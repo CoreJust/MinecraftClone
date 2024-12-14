@@ -1,0 +1,535 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" ToolsVersion="15.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|Win32">
+      <Configuration>Debug</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="FastCompilation|Win32">
+      <Configuration>FastCompilation</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="FastCompilation|x64">
+      <Configuration>FastCompilation</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|Win32">
+      <Configuration>Release</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Debug|x64">
+      <Configuration>Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <VCProjectVersion>15.0</VCProjectVersion>
+    <ProjectGuid>{B248D851-C1BE-4F87-B657-0853E3B08F3F}</ProjectGuid>
+    <RootNamespace>Thegame</RootNamespace>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+    <CharacterSet>MultiByte</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+    <CharacterSet>MultiByte</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='FastCompilation|Win32'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+    <CharacterSet>MultiByte</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+    <CharacterSet>MultiByte</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+    <CharacterSet>MultiByte</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='FastCompilation|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+    <CharacterSet>MultiByte</CharacterSet>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Label="ExtensionSettings">
+  </ImportGroup>
+  <ImportGroup Label="Shared">
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Condition="'$(Configuration)|$(Platform)'=='FastCompilation|Win32'" Label="PropertySheets">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Condition="'$(Configuration)|$(Platform)'=='FastCompilation|x64'" Label="PropertySheets">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <PropertyGroup Label="UserMacros" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+    <IncludePath>E:\GLFW\include;C:\Users\Egor\source\repos\The game\The game;$(IncludePath)</IncludePath>
+    <LibraryPath>E:\GLFW\lib;$(LibraryPath)</LibraryPath>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+    <IncludePath>E:\GLFW\include;C:\Users\Egor\source\repos\The game\The game;$(IncludePath)</IncludePath>
+    <LibraryPath>E:\GLFW\lib;$(LibraryPath)</LibraryPath>
+    <LinkIncremental>true</LinkIncremental>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='FastCompilation|Win32'">
+    <IncludePath>E:\GLFW\include;C:\Users\Egor\source\repos\The game\The game;$(IncludePath)</IncludePath>
+    <LibraryPath>E:\GLFW\lib;$(LibraryPath)</LibraryPath>
+    <LinkIncremental>true</LinkIncremental>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <IncludePath>E:\GLFW\include;C:\Users\Egor\source\repos\The game\The game;$(IncludePath)</IncludePath>
+    <LibraryPath>E:\GLFW\lib;$(LibraryPath)</LibraryPath>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <IncludePath>E:\GLFW\include;C:\Users\Egor\source\repos\The game\The game;$(IncludePath)</IncludePath>
+    <LibraryPath>E:\GLFW\lib;$(LibraryPath)</LibraryPath>
+    <LinkIncremental>true</LinkIncremental>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='FastCompilation|x64'">
+    <IncludePath>E:\GLFW\include;C:\Users\Egor\source\repos\The game\The game;$(IncludePath)</IncludePath>
+    <LibraryPath>E:\GLFW\lib;$(LibraryPath)</LibraryPath>
+    <LinkIncremental>true</LinkIncremental>
+  </PropertyGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <Optimization>Disabled</Optimization>
+      <SDLCheck>true</SDLCheck>
+      <ConformanceMode>true</ConformanceMode>
+      <PreprocessorDefinitions>GLEW_STATIC;SFML_DYNAMIC;_MBCS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+      <AdditionalIncludeDirectories>E:\GLFW\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ClCompile>
+    <Link>
+      <AdditionalDependencies>sfml-graphics-d.lib;sfml-window-d.lib;sfml-system-d.lib;sfml-audio-d.lib;opengl32.lib;glew32s.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>E:\GLFW\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <Optimization>MaxSpeed</Optimization>
+      <SDLCheck>true</SDLCheck>
+      <ConformanceMode>true</ConformanceMode>
+      <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;GLEW_STATIC;SFML_DYNAMIC;_MBCS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>C:\libs\glew-2.1.0-win32\glew-2.1.0\include;C:\libs\SFML-2.6.2-windows-vc17-64-bit\SFML-2.6.2\include;C:\Users\egor2\source\repos\The game\The game;C:\libs\glm;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <WholeProgramOptimization>true</WholeProgramOptimization>
+      <BasicRuntimeChecks>Default</BasicRuntimeChecks>
+      <DebugInformationFormat>OldStyle</DebugInformationFormat>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
+    </ClCompile>
+    <Link>
+      <AdditionalLibraryDirectories>C:\libs\glfw-3.3.8.bin.WIN64\glfw-3.3.8.bin.WIN64\lib-vc2022;C:\libs\glew-2.1.0-win32\glew-2.1.0\lib\Release\x64;C:\libs\SFML-2.6.2-windows-vc17-64-bit\SFML-2.6.2\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>sfml-graphics-d.lib;sfml-window-d.lib;sfml-system-d.lib;sfml-audio-d.lib;opengl32.lib;glew32s.lib;glfw3.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <Optimization>MaxSpeed</Optimization>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <SDLCheck>true</SDLCheck>
+      <ConformanceMode>true</ConformanceMode>
+      <PreprocessorDefinitions>GLEW_STATIC;SFML_DYNAMIC;_MBCS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+      <AdditionalIncludeDirectories>E:\GLFW\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
+      <InlineFunctionExpansion>Default</InlineFunctionExpansion>
+      <OmitFramePointers>true</OmitFramePointers>
+      <EnableFiberSafeOptimizations>true</EnableFiberSafeOptimizations>
+      <EnableEnhancedInstructionSet>AdvancedVectorExtensions2</EnableEnhancedInstructionSet>
+      <FloatingPointModel>Fast</FloatingPointModel>
+    </ClCompile>
+    <Link>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <OptimizeReferences>true</OptimizeReferences>
+      <AdditionalDependencies>sfml-system.lib;sfml-window.lib;sfml-graphics.lib;opengl32.lib;glew32s.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>E:\GLFW\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='FastCompilation|Win32'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <Optimization>MaxSpeed</Optimization>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <SDLCheck>true</SDLCheck>
+      <ConformanceMode>true</ConformanceMode>
+      <PreprocessorDefinitions>GLEW_STATIC;SFML_DYNAMIC;_MBCS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+      <AdditionalIncludeDirectories>E:\GLFW\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
+      <InlineFunctionExpansion>AnySuitable</InlineFunctionExpansion>
+      <OmitFramePointers>true</OmitFramePointers>
+      <EnableFiberSafeOptimizations>true</EnableFiberSafeOptimizations>
+    </ClCompile>
+    <Link>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <OptimizeReferences>true</OptimizeReferences>
+      <AdditionalDependencies>sfml-system.lib;sfml-window.lib;sfml-graphics.lib;opengl32.lib;glew32s.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>E:\GLFW\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <Optimization>MaxSpeed</Optimization>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <SDLCheck>true</SDLCheck>
+      <ConformanceMode>true</ConformanceMode>
+      <InlineFunctionExpansion>Default</InlineFunctionExpansion>
+      <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;GLEW_STATIC;SFML_STATIC;_MBCS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>C:\libs\glew-2.1.0-win32\glew-2.1.0\include;C:\libs\SFML-2.6.2-windows-vc17-64-bit\SFML-2.6.2\include;C:\Users\egor2\source\repos\The game\The game;C:\libs\glm;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+      <DebugInformationFormat>OldStyle</DebugInformationFormat>
+      <EnableFiberSafeOptimizations>true</EnableFiberSafeOptimizations>
+      <EnableEnhancedInstructionSet>AdvancedVectorExtensions2</EnableEnhancedInstructionSet>
+      <FloatingPointModel>Fast</FloatingPointModel>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
+    </ClCompile>
+    <Link>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <OptimizeReferences>true</OptimizeReferences>
+      <AdditionalLibraryDirectories>C:\libs\glfw-3.3.8.bin.WIN64\glfw-3.3.8.bin.WIN64\lib-vc2022;C:\libs\glew-2.1.0-win32\glew-2.1.0\lib\Release\x64;C:\libs\SFML-2.6.2-windows-vc17-64-bit\SFML-2.6.2\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>sfml-graphics-s.lib;sfml-window-s.lib;sfml-system-s.lib;sfml-audio-s.lib;opengl32.lib;openal32.lib;flac.lib;vorbisenc.lib;vorbisfile.lib;vorbis.lib;ogg.lib;ws2_32.lib;winmm.lib;gdi32.lib;freetype.lib;glew32s.lib;glfw3.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='FastCompilation|x64'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <Optimization>MaxSpeed</Optimization>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <SDLCheck>true</SDLCheck>
+      <ConformanceMode>true</ConformanceMode>
+      <InlineFunctionExpansion>AnySuitable</InlineFunctionExpansion>
+      <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;GLEW_STATIC;SFML_DYNAMIC;_MBCS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>C:\libs\glew-2.1.0-win32\glew-2.1.0\include;C:\libs\SFML-2.6.2-windows-vc17-64-bit\SFML-2.6.2\include;C:\Users\egor2\source\repos\The game\The game;C:\libs\glm;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+      <DebugInformationFormat>OldStyle</DebugInformationFormat>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
+    </ClCompile>
+    <Link>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <OptimizeReferences>true</OptimizeReferences>
+      <AdditionalLibraryDirectories>C:\libs\glfw-3.3.8.bin.WIN64\glfw-3.3.8.bin.WIN64\lib-vc2022;C:\libs\glew-2.1.0-win32\glew-2.1.0\lib\Release\x64;C:\libs\SFML-2.6.0-windows-vc17-64-bit\SFML-2.6.0\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>sfml-system.lib;sfml-window.lib;sfml-graphics.lib;opengl32.lib;glew32s.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <ClCompile Include="Camera.cpp" />
+    <ClCompile Include="Config.cpp" />
+    <ClCompile Include="Core\Common\Assert.cpp" />
+    <ClCompile Include="Core\Common\DurationToString.cpp" />
+    <ClCompile Include="Core\GL\ShaderBuilder.cpp" />
+    <ClCompile Include="Core\IO\ConsoleColor.cpp" />
+    <ClCompile Include="Core\IO\File.cpp" />
+    <ClCompile Include="Core\IO\Logger.cpp" />
+    <ClCompile Include="Core\Common\Time.cpp" />
+    <ClCompile Include="Core\Common\Timer.cpp" />
+    <ClCompile Include="Core\GL\Shader.cpp" />
+    <ClCompile Include="Core\GL\Texture.cpp" />
+    <ClCompile Include="Core\GL\Type.cpp" />
+    <ClCompile Include="Core\GL\Vertices.cpp" />
+    <ClCompile Include="Core\GL\UniformVariable.cpp" />
+    <ClCompile Include="Entity\Entity.cpp" />
+    <ClCompile Include="Entity\EntityBase.cpp" />
+    <ClCompile Include="Entity\Mobs\Zombie.cpp" />
+    <ClCompile Include="Entity\Player.cpp" />
+    <ClCompile Include="FBO.cpp" />
+    <ClCompile Include="Core\GL\Debug.cpp" />
+    <ClCompile Include="GUI\Background.cpp" />
+    <ClCompile Include="GUI\CraftingTableInterface.cpp" />
+    <ClCompile Include="GUI\HotBar.cpp" />
+    <ClCompile Include="GUI\Inventory.cpp" />
+    <ClCompile Include="GUI\Slot.cpp" />
+    <ClCompile Include="GUI\StandartInterface.cpp" />
+    <ClCompile Include="Maths\BlockPos.cpp" />
+    <ClCompile Include="Maths\Maths.cpp" />
+    <ClCompile Include="Maths\Noise\Noise.cpp" />
+    <ClCompile Include="Maths\Noise\PerlinNoise.cpp" />
+    <ClCompile Include="Model2D.cpp" />
+    <ClCompile Include="Renderer\EntityRenderer.cpp" />
+    <ClCompile Include="Renderer\GUIRenderer.cpp" />
+    <ClCompile Include="Renderer\IconRenderer.cpp" />
+    <ClCompile Include="Shaders\DestroyingShader.cpp" />
+    <ClCompile Include="Shaders\EntityShader.cpp" />
+    <ClCompile Include="Shaders\HitBoxShader.cpp" />
+    <ClCompile Include="Shaders\IconShader.cpp" />
+    <ClCompile Include="Shaders\SolidShader.cpp" />
+    <ClCompile Include="Shaders\WaterShader.cpp" />
+    <ClCompile Include="World\Block\Blocks\Air.cpp" />
+    <ClCompile Include="World\Block\Blocks\Bedrock.cpp" />
+    <ClCompile Include="World\Block\Blocks\Block.cpp" />
+    <ClCompile Include="World\Block\Blocks\Cobblestone.cpp" />
+    <ClCompile Include="World\Block\Blocks\CraftingTable.cpp" />
+    <ClCompile Include="World\Block\Blocks\Dirt.cpp" />
+    <ClCompile Include="World\Block\Blocks\Grass.cpp" />
+    <ClCompile Include="World\Block\Blocks\IronOre.cpp" />
+    <ClCompile Include="World\Block\Blocks\LeavesOak.cpp" />
+    <ClCompile Include="World\Block\Blocks\LogOak.cpp" />
+    <ClCompile Include="World\Block\Blocks\PlanksOak.cpp" />
+    <ClCompile Include="World\Block\Blocks\Sand.cpp" />
+    <ClCompile Include="World\Block\Blocks\Stone.cpp" />
+    <ClCompile Include="World\Block\Blocks\Water.cpp" />
+    <ClCompile Include="World\Chunk\PreChunk.cpp" />
+    <ClCompile Include="World\Crafts\CraftingGrid.cpp" />
+    <ClCompile Include="World\Crafts\CraftManager.cpp" />
+    <ClCompile Include="World\Crafts\ShapedRecipe.cpp" />
+    <ClCompile Include="World\Crafts\ShapelessRecipe.cpp" />
+    <ClCompile Include="World\Generator\Structures\OakTree.cpp" />
+    <ClCompile Include="World\Generator\TerrainBuilder.cpp" />
+    <ClCompile Include="World\Generator\TerrainGenerator\BasicGenerator.cpp" />
+    <ClCompile Include="World\ItemDatabase.cpp" />
+    <ClCompile Include="World\Items\Item.cpp" />
+    <ClCompile Include="Maths\AABB.cpp" />
+    <ClCompile Include="Maths\Frustum.cpp" />
+    <ClCompile Include="Maths\Matrix.cpp" />
+    <ClCompile Include="Maths\Ray.cpp" />
+    <ClCompile Include="Maths\VectorXZ.cpp" />
+    <ClCompile Include="Model.cpp" />
+    <ClCompile Include="Renderer\ChunkRenderer.cpp" />
+    <ClCompile Include="Renderer\HitBoxRenderer.cpp" />
+    <ClCompile Include="Renderer\RenderMaster.cpp" />
+    <ClCompile Include="Renderer\SFMLRenderer.cpp" />
+    <ClCompile Include="Textures\TextureAtlas.cpp" />
+    <ClCompile Include="Utils\Console.cpp" />
+    <ClCompile Include="States\GameState.cpp" />
+    <ClCompile Include="States\StatesController.cpp" />
+    <ClCompile Include="TheGame.cpp" />
+    <ClCompile Include="Textures\Texture.cpp" />
+    <ClCompile Include="World\Chunk\BoundsCheck.cpp" />
+    <ClCompile Include="World\Chunk\Chunk.cpp" />
+    <ClCompile Include="World\Chunk\ChunkSection.cpp" />
+    <ClCompile Include="World\Chunk\Mesh.cpp" />
+    <ClCompile Include="World\Chunk\MeshBuilder.cpp" />
+    <ClCompile Include="World\Items\ItemIcon.cpp" />
+    <ClCompile Include="World\Items\ItemStack.cpp" />
+    <ClCompile Include="World\Items\Items\IronIngot.cpp" />
+    <ClCompile Include="World\Items\Items\ItemStick.cpp" />
+    <ClCompile Include="World\Items\Items\StoneAxe.cpp" />
+    <ClCompile Include="World\Items\Items\StonePickaxe.cpp" />
+    <ClCompile Include="World\Items\Items\StoneShovel.cpp" />
+    <ClCompile Include="World\Items\Items\StoneSword.cpp" />
+    <ClCompile Include="World\Items\Items\WoodenAxe.cpp" />
+    <ClCompile Include="World\Items\Items\WoodenPickaxe.cpp" />
+    <ClCompile Include="World\Items\Items\WoodenShovel.cpp" />
+    <ClCompile Include="World\Items\Items\WoodenSword.cpp" />
+    <ClCompile Include="World\Items\StackIcon.cpp" />
+    <ClCompile Include="World\World.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="Camera.h" />
+    <ClInclude Include="Config.h" />
+    <ClInclude Include="Core\Common\Assert.hpp" />
+    <ClInclude Include="Core\GL\ShaderBuilder.hpp" />
+    <ClInclude Include="Core\IO\ConsoleColor.hpp" />
+    <ClInclude Include="Core\IO\File.hpp" />
+    <ClInclude Include="Core\IO\Logger.hpp" />
+    <ClInclude Include="Core\Common\Time.hpp" />
+    <ClInclude Include="Core\Common\Timer.hpp" />
+    <ClInclude Include="Core\Common\DurationToString.hpp" />
+    <ClInclude Include="Core\GL\Fwd.hpp" />
+    <ClInclude Include="Core\GL\Shader.hpp" />
+    <ClInclude Include="Core\GL\Texture.hpp" />
+    <ClInclude Include="Core\GL\Type.hpp" />
+    <ClInclude Include="Core\GL\Vertices.hpp" />
+    <ClInclude Include="Core\GL\UniformVariable.hpp" />
+    <ClInclude Include="Entity\Entity.h" />
+    <ClInclude Include="Entity\EntityBase.h" />
+    <ClInclude Include="Entity\Mobs\Zombie.h" />
+    <ClInclude Include="Entity\Player.h" />
+    <ClInclude Include="Core\GL\Debug.hpp" />
+    <ClInclude Include="GL\GLLight.h" />
+    <ClInclude Include="GL\GLMaterial.h" />
+    <ClInclude Include="GUI\Background.h" />
+    <ClInclude Include="GUI\CraftingTableInterface.h" />
+    <ClInclude Include="GUI\Element.h" />
+    <ClInclude Include="GUI\HotBar.h" />
+    <ClInclude Include="GUI\Interface.h" />
+    <ClInclude Include="GUI\Inventory.h" />
+    <ClInclude Include="GUI\Slot.h" />
+    <ClInclude Include="GUI\StandartInterface.h" />
+    <ClInclude Include="Maths\BlockPos.h" />
+    <ClInclude Include="Maths\Noise\Noise.h" />
+    <ClInclude Include="Maths\Noise\PerlinNoise.h" />
+    <ClInclude Include="Renderer\EntityRenderer.h" />
+    <ClInclude Include="Renderer\GUIRenderer.h" />
+    <ClInclude Include="Defs.h" />
+    <ClInclude Include="Renderer\IconRenderer.h" />
+    <ClInclude Include="res\shaders\basic_frameVertex.glsl" />
+    <ClInclude Include="FBO.h" />
+    <ClInclude Include="res\shaders\gui_vertex.glsl" />
+    <ClInclude Include="Model2D.h" />
+    <ClInclude Include="Shaders\DestroyingShader.h" />
+    <ClInclude Include="Shaders\EntityShader.h" />
+    <ClInclude Include="Shaders\HitBoxShader.h" />
+    <ClInclude Include="Shaders\IconShader.h" />
+    <ClInclude Include="Shaders\SolidShader.h" />
+    <ClInclude Include="Shaders\WaterShader.h" />
+    <ClInclude Include="Utils\Memory.h" />
+    <ClInclude Include="World\Block\Blocks\Air.h" />
+    <ClInclude Include="World\Block\Blocks\Bedrock.h" />
+    <ClInclude Include="World\Block\Blocks\Block.h" />
+    <ClInclude Include="World\Block\Blocks\Cobblestone.h" />
+    <ClInclude Include="World\Block\Blocks\CraftingTable.h" />
+    <ClInclude Include="World\Block\Blocks\Dirt.h" />
+    <ClInclude Include="World\Block\Blocks\Grass.h" />
+    <ClInclude Include="World\Block\Blocks\IronOre.h" />
+    <ClInclude Include="World\Block\Blocks\LeavesOak.h" />
+    <ClInclude Include="World\Block\Blocks\LogOak.h" />
+    <ClInclude Include="World\Block\Blocks\PlanksOak.h" />
+    <ClInclude Include="World\Block\Blocks\Sand.h" />
+    <ClInclude Include="World\Block\Blocks\Stone.h" />
+    <ClInclude Include="World\Block\Blocks\Water.h" />
+    <ClInclude Include="World\Chunk\IChunk.h" />
+    <ClInclude Include="World\Chunk\Meshes.h" />
+    <ClInclude Include="World\Chunk\PreChunk.h" />
+    <ClInclude Include="World\Crafts\CraftingGrid.h" />
+    <ClInclude Include="World\Crafts\CraftManager.h" />
+    <ClInclude Include="World\Crafts\IRecipe.h" />
+    <ClInclude Include="World\Crafts\ShapedRecipe.h" />
+    <ClInclude Include="World\Crafts\ShapelessRecipe.h" />
+    <ClInclude Include="World\Generator\Structures\OakTree.h" />
+    <ClInclude Include="World\Generator\Structures\Structure.h" />
+    <ClInclude Include="World\Generator\TerrainBuilder.h" />
+    <ClInclude Include="World\Generator\TerrainGenerator\BasicGenerator.h" />
+    <ClInclude Include="World\ItemDatabase.h" />
+    <ClInclude Include="World\Items\Item.h" />
+    <ClInclude Include="Maths\AABB.h" />
+    <ClInclude Include="Maths\Defs.h" />
+    <ClInclude Include="Maths\Frustum.h" />
+    <ClInclude Include="Maths\Maths.h" />
+    <ClInclude Include="Maths\Matrix.h" />
+    <ClInclude Include="Maths\Ray.h" />
+    <ClInclude Include="Maths\VectorXZ.h" />
+    <ClInclude Include="Model.h" />
+    <ClInclude Include="Object.h" />
+    <ClInclude Include="Renderer\ChunkRenderer.h" />
+    <ClInclude Include="Renderer\HitBoxRenderer.h" />
+    <ClInclude Include="Renderer\RenderMaster.h" />
+    <ClInclude Include="Renderer\SFMLRenderer.h" />
+    <ClInclude Include="States\State.h" />
+    <ClInclude Include="Textures\TextureAtlas.h" />
+    <ClInclude Include="Utils\Console.h" />
+    <ClInclude Include="States\GameState.h" />
+    <ClInclude Include="States\StatesController.h" />
+    <ClInclude Include="Textures\Texture.h" />
+    <ClInclude Include="Utils\Hasher.h" />
+    <ClInclude Include="Utils\Random.h" />
+    <ClInclude Include="World\Block\BlockData.h" />
+    <ClInclude Include="World\Block\BlockPosition.h" />
+    <ClInclude Include="World\Chunk\BoundsCheck.h" />
+    <ClInclude Include="World\Chunk\Chunk.h" />
+    <ClInclude Include="World\Chunk\ChunkSection.h" />
+    <ClInclude Include="World\Chunk\Mesh.h" />
+    <ClInclude Include="World\Chunk\MeshBuilder.h" />
+    <ClInclude Include="World\Items\ItemIcon.h" />
+    <ClInclude Include="World\Items\ItemID.h" />
+    <ClInclude Include="World\Items\ItemStack.h" />
+    <ClInclude Include="World\Items\Items\IronIngot.h" />
+    <ClInclude Include="World\Items\Items\ItemStick.h" />
+    <ClInclude Include="World\Items\Items\StoneAxe.h" />
+    <ClInclude Include="World\Items\Items\StonePickaxe.h" />
+    <ClInclude Include="World\Items\Items\StoneShovel.h" />
+    <ClInclude Include="World\Items\Items\StoneSword.h" />
+    <ClInclude Include="World\Items\Items\WoodenAxe.h" />
+    <ClInclude Include="World\Items\Items\WoodenPickaxe.h" />
+    <ClInclude Include="World\Items\Items\WoodenShovel.h" />
+    <ClInclude Include="World\Items\Items\WoodenSword.h" />
+    <ClInclude Include="World\Items\StackIcon.h" />
+    <ClInclude Include="World\World.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="res\blocks\air.block" />
+    <None Include="res\blocks\bedrock.block" />
+    <None Include="res\blocks\cobblestone.block" />
+    <None Include="res\blocks\crafting_table.block" />
+    <None Include="res\blocks\dirt.block" />
+    <None Include="res\blocks\grass.block" />
+    <None Include="res\blocks\iron_ore.block" />
+    <None Include="res\blocks\leaves_oak.block" />
+    <None Include="res\blocks\log_oak.block" />
+    <None Include="res\blocks\planks_oak.block" />
+    <None Include="res\blocks\sand.block" />
+    <None Include="res\blocks\stone.block" />
+    <None Include="res\blocks\water.block" />
+    <None Include="res\config.cfg" />
+    <None Include="res\items\iron_ingot.item" />
+    <None Include="res\items\stick.item" />
+    <None Include="res\items\stone_axe.item" />
+    <None Include="res\items\stone_pickaxe.item" />
+    <None Include="res\items\stone_shovel.item" />
+    <None Include="res\items\stone_sword.item" />
+    <None Include="res\items\wooden_axe.item" />
+    <None Include="res\items\wooden_pickaxe.item" />
+    <None Include="res\items\wooden_shovel.item" />
+    <None Include="res\items\wooden_sword.item" />
+    <None Include="res\shaders\basic_fragment.glsl" />
+    <None Include="res\shaders\basic_frameFragment.glsl" />
+    <None Include="res\shaders\destroying_vertex.glsl" />
+    <None Include="res\shaders\entity_vertex.glsl" />
+    <None Include="res\shaders\solid_fragment.glsl" />
+    <None Include="res\shaders\solid_vertex.glsl" />
+    <None Include="res\shaders\gui_fragment.glsl" />
+    <None Include="res\shaders\hitbox_fragment.glsl" />
+    <None Include="res\shaders\hitbox_vertex.glsl" />
+    <None Include="res\shaders\icon_vertex.glsl" />
+    <None Include="res\shaders\water_frameFragment.glsl" />
+    <None Include="res\shaders\water_vertex.glsl" />
+  </ItemGroup>
+  <ItemGroup>
+    <Font Include="res\fonts\font.ttf" />
+  </ItemGroup>
+  <ItemGroup>
+    <Image Include="res\textures\gui\active_slot.png" />
+    <Image Include="res\textures\gui\basic_slot.png" />
+    <Image Include="res\textures\texture_atlas.png" />
+    <Image Include="res\textures\texture_atlas16.png" />
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ImportGroup Label="ExtensionTargets">
+  </ImportGroup>
+</Project>

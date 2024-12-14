@@ -1,0 +1,52 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio 15
+VisualStudioVersion = 15.0.27130.2003
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "The game", "The game\The game.vcxproj", "{B248D851-C1BE-4F87-B657-0853E3B08F3F}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|x64 = Debug|x64
+		Debug|x86 = Debug|x86
+		FastCompilation|x64 = FastCompilation|x64
+		FastCompilation|x86 = FastCompilation|x86
+		Release|x64 = Release|x64
+		Release|x86 = Release|x86
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{B248D851-C1BE-4F87-B657-0853E3B08F3F}.Debug|x64.ActiveCfg = Debug|x64
+		{B248D851-C1BE-4F87-B657-0853E3B08F3F}.Debug|x64.Build.0 = Debug|x64
+		{B248D851-C1BE-4F87-B657-0853E3B08F3F}.Debug|x86.ActiveCfg = Debug|Win32
+		{B248D851-C1BE-4F87-B657-0853E3B08F3F}.Debug|x86.Build.0 = Debug|Win32
+		{B248D851-C1BE-4F87-B657-0853E3B08F3F}.FastCompilation|x64.ActiveCfg = FastCompilation|x64
+		{B248D851-C1BE-4F87-B657-0853E3B08F3F}.FastCompilation|x64.Build.0 = FastCompilation|x64
+		{B248D851-C1BE-4F87-B657-0853E3B08F3F}.FastCompilation|x86.ActiveCfg = FastCompilation|Win32
+		{B248D851-C1BE-4F87-B657-0853E3B08F3F}.FastCompilation|x86.Build.0 = FastCompilation|Win32
+		{B248D851-C1BE-4F87-B657-0853E3B08F3F}.Release|x64.ActiveCfg = Release|x64
+		{B248D851-C1BE-4F87-B657-0853E3B08F3F}.Release|x64.Build.0 = Release|x64
+		{B248D851-C1BE-4F87-B657-0853E3B08F3F}.Release|x86.ActiveCfg = Release|Win32
+		{B248D851-C1BE-4F87-B657-0853E3B08F3F}.Release|x86.Build.0 = Release|Win32
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {BC65252E-A83F-4576-ABC9-FBF3C2ADE86E}
+	EndGlobalSection
+	GlobalSection(Performance) = preSolution
+		HasPerformanceSessions = true
+	EndGlobalSection
+	GlobalSection(Performance) = preSolution
+		HasPerformanceSessions = true
+	EndGlobalSection
+	GlobalSection(Performance) = preSolution
+		HasPerformanceSessions = true
+	EndGlobalSection
+	GlobalSection(Performance) = preSolution
+		HasPerformanceSessions = true
+	EndGlobalSection
+	GlobalSection(Performance) = preSolution
+		HasPerformanceSessions = true
+	EndGlobalSection
+EndGlobal
