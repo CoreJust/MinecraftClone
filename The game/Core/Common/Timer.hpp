@@ -7,9 +7,11 @@ namespace core::common {
 
 	public:
 		Timer();
+		Timer(Time const startTime) noexcept;
 
 		static Timer global() noexcept;
 
+		Time startTime() const noexcept;
 		[[nodiscard]] Duration elapsed() const noexcept;
 		void restart();
 

@@ -1,9 +1,9 @@
+#include <Core/Test/TestMain.hpp>
 #include "States/StatesController.h"
 
-// todo: moon and sun, light, trees, biomes, fix physics of player, fix caves, optimization, greedy meshing with repeated textures, PCH
-// average fps: 38-44. Max - 60. Least - 34.
-
 int main() {
+	TEST_MAIN();
+
 	try {
 		Config cnf;
 		StatesController controller(cnf);

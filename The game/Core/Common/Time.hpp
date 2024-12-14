@@ -79,6 +79,10 @@ namespace core::common {
 			return ns / 1'000'000'000;
 		}
 
+		[[nodiscard]] constexpr size_t us() const noexcept {
+			return (ns / 1'000'000'000) % 1'000'000;
+		}
+
 		[[nodiscard]] constexpr size_t ms() const noexcept {
 			return (ns / 1'000'000) % 1'000;
 		}

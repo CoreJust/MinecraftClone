@@ -1,7 +1,7 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
-# Visual Studio 15
-VisualStudioVersion = 15.0.27130.2003
+# Visual Studio Version 17
+VisualStudioVersion = 17.12.35506.116 d17.12
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "The game", "The game\The game.vcxproj", "{B248D851-C1BE-4F87-B657-0853E3B08F3F}"
 EndProject
@@ -9,24 +9,24 @@ Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|x64 = Debug|x64
 		Debug|x86 = Debug|x86
-		FastCompilation|x64 = FastCompilation|x64
-		FastCompilation|x86 = FastCompilation|x86
 		Release|x64 = Release|x64
 		Release|x86 = Release|x86
+		Test|x64 = Test|x64
+		Test|x86 = Test|x86
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
 		{B248D851-C1BE-4F87-B657-0853E3B08F3F}.Debug|x64.ActiveCfg = Debug|x64
 		{B248D851-C1BE-4F87-B657-0853E3B08F3F}.Debug|x64.Build.0 = Debug|x64
 		{B248D851-C1BE-4F87-B657-0853E3B08F3F}.Debug|x86.ActiveCfg = Debug|Win32
 		{B248D851-C1BE-4F87-B657-0853E3B08F3F}.Debug|x86.Build.0 = Debug|Win32
-		{B248D851-C1BE-4F87-B657-0853E3B08F3F}.FastCompilation|x64.ActiveCfg = FastCompilation|x64
-		{B248D851-C1BE-4F87-B657-0853E3B08F3F}.FastCompilation|x64.Build.0 = FastCompilation|x64
-		{B248D851-C1BE-4F87-B657-0853E3B08F3F}.FastCompilation|x86.ActiveCfg = FastCompilation|Win32
-		{B248D851-C1BE-4F87-B657-0853E3B08F3F}.FastCompilation|x86.Build.0 = FastCompilation|Win32
 		{B248D851-C1BE-4F87-B657-0853E3B08F3F}.Release|x64.ActiveCfg = Release|x64
 		{B248D851-C1BE-4F87-B657-0853E3B08F3F}.Release|x64.Build.0 = Release|x64
 		{B248D851-C1BE-4F87-B657-0853E3B08F3F}.Release|x86.ActiveCfg = Release|Win32
 		{B248D851-C1BE-4F87-B657-0853E3B08F3F}.Release|x86.Build.0 = Release|Win32
+		{B248D851-C1BE-4F87-B657-0853E3B08F3F}.Test|x64.ActiveCfg = Test|x64
+		{B248D851-C1BE-4F87-B657-0853E3B08F3F}.Test|x64.Build.0 = Test|x64
+		{B248D851-C1BE-4F87-B657-0853E3B08F3F}.Test|x86.ActiveCfg = Test|Win32
+		{B248D851-C1BE-4F87-B657-0853E3B08F3F}.Test|x86.Build.0 = Test|Win32
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

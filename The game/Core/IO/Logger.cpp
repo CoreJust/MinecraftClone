@@ -14,7 +14,7 @@ void core::io::setLogLevel(LogLevel level) {
 void core::io::log(LogLevel level, const std::string& msg) {
 	static const char* LOG_LEVEL_STR[] = { " TRACE]: ", " DEBUG]: ", " INFO]: ", " WARN]: ", " ERROR]: ", " FATAL]: " };
 	static ConsoleColor LOG_LEVEL_FOREGROUND_COLOR[] = { Gray, BrightGreen, BrightBlue, BrightYellow, BrightRed, Red };
-	static ConsoleColor LOG_LEVEL_BACKGROUND_COLOR[] = { Black, Black, Black, Gray, Gray, Gray };
+	static ConsoleColor LOG_LEVEL_BACKGROUND_COLOR[] = { Black, Black, Black, Black, Black, Black };
 
 	auto const now = common::Timer::global().elapsed();
 	std::osyncstream(std::clog) 
