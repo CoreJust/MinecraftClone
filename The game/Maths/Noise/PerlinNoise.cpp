@@ -1,4 +1,5 @@
 #include "PerlinNoise.h"
+#include <cmath>
 #include "Noise.h"
 
 float mul(const sf::Vector2f &a, const sf::Vector2f &b) {
@@ -15,18 +16,16 @@ float lerp(float a, float b, float t) {
 
 PerlinNoise2D::PerlinNoise2D(int seed, double quantity) : m_quantity(quantity) {
 	m_rand.setSeed(seed);
-
-	for (int i = 0; i < 1024; ++i) {
-		permutationTable[i] = m_rand.random<char>(-127, 127);
-	}
+	for (int i = 0; i < 1024; ++i)
+		permutationTable[i] = m_rand.randi(-127, 127);
 }
 
 float PerlinNoise2D::noise(float fx, float fy) {
 	fx *= m_quantity;
 	fy *= m_quantity;
 
-	int left = floor(fx);
-	int top = floor(fy);
+	int left = static_cast<int>(floor(fx));
+	int top = static_cast<int>(floor(fy));
 
 	float pointInQuadX = fx - left;
 	float pointInQuadY = fy - top;
@@ -86,15 +85,14 @@ sf::Vector2f PerlinNoise2D::randomVector(int x, int y) {
 
 
 
-PerlinNoise3D::PerlinNoise3D(int seed, double quantity) : m_quantity(quantity) {
+PerlinNoise3D::PerlinNoise3D(int seed, float quantity) : m_quantity(quantity) {
 	m_rand.setSeed(seed);
 
 	for (int i = 0; i < 256; ++i) {
-		p[i] = m_rand.random(-127, 127);
-
-		m_gx[i] = (float(rand()) / (RAND_MAX / 2)) - 1.0f;
-		m_gy[i] = (float(rand()) / (RAND_MAX / 2)) - 1.0f;
-		m_gz[i] = (float(rand()) / (RAND_MAX / 2)) - 1.0f;
+		p[i] = m_rand.randi(-127, 127);
+		m_gx[i] = m_rand.randf(-1.f, 1.f);
+		m_gy[i] = m_rand.randf(-1.f, 1.f);
+		m_gz[i] = m_rand.randf(-1.f, 1.f);
 	}
 }
 
@@ -175,7 +173,7 @@ float CoherentPerlinNoise3D::noise(float fx, float fy, float fz) {
 	fy *= m_quantity;
 	fz *= m_quantity;
 
-	return noise::gradientCoherentNoise3D(fx, fy, fz, m_seed);
+	return static_cast<float>(noise::gradientCoherentNoise3D(fx, fy, fz, m_seed));
 }
 
 float CoherentPerlinNoise3D::octave_noise(float fx, float fy, float fz, int octaves, float persistence) {

@@ -1,8 +1,8 @@
 #ifdef _TEST
+#include <Core/Test/UnitTest.hpp>
 #include <Core/Common/Time.hpp>
 #include <Core/Common/DurationToString.hpp>
-#include <Core/Test/UnitTest.hpp>
-#include <Core/IO//Logger.hpp>
+#include <Core/IO/Logger.hpp>
 
 UNIT_TEST(DurationTest) {
 	using namespace core::common;

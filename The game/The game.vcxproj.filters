@@ -324,6 +324,15 @@
     <ClCompile Include="Core\Macro\NoOpt.cpp">
       <Filter>Исходные файлы</Filter>
     </ClCompile>
+    <ClCompile Include="Core\Common\Random.cpp">
+      <Filter>Исходные файлы</Filter>
+    </ClCompile>
+    <ClCompile Include="Tests\TypeErasedObjectTest.cpp">
+      <Filter>Исходные файлы</Filter>
+    </ClCompile>
+    <ClCompile Include="Tests\RandomTest.cpp">
+      <Filter>Исходные файлы</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="States\GameState.h">
@@ -336,9 +345,6 @@
       <Filter>Файлы заголовков</Filter>
     </ClInclude>
     <ClInclude Include="Object.h">
-      <Filter>Файлы заголовков</Filter>
-    </ClInclude>
-    <ClInclude Include="Utils\Random.h">
       <Filter>Файлы заголовков</Filter>
     </ClInclude>
     <ClInclude Include="Renderer\ChunkRenderer.h">
@@ -524,9 +530,6 @@
     <ClInclude Include="World\Items\StackIcon.h">
       <Filter>Файлы заголовков</Filter>
     </ClInclude>
-    <ClInclude Include="Utils\Memory.h">
-      <Filter>Файлы заголовков</Filter>
-    </ClInclude>
     <ClInclude Include="GUI\Background.h">
       <Filter>Файлы заголовков</Filter>
     </ClInclude>
@@ -696,6 +699,12 @@
       <Filter>Файлы заголовков</Filter>
     </ClInclude>
     <ClInclude Include="Core\Macro\NoOpt.hpp">
+      <Filter>Файлы заголовков</Filter>
+    </ClInclude>
+    <ClInclude Include="Core\Common\Random.hpp">
+      <Filter>Файлы заголовков</Filter>
+    </ClInclude>
+    <ClInclude Include="Core\Memory\TypeErasedObject.hpp">
       <Filter>Файлы заголовков</Filter>
     </ClInclude>
   </ItemGroup>

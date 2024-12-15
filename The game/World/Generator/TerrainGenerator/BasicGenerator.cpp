@@ -40,10 +40,10 @@ void BasicGenerator::generateTerrain(Chunk &chunk) {
 			if (global_noise < -5) {
 				global_noise *= 0.6f;
 				if (global_noise < halfWaterLevel)
-					global_noise = halfWaterLevel;
+					global_noise = static_cast<float>(halfWaterLevel);
 			}
 
-			int noise = global_noise + waterLevel;
+			int noise = static_cast<int>(global_noise) + waterLevel;
 
 			chunk.heightMap[x][z] = hMap[x][z] = noise;
 			if (noise > chunk.maxHeight)
@@ -81,7 +81,7 @@ void BasicGenerator::generateTerrain(Chunk &chunk) {
 
 				if (noise > chance) // caves
 					builder.setBlock(ItemID::AIR, { x, y, z });
-				else if (m_rand.random(0, ironFrequency) == 0) // ore gen
+				else if (m_rand.randi(0, ironFrequency) == 0) // ore gen
 					builder.setBlock(ItemID::IRON_ORE, { x, y, z });
 			}
 

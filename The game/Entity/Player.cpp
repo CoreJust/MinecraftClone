@@ -25,7 +25,7 @@ void Player::update(World &world, float dt) {
 	accT += dt;
 
 	while (accT >= 0.0055f) {
-		float m = (m_isOnGround ? 0.93 : 0.975);
+		float m = (m_isOnGround ? 0.93f : 0.975f);
 		m_velocity.x *= m;
 		m_velocity.z *= m;
 		accT -= 0.0055f;
@@ -151,9 +151,9 @@ void Player::playerInput(World &world, float mouseWheel) {
 						} else if (sf::Keyboard::isKeyPressed(sf::Keyboard::B)) { // boom
 							int DISTANCE = sf::Keyboard::isKeyPressed(sf::Keyboard::N) ? 20 : 5;
 
-							int px = m_pos.x;
-							int py = m_pos.y;
-							int pz = m_pos.z;
+							int px = static_cast<int>(m_pos.x);
+							int py = static_cast<int>(m_pos.y);
+							int pz = static_cast<int>(m_pos.z);
 							for (int x = -DISTANCE; x <= DISTANCE; x++) {
 								for (int y = -DISTANCE; y <= DISTANCE; y++) {
 									int by = py + y;

@@ -1,9 +1,9 @@
 #pragma once
 #include <unordered_map>
 #include <list>
+#include <Core/Common/Random.hpp>
 #include "../Maths/VectorXZ.h"
 #include "../Maths/BlockPos.h"
-#include "../Utils/Random.h"
 #include "ItemDatabase.h"
 #include "../Renderer/RenderMaster.h"
 #include "../Entity/Player.h"
@@ -60,7 +60,7 @@ public:
 	bool isMorning() const;
 	bool isEvening() const;
 
-	const Random<std::mt19937>& getRandom() const;
+	const core::common::Random& getRandom() const;
 
 private:
 	void loadChunks();

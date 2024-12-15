@@ -22,3 +22,8 @@ std::ostream& std::operator<<(std::ostream &ostr, VectorXZ vec) {
 	ostr << vec.x << " : " << vec.z;
 	return ostr;
 }
+
+size_t std::hash<VectorXZ>::operator()(const VectorXZ& p) const {
+	std::hash<int> hasher;
+	return std::hash<int>{}((hasher(p.x) ^ hasher(p.z)) >> 2);
+}

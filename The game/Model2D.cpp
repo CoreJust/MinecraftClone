@@ -44,7 +44,7 @@ Model2D::~Model2D() {
 void Model2D::setData(VectorGLfloat &vertices, VectorGLfloat &textureCoords) {
 	clear();
 
-	m_verticesCount = vertices.size() / 2;
+	m_verticesCount = static_cast<GLuint>(vertices.size()) / 2;
 	glGenVertexArrays(1, &m_vao);
 	glBindVertexArray(m_vao);
 

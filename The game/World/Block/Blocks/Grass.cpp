@@ -19,5 +19,5 @@ void Grass::onUpdate(sf::Vector3i blockPos, World &world) {
 }
 
 float Grass::timeToUpdate() {
-	return Random<>::rand(2.5f, 7.f);
+	return core::common::Random::global().randf(2.5f, 7.f);
 }

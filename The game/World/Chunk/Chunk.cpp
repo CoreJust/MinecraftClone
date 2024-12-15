@@ -1,11 +1,8 @@
 #include "Chunk.h"
 #include <cstring>
 #include <cmath>
-#include <iostream>
 #include "BoundsCheck.h"
 #include "MeshBuilder.h"
-#include "../../Maths/Maths.h"
-#include "../../Utils/Random.h"
 #include "../../Renderer/RenderMaster.h"
 #include "../World.h"
 
@@ -111,9 +108,8 @@ void Chunk::updateMaxHeight(int x, int z, int yMax) {
 		}
 	}
 
-	for (int mX = 0; mX < 16; ++mX) {
-		for (int mZ = 0; mZ < 16; ++mZ) {
-			maxHeight = max(heightMap[mX][mZ], maxHeight);
-		}
-	}
+	for (int mX = 0; mX < 16; ++mX)
+		for (int mZ = 0; mZ < 16; ++mZ)
+			if (heightMap[mX][mZ] > maxHeight)
+				maxHeight = heightMap[mX][mZ];
 }

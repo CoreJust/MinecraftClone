@@ -84,7 +84,7 @@ void Zombie::update(World &world, float dt) {
 	Player *player = world.getPlayer();
 	float px = player->getX();
 	float pz = player->getZ();
-	float distance = sqrt(pow(px - m_pos.x, 2) + pow(pz - m_pos.z, 2));
+	float distance = sqrtf(powf(px - m_pos.x, 2) + powf(pz - m_pos.z, 2));
 	if (distance <= LOOK_DISTANCE)
 		isSeeing = true;
 
@@ -129,11 +129,11 @@ void Zombie::update(World &world, float dt) {
 		}
 	} else {
 		// Passive mode
-		static Random<> r;
+		static core::common::Random r;
 
 		static float aim_rot = 0.f;
 		if (time >= 2.8f) {
-			aim_rot = r.random<float>(0, 360);
+			aim_rot = r.randf(0, 360);
 			time = 0.f;
 		}
 
@@ -183,7 +183,7 @@ void Zombie::update(World &world, float dt) {
 		accT += dt;
 
 		while (accT >= 0.0055f) {
-			float m = (m_isOnGround ? 0.93 : 0.975);
+			float m = (m_isOnGround ? 0.93f : 0.975f);
 			m_velocity.x *= m;
 			m_velocity.z *= m;
 			accT -= 0.0055f;

@@ -1,18 +1,15 @@
 #include "ShapelessRecipe.h"
-#include "../../Utils/Memory.h"
 
-ShapelessRecipe::ShapelessRecipe(const ItemStack &result, const std::vector<ItemID> &ingridients)
+ShapelessRecipe::ShapelessRecipe(ItemStack const& result, std::vector<ItemID> const& ingridients)
 	: IRecipe(result) {
 	for (int i = 0; i < ingridients.size(); ++i)
 		m_recipe[ingridients[i]]++;
 }
 
-ShapelessRecipe::ShapelessRecipe(const ItemStack &result, std::unordered_map<int, int> &&ingridients)
-	: IRecipe(result) {
-	memory::exchange(&m_recipe, &ingridients);
-}
+ShapelessRecipe::ShapelessRecipe(ItemStack const& result, std::unordered_map<int, int> ingridients)
+	: IRecipe(result), m_recipe(std::move(ingridients)) { }
 
-bool ShapelessRecipe::equals(const ShapelessRecipe &other) {
+bool ShapelessRecipe::equals(ShapelessRecipe const& other) const {
 	if (other.m_recipe.size() != m_recipe.size())
 		return false;
 

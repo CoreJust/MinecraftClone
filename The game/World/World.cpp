@@ -30,8 +30,8 @@ void World::update(glm::vec3 &camPos, float dt) {
 	// Update entities
 	updateEntities(dt);
 
-	int player_chunk_x = toChunkPos(camPos.x);
-	int player_chunk_z = toChunkPos(camPos.z);
+	int player_chunk_x = toChunkPos(static_cast<int>(camPos.x));
+	int player_chunk_z = toChunkPos(static_cast<int>(camPos.z));
 
 	// Delete chunks out of render distance
 	for (auto &it : m_chunksMap) {
@@ -77,14 +77,14 @@ void World::update(glm::vec3 &camPos, float dt) {
 }
 
 void World::updateEntities(float dt) {
-	int px = m_player->getX();
-	int pz = m_player->getZ();
+	int px = static_cast<int>(m_player->getX());
+	int pz = static_cast<int>(m_player->getZ());
 	if (isNight() && m_entities.size() < 16) {
-		static Random<> r;
+		static core::common::Random r;
 		int x, z;
 		do {
-			x = r.random(px - m_spawnDistance, px + m_spawnDistance);
-			z = r.random(pz - m_spawnDistance, pz + m_spawnDistance);
+			x = r.randi(px - m_spawnDistance, px + m_spawnDistance);
+			z = r.randi(pz - m_spawnDistance, pz + m_spawnDistance);
 		} while (abs(px - x) < SAFE_DISTANCE || abs(pz - z) < SAFE_DISTANCE);
 
 		int y = ((Chunk*)getChunk({ toChunkPos(x), toChunkPos(z) }))->heightMap[abs_pos(x % 16)][abs_pos(z % 16)];
@@ -329,8 +329,8 @@ bool World::isEvening() const {
 	return getWorldTime() > DAY_END && getWorldTime() < NIGHT_START;
 }
 
-const Random<std::mt19937>& World::getRandom() const {
-	static Random<std::mt19937> r;
+const core::common::Random& World::getRandom() const {
+	static core::common::Random r;
 	return r;
 }
 

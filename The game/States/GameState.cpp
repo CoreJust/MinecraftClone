@@ -1,7 +1,5 @@
 #include "GameState.h"
-#include <ctime>
 #include <Core/IO/Logger.hpp>
-#include "../Utils/Random.h"
 #include "../Maths/Maths.h"
 #include "../Textures/TextureAtlas.h"
 #include "StatesController.h"
@@ -113,7 +111,7 @@ void GameState::draw() {
 	// Draw the debug panel
 	if (m_showDebugPanel) {
 		static sf::Text text("", m_font, 36);
-		int chunksCount = m_world.getChunks().size();
+		size_t chunksCount = m_world.getChunks().size();
 		int playerX = toChunkPos(m_player.getX());
 		int playerZ = toChunkPos(m_player.getZ());
 		

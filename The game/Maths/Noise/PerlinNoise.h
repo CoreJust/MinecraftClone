@@ -1,5 +1,5 @@
 #pragma once
-#include "../../Utils/Random.h"
+#include <Core/Common/Random.hpp>
 #include <SFML\System\Vector2.hpp>
 
 class PerlinNoise2D final {
@@ -14,24 +14,24 @@ private:
 
 private:
 	char permutationTable[1024];
-	Random<> m_rand;
+	core::common::Random m_rand;
 	double m_quantity;
 };
 
 class PerlinNoise3D final {
 public:
-	PerlinNoise3D(int seed = 0, double quantity = 0.1);
+	PerlinNoise3D(int seed = 0, float quantity = 0.1f);
 
 	float noise(float fx, float fy, float fz);
 	float octave_noise(float fx, float fy, float fz, int octaves, float persistence = 0.5f);
 
 private:
 	char p[256];
-	char m_gx[256];
-	char m_gy[256];
-	char m_gz[256];
-	Random<> m_rand;
-	double m_quantity;
+	float m_gx[256];
+	float m_gy[256];
+	float m_gz[256];
+	core::common::Random m_rand;
+	float m_quantity;
 };
 
 class CoherentPerlinNoise3D final {

@@ -21,6 +21,7 @@
 //
 
 #include "Noise.h"
+#include <math.h>
 
 using namespace noise;
 
@@ -137,6 +138,16 @@ int noise::intValueNoise3D(int x, int y, int z, int seed) {
 		& 0x7fffffff;
 	n = (n >> 13) ^ n;
 	return (n * (n * n * 60493 + 19990303) + 1376312589) & 0x7fffffff;
+}
+
+double noise::makeInt32Range(double n) {
+	if (n >= 1073741824.0) {
+		return (2.0 * fmod(n, 1073741824.0)) - 1073741824.0;
+	} else if (n <= -1073741824.0) {
+		return (2.0 * fmod(n, 1073741824.0)) + 1073741824.0;
+	} else {
+		return n;
+	}
 }
 
 double noise::valueCoherentNoise3D(double x, double y, double z, int seed,

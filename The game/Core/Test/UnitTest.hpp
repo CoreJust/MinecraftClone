@@ -1,16 +1,16 @@
 #pragma once
 #include <Core/Macro/NameGeneration.hpp>
-#define GEN_UNITTEST_NAME(COUNTER) GEN_NAME_(UNITTEST__, COUNTER)
+#define GEN_UNITTEST_NAME(LINE, name) GEN_NAME_(UNITTEST_ ## name, LINE)
 
 #ifndef _TEST
-#define UNIT_TEST(name) auto GEN_UNITTEST_NAME(__LINE__) = [](core::test::UnitTestHelper test)
+#define UNIT_TEST(name) auto GEN_UNITTEST_NAME(__LINE__, name) = [](core::test::UnitTestHelper test)
 #else
 #include <source_location>
 #include <iterator>
 #include <Core/Common/Timer.hpp>
 #include <Core/Macro/Attributes.hpp>
 #include <Core/Macro/NoOpt.hpp>
-#define UNIT_TEST(name) auto GEN_UNITTEST_NAME(__COUNTER__ ## name) = core::test::UnitTestNote{ #name, __FILE__, __LINE__ } ^ [](core::test::UnitTestHelper test)
+#define UNIT_TEST(name) auto GEN_UNITTEST_NAME(__LINE__, name) = core::test::UnitTestNote{ #name, __FILE__, __LINE__ } ^ [](core::test::UnitTestHelper test)
 #define test_assert(expr) test.assert((expr), #expr)
 
 namespace core::test {

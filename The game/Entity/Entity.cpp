@@ -62,9 +62,9 @@ bool Entity::collisionTest(World &world, const glm::vec3 &velocity) {
 	auto &dims = m_box.getDimensions();
 	bool r = false;
 
-	for (int x = floor(m_pos.x); x < m_pos.x + dims.x; x++) {
-		for (int y = floor(m_pos.y); y < m_pos.y + dims.y; y++) {
-			for (int z = floor(m_pos.z); z < m_pos.z + dims.z; z++) {
+	for (int x = static_cast<int>(floor(m_pos.x)); x < m_pos.x + dims.x; x++) {
+		for (int y = static_cast<int>(floor(m_pos.y)); y < m_pos.y + dims.y; y++) {
+			for (int z = static_cast<int>(floor(m_pos.z)); z < m_pos.z + dims.z; z++) {
 				if (ItemDatabase::isSolid(world.getBlock(x, y, z))) {
 					r = true;
 					if (velocity.y > 0.f) {

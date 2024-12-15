@@ -20,13 +20,6 @@ namespace std {
 namespace std {
 	template<>
 	struct hash<VectorXZ> {
-		size_t operator() (const VectorXZ &pos) const {
-			auto makeHash = [](const VectorXZ &p) -> size_t {
-				std::hash<int> hasher;
-				return std::hash<int>{}((hasher(p.x) ^ hasher(p.z)) >> 2);
-			};
-
-			return makeHash(pos);
-		}
+		size_t operator() (const VectorXZ& pos) const;
 	};
 }

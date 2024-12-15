@@ -17,7 +17,7 @@ core::gl::Vertices::Vertices(std::vector<AttributeType> attrs, Type indicesType,
 	glBindVertexArray(m_vaoId);
 
 	glGenBuffers(m_bufferIds.size(), m_bufferIds.data());
-	size_t index = 0;
+	GLuint index = 0;
 	for (const auto& attr : m_attrs) {
 		glBindBuffer(GL_ARRAY_BUFFER, m_bufferIds[index]);
 		glBufferData(GL_ARRAY_BUFFER, m_bufferVerticesCount * typeSize(attr.type), nullptr, GL_DYNAMIC_DRAW);

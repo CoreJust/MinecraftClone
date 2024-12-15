@@ -12,7 +12,7 @@ namespace {
 
 IconShader::IconShader() : m_shader(buildIconShader()) { }
 
-void IconShader::bind() const const {
+void IconShader::bind() const {
 	m_shader.bind();
 }
 

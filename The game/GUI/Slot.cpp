@@ -1,7 +1,6 @@
 #include "Slot.h"
 #include <gl\glew.h>
 #include <SFML\Graphics.hpp>
-#include "../Utils/Memory.h"
 #include "../Renderer/RenderMaster.h"
 
 constexpr GLfloat slotMin = 0.f;
@@ -86,10 +85,10 @@ unsigned char Slot::getProperty(SlotProperty property) const {
 
 bool SlotHandler::tryExchange(Slot &slot, ItemStack &to) {
 	if (!slot.getProperty(Slot::CANT_PUT_ITEM)) {
-		memory::exchange(&slot.getStack(), &to);
+		std::swap(slot.getStack(), to);
 		return false;
 	} else if (to.getItem()->getID() == 0) {
-		memory::exchange(&slot.getStack(), &to);
+		std::swap(slot.getStack(), to);
 		return true;
 	}
 
@@ -148,7 +147,7 @@ void SlotHandler::moveItems(Slot &from, Slot &to) {
 
 void SlotHandler::moveItems(ItemStack &from, ItemStack &to) {
 	if (to.getCount() == 0) {
-		memory::exchange(&from, &to);
+		std::swap(from, to);
 		return;
 	}
 

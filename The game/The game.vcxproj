@@ -194,6 +194,7 @@
       <DebugInformationFormat>OldStyle</DebugInformationFormat>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <StringPooling>true</StringPooling>
+      <DisableSpecificWarnings>4244</DisableSpecificWarnings>
     </ClCompile>
     <Link>
       <AdditionalLibraryDirectories>C:\libs\glfw-3.3.8.bin.WIN64\glfw-3.3.8.bin.WIN64\lib-vc2022;C:\libs\glew-2.1.0-win32\glew-2.1.0\lib\Release\x64;C:\libs\SFML-2.6.2-windows-vc17-64-bit\SFML-2.6.2\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
@@ -292,6 +293,7 @@
       <FloatingPointModel>Fast</FloatingPointModel>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <StringPooling>true</StringPooling>
+      <DisableSpecificWarnings>4244</DisableSpecificWarnings>
     </ClCompile>
     <Link>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
@@ -319,6 +321,7 @@
       <FloatingPointModel>Fast</FloatingPointModel>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <StringPooling>true</StringPooling>
+      <DisableSpecificWarnings>4244</DisableSpecificWarnings>
     </ClCompile>
     <Link>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
@@ -343,6 +346,7 @@
       <DebugInformationFormat>OldStyle</DebugInformationFormat>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <StringPooling>true</StringPooling>
+      <DisableSpecificWarnings>4244</DisableSpecificWarnings>
     </ClCompile>
     <Link>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
@@ -356,6 +360,7 @@
     <ClCompile Include="Config.cpp" />
     <ClCompile Include="Core\Common\Assert.cpp" />
     <ClCompile Include="Core\Common\DurationToString.cpp" />
+    <ClCompile Include="Core\Common\Random.cpp" />
     <ClCompile Include="Core\GL\ShaderBuilder.cpp" />
     <ClCompile Include="Core\IO\ConsoleColor.cpp" />
     <ClCompile Include="Core\IO\File.cpp" />
@@ -397,7 +402,9 @@
     <ClCompile Include="Shaders\SolidShader.cpp" />
     <ClCompile Include="Shaders\WaterShader.cpp" />
     <ClCompile Include="Tests\DeferTests.cpp" />
+    <ClCompile Include="Tests\RandomTest.cpp" />
     <ClCompile Include="Tests\TimeTests.cpp" />
+    <ClCompile Include="Tests\TypeErasedObjectTest.cpp" />
     <ClCompile Include="World\Block\Blocks\Air.cpp" />
     <ClCompile Include="World\Block\Blocks\Bedrock.cpp" />
     <ClCompile Include="World\Block\Blocks\Block.cpp" />
@@ -461,6 +468,7 @@
     <ClInclude Include="Config.h" />
     <ClInclude Include="Core\Common\Assert.hpp" />
     <ClInclude Include="Core\Common\Defer.hpp" />
+    <ClInclude Include="Core\Common\Random.hpp" />
     <ClInclude Include="Core\GL\ShaderBuilder.hpp" />
     <ClInclude Include="Core\IO\ConsoleColor.hpp" />
     <ClInclude Include="Core\IO\File.hpp" />
@@ -477,6 +485,7 @@
     <ClInclude Include="Core\Macro\Attributes.hpp" />
     <ClInclude Include="Core\Macro\NameGeneration.hpp" />
     <ClInclude Include="Core\Macro\NoOpt.hpp" />
+    <ClInclude Include="Core\Memory\TypeErasedObject.hpp" />
     <ClInclude Include="Core\Test\TestMain.hpp" />
     <ClInclude Include="Core\Test\UnitTest.hpp" />
     <ClInclude Include="Entity\Entity.h" />
@@ -511,7 +520,6 @@
     <ClInclude Include="Shaders\IconShader.h" />
     <ClInclude Include="Shaders\SolidShader.h" />
     <ClInclude Include="Shaders\WaterShader.h" />
-    <ClInclude Include="Utils\Memory.h" />
     <ClInclude Include="World\Block\Blocks\Air.h" />
     <ClInclude Include="World\Block\Blocks\Bedrock.h" />
     <ClInclude Include="World\Block\Blocks\Block.h" />
@@ -558,7 +566,6 @@
     <ClInclude Include="States\GameState.h" />
     <ClInclude Include="States\StatesController.h" />
     <ClInclude Include="Utils\Hasher.h" />
-    <ClInclude Include="Utils\Random.h" />
     <ClInclude Include="World\Block\BlockData.h" />
     <ClInclude Include="World\Block\BlockPosition.h" />
     <ClInclude Include="World\Chunk\BoundsCheck.h" />
