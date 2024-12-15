@@ -1,20 +1,20 @@
 #include "StatesController.h"
 #include <ctime>
+#include <Core/IO/Logger.hpp>
 #include <Core/GL/Debug.hpp>
-#include "..\Utils\Console.h"
 #include "GameState.h"
 
 const char* const StatesController::TITLE = "The Game v0";
 
 StatesController::StatesController(Config config)
 	: m_state(RUNNING), m_width(config.width), m_height(config.height) {
-	printInfo("loading started...");
+	core::io::info("Loading the initial state");
 
 	// Initialize random
 	srand(clock());
 
 	// Set up Window
-	printInfo("create a window");
+	core::io::info("Creating the window");
 	sf::ContextSettings sets;
 	sets.majorVersion = 3;
 	sets.minorVersion = 3;
@@ -25,10 +25,10 @@ StatesController::StatesController(Config config)
 	m_window.setMouseCursorVisible(false);
 
 	// Set up the GLEW library
-	printInfo("initializing GLEW");
+	core::io::info("Initializing GLEW");
 	glewExperimental = GL_TRUE;
 	if (auto errorCode = glewInit(); errorCode != GLEW_OK)
-		fatalError(std::string("Failed to initialize the GLEW library, error is ") + (const char*)glewGetErrorString(errorCode));
+		core::io::fatal("Failed to initialize the GLEW library, error is {}", (const char*)glewGetErrorString(errorCode));
 
 	core::gl::enableGLDebug();
 
@@ -36,14 +36,14 @@ StatesController::StatesController(Config config)
 	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 	glEnable(GL_MULTISAMPLE);
 
-	printInfo("loading[1] success!");
+	core::io::info("State loaded successfully!");
 
 	// make the first state
 	pushState<GameState>(this, sf::Vector2i(m_width, m_height));
 }
 
 void StatesController::run() {
-	printInfo("running...");
+	core::io::info("Running the game");
 	m_state = RUNNING;
 
 	sf::Clock clock;

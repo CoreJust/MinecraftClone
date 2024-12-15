@@ -1,8 +1,6 @@
 #pragma once
 #include <SFML\Graphics.hpp>
 #include "State.h"
-#include "../Utils/Console.h"
-#include "../Textures/Texture.h"
 #include "../Renderer/RenderMaster.h"
 #include "../Entity/Player.h"
 #include "../Entity/Mobs/Zombie.h"

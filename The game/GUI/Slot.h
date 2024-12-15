@@ -1,7 +1,7 @@
 #pragma once
+#include <Core/GL/Texture.hpp>
 #include "Element.h"
 #include "../Model2D.h"
-#include "../Textures/Texture.h"
 #include "../World/Items/ItemStack.h"
 #include "../World/Items/StackIcon.h"
 
@@ -24,7 +24,7 @@ public:
 	void draw(RenderMaster &renderer) override;
 
 	Model2D& getModel() override;
-	Texture* getTexture() override;
+	core::gl::Texture* getTexture() override;
 
 	void setPosition(sf::Vector2f pos);
 	void setType(SlotType t);

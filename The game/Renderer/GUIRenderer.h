@@ -1,14 +1,17 @@
 #pragma once
 #include <vector>
-#include "../Model2D.h"
 #include <Core/GL/Shader.hpp>
-#include "../Textures/Texture.h"
+#include "../Model2D.h"
 #include "../GUI/Element.h"
+
+namespace core::gl {
+	class Texture;
+}
 
 class GUIRenderer {
 private:
 	struct RenderInfo {
-		Texture* text = nullptr;
+		core::gl::Texture* text = nullptr;
 		GLuint vao = 0;
 		GLuint verticesCount = 0;
 	};

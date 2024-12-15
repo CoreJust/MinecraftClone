@@ -10,7 +10,7 @@ void IconRenderer::draw(ItemIcon &icon, int z) {
 }
 
 void IconRenderer::update() {
-	Atlas::getAtlas()->bind(GL_TEXTURE0);
+	Atlas::getAtlas()->bind();
 	m_shader.bind();
 
 	glm::mat4 m;

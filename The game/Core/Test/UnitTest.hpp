@@ -1,6 +1,6 @@
 #pragma once
 #include <Core/Macro/NameGeneration.hpp>
-#define GEN_UNITTEST_NAME(LINE) GEN_NAME_(UNITTEST__, LINE)
+#define GEN_UNITTEST_NAME(COUNTER) GEN_NAME_(UNITTEST__, COUNTER)
 
 #ifndef _TEST
 #define UNIT_TEST(name) auto GEN_UNITTEST_NAME(__LINE__) = [](core::test::UnitTestHelper test)
@@ -8,10 +8,13 @@
 #include <source_location>
 #include <iterator>
 #include <Core/Common/Timer.hpp>
-#define UNIT_TEST(name) auto GEN_UNITTEST_NAME(__LINE__) = core::test::_UnitTestNote{ #name, __FILE__, __LINE__ } ^ [](core::test::UnitTestHelper test)
+#include <Core/Macro/Attributes.hpp>
+#include <Core/Macro/NoOpt.hpp>
+#define UNIT_TEST(name) auto GEN_UNITTEST_NAME(__COUNTER__ ## name) = core::test::UnitTestNote{ #name, __FILE__, __LINE__ } ^ [](core::test::UnitTestHelper test)
+#define test_assert(expr) test.assert((expr), #expr)
 
 namespace core::test {
-	struct _UnitTestNote final { 
+	struct UnitTestNote final { 
 		char const* const name;
 		char const* const file;
 		size_t line;
@@ -51,19 +54,19 @@ namespace core::test {
 		UnitTestHelper(UnitTestHelper&& other) noexcept;
 		~UnitTestHelper();
 
-		void assert(bool const condition, char const* const message = nullptr, std::source_location const location = std::source_location::current());
+		void assert(bool const condition, char const* const message = "", std::source_location const location = std::source_location::current());
 		UnitTestIterator begin();
 		UnitTestIterator end();
 	};
 
 	using UnitTestFunction = void(*)(core::test::UnitTestHelper);
 
-	int operator^(_UnitTestNote note, auto&& f) {
+	int operator^(UnitTestNote note, auto&& f) {
 		registerUnitTest(std::move(note), UnitTestFunction(f));
 		return 0;
 	}
 
-	void registerUnitTest(_UnitTestNote note, UnitTestFunction unitTest);
+	void registerUnitTest(UnitTestNote note, UnitTestFunction unitTest);
 	void runAll();
 }
 #endif

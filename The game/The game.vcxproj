@@ -193,6 +193,7 @@
       <BasicRuntimeChecks>Default</BasicRuntimeChecks>
       <DebugInformationFormat>OldStyle</DebugInformationFormat>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <StringPooling>true</StringPooling>
     </ClCompile>
     <Link>
       <AdditionalLibraryDirectories>C:\libs\glfw-3.3.8.bin.WIN64\glfw-3.3.8.bin.WIN64\lib-vc2022;C:\libs\glew-2.1.0-win32\glew-2.1.0\lib\Release\x64;C:\libs\SFML-2.6.2-windows-vc17-64-bit\SFML-2.6.2\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
@@ -290,6 +291,7 @@
       <EnableEnhancedInstructionSet>AdvancedVectorExtensions2</EnableEnhancedInstructionSet>
       <FloatingPointModel>Fast</FloatingPointModel>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <StringPooling>true</StringPooling>
     </ClCompile>
     <Link>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
@@ -301,7 +303,7 @@
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Test|x64'">
     <ClCompile>
       <WarningLevel>Level3</WarningLevel>
-      <Optimization>MaxSpeed</Optimization>
+      <Optimization>Disabled</Optimization>
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>true</SDLCheck>
@@ -316,6 +318,7 @@
       <EnableEnhancedInstructionSet>AdvancedVectorExtensions2</EnableEnhancedInstructionSet>
       <FloatingPointModel>Fast</FloatingPointModel>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <StringPooling>true</StringPooling>
     </ClCompile>
     <Link>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
@@ -339,6 +342,7 @@
       <LanguageStandard>stdcpp20</LanguageStandard>
       <DebugInformationFormat>OldStyle</DebugInformationFormat>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <StringPooling>true</StringPooling>
     </ClCompile>
     <Link>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
@@ -363,6 +367,7 @@
     <ClCompile Include="Core\GL\Type.cpp" />
     <ClCompile Include="Core\GL\Vertices.cpp" />
     <ClCompile Include="Core\GL\UniformVariable.cpp" />
+    <ClCompile Include="Core\Macro\NoOpt.cpp" />
     <ClCompile Include="Core\Test\TestMain.cpp" />
     <ClCompile Include="Core\Test\UnitTest.cpp" />
     <ClCompile Include="Entity\Entity.cpp" />
@@ -391,6 +396,7 @@
     <ClCompile Include="Shaders\IconShader.cpp" />
     <ClCompile Include="Shaders\SolidShader.cpp" />
     <ClCompile Include="Shaders\WaterShader.cpp" />
+    <ClCompile Include="Tests\DeferTests.cpp" />
     <ClCompile Include="Tests\TimeTests.cpp" />
     <ClCompile Include="World\Block\Blocks\Air.cpp" />
     <ClCompile Include="World\Block\Blocks\Bedrock.cpp" />
@@ -427,11 +433,9 @@
     <ClCompile Include="Renderer\RenderMaster.cpp" />
     <ClCompile Include="Renderer\SFMLRenderer.cpp" />
     <ClCompile Include="Textures\TextureAtlas.cpp" />
-    <ClCompile Include="Utils\Console.cpp" />
     <ClCompile Include="States\GameState.cpp" />
     <ClCompile Include="States\StatesController.cpp" />
     <ClCompile Include="TheGame.cpp" />
-    <ClCompile Include="Textures\Texture.cpp" />
     <ClCompile Include="World\Chunk\BoundsCheck.cpp" />
     <ClCompile Include="World\Chunk\Chunk.cpp" />
     <ClCompile Include="World\Chunk\ChunkSection.cpp" />
@@ -470,7 +474,9 @@
     <ClInclude Include="Core\GL\Type.hpp" />
     <ClInclude Include="Core\GL\Vertices.hpp" />
     <ClInclude Include="Core\GL\UniformVariable.hpp" />
+    <ClInclude Include="Core\Macro\Attributes.hpp" />
     <ClInclude Include="Core\Macro\NameGeneration.hpp" />
+    <ClInclude Include="Core\Macro\NoOpt.hpp" />
     <ClInclude Include="Core\Test\TestMain.hpp" />
     <ClInclude Include="Core\Test\UnitTest.hpp" />
     <ClInclude Include="Entity\Entity.h" />
@@ -549,10 +555,8 @@
     <ClInclude Include="Renderer\SFMLRenderer.h" />
     <ClInclude Include="States\State.h" />
     <ClInclude Include="Textures\TextureAtlas.h" />
-    <ClInclude Include="Utils\Console.h" />
     <ClInclude Include="States\GameState.h" />
     <ClInclude Include="States\StatesController.h" />
-    <ClInclude Include="Textures\Texture.h" />
     <ClInclude Include="Utils\Hasher.h" />
     <ClInclude Include="Utils\Random.h" />
     <ClInclude Include="World\Block\BlockData.h" />

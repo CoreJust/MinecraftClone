@@ -27,7 +27,7 @@ void ChunkRenderer::setDestroyingBlock(const BlockPos &pos, int destroyLevel) {
 
 void ChunkRenderer::update(const Camera &cam) {
 	glEnable(GL_CULL_FACE);
-	Atlas::getAtlas()->bind(GL_TEXTURE0);
+	Atlas::getAtlas()->bind();
 	m_solidShader.bind();
 	m_solidShader.projViewMat() = cam.getProjectionMatrix() * cam.getViewMatrix();
 

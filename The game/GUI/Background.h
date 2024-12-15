@@ -1,7 +1,8 @@
 #pragma once
+#include <SFML/System/Vector2.hpp>
+#include <Core/GL/Texture.hpp>
 #include "Element.h"
 #include "../Model2D.h"
-#include "../Textures/Texture.h"
 
 class Background final : public Element {
 public:
@@ -11,7 +12,7 @@ public:
 
 	void setSize(sf::Vector2f size);
 	Model2D& getModel() override;
-	Texture* getTexture() override;
+	core::gl::Texture* getTexture() override;
 
 private:
 	Model2D m_model;

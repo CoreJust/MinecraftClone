@@ -1,10 +1,10 @@
 #pragma once
 #include <vector>
 #include <math.h>
+#include <Core/GL/Texture.hpp>
 #include "EntityBase.h"
 #include "../Object.h"
 #include "../Model.h"
-#include "../Textures/Texture.h"
 #include "../Maths/AABB.h"
 
 class World;
@@ -25,7 +25,7 @@ struct TextureBox : public Object {
 
 struct EntityModel {
 	std::vector<TextureBox> boxes;
-	Texture *texture;
+	core::gl::Texture* texture;
 
 	Model* genModel();
 };

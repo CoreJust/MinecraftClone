@@ -1,5 +1,6 @@
 #include "GameState.h"
 #include <ctime>
+#include <Core/IO/Logger.hpp>
 #include "../Utils/Random.h"
 #include "../Maths/Maths.h"
 #include "../Textures/TextureAtlas.h"
@@ -18,7 +19,7 @@ GameState::GameState(StatesController* controller, sf::Vector2i screenSize)
 	m_cursor.setPosition(m_controller->getWidth() / 2 - 10.f, m_controller->getHeight() / 2 - 10.f);
 
 	// Generate the world
-	printInfo("generating the world...");
+	core::io::info("Starting world generation");
 	int pX = (int)m_player.getX();
 	int pY = (int)m_player.getY();
 	int pZ = (int)m_player.getZ();
@@ -26,30 +27,30 @@ GameState::GameState(StatesController* controller, sf::Vector2i screenSize)
 	m_world.setPlayer(&m_player);
 
 	// Generate the spawn house
-	printInfo("preparing spawn area...");
+	core::io::info("Preparing spawn area");
 
-		// floor and roof
-		m_world.fillBlocks(ItemID::COBBLESTONE, pX - 14, 29, pY - 1, 1, pZ - 14, 29);
-		m_world.fillBlocks(ItemID::COBBLESTONE, pX - 4, 9, pY + 4, 1, pZ - 4, 10);
+	// floor and roof
+	m_world.fillBlocks(ItemID::COBBLESTONE, pX - 14, 29, pY - 1, 1, pZ - 14, 29);
+	m_world.fillBlocks(ItemID::COBBLESTONE, pX - 4, 9, pY + 4, 1, pZ - 4, 10);
 
-		// walls
-		m_world.fillBlocks(ItemID::COBBLESTONE, pX - 5, 11, pY - 1, 6, pZ - 5, 1);
-		m_world.fillBlocks(ItemID::COBBLESTONE, pX - 5, 11, pY - 1, 6, pZ + 5, 1);
+	// walls
+	m_world.fillBlocks(ItemID::COBBLESTONE, pX - 5, 11, pY - 1, 6, pZ - 5, 1);
+	m_world.fillBlocks(ItemID::COBBLESTONE, pX - 5, 11, pY - 1, 6, pZ + 5, 1);
 
-		m_world.fillBlocks(ItemID::COBBLESTONE, pX - 5, 1,  pY - 1, 6, pZ - 4, 10);
-		m_world.fillBlocks(ItemID::COBBLESTONE, pX + 5, 1,  pY - 1, 6, pZ - 4, 10);
+	m_world.fillBlocks(ItemID::COBBLESTONE, pX - 5, 1,  pY - 1, 6, pZ - 4, 10);
+	m_world.fillBlocks(ItemID::COBBLESTONE, pX + 5, 1,  pY - 1, 6, pZ - 4, 10);
 
-		// door
-		m_world.destroyBlocks(pX - 1, 3, pY, 3, pZ + 5, 1);
+	// door
+	m_world.destroyBlocks(pX - 1, 3, pY, 3, pZ + 5, 1);
 
-		// windows
-		m_world.destroyBlocks(pX - 5, 1, pY + 1, 2, pZ - 2, 5);
-		m_world.destroyBlocks(pX + 5, 1, pY + 1, 2, pZ - 2, 5);
+	// windows
+	m_world.destroyBlocks(pX - 5, 1, pY + 1, 2, pZ - 2, 5);
+	m_world.destroyBlocks(pX + 5, 1, pY + 1, 2, pZ - 2, 5);
 
-		m_player.addItem(ItemDatabase::get().getItem(ItemID::STONE_PICKAXE));
-		m_player.addItem(ItemDatabase::get().getItem(ItemID::STONE_SHOVEL));
-	
-	printInfo("loading[2] success!");
+	m_player.addItem(ItemDatabase::get().getItem(ItemID::STONE_PICKAXE));
+	m_player.addItem(ItemDatabase::get().getItem(ItemID::STONE_SHOVEL));
+
+	core::io::info("World generation and player spawn finished");
 }
 
 void GameState::update(float delta, float mouseWheel) {

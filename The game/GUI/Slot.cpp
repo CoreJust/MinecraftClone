@@ -38,11 +38,11 @@ Model2D& Slot::getModel() {
 	return m_model;
 }
 
-Texture* Slot::getTexture() {
-	static Texture slotTextures[3] = {
-		Texture("gui/basic_slot.png"),
-		Texture("gui/active_slot.png"),
-		Texture("gui/inventory_slot.png")
+core::gl::Texture* Slot::getTexture() {
+	static core::gl::Texture slotTextures[3] = {
+		core::gl::Texture("gui/basic_slot.png"),
+		core::gl::Texture("gui/active_slot.png"),
+		core::gl::Texture("gui/inventory_slot.png")
 	};
 
 	return &slotTextures[m_type];

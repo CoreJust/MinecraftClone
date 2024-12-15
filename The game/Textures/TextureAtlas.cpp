@@ -1,6 +1,6 @@
 #include "TextureAtlas.h"
 
-std::vector<GLfloat> Atlas::getTextureCoords(sf::Vector2i coords) {
+std::vector<float> Atlas::getTextureCoords(sf::Vector2i coords) {
 	float x1 = coords.x * unitSize;
 	float y1 = coords.y * unitSize;
 
@@ -15,8 +15,8 @@ std::vector<GLfloat> Atlas::getTextureCoords(sf::Vector2i coords) {
 	};
 }
 
-std::vector<GLfloat> Atlas::getTextureBoxCoords(sf::Vector2i coords, int size, int bX, int bY, int bZ) {
-	static auto addBoxFace = [](std::vector<GLfloat> &vec, float x1, float y1, float x2, float y2) {
+std::vector<float> Atlas::getTextureBoxCoords(sf::Vector2i coords, int size, int bX, int bY, int bZ) {
+	static auto addBoxFace = [](std::vector<float> &vec, float x1, float y1, float x2, float y2) {
 		vec.insert(vec.end(), {
 			x1, y2,
 			x2, y2,
@@ -67,7 +67,7 @@ std::vector<GLfloat> Atlas::getTextureBoxCoords(sf::Vector2i coords, int size, i
 		bacY1 = topY2,
 		bacY2 = topY2 + sY;
 
-	std::vector<GLfloat> r;
+	std::vector<float> r;
 
 	addBoxFace(r, bacX1, bacY1, bacX2, bacY2);
 	addBoxFace(r, rigX1, rigY1, rigX2, rigY2);
@@ -79,7 +79,7 @@ std::vector<GLfloat> Atlas::getTextureBoxCoords(sf::Vector2i coords, int size, i
 	return r;
 }
 
-Texture* Atlas::getAtlas() {
-	static Texture *atlas = new Texture(TEXTURE_SIZE == 8 ? "texture_atlas.png" : "texture_atlas16.png");
+core::gl::Texture* Atlas::getAtlas() {
+	static core::gl::Texture* atlas = new core::gl::Texture(TEXTURE_SIZE == 8 ? "texture_atlas.png" : "texture_atlas16.png");
 	return atlas;
 }

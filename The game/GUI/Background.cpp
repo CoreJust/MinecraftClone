@@ -33,7 +33,7 @@ Model2D& Background::getModel() {
 	return m_model;
 }
 
-Texture* Background::getTexture() {
-	static Texture backgroundTexture("gui/background.png");
+core::gl::Texture* Background::getTexture() {
+	static core::gl::Texture backgroundTexture("gui/background.png");
 	return &backgroundTexture;
 }

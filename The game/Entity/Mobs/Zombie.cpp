@@ -6,7 +6,7 @@ const glm::vec3 ZOMBIE_HITBOX = { 0.6f, 1.76f, 0.6f };
 const float LOOK_DISTANCE = 24.f;
 
 Zombie::Zombie(glm::vec3 pos) : Entity(pos, ZOMBIE_HITBOX) {
-	const static Texture ZOMBIE_TEXTURE = Texture("entities/zombie.png");
+	static core::gl::Texture ZOMBIE_TEXTURE = core::gl::Texture("entities/zombie.png");
 
 	std::vector<TextureBox> boxes;
 	TextureBox box;
@@ -65,7 +65,7 @@ Zombie::Zombie(glm::vec3 pos) : Entity(pos, ZOMBIE_HITBOX) {
 
 	boxes.push_back(box);
 
-	m_model = new EntityModel{ boxes, (Texture*)&ZOMBIE_TEXTURE };
+	m_model = new EntityModel{ boxes, &ZOMBIE_TEXTURE };
 }
 
 void Zombie::update(World &world, float dt) {

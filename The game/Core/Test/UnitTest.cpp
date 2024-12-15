@@ -17,14 +17,15 @@ namespace {
 
 	constexpr double MAX_ITERATION_TIME_DEVIATION = 0.05;
 	constexpr size_t ITERATION_TIME_ADDITION = 100;
-	constexpr size_t ITERATION_TIME_WINDOW = 3;
+	constexpr size_t ITERATION_TIME_WINDOW = 4;
+	constexpr size_t ITERATIONS_MAX = 50;
 
 	void printTestsFileHeader(UnitTest const& test) {
 		std::cout << core::io::White << "\n=== Tests file " << test.file << " ===\n";
 	}
 
 	void printTestInfo(UnitTest const& test, size_t const testIndex) {
-		std::cout << core::io::White << "Test[" << testIndex << "] " << test.name << ": ";
+		std::cout << core::io::White << "Test[" << testIndex << "] " << test.name << ": \n";
 	}
 
 	void printTestsResults(size_t const successes, size_t const failures, core::common::Duration const duration) {
@@ -47,9 +48,13 @@ namespace {
 		g_testIterationDurations.emplace_back(duration);
 		if (g_testIterationDurations.size() < ITERATION_TIME_WINDOW)
 			return false;
+		if (g_testIterationDurations.size() >= ITERATIONS_MAX) {
+			std::cout << core::io::Yellow << "\tUnstable test iteration time!" << std::endl;
+			return true;
+		}
 
 		core::common::Duration minDuration = duration, maxDuration = duration;
-		for (size_t i = g_testIterationDurations.size(); i-- >= g_testIterationDurations.size() - ITERATION_TIME_WINDOW;) {
+		for (int i = g_testIterationDurations.size(); i-- > g_testIterationDurations.size() - ITERATION_TIME_WINDOW;) {
 			core::common::Duration iterationDuration = g_testIterationDurations[i];
 			if (iterationDuration < minDuration) {
 				minDuration = iterationDuration;
@@ -68,16 +73,16 @@ namespace {
 		g_isSuccess = true;
 		if (success) {
 			if (g_testIterationDurations.empty()) {
-				std::cout << core::io::Green << "Passed in " << core::common::durationToString(duration) << std::endl;
+				std::cout << core::io::Green << "\tPassed in " << core::common::durationToString(duration) << std::endl;
 			} else {
-				std::cout << core::io::Green << "Passed in " << core::common::durationToString(duration) 
+				std::cout << core::io::Green << "\tPassed in " << core::common::durationToString(duration) 
 					<< "; average time " << core::common::durationToString(g_testIterationDurations.back()) << std::endl;
 			}
 		} else {
 			if (g_testIterationDurations.empty()) {
-				std::cout << core::io::Red << "Failed in " << core::common::durationToString(duration) << std::endl;
+				std::cout << core::io::Red << "\tFailed in " << core::common::durationToString(duration) << std::endl;
 			} else {
-				std::cout << core::io::Red << "Failed in " << core::common::durationToString(duration)
+				std::cout << core::io::Red << "\tFailed in " << core::common::durationToString(duration)
 					<< "; average time " << core::common::durationToString(g_testIterationDurations.back()) << std::endl;
 			}
 		}
@@ -103,7 +108,7 @@ namespace {
 	public:
 		static inline UnitTestRunner* s_instance = nullptr;
 
-		void addTest(core::test::_UnitTestNote note, core::test::UnitTestFunction unitTest) {
+		void addTest(core::test::UnitTestNote note, core::test::UnitTestFunction unitTest) {
 			s_instance = this;
 			m_unitTests.emplace_back(note.name, note.file, note.line, unitTest);
 		}
@@ -175,7 +180,7 @@ core::test::UnitTestHelper::UnitTestIterator core::test::UnitTestHelper::end() {
 	return { true };
 }
 
-void core::test::registerUnitTest(_UnitTestNote note, UnitTestFunction unitTest) {
+void core::test::registerUnitTest(UnitTestNote note, UnitTestFunction unitTest) {
 	static UnitTestRunner s_unitTestRunner;
 	s_unitTestRunner.addTest(std::move(note), unitTest);
 }

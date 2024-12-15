@@ -94,7 +94,11 @@ std::string_view core::common::durationToString(Duration duration) noexcept {
 	}
 	writeDigits<2>(ptr, duration.seconds());
 	*(ptr++) = '.';
-	writeDigits<6>(ptr, duration.us());
+	writeDigits<3>(ptr, duration.ms());
+	*(ptr++) = '\'';
+	writeDigits<3>(ptr, duration.us());
+	*(ptr++) = '\'';
+	writeDigits<3>(ptr, duration.ns % 1'000);
 
 	return std::string_view(s_data, ptr - s_data);
 }

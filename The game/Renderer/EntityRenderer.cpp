@@ -1,4 +1,5 @@
 #include "EntityRenderer.h"
+#include <Core/GL/Texture.hpp>
 #include "../Entity/Entity.h"
 #include "../Maths/Matrix.h"
 
@@ -17,7 +18,7 @@ void EntityRenderer::update(const Camera &cam) {
 
 		for (auto &i : m_renderInfos) {
 			m_entityShader.modelMat() = Maths::genModelMatrix(i.obj, i.size * 0.5);
-			i.texture->bind(GL_TEXTURE0);
+			i.texture->bind();
 			i.model->bind();
 
 			glDrawElements(GL_TRIANGLES, i.model->getIndicesCount(), GL_UNSIGNED_INT, nullptr);
