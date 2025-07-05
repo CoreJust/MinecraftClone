@@ -25,6 +25,7 @@ namespace graphics {
         size_t rgfwExtensionsCount;
         char const** rgfwVkExtensions = RGFW_getVKRequiredInstanceExtensions(&rgfwExtensionsCount);
         m_vkInstance = vulkan::Instance(name, rgfwVkExtensions, static_cast<uint32_t>(rgfwExtensionsCount));
+        m_vkDevice = vulkan::Device(m_vkInstance);
         core::io::info("Window is ready for usage");
     }
 

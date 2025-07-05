@@ -14,5 +14,7 @@ namespace graphics::vulkan {
         Instance& operator=(Instance&&) noexcept = default;
         Instance& operator=(const Instance&) noexcept = delete;
         ~Instance();
+
+        core::memory::TypeErasedObject const& getInstance() const noexcept { return m_instance; };
     };
 } // namespace graphics::vulkan

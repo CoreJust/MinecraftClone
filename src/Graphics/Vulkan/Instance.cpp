@@ -30,7 +30,7 @@ namespace {
                 core::io::trace("Vulkan validation {:11}: {}", typeStr, pCallbackData->pMessage);
                 break;
             case VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT:
-                core::io::debug("Vulkan validation {:11}: {}",  typeStr, pCallbackData->pMessage);
+                core::io::debug("Vulkan validation {:11}: {}", typeStr, pCallbackData->pMessage);
                 break;
             case VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT:
                 core::io::warn("Vulkan validation {:11}: {}",  typeStr, pCallbackData->pMessage);

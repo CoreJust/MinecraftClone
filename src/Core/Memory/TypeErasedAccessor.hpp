@@ -40,7 +40,7 @@ namespace core::memory {
 			}
 		}
 
-		static T const& get(void const* const& ptr) {
+		static T const& get(void* const& ptr) {
 			if constexpr (IsSmallObject) {
 				return *reinterpret_cast<T const*>(&ptr);
 			} else {

@@ -38,5 +38,11 @@ namespace core::memory {
 			ASSERT(typeid(T).hash_code() == m_typeHashCode);
 			return TypeErasedAccessor<T>::get(m_data);
 		}
+
+		template<class T>
+		T const& get() const {
+			ASSERT(typeid(T).hash_code() == m_typeHashCode);
+			return TypeErasedAccessor<T const>::get(m_data);
+		}
 	};
 } // namespace core::memory

@@ -25,6 +25,7 @@ set(SOURCES
     Graphics/Vulkan/Extensions.cpp
     Graphics/Vulkan/Functions.cpp
     Graphics/Vulkan/Instance.cpp
+    Graphics/Vulkan/Device.cpp
     Graphics/Window.cpp)
 set(TESTS
     Core/Test/TestMain.cpp

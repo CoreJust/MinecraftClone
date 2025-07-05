@@ -1,8 +1,14 @@
+#include <tuple>
+#include <Core/Common/Assert.hpp>
 #include "Version.hpp"
 #include "Functions.hpp"
 
 namespace graphics::vulkan {
     Version g_vkVersion {};
+
+    bool Version::operator<(Version const& lhs) const noexcept {
+        return std::tie(variant, major, minor, patch) < std::tie(lhs.variant, lhs.major, lhs.minor, lhs.patch);
+    }
     
     Version Version::fromVk(uint32_t vkVersion) noexcept {
         return {
@@ -22,6 +28,11 @@ namespace graphics::vulkan {
         if (vkEnumerateInstanceVersion != NULL)
             vkEnumerateInstanceVersion(&apiVersion);
         g_vkVersion = Version::fromVk(apiVersion);
+    }
+
+    void downgradeVkVersion(Version newVersion) {
+        ASSERT(newVersion < g_vkVersion);
+        g_vkVersion = newVersion;
     }
 
     Version const& getVkVersion() {

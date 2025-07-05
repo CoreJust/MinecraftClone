@@ -9,11 +9,15 @@ namespace graphics::vulkan {
         uint32_t minor   = 0;
         uint32_t patch   = 0;
 
+        PURE bool operator<(Version const& lhs) const noexcept;
+
         PURE static Version fromVk(uint32_t vkVersion) noexcept;
         PURE uint32_t asVk() const noexcept;
     };
 
     void loadVkVersion();
+    void downgradeVkVersion(Version newVersion);
+
     PURE Version const& getVkVersion();
     PURE uint32_t getVkVersionMajor();
     PURE uint32_t getVkVersionMinor();
