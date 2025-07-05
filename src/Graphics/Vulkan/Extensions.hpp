@@ -15,6 +15,7 @@ namespace graphics::vulkan {
 
     bool hasExtension(VulkanExtension ext) noexcept;
     Version getExtensionVersion(VulkanExtension ext) noexcept;
+    char const* getFullExtensionName(VulkanExtension ext) noexcept;
 
     void loadVkSupportedExtensionList();
 } // namespace graphics::vulkan

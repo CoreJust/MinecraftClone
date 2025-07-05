@@ -11,6 +11,7 @@
 #include <Core/IO/Logger.hpp>
 #include "Vulkan/Functions.hpp"
 #include "Vulkan/Extensions.hpp"
+#include "Vulkan/Layers.hpp"
 #include "Vulkan/Version.hpp"
 
 namespace graphics {
@@ -19,6 +20,7 @@ namespace graphics {
         core::io::info("Created window (title: {}, size: ({} x {}))", name, width, height);
         vulkan::loadInstancelessVkFunctions();
         vulkan::loadVkVersion();
+        vulkan::loadVkSupportedLayerList();
         vulkan::loadVkSupportedExtensionList();
         size_t rgfwExtensionsCount;
         char const** rgfwVkExtensions = RGFW_getVKRequiredInstanceExtensions(&rgfwExtensionsCount);

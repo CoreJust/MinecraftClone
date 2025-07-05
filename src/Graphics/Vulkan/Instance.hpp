@@ -4,6 +4,7 @@
 namespace graphics::vulkan {
     class Instance final {
         core::memory::TypeErasedObject m_instance;
+        core::memory::TypeErasedObject m_debugMessenger;
 
     public:
         Instance() noexcept = default;

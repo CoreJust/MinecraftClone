@@ -7,7 +7,7 @@
 
 int main(int argc, char** argv) {
     core::io::ArgumentParser(argc, argv)
-        .onOption("debug", [](auto) { config::g_isDebugEnabled = true; });
+        .onOption("debug", [](std::string_view val) { config::g_isDebugEnabled = val != "false"; });
 
 	TEST_MAIN();
 

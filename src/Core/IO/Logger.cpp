@@ -12,6 +12,10 @@ namespace core::io {
 		g_logLevel = level;
 	}
 
+	LogLevel getLogLevel() {
+		return g_logLevel;
+	}
+
 	void onLoggingEnd() {
 		std::osyncstream(std::clog) 
 			<< Foreground { ConsoleColor::White } 

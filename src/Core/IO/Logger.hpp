@@ -14,32 +14,38 @@ namespace core::io {
 	};
 
 	void setLogLevel(LogLevel level); // Not thread safe, must be called from a single thread at a time
+	LogLevel getLogLevel();
 	void onLoggingEnd();
 	void log(LogLevel level, const std::string& msg);
 
 	template<class... Args>
 	void trace(std::format_string<Args...> fmt, Args&&... args) {
-		log(LogLevel::Trace, std::format(fmt, std::forward<Args>(args)...));
+		if (static_cast<int>(getLogLevel()) == static_cast<int>(LogLevel::Trace))
+			log(LogLevel::Trace, std::format(fmt, std::forward<Args>(args)...));
 	}
 
 	template<class... Args>
 	void debug(std::format_string<Args...> fmt, Args&&... args) {
-		log(LogLevel::Debug, std::format(fmt, std::forward<Args>(args)...));
+		if (static_cast<int>(getLogLevel()) <= static_cast<int>(LogLevel::Debug))
+			log(LogLevel::Debug, std::format(fmt, std::forward<Args>(args)...));
 	}
 
 	template<class... Args>
 	void info(std::format_string<Args...> fmt, Args&&... args) {
-		log(LogLevel::Info, std::format(fmt, std::forward<Args>(args)...));
+		if (static_cast<int>(getLogLevel()) <= static_cast<int>(LogLevel::Info))
+			log(LogLevel::Info, std::format(fmt, std::forward<Args>(args)...));
 	}
 
 	template<class... Args>
 	void warn(std::format_string<Args...> fmt, Args&&... args) {
-		log(LogLevel::Warn, std::format(fmt, std::forward<Args>(args)...));
+		if (static_cast<int>(getLogLevel()) <= static_cast<int>(LogLevel::Warn))
+			log(LogLevel::Warn, std::format(fmt, std::forward<Args>(args)...));
 	}
 
 	template<class... Args>
 	void error(std::format_string<Args...> fmt, Args&&... args) {
-		log(LogLevel::Error, std::format(fmt, std::forward<Args>(args)...));
+		if (static_cast<int>(getLogLevel()) <= static_cast<int>(LogLevel::Error))
+			log(LogLevel::Error, std::format(fmt, std::forward<Args>(args)...));
 	}
 
 	template<class... Args>

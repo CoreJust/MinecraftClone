@@ -21,6 +21,7 @@ set(SOURCES
     Core/Memory/TypeErasedObject.cpp
     Graphics/Vulkan/Check.cpp
     Graphics/Vulkan/Version.cpp
+    Graphics/Vulkan/Layers.cpp
     Graphics/Vulkan/Extensions.cpp
     Graphics/Vulkan/Functions.cpp
     Graphics/Vulkan/Instance.cpp
