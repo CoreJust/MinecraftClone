@@ -1,4 +1,5 @@
 #include "Check.hpp"
+#include <stacktrace>
 #include <Core/IO/Logger.hpp>
 
 namespace graphics::vulkan {
@@ -66,15 +67,15 @@ namespace {
     }
 } // namespace
 
-    bool checkVkResult(VkResult result, const std::source_location& loc) {
+    bool checkVkResult(VkResult result) {
         if (result == VK_SUCCESS)
             return true;
         std::string_view description;
         bool const isSuccess = decodeVkResult(result, description);
         if (isSuccess) {
-            core::io::trace("Operation returned {}\nat {}:{}:{}, function {}", description, loc.file_name(), loc.line(), loc.column(), loc.function_name());
+            core::io::trace("Operation returned {}\nat {}", description, std::stacktrace::current());
         } else {
-            core::io::error("Vulkan error: {}\nat {}:{}:{}, function {}", description, loc.file_name(), loc.line(), loc.column(), loc.function_name());
+            core::io::error("Vulkan error: {}\nat {}", description, std::stacktrace::current());
         }
         return isSuccess;
     }

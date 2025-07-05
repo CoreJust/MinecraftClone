@@ -12,22 +12,13 @@ set(FETCHCONTENT_BASE_DIR ${PROJECT_SOURCE_DIR}/third_party CACHE PATH "Missing 
 include(FetchContent)
 include(cmake/submodule.cmake)
 
-### Dependencies  ###
-# DocTest
+### Options ###
 option(MINECRAFT_CLONE_TESTING "Enable unit tests for MINECRAFT_CLONE_TESTING" ON)
 if(MINECRAFT_CLONE_TESTING)
-    include(CTest)
-    FetchContent_Declare(
-        DocTest
-        GIT_REPOSITORY "https://github.com/onqtam/doctest"
-        GIT_TAG        v2.4.12
-    )
-    FetchContent_MakeAvailable(DocTest)
-    add_compile_definitions(MINECRAFT_CLONE_TESTING)
-    add_compile_definitions(ENABLE_DOCTEST_IN_LIBRARY)
-    set(DOCTEST_INCLUDE ${PROJECT_SOURCE_DIR}/third_party/doctest-src)
+    add_compile_definitions(_TEST)
 endif()
 
+### Dependencies  ###
 # Vulkan
 find_package(Vulkan REQUIRED)
 

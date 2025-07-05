@@ -24,6 +24,10 @@ set(SOURCES
     Graphics/Vulkan/Functions.cpp
     Graphics/Vulkan/Instance.cpp
     Graphics/Window.cpp)
-set(TESTS)
+set(TESTS
+    Core/Test/TestMain.cpp
+    Core/Test/UnitTest.cpp
+    Core/Common/Tests/DeferTest.cpp
+    Core/Common/Tests/TimeTest.cpp)
 
 MAIN_MODULE(clone)
