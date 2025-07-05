@@ -1,0 +1,78 @@
+Language: Cpp
+IndentWidth: 4
+AlignArrayOfStructures: Left
+AlignEscapedNewlines: LeftWithLastLine
+AlignOperands: AlignAfterOperator
+AllowBreakBeforeNoexceptSpecifier: OnlyWithParen
+AllowShortBlocksOnASingleLine: Always
+AllowShortCaseLabelsOnASingleLine: true
+AllowShortCompoundRequirementOnASingleLine: true
+AllowShortEnumsOnASingleLine: true
+AllowShortFunctionsOnASingleLine: Inline
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLambdasOnASingleLine: All
+AllowShortLoopsOnASingleLine: false
+AllowShortNamespacesOnASingleLine: false
+AlwaysBreakBeforeMultilineStrings: true
+BreakAfterReturnType: ExceptShortType
+BreakBeforeBinaryOperators: NonAssignment
+BreakBeforeBraces: Attach
+BreakBeforeConceptDeclarations: Always
+BreakBeforeTernaryOperators: true
+BreakConstructorInitializers: BeforeComma
+BreakStringLiterals: true
+BreakTemplateDeclarations: Yes
+ColumnLimit: 96
+CompactNamespaces: false
+ContinuationIndentWidth: 4
+EmptyLineAfterAccessModifier: Never
+EmptyLineBeforeAccessModifier: Always
+EnumTrailingComma: Insert
+FixNamespaceComments: true
+IndentAccessModifiers: false
+IndentCaseBlocks: false
+IndentCaseLabels: true
+IndentPPDirectives: AfterHash
+IndentRequiresClause: true
+IndentWidth: 4
+InsertNewlineAtEOF: true
+InsertTrailingCommas: Wrapped
+IntegerLiteralSeparator:
+  Binary: 4
+  Decimal: 3
+  Hex: 4
+KeepEmptyLines:
+  AtEndOfFile: true
+  AtStartOfBlock: false
+  AtStartOfFile: false
+MaxEmptyLinesToKeep: 3
+PointerAlignment: Left
+QualifierAlignment: Right
+ReferenceAlignment: Left
+ReflowComments: Always
+RemoveParentheses: ReturnStatement
+RemoveSemicolon: true
+RequiresClausePosition: OwnLineWithBrace
+RequiresExpressionIndentation: OuterScope
+SeparateDefinitionBlocks: Always
+SpaceAfterCStyleCast: false
+SpaceAfterLogicalNot: false
+SpaceAfterOperatorKeyword: false
+SpaceAfterTemplateKeyword: false
+SpaceBeforeAssignmentOperators: true
+SpaceBeforeCaseColon: false
+SpaceBeforeCpp11BracedList: true
+SpaceBeforeCtorInitializerColon: true
+SpaceBeforeInheritanceColon: true
+SpaceBeforeParens: Always
+SpaceBeforeRangeBasedForLoopColon: true
+SpaceBeforeSquareBrackets: false
+SpaceInEmptyBlock: false
+SpaceInEmptyParentheses: false
+SpacesBeforeTrailingComments: 1
+SpacesInAngles: Never
+SpacesInParens: Never
+SpacesInSquareBrackets: false
+UseTab: Never
+WrapNamespaceBodyWithEmptyLines: Never
+

@@ -1,6 +1,15 @@
-#include <print>
+#include <Core/IO/Logger.hpp>
+#include <Core/Common/Defer.hpp>
+#include <Graphics/Window.hpp>
 
 int main() {
-    std::println("Hello world!");
+    core::io::setLogLevel(core::io::LogLevel::Info);
+    defer { core::io::onLoggingEnd(); };
+    try {
+        graphics::Window window("Minecraft Clone", 800, 600);
+        while (window.nextFrame());
+    } catch (...) {
+        core::io::fatal("Got an exception during engine running, shutting down...");
+    }
     return 0;
 }

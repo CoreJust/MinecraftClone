@@ -28,6 +28,7 @@
 *.app
 
 # Build files
+build.*
 build/
 third_party/
 .vscode

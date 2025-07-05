@@ -1,8 +1,29 @@
-set(DEPS)
+set(DEPS
+    RGFW
+    Vulkan::Vulkan)
 set(INCLUDES
     ./)
+set(SYSTEM_INCLUDES
+    ${RGFW_INCLUDE})
 set(SOURCES
-    main.cpp)
+    main.cpp
+    Core/Common/Assert.cpp
+    Core/Common/DurationToString.cpp
+    Core/Common/Random.cpp
+    Core/Common/Time.cpp
+    Core/Common/Timer.cpp
+    Core/Common/Timer.cpp
+    Core/IO/ConsoleColor.cpp
+    Core/IO/File.cpp
+    Core/IO/Logger.cpp
+    Core/Macro/NoOpt.cpp
+    Core/Memory/TypeErasedObject.cpp
+    Graphics/Vulkan/Check.cpp
+    Graphics/Vulkan/Version.cpp
+    Graphics/Vulkan/Extensions.cpp
+    Graphics/Vulkan/Functions.cpp
+    Graphics/Vulkan/Instance.cpp
+    Graphics/Window.cpp)
 set(TESTS)
 
 MAIN_MODULE(clone)

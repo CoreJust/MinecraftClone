@@ -17,18 +17,18 @@ macro(SUBMODULE_IMPL type name)
             target_sources(${name}
                 PRIVATE
                     ${TESTS})
-            set(INCLUDES ${INCLUDES} ${DOCTEST_INCLUDE})
+            set(SYSTEM_INCLUDES ${INCLUDES} ${DOCTEST_INCLUDE})
         endif()
-        set(INCLUDES ${INCLUDES} ${CMAKE_CURRENT_SOURCE_DIR}/include)
     endif()
 
     if(DEPS)
-        list(TRANSFORM DEPS PREPEND "$<TARGET_OBJECTS:")
-        list(TRANSFORM DEPS APPEND ">")
-        target_link_libraries(${name} PUBLIC ${DEPS})
+        target_link_libraries(${name} PRIVATE ${DEPS})
     endif()
     if(INCLUDES)
         target_include_directories(${name} PRIVATE ${INCLUDES})
+    endif() 
+    if(SYSTEM_INCLUDES)
+        target_include_directories(${name} SYSTEM PRIVATE ${SYSTEM_INCLUDES})
     endif()
 endmacro()
 
