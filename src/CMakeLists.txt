@@ -7,6 +7,7 @@ set(SYSTEM_INCLUDES
     ${RGFW_INCLUDE})
 set(SOURCES
     main.cpp
+    Config.cpp
     Core/Common/Assert.cpp
     Core/Common/DurationToString.cpp
     Core/Common/Random.cpp

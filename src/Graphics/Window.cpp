@@ -3,6 +3,8 @@
 #pragma warning(disable : 4244)
 #define RGFW_IMPLEMENTATION
 #define RGFW_VULKAN
+#define RGFW_PRINT_ERRORS
+#define RGFW_NO_API
 #include "RGFW.h"
 #pragma warning(pop)
 #include <Core/Common/Assert.hpp>
