@@ -30,7 +30,9 @@ namespace {
 } // namespace
 
     Pipeline::Pipeline(Device& device, Swapchain& swapchain, char const* const vertexShaderPath, char const* const fragmentShaderPath)
-        : m_device(device.get()) {
+        : m_pass(device, swapchain)
+        , m_framebuffers(device, swapchain, m_pass)
+        , m_device(device.get()) {
         ShaderModule vertex   { device.get(), vertexShaderPath   ? vertexShaderPath   : "basic.vert" };
         ShaderModule fragment { device.get(), fragmentShaderPath ? fragmentShaderPath : "basic.frag" };
         [[maybe_unused]] // Temporary
@@ -53,7 +55,6 @@ namespace {
 
         VkViewport viewport { };
         VkRect2D   scissor { };
-        [[maybe_unused]] // Temporary
         VkPipelineViewportStateCreateInfo viewportState = makeViewportStateCreateInfo(swapchain, viewport, scissor);
 
         VkPipelineRasterizationStateCreateInfo rasterizer { };
@@ -110,9 +111,39 @@ namespace {
             core::io::error("Failed to create pipeline layout");
             throw VulkanException { };
         }
+
+        VkGraphicsPipelineCreateInfo pipelineInfo { };
+        pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+        pipelineInfo.stageCount = 2;
+        pipelineInfo.pStages = shaderStages;
+        pipelineInfo.pVertexInputState = &vertexInputInfo;
+        pipelineInfo.pInputAssemblyState = &inputAssembly;
+        pipelineInfo.pViewportState = &viewportState;
+        pipelineInfo.pRasterizationState = &rasterizer;
+        pipelineInfo.pMultisampleState = &multisampling;
+        pipelineInfo.pDepthStencilState = nullptr;
+        pipelineInfo.pColorBlendState = &colorBlending;
+        pipelineInfo.pDynamicState = nullptr;
+        pipelineInfo.layout = m_layout;
+        pipelineInfo.renderPass = m_pass.get();
+        pipelineInfo.subpass = 0;
+        pipelineInfo.basePipelineHandle = VK_NULL_HANDLE;
+        pipelineInfo.basePipelineIndex = -1;
+
+        if (!VK_CHECK(vkCreateGraphicsPipelines(m_device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &m_pipeline))) {
+            core::io::error("Failed to create pipeline");
+            throw VulkanException { };
+        }
+
+        core::io::info("Created Vulkan pipeline");
     }
 
     Pipeline::~Pipeline() {
+        if (m_pipeline != VK_NULL_HANDLE) {
+            vkDestroyPipeline(m_device, m_pipeline, nullptr);
+            m_pipeline = VK_NULL_HANDLE;
+            core::io::info("Destroyed Vulkan pipeline");
+        }
         if (m_layout != VK_NULL_HANDLE) {
             vkDestroyPipelineLayout(m_device, m_layout, nullptr);
             m_layout = VK_NULL_HANDLE;

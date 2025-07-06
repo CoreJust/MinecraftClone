@@ -2,6 +2,7 @@ set(LOCAL_SOURCES
     Vulkan/Version.cpp
     Vulkan/Layers.cpp
     Vulkan/Extensions.cpp
+    Vulkan/RenderPipeline.cpp
     Vulkan/Vulkan.cpp
     Vulkan/Internal/Check.cpp
     Vulkan/Internal/Functions.cpp
@@ -14,8 +15,9 @@ set(LOCAL_SOURCES
     Vulkan/Internal/Swapchain.cpp
     Vulkan/Internal/SwapchainSupport.cpp
     Vulkan/Internal/ShaderModule.cpp
+    Vulkan/Internal/RenderPass.cpp
+    Vulkan/Internal/Framebuffers.cpp
     Vulkan/Internal/Pipeline.cpp
-    Vulkan/RenderPipeline.cpp
     RenderEngine.cpp
     Window.cpp)
 set(LOCAL_TESTS)

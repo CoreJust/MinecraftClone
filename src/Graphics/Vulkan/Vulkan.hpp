@@ -11,6 +11,7 @@ namespace graphics::vulkan {
         class Device;
         class Queue;
         class Swapchain;
+        class Framebuffers;
     }
 
     class Vulkan final {

@@ -17,16 +17,15 @@ namespace core::collection {
             return *this;
         }
         DynArray(size_t size) : m_data(memory::RawMemory::alloc(size * sizeof(T))) { }
-        ~DynArray() {
-            m_data.free();
-        }
-
-        PURE static DynArray defaultInitialized(size_t size) {
-            DynArray result = DynArray(size);
-            T* ptr = result.data();
+        DynArray(size_t size, T const& defaultValue)
+            : m_data(memory::RawMemory::alloc(size * sizeof(T))) {
+            T* ptr = data();
             T* end = ptr + size;
             while (ptr < end)
-                ::new(ptr++) T();
+                ::new(ptr++) T(defaultValue);
+        }
+        ~DynArray() {
+            m_data.free();
         }
 
         PURE T& operator[](size_t idx) {

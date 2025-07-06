@@ -1,4 +1,5 @@
 #include "Resources.hpp"
+#include <Core/Common/Assert.hpp>
 
 #define RESOURCES_PATH "res/"
 
@@ -9,8 +10,12 @@ char const* makeShaderPath(char const* const shaderPath) {
     static char s_buffer[1024] = SHADER_PATH;
     char const* src = shaderPath;
     char* dst = s_buffer + SHADER_PATH_SIZE;
-    while (*src)
+    char const* end = s_buffer + 1024;
+    while (*src) {
         *(dst++) = *(src++);
+        ASSERT(dst < end);
+    }
+    ASSERT(dst < end - 5);
     *(dst++) = '.';
     *(dst++) = 's';
     *(dst++) = 'p';

@@ -22,6 +22,9 @@ namespace graphics::vulkan::internal {
         ~Swapchain();
 
         PURE VkSwapchainKHR get() const noexcept { return m_swapchain; }
+        PURE core::collection::DynArray<VkImageView> const& imageViews() const noexcept { return m_imageViews; }
+        PURE VkSurfaceFormatKHR const& surfaceFormat() const noexcept { return m_surfaceFormat; }
         PURE VkExtent2D const& extent() const noexcept { return m_extent; }
+        PURE uint32_t imageCount() const noexcept { return m_imageCount; }
     };
 } // namespace graphics::vulkan::internal
