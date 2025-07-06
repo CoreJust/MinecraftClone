@@ -8,6 +8,7 @@
 #include "Internal/Queue.hpp"
 #include "Internal/Swapchain.hpp"
 #include "Internal/Pipeline.hpp"
+#include "Internal/CommandPool.hpp"
 #include "Internal/Functions.hpp"
 #include "Exception.hpp"
 #include "Extensions.hpp"
@@ -29,6 +30,7 @@ namespace graphics::vulkan {
         m_graphicsQueue  = queueMaker.make(internal::QueueType::Graphics);
         m_presentQueue   = queueMaker.make(internal::QueueType::Present);
         m_swapchain      = core::memory::makeUP<internal::Swapchain>(*m_physicalDevice, m_device->get(), m_surface->get(), window);
+        m_commandPool    = core::memory::makeUP<internal::CommandPool>(*m_device, m_physicalDevice->queueFamilies());
     }
 
     RenderPipeline Vulkan::createPipeline(char const* const vertexShaderPath, char const* const fragmentShaderPath) {

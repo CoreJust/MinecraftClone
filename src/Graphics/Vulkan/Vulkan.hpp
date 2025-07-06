@@ -11,7 +11,7 @@ namespace graphics::vulkan {
         class Device;
         class Queue;
         class Swapchain;
-        class Framebuffers;
+        class CommandPool;
     }
 
     class Vulkan final {
@@ -22,6 +22,7 @@ namespace graphics::vulkan {
         core::memory::UniquePtr<internal::Queue> m_graphicsQueue;
         core::memory::UniquePtr<internal::Queue> m_presentQueue;
         core::memory::UniquePtr<internal::Swapchain> m_swapchain;
+        core::memory::UniquePtr<internal::CommandPool> m_commandPool;
 
     public:
         Vulkan() noexcept = default;

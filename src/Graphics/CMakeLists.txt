@@ -15,6 +15,7 @@ set(LOCAL_SOURCES
     Vulkan/Internal/Swapchain.cpp
     Vulkan/Internal/SwapchainSupport.cpp
     Vulkan/Internal/ShaderModule.cpp
+    Vulkan/Internal/CommandPool.cpp
     Vulkan/Internal/RenderPass.cpp
     Vulkan/Internal/Framebuffers.cpp
     Vulkan/Internal/Pipeline.cpp
