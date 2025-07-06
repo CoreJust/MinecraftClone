@@ -43,10 +43,10 @@ namespace graphics::vulkan {
         core::io::info("Found Vulkan layers:\n{}", layersMessage);
 
         memset(g_supportedLayers, 255, std::size(g_supportedLayers));
-#define CHECK_LAYER(layer)                                                                                              \
-            if (auto it = layerVersions.find(getFullLayerName(VulkanLayer:: layer)); it != layerVersions.end())         \
-                g_supportedLayers[static_cast<size_t>(VulkanLayer:: layer)] = Version::fromVk(it->second)
-        CHECK_LAYER(Validation);
-#undef CHECK_LAYER
+        for (int i = 0; i < static_cast<int>(VulkanLayer::VulkanLayersCount); ++i) {
+            VulkanLayer layer = static_cast<VulkanLayer>(i);
+            if (auto it = layerVersions.find(getFullLayerName(layer)); it != layerVersions.end())
+                g_supportedLayers[static_cast<size_t>(layer)] = Version::fromVk(it->second);
+        }
     }
 } // namespace graphics::vulkan

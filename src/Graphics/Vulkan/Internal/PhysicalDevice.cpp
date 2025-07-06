@@ -8,7 +8,9 @@
 namespace graphics::vulkan::internal {
 namespace {
     uint64_t evaluateDevice(PhysicalDevice& d) {
-        if (!d.queueFamilies().hasFamily(QueueType::Graphics) || !d.queueFamilies().hasFamily(QueueType::Present))
+        if (!d.queueFamilies().hasFamily(QueueType::Graphics)
+            || !d.queueFamilies().hasFamily(QueueType::Present)
+            || !d.extensions().hasExtension(VulkanExtension::Swapchain))
             return 0;
 
         return d.props().apiVersion;
@@ -17,7 +19,8 @@ namespace {
 
 
     PhysicalDevice::PhysicalDevice(VkPhysicalDevice device, Surface& surface) noexcept
-        : m_physicalDevice(device) {
+        : m_physicalDevice(device)
+        , m_extensions(this) {
         vkGetPhysicalDeviceProperties(m_physicalDevice, &m_properties);
         m_queueFamilies = QueueFamilies(m_physicalDevice, surface);
     }

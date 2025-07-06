@@ -3,6 +3,7 @@
 #include <vulkan/vulkan.h>
 #include <Core/Macro/Attributes.hpp>
 #include "QueueFamilies.hpp"
+#include "../Extensions.hpp"
 
 namespace graphics::vulkan::internal {
     class Instance;
@@ -12,6 +13,7 @@ namespace graphics::vulkan::internal {
         VkPhysicalDevice m_physicalDevice = VK_NULL_HANDLE;
         VkPhysicalDeviceProperties m_properties { };
         QueueFamilies m_queueFamilies { };
+        SupportedExtensions m_extensions { };
 
     private:
         PhysicalDevice(VkPhysicalDevice device, Surface& surface) noexcept;
@@ -29,6 +31,7 @@ namespace graphics::vulkan::internal {
         PURE VkPhysicalDevice get() const noexcept { return m_physicalDevice; }
         PURE VkPhysicalDeviceProperties const& props() const noexcept { return m_properties; }
         PURE QueueFamilies const& queueFamilies() const noexcept { return m_queueFamilies; }
+        PURE SupportedExtensions const& extensions() const noexcept { return m_extensions; }
     };
 } // namespace graphics::vulkan::internal
 
