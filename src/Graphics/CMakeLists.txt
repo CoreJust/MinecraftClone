@@ -10,6 +10,7 @@ set(LOCAL_SOURCES
     Vulkan/Internal/Device.cpp
     Vulkan/Internal/QueueFamilies.cpp
     Vulkan/Internal/Queue.cpp
+    Vulkan/Internal/Surface.cpp
     Window.cpp)
 set(LOCAL_TESTS)
 

@@ -2,6 +2,7 @@
 #include <cstdlib>
 #include <Core/IO/Logger.hpp>
 #include "Internal/Instance.hpp"
+#include "Internal/Surface.hpp"
 #include "Internal/PhysicalDevice.hpp"
 #include "Internal/Device.hpp"
 #include "Internal/Queue.hpp"
@@ -12,12 +13,13 @@
 #include "Version.hpp"
 
 namespace graphics::vulkan {
-    Vulkan::Vulkan(char const* const appName, char const** windowRequiredExtensions, uint32_t windowRequiredExtensionsCount) {
+    Vulkan::Vulkan(void* window, void* surfaceCreator, char const* const appName, char const** windowRequiredExtensions, uint32_t windowRequiredExtensionsCount) {
         internal::loadInstancelessVkFunctions();
         loadVkVersion();
         loadVkSupportedLayerList();
         loadVkSupportedExtensionList();
         m_instance       = new internal::Instance(appName, windowRequiredExtensions, windowRequiredExtensionsCount);
+        m_surface        = new internal::Surface(window, surfaceCreator, *m_instance);
         m_physicalDevice = new internal::PhysicalDevice(internal::PhysicalDevice::choosePhysicalDevice(*m_instance));
         m_device         = new internal::Device(*m_physicalDevice);
         m_graphicsQueue  = new internal::Queue(m_device->get(), m_physicalDevice->queueFamilies().getIndex(internal::QueueType::Graphics));
@@ -35,6 +37,10 @@ namespace graphics::vulkan {
         if (m_physicalDevice) {
             delete m_physicalDevice;
             m_physicalDevice = nullptr;
+        }
+        if (m_surface) {
+            delete m_surface;
+            m_surface = nullptr;
         }
         if (m_instance) {
             delete m_instance;

@@ -1,12 +1,9 @@
 #include "Window.hpp"
-#pragma warning(push)
-#pragma warning(disable : 4244)
 #define RGFW_IMPLEMENTATION
 #define RGFW_VULKAN
 #define RGFW_PRINT_ERRORS
 #define RGFW_NO_API
 #include "RGFW.h"
-#pragma warning(pop)
 #include <Core/Common/Assert.hpp>
 #include <Core/IO/Logger.hpp>
 
@@ -16,7 +13,12 @@ namespace graphics {
         core::io::info("Created window (title: {}, size: ({} x {}))", name, width, height);
         size_t rgfwExtensionsCount;
         char const** rgfwVkExtensions = RGFW_getVKRequiredInstanceExtensions(&rgfwExtensionsCount);
-        m_vulkan = std::make_unique<vulkan::Vulkan>(name, rgfwVkExtensions, static_cast<uint32_t>(rgfwExtensionsCount));
+        m_vulkan = std::make_unique<vulkan::Vulkan>(
+            m_rgfwWindow,
+            reinterpret_cast<void*>(&RGFW_window_createVKSurface),
+            name,
+            rgfwVkExtensions,
+            static_cast<uint32_t>(rgfwExtensionsCount));
         core::io::info("Window is ready for usage");
     }
 

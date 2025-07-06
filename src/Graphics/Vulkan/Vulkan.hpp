@@ -4,6 +4,7 @@
 namespace graphics::vulkan {
     namespace internal {
         class Instance;
+        class Surface;
         class PhysicalDevice;
         class Device;
         class Queue;
@@ -11,13 +12,14 @@ namespace graphics::vulkan {
 
     class Vulkan final {
         internal::Instance* m_instance = nullptr;
+        internal::Surface* m_surface = nullptr;
         internal::PhysicalDevice* m_physicalDevice = nullptr;
         internal::Device* m_device = nullptr;
         internal::Queue* m_graphicsQueue = nullptr;
 
     public:
         Vulkan() noexcept = default;
-        Vulkan(char const* const appName, char const** windowRequiredExtensions, uint32_t windowRequiredExtensionsCount);
+        Vulkan(void* window, void* surfaceCreator, char const* const appName, char const** windowRequiredExtensions, uint32_t windowRequiredExtensionsCount);
         Vulkan(Vulkan&&) noexcept = default;
         Vulkan& operator=(Vulkan&&) noexcept = default;
         ~Vulkan();
