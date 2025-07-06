@@ -11,6 +11,7 @@ namespace graphics::vulkan::internal {
         ShaderModule(VkDevice device, char const* const path);
         ~ShaderModule();
 
+        PURE VkPipelineShaderStageCreateInfo makeCreationInfo(VkShaderStageFlagBits stage) const;
         PURE VkShaderModule get() const noexcept { return m_shaderModule; }
     };
 } // namespace graphics::vulkan::internal

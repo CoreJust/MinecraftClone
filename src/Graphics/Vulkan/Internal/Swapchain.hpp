@@ -22,5 +22,6 @@ namespace graphics::vulkan::internal {
         ~Swapchain();
 
         PURE VkSwapchainKHR get() const noexcept { return m_swapchain; }
+        PURE VkExtent2D const& extent() const noexcept { return m_extent; }
     };
 } // namespace graphics::vulkan::internal

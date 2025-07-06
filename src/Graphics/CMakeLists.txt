@@ -15,6 +15,8 @@ set(LOCAL_SOURCES
     Vulkan/Internal/SwapchainSupport.cpp
     Vulkan/Internal/ShaderModule.cpp
     Vulkan/Internal/Pipeline.cpp
+    Vulkan/RenderPipeline.cpp
+    RenderEngine.cpp
     Window.cpp)
 set(LOCAL_TESTS)
 

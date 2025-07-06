@@ -9,18 +9,10 @@
 
 namespace graphics {
     Window::Window(char const* const name, uint32_t width, uint32_t height)
-        : m_rgfwWindow(RGFW_createWindow(name, RGFW_RECT(0, 0, width, height), RGFW_windowCenter | RGFW_windowNoResize | RGFW_windowMaximize)) {
+        : m_rgfwWindow(RGFW_createWindow(name, RGFW_RECT(0, 0, width, height), RGFW_windowCenter | RGFW_windowNoResize | RGFW_windowMaximize))
+        , m_name(name) {
         RGFW_window_setFullscreen(reinterpret_cast<RGFW_window*>(m_rgfwWindow), true);
         core::io::info("Created window (title: {}, size: ({} x {}))", name, width, height);
-        size_t rgfwExtensionsCount;
-        char const** rgfwVkExtensions = RGFW_getVKRequiredInstanceExtensions(&rgfwExtensionsCount);
-        m_vulkan = core::memory::makeUP<vulkan::Vulkan>(
-            m_rgfwWindow,
-            reinterpret_cast<void*>(&RGFW_window_createVKSurface),
-            name,
-            rgfwVkExtensions,
-            static_cast<uint32_t>(rgfwExtensionsCount));
-        core::io::info("Window is ready for usage");
     }
 
     Window::~Window() {
@@ -29,6 +21,19 @@ namespace graphics {
             m_rgfwWindow = nullptr;
             core::io::info("The window was closed");
         }
+    }
+
+    core::memory::UniquePtr<vulkan::Vulkan> Window::createVulkan() {
+        size_t rgfwExtensionsCount;
+        char const** rgfwVkExtensions = RGFW_getVKRequiredInstanceExtensions(&rgfwExtensionsCount);
+        auto result = core::memory::makeUP<vulkan::Vulkan>(
+            m_rgfwWindow,
+            reinterpret_cast<void*>(&RGFW_window_createVKSurface),
+            m_name,
+            rgfwVkExtensions,
+            static_cast<uint32_t>(rgfwExtensionsCount));
+        core::io::info("Created Vulkan");
+        return result;
     }
 
     bool Window::nextFrame() {

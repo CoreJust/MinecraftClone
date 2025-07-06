@@ -1,13 +1,20 @@
 #include "Resources.hpp"
-#include <cstring>
 
 #define RESOURCES_PATH "res/"
 
 #define SHADER_PATH RESOURCES_PATH "shaders/"
-constexpr size_t SHADER_PATH_SIZE = sizeof(SHADER_PATH);
+constexpr size_t SHADER_PATH_SIZE = sizeof(SHADER_PATH) - 1;
 
 char const* makeShaderPath(char const* const shaderPath) {
     static char s_buffer[1024] = SHADER_PATH;
-    strcpy_s(s_buffer + SHADER_PATH_SIZE, 1024, shaderPath);
+    char const* src = shaderPath;
+    char* dst = s_buffer + SHADER_PATH_SIZE;
+    while (*src)
+        *(dst++) = *(src++);
+    *(dst++) = '.';
+    *(dst++) = 's';
+    *(dst++) = 'p';
+    *(dst++) = 'v';
+    *dst = '\0';
     return s_buffer;
 }

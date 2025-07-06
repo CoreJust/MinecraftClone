@@ -6,12 +6,13 @@
 namespace graphics {
     class Window final {
         void* m_rgfwWindow;
-        core::memory::UniquePtr<vulkan::Vulkan> m_vulkan;
+        char const* const m_name;
 
     public:
         Window(char const* const name, uint32_t width, uint32_t height);
         ~Window();
 
+        core::memory::UniquePtr<vulkan::Vulkan> createVulkan();
         bool nextFrame();
     };
 } // namespace graphics

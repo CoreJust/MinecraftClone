@@ -28,4 +28,13 @@ namespace graphics::vulkan::internal {
             m_shaderModule = VK_NULL_HANDLE;
         }
     }
+
+    VkPipelineShaderStageCreateInfo ShaderModule::makeCreationInfo(VkShaderStageFlagBits stage) const {
+        VkPipelineShaderStageCreateInfo createInfo { };
+        createInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+        createInfo.stage = stage;
+        createInfo.module = m_shaderModule;
+        createInfo.pName = "main";
+        return createInfo;
+    }
 } // namespace graphics::vulkan::internal

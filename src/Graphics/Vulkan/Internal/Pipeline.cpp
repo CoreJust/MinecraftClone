@@ -1,15 +1,121 @@
 #include "Pipeline.hpp"
 #include <Core/IO/Logger.hpp>
+#include "Check.hpp"
 #include "Device.hpp"
+#include "Swapchain.hpp"
 #include "ShaderModule.hpp"
+#include "../Exception.hpp"
 
 namespace graphics::vulkan::internal {
-    Pipeline::Pipeline(Device& device, char const* const vertexShaderPath, char const* const fragmentShaderPath) {
+namespace {
+    VkPipelineViewportStateCreateInfo makeViewportStateCreateInfo(Swapchain& swapchain, VkViewport& viewport, VkRect2D& scissor) {
+        viewport.x = 0.0f;
+        viewport.y = 0.0f;
+        viewport.width  = static_cast<float>(swapchain.extent().width);
+        viewport.height = static_cast<float>(swapchain.extent().height);
+        viewport.minDepth = 0.0f;
+        viewport.maxDepth = 1.0f;
+
+        scissor.offset = {0, 0};
+        scissor.extent = swapchain.extent();
+
+        VkPipelineViewportStateCreateInfo viewportState { };
+        viewportState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+        viewportState.viewportCount = 1;
+        viewportState.pViewports = &viewport;
+        viewportState.scissorCount = 1;
+        viewportState.pScissors = &scissor;
+        return viewportState;
+    }
+} // namespace
+
+    Pipeline::Pipeline(Device& device, Swapchain& swapchain, char const* const vertexShaderPath, char const* const fragmentShaderPath)
+        : m_device(device.get()) {
         ShaderModule vertex   { device.get(), vertexShaderPath   ? vertexShaderPath   : "basic.vert" };
         ShaderModule fragment { device.get(), fragmentShaderPath ? fragmentShaderPath : "basic.frag" };
+        [[maybe_unused]] // Temporary
+        VkPipelineShaderStageCreateInfo shaderStages[] = {
+            vertex  .makeCreationInfo(VK_SHADER_STAGE_VERTEX_BIT),
+            fragment.makeCreationInfo(VK_SHADER_STAGE_FRAGMENT_BIT),
+        };
+
+        VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
+        vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+        vertexInputInfo.vertexBindingDescriptionCount = 0;
+        vertexInputInfo.pVertexBindingDescriptions = nullptr;
+        vertexInputInfo.vertexAttributeDescriptionCount = 0;
+        vertexInputInfo.pVertexAttributeDescriptions = nullptr;
+
+        VkPipelineInputAssemblyStateCreateInfo inputAssembly{};
+        inputAssembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
+        inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+        inputAssembly.primitiveRestartEnable = VK_FALSE;
+
+        VkViewport viewport { };
+        VkRect2D   scissor { };
+        [[maybe_unused]] // Temporary
+        VkPipelineViewportStateCreateInfo viewportState = makeViewportStateCreateInfo(swapchain, viewport, scissor);
+
+        VkPipelineRasterizationStateCreateInfo rasterizer { };
+        rasterizer.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+        rasterizer.depthClampEnable = VK_FALSE;
+        rasterizer.rasterizerDiscardEnable = VK_FALSE;
+        rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
+        rasterizer.lineWidth = 1.f;
+        rasterizer.cullMode = VK_CULL_MODE_BACK_BIT;
+        rasterizer.frontFace = VK_FRONT_FACE_CLOCKWISE;
+        rasterizer.depthBiasEnable = VK_FALSE;
+        rasterizer.depthBiasConstantFactor = 0.0f;
+        rasterizer.depthBiasClamp = 0.0f;
+        rasterizer.depthBiasSlopeFactor = 0.0f;
+
+        VkPipelineMultisampleStateCreateInfo multisampling { };
+        multisampling.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+        multisampling.sampleShadingEnable = VK_FALSE;
+        multisampling.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+        multisampling.minSampleShading = 1.0f;
+        multisampling.pSampleMask = nullptr;
+        multisampling.alphaToCoverageEnable = VK_FALSE;
+        multisampling.alphaToOneEnable = VK_FALSE;
+
+        VkPipelineColorBlendAttachmentState colorBlendAttachment { };
+        colorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+        colorBlendAttachment.blendEnable = VK_TRUE;
+        colorBlendAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+        colorBlendAttachment.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+        colorBlendAttachment.colorBlendOp = VK_BLEND_OP_ADD;
+        colorBlendAttachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+        colorBlendAttachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
+        colorBlendAttachment.alphaBlendOp = VK_BLEND_OP_ADD;
+
+        VkPipelineColorBlendStateCreateInfo colorBlending { };
+        colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+        colorBlending.logicOpEnable = VK_FALSE;
+        colorBlending.logicOp = VK_LOGIC_OP_COPY;
+        colorBlending.attachmentCount = 1;
+        colorBlending.pAttachments = &colorBlendAttachment;
+        colorBlending.blendConstants[0] = 0.0f;
+        colorBlending.blendConstants[1] = 0.0f;
+        colorBlending.blendConstants[2] = 0.0f;
+        colorBlending.blendConstants[3] = 0.0f;
+
+        VkPipelineLayoutCreateInfo pipelineLayoutInfo { };
+        pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+        pipelineLayoutInfo.setLayoutCount = 0;
+        pipelineLayoutInfo.pSetLayouts = nullptr;
+        pipelineLayoutInfo.pushConstantRangeCount = 0;
+        pipelineLayoutInfo.pPushConstantRanges = nullptr;
+
+        if (!VK_CHECK(vkCreatePipelineLayout(device.get(), &pipelineLayoutInfo, nullptr, &m_layout))) {
+            core::io::error("Failed to create pipeline layout");
+            throw VulkanException { };
+        }
     }
 
     Pipeline::~Pipeline() {
-
+        if (m_layout != VK_NULL_HANDLE) {
+            vkDestroyPipelineLayout(m_device, m_layout, nullptr);
+            m_layout = VK_NULL_HANDLE;
+        }
     }
 } // namespace graphics::vulkan::internal

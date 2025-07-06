@@ -2,7 +2,7 @@
 #include <Core/IO/Logger.hpp>
 #include <Core/Common/Defer.hpp>
 #include <Core/IO/ArgumentParser.hpp>
-#include <Graphics/Window.hpp>
+#include <Graphics/RenderEngine.hpp>
 #include "Config.hpp"
 
 int main(int argc, char** argv) {
@@ -14,8 +14,8 @@ int main(int argc, char** argv) {
     core::io::setLogLevel(core::io::LogLevel::Info);
     defer { core::io::onLoggingEnd(); };
     try {
-        graphics::Window window("Minecraft Clone", 1920, 1080);
-        while (window.nextFrame());
+        graphics::RenderEngine engine("Minecraft Clone");
+        engine.run();
     } catch (...) {
         core::io::fatal("Got an exception during engine running, shutting down...");
     }
