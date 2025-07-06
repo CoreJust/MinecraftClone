@@ -14,7 +14,7 @@ int main(int argc, char** argv) {
     core::io::setLogLevel(core::io::LogLevel::Info);
     defer { core::io::onLoggingEnd(); };
     try {
-        graphics::Window window("Minecraft Clone", 0, 0);
+        graphics::Window window("Minecraft Clone", 1920, 1080);
         while (window.nextFrame());
     } catch (...) {
         core::io::fatal("Got an exception during engine running, shutting down...");

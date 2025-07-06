@@ -9,7 +9,8 @@
 
 namespace graphics {
     Window::Window(char const* const name, uint32_t width, uint32_t height)
-        : m_rgfwWindow(RGFW_createWindow(name, RGFW_RECT(0, 0, width, height), RGFW_windowCenter | (width && height ? 0 : RGFW_windowFullscreen))) {
+        : m_rgfwWindow(RGFW_createWindow(name, RGFW_RECT(0, 0, width, height), RGFW_windowCenter | RGFW_windowNoResize | RGFW_windowMaximize)) {
+        RGFW_window_setFullscreen(reinterpret_cast<RGFW_window*>(m_rgfwWindow), true);
         core::io::info("Created window (title: {}, size: ({} x {}))", name, width, height);
         size_t rgfwExtensionsCount;
         char const** rgfwVkExtensions = RGFW_getVKRequiredInstanceExtensions(&rgfwExtensionsCount);

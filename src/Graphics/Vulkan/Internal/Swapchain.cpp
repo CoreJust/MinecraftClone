@@ -63,6 +63,37 @@ namespace {
         }
         return result;
     }
+
+    core::collection::DynArray<VkImageView> getSwapchainImageViews(
+        VkDevice device, 
+        core::collection::DynArray<VkImage> const& images,
+        VkSurfaceFormatKHR const& surfaceFormat
+    ) {
+        core::collection::DynArray<VkImageView> result(images.size());
+        auto viewIt = result.begin();
+        for (VkImage const& img : images) {
+            VkImageViewCreateInfo createInfo{};
+            createInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+            createInfo.image = img;
+            createInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+            createInfo.format = surfaceFormat.format;
+            createInfo.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
+            createInfo.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
+            createInfo.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
+            createInfo.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
+            createInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+            createInfo.subresourceRange.baseMipLevel = 0;
+            createInfo.subresourceRange.levelCount = 1;
+            createInfo.subresourceRange.baseArrayLayer = 0;
+            createInfo.subresourceRange.layerCount = 1;
+            VkImageView& view = *(viewIt++);
+            if (!VK_CHECK(vkCreateImageView(device, &createInfo, nullptr, &view))) {
+                core::io::fatal("Failed to create image views for swapchain");
+                throw VulkanException { };
+            }
+        }
+        return result;
+    }
 } // namespace
 
 
@@ -82,10 +113,13 @@ namespace {
             throw VulkanException { };
         }
         m_images = getSwapchainImages(device, m_swapchain);
+        m_imageViews = getSwapchainImageViews(device, m_images, m_surfaceFormat);
     }
 
     Swapchain::~Swapchain() {
         if (m_swapchain != VK_NULL_HANDLE) {
+            for (VkImageView view : m_imageViews)
+                vkDestroyImageView(m_device, view, nullptr);
             vkDestroySwapchainKHR(m_device, m_swapchain, nullptr);
             m_swapchain = VK_NULL_HANDLE;
             core::io::info("Destroyed Vulkan swapchain");

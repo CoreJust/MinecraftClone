@@ -9,6 +9,7 @@ namespace graphics::vulkan::internal {
 
     class Swapchain final {
         core::collection::DynArray<VkImage> m_images;
+        core::collection::DynArray<VkImageView> m_imageViews;
         VkSwapchainKHR m_swapchain = VK_NULL_HANDLE;
         VkDevice m_device = VK_NULL_HANDLE; // Device used for swapchain creation.
         VkSurfaceFormatKHR m_surfaceFormat;
