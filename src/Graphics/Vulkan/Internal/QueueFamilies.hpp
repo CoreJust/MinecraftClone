@@ -2,24 +2,17 @@
 #include <optional>
 #include <vulkan/vulkan.h>
 #include <Core/Macro/Attributes.hpp>
+#include "QueueType.hpp"
 
 namespace graphics::vulkan::internal {
-    enum class QueueType {
-        Graphics,
-        Compute,
-        Transfer,
-
-        QueueTypesCount,
-    };
-
-    VkQueueFlagBits queueTypeToVk(QueueType type) noexcept;
+    class Surface;
 
     class QueueFamilies final {
         std::optional<uint32_t> m_indices[static_cast<size_t>(QueueType::QueueTypesCount)];
 
     public:
         QueueFamilies() noexcept = default;
-        QueueFamilies(VkPhysicalDevice device);
+        QueueFamilies(VkPhysicalDevice device, Surface& surface);
         QueueFamilies(QueueFamilies const&) noexcept = default;
         QueueFamilies(QueueFamilies&&) noexcept = default;
         QueueFamilies& operator=(QueueFamilies const&) noexcept = default;

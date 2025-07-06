@@ -12,6 +12,8 @@ namespace graphics::vulkan::internal {
         Surface(void* window, void* surfaceCreator, Instance& instance);
         ~Surface();
 
+        PURE bool isSupportedOn(VkPhysicalDevice physicalDevice, uint32_t queueIndex) const;
+
         PURE VkSurfaceKHR get() const noexcept { return m_surface; }
     };
 } // namespace graphics::vulkan::internal

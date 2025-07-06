@@ -1,5 +1,6 @@
 #pragma once
 #include <cstdint>
+#include <Core/Memory/UniquePtr.hpp>
 
 namespace graphics::vulkan {
     namespace internal {
@@ -11,17 +12,17 @@ namespace graphics::vulkan {
     }
 
     class Vulkan final {
-        internal::Instance* m_instance = nullptr;
-        internal::Surface* m_surface = nullptr;
-        internal::PhysicalDevice* m_physicalDevice = nullptr;
-        internal::Device* m_device = nullptr;
-        internal::Queue* m_graphicsQueue = nullptr;
+        core::memory::UniquePtr<internal::Instance> m_instance;
+        core::memory::UniquePtr<internal::Surface> m_surface;
+        core::memory::UniquePtr<internal::PhysicalDevice> m_physicalDevice;
+        core::memory::UniquePtr<internal::Device> m_device;
+        core::memory::UniquePtr<internal::Queue> m_graphicsQueue;
+        core::memory::UniquePtr<internal::Queue> m_presentQueue;
 
     public:
         Vulkan() noexcept = default;
         Vulkan(void* window, void* surfaceCreator, char const* const appName, char const** windowRequiredExtensions, uint32_t windowRequiredExtensionsCount);
         Vulkan(Vulkan&&) noexcept = default;
         Vulkan& operator=(Vulkan&&) noexcept = default;
-        ~Vulkan();
     };
 } // namespace graphics::vulkan

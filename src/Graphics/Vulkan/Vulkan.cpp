@@ -18,34 +18,13 @@ namespace graphics::vulkan {
         loadVkVersion();
         loadVkSupportedLayerList();
         loadVkSupportedExtensionList();
-        m_instance       = new internal::Instance(appName, windowRequiredExtensions, windowRequiredExtensionsCount);
-        m_surface        = new internal::Surface(window, surfaceCreator, *m_instance);
-        m_physicalDevice = new internal::PhysicalDevice(internal::PhysicalDevice::choosePhysicalDevice(*m_instance));
-        m_device         = new internal::Device(*m_physicalDevice);
-        m_graphicsQueue  = new internal::Queue(m_device->get(), m_physicalDevice->queueFamilies().getIndex(internal::QueueType::Graphics));
-    }
-
-    Vulkan::~Vulkan() {
-        if (m_graphicsQueue) {
-            delete m_graphicsQueue;
-            m_graphicsQueue = nullptr;
-        }
-        if (m_device) {
-            delete m_device;
-            m_device = nullptr;
-        }
-        if (m_physicalDevice) {
-            delete m_physicalDevice;
-            m_physicalDevice = nullptr;
-        }
-        if (m_surface) {
-            delete m_surface;
-            m_surface = nullptr;
-        }
-        if (m_instance) {
-            delete m_instance;
-            m_instance = nullptr;
-        }
+        m_instance       = core::memory::makeUP<internal::Instance>(appName, windowRequiredExtensions, windowRequiredExtensionsCount);
+        m_surface        = core::memory::makeUP<internal::Surface>(window, surfaceCreator, *m_instance);
+        m_physicalDevice = core::memory::makeUP<internal::PhysicalDevice>(internal::PhysicalDevice::choosePhysicalDevice(*m_instance, *m_surface));
+        m_device         = core::memory::makeUP<internal::Device>(*m_physicalDevice);
+        internal::QueueMaker queueMaker(m_device->get(), m_physicalDevice->queueFamilies());
+        m_graphicsQueue  = queueMaker.make(internal::QueueType::Graphics);
+        m_presentQueue   = queueMaker.make(internal::QueueType::Present);
     }
 } // namespace graphics::vulkan
 

@@ -1,6 +1,9 @@
 #pragma once
 #include <vulkan/vulkan.h>
+#include <Core/Memory/UniquePtr.hpp>
+#include <Core/Memory/TypeErasedObject.hpp>
 #include <Core/Macro/Attributes.hpp>
+#include "QueueType.hpp"
 
 namespace graphics::vulkan::internal {
     class Queue final {
@@ -10,11 +13,24 @@ namespace graphics::vulkan::internal {
         Queue() noexcept = default;
         Queue(VkDevice device, uint32_t index);
         Queue(Queue&&) noexcept = default;
-        Queue(const Queue&) noexcept = delete;
+        Queue(const Queue&) noexcept = default;
         Queue& operator=(Queue&&) noexcept = default;
-        Queue& operator=(const Queue&) noexcept = delete;
+        Queue& operator=(const Queue&) noexcept = default;
 
         PURE VkQueue get() const noexcept { return m_queue; };
+    };
+
+    class QueueFamilies;
+
+    class QueueMaker final {
+        VkDevice m_device;
+        QueueFamilies const& m_queueFamilies;
+        core::memory::TypeErasedObject m_createdQueues;
+
+    public:
+        QueueMaker(VkDevice device, QueueFamilies const& queueFamilies);
+        
+        core::memory::UniquePtr<Queue> make(QueueType type);
     };
 } // namespace graphics::vulkan::internal
 

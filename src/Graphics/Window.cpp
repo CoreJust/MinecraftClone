@@ -13,7 +13,7 @@ namespace graphics {
         core::io::info("Created window (title: {}, size: ({} x {}))", name, width, height);
         size_t rgfwExtensionsCount;
         char const** rgfwVkExtensions = RGFW_getVKRequiredInstanceExtensions(&rgfwExtensionsCount);
-        m_vulkan = std::make_unique<vulkan::Vulkan>(
+        m_vulkan = core::memory::makeUP<vulkan::Vulkan>(
             m_rgfwWindow,
             reinterpret_cast<void*>(&RGFW_window_createVKSurface),
             name,

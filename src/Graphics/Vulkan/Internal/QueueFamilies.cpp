@@ -1,9 +1,13 @@
 #include "QueueFamilies.hpp"
 #include <vector>
+#include <Core/Common/Assert.hpp>
+#include "Surface.hpp"
 
 namespace graphics::vulkan::internal {
     VkQueueFlagBits queueTypeToVk(QueueType type) noexcept {
+        ASSERT(type != QueueType::Present);
         VkQueueFlagBits VK_QUEUES[] = {
+            VK_QUEUE_GRAPHICS_BIT,
             VK_QUEUE_GRAPHICS_BIT,
             VK_QUEUE_COMPUTE_BIT,
             VK_QUEUE_TRANSFER_BIT,
@@ -12,7 +16,7 @@ namespace graphics::vulkan::internal {
         return VK_QUEUES[static_cast<size_t>(type)];
     }
 
-    QueueFamilies::QueueFamilies(VkPhysicalDevice device) {
+    QueueFamilies::QueueFamilies(VkPhysicalDevice device, Surface& surface) {
         uint32_t queueFamilyCount = 0;
         vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, nullptr);
 
@@ -23,8 +27,12 @@ namespace graphics::vulkan::internal {
         for (const VkQueueFamilyProperties& props : queueFamilies) {
             for (int i = 0; i < static_cast<int>(QueueType::QueueTypesCount); ++i) {
                 QueueType type = static_cast<QueueType>(i);
-                if (props.queueFlags & queueTypeToVk(type))
+                if (type == QueueType::Present) {
+                    if (surface.isSupportedOn(device, queueIndex))
+                        m_indices[i] = queueIndex;
+                } else if (props.queueFlags & queueTypeToVk(type)) {
                     m_indices[i] = queueIndex;
+                }
             }
             ++queueIndex;
         }

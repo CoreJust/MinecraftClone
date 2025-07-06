@@ -1,16 +1,28 @@
 #include "PhysicalDevice.hpp"
 #include <Core/IO/Logger.hpp>
+#include "Instance.hpp"
+#include "Surface.hpp"
 #include "../Version.hpp"
 #include "../Exception.hpp"
 
 namespace graphics::vulkan::internal {
-    PhysicalDevice::PhysicalDevice(VkPhysicalDevice device) noexcept
+namespace {
+    uint64_t evaluateDevice(PhysicalDevice& d) {
+        if (!d.queueFamilies().hasFamily(QueueType::Graphics) || !d.queueFamilies().hasFamily(QueueType::Present))
+            return 0;
+
+        return d.props().apiVersion;
+    }
+} // namespace
+
+
+    PhysicalDevice::PhysicalDevice(VkPhysicalDevice device, Surface& surface) noexcept
         : m_physicalDevice(device) {
         vkGetPhysicalDeviceProperties(m_physicalDevice, &m_properties);
-        m_queueFamilies = QueueFamilies(m_physicalDevice);
+        m_queueFamilies = QueueFamilies(m_physicalDevice, surface);
     }
 
-    std::vector<PhysicalDevice> PhysicalDevice::getPhysicalDevices(Instance& instance) noexcept {
+    std::vector<PhysicalDevice> PhysicalDevice::getPhysicalDevices(Instance& instance, Surface& surface) noexcept {
         core::io::info("Choosing physical device...");
         uint32_t deviceCount = 0;
         vkEnumeratePhysicalDevices(instance.get(), &deviceCount, nullptr);
@@ -23,20 +35,20 @@ namespace graphics::vulkan::internal {
         std::vector<PhysicalDevice> result;
         result.reserve(deviceCount);
         for (const VkPhysicalDevice& d : devices)
-            result.push_back(PhysicalDevice { d });
+            result.push_back(PhysicalDevice { d, surface });
         return result;
     }
 
-    PhysicalDevice PhysicalDevice::choosePhysicalDevice(Instance& instance) {
+    PhysicalDevice PhysicalDevice::choosePhysicalDevice(Instance& instance, Surface& surface) {
         core::io::info("Choosing physical device...");
-        std::vector<PhysicalDevice> devices = getPhysicalDevices(instance);
+        std::vector<PhysicalDevice> devices = getPhysicalDevices(instance, surface);
         PhysicalDevice* result = nullptr;
         if (devices.empty()) {
             core::io::fatal("No physical devices found");
             throw VulkanException { };
         }
 
-        Version bestVersion { };
+        uint64_t bestScore = 0;
         for (PhysicalDevice& d : devices) {
             Version apiVersion = Version::fromVk(d.props().apiVersion);
             core::io::info(
@@ -44,18 +56,11 @@ namespace graphics::vulkan::internal {
                 d.props().deviceName,
                 d.props().deviceID,
                 apiVersion.major, apiVersion.minor, apiVersion.patch);
-            if (d.queueFamilies().hasFamily(QueueType::Graphics) && bestVersion < apiVersion) {
+            uint64_t const score = evaluateDevice(d);
+            if (!result || score > bestScore) {
                 result = &d;
-                bestVersion = apiVersion;
+                bestScore = score;
             }
-        }
-
-        if (bestVersion < getVkVersion()) {
-            core::io::warn(
-                "Vulkan version downgraded: {}.{}.{} -> {}.{}.{}",
-                getVkVersion().major, getVkVersion().minor, getVkVersion().patch,
-                bestVersion.major, bestVersion.minor, bestVersion.patch);
-            downgradeVkVersion(bestVersion);
         }
 
         if (!result) {
@@ -64,6 +69,15 @@ namespace graphics::vulkan::internal {
         } else {
             core::io::info("Chose device {} (id {})", result->props().deviceName, result->props().deviceID);
         }
+
+        if (auto bestVersion = Version::fromVk(result->props().apiVersion); bestVersion < getVkVersion()) {
+            core::io::warn(
+                "Vulkan version downgraded: {}.{}.{} -> {}.{}.{}",
+                getVkVersion().major, getVkVersion().minor, getVkVersion().patch,
+                bestVersion.major, bestVersion.minor, bestVersion.patch);
+            downgradeVkVersion(bestVersion);
+        }
+
         return std::move(*result);
     }
 } // namespace graphics::vulkan::internal
