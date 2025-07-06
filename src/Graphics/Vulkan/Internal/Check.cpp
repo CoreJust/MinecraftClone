@@ -2,7 +2,7 @@
 #include <stacktrace>
 #include <Core/IO/Logger.hpp>
 
-namespace graphics::vulkan {
+namespace graphics::vulkan::internal {
 namespace {
     bool decodeVkResult(VkResult result, std::string_view& description) {
 #define ON_SUCCESS_CODE(code, desc) case code: description = #code ": " desc; return true
@@ -79,4 +79,4 @@ namespace {
         }
         return isSuccess;
     }
-} // namespace graphics::vulkan
+} // namespace graphics::vulkan::internal

@@ -1,16 +1,15 @@
 #include "Instance.hpp"
 #include <vector>
-#include <vulkan/vulkan.h>
 #include <Config.hpp>
 #include <Core/IO/Logger.hpp>
 #include "Check.hpp"
 #include "Functions.hpp"
-#include "Version.hpp"
-#include "Exception.hpp"
-#include "Layers.hpp"
-#include "Extensions.hpp"
+#include "../Version.hpp"
+#include "../Exception.hpp"
+#include "../Layers.hpp"
+#include "../Extensions.hpp"
 
-namespace graphics::vulkan {
+namespace graphics::vulkan::internal {
 namespace {
     VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(
         VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
@@ -59,7 +58,7 @@ namespace {
         VkDebugUtilsMessengerCreateInfoEXT createInfo { };
         initDebugUtilsMessengerCreateInfo(createInfo);
 
-        if (!VK_CHECK(vkCreateDebugUtilsMessengerEXT(instance, &createInfo, nullptr, &messenger)))
+        if (!pvkCreateDebugUtilsMessengerEXT || !VK_CHECK(pvkCreateDebugUtilsMessengerEXT(instance, &createInfo, nullptr, &messenger)))
             core::io::warn("Failed to set Vulkan debug callback");
     }
 
@@ -106,27 +105,26 @@ namespace {
     }
 } // namespace
 
-    Instance::Instance(char const* const appName, char const** windowRequiredExtensions, uint32_t windowRequiredExtensionsCount) 
-        : m_instance      (core::memory::TypeErasedObject::make<VkInstance>())
-        , m_debugMessenger(core::memory::TypeErasedObject::make<VkDebugUtilsMessengerEXT>())
-    {
+    Instance::Instance(char const* const appName, char const** windowRequiredExtensions, uint32_t windowRequiredExtensionsCount) {
         core::io::info("Creating Vulkan instance...");
-        VkInstance& instance = m_instance.get<VkInstance>();
         bool needsDebugCallback;
-        initInstance(instance, appName, windowRequiredExtensions, windowRequiredExtensionsCount, needsDebugCallback);
-        loadVkFunctions(instance);
+        initInstance(m_instance, appName, windowRequiredExtensions, windowRequiredExtensionsCount, needsDebugCallback);
+        loadVkFunctions(m_instance);
         if (needsDebugCallback)
-            initDebugCallback(instance, m_debugMessenger.get<VkDebugUtilsMessengerEXT>());
+            initDebugCallback(m_instance, m_debugMessenger);
         core::io::info("Created Vulkan {}.{}.{} instance", getVkVersionMajor(), getVkVersionMinor(), getVkVersionPatch());
     }
 
     Instance::~Instance() {
-        if (m_instance.hasValue()) {
-            VkInstance& instance = m_instance.get<VkInstance>();
-            vkDestroyDebugUtilsMessengerEXT(instance, m_debugMessenger.get<VkDebugUtilsMessengerEXT>(), nullptr);
-            vkDestroyInstance(instance, nullptr);
+        if (m_instance != VK_NULL_HANDLE) {
+            if (m_debugMessenger != VK_NULL_HANDLE) {
+                if (pvkDestroyDebugUtilsMessengerEXT)
+                    pvkDestroyDebugUtilsMessengerEXT(m_instance, m_debugMessenger, nullptr);
+                m_debugMessenger = VK_NULL_HANDLE;
+            }
+            vkDestroyInstance(m_instance, nullptr);
+            m_instance = VK_NULL_HANDLE;
             core::io::info("Destroyed Vulkan instance");
         }
     }
-} // namespace graphics::vulkan
-
+} // namespace graphics::vulkan::internal

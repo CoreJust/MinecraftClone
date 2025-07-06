@@ -1,10 +1,11 @@
 #pragma once
-#include <Core/Memory/TypeErasedObject.hpp>
+#include <vulkan/vulkan.h>
+#include <Core/Macro/Attributes.hpp>
 
-namespace graphics::vulkan {
+namespace graphics::vulkan::internal {
     class Instance final {
-        core::memory::TypeErasedObject m_instance;
-        core::memory::TypeErasedObject m_debugMessenger;
+        VkInstance m_instance = VK_NULL_HANDLE;
+        VkDebugUtilsMessengerEXT m_debugMessenger = VK_NULL_HANDLE;
 
     public:
         Instance() noexcept = default;
@@ -15,6 +16,6 @@ namespace graphics::vulkan {
         Instance& operator=(const Instance&) noexcept = delete;
         ~Instance();
 
-        core::memory::TypeErasedObject const& getInstance() const noexcept { return m_instance; };
+        PURE VkInstance get() const noexcept { return m_instance; };
     };
-} // namespace graphics::vulkan
+} // namespace graphics::vulkan::internal

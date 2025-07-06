@@ -7,30 +7,9 @@ set(SYSTEM_INCLUDES
     ${RGFW_INCLUDE})
 set(SOURCES
     main.cpp
-    Config.cpp
-    Core/Common/Assert.cpp
-    Core/Common/DurationToString.cpp
-    Core/Common/Random.cpp
-    Core/Common/Time.cpp
-    Core/Common/Timer.cpp
-    Core/Common/Timer.cpp
-    Core/IO/ConsoleColor.cpp
-    Core/IO/File.cpp
-    Core/IO/Logger.cpp
-    Core/Macro/NoOpt.cpp
-    Core/Memory/TypeErasedObject.cpp
-    Graphics/Vulkan/Check.cpp
-    Graphics/Vulkan/Version.cpp
-    Graphics/Vulkan/Layers.cpp
-    Graphics/Vulkan/Extensions.cpp
-    Graphics/Vulkan/Functions.cpp
-    Graphics/Vulkan/Instance.cpp
-    Graphics/Vulkan/Device.cpp
-    Graphics/Window.cpp)
-set(TESTS
-    Core/Test/TestMain.cpp
-    Core/Test/UnitTest.cpp
-    Core/Common/Tests/DeferTest.cpp
-    Core/Common/Tests/TimeTest.cpp)
+    Config.cpp)
+set(TESTS)
 
+add_subdirectory(Core)
+add_subdirectory(Graphics)
 MAIN_MODULE(clone)

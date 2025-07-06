@@ -9,23 +9,14 @@
 #pragma warning(pop)
 #include <Core/Common/Assert.hpp>
 #include <Core/IO/Logger.hpp>
-#include "Vulkan/Functions.hpp"
-#include "Vulkan/Extensions.hpp"
-#include "Vulkan/Layers.hpp"
-#include "Vulkan/Version.hpp"
 
 namespace graphics {
     Window::Window(char const* const name, uint32_t width, uint32_t height)
         : m_rgfwWindow(RGFW_createWindow(name, RGFW_RECT(0, 0, width, height), RGFW_windowCenter)) {
         core::io::info("Created window (title: {}, size: ({} x {}))", name, width, height);
-        vulkan::loadInstancelessVkFunctions();
-        vulkan::loadVkVersion();
-        vulkan::loadVkSupportedLayerList();
-        vulkan::loadVkSupportedExtensionList();
         size_t rgfwExtensionsCount;
         char const** rgfwVkExtensions = RGFW_getVKRequiredInstanceExtensions(&rgfwExtensionsCount);
-        m_vkInstance = vulkan::Instance(name, rgfwVkExtensions, static_cast<uint32_t>(rgfwExtensionsCount));
-        m_vkDevice = vulkan::Device(m_vkInstance);
+        m_vulkan = std::make_unique<vulkan::Vulkan>(name, rgfwVkExtensions, static_cast<uint32_t>(rgfwExtensionsCount));
         core::io::info("Window is ready for usage");
     }
 

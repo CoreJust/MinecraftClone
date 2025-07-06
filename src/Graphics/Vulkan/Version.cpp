@@ -1,7 +1,7 @@
+#include "Version.hpp"
 #include <tuple>
 #include <Core/Common/Assert.hpp>
-#include "Version.hpp"
-#include "Functions.hpp"
+#include "Internal/Functions.hpp"
 
 namespace graphics::vulkan {
     Version g_vkVersion {};
@@ -25,8 +25,8 @@ namespace graphics::vulkan {
 
     void loadVkVersion() {
         uint32_t apiVersion = VK_MAKE_API_VERSION(0, 1, 0, 0);
-        if (vkEnumerateInstanceVersion != NULL)
-            vkEnumerateInstanceVersion(&apiVersion);
+        if (internal::pvkEnumerateInstanceVersion)
+            internal::pvkEnumerateInstanceVersion(&apiVersion);
         g_vkVersion = Version::fromVk(apiVersion);
     }
 

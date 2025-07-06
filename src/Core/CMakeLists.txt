@@ -1,0 +1,19 @@
+set(LOCAL_SOURCES
+    Common/Assert.cpp
+    Common/DurationToString.cpp
+    Common/Random.cpp
+    Common/Time.cpp
+    Common/Timer.cpp
+    Common/Timer.cpp
+    IO/ConsoleColor.cpp
+    IO/File.cpp
+    IO/Logger.cpp
+    Macro/NoOpt.cpp
+    Memory/TypeErasedObject.cpp)
+set(LOCAL_TESTS
+    Test/TestMain.cpp
+    Test/UnitTest.cpp
+    Common/Tests/DeferTest.cpp
+    Common/Tests/TimeTest.cpp)
+
+SUBMODULE(Core)

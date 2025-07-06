@@ -1,13 +1,12 @@
 #pragma once
 #include <cstdint>
-#include "Vulkan/Instance.hpp"
-#include "Vulkan/Device.hpp"
+#include <memory>
+#include "Vulkan/Vulkan.hpp"
 
 namespace graphics {
     class Window final {
         void* m_rgfwWindow;
-        vulkan::Instance m_vkInstance;
-        vulkan::Device m_vkDevice;
+        std::unique_ptr<vulkan::Vulkan> m_vulkan;
 
     public:
         Window(char const* const name, uint32_t width, uint32_t height);
