@@ -9,6 +9,7 @@ namespace graphics::vulkan {
         class PhysicalDevice;
         class Device;
         class Queue;
+        class Swapchain;
     }
 
     class Vulkan final {
@@ -18,6 +19,7 @@ namespace graphics::vulkan {
         core::memory::UniquePtr<internal::Device> m_device;
         core::memory::UniquePtr<internal::Queue> m_graphicsQueue;
         core::memory::UniquePtr<internal::Queue> m_presentQueue;
+        core::memory::UniquePtr<internal::Swapchain> m_swapchain;
 
     public:
         Vulkan() noexcept = default;

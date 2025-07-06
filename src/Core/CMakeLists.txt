@@ -9,7 +9,8 @@ set(LOCAL_SOURCES
     IO/File.cpp
     IO/Logger.cpp
     Macro/NoOpt.cpp
-    Memory/TypeErasedObject.cpp)
+    Memory/TypeErasedObject.cpp
+    Memory/RawMemory.cpp)
 set(LOCAL_TESTS
     Test/TestMain.cpp
     Test/UnitTest.cpp

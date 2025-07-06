@@ -10,7 +10,9 @@ namespace {
     uint64_t evaluateDevice(PhysicalDevice& d) {
         if (!d.queueFamilies().hasFamily(QueueType::Graphics)
             || !d.queueFamilies().hasFamily(QueueType::Present)
-            || !d.extensions().hasExtension(VulkanExtension::Swapchain))
+            || !d.extensions().hasExtension(VulkanExtension::Swapchain)
+            || d.swapchainSupport().formats.empty()
+            || d.swapchainSupport().presentModes.empty())
             return 0;
 
         return d.props().apiVersion;
@@ -20,13 +22,13 @@ namespace {
 
     PhysicalDevice::PhysicalDevice(VkPhysicalDevice device, Surface& surface) noexcept
         : m_physicalDevice(device)
-        , m_extensions(this) {
+        , m_extensions(*this)
+        , m_swapchainSupport(m_physicalDevice, surface.get()) {
         vkGetPhysicalDeviceProperties(m_physicalDevice, &m_properties);
         m_queueFamilies = QueueFamilies(m_physicalDevice, surface);
     }
 
     std::vector<PhysicalDevice> PhysicalDevice::getPhysicalDevices(Instance& instance, Surface& surface) noexcept {
-        core::io::info("Choosing physical device...");
         uint32_t deviceCount = 0;
         vkEnumeratePhysicalDevices(instance.get(), &deviceCount, nullptr);
         if (deviceCount == 0)
@@ -60,6 +62,8 @@ namespace {
                 d.props().deviceID,
                 apiVersion.major, apiVersion.minor, apiVersion.patch);
             uint64_t const score = evaluateDevice(d);
+            if (score == 0)
+                continue; // Not suitable
             if (!result || score > bestScore) {
                 result = &d;
                 bestScore = score;

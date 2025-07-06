@@ -32,8 +32,20 @@ namespace {
         return result;
     }
 
+    std::vector<char const*> generateDeviceExtensions(PhysicalDevice const& physicalDevice) {
+        constexpr static VulkanExtension DEVICE_EXTENSIONS[] = { VulkanExtension::Swapchain };
+
+        std::vector<char const*> result;
+        for (VulkanExtension ext : DEVICE_EXTENSIONS) {
+            if (physicalDevice.extensions().hasExtension(ext))
+                result.emplace_back(getFullExtensionName(ext));
+        }
+        return result;
+    }
+
     void initLogicalDevice(VkDevice& device, PhysicalDevice const& physicalDevice) {
-        std::vector<VkDeviceQueueCreateInfo> queueCreateInfos = generateQueueCreateInfos(physicalDevice.queueFamilies());
+        std::vector<VkDeviceQueueCreateInfo> const queueCreateInfos = generateQueueCreateInfos(physicalDevice.queueFamilies());
+        std::vector<char const*> const deviceExtensions = generateDeviceExtensions(physicalDevice);
 
         VkPhysicalDeviceFeatures deviceFeatures { };
         VkDeviceCreateInfo createInfo { };
@@ -41,6 +53,8 @@ namespace {
         createInfo.pQueueCreateInfos = queueCreateInfos.data();
         createInfo.queueCreateInfoCount = static_cast<uint32_t>(queueCreateInfos.size());
         createInfo.pEnabledFeatures = &deviceFeatures;
+        createInfo.enabledExtensionCount = static_cast<uint32_t>(deviceExtensions.size());
+        createInfo.ppEnabledExtensionNames = deviceExtensions.data();
 
         if (!VK_CHECK(vkCreateDevice(physicalDevice.get(), &createInfo, nullptr, &device))) {
             core::io::fatal("Failed to create logical device");

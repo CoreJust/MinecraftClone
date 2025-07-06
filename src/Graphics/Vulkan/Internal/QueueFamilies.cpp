@@ -16,7 +16,7 @@ namespace graphics::vulkan::internal {
         return VK_QUEUES[static_cast<size_t>(type)];
     }
 
-    QueueFamilies::QueueFamilies(VkPhysicalDevice device, Surface& surface) {
+    QueueFamilies::QueueFamilies(VkPhysicalDevice device, Surface& surface) : QueueFamilies() {
         uint32_t queueFamilyCount = 0;
         vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, nullptr);
 

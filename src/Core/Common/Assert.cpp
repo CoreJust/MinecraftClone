@@ -3,10 +3,13 @@
 #include <Core/IO/Logger.hpp>
 
 namespace core::common {
-	void assert_failure(std::string_view message) {
+	void assert_failure(char const* const condition, char const* const file, unsigned long long line, char const* const message) {
 		io::error(
-			"Assertion: {}\nat {}",
+			"Assertion failed: {} evaluated to false; {}\nat {}:{}\nStacktrace:\n{}",
+			condition,
 			message,
+			file,
+			line,
 			std::stacktrace::current());
 	}
 } // namespace core::common

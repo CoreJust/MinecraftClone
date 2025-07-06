@@ -17,11 +17,15 @@ namespace graphics::vulkan {
         VulkanExtensionsCount,
     };
 
+    namespace internal {
+        class PhysicalDevice;
+    }
+
     struct SupportedExtensions final {
         Version versions[static_cast<size_t>(VulkanExtension::VulkanExtensionsCount)];
 
         SupportedExtensions() noexcept;
-        SupportedExtensions(void* physicalDevice);
+        SupportedExtensions(internal::PhysicalDevice& physicalDevice);
 
         PURE bool hasExtension(VulkanExtension ext) const noexcept;
         PURE Version getExtensionVersion(VulkanExtension ext) const noexcept;
@@ -32,5 +36,5 @@ namespace graphics::vulkan {
     PURE char const* getFullExtensionName(VulkanExtension ext) noexcept;
 
     void loadVkSupportedExtensionList();
-    void updateVkSupportedExtensionListForDevice(void* physicalDevice);
+    void updateVkSupportedExtensionListForDevice(internal::PhysicalDevice& physicalDevice);
 } // namespace graphics::vulkan

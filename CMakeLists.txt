@@ -13,10 +13,16 @@ include(FetchContent)
 include(cmake/submodule.cmake)
 
 ### Options ###
-option(MINECRAFT_CLONE_TESTING "Enable unit tests for MINECRAFT_CLONE_TESTING" ON)
+option(MINECRAFT_CLONE_TESTING "Enable unit tests" ON)
 if(MINECRAFT_CLONE_TESTING)
     add_compile_definitions(_TEST)
 endif()
+option(MINECRAFT_CLONE_DEBUG "Enable debug" ON)
+if(MINECRAFT_CLONE_TESTING)
+    add_compile_definitions(_MC_DEBUG)
+    add_compile_options(-g)
+endif()
+
 
 ### Dependencies  ###
 # Vulkan

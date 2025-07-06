@@ -14,13 +14,12 @@ namespace graphics::vulkan {
         memset(versions, 255, std::size(versions));
     }
     
-    SupportedExtensions::SupportedExtensions(void* physicalDevice) : SupportedExtensions() {
-        internal::PhysicalDevice& device = *reinterpret_cast<internal::PhysicalDevice*>(physicalDevice);
+    SupportedExtensions::SupportedExtensions(internal::PhysicalDevice& physicalDevice) : SupportedExtensions() {
         uint32_t extensionCount = 0;
-        vkEnumerateDeviceExtensionProperties(device.get(), nullptr, &extensionCount, nullptr);
+        vkEnumerateDeviceExtensionProperties(physicalDevice.get(), nullptr, &extensionCount, nullptr);
 
         std::vector<VkExtensionProperties> extensions(extensionCount);
-        vkEnumerateDeviceExtensionProperties(device.get(), nullptr, &extensionCount, extensions.data());
+        vkEnumerateDeviceExtensionProperties(physicalDevice.get(), nullptr, &extensionCount, extensions.data());
 
         std::unordered_map<std::string, uint32_t> extensionVersions;
         for (const VkExtensionProperties& ext : extensions)
@@ -83,9 +82,8 @@ namespace graphics::vulkan {
         }
     }
 
-    void updateVkSupportedExtensionListForDevice(void* physicalDevice) {
-        internal::PhysicalDevice& device = *reinterpret_cast<internal::PhysicalDevice*>(physicalDevice);
-        auto const& deviceExts = device.extensions();
+    void updateVkSupportedExtensionListForDevice(internal::PhysicalDevice& physicalDevice) {
+        auto const& deviceExts = physicalDevice.extensions();
         for (int i = 0; i < static_cast<int>(VulkanExtension::VulkanExtensionsCount); ++i) {
             VulkanExtension ext = static_cast<VulkanExtension>(i);
             if (deviceExts.hasExtension(ext)) {
@@ -97,7 +95,7 @@ namespace graphics::vulkan {
                         deviceExts.getExtensionVersion(ext).minor,
                         deviceExts.getExtensionVersion(ext).patch);
                     g_supportedExtensions.versions[i] = deviceExts.versions[i];
-                } else if (g_supportedExtensions.getExtensionVersion(ext) < deviceExts.getExtensionVersion(ext)) {
+                } else if (deviceExts.getExtensionVersion(ext) < g_supportedExtensions.getExtensionVersion(ext)) {
                     core::io::warn(
                         "Downgraded extension {} : {}.{}.{} -> {}.{}.{}, since device supports only that version",
                         getFullExtensionName(ext),

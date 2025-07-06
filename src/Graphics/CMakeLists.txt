@@ -11,6 +11,8 @@ set(LOCAL_SOURCES
     Vulkan/Internal/QueueFamilies.cpp
     Vulkan/Internal/Queue.cpp
     Vulkan/Internal/Surface.cpp
+    Vulkan/Internal/Swapchain.cpp
+    Vulkan/Internal/SwapchainSupport.cpp
     Window.cpp)
 set(LOCAL_TESTS)
 

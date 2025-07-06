@@ -6,6 +6,7 @@
 #include "Internal/PhysicalDevice.hpp"
 #include "Internal/Device.hpp"
 #include "Internal/Queue.hpp"
+#include "Internal/Swapchain.hpp"
 #include "Internal/Functions.hpp"
 #include "Exception.hpp"
 #include "Extensions.hpp"
@@ -21,10 +22,12 @@ namespace graphics::vulkan {
         m_instance       = core::memory::makeUP<internal::Instance>(appName, windowRequiredExtensions, windowRequiredExtensionsCount);
         m_surface        = core::memory::makeUP<internal::Surface>(window, surfaceCreator, *m_instance);
         m_physicalDevice = core::memory::makeUP<internal::PhysicalDevice>(internal::PhysicalDevice::choosePhysicalDevice(*m_instance, *m_surface));
+        updateVkSupportedExtensionListForDevice(*m_physicalDevice);
         m_device         = core::memory::makeUP<internal::Device>(*m_physicalDevice);
         internal::QueueMaker queueMaker(m_device->get(), m_physicalDevice->queueFamilies());
         m_graphicsQueue  = queueMaker.make(internal::QueueType::Graphics);
         m_presentQueue   = queueMaker.make(internal::QueueType::Present);
+        m_swapchain      = core::memory::makeUP<internal::Swapchain>(*m_physicalDevice, m_device->get(), m_surface->get(), window);
     }
 } // namespace graphics::vulkan
 
