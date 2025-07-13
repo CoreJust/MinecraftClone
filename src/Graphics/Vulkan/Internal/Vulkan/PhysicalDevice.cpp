@@ -1,0 +1,93 @@
+#include "PhysicalDevice.hpp"
+#include <Core/IO/Logger.hpp>
+#include "Vulkan.hpp"
+#include "../../Version.hpp"
+#include "../../Exception.hpp"
+
+namespace graphics::vulkan::internal {
+namespace {
+    uint64_t evaluateDevice(PhysicalDevice& d) {
+        if (!d.queueFamilies().hasFamily(QueueType::Graphics)
+            || !d.queueFamilies().hasFamily(QueueType::Present)
+            || !d.extensions().hasExtension(VulkanExtension::Swapchain)
+            || d.swapchainSupport().formats.size() == 0
+            || d.swapchainSupport().presentModes.size() == 0
+            || Version::fromVk(d.props().apiVersion) < getVkVersion())
+            return 0;
+
+        return 1;
+    }
+} // namespace
+
+
+    PhysicalDevice::PhysicalDevice(VkPhysicalDevice device, Surface const& surface, PassKey) noexcept
+        : m_physicalDevice(device)
+        , m_extensions(*this)
+        , m_swapchainSupport(m_physicalDevice, surface.get()) {
+        vkGetPhysicalDeviceProperties(m_physicalDevice, &m_properties);
+        m_queueFamilies = QueueFamilies(*this, surface);
+    }
+        
+    Version PhysicalDevice::getHighestPhysicalDeviceVersion(Instance& instance) noexcept {
+        uint32_t deviceCount = 0;
+        vkEnumeratePhysicalDevices(instance.get(), &deviceCount, nullptr);
+        if (deviceCount == 0)
+            return { };
+
+        core::collection::DynArray<VkPhysicalDevice> devices(deviceCount);
+        vkEnumeratePhysicalDevices(instance.get(), &deviceCount, devices.data());
+
+        Version result;
+        for (const VkPhysicalDevice& d : devices) {
+            VkPhysicalDeviceProperties properties;
+            vkGetPhysicalDeviceProperties(d, &properties);
+            Version apiVersion = Version::fromVk(properties.apiVersion);
+            if (result < apiVersion)
+                result = apiVersion;
+        }
+        return result;
+    }
+
+    core::collection::DynArray<core::memory::UniquePtr<PhysicalDevice>> PhysicalDevice::getPhysicalDevices(Vulkan& vulkan) noexcept {
+        core::collection::DynArray<VkPhysicalDevice> devices = vulkan.enumerate<vkEnumeratePhysicalDevices>();
+        return { devices.size(), [&](size_t i) { 
+            return core::memory::makeUP<PhysicalDevice>(devices[i], vulkan.surface(), PassKey { });
+        }};
+    }
+
+    core::memory::UniquePtr<PhysicalDevice> PhysicalDevice::choosePhysicalDevice(Vulkan& vulkan) {
+        core::io::info("Choosing physical device...");
+        auto devices = getPhysicalDevices(vulkan);
+        core::memory::UniquePtr<PhysicalDevice>* result = nullptr;
+        if (devices.size() == 0) {
+            core::io::fatal("No physical devices found");
+            throw VulkanException { };
+        }
+
+        uint64_t bestScore = 0;
+        for (auto& d : devices) {
+            Version apiVersion = Version::fromVk(d->props().apiVersion);
+            core::io::info(
+                "Found physical device {} (id {})\n\tVulkan API version {}.{}.{}",
+                d->props().deviceName,
+                d->props().deviceID,
+                apiVersion.major, apiVersion.minor, apiVersion.patch);
+            uint64_t const score = evaluateDevice(*d);
+            if (score == 0)
+                continue; // Not suitable
+            if (!result || score > bestScore) {
+                result = &d;
+                bestScore = score;
+            }
+        }
+
+        if (!result) {
+            core::io::fatal("No suitable physical device found");
+            throw VulkanException { };
+        } else {
+            core::io::info("Chose device {} (id {})", (*result)->props().deviceName, (*result)->props().deviceID);
+        }
+
+        return std::move(*result);
+    }
+} // namespace graphics::vulkan::internal

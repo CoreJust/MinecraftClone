@@ -3,8 +3,8 @@
 #include <unordered_set>
 #include <Core/Common/Assert.hpp>
 #include <Core/IO/Logger.hpp>
-#include "Check.hpp"
-#include "../Exception.hpp"
+#include "../Check.hpp"
+#include "../../Exception.hpp"
 
 namespace graphics::vulkan::internal {
 namespace {
@@ -70,9 +70,15 @@ namespace {
 
     Device::~Device() {
         if (m_logicalDevice != VK_NULL_HANDLE) {
+            waitIdle();
             vkDestroyDevice(m_logicalDevice, nullptr);
             m_logicalDevice = VK_NULL_HANDLE;
             core::io::info("Destroyed logical device");
         }
+    }
+
+    
+    void Device::waitIdle() const {
+        vkDeviceWaitIdle(m_logicalDevice);
     }
 } // namespace graphics::vulkan::internal

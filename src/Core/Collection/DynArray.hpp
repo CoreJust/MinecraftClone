@@ -1,56 +1,59 @@
 #pragma once
-#include <Core/Common/Assert.hpp>
+#include <Core/Meta/IsSame.hpp>
 #include <Core/Memory/Exchange.hpp>
-#include <Core/Memory/RawMemory.hpp>
+#include "ArrayView.hpp"
 
 namespace core::collection {
     template<typename T>
     class DynArray final {
-        memory::RawMemory m_data { };
+        ArrayView<T> m_data { };
 
     public:
         constexpr DynArray() noexcept = default;        
-        DynArray(DynArray&& other) noexcept
-            : m_data(memory::exchange(other.m_data, memory::RawMemory())) { }
-        DynArray& operator=(DynArray&& other) noexcept {
-            m_data = memory::exchange(other.m_data, memory::RawMemory());
+        constexpr DynArray(DynArray&& other) noexcept
+            : m_data(memory::exchange(other.m_data, ArrayView<T> { })) { }
+        constexpr DynArray& operator=(DynArray&& other) noexcept {
+            m_data = memory::exchange(other.m_data, ArrayView<T> { });
             return *this;
         }
-        DynArray(size_t size) : m_data(memory::RawMemory::alloc(size * sizeof(T))) { }
-        DynArray(size_t size, T const& defaultValue)
+        DynArray(size_t size, T const& defaultValue = T { })
             : m_data(memory::RawMemory::alloc(size * sizeof(T))) {
-            T* ptr = data();
-            T* end = ptr + size;
-            while (ptr < end)
-                ::new(ptr++) T(defaultValue);
+            for (auto& item : m_data)
+                ::new(&item) T { defaultValue };
+        }
+        DynArray(size_t size, auto&& func)
+            requires requires(size_t i) { { func(i) } -> meta::IsSame<T>; }
+            : m_data(memory::RawMemory::alloc(size * sizeof(T))) {
+            size_t i = 0;
+            for (auto& item : m_data)
+                ::new(&item) T { func(i++) };
+        }
+        explicit DynArray(ArrayView<T> view)
+            : m_data(memory::RawMemory::alloc(view.size())) {
+            m_data.rawMemory().copyFrom(view.rawMemory());
         }
         ~DynArray() {
-            m_data.free();
+            for (auto& item : m_data)
+                item.~T();
+            m_data.rawMemory().free();
         }
 
-        PURE T& operator[](size_t idx) {
-            ASSERT(idx * sizeof(T) + (sizeof(T) - 1) < m_data.size());
-            return data()[idx];
-        }
+        PURE constexpr operator ArrayView<T>() const noexcept { return m_data; }
 
-        PURE T const& operator[](size_t idx) const {
-            ASSERT(idx * sizeof(T) + (sizeof(T) - 1) < m_data.size());
-            return data()[idx];
-        }
+        PURE constexpr auto&& operator[](this auto&& self, size_t idx) { return self.m_data[idx]; }
 
         void resize(size_t newSize) {
-            m_data.resize(newSize * sizeof(T));
+            m_data.rawMemory().resize(newSize * sizeof(T));
         }
 
-        PURE constexpr T* begin() noexcept { return data(); }
-        PURE constexpr T const* begin() const noexcept { return data(); }
-        PURE constexpr T const* cbegin() const noexcept { return data(); }
-        PURE constexpr T* end() noexcept { return data() + size(); }
-        PURE constexpr T const* end() const noexcept { return data() + size(); }
-        PURE constexpr T const* cend() const noexcept { return data() + size(); }
+        PURE constexpr auto begin(this auto&& self) noexcept { return self.m_data.begin(); }
+        PURE constexpr T const* cbegin() const noexcept { return m_data.cbegin(); }
+        PURE constexpr auto end(this auto&& self) noexcept { return self.m_data.end(); }
+        PURE constexpr T const* cend() const noexcept { return m_data.cend(); }
 
-        PURE constexpr size_t size() const noexcept { return m_data.size() / sizeof(T); }
-        PURE constexpr T* data() noexcept { return reinterpret_cast<T*>(m_data.data()); }
-        PURE constexpr T const* data() const noexcept { return reinterpret_cast<T const*>(m_data.data()); }
+        PURE constexpr size_t size() const noexcept { return m_data.size(); }
+        PURE constexpr auto data(this auto&& self) noexcept { return self.m_data.data(); }
+
+        PURE constexpr auto&& arrayView(this auto&& self) noexcept { return self.m_data; }
     };
 } // namespace core::collection

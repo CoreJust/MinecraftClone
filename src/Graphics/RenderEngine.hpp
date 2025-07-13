@@ -5,11 +5,11 @@
 namespace graphics {
     class RenderEngine final {
         Window m_window;
-        core::memory::UniquePtr<vulkan::Vulkan> m_vulkan;
+        core::memory::UniquePtr<vulkan::VulkanManager> m_vulkanManager;
         vulkan::RenderPipeline m_pipeline;
 
     public:
-        RenderEngine(char const* const name);
+        RenderEngine(char const* const name, core::common::Version const& appVersion);
 
         void run();
     };

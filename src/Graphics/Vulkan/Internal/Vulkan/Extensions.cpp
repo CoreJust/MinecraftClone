@@ -5,9 +5,9 @@
 #include <unordered_map>
 #include <vulkan/vulkan.h>
 #include <Core/IO/Logger.hpp>
-#include "Internal/PhysicalDevice.hpp"
+#include "PhysicalDevice.hpp"
 
-namespace graphics::vulkan {
+namespace graphics::vulkan::internal {
     SupportedExtensions g_supportedExtensions { };
         
     SupportedExtensions::SupportedExtensions() noexcept {
@@ -110,4 +110,4 @@ namespace graphics::vulkan {
             }
         }
     }
-} // namespace graphics::vulkan
+} // namespace graphics::vulkan::internal

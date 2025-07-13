@@ -1,14 +1,14 @@
 #include "Surface.hpp"
 #include <Core/Common/Assert.hpp>
 #include <Core/IO/Logger.hpp>
-#include "Check.hpp"
-#include "../Exception.hpp"
+#include "../Check.hpp"
+#include "../../Exception.hpp"
 
 namespace graphics::vulkan::internal {
     Surface::Surface(void* window, void* surfaceCreator, Instance& instance) : m_instance(instance.get()) {
         core::io::info("Creating Vulkan surface...");
-        auto createVkSurface = reinterpret_cast<VkResult(*)(void*, VkInstance, VkSurfaceKHR*)>(surfaceCreator);
-        if (!VK_CHECK(createVkSurface(window, m_instance, &m_surface))) {
+        auto createVkSurface = reinterpret_cast<VkResult(*)(VkInstance, void*, const VkAllocationCallbacks*, VkSurfaceKHR*)>(surfaceCreator);
+        if (!VK_CHECK(createVkSurface(m_instance, window, nullptr, &m_surface))) {
             core::io::fatal("Failed to create Vulkan surface");
             throw VulkanException { };
         }

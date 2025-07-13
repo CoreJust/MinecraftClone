@@ -3,21 +3,26 @@
 #include <Core/Macro/Attributes.hpp>
 #include "RenderPass.hpp"
 #include "Framebuffers.hpp"
+#include "../PipelineOptions.hpp"
 
 namespace graphics::vulkan::internal {
-    class Device;
+    class Vulkan;
     class Swapchain;
+    class CommandBuffer;
 
     class Pipeline final {
         RenderPass m_pass;
         Framebuffers m_framebuffers;
         VkPipelineLayout m_layout = VK_NULL_HANDLE;
         VkPipeline m_pipeline = VK_NULL_HANDLE;
-        VkDevice m_device = VK_NULL_HANDLE; // Device used to create the pipeline
+        Vulkan& m_vulkan;
 
     public:
-        Pipeline(Device& device, Swapchain& swapchain, char const* const vertexShaderPath, char const* const fragmentShaderPath);
+        Pipeline(Vulkan& vulkan, PipelineOptions const& options);
         ~Pipeline();
+
+        void beginRenderPass(CommandBuffer& commandBuffer, uint32_t index);
+        void endRenderPass(CommandBuffer& frame);
 
         PURE VkPipeline get() const noexcept { return m_pipeline; }
         PURE VkPipelineLayout layout() const noexcept { return m_layout; }

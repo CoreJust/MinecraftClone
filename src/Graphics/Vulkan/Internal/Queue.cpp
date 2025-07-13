@@ -1,11 +1,45 @@
 #include "Queue.hpp"
 #include <unordered_map>
 #include <Core/Common/Assert.hpp>
+#include <Core/IO/Logger.hpp>
+#include "Check.hpp"
 #include "QueueFamilies.hpp"
+#include "CommandBuffer.hpp"
+#include "Semaphore.hpp"
+#include "../Exception.hpp"
 
 namespace graphics::vulkan::internal {
     Queue::Queue(VkDevice device, uint32_t index) {
         vkGetDeviceQueue(device, index, 0, &m_queue);
+    }
+
+    void Queue::submit(CommandBuffer& commandBuffer, Semaphore& wait, Semaphore& signal) {
+        VkSubmitInfo submitInfo { };
+        submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+
+        VkSemaphore waitSemaphores[] = { wait.get() };
+        VkPipelineStageFlags waitStages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
+        VkCommandBuffer commandBuffers[] = { commandBuffer.get() };
+        submitInfo.waitSemaphoreCount = 1;
+        submitInfo.pWaitSemaphores = waitSemaphores;
+        submitInfo.pWaitDstStageMask = waitStages;
+        submitInfo.commandBufferCount = 1;
+        submitInfo.pCommandBuffers = commandBuffers;
+
+        VkSemaphore signalSemaphores[] = { signal.get() };
+        submitInfo.signalSemaphoreCount = 1;
+        submitInfo.pSignalSemaphores = signalSemaphores;
+
+        if (!VK_CHECK(vkQueueSubmit(m_queue, 1, &submitInfo, VK_NULL_HANDLE))) {
+            core::io::error("Failed to submit command buffer to queue");
+            throw VulkanException { };
+        }
+    }
+
+    void Queue::waitIdle() const {
+        if (!VK_CHECK(vkQueueWaitIdle(m_queue))) {
+            core::io::error("Failed to wait for queue to be idle");
+        }
     }
        
     QueueMaker::QueueMaker(VkDevice device, QueueFamilies const& queueFamilies) 

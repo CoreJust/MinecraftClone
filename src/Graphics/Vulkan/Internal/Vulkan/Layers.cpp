@@ -6,7 +6,7 @@
 #include <vulkan/vulkan.h>
 #include <Core/IO/Logger.hpp>
 
-namespace graphics::vulkan {
+namespace graphics::vulkan::internal {
     Version g_supportedLayers[static_cast<size_t>(VulkanLayer::VulkanLayersCount)];
 
     bool hasLayer(VulkanLayer layer) noexcept {
@@ -49,4 +49,4 @@ namespace graphics::vulkan {
                 g_supportedLayers[static_cast<size_t>(layer)] = Version::fromVk(it->second);
         }
     }
-} // namespace graphics::vulkan
+} // namespace graphics::vulkan::internal

@@ -1,54 +1,67 @@
 #include "Window.hpp"
-#define RGFW_IMPLEMENTATION
-#define RGFW_VULKAN
-#define RGFW_PRINT_ERRORS
-#define RGFW_NO_API
-#include "RGFW.h"
+#define GLFW_INCLUDE_VULKAN
+#include <GLFW/glfw3.h>
 #include <Core/Common/Assert.hpp>
 #include <Core/IO/Logger.hpp>
 
 namespace graphics {
-    Window::Window(char const* const name, uint32_t width, uint32_t height)
-        : m_rgfwWindow(RGFW_createWindow(name, RGFW_RECT(0, 0, width, height), RGFW_windowCenter | RGFW_windowNoResize | RGFW_windowMaximize))
+namespace {
+    void* createWindow(char const* const name, int& width, int& height) {
+        glfwInit();
+        glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
+        GLFWmonitor* monitor = glfwGetPrimaryMonitor();
+        const GLFWvidmode* mode = glfwGetVideoMode(monitor);
+        glfwWindowHint(GLFW_RED_BITS, mode->redBits);
+        glfwWindowHint(GLFW_GREEN_BITS, mode->greenBits);
+        glfwWindowHint(GLFW_BLUE_BITS, mode->blueBits);
+        glfwWindowHint(GLFW_REFRESH_RATE, mode->refreshRate);
+        if (width <= 0 || height <= 0) {
+            width  = mode->width;
+            height = mode->height;
+            core::io::info("Setting full-screen window mode: {}x{}", width, height);
+        }
+        GLFWwindow* window = glfwCreateWindow(width, height, name, monitor, nullptr);
+        return reinterpret_cast<void*>(window);
+    }
+} // namespace
+
+
+    Window::Window(char const* const name, int width, int height)
+        : m_window(createWindow(name, width, height))
         , m_name(name) {
-        RGFW_window_setFullscreen(reinterpret_cast<RGFW_window*>(m_rgfwWindow), true);
         core::io::info("Created window (title: {}, size: ({} x {}))", name, width, height);
     }
 
     Window::~Window() {
-        if (m_rgfwWindow != nullptr) {
-            RGFW_window_close(reinterpret_cast<RGFW_window*>(m_rgfwWindow));
-            m_rgfwWindow = nullptr;
+        if (m_window != nullptr) {
+            glfwDestroyWindow(reinterpret_cast<GLFWwindow*>(m_window));
+            glfwTerminate();
+            m_window = nullptr;
             core::io::info("The window was closed");
         }
     }
 
-    core::memory::UniquePtr<vulkan::Vulkan> Window::createVulkan() {
-        size_t rgfwExtensionsCount;
-        char const** rgfwVkExtensions = RGFW_getVKRequiredInstanceExtensions(&rgfwExtensionsCount);
-        auto result = core::memory::makeUP<vulkan::Vulkan>(
-            m_rgfwWindow,
-            reinterpret_cast<void*>(&RGFW_window_createVKSurface),
+    core::memory::UniquePtr<vulkan::VulkanManager> Window::createVulkanManager(core::common::Version const& appVersion) {
+        uint32_t glfwExtensionsCount;
+        char const** glfwVkExtensions = glfwGetRequiredInstanceExtensions(&glfwExtensionsCount);
+        auto result = core::memory::makeUP<vulkan::VulkanManager>(
+            m_window,
+            reinterpret_cast<void*>(&glfwCreateWindowSurface),
             m_name,
-            rgfwVkExtensions,
-            static_cast<uint32_t>(rgfwExtensionsCount));
+            appVersion,
+            glfwVkExtensions,
+            glfwExtensionsCount);
         core::io::info("Created Vulkan");
         return result;
     }
 
     bool Window::nextFrame() {
-        ASSERT(m_rgfwWindow != nullptr, "Cannot acquire next frame: no RGFW window found!");
-        RGFW_window* window = reinterpret_cast<RGFW_window*>(m_rgfwWindow);
-        if (RGFW_window_shouldClose(window))
+        ASSERT(m_window != nullptr, "Cannot acquire next frame: no RGFW window found!");
+        GLFWwindow* window = reinterpret_cast<GLFWwindow*>(m_window);
+        if (glfwWindowShouldClose(window))
             return false;
-        while (RGFW_window_checkEvent(window)) {
-            RGFW_event const& e = window->event;
-            if (e.type == RGFW_quit || (e.type == RGFW_keyReleased && e.key == RGFW_escape)) {
-                core::io::info("Quitting the window...");
-                return false;
-            }
-        }
-        RGFW_window_swapBuffers(window);
+        glfwPollEvents();
+        glfwSwapBuffers(window);
         return true;
     }
 } // namespace graphics

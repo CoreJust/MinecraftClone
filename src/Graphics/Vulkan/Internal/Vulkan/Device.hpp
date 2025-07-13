@@ -16,6 +16,8 @@ namespace graphics::vulkan::internal {
         Device& operator=(const Device&) noexcept = delete;
         ~Device();
 
+        void waitIdle() const;
+
         PURE VkDevice get() const noexcept { return m_logicalDevice; }
     };
 } // namespace graphics::vulkan::internal

@@ -42,7 +42,6 @@ namespace core::io {
 		White,
 	};
 #endif
-
 	struct Background final {
 		ConsoleColor color;
 	};

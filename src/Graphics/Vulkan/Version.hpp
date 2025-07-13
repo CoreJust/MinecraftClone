@@ -1,22 +1,17 @@
 #pragma once
-#include <cstdint>
-#include <Core/Macro/Attributes.hpp>
+#include <Core/Common/Version.hpp>
 
 namespace graphics::vulkan {
-    struct Version final {
-        uint32_t variant = 0;
-        uint32_t major   = 1;
-        uint32_t minor   = 0;
-        uint32_t patch   = 0;
-
-        PURE bool operator<(Version const& lhs) const noexcept;
+    struct Version final : public core::common::Version {
+        PURE bool operator<(Version const& lhs) const noexcept { return core::common::Version::operator<(lhs); }
 
         PURE static Version fromVk(uint32_t vkVersion) noexcept;
         PURE uint32_t asVk() const noexcept;
     };
 
     void loadVkVersion();
-    void downgradeVkVersion(Version newVersion);
+    
+    PURE Version getMaxInstanceVersion(); 
 
     PURE Version const& getVkVersion();
     PURE uint32_t getVkVersionMajor();

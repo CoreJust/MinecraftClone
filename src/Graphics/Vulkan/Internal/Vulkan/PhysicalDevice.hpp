@@ -1,14 +1,16 @@
 #pragma once
-#include <vector>
 #include <vulkan/vulkan.h>
 #include <Core/Macro/Attributes.hpp>
-#include "QueueFamilies.hpp"
+#include <Core/Memory/UniquePtr.hpp>
+#include <Core/Collection/DynArray.hpp>
+#include "Extensions.hpp"
 #include "SwapchainSupport.hpp"
-#include "../Extensions.hpp"
+#include "../QueueFamilies.hpp"
 
 namespace graphics::vulkan::internal {
     class Instance;
     class Surface;
+    class Vulkan;
 
     class PhysicalDevice final {
         VkPhysicalDevice m_physicalDevice = VK_NULL_HANDLE;
@@ -18,11 +20,13 @@ namespace graphics::vulkan::internal {
         SwapchainSupport m_swapchainSupport { };
 
     private:
-        PhysicalDevice(VkPhysicalDevice device, Surface& surface) noexcept;
+        struct PassKey { explicit PassKey() = default; };
 
     public:
-        static std::vector<PhysicalDevice> getPhysicalDevices(Instance& instance, Surface& surface) noexcept;
-        static PhysicalDevice choosePhysicalDevice(Instance& instance, Surface& surface);
+        PhysicalDevice(VkPhysicalDevice device, Surface const& surface, PassKey) noexcept;
+        static Version getHighestPhysicalDeviceVersion(Instance& instance) noexcept;
+        static core::collection::DynArray<core::memory::UniquePtr<PhysicalDevice>> getPhysicalDevices(Vulkan& vulkan) noexcept;
+        static core::memory::UniquePtr<PhysicalDevice> choosePhysicalDevice(Vulkan& vulkan);
 
         PURE VkPhysicalDevice get() const noexcept { return m_physicalDevice; }
         PURE VkPhysicalDeviceProperties const& props()            const noexcept { return m_properties; }

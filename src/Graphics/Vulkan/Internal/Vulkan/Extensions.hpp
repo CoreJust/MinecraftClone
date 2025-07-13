@@ -1,8 +1,8 @@
 #pragma once
 #include <Core/Macro/Attributes.hpp>
-#include "Version.hpp"
+#include "../../Version.hpp"
 
-namespace graphics::vulkan {
+namespace graphics::vulkan::internal {
     enum class VulkanExtension {
         // General
         Swapchain,           // VK_KHR_swapchain
@@ -17,9 +17,7 @@ namespace graphics::vulkan {
         VulkanExtensionsCount,
     };
 
-    namespace internal {
-        class PhysicalDevice;
-    }
+    class PhysicalDevice;
 
     struct SupportedExtensions final {
         Version versions[static_cast<size_t>(VulkanExtension::VulkanExtensionsCount)];
@@ -37,4 +35,4 @@ namespace graphics::vulkan {
 
     void loadVkSupportedExtensionList();
     void updateVkSupportedExtensionListForDevice(internal::PhysicalDevice& physicalDevice);
-} // namespace graphics::vulkan
+} // namespace graphics::vulkan::internal

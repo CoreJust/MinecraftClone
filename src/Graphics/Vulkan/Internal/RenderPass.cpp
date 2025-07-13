@@ -1,15 +1,15 @@
 #include "RenderPass.hpp"
 #include <Core/IO/Logger.hpp>
 #include "Check.hpp"
-#include "Swapchain.hpp"
-#include "Device.hpp"
+#include "Vulkan/Swapchain.hpp"
+#include "Vulkan/Vulkan.hpp"
 #include "../Exception.hpp"
 
 namespace graphics::vulkan::internal {
-    RenderPass::RenderPass(Device& device, Swapchain& swapchain) 
-        : m_device(device.get()) {
+    RenderPass::RenderPass(Vulkan& vulkan) 
+        : m_vulkan(vulkan) {
         VkAttachmentDescription colorAttachment { };
-        colorAttachment.format = swapchain.surfaceFormat().format;
+        colorAttachment.format = m_vulkan.swapchain().surfaceFormat().format;
         colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
         colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
         colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
@@ -27,23 +27,27 @@ namespace graphics::vulkan::internal {
         subpass.colorAttachmentCount = 1;
         subpass.pColorAttachments = &colorAttachmentRef;
 
+        VkSubpassDependency dependency { };
+        dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
+        dependency.dstSubpass = 0;
+        dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+        dependency.srcAccessMask = 0;
+        dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+        dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+
         VkRenderPassCreateInfo renderPassInfo { };
         renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
         renderPassInfo.attachmentCount = 1;
         renderPassInfo.pAttachments = &colorAttachment;
         renderPassInfo.subpassCount = 1;
         renderPassInfo.pSubpasses = &subpass;
+        renderPassInfo.dependencyCount = 1;
+        renderPassInfo.pDependencies = &dependency;
 
-        if (!VK_CHECK(vkCreateRenderPass(device.get(), &renderPassInfo, nullptr, &m_pass))) {
-            core::io::error("Failed to create render pass");
-            throw VulkanException { };
-        }
+        m_pass = m_vulkan.create<vkCreateRenderPass>(&renderPassInfo, nullptr);
     }
 
     RenderPass::~RenderPass() {
-        if (m_pass != VK_NULL_HANDLE) {
-            vkDestroyRenderPass(m_device, m_pass, nullptr);
-            m_pass = VK_NULL_HANDLE;
-        }
+        m_vulkan.destroy<vkDestroyRenderPass>(m_pass, nullptr);
     }
 } // namespace graphics::vulkan::internal

@@ -2,9 +2,9 @@
 
 namespace core::meta {
 	template<class T>
-	struct UnConstTrait { using Type = T; };
+	struct UnConstImpl { using Type = T; };
 	template<class T>
-	struct UnConstTrait<const T> { using Type = T; };
+	struct UnConstImpl<const T> { using Type = T; };
 	template<class T>
-	using UnConst = UnConstTrait<T>::Type;
+	using UnConst = UnConstImpl<T>::Type;
 } // namespace core::meta

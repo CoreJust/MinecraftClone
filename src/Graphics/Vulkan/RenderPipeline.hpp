@@ -1,20 +1,14 @@
 #pragma once
 #include <Core/Macro/Attributes.hpp>
-#include <Core/Memory/UniquePtr.hpp>
 
 namespace graphics::vulkan {
-    namespace internal {
-        class Pipeline;
-    }
-
     // Public interface for a vulkan pipeline.
     class RenderPipeline final {
-        core::memory::UniquePtr<internal::Pipeline> m_impl;
+        size_t m_index;
 
     public:
-        RenderPipeline(core::memory::UniquePtr<internal::Pipeline> impl);
+        RenderPipeline(size_t index) noexcept : m_index(index) { }
 
-        PURE internal::Pipeline      & getImpl()       noexcept { return *m_impl; }
-        PURE internal::Pipeline const& getImpl() const noexcept { return *m_impl; }
+        PURE size_t& getIndex() noexcept { return m_index; }
     };
 } // namespace graphics::vulkan

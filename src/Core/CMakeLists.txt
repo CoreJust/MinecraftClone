@@ -4,7 +4,10 @@ set(LOCAL_SOURCES
     Common/Random.cpp
     Common/Time.cpp
     Common/Timer.cpp
-    Common/Timer.cpp
+    Common/Version.cpp
+    OS/Debug.cpp
+    OS/SignalHandler.cpp
+    IO/Console.cpp
     IO/ConsoleColor.cpp
     IO/File.cpp
     IO/Logger.cpp

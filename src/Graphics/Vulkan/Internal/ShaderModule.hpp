@@ -3,12 +3,14 @@
 #include <Core/Macro/Attributes.hpp>
 
 namespace graphics::vulkan::internal {
+    class Vulkan;
+
     class ShaderModule final {
         VkShaderModule m_shaderModule = VK_NULL_HANDLE;
-        VkDevice m_device = VK_NULL_HANDLE; // Device used to create the shader
+        Vulkan& m_vulkan;
 
     public:
-        ShaderModule(VkDevice device, char const* const path);
+        ShaderModule(Vulkan& vulkan, char const* const path);
         ~ShaderModule();
 
         PURE VkPipelineShaderStageCreateInfo makeCreationInfo(VkShaderStageFlagBits stage) const;

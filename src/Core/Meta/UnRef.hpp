@@ -2,11 +2,11 @@
 
 namespace core::meta {
 	template<class T>
-	struct UnRefTrait { using Type = T; };
+	struct UnRefImpl { using Type = T; };
 	template<class T>
-	struct UnRefTrait<T&> { using Type = T; };
+	struct UnRefImpl<T&> { using Type = T; };
 	template<class T>
-	struct UnRefTrait<T&&> { using Type = T; };
+	struct UnRefImpl<T&&> { using Type = T; };
 	template<class T>
-	using UnRef = UnRefTrait<T>::Type;
+	using UnRef = UnRefImpl<T>::Type;
 } // namespace core::meta

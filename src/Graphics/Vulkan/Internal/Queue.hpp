@@ -6,6 +6,9 @@
 #include "QueueType.hpp"
 
 namespace graphics::vulkan::internal {
+    class CommandBuffer;
+    class Semaphore;
+
     class Queue final {
         VkQueue m_queue = VK_NULL_HANDLE;
 
@@ -16,6 +19,9 @@ namespace graphics::vulkan::internal {
         Queue(const Queue&) noexcept = default;
         Queue& operator=(Queue&&) noexcept = default;
         Queue& operator=(const Queue&) noexcept = default;
+
+        void submit(CommandBuffer& commandBuffer, Semaphore& wait, Semaphore& signal);
+        void waitIdle() const;
 
         PURE VkQueue get() const noexcept { return m_queue; };
     };

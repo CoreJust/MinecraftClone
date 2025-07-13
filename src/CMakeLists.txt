@@ -1,10 +1,10 @@
 set(DEPS
-    RGFW
+    glfw
     Vulkan::Vulkan)
 set(INCLUDES
     ./)
 set(SYSTEM_INCLUDES
-    ${RGFW_INCLUDE})
+    ${GLFW_INCLUDE})
 set(SOURCES
     main.cpp
     Config.cpp

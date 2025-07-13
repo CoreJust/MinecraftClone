@@ -3,15 +3,14 @@
 #include <Core/Macro/Attributes.hpp>
 
 namespace graphics::vulkan::internal {
-    class Swapchain;
-    class Device;
+    class Vulkan;
 
     class RenderPass final {
         VkRenderPass m_pass = VK_NULL_HANDLE;
-        VkDevice m_device = VK_NULL_HANDLE; // Device used to create the pass
+        Vulkan&      m_vulkan;
 
     public:
-        RenderPass(Device& device, Swapchain& swapchain);
+        RenderPass(Vulkan& vulkan);
         ~RenderPass();
 
         PURE VkRenderPass get() const noexcept { return m_pass; }

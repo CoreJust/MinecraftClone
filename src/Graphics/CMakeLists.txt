@@ -1,26 +1,9 @@
 set(LOCAL_SOURCES
+    Vulkan/VulkanManager.cpp
     Vulkan/Version.cpp
-    Vulkan/Layers.cpp
-    Vulkan/Extensions.cpp
-    Vulkan/RenderPipeline.cpp
-    Vulkan/Vulkan.cpp
-    Vulkan/Internal/Check.cpp
-    Vulkan/Internal/Functions.cpp
-    Vulkan/Internal/Instance.cpp
-    Vulkan/Internal/PhysicalDevice.cpp
-    Vulkan/Internal/Device.cpp
-    Vulkan/Internal/QueueFamilies.cpp
-    Vulkan/Internal/Queue.cpp
-    Vulkan/Internal/Surface.cpp
-    Vulkan/Internal/Swapchain.cpp
-    Vulkan/Internal/SwapchainSupport.cpp
-    Vulkan/Internal/ShaderModule.cpp
-    Vulkan/Internal/CommandPool.cpp
-    Vulkan/Internal/RenderPass.cpp
-    Vulkan/Internal/Framebuffers.cpp
-    Vulkan/Internal/Pipeline.cpp
     RenderEngine.cpp
     Window.cpp)
 set(LOCAL_TESTS)
 
+add_subdirectory(Vulkan/Internal)
 SUBMODULE(Graphics)

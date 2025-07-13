@@ -1,12 +1,12 @@
 #pragma once
-#include <vector>
+#include <Core/Collection/DynArray.hpp>
 #include <vulkan/vulkan.h>
 
 namespace graphics::vulkan::internal {
     struct SwapchainSupport final {
-        VkSurfaceCapabilitiesKHR        const capabilities { };
-        std::vector<VkSurfaceFormatKHR> const formats { };
-        std::vector<VkPresentModeKHR>   const presentModes { };
+        VkSurfaceCapabilitiesKHR                       const capabilities { };
+        core::collection::DynArray<VkSurfaceFormatKHR> const formats      { };
+        core::collection::DynArray<VkPresentModeKHR>   const presentModes { };
 
         SwapchainSupport() noexcept = default;
         SwapchainSupport(VkPhysicalDevice device, VkSurfaceKHR surface);

@@ -1,0 +1,24 @@
+set(LOCAL_SOURCES
+    Check.cpp
+    Vulkan/Functions.cpp
+    Vulkan/Layers.cpp
+    Vulkan/Extensions.cpp
+    Vulkan/Instance.cpp
+    Vulkan/Surface.cpp
+    Vulkan/PhysicalDevice.cpp
+    Vulkan/Device.cpp
+    Vulkan/Swapchain.cpp
+    Vulkan/SwapchainSupport.cpp
+    Vulkan/Vulkan.cpp
+    Semaphore.cpp
+    QueueFamilies.cpp
+    Queue.cpp
+    ShaderModule.cpp
+    RenderPass.cpp
+    CommandPool.cpp
+    CommandBuffer.cpp
+    Framebuffers.cpp
+    Pipeline.cpp)
+set(LOCAL_TESTS)
+
+SUBMODULE(Graphics/Vulkan/Internal)

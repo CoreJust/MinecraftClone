@@ -4,16 +4,15 @@
 #include <Core/Collection/DynArray.hpp>
 
 namespace graphics::vulkan::internal {
-    class Device;
-    class Swapchain;
+    class Vulkan;
     class RenderPass;
 
     class Framebuffers final {
         core::collection::DynArray<VkFramebuffer> m_buffers;
-        VkDevice m_device = VK_NULL_HANDLE; // Device used for framebuffers creation
+        Vulkan& m_vulkan;
 
     public:
-        Framebuffers(Device& device, Swapchain& swapchain, RenderPass& renderPass);
+        Framebuffers(Vulkan& vulkan, RenderPass& renderPass);
         ~Framebuffers();
 
         PURE core::collection::DynArray<VkFramebuffer> const& get() const noexcept { return m_buffers; }

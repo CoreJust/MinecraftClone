@@ -1,32 +1,27 @@
 #include "ShaderModule.hpp"
+#include <Resources.hpp>
 #include <Core/IO/Logger.hpp>
 #include <Core/IO/File.hpp>
 #include "Check.hpp"
 #include "../Exception.hpp"
-#include <Resources.hpp>
+#include "Vulkan/Vulkan.hpp"
 
 namespace graphics::vulkan::internal {
-    ShaderModule::ShaderModule(VkDevice device, char const* const path) 
-        : m_device(device) {
+    ShaderModule::ShaderModule(Vulkan& vulkan, char const* const path) 
+        : m_vulkan(vulkan) {
         core::io::info("Loading shader module from {}", path);
-        std::string const source = core::io::readFile(makeShaderPath(path));
-        core::io::debug("Shader source loaded:\n{}\n", source);
+        std::string const spirVSource = core::io::readFile(makeShaderPath(path));
 
-        VkShaderModuleCreateInfo createInfo{};
+        VkShaderModuleCreateInfo createInfo { };
         createInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
-        createInfo.codeSize = source.size();
-        createInfo.pCode = reinterpret_cast<const uint32_t*>(source.data());
-        if (!VK_CHECK(vkCreateShaderModule(device, &createInfo, nullptr, &m_shaderModule))) {
-            core::io::error("Failed to create shader module {}", path);
-            throw VulkanException { };
-        }
+        createInfo.codeSize = spirVSource.size();
+        createInfo.pCode = reinterpret_cast<const uint32_t*>(spirVSource.data());
+
+        m_shaderModule = m_vulkan.create<vkCreateShaderModule>(&createInfo, nullptr);
     }
 
     ShaderModule::~ShaderModule() {
-        if (m_shaderModule != VK_NULL_HANDLE) {
-            vkDestroyShaderModule(m_device, m_shaderModule, nullptr);
-            m_shaderModule = VK_NULL_HANDLE;
-        }
+        m_vulkan.destroy<vkDestroyShaderModule>(m_shaderModule, nullptr);
     }
 
     VkPipelineShaderStageCreateInfo ShaderModule::makeCreationInfo(VkShaderStageFlagBits stage) const {

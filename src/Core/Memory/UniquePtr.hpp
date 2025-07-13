@@ -1,5 +1,6 @@
 #pragma once
 #include "Forward.hpp"
+#include <Core/Common/Assert.hpp>
 
 namespace core::memory {
     template<typename T>
@@ -30,10 +31,10 @@ namespace core::memory {
             }
         }
 
-        constexpr T& operator*() { return *m_data; }
-        constexpr T const& operator*() const { return *m_data; }
-        constexpr T* operator->() { return m_data; }
-        constexpr T const* operator->() const { return m_data; }
+        constexpr T      & operator* ()       { ASSERT(m_data != nullptr, "Dereferencing a null pointer!"); return *m_data; }
+        constexpr T const& operator* () const { ASSERT(m_data != nullptr, "Dereferencing a null pointer!"); return *m_data; }
+        constexpr T      * operator->()       { ASSERT(m_data != nullptr, "Dereferencing a null pointer!"); return  m_data; }
+        constexpr T const* operator->() const { ASSERT(m_data != nullptr, "Dereferencing a null pointer!"); return  m_data; }
         constexpr T* get() noexcept { return m_data; }
         constexpr T const* get() const noexcept { return m_data; }
     };

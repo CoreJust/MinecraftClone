@@ -1,16 +1,15 @@
 #include "Framebuffers.hpp"
 #include <Core/IO/Logger.hpp>
 #include "Check.hpp"
-#include "Device.hpp"
-#include "Swapchain.hpp"
+#include "Vulkan/Vulkan.hpp"
 #include "RenderPass.hpp"
 #include "../Exception.hpp"
 
 namespace graphics::vulkan::internal {
-    Framebuffers::Framebuffers(Device& device, Swapchain& swapchain, RenderPass& renderPass) 
-        : m_buffers(swapchain.imageViews().size(), VK_NULL_HANDLE)
-        , m_device(device.get()) {
-        auto const& imageViews = swapchain.imageViews();
+    Framebuffers::Framebuffers(Vulkan& vulkan, RenderPass& renderPass) 
+        : m_buffers(vulkan.swapchain().imageViews().size(), VK_NULL_HANDLE)
+        , m_vulkan(vulkan) {
+        auto const& imageViews = m_vulkan.swapchain().imageViews();
         for (size_t i = 0; i < imageViews.size(); i++) {
             VkImageView attachments[] = { imageViews[i] };
             VkFramebufferCreateInfo framebufferInfo { };
@@ -18,25 +17,18 @@ namespace graphics::vulkan::internal {
             framebufferInfo.renderPass = renderPass.get();
             framebufferInfo.attachmentCount = 1;
             framebufferInfo.pAttachments = attachments;
-            framebufferInfo.width = swapchain.extent().width;
-            framebufferInfo.height = swapchain.extent().height;
+            framebufferInfo.width  = m_vulkan.swapchain().extent().width;
+            framebufferInfo.height = m_vulkan.swapchain().extent().height;
             framebufferInfo.layers = 1;
 
-            if (!VK_CHECK(vkCreateFramebuffer(m_device, &framebufferInfo, nullptr, &m_buffers[i]))) {
-                core::io::error("Failed to create framebuffers");
-                throw VulkanException { };
-            }
+            m_buffers[i] = m_vulkan.create<vkCreateFramebuffer>(&framebufferInfo, nullptr);
         }
         core::io::info("Created Vulkan framebuffers");
     }
 
     Framebuffers::~Framebuffers() {
-        for (auto& framebuffer : m_buffers) {
-            if (framebuffer != VK_NULL_HANDLE) {
-                vkDestroyFramebuffer(m_device, framebuffer, nullptr);
-                framebuffer = VK_NULL_HANDLE;
-            }
-        }
+        for (auto& framebuffer : m_buffers)
+            m_vulkan.destroy<vkDestroyFramebuffer>(framebuffer, nullptr);
         core::io::info("Destroyed Vulkan framebuffers");
     }
 } // namespace graphics::vulkan::internal

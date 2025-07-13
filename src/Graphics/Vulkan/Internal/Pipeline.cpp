@@ -1,23 +1,23 @@
 #include "Pipeline.hpp"
 #include <Core/IO/Logger.hpp>
 #include "Check.hpp"
-#include "Device.hpp"
-#include "Swapchain.hpp"
+#include "Vulkan/Vulkan.hpp"
+#include "CommandBuffer.hpp"
 #include "ShaderModule.hpp"
 #include "../Exception.hpp"
 
 namespace graphics::vulkan::internal {
 namespace {
-    VkPipelineViewportStateCreateInfo makeViewportStateCreateInfo(Swapchain& swapchain, VkViewport& viewport, VkRect2D& scissor) {
+    VkPipelineViewportStateCreateInfo makeViewportStateCreateInfo(VkExtent2D const& extent, VkViewport& viewport, VkRect2D& scissor) {
         viewport.x = 0.0f;
         viewport.y = 0.0f;
-        viewport.width  = static_cast<float>(swapchain.extent().width);
-        viewport.height = static_cast<float>(swapchain.extent().height);
+        viewport.width  = static_cast<float>(extent.width);
+        viewport.height = static_cast<float>(extent.height);
         viewport.minDepth = 0.0f;
         viewport.maxDepth = 1.0f;
 
         scissor.offset = {0, 0};
-        scissor.extent = swapchain.extent();
+        scissor.extent = extent;
 
         VkPipelineViewportStateCreateInfo viewportState { };
         viewportState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
@@ -29,33 +29,32 @@ namespace {
     }
 } // namespace
 
-    Pipeline::Pipeline(Device& device, Swapchain& swapchain, char const* const vertexShaderPath, char const* const fragmentShaderPath)
-        : m_pass(device, swapchain)
-        , m_framebuffers(device, swapchain, m_pass)
-        , m_device(device.get()) {
-        ShaderModule vertex   { device.get(), vertexShaderPath   ? vertexShaderPath   : "basic.vert" };
-        ShaderModule fragment { device.get(), fragmentShaderPath ? fragmentShaderPath : "basic.frag" };
-        [[maybe_unused]] // Temporary
+    Pipeline::Pipeline(Vulkan& vulkan, PipelineOptions const& options)
+        : m_pass(vulkan)
+        , m_framebuffers(vulkan, m_pass)
+        , m_vulkan(vulkan) {
+        ShaderModule vertex   { m_vulkan, options.vertexShaderPath   ? options.vertexShaderPath   : "basic.vert" };
+        ShaderModule fragment { m_vulkan, options.fragmentShaderPath ? options.fragmentShaderPath : "basic.frag" };
         VkPipelineShaderStageCreateInfo shaderStages[] = {
             vertex  .makeCreationInfo(VK_SHADER_STAGE_VERTEX_BIT),
             fragment.makeCreationInfo(VK_SHADER_STAGE_FRAGMENT_BIT),
         };
 
-        VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
+        VkPipelineVertexInputStateCreateInfo vertexInputInfo { };
         vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
         vertexInputInfo.vertexBindingDescriptionCount = 0;
         vertexInputInfo.pVertexBindingDescriptions = nullptr;
         vertexInputInfo.vertexAttributeDescriptionCount = 0;
         vertexInputInfo.pVertexAttributeDescriptions = nullptr;
 
-        VkPipelineInputAssemblyStateCreateInfo inputAssembly{};
+        VkPipelineInputAssemblyStateCreateInfo inputAssembly { };
         inputAssembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
         inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
         inputAssembly.primitiveRestartEnable = VK_FALSE;
 
         VkViewport viewport { };
         VkRect2D   scissor { };
-        VkPipelineViewportStateCreateInfo viewportState = makeViewportStateCreateInfo(swapchain, viewport, scissor);
+        VkPipelineViewportStateCreateInfo viewportState = makeViewportStateCreateInfo(m_vulkan.swapchain().extent(), viewport, scissor);
 
         VkPipelineRasterizationStateCreateInfo rasterizer { };
         rasterizer.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
@@ -95,10 +94,10 @@ namespace {
         colorBlending.logicOp = VK_LOGIC_OP_COPY;
         colorBlending.attachmentCount = 1;
         colorBlending.pAttachments = &colorBlendAttachment;
-        colorBlending.blendConstants[0] = 0.0f;
-        colorBlending.blendConstants[1] = 0.0f;
-        colorBlending.blendConstants[2] = 0.0f;
-        colorBlending.blendConstants[3] = 0.0f;
+        colorBlending.blendConstants[0] = 0.f;
+        colorBlending.blendConstants[1] = 0.f;
+        colorBlending.blendConstants[2] = 0.f;
+        colorBlending.blendConstants[3] = 0.f;
 
         VkPipelineLayoutCreateInfo pipelineLayoutInfo { };
         pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
@@ -107,10 +106,7 @@ namespace {
         pipelineLayoutInfo.pushConstantRangeCount = 0;
         pipelineLayoutInfo.pPushConstantRanges = nullptr;
 
-        if (!VK_CHECK(vkCreatePipelineLayout(device.get(), &pipelineLayoutInfo, nullptr, &m_layout))) {
-            core::io::error("Failed to create pipeline layout");
-            throw VulkanException { };
-        }
+        m_layout = m_vulkan.create<vkCreatePipelineLayout>(&pipelineLayoutInfo, nullptr);
 
         VkGraphicsPipelineCreateInfo pipelineInfo { };
         pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
@@ -130,23 +126,32 @@ namespace {
         pipelineInfo.basePipelineHandle = VK_NULL_HANDLE;
         pipelineInfo.basePipelineIndex = -1;
 
-        if (!VK_CHECK(vkCreateGraphicsPipelines(m_device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &m_pipeline))) {
-            core::io::error("Failed to create pipeline");
-            throw VulkanException { };
-        }
-
+        m_pipeline = m_vulkan.create<vkCreateGraphicsPipelines>(VK_NULL_HANDLE, 1u, &pipelineInfo, nullptr);
         core::io::info("Created Vulkan pipeline");
     }
 
     Pipeline::~Pipeline() {
-        if (m_pipeline != VK_NULL_HANDLE) {
-            vkDestroyPipeline(m_device, m_pipeline, nullptr);
-            m_pipeline = VK_NULL_HANDLE;
+        if (m_vulkan.destroy<vkDestroyPipeline>(m_pipeline, nullptr))
             core::io::info("Destroyed Vulkan pipeline");
-        }
-        if (m_layout != VK_NULL_HANDLE) {
-            vkDestroyPipelineLayout(m_device, m_layout, nullptr);
-            m_layout = VK_NULL_HANDLE;
-        }
+        m_vulkan.destroy<vkDestroyPipelineLayout>(m_layout, nullptr);
+    }
+
+    void Pipeline::beginRenderPass(CommandBuffer& commandBuffer, uint32_t index) {
+        VkRenderPassBeginInfo renderPassInfo { };
+        renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+        renderPassInfo.renderPass = m_pass.get();
+        renderPassInfo.framebuffer = m_framebuffers.get()[index];
+        renderPassInfo.renderArea.offset = { 0, 0 };
+        renderPassInfo.renderArea.extent = m_vulkan.swapchain().extent();
+
+        VkClearValue clearColor = {{{ 0.f, 0.f, 1.f, 1.f }}};
+        renderPassInfo.clearValueCount = 1;
+        renderPassInfo.pClearValues = &clearColor;
+        vkCmdBeginRenderPass(commandBuffer.get(), &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
+        vkCmdBindPipeline(commandBuffer.get(), VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline);
+    }
+
+    void Pipeline::endRenderPass(CommandBuffer& commandBuffer) {
+        vkCmdEndRenderPass(commandBuffer.get());
     }
 } // namespace graphics::vulkan::internal

@@ -1,18 +1,21 @@
 #pragma once
 #include <vulkan/vulkan.h>
 #include <Core/Macro/Attributes.hpp>
+#include <Core/Collection/ArrayView.hpp>
+#include "CommandBuffer.hpp"
 
 namespace graphics::vulkan::internal {
-    class Device;
-    class QueueFamilies;
+    class Vulkan;
 
     class CommandPool final {
-        VkCommandPool m_pool = VK_NULL_HANDLE;
-        VkDevice m_device = VK_NULL_HANDLE; // Device used for pool creation
+        VkCommandPool m_pool   = VK_NULL_HANDLE;
+        Vulkan&       m_vulkan;
 
     public:
-        CommandPool(Device& device, QueueFamilies const& queueFamilies);
+        CommandPool(Vulkan& vulkan, uint32_t queueIndex);
         ~CommandPool();
+
+        void allocate(core::collection::ArrayView<CommandBuffer> result);
 
         PURE VkCommandPool get() const noexcept { return m_pool; }
     };

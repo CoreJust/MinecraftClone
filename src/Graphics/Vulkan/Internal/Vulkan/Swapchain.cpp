@@ -1,14 +1,16 @@
 #include "Swapchain.hpp"
 #include <Core/IO/Logger.hpp>
-#include "Check.hpp"
 #include "SwapchainSupport.hpp"
-#include "PhysicalDevice.hpp"
-#include "../Exception.hpp"
+#include "Vulkan.hpp"
+#include "../../Exception.hpp"
+#include "../Check.hpp"
+#include "../Queue.hpp"
+#include "../CommandBuffer.hpp"
 
 namespace graphics::vulkan::internal {
 namespace {
-    void makeSwapchainCreateInfo(VkSwapchainCreateInfoKHR& createInfo, PhysicalDevice const& device, VkSurfaceKHR surface, void* window) {
-        SwapchainSupport const& support  = device.swapchainSupport();
+    VkSwapchainCreateInfoKHR makeSwapchainCreateInfo(Vulkan& vulkan, void* window) {
+        SwapchainSupport const& support  = vulkan.physicalDevice().swapchainSupport();
         VkSurfaceFormatKHR surfaceFormat = support.chooseSurfaceFormat();
         VkPresentModeKHR   presentMode   = support.choosePresentMode();
         VkExtent2D         extent        = support.chooseSwapExtent(window);
@@ -16,8 +18,9 @@ namespace {
         if (support.capabilities.maxImageCount > 0 && imageCount > support.capabilities.maxImageCount)
             imageCount = support.capabilities.maxImageCount;
 
+        VkSwapchainCreateInfoKHR createInfo { };
         createInfo.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
-        createInfo.surface = surface;
+        createInfo.surface = vulkan.surface().get();
         createInfo.minImageCount = imageCount;
         createInfo.imageFormat = surfaceFormat.format;
         createInfo.imageColorSpace = surfaceFormat.colorSpace;
@@ -30,49 +33,39 @@ namespace {
         createInfo.clipped = VK_TRUE;
         createInfo.oldSwapchain = VK_NULL_HANDLE;
 
-        static thread_local uint32_t queueFamilyIndices[] = { device.queueFamilies().getIndex(QueueType::Graphics), device.queueFamilies().getIndex(QueueType::Present) };
+        static thread_local uint32_t queueFamilyIndices[] = { vulkan.queueFamilies().getIndex(QueueType::Graphics), vulkan.queueFamilies().getIndex(QueueType::Present) };
         if (queueFamilyIndices[0] != queueFamilyIndices[1]) {
             createInfo.imageSharingMode = VK_SHARING_MODE_CONCURRENT;
             createInfo.queueFamilyIndexCount = 2;
             createInfo.pQueueFamilyIndices = queueFamilyIndices;
         } else {
             createInfo.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
-            createInfo.queueFamilyIndexCount = 0;
-            createInfo.pQueueFamilyIndices = nullptr;
         }
 
         core::io::info(
             "Chosen Vulkan swapchain options:\n\t" \
-            "extent     {}x{}\n\t"                 \
-            "imageCount {}",
+            "extent       {}x{}\n\t"               \
+            "imageCount   {}\n\t"                  \
+            "present mode {}",
             extent.width, extent.height,
-            imageCount);
+            imageCount,
+            (presentMode == VK_PRESENT_MODE_MAILBOX_KHR ? "mailbox" : "fifo"));
+        return createInfo;
     }
 
-    core::collection::DynArray<VkImage> getSwapchainImages(VkDevice device, VkSwapchainKHR swapchain) {
-        core::collection::DynArray<VkImage> result;
-        uint32_t imageCount;
-        if (!VK_CHECK(vkGetSwapchainImagesKHR(device, swapchain, &imageCount, nullptr))) {
-            core::io::fatal("Failed to get swapchain images count");
-            throw VulkanException { };
-        }
-        result.resize(static_cast<size_t>(imageCount));
-        if (!VK_CHECK(vkGetSwapchainImagesKHR(device, swapchain, &imageCount, result.data()))) {
-            core::io::fatal("Failed to get swapchain images");
-            throw VulkanException { };
-        }
-        return result;
+    core::collection::DynArray<VkImage> getSwapchainImages(Vulkan& vulkan, VkSwapchainKHR swapchain) {
+        return vulkan.enumerate<vkGetSwapchainImagesKHR>(swapchain);
     }
 
     core::collection::DynArray<VkImageView> getSwapchainImageViews(
-        VkDevice device, 
+        Vulkan& vulkan, 
         core::collection::DynArray<VkImage> const& images,
         VkSurfaceFormatKHR const& surfaceFormat
     ) {
         core::collection::DynArray<VkImageView> result(images.size());
         auto viewIt = result.begin();
         for (VkImage const& img : images) {
-            VkImageViewCreateInfo createInfo{};
+            VkImageViewCreateInfo createInfo { };
             createInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
             createInfo.image = img;
             createInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
@@ -86,43 +79,73 @@ namespace {
             createInfo.subresourceRange.levelCount = 1;
             createInfo.subresourceRange.baseArrayLayer = 0;
             createInfo.subresourceRange.layerCount = 1;
-            VkImageView& view = *(viewIt++);
-            if (!VK_CHECK(vkCreateImageView(device, &createInfo, nullptr, &view))) {
-                core::io::fatal("Failed to create image views for swapchain");
-                throw VulkanException { };
-            }
+            *(viewIt++) = vulkan.create<vkCreateImageView>(&createInfo, nullptr);
         }
         return result;
     }
 } // namespace
 
 
-    Swapchain::Swapchain(PhysicalDevice const& physicalDevice, VkDevice device, VkSurfaceKHR surface, void* window)
-        : m_device(device)
+    Swapchain::Swapchain(Vulkan& vulkan, void* window)
+        : m_vulkan(vulkan)
+        , m_imageAvailable(m_vulkan)
+        , m_renderingDone(m_vulkan)
     {
         core::io::info("Creating Vulkan swapchain...");
-        VkSwapchainCreateInfoKHR createInfo { };
-        makeSwapchainCreateInfo(createInfo, physicalDevice, surface, window);
+        VkSwapchainCreateInfoKHR createInfo = makeSwapchainCreateInfo(m_vulkan, window);
         m_surfaceFormat.format     = createInfo.imageFormat;
         m_surfaceFormat.colorSpace = createInfo.imageColorSpace;
         m_presentMode              = createInfo.presentMode;
         m_extent                   = createInfo.imageExtent;
         m_imageCount               = createInfo.minImageCount;
-        if (!VK_CHECK(vkCreateSwapchainKHR(device, &createInfo, nullptr, &m_swapchain))) {
-            core::io::fatal("Failed to create swapchain");
-            throw VulkanException { };
-        }
-        m_images = getSwapchainImages(device, m_swapchain);
-        m_imageViews = getSwapchainImageViews(device, m_images, m_surfaceFormat);
+        m_swapchain                = m_vulkan.create<vkCreateSwapchainKHR>(&createInfo, nullptr);
+        QueueMaker queueMaker { m_vulkan.device().get(), m_vulkan.queueFamilies() };
+        m_graphicsQueue = queueMaker.make(internal::QueueType::Graphics);
+        m_presentQueue  = queueMaker.make(internal::QueueType::Present);
+        m_images        = getSwapchainImages(m_vulkan, m_swapchain);
+        m_imageViews    = getSwapchainImageViews(m_vulkan, m_images, m_surfaceFormat);
     }
 
     Swapchain::~Swapchain() {
         if (m_swapchain != VK_NULL_HANDLE) {
             for (VkImageView view : m_imageViews)
-                vkDestroyImageView(m_device, view, nullptr);
-            vkDestroySwapchainKHR(m_device, m_swapchain, nullptr);
-            m_swapchain = VK_NULL_HANDLE;
+                m_vulkan.destroy<vkDestroyImageView>(view, nullptr);
+            m_vulkan.destroy<vkDestroySwapchainKHR>(m_swapchain, nullptr);
             core::io::info("Destroyed Vulkan swapchain");
         }
+    }
+    
+    uint32_t Swapchain::acquireNextFrame() {
+        uint32_t result;
+        if (!m_vulkan.safeCall<vkAcquireNextImageKHR>(m_swapchain, UINT64_MAX, m_imageAvailable.get(), VK_NULL_HANDLE, &result)) {
+            core::io::error("Failed to acquire next frame");
+            return static_cast<uint32_t>(-1);
+        }
+        core::io::trace("Acquired frame {}", result);
+        return result;
+    }
+
+    void Swapchain::submit(CommandBuffer& commandBuffer) {
+        m_graphicsQueue->submit(commandBuffer, m_imageAvailable, m_renderingDone);
+    }
+
+    void Swapchain::present(uint32_t index) {
+        VkSemaphore signalSemaphores[] = { m_renderingDone.get() };
+        VkPresentInfoKHR presentInfo { };
+        presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+        presentInfo.pNext = nullptr;
+        presentInfo.waitSemaphoreCount = 1;
+        presentInfo.pWaitSemaphores = signalSemaphores;
+        presentInfo.swapchainCount = 1;
+        presentInfo.pSwapchains = &m_swapchain;
+        presentInfo.pImageIndices = &index;
+        presentInfo.pResults = nullptr;
+
+        if (!VK_CHECK(vkQueuePresentKHR(m_presentQueue->get(), &presentInfo))) {
+            core::io::error("Failed to present image (index {}) to present queue", index);
+            throw VulkanException { };
+        }
+
+        m_presentQueue->waitIdle();
     }
 } // namespace graphics::vulkan::internal

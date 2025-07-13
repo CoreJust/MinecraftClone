@@ -13,14 +13,13 @@ include(FetchContent)
 include(cmake/submodule.cmake)
 
 ### Options ###
-option(MINECRAFT_CLONE_TESTING "Enable unit tests" ON)
+option(MINECRAFT_CLONE_TESTING "Enable unit tests" OFF)
 if(MINECRAFT_CLONE_TESTING)
     add_compile_definitions(_TEST)
 endif()
-option(MINECRAFT_CLONE_DEBUG "Enable debug" ON)
-if(MINECRAFT_CLONE_TESTING)
+option(MINECRAFT_CLONE_DEBUG "Enable debug" OFF)
+if(MINECRAFT_CLONE_DEBUG)
     add_compile_definitions(_MC_DEBUG)
-    add_compile_options(-g)
 endif()
 
 
@@ -28,15 +27,15 @@ endif()
 # Vulkan
 find_package(Vulkan REQUIRED)
 
-# RGFW
+# GLFW
 FetchContent_Declare(
-    RGFW
-    GIT_REPOSITORY "https://github.com/ColleagueRiley/RGFW"
-    GIT_TAG        1.70
+    GLFW
+    GIT_REPOSITORY "https://github.com/glfw/glfw"
+    GIT_TAG        3.4
 )
-FetchContent_MakeAvailable(RGFW)
-add_library(RGFW INTERFACE)
-set(RGFW_INCLUDE ${PROJECT_SOURCE_DIR}/third_party/rgfw-src)
+FetchContent_MakeAvailable(GLFW)
+#add_subdirectory(third_party/glfw-src)
+set(GLFW_INCLUDE ${PROJECT_SOURCE_DIR}/third_party/glfw-src/include)
 
 
 ### Language Setup ###

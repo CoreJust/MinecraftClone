@@ -1,16 +1,25 @@
 #include "Instance.hpp"
 #include <vector>
 #include <Config.hpp>
+#include <Core/Collection/DynArray.hpp>
 #include <Core/IO/Logger.hpp>
-#include "Check.hpp"
+#include "../../Exception.hpp"
+#include "../Check.hpp"
 #include "Functions.hpp"
-#include "../Version.hpp"
-#include "../Exception.hpp"
-#include "../Layers.hpp"
-#include "../Extensions.hpp"
+#include "Layers.hpp"
+#include "Extensions.hpp"
 
 namespace graphics::vulkan::internal {
 namespace {
+    constexpr ProjectInfo ENGINE_INFO {
+        .name = "Voxel Engine",
+        .version = Version {{ 0, 0, 1, 0 }},
+    };
+    constexpr ProjectInfo DUMMY_APP_INFO {
+        .name = "Dummy",
+        .version = Version {{ 0, 0, 1, 0 }},
+    };
+
     VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(
         VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
         VkDebugUtilsMessageTypeFlagsEXT messageType,
@@ -42,39 +51,47 @@ namespace {
         return VK_FALSE;
     }
 
-    void initDebugUtilsMessengerCreateInfo(VkDebugUtilsMessengerCreateInfoEXT& createInfo) {
-        createInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
-        createInfo.messageSeverity =
-            VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT
-            | VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT
-            | VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT
-            | VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
-        createInfo.messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
-        createInfo.pfnUserCallback = debugCallback;
-        createInfo.pUserData = nullptr;
+    VkDebugUtilsMessengerCreateInfoEXT makeDebugUtilsMessengerCreateInfo() {
+        return {
+            .sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT,
+            .pNext = nullptr,
+            .flags = 0,
+            .messageSeverity =
+                VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT
+                | VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT
+                | VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT
+                | VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT,
+            .messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT,
+            .pfnUserCallback = debugCallback,
+            .pUserData = nullptr,
+        };
     }
 
     void initDebugCallback(VkInstance& instance, VkDebugUtilsMessengerEXT& messenger) {
-        VkDebugUtilsMessengerCreateInfoEXT createInfo { };
-        initDebugUtilsMessengerCreateInfo(createInfo);
-
+        VkDebugUtilsMessengerCreateInfoEXT createInfo = makeDebugUtilsMessengerCreateInfo();
         if (!pvkCreateDebugUtilsMessengerEXT || !VK_CHECK(pvkCreateDebugUtilsMessengerEXT(instance, &createInfo, nullptr, &messenger)))
             core::io::warn("Failed to set Vulkan debug callback");
     }
 
-    void initInstance(VkInstance& instance, char const* const appName, char const** windowRequiredExtensions, uint32_t windowRequiredExtensionsCount, bool& needsDebugCallback) {
+    VkApplicationInfo makeApplicationInfo(ProjectInfo const& appInfo, ProjectInfo const& engineInfo, Version const& vulkanVersion) {
+        return {
+            .sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
+            .pNext = nullptr,
+            .pApplicationName   = appInfo.name,
+            .applicationVersion = appInfo.version.asVk(),
+            .pEngineName        = engineInfo.name,
+            .engineVersion      = engineInfo.version.asVk(),
+            .apiVersion         = vulkanVersion.asVk(),
+        };
+    }
+
+    VkInstance createInstance(VkApplicationInfo const& appInfo, char const** windowRequiredExtensions, uint32_t windowRequiredExtensionsCount, bool& needsDebugCallback) {
+        VkInstance instance = VK_NULL_HANDLE;
         std::vector<char const*> extensions(windowRequiredExtensionsCount);
-        std::copy(windowRequiredExtensions, windowRequiredExtensions + windowRequiredExtensionsCount, extensions.begin());
+        if (windowRequiredExtensions != nullptr)
+            std::copy(windowRequiredExtensions, windowRequiredExtensions + windowRequiredExtensionsCount, extensions.begin());
 
-        VkApplicationInfo appInfo{};
-        appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
-        appInfo.pApplicationName = appName;
-        appInfo.applicationVersion = VK_MAKE_API_VERSION(0, 1, 0, 0);
-        appInfo.pEngineName = "CoreVoxelEngine";
-        appInfo.engineVersion = VK_MAKE_API_VERSION(0, 0, 1, 0);
-        appInfo.apiVersion = getVkVersion().asVk();
-
-        VkInstanceCreateInfo createInfo{};
+        VkInstanceCreateInfo createInfo { };
         createInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
         createInfo.pApplicationInfo = &appInfo;
         createInfo.enabledLayerCount = 0;
@@ -87,7 +104,7 @@ namespace {
                 static char const* LAYER_NAMES[] = { getFullLayerName(VulkanLayer::Validation) };
                 createInfo.enabledLayerCount = 1;
                 createInfo.ppEnabledLayerNames = LAYER_NAMES;
-                initDebugUtilsMessengerCreateInfo(debugUtilsCreateInfo);
+                debugUtilsCreateInfo = makeDebugUtilsMessengerCreateInfo();
                 createInfo.pNext = &debugUtilsCreateInfo;
                 if (hasExtension(VulkanExtension::DebugUtils)) {
                     extensions.push_back(getFullExtensionName(VulkanExtension::DebugUtils));
@@ -97,22 +114,40 @@ namespace {
         }
         createInfo.enabledExtensionCount = static_cast<uint32_t>(extensions.size());
         createInfo.ppEnabledExtensionNames = extensions.data();
-
+        
         if (!VK_CHECK(vkCreateInstance(&createInfo, nullptr, &instance))) {
             core::io::fatal("Failed to create Vulkan instance");
             throw VulkanException { };
         }
+
+        return instance;
     }
 } // namespace
 
-    Instance::Instance(char const* const appName, char const** windowRequiredExtensions, uint32_t windowRequiredExtensionsCount) {
-        core::io::info("Creating Vulkan instance...");
+    Instance::Instance() {
+        core::io::debug("Creating Vulkan temporary instance...");
+        VkApplicationInfo applicationInfo = makeApplicationInfo(DUMMY_APP_INFO, ENGINE_INFO, Version { 0, 1, 0, 0 });
         bool needsDebugCallback;
-        initInstance(m_instance, appName, windowRequiredExtensions, windowRequiredExtensionsCount, needsDebugCallback);
+        m_instance = createInstance(applicationInfo, nullptr, 0, needsDebugCallback);
+        loadVkFunctions(m_instance);
+        if (needsDebugCallback)
+            initDebugCallback(m_instance, m_debugMessenger);
+    }
+
+    Instance::Instance(ProjectInfo const& appInfo, char const** windowRequiredExtensions, uint32_t windowRequiredExtensionsCount) {
+        core::io::debug("Creating Vulkan instance...");
+        VkApplicationInfo applicationInfo = makeApplicationInfo(appInfo, ENGINE_INFO, getVkVersion());
+        bool needsDebugCallback;
+        m_instance = createInstance(applicationInfo, windowRequiredExtensions, windowRequiredExtensionsCount, needsDebugCallback);
         loadVkFunctions(m_instance);
         if (needsDebugCallback)
             initDebugCallback(m_instance, m_debugMessenger);
         core::io::info("Created Vulkan {}.{}.{} instance", getVkVersionMajor(), getVkVersionMinor(), getVkVersionPatch());
+    }
+
+    
+    Instance Instance::makeTemporaryInstance() {
+        return Instance();
     }
 
     Instance::~Instance() {
@@ -124,7 +159,7 @@ namespace {
             }
             vkDestroyInstance(m_instance, nullptr);
             m_instance = VK_NULL_HANDLE;
-            core::io::info("Destroyed Vulkan instance");
+            core::io::debug("Destroyed Vulkan instance");
         }
     }
 } // namespace graphics::vulkan::internal

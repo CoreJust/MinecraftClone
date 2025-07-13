@@ -1,7 +1,7 @@
 #pragma once
-#include "Version.hpp"
+#include "../../Version.hpp"
 
-namespace graphics::vulkan {
+namespace graphics::vulkan::internal {
     enum class VulkanLayer {
         // Debug
         Validation, // VK_LAYER_KHRONOS_validation
@@ -15,4 +15,4 @@ namespace graphics::vulkan {
     char const* getFullLayerName(VulkanLayer layer) noexcept;
 
     void loadVkSupportedLayerList();
-} // namespace graphics::vulkan
+} // namespace graphics::vulkan::internal

@@ -1,22 +1,20 @@
 #include "Version.hpp"
 #include <tuple>
 #include <Core/Common/Assert.hpp>
-#include "Internal/Functions.hpp"
+#include "Internal/Vulkan/Functions.hpp"
+#include "Internal/Vulkan/Instance.hpp"
+#include "Internal/Vulkan/PhysicalDevice.hpp"
 
 namespace graphics::vulkan {
     Version g_vkVersion {};
-
-    bool Version::operator<(Version const& lhs) const noexcept {
-        return std::tie(variant, major, minor, patch) < std::tie(lhs.variant, lhs.major, lhs.minor, lhs.patch);
-    }
     
     Version Version::fromVk(uint32_t vkVersion) noexcept {
-        return {
+        return {{
             .variant = VK_API_VERSION_VARIANT(vkVersion),
             .major   = VK_API_VERSION_MAJOR  (vkVersion),
             .minor   = VK_API_VERSION_MINOR  (vkVersion),
             .patch   = VK_API_VERSION_PATCH  (vkVersion),
-        };
+        }};
     }
 
     uint32_t Version::asVk() const noexcept {
@@ -24,15 +22,15 @@ namespace graphics::vulkan {
     }
 
     void loadVkVersion() {
+        internal::Instance instance = internal::Instance::makeTemporaryInstance();
+        g_vkVersion = internal::PhysicalDevice::getHighestPhysicalDeviceVersion(instance);
+    }
+
+    Version getMaxInstanceVersion() {
         uint32_t apiVersion = VK_MAKE_API_VERSION(0, 1, 0, 0);
         if (internal::pvkEnumerateInstanceVersion)
             internal::pvkEnumerateInstanceVersion(&apiVersion);
-        g_vkVersion = Version::fromVk(apiVersion);
-    }
-
-    void downgradeVkVersion(Version newVersion) {
-        ASSERT(newVersion < g_vkVersion);
-        g_vkVersion = newVersion;
+        return Version::fromVk(apiVersion);
     }
 
     Version const& getVkVersion() {

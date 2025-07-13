@@ -33,11 +33,6 @@ namespace core::memory {
         ::free(m_data);
         reset();
     }
-    
-    void RawMemory::reset() {
-        m_data = nullptr;
-        m_size = 0;
-    }
 
     void RawMemory::copyFrom(RawMemory const& other) {
         ASSERT(other.m_size == m_size);
@@ -61,13 +56,5 @@ namespace core::memory {
     void RawMemory::repeatValue(unsigned char value) {
         ASSERT(m_data != nullptr);
         memset(m_data, value, m_size);
-    }
-
-    RawMemory RawMemory::chunk(size_t from, size_t count) const {
-        if (m_data == nullptr || m_size == 0 || from >= m_size || count == 0)
-            return RawMemory();
-        if (from + count >= m_size)
-            return RawMemory(m_data + from, m_size - from);
-        return RawMemory(m_data + from, count);
     }
 } // namespace core::memory

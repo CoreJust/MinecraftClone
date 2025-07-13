@@ -13,10 +13,10 @@ namespace core::io {
 		Fatal,
 	};
 
-	void setLogLevel(LogLevel level); // Not thread safe, must be called from a single thread at a time
-	LogLevel getLogLevel();
+	void setLogLevel(LogLevel const level) noexcept; // Not thread safe, must be called from a single thread at a time
+	LogLevel getLogLevel() noexcept;
 	void onLoggingEnd();
-	void log(LogLevel level, const std::string& msg);
+	void log(LogLevel const level, std::string const& msg);
 
 	template<class... Args>
 	void trace(std::format_string<Args...> fmt, Args&&... args) {
