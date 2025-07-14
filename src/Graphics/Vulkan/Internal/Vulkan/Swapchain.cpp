@@ -1,5 +1,6 @@
 #include "Swapchain.hpp"
 #include <Core/IO/Logger.hpp>
+#include <Graphics/Window/Window.hpp>
 #include "SwapchainSupport.hpp"
 #include "Vulkan.hpp"
 #include "../../Exception.hpp"
@@ -9,12 +10,12 @@
 
 namespace graphics::vulkan::internal {
 namespace {
-    VkSwapchainCreateInfoKHR makeSwapchainCreateInfo(Vulkan& vulkan, void* window) {
+    VkSwapchainCreateInfoKHR makeSwapchainCreateInfo(Vulkan& vulkan, window::Window& win) {
         SwapchainSupport const& support  = vulkan.physicalDevice().swapchainSupport();
         VkSurfaceFormatKHR surfaceFormat = support.chooseSurfaceFormat();
         VkPresentModeKHR   presentMode   = support.choosePresentMode();
-        VkExtent2D         extent        = support.chooseSwapExtent(window);
-        uint32_t imageCount = support.capabilities.minImageCount + 1;
+        VkExtent2D         extent        = support.chooseSwapExtent(win);
+        u32 imageCount = support.capabilities.minImageCount + 1;
         if (support.capabilities.maxImageCount > 0 && imageCount > support.capabilities.maxImageCount)
             imageCount = support.capabilities.maxImageCount;
 
@@ -33,7 +34,7 @@ namespace {
         createInfo.clipped = VK_TRUE;
         createInfo.oldSwapchain = VK_NULL_HANDLE;
 
-        static thread_local uint32_t queueFamilyIndices[] = { vulkan.queueFamilies().getIndex(QueueType::Graphics), vulkan.queueFamilies().getIndex(QueueType::Present) };
+        static thread_local u32 queueFamilyIndices[] = { vulkan.queueFamilies().getIndex(QueueType::Graphics), vulkan.queueFamilies().getIndex(QueueType::Present) };
         if (queueFamilyIndices[0] != queueFamilyIndices[1]) {
             createInfo.imageSharingMode = VK_SHARING_MODE_CONCURRENT;
             createInfo.queueFamilyIndexCount = 2;
@@ -86,13 +87,13 @@ namespace {
 } // namespace
 
 
-    Swapchain::Swapchain(Vulkan& vulkan, void* window)
+    Swapchain::Swapchain(Vulkan& vulkan, window::Window& win)
         : m_vulkan(vulkan)
         , m_imageAvailable(m_vulkan)
         , m_renderingDone(m_vulkan)
     {
         core::io::info("Creating Vulkan swapchain...");
-        VkSwapchainCreateInfoKHR createInfo = makeSwapchainCreateInfo(m_vulkan, window);
+        VkSwapchainCreateInfoKHR createInfo = makeSwapchainCreateInfo(m_vulkan, win);
         m_surfaceFormat.format     = createInfo.imageFormat;
         m_surfaceFormat.colorSpace = createInfo.imageColorSpace;
         m_presentMode              = createInfo.presentMode;
@@ -115,11 +116,11 @@ namespace {
         }
     }
     
-    uint32_t Swapchain::acquireNextFrame() {
-        uint32_t result;
+    u32 Swapchain::acquireNextFrame() {
+        u32 result;
         if (!m_vulkan.safeCall<vkAcquireNextImageKHR>(m_swapchain, UINT64_MAX, m_imageAvailable.get(), VK_NULL_HANDLE, &result)) {
             core::io::error("Failed to acquire next frame");
-            return static_cast<uint32_t>(-1);
+            return static_cast<u32>(-1);
         }
         core::io::trace("Acquired frame {}", result);
         return result;
@@ -129,7 +130,7 @@ namespace {
         m_graphicsQueue->submit(commandBuffer, m_imageAvailable, m_renderingDone);
     }
 
-    void Swapchain::present(uint32_t index) {
+    void Swapchain::present(u32 index) {
         VkSemaphore signalSemaphores[] = { m_renderingDone.get() };
         VkPresentInfoKHR presentInfo { };
         presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;

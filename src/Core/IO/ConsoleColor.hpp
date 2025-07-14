@@ -1,10 +1,10 @@
 #pragma once
-#include <cstdint>
 #include <ostream>
+#include <Core/Common/Int.hpp>
 
 namespace core::io {
 #ifdef _WIN32
-	enum ConsoleColor : uint8_t {
+	enum ConsoleColor : u8 {
 		Black,
 		Blue,
 		Green,
@@ -23,7 +23,7 @@ namespace core::io {
 		White,
 	};
 #else // Linux
-	enum ConsoleColor : uint8_t {
+	enum ConsoleColor : u8 {
 		Black = 30,
 		Red,
 		Green,

@@ -1,11 +1,15 @@
 #pragma once
-#include <cstdint>
 #include <vector>
-#include <Core/Memory/UniquePtr.hpp>
+#include <Core/Common/Int.hpp>
 #include <Core/Common/Version.hpp>
+#include <Core/Memory/UniquePtr.hpp>
 #include <Core/Collection/DynArray.hpp>
 #include "RenderPipeline.hpp"
 #include "PipelineOptions.hpp"
+
+namespace graphics::window {
+    class Window;
+}
 
 namespace graphics::vulkan {
     namespace internal {
@@ -26,17 +30,11 @@ namespace graphics::vulkan {
         core::memory::UniquePtr<internal::CommandPool> m_commandPool;
         core::collection::DynArray<internal::CommandBuffer> m_commandBuffers;
         std::vector<PipelineNote> m_pipelines;
-        uint32_t m_frameIndex = static_cast<uint32_t>(-1);
+        u32 m_frameIndex = static_cast<u32>(-1);
 
     public:
         VulkanManager() noexcept = default;
-        VulkanManager(
-            void* window,
-            void* surfaceCreator,
-            char const* const appName,
-            core::common::Version const& appVersion,
-            char const** windowRequiredExtensions,
-            uint32_t windowRequiredExtensionsCount);
+        VulkanManager(window::Window& win, core::common::Version const& appVersion);
         VulkanManager(VulkanManager&&) noexcept = delete;
         VulkanManager(VulkanManager const&) noexcept = delete;
         VulkanManager& operator=(VulkanManager&&) noexcept = delete;

@@ -9,7 +9,7 @@
 #include "../Exception.hpp"
 
 namespace graphics::vulkan::internal {
-    Queue::Queue(VkDevice device, uint32_t index) {
+    Queue::Queue(VkDevice device, u32 index) {
         vkGetDeviceQueue(device, index, 0, &m_queue);
     }
 
@@ -45,13 +45,13 @@ namespace graphics::vulkan::internal {
     QueueMaker::QueueMaker(VkDevice device, QueueFamilies const& queueFamilies) 
         : m_device(device)
         , m_queueFamilies(queueFamilies)
-        , m_createdQueues(core::memory::TypeErasedObject::make<std::unordered_map<uint32_t, Queue*>>())
+        , m_createdQueues(core::memory::TypeErasedObject::make<std::unordered_map<u32, Queue*>>())
     { }
         
     core::memory::UniquePtr<Queue> QueueMaker::make(QueueType type) {
         ASSERT(m_queueFamilies.hasFamily(type));
-        auto& map = m_createdQueues.get<std::unordered_map<uint32_t, Queue*>>();
-        uint32_t const index = m_queueFamilies.getIndex(type);
+        auto& map = m_createdQueues.get<std::unordered_map<u32, Queue*>>();
+        u32 const index = m_queueFamilies.getIndex(type);
         if (auto it = map.find(index); it != map.end())
             return core::memory::makeUP<Queue>(*it->second);
         auto result = core::memory::makeUP<Queue>(m_device, index);

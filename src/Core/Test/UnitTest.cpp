@@ -11,24 +11,24 @@ namespace {
 	struct UnitTest {
 		char const* name;
 		char const* file;
-		size_t line;
+		usize line;
 		UnitTestFunction test;
 	};
 
 	constexpr double MAX_ITERATION_TIME_DEVIATION = 0.05;
-	constexpr size_t ITERATION_TIME_ADDITION = 100;
-	constexpr size_t ITERATION_TIME_WINDOW = 4;
-	constexpr size_t ITERATIONS_MAX = 50;
+	constexpr usize ITERATION_TIME_ADDITION = 100;
+	constexpr usize ITERATION_TIME_WINDOW = 4;
+	constexpr usize ITERATIONS_MAX = 50;
 
 	void printTestsFileHeader(UnitTest const& test) {
 		std::cout << io::White << "\n=== Tests file " << test.file << " ===\n";
 	}
 
-	void printTestInfo(UnitTest const& test, size_t const testIndex) {
+	void printTestInfo(UnitTest const& test, usize const testIndex) {
 		std::cout << io::White << "Test[" << testIndex << "] " << test.name << ": \n";
 	}
 
-	void printTestsResults(size_t const successes, size_t const failures, common::Duration const duration) {
+	void printTestsResults(usize const successes, usize const failures, common::Duration const duration) {
 		if (!failures) {
 			std::cout << io::Green << "All " << successes << " tests have passed!" << std::endl;
 		} else if (!successes) {
@@ -54,7 +54,7 @@ namespace {
 		}
 
 		common::Duration minDuration = duration, maxDuration = duration;
-		for (size_t i = g_testIterationDurations.size(); i-- > g_testIterationDurations.size() - ITERATION_TIME_WINDOW;) {
+		for (usize i = g_testIterationDurations.size(); i-- > g_testIterationDurations.size() - ITERATION_TIME_WINDOW;) {
 			common::Duration iterationDuration = g_testIterationDurations[i];
 			if (iterationDuration < minDuration) {
 				minDuration = iterationDuration;
@@ -63,8 +63,8 @@ namespace {
 			}
 		}
 
-		size_t const minNs = minDuration.ns + ITERATION_TIME_ADDITION;
-		size_t const maxNs = maxDuration.ns + ITERATION_TIME_ADDITION;
+		usize const minNs = minDuration.ns + ITERATION_TIME_ADDITION;
+		usize const maxNs = maxDuration.ns + ITERATION_TIME_ADDITION;
 		double const diff = static_cast<double>(maxNs) / static_cast<double>(minNs) - 1.0;
 		return diff < MAX_ITERATION_TIME_DEVIATION;
 	}
@@ -88,7 +88,7 @@ namespace {
 		}
 	}
 
-	bool runUnitTest(UnitTest const& test, size_t const testIndex, bool const shallPrintHeader) {
+	bool runUnitTest(UnitTest const& test, usize const testIndex, bool const shallPrintHeader) {
 		if (shallPrintHeader)
 			printTestsFileHeader(test);
 		printTestInfo(test, testIndex);
@@ -116,8 +116,8 @@ namespace {
 		void runAll() {
 			std::sort(m_unitTests.begin(), m_unitTests.end(), [](auto const& a, auto const& b) { return a.file < b.file; });
 
-			size_t index = 0;
-			size_t successCount = 0;
+			usize index = 0;
+			usize successCount = 0;
 			char const* prevTestFile = nullptr;
 			common::Timer allTestsTimer;
 			for (const auto& test : m_unitTests) {

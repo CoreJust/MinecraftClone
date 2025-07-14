@@ -14,7 +14,7 @@ namespace graphics::vulkan::internal {
 
     public:
         Queue() noexcept = default;
-        Queue(VkDevice device, uint32_t index);
+        Queue(VkDevice device, u32 index);
         Queue(Queue&&) noexcept = default;
         Queue(const Queue&) noexcept = default;
         Queue& operator=(Queue&&) noexcept = default;

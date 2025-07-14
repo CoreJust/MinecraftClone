@@ -14,6 +14,10 @@
 #include "Device.hpp"
 #include "Swapchain.hpp"
 
+namespace graphics::window {
+    class Window;
+}
+
 namespace graphics::vulkan::internal {
     class Vulkan final {
         core::memory::UniquePtr<Instance>       m_instance;
@@ -41,13 +45,7 @@ namespace graphics::vulkan::internal {
         }
 
     public:
-        Vulkan(
-            void* window,
-            void* surfaceCreator,
-            char const* const appName,
-            core::common::Version const& appVersion,
-            char const** windowRequiredExtensions,
-            uint32_t windowRequiredExtensionsCount);
+        Vulkan(window::Window& win, core::common::Version const& appVersion);
         Vulkan(Vulkan&&) noexcept = delete;
         Vulkan(Vulkan const&) noexcept = delete;
         Vulkan& operator=(Vulkan&&) noexcept = delete;
@@ -82,11 +80,11 @@ namespace graphics::vulkan::internal {
         PURE INLINE auto enumerate(auto&&... args) const {
             using T = core::meta::UnPtr<core::meta::LastArgumentOf<decltype(Func)>>;
             using Result = core::collection::DynArray<T>;
-            uint32_t count = 0;
+            u32 count = 0;
             if constexpr (core::meta::IsSame<core::meta::ReturnTypeOf<decltype(Func)>, VkResult>) {
                 if (!VK_CHECK(Func(firstArgumentOf<Func>(), args..., &count, nullptr)) || count == 0)
                     return Result { };
-                Result result(static_cast<size_t>(count));
+                Result result(static_cast<usize>(count));
                 if (!VK_CHECK(Func(firstArgumentOf<Func>(), args..., &count, result.data())))
                     return Result { };
                 return result;
@@ -94,7 +92,7 @@ namespace graphics::vulkan::internal {
                 Func(firstArgumentOf<Func>(), args..., &count, nullptr);
                 if (count == 0)
                     return Result { };
-                Result result(static_cast<size_t>(count));
+                Result result(static_cast<usize>(count));
                 Func(firstArgumentOf<Func>(), args..., &count, result.data());
                 return result;
             }

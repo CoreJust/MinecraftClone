@@ -3,6 +3,6 @@
 
 namespace core::common {
     Time Time::now() {
-        return { static_cast<size_t>(std::chrono::high_resolution_clock::now().time_since_epoch().count()) };
+        return { static_cast<usize>(std::chrono::high_resolution_clock::now().time_since_epoch().count()) };
     }
 } // namespace core::common

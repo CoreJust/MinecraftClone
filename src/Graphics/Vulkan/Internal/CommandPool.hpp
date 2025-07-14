@@ -12,7 +12,7 @@ namespace graphics::vulkan::internal {
         Vulkan&       m_vulkan;
 
     public:
-        CommandPool(Vulkan& vulkan, uint32_t queueIndex);
+        CommandPool(Vulkan& vulkan, u32 queueIndex);
         ~CommandPool();
 
         void allocate(core::collection::ArrayView<CommandBuffer> result);

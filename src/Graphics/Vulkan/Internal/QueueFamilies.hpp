@@ -1,6 +1,7 @@
 #pragma once
 #include <optional>
 #include <Core/Macro/Attributes.hpp>
+#include <Core/Common/Int.hpp>
 #include "QueueType.hpp"
 
 namespace graphics::vulkan::internal {
@@ -8,7 +9,7 @@ namespace graphics::vulkan::internal {
     class PhysicalDevice;
 
     class QueueFamilies final {
-        std::optional<uint32_t> m_indices[static_cast<size_t>(QueueType::QueueTypesCount)];
+        std::optional<u32> m_indices[static_cast<usize>(QueueType::QueueTypesCount)];
 
     public:
         QueueFamilies() noexcept = default;
@@ -18,7 +19,7 @@ namespace graphics::vulkan::internal {
         QueueFamilies& operator=(QueueFamilies const&) noexcept = default;
         QueueFamilies& operator=(QueueFamilies&&) noexcept = default;
 
-        PURE bool     hasFamily(QueueType type) const noexcept { return m_indices[static_cast<size_t>(type)].has_value(); }
-        PURE uint32_t getIndex (QueueType type) const noexcept { return m_indices[static_cast<size_t>(type)].value(); }
+        PURE bool     hasFamily(QueueType type) const noexcept { return m_indices[static_cast<usize>(type)].has_value(); }
+        PURE u32 getIndex (QueueType type) const noexcept { return m_indices[static_cast<usize>(type)].value(); }
     };
 } // namespace graphics::vulkan::internal

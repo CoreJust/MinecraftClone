@@ -8,7 +8,7 @@
 namespace graphics::vulkan {
     Version g_vkVersion {};
     
-    Version Version::fromVk(uint32_t vkVersion) noexcept {
+    Version Version::fromVk(u32 vkVersion) noexcept {
         return {{
             .variant = VK_API_VERSION_VARIANT(vkVersion),
             .major   = VK_API_VERSION_MAJOR  (vkVersion),
@@ -17,7 +17,7 @@ namespace graphics::vulkan {
         }};
     }
 
-    uint32_t Version::asVk() const noexcept {
+    u32 Version::asVk() const noexcept {
         return VK_MAKE_API_VERSION(variant, major, minor, patch);
     }
 
@@ -27,7 +27,7 @@ namespace graphics::vulkan {
     }
 
     Version getMaxInstanceVersion() {
-        uint32_t apiVersion = VK_MAKE_API_VERSION(0, 1, 0, 0);
+        u32 apiVersion = VK_MAKE_API_VERSION(0, 1, 0, 0);
         if (internal::pvkEnumerateInstanceVersion)
             internal::pvkEnumerateInstanceVersion(&apiVersion);
         return Version::fromVk(apiVersion);
@@ -37,15 +37,15 @@ namespace graphics::vulkan {
         return g_vkVersion;
     }
 
-    uint32_t getVkVersionMajor() {
+    u32 getVkVersionMajor() {
         return g_vkVersion.major;
     }
     
-    uint32_t getVkVersionMinor() {
+    u32 getVkVersionMinor() {
         return g_vkVersion.minor;
     }
     
-    uint32_t getVkVersionPatch() {
+    u32 getVkVersionPatch() {
         return g_vkVersion.patch;
     }
 } // namespace graphics::vulkan

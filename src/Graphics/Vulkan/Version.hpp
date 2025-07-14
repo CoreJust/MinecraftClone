@@ -5,8 +5,8 @@ namespace graphics::vulkan {
     struct Version final : public core::common::Version {
         PURE bool operator<(Version const& lhs) const noexcept { return core::common::Version::operator<(lhs); }
 
-        PURE static Version fromVk(uint32_t vkVersion) noexcept;
-        PURE uint32_t asVk() const noexcept;
+        PURE static Version fromVk(u32 vkVersion) noexcept;
+        PURE u32 asVk() const noexcept;
     };
 
     void loadVkVersion();
@@ -14,7 +14,7 @@ namespace graphics::vulkan {
     PURE Version getMaxInstanceVersion(); 
 
     PURE Version const& getVkVersion();
-    PURE uint32_t getVkVersionMajor();
-    PURE uint32_t getVkVersionMinor();
-    PURE uint32_t getVkVersionPatch();
+    PURE u32 getVkVersionMajor();
+    PURE u32 getVkVersionMinor();
+    PURE u32 getVkVersionPatch();
 } // namespace graphics::vulkan

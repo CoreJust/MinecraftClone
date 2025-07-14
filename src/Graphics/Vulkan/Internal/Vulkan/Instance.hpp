@@ -1,6 +1,7 @@
 #pragma once
 #include <vulkan/vulkan.h>
 #include <Core/Macro/Attributes.hpp>
+#include <Core/Collection/ArrayView.hpp>
 #include <Graphics/Vulkan/Version.hpp>
 
 namespace graphics::vulkan::internal {
@@ -15,7 +16,7 @@ namespace graphics::vulkan::internal {
 
         Instance();
     public:
-        Instance(ProjectInfo const& appInfo, char const** windowRequiredExtensions, uint32_t windowRequiredExtensionsCount);
+        Instance(ProjectInfo const& appInfo, core::collection::ArrayView<char const*> requiredExtensions);
         Instance(Instance&&) noexcept = delete;
         Instance(const Instance&) noexcept = delete;
         Instance& operator=(Instance&&) noexcept = delete;

@@ -15,7 +15,7 @@ namespace graphics::vulkan::internal {
         VkShaderModuleCreateInfo createInfo { };
         createInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
         createInfo.codeSize = spirVSource.size();
-        createInfo.pCode = reinterpret_cast<const uint32_t*>(spirVSource.data());
+        createInfo.pCode = reinterpret_cast<const u32*>(spirVSource.data());
 
         m_shaderModule = m_vulkan.create<vkCreateShaderModule>(&createInfo, nullptr);
     }

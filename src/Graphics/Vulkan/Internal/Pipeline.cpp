@@ -136,7 +136,7 @@ namespace {
         m_vulkan.destroy<vkDestroyPipelineLayout>(m_layout, nullptr);
     }
 
-    void Pipeline::beginRenderPass(CommandBuffer& commandBuffer, uint32_t index) {
+    void Pipeline::beginRenderPass(CommandBuffer& commandBuffer, u32 index) {
         VkRenderPassBeginInfo renderPassInfo { };
         renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
         renderPassInfo.renderPass = m_pass.get();

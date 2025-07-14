@@ -6,7 +6,7 @@
 #include "OutOfMemoryException.hpp"
 
 namespace core::memory {
-    RawMemory RawMemory::alloc(size_t size) {
+    RawMemory RawMemory::alloc(usize size) {
         unsigned char* data = reinterpret_cast<unsigned char*>(malloc(size));
         if (!data) {
             core::io::error("Malloc({}) returned nullptr; Probably, out of memory", size);
@@ -15,7 +15,7 @@ namespace core::memory {
         return RawMemory(data, size);
     }
 
-    void RawMemory::resize(size_t newSize) {
+    void RawMemory::resize(usize newSize) {
         if (m_size == newSize)
             return;
         unsigned char* data = reinterpret_cast<unsigned char*>(realloc(m_data, newSize));
@@ -50,7 +50,7 @@ namespace core::memory {
             dest += value.m_size;
         }
         if (dest < end)
-            memcpy(dest, src, static_cast<size_t>(dest - end));
+            memcpy(dest, src, static_cast<usize>(dest - end));
     }
 
     void RawMemory::repeatValue(unsigned char value) {

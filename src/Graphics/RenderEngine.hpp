@@ -1,10 +1,11 @@
 #pragma once
 #include <Core/Memory/UniquePtr.hpp>
-#include "Window.hpp"
+#include "Window/Window.hpp"
+#include "Vulkan/VulkanManager.hpp"
 
 namespace graphics {
     class RenderEngine final {
-        Window m_window;
+        window::Window m_window;
         core::memory::UniquePtr<vulkan::VulkanManager> m_vulkanManager;
         vulkan::RenderPipeline m_pipeline;
 

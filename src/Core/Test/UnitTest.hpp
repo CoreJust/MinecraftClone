@@ -14,7 +14,7 @@ namespace core::test {
 	struct UnitTestNote final { 
 		char const* const name;
 		char const* const file;
-		size_t line;
+		usize line;
 	};
 
 	struct UnitTestHelper final {

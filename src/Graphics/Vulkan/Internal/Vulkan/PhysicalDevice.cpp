@@ -6,7 +6,7 @@
 
 namespace graphics::vulkan::internal {
 namespace {
-    uint64_t evaluateDevice(PhysicalDevice& d) {
+    u64 evaluateDevice(PhysicalDevice& d) {
         if (!d.queueFamilies().hasFamily(QueueType::Graphics)
             || !d.queueFamilies().hasFamily(QueueType::Present)
             || !d.extensions().hasExtension(VulkanExtension::Swapchain)
@@ -29,7 +29,7 @@ namespace {
     }
         
     Version PhysicalDevice::getHighestPhysicalDeviceVersion(Instance& instance) noexcept {
-        uint32_t deviceCount = 0;
+        u32 deviceCount = 0;
         vkEnumeratePhysicalDevices(instance.get(), &deviceCount, nullptr);
         if (deviceCount == 0)
             return { };
@@ -50,7 +50,7 @@ namespace {
 
     core::collection::DynArray<core::memory::UniquePtr<PhysicalDevice>> PhysicalDevice::getPhysicalDevices(Vulkan& vulkan) noexcept {
         core::collection::DynArray<VkPhysicalDevice> devices = vulkan.enumerate<vkEnumeratePhysicalDevices>();
-        return { devices.size(), [&](size_t i) { 
+        return { devices.size(), [&](usize i) { 
             return core::memory::makeUP<PhysicalDevice>(devices[i], vulkan.surface(), PassKey { });
         }};
     }
@@ -64,7 +64,7 @@ namespace {
             throw VulkanException { };
         }
 
-        uint64_t bestScore = 0;
+        u64 bestScore = 0;
         for (auto& d : devices) {
             Version apiVersion = Version::fromVk(d->props().apiVersion);
             core::io::info(
@@ -72,7 +72,7 @@ namespace {
                 d->props().deviceName,
                 d->props().deviceID,
                 apiVersion.major, apiVersion.minor, apiVersion.patch);
-            uint64_t const score = evaluateDevice(*d);
+            u64 const score = evaluateDevice(*d);
             if (score == 0)
                 continue; // Not suitable
             if (!result || score > bestScore) {

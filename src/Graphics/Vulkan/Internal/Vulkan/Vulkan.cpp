@@ -1,6 +1,7 @@
 #include "Vulkan.hpp"
 #include <Core/Common/Assert.hpp>
 #include <Core/IO/Logger.hpp>
+#include <Graphics/Window/Window.hpp>
 #include "../../Version.hpp"
 #include "../../Exception.hpp"
 #include "Layers.hpp"
@@ -8,26 +9,18 @@
 #include "Functions.hpp"
 
 namespace graphics::vulkan::internal {
-    Vulkan::Vulkan(
-        void* window,
-        void* surfaceCreator,
-        char const* const appName,
-        core::common::Version const& appVersion,
-        char const** windowRequiredExtensions,
-        uint32_t windowRequiredExtensionsCount
-    ) {
-        ASSERT(window, "WIndow is null");
+    Vulkan::Vulkan(window::Window& win, core::common::Version const& appVersion) {
         loadInstancelessVkFunctions();
         loadVkSupportedLayerList();
         loadVkSupportedExtensionList();
         loadVkVersion();
 
-        m_instance       = core::memory::makeUP<Instance>(ProjectInfo { appName, { appVersion } }, windowRequiredExtensions, windowRequiredExtensionsCount);
-        m_surface        = core::memory::makeUP<Surface>(window, surfaceCreator, *m_instance);
+        m_instance       = core::memory::makeUP<Instance>(ProjectInfo { win.name(), { appVersion } }, win.getRequiredExtensions());
+        m_surface        = core::memory::makeUP<Surface>(win, *m_instance);
         m_physicalDevice = PhysicalDevice::choosePhysicalDevice(*this);
         updateVkSupportedExtensionListForDevice(*m_physicalDevice);
         m_device         = core::memory::makeUP<Device>(*m_physicalDevice);
-        m_swapchain      = core::memory::makeUP<internal::Swapchain>(*this, window);
+        m_swapchain      = core::memory::makeUP<internal::Swapchain>(*this, win);
     }
 
     Vulkan::~Vulkan() = default;

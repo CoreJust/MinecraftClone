@@ -1,6 +1,7 @@
 #pragma once
 #include <string>
 #include <unordered_map>
+#include <Core/Common/Int.hpp>
 #include "Logger.hpp"
 
 namespace core::io {
@@ -10,7 +11,7 @@ namespace core::io {
         ArgumentParser(int argc, char** argv) {
             for (int i = 0; i < argc; ++i) {
                 std::string arg = argv[i];
-                size_t eqPos = arg.find('=', 1ull);
+                usize eqPos = arg.find('=', 1ull);
                 if (eqPos == std::string::npos) {
                     m_arguments[arg] = "";
                 } else {

@@ -14,17 +14,17 @@ namespace graphics::vulkan::internal {
             VK_QUEUE_TRANSFER_BIT,
             VK_QUEUE_FLAG_BITS_MAX_ENUM,
         };
-        return VK_QUEUES[static_cast<size_t>(type)];
+        return VK_QUEUES[static_cast<usize>(type)];
     }
 
     QueueFamilies::QueueFamilies(PhysicalDevice const& device, Surface const& surface) : QueueFamilies() {
-        uint32_t count = 0;
+        u32 count = 0;
         vkGetPhysicalDeviceQueueFamilyProperties(device.get(), &count, nullptr);
 
         core::collection::DynArray<VkQueueFamilyProperties> queueFamilies(count);
         vkGetPhysicalDeviceQueueFamilyProperties(device.get(), &count, queueFamilies.data());
 
-        uint32_t queueIndex = 0;
+        u32 queueIndex = 0;
         for (VkQueueFamilyProperties const& props : queueFamilies) {
             for (int i = 0; i < static_cast<int>(QueueType::QueueTypesCount); ++i) {
                 if (m_indices[i])

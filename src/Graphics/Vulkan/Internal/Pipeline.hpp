@@ -21,7 +21,7 @@ namespace graphics::vulkan::internal {
         Pipeline(Vulkan& vulkan, PipelineOptions const& options);
         ~Pipeline();
 
-        void beginRenderPass(CommandBuffer& commandBuffer, uint32_t index);
+        void beginRenderPass(CommandBuffer& commandBuffer, u32 index);
         void endRenderPass(CommandBuffer& frame);
 
         PURE VkPipeline get() const noexcept { return m_pipeline; }

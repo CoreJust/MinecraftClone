@@ -15,20 +15,20 @@ namespace graphics::vulkan::internal {
     }
     
     SupportedExtensions::SupportedExtensions(internal::PhysicalDevice& physicalDevice) : SupportedExtensions() {
-        uint32_t extensionCount = 0;
+        u32 extensionCount = 0;
         vkEnumerateDeviceExtensionProperties(physicalDevice.get(), nullptr, &extensionCount, nullptr);
 
         std::vector<VkExtensionProperties> extensions(extensionCount);
         vkEnumerateDeviceExtensionProperties(physicalDevice.get(), nullptr, &extensionCount, extensions.data());
 
-        std::unordered_map<std::string, uint32_t> extensionVersions;
+        std::unordered_map<std::string, u32> extensionVersions;
         for (const VkExtensionProperties& ext : extensions)
             extensionVersions[ext.extensionName] = ext.specVersion;
 
         for (int i = 0; i < static_cast<int>(VulkanExtension::VulkanExtensionsCount); ++i) {
             VulkanExtension ext = static_cast<VulkanExtension>(i);
             if (auto it = extensionVersions.find(getFullExtensionName(ext)); it != extensionVersions.end())
-                versions[static_cast<size_t>(ext)] = Version::fromVk(it->second);
+                versions[static_cast<usize>(ext)] = Version::fromVk(it->second);
         }
     }
 
@@ -37,7 +37,7 @@ namespace graphics::vulkan::internal {
     }
 
     Version SupportedExtensions::getExtensionVersion(VulkanExtension ext) const noexcept {
-        return versions[static_cast<size_t>(ext)];
+        return versions[static_cast<usize>(ext)];
     }
 
     bool hasExtension(VulkanExtension ext) noexcept {
@@ -55,19 +55,19 @@ namespace graphics::vulkan::internal {
             "VK_EXT_debug_utils",
             "VK_EXT_memory_budget",
         };
-        return EXTENSION_NAMES[static_cast<size_t>(ext)];
+        return EXTENSION_NAMES[static_cast<usize>(ext)];
     }
 
     void loadVkSupportedExtensionList() {
         core::io::info("Loading supported Vulkan extensions list...");
-        uint32_t extensionCount = 0;
+        u32 extensionCount = 0;
         vkEnumerateInstanceExtensionProperties(nullptr, &extensionCount, nullptr);
 
         std::vector<VkExtensionProperties> extensions(extensionCount);
         vkEnumerateInstanceExtensionProperties(nullptr, &extensionCount, extensions.data());
 
         std::string extensionsMessage;
-        std::unordered_map<std::string, uint32_t> extensionVersions;
+        std::unordered_map<std::string, u32> extensionVersions;
         for (const VkExtensionProperties& ext : extensions) {
             extensionsMessage += std::format("\t{:40} v{}\n", ext.extensionName, ext.specVersion);
             extensionVersions[ext.extensionName] = ext.specVersion;
@@ -78,7 +78,7 @@ namespace graphics::vulkan::internal {
         for (int i = 0; i < static_cast<int>(VulkanExtension::VulkanExtensionsCount); ++i) {
             VulkanExtension ext = static_cast<VulkanExtension>(i);
             if (auto it = extensionVersions.find(getFullExtensionName(ext)); it != extensionVersions.end())
-                g_supportedExtensions.versions[static_cast<size_t>(ext)] = Version::fromVk(it->second);
+                g_supportedExtensions.versions[static_cast<usize>(ext)] = Version::fromVk(it->second);
         }
     }
 

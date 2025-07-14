@@ -16,15 +16,15 @@ namespace core::collection {
             m_data = memory::exchange(other.m_data, ArrayView<T> { });
             return *this;
         }
-        DynArray(size_t size, T const& defaultValue = T { })
+        DynArray(usize size, T const& defaultValue = T { })
             : m_data(memory::RawMemory::alloc(size * sizeof(T))) {
             for (auto& item : m_data)
                 ::new(&item) T { defaultValue };
         }
-        DynArray(size_t size, auto&& func)
-            requires requires(size_t i) { { func(i) } -> meta::IsSame<T>; }
+        DynArray(usize size, auto&& func)
+            requires requires(usize i) { { func(i) } -> meta::IsSame<T>; }
             : m_data(memory::RawMemory::alloc(size * sizeof(T))) {
-            size_t i = 0;
+            usize i = 0;
             for (auto& item : m_data)
                 ::new(&item) T { func(i++) };
         }
@@ -40,9 +40,9 @@ namespace core::collection {
 
         PURE constexpr operator ArrayView<T>() const noexcept { return m_data; }
 
-        PURE constexpr auto&& operator[](this auto&& self, size_t idx) { return self.m_data[idx]; }
+        PURE constexpr auto&& operator[](this auto&& self, usize idx) { return self.m_data[idx]; }
 
-        void resize(size_t newSize) {
+        void resize(usize newSize) {
             m_data.rawMemory().resize(newSize * sizeof(T));
         }
 
@@ -51,7 +51,7 @@ namespace core::collection {
         PURE constexpr auto end(this auto&& self) noexcept { return self.m_data.end(); }
         PURE constexpr T const* cend() const noexcept { return m_data.cend(); }
 
-        PURE constexpr size_t size() const noexcept { return m_data.size(); }
+        PURE constexpr usize size() const noexcept { return m_data.size(); }
         PURE constexpr auto data(this auto&& self) noexcept { return self.m_data.data(); }
 
         PURE constexpr auto&& arrayView(this auto&& self) noexcept { return self.m_data; }

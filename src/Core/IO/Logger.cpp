@@ -31,15 +31,15 @@ namespace core::io {
 		auto const now = common::Timer::global().elapsed();
 		if (level == LogLevel::Fatal) {
 			std::osyncstream(std::clog) 
-				<< Foreground { LOG_LEVEL_FOREGROUND_COLOR[static_cast<size_t>(level)] } 
-				<< Background { LOG_LEVEL_BACKGROUND_COLOR[static_cast<size_t>(level)] } 
-				<< "[" << common::durationToString(now) << LOG_LEVEL_STR[static_cast<size_t>(level)] << msg
+				<< Foreground { LOG_LEVEL_FOREGROUND_COLOR[static_cast<usize>(level)] } 
+				<< Background { LOG_LEVEL_BACKGROUND_COLOR[static_cast<usize>(level)] } 
+				<< "[" << common::durationToString(now) << LOG_LEVEL_STR[static_cast<usize>(level)] << msg
 				<< "\nStacktrace: \n" << std::stacktrace::current() << std::endl;
 		} else {
 			std::osyncstream(std::clog) 
-				<< Foreground { LOG_LEVEL_FOREGROUND_COLOR[static_cast<size_t>(level)] } 
-				<< Background { LOG_LEVEL_BACKGROUND_COLOR[static_cast<size_t>(level)] } 
-				<< "[" << common::durationToString(now) << LOG_LEVEL_STR[static_cast<size_t>(level)] << msg << std::endl;
+				<< Foreground { LOG_LEVEL_FOREGROUND_COLOR[static_cast<usize>(level)] } 
+				<< Background { LOG_LEVEL_BACKGROUND_COLOR[static_cast<usize>(level)] } 
+				<< "[" << common::durationToString(now) << LOG_LEVEL_STR[static_cast<usize>(level)] << msg << std::endl;
 		}
 	}
 } // namespace core::io

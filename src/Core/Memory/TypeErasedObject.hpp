@@ -9,10 +9,10 @@ namespace core::memory {
 
 		void* m_data = nullptr;
 		Deleter m_deleter = nullptr;
-		size_t m_typeHashCode = 0;
+		usize m_typeHashCode = 0;
 
 	private:
-		TypeErasedObject(void* data, Deleter deleter, size_t typeHashCode) noexcept;
+		TypeErasedObject(void* data, Deleter deleter, usize typeHashCode) noexcept;
 
 	public:
 		TypeErasedObject() = default;

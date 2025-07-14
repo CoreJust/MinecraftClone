@@ -2,8 +2,8 @@
 
 namespace graphics {
     RenderEngine::RenderEngine(char const* const name, core::common::Version const& appVersion) 
-        : m_window(name, 0, 0)
-        , m_vulkanManager(m_window.createVulkanManager(appVersion))
+        : m_window(name)
+        , m_vulkanManager(core::memory::makeUP<vulkan::VulkanManager>(m_window, appVersion))
         , m_pipeline(m_vulkanManager->createPipeline({ "basic.vert", "basic.frag" }))
     { }
 

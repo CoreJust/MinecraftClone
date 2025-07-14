@@ -1,7 +1,7 @@
 #include "TypeErasedObject.hpp"
 
 namespace core::memory {
-	TypeErasedObject::TypeErasedObject(void* data, Deleter deleter, size_t typeHashCode) noexcept
+	TypeErasedObject::TypeErasedObject(void* data, Deleter deleter, usize typeHashCode) noexcept
 		: m_data(data), m_deleter(deleter), m_typeHashCode(typeHashCode) { }
 
 	TypeErasedObject::TypeErasedObject(TypeErasedObject&& other) noexcept

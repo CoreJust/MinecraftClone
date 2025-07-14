@@ -20,7 +20,7 @@ namespace graphics::vulkan::internal {
     class PhysicalDevice;
 
     struct SupportedExtensions final {
-        Version versions[static_cast<size_t>(VulkanExtension::VulkanExtensionsCount)];
+        Version versions[static_cast<usize>(VulkanExtension::VulkanExtensionsCount)];
 
         SupportedExtensions() noexcept;
         SupportedExtensions(internal::PhysicalDevice& physicalDevice);

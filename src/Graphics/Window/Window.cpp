@@ -1,0 +1,100 @@
+#include "Window.hpp"
+#include <vulkan/vulkan.h>
+#include <GLFW/glfw3.h>
+#include <Core/Common/Assert.hpp>
+#include <Core/IO/Logger.hpp>
+#include "Keyboard.hpp"
+#include "WindowException.hpp"
+
+namespace graphics::window {
+namespace {
+    void errorCallback(int const code, char const* const description) {
+        core::io::error("GLFW error (code {}): {}", code, description);
+    }
+
+    void* createWindow(char const* const name, int& width, int& height) {
+        if (!glfwInit()) {
+            core::io::fatal("Failed to initialize GLFW");
+            throw WindowException { };
+        }
+        glfwSetErrorCallback(errorCallback);
+        glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
+        glfwWindowHint(GLFW_RESIZABLE,  GLFW_FALSE);
+        GLFWmonitor* monitor = glfwGetPrimaryMonitor();
+        const GLFWvidmode* mode = glfwGetVideoMode(monitor);
+        glfwWindowHint(GLFW_RED_BITS,     mode->redBits);
+        glfwWindowHint(GLFW_GREEN_BITS,   mode->greenBits);
+        glfwWindowHint(GLFW_BLUE_BITS,    mode->blueBits);
+        glfwWindowHint(GLFW_REFRESH_RATE, mode->refreshRate);
+        if (width <= 0 || height <= 0) {
+            width  = mode->width;
+            height = mode->height;
+            core::io::info("Setting full-screen window mode: {}x{}", width, height);
+        }
+        GLFWwindow* window = glfwCreateWindow(width, height, name, monitor, nullptr);
+        if (!window) {
+            core::io::fatal("Failed to create a window");
+            throw WindowException { };
+        }
+        glfwSetKeyCallback(window, reinterpret_cast<GLFWkeyfun>(keyCallback));
+        core::io::info(
+            "Created window:\n\t"   \
+            "Title:      {}\n\t"    \
+            "Size:       {}x{}\n\t" \
+            "Red bits:   {}\n\t"    \
+            "Green bits: {}\n\t"    \
+            "Blue bits:  {}\n\t"    \
+            "Refresh rate: {}",
+            name,
+            width, height,
+            mode->redBits,
+            mode->greenBits,
+            mode->blueBits,
+            mode->refreshRate);
+        return reinterpret_cast<void*>(window);
+    }
+} // namespace
+
+
+    Window::Window(char const* const name, int width, int height)
+        : m_window(createWindow(name, width, height))
+        , m_name(name)
+    { }
+
+    Window::~Window() {
+        if (m_window != nullptr) {
+            glfwDestroyWindow(reinterpret_cast<GLFWwindow*>(m_window));
+            glfwTerminate();
+            m_window = nullptr;
+            core::io::info("The window was closed");
+        }
+    }
+
+    bool Window::nextFrame() {
+        ASSERT(m_window != nullptr, "Cannot acquire next frame: no GLFW window found!");
+        GLFWwindow* window = reinterpret_cast<GLFWwindow*>(m_window);
+        if (glfwWindowShouldClose(window))
+            return false;
+        glfwPollEvents();
+        return true;
+    }
+
+    void* Window::getSurfaceCreateCallback() const noexcept {
+        return reinterpret_cast<void*>(&glfwCreateWindowSurface);
+    }
+    
+    core::collection::ArrayView<char const*> Window::getRequiredExtensions() const {
+        u32 glfwExtensionsCount;
+        char const** glfwVkExtensions = glfwGetRequiredInstanceExtensions(&glfwExtensionsCount);
+        return core::collection::ArrayView<char const*> { glfwVkExtensions, glfwExtensionsCount };
+    }
+
+    core::math::Vec2u32 Window::pixelSize() const noexcept {
+        int width, height;
+        glfwGetFramebufferSize(reinterpret_cast<GLFWwindow*>(m_window), &width, &height);
+        return {{
+            width  < 0 ? 0 : static_cast<u32>(width),
+            height < 0 ? 0 : static_cast<u32>(height),
+        }};
+    }
+} // namespace graphics::window

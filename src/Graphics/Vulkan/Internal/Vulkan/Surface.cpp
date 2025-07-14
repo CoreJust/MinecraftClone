@@ -1,14 +1,16 @@
 #include "Surface.hpp"
 #include <Core/Common/Assert.hpp>
 #include <Core/IO/Logger.hpp>
+#include <Graphics/Window/Window.hpp>
 #include "../Check.hpp"
 #include "../../Exception.hpp"
 
 namespace graphics::vulkan::internal {
-    Surface::Surface(void* window, void* surfaceCreator, Instance& instance) : m_instance(instance.get()) {
+    Surface::Surface(window::Window& win, Instance& instance)
+        : m_instance(instance.get()) {
         core::io::info("Creating Vulkan surface...");
-        auto createVkSurface = reinterpret_cast<VkResult(*)(VkInstance, void*, const VkAllocationCallbacks*, VkSurfaceKHR*)>(surfaceCreator);
-        if (!VK_CHECK(createVkSurface(m_instance, window, nullptr, &m_surface))) {
+        auto createVkSurface = reinterpret_cast<VkResult(*)(VkInstance, void*, const VkAllocationCallbacks*, VkSurfaceKHR*)>(win.getSurfaceCreateCallback());
+        if (!VK_CHECK(createVkSurface(m_instance, win.windowImpl(), nullptr, &m_surface))) {
             core::io::fatal("Failed to create Vulkan surface");
             throw VulkanException { };
         }
@@ -22,7 +24,7 @@ namespace graphics::vulkan::internal {
         }
     }
 
-    bool Surface::isSupportedOn(VkPhysicalDevice physicalDevice, uint32_t queueIndex) const {
+    bool Surface::isSupportedOn(VkPhysicalDevice physicalDevice, u32 queueIndex) const {
         ASSERT(m_surface != VK_NULL_HANDLE);
         VkBool32 result = false;
         if (!VK_CHECK(vkGetPhysicalDeviceSurfaceSupportKHR(physicalDevice, queueIndex, m_surface, &result)))

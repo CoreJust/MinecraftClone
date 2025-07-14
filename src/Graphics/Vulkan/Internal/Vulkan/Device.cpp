@@ -13,10 +13,10 @@ namespace {
         static float const ONE = 1.f;
 
         std::vector<VkDeviceQueueCreateInfo> result;
-        std::unordered_set<uint32_t> addedIndices;
+        std::unordered_set<u32> addedIndices;
         for (QueueType type : REQUIRED_TYPES) {
             ASSERT(queueFamilies.hasFamily(type));
-            uint32_t index = queueFamilies.getIndex(type);
+            u32 index = queueFamilies.getIndex(type);
             if (addedIndices.contains(index))
                 continue;
             addedIndices.insert(index);
@@ -51,9 +51,9 @@ namespace {
         VkDeviceCreateInfo createInfo { };
         createInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
         createInfo.pQueueCreateInfos = queueCreateInfos.data();
-        createInfo.queueCreateInfoCount = static_cast<uint32_t>(queueCreateInfos.size());
+        createInfo.queueCreateInfoCount = static_cast<u32>(queueCreateInfos.size());
         createInfo.pEnabledFeatures = &deviceFeatures;
-        createInfo.enabledExtensionCount = static_cast<uint32_t>(deviceExtensions.size());
+        createInfo.enabledExtensionCount = static_cast<u32>(deviceExtensions.size());
         createInfo.ppEnabledExtensionNames = deviceExtensions.data();
 
         if (!VK_CHECK(vkCreateDevice(physicalDevice.get(), &createInfo, nullptr, &device))) {

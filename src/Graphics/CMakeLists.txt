@@ -1,8 +1,9 @@
 set(LOCAL_SOURCES
+    Window/Window.cpp
+    Window/Keyboard.cpp
     Vulkan/VulkanManager.cpp
     Vulkan/Version.cpp
-    RenderEngine.cpp
-    Window.cpp)
+    RenderEngine.cpp)
 set(LOCAL_TESTS)
 
 add_subdirectory(Vulkan/Internal)

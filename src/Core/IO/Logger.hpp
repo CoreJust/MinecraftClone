@@ -2,9 +2,10 @@
 #include <string>
 #include <string_view>
 #include <format>
+#include <Core/Common/Int.hpp>
 
 namespace core::io {
-	enum class LogLevel : uint8_t {
+	enum class LogLevel : u8 {
 		Trace,
 		Debug,
 		Info,

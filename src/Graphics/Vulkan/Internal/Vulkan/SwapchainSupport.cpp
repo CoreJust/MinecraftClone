@@ -1,7 +1,7 @@
 #include "SwapchainSupport.hpp"
 #include <algorithm>
-#include <GLFW/glfw3.h>
 #include <Core/Common/Assert.hpp>
+#include <Graphics/Window/Window.hpp>
 
 namespace graphics::vulkan::internal {
 namespace {
@@ -12,7 +12,7 @@ namespace {
     }
 
     core::collection::DynArray<VkSurfaceFormatKHR> getVkSurfaceFormats(VkPhysicalDevice device, VkSurfaceKHR surface) {
-        uint32_t formatCount;
+        u32 formatCount;
         vkGetPhysicalDeviceSurfaceFormatsKHR(device, surface, &formatCount, nullptr);
 
         if (formatCount != 0) {
@@ -24,7 +24,7 @@ namespace {
     }
 
     core::collection::DynArray<VkPresentModeKHR> getVkPresentModes(VkPhysicalDevice device, VkSurfaceKHR surface) {
-        uint32_t presentModeCount;
+        u32 presentModeCount;
         vkGetPhysicalDeviceSurfacePresentModesKHR(device, surface, &presentModeCount, nullptr);
 
         if (presentModeCount != 0) {
@@ -62,14 +62,11 @@ namespace {
         return VK_PRESENT_MODE_FIFO_KHR; // It is guaranteed to be supported.
     }
     
-    VkExtent2D SwapchainSupport::chooseSwapExtent(void* window) const noexcept {
-        int iwidth, iheight;
-        glfwGetWindowSize(reinterpret_cast<GLFWwindow*>(window), &iwidth, &iheight);
-        uint32_t width  = iwidth  < 0 ? 0 : static_cast<uint32_t>(iwidth);
-        uint32_t height = iheight < 0 ? 0 : static_cast<uint32_t>(iheight);
+    VkExtent2D SwapchainSupport::chooseSwapExtent(window::Window& win) const noexcept {
+        core::math::Vec2u32 windowSize = win.pixelSize();
         return VkExtent2D { 
-            std::clamp<uint32_t>(width,  capabilities.minImageExtent.width,  capabilities.maxImageExtent.width),
-            std::clamp<uint32_t>(height, capabilities.minImageExtent.height, capabilities.maxImageExtent.height),
+            std::clamp<u32>(windowSize[0], capabilities.minImageExtent.width,  capabilities.maxImageExtent.width),
+            std::clamp<u32>(windowSize[1], capabilities.minImageExtent.height, capabilities.maxImageExtent.height),
         };
     }
 } // namespace graphics::vulkan::internal

@@ -63,6 +63,6 @@ UNIT_TEST(DurationToStringTest) {
 UNIT_TEST(DurationSpeedTest) {
 	Duration d { 0 };
 	for (auto _ : test)
-		for (size_t i = 0; i < 100'000; ++i)
+		for (usize i = 0; i < 100'000; ++i)
 			NO_OPT(d += Duration { i });
 };

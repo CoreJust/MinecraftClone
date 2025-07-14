@@ -2,6 +2,10 @@
 #include <Core/Collection/DynArray.hpp>
 #include <vulkan/vulkan.h>
 
+namespace graphics::window {
+    class Window;
+}
+
 namespace graphics::vulkan::internal {
     struct SwapchainSupport final {
         VkSurfaceCapabilitiesKHR                       const capabilities { };
@@ -13,6 +17,6 @@ namespace graphics::vulkan::internal {
 
         VkSurfaceFormatKHR const& chooseSurfaceFormat() const noexcept;
         VkPresentModeKHR          choosePresentMode  () const noexcept;
-        VkExtent2D                chooseSwapExtent   (void* window) const noexcept;
+        VkExtent2D                chooseSwapExtent   (window::Window& win) const noexcept;
     };
 } // namespace graphics::vulkan::internal

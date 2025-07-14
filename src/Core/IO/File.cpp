@@ -9,7 +9,7 @@ namespace core::io {
 			return "";
 		}
 
-		size_t const fileSize = std::filesystem::file_size(path);
+		usize const fileSize = std::filesystem::file_size(path);
 		std::string result(fileSize, 0);
 
 		std::FILE* file = std::fopen(path.data(), "rb");

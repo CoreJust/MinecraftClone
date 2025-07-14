@@ -1,10 +1,11 @@
 #pragma once
-#include <utility>
+#include <Core/Memory/Forward.hpp>
+#include <Core/Common/Int.hpp>
 
 namespace core::memory {
 	template<class T>
 	class TypeErasedAccessor final {
-		constexpr static inline size_t ObjectSize = sizeof(T);
+		constexpr static inline usize ObjectSize = sizeof(T);
 		constexpr static inline bool IsSmallObject = ObjectSize <= sizeof(void*);
 
 		using SmallObject = union {
@@ -16,10 +17,10 @@ namespace core::memory {
 		static void* make(auto&&... args) {
 			if constexpr (IsSmallObject) {
 				SmallObject result { nullptr };
-				new(&result.object) T(std::forward<decltype(args)>(args)...);
+				new(&result.object) T(FORWARD(args)...);
 				return result.ptr;
 			} else {
-				return reinterpret_cast<void*>(new T(std::forward<decltype(args)>(args)...));
+				return reinterpret_cast<void*>(new T(FORWARD(args)...));
 			}
 		}
 

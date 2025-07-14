@@ -10,7 +10,7 @@ namespace graphics::vulkan::internal {
         : m_buffers(vulkan.swapchain().imageViews().size(), VK_NULL_HANDLE)
         , m_vulkan(vulkan) {
         auto const& imageViews = m_vulkan.swapchain().imageViews();
-        for (size_t i = 0; i < imageViews.size(); i++) {
+        for (usize i = 0; i < imageViews.size(); i++) {
             VkImageView attachments[] = { imageViews[i] };
             VkFramebufferCreateInfo framebufferInfo { };
             framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;

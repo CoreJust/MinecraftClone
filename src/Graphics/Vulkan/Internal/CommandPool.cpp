@@ -7,7 +7,7 @@
 #include "../Exception.hpp"
 
 namespace graphics::vulkan::internal {
-    CommandPool::CommandPool(Vulkan& vulkan, uint32_t queueIndex) 
+    CommandPool::CommandPool(Vulkan& vulkan, u32 queueIndex) 
         : m_vulkan(vulkan) {
         VkCommandPoolCreateInfo poolInfo { };
         poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
@@ -29,7 +29,7 @@ namespace graphics::vulkan::internal {
         allocInfo.pNext = NULL;
         allocInfo.commandPool = m_pool;
         allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-        allocInfo.commandBufferCount = static_cast<uint32_t>(result.size());
+        allocInfo.commandBufferCount = static_cast<u32>(result.size());
 
         core::collection::DynArray<VkCommandBuffer> tmp { result.size(), VK_NULL_HANDLE };
         if (!m_vulkan.safeCall<vkAllocateCommandBuffers>(&allocInfo, tmp.data())) {

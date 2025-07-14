@@ -85,11 +85,10 @@ namespace {
         };
     }
 
-    VkInstance createInstance(VkApplicationInfo const& appInfo, char const** windowRequiredExtensions, uint32_t windowRequiredExtensionsCount, bool& needsDebugCallback) {
+    VkInstance createInstance(VkApplicationInfo const& appInfo, core::collection::ArrayView<char const*> requiredExtensions, bool& needsDebugCallback) {
         VkInstance instance = VK_NULL_HANDLE;
-        std::vector<char const*> extensions(windowRequiredExtensionsCount);
-        if (windowRequiredExtensions != nullptr)
-            std::copy(windowRequiredExtensions, windowRequiredExtensions + windowRequiredExtensionsCount, extensions.begin());
+        std::vector<char const*> extensions(requiredExtensions.size());
+        std::copy(requiredExtensions.begin(), requiredExtensions.end(), extensions.begin());
 
         VkInstanceCreateInfo createInfo { };
         createInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
@@ -112,7 +111,7 @@ namespace {
                 }
             }
         }
-        createInfo.enabledExtensionCount = static_cast<uint32_t>(extensions.size());
+        createInfo.enabledExtensionCount = static_cast<u32>(extensions.size());
         createInfo.ppEnabledExtensionNames = extensions.data();
         
         if (!VK_CHECK(vkCreateInstance(&createInfo, nullptr, &instance))) {
@@ -128,17 +127,17 @@ namespace {
         core::io::debug("Creating Vulkan temporary instance...");
         VkApplicationInfo applicationInfo = makeApplicationInfo(DUMMY_APP_INFO, ENGINE_INFO, Version { 0, 1, 0, 0 });
         bool needsDebugCallback;
-        m_instance = createInstance(applicationInfo, nullptr, 0, needsDebugCallback);
+        m_instance = createInstance(applicationInfo, {}, needsDebugCallback);
         loadVkFunctions(m_instance);
         if (needsDebugCallback)
             initDebugCallback(m_instance, m_debugMessenger);
     }
 
-    Instance::Instance(ProjectInfo const& appInfo, char const** windowRequiredExtensions, uint32_t windowRequiredExtensionsCount) {
+    Instance::Instance(ProjectInfo const& appInfo, core::collection::ArrayView<char const*> requiredExtensions) {
         core::io::debug("Creating Vulkan instance...");
         VkApplicationInfo applicationInfo = makeApplicationInfo(appInfo, ENGINE_INFO, getVkVersion());
         bool needsDebugCallback;
-        m_instance = createInstance(applicationInfo, windowRequiredExtensions, windowRequiredExtensionsCount, needsDebugCallback);
+        m_instance = createInstance(applicationInfo, requiredExtensions, needsDebugCallback);
         loadVkFunctions(m_instance);
         if (needsDebugCallback)
             initDebugCallback(m_instance, m_debugMessenger);

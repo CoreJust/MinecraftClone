@@ -5,6 +5,10 @@
 #include <Core/Collection/DynArray.hpp>
 #include "../Semaphore.hpp"
 
+namespace graphics::window {
+    class Window;
+}
+
 namespace graphics::vulkan::internal {
     struct SwapchainSupport;
     class Vulkan;
@@ -23,17 +27,17 @@ namespace graphics::vulkan::internal {
         VkSurfaceFormatKHR m_surfaceFormat;
         VkPresentModeKHR m_presentMode;
         VkExtent2D m_extent;
-        uint32_t m_imageCount;
+        u32 m_imageCount;
 
     public:
-        Swapchain(Vulkan& vulkan, void* window);
+        Swapchain(Vulkan& vulkan, window::Window& win);
         ~Swapchain();
 
         // Returns -1 on failure
-        PURE uint32_t acquireNextFrame();
+        PURE u32 acquireNextFrame();
         
         void submit(CommandBuffer& commandBuffer);
-        void present(uint32_t index);
+        void present(u32 index);
 
         PURE VkSwapchainKHR            get()               const noexcept { return m_swapchain; }
         PURE auto const&               imageViews()        const noexcept { return m_imageViews; }
@@ -41,6 +45,6 @@ namespace graphics::vulkan::internal {
         PURE Semaphore&                renderingDoneSemaphore()  noexcept { return m_renderingDone; }
         PURE VkSurfaceFormatKHR const& surfaceFormat()     const noexcept { return m_surfaceFormat; }
         PURE VkExtent2D const&         extent()            const noexcept { return m_extent; }
-        PURE uint32_t                  imageCount()        const noexcept { return m_imageCount; }
+        PURE u32                  imageCount()        const noexcept { return m_imageCount; }
     };
 } // namespace graphics::vulkan::internal
