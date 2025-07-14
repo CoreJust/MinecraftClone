@@ -1,13 +1,10 @@
 #pragma once
 #include <vulkan/vulkan.h>
 #include <Core/Macro/Attributes.hpp>
+#include <Core/Math/Vec.hpp>
 #include <Core/Memory/UniquePtr.hpp>
 #include <Core/Collection/DynArray.hpp>
 #include "../Semaphore.hpp"
-
-namespace graphics::window {
-    class Window;
-}
 
 namespace graphics::vulkan::internal {
     struct SwapchainSupport;
@@ -30,7 +27,7 @@ namespace graphics::vulkan::internal {
         u32 m_imageCount;
 
     public:
-        Swapchain(Vulkan& vulkan, window::Window& win);
+        Swapchain(Vulkan& vulkan, core::math::Vec2u32 pixelSize);
         ~Swapchain();
 
         // Returns -1 on failure

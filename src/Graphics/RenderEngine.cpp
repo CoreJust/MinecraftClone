@@ -1,4 +1,5 @@
 #include "RenderEngine.hpp"
+#include "Vulkan/Exception.hpp"
 
 namespace graphics {
     RenderEngine::RenderEngine(char const* const name, core::common::Version const& appVersion) 

@@ -1,7 +1,6 @@
 #include "SwapchainSupport.hpp"
 #include <algorithm>
 #include <Core/Common/Assert.hpp>
-#include <Graphics/Window/Window.hpp>
 
 namespace graphics::vulkan::internal {
 namespace {
@@ -62,11 +61,10 @@ namespace {
         return VK_PRESENT_MODE_FIFO_KHR; // It is guaranteed to be supported.
     }
     
-    VkExtent2D SwapchainSupport::chooseSwapExtent(window::Window& win) const noexcept {
-        core::math::Vec2u32 windowSize = win.pixelSize();
+    VkExtent2D SwapchainSupport::chooseSwapExtent(core::math::Vec2u32 pixelSize) const noexcept {
         return VkExtent2D { 
-            std::clamp<u32>(windowSize[0], capabilities.minImageExtent.width,  capabilities.maxImageExtent.width),
-            std::clamp<u32>(windowSize[1], capabilities.minImageExtent.height, capabilities.maxImageExtent.height),
+            std::clamp<u32>(pixelSize[0], capabilities.minImageExtent.width,  capabilities.maxImageExtent.width),
+            std::clamp<u32>(pixelSize[1], capabilities.minImageExtent.height, capabilities.maxImageExtent.height),
         };
     }
 } // namespace graphics::vulkan::internal

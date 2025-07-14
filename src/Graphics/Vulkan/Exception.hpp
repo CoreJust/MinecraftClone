@@ -1,5 +1,5 @@
 #pragma once
 
 namespace graphics::vulkan {
-    struct VulkanException final { };
+    struct VulkanException { };
 } // namespace graphics::vulkan

@@ -1,10 +1,7 @@
 #pragma once
+#include <Core/Math/Vec.hpp>
 #include <Core/Collection/DynArray.hpp>
 #include <vulkan/vulkan.h>
-
-namespace graphics::window {
-    class Window;
-}
 
 namespace graphics::vulkan::internal {
     struct SwapchainSupport final {
@@ -17,6 +14,6 @@ namespace graphics::vulkan::internal {
 
         VkSurfaceFormatKHR const& chooseSurfaceFormat() const noexcept;
         VkPresentModeKHR          choosePresentMode  () const noexcept;
-        VkExtent2D                chooseSwapExtent   (window::Window& win) const noexcept;
+        VkExtent2D                chooseSwapExtent   (core::math::Vec2u32 pixelSize) const noexcept;
     };
 } // namespace graphics::vulkan::internal

@@ -9,6 +9,7 @@
 #include "Functions.hpp"
 
 namespace graphics::vulkan::internal {
+
     Vulkan::Vulkan(window::Window& win, core::common::Version const& appVersion) {
         loadInstancelessVkFunctions();
         loadVkSupportedLayerList();
@@ -20,10 +21,15 @@ namespace graphics::vulkan::internal {
         m_physicalDevice = PhysicalDevice::choosePhysicalDevice(*this);
         updateVkSupportedExtensionListForDevice(*m_physicalDevice);
         m_device         = core::memory::makeUP<Device>(*m_physicalDevice);
-        m_swapchain      = core::memory::makeUP<internal::Swapchain>(*this, win);
+        m_swapchain      = core::memory::makeUP<internal::Swapchain>(*this, win.pixelSize());
     }
 
     Vulkan::~Vulkan() = default;
+        
+    void Vulkan::recreateSwapchain(core::math::Vec2u32 pixelSize) {
+        core::io::debug("Vulkan::recreateSwapchain(pixelSize: {}x{})", pixelSize[0], pixelSize[1]);
+        m_swapchain = core::memory::makeUP<internal::Swapchain>(*this, pixelSize);
+    }
 
     void Vulkan::creationFailure(char const* const resourceName) {
         core::io::error("Failed to create {}", resourceName);

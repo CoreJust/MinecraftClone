@@ -52,6 +52,8 @@ namespace graphics::vulkan::internal {
         Vulkan& operator=(Vulkan const&) noexcept = delete;
         ~Vulkan();
 
+        void recreateSwapchain(core::math::Vec2u32 pixelSize);
+
         template<typename T>
         PURE INLINE core::memory::UniquePtr<T> make(auto&&... args) {
             return core::memory::makeUP<T>(*this, FORWARD(args)...);

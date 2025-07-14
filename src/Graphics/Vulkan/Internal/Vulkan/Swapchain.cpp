@@ -1,6 +1,5 @@
 #include "Swapchain.hpp"
 #include <Core/IO/Logger.hpp>
-#include <Graphics/Window/Window.hpp>
 #include "SwapchainSupport.hpp"
 #include "Vulkan.hpp"
 #include "../../Exception.hpp"
@@ -10,11 +9,11 @@
 
 namespace graphics::vulkan::internal {
 namespace {
-    VkSwapchainCreateInfoKHR makeSwapchainCreateInfo(Vulkan& vulkan, window::Window& win) {
+    VkSwapchainCreateInfoKHR makeSwapchainCreateInfo(Vulkan& vulkan, core::math::Vec2u32 pixelSize) {
         SwapchainSupport const& support  = vulkan.physicalDevice().swapchainSupport();
         VkSurfaceFormatKHR surfaceFormat = support.chooseSurfaceFormat();
         VkPresentModeKHR   presentMode   = support.choosePresentMode();
-        VkExtent2D         extent        = support.chooseSwapExtent(win);
+        VkExtent2D         extent        = support.chooseSwapExtent(pixelSize);
         u32 imageCount = support.capabilities.minImageCount + 1;
         if (support.capabilities.maxImageCount > 0 && imageCount > support.capabilities.maxImageCount)
             imageCount = support.capabilities.maxImageCount;
@@ -87,13 +86,13 @@ namespace {
 } // namespace
 
 
-    Swapchain::Swapchain(Vulkan& vulkan, window::Window& win)
+    Swapchain::Swapchain(Vulkan& vulkan, core::math::Vec2u32 pixelSize)
         : m_vulkan(vulkan)
         , m_imageAvailable(m_vulkan)
         , m_renderingDone(m_vulkan)
     {
         core::io::info("Creating Vulkan swapchain...");
-        VkSwapchainCreateInfoKHR createInfo = makeSwapchainCreateInfo(m_vulkan, win);
+        VkSwapchainCreateInfoKHR createInfo = makeSwapchainCreateInfo(m_vulkan, pixelSize);
         m_surfaceFormat.format     = createInfo.imageFormat;
         m_surfaceFormat.colorSpace = createInfo.imageColorSpace;
         m_presentMode              = createInfo.presentMode;
@@ -122,7 +121,6 @@ namespace {
             core::io::error("Failed to acquire next frame");
             return static_cast<u32>(-1);
         }
-        core::io::trace("Acquired frame {}", result);
         return result;
     }
 
@@ -146,7 +144,5 @@ namespace {
             core::io::error("Failed to present image (index {}) to present queue", index);
             throw VulkanException { };
         }
-
-        m_presentQueue->waitIdle();
     }
 } // namespace graphics::vulkan::internal

@@ -2,6 +2,8 @@
 #include <cstdlib>
 #include <Core/Common/Assert.hpp>
 #include <Core/IO/Logger.hpp>
+#include <Graphics/Window/Window.hpp>
+#include "Internal/Vulkan/ErrorCallbacks.hpp"
 #include "Internal/Vulkan/Vulkan.hpp"
 #include "Internal/Pipeline.hpp"
 #include "Internal/CommandPool.hpp"
@@ -9,7 +11,12 @@
 
 namespace graphics::vulkan {
     VulkanManager::VulkanManager(window::Window& win, core::common::Version const& appVersion) 
-        : m_vulkan(core::memory::makeUP<internal::Vulkan>(win, appVersion)) {
+        : m_vulkan(core::memory::makeUP<internal::Vulkan>(win, appVersion))
+        , m_pWindow(win) {
+        internal::setOutOfDateKHRCallback([this] {
+            m_requiresSwapchainRecreation = true;
+            return true;
+        });
         m_commandPool    = core::memory::makeUP<internal::CommandPool>(*m_vulkan, m_vulkan->queueFamilies().getIndex(internal::QueueType::Graphics));
         m_commandBuffers = core::collection::DynArray<internal::CommandBuffer>(m_vulkan->swapchain().imageViews().size());
         m_commandPool->allocate(m_commandBuffers);
@@ -23,6 +30,11 @@ namespace graphics::vulkan {
     bool VulkanManager::startFrame() {
         ASSERT(m_frameIndex == static_cast<u32>(-1), "Frame was not ended before starting the next one");
         m_frameIndex = m_vulkan->swapchain().acquireNextFrame();
+        if (m_requiresSwapchainRecreation) {
+            m_frameIndex = static_cast<u32>(-1);
+            onSwapchainRecreationRequest();
+            return false;
+        }
         if (m_frameIndex == static_cast<u32>(-1))
             return false;
         m_commandBuffers[m_frameIndex].begin();
@@ -35,6 +47,8 @@ namespace graphics::vulkan {
         m_vulkan->swapchain().submit(m_commandBuffers[m_frameIndex]);
         m_vulkan->swapchain().present(m_frameIndex);
         m_frameIndex = static_cast<u32>(-1);
+        if (m_requiresSwapchainRecreation)
+            onSwapchainRecreationRequest();
     }
 
     RenderPipeline VulkanManager::createPipeline(PipelineOptions options) {
@@ -57,6 +71,18 @@ namespace graphics::vulkan {
         ASSERT(m_frameIndex != static_cast<u32>(-1), "Frame was not started; cannot end rendering");
         auto& impl = m_pipelines[pipeline.getIndex()].pipeline;
         impl->endRenderPass(m_commandBuffers[m_frameIndex]);
+    }
+        
+    void VulkanManager::onSwapchainRecreationRequest() {
+        m_requiresSwapchainRecreation = false;
+        m_vulkan->device().waitIdle();
+
+        core::math::Vec2u32 newWindowSize = m_pWindow.pixelSize();
+        if (newWindowSize[0] == 0 && newWindowSize[1] == 0) {
+            core::io::trace("VulkanManager::onOutOfDateKHR: window got minimized");
+            return;
+        }
+        m_vulkan->recreateSwapchain(newWindowSize);
     }
 
     void VulkanManager::createPipelines() {

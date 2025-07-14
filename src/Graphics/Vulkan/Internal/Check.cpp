@@ -1,6 +1,7 @@
 #include "Check.hpp"
 #include <stacktrace>
 #include <Core/IO/Logger.hpp>
+#include "Vulkan/ErrorCallbacks.hpp"
 
 namespace graphics::vulkan::internal {
 namespace {
@@ -69,6 +70,8 @@ namespace {
 
     bool checkVkResult(VkResult result) {
         if (result == VK_SUCCESS)
+            return true;
+        if (result == VK_ERROR_OUT_OF_DATE_KHR && onOutOfDateKHR())
             return true;
         std::string_view description;
         bool const isSuccess = decodeVkResult(result, description);

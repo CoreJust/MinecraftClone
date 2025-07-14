@@ -1,6 +1,7 @@
 set(LOCAL_SOURCES
     Check.cpp
     Vulkan/Functions.cpp
+    Vulkan/ErrorCallbacks.cpp
     Vulkan/Layers.cpp
     Vulkan/Extensions.cpp
     Vulkan/Instance.cpp
