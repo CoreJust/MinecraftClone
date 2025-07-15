@@ -1,5 +1,6 @@
 #include "Window.hpp"
 #include <vulkan/vulkan.h>
+#define GLFW_INCLUDE_NONE
 #include <GLFW/glfw3.h>
 #include <Core/Common/Assert.hpp>
 #include <Core/IO/Logger.hpp>
@@ -12,7 +13,7 @@ namespace {
         core::error("GLFW error (code {}): {}", code, description);
     }
 
-    void* createWindow(char const* const name, int& width, int& height) {
+    void* createWindow(char const* const name, core::Vec2<int>& size) {
         if (!glfwInit()) {
             core::fatal("Failed to initialize GLFW");
             throw WindowException { };
@@ -26,12 +27,11 @@ namespace {
         glfwWindowHint(GLFW_GREEN_BITS,   mode->greenBits);
         glfwWindowHint(GLFW_BLUE_BITS,    mode->blueBits);
         glfwWindowHint(GLFW_REFRESH_RATE, mode->refreshRate);
-        if (width <= 0 || height <= 0) {
-            width  = mode->width;
-            height = mode->height;
-            core::info("Setting full-screen window mode: {}x{}", width, height);
+        if (size[0] <= 0 || size[1] <= 0) {
+            size = core::Vec2<int> {{ mode->width, mode->height }};
+            core::info("Setting full-screen window mode: {}x{}", size[0], size[1]);
         }
-        GLFWwindow* window = glfwCreateWindow(width, height, name, monitor, nullptr);
+        GLFWwindow* window = glfwCreateWindow(size[0], size[1], name, monitor, nullptr);
         if (!window) {
             core::fatal("Failed to create a window");
             throw WindowException { };
@@ -46,7 +46,7 @@ namespace {
             "Blue bits:  {}\n\t"    \
             "Refresh rate: {}",
             name,
-            width, height,
+            size[0], size[1],
             mode->redBits,
             mode->greenBits,
             mode->blueBits,
@@ -56,8 +56,8 @@ namespace {
 } // namespace
 
 
-    Window::Window(char const* const name, int width, int height)
-        : m_window(createWindow(name, width, height))
+    Window::Window(char const* const name, core::Vec2<int> size)
+        : m_window(createWindow(name, size))
         , m_name(name)
     { }
 

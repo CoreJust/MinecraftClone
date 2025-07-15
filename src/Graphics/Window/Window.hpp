@@ -10,7 +10,7 @@ namespace graphics::window {
         char const* const m_name;
 
     public:
-        Window(char const* const name, int width = 0, int height = 0);
+        Window(char const* const name, core::Vec2<int> size = {{ 0, 0 }});
         ~Window();
 
         bool nextFrame();
