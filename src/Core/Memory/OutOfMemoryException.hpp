@@ -1,5 +1,5 @@
 #pragma once
 
-namespace core::memory {
+namespace core {
     struct OutOfMemoryException final { };
-} // namespace core::memory
+} // namespace core

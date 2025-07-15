@@ -3,7 +3,7 @@
 #include "TypeErasedAccessor.hpp"
 #include <typeinfo>
 
-namespace core::memory {
+namespace core {
 	class TypeErasedObject final {
 		using Deleter = void(*)(void* ptr);
 
@@ -45,4 +45,4 @@ namespace core::memory {
 			return TypeErasedAccessor<T const>::get(m_data);
 		}
 	};
-} // namespace core::memory
+} // namespace core

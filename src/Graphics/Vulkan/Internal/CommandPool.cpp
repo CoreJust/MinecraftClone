@@ -20,10 +20,10 @@ namespace graphics::vulkan::internal {
 
     CommandPool::~CommandPool() {
         if (m_vulkan.destroy<vkDestroyCommandPool>(m_pool, nullptr))
-            core::io::info("Destroyed Vulkan command pool");
+            core::info("Destroyed Vulkan command pool");
     }
 
-    void CommandPool::allocate(core::collection::ArrayView<CommandBuffer> result) {
+    void CommandPool::allocate(core::ArrayView<CommandBuffer> result) {
         VkCommandBufferAllocateInfo allocInfo { };
         allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
         allocInfo.pNext = NULL;
@@ -31,9 +31,9 @@ namespace graphics::vulkan::internal {
         allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
         allocInfo.commandBufferCount = static_cast<u32>(result.size());
 
-        core::collection::DynArray<VkCommandBuffer> tmp { result.size(), VK_NULL_HANDLE };
+        core::DynArray<VkCommandBuffer> tmp { result.size(), VK_NULL_HANDLE };
         if (!m_vulkan.safeCall<vkAllocateCommandBuffers>(&allocInfo, tmp.data())) {
-            core::io::fatal("Failed to allocate command buffers");
+            core::fatal("Failed to allocate command buffers");
             throw VulkanException { };
         }
         

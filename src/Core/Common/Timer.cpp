@@ -1,6 +1,6 @@
 #include "Timer.hpp"
 
-namespace core::common {
+namespace core {
 	Timer g_timer;
 
 	Timer::Timer() 
@@ -34,4 +34,4 @@ namespace core::common {
 		}
 		return false;
 	}
-} // namespace core::common
+} // namespace core

@@ -2,7 +2,7 @@
 #include <Core/Macro/Attributes.hpp>
 #include <Core/Common/Int.hpp>
 
-namespace core::memory {
+namespace core {
     // Has no ownership, simply provides access to a chunk of memory. All ownership (if any) can be handled from outside.
     struct RawMemory {
     protected:
@@ -39,4 +39,4 @@ namespace core::memory {
         PURE constexpr usize size() const noexcept { return m_size; }
         PURE constexpr auto data(this auto&& self) noexcept { return self.m_data; }
     };
-} // namespace core::memory
+} // namespace core

@@ -4,7 +4,7 @@
 #include <Core/Common/Int.hpp>
 #include "Logger.hpp"
 
-namespace core::io {
+namespace core {
     class ArgumentParser final {
         std::unordered_map<std::string, std::string> m_arguments;
     public:
@@ -22,10 +22,10 @@ namespace core::io {
 
         ArgumentParser const& onOption(std::string const& option, auto&& func) const {
             if (auto it = m_arguments.find(option); it != m_arguments.end()) {
-                core::io::info("Option {} is set to {}", option, it->second);
+                info("Option {} is set to {}", option, it->second);
                 func(it->second);
             }
             return *this;
         }
     };
-} // namespace core::io
+} // namespace core

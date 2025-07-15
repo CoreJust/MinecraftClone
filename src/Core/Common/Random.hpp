@@ -1,6 +1,6 @@
 #pragma once
 
-namespace core::common {
+namespace core {
 	class Random final {
 		mutable void* m_rnd;
 
@@ -17,4 +17,4 @@ namespace core::common {
 
 		static Random const& global();
 	};
-} // namespace core::common
+} // namespace core

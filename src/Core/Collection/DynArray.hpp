@@ -3,7 +3,7 @@
 #include <Core/Memory/Exchange.hpp>
 #include "ArrayView.hpp"
 
-namespace core::collection {
+namespace core {
     template<typename T>
     class DynArray final {
         ArrayView<T> m_data { };
@@ -11,25 +11,25 @@ namespace core::collection {
     public:
         constexpr DynArray() noexcept = default;        
         constexpr DynArray(DynArray&& other) noexcept
-            : m_data(memory::exchange(other.m_data, ArrayView<T> { })) { }
+            : m_data(exchange(other.m_data, ArrayView<T> { })) { }
         constexpr DynArray& operator=(DynArray&& other) noexcept {
-            m_data = memory::exchange(other.m_data, ArrayView<T> { });
+            m_data = exchange(other.m_data, ArrayView<T> { });
             return *this;
         }
         DynArray(usize size, T const& defaultValue = T { })
-            : m_data(memory::RawMemory::alloc(size * sizeof(T))) {
+            : m_data(RawMemory::alloc(size * sizeof(T))) {
             for (auto& item : m_data)
                 ::new(&item) T { defaultValue };
         }
         DynArray(usize size, auto&& func)
-            requires requires(usize i) { { func(i) } -> meta::IsSame<T>; }
-            : m_data(memory::RawMemory::alloc(size * sizeof(T))) {
+            requires requires(usize i) { { func(i) } -> IsSame<T>; }
+            : m_data(RawMemory::alloc(size * sizeof(T))) {
             usize i = 0;
             for (auto& item : m_data)
                 ::new(&item) T { func(i++) };
         }
         explicit DynArray(ArrayView<T> view)
-            : m_data(memory::RawMemory::alloc(view.size())) {
+            : m_data(RawMemory::alloc(view.size())) {
             m_data.rawMemory().copyFrom(view.rawMemory());
         }
         ~DynArray() {
@@ -56,4 +56,4 @@ namespace core::collection {
 
         PURE constexpr auto&& arrayView(this auto&& self) noexcept { return self.m_data; }
     };
-} // namespace core::collection
+} // namespace core

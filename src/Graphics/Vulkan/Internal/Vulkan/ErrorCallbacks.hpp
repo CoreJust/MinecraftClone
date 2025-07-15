@@ -2,7 +2,7 @@
 #include <Core/Memory/Function.hpp>
 
 namespace graphics::vulkan::internal {
-    using Callback = core::memory::Function<bool>;
+    using Callback = core::Function<bool>;
 
     void setOutOfDateKHRCallback(Callback callback) noexcept;
     bool onOutOfDateKHR();

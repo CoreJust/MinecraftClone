@@ -24,19 +24,19 @@ namespace graphics::vulkan {
     class VulkanManager final {
         struct PipelineNote final {
             PipelineOptions options;
-            core::memory::UniquePtr<internal::Pipeline> pipeline;
+            core::UniquePtr<internal::Pipeline> pipeline;
         };
 
-        core::memory::UniquePtr<internal::Vulkan> m_vulkan;
-        core::memory::UniquePtr<internal::CommandPool> m_commandPool;
-        core::collection::DynArray<internal::CommandBuffer> m_commandBuffers;
+        core::UniquePtr<internal::Vulkan> m_vulkan;
+        core::UniquePtr<internal::CommandPool> m_commandPool;
+        core::DynArray<internal::CommandBuffer> m_commandBuffers;
         std::vector<PipelineNote> m_pipelines;
         window::Window& m_pWindow;
         u32 m_frameIndex = static_cast<u32>(-1);
         bool m_requiresSwapchainRecreation = false;
 
     public:
-        VulkanManager(window::Window& win, core::common::Version const& appVersion);
+        VulkanManager(window::Window& win, core::Version const& appVersion);
         VulkanManager(VulkanManager&&) noexcept = delete;
         VulkanManager(VulkanManager const&) noexcept = delete;
         VulkanManager& operator=(VulkanManager&&) noexcept = delete;

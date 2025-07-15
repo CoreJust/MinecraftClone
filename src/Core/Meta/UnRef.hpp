@@ -1,6 +1,6 @@
 #pragma once
 
-namespace core::meta {
+namespace core {
 	template<class T>
 	struct UnRefImpl { using Type = T; };
 	template<class T>
@@ -9,4 +9,4 @@ namespace core::meta {
 	struct UnRefImpl<T&&> { using Type = T; };
 	template<class T>
 	using UnRef = UnRefImpl<T>::Type;
-} // namespace core::meta
+} // namespace core

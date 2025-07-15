@@ -20,24 +20,24 @@ namespace graphics::window {
 
 namespace graphics::vulkan::internal {
     class Vulkan final {
-        core::memory::UniquePtr<Instance>       m_instance;
-        core::memory::UniquePtr<Surface>        m_surface;
-        core::memory::UniquePtr<PhysicalDevice> m_physicalDevice;
-        core::memory::UniquePtr<Device>         m_device;
-        core::memory::UniquePtr<Swapchain>      m_swapchain;
+        core::UniquePtr<Instance>       m_instance;
+        core::UniquePtr<Surface>        m_surface;
+        core::UniquePtr<PhysicalDevice> m_physicalDevice;
+        core::UniquePtr<Device>         m_device;
+        core::UniquePtr<Swapchain>      m_swapchain;
 
         template<auto Func>
         PURE INLINE auto firstArgumentOf() const noexcept {
-            using Result = core::meta::FirstArgumentOf<decltype(Func)>;
-            if constexpr (core::meta::IsSame<Result, VkDevice>) {
+            using Result = core::FirstArgumentOf<decltype(Func)>;
+            if constexpr (core::IsSame<Result, VkDevice>) {
                 return m_device->get();
-            } else if constexpr (core::meta::IsSame<Result, VkPhysicalDevice>) {
+            } else if constexpr (core::IsSame<Result, VkPhysicalDevice>) {
                 return m_physicalDevice->get();
-            } else if constexpr (core::meta::IsSame<Result, VkInstance>) {
+            } else if constexpr (core::IsSame<Result, VkInstance>) {
                 return m_instance->get();
-            } else if constexpr (core::meta::IsSame<Result, VkSurfaceKHR>) {
+            } else if constexpr (core::IsSame<Result, VkSurfaceKHR>) {
                 return m_surface->get();
-            } else if constexpr (core::meta::IsSame<Result, VkSwapchainKHR>) {
+            } else if constexpr (core::IsSame<Result, VkSwapchainKHR>) {
                 return m_swapchain->get();
             } else {
                 static_assert(false, "Expected first argument to be either VkDevice, VkPhysicalDevice, VkInstance, VkSurfaceKHR, or VkSwapchainKHR");
@@ -45,23 +45,23 @@ namespace graphics::vulkan::internal {
         }
 
     public:
-        Vulkan(window::Window& win, core::common::Version const& appVersion);
+        Vulkan(window::Window& win, core::Version const& appVersion);
         Vulkan(Vulkan&&) noexcept = delete;
         Vulkan(Vulkan const&) noexcept = delete;
         Vulkan& operator=(Vulkan&&) noexcept = delete;
         Vulkan& operator=(Vulkan const&) noexcept = delete;
         ~Vulkan();
 
-        void recreateSwapchain(core::math::Vec2u32 pixelSize);
+        void recreateSwapchain(core::Vec2u32 pixelSize);
 
         template<typename T>
-        PURE INLINE core::memory::UniquePtr<T> make(auto&&... args) {
-            return core::memory::makeUP<T>(*this, FORWARD(args)...);
+        PURE INLINE core::UniquePtr<T> make(auto&&... args) {
+            return core::makeUP<T>(*this, FORWARD(args)...);
         }
         
         template<auto Func>
         PURE INLINE auto create(auto&&... args) const {
-            using Result = core::meta::UnPtr<core::meta::LastArgumentOf<decltype(Func)>>;
+            using Result = core::UnPtr<core::LastArgumentOf<decltype(Func)>>;
             Result result = VK_NULL_HANDLE;
             if (!VK_CHECK(Func(m_device->get(), FORWARD(args)..., &result)))
                 creationFailure(typeid(Result).name());
@@ -80,10 +80,10 @@ namespace graphics::vulkan::internal {
 
         template<auto Func>
         PURE INLINE auto enumerate(auto&&... args) const {
-            using T = core::meta::UnPtr<core::meta::LastArgumentOf<decltype(Func)>>;
-            using Result = core::collection::DynArray<T>;
+            using T = core::UnPtr<core::LastArgumentOf<decltype(Func)>>;
+            using Result = core::DynArray<T>;
             u32 count = 0;
-            if constexpr (core::meta::IsSame<core::meta::ReturnTypeOf<decltype(Func)>, VkResult>) {
+            if constexpr (core::IsSame<core::ReturnTypeOf<decltype(Func)>, VkResult>) {
                 if (!VK_CHECK(Func(firstArgumentOf<Func>(), args..., &count, nullptr)) || count == 0)
                     return Result { };
                 Result result(static_cast<usize>(count));

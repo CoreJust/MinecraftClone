@@ -34,7 +34,7 @@ namespace {
         if (deviceCount == 0)
             return { };
 
-        core::collection::DynArray<VkPhysicalDevice> devices(deviceCount);
+        core::DynArray<VkPhysicalDevice> devices(deviceCount);
         vkEnumeratePhysicalDevices(instance.get(), &deviceCount, devices.data());
 
         Version result;
@@ -48,26 +48,26 @@ namespace {
         return result;
     }
 
-    core::collection::DynArray<core::memory::UniquePtr<PhysicalDevice>> PhysicalDevice::getPhysicalDevices(Vulkan& vulkan) noexcept {
-        core::collection::DynArray<VkPhysicalDevice> devices = vulkan.enumerate<vkEnumeratePhysicalDevices>();
+    core::DynArray<core::UniquePtr<PhysicalDevice>> PhysicalDevice::getPhysicalDevices(Vulkan& vulkan) noexcept {
+        core::DynArray<VkPhysicalDevice> devices = vulkan.enumerate<vkEnumeratePhysicalDevices>();
         return { devices.size(), [&](usize i) { 
-            return core::memory::makeUP<PhysicalDevice>(devices[i], vulkan.surface(), PassKey { });
+            return core::makeUP<PhysicalDevice>(devices[i], vulkan.surface(), PassKey { });
         }};
     }
 
-    core::memory::UniquePtr<PhysicalDevice> PhysicalDevice::choosePhysicalDevice(Vulkan& vulkan) {
-        core::io::info("Choosing physical device...");
+    core::UniquePtr<PhysicalDevice> PhysicalDevice::choosePhysicalDevice(Vulkan& vulkan) {
+        core::info("Choosing physical device...");
         auto devices = getPhysicalDevices(vulkan);
-        core::memory::UniquePtr<PhysicalDevice>* result = nullptr;
+        core::UniquePtr<PhysicalDevice>* result = nullptr;
         if (devices.size() == 0) {
-            core::io::fatal("No physical devices found");
+            core::fatal("No physical devices found");
             throw VulkanException { };
         }
 
         u64 bestScore = 0;
         for (auto& d : devices) {
             Version apiVersion = Version::fromVk(d->props().apiVersion);
-            core::io::info(
+            core::info(
                 "Found physical device {} (id {})\n\tVulkan API version {}.{}.{}",
                 d->props().deviceName,
                 d->props().deviceID,
@@ -82,10 +82,10 @@ namespace {
         }
 
         if (!result) {
-            core::io::fatal("No suitable physical device found");
+            core::fatal("No suitable physical device found");
             throw VulkanException { };
         } else {
-            core::io::info("Chose device {} (id {})", (*result)->props().deviceName, (*result)->props().deviceID);
+            core::info("Chose device {} (id {})", (*result)->props().deviceName, (*result)->props().deviceID);
         }
 
         return std::move(*result);

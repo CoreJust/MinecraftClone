@@ -25,7 +25,7 @@ namespace graphics::vulkan::internal {
     }
 
     void loadVkSupportedLayerList() {
-        core::io::info("Loading supported Vulkan layers list...");
+        core::info("Loading supported Vulkan layers list...");
         u32 layersCount = 0;
         vkEnumerateInstanceLayerProperties(&layersCount, nullptr);
 
@@ -40,7 +40,7 @@ namespace graphics::vulkan::internal {
             layerVersions[layer.layerName] = layer.specVersion;
         }
 
-        core::io::info("Found Vulkan layers:\n{}", layersMessage);
+        core::info("Found Vulkan layers:\n{}", layersMessage);
 
         memset(g_supportedLayers, 255, std::size(g_supportedLayers));
         for (int i = 0; i < static_cast<int>(VulkanLayer::VulkanLayersCount); ++i) {

@@ -1,7 +1,7 @@
 #pragma once
 #include "Time.hpp"
 
-namespace core::common {
+namespace core {
 	class Timer final {
 		Time m_startTime;
 
@@ -19,4 +19,4 @@ namespace core::common {
 		// Otherwise, returns false
 		bool tryRestartWithInterval(Duration interval);
 	};
-} // namespace core::common
+} // namespace core

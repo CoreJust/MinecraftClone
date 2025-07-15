@@ -5,7 +5,7 @@
 #include "Forward.hpp"
 #include "Exchange.hpp"
 
-namespace core::memory {
+namespace core {
     template<typename Return, typename... Args>
     class Function final {
 		using Deleter = void(*)(void* ptr);
@@ -20,7 +20,7 @@ namespace core::memory {
         constexpr Function(Return(*func)(Args...)) : m_function(reinterpret_cast<void*>(func)) { }
         template<typename Functor>
         Function(Functor&& func)
-            requires requires (Args... args) { { func(args...) } -> meta::IsSame<Return>; }
+            requires requires (Args... args) { { func(args...) } -> IsSame<Return>; }
             : m_function(
                 reinterpret_cast<void*>(
                 static_cast<Return(*)(Functor*, Args...)>(
@@ -61,4 +61,4 @@ namespace core::memory {
             return m_function != nullptr;
         }
     };
-} // namespace core::memory
+} // namespace core

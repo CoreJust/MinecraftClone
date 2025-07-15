@@ -31,30 +31,30 @@ namespace graphics::vulkan::internal {
         submitInfo.pSignalSemaphores = signalSemaphores;
 
         if (!VK_CHECK(vkQueueSubmit(m_queue, 1, &submitInfo, VK_NULL_HANDLE))) {
-            core::io::error("Failed to submit command buffer to queue");
+            core::error("Failed to submit command buffer to queue");
             throw VulkanException { };
         }
     }
 
     void Queue::waitIdle() const {
         if (!VK_CHECK(vkQueueWaitIdle(m_queue))) {
-            core::io::error("Failed to wait for queue to be idle");
+            core::error("Failed to wait for queue to be idle");
         }
     }
        
     QueueMaker::QueueMaker(VkDevice device, QueueFamilies const& queueFamilies) 
         : m_device(device)
         , m_queueFamilies(queueFamilies)
-        , m_createdQueues(core::memory::TypeErasedObject::make<std::unordered_map<u32, Queue*>>())
+        , m_createdQueues(core::TypeErasedObject::make<std::unordered_map<u32, Queue*>>())
     { }
         
-    core::memory::UniquePtr<Queue> QueueMaker::make(QueueType type) {
+    core::UniquePtr<Queue> QueueMaker::make(QueueType type) {
         ASSERT(m_queueFamilies.hasFamily(type));
         auto& map = m_createdQueues.get<std::unordered_map<u32, Queue*>>();
         u32 const index = m_queueFamilies.getIndex(type);
         if (auto it = map.find(index); it != map.end())
-            return core::memory::makeUP<Queue>(*it->second);
-        auto result = core::memory::makeUP<Queue>(m_device, index);
+            return core::makeUP<Queue>(*it->second);
+        auto result = core::makeUP<Queue>(m_device, index);
         map[index] = result.get();
         return result;
     }

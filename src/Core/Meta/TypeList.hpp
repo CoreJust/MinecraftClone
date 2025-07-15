@@ -1,6 +1,6 @@
 #pragma once
 
-namespace core::meta {
+namespace core {
     template<typename... Ts>
     struct TypeList {
         inline constexpr static auto Size = sizeof...(Ts);
@@ -27,4 +27,4 @@ namespace core::meta {
 
     template<typename TypeList>
     using LastOf = TypeAtImpl<TypeList, TypeList::Size - 1>::Type;
-} // namespace core::meta
+} // namespace core

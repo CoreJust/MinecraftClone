@@ -7,7 +7,7 @@
 #  include <csignal>
 #endif
 
-namespace core::os {
+namespace core {
     void debugBreak() {
 #if WINDOWS
         DebugBreak();
@@ -17,4 +17,4 @@ namespace core::os {
         std::raise(SIGTRAP);
 #endif
     }
-} // namespace core::os
+} // namespace core

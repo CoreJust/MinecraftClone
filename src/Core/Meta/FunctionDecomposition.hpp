@@ -1,7 +1,7 @@
 #pragma once
 #include "TypeList.hpp"
 
-namespace core::meta {
+namespace core {
     template<typename F>
     struct FunctionDecompositionImpl { };
 
@@ -27,4 +27,4 @@ namespace core::meta {
     using FirstArgumentOf = FirstOf<typename FunctionDecompositionImpl<F>::Arguments>;
     template<typename F>
     using LastArgumentOf = LastOf<typename FunctionDecompositionImpl<F>::Arguments>;
-} // namespace core::meta
+} // namespace core

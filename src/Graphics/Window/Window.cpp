@@ -9,12 +9,12 @@
 namespace graphics::window {
 namespace {
     void errorCallback(int const code, char const* const description) {
-        core::io::error("GLFW error (code {}): {}", code, description);
+        core::error("GLFW error (code {}): {}", code, description);
     }
 
     void* createWindow(char const* const name, int& width, int& height) {
         if (!glfwInit()) {
-            core::io::fatal("Failed to initialize GLFW");
+            core::fatal("Failed to initialize GLFW");
             throw WindowException { };
         }
         glfwSetErrorCallback(errorCallback);
@@ -29,15 +29,15 @@ namespace {
         if (width <= 0 || height <= 0) {
             width  = mode->width;
             height = mode->height;
-            core::io::info("Setting full-screen window mode: {}x{}", width, height);
+            core::info("Setting full-screen window mode: {}x{}", width, height);
         }
         GLFWwindow* window = glfwCreateWindow(width, height, name, monitor, nullptr);
         if (!window) {
-            core::io::fatal("Failed to create a window");
+            core::fatal("Failed to create a window");
             throw WindowException { };
         }
         glfwSetKeyCallback(window, reinterpret_cast<GLFWkeyfun>(keyCallback));
-        core::io::info(
+        core::info(
             "Created window:\n\t"   \
             "Title:      {}\n\t"    \
             "Size:       {}x{}\n\t" \
@@ -66,7 +66,7 @@ namespace {
             glfwDestroyWindow(reinterpret_cast<GLFWwindow*>(m_window));
             glfwTerminate();
             m_window = nullptr;
-            core::io::info("The window was closed");
+            core::info("The window was closed");
         }
     }
 
@@ -83,13 +83,13 @@ namespace {
         return reinterpret_cast<void*>(&glfwCreateWindowSurface);
     }
     
-    core::collection::ArrayView<char const*> Window::getRequiredExtensions() const {
+    core::ArrayView<char const*> Window::getRequiredExtensions() const {
         u32 glfwExtensionsCount;
         char const** glfwVkExtensions = glfwGetRequiredInstanceExtensions(&glfwExtensionsCount);
-        return core::collection::ArrayView<char const*> { glfwVkExtensions, glfwExtensionsCount };
+        return core::ArrayView<char const*> { glfwVkExtensions, glfwExtensionsCount };
     }
 
-    core::math::Vec2u32 Window::pixelSize() const noexcept {
+    core::Vec2u32 Window::pixelSize() const noexcept {
         int width, height;
         glfwGetFramebufferSize(reinterpret_cast<GLFWwindow*>(m_window), &width, &height);
         return {{

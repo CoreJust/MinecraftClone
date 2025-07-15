@@ -1,6 +1,6 @@
 #pragma once
 
-namespace core::meta {
+namespace core {
     template<typename>
     struct UnPtrImpl { };
     
@@ -11,4 +11,4 @@ namespace core::meta {
 
     template<typename T>
     using UnPtr = UnPtrImpl<T>::Type;
-} // namespace core::meta
+} // namespace core

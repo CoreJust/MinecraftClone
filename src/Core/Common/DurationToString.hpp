@@ -2,7 +2,7 @@
 #include <string_view>
 #include "Time.hpp"
 
-namespace core::common {
+namespace core {
 	// Thread-safe
 	std::string_view durationToString(Duration duration) noexcept;
-} // namespace core::common
+} // namespace core

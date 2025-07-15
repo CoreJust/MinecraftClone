@@ -9,7 +9,7 @@
 
 namespace graphics::vulkan::internal {
 namespace {
-    VkSwapchainCreateInfoKHR makeSwapchainCreateInfo(Vulkan& vulkan, core::math::Vec2u32 pixelSize) {
+    VkSwapchainCreateInfoKHR makeSwapchainCreateInfo(Vulkan& vulkan, core::Vec2u32 pixelSize) {
         SwapchainSupport const& support  = vulkan.physicalDevice().swapchainSupport();
         VkSurfaceFormatKHR surfaceFormat = support.chooseSurfaceFormat();
         VkPresentModeKHR   presentMode   = support.choosePresentMode();
@@ -42,7 +42,7 @@ namespace {
             createInfo.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
         }
 
-        core::io::info(
+        core::info(
             "Chosen Vulkan swapchain options:\n\t" \
             "extent       {}x{}\n\t"               \
             "imageCount   {}\n\t"                  \
@@ -53,16 +53,16 @@ namespace {
         return createInfo;
     }
 
-    core::collection::DynArray<VkImage> getSwapchainImages(Vulkan& vulkan, VkSwapchainKHR swapchain) {
+    core::DynArray<VkImage> getSwapchainImages(Vulkan& vulkan, VkSwapchainKHR swapchain) {
         return vulkan.enumerate<vkGetSwapchainImagesKHR>(swapchain);
     }
 
-    core::collection::DynArray<VkImageView> getSwapchainImageViews(
+    core::DynArray<VkImageView> getSwapchainImageViews(
         Vulkan& vulkan, 
-        core::collection::DynArray<VkImage> const& images,
+        core::DynArray<VkImage> const& images,
         VkSurfaceFormatKHR const& surfaceFormat
     ) {
-        core::collection::DynArray<VkImageView> result(images.size());
+        core::DynArray<VkImageView> result(images.size());
         auto viewIt = result.begin();
         for (VkImage const& img : images) {
             VkImageViewCreateInfo createInfo { };
@@ -86,12 +86,12 @@ namespace {
 } // namespace
 
 
-    Swapchain::Swapchain(Vulkan& vulkan, core::math::Vec2u32 pixelSize)
+    Swapchain::Swapchain(Vulkan& vulkan, core::Vec2u32 pixelSize)
         : m_vulkan(vulkan)
         , m_imageAvailable(m_vulkan)
         , m_renderingDone(m_vulkan)
     {
-        core::io::info("Creating Vulkan swapchain...");
+        core::info("Creating Vulkan swapchain...");
         VkSwapchainCreateInfoKHR createInfo = makeSwapchainCreateInfo(m_vulkan, pixelSize);
         m_surfaceFormat.format     = createInfo.imageFormat;
         m_surfaceFormat.colorSpace = createInfo.imageColorSpace;
@@ -111,14 +111,14 @@ namespace {
             for (VkImageView view : m_imageViews)
                 m_vulkan.destroy<vkDestroyImageView>(view, nullptr);
             m_vulkan.destroy<vkDestroySwapchainKHR>(m_swapchain, nullptr);
-            core::io::info("Destroyed Vulkan swapchain");
+            core::info("Destroyed Vulkan swapchain");
         }
     }
     
     u32 Swapchain::acquireNextFrame() {
         u32 result;
         if (!m_vulkan.safeCall<vkAcquireNextImageKHR>(m_swapchain, UINT64_MAX, m_imageAvailable.get(), VK_NULL_HANDLE, &result)) {
-            core::io::error("Failed to acquire next frame");
+            core::error("Failed to acquire next frame");
             return static_cast<u32>(-1);
         }
         return result;
@@ -141,7 +141,7 @@ namespace {
         presentInfo.pResults = nullptr;
 
         if (!VK_CHECK(vkQueuePresentKHR(m_presentQueue->get(), &presentInfo))) {
-            core::io::error("Failed to present image (index {}) to present queue", index);
+            core::error("Failed to present image (index {}) to present queue", index);
             throw VulkanException { };
         }
     }

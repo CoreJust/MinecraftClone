@@ -25,8 +25,8 @@ namespace graphics::vulkan::internal {
     public:
         PhysicalDevice(VkPhysicalDevice device, Surface const& surface, PassKey) noexcept;
         static Version getHighestPhysicalDeviceVersion(Instance& instance) noexcept;
-        static core::collection::DynArray<core::memory::UniquePtr<PhysicalDevice>> getPhysicalDevices(Vulkan& vulkan) noexcept;
-        static core::memory::UniquePtr<PhysicalDevice> choosePhysicalDevice(Vulkan& vulkan);
+        static core::DynArray<core::UniquePtr<PhysicalDevice>> getPhysicalDevices(Vulkan& vulkan) noexcept;
+        static core::UniquePtr<PhysicalDevice> choosePhysicalDevice(Vulkan& vulkan);
 
         PURE VkPhysicalDevice get() const noexcept { return m_physicalDevice; }
         PURE VkPhysicalDeviceProperties const& props()            const noexcept { return m_properties; }

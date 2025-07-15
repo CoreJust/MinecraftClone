@@ -57,14 +57,14 @@ namespace {
         createInfo.ppEnabledExtensionNames = deviceExtensions.data();
 
         if (!VK_CHECK(vkCreateDevice(physicalDevice.get(), &createInfo, nullptr, &device))) {
-            core::io::fatal("Failed to create logical device");
+            core::fatal("Failed to create logical device");
             throw VulkanException { };
         }
     }
 } // namespace
 
     Device::Device(PhysicalDevice const& physicalDevice) {
-        core::io::info("Creating logical device...");
+        core::info("Creating logical device...");
         initLogicalDevice(m_logicalDevice, physicalDevice);
     }
 
@@ -73,7 +73,7 @@ namespace {
             waitIdle();
             vkDestroyDevice(m_logicalDevice, nullptr);
             m_logicalDevice = VK_NULL_HANDLE;
-            core::io::info("Destroyed logical device");
+            core::info("Destroyed logical device");
         }
     }
 

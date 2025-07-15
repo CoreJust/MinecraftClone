@@ -11,14 +11,14 @@ namespace graphics::vulkan::internal {
         beginInfo.pInheritanceInfo = nullptr;
 
         if (!VK_CHECK(vkBeginCommandBuffer(m_buffer, &beginInfo))) {
-            core::io::fatal("Failed to begin recording command buffers");
+            core::fatal("Failed to begin recording command buffers");
             throw VulkanException { };
         }
     }
 
     void CommandBuffer::end() const {
         if (!VK_CHECK(vkEndCommandBuffer(m_buffer))) {
-            core::io::error("Failed to end recording command buffer");
+            core::error("Failed to end recording command buffer");
             throw VulkanException { };
         }
     }

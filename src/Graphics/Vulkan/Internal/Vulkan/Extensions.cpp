@@ -59,7 +59,7 @@ namespace graphics::vulkan::internal {
     }
 
     void loadVkSupportedExtensionList() {
-        core::io::info("Loading supported Vulkan extensions list...");
+        core::info("Loading supported Vulkan extensions list...");
         u32 extensionCount = 0;
         vkEnumerateInstanceExtensionProperties(nullptr, &extensionCount, nullptr);
 
@@ -73,7 +73,7 @@ namespace graphics::vulkan::internal {
             extensionVersions[ext.extensionName] = ext.specVersion;
         }
 
-        core::io::info("Found Vulkan instance extensions:\n{}", extensionsMessage);
+        core::info("Found Vulkan instance extensions:\n{}", extensionsMessage);
 
         for (int i = 0; i < static_cast<int>(VulkanExtension::VulkanExtensionsCount); ++i) {
             VulkanExtension ext = static_cast<VulkanExtension>(i);
@@ -88,7 +88,7 @@ namespace graphics::vulkan::internal {
             VulkanExtension ext = static_cast<VulkanExtension>(i);
             if (deviceExts.hasExtension(ext)) {
                 if (!g_supportedExtensions.hasExtension(ext)) {
-                    core::io::info(
+                    core::info(
                         "Found device extension {} v{}.{}.{}",
                         getFullExtensionName(ext),
                         deviceExts.getExtensionVersion(ext).major,
@@ -96,7 +96,7 @@ namespace graphics::vulkan::internal {
                         deviceExts.getExtensionVersion(ext).patch);
                     g_supportedExtensions.versions[i] = deviceExts.versions[i];
                 } else if (deviceExts.getExtensionVersion(ext) < g_supportedExtensions.getExtensionVersion(ext)) {
-                    core::io::warn(
+                    core::warn(
                         "Downgraded extension {} : {}.{}.{} -> {}.{}.{}, since device supports only that version",
                         getFullExtensionName(ext),
                         g_supportedExtensions.getExtensionVersion(ext).major,

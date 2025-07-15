@@ -3,7 +3,7 @@
 #include <Core/Common/Int.hpp>
 #include <Core/Common/Assert.hpp>
 
-namespace core::math {
+namespace core {
     template<usize Size, typename T>
     struct Vec {
         static_assert(Size != 0);
@@ -95,4 +95,4 @@ namespace core::math {
     DECL_VEC_TYPES(3)
     DECL_VEC_TYPES(4)
 #undef DECL_VEC_TYPES
-} // namespace core::math
+} // namespace core

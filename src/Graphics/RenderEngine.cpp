@@ -2,9 +2,9 @@
 #include "Vulkan/Exception.hpp"
 
 namespace graphics {
-    RenderEngine::RenderEngine(char const* const name, core::common::Version const& appVersion) 
+    RenderEngine::RenderEngine(char const* const name, core::Version const& appVersion) 
         : m_window(name)
-        , m_vulkanManager(core::memory::makeUP<vulkan::VulkanManager>(m_window, appVersion))
+        , m_vulkanManager(core::makeUP<vulkan::VulkanManager>(m_window, appVersion))
         , m_pipeline(m_vulkanManager->createPipeline({ "basic.vert", "basic.frag" }))
     { }
 

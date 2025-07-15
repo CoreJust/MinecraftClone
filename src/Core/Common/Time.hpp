@@ -2,7 +2,7 @@
 #include <Core/Macro/Attributes.hpp>
 #include "Int.hpp"
 
-namespace core::common {
+namespace core {
 	// A light-weight struct to work with the time
 	struct Duration final {
 		usize ns;
@@ -139,4 +139,4 @@ namespace core::common {
 			return *this;
 		}
 	};
-} // namespace core::common
+} // namespace core

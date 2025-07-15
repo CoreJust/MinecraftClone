@@ -3,9 +3,9 @@
 #include <cstdlib>
 #include "UnitTest.hpp"
 
-namespace core::test {
+namespace core {
 	void test_main() {
 		runAll();
 		system("pause");
 	}
-} // namespace core::test
+} // namespace core

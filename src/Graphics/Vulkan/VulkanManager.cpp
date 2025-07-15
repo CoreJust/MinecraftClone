@@ -10,17 +10,17 @@
 #include "Internal/CommandBuffer.hpp"
 
 namespace graphics::vulkan {
-    VulkanManager::VulkanManager(window::Window& win, core::common::Version const& appVersion) 
-        : m_vulkan(core::memory::makeUP<internal::Vulkan>(win, appVersion))
+    VulkanManager::VulkanManager(window::Window& win, core::Version const& appVersion) 
+        : m_vulkan(core::makeUP<internal::Vulkan>(win, appVersion))
         , m_pWindow(win) {
         internal::setOutOfDateKHRCallback([this] {
             m_requiresSwapchainRecreation = true;
             return true;
         });
-        m_commandPool    = core::memory::makeUP<internal::CommandPool>(*m_vulkan, m_vulkan->queueFamilies().getIndex(internal::QueueType::Graphics));
-        m_commandBuffers = core::collection::DynArray<internal::CommandBuffer>(m_vulkan->swapchain().imageViews().size());
+        m_commandPool    = core::makeUP<internal::CommandPool>(*m_vulkan, m_vulkan->queueFamilies().getIndex(internal::QueueType::Graphics));
+        m_commandBuffers = core::DynArray<internal::CommandBuffer>(m_vulkan->swapchain().imageViews().size());
         m_commandPool->allocate(m_commandBuffers);
-        core::io::info("Created Vulkan manager");
+        core::info("Created Vulkan manager");
     }
 
     VulkanManager::~VulkanManager() {
@@ -52,7 +52,7 @@ namespace graphics::vulkan {
     }
 
     RenderPipeline VulkanManager::createPipeline(PipelineOptions options) {
-        auto pipeline = core::memory::makeUP<internal::Pipeline>(*m_vulkan, options);
+        auto pipeline = core::makeUP<internal::Pipeline>(*m_vulkan, options);
         usize index = m_pipelines.size();
         m_pipelines.push_back(PipelineNote {
             .options  = std::move(options),
@@ -77,9 +77,9 @@ namespace graphics::vulkan {
         m_requiresSwapchainRecreation = false;
         m_vulkan->device().waitIdle();
 
-        core::math::Vec2u32 newWindowSize = m_pWindow.pixelSize();
+        core::Vec2u32 newWindowSize = m_pWindow.pixelSize();
         if (newWindowSize[0] == 0 && newWindowSize[1] == 0) {
-            core::io::trace("VulkanManager::onOutOfDateKHR: window got minimized");
+            core::trace("VulkanManager::onOutOfDateKHR: window got minimized");
             return;
         }
         m_vulkan->recreateSwapchain(newWindowSize);

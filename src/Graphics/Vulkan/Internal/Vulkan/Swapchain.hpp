@@ -14,10 +14,10 @@ namespace graphics::vulkan::internal {
 
     class Swapchain final {
         Vulkan& m_vulkan;
-        core::collection::DynArray<VkImage> m_images;
-        core::collection::DynArray<VkImageView> m_imageViews;
-        core::memory::UniquePtr<Queue> m_graphicsQueue;
-        core::memory::UniquePtr<Queue> m_presentQueue;
+        core::DynArray<VkImage> m_images;
+        core::DynArray<VkImageView> m_imageViews;
+        core::UniquePtr<Queue> m_graphicsQueue;
+        core::UniquePtr<Queue> m_presentQueue;
         Semaphore m_imageAvailable;
         Semaphore m_renderingDone;
         VkSwapchainKHR m_swapchain = VK_NULL_HANDLE;
@@ -27,7 +27,7 @@ namespace graphics::vulkan::internal {
         u32 m_imageCount;
 
     public:
-        Swapchain(Vulkan& vulkan, core::math::Vec2u32 pixelSize);
+        Swapchain(Vulkan& vulkan, core::Vec2u32 pixelSize);
         ~Swapchain();
 
         // Returns -1 on failure

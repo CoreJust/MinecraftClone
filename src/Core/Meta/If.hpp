@@ -1,6 +1,6 @@
 #pragma once
 
-namespace core::meta {
+namespace core {
     template<bool Condition, typename Then, typename Else>
     struct IfImpl { };
     template<typename Then, typename Else>
@@ -14,4 +14,4 @@ namespace core::meta {
 
     template<bool Condition, typename Then, typename Else>
     using If = IfImpl<Condition, Then, Else>::Type;
-} // namespace core::meta
+} // namespace core

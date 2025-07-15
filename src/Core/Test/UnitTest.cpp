@@ -6,7 +6,7 @@
 #include <Core/Common/Timer.hpp>
 #include <Core/IO/ConsoleColor.hpp>
 
-namespace core::test {
+namespace core {
 namespace {
 	struct UnitTest {
 		char const* name;
@@ -21,41 +21,41 @@ namespace {
 	constexpr usize ITERATIONS_MAX = 50;
 
 	void printTestsFileHeader(UnitTest const& test) {
-		std::cout << io::White << "\n=== Tests file " << test.file << " ===\n";
+		std::cout << White << "\n=== Tests file " << test.file << " ===\n";
 	}
 
 	void printTestInfo(UnitTest const& test, usize const testIndex) {
-		std::cout << io::White << "Test[" << testIndex << "] " << test.name << ": \n";
+		std::cout << White << "Test[" << testIndex << "] " << test.name << ": \n";
 	}
 
-	void printTestsResults(usize const successes, usize const failures, common::Duration const duration) {
+	void printTestsResults(usize const successes, usize const failures, Duration const duration) {
 		if (!failures) {
-			std::cout << io::Green << "All " << successes << " tests have passed!" << std::endl;
+			std::cout << Green << "All " << successes << " tests have passed!" << std::endl;
 		} else if (!successes) {
-			std::cout << io::Red << "All " << failures << " tests have failed." << std::endl;
+			std::cout << Red << "All " << failures << " tests have failed." << std::endl;
 		} else {
-			std::cout << io::Green << successes << " tests have passed!" << std::endl;
-			std::cout << io::Red << failures << " tests have failed." << std::endl;
+			std::cout << Green << successes << " tests have passed!" << std::endl;
+			std::cout << Red << failures << " tests have failed." << std::endl;
 		}
-		std::cout << io::Gray << "Overall tests time: " << common::durationToString(duration) << std::endl;
+		std::cout << Gray << "Overall tests time: " << durationToString(duration) << std::endl;
 	}
 
-	std::vector<common::Duration> g_testIterationDurations;
+	std::vector<Duration> g_testIterationDurations;
 	bool g_isSuccess;
 
 	// Returns true if this is the last iteration
-	bool onTestIterationEnd(common::Duration const duration) {
+	bool onTestIterationEnd(Duration const duration) {
 		g_testIterationDurations.emplace_back(duration);
 		if (g_testIterationDurations.size() < ITERATION_TIME_WINDOW)
 			return false;
 		if (g_testIterationDurations.size() >= ITERATIONS_MAX) {
-			std::cout << io::Yellow << "\tUnstable test iteration time!" << std::endl;
+			std::cout << Yellow << "\tUnstable test iteration time!" << std::endl;
 			return true;
 		}
 
-		common::Duration minDuration = duration, maxDuration = duration;
+		Duration minDuration = duration, maxDuration = duration;
 		for (usize i = g_testIterationDurations.size(); i-- > g_testIterationDurations.size() - ITERATION_TIME_WINDOW;) {
-			common::Duration iterationDuration = g_testIterationDurations[i];
+			Duration iterationDuration = g_testIterationDurations[i];
 			if (iterationDuration < minDuration) {
 				minDuration = iterationDuration;
 			} else if (iterationDuration > maxDuration) {
@@ -69,21 +69,21 @@ namespace {
 		return diff < MAX_ITERATION_TIME_DEVIATION;
 	}
 
-	void onTestEnd(common::Duration const duration, bool success) {
+	void onTestEnd(Duration const duration, bool success) {
 		g_isSuccess = true;
 		if (success) {
 			if (g_testIterationDurations.empty()) {
-				std::cout << io::Green << "\tPassed in " << common::durationToString(duration) << std::endl;
+				std::cout << Green << "\tPassed in " << durationToString(duration) << std::endl;
 			} else {
-				std::cout << io::Green << "\tPassed in " << common::durationToString(duration) 
-					<< "; average time " << common::durationToString(g_testIterationDurations.back()) << std::endl;
+				std::cout << Green << "\tPassed in " << durationToString(duration) 
+					<< "; average time " << durationToString(g_testIterationDurations.back()) << std::endl;
 			}
 		} else {
 			if (g_testIterationDurations.empty()) {
-				std::cout << io::Red << "\tFailed in " << common::durationToString(duration) << std::endl;
+				std::cout << Red << "\tFailed in " << durationToString(duration) << std::endl;
 			} else {
-				std::cout << io::Red << "\tFailed in " << common::durationToString(duration)
-					<< "; average time " << common::durationToString(g_testIterationDurations.back()) << std::endl;
+				std::cout << Red << "\tFailed in " << durationToString(duration)
+					<< "; average time " << durationToString(g_testIterationDurations.back()) << std::endl;
 			}
 		}
 	}
@@ -97,7 +97,7 @@ namespace {
 			(*test.test)(UnitTestHelper{ });
 			return g_isSuccess;
 		} catch (...) {
-			std::cout << io::Red << "\tUncaught exception occured during test." << std::endl;
+			std::cout << Red << "\tUncaught exception occured during test." << std::endl;
 			return false;
 		}
 	}
@@ -119,7 +119,7 @@ namespace {
 			usize index = 0;
 			usize successCount = 0;
 			char const* prevTestFile = nullptr;
-			common::Timer allTestsTimer;
+			Timer allTestsTimer;
 			for (const auto& test : m_unitTests) {
 				successCount += runUnitTest(test, index++, prevTestFile != test.file);
 				prevTestFile = test.file;
@@ -156,7 +156,7 @@ namespace {
 	}
 
 	UnitTestHelper::UnitTestHelper(UnitTestHelper&& other) noexcept 
-		: m_timer(std::exchange(other.m_timer, common::Timer(common::Time{ 0 })))
+		: m_timer(std::exchange(other.m_timer, Timer(Time{ 0 })))
 		, m_success(other.m_success) {
 	}
 
@@ -167,7 +167,7 @@ namespace {
 
 	void UnitTestHelper::assert(bool const condition, char const* const message, std::source_location const location) {
 		if (!condition) {
-			std::cout << io::Red << "\tTest assertion failed at " << location.line() << ": " << message << std::endl;
+			std::cout << Red << "\tTest assertion failed at " << location.line() << ": " << message << std::endl;
 			m_success = false;
 		}
 	}
@@ -189,4 +189,4 @@ namespace {
 		if(UnitTestRunner::s_instance)
 			UnitTestRunner::s_instance->runAll();
 	}
-} // namespace core::test
+} // namespace core

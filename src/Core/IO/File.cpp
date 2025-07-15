@@ -2,7 +2,7 @@
 #include <filesystem>
 #include "Logger.hpp"
 
-namespace core::io {
+namespace core {
 	std::string readFile(std::string_view path) {
 		if (!std::filesystem::exists(path)) {
 			error("No such file: {}", path);
@@ -27,4 +27,4 @@ namespace core::io {
 		std::fclose(file);
 		return result;
 	}
-} // namespace core::io
+} // namespace core

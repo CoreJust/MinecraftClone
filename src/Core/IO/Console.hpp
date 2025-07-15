@@ -1,5 +1,5 @@
 #pragma once
 
-namespace core::io {
+namespace core {
     void enableUtf8Cout();
-} // namespace core::io
+} // namespace core

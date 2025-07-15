@@ -1,5 +1,5 @@
 #pragma once
 
-namespace core::meta {
+namespace core {
 	struct Void { };
-} // namespace core::meta
+} // namespace core

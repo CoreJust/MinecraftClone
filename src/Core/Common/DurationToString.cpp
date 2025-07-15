@@ -1,6 +1,6 @@
 #include "DurationToString.hpp"
 
-namespace core::common {
+namespace core {
 namespace {
 	int countDigits(u64 const x) {
 		if (x >= 10000000000) {
@@ -105,4 +105,4 @@ namespace {
 
 		return std::string_view(s_data, static_cast<usize>(ptr - s_data));
 	}
-} // namespace core::common
+} // namespace core

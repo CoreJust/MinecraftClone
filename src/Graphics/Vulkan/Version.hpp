@@ -2,8 +2,8 @@
 #include <Core/Common/Version.hpp>
 
 namespace graphics::vulkan {
-    struct Version final : public core::common::Version {
-        PURE bool operator<(Version const& lhs) const noexcept { return core::common::Version::operator<(lhs); }
+    struct Version final : public core::Version {
+        PURE bool operator<(Version const& lhs) const noexcept { return core::Version::operator<(lhs); }
 
         PURE static Version fromVk(u32 vkVersion) noexcept;
         PURE u32 asVk() const noexcept;

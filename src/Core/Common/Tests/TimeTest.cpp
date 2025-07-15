@@ -2,7 +2,7 @@
 #include "../Time.hpp"
 #include "../DurationToString.hpp"
 
-using namespace core::common;
+using namespace core;
 
 UNIT_TEST(DurationTest) {
 	constexpr Duration a { 0 };

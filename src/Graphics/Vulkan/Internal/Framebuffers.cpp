@@ -23,12 +23,12 @@ namespace graphics::vulkan::internal {
 
             m_buffers[i] = m_vulkan.create<vkCreateFramebuffer>(&framebufferInfo, nullptr);
         }
-        core::io::info("Created Vulkan framebuffers");
+        core::info("Created Vulkan framebuffers");
     }
 
     Framebuffers::~Framebuffers() {
         for (auto& framebuffer : m_buffers)
             m_vulkan.destroy<vkDestroyFramebuffer>(framebuffer, nullptr);
-        core::io::info("Destroyed Vulkan framebuffers");
+        core::info("Destroyed Vulkan framebuffers");
     }
 } // namespace graphics::vulkan::internal

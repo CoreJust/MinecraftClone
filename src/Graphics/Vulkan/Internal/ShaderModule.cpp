@@ -9,8 +9,8 @@
 namespace graphics::vulkan::internal {
     ShaderModule::ShaderModule(Vulkan& vulkan, char const* const path) 
         : m_vulkan(vulkan) {
-        core::io::info("Loading shader module from {}", path);
-        std::string const spirVSource = core::io::readFile(makeShaderPath(path));
+        core::info("Loading shader module from {}", path);
+        std::string const spirVSource = core::readFile(makeShaderPath(path));
 
         VkShaderModuleCreateInfo createInfo { };
         createInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;

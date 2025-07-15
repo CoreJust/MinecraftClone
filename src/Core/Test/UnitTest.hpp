@@ -7,10 +7,10 @@
 #include <Core/Common/Timer.hpp>
 #include <Core/Macro/Attributes.hpp>
 #include <Core/Macro/NoOpt.hpp>
-#define UNIT_TEST(name) auto GEN_UNITTEST_NAME(__LINE__, name) = core::test::UnitTestNote{ #name, __FILE__, __LINE__ } ^ [](core::test::UnitTestHelper test)
+#define UNIT_TEST(name) auto GEN_UNITTEST_NAME(__LINE__, name) = ::core::UnitTestNote{ #name, __FILE__, __LINE__ } ^ [](::core::UnitTestHelper test)
 #define CHECK(expr) test.assert((expr), #expr)
 
-namespace core::test {
+namespace core {
 	struct UnitTestNote final { 
 		char const* const name;
 		char const* const file;
@@ -22,7 +22,7 @@ namespace core::test {
 
 		struct UnitTestIteratedObject final {
 			UnitTestIterator const* pIter;
-			common::Timer timer;
+			Timer timer;
 
 			~UnitTestIteratedObject();
 		};
@@ -43,7 +43,7 @@ namespace core::test {
 			bool operator==(UnitTestIterator const& other) const noexcept;
 		};
 
-		common::Timer m_timer;
+		Timer m_timer;
 		bool m_success = true;
 
 	public:
@@ -56,7 +56,7 @@ namespace core::test {
 		UnitTestIterator end();
 	};
 
-	using UnitTestFunction = void(*)(core::test::UnitTestHelper);
+	using UnitTestFunction = void(*)(UnitTestHelper);
 
 	int operator^(UnitTestNote note, auto&& f) {
 		registerUnitTest(std::move(note), UnitTestFunction(f));
@@ -65,4 +65,4 @@ namespace core::test {
 
 	void registerUnitTest(UnitTestNote note, UnitTestFunction unitTest);
 	void runAll();
-} // namespace core::test
+} // namespace core

@@ -8,15 +8,15 @@
 
 // ConstIterator and Iterator make iterator creation fast and simple - you only need to define single traits and that's it.
 
-namespace core::algorithm {
+namespace core {
     template<typename T>
     concept ForwardIteratorImplConcept = requires (T it) {
         typename T::Value;
         it.next();                          // Advancing forth
         it = it;                            // Copying
-        { it == it } -> meta::IsSame<bool>; // Comparing for equality
-        meta::IsSame<T::Value, meta::UnRef<decltype(it.get())>>; // Getting the value
-        meta::IsSame<T::Value, meta::UnConst<meta::UnRef<decltype(*it.ptr())>>>; // Getting the value as a pointer (might be a temporary one)
+        { it == it } -> IsSame<bool>; // Comparing for equality
+        IsSame<T::Value, UnRef<decltype(it.get())>>; // Getting the value
+        IsSame<T::Value, UnConst<UnRef<decltype(*it.ptr())>>>; // Getting the value as a pointer (might be a temporary one)
     };
 
     template<typename T>
@@ -27,7 +27,7 @@ namespace core::algorithm {
     template<typename T>
     concept RandomAccessIteratorImplConcept = BidirectionalIteratorImplConcept<T> && requires (T it) {
         it.advance(10);
-        { it < it } -> meta::SameAs<bool>;
+        { it < it } -> SameAs<bool>;
     };
 
     template<ForwardIteratorImplConcept IteratorImpl, bool Const>
@@ -141,4 +141,4 @@ namespace core::algorithm {
     using MakeConstIterator = MakeIteratorImpl<IteratorImpl, true>;
     template<ForwardIteratorImplConcept IteratorImpl>
     using MakeIterator = MakeIteratorImpl<IteratorImpl, false>;
-} // namespace core::algorithm
+} // namespace core

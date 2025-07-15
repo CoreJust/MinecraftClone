@@ -2,7 +2,7 @@
 #include <Core/Macro/Attributes.hpp>
 #include "Int.hpp"
 
-namespace core::common {
+namespace core {
     struct Version {
         u32 variant = 0;
         u32 major   = 1;
@@ -11,4 +11,4 @@ namespace core::common {
 
         PURE bool operator<(Version const& lhs) const noexcept;
     };
-} // namespace core::common
+} // namespace core

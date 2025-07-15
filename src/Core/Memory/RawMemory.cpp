@@ -5,11 +5,11 @@
 #include <Core/IO/Logger.hpp>
 #include "OutOfMemoryException.hpp"
 
-namespace core::memory {
+namespace core {
     RawMemory RawMemory::alloc(usize size) {
         unsigned char* data = reinterpret_cast<unsigned char*>(malloc(size));
         if (!data) {
-            core::io::error("Malloc({}) returned nullptr; Probably, out of memory", size);
+            error("Malloc({}) returned nullptr; Probably, out of memory", size);
             throw OutOfMemoryException { };
         }
         return RawMemory(data, size);
@@ -20,7 +20,7 @@ namespace core::memory {
             return;
         unsigned char* data = reinterpret_cast<unsigned char*>(realloc(m_data, newSize));
         if (!data) {
-            core::io::error("Realloc({}) returned nullptr; Probably, out of memory", newSize);
+            error("Realloc({}) returned nullptr; Probably, out of memory", newSize);
             throw OutOfMemoryException { };
         }
         m_data = data;
@@ -57,4 +57,4 @@ namespace core::memory {
         ASSERT(m_data != nullptr);
         memset(m_data, value, m_size);
     }
-} // namespace core::memory
+} // namespace core

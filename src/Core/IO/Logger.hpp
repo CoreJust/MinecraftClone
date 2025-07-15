@@ -4,7 +4,7 @@
 #include <format>
 #include <Core/Common/Int.hpp>
 
-namespace core::io {
+namespace core {
 	enum class LogLevel : u8 {
 		Trace,
 		Debug,
@@ -53,4 +53,4 @@ namespace core::io {
 	void fatal(std::format_string<Args...> fmt, Args&&... args) {
 		log(LogLevel::Fatal, std::format(fmt, std::forward<Args>(args)...));
 	}
-} // namespace core::io
+} // namespace core

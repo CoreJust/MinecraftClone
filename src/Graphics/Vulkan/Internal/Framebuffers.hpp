@@ -8,13 +8,13 @@ namespace graphics::vulkan::internal {
     class RenderPass;
 
     class Framebuffers final {
-        core::collection::DynArray<VkFramebuffer> m_buffers;
+        core::DynArray<VkFramebuffer> m_buffers;
         Vulkan& m_vulkan;
 
     public:
         Framebuffers(Vulkan& vulkan, RenderPass& renderPass);
         ~Framebuffers();
 
-        PURE core::collection::DynArray<VkFramebuffer> const& get() const noexcept { return m_buffers; }
+        PURE core::DynArray<VkFramebuffer> const& get() const noexcept { return m_buffers; }
     };
 } // namespace graphics::vulkan::internal

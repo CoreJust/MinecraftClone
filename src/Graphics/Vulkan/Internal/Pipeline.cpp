@@ -127,12 +127,12 @@ namespace {
         pipelineInfo.basePipelineIndex = -1;
 
         m_pipeline = m_vulkan.create<vkCreateGraphicsPipelines>(VK_NULL_HANDLE, 1u, &pipelineInfo, nullptr);
-        core::io::info("Created Vulkan pipeline");
+        core::info("Created Vulkan pipeline");
     }
 
     Pipeline::~Pipeline() {
         if (m_vulkan.destroy<vkDestroyPipeline>(m_pipeline, nullptr))
-            core::io::info("Destroyed Vulkan pipeline");
+            core::info("Destroyed Vulkan pipeline");
         m_vulkan.destroy<vkDestroyPipelineLayout>(m_layout, nullptr);
     }
 

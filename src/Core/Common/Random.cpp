@@ -3,9 +3,9 @@
 #include <Core/Memory/TypeErasedAccessor.hpp>
 #include "Timer.hpp"
 
-namespace core::common {
+namespace core {
 	using RandomGenerator = std::mt19937;
-	using RGAccessor = memory::TypeErasedAccessor<RandomGenerator>;
+	using RGAccessor = TypeErasedAccessor<RandomGenerator>;
 
 	Random::Random() 
 		: m_rnd(RGAccessor::make()) {
@@ -51,4 +51,4 @@ namespace core::common {
 		static thread_local Random s_random;
 		return s_random;
 	}
-} // namespace core::common
+} // namespace core

@@ -16,10 +16,10 @@ namespace graphics::window {
         bool nextFrame();
 
         PURE void* getSurfaceCreateCallback() const noexcept;
-        PURE core::collection::ArrayView<char const*> getRequiredExtensions() const;
+        PURE core::ArrayView<char const*> getRequiredExtensions() const;
 
         PURE constexpr void*        windowImpl()       noexcept { return m_window; }
         PURE constexpr char const*  name()       const noexcept { return m_name; }
-        PURE core::math::Vec2u32    pixelSize() const noexcept;
+        PURE core::Vec2u32    pixelSize() const noexcept;
     };
 } // namespace graphics::window

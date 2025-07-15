@@ -16,7 +16,7 @@ namespace graphics::vulkan::internal {
 
         Instance();
     public:
-        Instance(ProjectInfo const& appInfo, core::collection::ArrayView<char const*> requiredExtensions);
+        Instance(ProjectInfo const& appInfo, core::ArrayView<char const*> requiredExtensions);
         Instance(Instance&&) noexcept = delete;
         Instance(const Instance&) noexcept = delete;
         Instance& operator=(Instance&&) noexcept = delete;

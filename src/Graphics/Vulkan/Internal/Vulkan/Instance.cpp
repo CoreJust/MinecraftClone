@@ -35,16 +35,16 @@ namespace {
         }
         switch (messageSeverity) {
             case VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT:
-                core::io::trace("Vulkan validation {:11}: {}", typeStr, pCallbackData->pMessage);
+                core::trace("Vulkan validation {:11}: {}", typeStr, pCallbackData->pMessage);
                 break;
             case VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT:
-                core::io::debug("Vulkan validation {:11}: {}", typeStr, pCallbackData->pMessage);
+                core::debug("Vulkan validation {:11}: {}", typeStr, pCallbackData->pMessage);
                 break;
             case VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT:
-                core::io::warn("Vulkan validation {:11}: {}",  typeStr, pCallbackData->pMessage);
+                core::warn("Vulkan validation {:11}: {}",  typeStr, pCallbackData->pMessage);
                 break;
             case VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT:
-                core::io::error("Vulkan validation {:11}: {}", typeStr, pCallbackData->pMessage);
+                core::error("Vulkan validation {:11}: {}", typeStr, pCallbackData->pMessage);
                 break;
         default: break;
         }
@@ -70,7 +70,7 @@ namespace {
     void initDebugCallback(VkInstance& instance, VkDebugUtilsMessengerEXT& messenger) {
         VkDebugUtilsMessengerCreateInfoEXT createInfo = makeDebugUtilsMessengerCreateInfo();
         if (!pvkCreateDebugUtilsMessengerEXT || !VK_CHECK(pvkCreateDebugUtilsMessengerEXT(instance, &createInfo, nullptr, &messenger)))
-            core::io::warn("Failed to set Vulkan debug callback");
+            core::warn("Failed to set Vulkan debug callback");
     }
 
     VkApplicationInfo makeApplicationInfo(ProjectInfo const& appInfo, ProjectInfo const& engineInfo, Version const& vulkanVersion) {
@@ -85,7 +85,7 @@ namespace {
         };
     }
 
-    VkInstance createInstance(VkApplicationInfo const& appInfo, core::collection::ArrayView<char const*> requiredExtensions, bool& needsDebugCallback) {
+    VkInstance createInstance(VkApplicationInfo const& appInfo, core::ArrayView<char const*> requiredExtensions, bool& needsDebugCallback) {
         VkInstance instance = VK_NULL_HANDLE;
         std::vector<char const*> extensions(requiredExtensions.size());
         std::copy(requiredExtensions.begin(), requiredExtensions.end(), extensions.begin());
@@ -98,7 +98,7 @@ namespace {
         VkDebugUtilsMessengerCreateInfoEXT debugUtilsCreateInfo { };
         if (config::g_isDebugEnabled) {
             if (!hasLayer(VulkanLayer::Validation)) {
-                core::io::warn("Vulkan validation layers not found: cannot enable them");
+                core::warn("Vulkan validation layers not found: cannot enable them");
             } else {
                 static char const* LAYER_NAMES[] = { getFullLayerName(VulkanLayer::Validation) };
                 createInfo.enabledLayerCount = 1;
@@ -115,7 +115,7 @@ namespace {
         createInfo.ppEnabledExtensionNames = extensions.data();
         
         if (!VK_CHECK(vkCreateInstance(&createInfo, nullptr, &instance))) {
-            core::io::fatal("Failed to create Vulkan instance");
+            core::fatal("Failed to create Vulkan instance");
             throw VulkanException { };
         }
 
@@ -124,7 +124,7 @@ namespace {
 } // namespace
 
     Instance::Instance() {
-        core::io::debug("Creating Vulkan temporary instance...");
+        core::debug("Creating Vulkan temporary instance...");
         VkApplicationInfo applicationInfo = makeApplicationInfo(DUMMY_APP_INFO, ENGINE_INFO, Version { 0, 1, 0, 0 });
         bool needsDebugCallback;
         m_instance = createInstance(applicationInfo, {}, needsDebugCallback);
@@ -133,15 +133,15 @@ namespace {
             initDebugCallback(m_instance, m_debugMessenger);
     }
 
-    Instance::Instance(ProjectInfo const& appInfo, core::collection::ArrayView<char const*> requiredExtensions) {
-        core::io::debug("Creating Vulkan instance...");
+    Instance::Instance(ProjectInfo const& appInfo, core::ArrayView<char const*> requiredExtensions) {
+        core::debug("Creating Vulkan instance...");
         VkApplicationInfo applicationInfo = makeApplicationInfo(appInfo, ENGINE_INFO, getVkVersion());
         bool needsDebugCallback;
         m_instance = createInstance(applicationInfo, requiredExtensions, needsDebugCallback);
         loadVkFunctions(m_instance);
         if (needsDebugCallback)
             initDebugCallback(m_instance, m_debugMessenger);
-        core::io::info("Created Vulkan {}.{}.{} instance", getVkVersionMajor(), getVkVersionMinor(), getVkVersionPatch());
+        core::info("Created Vulkan {}.{}.{} instance", getVkVersionMajor(), getVkVersionMinor(), getVkVersionPatch());
     }
 
     
@@ -158,7 +158,7 @@ namespace {
             }
             vkDestroyInstance(m_instance, nullptr);
             m_instance = VK_NULL_HANDLE;
-            core::io::debug("Destroyed Vulkan instance");
+            core::debug("Destroyed Vulkan instance");
         }
     }
 } // namespace graphics::vulkan::internal

@@ -1,5 +1,5 @@
 #pragma once
 
-namespace core::os {
+namespace core {
     void debugBreak();
-} // namespace core::os
+} // namespace core

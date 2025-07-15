@@ -2,10 +2,10 @@
 #include <Core/Common/Assert.hpp>
 #include <Core/Memory/RawMemory.hpp>
 
-namespace core::collection {
+namespace core {
     template<typename T>
     class ArrayView {
-        memory::RawMemory m_data;
+        RawMemory m_data;
 
     public:
         constexpr ArrayView() noexcept = default;        
@@ -14,7 +14,7 @@ namespace core::collection {
         constexpr ArrayView& operator=(ArrayView&&) noexcept = default;
         constexpr ArrayView& operator=(ArrayView const&) noexcept = default;
         constexpr ArrayView(T* ptr, usize size) noexcept : m_data(reinterpret_cast<unsigned char*>(ptr), size * sizeof(T)) { }
-        explicit constexpr ArrayView(memory::RawMemory rawData) noexcept : m_data(rawData) {
+        explicit constexpr ArrayView(RawMemory rawData) noexcept : m_data(rawData) {
             ASSERT(rawData.size() % sizeof(T) == 0);
         }
 
@@ -40,4 +40,4 @@ namespace core::collection {
 
         PURE constexpr auto&& rawMemory(this auto&& self) noexcept { return self.m_data; }
     };
-} // namespace core::collection
+} // namespace core

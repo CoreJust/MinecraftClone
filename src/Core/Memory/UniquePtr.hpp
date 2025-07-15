@@ -2,7 +2,7 @@
 #include "Forward.hpp"
 #include <Core/Common/Assert.hpp>
 
-namespace core::memory {
+namespace core {
     template<typename T>
     class UniquePtr final {
         T* m_data = nullptr;
@@ -43,5 +43,5 @@ namespace core::memory {
     UniquePtr<T> makeUP(auto&&... args) {
         return UniquePtr<T>(new T(FORWARD(args)...), static_cast<void(*)(T*)>([](T* x) { delete x; }));
     }
-} // namespace core::memory
+} // namespace core
 

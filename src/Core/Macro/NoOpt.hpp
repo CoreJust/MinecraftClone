@@ -3,16 +3,16 @@
 
 #if defined(_MSC_VER)
 #include <intrin.h>
-namespace core::macro {
+namespace core {
 	void useVolatile(char const volatile* const ptr) noexcept;
 
 	INLINE void NoOptImpl(auto const& value) noexcept {
 		useVolatile(&reinterpret_cast<char const volatile&>(value));
 		_ReadWriteBarrier();
 	}
-} // namespace core::macro
+} // namespace core
 #else
-namespace core::macro {
+namespace core {
 	INLINE void NoOptImpl(auto const& value) noexcept {
 		asm volatile("" : : "r,m"(value) : "memory");
 	}
@@ -24,7 +24,7 @@ namespace core::macro {
 		asm volatile("" : "+m,r"(value) : : "memory");
 #endif
 }
-} // namespace core::macro
+} // namespace core
 #endif
 
-#define NO_OPT(...) ::core::macro::NoOptImpl(__VA_ARGS__)
+#define NO_OPT(...) ::NoOptImpl(__VA_ARGS__)

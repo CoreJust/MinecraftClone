@@ -59,7 +59,7 @@ namespace {
             ON_ERROR_CODE(  VK_ERROR_NOT_ENOUGH_SPACE_KHR,                      "The application did not provide enough space to return all the required data");
             ON_ERROR_CODE(  VK_ERROR_UNKNOWN,                                   "An unknown error has occurred; either the application has provided invalid input, or an implementation failure has occurred.");
         default:
-            core::io::error("Unknown VkResult value: {}", static_cast<int64_t>(result));
+            core::error("Unknown VkResult value: {}", static_cast<int64_t>(result));
             description = "???";
             return false;
         }
@@ -76,9 +76,9 @@ namespace {
         std::string_view description;
         bool const isSuccess = decodeVkResult(result, description);
         if (isSuccess) {
-            core::io::trace("Operation returned {}\nat {}", description, std::stacktrace::current());
+            core::trace("Operation returned {}\nat {}", description, std::stacktrace::current());
         } else {
-            core::io::error("Vulkan error: {}\nat {}", description, std::stacktrace::current());
+            core::error("Vulkan error: {}\nat {}", description, std::stacktrace::current());
         }
         return isSuccess;
     }

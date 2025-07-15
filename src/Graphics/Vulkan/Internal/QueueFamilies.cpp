@@ -21,7 +21,7 @@ namespace graphics::vulkan::internal {
         u32 count = 0;
         vkGetPhysicalDeviceQueueFamilyProperties(device.get(), &count, nullptr);
 
-        core::collection::DynArray<VkQueueFamilyProperties> queueFamilies(count);
+        core::DynArray<VkQueueFamilyProperties> queueFamilies(count);
         vkGetPhysicalDeviceQueueFamilyProperties(device.get(), &count, queueFamilies.data());
 
         u32 queueIndex = 0;

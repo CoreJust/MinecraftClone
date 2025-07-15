@@ -13,20 +13,20 @@
 #endif
 
 int main(int argc, char** argv) {
-    core::os::setErrorSignalHandlers();
-    core::io::enableUtf8Cout();
-    core::io::ArgumentParser(argc, argv)
+    core::setErrorSignalHandlers();
+    core::enableUtf8Cout();
+    core::ArgumentParser(argc, argv)
         .onOption("debug", [](std::string_view val) { config::g_isDebugEnabled = (val != "false" && val != "off"); });
 
 	TEST_MAIN();
 
-    core::io::setLogLevel(core::io::LogLevel::Trace);
-    defer { core::io::onLoggingEnd(); };
+    core::setLogLevel(core::LogLevel::Trace);
+    defer { core::onLoggingEnd(); };
     try {
         graphics::RenderEngine engine("Minecraft Clone", { 0, 0, 1, 0 });
         engine.run();
     } catch (...) {
-        core::io::fatal("Got an exception during engine running, shutting down...");
+        core::fatal("Got an exception during engine running, shutting down...");
     }
     return 0;
 }

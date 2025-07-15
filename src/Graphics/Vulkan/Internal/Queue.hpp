@@ -31,12 +31,12 @@ namespace graphics::vulkan::internal {
     class QueueMaker final {
         VkDevice m_device;
         QueueFamilies const& m_queueFamilies;
-        core::memory::TypeErasedObject m_createdQueues;
+        core::TypeErasedObject m_createdQueues;
 
     public:
         QueueMaker(VkDevice device, QueueFamilies const& queueFamilies);
         
-        core::memory::UniquePtr<Queue> make(QueueType type);
+        core::UniquePtr<Queue> make(QueueType type);
     };
 } // namespace graphics::vulkan::internal
 

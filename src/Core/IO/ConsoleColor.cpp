@@ -6,7 +6,7 @@
 #include <iostream>
 #endif
 
-namespace core::io {
+namespace core {
     ConsoleColor g_currentForegroundColor = White;
     ConsoleColor g_currentBackgroundColor = Black;
 
@@ -46,4 +46,4 @@ namespace {
         }
         return out;
     }
-} // namespace core::io
+} // namespace core

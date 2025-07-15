@@ -2,7 +2,7 @@
 #include <Core/Memory/Forward.hpp>
 #include <Core/Common/Int.hpp>
 
-namespace core::memory {
+namespace core {
 	template<class T>
 	class TypeErasedAccessor final {
 		constexpr static inline usize ObjectSize = sizeof(T);
@@ -49,4 +49,4 @@ namespace core::memory {
 			}
 		}
 	};
-} // namespace core::memory
+} // namespace core

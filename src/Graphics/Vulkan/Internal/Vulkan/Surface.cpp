@@ -8,10 +8,10 @@
 namespace graphics::vulkan::internal {
     Surface::Surface(window::Window& win, Instance& instance)
         : m_instance(instance.get()) {
-        core::io::info("Creating Vulkan surface...");
+        core::info("Creating Vulkan surface...");
         auto createVkSurface = reinterpret_cast<VkResult(*)(VkInstance, void*, const VkAllocationCallbacks*, VkSurfaceKHR*)>(win.getSurfaceCreateCallback());
         if (!VK_CHECK(createVkSurface(m_instance, win.windowImpl(), nullptr, &m_surface))) {
-            core::io::fatal("Failed to create Vulkan surface");
+            core::fatal("Failed to create Vulkan surface");
             throw VulkanException { };
         }
     }
@@ -20,7 +20,7 @@ namespace graphics::vulkan::internal {
         if (m_surface != VK_NULL_HANDLE) {
             vkDestroySurfaceKHR(m_instance, m_surface, nullptr);
             m_surface = VK_NULL_HANDLE;
-            core::io::info("Destroyed Vulkan surface");
+            core::info("Destroyed Vulkan surface");
         }
     }
 

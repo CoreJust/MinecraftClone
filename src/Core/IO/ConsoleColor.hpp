@@ -2,7 +2,7 @@
 #include <ostream>
 #include <Core/Common/Int.hpp>
 
-namespace core::io {
+namespace core {
 #ifdef _WIN32
 	enum ConsoleColor : u8 {
 		Black,
@@ -53,4 +53,4 @@ namespace core::io {
 	std::ostream& operator<<(std::ostream& out, ConsoleColor color);
 	std::ostream& operator<<(std::ostream& out, Background color);
 	std::ostream& operator<<(std::ostream& out, Foreground color);
-} // namespace core::io
+} // namespace core

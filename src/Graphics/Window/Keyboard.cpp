@@ -4,6 +4,6 @@
 
 namespace graphics::window {
     void keyCallback(void*, int const key, int const scancode, int const action, int const mode) {
-        core::io::trace("Key {} (scancode {}); action {}, mode {}", key, scancode, action, mode);
+        core::trace("Key {} (scancode {}); action {}, mode {}", key, scancode, action, mode);
     }
 } // namespace graphics::window

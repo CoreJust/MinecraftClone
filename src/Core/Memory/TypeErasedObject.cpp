@@ -1,6 +1,6 @@
 #include "TypeErasedObject.hpp"
 
-namespace core::memory {
+namespace core {
 	TypeErasedObject::TypeErasedObject(void* data, Deleter deleter, usize typeHashCode) noexcept
 		: m_data(data), m_deleter(deleter), m_typeHashCode(typeHashCode) { }
 
@@ -31,4 +31,4 @@ namespace core::memory {
 	bool TypeErasedObject::hasValue() const noexcept {
 		return m_data != nullptr;
 	}
-} // namespace core::memory
+} // namespace core

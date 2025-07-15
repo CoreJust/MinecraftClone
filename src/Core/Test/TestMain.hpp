@@ -3,10 +3,9 @@
 #ifndef _TEST
 #define TEST_MAIN()
 #else
-#define TEST_MAIN()          \
-	core::test::test_main();
+#define TEST_MAIN() core::test_main()
 
-namespace core::test {
+namespace core {
 	void test_main();
-} // namespace core::test
+} // namespace core
 #endif

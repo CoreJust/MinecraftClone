@@ -7,7 +7,7 @@ namespace {
 } // namespace
 
     void setOutOfDateKHRCallback(Callback callback) noexcept {
-        g_onOutOfDateKHR = core::memory::move(callback);
+        g_onOutOfDateKHR = core::move(callback);
     }
 
     bool onOutOfDateKHR() {
