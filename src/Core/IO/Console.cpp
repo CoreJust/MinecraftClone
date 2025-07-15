@@ -1,9 +1,12 @@
 #include "Console.hpp"
-#include <Core/OS/OS.hpp>
+#include <Core/Macro/OS.hpp>
+#if WINDOWS
+#  include <WIndows.h>
+#endif
 
 namespace core::io {
     void enableUtf8Cout() {
-#if OS == WINDOWS
+#if WINDOWS
         SetConsoleOutputCP(CP_UTF8);
 #endif
     }

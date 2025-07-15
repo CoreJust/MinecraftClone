@@ -4,7 +4,7 @@
 #ifdef INLINE
 #  undef INLINE
 #endif
-#if COMPILER == MSVC
+#if MSVC
 #  define INLINE __forceinline
 #else
 #  define INLINE inline __attribute__((always_inline))
@@ -13,7 +13,7 @@
 #ifdef PURE
 #  undef PURE
 #endif
-#if COMPILER == MSVC
+#if MSVC
 #  define PURE [[nodiscard]]
 #else
 #  define PURE [[nodiscard]] __attribute__((const))
@@ -22,7 +22,7 @@
 #ifdef NO_UNIQUE_ADDRESS
 #  undef NO_UNIQUE_ADDRESS
 #endif
-#if COMPILER == MSVC
+#if MSVC
 #  define NO_UNIQUE_ADDRESS [[msvc::no_unique_address]]
 #else
 #  define NO_UNIQUE_ADDRESS [[no_unique_address]]

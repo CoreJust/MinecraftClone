@@ -4,7 +4,7 @@
 #ifdef __LANG_VERSION
 #  undef __LANG_VERSION
 #endif
-#if COMPILER == MSVC && _MSVC_LANG > __cplusplus
+#if MSVC && _MSVC_LANG > __cplusplus
 #  define __LANG_VERSION _MSVC_LANG
 #else
 #  define __LANG_VERSION __cplusplus

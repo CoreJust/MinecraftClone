@@ -1,43 +1,34 @@
 #pragma once
+
 #if defined(WIN32) || defined(_WIN32) || defined(__WIN32__) || defined(__NT__)
-#  include <Windows.h>
-#  define OS WINDOWS
+#  define WINDOWS 1
 #elif __APPLE__
 #  include "TargetConditionals.h"
 #  if TARGET_IPHONE_SIMULATOR
 #    error iPhone simulators not currently supported
-#    define OS IOS_SIMULATOR
+#    define IOS_SIMULATOR 1
 #  elif TARGET_OS_MACCATALYST
 #    error Mac's Catalyst not currently supported
-#    define OS MAC_CATALYST
+#    define MAC_CATALYST 1
 #  elif TARGET_OS_IPHONE
 #    error iOS not currently supported
-#    define OS IOS
+#    define IOS 1
 #  elif TARGET_OS_MAC
-#    define OS OSX
+#    define OSX 1
 #  else
 #   error "Unknown Apple platform"
 #  endif
 #elif __ANDROID__
 #  error Andoid OS not currently supported
-#  define OS ANDROID
+#  define ANDROID 1
 #elif __linux__
-#  include <unistd.h>
-#  include <sys/types.h>
-#  include <sys/stat.h>
-#  include <sys/epoll.h>
-#  include <sys/socket.h>
-#  include <sys/ioctl.h>
-#  include <fcntl.h>
-#  include <pthread.h>
-#  include <linux/input.h>
-#  define OS LINUX
+#  define LINUX 1
 #elif __unix__
 #  error General UNIX not currently supported
-#  define OS UNIX
+#  define UNIX 1
 #elif defined(_POSIX_VERSION)
 #  error General POSIX not currently supported
-#  define OS POSIX
+#  define POSIX 1
 #else
 #  error OS not supported
 #endif

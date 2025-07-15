@@ -1,15 +1,17 @@
 #include "Debug.hpp"
-#include "OS.hpp"
+#include <Core/Macro/OS.hpp>
 #include <Core/Macro/Compiler.hpp>
-#if OS != WINDOWS && !((OS == LINUX || OS == OSX) && (COMPILER == GCC || COMPILER == CLANG))
+#if WINDOWS
+#  include <Windows.h>
+#elif !((LINUX || OSX) && (GCC || CLANG))
 #  include <csignal>
 #endif
 
 namespace core::os {
     void debugBreak() {
-#if OS == WINDOWS
+#if WINDOWS
         DebugBreak();
-#elif (OS == LINUX || OS == OSX) && (COMPILER == GCC || COMPILER == CLANG)
+#elif (LINUX || OSX) && (GCC || CLANG)
         __builtin_trap();
 #else
         std::raise(SIGTRAP);
