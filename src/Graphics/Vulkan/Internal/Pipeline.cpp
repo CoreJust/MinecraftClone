@@ -151,6 +151,7 @@ namespace {
         renderPassInfo.pClearValues = &clearColor;
         vkCmdBeginRenderPass(commandBuffer.get(), &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
         vkCmdBindPipeline(commandBuffer.get(), VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline);
+        vkCmdDraw(commandBuffer.get(), 3, 1, 0, 0); // Temporary
     }
 
     void Pipeline::endRenderPass(CommandBuffer& commandBuffer) {

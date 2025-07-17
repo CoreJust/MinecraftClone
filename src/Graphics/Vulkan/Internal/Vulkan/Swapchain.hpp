@@ -21,6 +21,7 @@ namespace graphics::vulkan::internal {
         core::UniquePtr<Queue> m_graphicsQueue;
         core::UniquePtr<Queue> m_presentQueue;
         core::DynArray<Frame> m_frames;
+        core::DynArray<Fence*> m_swapchainFences;
         VkSwapchainKHR m_swapchain = VK_NULL_HANDLE;
         core::UniquePtr<SwapchainFormat> m_format;
         u64 m_framesCounter = 0;

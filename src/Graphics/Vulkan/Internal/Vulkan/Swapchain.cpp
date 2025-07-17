@@ -121,18 +121,22 @@ namespace {
     Frame* Swapchain::acquireNextFrame() {
         Frame& frame = currentFrame();
         frame.fence().wait();
-        frame.fence().reset();
 
         if (!m_vulkan.safeCall<vkAcquireNextImageKHR>(m_swapchain, UINT64_MAX, frame.imageAvailable().get(), VK_NULL_HANDLE, &m_swapchainIndex)) {
             core::error("Failed to acquire next frame");
             m_swapchainIndex = static_cast<u32>(-1);
             return nullptr;
         }
+        Fence*& swapchainFence = m_swapchainFences[m_swapchainIndex];
+        if (swapchainFence != nullptr) 
+            swapchainFence->wait();
+        swapchainFence = &frame.fence();
         return &currentFrame();
     }
 
     void Swapchain::submit() {
         Frame& frame = currentFrame();
+        frame.fence().reset();
         m_graphicsQueue->submit(frame.commandBuffer(), frame.imageAvailable(), frame.renderingDone(), frame.fence());
     }
 
@@ -166,5 +170,6 @@ namespace {
         m_swapchain                = m_vulkan.create<vkCreateSwapchainKHR>(&createInfo, nullptr);
         m_images                   = getSwapchainImages(m_vulkan, m_swapchain);
         m_imageViews               = getSwapchainImageViews(m_vulkan, m_images, m_format->surfaceFormat);
+        m_swapchainFences          = core::DynArray<Fence*>(m_imageCount, nullptr);
     }
 } // namespace graphics::vulkan::internal
