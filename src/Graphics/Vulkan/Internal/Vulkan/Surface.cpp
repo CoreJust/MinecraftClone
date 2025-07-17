@@ -1,4 +1,5 @@
 #include "Surface.hpp"
+#include <vulkan/vulkan.h>
 #include <Core/Common/Assert.hpp>
 #include <Core/IO/Logger.hpp>
 #include <Graphics/Window/Window.hpp>

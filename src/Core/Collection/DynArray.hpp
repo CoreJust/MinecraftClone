@@ -1,59 +1,62 @@
 #pragma once
 #include <Core/Meta/IsSame.hpp>
+#include <Core/Common/NonCopyable.hpp>
 #include <Core/Memory/Exchange.hpp>
+#include <Core/Memory/Move.hpp>
+#include <Core/Memory/Function.hpp>
 #include "ArrayView.hpp"
 
 namespace core {
     template<typename T>
-    class DynArray final {
-        ArrayView<T> m_data { };
+    class DynArray final : public ArrayView<T>, NonCopyable {
+        using Parent = ArrayView<T>;
 
     public:
-        constexpr DynArray() noexcept = default;        
-        constexpr DynArray(DynArray&& other) noexcept
-            : m_data(exchange(other.m_data, ArrayView<T> { })) { }
+        using Raw = Parent::Raw;
+        using Parent::raw;
+
+    private:
+        constexpr DynArray(Raw mem) noexcept : Parent(move(mem)) { }
+    public:
+        constexpr DynArray() noexcept = default;
+        constexpr DynArray(DynArray&& other) noexcept : Parent(exchange(other.raw(), Raw { })) { }
         constexpr DynArray& operator=(DynArray&& other) noexcept {
-            m_data = exchange(other.m_data, ArrayView<T> { });
+            Parent::operator=(Parent { exchange(other.raw(), Raw { }) });
             return *this;
         }
         DynArray(usize size, T const& defaultValue = T { })
-            : m_data(RawMemory::alloc(size * sizeof(T))) {
-            for (auto& item : m_data)
+            : Parent(Raw::alloc(size)) {
+            for (auto& item : *this)
                 ::new(&item) T { defaultValue };
         }
-        DynArray(usize size, auto&& func)
-            requires requires(usize i) { { func(i) } -> IsSame<T>; }
-            : m_data(RawMemory::alloc(size * sizeof(T))) {
+        DynArray(usize size, Function<T, usize> const& func)
+            : Parent(Raw::alloc(size)) {
             usize i = 0;
-            for (auto& item : m_data)
+            for (auto& item : *this)
                 ::new(&item) T { func(i++) };
         }
-        explicit DynArray(ArrayView<T> view)
-            : m_data(RawMemory::alloc(view.size())) {
-            m_data.rawMemory().copyFrom(view.rawMemory());
+        DynArray(usize size, Function<void, T*, usize> const& func)
+            : Parent(Raw::alloc(size)) {
+            usize i = 0;
+            for (auto& item : *this)
+                func(&item, i++);
+        }
+        explicit DynArray(Parent view)
+            : Parent(Raw::alloc(view.size())) {
+            raw().copyFrom(view.raw());
         }
         ~DynArray() {
-            for (auto& item : m_data)
+            for (auto& item : *this)
                 item.~T();
-            m_data.rawMemory().free();
+            raw().free();
         }
 
-        PURE constexpr operator ArrayView<T>() const noexcept { return m_data; }
-
-        PURE constexpr auto&& operator[](this auto&& self, usize idx) { return self.m_data[idx]; }
+        PURE static DynArray uninitialized(usize size) {
+            return DynArray(Raw::alloc(size));
+        }
 
         void resize(usize newSize) {
-            m_data.rawMemory().resize(newSize * sizeof(T));
+            raw().resize(newSize);
         }
-
-        PURE constexpr auto begin(this auto&& self) noexcept { return self.m_data.begin(); }
-        PURE constexpr T const* cbegin() const noexcept { return m_data.cbegin(); }
-        PURE constexpr auto end(this auto&& self) noexcept { return self.m_data.end(); }
-        PURE constexpr T const* cend() const noexcept { return m_data.cend(); }
-
-        PURE constexpr usize size() const noexcept { return m_data.size(); }
-        PURE constexpr auto data(this auto&& self) noexcept { return self.m_data.data(); }
-
-        PURE constexpr auto&& arrayView(this auto&& self) noexcept { return self.m_data; }
     };
 } // namespace core

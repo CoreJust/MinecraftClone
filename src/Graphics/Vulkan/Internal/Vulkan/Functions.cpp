@@ -3,10 +3,10 @@
 
 #define LOAD_FUNC_INSTANCELESS(name)                                                   \
     p##name = reinterpret_cast<PFN_##name>(vkGetInstanceProcAddr(VK_NULL_HANDLE, #name)); \
-    core::info("Function " #name " : {}", (name == NULL ? "Not found" : "Found"))
+    core::debug("Function " #name " : {}", (name == NULL ? "Not found" : "Found"))
 #define LOAD_FUNC(name)                                                                \
     p##name = reinterpret_cast<PFN_##name>(vkGetInstanceProcAddr(instance, #name));       \
-    core::info("Function " #name " : {}", (name == NULL ? "Not found" : "Found"))
+    core::debug("Function " #name " : {}", (name == NULL ? "Not found" : "Found"))
 
 namespace graphics::vulkan::internal {
     PFN_vkEnumerateInstanceVersion      pvkEnumerateInstanceVersion      = nullptr;

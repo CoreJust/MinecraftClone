@@ -1,11 +1,11 @@
 #pragma once
+#include <vulkan/vulkan.h>
 #include <Core/Math/Vec.hpp>
 #include <Core/Collection/DynArray.hpp>
-#include <vulkan/vulkan.h>
 
 namespace graphics::vulkan::internal {
     struct SwapchainSupport final {
-        VkSurfaceCapabilitiesKHR                       const capabilities { };
+        VkSurfaceCapabilitiesKHR           const capabilities { };
         core::DynArray<VkSurfaceFormatKHR> const formats      { };
         core::DynArray<VkPresentModeKHR>   const presentModes { };
 

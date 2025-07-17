@@ -19,6 +19,7 @@ namespace graphics::vulkan {
         class CommandPool;
         class CommandBuffer;
         class Pipeline;
+        class Frame;
     }
 
     class VulkanManager final {
@@ -28,11 +29,9 @@ namespace graphics::vulkan {
         };
 
         core::UniquePtr<internal::Vulkan> m_vulkan;
-        core::UniquePtr<internal::CommandPool> m_commandPool;
-        core::DynArray<internal::CommandBuffer> m_commandBuffers;
         std::vector<PipelineNote> m_pipelines;
         window::Window& m_pWindow;
-        u32 m_frameIndex = static_cast<u32>(-1);
+        internal::Frame* m_frame = nullptr;
         bool m_requiresSwapchainRecreation = false;
 
     public:

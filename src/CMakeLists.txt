@@ -1,6 +1,6 @@
 set(DEPS
-    glfw
-    Vulkan::Vulkan)
+    Vulkan::Vulkan
+    glfw)
 set(INCLUDES
     ./)
 set(SYSTEM_INCLUDES

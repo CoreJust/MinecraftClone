@@ -1,5 +1,6 @@
 #include "SwapchainSupport.hpp"
 #include <algorithm>
+#include <vulkan/vulkan.h>
 #include <Core/Common/Assert.hpp>
 
 namespace graphics::vulkan::internal {

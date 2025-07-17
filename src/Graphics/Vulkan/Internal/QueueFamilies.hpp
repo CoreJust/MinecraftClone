@@ -19,7 +19,7 @@ namespace graphics::vulkan::internal {
         QueueFamilies& operator=(QueueFamilies const&) noexcept = default;
         QueueFamilies& operator=(QueueFamilies&&) noexcept = default;
 
-        PURE bool     hasFamily(QueueType type) const noexcept { return m_indices[static_cast<usize>(type)].has_value(); }
-        PURE u32 getIndex (QueueType type) const noexcept { return m_indices[static_cast<usize>(type)].value(); }
+        PURE bool hasFamily(QueueType type) const noexcept { return m_indices[static_cast<usize>(type)].has_value(); }
+        PURE u32  getIndex (QueueType type) const noexcept { return m_indices[static_cast<usize>(type)].value(); }
     };
 } // namespace graphics::vulkan::internal

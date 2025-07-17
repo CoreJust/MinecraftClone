@@ -1,6 +1,6 @@
 #pragma once
-#include <vulkan/vulkan.h>
 #include <Core/Macro/Attributes.hpp>
+#include "../Wrapper/Handles.hpp"
 
 namespace graphics::vulkan::internal {
     class Vulkan;
@@ -13,6 +13,7 @@ namespace graphics::vulkan::internal {
         Semaphore(Vulkan& vulkan);
         ~Semaphore();
 
-        PURE VkSemaphore get() const noexcept { return m_semaphore; }
+        PURE VkSemaphore  get() const noexcept { return m_semaphore; }
+        PURE VkSemaphore* ptr()       noexcept { return &m_semaphore; }
     };
 } // namespace graphics::vulkan::internal

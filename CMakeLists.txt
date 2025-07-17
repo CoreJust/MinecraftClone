@@ -34,7 +34,6 @@ FetchContent_Declare(
     GIT_TAG        3.4
 )
 FetchContent_MakeAvailable(GLFW)
-#add_subdirectory(third_party/glfw-src)
 set(GLFW_INCLUDE ${PROJECT_SOURCE_DIR}/third_party/glfw-src/include)
 
 

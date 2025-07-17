@@ -1,13 +1,14 @@
 #pragma once
-#include <vulkan/vulkan.h>
 #include <Core/Memory/UniquePtr.hpp>
 #include <Core/Memory/TypeErasedObject.hpp>
 #include <Core/Macro/Attributes.hpp>
+#include "Wrapper/Handles.hpp"
 #include "QueueType.hpp"
 
 namespace graphics::vulkan::internal {
     class CommandBuffer;
     class Semaphore;
+    class Fence;
 
     class Queue final {
         VkQueue m_queue = VK_NULL_HANDLE;
@@ -20,7 +21,7 @@ namespace graphics::vulkan::internal {
         Queue& operator=(Queue&&) noexcept = default;
         Queue& operator=(const Queue&) noexcept = default;
 
-        void submit(CommandBuffer& commandBuffer, Semaphore& wait, Semaphore& signal);
+        void submit(CommandBuffer& commandBuffer, Semaphore& wait, Semaphore& signal, Fence& fence);
         void waitIdle() const;
 
         PURE VkQueue get() const noexcept { return m_queue; };

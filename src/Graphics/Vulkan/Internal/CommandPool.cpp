@@ -1,4 +1,5 @@
 #include "CommandPool.hpp"
+#include <vulkan/vulkan.h>
 #include <Core/IO/Logger.hpp>
 #include <Core/Collection/DynArray.hpp>
 #include "Check.hpp"

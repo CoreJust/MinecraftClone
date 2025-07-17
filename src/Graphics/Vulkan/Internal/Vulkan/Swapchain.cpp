@@ -1,5 +1,8 @@
 #include "Swapchain.hpp"
+#include <vulkan/vulkan.h>
+#include <Core/Memory/Move.hpp>
 #include <Core/IO/Logger.hpp>
+#include "SwapchainFormat.hpp"
 #include "SwapchainSupport.hpp"
 #include "Vulkan.hpp"
 #include "../../Exception.hpp"
@@ -85,25 +88,25 @@ namespace {
     }
 } // namespace
 
+    Swapchain::Swapchain(Swapchain& previous, core::Vec2u32 pixelSize) 
+        : m_vulkan(previous.m_vulkan)
+        , m_graphicsQueue(core::move(previous.m_graphicsQueue))
+        , m_presentQueue (core::move(previous.m_presentQueue))
+        , m_frames(core::move(previous.m_frames))
+    {    
+        core::info("Recreating Vulkan swapchain...");
+        initialize(pixelSize);
+    }
 
-    Swapchain::Swapchain(Vulkan& vulkan, core::Vec2u32 pixelSize)
+    Swapchain::Swapchain(Vulkan& vulkan, core::Vec2u32 pixelSize, usize framesCount)
         : m_vulkan(vulkan)
-        , m_imageAvailable(m_vulkan)
-        , m_renderingDone(m_vulkan)
+        , m_frames(framesCount, [&vulkan](Frame* ptr, usize) { new(ptr) Frame { vulkan }; })
     {
         core::info("Creating Vulkan swapchain...");
-        VkSwapchainCreateInfoKHR createInfo = makeSwapchainCreateInfo(m_vulkan, pixelSize);
-        m_surfaceFormat.format     = createInfo.imageFormat;
-        m_surfaceFormat.colorSpace = createInfo.imageColorSpace;
-        m_presentMode              = createInfo.presentMode;
-        m_extent                   = createInfo.imageExtent;
-        m_imageCount               = createInfo.minImageCount;
-        m_swapchain                = m_vulkan.create<vkCreateSwapchainKHR>(&createInfo, nullptr);
+        initialize(pixelSize);
         QueueMaker queueMaker { m_vulkan.device().get(), m_vulkan.queueFamilies() };
         m_graphicsQueue = queueMaker.make(internal::QueueType::Graphics);
         m_presentQueue  = queueMaker.make(internal::QueueType::Present);
-        m_images        = getSwapchainImages(m_vulkan, m_swapchain);
-        m_imageViews    = getSwapchainImageViews(m_vulkan, m_images, m_surfaceFormat);
     }
 
     Swapchain::~Swapchain() {
@@ -115,34 +118,53 @@ namespace {
         }
     }
     
-    u32 Swapchain::acquireNextFrame() {
-        u32 result;
-        if (!m_vulkan.safeCall<vkAcquireNextImageKHR>(m_swapchain, UINT64_MAX, m_imageAvailable.get(), VK_NULL_HANDLE, &result)) {
+    Frame* Swapchain::acquireNextFrame() {
+        Frame& frame = currentFrame();
+        frame.fence().wait();
+        frame.fence().reset();
+
+        if (!m_vulkan.safeCall<vkAcquireNextImageKHR>(m_swapchain, UINT64_MAX, frame.imageAvailable().get(), VK_NULL_HANDLE, &m_swapchainIndex)) {
             core::error("Failed to acquire next frame");
-            return static_cast<u32>(-1);
+            m_swapchainIndex = static_cast<u32>(-1);
+            return nullptr;
         }
-        return result;
+        return &currentFrame();
     }
 
-    void Swapchain::submit(CommandBuffer& commandBuffer) {
-        m_graphicsQueue->submit(commandBuffer, m_imageAvailable, m_renderingDone);
+    void Swapchain::submit() {
+        Frame& frame = currentFrame();
+        m_graphicsQueue->submit(frame.commandBuffer(), frame.imageAvailable(), frame.renderingDone(), frame.fence());
     }
 
-    void Swapchain::present(u32 index) {
-        VkSemaphore signalSemaphores[] = { m_renderingDone.get() };
+    void Swapchain::present() {
+        ASSERT(m_swapchainIndex != static_cast<u32>(-1), "No swapchain index is acquired; Cannot present");
+
         VkPresentInfoKHR presentInfo { };
         presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
         presentInfo.pNext = nullptr;
         presentInfo.waitSemaphoreCount = 1;
-        presentInfo.pWaitSemaphores = signalSemaphores;
+        presentInfo.pWaitSemaphores = currentFrame().renderingDone().ptr();
         presentInfo.swapchainCount = 1;
         presentInfo.pSwapchains = &m_swapchain;
-        presentInfo.pImageIndices = &index;
+        presentInfo.pImageIndices = &m_swapchainIndex;
         presentInfo.pResults = nullptr;
 
         if (!VK_CHECK(vkQueuePresentKHR(m_presentQueue->get(), &presentInfo))) {
-            core::error("Failed to present image (index {}) to present queue", index);
+            core::error("Failed to present image (index {}) to present queue", m_swapchainIndex);
             throw VulkanException { };
         }
+
+        ++m_framesCounter;
+    }
+    
+    void Swapchain::initialize(core::Vec2u32 pixelSize) {
+        VkSwapchainCreateInfoKHR createInfo = makeSwapchainCreateInfo(m_vulkan, pixelSize);
+        m_format = core::makeUP<SwapchainFormat>(SwapchainFormat {
+            { createInfo.imageFormat, createInfo.imageColorSpace }, createInfo.presentMode, createInfo.imageExtent
+        });
+        m_imageCount               = createInfo.minImageCount;
+        m_swapchain                = m_vulkan.create<vkCreateSwapchainKHR>(&createInfo, nullptr);
+        m_images                   = getSwapchainImages(m_vulkan, m_swapchain);
+        m_imageViews               = getSwapchainImageViews(m_vulkan, m_images, m_format->surfaceFormat);
     }
 } // namespace graphics::vulkan::internal

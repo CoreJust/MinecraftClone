@@ -1,4 +1,5 @@
 #include "QueueFamilies.hpp"
+#include <vulkan/vulkan.h>
 #include <Core/Common/Assert.hpp>
 #include <Core/Collection/DynArray.hpp>
 #include "Vulkan/Surface.hpp"

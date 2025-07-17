@@ -1,7 +1,9 @@
 #include "Pipeline.hpp"
+#include <vulkan/vulkan.h>
 #include <Core/IO/Logger.hpp>
 #include "Check.hpp"
 #include "Vulkan/Vulkan.hpp"
+#include "Vulkan/SwapchainFormat.hpp"
 #include "CommandBuffer.hpp"
 #include "ShaderModule.hpp"
 #include "../Exception.hpp"
@@ -54,7 +56,7 @@ namespace {
 
         VkViewport viewport { };
         VkRect2D   scissor { };
-        VkPipelineViewportStateCreateInfo viewportState = makeViewportStateCreateInfo(m_vulkan.swapchain().extent(), viewport, scissor);
+        VkPipelineViewportStateCreateInfo viewportState = makeViewportStateCreateInfo(m_vulkan.swapchain().format().extent, viewport, scissor);
 
         VkPipelineRasterizationStateCreateInfo rasterizer { };
         rasterizer.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
@@ -142,7 +144,7 @@ namespace {
         renderPassInfo.renderPass = m_pass.get();
         renderPassInfo.framebuffer = m_framebuffers.get()[index];
         renderPassInfo.renderArea.offset = { 0, 0 };
-        renderPassInfo.renderArea.extent = m_vulkan.swapchain().extent();
+        renderPassInfo.renderArea.extent = m_vulkan.swapchain().format().extent;
 
         VkClearValue clearColor = {{{ 0.f, 0.f, 1.f, 1.f }}};
         renderPassInfo.clearValueCount = 1;

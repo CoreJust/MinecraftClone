@@ -1,7 +1,9 @@
 #include "RenderPass.hpp"
+#include <vulkan/vulkan.h>
 #include <Core/IO/Logger.hpp>
 #include "Check.hpp"
 #include "Vulkan/Swapchain.hpp"
+#include "Vulkan/SwapchainFormat.hpp"
 #include "Vulkan/Vulkan.hpp"
 #include "../Exception.hpp"
 
@@ -9,7 +11,7 @@ namespace graphics::vulkan::internal {
     RenderPass::RenderPass(Vulkan& vulkan) 
         : m_vulkan(vulkan) {
         VkAttachmentDescription colorAttachment { };
-        colorAttachment.format = m_vulkan.swapchain().surfaceFormat().format;
+        colorAttachment.format = m_vulkan.swapchain().format().surfaceFormat.format;
         colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
         colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
         colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;

@@ -11,7 +11,7 @@ char const* makeShaderPath(char const* const shaderPath) {
     static char s_buffer[1024] = SHADER_PATH;
     char const* src = shaderPath;
     char* dst = s_buffer + SHADER_PATH_SIZE;
-    char const* end = s_buffer + 1024;
+    [[maybe_unused]] char const* end = s_buffer + 1024;
     while (*src) {
         *(dst++) = *(src++);
         ASSERT(dst < end);

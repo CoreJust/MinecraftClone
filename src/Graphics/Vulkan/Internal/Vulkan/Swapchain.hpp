@@ -1,16 +1,18 @@
 #pragma once
-#include <vulkan/vulkan.h>
 #include <Core/Macro/Attributes.hpp>
 #include <Core/Math/Vec.hpp>
 #include <Core/Memory/UniquePtr.hpp>
 #include <Core/Collection/DynArray.hpp>
-#include "../Semaphore.hpp"
+#include "../Wrapper/Handles.hpp"
+#include "Frame.hpp"
 
 namespace graphics::vulkan::internal {
     struct SwapchainSupport;
     class Vulkan;
     class Queue;
     class CommandBuffer;
+    class Semaphore;
+    struct SwapchainFormat;
 
     class Swapchain final {
         Vulkan& m_vulkan;
@@ -18,30 +20,32 @@ namespace graphics::vulkan::internal {
         core::DynArray<VkImageView> m_imageViews;
         core::UniquePtr<Queue> m_graphicsQueue;
         core::UniquePtr<Queue> m_presentQueue;
-        Semaphore m_imageAvailable;
-        Semaphore m_renderingDone;
+        core::DynArray<Frame> m_frames;
         VkSwapchainKHR m_swapchain = VK_NULL_HANDLE;
-        VkSurfaceFormatKHR m_surfaceFormat;
-        VkPresentModeKHR m_presentMode;
-        VkExtent2D m_extent;
+        core::UniquePtr<SwapchainFormat> m_format;
+        u64 m_framesCounter = 0;
+        u32 m_swapchainIndex = static_cast<u32>(-1);
         u32 m_imageCount;
 
     public:
-        Swapchain(Vulkan& vulkan, core::Vec2u32 pixelSize);
+        Swapchain(Swapchain& previous, core::Vec2u32 pixelSize); // Recreates swapchain
+        Swapchain(Vulkan& vulkan, core::Vec2u32 pixelSize, usize framesCount);
         ~Swapchain();
 
         // Returns -1 on failure
-        PURE u32 acquireNextFrame();
+        PURE Frame* acquireNextFrame();
+        PURE Frame& currentFrame() noexcept { return m_frames[m_framesCounter % m_frames.size()]; }
+        PURE u32    swapchainIndex() const noexcept { return m_swapchainIndex; }
         
-        void submit(CommandBuffer& commandBuffer);
-        void present(u32 index);
+        void submit();
+        void present();
 
-        PURE VkSwapchainKHR            get()               const noexcept { return m_swapchain; }
-        PURE auto const&               imageViews()        const noexcept { return m_imageViews; }
-        PURE Semaphore&                imageAvailableSemaphore() noexcept { return m_imageAvailable; }
-        PURE Semaphore&                renderingDoneSemaphore()  noexcept { return m_renderingDone; }
-        PURE VkSurfaceFormatKHR const& surfaceFormat()     const noexcept { return m_surfaceFormat; }
-        PURE VkExtent2D const&         extent()            const noexcept { return m_extent; }
-        PURE u32                  imageCount()        const noexcept { return m_imageCount; }
+        PURE VkSwapchainKHR                     get()               const noexcept { return m_swapchain; }
+        PURE core::DynArray<VkImageView> const& imageViews()        const noexcept { return m_imageViews; }
+        PURE SwapchainFormat             const& format()            const noexcept { return *m_format; }
+        PURE u32                                imageCount()        const noexcept { return m_imageCount; }
+
+    private:
+        void initialize(core::Vec2u32 pixelSize);
     };
 } // namespace graphics::vulkan::internal

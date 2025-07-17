@@ -1,7 +1,7 @@
 #pragma once
-#include <vulkan/vulkan.h>
 #include <Core/Macro/Attributes.hpp>
 #include <Core/Collection/ArrayView.hpp>
+#include "../Wrapper/Handles.hpp"
 #include <Graphics/Vulkan/Version.hpp>
 
 namespace graphics::vulkan::internal {
@@ -14,7 +14,6 @@ namespace graphics::vulkan::internal {
         VkInstance m_instance = VK_NULL_HANDLE;
         VkDebugUtilsMessengerEXT m_debugMessenger = VK_NULL_HANDLE;
 
-        Instance();
     public:
         Instance(ProjectInfo const& appInfo, core::ArrayView<char const*> requiredExtensions);
         Instance(Instance&&) noexcept = delete;
@@ -22,8 +21,6 @@ namespace graphics::vulkan::internal {
         Instance& operator=(Instance&&) noexcept = delete;
         Instance& operator=(const Instance&) noexcept = delete;
         ~Instance();
-
-        PURE static Instance makeTemporaryInstance();
 
         PURE VkInstance get() const noexcept { return m_instance; };
     };

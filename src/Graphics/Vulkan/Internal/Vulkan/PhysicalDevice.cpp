@@ -1,6 +1,8 @@
 #include "PhysicalDevice.hpp"
+#include <vulkan/vulkan.h>
 #include <Core/IO/Logger.hpp>
 #include "Vulkan.hpp"
+#include "SwapchainSupport.hpp"
 #include "../../Version.hpp"
 #include "../../Exception.hpp"
 
@@ -11,11 +13,10 @@ namespace {
             || !d.queueFamilies().hasFamily(QueueType::Present)
             || !d.extensions().hasExtension(VulkanExtension::Swapchain)
             || d.swapchainSupport().formats.size() == 0
-            || d.swapchainSupport().presentModes.size() == 0
-            || Version::fromVk(d.props().apiVersion) < getVkVersion())
+            || d.swapchainSupport().presentModes.size() == 0)
             return 0;
 
-        return 1;
+        return d.props().apiVersion;
     }
 } // namespace
 
@@ -23,34 +24,15 @@ namespace {
     PhysicalDevice::PhysicalDevice(VkPhysicalDevice device, Surface const& surface, PassKey) noexcept
         : m_physicalDevice(device)
         , m_extensions(*this)
-        , m_swapchainSupport(m_physicalDevice, surface.get()) {
-        vkGetPhysicalDeviceProperties(m_physicalDevice, &m_properties);
+        , m_swapchainSupport(core::makeUP<SwapchainSupport>(m_physicalDevice, surface.get())) {
+        m_properties = core::makeUP<VkPhysicalDeviceProperties>();
+        vkGetPhysicalDeviceProperties(m_physicalDevice, m_properties.get());
         m_queueFamilies = QueueFamilies(*this, surface);
-    }
-        
-    Version PhysicalDevice::getHighestPhysicalDeviceVersion(Instance& instance) noexcept {
-        u32 deviceCount = 0;
-        vkEnumeratePhysicalDevices(instance.get(), &deviceCount, nullptr);
-        if (deviceCount == 0)
-            return { };
-
-        core::DynArray<VkPhysicalDevice> devices(deviceCount);
-        vkEnumeratePhysicalDevices(instance.get(), &deviceCount, devices.data());
-
-        Version result;
-        for (const VkPhysicalDevice& d : devices) {
-            VkPhysicalDeviceProperties properties;
-            vkGetPhysicalDeviceProperties(d, &properties);
-            Version apiVersion = Version::fromVk(properties.apiVersion);
-            if (result < apiVersion)
-                result = apiVersion;
-        }
-        return result;
     }
 
     core::DynArray<core::UniquePtr<PhysicalDevice>> PhysicalDevice::getPhysicalDevices(Vulkan& vulkan) noexcept {
         core::DynArray<VkPhysicalDevice> devices = vulkan.enumerate<vkEnumeratePhysicalDevices>();
-        return { devices.size(), [&](usize i) { 
+        return { devices.size(), [&](usize i) {
             return core::makeUP<PhysicalDevice>(devices[i], vulkan.surface(), PassKey { });
         }};
     }

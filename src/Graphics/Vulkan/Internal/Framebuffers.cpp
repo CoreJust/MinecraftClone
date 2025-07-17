@@ -1,7 +1,9 @@
 #include "Framebuffers.hpp"
+#include <vulkan/vulkan.h>
 #include <Core/IO/Logger.hpp>
 #include "Check.hpp"
 #include "Vulkan/Vulkan.hpp"
+#include "Vulkan/SwapchainFormat.hpp"
 #include "RenderPass.hpp"
 #include "../Exception.hpp"
 
@@ -17,8 +19,8 @@ namespace graphics::vulkan::internal {
             framebufferInfo.renderPass = renderPass.get();
             framebufferInfo.attachmentCount = 1;
             framebufferInfo.pAttachments = attachments;
-            framebufferInfo.width  = m_vulkan.swapchain().extent().width;
-            framebufferInfo.height = m_vulkan.swapchain().extent().height;
+            framebufferInfo.width  = m_vulkan.swapchain().format().extent.width;
+            framebufferInfo.height = m_vulkan.swapchain().format().extent.height;
             framebufferInfo.layers = 1;
 
             m_buffers[i] = m_vulkan.create<vkCreateFramebuffer>(&framebufferInfo, nullptr);

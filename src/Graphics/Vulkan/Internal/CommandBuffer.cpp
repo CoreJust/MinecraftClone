@@ -1,4 +1,5 @@
 #include "CommandBuffer.hpp"
+#include <vulkan/vulkan.h>
 #include <Core/IO/Logger.hpp>
 #include "Check.hpp"
 #include "../Exception.hpp"

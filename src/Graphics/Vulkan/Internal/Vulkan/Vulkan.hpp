@@ -5,6 +5,7 @@
 #include <Core/Meta/UnPtr.hpp>
 #include <Core/Memory/UniquePtr.hpp>
 #include <Core/Memory/Forward.hpp>
+#include <Core/Common/NonMovable.hpp>
 #include <Core/Common/Version.hpp>
 #include <Core/Collection/DynArray.hpp>
 #include "../Check.hpp"
@@ -19,7 +20,7 @@ namespace graphics::window {
 }
 
 namespace graphics::vulkan::internal {
-    class Vulkan final {
+    class Vulkan final : core::NonMovable {
         core::UniquePtr<Instance>       m_instance;
         core::UniquePtr<Surface>        m_surface;
         core::UniquePtr<PhysicalDevice> m_physicalDevice;

@@ -1,5 +1,6 @@
 #include "Instance.hpp"
 #include <vector>
+#include <vulkan/vulkan.h>
 #include <Config.hpp>
 #include <Core/Collection/DynArray.hpp>
 #include <Core/IO/Logger.hpp>
@@ -13,10 +14,6 @@ namespace graphics::vulkan::internal {
 namespace {
     constexpr ProjectInfo ENGINE_INFO {
         .name = "Voxel Engine",
-        .version = Version {{ 0, 0, 1, 0 }},
-    };
-    constexpr ProjectInfo DUMMY_APP_INFO {
-        .name = "Dummy",
         .version = Version {{ 0, 0, 1, 0 }},
     };
 
@@ -119,19 +116,12 @@ namespace {
             throw VulkanException { };
         }
 
+        for (char const* ext : extensions) 
+            core::debug("Loaded Vulkan extension: {}", ext);
+
         return instance;
     }
 } // namespace
-
-    Instance::Instance() {
-        core::debug("Creating Vulkan temporary instance...");
-        VkApplicationInfo applicationInfo = makeApplicationInfo(DUMMY_APP_INFO, ENGINE_INFO, Version { 0, 1, 0, 0 });
-        bool needsDebugCallback;
-        m_instance = createInstance(applicationInfo, {}, needsDebugCallback);
-        loadVkFunctions(m_instance);
-        if (needsDebugCallback)
-            initDebugCallback(m_instance, m_debugMessenger);
-    }
 
     Instance::Instance(ProjectInfo const& appInfo, core::ArrayView<char const*> requiredExtensions) {
         core::debug("Creating Vulkan instance...");
@@ -142,11 +132,6 @@ namespace {
         if (needsDebugCallback)
             initDebugCallback(m_instance, m_debugMessenger);
         core::info("Created Vulkan {}.{}.{} instance", getVkVersionMajor(), getVkVersionMinor(), getVkVersionPatch());
-    }
-
-    
-    Instance Instance::makeTemporaryInstance() {
-        return Instance();
     }
 
     Instance::~Instance() {

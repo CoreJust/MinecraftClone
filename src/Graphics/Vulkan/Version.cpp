@@ -2,11 +2,10 @@
 #include <tuple>
 #include <Core/Common/Assert.hpp>
 #include "Internal/Vulkan/Functions.hpp"
-#include "Internal/Vulkan/Instance.hpp"
-#include "Internal/Vulkan/PhysicalDevice.hpp"
 
 namespace graphics::vulkan {
-    Version g_vkVersion {};
+    Version g_vkVersion { };
+    Version g_deviceVkVersion { };
     
     Version Version::fromVk(u32 vkVersion) noexcept {
         return {{
@@ -22,30 +21,33 @@ namespace graphics::vulkan {
     }
 
     void loadVkVersion() {
-        internal::Instance instance = internal::Instance::makeTemporaryInstance();
-        g_vkVersion = internal::PhysicalDevice::getHighestPhysicalDeviceVersion(instance);
-    }
-
-    Version getMaxInstanceVersion() {
-        u32 apiVersion = VK_MAKE_API_VERSION(0, 1, 0, 0);
+        uint32_t apiVersion = VK_MAKE_API_VERSION(0, 1, 0, 0);
         if (internal::pvkEnumerateInstanceVersion)
             internal::pvkEnumerateInstanceVersion(&apiVersion);
-        return Version::fromVk(apiVersion);
+        g_vkVersion = Version::fromVk(apiVersion);
     }
 
-    Version const& getVkVersion() {
+    void setDeviceVkVersion(Version const& version) noexcept {
+        g_deviceVkVersion = version;
+    }
+
+    Version const& getVkVersion() noexcept {
         return g_vkVersion;
     }
 
-    u32 getVkVersionMajor() {
+    Version const& getDeviceVkVersion() noexcept {
+        return g_deviceVkVersion;
+    }
+
+    u32 getVkVersionMajor() noexcept {
         return g_vkVersion.major;
     }
     
-    u32 getVkVersionMinor() {
+    u32 getVkVersionMinor() noexcept {
         return g_vkVersion.minor;
     }
     
-    u32 getVkVersionPatch() {
+    u32 getVkVersionPatch() noexcept {
         return g_vkVersion.patch;
     }
 } // namespace graphics::vulkan

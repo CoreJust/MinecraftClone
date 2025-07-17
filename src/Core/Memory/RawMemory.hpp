@@ -3,40 +3,30 @@
 #include <Core/Common/Int.hpp>
 
 namespace core {
+    using byte = unsigned char;
+
     // Has no ownership, simply provides access to a chunk of memory. All ownership (if any) can be handled from outside.
     struct RawMemory {
-    protected:
-        unsigned char* m_data = nullptr;
-        usize m_size = 0;
+        byte* data = nullptr;
+        usize size = 0;
 
-    public:
-        constexpr RawMemory() noexcept = default;
-        constexpr RawMemory(unsigned char* data, usize size) noexcept : m_data(data), m_size(size) { }
-        constexpr RawMemory(RawMemory&& other) noexcept = default;
-        constexpr RawMemory(RawMemory const& other) noexcept = default;
-        constexpr RawMemory& operator=(RawMemory&& other) noexcept = default;
-        constexpr RawMemory& operator=(RawMemory const& other) noexcept = default;
-
-        PURE static RawMemory alloc(usize size);
+        PURE static RawMemory alloc(usize size); // Note: guaranteed to be aligned at least for a pointer size
         void resize(usize newSize);
         void free();
         constexpr void reset() noexcept {
-            m_data = nullptr;
-            m_size = 0;
+            data = nullptr;
+            size = 0;
         }
 
         void copyFrom(RawMemory const& other);
         void repeatFrom(RawMemory const& value);
-        void repeatValue(unsigned char value);
+        void repeatValue(byte value);
         PURE constexpr RawMemory chunk(usize from = 0ull, usize count = static_cast<usize>(-1)) const noexcept {
-            if (m_data == nullptr || m_size == 0 || from >= m_size || count == 0)
+            if (data == nullptr || size == 0 || from >= size || count == 0)
                 return RawMemory();
-            if (from + count >= m_size)
-                return RawMemory(m_data + from, m_size - from);
-            return RawMemory(m_data + from, count);
+            if (from + count >= size)
+                return RawMemory(data + from, size - from);
+            return RawMemory(data + from, count);
         }
-
-        PURE constexpr usize size() const noexcept { return m_size; }
-        PURE constexpr auto data(this auto&& self) noexcept { return self.m_data; }
     };
 } // namespace core

@@ -1,5 +1,6 @@
 #include "Device.hpp"
 #include <vector>
+#include <vulkan/vulkan.h>
 #include <unordered_set>
 #include <Core/Common/Assert.hpp>
 #include <Core/IO/Logger.hpp>
@@ -69,7 +70,7 @@ namespace {
     }
 
     Device::~Device() {
-        if (m_logicalDevice != VK_NULL_HANDLE) {
+        if (m_logicalDevice) {
             waitIdle();
             vkDestroyDevice(m_logicalDevice, nullptr);
             m_logicalDevice = VK_NULL_HANDLE;

@@ -1,11 +1,13 @@
 #include "Queue.hpp"
 #include <unordered_map>
+#include <vulkan/vulkan.h>
 #include <Core/Common/Assert.hpp>
 #include <Core/IO/Logger.hpp>
 #include "Check.hpp"
 #include "QueueFamilies.hpp"
 #include "CommandBuffer.hpp"
-#include "Semaphore.hpp"
+#include "Sync/Semaphore.hpp"
+#include "Sync/Fence.hpp"
 #include "../Exception.hpp"
 
 namespace graphics::vulkan::internal {
@@ -13,24 +15,20 @@ namespace graphics::vulkan::internal {
         vkGetDeviceQueue(device, index, 0, &m_queue);
     }
 
-    void Queue::submit(CommandBuffer& commandBuffer, Semaphore& wait, Semaphore& signal) {
+    void Queue::submit(CommandBuffer& commandBuffer, Semaphore& wait, Semaphore& signal, Fence& fence) {
         VkSubmitInfo submitInfo { };
         submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
 
-        VkSemaphore waitSemaphores[] = { wait.get() };
         VkPipelineStageFlags waitStages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
-        VkCommandBuffer commandBuffers[] = { commandBuffer.get() };
         submitInfo.waitSemaphoreCount = 1;
-        submitInfo.pWaitSemaphores = waitSemaphores;
+        submitInfo.pWaitSemaphores = wait.ptr();
         submitInfo.pWaitDstStageMask = waitStages;
         submitInfo.commandBufferCount = 1;
-        submitInfo.pCommandBuffers = commandBuffers;
-
-        VkSemaphore signalSemaphores[] = { signal.get() };
+        submitInfo.pCommandBuffers = commandBuffer.ptr();
         submitInfo.signalSemaphoreCount = 1;
-        submitInfo.pSignalSemaphores = signalSemaphores;
+        submitInfo.pSignalSemaphores = signal.ptr();
 
-        if (!VK_CHECK(vkQueueSubmit(m_queue, 1, &submitInfo, VK_NULL_HANDLE))) {
+        if (!VK_CHECK(vkQueueSubmit(m_queue, 1, &submitInfo, fence.get()))) {
             core::error("Failed to submit command buffer to queue");
             throw VulkanException { };
         }

@@ -10,11 +10,11 @@ namespace graphics::vulkan {
     };
 
     void loadVkVersion();
-    
-    PURE Version getMaxInstanceVersion(); 
+    void setDeviceVkVersion(Version const& version) noexcept;
 
-    PURE Version const& getVkVersion();
-    PURE u32 getVkVersionMajor();
-    PURE u32 getVkVersionMinor();
-    PURE u32 getVkVersionPatch();
+    PURE Version const& getVkVersion() noexcept;
+    PURE Version const& getDeviceVkVersion() noexcept;
+    PURE u32 getVkVersionMajor() noexcept;
+    PURE u32 getVkVersionMinor() noexcept;
+    PURE u32 getVkVersionPatch() noexcept;
 } // namespace graphics::vulkan

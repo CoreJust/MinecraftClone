@@ -1,4 +1,5 @@
 #include "ShaderModule.hpp"
+#include <vulkan/vulkan.h>
 #include <Resources.hpp>
 #include <Core/IO/Logger.hpp>
 #include <Core/IO/File.hpp>

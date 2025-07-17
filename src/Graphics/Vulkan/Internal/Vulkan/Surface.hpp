@@ -1,6 +1,6 @@
 #pragma once
-#include <vulkan/vulkan.h>
 #include <Core/Macro/Attributes.hpp>
+#include "../Wrapper/Handles.hpp"
 #include "Instance.hpp"
 
 namespace graphics::window {

@@ -8,10 +8,12 @@ set(LOCAL_SOURCES
     Vulkan/Surface.cpp
     Vulkan/PhysicalDevice.cpp
     Vulkan/Device.cpp
+    Vulkan/Frame.cpp
     Vulkan/Swapchain.cpp
     Vulkan/SwapchainSupport.cpp
     Vulkan/Vulkan.cpp
-    Semaphore.cpp
+    Sync/Semaphore.cpp
+    Sync/Fence.cpp
     QueueFamilies.cpp
     Queue.cpp
     ShaderModule.cpp

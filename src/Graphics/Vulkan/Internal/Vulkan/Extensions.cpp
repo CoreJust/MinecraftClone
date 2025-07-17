@@ -5,6 +5,7 @@
 #include <unordered_map>
 #include <vulkan/vulkan.h>
 #include <Core/IO/Logger.hpp>
+#include "../Check.hpp"
 #include "PhysicalDevice.hpp"
 
 namespace graphics::vulkan::internal {
@@ -14,12 +15,13 @@ namespace graphics::vulkan::internal {
         memset(versions, 255, std::size(versions));
     }
     
-    SupportedExtensions::SupportedExtensions(internal::PhysicalDevice& physicalDevice) : SupportedExtensions() {
+    SupportedExtensions::SupportedExtensions(PhysicalDevice& physicalDevice) : SupportedExtensions() {
+        core::warn("Device==== {}", reinterpret_cast<usize>(physicalDevice.get()));
         u32 extensionCount = 0;
-        vkEnumerateDeviceExtensionProperties(physicalDevice.get(), nullptr, &extensionCount, nullptr);
+        VK_CHECK(vkEnumerateDeviceExtensionProperties(physicalDevice.get(), nullptr, &extensionCount, nullptr));
 
         std::vector<VkExtensionProperties> extensions(extensionCount);
-        vkEnumerateDeviceExtensionProperties(physicalDevice.get(), nullptr, &extensionCount, extensions.data());
+        VK_CHECK(vkEnumerateDeviceExtensionProperties(physicalDevice.get(), nullptr, &extensionCount, extensions.data()));
 
         std::unordered_map<std::string, u32> extensionVersions;
         for (const VkExtensionProperties& ext : extensions)
@@ -82,7 +84,7 @@ namespace graphics::vulkan::internal {
         }
     }
 
-    void updateVkSupportedExtensionListForDevice(internal::PhysicalDevice& physicalDevice) {
+    void updateVkSupportedExtensionListForDevice(PhysicalDevice& physicalDevice) {
         auto const& deviceExts = physicalDevice.extensions();
         for (int i = 0; i < static_cast<int>(VulkanExtension::VulkanExtensionsCount); ++i) {
             VulkanExtension ext = static_cast<VulkanExtension>(i);

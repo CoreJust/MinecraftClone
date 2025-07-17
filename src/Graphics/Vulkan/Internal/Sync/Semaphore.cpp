@@ -1,8 +1,6 @@
 #include "Semaphore.hpp"
-#include <Core/IO/Logger.hpp>
-#include "Check.hpp"
-#include "Vulkan/Vulkan.hpp"
-#include "../Exception.hpp"
+#include <vulkan/vulkan.h>
+#include "../Vulkan/Vulkan.hpp"
 
 namespace graphics::vulkan::internal {
     Semaphore::Semaphore(Vulkan& vulkan) 

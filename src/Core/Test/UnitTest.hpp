@@ -7,8 +7,9 @@
 #include <Core/Common/Timer.hpp>
 #include <Core/Macro/Attributes.hpp>
 #include <Core/Macro/NoOpt.hpp>
-#define UNIT_TEST(name) auto GEN_UNITTEST_NAME(__LINE__, name) = ::core::UnitTestNote{ #name, __FILE__, __LINE__ } ^ [](::core::UnitTestHelper test)
-#define CHECK(expr) test.assert((expr), #expr)
+#define UNIT_TEST(name) auto GEN_UNITTEST_NAME(__LINE__, name) = ::core::UnitTestNote{ #name, __FILE__, __LINE__ } ^ [](::core::UnitTestHelper test__)
+#define CHECK(...) test__.assert((__VA_ARGS__), #__VA_ARGS__)
+#define BENCHMARK() for (auto _ : test__)
 
 namespace core {
 	struct UnitTestNote final { 

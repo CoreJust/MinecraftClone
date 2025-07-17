@@ -1,7 +1,6 @@
 #pragma once
 #include <Core/Meta/IsSame.hpp>
 #include <Core/Common/Assert.hpp>
-#include "TypeErasedAccessor.hpp"
 #include "Forward.hpp"
 #include "Exchange.hpp"
 
@@ -25,8 +24,8 @@ namespace core {
                 reinterpret_cast<void*>(
                 static_cast<Return(*)(Functor*, Args...)>(
                     [](Functor* self, Args... args) -> Return { return self->operator()(FORWARD(args)...); })))
-            , m_context(TypeErasedAccessor<Functor>::make(FORWARD(func)))
-            , m_deleter(static_cast<Deleter>([](void* self) { TypeErasedAccessor<Functor>::destroy(self); }))
+            , m_context(new Functor { FORWARD(func) })
+            , m_deleter(static_cast<Deleter>([](void* self) { delete reinterpret_cast<Functor*>(self); }))
         { }
         constexpr Function(Function&& other) noexcept
             : m_function(exchange(other.m_function, nullptr))
@@ -48,7 +47,7 @@ namespace core {
             }
         }
 
-        Return operator()(Args... args) {
+        Return operator()(Args... args) const {
             ASSERT(m_function != nullptr);
             if (m_context != nullptr) {
                 return reinterpret_cast<Return(*)(void*, Args...)>(m_function)(m_context, FORWARD(args)...);
