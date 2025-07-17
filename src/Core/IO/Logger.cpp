@@ -19,6 +19,7 @@ namespace core {
 
 	void onLoggingEnd() {
 		std::osyncstream(std::clog) 
+			<< std::flush
 			<< Foreground { ConsoleColor::White } 
 			<< Background { ConsoleColor::Black };
 	}

@@ -13,7 +13,7 @@
 #endif
 
 int main(int argc, char** argv) {
-    core::setErrorSignalHandlers();
+    core::setErrorSignalsHandler();
     core::enableUtf8Cout();
     core::ArgumentParser(argc, argv)
         .onOption("debug", [](std::string_view val) { config::g_isDebugEnabled = (val != "false" && val != "off"); });

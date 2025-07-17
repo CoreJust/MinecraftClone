@@ -1,5 +1,5 @@
 #pragma once
 
 namespace core {
-    void setErrorSignalHandlers();
+    void setErrorSignalsHandler();
 } // namespace core
