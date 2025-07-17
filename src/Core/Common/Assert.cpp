@@ -4,7 +4,7 @@
 #include <Core/OS/Debug.hpp>
 
 namespace core {
-	void assert_failure_impl(char const* const condition, char const* const file, unsigned long long line, char const* const message) {
+	void assertFailureImpl(char const* const condition, char const* const file, unsigned long long line, char const* const message) {
 		error(
 			"Assertion failed: {} evaluated to false; {}\nat {}:{}\nStacktrace:\n{}",
 			condition,

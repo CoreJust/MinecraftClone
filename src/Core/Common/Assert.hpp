@@ -2,17 +2,17 @@
 
 #ifdef _MC_DEBUG
 namespace core {
-	void assert_failure_impl(char const* const condition, char const* const file, unsigned long long line, char const* const message);
-	constexpr void assert_failure(char const* const condition, char const* const file, unsigned long long line, char const* const message = "") {
+	void assertFailureImpl(char const* const condition, char const* const file, unsigned long long line, char const* const message);
+	constexpr void assertFailure(char const* const condition, char const* const file, unsigned long long line, char const* const message = "") {
 		if consteval {
 			throw message;
 		} else {
-			assert_failure_impl(condition, file, line, message);
+			assertFailureImpl(condition, file, line, message);
 		}
 	}
 } // namespace core
 
-#define ASSERT(expr, ...) if (!(expr)) ::core::assert_failure(#expr, __FILE__, __LINE__ __VA_OPT__(,) __VA_ARGS__)
+#define ASSERT(expr, ...) if (!(expr)) ::core::assertFailure(#expr, __FILE__, __LINE__ __VA_OPT__(,) __VA_ARGS__)
 #else
 #define ASSERT(expr, ...)
 #endif

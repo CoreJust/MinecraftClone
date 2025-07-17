@@ -70,7 +70,7 @@ namespace {
 	}
 
 	void onTestEnd(Duration const duration, bool success) {
-		g_isSuccess = true;
+		g_isSuccess = success;
 		if (success) {
 			if (g_testIterationDurations.empty()) {
 				std::cout << Green << "\tPassed in " << durationToString(duration) << std::endl;
@@ -165,11 +165,9 @@ namespace {
 			onTestEnd(m_timer.elapsed(), m_success);
 	}
 
-	void UnitTestHelper::assert(bool const condition, char const* const message, std::source_location const location) {
-		if (!condition) {
-			std::cout << Red << "\tTest assertion failed at " << location.line() << ": " << message << std::endl;
-			m_success = false;
-		}
+	void UnitTestHelper::checkFailure(char const* const message, std::source_location const location) {
+		std::cout << Red << "\tTest assertion failed: " << message << " in " << location.file_name() << ":" << location.line() << std::endl;
+		m_success = false;
 	}
 
 	UnitTestHelper::UnitTestIterator UnitTestHelper::begin() {

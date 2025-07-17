@@ -8,7 +8,7 @@
 #include <Core/Macro/Attributes.hpp>
 #include <Core/Macro/NoOpt.hpp>
 #define UNIT_TEST(name) auto GEN_UNITTEST_NAME(__LINE__, name) = ::core::UnitTestNote{ #name, __FILE__, __LINE__ } ^ [](::core::UnitTestHelper test__)
-#define CHECK(...) test__.assert((__VA_ARGS__), #__VA_ARGS__)
+#define CHECK(...) if (!(__VA_ARGS__)) { test__.checkFailure(#__VA_ARGS__); }
 #define BENCHMARK() for (auto _ : test__)
 
 namespace core {
@@ -52,7 +52,7 @@ namespace core {
 		UnitTestHelper(UnitTestHelper&& other) noexcept;
 		~UnitTestHelper();
 
-		void assert(bool const condition, char const* const message = "", std::source_location const location = std::source_location::current());
+		void checkFailure(char const* const message = "", std::source_location const location = std::source_location::current());
 		UnitTestIterator begin();
 		UnitTestIterator end();
 	};

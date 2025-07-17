@@ -20,6 +20,7 @@ extern "C" void onErrorSignal(int const code) {
 		"Caught error signal: {}\nStacktrace:\n{}",
 		decodeSignalCode(code),
 		std::stacktrace::current());
+    core::onLoggingEnd();
 }
 
 namespace core {
