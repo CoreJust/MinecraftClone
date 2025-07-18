@@ -18,6 +18,9 @@ namespace graphics::window {
         ~Window();
 
         bool nextFrame();
+        void waitForNotMinimized();
+
+        bool isMinimized();
 
         void onResize(core::Function<void, core::Vec2<int>> resizeCallback) { m_resizeCallback = core::move(resizeCallback); }
 

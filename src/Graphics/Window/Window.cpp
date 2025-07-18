@@ -85,6 +85,17 @@ namespace {
         return true;
     }
 
+    void Window::waitForNotMinimized() {
+        while (isMinimized())
+            glfwWaitEvents();
+    }
+        
+    bool Window::isMinimized() {
+        int width = 0, height = 0;
+        glfwGetFramebufferSize(m_window, &width, &height);
+        return width == 0 && height == 0;
+    }
+
     void* Window::getSurfaceCreateCallback() const noexcept {
         return reinterpret_cast<void*>(&glfwCreateWindowSurface);
     }

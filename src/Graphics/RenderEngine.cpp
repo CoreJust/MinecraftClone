@@ -6,7 +6,13 @@ namespace graphics {
         , m_vulkanManager(core::makeUP<vulkan::VulkanManager>(m_window, appVersion))
         , m_pipeline(m_vulkanManager->createPipeline({ "basic.vert", "basic.frag" }))
     {
-        m_window.onResize([this](core::Vec2<int>) { m_vulkanManager->requestSwapchainRecreation(); });
+        m_window.onResize([this](core::Vec2<int>) {
+            if (m_window.isMinimized()) {
+                m_window.waitForNotMinimized();
+                return;
+            }
+            m_vulkanManager->requestSwapchainRecreation();
+        });
     }
 
     void RenderEngine::run() {
