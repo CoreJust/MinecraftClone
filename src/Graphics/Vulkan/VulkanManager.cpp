@@ -10,18 +10,55 @@
 #include "Internal/CommandBuffer.hpp"
 
 namespace graphics::vulkan {
-    VulkanManager::VulkanManager(window::Window& win, core::Version const& appVersion) 
-        : m_vulkan(core::makeUP<internal::Vulkan>(win, appVersion))
+    VulkanManager::VulkanManager(StateSnapshot snapshot, window::Window& win)
+        : m_appVersion(snapshot.appVersion)
+        , m_vulkan(core::makeUP<internal::Vulkan>(win, snapshot.appVersion))
+        , m_pWindow(win) {
+        m_pipelines.reserve(snapshot.pipelineOptions.size());
+        for (auto& options : snapshot.pipelineOptions) {
+            auto pipeline = core::makeUP<internal::Pipeline>(*m_vulkan, options);
+            m_pipelines.push_back(PipelineNote {
+                .options  = core::move(options),
+                .pipeline = core::move(pipeline),
+            });
+        }
+        core::info("Recreated Vulkan manager");
+    }
+
+    VulkanManager::VulkanManager(window::Window& win, core::Version const& appVersion)
+        : m_appVersion(appVersion)
+        , m_vulkan(core::makeUP<internal::Vulkan>(win, appVersion))
         , m_pWindow(win) {
         internal::setOutOfDateKHRCallback([this] {
+            core::trace("Requires swapchain recreation");
             m_requiresSwapchainRecreation = true;
             return true;
+        });
+        internal::setOutOfDateKHRCallback([this] {
+            core::trace("Prefers swapchain recreation: suboptimal swapchain");
+            m_wantsSwapchainRecreation = true;
+            return true;
+        });
+        internal::setDeviceLostCallback([] -> bool {
+            core::warn("Device lost");
+            throw DeviceLostException { };
         });
         core::info("Created Vulkan manager");
     }
 
     VulkanManager::~VulkanManager() {
         m_vulkan->device().waitIdle();
+    }
+
+    VulkanManager::StateSnapshot VulkanManager::makeSnapshot() {
+        std::vector<PipelineOptions> pipelineOptions;
+        pipelineOptions.reserve(m_pipelines.size());
+        for (auto& [options, _] : m_pipelines)
+            pipelineOptions.push_back(core::move(options));
+        return {
+            .appVersion = m_appVersion,
+            .pipelineOptions = core::move(pipelineOptions),
+        };
     }
 
     bool VulkanManager::startFrame() {
@@ -44,7 +81,7 @@ namespace graphics::vulkan {
         m_vulkan->swapchain().submit();
         m_vulkan->swapchain().present();
         m_frame = nullptr;
-        if (m_requiresSwapchainRecreation)
+        if (m_requiresSwapchainRecreation || m_wantsSwapchainRecreation)
             onSwapchainRecreationRequest();
     }
 
@@ -72,16 +109,20 @@ namespace graphics::vulkan {
         
     void VulkanManager::onSwapchainRecreationRequest() {
         m_requiresSwapchainRecreation = false;
+        m_wantsSwapchainRecreation = false;
         m_vulkan->device().waitIdle();
 
         core::Vec2u32 newWindowSize = m_pWindow.pixelSize();
         if (newWindowSize[0] == 0 && newWindowSize[1] == 0)
             return; // Minimized
         m_vulkan->recreateSwapchain(newWindowSize);
+        createPipelines();
     }
 
     void VulkanManager::createPipelines() {
-
+        for (auto& [options, pipeline] : m_pipelines) {
+            pipeline = core::makeUP<internal::Pipeline>(*m_vulkan, options);
+        }
     }
 } // namespace graphics::vulkan
 

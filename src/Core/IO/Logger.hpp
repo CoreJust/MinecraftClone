@@ -8,6 +8,7 @@ namespace core {
 	enum class LogLevel : u8 {
 		Trace,
 		Debug,
+		Note,
 		Info,
 		Warn,
 		Error,
@@ -29,6 +30,12 @@ namespace core {
 	void debug(std::format_string<Args...> fmt, Args&&... args) {
 		if (static_cast<int>(getLogLevel()) <= static_cast<int>(LogLevel::Debug))
 			log(LogLevel::Debug, std::format(fmt, std::forward<Args>(args)...));
+	}
+
+	template<class... Args>
+	void note(std::format_string<Args...> fmt, Args&&... args) {
+		if (static_cast<int>(getLogLevel()) <= static_cast<int>(LogLevel::Note))
+			log(LogLevel::Note, std::format(fmt, std::forward<Args>(args)...));
 	}
 
 	template<class... Args>

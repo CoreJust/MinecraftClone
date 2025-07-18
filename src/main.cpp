@@ -20,7 +20,7 @@ int main(int argc, char** argv) {
 
 	TEST_MAIN();
 
-    core::setLogLevel(core::LogLevel::Trace);
+    core::setLogLevel(core::LogLevel::Debug);
     defer { core::onLoggingEnd(); };
     try {
         graphics::RenderEngine engine("Minecraft Clone", { 0, 0, 1, 0 });

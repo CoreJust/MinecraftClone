@@ -13,6 +13,8 @@ namespace graphics::window {
 }
 
 namespace graphics::vulkan {
+    struct DeviceLostException final { };
+
     namespace internal {
         class Vulkan;
         class Queue;
@@ -28,19 +30,29 @@ namespace graphics::vulkan {
             core::UniquePtr<internal::Pipeline> pipeline;
         };
 
+        struct StateSnapshot final {
+            core::Version appVersion;
+            std::vector<PipelineOptions> pipelineOptions;
+        };
+
+        core::Version m_appVersion;
         core::UniquePtr<internal::Vulkan> m_vulkan;
         std::vector<PipelineNote> m_pipelines;
         window::Window& m_pWindow;
         internal::Frame* m_frame = nullptr;
         bool m_requiresSwapchainRecreation = false;
+        bool m_wantsSwapchainRecreation = false;
 
     public:
+        explicit VulkanManager(StateSnapshot snapshot, window::Window& win);
         VulkanManager(window::Window& win, core::Version const& appVersion);
         VulkanManager(VulkanManager&&) noexcept = delete;
         VulkanManager(VulkanManager const&) noexcept = delete;
         VulkanManager& operator=(VulkanManager&&) noexcept = delete;
         VulkanManager& operator=(VulkanManager const&) noexcept = delete;
         ~VulkanManager();
+
+        StateSnapshot makeSnapshot();
 
         bool startFrame();
         void endFrame();

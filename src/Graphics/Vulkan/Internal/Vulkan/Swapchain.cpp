@@ -88,11 +88,11 @@ namespace {
     }
 } // namespace
 
-    Swapchain::Swapchain(Swapchain& previous, core::Vec2u32 pixelSize) 
-        : m_vulkan(previous.m_vulkan)
-        , m_graphicsQueue(core::move(previous.m_graphicsQueue))
-        , m_presentQueue (core::move(previous.m_presentQueue))
-        , m_frames(core::move(previous.m_frames))
+    Swapchain::Swapchain(Snapshot snapshot, core::Vec2u32 pixelSize) 
+        : m_vulkan(snapshot.vulkan)
+        , m_graphicsQueue(core::move(snapshot.graphicsQueue))
+        , m_presentQueue (core::move(snapshot.presentQueue))
+        , m_frames(core::move(snapshot.frames))
     {    
         core::info("Recreating Vulkan swapchain...");
         initialize(pixelSize);
@@ -116,6 +116,15 @@ namespace {
             m_vulkan.destroy<vkDestroySwapchainKHR>(m_swapchain, nullptr);
             core::info("Destroyed Vulkan swapchain");
         }
+    }
+
+    Swapchain::Snapshot Swapchain::makeSnapshot() {
+        return {
+            .graphicsQueue = core::move(m_graphicsQueue),
+            .presentQueue  = core::move(m_presentQueue),
+            .frames        = core::move(m_frames),
+            .vulkan        = m_vulkan,
+        };
     }
     
     Frame* Swapchain::acquireNextFrame() {

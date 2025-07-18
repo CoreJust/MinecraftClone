@@ -29,7 +29,9 @@ namespace graphics::vulkan::internal {
     Vulkan::~Vulkan() = default;
         
     void Vulkan::recreateSwapchain(core::Vec2u32 pixelSize) {
-        m_swapchain = core::makeUP<internal::Swapchain>(*m_swapchain, pixelSize);
+        auto snapshot = m_swapchain->makeSnapshot();
+        m_swapchain.reset();
+        m_swapchain = core::makeUP<internal::Swapchain>(core::move(snapshot), pixelSize);
     }
 
     void Vulkan::creationFailure(char const* const resourceName) {

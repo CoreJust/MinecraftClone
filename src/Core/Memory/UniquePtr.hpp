@@ -32,6 +32,14 @@ namespace core {
 
         constexpr explicit operator bool() const noexcept { return m_data != nullptr; }
 
+        constexpr void reset() {
+            if (m_data != nullptr && m_deleter != nullptr) {
+                m_deleter(m_data);
+                m_deleter = nullptr;
+                m_data = nullptr;
+            }
+        }
+
         constexpr T      & operator* ()       { ASSERT(m_data != nullptr, "Dereferencing a null pointer!"); return *m_data; }
         constexpr T const& operator* () const { ASSERT(m_data != nullptr, "Dereferencing a null pointer!"); return *m_data; }
         constexpr T      * operator->()       { ASSERT(m_data != nullptr, "Dereferencing a null pointer!"); return  m_data; }

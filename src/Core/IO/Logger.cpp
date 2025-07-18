@@ -25,9 +25,9 @@ namespace core {
 	}
 
 	void log(LogLevel const level, std::string const& msg) {
-		static const char*  LOG_LEVEL_STR[]              = { " TRACE]: ", " DEBUG]: ", " INFO]: ", " WARN]: ",   " ERROR]: ", " FATAL]: " };
-		static ConsoleColor LOG_LEVEL_FOREGROUND_COLOR[] = { Gray,        BrightGreen, BrightBlue, BrightYellow, BrightRed,   Red  };
-		static ConsoleColor LOG_LEVEL_BACKGROUND_COLOR[] = { Black,       Black,       Black,      Black,        Black,       Black };
+		static const char*  LOG_LEVEL_STR[]              = { " TRACE]: ", " DEBUG]: ", " NOTE]: ", " INFO]: ", " WARN]: ",   " ERROR]: ", " FATAL]: " };
+		static ConsoleColor LOG_LEVEL_FOREGROUND_COLOR[] = { Gray,        BrightGreen, BrightBlue, Blue,        BrightYellow, BrightRed,   Red  };
+		static ConsoleColor LOG_LEVEL_BACKGROUND_COLOR[] = { Black,       Black,       Black,      Black,       Black,        Black,       Black };
 
 		auto const now = Timer::global().elapsed();
 		if (level == LogLevel::Fatal) {

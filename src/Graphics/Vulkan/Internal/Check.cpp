@@ -66,12 +66,20 @@ namespace {
 #undef ON_SUCCESS_CODE
 #undef ON_ERROR_CODE
     }
+
+    bool tryHandleVkResult(VkResult result) {
+        switch (result) {
+            case VK_SUCCESS: return true;
+            case VK_ERROR_OUT_OF_DATE_KHR: return onOutOfDateKHR();
+            case VK_SUBOPTIMAL_KHR:        return onSuboptimalKHR();
+            case VK_ERROR_DEVICE_LOST:     return onDeviceLost();
+        default: return false;
+        }
+    }
 } // namespace
 
     bool checkVkResult(VkResult result) {
-        if (result == VK_SUCCESS)
-            return true;
-        if (result == VK_ERROR_OUT_OF_DATE_KHR && onOutOfDateKHR())
+        if (tryHandleVkResult(result))
             return true;
         std::string_view description;
         bool const isSuccess = decodeVkResult(result, description);
