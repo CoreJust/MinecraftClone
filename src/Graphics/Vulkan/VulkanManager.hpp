@@ -53,6 +53,7 @@ namespace graphics::vulkan {
         ~VulkanManager();
 
         StateSnapshot makeSnapshot();
+        void requestSwapchainRecreation() noexcept { m_requiresSwapchainRecreation = true; }
 
         bool startFrame();
         void endFrame();

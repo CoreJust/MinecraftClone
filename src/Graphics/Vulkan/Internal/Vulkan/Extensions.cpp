@@ -16,7 +16,6 @@ namespace graphics::vulkan::internal {
     }
     
     SupportedExtensions::SupportedExtensions(PhysicalDevice& physicalDevice) : SupportedExtensions() {
-        core::warn("Device==== {}", reinterpret_cast<usize>(physicalDevice.get()));
         u32 extensionCount = 0;
         VK_CHECK(vkEnumerateDeviceExtensionProperties(physicalDevice.get(), nullptr, &extensionCount, nullptr));
 

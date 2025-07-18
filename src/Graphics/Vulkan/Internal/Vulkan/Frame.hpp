@@ -19,6 +19,7 @@ namespace graphics::vulkan::internal {
 
     public:
         Frame(Vulkan& vulkan);
+        ~Frame();
 
         PURE CommandPool        & pool()                 noexcept { return m_pool; }
         PURE CommandBuffer      & commandBuffer()        noexcept { return m_commandBuffer; }

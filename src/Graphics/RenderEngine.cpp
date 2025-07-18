@@ -2,10 +2,12 @@
 
 namespace graphics {
     RenderEngine::RenderEngine(char const* const name, core::Version const& appVersion) 
-        : m_window(name)
+        : m_window(name, {{ 800, 600 }})
         , m_vulkanManager(core::makeUP<vulkan::VulkanManager>(m_window, appVersion))
         , m_pipeline(m_vulkanManager->createPipeline({ "basic.vert", "basic.frag" }))
-    { }
+    {
+        m_window.onResize([this](core::Vec2<int>) { m_vulkanManager->requestSwapchainRecreation(); });
+    }
 
     void RenderEngine::run() {
         while (m_window.nextFrame()) {

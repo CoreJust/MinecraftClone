@@ -16,6 +16,7 @@ namespace graphics::vulkan::internal {
         ~CommandPool();
 
         void allocate(core::ArrayView<CommandBuffer> result);
+        void free(core::ArrayView<CommandBuffer> result);
 
         PURE VkCommandPool get() const noexcept { return m_pool; }
     };

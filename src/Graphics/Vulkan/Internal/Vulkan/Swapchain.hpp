@@ -15,13 +15,6 @@ namespace graphics::vulkan::internal {
     struct SwapchainFormat;
 
     class Swapchain final {
-        struct Snapshot final {
-            core::UniquePtr<Queue> graphicsQueue;
-            core::UniquePtr<Queue> presentQueue;
-            core::DynArray<Frame> frames;
-            Vulkan& vulkan;
-        };
-
         Vulkan& m_vulkan;
         core::DynArray<VkImage> m_images;
         core::DynArray<VkImageView> m_imageViews;
@@ -36,11 +29,8 @@ namespace graphics::vulkan::internal {
         u32 m_imageCount;
 
     public:
-        Swapchain(Snapshot snapshot, core::Vec2u32 pixelSize); // Recreates swapchain
         Swapchain(Vulkan& vulkan, core::Vec2u32 pixelSize, usize framesCount);
         ~Swapchain();
-
-        Snapshot makeSnapshot();
 
         // Returns -1 on failure
         PURE Frame* acquireNextFrame();

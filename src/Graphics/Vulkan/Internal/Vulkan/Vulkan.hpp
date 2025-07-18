@@ -106,6 +106,11 @@ namespace graphics::vulkan::internal {
             return VK_CHECK(Func(firstArgumentOf<Func>(), FORWARD(args)...));
         }
 
+        template<auto Func>
+        INLINE void call(auto&&... args) const {
+            return Func(firstArgumentOf<Func>(), FORWARD(args)...);
+        }
+
         PURE Instance            & instance()             noexcept { return *m_instance; }
         PURE Surface             & surface()              noexcept { return *m_surface; }
         PURE PhysicalDevice      & physicalDevice()       noexcept { return *m_physicalDevice; }

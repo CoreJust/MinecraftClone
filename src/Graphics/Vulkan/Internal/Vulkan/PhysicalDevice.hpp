@@ -24,8 +24,11 @@ namespace graphics::vulkan::internal {
 
     public:
         PhysicalDevice(VkPhysicalDevice device, Surface const& surface, PassKey) noexcept;
+
         static core::DynArray<core::UniquePtr<PhysicalDevice>> getPhysicalDevices(Vulkan& vulkan) noexcept;
         static core::UniquePtr<PhysicalDevice> choosePhysicalDevice(Vulkan& vulkan);
+
+        void reloadSwapchainSupport(Surface const& surface);
 
         PURE VkPhysicalDevice get() const noexcept { return m_physicalDevice; }
         PURE VkPhysicalDeviceProperties const& props()            const noexcept { return *m_properties; }

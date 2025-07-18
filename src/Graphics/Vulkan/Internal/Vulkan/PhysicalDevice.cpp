@@ -23,8 +23,8 @@ namespace {
 
     PhysicalDevice::PhysicalDevice(VkPhysicalDevice device, Surface const& surface, PassKey) noexcept
         : m_physicalDevice(device)
-        , m_extensions(*this)
-        , m_swapchainSupport(core::makeUP<SwapchainSupport>(m_physicalDevice, surface.get())) {
+        , m_extensions(*this) {
+        reloadSwapchainSupport(surface);
         m_properties = core::makeUP<VkPhysicalDeviceProperties>();
         vkGetPhysicalDeviceProperties(m_physicalDevice, m_properties.get());
         m_queueFamilies = QueueFamilies(*this, surface);
@@ -71,5 +71,10 @@ namespace {
         }
 
         return std::move(*result);
+    }
+
+    
+    void PhysicalDevice::reloadSwapchainSupport(Surface const& surface) {
+        m_swapchainSupport = core::makeUP<SwapchainSupport>(m_physicalDevice, surface.get());
     }
 } // namespace graphics::vulkan::internal

@@ -43,4 +43,9 @@ namespace graphics::vulkan::internal {
         for (auto dst = result.begin(); dst < end; ++dst, ++src)
             *dst = CommandBuffer { *src };
     }
+
+    void CommandPool::free(core::ArrayView<CommandBuffer> result) {
+        core::DynArray<VkCommandBuffer> tmp { result.size(), VK_NULL_HANDLE };
+        m_vulkan.call<vkFreeCommandBuffers>(m_pool, static_cast<u32>(tmp.size()), tmp.data());
+    }
 } // namespace graphics::vulkan::internal

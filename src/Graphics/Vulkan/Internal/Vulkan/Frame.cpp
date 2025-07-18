@@ -9,4 +9,8 @@ namespace graphics::vulkan::internal {
         , m_fence(vulkan) {
         m_pool.allocate({ &m_commandBuffer, 1 });
     }
+
+    Frame::~Frame() {
+        m_pool.free({ &m_commandBuffer, 1 });
+    }
 } // namespace graphics::vulkan::internal

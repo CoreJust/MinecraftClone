@@ -110,11 +110,11 @@ namespace graphics::vulkan {
     void VulkanManager::onSwapchainRecreationRequest() {
         m_requiresSwapchainRecreation = false;
         m_wantsSwapchainRecreation = false;
-        m_vulkan->device().waitIdle();
 
         core::Vec2u32 newWindowSize = m_pWindow.pixelSize();
         if (newWindowSize[0] == 0 && newWindowSize[1] == 0)
             return; // Minimized
+        m_vulkan->device().waitIdle();
         m_vulkan->recreateSwapchain(newWindowSize);
         createPipelines();
     }
