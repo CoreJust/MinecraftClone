@@ -143,7 +143,7 @@ namespace {
             }
             vkDestroyInstance(m_instance, nullptr);
             m_instance = VK_NULL_HANDLE;
-            core::debug("Destroyed Vulkan instance");
+            core::note("Destroyed Vulkan instance");
         }
     }
 } // namespace graphics::vulkan::internal

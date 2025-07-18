@@ -85,17 +85,6 @@ namespace {
         return true;
     }
 
-    void Window::waitForNotMinimized() {
-        while (isMinimized())
-            glfwWaitEvents();
-    }
-        
-    bool Window::isMinimized() {
-        int width = 0, height = 0;
-        glfwGetFramebufferSize(m_window, &width, &height);
-        return width == 0 && height == 0;
-    }
-
     void* Window::getSurfaceCreateCallback() const noexcept {
         return reinterpret_cast<void*>(&glfwCreateWindowSurface);
     }
@@ -115,8 +104,15 @@ namespace {
         }};
     }
 
-    void Window::framebuffersResized(GLFWwindow* window, int const width, int const height) {
+    void Window::framebuffersResized(GLFWwindow* window, int width, int height) {
         Window& self = *reinterpret_cast<Window*>(glfwGetWindowUserPointer(window));
+        if (self.m_ignoreMinimized && width == 0 && height == 0) {
+            do {
+                glfwGetFramebufferSize(window, &width, &height);
+                glfwWaitEvents();
+            } while (width == 0 && height == 0);
+            return;
+        }
         if (self.m_resizeCallback)
             self.m_resizeCallback({{ width, height }});
     }

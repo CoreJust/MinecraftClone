@@ -38,7 +38,7 @@ namespace {
     }
 
     core::UniquePtr<PhysicalDevice> PhysicalDevice::choosePhysicalDevice(Vulkan& vulkan) {
-        core::info("Choosing physical device...");
+        core::note("Choosing physical device...");
         auto devices = getPhysicalDevices(vulkan);
         core::UniquePtr<PhysicalDevice>* result = nullptr;
         if (devices.size() == 0) {

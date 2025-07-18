@@ -12,17 +12,18 @@ namespace graphics::window {
         GLFWwindow* m_window;
         char const* const m_name;
         core::Function<void, core::Vec2<int>> m_resizeCallback;
+        bool m_ignoreMinimized = false;
 
     public:
         Window(char const* const name, core::Vec2<int> size = {{ 0, 0 }});
         ~Window();
 
         bool nextFrame();
-        void waitForNotMinimized();
 
-        bool isMinimized();
-
-        void onResize(core::Function<void, core::Vec2<int>> resizeCallback) { m_resizeCallback = core::move(resizeCallback); }
+        void onResize(bool ignoreMinimized, core::Function<void, core::Vec2<int>> resizeCallback) {
+            m_ignoreMinimized = ignoreMinimized;
+            m_resizeCallback = core::move(resizeCallback);
+        }
 
         PURE void* getSurfaceCreateCallback() const noexcept;
         PURE core::ArrayView<char const*> getRequiredExtensions() const;

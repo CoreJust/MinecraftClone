@@ -65,7 +65,7 @@ namespace {
 } // namespace
 
     Device::Device(PhysicalDevice const& physicalDevice) {
-        core::info("Creating logical device...");
+        core::note("Creating logical device...");
         initLogicalDevice(m_logicalDevice, physicalDevice);
     }
 
@@ -74,7 +74,7 @@ namespace {
             waitIdle();
             vkDestroyDevice(m_logicalDevice, nullptr);
             m_logicalDevice = VK_NULL_HANDLE;
-            core::info("Destroyed logical device");
+            core::note("Destroyed logical device");
         }
     }
 

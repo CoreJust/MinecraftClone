@@ -92,7 +92,7 @@ namespace {
         : m_vulkan(vulkan)
         , m_frames(framesCount, [&vulkan](Frame* ptr, usize) { new(ptr) Frame { vulkan }; })
     {
-        core::info("Creating Vulkan swapchain...");
+        core::note("Creating Vulkan swapchain...");
         initialize(pixelSize);
         QueueMaker queueMaker { m_vulkan.device().get(), m_vulkan.queueFamilies() };
         m_graphicsQueue = queueMaker.make(internal::QueueType::Graphics);
@@ -104,7 +104,7 @@ namespace {
             for (VkImageView view : m_imageViews)
                 m_vulkan.destroy<vkDestroyImageView>(view, nullptr);
             m_vulkan.destroy<vkDestroySwapchainKHR>(m_swapchain, nullptr);
-            core::info("Destroyed Vulkan swapchain");
+            core::note("Destroyed Vulkan swapchain");
         }
     }
     
