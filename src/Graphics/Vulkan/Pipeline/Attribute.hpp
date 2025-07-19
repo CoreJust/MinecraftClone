@@ -47,5 +47,7 @@ namespace graphics::vulkan::pipeline {
         Type type;
         Bits bits;
         Size size;
+
+        char const* name() const;
     };
 } // namespace graphics::vulkan::pipeline

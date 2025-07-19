@@ -3,7 +3,7 @@
 
 namespace graphics::vulkan::internal {
     VkFormat attributeFormat(pipeline::Attribute attr) {
-        VkFormat VULKAN_FORMATS
+        constexpr static VkFormat VULKAN_FORMATS
             [static_cast<usize>(pipeline::Type::TypesCount)]
             [static_cast<usize>(pipeline::Bits::BitsCount)]
             [static_cast<usize>(pipeline::Size::SizesCount)] 
@@ -15,41 +15,41 @@ namespace graphics::vulkan::internal {
 #define DECL_VK_FORMAT4_IMPL(bits, format) DECL_VK_FORMAT_IMPL(R##bits##G##bits##B##bits##A##bits, format)
 #define DECL_VK_FORMAT(format, bits, size) DECL_VK_FORMAT##size##_IMPL(bits, format)
 #define DECL_VK_FORMATS_FORMAT_BITS(format, bits) {   \
-        DECL_VK_FORMAT(format, bits, 1),              \
-        DECL_VK_FORMAT(format, bits, 2),              \
-        DECL_VK_FORMAT(format, bits, 3),              \
-        DECL_VK_FORMAT(format, bits, 4),              \
-        DECL_VK_FORMAT(format, bits, 4),              \
-        VK_FORMAT_UNDEFINED, /* couldn't pass mat3 */ \
-        DECL_VK_FORMAT(format, bits, 4) }
+    DECL_VK_FORMAT(format, bits, 1),              \
+    DECL_VK_FORMAT(format, bits, 2),              \
+    DECL_VK_FORMAT(format, bits, 3),              \
+    DECL_VK_FORMAT(format, bits, 4),              \
+    DECL_VK_FORMAT(format, bits, 4),              \
+    VK_FORMAT_UNDEFINED, /* couldn't pass mat3 */ \
+    DECL_VK_FORMAT(format, bits, 4) }
 #define DECL_VK_FORMATS_UNDEFINED() { \
-        VK_FORMAT_UNDEFINED,          \
-        VK_FORMAT_UNDEFINED,          \
-        VK_FORMAT_UNDEFINED,          \
-        VK_FORMAT_UNDEFINED,          \
-        VK_FORMAT_UNDEFINED,          \
-        VK_FORMAT_UNDEFINED,          \
-        VK_FORMAT_UNDEFINED }
+    VK_FORMAT_UNDEFINED,          \
+    VK_FORMAT_UNDEFINED,          \
+    VK_FORMAT_UNDEFINED,          \
+    VK_FORMAT_UNDEFINED,          \
+    VK_FORMAT_UNDEFINED,          \
+    VK_FORMAT_UNDEFINED,          \
+    VK_FORMAT_UNDEFINED }
 #define DECL_VK_FORMATS_FORMAT(format) {         \
-        DECL_VK_FORMATS_FORMAT_BITS(format, 8),  \
-        DECL_VK_FORMATS_FORMAT_BITS(format, 16), \
-        DECL_VK_FORMATS_FORMAT_BITS(format, 32), \
-        DECL_VK_FORMATS_FORMAT_BITS(format, 64) }
+    DECL_VK_FORMATS_FORMAT_BITS(format, 8),  \
+    DECL_VK_FORMATS_FORMAT_BITS(format, 16), \
+    DECL_VK_FORMATS_FORMAT_BITS(format, 32), \
+    DECL_VK_FORMATS_FORMAT_BITS(format, 64) }
 #define DECL_VK_FORMATS_8_16_FORMAT(format) {    \
-        DECL_VK_FORMATS_FORMAT_BITS(format, 8),  \
-        DECL_VK_FORMATS_FORMAT_BITS(format, 16), \
-        DECL_VK_FORMATS_UNDEFINED(),             \
-        DECL_VK_FORMATS_UNDEFINED() }
+    DECL_VK_FORMATS_FORMAT_BITS(format, 8),  \
+    DECL_VK_FORMATS_FORMAT_BITS(format, 16), \
+    DECL_VK_FORMATS_UNDEFINED(),             \
+    DECL_VK_FORMATS_UNDEFINED() }
 #define DECL_VK_FLOAT_FORMATS_FORMAT() {         \
-        DECL_VK_FORMATS_UNDEFINED(),             \
-        DECL_VK_FORMATS_FORMAT_BITS(SFLOAT, 16), \
-        DECL_VK_FORMATS_FORMAT_BITS(SFLOAT, 32), \
-        DECL_VK_FORMATS_FORMAT_BITS(SFLOAT, 64) }
+    DECL_VK_FORMATS_UNDEFINED(),             \
+    DECL_VK_FORMATS_FORMAT_BITS(SFLOAT, 16), \
+    DECL_VK_FORMATS_FORMAT_BITS(SFLOAT, 32), \
+    DECL_VK_FORMATS_FORMAT_BITS(SFLOAT, 64) }
 #define DECL_VK_SRGB_FORMATS_FORMAT() {       \
-        DECL_VK_FORMATS_FORMAT_BITS(SRGB, 8), \
-        DECL_VK_FORMATS_UNDEFINED(),          \
-        DECL_VK_FORMATS_UNDEFINED(),          \
-        DECL_VK_FORMATS_UNDEFINED() }
+    DECL_VK_FORMATS_FORMAT_BITS(SRGB, 8), \
+    DECL_VK_FORMATS_UNDEFINED(),          \
+    DECL_VK_FORMATS_UNDEFINED(),          \
+    DECL_VK_FORMATS_UNDEFINED() }
             
             DECL_VK_FLOAT_FORMATS_FORMAT(),
             DECL_VK_FORMATS_FORMAT(SINT),
