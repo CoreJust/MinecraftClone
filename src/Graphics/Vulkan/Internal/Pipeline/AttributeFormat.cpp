@@ -79,4 +79,43 @@ namespace graphics::vulkan::internal {
             return VK_FORMAT_UNDEFINED;
         return VULKAN_FORMATS[static_cast<usize>(attr.type)][static_cast<usize>(attr.bits)][static_cast<usize>(attr.size)];
     }
+
+    u32 attributeSize(pipeline::Attribute attr) {
+        constexpr static u32 SIZES[] = { 1, 2, 3, 4, 4, 9, 16, };
+        u32 const bitsSize = (1 << static_cast<u32>(attr.bits));
+        return bitsSize * SIZES[static_cast<usize>(attr.size)];
+    }
+
+    u32 attributeLocationSize(pipeline::Attribute attr) {
+        switch (attr.size) {
+            case pipeline::Size::Mat4: return 4;
+        default: return 1;
+        }
+    }
+
+    VulkanVertexLayoutDescription makeVertexLayoutDescription(core::ArrayView<pipeline::Attribute const> attrs) {
+        u32 location = 0, offset = 0;
+        core::DynArray<VkVertexInputAttributeDescription> attrDescriptions(attrs.size());
+        for (usize i = 0; i < attrs.size(); ++i) {
+            pipeline::Attribute const& attr = attrs[i];
+            VkVertexInputAttributeDescription& desc = attrDescriptions[i];
+            desc.binding = 0;
+            desc.location = location;
+            desc.offset = offset;
+            desc.format = attributeFormat(attr);
+            location += attributeLocationSize(attr);
+            offset += attributeSize(attr);
+        }
+        
+        VkVertexInputBindingDescription bindingDescription {
+            .binding = 0,
+            .stride = offset,
+            .inputRate = VK_VERTEX_INPUT_RATE_VERTEX,
+        };
+
+        return {
+            .attrDescriptions = core::move(attrDescriptions),
+            .bindingDescription = core::move(bindingDescription),
+        };
+    }
 } // namespace graphics::vulkan::internal

@@ -5,8 +5,9 @@
 #include "../Vulkan/Vulkan.hpp"
 #include "../Vulkan/SwapchainFormat.hpp"
 #include "../CommandBuffer.hpp"
-#include "ShaderModule.hpp"
 #include "../../Exception.hpp"
+#include "ShaderModule.hpp"
+#include "AttributeFormat.hpp"
 
 namespace graphics::vulkan::internal {
 namespace {
@@ -42,12 +43,14 @@ namespace {
             fragment.makeCreationInfo(VK_SHADER_STAGE_FRAGMENT_BIT),
         };
 
+        VulkanVertexLayoutDescription vertexLayoutDescription = makeVertexLayoutDescription(options.attributes);
+
         VkPipelineVertexInputStateCreateInfo vertexInputInfo { };
         vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-        vertexInputInfo.vertexBindingDescriptionCount = 0;
-        vertexInputInfo.pVertexBindingDescriptions = nullptr;
-        vertexInputInfo.vertexAttributeDescriptionCount = 0;
-        vertexInputInfo.pVertexAttributeDescriptions = nullptr;
+        vertexInputInfo.vertexBindingDescriptionCount = 1;
+        vertexInputInfo.pVertexBindingDescriptions = &vertexLayoutDescription.bindingDescription;
+        vertexInputInfo.vertexAttributeDescriptionCount = static_cast<u32>(vertexLayoutDescription.attrDescriptions.size());
+        vertexInputInfo.pVertexAttributeDescriptions = vertexLayoutDescription.attrDescriptions.data();
 
         VkPipelineInputAssemblyStateCreateInfo inputAssembly { };
         inputAssembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
@@ -151,7 +154,6 @@ namespace {
         renderPassInfo.pClearValues = &clearColor;
         vkCmdBeginRenderPass(commandBuffer.get(), &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
         vkCmdBindPipeline(commandBuffer.get(), VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline);
-        vkCmdDraw(commandBuffer.get(), 3, 1, 0, 0); // Temporary
     }
 
     void Pipeline::endRenderPass(CommandBuffer& commandBuffer) {
