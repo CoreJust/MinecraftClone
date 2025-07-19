@@ -54,6 +54,7 @@ namespace graphics::vulkan::internal {
         ~Vulkan();
 
         void recreateSwapchain(core::Vec2u32 pixelSize);
+        VkDeviceMemory allocDevice(usize size, u32 type, VkMemoryPropertyFlags properties);
 
         template<typename T>
         PURE INLINE core::UniquePtr<T> make(auto&&... args) {
@@ -107,7 +108,7 @@ namespace graphics::vulkan::internal {
         }
 
         template<auto Func>
-        INLINE void call(auto&&... args) const {
+        INLINE auto call(auto&&... args) const {
             return Func(firstArgumentOf<Func>(), FORWARD(args)...);
         }
 

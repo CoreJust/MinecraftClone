@@ -7,6 +7,7 @@
 #include <Core/Collection/DynArray.hpp>
 #include "Pipeline/RenderPipeline.hpp"
 #include "Pipeline/PipelineOptions.hpp"
+#include "Pipeline/Vertices.hpp"
 
 namespace graphics::window {
     class Window;
@@ -22,6 +23,7 @@ namespace graphics::vulkan {
         class CommandBuffer;
         class Pipeline;
         class Frame;
+        class Buffer;
     }
 
     class VulkanManager final {
@@ -60,14 +62,23 @@ namespace graphics::vulkan {
             return Pipeline { createPipelineImpl(Pipeline::Options) };
         }
 
-        bool startFrame();
+        bool beginFrame();
         void endFrame();
 
         void beginRendering(pipeline::RenderPipeline& pipeline);
         void endRendering(pipeline::RenderPipeline& pipeline);
 
+        void drawVertices(pipeline::VerticesBase& vertices);
+
+        template<pipeline::VertexConcept Vertex>
+        pipeline::Vertices<Vertex> createVertexBuffer(usize size) {
+            return { createVertexBufferImpl(size * sizeof(Vertex)) };
+        }
+
+
     private:
-        PURE usize createPipelineImpl(pipeline::PipelineOptions const& options);
+        usize createPipelineImpl(pipeline::PipelineOptions const& options);
+        pipeline::VerticesBase createVertexBufferImpl(usize size);
         void onSwapchainRecreationRequest();
         void createPipelines();
     };

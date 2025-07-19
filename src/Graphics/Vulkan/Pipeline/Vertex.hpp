@@ -8,7 +8,7 @@ namespace graphics::vulkan::pipeline {
     template<typename T>
     concept VertexConcept = requires (T const& vertex) {
         requires core::IsArray<core::UnRef<decltype(T::VertexLayout)>>;
-        requires core::IsSame<core::UnRef<decltype(T::VertexLayout)>, Attribute>;
+        requires core::IsSame<core::UnRef<decltype(T::VertexLayout[0])>, Attribute const>;
     };
 
     template<typename T>

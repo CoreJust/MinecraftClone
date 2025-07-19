@@ -27,6 +27,8 @@ namespace {
         reloadSwapchainSupport(surface);
         m_properties = core::makeUP<VkPhysicalDeviceProperties>();
         vkGetPhysicalDeviceProperties(m_physicalDevice, m_properties.get());
+        m_memoryProperties = core::makeUP<VkPhysicalDeviceMemoryProperties>();
+        vkGetPhysicalDeviceMemoryProperties(m_physicalDevice, m_memoryProperties.get());
         m_queueFamilies = QueueFamilies(*this, surface);
     }
 
@@ -73,7 +75,6 @@ namespace {
         return std::move(*result);
     }
 
-    
     void PhysicalDevice::reloadSwapchainSupport(Surface const& surface) {
         m_swapchainSupport = core::makeUP<SwapchainSupport>(m_physicalDevice, surface.get());
     }

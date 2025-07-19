@@ -5,6 +5,7 @@
 #include <Graphics/Window/Window.hpp>
 #include "Internal/Vulkan/ErrorCallbacks.hpp"
 #include "Internal/Vulkan/Vulkan.hpp"
+#include "Internal/Buffer/Buffer.hpp"
 #include "Internal/Pipeline/Pipeline.hpp"
 #include "Internal/Command/CommandPool.hpp"
 #include "Internal/Command/CommandBuffer.hpp"
@@ -61,7 +62,7 @@ namespace graphics::vulkan {
         };
     }
 
-    bool VulkanManager::startFrame() {
+    bool VulkanManager::beginFrame() {
         ASSERT(m_frame == nullptr, "Frame was not ended before starting the next one");
         m_frame = m_vulkan->swapchain().acquireNextFrame();
         if (m_requiresSwapchainRecreation) {
@@ -97,6 +98,11 @@ namespace graphics::vulkan {
         impl->endRenderPass(m_frame->commandBuffer());
     }
 
+    void VulkanManager::drawVertices(pipeline::VerticesBase& vertices) {
+        ASSERT(m_frame != nullptr, "Frame was not started; cannot draw vertices");
+        m_frame->commandBuffer().drawVertices(vertices.buffer());
+    }
+
     usize VulkanManager::createPipelineImpl(pipeline::PipelineOptions const& options) {
         auto pipeline = core::makeUP<internal::Pipeline>(*m_vulkan, options);
         usize index = m_pipelines.size();
@@ -105,6 +111,10 @@ namespace graphics::vulkan {
             .pipeline = std::move(pipeline),
         });
         return index;
+    }
+
+    pipeline::VerticesBase VulkanManager::createVertexBufferImpl(usize size) {
+        return { m_vulkan->make<internal::Buffer>(internal::BufferType::Vertex, size) };
     }
         
     void VulkanManager::onSwapchainRecreationRequest() {

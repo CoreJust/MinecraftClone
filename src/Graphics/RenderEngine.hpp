@@ -9,6 +9,7 @@ namespace graphics {
         window::Window m_window;
         core::UniquePtr<vulkan::VulkanManager> m_vulkanManager;
         renderer::pipelines::VoxelPipeline m_voxelPipeline;
+        renderer::pipelines::VoxelVertices m_voxelVertices;
 
     public:
         RenderEngine(char const* const name, core::Version const& appVersion);

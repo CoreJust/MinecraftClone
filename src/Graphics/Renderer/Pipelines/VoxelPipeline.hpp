@@ -3,6 +3,7 @@
 #include <Graphics/Vulkan/Pipeline/Vertex.hpp>
 #include <Graphics/Vulkan/Pipeline/RenderPipeline.hpp>
 #include <Graphics/Vulkan/Pipeline/PipelineOptions.hpp>
+#include <Graphics/Vulkan/Pipeline/Vertices.hpp>
 
 namespace graphics::renderer::pipelines {
     namespace vp = vulkan::pipeline;
@@ -28,4 +29,6 @@ namespace graphics::renderer::pipelines {
     public:
         VoxelPipeline(usize index) : vp::RenderPipeline(index) { }
     };
+
+    using VoxelVertices = vp::Vertices<VoxelVertex>;
 } // namespace graphics::renderer::pipelines

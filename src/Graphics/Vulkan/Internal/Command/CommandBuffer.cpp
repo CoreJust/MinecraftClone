@@ -23,4 +23,10 @@ namespace graphics::vulkan::internal {
             throw VulkanException { };
         }
     }
+
+    void CommandBuffer::drawVertices(Buffer& buffer) {
+        VkDeviceSize offsets[] = { 0 }; 
+        vkCmdBindVertexBuffers(m_buffer, 0, 1, buffer.ptr(), offsets);
+        vkCmdDraw(m_buffer, static_cast<uint32_t>(buffer.size()), 1, 0, 0);
+    }
 } // namespace graphics::vulkan::internal

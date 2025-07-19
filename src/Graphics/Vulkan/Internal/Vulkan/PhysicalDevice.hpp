@@ -15,6 +15,7 @@ namespace graphics::vulkan::internal {
     class PhysicalDevice final {
         VkPhysicalDevice m_physicalDevice = VK_NULL_HANDLE;
         core::UniquePtr<VkPhysicalDeviceProperties> m_properties { };
+        core::UniquePtr<VkPhysicalDeviceMemoryProperties> m_memoryProperties { };
         QueueFamilies m_queueFamilies { };
         SupportedExtensions m_extensions { };
         core::UniquePtr<SwapchainSupport> m_swapchainSupport { };
@@ -31,10 +32,11 @@ namespace graphics::vulkan::internal {
         void reloadSwapchainSupport(Surface const& surface);
 
         PURE VkPhysicalDevice get() const noexcept { return m_physicalDevice; }
-        PURE VkPhysicalDeviceProperties const& props()            const noexcept { return *m_properties; }
-        PURE QueueFamilies              const& queueFamilies()    const noexcept { return m_queueFamilies; }
-        PURE SupportedExtensions        const& extensions()       const noexcept { return m_extensions; }
-        PURE SwapchainSupport           const& swapchainSupport() const noexcept { return *m_swapchainSupport; }
+        PURE VkPhysicalDeviceProperties       const& props()            const noexcept { return *m_properties; }
+        PURE VkPhysicalDeviceMemoryProperties const& memoryProps()      const noexcept { return *m_memoryProperties; }
+        PURE QueueFamilies                    const& queueFamilies()    const noexcept { return m_queueFamilies; }
+        PURE SupportedExtensions              const& extensions()       const noexcept { return m_extensions; }
+        PURE SwapchainSupport                 const& swapchainSupport() const noexcept { return *m_swapchainSupport; }
     };
 } // namespace graphics::vulkan::internal
 

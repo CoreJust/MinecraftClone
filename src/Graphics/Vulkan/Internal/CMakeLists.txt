@@ -22,7 +22,9 @@ set(LOCAL_SOURCES
     Command/QueueFamilies.cpp
     Command/Queue.cpp
     Command/CommandPool.cpp
-    Command/CommandBuffer.cpp)
+    Command/CommandBuffer.cpp
+    Buffer/Buffer.cpp
+    Buffer/MappedMemory.cpp)
 set(LOCAL_TESTS)
 
 SUBMODULE(Graphics/Vulkan/Internal)
