@@ -85,16 +85,6 @@ namespace graphics::vulkan {
             onSwapchainRecreationRequest();
     }
 
-    pipeline::RenderPipeline VulkanManager::createPipeline(pipeline::PipelineOptions options) {
-        auto pipeline = core::makeUP<internal::Pipeline>(*m_vulkan, options);
-        usize index = m_pipelines.size();
-        m_pipelines.push_back(PipelineNote {
-            .options  = std::move(options),
-            .pipeline = std::move(pipeline),
-        });
-        return pipeline::RenderPipeline { index };
-    }
-
     void VulkanManager::beginRendering(pipeline::RenderPipeline& pipeline) {
         ASSERT(m_frame != nullptr, "Frame was not started; cannot begin rendering");
         auto& impl = m_pipelines[pipeline.getIndex()].pipeline;
@@ -105,6 +95,16 @@ namespace graphics::vulkan {
         ASSERT(m_frame != nullptr, "Frame was not started; cannot end rendering");
         auto& impl = m_pipelines[pipeline.getIndex()].pipeline;
         impl->endRenderPass(m_frame->commandBuffer());
+    }
+
+    usize VulkanManager::createPipelineImpl(pipeline::PipelineOptions const& options) {
+        auto pipeline = core::makeUP<internal::Pipeline>(*m_vulkan, options);
+        usize index = m_pipelines.size();
+        m_pipelines.push_back(PipelineNote {
+            .options  = options,
+            .pipeline = std::move(pipeline),
+        });
+        return index;
     }
         
     void VulkanManager::onSwapchainRecreationRequest() {

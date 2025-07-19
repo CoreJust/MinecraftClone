@@ -55,14 +55,19 @@ namespace graphics::vulkan {
         StateSnapshot makeSnapshot();
         void requestSwapchainRecreation() noexcept { m_requiresSwapchainRecreation = true; }
 
+        template<pipeline::PipelineConcept Pipeline>
+        PURE Pipeline createPipeline() {
+            return Pipeline { createPipelineImpl(Pipeline::Options) };
+        }
+
         bool startFrame();
         void endFrame();
 
-        PURE pipeline::RenderPipeline createPipeline(pipeline::PipelineOptions options);
         void beginRendering(pipeline::RenderPipeline& pipeline);
         void endRendering(pipeline::RenderPipeline& pipeline);
 
     private:
+        PURE usize createPipelineImpl(pipeline::PipelineOptions const& options);
         void onSwapchainRecreationRequest();
         void createPipelines();
     };
