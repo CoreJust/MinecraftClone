@@ -1,12 +1,12 @@
 #include "Pipeline.hpp"
 #include <vulkan/vulkan.h>
 #include <Core/IO/Logger.hpp>
-#include "Check.hpp"
-#include "Vulkan/Vulkan.hpp"
-#include "Vulkan/SwapchainFormat.hpp"
-#include "CommandBuffer.hpp"
+#include "../Check.hpp"
+#include "../Vulkan/Vulkan.hpp"
+#include "../Vulkan/SwapchainFormat.hpp"
+#include "../CommandBuffer.hpp"
 #include "ShaderModule.hpp"
-#include "../Exception.hpp"
+#include "../../Exception.hpp"
 
 namespace graphics::vulkan::internal {
 namespace {
@@ -31,7 +31,7 @@ namespace {
     }
 } // namespace
 
-    Pipeline::Pipeline(Vulkan& vulkan, PipelineOptions const& options)
+    Pipeline::Pipeline(Vulkan& vulkan, pipeline::PipelineOptions const& options)
         : m_pass(vulkan)
         , m_framebuffers(vulkan, m_pass)
         , m_vulkan(vulkan) {

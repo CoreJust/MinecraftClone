@@ -3,9 +3,9 @@
 #include <Resources.hpp>
 #include <Core/IO/Logger.hpp>
 #include <Core/IO/File.hpp>
-#include "Check.hpp"
-#include "../Exception.hpp"
-#include "Vulkan/Vulkan.hpp"
+#include "../Check.hpp"
+#include "../../Exception.hpp"
+#include "../Vulkan/Vulkan.hpp"
 
 namespace graphics::vulkan::internal {
     ShaderModule::ShaderModule(Vulkan& vulkan, char const* const path) 

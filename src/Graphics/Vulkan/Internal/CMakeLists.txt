@@ -14,14 +14,15 @@ set(LOCAL_SOURCES
     Vulkan/Vulkan.cpp
     Sync/Semaphore.cpp
     Sync/Fence.cpp
+    Pipeline/AttributeFormat.cpp
+    Pipeline/ShaderModule.cpp
+    Pipeline/RenderPass.cpp
+    Pipeline/Pipeline.cpp
     QueueFamilies.cpp
     Queue.cpp
-    ShaderModule.cpp
-    RenderPass.cpp
     CommandPool.cpp
     CommandBuffer.cpp
-    Framebuffers.cpp
-    Pipeline.cpp)
+    Framebuffers.cpp)
 set(LOCAL_TESTS)
 
 SUBMODULE(Graphics/Vulkan/Internal)

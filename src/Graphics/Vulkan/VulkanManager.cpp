@@ -5,7 +5,7 @@
 #include <Graphics/Window/Window.hpp>
 #include "Internal/Vulkan/ErrorCallbacks.hpp"
 #include "Internal/Vulkan/Vulkan.hpp"
-#include "Internal/Pipeline.hpp"
+#include "Internal/Pipeline/Pipeline.hpp"
 #include "Internal/CommandPool.hpp"
 #include "Internal/CommandBuffer.hpp"
 
@@ -51,7 +51,7 @@ namespace graphics::vulkan {
     }
 
     VulkanManager::StateSnapshot VulkanManager::makeSnapshot() {
-        std::vector<PipelineOptions> pipelineOptions;
+        std::vector<pipeline::PipelineOptions> pipelineOptions;
         pipelineOptions.reserve(m_pipelines.size());
         for (auto& [options, _] : m_pipelines)
             pipelineOptions.push_back(core::move(options));
@@ -85,23 +85,23 @@ namespace graphics::vulkan {
             onSwapchainRecreationRequest();
     }
 
-    RenderPipeline VulkanManager::createPipeline(PipelineOptions options) {
+    pipeline::RenderPipeline VulkanManager::createPipeline(pipeline::PipelineOptions options) {
         auto pipeline = core::makeUP<internal::Pipeline>(*m_vulkan, options);
         usize index = m_pipelines.size();
         m_pipelines.push_back(PipelineNote {
             .options  = std::move(options),
             .pipeline = std::move(pipeline),
         });
-        return RenderPipeline { index };
+        return pipeline::RenderPipeline { index };
     }
 
-    void VulkanManager::beginRendering(RenderPipeline& pipeline) {
+    void VulkanManager::beginRendering(pipeline::RenderPipeline& pipeline) {
         ASSERT(m_frame != nullptr, "Frame was not started; cannot begin rendering");
         auto& impl = m_pipelines[pipeline.getIndex()].pipeline;
         impl->beginRenderPass(m_frame->commandBuffer(), m_vulkan->swapchain().swapchainIndex());
     }
 
-    void VulkanManager::endRendering(RenderPipeline& pipeline) {
+    void VulkanManager::endRendering(pipeline::RenderPipeline& pipeline) {
         ASSERT(m_frame != nullptr, "Frame was not started; cannot end rendering");
         auto& impl = m_pipelines[pipeline.getIndex()].pipeline;
         impl->endRenderPass(m_frame->commandBuffer());

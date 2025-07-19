@@ -1,9 +1,9 @@
 #pragma once
 #include <Core/Macro/Attributes.hpp>
-#include "Wrapper/Handles.hpp"
+#include "../Wrapper/Handles.hpp"
 #include "RenderPass.hpp"
-#include "Framebuffers.hpp"
-#include "../PipelineOptions.hpp"
+#include "../Framebuffers.hpp"
+#include "../../Pipeline/PipelineOptions.hpp"
 
 namespace graphics::vulkan::internal {
     class Vulkan;
@@ -18,7 +18,7 @@ namespace graphics::vulkan::internal {
         Vulkan& m_vulkan;
 
     public:
-        Pipeline(Vulkan& vulkan, PipelineOptions const& options);
+        Pipeline(Vulkan& vulkan, pipeline::PipelineOptions const& options);
         ~Pipeline();
 
         void beginRenderPass(CommandBuffer& commandBuffer, u32 index);

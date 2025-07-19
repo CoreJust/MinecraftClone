@@ -4,7 +4,7 @@
 #include "Check.hpp"
 #include "Vulkan/Vulkan.hpp"
 #include "Vulkan/SwapchainFormat.hpp"
-#include "RenderPass.hpp"
+#include "Pipeline/RenderPass.hpp"
 #include "../Exception.hpp"
 
 namespace graphics::vulkan::internal {

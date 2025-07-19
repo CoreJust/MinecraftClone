@@ -5,8 +5,8 @@
 #include <Core/Math/Vec.hpp>
 #include <Core/Memory/UniquePtr.hpp>
 #include <Core/Collection/DynArray.hpp>
-#include "RenderPipeline.hpp"
-#include "PipelineOptions.hpp"
+#include "Pipeline/RenderPipeline.hpp"
+#include "Pipeline/PipelineOptions.hpp"
 
 namespace graphics::window {
     class Window;
@@ -26,13 +26,13 @@ namespace graphics::vulkan {
 
     class VulkanManager final {
         struct PipelineNote final {
-            PipelineOptions options;
+            pipeline::PipelineOptions options;
             core::UniquePtr<internal::Pipeline> pipeline;
         };
 
         struct StateSnapshot final {
             core::Version appVersion;
-            std::vector<PipelineOptions> pipelineOptions;
+            std::vector<pipeline::PipelineOptions> pipelineOptions;
         };
 
         core::Version m_appVersion;
@@ -58,9 +58,9 @@ namespace graphics::vulkan {
         bool startFrame();
         void endFrame();
 
-        PURE RenderPipeline createPipeline(PipelineOptions options);
-        void beginRendering(RenderPipeline& pipeline);
-        void endRendering(RenderPipeline& pipeline);
+        PURE pipeline::RenderPipeline createPipeline(pipeline::PipelineOptions options);
+        void beginRendering(pipeline::RenderPipeline& pipeline);
+        void endRendering(pipeline::RenderPipeline& pipeline);
 
     private:
         void onSwapchainRecreationRequest();
