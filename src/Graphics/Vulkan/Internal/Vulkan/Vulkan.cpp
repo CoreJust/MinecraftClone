@@ -2,8 +2,8 @@
 #include <Core/Common/Assert.hpp>
 #include <Core/IO/Logger.hpp>
 #include <Graphics/Window/Window.hpp>
-#include "../../Version.hpp"
-#include "../../Exception.hpp"
+#include <Graphics/Vulkan/Version.hpp>
+#include <Graphics/Vulkan/Exception.hpp>
 #include "Layers.hpp"
 #include "Extensions.hpp"
 #include "Functions.hpp"

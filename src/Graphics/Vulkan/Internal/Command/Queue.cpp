@@ -3,12 +3,12 @@
 #include <vulkan/vulkan.h>
 #include <Core/Common/Assert.hpp>
 #include <Core/IO/Logger.hpp>
-#include "Check.hpp"
+#include <Graphics/Vulkan/Exception.hpp>
+#include "../Sync/Semaphore.hpp"
+#include "../Sync/Fence.hpp"
+#include "../Check.hpp"
 #include "QueueFamilies.hpp"
 #include "CommandBuffer.hpp"
-#include "Sync/Semaphore.hpp"
-#include "Sync/Fence.hpp"
-#include "../Exception.hpp"
 
 namespace graphics::vulkan::internal {
     Queue::Queue(VkDevice device, u32 index) {

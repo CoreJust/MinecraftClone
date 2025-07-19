@@ -1,8 +1,8 @@
 #pragma once
 #include <Core/Macro/Attributes.hpp>
 #include <Core/Collection/ArrayView.hpp>
-#include "../Wrapper/Handles.hpp"
 #include <Graphics/Vulkan/Version.hpp>
+#include "../Wrapper/Handles.hpp"
 
 namespace graphics::vulkan::internal {
     struct ProjectInfo final {

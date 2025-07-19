@@ -1,9 +1,8 @@
 #pragma once
 #include <Core/Macro/Attributes.hpp>
 #include <Core/Memory/UniquePtr.hpp>
-#include <Graphics/Vulkan/Internal/Sync/Semaphore.hpp>
-#include "../CommandPool.hpp"
-#include "../CommandBuffer.hpp"
+#include "../Command/CommandPool.hpp"
+#include "../Command/CommandBuffer.hpp"
 #include "../Sync/Semaphore.hpp"
 #include "../Sync/Fence.hpp"
 

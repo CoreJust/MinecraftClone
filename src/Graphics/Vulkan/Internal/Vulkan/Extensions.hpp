@@ -1,6 +1,6 @@
 #pragma once
 #include <Core/Macro/Attributes.hpp>
-#include "../../Version.hpp"
+#include <Graphics/Vulkan/Version.hpp>
 
 namespace graphics::vulkan::internal {
     enum class VulkanExtension {

@@ -1,5 +1,6 @@
 set(LOCAL_SOURCES
     Check.cpp
+    Framebuffers.cpp
     Vulkan/Functions.cpp
     Vulkan/ErrorCallbacks.cpp
     Vulkan/Layers.cpp
@@ -18,11 +19,10 @@ set(LOCAL_SOURCES
     Pipeline/ShaderModule.cpp
     Pipeline/RenderPass.cpp
     Pipeline/Pipeline.cpp
-    QueueFamilies.cpp
-    Queue.cpp
-    CommandPool.cpp
-    CommandBuffer.cpp
-    Framebuffers.cpp)
+    Command/QueueFamilies.cpp
+    Command/Queue.cpp
+    Command/CommandPool.cpp
+    Command/CommandBuffer.cpp)
 set(LOCAL_TESTS)
 
 SUBMODULE(Graphics/Vulkan/Internal)

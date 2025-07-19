@@ -4,7 +4,7 @@
 #include <Config.hpp>
 #include <Core/Collection/DynArray.hpp>
 #include <Core/IO/Logger.hpp>
-#include "../../Exception.hpp"
+#include <Graphics/Vulkan/Exception.hpp>
 #include "../Check.hpp"
 #include "Functions.hpp"
 #include "Layers.hpp"

@@ -3,8 +3,8 @@
 #include <Resources.hpp>
 #include <Core/IO/Logger.hpp>
 #include <Core/IO/File.hpp>
+#include <Graphics/Vulkan/Exception.hpp>
 #include "../Check.hpp"
-#include "../../Exception.hpp"
 #include "../Vulkan/Vulkan.hpp"
 
 namespace graphics::vulkan::internal {

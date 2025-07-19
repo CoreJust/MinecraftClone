@@ -1,10 +1,10 @@
 #include "PhysicalDevice.hpp"
 #include <vulkan/vulkan.h>
 #include <Core/IO/Logger.hpp>
+#include <Graphics/Vulkan/Version.hpp>
+#include <Graphics/Vulkan/Exception.hpp>
 #include "Vulkan.hpp"
 #include "SwapchainSupport.hpp"
-#include "../../Version.hpp"
-#include "../../Exception.hpp"
 
 namespace graphics::vulkan::internal {
 namespace {

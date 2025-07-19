@@ -6,8 +6,8 @@
 #include "Internal/Vulkan/ErrorCallbacks.hpp"
 #include "Internal/Vulkan/Vulkan.hpp"
 #include "Internal/Pipeline/Pipeline.hpp"
-#include "Internal/CommandPool.hpp"
-#include "Internal/CommandBuffer.hpp"
+#include "Internal/Command/CommandPool.hpp"
+#include "Internal/Command/CommandBuffer.hpp"
 
 namespace graphics::vulkan {
     VulkanManager::VulkanManager(StateSnapshot snapshot, window::Window& win)

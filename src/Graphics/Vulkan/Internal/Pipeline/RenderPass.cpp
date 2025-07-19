@@ -1,11 +1,11 @@
 #include "RenderPass.hpp"
 #include <vulkan/vulkan.h>
 #include <Core/IO/Logger.hpp>
+#include <Graphics/Vulkan/Exception.hpp>
 #include "../Check.hpp"
 #include "../Vulkan/Swapchain.hpp"
 #include "../Vulkan/SwapchainFormat.hpp"
 #include "../Vulkan/Vulkan.hpp"
-#include "../../Exception.hpp"
 
 namespace graphics::vulkan::internal {
     RenderPass::RenderPass(Vulkan& vulkan) 

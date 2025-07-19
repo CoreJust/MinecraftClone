@@ -2,8 +2,8 @@
 #include <vulkan/vulkan.h>
 #include <Core/Common/Assert.hpp>
 #include <Core/Collection/DynArray.hpp>
-#include "Vulkan/Surface.hpp"
-#include "Vulkan/PhysicalDevice.hpp"
+#include "../Vulkan/Surface.hpp"
+#include "../Vulkan/PhysicalDevice.hpp"
 
 namespace graphics::vulkan::internal {
     VkQueueFlagBits queueTypeToVk(QueueType type) noexcept {

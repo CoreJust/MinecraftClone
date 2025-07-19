@@ -1,5 +1,5 @@
 #pragma once
-#include "../../Version.hpp"
+#include <Graphics/Vulkan/Version.hpp>
 
 namespace graphics::vulkan::internal {
     enum class VulkanLayer {

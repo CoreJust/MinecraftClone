@@ -2,7 +2,7 @@
 #include <Core/Memory/UniquePtr.hpp>
 #include <Core/Memory/TypeErasedObject.hpp>
 #include <Core/Macro/Attributes.hpp>
-#include "Wrapper/Handles.hpp"
+#include "../Wrapper/Handles.hpp"
 #include "QueueType.hpp"
 
 namespace graphics::vulkan::internal {

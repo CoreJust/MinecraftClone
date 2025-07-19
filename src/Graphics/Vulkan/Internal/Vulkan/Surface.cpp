@@ -3,8 +3,8 @@
 #include <Core/Common/Assert.hpp>
 #include <Core/IO/Logger.hpp>
 #include <Graphics/Window/Window.hpp>
+#include <Graphics/Vulkan/Exception.hpp>
 #include "../Check.hpp"
-#include "../../Exception.hpp"
 
 namespace graphics::vulkan::internal {
     Surface::Surface(window::Window& win, Instance& instance)
