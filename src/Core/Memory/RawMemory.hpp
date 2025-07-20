@@ -10,6 +10,13 @@ namespace core {
         byte* data = nullptr;
         usize size = 0;
 
+        PURE static RawMemory ofObject(auto& obj) noexcept {
+            return {
+                .data = reinterpret_cast<byte*>(&obj),
+                .size = sizeof(obj),
+            };
+        }
+
         PURE static RawMemory alloc(usize size); // Note: guaranteed to be aligned at least for a pointer size
         void resize(usize newSize);
         void free();

@@ -1,4 +1,6 @@
 #include "RenderEngine.hpp"
+#include <cmath>
+#include <Core/Common/Time.hpp>
 #include <Core/Common/Random.hpp>
 
 namespace graphics {
@@ -6,7 +8,7 @@ namespace graphics {
         : m_window(name, {{ 800, 600 }})
         , m_vulkanManager(core::makeUP<vulkan::VulkanManager>(m_window, appVersion))
         , m_voxelPipeline(m_vulkanManager->createPipeline<renderer::pipelines::VoxelPipeline>())
-        , m_voxelVertices(m_vulkanManager->createVertexBuffer<renderer::pipelines::VoxelVertex>(21))
+        , m_voxelVertices(m_vulkanManager->createVertexBuffer<renderer::pipelines::VoxelVertex>(36))
     {
         m_window.onResize(true, [this](core::Vec2<int>) { m_vulkanManager->requestSwapchainRecreation(); });
 
@@ -19,11 +21,21 @@ namespace graphics {
     }
 
     void RenderEngine::run() {
+        static float MVP[] = {
+            1.f, 0.f, 0.f, 0.f,
+            0.f, 1.f, 0.f, 0.f,
+            0.f, 0.f, 1.f, 0.f,
+            0.f, 0.f, 0.f, 1.f,
+        };
+        const static core::Time start = core::Time::now();
         while (m_window.nextFrame()) {
             try {
                 if (!m_vulkanManager->beginFrame())
                     continue;
                 m_vulkanManager->beginRendering(m_voxelPipeline);
+                MVP[3] = sinf(static_cast<float>((core::Time::now() - start).asSeconds()));
+                MVP[7] = cosf(static_cast<float>((core::Time::now() - start).asSeconds()));
+                m_vulkanManager->pushConstants(vulkan::internal::PipelineStage::Vertex, core::RawMemory::ofObject(MVP));
                 m_vulkanManager->drawVertices(m_voxelVertices);
                 m_vulkanManager->endRendering(m_voxelPipeline);
                 m_vulkanManager->endFrame();

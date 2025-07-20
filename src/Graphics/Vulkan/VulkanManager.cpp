@@ -88,18 +88,31 @@ namespace graphics::vulkan {
 
     void VulkanManager::beginRendering(pipeline::RenderPipeline& pipeline) {
         ASSERT(m_frame != nullptr, "Frame was not started; cannot begin rendering");
-        auto& impl = m_pipelines[pipeline.getIndex()].pipeline;
+        ASSERT(m_currentPipeline == static_cast<usize>(-1), "Already has begun a pipeline; it must be ended before beginning next one");
+        m_currentPipeline = pipeline.getIndex();
+        auto& impl = m_pipelines[m_currentPipeline].pipeline;
         impl->beginRenderPass(m_frame->commandBuffer(), m_vulkan->swapchain().swapchainIndex());
     }
 
     void VulkanManager::endRendering(pipeline::RenderPipeline& pipeline) {
         ASSERT(m_frame != nullptr, "Frame was not started; cannot end rendering");
-        auto& impl = m_pipelines[pipeline.getIndex()].pipeline;
+        ASSERT(m_currentPipeline == pipeline.getIndex(), "Cannot end pipeline: its index and the index of current pipeline differ");
+        auto& impl = m_pipelines[m_currentPipeline].pipeline;
         impl->endRenderPass(m_frame->commandBuffer());
+        m_currentPipeline = static_cast<usize>(-1);
+    }
+        
+    void VulkanManager::pushConstants(internal::PipelineStage stage, core::RawMemory constants) {
+        ASSERT(m_frame != nullptr, "Frame was not started; cannot push constants");
+        ASSERT(m_currentPipeline != static_cast<usize>(-1), "No pipeline begun; cannot push constants");
+        auto& impl = m_pipelines[m_currentPipeline].pipeline;
+        ASSERT(impl->getPushConstantsSize(stage) == constants.size, "PushConstantsSize in shader doesn't match the provided one; cannot push constants");
+        m_frame->commandBuffer().pushConstants(impl->layout(), stage, constants);
     }
 
     void VulkanManager::drawVertices(pipeline::VerticesBase& vertices) {
         ASSERT(m_frame != nullptr, "Frame was not started; cannot draw vertices");
+        ASSERT(m_currentPipeline != static_cast<usize>(-1), "No pipeline begun; cannot push constants");
         m_frame->commandBuffer().drawVertices(vertices.buffer());
     }
 

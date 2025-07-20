@@ -18,12 +18,17 @@ namespace graphics::renderer::pipelines {
     };
 
     class VoxelPipeline final : public vp::RenderPipeline {
+        constexpr static inline vp::Attribute VertexPushConstants[] = {
+            vp::Attribute { .type = vp::Type::Float, .bits = vp::Bits::Bits32, .size = vp::Size::Mat4 },
+        };
+
     public:
         using Vertex = VoxelVertex;
         static inline vp::PipelineOptions Options {
             .vertexShaderPath   = "voxel.vert",
             .fragmentShaderPath = "voxel.frag",
             .attributes         = Vertex::VertexLayout,
+            .vertexPushContants = VertexPushConstants,
         };
 
     public:

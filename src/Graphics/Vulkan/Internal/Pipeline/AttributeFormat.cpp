@@ -118,4 +118,16 @@ namespace graphics::vulkan::internal {
             .bindingDescription = core::move(bindingDescription),
         };
     }
+
+    VkPushConstantRange makePushConstantsDescription(PipelineStage stage, core::ArrayView<pipeline::Attribute const> attrs) {
+        u32 offset = 0;
+        for (auto const& attr : attrs)
+            offset += attributeSize(attr);
+
+        return {
+            .stageFlags = pipelineStageToVK(stage),
+            .offset = 0,
+            .size = offset,
+        };
+    }
 } // namespace graphics::vulkan::internal

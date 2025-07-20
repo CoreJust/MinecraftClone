@@ -18,6 +18,7 @@ set(LOCAL_SOURCES
     Pipeline/AttributeFormat.cpp
     Pipeline/ShaderModule.cpp
     Pipeline/RenderPass.cpp
+    Pipeline/PipelineStage.cpp
     Pipeline/Pipeline.cpp
     Command/QueueFamilies.cpp
     Command/Queue.cpp

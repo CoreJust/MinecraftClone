@@ -3,6 +3,7 @@
 #include <Core/IO/Logger.hpp>
 #include <Graphics/Vulkan/Exception.hpp>
 #include "../Check.hpp"
+#include "../Pipeline/AttributeFormat.hpp"
 
 namespace graphics::vulkan::internal {
     void CommandBuffer::begin() const {
@@ -22,6 +23,10 @@ namespace graphics::vulkan::internal {
             core::error("Failed to end recording command buffer");
             throw VulkanException { };
         }
+    }
+        
+    void CommandBuffer::pushConstants(VkPipelineLayout pipelineLayout, PipelineStage stage, core::RawMemory constants) {
+        vkCmdPushConstants(m_buffer, pipelineLayout, pipelineStageToVK(stage), 0, static_cast<u32>(constants.size), constants.data);
     }
 
     void CommandBuffer::drawVertices(Buffer& buffer) {

@@ -7,5 +7,7 @@ namespace graphics::vulkan::pipeline {
         char const* const vertexShaderPath;
         char const* const fragmentShaderPath;
         core::ArrayView<const Attribute> attributes;
+        core::ArrayView<const Attribute> vertexPushContants { };
+        core::ArrayView<const Attribute> fragmentPushContants { };
     };
 } // namespace graphics::vulkan::pipeline

@@ -30,6 +30,26 @@ namespace {
         viewportState.pScissors = &scissor;
         return viewportState;
     }
+
+    core::ArrayView<VkPushConstantRange> makePushConstantsRanges(
+        pipeline::PipelineOptions const& options,
+        u32 (&pushConstantsSizes)[static_cast<usize>(PipelineStage::PipelineStagesCount)]
+    ) {
+        VkPushConstantRange pushConstantsRanges[] = {
+            makePushConstantsDescription(PipelineStage::Vertex,   options.vertexPushContants),
+            makePushConstantsDescription(PipelineStage::Fragment, options.fragmentPushContants),
+        };
+
+        pushConstantsSizes[static_cast<usize>(PipelineStage::Vertex)]   = pushConstantsRanges[0].size;
+        pushConstantsSizes[static_cast<usize>(PipelineStage::Fragment)] = pushConstantsRanges[1].size;
+        static VkPushConstantRange nonemptyPushConstantsRanges[sizeof(pushConstantsRanges) / sizeof(pushConstantsRanges[0])];
+        VkPushConstantRange* it = nonemptyPushConstantsRanges;
+        for (auto const& range : pushConstantsRanges) {
+            if (range.size != 0)
+                *(it++) = range;
+        }
+        return { nonemptyPushConstantsRanges, static_cast<usize>(it - nonemptyPushConstantsRanges) };
+    }
 } // namespace
 
     Pipeline::Pipeline(Vulkan& vulkan, pipeline::PipelineOptions const& options)
@@ -104,12 +124,14 @@ namespace {
         colorBlending.blendConstants[2] = 0.f;
         colorBlending.blendConstants[3] = 0.f;
 
+        core::ArrayView<VkPushConstantRange> pushConstantRanges = makePushConstantsRanges(options, m_pushConstantsSizes);
+
         VkPipelineLayoutCreateInfo pipelineLayoutInfo { };
         pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
         pipelineLayoutInfo.setLayoutCount = 0;
         pipelineLayoutInfo.pSetLayouts = nullptr;
-        pipelineLayoutInfo.pushConstantRangeCount = 0;
-        pipelineLayoutInfo.pPushConstantRanges = nullptr;
+        pipelineLayoutInfo.pushConstantRangeCount = static_cast<u32>(pushConstantRanges.size());
+        pipelineLayoutInfo.pPushConstantRanges = pushConstantRanges.data();
 
         m_layout = m_vulkan.create<vkCreatePipelineLayout>(&pipelineLayoutInfo, nullptr);
 
