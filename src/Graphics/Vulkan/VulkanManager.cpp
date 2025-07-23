@@ -94,7 +94,7 @@ namespace graphics::vulkan {
         impl->beginRenderPass(m_frame->commandBuffer(), m_vulkan->swapchain().swapchainIndex());
     }
 
-    void VulkanManager::endRendering(pipeline::RenderPipeline& pipeline) {
+    void VulkanManager::endRendering([[maybe_unused]] pipeline::RenderPipeline& pipeline) {
         ASSERT(m_frame != nullptr, "Frame was not started; cannot end rendering");
         ASSERT(m_currentPipeline == pipeline.getIndex(), "Cannot end pipeline: its index and the index of current pipeline differ");
         auto& impl = m_pipelines[m_currentPipeline].pipeline;
@@ -104,7 +104,7 @@ namespace graphics::vulkan {
         
     void VulkanManager::pushConstants(internal::PipelineStage stage, core::RawMemory constants) {
         ASSERT(m_frame != nullptr, "Frame was not started; cannot push constants");
-        ASSERT(m_currentPipeline != static_cast<usize>(-1), "No pipeline begun; cannot push constants");
+        ASSERT(m_currentPipeline != static_cast<usize>(-1), "No pipeline was begun; cannot push constants");
         auto& impl = m_pipelines[m_currentPipeline].pipeline;
         ASSERT(impl->getPushConstantsSize(stage) == constants.size, "PushConstantsSize in shader doesn't match the provided one; cannot push constants");
         m_frame->commandBuffer().pushConstants(impl->layout(), stage, constants);
@@ -112,7 +112,7 @@ namespace graphics::vulkan {
 
     void VulkanManager::drawVertices(pipeline::VerticesBase& vertices) {
         ASSERT(m_frame != nullptr, "Frame was not started; cannot draw vertices");
-        ASSERT(m_currentPipeline != static_cast<usize>(-1), "No pipeline begun; cannot push constants");
+        ASSERT(m_currentPipeline != static_cast<usize>(-1), "No pipeline was begun; cannot push constants");
         m_frame->commandBuffer().drawVertices(vertices.buffer());
     }
 

@@ -2,6 +2,7 @@
 #include <iostream>
 #include <vector>
 #include <algorithm>
+#include <Core/Common/Assert.hpp>
 #include <Core/Common/DurationToString.hpp>
 #include <Core/Common/Timer.hpp>
 #include <Core/IO/ConsoleColor.hpp>
@@ -14,11 +15,6 @@ namespace {
 		usize line;
 		UnitTestFunction test;
 	};
-
-	constexpr double MAX_ITERATION_TIME_DEVIATION = 0.05;
-	constexpr usize ITERATION_TIME_ADDITION = 100;
-	constexpr usize ITERATION_TIME_WINDOW = 4;
-	constexpr usize ITERATIONS_MAX = 50;
 
 	void printTestsFileHeader(UnitTest const& test) {
 		std::cout << White << "\n=== Tests file " << test.file << " ===\n";
@@ -44,17 +40,17 @@ namespace {
 	bool g_isSuccess;
 
 	// Returns true if this is the last iteration
-	bool onTestIterationEnd(Duration const duration) {
+	bool onTestIterationEnd(Duration const duration, UnitTestHelper::BenchmarkingOptions const& options) {
 		g_testIterationDurations.emplace_back(duration);
-		if (g_testIterationDurations.size() < ITERATION_TIME_WINDOW)
+		if (g_testIterationDurations.size() < options.window)
 			return false;
-		if (g_testIterationDurations.size() >= ITERATIONS_MAX) {
+		if (g_testIterationDurations.size() >= options.maxIterations) {
 			std::cout << Yellow << "\tUnstable test iteration time!" << std::endl;
 			return true;
 		}
 
 		Duration minDuration = duration, maxDuration = duration;
-		for (usize i = g_testIterationDurations.size(); i-- > g_testIterationDurations.size() - ITERATION_TIME_WINDOW;) {
+		for (usize i = g_testIterationDurations.size(); i-- > g_testIterationDurations.size() - options.window;) {
 			Duration iterationDuration = g_testIterationDurations[i];
 			if (iterationDuration < minDuration) {
 				minDuration = iterationDuration;
@@ -63,27 +59,38 @@ namespace {
 			}
 		}
 
-		usize const minNs = minDuration.ns + ITERATION_TIME_ADDITION;
-		usize const maxNs = maxDuration.ns + ITERATION_TIME_ADDITION;
+		usize const minNs = minDuration.ns + options.timeAddition;
+		usize const maxNs = maxDuration.ns + options.timeAddition;
 		double const diff = static_cast<double>(maxNs) / static_cast<double>(minNs) - 1.0;
-		return diff < MAX_ITERATION_TIME_DEVIATION;
+		return diff < options.maxDeviation;
 	}
 
-	void onTestEnd(Duration const duration, bool success) {
+	std::string_view averageIterationTime(UnitTestHelper::BenchmarkingOptions const& options) {
+		usize i = g_testIterationDurations.size() - options.window;
+		usize sumNs = 0;
+		while (i < g_testIterationDurations.size()) {
+			sumNs += g_testIterationDurations[i].ns;
+			++i;
+		}
+		Duration avgDuration { sumNs / options.window };
+		return durationToString(avgDuration);
+	}
+
+	void onTestEnd(Duration const duration, bool success, UnitTestHelper::BenchmarkingOptions const& options) {
 		g_isSuccess = success;
 		if (success) {
 			if (g_testIterationDurations.empty()) {
 				std::cout << Green << "\tPassed in " << durationToString(duration) << std::endl;
 			} else {
 				std::cout << Green << "\tPassed in " << durationToString(duration) 
-					<< "; average time " << durationToString(g_testIterationDurations.back()) << std::endl;
+					<< "; average time " << averageIterationTime(options) << std::endl;
 			}
 		} else {
 			if (g_testIterationDurations.empty()) {
 				std::cout << Red << "\tFailed in " << durationToString(duration) << std::endl;
 			} else {
 				std::cout << Red << "\tFailed in " << durationToString(duration)
-					<< "; average time " << durationToString(g_testIterationDurations.back()) << std::endl;
+					<< "; average time " << averageIterationTime(options) << std::endl;
 			}
 		}
 	}
@@ -131,7 +138,7 @@ namespace {
 }
 
 	UnitTestHelper::UnitTestIteratedObject::~UnitTestIteratedObject() {
-		if (onTestIterationEnd(timer.elapsed()))
+		if (onTestIterationEnd(timer.elapsed(), pIter->options)) 
 			pIter->isEnd = true;
 	}
 
@@ -162,7 +169,14 @@ namespace {
 
 	UnitTestHelper::~UnitTestHelper() {
 		if (m_timer.startTime().ns)
-			onTestEnd(m_timer.elapsed(), m_success);
+			onTestEnd(m_timer.elapsed(), m_success, m_options);
+	}
+		
+	UnitTestHelper& UnitTestHelper::setBenchmarkingOptions(BenchmarkingOptions options) &noexcept {
+		ASSERT(options.window > 0, "Benchmarking options: window cannot be null");
+		ASSERT(options.maxDeviation > 0.00001, "Benchmarking options: maxDeviation cannot be less than 0.00001");
+		m_options = options;
+		return *this;
 	}
 
 	void UnitTestHelper::checkFailure(char const* const message, std::source_location const location) {
@@ -170,12 +184,12 @@ namespace {
 		m_success = false;
 	}
 
-	UnitTestHelper::UnitTestIterator UnitTestHelper::begin() {
-		return { false };
+	UnitTestHelper::UnitTestIterator UnitTestHelper::begin() &noexcept {
+		return { false, m_options };
 	}
 
-	UnitTestHelper::UnitTestIterator UnitTestHelper::end() {
-		return { true };
+	UnitTestHelper::UnitTestIterator UnitTestHelper::end() &noexcept {
+		return { true, m_options };
 	}
 
 	void registerUnitTest(UnitTestNote note, UnitTestFunction unitTest) {

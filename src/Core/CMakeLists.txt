@@ -22,6 +22,7 @@ set(LOCAL_TESTS
     Common/Tests/IntTest.cpp
     Memory/Tests/UniquePtrTest.cpp
     Memory/Tests/FunctionTest.cpp
+    Math/Tests/MatTest.cpp
     Collection/Tests/DynArrayTest.cpp)
 
 SUBMODULE(Core)

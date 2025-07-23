@@ -44,3 +44,14 @@
 #  define LIKELY [[likely]]
 #  define UNLIKELY [[unlikely]]
 #endif
+
+#ifdef ALIGNED
+#  undef ALIGNED
+#endif
+#if GCC || CLANG
+#  define ALIGNED(x) __attribute__ ((aligned (x)))
+#elif MSVC
+#  define ALIGNED(x) __declspec(align(x))
+#else
+#  define ALIGNED(x)
+#endif

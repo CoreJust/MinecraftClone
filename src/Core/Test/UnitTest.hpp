@@ -9,7 +9,11 @@
 #include <Core/Macro/NoOpt.hpp>
 #define UNIT_TEST(name) auto GEN_UNITTEST_NAME(__LINE__, name) = ::core::UnitTestNote{ #name, __FILE__, __LINE__ } ^ [](::core::UnitTestHelper test__)
 #define CHECK(...) if (!(__VA_ARGS__)) { test__.checkFailure(#__VA_ARGS__); }
-#define BENCHMARK() for (auto _ : test__)
+#define BENCHMARK(...) for (auto it__ : test__.setBenchmarkingOptions({ __VA_ARGS__ }))
+#define WINDOW(n) .window = (n)
+#define MAX_ITER(n) .maxIterations = (n)
+#define MAX_DEVIATION(n) .maxDeviation = (n)
+#define TIME_ADDITION(n) .timeAddition = (n)
 
 namespace core {
 	struct UnitTestNote final { 
@@ -20,6 +24,14 @@ namespace core {
 
 	struct UnitTestHelper final {
 		struct UnitTestIterator;
+
+		struct BenchmarkingOptions final {
+			// Repeats iterations until the difference within last [window] iterations is less than [maxDeviation]
+			double maxDeviation = 0.05;
+			usize window = 5;
+			usize timeAddition = 50; // Added to minimum and maximum time within window to increase stability before evaluation the deviation
+			usize maxIterations = 60;
+		};
 
 		struct UnitTestIteratedObject final {
 			UnitTestIterator const* pIter;
@@ -36,6 +48,7 @@ namespace core {
 			using Iterator_category = std::forward_iterator_tag;
 
 			mutable bool isEnd;
+			BenchmarkingOptions& options;
 
 			value_type operator*() const;
 			pointer operator->() const;
@@ -44,6 +57,7 @@ namespace core {
 			bool operator==(UnitTestIterator const& other) const noexcept;
 		};
 
+		BenchmarkingOptions m_options { };
 		Timer m_timer;
 		bool m_success = true;
 
@@ -52,9 +66,11 @@ namespace core {
 		UnitTestHelper(UnitTestHelper&& other) noexcept;
 		~UnitTestHelper();
 
+		UnitTestHelper& setBenchmarkingOptions(BenchmarkingOptions options) &noexcept;
+
 		void checkFailure(char const* const message = "", std::source_location const location = std::source_location::current());
-		UnitTestIterator begin();
-		UnitTestIterator end();
+		UnitTestIterator begin() &noexcept;
+		UnitTestIterator end() &noexcept;
 	};
 
 	using UnitTestFunction = void(*)(UnitTestHelper);

@@ -45,6 +45,7 @@ set(CMAKE_CXX_SCAN_FOR_MODULES OFF)
 add_compile_definitions(_CRT_SECURE_NO_WARNINGS)
 
 add_compile_options(
+    -march=native
     -Werror
     -Wall
     -Wextra
@@ -54,7 +55,6 @@ add_compile_options(
     -Wconversion
     -Wctor-dtor-privacy
     -Wenum-compare
-    -Wfloat-equal
     -Wnon-virtual-dtor
     -Wold-style-cast
     -Woverloaded-virtual

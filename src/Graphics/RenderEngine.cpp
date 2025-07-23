@@ -2,6 +2,7 @@
 #include <cmath>
 #include <Core/Common/Time.hpp>
 #include <Core/Common/Random.hpp>
+#include <Core/Math/Mat.hpp>
 
 namespace graphics {
     RenderEngine::RenderEngine(char const* const name, core::Version const& appVersion) 
@@ -21,7 +22,7 @@ namespace graphics {
     }
 
     void RenderEngine::run() {
-        static float MVP[] = {
+        static core::Mat4f MVP = {
             1.f, 0.f, 0.f, 0.f,
             0.f, 1.f, 0.f, 0.f,
             0.f, 0.f, 1.f, 0.f,
@@ -33,8 +34,8 @@ namespace graphics {
                 if (!m_vulkanManager->beginFrame())
                     continue;
                 m_vulkanManager->beginRendering(m_voxelPipeline);
-                MVP[3] = sinf(static_cast<float>((core::Time::now() - start).asSeconds()));
-                MVP[7] = cosf(static_cast<float>((core::Time::now() - start).asSeconds()));
+                MVP[0][3] = sinf(static_cast<float>((core::Time::now() - start).asSeconds()));
+                MVP[1][3] = cosf(static_cast<float>((core::Time::now() - start).asSeconds()));
                 m_vulkanManager->pushConstants(vulkan::internal::PipelineStage::Vertex, core::RawMemory::ofObject(MVP));
                 m_vulkanManager->drawVertices(m_voxelVertices);
                 m_vulkanManager->endRendering(m_voxelPipeline);
