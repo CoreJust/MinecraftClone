@@ -29,7 +29,7 @@ namespace graphics::vulkan::internal {
         vkCmdPushConstants(m_buffer, pipelineLayout, pipelineStageToVK(stage), 0, static_cast<u32>(constants.size), constants.data);
     }
 
-    void CommandBuffer::drawVertices(Buffer& buffer) {
+    void CommandBuffer::drawVertices(VertexBuffer& buffer) {
         VkDeviceSize offsets[] = { 0 }; 
         vkCmdBindVertexBuffers(m_buffer, 0, 1, buffer.ptr(), offsets);
         vkCmdDraw(m_buffer, static_cast<uint32_t>(buffer.size()), 1, 0, 0);

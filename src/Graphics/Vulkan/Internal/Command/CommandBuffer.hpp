@@ -1,7 +1,7 @@
 #pragma once
 #include <Core/Macro/Attributes.hpp>
 #include "../Wrapper/Handles.hpp"
-#include "../Buffer/Buffer.hpp"
+#include "../Buffer/VertexBuffer.hpp"
 #include "../Pipeline/PipelineStage.hpp"
 
 namespace graphics::vulkan::internal {
@@ -14,7 +14,7 @@ namespace graphics::vulkan::internal {
         void begin() const;
         void end() const;
         void pushConstants(VkPipelineLayout pipelineLayout, PipelineStage stage, core::RawMemory constants);
-        void drawVertices(Buffer& buffer);
+        void drawVertices(VertexBuffer& buffer);
 
         PURE VkCommandBuffer  get() const noexcept { return m_buffer; }
         PURE VkCommandBuffer* ptr()       noexcept { return &m_buffer; }

@@ -4,7 +4,7 @@
 #include "Vertex.hpp"
 
 namespace graphics::vulkan::internal {
-    class Buffer;
+    class VertexBuffer;
     class MappedMemory;
 } // namespace graphics::vulkan::internal
 
@@ -24,14 +24,14 @@ namespace graphics::vulkan::pipeline {
         };
 
     protected:
-        core::UniquePtr<internal::Buffer> m_buffer;
+        core::UniquePtr<internal::VertexBuffer> m_buffer;
 
     public:
         VerticesBase(VerticesBase&&) = default;
-        VerticesBase(core::UniquePtr<internal::Buffer> buffer);
+        VerticesBase(core::UniquePtr<internal::VertexBuffer> buffer);
         ~VerticesBase();
 
-        PURE internal::Buffer& buffer() { return *m_buffer; }
+        PURE internal::VertexBuffer& buffer() { return *m_buffer; }
 
     protected:
         PURE VerticesArrayBase mapVertices();

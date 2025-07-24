@@ -2,20 +2,22 @@
 #include <Core/Macro/Attributes.hpp>
 #include <Core/Common/Int.hpp>
 #include "../Wrapper/Handles.hpp"
-#include "BufferType.hpp"
+#include "BufferTypeBit.hpp"
+#include "MemoryTypeBit.hpp"
 #include "MappedMemory.hpp"
 
 namespace graphics::vulkan::internal {
     class Vulkan;
 
-    class Buffer final {
+    class Buffer {
         VkBuffer m_buffer;
         VkDeviceMemory m_memory;
+        MemoryTypeBit m_memoryType;
         usize m_size;
         Vulkan&  m_vulkan;
 
     public:
-        Buffer(Vulkan& vulkan, BufferType type, usize size);
+        Buffer(Vulkan& vulkan, BufferTypeBit type, MemoryTypeBit memoryType, usize size);
         ~Buffer();
 
         PURE MappedMemory map(usize offset = 0, usize size = static_cast<usize>(-1));

@@ -5,7 +5,7 @@
 #include <Graphics/Window/Window.hpp>
 #include "Internal/Vulkan/ErrorCallbacks.hpp"
 #include "Internal/Vulkan/Vulkan.hpp"
-#include "Internal/Buffer/Buffer.hpp"
+#include "Internal/Buffer/VertexBuffer.hpp"
 #include "Internal/Pipeline/Pipeline.hpp"
 #include "Internal/Command/CommandPool.hpp"
 #include "Internal/Command/CommandBuffer.hpp"
@@ -127,7 +127,7 @@ namespace graphics::vulkan {
     }
 
     pipeline::VerticesBase VulkanManager::createVertexBufferImpl(usize size) {
-        return { m_vulkan->make<internal::Buffer>(internal::BufferType::Vertex, size) };
+        return { m_vulkan->make<internal::VertexBuffer>(size) };
     }
         
     void VulkanManager::onSwapchainRecreationRequest() {

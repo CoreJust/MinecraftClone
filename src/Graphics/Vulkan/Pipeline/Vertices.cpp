@@ -1,5 +1,5 @@
 #include "Vertices.hpp"
-#include "../Internal/Buffer/Buffer.hpp"
+#include "../Internal/Buffer/VertexBuffer.hpp"
 
 namespace graphics::vulkan::pipeline {
     VerticesBase::VerticesArrayBase::VerticesArrayBase(core::UniquePtr<internal::MappedMemory> memory)
@@ -11,7 +11,7 @@ namespace graphics::vulkan::pipeline {
         return m_memory->get();
     }
 
-    VerticesBase::VerticesBase(core::UniquePtr<internal::Buffer> buffer)
+    VerticesBase::VerticesBase(core::UniquePtr<internal::VertexBuffer> buffer)
         : m_buffer(core::move(buffer)) { }
 
     VerticesBase::~VerticesBase() = default;
