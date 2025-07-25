@@ -3,8 +3,8 @@
 #include <Core/Common/Int.hpp>
 #include <Core/Common/Version.hpp>
 #include <Core/Math/Vec.hpp>
-#include <Core/Memory/UniquePtr.hpp>
-#include <Core/Collection/DynArray.hpp>
+#include <Core/Container/UniquePtr.hpp>
+#include <Core/Container/DynArray.hpp>
 #include "Internal/Pipeline/ShaderStageBit.hpp"
 #include "Pipeline/RenderPipeline.hpp"
 #include "Pipeline/PipelineOptions.hpp"

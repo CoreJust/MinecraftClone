@@ -1,5 +1,5 @@
 #pragma once
-#include <Core/Memory/UniquePtr.hpp>
+#include <Core/Container/UniquePtr.hpp>
 #include <Core/Memory/TypeErasedObject.hpp>
 #include <Core/Macro/Attributes.hpp>
 #include "../Wrapper/Handles.hpp"

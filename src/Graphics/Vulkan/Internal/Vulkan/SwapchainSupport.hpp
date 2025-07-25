@@ -1,7 +1,7 @@
 #pragma once
 #include <vulkan/vulkan.h>
 #include <Core/Math/Vec.hpp>
-#include <Core/Collection/DynArray.hpp>
+#include <Core/Container/DynArray.hpp>
 
 namespace graphics::vulkan::internal {
     struct SwapchainSupport final {

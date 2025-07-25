@@ -1,6 +1,6 @@
 #pragma once
 #include <Core/Macro/Attributes.hpp>
-#include <Core/Collection/DynArray.hpp>
+#include <Core/Container/DynArray.hpp>
 #include "Wrapper/Handles.hpp"
 
 namespace graphics::vulkan::internal {

@@ -20,9 +20,9 @@ set(LOCAL_TESTS
     Common/Tests/DeferTest.cpp
     Common/Tests/TimeTest.cpp
     Common/Tests/IntTest.cpp
-    Memory/Tests/UniquePtrTest.cpp
     Memory/Tests/FunctionTest.cpp
     Math/Tests/MatTest.cpp
-    Collection/Tests/DynArrayTest.cpp)
+    Container/Tests/UniquePtrTest.cpp
+    Container/Tests/DynArrayTest.cpp)
 
 SUBMODULE(Core)

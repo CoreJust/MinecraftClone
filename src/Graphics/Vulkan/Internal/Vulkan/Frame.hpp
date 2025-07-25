@@ -1,6 +1,6 @@
 #pragma once
 #include <Core/Macro/Attributes.hpp>
-#include <Core/Memory/UniquePtr.hpp>
+#include <Core/Container/UniquePtr.hpp>
 #include "../Command/CommandPool.hpp"
 #include "../Command/CommandBuffer.hpp"
 #include "../Sync/Semaphore.hpp"

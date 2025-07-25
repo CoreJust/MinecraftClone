@@ -1,7 +1,7 @@
 #include "QueueFamilies.hpp"
 #include <vulkan/vulkan.h>
 #include <Core/Common/Assert.hpp>
-#include <Core/Collection/DynArray.hpp>
+#include <Core/Container/DynArray.hpp>
 #include "../Vulkan/Surface.hpp"
 #include "../Vulkan/PhysicalDevice.hpp"
 

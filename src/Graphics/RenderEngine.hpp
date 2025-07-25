@@ -1,5 +1,5 @@
 #pragma once
-#include <Core/Memory/UniquePtr.hpp>
+#include <Core/Container/UniquePtr.hpp>
 #include "Window/Window.hpp"
 #include "Vulkan/VulkanManager.hpp"
 #include "Renderer/Pipelines/VoxelPipeline.hpp"

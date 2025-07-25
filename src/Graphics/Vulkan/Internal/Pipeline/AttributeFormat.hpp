@@ -1,6 +1,6 @@
 #pragma once
 #include <vulkan/vulkan.hpp>
-#include <Core/Collection/DynArray.hpp>
+#include <Core/Container/DynArray.hpp>
 #include <Graphics/Vulkan/Pipeline/Attribute.hpp>
 #include "ShaderStageBit.hpp"
 

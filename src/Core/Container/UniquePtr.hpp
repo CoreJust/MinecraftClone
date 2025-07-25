@@ -1,6 +1,6 @@
 #pragma once
-#include "Forward.hpp"
-#include "Exchange.hpp"
+#include <Core/Memory/Forward.hpp>
+#include <Core/Memory/Exchange.hpp>
 #include <Core/Common/Assert.hpp>
 
 namespace core {

@@ -1,5 +1,5 @@
 #pragma once
-#include <Core/Collection/ArrayView.hpp>
+#include <Core/Container/ArrayView.hpp>
 #include "Attribute.hpp"
 
 namespace graphics::vulkan::pipeline {

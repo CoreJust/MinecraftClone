@@ -1,7 +1,7 @@
 #pragma once
 #include <Core/Macro/Attributes.hpp>
-#include <Core/Memory/UniquePtr.hpp>
-#include <Core/Collection/DynArray.hpp>
+#include <Core/Container/UniquePtr.hpp>
+#include <Core/Container/DynArray.hpp>
 #include "Extensions.hpp"
 #include "../Wrapper/Handles.hpp"
 #include "../Command/QueueFamilies.hpp"

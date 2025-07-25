@@ -1,9 +1,9 @@
 #pragma once
 #include <Core/Macro/Attributes.hpp>
 #include <Core/Math/Vec.hpp>
-#include <Core/Memory/UniquePtr.hpp>
+#include <Core/Container/UniquePtr.hpp>
 #include <Core/Memory/Function.hpp>
-#include <Core/Collection/ArrayView.hpp>
+#include <Core/Container/ArrayView.hpp>
 
 typedef struct GLFWwindow GLFWwindow;
 

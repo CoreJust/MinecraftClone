@@ -3,11 +3,11 @@
 #include <Core/Meta/FunctionDecomposition.hpp>
 #include <Core/Meta/IsSame.hpp>
 #include <Core/Meta/UnPtr.hpp>
-#include <Core/Memory/UniquePtr.hpp>
+#include <Core/Container/UniquePtr.hpp>
 #include <Core/Memory/Forward.hpp>
 #include <Core/Common/NonMovable.hpp>
 #include <Core/Common/Version.hpp>
-#include <Core/Collection/DynArray.hpp>
+#include <Core/Container/DynArray.hpp>
 #include "../Check.hpp"
 #include "Instance.hpp"
 #include "Surface.hpp"

@@ -1,6 +1,6 @@
 #include <Core/Test/UnitTest.hpp>
+#include <Core/Memory/Move.hpp>
 #include "../UniquePtr.hpp"
-#include "../Move.hpp"
 
 using namespace core;
 

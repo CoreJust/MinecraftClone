@@ -1,6 +1,6 @@
 #pragma once
-#include <Core/Memory/UniquePtr.hpp>
-#include <Core/Collection/ArrayView.hpp>
+#include <Core/Container/UniquePtr.hpp>
+#include <Core/Container/ArrayView.hpp>
 #include "Vertex.hpp"
 
 namespace graphics::vulkan::internal {

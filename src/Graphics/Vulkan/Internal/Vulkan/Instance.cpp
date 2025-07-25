@@ -2,7 +2,7 @@
 #include <vector>
 #include <vulkan/vulkan.h>
 #include <Config.hpp>
-#include <Core/Collection/DynArray.hpp>
+#include <Core/Container/DynArray.hpp>
 #include <Core/IO/Logger.hpp>
 #include <Graphics/Vulkan/Exception.hpp>
 #include "../Check.hpp"
