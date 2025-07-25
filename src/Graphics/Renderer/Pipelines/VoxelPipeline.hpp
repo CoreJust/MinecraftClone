@@ -35,5 +35,6 @@ namespace graphics::renderer::pipelines {
         VoxelPipeline(usize index) : vp::RenderPipeline(index) { }
     };
 
-    using VoxelVertices = vp::Vertices<VoxelVertex>;
+    template<typename Index = u16>
+    using VoxelVertices = vp::Vertices<VoxelVertex, Index>;
 } // namespace graphics::renderer::pipelines

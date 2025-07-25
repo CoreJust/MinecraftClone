@@ -71,6 +71,23 @@ namespace core {
             return *this = *this * rhs;
         }
 
+        PURE constexpr Row operator*(Row const& vec) const noexcept {
+            Row result { };
+            T* dst = result.begin();
+            T* end = result.end();
+            Row const* rowSrc = begin();
+            while (dst < end) {
+                T tmp = static_cast<T>(0);
+                T const* a = (rowSrc++)->begin();
+                T const* b = vec.begin();
+                T const* bEnd = vec.end();
+                while (b < bEnd)
+                    tmp += *(a++) * *(b++);
+                *(dst++) = tmp;
+            }
+            return result;
+        }
+
 #define DECL_MAT_EQ_OP(op)                                             \
         PURE constexpr Mat& operator op##=(Mat const& rhs) &noexcept { \
             T* dst = data, *src = rhs.data, *end = data + Size;        \

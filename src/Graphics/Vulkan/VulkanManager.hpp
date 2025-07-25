@@ -74,14 +74,14 @@ namespace graphics::vulkan {
         void pushConstants(internal::ShaderStageBit stage, core::RawMemory constants);
         void drawVertices(pipeline::VerticesBase& vertices);
 
-        template<pipeline::VertexConcept Vertex>
-        pipeline::Vertices<Vertex> createVertexBuffer(usize size) {
-            return { createVertexBufferImpl(size * sizeof(Vertex)) };
+        template<pipeline::VertexConcept Vertex, typename Index>
+        pipeline::Vertices<Vertex, Index> createVertices(usize vertexCount, usize indexCount) {
+            return { createVerticesImpl(vertexCount * sizeof(Vertex), indexCount * sizeof(Index), sizeof(Index)) };
         }
 
     private:
         usize createPipelineImpl(pipeline::PipelineOptions const& options);
-        pipeline::VerticesBase createVertexBufferImpl(usize size);
+        pipeline::VerticesBase createVerticesImpl(usize vertexCount, usize indexCount, usize indexBits);
         void onSwapchainRecreationRequest();
         void createPipelines();
     };

@@ -55,6 +55,7 @@ namespace core {
             return DynArray(Raw::alloc(size));
         }
 
+        // Note: requires T to be trivially movable
         void resize(usize newSize) {
             raw().resize(newSize);
         }

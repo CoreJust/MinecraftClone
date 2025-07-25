@@ -6,6 +6,7 @@
 #include "Internal/Vulkan/ErrorCallbacks.hpp"
 #include "Internal/Vulkan/Vulkan.hpp"
 #include "Internal/Buffer/VertexBuffer.hpp"
+#include "Internal/Buffer/IndexBuffer.hpp"
 #include "Internal/Pipeline/Pipeline.hpp"
 #include "Internal/Command/CommandPool.hpp"
 #include "Internal/Command/CommandBuffer.hpp"
@@ -121,7 +122,7 @@ namespace graphics::vulkan {
     void VulkanManager::drawVertices(pipeline::VerticesBase& vertices) {
         ASSERT(m_frame != nullptr, "Frame was not started; cannot draw vertices");
         ASSERT(m_currentPipeline != static_cast<usize>(-1), "No pipeline was begun; cannot push constants");
-        m_frame->commandBuffer().drawVertices(vertices.buffer());
+        m_frame->commandBuffer().drawVertices(vertices.vertexBuffer(), vertices.indexBuffer());
     }
 
     usize VulkanManager::createPipelineImpl(pipeline::PipelineOptions const& options) {
@@ -134,8 +135,20 @@ namespace graphics::vulkan {
         return index;
     }
 
-    pipeline::VerticesBase VulkanManager::createVertexBufferImpl(usize size) {
-        return { m_vulkan->make<internal::VertexBuffer>(*m_copyCommandPool, size) };
+    pipeline::VerticesBase VulkanManager::createVerticesImpl(usize vertexCount, usize indexCount, usize indexBits) {
+        ASSERT(indexBits == 1 || indexBits == 2 || indexBits == 4);
+        internal::IndexType indexType = 
+            indexBits == 1 
+            ? internal::IndexType::Uint8
+            : indexBits == 2
+                ? internal::IndexType::Uint16
+                : internal::IndexType::Uint32;
+        return {
+            m_vulkan->make<internal::VertexBuffer>(*m_copyCommandPool, vertexCount),
+            indexCount
+                ? m_vulkan->make<internal::IndexBuffer>(*m_copyCommandPool, indexType, indexCount)
+                : nullptr,
+        };
     }
         
     void VulkanManager::onSwapchainRecreationRequest() {

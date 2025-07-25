@@ -1,7 +1,7 @@
 #version 450
 
 layout(push_constant) uniform ps {
-    mat4 mvp;
+    layout(row_major) mat4 mvp;
 };
 
 layout(location = 0) in vec2 inPosition;

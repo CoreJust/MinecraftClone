@@ -2,6 +2,7 @@
 #include <Core/Macro/Attributes.hpp>
 #include "../Wrapper/Handles.hpp"
 #include "../Buffer/VertexBuffer.hpp"
+#include "../Buffer/IndexBuffer.hpp"
 #include "../Pipeline/ShaderStageBit.hpp"
 #include "CommandBufferUsageBit.hpp"
 
@@ -20,7 +21,7 @@ namespace graphics::vulkan::internal {
         void end() const;
         void copyBuffer(VkBuffer src, VkBuffer dst, usize size, usize srcOffset, usize dstOffset);
         void pushConstants(VkPipelineLayout pipelineLayout, ShaderStageBit stage, core::RawMemory constants);
-        void drawVertices(VertexBuffer& buffer);
+        void drawVertices(VertexBuffer& vertices, IndexBuffer* indices = nullptr);
 
         PURE CommandBufferUsageBit usage() const noexcept { return m_usage; }
         PURE VkCommandBuffer  get() const noexcept { return m_buffer; }

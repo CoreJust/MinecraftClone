@@ -38,9 +38,14 @@ namespace graphics::vulkan::internal {
         vkCmdPushConstants(m_buffer, pipelineLayout, static_cast<VkShaderStageFlagBits>(stage), 0, static_cast<u32>(constants.size), constants.data);
     }
 
-    void CommandBuffer::drawVertices(VertexBuffer& buffer) {
+    void CommandBuffer::drawVertices(VertexBuffer& vertices, IndexBuffer* indices) {
         VkDeviceSize offsets[] = { 0 }; 
-        vkCmdBindVertexBuffers(m_buffer, 0, 1, buffer.ptr(), offsets);
-        vkCmdDraw(m_buffer, static_cast<uint32_t>(buffer.size()), 1, 0, 0);
+        vkCmdBindVertexBuffers(m_buffer, 0, 1, vertices.ptr(), offsets);
+        if (indices) {
+            vkCmdBindIndexBuffer(m_buffer, indices->get(), 0, static_cast<VkIndexType>(indices->indexType()));
+            vkCmdDrawIndexed(m_buffer, static_cast<u32>(indices->indexCount()), 1, 0, 0, 0);
+        } else {
+            vkCmdDraw(m_buffer, static_cast<u32>(vertices.size()), 1, 0, 0);
+        }
     }
 } // namespace graphics::vulkan::internal
