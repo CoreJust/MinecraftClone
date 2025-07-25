@@ -33,15 +33,15 @@ namespace {
 
     core::ArrayView<VkPushConstantRange> makePushConstantsRanges(
         pipeline::PipelineOptions const& options,
-        u32 (&pushConstantsSizes)[static_cast<usize>(PipelineStage::PipelineStagesCount)]
+        u32 (&pushConstantsSizes)[2]
     ) {
         VkPushConstantRange pushConstantsRanges[] = {
-            makePushConstantsDescription(PipelineStage::Vertex,   options.vertexPushContants),
-            makePushConstantsDescription(PipelineStage::Fragment, options.fragmentPushContants),
+            makePushConstantsDescription(ShaderStageBit::Vertex,   options.vertexPushContants),
+            makePushConstantsDescription(ShaderStageBit::Fragment, options.fragmentPushContants),
         };
 
-        pushConstantsSizes[static_cast<usize>(PipelineStage::Vertex)]   = pushConstantsRanges[0].size;
-        pushConstantsSizes[static_cast<usize>(PipelineStage::Fragment)] = pushConstantsRanges[1].size;
+        pushConstantsSizes[0] = pushConstantsRanges[0].size;
+        pushConstantsSizes[1] = pushConstantsRanges[1].size;
         static VkPushConstantRange nonemptyPushConstantsRanges[sizeof(pushConstantsRanges) / sizeof(pushConstantsRanges[0])];
         VkPushConstantRange* it = nonemptyPushConstantsRanges;
         for (auto const& range : pushConstantsRanges) {

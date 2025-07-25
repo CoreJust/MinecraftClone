@@ -18,13 +18,13 @@ set(LOCAL_SOURCES
     Pipeline/AttributeFormat.cpp
     Pipeline/ShaderModule.cpp
     Pipeline/RenderPass.cpp
-    Pipeline/PipelineStage.cpp
     Pipeline/Pipeline.cpp
     Command/QueueFamilies.cpp
     Command/Queue.cpp
     Command/CommandPool.cpp
     Command/CommandBuffer.cpp
     Buffer/Buffer.cpp
+    Buffer/CopyBuffer.cpp
     Buffer/MappedMemory.cpp)
 set(LOCAL_TESTS)
 

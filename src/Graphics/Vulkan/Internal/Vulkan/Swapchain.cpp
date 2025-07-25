@@ -90,13 +90,13 @@ namespace {
 
     Swapchain::Swapchain(Vulkan& vulkan, core::Vec2u32 pixelSize, usize framesCount)
         : m_vulkan(vulkan)
-        , m_frames(framesCount, [&vulkan](Frame* ptr, usize) { new(ptr) Frame { vulkan }; })
     {
         core::note("Creating Vulkan swapchain...");
         initialize(pixelSize);
         QueueMaker queueMaker { m_vulkan.device().get(), m_vulkan.queueFamilies() };
         m_graphicsQueue = queueMaker.make(internal::QueueType::Graphics);
         m_presentQueue  = queueMaker.make(internal::QueueType::Present);
+        m_frames = core::DynArray<Frame>(framesCount, [&](Frame* ptr, usize) { new(ptr) Frame { vulkan, *m_graphicsQueue }; });
     }
 
     Swapchain::~Swapchain() {
@@ -127,7 +127,7 @@ namespace {
     void Swapchain::submit() {
         Frame& frame = currentFrame();
         frame.fence().reset();
-        m_graphicsQueue->submit(frame.commandBuffer(), frame.imageAvailable(), frame.renderingDone(), frame.fence());
+        m_graphicsQueue->submit(frame.commandBuffer(), PipelineStageBit::ColorAttachmentOutput, &frame.imageAvailable(), &frame.renderingDone(), &frame.fence());
     }
 
     void Swapchain::present() {

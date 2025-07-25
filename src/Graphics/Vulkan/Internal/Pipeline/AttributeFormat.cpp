@@ -119,13 +119,13 @@ namespace graphics::vulkan::internal {
         };
     }
 
-    VkPushConstantRange makePushConstantsDescription(PipelineStage stage, core::ArrayView<pipeline::Attribute const> attrs) {
+    VkPushConstantRange makePushConstantsDescription(ShaderStageBit stage, core::ArrayView<pipeline::Attribute const> attrs) {
         u32 offset = 0;
         for (auto const& attr : attrs)
             offset += attributeSize(attr);
 
         return {
-            .stageFlags = pipelineStageToVK(stage),
+            .stageFlags = static_cast<VkShaderStageFlags>(stage),
             .offset = 0,
             .size = offset,
         };

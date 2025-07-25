@@ -17,7 +17,7 @@ namespace graphics::vulkan::internal {
         Fence         m_fence;
 
     public:
-        Frame(Vulkan& vulkan);
+        Frame(Vulkan& vulkan, Queue& graphicsQueue);
         ~Frame();
 
         PURE CommandPool        & pool()                 noexcept { return m_pool; }

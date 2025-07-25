@@ -11,24 +11,29 @@
 #include "CommandBuffer.hpp"
 
 namespace graphics::vulkan::internal {
-    Queue::Queue(VkDevice device, u32 index) {
+    Queue::Queue(VkDevice device, u32 index) 
+        : m_index(index) {
         vkGetDeviceQueue(device, index, 0, &m_queue);
     }
 
-    void Queue::submit(CommandBuffer& commandBuffer, Semaphore& wait, Semaphore& signal, Fence& fence) {
+    void Queue::submit(CommandBuffer& commandBuffer, PipelineStageBit waitStages, Semaphore* wait, Semaphore* signal, Fence* fence) const {
+        VkPipelineStageFlags waitStagesFlags = static_cast<VkPipelineStageFlags>(waitStages);
         VkSubmitInfo submitInfo { };
         submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
 
-        VkPipelineStageFlags waitStages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
-        submitInfo.waitSemaphoreCount = 1;
-        submitInfo.pWaitSemaphores = wait.ptr();
-        submitInfo.pWaitDstStageMask = waitStages;
+        if (wait) {
+            submitInfo.waitSemaphoreCount = 1;
+            submitInfo.pWaitSemaphores = wait->ptr();
+        }
+        if (signal) {
+            submitInfo.signalSemaphoreCount = 1;
+            submitInfo.pSignalSemaphores = signal->ptr();
+        }
+        submitInfo.pWaitDstStageMask = &waitStagesFlags;
         submitInfo.commandBufferCount = 1;
         submitInfo.pCommandBuffers = commandBuffer.ptr();
-        submitInfo.signalSemaphoreCount = 1;
-        submitInfo.pSignalSemaphores = signal.ptr();
 
-        if (!VK_CHECK(vkQueueSubmit(m_queue, 1, &submitInfo, fence.get()))) {
+        if (!VK_CHECK(vkQueueSubmit(m_queue, 1, &submitInfo, fence ? fence->get() : VK_NULL_HANDLE))) {
             core::error("Failed to submit command buffer to queue");
             throw VulkanException { };
         }

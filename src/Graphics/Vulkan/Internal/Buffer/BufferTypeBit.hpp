@@ -17,4 +17,8 @@ namespace graphics::vulkan::internal {
     constexpr BufferTypeBit operator|(BufferTypeBit lhs, BufferTypeBit rhs) noexcept {
         return static_cast<BufferTypeBit>(static_cast<unsigned int>(lhs) | static_cast<unsigned int>(rhs));
     }
+
+    constexpr BufferTypeBit operator&(BufferTypeBit lhs, BufferTypeBit rhs) noexcept {
+        return static_cast<BufferTypeBit>(static_cast<unsigned int>(lhs) & static_cast<unsigned int>(rhs));
+    }
 } // namespace graphics::vulkan::internal

@@ -23,6 +23,10 @@ namespace graphics::vulkan {
                 .pipeline = core::move(pipeline),
             });
         }
+        m_copyCommandPool = core::makeUP<internal::CommandPool>(
+            *m_vulkan,
+            internal::CommandPoolTypeBit::Transient | internal::CommandPoolTypeBit::ResetCommandBuffer, 
+            m_vulkan->swapchain().graphicsQueue());
         core::info("Recreated Vulkan manager");
     }
 
@@ -44,6 +48,10 @@ namespace graphics::vulkan {
             core::warn("Device lost");
             throw DeviceLostException { };
         });
+        m_copyCommandPool = core::makeUP<internal::CommandPool>(
+            *m_vulkan,
+            internal::CommandPoolTypeBit::Transient | internal::CommandPoolTypeBit::ResetCommandBuffer, 
+            m_vulkan->swapchain().graphicsQueue());
         core::info("Created Vulkan manager");
     }
 
@@ -102,7 +110,7 @@ namespace graphics::vulkan {
         m_currentPipeline = static_cast<usize>(-1);
     }
         
-    void VulkanManager::pushConstants(internal::PipelineStage stage, core::RawMemory constants) {
+    void VulkanManager::pushConstants(internal::ShaderStageBit stage, core::RawMemory constants) {
         ASSERT(m_frame != nullptr, "Frame was not started; cannot push constants");
         ASSERT(m_currentPipeline != static_cast<usize>(-1), "No pipeline was begun; cannot push constants");
         auto& impl = m_pipelines[m_currentPipeline].pipeline;
@@ -127,7 +135,7 @@ namespace graphics::vulkan {
     }
 
     pipeline::VerticesBase VulkanManager::createVertexBufferImpl(usize size) {
-        return { m_vulkan->make<internal::VertexBuffer>(size) };
+        return { m_vulkan->make<internal::VertexBuffer>(*m_copyCommandPool, size) };
     }
         
     void VulkanManager::onSwapchainRecreationRequest() {

@@ -9,7 +9,7 @@ namespace graphics::vulkan::internal {
     void CommandBuffer::begin() const {
         VkCommandBufferBeginInfo beginInfo { };
         beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-        beginInfo.flags = 0;
+        beginInfo.flags = static_cast<VkCommandBufferUsageFlags>(m_usage);
         beginInfo.pInheritanceInfo = nullptr;
 
         if (!VK_CHECK(vkBeginCommandBuffer(m_buffer, &beginInfo))) {
@@ -25,8 +25,17 @@ namespace graphics::vulkan::internal {
         }
     }
         
-    void CommandBuffer::pushConstants(VkPipelineLayout pipelineLayout, PipelineStage stage, core::RawMemory constants) {
-        vkCmdPushConstants(m_buffer, pipelineLayout, pipelineStageToVK(stage), 0, static_cast<u32>(constants.size), constants.data);
+    void CommandBuffer::copyBuffer(VkBuffer src, VkBuffer dst, usize size, usize srcOffset, usize dstOffset) {
+        VkBufferCopy region {
+            .srcOffset = srcOffset,
+            .dstOffset = dstOffset,
+            .size      = size,
+        };
+        vkCmdCopyBuffer(m_buffer, src, dst, 1, &region);
+    }
+        
+    void CommandBuffer::pushConstants(VkPipelineLayout pipelineLayout, ShaderStageBit stage, core::RawMemory constants) {
+        vkCmdPushConstants(m_buffer, pipelineLayout, static_cast<VkShaderStageFlagBits>(stage), 0, static_cast<u32>(constants.size), constants.data);
     }
 
     void CommandBuffer::drawVertices(VertexBuffer& buffer) {

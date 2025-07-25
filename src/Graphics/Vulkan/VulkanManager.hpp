@@ -5,7 +5,7 @@
 #include <Core/Math/Vec.hpp>
 #include <Core/Memory/UniquePtr.hpp>
 #include <Core/Collection/DynArray.hpp>
-#include "Internal/Pipeline/PipelineStage.hpp"
+#include "Internal/Pipeline/ShaderStageBit.hpp"
 #include "Pipeline/RenderPipeline.hpp"
 #include "Pipeline/PipelineOptions.hpp"
 #include "Pipeline/Vertices.hpp"
@@ -41,6 +41,7 @@ namespace graphics::vulkan {
         core::Version m_appVersion;
         core::UniquePtr<internal::Vulkan> m_vulkan;
         std::vector<PipelineNote> m_pipelines;
+        core::UniquePtr<internal::CommandPool> m_copyCommandPool;
         window::Window& m_pWindow;
         internal::Frame* m_frame = nullptr;
         usize m_currentPipeline = static_cast<usize>(-1);
@@ -70,14 +71,13 @@ namespace graphics::vulkan {
         void beginRendering(pipeline::RenderPipeline& pipeline);
         void endRendering(pipeline::RenderPipeline& pipeline);
 
-        void pushConstants(internal::PipelineStage stage, core::RawMemory constants);
+        void pushConstants(internal::ShaderStageBit stage, core::RawMemory constants);
         void drawVertices(pipeline::VerticesBase& vertices);
 
         template<pipeline::VertexConcept Vertex>
         pipeline::Vertices<Vertex> createVertexBuffer(usize size) {
             return { createVertexBufferImpl(size * sizeof(Vertex)) };
         }
-
 
     private:
         usize createPipelineImpl(pipeline::PipelineOptions const& options);

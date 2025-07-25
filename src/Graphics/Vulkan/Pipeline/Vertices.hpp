@@ -5,6 +5,7 @@
 
 namespace graphics::vulkan::internal {
     class VertexBuffer;
+    class CopyBuffer;
     class MappedMemory;
 } // namespace graphics::vulkan::internal
 
@@ -13,11 +14,12 @@ namespace graphics::vulkan::pipeline {
     class VerticesBase {
     protected:
         class VerticesArrayBase {
+            core::UniquePtr<internal::CopyBuffer> m_copyBuffer;
             core::UniquePtr<internal::MappedMemory> m_memory;
 
         public:
             VerticesArrayBase(VerticesArrayBase&&) = default;
-            VerticesArrayBase(core::UniquePtr<internal::MappedMemory> memory);
+            VerticesArrayBase(core::UniquePtr<internal::CopyBuffer> copyBuffer);
             ~VerticesArrayBase();
 
             core::RawMemory rawMemory() const;

@@ -3,7 +3,7 @@
 #include <Graphics/Vulkan/Pipeline/PipelineOptions.hpp>
 #include "../Wrapper/Handles.hpp"
 #include "../Framebuffers.hpp"
-#include "PipelineStage.hpp"
+#include "ShaderStageBit.hpp"
 #include "RenderPass.hpp"
 
 namespace graphics::vulkan::internal {
@@ -16,7 +16,8 @@ namespace graphics::vulkan::internal {
         Framebuffers m_framebuffers;
         VkPipelineLayout m_layout = VK_NULL_HANDLE;
         VkPipeline m_pipeline = VK_NULL_HANDLE;
-        u32 m_pushConstantsSizes[static_cast<usize>(PipelineStage::PipelineStagesCount)];
+        // TODO: refactor
+        u32 m_pushConstantsSizes[2];
         Vulkan& m_vulkan;
 
     public:
@@ -26,7 +27,7 @@ namespace graphics::vulkan::internal {
         void beginRenderPass(CommandBuffer& commandBuffer, u32 index);
         void endRenderPass(CommandBuffer& frame);
 
-        PURE u32 getPushConstantsSize(PipelineStage stage) const noexcept { return m_pushConstantsSizes[static_cast<usize>(stage)]; }
+        PURE u32 getPushConstantsSize(ShaderStageBit stage) const noexcept { return m_pushConstantsSizes[stage == ShaderStageBit::Fragment]; }
 
         PURE VkPipeline get() const noexcept { return m_pipeline; }
         PURE VkPipelineLayout layout() const noexcept { return m_layout; }

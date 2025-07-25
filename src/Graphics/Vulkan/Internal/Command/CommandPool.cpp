@@ -6,15 +6,18 @@
 #include "../Check.hpp"
 #include "../Vulkan/Vulkan.hpp"
 #include "QueueFamilies.hpp"
+#include "Queue.hpp"
 
 namespace graphics::vulkan::internal {
-    CommandPool::CommandPool(Vulkan& vulkan, u32 queueIndex) 
-        : m_vulkan(vulkan) {
+    CommandPool::CommandPool(Vulkan& vulkan, CommandPoolTypeBit type, Queue& queue) 
+        : m_vulkan(vulkan)
+        , m_queue(queue)
+        , m_type(type) {
         VkCommandPoolCreateInfo poolInfo { };
         poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
         poolInfo.pNext = NULL;
-        poolInfo.queueFamilyIndex = queueIndex;
-        poolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+        poolInfo.queueFamilyIndex = queue.index();
+        poolInfo.flags = static_cast<VkCommandPoolCreateFlagBits>(type);
 
         m_pool = m_vulkan.create<vkCreateCommandPool>(&poolInfo, nullptr);
     }
@@ -41,7 +44,7 @@ namespace graphics::vulkan::internal {
         auto src = tmp.begin();
         auto const end = result.end();
         for (auto dst = result.begin(); dst < end; ++dst, ++src)
-            *dst = CommandBuffer { *src };
+            *dst = CommandBuffer { dst->usage(), *src };
     }
 
     void CommandPool::free(core::ArrayView<CommandBuffer> result) {

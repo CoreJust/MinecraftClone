@@ -40,10 +40,11 @@ namespace graphics::vulkan::internal {
         void submit();
         void present();
 
-        PURE VkSwapchainKHR                     get()               const noexcept { return m_swapchain; }
-        PURE core::DynArray<VkImageView> const& imageViews()        const noexcept { return m_imageViews; }
-        PURE SwapchainFormat             const& format()            const noexcept { return *m_format; }
-        PURE u32                                imageCount()        const noexcept { return m_imageCount; }
+        PURE Queue                            & graphicsQueue()       noexcept { return *m_graphicsQueue; }
+        PURE VkSwapchainKHR                     get()           const noexcept { return m_swapchain; }
+        PURE core::DynArray<VkImageView> const& imageViews()    const noexcept { return m_imageViews; }
+        PURE SwapchainFormat             const& format()        const noexcept { return *m_format; }
+        PURE u32                                imageCount()    const noexcept { return m_imageCount; }
 
     private:
         void initialize(core::Vec2u32 pixelSize);

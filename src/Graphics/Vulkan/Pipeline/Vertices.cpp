@@ -2,8 +2,10 @@
 #include "../Internal/Buffer/VertexBuffer.hpp"
 
 namespace graphics::vulkan::pipeline {
-    VerticesBase::VerticesArrayBase::VerticesArrayBase(core::UniquePtr<internal::MappedMemory> memory)
-        : m_memory(core::move(memory)) { }
+    VerticesBase::VerticesArrayBase::VerticesArrayBase(core::UniquePtr<internal::CopyBuffer> copyBuffer)
+        : m_copyBuffer(core::move(copyBuffer))
+        , m_memory(core::makeUP<internal::MappedMemory>(m_copyBuffer->map()))
+    { }
 
     VerticesBase::VerticesArrayBase::~VerticesArrayBase() = default;
 
@@ -17,6 +19,6 @@ namespace graphics::vulkan::pipeline {
     VerticesBase::~VerticesBase() = default;
 
     VerticesBase::VerticesArrayBase VerticesBase::mapVertices() {
-        return core::makeUP<internal::MappedMemory>(m_buffer->map());
+        return core::makeUP<internal::CopyBuffer>(m_buffer->makeCopyBuffer());
     }
 } // namespace graphics::vulkan::pipeline
