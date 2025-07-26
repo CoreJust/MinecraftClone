@@ -11,3 +11,5 @@ Every programmer should write a minecraft clone at least once. This is the secon
 To work with windows the [GLFW](https://github.com/glfw/glfw) library is used.
 
 For graphics, Vulkan is used.
+
+For managing vulkan memory, [Vulkan Memory Allocator](https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator) library is used.

@@ -27,6 +27,15 @@ endif()
 # Vulkan
 find_package(Vulkan REQUIRED)
 
+# Vulkan Memory Allocators
+FetchContent_Declare(
+    VMA
+    GIT_REPOSITORY "https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator"
+    GIT_TAG        v3.3.0
+)
+FetchContent_MakeAvailable(VMA)
+set(VMA_INCLUDE ${PROJECT_SOURCE_DIR}/third_party/vma-src/include)
+
 # GLFW
 FetchContent_Declare(
     GLFW

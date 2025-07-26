@@ -24,6 +24,7 @@ set(LOCAL_SOURCES
     Command/Queue.cpp
     Command/CommandPool.cpp
     Command/CommandBuffer.cpp
+    Memory/VMA.cpp
     Memory/MappedMemory.cpp
     Buffer/Buffer.cpp
     Buffer/CopyBuffer.cpp)

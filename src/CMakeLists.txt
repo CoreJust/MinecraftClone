@@ -1,10 +1,12 @@
 set(DEPS
     Vulkan::Vulkan
+    GPUOpen::VulkanMemoryAllocator
     glfw)
 set(INCLUDES
     ./)
 set(SYSTEM_INCLUDES
-    ${GLFW_INCLUDE})
+    ${GLFW_INCLUDE}
+    ${VMA_INCLUDE})
 set(SOURCES
     main.cpp
     Config.cpp
