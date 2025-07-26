@@ -2,9 +2,9 @@
 #include <Core/Macro/Attributes.hpp>
 #include <Core/Common/Int.hpp>
 #include "../Wrapper/Handles.hpp"
+#include "../Memory/MemoryTypeBit.hpp"
+#include "../Memory/MappedMemory.hpp"
 #include "BufferTypeBit.hpp"
-#include "MemoryTypeBit.hpp"
-#include "MappedMemory.hpp"
 
 namespace graphics::vulkan::internal {
     class Vulkan;

@@ -1,6 +1,7 @@
 set(LOCAL_SOURCES
     Check.cpp
     Framebuffers.cpp
+    Wrapper/Resource.cpp
     Vulkan/Functions.cpp
     Vulkan/ErrorCallbacks.cpp
     Vulkan/Layers.cpp
@@ -23,9 +24,9 @@ set(LOCAL_SOURCES
     Command/Queue.cpp
     Command/CommandPool.cpp
     Command/CommandBuffer.cpp
+    Memory/MappedMemory.cpp
     Buffer/Buffer.cpp
-    Buffer/CopyBuffer.cpp
-    Buffer/MappedMemory.cpp)
+    Buffer/CopyBuffer.cpp)
 set(LOCAL_TESTS)
 
 SUBMODULE(Graphics/Vulkan/Internal)
