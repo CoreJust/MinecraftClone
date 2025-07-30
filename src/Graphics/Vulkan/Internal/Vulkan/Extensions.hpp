@@ -5,14 +5,20 @@
 namespace graphics::vulkan::internal {
     enum class VulkanExtension {
         // General
-        Swapchain,           // VK_KHR_swapchain
+        Swapchain,            // VK_KHR_swapchain
+        Maintenance4,         // VK_KHR_maintenance4
+        Maintenance5,         // VK_KHR_maintenance5
 
         // Efficiency
-        BufferDeviceAddress, // VK_KHR_buffer_device_address
+        DedicatedAllocation,  // VK_KHR_dedicated_allocation
+        BufferDeviceAddress,  // VK_KHR_buffer_device_address
+        BindMemory2,          // VK_KHR_bind_memory2
+        MemoryPriority,       // VK_EXT_memory_priority
 
         // Debug
-        DebugUtils,          // VK_EXT_debug_utils
-        MemoryBudget,        // VK_EXT_memory_budget
+        DebugUtils,           // VK_EXT_debug_utils
+        MemoryBudget,         // VK_EXT_memory_budget
+        DeviceCoherentMemory, // VK_AMD_device_coherent_memory 
 
         VulkanExtensionsCount,
     };

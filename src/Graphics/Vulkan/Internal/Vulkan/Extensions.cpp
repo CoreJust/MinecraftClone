@@ -52,9 +52,15 @@ namespace graphics::vulkan::internal {
     char const* getFullExtensionName(VulkanExtension ext) noexcept {
         char const* EXTENSION_NAMES[] = {
             "VK_KHR_swapchain",
+            "VK_KHR_maintenance4",
+            "VK_KHR_maintenance5",
+            "VK_KHR_dedicated_allocation",
             "VK_KHR_buffer_device_address",
+            "VK_KHR_bind_memory2",
+            "VK_EXT_memory_priority",
             "VK_EXT_debug_utils",
             "VK_EXT_memory_budget",
+            "VK_AMD_device_coherent_memory",
         };
         return EXTENSION_NAMES[static_cast<usize>(ext)];
     }
