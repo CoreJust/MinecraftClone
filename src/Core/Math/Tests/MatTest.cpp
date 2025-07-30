@@ -3,7 +3,11 @@
 
 using namespace core;
 
-UNIT_TEST(MatIdentityTest) {
-    Mat4f a = Mat4f::Identity();
-    CHECK(a * a == a);
+UNIT_TEST(MatConstantsTest) {
+    Mat4f id = Mat4f::identity();
+    Mat4f zero = Mat4f::zero();
+    CHECK(id * id == id);
+    CHECK(zero * zero == zero);
+    CHECK(id * zero == zero);
+    CHECK(zero * id == zero);
 };

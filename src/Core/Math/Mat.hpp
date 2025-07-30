@@ -14,7 +14,7 @@ namespace core {
 
         T data[Rows * Cols] { };
 
-        PURE constexpr static Mat const& Identity() noexcept {
+        PURE constexpr static Mat identity() noexcept {
             constexpr static Mat result = ([] consteval {
                 Mat result { };
                 for (usize row = 0; row < Rows; ++row) {
@@ -25,6 +25,17 @@ namespace core {
             })();
             return result;
         }
+
+        PURE constexpr static Mat constant(T value) noexcept {
+            Mat result { };
+            for (usize row = 0; row < Rows; ++row) {
+                for (usize col = 0; col < Cols; ++col)
+                    result.data[row * Cols + col] = value;
+            }
+            return result;
+        }
+
+        PURE constexpr static Mat zero() noexcept { return constant(static_cast<T>(0)); }
         
         PURE constexpr bool operator==(Mat const&) const noexcept = default;
 

@@ -11,6 +11,23 @@ namespace core {
 
         T data[Size] { };
 
+        PURE constexpr static Vec constant(T value) noexcept {
+            Vec result { };
+            for (usize i = 0; i < Size; ++i)
+                result.data[i] = value;
+            return result;
+        }
+
+        PURE constexpr static Vec zero() noexcept { return constant(static_cast<T>(0)); }
+
+        PURE constexpr static Vec constantAt(usize index, T value) noexcept {
+            Vec result = zero();
+            result.data[index] = value;
+            return result;
+        }
+        
+        PURE constexpr static Vec unit(usize index) noexcept { return constantAt(index, static_cast<T>(1)); }
+
         PURE constexpr bool operator==(Vec const&) const noexcept = default;
 
         PURE INLINE constexpr T& operator[](usize idx) noexcept {
