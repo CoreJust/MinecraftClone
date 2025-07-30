@@ -10,7 +10,8 @@ namespace core {
         constexpr static inline bool IsSquare = (Rows == Cols);
         static_assert(Rows != 0 && Cols != 0);
 
-        using Row = Vec<Cols, T>;
+        using Row      = Vec<Cols, T>;
+        using Diagonal = Vec<(Cols < Rows ? Cols : Rows), T>;
 
         T data[Rows * Cols] { };
 
@@ -32,6 +33,13 @@ namespace core {
                 for (usize col = 0; col < Cols; ++col)
                     result.data[row * Cols + col] = value;
             }
+            return result;
+        }
+
+        PURE constexpr static Mat diagonal(Diagonal const& diag) noexcept {
+            Mat result = zero();
+            for (usize i = 0; i < Diagonal::Size; ++i)
+                result.data[i * Cols + i] = diag.data[i];
             return result;
         }
 
@@ -166,6 +174,13 @@ namespace core {
                 }
                 ++srcCol;
             }
+            return result;
+        }
+
+        PURE constexpr Diagonal diagonal() const noexcept {
+            Diagonal result;
+            for (usize i = 0; i < Diagonal::Size; ++i)
+                result.data[i] = data[i * Cols + i];
             return result;
         }
 

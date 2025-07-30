@@ -87,11 +87,12 @@ namespace core {
         template<unsigned int NewSize>
         PURE constexpr Vec<NewSize, T> resized(T fillWith = T { }) const noexcept {
             Vec<NewSize, T> result { };
-            T* dst = result.data, *src = data, *resultEnd = result.data + NewSize;
+            T* dst = result.data, *resultEnd = result.data + NewSize;
+            T const* src = data;
             if constexpr (NewSize <= Size) {
                 while (dst < resultEnd) *(dst++) = *(src++);
             } else {
-                T* end = data + Size;
+                T const* end = data + Size;
                 while (src < end) *(dst++) = *(src++);
                 while (dst < resultEnd) *(dst++) = fillWith;
             }
@@ -102,7 +103,8 @@ namespace core {
         PURE constexpr Vec<NewSize, T> slice() const noexcept {
             static_assert(NewSize + From <= Size);
             Vec<NewSize, T> result { };
-            T* dst = result.data, *src = data + From, *resultEnd = result.data + NewSize + From;
+            T* dst = result.data, *resultEnd = result.data + NewSize + From;
+            T const* src = data + From;
             while (dst < resultEnd) *(dst++) = *(src++);
             return result;
         }

@@ -3,7 +3,7 @@
 #include <Core/Common/Time.hpp>
 #include <Core/Common/Random.hpp>
 #include <Core/IO/Logger.hpp>
-#include <Core/Math/Mat.hpp>
+#include <Core/Math/Transform.hpp>
 
 namespace graphics {
     RenderEngine::RenderEngine(char const* const name, core::Version const& appVersion) 
@@ -31,22 +31,20 @@ namespace graphics {
     }
 
     void RenderEngine::run() {
-        static core::Mat4f MVP = {
-            1.f, 0.f, 0.f, 0.f,
-            0.f, 1.f, 0.f, 0.f,
-            0.f, 0.f, 1.f, 0.f,
-            .1f, .1f, .1f, 1.f,
-        };
         const static core::Time start = core::Time::now();
+        auto p = [&](double a, double b, float c, float d) {
+            return std::sinf(static_cast<float>(((core::Time::now() - start).asSeconds() - a) * b)) * c + d;
+        };
         while (m_window.nextFrame()) {
             try {
                 if (!m_vulkanManager->beginFrame())
                     continue;
                 m_vulkanManager->beginRendering(m_voxelPipeline);
-                MVP[0][3] = sinf(static_cast<float>((core::Time::now() - start).asSeconds()));
-                MVP[1][3] = cosf(static_cast<float>((core::Time::now() - start).asSeconds()));
-                MVP[3][3] = cosf(static_cast<float>((core::Time::now() - start).asSeconds() * 0.29)) * 2.f + 2.25f;
-                m_vulkanManager->pushConstants(vulkan::internal::ShaderStageBit::Vertex, core::RawMemory::ofObject(MVP));
+                core::Transform3f mvp = 
+                      core::Transform3f::translation({ p(0.0, 1.0, 1.0, 0.0), p(1.0, 0.6, 1.0, 0.0), p(0.15, 0.35, 1.0, 0.0) })
+                    * core::Transform3f::rotation   ({ p(0.0, 1.0, 1.0, 0.0), p(1.0, 0.6, 1.0, 0.0), p(0.15, 0.35, 1.0, 0.0) })
+                    * core::Transform3f::scale      ({ p(0.0, 1.0, 1.0, 0.0), p(1.0, 0.6, 1.0, 0.0), p(0.15, 0.35, 1.0, 0.0) });
+                m_vulkanManager->pushConstants(vulkan::internal::ShaderStageBit::Vertex, core::RawMemory::ofObject(mvp));
                 m_vulkanManager->drawVertices(m_voxelVertices);
                 m_vulkanManager->endRendering(m_voxelPipeline);
                 m_vulkanManager->endFrame();

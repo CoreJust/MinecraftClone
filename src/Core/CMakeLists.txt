@@ -13,7 +13,8 @@ set(LOCAL_SOURCES
     IO/Logger.cpp
     Macro/NoOpt.cpp
     Memory/TypeErasedObject.cpp
-    Memory/RawMemory.cpp)
+    Memory/RawMemory.cpp
+    Math/Transform.cpp)
 set(LOCAL_TESTS
     Test/TestMain.cpp
     Test/UnitTest.cpp
@@ -23,6 +24,7 @@ set(LOCAL_TESTS
     Memory/Tests/FunctionTest.cpp
     Math/Tests/VecTest.cpp
     Math/Tests/MatTest.cpp
+    Math/Tests/TransformTest.cpp
     Container/Tests/UniquePtrTest.cpp
     Container/Tests/DynArrayTest.cpp)
 
