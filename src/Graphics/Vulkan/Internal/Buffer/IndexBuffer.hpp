@@ -10,7 +10,7 @@ namespace graphics::vulkan::internal {
 
     public:
         IndexBuffer(Vulkan& vulkan, CommandPool& copyCommandPool, IndexType type, usize size)
-            : Buffer(vulkan, BufferTypeBit::Index | BufferTypeBit::TransferDst, MemoryTypeBit::DeviceLocal, size)
+            : Buffer(vulkan, size, BufferTypeBit::Index | BufferTypeBit::TransferDst, AllocationTypeBit::None, AllocationUsage::AutoPreferDevice)
             , m_copyCommandPool(copyCommandPool)
             , m_indexType(type)
         { }

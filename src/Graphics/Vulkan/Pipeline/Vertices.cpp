@@ -29,4 +29,15 @@ namespace graphics::vulkan::pipeline {
         ASSERT(m_indexBuffer);
         return core::makeUP<internal::CopyBuffer>(m_indexBuffer->makeCopyBuffer());
     }
+        
+    void VerticesBase::loadVertices(core::RawMemory vertices) {
+        auto copyBuffer = m_vertexBuffer->makeCopyBuffer();
+        copyBuffer.loadFrom(vertices);
+    }
+        
+    void VerticesBase::loadIndices(core::RawMemory indices) {
+        ASSERT(m_indexBuffer);
+        auto copyBuffer = m_indexBuffer->makeCopyBuffer();
+        copyBuffer.loadFrom(indices);
+    }
 } // namespace graphics::vulkan::pipeline

@@ -8,7 +8,7 @@ namespace graphics::vulkan::internal {
 
     public:
         VertexBuffer(Vulkan& vulkan, CommandPool& copyCommandPool, usize size)
-            : Buffer(vulkan, BufferTypeBit::Vertex | BufferTypeBit::TransferDst, MemoryTypeBit::DeviceLocal, size)
+            : Buffer(vulkan, size, BufferTypeBit::Vertex | BufferTypeBit::TransferDst, AllocationTypeBit::None, AllocationUsage::AutoPreferDevice)
             , m_copyCommandPool(copyCommandPool)
         { }
 

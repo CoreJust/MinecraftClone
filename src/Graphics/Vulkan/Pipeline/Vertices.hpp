@@ -41,6 +41,8 @@ namespace graphics::vulkan::pipeline {
     protected:
         PURE VulkanArrayBase mapVertices();
         PURE VulkanArrayBase mapIndices();
+        void loadVertices(core::RawMemory vertices);
+        void loadIndices (core::RawMemory indices);
     };
 
     template<VertexConcept Vertex, typename Index>
@@ -67,7 +69,10 @@ namespace graphics::vulkan::pipeline {
     public:
         Vertices(VerticesBase&& base) : VerticesBase(core::move(base)) { }
 
-        VerticesArray vertices() { return VerticesBase::mapVertices(); }
-        IndicesArray  indices () { return VerticesBase::mapIndices (); }
+        // Note: it is best to use loadXXX rather than mapXXX if the data is already generated.
+        VerticesArray mapVertices() { return VerticesBase::mapVertices(); }
+        IndicesArray  mapIndices () { return VerticesBase::mapIndices (); }
+        void loadVertices(core::ArrayView<Vertex> vertices) { return VerticesBase::loadVertices(vertices); }
+        void loadIndices (core::ArrayView<Index>  indices)  { return VerticesBase::loadIndices (indices); }
     };
 } // namespace graphics::vulkan::pipeline

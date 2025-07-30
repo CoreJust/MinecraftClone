@@ -1,5 +1,6 @@
 #include "Buffer.hpp"
 #include <vulkan/vulkan.h>
+#include <vk_mem_alloc.h>
 #include <Core/Common/Assert.hpp>
 #include <Core/IO/Logger.hpp>
 #include "../Command/CommandPool.hpp"
@@ -10,38 +11,38 @@
 
 namespace graphics::vulkan::internal {
     Buffer::Buffer(Buffer&& other) noexcept
-        : m_buffer(core::exchange(other.m_buffer, VK_NULL_HANDLE))
-        , m_memory(core::exchange(other.m_memory, VK_NULL_HANDLE))
-        , m_size(core::exchange(other.m_size, 0ull))
-        , m_vulkan(other.m_vulkan)
-        , m_bufferType(other.m_bufferType)
-        , m_memoryType(other.m_memoryType)
+        : m_buffer         (core::exchange(other.m_buffer, VK_NULL_HANDLE))
+        , m_allocation     (core::exchange(other.m_allocation, VK_NULL_HANDLE))
+        , m_size           (core::exchange(other.m_size, 0ull))
+        , m_vulkan         (other.m_vulkan)
+        , m_bufferType     (other.m_bufferType)
+        , m_allocationType (other.m_allocationType)
+        , m_allocationUsage(other.m_allocationUsage)
     { }
 
-    Buffer::Buffer(Vulkan& vulkan, BufferTypeBit type, MemoryTypeBit memoryType, usize size) 
-        : m_size(size)
-        , m_vulkan(vulkan)
-        , m_bufferType(type)
-        , m_memoryType(memoryType)
+    Buffer::Buffer(Vulkan& vulkan, usize size, BufferTypeBit type, AllocationTypeBit allocType, AllocationUsage allocUsage, MemoryTypeBit preferredMemoryType) 
+        : m_size           (size)
+        , m_vulkan         (vulkan)
+        , m_bufferType     (type)
+        , m_allocationType (allocType)
+        , m_allocationUsage(allocUsage)
     {
         VkBufferCreateInfo bufferInfo { };
         bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
         bufferInfo.size  = size;
         bufferInfo.usage = static_cast<VkBufferUsageFlags>(type);
-        bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
-        m_buffer = m_vulkan.create<vkCreateBuffer>(&bufferInfo, nullptr);
+        VmaAllocationCreateInfo allocInfo { };
+        allocInfo.usage = static_cast<VmaMemoryUsage>(m_allocationUsage);
+        allocInfo.flags = static_cast<VmaAllocationCreateFlags>(allocType);
+        allocInfo.preferredFlags = static_cast<VkMemoryPropertyFlags>(preferredMemoryType);
 
-        VkMemoryRequirements memRequirements;
-        m_vulkan.call<vkGetBufferMemoryRequirements>(m_buffer, &memRequirements);
-        m_memory = m_vulkan.allocDevice(memRequirements.size, memRequirements.memoryTypeBits, static_cast<VkMemoryPropertyFlagBits>(memoryType));
-        m_vulkan.safeCall<vkBindBufferMemory>(m_buffer, m_memory, 0ull);
+        m_vulkan.safeCall<vmaCreateBuffer>(&bufferInfo, &allocInfo, &m_buffer, &m_allocation, nullptr);
     }
 
     Buffer::~Buffer() {
         m_vulkan.device().waitIdle();
-        m_vulkan.destroy<vkDestroyBuffer>(m_buffer, nullptr);
-        m_vulkan.destroy<vkFreeMemory>(m_memory, nullptr);
+        m_vulkan.destroy<vmaDestroyBuffer>(m_buffer, m_allocation);
     }
 
     void Buffer::copyFrom(Buffer& other, CommandPool& copyCommandPool, usize size, usize otherOffset, usize ownOffset) {
@@ -63,7 +64,13 @@ namespace graphics::vulkan::internal {
 
     PURE MappedMemory Buffer::map(usize offset, usize size) {
         ASSERT(size == static_cast<usize>(-1) || (size + offset <= m_size), "Buffer::map out of buffer bounds");
-        ASSERT((m_memoryType & MemoryTypeBit::HostVisible) != MemoryTypeBit::None, "Buffer is not visible to host; Cannot map it");
-        return MappedMemory { m_vulkan, m_memory, offset, size == static_cast<usize>(-1) ? m_size : size };
+        ASSERT((m_allocationType & AllocationTypeBit::CanBeMapped) != AllocationTypeBit::None, "Buffer is not visible to host; Cannot map it");
+        return MappedMemory { m_vulkan, m_allocation, offset, size == static_cast<usize>(-1) ? m_size - offset : size };
+    }
+    
+    void Buffer::loadFrom(core::RawMemory memory, usize offset) {
+        ASSERT(memory.size + offset <= m_size, "Buffer::map out of buffer bounds");
+        ASSERT((m_allocationType & AllocationTypeBit::CanBeMapped) != AllocationTypeBit::None, "Buffer is not visible to host; Cannot map it");
+        m_vulkan.safeCall<vmaCopyMemoryToAllocation>(memory.data, m_allocation, offset, memory.size);
     }
 } // namespace graphics::vulkan::internal

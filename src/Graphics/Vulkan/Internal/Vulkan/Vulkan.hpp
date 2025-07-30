@@ -8,6 +8,7 @@
 #include <Core/Common/NonMovable.hpp>
 #include <Core/Common/Version.hpp>
 #include <Core/Container/DynArray.hpp>
+#include "../Memory/Allocator.hpp"
 #include "../Check.hpp"
 #include "Instance.hpp"
 #include "Surface.hpp"
@@ -25,6 +26,7 @@ namespace graphics::vulkan::internal {
         core::UniquePtr<Surface>        m_surface;
         core::UniquePtr<PhysicalDevice> m_physicalDevice;
         core::UniquePtr<Device>         m_device;
+        core::UniquePtr<Allocator>      m_allocator;
         core::UniquePtr<Swapchain>      m_swapchain;
 
         template<auto Func>
@@ -36,6 +38,8 @@ namespace graphics::vulkan::internal {
                 return m_physicalDevice->get();
             } else if constexpr (core::IsSame<Result, VkInstance>) {
                 return m_instance->get();
+            } else if constexpr (core::IsSame<Result, VmaAllocator>) {
+                return m_allocator->get();
             } else if constexpr (core::IsSame<Result, VkSurfaceKHR>) {
                 return m_surface->get();
             } else if constexpr (core::IsSame<Result, VkSwapchainKHR>) {
@@ -54,7 +58,6 @@ namespace graphics::vulkan::internal {
         ~Vulkan();
 
         void recreateSwapchain(core::Vec2u32 pixelSize);
-        VkDeviceMemory allocDevice(usize size, u32 type, VkMemoryPropertyFlags properties);
 
         template<typename T>
         PURE INLINE core::UniquePtr<T> make(auto&&... args) {
@@ -73,7 +76,7 @@ namespace graphics::vulkan::internal {
         template<auto Func>
         INLINE bool destroy(auto& resource, auto&&... args) const {
             if (resource != VK_NULL_HANDLE) {
-                Func(m_device->get(), resource, FORWARD(args)...);
+                call<Func>(resource, FORWARD(args)...);
                 resource = VK_NULL_HANDLE;
                 return true;
             }
@@ -116,12 +119,14 @@ namespace graphics::vulkan::internal {
         PURE Surface             & surface()              noexcept { return *m_surface; }
         PURE PhysicalDevice      & physicalDevice()       noexcept { return *m_physicalDevice; }
         PURE Device              & device()               noexcept { return *m_device; }
+        PURE Allocator           & allocator()            noexcept { return *m_allocator; }
         PURE Swapchain           & swapchain()            noexcept { return *m_swapchain; }
         PURE Instance       const& instance()       const noexcept { return *m_instance; }
         PURE Surface        const& surface()        const noexcept { return *m_surface; }
         PURE PhysicalDevice const& physicalDevice() const noexcept { return *m_physicalDevice; }
         PURE QueueFamilies  const& queueFamilies()  const noexcept { return m_physicalDevice->queueFamilies(); }
         PURE Device         const& device()         const noexcept { return *m_device; }
+        PURE Allocator      const& allocator()      const noexcept { return *m_allocator; }
         PURE Swapchain      const& swapchain()      const noexcept { return *m_swapchain; }
 
     private:

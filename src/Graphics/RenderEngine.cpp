@@ -14,7 +14,7 @@ namespace graphics {
     {
         m_window.onResize(true, [this](core::Vec2<int>) { m_vulkanManager->requestSwapchainRecreation(); });
 
-        auto vertices = m_voxelVertices.vertices();
+        auto vertices = m_voxelVertices.mapVertices();
         core::Random rand;
         for (auto& vertex : vertices.arrayView()) {
             vertex.position = { rand.randf(-3.f, 3.f), rand.randf(-3.f, 3.f) };
@@ -25,7 +25,7 @@ namespace graphics {
             if (vertex.position[1] >  0.5f) vertex.position[1] = (vertex.position[1] - 0.5f) / 5.f + 0.5f;
         }
 
-        auto indices = m_voxelVertices.indices();
+        auto indices = m_voxelVertices.mapIndices();
         for (auto& index : indices.arrayView())
             index = static_cast<u16>(rand.randi(0, 15));
     }

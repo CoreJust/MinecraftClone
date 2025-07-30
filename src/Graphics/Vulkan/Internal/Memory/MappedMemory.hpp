@@ -8,12 +8,12 @@ namespace graphics::vulkan::internal {
 
     class MappedMemory final {
         core::RawMemory m_mappedMemory { };
-        VkDeviceMemory  m_memory;
+        VmaAllocation   m_allocation;
         Vulkan&         m_vulkan;
 
     public:
         MappedMemory(MappedMemory&& other);
-        MappedMemory(Vulkan& vulkan, VkDeviceMemory deviceMemory, usize offset, usize size);
+        MappedMemory(Vulkan& vulkan, VmaAllocation allocation, usize offset, usize size);
         ~MappedMemory();
 
         PURE core::RawMemory get() const noexcept { return m_mappedMemory; }

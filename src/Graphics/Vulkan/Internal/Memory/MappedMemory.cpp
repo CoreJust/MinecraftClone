@@ -1,27 +1,28 @@
 #include "MappedMemory.hpp"
 #include <vulkan/vulkan.h>
+#include <vk_mem_alloc.h>
 #include <Core/Memory/Exchange.hpp>
 #include "../Vulkan/Vulkan.hpp"
 
 namespace graphics::vulkan::internal {
     MappedMemory::MappedMemory(MappedMemory&& other) 
         : m_mappedMemory(core::exchange(other.m_mappedMemory, core::RawMemory { }))
-        , m_memory(core::exchange(other.m_memory, VK_NULL_HANDLE))
+        , m_allocation(core::exchange(other.m_allocation, VK_NULL_HANDLE))
         , m_vulkan(other.m_vulkan)
     { }
     
-    MappedMemory::MappedMemory(Vulkan& vulkan, VkDeviceMemory deviceMemory, usize offset, usize size)
-        : m_memory(deviceMemory)
+    MappedMemory::MappedMemory(Vulkan& vulkan, VmaAllocation allocation, usize offset, usize size)
+        : m_allocation(allocation)
         , m_vulkan(vulkan) {
         void* result = nullptr;
-        if (!m_vulkan.safeCall<vkMapMemory>(m_memory, offset, size, 0u, &result))
+        if (!m_vulkan.safeCall<vmaMapMemory>(m_allocation, &result))
             return;
-        m_mappedMemory = core::RawMemory { reinterpret_cast<core::byte*>(result), size };
+        m_mappedMemory = core::RawMemory { reinterpret_cast<core::byte*>(result) + offset, size };
     }
 
     MappedMemory::~MappedMemory() {
         if (m_mappedMemory.data != nullptr) {
-            m_vulkan.call<vkUnmapMemory>(m_memory);
+            m_vulkan.call<vmaUnmapMemory>(m_allocation);
             m_mappedMemory = { };
         }
     }
