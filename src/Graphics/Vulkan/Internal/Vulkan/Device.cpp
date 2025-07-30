@@ -6,6 +6,7 @@
 #include <Core/IO/Logger.hpp>
 #include <Graphics/Vulkan/Exception.hpp>
 #include "../Check.hpp"
+#include "Extensions.hpp"
 
 namespace graphics::vulkan::internal {
 namespace {
@@ -44,11 +45,19 @@ namespace {
         return result;
     }
 
+    void initDeviceFeatures(VkPhysicalDeviceFeatures& features, VkPhysicalDeviceVulkan12Features& features12) {
+        (void)features; // Temporary
+        features12.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
+        features12.bufferDeviceAddress = hasExtension(VulkanExtension::BufferDeviceAddress);
+    }
+
     void initLogicalDevice(VkDevice& device, PhysicalDevice const& physicalDevice) {
         std::vector<VkDeviceQueueCreateInfo> const queueCreateInfos = generateQueueCreateInfos(physicalDevice.queueFamilies());
         std::vector<char const*> const deviceExtensions = generateDeviceExtensions(physicalDevice);
 
         VkPhysicalDeviceFeatures deviceFeatures { };
+        VkPhysicalDeviceVulkan12Features deviceFeatures12 { };
+        initDeviceFeatures(deviceFeatures, deviceFeatures12);
         VkDeviceCreateInfo createInfo { };
         createInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
         createInfo.pQueueCreateInfos = queueCreateInfos.data();
@@ -56,6 +65,9 @@ namespace {
         createInfo.pEnabledFeatures = &deviceFeatures;
         createInfo.enabledExtensionCount = static_cast<u32>(deviceExtensions.size());
         createInfo.ppEnabledExtensionNames = deviceExtensions.data();
+        if (getDeviceVkVersion().minor >= 2) {
+            createInfo.pNext = &deviceFeatures12;
+        }
 
         if (!VK_CHECK(vkCreateDevice(physicalDevice.get(), &createInfo, nullptr, &device))) {
             core::fatal("Failed to create logical device");
