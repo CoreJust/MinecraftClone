@@ -16,8 +16,8 @@ namespace core {
         constexpr UniquePtr(UniquePtr&& other) noexcept : m_data(other.m_data), m_deleter(other.m_deleter) { other.m_data = nullptr; other.m_deleter = nullptr; }
         constexpr UniquePtr(UniquePtr const&) noexcept = delete;
         constexpr UniquePtr& operator=(UniquePtr&& other) noexcept {
-            m_data = exchange(other.m_data, m_data);
-            m_deleter = exchange(other.m_deleter, m_deleter);
+            m_data = core::exchange(other.m_data, m_data);
+            m_deleter = core::exchange(other.m_deleter, m_deleter);
             return *this;
         }
 

@@ -6,7 +6,7 @@
 #include <Core/Math/Transform.hpp>
 
 namespace graphics {
-    RenderEngine::RenderEngine(char const* const name, core::Version const& appVersion, engine::Camera& camera) 
+    RenderEngine::RenderEngine(char const* const name, core::Version const& appVersion, engine::Camera& camera)
         : m_window(name, {{ 800, 600 }})
         , m_vulkanManager(core::makeUP<vulkan::VulkanManager>(m_window, appVersion))
         , m_pCamera(camera)
@@ -36,7 +36,7 @@ namespace graphics {
         for (auto& index : indices.arrayView())
             index = static_cast<u16>(rand.randi(0, 15));
     }
-
+    
     void RenderEngine::run() {
         const static core::Time start = core::Time::now();
         auto p = [&](double a, double b, float c, float d) {

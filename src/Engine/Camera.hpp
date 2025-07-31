@@ -9,6 +9,7 @@ namespace engine {
         core::Vec3d m_rotation;
         core::Radiansd m_fov;
         double m_aspectRatio;
+        mutable void* m_lock = nullptr;
         bool m_isOrthogonal;
 
     public:
@@ -18,6 +19,7 @@ namespace engine {
             core::Radiansd fov = core::RadiansQuarter,
             double aspectRatio = 1.0,
             bool isOrthogonal = false) noexcept;
+        ~Camera();
 
         Camera& setPosition   (core::Vec3d const& position)    &noexcept;
         Camera& setRotation   (core::Vec3d const& rotation)    &noexcept;
@@ -27,13 +29,13 @@ namespace engine {
         Camera& setAspectRatio(double             aspectRatio) &noexcept;
         Camera& setOrthogonal (bool               mode)        &noexcept;
 
-        PURE core::Transform3d const& projectionView() const noexcept { return m_projectionView; }
+        PURE core::Transform3d const& projectionView() const noexcept;
 
-        PURE core::Vec3d const& position    () const noexcept { return m_position; }
-        PURE core::Vec3d const& rotation    () const noexcept { return m_rotation; }
-        PURE core::Radiansd     fov         () const noexcept { return m_fov; }
-        PURE double             aspectRatio () const noexcept { return m_aspectRatio; }
-        PURE bool               isOrthogonal() const noexcept { return m_isOrthogonal; }
+        PURE core::Vec3d const& position    () const noexcept;
+        PURE core::Vec3d const& rotation    () const noexcept;
+        PURE core::Radiansd     fov         () const noexcept;
+        PURE double             aspectRatio () const noexcept;
+        PURE bool               isOrthogonal() const noexcept;
 
     private:
         core::Transform3d makeProjection() const noexcept;
