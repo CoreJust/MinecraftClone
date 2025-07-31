@@ -40,7 +40,7 @@ namespace graphics {
     void RenderEngine::run() {
         const static core::Time start = core::Time::now();
         auto p = [&](double a, double b, float c, float d) {
-            return std::sinf(static_cast<float>(((core::Time::now() - start).asSeconds() - a) * b)) * c + d;
+            return std::sinf(static_cast<float>(((core::Time::now() - start).asSeconds() - a) * b * 0.4)) * c + d;
         };
         while (m_window.nextFrame()) {
             try {
