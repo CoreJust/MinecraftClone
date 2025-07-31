@@ -8,6 +8,7 @@
 #include <Core/IO/Console.hpp>
 #include <Core/OS/SignalHandler.hpp>
 #include <Graphics/RenderEngine.hpp>
+#include <Graphics/Window/Mouse.hpp>
 #include "../Config.hpp"
 
 #if !CPP23
@@ -61,6 +62,7 @@ namespace engine {
         try {
             core::Duration delta = m_timer.elapsed();
             m_timer.restart();
+            graphics::window::resetMouseDeltas();
             m_player.update(delta);
             m_camera.setPosition(m_player.position);
             m_camera.setRotation(m_player.rotation);

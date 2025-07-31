@@ -16,7 +16,7 @@ namespace core {
         constexpr static inline usize AnglesCount = (Dims * (Dims - 1)) / 2;
 
         using Translation = Vec<Dims, T>;
-        // yaw, pitch, roll - rotations around z, y, and x respectively.
+        // yaw, pitch, roll - rotations around x, y, and z respectively.
         using Rotation    = Vec<AnglesCount, Radians<T>>;
         using Scale       = Vec<Dims, T>;
         using Point       = Vec<Dims, T>;

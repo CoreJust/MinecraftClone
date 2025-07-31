@@ -136,6 +136,19 @@ namespace graphics::window {
         KeysCount,
     };
 
+    enum class MouseKey {
+        Left = 0,
+        Right,
+        Middle,
+        Button4,
+        Button5,
+        Button6,
+        Button7,
+        Button8,
+
+        MouseKeysCount,
+    };
+
     enum class KeyAction {
         Release = 0,
         Press,

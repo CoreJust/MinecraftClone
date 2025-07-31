@@ -108,12 +108,23 @@ namespace core {
         }
 
         template<usize NewSize, usize From = 0>
-        PURE constexpr Vec<NewSize, T> slice() const noexcept {
+        PURE Vec<NewSize, T>& slice() &noexcept {
             static_assert(NewSize + From <= Size);
-            Vec<NewSize, T> result { };
-            T* dst = result.data, *resultEnd = result.data + NewSize + From;
-            T const* src = data + From;
-            while (dst < resultEnd) *(dst++) = *(src++);
+            return *reinterpret_cast<Vec<NewSize, T>*>(data + From);
+        }
+
+        template<usize NewSize, usize From = 0>
+        PURE Vec<NewSize, T> const& slice() const& noexcept {
+            static_assert(NewSize + From <= Size);
+            return *reinterpret_cast<Vec<NewSize, T> const*>(data + From);
+        }
+
+        template<usize... Idx>
+        PURE Vec swizzled() const noexcept {
+            constexpr static usize indices[] = { Idx... };
+            Vec result = *this;
+            for (usize i = 0; i < sizeof...(Idx); ++i) 
+                result.data[i] = data[indices[i]];
             return result;
         }
 

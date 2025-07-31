@@ -13,12 +13,12 @@ namespace core {
                 static_cast<T>(0), static_cast<T>(0), static_cast<T>(1),
             };
         } else {
-            T sinA = std::sin(r.data[0]);
-            T cosA = std::cos(r.data[0]);
+            T sinA = std::sin(r.data[2]);
+            T cosA = std::cos(r.data[2]);
             T sinB = std::sin(r.data[1]);
             T cosB = std::cos(r.data[1]);
-            T sinY = std::sin(r.data[2]);
-            T cosY = std::cos(r.data[2]);
+            T sinY = std::sin(r.data[0]);
+            T cosY = std::cos(r.data[0]);
             return {
                 cosA * cosB,       cosA * sinB * sinY - sinA * cosY, cosA * sinB * cosY + sinA * sinY,        static_cast<T>(0),
                 sinA * cosB,       sinA * sinB * sinY + cosA * cosY, sinA * sinB * cosY - cosA * sinY,        static_cast<T>(0),

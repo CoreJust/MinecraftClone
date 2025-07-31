@@ -4,6 +4,7 @@
 #include <Core/Common/Random.hpp>
 #include <Core/IO/Logger.hpp>
 #include <Core/Math/Transform.hpp>
+#include "Window/Keyboard.hpp"
 
 namespace graphics {
     RenderEngine::RenderEngine(char const* const name, core::Version const& appVersion, engine::Camera& camera)
@@ -14,6 +15,7 @@ namespace graphics {
         , m_voxelVertices(m_vulkanManager->createVertices<renderer::pipelines::VoxelVertex, u16>(15, 15 * 9))
     {
         m_pCamera.setAspectRatio(m_window.aspectRatio());
+        m_window.enableCursor(false);
         m_window.onResize(true, [this](core::Vec2<int>) { 
             m_vulkanManager->requestSwapchainRecreation();
             m_pCamera.setAspectRatio(m_window.aspectRatio());
@@ -44,6 +46,7 @@ namespace graphics {
         };
         while (m_window.nextFrame()) {
             try {
+                m_window.enableCursor(window::isKeyPressed(window::Key::LeftAlt) || window::isKeyPressed(window::Key::RightAlt));
                 if (!m_vulkanManager->beginFrame())
                     continue;
                 m_vulkanManager->beginRendering(m_voxelPipeline);

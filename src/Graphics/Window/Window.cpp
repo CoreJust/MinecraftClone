@@ -5,6 +5,7 @@
 #include <Core/Common/Assert.hpp>
 #include <Core/IO/Logger.hpp>
 #include "Keyboard.hpp"
+#include "Mouse.hpp"
 #include "WindowException.hpp"
 
 namespace graphics::window {
@@ -41,6 +42,9 @@ namespace {
             throw WindowException { };
         }
         glfwSetKeyCallback(window, reinterpret_cast<GLFWkeyfun>(keyCallback));
+        glfwSetCursorPosCallback(window, reinterpret_cast<GLFWcursorposfun>(mousePositionCallback));
+        glfwSetScrollCallback(window, reinterpret_cast<GLFWscrollfun>(scrollCallback));
+        glfwSetMouseButtonCallback(window, reinterpret_cast<GLFWmousebuttonfun>(mouseKeyCallback));
         core::info(
             "Created window:\n\t"   \
             "Title:      {}\n\t"    \
@@ -83,6 +87,14 @@ namespace {
             return false;
         glfwPollEvents();
         return true;
+    }
+    
+    void Window::enableCursor(bool value) {
+        ASSERT(m_window != nullptr, "Cannot set cursor mode: no GLFW window found!");
+        if (m_cursorEnabled == value)
+            return;
+        glfwSetInputMode(m_window, GLFW_CURSOR, value ? GLFW_CURSOR_NORMAL : GLFW_CURSOR_DISABLED);
+        m_cursorEnabled = value;
     }
 
     void* Window::getSurfaceCreateCallback() const noexcept {

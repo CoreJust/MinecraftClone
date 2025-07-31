@@ -13,12 +13,14 @@ namespace graphics::window {
         char const* const m_name;
         core::Function<void, core::Vec2<int>> m_resizeCallback;
         bool m_ignoreMinimized = false;
+        bool m_cursorEnabled = true;
 
     public:
         Window(char const* const name, core::Vec2<int> size = {{ 0, 0 }});
         ~Window();
 
         bool nextFrame();
+        void enableCursor(bool value);
 
         void onResize(bool ignoreMinimized, core::Function<void, core::Vec2<int>> resizeCallback) {
             m_ignoreMinimized = ignoreMinimized;

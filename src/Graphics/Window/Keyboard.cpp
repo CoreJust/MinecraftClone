@@ -1,6 +1,5 @@
 #include "Keyboard.hpp"
 #include <atomic>
-#include <GLFW/glfw3.h>
 #include <Core/Common/Int.hpp>
 
 namespace graphics::window {

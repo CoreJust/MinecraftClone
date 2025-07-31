@@ -1,6 +1,7 @@
 set(LOCAL_SOURCES
     Window/Window.cpp
     Window/Keyboard.cpp
+    Window/Mouse.cpp
     Vulkan/Pipeline/Attribute.cpp
     Vulkan/Pipeline/Vertices.cpp
     Vulkan/VulkanManager.cpp
