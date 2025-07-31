@@ -55,7 +55,7 @@ namespace graphics {
                 m_vulkanManager->drawVertices(m_voxelVertices);
                 m_vulkanManager->endRendering(m_voxelPipeline);
                 m_vulkanManager->endFrame();
-            } catch(vulkan::DeviceLostException) {
+            } catch (vulkan::DeviceLostException) {
                 auto snapshot = m_vulkanManager->makeSnapshot();
                 m_vulkanManager.reset();
                 m_vulkanManager = core::makeUP<vulkan::VulkanManager>(core::move(snapshot), m_window);
