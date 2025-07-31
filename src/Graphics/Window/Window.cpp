@@ -95,6 +95,11 @@ namespace {
         return core::ArrayView<char const*> { glfwVkExtensions, glfwExtensionsCount };
     }
 
+    double Window::aspectRatio() const noexcept {
+        core::Vec2u32 size = pixelSize();
+        return static_cast<double>(size[0]) / static_cast<double>(size[1]);
+    }
+
     core::Vec2u32 Window::pixelSize() const noexcept {
         int width, height;
         glfwGetFramebufferSize(m_window, &width, &height);

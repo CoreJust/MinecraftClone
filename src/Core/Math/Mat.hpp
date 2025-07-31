@@ -107,8 +107,15 @@ namespace core {
             return result;
         }
 
+        constexpr Mat operator-() const noexcept {
+            Mat result = *this;
+            for (T& elem : result.flat())
+                elem = -elem;
+            return result;
+        }
+
 #define DECL_MAT_EQ_OP(op)                                             \
-        PURE constexpr Mat& operator op##=(Mat const& rhs) &noexcept { \
+        constexpr Mat& operator op##=(Mat const& rhs) &noexcept {      \
             T* dst = data, *src = rhs.data, *end = data + Size;        \
             while (dst < end) *(dst++) op##= *(src++);                 \
             return *this;                                              \
@@ -117,7 +124,7 @@ namespace core {
         DECL_MAT_EQ_OP(-)
 #undef DECL_MAT_EQ_OP
 #define DECL_SCALAR_EQ_OP(op)                                 \
-        PURE constexpr Mat& operator op##=(T rhs) &noexcept { \
+        constexpr Mat& operator op##=(T rhs) &noexcept {      \
             T* dst = data, *end = data + Size;                \
             while (dst < end) *(dst++) op##= rhs;             \
             return *this;                                     \
@@ -143,7 +150,8 @@ namespace core {
         template<typename U>
         PURE constexpr Mat<Rows, Cols, U> to() const noexcept {
             Mat<Rows, Cols, U> result { };
-            T* dst = result.data, *src = data, *end = data + Size;
+            U* dst = result.data;
+            T const* src = data, *end = data + Size;
             while (src < end) *(dst++) = static_cast<U>(*(src++));
             return result;
         }

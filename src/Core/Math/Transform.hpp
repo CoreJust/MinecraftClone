@@ -2,6 +2,7 @@
 #include <cmath>
 #include <Core/Meta/FloatingPoint.hpp>
 #include <Core/Memory/Forward.hpp>
+#include "Angles.hpp"
 #include "Mat.hpp"
 
 namespace core {
@@ -16,7 +17,7 @@ namespace core {
 
         using Translation = Vec<Dims, T>;
         // yaw, pitch, roll - rotations around z, y, and x respectively.
-        using Rotation    = Vec<AnglesCount, T>;
+        using Rotation    = Vec<AnglesCount, Radians<T>>;
         using Scale       = Vec<Dims, T>;
         using Point       = Vec<Dims, T>;
 
@@ -32,6 +33,19 @@ namespace core {
         PURE static Transform rotation(Rotation r) noexcept;
 
         PURE constexpr static Transform scale(Scale s) noexcept { return Parent::diagonal(s.template resized<Dims + 1>(static_cast<T>(1))); }
+
+        PURE static Transform perspective(
+            T aspectRatio,
+            Radians<T> fov = static_cast<Radians<T>>(RadiansQuarter),
+            T zNear = static_cast<T>(1.0 / 512.0),
+            T zFar = static_cast<T>(1024.0)) noexcept
+            requires(Dims == 3);
+        PURE static Transform orthogonal(
+            T aspectRatio,
+            T fov = static_cast<T>(1),
+            T zNear = static_cast<T>(1.0 / 512.0),
+            T zFar = static_cast<T>(1024.0)) noexcept
+            requires(Dims == 3);
 
         PURE constexpr Parent::Row operator*(Point const& rhs) const noexcept { return *this * rhs.template resized<Dims + 1>(static_cast<T>(1)); }
     };

@@ -6,6 +6,7 @@
 #include <Core/IO/Console.hpp>
 #include <Core/OS/SignalHandler.hpp>
 #include <Graphics/RenderEngine.hpp>
+#include <Engine/Camera.hpp>
 #include "Config.hpp"
 
 #if !CPP23
@@ -23,7 +24,8 @@ int main(int argc, char** argv) {
     core::setLogLevel(core::LogLevel::Debug);
     defer { core::onLoggingEnd(); };
     try {
-        graphics::RenderEngine engine("Minecraft Clone", { 0, 0, 1, 0 });
+        engine::Camera cam { };
+        graphics::RenderEngine engine("Minecraft Clone", { 0, 0, 1, 0 }, cam);
         engine.run();
     } catch (...) {
         core::fatal("Got an exception during engine running, shutting down...");

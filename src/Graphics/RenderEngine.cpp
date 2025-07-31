@@ -6,13 +6,20 @@
 #include <Core/Math/Transform.hpp>
 
 namespace graphics {
-    RenderEngine::RenderEngine(char const* const name, core::Version const& appVersion) 
+    RenderEngine::RenderEngine(char const* const name, core::Version const& appVersion, engine::Camera& camera) 
         : m_window(name, {{ 800, 600 }})
         , m_vulkanManager(core::makeUP<vulkan::VulkanManager>(m_window, appVersion))
+        , m_pCamera(camera)
         , m_voxelPipeline(m_vulkanManager->createPipeline<renderer::pipelines::VoxelPipeline>())
         , m_voxelVertices(m_vulkanManager->createVertices<renderer::pipelines::VoxelVertex, u16>(15, 15 * 9))
     {
-        m_window.onResize(true, [this](core::Vec2<int>) { m_vulkanManager->requestSwapchainRecreation(); });
+        m_pCamera.setAspectRatio(m_window.aspectRatio());
+        m_window.onResize(true, [this](core::Vec2<int>) { 
+            m_vulkanManager->requestSwapchainRecreation();
+            m_pCamera.setAspectRatio(m_window.aspectRatio());
+        });
+
+        m_pCamera.move({ 0.0, 0.0, -4.0 });
 
         auto vertices = m_voxelVertices.mapVertices();
         core::Random rand;
@@ -40,8 +47,8 @@ namespace graphics {
                 if (!m_vulkanManager->beginFrame())
                     continue;
                 m_vulkanManager->beginRendering(m_voxelPipeline);
-                core::Transform3f mvp = 
-                      core::Transform3f::translation({ p(0.0, 1.0, 1.0, 0.0), p(1.0, 0.6, 1.0, 0.0), p(0.15, 0.35, 1.0, 0.0) })
+                core::Transform3f mvp = m_pCamera.projectionView().to<float>()
+                    * core::Transform3f::translation({ p(0.0, 1.0, 1.0, 0.0), p(1.0, 0.6, 1.0, 0.0), p(0.15, 0.35, 1.0, 0.0) })
                     * core::Transform3f::rotation   ({ p(0.0, 1.0, 1.0, 0.0), p(1.0, 0.6, 1.0, 0.0), p(0.15, 0.35, 1.0, 0.0) })
                     * core::Transform3f::scale      ({ p(0.0, 1.0, 1.0, 0.0), p(1.0, 0.6, 1.0, 0.0), p(0.15, 0.35, 1.0, 0.0) });
                 m_vulkanManager->pushConstants(vulkan::internal::ShaderStageBit::Vertex, core::RawMemory::ofObject(mvp));

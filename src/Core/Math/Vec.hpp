@@ -43,9 +43,17 @@ namespace core {
         PURE INLINE constexpr T      * elemPtr(usize idx)       noexcept { return &data[idx]; }
         PURE INLINE constexpr T const* elemPtr(usize idx) const noexcept { return &data[idx]; }
 
+        constexpr Vec operator-() const noexcept {
+            Vec result = *this;
+            for (T& elem : result)
+                elem = -elem;
+            return result;
+        }
+
 #define DECL_VEC_EQ_OP(op)                                             \
-        PURE constexpr Vec& operator op##=(Vec const& rhs) &noexcept { \
-            T* dst = data, *src = rhs.data, *end = data + Size;        \
+        constexpr Vec& operator op##=(Vec const& rhs) &noexcept {      \
+            T* dst = data, *end = data + Size;                         \
+            T const* src = rhs.data;                                   \
             while (dst < end) *(dst++) op##= *(src++);                 \
             return *this;                                              \
         }
@@ -53,7 +61,7 @@ namespace core {
         DECL_VEC_EQ_OP(-)
 #undef DECL_VEC_EQ_OP
 #define DECL_SCALAR_EQ_OP(op)                                 \
-        PURE constexpr Vec& operator op##=(T rhs) &noexcept { \
+        constexpr Vec& operator op##=(T rhs) &noexcept {      \
             T* dst = data, *end = data + Size;                \
             while (dst < end) *(dst++) op##= rhs;             \
             return *this;                                     \

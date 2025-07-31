@@ -28,6 +28,8 @@ namespace graphics::window {
         PURE void* getSurfaceCreateCallback() const noexcept;
         PURE core::ArrayView<char const*> getRequiredExtensions() const;
 
+        PURE double aspectRatio() const noexcept;
+
         PURE constexpr GLFWwindow*  windowImpl()      noexcept { return m_window; }
         PURE constexpr char const*  name()      const noexcept { return m_name; }
         PURE core::Vec2u32          pixelSize() const noexcept;

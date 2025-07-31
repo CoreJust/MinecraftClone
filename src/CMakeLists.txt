@@ -15,4 +15,5 @@ set(TESTS)
 
 add_subdirectory(Core)
 add_subdirectory(Graphics)
+add_subdirectory(Engine)
 MAIN_MODULE(clone)
