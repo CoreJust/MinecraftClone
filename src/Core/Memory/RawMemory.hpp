@@ -31,7 +31,7 @@ namespace core {
         PURE constexpr RawMemory chunk(usize from = 0ull, usize count = static_cast<usize>(-1)) const noexcept {
             if (data == nullptr || size == 0 || from >= size || count == 0)
                 return RawMemory();
-            if (from + count >= size)
+            if (count >= size || from + count >= size)
                 return RawMemory(data + from, size - from);
             return RawMemory(data + from, count);
         }

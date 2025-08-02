@@ -1,3 +1,5 @@
 #pragma once
+#include <Core/Container/StringView.hpp>
 
-char const* makeShaderPath(char const* const shaderPath); 
+core::StringView makeShaderPath(char const* const shaderPath);
+core::StringView makeImagePath(char const* const imagePath);

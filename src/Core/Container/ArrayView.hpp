@@ -62,6 +62,8 @@ namespace core {
             return ArrayView(m_data.chunk(from, count));
         }
 
+        PURE constexpr bool empty() const noexcept { return m_data.size == 0; }
+
         PURE constexpr T const* begin()  const noexcept { return data(); }
         PURE constexpr T const* cbegin() const noexcept { return data(); }
         PURE constexpr T const* end()    const noexcept { return data() + size(); }

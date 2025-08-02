@@ -9,8 +9,10 @@ set(LOCAL_SOURCES
     OS/SignalHandler.cpp
     IO/Console.cpp
     IO/ConsoleColor.cpp
-    IO/File.cpp
     IO/Logger.cpp
+    File/File.cpp
+    File/ImageFile.cpp
+    File/BmpImageFile.cpp
     Macro/NoOpt.cpp
     Memory/TypeErasedObject.cpp
     Memory/RawMemory.cpp

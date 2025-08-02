@@ -2,7 +2,7 @@
 #include <vulkan/vulkan.h>
 #include <Resources.hpp>
 #include <Core/IO/Logger.hpp>
-#include <Core/IO/File.hpp>
+#include <Core/File/BinaryFile.hpp>
 #include <Graphics/Vulkan/Exception.hpp>
 #include "../Check.hpp"
 #include "../Vulkan/Vulkan.hpp"
@@ -11,7 +11,7 @@ namespace graphics::vulkan::internal {
     ShaderModule::ShaderModule(Vulkan& vulkan, char const* const path) 
         : m_vulkan(vulkan) {
         core::info("Loading shader module from {}", path);
-        std::string const spirVSource = core::readFile(makeShaderPath(path));
+        core::DynArray<core::byte> const spirVSource = core::BinaryFile(makeShaderPath(path)).extractData();
 
         VkShaderModuleCreateInfo createInfo { };
         createInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
