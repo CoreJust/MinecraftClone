@@ -10,10 +10,14 @@ namespace {
     std::atomic<double> g_wheelY = 0.0;
     std::atomic<double> g_wheelPrevX = 0.0;
     std::atomic<double> g_wheelPrevY = 0.0;
+    std::atomic<double> g_wheelDeltaX = 0.0;
+    std::atomic<double> g_wheelDeltaY = 0.0;
     std::atomic<double> g_mouseX = 0.0;
     std::atomic<double> g_mouseY = 0.0;
     std::atomic<double> g_mousePrevX = 0.0;
     std::atomic<double> g_mousePrevY = 0.0;
+    std::atomic<double> g_mouseDeltaX = 0.0;
+    std::atomic<double> g_mouseDeltaY = 0.0;
 } // namespace
 
     core::Vec2d getMousePosition() noexcept {
@@ -21,7 +25,7 @@ namespace {
     }
 
     core::Vec2d getMouseDelta() noexcept {
-        return { g_mouseX - g_mousePrevX, g_mouseY - g_mousePrevY };
+        return { g_mouseDeltaX, g_mouseDeltaY };
     }
 
     core::Vec2d getWheelPosition() noexcept {
@@ -29,7 +33,7 @@ namespace {
     }
 
     core::Vec2d getWheelDelta() noexcept {
-        return { g_wheelX - g_wheelPrevX, g_wheelY - g_wheelPrevY };
+        return { g_wheelDeltaX, g_wheelDeltaY };
     }
 
     bool isMouseKeyPressedWithModifer(MouseKey key, KeyModifierBit modifier) {
@@ -45,6 +49,10 @@ namespace {
     }
 
     void resetMouseDeltas() {
+        g_mouseDeltaX = g_mouseX - g_mousePrevX;
+        g_mouseDeltaY = g_mouseY - g_mousePrevY;
+        g_wheelDeltaX = g_wheelX - g_wheelPrevX;
+        g_wheelDeltaY = g_wheelY - g_wheelPrevY;
         g_mousePrevX = g_mouseX.load();
         g_mousePrevY = g_mouseY.load();
         g_wheelPrevX = g_wheelX.load();

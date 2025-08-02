@@ -1,6 +1,4 @@
 #include "RenderEngine.hpp"
-#include <cmath>
-#include <Core/Common/Time.hpp>
 #include <Core/Common/Random.hpp>
 #include <Core/IO/Logger.hpp>
 #include <Core/Math/Transform.hpp>
@@ -40,20 +38,13 @@ namespace graphics {
     }
     
     void RenderEngine::run() {
-        const static core::Time start = core::Time::now();
-        auto p = [&](double a, double b, float c, float d) {
-            return std::sinf(static_cast<float>(((core::Time::now() - start).asSeconds() - a) * b * 0.4)) * c + d;
-        };
         while (m_window.nextFrame()) {
             try {
                 m_window.enableCursor(window::isKeyPressed(window::Key::LeftAlt) || window::isKeyPressed(window::Key::RightAlt));
                 if (!m_vulkanManager->beginFrame())
                     continue;
                 m_vulkanManager->beginRendering(m_voxelPipeline);
-                core::Transform3f mvp = m_pCamera.projectionView().to<float>()
-                    * core::Transform3f::translation({ p(0.0, 1.0, 1.0, 0.0), p(1.0, 0.6, 1.0, 0.0), p(0.15, 0.35, 1.0, 0.0) })
-                    * core::Transform3f::rotation   ({ p(0.0, 1.0, 1.0, 0.0), p(1.0, 0.6, 1.0, 0.0), p(0.15, 0.35, 1.0, 0.0) })
-                    * core::Transform3f::scale      ({ p(0.0, 1.0, 1.0, 0.0), p(1.0, 0.6, 1.0, 0.0), p(0.15, 0.35, 1.0, 0.0) });
+                core::Transform3f mvp = m_pCamera.projectionView().to<float>();
                 m_vulkanManager->pushConstants(vulkan::internal::ShaderStageBit::Vertex, core::RawMemory::ofObject(mvp));
                 m_vulkanManager->drawVertices(m_voxelVertices);
                 m_vulkanManager->endRendering(m_voxelPipeline);

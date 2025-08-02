@@ -116,7 +116,8 @@ namespace core {
 
 #define DECL_MAT_EQ_OP(op)                                             \
         constexpr Mat& operator op##=(Mat const& rhs) &noexcept {      \
-            T* dst = data, *src = rhs.data, *end = data + Size;        \
+            T* dst = data, *end = data + Size;                         \
+            T const* src = rhs.data;                                   \
             while (dst < end) *(dst++) op##= *(src++);                 \
             return *this;                                              \
         }

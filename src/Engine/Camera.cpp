@@ -116,11 +116,11 @@ namespace {
 
     core::Transform3d Camera::makeProjection() const noexcept {
         return m_isOrthogonal
-            ? core::Transform3d::orthogonal(m_aspectRatio, m_fov)
-            : core::Transform3d::perspective(m_aspectRatio, m_fov);
+            ? core::Transform3d::vulkanClip() * core::Transform3d::orthogonal(m_aspectRatio, m_fov)
+            : core::Transform3d::vulkanClip() * core::Transform3d::perspective(m_aspectRatio, m_fov);
     }
 
     core::Transform3d Camera::makeView() const noexcept {
-        return core::Transform3d::translation(-m_position) * core::Transform3d::rotation(m_rotation);
+        return core::Transform3d::view(m_position, m_rotation);
     }
 } // namespace engine

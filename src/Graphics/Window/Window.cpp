@@ -42,9 +42,9 @@ namespace {
             throw WindowException { };
         }
         glfwSetKeyCallback(window, reinterpret_cast<GLFWkeyfun>(keyCallback));
+        glfwSetMouseButtonCallback(window, reinterpret_cast<GLFWmousebuttonfun>(mouseKeyCallback));
         glfwSetCursorPosCallback(window, reinterpret_cast<GLFWcursorposfun>(mousePositionCallback));
         glfwSetScrollCallback(window, reinterpret_cast<GLFWscrollfun>(scrollCallback));
-        glfwSetMouseButtonCallback(window, reinterpret_cast<GLFWmousebuttonfun>(mouseKeyCallback));
         core::info(
             "Created window:\n\t"   \
             "Title:      {}\n\t"    \

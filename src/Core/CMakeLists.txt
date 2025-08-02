@@ -14,6 +14,7 @@ set(LOCAL_SOURCES
     Macro/NoOpt.cpp
     Memory/TypeErasedObject.cpp
     Memory/RawMemory.cpp
+    Math/VecOps.cpp
     Math/Transform.cpp)
 set(LOCAL_TESTS
     Test/TestMain.cpp
