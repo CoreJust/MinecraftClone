@@ -11,6 +11,9 @@ namespace core {
     class DynArray final : public ArrayView<T>, NonCopyable {
         using Parent = ArrayView<T>;
 
+        template<typename U>
+        friend class DynArray;
+
     public:
         using Raw = Parent::Raw;
         using Parent::raw;
@@ -53,6 +56,13 @@ namespace core {
 
         PURE static DynArray uninitialized(usize size) {
             return DynArray(Raw::alloc(size));
+        }
+
+        template<typename U>
+        PURE DynArray<U> reinterpret() noexcept {
+            DynArray<U> result { raw() };
+            raw() = Raw { };
+            return result;
         }
 
         // Note: requires T to be trivially movable

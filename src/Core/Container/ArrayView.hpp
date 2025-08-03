@@ -27,6 +27,13 @@ namespace core {
             return ArrayView(m_data.chunk(from, count));
         }
 
+        template<typename U>
+        PURE ArrayView reinterpret() const noexcept {
+            return ArrayView<U>(raw());
+        }
+
+        PURE constexpr bool empty() const noexcept { return m_data.size == 0; }
+
         PURE constexpr T      * begin()        noexcept { return data(); }
         PURE constexpr T const* begin()  const noexcept { return data(); }
         PURE constexpr T const* cbegin() const noexcept { return data(); }
@@ -41,6 +48,7 @@ namespace core {
         PURE constexpr Raw      & raw()        noexcept { return m_data; }
         PURE constexpr Raw const& raw()  const noexcept { return m_data; }
     };
+
     template<typename T>
     class ArrayView<T const> {
     public:
@@ -60,6 +68,11 @@ namespace core {
 
         PURE constexpr ArrayView subview(usize from = 0ull, usize count = static_cast<usize>(-1) / sizeof(T)) const noexcept {
             return ArrayView(m_data.chunk(from, count));
+        }
+
+        template<typename U>
+        PURE ArrayView reinterpret() const noexcept {
+            return ArrayView<U const>(raw());
         }
 
         PURE constexpr bool empty() const noexcept { return m_data.size == 0; }
