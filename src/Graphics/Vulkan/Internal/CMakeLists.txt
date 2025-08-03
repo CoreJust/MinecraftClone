@@ -28,7 +28,8 @@ set(LOCAL_SOURCES
     Memory/Allocator.cpp
     Memory/MappedMemory.cpp
     Buffer/Buffer.cpp
-    Buffer/CopyBuffer.cpp)
+    Buffer/CopyBuffer.cpp
+    Buffer/Image.cpp)
 set(LOCAL_TESTS)
 
 SUBMODULE(Graphics/Vulkan/Internal)

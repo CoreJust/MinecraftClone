@@ -7,6 +7,7 @@
 #include "Internal/Vulkan/Vulkan.hpp"
 #include "Internal/Buffer/VertexBuffer.hpp"
 #include "Internal/Buffer/IndexBuffer.hpp"
+#include "Internal/Buffer/Image.hpp"
 #include "Internal/Pipeline/Pipeline.hpp"
 #include "Internal/Command/CommandPool.hpp"
 #include "Internal/Command/CommandBuffer.hpp"
@@ -123,6 +124,10 @@ namespace graphics::vulkan {
         ASSERT(m_frame != nullptr, "Frame was not started; cannot draw vertices");
         ASSERT(m_currentPipeline != static_cast<usize>(-1), "No pipeline was begun; cannot push constants");
         m_frame->commandBuffer().drawVertices(vertices.vertexBuffer(), vertices.indexBuffer());
+    }
+
+    core::UniquePtr<internal::Image> VulkanManager::createImage(core::Image& image, u32 mipLevels) {
+        return core::makeUP<internal::Image>(*m_vulkan, *m_copyCommandPool, image, mipLevels);
     }
 
     usize VulkanManager::createPipelineImpl(pipeline::PipelineOptions const& options) {

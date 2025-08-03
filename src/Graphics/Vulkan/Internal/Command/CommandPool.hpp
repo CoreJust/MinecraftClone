@@ -1,5 +1,6 @@
 #pragma once
 #include <Core/Macro/Attributes.hpp>
+#include <Core/Memory/Function.hpp>
 #include <Core/Container/ArrayView.hpp>
 #include "../Wrapper/Handles.hpp"
 #include "CommandPoolTypeBit.hpp"
@@ -21,6 +22,8 @@ namespace graphics::vulkan::internal {
 
         void allocate(core::ArrayView<CommandBuffer> result);
         void free(core::ArrayView<CommandBuffer> result);
+
+        void execImmediate(core::Function<void, CommandBuffer&> func);
 
         PURE Queue const& parentQueue() const noexcept { return m_queue; }
         PURE CommandPoolTypeBit type() const noexcept { return m_type; }

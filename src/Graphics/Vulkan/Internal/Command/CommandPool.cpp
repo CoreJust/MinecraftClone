@@ -51,4 +51,15 @@ namespace graphics::vulkan::internal {
         core::DynArray<VkCommandBuffer> tmp { result.size(), VK_NULL_HANDLE };
         m_vulkan.call<vkFreeCommandBuffers>(m_pool, static_cast<u32>(tmp.size()), tmp.data());
     }
+
+    void CommandPool::execImmediate(core::Function<void, CommandBuffer&> func) {
+        CommandBuffer cmd { CommandBufferUsageBit::OneTimeSubmit };
+        allocate({ &cmd, 1 });
+        cmd.begin();
+		func(cmd);
+        cmd.end();
+        m_queue.submit(cmd);
+        m_queue.waitIdle();
+        free({ &cmd, 1 });
+    }
 } // namespace graphics::vulkan::internal

@@ -92,7 +92,9 @@ namespace core {
         template<typename U>
         PURE constexpr Vec<Size, U> to() const noexcept {
             Vec<Size, U> result { };
-            T* dst = result.data, *src = data, *end = data + Size;
+            U* dst = result.data;
+            T const* src = data;
+            T const* end = data + Size;
             while (src < end) *(dst++) = static_cast<U>(*(src++));
             return result;
         }

@@ -5,6 +5,7 @@
 #include <Core/Math/Vec.hpp>
 #include <Core/Container/UniquePtr.hpp>
 #include <Core/Container/DynArray.hpp>
+#include <Core/Container/Image.hpp>
 #include "Internal/Pipeline/ShaderStageBit.hpp"
 #include "Pipeline/RenderPipeline.hpp"
 #include "Pipeline/PipelineOptions.hpp"
@@ -25,6 +26,7 @@ namespace graphics::vulkan {
         class Pipeline;
         class Frame;
         class Buffer;
+        class Image;
     }
 
     class VulkanManager final {
@@ -73,6 +75,8 @@ namespace graphics::vulkan {
 
         void pushConstants(internal::ShaderStageBit stage, core::RawMemory constants);
         void drawVertices(pipeline::VerticesBase& vertices);
+
+        core::UniquePtr<internal::Image> createImage(core::Image& image, u32 mipLevels = 0u);
 
         template<pipeline::VertexConcept Vertex, typename Index>
         pipeline::Vertices<Vertex, Index> createVertices(usize vertexCount, usize indexCount) {

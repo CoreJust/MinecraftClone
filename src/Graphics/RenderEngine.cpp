@@ -24,12 +24,8 @@ namespace graphics {
         auto vertices = m_voxelVertices.mapVertices();
         core::Random rand;
         for (auto& vertex : vertices.arrayView()) {
-            vertex.position = { rand.randf(-3.f, 3.f), rand.randf(-3.f, 3.f) };
-            vertex.color    = { rand.randNormalized(), rand.randNormalized(), rand.randNormalized() };
-            if (vertex.position[0] < -0.5f) vertex.position[0] = (vertex.position[0] + 0.5f) / 5.f - 0.5f;
-            if (vertex.position[0] >  0.5f) vertex.position[0] = (vertex.position[0] - 0.5f) / 5.f + 0.5f;
-            if (vertex.position[1] < -0.5f) vertex.position[1] = (vertex.position[1] + 0.5f) / 5.f - 0.5f;
-            if (vertex.position[1] >  0.5f) vertex.position[1] = (vertex.position[1] - 0.5f) / 5.f + 0.5f;
+            vertex.position  = { rand.randf(-3.f, 3.f), rand.randf(-3.f, 3.f) , rand.randf(-3.f, 3.f) };
+            vertex.texCoords = { rand.randNormalized(), rand.randNormalized() };
         }
 
         auto indices = m_voxelVertices.mapIndices();

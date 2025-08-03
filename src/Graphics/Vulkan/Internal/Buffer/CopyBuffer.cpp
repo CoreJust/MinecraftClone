@@ -3,7 +3,7 @@
 
 namespace graphics::vulkan::internal {
     CopyBuffer::CopyBuffer(CommandPool& copyCommandPool, Buffer& destination)
-        : Buffer(destination.vulkan(), destination.size(), BufferTypeBit::TransferSrc, AllocationTypeBit::HostAccessSequentialWrite, AllocationUsage::AutoPreferHost)
+        : Buffer(destination.vulkan(), destination.size(), BufferTypeBit::TransferSrc, AllocationTypeBit::HostAccessSequentialWrite, AllocationUsage::CpuToGpu)
         , m_destination(destination)
         , m_copyCommandPool(copyCommandPool)
     {
