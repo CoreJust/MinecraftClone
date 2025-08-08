@@ -10,6 +10,8 @@ namespace core {
 
     public:
         constexpr StringView() noexcept = default;
+        constexpr StringView(StringView&&) noexcept = default;
+        constexpr StringView(StringView const&) noexcept = default;
         constexpr StringView(char const* ptr, usize size) noexcept : Parent(ptr, size) { }
         constexpr StringView(char const* ptr) noexcept 
             : Parent(
@@ -23,6 +25,8 @@ namespace core {
         { }
         explicit constexpr StringView(Raw rawData) noexcept : Parent(rawData) { }
         explicit constexpr StringView(Parent view) noexcept : Parent(view) { }
+        constexpr StringView& operator=(StringView&&) noexcept = default;
+        constexpr StringView& operator=(StringView const&) noexcept = default;
 
         PURE constexpr bool operator==(StringView rhs) const noexcept {
             if (size() != rhs.size())

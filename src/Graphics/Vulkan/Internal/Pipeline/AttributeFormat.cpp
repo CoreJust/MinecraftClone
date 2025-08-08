@@ -6,7 +6,7 @@ namespace graphics::vulkan::internal {
         constexpr static VkFormat VULKAN_FORMATS
             [static_cast<usize>(pipeline::Type::TypesCount)]
             [static_cast<usize>(pipeline::Bits::BitsCount)]
-            [static_cast<usize>(pipeline::Size::SizesCount)] 
+            [static_cast<usize>(pipeline::Format::FormatsCount)] 
         = {
 #define DECL_VK_FORMAT_IMPL(componentFormat, numericFormat) VK_FORMAT_##componentFormat##_##numericFormat
 #define DECL_VK_FORMAT1_IMPL(bits, format) DECL_VK_FORMAT_IMPL(R##bits,                            format)
@@ -75,20 +75,20 @@ namespace graphics::vulkan::internal {
     
         if (static_cast<usize>(attr.type) >= static_cast<usize>(pipeline::Type::TypesCount)
             || static_cast<usize>(attr.bits) >= static_cast<usize>(pipeline::Bits::BitsCount)
-            || static_cast<usize>(attr.size) >= static_cast<usize>(pipeline::Size::SizesCount))
+            || static_cast<usize>(attr.format) >= static_cast<usize>(pipeline::Format::FormatsCount))
             return VK_FORMAT_UNDEFINED;
-        return VULKAN_FORMATS[static_cast<usize>(attr.type)][static_cast<usize>(attr.bits)][static_cast<usize>(attr.size)];
+        return VULKAN_FORMATS[static_cast<usize>(attr.type)][static_cast<usize>(attr.bits)][static_cast<usize>(attr.format)];
     }
 
     u32 attributeSize(pipeline::Attribute attr) {
         constexpr static u32 SIZES[] = { 1, 2, 3, 4, 4, 9, 16, };
         u32 const bitsSize = (1 << static_cast<u32>(attr.bits));
-        return bitsSize * SIZES[static_cast<usize>(attr.size)];
+        return bitsSize * SIZES[static_cast<usize>(attr.format)];
     }
 
     u32 attributeLocationSize(pipeline::Attribute attr) {
-        switch (attr.size) {
-            case pipeline::Size::Mat4: return 4;
+        switch (attr.format) {
+            case pipeline::Format::Mat4: return 4;
         default: return 1;
         }
     }

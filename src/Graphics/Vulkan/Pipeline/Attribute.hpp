@@ -31,7 +31,7 @@ namespace graphics::vulkan::pipeline {
         BitsCount,
     };
 
-    enum class Size : u8 {
+    enum class Format : u8 {
         Scalar,
         Vec2,
         Vec3,
@@ -40,14 +40,16 @@ namespace graphics::vulkan::pipeline {
         Mat3,
         Mat4,
 
-        SizesCount,
+        FormatsCount,
     };
 
     struct Attribute final {
-        Type type;
-        Bits bits;
-        Size size;
+        Type   type;
+        Bits   bits;
+        Format format;
 
         char const* name() const;
+    
+        static Attribute of(char const* const attr) noexcept;
     };
 } // namespace graphics::vulkan::pipeline

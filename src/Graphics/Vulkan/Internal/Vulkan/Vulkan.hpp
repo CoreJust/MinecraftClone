@@ -74,7 +74,7 @@ namespace graphics::vulkan::internal {
         }
 
         template<auto Func>
-        INLINE bool destroy(auto& resource, auto&&... args) const {
+        INLINE bool destroy(auto& resource, auto&&... args) const noexcept {
             if (resource != VK_NULL_HANDLE) {
                 call<Func>(resource, FORWARD(args)...);
                 resource = VK_NULL_HANDLE;

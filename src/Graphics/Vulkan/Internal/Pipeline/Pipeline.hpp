@@ -1,9 +1,11 @@
 #pragma once
 #include <Core/Macro/Attributes.hpp>
+#include <Core/Container/DynArray.hpp>
 #include <Graphics/Vulkan/Pipeline/PipelineOptions.hpp>
 #include "../Wrapper/Handles.hpp"
 #include "../Framebuffers.hpp"
 #include "ShaderStageBit.hpp"
+#include "DescriptorSet.hpp"
 #include "RenderPass.hpp"
 
 namespace graphics::vulkan::internal {
@@ -12,13 +14,14 @@ namespace graphics::vulkan::internal {
     class CommandBuffer;
 
     class Pipeline final {
-        RenderPass m_pass;
-        Framebuffers m_framebuffers;
-        VkPipelineLayout m_layout = VK_NULL_HANDLE;
-        VkPipeline m_pipeline = VK_NULL_HANDLE;
+        RenderPass                    m_pass;
+        Framebuffers                  m_framebuffers;
+        core::DynArray<DescriptorSet> m_descriptors;
+        VkPipelineLayout              m_layout   = VK_NULL_HANDLE;
+        VkPipeline                    m_pipeline = VK_NULL_HANDLE;
         // TODO: refactor
-        u32 m_pushConstantsSizes[2];
-        Vulkan& m_vulkan;
+        u32                           m_pushConstantsSizes[2];
+        Vulkan&                       m_vulkan;
 
     public:
         Pipeline(Vulkan& vulkan, pipeline::PipelineOptions const& options);

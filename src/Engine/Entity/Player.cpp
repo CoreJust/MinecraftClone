@@ -32,11 +32,13 @@ namespace engine::entity {
             position.z() -= std::sin(rotation.yaw() + core::RadiansQuarter) * speed;
         }
 
-        rotation.slice<2, 1>() += getMouseDelta().swizzled<1, 0>() * MOUSE_SPEED;
-        if (rotation.pitch() > core::RadiansQuarter * 0.99) {
-            rotation.pitch() = core::RadiansQuarter * 0.99;
-        } else if (rotation.pitch() < -core::RadiansQuarter * 0.99) {
-            rotation.pitch() = -core::RadiansQuarter * 0.99;
+        if (!isKeyPressed(Key::LeftAlt) && !isKeyPressed(Key::RightAlt)) {
+            rotation.slice<2, 1>() += getMouseDelta().swizzled<1, 0>() * MOUSE_SPEED;
+            if (rotation.pitch() > core::RadiansQuarter * 0.99) {
+                rotation.pitch() = core::RadiansQuarter * 0.99;
+            } else if (rotation.pitch() < -core::RadiansQuarter * 0.99) {
+                rotation.pitch() = -core::RadiansQuarter * 0.99;
+            }
         }
     }
 } // namespace engine::entity

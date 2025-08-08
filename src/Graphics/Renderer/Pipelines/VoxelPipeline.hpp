@@ -7,9 +7,9 @@
 namespace graphics::renderer::pipelines {
     namespace vp = vulkan::pipeline;
     struct VoxelVertex final {
-        constexpr static inline vp::Attribute VertexLayout[] = {
-            vp::Attribute { .type = vp::Type::Float, .bits = vp::Bits::Bits32, .size = vp::Size::Vec3 },
-            vp::Attribute { .type = vp::Type::Float, .bits = vp::Bits::Bits32, .size = vp::Size::Vec2 },
+        const static inline vp::Attribute VertexLayout[] = {
+            vp::Attribute::of("vec3f32"),
+            vp::Attribute::of("vec2f32"),
         };
 
         core::Vec3f position;
@@ -17,8 +17,12 @@ namespace graphics::renderer::pipelines {
     };
 
     class VoxelPipeline final : public vp::RenderPipeline {
-        constexpr static inline vp::Attribute VertexPushConstants[] = {
-            vp::Attribute { .type = vp::Type::Float, .bits = vp::Bits::Bits32, .size = vp::Size::Mat4 },
+        const static inline vp::Attribute VertexPushConstants[] = {
+            vp::Attribute::of("mat4f32"),
+        };
+
+        const static inline vp::Descriptor Descriptors[] = {
+            vp::Descriptor { .type = vp::DescriptorType::Sampler, .stages = vp::ShaderStageBit::Fragment },
         };
 
     public:
@@ -28,6 +32,7 @@ namespace graphics::renderer::pipelines {
             .fragmentShaderPath = "voxel.frag",
             .attributes         = Vertex::VertexLayout,
             .vertexPushContants = VertexPushConstants,
+            .descriptors        = Descriptors,
         };
 
     public:

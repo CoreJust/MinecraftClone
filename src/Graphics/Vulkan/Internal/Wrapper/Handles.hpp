@@ -38,6 +38,7 @@ using VkMemoryPropertyFlags = VkFlags;
     DECL_VK_HANDLE(RenderPass)
     DECL_VK_HANDLE(PipelineLayout)
     DECL_VK_HANDLE(Pipeline)
+    DECL_VK_HANDLE(DescriptorSetLayout)
     DECL_VMA_HANDLE(Allocator)
     DECL_VMA_HANDLE(Allocation)
 #undef DECL_VK_HANDLE

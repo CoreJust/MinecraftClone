@@ -13,10 +13,14 @@ namespace core {
 
     public:
         constexpr ArrayView() noexcept = default;
+        constexpr ArrayView(ArrayView&&) noexcept = default;
+        constexpr ArrayView(ArrayView const&) noexcept = default;
         constexpr ArrayView(T* ptr, usize size) noexcept : m_data({ reinterpret_cast<byte*>(ptr), size * sizeof(T) }) { }
         template<usize N>
         constexpr ArrayView(T(&arr)[N]) noexcept : m_data({ reinterpret_cast<byte*>(arr), N * sizeof(T) }) { }
         explicit constexpr ArrayView(Raw rawData) noexcept : m_data(rawData) { }
+        constexpr ArrayView& operator=(ArrayView&&) noexcept = default;
+        constexpr ArrayView& operator=(ArrayView const&) noexcept = default;
 
         PURE constexpr operator ArrayView<T const>() { return ArrayView<T const>(data(), size()); }
 
@@ -42,7 +46,7 @@ namespace core {
         PURE constexpr T const* cend()   const noexcept { return data() + size(); }
 
         PURE constexpr usize    size()   const noexcept { return m_data.count(); }
-        PURE constexpr T      * data()         noexcept { return reinterpret_cast<T*>(m_data.data); }
+        PURE constexpr T      * data()         noexcept { return reinterpret_cast<T*>      (m_data.data); }
         PURE constexpr T const* data()   const noexcept { return reinterpret_cast<T const*>(m_data.data); }
 
         PURE constexpr Raw      & raw()        noexcept { return m_data; }
@@ -55,14 +59,18 @@ namespace core {
         using Raw = RawArray<sizeof(T)>;
 
     private:
-        Raw const m_data;
+        Raw m_data;
 
     public:
         constexpr ArrayView() noexcept = default;
+        constexpr ArrayView(ArrayView&&) noexcept = default;
+        constexpr ArrayView(ArrayView const&) noexcept = default;
         constexpr ArrayView(T const* ptr, usize size) noexcept : m_data({ reinterpret_cast<byte*>(const_cast<T*>(ptr)), size * sizeof(T) }) { }
         template<usize N>
         constexpr ArrayView(T const(&arr)[N]) noexcept : m_data({ reinterpret_cast<byte*>(const_cast<T*>(arr)), N * sizeof(T) }) { }
         explicit constexpr ArrayView(Raw rawData) noexcept : m_data(rawData) { }
+        constexpr ArrayView& operator=(ArrayView&&) noexcept = default;
+        constexpr ArrayView& operator=(ArrayView const&) noexcept = default;
 
         PURE constexpr T const& operator[](usize idx) const { return *reinterpret_cast<T const*>(m_data.ptrAt(idx)); }
 

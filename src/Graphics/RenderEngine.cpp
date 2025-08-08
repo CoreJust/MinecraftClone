@@ -10,7 +10,7 @@ namespace graphics {
         , m_vulkanManager(core::makeUP<vulkan::VulkanManager>(m_window, appVersion))
         , m_pCamera(camera)
         , m_voxelPipeline(m_vulkanManager->createPipeline<renderer::pipelines::VoxelPipeline>())
-        , m_voxelVertices(m_vulkanManager->createVertices<renderer::pipelines::VoxelVertex, u16>(15, 15 * 9))
+        , m_voxelVertices(m_vulkanManager->createVertices<renderer::pipelines::VoxelVertex, u16>(21, 21 * 6))
     {
         m_pCamera.setAspectRatio(m_window.aspectRatio());
         m_window.enableCursor(false);
@@ -24,7 +24,7 @@ namespace graphics {
         auto vertices = m_voxelVertices.mapVertices();
         core::Random rand;
         for (auto& vertex : vertices.arrayView()) {
-            vertex.position  = { rand.randf(-3.f, 3.f), rand.randf(-3.f, 3.f) , rand.randf(-3.f, 3.f) };
+            vertex.position  = { rand.randf(-3.f, 3.f), rand.randf(-3.f, 5.f) , rand.randf(-3.f, 3.f) };
             vertex.texCoords = { rand.randNormalized(), rand.randNormalized() };
         }
 

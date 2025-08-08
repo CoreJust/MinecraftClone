@@ -8,7 +8,7 @@
 namespace core {
     template<typename Return, typename... Args>
     class Function final {
-		using Deleter = void(*)(void* ptr);
+        using Deleter = void(*)(void* ptr);
         using Func = Return(*)(Args...);
         using ContextFunc = Return(*)(void*&, Args...);
 
