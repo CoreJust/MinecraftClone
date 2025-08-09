@@ -11,8 +11,9 @@ namespace graphics::vulkan::internal {
 
     public:
         constexpr ResourceBase() noexcept = default;
-        constexpr ResourceBase(VkAnyHandle value) noexcept : m_value(value) { }
         constexpr ResourceBase(ResourceBase&& other) noexcept : m_value(other.m_value) { other.m_value = VK_NULL_HANDLE; }
+        constexpr ResourceBase(ResourceBase const&) noexcept = default;
+        constexpr ResourceBase(VkAnyHandle value) noexcept : m_value(value) { }
         constexpr ResourceBase& operator=(ResourceBase&& other) &noexcept {
             if (this != &other) {
                 VkAnyHandle tmp = m_value;
@@ -21,6 +22,7 @@ namespace graphics::vulkan::internal {
             }
             return *this;
         }
+        constexpr ResourceBase& operator=(ResourceBase const&) &noexcept = default;
         constexpr ~ResourceBase() { m_value = VK_NULL_HANDLE; }
 
         constexpr explicit operator bool() const noexcept { return m_value != VK_NULL_HANDLE; }
@@ -29,13 +31,17 @@ namespace graphics::vulkan::internal {
     template<typename T>
     class Resource : public ResourceBase {
         static_assert(sizeof(T) == sizeof(VkAnyHandle));
+
     public:
         using ResourceType = T;
 
     public:
         constexpr Resource() noexcept = default;
-        constexpr Resource(T value) noexcept : ResourceBase(value) { }
         constexpr Resource(Resource&&) noexcept = default;
+        constexpr Resource(Resource const&) noexcept = default;
+        constexpr Resource(T value) noexcept : ResourceBase(reinterpret_cast<VkAnyHandle>(value)) { }
+        constexpr Resource& operator=(Resource&&) &noexcept = default;
+        constexpr Resource& operator=(Resource const&) &noexcept = default;
 
         static void release(Vulkan& vulkan, core::ArrayView<T> items, void* allocator = nullptr) noexcept;
 
@@ -64,6 +70,10 @@ namespace graphics::vulkan::internal {
 
     template<typename T>
     class ResourceSet {
+#define PARENT_RESOURCE_SET(T)                             \
+        using Parent = ResourceSet<VkDescriptorSetLayout>; \
+        using Parent::m_resources
+
     public:
         using ResourceType = Resource<T>;
 
@@ -78,10 +88,12 @@ namespace graphics::vulkan::internal {
             , m_vulkan   (vulkan)
             , m_allocator(allocator)
         { }
-        ~ResourceSet() { ResourceType::release(m_vulkan, m_resources, m_allocator); }
+        ~ResourceSet() { ResourceType::release(m_vulkan, m_resources.view().template reinterpret<T>(), m_allocator); }
 
         ResourceType      & operator[]  (usize i)       noexcept { return m_resources[i]; }
         ResourceType const& operator[]  (usize i) const noexcept { return m_resources[i]; }
-        core::ArrayView<ResourceType> resources() const noexcept { return m_resources; }
+        core::ArrayView<ResourceType> resources   () const noexcept { return m_resources; }
+        u32                           size32      () const noexcept { return static_cast<u32>(m_resources.size()); }
+        T*                            resourcesPtr()       noexcept { return reinterpret_cast<T*>(m_resources.data()); }
     };
 } // namespace graphics::vulkan::internal

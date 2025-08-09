@@ -8,18 +8,23 @@
 namespace graphics::vulkan::internal {
     class Vulkan;
 
-    class DescriptorSet final : public StandaloneResource<VkDescriptorSetLayout> {
-        using ParentResource = StandaloneResource<VkDescriptorSetLayout>;
-
-        u32                   m_binding;
-        u32                   m_count;
-        DescriptorType        m_type;
-        ShaderStageBit        m_stages;
+    class DescriptorSet final : public ResourceSet<VkDescriptorSetLayout> {
+        PARENT_RESOURCE_SET(VkDescriptorSetLayout);
 
     public:
-        DescriptorSet(Vulkan& vulkan, DescriptorType type, ShaderStageBit stages, u32 binding, u32 count = 1);
+        struct DescriptorOptions final {
+            u32            binding;
+            u32            count;
+            DescriptorType type;
+            ShaderStageBit stages;
+        };
 
-        PURE DescriptorType        type  () const noexcept { return m_type; }
-        PURE ShaderStageBit        stages() const noexcept { return m_stages; }
+    private:
+        core::DynArray<DescriptorOptions> m_options;
+
+    public:
+        DescriptorSet(Vulkan& vulkan, core::DynArray<DescriptorOptions> options);
+
+        PURE core::ArrayView<DescriptorOptions const> options() const noexcept { return m_options.cview(); }
     };
 } // namespace graphics::vulkan::internal

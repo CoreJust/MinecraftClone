@@ -10,8 +10,8 @@ namespace core {
         constexpr RawArray(RawArray&&) noexcept = default;
         constexpr RawArray(RawArray const&) noexcept = default;
         constexpr RawArray(RawMemory memory) noexcept : RawMemory(memory) { ASSERT(memory.size % ElementSize == 0); }
-        constexpr RawArray& operator=(RawArray&&) noexcept = default;
-        constexpr RawArray& operator=(RawArray const&) noexcept = default;
+        constexpr RawArray& operator=(RawArray&&) &noexcept = default;
+        constexpr RawArray& operator=(RawArray const&) &noexcept = default;
 
         PURE static RawArray alloc(usize size) { return RawMemory::alloc(size * ElementSize); }
         void resize(usize newSize) { RawMemory::resize(newSize * ElementSize); }

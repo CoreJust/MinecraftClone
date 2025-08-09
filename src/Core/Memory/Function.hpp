@@ -43,10 +43,12 @@ namespace core {
             , m_context (exchange(other.m_context,  nullptr))
             , m_deleter (exchange(other.m_deleter,  nullptr))
         { }
-        constexpr Function& operator=(Function&& other) noexcept {
-            m_function = exchange(other.m_function, nullptr);
-            m_context  = exchange(other.m_context,  nullptr);
-            m_deleter  = exchange(other.m_deleter,  nullptr);
+        constexpr Function& operator=(Function&& other) &noexcept {
+            if (this != &other) {
+                m_function = exchange(other.m_function, nullptr);
+                m_context  = exchange(other.m_context,  nullptr);
+                m_deleter  = exchange(other.m_deleter,  nullptr);
+            }
             return *this;
         }
         ~Function() {

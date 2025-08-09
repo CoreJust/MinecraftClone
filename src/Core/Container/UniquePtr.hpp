@@ -21,9 +21,11 @@ namespace core {
         template<typename U>
             requires requires(T* t, U* u) { { t = u }; }
         constexpr UniquePtr(UniquePtr<U>&& other) noexcept : m_data(other.m_data), m_deleter(other.m_deleter) { other.m_data = nullptr; other.m_deleter = nullptr; }
-        constexpr UniquePtr& operator=(UniquePtr&& other) noexcept {
-            m_data = core::exchange(other.m_data, m_data);
-            m_deleter = core::exchange(other.m_deleter, m_deleter);
+        constexpr UniquePtr& operator=(UniquePtr&& other) &noexcept {
+            if (this != &other) {
+                m_data = core::exchange(other.m_data, m_data);
+                m_deleter = core::exchange(other.m_deleter, m_deleter);
+            }
             return *this;
         }
 

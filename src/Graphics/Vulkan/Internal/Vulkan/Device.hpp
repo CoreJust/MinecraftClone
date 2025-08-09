@@ -12,7 +12,7 @@ namespace graphics::vulkan::internal {
         Device(PhysicalDevice const& physicalDevice);
         Device(Device&&) noexcept = default;
         Device(const Device&) noexcept = delete;
-        Device& operator=(Device&&) noexcept = default;
+        Device& operator=(Device&&) &noexcept = default;
         Device& operator=(const Device&) noexcept = delete;
         ~Device();
 

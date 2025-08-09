@@ -18,7 +18,7 @@ namespace core {
 		TypeErasedObject() = default;
 		TypeErasedObject(TypeErasedObject&&) noexcept;
 		TypeErasedObject(const TypeErasedObject&) = delete;
-		TypeErasedObject& operator=(TypeErasedObject&&) noexcept;
+		TypeErasedObject& operator=(TypeErasedObject&&) &noexcept;
 		TypeErasedObject& operator=(const TypeErasedObject&) = delete;
 		~TypeErasedObject();
 

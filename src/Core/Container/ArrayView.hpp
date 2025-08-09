@@ -19,8 +19,8 @@ namespace core {
         template<usize N>
         constexpr ArrayView(T(&arr)[N]) noexcept : m_data({ reinterpret_cast<byte*>(arr), N * sizeof(T) }) { }
         explicit constexpr ArrayView(Raw rawData) noexcept : m_data(rawData) { }
-        constexpr ArrayView& operator=(ArrayView&&) noexcept = default;
-        constexpr ArrayView& operator=(ArrayView const&) noexcept = default;
+        constexpr ArrayView& operator=(ArrayView&&) &noexcept = default;
+        constexpr ArrayView& operator=(ArrayView const&) &noexcept = default;
 
         PURE constexpr operator ArrayView<T const>() { return ArrayView<T const>(data(), size()); }
 
@@ -32,7 +32,7 @@ namespace core {
         }
 
         template<typename U>
-        PURE ArrayView reinterpret() const noexcept {
+        PURE ArrayView<U> reinterpret() const noexcept {
             return ArrayView<U>(raw());
         }
 
@@ -69,8 +69,8 @@ namespace core {
         template<usize N>
         constexpr ArrayView(T const(&arr)[N]) noexcept : m_data({ reinterpret_cast<byte*>(const_cast<T*>(arr)), N * sizeof(T) }) { }
         explicit constexpr ArrayView(Raw rawData) noexcept : m_data(rawData) { }
-        constexpr ArrayView& operator=(ArrayView&&) noexcept = default;
-        constexpr ArrayView& operator=(ArrayView const&) noexcept = default;
+        constexpr ArrayView& operator=(ArrayView&&) &noexcept = default;
+        constexpr ArrayView& operator=(ArrayView const&) &noexcept = default;
 
         PURE constexpr T const& operator[](usize idx) const { return *reinterpret_cast<T const*>(m_data.ptrAt(idx)); }
 

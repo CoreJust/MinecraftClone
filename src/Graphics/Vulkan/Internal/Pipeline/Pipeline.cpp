@@ -53,12 +53,17 @@ namespace {
 } // namespace
 
     Pipeline::Pipeline(Vulkan& vulkan, pipeline::PipelineOptions const& options)
-        : m_pass        (vulkan)
-        , m_framebuffers(vulkan, m_pass)
-        , m_descriptors (options.descriptors.size(), [&vulkan, &options](usize i) {
+        : m_pass         (vulkan)
+        , m_framebuffers (vulkan, m_pass)
+        , m_descriptorSet(vulkan, { options.descriptors.size(), [&options](usize i) {
             pipeline::Descriptor desc = options.descriptors[i];
-            return DescriptorSet(vulkan, desc.type, desc.stages, static_cast<u32>(i));
-        })
+            return DescriptorSet::DescriptorOptions { 
+                .binding = static_cast<u32>(i),
+                .count   = 1, 
+                .type    = desc.type,
+                .stages  = desc.stages,
+            };
+        }})
         , m_vulkan      (vulkan)
     {
         ShaderModule vertex   { m_vulkan, options.vertexShaderPath   ? options.vertexShaderPath   : "basic.vert" };
@@ -134,15 +139,12 @@ namespace {
         colorBlending.blendConstants[2] = 0.f;
         colorBlending.blendConstants[3] = 0.f;
 
-        core::ArrayView<VkPushConstantRange>   pushConstantRanges    = makePushConstantsRanges(options, m_pushConstantsSizes);
-        core::DynArray <VkDescriptorSetLayout> descriptorSetLayouts { m_descriptors.size(), [this](usize i) {
-            return m_descriptors[i].get();
-        }};
+        core::ArrayView<VkPushConstantRange> pushConstantRanges = makePushConstantsRanges(options, m_pushConstantsSizes);
 
         VkPipelineLayoutCreateInfo pipelineLayoutInfo { };
         pipelineLayoutInfo.sType                  = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-        pipelineLayoutInfo.setLayoutCount         = static_cast<u32>(descriptorSetLayouts.size());
-        pipelineLayoutInfo.pSetLayouts            = descriptorSetLayouts.data();
+        pipelineLayoutInfo.setLayoutCount         = m_descriptorSet.size32();
+        pipelineLayoutInfo.pSetLayouts            = m_descriptorSet.resourcesPtr();
         pipelineLayoutInfo.pushConstantRangeCount = static_cast<u32>(pushConstantRanges.size());
         pipelineLayoutInfo.pPushConstantRanges    = pushConstantRanges.data();
 

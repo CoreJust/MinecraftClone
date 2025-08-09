@@ -20,8 +20,8 @@ namespace graphics::vulkan::internal {
         Queue(VkDevice device, u32 index);
         Queue(Queue&&) noexcept = default;
         Queue(const Queue&) noexcept = default;
-        Queue& operator=(Queue&&) noexcept = default;
-        Queue& operator=(const Queue&) noexcept = default;
+        Queue& operator=(Queue&&) &noexcept = default;
+        Queue& operator=(const Queue&) &noexcept = default;
 
         void submit(
             CommandBuffer& commandBuffer, 

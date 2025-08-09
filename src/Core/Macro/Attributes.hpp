@@ -55,3 +55,8 @@
 #else
 #  define ALIGNED(x)
 #endif
+
+#ifdef NOEXCEPT_AS
+#  undef NOEXCEPT_AS
+#endif
+#define NOEXCEPT_AS(...) noexcept(noexcept(__VA_ARGS__))

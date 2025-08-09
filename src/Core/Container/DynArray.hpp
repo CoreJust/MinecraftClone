@@ -23,11 +23,13 @@ namespace core {
     public:
         constexpr DynArray() noexcept = default;
         constexpr DynArray(DynArray&& other) noexcept : Parent(exchange(other.raw(), Raw { })) { }
-        constexpr DynArray& operator=(DynArray&& other) noexcept {
-            Parent::operator=(Parent { exchange(other.raw(), Raw { }) });
+        constexpr DynArray& operator=(DynArray&& other) &noexcept {
+            if (this != &other)
+                Parent::operator=(Parent { exchange(other.raw(), Raw { }) });
             return *this;
         }
         DynArray(usize size, T const& defaultValue = T { })
+            requires requires { new T { defaultValue }; }
             : Parent(Raw::alloc(size)) {
             for (auto& item : *this)
                 ::new(&item) T { defaultValue };
@@ -64,6 +66,9 @@ namespace core {
             raw() = Raw { };
             return result;
         }
+
+        PURE Parent             view () const noexcept { return *this; }
+        PURE ArrayView<T const> cview() const noexcept { return view(); }
 
         // Note: requires T to be trivially movable
         void resize(usize newSize) {

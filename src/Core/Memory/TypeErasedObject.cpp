@@ -11,13 +11,15 @@ namespace core {
 		other.m_typeHashCode = 0;
 	}
 
-	TypeErasedObject& TypeErasedObject::operator=(TypeErasedObject&& other) noexcept {
-		m_data = other.m_data;
-		m_deleter = other.m_deleter;
-		m_typeHashCode = other.m_typeHashCode;
-		other.m_data = nullptr;
-		other.m_deleter = nullptr;
-		other.m_typeHashCode = 0;
+	TypeErasedObject& TypeErasedObject::operator=(TypeErasedObject&& other) &noexcept {
+        if (this != &other) {
+			m_data = other.m_data;
+			m_deleter = other.m_deleter;
+			m_typeHashCode = other.m_typeHashCode;
+			other.m_data = nullptr;
+			other.m_deleter = nullptr;
+			other.m_typeHashCode = 0;
+		}
 		return *this;
 	}
 
