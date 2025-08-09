@@ -34,17 +34,18 @@ namespace graphics::vulkan::internal {
 
         // Returns -1 on failure
         PURE Frame* acquireNextFrame();
-        PURE Frame& currentFrame() noexcept { return m_frames[m_framesCounter % m_frames.size()]; }
-        PURE u32    swapchainIndex() const noexcept { return m_swapchainIndex; }
+        PURE Frame& currentFrame    ()       noexcept { return m_frames[m_framesCounter % m_frames.size()]; }
+        PURE u32    swapchainIndex  () const noexcept { return m_swapchainIndex; }
         
         void submit();
         void present();
 
         PURE Queue                            & graphicsQueue()       noexcept { return *m_graphicsQueue; }
-        PURE VkSwapchainKHR                     get()           const noexcept { return m_swapchain; }
-        PURE core::DynArray<VkImageView> const& imageViews()    const noexcept { return m_imageViews; }
-        PURE SwapchainFormat             const& format()        const noexcept { return *m_format; }
-        PURE u32                                imageCount()    const noexcept { return m_imageCount; }
+        PURE VkSwapchainKHR                     get          () const noexcept { return m_swapchain; }
+        PURE core::DynArray<VkImageView> const& imageViews   () const noexcept { return m_imageViews; }
+        PURE SwapchainFormat             const& format       () const noexcept { return *m_format; }
+        PURE u32                                imageCount   () const noexcept { return m_imageCount; }
+        PURE u32                                frameCount   () const noexcept { return static_cast<u32>(m_frames.size()); }
 
     private:
         void initialize(core::Vec2u32 pixelSize);

@@ -2,28 +2,21 @@
 #include <Core/Macro/Attributes.hpp>
 #include "../Wrapper/Handles.hpp"
 #include "../Wrapper/Resource.hpp"
-#include "DescriptorType.hpp"
-#include "ShaderStageBit.hpp"
+#include "DescriptorOptions.hpp"
+#include "DescriptorPool.hpp"
 
 namespace graphics::vulkan::internal {
     class Vulkan;
 
-    class DescriptorSet final : public ResourceSet<VkDescriptorSetLayout> {
-        PARENT_RESOURCE_SET(VkDescriptorSetLayout);
-
-    public:
-        struct DescriptorOptions final {
-            u32            binding;
-            u32            count;
-            DescriptorType type;
-            ShaderStageBit stages;
-        };
+    class DescriptorSetLayout final : public ResourceSet<VkDescriptorSetLayout> {
+        DERIVED_RESOURCE_SET(VkDescriptorSetLayout);
 
     private:
         core::DynArray<DescriptorOptions> m_options;
+        DescriptorPool                    m_pool;
 
     public:
-        DescriptorSet(Vulkan& vulkan, core::DynArray<DescriptorOptions> options);
+        DescriptorSetLayout(Vulkan& vulkan, core::DynArray<DescriptorOptions> options, u32 maxSets);
 
         PURE core::ArrayView<DescriptorOptions const> options() const noexcept { return m_options.cview(); }
     };

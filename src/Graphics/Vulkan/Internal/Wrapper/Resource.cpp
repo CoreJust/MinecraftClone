@@ -17,6 +17,11 @@ namespace graphics::vulkan::internal {
             vulkan.destroy<vkDestroyBuffer>(buffer, reinterpret_cast<VkAllocationCallbacks*>(allocator));
     }
 
+    DECL_RELEASE(VkDescriptorPool) {
+        for (VkDescriptorPool pool : items)
+            vulkan.destroy<vkDestroyDescriptorPool>(pool, reinterpret_cast<VkAllocationCallbacks*>(allocator));
+    }
+
     DECL_RELEASE(VkDescriptorSetLayout) {
         for (VkDescriptorSetLayout dsl : items)
             vulkan.destroy<vkDestroyDescriptorSetLayout>(dsl, reinterpret_cast<VkAllocationCallbacks*>(allocator));

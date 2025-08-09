@@ -54,6 +54,12 @@ namespace graphics::vulkan::internal {
 
     template<typename T>
     class StandaloneResource : public Resource<T> {
+#define DERIVED_STANDALONE_RESOURCE(T)        \
+        using Parent = StandaloneResource<T>; \
+        using Parent::get;                    \
+        using Parent::set;                    \
+        using Parent::m_vulkan
+
     protected:
         Vulkan& m_vulkan;
         void*   m_allocator = nullptr;
@@ -70,9 +76,10 @@ namespace graphics::vulkan::internal {
 
     template<typename T>
     class ResourceSet {
-#define PARENT_RESOURCE_SET(T)                             \
-        using Parent = ResourceSet<VkDescriptorSetLayout>; \
-        using Parent::m_resources
+#define DERIVED_RESOURCE_SET(T)        \
+        using Parent = ResourceSet<T>; \
+        using Parent::m_resources;     \
+        using Parent::m_vulkan
 
     public:
         using ResourceType = Resource<T>;

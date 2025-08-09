@@ -31,24 +31,24 @@ namespace graphics::vulkan {
 
     class VulkanManager final {
         struct PipelineNote final {
-            pipeline::PipelineOptions options;
+            pipeline::PipelineOptions           options;
             core::UniquePtr<internal::Pipeline> pipeline;
         };
 
         struct StateSnapshot final {
-            core::Version appVersion;
+            core::Version                          appVersion;
             std::vector<pipeline::PipelineOptions> pipelineOptions;
         };
 
-        core::Version m_appVersion;
-        core::UniquePtr<internal::Vulkan> m_vulkan;
-        std::vector<PipelineNote> m_pipelines;
+        core::Version                          m_appVersion;
+        core::UniquePtr<internal::Vulkan>      m_vulkan;
+        std::vector<PipelineNote>              m_pipelines;
         core::UniquePtr<internal::CommandPool> m_copyCommandPool;
-        window::Window& m_pWindow;
-        internal::Frame* m_frame = nullptr;
-        usize m_currentPipeline = static_cast<usize>(-1);
-        bool m_requiresSwapchainRecreation = false;
-        bool m_wantsSwapchainRecreation = false;
+        window::Window&                        m_pWindow;
+        internal::Frame*                       m_frame                       = nullptr;
+        usize                                  m_currentPipeline             = static_cast<usize>(-1);
+        bool                                   m_requiresSwapchainRecreation = false;
+        bool                                   m_wantsSwapchainRecreation    = false;
 
     public:
         explicit VulkanManager(StateSnapshot snapshot, window::Window& win);

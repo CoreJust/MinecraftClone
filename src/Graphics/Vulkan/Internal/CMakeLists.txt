@@ -17,6 +17,7 @@ set(LOCAL_SOURCES
     Sync/Semaphore.cpp
     Sync/Fence.cpp
     Pipeline/AttributeFormat.cpp
+    Pipeline/DescriptorPool.cpp
     Pipeline/DescriptorSet.cpp
     Pipeline/ShaderModule.cpp
     Pipeline/RenderPass.cpp

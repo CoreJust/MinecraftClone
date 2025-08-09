@@ -55,16 +55,19 @@ namespace {
     Pipeline::Pipeline(Vulkan& vulkan, pipeline::PipelineOptions const& options)
         : m_pass         (vulkan)
         , m_framebuffers (vulkan, m_pass)
-        , m_descriptorSet(vulkan, { options.descriptors.size(), [&options](usize i) {
-            pipeline::Descriptor desc = options.descriptors[i];
-            return DescriptorSet::DescriptorOptions { 
-                .binding = static_cast<u32>(i),
-                .count   = 1, 
-                .type    = desc.type,
-                .stages  = desc.stages,
-            };
-        }})
-        , m_vulkan      (vulkan)
+        , m_descriptorSetLayout(
+            vulkan,
+            { options.descriptors.size(), [&options](usize i) {
+                pipeline::Descriptor desc = options.descriptors[i];
+                return DescriptorOptions { 
+                    .binding = static_cast<u32>(i),
+                    .count   = 1,
+                    .type    = desc.type,
+                    .stages  = desc.stages,
+                };
+            }},
+            vulkan.swapchain().frameCount())
+        , m_vulkan(vulkan)
     {
         ShaderModule vertex   { m_vulkan, options.vertexShaderPath   ? options.vertexShaderPath   : "basic.vert" };
         ShaderModule fragment { m_vulkan, options.fragmentShaderPath ? options.fragmentShaderPath : "basic.frag" };
@@ -143,8 +146,8 @@ namespace {
 
         VkPipelineLayoutCreateInfo pipelineLayoutInfo { };
         pipelineLayoutInfo.sType                  = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-        pipelineLayoutInfo.setLayoutCount         = m_descriptorSet.size32();
-        pipelineLayoutInfo.pSetLayouts            = m_descriptorSet.resourcesPtr();
+        pipelineLayoutInfo.setLayoutCount         = m_descriptorSetLayout.size32();
+        pipelineLayoutInfo.pSetLayouts            = m_descriptorSetLayout.resourcesPtr();
         pipelineLayoutInfo.pushConstantRangeCount = static_cast<u32>(pushConstantRanges.size());
         pipelineLayoutInfo.pPushConstantRanges    = pushConstantRanges.data();
 

@@ -30,6 +30,10 @@ namespace engine::entity {
         } if (isKeyPressed(Key::D)) {
             position.x() -= std::cos(rotation.yaw() + core::RadiansQuarter) * speed;
             position.z() -= std::sin(rotation.yaw() + core::RadiansQuarter) * speed;
+        } if (isKeyPressed(Key::Space)) {
+            position.y() += speed;
+        } if (isKeyPressed(Key::LeftShift) || isKeyPressed(Key::RightShift)) {
+            position.y() -= speed;
         }
 
         if (!isKeyPressed(Key::LeftAlt) && !isKeyPressed(Key::RightAlt)) {

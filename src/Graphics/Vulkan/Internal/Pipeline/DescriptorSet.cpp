@@ -4,9 +4,10 @@
 #include "../Vulkan/Vulkan.hpp"
 
 namespace graphics::vulkan::internal {
-    DescriptorSet::DescriptorSet(Vulkan& vulkan, core::DynArray<DescriptorOptions> options)
+    DescriptorSetLayout::DescriptorSetLayout(Vulkan& vulkan, core::DynArray<DescriptorOptions> options, u32 maxSets)
         : Parent   (vulkan, options.size())
         , m_options(core::move(options))
+        , m_pool   (m_vulkan, m_options.cview(), maxSets)
     {
         for (auto& [layout, options] : m_resources | core::zip(m_options)) {
             VkDescriptorSetLayoutBinding layoutBinding { };
@@ -22,7 +23,7 @@ namespace graphics::vulkan::internal {
             layoutInfo.bindingCount = 1;
             layoutInfo.pBindings    = &layoutBinding;
 
-            layout = vulkan.create<vkCreateDescriptorSetLayout>(&layoutInfo, nullptr);
+            layout = m_vulkan.create<vkCreateDescriptorSetLayout>(&layoutInfo, nullptr);
         }
     }
 } // namespace graphics::vulkan::internal
