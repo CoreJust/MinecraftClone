@@ -1,11 +1,19 @@
 #include <Shadberry/Version.hpp>
-#include <Shadberry/Core/Console.hpp>
+#include <Shadberry/System/Console.hpp>
+
+#include <gtest/gtest.h>
+#include <gmock/gmock.h>
 
 #include <iostream>
 
-int main() {
-    engine::setConsoleColor(engine::ConsoleColor::Red);
-    std::cout << "EngineTests running\n";
-    std::cout << "Engine " << engine::ENGINE_NAME << " v" << engine::ENGINE_VERSION << "\n";
-    return 0;
+using namespace sb;
+
+TEST(Main, TestFail) {
+    std::cout << "FAIL!" << std::endl;
+    ASSERT_TRUE(false);
+}
+
+TEST(Main, TestSuccess) {
+    std::cout << "SUCCESS!" << std::endl;
+    ASSERT_TRUE(true);
 }

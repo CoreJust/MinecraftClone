@@ -1,8 +1,8 @@
 #pragma once
 
-namespace engine {
+namespace sb {
 
-constexpr inline char const* ENGINE_NAME = "Engine";
-constexpr inline char const* ENGINE_VERSION = "0.1";
+constexpr inline char const* ENGINE_NAME = "Shadberry";
+constexpr inline char const* ENGINE_VERSION = "0.1.0";
 
-} // namespace engine
+} // namespace sb

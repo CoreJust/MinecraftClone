@@ -25,5 +25,6 @@ target_link_libraries(MinecraftClone PRIVATE Eigen3::Eigen)
 sb_setup_target_common(MinecraftClone)
 
 if(MCC_BUILD_TESTS)
+  enable_testing()
   sb_add_tests(${CMAKE_CURRENT_LIST_DIR} MinecraftClone)
 endif()

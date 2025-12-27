@@ -34,10 +34,10 @@ get_filename_component(SHADBERRY_SOURCE_PARENT "${SHADBERRY_SOURCE_DIR}" DIRECTO
 target_include_directories(Shadberry
   PRIVATE
     ${SHADBERRY_SOURCE_DIR}
+    ${CMAKE_CURRENT_BINARY_DIR}/include
   INTERFACE
     $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/include>
-    $<BUILD_INTERFACE:${SHADBERRY_SOURCE_PARENT}>
-    $<INSTALL_INTERFACE:include/shadberry>
+    $<INSTALL_INTERFACE:include>
 )
 
 sb_setup_target_common(Shadberry)
@@ -60,6 +60,7 @@ target_link_libraries(Shadberry PRIVATE
 )
 
 if(SHADBERRY_BUILD_TESTS)
+  enable_testing()
   sb_add_tests(${CMAKE_CURRENT_LIST_DIR} Shadberry)
 endif()
 
