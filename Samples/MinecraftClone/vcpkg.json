@@ -1,0 +1,10 @@
+{
+  "name": "minecraft-clone",
+  "version": "0.1.0",
+  "dependencies": [
+    "eigen3",
+    "glew",
+    "openal-soft",
+    "rgfw"
+  ]
+}

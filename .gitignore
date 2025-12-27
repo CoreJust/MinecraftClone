@@ -39,3 +39,15 @@
 
 # debug information files
 *.dwo
+
+# Build files
+build.*
+build/
+third_party/
+.vscode/
+.PVS-Studio/
+.vcpkg/
+.vcpkg_installed/
+
+# Generated include files
+*/include/*
