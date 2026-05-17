@@ -1,0 +1,48 @@
+#include "Log.hpp"
+
+namespace core::detail {
+
+inline void assertFailed(
+    const char* file,
+    int line,
+    const char* func,
+    const char* condition_str
+) {
+    Log::getLogger()->critical(
+        "Assertion failed at {}:{}\n{} evaluated to false\nStacktrace:\n{}",
+        file, line, condition_str, std::stacktrace::current());
+    std::exit(1);
+}
+
+template <typename... Args>
+void assertFailed(
+    const char* file,
+    int line,
+    const char* func,
+    const char* condition_str,
+    fmt::format_string<Args...> fmt,
+    Args&&... args
+) {
+    std::string user_msg = fmt::format(fmt, std::forward<Args>(args)...);
+    Log::getLogger()->critical(
+        "Assertion failed at {}:{}: {}\n{} evaluated to false\nStacktrace:\n{}",
+        file, line, user_msg, condition_str, std::stacktrace::current());
+    std::exit(1);
+}
+
+} // namespace core::detail
+
+#define ASSERT(condition, ...)                                                \
+    do {                                                                      \
+        if (!(condition)) {                                                   \
+            ::core::detail::assertFailed(__FILE__, __LINE__, SPDLOG_FUNCTION, \
+                                        #condition                            \
+                                        __VA_OPT__(, __VA_ARGS__));           \
+        }                                                                     \
+    } while (0)
+
+#ifdef MC_ENABLE_HIGH_ASSERT
+#define HIGH_ASSERT(condition, ...) ASSERT(condition, __VA_ARGS__)
+#else
+#define HIGH_ASSERT(...)
+#endif

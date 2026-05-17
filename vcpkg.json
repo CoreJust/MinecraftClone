@@ -1,0 +1,9 @@
+{
+  "name": "minecraft-clone-2026",
+  "version-string": "0.1.0",
+  "dependencies": [
+    "glfw3",
+    "spdlog",
+    "gtest"
+  ]
+}
