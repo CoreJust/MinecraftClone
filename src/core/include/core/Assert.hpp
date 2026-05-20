@@ -1,12 +1,14 @@
+#pragma once
+
 #include "Log.hpp"
 
 namespace core::detail {
 
 inline void assertFailed(
-    const char* file,
-    int line,
-    const char* func,
-    const char* condition_str
+    char const* const file,
+    int const line,
+    char const* const func,
+    char const* const condition_str
 ) {
     Log::getLogger()->critical(
         "Assertion failed at {}:{}\n{} evaluated to false\nStacktrace:\n{}",
@@ -16,10 +18,10 @@ inline void assertFailed(
 
 template <typename... Args>
 void assertFailed(
-    const char* file,
-    int line,
-    const char* func,
-    const char* condition_str,
+    char const* const file,
+    int const line,
+    char const* const func,
+    char const* const condition_str,
     fmt::format_string<Args...> fmt,
     Args&&... args
 ) {
@@ -41,7 +43,7 @@ void assertFailed(
         }                                                                     \
     } while (0)
 
-#ifdef MC_ENABLE_HIGH_ASSERT
+#ifdef _MC_ENABLE_HIGH_ASSERT
 #define HIGH_ASSERT(condition, ...) ASSERT(condition, __VA_ARGS__)
 #else
 #define HIGH_ASSERT(...)

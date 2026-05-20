@@ -12,7 +12,7 @@ namespace fmt {
 
 template <>
 struct formatter<std::stacktrace> : formatter<std::string_view> {
-    context::iterator format(const std::stacktrace& st, format_context& ctx) const;
+    context::iterator format(std::stacktrace const& st, format_context& ctx) const;
 };
     
 } // namespace fmt
@@ -24,20 +24,21 @@ public:
     Log() = delete;
 
     static void init(
-        std::optional<std::filesystem::path> logs_dir = std::nullopt,
-        spdlog::level::level_enum initial_level = spdlog::level::info);
+        std::optional<std::filesystem::path> const logs_dir = std::nullopt,
+        spdlog::level::level_enum const initial_level = spdlog::level::info);
     static void destroy();
 
-    static void setLogLevel(spdlog::level::level_enum level) {
-        if (s_logger)
+    static void setLogLevel(spdlog::level::level_enum const level) {
+        if (s_logger) {
             s_logger->set_level(level);
+        }
     }
+    
     static spdlog::level::level_enum getLogLevel() noexcept {
         return s_logger ? s_logger->level() : spdlog::level::off;
     }
 
     static spdlog::logger* getLogger() noexcept { return s_logger.get(); }
-
 private:
     static std::shared_ptr<spdlog::logger> s_logger;
 };

@@ -1,5 +1,7 @@
 #pragma once
 
 namespace core {
-    void setCrashHandler();
+
+void setCrashHandler();
+
 } // namespace core

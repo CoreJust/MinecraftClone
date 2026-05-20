@@ -10,7 +10,7 @@
 
 namespace fmt {
 
-context::iterator formatter<std::stacktrace>::format(const std::stacktrace& st, format_context& ctx) const {
+context::iterator formatter<std::stacktrace>::format(std::stacktrace const& st, format_context& ctx) const {
     std::ostringstream oss;
     oss << st;
     std::string str = oss.str();
@@ -27,8 +27,8 @@ namespace core {
 std::shared_ptr<spdlog::logger> Log::s_logger;
 
 void Log::init(
-    std::optional<std::filesystem::path> logs_dir,
-    spdlog::level::level_enum initial_level
+    std::optional<std::filesystem::path> const logs_dir,
+    spdlog::level::level_enum const initial_level
 ) {
     spdlog::init_thread_pool(1024 * 8, 1);
 
