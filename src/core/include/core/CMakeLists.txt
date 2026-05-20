@@ -8,11 +8,14 @@ target_sources(mc
             macro/LanguageVersion.hpp
             macro/NameGeneration.hpp
             macro/OS.hpp
+            net/Net.hpp
             Assert.hpp
             Assume.hpp
+            AtAppExit.hpp
             CrashHandler.hpp
             Defer.hpp
             Log.hpp
             NonCopyable.hpp
             NonMovable.hpp
+            StaticInitializer.hpp
 )

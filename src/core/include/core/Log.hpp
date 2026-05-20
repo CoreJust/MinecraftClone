@@ -23,7 +23,7 @@ class Log final {
 public:
     Log() = delete;
 
-    static void init(
+    static void ensureInit(
         std::optional<std::filesystem::path> const logs_dir = std::nullopt,
         spdlog::level::level_enum const initial_level = spdlog::level::info);
     static void destroy();

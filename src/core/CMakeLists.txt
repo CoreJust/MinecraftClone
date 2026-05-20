@@ -1,5 +1,6 @@
 target_sources(mc
     PRIVATE
+        net/Net.cpp
         CrashHandler.cpp
         Log.cpp
 )

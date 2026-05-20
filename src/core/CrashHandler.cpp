@@ -1,4 +1,6 @@
 #include "core/CrashHandler.hpp"
+
+#include "core/AtAppExit.hpp"
 #include "core/Log.hpp"
 
 #include <csignal>
@@ -39,7 +41,7 @@ extern "C" void onErrorSignal(int const code) {
         "Caught error signal: {}\nStacktrace:\n{}",
         decodeSignalCode(code),
         std::stacktrace::current());
-    core::Log::destroy();
+    core::AtAppExit::exit();
     exit(1);
 }
 

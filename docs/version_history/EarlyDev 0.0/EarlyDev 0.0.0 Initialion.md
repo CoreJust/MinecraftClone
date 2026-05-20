@@ -20,3 +20,7 @@ Additions:
 2. Proper building with CMake and dependency management with vcpkg.
 3. Logging with `spdlog` and `fmt`.
 4. Some helper files in `core/` (different macros, assertions, crash handling, etc).
+
+## EarlyDev 0.1.0:2
+
+

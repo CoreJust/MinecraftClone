@@ -1,9 +1,11 @@
+#include <core/net/Net.hpp>
 #include <core/CrashHandler.hpp>
 #include <core/Log.hpp>
 
 int main(int argc, char** argv) {
-    core::Log::init();
+    core::Log::ensureInit();
     core::setCrashHandler();
+    core::Net::ensureInit();
 
     try {
         const bool is_server = (argc > 2 && std::string_view{ argv[1] } == "--server");
@@ -18,6 +20,6 @@ int main(int argc, char** argv) {
         CRITICAL("Received unknown uncaught exception");
     }
 
-    core::Log::destroy();
+    core::AtAppExit::exit();
     return 0;
 }

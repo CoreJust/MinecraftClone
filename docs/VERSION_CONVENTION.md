@@ -13,4 +13,13 @@ A snapshot is a minimal delivery unit with a few changes or improvements. It mig
 
 Snapshots are encoded like `i(yy.mm.dd)` where `i` is the snapshot index within that minor version.
 
+# Versions in git
+
+There are 2 main branches: `main` and `dev`. `dev` receives all the latest commits. When a snapshot is complete, it is merged into `main` with:
+
+```
+git merge --no-ff dev -m "$MAJOR_NAME $EPOCH.$MAJOR.$MINOR:$SNAPSHOT_INDEX(YY.MM.DD)"
+git tag -a $SNAPSHOT_NAME/$EPOCH.$MAJOR.$MINOR/$SNAPSHOT_INDEX_YY.MM.DD -m "$MAJOR_NAME $EPOCH.$MAJOR.$MINOR $MINOR_NAME snapshot $SNAPSHOT_INDEX(YY.MM.DD)"
+```
+
 Each minor version must have a separate release with executables.
