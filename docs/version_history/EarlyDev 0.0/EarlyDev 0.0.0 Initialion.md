@@ -23,4 +23,6 @@ Additions:
 
 ## EarlyDev 0.1.0:2
 
-
+Basic network logic and client/server separation.
+Additions:
+1. Basic network API.

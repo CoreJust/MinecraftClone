@@ -1,9 +1,9 @@
 #pragma once
 
+#include <enet/enet.h>
+
 #include <cstdint>
 #include <string>
-
-using ENetPeer = struct _ENetPeer;
 
 namespace core {
 

@@ -1,21 +1,14 @@
 #pragma once
 
-#include <filesystem>
-#include <memory>
-#include <optional>
-#include <stacktrace>
+#include <core/IO/OptionalFmt.hpp>
+#include <core/IO/StacktraceFmt.hpp>
 
 #include <fmt/core.h>
 #include <spdlog/spdlog.h>
 
-namespace fmt {
-
-template <>
-struct formatter<std::stacktrace> : formatter<std::string_view> {
-    context::iterator format(std::stacktrace const& st, format_context& ctx) const;
-};
-    
-} // namespace fmt
+#include <filesystem>
+#include <memory>
+#include <optional>
 
 namespace core {
 

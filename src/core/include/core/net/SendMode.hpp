@@ -8,10 +8,10 @@ namespace core {
 class SendMode final {
 public:
     enum Flag : uint32_t {
-        Reliable           = 1,
-        Unsequenced        = 2,
-        NoAllocate         = 4,
-        UnreliableFragment = 8,
+        Reliable           = ENET_PACKET_FLAG_RELIABLE,
+        Unsequenced        = ENET_PACKET_FLAG_UNSEQUENCED,
+        NoAllocate         = ENET_PACKET_FLAG_NO_ALLOCATE,
+        UnreliableFragment = ENET_PACKET_FLAG_UNRELIABLE_FRAGMENT,
     };
 private:
     // A workaround to make MSVC work

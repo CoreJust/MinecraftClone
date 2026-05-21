@@ -2,11 +2,11 @@
 
 #include "Peer.hpp"
 
+#include <enet/enet.h>
+
 #include <memory>
 #include <span>
 #include <variant>
-
-using ENetPacket = struct _ENetPacket;
 
 namespace core {
 

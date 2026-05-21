@@ -3,11 +3,15 @@ target_sources(mc
         FILE_SET HEADERS
         BASE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}
         FILES
+            IO/Log.hpp
+            IO/OptionalFmt.hpp
+            IO/StacktraceFmt.hpp
             macro/Attributes.hpp
             macro/Compiler.hpp
             macro/LanguageVersion.hpp
             macro/NameGeneration.hpp
             macro/OS.hpp
+            net/Address.hpp
             net/Client.hpp
             net/Event.hpp
             net/Host.hpp
@@ -21,7 +25,6 @@ target_sources(mc
             AtAppExit.hpp
             CrashHandler.hpp
             Defer.hpp
-            Log.hpp
             NonCopyable.hpp
             NonMovable.hpp
             StaticInitializer.hpp

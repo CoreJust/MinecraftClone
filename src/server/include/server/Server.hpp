@@ -8,7 +8,7 @@ class Server final {
 public:
     void run();
 private:
-    core::Host m_host{ std::nullopt, 20040, 1, 1 };
+    core::Host m_host{ core::Address::localhost(20040), 1, 1 };
 };
 
 } // namespace server

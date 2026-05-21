@@ -1,6 +1,6 @@
 #include <core/net/Net.hpp>
 #include <core/CrashHandler.hpp>
-#include <core/Log.hpp>
+#include <core/IO/Log.hpp>
 
 #include <server/Server.hpp>
 #include <client/Client.hpp>

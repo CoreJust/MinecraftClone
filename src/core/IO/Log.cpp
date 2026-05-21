@@ -1,28 +1,13 @@
-#include "Log.hpp"
+#include <core/IO/Log.hpp>
 
 #include <core/AtAppExit.hpp>
 
 #include <chrono>
-#include <sstream>
 
 #include <spdlog/async.h>
 #include <spdlog/fmt/chrono.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
 #include <spdlog/sinks/basic_file_sink.h>
-
-namespace fmt {
-
-context::iterator formatter<std::stacktrace>::format(std::stacktrace const& st, format_context& ctx) const {
-    std::ostringstream oss;
-    oss << st;
-    std::string str = oss.str();
-    if (!str.empty() && str.back() == '\n') {
-        str.pop_back();
-    }
-    return formatter<std::string_view>::format(std::string_view(str), ctx);
-}
-
-} // namespace fmt
 
 namespace core {
 

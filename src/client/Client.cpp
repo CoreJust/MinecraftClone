@@ -5,7 +5,7 @@
 namespace client {
 
 void Client::run() {
-    auto peer = m_host.connect("127.0.0.1", 20040, 1).value();
+    auto peer = m_host.connect(core::Address::localhost(20040), 1).value();
     while (true) {
         auto event = m_host.poll(std::chrono::milliseconds{ 10 });
         if (event) {

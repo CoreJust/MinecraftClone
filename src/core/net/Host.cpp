@@ -2,35 +2,24 @@
 
 #include <core/Assert.hpp>
 
-#include <enet/enet.h>
-
 namespace core {
 
 Host::Host(
-    std::optional<std::string> const& ip,
-    std::optional<uint16_t> const port,
+    std::optional<Address> const address,
     size_t const max_connections,
     size_t const max_channels
 ) {
-    if (port.has_value()){ 
-        ENetAddress address = ENetAddress{
-            .host = ENET_HOST_ANY,
-            .port = *port,
-        };
-        if (ip.has_value()) {
-            enet_address_set_host_ip(&address, ip->c_str());
-        }
-        m_host = enet_host_create(&address, max_connections, max_channels, 0, 0);
+    if (address.has_value()) {
+        m_host = enet_host_create(&address->raw(), max_connections, max_channels, 0, 0);
     } else {
-        ASSERT(!ip.has_value(), "If port is not provided, IP makes no sense");
         m_host = enet_host_create(NULL, max_connections, max_channels, 0, 0);
     }
     if (!m_host) {
         MC_ERROR("Failed to create ENet host");
     } else {
         MC_INFO(
-            "Created host at {}:{} with {} max connections and {} max channels",
-            ip.value_or("ANY_HOST"), port.value_or(-1), max_connections, max_channels);
+            "Created host at {} with {} max connections and {} max channels",
+            address, max_connections, max_channels);
     }
 }
 
@@ -113,26 +102,16 @@ bool Host::send(
     return true;
 }
 
-std::optional<Peer> Host::connect(
-    std::string const& ip,
-    uint16_t const port,
-    size_t const channels_count
-) {
-    ENetAddress address{
-        .host = ENET_HOST_ANY,
-        .port = port,
-    };
-    enet_address_set_host_ip(&address, ip.c_str());
-
-    if (ENetPeer *peer = enet_host_connect(m_host, &address, channels_count, 0)) {
+std::optional<Peer> Host::connect(Address const address, size_t const channels_count) {
+    if (ENetPeer *peer = enet_host_connect(m_host, &address.raw(), channels_count, 0)) {
         MC_INFO(
-            "Initiated connection to {}:{} with {} channels",
-            ip, port, channels_count);
+            "Initiated connection to {} with {} channels",
+            address, channels_count);
         return Peer{ *peer };
     }
     MC_ERROR(
-        "Failed to connect to {}:{} with {} channels",
-        ip, port, channels_count);
+        "Failed to connect to {} with {} channels",
+        address, channels_count);
     return std::nullopt;
 }
 
@@ -151,11 +130,9 @@ uint16_t Host::port() const noexcept {
     return m_host->address.port;
 }
 
-std::string_view Host::ip() const noexcept {
-    static char BUFFER[64];
+std::string Host::ip() const noexcept {
     ASSERT(m_host);
-    ASSERT(!enet_address_get_host_ip(&m_host->address, BUFFER, 64));
-    return std::string_view{ BUFFER };
+    return Address::fromRaw(m_host->address).ip();
 }
 
 } // namespace core

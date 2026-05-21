@@ -1,7 +1,7 @@
 #include "core/CrashHandler.hpp"
 
 #include "core/AtAppExit.hpp"
-#include "core/Log.hpp"
+#include "core/IO/Log.hpp"
 
 #include <csignal>
 #include <stacktrace>

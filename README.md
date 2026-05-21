@@ -51,6 +51,12 @@ cmake --preset debug
 cmake --build --preset debug
 ```
 
+### Run server
+
+```bash
+./build/debug/apps/launcher/mc_main --server
+```
+
 ### Run
 
 ```bash

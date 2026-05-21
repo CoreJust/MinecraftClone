@@ -10,7 +10,7 @@ public:
 private:
     bool pollServer();
 private:
-    core::Host m_host{ std::nullopt, std::nullopt, 1, 1 };
+    core::Host m_host{ std::nullopt, 1, 1 };
 };
 
 } // namespace client

@@ -1,8 +1,7 @@
 #include <core/net/Peer.hpp>
 
+#include <core/net/Address.hpp>
 #include <core/Assert.hpp>
-
-#include <enet/enet.h>
 
 namespace core {
 
@@ -11,9 +10,7 @@ uint16_t Peer::port() const noexcept {
 }
 
 std::string_view Peer::ip() const noexcept {
-    static char BUFFER[64];
-    ASSERT(!enet_address_get_host_ip(&m_peer->address, BUFFER, 64));
-    return std::string_view{ BUFFER };
+    return Address::fromRaw(m_peer->address).ip();
 }
 
 } // namespace core

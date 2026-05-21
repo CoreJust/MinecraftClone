@@ -1,6 +1,6 @@
 #pragma once
 
-#include "Log.hpp"
+#include <core/IO/Log.hpp>
 
 namespace core::detail {
 
