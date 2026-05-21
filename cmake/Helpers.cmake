@@ -12,4 +12,7 @@ function(mc_apply_target_defaults target)
             CXX_VISIBILITY_PRESET hidden
             VISIBILITY_INLINES_HIDDEN YES
     )
+    if(MSVC)
+        target_compile_options(${target} PRIVATE /Zc:preprocessor)
+    endif()
 endfunction()

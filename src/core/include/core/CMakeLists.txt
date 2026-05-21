@@ -8,7 +8,14 @@ target_sources(mc
             macro/LanguageVersion.hpp
             macro/NameGeneration.hpp
             macro/OS.hpp
+            net/Client.hpp
+            net/Event.hpp
+            net/Host.hpp
             net/Net.hpp
+            net/Peer.hpp
+            net/SendMode.hpp
+            net/Server.hpp
+            OS/Windows/Lean.hpp
             Assert.hpp
             Assume.hpp
             AtAppExit.hpp

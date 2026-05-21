@@ -37,7 +37,7 @@ char const* decodeSignalCode(int const code) noexcept {
 }
 
 extern "C" void onErrorSignal(int const code) {
-    CRITICAL(
+    MC_CRITICAL(
         "Caught error signal: {}\nStacktrace:\n{}",
         decodeSignalCode(code),
         std::stacktrace::current());

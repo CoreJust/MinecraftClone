@@ -7,7 +7,6 @@ namespace core::detail {
 inline void assertFailed(
     char const* const file,
     int const line,
-    char const* const func,
     char const* const condition_str
 ) {
     Log::getLogger()->critical(
@@ -20,7 +19,6 @@ template <typename... Args>
 void assertFailed(
     char const* const file,
     int const line,
-    char const* const func,
     char const* const condition_str,
     fmt::format_string<Args...> fmt,
     Args&&... args
@@ -37,7 +35,7 @@ void assertFailed(
 #define ASSERT(condition, ...)                                                \
     do {                                                                      \
         if (!(condition)) {                                                   \
-            ::core::detail::assertFailed(__FILE__, __LINE__, SPDLOG_FUNCTION, \
+            ::core::detail::assertFailed(__FILE__, __LINE__,                  \
                                         #condition                            \
                                         __VA_OPT__(, __VA_ARGS__));           \
         }                                                                     \
