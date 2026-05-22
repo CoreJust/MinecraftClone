@@ -30,9 +30,9 @@ Address Address::localhost(uint16_t const port) noexcept {
 
 [[nodiscard]]
 std::string Address::ip() const noexcept {
-    static char BUFFER[64];
-    ASSERT(!enet_address_get_host_ip(&m_address, BUFFER, 64));
-    return std::string{ BUFFER };
+    char buffer[64];
+    ASSERT(!enet_address_get_host_ip(&m_address, buffer, 64));
+    return std::string{ buffer };
 }
 
 } // namespace core

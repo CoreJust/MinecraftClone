@@ -48,3 +48,5 @@ third_party/
 .PVS-Studio/
 .vcpkg/
 .vcpkg_installed/
+
+*.py

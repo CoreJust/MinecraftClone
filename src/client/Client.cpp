@@ -33,7 +33,7 @@ void Client::run() {
 }
 
 bool Client::pollServer() {
-    while (auto event = m_host.poll(std::chrono::milliseconds{ 100 })) {
+    while (auto event = m_host.poll(std::chrono::milliseconds{ 500 })) {
         if (auto receive_event = std::get_if<core::ReceiveEvent>(&*event)) {
             std::cout << "[SERVER]: " << std::string_view{ (char*)receive_event->data.data(), receive_event->data.size() } << std::endl;
         }

@@ -23,6 +23,7 @@ target_sources(mc
             Assert.hpp
             Assume.hpp
             AtAppExit.hpp
+            ControlFlow.hpp
             CrashHandler.hpp
             Defer.hpp
             NonCopyable.hpp

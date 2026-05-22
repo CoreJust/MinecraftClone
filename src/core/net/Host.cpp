@@ -33,6 +33,7 @@ Host::~Host() {
 
 std::optional<NetEvent> Host::poll(std::chrono::milliseconds const timeout) {
     ASSERT(m_host);
+    ASSERT(timeout.count() >= 0);
 
     ENetEvent raw_event;
     int const host_service_result = enet_host_service(m_host, &raw_event, static_cast<enet_uint32>(timeout.count()));
@@ -96,7 +97,6 @@ bool Host::send(
 
     if (enet_peer_send(peer->raw(), channel_id, packet) < 0) {
         MC_ERROR("Failed to send a packet to peer");
-        enet_packet_destroy(packet);
         return false;
     }
     return true;
@@ -117,12 +117,12 @@ std::optional<Peer> Host::connect(Address const address, size_t const channels_c
 
 void Host::disconnect(Peer const peer) noexcept {
     enet_peer_disconnect(peer.raw(), 0);
-    MC_INFO("Initiated disconnection to peer {}:{}", peer.ip(), peer.port());
+    MC_INFO("Initiated disconnection to peer {}", peer.address());
 }
 
 void Host::reset(Peer const peer) noexcept {
     enet_peer_reset(peer.raw());
-    MC_INFO("Reset peer {}:{}", peer.ip(), peer.port());
+    MC_INFO("Reset peer {}", peer.address());
 }
 
 uint16_t Host::port() const noexcept {

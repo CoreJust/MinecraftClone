@@ -3,6 +3,7 @@
 #include "Address.hpp"
 #include "Event.hpp"
 #include "SendMode.hpp"
+#include <core/ControlFlow.hpp>
 
 #include <enet/enet.h>
 
@@ -24,12 +25,45 @@ public:
     std::optional<NetEvent> poll(std::chrono::milliseconds const timeout = std::chrono::milliseconds::zero());
     void flush() noexcept;
 
+    /*
+     * Repeats poll for up to total_timeout in total.
+     * For each polled event, the callback is called.
+     * Returns the number of events polled.
+     */
+    size_t repeatedlyPoll(auto&& cb, std::chrono::milliseconds total_timeout = std::chrono::milliseconds::zero()) {
+        namespace chr = std::chrono;
+        using CallbackReturnType = decltype(cb(std::declval<NetEvent>()));
+
+        chr::time_point end = chr::steady_clock::now() + total_timeout;
+        size_t polled_count = 0;
+        while (auto event = poll(total_timeout)) {
+            if constexpr (std::is_same_v<CallbackReturnType, ControlFlow>) {
+                if (cb(std::move(*event)) == ControlFlow::Break) {
+                    break;
+                }
+            } else {
+                static_assert(
+                    std::is_same_v<CallbackReturnType, void>,
+                    "repeatedlyPoll only accepts callbacks that return either void or ControlFlow");
+                cb(std::move(*event));
+            }
+            
+            ++polled_count;
+            total_timeout = chr::duration_cast<chr::milliseconds>(end - chr::steady_clock::now());
+            if (total_timeout.count() < 0) {
+                break;
+            }
+        }
+        return polled_count;
+    }
+
     bool send(
         std::optional<Peer> const peer,
         std::span<uint8_t const> const data,
         uint8_t const channel_id,
         SendMode const mode);
 
+    // Must not be called for a server.
     std::optional<Peer> connect(Address const address, size_t const channels_count);
     void disconnect(Peer const peer) noexcept;
     void reset(Peer const peer) noexcept;

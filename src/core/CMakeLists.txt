@@ -7,7 +7,6 @@ target_sources(mc
         net/Event.cpp
         net/Host.cpp
         net/Net.cpp
-        net/Peer.cpp
         net/Server.cpp
         CrashHandler.cpp
 )
