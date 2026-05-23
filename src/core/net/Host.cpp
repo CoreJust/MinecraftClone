@@ -8,7 +8,7 @@ Host::Host(
     std::optional<Address> const address,
     size_t const max_connections,
     size_t const max_channels
-) {
+) : m_max_channels(max_channels) {
     if (address.has_value()) {
         m_host = enet_host_create(&address->raw(), max_connections, max_channels, 0, 0);
     } else {
@@ -102,16 +102,16 @@ bool Host::send(
     return true;
 }
 
-std::optional<Peer> Host::connect(Address const address, size_t const channels_count) {
-    if (ENetPeer *peer = enet_host_connect(m_host, &address.raw(), channels_count, 0)) {
+std::optional<Peer> Host::connect(Address const address) {
+    if (ENetPeer *peer = enet_host_connect(m_host, &address.raw(), m_max_channels, 0)) {
         MC_INFO(
             "Initiated connection to {} with {} channels",
-            address, channels_count);
+            address, m_max_channels);
         return Peer{ *peer };
     }
     MC_ERROR(
         "Failed to connect to {} with {} channels",
-        address, channels_count);
+        address, m_max_channels);
     return std::nullopt;
 }
 

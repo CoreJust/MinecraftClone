@@ -75,7 +75,7 @@ public:
         SendMode const mode);
 
     // Must not be called for a server.
-    std::optional<Peer> connect(Address const address, size_t const channels_count);
+    std::optional<Peer> connect(Address const address);
     void disconnect(Peer const peer) noexcept;
     void reset(Peer const peer) noexcept;
 
@@ -88,6 +88,7 @@ public:
     constexpr bool isValid() const noexcept { return m_host != nullptr; }
 private:
     ENetHost* m_host{ nullptr };
+    size_t m_max_channels;
 };
 
 } // namespace core

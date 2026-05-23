@@ -64,11 +64,11 @@ size_t Server::kick(
         return ControlFlow::Continue;
     }, *wait_for_graceful_disconnect_time);
 
-    // Forcefully reset clients that didn;t confirm graceful disconnection.
+    // Forcefully reset clients that didn't confirm graceful disconnection.
     for (size_t i = 0; i < clients.size(); ++i) {
         if (unkicked[i]) {
-            removeClient(clients[i]);
             m_host.reset(client(clients[i]).value());
+            removeClient(clients[i]);
         }
     }
 
