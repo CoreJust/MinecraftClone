@@ -38,7 +38,7 @@ private:
     
 } // namespace core
 
-#define MC_LOG(level, ...)                                                                         \
+#define MC_LOG(level, ...)                                                                      \
     if (::core::Log::getLogLevel() <= level) {                                                  \
         ::core::Log::getLogger()                                                                \
             ->log(spdlog::source_loc{__FILE__, __LINE__, SPDLOG_FUNCTION}, level, __VA_ARGS__); \

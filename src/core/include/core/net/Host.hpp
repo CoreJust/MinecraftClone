@@ -16,6 +16,10 @@ namespace core {
 
 class Host final {
 public:
+    /*
+     * Address is the address that peers can use to connect to this host.
+     * If nullopt, no peers can connect, which makes this host a client.
+     */
     Host(
         std::optional<Address> const address,
         size_t const max_connections,
@@ -57,6 +61,13 @@ public:
         return polled_count;
     }
 
+    /* 
+     * Sends a packet containing data to the peer over channel with given ID and with the given mode.
+     * If peer is nullopt, the packet is sent to all the peers.
+     * Returns true if the packet was successfully queued for sending and false otherwise.
+     * Note that the packet is not sent immediately.
+     * To trigger the actual sending, you must call either flush or poll.
+     */
     bool send(
         std::optional<Peer> const peer,
         std::span<uint8_t const> const data,

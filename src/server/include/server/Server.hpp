@@ -10,9 +10,9 @@ public:
 
     void run();
 private:
-    void onConnected(core::ConnectEvent const event) override;
-    void onDisconnected(core::DisconnectEvent const event) override;
-    void onReceived(core::ReceiveEvent event) override;
+    void onConnected(core::ServerConnectEvent const event) override;
+    void onDisconnected(core::ServerDisconnectEvent const event) override;
+    void onReceived(core::ServerReceiveEvent event) override;
 private:
     size_t m_connects = 0;
     size_t m_disconnects = 0;

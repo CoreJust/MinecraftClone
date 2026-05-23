@@ -9,7 +9,7 @@ auto unitSpan(auto& single_element) {
     return std::span{ &single_element, 1 };
 }
 
-auto asByteSpan(auto const collection)
+auto asByteSpan(auto&& collection)
     requires requires { collection.data(); collection.size(); } {
     using Element = std::remove_reference_t<decltype(*collection.data())>;
     if constexpr (std::is_const_v<Element>) {

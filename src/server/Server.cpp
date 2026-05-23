@@ -10,22 +10,22 @@ void Server::run() {
     }
 }
 
-void Server::onConnected(core::ConnectEvent const event) {
-    MC_INFO("Server: onConnected {}", event.peer.address());
+void Server::onConnected(core::ServerConnectEvent const client) {
+    MC_INFO("Server: onConnected {}", client.client.address());
     ++m_connects;
 }
 
-void Server::onDisconnected(core::DisconnectEvent const event) {
-    MC_INFO("Server: onDisconnected {}", event.peer.address());
+void Server::onDisconnected(core::ServerDisconnectEvent const client) {
+    MC_INFO("Server: onDisconnected {}", client.client.address());
     ++m_disconnects;
 }
 
-void Server::onReceived(core::ReceiveEvent event) {
+void Server::onReceived(core::ServerReceiveEvent event) {
     std::string msg{ (char*)event.data.data(), event.data.size() };
     MC_INFO("Server: onReceived (channel {}): {}", event.channel_id, msg);
 
     if (msg == "stop me") {
-        if (kick(event.peer, std::chrono::milliseconds{ 5'000 })) {
+        if (kick(event.client_id, std::chrono::milliseconds{ 5'000 })) {
             MC_INFO("Kicked the client gracefully");
         } else {
             MC_INFO("Failed to kick the client gracefully");
@@ -34,7 +34,7 @@ void Server::onReceived(core::ReceiveEvent event) {
     }
 
     msg += "? I don't think so.";
-    send(event.peer, std::span{ (uint8_t*)msg.data(), msg.size() }, 0, core::SendMode{ });
+    send(event.client, core::asByteSpan(msg), 0, core::SendMode{ });
 }
 
 } // namespace server

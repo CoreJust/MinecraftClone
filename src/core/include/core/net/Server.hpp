@@ -2,6 +2,10 @@
 
 #include "Host.hpp"
 
+#include <core/SpanUtils.hpp>
+
+#include <optional>
+#include <span>
 #include <vector>
 
 namespace core {
@@ -28,18 +32,25 @@ public:
         return m_host.send(peer, data, channel_id, mode);
     }
 
-    // Returns number of ungraceful kicks
+    // Returns number of ungraceful kicks.
     size_t kick(
-        std::vector<Peer> const peers, // Intentionally copied to avoid dangling references in the process.
-        std::optional<std::chrono::milliseconds> const wait_for_graceful_disconnect_time = std::nullopt
+        std::span<ClientId const> const clients,
+        std::optional<std::chrono::milliseconds> const wait_for_graceful_disconnect_time = std::nullopt,
+        bool const generate_events = true
     );
-    // Returns true if kick was graceful
+    // Returns true if kick was graceful.
     bool kick(
-        Peer const peer,
-        std::optional<std::chrono::milliseconds> const wait_for_graceful_disconnect_time = std::nullopt
+        ClientId const client,
+        std::optional<std::chrono::milliseconds> const wait_for_graceful_disconnect_time = std::nullopt,
+        bool const generate_events = true
     ) {
-        return kick(std::vector{ peer }, wait_for_graceful_disconnect_time) == 0;
+        return kick(unitSpan(client), wait_for_graceful_disconnect_time, generate_events) == 0;
     }
+
+    [[nodiscard]]
+    std::optional<Peer> client(ClientId const id) const noexcept;
+    [[nodiscard]]
+    std::vector<ClientId> collectConnectedClients() const;
 
     [[nodiscard]]
     uint16_t port() const noexcept { return m_host.port(); }
@@ -49,21 +60,21 @@ public:
     [[nodiscard]]
     constexpr bool isValid() const noexcept { return m_host.isValid(); }
 
-    // Should not be saved since any disconnection invalidates it.
-    [[nodiscard]]
-    constexpr std::vector<Peer> const& connectedClients() const noexcept { return m_connected_clients; }
     [[nodiscard]]
     constexpr auto& host(this auto&& self) noexcept { return self.m_host; }
 protected:
-    virtual void onConnected(ConnectEvent const event) = 0;
-    virtual void onDisconnected(DisconnectEvent const event) = 0;
-    virtual void onReceived(ReceiveEvent event) = 0;
+    virtual void onConnected(ServerConnectEvent const event) = 0;
+    virtual void onDisconnected(ServerDisconnectEvent const event) = 0;
+    virtual void onReceived(ServerReceiveEvent event) = 0;
 private:
     void dispatchEvent(NetEvent event);
-    void removeClient(Peer const client);
+    void removeClient(ClientId const client);
+    std::optional<size_t> findClientIndex(ClientId const client) const noexcept;
+    std::optional<size_t> findClientIndex(Peer const client) const noexcept;
 private:
-    std::vector<Peer> m_connected_clients;
+    std::vector<std::pair<ClientId, Peer>> m_connected_clients;
     Host m_host;
+    ClientId m_next_id = 0;
 };
 
 } // namespace core

@@ -15,6 +15,7 @@ struct RawPacketDeleter final {
 };
 
 using RawPacket = std::unique_ptr<ENetPacket, RawPacketDeleter>;
+using ClientId = uint32_t;
 
 struct ConnectEvent final {
     Peer peer;
@@ -32,5 +33,23 @@ struct ReceiveEvent final {
 };
 
 using NetEvent = std::variant<ConnectEvent, DisconnectEvent, ReceiveEvent>;
+
+struct ServerConnectEvent final {
+    Peer client;
+    ClientId client_id;
+};
+
+struct ServerDisconnectEvent final {
+    Peer client;
+    ClientId client_id;
+};
+
+struct ServerReceiveEvent final {
+    Peer client;
+    ClientId client_id;
+    size_t channel_id;
+    RawPacket raw_packet;
+    std::span<uint8_t> data;
+};
 
 } // namespace core
