@@ -66,7 +66,7 @@ cmake --build --preset debug
 ### Test
 
 ```bash
-ctest --preset debug
+ctest --preset debug --output-on-failure
 ```
 
 ## Dependencies and used tools

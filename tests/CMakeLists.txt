@@ -1,13 +1,14 @@
 include(GoogleTest)
 
 add_executable(mc_tests
-    test_app.cpp
+    core/net_client_server_tests.cpp
+    main.cpp
 )
 
 target_link_libraries(mc_tests
     PRIVATE
         mc
-        GTest::gtest_main
+        GTest::gtest
 )
 mc_apply_target_defaults(mc_tests)
 

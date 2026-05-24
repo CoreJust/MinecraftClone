@@ -40,7 +40,16 @@ public:
 
         chr::time_point end = chr::steady_clock::now() + total_timeout;
         size_t polled_count = 0;
-        while (auto event = poll(total_timeout)) {
+        while (true) {
+            auto event = poll(total_timeout);
+            if (!event) {
+                total_timeout = chr::duration_cast<chr::milliseconds>(end - chr::steady_clock::now());
+                if (total_timeout.count() < 0) {
+                    break;
+                }
+                continue;
+            }
+
             if constexpr (std::is_same_v<CallbackReturnType, ControlFlow>) {
                 if (cb(std::move(*event)) == ControlFlow::Break) {
                     break;

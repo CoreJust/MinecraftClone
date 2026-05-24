@@ -53,6 +53,8 @@ size_t Server::kick(
             if (++gracefully_kicked == clients.size()) {
                 if (generate_events) {
                     dispatchEvent(std::move(event));
+                } else {
+                    removeClient(*it);
                 }
                 return ControlFlow::Break;
             }
@@ -114,10 +116,10 @@ void Server::dispatchEvent(NetEvent event) {
             auto const& client = m_connected_clients[*client_index];
             onReceived(ServerReceiveEvent{
                 .client = client.second,
-                .client_id = client.first,
-                .channel_id = receive_event->channel_id,
                 .raw_packet = std::move(receive_event->raw_packet),
                 .data = receive_event->data,
+                .client_id = client.first,
+                .channel_id = receive_event->channel_id,
             });
         }
     }

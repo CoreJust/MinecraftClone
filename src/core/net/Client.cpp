@@ -33,6 +33,9 @@ bool Client::connect(
         }
         return ControlFlow::Continue;
     }, timeout);
+    if (!success) {
+        m_server = std::nullopt;
+    }
     return success;
 }
 
@@ -73,9 +76,9 @@ bool Client::disconnect(
     // Forcefully reset server if it didn't confirm graceful disconnection
     if (!graceful) {
         m_host.reset(*m_server);
-        m_server = std::nullopt;
     }
 
+    m_server = std::nullopt;
     return graceful;
 }
 
@@ -98,6 +101,7 @@ bool Client::send(
 void Client::dispatchEvent(NetEvent event) {
     if (auto disconnect_event = std::get_if<DisconnectEvent>(&event)) {
         onDisconnected(*disconnect_event);
+        m_server = std::nullopt;
     } else if (auto receive_event = std::get_if<ReceiveEvent>(&event)) {
         onReceived(std::move(*receive_event));
     }

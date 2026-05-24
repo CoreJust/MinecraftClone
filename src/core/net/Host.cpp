@@ -38,7 +38,7 @@ std::optional<NetEvent> Host::poll(std::chrono::milliseconds const timeout) {
     ENetEvent raw_event;
     int const host_service_result = enet_host_service(m_host, &raw_event, static_cast<enet_uint32>(timeout.count()));
     if (host_service_result < 0) {
-        MC_DEBUG("Error occured during enet_host_service, returned value is {}", host_service_result);
+        MC_WARN("Error occured during enet_host_service, returned value is {}", host_service_result);
         return std::nullopt;
     }
 
@@ -54,12 +54,14 @@ std::optional<NetEvent> Host::poll(std::chrono::milliseconds const timeout) {
             ASSERT(raw_event.peer != nullptr);
             return DisconnectEvent{ .peer = Peer{ *raw_event.peer } };
         case ENET_EVENT_TYPE_RECEIVE:
-            ASSERT(raw_event.peer != nullptr && raw_event.packet != nullptr && raw_event.packet->data != nullptr);
+            ASSERT(raw_event.peer != nullptr);
             return ReceiveEvent{
                 .peer = Peer{ *raw_event.peer },
-                .channel_id = raw_event.channelID,
                 .raw_packet = RawPacket{ raw_event.packet },
-                .data = std::span{ raw_event.packet->data, raw_event.packet->dataLength },
+                .data = raw_event.packet
+                    ? std::span{ raw_event.packet->data, raw_event.packet->dataLength }
+                    : std::span<uint8_t>{ },
+                .channel_id = raw_event.channelID,
             };
         default:
             ASSERT("Unreachable");

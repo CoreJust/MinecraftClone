@@ -27,9 +27,9 @@ struct DisconnectEvent final {
 
 struct ReceiveEvent final {
     Peer peer;
-    size_t channel_id;
     RawPacket raw_packet;
     std::span<uint8_t> data;
+    uint8_t channel_id;
 };
 
 using NetEvent = std::variant<ConnectEvent, DisconnectEvent, ReceiveEvent>;
@@ -46,10 +46,10 @@ struct ServerDisconnectEvent final {
 
 struct ServerReceiveEvent final {
     Peer client;
-    ClientId client_id;
-    size_t channel_id;
     RawPacket raw_packet;
     std::span<uint8_t> data;
+    ClientId client_id;
+    uint8_t channel_id;
 };
 
 } // namespace core
