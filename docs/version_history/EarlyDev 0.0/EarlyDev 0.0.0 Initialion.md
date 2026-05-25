@@ -20,3 +20,10 @@ Additions:
 2. Proper building with CMake and dependency management with vcpkg.
 3. Logging with `spdlog` and `fmt`.
 4. Some helper files in `core/` (different macros, assertions, crash handling, etc).
+
+## EarlyDev 0.1.0:2(26.05.25)
+
+Basic network logic and client/server separation.
+Additions:
+1. Basic network API.
+2. Simple 2D console game where real players and bots can roam around a 32x32 world.

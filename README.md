@@ -39,6 +39,8 @@ Config files are expected to be replaceable in the future, so it can be easy to 
 
 ## Build
 
+*Note: replace debug with release below to get the Release build.*
+
 ### Configure
 
 ```bash
@@ -51,6 +53,12 @@ cmake --preset debug
 cmake --build --preset debug
 ```
 
+### Run server
+
+```bash
+./build/debug/apps/launcher/mc_main --server
+```
+
 ### Run
 
 ```bash
@@ -60,7 +68,7 @@ cmake --build --preset debug
 ### Test
 
 ```bash
-ctest --preset debug
+ctest --preset debug --output-on-failure
 ```
 
 ## Dependencies and used tools

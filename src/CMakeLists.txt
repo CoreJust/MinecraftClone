@@ -6,6 +6,9 @@ target_link_libraries(mc
     PRIVATE
         unofficial::enet::enet
 )
+if(WIN32) # For ENet
+    target_link_libraries(mc PRIVATE winmm ws2_32)
+endif()
 
 target_include_directories(mc
     PUBLIC
