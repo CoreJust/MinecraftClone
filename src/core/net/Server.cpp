@@ -5,7 +5,7 @@
 namespace core {
 
 Server::~Server() {
-    kick(collectConnectedClients(), std::chrono::milliseconds{ 500 }, false);
+    kick(collectConnectedClients(), std::chrono::milliseconds{ 300 }, false);
 }
 
 size_t Server::poll(std::chrono::milliseconds const total_timeout) {

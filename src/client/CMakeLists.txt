@@ -1,6 +1,9 @@
 target_sources(mc
     PRIVATE
-        Client.cpp
+        render/Window.cpp
+        BotClient.cpp
+        GameClient.cpp
+        PlayerClient.cpp
 )
 
 add_subdirectory(include/client)

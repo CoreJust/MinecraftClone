@@ -6,7 +6,7 @@ namespace core {
 
 Client::~Client() {
     if (isConnected()) {
-        disconnect(std::chrono::milliseconds{ 500 }, false);
+        disconnect(std::chrono::milliseconds{ 100 }, false);
     }
 }
 

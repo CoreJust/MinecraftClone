@@ -20,11 +20,12 @@ public:
     }
 
     template<typename Self, typename T>
-        requires std::is_pod_v<T>
+        requires std::is_pod_v<std::remove_cvref_t<T>>
     auto&& write(this Self&& self, T&& value) {
         using Value = std::remove_cvref_t<T>;
+        size_t const old_size = self.m_data.size();
         self.m_data.resize(self.m_data.size() + sizeof(Value));
-        ::new(self.m_data.data() + self.m_data.size()) Value(std::forward<T>(value));
+        ::new(self.m_data.data() + old_size) Value(std::forward<T>(value));
         return std::forward<Self>(self);
     }
 
@@ -44,7 +45,7 @@ public:
 
     template<typename Self>
     auto&& write(this Self&& self, std::string_view const value) {
-        return self.writeSpan<char>(std::span{ value.data(), value,size() });
+        return self.write(std::span{ value.data(), value,size() });
     }
 
     [[nodiscard]]

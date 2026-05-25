@@ -1,6 +1,6 @@
 target_sources(mc
     PRIVATE
-        Server.cpp
+        GameServer.cpp
 )
 
 add_subdirectory(include/server)

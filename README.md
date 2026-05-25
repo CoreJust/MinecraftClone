@@ -39,6 +39,8 @@ Config files are expected to be replaceable in the future, so it can be easy to 
 
 ## Build
 
+*Note: replace debug with release below to get the Release build.*
+
 ### Configure
 
 ```bash
