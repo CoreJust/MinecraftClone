@@ -34,6 +34,7 @@ find_package(fmt CONFIG REQUIRED)
 find_package(unofficial-enet CONFIG REQUIRED)
 find_package(glfw3 CONFIG REQUIRED)
 find_package(Vulkan REQUIRED)
+find_package(glm CONFIG REQUIRED)
 
 
 ###  CMAKE HELPERS  ###

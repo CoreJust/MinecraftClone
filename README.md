@@ -81,10 +81,8 @@ Current dependencies:
 3. fmt;
 4. glfw;
 5. vulkan;
-6. vulkan-hpp;
-7. volk;
-8. vk-bootstrap;
-9. gtest.
+6. glm;
+7. gtest.
 
 ## Highlights
 

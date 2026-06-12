@@ -6,6 +6,7 @@
     "enet",
     "glfw3",
     "vulkan",
+    "glm",
     "gtest"
   ]
 }

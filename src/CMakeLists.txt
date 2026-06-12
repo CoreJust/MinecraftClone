@@ -8,6 +8,7 @@ target_link_libraries(mc
         unofficial::enet::enet
         glfw
         Vulkan::Vulkan
+        glm::glm
 )
 if(WIN32) # For ENet
     target_link_libraries(mc PRIVATE winmm ws2_32)

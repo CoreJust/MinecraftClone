@@ -2,7 +2,7 @@
 
 #include <core/common/NonCopyable.hpp>
 #include <core/common/NonMovable.hpp>
-#include <core/graphics/Window.hpp>
+#include <core/window/Window.hpp>
 
 #include <array>
 #include <cstdint>

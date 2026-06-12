@@ -130,10 +130,6 @@ public:
     }
 
     void render(std::span<PlayerRenderData const> const players) {
-        m_window.pollEvents();
-        if (m_window.shouldClose()) {
-            return;
-        }
         if (m_window.isFramebufferSizeZero()) {
             return;
         }
