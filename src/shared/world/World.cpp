@@ -1,6 +1,6 @@
 #include <shared/world/World.hpp>
 
-#include <core/Assert.hpp>
+#include <core/common/Assert.hpp>
 
 namespace shared {
 

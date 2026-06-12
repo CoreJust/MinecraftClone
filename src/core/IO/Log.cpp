@@ -1,6 +1,6 @@
 #include <core/IO/Log.hpp>
 
-#include <core/AtAppExit.hpp>
+#include <core/common/AtAppExit.hpp>
 
 #include <chrono>
 

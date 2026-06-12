@@ -2,7 +2,7 @@
 
 #include "Host.hpp"
 
-#include <core/SpanUtils.hpp>
+#include <core/common/SpanUtils.hpp>
 
 #include <optional>
 #include <span>

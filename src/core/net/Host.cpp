@@ -1,6 +1,6 @@
 #include <core/net/Host.hpp>
 
-#include <core/Assert.hpp>
+#include <core/common/Assert.hpp>
 
 namespace core {
 

@@ -1,6 +1,6 @@
 #pragma once
 
-#include <core/Assert.hpp>
+#include <core/common/Assert.hpp>
 
 #include <cstdint>
 #include <span>

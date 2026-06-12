@@ -18,9 +18,13 @@ option(BUILD_TESTING "Build tests" ON)
 option(MC_ENABLE_WARNINGS "Enable strict warnings" ON)
 option(MC_ENABLE_SANITIZERS "Enable sanitizers where supported" OFF)
 option(MC_ENABLE_HIGH_ASSERT "Enable high assertions" OFF)
+option(MC_ENABLE_VULKAN_VALIDATION_LAYERS "Enable Vulkan validation layers" OFF)
 if(MC_ENABLE_HIGH_ASSERT)
     add_compile_definitions(_MC_ENABLE_HIGH_ASSERT)
     add_compile_definitions(_MC_DEBUG)
+endif()
+if(MC_ENABLE_VULKAN_VALIDATION_LAYERS)
+    add_compile_definitions(_MC_VK_VALIDATION_LAYERS)
 endif()
 
 
@@ -28,6 +32,8 @@ endif()
 find_package(spdlog CONFIG REQUIRED)
 find_package(fmt CONFIG REQUIRED)
 find_package(unofficial-enet CONFIG REQUIRED)
+find_package(glfw3 CONFIG REQUIRED)
+find_package(Vulkan REQUIRED)
 
 
 ###  CMAKE HELPERS  ###

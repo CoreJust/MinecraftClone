@@ -79,7 +79,12 @@ Current dependencies:
 1. enet;
 2. spdlog;
 3. fmt;
-4. gtest.
+4. glfw;
+5. vulkan;
+6. vulkan-hpp;
+7. volk;
+8. vk-bootstrap;
+9. gtest.
 
 ## Highlights
 
@@ -90,4 +95,3 @@ The project highlights are:
 2. **Replaceable modules**, allowing to create custom implementations;
 3. **Modifications** - the game should allow mods, both in terms of configs and full-fledged loadable DLLs;
 4. **High performance**.
-

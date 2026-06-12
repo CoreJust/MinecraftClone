@@ -1,14 +1,18 @@
 add_library(mc STATIC)
+
 target_link_libraries(mc
     PUBLIC
         spdlog::spdlog
         fmt::fmt
     PRIVATE
         unofficial::enet::enet
+        glfw
+        Vulkan::Vulkan
 )
 if(WIN32) # For ENet
     target_link_libraries(mc PRIVATE winmm ws2_32)
 endif()
+
 
 target_include_directories(mc
     PUBLIC

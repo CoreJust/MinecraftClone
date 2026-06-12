@@ -27,3 +27,7 @@ Basic network logic and client/server separation.
 Additions:
 1. Basic network API.
 2. Simple 2D console game where real players and bots can roam around a 32x32 world.
+
+## EarlyDev 0.1.0:3
+
+

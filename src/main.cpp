@@ -1,6 +1,6 @@
 #include <core/net/Address.hpp>
 #include <core/net/Net.hpp>
-#include <core/CrashHandler.hpp>
+#include <core/common/CrashHandler.hpp>
 #include <core/IO/Log.hpp>
 
 #include <server/GameServer.hpp>

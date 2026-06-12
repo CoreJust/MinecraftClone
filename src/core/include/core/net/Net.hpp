@@ -1,6 +1,6 @@
 #pragma once
 
-#include <core/StaticInitializer.hpp>
+#include <core/common/StaticInitializer.hpp>
 
 #include <atomic>
 

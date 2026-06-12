@@ -1,7 +1,7 @@
 #include <shared/net/Message.hpp>
 
-#include <core/ByteReader.hpp>
-#include <core/ByteWriter.hpp>
+#include <core/common/ByteReader.hpp>
+#include <core/common/ByteWriter.hpp>
 
 namespace shared {
 

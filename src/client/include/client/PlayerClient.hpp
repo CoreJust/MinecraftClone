@@ -1,20 +1,23 @@
 #pragma once
 
 #include "GameClient.hpp"
-#include <client/render/Window.hpp>
+#include "render/VulkanRenderer.hpp"
+#include <core/graphics/Window.hpp>
 
 namespace client {
 
 class PlayerClient final : public GameClient {
 public:
     explicit PlayerClient()
-        : m_window(Window::makeConsoleWindow(shared::World::WIDTH, shared::World::HEIGHT))
+        : m_window(1080, 720, "MC")
+        , m_renderer(m_window)
     { }
 private:
     shared::Direction input() override;
     void render() override;
 private:
-    std::unique_ptr<Window> m_window;
+    core::Window m_window;
+    VulkanRenderer m_renderer;
 };
 
 } // namespace client
