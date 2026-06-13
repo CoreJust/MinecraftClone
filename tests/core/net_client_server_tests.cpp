@@ -426,7 +426,7 @@ TEST(NetClientServer, SendEmptyMessageTest) {
 }
 
 TEST(NetClientServer, SendLargeMessageTest) {
-    const std::string msg(4096, 'A');
+    const std::string msg(4'096, 'A');
     std::string server_received;
 
     TestServerService srv{

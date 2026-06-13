@@ -49,4 +49,5 @@ third_party/
 .vcpkg/
 .vcpkg_installed/
 
-*.py
+collect.py
+*.pyc

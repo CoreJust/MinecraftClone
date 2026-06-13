@@ -1,8 +1,8 @@
 #pragma once
 
-#include <stacktrace>
-
 #include <fmt/core.h>
+
+#include <stacktrace>
 
 namespace fmt {
 

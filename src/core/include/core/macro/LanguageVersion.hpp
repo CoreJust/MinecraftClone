@@ -1,3 +1,4 @@
+// DONT_CHECK_ANY DIGIT_SEPARATORS
 #pragma once
 #include "Compiler.hpp"
 

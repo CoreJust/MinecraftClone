@@ -30,4 +30,9 @@ Additions:
 
 ## EarlyDev 0.1.0:3
 
-
+Basic rendering.
+Additions:
+1. Some common Vulkan infrastructure in core/vulkan.
+2. Window using GLFW.
+3. World rendering using Vulkan and GLFW in VulkanRenderer.cpp.
+4. Added automatic checks script before publishing snapshots.

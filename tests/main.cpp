@@ -1,5 +1,5 @@
-#include <core/net/Net.hpp>
 #include <core/IO/Log.hpp>
+#include <core/net/Net.hpp>
 
 #include <gtest/gtest.h>
 

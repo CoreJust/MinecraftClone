@@ -3,6 +3,7 @@
 #include "Address.hpp"
 #include "Event.hpp"
 #include "SendMode.hpp"
+
 #include <core/common/ControlFlow.hpp>
 
 #include <enet/enet.h>

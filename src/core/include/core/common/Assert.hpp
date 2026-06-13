@@ -36,8 +36,8 @@ void assertFailed(
     do {                                                                      \
         if (!(condition)) {                                                   \
             ::core::detail::assertFailed(__FILE__, __LINE__,                  \
-                                        #condition                            \
-                                        __VA_OPT__(, __VA_ARGS__));           \
+                #condition                                                    \
+                __VA_OPT__(, __VA_ARGS__));                                   \
         }                                                                     \
     } while (0)
 

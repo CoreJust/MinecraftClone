@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.24)
 
 project(MinecraftClone2026
-    VERSION 0.0.0
+    VERSION 0.1.0
     DESCRIPTION "A clone of Minecraft created for self-study and fun reasons."
     LANGUAGES C CXX
 )
@@ -34,6 +34,7 @@ find_package(fmt CONFIG REQUIRED)
 find_package(unofficial-enet CONFIG REQUIRED)
 find_package(glfw3 CONFIG REQUIRED)
 find_package(Vulkan REQUIRED)
+find_package(volk CONFIG REQUIRED)
 find_package(glm CONFIG REQUIRED)
 
 

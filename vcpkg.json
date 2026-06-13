@@ -2,10 +2,12 @@
   "name": "minecraft-clone-2026",
   "version-string": "0.1.0",
   "dependencies": [
-    "spdlog",
     "enet",
+    "spdlog",
+    "fmt",
     "glfw3",
     "vulkan",
+    "volk",
     "glm",
     "gtest"
   ]

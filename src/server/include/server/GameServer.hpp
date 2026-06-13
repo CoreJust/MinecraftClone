@@ -1,14 +1,14 @@
 #pragma once
 
-#include <core/net/Server.hpp>
 #include <shared/net/Message.hpp>
 #include <shared/world/World.hpp>
+#include <core/net/Server.hpp>
 
 namespace server {
 
 class GameServer final : public core::Server {
 public:
-    explicit GameServer() : core::Server { core::Address::localhost(20040), 4, 1 } { }
+    explicit GameServer() : core::Server { core::Address::localhost(20'040), 4, 1 } { }
 
     void run();
 private:

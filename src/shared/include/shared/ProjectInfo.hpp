@@ -7,8 +7,10 @@
 namespace shared {
 
 constexpr std::string_view PROJECT_NAME{ "Minecraft Clone 2026" };
+constexpr std::string_view MAJOR_VERSION_NAME{ "EarlyDev" };
+constexpr std::string_view MINOR_VERSION_NAME{ "Initiation" };
 
-constexpr core::Version PROjECT_VERSION{ 
+constexpr core::Version PROJECT_VERSION{ 
     .epoch = 0,
     .major = 1,
     .minor = 0,

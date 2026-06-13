@@ -1,10 +1,9 @@
 #include <core/window/Window.hpp>
 
-#include <core/window/Keyboard.hpp>
-#include <core/window/Mouse.hpp>
-
 #include <core/common/Assert.hpp>
 #include <core/IO/Log.hpp>
+#include <core/window/Keyboard.hpp>
+#include <core/window/Mouse.hpp>
 
 #define GLFW_INCLUDE_NONE
 #include <GLFW/glfw3.h>

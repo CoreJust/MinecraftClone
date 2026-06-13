@@ -19,7 +19,7 @@ There are 2 main branches: `main` and `dev`. `dev` receives all the latest commi
 
 ```
 git merge --no-ff dev -m "$MAJOR_NAME $EPOCH.$MAJOR.$MINOR:$SNAPSHOT_INDEX(YY.MM.DD)"
-git tag -a $SNAPSHOT_NAME/$EPOCH.$MAJOR.$MINOR/$SNAPSHOT_INDEX_YY.MM.DD -m "$MAJOR_NAME $EPOCH.$MAJOR.$MINOR $MINOR_NAME snapshot $SNAPSHOT_INDEX(YY.MM.DD)"
+git tag -a $MAJOR_NAME/$EPOCH.$MAJOR.$MINOR/$SNAPSHOT_INDEX_YY.MM.DD -m "$MAJOR_NAME $EPOCH.$MAJOR.$MINOR $MINOR_NAME snapshot $SNAPSHOT_INDEX(YY.MM.DD)"
 ```
 
 Each minor version must have a separate release with executables.

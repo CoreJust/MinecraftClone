@@ -107,4 +107,4 @@ void Client::dispatchEvent(NetEvent event) {
     }
 }
 
-} // namespace coree
+} // namespace core

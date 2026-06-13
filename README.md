@@ -4,6 +4,8 @@ Every programmer should try and develop a Minecraft clone. This one is not my fi
 
 Written in C++23.
 
+Version EarlyDev 0.1.0 Initiation.
+
 ## Project goals
 
 For me, the most important part of this project is the opportunity to learn (and well, have some fun of course).
@@ -27,6 +29,7 @@ cmake/ - helper CMake scripts.
 config/ - current game settings and configuration files.
 content/ - default game content, such as crafting recipes or block properties.
 docs/ - used conventions (for code, for versioning, etc), roadmap, version history.
+script/ - helper script files.
 src/ - actual source files
 |---> core/ - foundational files that are relatively project-agnostic (so can be used in other projects easily).
 |---> shared/ - shared logic between client and server (e.g. network protocols, world objects).
@@ -81,8 +84,9 @@ Current dependencies:
 3. fmt;
 4. glfw;
 5. vulkan;
-6. glm;
-7. gtest.
+6. volk;
+7. glm;
+8. gtest.
 
 ## Highlights
 

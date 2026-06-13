@@ -6,11 +6,14 @@ target_sources(mc
             Assert.hpp
             Assume.hpp
             AtAppExit.hpp
+            ByteReader.hpp
+            ByteWriter.hpp
             ControlFlow.hpp
             CrashHandler.hpp
             Defer.hpp
             NonCopyable.hpp
             NonMovable.hpp
+            SpanUtils.hpp
             StaticInitializer.hpp
             Version.hpp
 )

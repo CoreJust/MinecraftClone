@@ -1,7 +1,7 @@
 #include <client/GameClient.hpp>
 
-#include <core/IO/Log.hpp>
 #include <core/common/SpanUtils.hpp>
+#include <core/IO/Log.hpp>
 
 #include <iostream>
 

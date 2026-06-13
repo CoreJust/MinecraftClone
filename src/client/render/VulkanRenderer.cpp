@@ -1,10 +1,15 @@
 #include <client/render/VulkanRenderer.hpp>
 
+#include <shared/ProjectInfo.hpp>
+
+#include <core/common/Assert.hpp>
 #include <core/IO/File.hpp>
 #include <core/IO/Log.hpp>
-#include <core/common/Assert.hpp>
+#include <core/vulkan/VulkanVersion.hpp>
 
+// DONT_CHECK INCLUDE_ORDER
 #include <vulkan/vulkan.h>
+// DONT_CHECK INCLUDE_ORDER
 #include <GLFW/glfw3.h>
 
 #include <algorithm>
@@ -166,12 +171,13 @@ private:
         VkApplicationInfo const appInfo{
             .sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
             .pNext = nullptr,
-            .pApplicationName = "Minimal Vulkan Renderer",
-            .applicationVersion = VK_MAKE_VERSION(1, 0, 0),
-            .pEngineName = "Core",
-            .engineVersion = VK_MAKE_VERSION(1, 0, 0),
+            .pApplicationName = shared::PROJECT_NAME.data(),
+            .applicationVersion = core::versionToVk(shared::PROJECT_VERSION),
+            .pEngineName = shared::PROJECT_NAME.data(),
+            .engineVersion = core::versionToVk(shared::PROJECT_VERSION),
             .apiVersion = VK_API_VERSION_1_3,
         };
+        core::setVkVersion(core::vkToVersion(VK_API_VERSION_1_3));
 
         VkInstanceCreateInfo const createInfo{
             .sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
@@ -359,10 +365,14 @@ private:
     }
 
     void loadDeviceDispatch() {
-        m_vkCmdBeginRendering = reinterpret_cast<PFN_vkCmdBeginRendering>(vkGetDeviceProcAddr(m_device, "vkCmdBeginRendering"));
-        m_vkCmdEndRendering = reinterpret_cast<PFN_vkCmdEndRendering>(vkGetDeviceProcAddr(m_device, "vkCmdEndRendering"));
-        m_vkCmdPipelineBarrier2 = reinterpret_cast<PFN_vkCmdPipelineBarrier2>(vkGetDeviceProcAddr(m_device, "vkCmdPipelineBarrier2"));
-        m_vkCmdDrawMeshTasksEXT = reinterpret_cast<PFN_vkCmdDrawMeshTasksEXT>(vkGetDeviceProcAddr(m_device, "vkCmdDrawMeshTasksEXT"));
+        m_vkCmdBeginRendering = reinterpret_cast<PFN_vkCmdBeginRendering>(
+            vkGetDeviceProcAddr(m_device, "vkCmdBeginRendering"));
+        m_vkCmdEndRendering = reinterpret_cast<PFN_vkCmdEndRendering>(
+            vkGetDeviceProcAddr(m_device, "vkCmdEndRendering"));
+        m_vkCmdPipelineBarrier2 = reinterpret_cast<PFN_vkCmdPipelineBarrier2>(
+            vkGetDeviceProcAddr(m_device, "vkCmdPipelineBarrier2"));
+        m_vkCmdDrawMeshTasksEXT = reinterpret_cast<PFN_vkCmdDrawMeshTasksEXT>(
+            vkGetDeviceProcAddr(m_device, "vkCmdDrawMeshTasksEXT"));
 
         if (m_vkCmdBeginRendering == nullptr ||
             m_vkCmdEndRendering == nullptr ||
@@ -438,7 +448,9 @@ private:
             .imageExtent = m_swapchain.extent,
             .imageArrayLayers = 1,
             .imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
-            .imageSharingMode = (*m_queueFamilies.graphics != *m_queueFamilies.present) ? VK_SHARING_MODE_CONCURRENT : VK_SHARING_MODE_EXCLUSIVE,
+            .imageSharingMode = (*m_queueFamilies.graphics != *m_queueFamilies.present)
+                ? VK_SHARING_MODE_CONCURRENT
+                : VK_SHARING_MODE_EXCLUSIVE,
             .queueFamilyIndexCount = (*m_queueFamilies.graphics != *m_queueFamilies.present) ? 2U : 0U,
             .pQueueFamilyIndices = (*m_queueFamilies.graphics != *m_queueFamilies.present) ? queueFamilyIndices : nullptr,
             .preTransform = capabilities.currentTransform,
@@ -556,7 +568,7 @@ private:
 
     void destroyCommandBuffers() {
         if (!m_commandBuffers.empty() && m_commandPool != VK_NULL_HANDLE) {
-            vkFreeCommandBuffers(m_device, m_commandPool, static_cast<std::uint32_t>(m_commandBuffers.size()), m_commandBuffers.data());
+            vkFreeCommandBuffers(m_device, m_commandPool, static_cast<uint32_t>(m_commandBuffers.size()), m_commandBuffers.data());
             m_commandBuffers.clear();
         }
     }
@@ -713,10 +725,10 @@ private:
             .srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE,
             .dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO,
             .alphaBlendOp = VK_BLEND_OP_ADD,
-            .colorWriteMask = VK_COLOR_COMPONENT_R_BIT |
-                              VK_COLOR_COMPONENT_G_BIT |
-                              VK_COLOR_COMPONENT_B_BIT |
-                              VK_COLOR_COMPONENT_A_BIT,
+            .colorWriteMask = VK_COLOR_COMPONENT_R_BIT
+                | VK_COLOR_COMPONENT_G_BIT
+                | VK_COLOR_COMPONENT_B_BIT
+                | VK_COLOR_COMPONENT_A_BIT,
         };
         VkPipelineColorBlendStateCreateInfo const blend{
             .sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,

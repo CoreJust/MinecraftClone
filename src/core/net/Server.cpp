@@ -150,4 +150,4 @@ std::optional<size_t> Server::findClientIndex(Peer const client) const noexcept 
     return std::nullopt;
 }
 
-} // namespace coree
+} // namespace core

@@ -1,11 +1,11 @@
-#include <core/net/Address.hpp>
-#include <core/net/Net.hpp>
-#include <core/common/CrashHandler.hpp>
-#include <core/IO/Log.hpp>
-
-#include <server/GameServer.hpp>
 #include <client/BotClient.hpp>
 #include <client/PlayerClient.hpp>
+#include <server/GameServer.hpp>
+
+#include <core/common/CrashHandler.hpp>
+#include <core/IO/Log.hpp>
+#include <core/net/Address.hpp>
+#include <core/net/Net.hpp>
 
 #include <iostream>
 
@@ -25,12 +25,12 @@ core::Address readAddress() {
     std::string line;
     std::getline(std::cin, line);
     if (line.empty()) {
-        return core::Address::localhost(20040);
+        return core::Address::localhost(20'040);
     }
     size_t const delim = line.find(':');
     if (delim == std::string::npos) {
         std::cout << "Incorrect address format; Interpreted as default" << std::endl;
-        return core::Address::localhost(20040);
+        return core::Address::localhost(20'040);
     }
     std::string const ip = line.substr(0, delim);
     uint16_t const port = std::stoul(line.substr(delim + 1));
