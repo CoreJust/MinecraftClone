@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <tuple>
 
 namespace core {
 
@@ -11,9 +12,10 @@ struct Version {
     uint32_t patch = 0; // Or snapshot
 
     [[nodiscard]]
-    bool operator<(Version const& lhs) const noexcept;
-    [[nodiscard]]
-    constexpr bool operator==(Version const& lhs) const noexcept = default;
+    constexpr auto operator<=>(Version const& lhs) const noexcept {
+        return std::tie(epoch, major, minor, patch)
+            <=> std::tie(lhs.epoch, lhs.major, lhs.minor, lhs.patch);
+    }
 
     [[nodiscard]]
     static consteval Version max() noexcept {

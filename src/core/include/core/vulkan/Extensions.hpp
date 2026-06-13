@@ -2,6 +2,8 @@
 
 #include <core/common/Version.hpp>
 
+#include <string>
+
 namespace core {
 
 enum class VulkanExtension {
@@ -51,25 +53,23 @@ enum class VulkanExtension {
 
 enum class VulkanExtensionKind {
     Instance,
-    PhysicalDevice,
     Device,
 };
 
-struct SupportedExtensions final {
+struct VulkanExtensions final {
     Version versions[static_cast<size_t>(VulkanExtension::VulkanExtensionsCount)];
 
-    SupportedExtensions() noexcept;
+    VulkanExtensions() noexcept;
 
     [[nodiscard]]
     bool hasExtension(VulkanExtension const ext) const noexcept;
     [[nodiscard]]
     Version getExtensionVersion(VulkanExtension const ext) const noexcept;
+
+    [[nodiscard]]
+    std::string toString(std::string_view const indent = "") const;
 };
 
-[[nodiscard]]
-bool hasExtension(VulkanExtension const ext) noexcept;
-[[nodiscard]]
-Version getExtensionVersion(VulkanExtension const ext) noexcept;
 [[nodiscard]]
 char const* getFullExtensionName(VulkanExtension const ext) noexcept;
 [[nodiscard]]
@@ -77,6 +77,6 @@ VulkanExtensionKind getExtensionKind(VulkanExtension const ext) noexcept;
 [[nodiscard]]
 Version getExtensionPromotionVersion(VulkanExtension const ext) noexcept;
 
-void loadVkSupportedExtensionList();
+VulkanExtensions loadSupportedInstanceExtensions();
 
 } // namespace core

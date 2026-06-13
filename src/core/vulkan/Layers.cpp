@@ -4,23 +4,38 @@
 #include <core/vulkan/Check.hpp>
 #include <core/vulkan/VulkanVersion.hpp>
 
+#include <fmt/core.h>
 #include <vulkan/vulkan.h>
 
 #include <string>
-#include <format>
 #include <vector>
 #include <unordered_map>
 
 namespace core {
 
-Version g_supported_layers[static_cast<size_t>(VulkanLayer::VulkanLayersCount)];
+VulkanLayers::VulkanLayers() noexcept {
+    memset(versions, 255, std::size(versions));
+}
 
-bool hasLayer(VulkanLayer const layer) noexcept {
+bool VulkanLayers::hasLayer(VulkanLayer const layer) const noexcept {
     return getLayerVersion(layer).epoch != UINT32_MAX;
 }
 
-Version getLayerVersion(VulkanLayer const layer) noexcept {
-    return g_supported_layers[static_cast<size_t>(layer)];
+Version VulkanLayers::getLayerVersion(VulkanLayer const layer) const noexcept {
+    return versions[static_cast<size_t>(layer)];
+}
+
+
+std::string VulkanLayers::toString(std::string_view const indent) const {
+    std::string layers_message;
+    for (uint32_t i = 0; i < static_cast<uint32_t>(VulkanLayer::VulkanLayersCount); ++i) {
+        VulkanLayer layer = static_cast<VulkanLayer>(i);
+        if (hasLayer(layer)) {
+            Version const v = getLayerVersion(layer);
+            layers_message += fmt::format("{}{:40} v{}.{}.{}\n", indent, getFullLayerName(layer), v.major, v.minor, v.patch);
+        }
+    }
+    return layers_message;
 }
 
 char const* getFullLayerName(VulkanLayer const layer) noexcept {
@@ -33,7 +48,9 @@ char const* getFullLayerName(VulkanLayer const layer) noexcept {
     return LAYER_NAMES[static_cast<size_t>(layer)];
 }
 
-void loadVkSupportedLayerList() {
+VulkanLayers loadSupportedLayers() {
+    VulkanLayers supported_layers{ };
+
     MC_INFO("Loading supported Vulkan layers list...");
     uint32_t layers_count = 0;
     VK_ASSERT(vkEnumerateInstanceLayerProperties(&layers_count, nullptr));
@@ -41,24 +58,20 @@ void loadVkSupportedLayerList() {
     std::vector<VkLayerProperties> layers(layers_count);
     VK_ASSERT(vkEnumerateInstanceLayerProperties(&layers_count, layers.data()));
 
-    std::string layers_message;
     std::unordered_map<std::string, uint32_t> layer_versions;
-    layer_versions.reserve(static_cast<size_t>(VulkanLayer::VulkanLayersCount));
-    for (const VkLayerProperties& layer : layers) {
-        Version v = vkToVersion(layer.specVersion);
-        layers_message += std::format("\t{:40} v{}.{},{}\n", layer.layerName, v.major, v.minor, v.patch);
+    layer_versions.reserve(static_cast<size_t>(layers_count));
+    for (VkLayerProperties const& layer : layers) {
         layer_versions[layer.layerName] = layer.specVersion;
     }
 
-    MC_INFO("Found Vulkan layers:\n{}", layers_message);
-
-    memset(g_supported_layers, 255, std::size(g_supported_layers));
-    for (int i = 0; i < static_cast<int>(VulkanLayer::VulkanLayersCount); ++i) {
+    for (uint32_t i = 0; i < static_cast<uint32_t>(VulkanLayer::VulkanLayersCount); ++i) {
         VulkanLayer layer = static_cast<VulkanLayer>(i);
         if (auto it = layer_versions.find(getFullLayerName(layer)); it != layer_versions.end()) {
-            g_supported_layers[static_cast<size_t>(layer)] = vkToVersion(it->second);
+            supported_layers.versions[static_cast<size_t>(layer)] = vkToVersion(it->second);
         }
     }
+
+    return supported_layers;
 }
 
 } // namespace core

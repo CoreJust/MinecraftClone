@@ -4,35 +4,37 @@
 #include <core/vulkan/Check.hpp>
 #include <core/vulkan/VulkanVersion.hpp>
 
+#include <fmt/core.h>
 #include <vulkan/vulkan.h>
 
 #include <string>
-#include <format>
 #include <vector>
 #include <unordered_map>
 
 namespace core {
-
-SupportedExtensions g_supportedExtensions { };
     
-SupportedExtensions::SupportedExtensions() noexcept {
+VulkanExtensions::VulkanExtensions() noexcept {
     memset(versions, 255, std::size(versions));
 }
 
-bool SupportedExtensions::hasExtension(VulkanExtension const ext) const noexcept {
+bool VulkanExtensions::hasExtension(VulkanExtension const ext) const noexcept {
     return getExtensionVersion(ext).epoch != UINT32_MAX;
 }
 
-Version SupportedExtensions::getExtensionVersion(VulkanExtension const ext) const noexcept {
+Version VulkanExtensions::getExtensionVersion(VulkanExtension const ext) const noexcept {
     return versions[static_cast<size_t>(ext)];
 }
 
-bool hasExtension(VulkanExtension const ext) noexcept {
-    return g_supportedExtensions.hasExtension(ext);
-}
-
-Version getExtensionVersion(VulkanExtension const ext) noexcept {
-    return g_supportedExtensions.getExtensionVersion(ext);
+std::string VulkanExtensions::toString(std::string_view const indent) const {
+    std::string extensions_message;
+    for (uint32_t i = 0; i < static_cast<uint32_t>(VulkanExtension::VulkanExtensionsCount); ++i) {
+        VulkanExtension ext = static_cast<VulkanExtension>(i);
+        if (hasExtension(ext)) {
+            Version const v = getExtensionVersion(ext);
+            extensions_message += fmt::format("{}{:40} v{}.{}.{}\n", indent, getFullExtensionName(ext), v.major, v.minor, v.patch);
+        }
+    }
+    return extensions_message;
 }
 
 char const* getFullExtensionName(VulkanExtension const ext) noexcept {
@@ -132,7 +134,9 @@ Version getExtensionPromotionVersion(VulkanExtension const ext) noexcept {
     }
 }
 
-void loadVkSupportedExtensionList() {
+VulkanExtensions loadSupportedInstanceExtensions() {
+    VulkanExtensions supported_extensions { };
+
     MC_INFO("Loading supported Vulkan extensions list...");
     uint32_t extensionCount = 0;
     VK_ASSERT(vkEnumerateInstanceExtensionProperties(nullptr, &extensionCount, nullptr));
@@ -140,21 +144,19 @@ void loadVkSupportedExtensionList() {
     std::vector<VkExtensionProperties> extensions(extensionCount);
     VK_ASSERT(vkEnumerateInstanceExtensionProperties(nullptr, &extensionCount, extensions.data()));
 
-    std::string extensionsMessage;
     std::unordered_map<std::string, uint32_t> extensionVersions;
-    for (const VkExtensionProperties& ext : extensions) {
-        extensionsMessage += std::format("\t{:40} v{}\n", ext.extensionName, ext.specVersion);
+    for (VkExtensionProperties const& ext : extensions) {
         extensionVersions[ext.extensionName] = ext.specVersion;
     }
-
-    MC_INFO("Found Vulkan instance extensions:\n{}", extensionsMessage);
 
     for (uint32_t i = 0; i < static_cast<uint32_t>(VulkanExtension::VulkanExtensionsCount); ++i) {
         VulkanExtension ext = static_cast<VulkanExtension>(i);
         if (auto it = extensionVersions.find(getFullExtensionName(ext)); it != extensionVersions.end()) {
-            g_supportedExtensions.versions[static_cast<size_t>(ext)] = vkToVersion(it->second);
+            supported_extensions.versions[static_cast<size_t>(ext)] = vkToVersion(it->second);
         }
     }
+
+    return supported_extensions;
 }
 
 } // namespace core

@@ -4,6 +4,7 @@ target_sources(mc
         BASE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}
         FILES
             Check.hpp
+            DebugMessengerOptions.hpp
             ErrorCallbacks.hpp
             Extensions.hpp
             Layers.hpp

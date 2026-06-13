@@ -2,6 +2,8 @@
 
 #include <core/common/Version.hpp>
 
+#include <string>
+
 namespace core {
 
 enum class VulkanLayer {
@@ -14,15 +16,23 @@ enum class VulkanLayer {
     VulkanLayersCount,
 };
 
-[[nodiscard]]
-bool hasLayer(VulkanLayer const layer) noexcept;
+struct VulkanLayers final {
+    Version versions[static_cast<size_t>(VulkanLayer::VulkanLayersCount)];
 
-[[nodiscard]]
-Version getLayerVersion(VulkanLayer const layer) noexcept;
+    VulkanLayers() noexcept;
+
+    [[nodiscard]]
+    bool hasLayer(VulkanLayer const ext) const noexcept;
+    [[nodiscard]]
+    Version getLayerVersion(VulkanLayer const ext) const noexcept;
+
+    [[nodiscard]]
+    std::string toString(std::string_view const indent = "") const;
+};
 
 [[nodiscard]]
 char const* getFullLayerName(VulkanLayer const layer) noexcept;
 
-void loadVkSupportedLayerList();
+VulkanLayers loadSupportedLayers();
 
 } // namespace core

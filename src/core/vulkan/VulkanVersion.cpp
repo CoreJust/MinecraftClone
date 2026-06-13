@@ -3,10 +3,6 @@
 #include <vulkan.h>
 
 namespace core {
-namespace {
-Version g_vk_version { };
-Version g_device_vk_version { };
-} // namespace
 
 Version vkToVersion(uint32_t const vk_version) noexcept {
     return {
@@ -19,22 +15,6 @@ Version vkToVersion(uint32_t const vk_version) noexcept {
 
 uint32_t versionToVk(Version const& version) noexcept {
     return VK_MAKE_API_VERSION(version.epoch, version.major, version.minor, version.patch);
-}
-
-void setVkVersion(Version const& version) noexcept {
-    g_vk_version = version;
-}
-
-void setDeviceVkVersion(Version const& version) noexcept {
-    g_device_vk_version = version;
-}
-
-Version const& getVkVersion() noexcept {
-    return g_vk_version;
-}
-
-Version const& getDeviceVkVersion() noexcept {
-    return g_device_vk_version;
 }
 
 } // namespace core
