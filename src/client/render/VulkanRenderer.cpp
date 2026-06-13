@@ -5,6 +5,8 @@
 #include <core/common/Assert.hpp>
 #include <core/IO/File.hpp>
 #include <core/IO/Log.hpp>
+#include <core/vulkan/Check.hpp>
+#include <core/vulkan/ErrorCallbacks.hpp>
 #include <core/vulkan/VulkanVersion.hpp>
 
 // DONT_CHECK INCLUDE_ORDER
@@ -27,10 +29,10 @@ namespace client {
 
 namespace {
 
-constexpr std::uint32_t kWorldSize = 32;
-constexpr std::uint32_t kGridWorkgroupsX = 32;
-constexpr std::uint32_t kGridWorkgroupsY = 32;
-constexpr std::uint32_t kMaxFramesInFlight = 2;
+constexpr uint32_t kWorldSize = 32;
+constexpr uint32_t kGridWorkgroupsX = 32;
+constexpr uint32_t kGridWorkgroupsY = 32;
+constexpr uint32_t kMaxFramesInFlight = 2;
 constexpr char const* kGridShaderPath = "build/debug/src/client/grid.mesh.spv";
 constexpr char const* kPlayerShaderPath = "build/debug/src/client/player.mesh.spv";
 constexpr char const* kFragmentShaderPath = "build/debug/src/client/trivial.frag.spv";
@@ -53,8 +55,8 @@ struct alignas(16) PlayerPushConstants final {
 static_assert(sizeof(PlayerPushConstants) == 32);
 
 struct QueueFamilyIndices final {
-    std::optional<std::uint32_t> graphics;
-    std::optional<std::uint32_t> present;
+    std::optional<uint32_t> graphics;
+    std::optional<uint32_t> present;
 
     [[nodiscard]] constexpr bool complete() const noexcept {
         return graphics.has_value() && present.has_value();
@@ -69,35 +71,28 @@ struct SwapchainBundle final {
     std::vector<VkImageView> views;
 };
 
-[[nodiscard]] std::vector<std::uint32_t> toSpirv(std::vector<std::uint8_t> const& bytes) {
+[[nodiscard]] std::vector<uint32_t> toSpirv(std::vector<std::uint8_t> const& bytes) {
     ASSERT(bytes.size() % 4 == 0);
-    std::vector<std::uint32_t> words(bytes.size() / 4);
+    std::vector<uint32_t> words(bytes.size() / 4);
     std::memcpy(words.data(), bytes.data(), bytes.size());
     return words;
 }
 
 [[nodiscard]] VkShaderModule loadShaderModule(VkDevice const device, std::string const& path) {
     auto const bytes = core::readFile(path);
-    if (!bytes.has_value()) {
-        MC_CRITICAL("Failed to read shader file: {}", path);
-        ASSERT(false);
-    }
+    ASSERT(bytes.has_value(), "Failed to read shader file: {}", path);
 
     auto const words = toSpirv(*bytes);
     VkShaderModuleCreateInfo const info{
         .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
         .pNext = nullptr,
         .flags = 0,
-        .codeSize = words.size() * sizeof(std::uint32_t),
+        .codeSize = words.size() * sizeof(uint32_t),
         .pCode = words.data(),
     };
 
     VkShaderModule module = VK_NULL_HANDLE;
-    auto const result = vkCreateShaderModule(device, &info, nullptr, &module);
-    if (result != VK_SUCCESS) {
-        MC_CRITICAL("vkCreateShaderModule failed for {} (error {})", path, static_cast<int>(result));
-        ASSERT(false);
-    }
+    VK_ASSERT(vkCreateShaderModule(device, &info, nullptr, &module));
     return module;
 }
 
@@ -117,6 +112,8 @@ public:
         createCommandBuffers();
         createSyncObjects();
         createPipelines();
+        core::setOutOfDateKHRCallback([this]{ recreateSwapchain(); return true; });
+        core::setSuboptimalKHRCallback([this]{ recreateSwapchain(); return true; });
     }
 
     ~Impl() {
@@ -124,6 +121,8 @@ public:
             vkDeviceWaitIdle(m_device);
         }
 
+        core::setOutOfDateKHRCallback(nullptr);
+        core::setSuboptimalKHRCallback(nullptr);
         destroyPipelines();
         destroySyncObjects();
         destroyCommandBuffers();
@@ -145,20 +144,14 @@ private:
     using PFN_vkCmdBeginRendering = void(VKAPI_PTR*)(VkCommandBuffer, const VkRenderingInfo*);
     using PFN_vkCmdEndRendering = void(VKAPI_PTR*)(VkCommandBuffer);
     using PFN_vkCmdPipelineBarrier2 = void(VKAPI_PTR*)(VkCommandBuffer, const VkDependencyInfo*);
-    using PFN_vkCmdDrawMeshTasksEXT = void(VKAPI_PTR*)(VkCommandBuffer, std::uint32_t, std::uint32_t, std::uint32_t);
+    using PFN_vkCmdDrawMeshTasksEXT = void(VKAPI_PTR*)(VkCommandBuffer, uint32_t, uint32_t, uint32_t);
 
     void createInstance() {
-        if (glfwVulkanSupported() != GLFW_TRUE) {
-            MC_CRITICAL("GLFW reports Vulkan is not supported");
-            ASSERT(false);
-        }
+        ASSERT(glfwVulkanSupported() == GLFW_TRUE, "GLFW reports Vulkan is not supported");
 
-        std::uint32_t glfwExtensionCount = 0;
+        uint32_t glfwExtensionCount = 0;
         auto const* glfwExtensions = glfwGetRequiredInstanceExtensions(&glfwExtensionCount);
-        if (glfwExtensions == nullptr || glfwExtensionCount == 0) {
-            MC_CRITICAL("glfwGetRequiredInstanceExtensions returned nothing");
-            ASSERT(false);
-        }
+        ASSERT(glfwExtensions == nullptr || glfwExtensionCount == 0, "glfwGetRequiredInstanceExtensions returned nothing");
 
         std::vector<char const*> extensions(glfwExtensions, glfwExtensions + glfwExtensionCount);
 
@@ -184,29 +177,27 @@ private:
             .pNext = nullptr,
             .flags = 0,
             .pApplicationInfo = &appInfo,
-            .enabledLayerCount = static_cast<std::uint32_t>(layers.size()),
+            .enabledLayerCount = static_cast<uint32_t>(layers.size()),
             .ppEnabledLayerNames = layers.data(),
-            .enabledExtensionCount = static_cast<std::uint32_t>(extensions.size()),
+            .enabledExtensionCount = static_cast<uint32_t>(extensions.size()),
             .ppEnabledExtensionNames = extensions.data(),
         };
 
-        auto const result = vkCreateInstance(&createInfo, nullptr, &m_instance);
-        ASSERT(result == VK_SUCCESS, "vkCreateInstance failed (error {})", static_cast<int>(result));
+        VK_ASSERT(vkCreateInstance(&createInfo, nullptr, &m_instance));
     }
 
     void createSurface() {
-        auto const result = glfwCreateWindowSurface(m_instance, m_window.nativeHandle(), nullptr, &m_surface);
-        ASSERT(result == VK_SUCCESS, "glfwCreateWindowSurface failed (error {})", static_cast<int>(result));
+        VK_ASSERT(glfwCreateWindowSurface(m_instance, m_window.nativeHandle(), nullptr, &m_surface));
     }
 
     [[nodiscard]] QueueFamilyIndices findQueueFamilies(VkPhysicalDevice const device) const {
         QueueFamilyIndices indices{};
-        std::uint32_t count = 0;
+        uint32_t count = 0;
         vkGetPhysicalDeviceQueueFamilyProperties(device, &count, nullptr);
         std::vector<VkQueueFamilyProperties> families(count);
         vkGetPhysicalDeviceQueueFamilyProperties(device, &count, families.data());
 
-        for (std::uint32_t i = 0; i < count; ++i) {
+        for (uint32_t i = 0; i < count; ++i) {
             if ((families[i].queueFlags & VK_QUEUE_GRAPHICS_BIT) != 0U) {
                 indices.graphics = i;
             }
@@ -225,7 +216,7 @@ private:
     }
 
     [[nodiscard]] bool supportsRequiredExtensions(VkPhysicalDevice const device) const {
-        std::uint32_t count = 0;
+        uint32_t count = 0;
         if (vkEnumerateDeviceExtensionProperties(device, nullptr, &count, nullptr) != VK_SUCCESS) {
             return false;
         }
@@ -249,14 +240,12 @@ private:
     }
 
     void pickPhysicalDevice() {
-        std::uint32_t count = 0;
-        if (vkEnumeratePhysicalDevices(m_instance, &count, nullptr) != VK_SUCCESS || count == 0U) {
-            MC_CRITICAL("No Vulkan physical devices found");
-            ASSERT(false);
-        }
+        uint32_t count = 0;
+        VK_ASSERT(vkEnumeratePhysicalDevices(m_instance, &count, nullptr));
+        ASSERT(count, "No Vulkan physical devices found");
 
         std::vector<VkPhysicalDevice> devices(count);
-        vkEnumeratePhysicalDevices(m_instance, &count, devices.data());
+        VK_ASSERT(vkEnumeratePhysicalDevices(m_instance, &count, devices.data()));
 
         for (auto const device : devices) {
             if (!supportsRequiredExtensions(device)) {
@@ -298,15 +287,14 @@ private:
             return;
         }
 
-        MC_CRITICAL("No suitable Vulkan device with mesh shader and Vulkan 1.3 features was found");
-        ASSERT(false);
+        ASSERT(false, "No suitable Vulkan device with mesh shader and Vulkan 1.3 features was found");
     }
 
     void createDevice() {
-        std::uint32_t uniqueFamilies[2]{};
-        std::uint32_t uniqueCount = 0;
-        auto const addUnique = [&](std::uint32_t const family) {
-            for (std::uint32_t i = 0; i < uniqueCount; ++i) {
+        uint32_t uniqueFamilies[2]{};
+        uint32_t uniqueCount = 0;
+        auto const addUnique = [&](uint32_t const family) {
+            for (uint32_t i = 0; i < uniqueCount; ++i) {
                 if (uniqueFamilies[i] == family) {
                     return;
                 }
@@ -318,7 +306,7 @@ private:
 
         float const priority = 1.0f;
         VkDeviceQueueCreateInfo queueInfos[2]{};
-        for (std::uint32_t i = 0; i < uniqueCount; ++i) {
+        for (uint32_t i = 0; i < uniqueCount; ++i) {
             queueInfos[i] = VkDeviceQueueCreateInfo{
                 .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
                 .queueFamilyIndex = uniqueFamilies[i],
@@ -350,16 +338,11 @@ private:
             .pNext = &features13,
             .queueCreateInfoCount = uniqueCount,
             .pQueueCreateInfos = queueInfos,
-            .enabledExtensionCount = static_cast<std::uint32_t>(extensions.size()),
+            .enabledExtensionCount = static_cast<uint32_t>(extensions.size()),
             .ppEnabledExtensionNames = extensions.data(),
         };
 
-        auto const result = vkCreateDevice(m_physicalDevice, &createInfo, nullptr, &m_device);
-        if (result != VK_SUCCESS) {
-            MC_CRITICAL("vkCreateDevice failed (error {})", static_cast<int>(result));
-            ASSERT(false);
-        }
-
+        VK_ASSERT(vkCreateDevice(m_physicalDevice, &createInfo, nullptr, &m_device));
         vkGetDeviceQueue(m_device, *m_queueFamilies.graphics, 0, &m_graphicsQueue);
         vkGetDeviceQueue(m_device, *m_queueFamilies.present, 0, &m_presentQueue);
     }
@@ -374,13 +357,10 @@ private:
         m_vkCmdDrawMeshTasksEXT = reinterpret_cast<PFN_vkCmdDrawMeshTasksEXT>(
             vkGetDeviceProcAddr(m_device, "vkCmdDrawMeshTasksEXT"));
 
-        if (m_vkCmdBeginRendering == nullptr ||
+        ASSERT(m_vkCmdBeginRendering == nullptr ||
             m_vkCmdEndRendering == nullptr ||
             m_vkCmdPipelineBarrier2 == nullptr ||
-            m_vkCmdDrawMeshTasksEXT == nullptr) {
-            MC_CRITICAL("Required Vulkan device functions were not loaded");
-            ASSERT(false);
-        }
+            m_vkCmdDrawMeshTasksEXT == nullptr, "Required Vulkan device functions were not loaded");
     }
 
     [[nodiscard]] VkSurfaceFormatKHR chooseSurfaceFormat(std::span<VkSurfaceFormatKHR const> const formats) const {
@@ -402,7 +382,7 @@ private:
     }
 
     [[nodiscard]] VkExtent2D chooseExtent(VkSurfaceCapabilitiesKHR const& capabilities) const {
-        if (capabilities.currentExtent.width != std::numeric_limits<std::uint32_t>::max()) {
+        if (capabilities.currentExtent.width != std::numeric_limits<uint32_t>::max()) {
             return capabilities.currentExtent;
         }
 
@@ -415,29 +395,29 @@ private:
 
     void createSwapchain() {
         VkSurfaceCapabilitiesKHR capabilities{};
-        vkGetPhysicalDeviceSurfaceCapabilitiesKHR(m_physicalDevice, m_surface, &capabilities);
+        VK_ASSERT(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(m_physicalDevice, m_surface, &capabilities));
 
-        std::uint32_t formatCount = 0;
-        vkGetPhysicalDeviceSurfaceFormatsKHR(m_physicalDevice, m_surface, &formatCount, nullptr);
+        uint32_t formatCount = 0;
+        VK_ASSERT(vkGetPhysicalDeviceSurfaceFormatsKHR(m_physicalDevice, m_surface, &formatCount, nullptr));
         std::vector<VkSurfaceFormatKHR> formats(formatCount);
-        vkGetPhysicalDeviceSurfaceFormatsKHR(m_physicalDevice, m_surface, &formatCount, formats.data());
+        VK_ASSERT(vkGetPhysicalDeviceSurfaceFormatsKHR(m_physicalDevice, m_surface, &formatCount, formats.data()));
 
-        std::uint32_t presentModeCount = 0;
-        vkGetPhysicalDeviceSurfacePresentModesKHR(m_physicalDevice, m_surface, &presentModeCount, nullptr);
+        uint32_t presentModeCount = 0;
+        VK_ASSERT(vkGetPhysicalDeviceSurfacePresentModesKHR(m_physicalDevice, m_surface, &presentModeCount, nullptr));
         std::vector<VkPresentModeKHR> presentModes(presentModeCount);
-        vkGetPhysicalDeviceSurfacePresentModesKHR(m_physicalDevice, m_surface, &presentModeCount, presentModes.data());
+        VK_ASSERT(vkGetPhysicalDeviceSurfacePresentModesKHR(m_physicalDevice, m_surface, &presentModeCount, presentModes.data()));
 
         ASSERT(!formats.empty());
         auto const chosenFormat = chooseSurfaceFormat(formats);
         m_swapchain.format = chosenFormat.format;
         m_swapchain.extent = chooseExtent(capabilities);
 
-        std::uint32_t imageCount = capabilities.minImageCount + 1U;
+        uint32_t imageCount = capabilities.minImageCount + 1U;
         if (capabilities.maxImageCount > 0U) {
             imageCount = std::min(imageCount, capabilities.maxImageCount);
         }
 
-        std::uint32_t queueFamilyIndices[2]{*m_queueFamilies.graphics, *m_queueFamilies.present};
+        uint32_t queueFamilyIndices[2]{*m_queueFamilies.graphics, *m_queueFamilies.present};
 
         VkSwapchainCreateInfoKHR const createInfo{
             .sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
@@ -462,16 +442,12 @@ private:
 
         VkSwapchainKHR const oldSwapchain = m_swapchain.swapchain;
         VkSwapchainKHR newSwapchain = VK_NULL_HANDLE;
-        auto const result = vkCreateSwapchainKHR(m_device, &createInfo, nullptr, &newSwapchain);
-        if (result != VK_SUCCESS) {
-            MC_CRITICAL("vkCreateSwapchainKHR failed (error {})", static_cast<int>(result));
-            ASSERT(false);
-        }
+        VK_ASSERT(vkCreateSwapchainKHR(m_device, &createInfo, nullptr, &newSwapchain));
 
-        std::uint32_t newImageCount = 0;
-        vkGetSwapchainImagesKHR(m_device, newSwapchain, &newImageCount, nullptr);
+        uint32_t newImageCount = 0;
+        VK_ASSERT(vkGetSwapchainImagesKHR(m_device, newSwapchain, &newImageCount, nullptr));
         std::vector<VkImage> images(newImageCount);
-        vkGetSwapchainImagesKHR(m_device, newSwapchain, &newImageCount, images.data());
+        VK_ASSERT(vkGetSwapchainImagesKHR(m_device, newSwapchain, &newImageCount, images.data()));
 
         if (oldSwapchain != VK_NULL_HANDLE) {
             vkDestroySwapchainKHR(m_device, oldSwapchain, nullptr);
@@ -498,17 +474,13 @@ private:
             };
 
             VkImageView view = VK_NULL_HANDLE;
-            auto const viewResult = vkCreateImageView(m_device, &viewInfo, nullptr, &view);
-            if (viewResult != VK_SUCCESS) {
-                MC_CRITICAL("vkCreateImageView failed (error {})", static_cast<int>(viewResult));
-                ASSERT(false);
-            }
+            VK_ASSERT(vkCreateImageView(m_device, &viewInfo, nullptr, &view));
             m_swapchain.views.push_back(view);
         }
     }
 
     void recreateSwapchain() {
-        vkDeviceWaitIdle(m_device);
+        VK_ASSERT(vkDeviceWaitIdle(m_device));
         destroyPipelines();
         destroyCommandBuffers();
         destroySwapchain();
@@ -537,11 +509,7 @@ private:
             .flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
             .queueFamilyIndex = *m_queueFamilies.graphics,
         };
-        auto const result = vkCreateCommandPool(m_device, &info, nullptr, &m_commandPool);
-        if (result != VK_SUCCESS) {
-            MC_CRITICAL("vkCreateCommandPool failed");
-            ASSERT(false);
-        }
+        VK_ASSERT(vkCreateCommandPool(m_device, &info, nullptr, &m_commandPool));
     }
 
     void destroyCommandPool() {
@@ -559,11 +527,7 @@ private:
             .commandBufferCount = kMaxFramesInFlight,
         };
         m_commandBuffers.resize(kMaxFramesInFlight);
-        auto const result = vkAllocateCommandBuffers(m_device, &info, m_commandBuffers.data());
-        if (result != VK_SUCCESS) {
-            MC_CRITICAL("vkAllocateCommandBuffers failed");
-            ASSERT(false);
-        }
+        VK_ASSERT(vkAllocateCommandBuffers(m_device, &info, m_commandBuffers.data()));
     }
 
     void destroyCommandBuffers() {
@@ -586,13 +550,10 @@ private:
         m_renderFinished.resize(kMaxFramesInFlight);
         m_inFlight.resize(kMaxFramesInFlight);
 
-        for (std::uint32_t i = 0; i < kMaxFramesInFlight; ++i) {
-            if (vkCreateSemaphore(m_device, &semInfo, nullptr, &m_imageAvailable[i]) != VK_SUCCESS ||
-                vkCreateSemaphore(m_device, &semInfo, nullptr, &m_renderFinished[i]) != VK_SUCCESS ||
-                vkCreateFence(m_device, &fenceInfo, nullptr, &m_inFlight[i]) != VK_SUCCESS) {
-                MC_CRITICAL("Failed to create synchronization objects");
-                ASSERT(false);
-            }
+        for (uint32_t i = 0; i < kMaxFramesInFlight; ++i) {
+            VK_ASSERT(vkCreateSemaphore(m_device, &semInfo, nullptr, &m_imageAvailable[i]));
+            VK_ASSERT(vkCreateSemaphore(m_device, &semInfo, nullptr, &m_renderFinished[i]));
+            VK_ASSERT(vkCreateFence(m_device, &fenceInfo, nullptr, &m_inFlight[i]));
         }
     }
 
@@ -644,11 +605,8 @@ private:
             .pPushConstantRanges = &playerRange,
         };
 
-        if (vkCreatePipelineLayout(m_device, &gridLayoutInfo, nullptr, &m_gridLayout) != VK_SUCCESS ||
-            vkCreatePipelineLayout(m_device, &playerLayoutInfo, nullptr, &m_playerLayout) != VK_SUCCESS) {
-            MC_CRITICAL("vkCreatePipelineLayout failed");
-            ASSERT(false);
-        }
+        VK_ASSERT(vkCreatePipelineLayout(m_device, &gridLayoutInfo, nullptr, &m_gridLayout));
+        VK_ASSERT(vkCreatePipelineLayout(m_device, &playerLayoutInfo, nullptr, &m_playerLayout));
 
         VkPipelineRenderingCreateInfo const gridRendering{
             .sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO,
@@ -777,11 +735,7 @@ private:
 
         VkGraphicsPipelineCreateInfo const infos[2]{gridInfo, playerInfo};
         VkPipeline pipelines[2]{VK_NULL_HANDLE, VK_NULL_HANDLE};
-        auto const result = vkCreateGraphicsPipelines(m_device, VK_NULL_HANDLE, 2, infos, nullptr, pipelines);
-        if (result != VK_SUCCESS) {
-            MC_CRITICAL("vkCreateGraphicsPipelines failed (error {})", static_cast<int>(result));
-            ASSERT(false);
-        }
+        VK_ASSERT(vkCreateGraphicsPipelines(m_device, VK_NULL_HANDLE, 2, infos, nullptr, pipelines));
 
         m_gridPipeline = pipelines[0];
         m_playerPipeline = pipelines[1];
@@ -821,29 +775,20 @@ private:
     }
 
     void drawFrame(std::span<PlayerRenderData const> const players) {
-        std::uint32_t const frame = static_cast<std::uint32_t>(m_frameIndex % kMaxFramesInFlight);
-        vkWaitForFences(m_device, 1, &m_inFlight[frame], VK_TRUE, std::numeric_limits<std::uint64_t>::max());
+        uint32_t const frame = static_cast<uint32_t>(m_frameIndex % kMaxFramesInFlight);
+        VK_ASSERT(vkWaitForFences(m_device, 1, &m_inFlight[frame], VK_TRUE, std::numeric_limits<std::uint64_t>::max()));
 
-        std::uint32_t imageIndex = 0;
-        auto const acquire = vkAcquireNextImageKHR(
+        uint32_t imageIndex = 0;
+        VK_ASSERT(vkAcquireNextImageKHR(
             m_device,
             m_swapchain.swapchain,
             std::numeric_limits<std::uint64_t>::max(),
             m_imageAvailable[frame],
             VK_NULL_HANDLE,
-            &imageIndex);
+            &imageIndex));
 
-        if (acquire == VK_ERROR_OUT_OF_DATE_KHR) {
-            recreateSwapchain();
-            return;
-        }
-        if (acquire != VK_SUCCESS && acquire != VK_SUBOPTIMAL_KHR) {
-            MC_CRITICAL("vkAcquireNextImageKHR failed (error {})", static_cast<int>(acquire));
-            ASSERT(false);
-        }
-
-        vkResetFences(m_device, 1, &m_inFlight[frame]);
-        vkResetCommandBuffer(m_commandBuffers[frame], 0);
+        VK_ASSERT(vkResetFences(m_device, 1, &m_inFlight[frame]));
+        VK_ASSERT(vkResetCommandBuffer(m_commandBuffers[frame], 0));
         record(m_commandBuffers[frame], imageIndex, players);
 
         VkPipelineStageFlags const waitStage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
@@ -857,10 +802,7 @@ private:
             .signalSemaphoreCount = 1,
             .pSignalSemaphores = &m_renderFinished[frame],
         };
-        if (vkQueueSubmit(m_graphicsQueue, 1, &submit, m_inFlight[frame]) != VK_SUCCESS) {
-            MC_CRITICAL("vkQueueSubmit failed");
-            ASSERT(false);
-        }
+        VK_ASSERT(vkQueueSubmit(m_graphicsQueue, 1, &submit, m_inFlight[frame]));
 
         VkPresentInfoKHR const present{
             .sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
@@ -871,25 +813,16 @@ private:
             .pImageIndices = &imageIndex,
         };
 
-        auto const presentResult = vkQueuePresentKHR(m_presentQueue, &present);
-        if (presentResult == VK_ERROR_OUT_OF_DATE_KHR || presentResult == VK_SUBOPTIMAL_KHR || m_window.isFramebufferSizeZero()) {
-            recreateSwapchain();
-        } else if (presentResult != VK_SUCCESS) {
-            MC_CRITICAL("vkQueuePresentKHR failed (error {})", static_cast<int>(presentResult));
-            ASSERT(false);
-        }
+        VK_ASSERT(vkQueuePresentKHR(m_presentQueue, &present));
 
         ++m_frameIndex;
     }
 
-    void record(VkCommandBuffer const cmd, std::uint32_t const imageIndex, std::span<PlayerRenderData const> const players) {
+    void record(VkCommandBuffer const cmd, uint32_t const imageIndex, std::span<PlayerRenderData const> const players) {
         VkCommandBufferBeginInfo const beginInfo{
             .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
         };
-        if (vkBeginCommandBuffer(cmd, &beginInfo) != VK_SUCCESS) {
-            MC_CRITICAL("vkBeginCommandBuffer failed");
-            ASSERT(false);
-        }
+        VK_ASSERT(vkBeginCommandBuffer(cmd, &beginInfo));
 
         VkImageMemoryBarrier2 const toColor{
             .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
@@ -995,10 +928,7 @@ private:
         };
         m_vkCmdPipelineBarrier2(cmd, &depToPresent);
 
-        if (vkEndCommandBuffer(cmd) != VK_SUCCESS) {
-            MC_CRITICAL("vkEndCommandBuffer failed");
-            ASSERT(false);
-        }
+        VK_ASSERT(vkEndCommandBuffer(cmd));
     }
 
     void destroyDevice() {

@@ -196,6 +196,8 @@ def check_namespace_comments(ctx, fpath, content):
 @register_source_check(CODE_FILES, f"line length <= {LINE_LENGTH_MAX}")
 def check_line_length(ctx, fpath, content):
     lines = content.splitlines()
+    if lines[0].startswith(f'// DONT_CHECK_ANY {DONT_CHECK['line_length']}'):
+        return []
     return [f"line {i}: {len(l.rstrip())} chars" for i, l in enumerate(lines, 1) if len(l.rstrip()) > LINE_LENGTH_MAX]
 
 @register_source_check(CODE_FILES, f"nesting depth <= {MAX_NESTING_DEPTH} (indent 4 spaces)")

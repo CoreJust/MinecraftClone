@@ -1,5 +1,9 @@
 target_sources(mc
     PRIVATE
+        Check.cpp
+        ErrorCallbacks.cpp
+        Extension.cpp
+        Layers.cpp
         Volk.cpp
         VulkanVersion.cpp
 )

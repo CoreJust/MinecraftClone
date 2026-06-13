@@ -12,6 +12,18 @@ struct Version {
 
     [[nodiscard]]
     bool operator<(Version const& lhs) const noexcept;
+    [[nodiscard]]
+    constexpr bool operator==(Version const& lhs) const noexcept = default;
+
+    [[nodiscard]]
+    static consteval Version max() noexcept {
+        return Version {
+            static_cast<uint32_t>(-1),
+            static_cast<uint32_t>(-1),
+            static_cast<uint32_t>(-1),
+            static_cast<uint32_t>(-1),
+        };
+    }
 };
 
 } // namespace core

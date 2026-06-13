@@ -6,12 +6,18 @@ INCLUDES_ORDER = ('self', 'relative', 'project', 'thirdparty', 'std')
 LINE_LENGTH_MAX = 132
 MAX_NESTING_DEPTH = 6
 MAX_DIGITS_WITHOUT_SEPARATOR = 4
-FORBIDDEN_WORDS = { 'typedef' }
+FORBIDDEN_WORDS = {
+    'typedef',
+    'std::uint8_t', 'std::int8_t', 'std::uint16_t', 'std::int16_t',
+    'std::uint32_t', 'std::int32_t', 'std::uint64_t', 'std::int64_t',
+    'std::size_t', 'std::ptrdiff_t'
+}
 
 DONT_CHECKS = {
     'digit_separators': 'DIGIT_SEPARATORS',
     'include_order': 'INCLUDE_ORDER',
-    'pragma_once': 'NO_PRAGMA_ONCE'
+    'pragma_once': 'NO_PRAGMA_ONCE',
+    'line_length': 'LINE_LENGTH'
 }
 
 STD_HEADERS = {
