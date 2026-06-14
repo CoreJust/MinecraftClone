@@ -47,28 +47,25 @@ public:
                 return true;
             }
         } else {
-            if (instanceVersion() >= getExtensionPromotionVersion(extension)) {
+            if (deviceVersion() >= getExtensionPromotionVersion(extension)) {
                 return true;
             }
         }
         return instance().m_extensions.hasExtension(extension);
     }
 
-    [[nodiscard]]
-    InstanceBuilder makeInstanceBuilder();
-
-    void update(
+    static void update(
         Version const& instance_version,
         Version const& device_version,
         bool const validation_enabled,
         VulkanLayers const& enabled_layers,
         VulkanExtensions const& enabled_extensions
     ) noexcept {
-        m_instance_version = instance_version;
-        m_device_version = device_version;
-        m_validation_enabled = validation_enabled;
-        m_layers = enabled_layers;
-        m_extensions = enabled_extensions;
+        instance().m_instance_version = instance_version;
+        instance().m_device_version = device_version;
+        instance().m_validation_enabled = validation_enabled;
+        instance().m_layers = enabled_layers;
+        instance().m_extensions = enabled_extensions;
     }
 
     [[nodiscard]]

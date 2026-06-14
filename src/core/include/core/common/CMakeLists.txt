@@ -11,6 +11,7 @@ target_sources(mc
             ControlFlow.hpp
             CrashHandler.hpp
             Defer.hpp
+            IterEnum.hpp
             NonCopyable.hpp
             NonMovable.hpp
             SpanUtils.hpp

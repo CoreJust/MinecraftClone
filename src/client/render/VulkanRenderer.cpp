@@ -7,10 +7,11 @@
 #include <core/IO/Log.hpp>
 #include <core/vulkan/Check.hpp>
 #include <core/vulkan/ErrorCallbacks.hpp>
+#include <core/vulkan/InstanceBuilder.hpp>
 #include <core/vulkan/VulkanVersion.hpp>
 
 // DONT_CHECK INCLUDE_ORDER
-#include <vulkan/vulkan.h>
+#include <volk.h>
 // DONT_CHECK INCLUDE_ORDER
 #include <GLFW/glfw3.h>
 
@@ -71,7 +72,7 @@ struct SwapchainBundle final {
     std::vector<VkImageView> views;
 };
 
-[[nodiscard]] std::vector<uint32_t> toSpirv(std::vector<std::uint8_t> const& bytes) {
+[[nodiscard]] std::vector<uint32_t> toSpirv(std::vector<uint8_t> const& bytes) {
     ASSERT(bytes.size() % 4 == 0);
     std::vector<uint32_t> words(bytes.size() / 4);
     std::memcpy(words.data(), bytes.data(), bytes.size());
@@ -101,12 +102,19 @@ struct SwapchainBundle final {
 struct VulkanRenderer::Impl final {
 public:
     explicit Impl(core::Window const& window)
-        : m_window(window) {
-        createInstance();
+        : m_window(window)
+        , m_instance(core::InstanceBuilder()
+            .project(std::string{ shared::PROJECT_NAME }, shared::PROJECT_VERSION)
+            .engine(std::string{ shared::PROJECT_NAME }, shared::PROJECT_VERSION)
+            .requireVersion(core::Version{ 0, 1, 3, 0 })
+            .requireWindowExtensions()
+            .portabilityEnumeration()
+            .requireValidation()
+            .build())
+    {
         createSurface();
         pickPhysicalDevice();
         createDevice();
-        loadDeviceDispatch();
         createSwapchain();
         createCommandPool();
         createCommandBuffers();
@@ -130,7 +138,6 @@ public:
         destroySwapchain();
         destroyDevice();
         destroySurface();
-        destroyInstance();
     }
 
     void render(std::span<PlayerRenderData const> const players) {
@@ -146,48 +153,8 @@ private:
     using PFN_vkCmdPipelineBarrier2 = void(VKAPI_PTR*)(VkCommandBuffer, const VkDependencyInfo*);
     using PFN_vkCmdDrawMeshTasksEXT = void(VKAPI_PTR*)(VkCommandBuffer, uint32_t, uint32_t, uint32_t);
 
-    void createInstance() {
-        ASSERT(glfwVulkanSupported() == GLFW_TRUE, "GLFW reports Vulkan is not supported");
-
-        uint32_t glfwExtensionCount = 0;
-        auto const* glfwExtensions = glfwGetRequiredInstanceExtensions(&glfwExtensionCount);
-        ASSERT(glfwExtensions == nullptr || glfwExtensionCount == 0, "glfwGetRequiredInstanceExtensions returned nothing");
-
-        std::vector<char const*> extensions(glfwExtensions, glfwExtensions + glfwExtensionCount);
-
-#if !defined(NDEBUG)
-        std::vector<char const*> layers{"VK_LAYER_KHRONOS_validation"};
-#else
-        std::vector<char const*> layers{};
-#endif
-
-        VkApplicationInfo const appInfo{
-            .sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
-            .pNext = nullptr,
-            .pApplicationName = shared::PROJECT_NAME.data(),
-            .applicationVersion = core::versionToVk(shared::PROJECT_VERSION),
-            .pEngineName = shared::PROJECT_NAME.data(),
-            .engineVersion = core::versionToVk(shared::PROJECT_VERSION),
-            .apiVersion = VK_API_VERSION_1_3,
-        };
-        core::setVkVersion(core::vkToVersion(VK_API_VERSION_1_3));
-
-        VkInstanceCreateInfo const createInfo{
-            .sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
-            .pNext = nullptr,
-            .flags = 0,
-            .pApplicationInfo = &appInfo,
-            .enabledLayerCount = static_cast<uint32_t>(layers.size()),
-            .ppEnabledLayerNames = layers.data(),
-            .enabledExtensionCount = static_cast<uint32_t>(extensions.size()),
-            .ppEnabledExtensionNames = extensions.data(),
-        };
-
-        VK_ASSERT(vkCreateInstance(&createInfo, nullptr, &m_instance));
-    }
-
     void createSurface() {
-        VK_ASSERT(glfwCreateWindowSurface(m_instance, m_window.nativeHandle(), nullptr, &m_surface));
+        VK_ASSERT(glfwCreateWindowSurface(m_instance.handle(), m_window.nativeHandle(), nullptr, &m_surface));
     }
 
     [[nodiscard]] QueueFamilyIndices findQueueFamilies(VkPhysicalDevice const device) const {
@@ -241,11 +208,11 @@ private:
 
     void pickPhysicalDevice() {
         uint32_t count = 0;
-        VK_ASSERT(vkEnumeratePhysicalDevices(m_instance, &count, nullptr));
+        VK_ASSERT(vkEnumeratePhysicalDevices(m_instance.handle(), &count, nullptr));
         ASSERT(count, "No Vulkan physical devices found");
 
         std::vector<VkPhysicalDevice> devices(count);
-        VK_ASSERT(vkEnumeratePhysicalDevices(m_instance, &count, devices.data()));
+        VK_ASSERT(vkEnumeratePhysicalDevices(m_instance.handle(), &count, devices.data()));
 
         for (auto const device : devices) {
             if (!supportsRequiredExtensions(device)) {
@@ -343,24 +310,9 @@ private:
         };
 
         VK_ASSERT(vkCreateDevice(m_physicalDevice, &createInfo, nullptr, &m_device));
+        volkLoadDevice(m_device);
         vkGetDeviceQueue(m_device, *m_queueFamilies.graphics, 0, &m_graphicsQueue);
         vkGetDeviceQueue(m_device, *m_queueFamilies.present, 0, &m_presentQueue);
-    }
-
-    void loadDeviceDispatch() {
-        m_vkCmdBeginRendering = reinterpret_cast<PFN_vkCmdBeginRendering>(
-            vkGetDeviceProcAddr(m_device, "vkCmdBeginRendering"));
-        m_vkCmdEndRendering = reinterpret_cast<PFN_vkCmdEndRendering>(
-            vkGetDeviceProcAddr(m_device, "vkCmdEndRendering"));
-        m_vkCmdPipelineBarrier2 = reinterpret_cast<PFN_vkCmdPipelineBarrier2>(
-            vkGetDeviceProcAddr(m_device, "vkCmdPipelineBarrier2"));
-        m_vkCmdDrawMeshTasksEXT = reinterpret_cast<PFN_vkCmdDrawMeshTasksEXT>(
-            vkGetDeviceProcAddr(m_device, "vkCmdDrawMeshTasksEXT"));
-
-        ASSERT(m_vkCmdBeginRendering == nullptr ||
-            m_vkCmdEndRendering == nullptr ||
-            m_vkCmdPipelineBarrier2 == nullptr ||
-            m_vkCmdDrawMeshTasksEXT == nullptr, "Required Vulkan device functions were not loaded");
     }
 
     [[nodiscard]] VkSurfaceFormatKHR chooseSurfaceFormat(std::span<VkSurfaceFormatKHR const> const formats) const {
@@ -776,13 +728,13 @@ private:
 
     void drawFrame(std::span<PlayerRenderData const> const players) {
         uint32_t const frame = static_cast<uint32_t>(m_frameIndex % kMaxFramesInFlight);
-        VK_ASSERT(vkWaitForFences(m_device, 1, &m_inFlight[frame], VK_TRUE, std::numeric_limits<std::uint64_t>::max()));
+        VK_ASSERT(vkWaitForFences(m_device, 1, &m_inFlight[frame], VK_TRUE, std::numeric_limits<uint64_t>::max()));
 
         uint32_t imageIndex = 0;
         VK_ASSERT(vkAcquireNextImageKHR(
             m_device,
             m_swapchain.swapchain,
-            std::numeric_limits<std::uint64_t>::max(),
+            std::numeric_limits<uint64_t>::max(),
             m_imageAvailable[frame],
             VK_NULL_HANDLE,
             &imageIndex));
@@ -846,7 +798,7 @@ private:
             .imageMemoryBarrierCount = 1,
             .pImageMemoryBarriers = &toColor,
         };
-        m_vkCmdPipelineBarrier2(cmd, &depToColor);
+        vkCmdPipelineBarrier2(cmd, &depToColor);
 
         VkClearValue const clearValue{
             .color = VkClearColorValue{{0.06f, 0.06f, 0.08f, 1.0f}},
@@ -870,7 +822,7 @@ private:
             .pColorAttachments = &colorAttachment,
         };
 
-        m_vkCmdBeginRendering(cmd, &renderingInfo);
+        vkCmdBeginRendering(cmd, &renderingInfo);
 
         VkViewport const viewport{
             .x = 0.0f,
@@ -890,7 +842,7 @@ private:
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_gridPipeline);
         GridPushConstants const gridPush{};
         vkCmdPushConstants(cmd, m_gridLayout, VK_SHADER_STAGE_MESH_BIT_EXT, 0, sizeof(GridPushConstants), &gridPush);
-        m_vkCmdDrawMeshTasksEXT(cmd, kGridWorkgroupsX, kGridWorkgroupsY, 1);
+        vkCmdDrawMeshTasksEXT(cmd, kGridWorkgroupsX, kGridWorkgroupsY, 1);
 
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_playerPipeline);
         for (auto const& player : players) {
@@ -899,10 +851,10 @@ private:
             push.size = 2.0f;
             push.color = player.color;
             vkCmdPushConstants(cmd, m_playerLayout, VK_SHADER_STAGE_MESH_BIT_EXT, 0, sizeof(PlayerPushConstants), &push);
-            m_vkCmdDrawMeshTasksEXT(cmd, 1, 1, 1);
+            vkCmdDrawMeshTasksEXT(cmd, 1, 1, 1);
         }
 
-        m_vkCmdEndRendering(cmd);
+        vkCmdEndRendering(cmd);
 
         VkImageMemoryBarrier2 const toPresent{
             .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
@@ -926,7 +878,7 @@ private:
             .imageMemoryBarrierCount = 1,
             .pImageMemoryBarriers = &toPresent,
         };
-        m_vkCmdPipelineBarrier2(cmd, &depToPresent);
+        vkCmdPipelineBarrier2(cmd, &depToPresent);
 
         VK_ASSERT(vkEndCommandBuffer(cmd));
     }
@@ -940,27 +892,14 @@ private:
 
     void destroySurface() {
         if (m_surface != VK_NULL_HANDLE) {
-            vkDestroySurfaceKHR(m_instance, m_surface, nullptr);
+            vkDestroySurfaceKHR(m_instance.handle(), m_surface, nullptr);
             m_surface = VK_NULL_HANDLE;
         }
     }
-
-    void destroyInstance() {
-        if (m_instance != VK_NULL_HANDLE) {
-            vkDestroyInstance(m_instance, nullptr);
-            m_instance = VK_NULL_HANDLE;
-        }
-    }
-
 private:
     core::Window const& m_window;
 
-    PFN_vkCmdBeginRendering m_vkCmdBeginRendering = nullptr;
-    PFN_vkCmdEndRendering m_vkCmdEndRendering = nullptr;
-    PFN_vkCmdPipelineBarrier2 m_vkCmdPipelineBarrier2 = nullptr;
-    PFN_vkCmdDrawMeshTasksEXT m_vkCmdDrawMeshTasksEXT = nullptr;
-
-    VkInstance m_instance = VK_NULL_HANDLE;
+    core::Instance m_instance;
     VkSurfaceKHR m_surface = VK_NULL_HANDLE;
     VkPhysicalDevice m_physicalDevice = VK_NULL_HANDLE;
     QueueFamilyIndices m_queueFamilies{};
@@ -983,7 +922,7 @@ private:
     VkPipeline m_gridPipeline = VK_NULL_HANDLE;
     VkPipeline m_playerPipeline = VK_NULL_HANDLE;
 
-    std::uint64_t m_frameIndex = 0;
+    uint64_t m_frameIndex = 0;
 };
 
 VulkanRenderer::VulkanRenderer(core::Window const& window)

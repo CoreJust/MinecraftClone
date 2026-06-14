@@ -196,7 +196,7 @@ def check_namespace_comments(ctx, fpath, content):
 @register_source_check(CODE_FILES, f"line length <= {LINE_LENGTH_MAX}")
 def check_line_length(ctx, fpath, content):
     lines = content.splitlines()
-    if lines[0].startswith(f'// DONT_CHECK_ANY {DONT_CHECK['line_length']}'):
+    if lines[0].startswith(f'// DONT_CHECK_ANY {DONT_CHECKS['line_length']}'):
         return []
     return [f"line {i}: {len(l.rstrip())} chars" for i, l in enumerate(lines, 1) if len(l.rstrip()) > LINE_LENGTH_MAX]
 
@@ -214,7 +214,10 @@ def check_nesting_depth(ctx, fpath, content):
 @register_source_check(CODE_FILES, "no forbidden words")
 def check_no_typedef(ctx, fpath, content):
     cleaned = strip_cpp_comments(content)
-    return content_find(cleaned, fr'\b{'|'.join(FORBIDDEN_WORDS)}\b', "contains forbidden words")
+    found = [w for w in FORBIDDEN_WORDS if w in cleaned]
+    if len(found) == 0:
+        return []
+    return [f"{fpath} contains forbidden words: {', '.join(found)}"]
 
 @register_source_check(CODE_FILES, f"numbers >={MAX_DIGITS_WITHOUT_SEPARATOR + 1} digits must have digit separators")
 def check_digit_separators(ctx, fpath, content):

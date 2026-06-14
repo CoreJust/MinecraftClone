@@ -13,18 +13,26 @@ enum class VulkanLayer {
     Monitor,    // VK_LAYER_LUNARG_monitor
     Profiling,  // VK_LAYER_KHRONOS_profiling
 
-    VulkanLayersCount,
+    Count,
 };
 
 struct VulkanLayers final {
-    Version versions[static_cast<size_t>(VulkanLayer::VulkanLayersCount)];
+    Version versions[static_cast<size_t>(VulkanLayer::Count)];
 
     VulkanLayers() noexcept;
 
     [[nodiscard]]
-    bool hasLayer(VulkanLayer const ext) const noexcept;
+    bool hasLayer(VulkanLayer const layer) const noexcept;
+
     [[nodiscard]]
-    Version getLayerVersion(VulkanLayer const ext) const noexcept;
+    Version getLayerVersion(VulkanLayer const layer) const noexcept {
+        return versions[static_cast<size_t>(layer)];
+    }
+
+    [[nodiscard]]
+    Version& versionAt(VulkanLayer const layer) & noexcept {
+        return versions[static_cast<size_t>(layer)];
+    }
 
     [[nodiscard]]
     std::string toString(std::string_view const indent = "") const;

@@ -1,33 +1,30 @@
 #include "Extensions.hpp"
 
+#include <core/common/IterEnum.hpp>
 #include <core/IO/Log.hpp>
 #include <core/vulkan/Check.hpp>
 #include <core/vulkan/VulkanVersion.hpp>
 
 #include <fmt/core.h>
-#include <vulkan/vulkan.h>
+#include <volk.h>
 
 #include <string>
-#include <vector>
 #include <unordered_map>
+#include <vector>
 
 namespace core {
     
 VulkanExtensions::VulkanExtensions() noexcept {
-    memset(versions, 255, std::size(versions));
+    memset(versions, 255, std::size(versions) * sizeof(Version));
 }
 
 bool VulkanExtensions::hasExtension(VulkanExtension const ext) const noexcept {
     return getExtensionVersion(ext).epoch != UINT32_MAX;
 }
 
-Version VulkanExtensions::getExtensionVersion(VulkanExtension const ext) const noexcept {
-    return versions[static_cast<size_t>(ext)];
-}
-
 std::string VulkanExtensions::toString(std::string_view const indent) const {
     std::string extensions_message;
-    for (uint32_t i = 0; i < static_cast<uint32_t>(VulkanExtension::VulkanExtensionsCount); ++i) {
+    for (uint32_t i = 0; i < static_cast<uint32_t>(VulkanExtension::Count); ++i) {
         VulkanExtension ext = static_cast<VulkanExtension>(i);
         if (hasExtension(ext)) {
             Version const v = getExtensionVersion(ext);
@@ -56,6 +53,21 @@ char const* getFullExtensionName(VulkanExtension const ext) noexcept {
         "VK_KHR_get_memory_requirements2",
         "VK_KHR_create_renderpass2",
         "VK_EXT_mesh_shader",
+        "VK_KHR_portability_enumeration",
+
+        "VK_KHR_surface",
+        "VK_KHR_adnroid_surface",
+        "VK_EXT_directfb_surface",
+        "VK_FUCHSIA_imagepipe_surface ",
+        "VK_EXT_headless_surface",
+        "VK_EXT_metal_surface",
+        "VK_OHOS_surface",
+        "VK_QNX_screen_surface",
+        "VK_SEC_ubm_surface",
+        "VK_KHR_win32_surface",
+        "VK_KHR_wayland_surface",
+        "VK_KHR_xcb_surface",
+        "VK_KHR_xlib_surface",
 
         "VK_KHR_dedicated_allocation",
         "VK_KHR_buffer_device_address",
@@ -80,8 +92,40 @@ char const* getFullExtensionName(VulkanExtension const ext) noexcept {
     return EXTENSION_NAMES[static_cast<size_t>(ext)];
 }
 
+std::optional<VulkanExtension> extensionFromFullName(std::string_view const name) {
+    static std::unordered_map<std::string, VulkanExtension> FULL_NAME_TO_EXTENSION = std::invoke(
+        []{
+            std::unordered_map<std::string, VulkanExtension> result;
+            result.reserve(static_cast<size_t>(VulkanExtension::Count));
+            for (VulkanExtension const ext : iterEnum<VulkanExtension>()) {
+                result[getFullExtensionName(ext)] = ext;
+            }
+            return result;
+        }
+    );
+    // TODO: heterogeneous lookup
+    if (auto it = FULL_NAME_TO_EXTENSION.find(std::string{name}); it != FULL_NAME_TO_EXTENSION.end()) {
+        return it->second;
+    }
+    return std::nullopt;
+}
+
 VulkanExtensionKind getExtensionKind(VulkanExtension const ext) noexcept {
     switch (ext) {
+        case VulkanExtension::Surface: [[fallthrough]];
+        case VulkanExtension::AndroidSurface: [[fallthrough]];
+        case VulkanExtension::DirectfbSurface: [[fallthrough]];
+        case VulkanExtension::FuchsiaImagepipeSurface: [[fallthrough]];
+        case VulkanExtension::HeadlessSurface: [[fallthrough]];
+        case VulkanExtension::MetalSurface: [[fallthrough]];
+        case VulkanExtension::OhosSurface: [[fallthrough]];
+        case VulkanExtension::QnxSurface: [[fallthrough]];
+        case VulkanExtension::UbmSurface: [[fallthrough]];
+        case VulkanExtension::Win32Surface: [[fallthrough]];
+        case VulkanExtension::WaylandSurface: [[fallthrough]];
+        case VulkanExtension::XcbSurface: [[fallthrough]];
+        case VulkanExtension::XlibSurface: [[fallthrough]];
+        case VulkanExtension::PortabilityEnumeration: [[fallthrough]];
         case VulkanExtension::DebugUtils:
             return VulkanExtensionKind::Instance;
     default: return VulkanExtensionKind::Device;
@@ -90,47 +134,62 @@ VulkanExtensionKind getExtensionKind(VulkanExtension const ext) noexcept {
 
 Version getExtensionPromotionVersion(VulkanExtension const ext) noexcept {
     switch (ext) {
-    case VulkanExtension::Maintenance1: [[fallthrough]];
-    case VulkanExtension::Maintenance2: [[fallthrough]];
-    case VulkanExtension::BindMemory2: [[fallthrough]];
-    case VulkanExtension::DedicatedAllocation: [[fallthrough]];
-    case VulkanExtension::ExternalMemory: [[fallthrough]];
-    case VulkanExtension::ExternalSemaphore: [[fallthrough]];
-    case VulkanExtension::GetMemoryRequirements2: [[fallthrough]];
-    case VulkanExtension::Maintenance3:
-        return vkToVersion(VK_API_VERSION_1_1);
-    case VulkanExtension::BufferDeviceAddress: [[fallthrough]];
-    case VulkanExtension::CreateRenderPass2: [[fallthrough]];
-    case VulkanExtension::DescriptorIndexing:
-        return vkToVersion(VK_API_VERSION_1_2);
-    case VulkanExtension::Maintenance4:
-        return vkToVersion(VK_API_VERSION_1_3);
-    case VulkanExtension::Maintenance5: [[fallthrough]];
-    case VulkanExtension::HostImageCopy: [[fallthrough]];
-    case VulkanExtension::ToolingInfo: [[fallthrough]];
-    case VulkanExtension::Maintenance6:
-        return vkToVersion(VK_API_VERSION_1_4);
-    case VulkanExtension::Maintenance7: [[fallthrough]];
-    case VulkanExtension::Maintenance8: [[fallthrough]];
-    case VulkanExtension::Maintenance9: [[fallthrough]];
-    case VulkanExtension::Maintenance10: [[fallthrough]];
-    case VulkanExtension::Maintenance11: [[fallthrough]];
-    case VulkanExtension::DeviceCoherentMemory: [[fallthrough]];
-    case VulkanExtension::DeviceMemoryReport: [[fallthrough]];
-    case VulkanExtension::DeviceAddressBindingReport: [[fallthrough]];
-    case VulkanExtension::Swapchain: [[fallthrough]];
-    case VulkanExtension::DeviceFault: [[fallthrough]];
-    case VulkanExtension::DeviceGeneratedCommands: [[fallthrough]];
-    case VulkanExtension::GraphicsPipelineLibrary: [[fallthrough]];
-    case VulkanExtension::PipelineLibrary: [[fallthrough]];
-    case VulkanExtension::MemoryBudget: [[fallthrough]];
-    case VulkanExtension::MemoryPriority: [[fallthrough]];
-    case VulkanExtension::MeshShader: [[fallthrough]];
-    case VulkanExtension::MultiDraw: [[fallthrough]];
-    case VulkanExtension::ConditionalRendering:
-        return Version::max();
+        case VulkanExtension::Maintenance1: [[fallthrough]];
+        case VulkanExtension::Maintenance2: [[fallthrough]];
+        case VulkanExtension::BindMemory2: [[fallthrough]];
+        case VulkanExtension::DedicatedAllocation: [[fallthrough]];
+        case VulkanExtension::ExternalMemory: [[fallthrough]];
+        case VulkanExtension::ExternalSemaphore: [[fallthrough]];
+        case VulkanExtension::GetMemoryRequirements2: [[fallthrough]];
+        case VulkanExtension::Maintenance3:
+            return vkToVersion(VK_API_VERSION_1_1);
+        case VulkanExtension::BufferDeviceAddress: [[fallthrough]];
+        case VulkanExtension::CreateRenderPass2: [[fallthrough]];
+        case VulkanExtension::DescriptorIndexing:
+            return vkToVersion(VK_API_VERSION_1_2);
+        case VulkanExtension::Maintenance4:
+            return vkToVersion(VK_API_VERSION_1_3);
+        case VulkanExtension::Maintenance5: [[fallthrough]];
+        case VulkanExtension::HostImageCopy: [[fallthrough]];
+        case VulkanExtension::ToolingInfo: [[fallthrough]];
+        case VulkanExtension::Maintenance6:
+            return vkToVersion(VK_API_VERSION_1_4);
+        case VulkanExtension::Surface: [[fallthrough]];
+        case VulkanExtension::AndroidSurface: [[fallthrough]];
+        case VulkanExtension::DirectfbSurface: [[fallthrough]];
+        case VulkanExtension::FuchsiaImagepipeSurface: [[fallthrough]];
+        case VulkanExtension::HeadlessSurface: [[fallthrough]];
+        case VulkanExtension::MetalSurface: [[fallthrough]];
+        case VulkanExtension::OhosSurface: [[fallthrough]];
+        case VulkanExtension::QnxSurface: [[fallthrough]];
+        case VulkanExtension::UbmSurface: [[fallthrough]];
+        case VulkanExtension::Win32Surface: [[fallthrough]];
+        case VulkanExtension::WaylandSurface: [[fallthrough]];
+        case VulkanExtension::XcbSurface: [[fallthrough]];
+        case VulkanExtension::XlibSurface: [[fallthrough]];
+        case VulkanExtension::Maintenance7: [[fallthrough]];
+        case VulkanExtension::Maintenance8: [[fallthrough]];
+        case VulkanExtension::Maintenance9: [[fallthrough]];
+        case VulkanExtension::Maintenance10: [[fallthrough]];
+        case VulkanExtension::Maintenance11: [[fallthrough]];
+        case VulkanExtension::DeviceCoherentMemory: [[fallthrough]];
+        case VulkanExtension::DeviceMemoryReport: [[fallthrough]];
+        case VulkanExtension::DeviceAddressBindingReport: [[fallthrough]];
+        case VulkanExtension::Swapchain: [[fallthrough]];
+        case VulkanExtension::DeviceFault: [[fallthrough]];
+        case VulkanExtension::DeviceGeneratedCommands: [[fallthrough]];
+        case VulkanExtension::GraphicsPipelineLibrary: [[fallthrough]];
+        case VulkanExtension::PipelineLibrary: [[fallthrough]];
+        case VulkanExtension::MemoryBudget: [[fallthrough]];
+        case VulkanExtension::MemoryPriority: [[fallthrough]];
+        case VulkanExtension::MeshShader: [[fallthrough]];
+        case VulkanExtension::MultiDraw: [[fallthrough]];
+        case VulkanExtension::PortabilityEnumeration: [[fallthrough]];
+        case VulkanExtension::ConditionalRendering:
+            return Version::MAX();
     default:
         ASSERT(false, "Unknown vulkan extension: {}", static_cast<uint32_t>(ext));
+        return Version::MAX();
     }
 }
 
@@ -144,15 +203,11 @@ VulkanExtensions loadSupportedInstanceExtensions() {
     std::vector<VkExtensionProperties> extensions(extensionCount);
     VK_ASSERT(vkEnumerateInstanceExtensionProperties(nullptr, &extensionCount, extensions.data()));
 
-    std::unordered_map<std::string, uint32_t> extensionVersions;
-    for (VkExtensionProperties const& ext : extensions) {
-        extensionVersions[ext.extensionName] = ext.specVersion;
-    }
-
-    for (uint32_t i = 0; i < static_cast<uint32_t>(VulkanExtension::VulkanExtensionsCount); ++i) {
-        VulkanExtension ext = static_cast<VulkanExtension>(i);
-        if (auto it = extensionVersions.find(getFullExtensionName(ext)); it != extensionVersions.end()) {
-            supported_extensions.versions[static_cast<size_t>(ext)] = vkToVersion(it->second);
+    for (VkExtensionProperties const& vk_ext : extensions) {
+        if (auto maybe_ext = extensionFromFullName(vk_ext.extensionName)) {
+            supported_extensions.versionAt(*maybe_ext) = vkToVersion(vk_ext.specVersion);
+        } else {
+            MC_DEBUG("Supported extension not known: {}", vk_ext.extensionName);
         }
     }
 

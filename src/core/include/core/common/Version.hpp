@@ -1,5 +1,7 @@
 #pragma once
 
+#include <fmt/core.h>
+
 #include <cstdint>
 #include <tuple>
 
@@ -18,7 +20,7 @@ struct Version {
     }
 
     [[nodiscard]]
-    static consteval Version max() noexcept {
+    static consteval Version MAX() noexcept {
         return Version {
             static_cast<uint32_t>(-1),
             static_cast<uint32_t>(-1),
@@ -29,3 +31,14 @@ struct Version {
 };
 
 } // namespace core
+
+namespace fmt {
+
+template<>
+struct formatter<core::Version> : formatter<std::string_view> {
+    context::iterator format(core::Version const& version, format_context& ctx) const {
+        return format_to(ctx.out(), "{}.{}.{}:{}", version.epoch, version.major, version.minor, version.patch);
+    }
+};
+
+} // namespace fmt

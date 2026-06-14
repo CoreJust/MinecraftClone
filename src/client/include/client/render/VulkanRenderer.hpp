@@ -14,8 +14,8 @@
 namespace client {
 
 struct PlayerRenderData final {
-    std::uint32_t x = 0;
-    std::uint32_t y = 0;
+    uint32_t x = 0;
+    uint32_t y = 0;
     std::array<float, 4> color{ 1.0f, 1.0f, 1.0f, 1.0f };
 };
 

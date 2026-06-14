@@ -31,7 +31,7 @@ public:
     }
 
     [[nodiscard]]
-    std::pair<std::uint32_t, std::uint32_t> framebufferSize() const noexcept;
+    std::pair<uint32_t, uint32_t> framebufferSize() const noexcept;
     [[nodiscard]]
     bool isFramebufferSizeZero() const noexcept;
     [[nodiscard]]

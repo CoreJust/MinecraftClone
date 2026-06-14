@@ -17,7 +17,9 @@ void setOutOfDateKHRCallback     (Callback callback) noexcept { g_on_out_of_date
 void setSuboptimalKHRCallback    (Callback callback) noexcept { g_on_suboptimal_khr       = std::move(callback); }
 void setDeviceLostCallback       (Callback callback) noexcept { g_on_device_lost          = std::move(callback); }
 void setSurfaceLostCallback      (Callback callback) noexcept { g_on_surface_lost         = std::move(callback); }
-void setFullscreenExclusiveModeLostCallback(Callback callback) noexcept { g_on_fullscreen_exclusive_mode_lost = std::move(callback); }
+void setFullscreenExclusiveModeLostCallback(Callback callback) noexcept {
+    g_on_fullscreen_exclusive_mode_lost = std::move(callback);
+}
 void setOutOfHostMemoryCallback  (Callback callback) noexcept { g_on_out_of_host_memory   = std::move(callback); }
 void setOutOfDeviceMemoryCallback(Callback callback) noexcept { g_on_out_of_device_memory = std::move(callback); }
 

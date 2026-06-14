@@ -3,6 +3,8 @@ target_sources(mc
         Check.cpp
         ErrorCallbacks.cpp
         Extensions.cpp
+        Instance.cpp
+        InstanceBuilder.cpp
         Layers.cpp
         Volk.cpp
         VulkanVersion.cpp

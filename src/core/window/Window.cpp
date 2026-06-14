@@ -104,13 +104,13 @@ void Window::enableCursor(bool value) {
     m_cursor_enabled = value;
 }
 
-std::pair<std::uint32_t, std::uint32_t> Window::framebufferSize() const noexcept {
+std::pair<uint32_t, uint32_t> Window::framebufferSize() const noexcept {
     int width = 0;
     int height = 0;
     glfwGetFramebufferSize(m_window, &width, &height);
     return {
-        static_cast<std::uint32_t>(width > 0 ? width : 1),
-        static_cast<std::uint32_t>(height > 0 ? height : 1),
+        static_cast<uint32_t>(width > 0 ? width : 1),
+        static_cast<uint32_t>(height > 0 ? height : 1),
     };
 }
 

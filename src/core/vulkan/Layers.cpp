@@ -1,34 +1,30 @@
 #include <core/vulkan/Layers.hpp>
 
+#include <core/common/IterEnum.hpp>
 #include <core/IO/Log.hpp>
 #include <core/vulkan/Check.hpp>
 #include <core/vulkan/VulkanVersion.hpp>
 
 #include <fmt/core.h>
-#include <vulkan/vulkan.h>
+#include <volk.h>
 
 #include <string>
-#include <vector>
 #include <unordered_map>
+#include <vector>
 
 namespace core {
 
 VulkanLayers::VulkanLayers() noexcept {
-    memset(versions, 255, std::size(versions));
+    memset(versions, 255, std::size(versions) * sizeof(Version));
 }
 
 bool VulkanLayers::hasLayer(VulkanLayer const layer) const noexcept {
     return getLayerVersion(layer).epoch != UINT32_MAX;
 }
 
-Version VulkanLayers::getLayerVersion(VulkanLayer const layer) const noexcept {
-    return versions[static_cast<size_t>(layer)];
-}
-
-
 std::string VulkanLayers::toString(std::string_view const indent) const {
     std::string layers_message;
-    for (uint32_t i = 0; i < static_cast<uint32_t>(VulkanLayer::VulkanLayersCount); ++i) {
+    for (uint32_t i = 0; i < static_cast<uint32_t>(VulkanLayer::Count); ++i) {
         VulkanLayer layer = static_cast<VulkanLayer>(i);
         if (hasLayer(layer)) {
             Version const v = getLayerVersion(layer);
@@ -64,10 +60,9 @@ VulkanLayers loadSupportedLayers() {
         layer_versions[layer.layerName] = layer.specVersion;
     }
 
-    for (uint32_t i = 0; i < static_cast<uint32_t>(VulkanLayer::VulkanLayersCount); ++i) {
-        VulkanLayer layer = static_cast<VulkanLayer>(i);
+    for (VulkanLayer const layer : iterEnum<VulkanLayer>()) {
         if (auto it = layer_versions.find(getFullLayerName(layer)); it != layer_versions.end()) {
-            supported_layers.versions[static_cast<size_t>(layer)] = vkToVersion(it->second);
+            supported_layers.versionAt(layer) = vkToVersion(it->second);
         }
     }
 

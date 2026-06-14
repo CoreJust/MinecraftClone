@@ -7,5 +7,4 @@ target_sources(mc
             Log.hpp
             OptionalFmt.hpp
             StacktraceFmt.hpp
-            VersionFmt.hpp
 )

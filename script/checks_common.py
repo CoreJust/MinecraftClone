@@ -143,8 +143,3 @@ def line_check(lines: List[str], predicate, fmt) -> List[str]:
         if predicate(line):
             errors.append(f"line {i}: {fmt(line)}")
     return errors
-
-def content_find(content: str, pattern: str, error_msg: str, flags=0) -> List[str]:
-    if re.search(pattern, content, flags):
-        return [error_msg]
-    return []

@@ -2,6 +2,7 @@
 
 #include <core/common/Version.hpp>
 
+#include <optional>
 #include <string>
 
 namespace core {
@@ -25,6 +26,22 @@ enum class VulkanExtension {
     GetMemoryRequirements2,  // VK_KHR_get_memory_requirements2
     CreateRenderPass2,       // VK_KHR_create_renderpass2
     MeshShader,              // VK_EXT_mesh_shader
+    PortabilityEnumeration,  // VK_KHR_portability_enumeration
+
+    // Surface
+    Surface,                 // VK_KHR_surface
+    AndroidSurface,          // VK_KHR_adnroid_surface
+    DirectfbSurface,         // VK_EXT_directfb_surface
+    FuchsiaImagepipeSurface, // VK_FUCHSIA_imagepipe_surface 
+    HeadlessSurface,         // VK_EXT_headless_surface
+    MetalSurface,            // VK_EXT_metal_surface
+    OhosSurface,             // VK_OHOS_surface
+    QnxSurface,              // VK_QNX_screen_surface
+    UbmSurface,              // VK_SEC_ubm_surface
+    Win32Surface,            // VK_KHR_win32_surface
+    WaylandSurface,          // VK_KHR_wayland_surface
+    XcbSurface,              // VK_KHR_xcb_surface
+    XlibSurface,             // VK_KHR_xlib_surface
 
     // Efficiency
     DedicatedAllocation,     // VK_KHR_dedicated_allocation
@@ -48,7 +65,7 @@ enum class VulkanExtension {
     DeviceFault,             // VK_KHR_device_fault
     ToolingInfo,             // VK_EXT_tooling_info
 
-    VulkanExtensionsCount,
+    Count,
 };
 
 enum class VulkanExtensionKind {
@@ -57,14 +74,21 @@ enum class VulkanExtensionKind {
 };
 
 struct VulkanExtensions final {
-    Version versions[static_cast<size_t>(VulkanExtension::VulkanExtensionsCount)];
+    Version versions[static_cast<size_t>(VulkanExtension::Count)];
 
     VulkanExtensions() noexcept;
 
     [[nodiscard]]
     bool hasExtension(VulkanExtension const ext) const noexcept;
     [[nodiscard]]
-    Version getExtensionVersion(VulkanExtension const ext) const noexcept;
+    Version getExtensionVersion(VulkanExtension const ext) const noexcept {
+        return versions[static_cast<size_t>(ext)];
+    }
+
+    [[nodiscard]]
+    Version& versionAt(VulkanExtension const ext) & noexcept {
+        return versions[static_cast<size_t>(ext)];
+    }
 
     [[nodiscard]]
     std::string toString(std::string_view const indent = "") const;
@@ -72,6 +96,8 @@ struct VulkanExtensions final {
 
 [[nodiscard]]
 char const* getFullExtensionName(VulkanExtension const ext) noexcept;
+[[nodiscard]]
+std::optional<VulkanExtension> extensionFromFullName(std::string_view const name);
 [[nodiscard]]
 VulkanExtensionKind getExtensionKind(VulkanExtension const ext) noexcept;
 [[nodiscard]]
