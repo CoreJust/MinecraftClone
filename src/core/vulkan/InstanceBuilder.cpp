@@ -13,29 +13,15 @@
 #include <GLFW/glfw3.h>
 
 #include <algorithm>
-#include <array>
 #include <cstring>
 
 namespace core {
 namespace {
 
-[[nodiscard]]
-constexpr VkDebugUtilsMessengerCreateInfoEXT makeDebugMessengerCreateInfo(
-    DebugMessengerOptions const& options
-) noexcept {
-    return VkDebugUtilsMessengerCreateInfoEXT{
-        .sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT,
-        .messageSeverity = options.severity_mask,
-        .messageType = options.type_mask,
-        .pfnUserCallback = options.callback,
-        .pUserData = options.user_data,
-    };
-}
-
 VKAPI_ATTR VkBool32 VKAPI_PTR defaultDebugCallback(
     VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
     VkDebugUtilsMessageTypeFlagsEXT messageType,
-    const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData,
+    VkDebugUtilsMessengerCallbackDataEXT const* pCallbackData,
     [[maybe_unused]] void* pUserData
 ) {
     char const* typeStr = "-";
@@ -64,7 +50,22 @@ VKAPI_ATTR VkBool32 VKAPI_PTR defaultDebugCallback(
 }
 
 [[nodiscard]]
-uint32_t selectInstanceVersion(Version required, Version preferred) {
+constexpr VkDebugUtilsMessengerCreateInfoEXT makeDebugMessengerCreateInfo(
+    DebugMessengerOptions const& options
+) noexcept {
+    return VkDebugUtilsMessengerCreateInfoEXT{
+        .sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT,
+        .messageSeverity = options.severity_mask,
+        .messageType = options.type_mask,
+        .pfnUserCallback = options.callback == nullptr
+            ? defaultDebugCallback
+            : options.callback,
+        .pUserData = options.user_data,
+    };
+}
+
+[[nodiscard]]
+uint32_t selectInstanceVersion(Version const required, Version const preferred) {
     if (preferred < required) {
         throw InstanceCreationError(
             InstanceCreationErrorKind::InvalidApiVersionRange,
@@ -243,22 +244,13 @@ Instance InstanceBuilder::build() const {
         m_portability_enumeration
     );
 
-    bool const validation_available = supported_layers.hasLayer(VulkanLayer::Validation);
-    bool validation_failure_called = false;
-    if (wants_validation && !validation_available) {
+    bool const was_validation_enabled = true
+        && enabled_layers.hasLayer(VulkanLayer::Validation)
+        && enabled_extensions.hasExtension(VulkanExtension::DebugUtils);
+    if (wants_validation && !was_validation_enabled) {
         if (m_require_validation) {
             throw InstanceCreationError(InstanceCreationErrorKind::ValidationUnavailable);
         } else if (m_validation_failure_callback) {
-            m_validation_failure_callback();
-            validation_failure_called = true;
-        }
-    }
-
-    bool const has_debug_utils = supported_extensions.hasExtension(VulkanExtension::DebugUtils);
-    if (wants_validation && !has_debug_utils) {
-        if (m_require_validation) {
-            throw InstanceCreationError(InstanceCreationErrorKind::DebugUtilsUnavailable);
-        } else if (m_validation_failure_callback && !validation_failure_called) {
             m_validation_failure_callback();
         }
     }
@@ -286,45 +278,36 @@ Instance InstanceBuilder::build() const {
         }
     }
 
-    VkDebugUtilsMessengerCreateInfoEXT debugCreateInfo{ };
-    if (wants_validation && has_debug_utils) {
-        auto options = m_debug_messenger_options;
-        if (options.callback == nullptr) {
-            options.callback = defaultDebugCallback;
-        }
-        debugCreateInfo = makeDebugMessengerCreateInfo(options);
-    }
-
-    VkInstanceCreateInfo createInfo{
+    auto const debug_create_info = makeDebugMessengerCreateInfo(m_debug_messenger_options);
+    VkInstanceCreateInfo const create_info{
         .sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
+        .pNext = (wants_validation && was_validation_enabled)
+            ? &debug_create_info
+            : nullptr,
+        .flags = (m_portability_enumeration && enabled_extensions.hasExtension(VulkanExtension::PortabilityEnumeration))
+            ? VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR
+            : static_cast<VkInstanceCreateFlags>(0),
         .pApplicationInfo = &app_info,
         .enabledLayerCount = static_cast<uint32_t>(enabled_layer_names.size()),
         .ppEnabledLayerNames = enabled_layer_names.data(),
         .enabledExtensionCount = static_cast<uint32_t>(enabled_extension_names.size()),
         .ppEnabledExtensionNames = enabled_extension_names.data(),
     };
-    if (wants_validation && has_debug_utils) {
-        createInfo.pNext = &debugCreateInfo;
-    }
-    if (m_portability_enumeration && supported_extensions.hasExtension(VulkanExtension::PortabilityEnumeration)) {
-        createInfo.flags |= VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR;
-    }
 
-    VkInstance instance = nullptr;
-    if (!VK_CHECK(vkCreateInstance(&createInfo, nullptr, &instance))) {
+    VkInstance instance = VK_NULL_HANDLE;
+    if (!VK_CHECK(vkCreateInstance(&create_info, nullptr, &instance))) {
         throw InstanceCreationError(InstanceCreationErrorKind::InstanceCreationFailed);
     }
 
     volkLoadInstance(instance);
 
-    VkDebugUtilsMessengerEXT debugMessenger = nullptr;
-    if (wants_validation && has_debug_utils) {
-        VkDebugUtilsMessengerCreateInfoEXT messengerCreateInfo = debugCreateInfo;
+    VkDebugUtilsMessengerEXT debug_messenger = VK_NULL_HANDLE;
+    if (wants_validation && was_validation_enabled) {
         if (!VK_CHECK(vkCreateDebugUtilsMessengerEXT(
             instance,
-            &messengerCreateInfo,
+            &debug_create_info,
             nullptr,
-            &debugMessenger
+            &debug_messenger
         ))) {
             vkDestroyInstance(instance, nullptr);
             throw InstanceCreationError(InstanceCreationErrorKind::DebugMessengerCreationFailed);
@@ -334,11 +317,11 @@ Instance InstanceBuilder::build() const {
     VulkanCaps::update(
         vkToVersion(selected_version),
         Version::MAX(),
-        wants_validation && has_debug_utils,
+        wants_validation && was_validation_enabled,
         enabled_layers,
         enabled_extensions);
 
-    return Instance{ instance, debugMessenger };
+    return Instance{ instance, debug_messenger };
 }
 
 } // namespace core

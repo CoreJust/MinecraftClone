@@ -2,6 +2,8 @@
 
 #include "macro/NameGeneration.hpp"
 
+#include <utility>
+
 namespace core {
 
 struct _DeferNote { };
@@ -16,8 +18,8 @@ struct _DeferImpl final {
 };
 
 template<typename Func>
-_DeferImpl<Func> operator^(_DeferNote, Func f) {
-	return _DeferImpl<Func>(f);
+_DeferImpl<Func> operator^(_DeferNote, Func&& f) {
+	return _DeferImpl<Func>{ std::forward<Func>(f) };
 }
 
 } // namespace core

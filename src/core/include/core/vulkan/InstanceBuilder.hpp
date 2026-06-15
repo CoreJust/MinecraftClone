@@ -7,6 +7,7 @@
 #include <core/vulkan/Instance.hpp>
 #include <core/vulkan/Layers.hpp>
 
+#include <array>
 #include <functional>
 #include <span>
 #include <string>

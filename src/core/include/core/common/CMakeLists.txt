@@ -8,6 +8,7 @@ target_sources(mc
             AtAppExit.hpp
             ByteReader.hpp
             ByteWriter.hpp
+            CodeExecutionHelper.hpp
             ControlFlow.hpp
             CrashHandler.hpp
             Defer.hpp
@@ -16,5 +17,6 @@ target_sources(mc
             NonMovable.hpp
             SpanUtils.hpp
             StaticInitializer.hpp
+            TrivialPair.hpp
             Version.hpp
 )

@@ -6,6 +6,7 @@ target_sources(mc
         Instance.cpp
         InstanceBuilder.cpp
         Layers.cpp
+        Surface.cpp
         Volk.cpp
         VulkanVersion.cpp
 )

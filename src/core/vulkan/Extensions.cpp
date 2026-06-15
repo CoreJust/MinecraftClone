@@ -198,10 +198,10 @@ VulkanExtensions loadSupportedInstanceExtensions() {
 
     MC_INFO("Loading supported Vulkan extensions list...");
     uint32_t extensionCount = 0;
-    VK_ASSERT(vkEnumerateInstanceExtensionProperties(nullptr, &extensionCount, nullptr));
+    VKC_ASSERT(vkEnumerateInstanceExtensionProperties(nullptr, &extensionCount, nullptr));
 
     std::vector<VkExtensionProperties> extensions(extensionCount);
-    VK_ASSERT(vkEnumerateInstanceExtensionProperties(nullptr, &extensionCount, extensions.data()));
+    VKC_ASSERT(vkEnumerateInstanceExtensionProperties(nullptr, &extensionCount, extensions.data()));
 
     for (VkExtensionProperties const& vk_ext : extensions) {
         if (auto maybe_ext = extensionFromFullName(vk_ext.extensionName)) {

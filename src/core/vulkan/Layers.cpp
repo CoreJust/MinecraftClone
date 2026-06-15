@@ -49,10 +49,10 @@ VulkanLayers loadSupportedLayers() {
 
     MC_INFO("Loading supported Vulkan layers list...");
     uint32_t layers_count = 0;
-    VK_ASSERT(vkEnumerateInstanceLayerProperties(&layers_count, nullptr));
+    VKC_ASSERT(vkEnumerateInstanceLayerProperties(&layers_count, nullptr));
 
     std::vector<VkLayerProperties> layers(layers_count);
-    VK_ASSERT(vkEnumerateInstanceLayerProperties(&layers_count, layers.data()));
+    VKC_ASSERT(vkEnumerateInstanceLayerProperties(&layers_count, layers.data()));
 
     std::unordered_map<std::string, uint32_t> layer_versions;
     layer_versions.reserve(static_cast<size_t>(layers_count));

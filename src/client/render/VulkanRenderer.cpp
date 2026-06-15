@@ -8,6 +8,7 @@
 #include <core/vulkan/Check.hpp>
 #include <core/vulkan/ErrorCallbacks.hpp>
 #include <core/vulkan/InstanceBuilder.hpp>
+#include <core/vulkan/Surface.hpp>
 #include <core/vulkan/VulkanVersion.hpp>
 
 // DONT_CHECK INCLUDE_ORDER
@@ -93,7 +94,7 @@ struct SwapchainBundle final {
     };
 
     VkShaderModule module = VK_NULL_HANDLE;
-    VK_ASSERT(vkCreateShaderModule(device, &info, nullptr, &module));
+    VKC_ASSERT(vkCreateShaderModule(device, &info, nullptr, &module));
     return module;
 }
 
@@ -111,8 +112,8 @@ public:
             .portabilityEnumeration()
             .requireValidation()
             .build())
+        , m_surface(m_instance, window)
     {
-        createSurface();
         pickPhysicalDevice();
         createDevice();
         createSwapchain();
@@ -137,7 +138,6 @@ public:
         destroyCommandPool();
         destroySwapchain();
         destroyDevice();
-        destroySurface();
     }
 
     void render(std::span<PlayerRenderData const> const players) {
@@ -148,15 +148,6 @@ public:
     }
 
 private:
-    using PFN_vkCmdBeginRendering = void(VKAPI_PTR*)(VkCommandBuffer, const VkRenderingInfo*);
-    using PFN_vkCmdEndRendering = void(VKAPI_PTR*)(VkCommandBuffer);
-    using PFN_vkCmdPipelineBarrier2 = void(VKAPI_PTR*)(VkCommandBuffer, const VkDependencyInfo*);
-    using PFN_vkCmdDrawMeshTasksEXT = void(VKAPI_PTR*)(VkCommandBuffer, uint32_t, uint32_t, uint32_t);
-
-    void createSurface() {
-        VK_ASSERT(glfwCreateWindowSurface(m_instance.handle(), m_window.nativeHandle(), nullptr, &m_surface));
-    }
-
     [[nodiscard]] QueueFamilyIndices findQueueFamilies(VkPhysicalDevice const device) const {
         QueueFamilyIndices indices{};
         uint32_t count = 0;
@@ -170,7 +161,7 @@ private:
             }
 
             VkBool32 supported = VK_FALSE;
-            if (vkGetPhysicalDeviceSurfaceSupportKHR(device, i, m_surface, &supported) == VK_SUCCESS && supported == VK_TRUE) {
+            if (vkGetPhysicalDeviceSurfaceSupportKHR(device, i, m_surface.handle(), &supported) == VK_SUCCESS && supported == VK_TRUE) {
                 indices.present = i;
             }
 
@@ -208,11 +199,11 @@ private:
 
     void pickPhysicalDevice() {
         uint32_t count = 0;
-        VK_ASSERT(vkEnumeratePhysicalDevices(m_instance.handle(), &count, nullptr));
+        VKC_ASSERT(vkEnumeratePhysicalDevices(m_instance.handle(), &count, nullptr));
         ASSERT(count, "No Vulkan physical devices found");
 
         std::vector<VkPhysicalDevice> devices(count);
-        VK_ASSERT(vkEnumeratePhysicalDevices(m_instance.handle(), &count, devices.data()));
+        VKC_ASSERT(vkEnumeratePhysicalDevices(m_instance.handle(), &count, devices.data()));
 
         for (auto const device : devices) {
             if (!supportsRequiredExtensions(device)) {
@@ -309,7 +300,7 @@ private:
             .ppEnabledExtensionNames = extensions.data(),
         };
 
-        VK_ASSERT(vkCreateDevice(m_physicalDevice, &createInfo, nullptr, &m_device));
+        VKC_ASSERT(vkCreateDevice(m_physicalDevice, &createInfo, nullptr, &m_device));
         volkLoadDevice(m_device);
         vkGetDeviceQueue(m_device, *m_queueFamilies.graphics, 0, &m_graphicsQueue);
         vkGetDeviceQueue(m_device, *m_queueFamilies.present, 0, &m_presentQueue);
@@ -347,17 +338,17 @@ private:
 
     void createSwapchain() {
         VkSurfaceCapabilitiesKHR capabilities{};
-        VK_ASSERT(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(m_physicalDevice, m_surface, &capabilities));
+        VKC_ASSERT(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(m_physicalDevice, m_surface.handle(), &capabilities));
 
         uint32_t formatCount = 0;
-        VK_ASSERT(vkGetPhysicalDeviceSurfaceFormatsKHR(m_physicalDevice, m_surface, &formatCount, nullptr));
+        VKC_ASSERT(vkGetPhysicalDeviceSurfaceFormatsKHR(m_physicalDevice, m_surface.handle(), &formatCount, nullptr));
         std::vector<VkSurfaceFormatKHR> formats(formatCount);
-        VK_ASSERT(vkGetPhysicalDeviceSurfaceFormatsKHR(m_physicalDevice, m_surface, &formatCount, formats.data()));
+        VKC_ASSERT(vkGetPhysicalDeviceSurfaceFormatsKHR(m_physicalDevice, m_surface.handle(), &formatCount, formats.data()));
 
         uint32_t presentModeCount = 0;
-        VK_ASSERT(vkGetPhysicalDeviceSurfacePresentModesKHR(m_physicalDevice, m_surface, &presentModeCount, nullptr));
+        VKC_ASSERT(vkGetPhysicalDeviceSurfacePresentModesKHR(m_physicalDevice, m_surface.handle(), &presentModeCount, nullptr));
         std::vector<VkPresentModeKHR> presentModes(presentModeCount);
-        VK_ASSERT(vkGetPhysicalDeviceSurfacePresentModesKHR(m_physicalDevice, m_surface, &presentModeCount, presentModes.data()));
+        VKC_ASSERT(vkGetPhysicalDeviceSurfacePresentModesKHR(m_physicalDevice, m_surface.handle(), &presentModeCount, presentModes.data()));
 
         ASSERT(!formats.empty());
         auto const chosenFormat = chooseSurfaceFormat(formats);
@@ -373,7 +364,7 @@ private:
 
         VkSwapchainCreateInfoKHR const createInfo{
             .sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
-            .surface = m_surface,
+            .surface = m_surface.handle(),
             .minImageCount = imageCount,
             .imageFormat = chosenFormat.format,
             .imageColorSpace = chosenFormat.colorSpace,
@@ -394,12 +385,12 @@ private:
 
         VkSwapchainKHR const oldSwapchain = m_swapchain.swapchain;
         VkSwapchainKHR newSwapchain = VK_NULL_HANDLE;
-        VK_ASSERT(vkCreateSwapchainKHR(m_device, &createInfo, nullptr, &newSwapchain));
+        VKC_ASSERT(vkCreateSwapchainKHR(m_device, &createInfo, nullptr, &newSwapchain));
 
         uint32_t newImageCount = 0;
-        VK_ASSERT(vkGetSwapchainImagesKHR(m_device, newSwapchain, &newImageCount, nullptr));
+        VKC_ASSERT(vkGetSwapchainImagesKHR(m_device, newSwapchain, &newImageCount, nullptr));
         std::vector<VkImage> images(newImageCount);
-        VK_ASSERT(vkGetSwapchainImagesKHR(m_device, newSwapchain, &newImageCount, images.data()));
+        VKC_ASSERT(vkGetSwapchainImagesKHR(m_device, newSwapchain, &newImageCount, images.data()));
 
         if (oldSwapchain != VK_NULL_HANDLE) {
             vkDestroySwapchainKHR(m_device, oldSwapchain, nullptr);
@@ -426,13 +417,13 @@ private:
             };
 
             VkImageView view = VK_NULL_HANDLE;
-            VK_ASSERT(vkCreateImageView(m_device, &viewInfo, nullptr, &view));
+            VKC_ASSERT(vkCreateImageView(m_device, &viewInfo, nullptr, &view));
             m_swapchain.views.push_back(view);
         }
     }
 
     void recreateSwapchain() {
-        VK_ASSERT(vkDeviceWaitIdle(m_device));
+        VKC_ASSERT(vkDeviceWaitIdle(m_device));
         destroyPipelines();
         destroyCommandBuffers();
         destroySwapchain();
@@ -461,7 +452,7 @@ private:
             .flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
             .queueFamilyIndex = *m_queueFamilies.graphics,
         };
-        VK_ASSERT(vkCreateCommandPool(m_device, &info, nullptr, &m_commandPool));
+        VKC_ASSERT(vkCreateCommandPool(m_device, &info, nullptr, &m_commandPool));
     }
 
     void destroyCommandPool() {
@@ -479,7 +470,7 @@ private:
             .commandBufferCount = kMaxFramesInFlight,
         };
         m_commandBuffers.resize(kMaxFramesInFlight);
-        VK_ASSERT(vkAllocateCommandBuffers(m_device, &info, m_commandBuffers.data()));
+        VKC_ASSERT(vkAllocateCommandBuffers(m_device, &info, m_commandBuffers.data()));
     }
 
     void destroyCommandBuffers() {
@@ -503,9 +494,9 @@ private:
         m_inFlight.resize(kMaxFramesInFlight);
 
         for (uint32_t i = 0; i < kMaxFramesInFlight; ++i) {
-            VK_ASSERT(vkCreateSemaphore(m_device, &semInfo, nullptr, &m_imageAvailable[i]));
-            VK_ASSERT(vkCreateSemaphore(m_device, &semInfo, nullptr, &m_renderFinished[i]));
-            VK_ASSERT(vkCreateFence(m_device, &fenceInfo, nullptr, &m_inFlight[i]));
+            VKC_ASSERT(vkCreateSemaphore(m_device, &semInfo, nullptr, &m_imageAvailable[i]));
+            VKC_ASSERT(vkCreateSemaphore(m_device, &semInfo, nullptr, &m_renderFinished[i]));
+            VKC_ASSERT(vkCreateFence(m_device, &fenceInfo, nullptr, &m_inFlight[i]));
         }
     }
 
@@ -557,8 +548,8 @@ private:
             .pPushConstantRanges = &playerRange,
         };
 
-        VK_ASSERT(vkCreatePipelineLayout(m_device, &gridLayoutInfo, nullptr, &m_gridLayout));
-        VK_ASSERT(vkCreatePipelineLayout(m_device, &playerLayoutInfo, nullptr, &m_playerLayout));
+        VKC_ASSERT(vkCreatePipelineLayout(m_device, &gridLayoutInfo, nullptr, &m_gridLayout));
+        VKC_ASSERT(vkCreatePipelineLayout(m_device, &playerLayoutInfo, nullptr, &m_playerLayout));
 
         VkPipelineRenderingCreateInfo const gridRendering{
             .sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO,
@@ -687,7 +678,7 @@ private:
 
         VkGraphicsPipelineCreateInfo const infos[2]{gridInfo, playerInfo};
         VkPipeline pipelines[2]{VK_NULL_HANDLE, VK_NULL_HANDLE};
-        VK_ASSERT(vkCreateGraphicsPipelines(m_device, VK_NULL_HANDLE, 2, infos, nullptr, pipelines));
+        VKC_ASSERT(vkCreateGraphicsPipelines(m_device, VK_NULL_HANDLE, 2, infos, nullptr, pipelines));
 
         m_gridPipeline = pipelines[0];
         m_playerPipeline = pipelines[1];
@@ -728,10 +719,10 @@ private:
 
     void drawFrame(std::span<PlayerRenderData const> const players) {
         uint32_t const frame = static_cast<uint32_t>(m_frameIndex % kMaxFramesInFlight);
-        VK_ASSERT(vkWaitForFences(m_device, 1, &m_inFlight[frame], VK_TRUE, std::numeric_limits<uint64_t>::max()));
+        VKC_ASSERT(vkWaitForFences(m_device, 1, &m_inFlight[frame], VK_TRUE, std::numeric_limits<uint64_t>::max()));
 
         uint32_t imageIndex = 0;
-        VK_ASSERT(vkAcquireNextImageKHR(
+        VKC_ASSERT(vkAcquireNextImageKHR(
             m_device,
             m_swapchain.swapchain,
             std::numeric_limits<uint64_t>::max(),
@@ -739,8 +730,8 @@ private:
             VK_NULL_HANDLE,
             &imageIndex));
 
-        VK_ASSERT(vkResetFences(m_device, 1, &m_inFlight[frame]));
-        VK_ASSERT(vkResetCommandBuffer(m_commandBuffers[frame], 0));
+        VKC_ASSERT(vkResetFences(m_device, 1, &m_inFlight[frame]));
+        VKC_ASSERT(vkResetCommandBuffer(m_commandBuffers[frame], 0));
         record(m_commandBuffers[frame], imageIndex, players);
 
         VkPipelineStageFlags const waitStage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
@@ -754,7 +745,7 @@ private:
             .signalSemaphoreCount = 1,
             .pSignalSemaphores = &m_renderFinished[frame],
         };
-        VK_ASSERT(vkQueueSubmit(m_graphicsQueue, 1, &submit, m_inFlight[frame]));
+        VKC_ASSERT(vkQueueSubmit(m_graphicsQueue, 1, &submit, m_inFlight[frame]));
 
         VkPresentInfoKHR const present{
             .sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
@@ -765,7 +756,7 @@ private:
             .pImageIndices = &imageIndex,
         };
 
-        VK_ASSERT(vkQueuePresentKHR(m_presentQueue, &present));
+        VKC_ASSERT(vkQueuePresentKHR(m_presentQueue, &present));
 
         ++m_frameIndex;
     }
@@ -774,7 +765,7 @@ private:
         VkCommandBufferBeginInfo const beginInfo{
             .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
         };
-        VK_ASSERT(vkBeginCommandBuffer(cmd, &beginInfo));
+        VKC_ASSERT(vkBeginCommandBuffer(cmd, &beginInfo));
 
         VkImageMemoryBarrier2 const toColor{
             .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
@@ -880,7 +871,7 @@ private:
         };
         vkCmdPipelineBarrier2(cmd, &depToPresent);
 
-        VK_ASSERT(vkEndCommandBuffer(cmd));
+        VKC_ASSERT(vkEndCommandBuffer(cmd));
     }
 
     void destroyDevice() {
@@ -889,18 +880,11 @@ private:
             m_device = VK_NULL_HANDLE;
         }
     }
-
-    void destroySurface() {
-        if (m_surface != VK_NULL_HANDLE) {
-            vkDestroySurfaceKHR(m_instance.handle(), m_surface, nullptr);
-            m_surface = VK_NULL_HANDLE;
-        }
-    }
 private:
     core::Window const& m_window;
 
     core::Instance m_instance;
-    VkSurfaceKHR m_surface = VK_NULL_HANDLE;
+    core::Surface m_surface;
     VkPhysicalDevice m_physicalDevice = VK_NULL_HANDLE;
     QueueFamilyIndices m_queueFamilies{};
     VkDevice m_device = VK_NULL_HANDLE;

@@ -13,6 +13,7 @@ target_sources(mc
             Instance.hpp
             InstanceBuilder.hpp
             Layers.hpp
-            Raii.hpp
+            Resource.hpp
+            Surface.hpp
             VulkanVersion.hpp
 )
