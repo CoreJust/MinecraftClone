@@ -1,11 +1,16 @@
 target_sources(mc
     PRIVATE
+        Capabilities.cpp
         Check.cpp
         ErrorCallbacks.cpp
         Extensions.cpp
+        Features.cpp
         Instance.cpp
         InstanceBuilder.cpp
         Layers.cpp
+        PhysicalDeviceCapsStruct.cpp
+        PhysicalDeviceSelector.cpp
+        QueueFamily.cpp
         Surface.cpp
         Volk.cpp
         VulkanVersion.cpp

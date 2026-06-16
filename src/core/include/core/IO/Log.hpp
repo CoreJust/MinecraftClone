@@ -38,15 +38,15 @@ private:
     
 } // namespace core
 
-#define MC_LOG(level, ...)                                                                      \
+#define CORE_LOG(level, ...)                                                                      \
     if (::core::Log::getLogLevel() <= level) {                                                  \
         ::core::Log::getLogger()                                                                \
             ->log(spdlog::source_loc{__FILE__, __LINE__, SPDLOG_FUNCTION}, level, __VA_ARGS__); \
     }
 
-#define MC_TRACE(...)    MC_LOG(::spdlog::level::trace, __VA_ARGS__)
-#define MC_DEBUG(...)    MC_LOG(::spdlog::level::debug, __VA_ARGS__)
-#define MC_INFO(...)     MC_LOG(::spdlog::level::info, __VA_ARGS__)
-#define MC_WARN(...)     MC_LOG(::spdlog::level::warn, __VA_ARGS__)
-#define MC_ERROR(...)    MC_LOG(::spdlog::level::err, __VA_ARGS__)
-#define MC_CRITICAL(...) MC_LOG(::spdlog::level::critical, __VA_ARGS__)
+#define CORE_TRACE(...)    CORE_LOG(::spdlog::level::trace, __VA_ARGS__)
+#define CORE_DEBUG(...)    CORE_LOG(::spdlog::level::debug, __VA_ARGS__)
+#define CORE_INFO(...)     CORE_LOG(::spdlog::level::info, __VA_ARGS__)
+#define CORE_WARN(...)     CORE_LOG(::spdlog::level::warn, __VA_ARGS__)
+#define CORE_ERROR(...)    CORE_LOG(::spdlog::level::err, __VA_ARGS__)
+#define CORE_CRITICAL(...) CORE_LOG(::spdlog::level::critical, __VA_ARGS__)

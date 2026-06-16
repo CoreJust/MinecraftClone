@@ -17,18 +17,18 @@ std::optional<std::vector<uint8_t>> readFile(std::string const& path) {
 
 bool readFileTo(std::string const& path, std::span<uint8_t> const dst) {
     if (!std::filesystem::exists(path)) {
-        MC_ERROR("No such file: {}", path);
+        CORE_ERROR("No such file: {}", path);
         return false;
     }
 
     std::FILE* file = std::fopen(path.data(), "rb");
     if (file == nullptr) {
-        MC_ERROR("Failed to open file {}", path);
+        CORE_ERROR("Failed to open file {}", path);
         return false;
     }
 
     if (dst.size() != std::fread(dst.data(), 1, dst.size(), file)) {
-        MC_ERROR("Failed to read file {}", path);
+        CORE_ERROR("Failed to read file {}", path);
         return false;
     }
 

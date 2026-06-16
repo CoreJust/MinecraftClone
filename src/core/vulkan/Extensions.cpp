@@ -3,6 +3,7 @@
 #include <core/common/IterEnum.hpp>
 #include <core/IO/Log.hpp>
 #include <core/vulkan/Check.hpp>
+#include <core/vulkan/PhysicalDevice.hpp>
 #include <core/vulkan/VulkanVersion.hpp>
 
 #include <fmt/core.h>
@@ -24,8 +25,7 @@ bool VulkanExtensions::hasExtension(VulkanExtension const ext) const noexcept {
 
 std::string VulkanExtensions::toString(std::string_view const indent) const {
     std::string extensions_message;
-    for (uint32_t i = 0; i < static_cast<uint32_t>(VulkanExtension::Count); ++i) {
-        VulkanExtension ext = static_cast<VulkanExtension>(i);
+    for (VulkanExtension const ext : iterEnum<VulkanExtension>()) {
         if (hasExtension(ext)) {
             Version const v = getExtensionVersion(ext);
             extensions_message += fmt::format("{}{:40} v{}.{}.{}\n", indent, getFullExtensionName(ext), v.major, v.minor, v.patch);
@@ -193,21 +193,46 @@ Version getExtensionPromotionVersion(VulkanExtension const ext) noexcept {
     }
 }
 
-VulkanExtensions loadSupportedInstanceExtensions() {
+VulkanExtensions VulkanExtensions::loadSupportedInstanceExtensions() {
     VulkanExtensions supported_extensions { };
 
-    MC_INFO("Loading supported Vulkan extensions list...");
-    uint32_t extensionCount = 0;
-    VKC_ASSERT(vkEnumerateInstanceExtensionProperties(nullptr, &extensionCount, nullptr));
+    CORE_DEBUG("Loading supported Vulkan instance extensions list...");
+    uint32_t extension_count = 0;
+    CORE_VK_ASSERT(vkEnumerateInstanceExtensionProperties(nullptr, &extension_count, nullptr));
 
-    std::vector<VkExtensionProperties> extensions(extensionCount);
-    VKC_ASSERT(vkEnumerateInstanceExtensionProperties(nullptr, &extensionCount, extensions.data()));
+    std::vector<VkExtensionProperties> extensions(extension_count);
+    if (extension_count > 0) {
+        CORE_VK_ASSERT(vkEnumerateInstanceExtensionProperties(nullptr, &extension_count, extensions.data()));
+    }
 
     for (VkExtensionProperties const& vk_ext : extensions) {
         if (auto maybe_ext = extensionFromFullName(vk_ext.extensionName)) {
             supported_extensions.versionAt(*maybe_ext) = vkToVersion(vk_ext.specVersion);
         } else {
-            MC_DEBUG("Supported extension not known: {}", vk_ext.extensionName);
+            CORE_DEBUG("Supported extension not known: {}", vk_ext.extensionName);
+        }
+    }
+
+    return supported_extensions;
+}
+
+VulkanExtensions VulkanExtensions::loadSupportedDeviceExtensions(PhysicalDevice const& device) {
+    VulkanExtensions supported_extensions { };
+
+    CORE_DEBUG("Loading supported Vulkan extensions list...");
+    uint32_t extension_count = 0;
+    CORE_VK_ASSERT(vkEnumerateDeviceExtensionProperties(device.handle(), nullptr, &extension_count, nullptr));
+
+    std::vector<VkExtensionProperties> extensions(extension_count);
+    if (extension_count > 0) {
+        CORE_VK_ASSERT(vkEnumerateDeviceExtensionProperties(device.handle(), nullptr, &extension_count, extensions.data()));
+    }
+
+    for (VkExtensionProperties const& vk_ext : extensions) {
+        if (auto maybe_ext = extensionFromFullName(vk_ext.extensionName)) {
+            supported_extensions.versionAt(*maybe_ext) = vkToVersion(vk_ext.specVersion);
+        } else {
+            CORE_DEBUG("Supported extension not known: {}", vk_ext.extensionName);
         }
     }
 

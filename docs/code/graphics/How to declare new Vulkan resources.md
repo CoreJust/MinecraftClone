@@ -13,12 +13,12 @@ Then you need to add the metadata macros to the beginning of the class body. The
 ```cpp
 class RawResource : public core::VulkanResourceBase<VkResource> {
     // List the context needed to destroy the resource if any.
-    VKC_RESOURCE_CONTEXT(RawResource, DestructionContext1 ctx1; ...)
-    VKC_RESOURCE_CONSTRUCTION_FROM(OtherResource1 res1, OtherResource2 const& res2, ...) {
+    CORE_VKRESOURCE_CONTEXT(RawResource, DestructionContext1 ctx1; ...)
+    CORE_VKRESOURCE_CONSTRUCTION_FROM(OtherResource1 res1, OtherResource2 const& res2, ...) {
         // Initialize self fields (including self.m_handle which has VkResource type).
 
         // Then you need to provide the context that will later be needed to destroy the resource.
-        VKC_CAPTURE_DESTRUCTION_CONTEXT() {
+        CORE_VKCAPTURE_DESTRUCTION_CONTEXT() {
             .ctx1 = ...,
         };
     }
@@ -29,10 +29,10 @@ private:
 };
 ```
 
-Instead of VKC_RESOURCE_CONSTRUCTION_FROM alternatively you can use
+Instead of CORE_VKRESOURCE_CONSTRUCTION_FROM alternatively you can use
 
 ```cpp
-VKC_RESOURCE_DEFER_CONSTRUCTION_FROM(OtherResource1 res1, OtherResource2 const& res2, ...);
+CORE_VKRESOURCE_DEFER_CONSTRUCTION_FROM(OtherResource1 res1, OtherResource2 const& res2, ...);
 ```
 
 To define it elsewhere.
@@ -53,7 +53,7 @@ It will have all the same methods as your class, the constructor, and additional
 4. handle() to access the underlying handle (note that RawResource will also have it).
 5. isNull() to check if there is any resource inside (note that RawResource will also have it).
 
-TODO: implement VulkanRaiiVector (probably need to add `VKC_RESOURCE_BATCH_CONSTRUCTION_FROM`).
+TODO: implement VulkanRaiiVector (probably need to add `CORE_VKRESOURCE_BATCH_CONSTRUCTION_FROM`).
 
 As for Resources, note that here destroyer is optional. In some cases you will have to manually provide it by `setDestroyer()`, e.g. in cases like:
 
@@ -70,7 +70,7 @@ You can read more about available methods in [Resource.hpp](src/core/include/cor
 You have to declare
 
 ```cpp
-VKC_RESOURCE_DESTROY_IMPL(RawResource) {
+CORE_VKRESOURCE_DESTROY_IMPL(RawResource) {
     // Destroy RawResource self here.
     // This will contain the destruction context.
 }
@@ -81,8 +81,8 @@ Note that it is guaranteed that here self.isNull() is false - no need to check f
 If you deferred construction definition, you must additionally define it:
 
 ```cpp
-VKC_RESOURCE_DEFERRED_CONSTRUCTION_IMPL(RawResource, same arguments as in VKC_RESOURCE_DEFER_CONSTRUCTION_FROM) {
-    // Same body as for VKC_RESOURCE_CONSTRUCTION_FROM
+CORE_VKRESOURCE_DEFERRED_CONSTRUCTION_IMPL(RawResource, same arguments as in CORE_VKRESOURCE_DEFER_CONSTRUCTION_FROM) {
+    // Same body as for CORE_VKRESOURCE_CONSTRUCTION_FROM
 }
 ```
 

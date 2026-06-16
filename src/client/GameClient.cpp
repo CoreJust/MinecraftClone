@@ -39,7 +39,7 @@ void GameClient::onDisconnected(core::DisconnectEvent const event) {
 void GameClient::onReceived(core::ReceiveEvent event) {
     std::optional maybe_msg = shared::decodeMessage(event.data);
     if (!maybe_msg) {
-        MC_ERROR("Received a corrupted message");
+        CORE_ERROR("Received a corrupted message");
         return;
     }
 
@@ -62,14 +62,14 @@ void GameClient::onReceived(core::ReceiveEvent event) {
         shared::Player const p = m_world.playerByCharacter(ch).value();
         m_world.despawnPlayer(p.id);
     } else {
-        MC_ERROR("Received a message unsupported by the client {}", msg_ptr->index());
+        CORE_ERROR("Received a message unsupported by the client {}", msg_ptr->index());
     }
 }
 
 void GameClient::send(shared::Message const message) {
     std::vector const message_bytes = shared::encodeMessage(message);
     if (!core::Client::send(message_bytes, 0, core::SendMode{ core::SendMode::Reliable })) {
-        MC_ERROR("Failed to send a message");
+        CORE_ERROR("Failed to send a message");
     }
 }
 

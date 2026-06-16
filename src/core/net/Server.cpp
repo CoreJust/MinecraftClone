@@ -109,7 +109,7 @@ void Server::dispatchEvent(NetEvent event) {
             });
             removeClient(client.first);
         } else {
-            MC_ERROR("Tried to dispatch disconnect event, but no corresponding client exists in connected clients list");
+            CORE_ERROR("Tried to dispatch disconnect event, but no corresponding client exists in connected clients list");
         }
     } else if (auto receive_event = std::get_if<ReceiveEvent>(&event)) {
         if (auto const client_index = findClientIndex(receive_event->peer)) {

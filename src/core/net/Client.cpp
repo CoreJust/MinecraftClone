@@ -17,18 +17,18 @@ bool Client::connect(
     ASSERT(!m_server.has_value(), "Client cannot connect: it is already connected. Disconnect first");
     m_server = m_host.connect(address);
     if (!m_server) {
-        MC_ERROR("Failed to connect to address {}", address);
+        CORE_ERROR("Failed to connect to address {}", address);
         return false;
     }
     
     bool success = false;
     m_host.repeatedlyPoll([&](NetEvent event) {
         if (std::holds_alternative<core::ConnectEvent>(event)) {
-            MC_INFO("Successfully connected to {}", address);
+            CORE_INFO("Successfully connected to {}", address);
             success = true;
             return ControlFlow::Break;
         } else if (std::holds_alternative<core::DisconnectEvent>(event)) {
-            MC_INFO("Failed to connect to {}", address);
+            CORE_INFO("Failed to connect to {}", address);
             return ControlFlow::Break;
         }
         return ControlFlow::Continue;

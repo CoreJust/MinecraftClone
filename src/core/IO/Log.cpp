@@ -39,6 +39,7 @@ void Log::ensureInit(
 
     s_logger->set_pattern("%^[%H:%M:%S.%e %l at %s:%# t%t] %v%$");
     s_logger->flush_on(spdlog::level::err);
+    s_logger->set_level(initial_level);
 
     SPDLOG_LOGGER_INFO(
         s_logger,

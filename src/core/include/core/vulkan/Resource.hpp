@@ -4,7 +4,7 @@
 
 #include <core/common/NonCopyable.hpp>
 #include <core/common/TrivialPair.hpp>
-#include <core/vulkan/Handles.hpp>
+#include <core/vulkan/VulkanFwd.hpp>
 
 #include <optional>
 #include <type_traits>
@@ -17,7 +17,7 @@
  * Varibale arguments must include list of fields required to
  * destroy the object.
  */ 
-#define VKC_RESOURCE_CONTEXT(SelfType, ...)                  \
+#define CORE_VK_RESOURCE_CONTEXT(SelfType, ...)              \
 public:                                                      \
     using Self = SelfType;                                   \
     using Parent = ::core::VulkanResourceBase<Self::Handle>; \
@@ -30,7 +30,7 @@ public:                                                      \
                                                              \
     constexpr SelfType() noexcept = default;
 
-#define VKC_RESOURCE_CONSTRUCTION_FROM(...)                    \
+#define CORE_VK_RESOURCE_CONSTRUCTION_FROM(...)                \
 public:                                                        \
     template<typename... Args> [[nodiscard]]                   \
     static constexpr Self make(Args&&... args) {               \
@@ -57,7 +57,7 @@ private:                                                       \
         Destroyer* destroyer = nullptr                         \
     )
     
-#define VKC_RESOURCE_DEFER_CONSTRUCTION_FROM(...)    \
+#define CORE_VK_RESOURCE_DEFER_CONSTRUCTION_FROM(...)\
 public:                                              \
     template<typename... Args> [[nodiscard]]         \
     static Self make(Args&&... args) {               \
@@ -84,15 +84,15 @@ private:                                             \
         Destroyer* destroyer = nullptr               \
     )
 
-#define VKC_RESOURCE_DEFERRED_CONSTRUCTION_IMPL(Self, ...)  \
+#define CORE_VK_RESOURCE_DEFERRED_CONSTRUCTION_IMPL(Self, ...)  \
     void Self::constructInplace(Self& self, __VA_ARGS__, Destroyer* destroyer)
 
-#define VKC_CAPTURE_DESTRUCTION_CONTEXT() \
+#define CORE_VK_CAPTURE_DESTRUCTION_CONTEXT() \
     if (destroyer)                        \
         *destroyer = Destroyer
 
 // Must be declarared in a source file with resource destruction.
-#define VKC_RESOURCE_DESTROY_IMPL(Self) \
+#define CORE_VK_RESOURCE_DESTROY_IMPL(Self) \
     void Self::Destroyer::operator()(Self& self)
 
 namespace core {

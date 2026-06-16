@@ -9,11 +9,19 @@ target_sources(mc
             Error.hpp
             ErrorCallbacks.hpp
             Extensions.hpp
-            Handles.hpp
+            Features.hpp
             Instance.hpp
             InstanceBuilder.hpp
             Layers.hpp
+            MemoryProperty.hpp
+            PhysicalDevice.hpp
+            PhysicalDeviceCapsStruct.hpp
+            PhysicalDeviceProperties.hpp
+            PhysicalDeviceSelector.hpp
+            PhysicalDeviceType.hpp
+            QueueFamily.hpp
             Resource.hpp
             Surface.hpp
+            VulkanFwd.hpp
             VulkanVersion.hpp
 )

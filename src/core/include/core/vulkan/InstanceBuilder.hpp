@@ -1,6 +1,8 @@
 #pragma once
 
+#include <core/common/SpanUtils.hpp>
 #include <core/common/Version.hpp>
+#include <core/vulkan/Capabilities.hpp>
 #include <core/vulkan/DebugMessengerOptions.hpp>
 #include <core/vulkan/Error.hpp>
 #include <core/vulkan/Extensions.hpp>
@@ -32,24 +34,10 @@ enum class InstanceCreationErrorKind {
 [[nodiscard]]
 std::string to_string(InstanceCreationErrorKind const error_kind) noexcept;
 
-struct InstanceCreationError : public VulkanError {
-    InstanceCreationErrorKind kind;
-
-    InstanceCreationError(InstanceCreationErrorKind const kind)
-        : VulkanError(to_string(kind))
-        , kind(kind)
-    { }
-
-    template<typename... Args>
-    InstanceCreationError(InstanceCreationErrorKind const kind, fmt::format_string<Args...> format_string, Args&&... args)
-        : VulkanError(to_string(kind) + ": " + fmt::format(format_string, std::forward<Args>(args)...))
-        , kind(kind)
-    { }
-};
+using InstanceCreationError = VulkanErrorOverEnum<InstanceCreationErrorKind>;
 
 class InstanceBuilder final {
 public:
-    // Might throw InstanceCreationError(GlfwVulkanNotSupported)
     template<typename Self>
     [[nodiscard]] auto&& requireWindowExtensions(this Self&& self) {
         self.m_require_window_extensions = true;
@@ -95,92 +83,64 @@ public:
         return std::forward<Self>(self);
     }
 
-    template<typename Self>
+    template<typename Self, typename First, typename... Tail>
     [[nodiscard]] auto&& requireExtensions(
         this Self&& self,
-        std::span<VulkanExtension const> const extensions
+        First const first,
+        Tail const... rest
     ) {
+        SpanOver span_over_data{ first, rest... };
         self.m_required_extensions.insert(
             self.m_required_extensions.end(),
-            extensions.begin(),
-            extensions.end());
+            span_over_data.asSpan().begin(),
+            span_over_data.asSpan().end()
+        );
         return std::forward<Self>(self);
     }
 
-    template<typename Self, class... Tail>
-    [[nodiscard]] auto&& requireExtensions(
-        this Self&& self,
-        VulkanExtension const first,
-        Tail const... rest
-    ) {
-        std::array<VulkanExtension, 1U + sizeof...(rest)> values{ first, rest... };
-        return self.requireExtensions(std::span<VulkanExtension const>(values.data(), values.size()));
-    }
-
-    template<typename Self>
+    template<typename Self, typename First, typename... Tail>
     [[nodiscard]] auto&& preferExtensions(
         this Self&& self,
-        std::span<VulkanExtension const> const extensions
+        First const first,
+        Tail const... rest
     ) {
+        SpanOver span_over_data{ first, rest... };
         self.m_preferred_extensions.insert(
             self.m_preferred_extensions.end(),
-            extensions.begin(),
-            extensions.end());
+            span_over_data.asSpan().begin(),
+            span_over_data.asSpan().end()
+        );
         return std::forward<Self>(self);
     }
 
-    template<typename Self, class... Tail>
-    [[nodiscard]] auto&& preferExtensions(
-        this Self&& self,
-        VulkanExtension const first,
-        Tail const... rest
-    ) {
-        std::array<VulkanExtension, 1U + sizeof...(rest)> values{ first, rest... };
-        return self.preferExtensions(std::span<VulkanExtension const>(values.data(), values.size()));
-    }
-
-    template<typename Self>
+    template<typename Self, typename First, typename... Tail>
     [[nodiscard]] auto&& requireLayers(
         this Self&& self,
-        std::span<VulkanLayer const> const layers
+        First const first,
+        Tail const... rest
     ) {
+        SpanOver span_over_data{ first, rest... };
         self.m_required_layers.insert(
             self.m_required_layers.end(),
-            layers.begin(),
-            layers.end());
+            span_over_data.asSpan().begin(),
+            span_over_data.asSpan().end()
+        );
         return std::forward<Self>(self);
     }
 
-    template<typename Self, class... Tail>
-    [[nodiscard]] auto&& requireLayers(
-        this Self&& self,
-        VulkanLayer const first,
-        Tail const... rest
-    ) {
-        std::array<VulkanLayer, 1U + sizeof...(rest)> values{ first, rest... };
-        return self.requireLayers(std::span<VulkanLayer const>(values.data(), values.size()));
-    }
-
-    template<typename Self>
+    template<typename Self, typename First, typename... Tail>
     [[nodiscard]] auto&& preferLayers(
         this Self&& self,
-        std::span<VulkanLayer const> const layers
+        First const first,
+        Tail const... rest
     ) {
+        SpanOver span_over_data{ first, rest... };
         self.m_preferred_layers.insert(
             self.m_preferred_layers.end(),
-            layers.begin(),
-            layers.end());
+            span_over_data.asSpan().begin(),
+            span_over_data.asSpan().end()
+        );
         return std::forward<Self>(self);
-    }
-
-    template<typename Self, class... Tail>
-    [[nodiscard]] auto&& preferLayers(
-        this Self&& self,
-        VulkanLayer const first,
-        Tail const... rest
-    ) {
-        std::array<VulkanLayer, 1U + sizeof...(rest)> values{ first, rest... };
-        return self.preferLayers(std::span<VulkanLayer const>(values.data(), values.size()));
     }
 
     template<typename Self>
@@ -204,8 +164,9 @@ public:
     }
 
     // Throws InstanceCreationError
+    // out_caps is where the capabilities of built instance will bw stored to.
     [[nodiscard]]
-    Instance build() const;
+    Instance build(VulkanCaps* const out_caps = nullptr) const;
 private:
     Version m_required_version{ 0, 1, 0, 0 };
     Version m_preferred_version{ Version::MAX() };

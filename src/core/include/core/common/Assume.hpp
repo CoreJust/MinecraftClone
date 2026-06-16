@@ -1,6 +1,6 @@
 #pragma once
 
-#ifdef _MC_DEBUG
+#ifdef _CORE_DEBUG
 #  include "Assert.hpp"
 #  define ASSUME(...)                           \
     do {                                        \

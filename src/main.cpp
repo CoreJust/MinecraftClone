@@ -38,7 +38,7 @@ core::Address readAddress() {
 }
 
 int main(int argc, char** argv) {
-    core::Log::ensureInit();
+    core::Log::ensureInit(std::nullopt, spdlog::level::debug);
     core::setCrashHandler();
     core::Net::ensureInit();
 
@@ -60,9 +60,9 @@ int main(int argc, char** argv) {
             }
         }
     } catch (const std::runtime_error& e) {
-        MC_CRITICAL("Received uncaught exception: {}", e.what());
+        CORE_CRITICAL("Received uncaught exception: {}", e.what());
     } catch (...) {
-        MC_CRITICAL("Received unknown uncaught exception");
+        CORE_CRITICAL("Received unknown uncaught exception");
     }
 
     core::AtAppExit::exit();

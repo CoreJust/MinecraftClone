@@ -4,7 +4,7 @@
 
 namespace core {
 
-VKC_RESOURCE_DESTROY_IMPL(RawInstance) {
+CORE_VK_RESOURCE_DESTROY_IMPL(RawInstance) {
     if (self.m_debug_messenger != nullptr) {
         vkDestroyDebugUtilsMessengerEXT(self.m_handle, self.m_debug_messenger, nullptr);
     }

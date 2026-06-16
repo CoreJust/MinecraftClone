@@ -63,7 +63,7 @@ bool decodeVkResult(VkResult const result, std::string_view& description) {
         ON_ERROR_CODE(  VK_ERROR_NOT_ENOUGH_SPACE_KHR,                "The application did not provide enough space to return all the required data");
         ON_ERROR_CODE(  VK_ERROR_UNKNOWN,                             "An unknown error has occurred; either the application has provided invalid input, or an implementation failure has occurred.");
     default:
-        MC_ERROR("Unknown VkResult value: {}", static_cast<int64_t>(result));
+        CORE_ERROR("Unknown VkResult value: {}", static_cast<int64_t>(result));
         description = "???";
         return false;
     }
@@ -93,9 +93,9 @@ bool checkVkResult(VkResult const result) {
     std::string_view description;
     bool const isSuccess = decodeVkResult(result, description);
     if (isSuccess) {
-        MC_TRACE("Operation returned {}\nat {}", description, std::stacktrace::current());
+        CORE_TRACE("Operation returned {}\nat {}", description, std::stacktrace::current());
     } else {
-        MC_ERROR("Vulkan error: {}\nat {}", description, std::stacktrace::current());
+        CORE_ERROR("Vulkan error: {}\nat {}", description, std::stacktrace::current());
     }
     return isSuccess;
 }

@@ -3,7 +3,6 @@
 #include <core/common/Assert.hpp>
 #include <core/common/IterEnum.hpp>
 #include <core/IO/Log.hpp>
-#include <core/vulkan/Capabilities.hpp>
 #include <core/vulkan/Check.hpp>
 #include <core/vulkan/VulkanVersion.hpp>
 
@@ -33,16 +32,16 @@ VKAPI_ATTR VkBool32 VKAPI_PTR defaultDebugCallback(
     }
     switch (messageSeverity) {
         case VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT:
-            MC_TRACE("Vulkan validation {:11}: {}", typeStr, pCallbackData->pMessage);
+            CORE_TRACE("Vulkan validation {:11}: {}", typeStr, pCallbackData->pMessage);
             break;
         case VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT:
-            MC_DEBUG("Vulkan validation {:11}: {}", typeStr, pCallbackData->pMessage);
+            CORE_DEBUG("Vulkan validation {:11}: {}", typeStr, pCallbackData->pMessage);
             break;
         case VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT:
-            MC_WARN("Vulkan validation {:11}: {}",  typeStr, pCallbackData->pMessage);
+            CORE_WARN("Vulkan validation {:11}: {}",  typeStr, pCallbackData->pMessage);
             break;
         case VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT:
-            MC_ERROR("Vulkan validation {:11}: {}", typeStr, pCallbackData->pMessage);
+            CORE_ERROR("Vulkan validation {:11}: {}", typeStr, pCallbackData->pMessage);
             break;
     default: break;
     }
@@ -202,24 +201,26 @@ VulkanExtensions collectExtensionsToEnable(
 } // namespace
 
 [[nodiscard]]
-std::string to_string(InstanceCreationErrorKind const error) noexcept {
-    switch (error) {
+std::string to_string(InstanceCreationErrorKind const error_kind) noexcept {
+    switch (error_kind) {
         case InstanceCreationErrorKind::GlfwVulkanNotSupported:       return "GlfwVulkanNotSupported";
         case InstanceCreationErrorKind::VolkInitializationFailed:     return "VolkInitializationFailed";
         case InstanceCreationErrorKind::UnsupportedApiVersion:        return "UnsupportedApiVersion";
         case InstanceCreationErrorKind::InvalidApiVersionRange:       return "InvalidApiVersionRange";
         case InstanceCreationErrorKind::MissingRequiredLayer:         return "MissingRequiredLayer";
         case InstanceCreationErrorKind::MissingRequiredExtension:     return "MissingRequiredExtension";
+        case InstanceCreationErrorKind::WrongExtensionScope:          return "WrongExtensionScope";
         case InstanceCreationErrorKind::ValidationUnavailable:        return "ValidationUnavailable";
         case InstanceCreationErrorKind::DebugUtilsUnavailable:        return "DebugUtilsUnavailable";
         case InstanceCreationErrorKind::InstanceCreationFailed:       return "InstanceCreateFailed";
         case InstanceCreationErrorKind::DebugMessengerCreationFailed: return "DebugMessengerCreationFailed";
-    default: return "Unknown";
     }
+    ASSERT(false, "Unrecognized value: {}", static_cast<uint32_t>(error_kind));
+    return "";
 }
 
 [[nodiscard]]
-Instance InstanceBuilder::build() const {
+Instance InstanceBuilder::build(VulkanCaps* const out_caps) const {
     if (!VK_CHECK(volkInitialize())) {
         throw InstanceCreationError(InstanceCreationErrorKind::VolkInitializationFailed);
     }
@@ -234,7 +235,7 @@ Instance InstanceBuilder::build() const {
         m_preferred_layers,
         wants_validation
     );
-    VulkanExtensions supported_extensions = loadSupportedInstanceExtensions();
+    VulkanExtensions supported_extensions = VulkanExtensions::loadSupportedInstanceExtensions();
     VulkanExtensions enabled_extensions = collectExtensionsToEnable(
         supported_extensions,
         m_required_extensions,
@@ -314,12 +315,14 @@ Instance InstanceBuilder::build() const {
         }
     }
 
-    VulkanCaps::update(
-        vkToVersion(selected_version),
-        Version::MAX(),
-        wants_validation && was_validation_enabled,
-        enabled_layers,
-        enabled_extensions);
+    if (out_caps) {
+        out_caps->commitInstanceCaps(
+            vkToVersion(selected_version),
+            wants_validation && was_validation_enabled,
+            enabled_layers,
+            enabled_extensions
+        );
+    }
 
     return Instance{ instance, debug_messenger };
 }

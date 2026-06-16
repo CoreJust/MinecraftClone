@@ -205,8 +205,12 @@ def check_nesting_depth(ctx, fpath, content):
     errors = []
     for i, line in enumerate(content.splitlines(), 1):
         stripped = line.rstrip('\n')
-        if not stripped: continue
-        spaces = len(stripped) - len(stripped.lstrip(' '))
+        if not stripped:
+            continue
+        space_stripped = stripped.lstrip(' ')
+        if not space_stripped or space_stripped[0] in "\\/":
+            continue
+        spaces = len(stripped) - len(space_stripped)
         if spaces // 4 > MAX_NESTING_DEPTH:
             errors.append(f"line {i}: depth {spaces // 4}")
     return errors

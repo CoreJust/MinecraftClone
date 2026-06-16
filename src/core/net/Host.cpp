@@ -15,9 +15,9 @@ Host::Host(
         m_host = enet_host_create(NULL, max_connections, max_channels, 0, 0);
     }
     if (!m_host) {
-        MC_ERROR("Failed to create ENet host");
+        CORE_ERROR("Failed to create ENet host");
     } else {
-        MC_INFO(
+        CORE_INFO(
             "Created host at {} with {} max connections and {} max channels",
             address, max_connections, max_channels);
     }
@@ -27,7 +27,7 @@ Host::~Host() {
     if (m_host) {
         enet_host_destroy(m_host);
         m_host = nullptr;
-        MC_INFO("Destroyed host");
+        CORE_INFO("Destroyed host");
     }
 }
 
@@ -38,7 +38,7 @@ std::optional<NetEvent> Host::poll(std::chrono::milliseconds const timeout) {
     ENetEvent raw_event;
     int const host_service_result = enet_host_service(m_host, &raw_event, static_cast<enet_uint32>(timeout.count()));
     if (host_service_result < 0) {
-        MC_WARN("Error occured during enet_host_service, returned value is {}", host_service_result);
+        CORE_WARN("Error occured during enet_host_service, returned value is {}", host_service_result);
         return std::nullopt;
     }
 
@@ -81,13 +81,13 @@ bool Host::send(
     SendMode const mode
 ) {
     if (!mode.isValid()) {
-        MC_ERROR("SendMode has an invalid configuration");
+        CORE_ERROR("SendMode has an invalid configuration");
         return false;
     }
 
     ENetPacket* packet = enet_packet_create(data.data(), data.size_bytes(), mode.raw());
     if (!packet) {
-        MC_ERROR("Failed to create packet");
+        CORE_ERROR("Failed to create packet");
         return false;
     }
 
@@ -98,7 +98,7 @@ bool Host::send(
     }
 
     if (enet_peer_send(peer->raw(), channel_id, packet) < 0) {
-        MC_ERROR("Failed to send a packet to peer");
+        CORE_ERROR("Failed to send a packet to peer");
         return false;
     }
     return true;
@@ -106,12 +106,12 @@ bool Host::send(
 
 std::optional<Peer> Host::connect(Address const address) {
     if (ENetPeer *peer = enet_host_connect(m_host, &address.raw(), m_max_channels, 0)) {
-        MC_INFO(
+        CORE_INFO(
             "Initiated connection to {} with {} channels",
             address, m_max_channels);
         return Peer{ *peer };
     }
-    MC_ERROR(
+    CORE_ERROR(
         "Failed to connect to {} with {} channels",
         address, m_max_channels);
     return std::nullopt;
@@ -119,12 +119,12 @@ std::optional<Peer> Host::connect(Address const address) {
 
 void Host::disconnect(Peer const peer) noexcept {
     enet_peer_disconnect(peer.raw(), 0);
-    MC_INFO("Initiated disconnection to peer {}", peer.address());
+    CORE_INFO("Initiated disconnection to peer {}", peer.address());
 }
 
 void Host::reset(Peer const peer) noexcept {
     enet_peer_reset(peer.raw());
-    MC_INFO("Reset peer {}", peer.address());
+    CORE_INFO("Reset peer {}", peer.address());
 }
 
 uint16_t Host::port() const noexcept {

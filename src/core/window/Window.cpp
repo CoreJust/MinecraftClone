@@ -14,12 +14,12 @@ namespace core {
 namespace {
 
 void errorCallback(int const code, char const* const description) {
-    MC_ERROR("GLFW error (code {}): {}", code, description);
+    CORE_ERROR("GLFW error (code {}): {}", code, description);
 }
 
 GLFWwindow* createWindow(char const* const name, int width, int height) {
     if (!glfwInit()) {
-        MC_CRITICAL("Failed to initialize GLFW");
+        CORE_CRITICAL("Failed to initialize GLFW");
         throw WindowException{ };
     }
 
@@ -37,21 +37,21 @@ GLFWwindow* createWindow(char const* const name, int width, int height) {
     if (width <= 0 || height <= 0) {
         width = mode->width;
         height = mode->height;
-        MC_INFO("Setting full-screen window mode: {}x{}", width, height);
+        CORE_INFO("Setting full-screen window mode: {}x{}", width, height);
         window = glfwCreateWindow(width, height, name, monitor, nullptr);
     } else {
-        MC_INFO("Setting window mode: {}x{}", width, height);
+        CORE_INFO("Setting window mode: {}x{}", width, height);
         window = glfwCreateWindow(width, height, name, nullptr, nullptr);
     }
     if (!window) {
-        MC_CRITICAL("Failed to create a window");
+        CORE_CRITICAL("Failed to create a window");
         throw WindowException { };
     }
     glfwSetKeyCallback(window, reinterpret_cast<GLFWkeyfun>(keyCallback));
     glfwSetMouseButtonCallback(window, reinterpret_cast<GLFWmousebuttonfun>(mouseKeyCallback));
     glfwSetCursorPosCallback(window, reinterpret_cast<GLFWcursorposfun>(mousePositionCallback));
     glfwSetScrollCallback(window, reinterpret_cast<GLFWscrollfun>(scrollCallback));
-    MC_INFO(
+    CORE_INFO(
         "Created window:\n\t"   \
         "Title:      {}\n\t"    \
         "Size:       {}x{}\n\t" \
@@ -81,7 +81,7 @@ Window::~Window() {
     if (m_window != nullptr) {
         glfwDestroyWindow(m_window);
         m_window = nullptr;
-        MC_DEBUG("Window was closed");
+        CORE_DEBUG("Window was closed");
     }
     glfwTerminate();
 }

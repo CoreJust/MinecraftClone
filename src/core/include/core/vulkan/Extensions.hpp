@@ -79,6 +79,11 @@ struct VulkanExtensions final {
     VulkanExtensions() noexcept;
 
     [[nodiscard]]
+    static VulkanExtensions loadSupportedInstanceExtensions();
+    [[nodiscard]]
+    static VulkanExtensions loadSupportedDeviceExtensions(class PhysicalDevice const& device);
+
+    [[nodiscard]]
     bool hasExtension(VulkanExtension const ext) const noexcept;
     [[nodiscard]]
     Version getExtensionVersion(VulkanExtension const ext) const noexcept {
@@ -102,7 +107,5 @@ std::optional<VulkanExtension> extensionFromFullName(std::string_view const name
 VulkanExtensionKind getExtensionKind(VulkanExtension const ext) noexcept;
 [[nodiscard]]
 Version getExtensionPromotionVersion(VulkanExtension const ext) noexcept;
-
-VulkanExtensions loadSupportedInstanceExtensions();
 
 } // namespace core

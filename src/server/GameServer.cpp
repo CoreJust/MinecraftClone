@@ -19,11 +19,11 @@ void GameServer::run() {
 }
 
 void GameServer::onConnected(core::ServerConnectEvent const client) {
-    MC_INFO("Server: onConnected {}", client.client.address());
+    CORE_INFO("Server: onConnected {}", client.client.address());
 }
 
 void GameServer::onDisconnected(core::ServerDisconnectEvent const client) {
-    MC_INFO("Server: onDisconnected {}", client.client.address());
+    CORE_INFO("Server: onDisconnected {}", client.client.address());
     send(shared::ServerRemovePlayerMessage{
         .ch = m_world.player(client.client_id)->ch,
     });
@@ -33,7 +33,7 @@ void GameServer::onDisconnected(core::ServerDisconnectEvent const client) {
 void GameServer::onReceived(core::ServerReceiveEvent event) {
     std::optional maybe_msg = shared::decodeMessage(event.data);
     if (!maybe_msg) {
-        MC_ERROR("Received a corrupted message");
+        CORE_ERROR("Received a corrupted message");
         return;
     }
 
@@ -53,7 +53,7 @@ void GameServer::onReceived(core::ServerReceiveEvent event) {
         });
 
         shared::Player const p = m_world.player(id).value();
-        MC_INFO("Player '{}' spawned at x {}, y {}", ch, static_cast<int>(p.x), static_cast<int>(p.y));
+        CORE_INFO("Player '{}' spawned at x {}, y {}", ch, static_cast<int>(p.x), static_cast<int>(p.y));
         send(shared::ServerPlayerPositionMessage{
             .ch = ch,
             .x = p.x,
@@ -76,14 +76,14 @@ void GameServer::onReceived(core::ServerReceiveEvent event) {
             });
         }
     } else {
-        MC_ERROR("Received a message unsupported by the server {}", msg_ptr->index());
+        CORE_ERROR("Received a message unsupported by the server {}", msg_ptr->index());
     }
 }
 
 void GameServer::send(shared::Message const message) {
     std::vector const message_bytes = shared::encodeMessage(message);
     if (!core::Server::send(std::nullopt, message_bytes, 0, core::SendMode{ core::SendMode::Reliable })) {
-        MC_ERROR("Failed to send a message");
+        CORE_ERROR("Failed to send a message");
     }
 }
 

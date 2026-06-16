@@ -3,101 +3,86 @@
 #include <core/common/NonCopyable.hpp>
 #include <core/common/Version.hpp>
 #include <core/vulkan/Extensions.hpp>
+#include <core/vulkan/Features.hpp>
 #include <core/vulkan/Layers.hpp>
-
-#include <fmt/core.h>
-
-#include <cstdint>
-#include <optional>
-#include <span>
-#include <string>
-#include <vector>
+#include <core/vulkan/MemoryProperty.hpp>
+#include <core/vulkan/PhysicalDeviceProperties.hpp>
+#include <core/vulkan/PhysicalDeviceType.hpp>
 
 namespace core {
 
 class VulkanCaps final : NonCopyable {
 public:
-    [[nodiscard]]
-    static Version instanceVersion() noexcept { return instance().m_instance_version; }
-    [[nodiscard]]
-    static Version deviceVersion() noexcept { return instance().m_device_version; }
-    [[nodiscard]]
-    static bool validationEnabled() noexcept { return instance().m_validation_enabled; }
-    [[nodiscard]]
-    static uint64_t generation() noexcept { return instance().m_generation; }
-    [[nodiscard]]
-    static VulkanLayers layers() noexcept { return instance().m_layers; }
-    [[nodiscard]]
-    static VulkanExtensions extensions() noexcept { return instance().m_extensions; }
+    constexpr VulkanCaps() noexcept = default;
+
+    void commitInstanceCaps(
+        Version const& instance_version,
+        bool const validation_enabled,
+        VulkanLayers const& enabled_layers,
+        VulkanExtensions const& enabled_extensions
+    ) noexcept;
+
+    void commitDeviceCaps(
+        Version const& device_version,
+        VulkanFeatures const& enabled_features,
+        VulkanExtensions const& enabled_extensions,
+        PhysicalDeviceProperties const& properties,
+        std::vector<MemoryHeap> heaps,
+        PhysicalDeviceType const type
+    ) noexcept;
 
     [[nodiscard]]
-    static bool hasLayer(VulkanLayer const layer) noexcept {
-        return instance().m_layers.hasLayer(layer);
+    constexpr Version instanceVersion() const noexcept { return m_instance_version; }
+    [[nodiscard]]
+    constexpr Version deviceVersion() const noexcept { return m_device_version; }
+    [[nodiscard]]
+    constexpr bool validationEnabled() const noexcept { return m_validation_enabled; }
+    [[nodiscard]]
+    constexpr VulkanLayers const& layers() const noexcept { return m_layers; }
+    [[nodiscard]]
+    constexpr VulkanExtensions const& extensions() const noexcept { return m_extensions; }
+    [[nodiscard]]
+    constexpr VulkanFeatures const& features() const noexcept { return m_features; }
+
+    [[nodiscard]]
+    bool has(VulkanLayer const layer) const noexcept {
+        return m_layers.hasLayer(layer);
     }
 
     [[nodiscard]]
-    static bool hasExtension(VulkanExtension const extension) noexcept {
-        return instance().m_extensions.hasExtension(extension);
+    bool has(VulkanExtension const extension) const noexcept {
+        return m_extensions.hasExtension(extension);
     }
 
     [[nodiscard]]
-    static bool hasExtensionOrPromoted(VulkanExtension const extension) noexcept {
+    bool has(VulkanFeature const feature) const noexcept {
+        return m_features[feature];
+    }
+
+    [[nodiscard]]
+    bool hasExtensionOrPromoted(VulkanExtension const extension) const noexcept {
         if (getExtensionKind(extension) == VulkanExtensionKind::Instance) {
             if (instanceVersion() >= getExtensionPromotionVersion(extension)) {
                 return true;
             }
         } else {
-            if (deviceVersion() >= getExtensionPromotionVersion(extension)) {
-                return true;
-            }
+            return false;
         }
-        return instance().m_extensions.hasExtension(extension);
-    }
-
-    static void update(
-        Version const& instance_version,
-        Version const& device_version,
-        bool const validation_enabled,
-        VulkanLayers const& enabled_layers,
-        VulkanExtensions const& enabled_extensions
-    ) noexcept {
-        instance().m_instance_version = instance_version;
-        instance().m_device_version = device_version;
-        instance().m_validation_enabled = validation_enabled;
-        instance().m_layers = enabled_layers;
-        instance().m_extensions = enabled_extensions;
+        return m_extensions.hasExtension(extension);
     }
 
     [[nodiscard]]
-    static std::string toString() {
-        return fmt::format(
-            "Instance version: {}\n"
-            "Device version: {}\n"
-            "Validation: {}\n"
-            "Layers:\n{}"
-            "Extensions:\n{}",
-            instanceVersion(),
-            deviceVersion(),
-            validationEnabled() ? "Enabled" : "Disabled",
-            layers().toString("\t"),
-            extensions().toString("\t")
-        );
-    }
+    std::string toString() const;
 private:
-    VulkanCaps() = default;
-
-    [[nodiscard]]
-    static VulkanCaps& instance() noexcept {
-        static VulkanCaps s_instance{ };
-        return s_instance;
-    }
-
-    Version m_instance_version = core::Version{0, 1, 0, 0};
-    Version m_device_version = core::Version{0, 1, 0, 0};
-    bool m_validation_enabled = false;
     VulkanLayers m_layers{ };
     VulkanExtensions m_extensions{ };
-    uint64_t m_generation = 0;
+    VulkanFeatures m_features{ };
+    PhysicalDeviceProperties m_device_properties{ };
+    std::vector<MemoryHeap> m_heaps{ };
+    Version m_instance_version = core::Version{0, 1, 0, 0};
+    Version m_device_version = core::Version{0, 1, 0, 0};
+    PhysicalDeviceType m_device_type{ PhysicalDeviceType::Other };
+    bool m_validation_enabled{ false };
 };
 
 } // namespace core
