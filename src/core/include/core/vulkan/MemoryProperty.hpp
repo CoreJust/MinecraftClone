@@ -1,9 +1,9 @@
 #pragma once
 
 #include <core/common/SpanUtils.hpp>
+#include <core/meta/Enum.hpp>
 
 #include <cstdint>
-#include <string>
 
 namespace core {
 
@@ -20,6 +20,8 @@ enum class MemoryProperty {
 
     Count,
 };
+
+CORE_ENUM_FUNCTIONS(MemoryProperty);
 
 struct MemoryPropertyBits final {
     uint32_t value;
@@ -38,21 +40,5 @@ struct MemoryHeap final {
     MemoryPropertyBits properties;
     uint32_t heap_index;
 };
-
-[[nodiscard]]
-inline std::string to_string(MemoryProperty const property) {
-    switch (property) {
-        case MemoryProperty::DeviceLocal:     return "DeviceLocal";
-        case MemoryProperty::HostVisible:     return "HostVisible";
-        case MemoryProperty::HostCoherent:    return "HostCoherent";
-        case MemoryProperty::HostCached:      return "HostCached";
-        case MemoryProperty::LazilyAllocated: return "LazilyAllocated";
-        case MemoryProperty::Protected:       return "Protected";
-        case MemoryProperty::DeviceCoherent:  return "DeviceCoherent";
-        case MemoryProperty::DeviceUncached:  return "DeviceUncached";
-        case MemoryProperty::RdmaCapable:     return "RdmaCapable";
-    case MemoryProperty::Count: return "Count";
-    }
-}
 
 } // namespace core

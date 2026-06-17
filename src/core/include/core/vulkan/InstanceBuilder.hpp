@@ -2,6 +2,7 @@
 
 #include <core/common/SpanUtils.hpp>
 #include <core/common/Version.hpp>
+#include <core/meta/Enum.hpp>
 #include <core/vulkan/Capabilities.hpp>
 #include <core/vulkan/DebugMessengerOptions.hpp>
 #include <core/vulkan/Error.hpp>
@@ -17,7 +18,7 @@
 
 namespace core {
 
-enum class InstanceCreationErrorKind {
+CORE_VK_ERROR_WITH_KINDS(InstanceCreationError,
     GlfwVulkanNotSupported,
     VolkInitializationFailed,
     UnsupportedApiVersion,
@@ -28,13 +29,7 @@ enum class InstanceCreationErrorKind {
     ValidationUnavailable,
     DebugUtilsUnavailable,
     InstanceCreationFailed,
-    DebugMessengerCreationFailed,
-};
-
-[[nodiscard]]
-std::string to_string(InstanceCreationErrorKind const error_kind) noexcept;
-
-using InstanceCreationError = VulkanErrorOverEnum<InstanceCreationErrorKind>;
+    DebugMessengerCreationFailed);
 
 class InstanceBuilder final {
 public:

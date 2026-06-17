@@ -1,5 +1,6 @@
 #pragma once
 
+#include <core/meta/Enum.hpp>
 #include <core/vulkan/Capabilities.hpp>
 #include <core/vulkan/Error.hpp>
 #include <core/vulkan/Extensions.hpp>
@@ -11,19 +12,11 @@
 #include <core/vulkan/PhysicalDeviceType.hpp>
 #include <core/vulkan/Surface.hpp>
 
-#include <string>
-
 namespace core {
 
-enum class PhysicalDeviceSelectionErrorKind {
+CORE_VK_ERROR_WITH_KINDS(PhysicalDeviceSelectionError,
     NoPhysicalDevices,
-    NoSuitableDevice,
-};
-
-[[nodiscard]]
-std::string to_string(PhysicalDeviceSelectionErrorKind const error_kind) noexcept;
-
-using PhysicalDeviceSelectionError = VulkanErrorOverEnum<PhysicalDeviceSelectionErrorKind>;
+    NoSuitableDevice)
 
 class PhysicalDeviceSelector final {
 public:

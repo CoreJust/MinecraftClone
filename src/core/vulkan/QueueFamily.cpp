@@ -1,25 +1,13 @@
 #include <core/vulkan/QueueFamily.hpp>
 
-#include <core/common/IterEnum.hpp>
+#include <core/meta/EnumImpl.hpp>
 #include <core/vulkan/Check.hpp>
 
 #include <volk.h>
 
 namespace core {
 
-std::string to_string(QueueFamily const family) {
-    switch (family) {
-        case QueueFamily::Graphics:      return "Graphics";
-        case QueueFamily::Compute:       return "Compute";
-        case QueueFamily::Transfer:      return "Transfer";
-        case QueueFamily::SparseBinding: return "SparseBinding";
-        case QueueFamily::Protected:     return "Protected";
-        case QueueFamily::VideoDecode:   return "VideoDecode";
-        case QueueFamily::VideoEncode:   return "VideoEncode";
-        case QueueFamily::Present:       return "Present";
-    case QueueFamily::Count: return "Count";
-    }
-}
+CORE_ENUM_FUNCTIONS_IMPL(QueueFamily);
 
 QueueFamilies QueueFamilies::query(VkPhysicalDevice const device, VkSurfaceKHR const surface) {
     QueueFamilies families{ };
@@ -30,7 +18,7 @@ QueueFamilies QueueFamilies::query(VkPhysicalDevice const device, VkSurfaceKHR c
     vkGetPhysicalDeviceQueueFamilyProperties(device, &queue_family_count, queue_families.data());
 
     for (uint32_t i = 0; i < queue_family_count; ++i) {
-        for (QueueFamily const family : iterEnum<QueueFamily>()) {
+        for (QueueFamily const family : valuesOf<QueueFamily>()) {
             std::optional flag_bit = queueFamilyFlagBitOf(family);
             if (!flag_bit.has_value()) {
                 continue;

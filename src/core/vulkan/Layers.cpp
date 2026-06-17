@@ -1,7 +1,7 @@
 #include <core/vulkan/Layers.hpp>
 
-#include <core/common/IterEnum.hpp>
 #include <core/IO/Log.hpp>
+#include <core/meta/EnumImpl.hpp>
 #include <core/vulkan/Check.hpp>
 #include <core/vulkan/VulkanVersion.hpp>
 
@@ -14,6 +14,8 @@
 
 namespace core {
 
+CORE_ENUM_FUNCTIONS_IMPL(VulkanLayer);
+
 VulkanLayers::VulkanLayers() noexcept {
     memset(versions, 255, std::size(versions) * sizeof(Version));
 }
@@ -24,7 +26,7 @@ bool VulkanLayers::hasLayer(VulkanLayer const layer) const noexcept {
 
 std::string VulkanLayers::toString(std::string_view const indent) const {
     std::string layers_message;
-    for (VulkanLayer const layer : iterEnum<VulkanLayer>()) {
+    for (VulkanLayer const layer : valuesOf<VulkanLayer>()) {
         if (hasLayer(layer)) {
             Version const v = getLayerVersion(layer);
             layers_message += fmt::format("{}{:40} v{}.{}.{}\n", indent, getFullLayerName(layer), v.major, v.minor, v.patch);
@@ -59,7 +61,7 @@ VulkanLayers loadSupportedLayers() {
         layer_versions[layer.layerName] = layer.specVersion;
     }
 
-    for (VulkanLayer const layer : iterEnum<VulkanLayer>()) {
+    for (VulkanLayer const layer : valuesOf<VulkanLayer>()) {
         if (auto it = layer_versions.find(getFullLayerName(layer)); it != layer_versions.end()) {
             supported_layers.versionAt(layer) = vkToVersion(it->second);
         }

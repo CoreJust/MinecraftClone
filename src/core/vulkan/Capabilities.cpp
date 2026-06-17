@@ -1,6 +1,6 @@
 #include <core/vulkan/Capabilities.hpp>
 
-#include <core/common/IterEnum.hpp>
+#include <core/IO/EnumFmt.hpp>
 
 namespace core {
 
@@ -13,7 +13,7 @@ void VulkanCaps::commitInstanceCaps(
     m_instance_version = instance_version;
     m_validation_enabled = validation_enabled;
     m_layers = enabled_layers;
-    for (VulkanExtension const ext : iterEnum<VulkanExtension>()) {
+    for (VulkanExtension const ext : valuesOf<VulkanExtension>()) {
         if (getExtensionKind(ext) == VulkanExtensionKind::Instance) {
             m_extensions.versionAt(ext) = enabled_extensions.getExtensionVersion(ext);
         }
@@ -33,7 +33,7 @@ void VulkanCaps::commitDeviceCaps(
     m_device_properties = properties;
     m_heaps = heaps;
     m_device_type = type;
-    for (VulkanExtension const ext : iterEnum<VulkanExtension>()) {
+    for (VulkanExtension const ext : valuesOf<VulkanExtension>()) {
         if (getExtensionKind(ext) == VulkanExtensionKind::Device) {
             m_extensions.versionAt(ext) = enabled_extensions.getExtensionVersion(ext);
         }
@@ -45,9 +45,9 @@ std::string VulkanCaps::toString() const {
     uint32_t index = 0;
     for (MemoryHeap const heap : m_heaps) {
         tmp = std::to_string(heap.heap_index) + "\t";
-        for (MemoryProperty const property : iterEnum<MemoryProperty>()) {
+        for (MemoryProperty const property : valuesOf<MemoryProperty>()) {
             if (MemoryPropertyBits::of(property).value & heap.properties.value) {
-                tmp += to_string(property);
+                tmp += toStringView(property);
                 tmp += ", ";
             }
         }
@@ -68,7 +68,7 @@ std::string VulkanCaps::toString() const {
         "Memory heaps:\n{}",
         instanceVersion(),
         deviceVersion(),
-        to_string(m_device_type),
+        m_device_type,
         validationEnabled() ? "Enabled" : "Disabled",
         m_layers.toString("\t"),
         m_extensions.toString("\t"),

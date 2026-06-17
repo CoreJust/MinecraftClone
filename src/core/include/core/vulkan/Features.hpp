@@ -1,5 +1,7 @@
 #pragma once
 
+#include <core/meta/Enum.hpp>
+
 #include <bitset>
 #include <string>
 
@@ -72,8 +74,7 @@ enum class VulkanFeature {
     Count,
 };
 
-[[nodiscard]]
-std::string to_string(VulkanFeature const feature);
+CORE_ENUM_FUNCTIONS(VulkanFeature);
 
 struct VulkanFeatures final {
     std::bitset<static_cast<size_t>(VulkanFeature::Count)> data;

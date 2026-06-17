@@ -1,6 +1,6 @@
 #pragma once
 
-#include <string>
+#include <core/meta/Enum.hpp>
 
 namespace core {
 
@@ -15,16 +15,6 @@ enum class PhysicalDeviceType {
     Count,
 };
 
-[[nodiscard]]
-inline std::string to_string(PhysicalDeviceType const type) {
-    switch(type) {
-        case PhysicalDeviceType::Other:      return "Other";
-        case PhysicalDeviceType::Integrated: return "Integrated";
-        case PhysicalDeviceType::Discrete:   return "Discrete";
-        case PhysicalDeviceType::Virtual:    return "Virtual";
-        case PhysicalDeviceType::Cpu:        return "Cpu";
-    case PhysicalDeviceType::Count: return "Count";
-    }
-}
+CORE_ENUM_FUNCTIONS(PhysicalDeviceType);
 
 } // namespace core

@@ -1,7 +1,5 @@
 #include <core/vulkan/PhysicalDeviceCapsStruct.hpp>
 
-#include <core/common/IterEnum.hpp>
-
 namespace core::internal {
 
 PhysicalDeviceCapsStruct PhysicalDeviceCapsStruct::query(PhysicalDevice const& device) {
@@ -246,7 +244,7 @@ std::vector<MemoryHeap> PhysicalDeviceCapsStruct::memoryHeaps() const {
 
 VulkanFeatures PhysicalDeviceCapsStruct::getFeatures() const noexcept {
     VulkanFeatures result{ };
-    for (VulkanFeature const feature : iterEnum<VulkanFeature>()) {
+    for (VulkanFeature const feature : valuesOf<VulkanFeature>()) {
         if (hasFeature(feature)) {
             result[feature] = true;
         }

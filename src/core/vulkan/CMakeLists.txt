@@ -8,8 +8,10 @@ target_sources(mc
         Instance.cpp
         InstanceBuilder.cpp
         Layers.cpp
+        MemoryProperty.cpp
         PhysicalDeviceCapsStruct.cpp
         PhysicalDeviceSelector.cpp
+        PhysicalDeviceType.cpp
         QueueFamily.cpp
         Surface.cpp
         Volk.cpp

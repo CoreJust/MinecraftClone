@@ -1,12 +1,12 @@
 #pragma once
 
 #include <core/common/Assert.hpp>
+#include <core/meta/Enum.hpp>
 #include <core/vulkan/VulkanFwd.hpp>
 
 #include <array>
 #include <cstdint>
 #include <optional>
-#include <string>
 
 namespace core {
 
@@ -25,8 +25,7 @@ enum class QueueFamily {
     Count,
 };
 
-[[nodiscard]]
-std::string to_string(QueueFamily const family);
+CORE_ENUM_FUNCTIONS(QueueFamily);
 
 [[nodiscard]]
 constexpr std::optional<uint32_t> queueFamilyFlagBitOf(QueueFamily const family) noexcept {

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <core/common/Version.hpp>
+#include <core/meta/Enum.hpp>
 
 #include <optional>
 #include <string>
@@ -71,7 +72,12 @@ enum class VulkanExtension {
 enum class VulkanExtensionKind {
     Instance,
     Device,
+
+    Count,
 };
+
+CORE_ENUM_FUNCTIONS(VulkanExtension);
+CORE_ENUM_FUNCTIONS(VulkanExtensionKind);
 
 struct VulkanExtensions final {
     Version versions[static_cast<size_t>(VulkanExtension::Count)];

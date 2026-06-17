@@ -1,7 +1,7 @@
 #include "Extensions.hpp"
 
-#include <core/common/IterEnum.hpp>
 #include <core/IO/Log.hpp>
+#include <core/meta/EnumImpl.hpp>
 #include <core/vulkan/Check.hpp>
 #include <core/vulkan/PhysicalDevice.hpp>
 #include <core/vulkan/VulkanVersion.hpp>
@@ -15,6 +15,9 @@
 
 namespace core {
     
+CORE_ENUM_FUNCTIONS_IMPL(VulkanExtension);
+CORE_ENUM_FUNCTIONS_IMPL(VulkanExtensionKind);
+
 VulkanExtensions::VulkanExtensions() noexcept {
     memset(versions, 255, std::size(versions) * sizeof(Version));
 }
@@ -25,7 +28,7 @@ bool VulkanExtensions::hasExtension(VulkanExtension const ext) const noexcept {
 
 std::string VulkanExtensions::toString(std::string_view const indent) const {
     std::string extensions_message;
-    for (VulkanExtension const ext : iterEnum<VulkanExtension>()) {
+    for (VulkanExtension const ext : valuesOf<VulkanExtension>()) {
         if (hasExtension(ext)) {
             Version const v = getExtensionVersion(ext);
             extensions_message += fmt::format("{}{:40} v{}.{}.{}\n", indent, getFullExtensionName(ext), v.major, v.minor, v.patch);
@@ -97,7 +100,7 @@ std::optional<VulkanExtension> extensionFromFullName(std::string_view const name
         []{
             std::unordered_map<std::string, VulkanExtension> result;
             result.reserve(static_cast<size_t>(VulkanExtension::Count));
-            for (VulkanExtension const ext : iterEnum<VulkanExtension>()) {
+            for (VulkanExtension const ext : valuesOf<VulkanExtension>()) {
                 result[getFullExtensionName(ext)] = ext;
             }
             return result;

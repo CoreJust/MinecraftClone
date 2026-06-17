@@ -1,6 +1,7 @@
 #pragma once
 
 #include <core/common/Version.hpp>
+#include <core/meta/Enum.hpp>
 
 #include <string>
 
@@ -15,6 +16,8 @@ enum class VulkanLayer {
 
     Count,
 };
+
+CORE_ENUM_FUNCTIONS(VulkanLayer);
 
 struct VulkanLayers final {
     Version versions[static_cast<size_t>(VulkanLayer::Count)];

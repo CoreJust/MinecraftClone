@@ -1,8 +1,8 @@
 #include <core/vulkan/InstanceBuilder.hpp>
 
 #include <core/common/Assert.hpp>
-#include <core/common/IterEnum.hpp>
 #include <core/IO/Log.hpp>
+#include <core/meta/EnumImpl.hpp>
 #include <core/vulkan/Check.hpp>
 #include <core/vulkan/VulkanVersion.hpp>
 
@@ -67,14 +67,14 @@ constexpr VkDebugUtilsMessengerCreateInfoEXT makeDebugMessengerCreateInfo(
 uint32_t selectInstanceVersion(Version const required, Version const preferred) {
     if (preferred < required) {
         throw InstanceCreationError(
-            InstanceCreationErrorKind::InvalidApiVersionRange,
+            InstanceCreationError::InvalidApiVersionRange,
             "{} < {}", preferred, required);
     }
 
     uint32_t supported_version = VK_API_VERSION_1_0;
     if (vkEnumerateInstanceVersion != nullptr) {
         if (!VK_CHECK(vkEnumerateInstanceVersion(&supported_version))) {
-            throw InstanceCreationError(InstanceCreationErrorKind::UnsupportedApiVersion);
+            throw InstanceCreationError(InstanceCreationError::UnsupportedApiVersion);
         }
     }
 
@@ -82,14 +82,14 @@ uint32_t selectInstanceVersion(Version const required, Version const preferred) 
     uint32_t const preferred_version = versionToVk(preferred);
     if (supported_version < required_version) {
         throw InstanceCreationError(
-            InstanceCreationErrorKind::UnsupportedApiVersion,
+            InstanceCreationError::UnsupportedApiVersion,
             "{}; supported at most: {}", required_version, supported_version);
     }
 
     uint32_t const selected_version = std::min(preferred_version, supported_version);
     if (selected_version < required_version) {
         throw InstanceCreationError(
-            InstanceCreationErrorKind::UnsupportedApiVersion,
+            InstanceCreationError::UnsupportedApiVersion,
             "{}; selected: {}", required_version, selected_version);
     }
     return selected_version;
@@ -107,7 +107,7 @@ VulkanLayers collectLayersToEnable(
         if (!supported.hasLayer(layer)) {
             if (required) {
                 throw InstanceCreationError(
-                    InstanceCreationErrorKind::MissingRequiredLayer,
+                    InstanceCreationError::MissingRequiredLayer,
                     "{}", getFullLayerName(layer)
                 );
             }
@@ -143,14 +143,14 @@ VulkanExtensions collectExtensionsToEnable(
     auto const addExtension = [&](VulkanExtension const extension, bool const required) {
         if (getExtensionKind(extension) == VulkanExtensionKind::Device) {
             throw InstanceCreationError(
-                InstanceCreationErrorKind::WrongExtensionScope,
+                InstanceCreationError::WrongExtensionScope,
                 "{} is not an instance extension", getFullExtensionName(extension)
             );
         }
         if (!supported.hasExtension(extension)) {
             if (required) {
                 throw InstanceCreationError(
-                    InstanceCreationErrorKind::MissingRequiredExtension,
+                    InstanceCreationError::MissingRequiredExtension,
                     "{}", getFullExtensionName(extension)
                 );
             }
@@ -174,13 +174,13 @@ VulkanExtensions collectExtensionsToEnable(
     }
     if (requires_window_extensions) {
         if (glfwVulkanSupported() != GLFW_TRUE) {
-            throw InstanceCreationError(InstanceCreationErrorKind::GlfwVulkanNotSupported);
+            throw InstanceCreationError(InstanceCreationError::GlfwVulkanNotSupported);
         }
 
         uint32_t glfw_extension_count = 0;
         char const** const glfw_extensions = glfwGetRequiredInstanceExtensions(&glfw_extension_count);
         if (glfw_extensions == nullptr || glfw_extension_count == 0) {
-            throw InstanceCreationError(InstanceCreationErrorKind::GlfwVulkanNotSupported);
+            throw InstanceCreationError(InstanceCreationError::GlfwVulkanNotSupported);
         }
 
         for (uint32_t i = 0; i < glfw_extension_count; ++i) {
@@ -188,7 +188,7 @@ VulkanExtensions collectExtensionsToEnable(
                 addExtension(*maybe_extension, true);
             } else {
                 throw InstanceCreationError(
-                    InstanceCreationErrorKind::MissingRequiredExtension,
+                    InstanceCreationError::MissingRequiredExtension,
                     "{} not recognized", glfw_extensions[i]
                 );
             }
@@ -200,29 +200,12 @@ VulkanExtensions collectExtensionsToEnable(
 
 } // namespace
 
-[[nodiscard]]
-std::string to_string(InstanceCreationErrorKind const error_kind) noexcept {
-    switch (error_kind) {
-        case InstanceCreationErrorKind::GlfwVulkanNotSupported:       return "GlfwVulkanNotSupported";
-        case InstanceCreationErrorKind::VolkInitializationFailed:     return "VolkInitializationFailed";
-        case InstanceCreationErrorKind::UnsupportedApiVersion:        return "UnsupportedApiVersion";
-        case InstanceCreationErrorKind::InvalidApiVersionRange:       return "InvalidApiVersionRange";
-        case InstanceCreationErrorKind::MissingRequiredLayer:         return "MissingRequiredLayer";
-        case InstanceCreationErrorKind::MissingRequiredExtension:     return "MissingRequiredExtension";
-        case InstanceCreationErrorKind::WrongExtensionScope:          return "WrongExtensionScope";
-        case InstanceCreationErrorKind::ValidationUnavailable:        return "ValidationUnavailable";
-        case InstanceCreationErrorKind::DebugUtilsUnavailable:        return "DebugUtilsUnavailable";
-        case InstanceCreationErrorKind::InstanceCreationFailed:       return "InstanceCreateFailed";
-        case InstanceCreationErrorKind::DebugMessengerCreationFailed: return "DebugMessengerCreationFailed";
-    }
-    ASSERT(false, "Unrecognized value: {}", static_cast<uint32_t>(error_kind));
-    return "";
-}
+CORE_ENUM_FUNCTIONS_IMPL(InstanceCreationErrorKind);
 
 [[nodiscard]]
 Instance InstanceBuilder::build(VulkanCaps* const out_caps) const {
     if (!VK_CHECK(volkInitialize())) {
-        throw InstanceCreationError(InstanceCreationErrorKind::VolkInitializationFailed);
+        throw InstanceCreationError(InstanceCreationError::VolkInitializationFailed);
     }
 
     uint32_t const selected_version = selectInstanceVersion(m_required_version, m_preferred_version);
@@ -250,7 +233,7 @@ Instance InstanceBuilder::build(VulkanCaps* const out_caps) const {
         && enabled_extensions.hasExtension(VulkanExtension::DebugUtils);
     if (wants_validation && !was_validation_enabled) {
         if (m_require_validation) {
-            throw InstanceCreationError(InstanceCreationErrorKind::ValidationUnavailable);
+            throw InstanceCreationError(InstanceCreationError::ValidationUnavailable);
         } else if (m_validation_failure_callback) {
             m_validation_failure_callback();
         }
@@ -266,14 +249,14 @@ Instance InstanceBuilder::build(VulkanCaps* const out_caps) const {
     };
 
     std::vector<char const*> enabled_layer_names;
-    for (VulkanLayer const layer : iterEnum<VulkanLayer>()) {
+    for (VulkanLayer const layer : valuesOf<VulkanLayer>()) {
         if (enabled_layers.hasLayer(layer)) {
             enabled_layer_names.push_back(getFullLayerName(layer));
         }
     }
 
     std::vector<char const*> enabled_extension_names;
-    for (VulkanExtension const extension : iterEnum<VulkanExtension>()) {
+    for (VulkanExtension const extension : valuesOf<VulkanExtension>()) {
         if (enabled_extensions.hasExtension(extension)) {
             enabled_extension_names.push_back(getFullExtensionName(extension));
         }
@@ -297,7 +280,7 @@ Instance InstanceBuilder::build(VulkanCaps* const out_caps) const {
 
     VkInstance instance = VK_NULL_HANDLE;
     if (!VK_CHECK(vkCreateInstance(&create_info, nullptr, &instance))) {
-        throw InstanceCreationError(InstanceCreationErrorKind::InstanceCreationFailed);
+        throw InstanceCreationError(InstanceCreationError::InstanceCreationFailed);
     }
 
     volkLoadInstance(instance);
@@ -311,7 +294,7 @@ Instance InstanceBuilder::build(VulkanCaps* const out_caps) const {
             &debug_messenger
         ))) {
             vkDestroyInstance(instance, nullptr);
-            throw InstanceCreationError(InstanceCreationErrorKind::DebugMessengerCreationFailed);
+            throw InstanceCreationError(InstanceCreationError::DebugMessengerCreationFailed);
         }
     }
 
