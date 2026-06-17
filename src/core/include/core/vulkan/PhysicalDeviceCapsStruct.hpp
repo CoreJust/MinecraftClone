@@ -17,20 +17,44 @@ struct PhysicalDeviceCapsStruct final {
     VkPhysicalDeviceProperties properties{ };
     VkPhysicalDeviceMemoryProperties memory_properties{ };
     VkPhysicalDeviceFeatures features{ };
+
     VkPhysicalDeviceVulkan11Features vulkan_11_features{ };
     VkPhysicalDeviceVulkan12Features vulkan_12_features{ };
     VkPhysicalDeviceVulkan13Features vulkan_13_features{ };
     VkPhysicalDeviceVulkan14Features vulkan_14_features{ };
-    VkPhysicalDeviceMaintenance4Features maintenance_4_features{ };
-    VkPhysicalDeviceSynchronization2Features synchronization_2_features{ };
-    VkPhysicalDeviceDynamicRenderingFeatures dynamic_rendering_features{ };
-    VkPhysicalDeviceMeshShaderFeaturesEXT mesh_shader_features{ };
-    VkPhysicalDeviceBufferDeviceAddressFeatures buffer_device_address_features{ };
-    VkPhysicalDeviceDescriptorIndexingFeatures descriptor_indexing_features{ };
-    VkPhysicalDeviceTimelineSemaphoreFeatures timeline_semaphore_features{ };
+
+    // 1.1 promotions
+    VkPhysicalDevice16BitStorageFeatures              feat_16bit_storage{ };
+    VkPhysicalDeviceMultiviewFeatures                 feat_multiview{ };
+    VkPhysicalDeviceVariablePointersFeatures          feat_variable_pointers{ };
+
+    // 1.2 promotions
+    VkPhysicalDevice8BitStorageFeatures               feat_8bit_storage{ };
+    VkPhysicalDeviceShaderFloat16Int8Features         feat_shader_float16_int8{ };
+    VkPhysicalDeviceDescriptorIndexingFeatures        feat_descriptor_indexing{ };
+    VkPhysicalDeviceBufferDeviceAddressFeatures       feat_buffer_device_address{ };
+    VkPhysicalDeviceHostQueryResetFeatures            feat_host_query_reset{ };
+    VkPhysicalDeviceTimelineSemaphoreFeatures         feat_timeline_semaphore{ };
+    VkPhysicalDeviceVulkanMemoryModelFeatures         feat_vulkan_memory_model{ };
+    VkPhysicalDeviceShaderSubgroupExtendedTypesFeatures feat_subgroup_extended_types{ };
+    VkPhysicalDeviceSeparateDepthStencilLayoutsFeatures feat_separate_depth_stencil_layouts{ };
+    VkPhysicalDeviceUniformBufferStandardLayoutFeatures feat_uniform_buffer_standard_layout{ };
+    VkPhysicalDeviceShaderAtomicInt64Features         feat_shader_atomic_int64{ };
+    VkPhysicalDeviceScalarBlockLayoutFeatures         feat_scalar_block_layout{ };
+    VkPhysicalDeviceImagelessFramebufferFeatures      feat_imageless_framebuffer{ };
+
+    // 1.3 promotions
+    VkPhysicalDeviceMaintenance4Features              feat_maintenance4{ };
+    VkPhysicalDeviceSynchronization2Features          feat_synchronization2{ };
+    VkPhysicalDeviceDynamicRenderingFeatures          feat_dynamic_rendering{ };
+
+    // Not promoted
+    VkPhysicalDeviceMeshShaderFeaturesEXT             mesh_shader_features{ };
 
     [[nodiscard]]
-    static PhysicalDeviceCapsStruct query(PhysicalDevice const& device);
+    void* chained(Version instance_version) noexcept;
+    [[nodiscard]]
+    static PhysicalDeviceCapsStruct query(PhysicalDevice const& device, Version instance_version);
 
     [[nodiscard]]
     bool hasFeature(VulkanFeature const feature) const noexcept;

@@ -209,7 +209,7 @@ VulkanExtensions VulkanExtensions::loadSupportedInstanceExtensions() {
         if (auto maybe_ext = extensionFromFullName(vk_ext.extensionName)) {
             supported_extensions.versionAt(*maybe_ext) = vkToVersion(vk_ext.specVersion);
         } else {
-            CORE_DEBUG("Supported extension not known: {}", vk_ext.extensionName);
+            CORE_TRACE("Supported extension not known: {}", vk_ext.extensionName);
         }
     }
 
@@ -232,7 +232,7 @@ VulkanExtensions VulkanExtensions::loadSupportedDeviceExtensions(PhysicalDevice 
         if (auto maybe_ext = extensionFromFullName(vk_ext.extensionName)) {
             supported_extensions.versionAt(*maybe_ext) = vkToVersion(vk_ext.specVersion);
         } else {
-            CORE_DEBUG("Supported extension not known: {}", vk_ext.extensionName);
+            CORE_TRACE("Supported extension not known: {}", vk_ext.extensionName);
         }
     }
 

@@ -2,6 +2,8 @@ target_sources(mc
     PRIVATE
         Capabilities.cpp
         Check.cpp
+        Device.cpp
+        DeviceBuilder.cpp
         ErrorCallbacks.cpp
         Extensions.cpp
         Features.cpp

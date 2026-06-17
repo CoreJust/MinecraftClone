@@ -12,10 +12,12 @@ target_sources(mc
             ControlFlow.hpp
             CrashHandler.hpp
             Defer.hpp
+            InputSpan.hpp
             NonCopyable.hpp
             NonMovable.hpp
             SpanUtils.hpp
             StaticInitializer.hpp
             TrivialPair.hpp
+            VectorUtils.hpp
             Version.hpp
 )

@@ -51,7 +51,6 @@ void setCrashHandler() {
     std::signal(SIGABRT, onErrorSignal);
     std::signal(SIGFPE,  onErrorSignal);
     std::signal(SIGILL,  onErrorSignal);
-    std::signal(SIGINT,  onErrorSignal);
     std::signal(SIGSEGV, onErrorSignal);
     std::signal(SIGTERM, onErrorSignal);
 #ifdef SIGBREAK

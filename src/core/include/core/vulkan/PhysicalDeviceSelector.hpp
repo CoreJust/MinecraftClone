@@ -1,6 +1,7 @@
 #pragma once
 
-#include <core/meta/Enum.hpp>
+#include <core/common/InputSpan.hpp>
+#include <core/common/VectorUtils.hpp>
 #include <core/vulkan/Capabilities.hpp>
 #include <core/vulkan/Error.hpp>
 #include <core/vulkan/Extensions.hpp>
@@ -30,96 +31,60 @@ public:
         return std::forward<Self>(self);
     }
 
-    template<typename Self, typename First, typename... Tail>
+    template<typename Self>
     [[nodiscard]] auto&& requireExtensions(
         this Self&& self,
-        First const first,
-        Tail const... rest
+        InputSpan<VulkanExtension> const exts
     ) {
-        SpanOver span_over_data{ first, rest... };
-        self.m_required_extensions.insert(
-            self.m_required_extensions.end(),
-            span_over_data.asSpan().begin(),
-            span_over_data.asSpan().end()
-        );
+        appendRange(self.m_required_extensions, exts);
         return std::forward<Self>(self);
     }
 
-    template<typename Self, typename First, typename... Tail>
+    template<typename Self>
     [[nodiscard]] auto&& preferExtensions(
         this Self&& self,
-        First const first,
-        Tail const... rest
+        InputSpan<VulkanExtension> const exts
     ) {
-        SpanOver span_over_data{ first, rest... };
-        self.m_preferred_extensions.insert(
-            self.m_preferred_extensions.end(),
-            span_over_data.asSpan().begin(),
-            span_over_data.asSpan().end()
-        );
+        appendRange(self.m_preferred_extensions, exts);
         return std::forward<Self>(self);
     }
 
-    template<typename Self, typename First, typename... Tail>
+    template<typename Self>
     [[nodiscard]] auto&& requireFeatures(
         this Self&& self,
-        First const first,
-        Tail const... rest
+        InputSpan<VulkanFeature> const features
     ) {
-        SpanOver span_over_data{ first, rest... };
-        self.m_required_features.insert(
-            self.m_required_features.end(),
-            span_over_data.asSpan().begin(),
-            span_over_data.asSpan().end()
-        );
+        appendRange(self.m_required_features, features);
         return std::forward<Self>(self);
     }
 
-    template<typename Self, typename First, typename... Tail>
+    template<typename Self>
     [[nodiscard]] auto&& preferFeatures(
         this Self&& self,
-        First const first,
-        Tail const... rest
+        InputSpan<VulkanFeature> const features
     ) {
-        SpanOver span_over_data{ first, rest... };
-        self.m_preferred_features.insert(
-            self.m_preferred_features.end(),
-            span_over_data.asSpan().begin(),
-            span_over_data.asSpan().end()
-        );
+        appendRange(self.m_preferred_features, features);
         return std::forward<Self>(self);
     }
 
-    template<typename Self, typename First, typename... Tail>
+    template<typename Self>
     [[nodiscard]] auto&& requireMemoryHeaps(
         this Self&& self,
-        First const first,
-        Tail const... rest
+        InputSpan<MemoryPropertyBits> const heaps
     ) {
-        SpanOver span_over_data{ first, rest... };
-        self.m_required_heaps.insert(
-            self.m_required_heaps.end(),
-            span_over_data.asSpan().begin(),
-            span_over_data.asSpan().end()
-        );
+        appendRange(self.m_required_heaps, heaps);
         return std::forward<Self>(self);
     }
 
-    template<typename Self, typename First, typename... Tail>
+    template<typename Self>
     [[nodiscard]] auto&& requireQueueFamilies(
         this Self&& self,
-        First const first,
-        Tail const... rest
+        InputSpan<QueueFamily> const families
     ) {
-        SpanOver span_over_data{ first, rest... };
-        for (QueueFamily family : span_over_data.asSpan()) {
+        for (QueueFamily const family : families) {
             ASSERT(family != QueueFamily::Present, "Use requirePresentQueueFamily to request present queue family");
         }
-        self.m_required_queue_families.insert(
-            self.m_required_queue_families.end(),
-            span_over_data.asSpan().begin(),
-            span_over_data.asSpan().end()
-        );
+        appendRange(self.m_required_queue_families, families);
         return std::forward<Self>(self);
     }
     
@@ -133,42 +98,30 @@ public:
         return std::forward<Self>(self);
     }
 
-    template<typename Self, typename First, typename... Tail>
-    [[nodiscard]] auto&& preferDeviceType(
+    template<typename Self>
+    [[nodiscard]] auto&& requireDeviceType(
         this Self&& self,
-        First const first,
-        Tail const... rest
+        InputSpan<PhysicalDeviceType> const types
     ) {
-        SpanOver span_over_data{ first, rest... };
-        self.m_preferred_device_types.insert(
-            self.m_preferred_device_types.end(),
-            span_over_data.asSpan().begin(),
-            span_over_data.asSpan().end()
-        );
+        appendRange(self.m_required_device_types, types);
         return std::forward<Self>(self);
     }
 
-    template<typename Self, typename First, typename... Tail>
-    [[nodiscard]] auto&& requireDeviceType(
+    template<typename Self>
+    [[nodiscard]] auto&& preferDeviceType(
         this Self&& self,
-        First const first,
-        Tail const... rest
+        InputSpan<PhysicalDeviceType> const types
     ) {
-        SpanOver span_over_data{ first, rest... };
-        self.m_required_device_types.insert(
-            self.m_required_device_types.end(),
-            span_over_data.asSpan().begin(),
-            span_over_data.asSpan().end()
-        );
+        appendRange(self.m_preferred_device_types, types);
         return std::forward<Self>(self);
     }
 
     // Throws PhysicalDeviceSelectionError
     [[nodiscard]]
-    PhysicalDevice select(VulkanCaps* const out_caps = nullptr) const;
+    PhysicalDevice select(VulkanCaps& out_caps) const;
 private:
     [[nodiscard]]
-    int32_t scoreDevice(PhysicalDevice const& device) const;
+    int32_t scoreDevice(PhysicalDevice const& device, Version const instance_version) const;
 private:
     Instance const& m_instance;
     Surface const* m_surface;

@@ -203,7 +203,7 @@ VulkanExtensions collectExtensionsToEnable(
 CORE_ENUM_FUNCTIONS_IMPL(InstanceCreationErrorKind);
 
 [[nodiscard]]
-Instance InstanceBuilder::build(VulkanCaps* const out_caps) const {
+Instance InstanceBuilder::build(VulkanCaps& out_caps) const {
     if (!VK_CHECK(volkInitialize())) {
         throw InstanceCreationError(InstanceCreationError::VolkInitializationFailed);
     }
@@ -298,14 +298,14 @@ Instance InstanceBuilder::build(VulkanCaps* const out_caps) const {
         }
     }
 
-    if (out_caps) {
-        out_caps->commitInstanceCaps(
-            vkToVersion(selected_version),
-            wants_validation && was_validation_enabled,
-            enabled_layers,
-            enabled_extensions
-        );
-    }
+    out_caps.commitInstanceCaps(
+        vkToVersion(selected_version),
+        wants_validation && was_validation_enabled,
+        supported_layers,
+        enabled_layers,
+        supported_extensions,
+        enabled_extensions
+    );
 
     return Instance{ instance, debug_messenger };
 }

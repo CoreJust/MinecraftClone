@@ -6,6 +6,8 @@ target_sources(mc
             Capabilities.hpp
             Check.hpp
             DebugMessengerOptions.hpp
+            Device.hpp
+            DeviceBuilder.hpp
             Error.hpp
             ErrorCallbacks.hpp
             Extensions.hpp
@@ -19,6 +21,7 @@ target_sources(mc
             PhysicalDeviceProperties.hpp
             PhysicalDeviceSelector.hpp
             PhysicalDeviceType.hpp
+            Queue.hpp
             QueueFamily.hpp
             Resource.hpp
             Surface.hpp

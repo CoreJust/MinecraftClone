@@ -3,9 +3,6 @@
 #include <core/vulkan/Instance.hpp>
 #include <core/window/Window.hpp>
 
-#include <cstdint>
-#include <utility>
-
 namespace core {
 
 class RawSurface : public VulkanResourceBase<VkSurfaceKHR> {

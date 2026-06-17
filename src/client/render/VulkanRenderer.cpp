@@ -4,13 +4,11 @@
 
 #include <core/common/Assert.hpp>
 #include <core/IO/File.hpp>
-#include <core/IO/Log.hpp>
-#include <core/vulkan/Capabilities.hpp>
 #include <core/vulkan/Check.hpp>
+#include <core/vulkan/DeviceBuilder.hpp>
 #include <core/vulkan/ErrorCallbacks.hpp>
 #include <core/vulkan/InstanceBuilder.hpp>
 #include <core/vulkan/PhysicalDeviceSelector.hpp>
-#include <core/vulkan/Surface.hpp>
 #include <core/vulkan/VulkanVersion.hpp>
 
 // DONT_CHECK INCLUDE_ORDER
@@ -23,7 +21,6 @@
 #include <cstdint>
 #include <cstring>
 #include <limits>
-#include <optional>
 #include <span>
 #include <string>
 #include <utility>
@@ -73,7 +70,7 @@ struct SwapchainBundle final {
     return words;
 }
 
-[[nodiscard]] VkShaderModule loadShaderModule(VkDevice const device, std::string const& path) {
+[[nodiscard]] VkShaderModule loadShaderModule(core::Device const& device, std::string const& path) {
     auto const bytes = core::readFile(path);
     ASSERT(bytes.has_value(), "Failed to read shader file: {}", path);
 
@@ -87,7 +84,7 @@ struct SwapchainBundle final {
     };
 
     VkShaderModule module = VK_NULL_HANDLE;
-    CORE_VK_ASSERT(vkCreateShaderModule(device, &info, nullptr, &module));
+    CORE_VK_ASSERT(vkCreateShaderModule(device.handle(), &info, nullptr, &module));
     return module;
 }
 
@@ -104,24 +101,32 @@ public:
             .requireWindowExtensions()
             .portabilityEnumeration()
             .requireValidation()
-            .build(&m_caps))
+            .build(m_caps))
         , m_surface(m_instance, window)
         , m_physical_device(core::PhysicalDeviceSelector(m_instance)
-            .requireQueueFamilies(core::QueueFamily::Graphics)
+            .requireQueueFamilies({ core::QueueFamily::Graphics })
             .requirePresentQueueFamily(m_surface)
-            .requireExtensions(
+            .requireExtensions({
                 core::VulkanExtension::Swapchain,
-                core::VulkanExtension::MeshShader)
-            .requireFeatures(
+                core::VulkanExtension::MeshShader,
+            })
+            .requireFeatures({
                 core::VulkanFeature::DynamicRendering,
                 core::VulkanFeature::Synchronization2,
-                core::VulkanFeature::MeshShader)
+                core::VulkanFeature::Maintanance4,
+                core::VulkanFeature::MeshShader,
+            })
             .requireApiVersion(core::Version{ 0, 1, 3, 0 })
-            .preferDeviceType(core::PhysicalDeviceType::Discrete)
-            .select(&m_caps))
+            .preferDeviceType({ core::PhysicalDeviceType::Discrete })
+            .select(m_caps))
+        , m_device(core::DeviceBuilder(m_physical_device)
+            .requireQueueFamilies({
+                { core::QueueFamily::Graphics, 1.f },
+                { core::QueueFamily::Present, 1.f },
+            })
+            .build(m_caps))
     {
         CORE_INFO("Loaded Vulkan:\n{}", m_caps.toString());
-        createDevice();
         createSwapchain();
         createCommandPool();
         createCommandBuffers();
@@ -132,8 +137,8 @@ public:
     }
 
     ~Impl() {
-        if (m_device != VK_NULL_HANDLE) {
-            vkDeviceWaitIdle(m_device);
+        if (!m_device.isNull()) {
+            m_device.waitIdle();
         }
 
         core::setOutOfDateKHRCallback(nullptr);
@@ -143,7 +148,6 @@ public:
         destroyCommandBuffers();
         destroyCommandPool();
         destroySwapchain();
-        destroyDevice();
     }
 
     void render(std::span<PlayerRenderData const> const players) {
@@ -154,64 +158,6 @@ public:
     }
 
 private:
-    void createDevice() {
-        uint32_t uniqueFamilies[2]{};
-        uint32_t uniqueCount = 0;
-        auto const addUnique = [&](uint32_t const family) {
-            for (uint32_t i = 0; i < uniqueCount; ++i) {
-                if (uniqueFamilies[i] == family) {
-                    return;
-                }
-            }
-            uniqueFamilies[uniqueCount++] = family;
-        };
-        addUnique(*m_physical_device.queueFamily(core::QueueFamily::Graphics));
-        addUnique(*m_physical_device.queueFamily(core::QueueFamily::Present));
-
-        float const priority = 1.0f;
-        VkDeviceQueueCreateInfo queueInfos[2]{};
-        for (uint32_t i = 0; i < uniqueCount; ++i) {
-            queueInfos[i] = VkDeviceQueueCreateInfo{
-                .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
-                .queueFamilyIndex = uniqueFamilies[i],
-                .queueCount = 1,
-                .pQueuePriorities = &priority,
-            };
-        }
-
-        std::vector<char const*> extensions{
-            VK_KHR_SWAPCHAIN_EXTENSION_NAME,
-            VK_EXT_MESH_SHADER_EXTENSION_NAME,
-        };
-
-        VkPhysicalDeviceMeshShaderFeaturesEXT meshFeatures{
-            .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_FEATURES_EXT,
-            .taskShader = VK_FALSE,
-            .meshShader = VK_TRUE,
-        };
-        VkPhysicalDeviceVulkan13Features features13{
-            .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES,
-            .pNext = &meshFeatures,
-            .synchronization2 = VK_TRUE,
-            .dynamicRendering = VK_TRUE,
-            .maintenance4 = VK_TRUE,
-        };
-
-        VkDeviceCreateInfo const createInfo{
-            .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
-            .pNext = &features13,
-            .queueCreateInfoCount = uniqueCount,
-            .pQueueCreateInfos = queueInfos,
-            .enabledExtensionCount = static_cast<uint32_t>(extensions.size()),
-            .ppEnabledExtensionNames = extensions.data(),
-        };
-
-        CORE_VK_ASSERT(vkCreateDevice(m_physical_device.handle(), &createInfo, nullptr, &m_device));
-        volkLoadDevice(m_device);
-        vkGetDeviceQueue(m_device, *m_physical_device.queueFamily(core::QueueFamily::Graphics), 0, &m_graphicsQueue);
-        vkGetDeviceQueue(m_device, *m_physical_device.queueFamily(core::QueueFamily::Present), 0, &m_presentQueue);
-    }
-
     [[nodiscard]] VkSurfaceFormatKHR chooseSurfaceFormat(std::span<VkSurfaceFormatKHR const> const formats) const {
         for (auto const& format : formats) {
             if (format.format == VK_FORMAT_B8G8R8A8_SRGB && format.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) {
@@ -298,15 +244,15 @@ private:
 
         VkSwapchainKHR const oldSwapchain = m_swapchain.swapchain;
         VkSwapchainKHR newSwapchain = VK_NULL_HANDLE;
-        CORE_VK_ASSERT(vkCreateSwapchainKHR(m_device, &createInfo, nullptr, &newSwapchain));
+        CORE_VK_ASSERT(vkCreateSwapchainKHR(m_device.handle(), &createInfo, nullptr, &newSwapchain));
 
         uint32_t newImageCount = 0;
-        CORE_VK_ASSERT(vkGetSwapchainImagesKHR(m_device, newSwapchain, &newImageCount, nullptr));
+        CORE_VK_ASSERT(vkGetSwapchainImagesKHR(m_device.handle(), newSwapchain, &newImageCount, nullptr));
         std::vector<VkImage> images(newImageCount);
-        CORE_VK_ASSERT(vkGetSwapchainImagesKHR(m_device, newSwapchain, &newImageCount, images.data()));
+        CORE_VK_ASSERT(vkGetSwapchainImagesKHR(m_device.handle(), newSwapchain, &newImageCount, images.data()));
 
         if (oldSwapchain != VK_NULL_HANDLE) {
-            vkDestroySwapchainKHR(m_device, oldSwapchain, nullptr);
+            vkDestroySwapchainKHR(m_device.handle(), oldSwapchain, nullptr);
         }
 
         m_swapchain.swapchain = newSwapchain;
@@ -330,13 +276,13 @@ private:
             };
 
             VkImageView view = VK_NULL_HANDLE;
-            CORE_VK_ASSERT(vkCreateImageView(m_device, &viewInfo, nullptr, &view));
+            CORE_VK_ASSERT(vkCreateImageView(m_device.handle(), &viewInfo, nullptr, &view));
             m_swapchain.views.push_back(view);
         }
     }
 
     void recreateSwapchain() {
-        CORE_VK_ASSERT(vkDeviceWaitIdle(m_device));
+        m_device.waitIdle();
         destroyPipelines();
         destroyCommandBuffers();
         destroySwapchain();
@@ -348,13 +294,13 @@ private:
     void destroySwapchain() {
         for (auto const view : m_swapchain.views) {
             if (view != VK_NULL_HANDLE) {
-                vkDestroyImageView(m_device, view, nullptr);
+                vkDestroyImageView(m_device.handle(), view, nullptr);
             }
         }
         m_swapchain.views.clear();
 
         if (m_swapchain.swapchain != VK_NULL_HANDLE) {
-            vkDestroySwapchainKHR(m_device, m_swapchain.swapchain, nullptr);
+            vkDestroySwapchainKHR(m_device.handle(), m_swapchain.swapchain, nullptr);
             m_swapchain.swapchain = VK_NULL_HANDLE;
         }
     }
@@ -365,12 +311,12 @@ private:
             .flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
             .queueFamilyIndex = *m_physical_device.queueFamily(core::QueueFamily::Graphics),
         };
-        CORE_VK_ASSERT(vkCreateCommandPool(m_device, &info, nullptr, &m_commandPool));
+        CORE_VK_ASSERT(vkCreateCommandPool(m_device.handle(), &info, nullptr, &m_commandPool));
     }
 
     void destroyCommandPool() {
         if (m_commandPool != VK_NULL_HANDLE) {
-            vkDestroyCommandPool(m_device, m_commandPool, nullptr);
+            vkDestroyCommandPool(m_device.handle(), m_commandPool, nullptr);
             m_commandPool = VK_NULL_HANDLE;
         }
     }
@@ -383,12 +329,16 @@ private:
             .commandBufferCount = kMaxFramesInFlight,
         };
         m_commandBuffers.resize(kMaxFramesInFlight);
-        CORE_VK_ASSERT(vkAllocateCommandBuffers(m_device, &info, m_commandBuffers.data()));
+        CORE_VK_ASSERT(vkAllocateCommandBuffers(m_device.handle(), &info, m_commandBuffers.data()));
     }
 
     void destroyCommandBuffers() {
         if (!m_commandBuffers.empty() && m_commandPool != VK_NULL_HANDLE) {
-            vkFreeCommandBuffers(m_device, m_commandPool, static_cast<uint32_t>(m_commandBuffers.size()), m_commandBuffers.data());
+            vkFreeCommandBuffers(
+                m_device.handle(),
+                m_commandPool,
+                static_cast<uint32_t>(m_commandBuffers.size()),
+                m_commandBuffers.data());
             m_commandBuffers.clear();
         }
     }
@@ -407,26 +357,26 @@ private:
         m_inFlight.resize(kMaxFramesInFlight);
 
         for (uint32_t i = 0; i < kMaxFramesInFlight; ++i) {
-            CORE_VK_ASSERT(vkCreateSemaphore(m_device, &semInfo, nullptr, &m_imageAvailable[i]));
-            CORE_VK_ASSERT(vkCreateSemaphore(m_device, &semInfo, nullptr, &m_renderFinished[i]));
-            CORE_VK_ASSERT(vkCreateFence(m_device, &fenceInfo, nullptr, &m_inFlight[i]));
+            CORE_VK_ASSERT(vkCreateSemaphore(m_device.handle(), &semInfo, nullptr, &m_imageAvailable[i]));
+            CORE_VK_ASSERT(vkCreateSemaphore(m_device.handle(), &semInfo, nullptr, &m_renderFinished[i]));
+            CORE_VK_ASSERT(vkCreateFence(m_device.handle(), &fenceInfo, nullptr, &m_inFlight[i]));
         }
     }
 
     void destroySyncObjects() {
         for (auto const fence : m_inFlight) {
             if (fence != VK_NULL_HANDLE) {
-                vkDestroyFence(m_device, fence, nullptr);
+                vkDestroyFence(m_device.handle(), fence, nullptr);
             }
         }
         for (auto const semaphore : m_imageAvailable) {
             if (semaphore != VK_NULL_HANDLE) {
-                vkDestroySemaphore(m_device, semaphore, nullptr);
+                vkDestroySemaphore(m_device.handle(), semaphore, nullptr);
             }
         }
         for (auto const semaphore : m_renderFinished) {
             if (semaphore != VK_NULL_HANDLE) {
-                vkDestroySemaphore(m_device, semaphore, nullptr);
+                vkDestroySemaphore(m_device.handle(), semaphore, nullptr);
             }
         }
         m_inFlight.clear();
@@ -461,8 +411,8 @@ private:
             .pPushConstantRanges = &playerRange,
         };
 
-        CORE_VK_ASSERT(vkCreatePipelineLayout(m_device, &gridLayoutInfo, nullptr, &m_gridLayout));
-        CORE_VK_ASSERT(vkCreatePipelineLayout(m_device, &playerLayoutInfo, nullptr, &m_playerLayout));
+        CORE_VK_ASSERT(vkCreatePipelineLayout(m_device.handle(), &gridLayoutInfo, nullptr, &m_gridLayout));
+        CORE_VK_ASSERT(vkCreatePipelineLayout(m_device.handle(), &playerLayoutInfo, nullptr, &m_playerLayout));
 
         VkPipelineRenderingCreateInfo const gridRendering{
             .sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO,
@@ -591,40 +541,40 @@ private:
 
         VkGraphicsPipelineCreateInfo const infos[2]{gridInfo, playerInfo};
         VkPipeline pipelines[2]{VK_NULL_HANDLE, VK_NULL_HANDLE};
-        CORE_VK_ASSERT(vkCreateGraphicsPipelines(m_device, VK_NULL_HANDLE, 2, infos, nullptr, pipelines));
+        CORE_VK_ASSERT(vkCreateGraphicsPipelines(m_device.handle(), VK_NULL_HANDLE, 2, infos, nullptr, pipelines));
 
         m_gridPipeline = pipelines[0];
         m_playerPipeline = pipelines[1];
     }
 
     void destroyPipelines() {
-        if (m_device != VK_NULL_HANDLE) {
+        if (!m_device.isNull()) {
             if (m_gridPipeline != VK_NULL_HANDLE) {
-                vkDestroyPipeline(m_device, m_gridPipeline, nullptr);
+                vkDestroyPipeline(m_device.handle(), m_gridPipeline, nullptr);
                 m_gridPipeline = VK_NULL_HANDLE;
             }
             if (m_playerPipeline != VK_NULL_HANDLE) {
-                vkDestroyPipeline(m_device, m_playerPipeline, nullptr);
+                vkDestroyPipeline(m_device.handle(), m_playerPipeline, nullptr);
                 m_playerPipeline = VK_NULL_HANDLE;
             }
             if (m_gridLayout != VK_NULL_HANDLE) {
-                vkDestroyPipelineLayout(m_device, m_gridLayout, nullptr);
+                vkDestroyPipelineLayout(m_device.handle(), m_gridLayout, nullptr);
                 m_gridLayout = VK_NULL_HANDLE;
             }
             if (m_playerLayout != VK_NULL_HANDLE) {
-                vkDestroyPipelineLayout(m_device, m_playerLayout, nullptr);
+                vkDestroyPipelineLayout(m_device.handle(), m_playerLayout, nullptr);
                 m_playerLayout = VK_NULL_HANDLE;
             }
             if (m_gridMeshShader != VK_NULL_HANDLE) {
-                vkDestroyShaderModule(m_device, m_gridMeshShader, nullptr);
+                vkDestroyShaderModule(m_device.handle(), m_gridMeshShader, nullptr);
                 m_gridMeshShader = VK_NULL_HANDLE;
             }
             if (m_playerMeshShader != VK_NULL_HANDLE) {
-                vkDestroyShaderModule(m_device, m_playerMeshShader, nullptr);
+                vkDestroyShaderModule(m_device.handle(), m_playerMeshShader, nullptr);
                 m_playerMeshShader = VK_NULL_HANDLE;
             }
             if (m_fragmentShader != VK_NULL_HANDLE) {
-                vkDestroyShaderModule(m_device, m_fragmentShader, nullptr);
+                vkDestroyShaderModule(m_device.handle(), m_fragmentShader, nullptr);
                 m_fragmentShader = VK_NULL_HANDLE;
             }
         }
@@ -632,18 +582,18 @@ private:
 
     void drawFrame(std::span<PlayerRenderData const> const players) {
         uint32_t const frame = static_cast<uint32_t>(m_frameIndex % kMaxFramesInFlight);
-        CORE_VK_ASSERT(vkWaitForFences(m_device, 1, &m_inFlight[frame], VK_TRUE, std::numeric_limits<uint64_t>::max()));
+        CORE_VK_ASSERT(vkWaitForFences(m_device.handle(), 1, &m_inFlight[frame], VK_TRUE, std::numeric_limits<uint64_t>::max()));
 
         uint32_t imageIndex = 0;
         CORE_VK_ASSERT(vkAcquireNextImageKHR(
-            m_device,
+            m_device.handle(),
             m_swapchain.swapchain,
             std::numeric_limits<uint64_t>::max(),
             m_imageAvailable[frame],
             VK_NULL_HANDLE,
             &imageIndex));
 
-        CORE_VK_ASSERT(vkResetFences(m_device, 1, &m_inFlight[frame]));
+        CORE_VK_ASSERT(vkResetFences(m_device.handle(), 1, &m_inFlight[frame]));
         CORE_VK_ASSERT(vkResetCommandBuffer(m_commandBuffers[frame], 0));
         record(m_commandBuffers[frame], imageIndex, players);
 
@@ -658,7 +608,7 @@ private:
             .signalSemaphoreCount = 1,
             .pSignalSemaphores = &m_renderFinished[frame],
         };
-        CORE_VK_ASSERT(vkQueueSubmit(m_graphicsQueue, 1, &submit, m_inFlight[frame]));
+        CORE_VK_ASSERT(vkQueueSubmit(m_device.queue(core::QueueFamily::Graphics).handle(), 1, &submit, m_inFlight[frame]));
 
         VkPresentInfoKHR const present{
             .sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
@@ -669,7 +619,7 @@ private:
             .pImageIndices = &imageIndex,
         };
 
-        CORE_VK_ASSERT(vkQueuePresentKHR(m_presentQueue, &present));
+        CORE_VK_ASSERT(vkQueuePresentKHR(m_device.queue(core::QueueFamily::Present).handle(), &present));
 
         ++m_frameIndex;
     }
@@ -786,13 +736,6 @@ private:
 
         CORE_VK_ASSERT(vkEndCommandBuffer(cmd));
     }
-
-    void destroyDevice() {
-        if (m_device != VK_NULL_HANDLE) {
-            vkDestroyDevice(m_device, nullptr);
-            m_device = VK_NULL_HANDLE;
-        }
-    }
 private:
     core::Window const& m_window;
 
@@ -800,9 +743,7 @@ private:
     core::Instance m_instance;
     core::Surface m_surface;
     core::PhysicalDevice m_physical_device;
-    VkDevice m_device = VK_NULL_HANDLE;
-    VkQueue m_graphicsQueue = VK_NULL_HANDLE;
-    VkQueue m_presentQueue = VK_NULL_HANDLE;
+    core::Device m_device;
 
     SwapchainBundle m_swapchain{};
     VkCommandPool m_commandPool = VK_NULL_HANDLE;

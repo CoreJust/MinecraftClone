@@ -5,10 +5,52 @@
 #include <core/vulkan/PhysicalDeviceCapsStruct.hpp>
 
 namespace core {
+namespace {
+
+void commitCaps(
+    VulkanCaps& out_caps,
+    PhysicalDevice device,
+    std::vector<VulkanExtension> required_extensions,
+    std::vector<VulkanExtension> preferred_extensions,
+    std::vector<VulkanFeature> required_features,
+    std::vector<VulkanFeature> preferred_features
+) {
+    auto caps = internal::PhysicalDeviceCapsStruct::query(device, out_caps.instanceVersion());
+    
+    auto extensions = VulkanExtensions::loadSupportedDeviceExtensions(device);
+    VulkanExtensions supported_extensions{ };
+    for (VulkanExtension const ext : required_extensions) {
+        supported_extensions.versionAt(ext) = extensions.getExtensionVersion(ext);
+    }
+    for (VulkanExtension const ext : preferred_extensions) {
+        supported_extensions.versionAt(ext) = extensions.getExtensionVersion(ext);
+    }
+
+    VulkanFeatures const features = caps.getFeatures();
+    VulkanFeatures supported_features{ };
+    for (VulkanFeature const feature : required_features) {
+        supported_features[feature] = features[feature];
+    }
+    for (VulkanFeature const feature : preferred_features) {
+        supported_features[feature] = features[feature];
+    }
+
+    out_caps.commitPhysicalDeviceCaps(
+        std::string{ caps.deviceName() },
+        caps.apiVersion(),
+        caps.getProperties(),
+        caps.memoryHeaps(),
+        caps.deviceType(),
+        supported_extensions,
+        supported_features
+    );
+}
+
+} // namespace
 
 CORE_ENUM_FUNCTIONS_IMPL(PhysicalDeviceSelectionErrorKind);
 
-PhysicalDevice PhysicalDeviceSelector::select(VulkanCaps* const out_caps) const {
+PhysicalDevice PhysicalDeviceSelector::select(VulkanCaps& out_caps) const {
     uint32_t physical_device_count = 0;
     if (!VK_CHECK(vkEnumeratePhysicalDevices(m_instance.handle(), &physical_device_count, nullptr))
         || physical_device_count == 0
@@ -31,7 +73,7 @@ PhysicalDevice PhysicalDeviceSelector::select(VulkanCaps* const out_caps) const 
         PhysicalDevice const device = PhysicalDevice::make(
             physical_device,
             QueueFamilies::query(physical_device, surface_handle));
-        int32_t const score = scoreDevice(device);
+        int32_t const score = scoreDevice(device, out_caps.instanceVersion());
         if (score >= 0 && score > best_score) {
             best_score = score;
             best_device = device;
@@ -42,19 +84,11 @@ PhysicalDevice PhysicalDeviceSelector::select(VulkanCaps* const out_caps) const 
         throw PhysicalDeviceSelectionError(PhysicalDeviceSelectionError::NoSuitableDevice);
     }
 
-    if (out_caps) {
-        auto caps = internal::PhysicalDeviceCapsStruct::query(best_device);
-        out_caps->commitPhysicalDeviceCaps(
-            caps.apiVersion(),
-            caps.memoryHeaps(),
-            caps.deviceType()
-        );
-    }
-
+    commitCaps(out_caps, best_device, m_required_extensions, m_preferred_extensions, m_required_features, m_preferred_features);
     return best_device;
 }
 
-int32_t PhysicalDeviceSelector::scoreDevice(PhysicalDevice const& device) const {
+int32_t PhysicalDeviceSelector::scoreDevice(PhysicalDevice const& device, Version const instance_version) const {
     // Eligibility check
     for (QueueFamily const family : m_required_queue_families) {
         if (!device.queueFamily(family).has_value()) {
@@ -63,7 +97,7 @@ int32_t PhysicalDeviceSelector::scoreDevice(PhysicalDevice const& device) const 
         }
     }
     
-    auto caps = internal::PhysicalDeviceCapsStruct::query(device);
+    auto caps = internal::PhysicalDeviceCapsStruct::query(device, instance_version);
     if (caps.apiVersion() < m_required_api_version) {
         CORE_DEBUG(
             "PhysicalDevice {} rejected: required version {} < found {}",

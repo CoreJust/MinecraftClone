@@ -1,6 +1,7 @@
 #pragma once
 
-#include <core/common/SpanUtils.hpp>
+#include <core/common/InputSpan.hpp>
+#include <core/common/VectorUtils.hpp>
 #include <core/common/Version.hpp>
 #include <core/meta/Enum.hpp>
 #include <core/vulkan/Capabilities.hpp>
@@ -78,63 +79,39 @@ public:
         return std::forward<Self>(self);
     }
 
-    template<typename Self, typename First, typename... Tail>
+    template<typename Self>
     [[nodiscard]] auto&& requireExtensions(
         this Self&& self,
-        First const first,
-        Tail const... rest
+        InputSpan<VulkanExtension> const exts
     ) {
-        SpanOver span_over_data{ first, rest... };
-        self.m_required_extensions.insert(
-            self.m_required_extensions.end(),
-            span_over_data.asSpan().begin(),
-            span_over_data.asSpan().end()
-        );
+        appendRange(self.m_required_extensions, exts);
         return std::forward<Self>(self);
     }
 
-    template<typename Self, typename First, typename... Tail>
+    template<typename Self>
     [[nodiscard]] auto&& preferExtensions(
         this Self&& self,
-        First const first,
-        Tail const... rest
+        InputSpan<VulkanExtension> const exts
     ) {
-        SpanOver span_over_data{ first, rest... };
-        self.m_preferred_extensions.insert(
-            self.m_preferred_extensions.end(),
-            span_over_data.asSpan().begin(),
-            span_over_data.asSpan().end()
-        );
+        appendRange(self.m_preferred_extensions, exts);
         return std::forward<Self>(self);
     }
 
-    template<typename Self, typename First, typename... Tail>
+    template<typename Self>
     [[nodiscard]] auto&& requireLayers(
         this Self&& self,
-        First const first,
-        Tail const... rest
+        InputSpan<VulkanLayer> const layers
     ) {
-        SpanOver span_over_data{ first, rest... };
-        self.m_required_layers.insert(
-            self.m_required_layers.end(),
-            span_over_data.asSpan().begin(),
-            span_over_data.asSpan().end()
-        );
+        appendRange(self.m_required_layers, layers);
         return std::forward<Self>(self);
     }
 
-    template<typename Self, typename First, typename... Tail>
+    template<typename Self>
     [[nodiscard]] auto&& preferLayers(
         this Self&& self,
-        First const first,
-        Tail const... rest
+        InputSpan<VulkanLayer> const layers
     ) {
-        SpanOver span_over_data{ first, rest... };
-        self.m_preferred_layers.insert(
-            self.m_preferred_layers.end(),
-            span_over_data.asSpan().begin(),
-            span_over_data.asSpan().end()
-        );
+        appendRange(self.m_preferred_layers, layers);
         return std::forward<Self>(self);
     }
 
@@ -161,7 +138,7 @@ public:
     // Throws InstanceCreationError
     // out_caps is where the capabilities of built instance will bw stored to.
     [[nodiscard]]
-    Instance build(VulkanCaps* const out_caps = nullptr) const;
+    Instance build(VulkanCaps& out_caps) const;
 private:
     Version m_required_version{ 0, 1, 0, 0 };
     Version m_preferred_version{ Version::MAX() };

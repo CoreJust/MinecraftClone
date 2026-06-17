@@ -2,9 +2,6 @@
 
 #include <core/vulkan/Resource.hpp>
 
-#include <cstdint>
-#include <utility>
-
 namespace core {
 
 class RawInstance : public VulkanResourceBase<VkInstance> {
