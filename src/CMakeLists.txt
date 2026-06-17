@@ -7,11 +7,9 @@ target_link_libraries(mc
     PRIVATE
         unofficial::enet::enet
         glfw
-        Vulkan::Vulkan
         volk::volk_headers
         glm::glm
 )
-target_compile_definitions(mc PRIVATE VK_NO_PROTOTYPES)
 if(WIN32) # For ENet
     target_link_libraries(mc PRIVATE winmm ws2_32)
 endif()

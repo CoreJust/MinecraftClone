@@ -83,10 +83,9 @@ Current dependencies:
 2. spdlog;
 3. fmt;
 4. glfw;
-5. vulkan;
-6. volk;
-7. glm;
-8. gtest.
+5. volk;
+6. glm;
+7. gtest.
 
 ## Highlights
 

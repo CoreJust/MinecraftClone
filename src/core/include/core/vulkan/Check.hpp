@@ -2,7 +2,7 @@
 
 #include <core/common/Assert.hpp>
 
-#include <vulkan/vulkan.h>
+#include <volk.h>
 
 namespace core::internal {
 [[nodiscard]]

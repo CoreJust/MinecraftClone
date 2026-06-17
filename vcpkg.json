@@ -6,7 +6,6 @@
     "spdlog",
     "fmt",
     "glfw3",
-    "vulkan",
     "volk",
     "glm",
     "gtest"
