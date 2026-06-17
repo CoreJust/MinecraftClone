@@ -58,15 +58,6 @@ struct alignas(16) PlayerPushConstants final {
 };
 static_assert(sizeof(PlayerPushConstants) == 32);
 
-struct QueueFamilyIndices final {
-    std::optional<uint32_t> graphics;
-    std::optional<uint32_t> present;
-
-    [[nodiscard]] constexpr bool complete() const noexcept {
-        return graphics.has_value() && present.has_value();
-    }
-};
-
 struct SwapchainBundle final {
     VkSwapchainKHR swapchain = VK_NULL_HANDLE;
     VkFormat format = VK_FORMAT_UNDEFINED;

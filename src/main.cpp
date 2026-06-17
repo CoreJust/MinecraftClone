@@ -9,13 +9,31 @@
 
 #include <iostream>
 
+bool recoverFromInputError() {
+    if (std::cin.eof()) {
+        std::cout << "\nEOF detected\n";
+        return false;
+    }
+    std::cin.clear();
+    std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+    return true;
+}
+
 char readChar(std::string_view const prompt, std::string_view const options) {
     std::cout << prompt << ": ";
-    char result;
-    std::cin >> result;
-    while (!options.contains(result)) {
+    char result = '\0';
+    while (true) {
+        if (!(std::cin >> result)) {
+            if (!recoverFromInputError()) {
+                exit(1);
+            }
+            std::cout << "Expected one of {" << options << "}: ";
+            continue;
+        }
+        if (options.contains(result)) {
+            break;
+        }
         std::cout << "Expected one of {" << options << "}: ";
-        std::cin >> result;
     }
     return result;
 }

@@ -80,7 +80,7 @@ CORE_ENUM_FUNCTIONS(VulkanExtension);
 CORE_ENUM_FUNCTIONS(VulkanExtensionKind);
 
 struct VulkanExtensions final {
-    Version versions[static_cast<size_t>(VulkanExtension::Count)];
+    Version versions[countOf<VulkanExtension>()];
 
     VulkanExtensions() noexcept;
 
@@ -93,12 +93,12 @@ struct VulkanExtensions final {
     bool hasExtension(VulkanExtension const ext) const noexcept;
     [[nodiscard]]
     Version getExtensionVersion(VulkanExtension const ext) const noexcept {
-        return versions[static_cast<size_t>(ext)];
+        return versions[indexOf(ext)];
     }
 
     [[nodiscard]]
     Version& versionAt(VulkanExtension const ext) & noexcept {
-        return versions[static_cast<size_t>(ext)];
+        return versions[indexOf(ext)];
     }
 
     [[nodiscard]]

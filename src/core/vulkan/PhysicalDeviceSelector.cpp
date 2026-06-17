@@ -44,12 +44,8 @@ PhysicalDevice PhysicalDeviceSelector::select(VulkanCaps* const out_caps) const 
 
     if (out_caps) {
         auto caps = internal::PhysicalDeviceCapsStruct::query(best_device);
-        auto extensions = VulkanExtensions::loadSupportedDeviceExtensions(best_device);
-        out_caps->commitDeviceCaps(
+        out_caps->commitPhysicalDeviceCaps(
             caps.apiVersion(),
-            caps.getFeatures(),
-            extensions,
-            caps.getProperties(),
             caps.memoryHeaps(),
             caps.deviceType()
         );

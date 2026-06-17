@@ -1,5 +1,7 @@
 #pragma once
 
+#include <core/meta/Enum.hpp>
+
 namespace core {
 
 enum class Key {
@@ -134,7 +136,7 @@ enum class Key {
     RightSuper,
     Menu,
 
-    KeysCount,
+    Count,
 };
 
 enum class MouseKey {
@@ -147,7 +149,7 @@ enum class MouseKey {
     Button7,
     Button8,
 
-    MouseKeysCount,
+    Count,
 };
 
 enum class KeyAction {
@@ -155,7 +157,7 @@ enum class KeyAction {
     Press,
     Repeat,
 
-    KeyActionsCount,
+    Count,
 };
 
 enum class KeyModifierBit {
@@ -167,6 +169,10 @@ enum class KeyModifierBit {
     CapsLock = 16,
     NumLock = 32,
 };
+
+CORE_ENUM_FUNCTIONS(Key);
+CORE_ENUM_FUNCTIONS(MouseKey);
+CORE_ENUM_FUNCTIONS(KeyAction);
 
 constexpr KeyModifierBit operator|(KeyModifierBit const lhs, KeyModifierBit const rhs) noexcept {
     return static_cast<KeyModifierBit>(static_cast<unsigned int>(lhs) | static_cast<unsigned int>(rhs));

@@ -5,8 +5,8 @@
 namespace core {
 namespace {
 
-std::atomic_bool g_mouse_key_states[static_cast<size_t>(MouseKey::MouseKeysCount)];
-std::atomic<KeyModifierBit> g_mouse_key_modifiers[static_cast<size_t>(MouseKey::MouseKeysCount)];
+std::atomic_bool g_mouse_key_states[countOf<MouseKey>()];
+std::atomic<KeyModifierBit> g_mouse_key_modifiers[countOf<MouseKey>()];
 std::atomic<double> g_wheel_x = 0.0;
 std::atomic<double> g_wheel_y = 0.0;
 std::atomic<double> g_wheelPrev_x = 0.0;
@@ -39,15 +39,15 @@ glm::vec2 getWheelDelta() noexcept {
 }
 
 bool isMouseKeyPressedWithModifer(MouseKey const key, KeyModifierBit const modifier) {
-    return g_mouse_key_states[static_cast<size_t>(key)] && (g_mouse_key_modifiers[static_cast<size_t>(key)] & modifier) == modifier;
+    return g_mouse_key_states[indexOf(key)] && (g_mouse_key_modifiers[indexOf(key)] & modifier) == modifier;
 }
 
 bool isMouseKeyPressed(MouseKey const key) {
-    return g_mouse_key_states[static_cast<size_t>(key)];
+    return g_mouse_key_states[indexOf(key)];
 }
 
 bool isMouseKeyReleased(MouseKey const key) {
-    return g_mouse_key_states[static_cast<size_t>(key)];
+    return g_mouse_key_states[indexOf(key)];
 }
 
 void resetMouseDeltas() {

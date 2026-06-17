@@ -29,9 +29,9 @@ struct MemoryPropertyBits final {
     template<typename... Args> [[nodiscard]]
     static constexpr MemoryPropertyBits of(MemoryProperty const first, Args const... args) noexcept {
         if constexpr (sizeof...(Args) > 0) {
-            return { 1u << static_cast<uint32_t>(first) | memoryPropertyFlagBitsOf(args...).value };
+            return { 1u << indexOf(first) | memoryPropertyFlagBitsOf(args...).value };
         } else {
-            return { 1u << static_cast<uint32_t>(first) };
+            return { 1u << indexOf(first) };
         }
     }
 };

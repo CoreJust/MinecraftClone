@@ -22,11 +22,8 @@ public:
         VulkanExtensions const& enabled_extensions
     ) noexcept;
 
-    void commitDeviceCaps(
+    void commitPhysicalDeviceCaps(
         Version const& device_version,
-        VulkanFeatures const& enabled_features,
-        VulkanExtensions const& enabled_extensions,
-        PhysicalDeviceProperties const& properties,
         std::vector<MemoryHeap> heaps,
         PhysicalDeviceType const type
     ) noexcept;

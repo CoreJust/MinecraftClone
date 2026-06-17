@@ -77,14 +77,14 @@ enum class VulkanFeature {
 CORE_ENUM_FUNCTIONS(VulkanFeature);
 
 struct VulkanFeatures final {
-    std::bitset<static_cast<size_t>(VulkanFeature::Count)> data;
+    std::bitset<countOf<VulkanFeature>()> data;
 
     auto operator[](VulkanFeature const feature) noexcept {
-        return data[static_cast<size_t>(feature)];
+        return data[indexOf(feature)];
     }
 
     auto operator[](VulkanFeature const feature) const noexcept {
-        return data[static_cast<size_t>(feature)];
+        return data[indexOf(feature)];
     }
 
     [[nodiscard]]

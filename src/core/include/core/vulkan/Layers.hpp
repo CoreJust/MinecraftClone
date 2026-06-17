@@ -20,7 +20,7 @@ enum class VulkanLayer {
 CORE_ENUM_FUNCTIONS(VulkanLayer);
 
 struct VulkanLayers final {
-    Version versions[static_cast<size_t>(VulkanLayer::Count)];
+    Version versions[countOf<VulkanLayer>()];
 
     VulkanLayers() noexcept;
 
@@ -29,12 +29,12 @@ struct VulkanLayers final {
 
     [[nodiscard]]
     Version getLayerVersion(VulkanLayer const layer) const noexcept {
-        return versions[static_cast<size_t>(layer)];
+        return versions[indexOf(layer)];
     }
 
     [[nodiscard]]
     Version& versionAt(VulkanLayer const layer) & noexcept {
-        return versions[static_cast<size_t>(layer)];
+        return versions[indexOf(layer)];
     }
 
     [[nodiscard]]

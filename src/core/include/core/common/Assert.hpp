@@ -4,6 +4,7 @@
 
 namespace core::detail {
 
+[[noreturn]]
 inline void assertFailed(
     char const* const file,
     int const line,
@@ -15,7 +16,7 @@ inline void assertFailed(
     std::exit(1);
 }
 
-template <typename... Args>
+template <typename... Args> [[noreturn]]
 void assertFailed(
     char const* const file,
     int const line,
@@ -32,13 +33,19 @@ void assertFailed(
 
 } // namespace core::detail
 
-#define ASSERT(condition, ...)                                                \
-    do {                                                                      \
-        if (!(condition)) {                                                   \
-            ::core::detail::assertFailed(__FILE__, __LINE__,                  \
-                #condition                                                    \
-                __VA_OPT__(, __VA_ARGS__));                                   \
-        }                                                                     \
+#define ASSERT(condition, ...)                               \
+    do {                                                     \
+        if (!(condition)) {                                  \
+            ::core::detail::assertFailed(__FILE__, __LINE__, \
+                #condition                                   \
+                __VA_OPT__(, __VA_ARGS__));                  \
+        }                                                    \
+    } while (0)
+
+#define UNREACHABLE(...)                                 \
+    do {                                                 \
+        ::core::detail::assertFailed(__FILE__, __LINE__, \
+            "Unreachable" __VA_OPT__(, __VA_ARGS__));    \
     } while (0)
 
 #ifdef _MC_ENABLE_HIGH_ASSERT

@@ -1,5 +1,7 @@
 #include <core/vulkan/PhysicalDeviceCapsStruct.hpp>
 
+#include <core/common/Assert.hpp>
+
 namespace core::internal {
 
 PhysicalDeviceCapsStruct PhysicalDeviceCapsStruct::query(PhysicalDevice const& device) {
@@ -151,6 +153,7 @@ bool PhysicalDeviceCapsStruct::hasFeature(VulkanFeature const feature) const noe
         case VulkanFeature::MeshShader:
             return mesh_shader_features.meshShader == VK_TRUE;
     }
+    UNREACHABLE("Unknown feature: {}", indexOf(feature));
 }
 
 void PhysicalDeviceCapsStruct::setFeature(VulkanFeature const feature, bool const value) noexcept {

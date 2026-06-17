@@ -5,20 +5,20 @@
 namespace core {
 
 namespace {
-std::atomic_bool g_key_states[static_cast<size_t>(Key::KeysCount)];
-std::atomic<KeyModifierBit> g_key_modifiers[static_cast<size_t>(Key::KeysCount)];
+std::atomic_bool g_key_states[countOf<Key>()];
+std::atomic<KeyModifierBit> g_key_modifiers[countOf<Key>()];
 } // namespace
 
 bool isKeyPressedWithModifer(Key const key, KeyModifierBit const modifier) {
-    return g_key_states[static_cast<size_t>(key)] && (g_key_modifiers[static_cast<size_t>(key)] & modifier) == modifier;
+    return g_key_states[indexOf(key)] && (g_key_modifiers[indexOf(key)] & modifier) == modifier;
 }
 
 bool isKeyPressed(Key const key) {
-    return g_key_states[static_cast<size_t>(key)];
+    return g_key_states[indexOf(key)];
 }
 
 bool isKeyReleased(Key const key) {
-    return !g_key_states[static_cast<size_t>(key)];
+    return !g_key_states[indexOf(key)];
 }
 
 void keyCallback(void*, int const key, [[maybe_unused]] int const scancode, int const action, int const mode) {

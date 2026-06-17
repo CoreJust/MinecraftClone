@@ -42,7 +42,7 @@ char const* getFullLayerName(VulkanLayer const layer) noexcept {
         "VK_LAYER_LUNARG_monitor",
         "VK_LAYER_KHRONOS_profiling",
     };
-    return LAYER_NAMES[static_cast<size_t>(layer)];
+    return LAYER_NAMES[indexOf(layer)];
 }
 
 VulkanLayers loadSupportedLayers() {

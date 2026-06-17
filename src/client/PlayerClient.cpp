@@ -5,6 +5,9 @@
 namespace client {
 
 shared::Direction PlayerClient::input() {
+    if (core::isKeyPressed(core::Key::Escape)) {
+        m_running = false;
+    }
     uint8_t off_x = 0;
     uint8_t off_y = 0;
     if (core::isKeyPressed(core::Key::W)) {

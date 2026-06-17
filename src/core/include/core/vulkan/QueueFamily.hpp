@@ -32,13 +32,13 @@ constexpr std::optional<uint32_t> queueFamilyFlagBitOf(QueueFamily const family)
     if (family == QueueFamily::Present || family == QueueFamily::Count) {
         return std::nullopt;
     }
-    return 1 << static_cast<uint32_t>(family);
+    return 1 << indexOf(family);
 }
 
 struct QueueFamilies final {
     static constexpr uint32_t NO_INDEX = static_cast<uint32_t>(-1);
 
-    std::array<uint32_t, static_cast<size_t>(QueueFamily::Count)> indices;
+    std::array<uint32_t, countOf<QueueFamily>()> indices;
 
     [[nodiscard]]
     static QueueFamilies query(VkPhysicalDevice const device, VkSurfaceKHR const surface);
@@ -47,14 +47,14 @@ struct QueueFamilies final {
 
     [[nodiscard]]
     constexpr uint32_t& operator[](QueueFamily const family) noexcept {
-        ASSERT(static_cast<size_t>(family) < static_cast<size_t>(QueueFamily::Count));
-        return indices[static_cast<size_t>(family)];
+        ASSERT(indexOf(family) < countOf<QueueFamily>());
+        return indices[indexOf(family)];
     }
 
     [[nodiscard]]
     constexpr uint32_t operator[](QueueFamily const family) const noexcept {
-        ASSERT(static_cast<size_t>(family) < static_cast<size_t>(QueueFamily::Count));
-        return indices[static_cast<size_t>(family)];
+        ASSERT(indexOf(family) < countOf<QueueFamily>());
+        return indices[indexOf(family)];
     }
 };
 

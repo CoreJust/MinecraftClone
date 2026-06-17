@@ -20,39 +20,31 @@ void VulkanCaps::commitInstanceCaps(
     }
 }
 
-void VulkanCaps::commitDeviceCaps(
+void VulkanCaps::commitPhysicalDeviceCaps(
     Version const& device_version,
-    VulkanFeatures const& enabled_features,
-    VulkanExtensions const& enabled_extensions,
-    PhysicalDeviceProperties const& properties,
     std::vector<MemoryHeap> heaps,
     PhysicalDeviceType const type
 ) noexcept {
     m_device_version = device_version;
-    m_features = enabled_features;
-    m_device_properties = properties;
     m_heaps = heaps;
     m_device_type = type;
-    for (VulkanExtension const ext : valuesOf<VulkanExtension>()) {
-        if (getExtensionKind(ext) == VulkanExtensionKind::Device) {
-            m_extensions.versionAt(ext) = enabled_extensions.getExtensionVersion(ext);
-        }
-    }
 }
 
 std::string VulkanCaps::toString() const {
     std::string heaps_message, tmp;
     uint32_t index = 0;
     for (MemoryHeap const heap : m_heaps) {
-        tmp = std::to_string(heap.heap_index) + "\t";
+        tmp = "\t" + std::to_string(heap.heap_index) + ": ";
         for (MemoryProperty const property : valuesOf<MemoryProperty>()) {
             if (MemoryPropertyBits::of(property).value & heap.properties.value) {
                 tmp += toStringView(property);
                 tmp += ", ";
             }
         }
-        tmp.pop_back();
-        tmp.pop_back();
+        if (tmp.ends_with(", ")) {
+            tmp.pop_back();
+            tmp.pop_back();
+        }
         heaps_message += tmp;
         heaps_message += '\n';
         ++index;

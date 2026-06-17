@@ -4,6 +4,8 @@ include(Warnings)
 include(Sanitizers)
 
 function(mc_apply_target_defaults target)
+    target_compile_definitions(${target} PRIVATE NOMINMAX)
+    target_compile_definitions(${target} PRIVATE GLM_FORCE_DEPTH_ZERO_TO_ONE)
     target_compile_features(${target} PRIVATE cxx_std_23)
     mc_enable_warnings(${target})
     mc_enable_sanitizers(${target})
