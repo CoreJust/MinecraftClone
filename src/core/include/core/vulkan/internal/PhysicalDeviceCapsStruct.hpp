@@ -10,6 +10,7 @@
 #include <volk.h>
 
 #include <optional>
+#include <span>
 
 namespace core::internal {
 

@@ -8,6 +8,7 @@ target_sources(mc
             AllocatorBuilder.hpp
             Capabilities.hpp
             Check.hpp
+            ColorSpace.hpp
             DebugMessengerOptions.hpp
             Device.hpp
             DeviceBuilder.hpp
@@ -16,7 +17,9 @@ target_sources(mc
             Extensions.hpp
             Extent.hpp
             Features.hpp
+            Format.hpp
             Image.hpp
+            ImageUsage.hpp
             Instance.hpp
             InstanceBuilder.hpp
             Layers.hpp
@@ -25,9 +28,11 @@ target_sources(mc
             PhysicalDeviceProperties.hpp
             PhysicalDeviceSelector.hpp
             PhysicalDeviceType.hpp
+            PresentMode.hpp
             Queue.hpp
             QueueFamily.hpp
             Resource.hpp
             Surface.hpp
+            SurfaceTransform.hpp
             VulkanVersion.hpp
 )
