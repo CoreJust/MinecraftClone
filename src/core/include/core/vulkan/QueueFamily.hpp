@@ -2,7 +2,7 @@
 
 #include <core/common/Assert.hpp>
 #include <core/meta/Enum.hpp>
-#include <core/vulkan/VulkanFwd.hpp>
+#include <core/vulkan/internal/VulkanFwd.hpp>
 
 #include <array>
 #include <cstdint>

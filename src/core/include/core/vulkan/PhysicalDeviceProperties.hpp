@@ -1,7 +1,7 @@
 #pragma once
 
 #include <core/meta/FieldRequirement.hpp>
-#include <core/vulkan/VulkanFwd.hpp>
+#include <core/vulkan/internal/VulkanFwd.hpp>
 
 #include <type_traits>
 

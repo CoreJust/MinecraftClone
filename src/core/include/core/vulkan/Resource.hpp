@@ -4,7 +4,7 @@
 
 #include <core/common/NonCopyable.hpp>
 #include <core/common/TrivialPair.hpp>
-#include <core/vulkan/VulkanFwd.hpp>
+#include <core/vulkan/internal/VulkanFwd.hpp>
 
 #include <optional>
 #include <type_traits>

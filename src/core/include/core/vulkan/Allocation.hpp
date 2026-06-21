@@ -1,6 +1,6 @@
 #pragma once
 
-#include <core/vulkan/VulkanFwd.hpp>
+#include <core/vulkan/internal/VulkanFwd.hpp>
 
 namespace core {
 

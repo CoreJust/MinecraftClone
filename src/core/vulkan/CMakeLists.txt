@@ -14,12 +14,10 @@ target_sources(mc
         InstanceBuilder.cpp
         Layers.cpp
         MemoryProperty.cpp
-        PhysicalDeviceCapsStruct.cpp
         PhysicalDeviceSelector.cpp
         PhysicalDeviceType.cpp
         QueueFamily.cpp
         Surface.cpp
-        VMA.cpp
-        Volk.cpp
         VulkanVersion.cpp
 )
+add_subdirectory(internal)

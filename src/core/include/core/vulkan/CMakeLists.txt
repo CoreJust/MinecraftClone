@@ -22,7 +22,6 @@ target_sources(mc
             Layers.hpp
             MemoryProperty.hpp
             PhysicalDevice.hpp
-            PhysicalDeviceCapsStruct.hpp
             PhysicalDeviceProperties.hpp
             PhysicalDeviceSelector.hpp
             PhysicalDeviceType.hpp
@@ -30,7 +29,5 @@ target_sources(mc
             QueueFamily.hpp
             Resource.hpp
             Surface.hpp
-            VMA.hpp
-            VulkanFwd.hpp
             VulkanVersion.hpp
 )

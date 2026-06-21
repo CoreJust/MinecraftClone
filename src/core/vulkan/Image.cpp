@@ -1,6 +1,6 @@
 #include <core/vulkan/Image.hpp>
 
-#include <core/vulkan/VMA.hpp>
+#include <core/vulkan/internal/VMA.hpp>
 
 namespace core {
 

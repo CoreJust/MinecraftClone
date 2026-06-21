@@ -2,7 +2,7 @@
 
 #include <core/meta/EnumImpl.hpp>
 #include <core/vulkan/Check.hpp>
-#include <core/vulkan/PhysicalDeviceCapsStruct.hpp>
+#include <core/vulkan/internal/PhysicalDeviceCapsStruct.hpp>
 
 namespace core {
 namespace {

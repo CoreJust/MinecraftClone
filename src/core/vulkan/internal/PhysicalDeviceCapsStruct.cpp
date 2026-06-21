@@ -1,4 +1,4 @@
-#include <core/vulkan/PhysicalDeviceCapsStruct.hpp>
+#include <core/vulkan/internal/PhysicalDeviceCapsStruct.hpp>
 
 #include <core/common/Assert.hpp>
 

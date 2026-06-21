@@ -2,7 +2,7 @@
 
 #include <core/common/Assert.hpp>
 #include <core/meta/EnumImpl.hpp>
-#include <core/vulkan/VMA.hpp>
+#include <core/vulkan/internal/VMA.hpp>
 
 namespace core {
 
