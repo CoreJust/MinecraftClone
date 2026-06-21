@@ -3,6 +3,9 @@ target_sources(mc
         FILE_SET HEADERS
         BASE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}
         FILES
+            Allocation.hpp
+            Allocator.hpp
+            AllocatorBuilder.hpp
             Capabilities.hpp
             Check.hpp
             DebugMessengerOptions.hpp
@@ -11,7 +14,9 @@ target_sources(mc
             Error.hpp
             ErrorCallbacks.hpp
             Extensions.hpp
+            Extent.hpp
             Features.hpp
+            Image.hpp
             Instance.hpp
             InstanceBuilder.hpp
             Layers.hpp
@@ -25,6 +30,7 @@ target_sources(mc
             QueueFamily.hpp
             Resource.hpp
             Surface.hpp
+            VMA.hpp
             VulkanFwd.hpp
             VulkanVersion.hpp
 )

@@ -1,5 +1,7 @@
 target_sources(mc
     PRIVATE
+        Allocator.cpp
+        AllocatorBuilder.cpp
         Capabilities.cpp
         Check.cpp
         Device.cpp
@@ -7,6 +9,7 @@ target_sources(mc
         ErrorCallbacks.cpp
         Extensions.cpp
         Features.cpp
+        Image.cpp
         Instance.cpp
         InstanceBuilder.cpp
         Layers.cpp
@@ -16,6 +19,7 @@ target_sources(mc
         PhysicalDeviceType.cpp
         QueueFamily.cpp
         Surface.cpp
+        VMA.cpp
         Volk.cpp
         VulkanVersion.cpp
 )

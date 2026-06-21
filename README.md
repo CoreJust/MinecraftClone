@@ -80,12 +80,13 @@ CMake is used for building, vcpkg for dependencies management.
 
 Current dependencies:
 1. enet;
-2. spdlog;
-3. fmt;
-4. glfw;
-5. volk;
-6. glm;
-7. gtest.
+2. fmt;
+3. glfw;
+4. spdlog;
+5. glm;
+6. gtest;
+7. VMA;
+8. volk.
 
 ## Highlights
 

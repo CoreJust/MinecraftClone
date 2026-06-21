@@ -3,11 +3,12 @@
   "version-string": "0.1.0",
   "dependencies": [
     "enet",
-    "spdlog",
     "fmt",
     "glfw3",
-    "volk",
     "glm",
-    "gtest"
+    "gtest",
+    "spdlog",
+    "volk",
+    "vulkan-memory-allocator"
   ]
 }

@@ -52,6 +52,9 @@ using VkMemoryHeapFlags = VkFlags;
 #  define VK_NULL_HANDLE 0
     using VkAnyHandle = uint64_t;
 #endif
+#ifndef VMA_NULL
+#   define VMA_NULL nullptr
+#endif
     DECL_VMA_HANDLE(Allocation)
     DECL_VMA_HANDLE(Allocator)
     DECL_VK_HANDLE(Buffer)

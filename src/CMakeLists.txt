@@ -2,13 +2,19 @@ add_library(mc STATIC)
 
 target_link_libraries(mc
     PUBLIC
-        spdlog::spdlog
         fmt::fmt
+        spdlog::spdlog
     PRIVATE
         unofficial::enet::enet
         glfw
-        volk::volk_headers
         glm::glm
+        volk::volk_headers
+        GPUOpen::VulkanMemoryAllocator
+)
+target_compile_definitions(mc
+    PRIVATE
+        VMA_STATIC_VULKAN_FUNCTIONS=0
+        VMA_DYNAMIC_VULKAN_FUNCTIONS=0
 )
 if(WIN32) # For ENet
     target_link_libraries(mc PRIVATE winmm ws2_32)
