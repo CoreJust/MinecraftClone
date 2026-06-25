@@ -119,7 +119,10 @@ PresentMode choosePresentMode(
         &present_mode_count,
         nullptr
     ))) {
-        throw SwapchainCreationError(SwapchainCreationError::CapabilitiesQueryFailed, "{}", "vkGetPhysicalDeviceSurfacePresentModesKHR");
+        throw SwapchainCreationError(
+            SwapchainCreationError::CapabilitiesQueryFailed,
+            "{}", "vkGetPhysicalDeviceSurfacePresentModesKHR"
+        );
     }
     std::vector<VkPresentModeKHR> present_modes(present_mode_count);
     if (!VK_CHECK(vkGetPhysicalDeviceSurfacePresentModesKHR(
@@ -128,7 +131,10 @@ PresentMode choosePresentMode(
         &present_mode_count,
         present_modes.data()
     ))) {
-        throw SwapchainCreationError(SwapchainCreationError::CapabilitiesQueryFailed, "{}", "vkGetPhysicalDeviceSurfacePresentModesKHR");
+        throw SwapchainCreationError(
+            SwapchainCreationError::CapabilitiesQueryFailed,
+            "{}", "vkGetPhysicalDeviceSurfacePresentModesKHR"
+        );
     }
 
     std::unordered_set<PresentMode> found_modes;
@@ -196,7 +202,10 @@ Swapchain SwapchainBuilder::build(VulkanCaps& out_caps, Swapchain const* old_swa
     
     VkSurfaceCapabilitiesKHR capabilities{ };
     if (!VK_CHECK(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(m_physical_device.handle(), m_surface.handle(), &capabilities))) {
-        throw SwapchainCreationError(SwapchainCreationError::CapabilitiesQueryFailed, "{}", "vkGetPhysicalDeviceSurfaceCapabilitiesKHR");
+        throw SwapchainCreationError(
+            SwapchainCreationError::CapabilitiesQueryFailed,
+            "{}", "vkGetPhysicalDeviceSurfaceCapabilitiesKHR"
+        );
     }
 
     Extent2d extent{ capabilities.currentExtent.width, capabilities.currentExtent.height };

@@ -24,6 +24,12 @@ def _classify(path: str, quote_char: str, filepath: str) -> str:
     lib = path.split('/')[0].split('.')[0]
     return 'std' if lib in STD_HEADERS else 'thirdparty'
 
+def _hierarchical_sort_key(p: str):
+    parts = p.split('/')
+    dir_parts = tuple(part.lower() for part in parts[:-1])
+    file_part = parts[-1].lower()
+    return (dir_parts, file_part)
+
 def _check_include_order(lines: List[str], filepath: str) -> List[str]:
     errors = []
     entries = []
@@ -70,7 +76,7 @@ def _check_include_order(lines: List[str], filepath: str) -> List[str]:
         cat_entries = [(i, p) for i, p, c in ordered if c == cat]
         if len(cat_entries) < 2:
             continue
-        sorted_entries = sorted(cat_entries, key=lambda x: x[1].lower())
+        sorted_entries = sorted(cat_entries, key=(lambda x: _hierarchical_sort_key(x[1])) if cat == 'relative' else (lambda x: x[1].lower()))
         for (orig_i, orig_p), (_, sorted_p) in zip(cat_entries, sorted_entries):
             if orig_p != sorted_p:
                 errors.append(f"line {orig_i+1}: '{orig_p}' out of order, expected: {[p for _,p in sorted_entries]}")
@@ -83,7 +89,7 @@ def _check_include_order(lines: List[str], filepath: str) -> List[str]:
             if p.startswith(pref):
                 return idx
         return 999
-    sorted_proj = sorted(proj, key=lambda x: (subcat(x[1]), x[1].lower()))
+    sorted_proj = sorted(proj, key=lambda x: (subcat(x[1]), _hierarchical_sort_key(x[1])))
     for (orig_i, orig_p), (_, sorted_p) in zip(proj, sorted_proj):
         if orig_p != sorted_p:
             errors.append(f"line {orig_i+1}: project include '{orig_p}' sub‑order wrong; expected: {[p for _,p in sorted_proj]}")

@@ -24,7 +24,13 @@ struct JoinContainerDummy final {
     [[no_unique_address]] Func func;
 };
 
-template<ConstString Separator = ", ", ConstString First = "{", ConstString Last = "}", typename Func, JoinableContainer<Func> Container>
+template<
+    ConstString Separator = ", ",
+    ConstString First = "{",
+    ConstString Last = "}",
+    typename Func,
+    JoinableContainer<Func> Container
+>
 [[nodiscard]] auto joinFmt(Container const& container, Func func) {
     return JoinContainerDummy<Func, Container, Separator, First, Last>{
         .first = std::begin(container),
@@ -38,7 +44,12 @@ struct IdFunc final {
     static auto&& operator()(T&& t) noexcept { return std::forward<T>(t); }
 };
 
-template<ConstString Separator = ", ", ConstString First = "{", ConstString Last = "}", JoinableContainer<IdFunc> Container>
+template<
+    ConstString Separator = ", ",
+    ConstString First = "{",
+    ConstString Last = "}",
+    JoinableContainer<IdFunc> Container
+>
 [[nodiscard]] auto joinFmt(Container const& container) {
     return JoinContainerDummy<IdFunc, Container, Separator, First, Last>{
         .first = std::begin(container),
@@ -53,7 +64,10 @@ namespace fmt {
 
 template<typename Func, typename T, core::ConstString Separator, core::ConstString First, core::ConstString Last>
 struct formatter<core::JoinContainerDummy<Func, T, Separator, First, Last>> : formatter<std::string_view> {
-    context::iterator format(core::JoinContainerDummy<Func, T, Separator, First, Last> const c, format_context& ctx) const {
+    context::iterator format(
+        core::JoinContainerDummy<Func, T, Separator, First, Last> const c,
+        format_context& ctx
+    ) const {
         auto out = ctx.out();
         out = fmt::format_to(out, "{}", std::string_view{First});
         bool first = true;

@@ -2,8 +2,8 @@
 
 #include <core/meta/EnumImpl.hpp>
 #include <core/vulkan/Check.hpp>
-#include <core/vulkan/internal/VMA.hpp>
 #include <core/vulkan/VulkanVersion.hpp>
+#include <core/vulkan/internal/VMA.hpp>
 
 namespace core {
 namespace {
