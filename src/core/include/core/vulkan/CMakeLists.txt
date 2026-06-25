@@ -8,7 +8,6 @@ target_sources(mc
             AllocatorBuilder.hpp
             Capabilities.hpp
             Check.hpp
-            ColorSpace.hpp
             DebugMessengerOptions.hpp
             Device.hpp
             DeviceBuilder.hpp
@@ -17,22 +16,32 @@ target_sources(mc
             Extensions.hpp
             Extent.hpp
             Features.hpp
-            Format.hpp
             Image.hpp
-            ImageUsage.hpp
+            ImageView.hpp
             Instance.hpp
             InstanceBuilder.hpp
             Layers.hpp
-            MemoryProperty.hpp
             PhysicalDevice.hpp
             PhysicalDeviceProperties.hpp
             PhysicalDeviceSelector.hpp
-            PhysicalDeviceType.hpp
-            PresentMode.hpp
             Queue.hpp
-            QueueFamily.hpp
             Resource.hpp
             Surface.hpp
-            SurfaceTransform.hpp
+            Swapchain.hpp
+            SwapchainBuilder.hpp
             VulkanVersion.hpp
+            enum/ColorSpace.hpp
+            enum/ComponentMapping.hpp
+            enum/Format.hpp
+            enum/ImageAspect.hpp
+            enum/ImageUsage.hpp
+            enum/ImageViewType.hpp
+            enum/MemoryProperty.hpp
+            enum/PhysicalDeviceType.hpp
+            enum/PresentMode.hpp
+            enum/SurfaceTransform.hpp
+            enum/QueueFamily.hpp
+            internal/PhysicalDeviceCapsStruct.hpp
+            internal/VMA.hpp
+            internal/VulkanFwd.hpp
 )

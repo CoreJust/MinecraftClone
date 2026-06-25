@@ -1,7 +1,7 @@
 #pragma once
 
-#include <core/vulkan/QueueFamily.hpp>
 #include <core/vulkan/Resource.hpp>
+#include <core/vulkan/enum/QueueFamily.hpp>
 
 namespace core {
 

@@ -9,9 +9,11 @@ target_sources(mc
             ByteReader.hpp
             ByteWriter.hpp
             CodeExecutionHelper.hpp
+            ConstString.hpp
             ControlFlow.hpp
             CrashHandler.hpp
             Defer.hpp
+            EnumBits.hpp
             InputSpan.hpp
             NonCopyable.hpp
             NonMovable.hpp

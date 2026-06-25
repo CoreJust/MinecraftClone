@@ -1,0 +1,14 @@
+target_sources(mc
+    PRIVATE
+        ColorSpace.cpp
+        ComponentMapping.cpp
+        Format.cpp
+        ImageAspect.cpp
+        ImageUsage.cpp
+        ImageViewType.cpp
+        MemoryProperty.cpp
+        PhysicalDeviceType.cpp
+        PresentMode.cpp
+        SurfaceTransform.cpp
+        QueueFamily.cpp
+)

@@ -104,6 +104,7 @@ Device DeviceBuilder::build(VulkanCaps& caps) const {
     }
 
     caps.commitDeviceCaps(caps.supportedExtensions(), caps.supportedFeatures());
+    CORE_DEBUG("Device built");
     return Device(result, queues);
 }
 

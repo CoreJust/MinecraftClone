@@ -142,10 +142,18 @@ concept VulkanResource = VulkanResourceConceptImpl<std::remove_cvref_t<T>, typen
 ///   RAII WRAPPERS   ///
 
 template<VulkanResource Resource>
-class VulkanRaii final : public Resource, NonCopyable {
+class VulkanRaii : public Resource, NonCopyable {
     using Destroyer = Resource::Destroyer;
 public:
     VulkanRaii() noexcept = default;
+    VulkanRaii(VulkanRaii&& other) noexcept 
+        : Resource(other.grabRaw())
+        , m_destroyer(std::move(other.m_destroyer))
+    { }
+    VulkanRaii& operator=(VulkanRaii&& other) noexcept {
+        std::swap(*this, other);
+        return *this;
+    }
 
     template<typename... Args>
     explicit VulkanRaii(Args&&... args)

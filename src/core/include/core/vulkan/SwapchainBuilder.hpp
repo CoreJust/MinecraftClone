@@ -1,0 +1,142 @@
+#pragma once
+
+#include <core/common/InputSpan.hpp>
+#include <core/common/VectorUtils.hpp>
+#include <core/vulkan/Capabilities.hpp>
+#include <core/vulkan/Device.hpp>
+#include <core/vulkan/Error.hpp>
+#include <core/vulkan/Extent.hpp>
+#include <core/vulkan/PhysicalDevice.hpp>
+#include <core/vulkan/Surface.hpp>
+#include <core/vulkan/Swapchain.hpp>
+#include <core/vulkan/enum/ColorSpace.hpp>
+#include <core/vulkan/enum/PresentMode.hpp>
+#include <core/vulkan/enum/SurfaceTransform.hpp>
+
+namespace core {
+
+CORE_VK_ERROR_WITH_KINDS(SwapchainCreationError,
+    NoSuchFormat,
+    NoSuchColorSpace,
+    NoSuchPresentMode,
+    CapabilitiesQueryFailed,
+    NoFallbackExtentProvided,
+    FailedToCreateSwapchain,
+    FailedToGetSwapchainImages);
+
+class SwapchainBuilder final {
+public:
+    SwapchainBuilder(
+        Device const& device,
+        PhysicalDevice const& physical_device,
+        Surface const& surface)
+        : m_device(device)
+        , m_physical_device(physical_device)
+        , m_surface(surface)
+    { }
+
+    // Defaults to all formats allowed
+    template<typename Self>
+    [[nodiscard]] auto&& requireFormats(
+        this Self&& self,
+        InputSpan<Format> const formats
+    ) {
+        appendRange(self.m_required_formats, formats);
+        return std::forward<Self>(self);
+    }
+
+    // Defaults to B8G8R8A8SRGB
+    template<typename Self>
+    [[nodiscard]] auto&& preferFormats(
+        this Self&& self,
+        InputSpan<TrivialPair<Format, int32_t>> const formats
+    ) {
+        appendRange(self.m_preferred_formats, formats);
+        return std::forward<Self>(self);
+    }
+
+    // Defaults to all color spaces allowed
+    template<typename Self>
+    [[nodiscard]] auto&& requireColorSpaces(
+        this Self&& self,
+        InputSpan<ColorSpace> const color_spaces
+    ) {
+        appendRange(self.m_required_color_spaces, color_spaces);
+        return std::forward<Self>(self);
+    }
+
+    // Defaults to SRGBNonlinear
+    template<typename Self>
+    [[nodiscard]] auto&& preferColorSpaces(
+        this Self&& self,
+        InputSpan<TrivialPair<ColorSpace, int32_t>> const color_spaces
+    ) {
+        appendRange(self.m_preferred_color_spaces, color_spaces);
+        return std::forward<Self>(self);
+    }
+
+    // Defaults to all present modes allowed
+    template<typename Self>
+    [[nodiscard]] auto&& requirePresentModes(
+        this Self&& self,
+        InputSpan<PresentMode> const present_modes
+    ) {
+        appendRange(self.m_required_present_modes, present_modes);
+        return std::forward<Self>(self);
+    }
+
+    // Defaults to {Mailbox=1, FIFO=0}
+    template<typename Self>
+    [[nodiscard]] auto&& preferPresentModes(
+        this Self&& self,
+        InputSpan<TrivialPair<PresentMode, int32_t>> const present_modes
+    ) {
+        appendRange(self.m_preferred_present_modes, present_modes);
+        return std::forward<Self>(self);
+    }
+
+    template<typename Self>
+    [[nodiscard]] auto&& fallbackExtent(
+        this Self&& self,
+        Extent2d const extent
+    ) {
+        self.m_fallback_extent = extent;
+        return std::forward<Self>(self);
+    }
+
+    template<typename Self>
+    [[nodiscard]] auto&& fallbackExtent(
+        this Self&& self,
+        TrivialPair<uint32_t, uint32_t> const extent
+    ) {
+        return self.fallbackExtent(Extent2d{ extent.first, extent.second });
+    }
+
+    // Defaults to the one inquired from surface
+    template<typename Self>
+    [[nodiscard]] auto&& transform(
+        this Self&& self,
+        SurfaceTransformBits const transform
+    ) {
+        self.m_transform = transform;
+        return std::forward<Self>(self);
+    }
+
+    [[nodiscard]]
+    Swapchain build(VulkanCaps& out_caps, Swapchain const* old_swapchain = nullptr);
+private:
+    Device const& m_device;
+    PhysicalDevice const& m_physical_device;
+    Surface const& m_surface;
+    
+    std::vector<Format> m_required_formats;
+    std::vector<TrivialPair<Format, int32_t>> m_preferred_formats;
+    std::vector<ColorSpace> m_required_color_spaces;
+    std::vector<TrivialPair<ColorSpace, int32_t>> m_preferred_color_spaces;
+    std::vector<PresentMode> m_required_present_modes;
+    std::vector<TrivialPair<PresentMode, int32_t>> m_preferred_present_modes;
+    std::optional<Extent2d> m_fallback_extent;
+    std::optional<SurfaceTransformBits> m_transform;
+};
+
+} // namespace core

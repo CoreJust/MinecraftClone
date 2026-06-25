@@ -1,4 +1,4 @@
-#include <core/vulkan/PhysicalDeviceType.hpp>
+#include <core/vulkan/enum/PhysicalDeviceType.hpp>
 
 #include <core/meta/EnumImpl.hpp>
 

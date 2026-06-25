@@ -30,7 +30,14 @@ CORE_ENUM_FUNCTIONS(ColorSpace);
 constexpr uint32_t colorSpaceToVk(ColorSpace const color_space) noexcept {
     return color_space == ColorSpace::SRGBNonlinear
         ? 0
-        : static_cast<uint32_t>(color_space) + 1000104000;
+        : static_cast<uint32_t>(color_space) + 1'000'104'000;
+}
+
+[[nodiscard]]
+constexpr ColorSpace vkToColorSpace(uint32_t const color_space) noexcept {
+    return color_space == 0
+        ? ColorSpace::SRGBNonlinear
+        : static_cast<ColorSpace>(color_space - 1'000'104'000);
 }
 
 } // namespace core

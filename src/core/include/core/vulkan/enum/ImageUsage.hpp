@@ -1,5 +1,6 @@
 #pragma once
 
+#include <core/common/EnumBits.hpp>
 #include <core/meta/Enum.hpp>
 
 namespace core {
@@ -39,17 +40,6 @@ enum class ImageUsage {
 
 CORE_ENUM_FUNCTIONS(ImageUsage);
 
-struct ImageUsageBits final {
-    uint32_t value = 0;
-
-    template<typename... Args> [[nodiscard]]
-    static constexpr ImageUsageBits of(ImageUsage const first, Args const... args) noexcept {
-        if constexpr (sizeof...(Args) > 0) {
-            return { 1u << indexOf(first) | of(args...).value };
-        } else {
-            return { 1u << indexOf(first) };
-        }
-    }
-};
+using ImageUsageBits = EnumBits<ImageUsage>;
 
 } // namespace core

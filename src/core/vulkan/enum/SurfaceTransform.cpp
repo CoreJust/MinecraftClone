@@ -1,4 +1,4 @@
-#include <core/vulkan/SurfaceTransform.hpp>
+#include <core/vulkan/enum/SurfaceTransform.hpp>
 
 #include <core/meta/EnumImpl.hpp>
 

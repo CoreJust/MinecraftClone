@@ -4,25 +4,21 @@ target_sources(mc
         AllocatorBuilder.cpp
         Capabilities.cpp
         Check.cpp
-        ColorSpace.cpp
         Device.cpp
         DeviceBuilder.cpp
         ErrorCallbacks.cpp
         Extensions.cpp
         Features.cpp
-        Format.cpp
         Image.cpp
-        ImageUsage.cpp
+        ImageView.cpp
         Instance.cpp
         InstanceBuilder.cpp
         Layers.cpp
-        MemoryProperty.cpp
         PhysicalDeviceSelector.cpp
-        PhysicalDeviceType.cpp
-        PresentMode.cpp
-        QueueFamily.cpp
         Surface.cpp
-        SurfaceTransform.cpp
+        Swapchain.cpp
+        SwapchainBuilder.cpp
         VulkanVersion.cpp
 )
+add_subdirectory(enum)
 add_subdirectory(internal)

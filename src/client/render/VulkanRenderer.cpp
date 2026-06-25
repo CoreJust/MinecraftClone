@@ -9,6 +9,7 @@
 #include <core/vulkan/ErrorCallbacks.hpp>
 #include <core/vulkan/InstanceBuilder.hpp>
 #include <core/vulkan/PhysicalDeviceSelector.hpp>
+#include <core/vulkan/SwapchainBuilder.hpp>
 #include <core/vulkan/VulkanVersion.hpp>
 
 // DONT_CHECK INCLUDE_ORDER
@@ -125,9 +126,11 @@ public:
                 { core::QueueFamily::Present, 1.f },
             })
             .build(m_caps))
+        , m_swapchain_builder(core::SwapchainBuilder(m_device, m_physical_device, m_surface)
+            .fallbackExtent(m_window.framebufferSize()))
+        , m_swapchain(m_swapchain_builder.build(m_caps))
     {
         CORE_INFO("Loaded Vulkan:\n{}", m_caps.toString());
-        createSwapchain();
         createCommandPool();
         createCommandBuffers();
         createSyncObjects();
@@ -147,7 +150,6 @@ public:
         destroySyncObjects();
         destroyCommandBuffers();
         destroyCommandPool();
-        destroySwapchain();
     }
 
     void render(std::span<PlayerRenderData const> const players) {
@@ -158,151 +160,13 @@ public:
     }
 
 private:
-    [[nodiscard]] VkSurfaceFormatKHR chooseSurfaceFormat(std::span<VkSurfaceFormatKHR const> const formats) const {
-        for (auto const& format : formats) {
-            if (format.format == VK_FORMAT_B8G8R8A8_SRGB && format.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) {
-                return format;
-            }
-        }
-        return formats.front();
-    }
-
-    [[nodiscard]] VkPresentModeKHR choosePresentMode(std::span<VkPresentModeKHR const> const modes) const {
-        for (auto const mode : modes) {
-            if (mode == VK_PRESENT_MODE_MAILBOX_KHR) {
-                return mode;
-            }
-        }
-        return VK_PRESENT_MODE_FIFO_KHR;
-    }
-
-    [[nodiscard]] VkExtent2D chooseExtent(VkSurfaceCapabilitiesKHR const& capabilities) const {
-        if (capabilities.currentExtent.width != std::numeric_limits<uint32_t>::max()) {
-            return capabilities.currentExtent;
-        }
-
-        auto const [width, height] = m_window.framebufferSize();
-        return VkExtent2D{
-            std::clamp(width, capabilities.minImageExtent.width, capabilities.maxImageExtent.width),
-            std::clamp(height, capabilities.minImageExtent.height, capabilities.maxImageExtent.height),
-        };
-    }
-
-    void createSwapchain() {
-        VkSurfaceCapabilitiesKHR capabilities{};
-        CORE_VK_ASSERT(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(m_physical_device.handle(), m_surface.handle(), &capabilities));
-
-        uint32_t formatCount = 0;
-        CORE_VK_ASSERT(vkGetPhysicalDeviceSurfaceFormatsKHR(
-            m_physical_device.handle(), m_surface.handle(), &formatCount, nullptr));
-        std::vector<VkSurfaceFormatKHR> formats(formatCount);
-        CORE_VK_ASSERT(vkGetPhysicalDeviceSurfaceFormatsKHR(
-            m_physical_device.handle(), m_surface.handle(), &formatCount, formats.data()));
-
-        uint32_t presentModeCount = 0;
-        CORE_VK_ASSERT(vkGetPhysicalDeviceSurfacePresentModesKHR(
-            m_physical_device.handle(), m_surface.handle(), &presentModeCount, nullptr));
-        std::vector<VkPresentModeKHR> presentModes(presentModeCount);
-        CORE_VK_ASSERT(vkGetPhysicalDeviceSurfacePresentModesKHR(
-            m_physical_device.handle(), m_surface.handle(), &presentModeCount, presentModes.data()));
-
-        ASSERT(!formats.empty());
-        auto const chosenFormat = chooseSurfaceFormat(formats);
-        m_swapchain.format = chosenFormat.format;
-        m_swapchain.extent = chooseExtent(capabilities);
-
-        uint32_t imageCount = capabilities.minImageCount + 1U;
-        if (capabilities.maxImageCount > 0U) {
-            imageCount = std::min(imageCount, capabilities.maxImageCount);
-        }
-
-        uint32_t queueFamilyIndices[2]{
-            *m_physical_device.queueFamily(core::QueueFamily::Graphics),
-            *m_physical_device.queueFamily(core::QueueFamily::Present),
-        };
-
-        VkSwapchainCreateInfoKHR const createInfo{
-            .sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
-            .surface = m_surface.handle(),
-            .minImageCount = imageCount,
-            .imageFormat = chosenFormat.format,
-            .imageColorSpace = chosenFormat.colorSpace,
-            .imageExtent = m_swapchain.extent,
-            .imageArrayLayers = 1,
-            .imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
-            .imageSharingMode = (queueFamilyIndices[0] != queueFamilyIndices[1])
-                ? VK_SHARING_MODE_CONCURRENT
-                : VK_SHARING_MODE_EXCLUSIVE,
-            .queueFamilyIndexCount = (queueFamilyIndices[0] != queueFamilyIndices[1]) ? 2U : 0U,
-            .pQueueFamilyIndices = (queueFamilyIndices[0] != queueFamilyIndices[1]) ? queueFamilyIndices : nullptr,
-            .preTransform = capabilities.currentTransform,
-            .compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
-            .presentMode = choosePresentMode(presentModes),
-            .clipped = VK_TRUE,
-            .oldSwapchain = m_swapchain.swapchain,
-        };
-
-        VkSwapchainKHR const oldSwapchain = m_swapchain.swapchain;
-        VkSwapchainKHR newSwapchain = VK_NULL_HANDLE;
-        CORE_VK_ASSERT(vkCreateSwapchainKHR(m_device.handle(), &createInfo, nullptr, &newSwapchain));
-
-        uint32_t newImageCount = 0;
-        CORE_VK_ASSERT(vkGetSwapchainImagesKHR(m_device.handle(), newSwapchain, &newImageCount, nullptr));
-        std::vector<VkImage> images(newImageCount);
-        CORE_VK_ASSERT(vkGetSwapchainImagesKHR(m_device.handle(), newSwapchain, &newImageCount, images.data()));
-
-        if (oldSwapchain != VK_NULL_HANDLE) {
-            vkDestroySwapchainKHR(m_device.handle(), oldSwapchain, nullptr);
-        }
-
-        m_swapchain.swapchain = newSwapchain;
-        m_swapchain.images = std::move(images);
-        m_swapchain.views.clear();
-        m_swapchain.views.reserve(m_swapchain.images.size());
-
-        for (auto const image : m_swapchain.images) {
-            VkImageViewCreateInfo const viewInfo{
-                .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
-                .image = image,
-                .viewType = VK_IMAGE_VIEW_TYPE_2D,
-                .format = m_swapchain.format,
-                .subresourceRange = {
-                    .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-                    .baseMipLevel = 0,
-                    .levelCount = 1,
-                    .baseArrayLayer = 0,
-                    .layerCount = 1,
-                },
-            };
-
-            VkImageView view = VK_NULL_HANDLE;
-            CORE_VK_ASSERT(vkCreateImageView(m_device.handle(), &viewInfo, nullptr, &view));
-            m_swapchain.views.push_back(view);
-        }
-    }
-
     void recreateSwapchain() {
         m_device.waitIdle();
         destroyPipelines();
         destroyCommandBuffers();
-        destroySwapchain();
-        createSwapchain();
+        m_swapchain = m_swapchain_builder.build(m_caps, &m_swapchain);
         createCommandBuffers();
         createPipelines();
-    }
-
-    void destroySwapchain() {
-        for (auto const view : m_swapchain.views) {
-            if (view != VK_NULL_HANDLE) {
-                vkDestroyImageView(m_device.handle(), view, nullptr);
-            }
-        }
-        m_swapchain.views.clear();
-
-        if (m_swapchain.swapchain != VK_NULL_HANDLE) {
-            vkDestroySwapchainKHR(m_device.handle(), m_swapchain.swapchain, nullptr);
-            m_swapchain.swapchain = VK_NULL_HANDLE;
-        }
     }
 
     void createCommandPool() {
@@ -414,15 +278,16 @@ private:
         CORE_VK_ASSERT(vkCreatePipelineLayout(m_device.handle(), &gridLayoutInfo, nullptr, &m_gridLayout));
         CORE_VK_ASSERT(vkCreatePipelineLayout(m_device.handle(), &playerLayoutInfo, nullptr, &m_playerLayout));
 
+        VkFormat const format = static_cast<VkFormat>(m_caps.surfaceFormat());
         VkPipelineRenderingCreateInfo const gridRendering{
             .sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO,
             .colorAttachmentCount = 1,
-            .pColorAttachmentFormats = &m_swapchain.format,
+            .pColorAttachmentFormats = &format,
         };
         VkPipelineRenderingCreateInfo const playerRendering{
             .sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO,
             .colorAttachmentCount = 1,
-            .pColorAttachmentFormats = &m_swapchain.format,
+            .pColorAttachmentFormats = &format,
         };
 
         VkPipelineShaderStageCreateInfo const gridStages[2]{
@@ -587,7 +452,7 @@ private:
         uint32_t imageIndex = 0;
         CORE_VK_ASSERT(vkAcquireNextImageKHR(
             m_device.handle(),
-            m_swapchain.swapchain,
+            m_swapchain.handle(),
             std::numeric_limits<uint64_t>::max(),
             m_imageAvailable[frame],
             VK_NULL_HANDLE,
@@ -610,12 +475,13 @@ private:
         };
         CORE_VK_ASSERT(vkQueueSubmit(m_device.queue(core::QueueFamily::Graphics).handle(), 1, &submit, m_inFlight[frame]));
 
+        VkSwapchainKHR const swapchain = m_swapchain.handle();
         VkPresentInfoKHR const present{
             .sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
             .waitSemaphoreCount = 1,
             .pWaitSemaphores = &m_renderFinished[frame],
             .swapchainCount = 1,
-            .pSwapchains = &m_swapchain.swapchain,
+            .pSwapchains = &swapchain,
             .pImageIndices = &imageIndex,
         };
 
@@ -638,7 +504,7 @@ private:
             .dstAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
             .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
             .newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-            .image = m_swapchain.images[imageIndex],
+            .image = m_swapchain.images()[imageIndex].handle(),
             .subresourceRange = {
                 .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
                 .baseMipLevel = 0,
@@ -659,7 +525,7 @@ private:
         };
         VkRenderingAttachmentInfo const colorAttachment{
             .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
-            .imageView = m_swapchain.views[imageIndex],
+            .imageView = m_swapchain.imageViews()[imageIndex].handle(),
             .imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
             .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
             .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
@@ -669,7 +535,7 @@ private:
             .sType = VK_STRUCTURE_TYPE_RENDERING_INFO,
             .renderArea = {
                 .offset = {0, 0},
-                .extent = m_swapchain.extent,
+                .extent = { m_caps.extent().x, m_caps.extent().y },
             },
             .layerCount = 1,
             .colorAttachmentCount = 1,
@@ -681,14 +547,14 @@ private:
         VkViewport const viewport{
             .x = 0.0f,
             .y = 0.0f,
-            .width = static_cast<float>(m_swapchain.extent.width),
-            .height = static_cast<float>(m_swapchain.extent.height),
+            .width = static_cast<float>(m_caps.extent().x),
+            .height = static_cast<float>(m_caps.extent().y),
             .minDepth = 0.0f,
             .maxDepth = 1.0f,
         };
         VkRect2D const scissor{
             .offset = {0, 0},
-            .extent = m_swapchain.extent,
+            .extent = { m_caps.extent().x, m_caps.extent().y },
         };
         vkCmdSetViewport(cmd, 0, 1, &viewport);
         vkCmdSetScissor(cmd, 0, 1, &scissor);
@@ -718,7 +584,7 @@ private:
             .dstAccessMask = VK_ACCESS_2_NONE,
             .oldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
             .newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
-            .image = m_swapchain.images[imageIndex],
+            .image = m_swapchain.images()[imageIndex].handle(),
             .subresourceRange = {
                 .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
                 .baseMipLevel = 0,
@@ -744,8 +610,9 @@ private:
     core::Surface m_surface;
     core::PhysicalDevice m_physical_device;
     core::Device m_device;
+    core::SwapchainBuilder m_swapchain_builder;
+    core::Swapchain m_swapchain;
 
-    SwapchainBundle m_swapchain{};
     VkCommandPool m_commandPool = VK_NULL_HANDLE;
     std::vector<VkCommandBuffer> m_commandBuffers;
     std::vector<VkSemaphore> m_imageAvailable;

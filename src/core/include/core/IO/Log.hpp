@@ -1,6 +1,8 @@
 #pragma once
 
+#include <core/IO/EnumBitsFmt.hpp>
 #include <core/IO/EnumFmt.hpp>
+#include <core/IO/JoinContainerFmt.hpp>
 #include <core/IO/OptionalFmt.hpp>
 #include <core/IO/StacktraceFmt.hpp>
 

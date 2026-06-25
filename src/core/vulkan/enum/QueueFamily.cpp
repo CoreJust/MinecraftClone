@@ -1,4 +1,4 @@
-#include <core/vulkan/QueueFamily.hpp>
+#include <core/vulkan/enum/QueueFamily.hpp>
 
 #include <core/meta/EnumImpl.hpp>
 #include <core/vulkan/Check.hpp>

@@ -1,4 +1,4 @@
-#include <core/vulkan/ImageUsage.hpp>
+#include <core/vulkan/enum/ImageUsage.hpp>
 
 #include <core/meta/EnumImpl.hpp>
 

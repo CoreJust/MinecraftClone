@@ -1,5 +1,6 @@
 #pragma once
 
+#include <core/common/EnumBits.hpp>
 #include <core/meta/Enum.hpp>
 
 #include <cstdint>
@@ -22,18 +23,7 @@ enum class MemoryProperty {
 
 CORE_ENUM_FUNCTIONS(MemoryProperty);
 
-struct MemoryPropertyBits final {
-    uint32_t value;
-
-    template<typename... Args> [[nodiscard]]
-    static constexpr MemoryPropertyBits of(MemoryProperty const first, Args const... args) noexcept {
-        if constexpr (sizeof...(Args) > 0) {
-            return { 1u << indexOf(first) | of(args...).value };
-        } else {
-            return { 1u << indexOf(first) };
-        }
-    }
-};
+using MemoryPropertyBits = EnumBits<MemoryProperty>;
 
 struct MemoryHeap final {
     MemoryPropertyBits properties;

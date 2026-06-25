@@ -1,6 +1,8 @@
 #include <core/vulkan/Capabilities.hpp>
 
+#include <core/IO/EnumBitsFmt.hpp>
 #include <core/IO/EnumFmt.hpp>
+#include <core/IO/JoinContainerFmt.hpp>
 
 namespace core {
 
@@ -58,6 +60,22 @@ void VulkanCaps::commitDeviceCaps(
     }
 }
 
+void VulkanCaps::commitSwapchainCaps(
+    Format const format,
+    ColorSpace const color_space,
+    PresentMode const present_mode,
+    SurfaceTransformBits const surface_transform,
+    Extent2d const extent,
+    uint32_t const image_count
+) noexcept {
+    m_format = format;
+    m_color_space = color_space;
+    m_present_mode = present_mode;
+    m_surface_transform = surface_transform;
+    m_extent = extent;
+    m_image_count = image_count;
+}
+
 std::vector<VulkanExtension> VulkanCaps::supportedDeviceExtensionsAsVec() const {
     std::vector<VulkanExtension> result{ };
     for (VulkanExtension const ext : valuesOf<VulkanExtension>()) {
@@ -69,43 +87,39 @@ std::vector<VulkanExtension> VulkanCaps::supportedDeviceExtensionsAsVec() const 
 }
 
 std::string VulkanCaps::toString() const {
-    std::string heaps_message, tmp;
-    uint32_t index = 0;
-    for (MemoryHeap const heap : m_heaps) {
-        tmp = "\t" + std::to_string(heap.heap_index) + ": ";
-        for (MemoryProperty const property : valuesOf<MemoryProperty>()) {
-            if (MemoryPropertyBits::of(property).value & heap.properties.value) {
-                tmp += toStringView(property);
-                tmp += ", ";
-            }
-        }
-        if (tmp.ends_with(", ")) {
-            tmp.pop_back();
-            tmp.pop_back();
-        }
-        heaps_message += tmp;
-        heaps_message += '\n';
-        ++index;
-    }
     return fmt::format(
-        "Instance version: {}\n"
-        "Device name: {}\n"
-        "Device version: {}\n"
-        "Device type: {}\n"
-        "Validation: {}\n"
-        "Layers:\n{}"
-        "Extensions:\n{}"
-        "Features:\n{}"
-        "Memory heaps:\n{}",
+        "\tInstance version: {}\n"
+        "\tDevice name: {}\n"
+        "\tDevice version: {}\n"
+        "\tDevice type: {}\n"
+        "\tValidation: {}\n"
+        "\tSurface format: {}\n"
+        "\tColor space: {}\n"
+        "\tPresent mode: {}\n"
+        "\tSurface transform: {}\n"
+        "\tExtent: {}x{}\n"
+        "\tSwapchain image count: {}\n"
+        "\tLayers:\n{}"
+        "\tExtensions:\n{}"
+        "\tFeatures:\n{}"
+        "\tMemory heaps:\n{}",
         instanceVersion(),
         deviceName(),
         deviceVersion(),
         m_device_type,
         validationEnabled() ? "Enabled" : "Disabled",
+        m_format,
+        m_color_space,
+        m_present_mode,
+        joinFmt(m_surface_transform),
+        m_extent.x, m_extent.y,
+        m_image_count,
         m_enabled_layers.toString("\t"),
         m_enabled_extensions.toString("\t"),
         m_enabled_features.toString("\t"),
-        heaps_message
+        joinFmt(m_heaps, [](fmt::context::iterator out, MemoryHeap const& heap) {
+            return fmt::format_to(out, "\t\t{}: {}\n", heap.heap_index, joinFmt(heap.properties));
+        })
     );
 }
 

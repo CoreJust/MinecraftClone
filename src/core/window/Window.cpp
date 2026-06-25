@@ -104,7 +104,7 @@ void Window::enableCursor(bool value) {
     m_cursor_enabled = value;
 }
 
-std::pair<uint32_t, uint32_t> Window::framebufferSize() const noexcept {
+TrivialPair<uint32_t, uint32_t> Window::framebufferSize() const noexcept {
     int width = 0;
     int height = 0;
     glfwGetFramebufferSize(m_window, &width, &height);

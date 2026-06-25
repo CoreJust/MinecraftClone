@@ -7,11 +7,11 @@
 #include <core/vulkan/Extensions.hpp>
 #include <core/vulkan/Features.hpp>
 #include <core/vulkan/Instance.hpp>
-#include <core/vulkan/MemoryProperty.hpp>
 #include <core/vulkan/PhysicalDevice.hpp>
 #include <core/vulkan/PhysicalDeviceProperties.hpp>
-#include <core/vulkan/PhysicalDeviceType.hpp>
 #include <core/vulkan/Surface.hpp>
+#include <core/vulkan/enum/MemoryProperty.hpp>
+#include <core/vulkan/enum/PhysicalDeviceType.hpp>
 
 namespace core {
 

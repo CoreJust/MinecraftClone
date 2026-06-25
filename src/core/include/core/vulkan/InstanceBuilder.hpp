@@ -3,7 +3,6 @@
 #include <core/common/InputSpan.hpp>
 #include <core/common/VectorUtils.hpp>
 #include <core/common/Version.hpp>
-#include <core/meta/Enum.hpp>
 #include <core/vulkan/Capabilities.hpp>
 #include <core/vulkan/DebugMessengerOptions.hpp>
 #include <core/vulkan/Error.hpp>

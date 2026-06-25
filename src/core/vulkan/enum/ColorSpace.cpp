@@ -1,4 +1,4 @@
-#include <core/vulkan/ColorSpace.hpp>
+#include <core/vulkan/enum/ColorSpace.hpp>
 
 #include <core/meta/EnumImpl.hpp>
 

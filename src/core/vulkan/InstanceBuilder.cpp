@@ -307,6 +307,7 @@ Instance InstanceBuilder::build(VulkanCaps& out_caps) const {
         enabled_extensions
     );
 
+    CORE_DEBUG("Instance built");
     return Instance{ instance, debug_messenger };
 }
 

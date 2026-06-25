@@ -1,4 +1,4 @@
-#include <core/vulkan/MemoryProperty.hpp>
+#include <core/vulkan/enum/MemoryProperty.hpp>
 
 #include <core/meta/EnumImpl.hpp>
 

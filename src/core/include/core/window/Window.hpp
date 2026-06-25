@@ -2,6 +2,7 @@
 
 #include <core/common/NonCopyable.hpp>
 #include <core/common/NonMovable.hpp>
+#include <core/common/TrivialPair.hpp>
 
 #include <cstdint>
 #include <functional>
@@ -31,7 +32,7 @@ public:
     }
 
     [[nodiscard]]
-    std::pair<uint32_t, uint32_t> framebufferSize() const noexcept;
+    TrivialPair<uint32_t, uint32_t> framebufferSize() const noexcept;
     [[nodiscard]]
     bool isFramebufferSizeZero() const noexcept;
     [[nodiscard]]
