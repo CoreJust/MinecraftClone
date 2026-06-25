@@ -110,6 +110,8 @@ public:
     [[nodiscard]]
     constexpr Handle handle() const noexcept { return m_handle; }
     [[nodiscard]]
+    constexpr Handle* handlePtr() & noexcept { return &m_handle; }
+    [[nodiscard]]
     constexpr bool isNull() const noexcept { return m_handle == VK_NULL_HANDLE; }
 protected:
     Handle m_handle = VK_NULL_HANDLE;

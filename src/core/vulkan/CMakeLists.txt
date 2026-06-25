@@ -9,12 +9,14 @@ target_sources(mc
         ErrorCallbacks.cpp
         Extensions.cpp
         Features.cpp
+        Fence.cpp
         Image.cpp
         ImageView.cpp
         Instance.cpp
         InstanceBuilder.cpp
         Layers.cpp
         PhysicalDeviceSelector.cpp
+        Semaphore.cpp
         Surface.cpp
         Swapchain.cpp
         SwapchainBuilder.cpp

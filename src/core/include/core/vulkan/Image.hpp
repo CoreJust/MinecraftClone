@@ -12,7 +12,6 @@
 namespace core {
 
 struct ImageViewCreationError final : public VulkanError {
-public:
     ImageViewCreationError() : VulkanError("Failed to create ImageView from Image") { }
 };
 

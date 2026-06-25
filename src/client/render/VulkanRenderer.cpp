@@ -7,25 +7,17 @@
 #include <core/vulkan/Check.hpp>
 #include <core/vulkan/DeviceBuilder.hpp>
 #include <core/vulkan/ErrorCallbacks.hpp>
+#include <core/vulkan/Fence.hpp>
 #include <core/vulkan/InstanceBuilder.hpp>
 #include <core/vulkan/PhysicalDeviceSelector.hpp>
+#include <core/vulkan/Semaphore.hpp>
 #include <core/vulkan/SwapchainBuilder.hpp>
 #include <core/vulkan/VulkanVersion.hpp>
 
-// DONT_CHECK INCLUDE_ORDER
 #include <volk.h>
-// DONT_CHECK INCLUDE_ORDER
-#include <GLFW/glfw3.h>
 
-#include <algorithm>
 #include <array>
-#include <cstdint>
 #include <cstring>
-#include <limits>
-#include <span>
-#include <string>
-#include <utility>
-#include <vector>
 
 namespace client {
 
@@ -147,7 +139,6 @@ public:
         core::setOutOfDateKHRCallback(nullptr);
         core::setSuboptimalKHRCallback(nullptr);
         destroyPipelines();
-        destroySyncObjects();
         destroyCommandBuffers();
         destroyCommandPool();
     }
@@ -208,44 +199,15 @@ private:
     }
 
     void createSyncObjects() {
-        VkSemaphoreCreateInfo const semInfo{
-            .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
-        };
-        VkFenceCreateInfo const fenceInfo{
-            .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
-            .flags = VK_FENCE_CREATE_SIGNALED_BIT,
-        };
-
-        m_imageAvailable.resize(kMaxFramesInFlight);
-        m_renderFinished.resize(kMaxFramesInFlight);
-        m_inFlight.resize(kMaxFramesInFlight);
+        m_image_available.reserve(kMaxFramesInFlight);
+        m_render_finished.reserve(kMaxFramesInFlight);
+        m_in_flight.reserve(kMaxFramesInFlight);
 
         for (uint32_t i = 0; i < kMaxFramesInFlight; ++i) {
-            CORE_VK_ASSERT(vkCreateSemaphore(m_device.handle(), &semInfo, nullptr, &m_imageAvailable[i]));
-            CORE_VK_ASSERT(vkCreateSemaphore(m_device.handle(), &semInfo, nullptr, &m_renderFinished[i]));
-            CORE_VK_ASSERT(vkCreateFence(m_device.handle(), &fenceInfo, nullptr, &m_inFlight[i]));
+            m_image_available.emplace_back(m_device);
+            m_render_finished.emplace_back(m_device);
+            m_in_flight.emplace_back(m_device, true);
         }
-    }
-
-    void destroySyncObjects() {
-        for (auto const fence : m_inFlight) {
-            if (fence != VK_NULL_HANDLE) {
-                vkDestroyFence(m_device.handle(), fence, nullptr);
-            }
-        }
-        for (auto const semaphore : m_imageAvailable) {
-            if (semaphore != VK_NULL_HANDLE) {
-                vkDestroySemaphore(m_device.handle(), semaphore, nullptr);
-            }
-        }
-        for (auto const semaphore : m_renderFinished) {
-            if (semaphore != VK_NULL_HANDLE) {
-                vkDestroySemaphore(m_device.handle(), semaphore, nullptr);
-            }
-        }
-        m_inFlight.clear();
-        m_imageAvailable.clear();
-        m_renderFinished.clear();
     }
 
     void createPipelines() {
@@ -447,18 +409,21 @@ private:
 
     void drawFrame(std::span<PlayerRenderData const> const players) {
         uint32_t const frame = static_cast<uint32_t>(m_frameIndex % kMaxFramesInFlight);
-        CORE_VK_ASSERT(vkWaitForFences(m_device.handle(), 1, &m_inFlight[frame], VK_TRUE, std::numeric_limits<uint64_t>::max()));
+        if (!m_in_flight[frame].wait()) {
+            CORE_WARN("Failed to wait for in-flight fence on frame {}; skipping the frame", frame);
+            return;
+        }
 
         uint32_t imageIndex = 0;
         CORE_VK_ASSERT(vkAcquireNextImageKHR(
             m_device.handle(),
             m_swapchain.handle(),
             std::numeric_limits<uint64_t>::max(),
-            m_imageAvailable[frame],
+            m_image_available[frame].handle(),
             VK_NULL_HANDLE,
             &imageIndex));
 
-        CORE_VK_ASSERT(vkResetFences(m_device.handle(), 1, &m_inFlight[frame]));
+        m_in_flight[frame].reset();
         CORE_VK_ASSERT(vkResetCommandBuffer(m_commandBuffers[frame], 0));
         record(m_commandBuffers[frame], imageIndex, players);
 
@@ -466,22 +431,23 @@ private:
         VkSubmitInfo const submit{
             .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
             .waitSemaphoreCount = 1,
-            .pWaitSemaphores = &m_imageAvailable[frame],
+            .pWaitSemaphores = m_image_available[frame].handlePtr(),
             .pWaitDstStageMask = &waitStage,
             .commandBufferCount = 1,
             .pCommandBuffers = &m_commandBuffers[frame],
             .signalSemaphoreCount = 1,
-            .pSignalSemaphores = &m_renderFinished[frame],
+            .pSignalSemaphores = m_render_finished[frame].handlePtr(),
         };
-        CORE_VK_ASSERT(vkQueueSubmit(m_device.queue(core::QueueFamily::Graphics).handle(), 1, &submit, m_inFlight[frame]));
+        CORE_VK_ASSERT(
+            vkQueueSubmit(m_device.queue(core::QueueFamily::Graphics).handle(), 1, &submit, m_in_flight[frame].handle())
+        );
 
-        VkSwapchainKHR const swapchain = m_swapchain.handle();
         VkPresentInfoKHR const present{
             .sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
             .waitSemaphoreCount = 1,
-            .pWaitSemaphores = &m_renderFinished[frame],
+            .pWaitSemaphores = m_render_finished[frame].handlePtr(),
             .swapchainCount = 1,
-            .pSwapchains = &swapchain,
+            .pSwapchains = m_swapchain.handlePtr(),
             .pImageIndices = &imageIndex,
         };
 
@@ -615,9 +581,9 @@ private:
 
     VkCommandPool m_commandPool = VK_NULL_HANDLE;
     std::vector<VkCommandBuffer> m_commandBuffers;
-    std::vector<VkSemaphore> m_imageAvailable;
-    std::vector<VkSemaphore> m_renderFinished;
-    std::vector<VkFence> m_inFlight;
+    std::vector<core::Semaphore> m_image_available;
+    std::vector<core::Semaphore> m_render_finished;
+    std::vector<core::Fence> m_in_flight;
 
     VkShaderModule m_gridMeshShader = VK_NULL_HANDLE;
     VkShaderModule m_playerMeshShader = VK_NULL_HANDLE;

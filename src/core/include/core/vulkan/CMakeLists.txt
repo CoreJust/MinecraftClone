@@ -16,6 +16,7 @@ target_sources(mc
             Extensions.hpp
             Extent.hpp
             Features.hpp
+            Fence.hpp
             Image.hpp
             ImageView.hpp
             Instance.hpp
@@ -26,6 +27,7 @@ target_sources(mc
             PhysicalDeviceSelector.hpp
             Queue.hpp
             Resource.hpp
+            Semaphore.hpp
             Surface.hpp
             Swapchain.hpp
             SwapchainBuilder.hpp
