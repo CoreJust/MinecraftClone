@@ -5,6 +5,7 @@
 #include <core/IO/JoinContainerFmt.hpp>
 #include <core/IO/OptionalFmt.hpp>
 #include <core/IO/StacktraceFmt.hpp>
+#include <core/IO/TaggedBoolFmt.hpp>
 
 #include <fmt/core.h>
 #include <spdlog/spdlog.h>

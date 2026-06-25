@@ -5,7 +5,7 @@
 namespace core {
 
 Server::~Server() {
-    kick(collectConnectedClients(), std::chrono::milliseconds{ 300 }, false);
+    kick(collectConnectedClients(), std::chrono::milliseconds{ 300 }, GenerateEvents::No);
 }
 
 size_t Server::poll(std::chrono::milliseconds const total_timeout) {
@@ -18,7 +18,7 @@ size_t Server::poll(std::chrono::milliseconds const total_timeout) {
 size_t Server::kick(
     std::span<ClientId const> const clients,
     std::optional<std::chrono::milliseconds> const wait_for_graceful_disconnect_time,
-    bool const generate_events
+    GenerateEvents const generate_events
 ) {
     // Without graceful exit enabled just reset all the peers.
     if (!wait_for_graceful_disconnect_time.has_value()) {

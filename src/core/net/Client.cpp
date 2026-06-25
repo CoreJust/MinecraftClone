@@ -6,7 +6,7 @@ namespace core {
 
 Client::~Client() {
     if (isConnected()) {
-        disconnect(std::chrono::milliseconds{ 100 }, false);
+        disconnect(std::chrono::milliseconds{ 100 }, GenerateEvents::No);
     }
 }
 
@@ -41,7 +41,7 @@ bool Client::connect(
 
 bool Client::disconnect(
     std::optional<std::chrono::milliseconds> const graceful_disconnection_timeout,
-    bool const generate_events
+    GenerateEvents const generate_events
 ) {
     ASSERT(m_server.has_value(), "Cannot disconnect: Client is connected to no server");
 

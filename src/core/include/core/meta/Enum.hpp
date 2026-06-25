@@ -7,7 +7,7 @@
 
 namespace core {
 
-template<class E>
+template<typename E>
 concept CountableEnum = requires { static_cast<size_t>(E::Count); };
 
 template<CountableEnum E>

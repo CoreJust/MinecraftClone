@@ -245,8 +245,8 @@ void PhysicalDeviceCapsStruct::setFeature(VulkanFeature const feature, bool cons
     VkBool32 const v = value ? VK_TRUE : VK_FALSE;
     switch (feature) {
         using enum VulkanFeature;
-#define SET_FEATURE(feature_set, field) \
-    feature_set.field = v;              \
+#define SET_FEATURE(feature_set, field)                                     \
+    feature_set.field = v;                                                  \
     promotedIfAny(*this, &PhysicalDeviceCapsStruct::feature_set).field = v; \
     break;
 

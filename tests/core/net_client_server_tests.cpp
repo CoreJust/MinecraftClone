@@ -354,7 +354,7 @@ TEST(NetClientServer, ServerKickGracefulTest) {
     bool client_disconnected{ false };
 
     TestServerService srv{
-        [&](TestServer& self, auto&&) { self.kick(0, DEFAULT_TIMEOUT, true); },
+        [&](TestServer& self, auto&&) { self.kick(0, DEFAULT_TIMEOUT, core::GenerateEvents::Yes); },
         TEST_PORT_BASE + 7,
     };
     TestClient client{ [&](auto&&...) { client_disconnected = true; } };
@@ -373,7 +373,7 @@ TEST(NetClientServer, ServerKickImmediateTest) {
     bool client_disconnected{ false };
 
     TestServerService srv{
-        [&](TestServer& self, auto&&) { self.kick(0, std::nullopt, true); },
+        [&](TestServer& self, auto&&) { self.kick(0, std::nullopt, core::GenerateEvents::Yes); },
         TEST_PORT_BASE + 8,
     };
     TestClient client{ [&](auto&&...) { client_disconnected = true; } };

@@ -7,5 +7,6 @@ target_sources(mc
             EnumImpl.hpp
             Field.hpp
             FieldRequirement.hpp
+            TaggedBool.hpp
             TypeName.hpp
 )

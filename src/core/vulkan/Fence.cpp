@@ -13,12 +13,12 @@ CORE_VK_RESOURCE_DESTROY_IMPL(RawFence) {
     vkDestroyFence(device_handle, self.m_handle, nullptr);
 }
 
-CORE_VK_RESOURCE_DEFERRED_CONSTRUCTION_IMPL(RawFence, Device const& device, bool const signaled) {
+CORE_VK_RESOURCE_DEFERRED_CONSTRUCTION_IMPL(RawFence, Device const& device, FenceSignaled const signaled) {
     CORE_VK_CAPTURE_DESTRUCTION_CONTEXT(){ .device_handle = device.handle() };
 
     VkFenceCreateInfo const create_info{
         .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
-        .flags = static_cast<VkFenceCreateFlags>(signaled * VK_FENCE_CREATE_SIGNALED_BIT),
+        .flags = static_cast<VkFenceCreateFlags>(signaled.value * VK_FENCE_CREATE_SIGNALED_BIT),
     };
     if (!VK_CHECK(vkCreateFence(device.handle(), &create_info, nullptr, &self.m_handle))) {
         throw FenceCreationError{ };

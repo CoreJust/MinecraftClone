@@ -206,7 +206,7 @@ private:
         for (uint32_t i = 0; i < kMaxFramesInFlight; ++i) {
             m_image_available.emplace_back(m_device);
             m_render_finished.emplace_back(m_device);
-            m_in_flight.emplace_back(m_device, true);
+            m_in_flight.emplace_back(m_device, core::FenceSignaled::Yes);
         }
     }
 

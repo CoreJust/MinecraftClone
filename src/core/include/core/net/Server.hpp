@@ -1,8 +1,8 @@
 #pragma once
 
-#include "Host.hpp"
-
 #include <core/common/SpanUtils.hpp>
+#include <core/net/GenerateEvents.hpp>
+#include <core/net/Host.hpp>
 
 #include <optional>
 #include <span>
@@ -36,13 +36,13 @@ public:
     size_t kick(
         std::span<ClientId const> const clients,
         std::optional<std::chrono::milliseconds> const wait_for_graceful_disconnect_time = std::nullopt,
-        bool const generate_events = true
+        GenerateEvents const generate_events = GenerateEvents::Yes
     );
     // Returns true if kick was graceful.
     bool kick(
         ClientId const client,
         std::optional<std::chrono::milliseconds> const wait_for_graceful_disconnect_time = std::nullopt,
-        bool const generate_events = true
+        GenerateEvents const generate_events = GenerateEvents::Yes
     ) {
         return kick(unitSpan(client), wait_for_graceful_disconnect_time, generate_events) == 0;
     }

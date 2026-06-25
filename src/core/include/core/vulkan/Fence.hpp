@@ -1,5 +1,6 @@
 #pragma once
 
+#include <core/meta/TaggedBool.hpp>
 #include <core/vulkan/Device.hpp>
 #include <core/vulkan/Error.hpp>
 
@@ -9,6 +10,8 @@ struct FenceCreationError : public VulkanError {
     FenceCreationError() : VulkanError("Failed to create fence") { }
 };
 
+using FenceSignaled = TaggedBool<struct FenceSignaledTag>;
+
 CORE_VK_ERROR_WITH_KINDS(FenceError,
     FenceIsNull,
     FailedToWaitOnFence,
@@ -17,7 +20,7 @@ CORE_VK_ERROR_WITH_KINDS(FenceError,
 class RawFence : public VulkanResourceBase<VkFence> {
     CORE_VK_RESOURCE_CONTEXT(RawFence,
         VkDevice device_handle;);
-    CORE_VK_RESOURCE_DEFER_CONSTRUCTION_FROM(Device const& device, bool const signaled);
+    CORE_VK_RESOURCE_DEFER_CONSTRUCTION_FROM(Device const& device, FenceSignaled const signaled);
 };
 
 class Fence : public VulkanRaii<RawFence> {

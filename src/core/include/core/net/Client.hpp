@@ -1,6 +1,7 @@
 #pragma once
 
-#include "Host.hpp"
+#include <core/net/GenerateEvents.hpp>
+#include <core/net/Host.hpp>
 
 namespace core {
 
@@ -20,7 +21,7 @@ public:
     // Returns true if disconnection was graceful.
     bool disconnect(
         std::optional<std::chrono::milliseconds> const graceful_disconnection_timeout = std::nullopt,
-        bool const generate_events = true);
+        GenerateEvents const generate_events = GenerateEvents::Yes);
 
     size_t poll(std::chrono::milliseconds const total_timeout = std::chrono::milliseconds::zero());
     void flush() noexcept { m_host.flush(); }

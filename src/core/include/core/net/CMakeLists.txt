@@ -6,6 +6,7 @@ target_sources(mc
             Address.hpp
             Client.hpp
             Event.hpp
+            GenerateEvents.hpp
             Host.hpp
             Net.hpp
             Peer.hpp
