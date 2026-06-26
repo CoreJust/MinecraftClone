@@ -4,7 +4,7 @@
 
 namespace core {
 
-template<CountableEnum E>
+template<CountableEnum E> requires (countOf<E>() <= 32)
 struct EnumBits final {
     uint32_t value = 0;
 

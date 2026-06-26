@@ -14,9 +14,9 @@ struct Version {
     uint32_t patch = 0; // Or snapshot
 
     [[nodiscard]]
-    constexpr auto operator<=>(Version const& lhs) const noexcept {
+    constexpr auto operator<=>(Version const& rhs) const noexcept {
         return std::tie(epoch, major, minor, patch)
-            <=> std::tie(lhs.epoch, lhs.major, lhs.minor, lhs.patch);
+            <=> std::tie(rhs.epoch, rhs.major, rhs.minor, rhs.patch);
     }
 
     [[nodiscard]]
