@@ -26,13 +26,13 @@ public:
 
     // 0 for default
     template<typename Self>
-    [[nodiscard]] auto&& preferLargeHeapBlockSize(this Self&& self, VkDeviceSize const value) {
+    auto&& preferLargeHeapBlockSize(this Self&& self, VkDeviceSize const value) {
         self.m_preferred_large_heap_block_size = value;
         return std::forward<Self>(self);
     }
 
     template<typename Self>
-    [[nodiscard]] auto&& synchronizeExternally(this Self&& self, bool const value = true) {
+    auto&& synchronizeExternally(this Self&& self, bool const value = true) {
         self.m_externally_synchronized = value;
         return std::forward<Self>(self);
     }

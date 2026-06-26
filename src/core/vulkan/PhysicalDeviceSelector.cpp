@@ -50,23 +50,29 @@ void commitCaps(
 
 CORE_ENUM_FUNCTIONS_IMPL(PhysicalDeviceSelectionErrorKind);
 
-PhysicalDevice PhysicalDeviceSelector::select(VulkanCaps& out_caps) const {
+PhysicalDevice PhysicalDeviceSelector::select(VulkanCaps& out_caps, Instance const& instance, Surface const* surface) const {
+    if (std::ranges::contains(m_required_queue_families, QueueFamily::Present)
+        && surface == nullptr
+    ) {
+        throw PhysicalDeviceSelectionError(PhysicalDeviceSelectionError::NoSurfaceProvidedDespitePresentRequested);
+    }
+
     uint32_t physical_device_count = 0;
-    if (!VK_CHECK(vkEnumeratePhysicalDevices(m_instance.handle(), &physical_device_count, nullptr))
+    if (!VK_CHECK(vkEnumeratePhysicalDevices(instance.handle(), &physical_device_count, nullptr))
         || physical_device_count == 0
     ) {
         throw PhysicalDeviceSelectionError(PhysicalDeviceSelectionError::NoPhysicalDevices);
     }
 
     std::vector<VkPhysicalDevice> physical_devices(physical_device_count);
-    if (!VK_CHECK(vkEnumeratePhysicalDevices(m_instance.handle(), &physical_device_count, physical_devices.data()))) {
+    if (!VK_CHECK(vkEnumeratePhysicalDevices(instance.handle(), &physical_device_count, physical_devices.data()))) {
         throw PhysicalDeviceSelectionError(PhysicalDeviceSelectionError::NoPhysicalDevices);
     }
 
     PhysicalDevice best_device{ };
     int32_t best_score = std::numeric_limits<int32_t>::min();
-    VkSurfaceKHR const surface_handle = m_surface
-        ? m_surface->handle()
+    VkSurfaceKHR const surface_handle = surface
+        ? surface->handle()
         : VK_NULL_HANDLE;
 
     for (VkPhysicalDevice const physical_device : physical_devices) {

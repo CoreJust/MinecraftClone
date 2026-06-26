@@ -26,18 +26,9 @@ CORE_VK_ERROR_WITH_KINDS(SwapchainCreationError,
 
 class SwapchainBuilder final {
 public:
-    SwapchainBuilder(
-        Device const& device,
-        PhysicalDevice const& physical_device,
-        Surface const& surface)
-        : m_device(device)
-        , m_physical_device(physical_device)
-        , m_surface(surface)
-    { }
-
     // Defaults to all formats allowed
     template<typename Self>
-    [[nodiscard]] auto&& requireFormats(
+    auto&& requireFormats(
         this Self&& self,
         InputSpan<Format> const formats
     ) {
@@ -47,7 +38,7 @@ public:
 
     // Defaults to B8G8R8A8SRGB
     template<typename Self>
-    [[nodiscard]] auto&& preferFormats(
+    auto&& preferFormats(
         this Self&& self,
         InputSpan<TrivialPair<Format, int32_t>> const formats
     ) {
@@ -57,7 +48,7 @@ public:
 
     // Defaults to all color spaces allowed
     template<typename Self>
-    [[nodiscard]] auto&& requireColorSpaces(
+    auto&& requireColorSpaces(
         this Self&& self,
         InputSpan<ColorSpace> const color_spaces
     ) {
@@ -67,7 +58,7 @@ public:
 
     // Defaults to SRGBNonlinear
     template<typename Self>
-    [[nodiscard]] auto&& preferColorSpaces(
+    auto&& preferColorSpaces(
         this Self&& self,
         InputSpan<TrivialPair<ColorSpace, int32_t>> const color_spaces
     ) {
@@ -77,7 +68,7 @@ public:
 
     // Defaults to all present modes allowed
     template<typename Self>
-    [[nodiscard]] auto&& requirePresentModes(
+    auto&& requirePresentModes(
         this Self&& self,
         InputSpan<PresentMode> const present_modes
     ) {
@@ -87,7 +78,7 @@ public:
 
     // Defaults to {Mailbox=1, FIFO=0}
     template<typename Self>
-    [[nodiscard]] auto&& preferPresentModes(
+    auto&& preferPresentModes(
         this Self&& self,
         InputSpan<TrivialPair<PresentMode, int32_t>> const present_modes
     ) {
@@ -96,7 +87,7 @@ public:
     }
 
     template<typename Self>
-    [[nodiscard]] auto&& fallbackExtent(
+    auto&& fallbackExtent(
         this Self&& self,
         Extent2d const extent
     ) {
@@ -105,7 +96,7 @@ public:
     }
 
     template<typename Self>
-    [[nodiscard]] auto&& fallbackExtent(
+    auto&& fallbackExtent(
         this Self&& self,
         TrivialPair<uint32_t, uint32_t> const extent
     ) {
@@ -114,7 +105,7 @@ public:
 
     // Defaults to the one inquired from surface
     template<typename Self>
-    [[nodiscard]] auto&& transform(
+    auto&& transform(
         this Self&& self,
         SurfaceTransformBits const transform
     ) {
@@ -123,12 +114,14 @@ public:
     }
 
     [[nodiscard]]
-    Swapchain build(VulkanCaps& out_caps, Swapchain const* old_swapchain = nullptr);
+    Swapchain build(
+        VulkanCaps& out_caps,
+        Device const& device,
+        PhysicalDevice const& physical_device,
+        Surface const& surface,
+        Swapchain const* old_swapchain = nullptr
+    );
 private:
-    Device const& m_device;
-    PhysicalDevice const& m_physical_device;
-    Surface const& m_surface;
-    
     std::vector<Format> m_required_formats;
     std::vector<TrivialPair<Format, int32_t>> m_preferred_formats;
     std::vector<ColorSpace> m_required_color_spaces;

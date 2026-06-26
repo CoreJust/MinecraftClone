@@ -34,25 +34,25 @@ CORE_VK_ERROR_WITH_KINDS(InstanceCreationError,
 class InstanceBuilder final {
 public:
     template<typename Self>
-    [[nodiscard]] auto&& requireWindowExtensions(this Self&& self) {
+    auto&& requireWindowExtensions(this Self&& self) {
         self.m_require_window_extensions = true;
         return std::forward<Self>(self);
     }
 
     template<typename Self>
-    [[nodiscard]] auto&& requireVersion(this Self&& self, Version const version) {
+    auto&& requireVersion(this Self&& self, Version const version) {
         self.m_required_version = version;
         return std::forward<Self>(self);
     }
 
     template<typename Self>
-    [[nodiscard]] auto&& preferVersion(this Self&& self, Version const version) {
+    auto&& preferVersion(this Self&& self, Version const version) {
         self.m_preferred_version = version;
         return std::forward<Self>(self);
     }
 
     template<typename Self>
-    [[nodiscard]] auto&& requireValidation(
+    auto&& requireValidation(
         this Self&& self,
         bool const enabled = true,
         DebugMessengerOptionsBuilder const& options_builder = {},
@@ -66,7 +66,7 @@ public:
     }
 
     template<typename Self>
-    [[nodiscard]] auto&& preferValidation(
+    auto&& preferValidation(
         this Self&& self,
         bool const enabled = true,
         DebugMessengerOptionsBuilder const& options_builder = {},
@@ -79,7 +79,7 @@ public:
     }
 
     template<typename Self>
-    [[nodiscard]] auto&& requireExtensions(
+    auto&& requireExtensions(
         this Self&& self,
         InputSpan<VulkanExtension> const exts
     ) {
@@ -88,7 +88,7 @@ public:
     }
 
     template<typename Self>
-    [[nodiscard]] auto&& preferExtensions(
+    auto&& preferExtensions(
         this Self&& self,
         InputSpan<VulkanExtension> const exts
     ) {
@@ -97,7 +97,7 @@ public:
     }
 
     template<typename Self>
-    [[nodiscard]] auto&& requireLayers(
+    auto&& requireLayers(
         this Self&& self,
         InputSpan<VulkanLayer> const layers
     ) {
@@ -106,7 +106,7 @@ public:
     }
 
     template<typename Self>
-    [[nodiscard]] auto&& preferLayers(
+    auto&& preferLayers(
         this Self&& self,
         InputSpan<VulkanLayer> const layers
     ) {
@@ -115,21 +115,21 @@ public:
     }
 
     template<typename Self>
-    [[nodiscard]] auto&& project(this Self&& self, std::string name, Version const version) {
+    auto&& project(this Self&& self, std::string name, Version const version) {
         self.m_project_name = std::move(name);
         self.m_project_version = version;
         return std::forward<Self>(self);
     }
 
     template<typename Self>
-    [[nodiscard]] auto&& engine(this Self&& self, std::string name, Version const version) {
+    auto&& engine(this Self&& self, std::string name, Version const version) {
         self.m_engine_name = std::move(name);
         self.m_engine_version = version;
         return std::forward<Self>(self);
     }
 
     template<typename Self>
-    [[nodiscard]] auto&& portabilityEnumeration(this Self&& self, bool const enabled = true) {
+    auto&& portabilityEnumeration(this Self&& self, bool const enabled = true) {
         self.m_portability_enumeration = enabled;
         return std::forward<Self>(self);
     }

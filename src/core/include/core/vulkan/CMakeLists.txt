@@ -8,6 +8,8 @@ target_sources(mc
             AllocatorBuilder.hpp
             Capabilities.hpp
             Check.hpp
+            Context.hpp
+            ContextBuilder.hpp
             DebugMessengerOptions.hpp
             Device.hpp
             DeviceBuilder.hpp

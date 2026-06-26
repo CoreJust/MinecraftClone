@@ -178,7 +178,13 @@ PresentMode choosePresentMode(
 
 CORE_ENUM_FUNCTIONS_IMPL(SwapchainCreationErrorKind);
 
-Swapchain SwapchainBuilder::build(VulkanCaps& out_caps, Swapchain const* old_swapchain) {
+Swapchain SwapchainBuilder::build(
+    VulkanCaps& out_caps,
+    Device const& device,
+    PhysicalDevice const& physical_device,
+    Surface const& surface,
+    Swapchain const* old_swapchain
+) {
     if (m_preferred_formats.empty()) {
         m_preferred_formats.emplace_back(Format::B8G8R8A8SRGB, 0);
     }
@@ -191,17 +197,17 @@ Swapchain SwapchainBuilder::build(VulkanCaps& out_caps, Swapchain const* old_swa
     }
 
     auto [format, color_space] = chooseSurfaceFormat(
-        m_physical_device,
-        m_surface,
+        physical_device,
+        surface,
         m_required_formats,
         m_preferred_formats,
         m_required_color_spaces,
         m_preferred_color_spaces
     );
-    PresentMode mode = choosePresentMode(m_physical_device, m_surface, m_required_present_modes, m_preferred_present_modes);
+    PresentMode mode = choosePresentMode(physical_device, surface, m_required_present_modes, m_preferred_present_modes);
     
     VkSurfaceCapabilitiesKHR capabilities{ };
-    if (!VK_CHECK(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(m_physical_device.handle(), m_surface.handle(), &capabilities))) {
+    if (!VK_CHECK(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physical_device.handle(), surface.handle(), &capabilities))) {
         throw SwapchainCreationError(
             SwapchainCreationError::CapabilitiesQueryFailed,
             "{}", "vkGetPhysicalDeviceSurfaceCapabilitiesKHR"
@@ -223,8 +229,8 @@ Swapchain SwapchainBuilder::build(VulkanCaps& out_caps, Swapchain const* old_swa
     }
 
     uint32_t queue_family_ndices[2]{
-        *m_physical_device.queueFamily(core::QueueFamily::Graphics),
-        *m_physical_device.queueFamily(core::QueueFamily::Present),
+        *physical_device.queueFamily(core::QueueFamily::Graphics),
+        *physical_device.queueFamily(core::QueueFamily::Present),
     };
 
     SurfaceTransformBits const surface_transform = m_transform.value_or(
@@ -232,7 +238,7 @@ Swapchain SwapchainBuilder::build(VulkanCaps& out_caps, Swapchain const* old_swa
     );
     VkSwapchainCreateInfoKHR const create_info{
         .sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
-        .surface = m_surface.handle(),
+        .surface = surface.handle(),
         .minImageCount = image_count,
         .imageFormat = static_cast<VkFormat>(format),
         .imageColorSpace = static_cast<VkColorSpaceKHR>(colorSpaceToVk(color_space)),
@@ -252,15 +258,15 @@ Swapchain SwapchainBuilder::build(VulkanCaps& out_caps, Swapchain const* old_swa
     };
 
     VkSwapchainKHR swapchain = VK_NULL_HANDLE;
-    if (!VK_CHECK(vkCreateSwapchainKHR(m_device.handle(), &create_info, nullptr, &swapchain))) {
+    if (!VK_CHECK(vkCreateSwapchainKHR(device.handle(), &create_info, nullptr, &swapchain))) {
         throw SwapchainCreationError(SwapchainCreationError::FailedToCreateSwapchain);
     }
 
-    if (!VK_CHECK(vkGetSwapchainImagesKHR(m_device.handle(), swapchain, &image_count, nullptr))) {
+    if (!VK_CHECK(vkGetSwapchainImagesKHR(device.handle(), swapchain, &image_count, nullptr))) {
         throw SwapchainCreationError(SwapchainCreationError::FailedToGetSwapchainImages);
     }
     std::vector<VkImage> vk_images(image_count);
-    if (!VK_CHECK(vkGetSwapchainImagesKHR(m_device.handle(), swapchain, &image_count, vk_images.data()))) {
+    if (!VK_CHECK(vkGetSwapchainImagesKHR(device.handle(), swapchain, &image_count, vk_images.data()))) {
         throw SwapchainCreationError(SwapchainCreationError::FailedToGetSwapchainImages);
     }
 
@@ -282,7 +288,7 @@ Swapchain SwapchainBuilder::build(VulkanCaps& out_caps, Swapchain const* old_swa
             .format = format,
             .usage = ImageUsage::ColorAttachment,
         },
-        m_device
+        device
     );
 }
 

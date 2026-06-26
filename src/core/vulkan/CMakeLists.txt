@@ -4,6 +4,7 @@ target_sources(mc
         AllocatorBuilder.cpp
         Capabilities.cpp
         Check.cpp
+        Context.cpp
         Device.cpp
         DeviceBuilder.cpp
         ErrorCallbacks.cpp

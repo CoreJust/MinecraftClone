@@ -18,7 +18,7 @@
 
 namespace core {
 
-class VulkanCaps final : NonCopyable {
+class VulkanCaps : NonCopyable {
 public:
     constexpr VulkanCaps() noexcept = default;
 

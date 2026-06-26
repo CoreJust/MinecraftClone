@@ -16,23 +16,20 @@
 namespace core {
 
 CORE_VK_ERROR_WITH_KINDS(PhysicalDeviceSelectionError,
+    NoSurfaceProvidedDespitePresentRequested,
     NoPhysicalDevices,
     NoSuitableDevice)
 
 class PhysicalDeviceSelector final {
 public:
-    explicit PhysicalDeviceSelector(Instance const& instance)
-        : m_instance(instance)
-    { }
-
     template<typename Self>
-    [[nodiscard]] auto&& requireApiVersion(this Self&& self, Version const version) noexcept {
+    auto&& requireApiVersion(this Self&& self, Version const version) noexcept {
         self.m_required_api_version = version;
         return std::forward<Self>(self);
     }
 
     template<typename Self>
-    [[nodiscard]] auto&& requireExtensions(
+    auto&& requireExtensions(
         this Self&& self,
         InputSpan<VulkanExtension> const exts
     ) {
@@ -41,7 +38,7 @@ public:
     }
 
     template<typename Self>
-    [[nodiscard]] auto&& preferExtensions(
+    auto&& preferExtensions(
         this Self&& self,
         InputSpan<VulkanExtension> const exts
     ) {
@@ -50,7 +47,7 @@ public:
     }
 
     template<typename Self>
-    [[nodiscard]] auto&& requireFeatures(
+    auto&& requireFeatures(
         this Self&& self,
         InputSpan<VulkanFeature> const features
     ) {
@@ -59,7 +56,7 @@ public:
     }
 
     template<typename Self>
-    [[nodiscard]] auto&& preferFeatures(
+    auto&& preferFeatures(
         this Self&& self,
         InputSpan<VulkanFeature> const features
     ) {
@@ -68,7 +65,7 @@ public:
     }
 
     template<typename Self>
-    [[nodiscard]] auto&& requireMemoryHeaps(
+    auto&& requireMemoryHeaps(
         this Self&& self,
         InputSpan<MemoryPropertyBits> const heaps
     ) {
@@ -77,29 +74,16 @@ public:
     }
 
     template<typename Self>
-    [[nodiscard]] auto&& requireQueueFamilies(
+    auto&& requireQueueFamilies(
         this Self&& self,
         InputSpan<QueueFamily> const families
     ) {
-        for (QueueFamily const family : families) {
-            ASSERT(family != QueueFamily::Present, "Use requirePresentQueueFamily to request present queue family");
-        }
         appendRange(self.m_required_queue_families, families);
-        return std::forward<Self>(self);
-    }
-    
-    template<typename Self>
-    [[nodiscard]] auto&& requirePresentQueueFamily(
-        this Self&& self,
-        Surface const& surface
-    ) {
-        self.m_required_queue_families.push_back(QueueFamily::Present);
-        self.m_surface = &surface;
         return std::forward<Self>(self);
     }
 
     template<typename Self>
-    [[nodiscard]] auto&& requireDeviceType(
+    auto&& requireDeviceType(
         this Self&& self,
         InputSpan<PhysicalDeviceType> const types
     ) {
@@ -109,7 +93,7 @@ public:
 
     // By default discrete GPUs are preferred with weight 1024
     template<typename Self>
-    [[nodiscard]] auto&& preferDeviceType(
+    auto&& preferDeviceType(
         this Self&& self,
         InputSpan<TrivialPair<PhysicalDeviceType, int32_t>> const types
     ) {
@@ -119,14 +103,11 @@ public:
 
     // Throws PhysicalDeviceSelectionError
     [[nodiscard]]
-    PhysicalDevice select(VulkanCaps& out_caps) const;
+    PhysicalDevice select(VulkanCaps& out_caps, Instance const& instance, Surface const* surface = nullptr) const;
 private:
     [[nodiscard]]
     int32_t scoreDevice(PhysicalDevice const& device, Version const instance_version) const;
 private:
-    Instance const& m_instance;
-    Surface const* m_surface = nullptr;
-    
     std::vector<VulkanExtension> m_required_extensions;
     std::vector<VulkanExtension> m_preferred_extensions;
     std::vector<VulkanFeature> m_required_features;

@@ -19,12 +19,8 @@ CORE_VK_ERROR_WITH_KINDS(DeviceCreationError,
 // Extensions and features are taken from Capabilities
 class DeviceBuilder final {
 public:
-    explicit DeviceBuilder(PhysicalDevice const& physical_device)
-        : m_physical_device(physical_device)
-    { }
-
     template<typename Self>
-    [[nodiscard]] auto&& requireQueueFamilies(
+    auto&& requireQueueFamilies(
         this Self&& self,
         InputSpan<TrivialPair<QueueFamily, float>> const families
     ) {
@@ -34,10 +30,8 @@ public:
 
     // Throws DeviceCreationError
     [[nodiscard]]
-    Device build(VulkanCaps& caps) const;
+    Device build(VulkanCaps& caps, PhysicalDevice const& physical_device) const;
 private:
-    PhysicalDevice const& m_physical_device;
-
     std::vector<TrivialPair<QueueFamily, float>> m_required_queue_families;
 };
 

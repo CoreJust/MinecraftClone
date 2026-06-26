@@ -57,8 +57,8 @@ internal::PhysicalDeviceCapsStruct collectFeatures(VulkanCaps const& caps) {
 
 CORE_ENUM_FUNCTIONS_IMPL(DeviceCreationErrorKind);
 
-Device DeviceBuilder::build(VulkanCaps& caps) const {
-    auto const unique_families = collectUniqueQueueFamilies(m_required_queue_families, m_physical_device);
+Device DeviceBuilder::build(VulkanCaps& caps, PhysicalDevice const& physical_device) const {
+    auto const unique_families = collectUniqueQueueFamilies(m_required_queue_families, physical_device);
     std::vector<VkDeviceQueueCreateInfo> queue_infos{ };
     queue_infos.reserve(unique_families.size());
     for (size_t i = 0; i < unique_families.size(); ++i) {
@@ -90,14 +90,14 @@ Device DeviceBuilder::build(VulkanCaps& caps) const {
     };
 
     VkDevice result = VK_NULL_HANDLE;
-    if (!VK_CHECK(vkCreateDevice(m_physical_device.handle(), &createInfo, nullptr, &result))) {
+    if (!VK_CHECK(vkCreateDevice(physical_device.handle(), &createInfo, nullptr, &result))) {
         throw DeviceCreationError(DeviceCreationError::DeviceCreationFailed);
     }
     volkLoadDevice(result);
 
     Queues queues;
     for (auto const [family, _] : m_required_queue_families) {
-        uint32_t const family_index = m_physical_device.queueFamily(family).value();
+        uint32_t const family_index = physical_device.queueFamily(family).value();
         VkQueue tmp = VK_NULL_HANDLE;
         vkGetDeviceQueue(result, family_index, 0, &tmp);
         queues[indexOf(family)] = Queue::make(tmp, family);

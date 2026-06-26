@@ -1,0 +1,179 @@
+// Context.cpp
+#include <core/vulkan/Context.hpp>
+
+#include <core/common/Assert.hpp>
+#include <core/meta/EnumImpl.hpp>
+#include <core/vulkan/Check.hpp>
+#include <core/vulkan/ErrorCallbacks.hpp>
+
+#include <volk.h>
+
+namespace core {
+
+CORE_ENUM_FUNCTIONS_IMPL(ReloadType);
+
+struct VulkanContext::ContextReloadHelper final {
+    VulkanContext& self;
+    ReloadType type;
+
+    bool operator()() {
+        self.reloadImpl(type, ManualReload::No);
+        return true;
+    }
+};
+
+VulkanContext::VulkanContext(VulkanContextBuilder builder, Window const* window)
+    : m_builder(std::move(builder))
+    , m_window(window)
+    , m_instance(m_builder.buildInstance(*this))
+    , m_surface(
+        window
+            ? Surface(m_instance, *window)
+            : Surface()
+    )
+    , m_physical_device(m_builder.selectPhysicalDevice(
+        *this,
+        m_instance,
+        m_surface.isNull() ? nullptr : &m_surface
+    ))
+    , m_device(m_builder.buildDevice(*this, m_physical_device))
+    , m_swapchain(
+        m_surface.isNull()
+            ? Swapchain()
+            : m_builder.buildSwapchain(*this, m_device, m_physical_device, m_surface)
+    )
+{
+    createSyncObjects();
+    core::setOutOfDateKHRCallback(ContextReloadHelper{ *this, ReloadType::Swapchain });
+    core::setSuboptimalKHRCallback(ContextReloadHelper{ *this, ReloadType::Swapchain });
+    core::setDeviceLostCallback(ContextReloadHelper{ *this, ReloadType::Device });
+    core::setSurfaceLostCallback(ContextReloadHelper{ *this, ReloadType::Surface });
+    core::setOutOfHostMemoryCallback(ContextReloadHelper{ *this, ReloadType::Instance });
+    core::setOutOfDeviceMemoryCallback(ContextReloadHelper{ *this, ReloadType::Instance });
+}
+
+VulkanContext::~VulkanContext() {
+    CORE_DEBUG("Destroying VulkanContext...");
+    core::setOutOfDateKHRCallback(nullptr);
+    core::setSuboptimalKHRCallback(nullptr);
+    core::setDeviceLostCallback(nullptr);
+    core::setSurfaceLostCallback(nullptr);
+    core::setOutOfHostMemoryCallback(nullptr);
+    core::setOutOfDeviceMemoryCallback(nullptr);
+    if (!m_device.isNull()) {
+        m_device.waitIdle();
+    }
+    CORE_DEBUG("VulkanContext destroyed");
+}
+
+void VulkanContext::onReload(std::function<void(ReloadType, ManualReload)>&& callback) {
+    m_reload_callback = std::move(callback);
+}
+
+void VulkanContext::reload(ReloadType const type) {
+    reloadImpl(type, ManualReload::Yes);
+}
+
+void VulkanContext::reloadImpl(ReloadType const type, ManualReload const reason) {
+    if (!m_device.isNull()) {
+        m_device.waitIdle();
+    }
+    switch (type) {
+        case ReloadType::Instance:
+            m_instance = m_builder.buildInstance(*this);
+            [[fallthrough]];
+        case ReloadType::Surface:
+            if (m_window) {
+                m_surface = Surface(m_instance, *m_window);
+            }
+            [[fallthrough]];
+        case ReloadType::Device:
+            m_physical_device = m_builder.selectPhysicalDevice(
+                *this,
+                m_instance,
+                m_surface.isNull() ? nullptr : &m_surface
+            );
+            m_device = m_builder.buildDevice(*this, m_physical_device);
+            if (!m_surface.isNull()) {
+                createSyncObjects();
+            }
+            [[fallthrough]];
+        case ReloadType::Swapchain:
+            if (!m_surface.isNull()) {
+                m_swapchain = m_builder.rebuildSwapchain(
+                    *this,
+                    m_device,
+                    m_physical_device,
+                    m_surface,
+                    m_swapchain
+                );
+            }
+            break;
+    default: UNREACHABLE();
+    }
+    if (m_reload_callback) {
+        m_reload_callback(type, reason);
+    }
+}
+
+void VulkanContext::createSyncObjects() {
+    m_image_available.clear();
+    m_render_finished.clear();
+    m_in_flight.clear();
+
+    m_image_available.reserve(MAX_FRAMES_IN_FLIGHT);
+    m_render_finished.reserve(MAX_FRAMES_IN_FLIGHT);
+    m_in_flight.reserve(MAX_FRAMES_IN_FLIGHT);
+
+    for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
+        m_image_available.emplace_back(m_device);
+        m_render_finished.emplace_back(m_device);
+        m_in_flight.emplace_back(m_device, FenceSignaled::Yes);
+    }
+}
+
+bool VulkanContext::beginFrame() {
+    if (!inFlightFence().wait()) {
+        return false;
+    }
+    if (!VK_CHECK(vkAcquireNextImageKHR(
+        m_device.handle(),
+        m_swapchain.handle(),
+        std::numeric_limits<uint64_t>::max(),
+        imageAvailableSemaphore().handle(),
+        VK_NULL_HANDLE,
+        &m_acquired_next_image_index
+    ))) {
+        throw FailedToAcquireNextImage{ };
+    }
+    inFlightFence().reset();
+    return true;
+}
+
+void VulkanContext::endFrame() {
+    VkPresentInfoKHR const present{
+        .sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
+        .waitSemaphoreCount = 1,
+        .pWaitSemaphores = renderFinishedSemaphore().handlePtr(),
+        .swapchainCount = 1,
+        .pSwapchains = m_swapchain.handlePtr(),
+        .pImageIndices = &m_acquired_next_image_index,
+    };
+
+    if (!VK_CHECK(vkQueuePresentKHR(queue(core::QueueFamily::Present).handle(), &present))) {
+        throw FailedToAdvanceFrame{ "Failed to present the current frame" };
+    }
+    ++m_frame_index;
+}
+
+Image const& VulkanContext::swapchainImage() const {
+    ASSERT(m_acquired_next_image_index < m_swapchain.images().size());
+    return m_swapchain.images()[m_acquired_next_image_index];
+}
+
+ImageView const& VulkanContext::swapchainImageView() const {
+    ASSERT(m_acquired_next_image_index < m_swapchain.imageViews().size());
+    return m_swapchain.imageViews()[m_acquired_next_image_index];
+}
+
+} // namespace core

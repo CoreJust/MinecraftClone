@@ -4,8 +4,8 @@ namespace core {
 
 struct NonMovable {
     constexpr NonMovable() noexcept = default;
-    NonMovable(NonMovable&&) = delete;
-    NonMovable& operator=(NonMovable&&) = delete;
+    NonMovable(NonMovable&) = default;
+    NonMovable& operator=(NonMovable&) = default;
 };
 
 } // namespace core

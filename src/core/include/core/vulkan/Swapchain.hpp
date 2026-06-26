@@ -16,6 +16,7 @@ class RawSwapchain : public VulkanResourceBase<VkSwapchainKHR> {
 
 class Swapchain : public VulkanRaii<RawSwapchain> {
 public:
+    Swapchain() noexcept = default;
     Swapchain(VkSwapchainKHR const swapchain, Image::Info const& info, Device const& device);
 
     [[nodiscard]]
