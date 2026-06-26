@@ -152,8 +152,13 @@ public:
         : Resource(other.grabRaw())
         , m_destroyer(std::move(other.m_destroyer))
     { }
+
     VulkanRaii& operator=(VulkanRaii&& other) noexcept {
-        std::swap(*this, other);
+        if (this != &other) {
+            this->~VulkanRaii();
+            static_cast<Resource&>(*this) = other.grabRaw();
+            m_destroyer = std::move(other.m_destroyer);
+        }
         return *this;
     }
 
