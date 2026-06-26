@@ -48,14 +48,6 @@ struct alignas(16) PlayerPushConstants final {
 };
 static_assert(sizeof(PlayerPushConstants) == 32);
 
-struct SwapchainBundle final {
-    VkSwapchainKHR swapchain = VK_NULL_HANDLE;
-    VkFormat format = VK_FORMAT_UNDEFINED;
-    VkExtent2D extent{0, 0};
-    std::vector<VkImage> images;
-    std::vector<VkImageView> views;
-};
-
 [[nodiscard]] std::vector<uint32_t> toSpirv(std::vector<uint8_t> const& bytes) {
     ASSERT(bytes.size() % 4 == 0);
     std::vector<uint32_t> words(bytes.size() / 4);
@@ -110,7 +102,6 @@ public:
                 core::VulkanFeature::MeshShader,
             })
             .requireApiVersion(core::Version{ 0, 1, 3, 0 })
-            .preferDeviceType({ core::PhysicalDeviceType::Discrete })
             .select(m_caps))
         , m_device(core::DeviceBuilder(m_physical_device)
             .requireQueueFamilies({

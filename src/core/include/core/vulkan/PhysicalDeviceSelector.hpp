@@ -107,10 +107,11 @@ public:
         return std::forward<Self>(self);
     }
 
+    // By default discrete GPUs are preferred with weight 1024
     template<typename Self>
     [[nodiscard]] auto&& preferDeviceType(
         this Self&& self,
-        InputSpan<PhysicalDeviceType> const types
+        InputSpan<TrivialPair<PhysicalDeviceType, int32_t>> const types
     ) {
         appendRange(self.m_preferred_device_types, types);
         return std::forward<Self>(self);
@@ -133,7 +134,7 @@ private:
 
     std::vector<MemoryPropertyBits> m_required_heaps;
     std::vector<QueueFamily> m_required_queue_families;
-    std::vector<PhysicalDeviceType> m_preferred_device_types;
+    std::vector<TrivialPair<PhysicalDeviceType, int32_t>> m_preferred_device_types;
     std::vector<PhysicalDeviceType> m_required_device_types;
 
     Version m_required_api_version;

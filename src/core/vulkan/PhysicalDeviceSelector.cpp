@@ -138,8 +138,15 @@ int32_t PhysicalDeviceSelector::scoreDevice(PhysicalDevice const& device, Versio
 
     // Evaluation of eligible device
     int32_t score = 0;
-    if (std::ranges::find(m_preferred_device_types, caps.deviceType()) != m_preferred_device_types.end()) {
+    if (m_preferred_device_types.empty() && caps.deviceType() == PhysicalDeviceType::Discrete) {
         score += 1024;
+    }
+    if (auto it = std::ranges::find_if(
+            m_preferred_device_types,
+            [&](auto const& preference) { return preference.first == caps.deviceType(); }
+        ); it != m_preferred_device_types.end()
+    ) {
+        score += it->second;
     }
 
     for (VulkanFeature const feature : m_preferred_features) {
