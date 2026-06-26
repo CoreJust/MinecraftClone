@@ -124,7 +124,7 @@ private:
     int32_t scoreDevice(PhysicalDevice const& device, Version const instance_version) const;
 private:
     Instance const& m_instance;
-    Surface const* m_surface;
+    Surface const* m_surface = nullptr;
     
     std::vector<VulkanExtension> m_required_extensions;
     std::vector<VulkanExtension> m_preferred_extensions;
