@@ -77,7 +77,9 @@ int main(int argc, char** argv) {
                 client.run(address, ch);
             }
         }
-    } catch (const std::runtime_error& e) {
+    } catch (std::runtime_error const& e) {
+        CORE_CRITICAL("Received uncaught runtime error: {}", e.what());
+    } catch (std::exception const& e) {
         CORE_CRITICAL("Received uncaught exception: {}", e.what());
     } catch (...) {
         CORE_CRITICAL("Received unknown uncaught exception");
