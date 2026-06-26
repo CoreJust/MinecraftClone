@@ -138,7 +138,7 @@ int32_t PhysicalDeviceSelector::scoreDevice(PhysicalDevice const& device, Versio
 
     // Evaluation of eligible device
     int32_t score = 0;
-    if (std::ranges::find(m_preferred_device_types, caps.deviceType()) == m_preferred_device_types.end()) {
+    if (std::ranges::find(m_preferred_device_types, caps.deviceType()) != m_preferred_device_types.end()) {
         score += 1024;
     }
 
