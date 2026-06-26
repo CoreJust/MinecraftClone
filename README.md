@@ -58,14 +58,30 @@ cmake --build --preset debug
 
 ### Run server
 
+On Windows:
+
 ```bash
-./build/debug/apps/launcher/mc_main --server
+./build/debug/mc_main.exe --server
+```
+
+On the other systems:
+
+```bash
+./build/debug/mc_main --server
 ```
 
 ### Run
 
+On Windows:
+
 ```bash
-./build/debug/apps/launcher/mc_main
+./build/debug/mc_main.exe
+```
+
+On the other systems:
+
+```bash
+./build/debug/mc_main
 ```
 
 ### Test
