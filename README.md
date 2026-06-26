@@ -86,7 +86,8 @@ Current dependencies:
 5. glm;
 6. gtest;
 7. VMA;
-8. volk.
+8. Vulkan::glslc;
+9. volk.
 
 ## Highlights
 
