@@ -1,7 +1,6 @@
 // Context.hpp
 #pragma once
 
-#include <core/meta/TaggedBool.hpp>
 #include <core/vulkan/ContextBuilder.hpp>
 #include <core/vulkan/Fence.hpp>
 #include <core/vulkan/Semaphore.hpp>
@@ -20,9 +19,23 @@ enum class ReloadType {
     Count,
 };
 
-CORE_ENUM_FUNCTIONS(ReloadType);
+enum class ReloadSource {
+    User,
+    Error,
 
-using ManualReload = TaggedBool<struct ManualReloadTag>;
+    Count,
+};
+
+enum class ReloadAction {
+    Destroy,
+    Recreate,
+
+    Count,
+};
+
+CORE_ENUM_FUNCTIONS(ReloadType);
+CORE_ENUM_FUNCTIONS(ReloadSource);
+CORE_ENUM_FUNCTIONS(ReloadAction);
 
 struct FailedToAcquireNextImage final : public VulkanError {
     FailedToAcquireNextImage() : VulkanError("Failed to acquire next image") { }
@@ -39,7 +52,7 @@ public:
     explicit VulkanContext(VulkanContextBuilder builder, Window const* window = nullptr);
     ~VulkanContext();
 
-    void onReload(std::function<void(ReloadType, ManualReload)>&& callback);
+    void onReload(std::function<void(ReloadType const, ReloadSource const, ReloadAction const)>&& callback);
     void reload(ReloadType const type);
 
     void rebuild(auto&& fn, ReloadType const type = ReloadType::Instance) {
@@ -128,7 +141,7 @@ public:
 private:
     void createSyncObjects();
 
-    void reloadImpl(ReloadType const type, ManualReload const reason);
+    void reloadImpl(ReloadType const type, ReloadSource const source);
 private:
     VulkanContextBuilder m_builder;
     Window const* m_window = nullptr;
@@ -139,7 +152,7 @@ Surface m_surface;
     Device m_device;
     Swapchain m_swapchain;
 
-    std::function<void(ReloadType, ManualReload)> m_reload_callback;
+    std::function<void(ReloadType const, ReloadSource const, ReloadAction const)> m_reload_callback;
 
     std::vector<Semaphore> m_image_available;
     std::vector<Semaphore> m_render_finished;

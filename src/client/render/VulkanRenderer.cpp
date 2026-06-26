@@ -91,16 +91,21 @@ public:
         createCommandPool();
         createCommandBuffers();
         createPipelines();
-        m_ctx.onReload([this](core::ReloadType const type, core::ManualReload const reason) {
-            CORE_WARN("VulkanRenderer received reload of type {} and reason {}", type, reason);
-            if (type == core::ReloadType::Swapchain) {
+        m_ctx.onReload([this](
+            core::ReloadType const type,
+            core::ReloadSource const source,
+            core::ReloadAction const action
+        ) {
+            CORE_WARN("VulkanRenderer received reload of type {} with source {}; action {}", type, source, action);
+            if (action == core::ReloadAction::Destroy) {
                 destroyPipelines();
                 destroyCommandBuffers();
                 destroyCommandPool();
+            } else {
+                createCommandPool();
+                createCommandBuffers();
+                createPipelines();
             }
-            createCommandPool();
-            createCommandBuffers();
-            createPipelines();
         });
     }
 
@@ -252,6 +257,10 @@ public:
         ));
 
         m_ctx.endFrame();
+    }
+
+    void hotReload() {
+        m_ctx.reload(core::ReloadType::Instance);
     }
 private:
     void createCommandPool() {
@@ -511,6 +520,10 @@ VulkanRenderer::~VulkanRenderer() = default;
 
 void VulkanRenderer::render(std::span<PlayerRenderData const> const players) {
     m_impl->render(players);
+}
+
+void VulkanRenderer::hotReload() {
+    m_impl->hotReload();
 }
 
 } // namespace client

@@ -25,6 +25,7 @@ public:
     ~VulkanRenderer();
 
     void render(std::span<PlayerRenderData const> const players);
+    void hotReload();
 private:
     struct Impl;
     std::unique_ptr<Impl> m_impl;

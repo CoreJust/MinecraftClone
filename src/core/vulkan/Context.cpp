@@ -11,13 +11,15 @@
 namespace core {
 
 CORE_ENUM_FUNCTIONS_IMPL(ReloadType);
+CORE_ENUM_FUNCTIONS_IMPL(ReloadSource);
+CORE_ENUM_FUNCTIONS_IMPL(ReloadAction);
 
 struct VulkanContext::ContextReloadHelper final {
     VulkanContext& self;
     ReloadType type;
 
     bool operator()() {
-        self.reloadImpl(type, ManualReload::No);
+        self.reloadImpl(type, ReloadSource::Error);
         return true;
     }
 };
@@ -66,17 +68,34 @@ VulkanContext::~VulkanContext() {
     CORE_DEBUG("VulkanContext destroyed");
 }
 
-void VulkanContext::onReload(std::function<void(ReloadType, ManualReload)>&& callback) {
+void VulkanContext::onReload(std::function<void(ReloadType const, ReloadSource const, ReloadAction const)>&& callback) {
     m_reload_callback = std::move(callback);
 }
 
 void VulkanContext::reload(ReloadType const type) {
-    reloadImpl(type, ManualReload::Yes);
+    reloadImpl(type, ReloadSource::User);
 }
 
-void VulkanContext::reloadImpl(ReloadType const type, ManualReload const reason) {
+void VulkanContext::reloadImpl(ReloadType const type, ReloadSource const source) {
     if (!m_device.isNull()) {
         m_device.waitIdle();
+    }
+    if (m_reload_callback) {
+        m_reload_callback(type, source, ReloadAction::Destroy);
+    }
+    m_swapchain = Swapchain{ };
+    if (indexOf(type) >= indexOf(ReloadType::Device)) {
+        m_image_available.clear();
+        m_render_finished.clear();
+        m_in_flight.clear();
+        m_device = Device{ };
+        m_physical_device = PhysicalDevice{ };
+    }
+    if (indexOf(type) >= indexOf(ReloadType::Surface)) {
+        m_surface = Surface{ };
+    }
+    if (type == ReloadType::Instance) {
+        m_instance = Instance{ };
     }
     switch (type) {
         case ReloadType::Instance:
@@ -112,15 +131,11 @@ void VulkanContext::reloadImpl(ReloadType const type, ManualReload const reason)
     default: UNREACHABLE();
     }
     if (m_reload_callback) {
-        m_reload_callback(type, reason);
+        m_reload_callback(type, source, ReloadAction::Recreate);
     }
 }
 
 void VulkanContext::createSyncObjects() {
-    m_image_available.clear();
-    m_render_finished.clear();
-    m_in_flight.clear();
-
     m_image_available.reserve(MAX_FRAMES_IN_FLIGHT);
     m_render_finished.reserve(MAX_FRAMES_IN_FLIGHT);
     m_in_flight.reserve(MAX_FRAMES_IN_FLIGHT);

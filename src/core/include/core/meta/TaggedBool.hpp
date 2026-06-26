@@ -14,6 +14,10 @@ struct TaggedBool final {
     static const TaggedBool<Tag> No;
 
     [[nodiscard]]
+    constexpr bool operator==(TaggedBool const&) const noexcept = default;
+    [[nodiscard]]
+    constexpr auto operator<=>(TaggedBool const&) const noexcept = default;
+    [[nodiscard]]
     explicit constexpr operator bool() const noexcept { return value; }
 
     [[nodiscard]]

@@ -41,6 +41,10 @@ void PlayerClient::render() {
         });
     }
     m_renderer.render(rds);
+
+    if (core::isKeyPressed(core::Key::R)) {
+        m_renderer.hotReload();
+    }
 }
 
 } // namespace client
