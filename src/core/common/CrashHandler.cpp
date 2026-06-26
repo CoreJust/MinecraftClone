@@ -21,7 +21,7 @@ char const* decodeSignalCode(int const code) noexcept {
         case SIGBUS: return "SIGBUS";
 #endif
 #ifdef SIGKILL
-        case SIGBUS: return "SIGKILL";
+        case SIGKILL: return "SIGKILL";
 #endif
 #ifdef SIGQUIT
         case SIGQUIT: return "SIGQUIT";
@@ -59,14 +59,8 @@ void setCrashHandler() {
 #ifdef SIGBUS
     std::signal(SIGBUS, onErrorSignal);
 #endif
-#ifdef SIGKILL
-    std::signal(SIGKILL, onErrorSignal);
-#endif
 #ifdef SIGQUIT
     std::signal(SIGQUIT, onErrorSignal);
-#endif
-#ifdef SIGTSTP
-    std::signal(SIGTSTP, onErrorSignal);
 #endif
 #ifdef SIGSYS
     std::signal(SIGSYS, onErrorSignal);
