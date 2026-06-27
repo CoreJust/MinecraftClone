@@ -114,10 +114,10 @@ std::string VulkanCaps::toString() const {
         joinFmt(m_surface_transform),
         m_extent.x, m_extent.y,
         m_image_count,
-        m_enabled_layers.toString("\t"),
-        m_enabled_extensions.toString("\t"),
-        m_enabled_features.toString("\t"),
-        joinFmt(m_heaps, [](fmt::context::iterator out, MemoryHeap const& heap) {
+        m_enabled_layers.toString("\t\t"),
+        m_enabled_extensions.toString("\t\t"),
+        m_enabled_features.toString("\t\t"),
+        joinFmt<"", "", "">(m_heaps, [](fmt::context::iterator out, MemoryHeap const& heap) {
             return fmt::format_to(out, "\t\t{}: {}\n", heap.heap_index, joinFmt(heap.properties));
         })
     );
