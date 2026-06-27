@@ -45,7 +45,10 @@ VulkanContext::VulkanContext(VulkanContextBuilder builder, Window const* window)
             : m_builder.buildSwapchain(*this, m_device, m_physical_device, m_surface)
     )
 {
-    createSyncObjects();
+    if (!m_surface.isNull()) {
+        createSyncObjects();
+        createCommandObjects();
+    }
     core::setOutOfDateKHRCallback(ContextReloadHelper{ *this, ReloadType::Swapchain });
     core::setSuboptimalKHRCallback(ContextReloadHelper{ *this, ReloadType::Swapchain });
     core::setDeviceLostCallback(ContextReloadHelper{ *this, ReloadType::Device });
@@ -85,6 +88,8 @@ void VulkanContext::reloadImpl(ReloadType const type, ReloadSource const source)
     }
     m_swapchain = Swapchain{ };
     if (indexOf(type) >= indexOf(ReloadType::Device)) {
+        m_command_buffers = CommandBuffers{ };
+        m_command_pool = CommandPool( );
         m_image_available.clear();
         m_render_finished.clear();
         m_in_flight.clear();
@@ -115,6 +120,7 @@ void VulkanContext::reloadImpl(ReloadType const type, ReloadSource const source)
             m_device = m_builder.buildDevice(*this, m_physical_device);
             if (!m_surface.isNull()) {
                 createSyncObjects();
+                createCommandObjects();
             }
             [[fallthrough]];
         case ReloadType::Swapchain:
@@ -147,6 +153,15 @@ void VulkanContext::createSyncObjects() {
     }
 }
 
+void VulkanContext::createCommandObjects() {
+    m_command_pool = CommandPool(
+        m_device,
+        *queueFamily(core::QueueFamily::Graphics),
+        core::CommandPoolFlags::of(core::CommandPoolFlag::ResetCommandBuffer)
+    );
+    m_command_buffers = m_command_pool.allocateBuffers(MAX_FRAMES_IN_FLIGHT);
+}
+
 bool VulkanContext::beginFrame() {
     if (!inFlightFence().wait()) {
         return false;
@@ -162,10 +177,34 @@ bool VulkanContext::beginFrame() {
         throw FailedToAcquireNextImage{ };
     }
     inFlightFence().reset();
+    commandBuffer().reset();
+    commandBuffer().begin();
     return true;
 }
 
 void VulkanContext::endFrame() {
+    commandBuffer().end();
+
+    VkPipelineStageFlags const waitStage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    VkSubmitInfo const submit{
+        .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+        .waitSemaphoreCount = 1,
+        .pWaitSemaphores = imageAvailableSemaphore().handlePtr(),
+        .pWaitDstStageMask = &waitStage,
+        .commandBufferCount = 1,
+        .pCommandBuffers = commandBuffer().handlePtr(),
+        .signalSemaphoreCount = 1,
+        .pSignalSemaphores = renderFinishedSemaphore().handlePtr(),
+    };
+    if (!VK_CHECK(vkQueueSubmit(
+        queue(core::QueueFamily::Graphics).handle(),
+        1,
+        &submit,
+        inFlightFence().handle()
+    ))) {
+        throw FailedToAdvanceFrame{ "Failed to submit the current command buffer to graphics queue" };
+    }
+    
     VkPresentInfoKHR const present{
         .sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
         .waitSemaphoreCount = 1,

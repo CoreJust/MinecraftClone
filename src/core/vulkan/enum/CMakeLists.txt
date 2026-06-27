@@ -1,6 +1,9 @@
 target_sources(mc
     PRIVATE
         ColorSpace.cpp
+        CommandBufferType.cpp
+        CommandBufferUsage.cpp
+        CommandPoolFlag.cpp
         ComponentMapping.cpp
         Format.cpp
         ImageAspect.cpp

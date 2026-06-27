@@ -8,6 +8,8 @@ target_sources(mc
             AllocatorBuilder.hpp
             Capabilities.hpp
             Check.hpp
+            CommandBuffer.hpp
+            CommandPool.hpp
             Context.hpp
             ContextBuilder.hpp
             DebugMessengerOptions.hpp
@@ -35,6 +37,9 @@ target_sources(mc
             SwapchainBuilder.hpp
             VulkanVersion.hpp
             enum/ColorSpace.hpp
+            enum/CommandBufferType.hpp
+            enum/CommandBufferUsage.hpp
+            enum/CommandPoolFlag.hpp
             enum/ComponentMapping.hpp
             enum/Format.hpp
             enum/ImageAspect.hpp

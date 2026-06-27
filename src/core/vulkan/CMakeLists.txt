@@ -5,6 +5,8 @@ target_sources(mc
         Capabilities.cpp
         Check.cpp
         Context.cpp
+        CommandBuffer.cpp
+        CommandPool.cpp
         Device.cpp
         DeviceBuilder.cpp
         ErrorCallbacks.cpp

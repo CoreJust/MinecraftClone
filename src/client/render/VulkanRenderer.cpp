@@ -88,8 +88,6 @@ public:
         )
     {
         CORE_INFO("Loaded Vulkan:\n{}", m_ctx.toString());
-        createCommandPool();
-        createCommandBuffers();
         createPipelines();
         m_ctx.onReload([this](
             core::ReloadType const type,
@@ -99,11 +97,7 @@ public:
             CORE_WARN("VulkanRenderer received reload of type {} with source {}; action {}", type, source, action);
             if (action == core::ReloadAction::Destroy) {
                 destroyPipelines();
-                destroyCommandBuffers();
-                destroyCommandPool();
             } else {
-                createCommandPool();
-                createCommandBuffers();
                 createPipelines();
             }
         });
@@ -112,8 +106,6 @@ public:
     ~Impl() {
         m_ctx.waitIdle();
         destroyPipelines();
-        destroyCommandBuffers();
-        destroyCommandPool();
     }
 
     void render(std::span<PlayerRenderData const> const players) {
@@ -125,13 +117,7 @@ public:
             return;
         }
 
-        CORE_VK_ASSERT(vkResetCommandBuffer(m_commandBuffers[m_ctx.wrappedFrameIndex()], 0));
-        VkCommandBuffer cmd = m_commandBuffers[m_ctx.wrappedFrameIndex()];
-        VkCommandBufferBeginInfo const beginInfo{
-            .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
-        };
-        CORE_VK_ASSERT(vkBeginCommandBuffer(cmd, &beginInfo));
-
+        core::RawCommandBuffer cmd = m_ctx.commandBuffer();
         VkImageMemoryBarrier2 const toColor{
             .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
             .srcStageMask = VK_PIPELINE_STAGE_2_NONE,
@@ -154,7 +140,7 @@ public:
             .imageMemoryBarrierCount = 1,
             .pImageMemoryBarriers = &toColor,
         };
-        vkCmdPipelineBarrier2(cmd, &depToColor);
+        vkCmdPipelineBarrier2(cmd.handle(), &depToColor);
 
         VkClearValue const clearValue{
             .color = VkClearColorValue{{0.06f, 0.06f, 0.08f, 1.0f}},
@@ -178,7 +164,7 @@ public:
             .pColorAttachments = &colorAttachment,
         };
 
-        vkCmdBeginRendering(cmd, &renderingInfo);
+        vkCmdBeginRendering(cmd.handle(), &renderingInfo);
 
         VkViewport const viewport{
             .x = 0.0f,
@@ -192,25 +178,25 @@ public:
             .offset = {0, 0},
             .extent = { m_ctx.extent().x, m_ctx.extent().y },
         };
-        vkCmdSetViewport(cmd, 0, 1, &viewport);
-        vkCmdSetScissor(cmd, 0, 1, &scissor);
+        vkCmdSetViewport(cmd.handle(), 0, 1, &viewport);
+        vkCmdSetScissor(cmd.handle(), 0, 1, &scissor);
 
-        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_gridPipeline);
+        vkCmdBindPipeline(cmd.handle(), VK_PIPELINE_BIND_POINT_GRAPHICS, m_gridPipeline);
         GridPushConstants const gridPush{};
-        vkCmdPushConstants(cmd, m_gridLayout, VK_SHADER_STAGE_MESH_BIT_EXT, 0, sizeof(GridPushConstants), &gridPush);
-        vkCmdDrawMeshTasksEXT(cmd, kGridWorkgroupsX, kGridWorkgroupsY, 1);
+        vkCmdPushConstants(cmd.handle(), m_gridLayout, VK_SHADER_STAGE_MESH_BIT_EXT, 0, sizeof(GridPushConstants), &gridPush);
+        vkCmdDrawMeshTasksEXT(cmd.handle(), kGridWorkgroupsX, kGridWorkgroupsY, 1);
 
-        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_playerPipeline);
+        vkCmdBindPipeline(cmd.handle(), VK_PIPELINE_BIND_POINT_GRAPHICS, m_playerPipeline);
         for (auto const& player : players) {
             PlayerPushConstants push{};
             push.origin = {static_cast<float>(player.x), static_cast<float>(player.y)};
             push.size = 2.0f;
             push.color = player.color;
-            vkCmdPushConstants(cmd, m_playerLayout, VK_SHADER_STAGE_MESH_BIT_EXT, 0, sizeof(PlayerPushConstants), &push);
-            vkCmdDrawMeshTasksEXT(cmd, 1, 1, 1);
+            vkCmdPushConstants(cmd.handle(), m_playerLayout, VK_SHADER_STAGE_MESH_BIT_EXT, 0, sizeof(PlayerPushConstants), &push);
+            vkCmdDrawMeshTasksEXT(cmd.handle(), 1, 1, 1);
         }
 
-        vkCmdEndRendering(cmd);
+        vkCmdEndRendering(cmd.handle());
 
         VkImageMemoryBarrier2 const toPresent{
             .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
@@ -234,27 +220,7 @@ public:
             .imageMemoryBarrierCount = 1,
             .pImageMemoryBarriers = &toPresent,
         };
-        vkCmdPipelineBarrier2(cmd, &depToPresent);
-
-        CORE_VK_ASSERT(vkEndCommandBuffer(cmd));
-
-        VkPipelineStageFlags const waitStage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-        VkSubmitInfo const submit{
-            .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
-            .waitSemaphoreCount = 1,
-            .pWaitSemaphores = m_ctx.imageAvailableSemaphore().handlePtr(),
-            .pWaitDstStageMask = &waitStage,
-            .commandBufferCount = 1,
-            .pCommandBuffers = &m_commandBuffers[m_ctx.wrappedFrameIndex()],
-            .signalSemaphoreCount = 1,
-            .pSignalSemaphores = m_ctx.renderFinishedSemaphore().handlePtr(),
-        };
-        CORE_VK_ASSERT(vkQueueSubmit(
-            m_ctx.queue(core::QueueFamily::Graphics).handle(),
-            1,
-            &submit,
-            m_ctx.inFlightFence().handle()
-        ));
+        vkCmdPipelineBarrier2(cmd.handle(), &depToPresent);
 
         m_ctx.endFrame();
     }
@@ -263,44 +229,6 @@ public:
         m_ctx.reload(core::ReloadType::Instance);
     }
 private:
-    void createCommandPool() {
-        VkCommandPoolCreateInfo const info{
-            .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
-            .flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
-            .queueFamilyIndex = *m_ctx.queueFamily(core::QueueFamily::Graphics),
-        };
-        CORE_VK_ASSERT(vkCreateCommandPool(m_ctx.device().handle(), &info, nullptr, &m_commandPool));
-    }
-
-    void destroyCommandPool() {
-        if (m_commandPool != VK_NULL_HANDLE) {
-            vkDestroyCommandPool(m_ctx.device().handle(), m_commandPool, nullptr);
-            m_commandPool = VK_NULL_HANDLE;
-        }
-    }
-
-    void createCommandBuffers() {
-        VkCommandBufferAllocateInfo const info{
-            .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
-            .commandPool = m_commandPool,
-            .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
-            .commandBufferCount = core::VulkanContext::MAX_FRAMES_IN_FLIGHT,
-        };
-        m_commandBuffers.resize(core::VulkanContext::MAX_FRAMES_IN_FLIGHT);
-        CORE_VK_ASSERT(vkAllocateCommandBuffers(m_ctx.device().handle(), &info, m_commandBuffers.data()));
-    }
-
-    void destroyCommandBuffers() {
-        if (!m_commandBuffers.empty() && m_commandPool != VK_NULL_HANDLE) {
-            vkFreeCommandBuffers(
-                m_ctx.device().handle(),
-                m_commandPool,
-                static_cast<uint32_t>(m_commandBuffers.size()),
-                m_commandBuffers.data());
-            m_commandBuffers.clear();
-        }
-    }
-
     void createPipelines() {
         m_gridMeshShader = loadShaderModule(m_ctx.device(), kGridShaderPath);
         m_playerMeshShader = loadShaderModule(m_ctx.device(), kPlayerShaderPath);
@@ -499,9 +427,6 @@ private:
     }
 private:
     core::VulkanContext m_ctx;
-
-    VkCommandPool m_commandPool = VK_NULL_HANDLE;
-    std::vector<VkCommandBuffer> m_commandBuffers;
 
     VkShaderModule m_gridMeshShader = VK_NULL_HANDLE;
     VkShaderModule m_playerMeshShader = VK_NULL_HANDLE;

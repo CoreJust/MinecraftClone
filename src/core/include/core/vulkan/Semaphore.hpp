@@ -12,7 +12,7 @@ struct SemaphoreCreationError : public VulkanError {
 class RawSemaphore : public VulkanResourceBase<VkSemaphore> {
     CORE_VK_RESOURCE_CONTEXT(RawSemaphore,
         VkDevice device_handle;);
-    CORE_VK_RESOURCE_DEFER_CONSTRUCTION_FROM(Device const& device);
+    CORE_VK_RESOURCE_CONSTRUCTION_FROM(Device const& device);
 };
 
 using Semaphore = VulkanRaii<RawSemaphore>;
