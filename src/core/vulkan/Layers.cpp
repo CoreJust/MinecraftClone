@@ -12,9 +12,9 @@
 #include <unordered_map>
 #include <vector>
 
-namespace core {
+CORE_ENUM_FUNCTIONS_IMPL(vk::VulkanLayer);
 
-CORE_ENUM_FUNCTIONS_IMPL(VulkanLayer);
+namespace core::vk {
 
 VulkanLayers::VulkanLayers() noexcept {
     memset(versions, 255, std::size(versions) * sizeof(Version));
@@ -70,4 +70,4 @@ VulkanLayers loadSupportedLayers() {
     return supported_layers;
 }
 
-} // namespace core
+} // namespace core::vk

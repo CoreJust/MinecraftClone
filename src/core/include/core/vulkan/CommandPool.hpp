@@ -3,7 +3,7 @@
 #include <core/vulkan/CommandBuffer.hpp>
 #include <core/vulkan/enum/CommandPoolFlag.hpp>
 
-namespace core {
+namespace core::vk {
 
 struct FailedToCreateCommandPoolError : public VulkanError {
     FailedToCreateCommandPoolError() : VulkanError{"Failed to create command pool"} { }
@@ -21,7 +21,7 @@ public:
     using VulkanRaii<RawCommandPool>::VulkanRaii;
 
     [[nodiscard]]
-    CommandBuffers allocateBuffers(size_t const size, CommandBufferType const type = core::CommandBufferType::Primary);
+    CommandBuffers allocateBuffers(size_t const size, CommandBufferType const type = CommandBufferType::Primary);
 };
 
-} // namespace core
+} // namespace core::vk

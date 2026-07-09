@@ -6,7 +6,7 @@
 #include <optional>
 #include <string>
 
-namespace core {
+namespace core::vk {
 
 enum class VulkanExtension {
     // General
@@ -76,9 +76,6 @@ enum class VulkanExtensionKind {
     Count,
 };
 
-CORE_ENUM_FUNCTIONS(VulkanExtension);
-CORE_ENUM_FUNCTIONS(VulkanExtensionKind);
-
 struct VulkanExtensions final {
     Version versions[countOf<VulkanExtension>()];
 
@@ -114,4 +111,7 @@ VulkanExtensionKind getExtensionKind(VulkanExtension const ext) noexcept;
 [[nodiscard]]
 Version getExtensionPromotionVersion(VulkanExtension const ext) noexcept;
 
-} // namespace core
+} // namespace core::vk
+
+CORE_ENUM_FUNCTIONS(vk::VulkanExtension);
+CORE_ENUM_FUNCTIONS(vk::VulkanExtensionKind);

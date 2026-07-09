@@ -4,7 +4,7 @@
 
 #include <volk.h>
 
-namespace core {
+namespace core::vk {
 
 CORE_VK_RESOURCE_DESTROY_IMPL(RawDevice) {
     vkDestroyDevice(self.m_handle, nullptr);
@@ -15,4 +15,4 @@ void RawDevice::waitIdle() const {
     std::ignore = VK_CHECK(vkDeviceWaitIdle(m_handle));
 }
 
-} // namespace core
+} // namespace core::vk

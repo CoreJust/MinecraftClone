@@ -8,11 +8,11 @@
 
 #include <volk.h>
 
-namespace core {
+CORE_ENUM_FUNCTIONS_IMPL(vk::ReloadType);
+CORE_ENUM_FUNCTIONS_IMPL(vk::ReloadSource);
+CORE_ENUM_FUNCTIONS_IMPL(vk::ReloadAction);
 
-CORE_ENUM_FUNCTIONS_IMPL(ReloadType);
-CORE_ENUM_FUNCTIONS_IMPL(ReloadSource);
-CORE_ENUM_FUNCTIONS_IMPL(ReloadAction);
+namespace core::vk {
 
 struct VulkanContext::ContextReloadHelper final {
     VulkanContext& self;
@@ -49,22 +49,22 @@ VulkanContext::VulkanContext(VulkanContextBuilder builder, Window const* window)
         createSyncObjects();
         createCommandObjects();
     }
-    core::setOutOfDateKHRCallback(ContextReloadHelper{ *this, ReloadType::Swapchain });
-    core::setSuboptimalKHRCallback(ContextReloadHelper{ *this, ReloadType::Swapchain });
-    core::setDeviceLostCallback(ContextReloadHelper{ *this, ReloadType::Device });
-    core::setSurfaceLostCallback(ContextReloadHelper{ *this, ReloadType::Surface });
-    core::setOutOfHostMemoryCallback(ContextReloadHelper{ *this, ReloadType::Instance });
-    core::setOutOfDeviceMemoryCallback(ContextReloadHelper{ *this, ReloadType::Instance });
+    setOutOfDateKHRCallback(ContextReloadHelper{ *this, ReloadType::Swapchain });
+    setSuboptimalKHRCallback(ContextReloadHelper{ *this, ReloadType::Swapchain });
+    setDeviceLostCallback(ContextReloadHelper{ *this, ReloadType::Device });
+    setSurfaceLostCallback(ContextReloadHelper{ *this, ReloadType::Surface });
+    setOutOfHostMemoryCallback(ContextReloadHelper{ *this, ReloadType::Instance });
+    setOutOfDeviceMemoryCallback(ContextReloadHelper{ *this, ReloadType::Instance });
 }
 
 VulkanContext::~VulkanContext() {
     CORE_DEBUG("Destroying VulkanContext...");
-    core::setOutOfDateKHRCallback(nullptr);
-    core::setSuboptimalKHRCallback(nullptr);
-    core::setDeviceLostCallback(nullptr);
-    core::setSurfaceLostCallback(nullptr);
-    core::setOutOfHostMemoryCallback(nullptr);
-    core::setOutOfDeviceMemoryCallback(nullptr);
+    setOutOfDateKHRCallback(nullptr);
+    setSuboptimalKHRCallback(nullptr);
+    setDeviceLostCallback(nullptr);
+    setSurfaceLostCallback(nullptr);
+    setOutOfHostMemoryCallback(nullptr);
+    setOutOfDeviceMemoryCallback(nullptr);
     if (!m_device.isNull()) {
         m_device.waitIdle();
     }
@@ -156,8 +156,8 @@ void VulkanContext::createSyncObjects() {
 void VulkanContext::createCommandObjects() {
     m_command_pool = CommandPool(
         m_device,
-        *queueFamily(core::QueueFamily::Graphics),
-        core::CommandPoolFlags::of(core::CommandPoolFlag::ResetCommandBuffer)
+        *queueFamily(QueueFamily::Graphics),
+        CommandPoolFlags::of(CommandPoolFlag::ResetCommandBuffer)
     );
     m_command_buffers = m_command_pool.allocateBuffers(MAX_FRAMES_IN_FLIGHT);
 }
@@ -197,7 +197,7 @@ void VulkanContext::endFrame() {
         .pSignalSemaphores = renderFinishedSemaphore().handlePtr(),
     };
     if (!VK_CHECK(vkQueueSubmit(
-        queue(core::QueueFamily::Graphics).handle(),
+        queue(QueueFamily::Graphics).handle(),
         1,
         &submit,
         inFlightFence().handle()
@@ -214,7 +214,7 @@ void VulkanContext::endFrame() {
         .pImageIndices = &m_acquired_next_image_index,
     };
 
-    if (!VK_CHECK(vkQueuePresentKHR(queue(core::QueueFamily::Present).handle(), &present))) {
+    if (!VK_CHECK(vkQueuePresentKHR(queue(QueueFamily::Present).handle(), &present))) {
         throw FailedToAdvanceFrame{ "Failed to present the current frame" };
     }
     ++m_frame_index;
@@ -230,4 +230,4 @@ ImageView const& VulkanContext::swapchainImageView() const {
     return m_swapchain.imageViews()[m_acquired_next_image_index];
 }
 
-} // namespace core
+} // namespace core::vk

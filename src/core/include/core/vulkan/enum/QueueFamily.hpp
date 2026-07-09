@@ -8,7 +8,7 @@
 #include <cstdint>
 #include <optional>
 
-namespace core {
+namespace core::vk {
 
 enum class QueueFamily {
     Graphics,
@@ -24,8 +24,6 @@ enum class QueueFamily {
 
     Count,
 };
-
-CORE_ENUM_FUNCTIONS(QueueFamily);
 
 [[nodiscard]]
 constexpr std::optional<uint32_t> queueFamilyFlagBitOf(QueueFamily const family) noexcept {
@@ -58,4 +56,6 @@ struct QueueFamilies final {
     }
 };
 
-} // namespace core
+} // namespace core::vk
+
+CORE_ENUM_FUNCTIONS(vk::QueueFamily);

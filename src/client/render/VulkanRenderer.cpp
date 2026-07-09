@@ -47,7 +47,7 @@ static_assert(sizeof(PlayerPushConstants) == 32);
     return words;
 }
 
-[[nodiscard]] VkShaderModule loadShaderModule(core::Device const& device, std::string const& path) {
+[[nodiscard]] VkShaderModule loadShaderModule(core::vk::Device const& device, std::string const& path) {
     auto const bytes = core::readFile(path);
     ASSERT(bytes.has_value(), "Failed to read shader file: {}", path);
 
@@ -71,7 +71,7 @@ struct VulkanRenderer::Impl final {
 public:
     explicit Impl(core::Window const& window)
         : m_ctx(
-            core::VulkanContextBuilder()
+            core::vk::VulkanContextBuilder()
                 .project(std::string{ shared::PROJECT_NAME }, shared::PROJECT_VERSION)
                 .engine(std::string{ shared::PROJECT_NAME }, shared::PROJECT_VERSION)
                 .requireVersion(core::Version{ 0, 1, 3, 0 })
@@ -80,9 +80,9 @@ public:
                 .requireValidation()
                 .requireMeshShaders()
                 .requireFeatures({
-                    core::VulkanFeature::DynamicRendering,
-                    core::VulkanFeature::Synchronization2,
-                    core::VulkanFeature::Maintanance4,
+                    core::vk::VulkanFeature::DynamicRendering,
+                    core::vk::VulkanFeature::Synchronization2,
+                    core::vk::VulkanFeature::Maintanance4,
                 }),
             &window
         )
@@ -90,12 +90,12 @@ public:
         CORE_INFO("Loaded Vulkan:\n{}", m_ctx.toString());
         createPipelines();
         m_ctx.onReload([this](
-            core::ReloadType const type,
-            core::ReloadSource const source,
-            core::ReloadAction const action
+            core::vk::ReloadType const type,
+            core::vk::ReloadSource const source,
+            core::vk::ReloadAction const action
         ) {
             CORE_WARN("VulkanRenderer received reload of type {} with source {}; action {}", type, source, action);
-            if (action == core::ReloadAction::Destroy) {
+            if (action == core::vk::ReloadAction::Destroy) {
                 destroyPipelines();
             } else {
                 createPipelines();
@@ -117,7 +117,7 @@ public:
             return;
         }
 
-        core::RawCommandBuffer cmd = m_ctx.commandBuffer();
+        core::vk::RawCommandBuffer cmd = m_ctx.commandBuffer();
         VkImageMemoryBarrier2 const toColor{
             .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
             .srcStageMask = VK_PIPELINE_STAGE_2_NONE,
@@ -226,7 +226,7 @@ public:
     }
 
     void hotReload() {
-        m_ctx.reload(core::ReloadType::Instance);
+        m_ctx.reload(core::vk::ReloadType::Instance);
     }
 private:
     void createPipelines() {
@@ -426,7 +426,7 @@ private:
         }
     }
 private:
-    core::VulkanContext m_ctx;
+    core::vk::VulkanContext m_ctx;
 
     VkShaderModule m_gridMeshShader = VK_NULL_HANDLE;
     VkShaderModule m_playerMeshShader = VK_NULL_HANDLE;

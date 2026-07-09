@@ -48,8 +48,9 @@ public:
 };
 
 // Must be in namespace core
-// Must correspond to CORE_ENUM_FUNCTIONS in a header file
+// Must correspond to CORE_ENUM_FUNCTIONS in a header file, must be out of any namespace
 #define CORE_ENUM_FUNCTIONS_IMPL(E)                                        \
+namespace core {                                                           \
     template<>                                                             \
     std::string_view toStringView<E>(E const value) noexcept {             \
         ASSERT(indexOf(value) <= countOf<E>());                            \
@@ -70,6 +71,7 @@ public:
     template<>                                                             \
     EnumEntries<E> const& entriesOf<E>() noexcept {                        \
         return EnumTraits<E>::ENTRIES;                                     \
-    }
+    }                                                                      \
+} // namespace core
 
 } // namespace core

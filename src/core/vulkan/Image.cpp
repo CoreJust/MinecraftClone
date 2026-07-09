@@ -3,7 +3,7 @@
 #include <core/vulkan/Check.hpp>
 #include <core/vulkan/internal/VMA.hpp>
 
-namespace core {
+namespace core::vk {
 
 CORE_VK_RESOURCE_DESTROY_IMPL(RawImage) {
     if (allocation.allocator != VMA_NULL && allocation.allocation != VMA_NULL) {
@@ -38,4 +38,4 @@ ImageView RawImage::createView(Device const& device, ImageView::Info const& info
     return ImageView(result, info, device);
 }
 
-} // namespace core
+} // namespace core::vk

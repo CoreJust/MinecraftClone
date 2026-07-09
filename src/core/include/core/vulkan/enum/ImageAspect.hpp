@@ -3,7 +3,7 @@
 #include <core/common/EnumBits.hpp>
 #include <core/meta/Enum.hpp>
 
-namespace core {
+namespace core::vk {
 
 enum class ImageAspect {
     Color,
@@ -21,8 +21,8 @@ enum class ImageAspect {
     Count,
 };
 
-CORE_ENUM_FUNCTIONS(ImageAspect);
-
 using ImageAspectBits = EnumBits<ImageAspect>;
 
-} // namespace core
+} // namespace core::vk
+
+CORE_ENUM_FUNCTIONS(vk::ImageAspect);

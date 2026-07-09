@@ -3,7 +3,7 @@
 #include <core/vulkan/Device.hpp>
 #include <core/vulkan/Image.hpp>
 
-namespace core {
+namespace core::vk {
 
 class RawSwapchain : public VulkanResourceBase<VkSwapchainKHR> {
     CORE_VK_RESOURCE_CONTEXT(RawSwapchain,
@@ -28,4 +28,4 @@ private:
     std::vector<ImageView> m_image_views;
 };
 
-} // namespace core
+} // namespace core::vk

@@ -6,7 +6,7 @@
 #include <core/vulkan/enum/CommandBufferType.hpp>
 #include <core/vulkan/enum/CommandBufferUsage.hpp>
 
-namespace core {
+namespace core::vk {
 
 using CommandBufferReleaseResources = TaggedBool<struct CommandBufferReleaseResourcesTag>;
 
@@ -46,4 +46,4 @@ public:
 using CommandBuffer = VulkanRaii<RawCommandBuffer>;
 using CommandBuffers = VulkanRaiiVector<RawCommandBuffer>;
 
-} // namespace core
+} // namespace core::vk

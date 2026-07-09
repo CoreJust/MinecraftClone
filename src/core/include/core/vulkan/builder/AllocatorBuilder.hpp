@@ -7,11 +7,11 @@
 #include <core/vulkan/Instance.hpp>
 #include <core/vulkan/PhysicalDevice.hpp>
 
-namespace core {
-
-CORE_VK_ERROR_WITH_KINDS(AllocatorCreationError,
+CORE_VK_ERROR_WITH_KINDS(AllocatorCreationError, VulkanInitializationError,
     FailedToLoadVulkanFunctions,
     FailedToCreateVmaAllocator);
+
+namespace core::vk {
 
 class AllocatorBuilder final {
 public:
@@ -48,4 +48,4 @@ private:
     bool m_externally_synchronized = false;
 };
 
-} // namespace core
+} // namespace core::vk

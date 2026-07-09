@@ -5,7 +5,9 @@
 #include <core/vulkan/VulkanVersion.hpp>
 #include <core/vulkan/internal/VMA.hpp>
 
-namespace core {
+CORE_ENUM_FUNCTIONS_IMPL(vk::AllocatorCreationErrorKind);
+
+namespace core::vk {
 namespace {
 
 [[nodiscard]]
@@ -50,8 +52,6 @@ VmaAllocatorCreateFlags getVmaAllocatorFlags(
 
 } // namespace
 
-CORE_ENUM_FUNCTIONS_IMPL(AllocatorCreationErrorKind);
-
 Allocator AllocatorBuilder::build(VulkanCaps const& caps) const {
     VmaAllocatorCreateInfo create_info{
         .flags = getVmaAllocatorFlags(caps, m_externally_synchronized),
@@ -76,4 +76,4 @@ Allocator AllocatorBuilder::build(VulkanCaps const& caps) const {
     return Allocator(allocator);
 }
 
-} // namespace core
+} // namespace core::vk

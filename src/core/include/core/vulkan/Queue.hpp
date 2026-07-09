@@ -3,7 +3,7 @@
 #include <core/vulkan/Resource.hpp>
 #include <core/vulkan/enum/QueueFamily.hpp>
 
-namespace core {
+namespace core::vk {
 
 class Queue final : public VulkanResourceBase<VkQueue> {
     CORE_VK_RESOURCE_CONTEXT(Queue);
@@ -21,4 +21,4 @@ private:
 
 using Queues = std::array<Queue, countOf<QueueFamily>()>;
 
-} // namespace core
+} // namespace core::vk

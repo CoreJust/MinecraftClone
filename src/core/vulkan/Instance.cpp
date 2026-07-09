@@ -2,7 +2,7 @@
 
 #include <volk.h>
 
-namespace core {
+namespace core::vk {
 
 CORE_VK_RESOURCE_DESTROY_IMPL(RawInstance) {
     if (self.m_debug_messenger != nullptr) {
@@ -11,4 +11,4 @@ CORE_VK_RESOURCE_DESTROY_IMPL(RawInstance) {
     vkDestroyInstance(self.m_handle, nullptr);
 }
 
-} // namespace core
+} // namespace core::vk

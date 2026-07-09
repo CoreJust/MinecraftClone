@@ -5,7 +5,7 @@
 
 #include <type_traits>
 
-namespace core {
+namespace core::vk {
 
 struct PhysicalDeviceSparseProperties {
     VkBool32    residencyStandard2DBlockShape;
@@ -144,4 +144,4 @@ struct PhysicalDeviceProperties final {
     }
 };
 
-} // namespace core
+} // namespace core::vk

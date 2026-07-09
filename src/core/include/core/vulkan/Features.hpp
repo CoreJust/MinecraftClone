@@ -5,7 +5,7 @@
 #include <bitset>
 #include <string>
 
-namespace core {
+namespace core::vk {
 
 struct VulkanPhysicalDeviceFeatures;
 
@@ -74,8 +74,6 @@ enum class VulkanFeature {
     Count,
 };
 
-CORE_ENUM_FUNCTIONS(VulkanFeature);
-
 struct VulkanFeatures final {
     std::bitset<countOf<VulkanFeature>()> data;
 
@@ -91,4 +89,6 @@ struct VulkanFeatures final {
     std::string toString(std::string_view const indent = "") const;
 };
 
-} // namespace core
+} // namespace core::vk
+
+CORE_ENUM_FUNCTIONS(vk::VulkanFeature);

@@ -4,7 +4,7 @@
 #include <core/IO/EnumFmt.hpp>
 #include <core/IO/JoinContainerFmt.hpp>
 
-namespace core {
+namespace core::vk {
 
 void VulkanCaps::commitInstanceCaps(
     Version const& instance_version,
@@ -123,4 +123,4 @@ std::string VulkanCaps::toString() const {
     );
 }
 
-} // namespace core
+} // namespace core::vk

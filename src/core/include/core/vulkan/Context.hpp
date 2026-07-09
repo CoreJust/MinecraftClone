@@ -8,7 +8,7 @@
 
 #include <functional>
 
-namespace core {
+namespace core::vk {
 
 enum class ReloadType {
     Swapchain,
@@ -32,10 +32,6 @@ enum class ReloadAction {
 
     Count,
 };
-
-CORE_ENUM_FUNCTIONS(ReloadType);
-CORE_ENUM_FUNCTIONS(ReloadSource);
-CORE_ENUM_FUNCTIONS(ReloadAction);
 
 struct FailedToAcquireNextImage final : public VulkanError {
     FailedToAcquireNextImage() : VulkanError("Failed to acquire next image") { }
@@ -166,11 +162,15 @@ Surface m_surface;
     std::vector<Semaphore> m_image_available;
     std::vector<Semaphore> m_render_finished;
     std::vector<Fence> m_in_flight;
-    core::CommandPool m_command_pool;
-    core::CommandBuffers m_command_buffers;
+    CommandPool m_command_pool;
+    CommandBuffers m_command_buffers;
 
     size_t m_frame_index = 0;
     uint32_t m_acquired_next_image_index = 0;
 };
 
-} // namespace core
+} // namespace core::vk
+
+CORE_ENUM_FUNCTIONS(vk::ReloadType);
+CORE_ENUM_FUNCTIONS(vk::ReloadSource);
+CORE_ENUM_FUNCTIONS(vk::ReloadAction);

@@ -2,7 +2,7 @@
 
 #include <volk.h>
 
-namespace core {
+namespace core::vk {
 
 Version vkToVersion(uint32_t const vk_version) noexcept {
     return {
@@ -17,4 +17,4 @@ uint32_t versionToVk(Version const& version) noexcept {
     return VK_MAKE_API_VERSION(version.epoch, version.major, version.minor, version.patch);
 }
 
-} // namespace core
+} // namespace core::vk

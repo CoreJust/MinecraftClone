@@ -8,7 +8,9 @@
 
 #include <unordered_set>
 
-namespace core {
+CORE_ENUM_FUNCTIONS_IMPL(vk::SwapchainCreationErrorKind);
+
+namespace core::vk {
 namespace {
 
 [[nodiscard]]
@@ -176,8 +178,6 @@ PresentMode choosePresentMode(
 
 } // namespace
 
-CORE_ENUM_FUNCTIONS_IMPL(SwapchainCreationErrorKind);
-
 Swapchain SwapchainBuilder::build(
     VulkanCaps& out_caps,
     Device const& device,
@@ -229,8 +229,8 @@ Swapchain SwapchainBuilder::build(
     }
 
     uint32_t queue_family_ndices[2]{
-        *physical_device.queueFamily(core::QueueFamily::Graphics),
-        *physical_device.queueFamily(core::QueueFamily::Present),
+        *physical_device.queueFamily(QueueFamily::Graphics),
+        *physical_device.queueFamily(QueueFamily::Present),
     };
 
     SurfaceTransformBits const surface_transform = m_transform.value_or(
@@ -292,4 +292,4 @@ Swapchain SwapchainBuilder::build(
     );
 }
 
-} // namespace core
+} // namespace core::vk

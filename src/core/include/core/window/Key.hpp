@@ -170,10 +170,6 @@ enum class KeyModifierBit {
     NumLock = 32,
 };
 
-CORE_ENUM_FUNCTIONS(Key);
-CORE_ENUM_FUNCTIONS(MouseKey);
-CORE_ENUM_FUNCTIONS(KeyAction);
-
 constexpr KeyModifierBit operator|(KeyModifierBit const lhs, KeyModifierBit const rhs) noexcept {
     return static_cast<KeyModifierBit>(static_cast<unsigned int>(lhs) | static_cast<unsigned int>(rhs));
 }
@@ -183,3 +179,7 @@ constexpr KeyModifierBit operator&(KeyModifierBit const lhs, KeyModifierBit cons
 }
 
 } // namespace core
+
+CORE_ENUM_FUNCTIONS(Key);
+CORE_ENUM_FUNCTIONS(MouseKey);
+CORE_ENUM_FUNCTIONS(KeyAction);

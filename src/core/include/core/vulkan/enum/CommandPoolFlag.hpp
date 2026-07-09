@@ -5,7 +5,7 @@
 
 #include <cstdint>
 
-namespace core {
+namespace core::vk {
 
 enum class CommandPoolFlag {
     Transient,
@@ -15,8 +15,8 @@ enum class CommandPoolFlag {
     Count,
 };
 
-CORE_ENUM_FUNCTIONS(CommandPoolFlag);
-
 using CommandPoolFlags = EnumBits<CommandPoolFlag>;
 
-} // namespace core
+} // namespace core::vk
+
+CORE_ENUM_FUNCTIONS(vk::CommandPoolFlag);

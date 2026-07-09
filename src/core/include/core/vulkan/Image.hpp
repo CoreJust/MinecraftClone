@@ -9,7 +9,7 @@
 #include <core/vulkan/enum/Format.hpp>
 #include <core/vulkan/enum/ImageUsage.hpp>
 
-namespace core {
+namespace core::vk {
 
 struct ImageViewCreationError final : public VulkanError {
     ImageViewCreationError() : VulkanError("Failed to create ImageView from Image") { }
@@ -55,4 +55,4 @@ private:
 
 using Image = VulkanRaii<RawImage>;
 
-} // namespace core
+} // namespace core::vk

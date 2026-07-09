@@ -2,7 +2,7 @@
 
 #include <functional>
 
-namespace core {
+namespace core::vk {
 
 using Callback = std::function<bool()>;
 
@@ -22,4 +22,4 @@ bool onFullscreenExclusiveModeLost();
 bool onOutOfHostMemory();
 bool onOutOfDeviceMemory();
 
-} // namespace core
+} // namespace core::vk

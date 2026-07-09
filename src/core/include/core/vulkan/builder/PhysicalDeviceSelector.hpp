@@ -13,12 +13,12 @@
 #include <core/vulkan/enum/MemoryProperty.hpp>
 #include <core/vulkan/enum/PhysicalDeviceType.hpp>
 
-namespace core {
-
-CORE_VK_ERROR_WITH_KINDS(PhysicalDeviceSelectionError,
+CORE_VK_ERROR_WITH_KINDS(PhysicalDeviceSelectionError, VulkanInitializationError,
     NoSurfaceProvidedDespitePresentRequested,
     NoPhysicalDevices,
     NoSuitableDevice)
+
+namespace core::vk {
 
 class PhysicalDeviceSelector final {
 public:
@@ -121,4 +121,4 @@ private:
     Version m_required_api_version;
 };
 
-} // namespace core
+} // namespace core::vk

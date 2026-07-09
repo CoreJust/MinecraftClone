@@ -2,7 +2,7 @@
 
 #include <core/vulkan/Queue.hpp>
 
-namespace core {
+namespace core::vk {
 
 class RawDevice : public VulkanResourceBase<VkDevice> {
     CORE_VK_RESOURCE_CONTEXT(RawDevice);
@@ -24,4 +24,4 @@ private:
 
 using Device = VulkanRaii<RawDevice>;
 
-} // namespace core
+} // namespace core::vk

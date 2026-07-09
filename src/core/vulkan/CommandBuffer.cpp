@@ -4,7 +4,7 @@
 
 #include <volk.h>
 
-namespace core {
+namespace core::vk {
 
 CORE_VK_RESOURCE_DESTROY_IMPL(RawCommandBuffer) {
     vkFreeCommandBuffers(device_handle, pool_handle, 1, &self.m_handle);
@@ -66,4 +66,4 @@ void RawCommandBuffer::end() {
     }
 }
 
-} // namespace core
+} // namespace core::vk

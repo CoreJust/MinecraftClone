@@ -6,7 +6,7 @@
 
 #include <stdexcept>
 
-namespace core {
+namespace core::vk {
 
 struct VulkanError : public std::runtime_error {
     explicit VulkanError(std::string message)
@@ -19,17 +19,36 @@ struct VulkanError : public std::runtime_error {
     { }
 };
 
-// there must he a corresponding CORE_ENUM_FUNCTIONS_IMPL(NameKind) in a source file
-#define CORE_VK_ERROR_WITH_KINDS(Name, ...)        \
+struct VulkanInitializationError : public VulkanError {
+    using VulkanError::VulkanError;
+};
+
+struct VulkanRuntimeError : public VulkanError {
+    using VulkanError::VulkanError;
+};
+
+// Must be placed out of any namespace.
+#define CORE_VK_ERROR(Name, Base, ...) \
+namespace core::vk {                   \
+    struct Name final : public Base {  \
+        using Base::Base;              \
+        __VA_ARGS__                    \
+    };                                 \
+} // namespace core::vk
+
+// There must he a corresponding CORE_ENUM_FUNCTIONS_IMPL(NameKind) in a source file
+// Must be placed out pf any namespace
+#define CORE_VK_ERROR_WITH_KINDS(Name, Base, ...)  \
+namespace core::vk {                               \
     enum class Name##Kind { __VA_ARGS__, Count, }; \
-    CORE_ENUM_FUNCTIONS(Name##Kind);               \
-                                                   \
-    struct Name final : public VulkanError {       \
+}                                                  \
+    CORE_ENUM_FUNCTIONS(vk::Name##Kind);           \
+    CORE_VK_ERROR(Name, Base,                      \
         using enum Name##Kind;                     \
         Name##Kind kind;                           \
                                                    \
         Name(Name##Kind const kind)                \
-            : VulkanError(std::string{ toStringView(kind) }) \
+            : Base(std::string{ toStringView(kind) }) \
             , kind(kind)                           \
         { }                                        \
         template<typename... Args>                 \
@@ -37,13 +56,13 @@ struct VulkanError : public std::runtime_error {
             Name##Kind const kind,                 \
             fmt::format_string<Args...> format_string, \
             Args&&... args)                        \
-            : VulkanError("{}: {}",                \
+            : Base("{}: {}",                       \
                 toStringView(kind),                \
                 fmt::format(                       \
                     format_string,                 \
                     std::forward<Args>(args)...))  \
             , kind(kind)                           \
         { }                                        \
-    };
+    )
 
-} // namespace core
+} // namespace core::vk

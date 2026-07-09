@@ -2,7 +2,7 @@
 
 #include <core/common/Assert.hpp>
 
-namespace core::internal {
+namespace core::vk::internal {
 
 namespace {
 
@@ -338,4 +338,4 @@ VulkanFeatures PhysicalDeviceCapsStruct::getFeatures() const noexcept {
     return result;
 }
 
-} // namespace core::internal
+} // namespace core::vk::internal

@@ -2,7 +2,7 @@
 
 #include <core/meta/Enum.hpp>
 
-namespace core {
+namespace core::vk {
 
 // Can be bit_cast'ed to VkFormat
 enum class Format {
@@ -195,6 +195,6 @@ enum class Format {
     Count,
 };
 
-CORE_ENUM_FUNCTIONS(Format);
+} // namespace core::vk
 
-} // namespace core
+CORE_ENUM_FUNCTIONS(vk::Format);

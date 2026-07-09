@@ -2,7 +2,7 @@
 
 #include <core/meta/Enum.hpp>
 
-namespace core {
+namespace core::vk {
 
 // Might be static_cast'ed to VkPhysicalDeviceType
 enum class PhysicalDeviceType {
@@ -15,6 +15,6 @@ enum class PhysicalDeviceType {
     Count,
 };
 
-CORE_ENUM_FUNCTIONS(PhysicalDeviceType);
+} // namespace core::vk
 
-} // namespace core
+CORE_ENUM_FUNCTIONS(vk::PhysicalDeviceType);

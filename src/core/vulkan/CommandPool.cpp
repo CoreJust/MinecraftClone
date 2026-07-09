@@ -4,7 +4,7 @@
 
 #include <volk.h>
 
-namespace core {
+namespace core::vk {
 
 CORE_VK_RESOURCE_DESTROY_IMPL(RawCommandPool) {
     vkDestroyCommandPool(device_handle, self.m_handle, nullptr);
@@ -29,4 +29,4 @@ CommandBuffers CommandPool::allocateBuffers(size_t const size, CommandBufferType
     return CommandBuffers(size, destroyer().device_handle, handle(), type);
 }
 
-} // namespace core
+} // namespace core::vk

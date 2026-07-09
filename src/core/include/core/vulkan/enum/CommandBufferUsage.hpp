@@ -3,7 +3,7 @@
 #include <core/common/EnumBits.hpp>
 #include <core/meta/Enum.hpp>
 
-namespace core {
+namespace core::vk {
 
 enum class CommandBufferUsage {
     OneTimeSubmit,
@@ -13,8 +13,8 @@ enum class CommandBufferUsage {
     Count,
 };
 
-CORE_ENUM_FUNCTIONS(CommandBufferUsage);
-
 using CommandBufferUsageBits = EnumBits<CommandBufferUsage>;
 
-} // namespace core
+} // namespace core::vk
+
+CORE_ENUM_FUNCTIONS(vk::CommandBufferUsage);

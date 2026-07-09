@@ -4,7 +4,7 @@
 
 #include <volk.h>
 
-namespace core {
+namespace core::vk {
 
 CORE_VK_RESOURCE_DESTROY_IMPL(RawSwapchain) {
     vkDestroySwapchainKHR(device_handle, self.m_handle, nullptr);
@@ -27,4 +27,4 @@ Swapchain::Swapchain(VkSwapchainKHR const swapchain, Image::Info const& info, De
     }
 }
 
-} // namespace core
+} // namespace core::vk

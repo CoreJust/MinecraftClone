@@ -13,9 +13,7 @@
 #include <core/vulkan/enum/PresentMode.hpp>
 #include <core/vulkan/enum/SurfaceTransform.hpp>
 
-namespace core {
-
-CORE_VK_ERROR_WITH_KINDS(SwapchainCreationError,
+CORE_VK_ERROR_WITH_KINDS(SwapchainCreationError, VulkanInitializationError,
     NoSuchFormat,
     NoSuchColorSpace,
     NoSuchPresentMode,
@@ -23,6 +21,8 @@ CORE_VK_ERROR_WITH_KINDS(SwapchainCreationError,
     NoFallbackExtentProvided,
     FailedToCreateSwapchain,
     FailedToGetSwapchainImages);
+
+namespace core::vk {
 
 class SwapchainBuilder final {
 public:
@@ -132,4 +132,4 @@ private:
     std::optional<SurfaceTransformBits> m_transform;
 };
 
-} // namespace core
+} // namespace core::vk

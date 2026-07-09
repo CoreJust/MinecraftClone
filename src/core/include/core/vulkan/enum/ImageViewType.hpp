@@ -2,7 +2,7 @@
 
 #include <core/meta/Enum.hpp>
 
-namespace core {
+namespace core::vk {
 
 enum class ImageViewType {
     OneD,
@@ -16,6 +16,6 @@ enum class ImageViewType {
     Count,
 };
 
-CORE_ENUM_FUNCTIONS(ImageViewType);
+} // namespace core::vk
 
-} // namespace core
+CORE_ENUM_FUNCTIONS(vk::ImageViewType);

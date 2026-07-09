@@ -12,7 +12,7 @@
 #include <optional>
 #include <span>
 
-namespace core::internal {
+namespace core::vk::internal {
 
 struct PhysicalDeviceCapsStruct final {
     VkPhysicalDeviceProperties properties{ };
@@ -119,4 +119,4 @@ struct PhysicalDeviceCapsStruct final {
     }
 };
 
-} // namespace core::internal
+} // namespace core::vk::internal

@@ -3,7 +3,7 @@
 #include <core/vulkan/Instance.hpp>
 #include <core/window/Window.hpp>
 
-namespace core {
+namespace core::vk {
 
 class RawSurface : public VulkanResourceBase<VkSurfaceKHR> {
     CORE_VK_RESOURCE_CONTEXT(RawSurface,
@@ -14,4 +14,4 @@ class RawSurface : public VulkanResourceBase<VkSurfaceKHR> {
 
 using Surface = VulkanRaii<RawSurface>;
 
-} // namespace core
+} // namespace core::vk

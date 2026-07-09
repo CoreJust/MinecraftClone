@@ -5,7 +5,7 @@
 
 #include <string>
 
-namespace core {
+namespace core::vk {
 
 enum class VulkanLayer {
     // Debug
@@ -16,8 +16,6 @@ enum class VulkanLayer {
 
     Count,
 };
-
-CORE_ENUM_FUNCTIONS(VulkanLayer);
 
 struct VulkanLayers final {
     Version versions[countOf<VulkanLayer>()];
@@ -46,4 +44,6 @@ char const* getFullLayerName(VulkanLayer const layer) noexcept;
 
 VulkanLayers loadSupportedLayers();
 
-} // namespace core
+} // namespace core::vk
+
+CORE_ENUM_FUNCTIONS(vk::VulkanLayer);

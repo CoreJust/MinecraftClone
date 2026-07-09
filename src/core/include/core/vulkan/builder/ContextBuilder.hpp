@@ -8,7 +8,7 @@
 
 #include <optional>
 
-namespace core {
+namespace core::vk {
 
 class VulkanContextBuilder {
 public:
@@ -207,10 +207,10 @@ public:
     [[nodiscard]] auto&& renderTo(this Self&& self, Window const& window) {
         self.m_instance_builder.requireWindowExtensions();
         self.m_physical_device_selector.requireQueueFamilies({
-            core::QueueFamily::Graphics,
-            core::QueueFamily::Present,
+            QueueFamily::Graphics,
+            QueueFamily::Present,
         });
-        self.m_physical_device_selector.requireExtensions({ core::VulkanExtension::Swapchain });
+        self.m_physical_device_selector.requireExtensions({ VulkanExtension::Swapchain });
         self.m_device_builder.requireQueueFamilies({{QueueFamily::Graphics, 1.f}, {QueueFamily::Present, 1.f}});
         self.m_swapchain_builder.fallbackExtent(window.framebufferSize());
         return std::forward<Self>(self);
@@ -271,4 +271,4 @@ private:
     SwapchainBuilder m_swapchain_builder;
 };
 
-} // namespace core
+} // namespace core::vk

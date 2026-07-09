@@ -4,10 +4,10 @@
 #include <core/vulkan/Image.hpp>
 #include <core/vulkan/Resource.hpp>
 
-namespace core {
-
-CORE_VK_ERROR_WITH_KINDS(AllocationError,
+CORE_VK_ERROR_WITH_KINDS(AllocationError, VulkanRuntimeError,
     FailedToAllocateImage);
+
+namespace core::vk {
 
 class RawAllocator : public VulkanResourceBase<VmaAllocator> {
     CORE_VK_RESOURCE_CONTEXT(RawAllocator);
@@ -25,4 +25,4 @@ public:
 
 using Allocator = VulkanRaii<RawAllocator>;
 
-} // namespace core
+} // namespace core::vk

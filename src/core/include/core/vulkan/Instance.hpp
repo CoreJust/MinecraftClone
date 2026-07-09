@@ -2,7 +2,7 @@
 
 #include <core/vulkan/Resource.hpp>
 
-namespace core {
+namespace core::vk {
 
 class RawInstance : public VulkanResourceBase<VkInstance> {
     CORE_VK_RESOURCE_CONTEXT(RawInstance);
@@ -23,4 +23,4 @@ private:
 
 using Instance = VulkanRaii<RawInstance>;
 
-} // namespace core
+} // namespace core::vk

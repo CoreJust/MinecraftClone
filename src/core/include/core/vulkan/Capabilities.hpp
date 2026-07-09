@@ -16,7 +16,7 @@
 
 #include <vector>
 
-namespace core {
+namespace core::vk {
 
 class VulkanCaps : NonCopyable {
 public:
@@ -144,4 +144,4 @@ private:
     bool m_validation_enabled{ false };
 };
 
-} // namespace core
+} // namespace core::vk

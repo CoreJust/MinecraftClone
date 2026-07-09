@@ -4,9 +4,9 @@
 
 #include <fmt/core.h>
 
-namespace core {
+CORE_ENUM_FUNCTIONS_IMPL(vk::VulkanFeature);
 
-CORE_ENUM_FUNCTIONS_IMPL(VulkanFeature);
+namespace core::vk {
 
 std::string VulkanFeatures::toString(std::string_view const indent) const {
     std::string features_message;
@@ -18,4 +18,4 @@ std::string VulkanFeatures::toString(std::string_view const indent) const {
     return features_message;
 }
 
-} // namespace core
+} // namespace core::vk

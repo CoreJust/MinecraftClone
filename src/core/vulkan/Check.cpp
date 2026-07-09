@@ -6,7 +6,7 @@
 
 #include <stacktrace>
 
-namespace core::internal {
+namespace core::vk::internal {
 namespace {
 
 bool decodeVkResult(VkResult const result, std::string_view& description) {
@@ -100,4 +100,4 @@ bool checkVkResult(VkResult const result) {
     return isSuccess;
 }
 
-} // namespace core::internal
+} // namespace core::vk::internal

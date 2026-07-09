@@ -4,7 +4,7 @@
 
 #include <volk.h>
 
-namespace core {
+namespace core::vk {
 
 CORE_VK_RESOURCE_DESTROY_IMPL(RawSemaphore) {
     vkDestroySemaphore(device_handle, self.m_handle, nullptr);
@@ -21,4 +21,4 @@ CORE_VK_RESOURCE_DEFERRED_CONSTRUCTION_IMPL(RawSemaphore, Device const& device) 
     }
 }
 
-} // namespace core
+} // namespace core::vk

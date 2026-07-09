@@ -5,7 +5,7 @@
 
 #include <cstdint>
 
-namespace core {
+namespace core::vk {
 
 enum class SurfaceTransform {
     Identity,
@@ -21,8 +21,8 @@ enum class SurfaceTransform {
     Count,
 };
 
-CORE_ENUM_FUNCTIONS(SurfaceTransform);
-
 using SurfaceTransformBits = EnumBits<SurfaceTransform>;
 
-} // namespace core
+} // namespace core::vk
+
+CORE_ENUM_FUNCTIONS(vk::SurfaceTransform);

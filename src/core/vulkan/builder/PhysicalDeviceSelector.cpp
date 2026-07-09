@@ -4,7 +4,9 @@
 #include <core/vulkan/Check.hpp>
 #include <core/vulkan/internal/PhysicalDeviceCapsStruct.hpp>
 
-namespace core {
+CORE_ENUM_FUNCTIONS_IMPL(vk::PhysicalDeviceSelectionErrorKind);
+
+namespace core::vk {
 namespace {
 
 void commitCaps(
@@ -47,8 +49,6 @@ void commitCaps(
 }
 
 } // namespace
-
-CORE_ENUM_FUNCTIONS_IMPL(PhysicalDeviceSelectionErrorKind);
 
 PhysicalDevice PhysicalDeviceSelector::select(VulkanCaps& out_caps, Instance const& instance, Surface const* surface) const {
     if (std::ranges::contains(m_required_queue_families, QueueFamily::Present)
@@ -170,4 +170,4 @@ int32_t PhysicalDeviceSelector::scoreDevice(PhysicalDevice const& device, Versio
     return score;
 }
 
-} // namespace core
+} // namespace core::vk

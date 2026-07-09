@@ -37,8 +37,10 @@ EnumEntries<E> const& entriesOf() noexcept = delete;
  * Make sure to place it in namespace core in header.
  * There must be a corresponding source file where CORE_ENUM_FUNCTIONS_IMPL
  * from EnumImpl.hpp is declared.
+ * Should be placed out of any namespace.
  */
 #define CORE_ENUM_FUNCTIONS(E)                                      \
+namespace core {                                                    \
     template<> [[nodiscard]]                                        \
     std::string_view toStringView<E>(E const) noexcept;             \
     template<> [[nodiscard]]                                        \
@@ -46,6 +48,7 @@ EnumEntries<E> const& entriesOf() noexcept = delete;
     template<> [[nodiscard]]                                        \
     EnumValues<E> const& valuesOf<E>() noexcept;                    \
     template<> [[nodiscard]]                                        \
-    EnumEntries<E> const& entriesOf<E>() noexcept;
+    EnumEntries<E> const& entriesOf<E>() noexcept;                  \
+}
 
 } // namespace core

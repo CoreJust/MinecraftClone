@@ -6,7 +6,7 @@
 #include <core/vulkan/enum/ImageAspect.hpp>
 #include <core/vulkan/enum/ImageViewType.hpp>
 
-namespace core {
+namespace core::vk {
 
 class RawImageView : public VulkanResourceBase<VkImageView> {
 public:
@@ -41,4 +41,4 @@ private:
 
 using ImageView = VulkanRaii<RawImageView>;
 
-} // namespace core
+} // namespace core::vk

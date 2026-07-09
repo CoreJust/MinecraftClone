@@ -11,11 +11,11 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
-
-namespace core {
     
-CORE_ENUM_FUNCTIONS_IMPL(VulkanExtension);
-CORE_ENUM_FUNCTIONS_IMPL(VulkanExtensionKind);
+CORE_ENUM_FUNCTIONS_IMPL(vk::VulkanExtension);
+CORE_ENUM_FUNCTIONS_IMPL(vk::VulkanExtensionKind);
+
+namespace core::vk {
 
 VulkanExtensions::VulkanExtensions() noexcept {
     memset(versions, 255, std::size(versions) * sizeof(Version));
@@ -239,4 +239,4 @@ VulkanExtensions VulkanExtensions::loadSupportedDeviceExtensions(PhysicalDevice 
     return supported_extensions;
 }
 
-} // namespace core
+} // namespace core::vk

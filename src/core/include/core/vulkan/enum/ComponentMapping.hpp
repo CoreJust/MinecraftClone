@@ -2,7 +2,7 @@
 
 #include <core/meta/Enum.hpp>
 
-namespace core {
+namespace core::vk {
 
 enum class ComponentSwizzle {
     Identity,
@@ -16,8 +16,6 @@ enum class ComponentSwizzle {
     Count,
 };
 
-CORE_ENUM_FUNCTIONS(ComponentSwizzle);
-
 struct ComponentMapping final {
     ComponentSwizzle r;
     ComponentSwizzle g;
@@ -25,4 +23,6 @@ struct ComponentMapping final {
     ComponentSwizzle a;
 };
 
-} // namespace core
+} // namespace core::vk
+
+CORE_ENUM_FUNCTIONS(vk::ComponentSwizzle);

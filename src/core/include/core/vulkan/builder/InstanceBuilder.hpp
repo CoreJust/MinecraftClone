@@ -16,9 +16,7 @@
 #include <string>
 #include <vector>
 
-namespace core {
-
-CORE_VK_ERROR_WITH_KINDS(InstanceCreationError,
+CORE_VK_ERROR_WITH_KINDS(InstanceCreationError, VulkanInitializationError,
     GlfwVulkanNotSupported,
     VolkInitializationFailed,
     UnsupportedApiVersion,
@@ -30,6 +28,8 @@ CORE_VK_ERROR_WITH_KINDS(InstanceCreationError,
     DebugUtilsUnavailable,
     InstanceCreationFailed,
     DebugMessengerCreationFailed);
+
+namespace core::vk {
 
 class InstanceBuilder final {
 public:
@@ -162,4 +162,4 @@ private:
     bool m_require_window_extensions{ false };
 };
 
-} // namespace core
+} // namespace core::vk

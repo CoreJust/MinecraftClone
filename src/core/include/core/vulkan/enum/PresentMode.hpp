@@ -2,7 +2,7 @@
 
 #include <core/meta/Enum.hpp>
 
-namespace core {
+namespace core::vk {
 
 enum class PresentMode {
     Immediate,
@@ -13,6 +13,6 @@ enum class PresentMode {
     Count,
 };
 
-CORE_ENUM_FUNCTIONS(PresentMode);
+} // namespace core::vk
 
-} // namespace core
+CORE_ENUM_FUNCTIONS(vk::PresentMode);

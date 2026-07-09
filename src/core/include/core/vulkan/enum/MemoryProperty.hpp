@@ -5,7 +5,7 @@
 
 #include <cstdint>
 
-namespace core {
+namespace core::vk {
 
 enum class MemoryProperty {
     DeviceLocal,
@@ -21,8 +21,6 @@ enum class MemoryProperty {
     Count,
 };
 
-CORE_ENUM_FUNCTIONS(MemoryProperty);
-
 using MemoryPropertyBits = EnumBits<MemoryProperty>;
 
 struct MemoryHeap final {
@@ -30,4 +28,6 @@ struct MemoryHeap final {
     uint32_t heap_index;
 };
 
-} // namespace core
+} // namespace core::vk
+
+CORE_ENUM_FUNCTIONS(vk::MemoryProperty);

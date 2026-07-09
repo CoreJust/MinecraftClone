@@ -5,9 +5,9 @@
 
 #include <volk.h>
 
-namespace core {
+CORE_ENUM_FUNCTIONS_IMPL(vk::FenceErrorKind);
 
-CORE_ENUM_FUNCTIONS_IMPL(FenceErrorKind);
+namespace core::vk {
 
 CORE_VK_RESOURCE_DESTROY_IMPL(RawFence) {
     vkDestroyFence(device_handle, self.m_handle, nullptr);
@@ -21,7 +21,7 @@ CORE_VK_RESOURCE_DEFERRED_CONSTRUCTION_IMPL(RawFence, Device const& device, Fenc
         .flags = static_cast<VkFenceCreateFlags>(signaled.value * VK_FENCE_CREATE_SIGNALED_BIT),
     };
     if (!VK_CHECK(vkCreateFence(device.handle(), &create_info, nullptr, &self.m_handle))) {
-        throw FenceCreationError{ };
+        throw FenceError{ FenceError::FailedToCreateFence };
     }
 }
 
@@ -46,4 +46,4 @@ void Fence::reset() {
     }
 }
 
-} // namespace core
+} // namespace core::vk

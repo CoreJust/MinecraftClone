@@ -3,7 +3,7 @@
 #include <core/vulkan/Device.hpp>
 #include <core/vulkan/Error.hpp>
 
-namespace core {
+namespace core::vk {
 
 struct SemaphoreCreationError : public VulkanError {
     SemaphoreCreationError() : VulkanError("Failed to create semaphore") { }
@@ -17,4 +17,4 @@ class RawSemaphore : public VulkanResourceBase<VkSemaphore> {
 
 using Semaphore = VulkanRaii<RawSemaphore>;
 
-} // namespace core
+} // namespace core::vk

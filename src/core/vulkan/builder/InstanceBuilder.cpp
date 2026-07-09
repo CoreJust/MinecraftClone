@@ -14,7 +14,9 @@
 #include <algorithm>
 #include <cstring>
 
-namespace core {
+CORE_ENUM_FUNCTIONS_IMPL(vk::InstanceCreationErrorKind);
+
+namespace core::vk {
 namespace {
 
 VKAPI_ATTR VkBool32 VKAPI_PTR defaultDebugCallback(
@@ -200,8 +202,6 @@ VulkanExtensions collectExtensionsToEnable(
 
 } // namespace
 
-CORE_ENUM_FUNCTIONS_IMPL(InstanceCreationErrorKind);
-
 [[nodiscard]]
 Instance InstanceBuilder::build(VulkanCaps& out_caps) const {
     if (!VK_CHECK(volkInitialize())) {
@@ -311,4 +311,4 @@ Instance InstanceBuilder::build(VulkanCaps& out_caps) const {
     return Instance{ instance, debug_messenger };
 }
 
-} // namespace core
+} // namespace core::vk

@@ -2,7 +2,7 @@
 
 #include <core/meta/Enum.hpp>
 
-namespace core {
+namespace core::vk {
 
 enum class CommandBufferType {
     Primary,
@@ -11,6 +11,6 @@ enum class CommandBufferType {
     Count,
 };
 
-CORE_ENUM_FUNCTIONS(CommandBufferType);
+} // namespace core::vk
 
-} // namespace core
+CORE_ENUM_FUNCTIONS(vk::CommandBufferType);

@@ -2,10 +2,10 @@
 
 #include <volk.h>
 
-namespace core {
+namespace core::vk {
 
 CORE_VK_RESOURCE_DESTROY_IMPL(RawImageView) {
     vkDestroyImageView(device.handle(), self.m_handle, nullptr);
 }
 
-} // namespace core
+} // namespace core::vk

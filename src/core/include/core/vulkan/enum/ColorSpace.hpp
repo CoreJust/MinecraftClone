@@ -2,7 +2,7 @@
 
 #include <core/meta/Enum.hpp>
 
-namespace core {
+namespace core::vk {
 
 enum class ColorSpace {
     SRGBNonlinear,
@@ -24,8 +24,6 @@ enum class ColorSpace {
     Count,
 };
 
-CORE_ENUM_FUNCTIONS(ColorSpace);
-
 [[nodiscard]]
 constexpr uint32_t colorSpaceToVk(ColorSpace const color_space) noexcept {
     return color_space == ColorSpace::SRGBNonlinear
@@ -40,4 +38,6 @@ constexpr ColorSpace vkToColorSpace(uint32_t const color_space) noexcept {
         : static_cast<ColorSpace>(color_space - 1'000'104'000);
 }
 
-} // namespace core
+} // namespace core::vk
+
+CORE_ENUM_FUNCTIONS(vk::ColorSpace);

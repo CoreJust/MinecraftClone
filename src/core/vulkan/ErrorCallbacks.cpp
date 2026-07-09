@@ -1,6 +1,6 @@
 #include <core/vulkan/ErrorCallbacks.hpp>
 
-namespace core {
+namespace core::vk {
 namespace {
 
 Callback g_on_out_of_date_khr                = nullptr;
@@ -31,4 +31,4 @@ bool onFullscreenExclusiveModeLost() { return g_on_fullscreen_exclusive_mode_los
 bool onOutOfHostMemory  () { return g_on_out_of_host_memory   ? g_on_out_of_host_memory()   : false; }
 bool onOutOfDeviceMemory() { return g_on_out_of_device_memory ? g_on_out_of_device_memory() : false; }
 
-} // namespace core
+} // namespace core::vk

@@ -3,7 +3,7 @@
 #include <core/common/EnumBits.hpp>
 #include <core/meta/Enum.hpp>
 
-namespace core {
+namespace core::vk {
 
 enum class ImageUsage {
     TransferSrc,
@@ -38,8 +38,8 @@ enum class ImageUsage {
     Count,
 };
 
-CORE_ENUM_FUNCTIONS(ImageUsage);
-
 using ImageUsageBits = EnumBits<ImageUsage>;
 
-} // namespace core
+} // namespace core::vk
+
+CORE_ENUM_FUNCTIONS(vk::ImageUsage);

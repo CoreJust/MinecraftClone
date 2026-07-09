@@ -7,7 +7,7 @@
 // DONT_CHECK INCLUDE_ORDER
 #include <GLFW/glfw3.h>
 
-namespace core {
+namespace core::vk {
 
 CORE_VK_RESOURCE_DESTROY_IMPL(RawSurface) {
     vkDestroySurfaceKHR(instance.handle(), self.m_handle, nullptr);
@@ -18,4 +18,4 @@ CORE_VK_RESOURCE_DEFERRED_CONSTRUCTION_IMPL(RawSurface, Instance const& instance
     CORE_VK_CAPTURE_DESTRUCTION_CONTEXT() { .instance = instance.raw() };
 }
 
-} // namespace core
+} // namespace core::vk

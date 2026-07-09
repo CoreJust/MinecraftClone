@@ -4,18 +4,15 @@
 #include <core/vulkan/Device.hpp>
 #include <core/vulkan/Error.hpp>
 
-namespace core {
-
-struct FenceCreationError : public VulkanError {
-    FenceCreationError() : VulkanError("Failed to create fence") { }
-};
-
-using FenceSignaled = TaggedBool<struct FenceSignaledTag>;
-
-CORE_VK_ERROR_WITH_KINDS(FenceError,
+CORE_VK_ERROR_WITH_KINDS(FenceError, VulkanRuntimeError,
+    FailedToCreateFence,
     FenceIsNull,
     FailedToWaitOnFence,
     FaiedToResetFence);
+
+namespace core::vk {
+
+using FenceSignaled = TaggedBool<struct FenceSignaledTag>;
 
 class RawFence : public VulkanResourceBase<VkFence> {
     CORE_VK_RESOURCE_CONTEXT(RawFence,
@@ -36,4 +33,4 @@ public:
     void reset();
 };
 
-} // namespace core
+} // namespace core::vk

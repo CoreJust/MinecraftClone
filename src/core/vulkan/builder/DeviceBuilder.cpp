@@ -8,7 +8,9 @@
 
 #include <unordered_map>
 
-namespace core {
+CORE_ENUM_FUNCTIONS_IMPL(vk::DeviceCreationErrorKind);
+
+namespace core::vk {
 namespace {
 
 std::vector<TrivialPair<uint32_t, float>> collectUniqueQueueFamilies(
@@ -54,8 +56,6 @@ internal::PhysicalDeviceCapsStruct collectFeatures(VulkanCaps const& caps) {
 }
 
 } // namespace
-
-CORE_ENUM_FUNCTIONS_IMPL(DeviceCreationErrorKind);
 
 Device DeviceBuilder::build(VulkanCaps& caps, PhysicalDevice const& physical_device) const {
     auto const unique_families = collectUniqueQueueFamilies(m_required_queue_families, physical_device);
@@ -108,4 +108,4 @@ Device DeviceBuilder::build(VulkanCaps& caps, PhysicalDevice const& physical_dev
     return Device(result, queues);
 }
 
-} // namespace core
+} // namespace core::vk

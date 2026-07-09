@@ -5,9 +5,9 @@
 
 #include <volk.h>
 
-namespace core {
+CORE_ENUM_FUNCTIONS_IMPL(vk::QueueFamily);
 
-CORE_ENUM_FUNCTIONS_IMPL(QueueFamily);
+namespace core::vk {
 
 QueueFamilies QueueFamilies::query(VkPhysicalDevice const device, VkSurfaceKHR const surface) {
     QueueFamilies families{ };
@@ -43,4 +43,4 @@ QueueFamilies QueueFamilies::query(VkPhysicalDevice const device, VkSurfaceKHR c
     return families;
 }
 
-} // namespace core
+} // namespace core::vk

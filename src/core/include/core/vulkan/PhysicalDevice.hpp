@@ -3,7 +3,7 @@
 #include <core/vulkan/Resource.hpp>
 #include <core/vulkan/enum/QueueFamily.hpp>
 
-namespace core {
+namespace core::vk {
 
 // Note that RAII makes no sense for physical device since it is not created, but selected
 class PhysicalDevice final : public VulkanResourceBase<VkPhysicalDevice> {
@@ -30,4 +30,4 @@ private:
     QueueFamilies m_families{ };
 };
 
-} // namespace core
+} // namespace core::vk

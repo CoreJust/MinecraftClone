@@ -4,7 +4,7 @@
 
 #include <cstdint>
 
-namespace core {
+namespace core::vk {
 
 struct DebugMessengerOptions final {
     VkDebugUtilsMessageSeverityFlagsEXT severity_mask = 0
@@ -143,4 +143,4 @@ private:
     DebugMessengerOptions m_options{ };
 };
 
-} // namespace core
+} // namespace core::vk

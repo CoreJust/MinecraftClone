@@ -10,11 +10,11 @@
 #include <core/vulkan/Features.hpp>
 #include <core/vulkan/PhysicalDevice.hpp>
 
-namespace core {
-
-CORE_VK_ERROR_WITH_KINDS(DeviceCreationError,
+CORE_VK_ERROR_WITH_KINDS(DeviceCreationError, VulkanInitializationError,
     PhysicalDeviceHasNoSuchFamily,
     DeviceCreationFailed)
+
+namespace core::vk {
 
 // Extensions and features are taken from Capabilities
 class DeviceBuilder final {
@@ -35,4 +35,4 @@ private:
     std::vector<TrivialPair<QueueFamily, float>> m_required_queue_families;
 };
 
-} // namespace core
+} // namespace core::vk

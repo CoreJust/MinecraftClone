@@ -22,7 +22,7 @@
 #define CORE_VK_RESOURCE_CONTEXT(SelfType, ...)              \
 public:                                                      \
     using Self = SelfType;                                   \
-    using Parent = ::core::VulkanResourceBase<Self::Handle>; \
+    using Parent = ::core::vk::VulkanResourceBase<Self::Handle>;\
     static constexpr auto NAME = #SelfType;                  \
                                                              \
     struct Destroyer final {                                 \
@@ -126,7 +126,7 @@ private:                                              \
 #define CORE_VK_RESOURCE_BATCH_DESTROY_IMPL(Self) \
     void Self::Destroyer::operator()(std::vector<Self>& selves)
 
-namespace core {
+namespace core::vk {
 
 template<typename HandleTy>
 class VulkanResourceBase {
@@ -279,4 +279,4 @@ private:
     Destroyer m_destroyer;
 };
 
-} // namespace core
+} // namespace core::vk
