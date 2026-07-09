@@ -112,12 +112,14 @@ public:
         if (m_ctx.window()->isFramebufferSizeZero()) {
             return;
         }
-        if (!m_ctx.beginFrame()) {
+        std::optional maybe_frame = m_ctx.acquireFrame();
+        if (!maybe_frame) {
             CORE_WARN("Failed to wait for in-flight fence on frame {}; skipping the frame", m_ctx.wrappedFrameIndex());
             return;
         }
+        core::vk::FrameContext& frame = *maybe_frame;
 
-        core::vk::RawCommandBuffer cmd = m_ctx.commandBuffer();
+        core::vk::RawCommandBuffer cmd = frame.commandBuffer();
         VkImageMemoryBarrier2 const toColor{
             .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
             .srcStageMask = VK_PIPELINE_STAGE_2_NONE,
@@ -221,8 +223,6 @@ public:
             .pImageMemoryBarriers = &toPresent,
         };
         vkCmdPipelineBarrier2(cmd.handle(), &depToPresent);
-
-        m_ctx.endFrame();
     }
 
     void hotReload() {

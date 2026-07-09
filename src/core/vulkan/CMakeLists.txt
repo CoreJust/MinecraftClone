@@ -11,6 +11,7 @@ target_sources(mc
         Extensions.cpp
         Features.cpp
         Fence.cpp
+        FrameContext.cpp
         Image.cpp
         ImageView.cpp
         Instance.cpp

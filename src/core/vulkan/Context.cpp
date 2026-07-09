@@ -162,45 +162,56 @@ void VulkanContext::createCommandObjects() {
     m_command_buffers = m_command_pool.allocateBuffers(MAX_FRAMES_IN_FLIGHT);
 }
 
-bool VulkanContext::beginFrame() {
-    if (!inFlightFence().wait()) {
-        return false;
+std::optional<FrameContext> VulkanContext::acquireFrame() {
+    size_t const frame_idx = m_frame_index % MAX_FRAMES_IN_FLIGHT;
+    if (!m_in_flight[frame_idx].wait()) {
+        return std::nullopt;
     }
     if (!VK_CHECK(vkAcquireNextImageKHR(
         m_device.handle(),
         m_swapchain.handle(),
         std::numeric_limits<uint64_t>::max(),
-        imageAvailableSemaphore().handle(),
+        m_image_available[frame_idx].handle(),
         VK_NULL_HANDLE,
         &m_acquired_next_image_index
     ))) {
         throw FailedToAcquireNextImage{ };
     }
-    inFlightFence().reset();
-    commandBuffer().reset();
-    commandBuffer().begin();
-    return true;
+
+    m_in_flight[frame_idx].reset();
+    m_command_buffers[frame_idx].reset();
+    m_command_buffers[frame_idx].begin();
+    return std::make_optional<FrameContext>(
+        *this,
+        m_image_available[frame_idx],
+        m_render_finished[frame_idx],
+        m_in_flight[frame_idx],
+        m_command_buffers[frame_idx],
+        frame_idx,
+        m_acquired_next_image_index
+    );
 }
 
 void VulkanContext::endFrame() {
-    commandBuffer().end();
+    size_t const frame_idx = m_frame_index % MAX_FRAMES_IN_FLIGHT;
+    m_command_buffers[frame_idx].end();
 
     VkPipelineStageFlags const waitStage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
     VkSubmitInfo const submit{
         .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
         .waitSemaphoreCount = 1,
-        .pWaitSemaphores = imageAvailableSemaphore().handlePtr(),
+        .pWaitSemaphores = m_image_available[frame_idx].handlePtr(),
         .pWaitDstStageMask = &waitStage,
         .commandBufferCount = 1,
-        .pCommandBuffers = commandBuffer().handlePtr(),
+        .pCommandBuffers = m_command_buffers[frame_idx].handlePtr(),
         .signalSemaphoreCount = 1,
-        .pSignalSemaphores = renderFinishedSemaphore().handlePtr(),
+        .pSignalSemaphores = m_render_finished[frame_idx].handlePtr(),
     };
     if (!VK_CHECK(vkQueueSubmit(
         queue(QueueFamily::Graphics).handle(),
         1,
         &submit,
-        inFlightFence().handle()
+        m_in_flight[frame_idx].handle()
     ))) {
         throw FailedToAdvanceFrame{ "Failed to submit the current command buffer to graphics queue" };
     }
@@ -208,7 +219,7 @@ void VulkanContext::endFrame() {
     VkPresentInfoKHR const present{
         .sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
         .waitSemaphoreCount = 1,
-        .pWaitSemaphores = renderFinishedSemaphore().handlePtr(),
+        .pWaitSemaphores = m_render_finished[frame_idx].handlePtr(),
         .swapchainCount = 1,
         .pSwapchains = m_swapchain.handlePtr(),
         .pImageIndices = &m_acquired_next_image_index,

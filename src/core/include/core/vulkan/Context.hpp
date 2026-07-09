@@ -3,6 +3,7 @@
 
 #include <core/vulkan/CommandPool.hpp>
 #include <core/vulkan/Fence.hpp>
+#include <core/vulkan/FrameContext.hpp>
 #include <core/vulkan/Semaphore.hpp>
 #include <core/vulkan/builder/ContextBuilder.hpp>
 
@@ -56,9 +57,9 @@ public:
         reload(type);
     }
 
-    // Returns false if frame cannot be started
+    // Returns nullopt if frame cannot be started
     // Throws FailedToAcquireNextImage
-    bool beginFrame();
+    std::optional<FrameContext> acquireFrame();
     // Throws FailedToAdvanceFrame
     void endFrame();
 
@@ -86,39 +87,6 @@ public:
     Image const& swapchainImage() const;
     [[nodiscard]]
     ImageView const& swapchainImageView() const;
-
-    [[nodiscard]]
-    Semaphore& imageAvailableSemaphore() noexcept {
-        return m_image_available[m_frame_index % MAX_FRAMES_IN_FLIGHT];
-    }
-    [[nodiscard]]
-    Semaphore const& imageAvailableSemaphore() const noexcept {
-        return m_image_available[m_frame_index % MAX_FRAMES_IN_FLIGHT];
-    }
-    [[nodiscard]]
-    Semaphore& renderFinishedSemaphore() noexcept {
-        return m_render_finished[m_frame_index % MAX_FRAMES_IN_FLIGHT];
-    }
-    [[nodiscard]]
-    Semaphore const& renderFinishedSemaphore() const noexcept {
-        return m_render_finished[m_frame_index % MAX_FRAMES_IN_FLIGHT];
-    }
-    [[nodiscard]]
-    Fence& inFlightFence() noexcept {
-        return m_in_flight[m_frame_index % MAX_FRAMES_IN_FLIGHT];
-    }
-    [[nodiscard]]
-    Fence const& inFlightFence() const noexcept {
-        return m_in_flight[m_frame_index % MAX_FRAMES_IN_FLIGHT];
-    }
-    [[nodiscard]]
-    RawCommandBuffer& commandBuffer() noexcept {
-        return m_command_buffers[m_frame_index % MAX_FRAMES_IN_FLIGHT];
-    }
-    [[nodiscard]]
-    RawCommandBuffer const& commandBuffer() const noexcept {
-        return m_command_buffers[m_frame_index % MAX_FRAMES_IN_FLIGHT];
-    }
 
     [[nodiscard]]
     constexpr Window const* window() const noexcept { return m_window; }

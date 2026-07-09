@@ -17,6 +17,7 @@ target_sources(mc
             Extent.hpp
             Features.hpp
             Fence.hpp
+            FrameContext.hpp
             Image.hpp
             ImageView.hpp
             Instance.hpp
