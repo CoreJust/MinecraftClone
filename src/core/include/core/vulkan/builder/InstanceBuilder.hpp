@@ -4,11 +4,11 @@
 #include <core/common/VectorUtils.hpp>
 #include <core/common/Version.hpp>
 #include <core/vulkan/Capabilities.hpp>
-#include <core/vulkan/DebugMessengerOptions.hpp>
 #include <core/vulkan/Error.hpp>
 #include <core/vulkan/Extensions.hpp>
 #include <core/vulkan/Instance.hpp>
 #include <core/vulkan/Layers.hpp>
+#include <core/vulkan/builder/DebugMessengerOptions.hpp>
 
 #include <array>
 #include <functional>

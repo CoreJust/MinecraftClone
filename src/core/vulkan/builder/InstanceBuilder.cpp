@@ -1,4 +1,4 @@
-#include <core/vulkan/InstanceBuilder.hpp>
+#include <core/vulkan/builder/InstanceBuilder.hpp>
 
 #include <core/common/Assert.hpp>
 #include <core/IO/Log.hpp>

@@ -5,16 +5,12 @@ target_sources(mc
         FILES
             Allocation.hpp
             Allocator.hpp
-            AllocatorBuilder.hpp
             Capabilities.hpp
             Check.hpp
             CommandBuffer.hpp
             CommandPool.hpp
             Context.hpp
-            ContextBuilder.hpp
-            DebugMessengerOptions.hpp
             Device.hpp
-            DeviceBuilder.hpp
             Error.hpp
             ErrorCallbacks.hpp
             Extensions.hpp
@@ -24,18 +20,22 @@ target_sources(mc
             Image.hpp
             ImageView.hpp
             Instance.hpp
-            InstanceBuilder.hpp
             Layers.hpp
             PhysicalDevice.hpp
             PhysicalDeviceProperties.hpp
-            PhysicalDeviceSelector.hpp
             Queue.hpp
             Resource.hpp
             Semaphore.hpp
             Surface.hpp
             Swapchain.hpp
-            SwapchainBuilder.hpp
             VulkanVersion.hpp
+            builder/AllocatorBuilder.hpp
+            builder/ContextBuilder.hpp
+            builder/DebugMessengerOptions.hpp
+            builder/DeviceBuilder.hpp
+            builder/InstanceBuilder.hpp
+            builder/PhysicalDeviceSelector.hpp
+            builder/SwapchainBuilder.hpp
             enum/ColorSpace.hpp
             enum/CommandBufferType.hpp
             enum/CommandBufferUsage.hpp

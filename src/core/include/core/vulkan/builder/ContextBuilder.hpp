@@ -1,10 +1,10 @@
 // ContextBuilder.hpp
 #pragma once
 
-#include <core/vulkan/DeviceBuilder.hpp>
-#include <core/vulkan/InstanceBuilder.hpp>
-#include <core/vulkan/PhysicalDeviceSelector.hpp>
-#include <core/vulkan/SwapchainBuilder.hpp>
+#include <core/vulkan/builder/DeviceBuilder.hpp>
+#include <core/vulkan/builder/InstanceBuilder.hpp>
+#include <core/vulkan/builder/PhysicalDeviceSelector.hpp>
+#include <core/vulkan/builder/SwapchainBuilder.hpp>
 
 #include <optional>
 

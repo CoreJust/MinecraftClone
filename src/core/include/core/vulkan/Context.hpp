@@ -2,9 +2,9 @@
 #pragma once
 
 #include <core/vulkan/CommandPool.hpp>
-#include <core/vulkan/ContextBuilder.hpp>
 #include <core/vulkan/Fence.hpp>
 #include <core/vulkan/Semaphore.hpp>
+#include <core/vulkan/builder/ContextBuilder.hpp>
 
 #include <functional>
 

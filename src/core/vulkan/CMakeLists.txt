@@ -1,14 +1,12 @@
 target_sources(mc
     PRIVATE
         Allocator.cpp
-        AllocatorBuilder.cpp
         Capabilities.cpp
         Check.cpp
         Context.cpp
         CommandBuffer.cpp
         CommandPool.cpp
         Device.cpp
-        DeviceBuilder.cpp
         ErrorCallbacks.cpp
         Extensions.cpp
         Features.cpp
@@ -16,14 +14,12 @@ target_sources(mc
         Image.cpp
         ImageView.cpp
         Instance.cpp
-        InstanceBuilder.cpp
         Layers.cpp
-        PhysicalDeviceSelector.cpp
         Semaphore.cpp
         Surface.cpp
         Swapchain.cpp
-        SwapchainBuilder.cpp
         VulkanVersion.cpp
 )
+add_subdirectory(builder)
 add_subdirectory(enum)
 add_subdirectory(internal)

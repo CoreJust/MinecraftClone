@@ -29,7 +29,11 @@ class RawCommandBuffer : public VulkanResourceBase<VkCommandBuffer> {
         VkCommandPool pool_handle;
         CORE_VK_BATCH_DESTROYABLE());
     // Throws FailedToCreateCommandBufferError
-    CORE_VK_RESOURCE_BATCH_CONSTRUCTION_FROM(VkDevice const device_handle, VkCommandPool const pool_handle, CommandBufferType const type);
+    CORE_VK_RESOURCE_BATCH_CONSTRUCTION_FROM(
+        VkDevice const device_handle,
+        VkCommandPool const pool_handle,
+        CommandBufferType const type
+    );
 public:
     // Throws FailedToResetCommandBufferError
     void reset(CommandBufferReleaseResources const release_resources = CommandBufferReleaseResources::No);
