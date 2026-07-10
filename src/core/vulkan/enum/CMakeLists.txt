@@ -1,5 +1,6 @@
 target_sources(mc
     PRIVATE
+        AccessFlag.cpp
         ColorSpace.cpp
         CommandBufferType.cpp
         CommandBufferUsage.cpp
@@ -7,10 +8,12 @@ target_sources(mc
         ComponentMapping.cpp
         Format.cpp
         ImageAspect.cpp
+        ImageLayout.cpp
         ImageUsage.cpp
         ImageViewType.cpp
         MemoryProperty.cpp
         PhysicalDeviceType.cpp
+        PipelineStage.cpp
         PresentMode.cpp
         SurfaceTransform.cpp
         QueueFamily.cpp

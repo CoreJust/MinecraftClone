@@ -118,32 +118,13 @@ public:
             return;
         }
         core::vk::FrameContext& frame = *maybe_frame;
+        frame.setImageBarrier(core::vk::ImageMemoryBarrier{
+            .dst_stages = core::vk::PipelineStages::of(core::vk::PipelineStage::ColorAttachmentOutput),
+            .dst_access = core::vk::AccessFlags::of(core::vk::AccessFlag::ColorAttachmentWrite),
+            .new_layout = core::vk::ImageLayout::ColorAttachmentOptimal,
+        });
 
         core::vk::RawCommandBuffer cmd = frame.commandBuffer();
-        VkImageMemoryBarrier2 const toColor{
-            .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
-            .srcStageMask = VK_PIPELINE_STAGE_2_NONE,
-            .srcAccessMask = VK_ACCESS_2_NONE,
-            .dstStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
-            .dstAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
-            .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-            .newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-            .image = m_ctx.swapchainImage().handle(),
-            .subresourceRange = {
-                .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-                .baseMipLevel = 0,
-                .levelCount = 1,
-                .baseArrayLayer = 0,
-                .layerCount = 1,
-            },
-        };
-        VkDependencyInfo const depToColor{
-            .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
-            .imageMemoryBarrierCount = 1,
-            .pImageMemoryBarriers = &toColor,
-        };
-        vkCmdPipelineBarrier2(cmd.handle(), &depToColor);
-
         VkClearValue const clearValue{
             .color = VkClearColorValue{{0.06f, 0.06f, 0.08f, 1.0f}},
         };
@@ -199,30 +180,12 @@ public:
         }
 
         vkCmdEndRendering(cmd.handle());
-
-        VkImageMemoryBarrier2 const toPresent{
-            .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
-            .srcStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
-            .srcAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
-            .dstStageMask = VK_PIPELINE_STAGE_2_NONE,
-            .dstAccessMask = VK_ACCESS_2_NONE,
-            .oldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-            .newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
-            .image = m_ctx.swapchainImage().handle(),
-            .subresourceRange = {
-                .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-                .baseMipLevel = 0,
-                .levelCount = 1,
-                .baseArrayLayer = 0,
-                .layerCount = 1,
-            },
-        };
-        VkDependencyInfo const depToPresent{
-            .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
-            .imageMemoryBarrierCount = 1,
-            .pImageMemoryBarriers = &toPresent,
-        };
-        vkCmdPipelineBarrier2(cmd.handle(), &depToPresent);
+        frame.setImageBarrier(core::vk::ImageMemoryBarrier{
+            .src_stages = core::vk::PipelineStages::of(core::vk::PipelineStage::ColorAttachmentOutput),
+            .src_access = core::vk::AccessFlags::of(core::vk::AccessFlag::ColorAttachmentWrite),
+            .old_layout = core::vk::ImageLayout::ColorAttachmentOptimal,
+            .new_layout = core::vk::ImageLayout::PresentSrc,
+        });
     }
 
     void hotReload() {

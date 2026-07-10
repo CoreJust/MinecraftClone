@@ -1,8 +1,11 @@
 #include <core/vulkan/CommandBuffer.hpp>
 
+#include <core/meta/EnumImpl.hpp>
 #include <core/vulkan/Check.hpp>
 
 #include <volk.h>
+
+CORE_ENUM_FUNCTIONS_IMPL(vk::CommandBufferErrorKind);
 
 namespace core::vk {
 
@@ -34,7 +37,7 @@ CORE_VK_RESOURCE_DEFERRED_BATCH_CONSTRUCTION_IMPL(RawCommandBuffer,
         .commandBufferCount = static_cast<uint32_t>(selves.size()),
     };
     if (!VK_CHECK(vkAllocateCommandBuffers(device_handle, &allocate_info, reinterpret_cast<VkCommandBuffer*>(selves.data())))) {
-        throw FailedToCreateCommandBufferError{ };
+        throw CommandBufferError{ CommandBufferError::FailedToCreateCommandBuffer };
     }
 }
 
@@ -44,7 +47,7 @@ void RawCommandBuffer::reset(CommandBufferReleaseResources const release_resourc
         m_handle,
         static_cast<VkCommandBufferResetFlags>(VK_COMMAND_BUFFER_RESET_RELEASE_RESOURCES_BIT * bool(release_resources))
     ))) {
-        throw FailedToResetCommandBufferError{ };
+        throw CommandBufferError{ CommandBufferError::FailedToResetCommandBuffer };
     }
 }
 
@@ -55,14 +58,14 @@ void RawCommandBuffer::begin(CommandBufferUsageBits const usage) {
         .flags = static_cast<VkCommandBufferUsageFlags>(usage.value),
     };
     if (!VK_CHECK(vkBeginCommandBuffer(m_handle, &begin_info))) {
-        throw FailedToBeginCommandBufferError{ };
+        throw CommandBufferError{ CommandBufferError::FailedToBeginCommandBuffer };
     }
 }
 
 void RawCommandBuffer::end() {
     ASSERT(!isNull());
     if (!VK_CHECK(vkEndCommandBuffer(m_handle))) {
-        throw FailedToEndCommandBufferError{ };
+        throw CommandBufferError{ CommandBufferError::FailedToEndCommandBuffer };
     }
 }
 

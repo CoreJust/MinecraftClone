@@ -1,45 +1,39 @@
 #pragma once
 
+#include <core/common/SpanUtils.hpp>
 #include <core/meta/TaggedBool.hpp>
 #include <core/vulkan/Device.hpp>
 #include <core/vulkan/Error.hpp>
 #include <core/vulkan/enum/CommandBufferType.hpp>
 #include <core/vulkan/enum/CommandBufferUsage.hpp>
 
+CORE_VK_ERROR_WITH_KINDS(CommandBufferError, VulkanRuntimeError,
+    FailedToCreateCommandBuffer,
+    FailedToResetCommandBuffer,
+    FailedToBeginCommandBuffer,
+    FailedToEndCommandBuffer);
+
 namespace core::vk {
 
 using CommandBufferReleaseResources = TaggedBool<struct CommandBufferReleaseResourcesTag>;
-
-struct FailedToCreateCommandBufferError : public VulkanError {
-    FailedToCreateCommandBufferError() : VulkanError{"Failed to create command buffer"} { }
-};
-struct FailedToResetCommandBufferError : public VulkanError {
-    FailedToResetCommandBufferError() : VulkanError{"Failed to reset command buffer"} { }
-};
-struct FailedToBeginCommandBufferError : public VulkanError {
-    FailedToBeginCommandBufferError() : VulkanError{"Failed to begin command buffer"} { }
-};
-struct FailedToEndCommandBufferError : public VulkanError {
-    FailedToEndCommandBufferError() : VulkanError{"Failed to end command buffer"} { }
-};
 
 class RawCommandBuffer : public VulkanResourceBase<VkCommandBuffer> {
     CORE_VK_RESOURCE_CONTEXT(RawCommandBuffer,
         VkDevice device_handle;
         VkCommandPool pool_handle;
         CORE_VK_BATCH_DESTROYABLE());
-    // Throws FailedToCreateCommandBufferError
+    // Throws CommandBufferError
     CORE_VK_RESOURCE_BATCH_CONSTRUCTION_FROM(
         VkDevice const device_handle,
         VkCommandPool const pool_handle,
         CommandBufferType const type
     );
 public:
-    // Throws FailedToResetCommandBufferError
+    // Throws CommandBufferError
     void reset(CommandBufferReleaseResources const release_resources = CommandBufferReleaseResources::No);
-    // Throws FailedToBeginCommandBufferError
+    // Throws CommandBufferError
     void begin(CommandBufferUsageBits const usage = { });
-    // Throws FailedToEndCommandBufferError
+    // Throws CommandBufferError
     void end();
 };
 

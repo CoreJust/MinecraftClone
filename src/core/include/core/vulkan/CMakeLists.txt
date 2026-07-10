@@ -19,6 +19,7 @@ target_sources(mc
             Fence.hpp
             FrameContext.hpp
             Image.hpp
+            ImageMemoryBarrier.hpp
             ImageView.hpp
             Instance.hpp
             Layers.hpp
@@ -37,6 +38,7 @@ target_sources(mc
             builder/InstanceBuilder.hpp
             builder/PhysicalDeviceSelector.hpp
             builder/SwapchainBuilder.hpp
+            enum/AccessFlag.hpp
             enum/ColorSpace.hpp
             enum/CommandBufferType.hpp
             enum/CommandBufferUsage.hpp
@@ -44,10 +46,12 @@ target_sources(mc
             enum/ComponentMapping.hpp
             enum/Format.hpp
             enum/ImageAspect.hpp
+            enum/ImageLayout.hpp
             enum/ImageUsage.hpp
             enum/ImageViewType.hpp
             enum/MemoryProperty.hpp
             enum/PhysicalDeviceType.hpp
+            enum/PipelineStage.hpp
             enum/PresentMode.hpp
             enum/SurfaceTransform.hpp
             enum/QueueFamily.hpp

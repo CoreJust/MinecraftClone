@@ -3,8 +3,15 @@
 #include <core/common/NonCopyable.hpp>
 #include <core/common/NonMovable.hpp>
 #include <core/vulkan/CommandBuffer.hpp>
+#include <core/vulkan/Error.hpp>
 #include <core/vulkan/Fence.hpp>
+#include <core/vulkan/Image.hpp>
+#include <core/vulkan/ImageMemoryBarrier.hpp>
 #include <core/vulkan/Semaphore.hpp>
+
+CORE_VK_ERROR_WITH_KINDS(FrameContextError, VulkanRuntimeError,
+    UnsupportedMemoryBarrierStagesValue,
+    UnsupportedMemoryBarrierAccessValue);
 
 namespace core::vk {
 
@@ -30,6 +37,16 @@ public:
     { }
 
     ~FrameContext();
+    
+    // Throws FrameContextError
+    void setImageBarriers(std::span<ImageMemoryBarrier const> const barriers, std::span<RawImage const> const images);
+    // Throws FrameContextError
+    void setImageBarrier(ImageMemoryBarrier const barrier);
+
+    // Throws FrameContextError
+    void setImageBarrier(ImageMemoryBarrier const barrier, RawImage const image) {
+        setImageBarriers(unitSpan(barrier), unitSpan(image));
+    }
 
     [[nodiscard]]
     VulkanContext& ctx() noexcept {
