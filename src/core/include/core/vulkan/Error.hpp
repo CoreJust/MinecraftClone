@@ -23,6 +23,10 @@ struct VulkanInitializationError : public VulkanError {
     using VulkanError::VulkanError;
 };
 
+struct VulkanFrameGraphBuildError : public VulkanError {
+    using VulkanError::VulkanError;
+};
+
 struct VulkanRuntimeError : public VulkanError {
     using VulkanError::VulkanError;
 };

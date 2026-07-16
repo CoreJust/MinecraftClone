@@ -2,12 +2,20 @@
 #pragma once
 
 #include <core/vulkan/CommandPool.hpp>
+#include <core/vulkan/Error.hpp>
 #include <core/vulkan/Fence.hpp>
 #include <core/vulkan/FrameContext.hpp>
 #include <core/vulkan/Semaphore.hpp>
 #include <core/vulkan/builder/ContextBuilder.hpp>
 
 #include <functional>
+
+CORE_VK_ERROR_WITH_KINDS(VulkanContextError, VulkanRuntimeError,
+    FailedToAcquireNextImage,
+    FailedToAdvanceFrame,
+    UnsupportedAttachmentConfiguration,
+    FailedToCreateRenderPass,
+    FailedToCreateFramebuffer);
 
 namespace core::vk {
 
@@ -34,19 +42,14 @@ enum class ReloadAction {
     Count,
 };
 
-struct FailedToAcquireNextImage final : public VulkanError {
-    FailedToAcquireNextImage() : VulkanError("Failed to acquire next image") { }
-};
-struct FailedToAdvanceFrame final : public VulkanError {
-    FailedToAdvanceFrame(std::string reason) : VulkanError(reason) { }
-};
-
 class VulkanContext final : public VulkanCaps {
     struct ContextReloadHelper;
+    struct RenderPassCache;
 public:
     static constexpr size_t MAX_FRAMES_IN_FLIGHT = 3;
 public:
     explicit VulkanContext(VulkanContextBuilder builder, Window const* window = nullptr);
+    VulkanContext(VulkanContext&&) noexcept = default;
     ~VulkanContext();
 
     void onReload(std::function<void(ReloadType const, ReloadSource const, ReloadAction const)>&& callback);
@@ -58,10 +61,18 @@ public:
     }
 
     // Returns nullopt if frame cannot be started
-    // Throws FailedToAcquireNextImage
+    [[nodiscard]]
     std::optional<FrameContext> acquireFrame();
-    // Throws FailedToAdvanceFrame
     void endFrame();
+
+    void beginRenderScope(
+        RawCommandBuffer cmd,
+        Attachments const& attachments,
+        AttachmentViewProvider const& view_provider,
+        RelativeViewport viewport = { },
+        RelativeScissor scissor = { }
+    );
+    void endRenderScope(RawCommandBuffer command_buffer);
 
     [[nodiscard]]
     constexpr size_t frameIndex() const noexcept { return m_frame_index; }
@@ -111,6 +122,15 @@ public:
     [[nodiscard]]
     constexpr Swapchain const& swapchain() const noexcept { return m_swapchain; }
 private:
+    void beginDynamicRenderScope(
+        RawCommandBuffer cmd,
+        Attachments const& attachments,
+        AttachmentViewProvider const& view_provider,
+        VkExtent2D const extent,
+        RelativeViewport viewport = { },
+        RelativeScissor scissor = { }
+    );
+
     void createSyncObjects();
     void createCommandObjects();
 
@@ -120,10 +140,14 @@ private:
     Window const* m_window = nullptr;
 
     Instance m_instance;
-Surface m_surface;
+    Surface m_surface;
     PhysicalDevice m_physical_device;
     Device m_device;
     Swapchain m_swapchain;
+
+    std::unique_ptr<RenderPassCache> m_render_pass_cache;
+    bool m_render_scope_open = false;
+    bool m_render_scope_is_dynamic = false;
 
     std::function<void(ReloadType const, ReloadSource const, ReloadAction const)> m_reload_callback;
 

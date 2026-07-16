@@ -1,6 +1,7 @@
 target_sources(mc
     PRIVATE
         Allocator.cpp
+        Attachment.cpp
         Capabilities.cpp
         Check.cpp
         Context.cpp

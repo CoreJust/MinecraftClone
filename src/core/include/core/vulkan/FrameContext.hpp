@@ -2,6 +2,7 @@
 
 #include <core/common/NonCopyable.hpp>
 #include <core/common/NonMovable.hpp>
+#include <core/vulkan/Attachment.hpp>
 #include <core/vulkan/CommandBuffer.hpp>
 #include <core/vulkan/Error.hpp>
 #include <core/vulkan/Fence.hpp>
@@ -17,7 +18,21 @@ namespace core::vk {
 
 class VulkanContext;
 
-class FrameContext final : NonCopyable, NonMovable {
+struct RelativeViewport final { float x = 0.f, y = 0.f, w = 1.f, h = 1.f, depth_min = 0.f, depth_max = 1.f; };
+struct RelativeScissor final { float x = 0.f, y = 0.f, w = 1.f, h = 1.f; };
+
+class RenderScope final {
+public:
+    RenderScope(VulkanContext& ctx, RawCommandBuffer cmd) noexcept
+        : m_p_ctx(ctx), m_cmd(cmd)
+    { }
+    ~RenderScope();
+private:
+    VulkanContext& m_p_ctx;
+    RawCommandBuffer m_cmd;
+};
+
+class FrameContext : NonCopyable, NonMovable {
 public:
     FrameContext(
         VulkanContext& p_ctx,
@@ -35,18 +50,21 @@ public:
         , m_frame_index(frame_index)
         , m_acquired_next_image_index(acquired_next_image_index)
     { }
-
     ~FrameContext();
     
-    // Throws FrameContextError
     void setImageBarriers(std::span<ImageMemoryBarrier const> const barriers, std::span<RawImage const> const images);
-    // Throws FrameContextError
     void setImageBarrier(ImageMemoryBarrier const barrier);
-
-    // Throws FrameContextError
     void setImageBarrier(ImageMemoryBarrier const barrier, RawImage const image) {
         setImageBarriers(unitSpan(barrier), unitSpan(image));
     }
+
+    [[nodiscard]]
+    RenderScope acquireRenderScope(
+        Attachments const& attachments,
+        AttachmentViewProvider const& view_provider,
+        RelativeViewport viewport = { },
+        RelativeScissor scissor = { }
+    );
 
     [[nodiscard]]
     VulkanContext& ctx() noexcept {

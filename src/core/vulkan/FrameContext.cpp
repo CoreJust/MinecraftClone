@@ -10,6 +10,10 @@ CORE_ENUM_FUNCTIONS_IMPL(vk::FrameContextErrorKind);
 
 namespace core::vk {
 
+RenderScope::~RenderScope() {
+    m_p_ctx.endRenderScope(m_cmd);
+}
+
 FrameContext::~FrameContext() {
     m_p_ctx.endFrame();
 }
@@ -125,6 +129,19 @@ void FrameContext::setImageBarriers(
 
 void FrameContext::setImageBarrier(ImageMemoryBarrier const barrier) {
     setImageBarrier(barrier, m_p_ctx.swapchainImage().raw());
+}
+
+RenderScope FrameContext::acquireRenderScope(
+    Attachments const& attachments,
+    AttachmentViewProvider const& view_provider,
+    RelativeViewport viewport,
+    RelativeScissor scissor
+) {
+    m_p_ctx.beginRenderScope(m_command_buffer, attachments, view_provider, viewport, scissor);
+    return RenderScope{
+        m_p_ctx,
+        m_command_buffer,
+    };
 }
 
 } // namespace core::vk

@@ -1,6 +1,7 @@
 target_sources(mc
     PRIVATE
         AccessFlag.cpp
+        AttachmentOp.cpp
         ColorSpace.cpp
         CommandBufferType.cpp
         CommandBufferUsage.cpp

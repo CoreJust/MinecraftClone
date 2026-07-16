@@ -5,6 +5,7 @@ target_sources(mc
         FILES
             Allocation.hpp
             Allocator.hpp
+            Attachment.hpp
             Capabilities.hpp
             Check.hpp
             CommandBuffer.hpp
@@ -39,6 +40,7 @@ target_sources(mc
             builder/PhysicalDeviceSelector.hpp
             builder/SwapchainBuilder.hpp
             enum/AccessFlag.hpp
+            enum/AttachmentOp.hpp
             enum/ColorSpace.hpp
             enum/CommandBufferType.hpp
             enum/CommandBufferUsage.hpp
@@ -56,6 +58,7 @@ target_sources(mc
             enum/SurfaceTransform.hpp
             enum/QueueFamily.hpp
             internal/PhysicalDeviceCapsStruct.hpp
+            internal/RenderPassCache.hpp
             internal/VMA.hpp
             internal/VulkanFwd.hpp
 )

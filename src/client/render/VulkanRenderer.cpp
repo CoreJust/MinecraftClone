@@ -86,6 +86,14 @@ public:
                 }),
             &window
         )
+        , m_view_provider(1)
+        , m_swapchain_attachment(m_view_provider.createId())
+        , m_attachments{
+            .colors = {core::vk::ColorAttachment::clear(
+                m_swapchain_attachment,
+                core::Color4{ 0.06f, 0.06f, 0.08f, 1.0f }
+            )},
+        }
     {
         CORE_INFO("Loaded Vulkan:\n{}", m_ctx.toString());
         createPipelines();
@@ -124,62 +132,70 @@ public:
             .new_layout = core::vk::ImageLayout::ColorAttachmentOptimal,
         });
 
+        m_view_provider.bind(
+            m_swapchain_attachment,
+            core::vk::AttachmentView{
+                .image = m_ctx.swapchainImage().raw(),
+                .image_view = m_ctx.swapchainImageView().raw(),
+            }
+        );
+
         core::vk::RawCommandBuffer cmd = frame.commandBuffer();
-        VkClearValue const clearValue{
-            .color = VkClearColorValue{{0.06f, 0.06f, 0.08f, 1.0f}},
-        };
-        VkRenderingAttachmentInfo const colorAttachment{
-            .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
-            .imageView = m_ctx.swapchainImageView().handle(),
-            .imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-            .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
-            .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
-            .clearValue = clearValue,
-        };
-        VkRenderingInfo const renderingInfo{
-            .sType = VK_STRUCTURE_TYPE_RENDERING_INFO,
-            .renderArea = {
-                .offset = {0, 0},
-                .extent = { m_ctx.extent().x, m_ctx.extent().y },
-            },
-            .layerCount = 1,
-            .colorAttachmentCount = 1,
-            .pColorAttachments = &colorAttachment,
-        };
+        {
+            auto render_scope = frame.acquireRenderScope(m_attachments,m_view_provider);
+            vkCmdBindPipeline(
+                cmd.handle(),
+                VK_PIPELINE_BIND_POINT_GRAPHICS,
+                m_gridPipeline
+            );
 
-        vkCmdBeginRendering(cmd.handle(), &renderingInfo);
+            GridPushConstants const grid_push{ };
+            vkCmdPushConstants(
+                cmd.handle(),
+                m_gridLayout,
+                VK_SHADER_STAGE_MESH_BIT_EXT,
+                0,
+                sizeof(GridPushConstants),
+                &grid_push
+            );
+            vkCmdDrawMeshTasksEXT(
+                cmd.handle(),
+                kGridWorkgroupsX,
+                kGridWorkgroupsY,
+                1
+            );
 
-        VkViewport const viewport{
-            .x = 0.0f,
-            .y = 0.0f,
-            .width = static_cast<float>(m_ctx.extent().x),
-            .height = static_cast<float>(m_ctx.extent().y),
-            .minDepth = 0.0f,
-            .maxDepth = 1.0f,
-        };
-        VkRect2D const scissor{
-            .offset = {0, 0},
-            .extent = { m_ctx.extent().x, m_ctx.extent().y },
-        };
-        vkCmdSetViewport(cmd.handle(), 0, 1, &viewport);
-        vkCmdSetScissor(cmd.handle(), 0, 1, &scissor);
-
-        vkCmdBindPipeline(cmd.handle(), VK_PIPELINE_BIND_POINT_GRAPHICS, m_gridPipeline);
-        GridPushConstants const gridPush{};
-        vkCmdPushConstants(cmd.handle(), m_gridLayout, VK_SHADER_STAGE_MESH_BIT_EXT, 0, sizeof(GridPushConstants), &gridPush);
-        vkCmdDrawMeshTasksEXT(cmd.handle(), kGridWorkgroupsX, kGridWorkgroupsY, 1);
-
-        vkCmdBindPipeline(cmd.handle(), VK_PIPELINE_BIND_POINT_GRAPHICS, m_playerPipeline);
-        for (auto const& player : players) {
-            PlayerPushConstants push{};
-            push.origin = {static_cast<float>(player.x), static_cast<float>(player.y)};
-            push.size = 2.0f;
-            push.color = player.color;
-            vkCmdPushConstants(cmd.handle(), m_playerLayout, VK_SHADER_STAGE_MESH_BIT_EXT, 0, sizeof(PlayerPushConstants), &push);
-            vkCmdDrawMeshTasksEXT(cmd.handle(), 1, 1, 1);
+            vkCmdBindPipeline(
+                cmd.handle(),
+                VK_PIPELINE_BIND_POINT_GRAPHICS,
+                m_playerPipeline
+            );
+            for (PlayerRenderData const& player : players) {
+                PlayerPushConstants push{
+                    .origin = {
+                        static_cast<float>(player.x),
+                        static_cast<float>(player.y),
+                    },
+                    .size = 2.0f,
+                    .color = player.color,
+                };
+                vkCmdPushConstants(
+                    cmd.handle(),
+                    m_playerLayout,
+                    VK_SHADER_STAGE_MESH_BIT_EXT,
+                    0,
+                    sizeof(PlayerPushConstants),
+                    &push
+                );
+                vkCmdDrawMeshTasksEXT(
+                    cmd.handle(),
+                    1,
+                    1,
+                    1
+                );
+            }
         }
 
-        vkCmdEndRendering(cmd.handle());
         frame.setImageBarrier(core::vk::ImageMemoryBarrier{
             .src_stages = core::vk::PipelineStages::of(core::vk::PipelineStage::ColorAttachmentOutput),
             .src_access = core::vk::AccessFlags::of(core::vk::AccessFlag::ColorAttachmentWrite),
@@ -390,6 +406,9 @@ private:
     }
 private:
     core::vk::VulkanContext m_ctx;
+    core::vk::AttachmentViewProvider m_view_provider;
+    core::vk::AttachmentViewId m_swapchain_attachment;
+    core::vk::Attachments m_attachments;
 
     VkShaderModule m_gridMeshShader = VK_NULL_HANDLE;
     VkShaderModule m_playerMeshShader = VK_NULL_HANDLE;
