@@ -1,4 +1,3 @@
-// RenderPassCache.cpp
 #include <core/vulkan/internal/RenderPassCache.hpp>
 
 #include <core/common/Assert.hpp>

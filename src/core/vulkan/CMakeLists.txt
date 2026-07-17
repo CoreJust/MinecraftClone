@@ -13,6 +13,7 @@ target_sources(mc
         Features.cpp
         Fence.cpp
         FrameContext.cpp
+        FrameGraph.cpp
         Image.cpp
         ImageView.cpp
         Instance.cpp

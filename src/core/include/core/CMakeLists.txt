@@ -1,3 +1,4 @@
+add_subdirectory(algorithm)
 add_subdirectory(common)
 add_subdirectory(IO)
 add_subdirectory(macro)

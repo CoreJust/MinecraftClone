@@ -1,4 +1,3 @@
-// ContextBuilder.hpp
 #pragma once
 
 #include <core/vulkan/builder/DeviceBuilder.hpp>

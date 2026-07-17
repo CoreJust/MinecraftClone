@@ -19,6 +19,9 @@ target_sources(mc
             Features.hpp
             Fence.hpp
             FrameContext.hpp
+            FrameGraph.hpp
+            FrameStructs.hpp
+            FramePass.hpp
             Image.hpp
             ImageMemoryBarrier.hpp
             ImageView.hpp
@@ -57,6 +60,7 @@ target_sources(mc
             enum/PresentMode.hpp
             enum/SurfaceTransform.hpp
             enum/QueueFamily.hpp
+            internal/BuiltFrameGraph.hpp
             internal/PhysicalDeviceCapsStruct.hpp
             internal/RenderPassCache.hpp
             internal/VMA.hpp

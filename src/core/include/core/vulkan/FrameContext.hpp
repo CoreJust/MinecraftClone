@@ -6,6 +6,7 @@
 #include <core/vulkan/CommandBuffer.hpp>
 #include <core/vulkan/Error.hpp>
 #include <core/vulkan/Fence.hpp>
+#include <core/vulkan/FrameStructs.hpp>
 #include <core/vulkan/Image.hpp>
 #include <core/vulkan/ImageMemoryBarrier.hpp>
 #include <core/vulkan/Semaphore.hpp>
@@ -17,9 +18,6 @@ CORE_VK_ERROR_WITH_KINDS(FrameContextError, VulkanRuntimeError,
 namespace core::vk {
 
 class VulkanContext;
-
-struct RelativeViewport final { float x = 0.f, y = 0.f, w = 1.f, h = 1.f, depth_min = 0.f, depth_max = 1.f; };
-struct RelativeScissor final { float x = 0.f, y = 0.f, w = 1.f, h = 1.f; };
 
 class RenderScope final {
 public:

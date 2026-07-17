@@ -1,4 +1,3 @@
-// Context.hpp
 #pragma once
 
 #include <core/vulkan/CommandPool.hpp>
@@ -49,7 +48,7 @@ public:
     static constexpr size_t MAX_FRAMES_IN_FLIGHT = 3;
 public:
     explicit VulkanContext(VulkanContextBuilder builder, Window const* window = nullptr);
-    VulkanContext(VulkanContext&&) noexcept = default;
+    VulkanContext(VulkanContext&&) noexcept;
     ~VulkanContext();
 
     void onReload(std::function<void(ReloadType const, ReloadSource const, ReloadAction const)>&& callback);

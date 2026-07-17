@@ -1,4 +1,3 @@
-// Context.cpp
 #include <core/vulkan/Context.hpp>
 
 #include <core/common/Assert.hpp>
@@ -119,6 +118,8 @@ VulkanContext::VulkanContext(VulkanContextBuilder builder, Window const* window)
     setOutOfHostMemoryCallback(ContextReloadHelper{ *this, ReloadType::Instance });
     setOutOfDeviceMemoryCallback(ContextReloadHelper{ *this, ReloadType::Instance });
 }
+
+VulkanContext::VulkanContext(VulkanContext&&) noexcept = default;
 
 VulkanContext::~VulkanContext() {
     CORE_DEBUG("Destroying VulkanContext...");
