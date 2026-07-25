@@ -24,6 +24,26 @@ struct EnumBits final {
     constexpr bool operator[](E const bit) const noexcept {
         return value & (static_cast<UnderlyingTy>(1) << indexOf(bit));
     }
+
+    [[nodiscard]]
+    constexpr EnumBits operator|(EnumBits const rhs) const noexcept {
+        return EnumBits{ value | rhs.value };
+    }
+
+    [[nodiscard]]
+    constexpr EnumBits operator|(E const rhs) const noexcept {
+        return EnumBits{ value | of(rhs).value };
+    }
+
+    [[nodiscard]]
+    constexpr void operator|=(EnumBits const rhs) & noexcept {
+        value |= rhs.value;
+    }
+
+    [[nodiscard]]
+    constexpr void operator|=(E const rhs) & noexcept {
+        value |= of(rhs).value;
+    }
 };
 
 template<CountableEnum E, typename UnderlyingTy>

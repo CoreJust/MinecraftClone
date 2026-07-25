@@ -19,6 +19,17 @@ auto asByteSpan(auto&& collection)
     }
 }
 
+template<typename U>
+auto asSpan(auto&& collection)
+    requires requires { collection.data(); collection.size(); } {
+    using Element = std::remove_reference_t<decltype(*collection.data())>;
+    if constexpr (std::is_const_v<Element>) {
+        return std::span{ reinterpret_cast<U const*>(collection.data()), collection.size() * sizeof(Element) / sizeof(U) };
+    } else {
+        return std::span{ reinterpret_cast<U*>(collection.data()), collection.size() * sizeof(Element) / sizeof(U) };
+    }
+}
+
 std::string_view asStringView(auto const collection)
     requires requires { collection.data(); collection.size(); } {
     using Element = decltype((*collection.data()));

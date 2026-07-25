@@ -1,4 +1,3 @@
-// core/vulkan/enum/Access.hpp
 #pragma once
 
 #include <core/common/EnumBits.hpp>

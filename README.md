@@ -99,11 +99,12 @@ Current dependencies:
 2. fmt;
 3. glfw;
 4. spdlog;
-5. glm;
-6. gtest;
-7. VMA;
-8. Vulkan::glslc;
-9. volk.
+5. SPIRV-Reflect;
+6. glm;
+7. gtest;
+8. VMA;
+9. Vulkan::glslc;
+10. volk.
 
 ## Highlights
 

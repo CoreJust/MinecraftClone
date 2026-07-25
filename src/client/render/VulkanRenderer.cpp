@@ -6,64 +6,38 @@
 #include <core/IO/File.hpp>
 #include <core/vulkan/Check.hpp>
 #include <core/vulkan/FrameGraph.hpp>
+#include <core/vulkan/GraphicsPipeline.hpp>
+#include <core/vulkan/ShaderModule.hpp>
 
 #include <volk.h>
 
 #include <array>
-#include <cstring>
+
+#define SPIR_V_PATH(name) "build/debug/src/client/" name ".spv"
 
 namespace client {
 
 namespace {
 
-constexpr uint32_t kWorldSize = 32;
 constexpr uint32_t kGridWorkgroupsX = 32;
 constexpr uint32_t kGridWorkgroupsY = 32;
-constexpr char const* kGridShaderPath = "build/debug/src/client/grid.mesh.spv";
-constexpr char const* kPlayerShaderPath = "build/debug/src/client/player.mesh.spv";
-constexpr char const* kFragmentShaderPath = "build/debug/src/client/trivial.frag.spv";
 
 struct alignas(16) GridPushConstants final {
-    float worldSize = static_cast<float>(kWorldSize);
+    float worldSize = 32.f;
     float lineWidth = 0.03f;
-    float pad0 = 0.0f;
-    float pad1 = 0.0f;
-    std::array<float, 4> lineColor{0.16f, 0.16f, 0.18f, 1.0f};
+    float pad0 = 0.f;
+    float pad1 = 0.f;
+    std::array<float, 4> lineColor{ 0.16f, 0.16f, 0.18f, 1.f };
 };
 static_assert(sizeof(GridPushConstants) == 32);
 
 struct alignas(16) PlayerPushConstants final {
-    std::array<float, 2> origin{0.0f, 0.0f};
-    float size = 2.0f;
-    float pad0 = 0.0f;
-    std::array<float, 4> color{1.0f, 1.0f, 1.0f, 1.0f};
+    std::array<float, 2> origin{ 0.f, 0.f };
+    float size = 2.f;
+    float pad0 = 0.f;
+    std::array<float, 4> color{ 1.f, 1.f, 1.f, 1.f};
 };
 static_assert(sizeof(PlayerPushConstants) == 32);
-
-[[nodiscard]] std::vector<uint32_t> toSpirv(std::vector<uint8_t> const& bytes) {
-    ASSERT(bytes.size() % 4 == 0);
-    std::vector<uint32_t> words(bytes.size() / 4);
-    std::memcpy(words.data(), bytes.data(), bytes.size());
-    return words;
-}
-
-[[nodiscard]] VkShaderModule loadShaderModule(core::vk::Device const& device, std::string const& path) {
-    auto const bytes = core::readFile(path);
-    ASSERT(bytes.has_value(), "Failed to read shader file: {}", path);
-
-    auto const words = toSpirv(*bytes);
-    VkShaderModuleCreateInfo const info{
-        .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
-        .pNext = nullptr,
-        .flags = 0,
-        .codeSize = words.size() * sizeof(uint32_t),
-        .pCode = words.data(),
-    };
-
-    VkShaderModule module = VK_NULL_HANDLE;
-    CORE_VK_ASSERT(vkCreateShaderModule(device.handle(), &info, nullptr, &module));
-    return module;
-}
 
 } // namespace
 
@@ -116,41 +90,26 @@ public:
     }
 
     void render(std::span<PlayerRenderData const> const players) {
+        GridPushConstants const grid_push{ };
         m_graph.bind(m_render_pass, [&](core::vk::FramePassContext const ctx) {
-            VkCommandBuffer const cmd = ctx.cmd.handle();
-            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_gridPipeline);
-
-            GridPushConstants const grid_push{ };
-            vkCmdPushConstants(
-                cmd,
-                m_gridLayout,
-                VK_SHADER_STAGE_MESH_BIT_EXT,
-                0,
-                sizeof(GridPushConstants),
-                &grid_push
-            );
-            vkCmdDrawMeshTasksEXT(cmd, kGridWorkgroupsX, kGridWorkgroupsY, 1);
-
-            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_playerPipeline);
-            for (PlayerRenderData const& player : players) {
-                PlayerPushConstants push{
-                    .origin = {
-                        static_cast<float>(player.x),
-                        static_cast<float>(player.y),
-                    },
-                    .size = 2.0f,
-                    .color = player.color,
-                };
-                vkCmdPushConstants(
-                    cmd,
-                    m_playerLayout,
-                    VK_SHADER_STAGE_MESH_BIT_EXT,
-                    0,
-                    sizeof(PlayerPushConstants),
-                    &push
-                );
-                vkCmdDrawMeshTasksEXT(cmd, 1, 1, 1);
-            }
+            m_grid_pipeline.execute(ctx.cmd, [&](core::vk::BoundGraphicsPipeline p) {
+                p.pushConstants(core::vk::ShaderStages::of(core::vk::ShaderStage::Mesh), 0, grid_push);
+                p.drawMeshTasks(kGridWorkgroupsX, kGridWorkgroupsY);
+            });
+            m_player_pipeline.execute(ctx.cmd, [&](core::vk::BoundGraphicsPipeline p) {
+                for (PlayerRenderData const& player : players) {
+                    PlayerPushConstants push{
+                        .origin = {
+                            static_cast<float>(player.x),
+                            static_cast<float>(player.y),
+                        },
+                        .size = 2.0f,
+                        .color = player.color,
+                    };
+                    p.pushConstants(core::vk::ShaderStages::of(core::vk::ShaderStage::Mesh), 0, push);
+                    p.drawMeshTasks();
+                }
+            });
         });
         m_graph.render();
     }
@@ -160,34 +119,22 @@ public:
     }
 private:
     void createPipelines() {
-        m_gridMeshShader = loadShaderModule(m_graph.ctx().device(), kGridShaderPath);
-        m_playerMeshShader = loadShaderModule(m_graph.ctx().device(), kPlayerShaderPath);
-        m_fragmentShader = loadShaderModule(m_graph.ctx().device(), kFragmentShaderPath);
+        core::vk::Device& dev = m_graph.ctx().device();
+        core::vk::SpirV grid_mesh = core::vk::SpirV::fromFile(SPIR_V_PATH("grid.mesh"));
+        core::vk::SpirV player_mesh = core::vk::SpirV::fromFile(SPIR_V_PATH("player.mesh"));
+        core::vk::SpirV trivial_frag = core::vk::SpirV::fromFile(SPIR_V_PATH("trivial.frag"));
+        m_grid_shader = core::vk::ShaderModule{ dev, grid_mesh };
+        m_player_shader = core::vk::ShaderModule{ dev, player_mesh };
+        m_fragment_shader = core::vk::ShaderModule{ dev, trivial_frag };
 
-        VkPushConstantRange const gridRange{
-            .stageFlags = VK_SHADER_STAGE_MESH_BIT_EXT,
-            .offset = 0,
-            .size = sizeof(GridPushConstants),
+        m_grid_layout = core::vk::PipelineLayout{
+            dev,
+            core::vk::PipelineLayout::Info::fromSpirVs(grid_mesh, trivial_frag),
         };
-        VkPushConstantRange const playerRange{
-            .stageFlags = VK_SHADER_STAGE_MESH_BIT_EXT,
-            .offset = 0,
-            .size = sizeof(PlayerPushConstants),
+        m_player_layout = core::vk::PipelineLayout{
+            dev,
+            core::vk::PipelineLayout::Info::fromSpirVs(player_mesh, trivial_frag),
         };
-
-        VkPipelineLayoutCreateInfo const gridLayoutInfo{
-            .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
-            .pushConstantRangeCount = 1,
-            .pPushConstantRanges = &gridRange,
-        };
-        VkPipelineLayoutCreateInfo const playerLayoutInfo{
-            .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
-            .pushConstantRangeCount = 1,
-            .pPushConstantRanges = &playerRange,
-        };
-
-        CORE_VK_ASSERT(vkCreatePipelineLayout(m_graph.ctx().device().handle(), &gridLayoutInfo, nullptr, &m_gridLayout));
-        CORE_VK_ASSERT(vkCreatePipelineLayout(m_graph.ctx().device().handle(), &playerLayoutInfo, nullptr, &m_playerLayout));
 
         VkFormat const format = static_cast<VkFormat>(m_graph.ctx().surfaceFormat());
         VkPipelineRenderingCreateInfo const gridRendering{
@@ -205,13 +152,13 @@ private:
             {
                 .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
                 .stage = VK_SHADER_STAGE_MESH_BIT_EXT,
-                .module = m_gridMeshShader,
+                .module = m_grid_shader.handle(),
                 .pName = "main",
             },
             {
                 .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
                 .stage = VK_SHADER_STAGE_FRAGMENT_BIT,
-                .module = m_fragmentShader,
+                .module = m_fragment_shader.handle(),
                 .pName = "main",
             },
         };
@@ -219,13 +166,13 @@ private:
             {
                 .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
                 .stage = VK_SHADER_STAGE_MESH_BIT_EXT,
-                .module = m_playerMeshShader,
+                .module = m_player_shader.handle(),
                 .pName = "main",
             },
             {
                 .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
                 .stage = VK_SHADER_STAGE_FRAGMENT_BIT,
-                .module = m_fragmentShader,
+                .module = m_fragment_shader.handle(),
                 .pName = "main",
             },
         };
@@ -294,7 +241,7 @@ private:
             .pMultisampleState = &multisample,
             .pColorBlendState = &blend,
             .pDynamicState = &dynamicState,
-            .layout = m_gridLayout,
+            .layout = m_grid_layout.handle(),
             .renderPass = VK_NULL_HANDLE,
             .subpass = 0,
         };
@@ -310,63 +257,42 @@ private:
             .pMultisampleState = &multisample,
             .pColorBlendState = &blend,
             .pDynamicState = &dynamicState,
-            .layout = m_playerLayout,
+            .layout = m_player_layout.handle(),
             .renderPass = VK_NULL_HANDLE,
             .subpass = 0,
         };
 
         VkGraphicsPipelineCreateInfo const infos[2]{gridInfo, playerInfo};
         VkPipeline pipelines[2]{VK_NULL_HANDLE, VK_NULL_HANDLE};
-        CORE_VK_ASSERT(vkCreateGraphicsPipelines(m_graph.ctx().device().handle(), VK_NULL_HANDLE, 2, infos, nullptr, pipelines));
+        CORE_VK_ASSERT(vkCreateGraphicsPipelines(dev.handle(), VK_NULL_HANDLE, 2, infos, nullptr, pipelines));
 
-        m_gridPipeline = pipelines[0];
-        m_playerPipeline = pipelines[1];
+        m_grid_pipeline = core::vk::GraphicsPipeline{ dev, pipelines[0], m_grid_layout };
+        m_player_pipeline = core::vk::GraphicsPipeline{ dev, pipelines[1], m_player_layout };
     }
 
     void destroyPipelines() {
         core::vk::Device& device = m_graph.ctx().device();
         if (!device.isNull()) {
-            if (m_gridPipeline != VK_NULL_HANDLE) {
-                vkDestroyPipeline(device.handle(), m_gridPipeline, nullptr);
-                m_gridPipeline = VK_NULL_HANDLE;
-            }
-            if (m_playerPipeline != VK_NULL_HANDLE) {
-                vkDestroyPipeline(device.handle(), m_playerPipeline, nullptr);
-                m_playerPipeline = VK_NULL_HANDLE;
-            }
-            if (m_gridLayout != VK_NULL_HANDLE) {
-                vkDestroyPipelineLayout(device.handle(), m_gridLayout, nullptr);
-                m_gridLayout = VK_NULL_HANDLE;
-            }
-            if (m_playerLayout != VK_NULL_HANDLE) {
-                vkDestroyPipelineLayout(device.handle(), m_playerLayout, nullptr);
-                m_playerLayout = VK_NULL_HANDLE;
-            }
-            if (m_gridMeshShader != VK_NULL_HANDLE) {
-                vkDestroyShaderModule(device.handle(), m_gridMeshShader, nullptr);
-                m_gridMeshShader = VK_NULL_HANDLE;
-            }
-            if (m_playerMeshShader != VK_NULL_HANDLE) {
-                vkDestroyShaderModule(device.handle(), m_playerMeshShader, nullptr);
-                m_playerMeshShader = VK_NULL_HANDLE;
-            }
-            if (m_fragmentShader != VK_NULL_HANDLE) {
-                vkDestroyShaderModule(device.handle(), m_fragmentShader, nullptr);
-                m_fragmentShader = VK_NULL_HANDLE;
-            }
+            m_grid_pipeline = {};
+            m_player_pipeline = {};
+            m_grid_layout = {};
+            m_player_layout = {};
+            m_grid_shader = {};
+            m_player_shader = {};
+            m_fragment_shader = {};
         }
     }
 private:
     core::vk::FrameGraph m_graph;
     core::vk::FramePassId m_render_pass;
 
-    VkShaderModule m_gridMeshShader = VK_NULL_HANDLE;
-    VkShaderModule m_playerMeshShader = VK_NULL_HANDLE;
-    VkShaderModule m_fragmentShader = VK_NULL_HANDLE;
-    VkPipelineLayout m_gridLayout = VK_NULL_HANDLE;
-    VkPipelineLayout m_playerLayout = VK_NULL_HANDLE;
-    VkPipeline m_gridPipeline = VK_NULL_HANDLE;
-    VkPipeline m_playerPipeline = VK_NULL_HANDLE;
+    core::vk::ShaderModule m_grid_shader;
+    core::vk::ShaderModule m_player_shader;
+    core::vk::ShaderModule m_fragment_shader;
+    core::vk::PipelineLayout m_grid_layout;
+    core::vk::PipelineLayout m_player_layout;
+    core::vk::GraphicsPipeline m_grid_pipeline;
+    core::vk::GraphicsPipeline m_player_pipeline;
 };
 
 VulkanRenderer::VulkanRenderer(core::Window const& window)

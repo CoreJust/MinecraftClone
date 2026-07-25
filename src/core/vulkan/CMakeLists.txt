@@ -14,11 +14,15 @@ target_sources(mc
         Fence.cpp
         FrameContext.cpp
         FrameGraph.cpp
+        GraphicsPipeline.cpp
         Image.cpp
         ImageView.cpp
         Instance.cpp
         Layers.cpp
+        PipelineLayout.cpp
         Semaphore.cpp
+        ShaderModule.cpp
+        SpirV.cpp
         Surface.cpp
         Swapchain.cpp
         VulkanVersion.cpp

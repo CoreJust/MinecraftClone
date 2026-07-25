@@ -22,6 +22,7 @@ target_sources(mc
             FrameGraph.hpp
             FrameStructs.hpp
             FramePass.hpp
+            GraphicsPipeline.hpp
             Image.hpp
             ImageMemoryBarrier.hpp
             ImageView.hpp
@@ -29,9 +30,12 @@ target_sources(mc
             Layers.hpp
             PhysicalDevice.hpp
             PhysicalDeviceProperties.hpp
+            PipelineLayout.hpp
             Queue.hpp
             Resource.hpp
             Semaphore.hpp
+            ShaderModule.hpp
+            SpirV.hpp
             Surface.hpp
             Swapchain.hpp
             VulkanVersion.hpp
@@ -58,8 +62,9 @@ target_sources(mc
             enum/PhysicalDeviceType.hpp
             enum/PipelineStage.hpp
             enum/PresentMode.hpp
-            enum/SurfaceTransform.hpp
             enum/QueueFamily.hpp
+            enum/ShaderStage.hpp
+            enum/SurfaceTransform.hpp
             internal/BuiltFrameGraph.hpp
             internal/PhysicalDeviceCapsStruct.hpp
             internal/RenderPassCache.hpp

@@ -8,6 +8,7 @@
     "glm",
     "gtest",
     "spdlog",
+    "spirv-reflect",
     "volk",
     "vulkan",
     "vulkan-memory-allocator"

@@ -16,6 +16,7 @@ target_sources(mc
         PhysicalDeviceType.cpp
         PipelineStage.cpp
         PresentMode.cpp
-        SurfaceTransform.cpp
         QueueFamily.cpp
+        ShaderStage.cpp
+        SurfaceTransform.cpp
 )

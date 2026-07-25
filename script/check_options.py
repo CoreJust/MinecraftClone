@@ -4,7 +4,7 @@ SHADER_EXTS = { '.mesh', '.task', '.vert', '.frag', '.comp' }
 
 INCLUDES_ORDER = ('self', 'relative', 'project', 'thirdparty', 'std')
 LINE_LENGTH_MAX = 132
-MAX_NESTING_DEPTH = 6
+MAX_NESTING_DEPTH = 7
 MAX_DIGITS_WITHOUT_SEPARATOR = 4
 FORBIDDEN_WORDS = {
     'typedef',

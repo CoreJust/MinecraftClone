@@ -8,6 +8,7 @@ target_link_libraries(mc
         unofficial::enet::enet
         glfw
         glm::glm
+        unofficial::spirv-reflect
         volk::volk_headers
         GPUOpen::VulkanMemoryAllocator
 )
