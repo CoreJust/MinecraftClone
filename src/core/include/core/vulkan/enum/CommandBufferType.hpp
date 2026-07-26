@@ -13,4 +13,4 @@ enum class CommandBufferType {
 
 } // namespace core::vk
 
-CORE_ENUM_FUNCTIONS(vk::CommandBufferType);
+CORE_ENUM_FUNCTIONS(::core::vk::CommandBufferType);

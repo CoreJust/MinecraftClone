@@ -25,4 +25,4 @@ struct ComponentMapping final {
 
 } // namespace core::vk
 
-CORE_ENUM_FUNCTIONS(vk::ComponentSwizzle);
+CORE_ENUM_FUNCTIONS(::core::vk::ComponentSwizzle);

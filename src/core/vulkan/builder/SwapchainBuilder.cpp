@@ -8,7 +8,7 @@
 
 #include <unordered_set>
 
-CORE_ENUM_FUNCTIONS_IMPL(vk::SwapchainCreationErrorKind);
+CORE_ENUM_FUNCTIONS_IMPL(::core::vk::SwapchainCreationErrorKind);
 
 namespace core::vk {
 namespace {

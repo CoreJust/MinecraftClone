@@ -18,4 +18,4 @@ enum class ImageViewType {
 
 } // namespace core::vk
 
-CORE_ENUM_FUNCTIONS(vk::ImageViewType);
+CORE_ENUM_FUNCTIONS(::core::vk::ImageViewType);

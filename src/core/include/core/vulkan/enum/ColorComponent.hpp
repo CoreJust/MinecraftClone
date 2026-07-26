@@ -18,4 +18,4 @@ using ColorComponents = EnumBits<ColorComponent>;
 
 } // namespace core::vk
 
-CORE_ENUM_FUNCTIONS(vk::ColorComponent);
+CORE_ENUM_FUNCTIONS(::core::vk::ColorComponent);

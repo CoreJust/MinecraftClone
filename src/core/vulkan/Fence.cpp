@@ -5,7 +5,7 @@
 
 #include <volk.h>
 
-CORE_ENUM_FUNCTIONS_IMPL(vk::FenceErrorKind);
+CORE_ENUM_FUNCTIONS_IMPL(::core::vk::FenceErrorKind);
 
 namespace core::vk {
 

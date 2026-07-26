@@ -19,4 +19,4 @@ enum class StencilOp {
 
 } // namespace core::vk
 
-CORE_ENUM_FUNCTIONS(vk::StencilOp);
+CORE_ENUM_FUNCTIONS(::core::vk::StencilOp);

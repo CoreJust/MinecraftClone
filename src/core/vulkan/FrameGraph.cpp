@@ -4,7 +4,7 @@
 #include <core/meta/EnumImpl.hpp>
 #include <core/vulkan/internal/BuiltFrameGraph.hpp>
 
-CORE_ENUM_FUNCTIONS_IMPL(vk::FrameGraphErrorKind);
+CORE_ENUM_FUNCTIONS_IMPL(::core::vk::FrameGraphErrorKind);
 
 namespace core::vk {
 

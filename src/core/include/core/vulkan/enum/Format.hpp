@@ -197,4 +197,4 @@ enum class Format {
 
 } // namespace core::vk
 
-CORE_ENUM_FUNCTIONS(vk::Format);
+CORE_ENUM_FUNCTIONS(::core::vk::Format);

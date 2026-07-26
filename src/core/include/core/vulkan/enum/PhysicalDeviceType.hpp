@@ -17,4 +17,4 @@ enum class PhysicalDeviceType {
 
 } // namespace core::vk
 
-CORE_ENUM_FUNCTIONS(vk::PhysicalDeviceType);
+CORE_ENUM_FUNCTIONS(::core::vk::PhysicalDeviceType);

@@ -2,5 +2,5 @@
 
 #include <core/meta/EnumImpl.hpp>
 
-CORE_ENUM_FUNCTIONS_IMPL(vk::AttachmentLoadOp);
-CORE_ENUM_FUNCTIONS_IMPL(vk::AttachmentStoreOp);
+CORE_ENUM_FUNCTIONS_IMPL(::core::vk::AttachmentLoadOp);
+CORE_ENUM_FUNCTIONS_IMPL(::core::vk::AttachmentStoreOp);

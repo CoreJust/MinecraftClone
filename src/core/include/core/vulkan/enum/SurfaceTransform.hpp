@@ -25,4 +25,4 @@ using SurfaceTransformBits = EnumBits<SurfaceTransform>;
 
 } // namespace core::vk
 
-CORE_ENUM_FUNCTIONS(vk::SurfaceTransform);
+CORE_ENUM_FUNCTIONS(::core::vk::SurfaceTransform);

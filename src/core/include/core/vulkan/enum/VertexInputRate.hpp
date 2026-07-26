@@ -13,4 +13,4 @@ enum class VertexInputRate {
 
 } // namespace core::vk
 
-CORE_ENUM_FUNCTIONS(vk::VertexInputRate);
+CORE_ENUM_FUNCTIONS(::core::vk::VertexInputRate);

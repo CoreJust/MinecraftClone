@@ -63,4 +63,4 @@ using PipelineStages = EnumBits<PipelineStage, uint64_t>;
 
 } // namespace core::vk
 
-CORE_ENUM_FUNCTIONS(vk::PipelineStage);
+CORE_ENUM_FUNCTIONS(::core::vk::PipelineStage);

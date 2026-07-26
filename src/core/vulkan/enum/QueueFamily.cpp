@@ -5,7 +5,7 @@
 
 #include <volk.h>
 
-CORE_ENUM_FUNCTIONS_IMPL(vk::QueueFamily);
+CORE_ENUM_FUNCTIONS_IMPL(::core::vk::QueueFamily);
 
 namespace core::vk {
 

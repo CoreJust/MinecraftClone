@@ -56,5 +56,5 @@ struct AttachmentOps final {
 
 } // namespace core::vk
 
-CORE_ENUM_FUNCTIONS(vk::AttachmentLoadOp);
-CORE_ENUM_FUNCTIONS(vk::AttachmentStoreOp);
+CORE_ENUM_FUNCTIONS(::core::vk::AttachmentLoadOp);
+CORE_ENUM_FUNCTIONS(::core::vk::AttachmentStoreOp);

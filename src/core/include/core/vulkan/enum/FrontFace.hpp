@@ -13,4 +13,4 @@ enum class FrontFace {
 
 } // namespace core::vk
 
-CORE_ENUM_FUNCTIONS(vk::FrontFace);
+CORE_ENUM_FUNCTIONS(::core::vk::FrontFace);

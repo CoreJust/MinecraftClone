@@ -58,4 +58,4 @@ struct QueueFamilies final {
 
 } // namespace core::vk
 
-CORE_ENUM_FUNCTIONS(vk::QueueFamily);
+CORE_ENUM_FUNCTIONS(::core::vk::QueueFamily);

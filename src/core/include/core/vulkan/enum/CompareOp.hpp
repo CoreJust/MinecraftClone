@@ -19,4 +19,4 @@ enum class CompareOp {
 
 } // namespace core::vk
 
-CORE_ENUM_FUNCTIONS(vk::CompareOp);
+CORE_ENUM_FUNCTIONS(::core::vk::CompareOp);

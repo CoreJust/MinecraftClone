@@ -50,4 +50,4 @@ ImageLayout imageLayoutFromVk(uint32_t const layout) noexcept;
 
 } // namespace core::vk
 
-CORE_ENUM_FUNCTIONS(vk::ImageLayout);
+CORE_ENUM_FUNCTIONS(::core::vk::ImageLayout);

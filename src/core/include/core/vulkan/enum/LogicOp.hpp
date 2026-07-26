@@ -27,4 +27,4 @@ enum class LogicOp {
 
 } // namespace core::vk
 
-CORE_ENUM_FUNCTIONS(vk::LogicOp);
+CORE_ENUM_FUNCTIONS(::core::vk::LogicOp);

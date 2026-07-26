@@ -14,7 +14,7 @@
 #include <algorithm>
 #include <cstring>
 
-CORE_ENUM_FUNCTIONS_IMPL(vk::InstanceCreationErrorKind);
+CORE_ENUM_FUNCTIONS_IMPL(::core::vk::InstanceCreationErrorKind);
 
 namespace core::vk {
 namespace {

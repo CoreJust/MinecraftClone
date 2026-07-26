@@ -22,4 +22,4 @@ enum class PrimitiveTopology {
 
 } // namespace core::vk
 
-CORE_ENUM_FUNCTIONS(vk::PrimitiveTopology);
+CORE_ENUM_FUNCTIONS(::core::vk::PrimitiveTopology);

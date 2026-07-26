@@ -5,7 +5,7 @@
 
 #include <volk.h>
 
-CORE_ENUM_FUNCTIONS_IMPL(vk::CommandBufferErrorKind);
+CORE_ENUM_FUNCTIONS_IMPL(::core::vk::CommandBufferErrorKind);
 
 namespace core::vk {
 

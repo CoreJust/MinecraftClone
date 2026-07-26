@@ -4,7 +4,7 @@
 
 #include <fmt/core.h>
 
-CORE_ENUM_FUNCTIONS_IMPL(vk::VulkanFeature);
+CORE_ENUM_FUNCTIONS_IMPL(::core::vk::VulkanFeature);
 
 namespace core::vk {
 

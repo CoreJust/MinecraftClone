@@ -30,4 +30,4 @@ enum class BlendFactor {
 
 } // namespace core::vk
 
-CORE_ENUM_FUNCTIONS(vk::BlendFactor);
+CORE_ENUM_FUNCTIONS(::core::vk::BlendFactor);

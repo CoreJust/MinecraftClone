@@ -46,7 +46,7 @@ namespace core::vk {                   \
 namespace core::vk {                               \
     enum class Name##Kind { __VA_ARGS__, Count, }; \
 }                                                  \
-    CORE_ENUM_FUNCTIONS(vk::Name##Kind);           \
+    CORE_ENUM_FUNCTIONS(::core::vk::Name##Kind);   \
     CORE_VK_ERROR(Name, Base,                      \
         using enum Name##Kind;                     \
         Name##Kind kind;                           \

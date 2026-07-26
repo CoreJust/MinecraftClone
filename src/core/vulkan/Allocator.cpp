@@ -4,7 +4,7 @@
 #include <core/meta/EnumImpl.hpp>
 #include <core/vulkan/internal/VMA.hpp>
 
-CORE_ENUM_FUNCTIONS_IMPL(vk::AllocationErrorKind);
+CORE_ENUM_FUNCTIONS_IMPL(::core::vk::AllocationErrorKind);
 
 namespace core::vk {
 

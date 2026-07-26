@@ -3,7 +3,7 @@
 #include <core/common/Assert.hpp>
 #include <core/meta/EnumImpl.hpp>
 
-CORE_ENUM_FUNCTIONS_IMPL(vk::ImageLayout);
+CORE_ENUM_FUNCTIONS_IMPL(::core::vk::ImageLayout);
 
 namespace core::vk {
 

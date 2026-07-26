@@ -19,4 +19,4 @@ using CommandPoolFlags = EnumBits<CommandPoolFlag>;
 
 } // namespace core::vk
 
-CORE_ENUM_FUNCTIONS(vk::CommandPoolFlag);
+CORE_ENUM_FUNCTIONS(::core::vk::CommandPoolFlag);

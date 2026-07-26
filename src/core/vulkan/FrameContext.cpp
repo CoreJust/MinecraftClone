@@ -6,7 +6,7 @@
 
 #include <volk.h>
 
-CORE_ENUM_FUNCTIONS_IMPL(vk::FrameContextErrorKind);
+CORE_ENUM_FUNCTIONS_IMPL(::core::vk::FrameContextErrorKind);
 
 namespace core::vk {
 

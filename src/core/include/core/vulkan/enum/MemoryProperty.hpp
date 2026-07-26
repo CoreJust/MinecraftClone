@@ -30,4 +30,4 @@ struct MemoryHeap final {
 
 } // namespace core::vk
 
-CORE_ENUM_FUNCTIONS(vk::MemoryProperty);
+CORE_ENUM_FUNCTIONS(::core::vk::MemoryProperty);

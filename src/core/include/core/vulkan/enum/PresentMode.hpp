@@ -15,4 +15,4 @@ enum class PresentMode {
 
 } // namespace core::vk
 
-CORE_ENUM_FUNCTIONS(vk::PresentMode);
+CORE_ENUM_FUNCTIONS(::core::vk::PresentMode);

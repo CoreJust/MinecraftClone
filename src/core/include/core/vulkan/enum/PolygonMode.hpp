@@ -14,4 +14,4 @@ enum class PolygonMode {
 
 } // namespace core::vk
 
-CORE_ENUM_FUNCTIONS(vk::PolygonMode);
+CORE_ENUM_FUNCTIONS(::core::vk::PolygonMode);

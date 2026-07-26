@@ -75,4 +75,4 @@ using AccessFlags = EnumBits<AccessFlag, uint64_t>;
 
 } // namespace core::vk
 
-CORE_ENUM_FUNCTIONS(vk::AccessFlag);
+CORE_ENUM_FUNCTIONS(::core::vk::AccessFlag);

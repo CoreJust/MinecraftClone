@@ -40,4 +40,4 @@ constexpr ColorSpace vkToColorSpace(uint32_t const color_space) noexcept {
 
 } // namespace core::vk
 
-CORE_ENUM_FUNCTIONS(vk::ColorSpace);
+CORE_ENUM_FUNCTIONS(::core::vk::ColorSpace);

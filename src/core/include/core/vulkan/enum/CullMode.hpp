@@ -15,4 +15,4 @@ enum class CullMode {
 
 } // namespace core::vk
 
-CORE_ENUM_FUNCTIONS(vk::CullMode);
+CORE_ENUM_FUNCTIONS(::core::vk::CullMode);

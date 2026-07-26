@@ -2,4 +2,4 @@
 
 #include <core/meta/EnumImpl.hpp>
 
-CORE_ENUM_FUNCTIONS_IMPL(vk::SurfaceTransform);
+CORE_ENUM_FUNCTIONS_IMPL(::core::vk::SurfaceTransform);

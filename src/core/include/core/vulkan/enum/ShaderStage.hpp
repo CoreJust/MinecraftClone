@@ -34,4 +34,4 @@ using ShaderStages = EnumBits<ShaderStage>;
 
 } // namespace core::vk
 
-CORE_ENUM_FUNCTIONS(vk::ShaderStage);
+CORE_ENUM_FUNCTIONS(::core::vk::ShaderStage);

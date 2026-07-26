@@ -68,4 +68,4 @@ constexpr uint32_t dynamicStateToVk(DynamicState const state) noexcept {
 
 } // namespace core::vk
 
-CORE_ENUM_FUNCTIONS(vk::DynamicState);
+CORE_ENUM_FUNCTIONS(::core::vk::DynamicState);

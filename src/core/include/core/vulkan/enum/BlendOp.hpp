@@ -80,4 +80,4 @@ constexpr uint32_t blendOpToVk(BlendOp const op) noexcept {
 
 } // namespace core::vk
 
-CORE_ENUM_FUNCTIONS(vk::BlendOp);
+CORE_ENUM_FUNCTIONS(::core::vk::BlendOp);

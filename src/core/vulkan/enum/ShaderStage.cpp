@@ -2,4 +2,4 @@
 
 #include <core/meta/EnumImpl.hpp>
 
-CORE_ENUM_FUNCTIONS_IMPL(vk::ShaderStage);
+CORE_ENUM_FUNCTIONS_IMPL(::core::vk::ShaderStage);

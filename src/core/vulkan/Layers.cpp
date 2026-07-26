@@ -12,7 +12,7 @@
 #include <unordered_map>
 #include <vector>
 
-CORE_ENUM_FUNCTIONS_IMPL(vk::VulkanLayer);
+CORE_ENUM_FUNCTIONS_IMPL(::core::vk::VulkanLayer);
 
 namespace core::vk {
 

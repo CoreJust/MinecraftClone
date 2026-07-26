@@ -42,4 +42,4 @@ using ImageUsageBits = EnumBits<ImageUsage>;
 
 } // namespace core::vk
 
-CORE_ENUM_FUNCTIONS(vk::ImageUsage);
+CORE_ENUM_FUNCTIONS(::core::vk::ImageUsage);

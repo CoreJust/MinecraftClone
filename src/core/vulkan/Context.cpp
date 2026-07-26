@@ -8,10 +8,10 @@
 
 #include <volk.h>
 
-CORE_ENUM_FUNCTIONS_IMPL(vk::VulkanContextErrorKind);
-CORE_ENUM_FUNCTIONS_IMPL(vk::ReloadType);
-CORE_ENUM_FUNCTIONS_IMPL(vk::ReloadSource);
-CORE_ENUM_FUNCTIONS_IMPL(vk::ReloadAction);
+CORE_ENUM_FUNCTIONS_IMPL(::core::vk::VulkanContextErrorKind);
+CORE_ENUM_FUNCTIONS_IMPL(::core::vk::ReloadType);
+CORE_ENUM_FUNCTIONS_IMPL(::core::vk::ReloadSource);
+CORE_ENUM_FUNCTIONS_IMPL(::core::vk::ReloadAction);
 
 namespace core::vk {
 namespace {

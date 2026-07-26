@@ -25,4 +25,4 @@ using ImageAspectBits = EnumBits<ImageAspect>;
 
 } // namespace core::vk
 
-CORE_ENUM_FUNCTIONS(vk::ImageAspect);
+CORE_ENUM_FUNCTIONS(::core::vk::ImageAspect);

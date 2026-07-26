@@ -8,7 +8,7 @@
 
 #include <unordered_map>
 
-CORE_ENUM_FUNCTIONS_IMPL(vk::DeviceCreationErrorKind);
+CORE_ENUM_FUNCTIONS_IMPL(::core::vk::DeviceCreationErrorKind);
 
 namespace core::vk {
 namespace {

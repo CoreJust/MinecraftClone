@@ -113,5 +113,5 @@ Version getExtensionPromotionVersion(VulkanExtension const ext) noexcept;
 
 } // namespace core::vk
 
-CORE_ENUM_FUNCTIONS(vk::VulkanExtension);
-CORE_ENUM_FUNCTIONS(vk::VulkanExtensionKind);
+CORE_ENUM_FUNCTIONS(::core::vk::VulkanExtension);
+CORE_ENUM_FUNCTIONS(::core::vk::VulkanExtensionKind);

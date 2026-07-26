@@ -4,7 +4,7 @@
 #include <core/vulkan/Check.hpp>
 #include <core/vulkan/internal/PhysicalDeviceCapsStruct.hpp>
 
-CORE_ENUM_FUNCTIONS_IMPL(vk::PhysicalDeviceSelectionErrorKind);
+CORE_ENUM_FUNCTIONS_IMPL(::core::vk::PhysicalDeviceSelectionErrorKind);
 
 namespace core::vk {
 namespace {

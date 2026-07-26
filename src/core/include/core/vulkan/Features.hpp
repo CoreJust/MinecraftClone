@@ -91,4 +91,4 @@ struct VulkanFeatures final {
 
 } // namespace core::vk
 
-CORE_ENUM_FUNCTIONS(vk::VulkanFeature);
+CORE_ENUM_FUNCTIONS(::core::vk::VulkanFeature);

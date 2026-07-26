@@ -5,7 +5,7 @@
 #include <core/vulkan/VulkanVersion.hpp>
 #include <core/vulkan/internal/VMA.hpp>
 
-CORE_ENUM_FUNCTIONS_IMPL(vk::AllocatorCreationErrorKind);
+CORE_ENUM_FUNCTIONS_IMPL(::core::vk::AllocatorCreationErrorKind);
 
 namespace core::vk {
 namespace {

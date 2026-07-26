@@ -17,4 +17,4 @@ using CommandBufferUsageBits = EnumBits<CommandBufferUsage>;
 
 } // namespace core::vk
 
-CORE_ENUM_FUNCTIONS(vk::CommandBufferUsage);
+CORE_ENUM_FUNCTIONS(::core::vk::CommandBufferUsage);

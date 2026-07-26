@@ -46,4 +46,4 @@ VulkanLayers loadSupportedLayers();
 
 } // namespace core::vk
 
-CORE_ENUM_FUNCTIONS(vk::VulkanLayer);
+CORE_ENUM_FUNCTIONS(::core::vk::VulkanLayer);
