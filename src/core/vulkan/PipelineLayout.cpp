@@ -71,7 +71,7 @@ RawPipelineLayout::Info RawPipelineLayout::Info::fromSpirVs(std::span<SpirV cons
                         push_block->offset, existing_size, push_block->size
                     );
                 }
-                combined.emplace(key, ShaderStages::of(stage));
+                combined.emplace(key, stage);
             }
         }
     }

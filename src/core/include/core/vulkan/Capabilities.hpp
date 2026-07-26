@@ -138,7 +138,7 @@ private:
     Format m_format{ Format::None };
     ColorSpace m_color_space{ ColorSpace::Count };
     PresentMode m_present_mode{ PresentMode::Count };
-    SurfaceTransformBits m_surface_transform{ 0 };
+    SurfaceTransformBits m_surface_transform{ };
     Extent2d m_extent{ 0, 0 };
     uint32_t m_image_count{ 0 };
     bool m_validation_enabled{ false };

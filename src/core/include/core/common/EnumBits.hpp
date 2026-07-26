@@ -4,13 +4,15 @@
 
 namespace core {
 
-// TODO: think of how to support creation from a single E object without of(...)
 template<CountableEnum E, typename UnderlyingTy = uint32_t>
     requires (countOf<E>() <= 8 * sizeof(UnderlyingTy))
 struct EnumBits final {
     UnderlyingTy value = 0;
 
     static const EnumBits None;
+
+    constexpr EnumBits(UnderlyingTy const v = 0) noexcept : value(v) { }
+    constexpr EnumBits(E const v) noexcept : value(of(v).value) { }
 
     template<typename... Args> [[nodiscard]]
     static constexpr EnumBits of(E const first, Args const... args) noexcept {

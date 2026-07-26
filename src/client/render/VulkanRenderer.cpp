@@ -95,7 +95,7 @@ public:
         GridPushConstants const grid_push{ };
         m_graph.bind(m_render_pass, [&](vk::FramePassContext const ctx) {
             m_grid_pipeline.execute(ctx.cmd, [&](vk::BoundGraphicsPipeline p) {
-                p.pushConstants(vk::ShaderStages::of(vk::ShaderStage::Mesh), 0, grid_push);
+                p.pushConstants(vk::ShaderStage::Mesh, 0, grid_push);
                 p.drawMeshTasks(kGridWorkgroupsX, kGridWorkgroupsY);
             });
             m_player_pipeline.execute(ctx.cmd, [&](vk::BoundGraphicsPipeline p) {
@@ -108,7 +108,7 @@ public:
                         .size = 2.0f,
                         .color = player.color,
                     };
-                    p.pushConstants(vk::ShaderStages::of(vk::ShaderStage::Mesh), 0, push);
+                    p.pushConstants(vk::ShaderStage::Mesh, 0, push);
                     p.drawMeshTasks();
                 }
             });

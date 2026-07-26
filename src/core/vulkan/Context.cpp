@@ -412,11 +412,11 @@ void VulkanContext::createSyncObjects() {
 }
 
 void VulkanContext::createCommandObjects() {
-    m_command_pool = CommandPool(
+    m_command_pool = CommandPool{
         m_device,
         *queueFamily(QueueFamily::Graphics),
-        CommandPoolFlags::of(CommandPoolFlag::ResetCommandBuffer)
-    );
+        CommandPoolFlag::ResetCommandBuffer,
+    };
     m_command_buffers = m_command_pool.allocateBuffers(MAX_FRAMES_IN_FLIGHT);
 }
 

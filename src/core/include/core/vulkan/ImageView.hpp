@@ -18,7 +18,7 @@ public:
             .b = ComponentSwizzle::Identity,
             .a = ComponentSwizzle::Identity,
         };
-        ImageAspectBits aspect = ImageAspectBits::of(ImageAspect::Color);
+        ImageAspectBits aspect = ImageAspect::Color;
         uint32_t base_mip_level = 0;
         uint32_t level_count = 1;
         uint32_t base_array_layer = 0;

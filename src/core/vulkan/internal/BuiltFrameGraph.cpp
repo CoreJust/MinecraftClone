@@ -242,18 +242,18 @@ private:
     [[nodiscard]]
     static ImageMemoryBarrier makeSwapchainPresentBarrier(ResourceUsage const current_usage) {
         ImageMemoryBarrier barrier{
-            .dst_stages = PipelineStages::of(PipelineStage::BottomOfPipe),
+            .dst_stages = PipelineStage::BottomOfPipe,
             .new_layout = ImageLayout::PresentSrc,
         };
         switch (current_usage) {
             case ResourceUsage::ColorAttachment:
-                barrier.src_stages = PipelineStages::of(PipelineStage::ColorAttachmentOutput);
-                barrier.src_access = AccessFlags::of(AccessFlag::ColorAttachmentWrite);
+                barrier.src_stages = PipelineStage::ColorAttachmentOutput;
+                barrier.src_access = AccessFlag::ColorAttachmentWrite;
                 barrier.old_layout = ImageLayout::ColorAttachmentOptimal;
                 break;
             case ResourceUsage::InputAttachment:
-                barrier.src_stages = PipelineStages::of(PipelineStage::FragmentShader);
-                barrier.src_access = AccessFlags::of(AccessFlag::ShaderRead);
+                barrier.src_stages = PipelineStage::FragmentShader;
+                barrier.src_access = AccessFlag::ShaderRead;
                 barrier.old_layout = ImageLayout::ShaderReadOnlyOptimal;
                 break;
             default:
@@ -269,9 +269,9 @@ private:
     static PipelineStages stageForUsage(FrameResource::Kind const kind, ResourceUsage const usage) {
         if (kind == FrameResource::Kind::Swapchain) {
             switch (usage) {
-                case ResourceUsage::Undefined: return PipelineStages::of(PipelineStage::TopOfPipe);
-                case ResourceUsage::ColorAttachment: return PipelineStages::of(PipelineStage::ColorAttachmentOutput);
-                case ResourceUsage::InputAttachment: return PipelineStages::of(PipelineStage::FragmentShader);
+                case ResourceUsage::Undefined: return PipelineStage::TopOfPipe;
+                case ResourceUsage::ColorAttachment: return PipelineStage::ColorAttachmentOutput;
+                case ResourceUsage::InputAttachment: return PipelineStage::FragmentShader;
                 default: throw FrameGraphError{FrameGraphErrorKind::UnsupportedMemoryBarrierStagesValue};
             }
         }
@@ -283,8 +283,8 @@ private:
         if (kind == FrameResource::Kind::Swapchain) {
             switch (usage) {
                 case ResourceUsage::Undefined: return AccessFlags::None;
-                case ResourceUsage::ColorAttachment: return AccessFlags::of(AccessFlag::ColorAttachmentWrite);
-                case ResourceUsage::InputAttachment: return AccessFlags::of(AccessFlag::ShaderRead);
+                case ResourceUsage::ColorAttachment: return AccessFlag::ColorAttachmentWrite;
+                case ResourceUsage::InputAttachment: return AccessFlag::ShaderRead;
             default: throw FrameGraphError{FrameGraphErrorKind::UnsupportedMemoryBarrierAccessValue};
             }
         }
