@@ -6,13 +6,13 @@
 namespace core::vk {
 
 template<typename VkEnum, CountableEnum E>
-    requires std::is_enum_v<VkEnum>
+    requires (std::is_enum_v<VkEnum> || std::is_integral_v<VkEnum>)
 constexpr VkEnum toVk(E const e) noexcept {
     return static_cast<VkEnum>(EnumMapping<E, uint32_t>::map(e));
 }
 
 template<CountableEnum E, typename VkEnum>
-    requires std::is_enum_v<VkEnum>
+    requires (std::is_enum_v<VkEnum> || std::is_integral_v<VkEnum>)
 constexpr E fromVk(VkEnum const e) noexcept {
     return EnumMapping<E, uint32_t>::unmap(static_cast<uint32_t>(e));
 }

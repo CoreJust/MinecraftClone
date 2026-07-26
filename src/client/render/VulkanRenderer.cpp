@@ -6,10 +6,7 @@
 #include <core/IO/File.hpp>
 #include <core/vulkan/Check.hpp>
 #include <core/vulkan/FrameGraph.hpp>
-#include <core/vulkan/GraphicsPipeline.hpp>
-#include <core/vulkan/ShaderModule.hpp>
-
-#include <volk.h>
+#include <core/vulkan/GraphicsPipelineOptions.hpp>
 
 #include <array>
 
@@ -138,138 +135,37 @@ private:
             vk::PipelineLayout::Info::fromSpirVs(player_mesh, trivial_frag),
         };
 
-        VkFormat const format = toVk<VkFormat>(m_graph.ctx().surfaceFormat());
-        VkPipelineRenderingCreateInfo const gridRendering{
-            .sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO,
-            .colorAttachmentCount = 1,
-            .pColorAttachmentFormats = &format,
-        };
-        VkPipelineRenderingCreateInfo const playerRendering{
-            .sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO,
-            .colorAttachmentCount = 1,
-            .pColorAttachmentFormats = &format,
-        };
-
-        VkPipelineShaderStageCreateInfo const gridStages[2]{
-            {
-                .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
-                .stage = VK_SHADER_STAGE_MESH_BIT_EXT,
-                .module = m_grid_shader.handle(),
-                .pName = "main",
+        vk::GraphicsPipelineOptions grid_opts{
+            .shaders = {
+                {vk::ShaderStage::Mesh,     grid_mesh,    "main"},
+                {vk::ShaderStage::Fragment, trivial_frag, "main"}
             },
-            {
-                .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
-                .stage = VK_SHADER_STAGE_FRAGMENT_BIT,
-                .module = m_fragment_shader.handle(),
-                .pName = "main",
+            .dynamic_rendering = vk::DynamicRenderingInfo{
+                .color_formats = {m_graph.ctx().surfaceFormat()}
+            }
+        };
+
+        m_grid_pipeline = grid_opts.build(
+            dev,
+            m_grid_layout,
+            std::array{m_grid_shader.raw(), m_fragment_shader.raw()}
+        );
+
+        vk::GraphicsPipelineOptions player_opts{
+            .shaders = {
+                {vk::ShaderStage::Mesh,     player_mesh,   "main"},
+                {vk::ShaderStage::Fragment, trivial_frag,  "main"}
             },
-        };
-        VkPipelineShaderStageCreateInfo const playerStages[2]{
-            {
-                .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
-                .stage = VK_SHADER_STAGE_MESH_BIT_EXT,
-                .module = m_player_shader.handle(),
-                .pName = "main",
-            },
-            {
-                .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
-                .stage = VK_SHADER_STAGE_FRAGMENT_BIT,
-                .module = m_fragment_shader.handle(),
-                .pName = "main",
-            },
+            .dynamic_rendering = vk::DynamicRenderingInfo{
+                .color_formats = {m_graph.ctx().surfaceFormat()}
+            }
         };
 
-        VkPipelineVertexInputStateCreateInfo const vertexInput{
-            .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
-        };
-        VkPipelineInputAssemblyStateCreateInfo const inputAssembly{
-            .sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
-            .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
-            .primitiveRestartEnable = VK_FALSE,
-        };
-        VkPipelineViewportStateCreateInfo const viewportState{
-            .sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
-            .viewportCount = 1,
-            .scissorCount = 1,
-        };
-        VkPipelineRasterizationStateCreateInfo const rasterization{
-            .sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
-            .depthClampEnable = VK_FALSE,
-            .rasterizerDiscardEnable = VK_FALSE,
-            .polygonMode = VK_POLYGON_MODE_FILL,
-            .cullMode = VK_CULL_MODE_NONE,
-            .frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE,
-            .depthBiasEnable = VK_FALSE,
-            .lineWidth = 1.0f,
-        };
-        VkPipelineMultisampleStateCreateInfo const multisample{
-            .sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
-            .rasterizationSamples = VK_SAMPLE_COUNT_1_BIT,
-        };
-        VkPipelineColorBlendAttachmentState const attachment{
-            .blendEnable = VK_FALSE,
-            .srcColorBlendFactor = VK_BLEND_FACTOR_ONE,
-            .dstColorBlendFactor = VK_BLEND_FACTOR_ZERO,
-            .colorBlendOp = VK_BLEND_OP_ADD,
-            .srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE,
-            .dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO,
-            .alphaBlendOp = VK_BLEND_OP_ADD,
-            .colorWriteMask = VK_COLOR_COMPONENT_R_BIT
-                | VK_COLOR_COMPONENT_G_BIT
-                | VK_COLOR_COMPONENT_B_BIT
-                | VK_COLOR_COMPONENT_A_BIT,
-        };
-        VkPipelineColorBlendStateCreateInfo const blend{
-            .sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
-            .attachmentCount = 1,
-            .pAttachments = &attachment,
-        };
-        VkDynamicState const dynamicStates[2]{VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
-        VkPipelineDynamicStateCreateInfo const dynamicState{
-            .sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
-            .dynamicStateCount = 2,
-            .pDynamicStates = dynamicStates,
-        };
-
-        VkGraphicsPipelineCreateInfo const gridInfo{
-            .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
-            .pNext = &gridRendering,
-            .stageCount = 2,
-            .pStages = gridStages,
-            .pVertexInputState = &vertexInput,
-            .pInputAssemblyState = &inputAssembly,
-            .pViewportState = &viewportState,
-            .pRasterizationState = &rasterization,
-            .pMultisampleState = &multisample,
-            .pColorBlendState = &blend,
-            .pDynamicState = &dynamicState,
-            .layout = m_grid_layout.handle(),
-            .renderPass = VK_NULL_HANDLE,
-            .subpass = 0,
-        };
-        VkGraphicsPipelineCreateInfo const playerInfo{
-            .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
-            .pNext = &playerRendering,
-            .stageCount = 2,
-            .pStages = playerStages,
-            .pVertexInputState = &vertexInput,
-            .pInputAssemblyState = &inputAssembly,
-            .pViewportState = &viewportState,
-            .pRasterizationState = &rasterization,
-            .pMultisampleState = &multisample,
-            .pColorBlendState = &blend,
-            .pDynamicState = &dynamicState,
-            .layout = m_player_layout.handle(),
-            .renderPass = VK_NULL_HANDLE,
-            .subpass = 0,
-        };
-
-        VkGraphicsPipelineCreateInfo const infos[2]{gridInfo, playerInfo};
-        VkPipeline pipelines[2]{VK_NULL_HANDLE, VK_NULL_HANDLE};
-        CORE_VK_ASSERT(vkCreateGraphicsPipelines(dev.handle(), VK_NULL_HANDLE, 2, infos, nullptr, pipelines));
-
-        m_grid_pipeline = vk::GraphicsPipeline{ dev, pipelines[0], m_grid_layout };
-        m_player_pipeline = vk::GraphicsPipeline{ dev, pipelines[1], m_player_layout };
+        m_player_pipeline = player_opts.build(
+            dev,
+            m_player_layout,
+            std::array{m_player_shader.raw(), m_fragment_shader.raw()}
+        );
     }
 
     void destroyPipelines() {

@@ -15,6 +15,7 @@ target_sources(mc
         FrameContext.cpp
         FrameGraph.cpp
         GraphicsPipeline.cpp
+        GraphicsPipelineOptions.cpp
         Image.cpp
         ImageView.cpp
         Instance.cpp

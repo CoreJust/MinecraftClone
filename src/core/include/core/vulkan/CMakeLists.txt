@@ -23,6 +23,7 @@ target_sources(mc
             FrameStructs.hpp
             FramePass.hpp
             GraphicsPipeline.hpp
+            GraphicsPipelineOptions.hpp
             Image.hpp
             ImageMemoryBarrier.hpp
             ImageView.hpp

@@ -26,4 +26,4 @@ enum class ColorSpace {
 
 } // namespace core::vk
 
-CORE_VK_REGISTER_ENUM(ColorSpace, { SRGBNonlinear, 1'000'104'000 });
+CORE_VK_REGISTER_ENUM(ColorSpace, { DisplayP3Nonlinear, 1'000'104'001 });
