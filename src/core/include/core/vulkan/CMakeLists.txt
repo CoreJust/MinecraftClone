@@ -48,23 +48,35 @@ target_sources(mc
             builder/SwapchainBuilder.hpp
             enum/AccessFlag.hpp
             enum/AttachmentOp.hpp
+            enum/BlendFactor.hpp
+            enum/BlendOp.hpp
+            enum/ColorComponent.hpp
             enum/ColorSpace.hpp
             enum/CommandBufferType.hpp
             enum/CommandBufferUsage.hpp
             enum/CommandPoolFlag.hpp
+            enum/CompareOp.hpp
             enum/ComponentMapping.hpp
+            enum/CullMode.hpp
+            enum/DynamicState.hpp
             enum/Format.hpp
+            enum/FrontFace.hpp
             enum/ImageAspect.hpp
             enum/ImageLayout.hpp
             enum/ImageUsage.hpp
             enum/ImageViewType.hpp
+            enum/LogicOp.hpp
             enum/MemoryProperty.hpp
             enum/PhysicalDeviceType.hpp
             enum/PipelineStage.hpp
+            enum/PolygonMode.hpp
             enum/PresentMode.hpp
+            enum/PrimitiveTopology.hpp
             enum/QueueFamily.hpp
             enum/ShaderStage.hpp
+            enum/StencilOp.hpp
             enum/SurfaceTransform.hpp
+            enum/VertexInputRate.hpp
             internal/BuiltFrameGraph.hpp
             internal/PhysicalDeviceCapsStruct.hpp
             internal/RenderPassCache.hpp

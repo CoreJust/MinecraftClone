@@ -2,21 +2,33 @@ target_sources(mc
     PRIVATE
         AccessFlag.cpp
         AttachmentOp.cpp
+        BlendFactor.cpp
+        BlendOp.cpp
+        ColorComponent.cpp
         ColorSpace.cpp
         CommandBufferType.cpp
         CommandBufferUsage.cpp
         CommandPoolFlag.cpp
+        CompareOp.cpp
         ComponentMapping.cpp
+        CullMode.cpp
+        DynamicState.cpp
         Format.cpp
+        FrontFace.cpp
         ImageAspect.cpp
         ImageLayout.cpp
         ImageUsage.cpp
         ImageViewType.cpp
+        LogicOp.cpp
         MemoryProperty.cpp
         PhysicalDeviceType.cpp
         PipelineStage.cpp
+        PolygonMode.cpp
         PresentMode.cpp
+        PrimitiveTopology.cpp
         QueueFamily.cpp
         ShaderStage.cpp
+        StencilOp.cpp
         SurfaceTransform.cpp
+        VertexInputRate.cpp
 )

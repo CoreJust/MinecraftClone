@@ -4,6 +4,7 @@
 
 namespace core {
 
+// TODO: think of how to support creation from a single E object without of(...)
 template<CountableEnum E, typename UnderlyingTy = uint32_t>
     requires (countOf<E>() <= 8 * sizeof(UnderlyingTy))
 struct EnumBits final {

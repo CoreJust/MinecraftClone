@@ -32,6 +32,7 @@ EnumValues<E> const& valuesOf() noexcept = delete;
 template<CountableEnum E> [[nodiscard]]
 EnumEntries<E> const& entriesOf() noexcept = delete;
 
+// TODO: accept full path to E so it can be out of core::
 /*
  * Use for enums that have a Count member and are dense.
  * Make sure to place it in namespace core in header.
