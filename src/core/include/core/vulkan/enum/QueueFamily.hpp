@@ -1,7 +1,7 @@
 #pragma once
 
 #include <core/common/Assert.hpp>
-#include <core/meta/Enum.hpp>
+#include <core/vulkan/enum/VulkanEnum.hpp>
 #include <core/vulkan/internal/VulkanFwd.hpp>
 
 #include <array>
@@ -58,4 +58,4 @@ struct QueueFamilies final {
 
 } // namespace core::vk
 
-CORE_ENUM_FUNCTIONS(::core::vk::QueueFamily);
+CORE_VK_REGISTER_ENUM(QueueFamily);

@@ -1,7 +1,7 @@
 #pragma once
 
 #include <core/common/Version.hpp>
-#include <core/meta/Enum.hpp>
+#include <core/vulkan/enum/VulkanEnum.hpp>
 
 #include <optional>
 #include <string>
@@ -113,5 +113,5 @@ Version getExtensionPromotionVersion(VulkanExtension const ext) noexcept;
 
 } // namespace core::vk
 
-CORE_ENUM_FUNCTIONS(::core::vk::VulkanExtension);
-CORE_ENUM_FUNCTIONS(::core::vk::VulkanExtensionKind);
+CORE_VK_REGISTER_ENUM(VulkanExtension);
+CORE_VK_REGISTER_ENUM(VulkanExtensionKind);

@@ -77,6 +77,7 @@ target_sources(mc
             enum/StencilOp.hpp
             enum/SurfaceTransform.hpp
             enum/VertexInputRate.hpp
+            enum/VulkanEnum.hpp
             internal/BuiltFrameGraph.hpp
             internal/PhysicalDeviceCapsStruct.hpp
             internal/RenderPassCache.hpp

@@ -1,6 +1,6 @@
 #pragma once
 
-#include <core/meta/Enum.hpp>
+#include <core/vulkan/enum/VulkanEnum.hpp>
 
 namespace core::vk {
 
@@ -15,4 +15,4 @@ enum class CullMode {
 
 } // namespace core::vk
 
-CORE_ENUM_FUNCTIONS(::core::vk::CullMode);
+CORE_VK_REGISTER_ENUM(CullMode);

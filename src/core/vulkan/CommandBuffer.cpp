@@ -33,7 +33,7 @@ CORE_VK_RESOURCE_DEFERRED_BATCH_CONSTRUCTION_IMPL(RawCommandBuffer,
     VkCommandBufferAllocateInfo const allocate_info{
         .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
         .commandPool = pool_handle,
-        .level = static_cast<VkCommandBufferLevel>(type),
+        .level = toVk<VkCommandBufferLevel>(type),
         .commandBufferCount = static_cast<uint32_t>(selves.size()),
     };
     if (!VK_CHECK(vkAllocateCommandBuffers(device_handle, &allocate_info, reinterpret_cast<VkCommandBuffer*>(selves.data())))) {

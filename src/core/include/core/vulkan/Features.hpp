@@ -1,6 +1,6 @@
 #pragma once
 
-#include <core/meta/Enum.hpp>
+#include <core/vulkan/enum/VulkanEnum.hpp>
 
 #include <bitset>
 #include <string>
@@ -91,4 +91,4 @@ struct VulkanFeatures final {
 
 } // namespace core::vk
 
-CORE_ENUM_FUNCTIONS(::core::vk::VulkanFeature);
+CORE_VK_REGISTER_ENUM(VulkanFeature);

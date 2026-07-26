@@ -1,7 +1,7 @@
 #pragma once
 
 #include <core/common/Version.hpp>
-#include <core/meta/Enum.hpp>
+#include <core/vulkan/enum/VulkanEnum.hpp>
 
 #include <string>
 
@@ -46,4 +46,4 @@ VulkanLayers loadSupportedLayers();
 
 } // namespace core::vk
 
-CORE_ENUM_FUNCTIONS(::core::vk::VulkanLayer);
+CORE_VK_REGISTER_ENUM(VulkanLayer);

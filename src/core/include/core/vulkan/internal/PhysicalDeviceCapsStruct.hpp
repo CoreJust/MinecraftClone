@@ -63,11 +63,11 @@ struct PhysicalDeviceCapsStruct final {
 
     [[nodiscard]]
     PhysicalDeviceType type() const noexcept {
-        return static_cast<PhysicalDeviceType>(properties.deviceType);
+        return fromVk<PhysicalDeviceType>(properties.deviceType);
     }
 
     void setType(PhysicalDeviceType const type) noexcept {
-        properties.deviceType = static_cast<VkPhysicalDeviceType>(type);
+        properties.deviceType = toVk<VkPhysicalDeviceType>(type);
     }
 
     [[nodiscard]]

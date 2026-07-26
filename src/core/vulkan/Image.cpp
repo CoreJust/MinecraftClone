@@ -15,13 +15,13 @@ ImageView RawImage::createView(Device const& device, ImageView::Info const& info
     VkImageViewCreateInfo create_info{
         .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
         .image = m_handle,
-        .viewType = static_cast<VkImageViewType>(info.type),
-        .format = static_cast<VkFormat>(m_info.format),
+        .viewType = toVk<VkImageViewType>(info.type),
+        .format = toVk<VkFormat>(m_info.format),
         .components = VkComponentMapping{
-            .r = static_cast<VkComponentSwizzle>(info.mapping.r),
-            .g = static_cast<VkComponentSwizzle>(info.mapping.g),
-            .b = static_cast<VkComponentSwizzle>(info.mapping.b),
-            .a = static_cast<VkComponentSwizzle>(info.mapping.a),
+            .r = toVk<VkComponentSwizzle>(info.mapping.r),
+            .g = toVk<VkComponentSwizzle>(info.mapping.g),
+            .b = toVk<VkComponentSwizzle>(info.mapping.b),
+            .a = toVk<VkComponentSwizzle>(info.mapping.a),
         },
         .subresourceRange = VkImageSubresourceRange{
             .aspectMask = info.aspect.value,

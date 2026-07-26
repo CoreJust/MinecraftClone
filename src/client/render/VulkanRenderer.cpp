@@ -138,7 +138,7 @@ private:
             vk::PipelineLayout::Info::fromSpirVs(player_mesh, trivial_frag),
         };
 
-        VkFormat const format = static_cast<VkFormat>(m_graph.ctx().surfaceFormat());
+        VkFormat const format = toVk<VkFormat>(m_graph.ctx().surfaceFormat());
         VkPipelineRenderingCreateInfo const gridRendering{
             .sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO,
             .colorAttachmentCount = 1,

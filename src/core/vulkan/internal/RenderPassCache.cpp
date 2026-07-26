@@ -115,9 +115,9 @@ VulkanContext::RenderPassCache::RenderPassKey VulkanContext::RenderPassCache::ma
     for (ColorAttachment const& attachment : attachments.colors) {
         AttachmentView const view = view_provider[attachment.view_id];
         key.colors.push_back(ColorKey{
-            .format = static_cast<VkFormat>(view.image.format()),
-            .load_op = static_cast<VkAttachmentLoadOp>(attachmentLoadOpToVk(attachment.ops.load)),
-            .store_op = static_cast<VkAttachmentStoreOp>(attachmentStoreOpToVk(attachment.ops.store)),
+            .format = toVk<VkFormat>(view.image.format()),
+            .load_op = toVk<VkAttachmentLoadOp>(attachment.ops.load),
+            .store_op = toVk<VkAttachmentStoreOp>(attachment.ops.store),
         });
     }
 
@@ -125,11 +125,11 @@ VulkanContext::RenderPassCache::RenderPassKey VulkanContext::RenderPassCache::ma
         DepthStencilAttachment const attachment = attachments.depth_stencil.value();
         AttachmentView const view = view_provider[attachment.view_id];
         key.depth_stencil = DepthStencilKey{
-            .format = static_cast<VkFormat>(view.image.format()),
-            .depth_load_op = static_cast<VkAttachmentLoadOp>(attachmentLoadOpToVk(attachment.depth_ops.load)),
-            .depth_store_op = static_cast<VkAttachmentStoreOp>(attachmentStoreOpToVk(attachment.depth_ops.store)),
-            .stencil_load_op = static_cast<VkAttachmentLoadOp>(attachmentLoadOpToVk(attachment.stencil_ops.load)),
-            .stencil_store_op = static_cast<VkAttachmentStoreOp>(attachmentStoreOpToVk(attachment.stencil_ops.store)),
+            .format = toVk<VkFormat>(view.image.format()),
+            .depth_load_op = toVk<VkAttachmentLoadOp>(attachment.depth_ops.load),
+            .depth_store_op = toVk<VkAttachmentStoreOp>(attachment.depth_ops.store),
+            .stencil_load_op = toVk<VkAttachmentLoadOp>(attachment.stencil_ops.load),
+            .stencil_store_op = toVk<VkAttachmentStoreOp>(attachment.stencil_ops.store),
         };
     }
 
@@ -137,7 +137,7 @@ VulkanContext::RenderPassCache::RenderPassKey VulkanContext::RenderPassCache::ma
     for (InputAttachment const& attachment : attachments.inputs) {
         AttachmentView const view = view_provider[attachment.view_id];
         key.inputs.push_back(InputKey{
-            .format = static_cast<VkFormat>(view.image.format()),
+            .format = toVk<VkFormat>(view.image.format()),
         });
     }
 
@@ -145,7 +145,7 @@ VulkanContext::RenderPassCache::RenderPassKey VulkanContext::RenderPassCache::ma
     for (size_t i = 0; i < attachments.color_resolves.size() && i < attachments.colors.size(); ++i) {
         AttachmentView const view = view_provider[attachments.color_resolves[i].view_id];
         key.color_resolves[i] = ResolveKey{
-            .format = static_cast<VkFormat>(view.image.format()),
+            .format = toVk<VkFormat>(view.image.format()),
         };
     }
 
@@ -153,7 +153,7 @@ VulkanContext::RenderPassCache::RenderPassKey VulkanContext::RenderPassCache::ma
         DepthStencilResolveAttachment const attachment = attachments.depth_stencil_resolve.value();
         AttachmentView const view = view_provider[attachment.view_id];
         key.depth_stencil_resolve = DepthStencilResolveKey{
-            .format = static_cast<VkFormat>(view.image.format()),
+            .format = toVk<VkFormat>(view.image.format()),
             .resolve_depth = attachment.resolve_depth,
             .resolve_stencil = attachment.resolve_stencil,
         };
@@ -163,7 +163,7 @@ VulkanContext::RenderPassCache::RenderPassKey VulkanContext::RenderPassCache::ma
     for (PreserveAttachment const& attachment : attachments.preserve) {
         AttachmentView const view = view_provider[attachment.view_id];
         key.preserve.push_back(PreserveKey{
-            .format = static_cast<VkFormat>(view.image.format()),
+            .format = toVk<VkFormat>(view.image.format()),
         });
     }
 

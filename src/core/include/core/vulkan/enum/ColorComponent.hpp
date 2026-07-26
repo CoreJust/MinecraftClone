@@ -1,7 +1,7 @@
 #pragma once
 
 #include <core/common/EnumBits.hpp>
-#include <core/meta/Enum.hpp>
+#include <core/vulkan/enum/VulkanEnum.hpp>
 
 namespace core::vk {
 
@@ -18,4 +18,4 @@ using ColorComponents = EnumBits<ColorComponent>;
 
 } // namespace core::vk
 
-CORE_ENUM_FUNCTIONS(::core::vk::ColorComponent);
+CORE_VK_REGISTER_ENUM(ColorComponent);

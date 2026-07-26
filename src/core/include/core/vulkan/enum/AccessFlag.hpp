@@ -1,7 +1,7 @@
 #pragma once
 
 #include <core/common/EnumBits.hpp>
-#include <core/meta/Enum.hpp>
+#include <core/vulkan/enum/VulkanEnum.hpp>
 
 #include <cstdint>
 
@@ -75,4 +75,4 @@ using AccessFlags = EnumBits<AccessFlag, uint64_t>;
 
 } // namespace core::vk
 
-CORE_ENUM_FUNCTIONS(::core::vk::AccessFlag);
+CORE_VK_REGISTER_ENUM(AccessFlag);

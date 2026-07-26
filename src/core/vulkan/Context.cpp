@@ -29,8 +29,8 @@ VkRenderingAttachmentInfo makeColorRenderingAttachment(
         .resolveMode = VK_RESOLVE_MODE_NONE,
         .resolveImageView = VK_NULL_HANDLE,
         .resolveImageLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-        .loadOp = static_cast<VkAttachmentLoadOp>(attachmentLoadOpToVk(attachment.ops.load)),
-        .storeOp = static_cast<VkAttachmentStoreOp>(attachmentStoreOpToVk(attachment.ops.store)),
+        .loadOp = toVk<VkAttachmentLoadOp>(attachment.ops.load),
+        .storeOp = toVk<VkAttachmentStoreOp>(attachment.ops.store),
         .clearValue = attachment.clear_color.has_value()
             ? makeColorClearValue(*attachment.clear_color)
             : VkClearValue{ },
@@ -360,8 +360,8 @@ void VulkanContext::beginDynamicRenderScope(
             .resolveMode = VK_RESOLVE_MODE_NONE,
             .resolveImageView = VK_NULL_HANDLE,
             .resolveImageLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-            .loadOp = static_cast<VkAttachmentLoadOp>(attachmentLoadOpToVk(attachment.depth_ops.load)),
-            .storeOp = static_cast<VkAttachmentStoreOp>(attachmentStoreOpToVk(attachment.depth_ops.store)),
+            .loadOp = toVk<VkAttachmentLoadOp>(attachment.depth_ops.load),
+            .storeOp = toVk<VkAttachmentStoreOp>(attachment.depth_ops.store),
             .clearValue = attachment.clear_depth.has_value()
                 ? makeDepthClearValue(*attachment.clear_depth)
                 : VkClearValue{ },
@@ -373,8 +373,8 @@ void VulkanContext::beginDynamicRenderScope(
             .resolveMode = VK_RESOLVE_MODE_NONE,
             .resolveImageView = VK_NULL_HANDLE,
             .resolveImageLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-            .loadOp = static_cast<VkAttachmentLoadOp>(attachmentLoadOpToVk(attachment.stencil_ops.load)),
-            .storeOp = static_cast<VkAttachmentStoreOp>(attachmentStoreOpToVk(attachment.stencil_ops.store)),
+            .loadOp = toVk<VkAttachmentLoadOp>(attachment.stencil_ops.load),
+            .storeOp = toVk<VkAttachmentStoreOp>(attachment.stencil_ops.store),
             .clearValue = VkClearValue{ .depthStencil = {
                 .stencil = attachment.clear_stencil.value_or(0),
             }},

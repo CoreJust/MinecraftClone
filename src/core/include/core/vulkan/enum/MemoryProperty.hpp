@@ -1,7 +1,7 @@
 #pragma once
 
 #include <core/common/EnumBits.hpp>
-#include <core/meta/Enum.hpp>
+#include <core/vulkan/enum/VulkanEnum.hpp>
 
 #include <cstdint>
 
@@ -30,4 +30,4 @@ struct MemoryHeap final {
 
 } // namespace core::vk
 
-CORE_ENUM_FUNCTIONS(::core::vk::MemoryProperty);
+CORE_VK_REGISTER_ENUM(MemoryProperty);

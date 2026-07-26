@@ -1,6 +1,6 @@
 #pragma once
 
-#include <core/meta/Enum.hpp>
+#include <core/vulkan/enum/VulkanEnum.hpp>
 
 namespace core::vk {
 
@@ -27,4 +27,4 @@ enum class LogicOp {
 
 } // namespace core::vk
 
-CORE_ENUM_FUNCTIONS(::core::vk::LogicOp);
+CORE_VK_REGISTER_ENUM(LogicOp);

@@ -5,6 +5,7 @@ target_sources(mc
         FILES
             Enum.hpp
             EnumImpl.hpp
+            EnumMapping.hpp
             Field.hpp
             FieldRequirement.hpp
             TaggedBool.hpp

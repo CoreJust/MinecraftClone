@@ -1,6 +1,6 @@
 #pragma once
 
-#include <core/meta/Enum.hpp>
+#include <core/vulkan/enum/VulkanEnum.hpp>
 
 namespace core::vk {
 
@@ -25,4 +25,4 @@ struct ComponentMapping final {
 
 } // namespace core::vk
 
-CORE_ENUM_FUNCTIONS(::core::vk::ComponentSwizzle);
+CORE_VK_REGISTER_ENUM(ComponentSwizzle);

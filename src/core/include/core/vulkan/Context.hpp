@@ -162,6 +162,6 @@ private:
 
 } // namespace core::vk
 
-CORE_ENUM_FUNCTIONS(::core::vk::ReloadType);
-CORE_ENUM_FUNCTIONS(::core::vk::ReloadSource);
-CORE_ENUM_FUNCTIONS(::core::vk::ReloadAction);
+CORE_VK_REGISTER_ENUM(ReloadType);
+CORE_VK_REGISTER_ENUM(ReloadSource);
+CORE_VK_REGISTER_ENUM(ReloadAction);

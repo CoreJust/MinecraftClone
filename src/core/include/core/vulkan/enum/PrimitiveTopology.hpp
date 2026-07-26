@@ -1,6 +1,6 @@
 #pragma once
 
-#include <core/meta/Enum.hpp>
+#include <core/vulkan/enum/VulkanEnum.hpp>
 
 namespace core::vk {
 
@@ -22,4 +22,4 @@ enum class PrimitiveTopology {
 
 } // namespace core::vk
 
-CORE_ENUM_FUNCTIONS(::core::vk::PrimitiveTopology);
+CORE_VK_REGISTER_ENUM(PrimitiveTopology);

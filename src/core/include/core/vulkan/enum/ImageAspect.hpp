@@ -1,7 +1,7 @@
 #pragma once
 
 #include <core/common/EnumBits.hpp>
-#include <core/meta/Enum.hpp>
+#include <core/vulkan/enum/VulkanEnum.hpp>
 
 namespace core::vk {
 
@@ -25,4 +25,4 @@ using ImageAspectBits = EnumBits<ImageAspect>;
 
 } // namespace core::vk
 
-CORE_ENUM_FUNCTIONS(::core::vk::ImageAspect);
+CORE_VK_REGISTER_ENUM(ImageAspect);

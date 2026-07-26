@@ -1,6 +1,6 @@
 #pragma once
 
-#include <core/meta/Enum.hpp>
+#include <core/vulkan/enum/VulkanEnum.hpp>
 
 namespace core::vk {
 
@@ -24,20 +24,6 @@ enum class ColorSpace {
     Count,
 };
 
-[[nodiscard]]
-constexpr uint32_t colorSpaceToVk(ColorSpace const color_space) noexcept {
-    return color_space == ColorSpace::SRGBNonlinear
-        ? 0
-        : static_cast<uint32_t>(color_space) + 1'000'104'000;
-}
-
-[[nodiscard]]
-constexpr ColorSpace vkToColorSpace(uint32_t const color_space) noexcept {
-    return color_space == 0
-        ? ColorSpace::SRGBNonlinear
-        : static_cast<ColorSpace>(color_space - 1'000'104'000);
-}
-
 } // namespace core::vk
 
-CORE_ENUM_FUNCTIONS(::core::vk::ColorSpace);
+CORE_VK_REGISTER_ENUM(ColorSpace, { SRGBNonlinear, 1'000'104'000 });

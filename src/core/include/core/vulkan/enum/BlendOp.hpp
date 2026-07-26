@@ -1,6 +1,6 @@
 #pragma once
 
-#include <core/meta/Enum.hpp>
+#include <core/vulkan/enum/VulkanEnum.hpp>
 
 namespace core::vk {
 
@@ -60,24 +60,6 @@ enum class BlendOp {
     Count,
 };
 
-// TODO: add VulkanEnum.hpp with helpers, including general toVk<T> and fromVk<T>.
-[[nodiscard]]
-constexpr BlendOp blendOpFromVk(uint32_t const op) noexcept {
-    return static_cast<BlendOp>(op >= 1000148000
-        ? op - 1000148000 + static_cast<uint32_t>(BlendOp::Zero)
-        : op
-    );
-}
-
-[[nodiscard]]
-constexpr uint32_t blendOpToVk(BlendOp const op) noexcept {
-    uint32_t const as_uint32 = static_cast<uint32_t>(op);
-    return as_uint32 >= static_cast<uint32_t>(BlendOp::Zero)
-        ? as_uint32 + 1000148000 - static_cast<uint32_t>(BlendOp::Zero)
-        : as_uint32
-    ;
-}
-
 } // namespace core::vk
 
-CORE_ENUM_FUNCTIONS(::core::vk::BlendOp);
+CORE_VK_REGISTER_ENUM(BlendOp, { Zero, 1'000'148'000 });

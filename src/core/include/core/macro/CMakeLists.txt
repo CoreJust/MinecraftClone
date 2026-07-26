@@ -5,6 +5,7 @@ target_sources(mc
         FILES
             Attributes.hpp
             Compiler.hpp
+            Count.hpp
             LanguageVersion.hpp
             NameGeneration.hpp
             OS.hpp

@@ -54,7 +54,7 @@ TrivialPair<Format, ColorSpace> chooseSurfaceFormat(
     if (!required_formats.empty()) {
         bool found_some_required_format = false;
         for (Format const f : required_formats) {
-            if (found_formats.contains(static_cast<VkFormat>(f))) {
+            if (found_formats.contains(toVk<VkFormat>(f))) {
                 found_some_required_format = true;
                 break;
             }
@@ -70,7 +70,7 @@ TrivialPair<Format, ColorSpace> chooseSurfaceFormat(
     if (!required_color_spaces.empty()) {
         bool found_some_required_color_space = false;
         for (ColorSpace const cs : required_color_spaces) {
-            if (found_color_spaces.contains(static_cast<VkColorSpaceKHR>(colorSpaceToVk(cs)))) {
+            if (found_color_spaces.contains(toVk<VkColorSpaceKHR>(cs))) {
                 found_some_required_color_space = true;
                 break;
             }
@@ -79,7 +79,7 @@ TrivialPair<Format, ColorSpace> chooseSurfaceFormat(
             throw SwapchainCreationError(
                 SwapchainCreationError::NoSuchColorSpace,
                 "only following color spaces are supported: {}",
-                joinFmt(found_color_spaces, [](VkColorSpaceKHR const cs){ return vkToColorSpace(cs); }));
+                joinFmt(found_color_spaces, &fromVk<ColorSpace, VkColorSpaceKHR>));
         }
     }
 
@@ -88,17 +88,17 @@ TrivialPair<Format, ColorSpace> chooseSurfaceFormat(
         std::numeric_limits<int32_t>::min(),
     };
     TrivialPair<ColorSpace, int32_t> best_color_space {
-        static_cast<ColorSpace>(vkToColorSpace(*found_color_spaces.begin())),
+        fromVk<ColorSpace>(*found_color_spaces.begin()),
         std::numeric_limits<int32_t>::min(),
     };
     for (auto const [f, value] : preferred_formats) {
-        if (value > best_format.second && found_formats.contains(static_cast<VkFormat>(f))) {
+        if (value > best_format.second && found_formats.contains(toVk<VkFormat>(f))) {
             best_format.first = f;
             best_format.second = value;
         }
     }
     for (auto const [cs, value] : preferred_color_spaces) {
-        if (value > best_color_space.second && found_color_spaces.contains(static_cast<VkColorSpaceKHR>(colorSpaceToVk(cs)))) {
+        if (value > best_color_space.second && found_color_spaces.contains(toVk<VkColorSpaceKHR>(cs))) {
             best_color_space.first = cs;
             best_color_space.second = value;
         }
@@ -240,8 +240,8 @@ Swapchain SwapchainBuilder::build(
         .sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
         .surface = surface.handle(),
         .minImageCount = image_count,
-        .imageFormat = static_cast<VkFormat>(format),
-        .imageColorSpace = static_cast<VkColorSpaceKHR>(colorSpaceToVk(color_space)),
+        .imageFormat = toVk<VkFormat>(format),
+        .imageColorSpace = toVk<VkColorSpaceKHR>(color_space),
         .imageExtent = {extent.x, extent.y},
         .imageArrayLayers = 1,
         .imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
@@ -252,7 +252,7 @@ Swapchain SwapchainBuilder::build(
         .pQueueFamilyIndices = (queue_family_ndices[0] != queue_family_ndices[1]) ? queue_family_ndices : nullptr,
         .preTransform = static_cast<VkSurfaceTransformFlagBitsKHR>(surface_transform.value),
         .compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
-        .presentMode = static_cast<VkPresentModeKHR>(mode),
+        .presentMode = toVk<VkPresentModeKHR>(mode),
         .clipped = VK_TRUE,
         .oldSwapchain = old_swapchain != nullptr ? old_swapchain->handle() : VK_NULL_HANDLE,
     };
