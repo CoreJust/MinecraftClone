@@ -182,17 +182,14 @@ class VulkanRaii : public Resource, NonCopyable {
     using Destroyer = Resource::Destroyer;
 public:
     VulkanRaii() noexcept = default;
-    VulkanRaii(VulkanRaii&& other) noexcept 
+    VulkanRaii(VulkanRaii&& other) noexcept
         : Resource(other.grabRaw())
         , m_destroyer(std::move(other.m_destroyer))
     { }
 
     VulkanRaii& operator=(VulkanRaii&& other) noexcept {
-        if (this != &other) {
-            this->~VulkanRaii();
-            static_cast<Resource&>(*this) = other.grabRaw();
-            m_destroyer = std::move(other.m_destroyer);
-        }
+        VulkanRaii tmp{ std::move(other) };
+        swap(tmp);
         return *this;
     }
 
@@ -218,6 +215,12 @@ public:
     Resource raw() const noexcept { return static_cast<Resource const&>(*this); }
     [[nodiscard]]
     Resource grabRaw() noexcept { return std::exchange(static_cast<Resource&>(*this), Resource{ }); }
+
+    void swap(VulkanRaii& other) noexcept {
+        using std::swap;
+        swap(static_cast<Resource&>(*this), static_cast<Resource&>(other));
+        swap(m_destroyer, other.m_destroyer);
+    }
 private:
     explicit VulkanRaii(TrivialPair<Resource, Destroyer> rd)
         : Resource{ std::move(rd.first) }
