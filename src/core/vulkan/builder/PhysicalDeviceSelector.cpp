@@ -4,6 +4,8 @@
 #include <core/vulkan/Check.hpp>
 #include <core/vulkan/internal/PhysicalDeviceCapsStruct.hpp>
 
+#include <algorithm>
+
 CORE_ENUM_FUNCTIONS_IMPL(::core::vk::PhysicalDeviceSelectionErrorKind);
 
 namespace core::vk {
@@ -26,6 +28,13 @@ void commitCaps(
     }
     for (VulkanExtension const ext : preferred_extensions) {
         supported_extensions.versionAt(ext) = extensions.getExtensionVersion(ext);
+    }
+    // VK_KHR_portability_subset is spec-mandatory to enable whenever the device
+    // supports it (e.g. MoltenVK and other portability drivers). core::vk enables
+    // it automatically so callers do not have to handle portability drivers.
+    if (extensions.hasExtension(VulkanExtension::PortabilitySubset)) {
+        supported_extensions.versionAt(VulkanExtension::PortabilitySubset)
+            = extensions.getExtensionVersion(VulkanExtension::PortabilitySubset);
     }
 
     VulkanFeatures const features = caps.getFeatures();

@@ -1,5 +1,7 @@
 #include <core/IO/StacktraceFmt.hpp>
 
+#if CORE_HAS_STACKTRACE
+
 #include <sstream>
 
 namespace fmt {
@@ -15,3 +17,5 @@ context::iterator formatter<std::stacktrace>::format(std::stacktrace const& st, 
 }
 
 } // namespace fmt
+
+#endif

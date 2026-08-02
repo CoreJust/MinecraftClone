@@ -8,6 +8,8 @@ target_sources(mc
 mc_target_shaders(mc
     render/shaders/grid.mesh
     render/shaders/player.mesh
+    render/shaders/grid.vert
+    render/shaders/player.vert
     render/shaders/trivial.frag
 )
 

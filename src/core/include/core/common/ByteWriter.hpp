@@ -45,7 +45,7 @@ public:
 
     template<typename Self>
     auto&& write(this Self&& self, std::string_view const value) {
-        return self.write(std::span{ value.data(), value,size() });
+        return self.write(std::span{ value.data(), value.size() });
     }
 
     [[nodiscard]]

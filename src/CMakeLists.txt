@@ -20,6 +20,10 @@ target_compile_definitions(mc
 if(WIN32) # For ENet
     target_link_libraries(mc PRIVATE winmm ws2_32)
 endif()
+if(APPLE) # For vkCreateMetalSurfaceEXT and the Cocoa/CAMetalLayer window binding
+    target_compile_definitions(mc PRIVATE VK_USE_PLATFORM_METAL_EXT)
+    target_link_libraries(mc PRIVATE "-framework Cocoa" "-framework QuartzCore")
+endif()
 
 
 target_include_directories(mc

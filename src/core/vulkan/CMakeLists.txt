@@ -28,6 +28,18 @@ target_sources(mc
         Swapchain.cpp
         VulkanVersion.cpp
 )
+if(APPLE)
+    target_sources(mc
+        PRIVATE
+            MetalLayer.mm
+            SurfacePlatform.mm
+    )
+else()
+    target_sources(mc
+        PRIVATE
+            SurfacePlatform.cpp
+    )
+endif()
 add_subdirectory(builder)
 add_subdirectory(enum)
 add_subdirectory(internal)

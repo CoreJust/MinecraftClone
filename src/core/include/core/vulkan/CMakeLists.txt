@@ -29,6 +29,7 @@ target_sources(mc
             ImageView.hpp
             Instance.hpp
             Layers.hpp
+            MetalLayer.hpp
             PhysicalDevice.hpp
             PhysicalDeviceProperties.hpp
             PipelineLayout.hpp
@@ -38,6 +39,7 @@ target_sources(mc
             ShaderModule.hpp
             SpirV.hpp
             Surface.hpp
+            SurfacePlatform.hpp
             Swapchain.hpp
             VulkanVersion.hpp
             builder/AllocatorBuilder.hpp

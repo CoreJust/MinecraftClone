@@ -27,9 +27,7 @@ class RawGraphicsPipeline : public VulkanResourceBase<VkPipeline> {
 public:
     BoundGraphicsPipeline bind(RawCommandBuffer cmd) const;
 
-    void execute(RawCommandBuffer cmd, std::invocable<BoundGraphicsPipeline> auto&& fn) const {
-        fn(bind(cmd));
-    }
+    void execute(RawCommandBuffer cmd, std::invocable<BoundGraphicsPipeline> auto&& fn) const;
 private:
     void pushConstants(
         RawCommandBuffer cmd,
@@ -121,5 +119,9 @@ struct BoundGraphicsPipeline final {
         pipeline.drawMeshTasks(cmd, group_count_x, group_count_y, group_count_z);
     }
 };
+
+void RawGraphicsPipeline::execute(RawCommandBuffer cmd, std::invocable<BoundGraphicsPipeline> auto&& fn) const {
+    fn(bind(cmd));
+}
 
 } // namespace core::vk

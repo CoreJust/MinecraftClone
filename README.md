@@ -44,6 +44,8 @@ Config files are expected to be replaceable in the future, so it can be easy to 
 
 *Note: replace debug with release below to get the Release build.*
 
+Prerequisites: CMake 3.24+, Ninja, and vcpkg (with the `VCPKG_ROOT` environment variable set).
+
 ### Configure
 
 ```bash
@@ -103,8 +105,19 @@ Current dependencies:
 6. glm;
 7. gtest;
 8. VMA;
-9. Vulkan::glslc;
-10. volk.
+9. volk.
+
+In addition, the Vulkan SDK (loader and `glslc`) is required. It is located via CMake's `FindVulkan` module; set the `VULKAN_SDK` environment variable to the SDK's platform folder (e.g. `<sdk>/macOS` on macOS) if it is not installed system-wide.
+
+The renderer requires Vulkan 1.3 (it uses dynamic rendering, synchronization2 and maintenance4, which are Vulkan 1.3 features). Mesh shaders (`VK_EXT_mesh_shader`) are only preferred, not required: on drivers that lack them the renderer falls back to equivalent vertex pipelines, so they do not raise the minimum version.
+
+### macOS notes
+
+Vulkan is provided by MoltenVK via the Vulkan SDK. MoltenVK must advertise Vulkan 1.3 or newer (the renderer's minimum); any recent SDK satisfies this. If the SDK is not installed system-wide, point the loader at its ICD when running:
+
+```bash
+VK_DRIVER_FILES=<sdk>/macOS/share/vulkan/icd.d/MoltenVK_icd.json ./build/debug/mc_main
+```
 
 ## Highlights
 

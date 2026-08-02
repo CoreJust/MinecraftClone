@@ -223,6 +223,13 @@ public:
     }
 
     template<typename Self>
+    [[nodiscard]] auto&& preferMeshShaders(this Self&& self) {
+        self.m_physical_device_selector.preferExtensions({ VulkanExtension::MeshShader });
+        self.m_physical_device_selector.preferFeatures({ VulkanFeature::MeshShader });
+        return std::forward<Self>(self);
+    }
+
+    template<typename Self>
     [[nodiscard]] auto&& requireTaskShaders(this Self&& self) {
         self.m_physical_device_selector.requireFeatures({ VulkanFeature::TaskShader });
         return std::forward<Self>(self);

@@ -12,7 +12,7 @@ inline void assertFailed(
 ) {
     Log::getLogger()->critical(
         "Assertion failed at {}:{}\n{} evaluated to false\nStacktrace:\n{}",
-        file, line, condition_str, std::stacktrace::current());
+        file, line, condition_str, currentStacktrace());
     std::exit(1);
 }
 
@@ -27,7 +27,7 @@ void assertFailed(
     std::string user_msg = fmt::format(fmt, std::forward<Args>(args)...);
     Log::getLogger()->critical(
         "Assertion failed at {}:{}: {}\n{} evaluated to false\nStacktrace:\n{}",
-        file, line, user_msg, condition_str, std::stacktrace::current());
+        file, line, user_msg, condition_str, currentStacktrace());
     std::exit(1);
 }
 

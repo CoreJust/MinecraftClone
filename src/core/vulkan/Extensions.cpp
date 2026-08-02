@@ -56,6 +56,7 @@ char const* getFullExtensionName(VulkanExtension const ext) noexcept {
         "VK_KHR_create_renderpass2",
         "VK_EXT_mesh_shader",
         "VK_KHR_portability_enumeration",
+        "VK_KHR_portability_subset",
 
         "VK_KHR_surface",
         "VK_KHR_adnroid_surface",
@@ -186,6 +187,7 @@ Version getExtensionPromotionVersion(VulkanExtension const ext) noexcept {
         case VulkanExtension::MeshShader:                 [[fallthrough]];
         case VulkanExtension::MultiDraw:                  [[fallthrough]];
         case VulkanExtension::PortabilityEnumeration:     [[fallthrough]];
+        case VulkanExtension::PortabilitySubset:          [[fallthrough]];
         case VulkanExtension::ConditionalRendering:
             return Version::MAX();
     default:

@@ -5,6 +5,7 @@
 #include <spirv-reflect/spirv_reflect.h>
 #include <volk.h>
 
+#include <algorithm>
 #include <unordered_map>
 
 namespace core::vk {

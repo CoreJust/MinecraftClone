@@ -28,6 +28,7 @@ enum class VulkanExtension {
     CreateRenderPass2,       // VK_KHR_create_renderpass2
     MeshShader,              // VK_EXT_mesh_shader
     PortabilityEnumeration,  // VK_KHR_portability_enumeration
+    PortabilitySubset,       // VK_KHR_portability_subset
 
     // Surface
     Surface,                 // VK_KHR_surface

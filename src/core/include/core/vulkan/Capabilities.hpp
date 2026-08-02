@@ -109,6 +109,11 @@ public:
     }
 
     [[nodiscard]]
+    bool hasMeshShaders() const noexcept {
+        return has(VulkanExtension::MeshShader) && has(VulkanFeature::MeshShader);
+    }
+
+    [[nodiscard]]
     bool hasExtensionOrPromoted(VulkanExtension const extension) const noexcept {
         if (getExtensionKind(extension) == VulkanExtensionKind::Instance) {
             if (instanceVersion() >= getExtensionPromotionVersion(extension)) {

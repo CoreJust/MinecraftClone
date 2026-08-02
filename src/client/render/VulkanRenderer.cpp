@@ -20,6 +20,7 @@ namespace {
 
 constexpr uint32_t kGridWorkgroupsX = 32;
 constexpr uint32_t kGridWorkgroupsY = 32;
+constexpr uint32_t kQuadVertexCount = 6;
 
 struct alignas(16) GridPushConstants final {
     float worldSize = 32.f;
@@ -51,7 +52,7 @@ public:
                 .renderTo(window)
                 .portabilityEnumeration()
                 .requireValidation()
-                .requireMeshShaders()
+                .preferMeshShaders()
                 .requireFeatures({
                     vk::VulkanFeature::DynamicRendering,
                     vk::VulkanFeature::Synchronization2,
@@ -92,8 +93,12 @@ public:
         GridPushConstants const grid_push{ };
         m_graph.bind(m_render_pass, [&](vk::FramePassContext const ctx) {
             m_grid_pipeline.execute(ctx.cmd, [&](vk::BoundGraphicsPipeline p) {
-                p.pushConstants(vk::ShaderStage::Mesh, 0, grid_push);
-                p.drawMeshTasks(kGridWorkgroupsX, kGridWorkgroupsY);
+                p.pushConstants(m_main_shader_stage, 0, grid_push);
+                if (m_mesh_shaders) {
+                    p.drawMeshTasks(kGridWorkgroupsX, kGridWorkgroupsY);
+                } else {
+                    p.draw(kQuadVertexCount, kGridWorkgroupsX * kGridWorkgroupsY);
+                }
             });
             m_player_pipeline.execute(ctx.cmd, [&](vk::BoundGraphicsPipeline p) {
                 for (PlayerRenderData const& player : players) {
@@ -105,8 +110,12 @@ public:
                         .size = 2.0f,
                         .color = player.color,
                     };
-                    p.pushConstants(vk::ShaderStage::Mesh, 0, push);
-                    p.drawMeshTasks();
+                    p.pushConstants(m_main_shader_stage, 0, push);
+                    if (m_mesh_shaders) {
+                        p.drawMeshTasks();
+                    } else {
+                        p.draw(kQuadVertexCount);
+                    }
                 }
             });
         });
@@ -119,25 +128,35 @@ public:
 private:
     void createPipelines() {
         vk::Device& dev = m_graph.ctx().device();
-        vk::SpirV grid_mesh = vk::SpirV::fromFile(SPIR_V_PATH("grid.mesh"));
-        vk::SpirV player_mesh = vk::SpirV::fromFile(SPIR_V_PATH("player.mesh"));
+        m_mesh_shaders = m_graph.ctx().hasMeshShaders();
+        m_main_shader_stage = m_mesh_shaders ? vk::ShaderStage::Mesh : vk::ShaderStage::Vertex;
+        if (!m_mesh_shaders) {
+            CORE_WARN("Mesh shaders are not supported by the device; using vertex pipelines instead");
+        }
+
+        vk::SpirV grid_shader = vk::SpirV::fromFile(
+            m_mesh_shaders ? SPIR_V_PATH("grid.mesh") : SPIR_V_PATH("grid.vert")
+        );
+        vk::SpirV player_shader = vk::SpirV::fromFile(
+            m_mesh_shaders ? SPIR_V_PATH("player.mesh") : SPIR_V_PATH("player.vert")
+        );
         vk::SpirV trivial_frag = vk::SpirV::fromFile(SPIR_V_PATH("trivial.frag"));
-        m_grid_shader = vk::ShaderModule{ dev, grid_mesh };
-        m_player_shader = vk::ShaderModule{ dev, player_mesh };
+        m_grid_shader = vk::ShaderModule{ dev, grid_shader };
+        m_player_shader = vk::ShaderModule{ dev, player_shader };
         m_fragment_shader = vk::ShaderModule{ dev, trivial_frag };
 
         m_grid_layout = vk::PipelineLayout{
             dev,
-            vk::PipelineLayout::Info::fromSpirVs(grid_mesh, trivial_frag),
+            vk::PipelineLayout::Info::fromSpirVs(grid_shader, trivial_frag),
         };
         m_player_layout = vk::PipelineLayout{
             dev,
-            vk::PipelineLayout::Info::fromSpirVs(player_mesh, trivial_frag),
+            vk::PipelineLayout::Info::fromSpirVs(player_shader, trivial_frag),
         };
 
         vk::GraphicsPipelineOptions grid_opts{
             .shaders = {
-                {vk::ShaderStage::Mesh,     grid_mesh,    "main"},
+                {m_main_shader_stage,       grid_shader,  "main"},
                 {vk::ShaderStage::Fragment, trivial_frag, "main"}
             },
             .dynamic_rendering = vk::DynamicRenderingInfo{
@@ -153,7 +172,7 @@ private:
 
         vk::GraphicsPipelineOptions player_opts{
             .shaders = {
-                {vk::ShaderStage::Mesh,     player_mesh,   "main"},
+                {m_main_shader_stage,       player_shader, "main"},
                 {vk::ShaderStage::Fragment, trivial_frag,  "main"}
             },
             .dynamic_rendering = vk::DynamicRenderingInfo{
@@ -183,6 +202,9 @@ private:
 private:
     vk::FrameGraph m_graph;
     vk::FramePassId m_render_pass;
+
+    bool m_mesh_shaders = false;
+    vk::ShaderStage m_main_shader_stage = vk::ShaderStage::Mesh;
 
     vk::ShaderModule m_grid_shader;
     vk::ShaderModule m_player_shader;

@@ -4,7 +4,6 @@
 #include <core/IO/Log.hpp>
 
 #include <csignal>
-#include <stacktrace>
 
 char const* decodeSignalCode(int const code) noexcept {
     switch (code) {
@@ -40,7 +39,7 @@ extern "C" void onErrorSignal(int const code) {
     CORE_CRITICAL(
         "Caught error signal: {}\nStacktrace:\n{}",
         decodeSignalCode(code),
-        std::stacktrace::current());
+        core::currentStacktrace());
     core::AtAppExit::exit();
     exit(1);
 }

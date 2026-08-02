@@ -4,8 +4,6 @@
 #include <core/IO/Log.hpp>
 #include <core/vulkan/ErrorCallbacks.hpp>
 
-#include <stacktrace>
-
 namespace core::vk::internal {
 namespace {
 
@@ -93,9 +91,9 @@ bool checkVkResult(VkResult const result) {
     std::string_view description;
     bool const isSuccess = decodeVkResult(result, description);
     if (isSuccess) {
-        CORE_TRACE("Operation returned {}\nat {}", description, std::stacktrace::current());
+        CORE_TRACE("Operation returned {}\nat {}", description, currentStacktrace());
     } else {
-        CORE_ERROR("Vulkan error: {}\nat {}", description, std::stacktrace::current());
+        CORE_ERROR("Vulkan error: {}\nat {}", description, currentStacktrace());
     }
     return isSuccess;
 }
