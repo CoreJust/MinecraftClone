@@ -1,8 +1,10 @@
 #pragma once
 
-#include <core/common/Assert.hpp>
+#include <core/common/ByteSerializable.hpp>
 
 #include <cstdint>
+#include <cstring>
+#include <optional>
 #include <span>
 #include <string_view>
 
@@ -10,42 +12,52 @@ namespace core {
 
 class ByteReader final {
 public:
-    explicit ByteReader(std::span<uint8_t> data) : m_data(data) { }
+    explicit ByteReader(std::span<uint8_t const> data) : m_data(data) { }
 
-    template<typename T, typename Self>
-        requires std::is_pod_v<T>
+    template<ByteSerializable T, typename Self>
     [[nodiscard]]
-    auto read(this Self&& self) {
-        ASSERT(
-            self.m_pos + sizeof(T) <= self.m_data.size(),
-            "Tried to read {} bytes at position {} with packet size {}",
-            sizeof(T), self.m_pos, self.m_data.size());
-        T result = std::move(*reinterpret_cast<T*>(self.m_data.data() + self.m_pos));
+    std::optional<T> read(this Self&& self) noexcept {
+        if (self.m_pos + sizeof(T) > self.m_data.size()) {
+            return std::nullopt;
+        }
+        T result;
+        std::memcpy(&result, self.m_data.data() + self.m_pos, sizeof(T));
         self.m_pos += sizeof(T);
         return result;
     }
 
-    // Note: It allocates no additional memory, make sure that the created span
-    // does not outlive the PacketReader.
+    /*
+     * Note: It allocates no additional memory, make sure that the created span
+     * does not outlive the ByteReader. Returns std::nullopt on a truncated or
+     * attacker-oversized prefix.
+     */
     template<typename T>
     [[nodiscard]]
-    std::span<T> readSpan() {
-        size_t const size = read<size_t>();
-        std::span<T> result { reinterpret_cast<T*>(m_data.data() + m_pos), size };
-        ASSERT(
-            m_pos + result.size_bytes() <= m_data.size(),
-            "Tried to read {} bytes at position {} with packet size {}",
-            result.size_bytes(), m_pos, m_data.size());
+    std::optional<std::span<T const>> readSpan() noexcept {
+        auto const element_count = read<uint64_t>();
+        if (!element_count) {
+            return std::nullopt;
+        }
+        if (*element_count > (m_data.size() - m_pos) / sizeof(T)) {
+            return std::nullopt;
+        }
+        std::span<T const> result{ reinterpret_cast<T const*>(m_data.data() + m_pos), static_cast<size_t>(*element_count) };
         m_pos += result.size_bytes();
         return result;
     }
 
-    // Note: It allocates no additional memory, make sure that the created span
-    // does not outlive the PacketReader.
+    /*
+     * Note: It allocates no additional memory, make sure that the created view
+     * does not outlive the ByteReader. Returns std::nullopt on a truncated or
+     * attacker-oversized prefix.
+     */
     [[nodiscard]]
-    std::string_view readStr() {
-        std::span as_span = readSpan<char>();
-        return std::string_view{ as_span.data(), as_span.size() };
+    std::optional<std::string_view> readStr() noexcept {
+        auto const as_span = readSpan<char>();
+        if (!as_span) {
+            return std::nullopt;
+        }
+        return std::string_view{ as_span->data(), as_span->size() };
     }
 
     [[nodiscard]]
@@ -55,7 +67,7 @@ public:
     [[nodiscard]]
     constexpr size_t left() const noexcept { return m_data.size() - m_pos; }
 private:
-    std::span<uint8_t> m_data;
+    std::span<uint8_t const> m_data;
     size_t m_pos = 0;
 };
 

@@ -7,6 +7,7 @@ target_sources(mc
             Assume.hpp
             AtAppExit.hpp
             ByteReader.hpp
+            ByteSerializable.hpp
             ByteWriter.hpp
             CodeExecutionHelper.hpp
             Color.hpp

@@ -23,7 +23,8 @@ struct MessageEncoder final {
             .reserve(sizeof(MessageType) + sizeof(msg))
             .write(MessageType::JoinRequest)
             .write(msg)
-            .build();
+            .build()
+        ;
     }
 
     std::vector<uint8_t> operator()(JoinResponseMessage const msg) {
@@ -31,7 +32,8 @@ struct MessageEncoder final {
             .reserve(sizeof(MessageType) + sizeof(msg))
             .write(MessageType::JoinResponse)
             .write(msg)
-            .build();
+            .build()
+        ;
     }
 
     std::vector<uint8_t> operator()(ClientInputMessage const msg) {
@@ -39,7 +41,8 @@ struct MessageEncoder final {
             .reserve(sizeof(MessageType) + sizeof(msg))
             .write(MessageType::ClientInput)
             .write(msg)
-            .build();
+            .build()
+        ;
     }
 
     std::vector<uint8_t> operator()(ServerPlayerPositionMessage const msg) {
@@ -47,7 +50,8 @@ struct MessageEncoder final {
             .reserve(sizeof(MessageType) + sizeof(msg))
             .write(MessageType::ServerPlayerPosition)
             .write(msg)
-            .build();
+            .build()
+        ;
     }
 
     std::vector<uint8_t> operator()(ServerRemovePlayerMessage const msg) {
@@ -55,7 +59,8 @@ struct MessageEncoder final {
             .reserve(sizeof(MessageType) + sizeof(msg))
             .write(MessageType::ServerRemovePlayer)
             .write(msg)
-            .build();
+            .build()
+        ;
     }
 };
 
@@ -67,8 +72,11 @@ std::vector<uint8_t> encodeMessage(Message const message) {
 
 std::optional<Message> decodeMessage(std::span<uint8_t> const data) {
     core::ByteReader reader{ data };
-    MessageType const type = reader.read<MessageType>();
-    switch (type) {
+    auto const type = reader.read<MessageType>();
+    if (!type) {
+        return std::nullopt;
+    }
+    switch (*type) {
         case MessageType::JoinRequest:          return reader.read<JoinRequestMessage>();
         case MessageType::JoinResponse:         return reader.read<JoinResponseMessage>();
         case MessageType::ClientInput:          return reader.read<ClientInputMessage>();

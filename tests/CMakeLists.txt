@@ -2,6 +2,7 @@ include(GoogleTest)
 
 add_executable(mc_tests
     core/net_client_server_tests.cpp
+    core/byte_io_tests.cpp
     main.cpp
 )
 

@@ -1,6 +1,9 @@
 #pragma once
 
+#include <core/common/ByteSerializable.hpp>
+
 #include <cstdint>
+#include <cstring>
 #include <span>
 #include <string_view>
 #include <vector>
@@ -19,33 +22,34 @@ public:
         return std::forward<Self>(self);
     }
 
-    template<typename Self, typename T>
-        requires std::is_pod_v<std::remove_cvref_t<T>>
+    template<typename Self, ByteSerializable T>
     auto&& write(this Self&& self, T&& value) {
         using Value = std::remove_cvref_t<T>;
         size_t const old_size = self.m_data.size();
         self.m_data.resize(self.m_data.size() + sizeof(Value));
-        ::new(self.m_data.data() + old_size) Value(std::forward<T>(value));
+        Value const stored = std::forward<T>(value);
+        std::memcpy(self.m_data.data() + old_size, &stored, sizeof(Value));
         return std::forward<Self>(self);
     }
 
-    template<typename Self, typename T>
-        requires std::is_pod_v<T>
-    auto&& write(this Self&& self, std::span<T const> const value) {
+    template<typename Self, ByteSerializable T, size_t Extent>
+    auto&& write(this Self&& self, std::span<T const, Extent> const value) {
+        uint64_t const element_count = static_cast<uint64_t>(value.size());
+        size_t const value_bytes = value.size_bytes();
         size_t const old_size = self.m_data.size();
-        size_t const value_size = value.size_bytes();
-        self.m_data.resize(old_size + value_size + sizeof(value_size));
+        self.m_data.resize(old_size + sizeof(element_count) + value_bytes);
 
         uint8_t* dst = self.m_data.data() + old_size;
-        memcpy(dst, &value_size, sizeof(value_size));
-        memcpy(dst + sizeof(value_size), value.data(), value_size);
-
+        std::memcpy(dst, &element_count, sizeof(element_count));
+        if (value_bytes > 0) {
+            std::memcpy(dst + sizeof(element_count), value.data(), value_bytes);
+        }
         return std::forward<Self>(self);
     }
 
     template<typename Self>
     auto&& write(this Self&& self, std::string_view const value) {
-        return self.write(std::span{ value.data(), value.size() });
+        return self.write(std::span{ reinterpret_cast<char const*>(value.data()), value.size() });
     }
 
     [[nodiscard]]

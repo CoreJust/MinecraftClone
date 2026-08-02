@@ -38,12 +38,10 @@ struct EnumBits final {
         return EnumBits{ value | of(rhs).value };
     }
 
-    [[nodiscard]]
     constexpr void operator|=(EnumBits const rhs) & noexcept {
         value |= rhs.value;
     }
 
-    [[nodiscard]]
     constexpr void operator|=(E const rhs) & noexcept {
         value |= of(rhs).value;
     }
