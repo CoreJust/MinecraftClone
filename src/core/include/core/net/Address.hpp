@@ -16,7 +16,7 @@ public:
     }
 
     [[nodiscard]]
-    static Address make(std::string const& ip, uint16_t const port) noexcept;
+    static std::optional<Address> make(std::string const& ip, uint16_t const port) noexcept;
     [[nodiscard]]
     static Address anyhost(uint16_t const port) noexcept;
     [[nodiscard]]

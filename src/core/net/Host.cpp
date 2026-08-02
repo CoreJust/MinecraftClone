@@ -99,6 +99,7 @@ bool Host::send(
     }
 
     if (enet_peer_send(peer->raw(), channel_id, packet) < 0) {
+        enet_packet_destroy(packet);
         CORE_ERROR("Failed to send a packet to peer");
         return false;
     }
@@ -135,7 +136,7 @@ uint16_t Host::port() const noexcept {
     return m_host->address.port;
 }
 
-std::string Host::ip() const noexcept {
+std::string Host::ip() const {
     ASSERT(m_host);
     return Address::fromRaw(m_host->address).ip();
 }

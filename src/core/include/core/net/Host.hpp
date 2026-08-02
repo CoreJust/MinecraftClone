@@ -61,7 +61,7 @@ public:
                     "repeatedlyPoll only accepts callbacks that return either void or ControlFlow");
                 cb(std::move(*event));
             }
-            
+
             ++polled_count;
             total_timeout = chr::duration_cast<chr::milliseconds>(end - chr::steady_clock::now());
             if (total_timeout.count() < 0) {
@@ -71,7 +71,7 @@ public:
         return polled_count;
     }
 
-    /* 
+    /*
      * Sends a packet containing data to the peer over channel with given ID and with the given mode.
      * If peer is nullopt, the packet is sent to all the peers.
      * Returns true if the packet was successfully queued for sending and false otherwise.
@@ -92,7 +92,7 @@ public:
     [[nodiscard]]
     uint16_t port() const noexcept;
     [[nodiscard]]
-    std::string ip() const noexcept;
+    std::string ip() const;
 
     [[nodiscard]]
     constexpr bool isValid() const noexcept { return m_host != nullptr; }

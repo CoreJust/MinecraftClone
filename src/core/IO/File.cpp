@@ -7,7 +7,13 @@
 namespace core {
 
 std::optional<std::vector<uint8_t>> readFile(std::string const& path) {
-	size_t const file_size = std::filesystem::file_size(path);
+    std::error_code error;
+    size_t const file_size = std::filesystem::file_size(path, error);
+    if (error) {
+        CORE_ERROR("Failed to get size of file {}: {}", path, error.message());
+        return std::nullopt;
+    }
+
     std::vector<uint8_t> result(file_size);
     if (!readFileTo(path, result)) {
         return std::nullopt;
@@ -27,7 +33,9 @@ bool readFileTo(std::string const& path, std::span<uint8_t> const dst) {
         return false;
     }
 
-    if (dst.size() != std::fread(dst.data(), 1, dst.size(), file)) {
+    size_t const bytes_read = std::fread(dst.data(), 1, dst.size(), file);
+    bool const success = bytes_read == dst.size();
+    if (std::fclose(file) != 0 || !success) {
         CORE_ERROR("Failed to read file {}", path);
         return false;
     }

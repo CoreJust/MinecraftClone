@@ -46,8 +46,11 @@ size_t Server::kick(
             return ControlFlow::Continue;
         }
 
-        auto const client_index = findClientIndex(disconnect_event->peer).value();
-        auto const client_id = m_connected_clients[client_index].first;
+        auto const client_index = findClientIndex(disconnect_event->peer);
+        if (!client_index) {
+            return ControlFlow::Continue;
+        }
+        auto const client_id = m_connected_clients[*client_index].first;
         if (auto it = std::find(clients.begin(), clients.end(), client_id); it != clients.end()) {
             unkicked[it - clients.begin()] = false;
             if (++gracefully_kicked == clients.size()) {

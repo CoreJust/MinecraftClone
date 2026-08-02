@@ -52,7 +52,7 @@ core::Address readAddress() {
     }
     std::string const ip = line.substr(0, delim);
     uint16_t const port = static_cast<uint16_t>(std::stoul(line.substr(delim + 1)));
-    return core::Address::make(ip, port);
+    return core::Address::make(ip, port).value();
 }
 
 int main(int argc, char** argv) {

@@ -5,11 +5,13 @@
 namespace core {
 
 [[nodiscard]]
-Address Address::make(std::string const& ip, uint16_t const port) noexcept {
+std::optional<Address> Address::make(std::string const& ip, uint16_t const port) noexcept {
     ENetAddress result {
         .port = port,
     };
-    enet_address_set_host_ip(&result, ip.c_str());
+    if (enet_address_set_host_ip(&result, ip.c_str()) != 0) {
+        return std::nullopt;
+    }
     return Address{ result };
 }
 
@@ -25,7 +27,7 @@ Address Address::anyhost(uint16_t const port) noexcept {
 
 [[nodiscard]]
 Address Address::localhost(uint16_t const port) noexcept {
-    return Address::make("127.0.0.1", port);
+    return *Address::make("127.0.0.1", port);
 }
 
 [[nodiscard]]
