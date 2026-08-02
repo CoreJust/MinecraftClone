@@ -6,6 +6,10 @@ project(MinecraftClone2026
     LANGUAGES C CXX
 )
 
+if(NOT WIN32 AND NOT APPLE)
+    message(FATAL_ERROR "MinecraftClone currently supports only Windows and macOS")
+endif()
+
 
 ###  C++ OPTIONS  ###
 set(CMAKE_CXX_STANDARD 23)

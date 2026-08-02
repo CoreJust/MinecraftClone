@@ -75,7 +75,6 @@ struct PhysicalDeviceCapsStruct final {
         return vkToVersion(properties.apiVersion);
     }
 
-    [[nodiscard]]
     void setApiVersion(Version const version) noexcept {
         properties.apiVersion = versionToVk(version);
     }

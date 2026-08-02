@@ -16,20 +16,16 @@
 #  elif TARGET_OS_MAC
 #    define OSX 1
 #  else
-#   error "Unknown Apple platform"
+#    error "Unknown Apple platform"
 #  endif
 #elif __ANDROID__
-#  error Andoid OS not currently supported
-#  define ANDROID 1
+#  error Android OS not currently supported
 #elif __linux__
 #  error Linux not currently supported
-#  define LINUX 1
 #elif __unix__
 #  error General UNIX not currently supported
-#  define UNIX 1
 #elif defined(_POSIX_VERSION)
 #  error General POSIX not currently supported
-#  define POSIX 1
 #else
 #  error OS not supported
 #endif
