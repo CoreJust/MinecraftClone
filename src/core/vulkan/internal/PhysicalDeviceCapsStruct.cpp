@@ -12,7 +12,6 @@ struct FeatureSetTraits final{ };
 #define DECLARE_FEATURE_SET_CORE(version)                                         \
     template<>                                                                    \
     struct FeatureSetTraits<VkPhysicalDeviceVulkan1##version##Features> final {   \
-        static constexpr bool CORE = true;                                        \
         static constexpr bool PROMOTED = false;                                   \
         static constexpr uint32_t INTRODUCTION_VERSION = version;                 \
         static constexpr auto CoreField = &PhysicalDeviceCapsStruct::vulkan_1##version##_features; \
@@ -22,7 +21,6 @@ struct FeatureSetTraits final{ };
 #define DECLARE_FEATURE_SET_PROMOTION(feature_set, promotion_version)             \
     template<>                                                                    \
     struct FeatureSetTraits<VkPhysicalDevice##feature_set##Features> final {      \
-        static constexpr bool CORE = false;                                       \
         static constexpr bool PROMOTED = true;                                    \
         static constexpr uint32_t PROMOTION_VERSION = promotion_version;          \
         static constexpr auto CoreField = &PhysicalDeviceCapsStruct::vulkan_1##promotion_version##_features; \
@@ -58,7 +56,6 @@ DECLARE_FEATURE_SET_PROMOTION(DynamicRendering, 3)
 
 template<>
 struct FeatureSetTraits<VkPhysicalDeviceMeshShaderFeaturesEXT> final {
-    static constexpr bool CORE = false;
     static constexpr bool PROMOTED = false;
 };
 
@@ -108,7 +105,7 @@ auto& promotedIfAny(auto&& caps, FeatureSet PhysicalDeviceCapsStruct::*self) noe
 
 void* PhysicalDeviceCapsStruct::chained(Version instance_version) noexcept {
     FeaturesNeedle needle{ *this, instance_version };
-    
+
     needle.thread(vulkan_11_features, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES);
     needle.thread(vulkan_12_features, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES);
     needle.thread(vulkan_13_features, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES);
@@ -137,7 +134,7 @@ void* PhysicalDeviceCapsStruct::chained(Version instance_version) noexcept {
     needle.thread(feat_dynamic_rendering, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DYNAMIC_RENDERING_FEATURES);
 
     needle.thread(mesh_shader_features, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_FEATURES_EXT);
-    
+
     // Sync extension and core structs
     for (VulkanFeature const feature : valuesOf<VulkanFeature>()) {
         if (hasFeature(feature)) {
@@ -199,17 +196,17 @@ bool PhysicalDeviceCapsStruct::hasFeature(VulkanFeature const feature) const noe
     case TimelineSemaphore:                  RET_FEATURE(feat_timeline_semaphore, timelineSemaphore);
     case ShaderUniformBufferArrayNonUniformIndexing:
         RET_FEATURE(feat_descriptor_indexing, shaderUniformBufferArrayNonUniformIndexing);
-    case ShaderSampledImageArrayNonUniformIndexing: 
+    case ShaderSampledImageArrayNonUniformIndexing:
         RET_FEATURE(feat_descriptor_indexing, shaderSampledImageArrayNonUniformIndexing);
     case ShaderStorageBufferArrayNonUniformIndexing:
         RET_FEATURE(feat_descriptor_indexing, shaderStorageBufferArrayNonUniformIndexing);
-    case ShaderStorageImageArrayNonUniformIndexing: 
+    case ShaderStorageImageArrayNonUniformIndexing:
         RET_FEATURE(feat_descriptor_indexing, shaderStorageImageArrayNonUniformIndexing);
-    case DescriptorBindingPartiallyBound:           
+    case DescriptorBindingPartiallyBound:
         RET_FEATURE(feat_descriptor_indexing, descriptorBindingPartiallyBound);
-    case RuntimeDescriptorArray:                    
+    case RuntimeDescriptorArray:
         RET_FEATURE(feat_descriptor_indexing, runtimeDescriptorArray);
-    case DescriptorBindingVariableDescriptorCount:  
+    case DescriptorBindingVariableDescriptorCount:
         RET_FEATURE(feat_descriptor_indexing, descriptorBindingVariableDescriptorCount);
     case BufferDeviceAddress:                RET_FEATURE(feat_buffer_device_address, bufferDeviceAddress);
     case HostQueryReset:                     RET_FEATURE(feat_host_query_reset, hostQueryReset);
@@ -274,17 +271,17 @@ void PhysicalDeviceCapsStruct::setFeature(VulkanFeature const feature, bool cons
     case TimelineSemaphore:                  SET_FEATURE(feat_timeline_semaphore, timelineSemaphore);
     case ShaderUniformBufferArrayNonUniformIndexing:
         SET_FEATURE(feat_descriptor_indexing, shaderUniformBufferArrayNonUniformIndexing);
-    case ShaderSampledImageArrayNonUniformIndexing: 
+    case ShaderSampledImageArrayNonUniformIndexing:
         SET_FEATURE(feat_descriptor_indexing, shaderSampledImageArrayNonUniformIndexing);
     case ShaderStorageBufferArrayNonUniformIndexing:
         SET_FEATURE(feat_descriptor_indexing, shaderStorageBufferArrayNonUniformIndexing);
-    case ShaderStorageImageArrayNonUniformIndexing: 
+    case ShaderStorageImageArrayNonUniformIndexing:
         SET_FEATURE(feat_descriptor_indexing, shaderStorageImageArrayNonUniformIndexing);
-    case DescriptorBindingPartiallyBound:           
+    case DescriptorBindingPartiallyBound:
         SET_FEATURE(feat_descriptor_indexing, descriptorBindingPartiallyBound);
-    case RuntimeDescriptorArray:                    
+    case RuntimeDescriptorArray:
         SET_FEATURE(feat_descriptor_indexing, runtimeDescriptorArray);
-    case DescriptorBindingVariableDescriptorCount:  
+    case DescriptorBindingVariableDescriptorCount:
         SET_FEATURE(feat_descriptor_indexing, descriptorBindingVariableDescriptorCount);
     case BufferDeviceAddress:                SET_FEATURE(feat_buffer_device_address, bufferDeviceAddress);
     case HostQueryReset:                     SET_FEATURE(feat_host_query_reset, hostQueryReset);

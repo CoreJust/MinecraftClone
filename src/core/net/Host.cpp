@@ -19,7 +19,8 @@ Host::Host(
     } else {
         CORE_INFO(
             "Created host at {} with {} max connections and {} max channels",
-            address, max_connections, max_channels);
+            address, max_connections, max_channels
+        );
     }
 }
 
@@ -64,7 +65,7 @@ std::optional<NetEvent> Host::poll(std::chrono::milliseconds const timeout) {
                 .channel_id = raw_event.channelID,
             };
         default:
-            ASSERT("Unreachable");
+            UNREACHABLE();
             return std::nullopt;
     }
 }
@@ -108,12 +109,14 @@ std::optional<Peer> Host::connect(Address const address) {
     if (ENetPeer *peer = enet_host_connect(m_host, &address.raw(), m_max_channels, 0)) {
         CORE_INFO(
             "Initiated connection to {} with {} channels",
-            address, m_max_channels);
+            address, m_max_channels
+        );
         return Peer{ *peer };
     }
     CORE_ERROR(
         "Failed to connect to {} with {} channels",
-        address, m_max_channels);
+        address, m_max_channels
+    );
     return std::nullopt;
 }
 

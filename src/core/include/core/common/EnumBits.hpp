@@ -2,10 +2,12 @@
 
 #include <core/meta/Enum.hpp>
 
+#include <type_traits>
+
 namespace core {
 
 template<CountableEnum E, typename UnderlyingTy = uint32_t>
-    requires (countOf<E>() <= 8 * sizeof(UnderlyingTy))
+    requires (std::is_unsigned_v<UnderlyingTy> && countOf<E>() <= 8 * sizeof(UnderlyingTy))
 struct EnumBits final {
     UnderlyingTy value = 0;
 
@@ -48,7 +50,7 @@ struct EnumBits final {
 };
 
 template<CountableEnum E, typename UnderlyingTy>
-    requires (countOf<E>() <= 8 * sizeof(UnderlyingTy))
+    requires (std::is_unsigned_v<UnderlyingTy> && countOf<E>() <= 8 * sizeof(UnderlyingTy))
 constexpr inline EnumBits<E, UnderlyingTy> EnumBits<E, UnderlyingTy>::None{ 0 };
 
 } // namespace core

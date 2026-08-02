@@ -2,7 +2,7 @@
 
 #include <functional>
 
-namespace core::vk {
+namespace core {
 
 template<typename T>
 concept Hashable = requires(T const& t) { std::hash<std::remove_cvref_t<T>>{}(t); };
@@ -16,7 +16,7 @@ public:
     constexpr void consume(size_t const value) noexcept {
         m_hash ^= value + 0x9e37'79b9 + (m_hash << 6) + (m_hash >> 2);
     }
-    
+
     constexpr void consume(Hashable auto const&... args) requires (sizeof...(args) > 0) {
         (consume(static_cast<size_t>(std::hash<std::remove_cvref_t<decltype(args)>>{}( args ))), ...);
     }
@@ -27,4 +27,4 @@ private:
     size_t m_hash = 0xcbf2'9ce4'8422'2325ull;
 };
 
-} // namespace core::vk
+} // namespace core

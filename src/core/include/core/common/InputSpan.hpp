@@ -27,11 +27,7 @@ struct InputSpan final {
     [[nodiscard]]
     constexpr auto begin(this auto&& self) noexcept { return self.data.begin(); }
     [[nodiscard]]
-    constexpr auto cbegin(this auto&& self) noexcept { return self.data.cbegin(); }
-    [[nodiscard]]
     constexpr auto end(this auto&& self) noexcept { return self.data.end(); }
-    [[nodiscard]]
-    constexpr auto cend(this auto&& self) noexcept { return self.data.cend(); }
 };
 
 } // namespace core
