@@ -6,9 +6,9 @@
 namespace core::vk {
 
 SpirV::SpirV(std::vector<uint8_t>&& data) noexcept
-    : m_data(data)
+    : m_data(std::move(data))
 {
-    ASSERT(m_data.size() % 4 == 0, "SPIR-V data size must be a factor of 4, but it isn't");
+    ASSERT(m_data.size() % 4 == 0, "SPIR-V data size must be a multiple of 4, but it isn't");
 }
 
 SpirV SpirV::fromFile(std::string const& path) {

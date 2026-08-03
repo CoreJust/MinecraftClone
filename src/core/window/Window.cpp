@@ -28,15 +28,22 @@ GLFWwindow* createWindow(char const* const name, int width, int height) {
     glfwWindowHint(GLFW_RESIZABLE,  GLFW_TRUE);
 
     GLFWmonitor* monitor = glfwGetPrimaryMonitor();
-    const GLFWvidmode* mode = glfwGetVideoMode(monitor);
-    glfwWindowHint(GLFW_RED_BITS,     mode->redBits);
-    glfwWindowHint(GLFW_GREEN_BITS,   mode->greenBits);
-    glfwWindowHint(GLFW_BLUE_BITS,    mode->blueBits);
-    glfwWindowHint(GLFW_REFRESH_RATE, mode->refreshRate);
+    const GLFWvidmode* mode = monitor ? glfwGetVideoMode(monitor) : nullptr;
+    if (mode) {
+        glfwWindowHint(GLFW_RED_BITS,     mode->redBits);
+        glfwWindowHint(GLFW_GREEN_BITS,   mode->greenBits);
+        glfwWindowHint(GLFW_BLUE_BITS,    mode->blueBits);
+        glfwWindowHint(GLFW_REFRESH_RATE, mode->refreshRate);
+    }
     GLFWwindow* window = nullptr;
     if (width <= 0 || height <= 0) {
-        width = mode->width;
-        height = mode->height;
+        if (mode) {
+            width = mode->width;
+            height = mode->height;
+        } else {
+            width = 800;
+            height = 600;
+        }
         CORE_INFO("Setting full-screen window mode: {}x{}", width, height);
         window = glfwCreateWindow(width, height, name, monitor, nullptr);
     } else {
@@ -51,30 +58,35 @@ GLFWwindow* createWindow(char const* const name, int width, int height) {
     glfwSetMouseButtonCallback(window, reinterpret_cast<GLFWmousebuttonfun>(mouseKeyCallback));
     glfwSetCursorPosCallback(window, reinterpret_cast<GLFWcursorposfun>(mousePositionCallback));
     glfwSetScrollCallback(window, reinterpret_cast<GLFWscrollfun>(scrollCallback));
-    CORE_INFO(
-        "Created window:\n\t"   \
-        "Title:      {}\n\t"    \
-        "Size:       {}x{}\n\t" \
-        "Red bits:   {}\n\t"    \
-        "Green bits: {}\n\t"    \
-        "Blue bits:  {}\n\t"    \
-        "Refresh rate: {}",
-        name,
-        width, height,
-        mode->redBits,
-        mode->greenBits,
-        mode->blueBits,
-        mode->refreshRate);
+    if (mode) {
+        CORE_INFO(
+            "Created window:\n\t"
+            "Title:      {}\n\t"
+            "Size:       {}x{}\n\t"
+            "Red bits:   {}\n\t"
+            "Green bits: {}\n\t"
+            "Blue bits:  {}\n\t"
+            "Refresh rate: {}",
+            name,
+            width, height,
+            mode->redBits,
+            mode->greenBits,
+            mode->blueBits,
+            mode->refreshRate);
+    } else {
+        CORE_INFO("Created window '{}' {}x{}", name, width, height);
+    }
     return window;
 }
 
 } // namespace
 
-Window::Window(std::string title, int const width, int const height) 
+Window::Window(std::string title, int const width, int const height)
     : m_window(createWindow(title.data(), width, height))
     , m_title(std::move(title))
 {
     glfwSetWindowUserPointer(m_window, this);
+    glfwSetFramebufferSizeCallback(m_window, &Window::framebuffersResized);
 }
 
 Window::~Window() {

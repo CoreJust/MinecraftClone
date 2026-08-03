@@ -47,7 +47,7 @@ bool isMouseKeyPressed(MouseKey const key) {
 }
 
 bool isMouseKeyReleased(MouseKey const key) {
-    return g_mouse_key_states[indexOf(key)];
+    return !g_mouse_key_states[indexOf(key)];
 }
 
 void resetMouseDeltas() {
@@ -72,6 +72,9 @@ void scrollCallback(void*, double const xoffset, double const yoffset) {
 }
 
 void mouseKeyCallback(void*, int const button, int const action, int const mode) {
+    if (button < 0 || static_cast<size_t>(button) >= countOf<MouseKey>()) {
+        return;
+    }
     g_mouse_key_states[button] = bool(action);
     g_mouse_key_modifiers[button] = static_cast<KeyModifierBit>(mode);
 }

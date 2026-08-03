@@ -11,7 +11,7 @@
 #include <thread>
 
 constexpr std::chrono::milliseconds DEFAULT_TIMEOUT{ 10 };
-constexpr uint16_t TEST_PORT_BASE{ 30'000 };
+constexpr uint16_t EPHEMERAL_PORT{ 0 };
 
 struct NoAction final {
     void operator()(auto&&...) { }
@@ -55,7 +55,7 @@ private:
     void onDisconnected(core::DisconnectEvent const event) override {
         m_on_disconnected(*this, event);
     }
-    
+
     void onReceived(core::ReceiveEvent event) override {
         m_on_received(*this, std::move(event));
     }
@@ -134,6 +134,9 @@ struct TestServerService final {
 
     ~TestServerService() { server.stop(); }
 
+    [[nodiscard]]
+    uint16_t port() const noexcept { return server.port(); }
+
     void done(size_t const expected_connections, size_t const expected_disconnections) {
         server.stop();
         thread.join();
@@ -148,10 +151,10 @@ struct TestServerService final {
 TEST(NetClientServer, GracefulConnectDisconnectTest) {
     bool client_disconnected{ false };
 
-    TestServerService srv{ NoAction{ }, TEST_PORT_BASE + 0 };
+    TestServerService srv{ NoAction{ }, EPHEMERAL_PORT };
     TestClient client{ [&](auto&&...) { client_disconnected = true; } };
 
-    ASSERT_TRUE(client.connectAndWait(TEST_PORT_BASE + 0));
+    ASSERT_TRUE(client.connectAndWait(srv.port()));
     EXPECT_TRUE(srv.clients_connected == 1 && srv.clients_disconnected == 0);
     EXPECT_TRUE(client.isConnected());
 
@@ -165,11 +168,11 @@ TEST(NetClientServer, GracefulConnectDisconnectTest) {
 TEST(NetClientServer, MultipleReconnectionsTest) {
     constexpr uint32_t rounds{ 3 };
 
-    TestServerService srv{ NoAction{ }, TEST_PORT_BASE + 1 };
+    TestServerService srv{ NoAction{ }, EPHEMERAL_PORT };
     TestClient client{ };
 
     for (uint32_t i{ 0 }; i < rounds; ++i) {
-        ASSERT_TRUE(client.connectAndWait(TEST_PORT_BASE + 1));
+        ASSERT_TRUE(client.connectAndWait(srv.port()));
         ASSERT_TRUE(client.isConnected());
 
         client.disconnectAndWait();
@@ -181,7 +184,7 @@ TEST(NetClientServer, MultipleReconnectionsTest) {
 
 TEST(NetClientServer, ConnectionTimeoutTest) {
     TestClient client{ };
-    EXPECT_FALSE(client.connect(core::Address::localhost(TEST_PORT_BASE + 2), DEFAULT_TIMEOUT));
+    EXPECT_FALSE(client.connect(core::Address::localhost(EPHEMERAL_PORT), DEFAULT_TIMEOUT));
 }
 
 TEST(NetClientServer, SendReceiveSingleChannelTest) {
@@ -194,7 +197,7 @@ TEST(NetClientServer, SendReceiveSingleChannelTest) {
             server_received = core::asStringView(e.data);
             srv.server.send(e.client, e.data, e.channel_id, core::SendMode{ });
         },
-        TEST_PORT_BASE + 3,
+        EPHEMERAL_PORT,
     };
     TestClient client{
         NoAction{ },
@@ -203,7 +206,7 @@ TEST(NetClientServer, SendReceiveSingleChannelTest) {
         },
     };
 
-    ASSERT_TRUE(client.connectAndWait(TEST_PORT_BASE + 3));
+    ASSERT_TRUE(client.connectAndWait(srv.port()));
     ASSERT_TRUE(client.isConnected());
 
     ASSERT_TRUE(client.send(core::asByteSpan(msg), 0, core::SendMode{ }));
@@ -225,7 +228,7 @@ TEST(NetClientServer, MultipleChannelsAndModesTest) {
             server_received[e.channel_id] = core::asStringView(e.data);
             srv.server.send(e.client, e.data, e.channel_id, core::SendMode{ });
         },
-        TEST_PORT_BASE + 4,
+        EPHEMERAL_PORT,
         1,
         MAX_CHANNELS,
     };
@@ -237,7 +240,7 @@ TEST(NetClientServer, MultipleChannelsAndModesTest) {
         MAX_CHANNELS,
     };
 
-    ASSERT_TRUE(client.connectAndWait(TEST_PORT_BASE + 4));
+    ASSERT_TRUE(client.connectAndWait(srv.port()));
 
     auto send = [&](std::string_view const msg, uint8_t ch, core::SendMode::Flag mode) {
         client.send(core::asByteSpan(msg), ch, core::SendMode{ mode });
@@ -266,7 +269,7 @@ TEST(NetClientServer, MultipleClientsEchoTest) {
         [&](TestServer&, core::ServerReceiveEvent e) {
             srv.server.send(e.client, e.data, e.channel_id, core::SendMode{ });
         },
-        TEST_PORT_BASE + 5,
+        EPHEMERAL_PORT,
         NUM_CLIENTS,
         1,
     };
@@ -283,7 +286,7 @@ TEST(NetClientServer, MultipleClientsEchoTest) {
     }
 
     for (uint32_t i = 0; i < NUM_CLIENTS; ++i) {
-        ASSERT_TRUE(clients[i].connectAndWait(TEST_PORT_BASE + 5));
+        ASSERT_TRUE(clients[i].connectAndWait(srv.port()));
     }
 
     for (uint32_t i = 0; i < NUM_CLIENTS; ++i) {
@@ -315,7 +318,7 @@ TEST(NetClientServer, MessageRelayTest) {
                 }
             }
         },
-        TEST_PORT_BASE + 6,
+        EPHEMERAL_PORT,
         NUM_CLIENTS,
     };
 
@@ -331,7 +334,7 @@ TEST(NetClientServer, MessageRelayTest) {
     }
 
     for (uint32_t i = 0; i < NUM_CLIENTS; ++i) {
-        ASSERT_TRUE(clients[i].connectAndWait(TEST_PORT_BASE + 6));
+        ASSERT_TRUE(clients[i].connectAndWait(srv.port()));
     }
 
     std::string const msg = fmt::format("to:{}:Hello from 0", NUM_CLIENTS - 1);
@@ -355,11 +358,11 @@ TEST(NetClientServer, ServerKickGracefulTest) {
 
     TestServerService srv{
         [&](TestServer& self, auto&&) { self.kick(0, DEFAULT_TIMEOUT, core::GenerateEvents::Yes); },
-        TEST_PORT_BASE + 7,
+        EPHEMERAL_PORT,
     };
     TestClient client{ [&](auto&&...) { client_disconnected = true; } };
 
-    ASSERT_TRUE(client.connectAndWait(TEST_PORT_BASE + 7));
+    ASSERT_TRUE(client.connectAndWait(srv.port()));
     EXPECT_TRUE(client.isConnected());
 
     EXPECT_TRUE(client.sendAndPoll(" ", 0, core::SendMode{ }));
@@ -374,11 +377,11 @@ TEST(NetClientServer, ServerKickImmediateTest) {
 
     TestServerService srv{
         [&](TestServer& self, auto&&) { self.kick(0, std::nullopt, core::GenerateEvents::Yes); },
-        TEST_PORT_BASE + 8,
+        EPHEMERAL_PORT,
     };
     TestClient client{ [&](auto&&...) { client_disconnected = true; } };
 
-    ASSERT_TRUE(client.connectAndWait(TEST_PORT_BASE + 8));
+    ASSERT_TRUE(client.connectAndWait(srv.port()));
     EXPECT_TRUE(client.isConnected());
 
     EXPECT_TRUE(client.sendAndPoll(" ", 0, core::SendMode{ }));
@@ -392,10 +395,10 @@ TEST(NetClientServer, ServerKickImmediateTest) {
 TEST(NetClientServer, ClientDisconnectImmediateTest) {
     bool client_disconnected = false;
 
-    TestServerService srv{ NoAction{ }, TEST_PORT_BASE + 9 };
+    TestServerService srv{ NoAction{ }, EPHEMERAL_PORT };
     TestClient client{ [&](auto&&...) { client_disconnected = true; } };
 
-    ASSERT_TRUE(client.connectAndWait(TEST_PORT_BASE + 9));
+    ASSERT_TRUE(client.connectAndWait(srv.port()));
     EXPECT_TRUE(client.isConnected());
 
     client.disconnectAndWait(std::nullopt);
@@ -412,11 +415,11 @@ TEST(NetClientServer, SendEmptyMessageTest) {
         [&](TestServer&, core::ServerReceiveEvent e) {
             server_received = core::asStringView(e.data);
         },
-        TEST_PORT_BASE + 10,
+        EPHEMERAL_PORT,
     };
     TestClient client{ };
 
-    ASSERT_TRUE(client.connectAndWait(TEST_PORT_BASE + 10));
+    ASSERT_TRUE(client.connectAndWait(srv.port()));
 
     ASSERT_TRUE(client.send(std::span<uint8_t const>{ }, 0, core::SendMode{ }));
     client.pollAndWait();
@@ -433,11 +436,11 @@ TEST(NetClientServer, SendLargeMessageTest) {
         [&](TestServer&, core::ServerReceiveEvent e) {
             server_received = core::asStringView(e.data);
         },
-        TEST_PORT_BASE + 11,
+        EPHEMERAL_PORT,
     };
     TestClient client{ };
 
-    ASSERT_TRUE(client.connectAndWait(TEST_PORT_BASE + 11));
+    ASSERT_TRUE(client.connectAndWait(srv.port()));
 
     ASSERT_TRUE(client.sendAndPoll(msg, 0, core::SendMode{ core::SendMode::Reliable }));
 
@@ -452,10 +455,10 @@ TEST(NetClientServer, MultipleMessagesInSequenceTest) {
         [&](TestServer&, core::ServerReceiveEvent e) {
             server_received.emplace_back(core::asStringView(e.data));
         },
-        TEST_PORT_BASE + 12,
+        EPHEMERAL_PORT,
     };
     TestClient client{ };
-    ASSERT_TRUE(client.connectAndWait(TEST_PORT_BASE + 12));
+    ASSERT_TRUE(client.connectAndWait(srv.port()));
 
     client.sendAndPoll("first",  0, core::SendMode{ core::SendMode::Reliable });
     client.sendAndPoll("second", 0, core::SendMode{ core::SendMode::Reliable });
@@ -477,11 +480,11 @@ TEST(NetClientServer, DisconnectDuringSendTest) {
         [&](TestServer&, core::ServerReceiveEvent e) {
             server_received = core::asStringView(e.data);
         },
-        TEST_PORT_BASE + 13,
+        EPHEMERAL_PORT,
     };
     TestClient client{ [&](auto&&...) { client_disconnected = true; } };
 
-    ASSERT_TRUE(client.connectAndWait(TEST_PORT_BASE + 13));
+    ASSERT_TRUE(client.connectAndWait(srv.port()));
 
     client.send(core::asByteSpan(std::string_view{ "msg" }), 0, core::SendMode{ });
     client.disconnectAndWait();
@@ -492,15 +495,15 @@ TEST(NetClientServer, DisconnectDuringSendTest) {
 }
 
 TEST(NetClientServer, MaxConnectionsRejectionTest) {
-    TestServerService srv{ NoAction{ }, TEST_PORT_BASE + 14, 1, 1 };
+    TestServerService srv{ NoAction{ }, EPHEMERAL_PORT, 1, 1 };
 
     TestClient client1{ };
     TestClient client2{ };
 
-    ASSERT_TRUE(client1.connectAndWait(TEST_PORT_BASE + 14));
+    ASSERT_TRUE(client1.connectAndWait(srv.port()));
     EXPECT_TRUE(client1.isConnected());
 
-    EXPECT_FALSE(client2.connect(core::Address::localhost(TEST_PORT_BASE + 14), DEFAULT_TIMEOUT));
+    EXPECT_FALSE(client2.connect(core::Address::localhost(srv.port()), DEFAULT_TIMEOUT));
 
     srv.done(1, 0); // only first client connected, not disconnected yet
 }
@@ -510,8 +513,8 @@ TEST(NetClientServer, ServerDestructorDisconnectsTest) {
 
     TestClient client{ [&](auto&&...) { client_disconnected = true; } };
     {
-        TestServerService srv{ NoAction{ }, TEST_PORT_BASE + 15 };
-        ASSERT_TRUE(client.connectAndWait(TEST_PORT_BASE + 15));
+        TestServerService srv{ NoAction{ }, EPHEMERAL_PORT };
+        ASSERT_TRUE(client.connectAndWait(srv.port()));
         EXPECT_TRUE(client.isConnected());
     }
 
@@ -530,12 +533,12 @@ TEST(NetClientServer, ChannelIdBoundariesTest) {
                 server_received = core::asStringView(e.data);
             }
         },
-        TEST_PORT_BASE + 16,
+        EPHEMERAL_PORT,
         1,
         MAX_CHANNELS,
     };
     TestClient client{ NoAction{ }, NoAction{ }, MAX_CHANNELS };
-    ASSERT_TRUE(client.connectAndWait(TEST_PORT_BASE + 16));
+    ASSERT_TRUE(client.connectAndWait(srv.port()));
 
     ASSERT_TRUE(client.sendAndPoll("boundary", MAX_CHANNELS - 1, core::SendMode{ }));
 

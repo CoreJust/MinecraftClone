@@ -3,8 +3,8 @@ target_sources(mc
         FILE_SET HEADERS
         BASE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}
         FILES
-            render/VulkanRenderer.hpp
             BotClient.hpp
             GameClient.hpp
             PlayerClient.hpp
+            render/VulkanRenderer.hpp
 )

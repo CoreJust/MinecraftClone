@@ -7,6 +7,9 @@
 
 namespace core {
 
+// CountableEnum requires E::Count to exist, AND the enum's values must be
+// DENSE: 0, 1, 2, ..., Count-1. The reflection system (valuesOf, entriesOf)
+// generates values via static_cast<E>(0..N-1) and assumes density.
 template<typename E>
 concept CountableEnum = requires { static_cast<size_t>(E::Count); };
 

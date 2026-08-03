@@ -17,6 +17,10 @@ void Log::ensureInit(
     std::optional<std::filesystem::path> const logs_dir,
     spdlog::level::level_enum const initial_level
 ) {
+    if (s_logger) {
+        return;
+    }
+
     spdlog::init_thread_pool(1024 * 8, 1);
 
     auto console_sink = std::make_shared<spdlog::sinks::stdout_color_sink_mt>();

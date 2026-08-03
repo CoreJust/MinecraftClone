@@ -19,12 +19,17 @@ namespace core::vk {
 // Extensions and features are taken from Capabilities
 class DeviceBuilder final {
 public:
+    [[nodiscard]]
+    std::span<TrivialPair<QueueFamily, float> const> requiredQueueFamilies() const noexcept {
+        return m_required_queue_families;
+    }
+public:
     template<typename Self>
     auto&& requireQueueFamilies(
         this Self&& self,
         InputSpan<TrivialPair<QueueFamily, float>> const families
     ) {
-        appendRange(self.m_required_queue_families, families);
+        self.m_required_queue_families.assign(families.begin(), families.end());
         return std::forward<Self>(self);
     }
 

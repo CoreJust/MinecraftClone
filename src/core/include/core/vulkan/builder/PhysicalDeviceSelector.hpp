@@ -22,6 +22,35 @@ namespace core::vk {
 
 class PhysicalDeviceSelector final {
 public:
+    [[nodiscard]]
+    Version requiredApiVersion() const noexcept { return m_required_api_version; }
+
+    [[nodiscard]]
+    std::span<VulkanExtension const> requiredExtensions() const noexcept { return m_required_extensions; }
+
+    [[nodiscard]]
+    std::span<VulkanExtension const> preferredExtensions() const noexcept { return m_preferred_extensions; }
+
+    [[nodiscard]]
+    std::span<VulkanFeature const> requiredFeatures() const noexcept { return m_required_features; }
+
+    [[nodiscard]]
+    std::span<VulkanFeature const> preferredFeatures() const noexcept { return m_preferred_features; }
+
+    [[nodiscard]]
+    std::span<MemoryPropertyBits const> requiredMemoryHeaps() const noexcept { return m_required_heaps; }
+
+    [[nodiscard]]
+    std::span<QueueFamily const> requiredQueueFamilies() const noexcept { return m_required_queue_families; }
+
+    [[nodiscard]]
+    std::span<PhysicalDeviceType const> requiredDeviceTypes() const noexcept { return m_required_device_types; }
+
+    [[nodiscard]]
+    std::span<TrivialPair<PhysicalDeviceType, int32_t> const> preferredDeviceTypes() const noexcept {
+        return m_preferred_device_types;
+    }
+public:
     template<typename Self>
     auto&& requireApiVersion(this Self&& self, Version const version) noexcept {
         self.m_required_api_version = version;
@@ -33,7 +62,7 @@ public:
         this Self&& self,
         InputSpan<VulkanExtension> const exts
     ) {
-        appendRange(self.m_required_extensions, exts);
+        self.m_required_extensions.assign(exts.begin(), exts.end());
         return std::forward<Self>(self);
     }
 
@@ -42,7 +71,7 @@ public:
         this Self&& self,
         InputSpan<VulkanExtension> const exts
     ) {
-        appendRange(self.m_preferred_extensions, exts);
+        self.m_preferred_extensions.assign(exts.begin(), exts.end());
         return std::forward<Self>(self);
     }
 
@@ -51,7 +80,7 @@ public:
         this Self&& self,
         InputSpan<VulkanFeature> const features
     ) {
-        appendRange(self.m_required_features, features);
+        self.m_required_features.assign(features.begin(), features.end());
         return std::forward<Self>(self);
     }
 

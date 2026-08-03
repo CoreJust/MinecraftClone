@@ -1,4 +1,12 @@
 // Refer to docs/code/graphics/How to declare new Vulkan resources.md for additional info.
+//
+// Convention: types prefixed with `Raw` (e.g. RawFence, RawCommandBuffer) are
+// trivially-copyable handles that satisfy the VulkanResource concept - they
+// own no heap memory and can be stored by value in vectors/spans. The
+// non-`Raw` counterparts (e.g. Fence, CommandBuffer) are VulkanRaii wrappers
+// that own the resource and call its destroyer on destruction; some (like
+// Swapchain) also own heap-allocated vectors. Use `Raw*` for batch storage
+// and inter-function passing; use the Raii wrapper for ownership.
 
 #pragma once
 
@@ -12,13 +20,13 @@
 #include <utility>
 #include <vector>
 
-/* 
+/*
  * Must be added in the beginning of each Vulkan resource.
  * SelfType is the type of the resource that's being declared.
  * Variable arguments must include list of fields required to
  * destroy the object and optional `CORE_VK_BATCH_DESTROYABLE()`
  * which enables batch destruction.
- */ 
+ */
 #define CORE_VK_RESOURCE_CONTEXT(SelfType, ...)              \
 public:                                                      \
     using Self = SelfType;                                   \

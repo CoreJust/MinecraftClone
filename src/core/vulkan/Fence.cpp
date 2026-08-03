@@ -42,7 +42,7 @@ void Fence::reset() {
         throw FenceError(FenceError::FenceIsNull);
     }
     if (!VK_CHECK(vkResetFences(destroyer().device_handle, 1, handlePtr()))) {
-        throw FenceError(FenceError::FaiedToResetFence);
+        throw FenceError(FenceError::FailedToResetFence);
     }
 }
 

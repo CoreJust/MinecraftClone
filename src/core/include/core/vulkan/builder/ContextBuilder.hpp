@@ -5,8 +5,6 @@
 #include <core/vulkan/builder/PhysicalDeviceSelector.hpp>
 #include <core/vulkan/builder/SwapchainBuilder.hpp>
 
-#include <optional>
-
 namespace core::vk {
 
 class VulkanContextBuilder {
@@ -63,13 +61,16 @@ public:
         this Self&& self,
         InputSpan<VulkanExtension> const exts
     ) {
+        std::vector<VulkanExtension> instance_extensions;
+        std::vector<VulkanExtension> device_extensions;
         for (VulkanExtension const ext : exts) {
-            if (getExtensionKind(ext) == VulkanExtensionKind::Instance) {
-                self.m_instance_builder.requireExtensions({ ext });
-            } else {
-                self.m_physical_device_selector.requireExtensions({ ext });
-            }
+            (getExtensionKind(ext) == VulkanExtensionKind::Instance
+                ? instance_extensions
+                : device_extensions
+            ).push_back(ext);
         }
+        self.m_instance_builder.requireExtensions(instance_extensions);
+        self.m_physical_device_selector.requireExtensions(device_extensions);
         return std::forward<Self>(self);
     }
 
@@ -153,7 +154,7 @@ public:
         self.m_device_builder.requireQueueFamilies(families);
         return std::forward<Self>(self);
     }
-    
+
     template<typename Self>
     [[nodiscard]] auto&& requireFormats(this Self&& self, InputSpan<Format> const formats) {
         self.m_swapchain_builder.requireFormats(formats);

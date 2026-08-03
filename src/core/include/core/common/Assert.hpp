@@ -2,6 +2,8 @@
 
 #include <core/IO/Log.hpp>
 
+#include <cstdio>
+
 namespace core::detail {
 
 [[noreturn]]
@@ -10,9 +12,14 @@ inline void assertFailed(
     int const line,
     char const* const condition_str
 ) {
-    Log::getLogger()->critical(
-        "Assertion failed at {}:{}\n{} evaluated to false\nStacktrace:\n{}",
-        file, line, condition_str, currentStacktrace());
+    if (spdlog::logger* logger = Log::getLogger()) {
+        logger->critical(
+            "Assertion failed at {}:{}\n{} evaluated to false\nStacktrace:\n{}",
+            file, line, condition_str, currentStacktrace()
+        );
+    } else {
+        std::fprintf(stderr, "Assertion failed at %s:%d\n%s evaluated to false\n", file, line, condition_str);
+    }
     std::exit(1);
 }
 
@@ -25,9 +32,14 @@ void assertFailed(
     Args&&... args
 ) {
     std::string user_msg = fmt::format(fmt, std::forward<Args>(args)...);
-    Log::getLogger()->critical(
-        "Assertion failed at {}:{}: {}\n{} evaluated to false\nStacktrace:\n{}",
-        file, line, user_msg, condition_str, currentStacktrace());
+    if (spdlog::logger* logger = Log::getLogger()) {
+        logger->critical(
+            "Assertion failed at {}:{}: {}\n{} evaluated to false\nStacktrace:\n{}",
+            file, line, user_msg, condition_str, currentStacktrace()
+        );
+    } else {
+        std::fprintf(stderr, "Assertion failed at %s:%d: %s\n%s evaluated to false\n", file, line, user_msg.c_str(), condition_str);
+    }
     std::exit(1);
 }
 

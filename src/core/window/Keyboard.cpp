@@ -22,6 +22,9 @@ bool isKeyReleased(Key const key) {
 }
 
 void keyCallback(void*, int const key, [[maybe_unused]] int const scancode, int const action, int const mode) {
+    if (key < 0 || static_cast<size_t>(key) >= countOf<Key>()) {
+        return;
+    }
     g_key_states[key] = bool(action);
     g_key_modifiers[key] = static_cast<KeyModifierBit>(mode);
 }

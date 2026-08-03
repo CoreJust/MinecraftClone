@@ -51,7 +51,7 @@ public:
 
     // Renders, builds the graph if necessary.
     void render();
-    
+
     void onReload(std::function<void(ReloadType const, ReloadSource const, ReloadAction const)>&& callback) {
         m_ctx.onReload(std::move(callback));
     }

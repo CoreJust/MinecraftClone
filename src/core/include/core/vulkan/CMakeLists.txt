@@ -20,8 +20,8 @@ target_sources(mc
             Fence.hpp
             FrameContext.hpp
             FrameGraph.hpp
-            FrameStructs.hpp
             FramePass.hpp
+            FrameStructs.hpp
             GraphicsPipeline.hpp
             GraphicsPipelineOptions.hpp
             Image.hpp

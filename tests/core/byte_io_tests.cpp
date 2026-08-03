@@ -31,10 +31,10 @@ void roundTripScalar(T const value) {
 
 TEST(ByteIOTest, RoundTripsScalarTypes) {
     roundTripScalar<uint8_t>(0xABu);
-    roundTripScalar<uint32_t>(0xDEADBEEFu);
+    roundTripScalar<uint32_t>(0xDEAD'BEEFu);
     roundTripScalar<int64_t>(-1'000'000'000'000);
-    roundTripScalar<float>(3.14159f);
-    roundTripScalar<double>(2.718281828);
+    roundTripScalar<float>(3.141'59f);
+    roundTripScalar<double>(2.718'281'828);
     roundTripScalar<char>('Q');
 }
 

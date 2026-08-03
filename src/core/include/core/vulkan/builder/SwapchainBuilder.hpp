@@ -26,6 +26,30 @@ namespace core::vk {
 
 class SwapchainBuilder final {
 public:
+    [[nodiscard]]
+    std::span<Format const> requiredFormats() const noexcept { return m_required_formats; }
+
+    [[nodiscard]]
+    std::span<TrivialPair<Format, int32_t> const> preferredFormats() const noexcept { return m_preferred_formats; }
+
+    [[nodiscard]]
+    std::span<ColorSpace const> requiredColorSpaces() const noexcept { return m_required_color_spaces; }
+
+    [[nodiscard]]
+    std::span<TrivialPair<ColorSpace, int32_t> const> preferredColorSpaces() const noexcept { return m_preferred_color_spaces; }
+
+    [[nodiscard]]
+    std::span<PresentMode const> requiredPresentModes() const noexcept { return m_required_present_modes; }
+
+    [[nodiscard]]
+    std::span<TrivialPair<PresentMode, int32_t> const> preferredPresentModes() const noexcept { return m_preferred_present_modes; }
+
+    [[nodiscard]]
+    std::optional<Extent2d> fallbackExtent() const noexcept { return m_fallback_extent; }
+
+    [[nodiscard]]
+    std::optional<SurfaceTransformBits> transform() const noexcept { return m_transform; }
+public:
     // Defaults to all formats allowed
     template<typename Self>
     auto&& requireFormats(

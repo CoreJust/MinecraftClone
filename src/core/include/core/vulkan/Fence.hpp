@@ -8,7 +8,7 @@ CORE_VK_ERROR_WITH_KINDS(FenceError, VulkanRuntimeError,
     FailedToCreateFence,
     FenceIsNull,
     FailedToWaitOnFence,
-    FaiedToResetFence);
+    FailedToResetFence);
 
 namespace core::vk {
 

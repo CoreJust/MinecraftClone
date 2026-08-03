@@ -32,9 +32,9 @@ enum class VulkanExtension {
 
     // Surface
     Surface,                 // VK_KHR_surface
-    AndroidSurface,          // VK_KHR_adnroid_surface
+    AndroidSurface,          // VK_KHR_android_surface
     DirectfbSurface,         // VK_EXT_directfb_surface
-    FuchsiaImagepipeSurface, // VK_FUCHSIA_imagepipe_surface 
+    FuchsiaImagepipeSurface, // VK_FUCHSIA_imagepipe_surface
     HeadlessSurface,         // VK_EXT_headless_surface
     MetalSurface,            // VK_EXT_metal_surface
     OhosSurface,             // VK_OHOS_surface
@@ -56,7 +56,7 @@ enum class VulkanExtension {
     ConditionalRendering,    // VK_EXT_conditional_rendering
     DescriptorIndexing,      // VK_EXT_descriptor_indexing
     DeviceGeneratedCommands, // VK_EXT_device_generated_commands
-    HostImageCopy,           // VK_EXT_host_image_copy 
+    HostImageCopy,           // VK_EXT_host_image_copy
 
     // Debug
     DebugUtils,              // VK_EXT_debug_utils

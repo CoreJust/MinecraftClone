@@ -1,9 +1,9 @@
 target_sources(mc
     PRIVATE
-        render/VulkanRenderer.cpp
         BotClient.cpp
         GameClient.cpp
         PlayerClient.cpp
+        render/VulkanRenderer.cpp
 )
 mc_target_shaders(mc
     render/shaders/grid.mesh

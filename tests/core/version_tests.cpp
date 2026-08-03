@@ -1,8 +1,7 @@
 #include <core/common/Version.hpp>
 
-#include <gtest/gtest.h>
-
 #include <fmt/format.h>
+#include <gtest/gtest.h>
 
 TEST(VersionTest, ComparesComponentsInOrder) {
     core::Version const base{ .epoch = 1, .major = 2, .minor = 3, .patch = 4 };

@@ -4,9 +4,9 @@ target_sources(mc
         Attachment.cpp
         Capabilities.cpp
         Check.cpp
-        Context.cpp
         CommandBuffer.cpp
         CommandPool.cpp
+        Context.cpp
         Device.cpp
         ErrorCallbacks.cpp
         Extensions.cpp

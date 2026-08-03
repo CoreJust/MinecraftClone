@@ -39,6 +39,51 @@ public:
         return std::forward<Self>(self);
     }
 
+    [[nodiscard]]
+    Version const& requiredVersion() const noexcept { return m_required_version; }
+
+    [[nodiscard]]
+    Version const& preferredVersion() const noexcept { return m_preferred_version; }
+
+    [[nodiscard]]
+    bool requiresValidation() const noexcept { return m_require_validation; }
+
+    [[nodiscard]]
+    bool prefersValidation() const noexcept { return m_prefer_validation; }
+
+    [[nodiscard]]
+    bool usesPortabilityEnumeration() const noexcept { return m_portability_enumeration; }
+
+    [[nodiscard]]
+    std::string const& projectName() const noexcept { return m_project_name; }
+
+    [[nodiscard]]
+    Version const& projectVersion() const noexcept { return m_project_version; }
+
+    [[nodiscard]]
+    std::string const& engineName() const noexcept { return m_engine_name; }
+
+    [[nodiscard]]
+    Version const& engineVersion() const noexcept { return m_engine_version; }
+
+    [[nodiscard]]
+    DebugMessengerOptions const& debugMessengerOptions() const noexcept { return m_debug_messenger_options; }
+
+    [[nodiscard]]
+    std::span<VulkanExtension const> requiredExtensions() const noexcept { return m_required_extensions; }
+
+    [[nodiscard]]
+    std::span<VulkanExtension const> preferredExtensions() const noexcept { return m_preferred_extensions; }
+
+    [[nodiscard]]
+    std::span<VulkanLayer const> requiredLayers() const noexcept { return m_required_layers; }
+
+    [[nodiscard]]
+    std::span<VulkanLayer const> preferredLayers() const noexcept { return m_preferred_layers; }
+
+    [[nodiscard]]
+    bool requiresWindowExtensions() const noexcept { return m_require_window_extensions; }
+
     template<typename Self>
     auto&& requireVersion(this Self&& self, Version const version) {
         self.m_required_version = version;
@@ -83,7 +128,7 @@ public:
         this Self&& self,
         InputSpan<VulkanExtension> const exts
     ) {
-        appendRange(self.m_required_extensions, exts);
+        self.m_required_extensions.assign(exts.begin(), exts.end());
         return std::forward<Self>(self);
     }
 
@@ -92,7 +137,7 @@ public:
         this Self&& self,
         InputSpan<VulkanExtension> const exts
     ) {
-        appendRange(self.m_preferred_extensions, exts);
+        self.m_preferred_extensions.assign(exts.begin(), exts.end());
         return std::forward<Self>(self);
     }
 
@@ -101,7 +146,7 @@ public:
         this Self&& self,
         InputSpan<VulkanLayer> const layers
     ) {
-        appendRange(self.m_required_layers, layers);
+        self.m_required_layers.assign(layers.begin(), layers.end());
         return std::forward<Self>(self);
     }
 
@@ -110,7 +155,7 @@ public:
         this Self&& self,
         InputSpan<VulkanLayer> const layers
     ) {
-        appendRange(self.m_preferred_layers, layers);
+        self.m_preferred_layers.assign(layers.begin(), layers.end());
         return std::forward<Self>(self);
     }
 

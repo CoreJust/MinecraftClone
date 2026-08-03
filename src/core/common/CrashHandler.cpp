@@ -1,9 +1,16 @@
 #include <core/common/CrashHandler.hpp>
 
-#include <core/common/AtAppExit.hpp>
 #include <core/IO/Log.hpp>
 
 #include <csignal>
+#include <cstdlib>
+
+#ifdef _WIN32
+#include <windows.h>
+#endif
+
+namespace core {
+namespace {
 
 char const* decodeSignalCode(int const code) noexcept {
     switch (code) {
@@ -19,14 +26,8 @@ char const* decodeSignalCode(int const code) noexcept {
 #ifdef SIGBUS
         case SIGBUS: return "SIGBUS";
 #endif
-#ifdef SIGKILL
-        case SIGKILL: return "SIGKILL";
-#endif
 #ifdef SIGQUIT
         case SIGQUIT: return "SIGQUIT";
-#endif
-#ifdef SIGTSTP
-        case SIGTSTP: return "SIGTSTP";
 #endif
 #ifdef SIGSYS
         case SIGSYS: return "SIGSYS";
@@ -35,16 +36,22 @@ char const* decodeSignalCode(int const code) noexcept {
     }
 }
 
-extern "C" void onErrorSignal(int const code) {
+void onErrorSignal(int const code) {
     CORE_CRITICAL(
         "Caught error signal: {}\nStacktrace:\n{}",
         decodeSignalCode(code),
-        core::currentStacktrace());
-    core::AtAppExit::exit();
-    exit(1);
+        currentStacktrace());
+    std::quick_exit(1);
 }
 
-namespace core {
+#ifdef _WIN32
+LONG WINAPI onWindowsException(EXCEPTION_POINTERS*) {
+    CORE_CRITICAL("Caught Windows exception\nStacktrace:\n{}", currentStacktrace());
+    std::quick_exit(1);
+}
+#endif
+
+} // namespace
 
 void setCrashHandler() {
     std::signal(SIGABRT, onErrorSignal);
@@ -63,6 +70,9 @@ void setCrashHandler() {
 #endif
 #ifdef SIGSYS
     std::signal(SIGSYS, onErrorSignal);
+#endif
+#ifdef _WIN32
+    SetUnhandledExceptionFilter(onWindowsException);
 #endif
 }
 

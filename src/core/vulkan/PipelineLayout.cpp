@@ -106,6 +106,8 @@ CORE_VK_RESOURCE_DEFERRED_CONSTRUCTION_IMPL(RawPipelineLayout,
     VkPipelineLayoutCreateInfo create_info{
         .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
         .pushConstantRangeCount = static_cast<uint32_t>(info.push_constant_ranges.size()),
+        // reinterpret_cast here is not technically safe, but intentional since we rely on both structs having
+        // the same layout to avoid temporary allocations and copies.
         .pPushConstantRanges = reinterpret_cast<VkPushConstantRange const*>(info.push_constant_ranges.data()),
     };
     if (!VK_CHECK(vkCreatePipelineLayout(device.handle(), &create_info, nullptr, &self.m_handle))) {

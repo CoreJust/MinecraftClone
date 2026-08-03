@@ -115,8 +115,8 @@ VulkanContext::VulkanContext(VulkanContextBuilder builder, Window const* window)
     setSuboptimalKHRCallback(ContextReloadHelper{ *this, ReloadType::Swapchain });
     setDeviceLostCallback(ContextReloadHelper{ *this, ReloadType::Device });
     setSurfaceLostCallback(ContextReloadHelper{ *this, ReloadType::Surface });
-    setOutOfHostMemoryCallback(ContextReloadHelper{ *this, ReloadType::Instance });
-    setOutOfDeviceMemoryCallback(ContextReloadHelper{ *this, ReloadType::Instance });
+    setOutOfHostMemoryCallback(ContextReloadHelper{ *this, ReloadType::Swapchain });
+    setOutOfDeviceMemoryCallback(ContextReloadHelper{ *this, ReloadType::Swapchain });
 }
 
 VulkanContext::VulkanContext(VulkanContext&&) noexcept = default;
@@ -148,14 +148,19 @@ std::optional<FrameContext> VulkanContext::acquireFrame() {
     if (!m_in_flight[frame_idx].wait()) {
         return std::nullopt;
     }
-    if (!VK_CHECK(vkAcquireNextImageKHR(
+    VkResult const acquire_result = vkAcquireNextImageKHR(
         m_device.handle(),
         m_swapchain.handle(),
         std::numeric_limits<uint64_t>::max(),
         m_image_available[frame_idx].handle(),
         VK_NULL_HANDLE,
         &m_acquired_next_image_index
-    ))) {
+    );
+    if (acquire_result == VK_ERROR_OUT_OF_DATE_KHR || acquire_result == VK_ERROR_SURFACE_LOST_KHR) {
+        [[maybe_unused]] bool const handled = VK_CHECK(acquire_result);
+        return std::nullopt;
+    }
+    if (!VK_CHECK(acquire_result)) {
         throw VulkanContextError{ VulkanContextError::FailedToAcquireNextImage };
     }
 
@@ -199,7 +204,7 @@ void VulkanContext::endFrame() {
             "Failed to submit the current command buffer to graphics queue"
         };
     }
-    
+
     VkPresentInfoKHR const present{
         .sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
         .waitSemaphoreCount = 1,
@@ -259,26 +264,26 @@ void VulkanContext::beginRenderScope(
         extent
     );
 
-    VkClearValue clear_values[2]{ };
-    uint32_t clear_value_count = 0;
+    size_t const color_count = attachments.colors.size();
+    size_t const clear_value_count = color_count + (attachments.depth_stencil.has_value() ? 1 : 0);
+    std::vector<VkClearValue> clear_values(clear_value_count);
 
-    if (attachments.colors.size() > 0) {
-        ColorAttachment const& attachment = attachments.colors[0];
+    for (size_t i = 0; i < color_count; ++i) {
+        ColorAttachment const& attachment = attachments.colors[i];
         if (attachment.clear_color.has_value()) {
-            clear_values[clear_value_count] = makeColorClearValue(*attachment.clear_color);
+            clear_values[i] = makeColorClearValue(*attachment.clear_color);
         }
-        ++clear_value_count;
     }
 
     if (attachments.depth_stencil.has_value()) {
         DepthStencilAttachment const& attachment = attachments.depth_stencil.value();
+        VkClearValue& depth_stencil_clear = clear_values[color_count];
         if (attachment.clear_depth.has_value()) {
-            clear_values[clear_value_count].depthStencil.depth = attachment.clear_depth.value();
+            depth_stencil_clear.depthStencil.depth = attachment.clear_depth.value();
         }
         if (attachment.clear_stencil.has_value()) {
-            clear_values[clear_value_count].depthStencil.stencil = attachment.clear_stencil.value();
+            depth_stencil_clear.depthStencil.stencil = attachment.clear_stencil.value();
         }
-        ++clear_value_count;
     }
 
     VkRenderPassBeginInfo const begin_info{
@@ -286,8 +291,8 @@ void VulkanContext::beginRenderScope(
         .renderPass = render_pass,
         .framebuffer = framebuffer,
         .renderArea = VkRect2D{ .offset = { 0, 0 }, .extent = extent },
-        .clearValueCount = clear_value_count,
-        .pClearValues = clear_values,
+        .clearValueCount = static_cast<uint32_t>(clear_value_count),
+        .pClearValues = clear_values.data(),
     };
 
     vkCmdBeginRenderPass(cmd.handle(), &begin_info, VK_SUBPASS_CONTENTS_INLINE);
@@ -428,13 +433,13 @@ void VulkanContext::reloadImpl(ReloadType const type, ReloadSource const source)
         m_reload_callback(type, source, ReloadAction::Destroy);
     }
     m_render_pass_cache.reset();
-    m_swapchain = Swapchain{ };
     if (indexOf(type) >= indexOf(ReloadType::Device)) {
         m_command_buffers = CommandBuffers{ };
         m_command_pool = CommandPool( );
         m_image_available.clear();
         m_render_finished.clear();
         m_in_flight.clear();
+        m_swapchain = Swapchain{ };
         m_device = Device{ };
         m_physical_device = PhysicalDevice{ };
     }

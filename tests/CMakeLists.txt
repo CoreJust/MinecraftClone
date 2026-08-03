@@ -1,24 +1,36 @@
 include(GoogleTest)
 
 add_executable(mc_tests
-    main.cpp
     core/algorithm_tests.cpp
     core/byte_io_tests.cpp
     core/defer_tests.cpp
     core/enum_bits_tests.cpp
-    core/macro_tests.cpp
-    core/meta_tests.cpp
-    core/os_tests.cpp
+    core/field_requirement_tests.cpp
     core/hash_combine_tests.cpp
+    core/input_span_tests.cpp
     core/io_tests.cpp
+    core/log_tests.cpp
+    core/macro_tests.cpp
+    core/enum_meta_tests.cpp
     core/net_client_server_tests.cpp
     core/net_tests.cpp
-    core/non_movable_tests.cpp
     core/non_copyable_tests.cpp
+    core/non_movable_tests.cpp
+    core/os_tests.cpp
     core/range_span_tests.cpp
+    core/span_utils_tests.cpp
     core/static_initializer_tests.cpp
+    core/tagged_bool_tests.cpp
     core/trivial_pair_tests.cpp
+    core/type_name_tests.cpp
+    core/vector_utils_tests.cpp
     core/version_tests.cpp
+    core/vulkan/capabilities_tests.cpp
+    core/vulkan/extensions_tests.cpp
+    core/vulkan/spirv_tests.cpp
+    core/window/keyboard_tests.cpp
+    core/window/mouse_tests.cpp
+    main.cpp
 )
 
 target_link_libraries(mc_tests

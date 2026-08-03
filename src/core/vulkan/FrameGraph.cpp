@@ -144,9 +144,9 @@ void FrameGraph::render() {
 
         BuiltFrameGraph::BuiltPass const& built_pass = m_built_graph->passes[i];
         FullPassOptions& fpo = m_passes[static_cast<size_t>(built_pass.id)];
-        
+
         if (!fpo.callback) {
-            throw FrameGraphError{ FrameGraphError::FramePassCallbackNotBound };    
+            throw FrameGraphError{ FrameGraphError::FramePassCallbackNotBound };
         }
 
         if (built_pass.needs_render_scope) {

@@ -54,6 +54,14 @@ public:
     void onReload(std::function<void(ReloadType const, ReloadSource const, ReloadAction const)>&& callback);
     void reload(ReloadType const type);
 
+    /*
+     * Mutates the builder via `fn`, then reloads down to `type`. The reload only
+     * re-runs the builder for the scope being torn down (see reloadImpl), so
+     * mutating builder state for a scope ABOVE `type` has no effect - e.g.
+     * changing instance-level state and passing ReloadType::Swapchain silently
+     * ignores the change. Pass the ReloadType matching the highest scope you
+     * mutated, or ReloadType::Instance to be safe.
+     */
     void rebuild(auto&& fn, ReloadType const type = ReloadType::Instance) {
         fn(m_builder);
         reload(type);

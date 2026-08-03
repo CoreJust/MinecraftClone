@@ -30,7 +30,7 @@ public:
             s_logger->set_level(level);
         }
     }
-    
+
     static spdlog::level::level_enum getLogLevel() noexcept {
         return s_logger ? s_logger->level() : spdlog::level::off;
     }
@@ -39,14 +39,16 @@ public:
 private:
     static std::shared_ptr<spdlog::logger> s_logger;
 };
-    
+
 } // namespace core
 
-#define CORE_LOG(level, ...)                                                                      \
-    if (::core::Log::getLogLevel() <= level) {                                                  \
-        ::core::Log::getLogger()                                                                \
-            ->log(spdlog::source_loc{__FILE__, __LINE__, SPDLOG_FUNCTION}, level, __VA_ARGS__); \
-    }
+#define CORE_LOG(lvl, ...)                                                                           \
+    do {                                                                                             \
+        ::spdlog::logger* const core_logger = ::core::Log::getLogger();                              \
+        if (core_logger != nullptr && core_logger->level() <= lvl) {                                 \
+            core_logger->log(::spdlog::source_loc{__FILE__, __LINE__, SPDLOG_FUNCTION}, lvl, __VA_ARGS__);\
+        }                                                                                            \
+    } while (0)
 
 #define CORE_TRACE(...)    CORE_LOG(::spdlog::level::trace, __VA_ARGS__)
 #define CORE_DEBUG(...)    CORE_LOG(::spdlog::level::debug, __VA_ARGS__)

@@ -115,12 +115,15 @@ public:
 
     [[nodiscard]]
     bool hasExtensionOrPromoted(VulkanExtension const extension) const noexcept {
+        Version const promotion_version = getExtensionPromotionVersion(extension);
         if (getExtensionKind(extension) == VulkanExtensionKind::Instance) {
-            if (instanceVersion() >= getExtensionPromotionVersion(extension)) {
+            if (instanceVersion() >= promotion_version) {
                 return true;
             }
         } else {
-            return false;
+            if (deviceVersion() >= promotion_version) {
+                return true;
+            }
         }
         return m_enabled_extensions.hasExtension(extension);
     }
