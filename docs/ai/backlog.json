@@ -516,15 +516,15 @@
     "id": "MC-AI-0013",
     "title": "Automate publisher promotion",
     "kind": "chore",
-    "status": "backlog",
+    "status": "active",
     "priority": "P2",
     "route": "luna",
     "milestone": "ED-010-S3",
     "depends_on": [],
     "acceptance": "Promote approved delivery to main with auditable evidence.",
-    "evidence": "",
+    "evidence": "Snapshot-only prepare/finish/tag CLI uses immutable expected merge trees and genuine review gates. Temporary-Git regressions cover staged tampering before and during candidate checks, divergent baseline retention, conflicts, dirty state, tag protection and minor rejection; full Python suite passes. Actual Snapshot3 promotion remains pending.",
     "blocker": "",
-    "owner": ""
+    "owner": "publisher_automation"
   },
   {
     "level": "basic",

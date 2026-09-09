@@ -20,6 +20,18 @@ Create snapshot/minor/major tasks in advance on request. Their plans and child h
 5. Tag the verified promotion commit under `ai/<MajorName>/<Epoch.Major.Minor>/<snapshot>_<yy.mm.dd>`. Minor/major completion keeps its own aggregate task linkage and release notes while including the final snapshot workflow. Never rewrite an existing tag.
 6. Only when remote publication is authorized, push the exact `ai-main` ref and selected tag; publish executable assets when authorized. Record refs/artifacts in the task evidence. Avoid `--all` and `--follow-tags`, which can collect unrelated refs.
 
+`script/ai_publish.py` performs the local snapshot-only sequence with immutable
+source hashes. Run `prepare <snapshot-task> <ai-dev-HEAD>` from clean `ai-dev`;
+it validates the finalized aggregate and exact `ai-main` baseline, runs strict
+gates, and proves the immutable inputs merge cleanly before leaving a no-commit
+merge on `ai-main`. Review that merged index and record its normal
+`ai_commit.py` receipt. `finish` rejects an index that differs from that
+deterministic merge tree, commits the two-parent promotion, and reruns strict
+gates. `tag` validates the same merge tree before creating the
+one canonical annotated AI tag only if it does not already exist. It never
+pushes, changes `dev`/`main`, rewrites tags, creates a successor snapshot, or
+publishes a minor/major; those actions remain separately authorized workflows.
+
 A local task marked finalized is not a published release. Review/check failures block committing or promotion; they do not justify altering product requirements or inventing release evidence. Original-line history is preserved. The non-check legacy publisher below remains outside this AI workflow.
 
 ## Existing publisher
