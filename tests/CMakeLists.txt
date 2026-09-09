@@ -21,6 +21,7 @@ add_executable(mc_tests
     core/os_tests.cpp
     core/range_span_tests.cpp
     core/shared_message_tests.cpp
+    core/scenario_parser_tests.cpp
     core/shared_world_tests.cpp
     core/span_utils_tests.cpp
     core/static_initializer_tests.cpp

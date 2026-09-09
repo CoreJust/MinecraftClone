@@ -66,6 +66,7 @@
         "src/client/include/client/*.hpp",
         "src/client/include/client/CMakeLists.txt",
         "tests/core/shared_message_tests.cpp",
+        "tests/core/scenario_parser_tests.cpp",
         "tests/core/shared_world_tests.cpp",
         "tests/core/game_server_tests.cpp"
       ]

@@ -1,0 +1,13 @@
+# A hash inside a quoted character is data, not a comment.
+scenario 1
+profile flat2d-v1
+seed 7
+
+player hash_player character "#" at 0 0 # Setup is boundary 0.
+begin
+expect player hash_player position 0 0
+input hash_player 1 1 # This applies to the next step.
+wait 1
+input hash_player 0 0
+expect player hash_player position 1 1
+end

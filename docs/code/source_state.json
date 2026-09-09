@@ -67,7 +67,7 @@
         "vcpkg-configuration.json",
         "vcpkg.json"
       ],
-      "sources_sha256": "c3bdd67ab38e5dc93bc7508fc7f7e57cabf8ff0dbeb0052a81d53b4464516fd8"
+      "sources_sha256": "f2e37e5019415ad308a647e9069e9f67ec719eae166c281736c959452993ac55"
     },
     {
       "guide": "docs/code/CORE.md",
@@ -192,7 +192,7 @@
     },
     {
       "guide": "docs/code/GAMEPLAY.md",
-      "guide_sha256": "b8498fbcdc77f80ec9d7503f3769d4403505d1dc07537d51f2e04accc2e53a37",
+      "guide_sha256": "fe9c3a7da53b832e2827449b6d45d85e63ee33d89b2635b32c6dccafcd4fbe6c",
       "id": "gameplay",
       "sources": [
         "src/client/BotClient.cpp",
@@ -211,14 +211,17 @@
         "src/shared/include/shared/CMakeLists.txt",
         "src/shared/include/shared/ProjectInfo.hpp",
         "src/shared/include/shared/net/Message.hpp",
+        "src/shared/include/shared/scenario/Scenario.hpp",
         "src/shared/include/shared/world/World.hpp",
         "src/shared/net/Message.cpp",
+        "src/shared/scenario/Scenario.cpp",
         "src/shared/world/World.cpp",
         "tests/core/game_server_tests.cpp",
+        "tests/core/scenario_parser_tests.cpp",
         "tests/core/shared_message_tests.cpp",
         "tests/core/shared_world_tests.cpp"
       ],
-      "sources_sha256": "7209c26e3651de4d5c638b02da6d5862f070a4f27d974188def8fab552cabfac"
+      "sources_sha256": "6649edd9457bd6fb65edd54392693f2f4739e5b1fda5c90216356315c077cc11"
     },
     {
       "guide": "docs/code/RENDERING.md",

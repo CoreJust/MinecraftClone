@@ -209,10 +209,13 @@ Files:
 - [`src/shared/include/shared/CMakeLists.txt`](../../src/shared/include/shared/CMakeLists.txt)
 - [`src/shared/include/shared/ProjectInfo.hpp`](../../src/shared/include/shared/ProjectInfo.hpp)
 - [`src/shared/include/shared/net/Message.hpp`](../../src/shared/include/shared/net/Message.hpp)
+- [`src/shared/include/shared/scenario/Scenario.hpp`](../../src/shared/include/shared/scenario/Scenario.hpp)
 - [`src/shared/include/shared/world/World.hpp`](../../src/shared/include/shared/world/World.hpp)
 - [`src/shared/net/Message.cpp`](../../src/shared/net/Message.cpp)
+- [`src/shared/scenario/Scenario.cpp`](../../src/shared/scenario/Scenario.cpp)
 - [`src/shared/world/World.cpp`](../../src/shared/world/World.cpp)
 - [`tests/core/game_server_tests.cpp`](../../tests/core/game_server_tests.cpp)
+- [`tests/core/scenario_parser_tests.cpp`](../../tests/core/scenario_parser_tests.cpp)
 - [`tests/core/shared_message_tests.cpp`](../../tests/core/shared_message_tests.cpp)
 - [`tests/core/shared_world_tests.cpp`](../../tests/core/shared_world_tests.cpp)
 

@@ -54,6 +54,18 @@ spawns and movement. Explicit spawn and `setPlayerPosition` do not apply that
 check, so callers own their preconditions. Random spawning can also continue
 indefinitely if no valid cell remains.
 
+## Deterministic scenario plans
+
+[Scenario.hpp](../../src/shared/include/shared/scenario/Scenario.hpp) defines a
+bounded parser for the versioned `flat2d-v1` scenario format. Parsing validates
+the complete source, actor references, initial collision spacing, numeric
+ranges, and host-supplied resource limits before returning an
+immutable-by-interface `ScenarioPlan`; rejection cannot partially mutate a
+world. Plans preserve actor declaration order and typed operations with
+explicit issuing and effective authoritative boundaries. The complete grammar,
+compatibility rules, diagnostics, and checked-in examples are in the
+[scripting guide](../scripting/README.md).
+
 ## Wire protocol
 
 [Message.hpp](../../src/shared/include/shared/net/Message.hpp) exposes a

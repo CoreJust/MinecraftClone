@@ -12,7 +12,7 @@ Version EarlyDev 0.1.0 Initiation.
 | `ai-dev` → `ai-main` | AI-led development and verified snapshots |
 | `codex/ai-<task>` | Short-lived tasks based on `ai-dev` |
 
-Start with [AI development](docs/ai/README.md), the [backlog](docs/ai/BACKLOG.md), or the [code map](docs/code/README.md). The AI line follows the same [product roadmap](docs/ROADMAP.md); it changes the development workflow, not the intended game.
+Start with [AI development](docs/ai/README.md), the [backlog](docs/ai/BACKLOG.md), the [code map](docs/code/README.md), or the [scenario scripting guide](docs/scripting/README.md). The AI line follows the same [product roadmap](docs/ROADMAP.md); it changes the development workflow, not the intended game.
 
 ## Build and run
 
