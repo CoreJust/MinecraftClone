@@ -36,15 +36,18 @@ Vulkan.
   arranges teardown; logging macros silently do nothing before initialization.
   Its sink/logger mutation API is not an application-wide synchronization
   protocol—configure it during startup. [`CrashHandler`](../../src/core/common/CrashHandler.cpp)
-  installs signal/Windows handlers that log then `quick_exit`.
+  installs desktop signal/Windows handlers that terminate immediately with a nonzero status.
+  The POSIX signal path writes only one fixed stderr message before `_Exit`; neither path logs,
+  captures a stacktrace, allocates, takes locks, or runs exit callbacks. Signal-time diagnostics are
+  therefore deliberately limited, while normal `main` cleanup remains separate.
 - [`File`](../../src/core/include/core/IO/File.hpp) reads binary files. `readFile`
   allocates the exact reported size; `readFileTo` requires a destination large
   enough for the entire file and returns `false` for missing/open/read/close
   failures. Both log the failure. Formatting adapters next to `Log.hpp` extend
   `fmt` for core values.
 
-Tests: [`io_tests.cpp`](../../tests/core/io_tests.cpp),
-[`log_tests.cpp`](../../tests/core/log_tests.cpp), and
+Tests: [`crash_handler_tests.cpp`](../../tests/core/crash_handler_tests.cpp),
+[`io_tests.cpp`](../../tests/core/io_tests.cpp), [`log_tests.cpp`](../../tests/core/log_tests.cpp), and
 [`static_initializer_tests.cpp`](../../tests/core/static_initializer_tests.cpp).
 
 ## Value, byte, range, and control utilities

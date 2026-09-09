@@ -112,11 +112,11 @@
         "vcpkg-configuration.json",
         "vcpkg.json"
       ],
-      "sources_sha256": "ac8ab7e8088e03ad9223872257bc9faa27896f825ec369d151eda6a15489d7a4"
+      "sources_sha256": "4a936bad83c8e486f094d035c5d490b278222262e318170bd7091cd7913b9890"
     },
     {
       "guide": "docs/code/CORE.md",
-      "guide_sha256": "c34789c072f1c04c8f1c15ed5c123f69c4719e49c529d90ea0dc78224724c867",
+      "guide_sha256": "a4d92a67092c7defe04c8946446a071d772fca1ead280d68f5393382e1170905",
       "id": "core",
       "sources": [
         "src/core/CMakeLists.txt",
@@ -208,6 +208,7 @@
         "src/core/window/Window.cpp",
         "tests/core/algorithm_tests.cpp",
         "tests/core/byte_io_tests.cpp",
+        "tests/core/crash_handler_tests.cpp",
         "tests/core/defer_tests.cpp",
         "tests/core/enum_bits_tests.cpp",
         "tests/core/enum_meta_tests.cpp",
@@ -233,7 +234,7 @@
         "tests/core/window/keyboard_tests.cpp",
         "tests/core/window/mouse_tests.cpp"
       ],
-      "sources_sha256": "9985cd3c93e0b418556efb9c03e5ee86879abe4dc8b56dcde963d7546ce620e2"
+      "sources_sha256": "cc8ea531be5c61d3a57322cba7b37a7316b4c3191ec25e0bd8e147d1f1e5bb27"
     },
     {
       "guide": "docs/code/GAMEPLAY.md",

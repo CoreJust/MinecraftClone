@@ -204,6 +204,7 @@ Files:
 - [`src/core/window/Window.cpp`](../../src/core/window/Window.cpp)
 - [`tests/core/algorithm_tests.cpp`](../../tests/core/algorithm_tests.cpp)
 - [`tests/core/byte_io_tests.cpp`](../../tests/core/byte_io_tests.cpp)
+- [`tests/core/crash_handler_tests.cpp`](../../tests/core/crash_handler_tests.cpp)
 - [`tests/core/defer_tests.cpp`](../../tests/core/defer_tests.cpp)
 - [`tests/core/enum_bits_tests.cpp`](../../tests/core/enum_bits_tests.cpp)
 - [`tests/core/enum_meta_tests.cpp`](../../tests/core/enum_meta_tests.cpp)

@@ -1813,5 +1813,42 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0068",
+    "title": "Make desktop signal termination async-signal-safe",
+    "kind": "bug",
+    "status": "active",
+    "priority": "P1",
+    "route": "terra",
+    "milestone": "ED-010-S3",
+    "depends_on": [],
+    "acceptance": "Signal callbacks perform only operations permitted in signal context, terminate with a documented nonzero outcome, and never invoke logging, stacktrace collection, allocation, locks or exit callbacks. Focused subprocess tests cover ordinary termination and a fatal-signal path without killing the test runner; existing C++ signal setup remains portable to macOS and Windows. Documentation states diagnostic limitations and normal cleanup remains separate.",
+    "evidence": "The POSIX handler now performs only one fixed write and _Exit(128 + signal); Windows signal and SEH handlers use _Exit(EXIT_FAILURE). Two subprocess death-test cases cover SIGINT, SIGTERM, and SIGABRT without terminating the test runner. The frozen source lane passed both focused tests and the canonical integration reruns them before finalization.",
+    "blocker": "",
+    "owner": "signal_termination_fix",
+    "level": "basic",
+    "parent": "MC-AI-0032",
+    "motivation": "Desktop main installs handlers reached by ordinary Ctrl-C and SIGTERM; logging, stacktrace allocation and quick_exit inside the signal context can deadlock or re-enter unsafe code.",
+    "context": "Confirmed against immutable e2d16e2afcc073c595a4e2a82a934daba18f0909. CoreCpp extraction exposed the inherited defect; this task is the minimal current-snapshot fix, not a crash-reporting framework. Android does not install this handler.",
+    "complexity": "medium",
+    "created_at": "2026-09-09",
+    "resolved_at": "",
+    "resolution_changes": "",
+    "plan": [
+      "Clarify acceptance and implementation steps.",
+      "Inspect signal registration and choose the smallest portable safe handler.",
+      "Add bounded subprocess regressions for termination and fatal signals, preserving the test runner.",
+      "Update the owning guide and verify focused tests plus canonical exact-index checks."
+    ],
+    "product_changes": [],
+    "code_changes": [],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": false,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]
