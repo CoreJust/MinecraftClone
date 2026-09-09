@@ -55,8 +55,13 @@ class AiCheckTests(unittest.TestCase):
     def git(self, *args):
         return subprocess.run(["git", *args], cwd=self.root, text=True, capture_output=True, check=True)
 
-    def run_check(self, *args):
-        return subprocess.run([sys.executable, SCRIPT, "--root", self.root, *args], text=True, capture_output=True)
+    def run_check(self, *args, environment=None):
+        return subprocess.run(
+            [sys.executable, SCRIPT, "--root", self.root, *args],
+            text=True,
+            capture_output=True,
+            env=environment,
+        )
 
     def test_fast_runs_each_required_phase(self):
         result = self.run_check("--fast")
@@ -111,6 +116,91 @@ class AiCheckTests(unittest.TestCase):
         result = ai_check.run_phase(self.root, log_dir, "missing", ["definitely-not-a-command"], 1)
         self.assertEqual(result.returncode, 127)
         self.assertTrue((log_dir / "missing.log").is_file())
+
+    def test_python_test_environment_rejects_failed_or_malformed_git_discovery(self):
+        checker = load_module()
+        with mock.patch.object(checker, "command_output", side_effect=RuntimeError("git discovery failed")):
+            with self.assertRaises(RuntimeError):
+                checker.python_test_environment(self.root)
+        for output in ("", "GIT_DIR\nNOT_GIT\n"):
+            with self.subTest(output=output), mock.patch.object(checker, "command_output", return_value=output):
+                with self.assertRaises(RuntimeError):
+                    checker.python_test_environment(self.root)
+
+    def test_python_tests_clear_injected_hook_repository_environment(self):
+        with tempfile.TemporaryDirectory() as directory:
+            outer = Path(directory)
+
+            def outer_git(*args):
+                return subprocess.run(
+                    ["git", *args], cwd=outer, text=True, capture_output=True, check=True
+                )
+
+            outer_git("init", "-q")
+            outer_git("config", "user.email", "outer@example.invalid")
+            outer_git("config", "user.name", "Outer Repository")
+            outer_git("config", "core.hooksPath", "outer-hooks")
+            (outer / "outer.txt").write_text("outer\n", encoding="utf-8")
+            outer_git("add", "outer.txt")
+            outer_git("commit", "--no-gpg-sign", "-q", "-m", "outer fixture")
+            outer_git("config", "core.bare", "false")
+            outer_git("config", "user.email", "outer@example.invalid")
+            (outer / "outer.txt").write_text("outer  \n", encoding="utf-8")
+
+            outer_git_dir = outer / ".git"
+            before = {
+                "config": (outer_git_dir / "config").read_bytes(),
+                "head": outer_git("rev-parse", "HEAD").stdout,
+                "index": (outer_git_dir / "index").read_bytes(),
+                "refs": outer_git("show-ref", "--head").stdout,
+                "status": outer_git("status", "--porcelain=v1").stdout,
+            }
+            marker = self.root / "isolated-fixture-commit"
+            test_file = self.root / "script/tests/test_git_fixture.py"
+            test_file.write_text(
+                "import os\n"
+                "from pathlib import Path\n"
+                "import subprocess\n"
+                "import tempfile\n"
+                "import unittest\n"
+                "\n"
+                "class GitFixture(unittest.TestCase):\n"
+                "    def test_creates_its_own_repository(self):\n"
+                "        for name in ('GIT_DIR', 'GIT_COMMON_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE'):\n"
+                "            self.assertNotIn(name, os.environ)\n"
+                "        with tempfile.TemporaryDirectory() as directory:\n"
+                "            root = Path(directory)\n"
+                "            def git(*args):\n"
+                "                return subprocess.run(['git', *args], cwd=root, text=True, capture_output=True, check=True)\n"
+                "            git('init', '-q')\n"
+                "            git('config', 'user.email', 'fixture@example.invalid')\n"
+                "            git('config', 'user.name', 'Fixture Repository')\n"
+                "            (root / 'fixture.txt').write_text('fixture\\n', encoding='utf-8')\n"
+                "            git('add', 'fixture.txt')\n"
+                "            git('commit', '--no-gpg-sign', '-q', '-m', 'fixture commit')\n"
+                "            Path(os.environ['ISOLATION_MARKER']).write_text(git('rev-parse', 'HEAD').stdout, encoding='utf-8')\n",
+                encoding="utf-8",
+            )
+            environment = os.environ | {
+                "GIT_DIR": str(outer_git_dir),
+                "GIT_COMMON_DIR": str(outer_git_dir),
+                "GIT_WORK_TREE": str(outer),
+                "GIT_INDEX_FILE": str(outer_git_dir / "index"),
+                "ISOLATION_MARKER": str(marker),
+            }
+            result = self.run_check("--fast", environment=environment)
+            self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+            self.assertIn("PASS python-tests", result.stdout)
+            self.assertIn("FAIL diff-working", result.stdout)
+            self.assertRegex(marker.read_text(encoding="utf-8").strip(), r"^[0-9a-f]{40}$")
+            after = {
+                "config": (outer_git_dir / "config").read_bytes(),
+                "head": outer_git("rev-parse", "HEAD").stdout,
+                "index": (outer_git_dir / "index").read_bytes(),
+                "refs": outer_git("show-ref", "--head").stdout,
+                "status": outer_git("status", "--porcelain=v1").stdout,
+            }
+            self.assertEqual(after, before)
 
     def test_annotated_ai_tag_push_uses_strict_check_from_legacy_branch(self):
         fake_bin = self.root / "fake-bin"

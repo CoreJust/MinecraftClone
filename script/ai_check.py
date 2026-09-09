@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import subprocess
 import sys
@@ -129,9 +130,30 @@ def publisher_failure_is_allowed(output: str, strict: bool, candidate: bool = Fa
     return bool(failures) and failures <= allowed
 
 
+def python_test_environment(root: Path) -> dict[str, str]:
+    names = command_output(root, ["git", "rev-parse", "--local-env-vars"]).splitlines()
+    if not names:
+        raise RuntimeError("Git returned no repository-local environment variables")
+    if any(not re.fullmatch(r"GIT_[A-Z0-9_]+", name) for name in names):
+        raise RuntimeError("Git returned an invalid repository-local environment variable")
+    environment = os.environ.copy()
+    for name in names:
+        environment.pop(name, None)
+    return environment
+
+
 def run_phase(root: Path, log_dir: Path, name: str, command: Sequence[str], timeout: int) -> PhaseResult:
     try:
-        completed = subprocess.run(command, cwd=root, text=True, capture_output=True, timeout=timeout, check=False)
+        environment = python_test_environment(root) if name == "python-tests" else None
+        completed = subprocess.run(
+            command,
+            cwd=root,
+            text=True,
+            capture_output=True,
+            timeout=timeout,
+            check=False,
+            env=environment,
+        )
         output = completed.stdout + completed.stderr
         result = PhaseResult(name, command, completed.returncode, output)
     except subprocess.TimeoutExpired as error:
@@ -142,7 +164,7 @@ def run_phase(root: Path, log_dir: Path, name: str, command: Sequence[str], time
         if isinstance(stderr, bytes):
             stderr = stderr.decode(errors="replace")
         result = PhaseResult(name, command, 124, stdout + stderr, timed_out=True)
-    except OSError as error:
+    except (OSError, RuntimeError) as error:
         result = PhaseResult(name, command, 127, str(error))
     (log_dir / f"{name}.log").write_text(result.output, encoding="utf-8")
     return result
