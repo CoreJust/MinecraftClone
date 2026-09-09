@@ -1,14 +1,15 @@
-#include <core/vulkan/SurfacePlatform.hpp>
+#include <core/vulkan/GlfwSurfaceProvider.hpp>
 
 #include <core/macro/OS.hpp>
 #include <core/vulkan/MetalLayer.hpp>
+#include <core/window/Window.hpp>
 
 #ifdef OSX
 
 namespace core::vk {
 
-VkSurfaceKHR createWindowSurface(VkInstance const instance, GLFWwindow* const window) {
-    return MetalLayer{ window }.createSurface(instance);
+VkSurfaceKHR GlfwSurfaceProvider::createSurface(VkInstance const instance) const {
+    return MetalLayer{ m_window->nativeHandle() }.createSurface(instance);
 }
 
 } // namespace core::vk

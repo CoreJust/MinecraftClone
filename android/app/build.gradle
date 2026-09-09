@@ -1,0 +1,113 @@
+plugins {
+    id 'com.android.application'
+}
+
+def vcpkgRoot = providers.gradleProperty('vcpkgRoot')
+    .orElse(providers.environmentVariable('VCPKG_ROOT'))
+    .orNull
+if (vcpkgRoot == null || vcpkgRoot.trim().isEmpty()) {
+    throw new GradleException('Set VCPKG_ROOT or pass -PvcpkgRoot=/path/to/vcpkg.')
+}
+
+def vcpkgToolchain = file("${vcpkgRoot}/scripts/buildsystems/vcpkg.cmake")
+if (!vcpkgToolchain.isFile()) {
+    throw new GradleException("vcpkg toolchain does not exist: ${vcpkgToolchain}")
+}
+
+def fallbackShaderSources = layout.buildDirectory.dir('generated/fallback-shaders')
+def stageFallbackShaders = tasks.register('stageFallbackShaders', Sync) {
+    from('../../src/client/render/shaders') {
+        include 'grid.vert'
+        include 'player.vert'
+        include 'trivial.frag'
+    }
+    into(fallbackShaderSources)
+}
+
+def projectInfoText = file('../../src/shared/include/shared/ProjectInfo.hpp').getText('UTF-8')
+def projectVersionField = { String field ->
+    def matcher = projectInfoText =~ /\.${field}\s*=\s*(\d+)/
+    if (!matcher.find()) {
+        throw new GradleException("PROJECT_VERSION.${field} is missing from ProjectInfo.hpp")
+    }
+    return matcher.group(1).toInteger()
+}
+def projectEpoch = projectVersionField('epoch')
+def projectMajor = projectVersionField('major')
+def projectMinor = projectVersionField('minor')
+def projectSnapshot = projectVersionField('patch')
+if (projectEpoch > 20 || projectMajor > 99 || projectMinor > 99 || projectSnapshot > 9_999) {
+    throw new GradleException('PROJECT_VERSION cannot be represented as an Android versionCode')
+}
+def projectVersionCode = projectEpoch * 100_000_000 \
+    + projectMajor * 1_000_000 \
+    + projectMinor * 10_000 \
+    + projectSnapshot
+if (projectVersionCode < 1) {
+    throw new GradleException('PROJECT_VERSION must produce a positive Android versionCode')
+}
+def projectVersionName = "${projectEpoch}.${projectMajor}.${projectMinor}:${projectSnapshot}"
+
+android {
+    namespace 'com.corejust.minecraftclone'
+    compileSdk 35
+    ndkVersion '27.0.12077973'
+
+    defaultConfig {
+        applicationId 'com.corejust.minecraftclone'
+        minSdk 28
+        targetSdk 35
+        versionCode projectVersionCode
+        versionName projectVersionName
+
+        ndk {
+            abiFilters 'arm64-v8a'
+        }
+
+        externalNativeBuild {
+            cmake {
+                arguments '-DANDROID_STL=c++_shared',
+                    '-DANDROID_PLATFORM=android-28',
+                    '-DVCPKG_TARGET_TRIPLET=arm64-android'
+                targets 'mc_android'
+            }
+        }
+    }
+
+    externalNativeBuild {
+        cmake {
+            path file('../../CMakeLists.txt')
+            version '3.30.5'
+        }
+    }
+
+    sourceSets {
+        main {
+            shaders.setSrcDirs([fallbackShaderSources])
+        }
+    }
+
+    buildTypes {
+        debug {
+            // Android's standard debug keystore is intentionally the only signer.
+        }
+    }
+}
+
+def ndkToolchain = new File(android.ndkDirectory, 'build/cmake/android.toolchain.cmake')
+if (!ndkToolchain.isFile()) {
+    throw new GradleException("NDK ${android.ndkVersion} is missing its CMake toolchain: ${ndkToolchain}")
+}
+
+// vcpkg owns the outer toolchain and must chainload the NDK toolchain. Keeping
+// both paths Gradle-derived prevents a host path from entering source control.
+android.defaultConfig.externalNativeBuild.cmake.arguments.addAll([
+    "-DCMAKE_TOOLCHAIN_FILE=${vcpkgToolchain.absolutePath}",
+    "-DVCPKG_CHAINLOAD_TOOLCHAIN_FILE=${ndkToolchain.absolutePath}"
+])
+
+tasks.configureEach {
+    if (name ==~ /(merge|compile).+Shaders/) {
+        dependsOn(stageFallbackShaders)
+    }
+}

@@ -86,13 +86,13 @@ struct VulkanContext::ContextReloadHelper final {
     }
 };
 
-VulkanContext::VulkanContext(VulkanContextBuilder builder, Window const* window)
+VulkanContext::VulkanContext(VulkanContextBuilder builder, SurfaceProvider const* provider)
     : m_builder(std::move(builder))
-    , m_window(window)
+    , m_surface_provider(provider)
     , m_instance(m_builder.buildInstance(*this))
     , m_surface(
-        window
-            ? Surface(m_instance, *window)
+        provider
+            ? Surface(m_instance, *provider)
             : Surface()
     )
     , m_physical_device(m_builder.selectPhysicalDevice(
@@ -462,8 +462,8 @@ void VulkanContext::reloadImpl(ReloadType const type, ReloadSource const source)
             m_instance = m_builder.buildInstance(*this);
             [[fallthrough]];
         case ReloadType::Surface:
-            if (m_window) {
-                m_surface = Surface(m_instance, *m_window);
+            if (m_surface_provider) {
+                m_surface = Surface(m_instance, *m_surface_provider);
             }
             [[fallthrough]];
         case ReloadType::Device:

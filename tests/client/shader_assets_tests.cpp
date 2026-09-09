@@ -1,4 +1,4 @@
-#include "../../src/client/render/ShaderAssets.hpp"
+#include <client/render/InstalledShaderAssets.hpp>
 
 #include <core/common/Defer.hpp>
 #include <core/vulkan/SpirV.hpp>
@@ -23,11 +23,10 @@ TEST(ShaderAssetsTest, LoadsEveryCompiledShaderOutsideTheBuildDirectory)
     std::filesystem::path const previous_directory = std::filesystem::current_path();
     defer { std::filesystem::current_path(previous_directory); };
     std::filesystem::current_path(std::filesystem::temp_directory_path());
+    client::InstalledShaderAssets const assets;
 
     for (std::string_view const shader : SHADERS) {
-        std::filesystem::path const asset = client::shaderAssetPath(shader);
-        ASSERT_TRUE(asset.is_absolute());
-        core::vk::SpirV const spirv = core::vk::SpirV::fromFile(asset.string());
+        core::vk::SpirV const spirv = assets.load(shader);
         ASSERT_FALSE(spirv.data().empty()) << shader;
         EXPECT_EQ(spirv.data().front(), SPIRV_MAGIC) << shader;
     }
@@ -35,7 +34,9 @@ TEST(ShaderAssetsTest, LoadsEveryCompiledShaderOutsideTheBuildDirectory)
 
 TEST(ShaderAssetsTest, ReportsMissingAssetsAndRejectsPaths)
 {
-    EXPECT_THROW(static_cast<void>(client::shaderAssetPath("missing.spv")), std::runtime_error);
-    EXPECT_THROW(static_cast<void>(client::shaderAssetPath("../grid.vert.spv")), std::invalid_argument);
-    EXPECT_THROW(static_cast<void>(client::shaderAssetPath("grid.vert")), std::invalid_argument);
+    client::InstalledShaderAssets const assets;
+
+    EXPECT_THROW(static_cast<void>(assets.load("missing.spv")), std::runtime_error);
+    EXPECT_THROW(static_cast<void>(assets.load("../grid.vert.spv")), std::invalid_argument);
+    EXPECT_THROW(static_cast<void>(assets.load("grid.vert")), std::invalid_argument);
 }

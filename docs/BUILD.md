@@ -1,6 +1,6 @@
 # Build and verification
 
-Supported application platforms: Windows and macOS. C++23, CMake **3.25+** (preset schema 6), Ninja, vcpkg (`VCPKG_ROOT`), Python 3.12+ for development checks, and Vulkan SDK with loader/headers/`glslc` are required. Text checkouts use LF through `.gitattributes`, keeping hooks and source hashes consistent across platforms. Dependencies are pinned by [vcpkg-configuration.json](../vcpkg-configuration.json); packages are in [vcpkg.json](../vcpkg.json).
+Supported application platforms: Windows, macOS, and arm64 Android. Desktop builds require C++23, CMake **3.25+** (preset schema 6), Ninja, vcpkg (`VCPKG_ROOT`), Python 3.12+ for development checks, and a Vulkan SDK with loader/headers/`glslc`. Android builds use the Gradle wrapper, Android SDK API 35, NDK **27.0.12077973**, bundled CMake 3.30.5, Java 21, and vcpkg's pinned builtin `arm64-android` triplet at API floor 28. Text checkouts use LF through `.gitattributes`, keeping hooks and source hashes consistent across platforms. Dependencies are pinned by [vcpkg-configuration.json](../vcpkg-configuration.json); packages are in [vcpkg.json](../vcpkg.json).
 
 ```sh
 python3 script/ai_setup.py
@@ -13,6 +13,28 @@ python3 script/ai_check.py
 Run CMake presets from the repository root. Use `release` in place of `debug` for an optimized build. `mc_main` is under `build/<preset>/`; Windows adds `.exe`. Start one `mc_main --server`, then clients with `mc_main`; [gameplay](code/GAMEPLAY.md) lists exact options. The build copies compiled shaders into `shaders/` beside each executable. Runtime lookup uses the executable location, so launch need not use the repository working directory. `cmake --install build/release --prefix <destination>` installs the executable and shaders together; retain that layout when distributing.
 
 After building exact release inputs, use the deterministic [package tooling](PACKAGING.md) to create desktop archives or record Android APK evidence.
+
+## Android debug APK
+
+Install SDK API 35, NDK 27.0.12077973, and CMake 3.30.5. Set `ANDROID_SDK_ROOT`, Java 21 `JAVA_HOME`, and `VCPKG_ROOT`; do not commit host paths.
+
+```sh
+export ANDROID_SDK_ROOT=/path/to/android-sdk
+export JAVA_HOME=/path/to/java-21
+export VCPKG_ROOT=/path/to/vcpkg
+./android/gradlew :app:assembleDebug
+```
+
+The result is `android/app/build/outputs/apk/debug/app-debug.apk`: arm64-v8a, API 28 minimum, development-signed only. Gradle derives its version name/code from `PROJECT_VERSION`, including the snapshot index.
+
+Launch options are string extras. `server` is numeric `IP:PORT`; `character` is one of `@#$%&`. Defaults are `10.0.2.2:20040` (emulator host-loopback alias) and `@`:
+
+```sh
+adb shell am start -n com.corejust.minecraftclone/android.app.NativeActivity \
+    --es server 10.0.2.2:20040 --es character @
+```
+
+ENet uses UDP, while `adb reverse` forwards only TCP. Physical devices therefore need a network-reachable server; this snapshot's desktop server binds to loopback, so local acceptance uses the emulator. [Android architecture](code/ANDROID.md) owns NativeActivity lifecycle, input, asset, and renderer constraints.
 
 ## SDK and compiler
 

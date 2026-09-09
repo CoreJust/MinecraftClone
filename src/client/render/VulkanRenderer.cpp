@@ -1,7 +1,5 @@
 #include <client/render/VulkanRenderer.hpp>
 
-#include "ShaderAssets.hpp"
-
 #include <shared/ProjectInfo.hpp>
 
 #include <core/common/Assert.hpp>
@@ -9,6 +7,7 @@
 #include <core/vulkan/Check.hpp>
 #include <core/vulkan/FrameGraph.hpp>
 #include <core/vulkan/GraphicsPipelineOptions.hpp>
+#include <core/vulkan/SurfaceProvider.hpp>
 
 #include <array>
 
@@ -18,7 +17,7 @@ namespace vk = core::vk;
 
 namespace {
 
-#if defined(_CORE_DEBUG) || defined(_MC_VK_VALIDATION_LAYERS)
+#if (!defined(__ANDROID__) && defined(_CORE_DEBUG)) || defined(_MC_VK_VALIDATION_LAYERS)
 constexpr bool REQUIRE_VALIDATION = true;
 #else
 constexpr bool REQUIRE_VALIDATION = false;
@@ -49,14 +48,19 @@ static_assert(sizeof(PlayerPushConstants) == 32);
 
 struct VulkanRenderer::Impl final {
 public:
-    explicit Impl(core::Window const& window, VulkanRendererOptions const options)
-        : m_options(options)
+    explicit Impl(
+        vk::SurfaceProvider const& surface_provider,
+        ShaderAssets const& shader_assets,
+        VulkanRendererOptions const options
+    )
+        : m_shader_assets(shader_assets)
+        , m_options(options)
         , m_graph(vk::VulkanContext(
             vk::VulkanContextBuilder()
                 .project(std::string{ shared::PROJECT_NAME }, shared::PROJECT_VERSION)
                 .engine(std::string{ shared::PROJECT_NAME }, shared::PROJECT_VERSION)
                 .requireVersion(core::Version{ 0, 1, 2, 0 })
-                .renderTo(window)
+                .renderTo(surface_provider)
                 .portabilityEnumeration()
                 .requireValidation(REQUIRE_VALIDATION || options.require_validation)
                 .preferMeshShaders()
@@ -68,7 +72,7 @@ public:
                     vk::VulkanFeature::DynamicRendering,
                     vk::VulkanFeature::Synchronization2,
                 }),
-            &window
+            &surface_provider
         ))
     {
         CORE_INFO("Loaded Vulkan:\n{}", m_graph.ctx().toString());
@@ -146,13 +150,9 @@ private:
             CORE_INFO("Using mesh shader pipelines");
         }
 
-        vk::SpirV grid_shader = vk::SpirV::fromFile(
-            shaderAssetPath(m_mesh_shaders ? "grid.mesh.spv" : "grid.vert.spv").string()
-        );
-        vk::SpirV player_shader = vk::SpirV::fromFile(
-            shaderAssetPath(m_mesh_shaders ? "player.mesh.spv" : "player.vert.spv").string()
-        );
-        vk::SpirV trivial_frag = vk::SpirV::fromFile(shaderAssetPath("trivial.frag.spv").string());
+        vk::SpirV grid_shader = m_shader_assets.load(m_mesh_shaders ? "grid.mesh.spv" : "grid.vert.spv");
+        vk::SpirV player_shader = m_shader_assets.load(m_mesh_shaders ? "player.mesh.spv" : "player.vert.spv");
+        vk::SpirV trivial_frag = m_shader_assets.load("trivial.frag.spv");
         m_grid_shader = vk::ShaderModule{ dev, grid_shader };
         m_player_shader = vk::ShaderModule{ dev, player_shader };
         m_fragment_shader = vk::ShaderModule{ dev, trivial_frag };
@@ -212,6 +212,7 @@ private:
         }
     }
 private:
+    ShaderAssets const& m_shader_assets;
     VulkanRendererOptions const m_options;
     vk::FrameGraph m_graph;
     vk::FramePassId m_render_pass;
@@ -228,8 +229,12 @@ private:
     vk::GraphicsPipeline m_player_pipeline;
 };
 
-VulkanRenderer::VulkanRenderer(core::Window const& window, VulkanRendererOptions const options)
-    : m_impl(std::make_unique<Impl>(window, options))
+VulkanRenderer::VulkanRenderer(
+    core::vk::SurfaceProvider const& surface_provider,
+    ShaderAssets const& shader_assets,
+    VulkanRendererOptions const options
+)
+    : m_impl(std::make_unique<Impl>(surface_provider, shader_assets, options))
 { }
 
 VulkanRenderer::~VulkanRenderer() = default;

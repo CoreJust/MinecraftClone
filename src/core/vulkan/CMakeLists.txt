@@ -28,13 +28,19 @@ target_sources(mc
         Swapchain.cpp
         VulkanVersion.cpp
 )
+if(NOT ANDROID)
+    target_sources(mc
+        PRIVATE
+            GlfwSurfaceProvider.cpp
+    )
+endif()
 if(APPLE)
     target_sources(mc
         PRIVATE
             MetalLayer.mm
             SurfacePlatform.mm
     )
-else()
+elseif(NOT ANDROID)
     target_sources(mc
         PRIVATE
             SurfacePlatform.cpp

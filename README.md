@@ -16,7 +16,7 @@ Start with [AI development](docs/ai/README.md), the [backlog](docs/ai/BACKLOG.md
 
 ## Build and run
 
-Requires C++23, CMake 3.25+, Ninja, vcpkg (`VCPKG_ROOT`), and Vulkan SDK including `glslc`. Development tooling requires Python 3.12+. Application builds support Windows and macOS.
+Requires C++23, CMake 3.25+, Ninja, vcpkg (`VCPKG_ROOT`), and Vulkan SDK including `glslc`. Development tooling requires Python 3.12+. Application builds support Windows, macOS, and arm64 Android.
 
 ```sh
 cmake --preset debug

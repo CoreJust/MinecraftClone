@@ -9,6 +9,7 @@ namespace client {
 
 void GameClient::run(core::Address const server_address, char const ch) {
     if (!connect(server_address, std::chrono::milliseconds{ 1'000 })) {
+        CORE_ERROR("Failed to connect to server {}", server_address);
         std::cerr << "Failed to connect to server" << std::endl;
         return;
     }
@@ -37,6 +38,7 @@ void GameClient::run(core::Address const server_address, char const ch) {
 }
 
 void GameClient::onDisconnected(core::DisconnectEvent const event) {
+    CORE_INFO("Server disconnected: {}", event.peer.address());
     std::cout << "[SERVER DISCONNECTED] address " << fmt::format("{}", event.peer.address()) << std::endl;
     m_running = false;
 }

@@ -82,6 +82,14 @@
       ]
     },
     {
+      "id": "android",
+      "guide": "docs/code/ANDROID.md",
+      "sources": [
+        "src/android/**",
+        "tests/android/**"
+      ]
+    },
+    {
       "id": "build",
       "guide": "docs/BUILD.md",
       "sources": [
@@ -89,6 +97,7 @@
         "CMakePresets.json",
         "vcpkg*.json",
         "cmake/**",
+        "android/**",
         "src/CMakeLists.txt",
         "tests/CMakeLists.txt",
         "tests/main.cpp",

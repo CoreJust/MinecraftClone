@@ -24,6 +24,7 @@ target_sources(mc
             FrameStructs.hpp
             GraphicsPipeline.hpp
             GraphicsPipelineOptions.hpp
+            GlfwSurfaceProvider.hpp
             Image.hpp
             ImageMemoryBarrier.hpp
             ImageView.hpp
@@ -39,6 +40,7 @@ target_sources(mc
             ShaderModule.hpp
             SpirV.hpp
             Surface.hpp
+            SurfaceProvider.hpp
             SurfacePlatform.hpp
             Swapchain.hpp
             VulkanVersion.hpp

@@ -33,12 +33,6 @@ namespace core::vk {
 
 class InstanceBuilder final {
 public:
-    template<typename Self>
-    auto&& requireWindowExtensions(this Self&& self) {
-        self.m_require_window_extensions = true;
-        return std::forward<Self>(self);
-    }
-
     [[nodiscard]]
     Version const& requiredVersion() const noexcept { return m_required_version; }
 
@@ -80,9 +74,6 @@ public:
 
     [[nodiscard]]
     std::span<VulkanLayer const> preferredLayers() const noexcept { return m_preferred_layers; }
-
-    [[nodiscard]]
-    bool requiresWindowExtensions() const noexcept { return m_require_window_extensions; }
 
     template<typename Self>
     auto&& requireVersion(this Self&& self, Version const version) {
@@ -204,7 +195,6 @@ private:
     bool m_require_validation { false };
     bool m_prefer_validation { false };
     bool m_portability_enumeration{ false };
-    bool m_require_window_extensions{ false };
 };
 
 } // namespace core::vk

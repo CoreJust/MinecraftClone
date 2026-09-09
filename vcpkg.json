@@ -4,9 +4,15 @@
   "dependencies": [
     "enet",
     "fmt",
-    "glfw3",
+    {
+      "name": "glfw3",
+      "platform": "!android"
+    },
     "glm",
-    "gtest",
+    {
+      "name": "gtest",
+      "platform": "!android"
+    },
     "spdlog",
     "spirv-reflect",
     "volk",

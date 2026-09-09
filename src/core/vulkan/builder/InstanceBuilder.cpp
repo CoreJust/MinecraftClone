@@ -8,8 +8,6 @@
 
 // DONT_CHECK INCLUDE_ORDER
 #include <volk.h>
-// DONT_CHECK INCLUDE_ORDER
-#include <GLFW/glfw3.h>
 
 #include <algorithm>
 #include <cstring>
@@ -137,7 +135,6 @@ VulkanExtensions collectExtensionsToEnable(
     VulkanExtensions const& supported,
     std::vector<VulkanExtension> const& required,
     std::vector<VulkanExtension> const& preferred,
-    bool const requires_window_extensions,
     bool const wants_validation,
     bool const portability_enumeration
 ) {
@@ -174,29 +171,6 @@ VulkanExtensions collectExtensionsToEnable(
     if (wants_validation) {
         addExtension(VulkanExtension::DebugUtils, false);
     }
-    if (requires_window_extensions) {
-        if (glfwVulkanSupported() != GLFW_TRUE) {
-            throw InstanceCreationError(InstanceCreationError::GlfwVulkanNotSupported);
-        }
-
-        uint32_t glfw_extension_count = 0;
-        char const** const glfw_extensions = glfwGetRequiredInstanceExtensions(&glfw_extension_count);
-        if (glfw_extensions == nullptr || glfw_extension_count == 0) {
-            throw InstanceCreationError(InstanceCreationError::GlfwVulkanNotSupported);
-        }
-
-        for (uint32_t i = 0; i < glfw_extension_count; ++i) {
-            if (auto maybe_extension = extensionFromFullName(glfw_extensions[i])) {
-                addExtension(*maybe_extension, true);
-            } else {
-                throw InstanceCreationError(
-                    InstanceCreationError::MissingRequiredExtension,
-                    "{} not recognized", glfw_extensions[i]
-                );
-            }
-        }
-    }
-
     return enabled;
 }
 
@@ -223,7 +197,6 @@ Instance InstanceBuilder::build(VulkanCaps& out_caps) const {
         supported_extensions,
         m_required_extensions,
         m_preferred_extensions,
-        m_require_window_extensions,
         wants_validation,
         m_portability_enumeration
     );

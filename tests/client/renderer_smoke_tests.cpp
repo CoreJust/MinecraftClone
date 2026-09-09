@@ -1,5 +1,7 @@
+#include <client/render/InstalledShaderAssets.hpp>
 #include <client/render/VulkanRenderer.hpp>
 
+#include <core/vulkan/GlfwSurfaceProvider.hpp>
 #include <core/window/Window.hpp>
 
 #include <gtest/gtest.h>
@@ -13,8 +15,11 @@ void renderSmoke(bool const prefer_mesh_shaders)
     static constexpr uint32_t FRAME_COUNT = 6;
     static constexpr uint32_t RELOAD_FRAME = 3;
     core::Window const window{ "MinecraftClone renderer smoke", 320, 240 };
+    core::vk::GlfwSurfaceProvider const surface_provider{ window };
+    client::InstalledShaderAssets const shader_assets;
     client::VulkanRenderer renderer{
-        window,
+        surface_provider,
+        shader_assets,
         { .require_validation = true, .prefer_mesh_shaders = prefer_mesh_shaders },
     };
     std::array<client::PlayerRenderData, 2> players{

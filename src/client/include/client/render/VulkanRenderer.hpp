@@ -1,8 +1,9 @@
 #pragma once
 
+#include <client/render/ShaderAssets.hpp>
+
 #include <core/common/NonCopyable.hpp>
 #include <core/common/NonMovable.hpp>
-#include <core/window/Window.hpp>
 
 #include <array>
 #include <cstdint>
@@ -10,6 +11,12 @@
 #include <span>
 #include <string_view>
 #include <vector>
+
+namespace core::vk {
+
+class SurfaceProvider;
+
+} // namespace core::vk
 
 namespace client {
 
@@ -26,7 +33,11 @@ struct VulkanRendererOptions final {
 
 class VulkanRenderer final : core::NonCopyable, core::NonMovable {
 public:
-    explicit VulkanRenderer(core::Window const& window, VulkanRendererOptions options = {});
+    explicit VulkanRenderer(
+        core::vk::SurfaceProvider const& surface_provider,
+        ShaderAssets const& shader_assets,
+        VulkanRendererOptions options = {}
+    );
     ~VulkanRenderer();
 
     void render(std::span<PlayerRenderData const> const players);

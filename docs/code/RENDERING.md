@@ -11,17 +11,20 @@ capabilities and selected shader path determine driver requirements.
 
 [VulkanRenderer.hpp](../../src/client/include/client/render/VulkanRenderer.hpp)
 defines a non-copyable, non-movable façade. `PlayerClient` owns it after its
-window, passes a span of `PlayerRenderData` every frame, and calls `hotReload()`
-when R changes from released to pressed. The façade owns `Impl` with a
+window, `GlfwSurfaceProvider`, and `InstalledShaderAssets`; those borrowed
+providers must outlive the renderer. It passes a span of `PlayerRenderData`
+every frame and calls `hotReload()` when R changes from released to pressed.
+The façade owns `Impl` with a
 `unique_ptr`; `Impl` owns the frame graph, imported swapchain pass, shader
 modules, layouts, and pipelines.
 
 Construction in [VulkanRenderer.cpp](../../src/client/render/VulkanRenderer.cpp)
-builds a context for the supplied window, requests API version 1.2,
+builds a context for a supplied `SurfaceProvider`, requests API version 1.2,
 portability enumeration, dynamic rendering and synchronization2 extensions/features,
 graphics and present queues, and a swapchain. Validation is required in debug
-builds, with `MC_ENABLE_VULKAN_VALIDATION_LAYERS`, or when options explicitly
-request it; an ordinary release build does not require validation layers.
+desktop builds, with `MC_ENABLE_VULKAN_VALIDATION_LAYERS`, or when options
+explicitly request it. Android debug builds do not assume a packaged validation
+layer, and ordinary release builds do not require one.
 Mesh shaders are preferred, not required. `VulkanRendererOptions` can force
 vertex pipelines even when mesh support is enabled in the context.
 Failure to satisfy a required context condition prevents normal renderer
@@ -55,10 +58,12 @@ The source list in [src/client/CMakeLists.txt](../../src/client/CMakeLists.txt)
 is compiled by [`mc_target_shaders`](../../cmake/Helpers.cmake) into `.spv`
 files. `mc_copy_target_shaders` copies them beside each consuming executable
 under `shaders/`; installation places `mc_main` and that directory together.
-[ShaderAssets.cpp](../../src/client/render/ShaderAssets.cpp) resolves the actual
-Windows/macOS executable path, independently of working directory/configuration.
-It accepts only a bare `.spv` filename and reports missing files. There is no
-environment override or source-tree fallback. Preserve this layout when packaging.
+[`ShaderAssets`](../../src/client/include/client/render/ShaderAssets.hpp) is the
+renderer's borrowed loading contract. `InstalledShaderAssets` resolves the
+Windows/macOS executable path independently of working directory, accepts only
+a bare `.spv` filename, and reports missing files. Android supplies an APK asset
+loader and packages only the fallback shaders; it forces vertex pipelines.
+There is no environment override or source-tree fallback.
 
 | Purpose | Preferred shader | Fallback | Contract |
 | --- | --- | --- | --- |

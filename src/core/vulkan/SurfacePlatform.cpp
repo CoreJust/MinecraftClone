@@ -1,7 +1,8 @@
-#include <core/vulkan/SurfacePlatform.hpp>
+#include <core/vulkan/GlfwSurfaceProvider.hpp>
 
 #include <core/macro/OS.hpp>
 #include <core/vulkan/Check.hpp>
+#include <core/window/Window.hpp>
 
 #ifndef OSX
 
@@ -9,9 +10,9 @@
 
 namespace core::vk {
 
-VkSurfaceKHR createWindowSurface(VkInstance const instance, GLFWwindow* const window) {
+VkSurfaceKHR GlfwSurfaceProvider::createSurface(VkInstance const instance) const {
     VkSurfaceKHR handle = VK_NULL_HANDLE;
-    CORE_VK_ASSERT(glfwCreateWindowSurface(instance, window, nullptr, &handle));
+    CORE_VK_ASSERT(glfwCreateWindowSurface(instance, m_window->nativeHandle(), nullptr, &handle));
     return handle;
 }
 

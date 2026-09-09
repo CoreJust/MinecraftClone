@@ -5,7 +5,11 @@
 #include <spdlog/async.h>
 #include <spdlog/fmt/chrono.h>
 #include <spdlog/sinks/basic_file_sink.h>
+#if defined(__ANDROID__)
+#include <spdlog/sinks/android_sink.h>
+#else
 #include <spdlog/sinks/stdout_color_sinks.h>
+#endif
 
 #include <chrono>
 
@@ -23,7 +27,11 @@ void Log::ensureInit(
 
     spdlog::init_thread_pool(1024 * 8, 1);
 
+#if defined(__ANDROID__)
+    auto console_sink = std::make_shared<spdlog::sinks::android_sink_mt>("MinecraftClone");
+#else
     auto console_sink = std::make_shared<spdlog::sinks::stdout_color_sink_mt>();
+#endif
     console_sink->set_level(initial_level);
 
     std::shared_ptr<spdlog::sinks::basic_file_sink_mt> file_sink;

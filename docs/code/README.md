@@ -8,6 +8,7 @@ Start with one guide; use [the generated file index](INDEX.md) for exact paths. 
 | Vulkan infrastructure | [VULKAN.md](VULKAN.md) | Resources, builders, pipelines, frame graph, lifetime |
 | Entry point, client, server, shared world/protocol | [GAMEPLAY.md](GAMEPLAY.md) | Authority, state transitions, message flow |
 | Renderer and shaders | [RENDERING.md](RENDERING.md) | Frame lifecycle, GPU data, reload |
+| Android NativeActivity bridge | [ANDROID.md](ANDROID.md) | Activity lifecycle, input, surfaces, packaged assets |
 | Build and delivery tools | [../BUILD.md](../BUILD.md) | Prerequisites, commands, checks, limitations |
 
 Guides describe the current checkout, including pre-existing uncommitted work. Consult Git state and version history before treating a behavior as released. Exact signatures remain in headers; no second handwritten API reference is maintained.

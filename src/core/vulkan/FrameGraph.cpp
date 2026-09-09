@@ -103,7 +103,10 @@ void FrameGraph::build() {
 }
 
 void FrameGraph::render() {
-    if (m_ctx.window() != nullptr && m_ctx.window()->isFramebufferSizeZero()) {
+    if (
+        m_ctx.surfaceProvider() != nullptr
+        && m_ctx.surfaceProvider()->isFramebufferExtentZero()
+    ) {
         return;
     }
     if (!m_built_graph) {

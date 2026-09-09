@@ -47,7 +47,7 @@ class VulkanContext final : public VulkanCaps {
 public:
     static constexpr size_t MAX_FRAMES_IN_FLIGHT = 3;
 public:
-    explicit VulkanContext(VulkanContextBuilder builder, Window const* window = nullptr);
+    explicit VulkanContext(VulkanContextBuilder builder, SurfaceProvider const* provider = nullptr);
     VulkanContext(VulkanContext&&) noexcept;
     ~VulkanContext();
 
@@ -107,7 +107,7 @@ public:
     ImageView const& swapchainImageView() const;
 
     [[nodiscard]]
-    constexpr Window const* window() const noexcept { return m_window; }
+    constexpr SurfaceProvider const* surfaceProvider() const noexcept { return m_surface_provider; }
     [[nodiscard]]
     constexpr Instance& instance() noexcept { return m_instance; }
     [[nodiscard]]
@@ -144,7 +144,7 @@ private:
     void reloadImpl(ReloadType const type, ReloadSource const source);
 private:
     VulkanContextBuilder m_builder;
-    Window const* m_window = nullptr;
+    SurfaceProvider const* m_surface_provider = nullptr;
 
     Instance m_instance;
     Surface m_surface;

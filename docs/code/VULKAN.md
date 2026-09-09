@@ -9,11 +9,11 @@ in [`src/core/vulkan`](../../src/core/vulkan). Use
 ## Resource model and lifetime
 
 [`Resource.hpp`](../../src/core/include/core/vulkan/Resource.hpp) is the core
-ownership contract. `Raw*` types are trivially copyable handles plus destruction
-context; `VulkanRaii<Raw*>` owns destruction. `grabRaw()` transfers ownership;
-`raw()` copies only the handle/context. Destroyers capture required parent
-handles, so destroy children before parents. Do not retain a raw handle after its
-owner dies. Batch resources use `VulkanRaiiVector` and retain that wrapper.
+ownership contract. `Raw*` types are copyable handles with destruction context;
+`VulkanRaii<Raw*>` owns them. `grabRaw()` transfers ownership; `raw()` copies the
+handle/context. Destroyers capture parents, so destroy children first and never
+retain raw handles past owner lifetime. Batch resources retain their
+`VulkanRaiiVector` wrapper.
 
 - [`Instance`](../../src/core/include/core/vulkan/Instance.hpp),
   [`Surface`](../../src/core/include/core/vulkan/Surface.hpp),
@@ -37,6 +37,10 @@ coordinates instance, selection, device, and swapchain builders.
 Configure before construction or `VulkanContext::rebuild`. Builders validate
 requirements and throw typed errors; query enabled
 [`VulkanCaps`](../../src/core/include/core/vulkan/Capabilities.hpp) before use.
+`renderTo(SurfaceProvider)` adds its instance/presentation requirements,
+snapshots its fallback extent, and borrows it for surface creation and
+framebuffer checks; the provider must outlive the context. GLFW and Android
+adapt native windows without entering simulation or renderer interfaces.
 Repeated required/preferred extension calls append, including empty calls;
 they do not clear earlier window/swapchain requirements. ContextBuilder routes
 instance/device extensions through explicit `InputSpan`s. This accumulation
@@ -55,9 +59,9 @@ contract does not imply every other builder setter accumulates.
   [`Layers`](../../src/core/include/core/vulkan/Layers.hpp), and
   [`Capabilities`](../../src/core/include/core/vulkan/Capabilities.hpp) are the
   supported/enabled record. `has` checks enabled state;
-  `hasExtensionOrPromoted` also accepts the recorded API promotion version.
-  Dynamic rendering/synchronization2 promote in Vulkan 1.3. Feature enablement
-  remains distinct from extension availability.
+  `hasExtensionOrPromoted` accepts recorded API promotion. Dynamic rendering
+  and synchronization2 promote in Vulkan 1.3. Features remain distinct from
+  extensions.
 
 ## Context, swapchain, and reload
 
@@ -66,22 +70,21 @@ and three frame slots. It creates graphics command objects, semaphores, and
 initially signaled fences for a windowed surface. Call `waitIdle()` before
 destroying resources that could be in flight.
 
-`reload(type)` waits idle, announces `Destroy`, tears down from that scope,
-rebuilds, then announces `Recreate`. `rebuild(fn, type)` mutates its stored
-builder first. `type` must be the highest mutated scope: using `Swapchain` for
-an instance/device edit silently leaves that edit unapplied. Out-of-date/surface
-loss during acquire invokes error-driven reload and returns no frame.
+`reload(type)` waits idle, announces `Destroy`, rebuilds from that scope, then
+announces `Recreate`. `rebuild(fn, type)` first mutates its stored builder.
+Choose the highest mutated scope; `Swapchain` cannot apply instance/device
+edits. Acquire-time out-of-date/surface loss reloads and returns no frame.
 
 `Swapchain` owns its handle/views and borrows images. Current image/view validity
-starts at successful acquire and ends at the next frame/reload.
+runs from successful acquire through the next frame/reload.
 
 ## Per-frame recording and synchronization
 
 The canonical sequence is:
 
 1. `auto frame = ctx.acquireFrame();` and skip rendering when it is empty.
-   It waits the slot fence, acquires an image, resets/begins that slot's command
-   buffer, then returns a noncopyable/nonmovable `FrameContext`.
+   It waits the slot fence, acquires an image, resets/begins its command buffer,
+   then returns a noncopyable/nonmovable `FrameContext`.
 2. Record barriers and rendering through that `FrameContext`. Its destructor
    ends the command buffer, submits graphics work waiting at color-output on
    `imageAvailable`, signals `renderFinished`, presents, and advances the slot.
@@ -104,13 +107,11 @@ promoted path. A feature bit alone does not select the correct function name.
 
 [`Attachment`](../../src/core/include/core/vulkan/Attachment.hpp) expresses
 color/depth/stencil/input/resolve/preserve use through stable
-`AttachmentViewId`s. Bind every referenced ID in `AttachmentViewProvider`; views
-  need compatible format/extent/sample count. The context chooses dynamic
-  rendering only when supported and there are
-no input/preserve/depth-stencil-resolve attachments; otherwise it caches Vulkan
-render passes/framebuffers internally. More color resolves than colors is an
-explicit context error. Relative viewport/scissor are scaled to attachment
-extent.
+`AttachmentViewId`s. Bind every ID with compatible format, extent, and samples
+in `AttachmentViewProvider`. Dynamic rendering requires support and no
+input/preserve/depth-stencil-resolve attachments; otherwise the context caches
+render passes/framebuffers. More resolves than colors is an error. Relative
+viewport/scissor scale to attachment extent.
 
 [`FrameGraph`](../../src/core/include/core/vulkan/FrameGraph.hpp) owns a moved
 context and declarative passes. Add/import changes discard the built graph;

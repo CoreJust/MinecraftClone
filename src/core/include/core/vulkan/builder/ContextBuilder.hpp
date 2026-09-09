@@ -4,6 +4,7 @@
 #include <core/vulkan/builder/InstanceBuilder.hpp>
 #include <core/vulkan/builder/PhysicalDeviceSelector.hpp>
 #include <core/vulkan/builder/SwapchainBuilder.hpp>
+#include <core/vulkan/SurfaceProvider.hpp>
 
 namespace core::vk {
 
@@ -204,15 +205,15 @@ public:
     }
 
     template<typename Self>
-    [[nodiscard]] auto&& renderTo(this Self&& self, Window const& window) {
-        self.m_instance_builder.requireWindowExtensions();
+    [[nodiscard]] auto&& renderTo(this Self&& self, SurfaceProvider const& provider) {
+        self.m_instance_builder.requireExtensions(provider.requiredInstanceExtensions());
         self.m_physical_device_selector.requireQueueFamilies({
             QueueFamily::Graphics,
             QueueFamily::Present,
         });
         self.m_physical_device_selector.requireExtensions({ VulkanExtension::Swapchain });
         self.m_device_builder.requireQueueFamilies({{QueueFamily::Graphics, 1.f}, {QueueFamily::Present, 1.f}});
-        self.m_swapchain_builder.fallbackExtent(window.framebufferSize());
+        self.m_swapchain_builder.fallbackExtent(provider.framebufferExtent());
         return std::forward<Self>(self);
     }
 

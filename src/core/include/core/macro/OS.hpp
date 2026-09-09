@@ -19,7 +19,7 @@
 #    error "Unknown Apple platform"
 #  endif
 #elif __ANDROID__
-#  error Android OS not currently supported
+#  define ANDROID 1
 #elif __linux__
 #  error Linux not currently supported
 #elif __unix__

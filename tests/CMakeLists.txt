@@ -1,6 +1,7 @@
 include(GoogleTest)
 
 add_executable(mc_tests
+    android/input_state_tests.cpp
     client/shader_assets_tests.cpp
     core/algorithm_tests.cpp
     core/byte_io_tests.cpp
@@ -45,6 +46,7 @@ target_link_libraries(mc_tests
         mc
         GTest::gtest
 )
+target_include_directories(mc_tests PRIVATE ${PROJECT_SOURCE_DIR}/src/android)
 mc_apply_target_defaults(mc_tests)
 mc_copy_target_shaders(mc_tests mc)
 
