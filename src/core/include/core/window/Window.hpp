@@ -39,6 +39,8 @@ public:
     [[nodiscard]]
     bool isFramebufferSizeZero() const noexcept;
     [[nodiscard]]
+    bool resizeFramebuffer(uint32_t width, uint32_t height, uint32_t max_polls) const;
+    [[nodiscard]]
     GLFWwindow* nativeHandle() const noexcept { return m_window; }
     [[nodiscard]]
     std::string const& title() const noexcept { return m_title; }

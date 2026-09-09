@@ -49,6 +49,7 @@ public:
 
     [[nodiscard]]
     std::optional<SurfaceTransformBits> transform() const noexcept { return m_transform; }
+
 public:
     // Defaults to all formats allowed
     template<typename Self>
@@ -137,6 +138,12 @@ public:
         return std::forward<Self>(self);
     }
 
+    template<typename Self>
+    auto&& preferImageUsage(this Self&& self, ImageUsageBits const usage) {
+        self.m_preferred_image_usage |= usage;
+        return std::forward<Self>(self);
+    }
+
     [[nodiscard]]
     Swapchain build(
         VulkanCaps& out_caps,
@@ -154,6 +161,7 @@ private:
     std::vector<TrivialPair<PresentMode, int32_t>> m_preferred_present_modes;
     std::optional<Extent2d> m_fallback_extent;
     std::optional<SurfaceTransformBits> m_transform;
+    ImageUsageBits m_preferred_image_usage = ImageUsage::ColorAttachment;
 };
 
 } // namespace core::vk

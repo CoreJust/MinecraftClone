@@ -40,7 +40,7 @@ void PlayerClient::render() {
             .color = { float(p.ch) / 256.f, 1.f - float(p.ch) / 256.f, 1.f, 1.f },
         });
     }
-    m_renderer.render(rds);
+    static_cast<void>(m_renderer.render(rds));
 
     bool const reload_pressed = core::isKeyPressed(core::Key::R);
     if (reload_pressed && !m_was_reload_pressed) {

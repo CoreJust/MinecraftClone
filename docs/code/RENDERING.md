@@ -100,8 +100,9 @@ reload time.
   shaders validate for Vulkan 1.2.
 - Optional [renderer smoke](../../tests/client/renderer_smoke_tests.cpp), enabled
   by `MC_ENABLE_RENDERER_SMOKE`, requires a desktop, GPU and validation layers.
-  It draws six frames, including empty/player data and an instance reload,
-  through automatic and forced-vertex paths. CTest rejects validation/error logs.
+  It draws eight frames, including empty/player data, a window resize, an
+  instance reload, and an RGBA readback through automatic and forced-vertex
+  paths. It checks the captured scene pixels and CTest rejects validation/error logs.
   Automatic selection does not prove mesh execution on a non-mesh device.
-- Smoke does not inspect pixels, resize, or user controls; visible scene and
-  interaction acceptance still need separate evidence.
+- Smoke does not exercise user controls; visible interaction acceptance still
+  needs separate evidence.

@@ -14,6 +14,25 @@ CORE_ENUM_FUNCTIONS_IMPL(::core::vk::ReloadSource);
 CORE_ENUM_FUNCTIONS_IMPL(::core::vk::ReloadAction);
 
 namespace core::vk {
+
+namespace {
+
+[[nodiscard]]
+uint64_t remainingNanoseconds(std::chrono::steady_clock::time_point const deadline)
+{
+    if (deadline == std::chrono::steady_clock::time_point::max()) {
+        return std::numeric_limits<uint64_t>::max();
+    }
+    auto const now = std::chrono::steady_clock::now();
+    if (deadline <= now) {
+        return 0U;
+    }
+    return static_cast<uint64_t>(
+        std::chrono::duration_cast<std::chrono::nanoseconds>(deadline - now).count()
+    );
+}
+
+} // namespace
 namespace {
 
 [[nodiscard]]
@@ -143,19 +162,24 @@ void VulkanContext::reload(ReloadType const type) {
     reloadImpl(type, ReloadSource::User);
 }
 
-std::optional<FrameContext> VulkanContext::acquireFrame() {
+std::optional<FrameContext> VulkanContext::acquireFrame(
+    std::chrono::steady_clock::time_point const deadline
+) {
     size_t const frame_idx = m_frame_index % MAX_FRAMES_IN_FLIGHT;
-    if (!m_in_flight[frame_idx].wait()) {
+    if (!m_in_flight[frame_idx].wait(remainingNanoseconds(deadline))) {
         return std::nullopt;
     }
     VkResult const acquire_result = vkAcquireNextImageKHR(
         m_device.handle(),
         m_swapchain.handle(),
-        std::numeric_limits<uint64_t>::max(),
+        remainingNanoseconds(deadline),
         m_image_available[frame_idx].handle(),
         VK_NULL_HANDLE,
         &m_acquired_next_image_index
     );
+    if (acquire_result == VK_TIMEOUT || acquire_result == VK_NOT_READY) {
+        return std::nullopt;
+    }
     if (acquire_result == VK_ERROR_OUT_OF_DATE_KHR || acquire_result == VK_ERROR_SURFACE_LOST_KHR) {
         [[maybe_unused]] bool const handled = VK_CHECK(acquire_result);
         return std::nullopt;
@@ -176,6 +200,17 @@ std::optional<FrameContext> VulkanContext::acquireFrame() {
         frame_idx,
         m_acquired_next_image_index
     );
+}
+
+bool VulkanContext::waitForSubmittedFrames(
+    std::chrono::steady_clock::time_point const deadline
+) {
+    for (Fence& fence : m_in_flight) {
+        if (!fence.wait(remainingNanoseconds(deadline))) {
+            return false;
+        }
+    }
+    return true;
 }
 
 void VulkanContext::endFrame() {

@@ -5,6 +5,7 @@
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <functional>
 #include <thread>
@@ -127,6 +128,31 @@ TEST_F(GameServerTest, RepeatedJoinCannotCreateAnotherPlayerForAConnection)
     ASSERT_TRUE(join(newcomer, '#'));
     EXPECT_EQ(newcomer.positions('@').size(), 1u);
     EXPECT_EQ(newcomer.positions('#').size(), 1u);
+}
+
+TEST_F(GameServerTest, MalformedPacketFromUnjoinedPeerDoesNotPreventJoinOrMovement)
+{
+    static constexpr std::array<uint8_t, 1> TRUNCATED_JOIN_REQUEST{ 0 };
+    ProtocolClient client;
+    ASSERT_TRUE(connect(client));
+    ASSERT_TRUE(client.send(
+        TRUNCATED_JOIN_REQUEST,
+        0,
+        core::SendMode{ core::SendMode::Reliable }
+    ));
+    ASSERT_TRUE(client.sendMessage(shared::JoinRequestMessage{ .ch = '@' }));
+    ASSERT_TRUE(client.waitFor([&client] { return !client.positions('@').empty(); }));
+    ASSERT_EQ(client.responseCount(), 1u);
+    EXPECT_TRUE(std::get<shared::JoinResponseMessage>(client.messages.front()).accepted);
+    ASSERT_EQ(client.positions('@').size(), 1u);
+
+    auto const start = client.positions('@').front();
+    uint8_t const direction_x = start.x == 0 ? 1 : 255;
+    ASSERT_TRUE(client.sendMessage(shared::ClientInputMessage{ .direction = { direction_x, 0 } }));
+    ASSERT_TRUE(client.waitFor([&client] { return client.positions('@').size() == 2; }));
+    auto const positions = client.positions('@');
+    EXPECT_EQ(positions.back().x, start.x == 0 ? 1 : start.x - 1);
+    EXPECT_EQ(positions.back().y, start.y);
 }
 
 TEST_F(GameServerTest, IdleInputDoesNotConsumeTheSingleMovementInAPollingTick)

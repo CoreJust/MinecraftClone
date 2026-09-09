@@ -2,13 +2,15 @@
 
 #include <core/IO/Log.hpp>
 
+#include <algorithm>
+#include <stdexcept>
+
 namespace server {
 
-void GameServer::run() {
-    while (true) {
+void GameServer::run(std::stop_token const stop_token) {
+    while (!stop_token.stop_requested()) {
         auto const start = std::chrono::steady_clock::now();
-        m_players_moved_this_tick.clear();
-        poll();
+        static_cast<void>(tick());
         auto const tick_time = std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::steady_clock::now() - start
         );
@@ -16,6 +18,58 @@ void GameServer::run() {
             std::this_thread::sleep_for(shared::TICK - tick_time);
         }
     }
+}
+
+uint64_t GameServer::tick(std::chrono::milliseconds const timeout) {
+    m_players_moved_this_tick.clear();
+    return static_cast<uint64_t>(poll(timeout));
+}
+
+std::expected<std::vector<GameServer::SpawnPoint>, std::string> GameServer::validateSpawnPoints(
+    std::vector<SpawnPoint> spawn_points
+) {
+    for (SpawnPoint const& spawn_point : spawn_points) {
+        bool const valid_character = spawn_point.character == '@'
+            || spawn_point.character == '#'
+            || spawn_point.character == '$'
+            || spawn_point.character == '%'
+            || spawn_point.character == '&';
+        if (!valid_character) {
+            return std::unexpected("spawn point has an unsupported character");
+        }
+        if (spawn_point.x >= shared::World::WIDTH || spawn_point.y >= shared::World::HEIGHT) {
+            return std::unexpected("spawn point is outside the world");
+        }
+    }
+    for (auto first = spawn_points.begin(); first != spawn_points.end(); ++first) {
+        for (auto second = std::next(first); second != spawn_points.end(); ++second) {
+            if (first->character == second->character) {
+                return std::unexpected("spawn points contain duplicate characters");
+            }
+            uint8_t const horizontal_distance = first->x >= second->x
+                ? first->x - second->x
+                : second->x - first->x;
+            uint8_t const vertical_distance = first->y >= second->y
+                ? first->y - second->y
+                : second->y - first->y;
+            if (horizontal_distance <= 1 && vertical_distance <= 1) {
+                return std::unexpected("spawn points overlap player collision neighborhoods");
+            }
+        }
+    }
+    return spawn_points;
+}
+
+std::vector<GameServer::SpawnPoint> GameServer::checkedSpawnPoints(
+    std::vector<SpawnPoint> spawn_points
+) {
+    auto validated = validateSpawnPoints(
+        std::move(spawn_points)
+    );
+    if (!validated.has_value()) {
+        throw std::invalid_argument{ validated.error() };
+    }
+    return std::move(*validated);
 }
 
 void GameServer::onConnected(core::ServerConnectEvent const client) {
@@ -51,7 +105,16 @@ void GameServer::onReceived(core::ServerReceiveEvent event) {
             });
             return;
         }
-        m_world.spawnPlayer(id, ch);
+        auto const spawn_point = std::ranges::find(
+            m_spawn_points,
+            ch,
+            &SpawnPoint::character
+        );
+        if (spawn_point == m_spawn_points.end()) {
+            m_world.spawnPlayer(id, ch);
+        } else {
+            m_world.spawnPlayer(id, ch, std::pair{ spawn_point->x, spawn_point->y });
+        }
         sendTo(id, shared::JoinResponseMessage{
             .accepted = true,
         });

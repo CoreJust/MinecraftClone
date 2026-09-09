@@ -1,7 +1,20 @@
 include(GoogleTest)
 
+add_test(
+    NAME AcceptanceCli.RuntimeModes
+    COMMAND ${CMAKE_COMMAND}
+        -DMC_MAIN=$<TARGET_FILE:mc_main>
+        -DOUTPUT_DIRECTORY=${CMAKE_CURRENT_BINARY_DIR}/acceptance-cli
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/acceptance/runtime_cli_tests.cmake
+)
+set_tests_properties(AcceptanceCli.RuntimeModes PROPERTIES TIMEOUT 20)
+
 add_executable(mc_tests
     android/input_state_tests.cpp
+    acceptance/evidence_json_tests.cpp
+    acceptance/image_evidence_tests.cpp
+    acceptance/renderer_benchmark_tests.cpp
+    acceptance/scenario_runner_tests.cpp
     client/mesh_shader_selection_tests.cpp
     client/shader_assets_tests.cpp
     core/algorithm_tests.cpp
@@ -10,6 +23,7 @@ add_executable(mc_tests
     core/enum_bits_tests.cpp
     core/field_requirement_tests.cpp
     core/game_server_tests.cpp
+    core/game_server_lifecycle_tests.cpp
     core/hash_combine_tests.cpp
     core/input_span_tests.cpp
     core/io_tests.cpp

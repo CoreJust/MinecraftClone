@@ -8,6 +8,7 @@
 #include <core/vulkan/builder/ContextBuilder.hpp>
 
 #include <functional>
+#include <chrono>
 
 CORE_VK_ERROR_WITH_KINDS(VulkanContextError, VulkanRuntimeError,
     FailedToAcquireNextImage,
@@ -69,8 +70,15 @@ public:
 
     // Returns nullopt if frame cannot be started
     [[nodiscard]]
-    std::optional<FrameContext> acquireFrame();
+    std::optional<FrameContext> acquireFrame(
+        std::chrono::steady_clock::time_point deadline = std::chrono::steady_clock::time_point::max()
+    );
     void endFrame();
+
+    [[nodiscard]]
+    bool waitForSubmittedFrames(
+        std::chrono::steady_clock::time_point deadline = std::chrono::steady_clock::time_point::max()
+    );
 
     void beginRenderScope(
         RawCommandBuffer cmd,

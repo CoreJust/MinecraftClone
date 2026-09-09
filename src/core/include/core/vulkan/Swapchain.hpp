@@ -17,15 +17,23 @@ class RawSwapchain : public VulkanResourceBase<VkSwapchainKHR> {
 class Swapchain : public VulkanRaii<RawSwapchain> {
 public:
     Swapchain() noexcept = default;
-    Swapchain(VkSwapchainKHR const swapchain, Image::Info const& info, Device const& device);
+    Swapchain(
+        VkSwapchainKHR const swapchain,
+        Image::Info const& info,
+        Device const& device,
+        bool const supports_transfer_source
+    );
 
     [[nodiscard]]
     constexpr std::vector<Image> const& images() const noexcept { return m_images; }
     [[nodiscard]]
     constexpr std::vector<ImageView> const& imageViews() const noexcept { return m_image_views; }
+    [[nodiscard]]
+    constexpr bool supportsTransferSource() const noexcept { return m_supports_transfer_source; }
 private:
     std::vector<Image> m_images;
     std::vector<ImageView> m_image_views;
+    bool m_supports_transfer_source = false;
 };
 
 } // namespace core::vk

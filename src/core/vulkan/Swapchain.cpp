@@ -10,8 +10,14 @@ CORE_VK_RESOURCE_DESTROY_IMPL(RawSwapchain) {
     vkDestroySwapchainKHR(device_handle, self.m_handle, nullptr);
 }
 
-Swapchain::Swapchain(VkSwapchainKHR const swapchain, Image::Info const& info, Device const& device)
+Swapchain::Swapchain(
+    VkSwapchainKHR const swapchain,
+    Image::Info const& info,
+    Device const& device,
+    bool const supports_transfer_source
+)
     : VulkanRaii<RawSwapchain>(swapchain, device)
+    , m_supports_transfer_source(supports_transfer_source)
 {
     uint32_t image_count = 0;
     CORE_VK_ASSERT(vkGetSwapchainImagesKHR(device.handle(), m_handle, &image_count, nullptr));

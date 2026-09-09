@@ -49,8 +49,7 @@ public:
 
     // Lets the server to process the events
     void pollAndWait() {
-        std::this_thread::sleep_for(std::chrono::milliseconds{ 8 });
-        poll();
+        poll(DEFAULT_TIMEOUT);
     }
 
     bool pollUntil(std::function<bool()> const& ready) {

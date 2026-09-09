@@ -46,11 +46,18 @@ public:
         PersistentFramePassBindCallback const persistent = PersistentFramePassBindCallback::No
     );
 
+    void beforeFrameSubmit(std::function<void(FrameContext&)>&& callback) {
+        m_before_frame_submit_callback = std::move(callback);
+    }
+
     // Releases Vulkan resources, will cause a rebuild next time.
     void discard();
 
     // Renders, builds the graph if necessary.
-    void render();
+    [[nodiscard]]
+    bool render(
+        std::chrono::steady_clock::time_point deadline = std::chrono::steady_clock::time_point::max()
+    );
 
     void onReload(std::function<void(ReloadType const, ReloadSource const, ReloadAction const)>&& callback) {
         m_ctx.onReload(std::move(callback));
@@ -62,6 +69,8 @@ public:
 
     [[nodiscard]]
     VulkanContext& ctx() noexcept { return m_ctx; }
+    [[nodiscard]]
+    VulkanContext const& ctx() const noexcept { return m_ctx; }
 private:
     void build();
 private:
@@ -87,6 +96,7 @@ private:
     std::vector<FrameResource> m_resources;
     std::vector<AttachmentViewId> m_resources_view_ids;
     std::unique_ptr<BuiltFrameGraph> m_built_graph;
+    std::function<void(FrameContext&)> m_before_frame_submit_callback;
 };
 
 } // namespace core::vk

@@ -102,21 +102,21 @@ void FrameGraph::build() {
     m_built_graph = BuiltFrameGraph::create(m_passes, m_resources, m_resources_view_ids, std::move(provider));
 }
 
-void FrameGraph::render() {
+bool FrameGraph::render(std::chrono::steady_clock::time_point const deadline) {
     if (
         m_ctx.surfaceProvider() != nullptr
         && m_ctx.surfaceProvider()->isFramebufferExtentZero()
     ) {
-        return;
+        return false;
     }
     if (!m_built_graph) {
         build();
     }
 
-    auto maybe_frame = m_ctx.acquireFrame();
+    auto maybe_frame = m_ctx.acquireFrame(deadline);
     if (!maybe_frame.has_value()) {
         CORE_WARN("Failed to acquire frame {}; skipping the frame", m_ctx.frameIndex());
-        return;
+        return false;
     }
 
     FrameContext& frame_ctx = maybe_frame.value();
@@ -170,6 +170,10 @@ void FrameGraph::render() {
     }
 
     m_built_graph->applyBarrierSlot(m_built_graph->barriers.size() - 1, frame_ctx);
+    if (m_before_frame_submit_callback) {
+        m_before_frame_submit_callback(frame_ctx);
+    }
+    return true;
 }
 
 } // namespace core::vk

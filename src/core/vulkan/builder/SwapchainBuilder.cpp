@@ -146,20 +146,21 @@ PresentMode choosePresentMode(
         found_modes.insert(static_cast<PresentMode>(mode));
     }
 
-    if (!required.empty()) {
-        bool found_some_present_mode = false;
-        for (PresentMode const mode : required) {
-            if (found_modes.contains(mode)) {
-                found_some_present_mode = true;
-                break;
-            }
+    std::optional<PresentMode> required_present_mode;
+    for (PresentMode const mode : required) {
+        if (found_modes.contains(mode)) {
+            required_present_mode = mode;
+            break;
         }
-        if (!found_some_present_mode) {
+    }
+    if (!required.empty()) {
+        if (!required_present_mode.has_value()) {
             throw SwapchainCreationError(
                 SwapchainCreationError::NoSuchPresentMode,
                 "only following present formats are supported: {}",
                 joinFmt(found_modes));
         }
+        return *required_present_mode;
     }
 
     TrivialPair<PresentMode, int32_t> best_present_mode {
@@ -236,6 +237,15 @@ Swapchain SwapchainBuilder::build(
     SurfaceTransformBits const surface_transform = m_transform.value_or(
         SurfaceTransformBits{ static_cast<uint32_t>(capabilities.currentTransform) }
     );
+    VkImageUsageFlags image_usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+    if (m_preferred_image_usage[ImageUsage::TransferSrc]
+        && (capabilities.supportedUsageFlags & VK_IMAGE_USAGE_TRANSFER_SRC_BIT) != 0U
+    ) {
+        image_usage |= VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+    }
+
+    bool const supports_transfer_source = (image_usage & VK_IMAGE_USAGE_TRANSFER_SRC_BIT) != 0U;
+
     VkSwapchainCreateInfoKHR const create_info{
         .sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
         .surface = surface.handle(),
@@ -244,7 +254,7 @@ Swapchain SwapchainBuilder::build(
         .imageColorSpace = toVk<VkColorSpaceKHR>(color_space),
         .imageExtent = {extent.x, extent.y},
         .imageArrayLayers = 1,
-        .imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
+        .imageUsage = image_usage,
         .imageSharingMode = (queue_family_ndices[0] != queue_family_ndices[1])
             ? VK_SHARING_MODE_CONCURRENT
             : VK_SHARING_MODE_EXCLUSIVE,
@@ -288,7 +298,8 @@ Swapchain SwapchainBuilder::build(
             .format = format,
             .usage = ImageUsage::ColorAttachment,
         },
-        device
+        device,
+        supports_transfer_source
     );
 }
 

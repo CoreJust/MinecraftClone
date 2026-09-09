@@ -73,7 +73,7 @@ void AndroidPlayerClient::render()
             },
         });
     }
-    m_renderer->render(players);
+    static_cast<void>(m_renderer->render(players));
     if (m_input.consumeReloadRequest()) {
         m_renderer->hotReload();
     }

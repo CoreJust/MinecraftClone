@@ -13,6 +13,7 @@ python3 script/ai_check.py
 Run CMake presets from the repository root. Use `release` in place of `debug` for an optimized build. `mc_main` is under `build/<preset>/`; Windows adds `.exe`. Start one `mc_main --server`, then clients with `mc_main`; [gameplay](code/GAMEPLAY.md) lists exact options. The build copies compiled shaders into `shaders/` beside each executable. Runtime lookup uses the executable location, so launch need not use the repository working directory. `cmake --install build/release --prefix <destination>` installs the executable and shaders together; retain that layout when distributing.
 
 After building exact release inputs, use the deterministic [package tooling](PACKAGING.md) to create desktop archives or record Android APK evidence.
+See [runtime acceptance](ACCEPTANCE.md) for scenario, benchmark, and capture commands.
 
 ## Android debug APK
 

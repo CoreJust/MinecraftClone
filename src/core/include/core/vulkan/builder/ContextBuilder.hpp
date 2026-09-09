@@ -205,6 +205,12 @@ public:
     }
 
     template<typename Self>
+    [[nodiscard]] auto&& preferSwapchainImageUsage(this Self&& self, ImageUsageBits const usage) {
+        self.m_swapchain_builder.preferImageUsage(usage);
+        return std::forward<Self>(self);
+    }
+
+    template<typename Self>
     [[nodiscard]] auto&& renderTo(this Self&& self, SurfaceProvider const& provider) {
         self.m_instance_builder.requireExtensions(provider.requiredInstanceExtensions());
         self.m_physical_device_selector.requireQueueFamilies({

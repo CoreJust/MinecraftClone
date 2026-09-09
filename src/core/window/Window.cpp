@@ -8,6 +8,8 @@
 #define GLFW_INCLUDE_NONE
 #include <GLFW/glfw3.h>
 
+#include <cmath>
+#include <limits>
 #include <utility>
 
 namespace core {
@@ -131,6 +133,52 @@ bool Window::isFramebufferSizeZero() const noexcept {
     int height = 0;
     glfwGetFramebufferSize(m_window, &width, &height);
     return width == 0 || height == 0;
+}
+
+bool Window::resizeFramebuffer(
+    uint32_t const width,
+    uint32_t const height,
+    uint32_t const max_polls
+) const {
+    if (width == 0U || height == 0U) {
+        return false;
+    }
+    auto const current_framebuffer_size = framebufferSize();
+    int current_width = 0;
+    int current_height = 0;
+    glfwGetWindowSize(m_window, &current_width, &current_height);
+    float scale_x = 0.0F;
+    float scale_y = 0.0F;
+    glfwGetWindowContentScale(m_window, &scale_x, &scale_y);
+    if (scale_x <= 0.0F && current_width > 0) {
+        scale_x = static_cast<float>(current_framebuffer_size.first) / static_cast<float>(current_width);
+    }
+    if (scale_y <= 0.0F && current_height > 0) {
+        scale_y = static_cast<float>(current_framebuffer_size.second) / static_cast<float>(current_height);
+    }
+    if (scale_x <= 0.0F || scale_y <= 0.0F) {
+        return false;
+    }
+    float const logical_width = static_cast<float>(width) / scale_x;
+    float const logical_height = static_cast<float>(height) / scale_y;
+    if (logical_width > static_cast<float>(std::numeric_limits<int>::max())
+        || logical_height > static_cast<float>(std::numeric_limits<int>::max())
+    ) {
+        return false;
+    }
+    glfwSetWindowSize(
+        m_window,
+        static_cast<int>(std::lround(logical_width)),
+        static_cast<int>(std::lround(logical_height))
+    );
+    for (uint32_t poll{ 0 }; poll < max_polls; ++poll) {
+        glfwPollEvents();
+        auto const framebuffer_size = framebufferSize();
+        if (framebuffer_size.first == width && framebuffer_size.second == height) {
+            return true;
+        }
+    }
+    return false;
 }
 
 void Window::framebuffersResized(GLFWwindow* window, int width, int height) {

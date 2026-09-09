@@ -1,6 +1,30 @@
 {
   "modules": [
     {
+      "guide": "docs/ACCEPTANCE.md",
+      "guide_sha256": "6ecb16418679f537e593208c69f3acb534e8fe35379c0ddb87e904cda4939e4c",
+      "id": "acceptance",
+      "sources": [
+        "src/acceptance/CMakeLists.txt",
+        "src/acceptance/EvidenceJson.cpp",
+        "src/acceptance/ImageEvidence.cpp",
+        "src/acceptance/RenderCapture.cpp",
+        "src/acceptance/RendererBenchmark.cpp",
+        "src/acceptance/ScenarioRunner.cpp",
+        "src/acceptance/include/acceptance/EvidenceJson.hpp",
+        "src/acceptance/include/acceptance/ImageEvidence.hpp",
+        "src/acceptance/include/acceptance/RenderCapture.hpp",
+        "src/acceptance/include/acceptance/RendererBenchmark.hpp",
+        "src/acceptance/include/acceptance/ScenarioRunner.hpp",
+        "tests/acceptance/evidence_json_tests.cpp",
+        "tests/acceptance/image_evidence_tests.cpp",
+        "tests/acceptance/renderer_benchmark_tests.cpp",
+        "tests/acceptance/runtime_cli_tests.cmake",
+        "tests/acceptance/scenario_runner_tests.cpp"
+      ],
+      "sources_sha256": "09402724736d3f16789081af06cd0acc4548056ea21ca03b75605d3fa0120412"
+    },
+    {
       "guide": "docs/code/ANDROID.md",
       "guide_sha256": "4ef0303a2e2c4565c10abde42a4122729bcf5ea29bceded7f4aed043c4b1ffdb",
       "id": "android",
@@ -19,11 +43,11 @@
         "src/android/CMakeLists.txt",
         "tests/android/input_state_tests.cpp"
       ],
-      "sources_sha256": "054373dc968647da8014689de3ebbfb3d1e575bc40c8f263adefe3ade055e8e2"
+      "sources_sha256": "efb70e9ee107744e822f43973fb1012aac6826cc4378d3afc6357c6b15569c6c"
     },
     {
       "guide": "docs/BUILD.md",
-      "guide_sha256": "41821f0f953100dc889c4356e3a31f6956568f1cfea9295c033eb426566456e4",
+      "guide_sha256": "72a88a68a2215d685bee1ee6b406a37da39afe8208a96850818e7ca9a65c0a54",
       "id": "build",
       "sources": [
         ".agents/skills/backlog/SKILL.md",
@@ -88,7 +112,7 @@
         "vcpkg-configuration.json",
         "vcpkg.json"
       ],
-      "sources_sha256": "2227ee5dde6fd8d3c3f73ae299d24ff67ba96307264909b486206f4ccf7f8d93"
+      "sources_sha256": "ac8ab7e8088e03ad9223872257bc9faa27896f825ec369d151eda6a15489d7a4"
     },
     {
       "guide": "docs/code/CORE.md",
@@ -209,7 +233,7 @@
         "tests/core/window/keyboard_tests.cpp",
         "tests/core/window/mouse_tests.cpp"
       ],
-      "sources_sha256": "d80b7b384ffb9619515cd80ed686d3a455461d471efc843975a94b061cbfec64"
+      "sources_sha256": "9985cd3c93e0b418556efb9c03e5ee86879abe4dc8b56dcde963d7546ce620e2"
     },
     {
       "guide": "docs/code/GAMEPLAY.md",
@@ -237,16 +261,17 @@
         "src/shared/net/Message.cpp",
         "src/shared/scenario/Scenario.cpp",
         "src/shared/world/World.cpp",
+        "tests/core/game_server_lifecycle_tests.cpp",
         "tests/core/game_server_tests.cpp",
         "tests/core/scenario_parser_tests.cpp",
         "tests/core/shared_message_tests.cpp",
         "tests/core/shared_world_tests.cpp"
       ],
-      "sources_sha256": "fe6c4ae5666b4f1d1d25dfcad6d206dcd705db50966e6a47dc2de02fbff2d36a"
+      "sources_sha256": "ec27be57e6c2cee355b3b41cb23958dd9a251543a4781a4b7116be9282c675aa"
     },
     {
       "guide": "docs/code/RENDERING.md",
-      "guide_sha256": "906eb00b22ca9ad6e4dfd7a43b189dd78786fe3d50074a5b5b9578046e61a5d6",
+      "guide_sha256": "24207722085caa2a9a33fa4060a8d27c0329b24ba9db911bb402034ba410d2d2",
       "id": "rendering",
       "sources": [
         "src/client/CMakeLists.txt",
@@ -266,7 +291,7 @@
         "tests/client/renderer_smoke_tests.cpp",
         "tests/client/shader_assets_tests.cpp"
       ],
-      "sources_sha256": "2e3d4bd4a69950e01b2ba0d04483f4bb18848a62e533b153f93881c5e400911a"
+      "sources_sha256": "e4b88bdf8bfd6aad0c2ae70e1e6248a7df84c5ad38ccd2be8e349e1eb5363582"
     },
     {
       "guide": "docs/code/VULKAN.md",
@@ -441,7 +466,7 @@
         "tests/core/vulkan/physical_device_selector_tests.cpp",
         "tests/core/vulkan/spirv_tests.cpp"
       ],
-      "sources_sha256": "e56684c5d355998b0a81587380db9527d82fe47d92b4f4a1fa9322ef3a6aa0aa"
+      "sources_sha256": "1f024dc55f9e599ab9197f3b50bfc87bfd85c7991d44fa2d97ded0458ea84f66"
     }
   ],
   "version": 1
