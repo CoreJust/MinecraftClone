@@ -17,6 +17,8 @@
 namespace {
 
 PFN_vkAcquireNextImageKHR original_acquire_next_image = nullptr;
+uint32_t queue_submit_count = 0;
+uint32_t queue_present_count = 0;
 
 VkResult VKAPI_PTR acquireNextImageNotReady(
     VkDevice,
@@ -42,6 +44,64 @@ public:
     {
         vkAcquireNextImageKHR = original_acquire_next_image;
     }
+};
+
+VkResult VKAPI_PTR acquireNextImageSuboptimal(
+    VkDevice const device,
+    VkSwapchainKHR const swapchain,
+    uint64_t const timeout,
+    VkSemaphore const semaphore,
+    VkFence const fence,
+    uint32_t* const image_index
+)
+{
+    VkResult const result = original_acquire_next_image(
+        device,
+        swapchain,
+        timeout,
+        semaphore,
+        fence,
+        image_index
+    );
+    return result == VK_SUCCESS ? VK_SUBOPTIMAL_KHR : result;
+}
+
+VkResult VKAPI_PTR countQueueSubmit(VkQueue, uint32_t, VkSubmitInfo const*, VkFence)
+{
+    ++queue_submit_count;
+    return VK_SUCCESS;
+}
+
+VkResult VKAPI_PTR countQueuePresent(VkQueue, VkPresentInfoKHR const*)
+{
+    ++queue_present_count;
+    return VK_SUCCESS;
+}
+
+class ScopedSuboptimalAcquire final {
+public:
+    ScopedSuboptimalAcquire()
+        : m_queue_submit(vkQueueSubmit)
+        , m_queue_present(vkQueuePresentKHR)
+    {
+        original_acquire_next_image = vkAcquireNextImageKHR;
+        queue_submit_count = 0;
+        queue_present_count = 0;
+        vkAcquireNextImageKHR = acquireNextImageSuboptimal;
+        vkQueueSubmit = countQueueSubmit;
+        vkQueuePresentKHR = countQueuePresent;
+    }
+
+    ~ScopedSuboptimalAcquire()
+    {
+        vkAcquireNextImageKHR = original_acquire_next_image;
+        vkQueueSubmit = m_queue_submit;
+        vkQueuePresentKHR = m_queue_present;
+    }
+
+private:
+    PFN_vkQueueSubmit m_queue_submit;
+    PFN_vkQueuePresentKHR m_queue_present;
 };
 
 [[nodiscard]] bool hasBackgroundPixel(client::RendererFrameCapture const& capture)
@@ -226,6 +286,34 @@ TEST(RendererSmokeTest, NotReadyAcquireSkipsFrameAndRecovers)
             {},
             std::chrono::steady_clock::now() + std::chrono::seconds{ 5 }
         ));
+    }
+
+    EXPECT_TRUE(renderer.render(
+        {},
+        std::chrono::steady_clock::now() + std::chrono::seconds{ 5 }
+    ));
+    renderer.waitIdle();
+}
+
+TEST(RendererSmokeTest, SuboptimalAcquireSkipsStaleFrameAndRecovers)
+{
+    core::Window const window{ "MinecraftClone suboptimal acquire smoke", 320, 240 };
+    core::vk::GlfwSurfaceProvider const surface_provider{ window };
+    client::InstalledShaderAssets const shader_assets;
+    client::VulkanRenderer renderer{
+        surface_provider,
+        shader_assets,
+        { .require_validation = true, .prefer_mesh_shaders = false },
+    };
+
+    {
+        ScopedSuboptimalAcquire const suboptimal_acquire;
+        EXPECT_FALSE(renderer.render(
+            {},
+            std::chrono::steady_clock::now() + std::chrono::seconds{ 5 }
+        ));
+        EXPECT_EQ(queue_submit_count, 0U);
+        EXPECT_EQ(queue_present_count, 0U);
     }
 
     EXPECT_TRUE(renderer.render(

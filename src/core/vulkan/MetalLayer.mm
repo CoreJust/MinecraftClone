@@ -25,6 +25,7 @@ CAMetalLayer* acquireOrCreateLayer(GLFWwindow* const window) {
     layer.contentsScale = ns_window.backingScaleFactor;
     view.layer = layer;
     view.wantsLayer = YES;
+    layer.delegate = static_cast<id<CALayerDelegate>>(view);
     return layer;
 }
 

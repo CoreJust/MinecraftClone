@@ -184,6 +184,11 @@ std::optional<FrameContext> VulkanContext::acquireFrame(
         [[maybe_unused]] bool const handled = VK_CHECK(acquire_result);
         return std::nullopt;
     }
+    if (acquire_result == VK_SUBOPTIMAL_KHR) {
+        [[maybe_unused]] bool const handled = VK_CHECK(acquire_result);
+        m_image_available[frame_idx] = Semaphore{ m_device };
+        return std::nullopt;
+    }
     if (!VK_CHECK(acquire_result)) {
         throw VulkanContextError{ VulkanContextError::FailedToAcquireNextImage };
     }

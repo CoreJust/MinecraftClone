@@ -291,7 +291,7 @@
         "tests/client/renderer_smoke_tests.cpp",
         "tests/client/shader_assets_tests.cpp"
       ],
-      "sources_sha256": "e4b88bdf8bfd6aad0c2ae70e1e6248a7df84c5ad38ccd2be8e349e1eb5363582"
+      "sources_sha256": "344ec46ba958e13fec74647cfb9f7ff2404a0467e62e886c7d23fdcb05a4f93b"
     },
     {
       "guide": "docs/code/VULKAN.md",
@@ -466,7 +466,7 @@
         "tests/core/vulkan/physical_device_selector_tests.cpp",
         "tests/core/vulkan/spirv_tests.cpp"
       ],
-      "sources_sha256": "1f024dc55f9e599ab9197f3b50bfc87bfd85c7991d44fa2d97ded0458ea84f66"
+      "sources_sha256": "f6fe7effc96c88ae7fcf66833fff46a226604d87b46098432b2cb54d97641f48"
     }
   ],
   "version": 1
