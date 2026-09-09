@@ -1,7 +1,7 @@
 #pragma once
 
-#include <core/common/SpanUtils.hpp>
-
+#include <cstdint>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -9,16 +9,16 @@ namespace core::vk {
 
 class SpirV final {
 public:
-    explicit SpirV(std::vector<uint8_t>&& data) noexcept;
+    explicit SpirV(std::span<uint8_t const> data);
 
     static SpirV fromFile(std::string const& path);
 
     [[nodiscard]]
     std::span<uint32_t const> data() const noexcept {
-        return asSpan<uint32_t>(m_data);
+        return m_words;
     }
 private:
-    std::vector<uint8_t> m_data;
+    std::vector<uint32_t> m_words;
 };
 
 } // namespace core::vk

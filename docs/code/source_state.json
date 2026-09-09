@@ -43,7 +43,7 @@
         "src/android/CMakeLists.txt",
         "tests/android/input_state_tests.cpp"
       ],
-      "sources_sha256": "efb70e9ee107744e822f43973fb1012aac6826cc4378d3afc6357c6b15569c6c"
+      "sources_sha256": "a21e5cc84d729035f3f4401c90bb01c8d5f1d376400063f05d4550723da79a6a"
     },
     {
       "guide": "docs/BUILD.md",
@@ -296,7 +296,7 @@
     },
     {
       "guide": "docs/code/VULKAN.md",
-      "guide_sha256": "afd5f601f045994724560cba6acfa8ad4941d6d683a9db2017393b96a96b908c",
+      "guide_sha256": "0b1816814af3303d9ab89bf9953bafb4d4ec8b6a64fdf648e5fafff754a361a9",
       "id": "vulkan",
       "sources": [
         "src/core/include/core/vulkan/Allocation.hpp",
@@ -467,7 +467,7 @@
         "tests/core/vulkan/physical_device_selector_tests.cpp",
         "tests/core/vulkan/spirv_tests.cpp"
       ],
-      "sources_sha256": "f6fe7effc96c88ae7fcf66833fff46a226604d87b46098432b2cb54d97641f48"
+      "sources_sha256": "a981441afa13aaeb63fdb5c4463ae8372ae6fbb5e70f93a0bc041500f8a8217a"
     }
   ],
   "version": 1

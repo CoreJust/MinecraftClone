@@ -79,7 +79,7 @@ core::vk::SpirV AndroidShaderAssets::load(std::string_view const name) const
     if (magic != 0x07230203U) {
         throw std::runtime_error("Invalid Android SPIR-V magic: " + path);
     }
-    return core::vk::SpirV{ std::move(bytes) };
+    return core::vk::SpirV{ bytes };
 }
 
 } // namespace game_android

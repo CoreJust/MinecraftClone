@@ -123,8 +123,8 @@ needs internal lifetime/barrier rules.
 
 ## Pipelines, shader input, and errors
 
-[`SpirV`](../../src/core/include/core/vulkan/SpirV.hpp) loads binary words from
-a file; malformed size/I/O failures throw. `GraphicsPipelineOptions` owns the
+[`SpirV`](../../src/core/include/core/vulkan/SpirV.hpp) copies bytes into owned
+`uint32_t` words; malformed size/I/O failures throw. `GraphicsPipelineOptions` owns the
 declarative shader stages, vertex input, rasterization, depth/stencil, blending,
 dynamic state, and render-target compatibility used to create a graphics
 pipeline. Supply a mesh or vertex stage, ensure stage/module counts agree, and

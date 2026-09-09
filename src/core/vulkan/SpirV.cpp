@@ -3,19 +3,36 @@
 #include <core/common/Assert.hpp>
 #include <core/IO/File.hpp>
 
-namespace core::vk {
+#include <cstring>
 
-SpirV::SpirV(std::vector<uint8_t>&& data) noexcept
-    : m_data(std::move(data))
+namespace core::vk {
+namespace {
+
+[[nodiscard]]
+std::vector<uint32_t> wordsFromBytes(std::span<uint8_t const> const bytes)
 {
-    ASSERT(m_data.size() % 4 == 0, "SPIR-V data size must be a multiple of 4, but it isn't");
+    ASSERT(
+        bytes.size() % sizeof(uint32_t) == 0,
+        "SPIR-V data size must be a multiple of 4, but it isn't"
+    );
+
+    std::vector<uint32_t> words(bytes.size() / sizeof(uint32_t));
+    if (!bytes.empty()) {
+        std::memcpy(words.data(), bytes.data(), bytes.size());
+    }
+    return words;
 }
+
+} // namespace
+
+SpirV::SpirV(std::span<uint8_t const> const data)
+    : m_words(wordsFromBytes(data)) {}
 
 SpirV SpirV::fromFile(std::string const& path) {
     auto const bytes = core::readFile(path);
     ASSERT(bytes.has_value(), "Failed to read shader file: {}", path);
 
-    return SpirV{ std::vector<uint8_t>(bytes->begin(), bytes->end()) };
+    return SpirV{ *bytes };
 }
 
 } // namespace core::vk
