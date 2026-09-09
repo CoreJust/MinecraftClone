@@ -93,6 +93,7 @@
         "tests/main.cpp",
         "publish.py",
         "script/*.py",
+        "script/ci/**/*.py",
         "script/*.json",
         "script/tests/**/*.py",
         ".githooks/*",

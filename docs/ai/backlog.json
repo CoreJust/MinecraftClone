@@ -550,15 +550,15 @@
     "id": "MC-AI-0014",
     "title": "Add macOS and Windows CI",
     "kind": "chore",
-    "status": "backlog",
+    "status": "active",
     "priority": "P2",
     "route": "luna",
     "milestone": "ED-010-S3",
     "depends_on": [],
     "acceptance": "Build supported macOS and Windows targets in CI with logs.",
-    "evidence": "",
+    "evidence": "Pinned macOS/Windows Debug/Release workflow implemented with diagnostic uploads. SDK/Ninja acquisition-flow regressions and complete Python suite pass, including fast exact-index checks. Hosted builds remain pending and are not claimed.",
     "blocker": "",
-    "owner": ""
+    "owner": "desktop_ci"
   },
   {
     "level": "basic",

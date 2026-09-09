@@ -2,7 +2,7 @@
   "modules": [
     {
       "guide": "docs/BUILD.md",
-      "guide_sha256": "c04eb9f2274a5603286029d76ab9edd5705f4498b1944054d09153e74725f2de",
+      "guide_sha256": "1af70663bbd0b6fb528c76a38246a0c1f8f9aa77b8638d2cb478ffbdef2cebaa",
       "id": "build",
       "sources": [
         ".agents/skills/backlog/SKILL.md",
@@ -43,6 +43,8 @@
         "script/ai_tasks.py",
         "script/check_options.py",
         "script/checks_common.py",
+        "script/ci/__init__.py",
+        "script/ci/acquire.py",
         "script/code_checks.py",
         "script/colored_print.py",
         "script/infrastructure_checks.py",
@@ -54,13 +56,14 @@
         "script/tests/test_ai_run.py",
         "script/tests/test_ai_setup.py",
         "script/tests/test_ai_tasks.py",
+        "script/tests/test_ci_acquire.py",
         "src/CMakeLists.txt",
         "tests/CMakeLists.txt",
         "tests/main.cpp",
         "vcpkg-configuration.json",
         "vcpkg.json"
       ],
-      "sources_sha256": "6d4d592d2c12a17981a338869252830e0ffccdbe0466bebc9961a91cf70861af"
+      "sources_sha256": "c377ca68ebec3db69b04a3e55f0382bcd45d8cbddec4b2bfd029b50f09c63256"
     },
     {
       "guide": "docs/code/CORE.md",

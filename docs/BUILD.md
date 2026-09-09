@@ -16,6 +16,10 @@ Run CMake presets from the repository root. Use `release` in place of `debug` fo
 
 Set `VULKAN_SDK` to the SDK platform directory if CMake cannot find it. On macOS, Vulkan runs through MoltenVK; when the SDK is not registered system-wide, set `VK_DRIVER_FILES` to its `share/vulkan/icd.d/MoltenVK_icd.json` for the launched process. Do not commit machine-specific SDK paths.
 
+## Hosted desktop CI
+
+The GitHub workflow builds and runs CTest for both Debug and Release on `macos-15` arm64 and `windows-2022`. It acquires pinned CMake, Python, vcpkg, hash-verified upstream Ninja archives, and a hash-verified Vulkan SDK, then records the revision and actual tool output in diagnostic artifacts. It validates mesh SPIR-V against Vulkan 1.3 and fallback stages against Vulkan 1.2. Hosted runners set `MC_ENABLE_RENDERER_SMOKE=OFF`: build, CTest, and shader validation are not GPU/runtime acceptance. The workflow uploads only logs and toolchain metadata; packaging and release artifacts have a separate acceptance path.
+
 The renderer requests Vulkan 1.2 and requires dynamic rendering and synchronization2 extensions/features; maintenance4 is not a renderer requirement. Mesh shaders target Vulkan 1.3. Use a Vulkan 1.3-capable validation baseline and exercise the vertex fallback. A lower requested API number does not establish support for every Vulkan 1.2 driver. Vulkan 1.4 remains a project aspiration.
 
 Strict warnings are enabled by presets. `MC_ENABLE_HIGH_ASSERT`, `MC_ENABLE_VULKAN_VALIDATION_LAYERS`, and `MC_ENABLE_SANITIZERS` are CMake options; inspect [cmake helpers](../cmake/Helpers.cmake) and the platform implementation before enabling a configuration. Renderer validation is required in debug builds, with the validation option, or when explicitly requested by renderer options. Ordinary release builds do not require validation layers. Sanitizers and validation are separate evidence from ordinary unit tests.
