@@ -104,6 +104,8 @@ def validate_backlog(tasks: Sequence[dict[str, Any]]) -> None:
         if task["resolved_at"]:
             if validate_date(task_id, "resolved_at", task["resolved_at"]) < created_at:
                 raise BacklogError(f"{task_id}.resolved_at cannot precede created_at")
+        if task["level"] == "snapshot" and task["status"] != "done" and task["resolved_at"]:
+            raise BacklogError(f"{task_id} is not a done snapshot but has resolved_at")
         if task["baseline_commit"] and not SHA_PATTERN.fullmatch(task["baseline_commit"]):
             raise BacklogError(f"{task_id}.baseline_commit must be blank or a full 40/64-character SHA")
         if not all(SHA_PATTERN.fullmatch(commit) for commit in task["commits"]):

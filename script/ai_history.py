@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 from collections import defaultdict
+import json
 from pathlib import Path
 import subprocess
 import sys
@@ -133,6 +134,134 @@ def mapped_range_ids(
     return {commit_to_task[sha] for sha in range_shas}
 
 
+def has_tagged_promotion(repo: Path, baseline: str, source: str) -> bool:
+    merged = git(repo, "merge-tree", "--write-tree", baseline, source).splitlines()
+    if not merged:
+        return False
+    expected_tree = merged[0]
+    tag_refs = git(repo, "for-each-ref", "--format=%(refname)", "refs/tags/ai/").splitlines()
+    for tag_ref in tag_refs:
+        if git(repo, "cat-file", "-t", tag_ref).strip() != "tag":
+            continue
+        promoted = revision(repo, tag_ref)
+        parents = git(repo, "show", "-s", "--format=%P", promoted).split()
+        tree = git(repo, "rev-parse", f"{promoted}^{{tree}}").strip()
+        if parents == [baseline, source] and tree == expected_tree:
+            return True
+    return False
+
+
+def has_annotated_ai_tag(repo: Path, commit: str) -> bool:
+    tag_refs = git(repo, "for-each-ref", "--format=%(refname)", "refs/tags/ai/").splitlines()
+    return any(
+        git(repo, "cat-file", "-t", tag_ref).strip() == "tag"
+        and revision(repo, tag_ref) == commit
+        for tag_ref in tag_refs
+    )
+
+
+def require_valid_prior_snapshot_ledgers(
+    repo: Path,
+    tasks: list[dict[str, object]],
+    snapshot_id: str,
+    range_shas: list[str],
+) -> None:
+    by_id = {str(task["id"]): task for task in tasks}
+    current = by_id[snapshot_id]
+    task_commits = trailer_commits(repo, tasks)
+    commit_to_task = {sha: task_id for task_id, shas in task_commits.items() for sha in shas}
+    mutable_fields = {"status", "owner", "evidence", "resolved_at", "resolution_changes"}
+    validated_ledgers: set[str] = set()
+
+    for sha in range_shas:
+        task_id = commit_to_task[sha]
+        task = by_id[task_id]
+        if task_level(task) == "basic" or task_id == snapshot_id:
+            continue
+        if task_level(task) != "snapshot" or task_parent(task) != task_parent(current):
+            raise HistoryError(f"commit {sha} is not a prior snapshot publication ledger")
+        parents = git(repo, "show", "-s", "--format=%P", sha).split()
+        if len(parents) != 1:
+            raise HistoryError(f"publication ledger {sha} must have one parent")
+        allowed_paths = {
+            "docs/ai/backlog.json",
+            "docs/ai/BACKLOG.md",
+            f"docs/ai/tasks/{task_id}.md",
+        }
+        changed_paths = set(
+            git(repo, "diff-tree", "--no-commit-id", "--name-only", "-r", sha).splitlines()
+        )
+        required_paths = {"docs/ai/backlog.json", f"docs/ai/tasks/{task_id}.md"}
+        if not required_paths <= changed_paths or not changed_paths <= allowed_paths:
+            raise HistoryError(f"publication ledger {sha} changes non-ledger paths")
+        try:
+            before = json.loads(git(repo, "show", f"{parents[0]}:docs/ai/backlog.json"))
+            after = json.loads(git(repo, "show", f"{sha}:docs/ai/backlog.json"))
+        except (json.JSONDecodeError, HistoryError) as error:
+            raise HistoryError(f"publication ledger {sha} has invalid backlog metadata") from error
+        if not isinstance(before, list) or not isinstance(after, list):
+            raise HistoryError(f"publication ledger {sha} backlog must be a list")
+        try:
+            ai_tasks.validate_backlog(before)
+            ai_tasks.validate_backlog(after)
+        except ai_tasks.BacklogError as error:
+            raise HistoryError(f"publication ledger {sha} has invalid backlog metadata: {error}") from error
+        before_by_id = {str(item["id"]): item for item in before}
+        after_by_id = {str(item["id"]): item for item in after}
+        if before_by_id.keys() != after_by_id.keys():
+            raise HistoryError(f"publication ledger {sha} changes the task registry")
+        if any(before_by_id[key] != after_by_id[key] for key in before_by_id if key != task_id):
+            raise HistoryError(f"publication ledger {sha} changes tasks other than {task_id}")
+        previous = before_by_id.get(task_id)
+        published = after_by_id.get(task_id)
+        if previous is None or published is None:
+            raise HistoryError(f"publication ledger {sha} omits {task_id}")
+        changed_fields = {key for key in previous if previous[key] != published[key]}
+        if not changed_fields <= mutable_fields:
+            raise HistoryError(f"publication ledger {sha} changes immutable {task_id} fields")
+        if previous["status"] != "active" or previous["resolved_at"]:
+            raise HistoryError(f"publication ledger {sha} does not start from an active snapshot")
+        if published["status"] != "done" or not published["resolved_at"]:
+            raise HistoryError(f"publication ledger {sha} does not record a published snapshot")
+        if previous["finalized"] is not True or published["finalized"] is not True:
+            raise HistoryError(f"publication ledger {sha} must preserve finalized state")
+        baseline = revision(repo, str(previous["baseline_commit"]))
+        if not has_tagged_promotion(repo, baseline, parents[0]):
+            raise HistoryError(f"publication ledger {sha} has no tagged immutable promotion")
+        if published != task:
+            raise HistoryError(f"publication ledger {sha} does not match current {task_id} metadata")
+        rendered_backlog = git(repo, "show", f"{sha}:docs/ai/BACKLOG.md")
+        rendered_task = git(repo, "show", f"{sha}:docs/ai/tasks/{task_id}.md")
+        if rendered_backlog != ai_tasks.render_backlog(after):
+            raise HistoryError(f"publication ledger {sha} has stale backlog Markdown")
+        if rendered_task != ai_tasks.render_task(published, after):
+            raise HistoryError(f"publication ledger {sha} has stale task Markdown")
+        validated_ledgers.add(task_id)
+
+    baseline = revision(repo, str(current["baseline_commit"]))
+    if not has_annotated_ai_tag(repo, baseline):
+        return
+    promotion_parents = git(repo, "show", "-s", "--format=%P", baseline).split()
+    if len(promotion_parents) != 2:
+        raise HistoryError(f"snapshot baseline {baseline} is not a two-parent promotion")
+    merged = git(
+        repo, "merge-tree", "--write-tree", promotion_parents[0], promotion_parents[1]
+    ).splitlines()
+    promotion_tree = git(repo, "rev-parse", f"{baseline}^{{tree}}").strip()
+    if not merged or promotion_tree != merged[0]:
+        raise HistoryError(f"snapshot baseline {baseline} is not an immutable promotion tree")
+    previous_id = commit_to_task.get(promotion_parents[1])
+    previous = by_id.get(previous_id or "")
+    if (
+        previous is None
+        or task_level(previous) != "snapshot"
+        or task_parent(previous) != task_parent(current)
+    ):
+        raise HistoryError(f"snapshot baseline {baseline} has no prior snapshot source")
+    if previous_id not in validated_ledgers:
+        raise HistoryError(f"snapshot {snapshot_id} requires {previous_id} publication ledger")
+
+
 def require_aggregate_coverage(
     tasks: list[dict[str, object]], task_id: str, linked_ids: set[str]
 ) -> None:
@@ -162,10 +291,10 @@ def collect_aggregate(
     baseline = aggregate_baseline(repo, task)
     head = revision(repo, head_ref)
     resolved_additional = revision(repo, additional_head) if additional_head else None
-    linked_ids = mapped_range_ids(
-        repo, tasks, range_commits(repo, baseline, head, resolved_additional)
-    )
+    range_shas = range_commits(repo, baseline, head, resolved_additional)
+    linked_ids = mapped_range_ids(repo, tasks, range_shas)
     if level == "snapshot":
+        require_valid_prior_snapshot_ledgers(repo, tasks, task_id, range_shas)
         return sorted(task_id for task_id in linked_ids if task_level(by_id[task_id]) == "basic")
     require_aggregate_coverage(tasks, task_id, linked_ids)
     child_level = "snapshot" if level == "minor" else "minor"
@@ -206,9 +335,14 @@ def require_finalization_fields(task: dict[str, object], higher: bool) -> None:
     for field in ("product_changes", "code_changes"):
         if not task.get(field):
             raise HistoryError(f"{task['id']} requires {field}")
-    for field in ("evidence", "resolution_changes", "resolved_at"):
+    for field in ("evidence", "resolution_changes"):
         if not str(task.get(field, "")).strip():
             raise HistoryError(f"{task['id']} requires {field}")
+    resolved_at = str(task.get("resolved_at", "")).strip()
+    if not higher and task.get("status") == "active" and resolved_at:
+        raise HistoryError(f"{task['id']} active snapshot must not have resolved_at")
+    if (higher or task.get("status") == "done") and not resolved_at:
+        raise HistoryError(f"{task['id']} requires resolved_at")
     if higher:
         for field in ("retrospective", "docs_review", "environment_review", "backlog_review"):
             if not str(task.get(field, "")).strip():
@@ -229,12 +363,15 @@ def finalize(
     level = task_level(target)
     if level not in {"snapshot", "minor", "major"}:
         raise HistoryError(f"{task_id} is not an aggregate task")
+    if level == "snapshot" and target.get("status") not in {"active", "done"}:
+        raise HistoryError(f"{task_id} snapshot must be active or done")
     baseline = aggregate_baseline(repo, target)
     head = revision(repo, head_ref)
     resolved_additional = revision(repo, additional_head) if additional_head else None
     range_shas = range_commits(repo, baseline, head, resolved_additional)
     linked_ids = mapped_range_ids(repo, tasks, range_shas)
     if level == "snapshot":
+        require_valid_prior_snapshot_ledgers(repo, tasks, task_id, range_shas)
         actual = sorted(
             linked_id for linked_id in linked_ids if task_level(by_id[linked_id]) == "basic"
         )

@@ -90,8 +90,8 @@ def load_snapshot(root: Path, task_id: str, head: str) -> dict[str, Any]:
         raise PublishError(
             f"{task_id} is {task['level']}; only explicit snapshot publication is supported"
         )
-    if task["status"] != "done" or task["finalized"] is not True:
-        raise PublishError(f"{task_id} must be done and finalized before promotion")
+    if task["status"] != "active" or task["finalized"] is not True:
+        raise PublishError(f"{task_id} must be active and finalized before promotion")
     try:
         ai_history.finalize(root, copy.deepcopy(tasks), task_id, head)
     except (ai_history.HistoryError, ai_tasks.BacklogError, OSError, ValueError) as error:
@@ -175,17 +175,18 @@ def require_expected_promoted_tree(root: Path, baseline: str, source: str, promo
         raise PublishError("promotion tree differs from the expected immutable merge tree")
 
 
-def expected_tag(root: Path, task: dict[str, Any]) -> str:
+def expected_tag(root: Path, promoted: str) -> str:
     names, version = ai_check.project_version_arguments(root)
     major_name, separator, _minor_name = names.partition(":")
     numeric, separator2, snapshot = version.partition(":")
     if not separator or not separator2 or not major_name or not numeric or not snapshot:
         raise PublishError("ProjectInfo version is not a snapshot version")
+    committed = git(root, "show", "-s", "--format=%cs", promoted).strip()
     try:
-        year, month, day = task["resolved_at"].split("-")
+        year, month, day = committed.split("-")
         date = f"{year[2:]}.{month}.{day}"
     except ValueError as error:
-        raise PublishError(f"{task['id']} has no usable resolution date") from error
+        raise PublishError(f"{promoted} has no usable promotion date") from error
     return f"ai/{major_name}/{numeric}/{snapshot}_{date}"
 
 
@@ -254,7 +255,7 @@ def tag(root: Path, task_id: str) -> None:
     require_task_trailer(root, promoted, task_id)
     require_task_trailer(root, source, task_id)
     require_expected_promoted_tree(root, baseline, source, promoted)
-    name = expected_tag(root, task)
+    name = expected_tag(root, promoted)
     git(root, "check-ref-format", f"refs/tags/{name}")
     existing = subprocess.run(
         ["git", "show-ref", "--verify", "--quiet", f"refs/tags/{name}"], cwd=root, check=False

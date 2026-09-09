@@ -522,7 +522,7 @@
     "milestone": "ED-010-S3",
     "depends_on": [],
     "acceptance": "Promote approved delivery to main with auditable evidence.",
-    "evidence": "Snapshot-only prepare/finish/tag CLI uses immutable expected merge trees and genuine review gates. Temporary-Git regressions cover staged tampering before and during candidate checks, divergent baseline retention, conflicts, dirty state, tag protection and minor rejection; full Python suite passes. Actual Snapshot3 promotion remains pending.",
+    "evidence": "Snapshot-only prepare/finish/tag CLI uses immutable expected merge trees and genuine review gates. Temporary-Git regressions cover staged tampering before and during candidate checks, divergent baseline retention, conflicts, dirty state, tag protection and minor rejection. Only active finalized snapshots can enter local promotion without a fabricated release date; done snapshots require their actual resolution date, tags derive their date from the immutable promotion commit, and the next snapshot accepts only a validated metadata-only post-publication ledger anchored to its tagged two-parent promotion. Full Python suite passes. Actual Snapshot3 promotion remains pending.",
     "blocker": "",
     "owner": "publisher_automation"
   },

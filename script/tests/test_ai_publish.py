@@ -27,7 +27,7 @@ def task(task_id: str, level: str, parent: str = "", status: str = "active", **c
         "depends_on": [],
         "acceptance": "Acceptance",
         "evidence": "passed" if status == "done" else "",
-        "blocker": "",
+        "blocker": "publication blocked" if status == "blocked" else "",
         "owner": "Codex" if status == "active" else "",
         "level": level,
         "parent": parent,
@@ -112,20 +112,33 @@ class AiPublishTests(unittest.TestCase):
             ["git", *arguments], cwd=self.root, check=True, text=True, capture_output=True
         ).stdout.strip()
 
-    def write_backlog(self, basic_status: str = "done") -> None:
+    def write_backlog(
+        self,
+        basic_status: str = "done",
+        snapshot_status: str = "active",
+        **snapshot_changes: object,
+    ) -> None:
         basic = task("MC-AI-0001", "basic", "MC-AI-0032", basic_status)
         if basic_status == "active":
             basic["owner"] = "Codex"
+        snapshot = task(
+            "MC-AI-0032",
+            "snapshot",
+            "MC-AI-0033",
+            snapshot_status,
+            baseline_commit=self.baseline,
+            finalized=True,
+        )
+        if snapshot_status == "active":
+            snapshot.update({
+                "evidence": "Local snapshot gates passed.",
+                "resolution_changes": "Finalized for local promotion.",
+            })
+        snapshot.update(snapshot_changes)
         records = [
             task("MC-AI-0034", "major"),
             task("MC-AI-0033", "minor", "MC-AI-0034"),
-            task(
-                "MC-AI-0032",
-                "snapshot",
-                "MC-AI-0033",
-                "done",
-                baseline_commit=self.baseline,
-            ),
+            snapshot,
             basic,
         ]
         (self.root / "docs" / "ai" / "backlog.json").write_text(
@@ -175,6 +188,9 @@ class AiPublishTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_snapshot_flow_requires_candidate_receipt_and_creates_immutable_tag(self) -> None:
+        snapshot = json.loads((self.root / "docs" / "ai" / "backlog.json").read_text())[2]
+        self.assertEqual(snapshot["status"], "active")
+        self.assertEqual(snapshot["resolved_at"], "")
         self.prepare()
         (self.root / "untracked.txt").write_text("dirty\n", encoding="utf-8")
         dirty = self.run_publish("finish", "MC-AI-0032", self.source)
@@ -190,7 +206,8 @@ class AiPublishTests(unittest.TestCase):
         self.assertEqual((self.root / "src" / "baseline_only.txt").read_text(encoding="utf-8"), "retain\n")
         tagged = self.run_publish("tag", "MC-AI-0032")
         self.assertEqual(tagged.returncode, 0, tagged.stderr)
-        name = "ai/EarlyDev/0.1.0/3_26.09.09"
+        year, month, day = self.git_output("show", "-s", "--format=%cs", promoted).split("-")
+        name = f"ai/EarlyDev/0.1.0/3_{year[2:]}.{month}.{day}"
         self.assertEqual(tagged.stdout.strip(), name)
         self.assertEqual(self.git_output("rev-parse", f"{name}^{{commit}}"), promoted)
         old = self.run_publish("tag", "MC-AI-0032")
@@ -248,7 +265,25 @@ class AiPublishTests(unittest.TestCase):
         invalid_source = self.git_output("rev-parse", "HEAD")
         unfinished = self.run_publish("prepare", "MC-AI-0032", invalid_source)
         self.assertNotEqual(unfinished.returncode, 0)
-        self.assertIn("unfinished children", unfinished.stderr)
+        self.assertIn("missing or not done", unfinished.stderr)
+
+    def test_prepare_rejects_unreleased_statuses_and_done_without_resolution_date(self) -> None:
+        for status in ("backlog", "blocked", "done"):
+            self.write_backlog(snapshot_status=status)
+            self.git("add", "docs/ai/backlog.json")
+            self.git("commit", "--no-gpg-sign", "-q", "-m", f"{status} snapshot\n\nTask-ID: MC-AI-0032")
+            source = self.git_output("rev-parse", "HEAD")
+            rejected = self.run_publish("prepare", "MC-AI-0032", source)
+            self.assertNotEqual(rejected.returncode, 0)
+            self.assertIn("active and finalized", rejected.stderr)
+
+        self.write_backlog(snapshot_status="done", resolved_at="")
+        self.git("add", "docs/ai/backlog.json")
+        self.git("commit", "--no-gpg-sign", "-q", "-m", "missing date\n\nTask-ID: MC-AI-0032")
+        source = self.git_output("rev-parse", "HEAD")
+        rejected = self.run_publish("prepare", "MC-AI-0032", source)
+        self.assertNotEqual(rejected.returncode, 0)
+        self.assertIn("done but has no resolved_at", rejected.stderr)
 
     def test_finish_rejects_a_raced_ai_main_before_commit(self) -> None:
         self.prepare()

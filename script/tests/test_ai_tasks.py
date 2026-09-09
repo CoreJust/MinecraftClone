@@ -58,6 +58,21 @@ class AiTasksTest(unittest.TestCase):
             ai_tasks.validate_backlog([make_task(status="done", evidence="recorded", resolution_changes="done")])
         with self.assertRaisesRegex(ai_tasks.BacklogError, "no resolution_changes"):
             ai_tasks.validate_backlog([make_task(status="done", evidence="recorded", resolved_at="2026-09-09")])
+        for status, extra in (
+            ("active", {"owner": "Codex"}),
+            ("ready", {}),
+            ("blocked", {"blocker": "Awaiting evidence."}),
+        ):
+            with self.subTest(status=status):
+                with self.assertRaisesRegex(ai_tasks.BacklogError, "not a done snapshot"):
+                    ai_tasks.validate_backlog([
+                        make_task(
+                            status=status,
+                            level="snapshot",
+                            resolved_at="2026-09-09",
+                            **extra,
+                        )
+                    ])
 
     def test_hierarchy_and_aggregate_finalization_contracts(self) -> None:
         major = make_task("MC-AI-0001", level="major")

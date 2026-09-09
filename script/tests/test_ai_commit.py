@@ -354,12 +354,13 @@ class RealAiCommitIntegrationTests(unittest.TestCase):
         tasks = json.loads(backlog.read_text(encoding="utf-8"))
         snapshot = next(task for task in tasks if task["id"] == "MC-AI-0101")
         snapshot.update({
+            "status": "active",
+            "owner": "Codex",
             "baseline_commit": self.baseline,
             "finalized": True,
             "product_changes": ["Snapshot result"],
             "code_changes": ["Gate result"],
             "evidence": "child reviewed",
-            "resolved_at": "2026-09-09",
             "resolution_changes": "snapshot finalization prepared",
         })
         backlog.write_text(json.dumps(tasks) + "\n", encoding="utf-8")
