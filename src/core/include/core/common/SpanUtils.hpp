@@ -1,5 +1,6 @@
 #pragma once
 
+#include <ranges>
 #include <span>
 #include <string_view>
 
@@ -30,8 +31,15 @@ auto asSpan(auto&& collection)
     }
 }
 
-std::string_view asStringView(auto const collection)
-    requires requires { collection.data(); collection.size(); } {
+template<typename Collection>
+[[nodiscard]]
+std::string_view asStringView(Collection&& collection)
+    requires requires {
+        collection.data();
+        collection.size();
+        requires std::ranges::borrowed_range<Collection>;
+    }
+{
     using Element = decltype((*collection.data()));
     return std::string_view{ reinterpret_cast<char const*>(collection.data()), collection.size() * sizeof(Element) };
 }

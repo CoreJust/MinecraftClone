@@ -19,9 +19,14 @@ struct PlayerRenderData final {
     std::array<float, 4> color{ 1.0f, 1.0f, 1.0f, 1.0f };
 };
 
+struct VulkanRendererOptions final {
+    bool require_validation = false;
+    bool prefer_mesh_shaders = true;
+};
+
 class VulkanRenderer final : core::NonCopyable, core::NonMovable {
 public:
-    explicit VulkanRenderer(core::Window const& window);
+    explicit VulkanRenderer(core::Window const& window, VulkanRendererOptions options = {});
     ~VulkanRenderer();
 
     void render(std::span<PlayerRenderData const> const players);

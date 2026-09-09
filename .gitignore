@@ -51,3 +51,6 @@ third_party/
 
 collect.py
 *.pyc
+
+# The build-artifact pattern also matches this maintained guide on macOS.
+!docs/BUILD.md

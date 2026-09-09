@@ -1,11 +1,11 @@
 # In header
 
-In order to declare new Vulkan resource, you must first include header <core/common/Resource.hpp>.
+To declare a Vulkan resource, include `<core/vulkan/Resource.hpp>`.
 
-Then you have to declare the new class for the raw resource management and inherit it from `core::VulkanResourceBase<{HandleType}>`:
+Declare the raw resource in `core::vk` and inherit `VulkanResourceBase<{HandleType}>`:
 
 ```cpp
-class RawResource : public core::VulkanResourceBase<VkResource> { ... };
+class RawResource : public VulkanResourceBase<VkResource> { ... };
 ```
 
 Then you need to add the metadata macros to the beginning of the class body. The final header form is thus:
@@ -67,7 +67,8 @@ Resource will have all the same methods as your class, the constructor, and addi
 
 Resources will be accessible via `operator[]`. To use Resources you must provide `CORE_VK_RESOURCE_BATCH_CONSTRUCTION_FROM` and add `CORE_VK_BATCH_DESTROYABLE` to `CORE_VK_RESOURCE_CONTEXT`.
 
-You can read more about available methods in [Resource.hpp](src/core/include/core/vulkan/Resource.hpp).
+See [`Resource.hpp`](../../../src/core/include/core/vulkan/Resource.hpp) and
+[the Vulkan subsystem guide](../VULKAN.md) for the ownership model.
 
 # In source file
 
@@ -87,13 +88,24 @@ Note that it is guaranteed that here self.isNull() is false - no need to check f
 If you deferred construction definition, you must additionally define it:
 
 ```cpp
-CORE_VK_RESOURCE_DEFERRED_CONSTRUCTION_IMPL(RawResource, same arguments as in CORE_VK_RESOURCE_DEFER_CONSTRUCTION_FROM) {
-    // Same body as for CORE_VKRESOURCE_CONSTRUCTION_FROM
+CORE_VK_RESOURCE_DEFERRED_CONSTRUCTION_IMPL(RawResource, same arguments as in CORE_VK_RESOURCE_CONSTRUCTION_FROM) {
+    // Same body as for CORE_VK_RESOURCE_CONSTRUCTION_FROM
 }
 ```
 
 Same for `CORE_VK_RESOURCE_DEFERRED_BATCH_CONSTRUCTION_IMPL`.
 
-# What it all unfolds to
+# Ownership contract behind the macros
 
-TODO: fill in
+`CORE_VK_RESOURCE_CONTEXT` declares a trivially copyable `Destroyer` carrying
+only the parent handles/context needed at destruction. The construction macro
+creates `make`/`makeWithDestroyer`; the latter pairs the raw handle with that
+captured destroyer. `VulkanRaii<RawResource>` stores the pair, is move-only, and
+calls the destroyer once for a non-null handle. `raw()` borrows a copy of the raw
+handle; `grabRaw()` transfers ownership and leaves the wrapper null.
+
+Batch construction is for independently stored raw handles. Add
+`CORE_VK_BATCH_DESTROYABLE()` only when the backend supports vector-level
+destruction; otherwise `VulkanRaiiVector` destroys non-null elements one by one.
+Destruction context must not extend a parent lifetime: callers keep parent
+wrappers alive until all children are destroyed.

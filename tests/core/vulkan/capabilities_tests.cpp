@@ -196,6 +196,30 @@ TEST(VulkanCapabilitiesTest, PromotedDeviceExtensionAvailableAtExactlyPromotionV
     EXPECT_TRUE(caps.hasExtensionOrPromoted(VulkanExtension::Maintenance3)); // 1.1
 }
 
+TEST(VulkanCapabilitiesTest, RenderingAndSynchronizationRequireExtensionsBelowVulkan13)
+{
+    static constexpr core::Version INSTANCE_VERSION{ 0, 1, 3, 0 };
+    static constexpr core::Version DEVICE_VERSION{ 0, 1, 2, 0 };
+
+    for (VulkanExtension const ext : { VulkanExtension::DynamicRendering, VulkanExtension::Synchronization2 }) {
+        VulkanCaps caps = makeCapsWithVersions(INSTANCE_VERSION, DEVICE_VERSION);
+        EXPECT_FALSE(caps.hasExtensionOrPromoted(ext)) << "ext index " << core::indexOf(ext);
+        caps.commitDeviceCaps(singleExtension(ext), {});
+        EXPECT_TRUE(caps.hasExtensionOrPromoted(ext)) << "ext index " << core::indexOf(ext);
+    }
+}
+
+TEST(VulkanCapabilitiesTest, RenderingAndSynchronizationArePromotedAtVulkan13)
+{
+    static constexpr core::Version API_VERSION{ 0, 1, 3, 0 };
+
+    VulkanCaps const caps = makeCapsWithVersions(API_VERSION, API_VERSION);
+    EXPECT_TRUE(caps.hasExtensionOrPromoted(VulkanExtension::DynamicRendering));
+    EXPECT_TRUE(caps.hasExtensionOrPromoted(VulkanExtension::Synchronization2));
+    EXPECT_FALSE(caps.has(VulkanFeature::DynamicRendering));
+    EXPECT_FALSE(caps.has(VulkanFeature::Synchronization2));
+}
+
 TEST(VulkanCapabilitiesTest, DeviceVersion1_4SatisfiesAll14Promotions) {
     auto const caps = makeCapsWithVersions(core::Version{ 0, 1, 4, 0 }, core::Version{ 0, 1, 4, 0 });
     EXPECT_TRUE(caps.hasExtensionOrPromoted(VulkanExtension::Maintenance5));

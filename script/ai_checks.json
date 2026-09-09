@@ -1,0 +1,18 @@
+[
+  {
+    "name": "screenshots",
+    "enabled": false,
+    "levels": ["snapshot", "minor", "major"],
+    "command": [],
+    "timeout": 600,
+    "reason": "Screenshot tests are not implemented yet; add the runner and enable this gate when available."
+  },
+  {
+    "name": "environment",
+    "enabled": true,
+    "levels": ["minor", "major"],
+    "command": ["{python}", "script/ai_setup.py"],
+    "timeout": 60,
+    "reason": "Version completion checks the local development environment; record deeper findings in the version task."
+  }
+]

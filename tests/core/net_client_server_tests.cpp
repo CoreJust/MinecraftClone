@@ -3,6 +3,7 @@
 
 #include <gtest/gtest.h>
 
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <functional>
@@ -51,6 +52,16 @@ public:
         std::this_thread::sleep_for(std::chrono::milliseconds{ 8 });
         poll();
     }
+
+    bool pollUntil(std::function<bool()> const& ready) {
+        static constexpr std::chrono::seconds TIMEOUT{ 1 };
+        static constexpr std::chrono::milliseconds POLL_INTERVAL{ 1 };
+        auto const deadline = std::chrono::steady_clock::now() + TIMEOUT;
+        while (!ready() && std::chrono::steady_clock::now() < deadline) {
+            poll(POLL_INTERVAL);
+        }
+        return ready();
+    }
 private:
     void onDisconnected(core::DisconnectEvent const event) override {
         m_on_disconnected(*this, event);
@@ -80,12 +91,12 @@ public:
     { }
 
     void run() {
-        while (m_running) {
+        while (m_running.load()) {
             poll(DEFAULT_TIMEOUT);
         }
     }
 
-    void stop() noexcept { m_running = false; }
+    void stop() noexcept { m_running.store(false); }
 private:
     void onConnected(core::ServerConnectEvent const event) override {
         m_on_connected(*this, event);
@@ -102,14 +113,14 @@ private:
     std::function<void(TestServer&, core::ServerConnectEvent const)> m_on_connected;
     std::function<void(TestServer&, core::ServerDisconnectEvent const)> m_on_disconnected;
     std::function<void(TestServer&, core::ServerReceiveEvent)> m_on_received;
-    bool m_running = true;
+    std::atomic_bool m_running{ true };
 };
 
 struct TestServerService final {
-    TestServer server;
-    std::jthread thread;
     std::atomic_size_t clients_connected{ 0 };
     std::atomic_size_t clients_disconnected{ 0 };
+    TestServer server;
+    std::jthread thread;
 
     explicit TestServerService(
         std::function<void(TestServer&, core::ServerReceiveEvent)> on_received,
@@ -132,7 +143,12 @@ struct TestServerService final {
         , thread([this]{ this->server.run(); })
     { }
 
-    ~TestServerService() { server.stop(); }
+    ~TestServerService() {
+        server.stop();
+        if (thread.joinable()) {
+            thread.join();
+        }
+    }
 
     [[nodiscard]]
     uint16_t port() const noexcept { return server.port(); }
@@ -140,8 +156,8 @@ struct TestServerService final {
     void done(size_t const expected_connections, size_t const expected_disconnections) {
         server.stop();
         thread.join();
-        EXPECT_EQ(clients_connected, expected_connections);
-        EXPECT_EQ(clients_disconnected, expected_disconnections);
+        EXPECT_EQ(clients_connected.load(), expected_connections);
+        EXPECT_EQ(clients_disconnected.load(), expected_disconnections);
     }
 };
 
@@ -263,7 +279,7 @@ TEST(NetClientServer, MultipleChannelsAndModesTest) {
 
 TEST(NetClientServer, MultipleClientsEchoTest) {
     static constexpr uint32_t NUM_CLIENTS = 12;
-    std::string received[NUM_CLIENTS];
+    std::array<std::string, NUM_CLIENTS> received;
 
     TestServerService srv{
         [&](TestServer&, core::ServerReceiveEvent e) {
@@ -290,7 +306,14 @@ TEST(NetClientServer, MultipleClientsEchoTest) {
     }
 
     for (uint32_t i = 0; i < NUM_CLIENTS; ++i) {
-        clients[i].sendAndPoll("Client " + std::to_string(i), 0, core::SendMode{ });
+        auto const message = "Client " + std::to_string(i);
+        ASSERT_TRUE(clients[i].send(core::asByteSpan(message), 0, core::SendMode{ }));
+    }
+
+    for (uint32_t i = 0; i < NUM_CLIENTS; ++i) {
+        ASSERT_TRUE(clients[i].pollUntil([&received, i] {
+            return received[i] == "Client " + std::to_string(i);
+        })) << "Timed out waiting for echo to client " << i;
     }
 
     srv.done(NUM_CLIENTS, 0);
@@ -354,10 +377,11 @@ TEST(NetClientServer, MessageRelayTest) {
 }
 
 TEST(NetClientServer, ServerKickGracefulTest) {
+    static constexpr std::chrono::seconds DISCONNECT_TIMEOUT{ 1 };
     bool client_disconnected{ false };
 
     TestServerService srv{
-        [&](TestServer& self, auto&&) { self.kick(0, DEFAULT_TIMEOUT, core::GenerateEvents::Yes); },
+        [&](TestServer& self, auto&&) { self.kick(0, DISCONNECT_TIMEOUT, core::GenerateEvents::Yes); },
         EPHEMERAL_PORT,
     };
     TestClient client{ [&](auto&&...) { client_disconnected = true; } };
@@ -365,9 +389,8 @@ TEST(NetClientServer, ServerKickGracefulTest) {
     ASSERT_TRUE(client.connectAndWait(srv.port()));
     EXPECT_TRUE(client.isConnected());
 
-    EXPECT_TRUE(client.sendAndPoll(" ", 0, core::SendMode{ }));
-
-    EXPECT_TRUE(client_disconnected);
+    ASSERT_TRUE(client.send(core::asByteSpan(std::string_view{ " " }), 0, core::SendMode{ }));
+    EXPECT_TRUE(client.pollUntil([&] { return client_disconnected; }));
     EXPECT_FALSE(client.isConnected());
     srv.done(1, 1);
 }

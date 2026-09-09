@@ -54,6 +54,8 @@ char const* getFullExtensionName(VulkanExtension const ext) noexcept {
         "VK_KHR_external_semaphore",
         "VK_KHR_get_memory_requirements2",
         "VK_KHR_create_renderpass2",
+        "VK_KHR_dynamic_rendering",
+        "VK_KHR_synchronization2",
         "VK_EXT_mesh_shader",
         "VK_KHR_portability_enumeration",
         "VK_KHR_portability_subset",
@@ -149,6 +151,8 @@ Version getExtensionPromotionVersion(VulkanExtension const ext) noexcept {
         case VulkanExtension::CreateRenderPass2:          [[fallthrough]];
         case VulkanExtension::DescriptorIndexing:
             return vkToVersion(VK_API_VERSION_1_2);
+        case VulkanExtension::DynamicRendering:           [[fallthrough]];
+        case VulkanExtension::Synchronization2:           [[fallthrough]];
         case VulkanExtension::Maintenance4:
             return vkToVersion(VK_API_VERSION_1_3);
         case VulkanExtension::Maintenance5:               [[fallthrough]];

@@ -1,6 +1,8 @@
 # Roadmap to the next versions (estimated, up to changes and elaboration)
 
-Next version is EarlyDev 0.1.0 - Initiation.
+Current version family: EarlyDev 0.1.0 - Initiation. This is the canonical product scope, not a completion ledger.
+
+Both development lines share this plan. See [AI delivery sequencing](ai/ROADMAP.md) for dependencies and acceptance, [backlog](ai/BACKLOG.md) for actual task state, and [version history](<version_history/EarlyDev 0.1/EarlyDev 0.1.0 Initiation.md>) for snapshots. Tentative choices and inconsistent stage labels below remain explicit decisions; do not silently reinterpret them.
 
 Planned path to it (per snapshot):
 

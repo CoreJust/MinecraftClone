@@ -6,6 +6,7 @@
 #include <cstdlib>
 
 #ifdef _WIN32
+// DONT_CHECK INCLUDE_ORDER
 #include <windows.h>
 #endif
 

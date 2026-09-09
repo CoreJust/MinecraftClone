@@ -1,0 +1,23 @@
+name: AI checks
+
+on:
+  push:
+    branches: [ai-dev, ai-main, 'codex/ai-*']
+  pull_request:
+    branches: [ai-dev, ai-main, 'codex/ai-*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  fast:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python script/ai_check.py --fast

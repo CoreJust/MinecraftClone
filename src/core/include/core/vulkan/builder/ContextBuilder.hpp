@@ -69,8 +69,8 @@ public:
                 : device_extensions
             ).push_back(ext);
         }
-        self.m_instance_builder.requireExtensions(instance_extensions);
-        self.m_physical_device_selector.requireExtensions(device_extensions);
+        self.m_instance_builder.requireExtensions(InputSpan<VulkanExtension>{ instance_extensions });
+        self.m_physical_device_selector.requireExtensions(InputSpan<VulkanExtension>{ device_extensions });
         return std::forward<Self>(self);
     }
 

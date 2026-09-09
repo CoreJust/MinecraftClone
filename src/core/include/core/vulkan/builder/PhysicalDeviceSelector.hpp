@@ -62,7 +62,7 @@ public:
         this Self&& self,
         InputSpan<VulkanExtension> const exts
     ) {
-        self.m_required_extensions.assign(exts.begin(), exts.end());
+        appendRange(self.m_required_extensions, exts);
         return std::forward<Self>(self);
     }
 
@@ -71,7 +71,7 @@ public:
         this Self&& self,
         InputSpan<VulkanExtension> const exts
     ) {
-        self.m_preferred_extensions.assign(exts.begin(), exts.end());
+        appendRange(self.m_preferred_extensions, exts);
         return std::forward<Self>(self);
     }
 

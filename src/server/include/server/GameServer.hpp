@@ -8,7 +8,9 @@ namespace server {
 
 class GameServer final : public core::Server {
 public:
-    explicit GameServer() : core::Server { core::Address::localhost(20'040), 4, 1 } { }
+    explicit GameServer(uint16_t const port = 20'040)
+        : core::Server{ core::Address::localhost(port), 4, 1 }
+    { }
 
     void run();
 private:
@@ -17,6 +19,7 @@ private:
     void onReceived(core::ServerReceiveEvent event) override;
 
     void send(shared::Message const message);
+    void sendTo(std::optional<core::ClientId> const client_id, shared::Message message);
 private:
     shared::World m_world;
     std::string m_players_moved_this_tick;

@@ -1,25 +1,29 @@
-# Convention of how versions are organized
+# Versions and branches
 
-Minecraft clone versions come like the following: 
-`Epoch.Major.Minor:snapshot`
+Versions use `Epoch.Major.Minor:snapshot`. An epoch names a development stage; a major version groups mechanics; a minor version adds content. Snapshots are the smallest delivery unit, written `i(yy.mm.dd)`. Each minor release should include executables.
 
-A new epoch means large breaking changes and a new stage of game development. They are given complete names (e.g. the first epoch 0 is `EarlyDev`).
+| Line | Integration | Snapshots | Tag prefix |
+|---|---|---|---|
+| Original | `dev` | `main` | `<MajorName>/` |
+| AI | `ai-dev` | `ai-main` | `ai/<MajorName>/` |
 
-A new major version means significant portion of content that makes up a complete set of new mechanics.
+`ai-dev` starts at `dev`; `ai-main` starts at `main`. They evolve separately. Task branches use `codex/ai-<task>` from `ai-dev` and return there after their gates pass. Synchronization with the original line is an explicit scoped change, never an automatic merge. Do not rewrite either line's history.
 
-A new minor version adds some separate contents and improvements, but those may be incomplete.
+## AI snapshots and version completion
 
-A snapshot is a minimal delivery unit with a few changes or improvements. It might be relatively unstable.
+Create snapshot/minor/major tasks in advance on request. Their plans and child hierarchy live in [release tasks](ai/RELEASES.md). The current planned targets are snapshot `0.1.0:3`, minor `0.1.0`, and major `0.1`; this setup does not publish them.
 
-Snapshots are encoded like `i(yy.mm.dd)` where `i` is the snapshot index within that minor version.
+1. Complete the scoped basic tasks on `ai-dev`. Every commit has exactly one `Task-ID` trailer and passes Luna/high review plus minimal checks.
+2. Finalize the aggregate from its immutable baseline: collect all task commits since the preceding snapshot boundary, reconcile planned/actual children, and record product changes before code changes. Minor/major closure adds full-range Terra/high review, docs/environment review, hindsight and backlog maintenance.
+3. Stage finalization with actual version metadata/date. Obtain the candidate review receipts and run `ai_check.py --candidate --level <snapshot|minor|major>`. Commit using the aggregate task ID, then require a clean tree and run `ai_check.py --strict --level <level>` plus runtime acceptance.
+4. Record the exact `ai-dev` commit. In a clean checkout, switch to `ai-main` and run `git merge --no-ff --no-commit <recorded-commit>`. Review and check this merged index through the same task's candidate protocol before creating the promotion commit. Its message also includes exactly one `Task-ID` trailer for that aggregate. Recheck the clean promoted result with strict gates.
+5. Tag the verified promotion commit under `ai/<MajorName>/<Epoch.Major.Minor>/<snapshot>_<yy.mm.dd>`. Minor/major completion keeps its own aggregate task linkage and release notes while including the final snapshot workflow. Never rewrite an existing tag.
+6. Only when remote publication is authorized, push the exact `ai-main` ref and selected tag; publish executable assets when authorized. Record refs/artifacts in the task evidence. Avoid `--all` and `--follow-tags`, which can collect unrelated refs.
 
-# Versions in git
+A local task marked finalized is not a published release. Review/check failures block committing or promotion; they do not justify altering product requirements or inventing release evidence. Original-line history is preserved. The non-check legacy publisher below remains outside this AI workflow.
 
-There are 2 main branches: `main` and `dev`. `dev` receives all the latest commits. When a snapshot is complete, it is merged into `main` with:
+## Existing publisher
 
-```
-git merge --no-ff dev -m "$MAJOR_NAME $EPOCH.$MAJOR.$MINOR:$SNAPSHOT_INDEX(YY.MM.DD)"
-git tag -a $MAJOR_NAME/$EPOCH.$MAJOR.$MINOR/$SNAPSHOT_INDEX_YY.MM.DD -m "$MAJOR_NAME $EPOCH.$MAJOR.$MINOR $MINOR_NAME snapshot $SNAPSHOT_INDEX(YY.MM.DD)"
-```
+`python3 publish.py '<MajorName>:<MinorName>' '<Epoch.Major.Minor>:<i>' --checks-only` remains the source/style/version check. Its non-check path accepts only `dev` and currently merges without switching to `main`; do not use it to promote AI snapshots. The explicit procedure above is the AI release path until a separately tested publisher change is implemented.
 
-Each minor version must have a separate release with executables.
+Original tags/history keep their names. AI tags use a namespace so equal snapshot numbers cannot collide. The roadmap's transition labels are tentative; reconcile inconsistent epoch/stage naming as a recorded product decision before changing versions.

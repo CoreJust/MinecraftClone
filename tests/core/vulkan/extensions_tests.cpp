@@ -118,6 +118,8 @@ TEST(VulkanExtensionsTest, PromotionVersionMatchesVulkanCoreForPromotedExtension
     expectPromotedTo(VulkanExtension::CreateRenderPass2, 1, 2);
     expectPromotedTo(VulkanExtension::BufferDeviceAddress, 1, 2);
     expectPromotedTo(VulkanExtension::DescriptorIndexing, 1, 2);
+    expectPromotedTo(VulkanExtension::DynamicRendering, 1, 3);
+    expectPromotedTo(VulkanExtension::Synchronization2, 1, 3);
     expectPromotedTo(VulkanExtension::Maintenance4, 1, 3);
     expectPromotedTo(VulkanExtension::Maintenance5, 1, 4);
     expectPromotedTo(VulkanExtension::Maintenance6, 1, 4);

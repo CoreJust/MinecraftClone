@@ -16,18 +16,23 @@ void GameClient::run(core::Address const server_address, char const ch) {
     send(shared::JoinRequestMessage {
         .ch = ch,
     });
-    while (!m_accepted && m_running) {
-        poll();
-        std::this_thread::sleep_for(std::chrono::milliseconds{ 2 });
+    while (!m_accepted && m_running && isConnected()) {
+        poll(std::chrono::milliseconds{ 100 });
     }
 
-    while (m_running) {
-        poll();
+    while (m_running && isConnected()) {
+        poll(std::chrono::milliseconds{ 100 });
+        if (!m_running || !isConnected()) {
+            break;
+        }
         render();
+        if (!m_running || !isConnected()) {
+            break;
+        }
         send(shared::ClientInputMessage{
             .direction = input(),
         });
-        std::this_thread::sleep_for(std::chrono::milliseconds{ 40 });
+        std::this_thread::sleep_for(std::chrono::milliseconds{ 100 });
     }
 }
 
@@ -59,8 +64,9 @@ void GameClient::onReceived(core::ReceiveEvent event) {
         }
     } else if (auto* msg = std::get_if<shared::ServerRemovePlayerMessage>(msg_ptr)) {
         auto const [ch] = *msg;
-        shared::Player const p = m_world.playerByCharacter(ch).value();
-        m_world.despawnPlayer(p.id);
+        if (auto const p = m_world.playerByCharacter(ch)) {
+            m_world.despawnPlayer(p->id);
+        }
     } else {
         CORE_ERROR("Received a message unsupported by the client {}", msg_ptr->index());
     }

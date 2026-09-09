@@ -144,8 +144,9 @@ int32_t PhysicalDeviceSelector::scoreDevice(PhysicalDevice const& device, Versio
     }
 
     auto extensions = VulkanExtensions::loadSupportedDeviceExtensions(device);
+    Version const effective_api_version = std::min(instance_version, caps.apiVersion());
     for (VulkanExtension const ext : m_required_extensions) {
-        if (!extensions.hasExtension(ext)) {
+        if (!extensions.hasExtension(ext) && effective_api_version < getExtensionPromotionVersion(ext)) {
             CORE_DEBUG("PhysicalDevice {} rejected: required extension {} not found", caps.deviceName(), getFullExtensionName(ext));
             return -1;
         }
@@ -171,7 +172,7 @@ int32_t PhysicalDeviceSelector::scoreDevice(PhysicalDevice const& device, Versio
     }
 
     for (VulkanExtension const ext : m_preferred_extensions) {
-        if (extensions.hasExtension(ext)) {
+        if (extensions.hasExtension(ext) || effective_api_version >= getExtensionPromotionVersion(ext)) {
             score += 1;
         }
     }

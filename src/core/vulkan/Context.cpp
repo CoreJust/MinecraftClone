@@ -306,7 +306,11 @@ void VulkanContext::endRenderScope(RawCommandBuffer cmd) {
     ASSERT(m_render_scope_open);
 
     if (m_render_scope_is_dynamic) {
-        vkCmdEndRendering(cmd.handle());
+        if (has(VulkanExtension::DynamicRendering)) {
+            vkCmdEndRenderingKHR(cmd.handle());
+        } else {
+            vkCmdEndRendering(cmd.handle());
+        }
     } else {
         vkCmdEndRenderPass(cmd.handle());
     }
@@ -397,7 +401,11 @@ void VulkanContext::beginDynamicRenderScope(
         .pStencilAttachment = stencil_attachment.has_value() ? &stencil_attachment.value() : nullptr,
     };
 
-    vkCmdBeginRendering(cmd.handle(), &rendering_info);
+    if (has(VulkanExtension::DynamicRendering)) {
+        vkCmdBeginRenderingKHR(cmd.handle(), &rendering_info);
+    } else {
+        vkCmdBeginRendering(cmd.handle(), &rendering_info);
+    }
     applyViewportAndScissor(cmd, viewport, scissor, extent);
 
     m_render_scope_is_dynamic = true;

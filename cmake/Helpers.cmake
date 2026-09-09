@@ -44,6 +44,7 @@ function(mc_target_shaders TARGET)
             COMMAND Vulkan::glslc ${COMPILE_ARGS}
             DEPENDS ${SHADER_SOURCE}
             COMMENT "Compiling shader ${SHADER_NAME}"
+            VERBATIM
         )
         
         list(APPEND SPV_FILES ${SPV_FILE})
@@ -55,4 +56,16 @@ function(mc_target_shaders TARGET)
         SOURCES ${SHADER_SOURCE_FILES}
     )
     add_dependencies(${TARGET} ${TARGET}_shaders)
+    set_property(TARGET ${TARGET} PROPERTY MC_SHADER_FILES "${SPV_FILES}")
+endfunction()
+
+function(mc_copy_target_shaders TARGET SHADER_TARGET)
+    get_target_property(SPV_FILES ${SHADER_TARGET} MC_SHADER_FILES)
+    add_custom_target(${TARGET}_shader_assets
+        COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:${TARGET}>/shaders"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different ${SPV_FILES} "$<TARGET_FILE_DIR:${TARGET}>/shaders"
+        DEPENDS ${SHADER_TARGET}_shaders
+        VERBATIM
+    )
+    add_dependencies(${TARGET} ${TARGET}_shader_assets)
 endfunction()

@@ -1,0 +1,9 @@
+#!/bin/sh
+set -eu
+
+branch="$(git branch --show-current)"
+case "$branch" in
+    ai-dev|ai-main|codex/ai-*)
+        exec "${PYTHON:-python3}" script/ai_history.py refresh
+        ;;
+esac

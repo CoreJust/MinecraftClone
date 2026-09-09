@@ -42,9 +42,11 @@ void PlayerClient::render() {
     }
     m_renderer.render(rds);
 
-    if (core::isKeyPressed(core::Key::R)) {
+    bool const reload_pressed = core::isKeyPressed(core::Key::R);
+    if (reload_pressed && !m_was_reload_pressed) {
         m_renderer.hotReload();
     }
+    m_was_reload_pressed = reload_pressed;
 }
 
 } // namespace client

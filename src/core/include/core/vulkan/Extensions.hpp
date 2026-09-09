@@ -26,6 +26,8 @@ enum class VulkanExtension {
     ExternalSemaphore,       // VK_KHR_external_semaphore
     GetMemoryRequirements2,  // VK_KHR_get_memory_requirements2
     CreateRenderPass2,       // VK_KHR_create_renderpass2
+    DynamicRendering,        // VK_KHR_dynamic_rendering
+    Synchronization2,        // VK_KHR_synchronization2
     MeshShader,              // VK_EXT_mesh_shader
     PortabilityEnumeration,  // VK_KHR_portability_enumeration
     PortabilitySubset,       // VK_KHR_portability_subset

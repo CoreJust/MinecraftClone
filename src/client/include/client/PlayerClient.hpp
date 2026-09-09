@@ -19,6 +19,7 @@ private:
 private:
     core::Window m_window;
     VulkanRenderer m_renderer;
+    bool m_was_reload_pressed = false;
 };
 
 } // namespace client

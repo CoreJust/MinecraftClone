@@ -1,5 +1,7 @@
 #include <client/render/VulkanRenderer.hpp>
 
+#include "ShaderAssets.hpp"
+
 #include <shared/ProjectInfo.hpp>
 
 #include <core/common/Assert.hpp>
@@ -10,13 +12,17 @@
 
 #include <array>
 
-#define SPIR_V_PATH(name) "build/debug/src/client/" name ".spv"
-
 namespace client {
 
 namespace vk = core::vk;
 
 namespace {
+
+#if defined(_CORE_DEBUG) || defined(_MC_VK_VALIDATION_LAYERS)
+constexpr bool REQUIRE_VALIDATION = true;
+#else
+constexpr bool REQUIRE_VALIDATION = false;
+#endif
 
 constexpr uint32_t kGridWorkgroupsX = 32;
 constexpr uint32_t kGridWorkgroupsY = 32;
@@ -43,20 +49,24 @@ static_assert(sizeof(PlayerPushConstants) == 32);
 
 struct VulkanRenderer::Impl final {
 public:
-    explicit Impl(core::Window const& window)
-        : m_graph(vk::VulkanContext(
+    explicit Impl(core::Window const& window, VulkanRendererOptions const options)
+        : m_options(options)
+        , m_graph(vk::VulkanContext(
             vk::VulkanContextBuilder()
                 .project(std::string{ shared::PROJECT_NAME }, shared::PROJECT_VERSION)
                 .engine(std::string{ shared::PROJECT_NAME }, shared::PROJECT_VERSION)
-                .requireVersion(core::Version{ 0, 1, 3, 0 })
+                .requireVersion(core::Version{ 0, 1, 2, 0 })
                 .renderTo(window)
                 .portabilityEnumeration()
-                .requireValidation()
+                .requireValidation(REQUIRE_VALIDATION || options.require_validation)
                 .preferMeshShaders()
+                .requireExtensions({
+                    vk::VulkanExtension::DynamicRendering,
+                    vk::VulkanExtension::Synchronization2,
+                })
                 .requireFeatures({
                     vk::VulkanFeature::DynamicRendering,
                     vk::VulkanFeature::Synchronization2,
-                    vk::VulkanFeature::Maintanance4,
                 }),
             &window
         ))
@@ -128,19 +138,21 @@ public:
 private:
     void createPipelines() {
         vk::Device& dev = m_graph.ctx().device();
-        m_mesh_shaders = m_graph.ctx().hasMeshShaders();
+        m_mesh_shaders = m_options.prefer_mesh_shaders && m_graph.ctx().hasMeshShaders();
         m_main_shader_stage = m_mesh_shaders ? vk::ShaderStage::Mesh : vk::ShaderStage::Vertex;
         if (!m_mesh_shaders) {
-            CORE_WARN("Mesh shaders are not supported by the device; using vertex pipelines instead");
+            CORE_INFO("Using vertex pipelines (mesh shaders unavailable or disabled)");
+        } else {
+            CORE_INFO("Using mesh shader pipelines");
         }
 
         vk::SpirV grid_shader = vk::SpirV::fromFile(
-            m_mesh_shaders ? SPIR_V_PATH("grid.mesh") : SPIR_V_PATH("grid.vert")
+            shaderAssetPath(m_mesh_shaders ? "grid.mesh.spv" : "grid.vert.spv").string()
         );
         vk::SpirV player_shader = vk::SpirV::fromFile(
-            m_mesh_shaders ? SPIR_V_PATH("player.mesh") : SPIR_V_PATH("player.vert")
+            shaderAssetPath(m_mesh_shaders ? "player.mesh.spv" : "player.vert.spv").string()
         );
-        vk::SpirV trivial_frag = vk::SpirV::fromFile(SPIR_V_PATH("trivial.frag"));
+        vk::SpirV trivial_frag = vk::SpirV::fromFile(shaderAssetPath("trivial.frag.spv").string());
         m_grid_shader = vk::ShaderModule{ dev, grid_shader };
         m_player_shader = vk::ShaderModule{ dev, player_shader };
         m_fragment_shader = vk::ShaderModule{ dev, trivial_frag };
@@ -200,6 +212,7 @@ private:
         }
     }
 private:
+    VulkanRendererOptions const m_options;
     vk::FrameGraph m_graph;
     vk::FramePassId m_render_pass;
 
@@ -215,8 +228,8 @@ private:
     vk::GraphicsPipeline m_player_pipeline;
 };
 
-VulkanRenderer::VulkanRenderer(core::Window const& window)
-    : m_impl(std::make_unique<Impl>(window))
+VulkanRenderer::VulkanRenderer(core::Window const& window, VulkanRendererOptions const options)
+    : m_impl(std::make_unique<Impl>(window, options))
 { }
 
 VulkanRenderer::~VulkanRenderer() = default;

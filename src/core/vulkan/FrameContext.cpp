@@ -56,7 +56,11 @@ void FrameContext::setImageBarriers(
             .imageMemoryBarrierCount = static_cast<uint32_t>(vk_barriers.size()),
             .pImageMemoryBarriers = vk_barriers.data(),
         };
-        vkCmdPipelineBarrier2(m_command_buffer.handle(), &dep_info);
+        if (m_p_ctx.has(VulkanExtension::Synchronization2)) {
+            vkCmdPipelineBarrier2KHR(m_command_buffer.handle(), &dep_info);
+        } else {
+            vkCmdPipelineBarrier2(m_command_buffer.handle(), &dep_info);
+        }
     } else {
         std::vector<VkImageMemoryBarrier> vk_barriers;
         vk_barriers.reserve(barriers.size());

@@ -1,5 +1,7 @@
 # Code conventions used in this project
 
+Use [AGENTS.md](../AGENTS.md) for task workflow and [the code map](code/README.md) for contracts. These style rules apply equally to the original and AI development lines. Match existing names; do not perform unrelated renaming.
+
 ## Code style
 
 1. In headers, there is always `#pragma once` first and a newline after it.

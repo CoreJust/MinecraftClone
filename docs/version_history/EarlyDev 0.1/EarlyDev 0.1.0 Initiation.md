@@ -2,13 +2,9 @@
 
 This is the initiation version where the project structure is outlined and the modules are implemented in a simple way.
 
-## Content additions
+## Release status
 
-
-
-## Techincal additions
-
-
+Dated entries record the original snapshot history. Snapshot 3 is an undated draft, not evidence of release. The AI development line begins separately; add its verified snapshots with the actual release date and AI tag from [the version convention](../../VERSION_CONVENTION.md).
 
 # Snapshots
 

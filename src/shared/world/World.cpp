@@ -2,6 +2,9 @@
 
 #include <core/common/Assert.hpp>
 
+#include <algorithm>
+#include <random>
+
 namespace shared {
 
 bool World::playerExists(char const ch) const noexcept {
@@ -21,12 +24,13 @@ void World::spawnPlayer(PlayerId const id, char const ch, std::optional<std::pai
         x = at->first;
         y = at->second;
     } else {
-        uint64_t now = static_cast<uint64_t>(std::chrono::steady_clock::now().time_since_epoch().count());
+        static std::default_random_engine generator{ std::random_device{}() };
+        std::uniform_int_distribution<uint16_t> x_distribution{ 0, WIDTH - 1 };
+        std::uniform_int_distribution<uint16_t> y_distribution{ 0, HEIGHT - 1 };
         do {
-            x = now % (WIDTH - 1);
-            now = now * (now + 1);
-            y = now % (HEIGHT - 1);
-        } while (!canPlayerBeAt(x, y, ch));
+            x = static_cast<uint8_t>(x_distribution(generator));
+            y = static_cast<uint8_t>(y_distribution(generator));
+        } while (!canPlayerBeAt(x, y, id));
     }
 
     m_players.emplace_back(Player{
@@ -58,13 +62,17 @@ bool World::movePlayer(PlayerId const id, Direction const direction) {
         return false;
     }
 
-    auto const [off_x, off_y] = direction;
-    if (!canPlayerBeAt(p->x + off_x, p->y + off_y, id)) {
+    int const target_x = static_cast<int>(p->x) + static_cast<int8_t>(direction.x);
+    int const target_y = static_cast<int>(p->y) + static_cast<int8_t>(direction.y);
+    if (target_x < 0 || target_x >= WIDTH || target_y < 0 || target_y >= HEIGHT) {
+        return false;
+    }
+    if (!canPlayerBeAt(static_cast<uint8_t>(target_x), static_cast<uint8_t>(target_y), id)) {
         return false;
     }
 
-    p->x += off_x;
-    p->y += off_y;
+    p->x = static_cast<uint8_t>(target_x);
+    p->y = static_cast<uint8_t>(target_y);
     return true;
 }
 
@@ -97,14 +105,18 @@ std::optional<Player> World::playerByCharacter(char const ch) const noexcept {
 }
 
 bool World::canPlayerBeAt(uint8_t const x, uint8_t const y, PlayerId const id) const {
-    if (x >= WIDTH - 1 || y >= HEIGHT - 1) {
+    if (x >= WIDTH || y >= HEIGHT) {
         return false;
     }
     // Inefficient, but simple
     for (Player const& player : m_players) {
         if (player.id != id) {
-            for (uint8_t p_x = player.x - 1; p_x <= player.x + 1; ++p_x) {
-                for (uint8_t p_y = player.y - 1; p_y <= player.y + 1; ++p_y) {
+            int const min_x = std::max(0, static_cast<int>(player.x) - 1);
+            int const max_x = std::min(static_cast<int>(WIDTH) - 1, static_cast<int>(player.x) + 1);
+            int const min_y = std::max(0, static_cast<int>(player.y) - 1);
+            int const max_y = std::min(static_cast<int>(HEIGHT) - 1, static_cast<int>(player.y) + 1);
+            for (int p_x = min_x; p_x <= max_x; ++p_x) {
+                for (int p_y = min_y; p_y <= max_y; ++p_y) {
                     if (p_x == x && p_y == y) {
                         return false;
                     }
