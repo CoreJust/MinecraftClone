@@ -2,6 +2,7 @@ include(GoogleTest)
 
 add_executable(mc_tests
     android/input_state_tests.cpp
+    client/mesh_shader_selection_tests.cpp
     client/shader_assets_tests.cpp
     core/algorithm_tests.cpp
     core/byte_io_tests.cpp
@@ -51,6 +52,34 @@ mc_apply_target_defaults(mc_tests)
 mc_copy_target_shaders(mc_tests mc)
 
 gtest_discover_tests(mc_tests)
+
+find_program(MC_SPIRV_VAL_EXECUTABLE
+    NAMES spirv-val
+    HINTS "$ENV{VULKAN_SDK}"
+    PATH_SUFFIXES bin Bin
+    REQUIRED
+)
+
+foreach(SHADER_TARGET_ENV IN ITEMS
+    "grid.mesh.spv;vulkan1.3"
+    "player.mesh.spv;vulkan1.3"
+    "grid.vert.spv;vulkan1.2"
+    "player.vert.spv;vulkan1.2"
+    "trivial.frag.spv;vulkan1.2"
+)
+    list(GET SHADER_TARGET_ENV 0 SHADER_FILE)
+    list(GET SHADER_TARGET_ENV 1 VULKAN_TARGET_ENV)
+    add_test(
+        NAME ShaderSpirvTargetTest.${SHADER_FILE}
+        COMMAND ${MC_SPIRV_VAL_EXECUTABLE}
+            --target-env ${VULKAN_TARGET_ENV}
+            "$<TARGET_FILE_DIR:mc_tests>/shaders/${SHADER_FILE}"
+    )
+    set_tests_properties(
+        ShaderSpirvTargetTest.${SHADER_FILE}
+        PROPERTIES LABELS "shader;spirv"
+    )
+endforeach()
 
 option(MC_ENABLE_RENDERER_SMOKE "Run noninteractive GPU smoke (requires a desktop and Vulkan validation)" OFF)
 if(MC_ENABLE_RENDERER_SMOKE)

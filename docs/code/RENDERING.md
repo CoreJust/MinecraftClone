@@ -48,9 +48,11 @@ requires changing the C++ constants and shader constants/push data together.
 
 `GridPushConstants` and `PlayerPushConstants` are both asserted as 32 bytes.
 Their field order and alignment must remain ABI-compatible with their GLSL
-push-constant blocks. The selected main stage is mesh when mesh capability is
-available and vertex otherwise; the same stage is used for pipeline creation
-and `pushConstants`.
+push-constant blocks. The selected main stage is mesh only when mesh capability
+is available and the effective instance/device API version is at least Vulkan
+1.3; otherwise it is vertex. This matches the packaged mesh modules' Vulkan 1.3
+target while keeping the vertex fallback usable on Vulkan 1.2. The same stage
+is used for pipeline creation and `pushConstants`.
 
 ## Shader sets
 
@@ -93,6 +95,9 @@ reload time.
   push struct, both player shader variants, and their reflected layouts.
 - [Shader asset tests](../../tests/client/shader_assets_tests.cpp) load all five
   compiled shaders from a temporary working directory and reject missing/invalid paths.
+- `ShaderSpirvTargetTest.*` runs `spirv-val` against the copied executable
+  shader assets: mesh shaders target Vulkan 1.3, while vertex/fragment fallback
+  shaders validate for Vulkan 1.2.
 - Optional [renderer smoke](../../tests/client/renderer_smoke_tests.cpp), enabled
   by `MC_ENABLE_RENDERER_SMOKE`, requires a desktop, GPU and validation layers.
   It draws six frames, including empty/player data and an instance reload,

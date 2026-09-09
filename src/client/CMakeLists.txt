@@ -2,6 +2,7 @@ target_sources(mc
     PRIVATE
         BotClient.cpp
         GameClient.cpp
+        render/MeshShaderSelection.hpp
         render/ShaderAssets.cpp
         render/VulkanRenderer.cpp
 )

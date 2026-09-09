@@ -38,7 +38,7 @@ ENet uses UDP, while `adb reverse` forwards only TCP. Physical devices therefore
 
 ## SDK and compiler
 
-Set `VULKAN_SDK` to the SDK platform directory if CMake cannot find it. On macOS, Vulkan runs through MoltenVK; when the SDK is not registered system-wide, set `VK_DRIVER_FILES` to its `share/vulkan/icd.d/MoltenVK_icd.json` for the launched process. Do not commit machine-specific SDK paths.
+Set `VULKAN_SDK` to the SDK platform directory if CMake cannot find it. The SDK's `spirv-val` is required by the shader-target CTest checks. On macOS, Vulkan runs through MoltenVK; when the SDK is not registered system-wide, set `VK_DRIVER_FILES` to its `share/vulkan/icd.d/MoltenVK_icd.json` for the launched process. Do not commit machine-specific SDK paths.
 
 ## Hosted desktop CI
 
@@ -73,7 +73,7 @@ Additional release gates live in [ai_checks.json](../script/ai_checks.json); dis
 
 ## Test ownership
 
-`mc_tests` uses GoogleTest discovery into CTest. Networking/server tests use local sockets; shader tests load executable-relative assets from another working directory. Input tests drive callbacks without proving interactive controls. Python tooling suites live in `script/tests`.
+`mc_tests` uses GoogleTest discovery into CTest. Networking/server tests use local sockets; shader tests load executable-relative assets from another working directory. `ShaderSpirvTargetTest.*` validates the copied mesh shaders for Vulkan 1.3 and the vertex fallback set for Vulkan 1.2. Input tests drive callbacks without proving interactive controls. Python tooling suites live in `script/tests`.
 
 Enable `MC_ENABLE_RENDERER_SMOKE=ON` at configure time, build, then run `ctest --preset debug -R RendererSmokeTest --output-on-failure`. This optional test requires a desktop, Vulkan device and validation layers; it is not headless. It draws/reloads automatic and forced-vertex pipelines, with CTest rejecting validation/error output. It does not compare pixels or establish resize, user controls, cross-process gameplay or Windows execution from a macOS run.
 

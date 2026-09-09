@@ -23,7 +23,7 @@
     },
     {
       "guide": "docs/BUILD.md",
-      "guide_sha256": "6b12c168c0d3a624fb493250e2b3fdc68cf96d925ab7923a767eb07c17e5815c",
+      "guide_sha256": "41821f0f953100dc889c4356e3a31f6956568f1cfea9295c033eb426566456e4",
       "id": "build",
       "sources": [
         ".agents/skills/backlog/SKILL.md",
@@ -88,7 +88,7 @@
         "vcpkg-configuration.json",
         "vcpkg.json"
       ],
-      "sources_sha256": "9d4fd1d8ea1528871967b9853ef4f82fb868cc74a2952183d6aa48e0fd15fffc"
+      "sources_sha256": "56f35fd25cd66e8f951618aac278dea53512b3f40b6d96738768baf5a03ea704"
     },
     {
       "guide": "docs/code/CORE.md",
@@ -246,7 +246,7 @@
     },
     {
       "guide": "docs/code/RENDERING.md",
-      "guide_sha256": "9a1b6d6538834493eda6af0a23aacffc159d9e175283778e1b1a74bfb3e97c1f",
+      "guide_sha256": "906eb00b22ca9ad6e4dfd7a43b189dd78786fe3d50074a5b5b9578046e61a5d6",
       "id": "rendering",
       "sources": [
         "src/client/CMakeLists.txt",
@@ -254,6 +254,7 @@
         "src/client/include/client/render/ShaderAssets.hpp",
         "src/client/include/client/render/VulkanRenderer.hpp",
         "src/client/render/InstalledShaderAssets.cpp",
+        "src/client/render/MeshShaderSelection.hpp",
         "src/client/render/ShaderAssets.cpp",
         "src/client/render/VulkanRenderer.cpp",
         "src/client/render/shaders/grid.mesh",
@@ -261,10 +262,11 @@
         "src/client/render/shaders/player.mesh",
         "src/client/render/shaders/player.vert",
         "src/client/render/shaders/trivial.frag",
+        "tests/client/mesh_shader_selection_tests.cpp",
         "tests/client/renderer_smoke_tests.cpp",
         "tests/client/shader_assets_tests.cpp"
       ],
-      "sources_sha256": "fe28c29ae275c400908c993b05f77e5c4f59b926a8c8d9e2cc66b9891a0795b4"
+      "sources_sha256": "2e3d4bd4a69950e01b2ba0d04483f4bb18848a62e533b153f93881c5e400911a"
     },
     {
       "guide": "docs/code/VULKAN.md",

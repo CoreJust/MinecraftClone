@@ -1,5 +1,7 @@
 #include <client/render/VulkanRenderer.hpp>
 
+#include "MeshShaderSelection.hpp"
+
 #include <shared/ProjectInfo.hpp>
 
 #include <core/common/Assert.hpp>
@@ -142,10 +144,13 @@ public:
 private:
     void createPipelines() {
         vk::Device& dev = m_graph.ctx().device();
-        m_mesh_shaders = m_options.prefer_mesh_shaders && m_graph.ctx().hasMeshShaders();
+        m_mesh_shaders = detail::shouldUseMeshShaderPipelines(
+            m_options.prefer_mesh_shaders,
+            m_graph.ctx()
+        );
         m_main_shader_stage = m_mesh_shaders ? vk::ShaderStage::Mesh : vk::ShaderStage::Vertex;
         if (!m_mesh_shaders) {
-            CORE_INFO("Using vertex pipelines (mesh shaders unavailable or disabled)");
+            CORE_INFO("Using vertex pipelines (mesh shaders unavailable, incompatible, or disabled)");
         } else {
             CORE_INFO("Using mesh shader pipelines");
         }

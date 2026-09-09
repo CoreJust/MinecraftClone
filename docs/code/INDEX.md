@@ -248,6 +248,7 @@ Files:
 - [`src/client/include/client/render/ShaderAssets.hpp`](../../src/client/include/client/render/ShaderAssets.hpp)
 - [`src/client/include/client/render/VulkanRenderer.hpp`](../../src/client/include/client/render/VulkanRenderer.hpp)
 - [`src/client/render/InstalledShaderAssets.cpp`](../../src/client/render/InstalledShaderAssets.cpp)
+- [`src/client/render/MeshShaderSelection.hpp`](../../src/client/render/MeshShaderSelection.hpp)
 - [`src/client/render/ShaderAssets.cpp`](../../src/client/render/ShaderAssets.cpp)
 - [`src/client/render/VulkanRenderer.cpp`](../../src/client/render/VulkanRenderer.cpp)
 - [`src/client/render/shaders/grid.mesh`](../../src/client/render/shaders/grid.mesh)
@@ -255,6 +256,7 @@ Files:
 - [`src/client/render/shaders/player.mesh`](../../src/client/render/shaders/player.mesh)
 - [`src/client/render/shaders/player.vert`](../../src/client/render/shaders/player.vert)
 - [`src/client/render/shaders/trivial.frag`](../../src/client/render/shaders/trivial.frag)
+- [`tests/client/mesh_shader_selection_tests.cpp`](../../tests/client/mesh_shader_selection_tests.cpp)
 - [`tests/client/renderer_smoke_tests.cpp`](../../tests/client/renderer_smoke_tests.cpp)
 - [`tests/client/shader_assets_tests.cpp`](../../tests/client/shader_assets_tests.cpp)
 
