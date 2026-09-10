@@ -22,7 +22,7 @@
         "tests/acceptance/runtime_cli_tests.cmake",
         "tests/acceptance/scenario_runner_tests.cpp"
       ],
-      "sources_sha256": "28c1bde7d539315cf854416d0bd134f172e9bc6fda53ec80c7c272aa421a0d43"
+      "sources_sha256": "2c0d07d01e6ffbfeadb45200dfbdc559008d9b90b0191be97ec8e467bbaffc65"
     },
     {
       "guide": "docs/code/ANDROID.md",

@@ -60,7 +60,6 @@ end
     EXPECT_EQ(result->last_effective_tick, 1U);
     EXPECT_EQ(result->inputs_sent, 5U);
     EXPECT_EQ(result->expectations_passed, 1U);
-    EXPECT_GT(result->accepted_tick, 0U);
     EXPECT_GE(result->server_events_processed, 7U);
 }
 
@@ -120,7 +119,6 @@ end
     EXPECT_EQ(result->ticks, 2U);
     EXPECT_EQ(result->inputs_sent, 4U);
     EXPECT_EQ(result->expectations_passed, 2U);
-    EXPECT_GT(result->accepted_tick, 0U);
 }
 
 TEST(ScenarioRunner, RejectsInvalidRuntimeLimitsWithoutWaitingForNetwork)

@@ -3236,5 +3236,41 @@
     "docs_review": "",
     "environment_review": "Debug mc_tests rebuilt locally; the two affected 12-client tests passed 20 repetitions each in 63.79 seconds. Hosted confirmation remains pending X11.",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0085",
+    "title": "Remove nondeterministic pre-scenario tick assumptions",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P0",
+    "route": "luna",
+    "milestone": "ED-010-S3",
+    "depends_on": [],
+    "acceptance": "Real-ENet scenario tests continue to require accepted clients, authoritative tick counts, effective inputs, positions, event totals, and passed expectations without assuming the server worker must tick before a successfully accepted client.",
+    "evidence": "X11 recorded a fully accepted client, passed five-tick authoritative scenario, exact final position and processed events with accepted_tick zero. After removing only the two pre-scenario greater-than-zero assumptions, all three real-ENet scenario tests pass 20 consecutive repetitions locally.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0032",
+    "motivation": "X11 proved a valid accepted client and completed authoritative five-tick result can record accepted_tick zero when connection and spawn complete before the server worker's first tick.",
+    "context": "Repair only the nondeterministic observability assertion; preserve the scenario's exact authoritative behavior and all deadline checks.",
+    "complexity": "low",
+    "created_at": "2026-09-10",
+    "resolved_at": "2026-09-10",
+    "resolution_changes": "Removed the invalid assumption that successful connection acceptance must occur after the server worker's first tick; retained exact authoritative behavior and event-count assertions.",
+    "plan": [
+      "Remove the invalid greater-than-zero accepted_tick assumptions from the one- and two-actor real-ENet acceptance tests while retaining their behavioral assertions."
+    ],
+    "product_changes": [],
+    "code_changes": [
+      "tests/acceptance/scenario_runner_tests.cpp"
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": false,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "Debug mc_tests rebuilt locally and the three real-ENet ScenarioRunner tests passed 20 repetitions each in 20.29 seconds; hosted confirmation remains pending X12.",
+    "backlog_review": ""
   }
 ]
