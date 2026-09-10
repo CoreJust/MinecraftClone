@@ -2967,5 +2967,39 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0078",
+    "title": "Repair Windows shell fixture line endings",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P0",
+    "route": "luna",
+    "milestone": "ED-010-S3",
+    "depends_on": [],
+    "acceptance": "Temporary shell fixtures used by legacy tag resolution use LF line endings without CR bytes, preserving the intended POSIX shebang and strict tag-resolution contract. Focused tests and fast validation pass; hosted Windows build remains unclaimed until a new candidate runs.",
+    "evidence": "Focused fixture repair validated in the supplied isolated run: 151/151 Python tests passed in 43.1 seconds. Fresh hosted Windows validation remains unclaimed.",
+    "blocker": "",
+    "owner": "",
+    "level": "basic",
+    "parent": "MC-AI-0032",
+    "motivation": "X8 Windows pre-build source checks fail because a shell fixture is written with CRLF and the POSIX shebang becomes invalid.",
+    "context": "X8 fixture patch is prevalidated at /private/tmp/mc-s3-x8-fixture.Wxfwdu.patch; scope is test-fixture line endings only.",
+    "complexity": "low",
+    "created_at": "2026-09-10",
+    "resolved_at": "2026-09-10",
+    "resolution_changes": "Forced LF-only POSIX shell fixture bytes for legacy tag-resolution coverage.",
+    "plan": [
+      "Force exact LF fixture bytes and assert no CR bytes."
+    ],
+    "product_changes": [],
+    "code_changes": [],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": false,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]

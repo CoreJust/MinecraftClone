@@ -231,12 +231,16 @@ class AiCheckTests(unittest.TestCase):
             "  *) exit 2 ;;\n"
             "esac\n",
             encoding="utf-8",
+            newline="\n",
         )
         fake_python = fake_bin / "python"
         fake_python.write_text(
             "#!/bin/sh\nprintf '%s\\n' \"$*\" > \"$HOOK_LOG\"\n",
             encoding="utf-8",
+            newline="\n",
         )
+        self.assertNotIn(b"\r", fake_git.read_bytes())
+        self.assertNotIn(b"\r", fake_python.read_bytes())
         fake_git.chmod(0o755)
         fake_python.chmod(0o755)
         log = self.root / "hook.log"
