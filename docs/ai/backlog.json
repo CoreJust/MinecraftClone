@@ -3371,13 +3371,13 @@
     "id": "MC-AI-0088",
     "title": "Use portable Windows snapshot workflow paths",
     "kind": "bug",
-    "status": "active",
+    "status": "done",
     "priority": "P0",
     "route": "luna",
     "milestone": "ED-010-S3",
     "depends_on": [],
     "acceptance": "The Windows snapshot workflow creates and consumes the same toolchain evidence file through Python-portable repository-relative paths, preserves provenance validation and runtime closure, and produces the Windows package after its MSVC build and tests pass.",
-    "evidence": "X15 reproduced the package failure after a successful MSVC build and 204/204 CTests. Its raw hosted log proves record-metadata failed first because VsDevCmd replaced the acquired VCPKG_ROOT with Visual Studio bundled non-Git vcpkg; cmd then continued through the expensive build. Focused snapshot/acquisition workflow tests pass 23/23 locally; X16 hosted package evidence remains required.",
+    "evidence": "Immutable X16 hosted receipt /private/tmp/mc-s3-x16-hosted-ci-receipt-v1.txt (SHA256 9c45c54b7b2f578fec85e8fa505bb3c67488e3457a3791c9976f0e15c542d223) verifies candidate 398f3dd2305825dde15e9503beb91b040eae75ce and tree a4b42bea0d5844935f5e8a7fed17badb686ee9c2. AI checks run 34473924817 and snapshot artifacts run 34473924779 completed successfully; Windows build/test/package and provenance steps passed, with macOS and Android candidate artifacts produced. Local focused workflow/acquisition tests passed 23/23. No publication, tag, or user Windows-runtime acceptance is claimed.",
     "blocker": "",
     "owner": "Codex",
     "level": "basic",
@@ -3386,8 +3386,8 @@
     "context": "Preserve the acquired vcpkg root across Visual Studio environment initialization and make environment/provenance failures stop before compilation. Keep Python-portable repository-local paths, the external VCToolsRedistDir path, toolchain evidence validation, runtime DLL closure, hashes, and fail-closed behavior.",
     "complexity": "low",
     "created_at": "2026-09-10",
-    "resolved_at": "",
-    "resolution_changes": "Uses forward-slash repository-relative paths across the Windows Python provenance/package pipeline. Preserves the acquired pinned VCPKG_ROOT across VsDevCmd in both desktop workflows and exits immediately when environment verification or metadata recording fails, while retaining cmd-native build paths, external VCToolsRedistDir runtime closure, and provenance gates. Adds exact workflow contracts for the shared evidence path, root restoration ordering, and fail-fast metadata behavior.",
+    "resolved_at": "2026-09-10",
+    "resolution_changes": "Preserved the acquired pinned VCPKG_ROOT across VsDevCmd in both desktop workflows, converted Windows provenance/package paths to repository-relative forward-slash form, and made tool-acquisition and metadata failures fail fast. X16 then verified the exact candidate through successful hosted AI checks and snapshot-artifact workflows, including Windows package production and macOS/Android candidate artifacts.",
     "plan": [
       "Use forward-slash repository-relative paths for Windows Python metadata/package/evidence/checksum commands and guard the contract with a workflow test.",
       "Preserve the acquired VCPKG_ROOT across VsDevCmd and fail immediately if Windows environment verification or metadata recording fails."
@@ -3402,9 +3402,9 @@
     "commits": [],
     "finalized": false,
     "retrospective": "",
-    "docs_review": "No product or architecture guide semantics change; the workflow test owns the portable-path contract.",
-    "environment_review": "X15 raw Windows job 102854737081 logged CI setup failure: git -C C:\\Program Files\\Microsoft Visual Studio\\2022\\Enterprise\\VC\\vcpkg rev-parse HEAD exited 128 because that directory is not a Git repository; package-desktop later found no toolchain evidence. Local Python unittest suites script.tests.test_build_snapshot and script.tests.test_ci_acquire pass 23/23. Hosted Windows package verification remains pending X16.",
-    "backlog_review": "Task remains active until a hosted candidate preserves pinned provenance and produces the Windows package. X15 disproved the slash-only diagnosis and is recorded as causal evidence, not acceptance."
+    "docs_review": "The owning workflow tests and Windows artifact/provenance guidance match the restored VCPKG_ROOT and fail-fast contracts; no product or architecture guide change is required.",
+    "environment_review": "X16 hosted Windows primary jobs completed terminal success with pinned vcpkg provenance, build/test/package execution, and release-candidate upload. macOS and Android candidate artifacts were also produced. Actual release publication, tag/signing verification, exact-platform runtime acceptance, and separate user Windows runtime status remain aggregate evidence.",
+    "backlog_review": "Task is complete after the X16 candidate evidence. Keep Snapshot 3 publication and runtime acceptance separate; do not start X17 or auto-close the minor."
   },
   {
     "id": "MC-AI-0089",
