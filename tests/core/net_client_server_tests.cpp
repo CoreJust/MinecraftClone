@@ -7,6 +7,7 @@
 #include <atomic>
 #include <chrono>
 #include <functional>
+#include <memory>
 #include <span>
 #include <string>
 #include <thread>
@@ -86,7 +87,7 @@ class TestServer final : public core::Server {
 public:
     explicit TestServer(
         uint16_t const port,
-        size_t const max_connections,
+        uint32_t const max_connections,
         uint32_t const max_channels,
         std::function<void(TestServer&, core::ServerConnectEvent const)> on_connected,
         std::function<void(TestServer&, core::ServerDisconnectEvent const)> on_disconnected,
@@ -132,7 +133,7 @@ struct TestServerService final {
     explicit TestServerService(
         std::function<void(TestServer&, core::ServerReceiveEvent)> on_received,
         uint16_t const port,
-        size_t const max_connections = 1,
+        uint32_t const max_connections = 1,
         uint32_t const max_channels = 1,
         std::function<void(TestServer&, core::ServerConnectEvent const)> on_connected = nullptr,
         std::function<void(TestServer&, core::ServerDisconnectEvent const)> on_disconnected = nullptr)
@@ -297,10 +298,9 @@ TEST(NetClientServer, MultipleClientsEchoTest) {
         1,
     };
 
-    std::vector<TestClient> clients;
-    clients.reserve(NUM_CLIENTS);
+    std::array<std::unique_ptr<TestClient>, NUM_CLIENTS> clients;
     for (uint32_t i = 0; i < NUM_CLIENTS; ++i) {
-        clients.emplace_back(
+        clients[i] = std::make_unique<TestClient>(
             NoAction{ },
             [i, &received](TestClient&, core::ReceiveEvent e) {
                 received[i] = core::asStringView(e.data);
@@ -309,16 +309,16 @@ TEST(NetClientServer, MultipleClientsEchoTest) {
     }
 
     for (uint32_t i = 0; i < NUM_CLIENTS; ++i) {
-        ASSERT_TRUE(clients[i].connectAndWait(srv.port()));
+        ASSERT_TRUE(clients[i]->connectAndWait(srv.port()));
     }
 
     for (uint32_t i = 0; i < NUM_CLIENTS; ++i) {
         auto const message = "Client " + std::to_string(i);
-        ASSERT_TRUE(clients[i].send(asNetworkBytes(core::asByteSpan(message)), 0, core::SendMode{ }));
+        ASSERT_TRUE(clients[i]->send(asNetworkBytes(core::asByteSpan(message)), 0, core::SendMode{ }));
     }
 
     for (uint32_t i = 0; i < NUM_CLIENTS; ++i) {
-        ASSERT_TRUE(clients[i].pollUntil([&received, i] {
+        ASSERT_TRUE(clients[i]->pollUntil([&received, i] {
             return received[i] == "Client " + std::to_string(i);
         })) << "Timed out waiting for echo to client " << i;
     }
@@ -333,7 +333,7 @@ TEST(NetClientServer, MultipleClientsEchoTest) {
 TEST(NetClientServer, MessageRelayTest) {
     static constexpr uint32_t NUM_CLIENTS = 12;
     static constexpr std::chrono::seconds CONNECT_TIMEOUT{ 1 };
-    std::string received[NUM_CLIENTS];
+    std::array<std::string, NUM_CLIENTS> received;
 
     TestServerService srv{
         [&](TestServer& self, core::ServerReceiveEvent e) {
@@ -353,10 +353,9 @@ TEST(NetClientServer, MessageRelayTest) {
         NUM_CLIENTS,
     };
 
-    std::vector<TestClient> clients;
-    clients.reserve(NUM_CLIENTS);
+    std::array<std::unique_ptr<TestClient>, NUM_CLIENTS> clients;
     for (uint32_t i = 0; i < NUM_CLIENTS; ++i) {
-        clients.emplace_back(
+        clients[i] = std::make_unique<TestClient>(
             NoAction{ },
             [i, &received](TestClient&, core::ReceiveEvent e) {
                 received[i] = core::asStringView(e.data);
@@ -365,13 +364,13 @@ TEST(NetClientServer, MessageRelayTest) {
     }
 
     for (uint32_t i = 0; i < NUM_CLIENTS; ++i) {
-        ASSERT_TRUE(clients[i].connectAndWait(srv.port(), CONNECT_TIMEOUT));
+        ASSERT_TRUE(clients[i]->connectAndWait(srv.port(), CONNECT_TIMEOUT));
     }
 
     std::string const msg = fmt::format("to:{}:Hello from 0", NUM_CLIENTS - 1);
-    clients[0].send(asNetworkBytes(core::asByteSpan(msg)), 0, core::SendMode{ });
+    clients[0]->send(asNetworkBytes(core::asByteSpan(msg)), 0, core::SendMode{ });
     for (uint32_t i = 0; i < NUM_CLIENTS; ++i) {
-        clients[i].pollAndWait();
+        clients[i]->pollAndWait();
     }
 
     srv.done(NUM_CLIENTS, 0);

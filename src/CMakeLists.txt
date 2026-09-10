@@ -10,10 +10,10 @@ target_link_libraries(mc
     PUBLIC
         CoreCpp::Core
         CoreCpp::Runtime
+        CoreCpp::RuntimeNetwork
         fmt::fmt
         spdlog::spdlog
     PRIVATE
-        unofficial::enet::enet
         glm::glm
         unofficial::spirv-reflect
         volk::volk_headers
@@ -27,9 +27,6 @@ target_compile_definitions(mc
         VMA_STATIC_VULKAN_FUNCTIONS=0
         VMA_DYNAMIC_VULKAN_FUNCTIONS=0
 )
-if(WIN32) # For ENet
-    target_link_libraries(mc PRIVATE winmm ws2_32)
-endif()
 if(APPLE) # For vkCreateMetalSurfaceEXT and the Cocoa/CAMetalLayer window binding
     target_compile_definitions(mc PRIVATE VK_USE_PLATFORM_METAL_EXT)
     target_link_libraries(mc PRIVATE "-framework Cocoa" "-framework QuartzCore")

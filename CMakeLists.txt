@@ -48,10 +48,9 @@ endif()
 
 ###  DEPENDENCIES SETUP  ###
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/CoreCppProvenance.cmake")
-find_package(CoreCpp CONFIG REQUIRED COMPONENTS Core Runtime)
+find_package(CoreCpp CONFIG REQUIRED COMPONENTS Core Runtime RuntimeNetwork)
 mc_check_corecpp_provenance()
 
-find_package(unofficial-enet CONFIG REQUIRED)
 find_package(fmt CONFIG REQUIRED)
 if(NOT ANDROID)
     find_package(glfw3 CONFIG REQUIRED)

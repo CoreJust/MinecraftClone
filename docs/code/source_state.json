@@ -127,37 +127,20 @@
         "vcpkg-configuration.json",
         "vcpkg.json"
       ],
-      "sources_sha256": "c1189aab0235ceb9b3911625aa13f783ede315efdaeb2efe7449205c930c01ef"
+      "sources_sha256": "b0a1fdf2265760d81135594f372974d9beb0fa19301636a2b5539860891abc07"
     },
     {
       "guide": "docs/code/CORE.md",
-      "guide_sha256": "a299937ad565bd158db08dd69cf081b129fec2aac069e25c85da49536878b6fc",
+      "guide_sha256": "e836ae428f43973971d4f421bcc0807424f31bc4cfe948d6623d00ba9a54dda6",
       "id": "core",
       "sources": [
         "src/core/CMakeLists.txt",
         "src/core/include/core/CMakeLists.txt",
-        "src/core/include/core/net/Address.hpp",
-        "src/core/include/core/net/CMakeLists.txt",
-        "src/core/include/core/net/Client.hpp",
-        "src/core/include/core/net/Event.hpp",
-        "src/core/include/core/net/GenerateEvents.hpp",
-        "src/core/include/core/net/Host.hpp",
-        "src/core/include/core/net/Net.hpp",
-        "src/core/include/core/net/Peer.hpp",
-        "src/core/include/core/net/SendMode.hpp",
-        "src/core/include/core/net/Server.hpp",
         "src/core/include/core/window/CMakeLists.txt",
         "src/core/include/core/window/Key.hpp",
         "src/core/include/core/window/Keyboard.hpp",
         "src/core/include/core/window/Mouse.hpp",
         "src/core/include/core/window/Window.hpp",
-        "src/core/net/Address.cpp",
-        "src/core/net/CMakeLists.txt",
-        "src/core/net/Client.cpp",
-        "src/core/net/Event.cpp",
-        "src/core/net/Host.cpp",
-        "src/core/net/Net.cpp",
-        "src/core/net/Server.cpp",
         "src/core/window/CMakeLists.txt",
         "src/core/window/Key.cpp",
         "src/core/window/Keyboard.cpp",
@@ -191,11 +174,11 @@
         "tests/core/window/keyboard_tests.cpp",
         "tests/core/window/mouse_tests.cpp"
       ],
-      "sources_sha256": "56d61639b7e2a9e25df2a4bfe4546f253405e1d901a1d1e46f9f38176d78a8df"
+      "sources_sha256": "3a388c8a71ae33a2ae1c955af044d73296b1b59431f0f5eece2ba394c11ecda4"
     },
     {
       "guide": "docs/code/GAMEPLAY.md",
-      "guide_sha256": "fe9c3a7da53b832e2827449b6d45d85e63ee33d89b2635b32c6dccafcd4fbe6c",
+      "guide_sha256": "ae3b223ab23fbb5a46082187eaf2dbe80e95f45c2b9eb917762fbbc03fb38953",
       "id": "gameplay",
       "sources": [
         "src/client/BotClient.cpp",

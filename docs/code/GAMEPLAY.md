@@ -18,7 +18,7 @@ and uncaught exceptions produce a non-zero exit code in this checkout.
 mc_main
   server mode: GameServer -> authoritative World
   client mode: PlayerClient or BotClient -> GameClient -> local World
-                                                | reliable ENet channel 0
+                                                | reliable RuntimeNetwork channel 0
                                                 v
                                           GameServer callbacks
 ```
@@ -137,10 +137,10 @@ covers every message-kind round trip plus truncated, unknown, trailing, and
 invalid decoded payloads. [tests/core/shared_world_tests.cpp](../../tests/core/shared_world_tests.cpp)
 covers lookup, collisions, boundaries, random-spawn bounds, zero movement, and
 despawn. [Server tests](../../tests/core/game_server_tests.cpp) use real local
-ENet clients to cover private replies, newcomer visibility, repeated joins,
+RuntimeNetwork clients to cover private replies, newcomer visibility, repeated joins,
 idle/multiple input, and joined/unjoined disconnects. Their fixture polls the
 server directly; it does not exercise `run()` tick resets or client scheduling.
-[Transport tests](../../tests/core/net_client_server_tests.cpp) cover connections,
+[Transport tests](../../tests/core/net_client_server_tests.cpp) cover installed RuntimeNetwork connections,
 channels, echo, relay and disconnect behavior, including explicit multi-client
 connection readiness before echo. [tests/CMakeLists.txt](../../tests/CMakeLists.txt)
 registers these in `mc_tests`. Main prompts, the full client loop and cross-process
