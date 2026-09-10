@@ -3326,13 +3326,13 @@
     "id": "MC-AI-0087",
     "title": "Repair deterministic and Windows-portable test contracts",
     "kind": "bug",
-    "status": "active",
+    "status": "done",
     "priority": "P0",
     "route": "luna",
     "milestone": "ED-010-S3",
     "depends_on": [],
     "acceptance": "Scenario poll-timeout capping is verified deterministically without wall-clock races while real ENet scenario integration remains covered; image output tests release file handles before cleanup; InputSpan initializer-list tests consume the nonowning view within its valid full expression; TypeName omits MSVC class-key prefixes.",
-    "evidence": "X13 exact logs showed the scenario test consumed its 1-second real-network deadline and returned the deadline error instead of its expected-position text; Windows kept the PPM file open during removal, both InputSpan tests read expired initializer_list storage, and TypeName returned struct TypeNameTestObject. The debug target rebuilds, and 12 focused affected plus retained real-ENet tests pass for 20 consecutive repetitions locally. Hosted Windows confirmation remains pending X14.",
+    "evidence": "X13 exact logs identified the macOS wall-clock/error-message race plus four Windows portability defects. The implementation made poll capping a pure exact min contract used at every ScenarioRunner network-poll site while retaining three real-ENet integrations, closed the image stream before Windows cleanup, consumed initializer-list InputSpan views within their valid full expression, and removed MSVC class-key prefixes from reflected type names. Locally the debug target rebuilt and 12 focused tests passed 20 repeats. X14 AI run 34469811615 passed every macOS and Windows debug/release job; X14 snapshot Windows compiled under MSVC and all 204 CTests passed before a later unrelated toolchain-evidence packaging-path failure.",
     "blocker": "",
     "owner": "Codex",
     "level": "basic",
@@ -3341,7 +3341,7 @@
     "context": "Preserve production deadlines, real binary image output, InputSpan nonowning semantics, and compiler-independent type-name contracts; do not skip tests or weaken runtime behavior.",
     "complexity": "low",
     "created_at": "2026-09-10",
-    "resolved_at": "",
+    "resolved_at": "2026-09-10",
     "resolution_changes": "Replaced the wall-clock scenario cap probe with an exact pure cap contract used by production polling; closed image streams before cleanup; kept initializer-list InputSpan use within one full expression; and normalized MSVC class-key prefixes from reflected names.",
     "plan": [
       "Add a pure poll-timeout cap helper used by ScenarioRunner and test exact duration selection.",
@@ -3361,10 +3361,10 @@
     ],
     "baseline_commit": "04a8de567598e9eedf7c906e2de84a0759eea31a",
     "commits": [],
-    "finalized": false,
+    "finalized": true,
     "retrospective": "",
     "docs_review": "",
-    "environment_review": "Debug mc_tests rebuilt. Twelve focused affected and retained real-ENet tests passed 20/20 repetitions; narrow setup-timeout search found no remaining 10ms acceptance setup default beyond explicit timeout semantics already isolated in the network suite.",
-    "backlog_review": "Implementation is locally verified; keep active until X14 confirms the four Windows tests and macOS ScenarioRunner suite."
+    "environment_review": "Local debug mc_tests rebuilt and 12 focused affected plus retained real-ENet tests passed 20/20. X14 hosted Windows MSVC executed 204/204 CTests successfully; all four X13 failures and the macOS ScenarioRunner failure are absent.",
+    "backlog_review": "Acceptance is satisfied by deterministic local coverage and X14 hosted macOS/Windows test success. The subsequent Windows packaging provenance-path failure belongs to a separate task."
   }
 ]
