@@ -4,17 +4,26 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
+import platform
 import re
+import shutil
 import subprocess
 import sys
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Sequence
 
 
 LOG_DIR = Path("build/ai-checks")
+RECEIPT_SCHEMA_VERSION = 1
+SHARED_PYTHON_SOURCES = {
+    "ai_check.py", "ai_commit.py", "ai_docs.py", "ai_history.py", "ai_plan.py",
+    "ai_publish.py", "ai_run.py", "ai_setup.py", "ai_tasks.py",
+}
 PYTHON_TEST_TIMEOUT = 180 if os.name == "nt" else 60
 GOVERNED_PREFIXES = ("src/", "tests/", "docs/", "script/", ".githooks/", ".github/", ".codex/", ".agents/", "cmake/")
 GOVERNED_FILES = {
@@ -42,6 +51,9 @@ class PhaseResult:
     output: str
     timed_out: bool = False
     allowed_failure: bool = False
+    reused: bool = False
+    skipped: bool = False
+    duration_seconds: float = 0.0
 
 
 def command_output(root: Path, command: Sequence[str]) -> str:
@@ -76,6 +88,170 @@ def untracked_paths(root: Path) -> set[str]:
     if completed.returncode:
         raise RuntimeError(completed.stderr.decode(errors="replace").strip() or " ".join(command))
     return {path.decode(errors="surrogateescape") for path in completed.stdout.split(b"\0") if path}
+
+
+def repository_paths(root: Path) -> list[str]:
+    """Return tracked and untracked files used to fingerprint a check input."""
+    tracked = subprocess.run(
+        ["git", "ls-files", "-z"], cwd=root, capture_output=True, check=False
+    )
+    if tracked.returncode:
+        raise RuntimeError(tracked.stderr.decode(errors="replace").strip() or "git ls-files")
+    names = {path.decode(errors="surrogateescape") for path in tracked.stdout.split(b"\0") if path}
+    names.update(
+        path for path in untracked_paths(root)
+        if not path.startswith("build/ai-checks/")
+        and "/__pycache__/" not in f"/{path}"
+        and not path.endswith(".pyc")
+    )
+    return sorted(names)
+
+
+def phase_relevant_paths(root: Path, name: str) -> list[str]:
+    paths = repository_paths(root)
+    if name == "python-tests":
+        return [path for path in paths if path.startswith("script/") and path.endswith(".py")]
+    if name in {"backlog", "current-plan"}:
+        return [
+            path for path in paths
+            if path.startswith("docs/ai/")
+            or path in {"script/ai_tasks.py", "script/ai_plan.py", "script/ai_history.py"}
+        ]
+    # Documentation validation reads the complete module map and source state;
+    # diff checks also observe the complete index/worktree.
+    return paths
+
+
+def _git_diff_bytes(root: Path, cached: bool, paths: Sequence[str]) -> bytes:
+    command = ["git", "diff", "--binary", "--no-ext-diff"]
+    if cached:
+        command.append("--cached")
+    command.append("--")
+    command.extend(paths)
+    completed = subprocess.run(command, cwd=root, capture_output=True, check=False)
+    if completed.returncode:
+        raise RuntimeError(completed.stderr.decode(errors="replace").strip() or "git diff")
+    return completed.stdout
+
+
+def relevant_inputs(root: Path, name: str) -> dict[str, object]:
+    paths = phase_relevant_paths(root, name)
+    files = []
+    for relative in paths:
+        target = root / relative
+        if target.is_file():
+            digest = hashlib.sha256(target.read_bytes()).hexdigest()
+        else:
+            digest = "<missing>"
+        files.append([relative, digest])
+    payload = {
+        "paths": paths,
+        "files": files,
+        "index_diff": hashlib.sha256(_git_diff_bytes(root, True, paths)).hexdigest(),
+        "working_diff": hashlib.sha256(_git_diff_bytes(root, False, paths)).hexdigest(),
+    }
+    serialized = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+    payload["fingerprint"] = hashlib.sha256(serialized).hexdigest()
+    return payload
+
+
+def phase_environment(root: Path, name: str) -> dict[str, str]:
+    return python_test_environment(root) if name == "python-tests" else os.environ.copy()
+
+
+def environment_fingerprint(environment: dict[str, str]) -> str:
+    # PWD, shell nesting and the command lookup placeholder vary between hook
+    # invocations without changing a check's inputs. Git also injects these
+    # hook-only index/worktree selectors; the index/worktree hashes below are
+    # the authoritative state. Never persist values.
+    ignored = {
+        "PWD", "OLDPWD", "SHLVL", "_", "GIT_DIR", "GIT_COMMON_DIR",
+        "GIT_INDEX_FILE", "GIT_PREFIX", "GIT_WORK_TREE",
+    }
+    values = {key: value for key, value in environment.items() if key not in ignored}
+    serialized = json.dumps(values, sort_keys=True, separators=(",", ":")).encode()
+    return hashlib.sha256(serialized).hexdigest()
+
+
+def tool_identity(command: Sequence[str]) -> dict[str, object]:
+    executable = command[0] if command else ""
+    resolved = shutil.which(executable) or executable
+    target = Path(resolved)
+    identity: dict[str, object] = {
+        "requested": executable,
+        "resolved": str(target.resolve()) if target.exists() else resolved,
+        "python": sys.version,
+        "platform": platform.platform(),
+    }
+    try:
+        stat = target.stat()
+        identity.update({"size": stat.st_size, "mtime_ns": stat.st_mtime_ns})
+    except OSError:
+        identity.update({"size": None, "mtime_ns": None})
+    return identity
+
+
+def receipt_path(log_dir: Path, name: str) -> Path:
+    return log_dir / f"{name}.receipt.json"
+
+
+def read_matching_receipt(
+    root: Path,
+    log_dir: Path,
+    name: str,
+    command: Sequence[str],
+    environment: dict[str, str],
+    inputs: dict[str, object],
+) -> str | None:
+    target = receipt_path(log_dir, name)
+    log = log_dir / f"{name}.log"
+    try:
+        receipt = json.loads(target.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    expected = {
+        "schema_version": RECEIPT_SCHEMA_VERSION,
+        "phase": name,
+        "status": "PASS",
+        "command": list(command),
+        "environment_fingerprint": environment_fingerprint(environment),
+        "tool_identity": tool_identity(command),
+        "relevant_inputs": inputs,
+        "returncode": 0,
+        "timed_out": False,
+    }
+    if receipt != expected or not log.is_file():
+        return None
+    try:
+        return log.read_text(encoding="utf-8")
+    except OSError:
+        return None
+
+
+def write_receipt(
+    log_dir: Path,
+    name: str,
+    command: Sequence[str],
+    environment: dict[str, str],
+    inputs: dict[str, object],
+    result: PhaseResult,
+) -> None:
+    if result.returncode != 0 or result.timed_out:
+        return
+    receipt = {
+        "schema_version": RECEIPT_SCHEMA_VERSION,
+        "phase": name,
+        "status": "PASS",
+        "command": list(command),
+        "environment_fingerprint": environment_fingerprint(environment),
+        "tool_identity": tool_identity(command),
+        "relevant_inputs": inputs,
+        "returncode": result.returncode,
+        "timed_out": result.timed_out,
+    }
+    receipt_path(log_dir, name).write_text(
+        json.dumps(receipt, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
 
 
 def partially_staged_paths(root: Path) -> list[str]:
@@ -143,9 +319,31 @@ def python_test_environment(root: Path) -> dict[str, str]:
     return environment
 
 
-def run_phase(root: Path, log_dir: Path, name: str, command: Sequence[str], timeout: int) -> PhaseResult:
+def run_phase(
+    root: Path,
+    log_dir: Path,
+    name: str,
+    command: Sequence[str],
+    timeout: int,
+    *,
+    reuse: bool = False,
+) -> PhaseResult:
+    started = time.monotonic()
     try:
-        environment = python_test_environment(root) if name == "python-tests" else None
+        environment = phase_environment(root, name)
+        inputs = relevant_inputs(root, name)
+    except (OSError, RuntimeError) as error:
+        result = PhaseResult(name, command, 127, str(error))
+        result.duration_seconds = time.monotonic() - started
+        (log_dir / f"{name}.log").write_text(result.output, encoding="utf-8")
+        return result
+    if reuse and name not in {"build", "ctest"}:
+        output = read_matching_receipt(root, log_dir, name, command, environment, inputs)
+        if output is not None:
+            return PhaseResult(
+                name, command, 0, output, reused=True, duration_seconds=time.monotonic() - started
+            )
+    try:
         completed = subprocess.run(
             command,
             cwd=root,
@@ -168,11 +366,19 @@ def run_phase(root: Path, log_dir: Path, name: str, command: Sequence[str], time
     except (OSError, RuntimeError) as error:
         result = PhaseResult(name, command, 127, str(error))
     (log_dir / f"{name}.log").write_text(result.output, encoding="utf-8")
+    result.duration_seconds = time.monotonic() - started
+    write_receipt(log_dir, name, command, environment, inputs, result)
     return result
 
 
 def print_result(result: PhaseResult) -> None:
     command = " ".join(result.command)
+    if result.skipped:
+        print(f"SKIP {result.name}: {result.output}")
+        return
+    if result.reused:
+        print(f"REUSED PASS {result.name}: {command}")
+        return
     if result.returncode == 0:
         print(f"PASS {result.name}: {command}")
         return
@@ -183,6 +389,74 @@ def print_result(result: PhaseResult) -> None:
     snippet = result.output.strip()[-4_000:]
     if snippet:
         print(snippet)
+
+
+def changed_scope(root: Path) -> tuple[str, list[str]]:
+    paths = changed_paths(root, cached=True) | changed_paths(root, cached=False) | untracked_paths(root)
+    paths = {
+        path for path in paths
+        if not path.startswith("build/ai-checks/")
+        and "/__pycache__/" not in f"/{path}"
+        and not path.endswith(".pyc")
+    }
+    if not paths:
+        return "full-python", []
+    if all(path.startswith("docs/") or path in {"README.md", "AGENTS.md"} for path in paths):
+        return "metadata-only", sorted(paths)
+    python_sources = {
+        path for path in paths
+        if path.startswith("script/") and path.endswith(".py") and not path.startswith("script/tests/")
+    }
+    if python_sources and python_sources == paths:
+        targets = []
+        for source in sorted(python_sources):
+            if Path(source).name in SHARED_PYTHON_SOURCES or "/ci/" in source:
+                return "full-python", sorted(paths)
+            candidate = f"script/tests/test_{Path(source).stem}.py"
+            # The exact one-file mapping is intentionally conservative. A
+            # missing test or any mixed change falls back to the full suite.
+            if not (root / candidate).is_file():
+                return "full-python", sorted(paths)
+            targets.append(candidate)
+        return "targeted-python:" + ":".join(targets), sorted(paths)
+    if any(
+        path.startswith(("src/", "tests/", "cmake/"))
+        or path in {"CMakeLists.txt", "CMakePresets.json", "vcpkg.json", "vcpkg-configuration.json"}
+        for path in paths
+    ):
+        return "full-cpp", sorted(paths)
+    # Unknown governed inputs are not safely attributable to one test file;
+    # use the broad code/build fallback when the checkout supports it.
+    return "full-cpp", sorted(paths)
+
+
+def write_summary(root: Path, scope: str, changed: Sequence[str], results: Sequence[PhaseResult]) -> None:
+    try:
+        head = command_output(root, ["git", "rev-parse", "HEAD"]).strip()
+        index_tree = command_output(root, ["git", "write-tree"]).strip()
+    except (OSError, RuntimeError):
+        head = ""
+        index_tree = ""
+    payload = {
+        "schema_version": RECEIPT_SCHEMA_VERSION,
+        "invocation_id": f"{time.time_ns()}-{os.getpid()}",
+        "head": head,
+        "index_tree": index_tree,
+        "task_id": os.environ.get("AI_TASK", ""),
+        "scope": scope,
+        "changed_paths": list(changed),
+        "reused_phases": [result.name for result in results if result.reused],
+        "executed_phases": [result.name for result in results if not result.reused and not result.skipped],
+        "skipped_phases": [result.name for result in results if result.skipped],
+        "durations_seconds": {
+            result.name: round(result.duration_seconds, 6) for result in results
+        },
+    }
+    (root / LOG_DIR / "summary.json").write_text(
+        json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
+    with (root / LOG_DIR / "summary.jsonl").open("a", encoding="utf-8") as stream:
+        stream.write(json.dumps(payload, sort_keys=True) + "\n")
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -199,6 +473,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     root = (args.root or repository_root()).resolve()
     log_dir = root / LOG_DIR
     log_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        scope, changed = changed_scope(root)
+    except (OSError, RuntimeError) as error:
+        scope, changed = "full-python", []
+        print(f"CHECK SCOPE unknown: {error}; using conservative full Python fallback")
+    if changed:
+        print(f"CHECK SCOPE {scope}: {', '.join(changed)}")
 
     results: list[PhaseResult] = []
     if sys.version_info < (3, 12):
@@ -215,15 +496,42 @@ def main(argv: Sequence[str] | None = None) -> int:
         ("docs", [sys.executable, "script/ai_docs.py", "check"], 60),
         ("backlog", [sys.executable, "script/ai_tasks.py", "check"], 60),
         ("current-plan", [sys.executable, "script/ai_plan.py", "check"], 60),
-        (
-            "python-tests",
-            [sys.executable, "-m", "unittest", "discover", "-s", "script/tests", "-v"],
-            PYTHON_TEST_TIMEOUT,
-        ),
         ("diff-working", ["git", "diff", "--check"], 30),
         ("diff-cached", ["git", "diff", "--cached", "--check"], 30),
     ]
-    if not args.fast:
+    if scope == "metadata-only":
+        results.append(PhaseResult("python-tests", (), 0, "metadata-only changes", skipped=True))
+    elif scope.startswith("targeted-python:"):
+        targets = scope.split(":")[1:]
+        phase_specs.append(
+            (
+                "python-tests",
+                [sys.executable, "-m", "unittest", *targets, "-v"],
+                PYTHON_TEST_TIMEOUT,
+            )
+        )
+    else:
+        phase_specs.append(
+            (
+                "python-tests",
+                [sys.executable, "-m", "unittest", "discover", "-s", "script/tests", "-v"],
+                PYTHON_TEST_TIMEOUT,
+            )
+        )
+    build_configured = (root / "CMakePresets.json").is_file()
+    needs_build = not args.fast or (scope == "full-cpp" and build_configured)
+    if args.fast and needs_build:
+        print("CHECK SCOPE full-cpp: running the existing build and CTest fallback")
+    if args.fast and scope == "full-cpp" and not build_configured:
+        results.append(
+            PhaseResult(
+                "code-fallback",
+                ("cmake", "--build", "--preset", "debug"),
+                1,
+                "C++ or unknown changes require CMakePresets.json for the full build/CTest fallback",
+            )
+        )
+    if needs_build:
         phase_specs.extend([
             ("build", ["cmake", "--build", "--preset", "debug"], 600),
             ("ctest", ["ctest", "--preset", "debug", "--output-on-failure", "--no-tests=error", "--timeout", "60"], 600),
@@ -261,7 +569,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         except (OSError, ValueError, TypeError, KeyError) as error:
             results.append(PhaseResult("check-registry", (), 1, str(error)))
     for name, command, timeout in phase_specs:
-        results.append(run_phase(root, log_dir, name, command, timeout))
+        # Only fast development checks may reuse a receipt. Candidate,
+        # strict, and pre-push release checks always execute every phase.
+        if args.fast:
+            results.append(run_phase(root, log_dir, name, command, timeout, reuse=True))
+        else:
+            results.append(run_phase(root, log_dir, name, command, timeout))
     if not args.fast:
         try:
             names, version = project_version_arguments(root)
@@ -276,6 +589,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     for result in results:
         print_result(result)
+    write_summary(root, scope, changed, results)
     failures = [result for result in results if result.returncode and not result.allowed_failure]
     if any(result.allowed_failure for result in results):
         print("Publisher development exceptions were recorded; use --strict to reject them.")

@@ -122,7 +122,7 @@
         "vcpkg-configuration.json",
         "vcpkg.json"
       ],
-      "sources_sha256": "d7a2284840707e84b9494a2c5cb600ea003dea30a622f98079bae9bad1ec4a6b"
+      "sources_sha256": "49cec613630bef2b8b50b71ee6b5e32b2099c4040030dc3bb48b13cd2f69a22e"
     },
     {
       "guide": "docs/code/CORE.md",

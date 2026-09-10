@@ -22,13 +22,13 @@ Public task IDs are sequential numbers; file/trailer IDs retain the `MC-AI-####`
 ## Basic task loop
 
 1. Choose authorized work with `ai_tasks.py ready`; create missing tasks with `add`. Inspect status/diff, read the task and one relevant code guide. Record motivation/context before editing.
-2. Set owner and active status. Follow [model routing](MODELS.md); delegate only independent owned paths. The coordinator owns full integration checks; workers run focused tests and do not start their own review pipelines.
+2. Set owner and active status. Follow [model routing](MODELS.md); use Luna/high by default for well-specified work and delegate only independent owned paths. The coordinator owns full integration checks; workers run focused tests and do not start their own review pipelines.
 3. Implement the smallest accepted change, including meaningful tests. Record unrelated findings as tasks. Update affected guides, explicitly refresh documentation hashes, and generate task documents.
 4. Resolve the task only with actual resolution date, changes, and acceptance evidence. Stage only its changes; metadata updates required for its parent/traceability belong to the same task.
-5. Run minimal checks and a **Luna/high review before every commit**, including documentation and merge commits. [Commit gates](COMMITS.md) bind the review to the exact staged tree. Fix findings and renew the receipt if staging changes.
+5. Run minimal checks and one **Luna/high review before every commit**, including documentation and merge commits. [Commit gates](COMMITS.md) bind the review to the exact staged tree; reuse that receipt for the unchanged candidate and do not add a duplicate precommit wrapper. Fix findings and renew the receipt if staging changes.
 6. Commit with exactly one trailer: `Task-ID: MC-AI-####`. One task may have several commits. The post-commit hook refreshes local task pages with exact commit backlinks.
 
-A routine local report still runs `ai_check.py`; the minimal commit gate is `--fast`. Do not add repeated broad reviews between successful focused checks.
+A routine local report still runs `ai_check.py`; the minimal commit gate is `--fast`. Run reusable dependency/environment checks once per candidate, fail before expensive work when they fail, and reuse passing evidence while inputs are unchanged. Do not add repeated broad reviews or duplicate precommit checks between successful focused checks.
 
 ## Snapshots and versions
 
@@ -36,7 +36,7 @@ A snapshot records the preceding `ai-main` commit as `baseline_commit`. At final
 
 Fill product changes first, code changes second; reconcile planned and actual children, then `ai_history.py finalize <id>`. It refuses missing/unfinished children and untraceable commits. Plans are retained beside actual results. Acceptance review must also establish that no promised product scope was silently dropped.
 
-Snapshot closure runs the full suite, all enabled code checks, and every enabled additional gate. The renderer-smoke gate is mandatory for snapshot, minor and major full checks: it runs the windowed noninteractive `RendererSmokeTest`, fails closed on missing registration, device/validation/test failures or timeouts, and records its receipt. It is not a fully headless texture-golden gate; S4 owns those deterministic offscreen comparisons. Then follow [the publishing workflow](../VERSION_CONVENTION.md), including a reviewed promotion commit into `ai-main`.
+Snapshot closure runs the full suite, all enabled code checks, and every enabled additional gate. CI dependency, environment, and provenance checks fail closed before expensive builds; no arbitrary check skip is allowed. The renderer-smoke gate is mandatory for snapshot, minor and major full checks: it runs the windowed noninteractive `RendererSmokeTest`, fails closed on missing registration, device/validation/test failures or timeouts, and records its receipt. It is not a fully headless texture-golden gate; S4 owns those deterministic offscreen comparisons. Then follow [the publishing workflow](../VERSION_CONVENTION.md), including a reviewed promotion commit into `ai-main`.
 
 Minor closure groups snapshot tasks; major closure groups minor tasks. Both repeat snapshot closure at their full scope and add Terra/high review, documentation sanity, environment verification, hindsight, and backlog maintenance. Record findings and fixes in the version task; create missing follow-up tasks, adjust priorities/dependencies, and repair justified skills/hooks/environment issues. The [release checklist](RELEASES.md) owns these gates.
 

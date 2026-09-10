@@ -10,6 +10,7 @@ import json
 import os
 from pathlib import Path
 import re
+import subprocess
 import tempfile
 from typing import Any, Iterable, Sequence
 
@@ -39,6 +40,29 @@ SHA_PATTERN = re.compile(r"^[0-9a-fA-F]{40}(?:[0-9a-fA-F]{24})?$")
 
 class BacklogError(ValueError):
     pass
+
+
+PACKET_TASK_FIELDS = (
+    "id",
+    "title",
+    "status",
+    "priority",
+    "route",
+    "level",
+    "parent",
+    "milestone",
+    "depends_on",
+    "acceptance",
+    "plan",
+    "blocker",
+    "owner",
+)
+CI_SCHEMA_VERSION = 1
+CI_TERMINAL_STATUS = "completed"
+CI_SUCCESS_CONCLUSION = "success"
+EFFICIENCY_SCHEMA_VERSION = 1
+EFFICIENCY_BASELINE_TASK = "MC-AI-0089"
+EFFICIENCY_TARGET_SIZE = 5
 
 
 def load_backlog(backlog_path: Path) -> list[dict[str, Any]]:
@@ -181,6 +205,417 @@ def validate_backlog(tasks: Sequence[dict[str, Any]]) -> None:
         for field in ("product_changes", "code_changes"):
             if not parent[field]:
                 raise BacklogError(f"{parent_id} is done but has no {field}")
+
+
+def _git_output(root: Path, *arguments: str) -> str:
+    completed = subprocess.run(
+        ["git", *arguments],
+        cwd=root,
+        text=True,
+        encoding="utf-8",
+        errors="strict",
+        capture_output=True,
+        check=False,
+    )
+    if completed.returncode:
+        raise BacklogError(completed.stderr.strip() or "git " + " ".join(arguments) + " failed")
+    return completed.stdout.strip()
+
+
+def candidate_identity(root: Path, task: dict[str, Any]) -> dict[str, str]:
+    """Return the immutable local identity used by a compact handoff packet."""
+
+    head = _git_output(root, "rev-parse", "--verify", "HEAD^{commit}")
+    index_tree = _git_output(root, "write-tree")
+    baseline = task["baseline_commit"]
+    if baseline and not SHA_PATTERN.fullmatch(baseline):
+        raise BacklogError(f"{task['id']}.baseline_commit must be a full commit SHA")
+    return {
+        "task_id": task["id"],
+        "head_sha": head,
+        "index_tree": index_tree,
+        "baseline_commit": baseline,
+    }
+
+
+def changed_paths(root: Path) -> list[str]:
+    """List changed paths without reading file contents or commit history."""
+
+    completed = subprocess.run(
+        ["git", "status", "--porcelain=v1", "-z", "--untracked-files=all"],
+        cwd=root,
+        text=False,
+        capture_output=True,
+        check=False,
+    )
+    if completed.returncode:
+        error = completed.stderr.decode("utf-8", errors="replace").strip()
+        raise BacklogError(error or "git status failed")
+    fields = completed.stdout.split(b"\0")
+    paths: set[str] = set()
+    index = 0
+    while index < len(fields):
+        field = fields[index]
+        index += 1
+        if not field:
+            continue
+        if len(field) < 4:
+            raise BacklogError("git status returned a malformed porcelain record")
+        status = field[:2].decode("ascii", errors="replace")
+        current = field[3:].decode("utf-8", errors="strict")
+        paths.add(current)
+        if status[0] in "RC" or status[1] in "RC":
+            if index >= len(fields) or not fields[index]:
+                raise BacklogError("git status returned an incomplete rename record")
+            paths.add(fields[index].decode("utf-8", errors="strict"))
+            index += 1
+    return sorted(paths)
+
+
+def compact_task_packet(
+    tasks: Sequence[dict[str, Any]],
+    task_id: str,
+    root: Path = ROOT,
+    next_commands: Sequence[str] = (),
+) -> dict[str, Any]:
+    """Build a short, reproducible handoff packet from current local state."""
+
+    validate_backlog(tasks)
+    task = next((item for item in tasks if item["id"] == task_id), None)
+    if task is None:
+        raise BacklogError(f"unknown task ID: {task_id}")
+    if not all(isinstance(command, str) and command.strip() for command in next_commands):
+        raise BacklogError("next_commands must contain non-empty strings")
+    return {
+        "schema_version": 1,
+        "task": {field: task[field] for field in PACKET_TASK_FIELDS},
+        "candidate": candidate_identity(root, task),
+        "changed_paths": changed_paths(root),
+        "next_commands": list(next_commands),
+    }
+
+
+def _ci_artifacts(run: dict[str, Any]) -> list[dict[str, Any]]:
+    artifacts = run.get("artifacts")
+    if not isinstance(artifacts, list):
+        raise BacklogError("CI run has no artifact list")
+    result = []
+    seen: set[str] = set()
+    for artifact in artifacts:
+        if not isinstance(artifact, dict):
+            raise BacklogError("CI artifact must be an object")
+        artifact_id = artifact.get("id")
+        if not isinstance(artifact_id, (str, int)) or not str(artifact_id):
+            raise BacklogError("CI artifact has no ID")
+        key = str(artifact_id)
+        if key in seen:
+            raise BacklogError(f"duplicate CI artifact ID: {key}")
+        seen.add(key)
+        result.append({
+            "id": artifact_id,
+            "name": artifact.get("name", ""),
+        })
+    return result
+
+
+def build_ci_record(
+    runs: Sequence[dict[str, Any]],
+    expected_head: str,
+    workflow: str = "",
+) -> dict[str, Any]:
+    """Validate exact-SHA terminal CI runs and return a versioned local record."""
+
+    if not SHA_PATTERN.fullmatch(expected_head):
+        raise BacklogError("CI head must be a full commit SHA")
+    if not runs:
+        raise BacklogError(f"no CI runs found for {expected_head}")
+    records = []
+    for run in runs:
+        if not isinstance(run, dict):
+            raise BacklogError("CI run must be an object")
+        head = run.get("headSha", run.get("head_sha"))
+        if head != expected_head:
+            raise BacklogError("CI run head does not match the requested commit SHA")
+        status = run.get("status")
+        conclusion = run.get("conclusion")
+        if status != CI_TERMINAL_STATUS or conclusion != CI_SUCCESS_CONCLUSION:
+            raise BacklogError("CI run is not a completed success")
+        run_id = run.get("databaseId", run.get("run_id"))
+        if not isinstance(run_id, (str, int)) or not str(run_id):
+            raise BacklogError("CI run has no immutable run ID")
+        records.append({
+            "run_id": run_id,
+            "head_sha": head,
+            "status": status,
+            "conclusion": conclusion,
+            "workflow": run.get("workflowName", workflow),
+            "url": run.get("url", ""),
+            "artifacts": _ci_artifacts(run),
+        })
+    return {
+        "schema_version": CI_SCHEMA_VERSION,
+        "head_sha": expected_head,
+        "workflow": workflow,
+        "runs": records,
+    }
+
+
+def gh_json(root: Path, arguments: Sequence[str]) -> Any:
+    completed = subprocess.run(
+        ["gh", *arguments],
+        cwd=root,
+        text=True,
+        encoding="utf-8",
+        errors="strict",
+        capture_output=True,
+        check=False,
+    )
+    if completed.returncode:
+        raise BacklogError(completed.stderr.strip() or "gh command failed")
+    try:
+        return json.loads(completed.stdout)
+    except json.JSONDecodeError as error:
+        raise BacklogError(f"gh returned invalid JSON: {error}") from error
+
+
+def collect_ci_record(root: Path, expected_head: str, workflow: str = "") -> dict[str, Any]:
+    arguments = [
+        "run",
+        "list",
+        "--commit",
+        expected_head,
+        "--limit",
+        "100",
+        "--json",
+        "databaseId,status,conclusion,headSha,workflowName,url",
+    ]
+    if workflow:
+        arguments[4:4] = ["--workflow", workflow]
+    summaries = gh_json(root, arguments)
+    if not isinstance(summaries, list):
+        raise BacklogError("gh run list must return an array")
+    runs = []
+    for summary in summaries:
+        if not isinstance(summary, dict):
+            raise BacklogError("gh run list returned a malformed run")
+        run_id = summary.get("databaseId")
+        if not isinstance(run_id, (str, int)) or not str(run_id):
+            raise BacklogError("gh run list returned a run without an ID")
+        if summary.get("headSha") != expected_head:
+            raise BacklogError("gh run list returned a run for a different commit SHA")
+        details = gh_json(root, [
+            "run",
+            "view",
+            str(run_id),
+            "--json",
+            "databaseId,status,conclusion,headSha,workflowName,url,artifacts",
+        ])
+        if not isinstance(details, dict):
+            raise BacklogError("gh run view must return an object")
+        if details.get("databaseId", run_id) != run_id:
+            raise BacklogError("gh run view returned a different run ID")
+        runs.append(details)
+    return build_ci_record(runs, expected_head, workflow)
+
+
+def write_immutable_json(target_path: Path, payload: dict[str, Any]) -> None:
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        with target_path.open("x", encoding="utf-8", newline="\n") as output:
+            json.dump(payload, output, indent=2, ensure_ascii=False, sort_keys=True)
+            output.write("\n")
+    except FileExistsError as error:
+        raise BacklogError(f"refusing to overwrite immutable record {target_path}") from error
+
+
+def _receipt_summary(receipt_path: Path) -> dict[str, Any] | None:
+    try:
+        payload = json.loads(receipt_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(payload, dict):
+        return None
+    task_id = payload.get("task_id")
+    if not isinstance(task_id, str):
+        task_id = None
+    root_identity = payload.get("root", payload.get("root_identity", {}))
+    if not isinstance(root_identity, dict):
+        root_identity = {}
+    elapsed_ms = payload.get("elapsed_ms")
+    durations = payload.get("durations")
+    if elapsed_ms is None and isinstance(durations, dict):
+        values = [value for value in durations.values() if isinstance(value, (int, float)) and value >= 0]
+        if values and len(values) == len(durations):
+            elapsed_ms = sum(values)
+    return {
+        "task_id": task_id,
+        "phase": payload.get("phase", receipt_path.stem),
+        "status": payload.get("status"),
+        "scope": payload.get("scope"),
+        "changed_paths": payload.get("changed_paths"),
+        "head_sha": root_identity.get(
+            "HEAD", root_identity.get("head", root_identity.get("head_sha", payload.get("head_sha")))
+        ),
+        "index_tree": root_identity.get(
+            "INDEX", root_identity.get("index", root_identity.get("index_tree", payload.get("index_tree")))
+        ),
+        "reused_phases": payload.get("reused_phases"),
+        "executed_phases": payload.get("executed_phases"),
+        "skipped_phases": payload.get("skipped_phases"),
+        "durations": payload.get("durations"),
+        "elapsed_ms": elapsed_ms,
+        "model_usage": payload.get("model_usage"),
+    }
+
+
+def committed_task_ids(root: Path, baseline_commit: str) -> tuple[list[str], list[str]]:
+    """Resolve distinct task trailers after an immutable baseline in commit order."""
+
+    output = _git_output(
+        root,
+        "log",
+        "--reverse",
+        "--format=%H%x00%(trailers:key=Task-ID,valueonly,unfold)%x00",
+        f"{baseline_commit}..HEAD",
+    )
+    parts = output.split("\0")
+    task_ids: list[str] = []
+    unavailable: list[str] = []
+    for index in range(0, len(parts) - 1, 2):
+        commit = parts[index].strip()
+        trailer = parts[index + 1].strip()
+        if not commit or not trailer:
+            continue
+        values = [value.strip() for value in trailer.splitlines() if value.strip()]
+        if len(values) != 1:
+            unavailable.append(commit)
+            continue
+        if values[0] not in task_ids:
+            task_ids.append(values[0])
+    return task_ids, unavailable
+
+
+def efficiency_cohort(
+    tasks: Sequence[dict[str, Any]],
+    baseline_commit: str,
+    known_invocations: Sequence[str] = (),
+    test_commands: Sequence[str] = (),
+    receipt_dir: Path | None = None,
+    root: Path = ROOT,
+) -> dict[str, Any]:
+    """Create a small honest measurement ledger for the next five basic tasks."""
+
+    validate_backlog(tasks)
+    if not SHA_PATTERN.fullmatch(baseline_commit):
+        raise BacklogError("efficiency baseline_commit must be a full commit SHA")
+    baseline = next((task for task in tasks if task["id"] == EFFICIENCY_BASELINE_TASK), None)
+    if baseline is None or baseline["level"] != "basic":
+        raise BacklogError(f"{EFFICIENCY_BASELINE_TASK} must exist as a basic baseline task")
+    if not all(isinstance(value, str) and value.strip() for value in (*known_invocations, *test_commands)):
+        raise BacklogError("known invocations and test commands must be non-empty strings")
+    try:
+        committed_ids, unavailable_commits = committed_task_ids(root, baseline_commit)
+    except BacklogError:
+        committed_ids, unavailable_commits = [], [baseline_commit]
+    task_by_id = {task["id"]: task for task in tasks}
+    unavailable_task_ids = [task_id for task_id in committed_ids if task_id not in task_by_id]
+    candidates = [
+        task_by_id[task_id]
+        for task_id in committed_ids
+        if task_id in task_by_id
+        and task_id != EFFICIENCY_BASELINE_TASK
+        and task_by_id[task_id]["level"] == "basic"
+    ][:EFFICIENCY_TARGET_SIZE]
+    receipts: list[dict[str, Any]] = []
+    if receipt_dir is not None and receipt_dir.is_dir():
+        receipt_paths = sorted(receipt_dir.glob("*.receipt.json"))
+        summary_path = receipt_dir / "summary.json"
+        if summary_path.is_file():
+            receipt_paths.append(summary_path)
+        for receipt_path in receipt_paths:
+            summary = _receipt_summary(receipt_path)
+            if summary is not None:
+                receipts.append(summary)
+    by_task = {task["id"]: [] for task in candidates}
+    unmatched_receipts = []
+    for receipt in receipts:
+        if receipt["task_id"] in by_task:
+            by_task[receipt["task_id"]].append(receipt)
+        else:
+            unmatched_receipts.append(receipt)
+    task_records = []
+    for task in candidates:
+        task_receipts = by_task[task["id"]]
+        elapsed_values = {
+            receipt["elapsed_ms"]
+            for receipt in task_receipts
+            if receipt["elapsed_ms"] is not None
+        }
+        usage_values = {
+            json.dumps(receipt["model_usage"], sort_keys=True)
+            for receipt in task_receipts
+            if receipt["model_usage"] is not None
+        }
+        elapsed_ms = next(iter(elapsed_values)) if len(elapsed_values) == 1 else None
+        model_usage = json.loads(next(iter(usage_values))) if len(usage_values) == 1 else None
+        receipt_available = any(
+            receipt["status"] == "PASS"
+            and receipt["head_sha"]
+            and receipt["index_tree"]
+            for receipt in task_receipts
+        )
+        task_records.append({
+            "task_id": task["id"],
+            "status": task["status"],
+            "check_summaries": task_receipts,
+            "elapsed_ms": elapsed_ms,
+            "model_usage": model_usage,
+            "availability": "available" if receipt_available else "unavailable",
+        })
+    missing_metrics = []
+    if not receipts:
+        missing_metrics.extend(("checks", "elapsed_ms", "model_usage"))
+    else:
+        if unmatched_receipts:
+            missing_metrics.append("task_join")
+        if not task_records or all(not record["check_summaries"] for record in task_records):
+            missing_metrics.append("checks")
+        if any(record["elapsed_ms"] is None for record in task_records):
+            missing_metrics.append("elapsed_ms")
+        if any(record["model_usage"] is None for record in task_records):
+            missing_metrics.append("model_usage")
+    if unavailable_commits or unavailable_task_ids:
+        missing_metrics.append("task_mapping")
+    return {
+        "schema_version": EFFICIENCY_SCHEMA_VERSION,
+        "baseline": {"task_id": EFFICIENCY_BASELINE_TASK, "commit": baseline_commit},
+        "target_tasks": EFFICIENCY_TARGET_SIZE,
+        "comparison": {
+            "baseline": {
+                "checks": None,
+                "elapsed_ms": None,
+                "model_usage": None,
+                "availability": "unavailable",
+            },
+            "next_tasks": task_records,
+        },
+        "tasks": task_records,
+        "preworkflow": {
+            "known_invocations": list(known_invocations),
+            "test_commands": list(test_commands),
+            "availability": "available" if known_invocations or test_commands else "unavailable",
+        },
+        "coverage": {
+            "selected_tasks": len(task_records),
+            "completed_tasks": sum(record["status"] == "done" for record in task_records),
+            "partial": len(task_records) < EFFICIENCY_TARGET_SIZE or bool(missing_metrics),
+            "missing_metrics": sorted(set(missing_metrics)),
+            "receipt_count": len(receipts),
+            "unmatched_check_summaries": len(unmatched_receipts),
+            "unavailable_commits": unavailable_commits,
+            "unavailable_task_ids": unavailable_task_ids,
+        },
+    }
 
 
 def markdown_escape(value: str) -> str:
@@ -336,11 +771,31 @@ def make_parser() -> argparse.ArgumentParser:
     commands.add_parser("ready", help="list actionable ready tasks")
     show = commands.add_parser("show", help="print one task as JSON")
     show.add_argument("id")
+    packet = commands.add_parser("packet", help="print a compact task handoff packet")
+    packet.add_argument("id")
+    packet.add_argument("--root", type=Path, default=ROOT)
+    packet.add_argument("--next-command", action="append", default=[])
+    ci_record = commands.add_parser("ci-record", help="record terminal successful GitHub runs for one commit")
+    ci_record.add_argument("--head", required=True)
+    ci_record.add_argument("--workflow", default="")
+    ci_record.add_argument("--root", type=Path, default=ROOT)
+    ci_record.add_argument("--output", type=Path)
+    cohort = commands.add_parser("efficiency-cohort", help="write the bounded next-five measurement ledger")
+    cohort.add_argument("--baseline-commit", required=True)
+    cohort.add_argument("--root", type=Path, default=ROOT)
+    cohort.add_argument("--receipt-dir", type=Path)
+    cohort.add_argument("--known-invocation", action="append", default=[])
+    cohort.add_argument("--test-command", action="append", default=[])
+    cohort.add_argument(
+        "--output",
+        type=Path,
+        default=ROOT / "build" / "ai-checks" / "efficiency-cohort-v1.json",
+    )
     add = commands.add_parser("add", help="append a backlog task")
     add.add_argument("title")
     add.add_argument("--kind", required=True, choices=sorted(KINDS))
     add.add_argument("--priority", required=True, choices=sorted(PRIORITIES))
-    add.add_argument("--route", default="terra", choices=sorted(ROUTES))
+    add.add_argument("--route", default="luna", choices=sorted(ROUTES))
     add.add_argument("--milestone", required=True)
     add.add_argument("--acceptance", required=True)
     add.add_argument("--level", required=True, choices=sorted(LEVELS))
@@ -379,6 +834,12 @@ def main(argv: Sequence[str] | None = None) -> int:
             check(args.backlog, args.markdown)
             print("backlog and generated Markdown are valid")
             return 0
+        if args.command == "ci-record":
+            record = collect_ci_record(args.root.resolve(), args.head, args.workflow)
+            if args.output:
+                write_immutable_json(args.output, record)
+            print(json.dumps(record, indent=2, ensure_ascii=False, sort_keys=True))
+            return 0
         tasks = load_backlog(args.backlog)
         validate_backlog(tasks)
         if args.command == "render":
@@ -394,6 +855,28 @@ def main(argv: Sequence[str] | None = None) -> int:
             if task is None:
                 raise BacklogError(f"unknown task ID: {args.id}")
             print(json.dumps(task, indent=2, ensure_ascii=False))
+            return 0
+        if args.command == "packet":
+            packet = compact_task_packet(
+                tasks,
+                args.id,
+                root=args.root.resolve(),
+                next_commands=args.next_command,
+            )
+            print(json.dumps(packet, indent=2, ensure_ascii=False, sort_keys=True))
+            return 0
+        if args.command == "efficiency-cohort":
+            receipt_dir = args.receipt_dir or args.root / "build" / "ai-checks"
+            cohort = efficiency_cohort(
+                tasks,
+                args.baseline_commit,
+                known_invocations=args.known_invocation,
+                test_commands=args.test_command,
+                receipt_dir=receipt_dir,
+                root=args.root.resolve(),
+            )
+            write_immutable_json(args.output, cohort)
+            print(json.dumps(cohort, indent=2, ensure_ascii=False, sort_keys=True))
             return 0
         task = add_task(tasks, args) if args.command == "add" else update_task(tasks, args)
         write_backlog_atomic(args.backlog, tasks)

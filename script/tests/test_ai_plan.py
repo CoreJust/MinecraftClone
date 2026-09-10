@@ -56,6 +56,9 @@ class AiPlanTest(unittest.TestCase):
     def write(self, tasks: list[dict[str, object]]) -> None:
         self.backlog.write_text(json.dumps(tasks), encoding="utf-8")
 
+    def test_new_basic_uses_luna_route_by_default(self) -> None:
+        self.assertEqual(ai_plan.new_basic([], "Measure a bounded workflow")["route"], "luna")
+
     def run_cli(self, *arguments: str) -> subprocess.CompletedProcess[str]:
         return subprocess.run([sys.executable, str(SCRIPT_DIR / "ai_plan.py"), "--backlog", str(self.backlog), "--markdown", str(self.markdown), "--current", str(self.current), *arguments], text=True, capture_output=True)
 

@@ -19,7 +19,7 @@ The task must exist in the staged backlog. Stage only that task's work and requi
 5. At the final aggregate gate—not during routine minor development, CI candidates, or snapshot delivery—also record the accumulated-change report required by the [review and verification policy](../../AGENTS.md#review-and-verification-policy). For a minor, this is after the requested user-feedback hold and immediately before publication; for a major, follow its aggregate gate. Use `model: gpt-5.6-terra`; all candidate identity fields must match.
 6. Commit with the trailer. Hooks validate the review receipts, run the appropriate checks, and reject a missing/mismatched task, stale candidate, or failed gate.
 
-Receipts are local attestations of a real review, not cryptographic proof of who reviewed. Never fabricate one. Hooks make no paid model calls and do not loop on failed reviews. A changed HEAD, pending merge parent, index tree, task, or baseline invalidates the receipt. Review scope for Luna is the commit; Terra's version review covers the accumulated version changes.
+Receipts are local attestations of a real review, not cryptographic proof of who reviewed. Never fabricate one. The receipt is the single reusable review result for an unchanged candidate; do not run a duplicate precommit wrapper or claim unmeasured model usage. Hooks make no paid model calls and do not loop on failed reviews. A changed HEAD, pending merge parent, index tree, task, or baseline invalidates the receipt. Review scope for Luna is the commit; Terra's version review covers the accumulated version changes.
 
 ## Bidirectional links without recursive commits
 

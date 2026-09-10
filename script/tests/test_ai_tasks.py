@@ -6,6 +6,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 
 SCRIPT_DIR = Path(__file__).resolve().parents[1]
@@ -160,9 +161,143 @@ class AiTasksTest(unittest.TestCase):
             subprocess.run(command + ["update", "MC-AI-0002", "--plan", "third", "--product-change", "product", "--code-change", "code"], check=True, text=True, capture_output=True)
             tasks = ai_tasks.load_backlog(backlog_path)
             self.assertEqual(tasks[1]["plan"], ["first", "second", "third"])
+            self.assertEqual(tasks[1]["route"], "luna")
             self.assertEqual(tasks[1]["product_changes"], ["product"])
             self.assertEqual(tasks[1]["code_changes"], ["code"])
             ai_tasks.check(backlog_path, markdown_path)
+
+    def test_compact_packet_contains_only_current_task_and_candidate_state(self) -> None:
+        task = make_task("MC-AI-0007", baseline_commit="b" * 40, plan=["Run focused checks."])
+        with mock.patch.object(
+            ai_tasks,
+            "_git_output",
+            side_effect=["a" * 40, "c" * 40],
+        ), mock.patch.object(ai_tasks, "changed_paths", return_value=["script/ai_tasks.py"]):
+            packet = ai_tasks.compact_task_packet(
+                [task],
+                task["id"],
+                root=Path("/tmp/repository"),
+                next_commands=["python3 script/ai_check.py --fast"],
+            )
+        self.assertEqual(packet["schema_version"], 1)
+        self.assertEqual(packet["task"]["id"], "MC-AI-0007")
+        self.assertEqual(packet["candidate"], {
+            "task_id": "MC-AI-0007",
+            "head_sha": "a" * 40,
+            "index_tree": "c" * 40,
+            "baseline_commit": "b" * 40,
+        })
+        self.assertEqual(packet["changed_paths"], ["script/ai_tasks.py"])
+        self.assertEqual(packet["next_commands"], ["python3 script/ai_check.py --fast"])
+        self.assertNotIn("context", packet["task"])
+
+    def test_ci_record_rejects_mismatched_or_nonterminal_runs(self) -> None:
+        successful = {
+            "databaseId": 42,
+            "headSha": "a" * 40,
+            "status": "completed",
+            "conclusion": "success",
+            "workflowName": "checks",
+            "url": "https://example.invalid/run/42",
+            "artifacts": [{"id": 7, "name": "diagnostics"}],
+        }
+        record = ai_tasks.build_ci_record([successful], "a" * 40, "checks")
+        self.assertEqual(record["schema_version"], 1)
+        self.assertEqual(record["runs"][0]["artifacts"][0]["id"], 7)
+        for override, message in (
+            ({"headSha": "b" * 40}, "head does not match"),
+            ({"status": "in_progress"}, "completed success"),
+            ({"artifacts": [{"name": "missing-id"}]}, "no ID"),
+        ):
+            with self.subTest(message=message):
+                candidate = {**successful, **override}
+                with self.assertRaisesRegex(ai_tasks.BacklogError, message):
+                    ai_tasks.build_ci_record([candidate], "a" * 40, "checks")
+
+    def test_collect_ci_record_queries_read_only_exact_commit_and_artifacts(self) -> None:
+        summary = {
+            "databaseId": 42,
+            "headSha": "a" * 40,
+        }
+        details = {
+            **summary,
+            "status": "completed",
+            "conclusion": "success",
+            "workflowName": "checks",
+            "artifacts": [{"id": 9, "name": "diagnostics"}],
+        }
+        with mock.patch.object(ai_tasks, "gh_json", side_effect=[ [summary], details]) as gh:
+            record = ai_tasks.collect_ci_record(Path("/tmp/repository"), "a" * 40, "checks")
+        self.assertEqual(record["runs"][0]["artifacts"][0]["id"], 9)
+        list_call = gh.call_args_list[0].args[1]
+        self.assertEqual(list_call[list_call.index("--commit") + 1], "a" * 40)
+        self.assertIn("--workflow", list_call)
+
+        with mock.patch.object(ai_tasks, "gh_json", return_value=[{**summary, "headSha": "b" * 40}]):
+            with self.assertRaisesRegex(ai_tasks.BacklogError, "different commit SHA"):
+                ai_tasks.collect_ci_record(Path("/tmp/repository"), "a" * 40)
+
+    def test_immutable_record_does_not_overwrite(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory) / "record.json"
+            payload = {"schema_version": 1}
+            ai_tasks.write_immutable_json(target, payload)
+            with self.assertRaisesRegex(ai_tasks.BacklogError, "overwrite immutable"):
+                ai_tasks.write_immutable_json(target, payload)
+
+    def test_efficiency_cohort_selects_only_next_basic_tasks_and_reports_missing_metrics(self) -> None:
+        baseline = make_task("MC-AI-0089", status="active", owner="Codex")
+        first = make_task("MC-AI-0090", status="ready")
+        second = make_task("MC-AI-0091")
+        aggregate = make_task("MC-AI-0092", level="snapshot", parent="MC-AI-0093")
+        parent = make_task("MC-AI-0093", level="minor", parent="MC-AI-0094")
+        major = make_task("MC-AI-0094", level="major")
+        records = [baseline, first, second, aggregate, parent, major]
+        with tempfile.TemporaryDirectory() as directory:
+            receipt_dir = Path(directory)
+            (receipt_dir / "summary.json").write_text(json.dumps({
+                "schema_version": 1,
+                "scope": "local",
+                "root": {"head_sha": "a" * 40, "index_tree": "b" * 40},
+                "executed_phases": ["python-tests"],
+            }), encoding="utf-8")
+            with mock.patch.object(
+                ai_tasks,
+                "committed_task_ids",
+                return_value=(["MC-AI-0090", "MC-AI-0091", "MC-AI-0092"], []),
+            ):
+                report = ai_tasks.efficiency_cohort(
+                    records,
+                    "c" * 40,
+                    known_invocations=["python3 script/ai_check.py --fast"],
+                    test_commands=["python3 -m unittest script.tests.test_ai_tasks"],
+                    receipt_dir=receipt_dir,
+                )
+        self.assertEqual([record["task_id"] for record in report["tasks"]], ["MC-AI-0090", "MC-AI-0091"])
+        self.assertEqual(report["baseline"], {"task_id": "MC-AI-0089", "commit": "c" * 40})
+        self.assertTrue(report["coverage"]["partial"])
+        self.assertIn("task_join", report["coverage"]["missing_metrics"])
+        self.assertEqual(report["coverage"]["unmatched_check_summaries"], 1)
+
+    def test_committed_task_ids_preserve_commit_order_and_reject_ambiguous_trailers(self) -> None:
+        output = "\0".join((
+            "a" * 40,
+            "MC-AI-0091",
+            "b" * 40,
+            "MC-AI-0092\nMC-AI-0093",
+        ))
+        with mock.patch.object(ai_tasks, "_git_output", return_value=output):
+            task_ids, unavailable = ai_tasks.committed_task_ids(Path("/tmp/repository"), "c" * 40)
+        self.assertEqual(task_ids, ["MC-AI-0091"])
+        self.assertEqual(unavailable, ["b" * 40])
+
+    def test_efficiency_cohort_marks_missing_baseline_history_unavailable(self) -> None:
+        records = [make_task("MC-AI-0089", status="active", owner="Codex")]
+        with mock.patch.object(ai_tasks, "committed_task_ids", side_effect=ai_tasks.BacklogError("missing")):
+            report = ai_tasks.efficiency_cohort(records, "c" * 40)
+        self.assertEqual(report["tasks"], [])
+        self.assertIn("task_mapping", report["coverage"]["missing_metrics"])
+        self.assertEqual(report["coverage"]["unavailable_commits"], ["c" * 40])
 
 
 if __name__ == "__main__":

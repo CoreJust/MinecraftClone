@@ -83,7 +83,7 @@ class AiCheckTests(unittest.TestCase):
         checker = load_module()
         calls = []
 
-        def run_phase(root, log_dir, name, command, timeout):
+        def run_phase(root, log_dir, name, command, timeout, **kwargs):
             calls.append((name, command, timeout))
             return checker.PhaseResult(name, command, 0, "")
 
@@ -111,7 +111,9 @@ class AiCheckTests(unittest.TestCase):
         governed.write_text("staged\n", encoding="utf-8")
         self.git("add", "src/changed.cpp")
         note.write_text("unstaged\n", encoding="utf-8")
-        self.assertEqual(self.run_check("--fast", "--require-index-match").returncode, 0)
+        result = self.run_check("--fast", "--require-index-match")
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("CMakePresets.json", result.stdout)
 
     def test_index_check_rejects_untracked_governed_file_when_governed_content_is_staged(self):
         staged_doc = self.root / "docs/state.md"
@@ -335,16 +337,145 @@ class AiCheckTests(unittest.TestCase):
                    "command": ["{python}", "check.py"], "timeout": 7, "reason": ""}]
         config_path.write_text(json.dumps(config))
         commands = []
-        def run_phase(root, log_dir, name, command, timeout):
+        reuse_flags = []
+        def run_phase(root, log_dir, name, command, timeout, **kwargs):
             commands.append((name, command, timeout))
+            reuse_flags.append(kwargs.get("reuse", False))
             return checker.PhaseResult(name, command, 0, "")
         with mock.patch.object(checker, "run_phase", side_effect=run_phase), contextlib.redirect_stdout(io.StringIO()):
             self.assertEqual(checker.main(["--root", str(self.root), "--candidate", "--level", "snapshot"]), 0)
         self.assertIn(("extra-sample", [sys.executable, "check.py"], 7), commands)
+        self.assertFalse(any(reuse_flags))
         config[0]["command"] = []
         config_path.write_text(json.dumps(config))
         with mock.patch.object(checker, "run_phase", side_effect=run_phase), contextlib.redirect_stdout(io.StringIO()):
             self.assertEqual(checker.main(["--root", str(self.root), "--candidate", "--level", "snapshot"]), 1)
+
+    def test_metadata_only_scope_skips_python_tests_and_writes_summary(self):
+        metadata = self.root / "docs/ai/notes.md"
+        metadata.parent.mkdir(parents=True, exist_ok=True)
+        metadata.write_text("metadata\n", encoding="utf-8")
+        result = self.run_check("--fast")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("CHECK SCOPE metadata-only", result.stdout)
+        self.assertIn("SKIP python-tests", result.stdout)
+        summary = json.loads((self.root / "build/ai-checks/summary.json").read_text(encoding="utf-8"))
+        self.assertIn("python-tests", summary["skipped_phases"])
+
+    def test_matching_fast_receipts_are_reused_and_summarized(self):
+        first = self.run_check("--fast")
+        self.assertEqual(first.returncode, 0, first.stdout + first.stderr)
+        second = self.run_check("--fast")
+        self.assertEqual(second.returncode, 0, second.stdout + second.stderr)
+        self.assertIn("REUSED PASS docs", second.stdout)
+        summary = json.loads((self.root / "build/ai-checks/summary.json").read_text(encoding="utf-8"))
+        self.assertIn("docs", summary["reused_phases"])
+        self.assertTrue(summary["durations_seconds"]["docs"] >= 0)
+
+    def test_matching_receipt_keeps_hook_command_to_one_execution(self):
+        marker = self.root / "build/ai-checks/docs-command-count"
+        marker.parent.mkdir(parents=True, exist_ok=True)
+        (self.root / "script/ai_docs.py").write_text(
+            "import os\n"
+            "from pathlib import Path\n"
+            "marker = Path(os.environ['AI_CHECK_MARKER'])\n"
+            "value = int(marker.read_text()) if marker.exists() else 0\n"
+            "marker.write_text(str(value + 1))\n",
+            encoding="utf-8",
+        )
+        environment = os.environ | {"AI_CHECK_MARKER": str(marker)}
+        first = self.run_check("--fast", environment=environment)
+        self.assertEqual(first.returncode, 0, first.stdout + first.stderr)
+        second = self.run_check("--fast", environment=environment)
+        self.assertEqual(second.returncode, 0, second.stdout + second.stderr)
+        self.assertEqual(marker.read_text(encoding="utf-8"), "1")
+        self.assertIn("REUSED PASS docs", second.stdout)
+
+    def test_receipt_environment_mismatch_forces_execution(self):
+        first_environment = os.environ | {"AI_CHECK_RECEIPT_ENV": "one"}
+        second_environment = os.environ | {"AI_CHECK_RECEIPT_ENV": "two"}
+        first = self.run_check("--fast", environment=first_environment)
+        self.assertEqual(first.returncode, 0, first.stdout + first.stderr)
+        second = self.run_check("--fast", environment=second_environment)
+        self.assertEqual(second.returncode, 0, second.stdout + second.stderr)
+        self.assertNotIn("REUSED PASS docs", second.stdout)
+
+    def test_hook_only_git_environment_does_not_invalidate_manual_receipt(self):
+        first_environment = os.environ.copy()
+        for name in ("GIT_DIR", "GIT_COMMON_DIR", "GIT_INDEX_FILE", "GIT_PREFIX", "GIT_WORK_TREE"):
+            first_environment.pop(name, None)
+        second_environment = first_environment | {
+            "GIT_DIR": str(self.root / ".git"),
+            "GIT_COMMON_DIR": str(self.root / ".git"),
+            "GIT_INDEX_FILE": str(self.root / ".git/index"),
+            "GIT_PREFIX": "",
+            "GIT_WORK_TREE": str(self.root),
+        }
+        first = self.run_check("--fast", environment=first_environment)
+        self.assertEqual(first.returncode, 0, first.stdout + first.stderr)
+        second = self.run_check("--fast", environment=second_environment)
+        self.assertEqual(second.returncode, 0, second.stdout + second.stderr)
+        self.assertIn("REUSED PASS docs", second.stdout)
+
+    def test_failed_receipt_is_never_reused(self):
+        first = self.run_check("--fast")
+        self.assertEqual(first.returncode, 0, first.stdout + first.stderr)
+        receipt = self.root / "build/ai-checks/docs.receipt.json"
+        payload = json.loads(receipt.read_text(encoding="utf-8"))
+        payload["status"] = "FAIL"
+        receipt.write_text(json.dumps(payload), encoding="utf-8")
+        second = self.run_check("--fast")
+        self.assertEqual(second.returncode, 0, second.stdout + second.stderr)
+        self.assertNotIn("REUSED PASS docs", second.stdout)
+
+    def test_cpp_changes_use_existing_build_and_ctest_fallback(self):
+        checker = load_module()
+        (self.root / "CMakePresets.json").write_text("{}\n", encoding="utf-8")
+        (self.root / "src/fixture.cpp").write_text("changed\n", encoding="utf-8")
+        calls = []
+
+        def run_phase(root, log_dir, name, command, timeout, **kwargs):
+            calls.append(name)
+            return checker.PhaseResult(name, command, 0, "")
+
+        with mock.patch.object(checker, "run_phase", side_effect=run_phase), contextlib.redirect_stdout(io.StringIO()) as output:
+            self.assertEqual(checker.main(["--root", str(self.root), "--fast"]), 0)
+        self.assertIn("full-cpp", output.getvalue())
+        self.assertIn("build", calls)
+        self.assertIn("ctest", calls)
+
+    def test_exact_python_mapping_targets_existing_test_and_unknown_falls_back(self):
+        test_file = self.root / "script/tests/test_ai_tasks.py"
+        test_file.write_text(
+            "import unittest\n"
+            "class Tasks(unittest.TestCase):\n"
+            "    def test_ok(self): self.assertTrue(True)\n",
+            encoding="utf-8",
+        )
+        self.git("add", "script/tests/test_ai_tasks.py")
+        self.git("commit", "--no-gpg-sign", "-m", "fixture test")
+        (self.root / "script/ai_tasks.py").write_text("# changed\nraise SystemExit(0)\n", encoding="utf-8")
+        result = self.run_check("--fast")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("CHECK SCOPE full-python: script/ai_tasks.py", result.stdout)
+        self.assertNotIn("targeted-python", result.stdout)
+
+    def test_leaf_python_mapping_targets_proven_related_test(self):
+        source = self.root / "script/check_options.py"
+        test_file = self.root / "script/tests/test_check_options.py"
+        source.write_text("VALUE = 1\n", encoding="utf-8")
+        test_file.write_text(
+            "import unittest\n"
+            "class Options(unittest.TestCase):\n"
+            "    def test_ok(self): self.assertTrue(True)\n",
+            encoding="utf-8",
+        )
+        self.git("add", "script/check_options.py", "script/tests/test_check_options.py")
+        self.git("commit", "--no-gpg-sign", "-m", "fixture leaf")
+        source.write_text("VALUE = 2\n", encoding="utf-8")
+        result = self.run_check("--fast")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("CHECK SCOPE targeted-python:script/tests/test_check_options.py", result.stdout)
 
 
 if __name__ == "__main__":

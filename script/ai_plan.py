@@ -161,7 +161,7 @@ def new_basic(tasks: Sequence[dict[str, Any]], description: str, parent: str = "
         raise PlanError("task description must be non-empty")
     return {
         "id": ai_tasks.next_task_id(tasks), "title": description, "kind": "chore",
-        "status": "backlog", "priority": "P2", "route": "terra", "milestone": "Unassigned",
+        "status": "backlog", "priority": "P2", "route": "luna", "milestone": "Unassigned",
         "depends_on": [], "acceptance": f"Plan and deliver: {description}", "evidence": "",
         "blocker": "", "owner": "", "level": "basic", "parent": parent,
         "motivation": description, "context": "Created through the task planning interface.",
