@@ -198,7 +198,7 @@ jobs:
           cp android/app/build/outputs/apk/debug/app-debug.apk "dist/minecraftclone-${VERSION_SLUG}-android-arm64-v8a-ci-development.apk"
           python script/package_snapshot.py android \
             --apk "dist/minecraftclone-${VERSION_SLUG}-android-arm64-v8a-ci-development.apk" \
-            --api-level 35 --abi arm64_v8a --signing development --source-exactness exact \
+            --api-level 35 --abi arm64-v8a --signing development --source-exactness exact \
             --version "$SNAPSHOT_VERSION" --source-commit "$SOURCE_COMMIT" \
             --toolchain-evidence build/toolchain-android.json \
             --output "dist/minecraftclone-${VERSION_SLUG}-android-arm64-v8a-evidence.json"

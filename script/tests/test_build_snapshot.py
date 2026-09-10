@@ -240,6 +240,8 @@ class BuildSnapshotTests(unittest.TestCase):
         self.assertIn("runner: windows-2022", workflow)
         self.assertIn("runs-on: ubuntu-24.04", workflow)
         self.assertIn("android/gradlew --no-daemon --stacktrace :app:assembleDebug", workflow)
+        self.assertIn("--api-level 35 --abi arm64-v8a --signing development", workflow)
+        self.assertNotIn("--abi arm64_v8a", workflow)
         self.assertNotIn("gh release", workflow)
         self.assertNotIn("contents: write", workflow)
 
