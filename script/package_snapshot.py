@@ -230,19 +230,31 @@ def macos_architectures(binary: Path) -> frozenset[str]:
     return result
 
 
-def macos_dependencies(binary: Path) -> list[str]:
-    completed = subprocess.run(["otool", "-L", str(binary)], text=True, capture_output=True, check=False)
+def macos_otool_values(binary: Path, option: str) -> list[str]:
+    completed = subprocess.run(["otool", option, str(binary)], text=True, capture_output=True, check=False)
     if completed.returncode:
-        raise PackageError(f"otool could not inspect {binary}: {completed.stderr.strip()}")
-    dependencies = []
-    for line in completed.stdout.splitlines()[1:]:
+        raise PackageError(f"otool {option} could not inspect {binary}: {completed.stderr.strip()}")
+    header = re.compile(
+        rf"{re.escape(str(binary))}(?: \(architecture (?:arm64|x86_64)\))?:"
+    )
+    values = []
+    for line in completed.stdout.splitlines():
         line = line.strip()
-        if not line:
+        if not line or header.fullmatch(line):
             continue
-        dependencies.append(line.split(" (", 1)[0])
+        values.append(line.split(" (", 1)[0] if option == "-L" else line)
+    return values
+
+
+def macos_dependencies(binary: Path) -> list[str]:
+    dependencies = macos_otool_values(binary, "-L")
     if not dependencies:
         raise PackageError(f"otool reported no dependencies for {binary}")
     return dependencies
+
+
+def macos_install_names(binary: Path) -> frozenset[str]:
+    return frozenset(macos_otool_values(binary, "-D"))
 
 
 def resolve_macos_dependency(
@@ -295,7 +307,21 @@ def validate_macos_package(
                 raise PackageError(
                     f"macOS binary is missing executable architecture {missing}: {source}"
                 )
+            install_names = macos_install_names(inspection)
+            if binary_location.suffix == ".dylib":
+                if len(install_names) != 1:
+                    raise PackageError(f"macOS dylib has unexpected install names: {source}")
+                install_name = next(iter(install_names))
+                if resolve_macos_dependency(install_name, binary_location) != binary_location:
+                    raise PackageError(
+                        f"macOS dylib install name does not resolve to its packaged file: "
+                        f"{source}: {install_name}"
+                    )
+            elif install_names:
+                raise PackageError(f"macOS executable unexpectedly has an install name: {source}")
             for dependency in macos_dependencies(inspection):
+                if dependency in install_names:
+                    continue
                 if dependency.startswith(("@rpath/", "@loader_path/", "@executable_path/")):
                     location = resolve_macos_dependency(dependency, binary_location)
                     if location not in packaged_locations:

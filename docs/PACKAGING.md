@@ -59,15 +59,17 @@ python3 script/package_snapshot.py desktop \
   --output dist/minecraftclone-0.1.0-3-macos.tar.gz
 ```
 
-The macOS command runs `lipo -archs` and `otool -L` over the executable and
-bundled dylibs. Every bundled dylib must contain every supported architecture
-used by the executable (`arm64` or `x86_64`); universal dylibs are accepted for
-a thin executable, but missing an executable architecture is rejected. Binaries
-may depend only on system libraries or `@rpath`/loader-relative paths. It
+The macOS command runs `lipo -archs`, `otool -L`, and `otool -D` over the
+executable and bundled dylibs. Every bundled dylib must contain every supported
+architecture used by the executable (`arm64` or `x86_64`); universal dylibs are
+accepted for a thin executable, but missing an executable architecture is
+rejected. Binaries may depend only on system libraries or
+`@rpath`/loader-relative paths. It
 rejects an embedded developer path, and every relative dylib dependency must
-name an explicitly bundled library. The bundled regular loader bytes are always
-named `lib/libvulkan.1.dylib`, the stable fallback name used by Volk; source
-symlinks are not accepted. The bundled ICD is rewritten to reference
+name an explicitly bundled library. Each dylib install name must resolve to its
+own packaged path across every architecture. The bundled regular loader bytes
+are always named `lib/libvulkan.1.dylib`, the stable fallback name used by Volk;
+source symlinks are not accepted. The bundled ICD is rewritten to reference
 `../../lib/libMoltenVK.dylib`, never the input SDK path.
 
 `MinecraftClone.command` locates its own directory, sets the bundled Vulkan

@@ -3116,5 +3116,45 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0082",
+    "title": "Parse multi-architecture macOS dylib metadata correctly",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P0",
+    "route": "luna",
+    "milestone": "ED-010-S3",
+    "depends_on": [],
+    "acceptance": "macOS package validation parses every architecture section from fat-binary otool output without treating repeated section headers as dependencies, proves each dylib install name with otool -D resolves to its packaged path, and still rejects true absolute or unpackaged dependencies.",
+    "evidence": "All 24 focused package tests pass, including fat-header parsing, install-name separation, mismatched install-name rejection, and preserved absolute dependency rejection. Real validation passes for the current mc_main plus the universal Vulkan loader and MoltenVK SDK dylibs; their otool -D names resolve to the packaged lib paths.",
+    "blocker": "",
+    "owner": "",
+    "level": "basic",
+    "parent": "MC-AI-0032",
+    "motivation": "X9 passed all 204 macOS tests but packaging misclassified the repeated arm64 otool section header for the universal Vulkan loader as a non-relocatable dependency.",
+    "context": "The Vulkan loader and MoltenVK inputs already have relocatable @rpath install names; this repair keeps the external-dependency gate fail-closed rather than waiving or rewriting it.",
+    "complexity": "medium",
+    "created_at": "2026-09-10",
+    "resolved_at": "2026-09-10",
+    "resolution_changes": "Separated multi-architecture otool headers, dylib install names, and load dependencies; validated each install name against its archive location while preserving rejection of external dependencies.",
+    "plan": [
+      "Parse only exact thin or supported-architecture otool section headers as headers.",
+      "Use otool -D to distinguish and validate each dylib's own install name.",
+      "Retain fail-closed checks for true absolute and missing relative dependencies."
+    ],
+    "product_changes": [],
+    "code_changes": [
+      "docs/PACKAGING.md",
+      "script/package_snapshot.py",
+      "script/tests/test_package_snapshot.py"
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": false,
+    "retrospective": "",
+    "docs_review": "docs/PACKAGING.md records otool -D install-name validation and per-architecture packaged-path resolution.",
+    "environment_review": "Validated the current mc_main with the installed universal Vulkan loader and MoltenVK SDK dylibs on macOS; hosted packaging remains unclaimed until X10.",
+    "backlog_review": ""
   }
 ]

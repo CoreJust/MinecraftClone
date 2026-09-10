@@ -230,12 +230,28 @@ class PackageSnapshotTests(unittest.TestCase):
         executable = self.write("mac/mc_main", b"app")
         universal = self.write("mac/libuniversal.dylib", b"universal")
         safe_dependencies = ["@rpath/libfixture.dylib"]
-        with mock.patch.object(module, "macos_architectures", side_effect=[{"arm64"}, {"arm64"}, {"arm64", "x86_64"}]), mock.patch.object(module, "macos_dependencies", return_value=safe_dependencies):
+        with mock.patch.object(
+            module,
+            "macos_architectures",
+            side_effect=[{"arm64"}, {"arm64"}, {"arm64", "x86_64"}],
+        ), mock.patch.object(
+            module,
+            "macos_install_names",
+            side_effect=[set(), {"@rpath/libfixture.dylib"}],
+        ), mock.patch.object(module, "macos_dependencies", return_value=safe_dependencies):
             module.validate_macos_package([
                 (executable, PurePosixPath("mc_main")),
                 (universal, PurePosixPath("lib/libfixture.dylib")),
             ])
-        with mock.patch.object(module, "macos_architectures", side_effect=[{"arm64"}, {"arm64"}, {"x86_64"}]), mock.patch.object(module, "macos_dependencies", return_value=safe_dependencies):
+        with mock.patch.object(
+            module,
+            "macos_architectures",
+            side_effect=[{"arm64"}, {"arm64"}, {"x86_64"}],
+        ), mock.patch.object(
+            module,
+            "macos_install_names",
+            side_effect=[set(), {"@rpath/libfixture.dylib"}],
+        ), mock.patch.object(module, "macos_dependencies", return_value=safe_dependencies):
             with self.assertRaisesRegex(module.PackageError, "missing executable architecture arm64"):
                 module.validate_macos_package([
                     (executable, PurePosixPath("mc_main")),
@@ -246,6 +262,10 @@ class PackageSnapshotTests(unittest.TestCase):
         module = load_module()
         executable = self.write("mac/mc_main", b"app")
         with mock.patch.object(module, "macos_architectures", return_value={"arm64"}), mock.patch.object(
+            module,
+            "macos_install_names",
+            return_value=set(),
+        ), mock.patch.object(
             module,
             "macos_dependencies",
             return_value=["@rpath/libmissing.dylib"],
@@ -261,6 +281,10 @@ class PackageSnapshotTests(unittest.TestCase):
         executable = self.write("mac/mc_main", b"app")
         runtime = self.write("mac/libfoo.dylib", b"runtime")
         with mock.patch.object(module, "macos_architectures", return_value={"arm64"}), mock.patch.object(
+            module,
+            "macos_install_names",
+            return_value=set(),
+        ), mock.patch.object(
             module,
             "macos_dependencies",
             return_value=["@loader_path/../Frameworks/libfoo.dylib"],
@@ -301,18 +325,79 @@ class PackageSnapshotTests(unittest.TestCase):
         binary = self.write("mac/checked.dylib", b"fixture")
 
         def inspect(command, **_):
+            inspected = command[-1]
             if command[0] == "lipo":
-                return subprocess.CompletedProcess(command, 0, f"{binary} are: arm64\n", "")
+                return subprocess.CompletedProcess(command, 0, f"{inspected} are: arm64\n", "")
+            if command[1] == "-D":
+                return subprocess.CompletedProcess(
+                    command,
+                    0,
+                    f"{inspected}:\n@rpath/checked.dylib\n",
+                    "",
+                )
             return subprocess.CompletedProcess(
                 command,
                 0,
-                f"{binary}:\n\t/Users/example/vcpkg/lib/libfixture.dylib (compatibility version 1.0.0)\n",
+                f"{inspected}:\n"
+                "\t@rpath/checked.dylib (compatibility version 1.0.0)\n"
+                "\t/Users/example/vcpkg/lib/libfixture.dylib (compatibility version 1.0.0)\n",
                 "",
             )
 
         with mock.patch.object(module.subprocess, "run", side_effect=inspect):
             with self.assertRaisesRegex(module.PackageError, "non-relocatable dependency"):
                 module.validate_macos_package([(binary, PurePosixPath("lib/checked.dylib"))])
+
+    def test_macos_otool_parsers_skip_fat_binary_headers_and_separate_install_name(self):
+        module = load_module()
+        binary = self.write("mac/libfixture.dylib", b"fixture")
+
+        def inspect(command, **_):
+            option = command[1]
+            values = {
+                "-D": "@rpath/libfixture.dylib",
+                "-L": "@rpath/libfixture.dylib (compatibility version 1.0.0)",
+            }
+            output = (
+                f"{binary} (architecture x86_64):\n"
+                f"\t{values[option]}\n"
+                f"{binary} (architecture arm64):\n"
+                f"\t{values[option]}\n"
+            )
+            return subprocess.CompletedProcess(command, 0, output, "")
+
+        with mock.patch.object(module.subprocess, "run", side_effect=inspect):
+            self.assertEqual(
+                module.macos_dependencies(binary),
+                ["@rpath/libfixture.dylib", "@rpath/libfixture.dylib"],
+            )
+            self.assertEqual(
+                module.macos_install_names(binary),
+                frozenset({"@rpath/libfixture.dylib"}),
+            )
+
+    def test_macos_rejects_dylib_install_name_outside_packaged_location(self):
+        module = load_module()
+        executable = self.write("mac/mc_main", b"app")
+        runtime = self.write("mac/libfixture.dylib", b"runtime")
+        with mock.patch.object(
+            module,
+            "macos_architectures",
+            side_effect=[{"arm64"}, {"arm64"}, {"arm64"}],
+        ), mock.patch.object(
+            module,
+            "macos_install_names",
+            side_effect=[set(), {"/Users/example/libfixture.dylib"}],
+        ), mock.patch.object(
+            module,
+            "macos_dependencies",
+            return_value=["/usr/lib/libSystem.B.dylib"],
+        ):
+            with self.assertRaisesRegex(module.PackageError, "install name does not"):
+                module.validate_macos_package([
+                    (executable, PurePosixPath("mc_main")),
+                    (runtime, PurePosixPath("lib/libfixture.dylib")),
+                ])
 
     def test_macos_architecture_parser_accepts_lipo_plain_single_and_multi_arch_output(self):
         module = load_module()
