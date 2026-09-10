@@ -22,7 +22,7 @@
         "tests/acceptance/runtime_cli_tests.cmake",
         "tests/acceptance/scenario_runner_tests.cpp"
       ],
-      "sources_sha256": "09402724736d3f16789081af06cd0acc4548056ea21ca03b75605d3fa0120412"
+      "sources_sha256": "d8817e80aed2c76f6145a2333a353e6ea04e585470de1333158fc7f52c335dbc"
     },
     {
       "guide": "docs/code/ANDROID.md",
@@ -268,7 +268,7 @@
         "tests/core/shared_message_tests.cpp",
         "tests/core/shared_world_tests.cpp"
       ],
-      "sources_sha256": "ec27be57e6c2cee355b3b41cb23958dd9a251543a4781a4b7116be9282c675aa"
+      "sources_sha256": "31d1580d773aa53b72d2b3c961308d5d50870b37cb6b0de6a95d0cf9abb2f080"
     },
     {
       "guide": "docs/code/RENDERING.md",

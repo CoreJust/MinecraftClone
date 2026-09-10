@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <chrono>
 #include <functional>
 #include <thread>
@@ -68,12 +69,19 @@ private:
 class GameServerTest : public testing::Test {
 protected:
     server::GameServer server{ 0 };
-    std::jthread server_thread{ [this](std::stop_token const stop) {
+    std::atomic_bool stop_requested{ false };
+    std::thread server_thread{ [this] {
         static constexpr std::chrono::milliseconds POLL_INTERVAL{ 1 };
-        while (!stop.stop_requested()) {
+        while (!stop_requested.load(std::memory_order_relaxed)) {
             server.poll(POLL_INTERVAL);
         }
     } };
+
+    ~GameServerTest() override
+    {
+        stop_requested.store(true, std::memory_order_relaxed);
+        server_thread.join();
+    }
 
     bool connect(ProtocolClient& client)
     {

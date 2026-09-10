@@ -4,10 +4,10 @@
 #include <shared/world/World.hpp>
 #include <core/net/Server.hpp>
 
+#include <atomic>
 #include <chrono>
 #include <cstdint>
 #include <expected>
-#include <stop_token>
 #include <string>
 #include <utility>
 #include <vector>
@@ -35,7 +35,8 @@ public:
         std::vector<SpawnPoint> spawn_points
     );
 
-    void run(std::stop_token stop_token = { });
+    void run();
+    void run(std::atomic_bool const& stop_requested);
     [[nodiscard]]
     uint64_t tick(std::chrono::milliseconds timeout = std::chrono::milliseconds::zero());
 private:

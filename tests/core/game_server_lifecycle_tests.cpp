@@ -2,6 +2,7 @@
 
 #include <gtest/gtest.h>
 
+#include <atomic>
 #include <chrono>
 #include <expected>
 #include <string>
@@ -93,12 +94,13 @@ TEST(GameServerLifecycle, RunStopsAfterTheCurrentProductionTick)
 {
     static constexpr std::chrono::milliseconds MAXIMUM_STOP_TIME{ 200 };
     server::GameServer server{ 0 };
-    std::jthread thread{ [&server](std::stop_token const stop_token) {
-        server.run(stop_token);
+    std::atomic_bool stop_requested{ false };
+    std::thread thread{ [&server, &stop_requested] {
+        server.run(stop_requested);
     } };
     auto const start = std::chrono::steady_clock::now();
 
-    thread.request_stop();
+    stop_requested.store(true, std::memory_order_relaxed);
     thread.join();
 
     EXPECT_LT(std::chrono::steady_clock::now() - start, MAXIMUM_STOP_TIME);

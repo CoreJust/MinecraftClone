@@ -4,11 +4,19 @@
 
 #include <algorithm>
 #include <stdexcept>
+#include <thread>
 
 namespace server {
 
-void GameServer::run(std::stop_token const stop_token) {
-    while (!stop_token.stop_requested()) {
+void GameServer::run()
+{
+    std::atomic_bool const never_stop{ false };
+    run(never_stop);
+}
+
+void GameServer::run(std::atomic_bool const& stop_requested)
+{
+    while (!stop_requested.load(std::memory_order_relaxed)) {
         auto const start = std::chrono::steady_clock::now();
         static_cast<void>(tick());
         auto const tick_time = std::chrono::duration_cast<std::chrono::milliseconds>(

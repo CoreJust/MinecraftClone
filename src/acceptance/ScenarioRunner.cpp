@@ -12,7 +12,6 @@
 #include <chrono>
 #include <memory>
 #include <optional>
-#include <stop_token>
 #include <string>
 #include <thread>
 #include <vector>
@@ -114,8 +113,9 @@ public:
         if (m_worker.has_value()) {
             return;
         }
-        m_worker.emplace([this](std::stop_token const stop_token) {
-            while (!stop_token.stop_requested()) {
+        m_stop_requested.store(false, std::memory_order_relaxed);
+        m_worker.emplace([this] {
+            while (!m_stop_requested.load(std::memory_order_relaxed)) {
                 static_cast<void>(tick(std::min(m_poll_interval, remainingTimeout(m_deadline))));
             }
         });
@@ -126,7 +126,7 @@ public:
         if (!m_worker.has_value()) {
             return;
         }
-        m_worker->request_stop();
+        m_stop_requested.store(true, std::memory_order_relaxed);
         m_worker->join();
         m_worker.reset();
     }
@@ -163,7 +163,8 @@ private:
     server::GameServer m_server;
     std::chrono::milliseconds m_poll_interval;
     std::chrono::steady_clock::time_point m_deadline;
-    std::optional<std::jthread> m_worker;
+    std::optional<std::thread> m_worker;
+    std::atomic_bool m_stop_requested{ false };
     std::atomic<uint64_t> m_events_processed{ 0 };
     std::atomic<uint64_t> m_ticks{ 0 };
 };
