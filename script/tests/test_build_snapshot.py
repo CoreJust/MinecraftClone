@@ -260,6 +260,8 @@ class BuildSnapshotTests(unittest.TestCase):
         self.assertIn("android/gradlew --no-daemon --stacktrace :app:assembleDebug", workflow)
         self.assertIn("--api-level 35 --abi arm64-v8a --signing development", workflow)
         self.assertNotIn("--abi arm64_v8a", workflow)
+        self.assertEqual(workflow.count("build/toolchain-windows.json"), 3)
+        self.assertNotIn(r"build\toolchain-windows.json", workflow)
         self.assertNotIn("gh release", workflow)
         self.assertNotIn("contents: write", workflow)
 

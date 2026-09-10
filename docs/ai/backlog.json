@@ -3366,5 +3366,42 @@
     "docs_review": "",
     "environment_review": "Local debug mc_tests rebuilt and 12 focused affected plus retained real-ENet tests passed 20/20. X14 hosted Windows MSVC executed 204/204 CTests successfully; all four X13 failures and the macOS ScenarioRunner failure are absent.",
     "backlog_review": "Acceptance is satisfied by deterministic local coverage and X14 hosted macOS/Windows test success. The subsequent Windows packaging provenance-path failure belongs to a separate task."
+  },
+  {
+    "id": "MC-AI-0088",
+    "title": "Use portable Windows snapshot workflow paths",
+    "kind": "bug",
+    "status": "active",
+    "priority": "P0",
+    "route": "luna",
+    "milestone": "ED-010-S3",
+    "depends_on": [],
+    "acceptance": "The Windows snapshot workflow creates and consumes the same toolchain evidence file through Python-portable repository-relative paths, preserves provenance validation and runtime closure, and produces the Windows package after its MSVC build and tests pass.",
+    "evidence": "Focused snapshot packaging and acquisition workflow tests pass 22/22 locally; X15 hosted Windows package evidence remains required before closure.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0032",
+    "motivation": "X14 Windows compiled and passed all 204 CTests, then packaging could not find build\\\\toolchain-windows.json created earlier in the same cmd step; later missing-zip errors were cascading.",
+    "context": "Change only repository-local path spelling in the Windows Python packaging pipeline. Preserve the external VCToolsRedistDir path, toolchain evidence checks, runtime DLL closure, hashes, and fail-closed behavior.",
+    "complexity": "low",
+    "created_at": "2026-09-10",
+    "resolved_at": "",
+    "resolution_changes": "Uses forward-slash repository-relative paths across the Windows Python provenance, packaging, evidence, and checksum pipeline while retaining cmd-native build paths and the external VCToolsRedistDir path. Adds an exact workflow contract for the shared toolchain-evidence path.",
+    "plan": [
+      "Use forward-slash repository-relative paths for Windows Python metadata/package/evidence/checksum commands and guard the contract with a workflow test."
+    ],
+    "product_changes": [],
+    "code_changes": [
+      ".github/workflows/snapshot-artifacts.yml",
+      "script/tests/test_build_snapshot.py"
+    ],
+    "baseline_commit": "39697552df2563e151528f7463e72f246ebb4f67",
+    "commits": [],
+    "finalized": false,
+    "retrospective": "",
+    "docs_review": "No product or architecture guide semantics change; the workflow test owns the portable-path contract.",
+    "environment_review": "Local Python unittest suites script.tests.test_build_snapshot and script.tests.test_ci_acquire pass 22/22. Hosted Windows package verification remains pending X15.",
+    "backlog_review": "Task remains active until the X15 hosted Windows workflow produces a package after MSVC build and tests."
   }
 ]

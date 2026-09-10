@@ -151,7 +151,7 @@ jobs:
         run: |
           call "%ProgramFiles%\Microsoft Visual Studio\2022\Enterprise\Common7\Tools\VsDevCmd.bat" -arch=amd64
           python script/ci/acquire.py verify-tools --platform windows
-          python script/ci/acquire.py record-metadata --platform windows --preset release --output build\toolchain-windows.json
+          python script/ci/acquire.py record-metadata --platform windows --preset release --output build/toolchain-windows.json
           cmake --preset release -DMC_ENABLE_RENDERER_SMOKE=OFF
           cmake --build --preset release
           ctest --test-dir build\release --output-on-failure --no-tests=error --timeout 60 > build\release-tests-windows.log 2>&1
@@ -160,9 +160,9 @@ jobs:
           python script/ci/acquire.py validate-shaders --build-dir build\release
           cmake --install build\release --prefix build\install
           if not exist dist mkdir dist
-          python script/ci/build_snapshot.py package-desktop --platform windows --install-root build\install --vcpkg-installed build\release\vcpkg_installed --runtime-search build\release\vcpkg_installed\x64-windows\bin --runtime-search "%VCToolsRedistDir%\x64\Microsoft.VC143.CRT" --toolchain-evidence build\toolchain-windows.json --work-root build\package-windows --version "%SNAPSHOT_VERSION%" --source-commit "%SOURCE_COMMIT%" --output "dist\minecraftclone-%VERSION_SLUG%-windows-x86_64.zip"
-          python script/ci/build_snapshot.py write-evidence --platform windows --configuration release --automated-verification passed --version "%SNAPSHOT_VERSION%" --source-commit "%SOURCE_COMMIT%" --artifact "dist\minecraftclone-%VERSION_SLUG%-windows-x86_64.zip" --toolchain-evidence build\toolchain-windows.json --output "dist\minecraftclone-%VERSION_SLUG%-windows-x86_64-evidence.json"
-          python script/ci/build_snapshot.py write-checksum --artifact "dist\minecraftclone-%VERSION_SLUG%-windows-x86_64.zip" --output "dist\minecraftclone-%VERSION_SLUG%-windows-x86_64.zip.sha256"
+          python script/ci/build_snapshot.py package-desktop --platform windows --install-root build/install --vcpkg-installed build/release/vcpkg_installed --runtime-search build/release/vcpkg_installed/x64-windows/bin --runtime-search "%VCToolsRedistDir%\x64\Microsoft.VC143.CRT" --toolchain-evidence build/toolchain-windows.json --work-root build/package-windows --version "%SNAPSHOT_VERSION%" --source-commit "%SOURCE_COMMIT%" --output "dist/minecraftclone-%VERSION_SLUG%-windows-x86_64.zip"
+          python script/ci/build_snapshot.py write-evidence --platform windows --configuration release --automated-verification passed --version "%SNAPSHOT_VERSION%" --source-commit "%SOURCE_COMMIT%" --artifact "dist/minecraftclone-%VERSION_SLUG%-windows-x86_64.zip" --toolchain-evidence build/toolchain-windows.json --output "dist/minecraftclone-%VERSION_SLUG%-windows-x86_64-evidence.json"
+          python script/ci/build_snapshot.py write-checksum --artifact "dist/minecraftclone-%VERSION_SLUG%-windows-x86_64.zip" --output "dist/minecraftclone-%VERSION_SLUG%-windows-x86_64.zip.sha256"
       - name: Upload desktop release candidate
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
