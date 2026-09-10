@@ -2697,5 +2697,46 @@
     "docs_review": "docs/PACKAGING.md documents bounded ELF-header inspection, exact ABI-set agreement, and required libmc_android.so without claiming install/runtime acceptance.",
     "environment_review": "Validated a real existing arm64-v8a development APK read-only; final promotion APK build, signing, and runtime acceptance remain separate.",
     "backlog_review": "Task is active under snapshot aggregate MC-AI-0032; hosted and final publication prerequisites remain unchanged."
+  },
+  {
+    "id": "MC-AI-0072",
+    "title": "Repair GitHub Actions runner-context cache setup",
+    "kind": "bug",
+    "status": "active",
+    "priority": "P1",
+    "route": "luna",
+    "milestone": "ED-010-S3",
+    "depends_on": [],
+    "acceptance": "Both S3 GitHub workflows pass static validation without using runner.temp at job-level env scope; macOS and Windows configure VCPKG_DEFAULT_BINARY_CACHE at step runtime, create the cache directory on the corresponding runner, and preserve existing build/package behavior. A focused static regression test rejects runner-context expressions in job-level env and verifies the platform-specific runtime setup. Hosted GitHub success remains unclaimed.",
+    "evidence": "Both workflows now configure the vcpkg cache from platform-specific runtime steps: macOS creates $RUNNER_TEMP/vcpkg-binary-cache with mkdir -p and exports it through GITHUB_ENV; Windows creates the equivalent %RUNNER_TEMP% path and exports it through GITHUB_ENV. The focused workflow regression passes, both workflow files parse with Ruby YAML, all 133 script tests pass, and ai_check.py --fast passes. Hosted GitHub validation and desktop build execution remain unclaimed.",
+    "blocker": "",
+    "owner": "s3_ci",
+    "level": "basic",
+    "parent": "MC-AI-0032",
+    "motivation": "Hosted S3 validation rejects runner.temp in both workflows before job scheduling, blocking the intended macOS and Windows CI paths.",
+    "context": "Diagnosis /private/tmp/mc-s3-x3-ci-validation-diagnosis.txt at candidate 9ae5c609945384fae6e12474fdbf2034c184c52d7 identifies the exact GitHub static-validation error on ai-checks.yml line 46 and snapshot-artifacts.yml line 69. Scope is limited to workflow context placement, cache-directory setup, and a cheap static regression guard; do not broaden CI, rerun hosted workflows, or publish.",
+    "complexity": "low",
+    "created_at": "2026-09-10",
+    "resolved_at": "",
+    "resolution_changes": "",
+    "plan": [
+      "Inspect both workflow job/step contexts and confirm the runner-context validation failure.",
+      "Move cache configuration into platform-specific runtime steps that create the directory and export GITHUB_ENV.",
+      "Add a focused static workflow regression test covering all repository workflows and both affected runtime setups.",
+      "Run focused tests and ai_check.py --fast, obtain exact staged Luna/high review, then commit with one Task-ID trailer."
+    ],
+    "product_changes": [],
+    "code_changes": [
+      ".github/workflows/ai-checks.yml",
+      ".github/workflows/snapshot-artifacts.yml",
+      "script/tests/test_workflow_contexts.py"
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": false,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]

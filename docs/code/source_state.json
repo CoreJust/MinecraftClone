@@ -113,13 +113,14 @@
         "script/tests/test_ci_acquire.py",
         "script/tests/test_package_snapshot.py",
         "script/tests/test_verify_release_assets.py",
+        "script/tests/test_workflow_contexts.py",
         "src/CMakeLists.txt",
         "tests/CMakeLists.txt",
         "tests/main.cpp",
         "vcpkg-configuration.json",
         "vcpkg.json"
       ],
-      "sources_sha256": "74c6724a00c611fa8bb5ffb6ba7f485d73bc5056f00331a6161f2102b0e88a47"
+      "sources_sha256": "4b1ceecb28119860c375f0230befb0615b74e91134f3889bcef2674d88a1c3bb"
     },
     {
       "guide": "docs/code/CORE.md",
