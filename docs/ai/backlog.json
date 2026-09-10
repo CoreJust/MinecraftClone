@@ -1246,7 +1246,7 @@
     "milestone": "ED-010-S3",
     "depends_on": [],
     "acceptance": "Snapshot 3 roadmap rendering acceptance and every scoped basic child are complete; full enabled release checks pass; actual product/code changes and promotion evidence are recorded. The exact reviewed/tagged build is published with named macOS, Windows and Android GitHub assets, SHA256 hashes, provenance, dependencies/licenses and truthful signing status. The exact downloaded macOS asset and exact released Android APK pass local runtime acceptance; Windows build/package evidence is required, while runtime results from the user’s Windows laptop are recorded separately and never inferred.",
-    "evidence": "Prepared for local promotion on 2026-09-10; publication/runtime acceptance pending. All 45 scoped children are done once Task 92 commits. In the actual pending ai-main shape, its staged-index fixture passed 7 focused and all 182 Python tests. Pre-fix strict checks passed build, 205 CTests, packaged MoltenVK smoke, and publisher validation; post-fix gates remain. X16 is historical only. Exact artifacts, release verification, and macOS/Android runtime acceptance remain.",
+    "evidence": "Prepared for local promotion on 2026-09-10; publication/runtime acceptance pending. All 45 scoped basic children are done. Task 92 commit e0c5e9a7eb6d850508186b37f561b44ed13dabf5 fixes the pending-merge fixture: its actual ai-main shape passed 7 focused and 182 full Python tests. Fresh strict checks then passed build, 205 CTests, packaged MoltenVK smoke, and publisher validation. X16 is historical only. Exact-source artifacts, publication verification, and macOS/Android runtime acceptance remain.",
     "blocker": "",
     "owner": "Codex"
   },
