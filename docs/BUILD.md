@@ -70,13 +70,13 @@ python3 publish.py 'EarlyDev:Initiation' 0.1.0:3 --checks-only
 
 The existing non-check publisher only accepts `dev` and does not switch to `main` before merging. Do not use it for the AI line. Follow [the explicit snapshot procedure](VERSION_CONVENTION.md); a release-tool repair belongs to its own task.
 
-Additional release gates live in [ai_checks.json](../script/ai_checks.json); disabled screenshot tests are reported as pending. Minor/major gates include environment diagnostics and the recorded docs/environment/hindsight/backlog review. Every commit also uses [task and review receipts](ai/COMMITS.md).
+Additional [release gates](../script/ai_checks.json) require the windowed smoke below at snapshot, minor, and major levels; S4 task MC-AI-0052 owns offscreen texture goldens. Minor/major gates also record environment, documentation, hindsight, and backlog reviews. Every commit uses [task and review receipts](ai/COMMITS.md).
 
 ## Test ownership
 
 `mc_tests` uses GoogleTest discovery into CTest. Networking/server tests use local sockets; shader tests load executable-relative assets from another working directory. `ShaderSpirvTargetTest.*` validates the copied mesh shaders for Vulkan 1.3 and the vertex fallback set for Vulkan 1.2. Input tests drive callbacks without proving interactive controls. Python tooling suites live in `script/tests`.
 
-Enable `MC_ENABLE_RENDERER_SMOKE=ON` at configure time, build, then run `ctest --preset debug -R RendererSmokeTest --output-on-failure`. This optional test requires a desktop, Vulkan device and validation layers; it is not headless. It draws/reloads automatic and forced-vertex pipelines, with CTest rejecting validation/error output. It does not compare pixels or establish resize, user controls, cross-process gameplay or Windows execution from a macOS run.
+`script/ai_renderer_smoke.py` rejects foreign caches, configures its preset, builds `mc_renderer_smoke`, and runs `RendererSmokeTest` with bounded timeouts. It records `build/ai-checks/renderer-smoke.log` and fails on missing registration, device, validation, runtime, or timeout errors. This test checks pixels, resize, reload, and close across automatic and vertex-fallback pipelines. It does not prove controls, multiplayer, Windows, or headless goldens; hosted CI remains GPU-free.
 
 New test sources must be listed once in [tests/CMakeLists.txt](../tests/CMakeLists.txt); shader/source membership is also checked by the publisher. Keep one test suite/file per source or tightly related unit. No test command is a substitute for checking the required observable result.
 

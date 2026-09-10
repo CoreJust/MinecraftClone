@@ -29,6 +29,14 @@
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release"
       }
+    },
+    {
+      "name": "renderer-smoke",
+      "inherits": "debug",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": {
+        "MC_ENABLE_RENDERER_SMOKE": "ON"
+      }
     }
   ],
   "buildPresets": [
@@ -39,6 +47,10 @@
     {
       "name": "release",
       "configurePreset": "release"
+    },
+    {
+      "name": "renderer-smoke",
+      "configurePreset": "renderer-smoke"
     }
   ],
   "testPresets": [
@@ -49,6 +61,10 @@
     {
       "name": "release",
       "configurePreset": "release"
+    },
+    {
+      "name": "renderer-smoke",
+      "configurePreset": "renderer-smoke"
     }
   ]
 }

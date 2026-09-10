@@ -36,7 +36,7 @@ A snapshot records the preceding `ai-main` commit as `baseline_commit`. At final
 
 Fill product changes first, code changes second; reconcile planned and actual children, then `ai_history.py finalize <id>`. It refuses missing/unfinished children and untraceable commits. Plans are retained beside actual results. Acceptance review must also establish that no promised product scope was silently dropped.
 
-Snapshot closure runs the full suite, all enabled code checks, and every enabled additional gate. Screenshot testing is explicitly pending until its runner exists; it is not reported as passed. Then follow [the publishing workflow](../VERSION_CONVENTION.md), including a reviewed promotion commit into `ai-main`.
+Snapshot closure runs the full suite, all enabled code checks, and every enabled additional gate. The renderer-smoke gate is mandatory for snapshot, minor and major full checks: it runs the windowed noninteractive `RendererSmokeTest`, fails closed on missing registration, device/validation/test failures or timeouts, and records its receipt. It is not a fully headless texture-golden gate; S4 owns those deterministic offscreen comparisons. Then follow [the publishing workflow](../VERSION_CONVENTION.md), including a reviewed promotion commit into `ai-main`.
 
 Minor closure groups snapshot tasks; major closure groups minor tasks. Both repeat snapshot closure at their full scope and add Terra/high review, documentation sanity, environment verification, hindsight, and backlog maintenance. Record findings and fixes in the version task; create missing follow-up tasks, adjust priorities/dependencies, and repair justified skills/hooks/environment issues. The [release checklist](RELEASES.md) owns these gates.
 

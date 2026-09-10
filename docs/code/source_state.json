@@ -47,7 +47,7 @@
     },
     {
       "guide": "docs/BUILD.md",
-      "guide_sha256": "72a88a68a2215d685bee1ee6b406a37da39afe8208a96850818e7ca9a65c0a54",
+      "guide_sha256": "b57f88b35753411194047e466da28e04a629290b45f63ff0c04ccbfa6a938809",
       "id": "build",
       "sources": [
         ".agents/skills/backlog/SKILL.md",
@@ -84,6 +84,7 @@
         "script/ai_history.py",
         "script/ai_plan.py",
         "script/ai_publish.py",
+        "script/ai_renderer_smoke.py",
         "script/ai_run.py",
         "script/ai_setup.py",
         "script/ai_tasks.py",
@@ -101,6 +102,7 @@
         "script/tests/test_ai_history.py",
         "script/tests/test_ai_plan.py",
         "script/tests/test_ai_publish.py",
+        "script/tests/test_ai_renderer_smoke.py",
         "script/tests/test_ai_run.py",
         "script/tests/test_ai_setup.py",
         "script/tests/test_ai_tasks.py",
@@ -112,7 +114,7 @@
         "vcpkg-configuration.json",
         "vcpkg.json"
       ],
-      "sources_sha256": "e4022247731c3cff3b30529b3c218886de386e2e2b31fb5b8ef69e5cedde33fe"
+      "sources_sha256": "ec6af5cc479761514a5896af0925294127e525b07557889f151f837d4e569c12"
     },
     {
       "guide": "docs/code/CORE.md",

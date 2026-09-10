@@ -1,11 +1,11 @@
 [
   {
-    "name": "screenshots",
-    "enabled": false,
+    "name": "renderer-smoke",
+    "enabled": true,
     "levels": ["snapshot", "minor", "major"],
-    "command": [],
-    "timeout": 600,
-    "reason": "Screenshot tests are not implemented yet; add the runner and enable this gate when available."
+    "command": ["{python}", "script/ai_renderer_smoke.py"],
+    "timeout": 900,
+    "reason": "Runs the windowed noninteractive RendererSmokeTest with validation; it is not a fully headless texture-golden gate."
   },
   {
     "name": "environment",

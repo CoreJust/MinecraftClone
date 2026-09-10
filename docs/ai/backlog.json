@@ -362,14 +362,14 @@
   {
     "level": "basic",
     "parent": "MC-AI-0032",
-    "motivation": "Provide reproducible noninteractive renderer smoke.",
-    "context": "Snapshot 3 renderer acceptance foundation. Establish bounded, noninteractive smoke before later visual snapshots rely on it.",
+    "motivation": "Provide reproducible bounded, noninteractive renderer smoke.",
+    "context": "Snapshot 3 renderer acceptance foundation. Establish a mandatory windowed, noninteractive smoke gate before later visual snapshots rely on it; deterministic offscreen texture goldens remain owned by S4 task MC-AI-0052.",
     "complexity": "medium",
     "created_at": "2026-09-09",
     "resolved_at": "",
     "resolution_changes": "",
     "plan": [
-      "Provide reproducible noninteractive renderer smoke."
+      "Provide reproducible bounded, noninteractive renderer smoke."
     ],
     "product_changes": [],
     "code_changes": [],
@@ -381,15 +381,15 @@
     "environment_review": "",
     "backlog_review": "",
     "id": "MC-AI-0009",
-    "title": "Automate headless renderer smoke",
+    "title": "Automate bounded renderer smoke acceptance",
     "kind": "chore",
     "status": "active",
     "priority": "P1",
     "route": "terra",
     "milestone": "ED-010-S3",
     "depends_on": [],
-    "acceptance": "Provide reproducible noninteractive renderer smoke.",
-    "evidence": "",
+    "acceptance": "Snapshot, minor and major full gates configure a dedicated renderer-smoke preset, build only mc_renderer_smoke, run the exact registered windowed RendererSmokeTest with bounded timeouts, record command output, and fail closed on stale caches, missing registration, device, validation, runtime or timeout failures. The gate does not claim fully headless offscreen texture-golden coverage.",
+    "evidence": "Eight focused Python tests pass. The enabled gate configured its dedicated preset on the canonical Task 9 candidate, built mc_renderer_smoke, and passed the exact RendererSmokeTest aggregate with Vulkan validation in 1.54 seconds; build/ai-checks/renderer-smoke.log records all commands and output.",
     "blocker": "",
     "owner": "snapshot_gpu_gate"
   },
