@@ -103,9 +103,13 @@ python3 script/package_snapshot.py android \
 
 `--signing` records only `development` or `unknown`; it never invents a signing
 identity. `--source-exactness` records whether the caller has established that
-the APK came exactly from `--source-commit`. The output records API level and
-all supplied ABIs with the original APK byte count and SHA-256. Device install
-and launch evidence belongs to the Android task, not this command.
+the APK came exactly from `--source-commit`. Before writing evidence, the tool
+reads only the bounded ELF headers of packaged native libraries and requires
+their architectures to match both the `lib/<abi>/` directories and the exact
+set supplied through `--abi`; every declared ABI must contain
+`libmc_android.so`. The output records that validated ABI set with the original
+APK byte count and SHA-256. Device install and launch evidence belongs to the
+Android task, not this command.
 
 ## Focused tooling checks
 
@@ -114,6 +118,6 @@ python3 -m unittest script.tests.test_package_snapshot -v
 ```
 
 The fixtures cover deterministic Windows ZIP contents, macOS relative ICD and
-self-locating launcher construction, unsafe-input rejection, and Android byte
-preservation. They mock macOS binary inspection; run an actual archive command
-on macOS for `otool`/`lipo` evidence.
+self-locating launcher construction, unsafe-input rejection, Android byte
+preservation, and APK native-library ABI validation. They mock macOS binary
+inspection; run an actual archive command on macOS for `otool`/`lipo` evidence.

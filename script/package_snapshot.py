@@ -38,10 +38,34 @@ WINDOWS_RESERVED_NAMES = {
     "COM¹", "COM²", "COM³", "LPT¹", "LPT²", "LPT³",
 }
 WINDOWS_INVALID_CHARACTERS = frozenset('<>:"\\|?*')
+ANDROID_NATIVE_LIBRARY = "libmc_android.so"
+ANDROID_ELF_ABIS = {
+    (1, 3): "x86",
+    (1, 40): "armeabi-v7a",
+    (2, 62): "x86_64",
+    (2, 183): "arm64-v8a",
+}
 
 
 class PackageError(ValueError):
     """Raised when an input cannot safely produce the requested artifact."""
+
+
+def android_elf_abi(header: bytes, entry_name: str) -> str:
+    if len(header) < 20 or header[:4] != b"\x7fELF" or header[5:7] != b"\x01\x01":
+        raise PackageError(f"APK native library has a malformed ELF header: {entry_name}")
+    elf_class = header[4]
+    header_size = {1: 52, 2: 64}.get(elf_class)
+    if header_size is None or len(header) < header_size:
+        raise PackageError(f"APK native library has a malformed ELF header: {entry_name}")
+    size_offset = 40 if elf_class == 1 else 52
+    if int.from_bytes(header[size_offset:size_offset + 2], "little") != header_size:
+        raise PackageError(f"APK native library has a malformed ELF header: {entry_name}")
+    machine = int.from_bytes(header[18:20], "little")
+    abi = ANDROID_ELF_ABIS.get((elf_class, machine))
+    if abi is None:
+        raise PackageError(f"APK native library has an unsupported ELF architecture: {entry_name}")
+    return abi
 
 
 @dataclass(frozen=True)
@@ -507,6 +531,42 @@ def write_android_evidence(args: argparse.Namespace) -> dict[str, Any]:
         raise PackageError("--api-level must be positive")
     if not args.abi or any(not re.fullmatch(r"[a-z0-9_-]+", value) for value in args.abi):
         raise PackageError("--abi requires one or more Android ABI names")
+    declared_abis = set(args.abi)
+    try:
+        with zipfile.ZipFile(io.BytesIO(apk_data)) as archive:
+            native_libraries: dict[str, set[str]] = {}
+            native_paths: set[str] = set()
+            for entry in archive.infolist():
+                native_path = PurePosixPath(entry.filename)
+                parts = native_path.parts
+                if entry.is_dir() or not entry.filename.endswith(".so") or not parts or parts[0] != "lib":
+                    continue
+                if len(parts) != 3 or native_path.as_posix() != entry.filename or entry.filename in native_paths:
+                    raise PackageError(f"APK contains an invalid or duplicate native library path: {entry.filename}")
+                native_paths.add(entry.filename)
+                abi = parts[1]
+                if not re.fullmatch(r"[a-z0-9_-]+", abi):
+                    raise PackageError(f"APK contains an invalid native ABI path: {entry.filename}")
+                with archive.open(entry) as stream:
+                    header = stream.read(64)
+                actual_abi = android_elf_abi(header, entry.filename)
+                if actual_abi != abi:
+                    raise PackageError(
+                        f"APK native library architecture {actual_abi} does not match directory ABI {abi}: "
+                        f"{entry.filename}"
+                    )
+                native_libraries.setdefault(abi, set()).add(parts[2])
+    except (RuntimeError, zipfile.BadZipFile) as error:
+        raise PackageError(f"APK input is not a readable package: {error}") from error
+    packaged_abis = set(native_libraries)
+    if packaged_abis != declared_abis:
+        raise PackageError(
+            "APK native ABI set does not match --abi: packaged="
+            + ",".join(sorted(packaged_abis)) + " declared=" + ",".join(sorted(declared_abis))
+        )
+    for abi in sorted(declared_abis):
+        if ANDROID_NATIVE_LIBRARY not in native_libraries[abi]:
+            raise PackageError(f"APK is missing lib/{abi}/{ANDROID_NATIVE_LIBRARY}")
     output = output_path(args.output, args.overwrite)
     result = {
         "schema": 1,
@@ -517,7 +577,7 @@ def write_android_evidence(args: argparse.Namespace) -> dict[str, Any]:
         "source_commit": args.source_commit,
         "source_exactness": args.source_exactness,
         "api_level": args.api_level,
-        "abis": sorted(set(args.abi)),
+        "abis": sorted(declared_abis),
         "signing": {"classification": args.signing, "identity": "not asserted"},
         "toolchain_evidence": evidence,
         "preservation": "APK bytes are not copied, transformed, resigned, or uploaded by this command.",

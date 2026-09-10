@@ -51,6 +51,27 @@ class PackageSnapshotTests(unittest.TestCase):
         target.write_bytes(content)
         return target
 
+    def elf(self, abi):
+        elf_class, machine, header_size, size_offset = {
+            "armeabi-v7a": (1, 40, 52, 40),
+            "arm64-v8a": (2, 183, 64, 52),
+            "x86": (1, 3, 52, 40),
+            "x86_64": (2, 62, 64, 52),
+        }[abi]
+        header = bytearray(header_size)
+        header[:7] = b"\x7fELF" + bytes((elf_class, 1, 1))
+        header[18:20] = machine.to_bytes(2, "little")
+        header[size_offset:size_offset + 2] = header_size.to_bytes(2, "little")
+        return bytes(header)
+
+    def apk(self, relative, entries):
+        target = self.root / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        with zipfile.ZipFile(target, "w") as archive:
+            for name, contents in entries.items():
+                archive.writestr(name, contents)
+        return target
+
     def call(self, module, arguments):
         stdout = io.StringIO()
         stderr = io.StringIO()
@@ -345,7 +366,11 @@ class PackageSnapshotTests(unittest.TestCase):
 
     def test_android_evidence_does_not_modify_apk_or_claim_signing_identity(self):
         module = load_module()
-        apk = self.write("android/game.apk", b"signed apk bytes")
+        apk = self.apk("android/game.apk", {
+            "lib/arm64-v8a/libmc_android.so": self.elf("arm64-v8a"),
+            "lib/arm64-v8a/libc++_shared.so": self.elf("arm64-v8a"),
+            "assets/shaders/grid.vert.spv": b"shader",
+        })
         before = apk.read_bytes()
         output = self.root / "android-evidence.json"
         arguments = [
@@ -360,7 +385,101 @@ class PackageSnapshotTests(unittest.TestCase):
         self.assertEqual(evidence["apk"]["sha256"], hashlib.sha256(before).hexdigest())
         self.assertEqual(evidence["signing"], {"classification": "development", "identity": "not asserted"})
         self.assertEqual(evidence["source_exactness"], "exact")
+        self.assertEqual(evidence["abis"], ["arm64-v8a"])
         self.assertEqual(json.loads(stdout)["evidence_sha256"], hashlib.sha256(output.read_bytes()).hexdigest())
+
+    def test_android_evidence_rejects_declared_abi_mismatch(self):
+        module = load_module()
+        apk = self.apk("android/x86.apk", {
+            "lib/x86_64/libmc_android.so": self.elf("x86_64"),
+        })
+        output = self.root / "android-evidence.json"
+        arguments = [
+            "android", "--apk", str(apk), "--api-level", "35", "--abi", "arm64-v8a",
+            "--signing", "development", "--source-exactness", "exact",
+            *self.common, "--output", str(output),
+        ]
+        result, _, stderr = self.call(module, arguments)
+        self.assertEqual(result, 1)
+        self.assertIn("native ABI set does not match", stderr)
+        self.assertFalse(output.exists())
+
+    def test_android_evidence_rejects_directory_and_elf_architecture_mismatch(self):
+        module = load_module()
+        apk = self.apk("android/mislabeled.apk", {
+            "lib/arm64-v8a/libmc_android.so": self.elf("x86_64"),
+        })
+        output = self.root / "android-evidence.json"
+        arguments = [
+            "android", "--apk", str(apk), "--api-level", "35", "--abi", "arm64-v8a",
+            "--signing", "development", "--source-exactness", "exact",
+            *self.common, "--output", str(output),
+        ]
+        result, _, stderr = self.call(module, arguments)
+        self.assertEqual(result, 1)
+        self.assertIn("does not match directory ABI", stderr)
+        self.assertFalse(output.exists())
+
+    def test_android_evidence_rejects_malformed_or_missing_native_payload(self):
+        module = load_module()
+        cases = {
+            "malformed": (
+                {"lib/arm64-v8a/libmc_android.so": b"not an ELF"},
+                "malformed ELF header",
+            ),
+            "missing": (
+                {"lib/arm64-v8a/libc++_shared.so": self.elf("arm64-v8a")},
+                "missing lib/arm64-v8a/libmc_android.so",
+            ),
+        }
+        for name, (entries, expected_error) in cases.items():
+            with self.subTest(name=name):
+                apk = self.apk(f"android/{name}.apk", entries)
+                output = self.root / f"{name}-evidence.json"
+                arguments = [
+                    "android", "--apk", str(apk), "--api-level", "35", "--abi", "arm64-v8a",
+                    "--signing", "development", "--source-exactness", "exact",
+                    *self.common, "--output", str(output),
+                ]
+                result, _, stderr = self.call(module, arguments)
+                self.assertEqual(result, 1)
+                self.assertIn(expected_error, stderr)
+                self.assertFalse(output.exists())
+
+    def test_android_evidence_rejects_undeclared_second_abi(self):
+        module = load_module()
+        apk = self.apk("android/multi.apk", {
+            "lib/arm64-v8a/libmc_android.so": self.elf("arm64-v8a"),
+            "lib/x86_64/libmc_android.so": self.elf("x86_64"),
+        })
+        output = self.root / "android-evidence.json"
+        arguments = [
+            "android", "--apk", str(apk), "--api-level", "35", "--abi", "arm64-v8a",
+            "--signing", "development", "--source-exactness", "exact",
+            *self.common, "--output", str(output),
+        ]
+        result, _, stderr = self.call(module, arguments)
+        self.assertEqual(result, 1)
+        self.assertIn("native ABI set does not match", stderr)
+        self.assertFalse(output.exists())
+
+    def test_android_evidence_rejects_normalized_duplicate_native_path(self):
+        module = load_module()
+        apk = self.root / "android/duplicate.apk"
+        apk.parent.mkdir(parents=True)
+        with zipfile.ZipFile(apk, "w") as archive:
+            archive.writestr("lib/arm64-v8a/libmc_android.so", self.elf("arm64-v8a"))
+            archive.writestr("lib//arm64-v8a/libmc_android.so", self.elf("arm64-v8a"))
+        output = self.root / "android-evidence.json"
+        arguments = [
+            "android", "--apk", str(apk), "--api-level", "35", "--abi", "arm64-v8a",
+            "--signing", "development", "--source-exactness", "exact",
+            *self.common, "--output", str(output),
+        ]
+        result, _, stderr = self.call(module, arguments)
+        self.assertEqual(result, 1)
+        self.assertIn("invalid or duplicate native library path", stderr)
+        self.assertFalse(output.exists())
 
 
 if __name__ == "__main__":

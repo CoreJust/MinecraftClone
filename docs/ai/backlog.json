@@ -2655,5 +2655,47 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0071",
+    "title": "Validate Android package evidence against the APK native ABI set and required native library",
+    "kind": "bug",
+    "status": "active",
+    "priority": "P1",
+    "route": "luna",
+    "milestone": "ED-010-S3",
+    "depends_on": [],
+    "acceptance": "Android package evidence is written only when the APK native-library ABI set exactly matches every declared --abi, each lib/<abi>/ path agrees with a bounded ELF-header architecture check, and every declared ABI contains libmc_android.so. Caller mismatch, directory/header mismatch, malformed or missing native payload, and undeclared extra ABI fixtures fail closed without writing evidence; a valid arm64-v8a APK shape remains accepted.",
+    "evidence": "The Android evidence helper now reads at most 64 header bytes from each canonical direct lib/<abi>/*.so APK entry, validates little-endian ELF class, machine, and header size, rejects normalized duplicate paths, requires directory/header ABI agreement, requires the packaged ABI set to equal --abi, and requires libmc_android.so for every declared ABI. Twenty focused package tests pass, covering a valid arm64-v8a shape plus caller mismatch, directory/header mismatch, malformed and missing native payloads, an undeclared second ABI, and normalized duplicate paths. All 132 script tests pass. The helper also accepted the existing 5aa9cd370314be205a07e0d96e2d5eb2713ad14c19fec408658ee33a4e3e8603 development APK as arm64-v8a; this validates package shape only and is not final release-artifact evidence.",
+    "blocker": "",
+    "owner": "s3_integration",
+    "level": "basic",
+    "parent": "MC-AI-0032",
+    "motivation": "Release evidence previously trusted the caller-provided ABI and could falsely label an x86_64-only APK as arm64-v8a.",
+    "context": "Snapshot 3 release-evidence correctness follow-up from the candidate publication review. Validate only the supported APK native-library contract; do not extract, execute, or generalize into an APK scanner.",
+    "complexity": "medium",
+    "created_at": "2026-09-10",
+    "resolved_at": "",
+    "resolution_changes": "",
+    "plan": [
+      "Clarify acceptance and implementation steps.",
+      "Inspect bounded ELF headers for direct native-library entries and derive their Android ABIs.",
+      "Require exact declared/package ABI equality and libmc_android.so for each declared ABI.",
+      "Cover supported arm64-v8a evidence and fail-closed mismatch, malformed, missing, and multi-ABI cases."
+    ],
+    "product_changes": [
+      "Android package evidence now binds its claimed ABI set to the APK native payload."
+    ],
+    "code_changes": [
+      "script/package_snapshot.py",
+      "script/tests/test_package_snapshot.py"
+    ],
+    "baseline_commit": "f10d18c80fa1cfa7d1a4c5e4b21d9fa97b429754",
+    "commits": [],
+    "finalized": false,
+    "retrospective": "",
+    "docs_review": "docs/PACKAGING.md documents bounded ELF-header inspection, exact ABI-set agreement, and required libmc_android.so without claiming install/runtime acceptance.",
+    "environment_review": "Validated a real existing arm64-v8a development APK read-only; final promotion APK build, signing, and runtime acceptance remain separate.",
+    "backlog_review": "Task is active under snapshot aggregate MC-AI-0032; hosted and final publication prerequisites remain unchanged."
   }
 ]
