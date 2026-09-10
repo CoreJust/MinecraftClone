@@ -247,13 +247,13 @@ class AiCheckTests(unittest.TestCase):
         log = self.root / "hook.log"
         fake_git_log = self.root / "fake-git.log"
         environment = os.environ | {
-            "PATH": fake_bin.name + os.pathsep + os.environ["PATH"],
             "PYTHON": str(fake_python),
             "HOOK_LOG": str(log),
             "FAKE_GIT_LOG": fake_git_log.name,
         }
         shell = shutil.which("sh")
         self.assertIsNotNone(shell)
+        shell_path = 'PATH="$PWD/fake-bin:$PATH"; export PATH;'
         shell_version = subprocess.run(
             [shell, "--version"],
             cwd=self.root,
@@ -263,7 +263,7 @@ class AiCheckTests(unittest.TestCase):
             env=environment,
         )
         git_probe = subprocess.run(
-            [shell, "-c", "command -v git; git --version"],
+            [shell, "-c", f'{shell_path} command -v git; git --version'],
             cwd=self.root,
             text=True,
             capture_output=True,
@@ -271,7 +271,7 @@ class AiCheckTests(unittest.TestCase):
             env=environment,
         )
         result = subprocess.run(
-            [shell, PRE_PUSH],
+            [shell, "-c", f'{shell_path} exec "$1"', "pre-push-fixture", PRE_PUSH],
             cwd=self.root,
             input="refs/tags/ai/EarlyDev/0.1 tag-object refs/tags/ai/EarlyDev/0.1 0000000000000000000000000000000000000000\n",
             text=True,
