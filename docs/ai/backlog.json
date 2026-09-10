@@ -1246,7 +1246,7 @@
     "milestone": "ED-010-S3",
     "depends_on": [],
     "acceptance": "Snapshot 3 roadmap rendering acceptance and every scoped basic child are complete; full enabled release checks pass; actual product/code changes and promotion evidence are recorded. The exact reviewed/tagged build is published with named macOS, Windows and Android GitHub assets, SHA256 hashes, provenance, dependencies/licenses and truthful signing status. The exact downloaded macOS asset and exact released Android APK pass local runtime acceptance; Windows build/package evidence is required, while runtime results from the user’s Windows laptop are recorded separately and never inferred.",
-    "evidence": "Prepared for local promotion on 2026-09-10; publication/runtime acceptance pending. All 42 collected basic children are done and linked by immutable Task-ID commits. Local focused and full checks recorded by the children pass. Historical X16 receipt /private/tmp/mc-s3-x16-hosted-ci-receipt-v1.txt (SHA256 9c45c54b7b2f578fec85e8fa505bb3c67488e3457a3791c9976f0e15c542d223) establishes hosted macOS, Windows, and Android candidate production at 398f3dd2305825dde15e9503beb91b040eae75ce; it is not final-source release evidence. Final candidate/strict gates, exact-source hosted artifacts, publication verification, and exact macOS/Android runtime acceptance remain to be recorded by the publication ledger.",
+    "evidence": "Prepared for local promotion on 2026-09-10; publication/runtime acceptance pending. All 43 collected basic children, including the release-state-independent pre-finalization fixture repair, are done and linked by immutable Task-ID commits once MC-AI-0090 is committed. Historical X16 receipt /private/tmp/mc-s3-x16-hosted-ci-receipt-v1.txt (SHA256 9c45c54b7b2f578fec85e8fa505bb3c67488e3457a3791c9976f0e15c542d223) proves hosted candidates at 398f3dd2305825dde15e9503beb91b040eae75ce only, not final-source release evidence. Final strict gates, exact-source artifacts, publication verification, and exact macOS/Android runtime acceptance remain for the publication ledger.",
     "blocker": "",
     "owner": "Codex"
   },
@@ -3468,5 +3468,44 @@
     "docs_review": "Reviewed the owning routing, workflow, commit, automation, release, and project-skill guidance after the follow-up; generated source-state and task views are refreshed after the summary-history reader and regression changes.",
     "environment_review": "Task89 remains project-local tooling, policy, metadata, tests, and configuration; no C++ runtime or release artifact acceptance is claimed. The installed local hook path was exercised; normal workspace hooks/config were not changed.",
     "backlog_review": "The real five-task efficiency sample remains partial at 2/5 basic-task commits after baseline MC-AI-0089. Task88 and Task42 now have joined historical check summaries by immutable commit identity; elapsed time and model usage remain unavailable. No evaluation-only tasks, S3-scope change, auto-publication, or Snapshot 9 is introduced."
+  },
+  {
+    "id": "MC-AI-0090",
+    "title": "Keep pre-finalization publisher tests independent of live release history",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P0",
+    "route": "luna",
+    "milestone": "ED-010-S3",
+    "depends_on": [],
+    "acceptance": "The pre-finalization publisher test constructs its undated Snapshot 3 input independently of the live release-history state, continues to prove that ordinary checks reject a missing current snapshot while the explicit candidate mode accepts only that absence, and the focused suite plus required project checks pass.",
+    "evidence": "Focused script.tests.test_pre_finalization_candidate passes 7/7. The subsequent governed fast check passed the complete Python suite, build, and all 205 CTests with the installed Vulkan environment. No production or publisher behavior changed.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0032",
+    "motivation": "Snapshot 3 release preparation dates the live history entry, so the pre-finalization regression fixture must not inherit that later lifecycle state and silently stop exercising its boundary.",
+    "context": "The first clean strict Snapshot 3 gate passed production checks, build, 205 CTests, renderer smoke, and publisher validation, but this one Python test failed because its clone inherited the newly dated live S3 heading. Keep the repair fixture-only; do not change publisher behavior or release semantics.",
+    "complexity": "low",
+    "created_at": "2026-09-10",
+    "resolved_at": "2026-09-10",
+    "resolution_changes": "Made the test clone normalize exactly one Snapshot 3 heading to the undated pre-finalization form before its fixture commit, so the boundary test remains meaningful after the live source advances to release preparation.",
+    "plan": [
+      "Clarify acceptance and implementation steps.",
+      "Normalize only the cloned Snapshot 3 heading to its undated pre-finalization form and assert exactly one replacement before committing the fixture.",
+      "Run the focused pre-finalization suite and the full project gate."
+    ],
+    "product_changes": [],
+    "code_changes": [
+      "script/tests/test_pre_finalization_candidate.py",
+      "docs/code/source_state.json"
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": false,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]

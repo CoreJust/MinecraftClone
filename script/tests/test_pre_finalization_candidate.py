@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import shutil
 import subprocess
 import sys
@@ -36,8 +37,24 @@ class PreFinalizationCandidateTests(unittest.TestCase):
             source = REPOSITORY / relative
             target = self.root / relative
             shutil.copy2(source, target)
+        history = self.root / "docs/version_history/EarlyDev 0.1/EarlyDev 0.1.0 Initiation.md"
+        undated, replacements = re.subn(
+            r"^## EarlyDev 0\.1\.0:3(?:\(\d{2}\.\d{2}\.\d{2}\))?$",
+            "## EarlyDev 0.1.0:3",
+            history.read_text(encoding="utf-8"),
+            count=1,
+            flags=re.MULTILINE,
+        )
+        self.assertEqual(replacements, 1)
+        history.write_text(undated, encoding="utf-8")
         subprocess.run(
-            ["git", "add", "publish.py", "script/infrastructure_checks.py"],
+            [
+                "git",
+                "add",
+                "publish.py",
+                "script/infrastructure_checks.py",
+                str(history.relative_to(self.root)),
+            ],
             cwd=self.root,
             check=True,
         )
