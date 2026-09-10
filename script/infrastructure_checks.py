@@ -5,7 +5,7 @@ import json
 import subprocess
 import glob
 from pathlib import Path
-from datetime import date
+from datetime import date, datetime
 from typing import List, Tuple, Callable, Dict, Any
 
 from script.colored_print import *
@@ -140,11 +140,18 @@ def parse_snapshot_headings(content, major_name, version_str):
 @register_file_check(FILES.HISTORY, "snapshots 1..SnapshotIndex exist with correct format")
 def check_snapshot_indices(ctx, content):
     snapshots = parse_snapshot_headings(content, ctx['major_name'], ctx['version_str'])
+    indices = [idx for idx, _ in snapshots]
+    if len(indices) != len(set(indices)):
+        return False, "duplicate snapshot indices"
     existing = {idx for idx, _ in snapshots}
-    required = set(range(1, ctx['snapshot_index']+1))
+    pre_finalization_candidate = ctx.get('pre_finalization_candidate', False)
+    required_end = ctx['snapshot_index'] if pre_finalization_candidate else ctx['snapshot_index'] + 1
+    required = set(range(1, required_end))
     missing = required - existing
     if missing:
         return False, f"missing snapshots: {sorted(missing)}"
+    if pre_finalization_candidate and any(idx > ctx['snapshot_index'] for idx in existing):
+        return False, "snapshot history contains an index after the current candidate"
     ctx['_snapshots'] = snapshots
     return True, ""
 
@@ -152,11 +159,13 @@ def check_snapshot_indices(ctx, content):
 def check_snapshot_nonempty(ctx, content):
     snapshots = ctx.get('_snapshots', [])
     if not snapshots:
+        if ctx.get('pre_finalization_candidate', False):
+            return True, ""
         return False, "no snapshots found"
     major_name = ctx['major_name']
     version_str = ctx['version_str']
     for idx, date_str in snapshots:
-        pattern = rf'^#{1,2} {re.escape(major_name)} {re.escape(version_str)}:{idx}\({date_str}\)\s*$(.*?)(?=^#{1,2} {re.escape(major_name)}|\Z)'
+        pattern = rf'^#{{1,2}} {re.escape(major_name)} {re.escape(version_str)}:{idx}\({date_str}\)\s*$(.*?)(?=^#{{1,2}} {re.escape(major_name)}|\Z)'
         m = re.search(pattern, content, re.MULTILINE | re.DOTALL)
         if m:
             section_content = m.group(1).strip()
@@ -170,21 +179,31 @@ def check_snapshot_nonempty(ctx, content):
 def check_dates_order(ctx):
     snapshots = ctx.get('_snapshots', [])
     if not snapshots:
+        if ctx.get('pre_finalization_candidate', False):
+            return True, ""
         return False, "no snapshots found"
     prev = None
     for idx, date_str in sorted(snapshots):
-        if prev and date_str < prev:
+        try:
+            parsed_date = datetime.strptime(date_str, "%y.%m.%d").date()
+        except ValueError:
+            return False, f"snapshot {idx} has invalid date {date_str}"
+        if prev and parsed_date < prev:
             return False, f"date {date_str} at snapshot {idx} is earlier than previous {prev}"
-        prev = date_str
+        prev = parsed_date
     return True, ""
 
 @register_check("latest snapshot date is today")
 def check_today_date(ctx):
     snapshots = ctx.get('_snapshots', [])
     if not snapshots:
+        if ctx.get('pre_finalization_candidate', False):
+            return True, ""
         return False, "no snapshots found"
     latest = max(snapshots, key=lambda x: x[0])
     if latest[0] != ctx['snapshot_index']:
+        if ctx.get('pre_finalization_candidate', False) and latest[0] < ctx['snapshot_index']:
+            return True, ""
         return False, f"latest snapshot index {latest[0]} != {ctx['snapshot_index']}"
     today = date.today().strftime("%y.%m.%d")
     if latest[1] != today:

@@ -111,6 +111,7 @@ Files:
 - [`script/tests/test_checks_common.py`](../../script/tests/test_checks_common.py)
 - [`script/tests/test_ci_acquire.py`](../../script/tests/test_ci_acquire.py)
 - [`script/tests/test_package_snapshot.py`](../../script/tests/test_package_snapshot.py)
+- [`script/tests/test_pre_finalization_candidate.py`](../../script/tests/test_pre_finalization_candidate.py)
 - [`script/tests/test_verify_release_assets.py`](../../script/tests/test_verify_release_assets.py)
 - [`script/tests/test_workflow_contexts.py`](../../script/tests/test_workflow_contexts.py)
 - [`src/CMakeLists.txt`](../../src/CMakeLists.txt)

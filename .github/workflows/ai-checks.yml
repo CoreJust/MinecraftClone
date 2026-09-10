@@ -76,7 +76,11 @@ jobs:
         if: matrix.platform == 'windows'
         shell: cmd
         run: python script/ci/acquire.py install-vulkan --platform windows --root "%RUNNER_TEMP%\vulkan-sdk"
-      - name: Verify source policy checks
+      - name: Verify pre-finalization candidate source policy checks
+        if: github.ref != 'refs/heads/ai-main'
+        run: python script/ci/acquire.py source-checks --pre-finalization-candidate
+      - name: Verify finalized source policy checks
+        if: github.ref == 'refs/heads/ai-main'
         run: python script/ci/acquire.py source-checks
       - name: Build, test, and validate shaders (macOS)
         if: matrix.platform == 'macos'

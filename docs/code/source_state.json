@@ -113,6 +113,7 @@
         "script/tests/test_checks_common.py",
         "script/tests/test_ci_acquire.py",
         "script/tests/test_package_snapshot.py",
+        "script/tests/test_pre_finalization_candidate.py",
         "script/tests/test_verify_release_assets.py",
         "script/tests/test_workflow_contexts.py",
         "src/CMakeLists.txt",
@@ -121,7 +122,7 @@
         "vcpkg-configuration.json",
         "vcpkg.json"
       ],
-      "sources_sha256": "de15ce1af057fcff4accd068b741a39b3056d8e4ffeb0655ed9302b1d56111d4"
+      "sources_sha256": "fa0e3101a1c50aa13052c0d2ffae4ef99b37d23f007fdcd8c261c40c3345558b"
     },
     {
       "guide": "docs/code/CORE.md",

@@ -376,7 +376,7 @@ def validate_shaders(build_dir: Path) -> None:
         run([validator, "--target-env", "vulkan1.2", str(shader_path(build_dir, shader))])
 
 
-def source_checks() -> None:
+def source_checks(pre_finalization_candidate: bool = False) -> None:
     """Run repository policy/source checks without a duplicate application build."""
     root = Path(__file__).resolve().parents[2]
     run([sys.executable, "script/ai_check.py", "--fast"])
@@ -384,7 +384,10 @@ def source_checks() -> None:
     from script.ai_check import project_version_arguments
 
     names, version = project_version_arguments(root)
-    run([sys.executable, "publish.py", names, version, "--checks-only"])
+    command = [sys.executable, "publish.py", names, version, "--checks-only"]
+    if pre_finalization_candidate:
+        command.append("--pre-finalization-candidate")
+    run(command)
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -409,7 +412,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     metadata_parser.add_argument("--output", type=Path, required=True)
     shader_parser = commands.add_parser("validate-shaders")
     shader_parser.add_argument("--build-dir", type=Path, required=True)
-    commands.add_parser("source-checks")
+    source_checks_parser = commands.add_parser("source-checks")
+    source_checks_parser.add_argument("--pre-finalization-candidate", action="store_true")
     args = parser.parse_args(argv)
     try:
         if args.command == "install-vulkan":
@@ -427,7 +431,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         elif args.command == "validate-shaders":
             validate_shaders(args.build_dir)
         else:
-            source_checks()
+            source_checks(args.pre_finalization_candidate)
     except CiError as error:
         print(f"CI setup failed: {error}", file=sys.stderr)
         return 1

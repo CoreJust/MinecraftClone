@@ -108,7 +108,11 @@ jobs:
           --expected "$SOURCE_COMMIT"
           --version "$SNAPSHOT_VERSION"
           --output build/source-identity.json
-      - name: Verify source policy
+      - name: Verify pre-finalization candidate source policy
+        if: startsWith(github.ref, 'refs/heads/codex/ai-release-')
+        run: python script/ci/acquire.py source-checks --pre-finalization-candidate
+      - name: Verify finalized source policy
+        if: "!startsWith(github.ref, 'refs/heads/codex/ai-release-')"
         run: python script/ci/acquire.py source-checks
       - name: Build, test, and package macOS
         if: matrix.platform == 'macos'
@@ -200,7 +204,12 @@ jobs:
         run: |
           python script/ci/build_snapshot.py source-identity --expected "$SOURCE_COMMIT" --version "$SNAPSHOT_VERSION" --output build/source-identity.json
           python script/ci/build_snapshot.py verify-android-source --root android
-          python script/ci/acquire.py source-checks
+      - name: Verify pre-finalization candidate source policy
+        if: startsWith(github.ref, 'refs/heads/codex/ai-release-')
+        run: python script/ci/acquire.py source-checks --pre-finalization-candidate
+      - name: Verify finalized source policy
+        if: "!startsWith(github.ref, 'refs/heads/codex/ai-release-')"
+        run: python script/ci/acquire.py source-checks
       - name: Build and package development APK
         run: |
           set -euo pipefail

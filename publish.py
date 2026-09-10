@@ -27,10 +27,19 @@ def parse_args():
         sys.exit(1)
 
     checks_only = False
+    pre_finalization_candidate = False
     args = sys.argv[1:]
     if "--checks-only" in args:
         checks_only = True
         args.remove("--checks-only")
+    if "--pre-finalization-candidate" in args:
+        pre_finalization_candidate = True
+        args.remove("--pre-finalization-candidate")
+
+    if pre_finalization_candidate and not checks_only:
+        print_fail("--pre-finalization-candidate requires --checks-only")
+        print_help()
+        sys.exit(1)
 
     if len(args) != 2:
         print_help()
@@ -54,14 +63,25 @@ def parse_args():
     epoch, major, minor, snapshot_index = int(m.group(1)), int(m.group(2)), int(m.group(3)), int(m.group(4))
     version_str = f"{epoch}.{major}.{minor}"
 
-    return major_name, minor_name, epoch, major, minor, version_str, snapshot_index, checks_only
+    return (
+        major_name,
+        minor_name,
+        epoch,
+        major,
+        minor,
+        version_str,
+        snapshot_index,
+        checks_only,
+        pre_finalization_candidate,
+    )
 
 def print_help():
     print(Color.colorize("Usage:", Color.YELLOW))
-    print("  python publish_version.py \"<MajorName>:<MinorName>\" <Epoch>.<Major>.<Minor>:<SnapshotIndex> [--checks-only]")
+    print("  python publish_version.py \"<MajorName>:<MinorName>\" <Epoch>.<Major>.<Minor>:<SnapshotIndex> [--checks-only] [--pre-finalization-candidate]")
     print(Color.colorize("Example:", Color.GRAY))
     print("  python publish_version.py \"Crimson:Dawn\" 1.2.3:4")
     print("  --checks-only    Run only the common checks, skip tests and publishing.")
+    print("  --pre-finalization-candidate    Permit only a missing current snapshot during checks-only validation.")
 
 @register_check("no unstaged or uncommitted changes")
 def check_git_clean(ctx):
@@ -132,7 +152,17 @@ def publish(ctx):
     return True
 
 def main():
-    major_name, minor_name, epoch, major, minor, version_str, snapshot_index, checks_only = parse_args()
+    (
+        major_name,
+        minor_name,
+        epoch,
+        major,
+        minor,
+        version_str,
+        snapshot_index,
+        checks_only,
+        pre_finalization_candidate,
+    ) = parse_args()
 
     ctx = {
         'major_name': major_name,
@@ -142,6 +172,7 @@ def main():
         'minor': minor,
         'version_str': version_str,
         'snapshot_index': snapshot_index,
+        'pre_finalization_candidate': pre_finalization_candidate,
     }
 
     print_section("=== Common Checks ===")

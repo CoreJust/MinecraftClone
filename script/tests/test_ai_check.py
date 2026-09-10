@@ -206,53 +206,25 @@ class AiCheckTests(unittest.TestCase):
     def test_annotated_ai_tag_push_uses_strict_check_from_legacy_branch(self):
         fake_bin = self.root / "fake-bin"
         fake_bin.mkdir()
-        if os.name == "nt":
-            fake_git = fake_bin / "git.cmd"
-            fake_git.write_text(
-                "@echo off\n"
-                "if \"%~1 %~2\"==\"branch --show-current\" (\n"
-                "  echo master\n"
-                "  exit /b 0\n"
-                ")\n"
-                "if \"%~1 %~2\"==\"rev-parse HEAD\" (\n"
-                "  echo checked-commit\n"
-                "  exit /b 0\n"
-                ")\n"
-                "if \"%~1 %~2\"==\"rev-parse tag-object^{commit}\" (\n"
-                "  echo checked-commit\n"
-                "  exit /b 0\n"
-                ")\n"
-                "if \"%~1 %~2\"==\"status --porcelain\" exit /b 0\n"
-                "exit /b 2\n",
-                encoding="utf-8",
-                newline="\n",
-            )
-            fake_python = fake_bin / "python.cmd"
-            fake_python.write_text(
-                "@echo off\n> \"%HOOK_LOG%\" echo %*\n",
-                encoding="utf-8",
-                newline="\n",
-            )
-        else:
-            fake_git = fake_bin / "git"
-            fake_git.write_text(
-                "#!/bin/sh\n"
-                "case \"$1 $2\" in\n"
-                "  'branch --show-current') echo master ;;\n"
-                "  'rev-parse HEAD') echo checked-commit ;;\n"
-                "  'rev-parse tag-object^{commit}') echo checked-commit ;;\n"
-                "  'status --porcelain') ;;\n"
-                "  *) exit 2 ;;\n"
-                "esac\n",
-                encoding="utf-8",
-            )
-            fake_python = fake_bin / "python"
-            fake_python.write_text(
-                "#!/bin/sh\nprintf '%s\\n' \"$*\" > \"$HOOK_LOG\"\n",
-                encoding="utf-8",
-            )
-            fake_git.chmod(0o755)
-            fake_python.chmod(0o755)
+        fake_git = fake_bin / "git"
+        fake_git.write_text(
+            "#!/bin/sh\n"
+            "case \"$1 $2\" in\n"
+            "  'branch --show-current') echo master ;;\n"
+            "  'rev-parse HEAD') echo checked-commit ;;\n"
+            "  'rev-parse tag-object^{commit}') echo checked-commit ;;\n"
+            "  'status --porcelain') ;;\n"
+            "  *) exit 2 ;;\n"
+            "esac\n",
+            encoding="utf-8",
+        )
+        fake_python = fake_bin / "python"
+        fake_python.write_text(
+            "#!/bin/sh\nprintf '%s\\n' \"$*\" > \"$HOOK_LOG\"\n",
+            encoding="utf-8",
+        )
+        fake_git.chmod(0o755)
+        fake_python.chmod(0o755)
         log = self.root / "hook.log"
         environment = os.environ | {
             "PATH": str(fake_bin) + os.pathsep + os.environ["PATH"],
