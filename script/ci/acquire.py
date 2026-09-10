@@ -126,6 +126,13 @@ def write_github_path(value: Path) -> None:
             stream.write(f"{value}\n")
 
 
+def write_android_sdk_environment(root: Path) -> None:
+    """Export both Android SDK variable names to the same acquired root."""
+    value = str(root)
+    write_github_env("ANDROID_HOME", value)
+    write_github_env("ANDROID_SDK_ROOT", value)
+
+
 def safe_extract(archive: Path, destination: Path) -> None:
     """Extract a hash-verified archive without allowing paths outside destination."""
     root = destination.resolve()
@@ -250,7 +257,7 @@ def install_android_sdk(root: Path) -> Path:
     command = [str(sdkmanager), f"--sdk_root={root}"]
     run([*command, "--licenses"], input_text="y\n" * 100)
     run([*command, *ANDROID_SDK_PACKAGES])
-    write_github_env("ANDROID_HOME", str(root))
+    write_android_sdk_environment(root)
     print(root)
     return sdkmanager
 

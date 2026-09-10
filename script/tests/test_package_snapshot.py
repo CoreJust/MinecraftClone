@@ -314,6 +314,30 @@ class PackageSnapshotTests(unittest.TestCase):
             with self.assertRaisesRegex(module.PackageError, "non-relocatable dependency"):
                 module.validate_macos_package([(binary, PurePosixPath("lib/checked.dylib"))])
 
+    def test_macos_architecture_parser_accepts_lipo_plain_single_and_multi_arch_output(self):
+        module = load_module()
+        binary = self.write("mac/checked.dylib", b"fixture")
+        outputs = iter(("arm64\n", "arm64 x86_64\n"))
+        with mock.patch.object(
+            module.subprocess,
+            "run",
+            side_effect=lambda command, **_: subprocess.CompletedProcess(command, 0, next(outputs), ""),
+        ):
+            self.assertEqual(module.macos_architectures(binary), frozenset({"arm64"}))
+            self.assertEqual(module.macos_architectures(binary), frozenset({"arm64", "x86_64"}))
+
+    def test_macos_architecture_parser_rejects_malformed_or_unexpected_output(self):
+        module = load_module()
+        binary = self.write("mac/checked.dylib", b"fixture")
+        for output in ("", "arm64 arm64\n", "arm64 i386\n", "arm64, x86_64\n"):
+            with self.subTest(output=output), mock.patch.object(
+                module.subprocess,
+                "run",
+                return_value=subprocess.CompletedProcess(["lipo"], 0, output, ""),
+            ):
+                with self.assertRaisesRegex(module.PackageError, "unexpected|unsupported"):
+                    module.macos_architectures(binary)
+
     def test_output_temporary_and_sidecar_symlinks_are_not_followed(self):
         module = load_module()
         victim = self.write("victim.txt", b"preserve me")

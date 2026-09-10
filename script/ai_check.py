@@ -15,6 +15,7 @@ from typing import Sequence
 
 
 LOG_DIR = Path("build/ai-checks")
+PYTHON_TEST_TIMEOUT = 180 if os.name == "nt" else 60
 GOVERNED_PREFIXES = ("src/", "tests/", "docs/", "script/", ".githooks/", ".github/", ".codex/", ".agents/", "cmake/")
 GOVERNED_FILES = {
     ".gitattributes", ".gitignore", "AGENTS.md", "CLAUDE.md", "CMakeLists.txt", "CMakePresets.json", "README.md",
@@ -214,7 +215,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         ("docs", [sys.executable, "script/ai_docs.py", "check"], 60),
         ("backlog", [sys.executable, "script/ai_tasks.py", "check"], 60),
         ("current-plan", [sys.executable, "script/ai_plan.py", "check"], 60),
-        ("python-tests", [sys.executable, "-m", "unittest", "discover", "-s", "script/tests"], 60),
+        (
+            "python-tests",
+            [sys.executable, "-m", "unittest", "discover", "-s", "script/tests", "-v"],
+            PYTHON_TEST_TIMEOUT,
+        ),
         ("diff-working", ["git", "diff", "--check"], 30),
         ("diff-cached", ["git", "diff", "--cached", "--check"], 30),
     ]

@@ -2924,5 +2924,48 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0077",
+    "title": "Repair X7 hosted platform validation blockers",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P0",
+    "route": "luna",
+    "milestone": "ED-010-S3",
+    "depends_on": [],
+    "acceptance": "Hosted Android SDK setup exports matching ANDROID_HOME and ANDROID_SDK_ROOT values; snapshot tooling rejects conflicting roots and accepts matching ones. macOS packaging accepts only valid plain or standard lipo architecture output. Windows source checks provide named verbose test diagnostics and enough platform-specific time for the complete suite. The focused regressions and full Python suite pass; hosted build and artifact success remain unclaimed until a fresh candidate runs.",
+    "evidence": "X7 receipt SHA-256 4b02778c897912362efd1e569982237a6f75a647dc9952707e9d03b4abc46e00 establishes the terminal pre-build faults. The repair exports both Android SDK roots from the acquired path and rejects disagreement, accepts valid plain lipo architecture output while rejecting malformed output, and makes Windows Python diagnostics verbose with a 180-second platform-specific budget. Focused regressions and the complete Python suite are required before closure; fresh hosted build success remains unclaimed.",
+    "blocker": "",
+    "owner": "",
+    "level": "basic",
+    "parent": "MC-AI-0032",
+    "motivation": "X7 reaches platform validation but macOS package parsing, Android SDK-root conflict, and Windows Python-test timeout block the next candidate before all required build evidence exists.",
+    "context": "X7 receipt /private/tmp/mc-s3-x7-hosted-ci-receipt-v1.txt SHA-256 4b02778c897912362efd1e569982237a6f75a647dc9952707e9d03b4abc46e00: macOS debug/release builds and Snapshot tests passed before lipo parsing failed; Android failed on conflicting SDK roots; Windows timed out before naming a failure. Scope is only the confirmed platform-tooling repair; do not claim Task14 Windows, artifact, promotion, or publication success.",
+    "complexity": "medium",
+    "created_at": "2026-09-10",
+    "resolved_at": "2026-09-10",
+    "resolution_changes": "Repaired only the confirmed X7 Android SDK environment, macOS lipo parsing, and Windows Python diagnostics/time-budget blockers; fresh hosted validation, Task14 Windows completion, artifacts, promotion, and publication remain open.",
+    "plan": [
+      "Repair only the confirmed X7 platform-tooling blockers and add focused fail-closed regressions."
+    ],
+    "product_changes": [],
+    "code_changes": [
+      "script/ai_check.py",
+      "script/ci/acquire.py",
+      "script/ci/build_snapshot.py",
+      "script/package_snapshot.py",
+      "script/tests/test_ai_check.py",
+      "script/tests/test_build_snapshot.py",
+      "script/tests/test_ci_acquire.py",
+      "script/tests/test_package_snapshot.py"
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": false,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]

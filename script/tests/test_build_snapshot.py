@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import tempfile
 import unittest
 import zipfile
@@ -206,6 +207,23 @@ class BuildSnapshotTests(unittest.TestCase):
         )
         with self.assertRaisesRegex(build_snapshot.SnapshotBuildError, "distribution SHA-256"):
             build_snapshot.verify_android_source(self.root / "android")
+
+    def test_android_sdk_environment_rejects_conflicting_roots(self):
+        with mock.patch.dict(
+            os.environ,
+            {"ANDROID_HOME": str(self.root / "old"), "ANDROID_SDK_ROOT": str(self.root / "new")},
+            clear=False,
+        ):
+            with self.assertRaisesRegex(build_snapshot.SnapshotBuildError, "must agree"):
+                build_snapshot.android_sdk_root_from_environment()
+
+    def test_android_sdk_environment_accepts_matching_roots(self):
+        with mock.patch.dict(
+            os.environ,
+            {"ANDROID_HOME": str(self.root), "ANDROID_SDK_ROOT": str(self.root / ".")},
+            clear=False,
+        ):
+            self.assertEqual(build_snapshot.android_sdk_root_from_environment(), self.root.resolve())
 
     def test_release_evidence_never_claims_hosted_runtime_acceptance(self):
         artifact = self.write("dist/game.apk", b"apk")

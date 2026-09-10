@@ -376,14 +376,27 @@ def property_value(source: Path, name: str) -> str:
     raise SnapshotBuildError(f"{name} is missing from {source}")
 
 
+def android_sdk_root_from_environment() -> Path:
+    """Return the one Android SDK root selected by the process environment."""
+    values = {
+        name: value.strip()
+        for name in ("ANDROID_SDK_ROOT", "ANDROID_HOME")
+        if (value := os.environ.get(name, "").strip())
+    }
+    roots = {Path(value).resolve() for value in values.values()}
+    if not roots:
+        raise SnapshotBuildError("ANDROID_SDK_ROOT or ANDROID_HOME is required")
+    if len(roots) != 1:
+        details = ", ".join(f"{name}={values[name]}" for name in sorted(values))
+        raise SnapshotBuildError(f"Android SDK environment variables must agree: {details}")
+    return roots.pop()
+
+
 def record_android_metadata(args: argparse.Namespace) -> None:
     require_revision(args.source_commit)
     root = args.android_root.resolve()
     verify_android_source(root)
-    sdk_root_value = os.environ.get("ANDROID_SDK_ROOT") or os.environ.get("ANDROID_HOME")
-    if not sdk_root_value:
-        raise SnapshotBuildError("ANDROID_SDK_ROOT or ANDROID_HOME is required")
-    sdk_root = Path(sdk_root_value)
+    sdk_root = android_sdk_root_from_environment()
     platform_properties = sdk_root / f"platforms/android-{args.api_level}/source.properties"
     ndk_properties = sdk_root / f"ndk/{args.ndk_version}/source.properties"
     cmake_properties = sdk_root / f"cmake/{args.cmake_version}/source.properties"

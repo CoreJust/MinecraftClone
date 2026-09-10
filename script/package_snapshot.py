@@ -221,6 +221,8 @@ def macos_architectures(binary: Path) -> frozenset[str]:
     elif " architecture: " in output:
         names = [output.rsplit(" architecture: ", 1)[1].strip()]
     else:
+        names = output.split()
+    if not names or len(names) != len(set(names)):
         raise PackageError(f"unexpected lipo output for {binary}: {output}")
     result = frozenset(names)
     if not result or not result <= {"arm64", "x86_64"}:

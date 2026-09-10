@@ -79,6 +79,20 @@ class AiCheckTests(unittest.TestCase):
         self.assertIn("PASS backlog", result.stdout)
         self.assertIn("PASS python-tests", result.stdout)
 
+    def test_python_tests_use_verbose_diagnostics_and_platform_budget(self):
+        checker = load_module()
+        calls = []
+
+        def run_phase(root, log_dir, name, command, timeout):
+            calls.append((name, command, timeout))
+            return checker.PhaseResult(name, command, 0, "")
+
+        with mock.patch.object(checker, "run_phase", side_effect=run_phase), contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(checker.main(["--root", str(self.root), "--fast"]), 0)
+        python_tests = next(item for item in calls if item[0] == "python-tests")
+        self.assertEqual(python_tests[1][-1], "-v")
+        self.assertEqual(python_tests[2], 180 if os.name == "nt" else 60)
+
     def test_fast_rejects_partially_staged_governed_file(self):
         target = self.root / "src/changed.cpp"
         target.write_text("first\n", encoding="utf-8")

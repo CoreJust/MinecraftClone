@@ -109,7 +109,10 @@ class CiAcquireTests(unittest.TestCase):
                 mock.call([*command, "--licenses"], input_text="y\n" * 100),
                 mock.call([*command, *acquire.ANDROID_SDK_PACKAGES]),
             ])
-            write_env.assert_called_once_with("ANDROID_HOME", str(root))
+            self.assertEqual(write_env.call_args_list, [
+                mock.call("ANDROID_HOME", str(root)),
+                mock.call("ANDROID_SDK_ROOT", str(root)),
+            ])
 
     def test_verify_sha256_rejects_tampered_download(self):
         with tempfile.TemporaryDirectory() as directory:
