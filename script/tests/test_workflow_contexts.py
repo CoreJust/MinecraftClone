@@ -37,6 +37,12 @@ class WorkflowContextTests(unittest.TestCase):
             self.assertIn("VCPKG_DEFAULT_BINARY_CACHE=$cache_dir", workflow)
             self.assertIn("vcpkg-binary-cache", workflow)
 
+    def test_snapshot_workflow_bootstraps_android_sdk_before_package_install(self):
+        workflow = WORKFLOWS[1].read_text(encoding="utf-8")
+        bootstrap = 'python script/ci/acquire.py install-android-sdk --root "$RUNNER_TEMP/android-sdk"'
+        self.assertIn(bootstrap, workflow)
+        self.assertNotIn("run: sdkmanager", workflow)
+
 
 if __name__ == "__main__":
     unittest.main()

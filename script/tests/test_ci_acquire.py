@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import hashlib
+import io
 import os
 import tempfile
 import unittest
+import zipfile
 from pathlib import Path
 from unittest import mock
 
@@ -20,8 +22,13 @@ class CiAcquireTests(unittest.TestCase):
         self.assertEqual(acquire.NINJA_VERSION, "1.13.1")
         self.assertEqual(acquire.PYTHON_VERSION, "3.12.10")
         self.assertEqual(acquire.VCPKG_COMMIT, "2b65c20fc66eda893aa15a15a453c3cf09500b19")
+        self.assertEqual(acquire.VULKAN_VERSION, "1.4.357.0")
+        self.assertEqual(acquire.VULKAN_DOWNLOADS["windows"]["url"], "https://sdk.lunarg.com/sdk/download/1.4.357.0/windows/vulkan_sdk.exe")
+        self.assertEqual(acquire.VULKAN_DOWNLOADS["macos"]["url"], "https://sdk.lunarg.com/sdk/download/1.4.357.0/mac/vulkan_sdk.zip")
         self.assertEqual(acquire.VULKAN_DOWNLOADS["windows"]["sha256"], "81f474711e9042f4cd22b31b2f7a8870db2e428b21586fb43dd80150be97310d")
         self.assertEqual(acquire.VULKAN_DOWNLOADS["macos"]["sha256"], "539433589c83522e6f31b1c7b418a4167e21597a4a361ab119e1dc0760cf3865")
+        self.assertEqual(acquire.ANDROID_COMMAND_LINE_TOOLS["url"], "https://dl.google.com/android/repository/commandlinetools-linux-15859902_latest.zip")
+        self.assertEqual(acquire.ANDROID_COMMAND_LINE_TOOLS["sha256"], "4e4c464f145a7512b57d088ac6c278c03c9eea610886b35a5e0804e74eedf583")
         self.assertEqual(acquire.NINJA_DOWNLOADS["windows"]["sha256"], "26a40fa8595694dec2fad4911e62d29e10525d2133c9a4230b66397774ae25bf")
         self.assertEqual(acquire.NINJA_DOWNLOADS["macos"]["sha256"], "da7797794153629aca5570ef7c813342d0be214ba84632af886856e8f0063dd9")
 
@@ -54,7 +61,7 @@ class CiAcquireTests(unittest.TestCase):
                 result = acquire.install_vulkan("macos", root)
             config = acquire.VULKAN_DOWNLOADS["macos"]
             archive = root.parent / config["filename"]
-            download.assert_called_once_with(config["url"], archive)
+            download.assert_called_once_with(f"{config['url']}?Human=true", archive)
             verify.assert_called_once_with(archive, config["sha256"])
             extract.assert_called_once_with(archive, root / "installer")
             run.assert_called_once_with([
@@ -66,6 +73,43 @@ class CiAcquireTests(unittest.TestCase):
                 "copy_only=1",
             ])
             self.assertEqual(result, sdk_root)
+
+    def test_download_uses_explicit_agent_request(self):
+        with tempfile.TemporaryDirectory() as directory:
+            destination = Path(directory) / "payload"
+            response = mock.MagicMock()
+            response.__enter__.return_value = io.BytesIO(b"payload")
+            with mock.patch.object(acquire.urllib.request, "urlopen", return_value=response) as urlopen:
+                acquire.download("https://sdk.lunarg.com/example?Human=true", destination)
+            request = urlopen.call_args.args[0]
+            self.assertEqual(request.full_url, "https://sdk.lunarg.com/example?Human=true")
+            self.assertEqual(request.get_header("User-agent"), acquire.DOWNLOAD_USER_AGENT)
+            self.assertEqual(destination.read_bytes(), b"payload")
+
+    def test_install_android_sdk_bootstraps_latest_layout_before_sdkmanager(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "android-sdk"
+            archive = Path(directory) / acquire.ANDROID_COMMAND_LINE_TOOLS["filename"]
+            with zipfile.ZipFile(archive, "w") as contents:
+                contents.writestr("cmdline-tools/bin/sdkmanager", "#!/bin/sh\n")
+                contents.writestr("cmdline-tools/source.properties", "Pkg.Revision=20.0\n")
+            with mock.patch.object(acquire, "download") as download, mock.patch.object(acquire, "verify_sha256") as verify, mock.patch.object(acquire, "run") as run, mock.patch.object(acquire, "write_github_env") as write_env:
+                def copy_archive(_url: str, destination: Path) -> None:
+                    destination.write_bytes(archive.read_bytes())
+
+                download.side_effect = copy_archive
+                sdkmanager = acquire.install_android_sdk(root)
+            expected_archive = root.parent / acquire.ANDROID_COMMAND_LINE_TOOLS["filename"]
+            self.assertEqual(sdkmanager, root / "cmdline-tools" / "latest" / "bin" / "sdkmanager")
+            self.assertTrue(sdkmanager.is_file())
+            download.assert_called_once_with(acquire.ANDROID_COMMAND_LINE_TOOLS["url"], expected_archive)
+            verify.assert_called_once_with(expected_archive, acquire.ANDROID_COMMAND_LINE_TOOLS["sha256"])
+            command = [str(sdkmanager), f"--sdk_root={root}"]
+            self.assertEqual(run.call_args_list, [
+                mock.call([*command, "--licenses"], input_text="y\n" * 100),
+                mock.call([*command, *acquire.ANDROID_SDK_PACKAGES]),
+            ])
+            write_env.assert_called_once_with("ANDROID_HOME", str(root))
 
     def test_verify_sha256_rejects_tampered_download(self):
         with tempfile.TemporaryDirectory() as directory:

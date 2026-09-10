@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Acquire and verify the exact desktop CI toolchain without action-side installers."""
+"""Acquire and verify the exact CI toolchain without action-side installers."""
 
 from __future__ import annotations
 
@@ -35,6 +35,17 @@ VULKAN_DOWNLOADS = {
         "filename": "vulkan_sdk.zip",
     },
 }
+ANDROID_COMMAND_LINE_TOOLS = {
+    "url": "https://dl.google.com/android/repository/commandlinetools-linux-15859902_latest.zip",
+    "sha256": "4e4c464f145a7512b57d088ac6c278c03c9eea610886b35a5e0804e74eedf583",
+    "filename": "commandlinetools-linux-15859902_latest.zip",
+}
+ANDROID_SDK_PACKAGES = (
+    "platforms;android-35",
+    "ndk;27.0.12077973",
+    "cmake;3.30.5",
+)
+DOWNLOAD_USER_AGENT = "MinecraftClone CI acquisition"
 NINJA_DOWNLOADS = {
     "windows": {
         "url": f"https://github.com/ninja-build/ninja/releases/download/v{NINJA_VERSION}/ninja-win.zip",
@@ -55,10 +66,16 @@ class CiError(RuntimeError):
     """A pinned dependency or required CI tool was unavailable or mismatched."""
 
 
-def run(command: Sequence[str], accepted: Sequence[int] = (0,)) -> str:
+def run(command: Sequence[str], accepted: Sequence[int] = (0,), input_text: str | None = None) -> str:
     """Run a command and return combined output, accepting only stated statuses."""
     try:
-        completed = subprocess.run(command, text=True, capture_output=True, check=False)
+        completed = subprocess.run(
+            command,
+            text=True,
+            input=input_text,
+            capture_output=True,
+            check=False,
+        )
     except OSError as error:
         raise CiError(f"could not start {' '.join(command)}: {error}") from error
     output = completed.stdout + completed.stderr
@@ -86,7 +103,8 @@ def verify_sha256(path: Path, expected: str) -> None:
 def download(url: str, destination: Path) -> None:
     """Download an artifact into its destination without using a mutable action."""
     try:
-        with urllib.request.urlopen(url) as response, destination.open("wb") as stream:
+        request = urllib.request.Request(url, headers={"User-Agent": DOWNLOAD_USER_AGENT})
+        with urllib.request.urlopen(request) as response, destination.open("wb") as stream:
             shutil.copyfileobj(response, stream)
     except OSError as error:
         raise CiError(f"could not download {url}: {error}") from error
@@ -173,7 +191,7 @@ def install_vulkan(platform_name: str, root: Path) -> Path:
     config = VULKAN_DOWNLOADS[platform_name]
     root.mkdir(parents=True, exist_ok=True)
     archive = root.parent / config["filename"]
-    download(config["url"], archive)
+    download(f"{config['url']}?Human=true", archive)
     verify_sha256(archive, config["sha256"])
     if platform_name == "windows":
         run([
@@ -205,6 +223,36 @@ def install_vulkan(platform_name: str, root: Path) -> Path:
     write_github_path(compiler.parent)
     print(sdk_root)
     return sdk_root
+
+
+def install_android_sdk(root: Path) -> Path:
+    """Bootstrap pinned command-line tools before installing exact Android SDK packages."""
+    root.mkdir(parents=True, exist_ok=True)
+    latest = root / "cmdline-tools" / "latest"
+    if latest.exists():
+        raise CiError(f"Android command-line tools already exist: {latest}")
+    archive = root.parent / ANDROID_COMMAND_LINE_TOOLS["filename"]
+    download(ANDROID_COMMAND_LINE_TOOLS["url"], archive)
+    verify_sha256(archive, ANDROID_COMMAND_LINE_TOOLS["sha256"])
+    staging = root / "command-line-tools"
+    staging.mkdir()
+    safe_extract(archive, staging)
+    extracted_tools = staging / "cmdline-tools"
+    if not extracted_tools.is_dir():
+        raise CiError(f"Android command-line tools archive is missing {extracted_tools}")
+    latest.parent.mkdir(parents=True)
+    extracted_tools.rename(latest)
+    staging.rmdir()
+    sdkmanager = latest / "bin" / "sdkmanager"
+    if not sdkmanager.is_file():
+        raise CiError(f"Android command-line tools archive is missing {sdkmanager}")
+    sdkmanager.chmod(sdkmanager.stat().st_mode | stat.S_IXUSR)
+    command = [str(sdkmanager), f"--sdk_root={root}"]
+    run([*command, "--licenses"], input_text="y\n" * 100)
+    run([*command, *ANDROID_SDK_PACKAGES])
+    write_github_env("ANDROID_HOME", str(root))
+    print(root)
+    return sdkmanager
 
 
 def install_vcpkg(root: Path) -> None:
@@ -351,6 +399,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     install_ninja_parser.add_argument("--root", type=Path, required=True)
     install_vcpkg_parser = commands.add_parser("install-vcpkg")
     install_vcpkg_parser.add_argument("--root", type=Path, required=True)
+    install_android_parser = commands.add_parser("install-android-sdk")
+    install_android_parser.add_argument("--root", type=Path, required=True)
     verify_parser = commands.add_parser("verify-tools")
     verify_parser.add_argument("--platform", choices=tuple(VULKAN_DOWNLOADS), required=True)
     metadata_parser = commands.add_parser("record-metadata")
@@ -368,6 +418,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             install_ninja(args.platform, args.root)
         elif args.command == "install-vcpkg":
             install_vcpkg(args.root)
+        elif args.command == "install-android-sdk":
+            install_android_sdk(args.root)
         elif args.command == "verify-tools":
             verify_tools(args.platform)
         elif args.command == "record-metadata":

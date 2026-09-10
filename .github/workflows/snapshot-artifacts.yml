@@ -192,8 +192,8 @@ jobs:
         run: |
           echo "JAVA_HOME=$JAVA_HOME_21_X64" >> "$GITHUB_ENV"
           echo "$JAVA_HOME_21_X64/bin" >> "$GITHUB_PATH"
-      - name: Acquire pinned Android SDK components
-        run: sdkmanager 'platforms;android-35' 'ndk;27.0.12077973' 'cmake;3.30.5'
+      - name: Bootstrap and acquire pinned Android SDK components
+        run: python script/ci/acquire.py install-android-sdk --root "$RUNNER_TEMP/android-sdk"
       - name: Acquire pinned vcpkg
         run: python script/ci/acquire.py install-vcpkg --root "$RUNNER_TEMP/vcpkg"
       - name: Verify exact source and Android wrapper

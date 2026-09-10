@@ -2742,5 +2742,47 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0073",
+    "title": "Repair hosted SDK acquisition reliability",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P0",
+    "route": "luna",
+    "milestone": "ED-010-S3",
+    "depends_on": [],
+    "acceptance": "Both workflows acquire the pinned LunarG SDK through the vendor-documented bot-mitigation request form while retaining the existing pinned SHA-256 verification, and the artifact workflow deterministically bootstraps Android command-line tools before invoking sdkmanager to install the exact API 35, NDK 27.0.12077973, and CMake 3.30.5 packages. Focused tests cover request construction/headers or URL, hash verification preservation, missing sdkmanager bootstrap, and the resulting platform-specific workflow order. Hosted execution remains unclaimed until a new pushed candidate runs.",
+    "evidence": "Focused acquisition and workflow regressions pass 11/11; Python compilation, exact-index fast gate, and diff checks pass. The hosted X4 failure receipt is /private/tmp/mc-s3-x4-hosted-ci-receipt.txt; this local repair does not claim a hosted rerun.",
+    "blocker": "",
+    "owner": "s3_ci_acquisition",
+    "level": "basic",
+    "parent": "MC-AI-0032",
+    "motivation": "Exact X4 hosted macOS/Windows jobs fail before build because LunarG blocks the current generic urllib request, and Android fails because sdkmanager is invoked before command-line tools are provisioned.",
+    "context": "Hosted receipt /private/tmp/mc-s3-x4-hosted-ci-receipt.txt at X4 1a157a5d279a6e643470ea818c9b98ee46eb140b records LunarG HTTP 403 for the pinned 1.4.357.0 downloads and sdkmanager exit 127. LunarG documents ?Human=true for automated download mitigation; Android documents command-line-tools/latest bootstrap. Preserve existing version pins and SHA-256 checks; do not bypass verification, weaken TLS, change release scope, or claim hosted success.",
+    "complexity": "medium",
+    "created_at": "2026-09-10",
+    "resolved_at": "2026-09-10",
+    "resolution_changes": "Repaired the two pre-build hosted acquisition failures with pinned, hash-verified vendor downloads and deterministic Android command-line-tools bootstrap; hosted execution remains pending.",
+    "plan": [
+      "Use only the documented LunarG request form while retaining the fixed version, platform filename, and post-download SHA-256 verification.",
+      "Add a deterministic Android command-line-tools bootstrap before sdkmanager, then install only the currently pinned platform, NDK, and CMake packages.",
+      "Add narrow Python and workflow-contract regressions for both prior failure modes, run focused tests and fast exact-index validation, and record a Luna/high staged review."
+    ],
+    "product_changes": [
+      "No game behavior changed."
+    ],
+    "code_changes": [
+      "Uses the vendor-documented LunarG bot-mitigation request form while retaining fixed version and SHA-256 verification.",
+      "Bootstraps pinned Android command-line tools into cmdline-tools/latest before installing the exact required SDK packages.",
+      "Adds focused acquisition and workflow-order regressions."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": false,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]
