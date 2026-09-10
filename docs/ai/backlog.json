@@ -3177,13 +3177,13 @@
     "id": "MC-AI-0083",
     "title": "Resolve Windows POSIX-shell fake Git fixture from its working directory",
     "kind": "bug",
-    "status": "active",
+    "status": "done",
     "priority": "P0",
     "route": "luna",
     "milestone": "ED-010-S3",
     "depends_on": [],
     "acceptance": "The annotated AI tag pre-push fixture resolves and executes its fake Git command under hosted Windows POSIX sh as well as Unix shells, preserves the strict-tag assertion, and does not invoke the repository's real Git command.",
-    "evidence": "X10 and X11 both showed Git Bash 5.3.15 resolve /mingw64/bin/git with the fake log missing. The current fixture exports PATH=/private/tmp/mc-s3-ai-dev.fnW6RT/worktree/fake-bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/System/Cryptexes/App/usr/bin:/usr/bin:/bin:/usr/sbin:/sbin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/local/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/appleinternal/bin:/pkg/env/global/bin:/Library/Apple/usr/bin:/usr/local/go/bin:/usr/local/munki:/Users/core-just/.codex/tmp/arg0/codex-arg0mGjILR:/Users/core-just/.cache/codex-runtimes/codex-primary-runtime/dependencies/bin/override:/Users/core-just/.local/bin:/Users/core-just/.bun/bin:/Users/core-just/.nvm/versions/node/v22.22.0/bin:/opt/homebrew/Cellar/openjdk@21/21.0.12/libexec/openjdk.jdk/Contents/Home/bin:/opt/homebrew/opt/node@22/bin:/opt/homebrew/opt/openjdk@21/bin:/Users/core-just/Library/Android/sdk/tools:/Users/core-just/Library/Android/sdk/platform-tools:/Users/core-just/.android/avd:/Users/core-just/Library/Android/sdk/ndk/28.0.12433566/shader-tools/darwin-x86_64:/Users/core-just/.cache/codex-runtimes/codex-primary-runtime/dependencies/bin/fallback:/Applications/ChatGPT.app/Contents/Resources:/Users/core-just/.local/bin inside that shell, and the focused annotated-tag test passes locally while asserting the probe and all four hook Git calls reached the fake command; hosted Windows confirmation remains pending X12.",
+    "evidence": "X10 and X11 showed Git Bash 5.3.15 resolve /mingw64/bin/git while the fake log remained missing. The repaired fixture exports the POSIX path from $PWD inside the selected shell, and X12 then passed the full fast policy check plus Windows Debug and Release build, test, and shader jobs. The focused test still asserts the probe and all four hook Git calls reached the fake command; production hook behavior is unchanged.",
     "blocker": "",
     "owner": "Codex",
     "level": "basic",
@@ -3192,8 +3192,8 @@
     "context": "Repair only the cross-platform test fixture using its known subprocess working directory; production hook behavior and strict release checks remain unchanged.",
     "complexity": "low",
     "created_at": "2026-09-10",
-    "resolved_at": "",
-    "resolution_changes": "X11 disproved the native/relative Python PATH-prefix attempts. The current repair now constructs the POSIX PATH inside the selected shell from /private/tmp/mc-s3-ai-dev.fnW6RT/worktree before probing Git and executing the hook.",
+    "resolved_at": "2026-09-10",
+    "resolution_changes": "Constructed and exported PATH from $PWD inside the selected POSIX shell before probing Git and executing the hook.",
     "plan": [
       "Use a shell-portable relative fake-bin PATH entry rooted at the explicit subprocess cwd and assert the fake command is selected."
     ],
@@ -3206,7 +3206,7 @@
     "finalized": false,
     "retrospective": "",
     "docs_review": "",
-    "environment_review": "The current repair makes the PATH syntax shell-native after process launch, rather than relying on Python's Windows PATH serialization. Production hook and strict release behavior remain unchanged.",
+    "environment_review": "X12 passed the fixture in hosted Git Bash and completed both Windows desktop configurations. Production hook and strict release behavior remain unchanged.",
     "backlog_review": ""
   },
   {
