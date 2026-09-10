@@ -2885,5 +2885,44 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0076",
+    "title": "Restrict pre-minor review capacity to minimal Luna gate",
+    "kind": "decision",
+    "status": "done",
+    "priority": "P0",
+    "route": "luna",
+    "milestone": "AI development policy",
+    "depends_on": [],
+    "acceptance": "Until immediately before minor publication, each task uses exactly one minimal Luna/high staged review after deterministic automated checks. Unit, integration, screenshot and code checks remain primary; static analyzers and sanitizers remain deferred to the minor-publication review boundary. This policy does not weaken test, authority, release, or external-publication gates.",
+    "evidence": "The project now records one minimal Luna/high exact-staged-candidate review through minor development, CI candidates, and snapshot delivery. Deterministic unit, integration, screenshot, and code checks remain primary; static analyzers and sanitizers are deferred to the final pre-minor-publication boundary. The policy preserves test and publication-authority gates and the Snapshot 8 feedback hold.",
+    "blocker": "",
+    "owner": "",
+    "level": "basic",
+    "parent": "MC-AI-0032",
+    "motivation": "Record the user-directed review-capacity policy while retaining deterministic validation and delivery authority gates.",
+    "context": "Policy-only follow-up to the S3 closure batch. It supersedes additional review-before-push layers before minor publication; it does not change test or external-action authority.",
+    "complexity": "low",
+    "created_at": "2026-09-10",
+    "resolved_at": "2026-09-10",
+    "resolution_changes": "Recorded the user-directed minimal-review policy in the owning project guidance without changing release, test, or external-publication authority.",
+    "plan": [
+      "Update only the project review-policy documents to express the minimal Luna/high pre-minor gate."
+    ],
+    "product_changes": [],
+    "code_changes": [
+      "AGENTS.md",
+      "docs/ai/MODELS.md",
+      "docs/ai/COMMITS.md",
+      "docs/ai/RELEASES.md"
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": false,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]

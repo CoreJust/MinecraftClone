@@ -23,7 +23,7 @@ Do not run every change through all four models. Finish clean tasks on their ini
 
 If a worker fails the same acceptance predicate twice, stop retrying blindly. Send the failing test, smallest relevant diff, attempted approaches, and one precise question to the next suitable route. Escalate immediately for a newly discovered major contract decision. After the decision, return implementation to the original cheap route. Do not automatically ask Astra to review every completion.
 
-Deterministic checks remain the main debugging tool. Every commit also requires a short Luna/high review of the exact staged tree. Minor/major completion requires Terra/high review of the accumulated changes. Use Sol/Astra only for unresolved architecture or important decisions. Reuse still-valid evidence and avoid extra review rounds beyond [the commit policy](COMMITS.md).
+Deterministic checks remain the main debugging tool. Review timing, staged-tree identity, and testing priorities follow the [review and verification policy](../../AGENTS.md#review-and-verification-policy). Use Sol/Astra only for unresolved architecture or important decisions. Reuse still-valid evidence and avoid extra review rounds beyond [the commit policy](COMMITS.md).
 
 Examples: chunk coordinate design → Astra once; meshing contract → Sol if unresolved; meshing code → Terra; a specified block registry → Luna. Malformed-message regression → Terra; a wire-format compatibility decision → Astra or Sol according to its reach.
 
