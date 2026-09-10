@@ -35,7 +35,7 @@ public:
     static constexpr EnumValues<E> const& VALUES = helperValue<ValuesHelper>(SEQ);
     static constexpr EnumEntries<E> const& ENTRIES = helperValue<EntriesHelper>(SEQ);
     static constexpr auto const& NAMES = helperValue<NameesHelper>(SEQ);
-    
+
     inline static std::unordered_map<std::string_view, E> NAME_TO_VALUE = std::invoke([] {
         std::unordered_map<std::string_view, E> result;
         result.reserve(countOf<E>() + 1);

@@ -49,7 +49,7 @@ public:
         , m_acquired_next_image_index(acquired_next_image_index)
     { }
     ~FrameContext();
-    
+
     void setImageBarriers(std::span<ImageMemoryBarrier const> const barriers, std::span<RawImage const> const images);
     void setImageBarrier(ImageMemoryBarrier const barrier);
     void setImageBarrier(ImageMemoryBarrier const barrier, RawImage const image) {

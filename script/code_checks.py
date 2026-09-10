@@ -18,7 +18,7 @@ def _classify(path: str, quote_char: str, filepath: str) -> str:
         return 'self'
     if quote_char == '"':
         return 'relative'
-        
+
     if path.startswith(SRC_SUBFOLDERS):
         return 'project'
     lib = path.split('/')[0].split('.')[0]

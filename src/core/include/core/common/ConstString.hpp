@@ -13,7 +13,7 @@ struct ConstString final {
             value[i] = str[i];
         }
     }
-    
+
     constexpr operator std::string_view() const {
         return {value, N - 1};
     }

@@ -30,13 +30,13 @@ struct EnumMapping final {
  * enum class Enum {
  *     A, B, C, D, E, F,
  * };
- * 
+ *
  * CORE_DEFINE_ENUM_MAPPING(Enum, uint32_t,
  *     { C, 32 },
  *     { E, 64 }
  * )
  * using Mapping = core::EnumMapping<Enum, uint32_t>;
- * 
+ *
  * Now:
  * Mapping::map(Enum::A) -> 0
  * Mapping::map(Enum::B) -> 1

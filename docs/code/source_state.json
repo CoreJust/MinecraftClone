@@ -122,7 +122,7 @@
         "vcpkg-configuration.json",
         "vcpkg.json"
       ],
-      "sources_sha256": "56bbd71d93921dfb314f8f1431faf4a80e4b049c91b6e3338ab72f04be23713e"
+      "sources_sha256": "4a9c912f182b291a643696b54e11012c227dbd7b44fb60a3c4c57628867df60b"
     },
     {
       "guide": "docs/code/CORE.md",
@@ -244,7 +244,7 @@
         "tests/core/window/keyboard_tests.cpp",
         "tests/core/window/mouse_tests.cpp"
       ],
-      "sources_sha256": "20ed92dc640debab82fce53d0074d4cbb75cdf611773511d4547567cc00c9550"
+      "sources_sha256": "9195e6a7715abfb92f854549fbafaf037dfa49094b9b774c9a122df606517f79"
     },
     {
       "guide": "docs/code/GAMEPLAY.md",
@@ -278,7 +278,7 @@
         "tests/core/shared_message_tests.cpp",
         "tests/core/shared_world_tests.cpp"
       ],
-      "sources_sha256": "46add0963b2cdb6bde253724f308877357dcbdfc54e5f0664fc195e87fd454a2"
+      "sources_sha256": "428f5bf69eba073a4ce4aef087df48b73532bba722d091f1c607443a9be7b452"
     },
     {
       "guide": "docs/code/RENDERING.md",
@@ -477,7 +477,7 @@
         "tests/core/vulkan/physical_device_selector_tests.cpp",
         "tests/core/vulkan/spirv_tests.cpp"
       ],
-      "sources_sha256": "16319769400b0768188f7a1545e553c161f94c445c53a983b94bdee5e2d1912e"
+      "sources_sha256": "4bea64baa1c3ecb4721bde63edd4e23487497e998f75c15577ac2f3c16e9d3f9"
     }
   ],
   "version": 1

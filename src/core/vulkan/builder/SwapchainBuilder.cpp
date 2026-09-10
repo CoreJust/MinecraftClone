@@ -206,7 +206,7 @@ Swapchain SwapchainBuilder::build(
         m_preferred_color_spaces
     );
     PresentMode mode = choosePresentMode(physical_device, surface, m_required_present_modes, m_preferred_present_modes);
-    
+
     VkSurfaceCapabilitiesKHR capabilities{ };
     if (!VK_CHECK(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physical_device.handle(), surface.handle(), &capabilities))) {
         throw SwapchainCreationError(

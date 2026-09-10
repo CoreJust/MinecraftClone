@@ -32,7 +32,7 @@ function(mc_target_shaders TARGET)
         cmake_path(ABSOLUTE_PATH SHADER_SOURCE NORMALIZE)
         cmake_path(GET SHADER_SOURCE FILENAME SHADER_NAME)
         cmake_path(GET SHADER_SOURCE EXTENSION SHADER_EXT)
-        
+
         set(SPV_FILE "${CMAKE_CURRENT_BINARY_DIR}/${SHADER_NAME}.spv")
         set(COMPILE_ARGS "${SHADER_SOURCE}" -o "${SPV_FILE}")
         if(SHADER_EXT STREQUAL ".mesh" OR SHADER_EXT STREQUAL ".task")
@@ -46,7 +46,7 @@ function(mc_target_shaders TARGET)
             COMMENT "Compiling shader ${SHADER_NAME}"
             VERBATIM
         )
-        
+
         list(APPEND SPV_FILES ${SPV_FILE})
     endforeach()
 

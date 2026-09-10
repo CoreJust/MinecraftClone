@@ -39,7 +39,7 @@ enum class ImageLayout {
     TensorAliasing,
     VideoEncodeQuantizationMap,
     ZeroInitialized,
-    
+
     Count,
 };
 

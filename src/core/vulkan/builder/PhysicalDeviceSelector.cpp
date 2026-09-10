@@ -20,7 +20,7 @@ void commitCaps(
     std::vector<VulkanFeature> preferred_features
 ) {
     auto caps = internal::PhysicalDeviceCapsStruct::query(device, out_caps.instanceVersion());
-    
+
     auto extensions = VulkanExtensions::loadSupportedDeviceExtensions(device);
     VulkanExtensions supported_extensions{ };
     for (VulkanExtension const ext : required_extensions) {
@@ -111,7 +111,7 @@ int32_t PhysicalDeviceSelector::scoreDevice(PhysicalDevice const& device, Versio
             return -1;
         }
     }
-    
+
     auto caps = internal::PhysicalDeviceCapsStruct::query(device, instance_version);
     if (caps.apiVersion() < m_required_api_version) {
         CORE_DEBUG(

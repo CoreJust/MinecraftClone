@@ -18,7 +18,7 @@ enum class QueueFamily {
     Protected,
     VideoDecode,
     VideoEncode,
-    
+
     // Note that it doesn't map to any flag, so must be handled separately
     Present,
 

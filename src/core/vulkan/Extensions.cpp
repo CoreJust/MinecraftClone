@@ -11,7 +11,7 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
-    
+
 CORE_ENUM_FUNCTIONS_IMPL(::core::vk::VulkanExtension);
 CORE_ENUM_FUNCTIONS_IMPL(::core::vk::VulkanExtensionKind);
 
