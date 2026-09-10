@@ -3160,5 +3160,41 @@
     "docs_review": "docs/PACKAGING.md records otool -D install-name validation and per-architecture packaged-path resolution.",
     "environment_review": "Validated the current mc_main with the installed universal Vulkan loader and MoltenVK SDK dylibs on macOS; hosted packaging remains unclaimed until X10.",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0083",
+    "title": "Resolve Windows POSIX-shell fake Git fixture from its working directory",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P0",
+    "route": "luna",
+    "milestone": "ED-010-S3",
+    "depends_on": [],
+    "acceptance": "The annotated AI tag pre-push fixture resolves and executes its fake Git command under hosted Windows POSIX sh as well as Unix shells, preserves the strict-tag assertion, and does not invoke the repository's real Git command.",
+    "evidence": "X10 diagnostics showed Git Bash 5.3.15 resolved /mingw64/bin/git while the native absolute fake-bin prefix was not selected and the fake log remained missing. The repaired focused annotated-tag test passes locally and asserts the diagnostic probe plus all four hook Git calls reached the fake command; hosted Windows confirmation remains pending X11.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0032",
+    "motivation": "X10 diagnostics proved that hosted Windows sh ignored the absolute native fake-bin PATH entry, resolved /mingw64/bin/git, and never wrote the fake-Git argv log.",
+    "context": "Repair only the cross-platform test fixture using its known subprocess working directory; production hook behavior and strict release checks remain unchanged.",
+    "complexity": "low",
+    "created_at": "2026-09-10",
+    "resolved_at": "2026-09-10",
+    "resolution_changes": "Made the fake-bin PATH entry relative to the explicitly controlled subprocess working directory and asserted every Git invocation reached the fake command.",
+    "plan": [
+      "Use a shell-portable relative fake-bin PATH entry rooted at the explicit subprocess cwd and assert the fake command is selected."
+    ],
+    "product_changes": [],
+    "code_changes": [
+      "script/tests/test_ai_check.py"
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": false,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "The repair targets Git Bash PATH interpretation using a relative entry under the subprocess cwd; no production hook or release-gate behavior changed.",
+    "backlog_review": ""
   }
 ]

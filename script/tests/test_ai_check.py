@@ -247,7 +247,7 @@ class AiCheckTests(unittest.TestCase):
         log = self.root / "hook.log"
         fake_git_log = self.root / "fake-git.log"
         environment = os.environ | {
-            "PATH": str(fake_bin) + os.pathsep + os.environ["PATH"],
+            "PATH": fake_bin.name + os.pathsep + os.environ["PATH"],
             "PYTHON": str(fake_python),
             "HOOK_LOG": str(log),
             "FAKE_GIT_LOG": fake_git_log.name,
@@ -296,6 +296,16 @@ class AiCheckTests(unittest.TestCase):
             f"hook_stderr={result.stderr!r}"
         )
         self.assertEqual(result.returncode, 0, diagnostics)
+        self.assertEqual(
+            fake_git_log_contents.splitlines(),
+            [
+                "git:--version:",
+                "git:branch:--show-current",
+                "git:rev-parse:HEAD",
+                "git:rev-parse:tag-object^{commit}",
+                "git:status:--porcelain",
+            ],
+        )
         self.assertEqual(log.read_text(encoding="utf-8").strip(), "script/ai_check.py --strict --require-index-match")
 
     def test_version_arguments_and_publisher_exceptions_are_precise(self):
