@@ -6,15 +6,19 @@
     "context": "User-authorized adoption of the existing mixed working tree into S3, including its initial development-policy files. This baseline commit imports the prepared source/tooling together; sibling task records retain specific acceptance and remaining delivery work. Full gate requires desktop access when renderer smoke is enabled.",
     "complexity": "high",
     "created_at": "2026-09-09",
-    "resolved_at": "",
-    "resolution_changes": "",
+    "resolved_at": "2026-09-10",
+    "resolution_changes": "Adopted and verified the existing Snapshot 3 development baseline as a coherent local, task-traceable starting point; release publication and hosted runtime/artifact acceptance remain separate.",
     "plan": [
       "Record runtime baseline, gate results, and isolated preservation of user dirty work; do not claim Snapshot 3 complete.",
       "Resolve baseline code-review findings before creating a coherent exact-index candidate.",
       "Record build, full CTest, GPU smoke and tooling evidence without treating it as release publication."
     ],
-    "product_changes": [],
-    "code_changes": [],
+    "product_changes": [
+      "No new product behavior in this closure; the existing workflow, rendering, multiplayer, world, and portability baseline was locally integrated and verified."
+    ],
+    "code_changes": [
+      "Adopted the pre-existing Snapshot 3 source, tooling, documentation, and test baseline with explicit imported commit traceability."
+    ],
     "baseline_commit": "28010a92416a92408057d18154d9b00a3d8280b0",
     "commits": [
       "1146de889592ea780270ae86883348b64e2f7783",
@@ -81,13 +85,13 @@
     "id": "MC-AI-0001",
     "title": "Verify Snapshot 3 baseline",
     "kind": "decision",
-    "status": "active",
+    "status": "done",
     "priority": "P0",
     "route": "sol",
     "milestone": "EarlyDev 0.1.0:3",
     "depends_on": [],
     "acceptance": "Adopt and verify the pre-existing Snapshot 3 baseline as a coherent, task-traceable starting point: workflow/tooling, portability, renderer, multiplayer, world and focused tests build and pass without claiming snapshot release completion.",
-    "evidence": "Complete Debug integration gate passed on 2026-09-09 with desktop Vulkan access: CTest 159/159, Python tests, documentation inventory and source checks. Selector promotion regressions and SpanUtils lifetime tests pass. MoltenVK renderer smoke passed. Publisher development exceptions are only unfinished snapshot3 history and dirty tree. This is a development checkpoint, not snapshot release acceptance.",
+    "evidence": "The current development baseline passes CTest 204/204, 151 Python tests, documentation and task checks, and the exact RendererSmokeTest 1/1 with MoltenVK. Publisher output retains only the expected unfinished Snapshot 3 history development exception; this is not snapshot publication or hosted platform acceptance.",
     "blocker": "",
     "owner": "Codex"
   },
