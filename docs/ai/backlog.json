@@ -1122,32 +1122,36 @@
     "context": "Imported from the 2026-09-09 AI backlog; Network verification. Completion has not been established.",
     "complexity": "medium",
     "created_at": "2026-09-09",
-    "resolved_at": "",
-    "resolution_changes": "",
+    "resolved_at": "2026-09-10",
+    "resolution_changes": "Sent every client echo request before entering bounded per-client monotonic polling, replacing the order-dependent single poll without adding an arbitrary sleep.",
     "plan": [
       "Use deterministic readiness or bounded waits without extending arbitrary sleep."
     ],
-    "product_changes": [],
-    "code_changes": [],
+    "product_changes": [
+      "No game behavior changed; deterministic real-ENet multi-client acceptance no longer depends on a one-shot poll order."
+    ],
+    "code_changes": [
+      "tests/core/net_client_server_tests.cpp"
+    ],
     "baseline_commit": "",
     "commits": [],
     "finalized": false,
     "retrospective": "",
     "docs_review": "",
-    "environment_review": "",
+    "environment_review": "Local debug build passed 20 repetitions each of the two 12-client tests in 63.79 seconds without sleeps or retries.",
     "backlog_review": "",
     "id": "MC-AI-0030",
     "title": "Stabilize multi-client echo readiness",
     "kind": "bug",
-    "status": "ready",
+    "status": "done",
     "priority": "P1",
     "route": "terra",
     "milestone": "Network verification",
     "depends_on": [],
     "acceptance": "Use deterministic readiness or bounded waits without extending arbitrary sleep.",
-    "evidence": "tests/core/net_client_server_tests.cpp:299; 2026-09-09 full ctest: 135/136, client11 empty; focused repeat ×3: passed.",
+    "evidence": "The current debug mc_tests build passes MultipleClientsEchoTest and MessageRelayTest for 20 consecutive repetitions each after the shared bounded connection setup repair. The earlier full local CTest run passed all 204 tests; X12 hosted confirmation remains part of aggregate delivery rather than this focused closure.",
     "blocker": "",
-    "owner": ""
+    "owner": "Codex"
   },
   {
     "level": "basic",
