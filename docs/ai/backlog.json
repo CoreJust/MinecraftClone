@@ -434,13 +434,17 @@
     "context": "Snapshot 3 package-correctness fix. Remove build/debug shader discovery so Release and extracted artifacts can run.",
     "complexity": "medium",
     "created_at": "2026-09-09",
-    "resolved_at": "",
-    "resolution_changes": "",
+    "resolved_at": "2026-09-10",
+    "resolution_changes": "Verified existing executable-relative shader discovery in an isolated Release build and private installation; this closure adds no new source behavior.",
     "plan": [
       "Support debug and release shader discovery with evidence."
     ],
-    "product_changes": [],
-    "code_changes": [],
+    "product_changes": [
+      "No product behavior changed."
+    ],
+    "code_changes": [
+      "No source change in this closure; verified the installed mc_main plus shaders layout."
+    ],
     "baseline_commit": "",
     "commits": [],
     "finalized": false,
@@ -451,15 +455,15 @@
     "id": "MC-AI-0011",
     "title": "Fix release shader discovery",
     "kind": "bug",
-    "status": "ready",
+    "status": "done",
     "priority": "P1",
     "route": "terra",
     "milestone": "ED-010-S3",
     "depends_on": [],
     "acceptance": "Support debug and release shader discovery with evidence.",
-    "evidence": "",
+    "evidence": "At exact source commit 1a157a5d279a6e643470ea818c9b98ee46eb140b, isolated Release ShaderAssetsTest 2/2 and ShaderSpirvTargetTest 5/5 passed. The private installed mc_main captured a validation-enabled Apple M3 Pro/MoltenVK frame using the adjacent installed shaders; receipt /private/tmp/mc-s3-x4-runtime-acceptance.txt. This is not a promoted or published asset.",
     "blocker": "",
-    "owner": ""
+    "owner": "s3_finalization"
   },
   {
     "level": "basic",
