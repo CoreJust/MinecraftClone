@@ -9,6 +9,7 @@
 
 #include <functional>
 #include <chrono>
+#include <optional>
 
 CORE_VK_ERROR_WITH_KINDS(VulkanContextError, VulkanRuntimeError,
     FailedToAcquireNextImage,
@@ -153,6 +154,7 @@ private:
 private:
     VulkanContextBuilder m_builder;
     SurfaceProvider const* m_surface_provider = nullptr;
+    std::optional<Extent2d> m_observed_framebuffer_extent;
 
     Instance m_instance;
     Surface m_surface;

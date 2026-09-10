@@ -278,6 +278,10 @@ public:
     ) {
         return m_swapchain_builder.build(out_caps, device, physical_device, surface, &old_swapchain);
     }
+
+    void updateSwapchainFallbackExtent(Extent2d const extent) {
+        m_swapchain_builder.fallbackExtent(extent);
+    }
 private:
     InstanceBuilder m_instance_builder;
     PhysicalDeviceSelector m_physical_device_selector;

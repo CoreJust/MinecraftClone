@@ -66,14 +66,16 @@ contract does not imply every other builder setter accumulates.
 ## Context, swapchain, and reload
 
 `VulkanContext` owns instance → surface → physical device → device → swapchain
-and three frame slots. It creates graphics command objects, semaphores, and
-initially signaled fences for a windowed surface. Call `waitIdle()` before
+and three frame slots. It creates command objects, semaphores, and signaled
+fences. Call `waitIdle()` before
 destroying resources that could be in flight.
 
 `reload(type)` waits idle, announces `Destroy`, rebuilds from that scope, then
 announces `Recreate`. `rebuild(fn, type)` first mutates its stored builder.
 Choose the highest mutated scope; `Swapchain` cannot apply instance/device
-edits. Acquire-time out-of-date/surface loss reloads and returns no frame.
+edits. Raw framebuffer transitions update the fallback separately from clamped
+Vulkan extent. Zero skips; each nonzero transition reloads once and skips. Other
+acquire failures skip and reload when required, never submitting a stale image.
 
 `Swapchain` owns its handle/views and borrows images. Current image/view validity
 runs from successful acquire through the next frame/reload.
@@ -135,14 +137,13 @@ descriptor/push-constant declarations remain pipeline ABI.
 `VK_CHECK` dispatches expected recoverable results (out-of-date, suboptimal,
 device/surface/memory loss) through callbacks and returns whether handled.
 Typed `VulkanError` subclasses cover construction, frame, graph, allocation,
-and pipeline failures. An empty acquire is a reload boundary; propagate other
+and pipeline failures. An empty acquire is a frame-skip boundary; propagate other
 typed errors rather than using partially created handles.
 
 ## Threading, extension, and tests
 
 No wrapper locking. Serialize reload, frame acquisition, recording,
-and destruction; respect Vulkan external synchronization for each
-device/queue/command pool. Change error/reload callbacks outside frame work.
+destruction, and callbacks; respect Vulkan external synchronization.
 
 For new wrappers, define destruction context, add CMake sources and prove
 parent-before-child teardown. For

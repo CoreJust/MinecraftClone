@@ -112,7 +112,7 @@
         "vcpkg-configuration.json",
         "vcpkg.json"
       ],
-      "sources_sha256": "4a936bad83c8e486f094d035c5d490b278222262e318170bd7091cd7913b9890"
+      "sources_sha256": "e4022247731c3cff3b30529b3c218886de386e2e2b31fb5b8ef69e5cedde33fe"
     },
     {
       "guide": "docs/code/CORE.md",
@@ -292,11 +292,11 @@
         "tests/client/renderer_smoke_tests.cpp",
         "tests/client/shader_assets_tests.cpp"
       ],
-      "sources_sha256": "344ec46ba958e13fec74647cfb9f7ff2404a0467e62e886c7d23fdcb05a4f93b"
+      "sources_sha256": "a7207d06cb90e574d7fc95933d08726583d2f62184b903019789a13f7b0276aa"
     },
     {
       "guide": "docs/code/VULKAN.md",
-      "guide_sha256": "0b1816814af3303d9ab89bf9953bafb4d4ec8b6a64fdf648e5fafff754a361a9",
+      "guide_sha256": "9ae52294c788eaebd032c7b934235e24b46d1745bd402c947b0426871945ea7b",
       "id": "vulkan",
       "sources": [
         "src/core/include/core/vulkan/Allocation.hpp",
@@ -467,7 +467,7 @@
         "tests/core/vulkan/physical_device_selector_tests.cpp",
         "tests/core/vulkan/spirv_tests.cpp"
       ],
-      "sources_sha256": "a981441afa13aaeb63fdb5c4463ae8372ae6fbb5e70f93a0bc041500f8a8217a"
+      "sources_sha256": "14a364cf216814564bccf83ab8699b9dbc44a4ee0cb54fd557b8cb49a0e99494"
     }
   ],
   "version": 1

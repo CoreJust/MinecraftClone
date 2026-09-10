@@ -126,6 +126,9 @@ VulkanContext::VulkanContext(VulkanContextBuilder builder, SurfaceProvider const
             : m_builder.buildSwapchain(*this, m_device, m_physical_device, m_surface)
     )
 {
+    if (m_surface_provider != nullptr) {
+        m_observed_framebuffer_extent = m_surface_provider->framebufferExtent();
+    }
     if (!m_surface.isNull()) {
         createSyncObjects();
         createCommandObjects();
@@ -165,6 +168,24 @@ void VulkanContext::reload(ReloadType const type) {
 std::optional<FrameContext> VulkanContext::acquireFrame(
     std::chrono::steady_clock::time_point const deadline
 ) {
+    if (m_surface_provider != nullptr) {
+        Extent2d const framebuffer_extent = m_surface_provider->framebufferExtent();
+        bool const extent_changed = !m_observed_framebuffer_extent.has_value()
+            || framebuffer_extent.x != m_observed_framebuffer_extent->x
+            || framebuffer_extent.y != m_observed_framebuffer_extent->y;
+        if (extent_changed) {
+            m_observed_framebuffer_extent = framebuffer_extent;
+        }
+        if (m_surface_provider->isFramebufferExtentZero()) {
+            return std::nullopt;
+        }
+        if (extent_changed) {
+            m_builder.updateSwapchainFallbackExtent(framebuffer_extent);
+            reloadImpl(ReloadType::Swapchain, ReloadSource::Error);
+            return std::nullopt;
+        }
+    }
+
     size_t const frame_idx = m_frame_index % MAX_FRAMES_IN_FLIGHT;
     if (!m_in_flight[frame_idx].wait(remainingNanoseconds(deadline))) {
         return std::nullopt;

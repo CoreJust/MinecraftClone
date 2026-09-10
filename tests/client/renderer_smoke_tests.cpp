@@ -172,7 +172,9 @@ void renderSmoke(bool const prefer_mesh_shaders)
     static constexpr uint32_t RESIZE_FRAME = 2;
     static constexpr uint32_t RELOAD_FRAME = 4;
     static constexpr uint32_t CAPTURE_FRAME = 5;
-    static constexpr uint32_t MAX_RESIZE_POLL_COUNT = 20;
+    static constexpr uint32_t MAX_ATTEMPT_COUNT = 1'000;
+    static constexpr auto SMOKE_TIMEOUT = std::chrono::seconds{ 10 };
+    static constexpr double RETRY_EVENT_WAIT_SECONDS = 0.01;
     core::Window const window{ "MinecraftClone renderer smoke", 320, 240 };
     core::vk::GlfwSurfaceProvider const surface_provider{ window };
     client::InstalledShaderAssets const shader_assets;
@@ -191,34 +193,59 @@ void renderSmoke(bool const prefer_mesh_shaders)
     };
     uint32_t resized_width = 0;
     uint32_t resized_height = 0;
-    for (uint32_t frame = 0; frame < FRAME_COUNT; ++frame) {
+    uint32_t frame = 0;
+    uint32_t attempt = 0;
+    bool frame_prepared = false;
+    bool resize_requested = false;
+    bool resize_completed = false;
+    bool reload_completed = false;
+    bool capture_requested = false;
+    auto const deadline = std::chrono::steady_clock::now() + SMOKE_TIMEOUT;
+    while (
+        frame < FRAME_COUNT
+        && attempt < MAX_ATTEMPT_COUNT
+        && std::chrono::steady_clock::now() < deadline
+    ) {
+        ++attempt;
         ASSERT_TRUE(window.nextFrame());
         ASSERT_FALSE(window.isFramebufferSizeZero());
-        if (frame == RESIZE_FRAME) {
+        if (frame == RESIZE_FRAME && !resize_requested) {
             glfwSetWindowSize(window.nativeHandle(), RESIZED_WIDTH, RESIZED_HEIGHT);
+            resize_requested = true;
         }
-        if (frame == RELOAD_FRAME) {
-            for (uint32_t poll = 0; poll < MAX_RESIZE_POLL_COUNT; ++poll) {
-                auto const framebuffer_size = window.framebufferSize();
-                if (framebuffer_size.first != 320U || framebuffer_size.second != 240U) {
-                    resized_width = framebuffer_size.first;
-                    resized_height = framebuffer_size.second;
-                    break;
-                }
-                ASSERT_TRUE(window.nextFrame());
+        if (frame == RESIZE_FRAME && !resize_completed) {
+            auto const framebuffer_size = window.framebufferSize();
+            if (framebuffer_size.first == 320U && framebuffer_size.second == 240U) {
+                glfwWaitEventsTimeout(RETRY_EVENT_WAIT_SECONDS);
+                continue;
             }
-            ASSERT_NE(resized_width, 0U);
-            ASSERT_NE(resized_height, 0U);
+            resized_width = framebuffer_size.first;
+            resized_height = framebuffer_size.second;
+            resize_completed = true;
+        }
+        if (frame == RELOAD_FRAME && !reload_completed) {
             renderer.hotReload();
+            reload_completed = true;
         }
-        if (frame == CAPTURE_FRAME) {
+        if (frame == CAPTURE_FRAME && !capture_requested) {
             renderer.requestFrameCapture();
+            capture_requested = true;
         }
-        players.front().x += 1;
-        ASSERT_TRUE(renderer.render(
-            frame == 0 ? std::span<client::PlayerRenderData const>{} : players
-        ));
+        if (!frame_prepared) {
+            players.front().x += 1;
+            frame_prepared = true;
+        }
+        if (renderer.render(
+            frame == 0 ? std::span<client::PlayerRenderData const>{} : players,
+            deadline
+        )) {
+            ++frame;
+            frame_prepared = false;
+        } else {
+            glfwWaitEventsTimeout(RETRY_EVENT_WAIT_SECONDS);
+        }
     }
+    ASSERT_EQ(frame, FRAME_COUNT);
 
     client::RendererRuntimeInfo const runtime = renderer.runtimeInfo();
     EXPECT_EQ(runtime.width, resized_width);

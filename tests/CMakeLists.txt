@@ -110,6 +110,6 @@ if(MC_ENABLE_RENDERER_SMOKE)
         TIMEOUT 45
         RUN_SERIAL TRUE
         LABELS "renderer;gpu"
-        FAIL_REGULAR_EXPRESSION "Vulkan validation; error at ; critical at ;Failed to acquire frame"
+        FAIL_REGULAR_EXPRESSION "Vulkan validation; error at ; critical at "
     )
 endif()
