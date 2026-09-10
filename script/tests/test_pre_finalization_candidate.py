@@ -25,12 +25,20 @@ class PreFinalizationCandidateTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temporary = tempfile.TemporaryDirectory()
         self.root = Path(self.temporary.name) / "repository"
+        self.root.mkdir()
         subprocess.run(
-            ["git", "clone", "--quiet", "--no-local", str(REPOSITORY), str(self.root)],
+            [
+                "git",
+                "checkout-index",
+                "--all",
+                f"--prefix={self.root.resolve().as_posix()}/",
+            ],
+            cwd=REPOSITORY,
             check=True,
             text=True,
             capture_output=True,
         )
+        subprocess.run(["git", "init", "--quiet"], cwd=self.root, check=True)
         subprocess.run(["git", "config", "user.email", "candidate@example.invalid"], cwd=self.root, check=True)
         subprocess.run(["git", "config", "user.name", "Candidate Validation"], cwd=self.root, check=True)
         for relative in ("publish.py", "script/infrastructure_checks.py"):
@@ -47,17 +55,7 @@ class PreFinalizationCandidateTests(unittest.TestCase):
         )
         self.assertEqual(replacements, 1)
         history.write_text(undated, encoding="utf-8")
-        subprocess.run(
-            [
-                "git",
-                "add",
-                "publish.py",
-                "script/infrastructure_checks.py",
-                str(history.relative_to(self.root)),
-            ],
-            cwd=self.root,
-            check=True,
-        )
+        subprocess.run(["git", "add", "--all"], cwd=self.root, check=True)
         subprocess.run(
             [
                 "git",

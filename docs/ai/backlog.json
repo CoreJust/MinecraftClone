@@ -1246,7 +1246,7 @@
     "milestone": "ED-010-S3",
     "depends_on": [],
     "acceptance": "Snapshot 3 roadmap rendering acceptance and every scoped basic child are complete; full enabled release checks pass; actual product/code changes and promotion evidence are recorded. The exact reviewed/tagged build is published with named macOS, Windows and Android GitHub assets, SHA256 hashes, provenance, dependencies/licenses and truthful signing status. The exact downloaded macOS asset and exact released Android APK pass local runtime acceptance; Windows build/package evidence is required, while runtime results from the user’s Windows laptop are recorded separately and never inferred.",
-    "evidence": "Prepared for local promotion on 2026-09-10; publication/runtime acceptance pending. All 44 scoped basic children are done. Task 91 commit 78d8385857fddc1332d2d7e82f0827e92d12e923 removes exactly the inherited 15-line trailing-whitespace promotion blocker. Fresh strict checks at that commit passed 182 Python tests, build, 205 CTests, packaged MoltenVK renderer smoke, and publisher validation; both working-tree and full ai-main baseline diff checks pass. X16 remains historical only. Exact-source artifacts, publication verification, and exact macOS/Android runtime acceptance remain.",
+    "evidence": "Prepared for local promotion on 2026-09-10; publication/runtime acceptance pending. All 45 scoped children are done once Task 92 commits. In the actual pending ai-main shape, its staged-index fixture passed 7 focused and all 182 Python tests. Pre-fix strict checks passed build, 205 CTests, packaged MoltenVK smoke, and publisher validation; post-fix gates remain. X16 is historical only. Exact artifacts, release verification, and macOS/Android runtime acceptance remain.",
     "blocker": "",
     "owner": "Codex"
   },
@@ -3548,6 +3548,42 @@
       "src/core/vulkan/builder/PhysicalDeviceSelector.cpp",
       "src/core/vulkan/builder/SwapchainBuilder.cpp",
       "src/shared/include/shared/ProjectInfo.hpp"
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": false,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0092",
+    "title": "Snapshot the staged tree in pre-finalization publisher fixtures",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P0",
+    "route": "luna",
+    "milestone": "ED-010-S3",
+    "depends_on": [],
+    "acceptance": "The fixture materializes the exact outer repository index into a clean temporary Git repository. All seven pre-finalization tests and the complete 182-test Python suite pass in an actual pending ai-main merge shape, while normal ai-dev checks remain green.",
+    "evidence": "In disposable pending ai-main merge validation (HEAD 28010a9, MERGE_HEAD f13db9c), all 7 focused pre-finalization tests passed and the full 182-test Python suite passed after the exact staged-index fixture change.",
+    "blocker": "",
+    "owner": "",
+    "level": "basic",
+    "parent": "MC-AI-0032",
+    "motivation": "Make the release-candidate fixture exercise the exact staged promotion tree instead of cloning an older committed branch head.",
+    "context": "During ai_publish finish on a pending ai-main merge, the fixture cloned committed ai-main baseline HEAD, which lacks the staged Snapshot 3 script and version-history tree; all seven tests failed before their assertions.",
+    "complexity": "low",
+    "created_at": "2026-09-10",
+    "resolved_at": "2026-09-10",
+    "resolution_changes": "Changed the pre-finalization fixture to export the exact staged index into a new clean temporary Git repository instead of cloning committed HEAD.",
+    "plan": [
+      "Replace the fixture clone of committed HEAD with a checkout of the exact staged index, initialize and commit the fixture repository, and retain working publisher-script overlays for focused development tests."
+    ],
+    "product_changes": [],
+    "code_changes": [
+      "Changed only the pre-finalization test fixture setup to export the staged index and commit the complete fixture tree."
     ],
     "baseline_commit": "",
     "commits": [],
