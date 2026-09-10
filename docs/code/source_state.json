@@ -244,7 +244,7 @@
         "tests/core/window/keyboard_tests.cpp",
         "tests/core/window/mouse_tests.cpp"
       ],
-      "sources_sha256": "0f211033d5f48bb9f74dd83fab69cf8e174bb06db2fb7ffab1de5522d5156eda"
+      "sources_sha256": "9d2c0777b515335e6f8c0d0f2060a9ac92f24af68d46b6fe99e1cc3843898f7a"
     },
     {
       "guide": "docs/code/GAMEPLAY.md",

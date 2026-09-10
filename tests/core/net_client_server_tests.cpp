@@ -12,6 +12,7 @@
 #include <thread>
 
 constexpr std::chrono::milliseconds DEFAULT_TIMEOUT{ 10 };
+static constexpr std::chrono::seconds NORMAL_CONNECTION_TIMEOUT{ 1 };
 constexpr uint16_t EPHEMERAL_PORT{ 0 };
 
 struct NoAction final {
@@ -29,7 +30,7 @@ public:
         , m_on_received{ std::move(on_received) }
     { }
 
-    bool connectAndWait(uint16_t const port, std::chrono::milliseconds timeout = DEFAULT_TIMEOUT) {
+    bool connectAndWait(uint16_t const port, std::chrono::milliseconds timeout = NORMAL_CONNECTION_TIMEOUT) {
         bool const result = connect(core::Address::localhost(port), timeout);
         pollAndWait();
         return result;

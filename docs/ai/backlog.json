@@ -3196,5 +3196,41 @@
     "docs_review": "",
     "environment_review": "The repair targets Git Bash PATH interpretation using a relative entry under the subprocess cwd; no production hook or release-gate behavior changed.",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0084",
+    "title": "Use a bounded normal connection timeout in network tests",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P0",
+    "route": "luna",
+    "milestone": "ED-010-S3",
+    "depends_on": [],
+    "acceptance": "Normal test-client connection setup uses one explicit bounded timeout sufficient for hosted scheduling, while the dedicated connection-timeout test keeps its short explicit timeout and production networking defaults remain unchanged.",
+    "evidence": "X10 macOS debug failed the seventh MultipleClientsEchoTest connectAndWait at line 304 after six successful connections; MessageRelayTest with an explicit one-second timeout passed in the same run. The updated debug mc_tests target builds, and MultipleClientsEchoTest plus MessageRelayTest each pass 20 consecutive repetitions locally.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0032",
+    "motivation": "X10 macOS debug failed the seventh sequential MultipleClientsEchoTest connection at the test helper's 10 ms default; the following MessageRelayTest passed with its explicit 1 second connection timeout.",
+    "context": "Repair the shared test helper rather than adding another per-test retry or changing production timeouts.",
+    "complexity": "low",
+    "created_at": "2026-09-10",
+    "resolved_at": "2026-09-10",
+    "resolution_changes": "Changed the shared TestClient normal connection default from the 10 ms poll interval to an explicit one-second bound; retained the dedicated ConnectionTimeoutTest's explicit 10 ms production call.",
+    "plan": [
+      "Give TestClient normal connections a one-second bounded default and keep the explicit short timeout contract test unchanged."
+    ],
+    "product_changes": [],
+    "code_changes": [
+      "tests/core/net_client_server_tests.cpp"
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": false,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "Debug mc_tests rebuilt locally; the two affected 12-client tests passed 20 repetitions each in 63.79 seconds. Hosted confirmation remains pending X11.",
+    "backlog_review": ""
   }
 ]
