@@ -6,9 +6,20 @@
 #include <cstring>
 #include <span>
 #include <string_view>
+#include <type_traits>
 #include <vector>
 
 namespace core {
+
+namespace detail {
+
+template<typename T>
+inline constexpr bool IS_SPAN = false;
+
+template<typename T, size_t Extent>
+inline constexpr bool IS_SPAN<std::span<T, Extent>> = true;
+
+} // namespace detail
 
 class ByteWriter final {
 public:
@@ -23,6 +34,8 @@ public:
     }
 
     template<typename Self, ByteSerializable T>
+        requires (!detail::IS_SPAN<std::remove_cvref_t<T>>
+            && !std::is_same_v<std::remove_cvref_t<T>, std::string_view>)
     auto&& write(this Self&& self, T&& value) {
         using Value = std::remove_cvref_t<T>;
         size_t const old_size = self.m_data.size();
