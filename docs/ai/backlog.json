@@ -3290,13 +3290,13 @@
     "id": "MC-AI-0086",
     "title": "Disambiguate ByteWriter scalar and view overloads on MSVC",
     "kind": "bug",
-    "status": "active",
+    "status": "done",
     "priority": "P0",
     "route": "luna",
     "milestone": "ED-010-S3",
     "depends_on": [],
     "acceptance": "ByteWriter scalar writes, span writes, and string-view writes remain behaviorally distinct and compile under Clang and MSVC without ambiguous overload resolution; serialized bytes and reader round trips remain unchanged.",
-    "evidence": "X12 snapshot Windows reached MSVC and reported C2668 at every std::span and std::string_view write call because the generic ByteSerializable overload was also viable. The scalar overload now excludes those two view types; the debug mc_tests target builds with Clang and all 13 ByteIO tests pass locally. Hosted MSVC confirmation remains pending X13.",
+    "evidence": "X13 snapshot Windows at head 5b3e882d231260a454f64fc908d0e1b27e8bef1d compiled the full MSVC target and executed 204 CTests with no ByteWriter C2668 diagnostics, proving the scalar/span/string-view overload ambiguity is resolved. The four later Windows test failures were in unrelated image/span/type-name portability suites. Local Clang rebuilt mc_tests and all 13 ByteIO tests passed with serialized-byte and reader-round-trip assertions intact.",
     "blocker": "",
     "owner": "Codex",
     "level": "basic",
@@ -3305,7 +3305,7 @@
     "context": "Make the overload sets semantically disjoint in ByteWriter; do not skip tests, switch compilers, or alter the binary format.",
     "complexity": "low",
     "created_at": "2026-09-10",
-    "resolved_at": "",
+    "resolved_at": "2026-09-10",
     "resolution_changes": "Constrained the scalar write overload away from std::span and std::string_view so their dedicated length-prefixed overloads are unambiguous.",
     "plan": [
       "Exclude std::span and std::string_view from the scalar template, retain their dedicated overloads, and rerun ByteIO coverage."
@@ -3316,10 +3316,10 @@
     ],
     "baseline_commit": "",
     "commits": [],
-    "finalized": false,
+    "finalized": true,
     "retrospective": "",
     "docs_review": "",
-    "environment_review": "Local debug mc_tests rebuilt and all 13 ByteIO tests passed; Windows MSVC package-build confirmation remains pending X13.",
-    "backlog_review": ""
+    "environment_review": "Local debug mc_tests rebuilt and all 13 ByteIO tests passed. X13 hosted Windows compiled the full target under MSVC and reached 204 CTests without ByteWriter ambiguity.",
+    "backlog_review": "Acceptance is satisfied by local ByteIO contract coverage plus X13 hosted MSVC compilation; no remaining ByteWriter blocker."
   }
 ]
