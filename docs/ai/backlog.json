@@ -332,8 +332,8 @@
     "context": "Snapshot 3 decision prerequisite for later 3D/world work. Record the chosen axis convention and version naming without asserting later gameplay exists.",
     "complexity": "high",
     "created_at": "2026-09-09",
-    "resolved_at": "",
-    "resolution_changes": "",
+    "resolved_at": "2026-09-10",
+    "resolution_changes": "Closed the existing coordinate and Snapshot 3 naming decision record without claiming later gameplay or release work.",
     "plan": [
       "Record axis, coordinate, and snapshot-version contracts."
     ],
@@ -349,13 +349,13 @@
     "id": "MC-AI-0008",
     "title": "Decide axis and version names",
     "kind": "decision",
-    "status": "ready",
+    "status": "done",
     "priority": "P1",
     "route": "astra",
     "milestone": "ED-010-S3",
     "depends_on": [],
     "acceptance": "Record axis, coordinate, and snapshot-version contracts.",
-    "evidence": "",
+    "evidence": "The existing EarlyDev 0.1.0 decision records the future-facing coordinate contract: right-handed horizontal X/Y with Z up, one block per unit, zero yaw toward +Y, +X right, and one explicit conversion into Vulkan. It also records that EarlyDev 0.1.0:3 is declared but unreleased and S4-S8 remain future commitments.",
     "blocker": "",
     "owner": ""
   },
