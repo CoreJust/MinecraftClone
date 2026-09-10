@@ -2866,13 +2866,13 @@
     "id": "MC-AI-0075",
     "title": "Unblock pre-finalization hosted build validation while preserving strict release checks and repair confirmed Windows tooling fixtures",
     "kind": "chore",
-    "status": "active",
+    "status": "done",
     "priority": "P0",
     "route": "luna",
     "milestone": "ED-010-S3",
     "depends_on": [],
     "acceptance": "A dedicated pre-finalization candidate-build validation path reaches hosted compilation without finalizing or completing Snapshot 3, deferring only an absent current snapshot entry during checks-only operation. Existing snapshot sections, order, and dates, plus every unrelated source-policy failure, still block candidate validation; ordinary and strict/final paths retain all release-history checks. Regressions prove the distinction. Confirmed Windows fixture defects are repaired with exact expected/actual behavior while preserving test contracts. Hosted build success remains unclaimed until a new candidate runs.",
-    "evidence": "Corrected X6 receipt /private/tmp/mc-s3-x6-hosted-ci-receipt-v2.txt SHA-256 e6e2b8aabaeb2dc2e715a6d32ef359225185e985bab8ddaaead7ca688f1336f7 proves all acquisition paths pass and identifies the terminal pre-build source-policy/Windows test failures. The prior receipt path was overwritten during reconciliation; its unavailable original bytes are not used as evidence. Confirmed on Python 3.13 that locale-dependent Git text decoding under a patched cp1252 locale made test_collect_next_snapshot_excludes_post_publication_aggregate_ledger reject non-ASCII rendered Markdown as stale; ai_history now decodes Git text explicitly as strict UTF-8, and the regression passes under that locale. The controlled candidate fixture now permits its intentional empty seed commit after copied files match the committed source; candidate tests pass 7/7, full script discovery passes 146/146, and ai_check --fast passes after documentation refresh. Hosted build success remains unclaimed.",
+    "evidence": "Seven candidate-path regressions and the expanded local Python suite pass. X12 AI checks run 34466089956 passed the fast policy gate and all macOS/Windows Debug/Release builds, CTest, and shader validation, proving candidate validation reaches hosted compilation without finalizing Snapshot 3. Final release history, artifacts, and publication remain separate.",
     "blocker": "",
     "owner": "Codex",
     "level": "basic",
@@ -2881,8 +2881,8 @@
     "context": "Corrected X6 receipt /private/tmp/mc-s3-x6-hosted-ci-receipt-v2.txt SHA-256 e6e2b8aabaeb2dc2e715a6d32ef359225185e985bab8ddaaead7ca688f1336f7; raw hosted log archive /private/tmp/mc-s3-x6-reconcile-gh-cache/gh/run-log-34438549074-1789015656.zip SHA-256 666a8a9ae6992e69b6c64d7fc9a2e58c78f5cde3be10b60b137b53323fec8886. The candidate path may defer only facts unavailable until the current snapshot is published: its absent entry and corresponding current-date assertion. Existing history, section content, ordering, dates, and unrelated source checks remain mandatory; strict/final and ordinary source checks retain the full release policy. Windows fixture changes require exact failure reproduction, not guessed normalization.",
     "complexity": "medium",
     "created_at": "2026-09-10",
-    "resolved_at": "",
-    "resolution_changes": "",
+    "resolved_at": "2026-09-10",
+    "resolution_changes": "Added an explicit pre-finalization candidate checks-only path that defers only the absent current snapshot entry, preserved every existing history and strict/final check, and repaired confirmed locale and temporary-Git fixtures.",
     "plan": [
       "Clarify acceptance and implementation steps.",
       "Add the smallest explicit checks-only pre-finalization candidate flag that permits only an absent current snapshot while validating all existing release history.",
@@ -2908,8 +2908,8 @@
     "finalized": false,
     "retrospective": "",
     "docs_review": "",
-    "environment_review": "",
-    "backlog_review": ""
+    "environment_review": "Hosted X12 proves the pre-finalization candidate path reaches compilation on both desktop runner families while ordinary and strict release paths remain covered by negative regressions.",
+    "backlog_review": "Candidate validation is unblocked; aggregate snapshot artifact finalization remains under MC-AI-0042."
   },
   {
     "id": "MC-AI-0076",
