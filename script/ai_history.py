@@ -25,7 +25,13 @@ class HistoryError(RuntimeError):
 
 def git(repo: Path, *args: str, check: bool = True) -> str:
     result = subprocess.run(
-        ["git", *args], cwd=repo, text=True, capture_output=True, check=False
+        ["git", *args],
+        cwd=repo,
+        text=True,
+        encoding="utf-8",
+        errors="strict",
+        capture_output=True,
+        check=False,
     )
     if check and result.returncode:
         raise HistoryError(result.stderr.strip() or "git " + " ".join(args) + " failed")

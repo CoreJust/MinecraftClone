@@ -42,7 +42,15 @@ class PreFinalizationCandidateTests(unittest.TestCase):
             check=True,
         )
         subprocess.run(
-            ["git", "commit", "--quiet", "--no-gpg-sign", "-m", "candidate validation fixture"],
+            [
+                "git",
+                "commit",
+                "--quiet",
+                "--no-gpg-sign",
+                "--allow-empty",
+                "-m",
+                "candidate validation fixture",
+            ],
             cwd=self.root,
             check=True,
         )

@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import json
+import locale
 from pathlib import Path
 import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 
 SCRIPT_DIR = Path(__file__).resolve().parents[1]
@@ -207,7 +209,8 @@ class AiHistoryTest(unittest.TestCase):
         self.git_run("git", "checkout", "-q", "ai-dev")
         self.commit("next task\n\nTask-ID: MC-AI-0003")
 
-        ai_history.finalize(self.repo, tasks, "MC-AI-0102", "HEAD")
+        with mock.patch.object(locale, "getencoding", return_value="cp1252"):
+            ai_history.finalize(self.repo, tasks, "MC-AI-0102", "HEAD")
 
         self.assertTrue(next(item for item in tasks if item["id"] == "MC-AI-0102")["finalized"])
         self.assertEqual(
