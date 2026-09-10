@@ -6,7 +6,7 @@
 
 namespace core {
 class Window;
-}
+} // namespace core
 
 namespace core::vk {
 

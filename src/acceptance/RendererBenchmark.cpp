@@ -3,24 +3,24 @@
 #include <client/render/InstalledShaderAssets.hpp>
 #include <client/render/VulkanRenderer.hpp>
 
+#include <shared/ProjectInfo.hpp>
+
 #include <core/vulkan/GlfwSurfaceProvider.hpp>
 #include <core/window/Window.hpp>
 
-#include <shared/ProjectInfo.hpp>
-
 #include <fmt/format.h>
-
-#include <algorithm>
-#include <array>
-#include <limits>
-#include <thread>
-#include <vector>
 
 #if defined(__APPLE__)
 #include <sys/sysctl.h>
 #elif defined(_WIN32)
 #include <windows.h>
 #endif
+
+#include <algorithm>
+#include <array>
+#include <limits>
+#include <thread>
+#include <vector>
 
 namespace acceptance {
 

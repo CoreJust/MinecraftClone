@@ -1,23 +1,23 @@
-#include <acceptance/EvidenceJson.hpp>
-#include <acceptance/RenderCapture.hpp>
-#include <acceptance/RendererBenchmark.hpp>
-#include <acceptance/ScenarioRunner.hpp>
-
 #include <client/BotClient.hpp>
 #include <client/PlayerClient.hpp>
 #include <server/GameServer.hpp>
+
+#include <shared/scenario/Scenario.hpp>
 
 #include <core/common/CrashHandler.hpp>
 #include <core/IO/Log.hpp>
 #include <core/net/Address.hpp>
 #include <core/net/Net.hpp>
 
-#include <shared/scenario/Scenario.hpp>
+#include <acceptance/EvidenceJson.hpp>
+#include <acceptance/RenderCapture.hpp>
+#include <acceptance/RendererBenchmark.hpp>
+#include <acceptance/ScenarioRunner.hpp>
 
-#include <filesystem>
 #include <condition_variable>
 #include <cstdlib>
 #include <expected>
+#include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <limits>

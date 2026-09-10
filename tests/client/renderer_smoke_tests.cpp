@@ -4,12 +4,10 @@
 #include <core/vulkan/GlfwSurfaceProvider.hpp>
 #include <core/window/Window.hpp>
 
-#include <gtest/gtest.h>
-
-#include <volk.h>
-
 #define GLFW_INCLUDE_NONE
 #include <GLFW/glfw3.h>
+#include <gtest/gtest.h>
+#include <volk.h>
 
 #include <array>
 #include <chrono>

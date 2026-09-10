@@ -1,7 +1,7 @@
 #pragma once
 
-#include <core/vulkan/Extent.hpp>
 #include <core/vulkan/Extensions.hpp>
+#include <core/vulkan/Extent.hpp>
 
 // DONT_CHECK INCLUDE_ORDER
 #include <volk.h>

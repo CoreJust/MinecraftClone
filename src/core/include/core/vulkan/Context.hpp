@@ -7,8 +7,8 @@
 #include <core/vulkan/Semaphore.hpp>
 #include <core/vulkan/builder/ContextBuilder.hpp>
 
-#include <functional>
 #include <chrono>
+#include <functional>
 #include <optional>
 
 CORE_VK_ERROR_WITH_KINDS(VulkanContextError, VulkanRuntimeError,

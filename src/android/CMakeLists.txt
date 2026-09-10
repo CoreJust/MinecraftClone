@@ -1,10 +1,14 @@
 target_sources(mc_android
     PRIVATE
         AndroidInput.cpp
+        AndroidInput.hpp
         AndroidMain.cpp
         AndroidPlayerClient.cpp
+        AndroidPlayerClient.hpp
         AndroidShaderAssets.cpp
+        AndroidShaderAssets.hpp
         AndroidSurfaceProvider.cpp
+        AndroidSurfaceProvider.hpp
         ${CMAKE_ANDROID_NDK}/sources/android/native_app_glue/android_native_app_glue.c
 )
 

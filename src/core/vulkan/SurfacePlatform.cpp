@@ -1,7 +1,6 @@
-#include <core/vulkan/GlfwSurfaceProvider.hpp>
-
 #include <core/macro/OS.hpp>
 #include <core/vulkan/Check.hpp>
+#include <core/vulkan/GlfwSurfaceProvider.hpp>
 #include <core/window/Window.hpp>
 
 #ifndef OSX

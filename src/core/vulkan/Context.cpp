@@ -32,9 +32,6 @@ uint64_t remainingNanoseconds(std::chrono::steady_clock::time_point const deadli
     );
 }
 
-} // namespace
-namespace {
-
 [[nodiscard]]
 VkRenderingAttachmentInfo makeColorRenderingAttachment(
     ColorAttachment const& attachment,

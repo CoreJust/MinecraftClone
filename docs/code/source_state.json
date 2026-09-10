@@ -22,7 +22,7 @@
         "tests/acceptance/runtime_cli_tests.cmake",
         "tests/acceptance/scenario_runner_tests.cpp"
       ],
-      "sources_sha256": "d8817e80aed2c76f6145a2333a353e6ea04e585470de1333158fc7f52c335dbc"
+      "sources_sha256": "daec8878f5b92fc53c2e8a0fd307a4f03b5e54a2cd1d8a94665a9a7b774e2ae0"
     },
     {
       "guide": "docs/code/ANDROID.md",
@@ -43,7 +43,7 @@
         "src/android/CMakeLists.txt",
         "tests/android/input_state_tests.cpp"
       ],
-      "sources_sha256": "a21e5cc84d729035f3f4401c90bb01c8d5f1d376400063f05d4550723da79a6a"
+      "sources_sha256": "07bff909e248fa6df3efe185481eed86d12c349c4c434c2696de68dbd618e990"
     },
     {
       "guide": "docs/BUILD.md",
@@ -241,7 +241,7 @@
         "tests/core/window/keyboard_tests.cpp",
         "tests/core/window/mouse_tests.cpp"
       ],
-      "sources_sha256": "cc8ea531be5c61d3a57322cba7b37a7316b4c3191ec25e0bd8e147d1f1e5bb27"
+      "sources_sha256": "5d1fe6c9bc6e07f4d84d7ac57350a90357c12bc6d3f325e74b49797c45176323"
     },
     {
       "guide": "docs/code/GAMEPLAY.md",
@@ -275,7 +275,7 @@
         "tests/core/shared_message_tests.cpp",
         "tests/core/shared_world_tests.cpp"
       ],
-      "sources_sha256": "31d1580d773aa53b72d2b3c961308d5d50870b37cb6b0de6a95d0cf9abb2f080"
+      "sources_sha256": "02f17d4f9b97860bf2544d6f2245a1bd3d43339b807400ddfc187fdf1699e988"
     },
     {
       "guide": "docs/code/RENDERING.md",
@@ -299,7 +299,7 @@
         "tests/client/renderer_smoke_tests.cpp",
         "tests/client/shader_assets_tests.cpp"
       ],
-      "sources_sha256": "a7207d06cb90e574d7fc95933d08726583d2f62184b903019789a13f7b0276aa"
+      "sources_sha256": "07372b3974d426dd8f24a4aaac5d80ba0a5578ba58854c9303334b7589998baf"
     },
     {
       "guide": "docs/code/VULKAN.md",
@@ -474,7 +474,7 @@
         "tests/core/vulkan/physical_device_selector_tests.cpp",
         "tests/core/vulkan/spirv_tests.cpp"
       ],
-      "sources_sha256": "14a364cf216814564bccf83ab8699b9dbc44a4ee0cb54fd557b8cb49a0e99494"
+      "sources_sha256": "16319769400b0768188f7a1545e553c161f94c445c53a983b94bdee5e2d1912e"
     }
   ],
   "version": 1

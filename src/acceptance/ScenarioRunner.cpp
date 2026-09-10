@@ -2,10 +2,10 @@
 
 #include <server/GameServer.hpp>
 
+#include <shared/net/Message.hpp>
+
 #include <core/net/Client.hpp>
 #include <core/net/Net.hpp>
-
-#include <shared/net/Message.hpp>
 
 #include <algorithm>
 #include <atomic>

@@ -1,13 +1,12 @@
 #include <acceptance/RenderCapture.hpp>
 
-#include <acceptance/ImageEvidence.hpp>
-
 #include <client/render/InstalledShaderAssets.hpp>
 #include <client/render/VulkanRenderer.hpp>
 
 #include <core/vulkan/GlfwSurfaceProvider.hpp>
 #include <core/window/Window.hpp>
 
+#include <acceptance/ImageEvidence.hpp>
 #include <fmt/format.h>
 
 #include <chrono>

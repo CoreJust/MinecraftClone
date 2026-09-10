@@ -4,7 +4,6 @@
 
 #include <android/asset_manager.h>
 
-#include <cstddef>
 #include <cstdint>
 #include <limits>
 #include <memory>
@@ -49,23 +48,26 @@ core::vk::SpirV AndroidShaderAssets::load(std::string_view const name) const
         throw std::runtime_error("Missing Android shader asset: " + path);
     }
 
+    using ByteStorage = std::vector<uint8_t>;
+
     int64_t const length = AAsset_getLength64(asset.get());
+    uint64_t const asset_length = static_cast<uint64_t>(length);
     if (
         length <= 0
         || length % static_cast<int64_t>(sizeof(uint32_t)) != 0
-        || static_cast<uint64_t>(length) > std::numeric_limits<std::size_t>::max()
+        || asset_length > static_cast<uint64_t>(std::numeric_limits<ByteStorage::size_type>::max())
     ) {
         throw std::runtime_error("Invalid Android shader asset size: " + path);
     }
 
-    std::vector<uint8_t> bytes(static_cast<std::size_t>(length));
+    ByteStorage bytes(static_cast<ByteStorage::size_type>(asset_length));
     uint64_t offset = 0;
-    while (offset < static_cast<uint64_t>(length)) {
-        uint64_t const remaining = static_cast<uint64_t>(length) - offset;
+    while (offset < asset_length) {
+        uint64_t const remaining = asset_length - offset;
         int64_t const read = AAsset_read(
             asset.get(),
-            bytes.data() + static_cast<std::size_t>(offset),
-            static_cast<std::size_t>(remaining)
+            bytes.data() + static_cast<ByteStorage::size_type>(offset),
+            static_cast<ByteStorage::size_type>(remaining)
         );
         if (read <= 0 || static_cast<uint64_t>(read) > remaining) {
             throw std::runtime_error("Failed to read Android shader asset: " + path);
@@ -76,7 +78,7 @@ core::vk::SpirV AndroidShaderAssets::load(std::string_view const name) const
         | static_cast<uint32_t>(bytes[1]) << 8U
         | static_cast<uint32_t>(bytes[2]) << 16U
         | static_cast<uint32_t>(bytes[3]) << 24U;
-    if (magic != 0x07230203U) {
+    if (magic != 0x0723'0203U) {
         throw std::runtime_error("Invalid Android SPIR-V magic: " + path);
     }
     return core::vk::SpirV{ bytes };

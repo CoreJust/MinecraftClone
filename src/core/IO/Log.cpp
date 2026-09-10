@@ -4,10 +4,11 @@
 
 #include <spdlog/async.h>
 #include <spdlog/fmt/chrono.h>
-#include <spdlog/sinks/basic_file_sink.h>
 #if defined(__ANDROID__)
 #include <spdlog/sinks/android_sink.h>
-#else
+#endif
+#include <spdlog/sinks/basic_file_sink.h>
+#if !defined(__ANDROID__)
 #include <spdlog/sinks/stdout_color_sinks.h>
 #endif
 

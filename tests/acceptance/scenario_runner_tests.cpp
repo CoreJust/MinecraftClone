@@ -1,6 +1,6 @@
-#include <acceptance/ScenarioRunner.hpp>
-
 #include <shared/scenario/Scenario.hpp>
+
+#include <acceptance/ScenarioRunner.hpp>
 
 #include <gtest/gtest.h>
 

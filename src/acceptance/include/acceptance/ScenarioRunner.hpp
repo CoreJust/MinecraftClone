@@ -1,8 +1,8 @@
 #pragma once
 
-#include <acceptance/EvidenceJson.hpp>
-
 #include <shared/scenario/Scenario.hpp>
+
+#include <acceptance/EvidenceJson.hpp>
 
 #include <chrono>
 #include <expected>
