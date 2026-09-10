@@ -96,9 +96,14 @@ jobs:
         if: matrix.platform == 'windows'
         shell: cmd
         run: |
+          set "MC_ACQUIRED_VCPKG_ROOT=%VCPKG_ROOT%"
           call "%ProgramFiles%\Microsoft Visual Studio\2022\Enterprise\Common7\Tools\VsDevCmd.bat" -arch=amd64
+          if errorlevel 1 exit /b 1
+          set "VCPKG_ROOT=%MC_ACQUIRED_VCPKG_ROOT%"
           python script/ci/acquire.py verify-tools --platform windows
+          if errorlevel 1 exit /b 1
           python script/ci/acquire.py record-metadata --platform windows --preset ${{ matrix.preset }} --output build/ci-metadata.json
+          if errorlevel 1 exit /b 1
           cmake --preset ${{ matrix.preset }} -DMC_ENABLE_RENDERER_SMOKE=OFF
           cmake --build --preset ${{ matrix.preset }}
           ctest --test-dir build\${{ matrix.preset }} --output-on-failure --no-tests=error --timeout 60

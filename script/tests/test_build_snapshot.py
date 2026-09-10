@@ -17,6 +17,7 @@ from script.ci import build_snapshot
 
 REPOSITORY = Path(__file__).resolve().parents[2]
 WORKFLOW = REPOSITORY / ".github/workflows/snapshot-artifacts.yml"
+AI_WORKFLOW = REPOSITORY / ".github/workflows/ai-checks.yml"
 
 
 class BuildSnapshotTests(unittest.TestCase):
@@ -264,6 +265,23 @@ class BuildSnapshotTests(unittest.TestCase):
         self.assertNotIn(r"build\toolchain-windows.json", workflow)
         self.assertNotIn("gh release", workflow)
         self.assertNotIn("contents: write", workflow)
+
+    def test_windows_workflows_restore_acquired_vcpkg_and_fail_closed_on_metadata(self):
+        for workflow_path in (WORKFLOW, AI_WORKFLOW):
+            workflow = workflow_path.read_text(encoding="utf-8")
+            windows_step = workflow.split("shell: cmd", maxsplit=1)[1]
+            self.assertIn(
+                'set "MC_ACQUIRED_VCPKG_ROOT=%VCPKG_ROOT%"\n'
+                '          call "%ProgramFiles%\\Microsoft Visual Studio\\2022\\Enterprise\\Common7\\Tools\\VsDevCmd.bat" -arch=amd64\n'
+                "          if errorlevel 1 exit /b 1\n"
+                '          set "VCPKG_ROOT=%MC_ACQUIRED_VCPKG_ROOT%"',
+                windows_step,
+            )
+            metadata = windows_step.index("record-metadata --platform windows")
+            self.assertEqual(
+                windows_step[metadata:].splitlines()[1].strip(),
+                "if errorlevel 1 exit /b 1",
+            )
 
 
 if __name__ == "__main__":

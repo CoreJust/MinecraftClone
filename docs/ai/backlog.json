@@ -3377,31 +3377,33 @@
     "milestone": "ED-010-S3",
     "depends_on": [],
     "acceptance": "The Windows snapshot workflow creates and consumes the same toolchain evidence file through Python-portable repository-relative paths, preserves provenance validation and runtime closure, and produces the Windows package after its MSVC build and tests pass.",
-    "evidence": "Focused snapshot packaging and acquisition workflow tests pass 22/22 locally; X15 hosted Windows package evidence remains required before closure.",
+    "evidence": "X15 reproduced the package failure after a successful MSVC build and 204/204 CTests. Its raw hosted log proves record-metadata failed first because VsDevCmd replaced the acquired VCPKG_ROOT with Visual Studio bundled non-Git vcpkg; cmd then continued through the expensive build. Focused snapshot/acquisition workflow tests pass 23/23 locally; X16 hosted package evidence remains required.",
     "blocker": "",
     "owner": "Codex",
     "level": "basic",
     "parent": "MC-AI-0032",
-    "motivation": "X14 Windows compiled and passed all 204 CTests, then packaging could not find build\\\\toolchain-windows.json created earlier in the same cmd step; later missing-zip errors were cascading.",
-    "context": "Change only repository-local path spelling in the Windows Python packaging pipeline. Preserve the external VCToolsRedistDir path, toolchain evidence checks, runtime DLL closure, hashes, and fail-closed behavior.",
+    "motivation": "X14 and X15 Windows compiled and passed all 204 CTests, then packaging could not find its toolchain evidence. X15 raw logs prove VsDevCmd replaced the acquired pinned VCPKG_ROOT with Visual Studio bundled non-Git vcpkg and cmd continued after record-metadata failed.",
+    "context": "Preserve the acquired vcpkg root across Visual Studio environment initialization and make environment/provenance failures stop before compilation. Keep Python-portable repository-local paths, the external VCToolsRedistDir path, toolchain evidence validation, runtime DLL closure, hashes, and fail-closed behavior.",
     "complexity": "low",
     "created_at": "2026-09-10",
     "resolved_at": "",
-    "resolution_changes": "Uses forward-slash repository-relative paths across the Windows Python provenance, packaging, evidence, and checksum pipeline while retaining cmd-native build paths and the external VCToolsRedistDir path. Adds an exact workflow contract for the shared toolchain-evidence path.",
+    "resolution_changes": "Uses forward-slash repository-relative paths across the Windows Python provenance/package pipeline. Preserves the acquired pinned VCPKG_ROOT across VsDevCmd in both desktop workflows and exits immediately when environment verification or metadata recording fails, while retaining cmd-native build paths, external VCToolsRedistDir runtime closure, and provenance gates. Adds exact workflow contracts for the shared evidence path, root restoration ordering, and fail-fast metadata behavior.",
     "plan": [
-      "Use forward-slash repository-relative paths for Windows Python metadata/package/evidence/checksum commands and guard the contract with a workflow test."
+      "Use forward-slash repository-relative paths for Windows Python metadata/package/evidence/checksum commands and guard the contract with a workflow test.",
+      "Preserve the acquired VCPKG_ROOT across VsDevCmd and fail immediately if Windows environment verification or metadata recording fails."
     ],
     "product_changes": [],
     "code_changes": [
       ".github/workflows/snapshot-artifacts.yml",
-      "script/tests/test_build_snapshot.py"
+      "script/tests/test_build_snapshot.py",
+      ".github/workflows/ai-checks.yml"
     ],
     "baseline_commit": "39697552df2563e151528f7463e72f246ebb4f67",
     "commits": [],
     "finalized": false,
     "retrospective": "",
     "docs_review": "No product or architecture guide semantics change; the workflow test owns the portable-path contract.",
-    "environment_review": "Local Python unittest suites script.tests.test_build_snapshot and script.tests.test_ci_acquire pass 22/22. Hosted Windows package verification remains pending X15.",
-    "backlog_review": "Task remains active until the X15 hosted Windows workflow produces a package after MSVC build and tests."
+    "environment_review": "X15 raw Windows job 102854737081 logged CI setup failure: git -C C:\\Program Files\\Microsoft Visual Studio\\2022\\Enterprise\\VC\\vcpkg rev-parse HEAD exited 128 because that directory is not a Git repository; package-desktop later found no toolchain evidence. Local Python unittest suites script.tests.test_build_snapshot and script.tests.test_ci_acquire pass 23/23. Hosted Windows package verification remains pending X16.",
+    "backlog_review": "Task remains active until a hosted candidate preserves pinned provenance and produces the Windows package. X15 disproved the slash-only diagnosis and is recorded as causal evidence, not acceptance."
   }
 ]
