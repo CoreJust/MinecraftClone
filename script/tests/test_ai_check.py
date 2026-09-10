@@ -223,6 +223,7 @@ class AiCheckTests(unittest.TestCase):
         fake_git = fake_bin / "git"
         fake_git.write_text(
             "#!/bin/sh\n"
+            "printf 'git:%s:%s\\n' \"$1\" \"$2\" >> \"$FAKE_GIT_LOG\"\n"
             "case \"$1 $2\" in\n"
             "  'branch --show-current') echo master ;;\n"
             "  'rev-parse HEAD') echo checked-commit ;;\n"
@@ -244,13 +245,31 @@ class AiCheckTests(unittest.TestCase):
         fake_git.chmod(0o755)
         fake_python.chmod(0o755)
         log = self.root / "hook.log"
+        fake_git_log = self.root / "fake-git.log"
         environment = os.environ | {
             "PATH": str(fake_bin) + os.pathsep + os.environ["PATH"],
             "PYTHON": str(fake_python),
             "HOOK_LOG": str(log),
+            "FAKE_GIT_LOG": fake_git_log.name,
         }
         shell = shutil.which("sh")
         self.assertIsNotNone(shell)
+        shell_version = subprocess.run(
+            [shell, "--version"],
+            cwd=self.root,
+            text=True,
+            capture_output=True,
+            check=False,
+            env=environment,
+        )
+        git_probe = subprocess.run(
+            [shell, "-c", "command -v git; git --version"],
+            cwd=self.root,
+            text=True,
+            capture_output=True,
+            check=False,
+            env=environment,
+        )
         result = subprocess.run(
             [shell, PRE_PUSH],
             cwd=self.root,
@@ -259,7 +278,24 @@ class AiCheckTests(unittest.TestCase):
             capture_output=True,
             env=environment,
         )
-        self.assertEqual(result.returncode, 0, result.stderr)
+        fake_git_log_contents = (
+            fake_git_log.read_text(encoding="utf-8") if fake_git_log.exists() else "<missing>"
+        )
+        diagnostics = (
+            f"shell={shell!r}\n"
+            f"shell_version_rc={shell_version.returncode}\n"
+            f"shell_version_stdout={shell_version.stdout!r}\n"
+            f"shell_version_stderr={shell_version.stderr!r}\n"
+            f"fake_git_mode={oct(fake_git.stat().st_mode)}\n"
+            f"fake_git_executable={os.access(fake_git, os.X_OK)}\n"
+            f"git_probe_rc={git_probe.returncode}\n"
+            f"git_probe_stdout={git_probe.stdout!r}\n"
+            f"git_probe_stderr={git_probe.stderr!r}\n"
+            f"fake_git_log={fake_git_log_contents!r}\n"
+            f"hook_stdout={result.stdout!r}\n"
+            f"hook_stderr={result.stderr!r}"
+        )
+        self.assertEqual(result.returncode, 0, diagnostics)
         self.assertEqual(log.read_text(encoding="utf-8").strip(), "script/ai_check.py --strict --require-index-match")
 
     def test_version_arguments_and_publisher_exceptions_are_precise(self):

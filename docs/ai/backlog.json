@@ -3080,5 +3080,41 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0081",
+    "title": "Capture actionable Windows shell fixture diagnostics",
+    "kind": "chore",
+    "status": "done",
+    "priority": "P0",
+    "route": "luna",
+    "milestone": "ED-010-S3",
+    "depends_on": [],
+    "acceptance": "When the annotated-tag pre-push fixture fails on hosted Windows, its assertion reports the selected shell and version, fake-git executable state, selected git command/version, fake-git arguments, and hook stdout/stderr without weakening the strict tag-resolution assertion or changing production behavior.",
+    "evidence": "The exact diagnostic-only fixture patch passed all 13 test_ai_check tests and git diff --check in isolation. Hosted diagnostic output remains unclaimed until the next Windows candidate run.",
+    "blocker": "",
+    "owner": "",
+    "level": "basic",
+    "parent": "MC-AI-0032",
+    "motivation": "X9 confirmed the annotated-tag fixture still fails on Windows, while available logs expose only the wrapper assertion and do not establish which shell or git shim invocation fails.",
+    "context": "This task adds diagnostics only; it does not claim a Windows root cause or relax the strict pre-push contract.",
+    "complexity": "low",
+    "created_at": "2026-09-10",
+    "resolved_at": "2026-09-10",
+    "resolution_changes": "Added failure-only shell, executable, command-selection, fake-git argument, and hook-output diagnostics to the Windows-sensitive annotated-tag fixture.",
+    "plan": [
+      "Record enough deterministic fixture state to diagnose the next hosted Windows failure without guessing."
+    ],
+    "product_changes": [],
+    "code_changes": [
+      "script/tests/test_ai_check.py"
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": false,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]
