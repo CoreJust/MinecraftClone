@@ -548,32 +548,37 @@
     "context": "Snapshot 3 desktop delivery foundation. Add actual macOS and Windows build/test and artifact jobs; Windows runtime validation remains separately recorded.",
     "complexity": "medium",
     "created_at": "2026-09-09",
-    "resolved_at": "",
-    "resolution_changes": "",
+    "resolved_at": "2026-09-10",
+    "resolution_changes": "Added pinned macOS and Windows Debug/Release CI jobs with tool acquisition, source checks, builds, CTest, shader validation, and diagnostic artifact uploads.",
     "plan": [
       "Build supported macOS and Windows targets in CI with logs."
     ],
-    "product_changes": [],
-    "code_changes": [],
+    "product_changes": [
+      "No game behavior changed; supported desktop builds are now continuously verified on hosted macOS and Windows runners."
+    ],
+    "code_changes": [
+      ".github/workflows/ai-checks.yml",
+      "script/ci/acquire.py"
+    ],
     "baseline_commit": "",
     "commits": [],
     "finalized": false,
     "retrospective": "",
     "docs_review": "",
-    "environment_review": "",
+    "environment_review": "Hosted X12 is the first fully green four-variant desktop CI run; it does not substitute for user Windows runtime acceptance.",
     "backlog_review": "",
     "id": "MC-AI-0014",
     "title": "Add macOS and Windows CI",
     "kind": "chore",
-    "status": "active",
+    "status": "done",
     "priority": "P2",
     "route": "luna",
     "milestone": "ED-010-S3",
     "depends_on": [],
     "acceptance": "Build supported macOS and Windows targets in CI with logs.",
-    "evidence": "Pinned macOS/Windows Debug/Release workflow implemented with diagnostic uploads. SDK/Ninja acquisition-flow regressions and complete Python suite pass, including fast exact-index checks. Hosted builds remain pending and are not claimed.",
+    "evidence": "X12 AI checks run 34466089956 passed macOS Debug/Release and Windows Debug/Release build, CTest, and shader validation jobs after the fast source-policy job passed. Diagnostic artifacts were uploaded for both macOS variants; Windows runtime acceptance and snapshot publication remain separate.",
     "blocker": "",
-    "owner": "desktop_ci"
+    "owner": "Codex"
   },
   {
     "level": "basic",
