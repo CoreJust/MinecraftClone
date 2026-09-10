@@ -88,6 +88,35 @@ foreach(required_text "\"passed\": false" "65536-byte input limit before parsing
     endif()
 endforeach()
 
+set(aliased_scenario "${OUTPUT_DIRECTORY}/aliased.mcscenario")
+file(WRITE "${aliased_scenario}" [=[scenario 1
+profile flat2d-v1
+seed 42
+player alice character "@" at 4 4
+begin
+end
+]=])
+file(READ "${aliased_scenario}" aliased_source_before)
+execute_process(
+    COMMAND "${MC_MAIN}" --scenario "${aliased_scenario}"
+        --evidence "${OUTPUT_DIRECTORY}/./aliased.mcscenario"
+    RESULT_VARIABLE aliased_result
+    OUTPUT_VARIABLE aliased_stdout
+    ERROR_VARIABLE aliased_stderr
+    TIMEOUT 5
+)
+if(aliased_result EQUAL 0)
+    message(FATAL_ERROR "scenario/evidence path collision unexpectedly succeeded")
+endif()
+string(FIND "${aliased_stderr}" "scenario source and evidence paths must differ" aliased_error_index)
+if(aliased_error_index EQUAL -1)
+    message(FATAL_ERROR "scenario/evidence collision diagnostic is missing: ${aliased_stderr}")
+endif()
+file(READ "${aliased_scenario}" aliased_source_after)
+if(NOT aliased_source_after STREQUAL aliased_source_before)
+    message(FATAL_ERROR "scenario/evidence path collision modified the scenario source")
+endif()
+
 set(collision_output "${OUTPUT_DIRECTORY}/capture-evidence-collision.out")
 file(REMOVE "${collision_output}")
 execute_process(

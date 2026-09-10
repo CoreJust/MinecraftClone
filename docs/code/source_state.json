@@ -2,7 +2,7 @@
   "modules": [
     {
       "guide": "docs/ACCEPTANCE.md",
-      "guide_sha256": "6ecb16418679f537e593208c69f3acb534e8fe35379c0ddb87e904cda4939e4c",
+      "guide_sha256": "7be581bdd3b36b7ae7b9979acdf24f9e6611c3068e39af0c2774719c0acca332",
       "id": "acceptance",
       "sources": [
         "src/acceptance/CMakeLists.txt",
@@ -22,7 +22,7 @@
         "tests/acceptance/runtime_cli_tests.cmake",
         "tests/acceptance/scenario_runner_tests.cpp"
       ],
-      "sources_sha256": "daec8878f5b92fc53c2e8a0fd307a4f03b5e54a2cd1d8a94665a9a7b774e2ae0"
+      "sources_sha256": "28c1bde7d539315cf854416d0bd134f172e9bc6fda53ec80c7c272aa421a0d43"
     },
     {
       "guide": "docs/code/ANDROID.md",
@@ -275,7 +275,7 @@
         "tests/core/shared_message_tests.cpp",
         "tests/core/shared_world_tests.cpp"
       ],
-      "sources_sha256": "02f17d4f9b97860bf2544d6f2245a1bd3d43339b807400ddfc187fdf1699e988"
+      "sources_sha256": "46add0963b2cdb6bde253724f308877357dcbdfc54e5f0664fc195e87fd454a2"
     },
     {
       "guide": "docs/code/RENDERING.md",

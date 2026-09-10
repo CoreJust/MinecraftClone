@@ -205,6 +205,19 @@ int writeRuntimeEvidence(
 }
 
 [[nodiscard]]
+std::filesystem::path normalizedOutputPath(std::filesystem::path const& output_path)
+{
+    std::error_code error;
+    auto result = std::filesystem::weakly_canonical(output_path, error);
+    if (!error) {
+        return result;
+    }
+    error.clear();
+    result = std::filesystem::absolute(output_path, error);
+    return error ? output_path.lexically_normal() : result.lexically_normal();
+}
+
+[[nodiscard]]
 int runScenarioCommand(RuntimeCommand const& command)
 {
     static constexpr shared::ScenarioLimits LIMITS{
@@ -216,6 +229,10 @@ int runScenarioCommand(RuntimeCommand const& command)
         .max_evidence = 128,
     };
     static constexpr std::chrono::seconds DEADLINE{ 30 };
+    if (normalizedOutputPath(command.scenario_path) == normalizedOutputPath(command.evidence_path)) {
+        std::cerr << "scenario source and evidence paths must differ\n";
+        return 1;
+    }
     RuntimeDeadlineWatchdog watchdog{ command.evidence_path, "scenario", DEADLINE };
     auto failureEvidence = [](std::string failure) {
         auto evidence = failedEvidence("scenario", std::move(failure));
@@ -268,19 +285,6 @@ int runRendererBenchmarkCommand(RuntimeCommand const& command)
     evidence.deadline = std::chrono::duration_cast<std::chrono::milliseconds>(options.deadline);
     watchdog.complete();
     return writeRuntimeEvidence(command.evidence_path, evidence);
-}
-
-[[nodiscard]]
-std::filesystem::path normalizedOutputPath(std::filesystem::path const& output_path)
-{
-    std::error_code error;
-    auto result = std::filesystem::weakly_canonical(output_path, error);
-    if (!error) {
-        return result;
-    }
-    error.clear();
-    result = std::filesystem::absolute(output_path, error);
-    return error ? output_path.lexically_normal() : result.lexically_normal();
 }
 
 [[nodiscard]]

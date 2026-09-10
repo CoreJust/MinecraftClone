@@ -12,4 +12,4 @@ Scenario mode parses the versioned scripting format, starts a bounded local serv
 
 Benchmark evidence records requested and actual framebuffer size, device and driver identity, present mode, validation state, warmup and sample durations, frame count, and frame-time percentiles. Preserve these fields with each result; do not treat a hardware-specific FPS value as a portable pass threshold.
 
-Evidence and image paths must be distinct. A zero exit status means the requested operation completed and its assertions passed; it does not replace manual review of the captured frame or prove a different platform, driver, or package.
+Scenario source and evidence paths must be distinct, as must image and evidence paths. A zero exit status means the requested operation completed and its assertions passed; it does not replace manual review of the captured frame or prove a different platform, driver, or package.
