@@ -3038,5 +3038,43 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0080",
+    "title": "Require a local game inspection checkpoint after every snapshot publication",
+    "kind": "decision",
+    "status": "done",
+    "priority": "P0",
+    "route": "luna",
+    "milestone": "AI development policy",
+    "depends_on": [],
+    "acceptance": "The release policy requires launching the exact published macOS artifact after every snapshot publication and pausing for user notes before any work on the next snapshot. The checkpoint applies to Snapshots 3 through 8 and preserves the separate post-Snapshot-8 minor hold.",
+    "evidence": "docs/ai/RELEASES.md now records the mandatory post-publication local launch and user-feedback pause before the next snapshot.",
+    "blocker": "",
+    "owner": "",
+    "level": "basic",
+    "parent": "MC-AI-0032",
+    "motivation": "The user requires a visible runtime checkpoint after every published snapshot instead of uninterrupted Snapshot 3 through Snapshot 8 delivery.",
+    "context": "This supersedes continuous cross-snapshot execution without checkpoints; Snapshot 8's existing minor-feedback hold remains unchanged.",
+    "complexity": "low",
+    "created_at": "2026-09-10",
+    "resolved_at": "2026-09-10",
+    "resolution_changes": "Required a local launch of each published macOS snapshot artifact followed by a pause for user notes before subsequent snapshot work.",
+    "plan": [
+      "Record the post-publication launch and user-feedback checkpoint in the owning release policy."
+    ],
+    "product_changes": [
+      "No game behavior changed; snapshot delivery now pauses for user inspection after publication."
+    ],
+    "code_changes": [
+      "docs/ai/RELEASES.md"
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": false,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]
