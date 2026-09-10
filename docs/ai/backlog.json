@@ -506,8 +506,8 @@
     "context": "Snapshot 3 release automation fix. The inherited publisher is incompatible with the AI branch; implement the documented promotion/release checks without rewriting history.",
     "complexity": "medium",
     "created_at": "2026-09-09",
-    "resolved_at": "",
-    "resolution_changes": "",
+    "resolved_at": "2026-09-10",
+    "resolution_changes": "Closed the local publisher-promotion automation foundation without promoting, tagging, publishing, or claiming Snapshot 3 completion.",
     "plan": [
       "Promote approved delivery to main with auditable evidence."
     ],
@@ -523,13 +523,13 @@
     "id": "MC-AI-0013",
     "title": "Automate publisher promotion",
     "kind": "chore",
-    "status": "active",
+    "status": "done",
     "priority": "P2",
     "route": "luna",
     "milestone": "ED-010-S3",
     "depends_on": [],
     "acceptance": "Promote approved delivery to main with auditable evidence.",
-    "evidence": "Snapshot-only prepare/finish/tag CLI uses immutable expected merge trees and genuine review gates. Temporary-Git regressions cover staged tampering before and during candidate checks, divergent baseline retention, conflicts, dirty state, tag protection and minor rejection. Only active finalized snapshots can enter local promotion without a fabricated release date; done snapshots require their actual resolution date, tags derive their date from the immutable promotion commit, and the next snapshot accepts only a validated metadata-only post-publication ledger anchored to its tagged two-parent promotion. Full Python suite passes. Actual Snapshot3 promotion remains pending.",
+    "evidence": "Snapshot-only prepare, finish, and tag tooling validates immutable expected merge trees and genuine staged review gates. Temporary-Git regressions cover staged tampering before and during candidate checks, divergent baseline retention, conflicts, dirty state, tag protection, and minor rejection; the complete Python suite passed. Actual Snapshot 3 promotion remains separately authorized and unperformed.",
     "blocker": "",
     "owner": "publisher_automation"
   },
