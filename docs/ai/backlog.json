@@ -3001,5 +3001,42 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0079",
+    "title": "Repair hosted macOS message relay test connection timeout",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P0",
+    "route": "luna",
+    "milestone": "ED-010-S3",
+    "depends_on": [],
+    "acceptance": "NetClientServer.MessageRelayTest gives its bounded 12-client setup a one-second connection timeout without changing production networking behavior. The focused test passes repeatedly and the test binary builds in Release configuration; fresh hosted macOS validation remains unclaimed until a new candidate runs.",
+    "evidence": "The isolated candidate built mc_tests in Release configuration, passed the focused MessageRelayTest, and passed 20 repeated direct runs. Fresh hosted macOS validation remains unclaimed.",
+    "blocker": "",
+    "owner": "",
+    "level": "basic",
+    "parent": "MC-AI-0032",
+    "motivation": "X8 hosted macOS validation failed before relay assertions when the ninth sequential client exceeded the test helper's 10 millisecond default connection timeout.",
+    "context": "The failure is confined to MessageRelayTest setup under hosted load; no production relay defect was observed.",
+    "complexity": "low",
+    "created_at": "2026-09-10",
+    "resolved_at": "2026-09-10",
+    "resolution_changes": "Gave MessageRelayTest's 12-client setup an explicit bounded one-second connection timeout.",
+    "plan": [
+      "Use a test-local bounded connection timeout for the multi-client relay setup.",
+      "Verify the focused relay test repeatedly without altering production networking code."
+    ],
+    "product_changes": [],
+    "code_changes": [
+      "tests/core/net_client_server_tests.cpp"
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": false,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]

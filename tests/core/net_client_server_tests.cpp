@@ -324,6 +324,7 @@ TEST(NetClientServer, MultipleClientsEchoTest) {
 
 TEST(NetClientServer, MessageRelayTest) {
     static constexpr uint32_t NUM_CLIENTS = 12;
+    static constexpr std::chrono::seconds CONNECT_TIMEOUT{ 1 };
     std::string received[NUM_CLIENTS];
 
     TestServerService srv{
@@ -356,7 +357,7 @@ TEST(NetClientServer, MessageRelayTest) {
     }
 
     for (uint32_t i = 0; i < NUM_CLIENTS; ++i) {
-        ASSERT_TRUE(clients[i].connectAndWait(srv.port()));
+        ASSERT_TRUE(clients[i].connectAndWait(srv.port(), CONNECT_TIMEOUT));
     }
 
     std::string const msg = fmt::format("to:{}:Hello from 0", NUM_CLIENTS - 1);
