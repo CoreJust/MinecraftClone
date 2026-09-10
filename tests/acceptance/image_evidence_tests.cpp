@@ -23,13 +23,15 @@ TEST(ImageEvidence, WritesPortableRgbPixelsFromRgbaCapture)
         / "minecraftclone-image-evidence-test.ppm";
 
     ASSERT_TRUE(acceptance::writeRgba8Ppm(output_path, 2U, 1U, rgba8).has_value());
-    std::ifstream input{ output_path, std::ios::binary };
-    std::string const output{
-        std::istreambuf_iterator<char>{ input },
-        std::istreambuf_iterator<char>{ },
-    };
-    std::string const expected{ "P6\n2 1\n255\n\x01\x02\x03\x05\x06\x07", 17 };
-    EXPECT_EQ(output, expected);
+    {
+        std::ifstream input{ output_path, std::ios::binary };
+        std::string const output{
+            std::istreambuf_iterator<char>{ input },
+            std::istreambuf_iterator<char>{ },
+        };
+        std::string const expected{ "P6\n2 1\n255\n\x01\x02\x03\x05\x06\x07", 17 };
+        EXPECT_EQ(output, expected);
+    }
     EXPECT_TRUE(std::filesystem::remove(output_path));
 }
 

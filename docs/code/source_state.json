@@ -22,7 +22,7 @@
         "tests/acceptance/runtime_cli_tests.cmake",
         "tests/acceptance/scenario_runner_tests.cpp"
       ],
-      "sources_sha256": "2c0d07d01e6ffbfeadb45200dfbdc559008d9b90b0191be97ec8e467bbaffc65"
+      "sources_sha256": "aee3d0704299cc0c385733322e0130fc925e004562bc9ef0b87392bc5f88db18"
     },
     {
       "guide": "docs/code/ANDROID.md",
@@ -244,7 +244,7 @@
         "tests/core/window/keyboard_tests.cpp",
         "tests/core/window/mouse_tests.cpp"
       ],
-      "sources_sha256": "a4e3c46ccce00a4ef82661b4ba3d04f5b810a1a2f0f22c6d45836312f9492e5a"
+      "sources_sha256": "20ed92dc640debab82fce53d0074d4cbb75cdf611773511d4547567cc00c9550"
     },
     {
       "guide": "docs/code/GAMEPLAY.md",

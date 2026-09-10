@@ -12,6 +12,17 @@
 namespace core {
 namespace name_extraction {
 
+consteval std::string_view stripClassKey(std::string_view name) {
+    if (name.starts_with("class ")) {
+        name.remove_prefix(6);
+    } else if (name.starts_with("struct ")) {
+        name.remove_prefix(7);
+    } else if (name.starts_with("enum ")) {
+        name.remove_prefix(5);
+    }
+    return name;
+}
+
 template<typename T>
 consteval auto funcSelfNameDataT() {
     return std::string_view{ PRETTY_FUNCTION };
@@ -44,7 +55,7 @@ consteval std::string_view strip(std::string_view const raw_name) {
 #else
     size_t const name_end = raw_name.find_last_of(']');
 #endif
-    return raw_name.substr(name_start, name_end - name_start);
+    return stripClassKey(raw_name.substr(name_start, name_end - name_start));
 }
 
 } // namespace name_extraction

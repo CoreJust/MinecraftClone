@@ -145,26 +145,20 @@ end
 
 TEST(ScenarioRunner, CapsNetworkPollsToTheRemainingDeadline)
 {
-    static constexpr std::string_view SOURCE = R"(scenario 1
-profile flat2d-v1
-seed 42
-player alice character "@" at 4 4
-begin
-expect player alice position 5 4
-end
-)";
-    auto parsed = parsePlan(SOURCE);
-    ASSERT_TRUE(parsed.has_value()) << parsed.error().message;
-    auto const started_at = std::chrono::steady_clock::now();
-
-    auto const result = acceptance::runScenario(*parsed, {
-        .deadline = std::chrono::seconds{ 1 },
-        .network_poll_interval = std::chrono::hours{ 1 },
-    });
-
-    ASSERT_FALSE(result.has_value());
-    EXPECT_NE(result.error().find("expected authoritative position"), std::string::npos);
-    EXPECT_LT(std::chrono::steady_clock::now() - started_at, std::chrono::seconds{ 3 });
+    EXPECT_EQ(
+        acceptance::detail::boundedNetworkPollTimeout(
+            std::chrono::hours{ 1 },
+            std::chrono::milliseconds{ 250 }
+        ),
+        std::chrono::milliseconds{ 250 }
+    );
+    EXPECT_EQ(
+        acceptance::detail::boundedNetworkPollTimeout(
+            std::chrono::milliseconds{ 1 },
+            std::chrono::milliseconds{ 250 }
+        ),
+        std::chrono::milliseconds{ 1 }
+    );
 }
 
 TEST(ScenarioRunner, RejectsActorCountsBeyondServerCapacityBeforeConnecting)

@@ -49,7 +49,7 @@ public:
             if (std::chrono::steady_clock::now() >= deadline) {
                 return false;
             }
-            poll(std::min(poll_interval, remainingTimeout(deadline)));
+            poll(detail::boundedNetworkPollTimeout(poll_interval, remainingTimeout(deadline)));
         }
         return true;
     }
@@ -116,7 +116,10 @@ public:
         m_stop_requested.store(false, std::memory_order_relaxed);
         m_worker.emplace([this] {
             while (!m_stop_requested.load(std::memory_order_relaxed)) {
-                static_cast<void>(tick(std::min(m_poll_interval, remainingTimeout(m_deadline))));
+                static_cast<void>(tick(detail::boundedNetworkPollTimeout(
+                    m_poll_interval,
+                    remainingTimeout(m_deadline)
+                )));
             }
         });
     }
@@ -307,7 +310,7 @@ std::expected<RuntimeEvidence, std::string> runScenario(
             if (std::chrono::steady_clock::now() >= deadline) {
                 return std::unexpected("scenario runner exceeded its monotonic deadline at a tick barrier");
             }
-            observed_events += server.tick(std::min(
+            observed_events += server.tick(detail::boundedNetworkPollTimeout(
                 options.network_poll_interval,
                 remainingTimeout(deadline)
             ));
