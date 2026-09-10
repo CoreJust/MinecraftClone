@@ -276,8 +276,8 @@ class AiTasksTest(unittest.TestCase):
         self.assertEqual([record["task_id"] for record in report["tasks"]], ["MC-AI-0090", "MC-AI-0091"])
         self.assertEqual(report["baseline"], {"task_id": "MC-AI-0089", "commit": "c" * 40})
         self.assertTrue(report["coverage"]["partial"])
-        self.assertIn("task_join", report["coverage"]["missing_metrics"])
-        self.assertEqual(report["coverage"]["unmatched_check_summaries"], 1)
+        self.assertNotIn("task_join", report["coverage"]["missing_metrics"])
+        self.assertEqual(report["coverage"]["unmatched_check_summaries"], 0)
 
     def test_efficiency_cohort_joins_taskless_summary_by_commit_identity(self) -> None:
         records = [
@@ -309,7 +309,7 @@ class AiTasksTest(unittest.TestCase):
         self.assertEqual(report["coverage"]["unmatched_check_summaries"], 0)
         self.assertNotIn("task_join", report["coverage"]["missing_metrics"])
 
-    def test_efficiency_cohort_rejects_mismatched_taskless_summary_identity(self) -> None:
+    def test_efficiency_cohort_ignores_out_of_cohort_taskless_summary_identity(self) -> None:
         records = [
             make_task("MC-AI-0089", status="active", owner="Codex"),
             make_task("MC-AI-0090", status="ready"),
@@ -332,8 +332,54 @@ class AiTasksTest(unittest.TestCase):
             ):
                 report = ai_tasks.efficiency_cohort(records, "c" * 40, receipt_dir=receipt_dir)
         self.assertEqual(report["tasks"][0]["check_summaries"], [])
-        self.assertEqual(report["coverage"]["unmatched_check_summaries"], 1)
-        self.assertIn("task_join", report["coverage"]["missing_metrics"])
+        self.assertEqual(report["coverage"]["unmatched_check_summaries"], 0)
+        self.assertNotIn("task_join", report["coverage"]["missing_metrics"])
+
+    def test_efficiency_cohort_reads_summary_history_and_deduplicates_latest_copy(self) -> None:
+        records = [
+            make_task("MC-AI-0089", status="active", owner="Codex"),
+            make_task("MC-AI-0090", status="ready"),
+            make_task("MC-AI-0091", status="ready"),
+        ]
+        first = {
+            "invocation_id": "first",
+            "scope": "metadata-only",
+            "head": "a" * 40,
+            "index_tree": "b" * 40,
+            "executed_phases": ["docs"],
+        }
+        second = {
+            "invocation_id": "second",
+            "scope": "metadata-only",
+            "head": "c" * 40,
+            "index_tree": "d" * 40,
+            "executed_phases": ["docs"],
+        }
+        latest_second = {**second, "reused_phases": ["docs"]}
+        with tempfile.TemporaryDirectory() as directory:
+            receipt_dir = Path(directory)
+            (receipt_dir / "summary.jsonl").write_text(
+                json.dumps(first) + "\nnot-json\n" + json.dumps(second) + "\n",
+                encoding="utf-8",
+            )
+            (receipt_dir / "summary.json").write_text(json.dumps(latest_second), encoding="utf-8")
+            with mock.patch.object(
+                ai_tasks,
+                "committed_task_ids",
+                return_value=(["MC-AI-0090", "MC-AI-0091"], []),
+            ), mock.patch.object(
+                ai_tasks,
+                "committed_task_identities",
+                return_value={
+                    "MC-AI-0090": {"parent_head": "a" * 40, "commit_tree": "b" * 40},
+                    "MC-AI-0091": {"parent_head": "c" * 40, "commit_tree": "d" * 40},
+                },
+            ):
+                report = ai_tasks.efficiency_cohort(records, "e" * 40, receipt_dir=receipt_dir)
+        self.assertEqual([len(record["check_summaries"]) for record in report["tasks"]], [1, 1])
+        self.assertEqual(report["tasks"][1]["check_summaries"][0]["reused_phases"], ["docs"])
+        self.assertEqual(report["coverage"]["unmatched_check_summaries"], 0)
+        self.assertNotIn("task_join", report["coverage"]["missing_metrics"])
 
     def test_committed_task_ids_preserve_commit_order_and_reject_ambiguous_trailers(self) -> None:
         output = "\0".join((

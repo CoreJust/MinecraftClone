@@ -435,8 +435,12 @@ def _receipt_summary(receipt_path: Path) -> dict[str, Any] | None:
         return None
     if not isinstance(payload, dict):
         return None
+    return _receipt_summary_payload(payload, receipt_path.stem)
+
+
+def _receipt_summary_payload(payload: dict[str, Any], source: str) -> dict[str, Any]:
     task_id = payload.get("task_id")
-    if not isinstance(task_id, str):
+    if not isinstance(task_id, str) or not task_id:
         task_id = None
     root_identity = payload.get("root", payload.get("root_identity", {}))
     if not isinstance(root_identity, dict):
@@ -448,16 +452,21 @@ def _receipt_summary(receipt_path: Path) -> dict[str, Any] | None:
         if values and len(values) == len(durations):
             elapsed_ms = sum(values)
     return {
+        "invocation_id": payload.get("invocation_id"),
         "task_id": task_id,
-        "phase": payload.get("phase", receipt_path.stem),
+        "phase": payload.get("phase", source),
         "status": payload.get("status"),
         "scope": payload.get("scope"),
         "changed_paths": payload.get("changed_paths"),
         "head_sha": root_identity.get(
-            "HEAD", root_identity.get("head", root_identity.get("head_sha", payload.get("head_sha")))
+            "HEAD", root_identity.get(
+                "head", root_identity.get("head_sha", payload.get("head_sha", payload.get("head")))
+            )
         ),
         "index_tree": root_identity.get(
-            "INDEX", root_identity.get("index", root_identity.get("index_tree", payload.get("index_tree")))
+            "INDEX", root_identity.get(
+                "index", root_identity.get("index_tree", payload.get("index_tree"))
+            )
         ),
         "reused_phases": payload.get("reused_phases"),
         "executed_phases": payload.get("executed_phases"),
@@ -466,6 +475,46 @@ def _receipt_summary(receipt_path: Path) -> dict[str, Any] | None:
         "elapsed_ms": elapsed_ms,
         "model_usage": payload.get("model_usage"),
     }
+
+
+def _summary_history(receipt_dir: Path) -> list[dict[str, Any]]:
+    """Read check summaries, preferring the latest copy for each invocation."""
+
+    payloads: list[dict[str, Any]] = []
+    history_path = receipt_dir / "summary.jsonl"
+    if history_path.is_file():
+        try:
+            lines = history_path.read_text(encoding="utf-8").splitlines()
+        except OSError:
+            lines = []
+        for line in lines:
+            try:
+                payload = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(payload, dict):
+                payloads.append(payload)
+    latest_path = receipt_dir / "summary.json"
+    if latest_path.is_file():
+        try:
+            payload = json.loads(latest_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            payload = None
+        if isinstance(payload, dict):
+            payloads.append(payload)
+    by_invocation: dict[str, int] = {}
+    summaries: list[dict[str, Any]] = []
+    for payload in payloads:
+        summary = _receipt_summary_payload(payload, "summary")
+        invocation_id = summary["invocation_id"]
+        if isinstance(invocation_id, str) and invocation_id:
+            previous = by_invocation.get(invocation_id)
+            if previous is not None:
+                summaries[previous] = summary
+                continue
+            by_invocation[invocation_id] = len(summaries)
+        summaries.append(summary)
+    return summaries
 
 
 def committed_task_ids(root: Path, baseline_commit: str) -> tuple[list[str], list[str]]:
@@ -559,13 +608,16 @@ def efficiency_cohort(
     receipts: list[dict[str, Any]] = []
     if receipt_dir is not None and receipt_dir.is_dir():
         receipt_paths = sorted(receipt_dir.glob("*.receipt.json"))
-        summary_path = receipt_dir / "summary.json"
-        if summary_path.is_file():
-            receipt_paths.append(summary_path)
         for receipt_path in receipt_paths:
             summary = _receipt_summary(receipt_path)
             if summary is not None:
                 receipts.append(summary)
+        receipts.extend(_summary_history(receipt_dir))
+        receipts = [
+            receipt
+            for receipt in receipts
+            if receipt["task_id"] or (receipt["head_sha"] and receipt["index_tree"])
+        ]
     by_task = {task["id"]: [] for task in candidates}
     unmatched_receipts = []
     try:
@@ -587,7 +639,7 @@ def efficiency_cohort(
         ]
         if len(matches) == 1:
             by_task[matches[0]].append(receipt)
-        else:
+        elif receipt["task_id"] is not None:
             unmatched_receipts.append(receipt)
     task_records = []
     for task in candidates:
