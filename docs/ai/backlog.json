@@ -370,13 +370,17 @@
     "context": "Snapshot 3 renderer acceptance foundation. Establish a mandatory windowed, noninteractive smoke gate before later visual snapshots rely on it; deterministic offscreen texture goldens remain owned by S4 task MC-AI-0052.",
     "complexity": "medium",
     "created_at": "2026-09-09",
-    "resolved_at": "",
-    "resolution_changes": "",
+    "resolved_at": "2026-09-10",
+    "resolution_changes": "Added a dedicated fail-closed renderer-smoke gate that configures its own preset, builds only mc_renderer_smoke, runs the exact registered windowed test with bounded timeouts, and records its commands and output.",
     "plan": [
       "Provide reproducible bounded, noninteractive renderer smoke."
     ],
-    "product_changes": [],
-    "code_changes": [],
+    "product_changes": [
+      "Snapshot, minor, and major full gates now exercise the windowed renderer smoke path with Vulkan validation before publication checks."
+    ],
+    "code_changes": [
+      "Added the renderer-smoke preset, bounded gate runner, gate registration, focused Python coverage, and owning build documentation."
+    ],
     "baseline_commit": "",
     "commits": [],
     "finalized": false,
@@ -387,7 +391,7 @@
     "id": "MC-AI-0009",
     "title": "Automate bounded renderer smoke acceptance",
     "kind": "chore",
-    "status": "active",
+    "status": "done",
     "priority": "P1",
     "route": "terra",
     "milestone": "ED-010-S3",
@@ -395,7 +399,7 @@
     "acceptance": "Snapshot, minor and major full gates configure a dedicated renderer-smoke preset, build only mc_renderer_smoke, run the exact registered windowed RendererSmokeTest with bounded timeouts, record command output, and fail closed on stale caches, missing registration, device, validation, runtime or timeout failures. The gate does not claim fully headless offscreen texture-golden coverage.",
     "evidence": "Eight focused Python tests pass. The enabled gate configured its dedicated preset on the canonical Task 9 candidate, built mc_renderer_smoke, and passed the exact RendererSmokeTest aggregate with Vulkan validation in 1.54 seconds; build/ai-checks/renderer-smoke.log records all commands and output.",
     "blocker": "",
-    "owner": "snapshot_gpu_gate"
+    "owner": "Codex"
   },
   {
     "level": "basic",
