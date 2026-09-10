@@ -1,8 +1,7 @@
 # EarlyDev 0.1.0 implementation decisions
 
-This record supports [Initiation](../tasks/MC-AI-0033.md) and snapshots S3–S8.
-The product roadmap owns scope and the delivery roadmap owns acceptance. These
-are implementation contracts, not release evidence.
+Implementation contracts for [Initiation](../tasks/MC-AI-0033.md), S3–S8;
+the roadmaps own scope and acceptance. This is not release evidence.
 
 ## Boundaries and modularity
 
@@ -11,19 +10,16 @@ same-build codec, and Vulkan grid/player renderer. Shared code owns simulation
 and wire contracts; the server owns accepted state; the client owns input and
 presentation; core owns GPU resources.
 
-Keep module APIs small and established: expose necessary operations and data
-contracts, not storage or implementation details. Keep pure simulation and
-geometry separate from window, network, and GPU effects for direct tests.
-Prefer compact contiguous world, mesh, and simulation layouts with predictable
-iteration and batched work. Do not add allocation, indirection, copying, ECS,
-plugin ABI, persistence framework, or transport solely for hypothetical mods;
-instead preserve focused low-coupling APIs that make future extension possible
-without compromising measured hot paths.
+Use small encapsulated APIs. Separate pure simulation and geometry from window,
+network and GPU effects. Prefer contiguous data, predictable iteration and
+batching. Preserve source-level extension points without speculative ECS,
+binary plugin ABI, persistence/transport frameworks or unmeasured hot-path
+allocation, indirection and copying.
 
-Keep terrain generation deterministic and independent of visual residency.
-Future progressive generation may refine distant coarse terrain with structures
-and nearby decoration; S6 implements only this minor's air/stone generator,
-not those future content stages.
+Generation stays deterministic and independent of visual residency. S6 supplies
+the required registered region/chunk stages, explicit bounded retry and simple
+air/stone proof; rich content stays future. [Package architecture](architecture_packages.md)
+owns the module, scripting, kernel, audio and LOD contracts.
 
 `EarlyDev 0.1.0:3` is declared but not released. S3 decides the version naming
 and portable-wire direction; S4–S8 changes remain future commitments. After
@@ -33,11 +29,10 @@ automatically. Plan Snapshot 9 only if feedback requires it.
 
 ## Coordinates and protocol
 
-From S4, use right-handed X/Y horizontal and Z up. One world unit is one block;
-zero yaw faces +Y and +X is right. Camera math performs the Vulkan conversion
-once. Simulation positions use named `double` components; block/chunk
-coordinates are signed 32-bit; player IDs are uint32. GPU positions are
-camera- or chunk-relative floats, never large absolute floats.
+From S4, use right-handed horizontal X/Y and Z up. One unit is one block; zero
+yaw faces +Y and +X is right. Convert for Vulkan once. Simulation uses named
+`double` components, signed 32-bit block/chunk coordinates and uint32 player
+IDs. GPU positions are camera- or chunk-relative floats, never large absolutes.
 
 By S5, replace native-structure packets with one reliable ENet packet starting
 `0x4D`, version `1`, and stable tag (the five current meanings keep tags 0–4).
@@ -74,6 +69,22 @@ player, never packet content.
   collision, including seams; swept tests/bounded substeps prevent tunnelling.
   Permission revocation must recover a valid position.
 
+## Configuration and scripting
+
+S3 introduces a versioned finite text language that
+parses into a validated immutable scenario plan before changing state. Execute
+setup, player input, fixed tick delays and assertions through authoritative
+simulation operations, never in the render loop. Profiles preserve coordinate
+and tick semantics; unsupported profiles fail rather than reinterpret old
+scripts. Later snapshots add camera, block, world-generation, wrapping and
+permission operations with their features. The same runner powers playthroughs and executable
+acceptance. S4 keeps `scenario 1` and `flat2d-v1` fully supported while new
+documentation may prefer the generic Core language and Shared DSL. Keep
+host-enforced resource limits and precise source diagnostics;
+remote player packets never acquire script/setup authority. A future compiler,
+VM or JIT can target these operations but is not part of this minor. Provide a
+navigable language guide, complete grammar/reference and tested examples.
+
 ## Delivery evidence
 
 Use pure tests for math, codecs, chunks, meshes, wrapping and physics; use
@@ -89,11 +100,10 @@ an installable Android executable using shared simulation/rendering and narrow
 native surface, input, lifecycle and asset adapters. Test the exact released
 macOS and Android packages locally; Windows runtime testing belongs to the user.
 
-The user's basic-world target is at least 5,000 FPS on a Ryzen 9 HX laptop with
-an RTX 5070 Ti laptop GPU and 32 GB RAM, and several hundred FPS on this Mac.
-Weaker laptops must remain smooth. Use 1920×1080 as a provisional benchmark
-resolution until specified; record actual framebuffer size, power/build mode,
-present mode, hardware and frame-time percentiles. Separate presented frame
-rate from CPU submission and offscreen throughput. These targets remain
-unverified until measured on the relevant machines; microbenchmarks do not
-establish them.
+Targets: 5,000 full-frame render/submit/present-request game-loop iterations per
+second on the Ryzen 9 HX/RTX 5070 Ti/32 GB Windows laptop, several hundred on
+this Mac, and smooth weaker-laptop operation. This does not mean 5,000 physical
+screen refreshes; measure displayed cadence separately. At provisional
+1920×1080, record framebuffer, power/build mode, present mode, hardware and
+percentiles. Targets remain unverified; renderer-only/offscreen/CPU
+microbenchmarks do not establish them.
