@@ -279,6 +279,62 @@ class AiTasksTest(unittest.TestCase):
         self.assertIn("task_join", report["coverage"]["missing_metrics"])
         self.assertEqual(report["coverage"]["unmatched_check_summaries"], 1)
 
+    def test_efficiency_cohort_joins_taskless_summary_by_commit_identity(self) -> None:
+        records = [
+            make_task("MC-AI-0089", status="active", owner="Codex"),
+            make_task("MC-AI-0090", status="ready"),
+        ]
+        parent_head = "a" * 40
+        commit_tree = "b" * 40
+        with tempfile.TemporaryDirectory() as directory:
+            receipt_dir = Path(directory)
+            (receipt_dir / "summary.json").write_text(json.dumps({
+                "schema_version": 1,
+                "status": "PASS",
+                "elapsed_ms": 123,
+                "model_usage": {"input": 10, "output": 2},
+                "root": {"head_sha": parent_head, "index_tree": commit_tree},
+            }), encoding="utf-8")
+            with mock.patch.object(
+                ai_tasks,
+                "committed_task_ids",
+                return_value=(["MC-AI-0090"], []),
+            ), mock.patch.object(
+                ai_tasks,
+                "committed_task_identities",
+                return_value={"MC-AI-0090": {"parent_head": parent_head, "commit_tree": commit_tree}},
+            ):
+                report = ai_tasks.efficiency_cohort(records, "c" * 40, receipt_dir=receipt_dir)
+        self.assertEqual(len(report["tasks"][0]["check_summaries"]), 1)
+        self.assertEqual(report["coverage"]["unmatched_check_summaries"], 0)
+        self.assertNotIn("task_join", report["coverage"]["missing_metrics"])
+
+    def test_efficiency_cohort_rejects_mismatched_taskless_summary_identity(self) -> None:
+        records = [
+            make_task("MC-AI-0089", status="active", owner="Codex"),
+            make_task("MC-AI-0090", status="ready"),
+        ]
+        with tempfile.TemporaryDirectory() as directory:
+            receipt_dir = Path(directory)
+            (receipt_dir / "summary.json").write_text(json.dumps({
+                "schema_version": 1,
+                "status": "PASS",
+                "root": {"head_sha": "a" * 40, "index_tree": "c" * 40},
+            }), encoding="utf-8")
+            with mock.patch.object(
+                ai_tasks,
+                "committed_task_ids",
+                return_value=(["MC-AI-0090"], []),
+            ), mock.patch.object(
+                ai_tasks,
+                "committed_task_identities",
+                return_value={"MC-AI-0090": {"parent_head": "a" * 40, "commit_tree": "b" * 40}},
+            ):
+                report = ai_tasks.efficiency_cohort(records, "c" * 40, receipt_dir=receipt_dir)
+        self.assertEqual(report["tasks"][0]["check_summaries"], [])
+        self.assertEqual(report["coverage"]["unmatched_check_summaries"], 1)
+        self.assertIn("task_join", report["coverage"]["missing_metrics"])
+
     def test_committed_task_ids_preserve_commit_order_and_reject_ambiguous_trailers(self) -> None:
         output = "\0".join((
             "a" * 40,

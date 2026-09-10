@@ -495,6 +495,36 @@ def committed_task_ids(root: Path, baseline_commit: str) -> tuple[list[str], lis
     return task_ids, unavailable
 
 
+def committed_task_identities(root: Path, baseline_commit: str) -> dict[str, dict[str, str]]:
+    """Resolve task commits to the parent HEAD and resulting commit tree."""
+
+    output = _git_output(
+        root,
+        "log",
+        "--reverse",
+        "--format=%H%x00%(trailers:key=Task-ID,valueonly,unfold)%x00",
+        f"{baseline_commit}..HEAD",
+    )
+    parts = output.split("\0")
+    identities: dict[str, dict[str, str]] = {}
+    for index in range(0, len(parts) - 1, 2):
+        commit = parts[index].strip()
+        trailer = parts[index + 1].strip()
+        values = [value.strip() for value in trailer.splitlines() if value.strip()]
+        if not commit or len(values) != 1 or values[0] in identities:
+            continue
+        parents = _git_output(root, "show", "-s", "--format=%P", commit).split()
+        if len(parents) != 1:
+            continue
+        tree = _git_output(root, "rev-parse", f"{commit}^{{tree}}").strip()
+        if SHA_PATTERN.fullmatch(parents[0]) and SHA_PATTERN.fullmatch(tree):
+            identities[values[0]] = {
+                "parent_head": parents[0],
+                "commit_tree": tree,
+            }
+    return identities
+
+
 def efficiency_cohort(
     tasks: Sequence[dict[str, Any]],
     baseline_commit: str,
@@ -538,9 +568,25 @@ def efficiency_cohort(
                 receipts.append(summary)
     by_task = {task["id"]: [] for task in candidates}
     unmatched_receipts = []
+    try:
+        task_identities = committed_task_identities(root, baseline_commit)
+    except BacklogError:
+        task_identities = {}
     for receipt in receipts:
         if receipt["task_id"] in by_task:
             by_task[receipt["task_id"]].append(receipt)
+            continue
+        matches = [
+            task_id
+            for task_id in by_task
+            if receipt["task_id"] is None
+            and receipt["head_sha"]
+            and receipt["index_tree"]
+            and task_identities.get(task_id, {}).get("parent_head") == receipt["head_sha"]
+            and task_identities.get(task_id, {}).get("commit_tree") == receipt["index_tree"]
+        ]
+        if len(matches) == 1:
+            by_task[matches[0]].append(receipt)
         else:
             unmatched_receipts.append(receipt)
     task_records = []

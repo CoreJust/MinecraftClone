@@ -167,8 +167,15 @@ def environment_fingerprint(environment: dict[str, str]) -> str:
     ignored = {
         "PWD", "OLDPWD", "SHLVL", "_", "GIT_DIR", "GIT_COMMON_DIR",
         "GIT_INDEX_FILE", "GIT_PREFIX", "GIT_WORK_TREE",
+        "GIT_AUTHOR_DATE", "GIT_AUTHOR_EMAIL", "GIT_AUTHOR_NAME", "GIT_EDITOR",
     }
     values = {key: value for key, value in environment.items() if key not in ignored}
+    if "GIT_EXEC_PATH" not in values:
+        resolved = subprocess.run(
+            ["git", "--exec-path"], text=True, capture_output=True, check=False
+        )
+        if resolved.returncode == 0 and resolved.stdout.strip():
+            values["GIT_EXEC_PATH"] = resolved.stdout.strip()
     serialized = json.dumps(values, sort_keys=True, separators=(",", ":")).encode()
     return hashlib.sha256(serialized).hexdigest()
 

@@ -410,12 +410,27 @@ class AiCheckTests(unittest.TestCase):
             "GIT_INDEX_FILE": str(self.root / ".git/index"),
             "GIT_PREFIX": "",
             "GIT_WORK_TREE": str(self.root),
+            "GIT_EXEC_PATH": subprocess.run(
+                ["git", "--exec-path"], text=True, capture_output=True, check=True
+            ).stdout.strip(),
+            "GIT_AUTHOR_DATE": "@0 +0000",
+            "GIT_AUTHOR_EMAIL": "hook@example.invalid",
+            "GIT_AUTHOR_NAME": "Hook",
+            "GIT_EDITOR": ":",
         }
         first = self.run_check("--fast", environment=first_environment)
         self.assertEqual(first.returncode, 0, first.stdout + first.stderr)
         second = self.run_check("--fast", environment=second_environment)
         self.assertEqual(second.returncode, 0, second.stdout + second.stderr)
         self.assertIn("REUSED PASS docs", second.stdout)
+
+    def test_explicit_git_exec_path_mismatch_invalidates_receipt(self):
+        first = self.run_check("--fast")
+        self.assertEqual(first.returncode, 0, first.stdout + first.stderr)
+        environment = os.environ | {"GIT_EXEC_PATH": "/explicitly-different-git-core"}
+        second = self.run_check("--fast", environment=environment)
+        self.assertEqual(second.returncode, 0, second.stdout + second.stderr)
+        self.assertNotIn("REUSED PASS docs", second.stdout)
 
     def test_failed_receipt_is_never_reused(self):
         first = self.run_check("--fast")
