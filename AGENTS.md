@@ -13,7 +13,7 @@ Read [docs/ai/README.md](docs/ai/README.md), then only the guide and backlog ite
 
 For the current minor and included snapshots, until the final pre-publication gate after the requested feedback hold, use only minimal review: one short, exact-task Luna/high review per immutable staged candidate. This covers minor development, CI candidates, and snapshot delivery. Do not add independent-range, dual-reviewer, or higher-model reviews unless the user requests earlier review. At final pre-minor publication after the hold, add the accumulated-change review required by [the release policy](docs/ai/RELEASES.md), and no other review boundary.
 
-Keep one `Task-ID` trailer per commit, staged identity, automated checks, truthful evidence, Mac/Android artifact acceptance, and Windows user-runtime acceptance; publication remains explicitly authorized. Snapshot 8 stays held: no automatic minor or Snapshot 9.
+Keep one `Task-ID` trailer per commit, staged identity, automated checks, truthful evidence, Mac/Android artifact acceptance, and separately recorded user Windows runtime status; publication remains explicitly authorized. After publishing Snapshot 8, hold the minor for feedback; no automatic minor publication or Snapshot 9.
 
 Maximize deterministic automated coverage of public contracts: unit, subsystem integration, fixed-seed/replay, offscreen screenshot, and code checks. Add proportionate static analyzers/sanitizers later. Reuse passing evidence only when inputs are unchanged; never skip checks or auto-bless goldens.
 
