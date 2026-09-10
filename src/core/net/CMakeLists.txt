@@ -1,0 +1,9 @@
+target_sources(mc
+    PRIVATE
+        Address.cpp
+        Client.cpp
+        Event.cpp
+        Host.cpp
+        Net.cpp
+        Server.cpp
+)

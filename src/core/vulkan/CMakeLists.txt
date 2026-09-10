@@ -1,0 +1,51 @@
+target_sources(mc
+    PRIVATE
+        Allocator.cpp
+        Attachment.cpp
+        Capabilities.cpp
+        Check.cpp
+        CommandBuffer.cpp
+        CommandPool.cpp
+        Context.cpp
+        Device.cpp
+        ErrorCallbacks.cpp
+        Extensions.cpp
+        Features.cpp
+        Fence.cpp
+        FrameContext.cpp
+        FrameGraph.cpp
+        GraphicsPipeline.cpp
+        GraphicsPipelineOptions.cpp
+        Image.cpp
+        ImageView.cpp
+        Instance.cpp
+        Layers.cpp
+        PipelineLayout.cpp
+        Semaphore.cpp
+        ShaderModule.cpp
+        SpirV.cpp
+        Surface.cpp
+        Swapchain.cpp
+        VulkanVersion.cpp
+)
+if(NOT ANDROID)
+    target_sources(mc
+        PRIVATE
+            GlfwSurfaceProvider.cpp
+    )
+endif()
+if(APPLE)
+    target_sources(mc
+        PRIVATE
+            MetalLayer.mm
+            SurfacePlatform.mm
+    )
+elseif(NOT ANDROID)
+    target_sources(mc
+        PRIVATE
+            SurfacePlatform.cpp
+    )
+endif()
+add_subdirectory(builder)
+add_subdirectory(enum)
+add_subdirectory(internal)

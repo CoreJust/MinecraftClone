@@ -1,0 +1,10 @@
+scenario 1
+profile flat2d-v1
+seed 42
+player alice character "@" at 4 4
+begin
+input alice 1 0
+wait 5
+input alice 0 0
+expect player alice position 9 4
+end

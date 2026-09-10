@@ -1,0 +1,130 @@
+{
+  "modules": [
+    {
+      "id": "core",
+      "guide": "docs/code/CORE.md",
+      "sources": [
+        "src/core/CMakeLists.txt",
+        "src/core/include/core/CMakeLists.txt",
+        "src/core/OS/**",
+        "src/core/IO/**",
+        "src/core/common/**",
+        "src/core/net/**",
+        "src/core/window/**",
+        "src/core/include/core/OS/**",
+        "src/core/include/core/IO/**",
+        "src/core/include/core/algorithm/**",
+        "src/core/include/core/common/**",
+        "src/core/include/core/macro/**",
+        "src/core/include/core/meta/**",
+        "src/core/include/core/net/**",
+        "src/core/include/core/window/**",
+        "tests/core/algorithm_tests.cpp",
+        "tests/core/byte_io_tests.cpp",
+        "tests/core/crash_handler_tests.cpp",
+        "tests/core/defer_tests.cpp",
+        "tests/core/enum_bits_tests.cpp",
+        "tests/core/enum_meta_tests.cpp",
+        "tests/core/field_requirement_tests.cpp",
+        "tests/core/hash_combine_tests.cpp",
+        "tests/core/input_span_tests.cpp",
+        "tests/core/io_tests.cpp",
+        "tests/core/log_tests.cpp",
+        "tests/core/macro_tests.cpp",
+        "tests/core/net_client_server_tests.cpp",
+        "tests/core/net_tests.cpp",
+        "tests/core/non_copyable_tests.cpp",
+        "tests/core/non_movable_tests.cpp",
+        "tests/core/os_tests.cpp",
+        "tests/core/range_span_tests.cpp",
+        "tests/core/span_utils_tests.cpp",
+        "tests/core/static_initializer_tests.cpp",
+        "tests/core/tagged_bool_tests.cpp",
+        "tests/core/trivial_pair_tests.cpp",
+        "tests/core/type_name_tests.cpp",
+        "tests/core/vector_utils_tests.cpp",
+        "tests/core/version_tests.cpp",
+        "tests/core/window/**"
+      ]
+    },
+    {
+      "id": "vulkan",
+      "guide": "docs/code/VULKAN.md",
+      "sources": [
+        "src/core/vulkan/**",
+        "src/core/include/core/vulkan/**",
+        "tests/core/vulkan/**"
+      ]
+    },
+    {
+      "id": "gameplay",
+      "guide": "docs/code/GAMEPLAY.md",
+      "sources": [
+        "src/main.cpp",
+        "src/shared/**",
+        "src/server/**",
+        "src/client/*.cpp",
+        "src/client/include/client/*.hpp",
+        "src/client/include/client/CMakeLists.txt",
+        "tests/core/shared_message_tests.cpp",
+        "tests/core/scenario_parser_tests.cpp",
+        "tests/core/shared_world_tests.cpp",
+        "tests/core/game_server_tests.cpp",
+        "tests/core/game_server_lifecycle_tests.cpp"
+      ]
+    },
+    {
+      "id": "rendering",
+      "guide": "docs/code/RENDERING.md",
+      "sources": [
+        "src/client/render/**",
+        "src/client/include/client/render/**",
+        "src/client/CMakeLists.txt",
+        "tests/client/**"
+      ]
+    },
+    {
+      "id": "android",
+      "guide": "docs/code/ANDROID.md",
+      "sources": [
+        "src/android/**",
+        "tests/android/**"
+      ]
+    },
+    {
+      "id": "acceptance",
+      "guide": "docs/ACCEPTANCE.md",
+      "sources": [
+        "src/acceptance/**",
+        "tests/acceptance/**"
+      ]
+    },
+    {
+      "id": "build",
+      "guide": "docs/BUILD.md",
+      "sources": [
+        "CMakeLists.txt",
+        "CMakePresets.json",
+        "vcpkg*.json",
+        "cmake/**",
+        "android/**",
+        "src/CMakeLists.txt",
+        "tests/CMakeLists.txt",
+        "tests/main.cpp",
+        "publish.py",
+        "script/*.py",
+        "script/ci/**/*.py",
+        "script/*.json",
+        "script/tests/**/*.py",
+        ".githooks/*",
+        ".github/workflows/*",
+        ".codex/config.toml",
+        ".gitignore",
+        ".gitattributes",
+        "AGENTS.md",
+        "CLAUDE.md",
+        ".agents/skills/**"
+      ]
+    }
+  ]
+}

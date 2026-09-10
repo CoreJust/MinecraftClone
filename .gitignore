@@ -48,5 +48,16 @@ third_party/
 .PVS-Studio/
 .vcpkg/
 .vcpkg_installed/
+android/.gradle/
+android/build/
+android/app/.cxx/
+android/app/build/
+android/local.properties
+!android/build.gradle
+!android/app/build.gradle
 
-*.py
+collect.py
+*.pyc
+
+# The build-artifact pattern also matches this maintained guide on macOS.
+!docs/BUILD.md

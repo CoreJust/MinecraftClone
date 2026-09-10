@@ -1,11 +1,11 @@
 #include <core/net/Server.hpp>
 
-#include <core/Assert.hpp>
+#include <core/common/Assert.hpp>
 
 namespace core {
 
 Server::~Server() {
-    kick(collectConnectedClients(), std::chrono::milliseconds{ 300 }, false);
+    kick(collectConnectedClients(), std::chrono::milliseconds{ 300 }, GenerateEvents::No);
 }
 
 size_t Server::poll(std::chrono::milliseconds const total_timeout) {
@@ -18,7 +18,7 @@ size_t Server::poll(std::chrono::milliseconds const total_timeout) {
 size_t Server::kick(
     std::span<ClientId const> const clients,
     std::optional<std::chrono::milliseconds> const wait_for_graceful_disconnect_time,
-    bool const generate_events
+    GenerateEvents const generate_events
 ) {
     // Without graceful exit enabled just reset all the peers.
     if (!wait_for_graceful_disconnect_time.has_value()) {
@@ -46,8 +46,11 @@ size_t Server::kick(
             return ControlFlow::Continue;
         }
 
-        auto const client_index = findClientIndex(disconnect_event->peer).value();
-        auto const client_id = m_connected_clients[client_index].first;
+        auto const client_index = findClientIndex(disconnect_event->peer);
+        if (!client_index) {
+            return ControlFlow::Continue;
+        }
+        auto const client_id = m_connected_clients[*client_index].first;
         if (auto it = std::find(clients.begin(), clients.end(), client_id); it != clients.end()) {
             unkicked[it - clients.begin()] = false;
             if (++gracefully_kicked == clients.size()) {
@@ -109,7 +112,7 @@ void Server::dispatchEvent(NetEvent event) {
             });
             removeClient(client.first);
         } else {
-            MC_ERROR("Tried to dispatch disconnect event, but no corresponding client exists in connected clients list");
+            CORE_ERROR("Tried to dispatch disconnect event, but no corresponding client exists in connected clients list");
         }
     } else if (auto receive_event = std::get_if<ReceiveEvent>(&event)) {
         if (auto const client_index = findClientIndex(receive_event->peer)) {
@@ -150,4 +153,4 @@ std::optional<size_t> Server::findClientIndex(Peer const client) const noexcept 
     return std::nullopt;
 }
 
-} // namespace coree
+} // namespace core

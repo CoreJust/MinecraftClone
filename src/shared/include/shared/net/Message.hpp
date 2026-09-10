@@ -39,6 +39,6 @@ using Message = std::variant<
     ServerRemovePlayerMessage>;
 
 std::vector<uint8_t> encodeMessage(Message const message);
-std::optional<Message> decodeMessage(std::span<uint8_t> const data);
+std::optional<Message> decodeMessage(std::span<uint8_t const> const data);
 
 } // namespace shared

@@ -1,7 +1,7 @@
 #include <client/GameClient.hpp>
 
+#include <core/common/SpanUtils.hpp>
 #include <core/IO/Log.hpp>
-#include <core/SpanUtils.hpp>
 
 #include <iostream>
 
@@ -9,6 +9,7 @@ namespace client {
 
 void GameClient::run(core::Address const server_address, char const ch) {
     if (!connect(server_address, std::chrono::milliseconds{ 1'000 })) {
+        CORE_ERROR("Failed to connect to server {}", server_address);
         std::cerr << "Failed to connect to server" << std::endl;
         return;
     }
@@ -16,22 +17,28 @@ void GameClient::run(core::Address const server_address, char const ch) {
     send(shared::JoinRequestMessage {
         .ch = ch,
     });
-    while (!m_accepted && m_running) {
-        poll();
-        std::this_thread::sleep_for(std::chrono::milliseconds{ 2 });
+    while (!m_accepted && m_running && isConnected()) {
+        poll(std::chrono::milliseconds{ 100 });
     }
 
-    while (m_running) {
-        poll();
+    while (m_running && isConnected()) {
+        poll(std::chrono::milliseconds{ 100 });
+        if (!m_running || !isConnected()) {
+            break;
+        }
         render();
+        if (!m_running || !isConnected()) {
+            break;
+        }
         send(shared::ClientInputMessage{
             .direction = input(),
         });
-        std::this_thread::sleep_for(std::chrono::milliseconds{ 40 });
+        std::this_thread::sleep_for(std::chrono::milliseconds{ 100 });
     }
 }
 
 void GameClient::onDisconnected(core::DisconnectEvent const event) {
+    CORE_INFO("Server disconnected: {}", event.peer.address());
     std::cout << "[SERVER DISCONNECTED] address " << fmt::format("{}", event.peer.address()) << std::endl;
     m_running = false;
 }
@@ -39,7 +46,7 @@ void GameClient::onDisconnected(core::DisconnectEvent const event) {
 void GameClient::onReceived(core::ReceiveEvent event) {
     std::optional maybe_msg = shared::decodeMessage(event.data);
     if (!maybe_msg) {
-        MC_ERROR("Received a corrupted message");
+        CORE_ERROR("Received a corrupted message");
         return;
     }
 
@@ -59,17 +66,18 @@ void GameClient::onReceived(core::ReceiveEvent event) {
         }
     } else if (auto* msg = std::get_if<shared::ServerRemovePlayerMessage>(msg_ptr)) {
         auto const [ch] = *msg;
-        shared::Player const p = m_world.playerByCharacter(ch).value();
-        m_world.despawnPlayer(p.id);
+        if (auto const p = m_world.playerByCharacter(ch)) {
+            m_world.despawnPlayer(p->id);
+        }
     } else {
-        MC_ERROR("Received a message unsupported by the client {}", msg_ptr->index());
+        CORE_ERROR("Received a message unsupported by the client {}", msg_ptr->index());
     }
 }
 
 void GameClient::send(shared::Message const message) {
     std::vector const message_bytes = shared::encodeMessage(message);
     if (!core::Client::send(message_bytes, 0, core::SendMode{ core::SendMode::Reliable })) {
-        MC_ERROR("Failed to send a message");
+        CORE_ERROR("Failed to send a message");
     }
 }
 

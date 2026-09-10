@@ -1,0 +1,51 @@
+#!/bin/sh
+set -eu
+
+branch="$(git branch --show-current)"
+head_sha="$(git rev-parse HEAD)"
+is_ai_branch() {
+    case "$1" in ai-dev|ai-main|codex/ai-*) return 0;; esac
+    return 1
+}
+is_ai_ref() {
+    case "$1" in refs/heads/ai-dev|refs/heads/ai-main|refs/heads/codex/ai-*|refs/tags/ai/*) return 0;; esac
+    return 1
+}
+
+check_mode=""
+
+while read -r local_ref local_sha remote_ref remote_sha; do
+    [ -n "$local_ref" ] || continue
+    local_branch="${local_ref#refs/heads/}"
+    if is_ai_branch "$local_branch" || is_ai_branch "$branch" || is_ai_ref "$remote_ref"; then
+        local_commit="$(git rev-parse "${local_sha}^{commit}" 2>/dev/null)" || {
+            echo "Unable to resolve pushed ref $local_ref to a commit." >&2
+            exit 1
+        }
+        if [ "$local_commit" != "$head_sha" ]; then
+            echo "AI pushes must push the checked HEAD revision." >&2
+            exit 1
+        fi
+        case "$remote_ref" in refs/heads/main|refs/heads/dev)
+            echo "Refusing to push an AI branch to legacy $remote_ref." >&2
+            exit 1;;
+        esac
+        if [ -n "$(git status --porcelain)" ]; then
+            echo "AI pushes require a clean working tree." >&2
+            exit 1
+        fi
+        case "$remote_ref" in
+            refs/heads/ai-main|refs/tags/ai/*) check_mode="strict";;
+            *) [ "$check_mode" = "strict" ] || check_mode="full";;
+        esac
+    fi
+done
+
+case "$check_mode" in
+    strict)
+        exec "${PYTHON:-python3}" script/ai_check.py --strict --require-index-match
+        ;;
+    full)
+        exec "${PYTHON:-python3}" script/ai_check.py --require-index-match
+        ;;
+esac

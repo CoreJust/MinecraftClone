@@ -8,7 +8,7 @@ namespace core {
 
 void NetInitDestroy::init() {
     if (enet_initialize() != 0) {
-        MC_CRITICAL("Failed to initialize network; exiting");
+        CORE_CRITICAL("Failed to initialize network; exiting");
         exit(1);
     }
 }

@@ -1,93 +1,60 @@
 # Minecraft Clone 2026
 
-Every programmer should try and develop a Minecraft clone. This one is not my first attempt, but the first serious one.
+A C++23 Minecraft-style game for learning networking, Vulkan graphics, and simulation architecture.
 
-Written in C++23.
+Version EarlyDev 0.1.0 Initiation.
 
-## Project goals
+## Development lines
 
-For me, the most important part of this project is the opportunity to learn (and well, have some fun of course).
+| Branch | Purpose |
+|---|---|
+| `dev` → `main` | Original development and snapshots |
+| `ai-dev` → `ai-main` | AI-led development and verified snapshots |
+| `codex/ai-<task>` | Short-lived tasks based on `ai-dev` |
 
-Why Minecraft? Because it allows to quickly get to the first working version, but then to get it working well and fast and to implement some more complex content you need to carefully think through. Also, Minecraft allows you to focus more on coding rather than creating models/textures or designing game levels.
+Start with [AI development](docs/ai/README.md), the [backlog](docs/ai/BACKLOG.md), the [code map](docs/code/README.md), or the [scenario scripting guide](docs/scripting/README.md). The AI line follows the same [product roadmap](docs/ROADMAP.md); it changes the development workflow, not the intended game.
 
-In general, it easily grows into a large project, which forces you to study to design proper architectures (otherwise you will not be able to make it). I had some other relatively large projects, but they mostly had relatively simple structure. But here the architecture is way more complex - you have to split the responsibilities between the server and the client, organize their interaction in a way that works with network latency and bandwidth limitations. You have to think through the graphics, world update, world generation. You have to manage multiple entities of different kinds and with varying logic (blocks, blocks with complex logic, players, mobs, particles, etc).
+## Build and run
 
-Also, I consider this project as a chance to learn some more specific spheres I had no prior experience in:
-1. Network (it is my first project that utllizes it);
-2. Advanced graphics with Vulkan (previously I only had relatively simple OpenGL experience);
-3. Complex multithreading (I had experienced multithreading, but in considerably simpler scenarios).
+Requires C++23, CMake 3.25+, Ninja, vcpkg (`VCPKG_ROOT`), and Vulkan SDK including `glslc`. Development tooling requires Python 3.12+. Application builds support Windows, macOS, and arm64 Android.
 
-## Project structure
-
-Project structure (some of the folders may be non-existent for now and will be created later on):
-
-```
-assets/ - default game assets, such as textures and sounds.
-cmake/ - helper CMake scripts.
-config/ - current game settings and configuration files.
-content/ - default game content, such as crafting recipes or block properties.
-docs/ - used conventions (for code, for versioning, etc), roadmap, version history.
-src/ - actual source files
-|---> core/ - foundational files that are relatively project-agnostic (so can be used in other projects easily).
-|---> shared/ - shared logic between client and server (e.g. network protocols, world objects).
-|---> server/ - implementation of the server-side logic.
-|---> client/ - implementation of the client-side logic.
-tests/ - unit-tests.
-```
-
-Config files are expected to be replaceable in the future, so it can be easy to change the used assets and content. Probably some simple scripts and/or modding will be also added.
-
-## Build
-
-*Note: replace debug with release below to get the Release build.*
-
-### Configure
-
-```bash
+```sh
 cmake --preset debug
-```
-
-### Build
-
-```bash
 cmake --build --preset debug
+ctest --preset debug --output-on-failure --no-tests=error
+python3 script/ai_check.py
 ```
 
-### Run server
+From the repository root, run `./build/debug/mc_main --server`, then `./build/debug/mc_main` for a client. On Windows use `mc_main.exe`. See [build details](docs/BUILD.md) for SDK setup, configuration options, release-path limitations, and validation.
 
-```bash
-./build/debug/apps/launcher/mc_main --server
-```
+## Structure
 
-### Run
+- `src/core`: reusable utilities, networking, window/input, Vulkan infrastructure.
+- `src/shared`: world state, protocol, version metadata.
+- `src/server`, `src/client`: authoritative simulation and presentation.
+- `tests`: game/core tests; `script/tests`: development-tool tests.
+- `cmake`, `script`, `.githooks`: build and local validation.
+- `docs`: contracts, roadmap, release history, AI planning.
 
-```bash
-./build/debug/apps/launcher/mc_main
-```
+Assets, content packs, modding, replaceable modules, and broader hot reload remain planned directions. Current behavior and limitations are described in the [code guides](docs/code/README.md).
 
-### Test
-
-```bash
-ctest --preset debug --output-on-failure
-```
-
-## Dependencies and used tools
-
-CMake is used for building, vcpkg for dependencies management.
+## Dependencies
 
 Current dependencies:
 1. enet;
-2. spdlog;
-3. fmt;
-4. gtest.
+2. fmt;
+3. glfw;
+4. spdlog;
+5. SPIRV-Reflect;
+6. glm;
+7. gtest;
+8. VMA;
+9. volk.
 
-## Highlights
+The Vulkan SDK supplies the loader and shader compiler; macOS uses MoltenVK. Use a Vulkan 1.3-capable validation environment and test the vertex fallback on devices without mesh shaders. See the build guide for the distinction between requested API version and actual capabilities.
 
-Rendering is supposed to be done using Vulkan 1.4.
+## Project goals
 
-The project highlights are:
-1. **Isolated modules**, allowing to keep implementation inside modules and also giving the ability of hot-reloading in case of a crash;
-2. **Replaceable modules**, allowing to create custom implementations;
-3. **Modifications** - the game should allow mods, both in terms of configs and full-fledged loadable DLLs;
-4. **High performance**.
+Learn by building a performant, extensible multiplayer game: world generation and updates, network authority under latency, graphics, and progressively richer entities/content. Keep module responsibilities clear as complexity grows. Vulkan 1.4, modding, and replaceable modules are goals rather than statements of current support.
 
+[Code conventions](docs/CODE_CONVENTIONS.md) · [Version/branch convention](docs/VERSION_CONVENTION.md) · [Version history](<docs/version_history/EarlyDev 0.1/EarlyDev 0.1.0 Initiation.md>)

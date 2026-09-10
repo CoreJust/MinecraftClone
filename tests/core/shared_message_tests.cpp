@@ -1,0 +1,102 @@
+#include <shared/net/Message.hpp>
+
+#include <gtest/gtest.h>
+
+#include <array>
+#include <cstring>
+
+namespace {
+
+template<typename MessageTy>
+void expectRoundTrip(MessageTy const expected) {
+    shared::Message const message = expected;
+    std::vector<uint8_t> const bytes = shared::encodeMessage(message);
+    auto const decoded = shared::decodeMessage(std::span<uint8_t const>{ bytes.data(), bytes.size() });
+    ASSERT_TRUE(decoded.has_value());
+    ASSERT_TRUE(std::holds_alternative<MessageTy>(*decoded));
+    MessageTy const actual = std::get<MessageTy>(*decoded);
+    EXPECT_TRUE(std::memcmp(&actual, &expected, sizeof(MessageTy)) == 0);
+}
+
+} // namespace
+
+TEST(MessageTest, RoundTripsEveryMessageKind) {
+    expectRoundTrip(shared::JoinRequestMessage{ .ch = '@' });
+    expectRoundTrip(shared::JoinResponseMessage{ .accepted = true });
+    expectRoundTrip(shared::JoinResponseMessage{ .accepted = false });
+    expectRoundTrip(shared::ClientInputMessage{ .direction = { 255, 1 } });
+    expectRoundTrip(shared::ServerPlayerPositionMessage{ .ch = '#', .x = 31, .y = 0 });
+    expectRoundTrip(shared::ServerRemovePlayerMessage{ .ch = '$' });
+}
+
+TEST(MessageTest, RejectsTruncatedAndUnknownPayloads) {
+    std::array<shared::Message, 5> const messages{
+        shared::JoinRequestMessage{ .ch = '@' },
+        shared::JoinResponseMessage{ .accepted = true },
+        shared::ClientInputMessage{ .direction = { 255, 1 } },
+        shared::ServerPlayerPositionMessage{ .ch = '#', .x = 31, .y = 0 },
+        shared::ServerRemovePlayerMessage{ .ch = '$' },
+    };
+    for (auto const& message : messages) {
+        auto const bytes = shared::encodeMessage(message);
+        for (uint64_t size = 0; size < bytes.size(); ++size) {
+            EXPECT_FALSE(shared::decodeMessage(std::span{ bytes.data(), size }).has_value());
+        }
+    }
+    std::array<uint8_t, 4> unknown{ 255, 0, 0, 0 };
+    EXPECT_FALSE(shared::decodeMessage(unknown).has_value());
+}
+
+TEST(MessageTest, PreservesWireTagsAndPayloadBytes) {
+    EXPECT_EQ(
+        shared::encodeMessage(shared::JoinRequestMessage{ .ch = '@' }),
+        (std::vector<uint8_t>{ 0, '@' })
+    );
+    EXPECT_EQ(
+        shared::encodeMessage(shared::JoinResponseMessage{ .accepted = true }),
+        (std::vector<uint8_t>{ 1, 1 })
+    );
+    EXPECT_EQ(
+        shared::encodeMessage(shared::JoinResponseMessage{ .accepted = false }),
+        (std::vector<uint8_t>{ 1, 0 })
+    );
+    EXPECT_EQ(
+        shared::encodeMessage(shared::ClientInputMessage{ .direction = { 255, 1 } }),
+        (std::vector<uint8_t>{ 2, 255, 1 })
+    );
+    EXPECT_EQ(
+        shared::encodeMessage(shared::ServerPlayerPositionMessage{ .ch = '#', .x = 31, .y = 0 }),
+        (std::vector<uint8_t>{ 3, '#', 31, 0 })
+    );
+    EXPECT_EQ(
+        shared::encodeMessage(shared::ServerRemovePlayerMessage{ .ch = '$' }),
+        (std::vector<uint8_t>{ 4, '$' })
+    );
+}
+
+TEST(MessageTest, RejectsNoncanonicalAcceptanceByte) {
+    for (uint16_t value = 2; value <= 255; ++value) {
+        std::array<uint8_t, 2> const bytes{ 1, static_cast<uint8_t>(value) };
+        EXPECT_FALSE(shared::decodeMessage(bytes).has_value());
+    }
+}
+
+TEST(MessageTest, RejectsTrailingBytes) {
+    auto bytes = shared::encodeMessage(shared::JoinRequestMessage{ .ch = '@' });
+    bytes.push_back(0);
+    auto const decoded = shared::decodeMessage(std::span<uint8_t const>{ bytes.data(), bytes.size() });
+    EXPECT_FALSE(decoded.has_value());
+}
+
+TEST(MessageTest, RejectsInvalidPayloadValues) {
+    auto input = shared::encodeMessage(shared::ClientInputMessage{ .direction = { 1, 1 } });
+    input[1] = 2;
+    EXPECT_FALSE(shared::decodeMessage(input).has_value());
+
+    auto position = shared::encodeMessage(shared::ServerPlayerPositionMessage{ .ch = '@', .x = 1, .y = 1 });
+    position[2] = shared::World::WIDTH;
+    EXPECT_FALSE(shared::decodeMessage(position).has_value());
+
+    auto join = shared::encodeMessage(shared::JoinRequestMessage{ .ch = '\n' });
+    EXPECT_FALSE(shared::decodeMessage(join).has_value());
+}

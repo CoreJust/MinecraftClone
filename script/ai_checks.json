@@ -1,0 +1,18 @@
+[
+  {
+    "name": "renderer-smoke",
+    "enabled": true,
+    "levels": ["snapshot", "minor", "major"],
+    "command": ["{python}", "script/ai_renderer_smoke.py"],
+    "timeout": 900,
+    "reason": "Runs the windowed noninteractive RendererSmokeTest with validation; it is not a fully headless texture-golden gate."
+  },
+  {
+    "name": "environment",
+    "enabled": true,
+    "levels": ["minor", "major"],
+    "command": ["{python}", "script/ai_setup.py"],
+    "timeout": 60,
+    "reason": "Version completion checks the local development environment; record deeper findings in the version task."
+  }
+]

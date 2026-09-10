@@ -1,0 +1,56 @@
+#pragma once
+
+#include <core/meta/Enum.hpp>
+
+#include <type_traits>
+
+namespace core {
+
+template<CountableEnum E, typename UnderlyingTy = uint32_t>
+    requires (std::is_unsigned_v<UnderlyingTy> && countOf<E>() <= 8 * sizeof(UnderlyingTy))
+struct EnumBits final {
+    UnderlyingTy value = 0;
+
+    static const EnumBits None;
+
+    constexpr EnumBits(UnderlyingTy const v = 0) noexcept : value(v) { }
+    constexpr EnumBits(E const v) noexcept : value(of(v).value) { }
+
+    template<typename... Args> [[nodiscard]]
+    static constexpr EnumBits of(E const first, Args const... args) noexcept {
+        if constexpr (sizeof...(Args) > 0) {
+            return { (static_cast<UnderlyingTy>(1) << indexOf(first)) | of(args...).value };
+        } else {
+            return { static_cast<UnderlyingTy>(1) << indexOf(first) };
+        }
+    }
+
+    [[nodiscard]]
+    constexpr bool operator[](E const bit) const noexcept {
+        return value & (static_cast<UnderlyingTy>(1) << indexOf(bit));
+    }
+
+    [[nodiscard]]
+    constexpr EnumBits operator|(EnumBits const rhs) const noexcept {
+        return EnumBits{ value | rhs.value };
+    }
+
+    [[nodiscard]]
+    constexpr EnumBits operator|(E const rhs) const noexcept {
+        return EnumBits{ value | of(rhs).value };
+    }
+
+    constexpr void operator|=(EnumBits const rhs) & noexcept {
+        value |= rhs.value;
+    }
+
+    constexpr void operator|=(E const rhs) & noexcept {
+        value |= of(rhs).value;
+    }
+};
+
+template<CountableEnum E, typename UnderlyingTy>
+    requires (std::is_unsigned_v<UnderlyingTy> && countOf<E>() <= 8 * sizeof(UnderlyingTy))
+constexpr inline EnumBits<E, UnderlyingTy> EnumBits<E, UnderlyingTy>::None{ 0 };
+
+} // namespace core
