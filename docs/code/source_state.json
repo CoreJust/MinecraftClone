@@ -68,6 +68,7 @@
         ".githooks/pre-merge-commit",
         ".githooks/pre-push",
         ".github/workflows/ai-checks.yml",
+        ".github/workflows/snapshot-artifacts.yml",
         ".gitignore",
         "AGENTS.md",
         "CLAUDE.md",
@@ -92,6 +93,8 @@
         "script/checks_common.py",
         "script/ci/__init__.py",
         "script/ci/acquire.py",
+        "script/ci/build_snapshot.py",
+        "script/ci/verify_release_assets.py",
         "script/code_checks.py",
         "script/colored_print.py",
         "script/infrastructure_checks.py",
@@ -106,15 +109,17 @@
         "script/tests/test_ai_run.py",
         "script/tests/test_ai_setup.py",
         "script/tests/test_ai_tasks.py",
+        "script/tests/test_build_snapshot.py",
         "script/tests/test_ci_acquire.py",
         "script/tests/test_package_snapshot.py",
+        "script/tests/test_verify_release_assets.py",
         "src/CMakeLists.txt",
         "tests/CMakeLists.txt",
         "tests/main.cpp",
         "vcpkg-configuration.json",
         "vcpkg.json"
       ],
-      "sources_sha256": "ec6af5cc479761514a5896af0925294127e525b07557889f151f837d4e569c12"
+      "sources_sha256": "9b4062a9c2029133ee4ba8dc7ee677fb9a684832d7e11eae179646920efae7e6"
     },
     {
       "guide": "docs/code/CORE.md",
