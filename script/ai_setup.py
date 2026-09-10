@@ -42,7 +42,10 @@ def install_hooks(root: Path) -> int:
             return 1
     hook_dir = root / ".githooks"
     hooks = [hook_dir / name for name in ("pre-commit", "pre-push", "commit-msg", "post-commit", "pre-merge-commit")]
-    if any(not hook.is_file() or not hook.stat().st_mode & stat.S_IXUSR for hook in hooks):
+    if any(
+        not hook.is_file() or (os.name != "nt" and not hook.stat().st_mode & stat.S_IXUSR)
+        for hook in hooks
+    ):
         print(
             "Executable .githooks/pre-commit, .githooks/pre-push, .githooks/commit-msg, .githooks/post-commit, and .githooks/pre-merge-commit are required",
             file=sys.stderr,

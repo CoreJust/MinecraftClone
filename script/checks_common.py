@@ -5,7 +5,7 @@ import re
 import copy
 from pathlib import Path
 from dataclasses import dataclass, field
-from typing import List, Tuple, Callable, Dict, Any
+from typing import List, Tuple, Callable, Dict, Any, Set
 
 from script.colored_print import *
 from script.check_options import CODE_EXTS, SHADER_EXTS

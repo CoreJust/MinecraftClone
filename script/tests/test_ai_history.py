@@ -80,10 +80,12 @@ class AiHistoryTest(unittest.TestCase):
         (docs / "backlog.json").write_text(
             json.dumps(tasks, indent=2) + "\n", encoding="utf-8"
         )
-        (docs / "BACKLOG.md").write_text(ai_tasks.render_backlog(tasks), encoding="utf-8")
+        (docs / "BACKLOG.md").write_text(
+            ai_tasks.render_backlog(tasks), encoding="utf-8", newline="\n"
+        )
         for item in tasks:
             (task_docs / f"{item['id']}.md").write_text(
-                ai_tasks.render_task(item, tasks), encoding="utf-8"
+                ai_tasks.render_task(item, tasks), encoding="utf-8", newline="\n"
             )
         self.git_run("git", "add", "docs/ai")
 

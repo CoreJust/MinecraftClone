@@ -1,8 +1,10 @@
 import importlib.util
+import os
 import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 
 
@@ -79,7 +81,19 @@ class AiSetupTests(unittest.TestCase):
         self.assertEqual(before.returncode, after.returncode)
         self.assertEqual(before.stdout, after.stdout)
 
-    def test_install_rejects_non_executable_hook(self):
+    def test_install_rejects_missing_required_hook(self):
+        (self.root / ".githooks/pre-merge-commit").unlink()
+        result = self.run_setup("--install-hooks")
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("Executable .githooks", result.stderr)
+
+    def test_install_allows_required_hook_files_on_windows(self):
+        ai_setup = load_module()
+        with mock.patch.object(ai_setup.os, "name", "nt"):
+            self.assertEqual(ai_setup.install_hooks(self.root), 0)
+
+    @unittest.skipIf(os.name == "nt", "Windows hook files do not carry POSIX executable bits")
+    def test_install_rejects_non_executable_hook_on_posix(self):
         (self.root / ".githooks/pre-merge-commit").chmod(0o644)
         result = self.run_setup("--install-hooks")
         self.assertEqual(result.returncode, 1)

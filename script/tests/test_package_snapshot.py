@@ -130,14 +130,10 @@ class PackageSnapshotTests(unittest.TestCase):
         self.assertEqual(invalid, 1)
         self.assertIn("invalid Windows archive path", invalid_stderr)
 
-        reserved_license = self.write("other/COM¹.txt", b"reserved")
-        reserved_args = [
-            *self.windows_args(self.root / "reserved.zip"),
-            "--license", str(reserved_license),
-        ]
-        reserved, _, reserved_stderr = self.call(module, reserved_args)
-        self.assertEqual(reserved, 1)
-        self.assertIn("invalid Windows archive path", reserved_stderr)
+        with self.assertRaisesRegex(module.PackageError, "invalid Windows archive path"):
+            module.validate_windows_archive_names([
+                module.ArchiveEntry("licenses/COM¹.txt", b"reserved", 0o644),
+            ])
 
     def test_rejects_symlinked_shader_directory(self):
         module = load_module()

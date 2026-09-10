@@ -108,6 +108,7 @@ Files:
 - [`script/tests/test_ai_setup.py`](../../script/tests/test_ai_setup.py)
 - [`script/tests/test_ai_tasks.py`](../../script/tests/test_ai_tasks.py)
 - [`script/tests/test_build_snapshot.py`](../../script/tests/test_build_snapshot.py)
+- [`script/tests/test_checks_common.py`](../../script/tests/test_checks_common.py)
 - [`script/tests/test_ci_acquire.py`](../../script/tests/test_ci_acquire.py)
 - [`script/tests/test_package_snapshot.py`](../../script/tests/test_package_snapshot.py)
 - [`script/tests/test_verify_release_assets.py`](../../script/tests/test_verify_release_assets.py)

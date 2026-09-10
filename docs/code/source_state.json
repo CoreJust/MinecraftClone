@@ -110,6 +110,7 @@
         "script/tests/test_ai_setup.py",
         "script/tests/test_ai_tasks.py",
         "script/tests/test_build_snapshot.py",
+        "script/tests/test_checks_common.py",
         "script/tests/test_ci_acquire.py",
         "script/tests/test_package_snapshot.py",
         "script/tests/test_verify_release_assets.py",
@@ -120,7 +121,7 @@
         "vcpkg-configuration.json",
         "vcpkg.json"
       ],
-      "sources_sha256": "ee5fb879bef89ddd8d3805c0665b1c560842e2f725184b896249c6a35b7c3330"
+      "sources_sha256": "de15ce1af057fcff4accd068b741a39b3056d8e4ffeb0655ed9302b1d56111d4"
     },
     {
       "guide": "docs/code/CORE.md",
