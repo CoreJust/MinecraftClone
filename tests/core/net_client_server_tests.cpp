@@ -15,6 +15,13 @@ constexpr std::chrono::milliseconds DEFAULT_TIMEOUT{ 10 };
 static constexpr std::chrono::seconds NORMAL_CONNECTION_TIMEOUT{ 1 };
 constexpr uint16_t EPHEMERAL_PORT{ 0 };
 
+std::span<uint8_t const> asNetworkBytes(std::span<std::byte const> bytes) noexcept {
+    return {
+        reinterpret_cast<uint8_t const*>(bytes.data()),
+        bytes.size(),
+    };
+}
+
 struct NoAction final {
     void operator()(auto&&...) { }
 };
@@ -43,7 +50,7 @@ public:
     }
 
     bool sendAndPoll(std::string_view const msg, uint8_t const channel_id, core::SendMode const mode) {
-        bool const result = send(core::asByteSpan(msg), channel_id, mode);
+        bool const result = send(asNetworkBytes(core::asByteSpan(msg)), channel_id, mode);
         pollAndWait();
         return result;
     }
@@ -225,7 +232,7 @@ TEST(NetClientServer, SendReceiveSingleChannelTest) {
     ASSERT_TRUE(client.connectAndWait(srv.port()));
     ASSERT_TRUE(client.isConnected());
 
-    ASSERT_TRUE(client.send(core::asByteSpan(msg), 0, core::SendMode{ }));
+    ASSERT_TRUE(client.send(asNetworkBytes(core::asByteSpan(msg)), 0, core::SendMode{ }));
     client.pollAndWait();
 
     srv.done(1, 0);
@@ -259,7 +266,7 @@ TEST(NetClientServer, MultipleChannelsAndModesTest) {
     ASSERT_TRUE(client.connectAndWait(srv.port()));
 
     auto send = [&](std::string_view const msg, uint8_t ch, core::SendMode::Flag mode) {
-        client.send(core::asByteSpan(msg), ch, core::SendMode{ mode });
+        client.send(asNetworkBytes(core::asByteSpan(msg)), ch, core::SendMode{ mode });
     };
 
     send("Reliable", 0, core::SendMode::Reliable);
@@ -307,7 +314,7 @@ TEST(NetClientServer, MultipleClientsEchoTest) {
 
     for (uint32_t i = 0; i < NUM_CLIENTS; ++i) {
         auto const message = "Client " + std::to_string(i);
-        ASSERT_TRUE(clients[i].send(core::asByteSpan(message), 0, core::SendMode{ }));
+        ASSERT_TRUE(clients[i].send(asNetworkBytes(core::asByteSpan(message)), 0, core::SendMode{ }));
     }
 
     for (uint32_t i = 0; i < NUM_CLIENTS; ++i) {
@@ -337,7 +344,7 @@ TEST(NetClientServer, MessageRelayTest) {
                     uint32_t const target = std::stoul(std::string{ raw.substr(3, colon - 3) });
                     std::string const payload = std::string{ raw.substr(colon + 1) };
                     if (std::optional client = self.client(target)) {
-                        srv.server.send(client, core::asByteSpan(payload), 0, core::SendMode{ });
+                        srv.server.send(client, asNetworkBytes(core::asByteSpan(payload)), 0, core::SendMode{ });
                     }
                 }
             }
@@ -362,7 +369,7 @@ TEST(NetClientServer, MessageRelayTest) {
     }
 
     std::string const msg = fmt::format("to:{}:Hello from 0", NUM_CLIENTS - 1);
-    clients[0].send(core::asByteSpan(msg), 0, core::SendMode{ });
+    clients[0].send(asNetworkBytes(core::asByteSpan(msg)), 0, core::SendMode{ });
     for (uint32_t i = 0; i < NUM_CLIENTS; ++i) {
         clients[i].pollAndWait();
     }
@@ -390,7 +397,7 @@ TEST(NetClientServer, ServerKickGracefulTest) {
     ASSERT_TRUE(client.connectAndWait(srv.port()));
     EXPECT_TRUE(client.isConnected());
 
-    ASSERT_TRUE(client.send(core::asByteSpan(std::string_view{ " " }), 0, core::SendMode{ }));
+    ASSERT_TRUE(client.send(asNetworkBytes(core::asByteSpan(std::string_view{ " " })), 0, core::SendMode{ }));
     EXPECT_TRUE(client.pollUntil([&] { return client_disconnected; }));
     EXPECT_FALSE(client.isConnected());
     srv.done(1, 1);
@@ -510,7 +517,7 @@ TEST(NetClientServer, DisconnectDuringSendTest) {
 
     ASSERT_TRUE(client.connectAndWait(srv.port()));
 
-    client.send(core::asByteSpan(std::string_view{ "msg" }), 0, core::SendMode{ });
+    client.send(asNetworkBytes(core::asByteSpan(std::string_view{ "msg" })), 0, core::SendMode{ });
     client.disconnectAndWait();
 
     srv.done(1, 1);

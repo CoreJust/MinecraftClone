@@ -8,6 +8,7 @@ import os
 import tempfile
 import unittest
 import zipfile
+import json
 from pathlib import Path
 from unittest import mock
 
@@ -162,6 +163,125 @@ class CiAcquireTests(unittest.TestCase):
             with mock.patch.dict(os.environ, {"GITHUB_ENV": str(destination)}, clear=False):
                 acquire.write_github_env("VULKAN_SDK", "/tmp/sdk")
             self.assertEqual(destination.read_text(encoding="utf-8"), "VULKAN_SDK=/tmp/sdk\n")
+
+    def test_private_dependency_lock_requires_exact_allowlisted_repositories_and_pins(self):
+        with tempfile.TemporaryDirectory() as directory:
+            lock = Path(directory) / "dependencies.lock.json"
+            lock.write_text(
+                json.dumps(
+                    {
+                        "schema": 1,
+                        "dependencies": {
+                            "CoreCpp": {
+                                "repository": "CoreJust/CoreCpp",
+                                "revision": "a" * 40,
+                            },
+                            "CoreProject2026": {
+                                "repository": "CoreJust/CoreProject2026",
+                                "revision": "b" * 40,
+                            },
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            parsed = acquire.require_private_dependency_lock(lock)
+            self.assertEqual(parsed["CoreCpp"]["revision"], "a" * 40)
+            self.assertEqual(parsed["CoreProject2026"]["repository"], "CoreJust/CoreProject2026")
+            lock.write_text(
+                json.dumps(
+                    {
+                        "schema": 1,
+                        "dependencies": {
+                            "CoreCpp": {
+                                "repository": "CoreJust/Unapproved",
+                                "revision": "a" * 40,
+                            },
+                            "CoreProject2026": {
+                                "repository": "CoreJust/CoreProject2026",
+                                "revision": "main",
+                            },
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(acquire.CiError, "CoreCpp repository"):
+                acquire.require_private_dependency_lock(lock)
+
+    def test_repository_private_dependency_lock_is_complete(self):
+        lock = Path(__file__).resolve().parents[2] / "dependencies.lock.json"
+        parsed = acquire.require_private_dependency_lock(lock)
+        self.assertEqual(set(parsed), {"CoreCpp", "CoreProject2026"})
+
+    def test_private_dependency_fetch_pins_github_host_key(self):
+        with tempfile.TemporaryDirectory() as directory:
+            known_hosts = acquire.write_github_known_host(Path(directory))
+            self.assertEqual(known_hosts.read_text(encoding="utf-8"), acquire.GITHUB_SSH_KNOWN_HOST)
+            self.assertEqual(known_hosts.stat().st_mode & 0o777, 0o600)
+
+    def test_private_dependency_fetch_uses_two_key_files_and_exact_detached_pins(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            lock = root / "dependencies.lock.json"
+            lock.write_text(
+                json.dumps(
+                    {
+                        "schema": 1,
+                        "dependencies": {
+                            "CoreCpp": {
+                                "repository": "CoreJust/CoreCpp",
+                                "revision": "a" * 40,
+                            },
+                            "CoreProject2026": {
+                                "repository": "CoreJust/CoreProject2026",
+                                "revision": "b" * 40,
+                            },
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            corecpp_key = root / "corecpp-key"
+            coreproject_key = root / "coreproject-key"
+            corecpp_key.touch()
+            coreproject_key.touch()
+            corecpp_key.chmod(0o600)
+            coreproject_key.chmod(0o600)
+            responses = iter(("", "", "", "", "a" * 40, "", "", "", "", "", "b" * 40, ""))
+            with mock.patch.object(acquire, "run", side_effect=lambda *_args, **_kwargs: next(responses)) as run:
+                sources = acquire.fetch_private_dependencies(
+                    lock,
+                    root / "sources",
+                    {"CoreCpp": corecpp_key, "CoreProject2026": coreproject_key},
+                )
+            self.assertEqual(sources, {"CoreCpp": root / "sources/CoreCpp", "CoreProject2026": root / "sources/CoreProject2026"})
+            commands = [call.args[0] for call in run.call_args_list]
+            self.assertIn(["git", "-C", str(root / "sources/CoreCpp"), "checkout", "--detach", "FETCH_HEAD"], commands)
+            self.assertIn(["git", "-C", str(root / "sources/CoreProject2026"), "checkout", "--detach", "FETCH_HEAD"], commands)
+            fetches = [command for command in commands if "fetch" in command]
+            self.assertEqual(len(fetches), 2)
+            remotes = [command for command in commands if "remote" in command]
+            self.assertEqual(
+                [command[-1] for command in remotes],
+                ["git@github.com:CoreJust/CoreCpp.git", "git@github.com:CoreJust/CoreProject2026.git"],
+            )
+            self.assertEqual(fetches[0][-1], "a" * 40)
+            self.assertEqual(fetches[1][-1], "b" * 40)
+            self.assertNotIn("PRIVATE KEY", "\n".join(" ".join(command) for command in commands))
+
+    def test_private_dependency_artifact_exclusion_rejects_checkout_links(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            private_root = root / "private-dependencies"
+            (private_root / "CoreCpp").mkdir(parents=True)
+            artifact_root = root / "dist"
+            artifact_root.mkdir()
+            (artifact_root / "game.bin").write_bytes(b"artifact")
+            acquire.verify_private_dependency_artifact_exclusion(artifact_root, private_root)
+            (artifact_root / "private-source").symlink_to(private_root / "CoreCpp", target_is_directory=True)
+            with self.assertRaisesRegex(acquire.CiError, "must not contain symlinks"):
+                acquire.verify_private_dependency_artifact_exclusion(artifact_root, private_root)
 
 
 if __name__ == "__main__":

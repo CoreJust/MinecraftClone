@@ -1,6 +1,7 @@
 #include <core/vulkan/Context.hpp>
 
 #include <core/common/Assert.hpp>
+#include <core/IO/Log.hpp>
 #include <core/meta/EnumImpl.hpp>
 #include <core/vulkan/Check.hpp>
 #include <core/vulkan/ErrorCallbacks.hpp>

@@ -56,6 +56,15 @@ static_assert(sizeof(PlayerPushConstants) == 32);
     core::vk::SurfaceProvider const& surface_provider,
     VulkanRendererOptions const options
 ) {
+    vk::VulkanExtension required_extensions[] = {
+        vk::VulkanExtension::DynamicRendering,
+        vk::VulkanExtension::Synchronization2,
+    };
+    vk::VulkanFeature required_features[] = {
+        vk::VulkanFeature::DynamicRendering,
+        vk::VulkanFeature::Synchronization2,
+    };
+    vk::PresentMode required_present_modes[] = { vk::PresentMode::Immediate };
     auto builder = vk::VulkanContextBuilder()
         .project(std::string{ shared::PROJECT_NAME }, shared::PROJECT_VERSION)
         .engine(std::string{ shared::PROJECT_NAME }, shared::PROJECT_VERSION)
@@ -64,19 +73,13 @@ static_assert(sizeof(PlayerPushConstants) == 32);
         .portabilityEnumeration()
         .requireValidation(REQUIRE_VALIDATION || options.require_validation)
         .preferMeshShaders()
-        .requireExtensions({
-            vk::VulkanExtension::DynamicRendering,
-            vk::VulkanExtension::Synchronization2,
-        })
-        .requireFeatures({
-            vk::VulkanFeature::DynamicRendering,
-            vk::VulkanFeature::Synchronization2,
-        });
+        .requireExtensions(required_extensions)
+        .requireFeatures(required_features);
     if (options.enable_frame_capture) {
         (void)builder.preferSwapchainImageUsage(vk::ImageUsage::TransferSrc);
     }
     if (options.require_immediate_present_mode) {
-        (void)builder.requirePresentModes({ vk::PresentMode::Immediate });
+        (void)builder.requirePresentModes(required_present_modes);
     }
     return builder;
 }

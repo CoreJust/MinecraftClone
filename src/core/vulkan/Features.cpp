@@ -1,5 +1,6 @@
 #include <core/vulkan/Features.hpp>
 
+#include <core/IO/EnumFmt.hpp>
 #include <core/meta/EnumImpl.hpp>
 
 #include <fmt/core.h>

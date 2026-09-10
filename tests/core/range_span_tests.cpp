@@ -8,16 +8,17 @@
 #include <string>
 #include <vector>
 
-TEST(RangeSpanTest, InputSpanAcceptsArraySpanAndInitializerList) {
+TEST(RangeSpanTest, InputSpanAcceptsArrayAndSpan) {
     auto const copy = [](core::InputSpan<int> const input) {
         return std::vector<int>(input.begin(), input.end());
     };
     std::array<int, 3> values{ 1, 2, 3 };
     core::InputSpan<int> from_array{ values };
     core::InputSpan<int> from_span{ std::span{ values } };
+    int copied_values[] = { 4, 5, 6 };
     EXPECT_EQ(std::vector<int>(from_array.begin(), from_array.end()), (std::vector{ 1, 2, 3 }));
     EXPECT_EQ(std::vector<int>(from_span.begin(), from_span.end()), (std::vector{ 1, 2, 3 }));
-    EXPECT_EQ(copy({ 4, 5, 6 }), (std::vector{ 4, 5, 6 }));
+    EXPECT_EQ(copy(copied_values), (std::vector{ 4, 5, 6 }));
 }
 
 TEST(RangeSpanTest, InputSpanPreservesEmptyRange) {
@@ -41,7 +42,7 @@ TEST(RangeSpanTest, AppendsRangesAndPreservesDestinationForEmptyRange) {
 TEST(RangeSpanTest, ConvertsCollectionsToByteAndElementSpans) {
     std::array<uint16_t, 2> values{ 0x1234, 0x5678 };
     auto bytes = core::asByteSpan(values);
-    auto elements = core::asSpan<uint16_t>(bytes);
+    auto elements = core::asSpan<uint16_t>(values);
     EXPECT_EQ(bytes.size(), sizeof(values));
     ASSERT_EQ(elements.size(), values.size());
     EXPECT_EQ(elements[0], values[0]);

@@ -1,6 +1,7 @@
 #include <core/vulkan/FrameGraph.hpp>
 
 #include <core/common/Assert.hpp>
+#include <core/IO/Log.hpp>
 #include <core/meta/EnumImpl.hpp>
 #include <core/vulkan/internal/BuiltFrameGraph.hpp>
 

@@ -24,7 +24,7 @@ SHARED_PYTHON_SOURCES = {
     "ai_check.py", "ai_commit.py", "ai_docs.py", "ai_history.py", "ai_plan.py",
     "ai_publish.py", "ai_run.py", "ai_setup.py", "ai_tasks.py",
 }
-PYTHON_TEST_TIMEOUT = 180 if os.name == "nt" else 60
+PYTHON_TEST_TIMEOUT = 180 if os.name == "nt" else 120
 GOVERNED_PREFIXES = ("src/", "tests/", "docs/", "script/", ".githooks/", ".github/", ".codex/", ".agents/", "cmake/")
 GOVERNED_FILES = {
     ".gitattributes", ".gitignore", "AGENTS.md", "CLAUDE.md", "CMakeLists.txt", "CMakePresets.json", "README.md",

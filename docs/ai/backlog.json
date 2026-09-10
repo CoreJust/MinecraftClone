@@ -1818,7 +1818,7 @@
     "id": "MC-AI-0048",
     "title": "Extract Core and Runtime into CoreCpp packages",
     "kind": "feature",
-    "status": "active",
+    "status": "done",
     "priority": "P1",
     "route": "sol",
     "milestone": "ED-010-S4",
@@ -1826,25 +1826,29 @@
       "MC-AI-0032"
     ],
     "acceptance": "Private CoreCpp independently builds and tests the currently migrated Core utilities and Runtime functionality under CoreCpp:: component targets; MinecraftClone consumes an immutable locked commit through installed/exported CMake config without cross-repository source includes. Core contains only reusable utilities and small wrappers, current generic stateful services reside in Runtime, optional graphics/platform components do not burden a server-only consumer, README/ownership ledger/provenance are present, and an end-to-end game build/test proves package consumption. New kernel, executor, network and audio capabilities remain owned by their later tasks. No personal token or unapproved CI deploy key is introduced.",
-    "evidence": "",
+    "evidence": "MinecraftClone configured and built against clean exact CoreCpp f82c83e545b17f1bd1c90d9b61a1503628a7ce4e; full CTest passed 205/205, the server-only installed-package consumer passed, and standalone CoreCpp passed 116/116 when its provenance tests ran with required temporary-index permissions. Trusted CI dependency acquisition passed 37 focused tests, fast and full AI checks, and live detached clean SSH fetches for both private repositories. Deploy-key API readback verified both keys read-only; secret values were never read or logged.",
     "blocker": "",
     "owner": "Codex",
     "level": "basic",
     "parent": "MC-AI-0035",
     "motivation": "Make reusable utilities and generic stateful services independently buildable and consumable without game-source coupling before S4 expands the client.",
-    "context": "CoreJust/CoreCpp is a private repository created at the user’s request. It owns Core and Runtime source, README, build/tests and a minimal independent ledger; this MinecraftClone task tracks extraction and exact-revision game integration. Isolated standalone preparation may use frozen S3 inputs, but the game must not migrate to the packages until S3 is published. Final release pins require reviewed exact source revisions. Private CI deploy-key configuration awaits separate user authorization.",
+    "context": "CoreJust/CoreCpp is a private repository created at the user’s request. It owns generic Core and Runtime source, README, build/tests and a minimal independent ledger; MinecraftClone consumes only reviewed immutable installed-package revisions. The user approved separate read-only deploy keys for CoreCpp and CoreProject2026 in trusted release workflows; private dependency sources are excluded from public artifacts.",
     "complexity": "high",
     "created_at": "2026-09-09",
-    "resolved_at": "",
-    "resolution_changes": "",
+    "resolved_at": "2026-09-10",
+    "resolution_changes": "MinecraftClone now locks and consumes installed CoreCpp::Core and CoreCpp::Runtime, removes duplicated generic sources, preserves the existing game codec through explicit primitive byte encoding, verifies exact package provenance and server-only closure, and fetches both private dependencies only from trusted immutable release sources using separate read-only deploy keys. Private checkout content is excluded from distribution artifacts.",
     "plan": [
       "Inventory current src/core contracts and classify Core versus Runtime without pulling game rules into the reusable repository.",
       "Create the CoreCpp build, tests, README, component-aware installed CMake config and minimal repository-owned task ledger.",
       "Pin an immutable CoreCpp commit in MinecraftClone, enforce dependency-revision/provenance checks, migrate consumers, and remove source-tree coupling only after S3 publication.",
       "Prove clean standalone CoreCpp and server-only package consumption before the full MinecraftClone integration checks."
     ],
-    "product_changes": [],
-    "code_changes": [],
+    "product_changes": [
+      "No player-visible behavior changed; dependency ownership, provenance, and release-build trust were made explicit."
+    ],
+    "code_changes": [
+      "Added immutable dependency locking, exact CoreCpp package discovery/provenance checks, trusted private-dependency CI acquisition, server-only consumer coverage, and explicit primitive message encoding; removed duplicated Core/Runtime sources from the game repository."
+    ],
     "baseline_commit": "",
     "commits": [],
     "finalized": false,

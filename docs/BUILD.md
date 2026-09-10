@@ -10,7 +10,12 @@ ctest --preset debug --output-on-failure --no-tests=error
 python3 script/ai_check.py
 ```
 
-Run CMake presets from the repository root. Use `release` in place of `debug` for an optimized build. `mc_main` is under `build/<preset>/`; Windows adds `.exe`. Start one `mc_main --server`, then clients with `mc_main`; [gameplay](code/GAMEPLAY.md) lists exact options. The build copies compiled shaders into `shaders/` beside each executable. Runtime lookup uses the executable location, so launch need not use the repository working directory. `cmake --install build/release --prefix <destination>` installs the executable and shaders together; retain that layout when distributing.
+Run CMake presets from the repository root; use `release` for an optimized
+build. Configure with an installed CoreCpp package exposing `CoreCpp::Core` and
+`CoreCpp::Runtime`; the configure checks its exact revision against
+[`dependencies.lock.json`](../dependencies.lock.json). Local package iteration
+may set `-DMC_ALLOW_INEXACT_CORECPP=ON`, which is not release evidence.
+`mc_main` is under `build/<preset>/`; `cmake --install` installs it with shaders.
 
 After building exact release inputs, use the deterministic [package tooling](PACKAGING.md) to create desktop archives or record Android APK evidence.
 See [runtime acceptance](ACCEPTANCE.md) for scenario, benchmark, and capture commands.
@@ -60,7 +65,7 @@ Strict warnings are enabled by presets. `MC_ENABLE_HIGH_ASSERT`, `MC_ENABLE_VULK
 | `ai_check.py --strict --level snapshot` | Same after commit, with a clean tree and valid snapshot metadata |
 | Task-specific smoke | Real renderer/network/persistence acceptance, recorded per task |
 
-The publisher is [publish.py](../publish.py), not `publish_version.py` as its legacy help text says. Checks-only takes explicit metadata, currently:
+The publisher is [publish.py](../publish.py). Checks-only takes explicit metadata:
 
 ```sh
 python3 publish.py 'EarlyDev:Initiation' 0.1.0:3 --checks-only

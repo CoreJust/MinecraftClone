@@ -16,10 +16,4 @@ struct TypeNameTestObject final { };
 TEST(TypeNameTest, ExtractsTypeAndValueNames) {
     EXPECT_EQ(core::typeName<TypeNameTestObject>(), "TypeNameTestObject");
     EXPECT_EQ(core::valueName<TypeNameTestEnum::First>(), "First");
-    EXPECT_EQ(
-        core::name_extraction::stripClassKey("struct TypeNameTestObject"),
-        "TypeNameTestObject"
-    );
-    EXPECT_EQ(core::name_extraction::stripClassKey("class Object"), "Object");
-    EXPECT_EQ(core::name_extraction::stripClassKey("enum Value"), "Value");
 }

@@ -360,7 +360,7 @@ std::optional<core::Address> readAddress() {
 }
 
 int main(int argc, char** argv) {
-    core::Log::ensureInit(std::nullopt, spdlog::level::debug);
+    core::Log::ensureInit(core::LogSettings{ .initial_level = spdlog::level::debug });
     core::setCrashHandler();
     core::Net::ensureInit();
 

@@ -179,15 +179,15 @@ class PreFinalizationCandidateTests(unittest.TestCase):
         self.assertEqual(candidate[1][:-1], ordinary[1])
         self.assertEqual(candidate[1][-1], "--pre-finalization-candidate")
 
-    def test_hosted_workflows_limit_the_flag_to_pre_finalization_candidates(self) -> None:
+    def test_snapshot_artifact_workflow_reserves_private_dependencies_for_finalized_sources(self) -> None:
         ai_checks = AI_CHECKS_WORKFLOW.read_text(encoding="utf-8")
         snapshot = SNAPSHOT_WORKFLOW.read_text(encoding="utf-8")
 
         self.assertIn("if: github.ref != 'refs/heads/ai-main'", ai_checks)
         self.assertIn("if: github.ref == 'refs/heads/ai-main'", ai_checks)
         self.assertIn("source-checks --pre-finalization-candidate", ai_checks)
-        self.assertIn("startsWith(github.ref, 'refs/heads/codex/ai-release-')", snapshot)
-        self.assertIn("source-checks --pre-finalization-candidate", snapshot)
+        self.assertNotIn("codex/ai-release-", snapshot)
+        self.assertNotIn("source-checks --pre-finalization-candidate", snapshot)
         self.assertIn("run: python script/ci/acquire.py source-checks", snapshot)
 
 

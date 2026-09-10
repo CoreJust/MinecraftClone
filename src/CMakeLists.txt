@@ -8,6 +8,8 @@ target_sources(mc
 
 target_link_libraries(mc
     PUBLIC
+        CoreCpp::Core
+        CoreCpp::Runtime
         fmt::fmt
         spdlog::spdlog
     PRIVATE

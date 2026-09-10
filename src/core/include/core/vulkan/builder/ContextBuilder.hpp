@@ -81,10 +81,11 @@ public:
         InputSpan<VulkanExtension> const exts
     ) {
         for (VulkanExtension const ext : exts) {
+            VulkanExtension extension[] = { ext };
             if (getExtensionKind(ext) == VulkanExtensionKind::Instance) {
-                self.m_instance_builder.preferExtensions({ ext });
+                self.m_instance_builder.preferExtensions(extension);
             } else {
-                self.m_physical_device_selector.preferExtensions({ ext });
+                self.m_physical_device_selector.preferExtensions(extension);
             }
         }
         return std::forward<Self>(self);
@@ -150,7 +151,8 @@ public:
         InputSpan<TrivialPair<QueueFamily, float>> const families
     ) {
         for (auto [family, priority] : families) {
-            self.m_physical_device_selector.requireQueueFamilies({ family });
+            QueueFamily required_family[] = { family };
+            self.m_physical_device_selector.requireQueueFamilies(required_family);
         }
         self.m_device_builder.requireQueueFamilies(families);
         return std::forward<Self>(self);
@@ -213,33 +215,44 @@ public:
     template<typename Self>
     [[nodiscard]] auto&& renderTo(this Self&& self, SurfaceProvider const& provider) {
         self.m_instance_builder.requireExtensions(provider.requiredInstanceExtensions());
-        self.m_physical_device_selector.requireQueueFamilies({
+        QueueFamily required_queue_families[] = {
             QueueFamily::Graphics,
             QueueFamily::Present,
-        });
-        self.m_physical_device_selector.requireExtensions({ VulkanExtension::Swapchain });
-        self.m_device_builder.requireQueueFamilies({{QueueFamily::Graphics, 1.f}, {QueueFamily::Present, 1.f}});
+        };
+        self.m_physical_device_selector.requireQueueFamilies(required_queue_families);
+        VulkanExtension required_extensions[] = { VulkanExtension::Swapchain };
+        self.m_physical_device_selector.requireExtensions(required_extensions);
+        TrivialPair<QueueFamily, float> required_device_families[] = {
+            { QueueFamily::Graphics, 1.f },
+            { QueueFamily::Present, 1.f },
+        };
+        self.m_device_builder.requireQueueFamilies(required_device_families);
         self.m_swapchain_builder.fallbackExtent(provider.framebufferExtent());
         return std::forward<Self>(self);
     }
 
     template<typename Self>
     [[nodiscard]] auto&& requireMeshShaders(this Self&& self) {
-        self.m_physical_device_selector.requireExtensions({ VulkanExtension::MeshShader });
-        self.m_physical_device_selector.requireFeatures({ VulkanFeature::MeshShader });
+        VulkanExtension required_extensions[] = { VulkanExtension::MeshShader };
+        VulkanFeature required_features[] = { VulkanFeature::MeshShader };
+        self.m_physical_device_selector.requireExtensions(required_extensions);
+        self.m_physical_device_selector.requireFeatures(required_features);
         return std::forward<Self>(self);
     }
 
     template<typename Self>
     [[nodiscard]] auto&& preferMeshShaders(this Self&& self) {
-        self.m_physical_device_selector.preferExtensions({ VulkanExtension::MeshShader });
-        self.m_physical_device_selector.preferFeatures({ VulkanFeature::MeshShader });
+        VulkanExtension preferred_extensions[] = { VulkanExtension::MeshShader };
+        VulkanFeature preferred_features[] = { VulkanFeature::MeshShader };
+        self.m_physical_device_selector.preferExtensions(preferred_extensions);
+        self.m_physical_device_selector.preferFeatures(preferred_features);
         return std::forward<Self>(self);
     }
 
     template<typename Self>
     [[nodiscard]] auto&& requireTaskShaders(this Self&& self) {
-        self.m_physical_device_selector.requireFeatures({ VulkanFeature::TaskShader });
+        VulkanFeature required_features[] = { VulkanFeature::TaskShader };
+        self.m_physical_device_selector.requireFeatures(required_features);
         return std::forward<Self>(self);
     }
 public:

@@ -79,7 +79,11 @@ private:
                 "cycle detected in frame graph",
             };
         }
-        sorted_passes = std::move(*maybe_sorted);
+        sorted_passes.clear();
+        sorted_passes.reserve(maybe_sorted->size());
+        for (uint64_t const pass : *maybe_sorted) {
+            sorted_passes.push_back(static_cast<size_t>(pass));
+        }
     }
 
     void computeFirstWrites() {

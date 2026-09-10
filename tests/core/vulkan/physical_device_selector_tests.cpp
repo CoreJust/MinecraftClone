@@ -77,8 +77,10 @@ private:
 TEST(PhysicalDeviceSelectorTest, SuccessiveExtensionRequirementsPreserveSwapchain)
 {
     PhysicalDeviceSelector selector;
-    selector.requireExtensions({ VulkanExtension::Swapchain });
-    selector.requireExtensions({ VulkanExtension::DynamicRendering, VulkanExtension::Synchronization2 });
+    VulkanExtension swapchain[] = { VulkanExtension::Swapchain };
+    VulkanExtension rendering[] = { VulkanExtension::DynamicRendering, VulkanExtension::Synchronization2 };
+    selector.requireExtensions(swapchain);
+    selector.requireExtensions(rendering);
 
     EXPECT_TRUE(std::ranges::contains(selector.requiredExtensions(), VulkanExtension::Swapchain));
     EXPECT_TRUE(std::ranges::contains(selector.requiredExtensions(), VulkanExtension::DynamicRendering));
@@ -88,8 +90,10 @@ TEST(PhysicalDeviceSelectorTest, SuccessiveExtensionRequirementsPreserveSwapchai
 TEST(PhysicalDeviceSelectorTest, SuccessiveExtensionPreferencesAccumulate)
 {
     PhysicalDeviceSelector selector;
-    selector.preferExtensions({ VulkanExtension::MeshShader });
-    selector.preferExtensions({ VulkanExtension::Maintenance4 });
+    VulkanExtension mesh_shader[] = { VulkanExtension::MeshShader };
+    VulkanExtension maintenance4[] = { VulkanExtension::Maintenance4 };
+    selector.preferExtensions(mesh_shader);
+    selector.preferExtensions(maintenance4);
 
     EXPECT_TRUE(std::ranges::contains(selector.preferredExtensions(), VulkanExtension::MeshShader));
     EXPECT_TRUE(std::ranges::contains(selector.preferredExtensions(), VulkanExtension::Maintenance4));
@@ -103,7 +107,8 @@ TEST(PhysicalDeviceSelectorTest, Core13SatisfiesRenderingRequirementsWithoutEnab
     VulkanCaps caps;
     caps.commitInstanceCaps(API_VERSION, false, {}, {}, {}, {});
     PhysicalDeviceSelector selector;
-    selector.requireExtensions({ VulkanExtension::DynamicRendering, VulkanExtension::Synchronization2 });
+    VulkanExtension rendering[] = { VulkanExtension::DynamicRendering, VulkanExtension::Synchronization2 };
+    selector.requireExtensions(rendering);
 
     EXPECT_FALSE(selector.select(caps, Instance{}).isNull());
     EXPECT_TRUE(caps.supportedDeviceExtensionsAsVec().empty());
@@ -117,7 +122,8 @@ TEST(PhysicalDeviceSelectorTest, Core12StillRequiresRenderingExtensions)
     VulkanCaps caps;
     caps.commitInstanceCaps(API_VERSION, false, {}, {}, {}, {});
     PhysicalDeviceSelector selector;
-    selector.requireExtensions({ VulkanExtension::DynamicRendering, VulkanExtension::Synchronization2 });
+    VulkanExtension rendering[] = { VulkanExtension::DynamicRendering, VulkanExtension::Synchronization2 };
+    selector.requireExtensions(rendering);
 
     EXPECT_THROW(static_cast<void>(selector.select(caps, Instance{})), PhysicalDeviceSelectionError);
 }
@@ -130,7 +136,8 @@ TEST(PhysicalDeviceSelectorTest, Core12KeepsEnumeratedRenderingExtensionsForDevi
     VulkanCaps caps;
     caps.commitInstanceCaps(API_VERSION, false, {}, {}, {}, {});
     PhysicalDeviceSelector selector;
-    selector.requireExtensions({ VulkanExtension::DynamicRendering, VulkanExtension::Synchronization2 });
+    VulkanExtension rendering[] = { VulkanExtension::DynamicRendering, VulkanExtension::Synchronization2 };
+    selector.requireExtensions(rendering);
 
     EXPECT_FALSE(selector.select(caps, Instance{}).isNull());
     EXPECT_TRUE(std::ranges::contains(caps.supportedDeviceExtensionsAsVec(), VulkanExtension::DynamicRendering));
@@ -145,7 +152,8 @@ TEST(PhysicalDeviceSelectorTest, LowerInstanceVersionCannotUseDeviceCorePromotio
     VulkanCaps caps;
     caps.commitInstanceCaps(API_VERSION, false, {}, {}, {}, {});
     PhysicalDeviceSelector selector;
-    selector.requireExtensions({ VulkanExtension::DynamicRendering });
+    VulkanExtension rendering[] = { VulkanExtension::DynamicRendering };
+    selector.requireExtensions(rendering);
 
     EXPECT_THROW(static_cast<void>(selector.select(caps, Instance{})), PhysicalDeviceSelectionError);
 }
@@ -158,7 +166,8 @@ TEST(PhysicalDeviceSelectorTest, Core13DoesNotReplaceNonPromotedSwapchainExtensi
     VulkanCaps caps;
     caps.commitInstanceCaps(API_VERSION, false, {}, {}, {}, {});
     PhysicalDeviceSelector selector;
-    selector.requireExtensions({ VulkanExtension::Swapchain });
+    VulkanExtension swapchain[] = { VulkanExtension::Swapchain };
+    selector.requireExtensions(swapchain);
 
     EXPECT_THROW(static_cast<void>(selector.select(caps, Instance{})), PhysicalDeviceSelectionError);
 }

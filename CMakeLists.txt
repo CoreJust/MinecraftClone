@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.24)
+cmake_minimum_required(VERSION 3.25)
 
 project(MinecraftClone2026
     VERSION 0.1.0
@@ -23,6 +23,11 @@ option(MC_ENABLE_WARNINGS "Enable strict warnings" ON)
 option(MC_ENABLE_SANITIZERS "Enable sanitizers where supported" OFF)
 option(MC_ENABLE_HIGH_ASSERT "Enable high assertions" OFF)
 option(MC_ENABLE_VULKAN_VALIDATION_LAYERS "Enable Vulkan validation layers" OFF)
+option(
+    MC_ALLOW_INEXACT_CORECPP
+    "Allow a dirty, unknown, or mismatched CoreCpp package for local development"
+    OFF
+)
 if(ANDROID)
     # Tests target desktop-only window and process contracts. Android builds are
     # produced by the Gradle application module and never include CTest.
@@ -34,6 +39,7 @@ if(CMAKE_BUILD_TYPE STREQUAL "Debug" OR MC_ENABLE_HIGH_ASSERT)
 endif()
 if(MC_ENABLE_HIGH_ASSERT)
     add_compile_definitions(_MC_ENABLE_HIGH_ASSERT)
+    add_compile_definitions(_CORE_ENABLE_HIGH_ASSERT)
 endif()
 if(MC_ENABLE_VULKAN_VALIDATION_LAYERS)
     add_compile_definitions(_MC_VK_VALIDATION_LAYERS)
@@ -41,6 +47,10 @@ endif()
 
 
 ###  DEPENDENCIES SETUP  ###
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/CoreCppProvenance.cmake")
+find_package(CoreCpp CONFIG REQUIRED COMPONENTS Core Runtime)
+mc_check_corecpp_provenance()
+
 find_package(unofficial-enet CONFIG REQUIRED)
 find_package(fmt CONFIG REQUIRED)
 if(NOT ANDROID)

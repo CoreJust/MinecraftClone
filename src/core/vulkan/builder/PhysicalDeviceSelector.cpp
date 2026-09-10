@@ -1,5 +1,6 @@
 #include <core/vulkan/builder/PhysicalDeviceSelector.hpp>
 
+#include <core/IO/Log.hpp>
 #include <core/meta/EnumImpl.hpp>
 #include <core/vulkan/Check.hpp>
 #include <core/vulkan/internal/PhysicalDeviceCapsStruct.hpp>

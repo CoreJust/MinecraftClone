@@ -1,6 +1,7 @@
 #include <core/net/Server.hpp>
 
 #include <core/common/Assert.hpp>
+#include <core/IO/Log.hpp>
 
 namespace core {
 

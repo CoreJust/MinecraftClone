@@ -91,7 +91,7 @@ class AiCheckTests(unittest.TestCase):
             self.assertEqual(checker.main(["--root", str(self.root), "--fast"]), 0)
         python_tests = next(item for item in calls if item[0] == "python-tests")
         self.assertEqual(python_tests[1][-1], "-v")
-        self.assertEqual(python_tests[2], 180 if os.name == "nt" else 60)
+        self.assertEqual(python_tests[2], 180 if os.name == "nt" else 120)
 
     def test_fast_rejects_partially_staged_governed_file(self):
         target = self.root / "src/changed.cpp"

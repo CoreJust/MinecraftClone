@@ -1,5 +1,6 @@
 #include <core/vulkan/PipelineLayout.hpp>
 
+#include <core/IO/Log.hpp>
 #include <core/vulkan/Check.hpp>
 
 #include <spirv-reflect/spirv_reflect.h>

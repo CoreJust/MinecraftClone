@@ -47,7 +47,7 @@
     },
     {
       "guide": "docs/BUILD.md",
-      "guide_sha256": "b57f88b35753411194047e466da28e04a629290b45f63ff0c04ccbfa6a938809",
+      "guide_sha256": "023bdd0817081476027756273f7aa1c5e77dad6cc198cff23b073ef40f97b884",
       "id": "build",
       "sources": [
         ".agents/skills/backlog/SKILL.md",
@@ -74,9 +74,13 @@
         "CLAUDE.md",
         "CMakeLists.txt",
         "CMakePresets.json",
+        "cmake/CoreCppProvenance.cmake",
         "cmake/Helpers.cmake",
         "cmake/Sanitizers.cmake",
         "cmake/Warnings.cmake",
+        "cmake/fixtures/corecpp_server_consumer/CMakeLists.txt",
+        "cmake/fixtures/corecpp_server_consumer/main.cpp",
+        "dependencies.lock.json",
         "publish.py",
         "script/ai_check.py",
         "script/ai_checks.json",
@@ -118,77 +122,20 @@
         "script/tests/test_workflow_contexts.py",
         "src/CMakeLists.txt",
         "tests/CMakeLists.txt",
+        "tests/cmake/corecpp_server_consumer_test.cmake.in",
         "tests/main.cpp",
         "vcpkg-configuration.json",
         "vcpkg.json"
       ],
-      "sources_sha256": "6b558185c6b5199d2b1e47f75b040e1a12d06c31a5314e9180f8f32c1bdf1c0c"
+      "sources_sha256": "c1189aab0235ceb9b3911625aa13f783ede315efdaeb2efe7449205c930c01ef"
     },
     {
       "guide": "docs/code/CORE.md",
-      "guide_sha256": "a4d92a67092c7defe04c8946446a071d772fca1ead280d68f5393382e1170905",
+      "guide_sha256": "a299937ad565bd158db08dd69cf081b129fec2aac069e25c85da49536878b6fc",
       "id": "core",
       "sources": [
         "src/core/CMakeLists.txt",
-        "src/core/IO/CMakeLists.txt",
-        "src/core/IO/File.cpp",
-        "src/core/IO/Log.cpp",
-        "src/core/IO/StacktraceFmt.cpp",
-        "src/core/OS/CMakeLists.txt",
-        "src/core/common/CMakeLists.txt",
-        "src/core/common/CrashHandler.cpp",
         "src/core/include/core/CMakeLists.txt",
-        "src/core/include/core/IO/CMakeLists.txt",
-        "src/core/include/core/IO/EnumBitsFmt.hpp",
-        "src/core/include/core/IO/EnumFmt.hpp",
-        "src/core/include/core/IO/File.hpp",
-        "src/core/include/core/IO/JoinContainerFmt.hpp",
-        "src/core/include/core/IO/Log.hpp",
-        "src/core/include/core/IO/OptionalFmt.hpp",
-        "src/core/include/core/IO/StacktraceFmt.hpp",
-        "src/core/include/core/IO/TaggedBoolFmt.hpp",
-        "src/core/include/core/OS/CMakeLists.txt",
-        "src/core/include/core/OS/Windows/Lean.hpp",
-        "src/core/include/core/algorithm/CMakeLists.txt",
-        "src/core/include/core/algorithm/TopoSort.hpp",
-        "src/core/include/core/common/Assert.hpp",
-        "src/core/include/core/common/Assume.hpp",
-        "src/core/include/core/common/AtAppExit.hpp",
-        "src/core/include/core/common/ByteReader.hpp",
-        "src/core/include/core/common/ByteSerializable.hpp",
-        "src/core/include/core/common/ByteWriter.hpp",
-        "src/core/include/core/common/CMakeLists.txt",
-        "src/core/include/core/common/CodeExecutionHelper.hpp",
-        "src/core/include/core/common/Color.hpp",
-        "src/core/include/core/common/ConstString.hpp",
-        "src/core/include/core/common/ControlFlow.hpp",
-        "src/core/include/core/common/CrashHandler.hpp",
-        "src/core/include/core/common/Defer.hpp",
-        "src/core/include/core/common/EnumBits.hpp",
-        "src/core/include/core/common/HashCombine.hpp",
-        "src/core/include/core/common/InputSpan.hpp",
-        "src/core/include/core/common/NonCopyable.hpp",
-        "src/core/include/core/common/NonMovable.hpp",
-        "src/core/include/core/common/SpanUtils.hpp",
-        "src/core/include/core/common/StaticInitializer.hpp",
-        "src/core/include/core/common/TrivialPair.hpp",
-        "src/core/include/core/common/VectorUtils.hpp",
-        "src/core/include/core/common/Version.hpp",
-        "src/core/include/core/macro/Attributes.hpp",
-        "src/core/include/core/macro/CMakeLists.txt",
-        "src/core/include/core/macro/Compiler.hpp",
-        "src/core/include/core/macro/Count.hpp",
-        "src/core/include/core/macro/LanguageVersion.hpp",
-        "src/core/include/core/macro/NameGeneration.hpp",
-        "src/core/include/core/macro/OS.hpp",
-        "src/core/include/core/meta/CMakeLists.txt",
-        "src/core/include/core/meta/Enum.hpp",
-        "src/core/include/core/meta/EnumImpl.hpp",
-        "src/core/include/core/meta/EnumMapping.hpp",
-        "src/core/include/core/meta/Field.hpp",
-        "src/core/include/core/meta/FieldRequirement.hpp",
-        "src/core/include/core/meta/TaggedBool.hpp",
-        "src/core/include/core/meta/TypeName.hpp",
         "src/core/include/core/net/Address.hpp",
         "src/core/include/core/net/CMakeLists.txt",
         "src/core/include/core/net/Client.hpp",
@@ -244,7 +191,7 @@
         "tests/core/window/keyboard_tests.cpp",
         "tests/core/window/mouse_tests.cpp"
       ],
-      "sources_sha256": "9195e6a7715abfb92f854549fbafaf037dfa49094b9b774c9a122df606517f79"
+      "sources_sha256": "56d61639b7e2a9e25df2a4bfe4546f253405e1d901a1d1e46f9f38176d78a8df"
     },
     {
       "guide": "docs/code/GAMEPLAY.md",
@@ -278,7 +225,7 @@
         "tests/core/shared_message_tests.cpp",
         "tests/core/shared_world_tests.cpp"
       ],
-      "sources_sha256": "428f5bf69eba073a4ce4aef087df48b73532bba722d091f1c607443a9be7b452"
+      "sources_sha256": "06e2b8c8d164e0d4be3931839789120d4c3202a073b9f31fdb5d32c25bf39a8f"
     },
     {
       "guide": "docs/code/RENDERING.md",
@@ -302,7 +249,7 @@
         "tests/client/renderer_smoke_tests.cpp",
         "tests/client/shader_assets_tests.cpp"
       ],
-      "sources_sha256": "07372b3974d426dd8f24a4aaac5d80ba0a5578ba58854c9303334b7589998baf"
+      "sources_sha256": "5690e0ca614021dbccfd6124da66a73bcdc8f0911d8925bf708b52dc70c5a4a7"
     },
     {
       "guide": "docs/code/VULKAN.md",
@@ -477,7 +424,7 @@
         "tests/core/vulkan/physical_device_selector_tests.cpp",
         "tests/core/vulkan/spirv_tests.cpp"
       ],
-      "sources_sha256": "4bea64baa1c3ecb4721bde63edd4e23487497e998f75c15577ac2f3c16e9d3f9"
+      "sources_sha256": "5c5d7491db10860af97aaee50ef0fb9d57b527b471dc84e04a5119233f0fe040"
     }
   ],
   "version": 1

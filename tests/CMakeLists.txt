@@ -1,5 +1,16 @@
 include(GoogleTest)
 
+configure_file(
+    cmake/corecpp_server_consumer_test.cmake.in
+    "${CMAKE_CURRENT_BINARY_DIR}/corecpp_server_consumer_test.cmake"
+    @ONLY
+)
+add_test(
+    NAME CoreCpp.ServerOnlyPackageConsumer
+    COMMAND ${CMAKE_COMMAND}
+        -P "${CMAKE_CURRENT_BINARY_DIR}/corecpp_server_consumer_test.cmake"
+)
+
 add_test(
     NAME AcceptanceCli.RuntimeModes
     COMMAND ${CMAKE_COMMAND}
