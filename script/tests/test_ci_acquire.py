@@ -342,8 +342,7 @@ class CiAcquireTests(unittest.TestCase):
                 known_hosts = acquire.write_github_known_host(root)
             self.assertEqual(known_hosts.read_text(encoding="utf-8"), acquire.GITHUB_SSH_KNOWN_HOST)
             if os.name == "nt":
-                chmod_call.assert_called_once()
-                self.assertEqual(chmod_call.call_args.args[1], stat.S_IRUSR | stat.S_IWUSR)
+                chmod_call.assert_called_once_with(stat.S_IRUSR | stat.S_IWUSR)
             else:
                 self.assertEqual(known_hosts.stat().st_mode & 0o777, 0o600)
 
