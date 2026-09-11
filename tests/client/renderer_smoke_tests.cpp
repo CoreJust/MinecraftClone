@@ -19,13 +19,17 @@ namespace {
 
 struct CaptureColorClasses final {
     bool has_grid = false;
+    bool has_platform = false;
+    bool has_platform_side = false;
+    bool has_sky = false;
     bool has_red_player = false;
     bool has_green_player = false;
     bool has_debug_hud = false;
 
     [[nodiscard]] bool complete() const
     {
-        return has_grid && has_red_player && has_green_player && has_debug_hud;
+        return has_grid && has_platform && has_platform_side && has_sky
+            && has_red_player && has_green_player && has_debug_hud;
     }
 
     [[nodiscard]] std::string missingClasses() const
@@ -40,6 +44,9 @@ struct CaptureColorClasses final {
             }
         };
         appendMissing(has_grid, "grid");
+        appendMissing(has_platform, "platform");
+        appendMissing(has_platform_side, "platform-side");
+        appendMissing(has_sky, "sky");
         appendMissing(has_red_player, "red-player");
         appendMissing(has_green_player, "green-player");
         appendMissing(has_debug_hud, "debug-hud");
@@ -62,6 +69,22 @@ struct CaptureColorClasses final {
         classes.has_grid = classes.has_grid || (
             red > grid_min && red < grid_max && green > grid_min && green < grid_max
                 && blue > grid_min && blue < grid_max
+        );
+        classes.has_sky = classes.has_sky || (
+            blue > green + 20U && green > red + 20U
+        );
+        classes.has_platform = classes.has_platform || (
+            red < 130U && blue < 170U && blue > green + 8U && green > red + 8U
+        );
+        classes.has_platform_side = classes.has_platform_side || (
+            y > 0U
+            && red < 130U && blue < 170U && blue > green + 8U && green > red + 8U
+            && capture.rgba8[offset - static_cast<uint64_t>(capture.width) * 4U] < 130U
+            && capture.rgba8[offset - static_cast<uint64_t>(capture.width) * 4U + 2U] < 170U
+            && capture.rgba8[offset - static_cast<uint64_t>(capture.width) * 4U + 2U]
+                > capture.rgba8[offset - static_cast<uint64_t>(capture.width) * 4U + 1U] + 8U
+            && capture.rgba8[offset - static_cast<uint64_t>(capture.width) * 4U + 1U]
+                > capture.rgba8[offset - static_cast<uint64_t>(capture.width) * 4U] + 8U
         );
         classes.has_red_player = classes.has_red_player || (
             red > 200U && green < 80U && blue < 80U
@@ -148,7 +171,7 @@ TEST(RendererSmokeTest, CompletedCaptureSurvivesRecreateAndReadsBack)
     CaptureColorClasses const original_colors = classifyCaptureColors(*original_capture);
     EXPECT_TRUE(original_colors.complete())
         << "original capture lacks: " << original_colors.missingClasses()
-        << "; the 32x32 inset-cell grid may cover every physical framebuffer sample";
+        << "; the platform/grid/sky scene may cover every physical framebuffer sample";
     EXPECT_EQ(renderer.runtimeInfo().debug_hud_draw_count, 1U);
 
     renderer.requestFrameCapture();
@@ -171,7 +194,7 @@ TEST(RendererSmokeTest, CompletedCaptureSurvivesRecreateAndReadsBack)
     CaptureColorClasses const retained_colors = classifyCaptureColors(*retained_capture);
     EXPECT_TRUE(retained_colors.complete())
         << "retained capture lacks: " << retained_colors.missingClasses()
-        << "; the 32x32 inset-cell grid may cover every physical framebuffer sample";
+        << "; the platform/grid/sky scene may cover every physical framebuffer sample";
 
     renderer.hotReload();
     renderer.requestFrameCapture();
@@ -181,7 +204,7 @@ TEST(RendererSmokeTest, CompletedCaptureSurvivesRecreateAndReadsBack)
     CaptureColorClasses const reloaded_colors = classifyCaptureColors(*reloaded_capture);
     EXPECT_TRUE(reloaded_colors.complete())
         << "reloaded capture lacks: " << reloaded_colors.missingClasses()
-        << "; the 32x32 inset-cell grid may cover every physical framebuffer sample";
+        << "; the platform/grid/sky scene may cover every physical framebuffer sample";
     EXPECT_GE(rendered_frames, 3U);
     EXPECT_EQ(renderer.runtimeInfo().pipeline_path, client::RendererPipelinePath::Vertex);
 }
@@ -217,7 +240,7 @@ TEST(RendererSmokeTest, GlfwCursorCaptureSupportsContinuousCameraLook)
     EXPECT_EQ(glfwGetInputMode(window.nativeHandle(), GLFW_CURSOR), GLFW_CURSOR_NORMAL);
 }
 
-TEST(RendererSmokeTest, ActiveVertexRendererKeepsUprightGridAndTopLeftHudForRemotePlayers)
+TEST(RendererSmokeTest, ActiveThirdPersonRendererShowsPlatformPlayersAndTopLeftHud)
 {
     static constexpr uint32_t LOGICAL_WIDTH = 320U;
     static constexpr uint32_t LOGICAL_HEIGHT = 240U;
@@ -239,7 +262,7 @@ TEST(RendererSmokeTest, ActiveVertexRendererKeepsUprightGridAndTopLeftHudForRemo
         core::platform::glfw::WindowDescriptor{
             .width = LOGICAL_WIDTH,
             .height = LOGICAL_HEIGHT,
-            .title = "MinecraftClone active first-person renderer",
+            .title = "MinecraftClone active third-person renderer",
         },
     };
     client::InstalledShaderAssets const shader_assets;
@@ -252,7 +275,12 @@ TEST(RendererSmokeTest, ActiveVertexRendererKeepsUprightGridAndTopLeftHudForRemo
         { .require_validation = true, .enable_frame_capture = true },
     };
     renderer.setDebugHudEnabled(true);
-    std::array<client::PlayerRenderData, 1U> const remote_players{
+    std::array<client::PlayerRenderData, 2U> const players{
+        client::PlayerRenderData{
+            .x = LOCAL.x,
+            .y = LOCAL.y,
+            .color = { 1.0F, 0.0F, 0.0F, 1.0F },
+        },
         client::PlayerRenderData{
             .x = REMOTE.x,
             .y = REMOTE.y,
@@ -263,7 +291,10 @@ TEST(RendererSmokeTest, ActiveVertexRendererKeepsUprightGridAndTopLeftHudForRemo
     EXPECT_TRUE(client::shouldRenderRemotePlayer(REMOTE, LOCAL.ch));
     client::Camera const camera{
         {
-            .position = client::localPlayerEyePosition(LOCAL),
+            .position = client::localPlayerThirdPersonPose(
+                LOCAL,
+                { .pitch_degrees = -10.0 }
+            ).position,
             .angles = { .pitch_degrees = -10.0 },
         },
     };
@@ -278,7 +309,7 @@ TEST(RendererSmokeTest, ActiveVertexRendererKeepsUprightGridAndTopLeftHudForRemo
          ++frame) {
         ASSERT_TRUE(window.nextFrame());
         static_cast<void>(renderer.render(
-            remote_players,
+            players,
             client::DebugHudInput{ .player_x = static_cast<float>(LOCAL.x), .player_y = static_cast<float>(LOCAL.y) },
             1.0F,
             deadline
@@ -293,9 +324,12 @@ TEST(RendererSmokeTest, ActiveVertexRendererKeepsUprightGridAndTopLeftHudForRemo
     ASSERT_TRUE(captured);
     CaptureColorClasses const classes = classifyCaptureColors(capture);
     EXPECT_TRUE(classes.has_grid);
+    EXPECT_TRUE(classes.has_platform);
+    EXPECT_TRUE(classes.has_platform_side);
+    EXPECT_TRUE(classes.has_sky);
     EXPECT_TRUE(classes.has_debug_hud);
+    EXPECT_TRUE(classes.has_red_player);
     EXPECT_TRUE(classes.has_green_player);
-    EXPECT_FALSE(classes.has_red_player);
     EXPECT_EQ(renderer.runtimeInfo().pipeline_path, client::RendererPipelinePath::Vertex);
 }
 

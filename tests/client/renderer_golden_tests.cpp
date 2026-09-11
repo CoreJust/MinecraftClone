@@ -41,7 +41,21 @@ testsupport::Rgba8Image toImage(client::RendererFrameCapture const& capture)
     return pixels[offset] < 80U && pixels[offset + 1U] > 200U && pixels[offset + 2U] < 80U;
 }
 
-TEST(RendererGoldenTest, Flat3dV2SceneMatchesApprovedReferenceWithoutWindow)
+[[nodiscard]] bool isSky(std::span<uint8_t const> const pixels, size_t const offset)
+{
+    return pixels[offset + 2U] > pixels[offset + 1U] + 20U
+        && pixels[offset + 1U] > pixels[offset] + 20U;
+}
+
+[[nodiscard]] bool isPlatform(std::span<uint8_t const> const pixels, size_t const offset)
+{
+    return pixels[offset] < 100U
+        && pixels[offset + 2U] < 170U
+        && pixels[offset + 2U] > pixels[offset + 1U] + 8U
+        && pixels[offset + 1U] > pixels[offset] + 8U;
+}
+
+TEST(RendererGoldenTest, ThirdPersonPlatformV3MatchesApprovedReferenceWithoutWindow)
 {
     static constexpr uint32_t WIDTH = 640U;
     static constexpr uint32_t HEIGHT = 480U;
@@ -65,6 +79,28 @@ TEST(RendererGoldenTest, Flat3dV2SceneMatchesApprovedReferenceWithoutWindow)
         EXPECT_FALSE(capture.srgb_encoded);
         EXPECT_EQ(capture.rgba8.size(), static_cast<size_t>(WIDTH) * HEIGHT * 4U);
         EXPECT_EQ(renderer.validationErrorCount(), 0U);
+
+        bool saw_sky = false;
+        bool saw_platform = false;
+        bool saw_platform_side = false;
+        bool saw_red_player = false;
+        bool saw_green_player = false;
+        for (size_t offset = 0U; offset < capture.rgba8.size(); offset += 4U) {
+            saw_sky = saw_sky || isSky(capture.rgba8, offset);
+            saw_platform = saw_platform || isPlatform(capture.rgba8, offset);
+            saw_platform_side = saw_platform_side || (
+                offset >= static_cast<size_t>(WIDTH) * 4U
+                && isPlatform(capture.rgba8, offset)
+                && isPlatform(capture.rgba8, offset - static_cast<size_t>(WIDTH) * 4U)
+            );
+            saw_red_player = saw_red_player || isRed(capture.rgba8, offset);
+            saw_green_player = saw_green_player || isGreen(capture.rgba8, offset);
+        }
+        EXPECT_TRUE(saw_sky) << "third-person scene lacks sky-like clear color";
+        EXPECT_TRUE(saw_platform) << "third-person scene lacks solid platform side color";
+        EXPECT_TRUE(saw_platform_side) << "third-person scene lacks visible platform thickness";
+        EXPECT_TRUE(saw_red_player) << "third-person scene lacks local player cube";
+        EXPECT_TRUE(saw_green_player) << "third-person scene lacks remote player cube";
 
         testsupport::Rgba8Image const actual = toImage(capture);
         std::expected<testsupport::Rgba8Image, std::string> const expected = testsupport::readPpm(

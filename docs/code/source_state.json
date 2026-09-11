@@ -44,7 +44,7 @@
         "src/android/CMakeLists.txt",
         "tests/android/input_state_tests.cpp"
       ],
-      "sources_sha256": "35c97aa4b88e0a69d6f243d31343ec21b008d8be6e1f9d78622df7333495a776"
+      "sources_sha256": "0bd8fb303d3d58c9ad03319d073ac8e63d5fbff98ed138f328387ebdfd63147a"
     },
     {
       "guide": "docs/BUILD.md",
@@ -132,7 +132,7 @@
         "vcpkg-configuration.json",
         "vcpkg.json"
       ],
-      "sources_sha256": "b77c006266b3257de4c94efae3e215d1ee11825e959c05aa69ca3837ed3c81e6"
+      "sources_sha256": "126095b1e9113b82856aa1937c1545bb44ea920373921966171fdbbc0a6761c8"
     },
     {
       "guide": "docs/code/CORE.md",
@@ -212,11 +212,11 @@
         "tests/core/shared_message_tests.cpp",
         "tests/core/shared_world_tests.cpp"
       ],
-      "sources_sha256": "1b425d413ee7430c05095364502c67d1ca79b122a6dd3748be6a3d2ddf8e472b"
+      "sources_sha256": "748615e52041f87e91c6d940478ff51ef77427304149cd5d4e57839b923d173e"
     },
     {
       "guide": "docs/code/RENDERING.md",
-      "guide_sha256": "f1131bfde521de0793417d3a207b2466df2392981db3c2bd7e1a60784bba7b00",
+      "guide_sha256": "fa82c1c802d7e6b5957b31adec296490910f9c71919183c35a127bd77850accf",
       "id": "rendering",
       "sources": [
         "src/client/CMakeLists.txt",
@@ -244,6 +244,7 @@
         "tests/client/depth_format_tests.cpp",
         "tests/client/frame_scheduler_tests.cpp",
         "tests/client/goldens/README.md",
+        "tests/client/goldens/earlydev-0.1.0-snapshot-4-third-person-platform-v3.ppm",
         "tests/client/goldens/s4_flat3d_v2.ppm",
         "tests/client/goldens/s4_scene_v1.ppm",
         "tests/client/player_presentation_tests.cpp",
@@ -254,7 +255,7 @@
         "tests/testsupport/image_comparison_tests.cpp",
         "tests/testsupport/include/testsupport/ImageComparison.hpp"
       ],
-      "sources_sha256": "b7b48cfa5ba01b65877c7fba374e3b5ce63ac74d1466af15865a07784094aae2"
+      "sources_sha256": "e34d3a1fd21c8fab6662b01d6704efe81bb8669aae2a0bdbf5e6a14b2dc48a94"
     }
   ],
   "version": 1

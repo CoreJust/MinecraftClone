@@ -4,9 +4,8 @@
 
 layout(push_constant) uniform PushConstants {
     mat4 projection_view;
-    vec2 origin;
-    float size;
-    float pad0;
+    vec4 origin;
+    vec4 extent;
     vec4 color;
 } pc;
 
@@ -22,7 +21,7 @@ const vec3 kCubeVertices[36] = vec3[](
 );
 
 void main() {
-    vec3 world = vec3(pc.origin, 0.0) + kCubeVertices[gl_VertexIndex] * pc.size;
+    vec3 world = pc.origin.xyz + pc.extent.xyz * kCubeVertices[gl_VertexIndex];
     gl_Position = pc.projection_view * vec4(world, 1.0);
     outColor = pc.color;
 }

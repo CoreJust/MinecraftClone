@@ -41,9 +41,10 @@ ANDROID_COMMAND_LINE_TOOLS = {
     "sha256": "4e4c464f145a7512b57d088ac6c278c03c9eea610886b35a5e0804e74eedf583",
     "filename": "commandlinetools-linux-15859902_latest.zip",
 }
+ANDROID_NDK_VERSION = "27.0.12077973"
 ANDROID_SDK_PACKAGES = (
     "platforms;android-35",
-    "ndk;27.0.12077973",
+    f"ndk;{ANDROID_NDK_VERSION}",
     "cmake;3.30.5",
 )
 DOWNLOAD_USER_AGENT = "MinecraftClone CI acquisition"
@@ -167,6 +168,9 @@ def install_private_dependencies(root: Path, platform_name: str, cmake_arguments
     if platform_name not in {"macos", "windows", "android"}:
         raise CiError(f"unsupported private dependency platform: {platform_name}")
     prefix = root / "install"
+    installed_root = os.environ.get("VCPKG_INSTALLED_DIR")
+    if not installed_root:
+        raise CiError("VCPKG_INSTALLED_DIR is missing")
     for name in PRIVATE_DEPENDENCIES:
         source = root / name
         if source.is_symlink() or not (source / "CMakeLists.txt").is_file():
@@ -175,7 +179,7 @@ def install_private_dependencies(root: Path, platform_name: str, cmake_arguments
         configure = [
             "cmake", "-S", str(source), "-B", str(build), "-G", "Ninja",
             "-DCMAKE_BUILD_TYPE=Release", f"-DCMAKE_INSTALL_PREFIX={prefix}",
-            f"-DCMAKE_PREFIX_PATH={prefix}", *cmake_arguments,
+            f"-DCMAKE_PREFIX_PATH={prefix}", f"-DVCPKG_INSTALLED_DIR={installed_root}", *cmake_arguments,
         ]
         run(configure)
         run(["cmake", "--build", str(build), "--parallel"])
@@ -261,10 +265,13 @@ def write_github_path(value: Path) -> None:
 
 
 def write_android_sdk_environment(root: Path) -> None:
-    """Export both Android SDK variable names to the same acquired root."""
+    """Export the acquired SDK and exact NDK for later hosted build steps."""
     value = str(root)
     write_github_env("ANDROID_HOME", value)
     write_github_env("ANDROID_SDK_ROOT", value)
+    ndk = str(root / "ndk" / ANDROID_NDK_VERSION)
+    write_github_env("ANDROID_NDK_HOME", ndk)
+    write_github_env("ANDROID_NDK_ROOT", ndk)
 
 
 def safe_extract(archive: Path, destination: Path) -> None:
@@ -413,6 +420,35 @@ def install_vcpkg(root: Path) -> None:
     print(root)
 
 
+def install_manifest_dependencies(vcpkg_root: Path, platform_name: str, installed_root: Path) -> Path:
+    """Install repository manifest ports into an isolated, platform-specific root."""
+    triplets = {
+        "macos": "arm64-osx",
+        "windows": "x64-windows",
+        "android": "arm64-android",
+    }
+    if platform_name not in triplets:
+        raise CiError(f"unsupported manifest dependency platform: {platform_name}")
+    executable = vcpkg_root / ("vcpkg.exe" if os.name == "nt" else "vcpkg")
+    if not executable.is_file():
+        raise CiError(f"pinned vcpkg executable is missing: {executable}")
+    if installed_root.exists():
+        raise CiError(f"vcpkg install root already exists: {installed_root}")
+    repository = Path(__file__).resolve().parents[2]
+    run([
+        str(executable),
+        "install",
+        f"--triplet={triplets[platform_name]}",
+        f"--x-manifest-root={repository}",
+        f"--x-install-root={installed_root}",
+    ])
+    if not installed_root.is_dir():
+        raise CiError(f"vcpkg did not create its install root: {installed_root}")
+    write_github_env("VCPKG_INSTALLED_DIR", str(installed_root))
+    print(installed_root)
+    return installed_root
+
+
 def require_prefix(label: str, output: str, expected: str) -> None:
     """Require a command's recorded version output to include its exact pin."""
     if expected not in output:
@@ -543,6 +579,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     install_ninja_parser.add_argument("--root", type=Path, required=True)
     install_vcpkg_parser = commands.add_parser("install-vcpkg")
     install_vcpkg_parser.add_argument("--root", type=Path, required=True)
+    manifest_parser = commands.add_parser("install-manifest-dependencies")
+    manifest_parser.add_argument("--vcpkg-root", type=Path, required=True)
+    manifest_parser.add_argument("--platform", choices=("macos", "windows", "android"), required=True)
+    manifest_parser.add_argument("--installed-root", type=Path, required=True)
     install_android_parser = commands.add_parser("install-android-sdk")
     install_android_parser.add_argument("--root", type=Path, required=True)
     verify_parser = commands.add_parser("verify-tools")
@@ -575,6 +615,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             install_ninja(args.platform, args.root)
         elif args.command == "install-vcpkg":
             install_vcpkg(args.root)
+        elif args.command == "install-manifest-dependencies":
+            install_manifest_dependencies(args.vcpkg_root, args.platform, args.installed_root)
         elif args.command == "install-android-sdk":
             install_android_sdk(args.root)
         elif args.command == "verify-tools":
