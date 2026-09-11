@@ -122,6 +122,14 @@ def write_github_known_host(root: Path) -> Path:
     return known_hosts
 
 
+def quote_git_ssh_path(path_value: str) -> str:
+    """Quote one normalized path for Git's POSIX-style SSH command shell."""
+    normalized = path_value.replace("\\", "/")
+    if "\n" in normalized or "\r" in normalized or "\0" in normalized:
+        raise CiError("private dependency SSH path contains a forbidden control character")
+    return "'" + normalized.replace("'", "'\"'\"'") + "'"
+
+
 def git_with_key(key_file: Path, known_hosts_file: Path, command: Sequence[str]) -> list[str]:
     """Build a Git command that tries only the dependency-specific deploy key."""
     if key_file.is_symlink() or not key_file.is_file():
@@ -131,8 +139,8 @@ def git_with_key(key_file: Path, known_hosts_file: Path, command: Sequence[str])
     if known_hosts_file.is_symlink() or not known_hosts_file.is_file():
         raise CiError(f"GitHub SSH known-hosts file must be a regular file: {known_hosts_file}")
     ssh_command = (
-        f"ssh -i {key_file} -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes "
-        f"-o UserKnownHostsFile={known_hosts_file}"
+        f"ssh -i {quote_git_ssh_path(str(key_file))} -o IdentitiesOnly=yes "
+        f"-o StrictHostKeyChecking=yes -o UserKnownHostsFile={quote_git_ssh_path(str(known_hosts_file))}"
     )
     return ["git", "-c", f"core.sshCommand={ssh_command}", *command]
 
@@ -171,6 +179,8 @@ def install_private_dependencies(root: Path, platform_name: str, cmake_arguments
     installed_root = os.environ.get("VCPKG_INSTALLED_DIR")
     if not installed_root:
         raise CiError("VCPKG_INSTALLED_DIR is missing")
+    if any(argument.startswith("-DBUILD_TESTING=") for argument in cmake_arguments):
+        raise CiError("private dependency package installs own BUILD_TESTING=OFF")
     for name in PRIVATE_DEPENDENCIES:
         source = root / name
         if source.is_symlink() or not (source / "CMakeLists.txt").is_file():
@@ -179,7 +189,8 @@ def install_private_dependencies(root: Path, platform_name: str, cmake_arguments
         configure = [
             "cmake", "-S", str(source), "-B", str(build), "-G", "Ninja",
             "-DCMAKE_BUILD_TYPE=Release", f"-DCMAKE_INSTALL_PREFIX={prefix}",
-            f"-DCMAKE_PREFIX_PATH={prefix}", f"-DVCPKG_INSTALLED_DIR={installed_root}", *cmake_arguments,
+            f"-DCMAKE_PREFIX_PATH={prefix}", f"-DVCPKG_INSTALLED_DIR={installed_root}",
+            *cmake_arguments, "-DBUILD_TESTING=OFF",
         ]
         run(configure)
         run(["cmake", "--build", str(build), "--parallel"])
