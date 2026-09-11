@@ -1343,7 +1343,7 @@
       "MC-AI-0032"
     ],
     "acceptance": "A player navigates the existing authoritative multiplayer world through a deterministic 3D camera and WASD controls; focused unit, integration, Runtime/Client offscreen golden, visible runtime and frame-time evidence pass. The exact reviewed/tagged S4 build is published with named macOS, Windows and Android GitHub assets, SHA256 hashes, provenance, dependencies/licenses and truthful signing status. The exact downloaded macOS asset and exact released Android APK pass local runtime acceptance; Windows build/package evidence is required, while user Windows runtime is recorded separately and never inferred.",
-    "evidence": "",
+    "evidence": "Pre-final staged aggregate tree 36d4bc5f0c005c25bc4c53983b6e56d1788d89b1 passed the complete snapshot gate: 193 Python tests, 212 CTest tests, the self-closing validation-enabled renderer smoke, documentation, backlog, current-plan, index-match and diff checks; publisher validation allowed only the required dirty-tree candidate exception. Focused source acceptance also includes fixed 640-by-480 true-offscreen Client rendering passing 2/2 with no GLFW window, surface, or swapchain, matching reviewed flat3d-v2 golden SHA256 730db5145d7ba360769b29d649321b85536782b35c36bc96388f55dcf0ec0bcc and proving depth ordering. Camera, controller, cadence, HUD, player-presentation and shader regressions include an active renderer check for upright grid, top-left four-line HUD, visible remote player and hidden local player. The shipping two-client scenario passed with replay fnv1a64:b04ada818279ae1e. Android API 35 / NDK 27 assembleDebug passed against clean exact CoreCpp 618f68ce9625238039e454313b5e790ddf1350b4 and CoreProject2026 83669e6e38393417c903208837d640d3e2fd6a34 packages with manifest installation disabled and all five shaders in the APK. A Release 1920-by-1080 normal-gameplay benchmark with HUD on and negotiated FIFO sustained 119.923214 presentation requests/s for 1200 frames, with p50/p95/p99/max 8.264291/8.563374/8.750793/13.231042 ms and no frame above 16.667 ms. Exact 0.1.0:4 artifact gates and user preview remain prepublication requirements; Windows runtime remains user-owned and is never inferred.",
     "blocker": "",
     "owner": "Codex coordinator",
     "level": "snapshot",
@@ -1353,17 +1353,34 @@
     "complexity": "high",
     "created_at": "2026-09-09",
     "resolved_at": "",
-    "resolution_changes": "",
+    "resolution_changes": "Finalized the Snapshot 4 3D controls source candidate for exact review, promotion, cross-platform packaging, and the required prepublication user preview while retaining authoritative server movement and deterministic replay.",
     "plan": [
       "Deliver a coordinate/camera/controller boundary independent of GLFW and Vulkan.",
       "Render the flat scene in 3D with no per-frame blocking or busy work.",
       "Measure headless simulation and windowed rendering separately; do not claim cross-device FPS without a reproducible benchmark."
     ],
-    "product_changes": [],
-    "code_changes": [],
+    "product_changes": [
+      "Desktop players navigate the authoritative flat world from the local player eye with camera-relative WASD movement, captured mouse look, an upright depth-tested grid, and remote-player boxes.",
+      "Android players use simultaneous movement and camera-look touch pointers against the same authoritative simulation and first-person presentation policy.",
+      "A default-on, toggleable, DPI-scaled texture-free debug HUD renders FPS, monotonic uptime, authoritative player coordinates, and camera yaw/pitch/roll in four top-left rows.",
+      "Versioned CoreLang scenarios drive deterministic camera and two-client replay without changing the legacy script1/scenario1 compatibility frontends.",
+      "Snapshot publication pauses after exact candidate testing and normal playable macOS preview until explicit user acceptance."
+    ],
+    "code_changes": [
+      "Extracted universal CoreCpp Core/Runtime packages and exact CoreProject2026 dependency provenance, including optional network, kernel, graphics, GLFW, and Android components.",
+      "Implemented CoreLang 0.0.1 parsing, validation, immutable AST/runtime services, imports, rulesets, numeric and cast semantics, and Shared scenario integration.",
+      "Moved reusable Vulkan presentation, resources, kernel caching, depth state, and fixed-extent target-owned offscreen recording behind narrow Runtime interfaces.",
+      "Added independent camera/controller/frame-scheduler logic, 3D scene shaders, swapchain-image depth targets, deterministic depth-format fallback, and one shared production/offscreen draw routine.",
+      "Separated Runtime transport from Shared game protocol and added allocation-stable shader bitmap HUD rendering with licensed font attribution.",
+      "Added deterministic golden, replay, Android input/package, source-policy receipt, and immutable prior-ledger regression coverage.",
+      "Made the pre-finalization publisher fixture derive the current snapshot index from ProjectInfo so later version bumps preserve the same validation contract.",
+      "Added honest negotiated-present and per-phase renderer timing evidence without changing MoltenVK submission policy.",
+      "Corrected Vulkan projection and winding across shader variants and bound the playable camera/HUD to authoritative local-player state.",
+      "Made exact candidate testing and user preview precede immutable release publication in the canonical release checklist."
+    ],
     "baseline_commit": "c5100f5dc77a151a2644079575e25efd0f93a85d",
     "commits": [],
-    "finalized": false,
+    "finalized": true,
     "retrospective": "",
     "docs_review": "",
     "environment_review": "",
