@@ -5,6 +5,7 @@
 
 #include <core/platform/glfw/GlfwWindow.hpp>
 
+#include <acceptance/FramebufferExtent.hpp>
 #include <acceptance/ImageEvidence.hpp>
 #include <fmt/format.h>
 
@@ -57,6 +58,14 @@ std::expected<RuntimeEvidence, std::string> captureRendererFrame(
             .title = "MinecraftClone renderer capture",
         },
     };
+    std::expected<void, std::string> const extent = ensureFramebufferExtent(
+        window,
+        { .width = options.width, .height = options.height },
+        options.max_resize_polls
+    );
+    if (!extent.has_value()) {
+        return std::unexpected(extent.error());
+    }
     client::InstalledShaderAssets const shader_assets;
     client::VulkanRenderer renderer{
         client::VulkanRenderer::createPresentationContext(window),

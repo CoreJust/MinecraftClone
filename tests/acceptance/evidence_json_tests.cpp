@@ -57,15 +57,28 @@ TEST(EvidenceJson, EscapesControlCharactersInStringFields)
     EXPECT_NE(json.find("\"failure\": \"unexpected \\\"position\\\"\""), std::string::npos);
 }
 
-TEST(EvidenceJson, LabelsBenchmarkSamplesAsCpuPresentationRequests)
+TEST(EvidenceJson, LabelsBenchmarkSamplesAsCpuPresentationRequestsAndPhases)
 {
     acceptance::RuntimeEvidence const evidence{
         .mode = "benchmark-render",
         .benchmark = acceptance::RendererBenchmarkEvidence{
             .presentation_requests_per_second = 120.0,
+            .debug_hud_enabled = true,
             .presentation_request_timings = acceptance::FrameTimingSummary{
                 .sample_count = 2,
                 .p50 = std::chrono::nanoseconds{ 7 },
+            },
+            .acquire_wait_timings = acceptance::FrameTimingSummary{
+                .sample_count = 2,
+                .p50 = std::chrono::nanoseconds{ 3 },
+            },
+            .command_record_timings = acceptance::FrameTimingSummary{
+                .sample_count = 2,
+                .p50 = std::chrono::nanoseconds{ 2 },
+            },
+            .complete_present_wait_timings = acceptance::FrameTimingSummary{
+                .sample_count = 2,
+                .p50 = std::chrono::nanoseconds{ 2 },
             },
         },
     };
@@ -73,7 +86,11 @@ TEST(EvidenceJson, LabelsBenchmarkSamplesAsCpuPresentationRequests)
     std::string const json = acceptance::evidenceJson(evidence);
 
     EXPECT_NE(json.find("\"presentation_requests_per_second\": 120.000000"), std::string::npos);
+    EXPECT_NE(json.find("\"debug_hud_enabled\": true"), std::string::npos);
     EXPECT_NE(json.find("\"cpu_presentation_request_timings_ns\""), std::string::npos);
+    EXPECT_NE(json.find("\"cpu_acquire_wait_timings_ns\""), std::string::npos);
+    EXPECT_NE(json.find("\"cpu_command_record_timings_ns\""), std::string::npos);
+    EXPECT_NE(json.find("\"cpu_complete_submit_present_wait_timings_ns\""), std::string::npos);
     EXPECT_EQ(json.find("\"frames_per_second\""), std::string::npos);
     EXPECT_EQ(json.find("\"frame_timings_ns\""), std::string::npos);
 }

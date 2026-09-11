@@ -215,10 +215,14 @@ struct VulkanRenderer::Impl final {
             }
         }
 
+        std::chrono::steady_clock::time_point const acquire_started_at = std::chrono::steady_clock::now();
         std::optional<PresentationContext::Frame> frame;
         core::graphics::vulkan::PresentationAcquireResult const acquired = m_context->acquire(
             remaining(deadline),
             frame
+        );
+        m_cpu_acquire_wait_duration = std::chrono::duration_cast<std::chrono::nanoseconds>(
+            std::chrono::steady_clock::now() - acquire_started_at
         );
         if (acquired == core::graphics::vulkan::PresentationAcquireResult::NeedsRecreation) {
             m_last_presented = false;
@@ -230,17 +234,24 @@ struct VulkanRenderer::Impl final {
             return false;
         }
 
-        std::chrono::steady_clock::time_point const started_at = std::chrono::steady_clock::now();
+        std::chrono::steady_clock::time_point const command_record_started_at =
+            std::chrono::steady_clock::now();
         m_players = players;
         m_image_view = frame->imageView();
         m_current_depth_target = &depthTargetFor(frame->image());
         frame->record(&Impl::recordFrame, this);
+        m_cpu_command_record_duration = std::chrono::duration_cast<std::chrono::nanoseconds>(
+            std::chrono::steady_clock::now() - command_record_started_at
+        );
+        std::chrono::steady_clock::time_point const complete_present_started_at =
+            std::chrono::steady_clock::now();
         m_context->complete(*frame);
+        m_cpu_complete_present_wait_duration = std::chrono::duration_cast<std::chrono::nanoseconds>(
+            std::chrono::steady_clock::now() - complete_present_started_at
+        );
         m_current_depth_target = nullptr;
         m_last_presented = true;
-        m_cpu_frame_duration = std::chrono::duration_cast<std::chrono::nanoseconds>(
-            std::chrono::steady_clock::now() - started_at
-        );
+        m_cpu_frame_duration = m_cpu_command_record_duration + m_cpu_complete_present_wait_duration;
         ++m_submitted_frame_count;
 
         if (m_capture_requested) {
@@ -342,6 +353,9 @@ struct VulkanRenderer::Impl final {
             .validation_enabled = info.validation_enabled,
             .present_mode = rendererPresentMode(info.present_mode),
             .pipeline_path = RendererPipelinePath::Vertex,
+            .cpu_acquire_wait_duration = m_cpu_acquire_wait_duration,
+            .cpu_command_record_duration = m_cpu_command_record_duration,
+            .cpu_complete_present_wait_duration = m_cpu_complete_present_wait_duration,
             .cpu_frame_duration = m_cpu_frame_duration,
             .gpu_frame_duration = std::nullopt,
             .submitted_frame_count = m_submitted_frame_count,
@@ -797,6 +811,9 @@ private:
     PFN_vkCmdEndRenderingKHR m_end_rendering = nullptr;
     FrameCaptureState m_capture_state = FrameCaptureState::Disabled;
     std::optional<RendererFrameCapture> m_last_capture;
+    std::chrono::nanoseconds m_cpu_acquire_wait_duration{ 0 };
+    std::chrono::nanoseconds m_cpu_command_record_duration{ 0 };
+    std::chrono::nanoseconds m_cpu_complete_present_wait_duration{ 0 };
     std::chrono::nanoseconds m_cpu_frame_duration{ 0 };
     uint64_t m_submitted_frame_count = 0U;
     bool m_capture_requested = false;

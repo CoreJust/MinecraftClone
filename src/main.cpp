@@ -41,6 +41,7 @@ struct RuntimeCommand final {
     std::filesystem::path image_path;
     std::filesystem::path evidence_path;
     bool require_immediate_present_mode{ false };
+    bool debug_hud_enabled{ false };
 };
 
 class RuntimeDeadlineWatchdog final {
@@ -108,23 +109,24 @@ std::expected<RuntimeCommand, std::string> parseRuntimeCommand(int const argc, c
             .evidence_path = argv[4],
         };
     }
-    if (argc == 4 && std::string_view{ argv[1] } == "--benchmark-render"
-        && std::string_view{ argv[2] } == "--evidence"
+    if (argc >= 4 && argc <= 6 && std::string_view{ argv[1] } == "--benchmark-render"
+        && std::string_view{ argv[argc - 2] } == "--evidence"
     ) {
-        return RuntimeCommand{
+        RuntimeCommand command{
             .mode = RuntimeMode::RendererBenchmark,
-            .evidence_path = argv[3],
+            .evidence_path = argv[argc - 1],
         };
-    }
-    if (argc == 5 && std::string_view{ argv[1] } == "--benchmark-render"
-        && std::string_view{ argv[2] } == "--present-immediate"
-        && std::string_view{ argv[3] } == "--evidence"
-    ) {
-        return RuntimeCommand{
-            .mode = RuntimeMode::RendererBenchmark,
-            .evidence_path = argv[4],
-            .require_immediate_present_mode = true,
-        };
+        for (int argument_index = 2; argument_index < argc - 2; ++argument_index) {
+            std::string_view const argument{ argv[argument_index] };
+            if (argument == "--present-immediate" && !command.require_immediate_present_mode) {
+                command.require_immediate_present_mode = true;
+            } else if (argument == "--hud" && !command.debug_hud_enabled) {
+                command.debug_hud_enabled = true;
+            } else {
+                return std::unexpected("invalid renderer benchmark option: " + std::string{ argument });
+            }
+        }
+        return command;
     }
     if (argc == 6 && std::string_view{ argv[1] } == "--capture-render"
         && std::string_view{ argv[2] } == "--image"
@@ -138,7 +140,7 @@ std::expected<RuntimeCommand, std::string> parseRuntimeCommand(int const argc, c
     }
     return std::unexpected(
         "expected '--scenario <file> --evidence <file>', "
-        "'--benchmark-render [--present-immediate] --evidence <file>', "
+        "'--benchmark-render [--present-immediate] [--hud] --evidence <file>', "
         "or '--capture-render --image <ppm> --evidence <file>'"
     );
 }
@@ -276,6 +278,7 @@ int runRendererBenchmarkCommand(RuntimeCommand const& command)
 {
     acceptance::RendererBenchmarkOptions const options{
         .require_immediate_present_mode = command.require_immediate_present_mode,
+        .debug_hud_enabled = command.debug_hud_enabled,
     };
     RuntimeDeadlineWatchdog watchdog{ command.evidence_path, "benchmark-render", options.deadline };
     acceptance::RuntimeEvidence evidence = acceptance::collectRuntimeEvidence(

@@ -108,6 +108,7 @@ if(MC_BUILD_CLIENT AND NOT ANDROID)
         PRIVATE
             android/input_state_tests.cpp
             acceptance/evidence_json_tests.cpp
+            acceptance/framebuffer_extent_tests.cpp
             acceptance/image_evidence_tests.cpp
             acceptance/renderer_benchmark_tests.cpp
             acceptance/scenario_runner_tests.cpp

@@ -70,6 +70,9 @@ struct RendererRuntimeInfo final {
     bool validation_enabled = false;
     RendererPresentMode present_mode = RendererPresentMode::Unknown;
     RendererPipelinePath pipeline_path = RendererPipelinePath::Vertex;
+    std::chrono::nanoseconds cpu_acquire_wait_duration{ 0 };
+    std::chrono::nanoseconds cpu_command_record_duration{ 0 };
+    std::chrono::nanoseconds cpu_complete_present_wait_duration{ 0 };
     std::chrono::nanoseconds cpu_frame_duration{ 0 };
     std::optional<std::chrono::nanoseconds> gpu_frame_duration;
     uint64_t submitted_frame_count{ 0 };

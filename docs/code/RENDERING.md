@@ -122,3 +122,15 @@ never automatically.
 `RendererSmokeTest` remains a separate visible GLFW presentation/recreate and
 readback smoke. It is useful evidence for presentation ownership and input but
 is not a substitute for the display-independent offscreen golden.
+
+The benchmark uses shared renderer options; `--present-immediate` fails without
+immediate negotiation. Evidence records mode, HUD state, and CPU acquire, record, and
+complete timings—not GPU timestamps. Release disables validation;
+`--hud` supports paired runs. Missing CoreGraphics display metadata stays
+unavailable.
+
+Visible acceptance benchmark and capture modes keep their requested resolutions
+in framebuffer pixels. Their shared bounded GLFW setup converts the current
+pixel-to-logical scale into a checked logical resize before creating a
+`PresentationContext`; an exact framebuffer mismatch, no resize progress, or
+an oscillating adjustment fails rather than changing the recorded request.

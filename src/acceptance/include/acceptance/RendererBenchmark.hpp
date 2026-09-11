@@ -1,5 +1,7 @@
 #pragma once
 
+#include <client/render/VulkanRenderer.hpp>
+
 #include <acceptance/EvidenceJson.hpp>
 
 #include <chrono>
@@ -20,7 +22,19 @@ struct RendererBenchmarkOptions final {
     std::chrono::seconds deadline{ 20 };
     bool require_immediate_present_mode{ false };
     bool require_validation{ false };
+    bool debug_hud_enabled{ false };
 };
+
+[[nodiscard]]
+client::VulkanRendererOptions makeRendererBenchmarkVulkanOptions(
+    RendererBenchmarkOptions const& options
+) noexcept;
+
+[[nodiscard]]
+bool rendererBenchmarkPresentModeSatisfied(
+    RendererBenchmarkOptions const& options,
+    client::RendererPresentMode negotiated_mode
+) noexcept;
 
 [[nodiscard]]
 FrameTimingSummary summarizeFrameTimings(

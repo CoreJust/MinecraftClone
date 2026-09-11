@@ -60,6 +60,18 @@ uint64_t nanosecondsCount(std::chrono::nanoseconds const duration)
         : 0;
 }
 
+std::string frameTimingSummaryJson(FrameTimingSummary const& summary)
+{
+    return "{\n"
+        "      \"sample_count\": " + std::to_string(summary.sample_count) + ",\n"
+        "      \"p50\": " + std::to_string(nanosecondsCount(summary.p50)) + ",\n"
+        "      \"p95\": " + std::to_string(nanosecondsCount(summary.p95)) + ",\n"
+        "      \"p99\": " + std::to_string(nanosecondsCount(summary.p99)) + ",\n"
+        "      \"max\": " + std::to_string(nanosecondsCount(summary.maximum)) + ",\n"
+        "      \"mean\": " + std::to_string(nanosecondsCount(summary.mean)) + "\n"
+        "    }";
+}
+
 std::string benchmarkJson(RendererBenchmarkEvidence const& benchmark)
 {
     return "{\n"
@@ -72,6 +84,8 @@ std::string benchmarkJson(RendererBenchmarkEvidence const& benchmark)
         "    \"pipeline_path\": " + jsonString(benchmark.pipeline_path) + ",\n"
         "    \"validation_enabled\": "
             + std::string(benchmark.validation_enabled ? "true" : "false") + ",\n"
+        "    \"debug_hud_enabled\": "
+            + std::string(benchmark.debug_hud_enabled ? "true" : "false") + ",\n"
         "    \"warmup_ms\": " + std::to_string(millisecondsCount(benchmark.warmup)) + ",\n"
         "    \"sample_elapsed_ns\": "
             + std::to_string(nanosecondsCount(benchmark.sample_elapsed)) + ",\n"
@@ -83,20 +97,14 @@ std::string benchmarkJson(RendererBenchmarkEvidence const& benchmark)
             + std::to_string(benchmark.actual_height) + " },\n"
         "    \"presentation_requests_per_second\": "
             + std::to_string(benchmark.presentation_requests_per_second) + ",\n"
-        "    \"cpu_presentation_request_timings_ns\": {\n"
-        "      \"sample_count\": "
-            + std::to_string(benchmark.presentation_request_timings.sample_count) + ",\n"
-        "      \"p50\": "
-            + std::to_string(nanosecondsCount(benchmark.presentation_request_timings.p50)) + ",\n"
-        "      \"p95\": "
-            + std::to_string(nanosecondsCount(benchmark.presentation_request_timings.p95)) + ",\n"
-        "      \"p99\": "
-            + std::to_string(nanosecondsCount(benchmark.presentation_request_timings.p99)) + ",\n"
-        "      \"max\": "
-            + std::to_string(nanosecondsCount(benchmark.presentation_request_timings.maximum)) + ",\n"
-        "      \"mean\": "
-            + std::to_string(nanosecondsCount(benchmark.presentation_request_timings.mean)) + "\n"
-        "    }\n"
+        "    \"cpu_presentation_request_timings_ns\": "
+            + frameTimingSummaryJson(benchmark.presentation_request_timings) + ",\n"
+        "    \"cpu_acquire_wait_timings_ns\": "
+            + frameTimingSummaryJson(benchmark.acquire_wait_timings) + ",\n"
+        "    \"cpu_command_record_timings_ns\": "
+            + frameTimingSummaryJson(benchmark.command_record_timings) + ",\n"
+        "    \"cpu_complete_submit_present_wait_timings_ns\": "
+            + frameTimingSummaryJson(benchmark.complete_present_wait_timings) + "\n"
         "  }";
 }
 

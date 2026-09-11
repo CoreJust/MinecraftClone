@@ -2,27 +2,30 @@
   "modules": [
     {
       "guide": "docs/ACCEPTANCE.md",
-      "guide_sha256": "7be581bdd3b36b7ae7b9979acdf24f9e6611c3068e39af0c2774719c0acca332",
+      "guide_sha256": "5ba3757ccab260d6980a68df3c2656c3124fe286b641a55b4f4ace468abffd96",
       "id": "acceptance",
       "sources": [
         "src/acceptance/CMakeLists.txt",
         "src/acceptance/EvidenceJson.cpp",
+        "src/acceptance/FramebufferExtent.cpp",
         "src/acceptance/ImageEvidence.cpp",
         "src/acceptance/RenderCapture.cpp",
         "src/acceptance/RendererBenchmark.cpp",
         "src/acceptance/ScenarioRunner.cpp",
         "src/acceptance/include/acceptance/EvidenceJson.hpp",
+        "src/acceptance/include/acceptance/FramebufferExtent.hpp",
         "src/acceptance/include/acceptance/ImageEvidence.hpp",
         "src/acceptance/include/acceptance/RenderCapture.hpp",
         "src/acceptance/include/acceptance/RendererBenchmark.hpp",
         "src/acceptance/include/acceptance/ScenarioRunner.hpp",
         "tests/acceptance/evidence_json_tests.cpp",
+        "tests/acceptance/framebuffer_extent_tests.cpp",
         "tests/acceptance/image_evidence_tests.cpp",
         "tests/acceptance/renderer_benchmark_tests.cpp",
         "tests/acceptance/runtime_cli_tests.cmake",
         "tests/acceptance/scenario_runner_tests.cpp"
       ],
-      "sources_sha256": "606b9b0ef5e101dbaccf7ec08e31dafc6aa7073124cdc0c5f6cc5661e79adefa"
+      "sources_sha256": "f365246eee2beace0471f412fe55308e2e99e2cbced43edffa4ca2ec7ca9cbc4"
     },
     {
       "guide": "docs/code/ANDROID.md",
@@ -129,7 +132,7 @@
         "vcpkg-configuration.json",
         "vcpkg.json"
       ],
-      "sources_sha256": "5bbb28539780c20e3b6e97f08ef98ffc89c9105234dab22d0feb7f1328731ea5"
+      "sources_sha256": "99b772c085012319275b5e0fbb0490ff13243f7c9f5b07e9728aab152986bcb2"
     },
     {
       "guide": "docs/code/CORE.md",
@@ -207,11 +210,11 @@
         "tests/core/shared_message_tests.cpp",
         "tests/core/shared_world_tests.cpp"
       ],
-      "sources_sha256": "e0fbd8b882ea5a13078fcfca1d529691c348fcad882aacc71a151b8099007c26"
+      "sources_sha256": "3edcaa8cca992f15d7e69968eef811d29104abab6dc3765df71a32a0c6119444"
     },
     {
       "guide": "docs/code/RENDERING.md",
-      "guide_sha256": "c022d876f96a01ef5c898dae87a504d041974c65811151a06f9f18db47a4ac97",
+      "guide_sha256": "63aaa7a54b1a43c79c32ba0f2e505e16927681a86fc9997e4cdedf71f6c5db8f",
       "id": "rendering",
       "sources": [
         "src/client/CMakeLists.txt",
@@ -248,7 +251,7 @@
         "tests/testsupport/image_comparison_tests.cpp",
         "tests/testsupport/include/testsupport/ImageComparison.hpp"
       ],
-      "sources_sha256": "85619b6e9806b5e8e0f8e74eab3bf1385e002b2ddcfb2a1150fdf3d795dfb0ff"
+      "sources_sha256": "c15fe09d73060a844c0b44ad59a48c97df536e2dae70fa715e9a73b9231661e2"
     }
   ],
   "version": 1

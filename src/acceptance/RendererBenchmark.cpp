@@ -7,6 +7,7 @@
 
 #include <core/platform/glfw/GlfwWindow.hpp>
 
+#include <acceptance/FramebufferExtent.hpp>
 #include <fmt/format.h>
 
 #if defined(__APPLE__)
@@ -128,6 +129,25 @@ FrameTimingSummary summarizeFrameTimings(std::span<std::chrono::nanoseconds cons
     };
 }
 
+client::VulkanRendererOptions makeRendererBenchmarkVulkanOptions(
+    RendererBenchmarkOptions const& options
+) noexcept
+{
+    return {
+        .require_validation = options.require_validation,
+        .require_immediate_present_mode = options.require_immediate_present_mode,
+    };
+}
+
+bool rendererBenchmarkPresentModeSatisfied(
+    RendererBenchmarkOptions const& options,
+    client::RendererPresentMode const negotiated_mode
+) noexcept
+{
+    return !options.require_immediate_present_mode
+        || negotiated_mode == client::RendererPresentMode::Immediate;
+}
+
 std::expected<RuntimeEvidence, std::string> runRendererBenchmark(
     RendererBenchmarkOptions const& options
 )
@@ -152,16 +172,26 @@ std::expected<RuntimeEvidence, std::string> runRendererBenchmark(
             .title = "MinecraftClone renderer benchmark",
         },
     };
+    std::expected<void, std::string> const extent = ensureFramebufferExtent(
+        window,
+        { .width = options.requested_width, .height = options.requested_height },
+        options.max_resize_polls
+    );
+    if (!extent.has_value()) {
+        return std::unexpected(extent.error());
+    }
     client::InstalledShaderAssets const shader_assets;
+    client::VulkanRendererOptions const renderer_options = makeRendererBenchmarkVulkanOptions(options);
     client::VulkanRenderer renderer{
-        client::VulkanRenderer::createPresentationContext(window),
+        client::VulkanRenderer::createPresentationContext(window, renderer_options),
         shader_assets,
-        {
-            .require_validation = options.require_validation,
-            .require_immediate_present_mode = options.require_immediate_present_mode,
-        },
+        renderer_options,
     };
+    renderer.setDebugHudEnabled(options.debug_hud_enabled);
     std::vector<std::chrono::nanoseconds> samples;
+    std::vector<std::chrono::nanoseconds> acquire_wait_samples;
+    std::vector<std::chrono::nanoseconds> command_record_samples;
+    std::vector<std::chrono::nanoseconds> complete_present_wait_samples;
     std::vector<client::PlayerRenderData> const players{
         client::PlayerRenderData{
             .x = 4U,
@@ -202,7 +232,11 @@ std::expected<RuntimeEvidence, std::string> runRendererBenchmark(
             return std::unexpected("renderer benchmark window was closed");
         }
         if (renderer.render(players, deadline)) {
-            samples.push_back(renderer.runtimeInfo().cpu_frame_duration);
+            client::RendererRuntimeInfo const frame_runtime = renderer.runtimeInfo();
+            samples.push_back(frame_runtime.cpu_frame_duration);
+            acquire_wait_samples.push_back(frame_runtime.cpu_acquire_wait_duration);
+            command_record_samples.push_back(frame_runtime.cpu_command_record_duration);
+            complete_present_wait_samples.push_back(frame_runtime.cpu_complete_present_wait_duration);
             ++rendered_frames;
             ++frame_count;
         }
@@ -220,8 +254,16 @@ std::expected<RuntimeEvidence, std::string> runRendererBenchmark(
     if (runtime.width != options.requested_width || runtime.height != options.requested_height) {
         return std::unexpected("renderer benchmark did not retain the requested framebuffer extent");
     }
+    if (!rendererBenchmarkPresentModeSatisfied(options, runtime.present_mode)) {
+        return std::unexpected("renderer benchmark required immediate presentation but negotiated another mode");
+    }
     double const sample_elapsed_seconds = std::chrono::duration<double>(sample_elapsed).count();
     FrameTimingSummary const timings = summarizeFrameTimings(samples);
+    FrameTimingSummary const acquire_wait_timings = summarizeFrameTimings(acquire_wait_samples);
+    FrameTimingSummary const command_record_timings = summarizeFrameTimings(command_record_samples);
+    FrameTimingSummary const complete_present_wait_timings = summarizeFrameTimings(
+        complete_present_wait_samples
+    );
 
     return RuntimeEvidence{
         .mode = "benchmark-render",
@@ -244,12 +286,16 @@ std::expected<RuntimeEvidence, std::string> runRendererBenchmark(
             .actual_width = runtime.width,
             .actual_height = runtime.height,
             .validation_enabled = runtime.validation_enabled,
+            .debug_hud_enabled = options.debug_hud_enabled,
             .warmup = std::chrono::duration_cast<std::chrono::milliseconds>(options.warmup_duration),
             .sample_elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(sample_elapsed),
             .presentation_requests_per_second = sample_elapsed_seconds > 0.0
                 ? static_cast<double>(frame_count) / sample_elapsed_seconds
                 : 0.0,
             .presentation_request_timings = timings,
+            .acquire_wait_timings = acquire_wait_timings,
+            .command_record_timings = command_record_timings,
+            .complete_present_wait_timings = complete_present_wait_timings,
         },
     };
 }
