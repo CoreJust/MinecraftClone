@@ -188,7 +188,7 @@ jobs:
           if not exist "%RUNNER_TEMP%\vcpkg-binary-cache" mkdir "%RUNNER_TEMP%\vcpkg-binary-cache"
           echo VCPKG_DEFAULT_BINARY_CACHE=%RUNNER_TEMP%\vcpkg-binary-cache>>"%GITHUB_ENV%"
       - name: Install pinned CMake
-        run: python -m pip install --disable-pip-version-check --no-cache-dir cmake==3.31.6
+        run: python -m pip install --disable-pip-version-check --no-cache-dir cmake==3.31.6 tzdata==2025.2
       - name: Acquire pinned Ninja
         run: python script/ci/acquire.py install-ninja --platform ${{ matrix.platform }} --root "${{ runner.temp }}/ninja"
       - name: Acquire pinned vcpkg
@@ -366,7 +366,7 @@ jobs:
       - name: Bootstrap and acquire pinned Android SDK components
         run: python script/ci/acquire.py install-android-sdk --root "$RUNNER_TEMP/android-sdk"
       - name: Install pinned CMake
-        run: python -m pip install --disable-pip-version-check --no-cache-dir cmake==3.31.6
+        run: python -m pip install --disable-pip-version-check --no-cache-dir cmake==3.31.6 tzdata==2025.2
       - name: Acquire pinned vcpkg
         run: python script/ci/acquire.py install-vcpkg --root "$RUNNER_TEMP/vcpkg"
       - name: Install pinned vcpkg manifest dependencies

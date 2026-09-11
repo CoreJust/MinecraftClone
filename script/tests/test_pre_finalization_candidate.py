@@ -8,9 +8,11 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from datetime import date, datetime, timezone
 from pathlib import Path
 from unittest import mock
 
+from script import infrastructure_checks
 from script.ci import acquire
 
 
@@ -187,10 +189,31 @@ class PreFinalizationCandidateTests(unittest.TestCase):
         self.assertEqual(candidate[1][:-1], ordinary[1])
         self.assertEqual(candidate[1][-1], "--pre-finalization-candidate")
 
+    def test_project_date_uses_belgrade_midnight_on_every_runner(self) -> None:
+        before_midnight = datetime(2026, 9, 11, 21, 59, tzinfo=timezone.utc)
+        at_midnight = datetime(2026, 9, 11, 22, 0, tzinfo=timezone.utc)
+
+        self.assertEqual(infrastructure_checks.project_date(before_midnight).isoformat(), "2026-09-11")
+        self.assertEqual(infrastructure_checks.project_date(at_midnight).isoformat(), "2026-09-12")
+
+    def test_project_date_rejects_runner_local_naive_time(self) -> None:
+        with self.assertRaisesRegex(ValueError, "aware datetime"):
+            infrastructure_checks.project_date(datetime(2026, 9, 12))
+
+    def test_snapshot_date_still_rejects_a_project_date_mismatch(self) -> None:
+        context = {"_snapshots": [(4, "26.09.12")], "snapshot_index": 4}
+        with mock.patch.object(infrastructure_checks, "project_date", return_value=date(2026, 9, 13)):
+            passed, message = infrastructure_checks.check_today_date(context)
+
+        self.assertFalse(passed)
+        self.assertEqual(message, "snapshot date is 26.09.12, but today is 26.09.13")
+
     def test_snapshot_artifact_workflow_reserves_private_dependencies_for_finalized_sources(self) -> None:
         ai_checks = AI_CHECKS_WORKFLOW.read_text(encoding="utf-8")
         snapshot = SNAPSHOT_WORKFLOW.read_text(encoding="utf-8")
 
+        self.assertEqual(ai_checks.count("tzdata==2025.2"), 1)
+        self.assertEqual(snapshot.count("tzdata==2025.2"), 2)
         self.assertIn("if: github.ref != 'refs/heads/ai-main'", ai_checks)
         self.assertIn("if: github.ref == 'refs/heads/ai-main'", ai_checks)
         self.assertIn("source-checks --pre-finalization-candidate", ai_checks)
