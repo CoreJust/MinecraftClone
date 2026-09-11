@@ -6,26 +6,30 @@
 
 #include <shared/ProjectInfo.hpp>
 
-#include <core/vulkan/GlfwSurfaceProvider.hpp>
-#include <core/window/Window.hpp>
+#include <core/platform/glfw/GlfwWindow.hpp>
+
+#include <vector>
 
 namespace client {
 
 class PlayerClient final : public GameClient {
 public:
     explicit PlayerClient()
-        : m_window(std::string{ shared::PROJECT_NAME })
-        , m_surface_provider(m_window)
-        , m_renderer(m_surface_provider, m_shader_assets)
+        : m_window(core::platform::glfw::WindowDescriptor{
+            .width = 1280U,
+            .height = 720U,
+            .title = std::string{ shared::PROJECT_NAME },
+        })
+        , m_renderer(VulkanRenderer::createPresentationContext(m_window), m_shader_assets)
     { }
 private:
     shared::Direction input() override;
     void render() override;
 private:
-    core::Window m_window;
-    core::vk::GlfwSurfaceProvider m_surface_provider;
+    core::platform::glfw::GlfwWindow m_window;
     InstalledShaderAssets m_shader_assets;
     VulkanRenderer m_renderer;
+    std::vector<PlayerRenderData> m_render_data;
     bool m_was_reload_pressed = false;
 };
 

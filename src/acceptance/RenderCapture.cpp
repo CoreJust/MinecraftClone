@@ -3,8 +3,7 @@
 #include <client/render/InstalledShaderAssets.hpp>
 #include <client/render/VulkanRenderer.hpp>
 
-#include <core/vulkan/GlfwSurfaceProvider.hpp>
-#include <core/window/Window.hpp>
+#include <core/platform/glfw/GlfwWindow.hpp>
 
 #include <acceptance/ImageEvidence.hpp>
 #include <fmt/format.h>
@@ -51,18 +50,16 @@ std::expected<RuntimeEvidence, std::string> captureRendererFrame(
     ) {
         return std::unexpected("renderer capture extent is not supported by the window API");
     }
-    core::Window const window{
-        "MinecraftClone renderer capture",
-        static_cast<int32_t>(options.width),
-        static_cast<int32_t>(options.height),
+    core::platform::glfw::GlfwWindow const window{
+        core::platform::glfw::WindowDescriptor{
+            .width = options.width,
+            .height = options.height,
+            .title = "MinecraftClone renderer capture",
+        },
     };
-    if (!window.resizeFramebuffer(options.width, options.height, options.max_resize_polls)) {
-        return std::unexpected("renderer capture could not establish its requested framebuffer extent");
-    }
-    core::vk::GlfwSurfaceProvider const surface_provider{ window };
     client::InstalledShaderAssets const shader_assets;
     client::VulkanRenderer renderer{
-        surface_provider,
+        client::VulkanRenderer::createPresentationContext(window),
         shader_assets,
         {
             .enable_frame_capture = true,

@@ -46,15 +46,6 @@
       ]
     },
     {
-      "id": "vulkan",
-      "guide": "docs/code/VULKAN.md",
-      "sources": [
-        "src/core/vulkan/**",
-        "src/core/include/core/vulkan/**",
-        "tests/core/vulkan/**"
-      ]
-    },
-    {
       "id": "gameplay",
       "guide": "docs/code/GAMEPLAY.md",
       "sources": [
@@ -111,6 +102,7 @@
         "src/CMakeLists.txt",
         "tests/CMakeLists.txt",
         "tests/cmake/corecpp_server_consumer_test.cmake.in",
+        "tests/cmake/minecraftclone_server_only_test.cmake.in",
         "tests/cmake/coreproject2026_provenance_test.cmake.in",
         "cmake/fixtures/corecpp_server_consumer/**",
         "tests/main.cpp",

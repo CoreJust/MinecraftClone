@@ -2,7 +2,6 @@
 
 #include "AndroidInput.hpp"
 #include "AndroidShaderAssets.hpp"
-#include "AndroidSurfaceProvider.hpp"
 
 #include <client/GameClient.hpp>
 #include <client/render/VulkanRenderer.hpp>
@@ -38,7 +37,6 @@ private:
     android_app& m_app;
     AndroidInput m_input;
     AndroidShaderAssets m_shader_assets;
-    std::unique_ptr<AndroidSurfaceProvider> m_surface_provider;
     std::unique_ptr<client::VulkanRenderer> m_renderer;
     bool m_resumed = false;
     bool m_has_focus = false;

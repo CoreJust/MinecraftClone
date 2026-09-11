@@ -107,7 +107,12 @@ void AndroidPlayerClient::onAppCommand(int32_t const command)
     case APP_CMD_WINDOW_RESIZED:
     case APP_CMD_CONTENT_RECT_CHANGED:
         if (m_app.window != nullptr) {
-            m_input.setSurfaceWidth(static_cast<uint32_t>(ANativeWindow_getWidth(m_app.window)));
+            uint32_t const width = static_cast<uint32_t>(ANativeWindow_getWidth(m_app.window));
+            uint32_t const height = static_cast<uint32_t>(ANativeWindow_getHeight(m_app.window));
+            m_input.setSurfaceWidth(width);
+            if (m_renderer != nullptr) {
+                m_renderer->recreate(width, height);
+            }
         }
         break;
     case APP_CMD_RESUME:
@@ -140,9 +145,15 @@ void AndroidPlayerClient::createWindowResources()
     }
     destroyWindowResources();
     m_input.setSurfaceWidth(static_cast<uint32_t>(ANativeWindow_getWidth(m_app.window)));
-    m_surface_provider = std::make_unique<AndroidSurfaceProvider>(m_app.window);
     m_renderer = std::make_unique<client::VulkanRenderer>(
-        *m_surface_provider,
+        client::VulkanRenderer::createPresentationContext(
+            m_app.window,
+            static_cast<uint32_t>(ANativeWindow_getWidth(m_app.window)),
+            static_cast<uint32_t>(ANativeWindow_getHeight(m_app.window)),
+            client::VulkanRendererOptions{
+                .prefer_mesh_shaders = false,
+            }
+        ),
         m_shader_assets,
         client::VulkanRendererOptions{
             .prefer_mesh_shaders = false,
@@ -161,7 +172,6 @@ void AndroidPlayerClient::destroyWindowResources() noexcept
         CORE_INFO("Destroying Android renderer before releasing its native window");
     }
     m_renderer.reset();
-    m_surface_provider.reset();
     m_input.clear();
 }
 
@@ -208,7 +218,9 @@ bool AndroidPlayerClient::canRender() const noexcept
     return m_resumed
         && m_has_focus
         && m_renderer != nullptr
-        && !m_surface_provider->isFramebufferExtentZero();
+        && m_app.window != nullptr
+        && ANativeWindow_getWidth(m_app.window) > 0
+        && ANativeWindow_getHeight(m_app.window) > 0;
 }
 
 } // namespace game_android

@@ -1,7 +1,7 @@
 #include <client/render/InstalledShaderAssets.hpp>
 
 #include <core/common/Defer.hpp>
-#include <core/vulkan/SpirV.hpp>
+#include <core/kernel/Spirv.hpp>
 
 #include <gtest/gtest.h>
 
@@ -13,10 +13,8 @@
 TEST(ShaderAssetsTest, LoadsEveryCompiledShaderOutsideTheBuildDirectory)
 {
     static constexpr uint32_t SPIRV_MAGIC = 0x0723'0203;
-    static constexpr std::array<std::string_view, 5> SHADERS{
-        "grid.mesh.spv",
+    static constexpr std::array<std::string_view, 3> SHADERS{
         "grid.vert.spv",
-        "player.mesh.spv",
         "player.vert.spv",
         "trivial.frag.spv",
     };
@@ -26,9 +24,9 @@ TEST(ShaderAssetsTest, LoadsEveryCompiledShaderOutsideTheBuildDirectory)
     client::InstalledShaderAssets const assets;
 
     for (std::string_view const shader : SHADERS) {
-        core::vk::SpirV const spirv = assets.load(shader);
-        ASSERT_FALSE(spirv.data().empty()) << shader;
-        EXPECT_EQ(spirv.data().front(), SPIRV_MAGIC) << shader;
+        core::kernel::SpirvModule const spirv = assets.load(shader);
+        ASSERT_FALSE(spirv.words().empty()) << shader;
+        EXPECT_EQ(spirv.words().front(), SPIRV_MAGIC) << shader;
     }
 }
 

@@ -2,9 +2,8 @@ target_sources(mc
     PRIVATE
         BotClient.cpp
         GameClient.cpp
-        render/MeshShaderSelection.hpp
         render/ShaderAssets.cpp
-        render/VulkanRenderer.cpp
+        render/PresentationRenderer.cpp
 )
 if(NOT ANDROID)
     target_sources(mc

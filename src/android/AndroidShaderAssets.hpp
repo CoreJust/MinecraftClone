@@ -11,7 +11,7 @@ public:
     explicit AndroidShaderAssets(AAssetManager* asset_manager) noexcept;
 
     [[nodiscard]]
-    core::vk::SpirV load(std::string_view name) const override;
+    core::kernel::SpirvModule load(std::string_view name) const override;
 private:
     AAssetManager* m_asset_manager = nullptr;
 };

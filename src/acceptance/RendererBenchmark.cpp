@@ -5,8 +5,7 @@
 
 #include <shared/ProjectInfo.hpp>
 
-#include <core/vulkan/GlfwSurfaceProvider.hpp>
-#include <core/window/Window.hpp>
+#include <core/platform/glfw/GlfwWindow.hpp>
 
 #include <fmt/format.h>
 
@@ -146,22 +145,16 @@ std::expected<RuntimeEvidence, std::string> runRendererBenchmark(
         return std::unexpected("renderer benchmark extent is not supported by the window API");
     }
 
-    core::Window const window{
-        "MinecraftClone renderer benchmark",
-        static_cast<int32_t>(options.requested_width),
-        static_cast<int32_t>(options.requested_height),
+    core::platform::glfw::GlfwWindow const window{
+        core::platform::glfw::WindowDescriptor{
+            .width = options.requested_width,
+            .height = options.requested_height,
+            .title = "MinecraftClone renderer benchmark",
+        },
     };
-    if (!window.resizeFramebuffer(
-        options.requested_width,
-        options.requested_height,
-        options.max_resize_polls
-    )) {
-        return std::unexpected("renderer benchmark could not establish its requested framebuffer extent");
-    }
-    core::vk::GlfwSurfaceProvider const surface_provider{ window };
     client::InstalledShaderAssets const shader_assets;
     client::VulkanRenderer renderer{
-        surface_provider,
+        client::VulkanRenderer::createPresentationContext(window),
         shader_assets,
         {
             .require_validation = options.require_validation,

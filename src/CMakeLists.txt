@@ -16,21 +16,26 @@ target_link_libraries(mc
         spdlog::spdlog
     PRIVATE
         glm::glm
-        unofficial::spirv-reflect
-        volk::volk_headers
-        GPUOpen::VulkanMemoryAllocator
 )
-if(NOT ANDROID)
-    target_link_libraries(mc PRIVATE glfw)
-endif()
-target_compile_definitions(mc
-    PRIVATE
-        VMA_STATIC_VULKAN_FUNCTIONS=0
-        VMA_DYNAMIC_VULKAN_FUNCTIONS=0
-)
-if(APPLE) # For vkCreateMetalSurfaceEXT and the Cocoa/CAMetalLayer window binding
-    target_compile_definitions(mc PRIVATE VK_USE_PLATFORM_METAL_EXT)
-    target_link_libraries(mc PRIVATE "-framework Cocoa" "-framework QuartzCore")
+if(MC_BUILD_CLIENT)
+    if(NOT ANDROID)
+        target_link_libraries(mc
+            PRIVATE
+                CoreCpp::RuntimeGraphics
+                CoreCpp::RuntimeGraphicsVulkan
+                CoreCpp::RuntimeGraphicsVulkanGlfw
+                CoreCpp::RuntimeKernel
+                CoreCpp::RuntimePlatformGlfw
+        )
+    else()
+        target_link_libraries(mc
+            PRIVATE
+                CoreCpp::RuntimeGraphics
+                CoreCpp::RuntimeGraphicsVulkan
+                CoreCpp::RuntimeGraphicsVulkanAndroid
+                CoreCpp::RuntimeKernel
+        )
+    endif()
 endif()
 if(ANDROID)
     target_compile_definitions(mc PUBLIC VK_USE_PLATFORM_ANDROID_KHR)
@@ -47,17 +52,21 @@ target_include_directories(mc
         ${CMAKE_CURRENT_SOURCE_DIR}/core/include
         ${CMAKE_CURRENT_SOURCE_DIR}/shared/include
         ${CMAKE_CURRENT_SOURCE_DIR}/server/include
-        ${CMAKE_CURRENT_SOURCE_DIR}/client/include
 )
+if(MC_BUILD_CLIENT)
+    target_include_directories(mc PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/client/include)
+endif()
 
 add_subdirectory(core)
 add_subdirectory(shared)
 add_subdirectory(server)
-add_subdirectory(client)
+if(MC_BUILD_CLIENT)
+    add_subdirectory(client)
+endif()
 
 if(ANDROID)
     add_subdirectory(android)
-else()
+elseif(MC_BUILD_CLIENT)
     add_subdirectory(acceptance)
     target_link_libraries(mc_main PRIVATE mc)
 endif()

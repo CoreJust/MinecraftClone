@@ -4,10 +4,10 @@ This is a development map of the current checkout, including local changes; it
 does not describe a shipped release. MinecraftClone consumes reusable Core
 utilities and Runtime base services from the exact CoreCpp package revision in
 [`dependencies.lock.json`](../../dependencies.lock.json). Game-local `core`
-contains the remaining GLFW input and Vulkan layer documented
-in [VULKAN.md](VULKAN.md). Public contracts live under
+contains only game-specific utility glue. Public contracts live under
 [`src/core/include/core`](../../src/core/include/core) and the installed
-CoreCpp package; implementations are in [`src/core`](../../src/core).
+CoreCpp package; graphics, platform windows, Vulkan presentation, and shader
+loading are supplied by installed optional Runtime components.
 
 ## CoreCpp package boundary
 
@@ -16,23 +16,30 @@ formatting, and assertion utilities formerly under this tree. `CoreCpp::Runtime`
 owns logging, process-exit registration, and crash handling. The game links both
 targets publicly so its shared/server/client headers retain the existing
 `<core/...>` and `core::` contracts without source-tree includes.
-`CoreCpp::RuntimeNetwork` owns the generic transport/session service; window
-and Vulkan code remain game-local until the corresponding optional Runtime
-components are ready.
+`CoreCpp::RuntimeNetwork` owns the generic transport/session service.
+Desktop Client links `RuntimeGraphics`, `RuntimeGraphicsVulkan`,
+`RuntimeGraphicsVulkanGlfw`, `RuntimePlatformGlfw`, and `RuntimeKernel`.
+Android Client substitutes `RuntimeGraphicsVulkanAndroid`; server-only
+consumers remain free of every graphics, platform, Vulkan, GLFW, and audio
+target.
 
 The root CMake configure checks the installed package's clean exact revision
 against the lock file. `MC_ALLOW_INEXACT_CORECPP=ON` is reserved for local
 development and is not release evidence. The focused
 `CoreCpp.ServerOnlyPackageConsumer` test links `CoreCpp::RuntimeNetwork` and
 rejects graphics, platform, and audio components.
+`MC_BUILD_CLIENT=OFF` is the MinecraftClone headless configuration: it omits
+Client sources, Vulkan discovery, and optional CoreCpp graphics/platform
+components. `MinecraftClone.ServerOnlyBuild` configures and builds that target
+and asserts the forbidden imported and linked targets are absent.
 
 ## Boundaries and build layout
 
-[`src/core/CMakeLists.txt`](../../src/core/CMakeLists.txt) composes the
-game-local `window` and `vulkan` libraries. Reusable headers, Runtime sources,
-and Runtime network transport are supplied by installed CoreCpp targets. Depend
-on the narrowest public header, not a directory-wide umbrella. GLFW/Vulkan
-platform bridges remain local until optional Runtime components are integrated.
+[`src/core/CMakeLists.txt`](../../src/core/CMakeLists.txt) contains only the
+remaining game-local core target layout. Reusable headers, Runtime sources,
+Runtime network transport, and graphics/platform bridges are supplied by
+installed CoreCpp targets. Depend on the narrowest public header, not a
+directory-wide umbrella.
 
 Core uses assertions for violated programmer contracts. `ASSERT` and
 `UNREACHABLE` log a stack trace when logging exists, otherwise write stderr,
@@ -113,25 +120,9 @@ Tests: [`net_tests.cpp`](../../tests/core/net_tests.cpp) and
 exercise installed RuntimeNetwork loopback, reconnect, modes/channels, timeout,
 broadcast, and graceful/ungraceful paths.
 
-## Window and input
-
-[`Window`](../../src/core/include/core/window/Window.hpp) owns one GLFW window
-and GLFW's global initialization/termination in the current implementation.
-Create/destroy windows serially; concurrent/multiple live windows are not an
-established contract. `nextFrame()` polls GLFW and returns false when closing.
-Resize callbacks run from GLFW event dispatch. With `IgnoreMinimized::Yes`, the
-callback blocks in `glfwWaitEvents` until a nonzero framebuffer returns; choose
-this only where blocking the event loop is acceptable.
-
-Keyboard/mouse callbacks write process-global atomic state. Query functions may
-run concurrently with GLFW callbacks, but input represents the latest sampled
-state, not an event queue. `resetMouseDeltas()` is the frame boundary: call it
-once per frame after consuming prior deltas to establish the next delta.
-
-Tests: [`keyboard_tests.cpp`](../../tests/core/window/keyboard_tests.cpp) and
-[`mouse_tests.cpp`](../../tests/core/window/mouse_tests.cpp).
-
 ## Extension checklist
 
 New game-local core code needs explicit lifetime/error contracts, narrow CMake
-edges, and a focused suite under `tests/core`; GPU work belongs in [VULKAN.md](VULKAN.md).
+edges, and a focused suite under `tests/core`. GPU policy belongs in
+[RENDERING.md](RENDERING.md); never reintroduce a game-local Vulkan/window
+ownership layer.

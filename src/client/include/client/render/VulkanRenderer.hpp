@@ -6,6 +6,8 @@
 #include <core/common/NonMovable.hpp>
 #include <core/common/Version.hpp>
 
+#include <core/graphics/vulkan/Vulkan.hpp>
+
 #include <array>
 #include <chrono>
 #include <cstdint>
@@ -15,11 +17,11 @@
 #include <string>
 #include <vector>
 
-namespace core::vk {
+namespace core::platform::glfw {
+class GlfwWindow;
+} // namespace core::platform::glfw
 
-class SurfaceProvider;
-
-} // namespace core::vk
+struct ANativeWindow;
 
 namespace client {
 
@@ -80,9 +82,21 @@ struct RendererFrameCapture final {
 
 class VulkanRenderer final : core::NonCopyable, core::NonMovable {
 public:
+    [[nodiscard]]
+    static std::shared_ptr<core::graphics::vulkan::PresentationContext> createPresentationContext(
+        core::platform::glfw::GlfwWindow const& window,
+        VulkanRendererOptions options = {}
+    );
     explicit VulkanRenderer(
-        core::vk::SurfaceProvider const& surface_provider,
+        std::shared_ptr<core::graphics::vulkan::PresentationContext> context,
         ShaderAssets const& shader_assets,
+        VulkanRendererOptions options = {}
+    );
+    [[nodiscard]]
+    static std::shared_ptr<core::graphics::vulkan::PresentationContext> createPresentationContext(
+        ANativeWindow* window,
+        uint32_t width,
+        uint32_t height,
         VulkanRendererOptions options = {}
     );
     ~VulkanRenderer();
@@ -93,7 +107,7 @@ public:
         std::chrono::steady_clock::time_point deadline = std::chrono::steady_clock::time_point::max()
     );
     void hotReload();
-    void waitIdle();
+    void recreate(uint32_t width, uint32_t height);
     [[nodiscard]]
     bool waitForSubmittedFrames(
         std::chrono::steady_clock::time_point deadline = std::chrono::steady_clock::time_point::max()
