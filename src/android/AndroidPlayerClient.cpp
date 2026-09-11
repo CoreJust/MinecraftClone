@@ -8,9 +8,15 @@
 #include <android/looper.h>
 #include <android/native_window.h>
 
+#include <chrono>
 #include <vector>
 
 namespace game_android {
+namespace {
+
+constexpr std::chrono::milliseconds ANDROID_PRESENT_WAIT_BUDGET{ 1 };
+
+} // namespace
 
 AndroidPlayerClient::AndroidPlayerClient(android_app& app)
     : m_app(app)
@@ -117,7 +123,12 @@ void AndroidPlayerClient::render()
         m_renderer->toggleDebugHud();
     }
     m_renderer->setCamera(m_camera.pose());
-    static_cast<void>(m_renderer->render(players, debug_hud_input, m_density_scale));
+    static_cast<void>(m_renderer->render(
+        players,
+        debug_hud_input,
+        m_density_scale,
+        std::chrono::steady_clock::now() + ANDROID_PRESENT_WAIT_BUDGET
+    ));
     if (m_input.consumeReloadRequest()) {
         m_renderer->hotReload();
     }

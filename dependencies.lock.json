@@ -3,11 +3,11 @@
   "dependencies": {
     "CoreCpp": {
       "repository": "CoreJust/CoreCpp",
-      "revision": "dcecf1c25085986297a3c6bd2b708ef3bd586503"
+      "revision": "22376c32a23c98b7815e1bb0249384daeaee4e3b"
     },
     "CoreProject2026": {
       "repository": "CoreJust/CoreProject2026",
-      "revision": "571dd6e2ba7b1195bd70f9bd5c1f750e5b2740d1"
+      "revision": "714bd1186adb2c07890b15010db595230b3a41ec"
     }
   }
 }

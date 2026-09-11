@@ -194,6 +194,11 @@ struct VulkanRenderer::Impl final {
         if (!m_context) {
             throw std::invalid_argument("Vulkan renderer requires a presentation context");
         }
+        if (m_context->info().surface_transform.requires_client_orientation_compensation) {
+            throw std::runtime_error(
+                "Vulkan renderer cannot present upright without client orientation compensation"
+            );
+        }
         createResources();
         refreshCaptureState();
     }
@@ -535,12 +540,9 @@ private:
     void createResources()
     {
         m_resources.emplace(m_context->resources());
-        m_begin_rendering = reinterpret_cast<PFN_vkCmdBeginRenderingKHR>(
-            vkGetDeviceProcAddr(m_resources->device(), "vkCmdBeginRenderingKHR")
-        );
-        m_end_rendering = reinterpret_cast<PFN_vkCmdEndRenderingKHR>(
-            vkGetDeviceProcAddr(m_resources->device(), "vkCmdEndRenderingKHR")
-        );
+        auto const dynamic_rendering = m_resources->dynamicRenderingCommands();
+        m_begin_rendering = dynamic_rendering.begin;
+        m_end_rendering = dynamic_rendering.end;
         if (m_begin_rendering == nullptr || m_end_rendering == nullptr) {
             throw std::runtime_error("Vulkan presentation device does not expose dynamic rendering commands");
         }
@@ -956,12 +958,9 @@ public:
         , m_depth(m_device, m_depth_format, { .width = OFFSCREEN_WIDTH, .height = OFFSCREEN_HEIGHT })
     {
         try {
-            m_begin_rendering = reinterpret_cast<PFN_vkCmdBeginRenderingKHR>(
-                vkGetDeviceProcAddr(m_device->handle(), "vkCmdBeginRenderingKHR")
-            );
-            m_end_rendering = reinterpret_cast<PFN_vkCmdEndRenderingKHR>(
-                vkGetDeviceProcAddr(m_device->handle(), "vkCmdEndRenderingKHR")
-            );
+            auto const dynamic_rendering = m_device->dynamicRenderingCommands();
+            m_begin_rendering = dynamic_rendering.begin;
+            m_end_rendering = dynamic_rendering.end;
             if (m_begin_rendering == nullptr || m_end_rendering == nullptr) {
                 throw std::runtime_error("offscreen device does not expose dynamic rendering commands");
             }

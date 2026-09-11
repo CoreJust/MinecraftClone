@@ -12,10 +12,59 @@
 #include <array>
 #include <chrono>
 #include <cstdint>
+#include <memory>
+#include <span>
 #include <string>
 #include <utility>
 
 namespace {
+
+class InertPresentationBackend final : public core::graphics::vulkan::PresentationBackend {
+public:
+    [[nodiscard]] core::graphics::vulkan::FenceWaitResult waitForSlot(
+        uint32_t,
+        std::chrono::nanoseconds
+    ) override
+    {
+        return core::graphics::vulkan::FenceWaitResult::Completed;
+    }
+
+    [[nodiscard]] core::graphics::vulkan::FenceWaitResult waitForRecreation(
+        std::chrono::nanoseconds
+    ) override
+    {
+        return core::graphics::vulkan::FenceWaitResult::Completed;
+    }
+
+    [[nodiscard]] core::graphics::vulkan::PresentationAcquireResult acquire(
+        uint32_t,
+        std::chrono::nanoseconds,
+        uint32_t& image
+    ) override
+    {
+        image = 0U;
+        return core::graphics::vulkan::PresentationAcquireResult::NotReady;
+    }
+
+    void record(VkCommandBuffer, void (*)(VkCommandBuffer, void*), void*) override {}
+    void submit(uint32_t, VkCommandBuffer) override {}
+
+    [[nodiscard]] core::graphics::vulkan::PresentationAcquireResult present(
+        uint32_t,
+        uint32_t
+    ) override
+    {
+        return core::graphics::vulkan::PresentationAcquireResult::NotReady;
+    }
+
+    void abandon(uint32_t, uint32_t) noexcept override {}
+    void recreate(VkExtent2D) override {}
+
+    [[nodiscard]] std::span<uint8_t const> completedReadback(uint32_t) const noexcept override
+    {
+        return {};
+    }
+};
 
 struct CaptureColorClasses final {
     bool has_grid = false;
@@ -207,6 +256,26 @@ TEST(RendererSmokeTest, CompletedCaptureSurvivesRecreateAndReadsBack)
         << "; the platform/grid/sky scene may cover every physical framebuffer sample";
     EXPECT_GE(rendered_frames, 3U);
     EXPECT_EQ(renderer.runtimeInfo().pipeline_path, client::RendererPipelinePath::Vertex);
+}
+
+TEST(RendererSmokeTest, RejectsASelectedTransformThatRequiresClientCompensation)
+{
+    auto context = core::graphics::vulkan::PresentationContext::createForTesting(
+        {
+            .extent = { .width = 1280U, .height = 720U },
+            .surface_transform = {
+                .pre_transform = VK_SURFACE_TRANSFORM_ROTATE_90_BIT_KHR,
+                .requires_client_orientation_compensation = true,
+            },
+        },
+        std::make_unique<InertPresentationBackend>()
+    );
+    client::InstalledShaderAssets const shader_assets;
+
+    EXPECT_THROW(
+        static_cast<void>(client::VulkanRenderer{ std::move(context), shader_assets }),
+        std::runtime_error
+    );
 }
 
 TEST(RendererSmokeTest, GlfwInputAdapterPreservesPressAndRelease)
