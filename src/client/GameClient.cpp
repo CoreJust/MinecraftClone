@@ -6,6 +6,7 @@
 #include <core/IO/Log.hpp>
 
 #include <iostream>
+#include <optional>
 
 namespace client {
 
@@ -70,6 +71,11 @@ void GameClient::onReceived(core::ReceiveEvent event) {
             m_world.setPlayerPosition(p->id, x, y);
         } else {
             m_world.spawnPlayer(m_next_id++, ch, {{x, y}});
+        }
+        if (ch == m_local_character) {
+            if (std::optional<shared::Player> const player = m_world.playerByCharacter(ch); player.has_value()) {
+                onAuthoritativeLocalPlayerPosition(*player);
+            }
         }
     } else if (auto* msg = std::get_if<shared::ServerRemovePlayerMessage>(msg_ptr)) {
         auto const [ch] = *msg;

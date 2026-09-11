@@ -232,6 +232,18 @@ TEST(DebugHudTest, PacksFourSanitizedAsciiBytesInLittleEndianOrder)
     );
 }
 
+TEST(DebugHudTest, RendererDefaultIsDisabledUntilGameplayEnablesIt)
+{
+    client::DebugHudState hud;
+    client::DebugHudText text;
+    client::DebugHudBatch batch;
+
+    EXPECT_FALSE(hud.snapshot().enabled);
+    EXPECT_FALSE(hud.buildBatch(text, batch));
+    hud.setEnabled(true);
+    EXPECT_TRUE(hud.buildBatch(text, batch));
+}
+
 TEST(DebugHudTest, F1ToggleLatchDebouncesPressesAndCanBeReset)
 {
     client::DebugHudToggleLatch latch;
@@ -240,14 +252,14 @@ TEST(DebugHudTest, F1ToggleLatchDebouncesPressesAndCanBeReset)
     if (latch.update(true)) {
         hud.toggle();
     }
-    EXPECT_FALSE(hud.snapshot().enabled);
+    EXPECT_TRUE(hud.snapshot().enabled);
     EXPECT_FALSE(latch.update(true));
-    EXPECT_FALSE(hud.snapshot().enabled);
+    EXPECT_TRUE(hud.snapshot().enabled);
     EXPECT_FALSE(latch.update(false));
     if (latch.update(true)) {
         hud.toggle();
     }
-    EXPECT_TRUE(hud.snapshot().enabled);
+    EXPECT_FALSE(hud.snapshot().enabled);
 
     latch.reset();
     EXPECT_TRUE(latch.update(true));
@@ -277,8 +289,11 @@ TEST(DebugHudTest, PackingIsBoundedByFixedCapacity)
 
     client::packDebugHudText(text, batch);
 
-    EXPECT_EQ(batch.size, client::DEBUG_HUD_MAX_INSTANCES);
-    EXPECT_EQ(batch.instances.back().packed_ascii, 0x4141'4141U);
+    EXPECT_EQ(batch.size, client::DEBUG_HUD_WORDS_PER_LINE);
+    EXPECT_EQ(
+        batch.instances[client::DEBUG_HUD_WORDS_PER_LINE - 1U].packed_ascii,
+        0x4141'4141U
+    );
 }
 
 TEST(DebugHudTest, UsesPresentedFramesInAOneSecondSlidingWindow)
@@ -350,6 +365,7 @@ TEST(DebugHudTest, IgnoresNonFiniteClockValues)
 TEST(DebugHudTest, FormatsStableGoldenValuesAndDegreeLabels)
 {
     client::DebugHudState hud;
+    hud.setEnabled(true);
     hud.updateAt(
         10.0,
         client::DebugHudInput{
@@ -367,7 +383,41 @@ TEST(DebugHudTest, FormatsStableGoldenValuesAndDegreeLabels)
     ASSERT_TRUE(hud.formatText(text));
     EXPECT_EQ(
         std::string_view(text.bytes.data(), text.size),
-        "FPS:0.0 UPTIME:0.0s XYZ(plane):1.2,-2.3,4.6 YAW:45.0deg PITCH:-10.0deg ROLL:3.0deg"
+        "FPS:0.0\nUPTIME:0.0s\nXYZ:1.2,-2.3,4.6\nY/P/R(deg):45.0,-10.0,3.0"
+    );
+}
+
+TEST(DebugHudTest, PacksFourLinesIntoFixedShaderRows)
+{
+    client::DebugHudState hud;
+    hud.setEnabled(true);
+    hud.updateAt(
+        10.0,
+        client::DebugHudInput{
+            .player_x = 1.25F,
+            .player_y = -2.3F,
+            .player_z = 4.56F,
+            .camera_yaw_degrees = 45.0F,
+            .camera_pitch_degrees = -10.0F,
+        }
+    );
+    client::DebugHudText text;
+    client::DebugHudBatch batch;
+
+    ASSERT_TRUE(hud.buildBatch(text, batch));
+    ASSERT_EQ(batch.size, client::DEBUG_HUD_MAX_INSTANCES);
+    EXPECT_EQ(batch.instances[0].packed_ascii, client::packDebugHudAscii('F', 'P', 'S', ':'));
+    EXPECT_EQ(
+        batch.instances[client::DEBUG_HUD_WORDS_PER_LINE].packed_ascii,
+        client::packDebugHudAscii('U', 'P', 'T', 'I')
+    );
+    EXPECT_EQ(
+        batch.instances[2U * client::DEBUG_HUD_WORDS_PER_LINE].packed_ascii,
+        client::packDebugHudAscii('X', 'Y', 'Z', ':')
+    );
+    EXPECT_EQ(
+        batch.instances[3U * client::DEBUG_HUD_WORDS_PER_LINE].packed_ascii,
+        client::packDebugHudAscii('Y', '/', 'P', '/')
     );
 }
 
@@ -377,6 +427,7 @@ TEST(DebugHudTest, SupportsInjectedFormattingAndDpiToggleState)
         {},
         client::DebugHudNumberFormatter{ .format = &writeMarker }
     );
+    hud.setEnabled(true);
     hud.setDpiScale(100.0F);
     EXPECT_FLOAT_EQ(hud.snapshot().dpi_scale, 8.0F);
     hud.setDpiScale(0.0F);
@@ -387,7 +438,7 @@ TEST(DebugHudTest, SupportsInjectedFormattingAndDpiToggleState)
     ASSERT_TRUE(hud.formatText(text));
     EXPECT_EQ(
         std::string_view(text.bytes.data(), text.size),
-        "FPS:X UPTIME:Xs XYZ(plane):X,X,X YAW:Xdeg PITCH:Xdeg ROLL:Xdeg"
+        "FPS:X\nUPTIME:Xs\nXYZ:X,X,X\nY/P/R(deg):X,X,X"
     );
 
     hud.toggle();
@@ -395,9 +446,38 @@ TEST(DebugHudTest, SupportsInjectedFormattingAndDpiToggleState)
     EXPECT_FALSE(hud.formatText(text));
 }
 
+TEST(DebugHudTest, BoundsSignedCameraAnglesToTheFourthLayoutRow)
+{
+    client::DebugHudState hud;
+    hud.setEnabled(true);
+    hud.updateAt(
+        10.0,
+        client::DebugHudInput{
+            .camera_yaw_degrees = 359.0F,
+            .camera_pitch_degrees = -89.0F,
+            .camera_roll_degrees = 359.0F,
+        }
+    );
+    client::DebugHudText text;
+
+    ASSERT_TRUE(hud.formatText(text));
+    std::string_view const formatted{ text.bytes.data(), text.size };
+    size_t const last_line = formatted.rfind('\n');
+    ASSERT_NE(last_line, std::string_view::npos);
+    EXPECT_LE(
+        formatted.size() - last_line - 1U,
+        client::DEBUG_HUD_MAX_LINE_BYTES
+    );
+    EXPECT_EQ(
+        formatted.substr(last_line + 1U),
+        "Y/P/R(deg):359.0,-89.0,359.0"
+    );
+}
+
 TEST(DebugHudTest, ReusesFixedBuffersWithoutSteadyFrameAllocations)
 {
     client::DebugHudState hud;
+    hud.setEnabled(true);
     client::DebugHudText text;
     client::DebugHudBatch batch;
 

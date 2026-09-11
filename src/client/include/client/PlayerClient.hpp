@@ -24,11 +24,13 @@ public:
         , m_renderer(VulkanRenderer::createPresentationContext(m_window), m_shader_assets)
     {
         beginContinuousLook();
+        m_renderer.setDebugHudEnabled(true);
     }
     ~PlayerClient();
 private:
     shared::Direction input() override;
     void render() override;
+    void onAuthoritativeLocalPlayerPosition(shared::Player const& player) noexcept override;
 private:
     void beginContinuousLook() noexcept;
     Camera m_camera{

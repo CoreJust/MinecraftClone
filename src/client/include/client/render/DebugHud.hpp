@@ -8,8 +8,13 @@
 namespace client {
 
 inline constexpr size_t DEBUG_HUD_MAX_TEXT_BYTES = 112;
+inline constexpr size_t DEBUG_HUD_LINE_COUNT = 4;
+inline constexpr size_t DEBUG_HUD_MAX_LINE_BYTES =
+    DEBUG_HUD_MAX_TEXT_BYTES / DEBUG_HUD_LINE_COUNT;
+inline constexpr size_t DEBUG_HUD_WORDS_PER_LINE =
+    (DEBUG_HUD_MAX_LINE_BYTES + 3) / 4;
 inline constexpr size_t DEBUG_HUD_MAX_INSTANCES =
-    (DEBUG_HUD_MAX_TEXT_BYTES + 3) / 4;
+    DEBUG_HUD_LINE_COUNT * DEBUG_HUD_WORDS_PER_LINE;
 inline constexpr size_t DEBUG_HUD_MAX_PRESENTED_SAMPLES = 256;
 inline constexpr double DEBUG_HUD_FPS_WINDOW_SECONDS = 1.0;
 
@@ -62,7 +67,7 @@ struct DebugHudSnapshot {
     double presented_fps = 0.0;
     DebugHudInput input{};
     float dpi_scale = 1.0F;
-    bool enabled = true;
+    bool enabled = false;
 };
 
 // Shared edge detector for the shipped performance-toggle input. Keeping the
@@ -131,7 +136,7 @@ private:
     double now_ = 0.0;
     DebugHudInput input_{};
     float dpi_scale_ = 1.0F;
-    bool enabled_ = true;
+    bool enabled_ = false;
     bool has_time_ = false;
 };
 

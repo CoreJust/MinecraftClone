@@ -21,14 +21,10 @@ extent, and the acquired `Frame::imageView()` is the only render target. The
 Client records only into `Frame::commandBuffer()` via the frame callback;
 CoreCpp performs the acquire/transition/submit/present sequence.
 
-`PresentationResourceScope` retains the context device but becomes stale after
-every recreation, even where extent and format happen to match. The renderer's
-pre-recreate hook invalidates its cache using that scope's device identity,
-releases the programs, layouts, and scope; its post-recreate hook obtains a
-fresh scope and rebuilds format-dependent objects. This also gives
-`waitForSubmittedFrames()` a bounded frame-slot drain without
-`vkDeviceWaitIdle`. There is no second Client device and no steady per-draw
-allocation.
+`PresentationResourceScope` becomes stale on recreation. Pre-recreate releases
+the cache, programs, layouts, and scope; post-recreate builds format-dependent
+objects from a fresh scope. `waitForSubmittedFrames()` drains bounded frame
+slots without `vkDeviceWaitIdle`; there is no steady per-draw allocation.
 
 ## Scene and shader policy
 
@@ -37,10 +33,12 @@ World players -> PlayerClient / AndroidPlayerClient -> PlayerRenderData span
   -> VulkanRenderer -> PresentationContext::Frame callback -> present/readback
 ```
 
-The renderer clears dark, draws the 32-by-32 ground grid first, then one
-coloured 2-by-2-by-2 player box for each `PlayerRenderData`. A client-local
-right-handed Z-up camera supplies a resize-safe Vulkan zero-to-one perspective
-projection; the initial eye is `(16, -20, 22)` with pitch `-35` degrees.
+Renderer clears dark, draws the 32-by-32 ground grid first, then coloured
+2-by-2-by-2 remote-player boxes. Each authoritative local-player update sets
+the eye to `(x+1, y+1, 1.6)` without changing its angles and omits that local
+cube. A right-handed Z-up camera supplies a zero-to-one projection with Y
+flipped for its positive-height viewport. The flip reverses winding, so
+grid/player/HUD triangles are reversed for the CoreCpp CCW back-face policy.
 `GridPushConstants` and `PlayerPushConstants` are both 96 bytes and carry the
 projection-view matrix, so their ABI must remain compatible with the GLSL push
 blocks. The grid and boxes use a same-scope depth attachment selected
@@ -60,8 +58,9 @@ accept bare `.spv` names only; no source-tree fallback is allowed.
 
 ## Debug HUD boundary
 
-`DebugHudState` formats a bounded, allocation-free diagnostic line and packs
-four sanitized ASCII bytes into each instance word. `debug_hud.vert` expands
+`DebugHudState` defaults off for benchmark/capture and normal gameplay enables
+it. It formats four bounded allocation-free lines and packs four sanitized
+ASCII bytes into each instance word. `debug_hud.vert` expands
 those instances into procedural 8-by-16 quads; `debug_hud.frag` owns the
 texture-free bitmap constants and performs the factor-of-eight glyph-row
 addressing. The renderer submits all packed words with one instanced draw
@@ -70,32 +69,23 @@ scene.
 
 Desktop and Android supply the current local character's authoritative X/Y and
 plane-derived Z (`0` while the world remains flat), plus camera yaw/pitch/roll
-in degrees. The HUD labels that coordinate as `XYZ(plane)` so it cannot be
-mistaken for camera-eye elevation. The renderer overwrites the presentation bit from its
+as `Y/P/R(deg):yaw,pitch,roll`. The HUD labels this `XYZ`; its plane-derived Z
+is documented here, not camera-eye elevation. The renderer overwrites the presentation bit from its
 own successful `PresentationContext::complete` result, so dropped or
 non-presented frames do not enter the one-second FPS window. The public
 `setDebugHudEnabled`/`toggleDebugHud` controls support performance measurements.
 
 ## Capture, input, and validation
 
-When capture is requested, the context enables transfer-source presentation and
-the renderer consumes `takeCompletedReadback()` after submission. Captured bytes
-are an owned RGBA8 vector returned only to the caller; ordinary frames allocate
-neither draw data nor readback storage. Context recreation, window resize, and
-Android native-window replacement preserve this contract.
+Capture enables transfer-source presentation and returns an owned RGBA8 vector
+after submission. Ordinary frames allocate neither draw data nor readback;
+recreation, resize, and Android window replacement preserve that contract.
 
-Desktop input is supplied by `RuntimePlatformGlfw::GlfwWindow`; PlayerClient
-uses GLFW cursor deltas for yaw/pitch and maps W/A/S/D camera-relative intent
-through `CameraController` into the unchanged cardinal authoritative
-`Direction` packet. Escape, R, and F1 remain window input without recreating a
-local GLFW state layer. A
-debounced F1 key-down toggles the HUD; holding F1 does not retrigger it. R
-retains its existing debounced shader-hot-reload action. Android uses the same
-F1 edge contract through `AndroidInput`.
-Android keeps left-half drag movement intent and uses right-half drag deltas
-for yaw/pitch before the same controller lowering; it retains its asset and
-`AndroidInput` glue while delegating only Vulkan surface/device/presentation
-ownership.
+Desktop GLFW cursor deltas control yaw/pitch; W/A/S/D lower through
+`CameraController` into unchanged authoritative `Direction` packets. Escape,
+R, and debounced F1 remain window input; R reloads shaders and F1 toggles HUD.
+Android maps left drag to movement and right drag to yaw/pitch before the same
+lowering while retaining its asset and `AndroidInput` glue.
 
 [`renderer_smoke_tests.cpp`](../../tests/client/renderer_smoke_tests.cpp), when
 enabled with `MC_ENABLE_RENDERER_SMOKE`, deterministically tests the GLFW
@@ -124,10 +114,11 @@ readback smoke. It is useful evidence for presentation ownership and input but
 is not a substitute for the display-independent offscreen golden.
 
 The benchmark uses shared renderer options; `--present-immediate` fails without
-immediate negotiation. Evidence records mode, HUD state, and CPU acquire, record, and
-complete timings—not GPU timestamps. Release disables validation;
-`--hud` supports paired runs. Missing CoreGraphics display metadata stays
-unavailable.
+immediate negotiation. Release evidence records negotiated mode, actual pixel
+resolution, scene, HUD state, sustained rate, p50/p95/p99/max, and stutters;
+it records CPU acquire, record, and complete timings—not GPU timestamps.
+Release disables validation; `--hud` supports paired runs. Missing CoreGraphics
+display metadata stays unavailable.
 
 Visible acceptance benchmark and capture modes keep their requested resolutions
 in framebuffer pixels. Their shared bounded GLFW setup converts the current

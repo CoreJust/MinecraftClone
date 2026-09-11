@@ -117,6 +117,7 @@ if(MC_BUILD_CLIENT AND NOT ANDROID)
             client/camera_tests.cpp
             client/debug_hud_tests.cpp
             client/frame_scheduler_tests.cpp
+            client/player_presentation_tests.cpp
             client/shader_assets_tests.cpp
             core/corelang_scenario_tests.cpp
     )

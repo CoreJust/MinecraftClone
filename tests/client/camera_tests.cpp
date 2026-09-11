@@ -112,7 +112,7 @@ TEST(CameraTest, ProjectionRejectsZeroExtentAndUsesFiniteAspect) {
     EXPECT_TRUE(std::isfinite((*projection)[0][0]));
     EXPECT_TRUE(std::isfinite((*projection)[1][1]));
     EXPECT_GT((*projection)[0][0], 0.0f);
-    EXPECT_GT((*projection)[1][1], 0.0f);
+    EXPECT_LT((*projection)[1][1], 0.0f);
 }
 
 TEST(CameraTest, ProjectionUsesVulkanZeroToOneDepthRange) {
@@ -129,6 +129,33 @@ TEST(CameraTest, ProjectionUsesVulkanZeroToOneDepthRange) {
     glm::vec4 const far_clip = *projection * glm::vec4{ 0.0f, 0.0f, FAR_VIEW_DEPTH, 1.0f };
     EXPECT_NEAR(near_clip.z / near_clip.w, 0.0f, 1e-6f);
     EXPECT_NEAR(far_clip.z / far_clip.w, 1.0f, 1e-6f);
+}
+
+TEST(CameraTest, ProjectionMapsWorldUpTowardPositiveViewportTop)
+{
+    static constexpr float WORLD_DISTANCE = 5.0F;
+    static constexpr float WORLD_HEIGHT = 1.0F;
+
+    client::Camera const camera;
+    std::optional<glm::mat4> const projection = camera.projectionMatrix(1920U, 1080U);
+    ASSERT_TRUE(projection.has_value());
+
+    glm::mat4 const projection_view = *projection * camera.viewMatrix();
+    glm::vec4 const above_clip = projection_view * glm::vec4{
+        0.0F,
+        WORLD_DISTANCE,
+        WORLD_HEIGHT,
+        1.0F,
+    };
+    glm::vec4 const below_clip = projection_view * glm::vec4{
+        0.0F,
+        WORLD_DISTANCE,
+        -WORLD_HEIGHT,
+        1.0F,
+    };
+
+    EXPECT_LT(above_clip.y / above_clip.w, 0.0F);
+    EXPECT_GT(below_clip.y / below_clip.w, 0.0F);
 }
 
 TEST(CameraTest, InvalidProjectionIsRejectedWithoutMutation) {

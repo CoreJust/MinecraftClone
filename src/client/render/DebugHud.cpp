@@ -68,20 +68,27 @@ uint32_t packDebugHudAscii(
 }
 
 void packDebugHudText(DebugHudText const& text, DebugHudBatch& batch) noexcept {
+    batch.instances.fill({ });
     batch.size = 0;
     size_t const bounded_size = std::min(text.size, text.bytes.size());
-    for (size_t offset = 0; offset < bounded_size && batch.size < batch.instances.size(); offset += 4) {
-        uint8_t const c0 = static_cast<uint8_t>(text.bytes[offset]);
-        uint8_t const c1 = offset + 1 < bounded_size
-            ? static_cast<uint8_t>(text.bytes[offset + 1])
-            : 0;
-        uint8_t const c2 = offset + 2 < bounded_size
-            ? static_cast<uint8_t>(text.bytes[offset + 2])
-            : 0;
-        uint8_t const c3 = offset + 3 < bounded_size
-            ? static_cast<uint8_t>(text.bytes[offset + 3])
-            : 0;
-        batch.instances[batch.size++].packed_ascii = packDebugHudAscii(c0, c1, c2, c3);
+    size_t line = 0;
+    size_t column = 0;
+    for (size_t offset = 0; offset < bounded_size && line < DEBUG_HUD_LINE_COUNT; ++offset) {
+        uint8_t const character = static_cast<uint8_t>(text.bytes[offset]);
+        if (character == static_cast<uint8_t>('\n')) {
+            ++line;
+            column = 0;
+            continue;
+        }
+        if (column >= DEBUG_HUD_MAX_LINE_BYTES) {
+            continue;
+        }
+        size_t const word_index = line * DEBUG_HUD_WORDS_PER_LINE + column / 4;
+        uint32_t const character_shift = static_cast<uint32_t>(8 * (column % 4));
+        batch.instances[word_index].packed_ascii |=
+            static_cast<uint32_t>(sanitizeDebugHudByte(character)) << character_shift;
+        batch.size = std::max(batch.size, word_index + 1);
+        ++column;
     }
 }
 
@@ -164,21 +171,20 @@ bool DebugHudState::formatText(DebugHudText& text) const noexcept {
     size_t offset = 0;
     offset = appendText(text, offset, "FPS:");
     offset = appendNumber(text, offset, values.presented_fps, 1);
-    offset = appendText(text, offset, " UPTIME:");
+    offset = appendText(text, offset, "\nUPTIME:");
     offset = appendNumber(text, offset, values.uptime_seconds, 1);
-    offset = appendText(text, offset, "s XYZ(plane):");
+    offset = appendText(text, offset, "s\nXYZ:");
     offset = appendNumber(text, offset, values.input.player_x, 1);
     offset = appendText(text, offset, ",");
     offset = appendNumber(text, offset, values.input.player_y, 1);
     offset = appendText(text, offset, ",");
     offset = appendNumber(text, offset, values.input.player_z, 1);
-    offset = appendText(text, offset, " YAW:");
+    offset = appendText(text, offset, "\nY/P/R(deg):");
     offset = appendNumber(text, offset, values.input.camera_yaw_degrees, 1);
-    offset = appendText(text, offset, "deg PITCH:");
+    offset = appendText(text, offset, ",");
     offset = appendNumber(text, offset, values.input.camera_pitch_degrees, 1);
-    offset = appendText(text, offset, "deg ROLL:");
+    offset = appendText(text, offset, ",");
     offset = appendNumber(text, offset, values.input.camera_roll_degrees, 1);
-    offset = appendText(text, offset, "deg");
     text.size = offset;
     return true;
 }

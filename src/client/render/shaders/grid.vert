@@ -22,7 +22,7 @@ const vec2 kCorners[4] = vec2[](
     vec2(0.0, 1.0),
     vec2(1.0, 1.0)
 );
-const uint kIndices[6] = uint[](0u, 2u, 1u, 2u, 3u, 1u);
+const uint kIndices[6] = uint[](0u, 1u, 2u, 2u, 1u, 3u);
 
 void main() {
     uint cell = uint(gl_InstanceIndex);

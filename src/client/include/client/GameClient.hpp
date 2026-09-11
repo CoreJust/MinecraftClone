@@ -14,6 +14,7 @@ public:
 protected:
     virtual shared::Direction input() = 0;
     virtual void render() = 0;
+    virtual void onAuthoritativeLocalPlayerPosition(shared::Player const&) noexcept {}
 
     void send(shared::Message const message);
 private:

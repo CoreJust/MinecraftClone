@@ -151,12 +151,14 @@ std::optional<glm::mat4> Camera::projectionMatrix(uint32_t const width, uint32_t
         return std::nullopt;
     }
     double const aspect = static_cast<double>(width) / static_cast<double>(height);
-    return glm::mat4(glm::perspectiveRH_ZO(
+    glm::mat4 projection = glm::mat4(glm::perspectiveRH_ZO(
         m_projection.vertical_fov_degrees * DEGREES_TO_RADIANS,
         aspect,
         m_projection.near_plane,
         m_projection.far_plane
     ));
+    projection[1][1] = -projection[1][1];
+    return projection;
 }
 
 double Camera::normalizeYaw(double yaw_degrees) noexcept {

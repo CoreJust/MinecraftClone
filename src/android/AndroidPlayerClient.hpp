@@ -21,6 +21,7 @@ public:
 private:
     shared::Direction input() override;
     void render() override;
+    void onAuthoritativeLocalPlayerPosition(shared::Player const& player) noexcept override;
 
     static void handleAppCommand(android_app* app, int32_t command);
     static int32_t handleInputEvent(android_app* app, AInputEvent* event);

@@ -6,6 +6,7 @@ target_sources(mc
     DepthFormat.cpp
         FrameScheduler.cpp
         GameClient.cpp
+        PlayerPresentation.cpp
         render/DebugHud.cpp
         render/ShaderAssets.cpp
         render/PresentationRenderer.cpp

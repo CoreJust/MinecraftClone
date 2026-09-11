@@ -1,6 +1,7 @@
 #include <client/PlayerClient.hpp>
 
 #include <client/CameraController.hpp>
+#include <client/PlayerPresentation.hpp>
 
 #define GLFW_INCLUDE_NONE
 #include <GLFW/glfw3.h>
@@ -66,6 +67,9 @@ void PlayerClient::render() {
     m_render_data.clear();
     m_render_data.reserve(m_world.players().size());
     for (shared::Player const& p : m_world.players()) {
+        if (!shouldRenderRemotePlayer(p, m_local_character)) {
+            continue;
+        }
         m_render_data.push_back({
             .x = p.x,
             .y = p.y,
@@ -103,6 +107,11 @@ void PlayerClient::render() {
         m_renderer.hotReload();
     }
     m_was_reload_pressed = reload_pressed;
+}
+
+void PlayerClient::onAuthoritativeLocalPlayerPosition(shared::Player const& player) noexcept
+{
+    static_cast<void>(m_camera.setPosition(localPlayerEyePosition(player)));
 }
 
 } // namespace client

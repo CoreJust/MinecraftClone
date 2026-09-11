@@ -1,3 +1,5 @@
+#include <client/Camera.hpp>
+#include <client/PlayerPresentation.hpp>
 #include <client/render/InstalledShaderAssets.hpp>
 #include <client/render/VulkanRenderer.hpp>
 
@@ -11,6 +13,7 @@
 #include <chrono>
 #include <cstdint>
 #include <string>
+#include <utility>
 
 namespace {
 
@@ -67,7 +70,7 @@ struct CaptureColorClasses final {
             red < 80U && green > 200U && blue < 80U
         );
         classes.has_debug_hud = classes.has_debug_hud || (
-            x < 220U && y + 32U > capture.height && red > 180U && green > 180U && blue > 180U
+            x < 220U && y < 80U && red > 180U && green > 180U && blue > 180U
         );
     }
     return classes;
@@ -102,6 +105,7 @@ TEST(RendererSmokeTest, CompletedCaptureSurvivesRecreateAndReadsBack)
         shader_assets,
         { .require_validation = true, .enable_frame_capture = true },
     };
+    renderer.setDebugHudEnabled(true);
     std::array<client::PlayerRenderData, 2> const players{
         client::PlayerRenderData{ .x = 2U, .y = 3U, .color = { 1.0F, 0.0F, 0.0F, 1.0F } },
         client::PlayerRenderData{ .x = 29U, .y = 28U, .color = { 0.0F, 1.0F, 0.0F, 1.0F } },
@@ -211,6 +215,88 @@ TEST(RendererSmokeTest, GlfwCursorCaptureSupportsContinuousCameraLook)
     EXPECT_EQ(glfwGetInputMode(window.nativeHandle(), GLFW_CURSOR), GLFW_CURSOR_DISABLED);
     glfwSetInputMode(window.nativeHandle(), GLFW_CURSOR, GLFW_CURSOR_NORMAL);
     EXPECT_EQ(glfwGetInputMode(window.nativeHandle(), GLFW_CURSOR), GLFW_CURSOR_NORMAL);
+}
+
+TEST(RendererSmokeTest, ActiveVertexRendererKeepsUprightGridAndTopLeftHudForRemotePlayers)
+{
+    static constexpr uint32_t LOGICAL_WIDTH = 320U;
+    static constexpr uint32_t LOGICAL_HEIGHT = 240U;
+    static constexpr uint32_t MAX_CAPTURE_FRAMES = 12U;
+    static constexpr auto TIMEOUT = std::chrono::seconds{ 10 };
+    static constexpr shared::Player LOCAL{
+        .id = 1U,
+        .x = 8U,
+        .y = 8U,
+        .ch = '@',
+    };
+    static constexpr shared::Player REMOTE{
+        .id = 2U,
+        .x = 8U,
+        .y = 15U,
+        .ch = '#',
+    };
+    core::platform::glfw::GlfwWindow window{
+        core::platform::glfw::WindowDescriptor{
+            .width = LOGICAL_WIDTH,
+            .height = LOGICAL_HEIGHT,
+            .title = "MinecraftClone active first-person renderer",
+        },
+    };
+    client::InstalledShaderAssets const shader_assets;
+    client::VulkanRenderer renderer{
+        client::VulkanRenderer::createPresentationContext(
+            window,
+            { .require_validation = true, .enable_frame_capture = true }
+        ),
+        shader_assets,
+        { .require_validation = true, .enable_frame_capture = true },
+    };
+    renderer.setDebugHudEnabled(true);
+    std::array<client::PlayerRenderData, 1U> const remote_players{
+        client::PlayerRenderData{
+            .x = REMOTE.x,
+            .y = REMOTE.y,
+            .color = { 0.0F, 1.0F, 0.0F, 1.0F },
+        },
+    };
+    EXPECT_FALSE(client::shouldRenderRemotePlayer(LOCAL, LOCAL.ch));
+    EXPECT_TRUE(client::shouldRenderRemotePlayer(REMOTE, LOCAL.ch));
+    client::Camera const camera{
+        {
+            .position = client::localPlayerEyePosition(LOCAL),
+            .angles = { .pitch_degrees = -10.0 },
+        },
+    };
+    renderer.setCamera(camera.pose());
+    renderer.requestFrameCapture();
+
+    client::RendererFrameCapture capture;
+    bool captured = false;
+    auto const deadline = std::chrono::steady_clock::now() + TIMEOUT;
+    for (uint32_t frame = 0U;
+         frame < MAX_CAPTURE_FRAMES && std::chrono::steady_clock::now() < deadline;
+         ++frame) {
+        ASSERT_TRUE(window.nextFrame());
+        static_cast<void>(renderer.render(
+            remote_players,
+            client::DebugHudInput{ .player_x = static_cast<float>(LOCAL.x), .player_y = static_cast<float>(LOCAL.y) },
+            1.0F,
+            deadline
+        ));
+        if (std::optional<client::RendererFrameCapture> const completed = renderer.takeFrameCapture(); completed.has_value()) {
+            capture = std::move(*completed);
+            captured = true;
+            break;
+        }
+    }
+
+    ASSERT_TRUE(captured);
+    CaptureColorClasses const classes = classifyCaptureColors(capture);
+    EXPECT_TRUE(classes.has_grid);
+    EXPECT_TRUE(classes.has_debug_hud);
+    EXPECT_TRUE(classes.has_green_player);
+    EXPECT_FALSE(classes.has_red_player);
+    EXPECT_EQ(renderer.runtimeInfo().pipeline_path, client::RendererPipelinePath::Vertex);
 }
 
 } // namespace

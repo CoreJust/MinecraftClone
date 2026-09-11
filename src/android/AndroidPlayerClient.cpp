@@ -1,6 +1,7 @@
 #include "AndroidPlayerClient.hpp"
 
 #include <client/CameraController.hpp>
+#include <client/PlayerPresentation.hpp>
 #include <core/IO/Log.hpp>
 
 #include <android/configuration.h>
@@ -82,6 +83,9 @@ void AndroidPlayerClient::render()
     std::vector<client::PlayerRenderData> players;
     players.reserve(m_world.players().size());
     for (shared::Player const& player : m_world.players()) {
+        if (!client::shouldRenderRemotePlayer(player, m_local_character)) {
+            continue;
+        }
         players.push_back({
             .x = player.x,
             .y = player.y,
@@ -113,6 +117,11 @@ void AndroidPlayerClient::render()
     if (m_input.consumeReloadRequest()) {
         m_renderer->hotReload();
     }
+}
+
+void AndroidPlayerClient::onAuthoritativeLocalPlayerPosition(shared::Player const& player) noexcept
+{
+    static_cast<void>(m_camera.setPosition(client::localPlayerEyePosition(player)));
 }
 
 void AndroidPlayerClient::handleAppCommand(android_app* const app, int32_t const command)
@@ -195,6 +204,7 @@ void AndroidPlayerClient::createWindowResources()
             .prefer_mesh_shaders = false,
         }
     );
+    m_renderer->setDebugHudEnabled(true);
     CORE_INFO(
         "Android renderer created for {}x{} surface",
         ANativeWindow_getWidth(m_app.window),

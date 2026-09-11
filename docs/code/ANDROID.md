@@ -34,8 +34,8 @@ right-half drag supplies yaw/pitch deltas to the client-local 3D camera; the
 portable controller lowers left-half intent at the current yaw into the same
 single cardinal authoritative direction packet used by desktop.
 Back/Escape requests client shutdown; a debounced F1 key-down toggles the
-performance HUD, while R retains its shader-reload action (holding either key
-does not repeat its action). The Android client uses the portable vertex path
+performance HUD, enabled by default for normal gameplay, while R retains its
+shader-reload action (holding either key does not repeat its action). The Android client uses the portable vertex path
 because `RuntimeKernel::SpirvModule` currently exposes vertex/fragment modules
 only.
 

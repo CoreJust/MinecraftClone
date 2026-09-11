@@ -82,12 +82,14 @@ accept/reject/disconnect, then repeatedly poll and render presentation frames.
 `FrameScheduler` sends input reliably at the independent 100 ms authoritative
 cadence and sleeps at most one millisecond between presentation attempts, which
 permits normal windowed refresh without busy spinning or catch-up input bursts.
-Position messages update a local `World`; unknown characters
-receive locally assigned ids. A disconnect or rejected join stops the loop.
+Position messages update a local `World`; unknown characters receive locally
+assigned ids. A local authoritative update centers the first-person eye at
+`(x+1, y+1, 1.6)` while retaining camera angles; only remote players become
+render records. A disconnect or rejected join stops the loop.
 
 [PlayerClient.hpp](../../src/client/include/client/PlayerClient.hpp) and
 [PlayerClient.cpp](../../src/client/PlayerClient.cpp) provide the GLFW/Vulkan
-client. GLFW cursor movement controls local yaw/pitch; W/S and A/D become
+client. Normal gameplay enables the HUD by default. GLFW cursor movement controls local yaw/pitch; W/S and A/D become
 camera-relative cardinal directions through the GLFW-independent controller.
 This never predicts or applies a local movement result. Each render converts
 local players to colored 2 by 2 render records. R reloads the

@@ -29,7 +29,7 @@
     },
     {
       "guide": "docs/code/ANDROID.md",
-      "guide_sha256": "265e7a346b1a74226164cc3d8fa1e487714ce9c81184fd211e0b37031a3f2f7d",
+      "guide_sha256": "3d2ff3265ac1ba9198e5a144f2739e65f3441e66f816a86482cd50661bec8bc2",
       "id": "android",
       "sources": [
         "src/android/AndroidInput.cpp",
@@ -44,7 +44,7 @@
         "src/android/CMakeLists.txt",
         "tests/android/input_state_tests.cpp"
       ],
-      "sources_sha256": "33d49b36ffe2bfc9b3159f687873dd0234f4e1d04d024d193351f5f3fe9046c7"
+      "sources_sha256": "35c97aa4b88e0a69d6f243d31343ec21b008d8be6e1f9d78622df7333495a776"
     },
     {
       "guide": "docs/BUILD.md",
@@ -132,7 +132,7 @@
         "vcpkg-configuration.json",
         "vcpkg.json"
       ],
-      "sources_sha256": "99b772c085012319275b5e0fbb0490ff13243f7c9f5b07e9728aab152986bcb2"
+      "sources_sha256": "a153354821b171737ad49ea66a4fe57d6d46e35b0a4e81207c70bb57097c5d5a"
     },
     {
       "guide": "docs/code/CORE.md",
@@ -171,7 +171,7 @@
     },
     {
       "guide": "docs/code/GAMEPLAY.md",
-      "guide_sha256": "04ad8f6c6a9b17e09cecafd0a9ff5df753548784f04ee9de06e97a14fbf3dabf",
+      "guide_sha256": "e2ab4ffbd365d04b287b28e73c7281c65d888af0aca9fde2c32e23abedcd42e9",
       "id": "gameplay",
       "sources": [
         "src/client/BotClient.cpp",
@@ -181,6 +181,7 @@
         "src/client/FrameScheduler.cpp",
         "src/client/GameClient.cpp",
         "src/client/PlayerClient.cpp",
+        "src/client/PlayerPresentation.cpp",
         "src/client/include/client/BotClient.hpp",
         "src/client/include/client/CMakeLists.txt",
         "src/client/include/client/Camera.hpp",
@@ -188,6 +189,7 @@
         "src/client/include/client/FrameScheduler.hpp",
         "src/client/include/client/GameClient.hpp",
         "src/client/include/client/PlayerClient.hpp",
+        "src/client/include/client/PlayerPresentation.hpp",
         "src/main.cpp",
         "src/server/CMakeLists.txt",
         "src/server/GameServer.cpp",
@@ -210,11 +212,11 @@
         "tests/core/shared_message_tests.cpp",
         "tests/core/shared_world_tests.cpp"
       ],
-      "sources_sha256": "3edcaa8cca992f15d7e69968eef811d29104abab6dc3765df71a32a0c6119444"
+      "sources_sha256": "7a6c80db24f79581c1599de9d9e2a443cad84323f1d3a583b9fe525897cdb871"
     },
     {
       "guide": "docs/code/RENDERING.md",
-      "guide_sha256": "63aaa7a54b1a43c79c32ba0f2e505e16927681a86fc9997e4cdedf71f6c5db8f",
+      "guide_sha256": "f1131bfde521de0793417d3a207b2466df2392981db3c2bd7e1a60784bba7b00",
       "id": "rendering",
       "sources": [
         "src/client/CMakeLists.txt",
@@ -244,6 +246,7 @@
         "tests/client/goldens/README.md",
         "tests/client/goldens/s4_flat3d_v2.ppm",
         "tests/client/goldens/s4_scene_v1.ppm",
+        "tests/client/player_presentation_tests.cpp",
         "tests/client/renderer_golden_tests.cpp",
         "tests/client/renderer_smoke_tests.cpp",
         "tests/client/shader_assets_tests.cpp",
@@ -251,7 +254,7 @@
         "tests/testsupport/image_comparison_tests.cpp",
         "tests/testsupport/include/testsupport/ImageComparison.hpp"
       ],
-      "sources_sha256": "c15fe09d73060a844c0b44ad59a48c97df536e2dae70fa715e9a73b9231661e2"
+      "sources_sha256": "b7b48cfa5ba01b65877c7fba374e3b5ce63ac74d1466af15865a07784094aae2"
     }
   ],
   "version": 1
