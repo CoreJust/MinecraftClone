@@ -4223,5 +4223,45 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0107",
+    "title": "Repin MinGW-portable private packages",
+    "kind": "chore",
+    "status": "done",
+    "priority": "P0",
+    "route": "luna",
+    "milestone": "EarlyDev 0.1.0:4",
+    "depends_on": [
+      "MC-AI-0106"
+    ],
+    "acceptance": "Pin CoreCpp and CoreProject2026 to their reviewed clean MinGW-portable commits; verify the exact pair builds on local macOS and Android with manifest installation disabled; preserve package provenance and all game tests; obtain one exact-task Luna/high review; commit with the generated Task-ID; rerun hosted macOS, Windows and Android candidates; do not claim Windows portability or publish Snapshot 4 until hosted jobs pass and the user previews the exact candidate.",
+    "evidence": "Failed hosted runs are preserved: AI checks 34627745922 Windows release job 103356840719 and debug job 103356840863, plus snapshot artifacts 34627745923 Windows job 103356920659. All reached private dependency compilation before MinGW rejected four mixed Vulkan flag-bit/integer conditional expressions under -Wextra -Werror. CoreCpp a8add71c7d042357a504299374329fe648962a83 and CoreProject2026 77b1c09afd485a894f2fbc09894d9acf2d05ba5f were reviewed and pushed to ai-dev. Fresh isolated package installs with VCPKG_MANIFEST_INSTALL=OFF report both revisions clean and exact. Fresh exact macOS Release MinecraftClone built mc_main and mc_tests and passed 212/212 CTests. Fresh Android NDK 27.0.12077973, API 28, arm64-v8a packages linked mc_android against the same exact revisions; only upstream native_app_glue warnings remain. New hosted Windows jobs remain required before cross-platform success is claimed.",
+    "blocker": "",
+    "owner": "",
+    "level": "basic",
+    "parent": "MC-AI-0035",
+    "motivation": "Hosted Windows jobs reached the pinned private dependency build but MinGW rejected mixed Vulkan enum and integer flag expressions under strict warnings.",
+    "context": "CC-0019 fixes the complete proven Vulkan flag-composition warning class and CP-0018 advances CoreProject2026 to that exact CoreCpp package. Preserve all Snapshot 4 product behavior and the prepublication user-preview hold.",
+    "complexity": "low",
+    "created_at": "2026-09-11",
+    "resolved_at": "2026-09-11",
+    "resolution_changes": "Pinned MinecraftClone to CoreCpp CC-0019 and CoreProject2026 CP-0018, preserving exact package provenance for desktop and Android consumers.",
+    "plan": [
+      "Update only the immutable dependency lock and generated task metadata. Build the exact private package pair and game consumers locally, review the staged tree, commit it, promote the same tree to ai-main, and retain failed hosted run evidence until replacement jobs pass."
+    ],
+    "product_changes": [
+      "None; this is an exact dependency provenance correction for existing Snapshot 4 behavior."
+    ],
+    "code_changes": [
+      "Advance the two private dependency revisions to CC-0019 and CP-0018 and regenerate canonical task views."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": false,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]
