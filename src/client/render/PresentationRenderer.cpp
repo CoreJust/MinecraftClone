@@ -194,6 +194,11 @@ struct VulkanRenderer::Impl final {
         if (!m_context) {
             throw std::invalid_argument("Vulkan renderer requires a presentation context");
         }
+        if (m_context->info().surface_transform.requires_client_orientation_compensation) {
+            throw std::runtime_error(
+                "Vulkan renderer cannot present upright without client orientation compensation"
+            );
+        }
         createResources();
         refreshCaptureState();
     }
