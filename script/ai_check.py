@@ -344,7 +344,11 @@ def run_phase(
         result.duration_seconds = time.monotonic() - started
         (log_dir / f"{name}.log").write_text(result.output, encoding="utf-8")
         return result
-    if reuse and name not in {"build", "ctest"}:
+    # The full Python suite reads repository content outside script/**/*.py,
+    # so its receipt cannot be invalidated safely by the script-only input
+    # fingerprint. Always execute it during fast checks; other eligible
+    # phases retain receipt reuse.
+    if reuse and name not in {"build", "ctest", "python-tests"}:
         output = read_matching_receipt(root, log_dir, name, command, environment, inputs)
         if output is not None:
             return PhaseResult(

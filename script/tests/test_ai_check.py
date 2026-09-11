@@ -372,6 +372,35 @@ class AiCheckTests(unittest.TestCase):
         self.assertIn("docs", summary["reused_phases"])
         self.assertTrue(summary["durations_seconds"]["docs"] >= 0)
 
+    def test_python_tests_execute_after_non_script_input_changes(self):
+        source = self.root / "src/source_policy.cpp"
+        source.write_text("int value = 1;\n", encoding="utf-8")
+        test_file = self.root / "script/tests/test_source_policy.py"
+        test_file.write_text(
+            "from pathlib import Path\n"
+            "import unittest\n"
+            "\n"
+            "class SourcePolicy(unittest.TestCase):\n"
+            "    def test_source_lines_are_bounded(self):\n"
+            "        source = Path(__file__).parents[2] / 'src/source_policy.cpp'\n"
+            "        self.assertTrue(all(len(line) <= 80 for line in source.read_text().splitlines()))\n",
+            encoding="utf-8",
+        )
+        self.git("add", "src/source_policy.cpp", "script/tests/test_source_policy.py")
+        self.git("commit", "--no-gpg-sign", "-m", "source policy fixture")
+
+        first = self.run_check("--fast")
+        self.assertEqual(first.returncode, 0, first.stdout + first.stderr)
+        source.write_text("x" * 81 + "\n", encoding="utf-8")
+
+        second = self.run_check("--fast")
+        self.assertEqual(second.returncode, 1, second.stdout + second.stderr)
+        self.assertIn("FAIL python-tests", second.stdout)
+        self.assertNotIn("REUSED PASS python-tests", second.stdout)
+        summary = json.loads((self.root / "build/ai-checks/summary.json").read_text(encoding="utf-8"))
+        self.assertIn("python-tests", summary["executed_phases"])
+        self.assertNotIn("python-tests", summary["reused_phases"])
+
     def test_matching_receipt_keeps_hook_command_to_one_execution(self):
         marker = self.root / "build/ai-checks/docs-command-count"
         marker.parent.mkdir(parents=True, exist_ok=True)
