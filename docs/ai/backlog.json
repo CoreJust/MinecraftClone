@@ -4183,5 +4183,45 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0106",
+    "title": "Repin Windows-portable private packages",
+    "kind": "chore",
+    "status": "done",
+    "priority": "P0",
+    "route": "luna",
+    "milestone": "EarlyDev 0.1.0:4",
+    "depends_on": [
+      "MC-AI-0105"
+    ],
+    "acceptance": "MinecraftClone locks the reviewed clean CoreCpp Windows-portability revision and the matching CoreProject2026 exact dependency revision. Fresh package acquisition and local Mac and Android game builds retain exact provenance, private source exclusion, BUILD_TESTING=OFF for dependency packages, and VCPKG_MANIFEST_INSTALL=OFF. New hosted Windows checks and artifact packaging pass before cross-platform success is claimed.",
+    "evidence": "Failed hosted runs are preserved: AI checks 34621786059 job 103337274648 and snapshot artifacts 34621786303 job 103337374253. Both reached private fetch and dependency setup before MinGW rejected the missing fixed-width include and Windows-only unused signal parameter. CoreCpp 001ef85162c3c6c7893efb43a0b0a9e650701efd and CoreProject2026 07c2def79c486cd5a9120279a5f30f08659f2f7c were reviewed, pushed to ai-dev, rebuilt, and installed from clean sources with VCPKG_MANIFEST_INSTALL=OFF; installed configs report DIRTY=FALSE and REVISION_EXACT=TRUE. Fresh exact macOS Release MinecraftClone built mc_main and mc_tests and passed 211/211 CTests. Fresh Android NDK 27.0.12077973, API 28, arm64-v8a packages linked mc_android against the same exact revisions. A new hosted Windows build remains required before cross-platform success is claimed.",
+    "blocker": "",
+    "owner": "",
+    "level": "basic",
+    "parent": "MC-AI-0035",
+    "motivation": "Hosted Windows jobs 103337274648 and 103337374253 reached strict CoreCpp compiler failures after deploy-key validation, private fetch, vcpkg, and Vulkan acquisition succeeded.",
+    "context": "Preserve failed runs 34621786059 and 34621786303. CoreCpp CC-0018 commit 001ef85162c3c6c7893efb43a0b0a9e650701efd fixes the missing fixed-width include and Windows-only unused signal parameter. CoreProject2026 CP-0017 repins that exact package. Do not claim Windows success until hosted reruns pass.",
+    "complexity": "low",
+    "created_at": "2026-09-11",
+    "resolved_at": "2026-09-11",
+    "resolution_changes": "Pinned MinecraftClone to CoreCpp CC-0018 and CoreProject2026 CP-0017, preserving exact package provenance for desktop and Android consumers.",
+    "plan": [
+      "Pin exact reviewed CoreCpp and CoreProject2026 commits.",
+      "Validate package provenance and unchanged local Mac and Android consumption.",
+      "Promote the candidate and rerun trusted hosted checks and artifact packaging."
+    ],
+    "product_changes": [],
+    "code_changes": [
+      "Update dependencies.lock.json and the task ledger to the exact reviewed private package revisions."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": false,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]
