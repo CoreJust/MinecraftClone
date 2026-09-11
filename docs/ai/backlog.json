@@ -1861,7 +1861,7 @@
     "id": "MC-AI-0049",
     "title": "Build CoreLang and Shared compatibility integration",
     "kind": "feature",
-    "status": "active",
+    "status": "done",
     "priority": "P1",
     "route": "sol",
     "milestone": "ED-010-S4",
@@ -1878,8 +1878,8 @@
     "context": "CoreJust/CoreProject2026 owns generic Script and CoreLang source, docs, build/tests and a minimal independent ledger. This game task owns the immutable CoreLang integration, pinned package provenance, game ruleset, and scenario compatibility. The extension contract is source-compatible C++, not a binary plugin ABI; MinecraftClone never vendors private source.",
     "complexity": "high",
     "created_at": "2026-09-09",
-    "resolved_at": "",
-    "resolution_changes": "",
+    "resolved_at": "2026-09-11",
+    "resolution_changes": "Integrated the exact CoreProject2026 CoreLang package into Shared with separate explicit legacy and CoreLang frontends, immutable typed plan collection, failure isolation, canonical scenario equivalence, and bounded directive accounting.",
     "plan": [
       "Consume immutable CoreProject2026::CoreLang with fail-closed package provenance.",
       "Register the fixed Shared CoreLang scenario ruleset and lower only typed host operations into ScenarioPlan.",
@@ -1889,7 +1889,9 @@
     "product_changes": [],
     "code_changes": [],
     "baseline_commit": "",
-    "commits": [],
+    "commits": [
+      "e70e5a39775b867aae3d3b3c9a30a777b7dac8ee"
+    ],
     "finalized": false,
     "retrospective": "",
     "docs_review": "",
@@ -3685,6 +3687,44 @@
     "finalized": false,
     "retrospective": "",
     "docs_review": "Generated backlog/task pages and refreshed the source-state inventory; ai_tasks and ai_docs checks pass.",
+    "environment_review": "",
+    "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0095",
+    "title": "Reconcile delivered CoreLang integration status",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P1",
+    "route": "luna",
+    "milestone": "ED-010-S4",
+    "depends_on": [
+      "MC-AI-0049"
+    ],
+    "acceptance": "The canonical ledger records MC-AI-0049 as done with its immutable commit, exact dependency provenance, passing acceptance evidence, and no change to delivered source.",
+    "evidence": "git show verifies commit e70e5a39775b867aae3d3b3c9a30a777b7dac8ee has tree d31bc58b889df6a7e1f49a53f033146432e31ada and exactly one Task-ID trailer MC-AI-0049. The MC-AI-0049 acceptance evidence was already recorded and remains unchanged. Task and documentation validation pass after rendering the status correction.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0035",
+    "motivation": "MC-AI-0049 was implemented, reviewed, committed, and pushed, but its pre-commit active status remained in the canonical ledger and blocked dependent task preparation.",
+    "context": "This is a ledger-only correction under the explicitly allowed aggregate ledger exception; do not amend or rewrite the immutable MC-AI-0049 commit.",
+    "complexity": "low",
+    "created_at": "2026-09-11",
+    "resolved_at": "2026-09-11",
+    "resolution_changes": "Recorded the already delivered MC-AI-0049 task as done and linked its immutable commit without modifying source or rewriting history.",
+    "plan": [
+      "Verify the immutable MC-AI-0049 commit and trailer, update its status/evidence, regenerate views, and validate task/document consistency."
+    ],
+    "product_changes": [],
+    "code_changes": [
+      "docs/ai/backlog.json and generated task/backlog views only."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": false,
+    "retrospective": "",
+    "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
   }
