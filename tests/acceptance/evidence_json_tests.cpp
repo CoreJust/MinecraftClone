@@ -62,8 +62,8 @@ TEST(EvidenceJson, LabelsBenchmarkSamplesAsCpuPresentationRequestsAndPhases)
     acceptance::RuntimeEvidence const evidence{
         .mode = "benchmark-render",
         .benchmark = acceptance::RendererBenchmarkEvidence{
-            .presentation_requests_per_second = 120.0,
             .debug_hud_enabled = true,
+            .presentation_requests_per_second = 120.0,
             .presentation_request_timings = acceptance::FrameTimingSummary{
                 .sample_count = 2,
                 .p50 = std::chrono::nanoseconds{ 7 },
