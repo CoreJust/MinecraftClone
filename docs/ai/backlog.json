@@ -4027,5 +4027,45 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0102",
+    "title": "Repair hosted candidate build portability",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P0",
+    "route": "luna",
+    "milestone": "EarlyDev 0.1.0:4",
+    "depends_on": [],
+    "acceptance": "Hosted candidate workflows preserve the trusted-source secret boundary, materialize deploy keys with owner-only access on POSIX and an explicit current-user-only ACL on Windows, transport every leading-dash CMake argument intact, install the exact private dependency commits before all desktop builds, and pass their install prefixes to CMake with manifest installation disabled. Focused failure-case tests cover argument spelling, Windows ACL semantics and fail-fast behavior, platform-appropriate permission assertions, and private-prefix propagation. New ai-checks and snapshot-artifacts runs for one immutable source commit must pass before cross-platform candidate success is claimed.",
+    "evidence": "Reproduced hosted failures are preserved in ai-checks run 34604829910 and snapshot-artifacts run 34604829950 at source 0e828d61b9b14da7dd2c323d87ec4c9df1da3729. Local regression verification passed 39 tests across script.tests.test_ci_acquire, script.tests.test_workflow_contexts and script.tests.test_build_snapshot; both workflow YAML files parse successfully, git diff --check passes, and an absent pinned vcpkg executable fails closed. The corrected workflows have not yet run on hosted macOS, Windows or Android, so no cross-platform candidate success is claimed by this task; that immutable-source result remains a parent snapshot gate.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0035",
+    "motivation": "Exact ai-main candidate runs 34604829950 and 34604829910 failed before producing the required cross-platform artifacts because workflow argument transport, Windows ACL syntax and platform-specific permission assertions were not portable, while ordinary AI desktop jobs lacked the pinned private dependency install and prefix propagation.",
+    "context": "Source identity 0e828d61b9b14da7dd2c323d87ec4c9df1da3729 passed the source and fast jobs. Snapshot artifacts failed on macOS and Android when argparse rejected leading-dash CMake values, and on Windows when icacls received a malformed principal. AI checks failed on Windows because a POSIX mode test expected 0600, and macOS configuration could not find CoreCpp because pinned private packages were not installed or selected.",
+    "complexity": "medium",
+    "created_at": "2026-09-11",
+    "resolved_at": "2026-09-11",
+    "resolution_changes": "Restricted private-dependency desktop jobs to trusted ai-main pushes and manual runs resolving ai-main, corrected leading-dash CMake argument transport, applied explicit current-user-only Windows key ACLs with checked failures, made POSIX mode assertions platform-aware, acquired manifest ports into a fresh runner-temporary platform root, selected the exact NDK for Android vcpkg, and propagated the isolated vcpkg and exact private-package prefixes through dependency builds, product builds, packaging and license collection.",
+    "plan": [
+      "Correct hosted workflow argument, ACL and private-package propagation contracts without changing product runtime behavior.",
+      "Add focused regression assertions for each failed platform branch and verify the real source-policy entrypoint locally.",
+      "Run minimal checks, obtain one exact-task Luna/high review, commit with Task-ID MC-AI-0102, push the authorized ai-dev/ai-main candidate flow, and require new hosted jobs to pass."
+    ],
+    "product_changes": [
+      "No product behavior changed; hosted candidate builds become portable and fail closed across macOS, Windows and Android."
+    ],
+    "code_changes": [
+      "Repair candidate workflow argument transport, secure Windows deploy-key ACL materialization, platform-aware permission tests, and exact private-dependency prefix selection."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": false,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]

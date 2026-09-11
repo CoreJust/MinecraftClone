@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import io
 import os
+import stat
 import tempfile
 import unittest
 import zipfile
@@ -113,7 +114,56 @@ class CiAcquireTests(unittest.TestCase):
             self.assertEqual(write_env.call_args_list, [
                 mock.call("ANDROID_HOME", str(root)),
                 mock.call("ANDROID_SDK_ROOT", str(root)),
+                mock.call("ANDROID_NDK_HOME", str(root / "ndk" / acquire.ANDROID_NDK_VERSION)),
+                mock.call("ANDROID_NDK_ROOT", str(root / "ndk" / acquire.ANDROID_NDK_VERSION)),
             ])
+
+    def test_install_manifest_dependencies_uses_isolated_platform_triplets(self):
+        for platform_name, triplet in (
+            ("macos", "arm64-osx"),
+            ("windows", "x64-windows"),
+            ("android", "arm64-android"),
+        ):
+            with tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                vcpkg_root = root / "vcpkg"
+                vcpkg_root.mkdir()
+                executable = vcpkg_root / ("vcpkg.exe" if os.name == "nt" else "vcpkg")
+                executable.touch()
+                installed_root = root / "vcpkg-installed"
+
+                def install(command):
+                    installed_root.mkdir()
+                    return ""
+
+                with mock.patch.object(acquire, "run", side_effect=install) as run, mock.patch.object(acquire, "write_github_env") as write_env:
+                    result = acquire.install_manifest_dependencies(vcpkg_root, platform_name, installed_root)
+
+                repository = Path(__file__).resolve().parents[2]
+                self.assertEqual(result, installed_root)
+                run.assert_called_once_with([
+                    str(executable),
+                    "install",
+                    f"--triplet={triplet}",
+                    f"--x-manifest-root={repository}",
+                    f"--x-install-root={installed_root}",
+                ])
+                write_env.assert_called_once_with("VCPKG_INSTALLED_DIR", str(installed_root))
+
+    def test_install_private_dependencies_passes_isolated_vcpkg_root(self):
+        with tempfile.TemporaryDirectory() as directory, mock.patch.dict(os.environ, {"VCPKG_INSTALLED_DIR": "/tmp/vcpkg-installed"}):
+            root = Path(directory) / "private-dependencies"
+            for name in acquire.PRIVATE_DEPENDENCIES:
+                source = root / name
+                source.mkdir(parents=True)
+                (source / "CMakeLists.txt").touch()
+            with mock.patch.object(acquire, "run") as run, mock.patch.object(acquire, "write_github_env"):
+                acquire.install_private_dependencies(root, "macos", ["-DVCPKG_MANIFEST_INSTALL=OFF"])
+            configure_commands = [call.args[0] for call in run.call_args_list if call.args[0][0] == "cmake" and "-S" in call.args[0]]
+            self.assertEqual(len(configure_commands), len(acquire.PRIVATE_DEPENDENCIES))
+            for command in configure_commands:
+                self.assertIn("-DVCPKG_INSTALLED_DIR=/tmp/vcpkg-installed", command)
+                self.assertIn("-DVCPKG_MANIFEST_INSTALL=OFF", command)
 
     def test_verify_sha256_rejects_tampered_download(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -216,9 +266,18 @@ class CiAcquireTests(unittest.TestCase):
 
     def test_private_dependency_fetch_pins_github_host_key(self):
         with tempfile.TemporaryDirectory() as directory:
-            known_hosts = acquire.write_github_known_host(Path(directory))
+            root = Path(directory)
+            if os.name == "nt":
+                with mock.patch.object(Path, "chmod") as chmod_call:
+                    known_hosts = acquire.write_github_known_host(root)
+            else:
+                known_hosts = acquire.write_github_known_host(root)
             self.assertEqual(known_hosts.read_text(encoding="utf-8"), acquire.GITHUB_SSH_KNOWN_HOST)
-            self.assertEqual(known_hosts.stat().st_mode & 0o777, 0o600)
+            if os.name == "nt":
+                chmod_call.assert_called_once()
+                self.assertEqual(chmod_call.call_args.args[1], stat.S_IRUSR | stat.S_IWUSR)
+            else:
+                self.assertEqual(known_hosts.stat().st_mode & 0o777, 0o600)
 
     def test_private_dependency_fetch_uses_two_key_files_and_exact_detached_pins(self):
         with tempfile.TemporaryDirectory() as directory:

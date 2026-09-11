@@ -135,7 +135,14 @@ jobs:
           $coreProjectKey = Join-Path $keyRoot 'coreproject2026'
           [System.IO.File]::WriteAllText($coreCppKey, $env:MC_CI_CORECPP_DEPLOY_KEY + [Environment]::NewLine)
           [System.IO.File]::WriteAllText($coreProjectKey, $env:MC_CI_COREPROJECT2026_DEPLOY_KEY + [Environment]::NewLine)
-          icacls $keyRoot /inheritance:r /grant:r "$env:USERNAME:(OI)(CI)(R,W)" | Out-Null
+          $currentUser = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
+          $grant = '{0}:F' -f $currentUser
+          foreach ($keyPath in @($keyRoot, $coreCppKey, $coreProjectKey)) {
+            & icacls.exe $keyPath /inheritance:r /grant:r $grant | Out-Null
+            if ($LASTEXITCODE -ne 0) {
+              throw "icacls failed for $keyPath with exit code $LASTEXITCODE"
+            }
+          }
           "MC_CI_CORECPP_DEPLOY_KEY_FILE=$coreCppKey" >> $env:GITHUB_ENV
           "MC_CI_COREPROJECT2026_DEPLOY_KEY_FILE=$coreProjectKey" >> $env:GITHUB_ENV
       - name: Fetch exact private dependency commits (macOS)
@@ -173,6 +180,20 @@ jobs:
         run: python script/ci/acquire.py install-ninja --platform ${{ matrix.platform }} --root "${{ runner.temp }}/ninja"
       - name: Acquire pinned vcpkg
         run: python script/ci/acquire.py install-vcpkg --root "${{ runner.temp }}/vcpkg"
+      - name: Install pinned vcpkg manifest dependencies (macOS)
+        if: matrix.platform == 'macos'
+        shell: bash
+        run: >-
+          python script/ci/acquire.py install-manifest-dependencies
+          --vcpkg-root "$RUNNER_TEMP/vcpkg" --platform macos
+          --installed-root "$RUNNER_TEMP/vcpkg-installed"
+      - name: Install pinned vcpkg manifest dependencies (Windows)
+        if: matrix.platform == 'windows'
+        shell: cmd
+        run: >-
+          python script/ci/acquire.py install-manifest-dependencies
+          --vcpkg-root "%RUNNER_TEMP%\vcpkg" --platform windows
+          --installed-root "%RUNNER_TEMP%\vcpkg-installed"
       - name: Acquire pinned Vulkan SDK (macOS)
         if: matrix.platform == 'macos'
         run: python script/ci/acquire.py install-vulkan --platform macos --root "$RUNNER_TEMP/vulkan-sdk"
@@ -186,14 +207,16 @@ jobs:
         run: >-
           python script/ci/acquire.py install-private-dependencies
           --root "$RUNNER_TEMP/private-dependencies" --platform macos
-          --cmake-arg "-DCMAKE_TOOLCHAIN_FILE=$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake"
+          --cmake-arg=-DCMAKE_TOOLCHAIN_FILE=$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake
+          --cmake-arg=-DVCPKG_MANIFEST_INSTALL=OFF
       - name: Install pinned private dependencies (Windows)
         if: matrix.platform == 'windows'
         shell: cmd
         run: >-
           python script/ci/acquire.py install-private-dependencies
           --root "%RUNNER_TEMP%\private-dependencies" --platform windows
-          --cmake-arg "-DCMAKE_TOOLCHAIN_FILE=%VCPKG_ROOT%\scripts\buildsystems\vcpkg.cmake"
+          --cmake-arg=-DCMAKE_TOOLCHAIN_FILE=%VCPKG_ROOT%\scripts\buildsystems\vcpkg.cmake
+          --cmake-arg=-DVCPKG_MANIFEST_INSTALL=OFF
       - name: Verify exact source
         shell: bash
         run: >-
@@ -211,7 +234,7 @@ jobs:
           sudo xcode-select --switch /Applications/Xcode_26.2.app/Contents/Developer
           python script/ci/acquire.py verify-tools --platform macos
           python script/ci/acquire.py record-metadata --platform macos --preset release --output build/toolchain-macos.json
-          cmake --preset release -DMC_ENABLE_RENDERER_SMOKE=OFF
+          cmake --preset release -DMC_ENABLE_RENDERER_SMOKE=OFF -DVCPKG_MANIFEST_INSTALL=OFF -DVCPKG_INSTALLED_DIR="$VCPKG_INSTALLED_DIR" -DCMAKE_PREFIX_PATH="$MC_PRIVATE_DEPENDENCIES_PREFIX" -DCoreCpp_DIR="$MC_PRIVATE_DEPENDENCIES_PREFIX/lib/cmake/CoreCpp" -DCoreProject2026_DIR="$MC_PRIVATE_DEPENDENCIES_PREFIX/lib/cmake/CoreProject2026"
           cmake --build --preset release
           ctest --test-dir build/release --output-on-failure --no-tests=error --timeout 60 | tee build/release-tests-macos.log
           python script/ci/acquire.py validate-shaders --build-dir build/release
@@ -219,7 +242,7 @@ jobs:
           mkdir -p dist
           python script/ci/build_snapshot.py package-desktop \
             --platform macos --install-root build/install \
-            --vcpkg-installed build/release/vcpkg_installed \
+            --vcpkg-installed "$VCPKG_INSTALLED_DIR" \
             --sdk-root "$VULKAN_SDK" \
             --toolchain-evidence build/toolchain-macos.json \
             --work-root build/package-macos \
@@ -248,7 +271,7 @@ jobs:
           if errorlevel 1 exit /b 1
           python script/ci/acquire.py record-metadata --platform windows --preset release --output build/toolchain-windows.json
           if errorlevel 1 exit /b 1
-          cmake --preset release -DMC_ENABLE_RENDERER_SMOKE=OFF
+          cmake --preset release -DMC_ENABLE_RENDERER_SMOKE=OFF -DVCPKG_MANIFEST_INSTALL=OFF -DVCPKG_INSTALLED_DIR="%VCPKG_INSTALLED_DIR%" -DCMAKE_PREFIX_PATH="%MC_PRIVATE_DEPENDENCIES_PREFIX%" -DCoreCpp_DIR="%MC_PRIVATE_DEPENDENCIES_PREFIX%\lib\cmake\CoreCpp" -DCoreProject2026_DIR="%MC_PRIVATE_DEPENDENCIES_PREFIX%\lib\cmake\CoreProject2026"
           if errorlevel 1 exit /b 1
           cmake --build --preset release
           if errorlevel 1 exit /b 1
@@ -264,7 +287,7 @@ jobs:
             mkdir dist
             if errorlevel 1 exit /b 1
           )
-          python script/ci/build_snapshot.py package-desktop --platform windows --install-root build/install --vcpkg-installed build/release/vcpkg_installed --runtime-search build/release/vcpkg_installed/x64-windows/bin --runtime-search "%VCToolsRedistDir%\x64\Microsoft.VC143.CRT" --toolchain-evidence build/toolchain-windows.json --work-root build/package-windows --version "%SNAPSHOT_VERSION%" --source-commit "%SOURCE_COMMIT%" --output "dist/minecraftclone-%VERSION_SLUG%-windows-x86_64.zip"
+          python script/ci/build_snapshot.py package-desktop --platform windows --install-root build/install --vcpkg-installed "%VCPKG_INSTALLED_DIR%" --runtime-search "%VCPKG_INSTALLED_DIR%\x64-windows\bin" --runtime-search "%VCToolsRedistDir%\x64\Microsoft.VC143.CRT" --toolchain-evidence build/toolchain-windows.json --work-root build/package-windows --version "%SNAPSHOT_VERSION%" --source-commit "%SOURCE_COMMIT%" --output "dist/minecraftclone-%VERSION_SLUG%-windows-x86_64.zip"
           if errorlevel 1 exit /b 1
           python script/ci/build_snapshot.py write-evidence --platform windows --configuration release --automated-verification passed --version "%SNAPSHOT_VERSION%" --source-commit "%SOURCE_COMMIT%" --artifact "dist/minecraftclone-%VERSION_SLUG%-windows-x86_64.zip" --toolchain-evidence build/toolchain-windows.json --output "dist/minecraftclone-%VERSION_SLUG%-windows-x86_64-evidence.json"
           if errorlevel 1 exit /b 1
@@ -333,15 +356,21 @@ jobs:
         run: python -m pip install --disable-pip-version-check --no-cache-dir cmake==3.31.6
       - name: Acquire pinned vcpkg
         run: python script/ci/acquire.py install-vcpkg --root "$RUNNER_TEMP/vcpkg"
+      - name: Install pinned vcpkg manifest dependencies
+        run: >-
+          python script/ci/acquire.py install-manifest-dependencies
+          --vcpkg-root "$RUNNER_TEMP/vcpkg" --platform android
+          --installed-root "$RUNNER_TEMP/vcpkg-installed"
       - name: Install pinned private dependencies
         run: >-
           python script/ci/acquire.py install-private-dependencies
           --root "$RUNNER_TEMP/private-dependencies" --platform android
-          --cmake-arg "-DCMAKE_TOOLCHAIN_FILE=$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake"
-          --cmake-arg "-DVCPKG_CHAINLOAD_TOOLCHAIN_FILE=$ANDROID_SDK_ROOT/ndk/27.0.12077973/build/cmake/android.toolchain.cmake"
-          --cmake-arg "-DVCPKG_TARGET_TRIPLET=arm64-android"
-          --cmake-arg "-DANDROID_ABI=arm64-v8a"
-          --cmake-arg "-DANDROID_PLATFORM=android-28"
+          --cmake-arg=-DCMAKE_TOOLCHAIN_FILE=$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake
+          --cmake-arg=-DVCPKG_CHAINLOAD_TOOLCHAIN_FILE=$ANDROID_SDK_ROOT/ndk/27.0.12077973/build/cmake/android.toolchain.cmake
+          --cmake-arg=-DVCPKG_TARGET_TRIPLET=arm64-android
+          --cmake-arg=-DANDROID_ABI=arm64-v8a
+          --cmake-arg=-DANDROID_PLATFORM=android-28
+          --cmake-arg=-DVCPKG_MANIFEST_INSTALL=OFF
       - name: Verify exact source and Android wrapper
         run: |
           python script/ci/build_snapshot.py source-identity --expected "$SOURCE_COMMIT" --version "$SNAPSHOT_VERSION" --output build/source-identity.json
@@ -351,7 +380,7 @@ jobs:
       - name: Build and package development APK
         run: |
           set -euo pipefail
-          android/gradlew --no-daemon --stacktrace :app:assembleDebug
+          android/gradlew --no-daemon --stacktrace -PvcpkgManifestInstall=OFF -PvcpkgInstalledDir="$VCPKG_INSTALLED_DIR" -PcmakePrefixPath="$MC_PRIVATE_DEPENDENCIES_PREFIX" -PcoreCppDir="$MC_PRIVATE_DEPENDENCIES_PREFIX/lib/cmake/CoreCpp" -PcoreProjectDir="$MC_PRIVATE_DEPENDENCIES_PREFIX/lib/cmake/CoreProject2026" :app:assembleDebug
           python script/ci/build_snapshot.py record-android-metadata --android-root android --vcpkg-root "$VCPKG_ROOT" --source-commit "$SOURCE_COMMIT" --output build/toolchain-android.json
           mkdir -p dist
           cp android/app/build/outputs/apk/debug/app-debug.apk "dist/minecraftclone-${VERSION_SLUG}-android-arm64-v8a-ci-development.apk"
@@ -362,7 +391,7 @@ jobs:
             --toolchain-evidence build/toolchain-android.json \
             --output "dist/minecraftclone-${VERSION_SLUG}-android-arm64-v8a-evidence.json"
           python script/ci/build_snapshot.py license-archive \
-            --vcpkg-installed android/app/.cxx --work-root build/package-android \
+            --vcpkg-installed "$VCPKG_INSTALLED_DIR" --work-root build/package-android \
             --output "dist/minecraftclone-${VERSION_SLUG}-android-licenses.zip"
           python script/ci/build_snapshot.py write-evidence \
             --platform android --configuration development-debug --automated-verification build-only \
