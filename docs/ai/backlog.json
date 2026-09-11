@@ -3971,5 +3971,44 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0101",
+    "title": "Require prepublication candidate preview",
+    "kind": "chore",
+    "status": "done",
+    "priority": "P0",
+    "route": "luna",
+    "milestone": "EarlyDev 0.1.0:4",
+    "depends_on": [],
+    "acceptance": "The exact intended Mac, Windows, and Android candidate artifacts are built and tested before publication; normal playable Mac candidate launches with upright grid, first-person player-following camera, and default-on multiline HUD; delivery pauses before creating a tag or GitHub release until explicit user acceptance; byte-changing feedback invalidates candidate receipts and requires rebuild, retest, and another preview; publication uses the accepted immutable bytes and verifies remote hashes and provenance.",
+    "evidence": "python3 script/ai_tasks.py check: passed; python3 script/ai_docs.py check: passed; git diff --check: passed.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0035",
+    "motivation": "The user must inspect the exact playable candidate immediately before publication so visible defects cannot be discovered only after immutable release creation.",
+    "context": "The existing release policy launches the macOS artifact only after publication. User instruction on 2026-09-11 supersedes that order while preserving authorized ai-* pushes and CI candidate builds, the post-publication verification, the stop before the next snapshot, and the Snapshot 8 minor-feedback hold.",
+    "complexity": "low",
+    "created_at": "2026-09-11",
+    "resolved_at": "2026-09-11",
+    "resolution_changes": "Reordered the canonical snapshot release checklist so exact candidate artifacts are built and tested before a normal playable macOS preview and explicit user acceptance; byte-changing feedback now invalidates receipts, while publication verifies the accepted bytes and provenance.",
+    "plan": [
+      "Make RELEASES.md the single owner of the prepublication candidate-preview order and immutable-byte acceptance rule.",
+      "Keep candidate CI and ai-* branch pushes allowed before the hold; do not create a tag or GitHub release before explicit acceptance."
+    ],
+    "product_changes": [
+      "Release publication waits for explicit approval after the exact normal playable candidate has been launched for inspection."
+    ],
+    "code_changes": [
+      "Update the canonical release checklist without duplicating policy across workflow documents."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": false,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]

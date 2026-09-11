@@ -30,4 +30,23 @@ Use [the version/branch procedure](../VERSION_CONVENTION.md). The finalization c
 
 Local commits/tags and remote publication are distinct. A request to create planning tasks does not authorize either release execution or remote mutation. A later release request authorizes its scoped local workflow; push/releases need the requested external authority. After actual publication, make an `ai-dev` metadata ledger commit with the aggregate `Task-ID`, real published refs/artifacts, `resolved_at`, and `done` status. This record follows the immutable tag and is excluded from the next snapshot's basic-task collection. Snapshot 8 uses the same ledger record; its minor remains active and unfinalized until requested feedback, without creating Snapshot 9.
 
-After each authorized snapshot publication, verify the exact tag/signing and asset checksums, launch the exact published macOS artifact locally for user inspection, then pause for notes. Do not start work on the next snapshot until the user responds; this checkpoint applies to Snapshot 3 through Snapshot 8, in addition to the existing post-Snapshot-8 minor hold. Never auto-publish a minor or invent Snapshot 9 during the Snapshot 8 hold.
+Before publishing a snapshot, build the intended final macOS, Windows and Android
+candidate artifacts from one immutable source identity. Complete the applicable
+build, test, packaging and provenance gates for each candidate. Candidate CI runs
+and authorized `ai-*` branch pushes may proceed before publication. Launch the
+normal playable macOS candidate for user inspection, with the snapshot's default
+gameplay presentation rather than a capture or benchmark mode, then pause. Do not
+create the release tag or GitHub release until the user explicitly accepts that
+candidate.
+
+Feedback that changes any candidate byte invalidates the affected artifact
+receipts: rebuild and retest the complete candidate set, launch the corrected
+macOS candidate, and pause again. After acceptance, publish those same immutable
+artifact bytes. Verify the remote tag, signing, provenance, asset names and
+checksums against the accepted local candidate before recording the release as
+done.
+
+Do not start work on the next snapshot until the user responds to the accepted
+release; this checkpoint applies to Snapshot 3 through Snapshot 8, in addition
+to the existing post-Snapshot-8 minor hold. Never auto-publish a minor or invent
+Snapshot 9 during the Snapshot 8 hold.
