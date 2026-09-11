@@ -132,7 +132,7 @@
         "vcpkg-configuration.json",
         "vcpkg.json"
       ],
-      "sources_sha256": "ccc7094f55b1dc57274ce6a4feb53c7b5f7237daabd6d163cf7dd00411cba068"
+      "sources_sha256": "f7748eae4165aab88350e3c6d058568f8840789fa926ad6c4b5839dc5ae4cc92"
     },
     {
       "guide": "docs/code/CORE.md",
@@ -255,7 +255,7 @@
         "tests/testsupport/image_comparison_tests.cpp",
         "tests/testsupport/include/testsupport/ImageComparison.hpp"
       ],
-      "sources_sha256": "e34d3a1fd21c8fab6662b01d6704efe81bb8669aae2a0bdbf5e6a14b2dc48a94"
+      "sources_sha256": "b73945cadb4a9bd21ed16ef7b95b8d7ac5553b1cb6707962242d91c94775f978"
     }
   ],
   "version": 1
