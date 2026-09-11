@@ -1,10 +1,15 @@
 target_sources(mc
     PRIVATE
         BotClient.cpp
+    Camera.cpp
+    CameraController.cpp
+    DepthFormat.cpp
+        FrameScheduler.cpp
         GameClient.cpp
-        render/MeshShaderSelection.hpp
+        PlayerPresentation.cpp
+        render/DebugHud.cpp
         render/ShaderAssets.cpp
-        render/VulkanRenderer.cpp
+        render/PresentationRenderer.cpp
 )
 if(NOT ANDROID)
     target_sources(mc
@@ -20,6 +25,8 @@ if(NOT ANDROID)
         render/shaders/grid.vert
         render/shaders/player.vert
         render/shaders/trivial.frag
+        render/shaders/debug_hud.vert
+        render/shaders/debug_hud.frag
     )
 
     mc_copy_target_shaders(mc_main mc)

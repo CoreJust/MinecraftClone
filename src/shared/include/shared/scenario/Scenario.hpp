@@ -1,5 +1,7 @@
 #pragma once
 
+#include <shared/world/World.hpp>
+
 #include <cstdint>
 #include <expected>
 #include <string>
@@ -14,11 +16,14 @@ using ScenarioActorId = uint32_t;
 namespace scenario_detail {
 
 class ScenarioParser;
+class CoreLangScenarioLowerer;
+class ScenarioPlanCollector;
 
 } // namespace scenario_detail
 
 enum class ScenarioProfile : uint8_t {
     Flat2dV1,
+    Flat3dV1,
 };
 
 [[nodiscard]]
@@ -57,6 +62,18 @@ enum class ScenarioDiagnosticCode : uint8_t {
     InvalidRange,
     InvalidCharacter,
     MissingPlayer,
+    UnknownSourceHeader,
+    CoreLangCompileFailure,
+    CoreLangRuntimeFailure,
+    Cancelled,
+};
+
+class ScenarioCancellation {
+public:
+    virtual ~ScenarioCancellation() = default;
+
+    [[nodiscard]]
+    virtual bool isCancellationRequested() const noexcept = 0;
 };
 
 [[nodiscard]]
@@ -75,6 +92,10 @@ struct ScenarioActor final {
     char character;
     uint8_t x;
     uint8_t y;
+    uint8_t z;
+    int16_t yaw_degrees;
+    int16_t pitch_degrees;
+    int16_t roll_degrees;
     ScenarioLocation location;
 };
 
@@ -82,6 +103,13 @@ struct ScenarioInputOperation final {
     ScenarioActorId actor;
     int8_t x;
     int8_t y;
+    uint64_t effective_boundary;
+};
+
+struct ScenarioCameraInputOperation final {
+    ScenarioActorId actor;
+    int8_t strafe;
+    int8_t forward;
     uint64_t effective_boundary;
 };
 
@@ -93,10 +121,12 @@ struct ScenarioExpectPositionOperation final {
     ScenarioActorId actor;
     uint8_t x;
     uint8_t y;
+    uint8_t z;
 };
 
 using ScenarioOperationData = std::variant<
     ScenarioInputOperation,
+    ScenarioCameraInputOperation,
     ScenarioWaitOperation,
     ScenarioExpectPositionOperation>;
 
@@ -105,6 +135,23 @@ struct ScenarioOperation final {
     uint64_t boundary;
     ScenarioOperationData data;
 };
+
+class ScenarioPlan;
+
+// This is the scenario-side form of the client camera controller.  A yaw of
+// zero faces +Y; positive yaw turns toward +X.  It deliberately returns the
+// existing cardinal wire Direction so the server remains the sole authority.
+[[nodiscard]]
+Direction scenarioCameraRelativeDirection(
+    int16_t yaw_degrees,
+    int8_t strafe,
+    int8_t forward
+) noexcept;
+
+// Stable plan fingerprint recorded with runtime evidence.  It identifies the
+// replay inputs and camera pose without including wall-clock measurements.
+[[nodiscard]]
+std::string scenarioReplayId(ScenarioPlan const& plan);
 
 class ScenarioPlan final {
 public:
@@ -144,6 +191,8 @@ private:
     uint64_t m_evidence_count;
 
     friend class scenario_detail::ScenarioParser;
+    friend class scenario_detail::CoreLangScenarioLowerer;
+    friend class scenario_detail::ScenarioPlanCollector;
 };
 
 [[nodiscard]]
@@ -151,6 +200,16 @@ std::expected<ScenarioPlan, ScenarioDiagnostic> parseScenario(
     std::string_view filename,
     std::string_view source,
     ScenarioLimits const& limits
+);
+
+// Selects the finite legacy frontend or the CoreLang frontend from its explicit
+// source header. Both frontends lower to the same immutable ScenarioPlan.
+[[nodiscard]]
+std::expected<ScenarioPlan, ScenarioDiagnostic> parseScenarioSource(
+    std::string_view filename,
+    std::string_view source,
+    ScenarioLimits const& limits,
+    ScenarioCancellation const* cancellation = nullptr
 );
 
 } // namespace shared

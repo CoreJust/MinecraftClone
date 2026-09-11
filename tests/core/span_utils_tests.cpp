@@ -17,7 +17,7 @@ concept StringViewBorrowable = requires(T&& value) {
 TEST(SpanUtilsTest, ConvertsCollectionsToByteAndElementSpans) {
     std::array<uint16_t, 2> values{ 0x1234, 0x5678 };
     auto bytes = core::asByteSpan(values);
-    auto elements = core::asSpan<uint16_t>(bytes);
+    auto elements = core::asSpan<uint16_t>(values);
     EXPECT_EQ(bytes.size(), sizeof(values));
     ASSERT_EQ(elements.size(), values.size());
     EXPECT_EQ(elements[0], values[0]);

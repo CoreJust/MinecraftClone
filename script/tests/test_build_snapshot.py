@@ -250,9 +250,12 @@ class BuildSnapshotTests(unittest.TestCase):
     def test_workflow_builds_resolved_commit_without_publishing(self):
         workflow = WORKFLOW.read_text(encoding="utf-8")
         self.assertIn("workflow_dispatch:", workflow)
-        self.assertIn("'codex/ai-release-*'", workflow)
         self.assertIn("'ai/*/*/*'", workflow)
-        self.assertIn("source_commit: ${{ steps.identity.outputs.source_commit }}", workflow)
+        self.assertIn("source_commit: ${{ steps.trust.outputs.source_commit }}", workflow)
+        self.assertIn("trusted_dependency_source: ${{ steps.trust.outputs.trusted_dependency_source }}", workflow)
+        self.assertIn("if: needs.source.outputs.trusted_dependency_source == 'true'", workflow)
+        self.assertIn("git merge-base --is-ancestor", workflow)
+        self.assertIn("refs/heads/ai-main|refs/tags/ai/*/*/*", workflow)
         self.assertGreaterEqual(workflow.count("ref: ${{ needs.source.outputs.source_commit }}"), 2)
         self.assertIn("runner: macos-15", workflow)
         self.assertIn("xcode-select --switch /Applications/Xcode_26.2.app/Contents/Developer", workflow)
@@ -265,6 +268,20 @@ class BuildSnapshotTests(unittest.TestCase):
         self.assertNotIn(r"build\toolchain-windows.json", workflow)
         self.assertNotIn("gh release", workflow)
         self.assertNotIn("contents: write", workflow)
+
+    def test_private_dependency_workflow_uses_secrets_only_after_trust_and_excludes_checkouts(self):
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        source_job = workflow.split("\n  desktop:", maxsplit=1)[0]
+        self.assertNotIn("secrets.", source_job)
+        self.assertIn("MC_CI_CORECPP_DEPLOY_KEY", workflow)
+        self.assertIn("MC_CI_COREPROJECT2026_DEPLOY_KEY", workflow)
+        self.assertIn("fetch-private-dependencies", workflow)
+        self.assertIn("install-private-dependencies", workflow)
+        self.assertIn("verify-private-dependency-artifact-exclusion", workflow)
+        self.assertNotIn("private-dependencies/**", workflow)
+        upload_paths = [block.split("\n          if-no-files-found", maxsplit=1)[0] for block in workflow.split("path: |")[1:]]
+        self.assertTrue(upload_paths)
+        self.assertTrue(all("private-dependency" not in path for path in upload_paths))
 
     def test_windows_workflows_restore_acquired_vcpkg_and_fail_closed_on_metadata(self):
         for workflow_path in (WORKFLOW, AI_WORKFLOW):
@@ -282,6 +299,57 @@ class BuildSnapshotTests(unittest.TestCase):
                 windows_step[metadata:].splitlines()[1].strip(),
                 "if errorlevel 1 exit /b 1",
             )
+
+    def test_windows_release_phase_stops_at_each_fallible_command(self):
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        windows_step = workflow.split("      - name: Build, test, and package Windows\n", maxsplit=1)[1]
+        windows_phase = windows_step.split("      - name: Upload desktop release candidate\n", maxsplit=1)[0]
+        commands = (
+            'call "%ProgramFiles%\\Microsoft Visual Studio\\2022\\Enterprise\\Common7\\Tools\\VsDevCmd.bat" -arch=amd64',
+            "python script/ci/acquire.py verify-tools --platform windows",
+            "python script/ci/acquire.py record-metadata --platform windows --preset release --output build/toolchain-windows.json",
+            "cmake --preset release -DMC_ENABLE_RENDERER_SMOKE=OFF",
+            "cmake --build --preset release",
+            "ctest --test-dir build\\release --output-on-failure --no-tests=error --timeout 60 > build\\release-tests-windows.log 2>&1",
+            "type build\\release-tests-windows.log",
+            "python script/ci/acquire.py validate-shaders --build-dir build\\release",
+            "cmake --install build\\release --prefix build\\install",
+            "mkdir dist",
+            "python script/ci/build_snapshot.py package-desktop --platform windows",
+            "python script/ci/build_snapshot.py write-evidence --platform windows",
+            "python script/ci/build_snapshot.py write-checksum",
+            "python script/ci/acquire.py verify-private-dependency-artifact-exclusion",
+        )
+        failure_guard = "if errorlevel 1 exit /b 1"
+        lines = [line.strip() for line in windows_phase.splitlines()]
+        command_indices = [next(index for index, line in enumerate(lines) if line.startswith(command)) for command in commands]
+        for command, index in zip(commands, command_indices):
+            if command.startswith("ctest "):
+                self.assertEqual(
+                    lines[index + 1],
+                    "if errorlevel 1 (type build\\release-tests-windows.log & exit /b 1)",
+                )
+            else:
+                self.assertEqual(lines[index + 1], failure_guard, command)
+
+        def run_extracted_phase(failed_command: str | None) -> tuple[int, list[str]]:
+            errorlevel = 0
+            executed = []
+            for line in lines:
+                command = next((item for item in commands if line.startswith(item)), None)
+                if command is not None:
+                    executed.append(command)
+                    errorlevel = int(command == failed_command)
+                elif line.startswith("if errorlevel 1") and errorlevel >= 1:
+                    return errorlevel, executed
+            return errorlevel, executed
+
+        self.assertEqual(run_extracted_phase(None), (0, list(commands)))
+        for failed_command in commands:
+            exit_code, executed = run_extracted_phase(failed_command)
+            self.assertEqual(exit_code, 1)
+            self.assertEqual(executed[-1], failed_command)
+            self.assertNotIn(commands[-1], executed[:-1])
 
 
 if __name__ == "__main__":

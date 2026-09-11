@@ -121,6 +121,87 @@ class AiHistoryTest(unittest.TestCase):
             ["MC-AI-0001", "MC-AI-0002"],
         )
 
+    def test_snapshot_three_publication_exception_is_exactly_scoped(self) -> None:
+        standard = ai_history.PUBLICATION_LEDGER_MUTABLE_FIELDS
+        historical = ai_history.publication_ledger_mutable_fields(
+            "8df27fb8fa08d9e0cd625b8cad85209fdd09251d"
+        )
+
+        self.assertEqual(
+            historical - standard,
+            {"context", "plan", "product_changes", "code_changes"},
+        )
+        self.assertEqual(
+            ai_history.publication_ledger_mutable_fields("0" * 40),
+            standard,
+        )
+
+    def test_publication_ledger_exception_reaches_commit_validation(self) -> None:
+        tasks = self.hierarchy()
+        self.commit("first task\n\nTask-ID: MC-AI-0001")
+        self.commit("second task\n\nTask-ID: MC-AI-0002")
+        previous = tasks[2]
+        previous.update({
+            "status": "active",
+            "owner": "Codex",
+            "product_changes": ["Snapshot result"],
+            "code_changes": ["Snapshot gate"],
+            "evidence": "Local snapshot gates passed.",
+            "resolution_changes": "Finalized for local promotion.",
+        })
+        ai_history.finalize(self.repo, tasks, "MC-AI-0101", "HEAD")
+        self.write_task_metadata(tasks)
+        source = self.commit("finalize snapshot\n\nTask-ID: MC-AI-0101")
+        self.git_run("git", "checkout", "-q", "-b", "ai-main", self.baseline)
+        self.git_run(
+            "git", "merge", "--no-ff", "-q", source,
+            "-m", "promote snapshot\n\nTask-ID: MC-AI-0101",
+        )
+        promoted = self.git_run("git", "rev-parse", "HEAD")
+        self.git_run(
+            "git", "tag", "-a", "ai/Test/0.1.0/1_26.09.09", promoted,
+            "-m", "published snapshot",
+        )
+        self.git_run("git", "checkout", "-q", "-b", "ai-dev", source)
+        previous.update({
+            "status": "done",
+            "owner": "",
+            "context": "Condensed published context.",
+            "plan": ["Condensed published plan."],
+            "product_changes": ["Condensed product result."],
+            "code_changes": ["Condensed code result."],
+            "evidence": "Published snapshot artifacts verified.",
+            "resolved_at": "2026-09-09",
+            "resolution_changes": "Recorded the published snapshot.",
+        })
+        self.write_task_metadata(tasks)
+        ledger = self.commit("publication ledger\n\nTask-ID: MC-AI-0101")
+        tasks.extend([
+            task(
+                "MC-AI-0102", "snapshot", "MC-AI-0103", status="active", owner="Codex",
+                baseline_commit=promoted, product_changes=["Next snapshot"],
+                code_changes=["Next gate"], evidence="Local snapshot gates passed.",
+                resolution_changes="Finalized for local promotion.",
+            ),
+            task(
+                "MC-AI-0003", "basic", "MC-AI-0102", status="done",
+                evidence="passed", resolved_at="2026-09-09", resolution_changes="finished",
+            ),
+        ])
+        self.commit("next task\n\nTask-ID: MC-AI-0003")
+
+        with self.assertRaisesRegex(ai_history.HistoryError, "changes immutable"):
+            ai_history.collect_snapshot(self.repo, tasks, "MC-AI-0102", "HEAD")
+        with mock.patch.dict(
+            ai_history.LEGACY_PUBLICATION_LEDGER_FIELD_EXCEPTIONS,
+            {ledger: {"context", "plan", "product_changes", "code_changes"}},
+            clear=True,
+        ):
+            self.assertEqual(
+                ai_history.collect_snapshot(self.repo, tasks, "MC-AI-0102", "HEAD"),
+                ["MC-AI-0003"],
+            )
+
     def test_collect_next_snapshot_excludes_post_publication_aggregate_ledger(self) -> None:
         tasks = self.hierarchy()
         self.commit("first task\n\nTask-ID: MC-AI-0001")

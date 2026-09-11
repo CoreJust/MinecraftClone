@@ -121,6 +121,42 @@ end
     EXPECT_EQ(result->expectations_passed, 2U);
 }
 
+TEST(ScenarioRunner, ReplaysTwoCameraRelativeActorsThroughTheAuthoritativeDirectionWire)
+{
+    static constexpr std::string_view SOURCE = R"(scenario 1
+profile flat3d-v1
+seed 42
+player alice character "@" at 4 4 0 orientation 0 0 0
+player bob character "#" at 10 10 0 orientation 90 0 0
+begin
+input alice camera 0 1
+input bob camera 0 1
+wait 2
+expect player alice position 4 6 0
+expect player bob position 12 10 0
+end
+)";
+    auto parsed = parsePlan(SOURCE);
+    ASSERT_TRUE(parsed.has_value()) << parsed.error().message;
+    std::string const replay_id = shared::scenarioReplayId(*parsed);
+
+    auto const result = acceptance::runScenario(*parsed, {
+        .deadline = std::chrono::seconds{ 5 },
+        .network_poll_interval = std::chrono::milliseconds{ 1 },
+    });
+
+    ASSERT_TRUE(result.has_value()) << result.error();
+    EXPECT_TRUE(result->passed);
+    EXPECT_EQ(result->clients_requested, 2U);
+    EXPECT_EQ(result->clients_accepted, 2U);
+    EXPECT_EQ(result->ticks, 2U);
+    EXPECT_EQ(result->inputs_sent, 4U);
+    EXPECT_EQ(result->camera_relative_inputs, 2U);
+    EXPECT_EQ(result->expectations_passed, 2U);
+    EXPECT_EQ(result->authoritative_tick_ms, 100U);
+    EXPECT_EQ(result->replay_id, replay_id);
+}
+
 TEST(ScenarioRunner, RejectsInvalidRuntimeLimitsWithoutWaitingForNetwork)
 {
     static constexpr std::string_view SOURCE = R"(scenario 1

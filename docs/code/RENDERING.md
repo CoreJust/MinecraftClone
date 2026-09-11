@@ -1,108 +1,127 @@
 # Vulkan rendering
 
-## Scope and checkout state
+## Boundary and ownership
 
-This note describes the current working tree. Its renderer changes are staged
-or unstaged local work where shown by `git status`; they are not evidence that
-the behavior is released. The current source requests Vulkan 1.2; actual
-capabilities and selected shader path determine driver requirements.
+[`VulkanRenderer.hpp`](../../src/client/include/client/render/VulkanRenderer.hpp)
+is the Client policy facade. It owns scene draw order, grid/player push
+constants, shader choice, camera/world interpretation, and raw device children
+(pipeline layouts and CoreCpp program/cache lifetimes). CoreCpp
+`RuntimeKernel::GraphicsProgram` validates the Client's reflected vertex and
+fragment entrypoints, and `RuntimeGraphicsVulkan::VulkanKernelCache` owns the
+corresponding shader modules and pipelines. The Client does not own a Vulkan
+instance, physical device, device, queues, command pools, synchronization
+objects, swapchain, image views, or GLFW/Android surface.
 
-## Public boundary and ownership
+Those objects belong to one CoreCpp
+`RuntimeGraphicsVulkan::PresentationContext`. Desktop constructs it using
+`RuntimePlatformGlfw` and `RuntimeGraphicsVulkanGlfw`; Android constructs the
+same contract through `RuntimeGraphicsVulkanAndroid`. All Client device
+children use the current `PresentationResourceScope::device()`, format, and
+extent, and the acquired `Frame::imageView()` is the only render target. The
+Client records only into `Frame::commandBuffer()` via the frame callback;
+CoreCpp performs the acquire/transition/submit/present sequence.
 
-[VulkanRenderer.hpp](../../src/client/include/client/render/VulkanRenderer.hpp)
-defines a non-copyable, non-movable façade. `PlayerClient` owns it after its
-window, `GlfwSurfaceProvider`, and `InstalledShaderAssets`; those borrowed
-providers must outlive the renderer. It passes a span of `PlayerRenderData`
-every frame and calls `hotReload()` when R changes from released to pressed.
-The façade owns `Impl` with a
-`unique_ptr`; `Impl` owns the frame graph, imported swapchain pass, shader
-modules, layouts, and pipelines.
+`PresentationResourceScope` becomes stale on recreation. Pre-recreate releases
+the cache, programs, layouts, and scope; post-recreate builds format-dependent
+objects from a fresh scope. `waitForSubmittedFrames()` drains bounded frame
+slots without `vkDeviceWaitIdle`; there is no steady per-draw allocation.
 
-Construction in [VulkanRenderer.cpp](../../src/client/render/VulkanRenderer.cpp)
-builds a context for a supplied `SurfaceProvider`, requests API version 1.2,
-portability enumeration, dynamic rendering and synchronization2 extensions/features,
-graphics and present queues, and a swapchain. Validation is required in debug
-desktop builds, with `MC_ENABLE_VULKAN_VALIDATION_LAYERS`, or when options
-explicitly request it. Android debug builds do not assume a packaged validation
-layer, and ordinary release builds do not require one.
-Mesh shaders are preferred, not required. `VulkanRendererOptions` can force
-vertex pipelines even when mesh support is enabled in the context.
-Failure to satisfy a required context condition prevents normal renderer
-construction; no alternative renderer exists.
-
-## Per-frame data flow
+## Scene and shader policy
 
 ```text
-World players -> PlayerClient::render -> PlayerRenderData span
-  -> VulkanRenderer::render -> FrameGraph pass -> swapchain
-       grid pipeline first, then one player draw per record
+World players -> PlayerClient / AndroidPlayerClient -> PlayerRenderData span
+  -> VulkanRenderer -> PresentationContext::Frame callback -> present/readback
 ```
 
-The renderer imports the swapchain with a dark clear color and registers one
-pass that writes it. Each `render` binds that pass, pushes constants, records
-the grid then player commands, and invokes `FrameGraph::render()`. The grid
-always draws 32 by 32 cells; every player produces a 2 by 2 colored quad. The
-coordinate mapping uses 32 world units in each axis, so the renderer assumes
-the shared world dimensions are 32. Changing `World::WIDTH` or `HEIGHT`
-requires changing the C++ constants and shader constants/push data together.
+Renderer clears dark, draws the 32-by-32 ground grid first, then coloured
+2-by-2-by-2 remote-player boxes. Each authoritative local-player update sets
+the eye to `(x+1, y+1, 1.6)` without changing its angles and omits that local
+cube. A right-handed Z-up camera supplies a zero-to-one projection with Y
+flipped for its positive-height viewport. The flip reverses winding, so
+grid/player/HUD triangles are reversed for the CoreCpp CCW back-face policy.
+`GridPushConstants` and `PlayerPushConstants` are both 96 bytes and carry the
+projection-view matrix, so their ABI must remain compatible with the GLSL push
+blocks. The grid and boxes use a same-scope depth attachment selected
+deterministically from `D32_SFLOAT`, then `D16_UNORM`, with the CC-0014
+explicit `LESS` depth test/write pipeline state. Each freshly
+created attachment receives an explicit `UNDEFINED` to
+`DEPTH_STENCIL_ATTACHMENT_OPTIMAL` barrier before the first dynamic-rendering
+pass; resize destruction releases view, image, and memory before its resource
+scope. The portable `RuntimeKernel::SpirvModule` boundary
+currently accepts vertex/fragment stages, so both desktop and Android use
+`grid.vert`, `player.vert`, and `trivial.frag`; mesh modules remain assets but
+are not a selected Client pipeline.
 
-`GridPushConstants` and `PlayerPushConstants` are both asserted as 32 bytes.
-Their field order and alignment must remain ABI-compatible with their GLSL
-push-constant blocks. The selected main stage is mesh only when mesh capability
-is available and the effective instance/device API version is at least Vulkan
-1.3; otherwise it is vertex. This matches the packaged mesh modules' Vulkan 1.3
-target while keeping the vertex fallback usable on Vulkan 1.2. The same stage
-is used for pipeline creation and `pushConstants`.
+Shader assets are borrowed: desktop `InstalledShaderAssets` reads the installed
+`shaders/` directory and Android `AndroidShaderAssets` reads APK assets. Both
+accept bare `.spv` names only; no source-tree fallback is allowed.
 
-## Shader sets
+## Debug HUD boundary
 
-The source list in [src/client/CMakeLists.txt](../../src/client/CMakeLists.txt)
-is compiled by [`mc_target_shaders`](../../cmake/Helpers.cmake) into `.spv`
-files. `mc_copy_target_shaders` copies them beside each consuming executable
-under `shaders/`; installation places `mc_main` and that directory together.
-[`ShaderAssets`](../../src/client/include/client/render/ShaderAssets.hpp) is the
-renderer's borrowed loading contract. `InstalledShaderAssets` resolves the
-Windows/macOS executable path independently of working directory, accepts only
-a bare `.spv` filename, and reports missing files. Android supplies an APK asset
-loader and packages only the fallback shaders; it forces vertex pipelines.
-There is no environment override or source-tree fallback.
+`DebugHudState` defaults off for benchmark/capture and normal gameplay enables
+it. It formats four bounded allocation-free lines and packs four sanitized
+ASCII bytes into each instance word. `debug_hud.vert` expands
+those instances into procedural 8-by-16 quads; `debug_hud.frag` owns the
+texture-free bitmap constants and performs the factor-of-eight glyph-row
+addressing. The renderer submits all packed words with one instanced draw
+through the same-device `GraphicsProgram` and `VulkanKernelCache` used by the
+scene.
 
-| Purpose | Preferred shader | Fallback | Contract |
-| --- | --- | --- | --- |
-| Grid | [grid.mesh](../../src/client/render/shaders/grid.mesh) | [grid.vert](../../src/client/render/shaders/grid.vert) | 32 × 32 quads with a 0.03-cell inset and the grid push block |
-| Player | [player.mesh](../../src/client/render/shaders/player.mesh) | [player.vert](../../src/client/render/shaders/player.vert) | one 2-triangle quad using origin, size, and RGBA push data |
-| Color | [trivial.frag](../../src/client/render/shaders/trivial.frag) | — | forwards the interpolated color |
+Desktop and Android supply the current local character's authoritative X/Y and
+plane-derived Z (`0` while the world remains flat), plus camera yaw/pitch/roll
+as `Y/P/R(deg):yaw,pitch,roll`. The HUD labels this `XYZ`; its plane-derived Z
+is documented here, not camera-eye elevation. The renderer overwrites the presentation bit from its
+own successful `PresentationContext::complete` result, so dropped or
+non-presented frames do not enter the one-second FPS window. The public
+`setDebugHudEnabled`/`toggleDebugHud` controls support performance measurements.
 
-Both geometry paths use the same four corners and two triangles. Mesh shaders
-produce four vertices/two primitives per workgroup; vertex fallbacks issue six
-vertices, with the grid using one instance per cell. Keep locations and
-push-constant layouts synchronized across each pair and the C++ structs.
+## Capture, input, and validation
 
-## Reload and teardown
+Capture enables transfer-source presentation and returns an owned RGBA8 vector
+after submission. Ordinary frames allocate neither draw data nor readback;
+recreation, resize, and Android window replacement preserve that contract.
 
-`hotReload()` requests an instance-level frame-graph reload. The registered
-reload callback destroys pipelines/layouts/modules on `Destroy` and recreates
-them otherwise. Destruction first waits for the device to become idle, then
-releases the same graphics objects. The renderer therefore expects pipeline
-creation to be repeatable and all currently selected SPIR-V paths to exist at
-reload time.
+Desktop GLFW cursor deltas control yaw/pitch; W/A/S/D lower through
+`CameraController` into unchanged authoritative `Direction` packets. Escape,
+R, and debounced F1 remain window input; R reloads shaders and F1 toggles HUD.
+Android maps left drag to movement and right drag to yaw/pitch before the same
+lowering while retaining its asset and `AndroidInput` glue.
 
-## Extension points and limits
+[`renderer_smoke_tests.cpp`](../../tests/client/renderer_smoke_tests.cpp), when
+enabled with `MC_ENABLE_RENDERER_SMOKE`, deterministically tests the GLFW
+input adapter and runs the real presentation/context recreate/readback case on
+a Vulkan-capable desktop. The latter is a hardware smoke, not a replacement for
+normal CTest. Android package compilation links the exact installed Android
+RuntimeGraphics components; emulator presentation remains separate runtime
+acceptance.
 
-- Add world geometry by adding a shader/pipeline and recording it in the
-  existing render pass with explicit data/layout contracts.
-- Add per-player attributes by extending `PlayerRenderData`, the matching C++
-  push struct, both player shader variants, and their reflected layouts.
-- [Shader asset tests](../../tests/client/shader_assets_tests.cpp) load all five
-  compiled shaders from a temporary working directory and reject missing/invalid paths.
-- `ShaderSpirvTargetTest.*` runs `spirv-val` against the copied executable
-  shader assets: mesh shaders target Vulkan 1.3, while vertex/fragment fallback
-  shaders validate for Vulkan 1.2.
-- Optional [renderer smoke](../../tests/client/renderer_smoke_tests.cpp), enabled
-  by `MC_ENABLE_RENDERER_SMOKE`, requires a desktop, GPU and validation layers.
-  It draws eight frames, including empty/player data, a window resize, an
-  instance reload, and an RGBA readback through automatic and forced-vertex
-  paths. It checks the captured scene pixels and CTest rejects validation/error logs.
-  Automatic selection does not prove mesh execution on a non-mesh device.
-- Smoke does not exercise user controls; visible interaction acceptance still
-  needs separate evidence.
+`renderer_golden_tests.cpp` is an opt-in true offscreen production-renderer
+capture of the fixed 640-by-480 S4 scene. It creates no GLFW window, Vulkan
+surface, or swapchain and remains valid with display environment variables
+unset. `RuntimeGraphicsVulkan::VulkanOffscreenTarget` owns the fixed
+`R8G8B8A8_UNORM` linear color target, command submission, and readback; the
+Client owns its selected depth target through the recording lifetime. The
+offscreen callback invokes the exact same grid/player scene-recording routine,
+shader programs, camera transforms, and depth-enabled `VulkanKernelCache`
+pipelines as presentation. It requires validation during strict approval and
+checks both exact `flat3d-v2` bytes and a near-box-over-later-far pixel
+predicate. Test-only `mc_test_support` writes bounded actual/diff diagnostics;
+the versioned reference may change only after deliberate native-size review,
+never automatically.
+
+`RendererSmokeTest` remains a separate visible GLFW presentation/recreate and
+readback smoke. It is useful evidence for presentation ownership and input but
+is not a substitute for the display-independent offscreen golden.
+
+The benchmark uses shared renderer options; `--present-immediate` fails without
+immediate negotiation. Release evidence records negotiated mode, actual pixel
+resolution, scene, HUD state, sustained rate, p50/p95/p99/max, and stutters;
+it records CPU acquire, record, and complete timings—not GPU timestamps.
+Release disables validation; `--hud` supports paired runs. Missing CoreGraphics
+display metadata stays unavailable.
+
+Visible acceptance benchmark and capture modes keep their requested resolutions
+in framebuffer pixels. Their shared bounded GLFW setup converts the current
+pixel-to-logical scale into a checked logical resize before creating a
+`PresentationContext`; an exact framebuffer mismatch, no resize progress, or
+an oscillating adjustment fails rather than changing the recorded request.

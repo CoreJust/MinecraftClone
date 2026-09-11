@@ -1,349 +1,302 @@
+#include <client/Camera.hpp>
+#include <client/PlayerPresentation.hpp>
 #include <client/render/InstalledShaderAssets.hpp>
 #include <client/render/VulkanRenderer.hpp>
 
-#include <core/vulkan/GlfwSurfaceProvider.hpp>
-#include <core/window/Window.hpp>
+#include <core/platform/glfw/GlfwWindow.hpp>
 
 #define GLFW_INCLUDE_NONE
 #include <GLFW/glfw3.h>
 #include <gtest/gtest.h>
-#include <volk.h>
 
 #include <array>
 #include <chrono>
+#include <cstdint>
+#include <string>
+#include <utility>
 
 namespace {
 
-PFN_vkAcquireNextImageKHR original_acquire_next_image = nullptr;
-uint32_t queue_submit_count = 0;
-uint32_t queue_present_count = 0;
+struct CaptureColorClasses final {
+    bool has_grid = false;
+    bool has_red_player = false;
+    bool has_green_player = false;
+    bool has_debug_hud = false;
 
-VkResult VKAPI_PTR acquireNextImageNotReady(
-    VkDevice,
-    VkSwapchainKHR,
-    uint64_t,
-    VkSemaphore,
-    VkFence,
-    uint32_t*
-)
-{
-    return VK_NOT_READY;
-}
-
-class ScopedNotReadyAcquire final {
-public:
-    ScopedNotReadyAcquire()
+    [[nodiscard]] bool complete() const
     {
-        original_acquire_next_image = vkAcquireNextImageKHR;
-        vkAcquireNextImageKHR = acquireNextImageNotReady;
+        return has_grid && has_red_player && has_green_player && has_debug_hud;
     }
 
-    ~ScopedNotReadyAcquire()
+    [[nodiscard]] std::string missingClasses() const
     {
-        vkAcquireNextImageKHR = original_acquire_next_image;
+        std::string missing;
+        auto appendMissing = [&missing](bool const present, char const* const name) {
+            if (!present) {
+                if (!missing.empty()) {
+                    missing += ", ";
+                }
+                missing += name;
+            }
+        };
+        appendMissing(has_grid, "grid");
+        appendMissing(has_red_player, "red-player");
+        appendMissing(has_green_player, "green-player");
+        appendMissing(has_debug_hud, "debug-hud");
+        return missing;
     }
 };
 
-VkResult VKAPI_PTR acquireNextImageSuboptimal(
-    VkDevice const device,
-    VkSwapchainKHR const swapchain,
-    uint64_t const timeout,
-    VkSemaphore const semaphore,
-    VkFence const fence,
-    uint32_t* const image_index
-)
+[[nodiscard]] CaptureColorClasses classifyCaptureColors(client::RendererFrameCapture const& capture)
 {
-    VkResult const result = original_acquire_next_image(
-        device,
-        swapchain,
-        timeout,
-        semaphore,
-        fence,
-        image_index
-    );
-    return result == VK_SUCCESS ? VK_SUBOPTIMAL_KHR : result;
-}
-
-VkResult VKAPI_PTR countQueueSubmit(VkQueue, uint32_t, VkSubmitInfo const*, VkFence)
-{
-    ++queue_submit_count;
-    return VK_SUCCESS;
-}
-
-VkResult VKAPI_PTR countQueuePresent(VkQueue, VkPresentInfoKHR const*)
-{
-    ++queue_present_count;
-    return VK_SUCCESS;
-}
-
-class ScopedSuboptimalAcquire final {
-public:
-    ScopedSuboptimalAcquire()
-        : m_queue_submit(vkQueueSubmit)
-        , m_queue_present(vkQueuePresentKHR)
-    {
-        original_acquire_next_image = vkAcquireNextImageKHR;
-        queue_submit_count = 0;
-        queue_present_count = 0;
-        vkAcquireNextImageKHR = acquireNextImageSuboptimal;
-        vkQueueSubmit = countQueueSubmit;
-        vkQueuePresentKHR = countQueuePresent;
-    }
-
-    ~ScopedSuboptimalAcquire()
-    {
-        vkAcquireNextImageKHR = original_acquire_next_image;
-        vkQueueSubmit = m_queue_submit;
-        vkQueuePresentKHR = m_queue_present;
-    }
-
-private:
-    PFN_vkQueueSubmit m_queue_submit;
-    PFN_vkQueuePresentKHR m_queue_present;
-};
-
-[[nodiscard]] bool hasBackgroundPixel(client::RendererFrameCapture const& capture)
-{
-    if (capture.rgba8.size() % 4U != 0U) {
-        return false;
-    }
-    for (uint64_t offset = 0; offset < capture.rgba8.size(); offset += 4U) {
-        uint8_t const background_max = capture.srgb_encoded ? 90U : 28U;
-        if (capture.rgba8[offset] < background_max
-            && capture.rgba8[offset + 1U] < background_max
-            && capture.rgba8[offset + 2U] < background_max
-        ) {
-            return true;
-        }
-    }
-    return false;
-}
-
-[[nodiscard]] bool hasGridPixel(client::RendererFrameCapture const& capture)
-{
-    if (capture.rgba8.size() % 4U != 0U) {
-        return false;
-    }
-    for (uint64_t offset = 0; offset < capture.rgba8.size(); offset += 4U) {
+    CaptureColorClasses classes;
+    uint8_t const grid_min = capture.srgb_encoded ? 90U : 32U;
+    uint8_t const grid_max = capture.srgb_encoded ? 160U : 64U;
+    for (uint64_t offset = 0U; offset < capture.rgba8.size(); offset += 4U) {
+        uint32_t const pixel_index = static_cast<uint32_t>(offset / 4U);
+        uint32_t const x = pixel_index % capture.width;
+        uint32_t const y = pixel_index / capture.width;
         uint8_t const red = capture.rgba8[offset];
         uint8_t const green = capture.rgba8[offset + 1U];
         uint8_t const blue = capture.rgba8[offset + 2U];
-        uint8_t const grid_min = capture.srgb_encoded ? 90U : 32U;
-        uint8_t const grid_max = capture.srgb_encoded ? 160U : 64U;
-        if (red > grid_min && red < grid_max
-            && green > grid_min && green < grid_max
-            && blue > grid_min && blue < grid_max
-        ) {
-            return true;
-        }
+        classes.has_grid = classes.has_grid || (
+            red > grid_min && red < grid_max && green > grid_min && green < grid_max
+                && blue > grid_min && blue < grid_max
+        );
+        classes.has_red_player = classes.has_red_player || (
+            red > 200U && green < 80U && blue < 80U
+        );
+        classes.has_green_player = classes.has_green_player || (
+            red < 80U && green > 200U && blue < 80U
+        );
+        classes.has_debug_hud = classes.has_debug_hud || (
+            x < 220U && y < 80U && red > 180U && green > 180U && blue > 180U
+        );
     }
-    return false;
+    return classes;
 }
 
-[[nodiscard]] bool hasPlayerPixel(
-    client::RendererFrameCapture const& capture,
-    uint8_t const channel
-)
+TEST(RendererSmokeTest, CompletedCaptureSurvivesRecreateAndReadsBack)
 {
-    if (capture.rgba8.size() % 4U != 0U) {
-        return false;
-    }
-    for (uint64_t offset = 0; offset < capture.rgba8.size(); offset += 4U) {
-        uint8_t const red = capture.rgba8[offset];
-        uint8_t const green = capture.rgba8[offset + 1U];
-        uint8_t const blue = capture.rgba8[offset + 2U];
-        if (channel == 0U && red > 200U && green < 80U && blue < 80U) {
-            return true;
-        }
-        if (channel == 1U && red < 80U && green > 200U && blue < 80U) {
-            return true;
-        }
-    }
-    return false;
-}
-
-void renderSmoke(bool const prefer_mesh_shaders)
-{
-    static constexpr uint32_t FRAME_COUNT = 8;
+    static constexpr uint32_t INITIAL_LOGICAL_WIDTH = 320U;
+    static constexpr uint32_t INITIAL_LOGICAL_HEIGHT = 240U;
     static constexpr int32_t RESIZED_WIDTH = 400;
     static constexpr int32_t RESIZED_HEIGHT = 300;
-    static constexpr uint32_t RESIZE_FRAME = 2;
-    static constexpr uint32_t RELOAD_FRAME = 4;
-    static constexpr uint32_t CAPTURE_FRAME = 5;
-    static constexpr uint32_t MAX_ATTEMPT_COUNT = 1'000;
-    static constexpr auto SMOKE_TIMEOUT = std::chrono::seconds{ 10 };
-    static constexpr double RETRY_EVENT_WAIT_SECONDS = 0.01;
-    core::Window const window{ "MinecraftClone renderer smoke", 320, 240 };
-    core::vk::GlfwSurfaceProvider const surface_provider{ window };
-    client::InstalledShaderAssets const shader_assets;
-    client::VulkanRenderer renderer{
-        surface_provider,
-        shader_assets,
-        {
-            .require_validation = true,
-            .prefer_mesh_shaders = prefer_mesh_shaders,
-            .enable_frame_capture = true,
+    static constexpr uint32_t MAX_CAPTURE_FRAMES = 12U;
+    static constexpr auto TIMEOUT = std::chrono::seconds{ 10 };
+    core::platform::glfw::GlfwWindow window{
+        core::platform::glfw::WindowDescriptor{
+            .width = INITIAL_LOGICAL_WIDTH,
+            .height = INITIAL_LOGICAL_HEIGHT,
+            .title = "MinecraftClone presentation smoke",
         },
     };
-    std::array<client::PlayerRenderData, 2> players{
-        client::PlayerRenderData{ .x = 2, .y = 3, .color = { 1.f, 0.f, 0.f, 1.f } },
-        client::PlayerRenderData{ .x = 29, .y = 28, .color = { 0.f, 1.f, 0.f, 1.f } },
+    uint32_t initial_framebuffer_width = 0U;
+    uint32_t initial_framebuffer_height = 0U;
+    window.framebufferSize(initial_framebuffer_width, initial_framebuffer_height);
+    ASSERT_GT(initial_framebuffer_width, 0U);
+    ASSERT_GT(initial_framebuffer_height, 0U);
+    client::InstalledShaderAssets const shader_assets;
+    client::VulkanRenderer renderer{
+        client::VulkanRenderer::createPresentationContext(
+            window,
+            { .require_validation = true, .enable_frame_capture = true }
+        ),
+        shader_assets,
+        { .require_validation = true, .enable_frame_capture = true },
     };
-    uint32_t resized_width = 0;
-    uint32_t resized_height = 0;
-    uint32_t frame = 0;
-    uint32_t attempt = 0;
-    bool frame_prepared = false;
-    bool resize_requested = false;
-    bool resize_completed = false;
-    bool reload_completed = false;
-    bool capture_requested = false;
-    auto const deadline = std::chrono::steady_clock::now() + SMOKE_TIMEOUT;
-    while (
-        frame < FRAME_COUNT
-        && attempt < MAX_ATTEMPT_COUNT
-        && std::chrono::steady_clock::now() < deadline
-    ) {
-        ++attempt;
-        ASSERT_TRUE(window.nextFrame());
-        ASSERT_FALSE(window.isFramebufferSizeZero());
-        if (frame == RESIZE_FRAME && !resize_requested) {
-            glfwSetWindowSize(window.nativeHandle(), RESIZED_WIDTH, RESIZED_HEIGHT);
-            resize_requested = true;
-        }
-        if (frame == RESIZE_FRAME && !resize_completed) {
-            auto const framebuffer_size = window.framebufferSize();
-            if (framebuffer_size.first == 320U && framebuffer_size.second == 240U) {
-                glfwWaitEventsTimeout(RETRY_EVENT_WAIT_SECONDS);
-                continue;
+    renderer.setDebugHudEnabled(true);
+    std::array<client::PlayerRenderData, 2> const players{
+        client::PlayerRenderData{ .x = 2U, .y = 3U, .color = { 1.0F, 0.0F, 0.0F, 1.0F } },
+        client::PlayerRenderData{ .x = 29U, .y = 28U, .color = { 0.0F, 1.0F, 0.0F, 1.0F } },
+    };
+    auto const deadline = std::chrono::steady_clock::now() + TIMEOUT;
+    uint32_t rendered_frames = 0U;
+    auto completeCapture = [&] {
+        for (uint32_t frame = 0U;
+             frame < MAX_CAPTURE_FRAMES && std::chrono::steady_clock::now() < deadline;
+             ++frame) {
+            if (!window.nextFrame()) {
+                return false;
             }
-            resized_width = framebuffer_size.first;
-            resized_height = framebuffer_size.second;
-            resize_completed = true;
+            if (renderer.render(
+                    players,
+                    client::DebugHudInput{ .player_x = 2.0F, .player_y = 3.0F },
+                    1.0F,
+                    deadline
+                )) {
+                ++rendered_frames;
+            }
+            if (renderer.captureState() == client::FrameCaptureState::Completed) {
+                return true;
+            }
         }
-        if (frame == RELOAD_FRAME && !reload_completed) {
-            renderer.hotReload();
-            reload_completed = true;
-        }
-        if (frame == CAPTURE_FRAME && !capture_requested) {
-            renderer.requestFrameCapture();
-            capture_requested = true;
-        }
-        if (!frame_prepared) {
-            players.front().x += 1;
-            frame_prepared = true;
-        }
-        if (renderer.render(
-            frame == 0 ? std::span<client::PlayerRenderData const>{} : players,
-            deadline
-        )) {
-            ++frame;
-            frame_prepared = false;
-        } else {
-            glfwWaitEventsTimeout(RETRY_EVENT_WAIT_SECONDS);
-        }
-    }
-    ASSERT_EQ(frame, FRAME_COUNT);
+        return false;
+    };
 
-    client::RendererRuntimeInfo const runtime = renderer.runtimeInfo();
-    EXPECT_EQ(runtime.width, resized_width);
-    EXPECT_EQ(runtime.height, resized_height);
-    if (prefer_mesh_shaders) {
-        EXPECT_TRUE(
-            runtime.pipeline_path == client::RendererPipelinePath::Vertex
-            || runtime.pipeline_path == client::RendererPipelinePath::Mesh
-        );
-    } else {
-        EXPECT_EQ(runtime.pipeline_path, client::RendererPipelinePath::Vertex);
-    }
-    EXPECT_GT(runtime.cpu_frame_duration.count(), 0);
-    EXPECT_FALSE(runtime.gpu_frame_duration.has_value());
-    EXPECT_EQ(runtime.submitted_frame_count, FRAME_COUNT);
-
+    renderer.requestFrameCapture();
+    ASSERT_TRUE(completeCapture());
     ASSERT_EQ(renderer.captureState(), client::FrameCaptureState::Completed);
-    std::optional<client::RendererFrameCapture> const capture = renderer.takeFrameCapture();
-    ASSERT_TRUE(capture.has_value());
-    EXPECT_EQ(capture->width, resized_width);
-    EXPECT_EQ(capture->height, resized_height);
-    ASSERT_EQ(capture->rgba8.size(), static_cast<uint64_t>(capture->width) * capture->height * 4U);
-    EXPECT_TRUE(hasBackgroundPixel(*capture));
-    EXPECT_TRUE(hasGridPixel(*capture));
-    EXPECT_TRUE(hasPlayerPixel(*capture, 0U));
-    EXPECT_TRUE(hasPlayerPixel(*capture, 1U));
+    std::optional<client::RendererFrameCapture> const original_capture = renderer.takeFrameCapture();
+    ASSERT_TRUE(original_capture.has_value());
+    ASSERT_EQ(original_capture->width, initial_framebuffer_width);
+    ASSERT_EQ(original_capture->height, initial_framebuffer_height);
+    ASSERT_EQ(
+        original_capture->rgba8.size(),
+        static_cast<uint64_t>(initial_framebuffer_width) * initial_framebuffer_height * 4U
+    );
+    CaptureColorClasses const original_colors = classifyCaptureColors(*original_capture);
+    EXPECT_TRUE(original_colors.complete())
+        << "original capture lacks: " << original_colors.missingClasses()
+        << "; the 32x32 inset-cell grid may cover every physical framebuffer sample";
+    EXPECT_EQ(renderer.runtimeInfo().debug_hud_draw_count, 1U);
 
-    uint64_t const submitted_before_close = renderer.runtimeInfo().submitted_frame_count;
-    glfwSetWindowShouldClose(window.nativeHandle(), GLFW_TRUE);
-    bool const should_render = window.nextFrame();
-    EXPECT_FALSE(should_render);
-    if (should_render) {
-        static_cast<void>(renderer.render(players));
+    renderer.requestFrameCapture();
+    ASSERT_TRUE(completeCapture());
+    ASSERT_EQ(renderer.captureState(), client::FrameCaptureState::Completed);
+    glfwSetWindowSize(window.nativeHandle(), RESIZED_WIDTH, RESIZED_HEIGHT);
+    ASSERT_TRUE(window.nextFrame());
+    uint32_t width = 0U;
+    uint32_t height = 0U;
+    window.framebufferSize(width, height);
+    ASSERT_TRUE(width != initial_framebuffer_width || height != initial_framebuffer_height);
+    renderer.recreate(width, height);
+    ASSERT_EQ(renderer.captureState(), client::FrameCaptureState::Completed);
+    std::optional<client::RendererFrameCapture> const retained_capture = renderer.takeFrameCapture();
+    ASSERT_TRUE(retained_capture.has_value());
+    EXPECT_EQ(retained_capture->width, initial_framebuffer_width);
+    EXPECT_EQ(retained_capture->height, initial_framebuffer_height);
+    EXPECT_EQ(retained_capture->srgb_encoded, original_capture->srgb_encoded);
+    EXPECT_EQ(retained_capture->rgba8, original_capture->rgba8);
+    CaptureColorClasses const retained_colors = classifyCaptureColors(*retained_capture);
+    EXPECT_TRUE(retained_colors.complete())
+        << "retained capture lacks: " << retained_colors.missingClasses()
+        << "; the 32x32 inset-cell grid may cover every physical framebuffer sample";
+
+    renderer.hotReload();
+    renderer.requestFrameCapture();
+    ASSERT_TRUE(completeCapture());
+    std::optional<client::RendererFrameCapture> const reloaded_capture = renderer.takeFrameCapture();
+    ASSERT_TRUE(reloaded_capture.has_value());
+    CaptureColorClasses const reloaded_colors = classifyCaptureColors(*reloaded_capture);
+    EXPECT_TRUE(reloaded_colors.complete())
+        << "reloaded capture lacks: " << reloaded_colors.missingClasses()
+        << "; the 32x32 inset-cell grid may cover every physical framebuffer sample";
+    EXPECT_GE(rendered_frames, 3U);
+    EXPECT_EQ(renderer.runtimeInfo().pipeline_path, client::RendererPipelinePath::Vertex);
+}
+
+TEST(RendererSmokeTest, GlfwInputAdapterPreservesPressAndRelease)
+{
+    core::platform::glfw::GlfwWindow window{
+        core::platform::glfw::WindowDescriptor{
+            .width = 64U,
+            .height = 64U,
+            .title = "MinecraftClone input adapter",
+        },
+    };
+    EXPECT_FALSE(window.keyPressed(core::platform::glfw::WindowKey::W));
+    window.injectKeyForTesting(core::platform::glfw::WindowKey::W, true);
+    EXPECT_TRUE(window.keyPressed(core::platform::glfw::WindowKey::W));
+    window.injectKeyForTesting(core::platform::glfw::WindowKey::W, false);
+    EXPECT_FALSE(window.keyPressed(core::platform::glfw::WindowKey::W));
+}
+
+TEST(RendererSmokeTest, GlfwCursorCaptureSupportsContinuousCameraLook)
+{
+    core::platform::glfw::GlfwWindow window{
+        core::platform::glfw::WindowDescriptor{
+            .width = 64U,
+            .height = 64U,
+            .title = "MinecraftClone cursor capture",
+        },
+    };
+    glfwSetInputMode(window.nativeHandle(), GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+    EXPECT_EQ(glfwGetInputMode(window.nativeHandle(), GLFW_CURSOR), GLFW_CURSOR_DISABLED);
+    glfwSetInputMode(window.nativeHandle(), GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+    EXPECT_EQ(glfwGetInputMode(window.nativeHandle(), GLFW_CURSOR), GLFW_CURSOR_NORMAL);
+}
+
+TEST(RendererSmokeTest, ActiveVertexRendererKeepsUprightGridAndTopLeftHudForRemotePlayers)
+{
+    static constexpr uint32_t LOGICAL_WIDTH = 320U;
+    static constexpr uint32_t LOGICAL_HEIGHT = 240U;
+    static constexpr uint32_t MAX_CAPTURE_FRAMES = 12U;
+    static constexpr auto TIMEOUT = std::chrono::seconds{ 10 };
+    static constexpr shared::Player LOCAL{
+        .id = 1U,
+        .x = 8U,
+        .y = 8U,
+        .ch = '@',
+    };
+    static constexpr shared::Player REMOTE{
+        .id = 2U,
+        .x = 8U,
+        .y = 15U,
+        .ch = '#',
+    };
+    core::platform::glfw::GlfwWindow window{
+        core::platform::glfw::WindowDescriptor{
+            .width = LOGICAL_WIDTH,
+            .height = LOGICAL_HEIGHT,
+            .title = "MinecraftClone active first-person renderer",
+        },
+    };
+    client::InstalledShaderAssets const shader_assets;
+    client::VulkanRenderer renderer{
+        client::VulkanRenderer::createPresentationContext(
+            window,
+            { .require_validation = true, .enable_frame_capture = true }
+        ),
+        shader_assets,
+        { .require_validation = true, .enable_frame_capture = true },
+    };
+    renderer.setDebugHudEnabled(true);
+    std::array<client::PlayerRenderData, 1U> const remote_players{
+        client::PlayerRenderData{
+            .x = REMOTE.x,
+            .y = REMOTE.y,
+            .color = { 0.0F, 1.0F, 0.0F, 1.0F },
+        },
+    };
+    EXPECT_FALSE(client::shouldRenderRemotePlayer(LOCAL, LOCAL.ch));
+    EXPECT_TRUE(client::shouldRenderRemotePlayer(REMOTE, LOCAL.ch));
+    client::Camera const camera{
+        {
+            .position = client::localPlayerEyePosition(LOCAL),
+            .angles = { .pitch_degrees = -10.0 },
+        },
+    };
+    renderer.setCamera(camera.pose());
+    renderer.requestFrameCapture();
+
+    client::RendererFrameCapture capture;
+    bool captured = false;
+    auto const deadline = std::chrono::steady_clock::now() + TIMEOUT;
+    for (uint32_t frame = 0U;
+         frame < MAX_CAPTURE_FRAMES && std::chrono::steady_clock::now() < deadline;
+         ++frame) {
+        ASSERT_TRUE(window.nextFrame());
+        static_cast<void>(renderer.render(
+            remote_players,
+            client::DebugHudInput{ .player_x = static_cast<float>(LOCAL.x), .player_y = static_cast<float>(LOCAL.y) },
+            1.0F,
+            deadline
+        ));
+        if (std::optional<client::RendererFrameCapture> const completed = renderer.takeFrameCapture(); completed.has_value()) {
+            capture = std::move(*completed);
+            captured = true;
+            break;
+        }
     }
-    EXPECT_EQ(renderer.runtimeInfo().submitted_frame_count, submitted_before_close);
-    renderer.waitIdle();
+
+    ASSERT_TRUE(captured);
+    CaptureColorClasses const classes = classifyCaptureColors(capture);
+    EXPECT_TRUE(classes.has_grid);
+    EXPECT_TRUE(classes.has_debug_hud);
+    EXPECT_TRUE(classes.has_green_player);
+    EXPECT_FALSE(classes.has_red_player);
+    EXPECT_EQ(renderer.runtimeInfo().pipeline_path, client::RendererPipelinePath::Vertex);
 }
 
 } // namespace
-
-TEST(RendererSmokeTest, AutomaticPipelineDrawsAndReloads)
-{
-    renderSmoke(true);
-}
-
-TEST(RendererSmokeTest, VertexFallbackDrawsAndReloads)
-{
-    renderSmoke(false);
-}
-
-TEST(RendererSmokeTest, NotReadyAcquireSkipsFrameAndRecovers)
-{
-    core::Window const window{ "MinecraftClone not-ready acquire smoke", 320, 240 };
-    core::vk::GlfwSurfaceProvider const surface_provider{ window };
-    client::InstalledShaderAssets const shader_assets;
-    client::VulkanRenderer renderer{
-        surface_provider,
-        shader_assets,
-        { .require_validation = true, .prefer_mesh_shaders = false },
-    };
-
-    {
-        ScopedNotReadyAcquire const not_ready_acquire;
-        EXPECT_FALSE(renderer.render(
-            {},
-            std::chrono::steady_clock::now() + std::chrono::seconds{ 5 }
-        ));
-    }
-
-    EXPECT_TRUE(renderer.render(
-        {},
-        std::chrono::steady_clock::now() + std::chrono::seconds{ 5 }
-    ));
-    renderer.waitIdle();
-}
-
-TEST(RendererSmokeTest, SuboptimalAcquireSkipsStaleFrameAndRecovers)
-{
-    core::Window const window{ "MinecraftClone suboptimal acquire smoke", 320, 240 };
-    core::vk::GlfwSurfaceProvider const surface_provider{ window };
-    client::InstalledShaderAssets const shader_assets;
-    client::VulkanRenderer renderer{
-        surface_provider,
-        shader_assets,
-        { .require_validation = true, .prefer_mesh_shaders = false },
-    };
-
-    {
-        ScopedSuboptimalAcquire const suboptimal_acquire;
-        EXPECT_FALSE(renderer.render(
-            {},
-            std::chrono::steady_clock::now() + std::chrono::seconds{ 5 }
-        ));
-        EXPECT_EQ(queue_submit_count, 0U);
-        EXPECT_EQ(queue_present_count, 0U);
-    }
-
-    EXPECT_TRUE(renderer.render(
-        {},
-        std::chrono::steady_clock::now() + std::chrono::seconds{ 5 }
-    ));
-    renderer.waitIdle();
-}

@@ -45,10 +45,14 @@ class PreFinalizationCandidateTests(unittest.TestCase):
             source = REPOSITORY / relative
             target = self.root / relative
             shutil.copy2(source, target)
+        project_info = self.root / "src/shared/include/shared/ProjectInfo.hpp"
+        patch_match = re.search(r"\.patch = (\d+),", project_info.read_text(encoding="utf-8"))
+        self.assertIsNotNone(patch_match)
+        self.snapshot_index = int(patch_match.group(1))
         history = self.root / "docs/version_history/EarlyDev 0.1/EarlyDev 0.1.0 Initiation.md"
         undated, replacements = re.subn(
-            r"^## EarlyDev 0\.1\.0:3(?:\(\d{2}\.\d{2}\.\d{2}\))?$",
-            "## EarlyDev 0.1.0:3",
+            rf"^## EarlyDev 0\.1\.0:{self.snapshot_index}(?:\(\d{{2}}\.\d{{2}}\.\d{{2}}\))?$",
+            f"## EarlyDev 0.1.0:{self.snapshot_index}",
             history.read_text(encoding="utf-8"),
             count=1,
             flags=re.MULTILINE,
@@ -79,7 +83,7 @@ class PreFinalizationCandidateTests(unittest.TestCase):
                 sys.executable,
                 "publish.py",
                 "EarlyDev:Initiation",
-                "0.1.0:3",
+                f"0.1.0:{self.snapshot_index}",
                 "--checks-only",
                 *extra,
             ],
@@ -90,7 +94,11 @@ class PreFinalizationCandidateTests(unittest.TestCase):
 
     def commit_history(self, content: str) -> None:
         history = self.root / "docs/version_history/EarlyDev 0.1/EarlyDev 0.1.0 Initiation.md"
-        history.write_text(content, encoding="utf-8")
+        preceding_snapshots = "".join(
+            f"\n## EarlyDev 0.1.0:{index}(26.09.10)\nSnapshot {index}\n"
+            for index in range(3, self.snapshot_index)
+        )
+        history.write_text(content + preceding_snapshots, encoding="utf-8")
         subprocess.run(["git", "add", str(history.relative_to(self.root))], cwd=self.root, check=True)
         subprocess.run(
             ["git", "commit", "--quiet", "--no-gpg-sign", "-m", "candidate history fixture"],
@@ -101,7 +109,7 @@ class PreFinalizationCandidateTests(unittest.TestCase):
     def test_allows_only_absent_current_snapshot(self) -> None:
         ordinary = self.run_publish()
         self.assertNotEqual(ordinary.returncode, 0)
-        self.assertIn("missing snapshots: [3]", ordinary.stdout)
+        self.assertIn(f"missing snapshots: [{self.snapshot_index}]", ordinary.stdout)
 
         candidate = self.run_publish("--pre-finalization-candidate")
         self.assertEqual(candidate.returncode, 0, candidate.stdout + candidate.stderr)
@@ -179,15 +187,15 @@ class PreFinalizationCandidateTests(unittest.TestCase):
         self.assertEqual(candidate[1][:-1], ordinary[1])
         self.assertEqual(candidate[1][-1], "--pre-finalization-candidate")
 
-    def test_hosted_workflows_limit_the_flag_to_pre_finalization_candidates(self) -> None:
+    def test_snapshot_artifact_workflow_reserves_private_dependencies_for_finalized_sources(self) -> None:
         ai_checks = AI_CHECKS_WORKFLOW.read_text(encoding="utf-8")
         snapshot = SNAPSHOT_WORKFLOW.read_text(encoding="utf-8")
 
         self.assertIn("if: github.ref != 'refs/heads/ai-main'", ai_checks)
         self.assertIn("if: github.ref == 'refs/heads/ai-main'", ai_checks)
         self.assertIn("source-checks --pre-finalization-candidate", ai_checks)
-        self.assertIn("startsWith(github.ref, 'refs/heads/codex/ai-release-')", snapshot)
-        self.assertIn("source-checks --pre-finalization-candidate", snapshot)
+        self.assertNotIn("codex/ai-release-", snapshot)
+        self.assertNotIn("source-checks --pre-finalization-candidate", snapshot)
         self.assertIn("run: python script/ci/acquire.py source-checks", snapshot)
 
 

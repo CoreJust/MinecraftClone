@@ -151,5 +151,31 @@ TEST(AndroidInputStateTest, HardwareKeysOverrideTouchPerAxisUntilReleased)
     EXPECT_EQ(signedComponent(input.direction().y), 0);
 }
 
+TEST(AndroidInputStateTest, TracksMovementAndLookForTwoPointersInEitherMoveOrder)
+{
+    static constexpr uint32_t SURFACE_WIDTH = 1'000;
+    AndroidInputState input;
+    ASSERT_TRUE(input.beginTouch(7, 200.0F, 300.0F, SURFACE_WIDTH));
+    ASSERT_TRUE(input.beginLookTouch(8, 700.0F, 300.0F, SURFACE_WIDTH));
+
+    EXPECT_TRUE(input.moveLookTouch(8, 725.0F, 280.0F));
+    EXPECT_TRUE(input.moveTouch(7, 250.0F, 350.0F));
+    EXPECT_EQ(signedComponent(input.direction().x), 1);
+    EXPECT_EQ(signedComponent(input.direction().y), 1);
+    float horizontal = 0.0F;
+    float vertical = 0.0F;
+    EXPECT_TRUE(input.consumeLookDelta(horizontal, vertical));
+    EXPECT_FLOAT_EQ(horizontal, 25.0F);
+    EXPECT_FLOAT_EQ(vertical, -20.0F);
+
+    EXPECT_TRUE(input.moveTouch(7, 150.0F, 250.0F));
+    EXPECT_TRUE(input.moveLookTouch(8, 735.0F, 300.0F));
+    EXPECT_EQ(signedComponent(input.direction().x), -1);
+    EXPECT_EQ(signedComponent(input.direction().y), -1);
+    EXPECT_TRUE(input.consumeLookDelta(horizontal, vertical));
+    EXPECT_FLOAT_EQ(horizontal, 10.0F);
+    EXPECT_FLOAT_EQ(vertical, 20.0F);
+}
+
 } // namespace
 } // namespace game_android

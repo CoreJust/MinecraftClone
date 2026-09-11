@@ -39,6 +39,84 @@ foreach(required_text
     endif()
 endforeach()
 
+set(valid_core_semicolon "${OUTPUT_DIRECTORY}/valid-semicolon.core")
+set(valid_core_semicolon_evidence "${OUTPUT_DIRECTORY}/valid-semicolon.json")
+file(WRITE "${valid_core_semicolon}" [=[@version("0.0.1");
+@use MinecraftScenario
+profile("flat2d-v1")
+seed(42u64)
+player("alice", '@', 4u8, 4u8)
+input("alice", 1i8, 0i8)
+wait(5u64)
+expect_position("alice", 9u8, 4u8)
+]=])
+execute_process(COMMAND "${MC_MAIN}" --scenario "${valid_core_semicolon}" --evidence "${valid_core_semicolon_evidence}" RESULT_VARIABLE valid_core_semicolon_result TIMEOUT 10)
+if(NOT valid_core_semicolon_result EQUAL 0)
+    message(FATAL_ERROR "semicolon-terminated CoreLang header failed")
+endif()
+
+set(valid_core "${OUTPUT_DIRECTORY}/valid.core")
+set(valid_core_evidence "${OUTPUT_DIRECTORY}/valid-core.json")
+file(WRITE "${valid_core}" [=[@version("0.0.1")
+@use MinecraftScenario
+profile("flat2d-v1")
+seed(42u64)
+player("alice", '@', 4u8, 4u8)
+input("alice", 1i8, 0i8)
+wait(5u64)
+expect_position("alice", 9u8, 4u8)
+]=])
+execute_process(
+    COMMAND "${MC_MAIN}" --scenario "${valid_core}" --evidence "${valid_core_evidence}"
+    RESULT_VARIABLE valid_core_result
+    ERROR_VARIABLE valid_core_stderr
+    TIMEOUT 10
+)
+if(NOT valid_core_result EQUAL 0)
+    message(FATAL_ERROR "valid CoreLang scenario command failed: ${valid_core_stderr}")
+endif()
+file(READ "${valid_core_evidence}" valid_core_json)
+foreach(required_text "\"passed\": true" "\"ticks\": 5" "\"clients_accepted\": 1")
+    string(FIND "${valid_core_json}" "${required_text}" match_index)
+    if(match_index EQUAL -1)
+        message(FATAL_ERROR "valid CoreLang evidence is missing ${required_text}")
+    endif()
+endforeach()
+
+set(unknown_header "${OUTPUT_DIRECTORY}/unknown.core")
+set(unknown_header_evidence "${OUTPUT_DIRECTORY}/unknown-core.json")
+file(WRITE "${unknown_header}" "script 1;\n")
+execute_process(
+    COMMAND "${MC_MAIN}" --scenario "${unknown_header}" --evidence "${unknown_header_evidence}"
+    RESULT_VARIABLE unknown_header_result
+    TIMEOUT 10
+)
+if(unknown_header_result EQUAL 0)
+    message(FATAL_ERROR "unknown scenario header unexpectedly succeeded")
+endif()
+file(READ "${unknown_header_evidence}" unknown_header_json)
+string(FIND "${unknown_header_json}" "unknown-source-header" match_index)
+if(match_index EQUAL -1)
+    message(FATAL_ERROR "unknown scenario header diagnostic is missing")
+endif()
+
+set(mixed_header "${OUTPUT_DIRECTORY}/mixed.core")
+set(mixed_header_evidence "${OUTPUT_DIRECTORY}/mixed-core.json")
+file(WRITE "${mixed_header}" "@version(\"0.0.1\")\nscenario 1\n")
+execute_process(
+    COMMAND "${MC_MAIN}" --scenario "${mixed_header}" --evidence "${mixed_header_evidence}"
+    RESULT_VARIABLE mixed_header_result
+    TIMEOUT 10
+)
+if(mixed_header_result EQUAL 0)
+    message(FATAL_ERROR "mixed scenario headers unexpectedly succeeded")
+endif()
+file(READ "${mixed_header_evidence}" mixed_header_json)
+string(FIND "${mixed_header_json}" "corelang-compile-failure" match_index)
+if(match_index EQUAL -1)
+    message(FATAL_ERROR "mixed scenario header diagnostic is missing")
+endif()
+
 set(invalid_scenario "${OUTPUT_DIRECTORY}/invalid.mcscenario")
 set(invalid_evidence "${OUTPUT_DIRECTORY}/invalid.json")
 file(WRITE "${invalid_scenario}" [=[scenario 1

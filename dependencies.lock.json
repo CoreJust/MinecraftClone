@@ -1,0 +1,13 @@
+{
+  "schema": 1,
+  "dependencies": {
+    "CoreCpp": {
+      "repository": "CoreJust/CoreCpp",
+      "revision": "618f68ce9625238039e454313b5e790ddf1350b4"
+    },
+    "CoreProject2026": {
+      "repository": "CoreJust/CoreProject2026",
+      "revision": "83669e6e38393417c903208837d640d3e2fd6a34"
+    }
+  }
+}

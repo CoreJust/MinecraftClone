@@ -35,6 +35,9 @@ public:
         std::vector<SpawnPoint> spawn_points
     );
 
+    [[nodiscard]]
+    static std::chrono::milliseconds fixedTickDelay(std::chrono::milliseconds elapsed) noexcept;
+
     void run();
     void run(std::atomic_bool const& stop_requested);
     [[nodiscard]]

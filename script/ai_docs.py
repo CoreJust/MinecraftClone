@@ -59,7 +59,11 @@ def collect_source_files(root: Path) -> list[Path]:
         candidate = root / name
         if candidate.is_file() and not candidate.is_symlink():
             files.add(candidate)
-    files.update(path for path in root.glob("vcpkg*.json") if path.is_file() and not path.is_symlink())
+    files.update(
+        path
+        for path in (*root.glob("vcpkg*.json"), root / "dependencies.lock.json")
+        if path.is_file() and not path.is_symlink()
+    )
     files.update(path for path in (root / "script").rglob("*.py") if path.is_file() and not path.is_symlink())
     files.update(path for path in (root / "script").glob("*.json") if path.is_file() and not path.is_symlink())
     config = root / ".codex" / "config.toml"

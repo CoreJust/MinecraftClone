@@ -1,0 +1,12 @@
+scenario 1
+profile flat3d-v1
+seed 42
+player alice character "@" at 4 4 0 orientation 0 0 0
+player bob character "#" at 10 10 0 orientation 90 0 0
+begin
+input alice camera 0 1
+input bob camera 0 1
+wait 2
+expect player alice position 4 6 0
+expect player bob position 12 10 0
+end

@@ -2,6 +2,8 @@ plugins {
     id 'com.android.application'
 }
 
+import java.util.zip.ZipFile
+
 def vcpkgRoot = providers.gradleProperty('vcpkgRoot')
     .orElse(providers.environmentVariable('VCPKG_ROOT'))
     .orNull
@@ -13,13 +15,37 @@ def vcpkgToolchain = file("${vcpkgRoot}/scripts/buildsystems/vcpkg.cmake")
 if (!vcpkgToolchain.isFile()) {
     throw new GradleException("vcpkg toolchain does not exist: ${vcpkgToolchain}")
 }
+def vcpkgInstalledDir = providers.gradleProperty('vcpkgInstalledDir')
+    .orElse(providers.environmentVariable('VCPKG_INSTALLED_DIR'))
+    .orNull
+def vcpkgManifestInstall = providers.gradleProperty('vcpkgManifestInstall')
+    .orElse('ON')
+    .get()
+def cmakePrefixPath = providers.gradleProperty('cmakePrefixPath')
+    .orElse(providers.environmentVariable('MC_CMAKE_PREFIX_PATH'))
+    .orNull
+def coreCppDir = providers.gradleProperty('coreCppDir')
+    .orElse(providers.environmentVariable('CORECPP_DIR'))
+    .orNull
+def coreProjectDir = providers.gradleProperty('coreProjectDir')
+    .orElse(providers.environmentVariable('COREPROJECT2026_DIR'))
+    .orNull
 
 def fallbackShaderSources = layout.buildDirectory.dir('generated/fallback-shaders')
+def requiredShaderAssets = [
+    'debug_hud.frag.spv',
+    'debug_hud.vert.spv',
+    'grid.vert.spv',
+    'player.vert.spv',
+    'trivial.frag.spv',
+]
 def stageFallbackShaders = tasks.register('stageFallbackShaders', Sync) {
     from('../../src/client/render/shaders') {
         include 'grid.vert'
         include 'player.vert'
         include 'trivial.frag'
+        include 'debug_hud.vert'
+        include 'debug_hud.frag'
     }
     into(fallbackShaderSources)
 }
@@ -103,11 +129,57 @@ if (!ndkToolchain.isFile()) {
 // both paths Gradle-derived prevents a host path from entering source control.
 android.defaultConfig.externalNativeBuild.cmake.arguments.addAll([
     "-DCMAKE_TOOLCHAIN_FILE=${vcpkgToolchain.absolutePath}",
-    "-DVCPKG_CHAINLOAD_TOOLCHAIN_FILE=${ndkToolchain.absolutePath}"
+    "-DVCPKG_CHAINLOAD_TOOLCHAIN_FILE=${ndkToolchain.absolutePath}",
+    "-DVCPKG_MANIFEST_INSTALL=${vcpkgManifestInstall}"
 ])
+if (vcpkgInstalledDir != null && !vcpkgInstalledDir.trim().isEmpty()) {
+    android.defaultConfig.externalNativeBuild.cmake.arguments.add(
+        "-DVCPKG_INSTALLED_DIR=${file(vcpkgInstalledDir).absolutePath}"
+    )
+}
+if (cmakePrefixPath != null && !cmakePrefixPath.trim().isEmpty()) {
+    android.defaultConfig.externalNativeBuild.cmake.arguments.add(
+        "-DCMAKE_PREFIX_PATH=${cmakePrefixPath}"
+    )
+}
+if (coreCppDir != null && !coreCppDir.trim().isEmpty()) {
+    android.defaultConfig.externalNativeBuild.cmake.arguments.add(
+        "-DCoreCpp_DIR=${file(coreCppDir).absolutePath}"
+    )
+}
+if (coreProjectDir != null && !coreProjectDir.trim().isEmpty()) {
+    android.defaultConfig.externalNativeBuild.cmake.arguments.add(
+        "-DCoreProject2026_DIR=${file(coreProjectDir).absolutePath}"
+    )
+}
 
 tasks.configureEach {
     if (name ==~ /(merge|compile).+Shaders/) {
         dependsOn(stageFallbackShaders)
+    }
+}
+
+def verifyDebugShaderAssets = tasks.register('verifyDebugShaderAssets') {
+    doLast {
+        File apk = layout.buildDirectory.file('outputs/apk/debug/app-debug.apk').get().asFile
+        if (!apk.isFile()) {
+            throw new GradleException("Debug APK is missing: ${apk}")
+        }
+        ZipFile zip = new ZipFile(apk)
+        try {
+            requiredShaderAssets.each { String asset ->
+                if (zip.getEntry("assets/shaders/${asset}") == null) {
+                    throw new GradleException("Debug APK is missing shader asset: ${asset}")
+                }
+            }
+        } finally {
+            zip.close()
+        }
+    }
+}
+
+tasks.configureEach {
+    if (name == 'assembleDebug') {
+        finalizedBy(verifyDebugShaderAssets)
     }
 }

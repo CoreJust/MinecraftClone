@@ -106,4 +106,12 @@ TEST(GameServerLifecycle, RunStopsAfterTheCurrentProductionTick)
     EXPECT_LT(std::chrono::steady_clock::now() - start, MAXIMUM_STOP_TIME);
 }
 
+TEST(GameServerLifecycle, FixedCadenceIsIndependentOfPresentationWork)
+{
+    EXPECT_EQ(server::GameServer::fixedTickDelay(std::chrono::milliseconds::zero()), shared::TICK);
+    EXPECT_EQ(server::GameServer::fixedTickDelay(std::chrono::milliseconds{ 37 }), std::chrono::milliseconds{ 63 });
+    EXPECT_EQ(server::GameServer::fixedTickDelay(shared::TICK), std::chrono::milliseconds::zero());
+    EXPECT_EQ(server::GameServer::fixedTickDelay(std::chrono::milliseconds{ 250 }), std::chrono::milliseconds::zero());
+}
+
 } // namespace

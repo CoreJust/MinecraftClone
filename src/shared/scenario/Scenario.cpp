@@ -1,5 +1,7 @@
 #include <shared/scenario/Scenario.hpp>
 
+#include <array>
+#include <cmath>
 #include <limits>
 #include <utility>
 
@@ -358,7 +360,7 @@ private:
             return std::unexpected(count.error());
         }
         if (!hasExactWords(*line, "profile", 2)) {
-            return std::unexpected(malformed(*line, "expected 'profile flat2d-v1'"));
+            return std::unexpected(malformed(*line, "expected 'profile flat2d-v1' or 'profile flat3d-v1'"));
         }
         if (line->tokens[1].kind != ScenarioTokenKind::Word) {
             return std::unexpected(diagnostic(
@@ -367,15 +369,21 @@ private:
                 "profile name must be an unquoted ASCII identifier"
             ));
         }
-        if (line->tokens[1].text != "flat2d-v1") {
+        if (line->tokens[1].text == "flat2d-v1") {
+            m_profile = ScenarioProfile::Flat2dV1;
+            return {};
+        }
+        if (line->tokens[1].text == "flat3d-v1") {
+            m_profile = ScenarioProfile::Flat3dV1;
+            return {};
+        }
+        {
             return std::unexpected(diagnostic(
                 ScenarioDiagnosticCode::UnsupportedProfile,
                 line->tokens[1].location,
-                "only profile flat2d-v1 is supported"
+                "only profiles flat2d-v1 and flat3d-v1 are supported"
             ));
         }
-        m_profile = ScenarioProfile::Flat2dV1;
-        return {};
     }
 
     [[nodiscard]]
@@ -405,9 +413,12 @@ private:
             if (auto const count = expectStatement(*line); !count) {
                 return std::unexpected(count.error());
             }
-            if (line->tokens.size() != 7 || !hasWord(*line, 2, "character")
-                || line->tokens[3].kind != ScenarioTokenKind::String || !hasWord(*line, 4, "at")) {
-                return std::unexpected(malformed(*line, "expected 'player <name> character <char> at <x> <y>'"));
+            uint64_t const player_tokens = m_profile == ScenarioProfile::Flat3dV1 ? 12U : 7U;
+            if (line->tokens.size() != player_tokens || !hasWord(*line, 2, "character")
+                || line->tokens[3].kind != ScenarioTokenKind::String || !hasWord(*line, 4, "at")
+                || (m_profile == ScenarioProfile::Flat3dV1 && !hasWord(*line, 8, "orientation"))) {
+                return std::unexpected(malformed(*line,
+                    "expected 2D player or 'player <name> character <char> at <x> <y> <z> orientation <yaw> <pitch> <roll>'"));
             }
             if (line->tokens[1].kind != ScenarioTokenKind::Word || !isIdentifier(line->tokens[1].text)) {
                 return std::unexpected(diagnostic(
@@ -430,6 +441,27 @@ private:
             auto const y = parsePosition(line->tokens[6]);
             if (!y) {
                 return std::unexpected(y.error());
+            }
+            uint8_t z{ 0 };
+            int16_t yaw_degrees{ 0 };
+            int16_t pitch_degrees{ 0 };
+            int16_t roll_degrees{ 0 };
+            if (m_profile == ScenarioProfile::Flat3dV1) {
+                auto const parsed_z = parsePosition(line->tokens[7]);
+                if (!parsed_z) return std::unexpected(parsed_z.error());
+                if (*parsed_z != 0U) return std::unexpected(diagnostic(
+                    ScenarioDiagnosticCode::InvalidRange, line->tokens[7].location,
+                    "flat3d-v1 player z must be zero until authoritative vertical movement exists"));
+                auto const parsed_yaw = parseDegrees(line->tokens[9], 0, 359, "yaw degrees must be in 0..359");
+                if (!parsed_yaw) return std::unexpected(parsed_yaw.error());
+                auto const parsed_pitch = parseDegrees(line->tokens[10], -89, 89, "pitch degrees must be in -89..89");
+                if (!parsed_pitch) return std::unexpected(parsed_pitch.error());
+                auto const parsed_roll = parseDegrees(line->tokens[11], -180, 180, "roll degrees must be in -180..180");
+                if (!parsed_roll) return std::unexpected(parsed_roll.error());
+                z = *parsed_z;
+                yaw_degrees = *parsed_yaw;
+                pitch_degrees = *parsed_pitch;
+                roll_degrees = *parsed_roll;
             }
             if (m_actors.size() >= m_limits.max_actors) {
                 return std::unexpected(diagnostic(
@@ -469,6 +501,10 @@ private:
                 .character = line->tokens[3].text.front(),
                 .x = *x,
                 .y = *y,
+                .z = z,
+                .yaw_degrees = yaw_degrees,
+                .pitch_degrees = pitch_degrees,
+                .roll_degrees = roll_degrees,
                 .location = line->location,
             });
         }
@@ -543,6 +579,26 @@ private:
 
     [[nodiscard]]
     std::expected<void, ScenarioDiagnostic> parseInput(ScenarioLine const& line) {
+        if (m_profile == ScenarioProfile::Flat3dV1 && line.tokens.size() == 5 && hasWord(line, 2, "camera")) {
+            auto const actor = actorId(line.tokens[1]);
+            if (!actor) return std::unexpected(actor.error());
+            auto const strafe = parseInputComponent(line.tokens[3]);
+            if (!strafe) return std::unexpected(strafe.error());
+            auto const forward = parseInputComponent(line.tokens[4]);
+            if (!forward) return std::unexpected(forward.error());
+            if (m_boundary == std::numeric_limits<uint64_t>::max()) {
+                return std::unexpected(diagnostic(ScenarioDiagnosticCode::IntegerOverflow, line.location,
+                    "input effective boundary overflows uint64"));
+            }
+            return addOperation(ScenarioOperation{
+                .location = line.location,
+                .boundary = m_boundary,
+                .data = ScenarioCameraInputOperation{
+                    .actor = *actor, .strafe = *strafe, .forward = *forward,
+                    .effective_boundary = m_boundary + 1U,
+                },
+            });
+        }
         if (line.tokens.size() != 4) {
             return std::unexpected(malformed(line, "expected 'input <player> <x> <y>'"));
         }
@@ -631,8 +687,9 @@ private:
 
     [[nodiscard]]
     std::expected<void, ScenarioDiagnostic> parseExpectation(ScenarioLine const& line) {
-        if (line.tokens.size() != 6 || !hasWord(line, 1, "player") || !hasWord(line, 3, "position")) {
-            return std::unexpected(malformed(line, "expected 'expect player <name> position <x> <y>'"));
+        uint64_t const expectation_tokens = m_profile == ScenarioProfile::Flat3dV1 ? 7U : 6U;
+        if (line.tokens.size() != expectation_tokens || !hasWord(line, 1, "player") || !hasWord(line, 3, "position")) {
+            return std::unexpected(malformed(line, "expected 2D position or 'expect player <name> position <x> <y> <z>'"));
         }
         auto const actor = actorId(line.tokens[2]);
         if (!actor) {
@@ -645,6 +702,15 @@ private:
         auto const y = parsePosition(line.tokens[5]);
         if (!y) {
             return std::unexpected(y.error());
+        }
+        uint8_t z{ 0 };
+        if (m_profile == ScenarioProfile::Flat3dV1) {
+            auto const parsed_z = parsePosition(line.tokens[6]);
+            if (!parsed_z) return std::unexpected(parsed_z.error());
+            if (*parsed_z != 0U) return std::unexpected(diagnostic(
+                ScenarioDiagnosticCode::InvalidRange, line.tokens[6].location,
+                "flat3d-v1 expected z must be zero until authoritative vertical movement exists"));
+            z = *parsed_z;
         }
         if (m_evidence_count == m_limits.max_evidence) {
             return std::unexpected(diagnostic(
@@ -660,6 +726,7 @@ private:
                 .actor = *actor,
                 .x = *x,
                 .y = *y,
+                .z = z,
             },
         };
         if (auto const added = addOperation(operation); !added) {
@@ -779,6 +846,34 @@ private:
     }
 
     [[nodiscard]]
+    std::expected<int16_t, ScenarioDiagnostic> parseDegrees(
+        ScenarioToken const& token,
+        int16_t const minimum,
+        int16_t const maximum,
+        std::string_view const message
+    ) const {
+        if (token.kind != ScenarioTokenKind::Word || token.text.empty()) {
+            return std::unexpected(diagnostic(ScenarioDiagnosticCode::InvalidInteger, token.location,
+                "expected a base-10 integer"));
+        }
+        bool const negative = token.text.front() == '-';
+        std::string_view const digits = negative ? std::string_view{ token.text }.substr(1U) : token.text;
+        ScenarioToken const unsigned_token{.kind = token.kind, .text = std::string{digits}, .location = token.location};
+        auto const magnitude = parseUnsigned(unsigned_token);
+        if (!magnitude) return std::unexpected(magnitude.error());
+        if (*magnitude > static_cast<uint64_t>(std::numeric_limits<int16_t>::max())
+            || (negative && *magnitude > static_cast<uint64_t>(std::numeric_limits<int16_t>::max()) + 1U)) {
+            return std::unexpected(diagnostic(ScenarioDiagnosticCode::IntegerOverflow, token.location,
+                "degree value overflows int16"));
+        }
+        int32_t const value = negative ? -static_cast<int32_t>(*magnitude) : static_cast<int32_t>(*magnitude);
+        if (value < minimum || value > maximum) {
+            return std::unexpected(diagnostic(ScenarioDiagnosticCode::InvalidRange, token.location, std::string{message}));
+        }
+        return static_cast<int16_t>(value);
+    }
+
+    [[nodiscard]]
     std::expected<ScenarioActorId, ScenarioDiagnostic> actorId(ScenarioToken const& token) const {
         if (token.kind != ScenarioTokenKind::Word || !isIdentifier(token.text)) {
             return std::unexpected(diagnostic(
@@ -894,8 +989,92 @@ private:
 std::string_view scenarioProfileName(ScenarioProfile const profile) noexcept {
     switch (profile) {
         case ScenarioProfile::Flat2dV1: return "flat2d-v1";
+        case ScenarioProfile::Flat3dV1: return "flat3d-v1";
     }
     return "unknown";
+}
+
+Direction scenarioCameraRelativeDirection(
+    int16_t const yaw_degrees,
+    int8_t const strafe,
+    int8_t const forward
+) noexcept {
+    int8_t const clamped_strafe = strafe < 0 ? -1 : strafe > 0 ? 1 : 0;
+    int8_t const clamped_forward = forward < 0 ? -1 : forward > 0 ? 1 : 0;
+    if (clamped_strafe == 0 && clamped_forward == 0) return { .x = 0, .y = 0 };
+
+    constexpr double DEGREES_TO_RADIANS = 0.017'453'292'519'943'295'769'236'907'684'89;
+    constexpr double AXIS_TIE_EPSILON = 1e-12;
+    int16_t normalized_yaw = static_cast<int16_t>(yaw_degrees % 360);
+    if (normalized_yaw < 0) normalized_yaw = static_cast<int16_t>(normalized_yaw + 360);
+    double const yaw_radians = static_cast<double>(normalized_yaw) * DEGREES_TO_RADIANS;
+    double const world_x = static_cast<double>(clamped_strafe) * std::cos(yaw_radians)
+        + static_cast<double>(clamped_forward) * std::sin(yaw_radians);
+    double const world_y = -static_cast<double>(clamped_strafe) * std::sin(yaw_radians)
+        + static_cast<double>(clamped_forward) * std::cos(yaw_radians);
+    double const absolute_x = std::abs(world_x);
+    double const absolute_y = std::abs(world_y);
+    if (absolute_x == 0.0) return { .x = 0, .y = static_cast<uint8_t>(world_y < 0.0 ? -1 : 1) };
+    if (absolute_y == 0.0) return { .x = static_cast<uint8_t>(world_x < 0.0 ? -1 : 1), .y = 0 };
+    if (absolute_x + AXIS_TIE_EPSILON >= absolute_y) {
+        return { .x = static_cast<uint8_t>(world_x < 0.0 ? -1 : 1), .y = 0 };
+    }
+    return { .x = 0, .y = static_cast<uint8_t>(world_y < 0.0 ? -1 : 1) };
+}
+
+std::string scenarioReplayId(ScenarioPlan const& plan) {
+    uint64_t state = 1'469'598'103'934'665'603ULL;
+    auto append = [&state](uint64_t const value) {
+        for (uint32_t index = 0U; index < 8U; ++index) {
+            state ^= static_cast<uint8_t>(value >> (index * 8U));
+            state *= 1'099'511'628'211ULL;
+        }
+    };
+    append(plan.version());
+    append(static_cast<uint8_t>(plan.profile()));
+    append(plan.seed());
+    for (ScenarioActor const& actor : plan.actors()) {
+        append(actor.id);
+        append(actor.name.size());
+        for (char const character : actor.name) append(static_cast<uint8_t>(character));
+        append(static_cast<uint8_t>(actor.character));
+        append(actor.x);
+        append(actor.y);
+        append(actor.z);
+        append(static_cast<uint16_t>(actor.yaw_degrees));
+        append(static_cast<uint16_t>(actor.pitch_degrees));
+        append(static_cast<uint16_t>(actor.roll_degrees));
+    }
+    for (ScenarioOperation const& operation : plan.operations()) {
+        append(operation.boundary);
+        append(operation.data.index());
+        std::visit([&append](auto const& value) {
+            if constexpr (requires { value.actor; }) append(value.actor);
+            if constexpr (requires { value.x; }) {
+                append(static_cast<uint8_t>(value.x));
+                append(static_cast<uint8_t>(value.y));
+            }
+            if constexpr (requires { value.z; }) append(value.z);
+            if constexpr (requires { value.strafe; }) {
+                append(static_cast<uint8_t>(value.strafe));
+                append(static_cast<uint8_t>(value.forward));
+                append(value.effective_boundary);
+            }
+            if constexpr (requires { value.ticks; }) append(value.ticks);
+            if constexpr (requires { value.effective_boundary; } && !requires { value.strafe; }) {
+                append(value.effective_boundary);
+            }
+        }, operation.data);
+    }
+    static constexpr std::array<char, 16> HEX_DIGITS{
+        '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f',
+    };
+    std::string result{ "fnv1a64:" };
+    result.reserve(result.size() + 16U);
+    for (int32_t shift = 60; shift >= 0; shift -= 4) {
+        result.push_back(HEX_DIGITS[(state >> static_cast<uint32_t>(shift)) & 0x0fU]);
+    }
+    return result;
 }
 
 std::string_view scenarioDiagnosticCodeName(ScenarioDiagnosticCode const code) noexcept {
@@ -918,6 +1097,10 @@ std::string_view scenarioDiagnosticCodeName(ScenarioDiagnosticCode const code) n
         case ScenarioDiagnosticCode::InvalidRange: return "invalid-range";
         case ScenarioDiagnosticCode::InvalidCharacter: return "invalid-character";
         case ScenarioDiagnosticCode::MissingPlayer: return "missing-player";
+        case ScenarioDiagnosticCode::UnknownSourceHeader: return "unknown-source-header";
+        case ScenarioDiagnosticCode::CoreLangCompileFailure: return "corelang-compile-failure";
+        case ScenarioDiagnosticCode::CoreLangRuntimeFailure: return "corelang-runtime-failure";
+        case ScenarioDiagnosticCode::Cancelled: return "cancelled";
     }
     return "unknown";
 }

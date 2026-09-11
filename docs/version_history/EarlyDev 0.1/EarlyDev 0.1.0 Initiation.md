@@ -32,3 +32,12 @@ Additions:
 2. Deterministic server and two-client scenarios with renderer smoke, capture, and benchmark evidence.
 3. Relocatable macOS and Windows packages plus an arm64-v8a Android Vulkan application.
 4. Exact-source snapshot promotion, cross-platform CI, checksums, provenance, and release-asset verification.
+
+## EarlyDev 0.1.0:4(26.09.11)
+
+Controllable 3D presentation of the authoritative flat multiplayer world.
+Additions:
+1. Deterministic first-person camera, camera-relative desktop and Android controls, and fixed-step render scheduling.
+2. Depth-tested grid and remote-player boxes with a reusable Runtime graphics/kernel path and fixed-size true-offscreen golden coverage.
+3. Default-on texture-free shader bitmap debug HUD with windowed FPS, monotonic uptime, player position, and camera angles.
+4. CoreLang 0.0.1 scripts, exact reusable CoreCpp/CoreProject2026 packages, and separated Runtime transport/game protocol boundaries.

@@ -1,0 +1,83 @@
+set(test_root "@CMAKE_CURRENT_BINARY_DIR@/corecpp-server-consumer")
+set(corecpp_prefix "@CoreCpp_DIR@/../../..")
+set(dependency_prefix "@CMAKE_PREFIX_PATH@")
+
+file(REMOVE_RECURSE "${test_root}")
+file(MAKE_DIRECTORY "${test_root}")
+
+set(mismatched_corecpp "${test_root}/mismatched-corecpp")
+file(MAKE_DIRECTORY "${mismatched_corecpp}")
+file(
+    WRITE "${mismatched_corecpp}/CoreCppConfig.cmake"
+    "set(CoreCpp_REVISION \"0000000000000000000000000000000000000000\")\n"
+    "set(CoreCpp_DIRTY FALSE)\n"
+    "set(CoreCpp_REVISION_EXACT TRUE)\n"
+    "set(CoreCpp_AVAILABLE_COMPONENTS \"Core;Runtime\")\n"
+    "add_library(CoreCpp::Core INTERFACE IMPORTED)\n"
+    "add_library(CoreCpp::Runtime INTERFACE IMPORTED)\n"
+    "set(CoreCpp_Core_FOUND TRUE)\n"
+    "set(CoreCpp_Runtime_FOUND TRUE)\n"
+    "set(CoreCpp_FOUND TRUE)\n"
+)
+execute_process(
+    COMMAND
+        "@CMAKE_COMMAND@"
+        -S "@PROJECT_SOURCE_DIR@"
+        -B "${test_root}/mismatch-build"
+        -DCoreCpp_DIR=${mismatched_corecpp}
+        -DBUILD_TESTING=OFF
+        -DVCPKG_MANIFEST_INSTALL=OFF
+    RESULT_VARIABLE mismatch_result
+    OUTPUT_VARIABLE mismatch_output
+    ERROR_VARIABLE mismatch_error
+)
+if(mismatch_result EQUAL 0)
+    message(FATAL_ERROR "MinecraftClone accepted a mismatched CoreCpp revision")
+endif()
+string(CONCAT mismatch_log "${mismatch_output}" "${mismatch_error}")
+if(NOT mismatch_log MATCHES "CoreCpp revision mismatch")
+    message(FATAL_ERROR "CoreCpp mismatch failed for an unexpected reason:\n${mismatch_log}")
+endif()
+
+execute_process(
+    COMMAND
+        "@CMAKE_COMMAND@"
+        -S "@PROJECT_SOURCE_DIR@/cmake/fixtures/corecpp_server_consumer"
+        -B "${test_root}/build"
+        "-DCMAKE_PREFIX_PATH=${corecpp_prefix};${dependency_prefix}"
+        -DVCPKG_MANIFEST_INSTALL=OFF
+        -DCMAKE_BUILD_TYPE=Debug
+    RESULT_VARIABLE configure_result
+    OUTPUT_VARIABLE configure_output
+    ERROR_VARIABLE configure_error
+)
+if(NOT configure_result EQUAL 0)
+    string(CONCAT configure_log "${configure_output}" "${configure_error}")
+    message(FATAL_ERROR "CoreCpp server-only consumer configure failed:\n${configure_log}")
+endif()
+
+execute_process(
+    COMMAND "@CMAKE_COMMAND@" --build "${test_root}/build" --parallel 2
+    RESULT_VARIABLE build_result
+    OUTPUT_VARIABLE build_output
+    ERROR_VARIABLE build_error
+)
+if(NOT build_result EQUAL 0)
+    string(CONCAT build_log "${build_output}" "${build_error}")
+    message(FATAL_ERROR "CoreCpp server-only consumer build failed:\n${build_log}")
+endif()
+
+if(WIN32)
+    set(consumer_executable "${test_root}/build/mc_corecpp_server_consumer.exe")
+else()
+    set(consumer_executable "${test_root}/build/mc_corecpp_server_consumer")
+endif()
+
+execute_process(
+    COMMAND "${consumer_executable}"
+    WORKING_DIRECTORY "${test_root}"
+    RESULT_VARIABLE run_result
+)
+if(NOT run_result EQUAL 0)
+    message(FATAL_ERROR "CoreCpp server-only consumer exited with ${run_result}")
+endif()

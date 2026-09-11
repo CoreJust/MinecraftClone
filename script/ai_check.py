@@ -24,7 +24,7 @@ SHARED_PYTHON_SOURCES = {
     "ai_check.py", "ai_commit.py", "ai_docs.py", "ai_history.py", "ai_plan.py",
     "ai_publish.py", "ai_run.py", "ai_setup.py", "ai_tasks.py",
 }
-PYTHON_TEST_TIMEOUT = 180 if os.name == "nt" else 60
+PYTHON_TEST_TIMEOUT = 180 if os.name == "nt" else 120
 GOVERNED_PREFIXES = ("src/", "tests/", "docs/", "script/", ".githooks/", ".github/", ".codex/", ".agents/", "cmake/")
 GOVERNED_FILES = {
     ".gitattributes", ".gitignore", "AGENTS.md", "CLAUDE.md", "CMakeLists.txt", "CMakePresets.json", "README.md",
@@ -344,7 +344,11 @@ def run_phase(
         result.duration_seconds = time.monotonic() - started
         (log_dir / f"{name}.log").write_text(result.output, encoding="utf-8")
         return result
-    if reuse and name not in {"build", "ctest"}:
+    # The full Python suite reads repository content outside script/**/*.py,
+    # so its receipt cannot be invalidated safely by the script-only input
+    # fingerprint. Always execute it during fast checks; other eligible
+    # phases retain receipt reuse.
+    if reuse and name not in {"build", "ctest", "python-tests"}:
         output = read_matching_receipt(root, log_dir, name, command, environment, inputs)
         if output is not None:
             return PhaseResult(

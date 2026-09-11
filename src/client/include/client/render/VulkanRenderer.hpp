@@ -1,10 +1,14 @@
 #pragma once
 
+#include <client/Camera.hpp>
+#include <client/render/DebugHud.hpp>
 #include <client/render/ShaderAssets.hpp>
 
 #include <core/common/NonCopyable.hpp>
 #include <core/common/NonMovable.hpp>
 #include <core/common/Version.hpp>
+
+#include <core/graphics/vulkan/Vulkan.hpp>
 
 #include <array>
 #include <chrono>
@@ -15,11 +19,11 @@
 #include <string>
 #include <vector>
 
-namespace core::vk {
+namespace core::platform::glfw {
+class GlfwWindow;
+} // namespace core::platform::glfw
 
-class SurfaceProvider;
-
-} // namespace core::vk
+struct ANativeWindow;
 
 namespace client {
 
@@ -66,9 +70,13 @@ struct RendererRuntimeInfo final {
     bool validation_enabled = false;
     RendererPresentMode present_mode = RendererPresentMode::Unknown;
     RendererPipelinePath pipeline_path = RendererPipelinePath::Vertex;
+    std::chrono::nanoseconds cpu_acquire_wait_duration{ 0 };
+    std::chrono::nanoseconds cpu_command_record_duration{ 0 };
+    std::chrono::nanoseconds cpu_complete_present_wait_duration{ 0 };
     std::chrono::nanoseconds cpu_frame_duration{ 0 };
     std::optional<std::chrono::nanoseconds> gpu_frame_duration;
     uint64_t submitted_frame_count{ 0 };
+    uint32_t debug_hud_draw_count{ 0 };
 };
 
 struct RendererFrameCapture final {
@@ -80,9 +88,21 @@ struct RendererFrameCapture final {
 
 class VulkanRenderer final : core::NonCopyable, core::NonMovable {
 public:
+    [[nodiscard]]
+    static std::shared_ptr<core::graphics::vulkan::PresentationContext> createPresentationContext(
+        core::platform::glfw::GlfwWindow const& window,
+        VulkanRendererOptions options = {}
+    );
     explicit VulkanRenderer(
-        core::vk::SurfaceProvider const& surface_provider,
+        std::shared_ptr<core::graphics::vulkan::PresentationContext> context,
         ShaderAssets const& shader_assets,
+        VulkanRendererOptions options = {}
+    );
+    [[nodiscard]]
+    static std::shared_ptr<core::graphics::vulkan::PresentationContext> createPresentationContext(
+        ANativeWindow* window,
+        uint32_t width,
+        uint32_t height,
         VulkanRendererOptions options = {}
     );
     ~VulkanRenderer();
@@ -92,8 +112,18 @@ public:
         std::span<PlayerRenderData const> players,
         std::chrono::steady_clock::time_point deadline = std::chrono::steady_clock::time_point::max()
     );
+    [[nodiscard]]
+    bool render(
+        std::span<PlayerRenderData const> players,
+        DebugHudInput debug_hud_input,
+        float debug_hud_dpi_scale,
+        std::chrono::steady_clock::time_point deadline = std::chrono::steady_clock::time_point::max()
+    );
+    void setDebugHudEnabled(bool enabled) noexcept;
+    void toggleDebugHud() noexcept;
+    void setCamera(CameraPose pose) noexcept;
     void hotReload();
-    void waitIdle();
+    void recreate(uint32_t width, uint32_t height);
     [[nodiscard]]
     bool waitForSubmittedFrames(
         std::chrono::steady_clock::time_point deadline = std::chrono::steady_clock::time_point::max()
@@ -103,6 +133,25 @@ public:
     [[nodiscard]] FrameCaptureState captureState() const;
     [[nodiscard]] std::optional<RendererFrameCapture> takeFrameCapture();
     [[nodiscard]] RendererRuntimeInfo runtimeInfo() const;
+private:
+    struct Impl;
+    std::unique_ptr<Impl> m_impl;
+};
+
+class VulkanOffscreenRenderer final : core::NonCopyable, core::NonMovable {
+public:
+    explicit VulkanOffscreenRenderer(
+        ShaderAssets const& shader_assets,
+        bool require_validation = false
+    );
+    ~VulkanOffscreenRenderer();
+
+    [[nodiscard]] RendererFrameCapture render(
+        std::span<PlayerRenderData const> players,
+        std::chrono::steady_clock::time_point deadline = std::chrono::steady_clock::time_point::max()
+    );
+    [[nodiscard]] bool validationEnabled() const noexcept;
+    [[nodiscard]] uint32_t validationErrorCount() const noexcept;
 private:
     struct Impl;
     std::unique_ptr<Impl> m_impl;

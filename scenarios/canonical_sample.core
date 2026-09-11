@@ -1,0 +1,9 @@
+@version("0.0.1")
+@use MinecraftScenario
+profile("flat2d-v1")
+seed(42u64)
+player("alice", '@', 4u8, 4u8)
+input("alice", 1i8, 0i8)
+wait(5u64)
+input("alice", 0i8, 0i8)
+expect_position("alice", 9u8, 4u8)

@@ -8,6 +8,7 @@ import hashlib
 import json
 import os
 import platform as host_platform
+import re
 import shutil
 import stat
 import subprocess
@@ -60,10 +61,143 @@ NINJA_DOWNLOADS = {
 }
 MESH_SHADERS = ("grid.mesh.spv", "player.mesh.spv")
 VULKAN_12_SHADERS = ("grid.vert.spv", "player.vert.spv", "trivial.frag.spv")
+PRIVATE_DEPENDENCY_LOCK_SCHEMA = 1
+PRIVATE_DEPENDENCIES = {
+    "CoreCpp": {
+        "repository": "CoreJust/CoreCpp",
+        "key_argument": "corecpp_key",
+    },
+    "CoreProject2026": {
+        "repository": "CoreJust/CoreProject2026",
+        "key_argument": "coreproject2026_key",
+    },
+}
+GIT_REVISION_RE = re.compile(r"[0-9a-f]{40}")
+GITHUB_SSH_KNOWN_HOST = (
+    "github.com ssh-ed25519 "
+    "AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl\n"
+)
 
 
 class CiError(RuntimeError):
     """A pinned dependency or required CI tool was unavailable or mismatched."""
+
+
+def require_private_dependency_lock(lock_file: Path) -> dict[str, dict[str, str]]:
+    """Read the fixed private-dependency allowlist without accepting mutable refs."""
+    if lock_file.is_symlink() or not lock_file.is_file():
+        raise CiError(f"private dependency lock must be a regular file: {lock_file}")
+    try:
+        value = json.loads(lock_file.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise CiError(f"could not read private dependency lock {lock_file}: {error}") from error
+    if not isinstance(value, dict) or set(value) != {"schema", "dependencies"}:
+        raise CiError("private dependency lock must contain only schema and dependencies")
+    if value["schema"] != PRIVATE_DEPENDENCY_LOCK_SCHEMA:
+        raise CiError(f"private dependency lock schema must be {PRIVATE_DEPENDENCY_LOCK_SCHEMA}")
+    dependencies = value["dependencies"]
+    if not isinstance(dependencies, dict) or set(dependencies) != set(PRIVATE_DEPENDENCIES):
+        raise CiError(f"private dependency lock must contain exactly {', '.join(sorted(PRIVATE_DEPENDENCIES))}")
+    result: dict[str, dict[str, str]] = {}
+    for name, expected in PRIVATE_DEPENDENCIES.items():
+        dependency = dependencies[name]
+        if not isinstance(dependency, dict) or set(dependency) != {"repository", "revision"}:
+            raise CiError(f"{name} lock entry must contain only repository and revision")
+        repository = dependency["repository"]
+        revision = dependency["revision"]
+        if repository != expected["repository"]:
+            raise CiError(f"{name} repository must be {expected['repository']}")
+        if not isinstance(revision, str) or GIT_REVISION_RE.fullmatch(revision) is None:
+            raise CiError(f"{name} revision must be a 40-character lowercase hexadecimal commit")
+        result[name] = {"repository": repository, "revision": revision}
+    return result
+
+
+def write_github_known_host(root: Path) -> Path:
+    """Pin GitHub's published ED25519 host key for SSH-only dependency access."""
+    known_hosts = root / "github-known-hosts"
+    known_hosts.write_text(GITHUB_SSH_KNOWN_HOST, encoding="utf-8")
+    known_hosts.chmod(stat.S_IRUSR | stat.S_IWUSR)
+    return known_hosts
+
+
+def git_with_key(key_file: Path, known_hosts_file: Path, command: Sequence[str]) -> list[str]:
+    """Build a Git command that tries only the dependency-specific deploy key."""
+    if key_file.is_symlink() or not key_file.is_file():
+        raise CiError(f"private dependency deploy key must be a regular file: {key_file}")
+    if os.name != "nt" and key_file.stat().st_mode & (stat.S_IRWXG | stat.S_IRWXO):
+        raise CiError(f"private dependency deploy key must not be group/world accessible: {key_file}")
+    if known_hosts_file.is_symlink() or not known_hosts_file.is_file():
+        raise CiError(f"GitHub SSH known-hosts file must be a regular file: {known_hosts_file}")
+    ssh_command = (
+        f"ssh -i {key_file} -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes "
+        f"-o UserKnownHostsFile={known_hosts_file}"
+    )
+    return ["git", "-c", f"core.sshCommand={ssh_command}", *command]
+
+
+def fetch_private_dependencies(lock_file: Path, root: Path, key_files: dict[str, Path]) -> dict[str, Path]:
+    """Fetch and detach exactly the two immutable private dependency revisions."""
+    dependencies = require_private_dependency_lock(lock_file)
+    if root.exists():
+        raise CiError(f"private dependency root already exists: {root}")
+    root.mkdir(parents=True)
+    known_hosts_file = write_github_known_host(root)
+    sources: dict[str, Path] = {}
+    for name, dependency in dependencies.items():
+        key_file = key_files.get(name)
+        if key_file is None:
+            raise CiError(f"missing deploy key for {name}")
+        source = root / name
+        run(["git", "init", str(source)])
+        run(["git", "-C", str(source), "remote", "add", "origin", f"git@github.com:{dependency['repository']}.git"])
+        run(git_with_key(key_file, known_hosts_file, ["-C", str(source), "fetch", "--depth", "1", "origin", dependency["revision"]]))
+        run(["git", "-C", str(source), "checkout", "--detach", "FETCH_HEAD"])
+        actual_revision = run(["git", "-C", str(source), "rev-parse", "HEAD"])
+        if actual_revision != dependency["revision"]:
+            raise CiError(f"{name} revision mismatch: expected {dependency['revision']}, got {actual_revision}")
+        if run(["git", "-C", str(source), "status", "--porcelain=v1"]):
+            raise CiError(f"{name} source is dirty after checkout")
+        sources[name] = source
+    return sources
+
+
+def install_private_dependencies(root: Path, platform_name: str, cmake_arguments: Sequence[str]) -> Path:
+    """Build/install private CMake packages in dependency order and export their prefix."""
+    if platform_name not in {"macos", "windows", "android"}:
+        raise CiError(f"unsupported private dependency platform: {platform_name}")
+    prefix = root / "install"
+    for name in PRIVATE_DEPENDENCIES:
+        source = root / name
+        if source.is_symlink() or not (source / "CMakeLists.txt").is_file():
+            raise CiError(f"{name} source is missing its CMakeLists.txt: {source}")
+        build = root / f"{name}-build"
+        configure = [
+            "cmake", "-S", str(source), "-B", str(build), "-G", "Ninja",
+            "-DCMAKE_BUILD_TYPE=Release", f"-DCMAKE_INSTALL_PREFIX={prefix}",
+            f"-DCMAKE_PREFIX_PATH={prefix}", *cmake_arguments,
+        ]
+        run(configure)
+        run(["cmake", "--build", str(build), "--parallel"])
+        run(["cmake", "--install", str(build)])
+    write_github_env("MC_PRIVATE_DEPENDENCIES_PREFIX", str(prefix))
+    write_github_env("CMAKE_PREFIX_PATH", str(prefix))
+    return prefix
+
+
+def verify_private_dependency_artifact_exclusion(artifact_root: Path, private_dependency_root: Path) -> None:
+    """Reject artifact trees that reference the temporary private source checkouts."""
+    if artifact_root.is_symlink() or not artifact_root.is_dir():
+        raise CiError(f"artifact root must be a real directory: {artifact_root}")
+    private_root = private_dependency_root.resolve()
+    for candidate in artifact_root.rglob("*"):
+        if candidate.is_symlink():
+            raise CiError(f"artifact root must not contain symlinks: {candidate}")
+        resolved = candidate.resolve()
+        if resolved == private_root or private_root in resolved.parents:
+            raise CiError(f"artifact contains private dependency checkout material: {candidate}")
+        if ".git" in candidate.parts:
+            raise CiError(f"artifact contains Git metadata: {candidate}")
 
 
 def run(command: Sequence[str], accepted: Sequence[int] = (0,), input_text: str | None = None) -> str:
@@ -421,6 +555,18 @@ def main(argv: Sequence[str] | None = None) -> int:
     shader_parser.add_argument("--build-dir", type=Path, required=True)
     source_checks_parser = commands.add_parser("source-checks")
     source_checks_parser.add_argument("--pre-finalization-candidate", action="store_true")
+    fetch_private_parser = commands.add_parser("fetch-private-dependencies")
+    fetch_private_parser.add_argument("--lock", type=Path, default=Path("dependencies.lock.json"))
+    fetch_private_parser.add_argument("--root", type=Path, required=True)
+    fetch_private_parser.add_argument("--corecpp-key", type=Path, required=True)
+    fetch_private_parser.add_argument("--coreproject2026-key", type=Path, required=True)
+    install_private_parser = commands.add_parser("install-private-dependencies")
+    install_private_parser.add_argument("--root", type=Path, required=True)
+    install_private_parser.add_argument("--platform", choices=("macos", "windows", "android"), required=True)
+    install_private_parser.add_argument("--cmake-arg", action="append", default=[])
+    artifact_exclusion_parser = commands.add_parser("verify-private-dependency-artifact-exclusion")
+    artifact_exclusion_parser.add_argument("--artifact-root", type=Path, required=True)
+    artifact_exclusion_parser.add_argument("--private-dependency-root", type=Path, required=True)
     args = parser.parse_args(argv)
     try:
         if args.command == "install-vulkan":
@@ -437,6 +583,19 @@ def main(argv: Sequence[str] | None = None) -> int:
             record_metadata(args.platform, args.preset, args.output)
         elif args.command == "validate-shaders":
             validate_shaders(args.build_dir)
+        elif args.command == "fetch-private-dependencies":
+            fetch_private_dependencies(
+                args.lock,
+                args.root,
+                {
+                    "CoreCpp": args.corecpp_key,
+                    "CoreProject2026": args.coreproject2026_key,
+                },
+            )
+        elif args.command == "install-private-dependencies":
+            install_private_dependencies(args.root, args.platform, args.cmake_arg)
+        elif args.command == "verify-private-dependency-artifact-exclusion":
+            verify_private_dependency_artifact_exclusion(args.artifact_root, args.private_dependency_root)
         else:
             source_checks(args.pre_finalization_candidate)
     except CiError as error:

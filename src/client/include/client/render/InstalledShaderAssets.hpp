@@ -7,7 +7,7 @@ namespace client {
 class InstalledShaderAssets final : public ShaderAssets {
 public:
     [[nodiscard]]
-    core::vk::SpirV load(std::string_view name) const override;
+    core::kernel::SpirvModule load(std::string_view name) const override;
 };
 
 } // namespace client

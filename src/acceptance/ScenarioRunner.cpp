@@ -214,7 +214,7 @@ std::expected<RuntimeEvidence, std::string> runScenario(
     ) {
         return std::unexpected("scenario runner requires positive monotonic limits");
     }
-    if (plan.profile() != shared::ScenarioProfile::Flat2dV1) {
+    if (plan.profile() != shared::ScenarioProfile::Flat2dV1 && plan.profile() != shared::ScenarioProfile::Flat3dV1) {
         return std::unexpected("scenario runner does not support this profile");
     }
     static constexpr uint64_t MAX_SERVER_CLIENTS{ 4 };
@@ -250,6 +250,7 @@ std::expected<RuntimeEvidence, std::string> runScenario(
     std::optional<std::string> failure;
     uint64_t logical_tick{ 0 };
     uint64_t inputs_sent{ 0 };
+    uint64_t camera_relative_inputs{ 0 };
     uint64_t expectations_passed{ 0 };
     uint64_t last_effective_tick{ 0 };
     uint64_t clients_accepted{ 0 };
@@ -340,6 +341,23 @@ std::expected<RuntimeEvidence, std::string> runScenario(
                     .y = static_cast<uint8_t>(input->y),
                 };
                 last_effective_tick = input->effective_boundary;
+            } else if (auto const* const input = std::get_if<shared::ScenarioCameraInputOperation>(&operation.data)) {
+                if (plan.profile() != shared::ScenarioProfile::Flat3dV1
+                    || input->effective_boundary != logical_tick + 1U) {
+                    failure = operationFailure(operation, "has an inconsistent camera input boundary");
+                    break;
+                }
+                auto const index = actorIndex(plan, input->actor);
+                if (!index.has_value()) {
+                    failure = operationFailure(operation, "references an unknown actor");
+                    break;
+                }
+                shared::ScenarioActor const& actor = plan.actors()[*index];
+                active_inputs[*index] = shared::scenarioCameraRelativeDirection(
+                    actor.yaw_degrees, input->strafe, input->forward
+                );
+                ++camera_relative_inputs;
+                last_effective_tick = input->effective_boundary;
             } else if (auto const* const wait = std::get_if<shared::ScenarioWaitOperation>(&operation.data)) {
                 for (uint64_t tick{ 0 }; tick < wait->ticks; ++tick) {
                     auto const advanced = advanceOneTick();
@@ -365,7 +383,8 @@ std::expected<RuntimeEvidence, std::string> runScenario(
                         auto const position = client->latestPosition(character);
                         return position.has_value()
                             && position->x == expectation->x
-                            && position->y == expectation->y;
+                            && position->y == expectation->y
+                            && expectation->z == 0U;
                     },
                     deadline,
                     options.network_poll_interval
@@ -408,7 +427,10 @@ std::expected<RuntimeEvidence, std::string> runScenario(
         .accepted_tick = accepted_tick,
         .last_effective_tick = last_effective_tick,
         .inputs_sent = inputs_sent,
+        .camera_relative_inputs = camera_relative_inputs,
         .expectations_passed = expectations_passed,
+        .authoritative_tick_ms = static_cast<uint64_t>(shared::TICK.count()),
+        .replay_id = shared::scenarioReplayId(plan),
         .elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::steady_clock::now() - started_at
         ),

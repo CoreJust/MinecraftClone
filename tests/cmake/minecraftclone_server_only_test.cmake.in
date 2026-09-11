@@ -1,0 +1,48 @@
+set(test_root "@CMAKE_CURRENT_BINARY_DIR@/minecraftclone-server-only")
+set(corecpp_prefix "@CoreCpp_DIR@/../../..")
+set(coreproject_dir "@CoreProject2026_DIR@")
+set(dependency_prefix "@CMAKE_PREFIX_PATH@")
+
+file(REMOVE_RECURSE "${test_root}")
+
+execute_process(
+    COMMAND
+        "@CMAKE_COMMAND@"
+        -S "@PROJECT_SOURCE_DIR@"
+        -B "${test_root}/build"
+        "-DCMAKE_PREFIX_PATH=${corecpp_prefix};${dependency_prefix}"
+        "-DCoreProject2026_DIR=${coreproject_dir}"
+        -DMC_BUILD_CLIENT=OFF
+        -DMC_REGISTER_SERVER_ONLY_BUILD_TEST=OFF
+        -DVCPKG_MANIFEST_INSTALL=OFF
+        -DCMAKE_BUILD_TYPE=Debug
+    RESULT_VARIABLE configure_result
+    OUTPUT_VARIABLE configure_output
+    ERROR_VARIABLE configure_error
+)
+if(NOT configure_result EQUAL 0)
+    string(CONCAT configure_log "${configure_output}" "${configure_error}")
+    message(FATAL_ERROR "MinecraftClone server-only configure failed:\n${configure_log}")
+endif()
+
+execute_process(
+    COMMAND "@CMAKE_COMMAND@" --build "${test_root}/build" --parallel 8
+    RESULT_VARIABLE build_result
+    OUTPUT_VARIABLE build_output
+    ERROR_VARIABLE build_error
+)
+if(NOT build_result EQUAL 0)
+    string(CONCAT build_log "${build_output}" "${build_error}")
+    message(FATAL_ERROR "MinecraftClone server-only build failed:\n${build_log}")
+endif()
+
+execute_process(
+    COMMAND "@CMAKE_CTEST_COMMAND@" --test-dir "${test_root}/build" --output-on-failure
+    RESULT_VARIABLE test_result
+    OUTPUT_VARIABLE test_output
+    ERROR_VARIABLE test_error
+)
+if(NOT test_result EQUAL 0)
+    string(CONCAT test_log "${test_output}" "${test_error}")
+    message(FATAL_ERROR "MinecraftClone server-only CTest failed:\n${test_log}")
+endif()

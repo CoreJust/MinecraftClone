@@ -1,13 +1,17 @@
 #include <client/GameClient.hpp>
 
+#include <client/FrameScheduler.hpp>
+
 #include <core/common/SpanUtils.hpp>
 #include <core/IO/Log.hpp>
 
 #include <iostream>
+#include <optional>
 
 namespace client {
 
 void GameClient::run(core::Address const server_address, char const ch) {
+    m_local_character = ch;
     if (!connect(server_address, std::chrono::milliseconds{ 1'000 })) {
         CORE_ERROR("Failed to connect to server {}", server_address);
         std::cerr << "Failed to connect to server" << std::endl;
@@ -21,8 +25,9 @@ void GameClient::run(core::Address const server_address, char const ch) {
         poll(std::chrono::milliseconds{ 100 });
     }
 
+    FrameScheduler scheduler{ std::chrono::steady_clock::now(), shared::TICK };
     while (m_running && isConnected()) {
-        poll(std::chrono::milliseconds{ 100 });
+        poll(std::chrono::milliseconds::zero());
         if (!m_running || !isConnected()) {
             break;
         }
@@ -30,10 +35,13 @@ void GameClient::run(core::Address const server_address, char const ch) {
         if (!m_running || !isConnected()) {
             break;
         }
-        send(shared::ClientInputMessage{
-            .direction = input(),
-        });
-        std::this_thread::sleep_for(std::chrono::milliseconds{ 100 });
+        std::chrono::steady_clock::time_point const now = std::chrono::steady_clock::now();
+        if (scheduler.simulationDue(now)) {
+            send(shared::ClientInputMessage{
+                .direction = input(),
+            });
+        }
+        std::this_thread::sleep_for(scheduler.idleDelay(now));
     }
 }
 
@@ -63,6 +71,11 @@ void GameClient::onReceived(core::ReceiveEvent event) {
             m_world.setPlayerPosition(p->id, x, y);
         } else {
             m_world.spawnPlayer(m_next_id++, ch, {{x, y}});
+        }
+        if (ch == m_local_character) {
+            if (std::optional<shared::Player> const player = m_world.playerByCharacter(ch); player.has_value()) {
+                onAuthoritativeLocalPlayerPosition(*player);
+            }
         }
     } else if (auto* msg = std::get_if<shared::ServerRemovePlayerMessage>(msg_ptr)) {
         auto const [ch] = *msg;

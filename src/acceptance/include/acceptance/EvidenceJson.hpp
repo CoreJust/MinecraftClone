@@ -32,10 +32,14 @@ struct RendererBenchmarkEvidence final {
     uint32_t actual_width{ 0 };
     uint32_t actual_height{ 0 };
     bool validation_enabled{ false };
+    bool debug_hud_enabled{ false };
     std::chrono::milliseconds warmup{ 0 };
     std::chrono::nanoseconds sample_elapsed{ 0 };
     double presentation_requests_per_second{ 0.0 };
     FrameTimingSummary presentation_request_timings;
+    FrameTimingSummary acquire_wait_timings;
+    FrameTimingSummary command_record_timings;
+    FrameTimingSummary complete_present_wait_timings;
 };
 
 struct RendererCaptureEvidence final {
@@ -66,7 +70,10 @@ struct RuntimeEvidence final {
     uint64_t accepted_tick{ 0 };
     uint64_t last_effective_tick{ 0 };
     uint64_t inputs_sent{ 0 };
+    uint64_t camera_relative_inputs{ 0 };
     uint64_t expectations_passed{ 0 };
+    uint64_t authoritative_tick_ms{ 0 };
+    std::string replay_id;
     std::chrono::milliseconds elapsed{ 0 };
     std::chrono::milliseconds deadline{ 0 };
     bool passed{ false };

@@ -51,7 +51,7 @@ std::filesystem::path executablePath()
 
 } // namespace
 
-core::vk::SpirV InstalledShaderAssets::load(std::string_view const name) const
+core::kernel::SpirvModule InstalledShaderAssets::load(std::string_view const name) const
 {
     std::filesystem::path const shader_name{ name };
     if (shader_name.empty() || shader_name.has_parent_path() || shader_name.extension() != ".spv") {
@@ -62,7 +62,7 @@ core::vk::SpirV InstalledShaderAssets::load(std::string_view const name) const
     if (!std::filesystem::is_regular_file(asset)) {
         throw std::runtime_error("Missing shader asset: " + asset.string());
     }
-    return core::vk::SpirV::fromFile(asset.string());
+    return core::kernel::SpirvModule::fromFile(asset);
 }
 
 } // namespace client
