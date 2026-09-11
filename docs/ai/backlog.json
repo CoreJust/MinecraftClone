@@ -3794,5 +3794,43 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0097",
+    "title": "Honor immutable Snapshot 3 publication ledger history",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P1",
+    "route": "luna",
+    "milestone": "ED-010-S4",
+    "depends_on": [],
+    "acceptance": "Snapshot 4 history collection accepts the exact immutable Snapshot 3 publication-ledger commit while every other publication ledger remains restricted to the standard mutable fields; temporary-Git regression coverage proves the exception is commit-scoped, and the real MC-AI-0035 collector succeeds without rewriting Snapshot 3 history.",
+    "evidence": "Focused ai_history unit/integration suite passed 19/19. A temporary-Git publication flow proves an immutable-field ledger is rejected for an unlisted SHA and accepted only when that exact SHA receives the four-field compatibility entry. The real python3 script/ai_history.py collect MC-AI-0035 command succeeds and lists only Snapshot 4 child task IDs, including no prior Snapshot 3 aggregate. The production exception is keyed to immutable commit 8df27fb8fa08d9e0cd625b8cad85209fdd09251d and exposes only context, plan, product_changes, and code_changes beyond the standard publication fields.",
+    "blocker": "",
+    "owner": "Codex coordinator",
+    "level": "basic",
+    "parent": "MC-AI-0035",
+    "motivation": "Unblock reproducible Snapshot 4 finalization without weakening publication-ledger immutability or rewriting the already-published Snapshot 3 commit.",
+    "context": "The immutable 8df27fb publication ledger predates the strict checker and condensed finalized context, plan, and change-list prose in addition to valid publication fields. Its exact commit identity is the only safe exception boundary.",
+    "complexity": "low",
+    "created_at": "2026-09-11",
+    "resolved_at": "2026-09-11",
+    "resolution_changes": "Grandfathered only the immutable Snapshot 3 publication-ledger prose condensation while preserving fail-closed validation for every other commit and ledger field.",
+    "plan": [
+      "Encode a closed exact-commit field exception, retain strict defaults, and cover both exact and unknown identities."
+    ],
+    "product_changes": [
+      "No product behavior changed."
+    ],
+    "code_changes": [
+      "Added an exact immutable Snapshot 3 publication-ledger compatibility exception and regression coverage."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": false,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]

@@ -23,6 +23,32 @@ class HistoryError(RuntimeError):
     pass
 
 
+PUBLICATION_LEDGER_MUTABLE_FIELDS = {
+    "status",
+    "owner",
+    "evidence",
+    "resolved_at",
+    "resolution_changes",
+}
+
+# Snapshot 3 was published before the ledger immutability check landed. Its
+# immutable commit also condensed finalized prose fields. The commit identity
+# makes this a closed historical exception; later ledgers retain the strict
+# field set above.
+LEGACY_PUBLICATION_LEDGER_FIELD_EXCEPTIONS = {
+    "8df27fb8fa08d9e0cd625b8cad85209fdd09251d": {
+        "context",
+        "plan",
+        "product_changes",
+        "code_changes",
+    },
+}
+
+
+def publication_ledger_mutable_fields(sha: str) -> set[str]:
+    return PUBLICATION_LEDGER_MUTABLE_FIELDS | LEGACY_PUBLICATION_LEDGER_FIELD_EXCEPTIONS.get(sha, set())
+
+
 def git(repo: Path, *args: str, check: bool = True) -> str:
     result = subprocess.run(
         ["git", *args],
@@ -176,7 +202,6 @@ def require_valid_prior_snapshot_ledgers(
     current = by_id[snapshot_id]
     task_commits = trailer_commits(repo, tasks)
     commit_to_task = {sha: task_id for task_id, shas in task_commits.items() for sha in shas}
-    mutable_fields = {"status", "owner", "evidence", "resolved_at", "resolution_changes"}
     validated_ledgers: set[str] = set()
 
     for sha in range_shas:
@@ -223,7 +248,7 @@ def require_valid_prior_snapshot_ledgers(
         if previous is None or published is None:
             raise HistoryError(f"publication ledger {sha} omits {task_id}")
         changed_fields = {key for key in previous if previous[key] != published[key]}
-        if not changed_fields <= mutable_fields:
+        if not changed_fields <= publication_ledger_mutable_fields(sha):
             raise HistoryError(f"publication ledger {sha} changes immutable {task_id} fields")
         if previous["status"] != "active" or previous["resolved_at"]:
             raise HistoryError(f"publication ledger {sha} does not start from an active snapshot")

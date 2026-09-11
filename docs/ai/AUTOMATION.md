@@ -22,6 +22,12 @@ Install once per clone with `python3 script/ai_setup.py --install-hooks`. `core.
 
 The hooks apply to `ai-dev`, `ai-main`, and `codex/ai-*` work. Pre-commit and pre-merge-commit require the exact Luna review receipt and run the one fast check for basic tasks or candidate release check for aggregates; do not wrap the same precommit predicate a second time. `ai_check.py` removes exactly the variables reported by `git rev-parse --local-env-vars` from the Python-test child environment; candidate and index checks retain the real hook environment. Commit-msg requires exactly one matching Task-ID trailer; post-commit refreshes ignored local task pages. Minor/major candidates also require Terra review. Pre-push checks the actual AI ref against the checked-out commit and requires a clean tree before running the full gate; `ai-main` requires strict checks. Pushing an AI checkout to the legacy `dev`/`main` refs is blocked. Hooks are guardrails, not remote branch protection, and can be bypassed by Git options.
 
+Publication-ledger validation keeps snapshot planning and finalized change lists
+immutable. One exact historical compatibility entry recognizes Snapshot 3 commit
+`8df27fb8fa08d9e0cd625b8cad85209fdd09251d`, which predates that rule and
+condensed four prose fields. The exception is commit-scoped; later ledgers use
+only the standard publication fields.
+
 [GitHub workflow](../../.github/workflows/ai-checks.yml) runs fast checks on AI branches and pull requests. It has read-only permissions and does not call a model, publish, or run arbitrary scheduled work. Linux CI validates tooling only: the application supports macOS and Windows. GPU/multiplayer acceptance belongs to a supported runner and the task evidence. Enabling remote rules or workflows requires publishing and separate repository administration; this setup performs neither.
 
 ## Project skills and future hooks
