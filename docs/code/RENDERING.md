@@ -5,9 +5,12 @@
 [`VulkanRenderer.hpp`](../../src/client/include/client/render/VulkanRenderer.hpp)
 is the Client policy facade. It owns scene draw order, grid/player push
 constants, shader choice, camera/world interpretation, and raw device children
-(shader modules, layouts, and pipelines). It does not own a Vulkan instance,
-physical device, device, queues, command pools, synchronization objects,
-swapchain, image views, or GLFW/Android surface.
+(pipeline layouts and CoreCpp program/cache lifetimes). CoreCpp
+`RuntimeKernel::GraphicsProgram` validates the Client's reflected vertex and
+fragment entrypoints, and `RuntimeGraphicsVulkan::VulkanKernelCache` owns the
+corresponding shader modules and pipelines. The Client does not own a Vulkan
+instance, physical device, device, queues, command pools, synchronization
+objects, swapchain, image views, or GLFW/Android surface.
 
 Those objects belong to one CoreCpp
 `RuntimeGraphicsVulkan::PresentationContext`. Desktop constructs it using
@@ -20,11 +23,12 @@ CoreCpp performs the acquire/transition/submit/present sequence.
 
 `PresentationResourceScope` retains the context device but becomes stale after
 every recreation, even where extent and format happen to match. The renderer's
-pre-recreate hook destroys all raw device children and releases the scope;
-its post-recreate hook obtains a fresh scope and rebuilds format-dependent
-objects. This also gives `waitForSubmittedFrames()` a bounded frame-slot drain
-without `vkDeviceWaitIdle`. There is no second Client device and no steady
-per-draw allocation.
+pre-recreate hook invalidates its cache using that scope's device identity,
+releases the programs, layouts, and scope; its post-recreate hook obtains a
+fresh scope and rebuilds format-dependent objects. This also gives
+`waitForSubmittedFrames()` a bounded frame-slot drain without
+`vkDeviceWaitIdle`. There is no second Client device and no steady per-draw
+allocation.
 
 ## Scene and shader policy
 

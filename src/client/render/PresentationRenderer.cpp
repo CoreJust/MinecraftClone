@@ -4,6 +4,11 @@
 #include <core/graphics/vulkan/android/AndroidSurface.hpp>
 #else
 #include <core/graphics/vulkan/glfw/GlfwSurface.hpp>
+#endif
+
+#include <core/kernel/Program.hpp>
+
+#if !defined(__ANDROID__)
 #include <core/platform/glfw/GlfwWindow.hpp>
 #endif
 
@@ -24,6 +29,7 @@ constexpr bool REQUIRE_VALIDATION = false;
 
 constexpr uint32_t GRID_WORKGROUPS_X = 32U;
 constexpr uint32_t GRID_WORKGROUPS_Y = 32U;
+constexpr uint32_t KERNEL_CACHE_CAPACITY = 5U;
 constexpr uint32_t QUAD_VERTEX_COUNT = 6U;
 
 struct alignas(16) GridPushConstants final {
@@ -324,18 +330,6 @@ private:
         m_end_rendering(command);
     }
 
-    [[nodiscard]] VkShaderModule createShader(core::kernel::SpirvModule const& module) const
-    {
-        std::span<uint32_t const> const words = module.words();
-        VkShaderModule shader = VK_NULL_HANDLE;
-        VkShaderModuleCreateInfo info{};
-        info.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
-        info.codeSize = words.size_bytes();
-        info.pCode = words.data();
-        checkResult(vkCreateShaderModule(m_resources->device(), &info, nullptr, &shader), "vkCreateShaderModule");
-        return shader;
-    }
-
     [[nodiscard]] VkPipelineLayout createLayout() const
     {
         VkPushConstantRange range{};
@@ -351,74 +345,6 @@ private:
         return layout;
     }
 
-    [[nodiscard]] VkPipeline createPipeline(VkPipelineLayout const layout, VkShaderModule const vertex) const
-    {
-        std::array<VkPipelineShaderStageCreateInfo, 2U> stages{};
-        stages[0].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-        stages[0].stage = VK_SHADER_STAGE_VERTEX_BIT;
-        stages[0].module = vertex;
-        stages[0].pName = "main";
-        stages[1].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-        stages[1].stage = VK_SHADER_STAGE_FRAGMENT_BIT;
-        stages[1].module = m_fragment_shader;
-        stages[1].pName = "main";
-
-        VkPipelineVertexInputStateCreateInfo vertex_input{};
-        vertex_input.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-        VkPipelineInputAssemblyStateCreateInfo assembly{};
-        assembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
-        assembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
-        VkPipelineViewportStateCreateInfo viewport{};
-        viewport.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
-        viewport.viewportCount = 1U;
-        viewport.scissorCount = 1U;
-        VkPipelineRasterizationStateCreateInfo rasterization{};
-        rasterization.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
-        rasterization.polygonMode = VK_POLYGON_MODE_FILL;
-        rasterization.cullMode = VK_CULL_MODE_NONE;
-        rasterization.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
-        rasterization.lineWidth = 1.0F;
-        VkPipelineMultisampleStateCreateInfo multisample{};
-        multisample.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
-        multisample.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
-        VkPipelineColorBlendAttachmentState blend_attachment{};
-        blend_attachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT
-            | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
-        VkPipelineColorBlendStateCreateInfo blend{};
-        blend.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
-        blend.attachmentCount = 1U;
-        blend.pAttachments = &blend_attachment;
-        VkDynamicState const dynamic_states[] = { VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR };
-        VkPipelineDynamicStateCreateInfo dynamic{};
-        dynamic.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
-        dynamic.dynamicStateCount = static_cast<uint32_t>(std::size(dynamic_states));
-        dynamic.pDynamicStates = dynamic_states;
-        VkFormat const color_format = m_resources->format();
-        VkPipelineRenderingCreateInfo rendering{};
-        rendering.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO;
-        rendering.colorAttachmentCount = 1U;
-        rendering.pColorAttachmentFormats = &color_format;
-        VkGraphicsPipelineCreateInfo info{};
-        info.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
-        info.pNext = &rendering;
-        info.stageCount = static_cast<uint32_t>(stages.size());
-        info.pStages = stages.data();
-        info.pVertexInputState = &vertex_input;
-        info.pInputAssemblyState = &assembly;
-        info.pViewportState = &viewport;
-        info.pRasterizationState = &rasterization;
-        info.pMultisampleState = &multisample;
-        info.pColorBlendState = &blend;
-        info.pDynamicState = &dynamic;
-        info.layout = layout;
-        VkPipeline pipeline = VK_NULL_HANDLE;
-        checkResult(
-            vkCreateGraphicsPipelines(m_resources->device(), VK_NULL_HANDLE, 1U, &info, nullptr, &pipeline),
-            "vkCreateGraphicsPipelines"
-        );
-        return pipeline;
-    }
-
     void createResources()
     {
         m_resources.emplace(m_context->resources());
@@ -431,16 +357,59 @@ private:
         if (m_begin_rendering == nullptr || m_end_rendering == nullptr) {
             throw std::runtime_error("Vulkan presentation device does not expose dynamic rendering commands");
         }
-        core::kernel::SpirvModule const grid = m_shader_assets.load("grid.vert.spv");
-        core::kernel::SpirvModule const player = m_shader_assets.load("player.vert.spv");
-        core::kernel::SpirvModule const fragment = m_shader_assets.load("trivial.frag.spv");
-        m_grid_shader = createShader(grid);
-        m_player_shader = createShader(player);
-        m_fragment_shader = createShader(fragment);
+        auto const grid = std::make_shared<core::kernel::SpirvModule const>(
+            m_shader_assets.load("grid.vert.spv")
+        );
+        auto const player = std::make_shared<core::kernel::SpirvModule const>(
+            m_shader_assets.load("player.vert.spv")
+        );
+        auto const fragment = std::make_shared<core::kernel::SpirvModule const>(
+            m_shader_assets.load("trivial.frag.spv")
+        );
+        m_grid_program.emplace(core::kernel::GraphicsProgram::create(
+            {
+                .module = grid,
+                .entrypoint = "main",
+                .required_bindings = {},
+            },
+            {
+                .module = fragment,
+                .entrypoint = "main",
+                .required_bindings = {},
+            }
+        ));
+        m_player_program.emplace(core::kernel::GraphicsProgram::create(
+            {
+                .module = player,
+                .entrypoint = "main",
+                .required_bindings = {},
+            },
+            {
+                .module = fragment,
+                .entrypoint = "main",
+                .required_bindings = {},
+            }
+        ));
         m_grid_layout = createLayout();
         m_player_layout = createLayout();
-        m_grid_pipeline = createPipeline(m_grid_layout, m_grid_shader);
-        m_player_pipeline = createPipeline(m_player_layout, m_player_shader);
+        m_kernel_cache.emplace(KERNEL_CACHE_CAPACITY);
+        core::graphics::vulkan::VulkanDeviceReference const device = m_resources->deviceReference();
+        m_grid_pipeline = m_kernel_cache->pipelineFor(
+            device,
+            *m_grid_program,
+            {
+                .layout = m_grid_layout,
+                .color_format = m_resources->format(),
+            }
+        );
+        m_player_pipeline = m_kernel_cache->pipelineFor(
+            device,
+            *m_player_program,
+            {
+                .layout = m_player_layout,
+                .color_format = m_resources->format(),
+            }
+        );
     }
 
     void destroyResources() noexcept
@@ -449,20 +418,18 @@ private:
             return;
         }
         VkDevice const device = m_resources->device();
-        if (m_grid_pipeline != VK_NULL_HANDLE) { vkDestroyPipeline(device, m_grid_pipeline, nullptr); }
-        if (m_player_pipeline != VK_NULL_HANDLE) { vkDestroyPipeline(device, m_player_pipeline, nullptr); }
+        if (m_kernel_cache.has_value()) {
+            m_kernel_cache->invalidate(m_resources->deviceReference().identity());
+            m_kernel_cache.reset();
+        }
         if (m_grid_layout != VK_NULL_HANDLE) { vkDestroyPipelineLayout(device, m_grid_layout, nullptr); }
         if (m_player_layout != VK_NULL_HANDLE) { vkDestroyPipelineLayout(device, m_player_layout, nullptr); }
-        if (m_grid_shader != VK_NULL_HANDLE) { vkDestroyShaderModule(device, m_grid_shader, nullptr); }
-        if (m_player_shader != VK_NULL_HANDLE) { vkDestroyShaderModule(device, m_player_shader, nullptr); }
-        if (m_fragment_shader != VK_NULL_HANDLE) { vkDestroyShaderModule(device, m_fragment_shader, nullptr); }
         m_grid_pipeline = VK_NULL_HANDLE;
         m_player_pipeline = VK_NULL_HANDLE;
         m_grid_layout = VK_NULL_HANDLE;
         m_player_layout = VK_NULL_HANDLE;
-        m_grid_shader = VK_NULL_HANDLE;
-        m_player_shader = VK_NULL_HANDLE;
-        m_fragment_shader = VK_NULL_HANDLE;
+        m_grid_program.reset();
+        m_player_program.reset();
         m_begin_rendering = nullptr;
         m_end_rendering = nullptr;
         m_resources.reset();
@@ -485,11 +452,11 @@ private:
     ShaderAssets const& m_shader_assets;
     VulkanRendererOptions m_options;
     std::optional<ResourceScope> m_resources;
+    std::optional<core::graphics::vulkan::VulkanKernelCache> m_kernel_cache;
     std::span<PlayerRenderData const> m_players;
     VkImageView m_image_view = VK_NULL_HANDLE;
-    VkShaderModule m_grid_shader = VK_NULL_HANDLE;
-    VkShaderModule m_player_shader = VK_NULL_HANDLE;
-    VkShaderModule m_fragment_shader = VK_NULL_HANDLE;
+    std::optional<core::kernel::GraphicsProgram> m_grid_program;
+    std::optional<core::kernel::GraphicsProgram> m_player_program;
     VkPipelineLayout m_grid_layout = VK_NULL_HANDLE;
     VkPipelineLayout m_player_layout = VK_NULL_HANDLE;
     VkPipeline m_grid_pipeline = VK_NULL_HANDLE;

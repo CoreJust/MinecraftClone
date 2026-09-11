@@ -203,7 +203,7 @@
     },
     {
       "guide": "docs/code/RENDERING.md",
-      "guide_sha256": "d76141b95b7d224c7d75584c3e9df4e534c629b76d9f6a6db1b84cfda1bf193d",
+      "guide_sha256": "9dca6dfe9530ba014c99150e68582ef23c6dd3b05f06f056a0416fdc77baddd7",
       "id": "rendering",
       "sources": [
         "src/client/CMakeLists.txt",
@@ -221,7 +221,7 @@
         "tests/client/renderer_smoke_tests.cpp",
         "tests/client/shader_assets_tests.cpp"
       ],
-      "sources_sha256": "370fe9774b5bd814fb5b9c7ca04beb35b77d3aca62f164e7bb4d1c610a4137d0"
+      "sources_sha256": "64b6935979211fcf2093412b81d38501142b5ca8afa33b1afb96405d70f3e2f7"
     }
   ],
   "version": 1

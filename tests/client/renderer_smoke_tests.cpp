@@ -154,7 +154,17 @@ TEST(RendererSmokeTest, CompletedCaptureSurvivesRecreateAndReadsBack)
     EXPECT_TRUE(retained_colors.complete())
         << "retained capture lacks: " << retained_colors.missingClasses()
         << "; the 32x32 inset-cell grid may cover every physical framebuffer sample";
-    EXPECT_GE(rendered_frames, 2U);
+
+    renderer.hotReload();
+    renderer.requestFrameCapture();
+    ASSERT_TRUE(completeCapture());
+    std::optional<client::RendererFrameCapture> const reloaded_capture = renderer.takeFrameCapture();
+    ASSERT_TRUE(reloaded_capture.has_value());
+    CaptureColorClasses const reloaded_colors = classifyCaptureColors(*reloaded_capture);
+    EXPECT_TRUE(reloaded_colors.complete())
+        << "reloaded capture lacks: " << reloaded_colors.missingClasses()
+        << "; the 32x32 inset-cell grid may cover every physical framebuffer sample";
+    EXPECT_GE(rendered_frames, 3U);
     EXPECT_EQ(renderer.runtimeInfo().pipeline_path, client::RendererPipelinePath::Vertex);
 }
 
