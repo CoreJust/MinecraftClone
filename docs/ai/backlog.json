@@ -4107,5 +4107,43 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0104",
+    "title": "Repair hosted private dependency setup",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P0",
+    "route": "luna",
+    "milestone": "EarlyDev 0.1.0:4",
+    "depends_on": [],
+    "acceptance": "Trusted hosted macOS, Windows, and Android jobs fetch the exact two private dependency revisions without exposing deploy keys and install package targets without compiling dependency-owned tests. Git-for-Windows receives quoted forward-slash SSH key and known-host paths that preserve drive letters, spaces, and option boundaries. Package-only dependency installs force BUILD_TESTING=OFF while MinecraftClone tests remain enabled. Focused regressions cover Windows backslashes/spaces, unsafe quote rejection, immutable fetch/checkout arguments, enforced package-only configuration, and all affected workflow call sites. New hosted checks and artifact jobs must pass before any cross-platform or artifact claim.",
+    "evidence": "Hosted runs 34614650561 and 34614650572 at bc3816680a0472d282cad68a7c82a8b8f60e1670 failed before product builds: Windows stripped backslashes from unquoted core.sshCommand paths; macOS compiled CoreCpp dependency tests and failed on hosted std::jthread support; Android configured dependency tests and could not find target-triplet GTest. Focused acquire/workflow/build-snapshot regressions passed 41 of 41, including Windows drive/backslash/space/single-quote preservation, control-character rejection, exact fetch/checkout arguments, and enforced package-only BUILD_TESTING=OFF. New hosted workflows remain required before cross-platform success is claimed.",
+    "blocker": "",
+    "owner": "",
+    "level": "basic",
+    "parent": "MC-AI-0035",
+    "motivation": "Snapshot 4 hosted runs 34614650561 and 34614650572 failed before product builds because Windows core.sshCommand lost path backslashes and package-only installs compiled dependency test suites.",
+    "context": "Preserve failed logs and exact run IDs. Do not modify private repositories or credentials. BUILD_TESTING=OFF applies only to acquired dependency package builds; retain independent library conformance evidence and all MinecraftClone tests.",
+    "complexity": "medium",
+    "created_at": "2026-09-11",
+    "resolved_at": "2026-09-11",
+    "resolution_changes": "Normalized and single-quoted private SSH key and known-host paths for Git-for-Windows POSIX command parsing, rejected control-character injection, and made package-only private dependency configuration own a final BUILD_TESTING=OFF while rejecting caller overrides.",
+    "plan": [
+      "Normalize and quote SSH path arguments for Git-for-Windows while rejecting unsafe embedded quotes or line breaks.",
+      "Force BUILD_TESTING=OFF after caller CMake arguments in package-only private dependency configuration and inspect adjacent fetch/install argument boundaries.",
+      "Add focused regressions, record the failed hosted evidence, pass the task gate and Luna/high review, then rerun trusted workflows at the revised ai-main commit."
+    ],
+    "product_changes": [],
+    "code_changes": [
+      "Harden script/ci/acquire.py private fetch and install command construction with focused CI setup tests."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": false,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]

@@ -164,6 +164,19 @@ class CiAcquireTests(unittest.TestCase):
             for command in configure_commands:
                 self.assertIn("-DVCPKG_INSTALLED_DIR=/tmp/vcpkg-installed", command)
                 self.assertIn("-DVCPKG_MANIFEST_INSTALL=OFF", command)
+                self.assertEqual(command[-1], "-DBUILD_TESTING=OFF")
+
+    def test_install_private_dependencies_rejects_test_override(self):
+        with tempfile.TemporaryDirectory() as directory, mock.patch.dict(
+            os.environ,
+            {"VCPKG_INSTALLED_DIR": "/tmp/vcpkg-installed"},
+        ):
+            with self.assertRaisesRegex(acquire.CiError, "own BUILD_TESTING=OFF"):
+                acquire.install_private_dependencies(
+                    Path(directory) / "private-dependencies",
+                    "android",
+                    ["-DBUILD_TESTING=ON"],
+                )
 
     def test_verify_sha256_rejects_tampered_download(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -328,6 +341,18 @@ class CiAcquireTests(unittest.TestCase):
             self.assertEqual(fetches[0][-1], "a" * 40)
             self.assertEqual(fetches[1][-1], "b" * 40)
             self.assertNotIn("PRIVATE KEY", "\n".join(" ".join(command) for command in commands))
+
+    def test_git_ssh_paths_preserve_windows_drives_spaces_and_option_boundaries(self):
+        self.assertEqual(
+            acquire.quote_git_ssh_path(r"D:\a\runner temp\private-dependency-keys\corecpp"),
+            "'D:/a/runner temp/private-dependency-keys/corecpp'",
+        )
+        self.assertEqual(
+            acquire.quote_git_ssh_path(r"D:\a\runner's temp\github-known-hosts"),
+            "'D:/a/runner'\"'\"'s temp/github-known-hosts'",
+        )
+        with self.assertRaisesRegex(acquire.CiError, "forbidden control character"):
+            acquire.quote_git_ssh_path("D:\\a\\key\n-o StrictHostKeyChecking=no")
 
     def test_private_dependency_artifact_exclusion_rejects_checkout_links(self):
         with tempfile.TemporaryDirectory() as directory:
