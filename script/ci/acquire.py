@@ -73,6 +73,25 @@ PRIVATE_DEPENDENCIES = {
         "key_argument": "coreproject2026_key",
     },
 }
+CORECPP_COMMON_BUILD_ARGUMENTS = (
+    "-DCORECPP_BUILD_CORE=ON",
+    "-DCORECPP_BUILD_RUNTIME=ON",
+    "-DCORECPP_BUILD_RUNTIME_NETWORK=ON",
+    "-DCORECPP_BUILD_RUNTIME_KERNEL=ON",
+    "-DCORECPP_BUILD_RUNTIME_GRAPHICS=ON",
+    "-DCORECPP_BUILD_RUNTIME_GRAPHICS_VULKAN=ON",
+)
+CORECPP_PLATFORM_BUILD_ARGUMENTS = {
+    "macos": (
+        "-DCORECPP_BUILD_RUNTIME_PLATFORM_GLFW=ON",
+        "-DCORECPP_BUILD_RUNTIME_GRAPHICS_VULKAN_GLFW=ON",
+    ),
+    "windows": (
+        "-DCORECPP_BUILD_RUNTIME_PLATFORM_GLFW=ON",
+        "-DCORECPP_BUILD_RUNTIME_GRAPHICS_VULKAN_GLFW=ON",
+    ),
+    "android": ("-DCORECPP_BUILD_RUNTIME_GRAPHICS_VULKAN_ANDROID=ON",),
+}
 GIT_REVISION_RE = re.compile(r"[0-9a-f]{40}")
 GITHUB_SSH_KNOWN_HOST = (
     "github.com ssh-ed25519 "
@@ -186,11 +205,20 @@ def install_private_dependencies(root: Path, platform_name: str, cmake_arguments
         if source.is_symlink() or not (source / "CMakeLists.txt").is_file():
             raise CiError(f"{name} source is missing its CMakeLists.txt: {source}")
         build = root / f"{name}-build"
+        package_arguments: list[str] = []
+        if name == "CoreCpp":
+            package_arguments.extend(CORECPP_COMMON_BUILD_ARGUMENTS)
+            package_arguments.extend(CORECPP_PLATFORM_BUILD_ARGUMENTS[platform_name])
+        else:
+            corecpp_config = prefix / "lib" / "cmake" / "CoreCpp" / "CoreCppConfig.cmake"
+            if not corecpp_config.is_file():
+                raise CiError(f"installed CoreCpp package config is missing: {corecpp_config}")
+            package_arguments.append(f"-DCoreCpp_DIR={corecpp_config.parent}")
         configure = [
             "cmake", "-S", str(source), "-B", str(build), "-G", "Ninja",
             "-DCMAKE_BUILD_TYPE=Release", f"-DCMAKE_INSTALL_PREFIX={prefix}",
             f"-DCMAKE_PREFIX_PATH={prefix}", f"-DVCPKG_INSTALLED_DIR={installed_root}",
-            *cmake_arguments, "-DBUILD_TESTING=OFF",
+            *cmake_arguments, *package_arguments, "-DBUILD_TESTING=OFF",
         ]
         run(configure)
         run(["cmake", "--build", str(build), "--parallel"])
