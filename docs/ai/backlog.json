@@ -4263,5 +4263,45 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0108",
+    "title": "Make source policy test portable on Windows",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P0",
+    "route": "luna",
+    "milestone": "EarlyDev 0.1.0:4",
+    "depends_on": [
+      "MC-AI-0107"
+    ],
+    "acceptance": "Make the GitHub known-host permission assertion independent of mock call storage and host argument binding; retain POSIX mode validation and Windows ACL production behavior; run the focused CI acquire suite plus the fast source-policy gate; obtain one exact-task Luna/high review; commit with Task-ID MC-AI-0108; rerun hosted Windows before claiming the candidate complete.",
+    "evidence": "Hosted snapshot artifacts run 34633199620 Windows job 103374865250 failed reproducibly before build: test_private_dependency_fetch_pins_github_host_key indexed chmod_call.call_args.args[1], but patched Path.chmod recorded the single mode argument at args[0]. The focused CI acquire suite passes 21 tests and the full fast gate passes Python tests, existing debug build, and CTest. Hosted Windows replacement remains required before cross-platform candidate acceptance.",
+    "blocker": "",
+    "owner": "",
+    "level": "basic",
+    "parent": "MC-AI-0035",
+    "motivation": "Hosted snapshot artifacts run 34633199620 reached finalized source policy on Windows, where test_private_dependency_fetch_pins_github_host_key raised IndexError because Path.chmod recorded mode as the first positional argument for a patched bound method.",
+    "context": "macOS and Android artifact jobs passed at exact source 4cdbbe8; Windows did not reach its package build. Preserve the failed run and keep publication paused for exact candidate preview.",
+    "complexity": "low",
+    "created_at": "2026-09-11",
+    "resolved_at": "2026-09-11",
+    "resolution_changes": "Made the Windows known-host permission test assert the patched bound Path.chmod call directly, preserving the production POSIX permission and Windows ACL behavior.",
+    "plan": [
+      "Correct only the faulty call assertion, add no behavior change to credential handling, run focused and fast gates, review the immutable staged tree, then promote for hosted rerun."
+    ],
+    "product_changes": [
+      "None; this repairs cross-platform verification of an existing security invariant."
+    ],
+    "code_changes": [
+      "Assert the patched Path.chmod call with its actual bound-method call signature and preserve platform-specific mode checks."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": false,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]
