@@ -249,16 +249,27 @@ jobs:
           python script/ci/acquire.py record-metadata --platform windows --preset release --output build/toolchain-windows.json
           if errorlevel 1 exit /b 1
           cmake --preset release -DMC_ENABLE_RENDERER_SMOKE=OFF
+          if errorlevel 1 exit /b 1
           cmake --build --preset release
+          if errorlevel 1 exit /b 1
           ctest --test-dir build\release --output-on-failure --no-tests=error --timeout 60 > build\release-tests-windows.log 2>&1
           if errorlevel 1 (type build\release-tests-windows.log & exit /b 1)
           type build\release-tests-windows.log
+          if errorlevel 1 exit /b 1
           python script/ci/acquire.py validate-shaders --build-dir build\release
+          if errorlevel 1 exit /b 1
           cmake --install build\release --prefix build\install
-          if not exist dist mkdir dist
+          if errorlevel 1 exit /b 1
+          if not exist dist (
+            mkdir dist
+            if errorlevel 1 exit /b 1
+          )
           python script/ci/build_snapshot.py package-desktop --platform windows --install-root build/install --vcpkg-installed build/release/vcpkg_installed --runtime-search build/release/vcpkg_installed/x64-windows/bin --runtime-search "%VCToolsRedistDir%\x64\Microsoft.VC143.CRT" --toolchain-evidence build/toolchain-windows.json --work-root build/package-windows --version "%SNAPSHOT_VERSION%" --source-commit "%SOURCE_COMMIT%" --output "dist/minecraftclone-%VERSION_SLUG%-windows-x86_64.zip"
+          if errorlevel 1 exit /b 1
           python script/ci/build_snapshot.py write-evidence --platform windows --configuration release --automated-verification passed --version "%SNAPSHOT_VERSION%" --source-commit "%SOURCE_COMMIT%" --artifact "dist/minecraftclone-%VERSION_SLUG%-windows-x86_64.zip" --toolchain-evidence build/toolchain-windows.json --output "dist/minecraftclone-%VERSION_SLUG%-windows-x86_64-evidence.json"
+          if errorlevel 1 exit /b 1
           python script/ci/build_snapshot.py write-checksum --artifact "dist/minecraftclone-%VERSION_SLUG%-windows-x86_64.zip" --output "dist/minecraftclone-%VERSION_SLUG%-windows-x86_64.zip.sha256"
+          if errorlevel 1 exit /b 1
           python script/ci/acquire.py verify-private-dependency-artifact-exclusion --artifact-root dist --private-dependency-root "%RUNNER_TEMP%\private-dependencies"
           if errorlevel 1 exit /b 1
       - name: Upload desktop release candidate

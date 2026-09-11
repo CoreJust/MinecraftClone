@@ -3841,5 +3841,46 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0098",
+    "title": "Make Windows release phase fail immediately",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P1",
+    "route": "luna",
+    "milestone": "ED-010-S4",
+    "depends_on": [
+      "MC-AI-0042"
+    ],
+    "acceptance": "The Windows desktop release command phase stops immediately after every configure, build, test, shader-validation, install, packaging, evidence, checksum, and private-source-exclusion failure; a focused failure-injection regression proves no later command can mask an earlier nonzero exit; successful packaging behavior remains unchanged.",
+    "evidence": "The Windows snapshot phase now places an immediate errorlevel guard after every fallible setup, configure, build, CTest/log-read, shader-validation, install, directory creation, packaging, evidence, checksum, and private-source-exclusion command. The focused test injects failure at each command and proves no successor runs; the successful path reaches all commands. python3 -m unittest script.tests.test_build_snapshot passed 16/16; python3 -m script.code_checks and git diff --check passed.",
+    "blocker": "",
+    "owner": "Luna Windows release worker",
+    "level": "basic",
+    "parent": "MC-AI-0035",
+    "motivation": "The cmd release phase checks only selected errorlevels, so a failed Windows build or package command can be masked by a later successful command and produce misleading release evidence.",
+    "context": "Discovered during the Snapshot 4 pre-CI audit. Scope is the existing Windows package command chain and its static/failure-injection regression; no workflow redesign or hosted-success claim.",
+    "complexity": "low",
+    "created_at": "2026-09-11",
+    "resolved_at": "2026-09-11",
+    "resolution_changes": "Made the complete Windows release command chain fail immediately and added class-wide failure-injection regression coverage.",
+    "plan": [
+      "Enumerate every fallible command in the Windows packaging phase and enforce immediate exit after each one.",
+      "Add a focused regression that injects a failure before a successful command and proves the phase returns nonzero without executing the successor."
+    ],
+    "product_changes": [
+      "No product behavior changes; Windows release failures cannot be masked by later successful commands."
+    ],
+    "code_changes": [
+      "Harden the Windows snapshot packaging cmd chain and add focused workflow regression coverage."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": false,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]
