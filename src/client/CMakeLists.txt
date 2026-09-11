@@ -1,6 +1,10 @@
 target_sources(mc
     PRIVATE
         BotClient.cpp
+    Camera.cpp
+    CameraController.cpp
+    DepthFormat.cpp
+        FrameScheduler.cpp
         GameClient.cpp
         render/DebugHud.cpp
         render/ShaderAssets.cpp

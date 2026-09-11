@@ -198,4 +198,19 @@ TEST(RendererSmokeTest, GlfwInputAdapterPreservesPressAndRelease)
     EXPECT_FALSE(window.keyPressed(core::platform::glfw::WindowKey::W));
 }
 
+TEST(RendererSmokeTest, GlfwCursorCaptureSupportsContinuousCameraLook)
+{
+    core::platform::glfw::GlfwWindow window{
+        core::platform::glfw::WindowDescriptor{
+            .width = 64U,
+            .height = 64U,
+            .title = "MinecraftClone cursor capture",
+        },
+    };
+    glfwSetInputMode(window.nativeHandle(), GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+    EXPECT_EQ(glfwGetInputMode(window.nativeHandle(), GLFW_CURSOR), GLFW_CURSOR_DISABLED);
+    glfwSetInputMode(window.nativeHandle(), GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+    EXPECT_EQ(glfwGetInputMode(window.nativeHandle(), GLFW_CURSOR), GLFW_CURSOR_NORMAL);
+}
+
 } // namespace

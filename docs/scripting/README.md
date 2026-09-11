@@ -1,10 +1,11 @@
 # Deterministic scenario scripts
 
 Scenario scripts describe a small, deterministic authoritative simulation. They
-are plain UTF-8 text files with two explicit frontends for the same
-`flat2d-v1` plan: legacy `.mcscenario` sources start with `scenario 1`, while
-CoreLang `.core` sources start with `@version("0.0.1")`. Shared selects only by
-that header; an unknown or mixed header is rejected rather than guessed.
+are plain UTF-8 text files with two explicit frontends. Legacy `.mcscenario`
+sources start with `scenario 1` and support `flat2d-v1` plus the bounded
+`flat3d-v1` camera-replay profile. CoreLang `.core` sources start with
+`@version("0.0.1")` and retain the existing `flat2d-v1` plan. Shared selects
+only by that header; an unknown or mixed header is rejected rather than guessed.
 
 Use this guide as the entry point:
 
@@ -27,8 +28,12 @@ relabeling.
 
 `flat2d-v1` has a 32 by 32 board. It accepts characters `@`, `#`, `$`, `%`, and
 `&`; coordinates are inclusive in `0..31`; direction components are in
-`-1..1`; and every `wait` count is positive. Commands are limited to `input`,
-`wait`, and `expect player ... position`.
+`-1..1`; and every `wait` count is positive. `flat3d-v1` preserves that
+authoritative 2D board while recording `(x, y, z)` plus yaw/pitch/roll degrees
+for a flat 3D camera replay. Its Z is required to be zero; it has no vertical
+movement or changed wire message. A camera-relative input maps to the same
+cardinal `Direction` sent to the server: yaw zero faces +Y and positive yaw
+turns toward +X.
 
 The source is fully compiled/validated and lowered before it changes world
 state. A successful script is deterministic for its profile, seed, source

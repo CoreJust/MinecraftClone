@@ -1,5 +1,6 @@
 #include "AndroidPlayerClient.hpp"
 
+#include <client/CameraController.hpp>
 #include <core/IO/Log.hpp>
 
 #include <android/configuration.h>
@@ -41,7 +42,18 @@ shared::Direction AndroidPlayerClient::input()
     if (m_input.consumeStopRequest()) {
         stop();
     }
-    return m_input.direction();
+    shared::Direction const input = m_input.direction();
+    client::DiscreteMovement const movement = client::CameraController::cameraRelativeMovement(
+        {
+            .strafe = static_cast<int8_t>(input.x),
+            .forward = static_cast<int8_t>(-static_cast<int8_t>(input.y)),
+        },
+        m_camera.pose().angles.yaw_degrees
+    );
+    return {
+        .x = static_cast<uint8_t>(movement.x),
+        .y = static_cast<uint8_t>(movement.y),
+    };
 }
 
 void AndroidPlayerClient::render()
@@ -56,6 +68,15 @@ void AndroidPlayerClient::render()
     }
     if (!m_running || !canRender()) {
         return;
+    }
+
+    float look_horizontal = 0.0F;
+    float look_vertical = 0.0F;
+    if (m_input.consumeLookDelta(look_horizontal, look_vertical)) {
+        static_cast<void>(m_camera.rotate(
+            static_cast<double>(look_horizontal) * 0.15,
+            static_cast<double>(-look_vertical) * 0.15
+        ));
     }
 
     std::vector<client::PlayerRenderData> players;
@@ -78,11 +99,16 @@ void AndroidPlayerClient::render()
             input.player_x = static_cast<float>(player->x);
             input.player_y = static_cast<float>(player->y);
         }
+        client::CameraAngles const angles = m_camera.pose().angles;
+        input.camera_yaw_degrees = static_cast<float>(angles.yaw_degrees);
+        input.camera_pitch_degrees = static_cast<float>(angles.pitch_degrees);
+        input.camera_roll_degrees = static_cast<float>(angles.roll_degrees);
         return input;
     }();
     if (m_input.consumeDebugHudToggleRequest()) {
         m_renderer->toggleDebugHud();
     }
+    m_renderer->setCamera(m_camera.pose());
     static_cast<void>(m_renderer->render(players, debug_hud_input, m_density_scale));
     if (m_input.consumeReloadRequest()) {
         m_renderer->hotReload();

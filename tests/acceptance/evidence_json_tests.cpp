@@ -20,7 +20,10 @@ TEST(EvidenceJson, IncludesVersionedMetadataTimingAndCounters)
         .clients_requested = 1,
         .clients_accepted = 1,
         .inputs_sent = 1,
+        .camera_relative_inputs = 1,
         .expectations_passed = 1,
+        .authoritative_tick_ms = 100,
+        .replay_id = "fnv1a64:0123456789abcdef",
         .elapsed = std::chrono::milliseconds{ 17 },
         .deadline = std::chrono::milliseconds{ 1'000 },
         .passed = true,
@@ -32,10 +35,13 @@ TEST(EvidenceJson, IncludesVersionedMetadataTimingAndCounters)
     EXPECT_NE(json.find("\"scenario_version\": \"1\""), std::string::npos);
     EXPECT_NE(json.find("\"profile\": \"flat2d-v1\""), std::string::npos);
     EXPECT_NE(json.find("\"seed\": 42"), std::string::npos);
+    EXPECT_NE(json.find("\"replay_id\": \"fnv1a64:0123456789abcdef\""), std::string::npos);
     EXPECT_NE(json.find("\"elapsed_ms\": 17"), std::string::npos);
     EXPECT_NE(json.find("\"deadline_ms\": 1000"), std::string::npos);
     EXPECT_NE(json.find("\"ticks\": 6"), std::string::npos);
     EXPECT_NE(json.find("\"clients_accepted\": 1"), std::string::npos);
+    EXPECT_NE(json.find("\"camera_relative_inputs\": 1"), std::string::npos);
+    EXPECT_NE(json.find("\"authoritative_tick_ms\": 100"), std::string::npos);
     EXPECT_NE(json.find("\"passed\": true"), std::string::npos);
 }
 

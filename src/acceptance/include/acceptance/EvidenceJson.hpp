@@ -66,7 +66,10 @@ struct RuntimeEvidence final {
     uint64_t accepted_tick{ 0 };
     uint64_t last_effective_tick{ 0 };
     uint64_t inputs_sent{ 0 };
+    uint64_t camera_relative_inputs{ 0 };
     uint64_t expectations_passed{ 0 };
+    uint64_t authoritative_tick_ms{ 0 };
+    std::string replay_id;
     std::chrono::milliseconds elapsed{ 0 };
     std::chrono::milliseconds deadline{ 0 };
     bool passed{ false };

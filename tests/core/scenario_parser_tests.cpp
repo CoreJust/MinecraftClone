@@ -105,6 +105,85 @@ end
     EXPECT_EQ(plan.evidenceCount(), 1u);
 }
 
+TEST(ScenarioParserTest, PreservesFlat3dCameraPoseAndCameraRelativeReplayInput)
+{
+    static constexpr std::string_view SOURCE = R"(scenario 1
+profile flat3d-v1
+seed 7
+player alice character "@" at 4 4 0 orientation 0 12 -30
+player bob character "#" at 10 10 0 orientation 90 0 0
+begin
+input alice camera 0 1
+input bob camera 0 1
+wait 2
+expect player alice position 4 6 0
+expect player bob position 12 10 0
+end
+)";
+    auto const result = shared::parseScenario("sample.scenario", SOURCE, scenarioLimits());
+    ASSERT_TRUE(result.has_value()) << result.error().message;
+    EXPECT_EQ(result->profile(), shared::ScenarioProfile::Flat3dV1);
+    EXPECT_EQ(shared::scenarioProfileName(result->profile()), "flat3d-v1");
+    ASSERT_EQ(result->actors().size(), 2U);
+    EXPECT_EQ(result->actors()[0].z, 0U);
+    EXPECT_EQ(result->actors()[0].yaw_degrees, 0);
+    EXPECT_EQ(result->actors()[0].pitch_degrees, 12);
+    EXPECT_EQ(result->actors()[0].roll_degrees, -30);
+    EXPECT_EQ(result->actors()[1].yaw_degrees, 90);
+    ASSERT_EQ(result->operations().size(), 5U);
+    auto const* const alice_input = std::get_if<shared::ScenarioCameraInputOperation>(&result->operations()[0].data);
+    ASSERT_NE(alice_input, nullptr);
+    EXPECT_EQ(alice_input->strafe, 0);
+    EXPECT_EQ(alice_input->forward, 1);
+    shared::Direction const forward = shared::scenarioCameraRelativeDirection(0, 0, 1);
+    EXPECT_EQ(forward.x, 0U);
+    EXPECT_EQ(forward.y, 1U);
+    shared::Direction const right_facing_forward = shared::scenarioCameraRelativeDirection(90, 0, 1);
+    EXPECT_EQ(right_facing_forward.x, 1U);
+    EXPECT_EQ(right_facing_forward.y, 0U);
+    shared::Direction const diagonal_heading_forward = shared::scenarioCameraRelativeDirection(135, 0, 1);
+    EXPECT_EQ(diagonal_heading_forward.x, 1U);
+    EXPECT_EQ(diagonal_heading_forward.y, 0U);
+    shared::Direction const diagonal_tie = shared::scenarioCameraRelativeDirection(0, 1, 1);
+    EXPECT_EQ(diagonal_tie.x, 1U);
+    EXPECT_EQ(diagonal_tie.y, 0U);
+    EXPECT_EQ(result->operations()[4].boundary, 2U);
+    auto const* const expectation = std::get_if<shared::ScenarioExpectPositionOperation>(&result->operations()[4].data);
+    ASSERT_NE(expectation, nullptr);
+    EXPECT_EQ(expectation->z, 0U);
+    std::string alternate_source{ SOURCE };
+    alternate_source.replace(alternate_source.find("orientation 0 12 -30"), 20U, "orientation 1 12 -30");
+    auto const alternate = shared::parseScenario("alternate.scenario", alternate_source, scenarioLimits());
+    ASSERT_TRUE(alternate.has_value()) << alternate.error().message;
+    EXPECT_NE(shared::scenarioReplayId(*result), shared::scenarioReplayId(*alternate));
+}
+
+TEST(ScenarioParserTest, RejectsNonFlat3dVerticalCoordinatesAndInvalidCameraAngles)
+{
+    static constexpr std::string_view VERTICAL_PLAYER = R"(scenario 1
+profile flat3d-v1
+seed 7
+player alice character "@" at 4 4 1 orientation 0 0 0
+)";
+    expectDiagnostic(
+        shared::parseScenario("sample.scenario", VERTICAL_PLAYER, scenarioLimits()),
+        shared::ScenarioDiagnosticCode::InvalidRange,
+        4,
+        35
+    );
+    static constexpr std::string_view INVALID_PITCH = R"(scenario 1
+profile flat3d-v1
+seed 7
+player alice character "@" at 4 4 0 orientation 0 90 0
+)";
+    expectDiagnostic(
+        shared::parseScenario("sample.scenario", INVALID_PITCH, scenarioLimits()),
+        shared::ScenarioDiagnosticCode::InvalidRange,
+        4,
+        51
+    );
+}
+
 TEST(ScenarioParserTest, SupportsCommentsQuotedCharactersAndAsciiIdentifiersWithoutMutatingSource) {
     std::string const source = R"(# setup
 scenario 1 # current schema
@@ -157,7 +236,8 @@ end
 }
 
 TEST(ScenarioParserTest, ParsesEveryCheckedInScenarioExample) {
-    static constexpr std::array<std::string_view, 3> EXAMPLES{
+    static constexpr std::array<std::string_view, 4> EXAMPLES{
+        "camera_two_client.mcscenario",
         "canonical_sample.mcscenario",
         "comment_and_boundary.mcscenario",
         "two_players.mcscenario",

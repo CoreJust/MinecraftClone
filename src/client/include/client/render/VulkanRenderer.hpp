@@ -1,5 +1,6 @@
 #pragma once
 
+#include <client/Camera.hpp>
 #include <client/render/DebugHud.hpp>
 #include <client/render/ShaderAssets.hpp>
 
@@ -117,6 +118,7 @@ public:
     );
     void setDebugHudEnabled(bool enabled) noexcept;
     void toggleDebugHud() noexcept;
+    void setCamera(CameraPose pose) noexcept;
     void hotReload();
     void recreate(uint32_t width, uint32_t height);
     [[nodiscard]]
@@ -128,6 +130,25 @@ public:
     [[nodiscard]] FrameCaptureState captureState() const;
     [[nodiscard]] std::optional<RendererFrameCapture> takeFrameCapture();
     [[nodiscard]] RendererRuntimeInfo runtimeInfo() const;
+private:
+    struct Impl;
+    std::unique_ptr<Impl> m_impl;
+};
+
+class VulkanOffscreenRenderer final : core::NonCopyable, core::NonMovable {
+public:
+    explicit VulkanOffscreenRenderer(
+        ShaderAssets const& shader_assets,
+        bool require_validation = false
+    );
+    ~VulkanOffscreenRenderer();
+
+    [[nodiscard]] RendererFrameCapture render(
+        std::span<PlayerRenderData const> players,
+        std::chrono::steady_clock::time_point deadline = std::chrono::steady_clock::time_point::max()
+    );
+    [[nodiscard]] bool validationEnabled() const noexcept;
+    [[nodiscard]] uint32_t validationErrorCount() const noexcept;
 private:
     struct Impl;
     std::unique_ptr<Impl> m_impl;

@@ -22,10 +22,15 @@ void GameServer::run(std::atomic_bool const& stop_requested)
         auto const tick_time = std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::steady_clock::now() - start
         );
-        if (tick_time < shared::TICK) {
-            std::this_thread::sleep_for(shared::TICK - tick_time);
+        if (auto const delay = fixedTickDelay(tick_time); delay > std::chrono::milliseconds::zero()) {
+            std::this_thread::sleep_for(delay);
         }
     }
+}
+
+std::chrono::milliseconds GameServer::fixedTickDelay(std::chrono::milliseconds const elapsed) noexcept
+{
+    return elapsed < shared::TICK ? shared::TICK - elapsed : std::chrono::milliseconds::zero();
 }
 
 uint64_t GameServer::tick(std::chrono::milliseconds const timeout) {

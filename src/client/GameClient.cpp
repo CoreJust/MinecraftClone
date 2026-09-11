@@ -1,5 +1,7 @@
 #include <client/GameClient.hpp>
 
+#include <client/FrameScheduler.hpp>
+
 #include <core/common/SpanUtils.hpp>
 #include <core/IO/Log.hpp>
 
@@ -22,8 +24,9 @@ void GameClient::run(core::Address const server_address, char const ch) {
         poll(std::chrono::milliseconds{ 100 });
     }
 
+    FrameScheduler scheduler{ std::chrono::steady_clock::now(), shared::TICK };
     while (m_running && isConnected()) {
-        poll(std::chrono::milliseconds{ 100 });
+        poll(std::chrono::milliseconds::zero());
         if (!m_running || !isConnected()) {
             break;
         }
@@ -31,10 +34,13 @@ void GameClient::run(core::Address const server_address, char const ch) {
         if (!m_running || !isConnected()) {
             break;
         }
-        send(shared::ClientInputMessage{
-            .direction = input(),
-        });
-        std::this_thread::sleep_for(std::chrono::milliseconds{ 100 });
+        std::chrono::steady_clock::time_point const now = std::chrono::steady_clock::now();
+        if (scheduler.simulationDue(now)) {
+            send(shared::ClientInputMessage{
+                .direction = input(),
+            });
+        }
+        std::this_thread::sleep_for(scheduler.idleDelay(now));
     }
 }
 

@@ -22,11 +22,11 @@
         "tests/acceptance/runtime_cli_tests.cmake",
         "tests/acceptance/scenario_runner_tests.cpp"
       ],
-      "sources_sha256": "10dadf2ceb959f73c4941d74ba80c0d9876bac3fba9f1d9f5b5ce41ef0fa39e2"
+      "sources_sha256": "606b9b0ef5e101dbaccf7ec08e31dafc6aa7073124cdc0c5f6cc5661e79adefa"
     },
     {
       "guide": "docs/code/ANDROID.md",
-      "guide_sha256": "2d14955d9bc1d3a6b5f5c0b585e97e1e4802844f456d1b922d2e9b98e990e389",
+      "guide_sha256": "265e7a346b1a74226164cc3d8fa1e487714ce9c81184fd211e0b37031a3f2f7d",
       "id": "android",
       "sources": [
         "src/android/AndroidInput.cpp",
@@ -41,7 +41,7 @@
         "src/android/CMakeLists.txt",
         "tests/android/input_state_tests.cpp"
       ],
-      "sources_sha256": "36c1f1a5b79c5b2b3e65382c878337cd9a7ddcce800e943c70e38a95b845e92d"
+      "sources_sha256": "33d49b36ffe2bfc9b3159f687873dd0234f4e1d04d024d193351f5f3fe9046c7"
     },
     {
       "guide": "docs/BUILD.md",
@@ -129,7 +129,7 @@
         "vcpkg-configuration.json",
         "vcpkg.json"
       ],
-      "sources_sha256": "38e7d558da876ddeabc75e281477d95b9da183162e146f2eb8ed647d2f734a27"
+      "sources_sha256": "c5a297ae276dd6c09ff1970741adc97178bcccb6f4d27acfe2609c69482698f6"
     },
     {
       "guide": "docs/code/CORE.md",
@@ -168,14 +168,21 @@
     },
     {
       "guide": "docs/code/GAMEPLAY.md",
-      "guide_sha256": "86d1efd01e38358c6d4a31e4724a55d587896c12272dc8850ba044e19338dc57",
+      "guide_sha256": "04ad8f6c6a9b17e09cecafd0a9ff5df753548784f04ee9de06e97a14fbf3dabf",
       "id": "gameplay",
       "sources": [
         "src/client/BotClient.cpp",
+        "src/client/Camera.cpp",
+        "src/client/CameraController.cpp",
+        "src/client/DepthFormat.cpp",
+        "src/client/FrameScheduler.cpp",
         "src/client/GameClient.cpp",
         "src/client/PlayerClient.cpp",
         "src/client/include/client/BotClient.hpp",
         "src/client/include/client/CMakeLists.txt",
+        "src/client/include/client/Camera.hpp",
+        "src/client/include/client/CameraController.hpp",
+        "src/client/include/client/FrameScheduler.hpp",
         "src/client/include/client/GameClient.hpp",
         "src/client/include/client/PlayerClient.hpp",
         "src/main.cpp",
@@ -200,15 +207,16 @@
         "tests/core/shared_message_tests.cpp",
         "tests/core/shared_world_tests.cpp"
       ],
-      "sources_sha256": "4c07cb5f462bf6d8de65a57eee82cff20596cec0f1ae39e593337ea17537b4c8"
+      "sources_sha256": "e0fbd8b882ea5a13078fcfca1d529691c348fcad882aacc71a151b8099007c26"
     },
     {
       "guide": "docs/code/RENDERING.md",
-      "guide_sha256": "13f0703884dbda3383351e0ae78fb09232c3d533ffbfd71b68dd4eabb11be868",
+      "guide_sha256": "c022d876f96a01ef5c898dae87a504d041974c65811151a06f9f18db47a4ac97",
       "id": "rendering",
       "sources": [
         "src/client/CMakeLists.txt",
         "src/client/include/client/render/DebugHud.hpp",
+        "src/client/include/client/render/DepthFormat.hpp",
         "src/client/include/client/render/InstalledShaderAssets.hpp",
         "src/client/include/client/render/ShaderAssets.hpp",
         "src/client/include/client/render/VulkanRenderer.hpp",
@@ -225,8 +233,13 @@
         "src/client/render/shaders/player.mesh",
         "src/client/render/shaders/player.vert",
         "src/client/render/shaders/trivial.frag",
+        "tests/client/camera_controller_tests.cpp",
+        "tests/client/camera_tests.cpp",
         "tests/client/debug_hud_tests.cpp",
+        "tests/client/depth_format_tests.cpp",
+        "tests/client/frame_scheduler_tests.cpp",
         "tests/client/goldens/README.md",
+        "tests/client/goldens/s4_flat3d_v2.ppm",
         "tests/client/goldens/s4_scene_v1.ppm",
         "tests/client/renderer_golden_tests.cpp",
         "tests/client/renderer_smoke_tests.cpp",
@@ -235,7 +248,7 @@
         "tests/testsupport/image_comparison_tests.cpp",
         "tests/testsupport/include/testsupport/ImageComparison.hpp"
       ],
-      "sources_sha256": "1edb30b225518b181f3ff93a9572e6cb7e1220fabb9eccb35699ab7d43a603b3"
+      "sources_sha256": "85619b6e9806b5e8e0f8e74eab3bf1385e002b2ddcfb2a1150fdf3d795dfb0ff"
     }
   ],
   "version": 1

@@ -23,6 +23,7 @@ void AndroidInputState::clear() noexcept
     m_left_pressed = false;
     m_right_pressed = false;
     static_cast<void>(cancelTouch());
+    static_cast<void>(cancelLookTouch());
 }
 
 void AndroidInputState::setMoveKeyPressed(
@@ -105,6 +106,78 @@ bool AndroidInputState::cancelTouch() noexcept
     m_touch_x = 0;
     m_touch_y = 0;
     return had_touch;
+}
+
+bool AndroidInputState::beginLookTouch(
+    int32_t const pointer_id,
+    float const x,
+    float const y,
+    uint32_t const surface_width
+) noexcept
+{
+    if (
+        m_look_pointer_id >= 0
+        || pointer_id < 0
+        || surface_width == 0U
+        || !std::isfinite(x)
+        || !std::isfinite(y)
+        || x < static_cast<float>(surface_width) / 2.0F
+    ) {
+        return false;
+    }
+    m_look_pointer_id = pointer_id;
+    m_look_x = x;
+    m_look_y = y;
+    return true;
+}
+
+bool AndroidInputState::moveLookTouch(
+    int32_t const pointer_id,
+    float const x,
+    float const y
+) noexcept
+{
+    if (pointer_id != m_look_pointer_id || m_look_pointer_id < 0) {
+        return false;
+    }
+    if (!std::isfinite(x) || !std::isfinite(y)) {
+        static_cast<void>(cancelLookTouch());
+        return true;
+    }
+    m_look_delta_x += x - m_look_x;
+    m_look_delta_y += y - m_look_y;
+    m_look_x = x;
+    m_look_y = y;
+    return true;
+}
+
+bool AndroidInputState::endLookTouch(int32_t const pointer_id) noexcept
+{
+    if (pointer_id != m_look_pointer_id || m_look_pointer_id < 0) {
+        return false;
+    }
+    static_cast<void>(cancelLookTouch());
+    return true;
+}
+
+bool AndroidInputState::cancelLookTouch() noexcept
+{
+    bool const had_look = m_look_pointer_id >= 0;
+    m_look_pointer_id = -1;
+    m_look_x = 0.0F;
+    m_look_y = 0.0F;
+    m_look_delta_x = 0.0F;
+    m_look_delta_y = 0.0F;
+    return had_look;
+}
+
+bool AndroidInputState::consumeLookDelta(float& horizontal, float& vertical) noexcept
+{
+    horizontal = m_look_delta_x;
+    vertical = m_look_delta_y;
+    m_look_delta_x = 0.0F;
+    m_look_delta_y = 0.0F;
+    return horizontal != 0.0F || vertical != 0.0F;
 }
 
 shared::Direction AndroidInputState::direction() const noexcept

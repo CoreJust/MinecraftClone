@@ -367,7 +367,7 @@ TEST(DebugHudTest, FormatsStableGoldenValuesAndDegreeLabels)
     ASSERT_TRUE(hud.formatText(text));
     EXPECT_EQ(
         std::string_view(text.bytes.data(), text.size),
-        "FPS:0.0 UPTIME:0.0s XYZ:1.2,-2.3,4.6 YAW:45.0deg PITCH:-10.0deg ROLL:3.0deg"
+        "FPS:0.0 UPTIME:0.0s XYZ(plane):1.2,-2.3,4.6 YAW:45.0deg PITCH:-10.0deg ROLL:3.0deg"
     );
 }
 
@@ -387,7 +387,7 @@ TEST(DebugHudTest, SupportsInjectedFormattingAndDpiToggleState)
     ASSERT_TRUE(hud.formatText(text));
     EXPECT_EQ(
         std::string_view(text.bytes.data(), text.size),
-        "FPS:X UPTIME:Xs XYZ:X,X,X YAW:Xdeg PITCH:Xdeg ROLL:Xdeg"
+        "FPS:X UPTIME:Xs XYZ(plane):X,X,X YAW:Xdeg PITCH:Xdeg ROLL:Xdeg"
     );
 
     hud.toggle();

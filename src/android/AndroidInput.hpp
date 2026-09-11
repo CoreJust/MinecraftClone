@@ -26,6 +26,8 @@ public:
     bool consumeReloadRequest() noexcept;
     [[nodiscard]]
     bool consumeDebugHudToggleRequest() noexcept;
+    [[nodiscard]]
+    bool consumeLookDelta(float& horizontal, float& vertical) noexcept;
 private:
     [[nodiscard]]
     int32_t handleKey(AInputEvent const* event) noexcept;

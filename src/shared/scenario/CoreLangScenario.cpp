@@ -117,6 +117,10 @@ public:
             .character = character,
             .x = x,
             .y = y,
+            .z = 0U,
+            .yaw_degrees = 0,
+            .pitch_degrees = 0,
+            .roll_degrees = 0,
             .location = { .line = 1, .column = 1 },
         });
         return core::lang::Value::unit();
@@ -163,7 +167,7 @@ public:
         if (x > MAX_POSITION || y > MAX_POSITION) return std::unexpected("expected position is outside flat2d-v1");
         if (m_evidence_count >= m_limits.max_evidence) return std::unexpected("scenario evidence limit exceeded");
         if (auto const operation = appendOperation(ScenarioOperationData{ScenarioExpectPositionOperation{
-            .actor = *actor, .x = x, .y = y,
+            .actor = *actor, .x = x, .y = y, .z = 0U,
         }}); !operation) return std::unexpected(operation.error());
         ++m_evidence_count;
         return core::lang::Value::unit();

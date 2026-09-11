@@ -12,6 +12,9 @@ header-selected frontend documented in [the scripting guide](../docs/scripting/R
   boundary zero.
 - [two_players.mcscenario](two_players.mcscenario) shows ordered input and
   expectations for separate actors.
+- [camera_two_client.mcscenario](camera_two_client.mcscenario) is the bounded
+  `flat3d-v1` replay: two camera poses map forward input to the unchanged
+  authoritative cardinal direction wire, with Z explicitly fixed at zero.
 
-Examples use only `flat2d-v1`; they do not demonstrate future profiles,
-compiler, VM, or JIT features because those are not supported today.
+The CoreLang sample uses `flat2d-v1`; `flat3d-v1` is currently a legacy-source
+camera/replay profile, not a compiler, VM, or JIT feature.

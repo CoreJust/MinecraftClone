@@ -1,5 +1,7 @@
 #include <client/PlayerClient.hpp>
 
+#include <client/CameraController.hpp>
+
 #define GLFW_INCLUDE_NONE
 #include <GLFW/glfw3.h>
 
@@ -7,25 +9,35 @@
 
 namespace client {
 
+PlayerClient::~PlayerClient()
+{
+    if (m_window.nativeHandle() != nullptr) {
+        glfwSetInputMode(m_window.nativeHandle(), GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+    }
+}
+
+void PlayerClient::beginContinuousLook() noexcept
+{
+    glfwSetInputMode(m_window.nativeHandle(), GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+}
+
 shared::Direction PlayerClient::input() {
     if (m_window.keyPressed(core::platform::glfw::WindowKey::Escape)) {
         m_running = false;
     }
-    uint8_t off_x = 0;
-    uint8_t off_y = 0;
-    if (m_window.keyPressed(core::platform::glfw::WindowKey::W)) {
-        off_y = static_cast<uint8_t>(-1);
-    } else if (m_window.keyPressed(core::platform::glfw::WindowKey::S)) {
-        off_y = 1;
-    }
-    if (m_window.keyPressed(core::platform::glfw::WindowKey::D)) {
-        off_x = 1;
-    } else if (m_window.keyPressed(core::platform::glfw::WindowKey::A)) {
-        off_x = static_cast<uint8_t>(-1);
-    }
+    MovementIntent const intent{
+        .strafe = static_cast<int8_t>(m_window.keyPressed(core::platform::glfw::WindowKey::D)
+            ? 1 : (m_window.keyPressed(core::platform::glfw::WindowKey::A) ? -1 : 0)),
+        .forward = static_cast<int8_t>(m_window.keyPressed(core::platform::glfw::WindowKey::W)
+            ? 1 : (m_window.keyPressed(core::platform::glfw::WindowKey::S) ? -1 : 0)),
+    };
+    DiscreteMovement const movement = CameraController::cameraRelativeMovement(
+        intent,
+        m_camera.pose().angles.yaw_degrees
+    );
     return shared::Direction{
-        .x = off_x,
-        .y = off_y,
+        .x = static_cast<uint8_t>(movement.x),
+        .y = static_cast<uint8_t>(movement.y),
     };
 }
 
@@ -38,6 +50,18 @@ void PlayerClient::render() {
     uint32_t width = 0U;
     uint32_t height = 0U;
     m_window.framebufferSize(width, height);
+    double cursor_x = 0.0;
+    double cursor_y = 0.0;
+    glfwGetCursorPos(m_window.nativeHandle(), &cursor_x, &cursor_y);
+    if (m_has_cursor_position) {
+        static_cast<void>(m_camera.rotate(
+            (cursor_x - m_last_cursor_x) * 0.15,
+            (m_last_cursor_y - cursor_y) * 0.15
+        ));
+    }
+    m_last_cursor_x = cursor_x;
+    m_last_cursor_y = cursor_y;
+    m_has_cursor_position = true;
     m_renderer.recreate(width, height);
     m_render_data.clear();
     m_render_data.reserve(m_world.players().size());
@@ -54,6 +78,10 @@ void PlayerClient::render() {
             input.player_x = static_cast<float>(player->x);
             input.player_y = static_cast<float>(player->y);
         }
+        CameraAngles const angles = m_camera.pose().angles;
+        input.camera_yaw_degrees = static_cast<float>(angles.yaw_degrees);
+        input.camera_pitch_degrees = static_cast<float>(angles.pitch_degrees);
+        input.camera_roll_degrees = static_cast<float>(angles.roll_degrees);
         return input;
     }();
     float content_scale_x = 1.0F;
@@ -63,6 +91,7 @@ void PlayerClient::render() {
     if (m_debug_hud_toggle.update(debug_hud_pressed)) {
         m_renderer.toggleDebugHud();
     }
+    m_renderer.setCamera(m_camera.pose());
     static_cast<void>(m_renderer.render(
         m_render_data,
         debug_hud_input,

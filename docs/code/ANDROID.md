@@ -29,7 +29,10 @@ or window replacement first destroys Client device children and its
 rebuilds them from a fresh scope in the post-recreate hook.
 
 [`AndroidInput`](../../src/android/AndroidInput.hpp) maps keyboard/gamepad
-movement and a left-half touchscreen drag to the shared movement direction.
+movement and a left-half touchscreen drag to local movement intent. A
+right-half drag supplies yaw/pitch deltas to the client-local 3D camera; the
+portable controller lowers left-half intent at the current yaw into the same
+single cardinal authoritative direction packet used by desktop.
 Back/Escape requests client shutdown; a debounced F1 key-down toggles the
 performance HUD, while R retains its shader-reload action (holding either key
 does not repeat its action). The Android client uses the portable vertex path
@@ -39,7 +42,7 @@ only.
 [`AndroidShaderAssets`](../../src/android/AndroidShaderAssets.hpp) reads
 bare `.spv` names from the APK asset manager under `shaders/`, validates their
 SPIR-V word alignment and magic, and returns the portable renderer input. The
-Gradle source set stages all five fallback vertex/fragment shader sources,
+Gradle source set stages all five selected vertex/fragment shader sources,
 including `debug_hud.vert` and `debug_hud.frag`, so the APK contains their
 compiled `shaders/*.spv` assets; see the Android section of [the build
 guide](../BUILD.md) for packaging and environment requirements.

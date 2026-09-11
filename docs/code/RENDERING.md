@@ -37,10 +37,19 @@ World players -> PlayerClient / AndroidPlayerClient -> PlayerRenderData span
   -> VulkanRenderer -> PresentationContext::Frame callback -> present/readback
 ```
 
-The renderer clears dark, draws the 32-by-32 grid first, then one coloured
-2-by-2 player quad for each `PlayerRenderData`. `GridPushConstants` and
-`PlayerPushConstants` are both 32 bytes and must remain ABI-compatible with
-the GLSL push blocks. The portable `RuntimeKernel::SpirvModule` boundary
+The renderer clears dark, draws the 32-by-32 ground grid first, then one
+coloured 2-by-2-by-2 player box for each `PlayerRenderData`. A client-local
+right-handed Z-up camera supplies a resize-safe Vulkan zero-to-one perspective
+projection; the initial eye is `(16, -20, 22)` with pitch `-35` degrees.
+`GridPushConstants` and `PlayerPushConstants` are both 96 bytes and carry the
+projection-view matrix, so their ABI must remain compatible with the GLSL push
+blocks. The grid and boxes use a same-scope depth attachment selected
+deterministically from `D32_SFLOAT`, then `D16_UNORM`, with the CC-0014
+explicit `LESS` depth test/write pipeline state. Each freshly
+created attachment receives an explicit `UNDEFINED` to
+`DEPTH_STENCIL_ATTACHMENT_OPTIMAL` barrier before the first dynamic-rendering
+pass; resize destruction releases view, image, and memory before its resource
+scope. The portable `RuntimeKernel::SpirvModule` boundary
 currently accepts vertex/fragment stages, so both desktop and Android use
 `grid.vert`, `player.vert`, and `trivial.frag`; mesh modules remain assets but
 are not a selected Client pipeline.
@@ -59,11 +68,10 @@ addressing. The renderer submits all packed words with one instanced draw
 through the same-device `GraphicsProgram` and `VulkanKernelCache` used by the
 scene.
 
-Desktop supplies the current local character's X/Y and the GLFW content scale;
-Android supplies the same X/Y boundary and its native density. The current
-task3 camera integration has not landed in this branch, so Z and yaw/pitch/roll
-are explicitly reported as zero and labelled in degrees rather than inferred
-from unrelated state. The renderer overwrites the presentation bit from its
+Desktop and Android supply the current local character's authoritative X/Y and
+plane-derived Z (`0` while the world remains flat), plus camera yaw/pitch/roll
+in degrees. The HUD labels that coordinate as `XYZ(plane)` so it cannot be
+mistaken for camera-eye elevation. The renderer overwrites the presentation bit from its
 own successful `PresentationContext::complete` result, so dropped or
 non-presented frames do not enter the one-second FPS window. The public
 `setDebugHudEnabled`/`toggleDebugHud` controls support performance measurements.
@@ -77,12 +85,17 @@ neither draw data nor readback storage. Context recreation, window resize, and
 Android native-window replacement preserve this contract.
 
 Desktop input is supplied by `RuntimePlatformGlfw::GlfwWindow`; PlayerClient
-maps W/A/S/D, Escape, R, and F1 without recreating a local GLFW state layer. A
+uses GLFW cursor deltas for yaw/pitch and maps W/A/S/D camera-relative intent
+through `CameraController` into the unchanged cardinal authoritative
+`Direction` packet. Escape, R, and F1 remain window input without recreating a
+local GLFW state layer. A
 debounced F1 key-down toggles the HUD; holding F1 does not retrigger it. R
 retains its existing debounced shader-hot-reload action. Android uses the same
 F1 edge contract through `AndroidInput`.
-Android retains its asset and `AndroidInput` glue while delegating only Vulkan
-surface/device/presentation ownership.
+Android keeps left-half drag movement intent and uses right-half drag deltas
+for yaw/pitch before the same controller lowering; it retains its asset and
+`AndroidInput` glue while delegating only Vulkan surface/device/presentation
+ownership.
 
 [`renderer_smoke_tests.cpp`](../../tests/client/renderer_smoke_tests.cpp), when
 enabled with `MC_ENABLE_RENDERER_SMOKE`, deterministically tests the GLFW
@@ -92,11 +105,20 @@ normal CTest. Android package compilation links the exact installed Android
 RuntimeGraphics components; emulator presentation remains separate runtime
 acceptance.
 
-`renderer_golden_tests.cpp` is an opt-in desktop production-renderer capture of
-the fixed S4 scene. It uses the same GLFW `PresentationContext` and completed
-RGBA8 readback seam, requires validation during strict approval, and delegates
-byte comparison plus bounded actual/diff diagnostics to test-only
-`mc_test_support`. Its versioned reference and manual review policy live beside
-the test. Only explicit GLFW setup/capture-capability boundaries may skip under
-development policy; strict reference approval fails. This deterministic image gate
-complements rather than replaces the visible `RendererSmokeTest`.
+`renderer_golden_tests.cpp` is an opt-in true offscreen production-renderer
+capture of the fixed 640-by-480 S4 scene. It creates no GLFW window, Vulkan
+surface, or swapchain and remains valid with display environment variables
+unset. `RuntimeGraphicsVulkan::VulkanOffscreenTarget` owns the fixed
+`R8G8B8A8_UNORM` linear color target, command submission, and readback; the
+Client owns its selected depth target through the recording lifetime. The
+offscreen callback invokes the exact same grid/player scene-recording routine,
+shader programs, camera transforms, and depth-enabled `VulkanKernelCache`
+pipelines as presentation. It requires validation during strict approval and
+checks both exact `flat3d-v2` bytes and a near-box-over-later-far pixel
+predicate. Test-only `mc_test_support` writes bounded actual/diff diagnostics;
+the versioned reference may change only after deliberate native-size review,
+never automatically.
+
+`RendererSmokeTest` remains a separate visible GLFW presentation/recreate and
+readback smoke. It is useful evidence for presentation ownership and input but
+is not a substitute for the display-independent offscreen golden.

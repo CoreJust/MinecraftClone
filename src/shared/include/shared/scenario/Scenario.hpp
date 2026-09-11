@@ -1,5 +1,7 @@
 #pragma once
 
+#include <shared/world/World.hpp>
+
 #include <cstdint>
 #include <expected>
 #include <string>
@@ -21,6 +23,7 @@ class ScenarioPlanCollector;
 
 enum class ScenarioProfile : uint8_t {
     Flat2dV1,
+    Flat3dV1,
 };
 
 [[nodiscard]]
@@ -89,6 +92,10 @@ struct ScenarioActor final {
     char character;
     uint8_t x;
     uint8_t y;
+    uint8_t z;
+    int16_t yaw_degrees;
+    int16_t pitch_degrees;
+    int16_t roll_degrees;
     ScenarioLocation location;
 };
 
@@ -96,6 +103,13 @@ struct ScenarioInputOperation final {
     ScenarioActorId actor;
     int8_t x;
     int8_t y;
+    uint64_t effective_boundary;
+};
+
+struct ScenarioCameraInputOperation final {
+    ScenarioActorId actor;
+    int8_t strafe;
+    int8_t forward;
     uint64_t effective_boundary;
 };
 
@@ -107,10 +121,12 @@ struct ScenarioExpectPositionOperation final {
     ScenarioActorId actor;
     uint8_t x;
     uint8_t y;
+    uint8_t z;
 };
 
 using ScenarioOperationData = std::variant<
     ScenarioInputOperation,
+    ScenarioCameraInputOperation,
     ScenarioWaitOperation,
     ScenarioExpectPositionOperation>;
 
@@ -119,6 +135,23 @@ struct ScenarioOperation final {
     uint64_t boundary;
     ScenarioOperationData data;
 };
+
+class ScenarioPlan;
+
+// This is the scenario-side form of the client camera controller.  A yaw of
+// zero faces +Y; positive yaw turns toward +X.  It deliberately returns the
+// existing cardinal wire Direction so the server remains the sole authority.
+[[nodiscard]]
+Direction scenarioCameraRelativeDirection(
+    int16_t yaw_degrees,
+    int8_t strafe,
+    int8_t forward
+) noexcept;
+
+// Stable plan fingerprint recorded with runtime evidence.  It identifies the
+// replay inputs and camera pose without including wall-clock measurements.
+[[nodiscard]]
+std::string scenarioReplayId(ScenarioPlan const& plan);
 
 class ScenarioPlan final {
 public:

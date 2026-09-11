@@ -111,7 +111,11 @@ if(MC_BUILD_CLIENT AND NOT ANDROID)
             acceptance/image_evidence_tests.cpp
             acceptance/renderer_benchmark_tests.cpp
             acceptance/scenario_runner_tests.cpp
+    client/camera_controller_tests.cpp
+    client/depth_format_tests.cpp
+            client/camera_tests.cpp
             client/debug_hud_tests.cpp
+            client/frame_scheduler_tests.cpp
             client/shader_assets_tests.cpp
             core/corelang_scenario_tests.cpp
     )
@@ -206,7 +210,7 @@ if(MC_ENABLE_RENDERER_GOLDEN)
         PRIVATE
             MC_RENDERER_GOLDEN_DIAGNOSTIC_DIRECTORY="$<TARGET_FILE_DIR:mc_renderer_golden>/diagnostics"
             MC_RENDERER_GOLDEN_FAIL_UNSUPPORTED=${mc_renderer_golden_fail_unsupported}
-            MC_RENDERER_GOLDEN_REFERENCE="${CMAKE_CURRENT_SOURCE_DIR}/client/goldens/s4_scene_v1.ppm"
+            MC_RENDERER_GOLDEN_REFERENCE="${CMAKE_CURRENT_SOURCE_DIR}/client/goldens/s4_flat3d_v2.ppm"
     )
     target_link_libraries(mc_renderer_golden PRIVATE mc mc_test_support GTest::gtest)
     mc_apply_target_defaults(mc_renderer_golden)

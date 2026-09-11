@@ -166,7 +166,7 @@ bool DebugHudState::formatText(DebugHudText& text) const noexcept {
     offset = appendNumber(text, offset, values.presented_fps, 1);
     offset = appendText(text, offset, " UPTIME:");
     offset = appendNumber(text, offset, values.uptime_seconds, 1);
-    offset = appendText(text, offset, "s XYZ:");
+    offset = appendText(text, offset, "s XYZ(plane):");
     offset = appendNumber(text, offset, values.input.player_x, 1);
     offset = appendText(text, offset, ",");
     offset = appendNumber(text, offset, values.input.player_y, 1);
