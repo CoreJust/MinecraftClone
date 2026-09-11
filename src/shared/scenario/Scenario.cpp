@@ -918,6 +918,10 @@ std::string_view scenarioDiagnosticCodeName(ScenarioDiagnosticCode const code) n
         case ScenarioDiagnosticCode::InvalidRange: return "invalid-range";
         case ScenarioDiagnosticCode::InvalidCharacter: return "invalid-character";
         case ScenarioDiagnosticCode::MissingPlayer: return "missing-player";
+        case ScenarioDiagnosticCode::UnknownSourceHeader: return "unknown-source-header";
+        case ScenarioDiagnosticCode::CoreLangCompileFailure: return "corelang-compile-failure";
+        case ScenarioDiagnosticCode::CoreLangRuntimeFailure: return "corelang-runtime-failure";
+        case ScenarioDiagnosticCode::Cancelled: return "cancelled";
     }
     return "unknown";
 }

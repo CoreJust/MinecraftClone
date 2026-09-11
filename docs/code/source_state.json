@@ -22,7 +22,7 @@
         "tests/acceptance/runtime_cli_tests.cmake",
         "tests/acceptance/scenario_runner_tests.cpp"
       ],
-      "sources_sha256": "aee3d0704299cc0c385733322e0130fc925e004562bc9ef0b87392bc5f88db18"
+      "sources_sha256": "790d31c5effa287a2a2ee283d7c58f967a6c0080dd146d5a5810e6558118c7b3"
     },
     {
       "guide": "docs/code/ANDROID.md",
@@ -47,7 +47,7 @@
     },
     {
       "guide": "docs/BUILD.md",
-      "guide_sha256": "023bdd0817081476027756273f7aa1c5e77dad6cc198cff23b073ef40f97b884",
+      "guide_sha256": "16b489af196214bb5c7c0255568dde588e0a74315e5dfe4c8fc0a63f41dc7a94",
       "id": "build",
       "sources": [
         ".agents/skills/backlog/SKILL.md",
@@ -75,6 +75,7 @@
         "CMakeLists.txt",
         "CMakePresets.json",
         "cmake/CoreCppProvenance.cmake",
+        "cmake/CoreProject2026Provenance.cmake",
         "cmake/Helpers.cmake",
         "cmake/Sanitizers.cmake",
         "cmake/Warnings.cmake",
@@ -123,11 +124,12 @@
         "src/CMakeLists.txt",
         "tests/CMakeLists.txt",
         "tests/cmake/corecpp_server_consumer_test.cmake.in",
+        "tests/cmake/coreproject2026_provenance_test.cmake.in",
         "tests/main.cpp",
         "vcpkg-configuration.json",
         "vcpkg.json"
       ],
-      "sources_sha256": "b0a1fdf2265760d81135594f372974d9beb0fa19301636a2b5539860891abc07"
+      "sources_sha256": "a45be0ec3cea299ffc8a728338407ca47fdde880caa74af751e57a9bacf49799"
     },
     {
       "guide": "docs/code/CORE.md",
@@ -178,7 +180,7 @@
     },
     {
       "guide": "docs/code/GAMEPLAY.md",
-      "guide_sha256": "ae3b223ab23fbb5a46082187eaf2dbe80e95f45c2b9eb917762fbbc03fb38953",
+      "guide_sha256": "86d1efd01e38358c6d4a31e4724a55d587896c12272dc8850ba044e19338dc57",
       "id": "gameplay",
       "sources": [
         "src/client/BotClient.cpp",
@@ -200,15 +202,17 @@
         "src/shared/include/shared/scenario/Scenario.hpp",
         "src/shared/include/shared/world/World.hpp",
         "src/shared/net/Message.cpp",
+        "src/shared/scenario/CoreLangScenario.cpp",
         "src/shared/scenario/Scenario.cpp",
         "src/shared/world/World.cpp",
+        "tests/core/corelang_scenario_tests.cpp",
         "tests/core/game_server_lifecycle_tests.cpp",
         "tests/core/game_server_tests.cpp",
         "tests/core/scenario_parser_tests.cpp",
         "tests/core/shared_message_tests.cpp",
         "tests/core/shared_world_tests.cpp"
       ],
-      "sources_sha256": "06e2b8c8d164e0d4be3931839789120d4c3202a073b9f31fdb5d32c25bf39a8f"
+      "sources_sha256": "c68cc0929017b9ab5f84fd613a47ee5231fc568db5ab583f4dde5d34d14c95dc"
     },
     {
       "guide": "docs/code/RENDERING.md",

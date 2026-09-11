@@ -11,6 +11,17 @@ add_test(
         -P "${CMAKE_CURRENT_BINARY_DIR}/corecpp_server_consumer_test.cmake"
 )
 
+configure_file(
+    cmake/coreproject2026_provenance_test.cmake.in
+    "${CMAKE_CURRENT_BINARY_DIR}/coreproject2026_provenance_test.cmake"
+    @ONLY
+)
+add_test(
+    NAME CoreProject2026.Provenance
+    COMMAND ${CMAKE_COMMAND}
+        -P "${CMAKE_CURRENT_BINARY_DIR}/coreproject2026_provenance_test.cmake"
+)
+
 add_test(
     NAME AcceptanceCli.RuntimeModes
     COMMAND ${CMAKE_COMMAND}
@@ -31,6 +42,7 @@ add_executable(mc_tests
     core/algorithm_tests.cpp
     core/byte_io_tests.cpp
     core/crash_handler_tests.cpp
+    core/corelang_scenario_tests.cpp
     core/defer_tests.cpp
     core/enum_bits_tests.cpp
     core/field_requirement_tests.cpp

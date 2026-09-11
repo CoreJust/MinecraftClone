@@ -57,13 +57,14 @@ indefinitely if no valid cell remains.
 ## Deterministic scenario plans
 
 [Scenario.hpp](../../src/shared/include/shared/scenario/Scenario.hpp) defines a
-bounded parser for the versioned `flat2d-v1` scenario format. Parsing validates
-the complete source, actor references, initial collision spacing, numeric
-ranges, and host-supplied resource limits before returning an
+bounded header-selected scenario frontend. `scenario 1` preserves the legacy
+parser; `@version("0.0.1")` compiles against a fixed Shared CoreLang ruleset.
+Both validate and lower the complete source, actor references, initial collision
+spacing, numeric ranges, and host-supplied resource limits before returning an
 immutable-by-interface `ScenarioPlan`; rejection cannot partially mutate a
-world. Plans preserve actor declaration order and typed operations with
-explicit issuing and effective authoritative boundaries. The complete grammar,
-compatibility rules, diagnostics, and checked-in examples are in the
+world or start the runner. Plans preserve actor declaration order and typed
+operations with explicit issuing and effective authoritative boundaries. The
+complete grammar, compatibility rules, diagnostics, and checked-in examples are in the
 [scripting guide](../scripting/README.md).
 
 ## Wire protocol

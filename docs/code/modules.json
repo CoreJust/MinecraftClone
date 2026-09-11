@@ -66,6 +66,7 @@
         "src/client/include/client/CMakeLists.txt",
         "tests/core/shared_message_tests.cpp",
         "tests/core/scenario_parser_tests.cpp",
+        "tests/core/corelang_scenario_tests.cpp",
         "tests/core/shared_world_tests.cpp",
         "tests/core/game_server_tests.cpp",
         "tests/core/game_server_lifecycle_tests.cpp"
@@ -110,6 +111,7 @@
         "src/CMakeLists.txt",
         "tests/CMakeLists.txt",
         "tests/cmake/corecpp_server_consumer_test.cmake.in",
+        "tests/cmake/coreproject2026_provenance_test.cmake.in",
         "cmake/fixtures/corecpp_server_consumer/**",
         "tests/main.cpp",
         "publish.py",

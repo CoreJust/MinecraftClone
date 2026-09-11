@@ -11,6 +11,7 @@ target_link_libraries(mc
         CoreCpp::Core
         CoreCpp::Runtime
         CoreCpp::RuntimeNetwork
+        CoreProject2026::CoreLang
         fmt::fmt
         spdlog::spdlog
     PRIVATE

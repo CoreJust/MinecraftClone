@@ -246,7 +246,7 @@ int runScenarioCommand(RuntimeCommand const& command)
             failureEvidence(source.error())
         );
     }
-    auto const plan = shared::parseScenario(command.scenario_path.string(), *source, LIMITS);
+    auto const plan = shared::parseScenarioSource(command.scenario_path.string(), *source, LIMITS);
     if (!plan.has_value()) {
         std::string const failure = plan.error().filename + ":" + std::to_string(plan.error().location.line)
             + ":" + std::to_string(plan.error().location.column) + " "

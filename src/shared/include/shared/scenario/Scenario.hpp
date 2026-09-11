@@ -14,6 +14,8 @@ using ScenarioActorId = uint32_t;
 namespace scenario_detail {
 
 class ScenarioParser;
+class CoreLangScenarioLowerer;
+class ScenarioPlanCollector;
 
 } // namespace scenario_detail
 
@@ -57,6 +59,18 @@ enum class ScenarioDiagnosticCode : uint8_t {
     InvalidRange,
     InvalidCharacter,
     MissingPlayer,
+    UnknownSourceHeader,
+    CoreLangCompileFailure,
+    CoreLangRuntimeFailure,
+    Cancelled,
+};
+
+class ScenarioCancellation {
+public:
+    virtual ~ScenarioCancellation() = default;
+
+    [[nodiscard]]
+    virtual bool isCancellationRequested() const noexcept = 0;
 };
 
 [[nodiscard]]
@@ -144,6 +158,8 @@ private:
     uint64_t m_evidence_count;
 
     friend class scenario_detail::ScenarioParser;
+    friend class scenario_detail::CoreLangScenarioLowerer;
+    friend class scenario_detail::ScenarioPlanCollector;
 };
 
 [[nodiscard]]
@@ -151,6 +167,16 @@ std::expected<ScenarioPlan, ScenarioDiagnostic> parseScenario(
     std::string_view filename,
     std::string_view source,
     ScenarioLimits const& limits
+);
+
+// Selects the finite legacy frontend or the CoreLang frontend from its explicit
+// source header. Both frontends lower to the same immutable ScenarioPlan.
+[[nodiscard]]
+std::expected<ScenarioPlan, ScenarioDiagnostic> parseScenarioSource(
+    std::string_view filename,
+    std::string_view source,
+    ScenarioLimits const& limits,
+    ScenarioCancellation const* cancellation = nullptr
 );
 
 } // namespace shared

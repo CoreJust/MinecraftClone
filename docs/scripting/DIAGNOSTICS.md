@@ -24,6 +24,10 @@ code.
 | `InvalidInteger` | `invalid-integer` | A numeric token is not a permitted base-10 integer for its field. |
 | `InvalidRange` | `invalid-range` | A profile field, direction, coordinate, or count is outside its allowed range. |
 | `InvalidCharacter` | `invalid-character` | A character string is malformed or not supported by the selected profile. |
+| `UnknownSourceHeader` | `unknown-source-header` | The first source header selects neither `scenario 1` nor CoreLang `@version("0.0.1")`. |
+| `CoreLangCompileFailure` | `corelang-compile-failure` | CoreLang parsing, graph validation, or fixed-ruleset resolution failed before a plan exists. |
+| `CoreLangRuntimeFailure` | `corelang-runtime-failure` | A bounded CoreLang callback rejected its typed scenario operation before a plan exists. |
+| `Cancelled` | `cancelled` | Scenario lowering observed cancellation before returning a plan. |
 | `MissingPlayer` | `missing-player` | The required one-or-more player declarations are absent. |
 
 Parse and validation failures have no scenario side effect. A runner may report

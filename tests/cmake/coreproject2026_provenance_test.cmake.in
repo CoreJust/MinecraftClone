@@ -1,0 +1,40 @@
+set(test_root "@CMAKE_CURRENT_BINARY_DIR@/coreproject2026-provenance")
+file(MAKE_DIRECTORY "${test_root}")
+
+function(expect_rejected label revision dirty exact expected)
+    set(package_root "${test_root}/${label}")
+    file(MAKE_DIRECTORY "${package_root}")
+    file(WRITE "${package_root}/CoreProject2026Config.cmake"
+        "set(CoreProject2026_REVISION \"${revision}\")\n"
+        "set(CoreProject2026_DIRTY \"${dirty}\")\n"
+        "set(CoreProject2026_REVISION_EXACT \"${exact}\")\n"
+        "set(CoreProject2026_CoreLang_FOUND TRUE)\n"
+        "add_library(CoreProject2026::CoreLang INTERFACE IMPORTED)\n"
+        "set(CoreProject2026_FOUND TRUE)\n"
+    )
+    execute_process(
+        COMMAND "@CMAKE_COMMAND@"
+            -S "@PROJECT_SOURCE_DIR@"
+            -B "${package_root}/build"
+            "-DCoreProject2026_DIR=${package_root}"
+            "-DCoreCpp_DIR=@CoreCpp_DIR@"
+            "-DCMAKE_PREFIX_PATH=@CMAKE_PREFIX_PATH@"
+            -DBUILD_TESTING=OFF
+            -DMC_ALLOW_INEXACT_CORECPP=ON
+            -DCOREPROJECT2026_ALLOW_INEXACT_CORECPP=ON
+        RESULT_VARIABLE result
+        OUTPUT_VARIABLE stdout
+        ERROR_VARIABLE stderr
+    )
+    if(result EQUAL 0)
+        message(FATAL_ERROR "MinecraftClone accepted ${label} CoreProject2026 provenance")
+    endif()
+    string(FIND "${stdout}${stderr}" "${expected}" error_index)
+    if(error_index EQUAL -1)
+        message(FATAL_ERROR "${label} provenance failed for an unexpected reason:\n${stdout}${stderr}")
+    endif()
+endfunction()
+
+expect_rejected(dirty "a2f43c74a3b3ad4f4536ca85c58ec61136a58bc4" TRUE TRUE "clean, known CoreProject2026")
+expect_rejected(unknown unavailable FALSE FALSE "clean, known CoreProject2026")
+expect_rejected(mismatch "0000000000000000000000000000000000000000" FALSE TRUE "CoreProject2026 revision mismatch")

@@ -48,8 +48,11 @@ endif()
 
 ###  DEPENDENCIES SETUP  ###
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/CoreCppProvenance.cmake")
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/CoreProject2026Provenance.cmake")
 find_package(CoreCpp CONFIG REQUIRED COMPONENTS Core Runtime RuntimeNetwork)
 mc_check_corecpp_provenance()
+find_package(CoreProject2026 CONFIG REQUIRED COMPONENTS CoreLang)
+mc_check_coreproject2026_provenance()
 
 find_package(fmt CONFIG REQUIRED)
 if(NOT ANDROID)
