@@ -133,14 +133,27 @@ jobs:
           New-Item -ItemType Directory -Force -Path $keyRoot | Out-Null
           $coreCppKey = Join-Path $keyRoot 'corecpp'
           $coreProjectKey = Join-Path $keyRoot 'coreproject2026'
-          [System.IO.File]::WriteAllText($coreCppKey, $env:MC_CI_CORECPP_DEPLOY_KEY + [Environment]::NewLine)
-          [System.IO.File]::WriteAllText($coreProjectKey, $env:MC_CI_COREPROJECT2026_DEPLOY_KEY + [Environment]::NewLine)
+          $utf8NoBom = [System.Text.UTF8Encoding]::new($false)
+          $coreCppText = $env:MC_CI_CORECPP_DEPLOY_KEY.Replace("`r`n", "`n").Replace("`r", "`n").TrimEnd([char[]]"`n") + "`n"
+          $coreProjectText = $env:MC_CI_COREPROJECT2026_DEPLOY_KEY.Replace("`r`n", "`n").Replace("`r", "`n").TrimEnd([char[]]"`n") + "`n"
+          [System.IO.File]::WriteAllText($coreCppKey, $coreCppText, $utf8NoBom)
+          [System.IO.File]::WriteAllText($coreProjectKey, $coreProjectText, $utf8NoBom)
           $currentUser = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
           $grant = '{0}:F' -f $currentUser
           foreach ($keyPath in @($keyRoot, $coreCppKey, $coreProjectKey)) {
             & icacls.exe $keyPath /inheritance:r /grant:r $grant | Out-Null
             if ($LASTEXITCODE -ne 0) {
               throw "icacls failed for $keyPath with exit code $LASTEXITCODE"
+            }
+          }
+          foreach ($keyPath in @($coreCppKey, $coreProjectKey)) {
+            $bytes = [System.IO.File]::ReadAllBytes($keyPath)
+            if ($bytes.Length -lt 3 -or $bytes[-1] -ne 10 -or $bytes -contains 13 -or ($bytes[0] -eq 239 -and $bytes[1] -eq 187 -and $bytes[2] -eq 191)) {
+              throw "deploy key encoding validation failed for $keyPath"
+            }
+            & ssh-keygen.exe -y -f $keyPath *> $null
+            if ($LASTEXITCODE -ne 0) {
+              throw "ssh-keygen rejected deploy key $keyPath"
             }
           }
           "MC_CI_CORECPP_DEPLOY_KEY_FILE=$coreCppKey" >> $env:GITHUB_ENV

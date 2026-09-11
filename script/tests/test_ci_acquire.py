@@ -150,21 +150,76 @@ class CiAcquireTests(unittest.TestCase):
                 ])
                 write_env.assert_called_once_with("VCPKG_INSTALLED_DIR", str(installed_root))
 
-    def test_install_private_dependencies_passes_isolated_vcpkg_root(self):
-        with tempfile.TemporaryDirectory() as directory, mock.patch.dict(os.environ, {"VCPKG_INSTALLED_DIR": "/tmp/vcpkg-installed"}):
+    def test_install_private_dependencies_passes_exact_platform_component_closure(self):
+        expected_platform_arguments = {
+            "android": {"-DCORECPP_BUILD_RUNTIME_GRAPHICS_VULKAN_ANDROID=ON"},
+            "macos": {
+                "-DCORECPP_BUILD_RUNTIME_PLATFORM_GLFW=ON",
+                "-DCORECPP_BUILD_RUNTIME_GRAPHICS_VULKAN_GLFW=ON",
+            },
+            "windows": {
+                "-DCORECPP_BUILD_RUNTIME_PLATFORM_GLFW=ON",
+                "-DCORECPP_BUILD_RUNTIME_GRAPHICS_VULKAN_GLFW=ON",
+            },
+        }
+        all_platform_arguments = set().union(*expected_platform_arguments.values())
+        for platform_name, platform_arguments in expected_platform_arguments.items():
+            with self.subTest(platform_name=platform_name), tempfile.TemporaryDirectory() as directory, mock.patch.dict(
+                os.environ,
+                {"VCPKG_INSTALLED_DIR": "/tmp/vcpkg-installed"},
+            ):
+                root = Path(directory) / "private-dependencies"
+                for name in acquire.PRIVATE_DEPENDENCIES:
+                    source = root / name
+                    source.mkdir(parents=True)
+                    (source / "CMakeLists.txt").touch()
+                corecpp_config = root / "install/lib/cmake/CoreCpp/CoreCppConfig.cmake"
+
+                def run_command(command):
+                    if command[:2] == ["cmake", "--install"] and command[2].endswith("CoreCpp-build"):
+                        corecpp_config.parent.mkdir(parents=True)
+                        corecpp_config.touch()
+                    return ""
+
+                with mock.patch.object(acquire, "run", side_effect=run_command) as run, mock.patch.object(
+                    acquire,
+                    "write_github_env",
+                ):
+                    acquire.install_private_dependencies(
+                        root,
+                        platform_name,
+                        ["-DVCPKG_MANIFEST_INSTALL=OFF"],
+                    )
+                commands = [call.args[0] for call in run.call_args_list]
+                configure_commands = [command for command in commands if command[0] == "cmake" and "-S" in command]
+                self.assertEqual(len(configure_commands), len(acquire.PRIVATE_DEPENDENCIES))
+                for command in configure_commands:
+                    self.assertIn("-DVCPKG_INSTALLED_DIR=/tmp/vcpkg-installed", command)
+                    self.assertIn("-DVCPKG_MANIFEST_INSTALL=OFF", command)
+                    self.assertEqual(command[-1], "-DBUILD_TESTING=OFF")
+                corecpp_command, coreproject_command = configure_commands
+                for argument in acquire.CORECPP_COMMON_BUILD_ARGUMENTS:
+                    self.assertIn(argument, corecpp_command)
+                self.assertTrue(platform_arguments.issubset(corecpp_command))
+                self.assertTrue((all_platform_arguments - platform_arguments).isdisjoint(corecpp_command))
+                self.assertIn(f"-DCoreCpp_DIR={corecpp_config.parent}", coreproject_command)
+                corecpp_install_index = commands.index(["cmake", "--install", str(root / "CoreCpp-build")])
+                coreproject_configure_index = commands.index(coreproject_command)
+                self.assertLess(corecpp_install_index, coreproject_configure_index)
+
+    def test_private_dependency_install_requires_corecpp_package_before_dependent_configure(self):
+        with tempfile.TemporaryDirectory() as directory, mock.patch.dict(
+            os.environ,
+            {"VCPKG_INSTALLED_DIR": "/tmp/vcpkg-installed"},
+        ):
             root = Path(directory) / "private-dependencies"
             for name in acquire.PRIVATE_DEPENDENCIES:
                 source = root / name
                 source.mkdir(parents=True)
                 (source / "CMakeLists.txt").touch()
-            with mock.patch.object(acquire, "run") as run, mock.patch.object(acquire, "write_github_env"):
-                acquire.install_private_dependencies(root, "macos", ["-DVCPKG_MANIFEST_INSTALL=OFF"])
-            configure_commands = [call.args[0] for call in run.call_args_list if call.args[0][0] == "cmake" and "-S" in call.args[0]]
-            self.assertEqual(len(configure_commands), len(acquire.PRIVATE_DEPENDENCIES))
-            for command in configure_commands:
-                self.assertIn("-DVCPKG_INSTALLED_DIR=/tmp/vcpkg-installed", command)
-                self.assertIn("-DVCPKG_MANIFEST_INSTALL=OFF", command)
-                self.assertEqual(command[-1], "-DBUILD_TESTING=OFF")
+            with mock.patch.object(acquire, "run", return_value=""):
+                with self.assertRaisesRegex(acquire.CiError, "installed CoreCpp package config is missing"):
+                    acquire.install_private_dependencies(root, "android", ["-DVCPKG_MANIFEST_INSTALL=OFF"])
 
     def test_install_private_dependencies_rejects_test_override(self):
         with tempfile.TemporaryDirectory() as directory, mock.patch.dict(
