@@ -44,7 +44,7 @@
         "src/android/CMakeLists.txt",
         "tests/android/input_state_tests.cpp"
       ],
-      "sources_sha256": "0bd8fb303d3d58c9ad03319d073ac8e63d5fbff98ed138f328387ebdfd63147a"
+      "sources_sha256": "1925f1f1ad08010c05698b5731fd6a64810ddbc5bc6b8cca3f6acc7747dea454"
     },
     {
       "guide": "docs/BUILD.md",
