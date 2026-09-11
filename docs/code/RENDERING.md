@@ -91,3 +91,12 @@ a Vulkan-capable desktop. The latter is a hardware smoke, not a replacement for
 normal CTest. Android package compilation links the exact installed Android
 RuntimeGraphics components; emulator presentation remains separate runtime
 acceptance.
+
+`renderer_golden_tests.cpp` is an opt-in desktop production-renderer capture of
+the fixed S4 scene. It uses the same GLFW `PresentationContext` and completed
+RGBA8 readback seam, requires validation during strict approval, and delegates
+byte comparison plus bounded actual/diff diagnostics to test-only
+`mc_test_support`. Its versioned reference and manual review policy live beside
+the test. Only explicit GLFW setup/capture-capability boundaries may skip under
+development policy; strict reference approval fails. This deterministic image gate
+complements rather than replaces the visible `RendererSmokeTest`.

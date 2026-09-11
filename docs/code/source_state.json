@@ -45,7 +45,7 @@
     },
     {
       "guide": "docs/BUILD.md",
-      "guide_sha256": "16b489af196214bb5c7c0255568dde588e0a74315e5dfe4c8fc0a63f41dc7a94",
+      "guide_sha256": "9ed2562ad5200dd745666449eb587bbf676874b573a79d4b0af5fc05ed64c6ad",
       "id": "build",
       "sources": [
         ".agents/skills/backlog/SKILL.md",
@@ -129,7 +129,7 @@
         "vcpkg-configuration.json",
         "vcpkg.json"
       ],
-      "sources_sha256": "e394fbb5f4ec2a8a61273db01850852f0ea17ba7df58a93f8a79375315b7e7b6"
+      "sources_sha256": "64873868a42ff7c41d46a9e857410c6eced4bc6aef486197e572630ae521c7f3"
     },
     {
       "guide": "docs/code/CORE.md",
@@ -204,7 +204,7 @@
     },
     {
       "guide": "docs/code/RENDERING.md",
-      "guide_sha256": "9ea4d18346e28b6e3fd5ac7bc87b9d5c467f7ce7bd1cbb99512b5fac1df6a98c",
+      "guide_sha256": "13f0703884dbda3383351e0ae78fb09232c3d533ffbfd71b68dd4eabb11be868",
       "id": "rendering",
       "sources": [
         "src/client/CMakeLists.txt",
@@ -226,10 +226,16 @@
         "src/client/render/shaders/player.vert",
         "src/client/render/shaders/trivial.frag",
         "tests/client/debug_hud_tests.cpp",
+        "tests/client/goldens/README.md",
+        "tests/client/goldens/s4_scene_v1.ppm",
+        "tests/client/renderer_golden_tests.cpp",
         "tests/client/renderer_smoke_tests.cpp",
-        "tests/client/shader_assets_tests.cpp"
+        "tests/client/shader_assets_tests.cpp",
+        "tests/testsupport/ImageComparison.cpp",
+        "tests/testsupport/image_comparison_tests.cpp",
+        "tests/testsupport/include/testsupport/ImageComparison.hpp"
       ],
-      "sources_sha256": "c28aa115ffee1522d762722ace57f1c3b82479adc449b74a3a4b384ac2d2421b"
+      "sources_sha256": "1edb30b225518b181f3ff93a9572e6cb7e1220fabb9eccb35699ab7d43a603b3"
     }
   ],
   "version": 1

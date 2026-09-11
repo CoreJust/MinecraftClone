@@ -1,5 +1,15 @@
 include(GoogleTest)
 
+add_library(mc_test_support STATIC
+    testsupport/ImageComparison.cpp
+    testsupport/include/testsupport/ImageComparison.hpp
+)
+target_include_directories(mc_test_support
+    PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}/testsupport/include
+)
+mc_apply_target_defaults(mc_test_support)
+
 configure_file(
     cmake/corecpp_server_consumer_test.cmake.in
     "${CMAKE_CURRENT_BINARY_DIR}/corecpp_server_consumer_test.cmake"
@@ -82,11 +92,13 @@ add_executable(mc_tests
     core/vector_utils_tests.cpp
     core/version_tests.cpp
     main.cpp
+    testsupport/image_comparison_tests.cpp
 )
 
 target_link_libraries(mc_tests
     PRIVATE
         mc
+        mc_test_support
         GTest::gtest
 )
 mc_apply_target_defaults(mc_tests)
@@ -155,6 +167,55 @@ if(MC_BUILD_CLIENT AND NOT ANDROID AND MC_ENABLE_RENDERER_SMOKE)
         TIMEOUT 45
         RUN_SERIAL TRUE
         LABELS "renderer;gpu"
+        FAIL_REGULAR_EXPRESSION "Vulkan validation; error at ; critical at "
+    )
+endif()
+
+option(
+    MC_ENABLE_RENDERER_GOLDEN
+    "Run the opt-in production-renderer S4 offscreen image golden"
+    OFF
+)
+set(
+    MC_RENDERER_GOLDEN_UNSUPPORTED_POLICY
+    "skip"
+    CACHE STRING
+    "Policy for unavailable renderer golden runtime: skip or fail"
+)
+set_property(
+    CACHE MC_RENDERER_GOLDEN_UNSUPPORTED_POLICY
+    PROPERTY STRINGS skip fail
+)
+if(MC_ENABLE_RENDERER_GOLDEN)
+    if(NOT MC_BUILD_CLIENT OR ANDROID)
+        message(FATAL_ERROR "MC_ENABLE_RENDERER_GOLDEN requires a desktop Client build")
+    endif()
+    string(TOLOWER "${MC_RENDERER_GOLDEN_UNSUPPORTED_POLICY}" mc_renderer_golden_unsupported_policy)
+    if(mc_renderer_golden_unsupported_policy STREQUAL "fail")
+        set(mc_renderer_golden_fail_unsupported 1)
+    elseif(mc_renderer_golden_unsupported_policy STREQUAL "skip")
+        set(mc_renderer_golden_fail_unsupported 0)
+    else()
+        message(FATAL_ERROR "MC_RENDERER_GOLDEN_UNSUPPORTED_POLICY must be skip or fail")
+    endif()
+    add_executable(mc_renderer_golden client/renderer_golden_tests.cpp main.cpp)
+    set_target_properties(mc_renderer_golden PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/renderer-golden"
+    )
+    target_compile_definitions(mc_renderer_golden
+        PRIVATE
+            MC_RENDERER_GOLDEN_DIAGNOSTIC_DIRECTORY="$<TARGET_FILE_DIR:mc_renderer_golden>/diagnostics"
+            MC_RENDERER_GOLDEN_FAIL_UNSUPPORTED=${mc_renderer_golden_fail_unsupported}
+            MC_RENDERER_GOLDEN_REFERENCE="${CMAKE_CURRENT_SOURCE_DIR}/client/goldens/s4_scene_v1.ppm"
+    )
+    target_link_libraries(mc_renderer_golden PRIVATE mc mc_test_support GTest::gtest)
+    mc_apply_target_defaults(mc_renderer_golden)
+    mc_copy_target_shaders(mc_renderer_golden mc)
+    add_test(NAME RendererGoldenTest COMMAND mc_renderer_golden)
+    set_tests_properties(RendererGoldenTest PROPERTIES
+        TIMEOUT 45
+        RUN_SERIAL TRUE
+        LABELS "renderer;gpu;golden"
         FAIL_REGULAR_EXPRESSION "Vulkan validation; error at ; critical at "
     )
 endif()

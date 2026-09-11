@@ -70,7 +70,8 @@
         "src/client/render/**",
         "src/client/include/client/render/**",
         "src/client/CMakeLists.txt",
-        "tests/client/**"
+        "tests/client/**",
+        "tests/testsupport/**"
       ]
     },
     {

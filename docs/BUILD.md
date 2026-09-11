@@ -85,6 +85,11 @@ Additional [release gates](../script/ai_checks.json) require the windowed smoke 
 
 `script/ai_renderer_smoke.py` rejects foreign caches, configures its preset, builds `mc_renderer_smoke`, and runs `RendererSmokeTest` with bounded timeouts. It records `build/ai-checks/renderer-smoke.log` and fails on missing registration, device, validation, runtime, or timeout errors. This test checks pixels, resize, reload, and close across automatic and vertex-fallback pipelines. It does not prove controls, multiplayer, Windows, or headless goldens; hosted CI remains GPU-free.
 
+`MC_ENABLE_RENDERER_GOLDEN=ON` enables S4 readback against manual
+non-updating reference. `MC_RENDERER_GOLDEN_UNSUPPORTED_POLICY=fail` approves;
+`skip` is only unsupported. Mismatches fail.
+[golden guide](../tests/client/goldens/README.md) owns policy.
+
 New test sources must be listed once in [tests/CMakeLists.txt](../tests/CMakeLists.txt); shader/source membership is also checked by the publisher. Keep one test suite/file per source or tightly related unit. No test command is a substitute for checking the required observable result.
 
 Task lookup and preparation use `python3 script/ai_plan.py`; see [project skills](ai/SKILLS.md). Commit hooks include `pre-merge-commit`, so merge commits use the same review/check gates.
