@@ -15,6 +15,8 @@
 #include <algorithm>
 #include <array>
 #include <chrono>
+#include <cstddef>
+#include <cstdint>
 #include <stdexcept>
 #include <utility>
 
@@ -29,7 +31,7 @@ constexpr bool REQUIRE_VALIDATION = false;
 
 constexpr uint32_t GRID_WORKGROUPS_X = 32U;
 constexpr uint32_t GRID_WORKGROUPS_Y = 32U;
-constexpr uint32_t KERNEL_CACHE_CAPACITY = 5U;
+constexpr uint32_t KERNEL_CACHE_CAPACITY = 8U;
 constexpr uint32_t QUAD_VERTEX_COUNT = 6U;
 
 struct alignas(16) GridPushConstants final {
@@ -48,6 +50,13 @@ struct alignas(16) PlayerPushConstants final {
     std::array<float, 4> color{ 1.0F, 1.0F, 1.0F, 1.0F };
 };
 static_assert(sizeof(PlayerPushConstants) == 32U);
+
+struct DebugHudPushConstants final {
+    std::array<float, 2> resolution{ 0.0F, 0.0F };
+    float scale = 1.0F;
+    std::array<uint32_t, client::DEBUG_HUD_MAX_INSTANCES> packed_ascii{ };
+};
+static_assert(sizeof(DebugHudPushConstants) == 124U);
 
 [[nodiscard]]
 std::chrono::nanoseconds remaining(std::chrono::steady_clock::time_point const deadline)
@@ -120,19 +129,39 @@ struct VulkanRenderer::Impl final {
 
     [[nodiscard]] bool render(
         std::span<PlayerRenderData const> const players,
+        DebugHudInput debug_hud_input,
+        float const debug_hud_dpi_scale,
         std::chrono::steady_clock::time_point const deadline
     )
     {
+        debug_hud_input.presented = m_last_presented;
+        m_debug_hud_state.setDpiScale(debug_hud_dpi_scale);
+        m_debug_hud_state.update(debug_hud_input);
+        m_debug_hud_batch.size = 0U;
+        if (m_debug_hud_state.buildBatch(m_debug_hud_text, m_debug_hud_batch)) {
+            DebugHudSnapshot const snapshot = m_debug_hud_state.snapshot();
+            m_debug_hud_push.resolution = {
+                static_cast<float>(m_context->info().extent.width),
+                static_cast<float>(m_context->info().extent.height),
+            };
+            m_debug_hud_push.scale = snapshot.dpi_scale;
+            for (size_t index = 0U; index < m_debug_hud_batch.size; ++index) {
+                m_debug_hud_push.packed_ascii[index] = m_debug_hud_batch.instances[index].packed_ascii;
+            }
+        }
+
         std::optional<PresentationContext::Frame> frame;
         core::graphics::vulkan::PresentationAcquireResult const acquired = m_context->acquire(
             remaining(deadline),
             frame
         );
         if (acquired == core::graphics::vulkan::PresentationAcquireResult::NeedsRecreation) {
+            m_last_presented = false;
             recreate(m_context->info().extent, deadline);
             return false;
         }
         if (acquired != core::graphics::vulkan::PresentationAcquireResult::Ready || !frame.has_value()) {
+            m_last_presented = false;
             return false;
         }
 
@@ -141,6 +170,7 @@ struct VulkanRenderer::Impl final {
         m_image_view = frame->imageView();
         frame->record(&Impl::recordFrame, this);
         m_context->complete(*frame);
+        m_last_presented = true;
         m_cpu_frame_duration = std::chrono::duration_cast<std::chrono::nanoseconds>(
             std::chrono::steady_clock::now() - started_at
         );
@@ -163,6 +193,16 @@ struct VulkanRenderer::Impl final {
             }
         }
         return true;
+    }
+
+    void setDebugHudEnabled(bool const enabled) noexcept
+    {
+        m_debug_hud_state.setEnabled(enabled);
+    }
+
+    void toggleDebugHud() noexcept
+    {
+        m_debug_hud_state.toggle();
     }
 
     void hotReload()
@@ -232,6 +272,7 @@ struct VulkanRenderer::Impl final {
             .cpu_frame_duration = m_cpu_frame_duration,
             .gpu_frame_duration = std::nullopt,
             .submitted_frame_count = m_submitted_frame_count,
+            .debug_hud_draw_count = m_debug_hud_draw_count,
         };
     }
 
@@ -269,8 +310,9 @@ private:
         static_cast<Impl*>(user_data)->record(command);
     }
 
-    void record(VkCommandBuffer const command) const
+    void record(VkCommandBuffer const command)
     {
+        m_debug_hud_draw_count = 0U;
         VkRenderingAttachmentInfo color_attachment{};
         color_attachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
         color_attachment.imageView = m_image_view;
@@ -327,15 +369,34 @@ private:
             );
             vkCmdDraw(command, QUAD_VERTEX_COUNT, 1U, 0U, 0U);
         }
+        if (m_debug_hud_batch.size > 0U) {
+            m_debug_hud_draw_count = 1U;
+            vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS, m_debug_hud_pipeline);
+            vkCmdPushConstants(
+                command,
+                m_debug_hud_layout,
+                VK_SHADER_STAGE_VERTEX_BIT,
+                0U,
+                sizeof(m_debug_hud_push),
+                &m_debug_hud_push
+            );
+            vkCmdDraw(
+                command,
+                QUAD_VERTEX_COUNT,
+                static_cast<uint32_t>(m_debug_hud_batch.size),
+                0U,
+                0U
+            );
+        }
         m_end_rendering(command);
     }
 
-    [[nodiscard]] VkPipelineLayout createLayout() const
+    [[nodiscard]] VkPipelineLayout createLayout(uint32_t const push_constant_size) const
     {
         VkPushConstantRange range{};
         range.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
         range.offset = 0U;
-        range.size = sizeof(GridPushConstants);
+        range.size = push_constant_size;
         VkPipelineLayout layout = VK_NULL_HANDLE;
         VkPipelineLayoutCreateInfo info{};
         info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
@@ -363,8 +424,14 @@ private:
         auto const player = std::make_shared<core::kernel::SpirvModule const>(
             m_shader_assets.load("player.vert.spv")
         );
+        auto const debug_hud = std::make_shared<core::kernel::SpirvModule const>(
+            m_shader_assets.load("debug_hud.vert.spv")
+        );
         auto const fragment = std::make_shared<core::kernel::SpirvModule const>(
             m_shader_assets.load("trivial.frag.spv")
+        );
+        auto const debug_hud_fragment = std::make_shared<core::kernel::SpirvModule const>(
+            m_shader_assets.load("debug_hud.frag.spv")
         );
         m_grid_program.emplace(core::kernel::GraphicsProgram::create(
             {
@@ -390,8 +457,21 @@ private:
                 .required_bindings = {},
             }
         ));
-        m_grid_layout = createLayout();
-        m_player_layout = createLayout();
+        m_debug_hud_program.emplace(core::kernel::GraphicsProgram::create(
+            {
+                .module = debug_hud,
+                .entrypoint = "main",
+                .required_bindings = {},
+            },
+            {
+                .module = debug_hud_fragment,
+                .entrypoint = "main",
+                .required_bindings = {},
+            }
+        ));
+        m_grid_layout = createLayout(static_cast<uint32_t>(sizeof(GridPushConstants)));
+        m_player_layout = createLayout(static_cast<uint32_t>(sizeof(PlayerPushConstants)));
+        m_debug_hud_layout = createLayout(static_cast<uint32_t>(sizeof(DebugHudPushConstants)));
         m_kernel_cache.emplace(KERNEL_CACHE_CAPACITY);
         core::graphics::vulkan::VulkanDeviceReference const device = m_resources->deviceReference();
         m_grid_pipeline = m_kernel_cache->pipelineFor(
@@ -410,6 +490,14 @@ private:
                 .color_format = m_resources->format(),
             }
         );
+        m_debug_hud_pipeline = m_kernel_cache->pipelineFor(
+            device,
+            *m_debug_hud_program,
+            {
+                .layout = m_debug_hud_layout,
+                .color_format = m_resources->format(),
+            }
+        );
     }
 
     void destroyResources() noexcept
@@ -424,12 +512,18 @@ private:
         }
         if (m_grid_layout != VK_NULL_HANDLE) { vkDestroyPipelineLayout(device, m_grid_layout, nullptr); }
         if (m_player_layout != VK_NULL_HANDLE) { vkDestroyPipelineLayout(device, m_player_layout, nullptr); }
+        if (m_debug_hud_layout != VK_NULL_HANDLE) {
+            vkDestroyPipelineLayout(device, m_debug_hud_layout, nullptr);
+        }
         m_grid_pipeline = VK_NULL_HANDLE;
         m_player_pipeline = VK_NULL_HANDLE;
+        m_debug_hud_pipeline = VK_NULL_HANDLE;
         m_grid_layout = VK_NULL_HANDLE;
         m_player_layout = VK_NULL_HANDLE;
+        m_debug_hud_layout = VK_NULL_HANDLE;
         m_grid_program.reset();
         m_player_program.reset();
+        m_debug_hud_program.reset();
         m_begin_rendering = nullptr;
         m_end_rendering = nullptr;
         m_resources.reset();
@@ -457,10 +551,13 @@ private:
     VkImageView m_image_view = VK_NULL_HANDLE;
     std::optional<core::kernel::GraphicsProgram> m_grid_program;
     std::optional<core::kernel::GraphicsProgram> m_player_program;
+    std::optional<core::kernel::GraphicsProgram> m_debug_hud_program;
     VkPipelineLayout m_grid_layout = VK_NULL_HANDLE;
     VkPipelineLayout m_player_layout = VK_NULL_HANDLE;
+    VkPipelineLayout m_debug_hud_layout = VK_NULL_HANDLE;
     VkPipeline m_grid_pipeline = VK_NULL_HANDLE;
     VkPipeline m_player_pipeline = VK_NULL_HANDLE;
+    VkPipeline m_debug_hud_pipeline = VK_NULL_HANDLE;
     PFN_vkCmdBeginRenderingKHR m_begin_rendering = nullptr;
     PFN_vkCmdEndRenderingKHR m_end_rendering = nullptr;
     FrameCaptureState m_capture_state = FrameCaptureState::Disabled;
@@ -468,6 +565,12 @@ private:
     std::chrono::nanoseconds m_cpu_frame_duration{ 0 };
     uint64_t m_submitted_frame_count = 0U;
     bool m_capture_requested = false;
+    DebugHudState m_debug_hud_state;
+    DebugHudText m_debug_hud_text;
+    DebugHudBatch m_debug_hud_batch;
+    DebugHudPushConstants m_debug_hud_push;
+    bool m_last_presented = false;
+    uint32_t m_debug_hud_draw_count = 0U;
 };
 
 #if !defined(__ANDROID__)
@@ -539,7 +642,27 @@ VulkanRenderer::~VulkanRenderer() = default;
 
 bool VulkanRenderer::render(std::span<PlayerRenderData const> const players, std::chrono::steady_clock::time_point const deadline)
 {
-    return m_impl->render(players, deadline);
+    return render(players, DebugHudInput{}, 1.0F, deadline);
+}
+
+bool VulkanRenderer::render(
+    std::span<PlayerRenderData const> const players,
+    DebugHudInput const debug_hud_input,
+    float const debug_hud_dpi_scale,
+    std::chrono::steady_clock::time_point const deadline
+)
+{
+    return m_impl->render(players, debug_hud_input, debug_hud_dpi_scale, deadline);
+}
+
+void VulkanRenderer::setDebugHudEnabled(bool const enabled) noexcept
+{
+    m_impl->setDebugHudEnabled(enabled);
+}
+
+void VulkanRenderer::toggleDebugHud() noexcept
+{
+    m_impl->toggleDebugHud();
 }
 
 void VulkanRenderer::hotReload()

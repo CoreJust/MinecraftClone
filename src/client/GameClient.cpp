@@ -8,6 +8,7 @@
 namespace client {
 
 void GameClient::run(core::Address const server_address, char const ch) {
+    m_local_character = ch;
     if (!connect(server_address, std::chrono::milliseconds{ 1'000 })) {
         CORE_ERROR("Failed to connect to server {}", server_address);
         std::cerr << "Failed to connect to server" << std::endl;

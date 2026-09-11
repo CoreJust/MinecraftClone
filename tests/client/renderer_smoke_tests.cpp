@@ -18,10 +18,11 @@ struct CaptureColorClasses final {
     bool has_grid = false;
     bool has_red_player = false;
     bool has_green_player = false;
+    bool has_debug_hud = false;
 
     [[nodiscard]] bool complete() const
     {
-        return has_grid && has_red_player && has_green_player;
+        return has_grid && has_red_player && has_green_player && has_debug_hud;
     }
 
     [[nodiscard]] std::string missingClasses() const
@@ -38,6 +39,7 @@ struct CaptureColorClasses final {
         appendMissing(has_grid, "grid");
         appendMissing(has_red_player, "red-player");
         appendMissing(has_green_player, "green-player");
+        appendMissing(has_debug_hud, "debug-hud");
         return missing;
     }
 };
@@ -48,6 +50,9 @@ struct CaptureColorClasses final {
     uint8_t const grid_min = capture.srgb_encoded ? 90U : 32U;
     uint8_t const grid_max = capture.srgb_encoded ? 160U : 64U;
     for (uint64_t offset = 0U; offset < capture.rgba8.size(); offset += 4U) {
+        uint32_t const pixel_index = static_cast<uint32_t>(offset / 4U);
+        uint32_t const x = pixel_index % capture.width;
+        uint32_t const y = pixel_index / capture.width;
         uint8_t const red = capture.rgba8[offset];
         uint8_t const green = capture.rgba8[offset + 1U];
         uint8_t const blue = capture.rgba8[offset + 2U];
@@ -60,6 +65,9 @@ struct CaptureColorClasses final {
         );
         classes.has_green_player = classes.has_green_player || (
             red < 80U && green > 200U && blue < 80U
+        );
+        classes.has_debug_hud = classes.has_debug_hud || (
+            x < 220U && y + 32U > capture.height && red > 180U && green > 180U && blue > 180U
         );
     }
     return classes;
@@ -107,7 +115,12 @@ TEST(RendererSmokeTest, CompletedCaptureSurvivesRecreateAndReadsBack)
             if (!window.nextFrame()) {
                 return false;
             }
-            if (renderer.render(players, deadline)) {
+            if (renderer.render(
+                    players,
+                    client::DebugHudInput{ .player_x = 2.0F, .player_y = 3.0F },
+                    1.0F,
+                    deadline
+                )) {
                 ++rendered_frames;
             }
             if (renderer.captureState() == client::FrameCaptureState::Completed) {
@@ -132,6 +145,7 @@ TEST(RendererSmokeTest, CompletedCaptureSurvivesRecreateAndReadsBack)
     EXPECT_TRUE(original_colors.complete())
         << "original capture lacks: " << original_colors.missingClasses()
         << "; the 32x32 inset-cell grid may cover every physical framebuffer sample";
+    EXPECT_EQ(renderer.runtimeInfo().debug_hud_draw_count, 1U);
 
     renderer.requestFrameCapture();
     ASSERT_TRUE(completeCapture());

@@ -21,6 +21,8 @@ void AndroidInput::clear() noexcept
     m_state.clear();
     m_reload_pressed = false;
     m_reload_requested = false;
+    m_debug_hud_toggle.reset();
+    m_debug_hud_toggle_requested = false;
 }
 
 int32_t AndroidInput::handle(AInputEvent const* const event) noexcept
@@ -53,6 +55,13 @@ bool AndroidInput::consumeReloadRequest() noexcept
     return requested;
 }
 
+bool AndroidInput::consumeDebugHudToggleRequest() noexcept
+{
+    bool const requested = m_debug_hud_toggle_requested;
+    m_debug_hud_toggle_requested = false;
+    return requested;
+}
+
 int32_t AndroidInput::handleKey(AInputEvent const* const event) noexcept
 {
     int32_t const action = AKeyEvent_getAction(event);
@@ -82,6 +91,11 @@ int32_t AndroidInput::handleKey(AInputEvent const* const event) noexcept
             m_reload_requested = true;
         }
         m_reload_pressed = pressed;
+        return 1;
+    case AKEYCODE_F1:
+        if (m_debug_hud_toggle.update(pressed)) {
+            m_debug_hud_toggle_requested = true;
+        }
         return 1;
     case AKEYCODE_BACK:
     case AKEYCODE_ESCAPE:

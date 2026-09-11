@@ -20,10 +20,9 @@ AndroidPlayerClient::AndroidPlayerClient(android_app& app)
 
     int32_t const density = AConfiguration_getDensity(m_app.config);
     if (density > 0) {
-        m_input.setDensity(
-            static_cast<float>(density)
-            / static_cast<float>(static_cast<int32_t>(ACONFIGURATION_DENSITY_MEDIUM))
-        );
+        m_density_scale = static_cast<float>(density)
+            / static_cast<float>(static_cast<int32_t>(ACONFIGURATION_DENSITY_MEDIUM));
+        m_input.setDensity(m_density_scale);
     }
 }
 
@@ -73,7 +72,18 @@ void AndroidPlayerClient::render()
             },
         });
     }
-    static_cast<void>(m_renderer->render(players));
+    client::DebugHudInput const debug_hud_input = [&] {
+        client::DebugHudInput input;
+        if (auto const player = m_world.playerByCharacter(m_local_character)) {
+            input.player_x = static_cast<float>(player->x);
+            input.player_y = static_cast<float>(player->y);
+        }
+        return input;
+    }();
+    if (m_input.consumeDebugHudToggleRequest()) {
+        m_renderer->toggleDebugHud();
+    }
+    static_cast<void>(m_renderer->render(players, debug_hud_input, m_density_scale));
     if (m_input.consumeReloadRequest()) {
         m_renderer->hotReload();
     }

@@ -26,7 +26,7 @@
     },
     {
       "guide": "docs/code/ANDROID.md",
-      "guide_sha256": "95f35d563ade3d8059b43edc90aec8f8a91f9ded84f82db97509a943404b6be7",
+      "guide_sha256": "2d14955d9bc1d3a6b5f5c0b585e97e1e4802844f456d1b922d2e9b98e990e389",
       "id": "android",
       "sources": [
         "src/android/AndroidInput.cpp",
@@ -41,7 +41,7 @@
         "src/android/CMakeLists.txt",
         "tests/android/input_state_tests.cpp"
       ],
-      "sources_sha256": "3ecd8d3583a30c4b773ac09f1c117345fa4f199bb26d6169fef35e15e3d7f481"
+      "sources_sha256": "36c1f1a5b79c5b2b3e65382c878337cd9a7ddcce800e943c70e38a95b845e92d"
     },
     {
       "guide": "docs/BUILD.md",
@@ -112,6 +112,7 @@
         "script/tests/test_ai_run.py",
         "script/tests/test_ai_setup.py",
         "script/tests/test_ai_tasks.py",
+        "script/tests/test_android_shader_assets.py",
         "script/tests/test_build_snapshot.py",
         "script/tests/test_checks_common.py",
         "script/tests/test_ci_acquire.py",
@@ -128,7 +129,7 @@
         "vcpkg-configuration.json",
         "vcpkg.json"
       ],
-      "sources_sha256": "4581c00b5ffc501d0824fda3bfc95a45205c15930bda6bc3c7b24511dff0886f"
+      "sources_sha256": "e394fbb5f4ec2a8a61273db01850852f0ea17ba7df58a93f8a79375315b7e7b6"
     },
     {
       "guide": "docs/code/CORE.md",
@@ -199,29 +200,36 @@
         "tests/core/shared_message_tests.cpp",
         "tests/core/shared_world_tests.cpp"
       ],
-      "sources_sha256": "501eaff2952b1fa731dc3d5562494e8520fed07105c5d2db55fd64d563778740"
+      "sources_sha256": "4c07cb5f462bf6d8de65a57eee82cff20596cec0f1ae39e593337ea17537b4c8"
     },
     {
       "guide": "docs/code/RENDERING.md",
-      "guide_sha256": "9dca6dfe9530ba014c99150e68582ef23c6dd3b05f06f056a0416fdc77baddd7",
+      "guide_sha256": "9ea4d18346e28b6e3fd5ac7bc87b9d5c467f7ce7bd1cbb99512b5fac1df6a98c",
       "id": "rendering",
       "sources": [
         "src/client/CMakeLists.txt",
+        "src/client/include/client/render/DebugHud.hpp",
         "src/client/include/client/render/InstalledShaderAssets.hpp",
         "src/client/include/client/render/ShaderAssets.hpp",
         "src/client/include/client/render/VulkanRenderer.hpp",
+        "src/client/render/DebugHud.cpp",
         "src/client/render/InstalledShaderAssets.cpp",
         "src/client/render/PresentationRenderer.cpp",
         "src/client/render/ShaderAssets.cpp",
+        "src/client/render/shaders/DEBUG_HUD_ATTRIBUTION.md",
+        "src/client/render/shaders/TAMSYN_LICENSE.txt",
+        "src/client/render/shaders/debug_hud.frag",
+        "src/client/render/shaders/debug_hud.vert",
         "src/client/render/shaders/grid.mesh",
         "src/client/render/shaders/grid.vert",
         "src/client/render/shaders/player.mesh",
         "src/client/render/shaders/player.vert",
         "src/client/render/shaders/trivial.frag",
+        "tests/client/debug_hud_tests.cpp",
         "tests/client/renderer_smoke_tests.cpp",
         "tests/client/shader_assets_tests.cpp"
       ],
-      "sources_sha256": "64b6935979211fcf2093412b81d38501142b5ca8afa33b1afb96405d70f3e2f7"
+      "sources_sha256": "c28aa115ffee1522d762722ace57f1c3b82479adc449b74a3a4b384ac2d2421b"
     }
   ],
   "version": 1

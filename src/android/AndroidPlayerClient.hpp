@@ -38,6 +38,7 @@ private:
     AndroidInput m_input;
     AndroidShaderAssets m_shader_assets;
     std::unique_ptr<client::VulkanRenderer> m_renderer;
+    float m_density_scale = 1.0F;
     bool m_resumed = false;
     bool m_has_focus = false;
 };

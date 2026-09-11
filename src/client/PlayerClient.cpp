@@ -1,5 +1,10 @@
 #include <client/PlayerClient.hpp>
 
+#define GLFW_INCLUDE_NONE
+#include <GLFW/glfw3.h>
+
+#include <algorithm>
+
 namespace client {
 
 shared::Direction PlayerClient::input() {
@@ -43,7 +48,26 @@ void PlayerClient::render() {
             .color = { float(p.ch) / 256.f, 1.f - float(p.ch) / 256.f, 1.f, 1.f },
         });
     }
-    static_cast<void>(m_renderer.render(m_render_data));
+    DebugHudInput const debug_hud_input = [&] {
+        DebugHudInput input;
+        if (auto const player = m_world.playerByCharacter(m_local_character)) {
+            input.player_x = static_cast<float>(player->x);
+            input.player_y = static_cast<float>(player->y);
+        }
+        return input;
+    }();
+    float content_scale_x = 1.0F;
+    float content_scale_y = 1.0F;
+    glfwGetWindowContentScale(m_window.nativeHandle(), &content_scale_x, &content_scale_y);
+    bool const debug_hud_pressed = glfwGetKey(m_window.nativeHandle(), GLFW_KEY_F1) == GLFW_PRESS;
+    if (m_debug_hud_toggle.update(debug_hud_pressed)) {
+        m_renderer.toggleDebugHud();
+    }
+    static_cast<void>(m_renderer.render(
+        m_render_data,
+        debug_hud_input,
+        std::max(content_scale_x, content_scale_y)
+    ));
 
     bool const reload_pressed = m_window.keyPressed(core::platform::glfw::WindowKey::R);
     if (reload_pressed && !m_was_reload_pressed) {

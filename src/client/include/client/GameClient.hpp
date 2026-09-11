@@ -22,6 +22,7 @@ private:
 protected:
     shared::World m_world;
     shared::PlayerId m_next_id = 0;
+    char m_local_character = 0;
     bool m_running = true;
     bool m_accepted = false;
 };

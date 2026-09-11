@@ -30,6 +30,7 @@ private:
     InstalledShaderAssets m_shader_assets;
     VulkanRenderer m_renderer;
     std::vector<PlayerRenderData> m_render_data;
+    DebugHudToggleLatch m_debug_hud_toggle;
     bool m_was_reload_pressed = false;
 };
 

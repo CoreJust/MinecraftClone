@@ -49,6 +49,25 @@ Shader assets are borrowed: desktop `InstalledShaderAssets` reads the installed
 `shaders/` directory and Android `AndroidShaderAssets` reads APK assets. Both
 accept bare `.spv` names only; no source-tree fallback is allowed.
 
+## Debug HUD boundary
+
+`DebugHudState` formats a bounded, allocation-free diagnostic line and packs
+four sanitized ASCII bytes into each instance word. `debug_hud.vert` expands
+those instances into procedural 8-by-16 quads; `debug_hud.frag` owns the
+texture-free bitmap constants and performs the factor-of-eight glyph-row
+addressing. The renderer submits all packed words with one instanced draw
+through the same-device `GraphicsProgram` and `VulkanKernelCache` used by the
+scene.
+
+Desktop supplies the current local character's X/Y and the GLFW content scale;
+Android supplies the same X/Y boundary and its native density. The current
+task3 camera integration has not landed in this branch, so Z and yaw/pitch/roll
+are explicitly reported as zero and labelled in degrees rather than inferred
+from unrelated state. The renderer overwrites the presentation bit from its
+own successful `PresentationContext::complete` result, so dropped or
+non-presented frames do not enter the one-second FPS window. The public
+`setDebugHudEnabled`/`toggleDebugHud` controls support performance measurements.
+
 ## Capture, input, and validation
 
 When capture is requested, the context enables transfer-source presentation and
@@ -58,7 +77,10 @@ neither draw data nor readback storage. Context recreation, window resize, and
 Android native-window replacement preserve this contract.
 
 Desktop input is supplied by `RuntimePlatformGlfw::GlfwWindow`; PlayerClient
-maps W/A/S/D, Escape, and R without recreating a local GLFW state layer.
+maps W/A/S/D, Escape, R, and F1 without recreating a local GLFW state layer. A
+debounced F1 key-down toggles the HUD; holding F1 does not retrigger it. R
+retains its existing debounced shader-hot-reload action. Android uses the same
+F1 edge contract through `AndroidInput`.
 Android retains its asset and `AndroidInput` glue while delegating only Vulkan
 surface/device/presentation ownership.
 

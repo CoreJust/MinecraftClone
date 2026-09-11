@@ -2,6 +2,8 @@
 
 #include "AndroidInputState.hpp"
 
+#include <client/render/DebugHud.hpp>
+
 #include <cstdint>
 
 struct AInputEvent;
@@ -22,6 +24,8 @@ public:
     bool consumeStopRequest() noexcept;
     [[nodiscard]]
     bool consumeReloadRequest() noexcept;
+    [[nodiscard]]
+    bool consumeDebugHudToggleRequest() noexcept;
 private:
     [[nodiscard]]
     int32_t handleKey(AInputEvent const* event) noexcept;
@@ -32,8 +36,10 @@ private:
     AndroidInputState m_state;
 
     bool m_reload_pressed = false;
+    client::DebugHudToggleLatch m_debug_hud_toggle;
     bool m_stop_requested = false;
     bool m_reload_requested = false;
+    bool m_debug_hud_toggle_requested = false;
 };
 
 } // namespace game_android

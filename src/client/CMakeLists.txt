@@ -2,6 +2,7 @@ target_sources(mc
     PRIVATE
         BotClient.cpp
         GameClient.cpp
+        render/DebugHud.cpp
         render/ShaderAssets.cpp
         render/PresentationRenderer.cpp
 )
@@ -19,6 +20,8 @@ if(NOT ANDROID)
         render/shaders/grid.vert
         render/shaders/player.vert
         render/shaders/trivial.frag
+        render/shaders/debug_hud.vert
+        render/shaders/debug_hud.frag
     )
 
     mc_copy_target_shaders(mc_main mc)

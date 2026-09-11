@@ -30,13 +30,16 @@ rebuilds them from a fresh scope in the post-recreate hook.
 
 [`AndroidInput`](../../src/android/AndroidInput.hpp) maps keyboard/gamepad
 movement and a left-half touchscreen drag to the shared movement direction.
-Back/Escape requests client shutdown; R requests shader reload. The Android
-client uses the portable vertex path because `RuntimeKernel::SpirvModule`
-currently exposes vertex/fragment modules only.
+Back/Escape requests client shutdown; a debounced F1 key-down toggles the
+performance HUD, while R retains its shader-reload action (holding either key
+does not repeat its action). The Android client uses the portable vertex path
+because `RuntimeKernel::SpirvModule` currently exposes vertex/fragment modules
+only.
 
 [`AndroidShaderAssets`](../../src/android/AndroidShaderAssets.hpp) reads
 bare `.spv` names from the APK asset manager under `shaders/`, validates their
 SPIR-V word alignment and magic, and returns the portable renderer input. The
-Gradle source set prepares only the fallback vertex/fragment shader sources;
-see the Android section of [the build guide](../BUILD.md) for packaging and
-environment requirements.
+Gradle source set stages all five fallback vertex/fragment shader sources,
+including `debug_hud.vert` and `debug_hud.frag`, so the APK contains their
+compiled `shaders/*.spv` assets; see the Android section of [the build
+guide](../BUILD.md) for packaging and environment requirements.

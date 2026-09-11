@@ -1,5 +1,6 @@
 #pragma once
 
+#include <client/render/DebugHud.hpp>
 #include <client/render/ShaderAssets.hpp>
 
 #include <core/common/NonCopyable.hpp>
@@ -71,6 +72,7 @@ struct RendererRuntimeInfo final {
     std::chrono::nanoseconds cpu_frame_duration{ 0 };
     std::optional<std::chrono::nanoseconds> gpu_frame_duration;
     uint64_t submitted_frame_count{ 0 };
+    uint32_t debug_hud_draw_count{ 0 };
 };
 
 struct RendererFrameCapture final {
@@ -106,6 +108,15 @@ public:
         std::span<PlayerRenderData const> players,
         std::chrono::steady_clock::time_point deadline = std::chrono::steady_clock::time_point::max()
     );
+    [[nodiscard]]
+    bool render(
+        std::span<PlayerRenderData const> players,
+        DebugHudInput debug_hud_input,
+        float debug_hud_dpi_scale,
+        std::chrono::steady_clock::time_point deadline = std::chrono::steady_clock::time_point::max()
+    );
+    void setDebugHudEnabled(bool enabled) noexcept;
+    void toggleDebugHud() noexcept;
     void hotReload();
     void recreate(uint32_t width, uint32_t height);
     [[nodiscard]]

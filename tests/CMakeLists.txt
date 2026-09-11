@@ -99,6 +99,7 @@ if(MC_BUILD_CLIENT AND NOT ANDROID)
             acceptance/image_evidence_tests.cpp
             acceptance/renderer_benchmark_tests.cpp
             acceptance/scenario_runner_tests.cpp
+            client/debug_hud_tests.cpp
             client/shader_assets_tests.cpp
             core/corelang_scenario_tests.cpp
     )
@@ -122,6 +123,8 @@ if(MC_BUILD_CLIENT AND NOT ANDROID)
         "grid.vert.spv;vulkan1.2"
         "player.vert.spv;vulkan1.2"
         "trivial.frag.spv;vulkan1.2"
+        "debug_hud.vert.spv;vulkan1.2"
+        "debug_hud.frag.spv;vulkan1.2"
     )
         list(GET SHADER_TARGET_ENV 0 SHADER_FILE)
         list(GET SHADER_TARGET_ENV 1 VULKAN_TARGET_ENV)

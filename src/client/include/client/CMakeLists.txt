@@ -6,6 +6,7 @@ target_sources(mc
             BotClient.hpp
             GameClient.hpp
             PlayerClient.hpp
+            render/DebugHud.hpp
             render/InstalledShaderAssets.hpp
             render/ShaderAssets.hpp
             render/VulkanRenderer.hpp
