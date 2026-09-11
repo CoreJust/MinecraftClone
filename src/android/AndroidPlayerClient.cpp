@@ -79,13 +79,17 @@ void AndroidPlayerClient::render()
             static_cast<double>(-look_vertical) * 0.15
         ));
     }
+    if (m_local_player.has_value()) {
+        client::CameraPose const camera_pose = client::localPlayerThirdPersonPose(
+            *m_local_player,
+            m_camera.pose().angles
+        );
+        static_cast<void>(m_camera.setPosition(camera_pose.position));
+    }
 
     std::vector<client::PlayerRenderData> players;
     players.reserve(m_world.players().size());
     for (shared::Player const& player : m_world.players()) {
-        if (!client::shouldRenderRemotePlayer(player, m_local_character)) {
-            continue;
-        }
         players.push_back({
             .x = player.x,
             .y = player.y,
@@ -121,7 +125,12 @@ void AndroidPlayerClient::render()
 
 void AndroidPlayerClient::onAuthoritativeLocalPlayerPosition(shared::Player const& player) noexcept
 {
-    static_cast<void>(m_camera.setPosition(client::localPlayerEyePosition(player)));
+    m_local_player = player;
+    client::CameraPose const camera_pose = client::localPlayerThirdPersonPose(
+        player,
+        m_camera.pose().angles
+    );
+    static_cast<void>(m_camera.setPosition(camera_pose.position));
 }
 
 void AndroidPlayerClient::handleAppCommand(android_app* const app, int32_t const command)

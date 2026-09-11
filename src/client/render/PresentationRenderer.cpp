@@ -53,14 +53,13 @@ struct alignas(16) GridPushConstants final {
 };
 static_assert(sizeof(GridPushConstants) == 96U);
 
-struct alignas(16) PlayerPushConstants final {
+struct alignas(16) BoxPushConstants final {
     glm::mat4 projection_view{ 1.0F };
-    std::array<float, 2> origin{ 0.0F, 0.0F };
-    float size = 2.0F;
-    float pad0 = 0.0F;
+    std::array<float, 4> origin{ 0.0F, 0.0F, 0.0F, 0.0F };
+    std::array<float, 4> extent{ 2.0F, 2.0F, 2.0F, 0.0F };
     std::array<float, 4> color{ 1.0F, 1.0F, 1.0F, 1.0F };
 };
-static_assert(sizeof(PlayerPushConstants) == 96U);
+static_assert(sizeof(BoxPushConstants) == 112U);
 
 struct DebugHudPushConstants final {
     std::array<float, 2> resolution{ 0.0F, 0.0F };
@@ -116,6 +115,23 @@ void recordFlat3dScene(
         return;
     }
     glm::mat4 const projection_view = *projection * camera.viewMatrix();
+    BoxPushConstants const platform_push{
+        .projection_view = projection_view,
+        .origin = { 0.0F, 0.0F, -1.0F, 0.0F },
+        .extent = { 32.0F, 32.0F, 0.98F, 0.0F },
+        .color = { 0.12F, 0.17F, 0.24F, 1.0F },
+    };
+    vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS, player_pipeline);
+    vkCmdPushConstants(
+        command,
+        player_layout,
+        VK_SHADER_STAGE_VERTEX_BIT,
+        0U,
+        sizeof(platform_push),
+        &platform_push
+    );
+    vkCmdDraw(command, BOX_VERTEX_COUNT, 1U, 0U, 0U);
+
     GridPushConstants const grid_push{ .projection_view = projection_view };
     vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS, grid_pipeline);
     vkCmdPushConstants(
@@ -130,9 +146,15 @@ void recordFlat3dScene(
 
     vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS, player_pipeline);
     for (PlayerRenderData const& player : players) {
-        PlayerPushConstants const push{
+        BoxPushConstants const push{
             .projection_view = projection_view,
-            .origin = { static_cast<float>(player.x), static_cast<float>(player.y) },
+            .origin = {
+                static_cast<float>(player.x),
+                static_cast<float>(player.y),
+                0.0F,
+                0.0F,
+            },
+            .extent = { 2.0F, 2.0F, 2.0F, 0.0F },
             .color = player.color,
         };
         vkCmdPushConstants(
@@ -433,9 +455,9 @@ private:
         color_attachment.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
         color_attachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
         color_attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-        color_attachment.clearValue.color.float32[0] = 0.06F;
-        color_attachment.clearValue.color.float32[1] = 0.06F;
-        color_attachment.clearValue.color.float32[2] = 0.08F;
+        color_attachment.clearValue.color.float32[0] = 0.28F;
+        color_attachment.clearValue.color.float32[1] = 0.48F;
+        color_attachment.clearValue.color.float32[2] = 0.72F;
         color_attachment.clearValue.color.float32[3] = 1.0F;
         VkExtent2D const extent = m_resources->extent();
         VkRenderingAttachmentInfo depth_attachment{};
@@ -575,7 +597,7 @@ private:
             }
         ));
         m_grid_layout = createLayout(static_cast<uint32_t>(sizeof(GridPushConstants)));
-        m_player_layout = createLayout(static_cast<uint32_t>(sizeof(PlayerPushConstants)));
+        m_player_layout = createLayout(static_cast<uint32_t>(sizeof(BoxPushConstants)));
         m_debug_hud_layout = createLayout(static_cast<uint32_t>(sizeof(DebugHudPushConstants)));
         m_kernel_cache.emplace(KERNEL_CACHE_CAPACITY);
         core::graphics::vulkan::VulkanDeviceReference const device = m_resources->deviceReference();
@@ -955,7 +977,7 @@ public:
                 { .module = fragment, .entrypoint = "main", .required_bindings = {} }
             ));
             m_grid_layout = createLayout(static_cast<uint32_t>(sizeof(GridPushConstants)));
-            m_player_layout = createLayout(static_cast<uint32_t>(sizeof(PlayerPushConstants)));
+            m_player_layout = createLayout(static_cast<uint32_t>(sizeof(BoxPushConstants)));
             core::graphics::vulkan::VulkanDeviceReference const reference = m_device->reference();
             m_grid_pipeline = m_cache.pipelineFor(reference, *m_grid_program, pipelineDescriptor(m_grid_layout));
             m_player_pipeline = m_cache.pipelineFor(reference, *m_player_program, pipelineDescriptor(m_player_layout));
@@ -1126,9 +1148,9 @@ private:
         color.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
         color.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
         color.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-        color.clearValue.color.float32[0] = 0.06F;
-        color.clearValue.color.float32[1] = 0.06F;
-        color.clearValue.color.float32[2] = 0.08F;
+        color.clearValue.color.float32[0] = 0.28F;
+        color.clearValue.color.float32[1] = 0.48F;
+        color.clearValue.color.float32[2] = 0.72F;
         color.clearValue.color.float32[3] = 1.0F;
         VkRenderingAttachmentInfo depth{};
         depth.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;

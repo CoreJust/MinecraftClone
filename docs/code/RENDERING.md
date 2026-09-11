@@ -3,28 +3,15 @@
 ## Boundary and ownership
 
 [`VulkanRenderer.hpp`](../../src/client/include/client/render/VulkanRenderer.hpp)
-is the Client policy facade. It owns scene draw order, grid/player push
-constants, shader choice, camera/world interpretation, and raw device children
-(pipeline layouts and CoreCpp program/cache lifetimes). CoreCpp
-`RuntimeKernel::GraphicsProgram` validates the Client's reflected vertex and
-fragment entrypoints, and `RuntimeGraphicsVulkan::VulkanKernelCache` owns the
-corresponding shader modules and pipelines. The Client does not own a Vulkan
-instance, physical device, device, queues, command pools, synchronization
-objects, swapchain, image views, or GLFW/Android surface.
+owns Client scene order, push constants, shaders, camera policy, pipeline
+layouts, and program/cache lifetimes. CoreCpp validates programs and owns Vulkan
+instance/device, queues, commands, synchronization, swapchain, views, and
+GLFW/Android surface integration through one `PresentationContext`.
 
-Those objects belong to one CoreCpp
-`RuntimeGraphicsVulkan::PresentationContext`. Desktop constructs it using
-`RuntimePlatformGlfw` and `RuntimeGraphicsVulkanGlfw`; Android constructs the
-same contract through `RuntimeGraphicsVulkanAndroid`. All Client device
-children use the current `PresentationResourceScope::device()`, format, and
-extent, and the acquired `Frame::imageView()` is the only render target. The
-Client records only into `Frame::commandBuffer()` via the frame callback;
-CoreCpp performs the acquire/transition/submit/present sequence.
-
-`PresentationResourceScope` becomes stale on recreation. Pre-recreate releases
-the cache, programs, layouts, and scope; post-recreate builds format-dependent
-objects from a fresh scope. `waitForSubmittedFrames()` drains bounded frame
-slots without `vkDeviceWaitIdle`; there is no steady per-draw allocation.
+Client device children use the current `PresentationResourceScope`; it records
+only into an acquired frame callback. Recreation releases cache, programs,
+layouts, and the stale scope before rebuilding. `waitForSubmittedFrames()`
+drains bounded slots without steady-state `vkDeviceWaitIdle` or draw allocation.
 
 ## Scene and shader policy
 
@@ -33,14 +20,20 @@ World players -> PlayerClient / AndroidPlayerClient -> PlayerRenderData span
   -> VulkanRenderer -> PresentationContext::Frame callback -> present/readback
 ```
 
-Renderer clears dark, draws the 32-by-32 ground grid first, then coloured
-2-by-2-by-2 remote-player boxes. Each authoritative local-player update sets
-the eye to `(x+1, y+1, 1.6)` without changing its angles and omits that local
-cube. A right-handed Z-up camera supplies a zero-to-one projection with Y
-flipped for its positive-height viewport. The flip reverses winding, so
-grid/player/HUD triangles are reversed for the CoreCpp CCW back-face policy.
-`GridPushConstants` and `PlayerPushConstants` are both 96 bytes and carry the
-projection-view matrix, so their ABI must remain compatible with the GLSL push
+Renderer clears to a sky-like blue, draws a depth-tested 32-by-32 platform
+volume with approximately one unit of side thickness, then the ground grid
+and coloured 2-by-2-by-2 player boxes. The platform top is just below `z=0`,
+so the grid remains visibly upright above its solid sides. Each authoritative
+local-player update targets the player center `(x+1, y+1, 1)` and places a
+close third-person camera six units behind and above it using the current
+yaw/pitch; cursor and touch orbit recompute that position every frame. Both
+the local and remote cubes are submitted. A right-handed Z-up camera supplies
+a zero-to-one projection with Y flipped for its positive-height viewport. The
+flip reverses winding, so grid/player/HUD triangles are reversed for the
+CoreCpp CCW back-face policy.
+`GridPushConstants` is 96 bytes and `BoxPushConstants` is 112 bytes; both carry
+the projection-view matrix, while the box block also carries independent XYZ
+origin and extent vectors. Their ABI must remain compatible with the GLSL push
 blocks. The grid and boxes use a same-scope depth attachment selected
 deterministically from `D32_SFLOAT`, then `D16_UNORM`, with the CC-0014
 explicit `LESS` depth test/write pipeline state. Each freshly
@@ -95,23 +88,16 @@ normal CTest. Android package compilation links the exact installed Android
 RuntimeGraphics components; emulator presentation remains separate runtime
 acceptance.
 
-`renderer_golden_tests.cpp` is an opt-in true offscreen production-renderer
-capture of the fixed 640-by-480 S4 scene. It creates no GLFW window, Vulkan
-surface, or swapchain and remains valid with display environment variables
-unset. `RuntimeGraphicsVulkan::VulkanOffscreenTarget` owns the fixed
-`R8G8B8A8_UNORM` linear color target, command submission, and readback; the
-Client owns its selected depth target through the recording lifetime. The
-offscreen callback invokes the exact same grid/player scene-recording routine,
-shader programs, camera transforms, and depth-enabled `VulkanKernelCache`
-pipelines as presentation. It requires validation during strict approval and
-checks both exact `flat3d-v2` bytes and a near-box-over-later-far pixel
-predicate. Test-only `mc_test_support` writes bounded actual/diff diagnostics;
-the versioned reference may change only after deliberate native-size review,
-never automatically.
+`renderer_golden_tests.cpp` captures the fixed 640-by-480
+EarlyDev 0.1.0 snapshot 4 scene without GLFW, a surface, or a swapchain.
+`VulkanOffscreenTarget` owns its linear color target, submission, and readback;
+Client owns depth and invokes the same scene recorder and pipelines as
+presentation. Strict approval enables validation and checks the version 3
+reference plus independent depth/scene predicates. Diagnostics are bounded and
+a reference changes only after deliberate native-size review.
 
-`RendererSmokeTest` remains a separate visible GLFW presentation/recreate and
-readback smoke. It is useful evidence for presentation ownership and input but
-is not a substitute for the display-independent offscreen golden.
+`RendererSmokeTest` separately covers visible GLFW presentation, recreation,
+readback, input, and the default-on HUD.
 
 The benchmark uses shared renderer options; `--present-immediate` fails without
 immediate negotiation. Release evidence records negotiated mode, actual pixel

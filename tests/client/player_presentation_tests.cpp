@@ -5,7 +5,7 @@
 
 namespace {
 
-TEST(PlayerPresentationTest, LocalPlayerUsesCenteredFirstPersonEyeWithoutChangingAngles)
+TEST(PlayerPresentationTest, LocalPlayerThirdPersonPoseOrbitsAroundPlayerCenter)
 {
     static constexpr shared::Player PLAYER{
         .id = 7U,
@@ -13,25 +13,33 @@ TEST(PlayerPresentationTest, LocalPlayerUsesCenteredFirstPersonEyeWithoutChangin
         .y = 20U,
         .ch = '@',
     };
-    client::Camera camera{
-        {
-            .position = { 0.0, 0.0, 0.0 },
-            .angles = {
-                .yaw_degrees = 135.0,
-                .pitch_degrees = -20.0,
-                .roll_degrees = 10.0,
-            },
-        },
-    };
-    client::CameraAngles const angles_before = camera.pose().angles;
+    client::CameraAngles const angles{ .yaw_degrees = 0.0, .pitch_degrees = 0.0, .roll_degrees = 10.0 };
+    client::CameraPose const pose = client::localPlayerThirdPersonPose(PLAYER, angles);
 
-    ASSERT_TRUE(camera.setPosition(client::localPlayerEyePosition(PLAYER)));
+    EXPECT_EQ(client::localPlayerCenterPosition(PLAYER), (glm::dvec3{ 13.0, 21.0, 1.0 }));
+    EXPECT_EQ(pose.position, (glm::dvec3{ 13.0, 15.0, 1.0 }));
+    EXPECT_EQ(pose.angles, angles);
 
-    EXPECT_EQ(camera.pose().position, (glm::dvec3{ 13.0, 21.0, 1.6 }));
-    EXPECT_EQ(camera.pose().angles, angles_before);
+    client::CameraPose const side_pose = client::localPlayerThirdPersonPose(
+        PLAYER,
+        { .yaw_degrees = 90.0, .pitch_degrees = 0.0 }
+    );
+    EXPECT_EQ(side_pose.position, (glm::dvec3{ 7.0, 21.0, 1.0 }));
+
+    client::CameraPose const elevated_pose = client::localPlayerThirdPersonPose(
+        PLAYER,
+        { .yaw_degrees = 0.0, .pitch_degrees = -30.0 }
+    );
+    EXPECT_NEAR(elevated_pose.position.y, 15.803'847'577'3, 1e-9);
+    EXPECT_NEAR(elevated_pose.position.z, 4.0, 1e-9);
+
+    client::Camera const camera{ elevated_pose };
+    EXPECT_NEAR(camera.forward().x, 0.0, 1e-12);
+    EXPECT_NEAR(camera.forward().y, 0.866'025'403'8, 1e-9);
+    EXPECT_NEAR(camera.forward().z, -0.5, 1e-9);
 }
 
-TEST(PlayerPresentationTest, OnlyRemotePlayersArePresented)
+TEST(PlayerPresentationTest, RemoteFilterRemainsAvailableForPresentationMetadata)
 {
     static constexpr shared::Player LOCAL{
         .id = 1U,

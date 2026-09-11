@@ -212,7 +212,7 @@ if(MC_ENABLE_RENDERER_GOLDEN)
         PRIVATE
             MC_RENDERER_GOLDEN_DIAGNOSTIC_DIRECTORY="$<TARGET_FILE_DIR:mc_renderer_golden>/diagnostics"
             MC_RENDERER_GOLDEN_FAIL_UNSUPPORTED=${mc_renderer_golden_fail_unsupported}
-            MC_RENDERER_GOLDEN_REFERENCE="${CMAKE_CURRENT_SOURCE_DIR}/client/goldens/s4_flat3d_v2.ppm"
+            MC_RENDERER_GOLDEN_REFERENCE="${CMAKE_CURRENT_SOURCE_DIR}/client/goldens/earlydev-0.1.0-snapshot-4-third-person-platform-v3.ppm"
     )
     target_link_libraries(mc_renderer_golden PRIVATE mc mc_test_support GTest::gtest)
     mc_apply_target_defaults(mc_renderer_golden)

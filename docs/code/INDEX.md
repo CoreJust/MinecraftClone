@@ -236,6 +236,7 @@ Files:
 - [`tests/client/depth_format_tests.cpp`](../../tests/client/depth_format_tests.cpp)
 - [`tests/client/frame_scheduler_tests.cpp`](../../tests/client/frame_scheduler_tests.cpp)
 - [`tests/client/goldens/README.md`](../../tests/client/goldens/README.md)
+- [`tests/client/goldens/earlydev-0.1.0-snapshot-4-third-person-platform-v3.ppm`](../../tests/client/goldens/earlydev-0.1.0-snapshot-4-third-person-platform-v3.ppm)
 - [`tests/client/goldens/s4_flat3d_v2.ppm`](../../tests/client/goldens/s4_flat3d_v2.ppm)
 - [`tests/client/goldens/s4_scene_v1.ppm`](../../tests/client/goldens/s4_scene_v1.ppm)
 - [`tests/client/player_presentation_tests.cpp`](../../tests/client/player_presentation_tests.cpp)

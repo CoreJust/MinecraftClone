@@ -63,13 +63,14 @@ void PlayerClient::render() {
     m_last_cursor_x = cursor_x;
     m_last_cursor_y = cursor_y;
     m_has_cursor_position = true;
+    if (m_local_player.has_value()) {
+        CameraPose const camera_pose = localPlayerThirdPersonPose(*m_local_player, m_camera.pose().angles);
+        static_cast<void>(m_camera.setPosition(camera_pose.position));
+    }
     m_renderer.recreate(width, height);
     m_render_data.clear();
     m_render_data.reserve(m_world.players().size());
     for (shared::Player const& p : m_world.players()) {
-        if (!shouldRenderRemotePlayer(p, m_local_character)) {
-            continue;
-        }
         m_render_data.push_back({
             .x = p.x,
             .y = p.y,
@@ -111,7 +112,9 @@ void PlayerClient::render() {
 
 void PlayerClient::onAuthoritativeLocalPlayerPosition(shared::Player const& player) noexcept
 {
-    static_cast<void>(m_camera.setPosition(localPlayerEyePosition(player)));
+    m_local_player = player;
+    CameraPose const camera_pose = localPlayerThirdPersonPose(player, m_camera.pose().angles);
+    static_cast<void>(m_camera.setPosition(camera_pose.position));
 }
 
 } // namespace client
