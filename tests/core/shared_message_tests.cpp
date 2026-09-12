@@ -3,7 +3,7 @@
 #include <gtest/gtest.h>
 
 #include <array>
-#include <cstring>
+#include <type_traits>
 
 namespace {
 
@@ -15,7 +15,23 @@ void expectRoundTrip(MessageTy const expected) {
     ASSERT_TRUE(decoded.has_value());
     ASSERT_TRUE(std::holds_alternative<MessageTy>(*decoded));
     MessageTy const actual = std::get<MessageTy>(*decoded);
-    EXPECT_TRUE(std::memcmp(&actual, &expected, sizeof(MessageTy)) == 0);
+    if constexpr (std::is_same_v<MessageTy, shared::JoinRequestMessage>) {
+        EXPECT_EQ(actual.ch, expected.ch);
+    } else if constexpr (std::is_same_v<MessageTy, shared::JoinResponseMessage>) {
+        EXPECT_EQ(actual.accepted, expected.accepted);
+    } else if constexpr (std::is_same_v<MessageTy, shared::ClientInputMessage>) {
+        EXPECT_EQ(actual.direction.x, expected.direction.x);
+        EXPECT_EQ(actual.direction.y, expected.direction.y);
+    } else if constexpr (std::is_same_v<MessageTy, shared::ServerPlayerPositionMessage>) {
+        EXPECT_EQ(actual.ch, expected.ch);
+        EXPECT_EQ(actual.x, expected.x);
+        EXPECT_EQ(actual.y, expected.y);
+        EXPECT_EQ(actual.x_subcell, expected.x_subcell);
+        EXPECT_EQ(actual.y_subcell, expected.y_subcell);
+    } else {
+        EXPECT_EQ(actual.ch, expected.ch);
+    }
+    EXPECT_EQ(shared::encodeMessage(actual), bytes);
 }
 
 } // namespace

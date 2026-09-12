@@ -220,6 +220,7 @@ jobs:
         run: >-
           python script/ci/acquire.py install-private-dependencies
           --root "$RUNNER_TEMP/private-dependencies" --platform macos
+          --preset release
           --cmake-arg=-DCMAKE_TOOLCHAIN_FILE=$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake
           --cmake-arg=-DVCPKG_MANIFEST_INSTALL=OFF
       - name: Install pinned private dependencies (Windows)
@@ -230,7 +231,7 @@ jobs:
           call "%ProgramFiles%\Microsoft Visual Studio\2022\Enterprise\Common7\Tools\VsDevCmd.bat" -arch=amd64
           if errorlevel 1 exit /b %errorlevel%
           set "VCPKG_ROOT=%MC_ACQUIRED_VCPKG_ROOT%"
-          python script/ci/acquire.py install-private-dependencies --root "%RUNNER_TEMP%\private-dependencies" --platform windows "--cmake-arg=-DCMAKE_TOOLCHAIN_FILE=%VCPKG_ROOT%\scripts\buildsystems\vcpkg.cmake" --cmake-arg=-DVCPKG_MANIFEST_INSTALL=OFF
+          python script/ci/acquire.py install-private-dependencies --root "%RUNNER_TEMP%\private-dependencies" --platform windows --preset release "--cmake-arg=-DCMAKE_TOOLCHAIN_FILE=%VCPKG_ROOT%\scripts\buildsystems\vcpkg.cmake" --cmake-arg=-DVCPKG_MANIFEST_INSTALL=OFF
           if errorlevel 1 exit /b %errorlevel%
       - name: Verify exact source
         shell: bash

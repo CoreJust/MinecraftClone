@@ -75,6 +75,12 @@ class WorkflowContextTests(unittest.TestCase):
             self.assertIn("-DCoreCpp_DIR=", workflow, workflow_path)
             self.assertIn("-DCoreProject2026_DIR=", workflow, workflow_path)
 
+    def test_private_dependency_install_matches_consumer_preset(self):
+        ai_workflow = WORKFLOWS[0].read_text(encoding="utf-8")
+        snapshot_workflow = WORKFLOWS[1].read_text(encoding="utf-8")
+        self.assertIn('--preset "${{ matrix.preset }}"', ai_workflow)
+        self.assertIn("--preset release", snapshot_workflow)
+
     def test_windows_key_acl_is_current_user_only_and_fail_closed(self):
         for workflow_path in WORKFLOWS:
             workflow = workflow_path.read_text(encoding="utf-8")
@@ -149,6 +155,15 @@ class WorkflowContextTests(unittest.TestCase):
         for template in (REPOSITORY / "tests/cmake").glob("*.in"):
             contents = template.read_text(encoding="utf-8")
             self.assertNotRegex(contents, r"@(CMAKE_CURRENT_BINARY_DIR|CMAKE_COMMAND|CMAKE_CTEST_COMMAND|PROJECT_SOURCE_DIR|CMAKE_PREFIX_PATH|CoreCpp_DIR|CoreProject2026_DIR)@")
+        for template_name in ("corecpp_server_consumer_test.cmake.in", "minecraftclone_server_only_test.cmake.in"):
+            contents = (REPOSITORY / "tests/cmake" / template_name).read_text(encoding="utf-8")
+            self.assertIn("-DCMAKE_BUILD_TYPE=@CMAKE_BUILD_TYPE@", contents)
+            self.assertNotIn("-DCMAKE_BUILD_TYPE=Debug", contents)
+
+    def test_server_only_build_test_has_platform_timeout(self):
+        cmake_lists = (REPOSITORY / "tests/CMakeLists.txt").read_text(encoding="utf-8")
+        self.assertIn("set_tests_properties(MinecraftClone.ServerOnlyBuild PROPERTIES TIMEOUT 180)", cmake_lists)
+        self.assertIn("set_tests_properties(MinecraftClone.ServerOnlyBuild PROPERTIES TIMEOUT 120)", cmake_lists)
 
 
 if __name__ == "__main__":

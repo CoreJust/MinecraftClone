@@ -214,10 +214,18 @@ def fetch_private_dependencies(lock_file: Path, root: Path, key_files: dict[str,
     return sources
 
 
-def install_private_dependencies(root: Path, platform_name: str, cmake_arguments: Sequence[str]) -> Path:
+def install_private_dependencies(
+    root: Path,
+    platform_name: str,
+    cmake_arguments: Sequence[str],
+    preset: str = "release",
+) -> Path:
     """Build/install private CMake packages in dependency order and export their prefix."""
     if platform_name not in {"macos", "windows", "android"}:
         raise CiError(f"unsupported private dependency platform: {platform_name}")
+    if preset not in {"debug", "release"}:
+        raise CiError(f"unsupported private dependency preset: {preset}")
+    build_type = preset.capitalize()
     prefix = root / "install"
     installed_root = os.environ.get("VCPKG_INSTALLED_DIR")
     if not installed_root:
@@ -241,7 +249,7 @@ def install_private_dependencies(root: Path, platform_name: str, cmake_arguments
             package_arguments.append(f"-DCoreCpp_DIR={corecpp_config.parent}")
         configure = [
             "cmake", "-S", str(source), "-B", str(build), "-G", "Ninja",
-            "-DCMAKE_BUILD_TYPE=Release", f"-DCMAKE_INSTALL_PREFIX={normalize_cmake_path(prefix)}",
+            f"-DCMAKE_BUILD_TYPE={build_type}", f"-DCMAKE_INSTALL_PREFIX={normalize_cmake_path(prefix)}",
             f"-DCMAKE_PREFIX_PATH={normalize_cmake_path(prefix)}",
             f"-DVCPKG_INSTALLED_DIR={normalize_cmake_path(installed_root)}",
             *normalized_cmake_arguments,
@@ -670,6 +678,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     install_private_parser = commands.add_parser("install-private-dependencies")
     install_private_parser.add_argument("--root", type=Path, required=True)
     install_private_parser.add_argument("--platform", choices=("macos", "windows", "android"), required=True)
+    install_private_parser.add_argument("--preset", choices=("debug", "release"), default="release")
     install_private_parser.add_argument("--cmake-arg", action="append", default=[])
     artifact_exclusion_parser = commands.add_parser("verify-private-dependency-artifact-exclusion")
     artifact_exclusion_parser.add_argument("--artifact-root", type=Path, required=True)
@@ -702,7 +711,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 },
             )
         elif args.command == "install-private-dependencies":
-            install_private_dependencies(args.root, args.platform, args.cmake_arg)
+            install_private_dependencies(args.root, args.platform, args.cmake_arg, args.preset)
         elif args.command == "verify-private-dependency-artifact-exclusion":
             verify_private_dependency_artifact_exclusion(args.artifact_root, args.private_dependency_root)
         else:

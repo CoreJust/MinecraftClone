@@ -445,6 +445,8 @@ def finalize(
             child_id = str(child["id"])
             if child_id not in actual or child.get("status") != "done":
                 raise HistoryError(f"planned child {child_id} is missing or not done")
+            if child.get("finalized") is not True:
+                raise HistoryError(f"planned child {child_id} is not finalized")
         for child_id in actual:
             child = by_id[child_id]
             parent = task_parent(child)
@@ -461,6 +463,8 @@ def finalize(
         for child in children:
             if child.get("status") != "done":
                 raise HistoryError(f"child {child['id']} is not done")
+            if child.get("finalized") is not True:
+                raise HistoryError(f"child {child['id']} is not finalized")
         require_aggregate_coverage(tasks, task_id, linked_ids)
     require_finalization_fields(target, higher=level in {"minor", "major"})
     target["finalized"] = True

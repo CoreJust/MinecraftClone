@@ -75,6 +75,17 @@ ANDROID_REQUIRED_FILES = (
     "app/src/main/AndroidManifest.xml",
     "app/src/main/res/values/styles.xml",
 )
+REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
+HUD_LICENSE_SOURCES = (
+    (
+        "hud/DEBUG_HUD_ATTRIBUTION.md",
+        REPOSITORY_ROOT / "src/client/render/shaders/DEBUG_HUD_ATTRIBUTION.md",
+    ),
+    (
+        "hud/TAMSYN_LICENSE.txt",
+        REPOSITORY_ROOT / "src/client/render/shaders/TAMSYN_LICENSE.txt",
+    ),
+)
 
 
 class SnapshotBuildError(RuntimeError):
@@ -199,6 +210,7 @@ def prepare_licenses(
     vcpkg_root: Path,
     output: Path,
     include_vendor: bool,
+    hud_sources: Sequence[tuple[str, Path]] | None = None,
 ) -> Path:
     if output.exists() or output.is_symlink():
         raise SnapshotBuildError(f"license output already exists: {output}")
@@ -209,6 +221,13 @@ def prepare_licenses(
     dependency_root.mkdir()
     for port, source in vcpkg_copyrights(vcpkg_root).items():
         (dependency_root / f"{port}-copyright.txt").write_bytes(source.read_bytes())
+    for relative, source in hud_sources or HUD_LICENSE_SOURCES:
+        destination = output / relative
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        contents = require_file(source, "HUD attribution/license").read_bytes()
+        if not contents:
+            raise SnapshotBuildError(f"HUD attribution/license must not be empty: {source}")
+        destination.write_bytes(contents)
     if include_vendor:
         vendor_root = output / "vulkan"
         vendor_root.mkdir()

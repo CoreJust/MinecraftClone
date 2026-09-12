@@ -34,7 +34,10 @@ class PackageSnapshotTests(unittest.TestCase):
         self.dll = self.write("input/dependency.dll", b"dependency")
         self.shader_dir = self.root / "input/shaders"
         self.write("input/shaders/grid.vert.spv", b"shader")
-        self.license = self.write("input/LICENSE-dependency", b"license")
+        self.license = self.root / "input/licenses"
+        self.write("input/licenses/LICENSE-dependency", b"license")
+        self.write("input/licenses/hud/DEBUG_HUD_ATTRIBUTION.md", b"HUD attribution")
+        self.write("input/licenses/hud/TAMSYN_LICENSE.txt", b"Tamsyn license")
         self.evidence = self.write("input/toolchain.json", b'{"compiler":"fixture","vulkan":"1.3"}\n')
         self.common = [
             "--version", "0.1.0:3",
@@ -67,6 +70,11 @@ class PackageSnapshotTests(unittest.TestCase):
     def apk(self, relative, entries):
         target = self.root / relative
         target.parent.mkdir(parents=True, exist_ok=True)
+        entries = {
+            "assets/licenses/hud/DEBUG_HUD_ATTRIBUTION.md": b"HUD attribution",
+            "assets/licenses/hud/TAMSYN_LICENSE.txt": b"Tamsyn license",
+            **entries,
+        }
         with zipfile.ZipFile(target, "w") as archive:
             for name, contents in entries.items():
                 archive.writestr(name, contents)
@@ -102,11 +110,22 @@ class PackageSnapshotTests(unittest.TestCase):
         with zipfile.ZipFile(first) as archive:
             self.assertEqual(
                 archive.namelist(),
-                ["LAUNCH.txt", "dependency.dll", "licenses/LICENSE-dependency", "manifest.json", "mc_main.exe", "shaders/grid.vert.spv"],
+                [
+                    "LAUNCH.txt",
+                    "dependency.dll",
+                    "licenses/LICENSE-dependency",
+                    "licenses/hud/DEBUG_HUD_ATTRIBUTION.md",
+                    "licenses/hud/TAMSYN_LICENSE.txt",
+                    "manifest.json",
+                    "mc_main.exe",
+                    "shaders/grid.vert.spv",
+                ],
             )
             self.assertTrue(all(item.date_time == (1980, 1, 1, 0, 0, 0) for item in archive.infolist()))
             manifest = json.loads(archive.read("manifest.json"))
         self.assertEqual(manifest["runtime"], {"launcher": "mc_main.exe", "vulkan_driver": "external-required"})
+        self.assertTrue(manifest["hud_attribution_present"])
+        self.assertTrue(manifest["hud_font_license_present"])
         self.assertNotIn(str(self.root), json.dumps(manifest))
         self.assertTrue((self.root / "first.zip.manifest.json").is_file())
 
@@ -134,6 +153,24 @@ class PackageSnapshotTests(unittest.TestCase):
             module.validate_windows_archive_names([
                 module.ArchiveEntry("licenses/COM¹.txt", b"reserved", 0o644),
             ])
+
+    def test_desktop_rejects_missing_hud_license_material(self):
+        module = load_module()
+        generic_license = self.write("input/generic-license.txt", b"license")
+        arguments = self.windows_args(self.root / "missing-hud.zip")
+        license_index = arguments.index("--license") + 1
+        arguments[license_index] = str(generic_license)
+        result, _, stderr = self.call(module, arguments)
+        self.assertEqual(result, 1)
+        self.assertIn("required HUD attribution/license material is missing", stderr)
+
+    def test_desktop_rejects_empty_hud_license_material(self):
+        module = load_module()
+        (self.license / "hud/TAMSYN_LICENSE.txt").write_bytes(b"")
+        result, _, stderr = self.call(module, self.windows_args(self.root / "empty-hud.zip"))
+        self.assertEqual(result, 1)
+        self.assertIn("required HUD attribution/license material is empty", stderr)
+        self.assertFalse((self.root / "empty-hud.zip").exists())
 
     def test_rejects_symlinked_shader_directory(self):
         module = load_module()
@@ -219,11 +256,15 @@ class PackageSnapshotTests(unittest.TestCase):
             manifest = json.loads(archive.extractfile("manifest.json").read())
             packaged_icd = json.loads(archive.extractfile("vulkan/icd.d/MoltenVK_icd.json").read())
             self.assertIn("lib/libvulkan.1.dylib", archive.getnames())
+            self.assertIn("licenses/hud/TAMSYN_LICENSE.txt", archive.getnames())
+            self.assertIn("licenses/hud/DEBUG_HUD_ATTRIBUTION.md", archive.getnames())
         self.assertIn('bundle_root=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)', launcher)
         self.assertIn('VK_DRIVER_FILES="$bundle_root/vulkan/icd.d/MoltenVK_icd.json"', launcher)
         self.assertEqual(packaged_icd["ICD"]["library_path"], "../../lib/libMoltenVK.dylib")
         self.assertEqual(manifest["runtime"]["vulkan_loader"], "lib/libvulkan.1.dylib")
         self.assertEqual(manifest["runtime"]["moltenvk"], "lib/libMoltenVK.dylib")
+        self.assertTrue(manifest["hud_font_license_present"])
+        self.assertTrue(manifest["hud_attribution_present"])
 
     def test_macos_allows_universal_runtime_but_rejects_missing_executable_architecture(self):
         module = load_module()
@@ -491,6 +532,14 @@ class PackageSnapshotTests(unittest.TestCase):
         self.assertEqual(evidence["signing"], {"classification": "development", "identity": "not asserted"})
         self.assertEqual(evidence["source_exactness"], "exact")
         self.assertEqual(evidence["abis"], ["arm64-v8a"])
+        self.assertEqual(
+            [item["path"] for item in evidence["licenses"]],
+            [
+                "assets/licenses/hud/DEBUG_HUD_ATTRIBUTION.md",
+                "assets/licenses/hud/TAMSYN_LICENSE.txt",
+            ],
+        )
+        self.assertTrue(evidence["hud_font_license_present"])
         self.assertEqual(json.loads(stdout)["evidence_sha256"], hashlib.sha256(output.read_bytes()).hexdigest())
 
     def test_android_evidence_rejects_declared_abi_mismatch(self):
@@ -507,6 +556,23 @@ class PackageSnapshotTests(unittest.TestCase):
         result, _, stderr = self.call(module, arguments)
         self.assertEqual(result, 1)
         self.assertIn("native ABI set does not match", stderr)
+        self.assertFalse(output.exists())
+
+    def test_android_evidence_rejects_missing_hud_license_asset(self):
+        module = load_module()
+        apk = self.root / "android/missing-license.apk"
+        apk.parent.mkdir(parents=True)
+        with zipfile.ZipFile(apk, "w") as archive:
+            archive.writestr("lib/arm64-v8a/libmc_android.so", self.elf("arm64-v8a"))
+        output = self.root / "android-missing-license-evidence.json"
+        arguments = [
+            "android", "--apk", str(apk), "--api-level", "35", "--abi", "arm64-v8a",
+            "--signing", "development", "--source-exactness", "exact",
+            *self.common, "--output", str(output),
+        ]
+        result, _, stderr = self.call(module, arguments)
+        self.assertEqual(result, 1)
+        self.assertIn("missing required HUD attribution/license asset", stderr)
         self.assertFalse(output.exists())
 
     def test_android_evidence_rejects_directory_and_elf_architecture_mismatch(self):
@@ -573,6 +639,8 @@ class PackageSnapshotTests(unittest.TestCase):
         apk = self.root / "android/duplicate.apk"
         apk.parent.mkdir(parents=True)
         with zipfile.ZipFile(apk, "w") as archive:
+            archive.writestr("assets/licenses/hud/DEBUG_HUD_ATTRIBUTION.md", b"HUD attribution")
+            archive.writestr("assets/licenses/hud/TAMSYN_LICENSE.txt", b"Tamsyn license")
             archive.writestr("lib/arm64-v8a/libmc_android.so", self.elf("arm64-v8a"))
             archive.writestr("lib//arm64-v8a/libmc_android.so", self.elf("arm64-v8a"))
         output = self.root / "android-evidence.json"

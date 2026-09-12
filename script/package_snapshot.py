@@ -39,6 +39,14 @@ WINDOWS_RESERVED_NAMES = {
 }
 WINDOWS_INVALID_CHARACTERS = frozenset('<>:"\\|?*')
 ANDROID_NATIVE_LIBRARY = "libmc_android.so"
+HUD_LICENSE_PATHS = (
+    "licenses/hud/DEBUG_HUD_ATTRIBUTION.md",
+    "licenses/hud/TAMSYN_LICENSE.txt",
+)
+ANDROID_HUD_LICENSE_PATHS = (
+    "assets/licenses/hud/DEBUG_HUD_ATTRIBUTION.md",
+    "assets/licenses/hud/TAMSYN_LICENSE.txt",
+)
 ANDROID_ELF_ABIS = {
     (1, 3): "x86",
     (1, 40): "armeabi-v7a",
@@ -372,15 +380,33 @@ def desktop_entries(args: argparse.Namespace, evidence: dict[str, Any]) -> tuple
     for source in args.license:
         candidate = Path(source)
         if candidate.is_dir() and not candidate.is_symlink():
-            copied = files_in_tree(candidate, f"licenses/{candidate.name}", "license directory")
+            copied = files_in_tree(candidate, "licenses", "license directory")
             entries.extend(copied)
             license_names.extend(entry.name for entry in copied)
         else:
-            destination = f"licenses/{candidate.name}"
+            destination = (
+                f"licenses/hud/{candidate.name}"
+                if candidate.name in {PurePosixPath(path).name for path in HUD_LICENSE_PATHS}
+                else f"licenses/{candidate.name}"
+            )
             add_file(entries, candidate, destination, "license")
             license_names.append(destination)
     if not license_names:
         raise PackageError("at least one --license input is required")
+    missing_hud_licenses = sorted(set(HUD_LICENSE_PATHS) - set(license_names))
+    if missing_hud_licenses:
+        raise PackageError(
+            "required HUD attribution/license material is missing: "
+            + ", ".join(missing_hud_licenses)
+        )
+    empty_hud_licenses = sorted(
+        entry.name for entry in entries if entry.name in HUD_LICENSE_PATHS and not entry.bytes()
+    )
+    if empty_hud_licenses:
+        raise PackageError(
+            "required HUD attribution/license material is empty: "
+            + ", ".join(empty_hud_licenses)
+        )
 
     runtime = [require_regular_file(Path(item), "runtime dependency") for item in args.runtime]
     if args.platform == "windows":
@@ -438,6 +464,8 @@ def desktop_entries(args: argparse.Namespace, evidence: dict[str, Any]) -> tuple
         "toolchain_evidence": evidence,
         "runtime": runtime_config,
         "licenses": sorted(license_names),
+        "hud_attribution_present": HUD_LICENSE_PATHS[0] in license_names,
+        "hud_font_license_present": HUD_LICENSE_PATHS[1] in license_names,
         "files": [
             {"path": entry.name, "sha256": sha256_bytes(entry.bytes()), "bytes": len(entry.bytes())}
             for entry in sorted(entries, key=lambda item: item.name)
@@ -560,8 +588,17 @@ def write_android_evidence(args: argparse.Namespace) -> dict[str, Any]:
     if not args.abi or any(not re.fullmatch(r"[a-z0-9_-]+", value) for value in args.abi):
         raise PackageError("--abi requires one or more Android ABI names")
     declared_abis = set(args.abi)
+    licenses: list[dict[str, Any]] = []
     try:
         with zipfile.ZipFile(io.BytesIO(apk_data)) as archive:
+            for path in ANDROID_HUD_LICENSE_PATHS:
+                try:
+                    data = archive.read(path)
+                except KeyError as error:
+                    raise PackageError(f"APK is missing required HUD attribution/license asset: {path}") from error
+                if not data:
+                    raise PackageError(f"APK contains an empty HUD attribution/license asset: {path}")
+                licenses.append({"path": path, "sha256": sha256_bytes(data), "bytes": len(data)})
             native_libraries: dict[str, set[str]] = {}
             native_paths: set[str] = set()
             for entry in archive.infolist():
@@ -606,6 +643,9 @@ def write_android_evidence(args: argparse.Namespace) -> dict[str, Any]:
         "source_exactness": args.source_exactness,
         "api_level": args.api_level,
         "abis": sorted(declared_abis),
+        "licenses": licenses,
+        "hud_attribution_present": True,
+        "hud_font_license_present": True,
         "signing": {"classification": args.signing, "identity": "not asserted"},
         "toolchain_evidence": evidence,
         "preservation": "APK bytes are not copied, transformed, resigned, or uploaded by this command.",
