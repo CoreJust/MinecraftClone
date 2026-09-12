@@ -4683,5 +4683,41 @@
     "docs_review": "Rendering and golden-reference guides now define exact z planes, surface ownership, winding, shading, fade, manual inspection and final bundled-driver rerun requirements.",
     "environment_review": "No new library, asset or platform capability. GPU evidence used Apple M3 Pro and local MoltenVK 1.2.11; final package acceptance must rerun through its bundled driver.",
     "backlog_review": "This task closes the scene/depth portion of the user's preview feedback. Camera-relative continuous movement is MC-AI-0116 and the 2x HUD is MC-AI-0117; the parent snapshot remains unpublished pending corrected exact-package user preview."
+  },
+  {
+    "id": "MC-AI-0119",
+    "title": "Repin strict MSVC dependency packages",
+    "kind": "chore",
+    "status": "done",
+    "priority": "P0",
+    "route": "luna",
+    "milestone": "EarlyDev 0.1.0:4",
+    "depends_on": [
+      "MC-AI-0115"
+    ],
+    "acceptance": "Pin exact reviewed clean CoreCpp and CoreProject2026 MSVC-portability package revisions, validate the installed dependency closure, and preserve all gameplay source behavior.",
+    "evidence": "Configured and built mc_tests plus mc_main against clean installed CoreCpp bc9e4c9f7a2470d37376c0ad68198d7a127ab4af and CoreProject2026 12a5c9272156704e9e37486753001312cf00a6af packages with manifest installation disabled; CTest passed 222/222, including dependency provenance and server-only installed consumers.",
+    "blocker": "",
+    "owner": "codex",
+    "level": "basic",
+    "parent": "MC-AI-0035",
+    "motivation": "Hosted Windows strict builds fail in the pinned CoreCpp package before the game build.",
+    "context": "Advance only immutable dependency identities after CC-0024 and CP-0023; hosted MSVC remains the downstream proof.",
+    "complexity": "low",
+    "created_at": "2026-09-12",
+    "resolved_at": "2026-09-12",
+    "resolution_changes": "Pinned the exact reviewed CoreCpp and CoreProject2026 MSVC-portability package revisions.",
+    "plan": [],
+    "product_changes": [],
+    "code_changes": [
+      "Updated dependencies.lock.json to the exact CC-0024 and CP-0023 reviewed revisions."
+    ],
+    "baseline_commit": "f543e6929cab8142da7c04c115229a6ecc455525",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "No public product or API documentation changed; generated task and backlog views were refreshed.",
+    "environment_review": "Local package closure used clean revision-exact installs and an isolated pinned vcpkg toolchain/install tree with VCPKG_MANIFEST_INSTALL=OFF. Hosted MSVC remains the cross-platform confirmation after promotion.",
+    "backlog_review": "This mechanical dependency repin preserves gameplay source behavior and keeps MC-AI-0035 open for the final hosted artifact cycle and prepublication user preview."
   }
 ]
