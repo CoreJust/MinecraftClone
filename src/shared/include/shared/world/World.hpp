@@ -43,6 +43,10 @@ class World final {
 public:
     static constexpr uint8_t WIDTH = 32;
     static constexpr uint8_t HEIGHT = 32;
+    static constexpr uint8_t PLAYER_FOOTPRINT_CELLS = 2;
+    static constexpr uint8_t MAX_PLAYER_ORIGIN_CELL = WIDTH - PLAYER_FOOTPRINT_CELLS;
+    static constexpr uint32_t MAX_PLAYER_ORIGIN_SUBCELL = static_cast<uint32_t>(MAX_PLAYER_ORIGIN_CELL)
+        * SUBCELLS_PER_CELL;
 
     [[nodiscard]]
     bool playerExists(char const ch) const noexcept;

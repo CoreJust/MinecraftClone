@@ -23,18 +23,37 @@ void World::spawnPlayer(PlayerId const id, char const ch, std::optional<std::pai
     if (at) {
         x = at->first;
         y = at->second;
-    } else {
-        static std::default_random_engine generator{ std::random_device{}() };
-        std::uniform_int_distribution<uint16_t> x_distribution{ 0, WIDTH - 1 };
-        std::uniform_int_distribution<uint16_t> y_distribution{ 0, HEIGHT - 1 };
-        do {
-            x = static_cast<uint8_t>(x_distribution(generator));
-            y = static_cast<uint8_t>(y_distribution(generator));
-        } while (!canPlayerBeAt(
+        if (!canPlayerBeAt(
             static_cast<uint32_t>(x) * SUBCELLS_PER_CELL,
             static_cast<uint32_t>(y) * SUBCELLS_PER_CELL,
             id
-        ));
+        )) {
+            return;
+        }
+    } else {
+        static std::default_random_engine generator{ std::random_device{}() };
+        std::vector<std::pair<uint8_t, uint8_t>> spawn_locations;
+        spawn_locations.reserve(static_cast<uint32_t>(MAX_PLAYER_ORIGIN_CELL + 1U)
+            * static_cast<uint32_t>(MAX_PLAYER_ORIGIN_CELL + 1U));
+        for (uint8_t candidate_x{ 0 }; candidate_x <= MAX_PLAYER_ORIGIN_CELL; ++candidate_x) {
+            for (uint8_t candidate_y{ 0 }; candidate_y <= MAX_PLAYER_ORIGIN_CELL; ++candidate_y) {
+                if (canPlayerBeAt(
+                    static_cast<uint32_t>(candidate_x) * SUBCELLS_PER_CELL,
+                    static_cast<uint32_t>(candidate_y) * SUBCELLS_PER_CELL,
+                    id
+                )) {
+                    spawn_locations.emplace_back(candidate_x, candidate_y);
+                }
+            }
+        }
+        ASSERT(!spawn_locations.empty());
+        std::uniform_int_distribution<uint32_t> location_distribution{
+            0U,
+            static_cast<uint32_t>(spawn_locations.size() - 1U),
+        };
+        auto const& location = spawn_locations[location_distribution(generator)];
+        x = location.first;
+        y = location.second;
     }
 
     m_players.emplace_back(Player{
@@ -97,8 +116,8 @@ bool World::movePlayer(
     int const position_y = static_cast<int>(p->y) * SUBCELLS_PER_CELL + p->y_subcell + delta_y;
     int const target_x = position_x / SUBCELLS_PER_CELL;
     int const target_y = position_y / SUBCELLS_PER_CELL;
-    if (position_x < 0 || position_x >= static_cast<int>(WIDTH) * SUBCELLS_PER_CELL
-        || position_y < 0 || position_y >= static_cast<int>(HEIGHT) * SUBCELLS_PER_CELL) {
+    if (position_x < 0 || position_x > static_cast<int>(MAX_PLAYER_ORIGIN_SUBCELL)
+        || position_y < 0 || position_y > static_cast<int>(MAX_PLAYER_ORIGIN_SUBCELL)) {
         return false;
     }
     if (!canPlayerBeAt(static_cast<uint32_t>(position_x), static_cast<uint32_t>(position_y), id)) {
@@ -149,11 +168,10 @@ std::optional<Player> World::playerByCharacter(char const ch) const noexcept {
 }
 
 bool World::canPlayerBeAt(uint32_t const x, uint32_t const y, PlayerId const id) const {
-    if (x >= static_cast<uint32_t>(WIDTH) * SUBCELLS_PER_CELL
-        || y >= static_cast<uint32_t>(HEIGHT) * SUBCELLS_PER_CELL) {
+    if (x > MAX_PLAYER_ORIGIN_SUBCELL || y > MAX_PLAYER_ORIGIN_SUBCELL) {
         return false;
     }
-    constexpr uint32_t PLAYER_BOX_SIZE = 2U * SUBCELLS_PER_CELL;
+    constexpr uint32_t PLAYER_BOX_SIZE = PLAYER_FOOTPRINT_CELLS * SUBCELLS_PER_CELL;
     for (Player const& player : m_players) {
         if (player.id != id) {
             uint32_t const player_x = static_cast<uint32_t>(player.x) * SUBCELLS_PER_CELL + player.x_subcell;

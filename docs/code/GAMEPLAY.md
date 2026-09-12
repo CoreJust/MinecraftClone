@@ -25,7 +25,10 @@ server `PlayerId`s and instead track remote players by character.
 players with deterministic 10,000-subcell remainders. `World` owns player
 lookup, spawn, fixed-step movement, despawn, and replicated positions. A
 normal tick advances 0.4 cells at full direction magnitude; the
-remainder persists across ticks and diagonal vectors are normalized.
+remainder persists across ticks and diagonal vectors are normalized. Each
+authoritative player has a 2 by 2 footprint, so its origin is limited to cells
+0 through 30 inclusive (0 through 300,000 subcells) on both axes; its
+footprint may end at, but never exceed, the platform edge.
 
 A valid location is not within the 3 by 3 neighborhood of another player's
 cell, including diagonals. This is the collision invariant used for random

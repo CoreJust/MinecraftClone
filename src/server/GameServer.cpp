@@ -50,7 +50,8 @@ std::expected<std::vector<GameServer::SpawnPoint>, std::string> GameServer::vali
         if (!valid_character) {
             return std::unexpected("spawn point has an unsupported character");
         }
-        if (spawn_point.x >= shared::World::WIDTH || spawn_point.y >= shared::World::HEIGHT) {
+        if (spawn_point.x > shared::World::MAX_PLAYER_ORIGIN_CELL
+            || spawn_point.y > shared::World::MAX_PLAYER_ORIGIN_CELL) {
             return std::unexpected("spawn point is outside the world");
         }
     }

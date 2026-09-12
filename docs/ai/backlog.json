@@ -5456,5 +5456,41 @@
     "docs_review": "No gameplay guide change was required: the fixed 100 ms authoritative cadence and one-move-per-player rule are unchanged.",
     "environment_review": "Local macOS Debug build and real local ENet regression passed. No Android or interactive runtime evidence is claimed.",
     "backlog_review": "MC-AI-0142 is finalized as one basic child under MC-AI-0035. Scope is limited to bounded server event draining and its regression; no bounds, prediction, protocol, speed, sliding, or scenario changes occurred."
+  },
+  {
+    "id": "MC-AI-0143",
+    "title": "Keep every authoritative 2x2 player footprint on the platform",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P0",
+    "route": "luna",
+    "milestone": "ED-010-S4",
+    "depends_on": [],
+    "acceptance": "Every authoritative player origin remains within 0 through 30 cells inclusive (0 through 300000 subcells) on both axes, so its 2x2 footprint may end exactly at the 32-cell platform edge but never exceed it. Cardinal and diagonal movement accept reaching the final valid origin and reject a further normal-tick move without changing position. Random and explicit server spawns use the same range; explicit cell-30 spawns are valid, cell-31 spawns are rejected, and random spawning selects only valid origins with bounded completion.",
+    "evidence": "cmake --build --preset debug --target mc_tests and ctest --preset debug --output-on-failure --no-tests=error -R ^(WorldTest.|GameServerLifecycle.)$: 17/17 passed; python3 script/ai_check.py --fast: passed.",
+    "blocker": "",
+    "owner": "",
+    "level": "basic",
+    "parent": "MC-AI-0035",
+    "motivation": "A player origin in cell 31 places part of its authoritative 2x2 footprint outside the 32x32 platform.",
+    "context": "World movement and collision checks admit origins through cell 31, random spawning can choose that cell, and GameServer scenario-spawn validation follows the old whole-cell boundary. Presentation uses the already-authoritative position and must not compensate with render clamping or epsilon logic.",
+    "complexity": "medium",
+    "created_at": "2026-09-12",
+    "resolved_at": "2026-09-13",
+    "resolution_changes": "Bound World origins, movement, collision admission, random spawning, and scenario spawn validation to the authoritative 2x2 footprint; added deterministic edge and spawn-contract coverage.",
+    "plan": [
+      "Define the shared 2x2 footprint origin maximum as cell 30 / subcell 300000 and apply it to World movement and collision admission.",
+      "Generate random origins only within the valid range with a finite candidate selection, and validate explicit GameServer spawn points against the same range.",
+      "Cover each positive axis and diagonal at normal tick speed, the unchanged rejected edge move, explicit cell-30/cell-31 spawns, and bounded random spawning."
+    ],
+    "product_changes": [],
+    "code_changes": [],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "Updated docs/code/GAMEPLAY.md with the authoritative 2x2 footprint bound; refreshed generated source state.",
+    "environment_review": "macOS focused WorldTest and GameServerLifecycle coverage passed; no runtime launch was requested.",
+    "backlog_review": "Finalized MC-AI-0143 as an exact MC-AI-0035 child; no unrelated task records changed."
   }
 ]
