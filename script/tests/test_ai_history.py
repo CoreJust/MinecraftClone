@@ -101,10 +101,11 @@ class AiHistoryTest(unittest.TestCase):
                 evidence="passed" if first_status == "done" else "",
                 resolved_at="2026-09-09" if first_status == "done" else "",
                 resolution_changes="finished" if first_status == "done" else "",
+                finalized=first_status == "done",
             ),
             task(
                 "MC-AI-0002", "basic", "MC-AI-0101", status="done", evidence="passed",
-                resolved_at="2026-09-09", resolution_changes="finished",
+                resolved_at="2026-09-09", resolution_changes="finished", finalized=True,
             ),
         ]
 
@@ -185,7 +186,7 @@ class AiHistoryTest(unittest.TestCase):
             ),
             task(
                 "MC-AI-0003", "basic", "MC-AI-0102", status="done",
-                evidence="passed", resolved_at="2026-09-09", resolution_changes="finished",
+                evidence="passed", resolved_at="2026-09-09", resolution_changes="finished", finalized=True,
             ),
         ])
         self.commit("next task\n\nTask-ID: MC-AI-0003")
@@ -243,7 +244,7 @@ class AiHistoryTest(unittest.TestCase):
             ),
             task(
                 "MC-AI-0003", "basic", "MC-AI-0102", status="done",
-                evidence="passed", resolved_at="2026-09-09", resolution_changes="finished",
+                evidence="passed", resolved_at="2026-09-09", resolution_changes="finished", finalized=True,
             ),
         ])
         with self.assertRaisesRegex(ai_history.HistoryError, "no tagged immutable promotion"):
@@ -429,6 +430,28 @@ class AiHistoryTest(unittest.TestCase):
         self.commit("second task\n\nTask-ID: MC-AI-0002")
         with self.assertRaisesRegex(ai_history.HistoryError, "not done"):
             ai_history.finalize(self.repo, tasks, "MC-AI-0101", "HEAD")
+
+    def test_finalize_requires_finalized_planned_basic_tasks(self) -> None:
+        tasks = self.hierarchy()
+        tasks[3]["finalized"] = False
+        self.commit("first task\n\nTask-ID: MC-AI-0001")
+        self.commit("second task\n\nTask-ID: MC-AI-0002")
+        snapshot = tasks[2]
+        snapshot.update({
+            "status": "active",
+            "owner": "Codex",
+            "product_changes": ["None"],
+            "code_changes": ["None"],
+            "evidence": "checked",
+            "resolution_changes": "prepared",
+        })
+
+        with self.assertRaisesRegex(ai_history.HistoryError, "MC-AI-0001 is not finalized"):
+            ai_history.finalize(self.repo, tasks, "MC-AI-0101", "HEAD")
+
+        tasks[3]["finalized"] = True
+        ai_history.finalize(self.repo, tasks, "MC-AI-0101", "HEAD")
+        self.assertTrue(snapshot["finalized"])
 
     def test_finalize_assigns_unparented_completed_basic_tasks(self) -> None:
         tasks = self.hierarchy()

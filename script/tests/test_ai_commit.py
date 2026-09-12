@@ -340,7 +340,7 @@ class RealAiCommitIntegrationTests(unittest.TestCase):
         tasks = [
             real_task(
                 "MC-AI-0001", "basic", "MC-AI-0101", status="done", evidence="passed",
-                resolved_at="2026-09-09", resolution_changes="child complete",
+                resolved_at="2026-09-09", resolution_changes="child complete", finalized=True,
             ),
             real_task("MC-AI-0101", "snapshot", "MC-AI-0102"),
             real_task("MC-AI-0102", "minor", "MC-AI-0103"),
