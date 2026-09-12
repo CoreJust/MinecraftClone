@@ -5221,5 +5221,43 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0137",
+    "title": "Repair renderer capture-retention smoke contract",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P1",
+    "route": "luna",
+    "milestone": "EarlyDev 0.1.0:4",
+    "depends_on": [],
+    "acceptance": "RendererSmokeTest preserves and byte-compares one completed capture across recreate before any subsequent render; a separately rendered later HUD capture is checked for valid dimensions, content classes, and successful capture state without byte equality. No production, golden, or clock changes.",
+    "evidence": "Focused mc_renderer_smoke build passed. Elevated validation-enabled RendererSmokeTest.CompletedCaptureSurvivesRecreateAndReadsBack passed 1/1 with VK_DRIVER_FILES=/usr/local/share/vulkan/icd.d/MoltenVK_icd.json; with HUD disabled, the original capture and a second renderer-owned capture matched in width/height/sRGB/rgba8 across recreate, then a separately rendered resized HUD capture passed dimensions/content classes and HUD draw-count checks. The receipt is /private/tmp/mc-ai-0137-validation-smoke.log and contains no VUID or validation diagnostics. The sandboxed full fast gate passed 223/224 tests but its five-test RendererSmokeTest process timed out after macOS service access failed; the exact unrestricted validation-enabled five-test aggregate then passed 5/5 in 653 ms. Its receipt is /private/tmp/mc-ai-0137-validation-aggregate.log.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0035",
+    "motivation": "The renderer smoke test compares independently rendered HUD captures across time, so dynamic HUD text makes the retention assertion fail even when recreate preserves the completed capture.",
+    "context": "MC-AI-0136 validation smoke showed the existing line-246 rgba8 equality failure while the HUD-enabled active presentation case passed without Vulkan validation diagnostics. The test must prove preservation before another frame is rendered, then validate a later capture by content classes without comparing independent HUD frames.",
+    "complexity": "low",
+    "created_at": "2026-09-12",
+    "resolved_at": "2026-09-12",
+    "resolution_changes": "Reworked renderer smoke capture ownership so a HUD-off completed payload remains renderer-owned through recreate and is compared byte-for-byte before any new render; a subsequent resized HUD capture is validated independently by dimensions, content classes, and draw count. No production or golden files changed.",
+    "plan": [
+      "Move the recreate-retention assertion before any subsequent render.",
+      "Capture a later HUD frame separately and assert validity/content classes without comparing its bytes."
+    ],
+    "product_changes": [],
+    "code_changes": [
+      "Asserted HUD-off completed capture retention through recreate with exact width/height/sRGB/rgba8 equality.",
+      "Validated a subsequent resized dynamic HUD capture without comparing independently rendered bytes."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]
