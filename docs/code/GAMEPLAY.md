@@ -20,12 +20,14 @@ server `PlayerId`s and instead track remote players by character.
 
 ## Shared simulation
 
-[World.hpp](../../src/shared/include/shared/world/World.hpp) defines a flat
-32 by 32 board, the 100 ms `TICK`, byte-valued normalized `Direction`, and
-players with deterministic 10,000-subcell remainders. `World` owns player
-lookup, spawn, fixed-step movement, despawn, and replicated positions. A
-normal tick advances 0.4 cells at full direction magnitude; the
-remainder persists across ticks and diagonal vectors are normalized. Each
+[World.hpp](../../src/shared/include/shared/world/World.hpp) defines the 100 ms
+`TICK`, byte-valued normalized XYZ `Direction`, and players with deterministic
+10,000-subcell remainders. `World` owns player lookup, spawn, fixed-step
+movement, despawn, and replicated positions. Flat mode retains the 32 by 32
+board and its two-dimensional collision rules. Flight mode uses signed XYZ
+coordinates, a fixed clear-air spawn, bounds checks without gravity or player
+collisions, and normalized three-axis movement. A normal tick advances 0.56
+cells at full direction magnitude; the remainder persists across ticks. Each
 authoritative player has a 2 by 2 footprint, so its origin is limited to cells
 0 through 30 inclusive (0 through 300,000 subcells) on both axes; its
 footprint may end at, but never exceed, the platform edge.
@@ -54,19 +56,20 @@ camera-input count, and 100 ms server tick separately from presentation cadence.
 ## Wire protocol
 
 [Message.hpp](../../src/shared/include/shared/net/Message.hpp) exposes a
-`std::variant` with five messages:
+`std::variant` with five versioned, fixed-width little-endian messages:
 
 | Direction | Message | Payload |
 | --- | --- | --- |
-| client → server | `JoinRequest` | one selected character |
+| client → server | `JoinRequest` | character, world mode, and configuration identity |
 | server → client | `JoinResponse` | acceptance boolean |
-| client → server | `ClientInput` | two signed normalized direction bytes (`-127..127`) |
-| server → client | `ServerPlayerPosition` | character, cell, and two subcell remainders |
+| client → server | `ClientInput` | three signed normalized direction bytes (`-127..127`) |
+| server → client | `ServerPlayerPosition` | character, XYZ cell, and three subcell remainders |
 | server → client | `ServerRemovePlayer` | character |
 
-`Message.cpp` prepends a private tag. Decoding requires a known, complete,
-valid, non-trailing payload. Directions encode `-1` as `255`; this is a
-same-build native-layout protocol with no cross-version contract.
+`Message.cpp` prepends a magic byte, protocol version, and tag. Decoding
+requires a known, complete, valid, non-trailing payload and rejects old or
+mixed versions before any authority mutation. The join configuration identifies
+the selected seeded world and the server rejects mismatches before gameplay.
 
 ## Server authority
 
@@ -74,8 +77,9 @@ same-build native-layout protocol with no cross-version contract.
 localhost server on default port `20040` (constructor accepts another port);
 [GameServer.cpp](../../src/server/GameServer.cpp)
 drains pending events within each 100 ms tick, processes at most one queued
-input per player, and includes the acknowledged input sequence plus a monotonic
-state revision in each replicated position.
+input per player, rejects joins whose mode or configuration differs from its
+authoritative world, and includes the acknowledged input sequence plus a
+monotonic state revision in each replicated position.
 
 The server rejects duplicate/already-joined characters, privately accepts a
 success, broadcasts positions, ignores unjoined input, and allows one nonzero

@@ -133,7 +133,7 @@
         "vcpkg-configuration.json",
         "vcpkg.json"
       ],
-      "sources_sha256": "4b13eb9b70be905297968fd220f3292ad411d4fac1d4d8eb90159918fcdcebd8"
+      "sources_sha256": "1829fd8102acac93cc901350249fafcceda15c9d256627c753f72dba930abbd7"
     },
     {
       "guide": "docs/code/CORE.md",
@@ -172,7 +172,7 @@
     },
     {
       "guide": "docs/code/GAMEPLAY.md",
-      "guide_sha256": "be296bc36f0f7291945a989f2b84e0e96fd2afc79e962682717a4fc73cf0fd50",
+      "guide_sha256": "22f90d6f5e8005a1e6c36507af65d7b75b677c7c98753893030ec32d8f5d9c79",
       "id": "gameplay",
       "sources": [
         "src/client/BotClient.cpp",
@@ -213,13 +213,14 @@
         "tests/core/chunk_mesher_tests.cpp",
         "tests/core/chunk_tests.cpp",
         "tests/core/corelang_scenario_tests.cpp",
+        "tests/core/flight_world_tests.cpp",
         "tests/core/game_server_lifecycle_tests.cpp",
         "tests/core/game_server_tests.cpp",
         "tests/core/scenario_parser_tests.cpp",
         "tests/core/shared_message_tests.cpp",
         "tests/core/shared_world_tests.cpp"
       ],
-      "sources_sha256": "1f716887331c39fe17386862a11245e51f0d6e4ad28d72badd0baf28081e1552"
+      "sources_sha256": "8ea8934eabd61695350f1838a0cc61eda55907464e0840ee1d7702809f606a77"
     },
     {
       "guide": "docs/code/RENDERING.md",

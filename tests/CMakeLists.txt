@@ -101,6 +101,7 @@ add_executable(mc_tests
     core/chunk_tests.cpp
     core/chunk_mesher_tests.cpp
     core/shared_world_tests.cpp
+    core/flight_world_tests.cpp
     core/span_utils_tests.cpp
     core/static_initializer_tests.cpp
     core/tagged_bool_tests.cpp

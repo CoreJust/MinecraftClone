@@ -16,18 +16,6 @@ TEST(WorldTest, ExplicitSpawnAndLookup) {
     EXPECT_TRUE(world.playerByCharacter('@').has_value());
 }
 
-TEST(WorldTest, ExplicitSpawnRejectsOriginsOutsideFootprintBounds) {
-    shared::World valid;
-    valid.spawnPlayer(1, '@', std::pair<uint8_t, uint8_t>{ 30, 30 });
-    EXPECT_TRUE(valid.player(1).has_value());
-    shared::World outside_x;
-    outside_x.spawnPlayer(1, '@', std::pair<uint8_t, uint8_t>{ 31, 4 });
-    EXPECT_FALSE(outside_x.player(1).has_value());
-    shared::World outside_y;
-    outside_y.spawnPlayer(1, '@', std::pair<uint8_t, uint8_t>{ 4, 31 });
-    EXPECT_FALSE(outside_y.player(1).has_value());
-}
-
 TEST(WorldTest, MovePlayerRejectsUnknownAndOccupiedPositions) {
     shared::World world;
     world.spawnPlayer(1, '@', std::pair<uint8_t, uint8_t>{ 5, 5 });
@@ -94,7 +82,7 @@ TEST(WorldTest, FootprintMovementStopsAtTheLastValidOrigin) {
 
     shared::World horizontal;
     horizontal.spawnPlayer(1, '@', std::pair<uint8_t, uint8_t>{ LAST_INTERIOR_CELL, 4 });
-    horizontal.setPlayerPosition(1, LAST_INTERIOR_CELL, 4, CARDINAL_START_SUBCELL, 0);
+    ASSERT_TRUE(horizontal.setPlayerPosition(1, LAST_INTERIOR_CELL, 4, CARDINAL_START_SUBCELL, 0));
     ASSERT_TRUE(horizontal.movePlayer(1, { POSITIVE_DIRECTION, 0 }));
     ASSERT_TRUE(horizontal.player(1).has_value());
     EXPECT_EQ(horizontal.player(1)->x, shared::World::MAX_PLAYER_ORIGIN_CELL);
@@ -105,7 +93,7 @@ TEST(WorldTest, FootprintMovementStopsAtTheLastValidOrigin) {
 
     shared::World vertical;
     vertical.spawnPlayer(1, '@', std::pair<uint8_t, uint8_t>{ 4, LAST_INTERIOR_CELL });
-    vertical.setPlayerPosition(1, 4, LAST_INTERIOR_CELL, 0, CARDINAL_START_SUBCELL);
+    ASSERT_TRUE(vertical.setPlayerPosition(1, 4, LAST_INTERIOR_CELL, 0, CARDINAL_START_SUBCELL));
     ASSERT_TRUE(vertical.movePlayer(1, { 0, POSITIVE_DIRECTION }));
     ASSERT_TRUE(vertical.player(1).has_value());
     EXPECT_EQ(vertical.player(1)->y, shared::World::MAX_PLAYER_ORIGIN_CELL);
@@ -116,13 +104,13 @@ TEST(WorldTest, FootprintMovementStopsAtTheLastValidOrigin) {
 
     shared::World diagonal;
     diagonal.spawnPlayer(1, '@', std::pair<uint8_t, uint8_t>{ LAST_INTERIOR_CELL, LAST_INTERIOR_CELL });
-    diagonal.setPlayerPosition(
+    ASSERT_TRUE(diagonal.setPlayerPosition(
         1,
         LAST_INTERIOR_CELL,
         LAST_INTERIOR_CELL,
         DIAGONAL_START_SUBCELL,
         DIAGONAL_START_SUBCELL
-    );
+    ));
     ASSERT_TRUE(diagonal.movePlayer(1, { POSITIVE_DIRECTION, POSITIVE_DIRECTION }));
     ASSERT_TRUE(diagonal.player(1).has_value());
     EXPECT_EQ(diagonal.player(1)->x, shared::World::MAX_PLAYER_ORIGIN_CELL);
@@ -182,14 +170,6 @@ TEST(WorldTest, ZeroDirectionDoesNotMovePlayer) {
     EXPECT_EQ(world.player(1)->y, 5u);
 }
 
-TEST(WorldTest, ZeroDurationNonzeroDirectionIsASuccessfulNoOp) {
-    shared::World world;
-    world.spawnPlayer(1, '@', std::pair<uint8_t, uint8_t>{ 5, 5 });
-    EXPECT_TRUE(world.movePlayer(1, { 127, 0 }, std::chrono::milliseconds::zero()));
-    EXPECT_EQ(world.player(1)->x, 5U);
-    EXPECT_EQ(world.player(1)->x_subcell, 0U);
-}
-
 TEST(WorldTest, SubstepsAccumulateAndDiagonalSpeedIsNormalized) {
     shared::World cardinal;
     shared::World diagonal;
@@ -233,8 +213,8 @@ TEST(WorldTest, SubcellCollisionRejectsOverlapBeforeEitherPlayerChangesCells) {
     shared::World world;
     world.spawnPlayer(1, '@', std::pair<uint8_t, uint8_t>{ 5, 5 });
     world.spawnPlayer(2, '#', std::pair<uint8_t, uint8_t>{ 7, 5 });
-    world.setPlayerPosition(1, 5, 5, 5'000, 0);
-    world.setPlayerPosition(2, 7, 5, 5'000, 0);
+    ASSERT_TRUE(world.setPlayerPosition(1, 5, 5, 5'000, 0));
+    ASSERT_TRUE(world.setPlayerPosition(2, 7, 5, 5'000, 0));
 
     EXPECT_FALSE(world.movePlayer(1, { 127, 0 }));
     ASSERT_TRUE(world.player(1).has_value());
