@@ -117,3 +117,11 @@ probability 1/50 per input call.
 Message, world, server, transport, scenario, camera, and scheduler tests are
 registered in `mc_tests`. Full UI and cross-process runtime acceptance remain
 separate; see [renderer tests](RENDERING.md).
+
+## S5 chunk data
+
+`Chunk` stores 4096 Air/Stone IDs in a 16-cubed unit with signed chunk
+coordinates and checked local coordinates. Bulk construction rejects unsupported
+IDs; effective edits update revision and content hash. Coordinate-and-seed
+sampling is deterministic. The native seed-42 fixture is a test/reference
+implementation; scripted configuration and gameplay integration are separate tasks.

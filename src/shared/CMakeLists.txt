@@ -3,6 +3,7 @@ target_sources(mc
         net/Message.cpp
         scenario/CoreLangScenario.cpp
         scenario/Scenario.cpp
+        world/Chunk.cpp
         world/World.cpp
 )
 

@@ -6,5 +6,6 @@ target_sources(mc
             ProjectInfo.hpp
             net/Message.hpp
             scenario/Scenario.hpp
+            world/Chunk.hpp
             world/World.hpp
 )
