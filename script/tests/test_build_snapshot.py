@@ -299,14 +299,14 @@ class BuildSnapshotTests(unittest.TestCase):
             self.assertIn(
                 'set "MC_ACQUIRED_VCPKG_ROOT=%VCPKG_ROOT%"\n'
                 '          call "%ProgramFiles%\\Microsoft Visual Studio\\2022\\Enterprise\\Common7\\Tools\\VsDevCmd.bat" -arch=amd64\n'
-                "          if errorlevel 1 exit /b 1\n"
+                "          if errorlevel 1 exit /b %errorlevel%\n"
                 '          set "VCPKG_ROOT=%MC_ACQUIRED_VCPKG_ROOT%"',
                 windows_step,
             )
             metadata = windows_step.index("record-metadata --platform windows")
             self.assertEqual(
                 windows_step[metadata:].splitlines()[1].strip(),
-                "if errorlevel 1 exit /b 1",
+                "if errorlevel 1 exit /b %errorlevel%",
             )
 
     def test_windows_release_phase_stops_at_each_fallible_command(self):
@@ -323,21 +323,18 @@ class BuildSnapshotTests(unittest.TestCase):
             "type build\\release-tests-windows.log",
             "python script/ci/acquire.py validate-shaders --build-dir build\\release",
             "cmake --install build\\release --prefix build\\install",
-            "mkdir dist",
+            "if not exist dist mkdir dist",
             "python script/ci/build_snapshot.py package-desktop --platform windows",
             "python script/ci/build_snapshot.py write-evidence --platform windows",
             "python script/ci/build_snapshot.py write-checksum",
             "python script/ci/acquire.py verify-private-dependency-artifact-exclusion",
         )
-        failure_guard = "if errorlevel 1 exit /b 1"
+        failure_guard = "if errorlevel 1 exit /b %errorlevel%"
         lines = [line.strip() for line in windows_phase.splitlines()]
         command_indices = [next(index for index, line in enumerate(lines) if line.startswith(command)) for command in commands]
         for command, index in zip(commands, command_indices):
             if command.startswith("ctest "):
-                self.assertEqual(
-                    lines[index + 1],
-                    "if errorlevel 1 (type build\\release-tests-windows.log & exit /b 1)",
-                )
+                self.assertEqual(lines[index + 1], failure_guard)
             else:
                 self.assertEqual(lines[index + 1], failure_guard, command)
 

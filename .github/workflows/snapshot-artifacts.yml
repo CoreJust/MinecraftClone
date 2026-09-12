@@ -169,11 +169,9 @@ jobs:
       - name: Fetch exact private dependency commits (Windows)
         if: matrix.platform == 'windows'
         shell: cmd
-        run: >-
-          python script/ci/acquire.py fetch-private-dependencies
-          --root "%RUNNER_TEMP%\private-dependencies"
-          --corecpp-key "%MC_CI_CORECPP_DEPLOY_KEY_FILE%"
-          --coreproject2026-key "%MC_CI_COREPROJECT2026_DEPLOY_KEY_FILE%"
+        run: |
+          python script/ci/acquire.py fetch-private-dependencies --root "%RUNNER_TEMP%\private-dependencies" --corecpp-key "%MC_CI_CORECPP_DEPLOY_KEY_FILE%" --coreproject2026-key "%MC_CI_COREPROJECT2026_DEPLOY_KEY_FILE%"
+          if errorlevel 1 exit /b %errorlevel%
       - name: Configure vcpkg binary cache (macOS)
         if: matrix.platform == 'macos'
         shell: bash
@@ -186,6 +184,7 @@ jobs:
         shell: cmd
         run: |
           if not exist "%RUNNER_TEMP%\vcpkg-binary-cache" mkdir "%RUNNER_TEMP%\vcpkg-binary-cache"
+          if errorlevel 1 exit /b %errorlevel%
           echo VCPKG_DEFAULT_BINARY_CACHE=%RUNNER_TEMP%\vcpkg-binary-cache>>"%GITHUB_ENV%"
       - name: Install pinned CMake
         run: python -m pip install --disable-pip-version-check --no-cache-dir cmake==3.31.6 tzdata==2025.2
@@ -203,17 +202,18 @@ jobs:
       - name: Install pinned vcpkg manifest dependencies (Windows)
         if: matrix.platform == 'windows'
         shell: cmd
-        run: >-
-          python script/ci/acquire.py install-manifest-dependencies
-          --vcpkg-root "%RUNNER_TEMP%\vcpkg" --platform windows
-          --installed-root "%RUNNER_TEMP%\vcpkg-installed"
+        run: |
+          python script/ci/acquire.py install-manifest-dependencies --vcpkg-root "%RUNNER_TEMP%\vcpkg" --platform windows --installed-root "%RUNNER_TEMP%\vcpkg-installed"
+          if errorlevel 1 exit /b %errorlevel%
       - name: Acquire pinned Vulkan SDK (macOS)
         if: matrix.platform == 'macos'
         run: python script/ci/acquire.py install-vulkan --platform macos --root "$RUNNER_TEMP/vulkan-sdk"
       - name: Acquire pinned Vulkan SDK (Windows)
         if: matrix.platform == 'windows'
         shell: cmd
-        run: python script/ci/acquire.py install-vulkan --platform windows --root "%RUNNER_TEMP%\vulkan-sdk"
+        run: |
+          python script/ci/acquire.py install-vulkan --platform windows --root "%RUNNER_TEMP%\vulkan-sdk"
+          if errorlevel 1 exit /b %errorlevel%
       - name: Install pinned private dependencies (macOS)
         if: matrix.platform == 'macos'
         shell: bash
@@ -225,11 +225,13 @@ jobs:
       - name: Install pinned private dependencies (Windows)
         if: matrix.platform == 'windows'
         shell: cmd
-        run: >-
-          python script/ci/acquire.py install-private-dependencies
-          --root "%RUNNER_TEMP%\private-dependencies" --platform windows
-          --cmake-arg=-DCMAKE_TOOLCHAIN_FILE=%VCPKG_ROOT%\scripts\buildsystems\vcpkg.cmake
-          --cmake-arg=-DVCPKG_MANIFEST_INSTALL=OFF
+        run: |
+          set "MC_ACQUIRED_VCPKG_ROOT=%VCPKG_ROOT%"
+          call "%ProgramFiles%\Microsoft Visual Studio\2022\Enterprise\Common7\Tools\VsDevCmd.bat" -arch=amd64
+          if errorlevel 1 exit /b %errorlevel%
+          set "VCPKG_ROOT=%MC_ACQUIRED_VCPKG_ROOT%"
+          python script/ci/acquire.py install-private-dependencies --root "%RUNNER_TEMP%\private-dependencies" --platform windows "--cmake-arg=-DCMAKE_TOOLCHAIN_FILE=%VCPKG_ROOT%\scripts\buildsystems\vcpkg.cmake" --cmake-arg=-DVCPKG_MANIFEST_INSTALL=OFF
+          if errorlevel 1 exit /b %errorlevel%
       - name: Verify exact source
         shell: bash
         run: >-
@@ -278,36 +280,34 @@ jobs:
         run: |
           set "MC_ACQUIRED_VCPKG_ROOT=%VCPKG_ROOT%"
           call "%ProgramFiles%\Microsoft Visual Studio\2022\Enterprise\Common7\Tools\VsDevCmd.bat" -arch=amd64
-          if errorlevel 1 exit /b 1
+          if errorlevel 1 exit /b %errorlevel%
           set "VCPKG_ROOT=%MC_ACQUIRED_VCPKG_ROOT%"
           python script/ci/acquire.py verify-tools --platform windows
-          if errorlevel 1 exit /b 1
+          if errorlevel 1 exit /b %errorlevel%
           python script/ci/acquire.py record-metadata --platform windows --preset release --output build/toolchain-windows.json
-          if errorlevel 1 exit /b 1
-          cmake --preset release -DMC_ENABLE_RENDERER_SMOKE=OFF -DVCPKG_MANIFEST_INSTALL=OFF -DVCPKG_INSTALLED_DIR="%VCPKG_INSTALLED_DIR%" -DCMAKE_PREFIX_PATH="%MC_PRIVATE_DEPENDENCIES_PREFIX%" -DCoreCpp_DIR="%MC_PRIVATE_DEPENDENCIES_PREFIX%\lib\cmake\CoreCpp" -DCoreProject2026_DIR="%MC_PRIVATE_DEPENDENCIES_PREFIX%\lib\cmake\CoreProject2026"
-          if errorlevel 1 exit /b 1
+          if errorlevel 1 exit /b %errorlevel%
+          cmake --preset release -DMC_ENABLE_RENDERER_SMOKE=OFF -DVCPKG_MANIFEST_INSTALL=OFF -DVCPKG_INSTALLED_DIR="%VCPKG_INSTALLED_DIR%" -DCMAKE_PREFIX_PATH="%MC_PRIVATE_DEPENDENCIES_PREFIX%" -DCoreCpp_DIR="%MC_PRIVATE_DEPENDENCIES_PREFIX%/lib/cmake/CoreCpp" -DCoreProject2026_DIR="%MC_PRIVATE_DEPENDENCIES_PREFIX%/lib/cmake/CoreProject2026"
+          if errorlevel 1 exit /b %errorlevel%
           cmake --build --preset release
-          if errorlevel 1 exit /b 1
+          if errorlevel 1 exit /b %errorlevel%
           ctest --test-dir build\release --output-on-failure --no-tests=error --timeout 60 > build\release-tests-windows.log 2>&1
-          if errorlevel 1 (type build\release-tests-windows.log & exit /b 1)
+          if errorlevel 1 exit /b %errorlevel%
           type build\release-tests-windows.log
-          if errorlevel 1 exit /b 1
+          if errorlevel 1 exit /b %errorlevel%
           python script/ci/acquire.py validate-shaders --build-dir build\release
-          if errorlevel 1 exit /b 1
+          if errorlevel 1 exit /b %errorlevel%
           cmake --install build\release --prefix build\install
-          if errorlevel 1 exit /b 1
-          if not exist dist (
-            mkdir dist
-            if errorlevel 1 exit /b 1
-          )
+          if errorlevel 1 exit /b %errorlevel%
+          if not exist dist mkdir dist
+          if errorlevel 1 exit /b %errorlevel%
           python script/ci/build_snapshot.py package-desktop --platform windows --install-root build/install --vcpkg-installed "%VCPKG_INSTALLED_DIR%" --runtime-search "%VCPKG_INSTALLED_DIR%\x64-windows\bin" --runtime-search "%VCToolsRedistDir%\x64\Microsoft.VC143.CRT" --toolchain-evidence build/toolchain-windows.json --work-root build/package-windows --version "%SNAPSHOT_VERSION%" --source-commit "%SOURCE_COMMIT%" --output "dist/minecraftclone-%VERSION_SLUG%-windows-x86_64.zip"
-          if errorlevel 1 exit /b 1
+          if errorlevel 1 exit /b %errorlevel%
           python script/ci/build_snapshot.py write-evidence --platform windows --configuration release --automated-verification passed --version "%SNAPSHOT_VERSION%" --source-commit "%SOURCE_COMMIT%" --artifact "dist/minecraftclone-%VERSION_SLUG%-windows-x86_64.zip" --toolchain-evidence build/toolchain-windows.json --output "dist/minecraftclone-%VERSION_SLUG%-windows-x86_64-evidence.json"
-          if errorlevel 1 exit /b 1
+          if errorlevel 1 exit /b %errorlevel%
           python script/ci/build_snapshot.py write-checksum --artifact "dist/minecraftclone-%VERSION_SLUG%-windows-x86_64.zip" --output "dist/minecraftclone-%VERSION_SLUG%-windows-x86_64.zip.sha256"
-          if errorlevel 1 exit /b 1
+          if errorlevel 1 exit /b %errorlevel%
           python script/ci/acquire.py verify-private-dependency-artifact-exclusion --artifact-root dist --private-dependency-root "%RUNNER_TEMP%\private-dependencies"
-          if errorlevel 1 exit /b 1
+          if errorlevel 1 exit /b %errorlevel%
       - name: Upload desktop release candidate
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:

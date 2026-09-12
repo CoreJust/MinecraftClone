@@ -1,5 +1,13 @@
 include(GoogleTest)
 
+file(TO_CMAKE_PATH "${CMAKE_CURRENT_BINARY_DIR}" MC_TEST_BINARY_DIR)
+file(TO_CMAKE_PATH "${CMAKE_COMMAND}" MC_CMAKE_COMMAND)
+file(TO_CMAKE_PATH "${CMAKE_CTEST_COMMAND}" MC_CTEST_COMMAND)
+file(TO_CMAKE_PATH "${PROJECT_SOURCE_DIR}" MC_PROJECT_SOURCE_DIR)
+file(TO_CMAKE_PATH "${CMAKE_PREFIX_PATH}" MC_CMAKE_PREFIX_PATH)
+file(TO_CMAKE_PATH "${CoreCpp_DIR}" MC_CORECPP_DIR)
+file(TO_CMAKE_PATH "${CoreProject2026_DIR}" MC_COREPROJECT2026_DIR)
+
 add_library(mc_test_support STATIC
     testsupport/ImageComparison.cpp
     testsupport/include/testsupport/ImageComparison.hpp

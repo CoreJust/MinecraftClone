@@ -103,6 +103,30 @@ class CiError(RuntimeError):
     """A pinned dependency or required CI tool was unavailable or mismatched."""
 
 
+CMAKE_PATH_DEFINITIONS = frozenset(
+    {
+        "-DCMAKE_INSTALL_PREFIX",
+        "-DCMAKE_PREFIX_PATH",
+        "-DCMAKE_TOOLCHAIN_FILE",
+        "-DCoreCpp_DIR",
+        "-DVCPKG_INSTALLED_DIR",
+    }
+)
+
+
+def normalize_cmake_path(path_value: str | os.PathLike[str]) -> str:
+    """Render a native path safely in a CMake argument or generated script."""
+    return os.fspath(path_value).replace("\\", "/")
+
+
+def normalize_cmake_argument(argument: str) -> str:
+    """Normalize only known path-valued CMake definitions."""
+    name, separator, value = argument.partition("=")
+    if separator and name in CMAKE_PATH_DEFINITIONS:
+        return f"{name}={normalize_cmake_path(value)}"
+    return argument
+
+
 def require_private_dependency_lock(lock_file: Path) -> dict[str, dict[str, str]]:
     """Read the fixed private-dependency allowlist without accepting mutable refs."""
     if lock_file.is_symlink() or not lock_file.is_file():
@@ -200,6 +224,7 @@ def install_private_dependencies(root: Path, platform_name: str, cmake_arguments
         raise CiError("VCPKG_INSTALLED_DIR is missing")
     if any(argument.startswith("-DBUILD_TESTING=") for argument in cmake_arguments):
         raise CiError("private dependency package installs own BUILD_TESTING=OFF")
+    normalized_cmake_arguments = tuple(normalize_cmake_argument(argument) for argument in cmake_arguments)
     for name in PRIVATE_DEPENDENCIES:
         source = root / name
         if source.is_symlink() or not (source / "CMakeLists.txt").is_file():
@@ -216,9 +241,12 @@ def install_private_dependencies(root: Path, platform_name: str, cmake_arguments
             package_arguments.append(f"-DCoreCpp_DIR={corecpp_config.parent}")
         configure = [
             "cmake", "-S", str(source), "-B", str(build), "-G", "Ninja",
-            "-DCMAKE_BUILD_TYPE=Release", f"-DCMAKE_INSTALL_PREFIX={prefix}",
-            f"-DCMAKE_PREFIX_PATH={prefix}", f"-DVCPKG_INSTALLED_DIR={installed_root}",
-            *cmake_arguments, *package_arguments, "-DBUILD_TESTING=OFF",
+            "-DCMAKE_BUILD_TYPE=Release", f"-DCMAKE_INSTALL_PREFIX={normalize_cmake_path(prefix)}",
+            f"-DCMAKE_PREFIX_PATH={normalize_cmake_path(prefix)}",
+            f"-DVCPKG_INSTALLED_DIR={normalize_cmake_path(installed_root)}",
+            *normalized_cmake_arguments,
+            *[normalize_cmake_argument(argument) for argument in package_arguments],
+            "-DBUILD_TESTING=OFF",
         ]
         run(configure)
         run(["cmake", "--build", str(build), "--parallel"])

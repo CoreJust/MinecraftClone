@@ -50,7 +50,7 @@ Set `VULKAN_SDK` to the SDK platform directory if CMake cannot find it. The SDK'
 
 ## Hosted desktop CI
 
-The GitHub workflow builds and runs CTest for both Debug and Release on `macos-15` arm64 and `windows-2022`. It acquires pinned CMake, Python, vcpkg, hash-verified upstream Ninja archives, and a hash-verified Vulkan SDK, then records the revision and actual tool output in diagnostic artifacts. It validates mesh SPIR-V against Vulkan 1.3 and fallback stages against Vulkan 1.2. Hosted runners set `MC_ENABLE_RENDERER_SMOKE=OFF`: build, CTest, and shader validation are not GPU/runtime acceptance. The workflow uploads only logs and toolchain metadata; packaging and release artifacts have a separate acceptance path.
+GitHub CI builds and tests Debug and Release on `macos-15` arm64 and `windows-2022`. It acquires pinned CMake, Python, vcpkg, Ninja, and Vulkan SDK, records toolchain metadata, and validates mesh SPIR-V for Vulkan 1.3 plus fallback stages for 1.2. Windows enters VS 2022 x64 before private dependencies and checks setup, build, test, shader, packaging, checksum, and exclusion commands. Hosted runners set `MC_ENABLE_RENDERER_SMOKE=OFF`; these checks are not GPU/runtime acceptance. CI uploads logs and toolchain metadata; packaging and release artifacts use separate acceptance.
 
 The renderer requests Vulkan 1.2 and requires dynamic rendering and synchronization2 extensions/features; maintenance4 is not a renderer requirement. Mesh shaders target Vulkan 1.3. Use a Vulkan 1.3-capable validation baseline and exercise the vertex fallback. A lower requested API number does not establish support for every Vulkan 1.2 driver. Vulkan 1.4 remains a project aspiration.
 
