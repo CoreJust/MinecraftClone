@@ -31,7 +31,7 @@ TEST(WorldTest, BorderCellsAreValidAndCollisionChecksDoNotUnderflow) {
     world.spawnPlayer(1, '@', std::pair<uint8_t, uint8_t>{ 0, 0 });
     EXPECT_TRUE(world.movePlayer(1, { 127, 0 }));
     EXPECT_EQ(world.player(1)->x, 0u);
-    EXPECT_EQ(world.player(1)->x_subcell, 1'000u);
+    EXPECT_EQ(world.player(1)->x_subcell, shared::MOVEMENT_SUBCELLS_PER_TICK);
     EXPECT_TRUE(world.movePlayer(1, { static_cast<uint8_t>(-127), 0 }));
     EXPECT_EQ(world.player(1)->x, 0u);
     EXPECT_EQ(world.player(1)->x_subcell, 0u);
@@ -123,6 +123,17 @@ TEST(WorldTest, SubstepsAccumulateAndDiagonalSpeedIsNormalized) {
         * diagonal.player(1)->y_subcell;
     EXPECT_LE(diagonal_distance_squared, static_cast<uint32_t>(shared::MOVEMENT_SUBCELLS_PER_TICK)
         * shared::MOVEMENT_SUBCELLS_PER_TICK);
+}
+
+TEST(WorldTest, FullTickUsesTheRequestedFourThousandSubcellSpeed) {
+    shared::World world;
+    world.spawnPlayer(1U, '@', std::pair<uint8_t, uint8_t>{ 5U, 5U });
+
+    ASSERT_TRUE(world.movePlayer(1U, { 127U, 0U }));
+    ASSERT_TRUE(world.player(1U).has_value());
+    EXPECT_EQ(shared::MOVEMENT_SUBCELLS_PER_TICK, 4'000U);
+    EXPECT_EQ(world.player(1U)->x, 5U);
+    EXPECT_EQ(world.player(1U)->x_subcell, 4'000U);
 }
 
 TEST(WorldTest, SubcellCollisionRejectsOverlapBeforeEitherPlayerChangesCells) {

@@ -161,7 +161,12 @@ TEST_F(GameServerTest, MalformedPacketFromUnjoinedPeerDoesNotPreventJoinOrMoveme
     auto const positions = client.positions('@');
     EXPECT_EQ(positions.back().x, start.x == 0 ? start.x : start.x - 1);
     EXPECT_EQ(positions.back().y, start.y);
-    EXPECT_EQ(positions.back().x_subcell, start.x == 0 ? 1'000U : 9'000U);
+    EXPECT_EQ(
+        positions.back().x_subcell,
+        start.x == 0
+            ? shared::MOVEMENT_SUBCELLS_PER_TICK
+            : shared::SUBCELLS_PER_CELL - shared::MOVEMENT_SUBCELLS_PER_TICK
+    );
     EXPECT_EQ(positions.back().y_subcell, 0U);
 }
 
@@ -181,7 +186,12 @@ TEST_F(GameServerTest, IdleInputDoesNotConsumeTheSingleMovementInAPollingTick)
     ASSERT_EQ(positions.size(), 2u);
     EXPECT_EQ(positions.back().x, start.x == 0 ? start.x : start.x - 1);
     EXPECT_EQ(positions.back().y, start.y);
-    EXPECT_EQ(positions.back().x_subcell, start.x == 0 ? 1'000U : 9'000U);
+    EXPECT_EQ(
+        positions.back().x_subcell,
+        start.x == 0
+            ? shared::MOVEMENT_SUBCELLS_PER_TICK
+            : shared::SUBCELLS_PER_CELL - shared::MOVEMENT_SUBCELLS_PER_TICK
+    );
     EXPECT_EQ(positions.back().y_subcell, 0U);
 }
 

@@ -85,9 +85,10 @@ void AndroidPlayerClient::render()
             static_cast<double>(-look_vertical) * 0.15
         ));
     }
-    if (m_local_player.has_value()) {
+    std::chrono::steady_clock::time_point const now = std::chrono::steady_clock::now();
+    if (auto const local_position = m_player_presentation.sample(m_local_character, now)) {
         client::CameraPose const camera_pose = client::localPlayerThirdPersonPose(
-            *m_local_player,
+            *local_position,
             m_camera.pose().angles
         );
         static_cast<void>(m_camera.setPosition(camera_pose.position));
@@ -96,16 +97,18 @@ void AndroidPlayerClient::render()
     std::vector<client::PlayerRenderData> players;
     players.reserve(m_world.players().size());
     for (shared::Player const& player : m_world.players()) {
-        players.push_back({
-            .x = static_cast<float>(shared::playerPositionX(player)),
-            .y = static_cast<float>(shared::playerPositionY(player)),
-            .color = {
-                static_cast<float>(player.ch) / 256.0f,
-                1.0f - static_cast<float>(player.ch) / 256.0f,
-                1.0f,
-                1.0f,
-            },
-        });
+        if (auto const position = m_player_presentation.sample(player.ch, now)) {
+            players.push_back({
+                .x = static_cast<float>(position->x),
+                .y = static_cast<float>(position->y),
+                .color = {
+                    static_cast<float>(player.ch) / 256.0f,
+                    1.0f - static_cast<float>(player.ch) / 256.0f,
+                    1.0f,
+                    1.0f,
+                },
+            });
+        }
     }
     client::DebugHudInput const debug_hud_input = [&] {
         client::DebugHudInput input;
@@ -132,16 +135,6 @@ void AndroidPlayerClient::render()
     if (m_input.consumeReloadRequest()) {
         m_renderer->hotReload();
     }
-}
-
-void AndroidPlayerClient::onAuthoritativeLocalPlayerPosition(shared::Player const& player) noexcept
-{
-    m_local_player = player;
-    client::CameraPose const camera_pose = client::localPlayerThirdPersonPose(
-        player,
-        m_camera.pose().angles
-    );
-    static_cast<void>(m_camera.setPosition(camera_pose.position));
 }
 
 void AndroidPlayerClient::handleAppCommand(android_app* const app, int32_t const command)

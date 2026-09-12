@@ -44,7 +44,7 @@
         "src/android/CMakeLists.txt",
         "tests/android/input_state_tests.cpp"
       ],
-      "sources_sha256": "fdc4fd637a46e6380e3bec613caf183b36ecdc365f148f83f900c0cd1f87c630"
+      "sources_sha256": "964b54f3b0b6d5d33ade4d8f03e0186b1515d7afb4e91477412966380aaf64fa"
     },
     {
       "guide": "docs/BUILD.md",
@@ -172,7 +172,7 @@
     },
     {
       "guide": "docs/code/GAMEPLAY.md",
-      "guide_sha256": "cd167f4adbf9a2e8caea6eef897aae9e7cbf6b89c2dc21f3c50e2f682393df8b",
+      "guide_sha256": "0e9ec586fc0699182ccf1733be8525bab9c085529b1ba0b7db90b2aaa82af78a",
       "id": "gameplay",
       "sources": [
         "src/client/BotClient.cpp",
@@ -213,7 +213,7 @@
         "tests/core/shared_message_tests.cpp",
         "tests/core/shared_world_tests.cpp"
       ],
-      "sources_sha256": "af4f369397dacc26e34422c7a30d9fba3edb5144334f451cfd2b2e5f995530ae"
+      "sources_sha256": "7e94a070bf761165282b33efde25f9317d1891158b9e8e8b8e1f87b73190c71c"
     },
     {
       "guide": "docs/code/RENDERING.md",
@@ -258,7 +258,7 @@
         "tests/testsupport/image_comparison_tests.cpp",
         "tests/testsupport/include/testsupport/ImageComparison.hpp"
       ],
-      "sources_sha256": "7c7f5b0e37e1f187bc718853ffd79fc2ba17c6f49316f67d165a148265deeceb"
+      "sources_sha256": "ab1f9db50c29378ec51ad01e77fb5c86c22a9a2e9fbc13c0c068201e7e72e985"
     }
   ],
   "version": 1

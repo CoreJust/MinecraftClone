@@ -9,7 +9,7 @@ namespace shared {
 
 constexpr std::chrono::milliseconds TICK { 100 };
 constexpr uint16_t SUBCELLS_PER_CELL = 10'000;
-constexpr uint16_t MOVEMENT_SUBCELLS_PER_TICK = 1'000;
+constexpr uint16_t MOVEMENT_SUBCELLS_PER_TICK = 4'000;
 
 using PlayerId = uint32_t;
 

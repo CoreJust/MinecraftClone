@@ -24,7 +24,7 @@ server `PlayerId`s and instead track remote players by character.
 32 by 32 board, the 100 ms `TICK`, byte-valued normalized `Direction`, and
 players with deterministic 10,000-subcell remainders. `World` owns player
 lookup, spawn, fixed-step movement, despawn, and replicated positions. A
-normal tick advances one tenth of a cell at full direction magnitude; the
+normal tick advances 0.4 cells at full direction magnitude; the
 remainder persists across ticks and diagonal vectors are normalized.
 
 A valid location is not within the 3 by 3 neighborhood of another player's
@@ -86,17 +86,21 @@ accept/reject/disconnect, then repeatedly poll and render presentation frames.
 cadence and sleeps at most one millisecond between presentation attempts, which
 permits normal windowed refresh without busy spinning or catch-up input bursts.
 Position messages update a local `World`; unknown characters receive locally
-assigned ids. A local authoritative update centers the first-person eye at
-`(x+1, y+1, 1.6)` while retaining camera angles; only remote players become
-render records. A disconnect or rejected join stops the loop.
+assigned ids. `PlayerPresentation` retains one receive-time transition per
+character: the first update snaps, later updates interpolate from the current
+presented position to the newest authoritative position during one `TICK`, and
+gaps hold the latest position without extrapolation. The HUD, world, collision,
+and network state always remain authoritative. A disconnect or rejected join
+stops the loop.
 
 [PlayerClient.hpp](../../src/client/include/client/PlayerClient.hpp) and
 [PlayerClient.cpp](../../src/client/PlayerClient.cpp) provide the GLFW/Vulkan
 client. Normal gameplay enables the HUD by default. GLFW cursor movement controls local yaw/pitch; W/S and A/D become
 camera-relative normalized horizontal directions through the GLFW-independent controller.
-This never predicts or applies a local movement result. Each render converts
-authoritative subcell positions to colored 2 by 2 render records. R reloads the
-renderer on a press edge stored per client instance.
+This never predicts or applies a local movement result. Each render samples
+every received player presentation into colored 2 by 2 render records and
+centers the third-person camera from the sampled local presentation. R reloads
+the renderer on a press edge stored per client instance.
 
 `BotClient` renders nothing and changes a persistent random direction with
 probability 1/50 per input call. Neither client predicts movement.

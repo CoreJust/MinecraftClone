@@ -11,7 +11,6 @@
 
 #include <cstdint>
 #include <memory>
-#include <optional>
 
 namespace game_android {
 
@@ -22,7 +21,6 @@ public:
 private:
     shared::Direction input() override;
     void render() override;
-    void onAuthoritativeLocalPlayerPosition(shared::Player const& player) noexcept override;
 
     static void handleAppCommand(android_app* app, int32_t command);
     static int32_t handleInputEvent(android_app* app, AInputEvent* event);
@@ -43,7 +41,6 @@ private:
     client::Camera m_camera{
         { .position = { 16.0, -20.0, 22.0 }, .angles = { .pitch_degrees = -35.0 } },
     };
-    std::optional<shared::Player> m_local_player;
     std::unique_ptr<client::VulkanRenderer> m_renderer;
     float m_density_scale = 1.0F;
     bool m_resumed = false;

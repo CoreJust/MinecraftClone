@@ -3,6 +3,8 @@
 
 #include <gtest/gtest.h>
 
+#include <chrono>
+
 namespace {
 
 TEST(PlayerPresentationTest, LocalPlayerThirdPersonPoseOrbitsAroundPlayerCenter)
@@ -72,6 +74,110 @@ TEST(PlayerPresentationTest, CameraFollowsAuthoritativeSubcellPosition)
     client::CameraPose const pose = client::localPlayerThirdPersonPose(PLAYER, { });
     EXPECT_DOUBLE_EQ(pose.position.x, 13.5);
     EXPECT_DOUBLE_EQ(pose.position.y, 15.25);
+}
+
+TEST(PlayerPresentationTest, InitialAuthoritativePositionSnapsAndSubsequentPositionsInterpolate)
+{
+    static constexpr shared::Player INITIAL{ .id = 1U, .x = 0U, .y = 0U, .ch = '@' };
+    static constexpr shared::Player TARGET{
+        .id = 1U,
+        .x = 0U,
+        .y = 0U,
+        .x_subcell = 4'000U,
+        .ch = '@',
+    };
+    std::chrono::steady_clock::time_point const started_at{};
+    client::PlayerPresentation presentation;
+
+    presentation.update(INITIAL, started_at);
+    presentation.update(TARGET, started_at + std::chrono::milliseconds{ 100 });
+
+    ASSERT_TRUE(presentation.sample('@', started_at + std::chrono::milliseconds{ 125 }).has_value());
+    EXPECT_DOUBLE_EQ(presentation.sample('@', started_at + std::chrono::milliseconds{ 125 })->x, 0.1);
+    EXPECT_DOUBLE_EQ(presentation.sample('@', started_at + std::chrono::milliseconds{ 150 })->x, 0.2);
+    EXPECT_DOUBLE_EQ(presentation.sample('@', started_at + std::chrono::milliseconds{ 200 })->x, 0.4);
+}
+
+TEST(PlayerPresentationTest, RetargetStartsFromTheCurrentPresentationPositionAndHoldsEndpoint)
+{
+    static constexpr shared::Player INITIAL{ .id = 1U, .x = 0U, .y = 0U, .ch = '@' };
+    static constexpr shared::Player FIRST_TARGET{
+        .id = 1U,
+        .x = 0U,
+        .y = 0U,
+        .x_subcell = 4'000U,
+        .ch = '@',
+    };
+    static constexpr shared::Player SECOND_TARGET{
+        .id = 1U,
+        .x = 0U,
+        .y = 0U,
+        .x_subcell = 8'000U,
+        .ch = '@',
+    };
+    std::chrono::steady_clock::time_point const started_at{};
+    client::PlayerPresentation presentation;
+
+    presentation.update(INITIAL, started_at);
+    presentation.update(FIRST_TARGET, started_at + std::chrono::milliseconds{ 100 });
+    presentation.update(SECOND_TARGET, started_at + std::chrono::milliseconds{ 150 });
+
+    ASSERT_TRUE(presentation.sample('@', started_at + std::chrono::milliseconds{ 175 }).has_value());
+    EXPECT_DOUBLE_EQ(presentation.sample('@', started_at + std::chrono::milliseconds{ 175 })->x, 0.35);
+    EXPECT_DOUBLE_EQ(presentation.sample('@', started_at + std::chrono::seconds{ 1 })->x, 0.8);
+}
+
+TEST(PlayerPresentationTest, SampledLocalAndRemotePresentationLeavesWorldValuesAuthoritative)
+{
+    static constexpr shared::Player LOCAL_INITIAL{ .id = 1U, .x = 0U, .y = 0U, .ch = '@' };
+    static constexpr shared::Player LOCAL_AUTHORITATIVE{
+        .id = 1U,
+        .x = 0U,
+        .y = 0U,
+        .x_subcell = 4'000U,
+        .ch = '@',
+    };
+    static constexpr shared::Player REMOTE_INITIAL{ .id = 2U, .x = 10U, .y = 0U, .ch = '#' };
+    static constexpr shared::Player REMOTE_AUTHORITATIVE{
+        .id = 2U,
+        .x = 10U,
+        .y = 0U,
+        .x_subcell = 4'000U,
+        .ch = '#',
+    };
+    std::chrono::steady_clock::time_point const started_at{};
+    client::PlayerPresentation presentation;
+
+    presentation.update(LOCAL_INITIAL, started_at);
+    presentation.update(REMOTE_INITIAL, started_at);
+    presentation.update(LOCAL_AUTHORITATIVE, started_at + std::chrono::milliseconds{ 100 });
+    presentation.update(REMOTE_AUTHORITATIVE, started_at + std::chrono::milliseconds{ 100 });
+
+    ASSERT_TRUE(presentation.sample('@', started_at + std::chrono::milliseconds{ 125 }).has_value());
+    ASSERT_TRUE(presentation.sample('#', started_at + std::chrono::milliseconds{ 125 }).has_value());
+    EXPECT_DOUBLE_EQ(shared::playerPositionX(LOCAL_AUTHORITATIVE), 0.4);
+    EXPECT_DOUBLE_EQ(shared::playerPositionX(REMOTE_AUTHORITATIVE), 10.4);
+    EXPECT_DOUBLE_EQ(presentation.sample('@', started_at + std::chrono::milliseconds{ 125 })->x, 0.1);
+    EXPECT_DOUBLE_EQ(presentation.sample('#', started_at + std::chrono::milliseconds{ 125 })->x, 10.1);
+    EXPECT_DOUBLE_EQ(
+        client::localPlayerThirdPersonPose(
+            *presentation.sample('@', started_at + std::chrono::milliseconds{ 125 }),
+            { }
+        ).position.x,
+        1.1
+    );
+}
+
+TEST(PlayerPresentationTest, RemovalDropsTheCharacterPresentation)
+{
+    static constexpr shared::Player PLAYER{ .id = 1U, .x = 0U, .y = 0U, .ch = '@' };
+    std::chrono::steady_clock::time_point const started_at{};
+    client::PlayerPresentation presentation;
+
+    presentation.update(PLAYER, started_at);
+    presentation.remove('@');
+
+    EXPECT_FALSE(presentation.sample('@', started_at).has_value());
 }
 
 } // namespace

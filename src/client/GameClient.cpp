@@ -74,14 +74,13 @@ void GameClient::onReceived(core::ReceiveEvent event) {
             m_world.spawnPlayer(id, ch, {{x, y}});
             m_world.setPlayerPosition(id, x, y, x_subcell, y_subcell);
         }
-        if (ch == m_local_character) {
-            if (std::optional<shared::Player> const player = m_world.playerByCharacter(ch); player.has_value()) {
-                onAuthoritativeLocalPlayerPosition(*player);
-            }
+        if (std::optional<shared::Player> const player = m_world.playerByCharacter(ch); player.has_value()) {
+            m_player_presentation.update(*player, std::chrono::steady_clock::now());
         }
     } else if (auto* msg = std::get_if<shared::ServerRemovePlayerMessage>(msg_ptr)) {
         auto const [ch] = *msg;
         if (auto const p = m_world.playerByCharacter(ch)) {
+            m_player_presentation.remove(ch);
             m_world.despawnPlayer(p->id);
         }
     } else {

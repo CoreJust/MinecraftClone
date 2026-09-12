@@ -5377,5 +5377,46 @@
     "docs_review": "Reviewed the task, automation, and release workflow together so local preview changes ordering without weakening final platform, strict-check, signing, or publication evidence.",
     "environment_review": "Focused Python tests used the local repository harness and simulated fast, full, strict, and injected-failure paths. No platform build or runtime evidence is claimed by this policy task.",
     "backlog_review": "MC-AI-0148 is a bounded workflow child under MC-AI-0035. Gameplay fixes remain separately owned tasks and Snapshot 4 remains active pending macOS feedback plus later Windows and Android closure."
+  },
+  {
+    "id": "MC-AI-0140",
+    "title": "Smooth continuous networked movement and increase playable speed about fourfold",
+    "kind": "chore",
+    "status": "done",
+    "priority": "P2",
+    "route": "luna",
+    "milestone": "EarlyDev 0.1.0:4",
+    "depends_on": [],
+    "acceptance": "Keep fixed 100 ms server authority while every local and remote player presentation interpolates received positions without prediction, increase an authoritative full-direction tick to 4,000 subcells, retain camera-relative normalized input and authoritative HUD semantics, and cover the timing and endpoint contracts deterministically.",
+    "evidence": "Configured and built mc_tests with pinned local dependencies, then passed 25/25 focused PlayerPresentationTest, WorldTest, and GameServerTest cases; git diff --check passed. The fast source gate is recorded separately.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0035",
+    "motivation": "Smooth continuous networked movement and increase playable speed about fourfold",
+    "context": "World state is authoritative at 100 ms cadence and already retains exact subcells, but desktop and Android render directly from the latest replicated snapshot. The current snapshot selection is MC-AI-0035.",
+    "complexity": "medium",
+    "created_at": "2026-09-12",
+    "resolved_at": "2026-09-12",
+    "resolution_changes": "Added receive-time per-character presentation interpolation for desktop and Android rendering while preserving the authoritative World and HUD; raised the fixed full-direction movement step to 4,000 subcells and covered interpolation, retargeting, endpoint, removal, and speed contracts deterministically.",
+    "plan": [
+      "Represent each received character position as a receive-time presentation transition without changing World, protocol, collision, or input authority.",
+      "Sample that presentation at desktop and Android render cadence for every player record and the local third-person camera while leaving the HUD authoritative.",
+      "Increase the fixed full-direction movement step to 4,000 subcells and prove interpolation and endpoint behavior with deterministic tests."
+    ],
+    "product_changes": [
+      "Networked movement presents continuously between 100 ms authoritative updates at four cells per second."
+    ],
+    "code_changes": [
+      "Added receive-time per-character presentation interpolation for desktop and Android rendering while retaining authoritative World state and HUD values.",
+      "Raised fixed full-direction movement from 1,000 to 4,000 subcells per tick and added deterministic interpolation and collision-endpoint coverage."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "Reviewed docs/code/GAMEPLAY.md against the receive-time interpolation and authoritative-HUD contract; it now describes the 0.4-cell tick and presentation boundary.",
+    "environment_review": "Local macOS Debug configure/build completed with pinned dependencies. No Android device or interactive runtime evidence is claimed by this deterministic task slice.",
+    "backlog_review": "MC-AI-0140 is finalized as one basic child under MC-AI-0035. Scope excludes server draining, world bounds, prediction/protocol, 5,600-subcell speed, sliding, and scenarios."
   }
 ]

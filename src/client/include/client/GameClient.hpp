@@ -1,5 +1,7 @@
 #pragma once
 
+#include "PlayerPresentation.hpp"
+
 #include <shared/net/Message.hpp>
 #include <shared/world/World.hpp>
 #include <core/net/Client.hpp>
@@ -14,14 +16,13 @@ public:
 protected:
     virtual shared::Direction input() = 0;
     virtual void render() = 0;
-    virtual void onAuthoritativeLocalPlayerPosition(shared::Player const&) noexcept {}
-
     void send(shared::Message const message);
 private:
     void onDisconnected(core::DisconnectEvent const event) override;
     void onReceived(core::ReceiveEvent event) override;
 protected:
     shared::World m_world;
+    PlayerPresentation m_player_presentation;
     shared::PlayerId m_next_id = 0;
     char m_local_character = 0;
     bool m_running = true;

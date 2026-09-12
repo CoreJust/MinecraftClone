@@ -9,7 +9,6 @@
 
 #include <core/platform/glfw/GlfwWindow.hpp>
 
-#include <optional>
 #include <vector>
 
 namespace client {
@@ -31,7 +30,6 @@ public:
 private:
     shared::Direction input() override;
     void render() override;
-    void onAuthoritativeLocalPlayerPosition(shared::Player const& player) noexcept override;
 private:
     void beginContinuousLook() noexcept;
     Camera m_camera{
@@ -41,7 +39,6 @@ private:
     InstalledShaderAssets m_shader_assets;
     VulkanRenderer m_renderer;
     std::vector<PlayerRenderData> m_render_data;
-    std::optional<shared::Player> m_local_player;
     DebugHudToggleLatch m_debug_hud_toggle;
     double m_last_cursor_x = 0.0;
     double m_last_cursor_y = 0.0;
