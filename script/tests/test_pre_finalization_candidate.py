@@ -41,6 +41,10 @@ class PreFinalizationCandidateTests(unittest.TestCase):
             capture_output=True,
         )
         subprocess.run(["git", "init", "--quiet"], cwd=self.root, check=True)
+        # This fixture owns its temporary repository. Keep Git's background
+        # maintenance from racing TemporaryDirectory.cleanup after commits.
+        for key, value in (("gc.auto", "0"), ("maintenance.auto", "false")):
+            subprocess.run(["git", "config", key, value], cwd=self.root, check=True)
         subprocess.run(["git", "config", "user.email", "candidate@example.invalid"], cwd=self.root, check=True)
         subprocess.run(["git", "config", "user.name", "Candidate Validation"], cwd=self.root, check=True)
         for relative in ("publish.py", "script/infrastructure_checks.py"):
@@ -78,6 +82,16 @@ class PreFinalizationCandidateTests(unittest.TestCase):
 
     def tearDown(self) -> None:
         self.temporary.cleanup()
+
+    def test_owned_temp_repo_disables_background_git_maintenance(self) -> None:
+        config = subprocess.run(
+            ["git", "config", "--get-regexp", r"^(gc\.auto|maintenance\.auto)$"],
+            cwd=self.root,
+            check=True,
+            text=True,
+            capture_output=True,
+        ).stdout.splitlines()
+        self.assertEqual(config, ["gc.auto 0", "maintenance.auto false"])
 
     def run_publish(self, *extra: str) -> subprocess.CompletedProcess[str]:
         return subprocess.run(

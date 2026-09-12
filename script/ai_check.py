@@ -19,13 +19,14 @@ from typing import Sequence
 
 
 LOG_DIR = Path("build/ai-checks")
-RECEIPT_SCHEMA_VERSION = 1
+RECEIPT_SCHEMA_VERSION = 2
 SHARED_PYTHON_SOURCES = {
     "ai_check.py", "ai_commit.py", "ai_docs.py", "ai_history.py", "ai_plan.py",
     "ai_publish.py", "ai_run.py", "ai_setup.py", "ai_tasks.py",
 }
 PYTHON_TEST_TIMEOUT = 180 if os.name == "nt" else 120
 GOVERNED_PREFIXES = ("src/", "tests/", "docs/", "script/", ".githooks/", ".github/", ".codex/", ".agents/", "cmake/")
+PYTHON_WORKFLOW_PREFIXES = ("docs/ai/", "docs/code/", "script/", ".agents/", ".githooks/")
 GOVERNED_FILES = {
     ".gitattributes", ".gitignore", "AGENTS.md", "CLAUDE.md", "CMakeLists.txt", "CMakePresets.json", "README.md",
     "publish.py", "vcpkg.json", "vcpkg-configuration.json",
@@ -110,7 +111,18 @@ def repository_paths(root: Path) -> list[str]:
 def phase_relevant_paths(root: Path, name: str) -> list[str]:
     paths = repository_paths(root)
     if name == "python-tests":
-        return [path for path in paths if path.startswith("script/") and path.endswith(".py")]
+        # The full unittest suite is a repository-policy harness, not a unit
+        # test of only the Python modules. Tests may inspect source, docs,
+        # workflow, and project files, so use the conservative repository
+        # closure rather than guessing by extension.
+        tests_root = root / "script/tests"
+        if tests_root.is_dir():
+            paths.extend(
+                target.relative_to(root).as_posix()
+                for target in tests_root.rglob("test*.py")
+                if target.is_file()
+            )
+        return sorted(set(paths))
     if name in {"backlog", "current-plan"}:
         return [
             path for path in paths
@@ -120,18 +132,6 @@ def phase_relevant_paths(root: Path, name: str) -> list[str]:
     # Documentation validation reads the complete module map and source state;
     # diff checks also observe the complete index/worktree.
     return paths
-
-
-def _git_diff_bytes(root: Path, cached: bool, paths: Sequence[str]) -> bytes:
-    command = ["git", "diff", "--binary", "--no-ext-diff"]
-    if cached:
-        command.append("--cached")
-    command.append("--")
-    command.extend(paths)
-    completed = subprocess.run(command, cwd=root, capture_output=True, check=False)
-    if completed.returncode:
-        raise RuntimeError(completed.stderr.decode(errors="replace").strip() or "git diff")
-    return completed.stdout
 
 
 def relevant_inputs(root: Path, name: str) -> dict[str, object]:
@@ -147,8 +147,6 @@ def relevant_inputs(root: Path, name: str) -> dict[str, object]:
     payload = {
         "paths": paths,
         "files": files,
-        "index_diff": hashlib.sha256(_git_diff_bytes(root, True, paths)).hexdigest(),
-        "working_diff": hashlib.sha256(_git_diff_bytes(root, False, paths)).hexdigest(),
     }
     serialized = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
     payload["fingerprint"] = hashlib.sha256(serialized).hexdigest()
@@ -227,12 +225,20 @@ def read_matching_receipt(
         "returncode": 0,
         "timed_out": False,
     }
-    if receipt != expected or not log.is_file():
+    if not log.is_file():
         return None
     try:
-        return log.read_text(encoding="utf-8")
-    except OSError:
+        output = log.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
         return None
+    expected["evidence_sha256"] = evidence_fingerprint(output)
+    if receipt != expected:
+        return None
+    return output
+
+
+def evidence_fingerprint(output: str) -> str:
+    return hashlib.sha256(output.encode("utf-8")).hexdigest()
 
 
 def write_receipt(
@@ -244,6 +250,12 @@ def write_receipt(
     result: PhaseResult,
 ) -> None:
     if result.returncode != 0 or result.timed_out:
+        # A previous pass must not survive a failed rerun with otherwise
+        # equivalent inputs; the next invocation must execute again.
+        try:
+            receipt_path(log_dir, name).unlink(missing_ok=True)
+        except OSError:
+            pass
         return
     receipt = {
         "schema_version": RECEIPT_SCHEMA_VERSION,
@@ -255,6 +267,7 @@ def write_receipt(
         "relevant_inputs": inputs,
         "returncode": result.returncode,
         "timed_out": result.timed_out,
+        "evidence_sha256": evidence_fingerprint(result.output),
     }
     receipt_path(log_dir, name).write_text(
         json.dumps(receipt, indent=2, sort_keys=True) + "\n", encoding="utf-8"
@@ -323,6 +336,9 @@ def python_test_environment(root: Path) -> dict[str, str]:
     environment = os.environ.copy()
     for name in names:
         environment.pop(name, None)
+    # The selector belongs to the check caller. Letting it reach harness tests
+    # makes their subprocesses depend on which task invoked the check.
+    environment.pop("AI_TASK", None)
     return environment
 
 
@@ -340,15 +356,22 @@ def run_phase(
         environment = phase_environment(root, name)
         inputs = relevant_inputs(root, name)
     except (OSError, RuntimeError) as error:
+        # An old PASS must not survive an inability to fingerprint the phase:
+        # otherwise a later invocation could reuse evidence whose inputs were
+        # never successfully checked.
+        try:
+            receipt_path(log_dir, name).unlink(missing_ok=True)
+        except OSError:
+            pass
         result = PhaseResult(name, command, 127, str(error))
         result.duration_seconds = time.monotonic() - started
         (log_dir / f"{name}.log").write_text(result.output, encoding="utf-8")
         return result
-    # The full Python suite reads repository content outside script/**/*.py,
-    # so its receipt cannot be invalidated safely by the script-only input
-    # fingerprint. Always execute it during fast checks; other eligible
-    # phases retain receipt reuse.
-    if reuse and name not in {"build", "ctest", "python-tests"}:
+    # Build and CTest outputs have dependency closures too broad for this
+    # lightweight receipt. Tooling checks, including the full Python suite,
+    # are reusable when their exact command, environment, evidence, and
+    # content-based repository inputs still match.
+    if reuse and name not in {"build", "ctest"}:
         output = read_matching_receipt(root, log_dir, name, command, environment, inputs)
         if output is not None:
             return PhaseResult(
@@ -430,6 +453,11 @@ def changed_scope(root: Path) -> tuple[str, list[str]]:
                 return "full-python", sorted(paths)
             targets.append(candidate)
         return "targeted-python:" + ":".join(targets), sorted(paths)
+    if all(
+        path.startswith(PYTHON_WORKFLOW_PREFIXES) or path == "AGENTS.md"
+        for path in paths
+    ):
+        return "full-python", sorted(paths)
     if any(
         path.startswith(("src/", "tests/", "cmake/"))
         or path in {"CMakeLists.txt", "CMakePresets.json", "vcpkg.json", "vcpkg-configuration.json"}
@@ -580,8 +608,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         except (OSError, ValueError, TypeError, KeyError) as error:
             results.append(PhaseResult("check-registry", (), 1, str(error)))
     for name, command, timeout in phase_specs:
-        # Only fast development checks may reuse a receipt. Candidate,
-        # strict, and pre-push release checks always execute every phase.
+        # Only fast development checks may reuse a receipt. Candidate and
+        # strict release checks always execute every phase.
         if args.fast:
             results.append(run_phase(root, log_dir, name, command, timeout, reuse=True))
         else:
