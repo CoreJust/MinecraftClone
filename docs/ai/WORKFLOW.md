@@ -15,7 +15,7 @@ Every change belongs to a task created before work. [backlog.json](backlog.json)
 | Plan and acceptance | Intended scope, dependencies, observable completion criteria |
 | Resolution | Actual changes and verification evidence; do not backfill invented results |
 | Change lists | Product changes first, code changes second |
-| Commit relation | Exactly one `Task-ID` trailer per commit; derived hashes and GitHub links |
+| Commit relation | Exactly one task commit with one `Task-ID` trailer; derived hashes and GitHub links |
 
 Public task IDs are sequential numbers; file/trailer IDs retain the `MC-AI-####` namespace. The [project skills](SKILLS.md) resolve them deterministically. Basic tasks may be unassigned in the backlog; assign active implementation to the current snapshot. Hierarchy: **basic → snapshot → minor → major**. Parentage groups work; dependencies order it. Aggregates are created on request before implementation, initially with plans and unresolved resolution fields. Future stages remain plans, not completion claims.
 
@@ -23,12 +23,12 @@ Public task IDs are sequential numbers; file/trailer IDs retain the `MC-AI-####`
 
 1. Choose authorized work with `ai_tasks.py ready`; create missing tasks with `add`. Inspect status/diff, read the task and one relevant code guide. Record motivation/context before editing.
 2. Set owner and active status. Follow [model routing](MODELS.md); use Luna/high by default for well-specified work and delegate only independent owned paths. The coordinator owns full integration checks; workers run focused tests and do not start their own review pipelines.
-3. Implement the smallest accepted change, including meaningful tests. Record unrelated findings as tasks. Update affected guides, explicitly refresh documentation hashes, and generate task documents.
+3. Implement the smallest accepted change, including meaningful tests. Run focused tests, formatters, and source-policy checks before final staging. Record unrelated findings as tasks. Update affected guides, explicitly refresh documentation hashes, and generate task documents.
 4. Resolve the task only with actual resolution date, changes, and acceptance evidence. Stage only its changes; metadata updates required for its parent/traceability belong to the same task.
-5. Run minimal checks and one **Luna/high review before every commit**, including documentation and merge commits. [Commit gates](COMMITS.md) bind the review to the exact staged tree; reuse that receipt for the unchanged candidate and do not add a duplicate precommit wrapper. Fix findings and renew the receipt if staging changes.
-6. Commit with exactly one trailer: `Task-ID: MC-AI-####`. One task may have several commits. The post-commit hook refreshes local task pages with exact commit backlinks.
+5. Run one bounded **Luna/high review batch** for the exact staged task candidate. [Commit gates](COMMITS.md) bind the review to the exact staged tree; reuse that receipt only when inputs are unchanged and do not add a duplicate precommit wrapper. Fix genuine findings before commit; send only a changed delta to the same reviewer, and defer non-blocking cosmetic suggestions.
+6. Commit exactly once with exactly one trailer: `Task-ID: MC-AI-####`. A later change requires a new task; do not silently rewrite published history. The post-commit hook refreshes local task pages with exact commit backlinks.
 
-A routine local report still runs `ai_check.py`; the minimal commit gate is `--fast`. Run reusable dependency/environment checks once per candidate, fail before expensive work when they fail, and reuse passing evidence while inputs are unchanged. Do not add repeated broad reviews or duplicate precommit checks between successful focused checks.
+A routine local report still runs `ai_check.py`; the commit hook owns the development gate. Development `ai-dev` pushes use changed-scope fast validation, while `ai-main` and `ai/*` tags use full strict checks. Run reusable dependency/environment checks once per candidate, fail before expensive work when they fail, and reuse passing evidence only while inputs are unchanged. Do not add repeated broad reviews or duplicate precommit checks between successful focused checks.
 
 ## Snapshots and versions
 

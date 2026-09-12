@@ -12,14 +12,14 @@ The task must exist in the staged backlog. Stage only that task's work and requi
 
 ## Review once, bind it to the candidate
 
-1. Stage the final task change, including regenerated guides/task documents.
-2. Run `python3 script/ai_check.py --fast --require-index-match`.
-3. Run `python3 script/ai_commit.py candidate MC-AI-0031`. Give its immutable `head`, `tree`, task/level/baseline/merge-head fields and the staged diff to a fresh **Luna/high** reviewer. Read the actual staged contents, not unstaged files.
-4. The reviewer returns an approved JSON report containing the candidate fields plus `model: gpt-5.6-luna`, `effort: high`, `verdict: approved`, and a concise nonempty `evidence` receipt. Run `ai_commit.py record-review <report.json>`.
+1. Before final staging, run focused tests, formatters, and source-policy checks. Resolve correctness failures while the working tree is still easy to inspect.
+2. Stage the final task change, including regenerated guides/task documents.
+3. Run `python3 script/ai_commit.py candidate MC-AI-0031`. Give its immutable `head`, `tree`, task/level/baseline/merge-head fields and the staged diff to one fresh **Luna/high** reviewer. Read the actual staged contents, not unstaged files.
+4. The reviewer returns an approved JSON report containing the candidate fields plus `model: gpt-5.6-luna`, `effort: high`, `verdict: approved`, and a concise nonempty `evidence` receipt. Run `ai_commit.py record-review <report.json>`. Keep the batch bounded to genuine correctness findings; if a correction changes the candidate, send only that delta to the same reviewer and renew the receipt. Defer non-blocking cosmetic suggestions.
 5. At the final aggregate gate—not during routine minor development, CI candidates, or snapshot delivery—also record the accumulated-change report required by the [review and verification policy](../../AGENTS.md#review-and-verification-policy). For a minor, this is after the requested user-feedback hold and immediately before publication; for a major, follow its aggregate gate. Use `model: gpt-5.6-terra`; all candidate identity fields must match.
-6. Commit with the trailer. Hooks validate the review receipts, run the appropriate checks, and reject a missing/mismatched task, stale candidate, or failed gate.
+6. Commit with the trailer. The commit hook owns the development gate; do not run a duplicate precommit wrapper. Hooks validate the review receipts, run the appropriate checks, and reject a missing/mismatched task, stale candidate, or failed gate.
 
-Receipts are local attestations of a real review, not cryptographic proof of who reviewed. Never fabricate one. The receipt is the single reusable review result for an unchanged candidate; do not run a duplicate precommit wrapper or claim unmeasured model usage. Hooks make no paid model calls and do not loop on failed reviews. A changed HEAD, pending merge parent, index tree, task, or baseline invalidates the receipt. Review scope for Luna is the commit; Terra's version review covers the accumulated version changes.
+Receipts are local attestations of a real review, not cryptographic proof of who reviewed. Never fabricate one. The receipt is the single reusable review result for an unchanged candidate; receipt reuse is valid only when the checker confirms its inputs are unchanged. Hooks make no paid model calls and do not loop on failed reviews. A changed HEAD, pending merge parent, index tree, task, or baseline invalidates the receipt. Review scope for Luna is the task commit; Terra's version review covers the accumulated version changes. Each task produces one commit; later work belongs to a new task, and published history is never silently rewritten.
 
 ## Bidirectional links without recursive commits
 

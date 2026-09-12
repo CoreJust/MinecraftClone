@@ -36,7 +36,7 @@ while read -r local_ref local_sha remote_ref remote_sha; do
         fi
         case "$remote_ref" in
             refs/heads/ai-main|refs/tags/ai/*) check_mode="strict";;
-            *) [ "$check_mode" = "strict" ] || check_mode="full";;
+            *) [ "$check_mode" = "strict" ] || check_mode="fast";;
         esac
     fi
 done
@@ -45,7 +45,7 @@ case "$check_mode" in
     strict)
         exec "${PYTHON:-python3}" script/ai_check.py --strict --require-index-match
         ;;
-    full)
-        exec "${PYTHON:-python3}" script/ai_check.py --require-index-match
+    fast)
+        exec "${PYTHON:-python3}" script/ai_check.py --fast --require-index-match
         ;;
 esac

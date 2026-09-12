@@ -312,6 +312,26 @@ class AiHistoryTest(unittest.TestCase):
         with self.assertRaisesRegex(ai_history.HistoryError, "belongs to both"):
             ai_history.trailer_commits(self.repo, tasks)
 
+    def test_collect_ignores_unknown_trailer_on_unrelated_branch(self) -> None:
+        tasks = self.hierarchy()
+        self.commit("known task\n\nTask-ID: MC-AI-0001")
+        self.git_run("git", "checkout", "-q", "-b", "unrelated", self.baseline)
+        self.commit("unrelated\n\nTask-ID: MC-AI-9999")
+        self.git_run("git", "checkout", "-q", "master")
+
+        self.assertEqual(
+            ai_history.collect_snapshot(self.repo, tasks, "MC-AI-0101", "HEAD"),
+            ["MC-AI-0001"],
+        )
+
+    def test_collect_rejects_unknown_trailer_reachable_from_candidate(self) -> None:
+        tasks = self.hierarchy()
+        self.commit("known task\n\nTask-ID: MC-AI-0001")
+        self.commit("unknown\n\nTask-ID: MC-AI-9999")
+
+        with self.assertRaisesRegex(ai_history.HistoryError, "unknown Task-ID"):
+            ai_history.collect_snapshot(self.repo, tasks, "MC-AI-0101", "HEAD")
+
     def test_collect_rejects_unrelated_baseline(self) -> None:
         tasks = self.hierarchy()
         self.git_run("git", "checkout", "-q", "--orphan", "unrelated")
