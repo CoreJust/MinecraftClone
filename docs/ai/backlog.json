@@ -5664,5 +5664,39 @@
     "docs_review": "Generated source state refreshed.",
     "environment_review": "macOS incremental build and focused presentation/prediction tests passed.",
     "backlog_review": "Finalized MC-AI-0149 as one MC-AI-0035 child."
+  },
+  {
+    "id": "MC-AI-0180",
+    "title": "Restore deterministic presentation sampling tests",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P0",
+    "route": "luna",
+    "milestone": "EarlyDev 0.1.0:4",
+    "depends_on": [],
+    "acceptance": "Player presentation test source byte-matches the approved aggregate and focused presentation/prediction coverage passes.",
+    "evidence": "Incremental mc_main and mc_tests build plus GameClientPredictionTest and PlayerPresentationTest: 15/15 passed.",
+    "blocker": "",
+    "owner": "",
+    "level": "basic",
+    "parent": "MC-AI-0035",
+    "motivation": "The approved presentation sampling tests were omitted from MC-AI-0149 reconstruction.",
+    "context": "Restore the frozen approved test file without production changes.",
+    "complexity": "low",
+    "created_at": "2026-09-13",
+    "resolved_at": "2026-09-13",
+    "resolution_changes": "Restored tests/client/player_presentation_tests.cpp byte-for-byte from the approved aggregate.",
+    "plan": [
+      "Restore the approved deterministic presentation test file and generated metadata."
+    ],
+    "product_changes": [],
+    "code_changes": [],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "Generated source state refreshed.",
+    "environment_review": "macOS incremental build and focused tests passed.",
+    "backlog_review": "Finalized MC-AI-0180 as a narrow MC-AI-0035 child."
   }
 ]

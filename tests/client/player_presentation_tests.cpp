@@ -78,7 +78,12 @@ TEST(PlayerPresentationTest, CameraFollowsAuthoritativeSubcellPosition)
 
 TEST(PlayerPresentationTest, InitialAuthoritativePositionSnapsAndSubsequentPositionsInterpolate)
 {
-    static constexpr shared::Player INITIAL{ .id = 1U, .x = 0U, .y = 0U, .ch = '@' };
+    static constexpr shared::Player INITIAL{
+        .id = 1U,
+        .x = 0U,
+        .y = 0U,
+        .ch = '@',
+    };
     static constexpr shared::Player TARGET{
         .id = 1U,
         .x = 0U,
@@ -90,17 +95,60 @@ TEST(PlayerPresentationTest, InitialAuthoritativePositionSnapsAndSubsequentPosit
     client::PlayerPresentation presentation;
 
     presentation.update(INITIAL, started_at);
-    presentation.update(TARGET, started_at + std::chrono::milliseconds{ 100 });
+    ASSERT_TRUE(presentation.sample('@', started_at).has_value());
+    EXPECT_DOUBLE_EQ(presentation.sample('@', started_at)->x, 0.0);
 
-    ASSERT_TRUE(presentation.sample('@', started_at + std::chrono::milliseconds{ 125 }).has_value());
+    presentation.update(TARGET, started_at + std::chrono::milliseconds{ 100 });
+    EXPECT_DOUBLE_EQ(shared::playerPositionX(TARGET), 0.4);
     EXPECT_DOUBLE_EQ(presentation.sample('@', started_at + std::chrono::milliseconds{ 125 })->x, 0.1);
     EXPECT_DOUBLE_EQ(presentation.sample('@', started_at + std::chrono::milliseconds{ 150 })->x, 0.2);
+    EXPECT_DOUBLE_EQ(presentation.sample('@', started_at + std::chrono::milliseconds{ 175 })->x, 0.3);
     EXPECT_DOUBLE_EQ(presentation.sample('@', started_at + std::chrono::milliseconds{ 200 })->x, 0.4);
 }
 
-TEST(PlayerPresentationTest, RetargetStartsFromTheCurrentPresentationPositionAndHoldsEndpoint)
+TEST(PlayerPresentationTest, SamplingDoesNotDependOnPriorRenderFrames)
 {
-    static constexpr shared::Player INITIAL{ .id = 1U, .x = 0U, .y = 0U, .ch = '@' };
+    static constexpr shared::Player INITIAL{
+        .id = 1U,
+        .x = 0U,
+        .y = 0U,
+        .ch = '@',
+    };
+    static constexpr shared::Player TARGET{
+        .id = 1U,
+        .x = 0U,
+        .y = 0U,
+        .x_subcell = 4'000U,
+        .ch = '@',
+    };
+    std::chrono::steady_clock::time_point const started_at{};
+    client::PlayerPresentation sampled_each_frame;
+    client::PlayerPresentation sampled_once;
+
+    sampled_each_frame.update(INITIAL, started_at);
+    sampled_once.update(INITIAL, started_at);
+    sampled_each_frame.update(TARGET, started_at + std::chrono::milliseconds{ 100 });
+    sampled_once.update(TARGET, started_at + std::chrono::milliseconds{ 100 });
+    static_cast<void>(sampled_each_frame.sample('@', started_at + std::chrono::milliseconds{ 125 }));
+    static_cast<void>(sampled_each_frame.sample('@', started_at + std::chrono::milliseconds{ 150 }));
+    static_cast<void>(sampled_each_frame.sample('@', started_at + std::chrono::milliseconds{ 175 }));
+
+    ASSERT_TRUE(sampled_each_frame.sample('@', started_at + std::chrono::milliseconds{ 175 }).has_value());
+    ASSERT_TRUE(sampled_once.sample('@', started_at + std::chrono::milliseconds{ 175 }).has_value());
+    EXPECT_DOUBLE_EQ(
+        sampled_each_frame.sample('@', started_at + std::chrono::milliseconds{ 175 })->x,
+        sampled_once.sample('@', started_at + std::chrono::milliseconds{ 175 })->x
+    );
+}
+
+TEST(PlayerPresentationTest, RetargetStartsFromTheCurrentPresentationPosition)
+{
+    static constexpr shared::Player INITIAL{
+        .id = 1U,
+        .x = 0U,
+        .y = 0U,
+        .ch = '@',
+    };
     static constexpr shared::Player FIRST_TARGET{
         .id = 1U,
         .x = 0U,
@@ -122,14 +170,61 @@ TEST(PlayerPresentationTest, RetargetStartsFromTheCurrentPresentationPositionAnd
     presentation.update(FIRST_TARGET, started_at + std::chrono::milliseconds{ 100 });
     presentation.update(SECOND_TARGET, started_at + std::chrono::milliseconds{ 150 });
 
-    ASSERT_TRUE(presentation.sample('@', started_at + std::chrono::milliseconds{ 175 }).has_value());
+    EXPECT_DOUBLE_EQ(presentation.sample('@', started_at + std::chrono::milliseconds{ 150 })->x, 0.2);
     EXPECT_DOUBLE_EQ(presentation.sample('@', started_at + std::chrono::milliseconds{ 175 })->x, 0.35);
-    EXPECT_DOUBLE_EQ(presentation.sample('@', started_at + std::chrono::seconds{ 1 })->x, 0.8);
+    EXPECT_DOUBLE_EQ(presentation.sample('@', started_at + std::chrono::milliseconds{ 250 })->x, 0.8);
 }
 
-TEST(PlayerPresentationTest, SampledLocalAndRemotePresentationLeavesWorldValuesAuthoritative)
+TEST(PlayerPresentationTest, PresentationHoldsLastAuthoritativePositionUntilTheNextUpdate)
 {
-    static constexpr shared::Player LOCAL_INITIAL{ .id = 1U, .x = 0U, .y = 0U, .ch = '@' };
+    static constexpr shared::Player INITIAL{
+        .id = 1U,
+        .x = 0U,
+        .y = 0U,
+        .ch = '@',
+    };
+    static constexpr shared::Player TARGET{
+        .id = 1U,
+        .x = 0U,
+        .y = 0U,
+        .x_subcell = 4'000U,
+        .ch = '@',
+    };
+    std::chrono::steady_clock::time_point const started_at{};
+    client::PlayerPresentation presentation;
+
+    presentation.update(INITIAL, started_at);
+    presentation.update(TARGET, started_at + std::chrono::milliseconds{ 100 });
+
+    ASSERT_TRUE(presentation.sample('@', started_at + std::chrono::seconds{ 1 }).has_value());
+    EXPECT_DOUBLE_EQ(presentation.sample('@', started_at + std::chrono::seconds{ 1 })->x, 0.4);
+}
+
+TEST(PlayerPresentationTest, RemovalDropsTheCharacterPresentation)
+{
+    static constexpr shared::Player PLAYER{
+        .id = 1U,
+        .x = 0U,
+        .y = 0U,
+        .ch = '@',
+    };
+    std::chrono::steady_clock::time_point const started_at{};
+    client::PlayerPresentation presentation;
+
+    presentation.update(PLAYER, started_at);
+    presentation.remove('@');
+
+    EXPECT_FALSE(presentation.sample('@', started_at).has_value());
+}
+
+TEST(PlayerPresentationTest, SampledPresentationDrivesCameraAndRemotePlayersWhileWorldStaysAuthoritative)
+{
+    static constexpr shared::Player LOCAL_INITIAL{
+        .id = 1U,
+        .x = 0U,
+        .y = 0U,
+        .ch = '@',
+    };
     static constexpr shared::Player LOCAL_AUTHORITATIVE{
         .id = 1U,
         .x = 0U,
@@ -137,7 +232,12 @@ TEST(PlayerPresentationTest, SampledLocalAndRemotePresentationLeavesWorldValuesA
         .x_subcell = 4'000U,
         .ch = '@',
     };
-    static constexpr shared::Player REMOTE_INITIAL{ .id = 2U, .x = 10U, .y = 0U, .ch = '#' };
+    static constexpr shared::Player REMOTE_INITIAL{
+        .id = 2U,
+        .x = 10U,
+        .y = 0U,
+        .ch = '#',
+    };
     static constexpr shared::Player REMOTE_AUTHORITATIVE{
         .id = 2U,
         .x = 10U,
@@ -166,18 +266,6 @@ TEST(PlayerPresentationTest, SampledLocalAndRemotePresentationLeavesWorldValuesA
         ).position.x,
         1.1
     );
-}
-
-TEST(PlayerPresentationTest, RemovalDropsTheCharacterPresentation)
-{
-    static constexpr shared::Player PLAYER{ .id = 1U, .x = 0U, .y = 0U, .ch = '@' };
-    std::chrono::steady_clock::time_point const started_at{};
-    client::PlayerPresentation presentation;
-
-    presentation.update(PLAYER, started_at);
-    presentation.remove('@');
-
-    EXPECT_FALSE(presentation.sample('@', started_at).has_value());
 }
 
 } // namespace
