@@ -126,8 +126,14 @@ if(MC_BUILD_CLIENT AND NOT ANDROID)
             client/debug_hud_tests.cpp
             client/frame_scheduler_tests.cpp
             client/player_presentation_tests.cpp
+            client/renderer_geometry_tests.cpp
             client/shader_assets_tests.cpp
             core/corelang_scenario_tests.cpp
+    )
+    target_compile_definitions(
+        mc_tests
+        PRIVATE
+            MC_SHADER_SOURCE_DIR="${PROJECT_SOURCE_DIR}/src/client/render/shaders"
     )
     target_include_directories(mc_tests PRIVATE ${PROJECT_SOURCE_DIR}/src/android)
     mc_copy_target_shaders(mc_tests mc)
@@ -173,7 +179,7 @@ if(MC_BUILD_CLIENT AND NOT ANDROID AND MC_ENABLE_RENDERER_SMOKE)
     set_target_properties(mc_renderer_smoke PROPERTIES
         RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/renderer-smoke"
     )
-    target_link_libraries(mc_renderer_smoke PRIVATE mc GTest::gtest)
+    target_link_libraries(mc_renderer_smoke PRIVATE mc mc_test_support GTest::gtest)
     mc_apply_target_defaults(mc_renderer_smoke)
     mc_copy_target_shaders(mc_renderer_smoke mc)
     add_test(NAME RendererSmokeTest COMMAND mc_renderer_smoke)
@@ -220,7 +226,7 @@ if(MC_ENABLE_RENDERER_GOLDEN)
         PRIVATE
             MC_RENDERER_GOLDEN_DIAGNOSTIC_DIRECTORY="$<TARGET_FILE_DIR:mc_renderer_golden>/diagnostics"
             MC_RENDERER_GOLDEN_FAIL_UNSUPPORTED=${mc_renderer_golden_fail_unsupported}
-            MC_RENDERER_GOLDEN_REFERENCE="${CMAKE_CURRENT_SOURCE_DIR}/client/goldens/earlydev-0.1.0-snapshot-4-third-person-platform-v3.ppm"
+            MC_RENDERER_GOLDEN_REFERENCE="${CMAKE_CURRENT_SOURCE_DIR}/client/goldens/earlydev-0.1.0-snapshot-4-third-person-platform-v4.ppm"
     )
     target_link_libraries(mc_renderer_golden PRIVATE mc mc_test_support GTest::gtest)
     mc_apply_target_defaults(mc_renderer_golden)

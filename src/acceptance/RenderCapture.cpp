@@ -68,7 +68,10 @@ std::expected<RuntimeEvidence, std::string> captureRendererFrame(
     }
     client::InstalledShaderAssets const shader_assets;
     client::VulkanRenderer renderer{
-        client::VulkanRenderer::createPresentationContext(window),
+        client::VulkanRenderer::createPresentationContext(
+            window,
+            { .enable_frame_capture = true }
+        ),
         shader_assets,
         {
             .enable_frame_capture = true,

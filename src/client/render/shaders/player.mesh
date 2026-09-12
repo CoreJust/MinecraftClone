@@ -21,9 +21,9 @@ const vec3 kCubeVertices[8] = vec3[](
 );
 
 const uvec3 kCubeTriangles[12] = uvec3[](
-    uvec3(0,1,2), uvec3(0,2,3), uvec3(4,5,6), uvec3(4,7,5),
-    uvec3(0,6,1), uvec3(0,4,6), uvec3(3,5,7), uvec3(3,2,5),
-    uvec3(0,7,4), uvec3(0,3,7), uvec3(1,5,2), uvec3(1,6,5)
+    uvec3(0,2,1), uvec3(0,3,2), uvec3(4,6,5), uvec3(4,5,7),
+    uvec3(0,1,6), uvec3(0,6,4), uvec3(3,7,5), uvec3(3,5,2),
+    uvec3(0,4,7), uvec3(0,7,3), uvec3(1,2,5), uvec3(1,5,6)
 );
 
 void main() {

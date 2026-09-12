@@ -20,10 +20,15 @@ World players -> PlayerClient / AndroidPlayerClient -> PlayerRenderData span
   -> VulkanRenderer -> PresentationContext::Frame callback -> present/readback
 ```
 
-Renderer clears to a sky-like blue, draws a depth-tested 32-by-32 platform
-volume with approximately one unit of side thickness, then the ground grid
-and coloured 2-by-2-by-2 player boxes. The platform top is just below `z=0`,
-so the grid remains visibly upright above its solid sides. Each authoritative
+Renderer clears to a light sky blue, draws a depth-tested 32-by-32 slate
+platform volume from `z=-1.0` through `z=0.0` (an exact one-unit visible
+thickness), then its subdued grid top and coloured 2-by-2-by-2 player boxes.
+The platform draw omits its coplanar top triangles; a single non-overlapping
+grid-material draw owns the complete `z=0` surface, fills every cell with slate,
+and fades its thin borders toward the surface colour with distance. This keeps
+strict `LESS` depth comparison without an epsilon or coplanar overlay. Player
+faces use restrained per-face shading so the silhouette remains readable
+against the platform and sky. Each authoritative
 local-player update targets the player center `(x+1, y+1, 1)` and places a
 close third-person camera six units behind and above it using the current
 yaw/pitch; cursor and touch orbit recompute that position every frame. Both
@@ -93,12 +98,13 @@ RuntimeGraphics components; emulator presentation remains separate runtime
 acceptance.
 
 `renderer_golden_tests.cpp` captures the fixed 640-by-480
-EarlyDev 0.1.0 snapshot 4 scene without GLFW, a surface, or a swapchain.
+EarlyDev 0.1.0 snapshot 4 scene without GLFW, a surface, or a swapchain. Its
+oblique regression exercises yaw `37.2` and pitch `-35`, plus the opposite yaw.
 `VulkanOffscreenTarget` owns its linear color target, submission, and readback;
 Client owns depth and invokes the same scene recorder and pipelines as
-presentation. Strict approval enables validation and checks the version 3
-reference plus independent depth/scene predicates. Diagnostics are bounded and
-a reference changes only after deliberate native-size review.
+presentation. Strict approval enables validation and checks the active
+versioned reference plus independent depth/scene predicates. Diagnostics are
+bounded and a reference changes only after deliberate native-size review.
 
 `RendererSmokeTest` separately covers visible GLFW presentation, recreation,
 readback, input, and the default-on HUD.

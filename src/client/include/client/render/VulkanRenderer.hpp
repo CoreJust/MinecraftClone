@@ -150,6 +150,7 @@ public:
         std::span<PlayerRenderData const> players,
         std::chrono::steady_clock::time_point deadline = std::chrono::steady_clock::time_point::max()
     );
+    void setCamera(CameraPose pose) noexcept;
     [[nodiscard]] bool validationEnabled() const noexcept;
     [[nodiscard]] uint32_t validationErrorCount() const noexcept;
 private:

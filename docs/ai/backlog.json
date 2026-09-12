@@ -4640,5 +4640,48 @@
     "docs_review": "Rendering guide updated to the exact glyph dimensions, row spacing, labels, and one-draw constraints.",
     "environment_review": "No new runtime dependency, font atlas, texture, allocation path, or platform capability.",
     "backlog_review": "This is the HUD-only preview correction; movement is MC-AI-0116 and scene/depth polish is MC-AI-0118."
+  },
+  {
+    "id": "MC-AI-0118",
+    "title": "Correct player-cube winding and refine platform scene presentation",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P0",
+    "route": "luna",
+    "milestone": "EarlyDev:Initiation 0.1.0:4",
+    "depends_on": [],
+    "acceptance": "Normal desktop and Android gameplay render outward-wound player cubes with BACK culling, CCW front faces, strict LESS depth comparison, and no platform/grid pixels leaking through visible player faces at the reported oblique camera angle or its opposite. Player feet and the platform top share the exact z=0 contact plane; the platform extends to z=-1 with visible sides, while deterministic draw ordering preserves a subdued thin grid without depth epsilon or LEQUAL. The active vertex path shades cube faces for a readable silhouette against a lighter sky and restrained slate platform. Both player shader variants have an outward-normal invariant. A fixed-size true-offscreen Client render with no GLFW/surface/swapchain proves depth ordering and continuous player scanlines, and a real normal-play frame is manually inspected before updating a versioned golden.",
+    "evidence": "Focused geometry, image-evidence and Vulkan 1.2/1.3 SPIR-V tests passed 15/15. The validation-enabled true-offscreen RendererGoldenTest passed all three cases: exact version 4 pixels, independent near-over-far depth ordering, and continuous player scanlines at yaw 37.2/pitch -35 plus the opposite oblique view. The real close-third-person GLFW smoke passed with the default-on 2x HUD and both separated players; its manually inspected frame is /private/tmp/mc-ai-0118-close-third-person-hud-v3.png. The saved original-bug-angle frame /private/tmp/mc-ai-0118-oblique-yaw37.png visibly has solid shaded faces and exact platform contact with no platform/grid hole. The deliberately inspected 640x480 overview became version 4 golden SHA256 a663b9a6410608804425d3f9b846306212e160f80b0ee130530ebda54c504b40. Production capture-render completed in 93 ms at 1920x1080 with validation enabled and content_verified=true; image/evidence SHA256 are 1250b02c0c00ff075e9c29e9ce9e1d8a2af738026ffeb32198e792f24abf2dde and 26dbdc5817c2c3f4157d0a17a807a7b2a78ec1a081a9fe91f52e7d30ab16685c. Exact packaged normal-play preview remains the parent Snapshot 4 gate.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0035",
+    "motivation": "Correct player-cube winding and refine platform scene presentation",
+    "context": "The pre-publication Android preview showed a large platform-colored hole through the player at yaw 37.2 degrees and pitch -35 degrees. Diagnosis proved every player-cube triangle was wound inward against the fixed BACK/CCW raster state; the near shell was culled and the platform/grid became visible through it. User feedback also requested a cohesive slate platform with visible thickness, a subdued thin grid, a lighter sky, and readable player-face shading.",
+    "complexity": "medium",
+    "created_at": "2026-09-12",
+    "resolved_at": "2026-09-12",
+    "resolution_changes": "Reversed all player triangles to outward winding, made the grid material the sole owner of the exact platform top plane, added distance-faded non-overlapping slate/grid coverage and player face shading, and strengthened real offscreen/presentation evidence at the reported oblique angle.",
+    "plan": [
+      "Reverse every player-cube triangle in the active vertex shader and mesh parity variant while preserving BACK/CCW/LESS.",
+      "Use exact platform/player contact geometry and deterministic ordering to render the top, sides, and thin grid without a depth epsilon.",
+      "Add outward-normal shader invariants plus oblique true-offscreen continuity/depth predicates, then manually inspect the real frame before approving a new golden."
+    ],
+    "product_changes": [
+      "Player cubes are solid from oblique third-person views instead of exposing platform pixels through inward-wound faces.",
+      "The floating platform has a lighter cohesive slate top, distinct side thickness, subdued perspective grid, and lighter sky; player faces use restrained shading."
+    ],
+    "code_changes": [
+      "Corrected vertex and mesh player winding while preserving BACK/CCW/LESS; the platform marks its omitted top and the grid vertex path emits non-overlapping surface/border rectangles on the exact z=0 plane.",
+      "Added a narrow offscreen camera setter, outward-winding invariants, oblique scanline continuity/depth assertions, version 4 golden provenance, and optional manual-capture outputs for GPU smoke evidence.",
+      "Updated production frame classification for the revised sky/grid/shaded-player palette and enabled transfer-source capture on its presentation context."
+    ],
+    "baseline_commit": "6907daa1d5c2e1eb11b33e461085f4c79cc9b9b3",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "Rendering and golden-reference guides now define exact z planes, surface ownership, winding, shading, fade, manual inspection and final bundled-driver rerun requirements.",
+    "environment_review": "No new library, asset or platform capability. GPU evidence used Apple M3 Pro and local MoltenVK 1.2.11; final package acceptance must rerun through its bundled driver.",
+    "backlog_review": "This task closes the scene/depth portion of the user's preview feedback. Camera-relative continuous movement is MC-AI-0116 and the 2x HUD is MC-AI-0117; the parent snapshot remains unpublished pending corrected exact-package user preview."
   }
 ]

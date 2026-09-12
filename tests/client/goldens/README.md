@@ -2,7 +2,7 @@
 
 `s4_scene_v1.ppm` is the preserved 2D provenance reference and
 `s4_flat3d_v2.ppm` preserves the earlier flat 3D reference.
-`earlydev-0.1.0-snapshot-4-third-person-platform-v3.ppm` is the active P6
+`earlydev-0.1.0-snapshot-4-third-person-platform-v4.ppm` is the active P6
 Netpbm, 640-by-480, linear RGB reference. Alpha is implicitly opaque because P6
 has no alpha channel. The production renderer returns RGBA8; the test compares
 all four channels after restoring the reference alpha to 255.
@@ -13,10 +13,11 @@ unknown declarations fail before comparison; the maximum decoded payload is
 64 MiB, with checked arithmetic before allocation or read.
 
 The active reference keeps opaque player boxes at `(2, 3, 0)` and `(29, 28, 0)`
-and adds a 32-by-32 solid platform from `z=-1` to `z=-0.02`, an upright grid at
-`z=0`, and a sky-like clear color. The fixed diagnostic camera is `(16, -20,
-22)` with yaw 0, pitch -35 and roll 0 degrees. Depth test/write with `LESS`
-resolves platform, grid, and box faces independently of draw order. The debug
+and adds a 32-by-32 solid platform from `z=-1` to `z=0`. A single grid-material
+draw owns the top surface at `z=0`; the platform's coplanar top triangles are
+omitted, so the slate cells and distance-faded borders need no depth epsilon or
+`LEQUAL`. The fixed diagnostic camera is `(16, -20, 22)` with yaw 0, pitch -35
+and roll 0 degrees. Player cubes use outward winding and shaded faces. The debug
 HUD is explicitly disabled for this offscreen image; active presentation tests
 cover its default-on top-left placement.
 
@@ -86,7 +87,7 @@ over-later-green-box depth predicate in 153 ms; its receipt is
 presentation capture remains visible-smoke provenance only; no reference bytes
 were automatically generated or blessed by the corrective path.
 
-The active version 3 reference was generated and manually inspected on
+The preserved version 3 reference was generated and manually inspected on
 2026-09-11 through the true offscreen path with validation enabled using Vulkan
 SDK 1.4.357.0, Vulkan instance 1.4.357, Apple M3 Pro, MoltenVK driver 1.4.1
 (`driverVersion` 0.2.2209), and Vulkan device API 1.4.334. The native image
@@ -94,6 +95,19 @@ showed a blue surround, a thin solid platform with visible front and side
 faces, upright grid lines, and separated red and green player cubes. Its
 SHA256 is
 `6881cfa1c43aea276bce73e2c416011b4c960dcdac2f9e9b0e3f4e2371ca2deb`.
+
+The active version 4 reference was generated and manually inspected on
+2026-09-12 through the validation-enabled true-offscreen path. The native image
+showed a lighter sky, a readable slate top with distinct platform sides, thin
+distance-faded grid borders, and solid outward-wound red and green cubes with
+no platform-coloured face holes. The separate close third-person presentation
+capture showed exact player/platform contact and the default-on four-row HUD;
+oblique yaw `37.2`/pitch `-35` and opposite-angle scanline predicates passed.
+Its SHA256 is
+`a663b9a6410608804425d3f9b846306212e160f80b0ee130530ebda54c504b40`.
+This local generation used Apple M3 Pro and MoltenVK 1.2.11 (Vulkan device API
+1.2.296, driver 0.2.2019); final release acceptance must still rerun the same
+strict comparison through the package's bundled driver.
 
 The preserved v1 driver receipt was MoltenVK 1.2.11, Vulkan 1.2.296, driver
 0.2.2019. It does not prove final release-bundled Vulkan SDK 1.4.357.0 runtime
