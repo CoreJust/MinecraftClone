@@ -7,16 +7,25 @@
 
 namespace client {
 
-inline constexpr size_t DEBUG_HUD_MAX_TEXT_BYTES = 112;
+inline constexpr size_t DEBUG_HUD_MAX_TEXT_BYTES = 116;
 inline constexpr size_t DEBUG_HUD_LINE_COUNT = 4;
 inline constexpr size_t DEBUG_HUD_MAX_LINE_BYTES =
-    DEBUG_HUD_MAX_TEXT_BYTES / DEBUG_HUD_LINE_COUNT;
+    (DEBUG_HUD_MAX_TEXT_BYTES - (DEBUG_HUD_LINE_COUNT - 1U)) / DEBUG_HUD_LINE_COUNT;
 inline constexpr size_t DEBUG_HUD_WORDS_PER_LINE =
     (DEBUG_HUD_MAX_LINE_BYTES + 3) / 4;
 inline constexpr size_t DEBUG_HUD_MAX_INSTANCES =
     DEBUG_HUD_LINE_COUNT * DEBUG_HUD_WORDS_PER_LINE;
 inline constexpr size_t DEBUG_HUD_MAX_PRESENTED_SAMPLES = 256;
 inline constexpr double DEBUG_HUD_FPS_WINDOW_SECONDS = 1.0;
+inline constexpr float DEBUG_HUD_BITMAP_GLYPH_WIDTH_PIXELS = 8.0F;
+inline constexpr float DEBUG_HUD_BITMAP_GLYPH_HEIGHT_PIXELS = 16.0F;
+inline constexpr float DEBUG_HUD_GLYPH_SCALE = 2.0F;
+inline constexpr float DEBUG_HUD_GLYPH_WIDTH_PIXELS =
+    DEBUG_HUD_BITMAP_GLYPH_WIDTH_PIXELS * DEBUG_HUD_GLYPH_SCALE;
+inline constexpr float DEBUG_HUD_GLYPH_HEIGHT_PIXELS =
+    DEBUG_HUD_BITMAP_GLYPH_HEIGHT_PIXELS * DEBUG_HUD_GLYPH_SCALE;
+inline constexpr float DEBUG_HUD_MARGIN_PIXELS = 8.0F;
+inline constexpr float DEBUG_HUD_LINE_ADVANCE_PIXELS = 40.0F;
 
 struct DebugHudClock {
     using NowFunction = double (*)(void*) noexcept;
@@ -117,11 +126,13 @@ private:
     [[nodiscard]] size_t appendText(
         DebugHudText& text,
         size_t offset,
+        size_t limit,
         std::string_view value
     ) const noexcept;
     [[nodiscard]] size_t appendNumber(
         DebugHudText& text,
         size_t offset,
+        size_t limit,
         double value,
         int decimals
     ) const noexcept;

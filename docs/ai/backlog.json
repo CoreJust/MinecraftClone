@@ -4601,5 +4601,44 @@
     "docs_review": "Gameplay, Android, scripting execution, and quickstart contracts updated and checked against source.",
     "environment_review": "No new runtime dependency or platform capability; desktop and Android use the same shared movement protocol.",
     "backlog_review": "This task is the coherent movement response to preview feedback; HUD scale and scene/depth polish remain separate MC-AI-0117 and MC-AI-0118 tasks."
+  },
+  {
+    "id": "MC-AI-0117",
+    "title": "Make the debug HUD twice as readable with padded multiline rows",
+    "kind": "feature",
+    "status": "done",
+    "priority": "P0",
+    "route": "luna",
+    "milestone": "EarlyDev:Initiation 0.1.0:4",
+    "depends_on": [],
+    "acceptance": "Normal desktop and Android gameplay render the texture-free HUD at twice the previous native glyph size with DPI scaling, a 40-pixel row advance, and readable padding between numeric groups. Four top-left rows remain bounded to the existing one-draw packed-ASCII contract: FPS, uptime, XYZ, and yaw/pitch/roll explicitly labelled in degrees. Deterministic formatting covers maximum signed values without clipping; benchmark and capture HUD toggles remain explicit.",
+    "evidence": "The integration candidate passed 18/18 focused DebugHud and SPIR-V tests. python3 -B script/ai_check.py --fast passed documentation, backlog, plan, diff, Python, build, and the full CTest suite. Real normal-play visual acceptance remains the parent snapshot preview gate.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0035",
+    "motivation": "Make the debug HUD twice as readable with padded multiline rows",
+    "context": "User feedback on the 0.1.0:4 pre-publication preview found the debug text too small and the numeric groups too tightly spaced. This task changes only HUD layout and formatting while retaining the texture-free one-batch renderer.",
+    "complexity": "medium",
+    "created_at": "2026-09-12",
+    "resolved_at": "2026-09-12",
+    "resolution_changes": "Doubled native glyph dimensions, increased row advance, expanded bounded row capacity, and added spaced numeric formatting with an explicit degree-unit label.",
+    "plan": [
+      "Scale the existing shader-generated glyph geometry and row spacing without adding textures or draws.",
+      "Keep all four rows bounded, padded, DPI-scaled, and regression-covered at maximum values."
+    ],
+    "product_changes": [
+      "The default gameplay HUD is twice as large, has clear row separation, and spaces XYZ and camera-angle groups for readability."
+    ],
+    "code_changes": [
+      "Updated bounded HUD text capacity/formatting and vertex-shader glyph geometry; extended focused tests."
+    ],
+    "baseline_commit": "f8044ce1f140d1815cc0a4ecacbe3f13a474590b",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "Rendering guide updated to the exact glyph dimensions, row spacing, labels, and one-draw constraints.",
+    "environment_review": "No new runtime dependency, font atlas, texture, allocation path, or platform capability.",
+    "backlog_review": "This is the HUD-only preview correction; movement is MC-AI-0116 and scene/depth polish is MC-AI-0118."
   }
 ]

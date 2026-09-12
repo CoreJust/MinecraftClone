@@ -53,12 +53,16 @@ accept bare `.spv` names only; no source-tree fallback is allowed.
 
 `DebugHudState` defaults off for benchmark/capture and normal gameplay enables
 it. It formats four bounded allocation-free lines and packs four sanitized
-ASCII bytes into each instance word. `debug_hud.vert` expands
-those instances into procedural 8-by-16 quads; `debug_hud.frag` owns the
-texture-free bitmap constants and performs the factor-of-eight glyph-row
-addressing. The renderer submits all packed words with one instanced draw
-through the same-device `GraphicsProgram` and `VulkanKernelCache` used by the
-scene.
+ASCII bytes into each instance word. The coordinate and angle rows use padded
+groups (`XYZ:  1.25   2.50   0.00` and `YPR deg: 45.0  -10.0  3.0`).
+`debug_hud.vert` expands those instances into
+procedural 16-by-32 quads, twice the bitmap's native 8-by-16 glyph size, with
+a 40-pixel row advance. Its DPI scale is capped by the presentation extent so
+all four rows remain top-left and non-overlapping at high scale. `debug_hud.frag`
+owns the texture-free bitmap constants and performs the factor-of-eight
+glyph-row addressing. The renderer submits all packed words with one instanced
+draw through the same-device `GraphicsProgram` and `VulkanKernelCache` used by
+the scene.
 
 Desktop and Android supply the current local character's authoritative X/Y and
 plane-derived Z (`0` while the world remains flat), plus camera yaw/pitch/roll
