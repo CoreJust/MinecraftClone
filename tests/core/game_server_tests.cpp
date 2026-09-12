@@ -126,6 +126,42 @@ protected:
     }
 };
 
+bool pumpUntil(
+    server::GameServer& server,
+    ProtocolClient& client,
+    std::function<bool()> const& ready
+)
+{
+    static constexpr std::chrono::milliseconds POLL_INTERVAL{ 1 };
+    static constexpr std::chrono::seconds TIMEOUT{ 1 };
+    auto const deadline = std::chrono::steady_clock::now() + TIMEOUT;
+    while (!ready() && std::chrono::steady_clock::now() < deadline) {
+        static_cast<void>(server.tick(POLL_INTERVAL));
+        client.poll(POLL_INTERVAL);
+    }
+    return ready();
+}
+
+bool joinManually(server::GameServer& server, ProtocolClient& client, char const character)
+{
+    static constexpr std::chrono::seconds TIMEOUT{ 1 };
+    std::atomic_bool stop_requested{ false };
+    std::thread server_thread{ [&server, &stop_requested] {
+        static constexpr std::chrono::milliseconds POLL_INTERVAL{ 1 };
+        while (!stop_requested.load(std::memory_order_relaxed)) {
+            server.poll(POLL_INTERVAL);
+        }
+    } };
+    bool const joined = client.connect(core::Address::localhost(server.port()), TIMEOUT)
+        && client.sendMessage(shared::JoinRequestMessage{ .ch = character })
+        && client.waitFor([&client, character] {
+            return !client.positions(character).empty();
+        });
+    stop_requested.store(true, std::memory_order_relaxed);
+    server_thread.join();
+    return joined;
+}
+
 } // namespace
 
 TEST_F(GameServerTest, JoinRepliesArePrivateAndNewPlayersReachExistingClients)
@@ -185,7 +221,7 @@ TEST_F(GameServerTest, MalformedPacketFromUnjoinedPeerDoesNotPreventJoinOrMoveme
 
     auto const start = client.positions('@').front();
     uint8_t const direction_x = start.x == 0 ? 127 : 129;
-    ASSERT_TRUE(client.sendMessage(shared::ClientInputMessage{ .direction = { direction_x, 0 } }));
+    ASSERT_TRUE(client.sendMessage(shared::ClientInputMessage{ .direction = { direction_x, 0 }, .sequence = 1U }));
     ASSERT_TRUE(client.waitFor([&client] { return client.positions('@').size() == 2; }));
     auto const positions = client.positions('@');
     EXPECT_EQ(positions.back().x, start.x == 0 ? start.x : start.x - 1);
@@ -199,29 +235,35 @@ TEST_F(GameServerTest, MalformedPacketFromUnjoinedPeerDoesNotPreventJoinOrMoveme
     EXPECT_EQ(positions.back().y_subcell, 0U);
 }
 
-TEST_F(GameServerTest, IdleInputDoesNotConsumeTheSingleMovementInAPollingTick)
+TEST(GameServerPredictionTest, IdleInputConsumesTheSingleAuthoritativeActionInATick)
 {
+    server::GameServer server{ 0, {{ .character = '@', .x = 0U, .y = 0U }} };
     ProtocolClient client;
-    ASSERT_TRUE(join(client, '@'));
+    ASSERT_TRUE(joinManually(server, client, '@'));
     auto const start = client.positions('@').front();
-    auto const direction_x = static_cast<uint8_t>(start.x == 0 ? 127 : 129);
-    ASSERT_TRUE(client.sendMessage(shared::ClientInputMessage{ .direction = { 0, 0 } }));
-    ASSERT_TRUE(client.sendMessage(shared::ClientInputMessage{ .direction = { direction_x, 0 } }));
-    ASSERT_TRUE(client.sendMessage(shared::ClientInputMessage{ .direction = { direction_x, 0 } }));
-    ASSERT_TRUE(client.sendMessage(shared::JoinRequestMessage{ .ch = '@' }));
-    ASSERT_TRUE(client.waitFor([&] { return client.responseCount() == 2; }));
+    ASSERT_TRUE(client.sendMessage(shared::ClientInputMessage{ .direction = { 0, 0 }, .sequence = 1U }));
+    ASSERT_TRUE(client.sendMessage(shared::ClientInputMessage{ .direction = { 127U, 0 }, .sequence = 2U }));
 
-    auto const positions = client.positions('@');
-    ASSERT_EQ(positions.size(), 2u);
-    EXPECT_EQ(positions.back().x, start.x == 0 ? start.x : start.x - 1);
-    EXPECT_EQ(positions.back().y, start.y);
-    EXPECT_EQ(
-        positions.back().x_subcell,
-        start.x == 0
-            ? shared::MOVEMENT_SUBCELLS_PER_TICK
-            : shared::SUBCELLS_PER_CELL - shared::MOVEMENT_SUBCELLS_PER_TICK
-    );
-    EXPECT_EQ(positions.back().y_subcell, 0U);
+    ASSERT_TRUE(pumpUntil(server, client, [&client] {
+        auto const positions = client.positions('@');
+        return !positions.empty() && positions.back().acknowledged_input_sequence == 1U;
+    }));
+    auto const after_idle_tick = client.positions('@').back();
+    EXPECT_EQ(after_idle_tick.x, start.x);
+    EXPECT_EQ(after_idle_tick.y, start.y);
+    EXPECT_EQ(after_idle_tick.x_subcell, 0U);
+    EXPECT_EQ(after_idle_tick.y_subcell, 0U);
+
+    ASSERT_TRUE(pumpUntil(server, client, [&client] {
+        auto const positions = client.positions('@');
+        return !positions.empty() && positions.back().acknowledged_input_sequence == 2U;
+    }));
+    auto const after_movement_tick = client.positions('@').back();
+    EXPECT_EQ(after_movement_tick.x, start.x);
+    EXPECT_EQ(after_movement_tick.y, start.y);
+    EXPECT_EQ(after_movement_tick.x_subcell, shared::MOVEMENT_SUBCELLS_PER_TICK);
+    EXPECT_EQ(after_movement_tick.y_subcell, 0U);
+    EXPECT_LT(after_idle_tick.state_revision, after_movement_tick.state_revision);
 }
 
 TEST_F(GameServerTest, UnjoinedInputAndDisconnectLeaveAcceptedPlayersIntact)
@@ -232,7 +274,7 @@ TEST_F(GameServerTest, UnjoinedInputAndDisconnectLeaveAcceptedPlayersIntact)
     ProtocolClient newcomer;
     ASSERT_TRUE(join(first, '@'));
     ASSERT_TRUE(connect(unjoined));
-    ASSERT_TRUE(unjoined.sendMessage(shared::ClientInputMessage{ .direction = { 127, 0 } }));
+    ASSERT_TRUE(unjoined.sendMessage(shared::ClientInputMessage{ .direction = { 127, 0 }, .sequence = 1U }));
     ASSERT_TRUE(unjoined.sendMessage(shared::JoinRequestMessage{ .ch = '@' }));
     ASSERT_TRUE(unjoined.waitFor([&] { return unjoined.responseCount() == 1; }));
     EXPECT_FALSE(std::get<shared::JoinResponseMessage>(unjoined.messages.front()).accepted);
@@ -287,9 +329,10 @@ TEST_F(ProductionGameServerTest, ConcurrentNormalCadenceInputsDoNotStarveNewJoin
     std::atomic<uint32_t> second_inputs_sent{ 0 };
     std::barrier start_senders{ 3 };
     auto const send_inputs = [&](ProtocolClient& client, std::atomic<uint32_t>& inputs_sent) {
+        uint32_t sequence = 1U;
         start_senders.arrive_and_wait();
         while (!stop_sending.load(std::memory_order_relaxed)) {
-            if (!client.sendMessage(shared::ClientInputMessage{ .direction = DIRECTION })) {
+            if (!client.sendMessage(shared::ClientInputMessage{ .direction = DIRECTION, .sequence = sequence++ })) {
                 send_failed.store(true, std::memory_order_relaxed);
                 return;
             }
@@ -332,4 +375,55 @@ TEST_F(ProductionGameServerTest, ConcurrentNormalCadenceInputsDoNotStarveNewJoin
     EXPECT_TRUE(joined);
     EXPECT_TRUE(received_authoritative_state);
     EXPECT_LT(join_elapsed, JOIN_TIMEOUT);
+}
+
+TEST(GameServerPredictionTest, QueuedInputsApplyAtMostOncePerTickAndAcknowledgeInOrder)
+{
+    static constexpr shared::Direction RIGHT{ .x = 127U, .y = 0U };
+    server::GameServer server{ 0, {{ .character = '@', .x = 0U, .y = 0U }} };
+    ProtocolClient client;
+    ASSERT_TRUE(joinManually(server, client, '@'));
+    ASSERT_TRUE(client.sendMessage(shared::ClientInputMessage{ .direction = RIGHT, .sequence = 1U }));
+    ASSERT_TRUE(client.sendMessage(shared::ClientInputMessage{ .direction = RIGHT, .sequence = 2U }));
+
+    ASSERT_TRUE(pumpUntil(server, client, [&client] {
+        auto const positions = client.positions('@');
+        return !positions.empty() && positions.back().acknowledged_input_sequence == 1U;
+    }));
+    auto const after_first_tick = client.positions('@').back();
+    EXPECT_EQ(after_first_tick.x_subcell, shared::MOVEMENT_SUBCELLS_PER_TICK);
+
+    ASSERT_TRUE(pumpUntil(server, client, [&client] {
+        auto const positions = client.positions('@');
+        return !positions.empty() && positions.back().acknowledged_input_sequence == 2U;
+    }));
+    auto const after_second_tick = client.positions('@').back();
+    EXPECT_EQ(after_second_tick.x_subcell, 2U * shared::MOVEMENT_SUBCELLS_PER_TICK);
+    EXPECT_LT(after_first_tick.state_revision, after_second_tick.state_revision);
+}
+
+TEST(GameServerPredictionTest, ZeroAndCollisionInputsReceiveAuthoritativeOwnerAcknowledgements)
+{
+    static constexpr shared::Direction RIGHT{ .x = 127U, .y = 0U };
+    server::GameServer server{ 0, {{ .character = '@', .x = 30U, .y = 0U }} };
+    ProtocolClient client;
+    ASSERT_TRUE(joinManually(server, client, '@'));
+    ASSERT_TRUE(client.sendMessage(shared::ClientInputMessage{ .direction = { }, .sequence = 1U }));
+    ASSERT_TRUE(pumpUntil(server, client, [&client] {
+        auto const positions = client.positions('@');
+        return !positions.empty() && positions.back().acknowledged_input_sequence == 1U;
+    }));
+    auto const zero_acknowledgement = client.positions('@').back();
+    EXPECT_EQ(zero_acknowledgement.x, 30U);
+    EXPECT_EQ(zero_acknowledgement.x_subcell, 0U);
+
+    ASSERT_TRUE(client.sendMessage(shared::ClientInputMessage{ .direction = RIGHT, .sequence = 2U }));
+    ASSERT_TRUE(pumpUntil(server, client, [&client] {
+        auto const positions = client.positions('@');
+        return !positions.empty() && positions.back().acknowledged_input_sequence == 2U;
+    }));
+    auto const collision_acknowledgement = client.positions('@').back();
+    EXPECT_EQ(collision_acknowledgement.x, 30U);
+    EXPECT_EQ(collision_acknowledgement.x_subcell, 0U);
+    EXPECT_LT(zero_acknowledgement.state_revision, collision_acknowledgement.state_revision);
 }

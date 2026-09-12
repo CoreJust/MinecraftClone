@@ -5492,5 +5492,41 @@
     "docs_review": "Updated docs/code/GAMEPLAY.md with the authoritative 2x2 footprint bound; refreshed generated source state.",
     "environment_review": "macOS focused WorldTest and GameServerLifecycle coverage passed; no runtime launch was requested.",
     "backlog_review": "Finalized MC-AI-0143 as an exact MC-AI-0035 child; no unrelated task records changed."
+  },
+  {
+    "id": "MC-AI-0144",
+    "title": "Add sequenced client prediction and reconciliation",
+    "kind": "feature",
+    "status": "done",
+    "priority": "P0",
+    "route": "luna",
+    "milestone": "EarlyDev 0.1.0:4",
+    "depends_on": [],
+    "acceptance": "Client input messages carry monotonic sequence numbers. The server accepts one action per player per tick, acknowledges processed input, and emits monotonic state revisions. Clients predict only their local player, reconcile acknowledged state by replaying pending input, and reject stale revisions without changing the authoritative world.",
+    "evidence": "Existing focused prediction/protocol coverage 14/14 and combined affected coverage 65/65 passed in the approved source batch; staged local source reconstruction reviewed.",
+    "blocker": "",
+    "owner": "",
+    "level": "basic",
+    "parent": "MC-AI-0035",
+    "motivation": "Local input must feel responsive while server state remains authoritative.",
+    "context": "The multiplayer protocol carries authoritative player positions without input acknowledgements, so clients cannot reconcile local prediction or reject stale state safely.",
+    "complexity": "high",
+    "created_at": "2026-09-12",
+    "resolved_at": "2026-09-13",
+    "resolution_changes": "Added sequenced input protocol, bounded server input reconciliation, and local-only client prediction.",
+    "plan": [
+      "Add sequence and revision protocol fields.",
+      "Queue and acknowledge server input at fixed cadence.",
+      "Predict local input and reconcile authoritative position."
+    ],
+    "product_changes": [],
+    "code_changes": [],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "Source state refreshed; protocol behavior is covered by generated code inventory.",
+    "environment_review": "No runtime launch requested.",
+    "backlog_review": "Finalized MC-AI-0144 as an exact MC-AI-0035 child."
   }
 ]

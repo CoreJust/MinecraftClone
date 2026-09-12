@@ -86,7 +86,7 @@ void AndroidPlayerClient::render()
         ));
     }
     std::chrono::steady_clock::time_point const now = std::chrono::steady_clock::now();
-    if (auto const local_position = m_player_presentation.sample(m_local_character, now)) {
+    if (auto const local_position = predictedLocalPlayer()) {
         client::CameraPose const camera_pose = client::localPlayerThirdPersonPose(
             *local_position,
             m_camera.pose().angles
@@ -97,6 +97,21 @@ void AndroidPlayerClient::render()
     std::vector<client::PlayerRenderData> players;
     players.reserve(m_world.players().size());
     for (shared::Player const& player : m_world.players()) {
+        if (player.ch == m_local_character) {
+            if (auto const local_position = predictedLocalPlayer()) {
+                players.push_back({
+                    .x = static_cast<float>(shared::playerPositionX(*local_position)),
+                    .y = static_cast<float>(shared::playerPositionY(*local_position)),
+                    .color = {
+                        static_cast<float>(player.ch) / 256.0f,
+                        1.0f - static_cast<float>(player.ch) / 256.0f,
+                        1.0f,
+                        1.0f,
+                    },
+                });
+            }
+            continue;
+        }
         if (auto const position = m_player_presentation.sample(player.ch, now)) {
             players.push_back({
                 .x = static_cast<float>(position->x),

@@ -131,7 +131,8 @@ if(MC_BUILD_CLIENT AND NOT ANDROID)
     client/depth_format_tests.cpp
             client/camera_tests.cpp
             client/debug_hud_tests.cpp
-            client/frame_scheduler_tests.cpp
+    client/frame_scheduler_tests.cpp
+            client/game_client_prediction_tests.cpp
             client/player_presentation_tests.cpp
             client/renderer_geometry_tests.cpp
             client/shader_assets_tests.cpp

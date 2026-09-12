@@ -73,7 +73,9 @@ same-build native-layout protocol with no cross-version contract.
 [GameServer.hpp](../../src/server/include/server/GameServer.hpp) creates a
 localhost server on default port `20040` (constructor accepts another port);
 [GameServer.cpp](../../src/server/GameServer.cpp)
-polls once per 100 ms and resets the per-tick moved-character set.
+drains pending events within each 100 ms tick, processes at most one queued
+input per player, and includes the acknowledged input sequence plus a monotonic
+state revision in each replicated position.
 
 The server rejects duplicate/already-joined characters, privately accepts a
 success, broadcasts positions, ignores unjoined input, and allows one nonzero
@@ -100,13 +102,15 @@ stops the loop.
 [PlayerClient.cpp](../../src/client/PlayerClient.cpp) provide the GLFW/Vulkan
 client. Normal gameplay enables the HUD by default. GLFW cursor movement controls local yaw/pitch; W/S and A/D become
 camera-relative normalized horizontal directions through the GLFW-independent controller.
-This never predicts or applies a local movement result. Each render samples
+The shared client predicts only its local player's queued input, then rebuilds
+that prediction from acknowledged server state; it never mutates the
+authoritative `World`. Each render samples
 every received player presentation into colored 2 by 2 render records and
 centers the third-person camera from the sampled local presentation. R reloads
 the renderer on a press edge stored per client instance.
 
 `BotClient` renders nothing and changes a persistent random direction with
-probability 1/50 per input call. Neither client predicts movement.
+probability 1/50 per input call.
 
 ## Direct test mapping
 

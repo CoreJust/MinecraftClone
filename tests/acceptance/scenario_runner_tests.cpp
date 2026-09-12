@@ -40,7 +40,7 @@ player alice character "@" at 4 4
 begin
 input alice 1 0
 wait 10
-expect player alice position 5 4
+expect player alice position 9 4
 end
 )";
     auto parsed = parsePlan(SOURCE);
@@ -68,11 +68,11 @@ TEST(ScenarioRunner, PreservesNegativeDirectionsAtTheWireBoundary)
     static constexpr std::string_view SOURCE = R"(scenario 1
 profile flat2d-v1
 seed 42
-player alice character "@" at 4 4
+player alice character "@" at 6 4
 begin
 input alice -1 0
 wait 10
-expect player alice position 3 4
+expect player alice position 0 4
 end
 )";
     auto parsed = parsePlan(SOURCE);
@@ -95,13 +95,13 @@ TEST(ScenarioRunner, AppliesTwoActorsInputsAtTheSameTickBoundary)
 profile flat2d-v1
 seed 42
 player alice character "@" at 4 4
-player bob character "#" at 10 10
+player bob character "#" at 20 12
 begin
 input alice 1 0
 input bob 0 -1
 wait 20
-expect player alice position 6 4
-expect player bob position 10 8
+expect player alice position 15 4
+expect player bob position 20 0
 end
 )";
     auto parsed = parsePlan(SOURCE);
@@ -132,8 +132,8 @@ begin
 input alice camera 0 1
 input bob camera 0 1
 wait 20
-expect player alice position 4 6 0
-expect player bob position 12 10 0
+expect player alice position 4 15 0
+expect player bob position 21 10 0
 end
 )";
     auto parsed = parsePlan(SOURCE);
@@ -166,7 +166,7 @@ player alice character "@" at 4 4 0 orientation 0 0 0
 begin
 input alice camera 1 1
 wait 15
-expect player alice position 5 5 0
+expect player alice position 9 9 0
 end
 )";
     auto parsed = parsePlan(SOURCE);
@@ -181,6 +181,39 @@ end
     EXPECT_EQ(result->inputs_sent, 15U);
     EXPECT_EQ(result->camera_relative_inputs, 1U);
     EXPECT_EQ(result->expectations_passed, 1U);
+}
+
+TEST(ScenarioRunner, SlidesAlongAPlayerFootprintThenEscapesThroughRealEnet)
+{
+    static constexpr std::string_view SOURCE = R"(scenario 1
+profile flat2d-v1
+seed 42
+player alice character "@" at 4 4
+player bob character "#" at 6 4
+begin
+input alice 1 1
+wait 3
+expect player alice position 4 5
+input alice -1 0
+wait 2
+expect player alice position 2 5
+end
+)";
+    auto parsed = parsePlan(SOURCE);
+    ASSERT_TRUE(parsed.has_value()) << parsed.error().message;
+
+    auto const result = acceptance::runScenario(*parsed, {
+        .deadline = std::chrono::seconds{ 5 },
+        .network_poll_interval = std::chrono::milliseconds{ 1 },
+    });
+
+    ASSERT_TRUE(result.has_value()) << result.error();
+    EXPECT_TRUE(result->passed);
+    EXPECT_EQ(result->clients_requested, 2U);
+    EXPECT_EQ(result->clients_accepted, 2U);
+    EXPECT_EQ(result->ticks, 5U);
+    EXPECT_EQ(result->inputs_sent, 5U);
+    EXPECT_EQ(result->expectations_passed, 2U);
 }
 
 TEST(ScenarioRunner, RejectsInvalidRuntimeLimitsWithoutWaitingForNetwork)

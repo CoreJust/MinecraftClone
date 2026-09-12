@@ -25,7 +25,7 @@
         "tests/acceptance/runtime_cli_tests.cmake",
         "tests/acceptance/scenario_runner_tests.cpp"
       ],
-      "sources_sha256": "9b636cb3f77b0e16faf2ebbc92e04263b866fed04a6f68f76de6693265c1acb9"
+      "sources_sha256": "f688b919921a51ea38408be363887db6ac4a4c3428f1d89a10a02282046cf7fe"
     },
     {
       "guide": "docs/code/ANDROID.md",
@@ -44,7 +44,7 @@
         "src/android/CMakeLists.txt",
         "tests/android/input_state_tests.cpp"
       ],
-      "sources_sha256": "964b54f3b0b6d5d33ade4d8f03e0186b1515d7afb4e91477412966380aaf64fa"
+      "sources_sha256": "6ac4d1fc516bcd01747537d23efcab2a307cdb4cfb1706f56236632a9c11666a"
     },
     {
       "guide": "docs/BUILD.md",
@@ -133,7 +133,7 @@
         "vcpkg-configuration.json",
         "vcpkg.json"
       ],
-      "sources_sha256": "d247c5d6517cdfbcc3ed134985a0518826970d43f355bff9fc4b2fd3ef63aba3"
+      "sources_sha256": "da633d5d11af9253999e1299a01bf02e55ac9ec1f3e7f6f420cb250b10e00256"
     },
     {
       "guide": "docs/code/CORE.md",
@@ -172,7 +172,7 @@
     },
     {
       "guide": "docs/code/GAMEPLAY.md",
-      "guide_sha256": "1d4a17d65d8f9ceb3d8f98f295b5ef8b6ba835502bfa832ac4904f6d91a3127a",
+      "guide_sha256": "65ff5f0abe52db20bf911b08344e775d5cd6e028076389cd3405395e4e3f3122",
       "id": "gameplay",
       "sources": [
         "src/client/BotClient.cpp",
@@ -213,7 +213,7 @@
         "tests/core/shared_message_tests.cpp",
         "tests/core/shared_world_tests.cpp"
       ],
-      "sources_sha256": "bf936ccd3c6d5e653fe772050084bd30f9a8b8c26d8f4723e3389899f1ce6aef"
+      "sources_sha256": "ab45fcd735a1ab082a9f21963c05965a2fd197a18259ed0abe2f37542052738d"
     },
     {
       "guide": "docs/code/RENDERING.md",
@@ -244,6 +244,7 @@
         "tests/client/debug_hud_tests.cpp",
         "tests/client/depth_format_tests.cpp",
         "tests/client/frame_scheduler_tests.cpp",
+        "tests/client/game_client_prediction_tests.cpp",
         "tests/client/goldens/README.md",
         "tests/client/goldens/earlydev-0.1.0-snapshot-4-third-person-platform-v3.ppm",
         "tests/client/goldens/earlydev-0.1.0-snapshot-4-third-person-platform-v4.ppm",
@@ -258,7 +259,7 @@
         "tests/testsupport/image_comparison_tests.cpp",
         "tests/testsupport/include/testsupport/ImageComparison.hpp"
       ],
-      "sources_sha256": "ab1f9db50c29378ec51ad01e77fb5c86c22a9a2e9fbc13c0c068201e7e72e985"
+      "sources_sha256": "3545f0c2b9962ab8a068d80f170ae5b3f65c8526ad09354d77d02a960cc8fe4a"
     }
   ],
   "version": 1

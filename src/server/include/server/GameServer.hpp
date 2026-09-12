@@ -7,8 +7,8 @@
 #include <atomic>
 #include <chrono>
 #include <cstdint>
+#include <deque>
 #include <expected>
-#include <string>
 #include <utility>
 #include <vector>
 
@@ -43,18 +43,38 @@ public:
     [[nodiscard]]
     uint64_t tick(std::chrono::milliseconds timeout = std::chrono::milliseconds::zero());
 private:
+    struct PlayerReplication final {
+        static constexpr uint32_t MAX_PENDING_INPUTS = 64;
+
+        shared::PlayerId id;
+        uint32_t latest_received_sequence = 0;
+        uint32_t acknowledged_input_sequence = 0;
+        uint32_t state_revision = 1;
+        std::deque<shared::ClientInputMessage> pending_inputs;
+        bool has_received_sequence = false;
+        bool action_consumed_this_tick = false;
+    };
+
     void onConnected(core::ServerConnectEvent const event) override;
     void onDisconnected(core::ServerDisconnectEvent const event) override;
     void onReceived(core::ServerReceiveEvent event) override;
 
     void send(shared::Message const message);
     void sendTo(std::optional<core::ClientId> const client_id, shared::Message message);
+    void processInput(PlayerReplication& replication, shared::ClientInputMessage input);
+    [[nodiscard]]
+    PlayerReplication* playerReplication(shared::PlayerId id) noexcept;
+    [[nodiscard]]
+    shared::ServerPlayerPositionMessage playerPositionMessage(
+        shared::Player const& player,
+        PlayerReplication const& replication
+    ) const noexcept;
     [[nodiscard]]
     static std::vector<SpawnPoint> checkedSpawnPoints(std::vector<SpawnPoint> spawn_points);
 private:
     shared::World m_world;
     std::vector<SpawnPoint> m_spawn_points;
-    std::string m_players_moved_this_tick;
+    std::vector<PlayerReplication> m_player_replications;
 };
 
 } // namespace server

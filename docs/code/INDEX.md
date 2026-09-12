@@ -236,6 +236,7 @@ Files:
 - [`tests/client/debug_hud_tests.cpp`](../../tests/client/debug_hud_tests.cpp)
 - [`tests/client/depth_format_tests.cpp`](../../tests/client/depth_format_tests.cpp)
 - [`tests/client/frame_scheduler_tests.cpp`](../../tests/client/frame_scheduler_tests.cpp)
+- [`tests/client/game_client_prediction_tests.cpp`](../../tests/client/game_client_prediction_tests.cpp)
 - [`tests/client/goldens/README.md`](../../tests/client/goldens/README.md)
 - [`tests/client/goldens/earlydev-0.1.0-snapshot-4-third-person-platform-v3.ppm`](../../tests/client/goldens/earlydev-0.1.0-snapshot-4-third-person-platform-v3.ppm)
 - [`tests/client/goldens/earlydev-0.1.0-snapshot-4-third-person-platform-v4.ppm`](../../tests/client/goldens/earlydev-0.1.0-snapshot-4-third-person-platform-v4.ppm)

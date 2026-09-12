@@ -247,6 +247,7 @@ std::expected<RuntimeEvidence, std::string> runScenario(
     std::vector<std::unique_ptr<ScenarioClient>> clients;
     clients.reserve(plan.actors().size());
     std::vector<std::optional<shared::Direction>> active_inputs(plan.actors().size());
+    std::vector<uint32_t> input_sequences(plan.actors().size(), 1U);
     std::optional<std::string> failure;
     uint64_t logical_tick{ 0 };
     uint64_t inputs_sent{ 0 };
@@ -299,6 +300,7 @@ std::expected<RuntimeEvidence, std::string> runScenario(
             }
             if (!clients[index]->sendMessage(shared::ClientInputMessage{
                 .direction = *active_inputs[index],
+                .sequence = input_sequences[index]++,
             })) {
                 return std::unexpected("scenario client could not send active input");
             }
