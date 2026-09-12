@@ -106,7 +106,8 @@ class AiCommitTests(unittest.TestCase):
             "id": "MC-AI-0001",
             "level": "basic",
             "baseline_commit": self.baseline,
-            "finalized": False,
+            "status": "done",
+            "finalized": True,
         }
         task.update(overrides)
         return task
@@ -195,6 +196,21 @@ class AiCommitTests(unittest.TestCase):
                 message.write_text(content, encoding="utf-8")
                 result = self.run_command("check", "--message", str(message))
                 self.assertEqual(result.returncode, 0 if name == "valid" else 1, result.stderr)
+
+    def test_basic_requires_done_and_finalized_metadata(self) -> None:
+        self.stage_task(status="active", finalized=True)
+        active = self.run_command("candidate", "MC-AI-0001")
+        self.assertEqual(active.returncode, 1)
+        self.assertIn("status to done and finalized to true", active.stderr)
+
+        self.stage_task(status="done", finalized=False)
+        unfinalized = self.run_command("candidate", "MC-AI-0001")
+        self.assertEqual(unfinalized.returncode, 1)
+        self.assertIn("status to done and finalized to true", unfinalized.stderr)
+
+        self.stage_task(status="done", finalized=True)
+        candidate = self.candidate()
+        self.assertEqual(candidate["level"], "basic")
 
     def test_minor_requires_terra_and_finalized_metadata(self) -> None:
         self.stage_task(level="snapshot", finalized=True, baseline_commit="")
