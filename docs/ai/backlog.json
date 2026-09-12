@@ -5182,5 +5182,44 @@
     "docs_review": "Read docs/code/CORE.md and docs/ai/MAINTENANCE.md against the changed test and CI behavior; no narrative guide contract changed. Regenerated docs/code/INDEX.md and docs/code/source_state.json with python3 script/ai_docs.py refresh, then check passed.",
     "environment_review": "Fresh local macOS Release Ninja validation with exact installed private package prefixes passed the three affected tests. A forced Ninja Multi-Config nested generator passed both fixtures, verifying CMake multi-config command selection. Fresh hosted Windows rerun remains required for MSVC ABI and cmd behavior.",
     "backlog_review": "Scoped only to MC-AI-0135 under MC-AI-0035; no remote, tag, release, or unrelated task mutation."
+  },
+  {
+    "id": "MC-AI-0136",
+    "title": "Align presentation pipelines with the active depth attachment",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P0",
+    "route": "luna",
+    "milestone": "EarlyDev 0.1.0:4",
+    "depends_on": [],
+    "acceptance": "Every active presentation pipeline declares the selected common depth attachment format. The HUD keeps depth testing and writing disabled, focused configuration regression covers grid/player/HUD, and validation-enabled presentation smoke is run when the local environment supports it without changing offscreen/golden output.",
+    "evidence": "Focused Debug build of mc_tests passed; DepthFormatTest.* passed 4/4 and ShaderSpirvTargetTest.* passed 7/7. Elevated validation-enabled RendererSmokeTest ran from the built candidate with VK_DRIVER_FILES=/usr/local/share/vulkan/icd.d/MoltenVK_icd.json; the HUD-enabled ActiveThirdPersonRendererShowsPlatformPlayersAndTopLeftHud case passed and the log contains no VUID or validation diagnostics. The aggregate smoke exited nonzero because the unrelated CompletedCaptureSurvivesRecreateAndReadsBack byte-retention assertion failed. True offscreen golden could not run in the worker's earlier environment because no Metal-capable Vulkan device was available; unrestricted final artifact acceptance remains required.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0035",
+    "motivation": "Validation reports VUID-vkCmdDraw-dynamicRenderingUnusedAttachments-08914 when the HUD draws inside the common presentation depth attachment because its pipeline declares VK_FORMAT_UNDEFINED.",
+    "context": "PresentationRenderer binds a selected D32_SFLOAT or D16_UNORM depth image view for every dynamic-rendering frame. Grid and player pipelines already declare that format; the active HUD pipeline omitted it. The fix must preserve the HUD's disabled depth test/write state and must not weaken validation or enable unsupported features.",
+    "complexity": "low",
+    "created_at": "2026-09-12",
+    "resolved_at": "2026-09-12",
+    "resolution_changes": "Declared the selected presentation depth format for grid, player, and HUD pipelines while retaining HUD depth test/write disabled; added focused configuration coverage. No offscreen or golden assets changed.",
+    "plan": [
+      "Declare the selected presentation depth format for grid, player, and HUD pipelines while retaining HUD depth test/write disabled.",
+      "Add a focused configuration regression that covers every active presentation pipeline and run focused renderer checks plus validation-enabled presentation smoke when supported."
+    ],
+    "product_changes": [],
+    "code_changes": [
+      "Added a shared selected-depth-format record for all active presentation pipelines.",
+      "Updated HUD dynamic-rendering pipeline creation to declare the selected depth format with depth test/write disabled.",
+      "Added a focused regression covering every active presentation pipeline."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]

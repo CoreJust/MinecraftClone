@@ -605,37 +605,27 @@ private:
         m_debug_hud_layout = createLayout(static_cast<uint32_t>(sizeof(DebugHudPushConstants)));
         m_kernel_cache.emplace(KERNEL_CACHE_CAPACITY);
         core::graphics::vulkan::VulkanDeviceReference const device = m_resources->deviceReference();
+        PresentationPipelineDescriptors const descriptors = presentationPipelineDescriptors(
+            m_grid_layout,
+            m_player_layout,
+            m_debug_hud_layout,
+            m_resources->format(),
+            m_depth_format
+        );
         m_grid_pipeline = m_kernel_cache->pipelineFor(
             device,
             *m_grid_program,
-            {
-                .layout = m_grid_layout,
-                .color_format = m_resources->format(),
-                .depth_format = m_depth_format,
-                .depth_test_enabled = true,
-                .depth_write_enabled = true,
-                .depth_compare_op = VK_COMPARE_OP_LESS,
-            }
+            descriptors.grid
         );
         m_player_pipeline = m_kernel_cache->pipelineFor(
             device,
             *m_player_program,
-            {
-                .layout = m_player_layout,
-                .color_format = m_resources->format(),
-                .depth_format = m_depth_format,
-                .depth_test_enabled = true,
-                .depth_write_enabled = true,
-                .depth_compare_op = VK_COMPARE_OP_LESS,
-            }
+            descriptors.player
         );
         m_debug_hud_pipeline = m_kernel_cache->pipelineFor(
             device,
             *m_debug_hud_program,
-            {
-                .layout = m_debug_hud_layout,
-                .color_format = m_resources->format(),
-            }
+            descriptors.debug_hud
         );
     }
 
