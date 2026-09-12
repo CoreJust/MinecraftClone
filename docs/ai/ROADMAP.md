@@ -18,7 +18,7 @@ This is an implementation queue, not the product specification. [../ROADMAP.md](
 | ED-010-S2 | S1 | Basic network API and separated server/client; real players and bots with 2×2 footprints roam a console-rendered 32×32 flat 2D world, with server collision. | codec/world collision tests; server plus two clients smoke. |
 | ED-010-S3 | S2 | Core Vulkan infrastructure, GLFW window, Vulkan+GLFW world rendering, and publish-check script; the S2 scene visibly renders. | validation-layer renderer smoke; fallback-capable GPU smoke; common gate. |
 | ED-010-S4 | S3 | 3D visual scene over still-flat logic; real or bot players; real-player camera and WASD; grid floor and colored box players. | input/camera math tests; bot and interactive movement smoke. |
-| ED-010-S5 | S4 | One chunk made only of air and dirt; flying player can inspect its block geometry. | chunk/meshing tests; fly-through renderer smoke. |
+| ED-010-S5 | S4 | One chunk made only of air and stone; flying player can inspect its block geometry. | chunk/meshing tests; fly-through renderer smoke. |
 | ED-010-S6 | S5 | Sparse/chunked 65,536×65,536×1,024 addressable world with deterministic air/stone pattern; no full-world allocation. | boundary/streaming/memory tests; distant chunk smoke. |
 | ED-010-S7 | S6 | X/Y world wrapping across simulation, protocol, and rendering. D: profile first, then record justified render/network optimizations and budgets. | seam/collision/replication tests; wrap-crossing smoke; profile artifact. |
 | ED-010-S8 | S7 | Permission-gated flight and phasing through blocks/entities; without permission, jump, gravity, block collision, and entity collision work. | permission and physics edge-case tests; multiplayer smoke. |
