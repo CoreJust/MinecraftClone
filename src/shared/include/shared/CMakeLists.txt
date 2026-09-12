@@ -7,5 +7,6 @@ target_sources(mc
             net/Message.hpp
             scenario/Scenario.hpp
             world/Chunk.hpp
+            world/ChunkMesher.hpp
             world/World.hpp
 )

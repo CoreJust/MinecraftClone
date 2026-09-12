@@ -125,3 +125,11 @@ coordinates and checked local coordinates. Bulk construction rejects unsupported
 IDs; effective edits update revision and content hash. Coordinate-and-seed
 sampling is deterministic. The native seed-42 fixture is a test/reference
 implementation; scripted configuration and gameplay integration are separate tasks.
+
+## S5 exposed-face mesh
+
+`ChunkMesher` emits local origin, material and outward direction for each
+exposed face in stable order. Optional neighbor boundary planes suppress solid
+seams. Cache validity compares the exact block and neighbor inputs plus revision;
+a content hash alone never authorizes reuse. Repeated identical updates preserve
+the mesh and build count. Renderer integration is tracked separately.

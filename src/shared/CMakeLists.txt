@@ -4,6 +4,7 @@ target_sources(mc
         scenario/CoreLangScenario.cpp
         scenario/Scenario.cpp
         world/Chunk.cpp
+        world/ChunkMesher.cpp
         world/World.cpp
 )
 
