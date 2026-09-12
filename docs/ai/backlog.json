@@ -1343,7 +1343,7 @@
       "MC-AI-0032"
     ],
     "acceptance": "A player navigates the existing authoritative multiplayer world through a deterministic 3D camera and WASD controls; focused unit, integration, Runtime/Client offscreen golden, visible runtime and frame-time evidence pass. The exact reviewed/tagged S4 build is published with named macOS, Windows and Android GitHub assets, SHA256 hashes, provenance, dependencies/licenses and truthful signing status. The exact downloaded macOS asset and exact released Android APK pass local runtime acceptance; Windows build/package evidence is required, while user Windows runtime is recorded separately and never inferred.",
-    "evidence": "Pre-final gates passed 193 Python tests, 212 CTest tests, validation-enabled presentation, true-offscreen depth/golden coverage, two-client replay fnv1a64:b04ada818279ae1e, documentation, and publisher checks. Android API 35/NDK 27 used exact CoreCpp 22376c32a23c98b7815e1bb0249384daeaee4e3b and CoreProject2026 714bd1186adb2c07890b15010db595230b3a41ec. The APK stayed upright near 60 FPS for over one minute; touch look changed yaw 0.0 to 22.4 degrees and movement changed authoritative Y 15 to 23 without the former five-second stall. The 1920-by-1080 Release HUD-on run sustained 119.923214 presentation requests/s for 1200 frames, p95/p99/max 8.563374/8.750793/13.231042 ms, with none above 16.667 ms. Exact artifacts, hosted Windows packaging, local Mac and Android acceptance, and normal-playable user preview remain prepublication gates; Windows runtime remains user-owned.",
+    "evidence": "Pre-final gates passed 193 Python tests, 212 CTest tests, validated presentation, true-offscreen depth/goldens, deterministic replay, documentation, and publisher checks. Android API 35/NDK 27 rendered upright and accepted responsive touch look plus authoritative movement. The 1920-by-1080 Release HUD-on run sustained 119.923214 presentation requests/s for 1200 frames, with p95/p99/max 8.563374/8.750793/13.231042 ms and none above 16.667 ms. Exact artifacts, hosted Windows packaging, local Mac and Android acceptance, and normal-playable user preview remain prepublication gates; Windows runtime remains user-owned.",
     "blocker": "",
     "owner": "Codex coordinator",
     "level": "snapshot",
@@ -4761,5 +4761,45 @@
     "docs_review": "No public product or API documentation changed; generated task and backlog views were refreshed.",
     "environment_review": "All local packages used clean revision-exact source commits and isolated install directories. The vcpkg manifest installer remained disabled and the existing dependency prefix was read-only.",
     "backlog_review": "The repin is a release-blocking dependency correction under MC-AI-0035; hosted Windows artifact confirmation and exact post-promotion Mac/Android artifacts remain prepublication gates."
+  },
+  {
+    "id": "MC-AI-0121",
+    "title": "Repin exact CoreProject2026 strict MSVC warning package",
+    "kind": "chore",
+    "status": "done",
+    "priority": "P0",
+    "route": "luna",
+    "milestone": "EarlyDev 0.1.0:4",
+    "depends_on": ["MC-AI-0120"],
+    "acceptance": "Pin the exact reviewed clean CoreProject2026 CP-0025 revision that fixes the two strict MSVC CoreLang warnings, validate the installed dependency closure and full game tests with vcpkg manifest installation disabled, and preserve all gameplay and visual source behavior. Hosted MSVC package verification remains the downstream candidate gate.",
+    "evidence": "Clean revision-exact CoreProject2026 156ebb7967b426881dde811c9bdabad75043403e installed against unchanged clean revision-exact CoreCpp 1bd387550fe5ac1e0561b8a49b6573841956e731. MinecraftClone configured against the full exact client package closure with VCPKG_MANIFEST_INSTALL=OFF, built mc_tests and mc_main in 86 steps, and passed 222/222 CTest tests. The shared vcpkg prefix remained unchanged. Hosted MSVC verification remains the downstream candidate gate.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0035",
+    "motivation": "Hosted candidate runs 34675929251 and 34675929249 passed macOS and Android but all three Windows jobs failed while compiling CoreProject2026 CoreLang under /W4 /WX: RuntimeError::operator== hid the public message member and precedence arithmetic narrowed unsigned int to uint16_t.",
+    "context": "CoreProject2026 CP-0025 fixes both warnings without changing the public function type, accepted language semantics, or the exact CoreCpp revision. This MinecraftClone task changes only the CoreProject2026 dependency identity and task records.",
+    "complexity": "low",
+    "created_at": "2026-09-12",
+    "resolved_at": "2026-09-12",
+    "resolution_changes": "Advanced the exact CoreProject2026 package pin to CP-0025 while retaining CoreCpp CC-0025 and preserving all gameplay source behavior.",
+    "plan": [
+      "Pin CoreProject2026 to the reviewed clean CP-0025 commit while retaining the existing CoreCpp pin.",
+      "Build and test MinecraftClone against exact installed packages with vcpkg manifest installation disabled.",
+      "Record exact provenance, review the staged task, and rerun the trusted hosted Windows candidate after promotion."
+    ],
+    "product_changes": [
+      "Preserved the corrected Snapshot 4 gameplay and visual behavior while advancing the strict-MSVC-portable CoreLang dependency package."
+    ],
+    "code_changes": [
+      "Advance dependencies.lock.json to CoreProject2026 CP-0025 while retaining CoreCpp CC-0025."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "The first local configure selected a server-only CoreCpp install with the correct revision but insufficient components; validation resumed with the existing full exact install and passed without rebuilding or mutating dependencies.",
+    "docs_review": "No public product or API documentation changed; generated task and backlog views were refreshed.",
+    "environment_review": "CoreProject2026 156ebb7967b426881dde811c9bdabad75043403e and full CoreCpp 1bd387550fe5ac1e0561b8a49b6573841956e731 were clean and revision-exact. The game build used isolated package/build directories and the shared vcpkg prefix read-only with VCPKG_MANIFEST_INSTALL=OFF.",
+    "backlog_review": "This closes only the exact dependency repin. Hosted MSVC build/package verification and exact post-promotion Mac/Android artifacts remain Snapshot 4 prepublication gates."
   }
 ]
