@@ -25,7 +25,7 @@
         "tests/acceptance/runtime_cli_tests.cmake",
         "tests/acceptance/scenario_runner_tests.cpp"
       ],
-      "sources_sha256": "f688b919921a51ea38408be363887db6ac4a4c3428f1d89a10a02282046cf7fe"
+      "sources_sha256": "f216f7e25ddfd4c7cde43efde83435d108cdc93390f2886d111ae7fcb0530318"
     },
     {
       "guide": "docs/code/ANDROID.md",
@@ -213,7 +213,7 @@
         "tests/core/shared_message_tests.cpp",
         "tests/core/shared_world_tests.cpp"
       ],
-      "sources_sha256": "ab45fcd735a1ab082a9f21963c05965a2fd197a18259ed0abe2f37542052738d"
+      "sources_sha256": "3483472c33f4060b142f45523a3871342e74ef8aa56ecd478840512e2f979485"
     },
     {
       "guide": "docs/code/RENDERING.md",
@@ -259,7 +259,7 @@
         "tests/testsupport/image_comparison_tests.cpp",
         "tests/testsupport/include/testsupport/ImageComparison.hpp"
       ],
-      "sources_sha256": "3545f0c2b9962ab8a068d80f170ae5b3f65c8526ad09354d77d02a960cc8fe4a"
+      "sources_sha256": "60d2d52c36e52924b21ad663cc6739df284d16c2c98ef6399b5a3a7ed2ebab4e"
     }
   ],
   "version": 1

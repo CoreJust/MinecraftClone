@@ -19,7 +19,8 @@ statements: each command observes all earlier commands at that boundary.
 - `expect` reads the current boundary and does not advance time.
 
 For the canonical sample, `input alice 1 0` is set at boundary 0; `wait 10`
-advances steps 1 through 10; Alice reaches `(5, 4)` at boundary 10. The
+advances steps 1 through 10; the fixed 100 ms authority applies 5,600 subcells
+per full-direction step, so Alice reaches `(9, 4)` at boundary 10. The
 subsequent stopped input is at boundary 10 and cannot retroactively affect
 those ten steps.
 

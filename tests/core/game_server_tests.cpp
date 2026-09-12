@@ -398,7 +398,9 @@ TEST(GameServerPredictionTest, QueuedInputsApplyAtMostOncePerTickAndAcknowledgeI
         return !positions.empty() && positions.back().acknowledged_input_sequence == 2U;
     }));
     auto const after_second_tick = client.positions('@').back();
-    EXPECT_EQ(after_second_tick.x_subcell, 2U * shared::MOVEMENT_SUBCELLS_PER_TICK);
+    uint32_t const expected_subcells = 2U * shared::MOVEMENT_SUBCELLS_PER_TICK;
+    EXPECT_EQ(after_second_tick.x, expected_subcells / shared::SUBCELLS_PER_CELL);
+    EXPECT_EQ(after_second_tick.x_subcell, expected_subcells % shared::SUBCELLS_PER_CELL);
     EXPECT_LT(after_first_tick.state_revision, after_second_tick.state_revision);
 }
 

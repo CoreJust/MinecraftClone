@@ -94,11 +94,12 @@ TEST(GameClientPredictionTest, AcknowledgementReconcilesAndReplaysWithoutCorrect
     ASSERT_TRUE(client.applyServerPosition(position(
         '@',
         1U,
-        2U * shared::MOVEMENT_SUBCELLS_PER_TICK,
+        2U * shared::MOVEMENT_SUBCELLS_PER_TICK - shared::SUBCELLS_PER_CELL,
         2U,
         3U
     )));
     ASSERT_TRUE(client.predictedLocalPlayer().has_value());
+    EXPECT_EQ(client.predictedLocalPlayer()->x, 1U);
     EXPECT_EQ(client.predictedLocalPlayer()->x_subcell, predicted_before_acknowledgement);
 }
 

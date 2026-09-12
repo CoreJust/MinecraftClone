@@ -5528,5 +5528,39 @@
     "docs_review": "Source state refreshed; protocol behavior is covered by generated code inventory.",
     "environment_review": "No runtime launch requested.",
     "backlog_review": "Finalized MC-AI-0144 as an exact MC-AI-0035 child."
+  },
+  {
+    "id": "MC-AI-0145",
+    "title": "Increase authoritative movement speed to 5600 subcells",
+    "kind": "feature",
+    "status": "done",
+    "priority": "P0",
+    "route": "luna",
+    "milestone": "EarlyDev 0.1.0:4",
+    "depends_on": [],
+    "acceptance": "A full 100 ms direction step advances 5600 subcells, with server acknowledgement, client prediction, world bounds, and canonical CLI scenarios deriving the same value.",
+    "evidence": "cmake --build --preset debug --target mc_main mc_tests and focused WorldTest/GameServerPredictionTest/GameClientPredictionTest/AcceptanceCli: 22/22 passed; fast gate passed.",
+    "blocker": "",
+    "owner": "",
+    "level": "basic",
+    "parent": "MC-AI-0035",
+    "motivation": "Increase fixed-step movement while retaining authoritative reconciliation.",
+    "context": "Prediction and scenario expectations derive from the shared fixed-step speed.",
+    "complexity": "low",
+    "created_at": "2026-09-12",
+    "resolved_at": "2026-09-13",
+    "resolution_changes": "Raised the shared authoritative movement step to 5600 subcells and updated world, server reconciliation, prediction, canonical scenario, and runtime CLI expectations.",
+    "plan": [
+      "Raise the shared movement constant and update deterministic expectations."
+    ],
+    "product_changes": [],
+    "code_changes": [],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "Updated scripting execution and quickstart documentation plus canonical scenario sources; refreshed generated source state.",
+    "environment_review": "macOS incremental mc_main and mc_tests build plus affected tests passed; no runtime launch requested.",
+    "backlog_review": "Finalized MC-AI-0145 as one MC-AI-0035 child."
   }
 ]

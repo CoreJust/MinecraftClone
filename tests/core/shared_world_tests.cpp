@@ -96,8 +96,8 @@ TEST(WorldTest, RandomSpawnsStayWithinTheWorld) {
 TEST(WorldTest, FootprintMovementStopsAtTheLastValidOrigin) {
     static constexpr uint8_t LAST_INTERIOR_CELL = 29;
     static constexpr uint8_t POSITIVE_DIRECTION = 127;
-    static constexpr uint16_t CARDINAL_START_SUBCELL = 6'000;
-    static constexpr uint16_t DIAGONAL_START_SUBCELL = 7'178;
+    static constexpr uint16_t CARDINAL_START_SUBCELL = 4'400;
+    static constexpr uint16_t DIAGONAL_START_SUBCELL = 6'049;
 
     shared::World horizontal;
     horizontal.spawnPlayer(1, '@', std::pair<uint8_t, uint8_t>{ LAST_INTERIOR_CELL, 4 });
@@ -208,15 +208,15 @@ TEST(WorldTest, SubstepsAccumulateAndDiagonalSpeedIsNormalized) {
         * shared::MOVEMENT_SUBCELLS_PER_TICK);
 }
 
-TEST(WorldTest, FullTickUsesTheRequestedFourThousandSubcellSpeed) {
+TEST(WorldTest, FullTickUsesTheRequestedFiveThousandSixHundredSubcellSpeed) {
     shared::World world;
     world.spawnPlayer(1U, '@', std::pair<uint8_t, uint8_t>{ 5U, 5U });
 
     ASSERT_TRUE(world.movePlayer(1U, { 127U, 0U }));
     ASSERT_TRUE(world.player(1U).has_value());
-    EXPECT_EQ(shared::MOVEMENT_SUBCELLS_PER_TICK, 4'000U);
+    EXPECT_EQ(shared::MOVEMENT_SUBCELLS_PER_TICK, 5'600U);
     EXPECT_EQ(world.player(1U)->x, 5U);
-    EXPECT_EQ(world.player(1U)->x_subcell, 4'000U);
+    EXPECT_EQ(world.player(1U)->x_subcell, 5'600U);
 }
 
 TEST(WorldTest, SubcellCollisionRejectsOverlapBeforeEitherPlayerChangesCells) {

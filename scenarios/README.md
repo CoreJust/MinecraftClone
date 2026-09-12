@@ -4,9 +4,10 @@ Every checked-in source in this directory is complete and parseable by the
 header-selected frontend documented in [the scripting guide](../docs/scripting/README.md).
 
 - [canonical_sample.mcscenario](canonical_sample.mcscenario) is the exact
-  canonical quickstart source.
+  canonical quickstart source: ten fixed 100 ms steps at 0.56 cells per step
+  reach `(9, 4)`.
 - [canonical_sample.core](canonical_sample.core) is the CoreLang equivalent;
-  it lowers to the same five-tick authoritative plan.
+  it lowers to the same ten-tick authoritative plan.
 - [comment_and_boundary.mcscenario](comment_and_boundary.mcscenario) shows
   blank lines, trailing comments, `"#"` as a character, and an expectation at
   boundary zero.
