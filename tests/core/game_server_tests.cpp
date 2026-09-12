@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <array>
 #include <atomic>
+#include <barrier>
 #include <chrono>
 #include <functional>
 #include <thread>
@@ -78,6 +79,34 @@ protected:
     } };
 
     ~GameServerTest() override
+    {
+        stop_requested.store(true, std::memory_order_relaxed);
+        server_thread.join();
+    }
+
+    bool connect(ProtocolClient& client)
+    {
+        static constexpr std::chrono::seconds TIMEOUT{ 1 };
+        return client.connect(core::Address::localhost(server.port()), TIMEOUT);
+    }
+
+    bool join(ProtocolClient& client, char const ch)
+    {
+        return connect(client)
+            && client.sendMessage(shared::JoinRequestMessage{ .ch = ch })
+            && client.waitFor([&client, ch] { return !client.positions(ch).empty(); });
+    }
+};
+
+class ProductionGameServerTest : public testing::Test {
+protected:
+    server::GameServer server{ 0 };
+    std::atomic_bool stop_requested{ false };
+    std::thread server_thread{ [this] {
+        server.run(stop_requested);
+    } };
+
+    ~ProductionGameServerTest() override
     {
         stop_requested.store(true, std::memory_order_relaxed);
         server_thread.join();
@@ -238,4 +267,69 @@ TEST_F(GameServerTest, JoinedDisconnectRemovesOnlyTheDepartingPlayer)
     ASSERT_TRUE(join(replacement, '#'));
     EXPECT_EQ(replacement.positions('@').size(), 1u);
     EXPECT_EQ(replacement.positions('#').size(), 1u);
+}
+
+TEST_F(ProductionGameServerTest, ConcurrentNormalCadenceInputsDoNotStarveNewJoin)
+{
+    static constexpr uint32_t INPUTS_PER_SENDER_BEFORE_JOIN{ 12 };
+    static constexpr std::chrono::seconds JOIN_TIMEOUT{ 1 };
+    static constexpr std::chrono::seconds NORMAL_CADENCE_TIMEOUT{ 2 };
+    static constexpr shared::Direction DIRECTION{ .x = 127, .y = 0 };
+    ProtocolClient first;
+    ProtocolClient second;
+    ProtocolClient newcomer;
+    ASSERT_TRUE(join(first, '@'));
+    ASSERT_TRUE(join(second, '#'));
+
+    std::atomic_bool stop_sending{ false };
+    std::atomic_bool send_failed{ false };
+    std::atomic<uint32_t> first_inputs_sent{ 0 };
+    std::atomic<uint32_t> second_inputs_sent{ 0 };
+    std::barrier start_senders{ 3 };
+    auto const send_inputs = [&](ProtocolClient& client, std::atomic<uint32_t>& inputs_sent) {
+        start_senders.arrive_and_wait();
+        while (!stop_sending.load(std::memory_order_relaxed)) {
+            if (!client.sendMessage(shared::ClientInputMessage{ .direction = DIRECTION })) {
+                send_failed.store(true, std::memory_order_relaxed);
+                return;
+            }
+            client.flush();
+            inputs_sent.fetch_add(1, std::memory_order_relaxed);
+            std::this_thread::sleep_for(shared::TICK);
+        }
+    };
+    std::thread first_sender{ send_inputs, std::ref(first), std::ref(first_inputs_sent) };
+    std::thread second_sender{ send_inputs, std::ref(second), std::ref(second_inputs_sent) };
+    start_senders.arrive_and_wait();
+
+    auto const normal_cadence_deadline = std::chrono::steady_clock::now() + NORMAL_CADENCE_TIMEOUT;
+    while (
+        (
+            first_inputs_sent.load(std::memory_order_relaxed) < INPUTS_PER_SENDER_BEFORE_JOIN
+            || second_inputs_sent.load(std::memory_order_relaxed) < INPUTS_PER_SENDER_BEFORE_JOIN
+        )
+        && std::chrono::steady_clock::now() < normal_cadence_deadline
+    ) {
+        std::this_thread::sleep_for(std::chrono::milliseconds{ 1 });
+    }
+    bool const normal_cadence_backlog_created =
+        first_inputs_sent.load(std::memory_order_relaxed) >= INPUTS_PER_SENDER_BEFORE_JOIN
+        && second_inputs_sent.load(std::memory_order_relaxed) >= INPUTS_PER_SENDER_BEFORE_JOIN;
+
+    auto const join_started = std::chrono::steady_clock::now();
+    bool const joined = normal_cadence_backlog_created && join(newcomer, '$');
+    bool const received_authoritative_state = joined && newcomer.waitFor([&] {
+        return !newcomer.positions('@').empty() && !newcomer.positions('#').empty();
+    });
+    auto const join_elapsed = std::chrono::steady_clock::now() - join_started;
+
+    stop_sending.store(true, std::memory_order_relaxed);
+    first_sender.join();
+    second_sender.join();
+
+    EXPECT_FALSE(send_failed.load(std::memory_order_relaxed));
+    EXPECT_TRUE(normal_cadence_backlog_created);
+    EXPECT_TRUE(joined);
+    EXPECT_TRUE(received_authoritative_state);
+    EXPECT_LT(join_elapsed, JOIN_TIMEOUT);
 }

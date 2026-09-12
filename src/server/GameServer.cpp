@@ -18,7 +18,7 @@ void GameServer::run(std::atomic_bool const& stop_requested)
 {
     while (!stop_requested.load(std::memory_order_relaxed)) {
         auto const start = std::chrono::steady_clock::now();
-        static_cast<void>(tick());
+        static_cast<void>(tick(shared::TICK));
         auto const tick_time = std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::steady_clock::now() - start
         );

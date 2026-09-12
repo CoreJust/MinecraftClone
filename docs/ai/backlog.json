@@ -5418,5 +5418,43 @@
     "docs_review": "Reviewed docs/code/GAMEPLAY.md against the receive-time interpolation and authoritative-HUD contract; it now describes the 0.4-cell tick and presentation boundary.",
     "environment_review": "Local macOS Debug configure/build completed with pinned dependencies. No Android device or interactive runtime evidence is claimed by this deterministic task slice.",
     "backlog_review": "MC-AI-0140 is finalized as one basic child under MC-AI-0035. Scope excludes server draining, world bounds, prediction/protocol, 5,600-subcell speed, sliding, and scenarios."
+  },
+  {
+    "id": "MC-AI-0142",
+    "title": "Drain multiplayer server events within each authoritative tick",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P0",
+    "route": "luna",
+    "milestone": "EarlyDev 0.1.0:4",
+    "depends_on": [],
+    "acceptance": "The production GameServer loop drains concurrent client events within each bounded 100 ms authoritative tick without allowing more than one move per player per tick. With two real protocol clients sending at the normal cadence, a third client connects, joins, receives authoritative state, and remains serviced; focused coverage uses GameServer::run rather than a manually over-polled helper.",
+    "evidence": "Configured and built mc_tests, then passed all 7 focused GameServerTest and ProductionGameServerTest cases; git diff --check passed. The fast source gate is recorded separately.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0035",
+    "motivation": "The server currently dispatches at most one ENet event per 100 ms tick, so two clients exceed its service rate, starve new handshakes and input, and are eventually disconnected.",
+    "context": "CoreCpp poll(0) dispatches at most one event, while each client sends once per 100 ms.",
+    "complexity": "medium",
+    "created_at": "2026-09-12",
+    "resolved_at": "2026-09-12",
+    "resolution_changes": "Changed the production server loop to use the bounded authoritative tick duration as its poll timeout, draining queued client events while retaining the once-per-player movement guard; added a real concurrent normal-cadence production-loop regression.",
+    "plan": [
+      "Give the production GameServer loop a bounded tick-duration poll while retaining fixed-step cadence and once-per-player movement.",
+      "Add a real production-loop multiplayer regression with concurrent normal-cadence senders and a third joining client."
+    ],
+    "product_changes": [],
+    "code_changes": [
+      "GameServer drains queued ENet events during each authoritative tick.",
+      "Added production-loop concurrent-client regression coverage."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "No gameplay guide change was required: the fixed 100 ms authoritative cadence and one-move-per-player rule are unchanged.",
+    "environment_review": "Local macOS Debug build and real local ENet regression passed. No Android or interactive runtime evidence is claimed.",
+    "backlog_review": "MC-AI-0142 is finalized as one basic child under MC-AI-0035. Scope is limited to bounded server event draining and its regression; no bounds, prediction, protocol, speed, sliding, or scenario changes occurred."
   }
 ]
