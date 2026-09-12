@@ -17,6 +17,15 @@ SCRIPT = REPOSITORY / "script/ai_check.py"
 PRE_PUSH = REPOSITORY / ".githooks/pre-push"
 
 
+def pre_push_command():
+    if os.name != "nt":
+        return [str(PRE_PUSH)]
+    shell = shutil.which("sh")
+    if shell is None:
+        raise RuntimeError("POSIX shell 'sh' is required to execute the pre-push fixture on Windows")
+    return [shell, "-c", 'exec "$1"', "pre-push-fixture", str(PRE_PUSH)]
+
+
 def load_module():
     spec = importlib.util.spec_from_file_location("ai_check", SCRIPT)
     module = importlib.util.module_from_spec(spec)
@@ -342,17 +351,26 @@ class AiCheckTests(unittest.TestCase):
             }
             input_line = f"refs/heads/ai-dev {head} refs/heads/ai-dev {head}\n"
             success = subprocess.run(
-                [PRE_PUSH], cwd=self.root, input=input_line, text=True,
+                pre_push_command(), cwd=self.root, input=input_line, text=True,
                 capture_output=True, env=environment,
             )
             self.assertEqual(success.returncode, 0, success.stderr)
             self.assertEqual(log.read_text(encoding="utf-8").strip(), "script/ai_check.py --fast --require-index-match")
 
             failure = subprocess.run(
-                [PRE_PUSH], cwd=self.root, input=input_line, text=True,
+                pre_push_command(), cwd=self.root, input=input_line, text=True,
                 capture_output=True, env=environment | {"HOOK_EXIT": "7"},
             )
             self.assertEqual(failure.returncode, 7, failure.stderr)
+            self.assertEqual(log.read_text(encoding="utf-8").strip(), "script/ai_check.py --fast --require-index-match")
+
+    def test_pre_push_command_uses_detected_posix_shell_on_windows(self):
+        with mock.patch.object(os, "name", "nt"), mock.patch.object(shutil, "which", return_value="sh.exe") as which:
+            self.assertEqual(
+                pre_push_command(),
+                ["sh.exe", "-c", 'exec "$1"', "pre-push-fixture", str(PRE_PUSH)],
+            )
+        which.assert_called_once_with("sh")
 
     def test_version_arguments_and_publisher_exceptions_are_precise(self):
         ai_check = load_module()
