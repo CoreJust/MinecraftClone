@@ -47,12 +47,14 @@ class RuntimeCliTests(unittest.TestCase):
             output = result.stdout + result.stderr
             self.assertNotEqual(result.returncode, 0, output)
             self.assertIn("valid scenario command failed:", output)
+            diagnostic_scenario = f"{output_directory}/valid.mcscenario"
+            diagnostic_evidence = f"{output_directory}/valid.json"
             self.assertRegex(
                 output,
                 re.compile(
                     rf'command:\s+"{re.escape(str(launcher))}"\s+"--scenario"\s+'
-                    rf'"{re.escape(str(output_directory / "valid.mcscenario"))}"\s+"--evidence"\s+'
-                    rf'"{re.escape(str(output_directory / "valid.json"))}"'
+                    rf'"{re.escape(diagnostic_scenario)}"\s+"--evidence"\s+'
+                    rf'"{re.escape(diagnostic_evidence)}"'
                 ),
             )
             self.assertIn("exit code: 37", output)

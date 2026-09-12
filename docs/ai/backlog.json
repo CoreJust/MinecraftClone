@@ -5298,5 +5298,44 @@
     "docs_review": "Refreshed generated task/backlog/source-state views with python3 script/ai_docs.py refresh; documentation checks pass.",
     "environment_review": "Validation used isolated CoreCpp, CoreProject2026, and MinecraftClone build/install directories with VCPKG_MANIFEST_INSTALL=OFF and the existing vcpkg inputs; shared dependency prefixes were not mutated. Exact installed package metadata and MC CMake cache were read back. The interrupted CoreCpp PresentationSmoke exit 130 remains a graphics-window limitation outside the MinecraftClone gate; hosted Windows and Android artifact acceptance remain separate.",
     "backlog_review": "MC-AI-0138 remains finalized under parent MC-AI-0035; no unrelated backlog tasks were changed."
+  },
+  {
+    "id": "MC-AI-0139",
+    "title": "Make runtime CLI diagnostic path assertion portable on Windows",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P1",
+    "route": "luna",
+    "milestone": "EarlyDev 0.1.0:4",
+    "depends_on": [],
+    "acceptance": "The AcceptanceCli runtime diagnostic regression accepts the exact CMake diagnostic spelling for native POSIX paths and Windows drive paths whose directory base uses backslashes while CMake appends forward-slash filenames, while preserving the child command, exit code, stdout, and stderr assertions. No production, game, or CMake behavior changes.",
+    "evidence": "The supplied hosted Windows Release log /private/tmp/mc-s4-5cf986e-evidence-UA9Y5I/logs/ai-checks-windows-release.log at source 5cf986e3fca633ae37549e84cb3b10036eb8739d reproduces the failure: CMake reports C:\\\\Users\\\\RUNNER~1\\\\...\\\\output/valid.mcscenario and output/valid.json, while the prior regex expects all-backslash Path spellings. Focused python3 -m unittest script.tests.test_runtime_cli -v passed 1/1. A deterministic PureWindowsPath-shaped diagnostic check passed for C:\\\\Users\\\\RUNNER~1\\\\...\\\\output/valid.mcscenario and output/valid.json with mixed base backslashes plus CMake-appended forward slashes. Full python3 -m unittest discover -s script/tests -v passed 236/236 in 45.464 seconds. python3 -m script.code_checks, git diff --check, python3 script/ai_docs.py check, python3 script/ai_tasks.py check, and python3 script/ai_plan.py check passed. No production, game, or CMake behavior changed; workflow log-printing and artifact-upload diagnostics requested during follow-up were not implemented because they require explicit authorization for externally hosted raw diagnostics.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0035",
+    "motivation": "The hosted Windows Release Python suite fails because test_runtime_cli.py expects native backslashes in paths that CMake prints with a forward slash before the generated filenames.",
+    "context": "Exact hosted log /private/tmp/mc-s4-5cf986e-evidence-UA9Y5I/logs/ai-checks-windows-release.log at source 5cf986e3fca633ae37549e84cb3b10036eb8739d reports test_runtime_cli.py:50 failing: CMake prints C:\\\\Users\\\\...\\\\output/valid.mcscenario and output/valid.json, while the test regex expects all-backslash Path spellings. Scope is the test assertion and nearby runtime CLI/path assertions only; do not change runtime, production, or CMake behavior.",
+    "complexity": "low",
+    "created_at": "2026-09-12",
+    "resolved_at": "2026-09-12",
+    "resolution_changes": "Updated the runtime CLI diagnostic regression to derive generated-file spellings by appending the forward slash CMake uses after the platform-native output directory; preserved exact child command, exit code, stdout, and stderr assertions; regenerated required task/backlog/source-state metadata.",
+    "plan": [
+      "Derive expected generated-file spellings from the CMake diagnostic concatenation rather than native Path joining.",
+      "Run the focused runtime CLI test and a deterministic Windows-style diagnostic-path assertion.",
+      "Run task, docs, source-policy, and diff checks; record exact evidence and limitations."
+    ],
+    "product_changes": [],
+    "code_changes": [
+      "script/tests/test_runtime_cli.py",
+      "Generated MC-AI-0139 task, parent task, backlog, and source-state metadata required for traceability."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "Reviewed docs/code/README.md and docs/ai/MAINTENANCE.md against the test-only path-diagnostic change; no narrative guide change was needed. Ran python3 script/ai_docs.py refresh and check, updating only generated source_state.json plus required task/backlog views.",
+    "environment_review": "macOS focused and full Python validation passed. The supplied Windows log is the authoritative failure reproduction and a deterministic PureWindowsPath case passed locally; no Windows runner is available in this lane, so hosted rerun/runtime acceptance is not claimed.",
+    "backlog_review": "MC-AI-0139 is finalized as one basic child under MC-AI-0035. Scope is limited to the portable runtime CLI path assertion and required task/backlog/source-state metadata. The requested workflow raw-log printing and build/ai-checks/** artifact upload are withheld pending explicit user authorization; no unrelated task mutation occurred."
   }
 ]
