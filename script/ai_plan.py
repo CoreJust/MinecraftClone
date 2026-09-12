@@ -73,7 +73,7 @@ def current_tasks(
             raise PlanError(f"current {level} must be active or done")
         selected[level] = task
         active = [item for item in tasks if item["level"] == level and item["status"] == "active"]
-        if task["status"] == "active" and (len(active) != 1 or active[0]["id"] != task["id"]):
+        if level != "snapshot" and task["status"] == "active" and (len(active) != 1 or active[0]["id"] != task["id"]):
             raise PlanError(f"current {level} is ambiguous")
     if "snapshot" in selected and "minor" not in selected:
         raise PlanError("current snapshot requires a current minor")
@@ -211,7 +211,7 @@ def select_current(tasks: Sequence[dict[str, Any]], level: str, number: str, cur
     if task["level"] != level or task["status"] != "active":
         raise PlanError(f"task {number} is not an active {level}")
     active = [item for item in tasks if item["level"] == level and item["status"] == "active"]
-    if len(active) != 1:
+    if level != "snapshot" and len(active) != 1:
         raise PlanError(f"current {level} is ambiguous")
     current = load_current(current_path)
     task_by_id = {item["id"]: item for item in tasks}
