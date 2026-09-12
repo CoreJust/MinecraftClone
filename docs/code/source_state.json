@@ -259,7 +259,7 @@
         "tests/testsupport/image_comparison_tests.cpp",
         "tests/testsupport/include/testsupport/ImageComparison.hpp"
       ],
-      "sources_sha256": "60d2d52c36e52924b21ad663cc6739df284d16c2c98ef6399b5a3a7ed2ebab4e"
+      "sources_sha256": "05b0947722a94fa5528de270d4cc535d19017f8d24deb80429d727dceab604e4"
     }
   ],
   "version": 1

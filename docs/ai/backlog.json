@@ -5596,5 +5596,39 @@
     "docs_review": "Generated source state refreshed.",
     "environment_review": "macOS incremental build and focused World tests passed.",
     "backlog_review": "Finalized MC-AI-0146 as one MC-AI-0035 child."
+  },
+  {
+    "id": "MC-AI-0147",
+    "title": "Exercise real multiplayer prediction scenarios",
+    "kind": "feature",
+    "status": "done",
+    "priority": "P0",
+    "route": "luna",
+    "milestone": "EarlyDev 0.1.0:4",
+    "depends_on": [],
+    "acceptance": "Real ENet clients cover concurrent cadence, reconciliation, and authoritative player lifetimes.",
+    "evidence": "Incremental mc_main and mc_tests build plus GameClientPredictionTest including real three-client transport reconciliation: 5/5 passed; fast gate passed.",
+    "blocker": "",
+    "owner": "",
+    "level": "basic",
+    "parent": "MC-AI-0035",
+    "motivation": "Direct helper tests do not prove real transport reconciliation.",
+    "context": "Prediction must remain reconciled with three concurrent production clients.",
+    "complexity": "medium",
+    "created_at": "2026-09-12",
+    "resolved_at": "2026-09-13",
+    "resolution_changes": "Added bounded real ENet three-client prediction reconciliation coverage without production behavior changes.",
+    "plan": [
+      "Add bounded three-client production transport coverage."
+    ],
+    "product_changes": [],
+    "code_changes": [],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "Generated source state refreshed.",
+    "environment_review": "macOS incremental build and focused real transport scenario passed.",
+    "backlog_review": "Finalized MC-AI-0147 as one MC-AI-0035 child."
   }
 ]
