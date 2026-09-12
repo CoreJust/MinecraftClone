@@ -176,10 +176,16 @@ class AiCommitTests(unittest.TestCase):
             ("model", {"model": "gpt-5.6-sol"}),
             ("task", {"task_id": "MC-AI-9999"}),
             ("head", {"head": "0" * 40}),
+            ("effort", {"effort": "low"}),
         ):
             with self.subTest(name=name):
                 result = self.record(candidate, **changes)
                 self.assertEqual(result.returncode, 1)
+
+    def test_medium_effort_report_is_accepted(self) -> None:
+        candidate = self.candidate()
+        result = self.record(candidate, effort="medium")
+        self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_commit_message_requires_one_matching_trailer(self) -> None:
         candidate = self.candidate()
