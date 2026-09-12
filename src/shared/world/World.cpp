@@ -92,9 +92,12 @@ bool World::movePlayer(
         return false;
     }
 
-    int const direction_x = static_cast<int8_t>(direction.x);
-    int const direction_y = static_cast<int8_t>(direction.y);
+    int32_t const direction_x = static_cast<int8_t>(direction.x);
+    int32_t const direction_y = static_cast<int8_t>(direction.y);
     if (direction_x == 0 && direction_y == 0) {
+        return true;
+    }
+    if (elapsed == std::chrono::milliseconds::zero()) {
         return true;
     }
 
@@ -108,24 +111,32 @@ bool World::movePlayer(
     uint32_t const divisor = std::max<uint32_t>(127U, direction_length);
     uint32_t const base_step = static_cast<uint32_t>(elapsed.count())
         * MOVEMENT_SUBCELLS_PER_TICK / static_cast<uint32_t>(TICK.count());
-    int const delta_x = static_cast<int>(base_step * static_cast<uint32_t>(std::abs(direction_x)) / divisor)
+    int32_t const delta_x = static_cast<int32_t>(base_step * static_cast<uint32_t>(std::abs(direction_x)) / divisor)
         * (direction_x < 0 ? -1 : 1);
-    int const delta_y = static_cast<int>(base_step * static_cast<uint32_t>(std::abs(direction_y)) / divisor)
+    int32_t const delta_y = static_cast<int32_t>(base_step * static_cast<uint32_t>(std::abs(direction_y)) / divisor)
         * (direction_y < 0 ? -1 : 1);
-    int const position_x = static_cast<int>(p->x) * SUBCELLS_PER_CELL + p->x_subcell + delta_x;
-    int const position_y = static_cast<int>(p->y) * SUBCELLS_PER_CELL + p->y_subcell + delta_y;
-    int const target_x = position_x / SUBCELLS_PER_CELL;
-    int const target_y = position_y / SUBCELLS_PER_CELL;
-    if (position_x < 0 || position_x > static_cast<int>(MAX_PLAYER_ORIGIN_SUBCELL)
-        || position_y < 0 || position_y > static_cast<int>(MAX_PLAYER_ORIGIN_SUBCELL)) {
-        return false;
+    int32_t position_x = static_cast<int32_t>(p->x) * SUBCELLS_PER_CELL + p->x_subcell;
+    int32_t position_y = static_cast<int32_t>(p->y) * SUBCELLS_PER_CELL + p->y_subcell;
+    bool applied_x = false;
+    bool applied_y = false;
+    int32_t const candidate_x = position_x + delta_x;
+    if (delta_x != 0 && candidate_x >= 0 && candidate_x <= static_cast<int32_t>(MAX_PLAYER_ORIGIN_SUBCELL)
+        && canPlayerBeAt(static_cast<uint32_t>(candidate_x), static_cast<uint32_t>(position_y), id)) {
+        position_x = candidate_x;
+        applied_x = true;
     }
-    if (!canPlayerBeAt(static_cast<uint32_t>(position_x), static_cast<uint32_t>(position_y), id)) {
+    int32_t const candidate_y = position_y + delta_y;
+    if (delta_y != 0 && candidate_y >= 0 && candidate_y <= static_cast<int32_t>(MAX_PLAYER_ORIGIN_SUBCELL)
+        && canPlayerBeAt(static_cast<uint32_t>(position_x), static_cast<uint32_t>(candidate_y), id)) {
+        position_y = candidate_y;
+        applied_y = true;
+    }
+    if (!applied_x && !applied_y) {
         return false;
     }
 
-    p->x = static_cast<uint8_t>(target_x);
-    p->y = static_cast<uint8_t>(target_y);
+    p->x = static_cast<uint8_t>(position_x / SUBCELLS_PER_CELL);
+    p->y = static_cast<uint8_t>(position_y / SUBCELLS_PER_CELL);
     p->x_subcell = static_cast<uint16_t>(position_x % SUBCELLS_PER_CELL);
     p->y_subcell = static_cast<uint16_t>(position_y % SUBCELLS_PER_CELL);
     return true;

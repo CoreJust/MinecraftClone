@@ -5562,5 +5562,39 @@
     "docs_review": "Updated scripting execution and quickstart documentation plus canonical scenario sources; refreshed generated source state.",
     "environment_review": "macOS incremental mc_main and mc_tests build plus affected tests passed; no runtime launch requested.",
     "backlog_review": "Finalized MC-AI-0145 as one MC-AI-0035 child."
+  },
+  {
+    "id": "MC-AI-0146",
+    "title": "Allow axis sliding at collision contacts",
+    "kind": "feature",
+    "status": "done",
+    "priority": "P0",
+    "route": "luna",
+    "milestone": "EarlyDev 0.1.0:4",
+    "depends_on": [],
+    "acceptance": "World resolves X before Y, slides on an unblocked axis without speed gain, stops blocked straight movement, and permits moving away.",
+    "evidence": "Incremental mc_main and mc_tests build plus WorldTest: 18/18 passed; fast gate passed.",
+    "blocker": "",
+    "owner": "",
+    "level": "basic",
+    "parent": "MC-AI-0035",
+    "motivation": "Diagonal movement should retain an unblocked tangential component at authoritative collision contacts.",
+    "context": "World movement currently rejects a whole diagonal move when one axis is blocked.",
+    "complexity": "medium",
+    "created_at": "2026-09-12",
+    "resolved_at": "2026-09-13",
+    "resolution_changes": "Resolved diagonal movement axes independently so players slide on an unblocked axis while retaining bounds and collision authority.",
+    "plan": [
+      "Resolve movement axes independently under the existing authoritative bounds and collision checks."
+    ],
+    "product_changes": [],
+    "code_changes": [],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "Generated source state refreshed.",
+    "environment_review": "macOS incremental build and focused World tests passed.",
+    "backlog_review": "Finalized MC-AI-0146 as one MC-AI-0035 child."
   }
 ]

@@ -213,7 +213,7 @@
         "tests/core/shared_message_tests.cpp",
         "tests/core/shared_world_tests.cpp"
       ],
-      "sources_sha256": "3483472c33f4060b142f45523a3871342e74ef8aa56ecd478840512e2f979485"
+      "sources_sha256": "3a4b1512a1f105a5b3aef9a5fc8079be8563c5a57aa3062b9479b3a9d02be2c3"
     },
     {
       "guide": "docs/code/RENDERING.md",
