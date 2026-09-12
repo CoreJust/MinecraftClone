@@ -5259,5 +5259,44 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0138",
+    "title": "Repin exact CoreCpp CC-0030 and CoreProject2026 CP-0027 packages",
+    "kind": "chore",
+    "status": "done",
+    "priority": "P0",
+    "route": "luna",
+    "milestone": "EarlyDev 0.1.0:4",
+    "depends_on": [],
+    "acceptance": "dependencies.lock.json pins CoreCpp 099ec448239ab15dd4ad18a00f60b5b295267830 and CoreProject2026 1d050837b89575c5cb97de8b44142da8b9840cff exactly; fail-closed provenance matching remains unchanged, and no gameplay, rendering, package, or contract source behavior changes.",
+    "evidence": "CoreCpp source copy at commit 099ec448239ab15dd4ad18a00f60b5b295267830 was configured with VCPKG_MANIFEST_INSTALL=OFF and the requested full desktop closure (Core, Runtime, RuntimeNetwork, RuntimeKernel, RuntimeGraphics, RuntimeGraphicsVulkan, RuntimePlatformGlfw, RuntimeGraphicsVulkanGlfw). The unrestricted reconfigure exported revision 099ec448239ab15dd4ad18a00f60b5b295267830, DIRTY=FALSE, REVISION_EXACT=TRUE; install to /private/tmp/corecpp-cc0030-exact099-full-install exported the same metadata and all requested component target files. CoreCpp build passed; its interactive PresentationSmoke test was interrupted at exit 130 and is not a MinecraftClone gate. Clean CoreProject2026 source /private/tmp/cp-0027-coreproject-repin at commit 1d050837b89575c5cb97de8b44142da8b9840cff was installed at /private/tmp/mc-ai-0138-coreproject-install with revision exact, DIRTY=FALSE, REVISION_EXACT=TRUE, required CoreCpp 099ec448239ab15dd4ad18a00f60b5b295267830, and its 8/8 CTest suite passed. MinecraftClone was freshly configured and built in /private/tmp/mc-ai-0138-game-full-build against only these exact prefixes with VCPKG_MANIFEST_INSTALL=OFF; mc_main and mc_tests built (86/86 build steps), and complete CTest passed 223/223, including CoreCpp.ServerOnlyPackageConsumer, CoreProject2026.Provenance, MinecraftClone.ServerOnlyBuild, AcceptanceCli.RuntimeModes, and all client/unit/shader tests. No gameplay or source behavior changed.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0035",
+    "motivation": "Advance MinecraftClone dependency provenance to the reviewed exact CoreCpp CC-0030 and CoreProject2026 CP-0027 package revisions.",
+    "context": "MC-AI-0137 is the current reviewed S4 base. This task mechanically updates only dependencies.lock.json. The available CoreCpp install is /private/tmp/corecpp-cc0030-exact099-install; the available /private/tmp/coreproject-cp0027-exact099-install must be checked for exported revision, dirty, and exactness metadata before it can be used as exact package evidence.",
+    "complexity": "low",
+    "created_at": "2026-09-12",
+    "resolved_at": "2026-09-12",
+    "resolution_changes": "Updated dependencies.lock.json to exact CoreCpp CC-0030 revision 099ec448239ab15dd4ad18a00f60b5b295267830 and CoreProject2026 CP-0027 revision 1d050837b89575c5cb97de8b44142da8b9840cff; regenerated task, backlog, and source-state views; refreshed exact full-package and complete MinecraftClone validation evidence.",
+    "plan": [
+      "Replace only the two immutable dependency revisions in dependencies.lock.json.",
+      "Inspect both installed package prefixes for exported revision, dirty, and exactness metadata without rebuilding or mutating shared prefixes.",
+      "Regenerate canonical task/backlog/source-state views as needed and validate exact lock provenance plus the focused existing suite with VCPKG_MANIFEST_INSTALL=OFF."
+    ],
+    "product_changes": [],
+    "code_changes": [
+      "dependencies.lock.json",
+      "Generated task, backlog, and source-state metadata as needed."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "Refreshed generated task/backlog/source-state views with python3 script/ai_docs.py refresh; documentation checks pass.",
+    "environment_review": "Validation used isolated CoreCpp, CoreProject2026, and MinecraftClone build/install directories with VCPKG_MANIFEST_INSTALL=OFF and the existing vcpkg inputs; shared dependency prefixes were not mutated. Exact installed package metadata and MC CMake cache were read back. The interrupted CoreCpp PresentationSmoke exit 130 remains a graphics-window limitation outside the MinecraftClone gate; hosted Windows and Android artifact acceptance remain separate.",
+    "backlog_review": "MC-AI-0138 remains finalized under parent MC-AI-0035; no unrelated backlog tasks were changed."
   }
 ]
