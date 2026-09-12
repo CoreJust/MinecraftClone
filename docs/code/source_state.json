@@ -25,7 +25,7 @@
         "tests/acceptance/runtime_cli_tests.cmake",
         "tests/acceptance/scenario_runner_tests.cpp"
       ],
-      "sources_sha256": "d7f721b038caca4e0bffe41c357274e62666f22debcbf89e7d79a2e316edaea6"
+      "sources_sha256": "9b636cb3f77b0e16faf2ebbc92e04263b866fed04a6f68f76de6693265c1acb9"
     },
     {
       "guide": "docs/code/ANDROID.md",
@@ -121,6 +121,7 @@
         "script/tests/test_ci_acquire.py",
         "script/tests/test_package_snapshot.py",
         "script/tests/test_pre_finalization_candidate.py",
+        "script/tests/test_runtime_cli.py",
         "script/tests/test_verify_release_assets.py",
         "script/tests/test_workflow_contexts.py",
         "src/CMakeLists.txt",
@@ -132,7 +133,7 @@
         "vcpkg-configuration.json",
         "vcpkg.json"
       ],
-      "sources_sha256": "e9f449533cb97f941bf05cd32081ab69e97d7a1c7dc65d3d86325144cc41a8f0"
+      "sources_sha256": "83dc52e2faf5ea4687aef7675700c29f8b0aeb3c41585851b48a4f29ceb62235"
     },
     {
       "guide": "docs/code/CORE.md",
@@ -257,7 +258,7 @@
         "tests/testsupport/image_comparison_tests.cpp",
         "tests/testsupport/include/testsupport/ImageComparison.hpp"
       ],
-      "sources_sha256": "e107f637362d3def022b8b914d19231ddf41d9c7523a2ca9f8d5ec4916867937"
+      "sources_sha256": "7c7f5b0e37e1f187bc718853ffd79fc2ba17c6f49316f67d165a148265deeceb"
     }
   ],
   "version": 1

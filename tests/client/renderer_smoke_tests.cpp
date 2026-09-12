@@ -181,7 +181,7 @@ TEST(RendererSmokeTest, CompletedCaptureSurvivesRecreateAndReadsBack)
         shader_assets,
         { .require_validation = true, .enable_frame_capture = true },
     };
-    renderer.setDebugHudEnabled(true);
+    renderer.setDebugHudEnabled(false);
     std::array<client::PlayerRenderData, 2> const players{
         client::PlayerRenderData{ .x = 2U, .y = 3U, .color = { 1.0F, 0.0F, 0.0F, 1.0F } },
         client::PlayerRenderData{ .x = 29U, .y = 28U, .color = { 0.0F, 1.0F, 0.0F, 1.0F } },
@@ -215,21 +215,18 @@ TEST(RendererSmokeTest, CompletedCaptureSurvivesRecreateAndReadsBack)
     ASSERT_EQ(renderer.captureState(), client::FrameCaptureState::Completed);
     std::optional<client::RendererFrameCapture> const original_capture = renderer.takeFrameCapture();
     ASSERT_TRUE(original_capture.has_value());
-    ASSERT_EQ(original_capture->width, initial_framebuffer_width);
-    ASSERT_EQ(original_capture->height, initial_framebuffer_height);
-    ASSERT_EQ(
+    EXPECT_EQ(original_capture->width, initial_framebuffer_width);
+    EXPECT_EQ(original_capture->height, initial_framebuffer_height);
+    EXPECT_EQ(
         original_capture->rgba8.size(),
         static_cast<uint64_t>(initial_framebuffer_width) * initial_framebuffer_height * 4U
     );
-    CaptureColorClasses const original_colors = classifyCaptureColors(*original_capture);
-    EXPECT_TRUE(original_colors.complete())
-        << "original capture lacks: " << original_colors.missingClasses()
-        << "; the platform/grid/sky scene may cover every physical framebuffer sample";
-    EXPECT_EQ(renderer.runtimeInfo().debug_hud_draw_count, 1U);
+    EXPECT_EQ(renderer.runtimeInfo().debug_hud_draw_count, 0U);
 
     renderer.requestFrameCapture();
     ASSERT_TRUE(completeCapture());
     ASSERT_EQ(renderer.captureState(), client::FrameCaptureState::Completed);
+
     glfwSetWindowSize(window.nativeHandle(), RESIZED_WIDTH, RESIZED_HEIGHT);
     ASSERT_TRUE(window.nextFrame());
     uint32_t width = 0U;
@@ -243,11 +240,36 @@ TEST(RendererSmokeTest, CompletedCaptureSurvivesRecreateAndReadsBack)
     EXPECT_EQ(retained_capture->width, initial_framebuffer_width);
     EXPECT_EQ(retained_capture->height, initial_framebuffer_height);
     EXPECT_EQ(retained_capture->srgb_encoded, original_capture->srgb_encoded);
+    EXPECT_EQ(
+        retained_capture->rgba8.size(),
+        static_cast<uint64_t>(initial_framebuffer_width) * initial_framebuffer_height * 4U
+    );
     EXPECT_EQ(retained_capture->rgba8, original_capture->rgba8);
     CaptureColorClasses const retained_colors = classifyCaptureColors(*retained_capture);
-    EXPECT_TRUE(retained_colors.complete())
-        << "retained capture lacks: " << retained_colors.missingClasses()
-        << "; the platform/grid/sky scene may cover every physical framebuffer sample";
+    EXPECT_TRUE(retained_colors.has_grid);
+    EXPECT_TRUE(retained_colors.has_platform);
+    EXPECT_TRUE(retained_colors.has_platform_side);
+    EXPECT_TRUE(retained_colors.has_sky);
+    EXPECT_TRUE(retained_colors.has_red_player);
+    EXPECT_TRUE(retained_colors.has_green_player);
+
+    renderer.setDebugHudEnabled(true);
+    renderer.requestFrameCapture();
+    ASSERT_TRUE(completeCapture());
+    ASSERT_EQ(renderer.captureState(), client::FrameCaptureState::Completed);
+    std::optional<client::RendererFrameCapture> const subsequent_capture = renderer.takeFrameCapture();
+    ASSERT_TRUE(subsequent_capture.has_value());
+    EXPECT_EQ(subsequent_capture->width, width);
+    EXPECT_EQ(subsequent_capture->height, height);
+    EXPECT_EQ(
+        subsequent_capture->rgba8.size(),
+        static_cast<uint64_t>(width) * height * 4U
+    );
+    CaptureColorClasses const subsequent_colors = classifyCaptureColors(*subsequent_capture);
+    EXPECT_TRUE(subsequent_colors.complete())
+        << "subsequent capture lacks: " << subsequent_colors.missingClasses()
+        << "; the resized platform/grid/sky/HUD scene may cover every physical framebuffer sample";
+    EXPECT_EQ(renderer.runtimeInfo().debug_hud_draw_count, 1U);
 
     renderer.hotReload();
     renderer.requestFrameCapture();
