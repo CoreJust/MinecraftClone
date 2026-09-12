@@ -4770,7 +4770,9 @@
     "priority": "P0",
     "route": "luna",
     "milestone": "EarlyDev 0.1.0:4",
-    "depends_on": ["MC-AI-0120"],
+    "depends_on": [
+      "MC-AI-0120"
+    ],
     "acceptance": "Pin the exact reviewed clean CoreProject2026 CP-0025 revision that fixes the two strict MSVC CoreLang warnings, validate the installed dependency closure and full game tests with vcpkg manifest installation disabled, and preserve all gameplay and visual source behavior. Hosted MSVC package verification remains the downstream candidate gate.",
     "evidence": "Clean revision-exact CoreProject2026 156ebb7967b426881dde811c9bdabad75043403e installed against unchanged clean revision-exact CoreCpp 1bd387550fe5ac1e0561b8a49b6573841956e731. MinecraftClone configured against the full exact client package closure with VCPKG_MANIFEST_INSTALL=OFF, built mc_tests and mc_main in 86 steps, and passed 222/222 CTest tests. The shared vcpkg prefix remained unchanged. Hosted MSVC verification remains the downstream candidate gate.",
     "blocker": "",
@@ -4846,5 +4848,45 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0128",
+    "title": "Retain complete Windows Python CI failure diagnostics and normalize path assertions",
+    "kind": "chore",
+    "status": "done",
+    "priority": "P1",
+    "route": "luna",
+    "milestone": "EarlyDev 0.1.0:4",
+    "depends_on": [],
+    "acceptance": "Make failed ai_check phases expose complete diagnostics so hosted Python tracebacks are recoverable; normalize all nearby CMake path assertions semantically across platforms; add focused regression coverage; do not change production CI behavior except diagnostic visibility; run focused tests, docs/tasks/plan checks, and one exact-staged Luna/high review; commit with Task-ID MC-AI-0128 and do not push.",
+    "evidence": "Focused script.tests.test_ai_check passed 34/34; focused script.tests.test_ci_acquire and script.tests.test_workflow_contexts passed 31/31; python3 script/ai_check.py --fast passed docs, backlog, current-plan, diff-working, diff-cached, and the full unittest discovery suite. Hosted run 34692790648 job 103550945343 fully proves three test_ci_acquire path failures; GitHub annotations and downloaded log contain no fourth traceback, so no speculative test_ai_check fix was made.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0035",
+    "motivation": "Hosted Windows source-policy checks hide the full fourth Python failure while CMake path normalization makes exact CoreCpp_DIR assertions fail on Windows.",
+    "context": "Snapshot artifact run 34692790648 job 103550945343 ran 223 Python tests: three test_ci_acquire path assertion failures are fully evidenced; the fourth test_ai_check error is only summarized because the CI output tails the Python log and does not retain it. Preserve Mac/Android evidence and do not guess at the unknown test cause.",
+    "complexity": "medium",
+    "created_at": "2026-09-12",
+    "resolved_at": "2026-09-12",
+    "resolution_changes": "Changed ai_check failure reporting to print complete phase diagnostics instead of a 4,000-character tail; normalized the CoreCpp_DIR assertion with Path.as_posix(); added a long-output regression. The unknown fourth hosted test_ai_check cause remains unfixed because the retained job log and annotations did not include its traceback.",
+    "plan": [
+      "Make failed phase output complete rather than tail-truncated.",
+      "Use Path.as_posix() for CMake path assertions.",
+      "Add a regression that proves long failure diagnostics are retained.",
+      "Run focused and full fast validation, then stage the exact task candidate for review."
+    ],
+    "product_changes": [],
+    "code_changes": [
+      "Print complete failed-phase diagnostics in script/ai_check.py.",
+      "Use normalized CMake path spelling in test_ci_acquire.py and cover diagnostic retention in test_ai_check.py."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": false,
+    "retrospective": "",
+    "docs_review": "Regenerated docs/code/source_state.json and task/backlog Markdown; ai_docs.py check and ai_tasks.py check pass.",
+    "environment_review": "Local macOS validation only; hosted Windows confirmation remains required. No external publication or artifact upload was performed.",
+    "backlog_review": "Scoped to MC-AI-0128 under MC-AI-0035; preserved Mac/Android evidence and left the unknown test_ai_check cause as a documented residual."
   }
 ]
