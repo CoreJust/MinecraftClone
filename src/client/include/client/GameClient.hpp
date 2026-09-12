@@ -7,6 +7,7 @@
 
 #include <core/net/Client.hpp>
 
+#include <chrono>
 #include <deque>
 #include <optional>
 #include <unordered_map>
@@ -25,11 +26,26 @@ protected:
     virtual void render() = 0;
 
     [[nodiscard]] bool send(shared::Message const message);
-    [[nodiscard]] std::optional<shared::ClientInputMessage> predictInput(shared::Direction direction);
-    void discardPredictedInput(uint32_t sequence);
-    [[nodiscard]] bool applyServerPosition(shared::ServerPlayerPositionMessage const& message);
+    [[nodiscard]]
+    std::optional<shared::ClientInputMessage> predictInput(
+        shared::Direction direction,
+        std::chrono::steady_clock::time_point predicted_at = std::chrono::steady_clock::now()
+    );
+    void discardPredictedInput(
+        uint32_t sequence,
+        std::chrono::steady_clock::time_point discarded_at = std::chrono::steady_clock::now()
+    );
+    [[nodiscard]]
+    bool applyServerPosition(
+        shared::ServerPlayerPositionMessage const& message,
+        std::chrono::steady_clock::time_point received_at = std::chrono::steady_clock::now()
+    );
     void applyServerRemoval(char character);
     [[nodiscard]] std::optional<shared::Player> predictedLocalPlayer() const noexcept;
+    [[nodiscard]]
+    std::optional<PlayerPresentationPosition> predictedLocalPresentation(
+        std::chrono::steady_clock::time_point now
+    ) const noexcept;
 private:
     void onDisconnected(core::DisconnectEvent const event) override;
     void onReceived(core::ReceiveEvent event) override;
@@ -46,6 +62,7 @@ protected:
     bool m_accepted = false;
 private:
     void rebuildPrediction();
+    void updatePredictedPresentation(std::chrono::steady_clock::time_point updated_at) noexcept;
 };
 
 } // namespace client

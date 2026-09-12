@@ -5630,5 +5630,39 @@
     "docs_review": "Generated source state refreshed.",
     "environment_review": "macOS incremental build and focused real transport scenario passed.",
     "backlog_review": "Finalized MC-AI-0147 as one MC-AI-0035 child."
+  },
+  {
+    "id": "MC-AI-0149",
+    "title": "Smooth local predicted presentation between authoritative ticks",
+    "kind": "feature",
+    "status": "done",
+    "priority": "P0",
+    "route": "luna",
+    "milestone": "EarlyDev 0.1.0:4",
+    "depends_on": [],
+    "acceptance": "Local prediction updates receive-time presentation targets, camera and draw share a frame sample, equal acknowledgements do not restart smoothing, and authority remains unchanged.",
+    "evidence": "Incremental mc_main and mc_tests build plus GameClientPredictionTest and PlayerPresentationTest: 13/13 passed; fast gate passed.",
+    "blocker": "",
+    "owner": "",
+    "level": "basic",
+    "parent": "MC-AI-0035",
+    "motivation": "Local predicted movement still appears stepped between 100 ms authoritative updates.",
+    "context": "Presentation may smooth predicted targets without changing authoritative state, protocol, or simulation cadence.",
+    "complexity": "medium",
+    "created_at": "2026-09-12",
+    "resolved_at": "2026-09-13",
+    "resolution_changes": "Routed local predicted targets through receive-time presentation sampling and shared one frame sample between local camera and draw paths.",
+    "plan": [
+      "Route predicted local targets through PlayerPresentation with deterministic timestamped coverage."
+    ],
+    "product_changes": [],
+    "code_changes": [],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "Generated source state refreshed.",
+    "environment_review": "macOS incremental build and focused presentation/prediction tests passed.",
+    "backlog_review": "Finalized MC-AI-0149 as one MC-AI-0035 child."
   }
 ]

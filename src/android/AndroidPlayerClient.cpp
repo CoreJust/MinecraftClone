@@ -9,6 +9,7 @@
 #include <android/native_window.h>
 
 #include <chrono>
+#include <optional>
 #include <vector>
 
 namespace game_android {
@@ -86,7 +87,8 @@ void AndroidPlayerClient::render()
         ));
     }
     std::chrono::steady_clock::time_point const now = std::chrono::steady_clock::now();
-    if (auto const local_position = predictedLocalPlayer()) {
+    std::optional<client::PlayerPresentationPosition> const local_position = predictedLocalPresentation(now);
+    if (local_position.has_value()) {
         client::CameraPose const camera_pose = client::localPlayerThirdPersonPose(
             *local_position,
             m_camera.pose().angles
@@ -98,10 +100,10 @@ void AndroidPlayerClient::render()
     players.reserve(m_world.players().size());
     for (shared::Player const& player : m_world.players()) {
         if (player.ch == m_local_character) {
-            if (auto const local_position = predictedLocalPlayer()) {
+            if (local_position.has_value()) {
                 players.push_back({
-                    .x = static_cast<float>(shared::playerPositionX(*local_position)),
-                    .y = static_cast<float>(shared::playerPositionY(*local_position)),
+                    .x = static_cast<float>(local_position->x),
+                    .y = static_cast<float>(local_position->y),
                     .color = {
                         static_cast<float>(player.ch) / 256.0f,
                         1.0f - static_cast<float>(player.ch) / 256.0f,

@@ -7,6 +7,7 @@
 #include <GLFW/glfw3.h>
 
 #include <algorithm>
+#include <optional>
 
 namespace client {
 
@@ -64,8 +65,9 @@ void PlayerClient::render() {
     m_last_cursor_y = cursor_y;
     m_has_cursor_position = true;
     std::chrono::steady_clock::time_point const now = std::chrono::steady_clock::now();
-    if (auto const local_player = predictedLocalPlayer()) {
-        CameraPose const camera_pose = localPlayerThirdPersonPose(*local_player, m_camera.pose().angles);
+    std::optional<PlayerPresentationPosition> const local_position = predictedLocalPresentation(now);
+    if (local_position.has_value()) {
+        CameraPose const camera_pose = localPlayerThirdPersonPose(*local_position, m_camera.pose().angles);
         static_cast<void>(m_camera.setPosition(camera_pose.position));
     }
     m_renderer.recreate(width, height);
@@ -73,10 +75,10 @@ void PlayerClient::render() {
     m_render_data.reserve(m_world.players().size());
     for (shared::Player const& p : m_world.players()) {
         if (p.ch == m_local_character) {
-            if (auto const local_player = predictedLocalPlayer()) {
+            if (local_position.has_value()) {
                 m_render_data.push_back({
-                    .x = static_cast<float>(shared::playerPositionX(*local_player)),
-                    .y = static_cast<float>(shared::playerPositionY(*local_player)),
+                    .x = static_cast<float>(local_position->x),
+                    .y = static_cast<float>(local_position->y),
                     .color = { float(p.ch) / 256.f, 1.f - float(p.ch) / 256.f, 1.f, 1.f },
                 });
             }

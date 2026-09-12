@@ -22,6 +22,9 @@ void PlayerPresentation::update(
     PlayerPresentationPosition const target = position(player);
     for (Sample& sample : m_samples) {
         if (sample.character == player.ch) {
+            if (sample.to == target) {
+                return;
+            }
             sample = {
                 .character = player.ch,
                 .from = PlayerPresentation::sample(sample, received_at),

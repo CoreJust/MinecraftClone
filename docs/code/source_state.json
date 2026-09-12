@@ -44,7 +44,7 @@
         "src/android/CMakeLists.txt",
         "tests/android/input_state_tests.cpp"
       ],
-      "sources_sha256": "6ac4d1fc516bcd01747537d23efcab2a307cdb4cfb1706f56236632a9c11666a"
+      "sources_sha256": "16f6cdf7d744bd625757cd389a79efc12d635283a73fd2dcd6e1c363d8f62314"
     },
     {
       "guide": "docs/BUILD.md",
@@ -213,7 +213,7 @@
         "tests/core/shared_message_tests.cpp",
         "tests/core/shared_world_tests.cpp"
       ],
-      "sources_sha256": "3a4b1512a1f105a5b3aef9a5fc8079be8563c5a57aa3062b9479b3a9d02be2c3"
+      "sources_sha256": "355b8b321c52bfccfb246e4e7e9cb7c5abcc37496172807be669b9faa6f3aaaf"
     },
     {
       "guide": "docs/code/RENDERING.md",
@@ -259,7 +259,7 @@
         "tests/testsupport/image_comparison_tests.cpp",
         "tests/testsupport/include/testsupport/ImageComparison.hpp"
       ],
-      "sources_sha256": "05b0947722a94fa5528de270d4cc535d19017f8d24deb80429d727dceab604e4"
+      "sources_sha256": "34f503805da42aaa934b66328f8a972c4733f94e4a78519280ccee1cbef527cb"
     }
   ],
   "version": 1

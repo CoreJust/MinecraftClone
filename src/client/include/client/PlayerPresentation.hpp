@@ -15,6 +15,8 @@ namespace client {
 struct PlayerPresentationPosition final {
     double x;
     double y;
+
+    bool operator==(PlayerPresentationPosition const&) const noexcept = default;
 };
 
 class PlayerPresentation final {
@@ -48,20 +50,20 @@ private:
 };
 
 [[nodiscard]]
-glm::dvec3 localPlayerCenterPosition(shared::Player const& player) noexcept;
-
-[[nodiscard]]
 glm::dvec3 localPlayerCenterPosition(PlayerPresentationPosition position) noexcept;
 
 [[nodiscard]]
+glm::dvec3 localPlayerCenterPosition(shared::Player const& player) noexcept;
+
+[[nodiscard]]
 CameraPose localPlayerThirdPersonPose(
-    shared::Player const& player,
+    PlayerPresentationPosition position,
     CameraAngles angles
 ) noexcept;
 
 [[nodiscard]]
 CameraPose localPlayerThirdPersonPose(
-    PlayerPresentationPosition position,
+    shared::Player const& player,
     CameraAngles angles
 ) noexcept;
 

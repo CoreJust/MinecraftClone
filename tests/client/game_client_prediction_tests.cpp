@@ -21,6 +21,7 @@ public:
     using GameClient::discardPredictedInput;
     using GameClient::predictInput;
     using GameClient::predictedLocalPlayer;
+    using GameClient::predictedLocalPresentation;
 
     void setLocalCharacter(char const character) noexcept
     {
@@ -219,6 +220,64 @@ TEST(GameClientPredictionTest, AcknowledgementReconcilesAndReplaysWithoutCorrect
     ASSERT_TRUE(client.predictedLocalPlayer().has_value());
     EXPECT_EQ(client.predictedLocalPlayer()->x, 1U);
     EXPECT_EQ(client.predictedLocalPlayer()->x_subcell, predicted_before_acknowledgement);
+}
+
+TEST(GameClientPredictionTest, PredictedLocalPresentationInterpolatesFrameSamplesWithoutRestartingCorrectAck)
+{
+    static constexpr shared::Direction RIGHT{ .x = 127U, .y = 0U };
+    static constexpr double STEP = static_cast<double>(shared::MOVEMENT_SUBCELLS_PER_TICK)
+        / static_cast<double>(shared::SUBCELLS_PER_CELL);
+    std::chrono::steady_clock::time_point const STARTED_AT{};
+    PredictionClient sampled_each_frame;
+    PredictionClient sampled_once;
+    sampled_each_frame.setLocalCharacter('@');
+    sampled_once.setLocalCharacter('@');
+    ASSERT_TRUE(sampled_each_frame.applyServerPosition(position('@', 0U, 0U, 0U, 1U), STARTED_AT));
+    ASSERT_TRUE(sampled_once.applyServerPosition(position('@', 0U, 0U, 0U, 1U), STARTED_AT));
+    ASSERT_TRUE(sampled_each_frame.predictInput(RIGHT, STARTED_AT).has_value());
+    ASSERT_TRUE(sampled_once.predictInput(RIGHT, STARTED_AT).has_value());
+
+    ASSERT_TRUE(sampled_each_frame.predictedLocalPresentation(STARTED_AT + std::chrono::milliseconds{ 25 }).has_value());
+    ASSERT_TRUE(sampled_each_frame.predictedLocalPresentation(STARTED_AT + std::chrono::milliseconds{ 50 }).has_value());
+    ASSERT_TRUE(sampled_each_frame.predictedLocalPresentation(STARTED_AT + std::chrono::milliseconds{ 75 }).has_value());
+    EXPECT_DOUBLE_EQ(
+        sampled_each_frame.predictedLocalPresentation(STARTED_AT + std::chrono::milliseconds{ 25 })->x,
+        STEP * 0.25
+    );
+    EXPECT_DOUBLE_EQ(
+        sampled_each_frame.predictedLocalPresentation(STARTED_AT + std::chrono::milliseconds{ 50 })->x,
+        STEP * 0.5
+    );
+    EXPECT_DOUBLE_EQ(
+        sampled_each_frame.predictedLocalPresentation(STARTED_AT + std::chrono::milliseconds{ 75 })->x,
+        STEP * 0.75
+    );
+    ASSERT_TRUE(sampled_once.predictedLocalPresentation(STARTED_AT + std::chrono::milliseconds{ 75 }).has_value());
+    EXPECT_DOUBLE_EQ(
+        sampled_each_frame.predictedLocalPresentation(STARTED_AT + std::chrono::milliseconds{ 75 })->x,
+        sampled_once.predictedLocalPresentation(STARTED_AT + std::chrono::milliseconds{ 75 })->x
+    );
+
+    ASSERT_TRUE(sampled_each_frame.applyServerPosition(
+        position('@', 0U, shared::MOVEMENT_SUBCELLS_PER_TICK, 1U, 2U),
+        STARTED_AT + std::chrono::milliseconds{ 50 }
+    ));
+    ASSERT_TRUE(sampled_each_frame.predictedLocalPresentation(STARTED_AT + std::chrono::milliseconds{ 75 }).has_value());
+    EXPECT_DOUBLE_EQ(
+        sampled_each_frame.predictedLocalPresentation(STARTED_AT + std::chrono::milliseconds{ 75 })->x,
+        STEP * 0.75
+    );
+    ASSERT_TRUE(sampled_each_frame.predictedLocalPresentation(STARTED_AT + std::chrono::milliseconds{ 200 }).has_value());
+    EXPECT_DOUBLE_EQ(
+        sampled_each_frame.predictedLocalPresentation(STARTED_AT + std::chrono::milliseconds{ 200 })->x,
+        STEP
+    );
+
+    client::CameraPose const frame_camera = client::localPlayerThirdPersonPose(
+        *sampled_each_frame.predictedLocalPresentation(STARTED_AT + std::chrono::milliseconds{ 75 }),
+        { }
+    );
+    EXPECT_DOUBLE_EQ(frame_camera.position.x, 1.0 + STEP * 0.75);
 }
 
 TEST(GameClientPredictionTest, DiscardedAndCollisionRejectedInputsDoNotLeavePhantomPrediction)

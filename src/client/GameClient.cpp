@@ -38,9 +38,9 @@ void GameClient::run(core::Address const server_address, char const ch) {
         }
         std::chrono::steady_clock::time_point const now = std::chrono::steady_clock::now();
         if (scheduler.simulationDue(now)) {
-            if (auto const predicted_input = predictInput(input())) {
+            if (auto const predicted_input = predictInput(input(), now)) {
                 if (!send(*predicted_input)) {
-                    discardPredictedInput(predicted_input->sequence);
+                    discardPredictedInput(predicted_input->sequence, now);
                 }
             }
         }
@@ -87,7 +87,10 @@ void GameClient::applyServerRemoval(char const character)
     }
 }
 
-std::optional<shared::ClientInputMessage> GameClient::predictInput(shared::Direction const direction)
+std::optional<shared::ClientInputMessage> GameClient::predictInput(
+    shared::Direction const direction,
+    std::chrono::steady_clock::time_point const predicted_at
+)
 {
     if (!m_predicted_world.playerByCharacter(m_local_character).has_value()
         || m_pending_inputs.size() == MAX_PENDING_INPUTS) {
@@ -100,10 +103,14 @@ std::optional<shared::ClientInputMessage> GameClient::predictInput(shared::Direc
     m_pending_inputs.push_back(input);
     shared::Player const player = *m_predicted_world.playerByCharacter(m_local_character);
     static_cast<void>(m_predicted_world.movePlayer(player.id, direction));
+    updatePredictedPresentation(predicted_at);
     return input;
 }
 
-void GameClient::discardPredictedInput(uint32_t const sequence)
+void GameClient::discardPredictedInput(
+    uint32_t const sequence,
+    std::chrono::steady_clock::time_point const discarded_at
+)
 {
     auto const found = std::find_if(m_pending_inputs.begin(), m_pending_inputs.end(), [sequence](
         shared::ClientInputMessage const& input
@@ -113,10 +120,14 @@ void GameClient::discardPredictedInput(uint32_t const sequence)
     if (found != m_pending_inputs.end()) {
         m_pending_inputs.erase(found);
         rebuildPrediction();
+        updatePredictedPresentation(discarded_at);
     }
 }
 
-bool GameClient::applyServerPosition(shared::ServerPlayerPositionMessage const& message)
+bool GameClient::applyServerPosition(
+    shared::ServerPlayerPositionMessage const& message,
+    std::chrono::steady_clock::time_point const received_at
+)
 {
     auto const known_revision = m_state_revisions.find(message.ch);
     if (known_revision != m_state_revisions.end()
@@ -140,10 +151,12 @@ bool GameClient::applyServerPosition(shared::ServerPlayerPositionMessage const& 
             m_pending_inputs.pop_front();
         }
         rebuildPrediction();
+        updatePredictedPresentation(received_at);
     } else {
         rebuildPrediction();
+        updatePredictedPresentation(received_at);
         if (auto const player = m_world.playerByCharacter(message.ch)) {
-            m_player_presentation.update(*player, std::chrono::steady_clock::now());
+            m_player_presentation.update(*player, received_at);
         }
     }
     return true;
@@ -154,6 +167,13 @@ std::optional<shared::Player> GameClient::predictedLocalPlayer() const noexcept
     return m_predicted_world.playerByCharacter(m_local_character);
 }
 
+std::optional<PlayerPresentationPosition> GameClient::predictedLocalPresentation(
+    std::chrono::steady_clock::time_point const now
+) const noexcept
+{
+    return m_player_presentation.sample(m_local_character, now);
+}
+
 void GameClient::rebuildPrediction()
 {
     m_predicted_world = m_world;
@@ -161,6 +181,13 @@ void GameClient::rebuildPrediction()
         for (shared::ClientInputMessage const& input : m_pending_inputs) {
             static_cast<void>(m_predicted_world.movePlayer(player->id, input.direction));
         }
+    }
+}
+
+void GameClient::updatePredictedPresentation(std::chrono::steady_clock::time_point const updated_at) noexcept
+{
+    if (auto const player = m_predicted_world.playerByCharacter(m_local_character)) {
+        m_player_presentation.update(*player, updated_at);
     }
 }
 
