@@ -46,7 +46,7 @@ execute_process(
         -B "${test_root}/build"
         "-DCMAKE_PREFIX_PATH=${corecpp_prefix};${dependency_prefix}"
         -DVCPKG_MANIFEST_INSTALL=OFF
-        -DCMAKE_BUILD_TYPE=Debug
+        -DCMAKE_BUILD_TYPE=@CMAKE_BUILD_TYPE@
     RESULT_VARIABLE configure_result
     OUTPUT_VARIABLE configure_output
     ERROR_VARIABLE configure_error

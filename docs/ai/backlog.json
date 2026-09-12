@@ -1342,8 +1342,8 @@
     "depends_on": [
       "MC-AI-0032"
     ],
-    "acceptance": "A player navigates the existing authoritative multiplayer world through a deterministic 3D camera and WASD controls; focused unit, integration, Runtime/Client offscreen golden, visible runtime and frame-time evidence pass. The exact reviewed/tagged S4 build is published with named macOS, Windows and Android GitHub assets, SHA256 hashes, provenance, dependencies/licenses and truthful signing status. The exact downloaded macOS asset and exact released Android APK pass local runtime acceptance; Windows build/package evidence is required, while user Windows runtime is recorded separately and never inferred.",
-    "evidence": "Pre-final gates passed 193 Python tests, 212 CTest tests, validated presentation, true-offscreen depth/goldens, deterministic replay, documentation, and publisher checks. Android API 35/NDK 27 rendered upright and accepted responsive touch look plus authoritative movement. The 1920-by-1080 Release HUD-on run sustained 119.923214 presentation requests/s for 1200 frames, with p95/p99/max 8.563374/8.750793/13.231042 ms and none above 16.667 ms. Exact artifacts, hosted Windows packaging, local Mac and Android acceptance, and normal-playable user preview remain prepublication gates; Windows runtime remains user-owned.",
+    "acceptance": "Authoritative multiplayer movement uses a close third-person 3D camera and camera-relative WASD. Unit, integration, offscreen, visible-runtime and frame-time evidence pass. The exact reviewed S4 candidate provides named macOS, Windows and Android assets with hashes, provenance, licenses and truthful signing status. Exact macOS and host-signed Android assets pass local runtime; hosted Windows build/package passes while Windows runtime remains user-owned. Publication waits for user preview acceptance.",
+    "evidence": "Pre-final source gates validated 3D presentation, true-offscreen depth/goldens, replay, documentation, publisher checks, Android API 35/NDK 27 upright touch movement/look, and macOS 1920-by-1080 HUD-on 120 FPS. Exact final artifacts, hosted Windows packaging, macOS/Android acceptance and user preview remain publication gates; Windows runtime is user-owned.",
     "blocker": "",
     "owner": "Codex coordinator",
     "level": "snapshot",
@@ -1353,29 +1353,25 @@
     "complexity": "high",
     "created_at": "2026-09-09",
     "resolved_at": "",
-    "resolution_changes": "Finalized the Snapshot 4 3D controls source candidate for exact review, promotion, cross-platform packaging, and the required prepublication user preview while retaining authoritative server movement and deterministic replay.",
+    "resolution_changes": "Finalized the S4 source candidate for exact review, packaging and user preview with authoritative movement and deterministic replay.",
     "plan": [
-      "Deliver a coordinate/camera/controller boundary independent of GLFW and Vulkan.",
-      "Render the flat scene in 3D with no per-frame blocking or busy work.",
-      "Measure headless simulation and windowed rendering separately; do not claim cross-device FPS without a reproducible benchmark."
+      "Keep camera/controller independent of GLFW and Vulkan.",
+      "Render 3D without per-frame blocking or busy work.",
+      "Measure simulation and presentation separately."
     ],
     "product_changes": [
-      "Desktop and Android players navigate the authoritative world with camera-relative controls from a close third-person camera following the visible local player; remote players remain visible.",
-      "A default-on, toggleable, DPI-scaled texture-free debug HUD renders FPS, monotonic uptime, authoritative player coordinates, and camera yaw/pitch/roll in four top-left rows.",
-      "Versioned CoreLang scenarios drive deterministic camera and two-client replay without changing the legacy script1/scenario1 compatibility frontends.",
-      "Snapshot publication pauses after exact candidate testing and normal playable macOS preview until explicit user acceptance."
+      "Desktop and Android use camera-relative controls and a close third-person camera following the visible local player.",
+      "The default-on DPI-scaled shader HUD shows FPS, uptime, authoritative position and camera angles in four rows.",
+      "CoreLang scenarios drive deterministic camera and multiplayer replay while legacy frontends remain compatible.",
+      "Publication waits for exact candidate tests and user macOS preview acceptance."
     ],
     "code_changes": [
-      "Extracted universal CoreCpp Core/Runtime packages and exact CoreProject2026 dependency provenance, including optional network, kernel, graphics, GLFW, and Android components.",
-      "Implemented CoreLang 0.0.1 parsing, validation, immutable AST/runtime services, imports, rulesets, numeric and cast semantics, and Shared scenario integration.",
-      "Moved reusable Vulkan presentation, resources, kernel caching, depth state, and fixed-extent target-owned offscreen recording behind narrow Runtime interfaces.",
-      "Added independent camera/controller/frame-scheduler logic, 3D scene shaders, swapchain-image depth targets, deterministic depth-format fallback, and one shared production/offscreen draw routine.",
-      "Separated Runtime transport from Shared game protocol and added allocation-stable shader bitmap HUD rendering with licensed font attribution.",
-      "Added deterministic golden, replay, Android input/package, source-policy receipt, and immutable prior-ledger regression coverage.",
-      "Made the pre-finalization publisher fixture derive the current snapshot index from ProjectInfo so later version bumps preserve the same validation contract.",
-      "Added honest negotiated-present and per-phase renderer timing evidence without changing MoltenVK policy.",
-      "Corrected Vulkan projection and winding across shader variants, then bound the third-person camera and HUD to authoritative local-player state.",
-      "Made exact candidate testing and user preview precede immutable release publication in the canonical release checklist."
+      "Extracted universal CoreCpp Core/Runtime packages and exact CoreProject2026 provenance with optional platform components.",
+      "Implemented CoreLang 0.0.1 validation/runtime semantics and Shared scenario integration.",
+      "Moved Vulkan presentation, resources, kernels, depth and fixed-extent offscreen recording behind narrow Runtime interfaces.",
+      "Added camera/controller/cadence logic, 3D shaders, deterministic depth fallback and shared production/offscreen drawing.",
+      "Separated transport from game protocol and added allocation-stable licensed shader HUD rendering.",
+      "Added deterministic golden/replay/Android/package/source-policy evidence, truthful timing, corrected projection/winding, player-following presentation and prepublication preview policy."
     ],
     "baseline_commit": "c5100f5dc77a151a2644079575e25efd0f93a85d",
     "commits": [],
@@ -4930,5 +4926,53 @@
     "docs_review": "Generated backlog and task Markdown are valid according to python3 script/ai_tasks.py check. The pre-existing ai_docs.py check remains blocked by MC-AI-0035.md word count and stale source_state.json; neither unrelated baseline issue was changed.",
     "environment_review": "Local macOS/POSIX focused validation passed. Windows execution remains unverified locally; the fix targets the proven WinError 193 direct-script invocation from hosted runs 34694560321 and 34694560310.",
     "backlog_review": "Scoped only to MC-AI-0129 under MC-AI-0035; no unrelated backlog items or release/tag state changed."
+  },
+  {
+    "id": "MC-AI-0130",
+    "title": "Make Windows Debug and Release package/test configuration ABI-consistent and portable",
+    "kind": "chore",
+    "status": "done",
+    "priority": "P2",
+    "route": "luna",
+    "milestone": "EarlyDev 0.1.0:4",
+    "depends_on": [],
+    "acceptance": "Windows Debug and Release consumers build private CoreCpp and CoreProject2026 packages with the matching preset, nested package/server-only fixtures inherit the enclosing CMAKE_BUILD_TYPE, and MessageTest checks observable fields plus exact serialized bytes without object-padding assumptions. The separately registered server-only build has an explicit bounded platform timeout. Preserve the canonical TypeName test and document its failing CoreCpp package as a separate cross-repo blocker; do not weaken debug checks or claim hosted Windows success without a fresh rerun.",
+    "evidence": "Focused CI acquisition/workflow suites passed 35 tests; MessageTest passed 6 tests; local CTest passed 129 tests including the CoreCpp package consumer and MinecraftClone server-only build; python3 script/ai_check.py --fast --require-index-match passed. Hosted Windows rerun remains the snapshot gate after the separately owned CoreCpp CC-0029 canonical type-name fix and exact repin.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0035",
+    "motivation": "Make Windows Debug and Release package/test configuration ABI-consistent and portable",
+    "context": "Snapshot 4 b519 logs show Windows Debug and Release package consumers linking Release-built private libraries: Debug fails with MSVC RuntimeLibrary/ITERATOR_DEBUG_LEVEL LNK2038, while Release fails the padding-sensitive MessageTest and the canonical TypeName test because CoreCpp returns a class-key prefix. The nested CoreCpp package consumer also hardcodes Debug and fails from the same ABI mismatch. MinecraftClone.ServerOnlyBuild is a separately registered CTest and independently reaches the 60-second default timeout; AcceptanceCli failure remains cascading until an aligned executable rerun.",
+    "complexity": "medium",
+    "created_at": "2026-09-12",
+    "resolved_at": "2026-09-12",
+    "resolution_changes": "Made private dependency installs match the consuming Debug or Release preset, propagated the enclosing build type into nested consumers, replaced padding-sensitive message comparisons with field and wire-byte checks, and assigned bounded platform-specific server-only build timeouts.",
+    "plan": [
+      "Carry the consuming debug/release preset into private dependency package builds in both desktop workflows without disabling debug checks.",
+      "Pass the enclosing CMAKE_BUILD_TYPE into nested CoreCpp and server-only consumer fixtures and add deterministic configuration regressions.",
+      "Give the separately registered server-only build a bounded platform-specific timeout and assert its registration contract.",
+      "Replace MessageTest object memcmp with field and serialized-byte assertions; retain the canonical TypeName expectation and report the CoreCpp fix separately.",
+      "Run focused tests and python3 script/ai_check.py --fast --require-index-match, recording the inherited docs/source-state gate and hosted Windows rerun requirement."
+    ],
+    "product_changes": [],
+    "code_changes": [
+      ".github/workflows/ai-checks.yml",
+      ".github/workflows/snapshot-artifacts.yml",
+      "script/ci/acquire.py",
+      "script/tests/test_ci_acquire.py",
+      "script/tests/test_workflow_contexts.py",
+      "tests/cmake/corecpp_server_consumer_test.cmake.in",
+      "tests/cmake/minecraftclone_server_only_test.cmake.in",
+      "tests/CMakeLists.txt",
+      "tests/core/shared_message_tests.cpp"
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": false,
+    "retrospective": "",
+    "docs_review": "Task/backlog/plan metadata validate. The pre-existing MC-AI-0035 word-count and stale source-state documentation issues remain outside this task.",
+    "environment_review": "Local macOS tests exercise command generation and nested build behavior; exact hosted MSVC validation remains required before snapshot publication.",
+    "backlog_review": "Scoped to MC-AI-0130 under MC-AI-0035; no release, tag, or future-snapshot state changed."
   }
 ]

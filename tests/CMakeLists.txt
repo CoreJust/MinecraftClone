@@ -55,6 +55,11 @@ if(MC_REGISTER_SERVER_ONLY_BUILD_TEST)
         COMMAND ${CMAKE_COMMAND}
             -P "${CMAKE_CURRENT_BINARY_DIR}/minecraftclone_server_only_test.cmake"
     )
+    if(WIN32)
+        set_tests_properties(MinecraftClone.ServerOnlyBuild PROPERTIES TIMEOUT 180)
+    else()
+        set_tests_properties(MinecraftClone.ServerOnlyBuild PROPERTIES TIMEOUT 120)
+    endif()
 endif()
 
 if(MC_BUILD_CLIENT AND NOT ANDROID)

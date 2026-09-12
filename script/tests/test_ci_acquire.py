@@ -194,6 +194,7 @@ class CiAcquireTests(unittest.TestCase):
                 configure_commands = [command for command in commands if command[0] == "cmake" and "-S" in command]
                 self.assertEqual(len(configure_commands), len(acquire.PRIVATE_DEPENDENCIES))
                 for command in configure_commands:
+                    self.assertIn("-DCMAKE_BUILD_TYPE=Release", command)
                     self.assertIn("-DVCPKG_INSTALLED_DIR=/tmp/vcpkg-installed", command)
                     self.assertIn("-DVCPKG_MANIFEST_INSTALL=OFF", command)
                     self.assertEqual(command[-1], "-DBUILD_TESTING=OFF")
@@ -221,6 +222,42 @@ class CiAcquireTests(unittest.TestCase):
                 with self.assertRaisesRegex(acquire.CiError, "installed CoreCpp package config is missing"):
                     acquire.install_private_dependencies(root, "android", ["-DVCPKG_MANIFEST_INSTALL=OFF"])
 
+    def test_private_dependency_install_matches_requested_preset(self):
+        with tempfile.TemporaryDirectory() as directory, mock.patch.dict(
+            os.environ,
+            {"VCPKG_INSTALLED_DIR": "/tmp/vcpkg-installed"},
+        ):
+            root = Path(directory) / "private-dependencies"
+            for name in acquire.PRIVATE_DEPENDENCIES:
+                source = root / name
+                source.mkdir(parents=True)
+                (source / "CMakeLists.txt").touch()
+            corecpp_config = root / "install/lib/cmake/CoreCpp/CoreCppConfig.cmake"
+
+            def run_command(command):
+                if command[:2] == ["cmake", "--install"] and command[2].endswith("CoreCpp-build"):
+                    corecpp_config.parent.mkdir(parents=True)
+                    corecpp_config.touch()
+                return ""
+
+            with mock.patch.object(acquire, "run", side_effect=run_command) as run, mock.patch.object(
+                acquire,
+                "write_github_env",
+            ):
+                acquire.install_private_dependencies(
+                    root,
+                    "windows",
+                    ["-DVCPKG_MANIFEST_INSTALL=OFF"],
+                    "debug",
+                )
+            configure_commands = [
+                call.args[0]
+                for call in run.call_args_list
+                if call.args[0][0] == "cmake" and "-S" in call.args[0]
+            ]
+            self.assertEqual(len(configure_commands), len(acquire.PRIVATE_DEPENDENCIES))
+            self.assertTrue(all("-DCMAKE_BUILD_TYPE=Debug" in command for command in configure_commands))
+
     def test_install_private_dependencies_rejects_test_override(self):
         with tempfile.TemporaryDirectory() as directory, mock.patch.dict(
             os.environ,
@@ -232,6 +269,14 @@ class CiAcquireTests(unittest.TestCase):
                     "android",
                     ["-DBUILD_TESTING=ON"],
                 )
+
+    def test_install_private_dependencies_rejects_unknown_preset(self):
+        with tempfile.TemporaryDirectory() as directory, mock.patch.dict(
+            os.environ,
+            {"VCPKG_INSTALLED_DIR": "/tmp/vcpkg-installed"},
+        ):
+            with self.assertRaisesRegex(acquire.CiError, "unsupported private dependency preset"):
+                acquire.install_private_dependencies(Path(directory) / "private-dependencies", "windows", [], "profile")
 
     def test_verify_sha256_rejects_tampered_download(self):
         with tempfile.TemporaryDirectory() as directory:
