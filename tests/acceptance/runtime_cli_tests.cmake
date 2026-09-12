@@ -24,7 +24,13 @@ execute_process(
     TIMEOUT 10
 )
 if(NOT valid_result EQUAL 0)
-    message(FATAL_ERROR "valid scenario command failed: ${valid_stderr}")
+    message(FATAL_ERROR
+        "valid scenario command failed:\n"
+        "command: \"${MC_MAIN}\" \"--scenario\" \"${valid_scenario}\" \"--evidence\" \"${valid_evidence}\"\n"
+        "exit code: ${valid_result}\n"
+        "stdout:\n${valid_stdout}\n"
+        "stderr:\n${valid_stderr}"
+    )
 endif()
 file(READ "${valid_evidence}" valid_json)
 foreach(required_text

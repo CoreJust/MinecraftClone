@@ -138,6 +138,19 @@ class WorkflowContextTests(unittest.TestCase):
                 lines = [line.strip() for line in phase.splitlines()]
                 for command in commands:
                     index = next(index for index, line in enumerate(lines) if line.startswith(command))
+                    if phase_name == "Build, test, and package Windows" and command == "ctest --test-dir":
+                        self.assertEqual(
+                            lines[index + 1:index + 6],
+                            [
+                                'set "ctest_result=%errorlevel%"',
+                                "type build\\release-tests-windows.log",
+                                'set "ctest_log_result=%errorlevel%"',
+                                'if not "%ctest_result%"=="0" exit /b %ctest_result%',
+                                'if not "%ctest_log_result%"=="0" exit /b %ctest_log_result%',
+                            ],
+                            workflow_path,
+                        )
+                        continue
                     self.assertEqual(lines[index + 1], "if errorlevel 1 exit /b %errorlevel%", (workflow_path, command))
 
     def test_nested_cmake_scripts_receive_forward_slash_path_substitutions(self):
@@ -157,8 +170,16 @@ class WorkflowContextTests(unittest.TestCase):
             self.assertNotRegex(contents, r"@(CMAKE_CURRENT_BINARY_DIR|CMAKE_COMMAND|CMAKE_CTEST_COMMAND|PROJECT_SOURCE_DIR|CMAKE_PREFIX_PATH|CoreCpp_DIR|CoreProject2026_DIR)@")
         for template_name in ("corecpp_server_consumer_test.cmake.in", "minecraftclone_server_only_test.cmake.in"):
             contents = (REPOSITORY / "tests/cmake" / template_name).read_text(encoding="utf-8")
-            self.assertIn("-DCMAKE_BUILD_TYPE=@CMAKE_BUILD_TYPE@", contents)
+            self.assertIn('set(MC_TEST_CONFIGURATION "@CMAKE_BUILD_TYPE@")', contents)
+            self.assertIn('"-DCMAKE_BUILD_TYPE=${MC_TEST_CONFIGURATION}"', contents)
+            self.assertIn('REGEX "^CMAKE_CONFIGURATION_TYPES:.*="', contents)
+            self.assertIn("list(APPEND build_command --config \"${MC_TEST_CONFIGURATION}\")", contents)
             self.assertNotIn("-DCMAKE_BUILD_TYPE=Debug", contents)
+        self.assertEqual(cmake_lists.count('"-DMC_TEST_CONFIGURATION=$<CONFIG>"'), 2)
+        corecpp_template = (REPOSITORY / "tests/cmake/corecpp_server_consumer_test.cmake.in").read_text(encoding="utf-8")
+        self.assertIn('set(consumer_directory "${consumer_directory}/${MC_TEST_CONFIGURATION}")', corecpp_template)
+        minecraftclone_template = (REPOSITORY / "tests/cmake/minecraftclone_server_only_test.cmake.in").read_text(encoding="utf-8")
+        self.assertIn("list(APPEND test_command -C \"${MC_TEST_CONFIGURATION}\")", minecraftclone_template)
 
     def test_server_only_build_test_has_platform_timeout(self):
         cmake_lists = (REPOSITORY / "tests/CMakeLists.txt").read_text(encoding="utf-8")

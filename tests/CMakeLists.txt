@@ -26,6 +26,7 @@ configure_file(
 add_test(
     NAME CoreCpp.ServerOnlyPackageConsumer
     COMMAND ${CMAKE_COMMAND}
+        "-DMC_TEST_CONFIGURATION=$<CONFIG>"
         -P "${CMAKE_CURRENT_BINARY_DIR}/corecpp_server_consumer_test.cmake"
 )
 
@@ -53,6 +54,7 @@ if(MC_REGISTER_SERVER_ONLY_BUILD_TEST)
     add_test(
         NAME MinecraftClone.ServerOnlyBuild
         COMMAND ${CMAKE_COMMAND}
+            "-DMC_TEST_CONFIGURATION=$<CONFIG>"
             -P "${CMAKE_CURRENT_BINARY_DIR}/minecraftclone_server_only_test.cmake"
     )
     if(WIN32)

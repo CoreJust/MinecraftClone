@@ -2,6 +2,9 @@ set(test_root "@MC_TEST_BINARY_DIR@/minecraftclone-server-only")
 set(corecpp_prefix "@MC_CORECPP_DIR@/../../..")
 set(coreproject_dir "@MC_COREPROJECT2026_DIR@")
 set(dependency_prefix "@MC_CMAKE_PREFIX_PATH@")
+if(NOT DEFINED MC_TEST_CONFIGURATION)
+    set(MC_TEST_CONFIGURATION "@CMAKE_BUILD_TYPE@")
+endif()
 
 file(REMOVE_RECURSE "${test_root}")
 
@@ -15,7 +18,7 @@ execute_process(
         -DMC_BUILD_CLIENT=OFF
         -DMC_REGISTER_SERVER_ONLY_BUILD_TEST=OFF
         -DVCPKG_MANIFEST_INSTALL=OFF
-        -DCMAKE_BUILD_TYPE=@CMAKE_BUILD_TYPE@
+        "-DCMAKE_BUILD_TYPE=${MC_TEST_CONFIGURATION}"
     RESULT_VARIABLE configure_result
     OUTPUT_VARIABLE configure_output
     ERROR_VARIABLE configure_error
@@ -25,8 +28,24 @@ if(NOT configure_result EQUAL 0)
     message(FATAL_ERROR "MinecraftClone server-only configure failed:\n${configure_log}")
 endif()
 
+file(
+    STRINGS "${test_root}/build/CMakeCache.txt" nested_configuration_types
+    REGEX "^CMAKE_CONFIGURATION_TYPES:.*="
+)
+set(nested_is_multi_config FALSE)
+if(nested_configuration_types)
+    if(MC_TEST_CONFIGURATION STREQUAL "")
+        message(FATAL_ERROR "Nested multi-config MinecraftClone build requires an enclosing test configuration")
+    endif()
+    set(nested_is_multi_config TRUE)
+endif()
+
+set(build_command "@MC_CMAKE_COMMAND@" --build "${test_root}/build" --parallel 8)
+if(nested_is_multi_config)
+    list(APPEND build_command --config "${MC_TEST_CONFIGURATION}")
+endif()
 execute_process(
-    COMMAND "@MC_CMAKE_COMMAND@" --build "${test_root}/build" --parallel 8
+    COMMAND ${build_command}
     RESULT_VARIABLE build_result
     OUTPUT_VARIABLE build_output
     ERROR_VARIABLE build_error
@@ -36,8 +55,12 @@ if(NOT build_result EQUAL 0)
     message(FATAL_ERROR "MinecraftClone server-only build failed:\n${build_log}")
 endif()
 
+set(test_command "@MC_CTEST_COMMAND@" --test-dir "${test_root}/build" --output-on-failure)
+if(nested_is_multi_config)
+    list(APPEND test_command -C "${MC_TEST_CONFIGURATION}")
+endif()
 execute_process(
-    COMMAND "@MC_CTEST_COMMAND@" --test-dir "${test_root}/build" --output-on-failure
+    COMMAND ${test_command}
     RESULT_VARIABLE test_result
     OUTPUT_VARIABLE test_output
     ERROR_VARIABLE test_error

@@ -25,7 +25,7 @@
         "tests/acceptance/runtime_cli_tests.cmake",
         "tests/acceptance/scenario_runner_tests.cpp"
       ],
-      "sources_sha256": "d7f721b038caca4e0bffe41c357274e62666f22debcbf89e7d79a2e316edaea6"
+      "sources_sha256": "9b636cb3f77b0e16faf2ebbc92e04263b866fed04a6f68f76de6693265c1acb9"
     },
     {
       "guide": "docs/code/ANDROID.md",
@@ -121,6 +121,7 @@
         "script/tests/test_ci_acquire.py",
         "script/tests/test_package_snapshot.py",
         "script/tests/test_pre_finalization_candidate.py",
+        "script/tests/test_runtime_cli.py",
         "script/tests/test_verify_release_assets.py",
         "script/tests/test_workflow_contexts.py",
         "src/CMakeLists.txt",
@@ -132,7 +133,7 @@
         "vcpkg-configuration.json",
         "vcpkg.json"
       ],
-      "sources_sha256": "e9f449533cb97f941bf05cd32081ab69e97d7a1c7dc65d3d86325144cc41a8f0"
+      "sources_sha256": "2c786b10a34a170d2773a15f31d1de98c3e602a8a5e09fdf42bce19c5e70400a"
     },
     {
       "guide": "docs/code/CORE.md",

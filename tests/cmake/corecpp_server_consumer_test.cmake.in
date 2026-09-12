@@ -1,6 +1,9 @@
 set(test_root "@MC_TEST_BINARY_DIR@/corecpp-server-consumer")
 set(corecpp_prefix "@MC_CORECPP_DIR@/../../..")
 set(dependency_prefix "@MC_CMAKE_PREFIX_PATH@")
+if(NOT DEFINED MC_TEST_CONFIGURATION)
+    set(MC_TEST_CONFIGURATION "@CMAKE_BUILD_TYPE@")
+endif()
 
 file(REMOVE_RECURSE "${test_root}")
 file(MAKE_DIRECTORY "${test_root}")
@@ -46,7 +49,7 @@ execute_process(
         -B "${test_root}/build"
         "-DCMAKE_PREFIX_PATH=${corecpp_prefix};${dependency_prefix}"
         -DVCPKG_MANIFEST_INSTALL=OFF
-        -DCMAKE_BUILD_TYPE=@CMAKE_BUILD_TYPE@
+        "-DCMAKE_BUILD_TYPE=${MC_TEST_CONFIGURATION}"
     RESULT_VARIABLE configure_result
     OUTPUT_VARIABLE configure_output
     ERROR_VARIABLE configure_error
@@ -56,8 +59,24 @@ if(NOT configure_result EQUAL 0)
     message(FATAL_ERROR "CoreCpp server-only consumer configure failed:\n${configure_log}")
 endif()
 
+file(
+    STRINGS "${test_root}/build/CMakeCache.txt" nested_configuration_types
+    REGEX "^CMAKE_CONFIGURATION_TYPES:.*="
+)
+set(nested_is_multi_config FALSE)
+if(nested_configuration_types)
+    if(MC_TEST_CONFIGURATION STREQUAL "")
+        message(FATAL_ERROR "Nested multi-config consumer requires an enclosing test configuration")
+    endif()
+    set(nested_is_multi_config TRUE)
+endif()
+
+set(build_command "@MC_CMAKE_COMMAND@" --build "${test_root}/build" --parallel 2)
+if(nested_is_multi_config)
+    list(APPEND build_command --config "${MC_TEST_CONFIGURATION}")
+endif()
 execute_process(
-    COMMAND "@MC_CMAKE_COMMAND@" --build "${test_root}/build" --parallel 2
+    COMMAND ${build_command}
     RESULT_VARIABLE build_result
     OUTPUT_VARIABLE build_output
     ERROR_VARIABLE build_error
@@ -67,10 +86,14 @@ if(NOT build_result EQUAL 0)
     message(FATAL_ERROR "CoreCpp server-only consumer build failed:\n${build_log}")
 endif()
 
+set(consumer_directory "${test_root}/build")
+if(nested_is_multi_config)
+    set(consumer_directory "${consumer_directory}/${MC_TEST_CONFIGURATION}")
+endif()
 if(WIN32)
-    set(consumer_executable "${test_root}/build/mc_corecpp_server_consumer.exe")
+    set(consumer_executable "${consumer_directory}/mc_corecpp_server_consumer.exe")
 else()
-    set(consumer_executable "${test_root}/build/mc_corecpp_server_consumer")
+    set(consumer_executable "${consumer_directory}/mc_corecpp_server_consumer")
 endif()
 
 execute_process(

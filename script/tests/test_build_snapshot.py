@@ -358,18 +358,39 @@ class BuildSnapshotTests(unittest.TestCase):
         command_indices = [next(index for index, line in enumerate(lines) if line.startswith(command)) for command in commands]
         for command, index in zip(commands, command_indices):
             if command.startswith("ctest "):
-                self.assertEqual(lines[index + 1], failure_guard)
+                self.assertEqual(
+                    lines[index + 1:index + 6],
+                    [
+                        'set "ctest_result=%errorlevel%"',
+                        "type build\\release-tests-windows.log",
+                        'set "ctest_log_result=%errorlevel%"',
+                        'if not "%ctest_result%"=="0" exit /b %ctest_result%',
+                        'if not "%ctest_log_result%"=="0" exit /b %ctest_log_result%',
+                    ],
+                )
+            elif command.startswith("type "):
+                continue
             else:
                 self.assertEqual(lines[index + 1], failure_guard, command)
 
         def run_extracted_phase(failed_command: str | None) -> tuple[int, list[str]]:
             errorlevel = 0
+            ctest_result = 0
+            ctest_log_result = 0
             executed = []
             for line in lines:
                 command = next((item for item in commands if line.startswith(item)), None)
                 if command is not None:
                     executed.append(command)
                     errorlevel = int(command == failed_command)
+                    if command.startswith("ctest "):
+                        ctest_result = errorlevel
+                    elif command.startswith("type "):
+                        ctest_log_result = errorlevel
+                elif line.startswith('if not "%ctest_result%"') and ctest_result >= 1:
+                    return ctest_result, executed
+                elif line.startswith('if not "%ctest_log_result%"') and ctest_log_result >= 1:
+                    return ctest_log_result, executed
                 elif line.startswith("if errorlevel 1") and errorlevel >= 1:
                     return errorlevel, executed
             return errorlevel, executed
@@ -378,7 +399,10 @@ class BuildSnapshotTests(unittest.TestCase):
         for failed_command in commands:
             exit_code, executed = run_extracted_phase(failed_command)
             self.assertEqual(exit_code, 1)
-            self.assertEqual(executed[-1], failed_command)
+            if failed_command.startswith("ctest "):
+                self.assertEqual(executed[-1], "type build\\release-tests-windows.log")
+            else:
+                self.assertEqual(executed[-1], failed_command)
             self.assertNotIn(commands[-1], executed[:-1])
 
 
