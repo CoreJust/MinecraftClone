@@ -420,9 +420,9 @@ def print_result(result: PhaseResult) -> None:
     if result.allowed_failure:
         state = "ALLOWED"
     print(f"{state} {result.name}: exit {result.returncode}; log build/ai-checks/{result.name}.log")
-    snippet = result.output.strip()[-4_000:]
-    if snippet:
-        print(snippet)
+    diagnostics = result.output.strip()
+    if diagnostics:
+        print(diagnostics)
 
 
 def changed_scope(root: Path) -> tuple[str, list[str]]:

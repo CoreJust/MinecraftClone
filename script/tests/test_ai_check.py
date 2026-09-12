@@ -134,6 +134,16 @@ class AiCheckTests(unittest.TestCase):
         self.assertEqual(result.returncode, 127)
         self.assertTrue((log_dir / "missing.log").is_file())
 
+    def test_failed_phase_prints_complete_diagnostics(self):
+        ai_check = load_module()
+        diagnostics = "traceback-start\n" + ("diagnostic line\n" * 1_500) + "traceback-end"
+        result = ai_check.PhaseResult("python-tests", ["python", "-m", "unittest"], 1, diagnostics)
+        with contextlib.redirect_stdout(io.StringIO()) as output:
+            ai_check.print_result(result)
+        self.assertIn("traceback-start", output.getvalue())
+        self.assertIn("traceback-end", output.getvalue())
+        self.assertEqual(output.getvalue().count("diagnostic line"), 1_500)
+
     def test_python_test_environment_rejects_failed_or_malformed_git_discovery(self):
         checker = load_module()
         with mock.patch.object(checker, "command_output", side_effect=RuntimeError("git discovery failed")):
