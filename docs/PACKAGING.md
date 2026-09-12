@@ -18,7 +18,9 @@ and all applicable license material. Input files and trees must be regular,
 non-empty where required, and free of symlinks. The result contains
 `manifest.json` with the platform, version, source revision, normalized
 toolchain evidence, runtime layout, licenses, and SHA-256/size of every shipped
-file. A small adjacent `<archive>.manifest.json` reports the archive SHA-256.
+file. Every desktop package contains the HUD attribution and Tamsyn font
+license under `licenses/hud/`; the manifest marks both as present. A small
+adjacent `<archive>.manifest.json` reports the archive SHA-256.
 
 Windows packages use ZIP and place the executable and supplied dependency DLLs
 beside one another for normal DLL lookup:
@@ -89,9 +91,11 @@ use its canonical path when a system alias such as `/tmp` is involved.
 
 ## Android APK evidence
 
-Android input is an existing APK, not a packaging source. This command hashes
-the APK and writes an evidence JSON file without copying, transforming,
-resigning, installing, or uploading it:
+Android input is an existing APK, not a packaging source. The Android build
+stages `DEBUG_HUD_ATTRIBUTION.md` and `TAMSYN_LICENSE.txt` into
+`assets/licenses/hud/`. This command verifies those assets, hashes the APK, and
+writes an evidence JSON file without copying, transforming, resigning,
+installing, or uploading it:
 
 ```sh
 python3 script/package_snapshot.py android \
@@ -109,9 +113,9 @@ the APK came exactly from `--source-commit`. Before writing evidence, the tool
 reads only the bounded ELF headers of packaged native libraries and requires
 their architectures to match both the `lib/<abi>/` directories and the exact
 set supplied through `--abi`; every declared ABI must contain
-`libmc_android.so`. The output records that validated ABI set with the original
-APK byte count and SHA-256. Device install and launch evidence belongs to the
-Android task, not this command.
+`libmc_android.so`. The output records that validated ABI set, both HUD license
+assets, and the original APK byte count and SHA-256. Device install and launch
+evidence belongs to the Android task, not this command.
 
 ## Focused tooling checks
 

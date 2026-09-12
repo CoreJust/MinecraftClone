@@ -4974,5 +4974,51 @@
     "docs_review": "Task/backlog/plan metadata validate. The pre-existing MC-AI-0035 word-count and stale source-state documentation issues remain outside this task.",
     "environment_review": "Local macOS tests exercise command generation and nested build behavior; exact hosted MSVC validation remains required before snapshot publication.",
     "backlog_review": "Scoped to MC-AI-0130 under MC-AI-0035; no release, tag, or future-snapshot state changed."
+  },
+  {
+    "id": "MC-AI-0131",
+    "title": "Include the attributed HUD font license in every distributable package",
+    "kind": "chore",
+    "status": "done",
+    "priority": "P2",
+    "route": "luna",
+    "milestone": "EarlyDev 0.1.0:4",
+    "depends_on": [],
+    "acceptance": "Every macOS and Windows archive contains the HUD attribution and Tamsyn font license under licenses/hud/, and every Android APK and evidence manifest contains and hashes the matching assets; missing or empty material fails closed.",
+    "evidence": "Focused package/build suites passed 44 tests, including missing and empty HUD-license rejection for desktop and Android evidence paths. The final integrated fast gate passed docs, backlog, plan, diff checks, 233 Python tests, the existing Debug build, and CTest. Hosted package rebuild remains required.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0035",
+    "motivation": "Include the attributed HUD font license in every distributable package",
+    "context": "Created through the task planning interface.",
+    "complexity": "medium",
+    "created_at": "2026-09-12",
+    "resolved_at": "2026-09-12",
+    "resolution_changes": "Collected the checked-in HUD attribution and Tamsyn font license into shared desktop and Android license material, staged both files in Android APK assets, and made package manifests validate and report their presence.",
+    "plan": [
+      "Collect checked-in HUD attribution and font license in the release license tree.",
+      "Stage both files in Android APK assets and validate them during evidence generation.",
+      "Add fail-closed archive/evidence tests and update packaging documentation."
+    ],
+    "product_changes": [
+      "All macOS, Windows and Android distributables retain the HUD attribution and Tamsyn font license."
+    ],
+    "code_changes": [
+      "script/ci/build_snapshot.py",
+      "script/package_snapshot.py",
+      "android/app/build.gradle",
+      "script/tests/test_build_snapshot.py",
+      "script/tests/test_package_snapshot.py",
+      "docs/PACKAGING.md",
+      "docs/RELEASE_ARTIFACTS.md"
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": false,
+    "retrospective": "",
+    "docs_review": "Packaging and release guides describe the same required paths and fail-closed evidence contract.",
+    "environment_review": "Python package fixtures pass locally; exact hosted macOS, Windows and Android package rebuilds remain the release gate.",
+    "backlog_review": "Scoped to MC-AI-0131 under MC-AI-0035; no tag, release or future-snapshot state changed."
   }
 ]

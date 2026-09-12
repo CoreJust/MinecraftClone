@@ -39,6 +39,11 @@ def requiredShaderAssets = [
     'player.vert.spv',
     'trivial.frag.spv',
 ]
+def hudLicenseAssets = file("${buildDir}/generated/hud-licenses")
+def requiredHudLicenseAssets = [
+    'licenses/hud/DEBUG_HUD_ATTRIBUTION.md',
+    'licenses/hud/TAMSYN_LICENSE.txt',
+]
 def stageFallbackShaders = tasks.register('stageFallbackShaders', Sync) {
     from('../../src/client/render/shaders') {
         include 'grid.vert'
@@ -48,6 +53,13 @@ def stageFallbackShaders = tasks.register('stageFallbackShaders', Sync) {
         include 'debug_hud.frag'
     }
     into(fallbackShaderSources)
+}
+def stageHudLicenses = tasks.register('stageHudLicenses', Sync) {
+    from('../../src/client/render/shaders') {
+        include 'DEBUG_HUD_ATTRIBUTION.md'
+        include 'TAMSYN_LICENSE.txt'
+    }
+    into(new File(hudLicenseAssets, 'licenses/hud'))
 }
 
 def projectInfoText = file('../../src/shared/include/shared/ProjectInfo.hpp').getText('UTF-8')
@@ -110,6 +122,7 @@ android {
     sourceSets {
         main {
             shaders.setSrcDirs([fallbackShaderSources])
+            assets.setSrcDirs([hudLicenseAssets])
         }
     }
 
@@ -157,6 +170,9 @@ tasks.configureEach {
     if (name ==~ /(merge|compile).+Shaders/) {
         dependsOn(stageFallbackShaders)
     }
+    if (name ==~ /merge.+Assets/) {
+        dependsOn(stageHudLicenses)
+    }
 }
 
 def verifyDebugShaderAssets = tasks.register('verifyDebugShaderAssets') {
@@ -170,6 +186,11 @@ def verifyDebugShaderAssets = tasks.register('verifyDebugShaderAssets') {
             requiredShaderAssets.each { String asset ->
                 if (zip.getEntry("assets/shaders/${asset}") == null) {
                     throw new GradleException("Debug APK is missing shader asset: ${asset}")
+                }
+            }
+            requiredHudLicenseAssets.each { String asset ->
+                if (zip.getEntry("assets/${asset}") == null) {
+                    throw new GradleException("Debug APK is missing HUD attribution/license asset: ${asset}")
                 }
             }
         } finally {

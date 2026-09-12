@@ -76,6 +76,8 @@ class BuildSnapshotTests(unittest.TestCase):
         self.write("installed/arm64-osx/share/fmt/copyright", b"fmt")
         self.write("installed/duplicate/share/fmt/copyright", b"fmt")
         self.write("installed/arm64-osx/share/volk/copyright", b"volk")
+        self.write("src/client/render/shaders/DEBUG_HUD_ATTRIBUTION.md", b"HUD attribution")
+        self.write("src/client/render/shaders/TAMSYN_LICENSE.txt", b"Tamsyn license")
 
         def download(_url: str, digest: str, output: Path) -> None:
             output.write_text(digest, encoding="utf-8")
@@ -88,6 +90,8 @@ class BuildSnapshotTests(unittest.TestCase):
             sorted(path.relative_to(destination).as_posix() for path in destination.rglob("*") if path.is_file()),
             [
                 "MinecraftClone-LICENSE.txt",
+                "hud/DEBUG_HUD_ATTRIBUTION.md",
+                "hud/TAMSYN_LICENSE.txt",
                 "vcpkg/fmt-copyright.txt",
                 "vcpkg/volk-copyright.txt",
                 "vulkan/MoltenVK-LICENSE.txt",
@@ -107,6 +111,24 @@ class BuildSnapshotTests(unittest.TestCase):
         with zipfile.ZipFile(first) as archive:
             self.assertEqual(archive.namelist(), ["dependencies/fmt.txt", "project.txt"])
             self.assertTrue(all(item.date_time == (1980, 1, 1, 0, 0, 0) for item in archive.infolist()))
+
+    def test_license_material_rejects_empty_hud_files(self):
+        project_license = self.write("LICENSE", b"project")
+        self.write("installed/arm64-osx/share/fmt/copyright", b"fmt")
+        empty_attribution = self.write("hud/DEBUG_HUD_ATTRIBUTION.md", b"")
+        font_license = self.write("hud/TAMSYN_LICENSE.txt", b"Tamsyn license")
+
+        with self.assertRaisesRegex(build_snapshot.SnapshotBuildError, "must not be empty"):
+            build_snapshot.prepare_licenses(
+                project_license,
+                self.root / "installed",
+                self.root / "licenses",
+                False,
+                (
+                    ("hud/DEBUG_HUD_ATTRIBUTION.md", empty_attribution),
+                    ("hud/TAMSYN_LICENSE.txt", font_license),
+                ),
+            )
 
     def test_windows_runtime_closure_packages_recursive_non_system_dependencies(self):
         executable = self.write("install/mc_main.exe", b"exe")
@@ -134,6 +156,8 @@ class BuildSnapshotTests(unittest.TestCase):
         self.write("install/shaders/grid.vert.spv", b"shader")
         self.write("installed/arm64-osx/share/fmt/copyright", b"fmt")
         project_license = self.write("LICENSE", b"project")
+        self.write("src/client/render/shaders/DEBUG_HUD_ATTRIBUTION.md", b"HUD attribution")
+        self.write("src/client/render/shaders/TAMSYN_LICENSE.txt", b"Tamsyn license")
         packager = self.write("script/package_snapshot.py", b"fixture")
         evidence = self.write("build/toolchain.json", b"{}")
         sdk_root = self.root / "sdk"
