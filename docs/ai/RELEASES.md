@@ -30,23 +30,8 @@ Use [the version/branch procedure](../VERSION_CONVENTION.md). The finalization c
 
 Local commits/tags and remote publication are distinct. A request to create planning tasks does not authorize either release execution or remote mutation. A later release request authorizes its scoped local workflow; push/releases need the requested external authority. After actual publication, make an `ai-dev` metadata ledger commit with the aggregate `Task-ID`, real published refs/artifacts, `resolved_at`, and `done` status. Snapshot and tag dates use the canonical `Europe/Belgrade` project date so local and hosted runners agree across UTC midnight. This record follows the immutable tag and is excluded from the next snapshot's basic-task collection. Snapshot 8 uses the same ledger record; its minor remains active and unfinalized until requested feedback, without creating Snapshot 9.
 
-Before publishing a snapshot, build the intended final macOS, Windows and Android
-candidate artifacts from one immutable source identity. Complete the applicable
-build, test, packaging and provenance gates for each candidate. Candidate CI runs
-and authorized `ai-*` branch pushes may proceed before publication. Launch the
-normal playable macOS candidate for user inspection, with the snapshot's default
-gameplay presentation rather than a capture or benchmark mode, then pause. Do not
-create the release tag or GitHub release until the user explicitly accepts that
-candidate.
+Release preparation is staged: establish the immutable source identity, run affected-module checks per task, and run the one full integration gate at the batch boundary. Once the main gameplay features are usable, launch the normal playable macOS candidate for user inspection before platform-CI work. Mac approval may unlock the next snapshot's implementation in a separate task while the current snapshot finishes its Windows/Android checks and artifact evidence; it does not authorize publication, replace required evidence, or close the current release.
 
-Feedback that changes any candidate byte invalidates the affected artifact
-receipts: rebuild and retest the complete candidate set, launch the corrected
-macOS candidate, and pause again. After acceptance, publish those same immutable
-artifact bytes. Verify the remote tag, signing, provenance, asset names and
-checksums against the accepted local candidate before recording the release as
-done.
+Late working assets may be attached to the previous snapshot release when their exact source/provenance and byte hashes are recorded. After Mac approval and explicit publication authorization, an explicitly incomplete prerelease may be created with every pending platform, asset, hash, packaging or runtime check listed in its metadata; this does not mark the snapshot complete. Never silently replace accepted macOS bytes, move an immutable tag, or claim that a different source revision is the accepted one. A platform-only repair may produce a new documented build revision; any shared/gameplay change invalidates the affected macOS acceptance and requires a new candidate check. `done` and full completion wait for every required asset, hash, provenance, packaging and runtime acceptance to be verified. Missing evidence remains missing, never zero or inferred.
 
-Do not start work on the next snapshot until the user responds to the accepted
-release; this checkpoint applies to Snapshot 3 through Snapshot 8, in addition
-to the existing post-Snapshot-8 minor hold. Never auto-publish a minor or invent
-Snapshot 9 during the Snapshot 8 hold.
+After each authorized snapshot publication, verify the exact tag/signing and asset checksums against the accepted candidate. Replay the macOS artifact only when the published bytes differ, diagnosis requires it, or the user asks; the pre-publication hands-on check remains the normal play checkpoint. Do not auto-publish a minor or invent Snapshot 9 during the post-Snapshot-8 feedback hold.

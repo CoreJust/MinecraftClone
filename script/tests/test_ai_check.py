@@ -121,8 +121,8 @@ class AiCheckTests(unittest.TestCase):
         self.git("add", "src/changed.cpp")
         note.write_text("unstaged\n", encoding="utf-8")
         result = self.run_check("--fast", "--require-index-match")
-        self.assertEqual(result.returncode, 1)
-        self.assertIn("CMakePresets.json", result.stdout)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertNotIn("CMakePresets.json", result.stdout)
 
     def test_index_check_rejects_untracked_governed_file_when_governed_content_is_staged(self):
         staged_doc = self.root / "docs/state.md"
@@ -678,7 +678,7 @@ class AiCheckTests(unittest.TestCase):
         self.assertEqual(second.returncode, 0, second.stdout + second.stderr)
         self.assertNotIn("REUSED PASS docs", second.stdout)
 
-    def test_cpp_changes_use_existing_build_and_ctest_fallback(self):
+    def test_fast_cpp_changes_defer_build_and_ctest_to_batch_gate(self):
         checker = load_module()
         (self.root / "CMakePresets.json").write_text("{}\n", encoding="utf-8")
         (self.root / "src/fixture.cpp").write_text("changed\n", encoding="utf-8")
@@ -691,8 +691,26 @@ class AiCheckTests(unittest.TestCase):
         with mock.patch.object(checker, "run_phase", side_effect=run_phase), contextlib.redirect_stdout(io.StringIO()) as output:
             self.assertEqual(checker.main(["--root", str(self.root), "--fast"]), 0)
         self.assertIn("full-cpp", output.getvalue())
-        self.assertIn("build", calls)
-        self.assertIn("ctest", calls)
+        self.assertNotIn("build", calls)
+        self.assertNotIn("ctest", calls)
+
+    def test_full_and_strict_checks_still_run_and_propagate_build_failures(self):
+        checker = load_module()
+
+        for arguments in ([], ["--strict"]):
+            with self.subTest(arguments=arguments):
+                calls = []
+
+                def run_phase(root, log_dir, name, command, timeout, **kwargs):
+                    calls.append(name)
+                    return checker.PhaseResult(name, command, 7 if name == "build" else 0, "failed build")
+
+                with mock.patch.object(checker, "run_phase", side_effect=run_phase), contextlib.redirect_stdout(io.StringIO()):
+                    result = checker.main(["--root", str(self.root), *arguments])
+
+                self.assertEqual(result, 1)
+                self.assertIn("build", calls)
+                self.assertIn("ctest", calls)
 
     def test_workflow_only_changes_use_full_python_scope(self):
         checker = load_module()

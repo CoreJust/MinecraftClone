@@ -557,20 +557,11 @@ def main(argv: Sequence[str] | None = None) -> int:
                 PYTHON_TEST_TIMEOUT,
             )
         )
-    build_configured = (root / "CMakePresets.json").is_file()
-    needs_build = not args.fast or (scope == "full-cpp" and build_configured)
-    if args.fast and needs_build:
-        print("CHECK SCOPE full-cpp: running the existing build and CTest fallback")
-    if args.fast and scope == "full-cpp" and not build_configured:
-        results.append(
-            PhaseResult(
-                "code-fallback",
-                ("cmake", "--build", "--preset", "debug"),
-                1,
-                "C++ or unknown changes require CMakePresets.json for the full build/CTest fallback",
-            )
-        )
-    if needs_build:
+    # Fast checks intentionally stop at affected tooling and whitespace checks.
+    # The coordinator owns the one complete build/CTest integration gate at a
+    # batch boundary; running it here would repeat the batch-wide work for
+    # every basic gameplay commit.
+    if not args.fast:
         phase_specs.extend([
             ("build", ["cmake", "--build", "--preset", "debug"], 600),
             ("ctest", ["ctest", "--preset", "debug", "--output-on-failure", "--no-tests=error", "--timeout", "60"], 600),

@@ -26,8 +26,9 @@ Maximize deterministic public-contract coverage: unit, subsystem integration, fi
 
 ## Delivery gates
 
-- While iterating: focused tests, formatters, and source-policy checks; the commit hook owns the development gate, so callers do not run a duplicate precommit wrapper. Development `ai-dev` pushes use changed-scope fast validation.
-- Before reporting completed work: `python3 script/ai_check.py` (build, tests, and `publish.py --checks-only`). Only dirty-tree and incorrect snapshot-file checks may be development exceptions; report them.
+- While iterating: run the affected module's focused build/tests and `python3 script/ai_check.py --fast`; the fast gate does not run the batch-wide build or CTest suite. The commit hook owns this development gate, so callers do not run a duplicate precommit wrapper.
+- At a batch boundary, the coordinator runs one `python3 script/ai_check.py` full integration gate plus the batch's required integration/runtime checks, then pushes that batch. Do not repeat the full gate for each basic task in the same batch.
+- Before reporting a snapshot or release complete, use the aggregate candidate/strict gates below and report missing platform or runtime evidence rather than substituting unit tests.
 - Before an aggregate commit: `python3 script/ai_check.py --candidate --level snapshot` (or `minor`/`major`); after its commit and for `ai-main`/`ai/*` tags use full `--strict --level <level>` checks, plus runtime acceptance. A fast CI pass does not establish GPU or multiplayer correctness.
 - When contracts change, update the owning guide; after reading it against source, run `python3 script/ai_docs.py refresh`, then `check`. A hash refresh is not semantic review.
 - Complete backlog tasks only with acceptance evidence. Report changed scope, check results, and material limitations concisely.

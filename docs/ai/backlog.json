@@ -1353,7 +1353,7 @@
     "complexity": "high",
     "created_at": "2026-09-09",
     "resolved_at": "",
-    "resolution_changes": "Finalized the S4 source candidate for exact review, packaging and user preview with authoritative movement and deterministic replay.",
+    "resolution_changes": "S4 gameplay feedback remains active; macOS preview acceptance is pending, with Windows and Android closure tracked separately before publication.",
     "plan": [
       "Keep camera/controller independent of GLFW and Vulkan.",
       "Render 3D without per-frame blocking or busy work.",
@@ -1375,7 +1375,7 @@
     ],
     "baseline_commit": "c5100f5dc77a151a2644079575e25efd0f93a85d",
     "commits": [],
-    "finalized": true,
+    "finalized": false,
     "retrospective": "",
     "docs_review": "",
     "environment_review": "",
@@ -5337,5 +5337,45 @@
     "docs_review": "Reviewed docs/code/README.md and docs/ai/MAINTENANCE.md against the test-only path-diagnostic change; no narrative guide change was needed. Ran python3 script/ai_docs.py refresh and check, updating only generated source_state.json plus required task/backlog views.",
     "environment_review": "macOS focused and full Python validation passed. The supplied Windows log is the authoritative failure reproduction and a deterministic PureWindowsPath case passed locally; no Windows runner is available in this lane, so hosted rerun/runtime acceptance is not claimed.",
     "backlog_review": "MC-AI-0139 is finalized as one basic child under MC-AI-0035. Scope is limited to the portable runtime CLI path assertion and required task/backlog/source-state metadata. The requested workflow raw-log printing and build/ai-checks/** artifact upload are withheld pending explicit user authorization; no unrelated task mutation occurred."
+  },
+  {
+    "id": "MC-AI-0148",
+    "title": "Use focused task checks and local preview before platform closure",
+    "kind": "chore",
+    "status": "done",
+    "priority": "P0",
+    "route": "luna",
+    "milestone": "EarlyDev 0.1.0:4",
+    "depends_on": [],
+    "acceptance": "Ordinary task work runs affected builds and tests plus the fast source gate; a batch runs one full integration check at its boundary; a macOS playable candidate is shown before Windows, Android, hosted CI, tag, or release closure. The complete strict release gate and all platform evidence remain required before a snapshot is done or published.",
+    "evidence": "Focused Python validation passed 36/36 in 16.929 seconds, including that fast checks do not invoke the C++ build or CTest, full and strict checks still invoke both, injected build failures remain nonzero, and existing receipt invalidation behavior remains enforced. git diff --check passed. No platform CI, tag, or release was started.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0035",
+    "motivation": "Repeated complete build, test, packaging, and platform gates between small feedback tasks delayed playable validation and duplicated unchanged evidence.",
+    "context": "The user now requires affected checks per task, one full integration check per batch of up to eight independent tasks, and local macOS gameplay feedback before platform closure. Final snapshot publication still requires the complete release contract.",
+    "complexity": "medium",
+    "created_at": "2026-09-12",
+    "resolved_at": "2026-09-12",
+    "resolution_changes": "Removed the full C++ build and CTest fallback from the fast source gate while preserving complete non-fast and strict checks; documented focused task checks, batch-boundary integration, preview-first feedback, and split platform closure without weakening final publication requirements.",
+    "plan": [
+      "Keep fast source validation limited to task and source-policy checks rather than falling back to the complete C++ suite.",
+      "Document affected task checks, one complete batch-boundary integration check, and macOS preview before platform closure.",
+      "Prove fast, full, strict, failure-propagation, and receipt-invalidation behavior with focused deterministic tests."
+    ],
+    "product_changes": [],
+    "code_changes": [
+      "script/ai_check.py and script/tests/test_ai_check.py",
+      "AGENTS.md and docs/ai/WORKFLOW.md, docs/ai/AUTOMATION.md, and docs/ai/RELEASES.md",
+      "Generated task, parent, backlog, and source-state metadata required for traceability."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "Reviewed the task, automation, and release workflow together so local preview changes ordering without weakening final platform, strict-check, signing, or publication evidence.",
+    "environment_review": "Focused Python tests used the local repository harness and simulated fast, full, strict, and injected-failure paths. No platform build or runtime evidence is claimed by this policy task.",
+    "backlog_review": "MC-AI-0148 is a bounded workflow child under MC-AI-0035. Gameplay fixes remain separately owned tasks and Snapshot 4 remains active pending macOS feedback plus later Windows and Android closure."
   }
 ]
