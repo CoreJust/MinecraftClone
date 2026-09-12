@@ -66,11 +66,13 @@ void GameClient::onReceived(core::ReceiveEvent event) {
             m_running = false;
         }
     } else if (auto* msg = std::get_if<shared::ServerPlayerPositionMessage>(msg_ptr)) {
-        auto const [ch, x, y] = *msg;
+        auto const [ch, x, y, x_subcell, y_subcell] = *msg;
         if (auto p = m_world.playerByCharacter(ch)) {
-            m_world.setPlayerPosition(p->id, x, y);
+            m_world.setPlayerPosition(p->id, x, y, x_subcell, y_subcell);
         } else {
-            m_world.spawnPlayer(m_next_id++, ch, {{x, y}});
+            shared::PlayerId const id = m_next_id++;
+            m_world.spawnPlayer(id, ch, {{x, y}});
+            m_world.setPlayerPosition(id, x, y, x_subcell, y_subcell);
         }
         if (ch == m_local_character) {
             if (std::optional<shared::Player> const player = m_world.playerByCharacter(ch); player.has_value()) {

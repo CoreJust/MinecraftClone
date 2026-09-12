@@ -1,5 +1,6 @@
-#include <AndroidInputState.hpp>
+#include <client/CameraController.hpp>
 
+#include <AndroidInputState.hpp>
 #include <gtest/gtest.h>
 
 #include <cstdint>
@@ -27,13 +28,40 @@ TEST(AndroidInputStateTest, TracksKeyPressesReleasesAndCombinedAxes)
     input.setMoveKeyPressed(AndroidMoveKey::Right, true);
     input.setMoveKeyPressed(AndroidMoveKey::Down, true);
     EXPECT_EQ(signedComponent(input.direction().x), 1);
-    EXPECT_EQ(signedComponent(input.direction().y), 1);
+    EXPECT_EQ(signedComponent(input.direction().y), 0);
 
     input.setMoveKeyPressed(AndroidMoveKey::Right, false);
     input.setMoveKeyPressed(AndroidMoveKey::Up, false);
     input.setMoveKeyPressed(AndroidMoveKey::Down, false);
     EXPECT_EQ(signedComponent(input.direction().x), 0);
     EXPECT_EQ(signedComponent(input.direction().y), 0);
+}
+
+TEST(AndroidInputStateTest, OpposingHardwareAxesCancelBeforeCameraRelativeMovement)
+{
+    static constexpr int32_t POINTER_ID = 7;
+    static constexpr uint32_t SURFACE_WIDTH = 1'000;
+    AndroidInputState input;
+    ASSERT_TRUE(input.beginTouch(POINTER_ID, 200.0F, 300.0F, SURFACE_WIDTH));
+    ASSERT_TRUE(input.moveTouch(POINTER_ID, 250.0F, 350.0F));
+    input.setMoveKeyPressed(AndroidMoveKey::Left, true);
+    input.setMoveKeyPressed(AndroidMoveKey::Right, true);
+    input.setMoveKeyPressed(AndroidMoveKey::Up, true);
+    input.setMoveKeyPressed(AndroidMoveKey::Down, true);
+
+    shared::Direction const direction = input.direction();
+    EXPECT_EQ(signedComponent(direction.x), 0);
+    EXPECT_EQ(signedComponent(direction.y), 0);
+    EXPECT_EQ(
+        client::CameraController::cameraRelativeMovement(
+            {
+                .strafe = static_cast<int8_t>(direction.x),
+                .forward = static_cast<int8_t>(-static_cast<int8_t>(direction.y)),
+            },
+            90.0
+        ),
+        (client::MovementDirection{ })
+    );
 }
 
 TEST(AndroidInputStateTest, ScalesTouchDeadZoneWithDensity)

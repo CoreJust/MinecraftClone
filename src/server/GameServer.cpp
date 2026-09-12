@@ -139,6 +139,8 @@ void GameServer::onReceived(core::ServerReceiveEvent event) {
                 .ch = player.ch,
                 .x = player.x,
                 .y = player.y,
+                .x_subcell = player.x_subcell,
+                .y_subcell = player.y_subcell,
             };
             if (player.id == id) {
                 send(position);
@@ -163,6 +165,8 @@ void GameServer::onReceived(core::ServerReceiveEvent event) {
                     .ch = moved_player->ch,
                     .x = moved_player->x,
                     .y = moved_player->y,
+                    .x_subcell = moved_player->x_subcell,
+                    .y_subcell = moved_player->y_subcell,
                 });
             }
         }

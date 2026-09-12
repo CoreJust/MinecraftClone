@@ -31,7 +31,7 @@ std::expected<shared::ScenarioPlan, shared::ScenarioDiagnostic> parsePlan(std::s
     return shared::parseScenario("scenario-runner-test", source, scenarioLimits());
 }
 
-TEST(ScenarioRunner, ExecutesTheAuthoritativeFiveTickSampleOverRealEnet)
+TEST(ScenarioRunner, ExecutesTheAuthoritativeTenTickSampleOverRealEnet)
 {
     static constexpr std::string_view SOURCE = R"(scenario 1
 profile flat2d-v1
@@ -39,8 +39,8 @@ seed 42
 player alice character "@" at 4 4
 begin
 input alice 1 0
-wait 5
-expect player alice position 9 4
+wait 10
+expect player alice position 5 4
 end
 )";
     auto parsed = parsePlan(SOURCE);
@@ -56,9 +56,9 @@ end
     EXPECT_TRUE(result->passed);
     EXPECT_EQ(result->clients_requested, 1U);
     EXPECT_EQ(result->clients_accepted, 1U);
-    EXPECT_EQ(result->ticks, 5U);
+    EXPECT_EQ(result->ticks, 10U);
     EXPECT_EQ(result->last_effective_tick, 1U);
-    EXPECT_EQ(result->inputs_sent, 5U);
+    EXPECT_EQ(result->inputs_sent, 10U);
     EXPECT_EQ(result->expectations_passed, 1U);
     EXPECT_GE(result->server_events_processed, 7U);
 }
@@ -71,7 +71,7 @@ seed 42
 player alice character "@" at 4 4
 begin
 input alice -1 0
-wait 1
+wait 10
 expect player alice position 3 4
 end
 )";
@@ -85,7 +85,7 @@ end
     });
 
     ASSERT_TRUE(result.has_value()) << result.error();
-    EXPECT_EQ(result->inputs_sent, 1U);
+    EXPECT_EQ(result->inputs_sent, 10U);
     EXPECT_EQ(result->last_effective_tick, 1U);
 }
 
@@ -99,7 +99,7 @@ player bob character "#" at 10 10
 begin
 input alice 1 0
 input bob 0 -1
-wait 2
+wait 20
 expect player alice position 6 4
 expect player bob position 10 8
 end
@@ -116,8 +116,8 @@ end
     EXPECT_TRUE(result->passed);
     EXPECT_EQ(result->clients_requested, 2U);
     EXPECT_EQ(result->clients_accepted, 2U);
-    EXPECT_EQ(result->ticks, 2U);
-    EXPECT_EQ(result->inputs_sent, 4U);
+    EXPECT_EQ(result->ticks, 20U);
+    EXPECT_EQ(result->inputs_sent, 40U);
     EXPECT_EQ(result->expectations_passed, 2U);
 }
 
@@ -131,7 +131,7 @@ player bob character "#" at 10 10 0 orientation 90 0 0
 begin
 input alice camera 0 1
 input bob camera 0 1
-wait 2
+wait 20
 expect player alice position 4 6 0
 expect player bob position 12 10 0
 end
@@ -149,12 +149,38 @@ end
     EXPECT_TRUE(result->passed);
     EXPECT_EQ(result->clients_requested, 2U);
     EXPECT_EQ(result->clients_accepted, 2U);
-    EXPECT_EQ(result->ticks, 2U);
-    EXPECT_EQ(result->inputs_sent, 4U);
+    EXPECT_EQ(result->ticks, 20U);
+    EXPECT_EQ(result->inputs_sent, 40U);
     EXPECT_EQ(result->camera_relative_inputs, 2U);
     EXPECT_EQ(result->expectations_passed, 2U);
     EXPECT_EQ(result->authoritative_tick_ms, 100U);
     EXPECT_EQ(result->replay_id, replay_id);
+}
+
+TEST(ScenarioRunner, ReplaysNormalizedCameraRelativeDiagonalThroughTheAuthoritativeWire)
+{
+    static constexpr std::string_view SOURCE = R"(scenario 1
+profile flat3d-v1
+seed 42
+player alice character "@" at 4 4 0 orientation 0 0 0
+begin
+input alice camera 1 1
+wait 15
+expect player alice position 5 5 0
+end
+)";
+    auto parsed = parsePlan(SOURCE);
+    ASSERT_TRUE(parsed.has_value()) << parsed.error().message;
+
+    auto const result = acceptance::runScenario(*parsed, {
+        .deadline = std::chrono::seconds{ 5 },
+        .network_poll_interval = std::chrono::milliseconds{ 1 },
+    });
+
+    ASSERT_TRUE(result.has_value()) << result.error();
+    EXPECT_EQ(result->inputs_sent, 15U);
+    EXPECT_EQ(result->camera_relative_inputs, 1U);
+    EXPECT_EQ(result->expectations_passed, 1U);
 }
 
 TEST(ScenarioRunner, RejectsInvalidRuntimeLimitsWithoutWaitingForNetwork)

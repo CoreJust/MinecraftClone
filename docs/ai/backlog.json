@@ -4560,5 +4560,46 @@
     "docs_review": "Updated the hosted Windows CI contract in docs/BUILD.md; generated code-documentation state refreshed and validated.",
     "environment_review": "Local macOS verification only; fresh hosted Windows build/test/package acceptance remains a Snapshot 4 gate.",
     "backlog_review": "MC-AI-0115 is the sole scoped child under MC-AI-0035; no Snapshot 5 work or publication mutation."
+  },
+  {
+    "id": "MC-AI-0116",
+    "title": "Make gameplay movement camera-relative and continuous",
+    "kind": "feature",
+    "status": "done",
+    "priority": "P0",
+    "route": "luna",
+    "milestone": "EarlyDev:Initiation 0.1.0:4",
+    "depends_on": [],
+    "acceptance": "Normal desktop and Android play translate W/A/S/D through camera yaw onto the horizontal plane; opposing inputs cancel; diagonal input is normalized. The authoritative server advances movement continuously at the fixed-tick rate with subcell precision, rejects subcell collisions and invalid wire values, broadcasts exact positions, and Client camera/rendering consume those positions without integer stepping. Deterministic tests cover yaw 0/90/180, opposing inputs, diagonal normalization, substeps, collision, serialization, scenario playback, and player presentation.",
+    "evidence": "The integrated candidate passed 28 focused camera, presentation, world, and server tests after the fractional 2x2 collision correction, then 17/17 focused Android input and scenario tests after review corrections for opposing-axis cancellation and normalized diagonal replay. python3 -B script/ai_check.py --fast passed documentation, backlog, plan, diff, Python, build, and the full CTest suite after all corrections. Exact packaged desktop and Android runtime remain parent Snapshot 4 gates.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0035",
+    "motivation": "Make gameplay movement camera-relative and continuous",
+    "context": "User feedback on the 0.1.0:4 pre-publication preview showed fixed-world W movement and visible integer stepping. This task implements the requested camera-relative, continuous authoritative contract without cosmetic-only interpolation.",
+    "complexity": "medium",
+    "created_at": "2026-09-12",
+    "resolved_at": "2026-09-12",
+    "resolution_changes": "Camera yaw now determines horizontal forward/right input; normalized signed wire axes feed fixed-point authoritative world movement and collision, subcell positions round-trip through network/scenarios, and Client camera/rendering use continuous positions.",
+    "plan": [
+      "Define yaw-relative input and signed normalized wire axes; retain deterministic fixed-tick authority with subcell state.",
+      "Update collision, serialization, scenarios, Client presentation, Android input, and tests as one coherent movement change."
+    ],
+    "product_changes": [
+      "W/A/S/D follows the third-person camera heading and moves continuously at a time-based authoritative rate without diagonal speed gain."
+    ],
+    "code_changes": [
+      "Added fixed-point player subcells, continuous collision, signed normalized input encoding, and server broadcast persistence.",
+      "Updated desktop, Android, bot, scenario, camera, and presentation consumers plus deterministic coverage.",
+      "Review correction makes simultaneous Android hardware axes cancel and makes scenario diagonal axes match normalized desktop/Android wire values."
+    ],
+    "baseline_commit": "9a5b1e050b0a172536d87141007ece9fd1f02967",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "Gameplay, Android, scripting execution, and quickstart contracts updated and checked against source.",
+    "environment_review": "No new runtime dependency or platform capability; desktop and Android use the same shared movement protocol.",
+    "backlog_review": "This task is the coherent movement response to preview feedback; HUD scale and scene/depth polish remain separate MC-AI-0117 and MC-AI-0118 tasks."
   }
 ]

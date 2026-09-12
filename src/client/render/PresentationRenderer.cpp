@@ -149,8 +149,8 @@ void recordFlat3dScene(
         BoxPushConstants const push{
             .projection_view = projection_view,
             .origin = {
-                static_cast<float>(player.x),
-                static_cast<float>(player.y),
+                player.x,
+                player.y,
                 0.0F,
                 0.0F,
             },

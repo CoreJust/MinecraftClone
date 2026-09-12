@@ -25,11 +25,11 @@
         "tests/acceptance/runtime_cli_tests.cmake",
         "tests/acceptance/scenario_runner_tests.cpp"
       ],
-      "sources_sha256": "8da34ba88e21d4a3826916b09e7d778ac66747b8af70c21ecdffe0e8436dc8e2"
+      "sources_sha256": "58c80a442cca9a0919d71570e84b7f98c0a3076b03404250eb7e579ab1e5b5bb"
     },
     {
       "guide": "docs/code/ANDROID.md",
-      "guide_sha256": "3d2ff3265ac1ba9198e5a144f2739e65f3441e66f816a86482cd50661bec8bc2",
+      "guide_sha256": "3487aa557753acb8264799c9565b7573dd0aecd57f4cc692fdc096910b7432ea",
       "id": "android",
       "sources": [
         "src/android/AndroidInput.cpp",
@@ -44,7 +44,7 @@
         "src/android/CMakeLists.txt",
         "tests/android/input_state_tests.cpp"
       ],
-      "sources_sha256": "1925f1f1ad08010c05698b5731fd6a64810ddbc5bc6b8cca3f6acc7747dea454"
+      "sources_sha256": "fdc4fd637a46e6380e3bec613caf183b36ecdc365f148f83f900c0cd1f87c630"
     },
     {
       "guide": "docs/BUILD.md",
@@ -171,7 +171,7 @@
     },
     {
       "guide": "docs/code/GAMEPLAY.md",
-      "guide_sha256": "e2ab4ffbd365d04b287b28e73c7281c65d888af0aca9fde2c32e23abedcd42e9",
+      "guide_sha256": "cd167f4adbf9a2e8caea6eef897aae9e7cbf6b89c2dc21f3c50e2f682393df8b",
       "id": "gameplay",
       "sources": [
         "src/client/BotClient.cpp",
@@ -212,7 +212,7 @@
         "tests/core/shared_message_tests.cpp",
         "tests/core/shared_world_tests.cpp"
       ],
-      "sources_sha256": "748615e52041f87e91c6d940478ff51ef77427304149cd5d4e57839b923d173e"
+      "sources_sha256": "9365005e1726a3e097cfabd0478e8271b696009c7364b4107c9727f78ab37b2c"
     },
     {
       "guide": "docs/code/RENDERING.md",
@@ -255,7 +255,7 @@
         "tests/testsupport/image_comparison_tests.cpp",
         "tests/testsupport/include/testsupport/ImageComparison.hpp"
       ],
-      "sources_sha256": "0ebc2a5820f7ca5df60a0eed0d34df859ac69237b21a72c03e482d331d6c6c3a"
+      "sources_sha256": "0990c965ec16b39e4a1e644123f9c405a1c02ce9af35a3d72b585c52bb61dc3c"
     }
   ],
   "version": 1

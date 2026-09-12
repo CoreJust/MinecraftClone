@@ -58,4 +58,20 @@ TEST(PlayerPresentationTest, RemoteFilterRemainsAvailableForPresentationMetadata
     EXPECT_TRUE(client::shouldRenderRemotePlayer(REMOTE, '@'));
 }
 
+TEST(PlayerPresentationTest, CameraFollowsAuthoritativeSubcellPosition)
+{
+    static constexpr shared::Player PLAYER{
+        .id = 7U,
+        .x = 12U,
+        .y = 20U,
+        .x_subcell = 5'000U,
+        .y_subcell = 2'500U,
+        .ch = '@',
+    };
+
+    client::CameraPose const pose = client::localPlayerThirdPersonPose(PLAYER, { });
+    EXPECT_DOUBLE_EQ(pose.position.x, 13.5);
+    EXPECT_DOUBLE_EQ(pose.position.y, 15.25);
+}
+
 } // namespace

@@ -27,12 +27,12 @@ shared::Direction PlayerClient::input() {
         m_running = false;
     }
     MovementIntent const intent{
-        .strafe = static_cast<int8_t>(m_window.keyPressed(core::platform::glfw::WindowKey::D)
-            ? 1 : (m_window.keyPressed(core::platform::glfw::WindowKey::A) ? -1 : 0)),
-        .forward = static_cast<int8_t>(m_window.keyPressed(core::platform::glfw::WindowKey::W)
-            ? 1 : (m_window.keyPressed(core::platform::glfw::WindowKey::S) ? -1 : 0)),
+        .strafe = static_cast<int8_t>(static_cast<int>(m_window.keyPressed(core::platform::glfw::WindowKey::D))
+            - static_cast<int>(m_window.keyPressed(core::platform::glfw::WindowKey::A))),
+        .forward = static_cast<int8_t>(static_cast<int>(m_window.keyPressed(core::platform::glfw::WindowKey::W))
+            - static_cast<int>(m_window.keyPressed(core::platform::glfw::WindowKey::S))),
     };
-    DiscreteMovement const movement = CameraController::cameraRelativeMovement(
+    MovementDirection const movement = CameraController::cameraRelativeMovement(
         intent,
         m_camera.pose().angles.yaw_degrees
     );
@@ -72,16 +72,16 @@ void PlayerClient::render() {
     m_render_data.reserve(m_world.players().size());
     for (shared::Player const& p : m_world.players()) {
         m_render_data.push_back({
-            .x = p.x,
-            .y = p.y,
+            .x = static_cast<float>(shared::playerPositionX(p)),
+            .y = static_cast<float>(shared::playerPositionY(p)),
             .color = { float(p.ch) / 256.f, 1.f - float(p.ch) / 256.f, 1.f, 1.f },
         });
     }
     DebugHudInput const debug_hud_input = [&] {
         DebugHudInput input;
         if (auto const player = m_world.playerByCharacter(m_local_character)) {
-            input.player_x = static_cast<float>(player->x);
-            input.player_y = static_cast<float>(player->y);
+            input.player_x = static_cast<float>(shared::playerPositionX(*player));
+            input.player_y = static_cast<float>(shared::playerPositionY(*player));
         }
         CameraAngles const angles = m_camera.pose().angles;
         input.camera_yaw_degrees = static_cast<float>(angles.yaw_degrees);

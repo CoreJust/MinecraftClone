@@ -140,7 +140,7 @@ class ScenarioPlan;
 
 // This is the scenario-side form of the client camera controller.  A yaw of
 // zero faces +Y; positive yaw turns toward +X.  It deliberately returns the
-// existing cardinal wire Direction so the server remains the sole authority.
+// normalized signed wire Direction so the server remains the sole authority.
 [[nodiscard]]
 Direction scenarioCameraRelativeDirection(
     int16_t yaw_degrees,

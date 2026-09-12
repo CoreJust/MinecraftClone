@@ -12,8 +12,8 @@ seed 42
 player alice character "@" at 4 4
 begin
 input alice 1 0
-wait 5
-expect player alice position 9 4
+wait 10
+expect player alice position 5 4
 end
 ]=])
 execute_process(
@@ -29,7 +29,7 @@ endif()
 file(READ "${valid_evidence}" valid_json)
 foreach(required_text
     "\"passed\": true"
-    "\"ticks\": 5"
+    "\"ticks\": 10"
     "\"clients_accepted\": 1"
     "\"expectations_passed\": 1"
 )
@@ -47,8 +47,8 @@ profile("flat2d-v1")
 seed(42u64)
 player("alice", '@', 4u8, 4u8)
 input("alice", 1i8, 0i8)
-wait(5u64)
-expect_position("alice", 9u8, 4u8)
+wait(10u64)
+expect_position("alice", 5u8, 4u8)
 ]=])
 execute_process(COMMAND "${MC_MAIN}" --scenario "${valid_core_semicolon}" --evidence "${valid_core_semicolon_evidence}" RESULT_VARIABLE valid_core_semicolon_result TIMEOUT 10)
 if(NOT valid_core_semicolon_result EQUAL 0)
@@ -63,8 +63,8 @@ profile("flat2d-v1")
 seed(42u64)
 player("alice", '@', 4u8, 4u8)
 input("alice", 1i8, 0i8)
-wait(5u64)
-expect_position("alice", 9u8, 4u8)
+wait(10u64)
+expect_position("alice", 5u8, 4u8)
 ]=])
 execute_process(
     COMMAND "${MC_MAIN}" --scenario "${valid_core}" --evidence "${valid_core_evidence}"
@@ -76,7 +76,7 @@ if(NOT valid_core_result EQUAL 0)
     message(FATAL_ERROR "valid CoreLang scenario command failed: ${valid_core_stderr}")
 endif()
 file(READ "${valid_core_evidence}" valid_core_json)
-foreach(required_text "\"passed\": true" "\"ticks\": 5" "\"clients_accepted\": 1")
+foreach(required_text "\"passed\": true" "\"ticks\": 10" "\"clients_accepted\": 1")
     string(FIND "${valid_core_json}" "${required_text}" match_index)
     if(match_index EQUAL -1)
         message(FATAL_ERROR "valid CoreLang evidence is missing ${required_text}")

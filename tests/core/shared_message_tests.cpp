@@ -24,8 +24,10 @@ TEST(MessageTest, RoundTripsEveryMessageKind) {
     expectRoundTrip(shared::JoinRequestMessage{ .ch = '@' });
     expectRoundTrip(shared::JoinResponseMessage{ .accepted = true });
     expectRoundTrip(shared::JoinResponseMessage{ .accepted = false });
-    expectRoundTrip(shared::ClientInputMessage{ .direction = { 255, 1 } });
-    expectRoundTrip(shared::ServerPlayerPositionMessage{ .ch = '#', .x = 31, .y = 0 });
+    expectRoundTrip(shared::ClientInputMessage{ .direction = { 129, 127 } });
+    expectRoundTrip(shared::ServerPlayerPositionMessage{
+        .ch = '#', .x = 31, .y = 0, .x_subcell = 9'999, .y_subcell = 500,
+    });
     expectRoundTrip(shared::ServerRemovePlayerMessage{ .ch = '$' });
 }
 
@@ -33,8 +35,10 @@ TEST(MessageTest, RejectsTruncatedAndUnknownPayloads) {
     std::array<shared::Message, 5> const messages{
         shared::JoinRequestMessage{ .ch = '@' },
         shared::JoinResponseMessage{ .accepted = true },
-        shared::ClientInputMessage{ .direction = { 255, 1 } },
-        shared::ServerPlayerPositionMessage{ .ch = '#', .x = 31, .y = 0 },
+        shared::ClientInputMessage{ .direction = { 129, 127 } },
+        shared::ServerPlayerPositionMessage{
+            .ch = '#', .x = 31, .y = 0, .x_subcell = 9'999, .y_subcell = 500,
+        },
         shared::ServerRemovePlayerMessage{ .ch = '$' },
     };
     for (auto const& message : messages) {
@@ -61,12 +65,14 @@ TEST(MessageTest, PreservesWireTagsAndPayloadBytes) {
         (std::vector<uint8_t>{ 1, 0 })
     );
     EXPECT_EQ(
-        shared::encodeMessage(shared::ClientInputMessage{ .direction = { 255, 1 } }),
-        (std::vector<uint8_t>{ 2, 255, 1 })
+        shared::encodeMessage(shared::ClientInputMessage{ .direction = { 129, 127 } }),
+        (std::vector<uint8_t>{ 2, 129, 127 })
     );
     EXPECT_EQ(
-        shared::encodeMessage(shared::ServerPlayerPositionMessage{ .ch = '#', .x = 31, .y = 0 }),
-        (std::vector<uint8_t>{ 3, '#', 31, 0 })
+        shared::encodeMessage(shared::ServerPlayerPositionMessage{
+            .ch = '#', .x = 31, .y = 0, .x_subcell = 9'999, .y_subcell = 500,
+        }),
+        (std::vector<uint8_t>{ 3, '#', 31, 0, 15, 39, 244, 1 })
     );
     EXPECT_EQ(
         shared::encodeMessage(shared::ServerRemovePlayerMessage{ .ch = '$' }),
@@ -89,12 +95,21 @@ TEST(MessageTest, RejectsTrailingBytes) {
 }
 
 TEST(MessageTest, RejectsInvalidPayloadValues) {
-    auto input = shared::encodeMessage(shared::ClientInputMessage{ .direction = { 1, 1 } });
-    input[1] = 2;
+    auto input = shared::encodeMessage(shared::ClientInputMessage{ .direction = { 127, 127 } });
+    input[1] = 128;
     EXPECT_FALSE(shared::decodeMessage(input).has_value());
 
-    auto position = shared::encodeMessage(shared::ServerPlayerPositionMessage{ .ch = '@', .x = 1, .y = 1 });
+    auto position = shared::encodeMessage(shared::ServerPlayerPositionMessage{
+        .ch = '@', .x = 1, .y = 1, .x_subcell = 0, .y_subcell = 0,
+    });
     position[2] = shared::World::WIDTH;
+    EXPECT_FALSE(shared::decodeMessage(position).has_value());
+
+    position = shared::encodeMessage(shared::ServerPlayerPositionMessage{
+        .ch = '@', .x = 1, .y = 1, .x_subcell = 0, .y_subcell = 0,
+    });
+    position[4] = 16;
+    position[5] = 39;
     EXPECT_FALSE(shared::decodeMessage(position).has_value());
 
     auto join = shared::encodeMessage(shared::JoinRequestMessage{ .ch = '\n' });

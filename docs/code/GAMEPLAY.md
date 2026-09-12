@@ -21,8 +21,11 @@ server `PlayerId`s and instead track remote players by character.
 ## Shared simulation
 
 [World.hpp](../../src/shared/include/shared/world/World.hpp) defines a flat
-32 by 32 board, the 100 ms `TICK`, players, and byte-valued `Direction`.
-`World` owns player lookup, spawn, movement, despawn, and replicated positions.
+32 by 32 board, the 100 ms `TICK`, byte-valued normalized `Direction`, and
+players with deterministic 10,000-subcell remainders. `World` owns player
+lookup, spawn, fixed-step movement, despawn, and replicated positions. A
+normal tick advances one tenth of a cell at full direction magnitude; the
+remainder persists across ticks and diagonal vectors are normalized.
 
 A valid location is not within the 3 by 3 neighborhood of another player's
 cell, including diagonals. This is the collision invariant used for random
@@ -54,8 +57,8 @@ camera-input count, and 100 ms server tick separately from presentation cadence.
 | --- | --- | --- |
 | client → server | `JoinRequest` | one selected character |
 | server → client | `JoinResponse` | acceptance boolean |
-| client → server | `ClientInput` | two direction bytes |
-| server → client | `ServerPlayerPosition` | character and cell |
+| client → server | `ClientInput` | two signed normalized direction bytes (`-127..127`) |
+| server → client | `ServerPlayerPosition` | character, cell, and two subcell remainders |
 | server → client | `ServerRemovePlayer` | character |
 
 `Message.cpp` prepends a private tag. Decoding requires a known, complete,
@@ -90,9 +93,9 @@ render records. A disconnect or rejected join stops the loop.
 [PlayerClient.hpp](../../src/client/include/client/PlayerClient.hpp) and
 [PlayerClient.cpp](../../src/client/PlayerClient.cpp) provide the GLFW/Vulkan
 client. Normal gameplay enables the HUD by default. GLFW cursor movement controls local yaw/pitch; W/S and A/D become
-camera-relative cardinal directions through the GLFW-independent controller.
+camera-relative normalized horizontal directions through the GLFW-independent controller.
 This never predicts or applies a local movement result. Each render converts
-local players to colored 2 by 2 render records. R reloads the
+authoritative subcell positions to colored 2 by 2 render records. R reloads the
 renderer on a press edge stored per client instance.
 
 `BotClient` renders nothing and changes a persistent random direction with
