@@ -408,6 +408,17 @@ class CiAcquireTests(unittest.TestCase):
         with self.assertRaisesRegex(acquire.CiError, "forbidden control character"):
             acquire.quote_git_ssh_path("D:\\a\\key\n-o StrictHostKeyChecking=no")
 
+    def test_cmake_paths_normalize_windows_separators_without_changing_flags(self):
+        self.assertEqual(
+            acquire.normalize_cmake_path(r"D:\a\runner temp\vcpkg-installed"),
+            "D:/a/runner temp/vcpkg-installed",
+        )
+        self.assertEqual(
+            acquire.normalize_cmake_argument(r"-DCMAKE_TOOLCHAIN_FILE=D:\a\vcpkg\scripts\buildsystems\vcpkg.cmake"),
+            "-DCMAKE_TOOLCHAIN_FILE=D:/a/vcpkg/scripts/buildsystems/vcpkg.cmake",
+        )
+        self.assertEqual(acquire.normalize_cmake_argument("-DVCPKG_MANIFEST_INSTALL=OFF"), "-DVCPKG_MANIFEST_INSTALL=OFF")
+
     def test_private_dependency_artifact_exclusion_rejects_checkout_links(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

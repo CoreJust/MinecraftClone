@@ -1004,7 +1004,6 @@ Direction scenarioCameraRelativeDirection(
     if (clamped_strafe == 0 && clamped_forward == 0) return { .x = 0, .y = 0 };
 
     constexpr double DEGREES_TO_RADIANS = 0.017'453'292'519'943'295'769'236'907'684'89;
-    constexpr double AXIS_TIE_EPSILON = 1e-12;
     int16_t normalized_yaw = static_cast<int16_t>(yaw_degrees % 360);
     if (normalized_yaw < 0) normalized_yaw = static_cast<int16_t>(normalized_yaw + 360);
     double const yaw_radians = static_cast<double>(normalized_yaw) * DEGREES_TO_RADIANS;
@@ -1012,14 +1011,12 @@ Direction scenarioCameraRelativeDirection(
         + static_cast<double>(clamped_forward) * std::sin(yaw_radians);
     double const world_y = -static_cast<double>(clamped_strafe) * std::sin(yaw_radians)
         + static_cast<double>(clamped_forward) * std::cos(yaw_radians);
-    double const absolute_x = std::abs(world_x);
-    double const absolute_y = std::abs(world_y);
-    if (absolute_x == 0.0) return { .x = 0, .y = static_cast<uint8_t>(world_y < 0.0 ? -1 : 1) };
-    if (absolute_y == 0.0) return { .x = static_cast<uint8_t>(world_x < 0.0 ? -1 : 1), .y = 0 };
-    if (absolute_x + AXIS_TIE_EPSILON >= absolute_y) {
-        return { .x = static_cast<uint8_t>(world_x < 0.0 ? -1 : 1), .y = 0 };
-    }
-    return { .x = 0, .y = static_cast<uint8_t>(world_y < 0.0 ? -1 : 1) };
+    double const length = std::hypot(world_x, world_y);
+    constexpr double MAX_DIRECTION_COMPONENT = 127.0;
+    return {
+        .x = static_cast<uint8_t>(static_cast<int8_t>(world_x / length * MAX_DIRECTION_COMPONENT)),
+        .y = static_cast<uint8_t>(static_cast<int8_t>(world_y / length * MAX_DIRECTION_COMPONENT)),
+    };
 }
 
 std::string scenarioReplayId(ScenarioPlan const& plan) {

@@ -155,12 +155,14 @@ TEST_F(GameServerTest, MalformedPacketFromUnjoinedPeerDoesNotPreventJoinOrMoveme
     ASSERT_EQ(client.positions('@').size(), 1u);
 
     auto const start = client.positions('@').front();
-    uint8_t const direction_x = start.x == 0 ? 1 : 255;
+    uint8_t const direction_x = start.x == 0 ? 127 : 129;
     ASSERT_TRUE(client.sendMessage(shared::ClientInputMessage{ .direction = { direction_x, 0 } }));
     ASSERT_TRUE(client.waitFor([&client] { return client.positions('@').size() == 2; }));
     auto const positions = client.positions('@');
-    EXPECT_EQ(positions.back().x, start.x == 0 ? 1 : start.x - 1);
+    EXPECT_EQ(positions.back().x, start.x == 0 ? start.x : start.x - 1);
     EXPECT_EQ(positions.back().y, start.y);
+    EXPECT_EQ(positions.back().x_subcell, start.x == 0 ? 1'000U : 9'000U);
+    EXPECT_EQ(positions.back().y_subcell, 0U);
 }
 
 TEST_F(GameServerTest, IdleInputDoesNotConsumeTheSingleMovementInAPollingTick)
@@ -168,7 +170,7 @@ TEST_F(GameServerTest, IdleInputDoesNotConsumeTheSingleMovementInAPollingTick)
     ProtocolClient client;
     ASSERT_TRUE(join(client, '@'));
     auto const start = client.positions('@').front();
-    auto const direction_x = static_cast<uint8_t>(start.x == 0 ? 1 : 255);
+    auto const direction_x = static_cast<uint8_t>(start.x == 0 ? 127 : 129);
     ASSERT_TRUE(client.sendMessage(shared::ClientInputMessage{ .direction = { 0, 0 } }));
     ASSERT_TRUE(client.sendMessage(shared::ClientInputMessage{ .direction = { direction_x, 0 } }));
     ASSERT_TRUE(client.sendMessage(shared::ClientInputMessage{ .direction = { direction_x, 0 } }));
@@ -177,8 +179,10 @@ TEST_F(GameServerTest, IdleInputDoesNotConsumeTheSingleMovementInAPollingTick)
 
     auto const positions = client.positions('@');
     ASSERT_EQ(positions.size(), 2u);
-    EXPECT_EQ(positions.back().x, start.x == 0 ? 1 : start.x - 1);
+    EXPECT_EQ(positions.back().x, start.x == 0 ? start.x : start.x - 1);
     EXPECT_EQ(positions.back().y, start.y);
+    EXPECT_EQ(positions.back().x_subcell, start.x == 0 ? 1'000U : 9'000U);
+    EXPECT_EQ(positions.back().y_subcell, 0U);
 }
 
 TEST_F(GameServerTest, UnjoinedInputAndDisconnectLeaveAcceptedPlayersIntact)
@@ -189,7 +193,7 @@ TEST_F(GameServerTest, UnjoinedInputAndDisconnectLeaveAcceptedPlayersIntact)
     ProtocolClient newcomer;
     ASSERT_TRUE(join(first, '@'));
     ASSERT_TRUE(connect(unjoined));
-    ASSERT_TRUE(unjoined.sendMessage(shared::ClientInputMessage{ .direction = { 1, 0 } }));
+    ASSERT_TRUE(unjoined.sendMessage(shared::ClientInputMessage{ .direction = { 127, 0 } }));
     ASSERT_TRUE(unjoined.sendMessage(shared::JoinRequestMessage{ .ch = '@' }));
     ASSERT_TRUE(unjoined.waitFor([&] { return unjoined.responseCount() == 1; }));
     EXPECT_FALSE(std::get<shared::JoinResponseMessage>(unjoined.messages.front()).accepted);

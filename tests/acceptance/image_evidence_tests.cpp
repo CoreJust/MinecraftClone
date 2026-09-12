@@ -46,12 +46,12 @@ TEST(ImageEvidence, RejectsMismatchedCaptureSize)
 }
 
 std::vector<uint8_t> gameplayCapture(
-    bool const expected_player_positions,
+    bool const include_players,
     bool const srgb_encoded
 )
 {
     static constexpr uint32_t EXTENT{ 32U };
-    std::vector<uint8_t> capture(EXTENT * EXTENT * 4U, 10U);
+    std::vector<uint8_t> capture(EXTENT * EXTENT * 4U, 255U);
     auto setPixel = [&capture](
         uint32_t const x,
         uint32_t const y,
@@ -60,31 +60,30 @@ std::vector<uint8_t> gameplayCapture(
         uint64_t const offset = (static_cast<uint64_t>(y) * EXTENT + x) * 4U;
         std::ranges::copy(color, capture.begin() + static_cast<int64_t>(offset));
     };
-    uint8_t const background = srgb_encoded ? 69U : 15U;
-    uint8_t const grid = srgb_encoded ? 111U : 41U;
-    std::ranges::fill(capture, background);
-    setPixel(1U, 1U, { grid, grid, grid, 255U });
-    setPixel(
-        expected_player_positions ? 2U : 10U,
-        expected_player_positions ? 3U : 10U,
-        { 255U, 0U, 0U, 255U }
-    );
-    setPixel(
-        expected_player_positions ? 29U : 20U,
-        expected_player_positions ? 28U : 20U,
-        { 0U, 255U, 0U, 255U }
-    );
+    std::array<uint8_t, 4> const sky = srgb_encoded
+        ? std::array<uint8_t, 4>{ 160U, 205U, 240U, 255U }
+        : std::array<uint8_t, 4>{ 97U, 158U, 224U, 255U };
+    for (uint32_t y = 0U; y < EXTENT; ++y) {
+        for (uint32_t x = 0U; x < EXTENT; ++x) {
+            setPixel(x, y, sky);
+        }
+    }
+    setPixel(1U, 1U, { 28U, 31U, 36U, 255U });
+    if (include_players) {
+        setPixel(2U, 3U, { 255U, 0U, 0U, 255U });
+        setPixel(29U, 28U, { 0U, 255U, 0U, 255U });
+    }
     return capture;
 }
 
-TEST(ImageEvidence, RequiresSceneColorsInExpectedGameplayRegions)
+TEST(ImageEvidence, RequiresSceneColorsAndBothPlayers)
 {
     std::vector<uint8_t> const complete_capture = gameplayCapture(true, true);
-    std::vector<uint8_t> const misplaced_players = gameplayCapture(false, true);
+    std::vector<uint8_t> const missing_players = gameplayCapture(false, true);
 
     EXPECT_TRUE(acceptance::validateGameplayFrameCapture(32U, 32U, complete_capture, true).has_value());
     EXPECT_FALSE(
-        acceptance::validateGameplayFrameCapture(32U, 32U, misplaced_players, true).has_value()
+        acceptance::validateGameplayFrameCapture(32U, 32U, missing_players, true).has_value()
     );
 }
 

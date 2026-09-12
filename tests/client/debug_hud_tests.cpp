@@ -362,7 +362,7 @@ TEST(DebugHudTest, IgnoresNonFiniteClockValues)
     EXPECT_DOUBLE_EQ(hud.snapshot().uptime_seconds, 3.0);
 }
 
-TEST(DebugHudTest, FormatsStableGoldenValuesAndDegreeLabels)
+TEST(DebugHudTest, FormatsReadableSpacedGoldenValuesAndDegreeGroups)
 {
     client::DebugHudState hud;
     hud.setEnabled(true);
@@ -383,8 +383,63 @@ TEST(DebugHudTest, FormatsStableGoldenValuesAndDegreeLabels)
     ASSERT_TRUE(hud.formatText(text));
     EXPECT_EQ(
         std::string_view(text.bytes.data(), text.size),
-        "FPS:0.0\nUPTIME:0.0s\nXYZ:1.2,-2.3,4.6\nY/P/R(deg):45.0,-10.0,3.0"
+        "FPS:  0.0\nUPTIME:  0.0s\nXYZ:  1.25   -2.30   4.56\nYPR deg: 45.0  -10.0  3.0"
     );
+}
+
+TEST(DebugHudTest, ReservesFourBoundedRowsForExtremeInputValues)
+{
+    client::DebugHudState hud;
+    hud.setEnabled(true);
+    hud.updateAt(
+        10.0,
+        client::DebugHudInput{
+            .player_x = std::numeric_limits<float>::max(),
+            .player_y = -std::numeric_limits<float>::max(),
+            .player_z = std::numeric_limits<float>::max(),
+            .camera_yaw_degrees = std::numeric_limits<float>::max(),
+            .camera_pitch_degrees = -std::numeric_limits<float>::max(),
+            .camera_roll_degrees = std::numeric_limits<float>::max(),
+        }
+    );
+    client::DebugHudText text;
+
+    ASSERT_TRUE(hud.formatText(text));
+    std::string_view const formatted{ text.bytes.data(), text.size };
+    size_t line_start = 0U;
+    for (size_t line = 0U; line < client::DEBUG_HUD_LINE_COUNT; ++line) {
+        size_t const line_end = formatted.find('\n', line_start);
+        if (line + 1U < client::DEBUG_HUD_LINE_COUNT) {
+            ASSERT_NE(line_end, std::string_view::npos);
+        } else {
+            EXPECT_EQ(line_end, std::string_view::npos);
+        }
+        size_t const bounded_line_end = line_end == std::string_view::npos
+            ? formatted.size()
+            : line_end;
+        EXPECT_LE(bounded_line_end - line_start, client::DEBUG_HUD_MAX_LINE_BYTES);
+        if (line_end != std::string_view::npos) {
+            line_start = bounded_line_end + 1U;
+        }
+    }
+}
+
+TEST(DebugHudTest, DeclaresDoubleSizeGlyphsAndSeparatedRows)
+{
+    EXPECT_EQ(
+        client::DEBUG_HUD_GLYPH_WIDTH_PIXELS,
+        2.0F * client::DEBUG_HUD_BITMAP_GLYPH_WIDTH_PIXELS
+    );
+    EXPECT_EQ(
+        client::DEBUG_HUD_GLYPH_HEIGHT_PIXELS,
+        2.0F * client::DEBUG_HUD_BITMAP_GLYPH_HEIGHT_PIXELS
+    );
+    EXPECT_GE(
+        client::DEBUG_HUD_LINE_ADVANCE_PIXELS,
+        client::DEBUG_HUD_GLYPH_HEIGHT_PIXELS
+    );
+    EXPECT_EQ(client::DEBUG_HUD_MAX_LINE_BYTES, 28U);
+    EXPECT_EQ(client::DEBUG_HUD_WORDS_PER_LINE, 7U);
 }
 
 TEST(DebugHudTest, PacksFourLinesIntoFixedShaderRows)
@@ -417,7 +472,7 @@ TEST(DebugHudTest, PacksFourLinesIntoFixedShaderRows)
     );
     EXPECT_EQ(
         batch.instances[3U * client::DEBUG_HUD_WORDS_PER_LINE].packed_ascii,
-        client::packDebugHudAscii('Y', '/', 'P', '/')
+        client::packDebugHudAscii('Y', 'P', 'R', ' ')
     );
 }
 
@@ -438,7 +493,7 @@ TEST(DebugHudTest, SupportsInjectedFormattingAndDpiToggleState)
     ASSERT_TRUE(hud.formatText(text));
     EXPECT_EQ(
         std::string_view(text.bytes.data(), text.size),
-        "FPS:X\nUPTIME:Xs\nXYZ:X,X,X\nY/P/R(deg):X,X,X"
+        "FPS:  X\nUPTIME:  Xs\nXYZ:  X   X   X\nYPR deg: X  X  X"
     );
 
     hud.toggle();
@@ -446,7 +501,7 @@ TEST(DebugHudTest, SupportsInjectedFormattingAndDpiToggleState)
     EXPECT_FALSE(hud.formatText(text));
 }
 
-TEST(DebugHudTest, BoundsSignedCameraAnglesToTheFourthLayoutRow)
+TEST(DebugHudTest, BoundsSpacedCameraAnglesToTheFourthLayoutRow)
 {
     client::DebugHudState hud;
     hud.setEnabled(true);
@@ -470,7 +525,7 @@ TEST(DebugHudTest, BoundsSignedCameraAnglesToTheFourthLayoutRow)
     );
     EXPECT_EQ(
         formatted.substr(last_line + 1U),
-        "Y/P/R(deg):359.0,-89.0,359.0"
+        "YPR deg: 359.0  -89.0  359.0"
     );
 }
 

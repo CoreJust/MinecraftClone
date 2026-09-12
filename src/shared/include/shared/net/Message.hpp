@@ -25,6 +25,8 @@ struct ServerPlayerPositionMessage final {
     char ch;
     uint8_t x;
     uint8_t y;
+    uint16_t x_subcell;
+    uint16_t y_subcell;
 };
 
 struct ServerRemovePlayerMessage final {

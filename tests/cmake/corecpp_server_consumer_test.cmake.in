@@ -1,6 +1,6 @@
-set(test_root "@CMAKE_CURRENT_BINARY_DIR@/corecpp-server-consumer")
-set(corecpp_prefix "@CoreCpp_DIR@/../../..")
-set(dependency_prefix "@CMAKE_PREFIX_PATH@")
+set(test_root "@MC_TEST_BINARY_DIR@/corecpp-server-consumer")
+set(corecpp_prefix "@MC_CORECPP_DIR@/../../..")
+set(dependency_prefix "@MC_CMAKE_PREFIX_PATH@")
 
 file(REMOVE_RECURSE "${test_root}")
 file(MAKE_DIRECTORY "${test_root}")
@@ -21,8 +21,8 @@ file(
 )
 execute_process(
     COMMAND
-        "@CMAKE_COMMAND@"
-        -S "@PROJECT_SOURCE_DIR@"
+        "@MC_CMAKE_COMMAND@"
+        -S "@MC_PROJECT_SOURCE_DIR@"
         -B "${test_root}/mismatch-build"
         -DCoreCpp_DIR=${mismatched_corecpp}
         -DBUILD_TESTING=OFF
@@ -41,8 +41,8 @@ endif()
 
 execute_process(
     COMMAND
-        "@CMAKE_COMMAND@"
-        -S "@PROJECT_SOURCE_DIR@/cmake/fixtures/corecpp_server_consumer"
+        "@MC_CMAKE_COMMAND@"
+        -S "@MC_PROJECT_SOURCE_DIR@/cmake/fixtures/corecpp_server_consumer"
         -B "${test_root}/build"
         "-DCMAKE_PREFIX_PATH=${corecpp_prefix};${dependency_prefix}"
         -DVCPKG_MANIFEST_INSTALL=OFF
@@ -57,7 +57,7 @@ if(NOT configure_result EQUAL 0)
 endif()
 
 execute_process(
-    COMMAND "@CMAKE_COMMAND@" --build "${test_root}/build" --parallel 2
+    COMMAND "@MC_CMAKE_COMMAND@" --build "${test_root}/build" --parallel 2
     RESULT_VARIABLE build_result
     OUTPUT_VARIABLE build_output
     ERROR_VARIABLE build_error

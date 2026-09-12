@@ -18,10 +18,10 @@ statements: each command observes all earlier commands at that boundary.
   advances. After it completes, the current boundary has increased by `N`.
 - `expect` reads the current boundary and does not advance time.
 
-For the canonical sample, `input alice 1 0` is set at boundary 0; `wait 5`
-advances steps 1 through 5; Alice reaches `(9, 4)` at boundary 5. The
-subsequent stopped input is at boundary 5 and cannot retroactively affect
-those five steps.
+For the canonical sample, `input alice 1 0` is set at boundary 0; `wait 10`
+advances steps 1 through 10; Alice reaches `(5, 4)` at boundary 10. The
+subsequent stopped input is at boundary 10 and cannot retroactively affect
+those ten steps.
 
 The scenario runner is authoritative. An expectation is evaluated against the
 authoritative profile state, never client prediction, renderer state, wall

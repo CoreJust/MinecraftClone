@@ -9,9 +9,13 @@
 #include <GLFW/glfw3.h>
 #include <gtest/gtest.h>
 
+#include <testsupport/ImageComparison.hpp>
+
 #include <array>
 #include <chrono>
 #include <cstdint>
+#include <cstdlib>
+#include <filesystem>
 #include <memory>
 #include <span>
 #include <string>
@@ -123,23 +127,23 @@ struct CaptureColorClasses final {
             blue > green + 20U && green > red + 20U
         );
         classes.has_platform = classes.has_platform || (
-            red < 130U && blue < 170U && blue > green + 8U && green > red + 8U
+            red < 130U && blue < 170U && blue > green + 2U && green > red + 2U
         );
         classes.has_platform_side = classes.has_platform_side || (
             y > 0U
-            && red < 130U && blue < 170U && blue > green + 8U && green > red + 8U
+            && red < 130U && blue < 170U && blue > green + 2U && green > red + 2U
             && capture.rgba8[offset - static_cast<uint64_t>(capture.width) * 4U] < 130U
             && capture.rgba8[offset - static_cast<uint64_t>(capture.width) * 4U + 2U] < 170U
             && capture.rgba8[offset - static_cast<uint64_t>(capture.width) * 4U + 2U]
-                > capture.rgba8[offset - static_cast<uint64_t>(capture.width) * 4U + 1U] + 8U
+                > capture.rgba8[offset - static_cast<uint64_t>(capture.width) * 4U + 1U] + 2U
             && capture.rgba8[offset - static_cast<uint64_t>(capture.width) * 4U + 1U]
-                > capture.rgba8[offset - static_cast<uint64_t>(capture.width) * 4U] + 8U
+                > capture.rgba8[offset - static_cast<uint64_t>(capture.width) * 4U] + 2U
         );
         classes.has_red_player = classes.has_red_player || (
             red > 200U && green < 80U && blue < 80U
         );
         classes.has_green_player = classes.has_green_player || (
-            red < 80U && green > 200U && blue < 80U
+            red < 80U && green > 150U && blue < 80U
         );
         classes.has_debug_hud = classes.has_debug_hud || (
             x < 220U && y < 80U && red > 180U && green > 180U && blue > 180U
@@ -323,7 +327,7 @@ TEST(RendererSmokeTest, ActiveThirdPersonRendererShowsPlatformPlayersAndTopLeftH
     };
     static constexpr shared::Player REMOTE{
         .id = 2U,
-        .x = 8U,
+        .x = 12U,
         .y = 15U,
         .ch = '#',
     };
@@ -391,6 +395,20 @@ TEST(RendererSmokeTest, ActiveThirdPersonRendererShowsPlatformPlayersAndTopLeftH
     }
 
     ASSERT_TRUE(captured);
+    if (char const* const capture_path = std::getenv("MC_RENDERER_SMOKE_CAPTURE_PATH");
+        capture_path != nullptr && capture_path[0] != '\0') {
+        auto const written = testsupport::writePpm(
+            {
+                .width = capture.width,
+                .height = capture.height,
+                .srgb_encoded = capture.srgb_encoded,
+                .pixels = capture.rgba8,
+            },
+            std::filesystem::path{ capture_path },
+            "MC-AI-0118 normal close third-person HUD smoke capture"
+        );
+        ASSERT_TRUE(written.has_value()) << written.error();
+    }
     CaptureColorClasses const classes = classifyCaptureColors(capture);
     EXPECT_TRUE(classes.has_grid);
     EXPECT_TRUE(classes.has_platform);

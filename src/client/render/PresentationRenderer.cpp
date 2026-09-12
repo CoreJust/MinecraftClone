@@ -37,6 +37,7 @@ constexpr uint32_t GRID_WORKGROUPS_X = 32U;
 constexpr uint32_t GRID_WORKGROUPS_Y = 32U;
 constexpr uint32_t KERNEL_CACHE_CAPACITY = 8U;
 constexpr uint32_t QUAD_VERTEX_COUNT = 6U;
+constexpr uint32_t GRID_VERTEX_COUNT = 30U;
 constexpr uint32_t BOX_VERTEX_COUNT = 36U;
 constexpr std::array DEPTH_FORMAT_CANDIDATES{
     VK_FORMAT_D32_SFLOAT,
@@ -46,12 +47,13 @@ constexpr std::array DEPTH_FORMAT_CANDIDATES{
 struct alignas(16) GridPushConstants final {
     glm::mat4 projection_view{ 1.0F };
     float world_size = 32.0F;
-    float line_width = 0.03F;
+    float line_width = 0.025F;
     float pad0 = 0.0F;
     float pad1 = 0.0F;
-    std::array<float, 4> line_color{ 0.16F, 0.16F, 0.18F, 1.0F };
+    std::array<float, 4> line_color{ 0.11F, 0.12F, 0.14F, 1.0F };
+    std::array<float, 4> surface_color{ 0.30F, 0.34F, 0.39F, 1.0F };
 };
-static_assert(sizeof(GridPushConstants) == 96U);
+static_assert(sizeof(GridPushConstants) == 112U);
 
 struct alignas(16) BoxPushConstants final {
     glm::mat4 projection_view{ 1.0F };
@@ -118,8 +120,8 @@ void recordFlat3dScene(
     BoxPushConstants const platform_push{
         .projection_view = projection_view,
         .origin = { 0.0F, 0.0F, -1.0F, 0.0F },
-        .extent = { 32.0F, 32.0F, 0.98F, 0.0F },
-        .color = { 0.12F, 0.17F, 0.24F, 1.0F },
+        .extent = { 32.0F, 32.0F, 1.0F, 1.0F },
+        .color = { 0.2F, 0.22F, 0.26F, 1.0F },
     };
     vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS, player_pipeline);
     vkCmdPushConstants(
@@ -142,15 +144,15 @@ void recordFlat3dScene(
         sizeof(grid_push),
         &grid_push
     );
-    vkCmdDraw(command, QUAD_VERTEX_COUNT, GRID_WORKGROUPS_X * GRID_WORKGROUPS_Y, 0U, 0U);
+    vkCmdDraw(command, GRID_VERTEX_COUNT, GRID_WORKGROUPS_X * GRID_WORKGROUPS_Y, 0U, 0U);
 
     vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS, player_pipeline);
     for (PlayerRenderData const& player : players) {
         BoxPushConstants const push{
             .projection_view = projection_view,
             .origin = {
-                static_cast<float>(player.x),
-                static_cast<float>(player.y),
+                player.x,
+                player.y,
                 0.0F,
                 0.0F,
             },
@@ -460,9 +462,9 @@ private:
         color_attachment.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
         color_attachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
         color_attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-        color_attachment.clearValue.color.float32[0] = 0.28F;
-        color_attachment.clearValue.color.float32[1] = 0.48F;
-        color_attachment.clearValue.color.float32[2] = 0.72F;
+        color_attachment.clearValue.color.float32[0] = 0.38F;
+        color_attachment.clearValue.color.float32[1] = 0.62F;
+        color_attachment.clearValue.color.float32[2] = 0.88F;
         color_attachment.clearValue.color.float32[3] = 1.0F;
         VkExtent2D const extent = m_resources->extent();
         VkRenderingAttachmentInfo depth_attachment{};
@@ -1109,6 +1111,12 @@ struct VulkanOffscreenRenderer::Impl final {
         };
     }
 
+    void setCamera(CameraPose const pose) noexcept
+    {
+        static_cast<void>(m_camera.setPosition(pose.position));
+        static_cast<void>(m_camera.setAngles(pose.angles));
+    }
+
     [[nodiscard]] bool validationEnabled() const noexcept { return m_instance->validationEnabled(); }
     [[nodiscard]] uint32_t validationErrorCount() const noexcept { return m_instance->validationErrorCount(); }
 private:
@@ -1147,9 +1155,9 @@ private:
         color.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
         color.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
         color.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-        color.clearValue.color.float32[0] = 0.28F;
-        color.clearValue.color.float32[1] = 0.48F;
-        color.clearValue.color.float32[2] = 0.72F;
+        color.clearValue.color.float32[0] = 0.38F;
+        color.clearValue.color.float32[1] = 0.62F;
+        color.clearValue.color.float32[2] = 0.88F;
         color.clearValue.color.float32[3] = 1.0F;
         VkRenderingAttachmentInfo depth{};
         depth.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
@@ -1345,6 +1353,11 @@ RendererFrameCapture VulkanOffscreenRenderer::render(
 )
 {
     return m_impl->render(players, deadline);
+}
+
+void VulkanOffscreenRenderer::setCamera(CameraPose const pose) noexcept
+{
+    m_impl->setCamera(pose);
 }
 
 bool VulkanOffscreenRenderer::validationEnabled() const noexcept

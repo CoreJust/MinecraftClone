@@ -104,6 +104,52 @@ class WorkflowContextTests(unittest.TestCase):
             for upload in workflow.split("path: |")[1:]:
                 self.assertNotIn("private-dependencies", upload.split("if-no-files-found", maxsplit=1)[0], workflow_path)
 
+    def test_windows_private_install_enters_msvc_before_cmake(self):
+        for workflow_path in WORKFLOWS:
+            workflow = workflow_path.read_text(encoding="utf-8")
+            private_step = workflow.split("      - name: Install pinned private dependencies (Windows)\n", maxsplit=1)[1]
+            private_step = private_step.split("      - name:", maxsplit=1)[0]
+            developer_environment = 'call "%ProgramFiles%\\Microsoft Visual Studio\\2022\\Enterprise\\Common7\\Tools\\VsDevCmd.bat" -arch=amd64'
+            self.assertLess(private_step.index(developer_environment), private_step.index("install-private-dependencies"), workflow_path)
+            self.assertIn('set "MC_ACQUIRED_VCPKG_ROOT=%VCPKG_ROOT%"', private_step, workflow_path)
+            self.assertIn('set "VCPKG_ROOT=%MC_ACQUIRED_VCPKG_ROOT%"', private_step, workflow_path)
+            self.assertIn(
+                '"--cmake-arg=-DCMAKE_TOOLCHAIN_FILE=%VCPKG_ROOT%\\scripts\\buildsystems\\vcpkg.cmake"',
+                private_step,
+                workflow_path,
+            )
+            self.assertIn("if errorlevel 1 exit /b %errorlevel%", private_step, workflow_path)
+
+    def test_windows_cmd_build_phases_guard_each_fallible_command(self):
+        phase_names = ("Build, test, and validate shaders (Windows)", "Build, test, and package Windows")
+        commands = ("cmake --preset", "cmake --build", "ctest --test-dir", "python script/ci/acquire.py validate-shaders")
+        for workflow_path in WORKFLOWS:
+            workflow = workflow_path.read_text(encoding="utf-8")
+            for phase_name in phase_names:
+                if phase_name not in workflow:
+                    continue
+                phase = workflow.split(f"      - name: {phase_name}\n", maxsplit=1)[1].split("      - name:", maxsplit=1)[0]
+                lines = [line.strip() for line in phase.splitlines()]
+                for command in commands:
+                    index = next(index for index, line in enumerate(lines) if line.startswith(command))
+                    self.assertEqual(lines[index + 1], "if errorlevel 1 exit /b %errorlevel%", (workflow_path, command))
+
+    def test_nested_cmake_scripts_receive_forward_slash_path_substitutions(self):
+        cmake_lists = (REPOSITORY / "tests/CMakeLists.txt").read_text(encoding="utf-8")
+        for source_name, normalized_name in (
+            ("CMAKE_CURRENT_BINARY_DIR", "MC_TEST_BINARY_DIR"),
+            ("CMAKE_COMMAND", "MC_CMAKE_COMMAND"),
+            ("CMAKE_CTEST_COMMAND", "MC_CTEST_COMMAND"),
+            ("PROJECT_SOURCE_DIR", "MC_PROJECT_SOURCE_DIR"),
+            ("CMAKE_PREFIX_PATH", "MC_CMAKE_PREFIX_PATH"),
+            ("CoreCpp_DIR", "MC_CORECPP_DIR"),
+            ("CoreProject2026_DIR", "MC_COREPROJECT2026_DIR"),
+        ):
+            self.assertIn(f'file(TO_CMAKE_PATH "${{{source_name}}}" {normalized_name})', cmake_lists)
+        for template in (REPOSITORY / "tests/cmake").glob("*.in"):
+            contents = template.read_text(encoding="utf-8")
+            self.assertNotRegex(contents, r"@(CMAKE_CURRENT_BINARY_DIR|CMAKE_COMMAND|CMAKE_CTEST_COMMAND|PROJECT_SOURCE_DIR|CMAKE_PREFIX_PATH|CoreCpp_DIR|CoreProject2026_DIR)@")
+
 
 if __name__ == "__main__":
     unittest.main()

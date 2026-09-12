@@ -50,11 +50,14 @@ struct MessageEncoder final {
 
     std::vector<uint8_t> operator()(ServerPlayerPositionMessage const msg) {
         return writer
-            .reserve(sizeof(uint8_t) + sizeof(msg.ch) + sizeof(msg.x) + sizeof(msg.y))
+            .reserve(sizeof(uint8_t) + sizeof(msg.ch) + sizeof(msg.x) + sizeof(msg.y)
+                + sizeof(msg.x_subcell) + sizeof(msg.y_subcell))
             .write(static_cast<uint8_t>(MessageType::ServerPlayerPosition))
             .write(msg.ch)
             .write(msg.x)
             .write(msg.y)
+            .write(msg.x_subcell)
+            .write(msg.y_subcell)
             .build()
         ;
     }
@@ -74,7 +77,7 @@ bool isValidCharacter(char const ch) noexcept {
 }
 
 bool isValidDirection(uint8_t const value) noexcept {
-    return value == 0 || value == 1 || value == 255;
+    return value != 128;
 }
 
 bool isValidMessage(Message const& message) noexcept {
@@ -87,7 +90,8 @@ bool isValidMessage(Message const& message) noexcept {
         } else if constexpr (std::is_same_v<T, ClientInputMessage>) {
             return isValidDirection(value.direction.x) && isValidDirection(value.direction.y);
         } else if constexpr (std::is_same_v<T, ServerPlayerPositionMessage>) {
-            return isValidCharacter(value.ch) && value.x < World::WIDTH && value.y < World::HEIGHT;
+            return isValidCharacter(value.ch) && value.x < World::WIDTH && value.y < World::HEIGHT
+                && value.x_subcell < SUBCELLS_PER_CELL && value.y_subcell < SUBCELLS_PER_CELL;
         } else {
             return isValidCharacter(value.ch);
         }
@@ -138,8 +142,16 @@ std::optional<Message> decodeMessage(std::span<uint8_t const> const data) {
             auto const ch = reader.read<char>();
             auto const x = reader.read<uint8_t>();
             auto const y = reader.read<uint8_t>();
-            if (ch && x && y) {
-                message = ServerPlayerPositionMessage{ .ch = *ch, .x = *x, .y = *y };
+            auto const x_subcell = reader.read<uint16_t>();
+            auto const y_subcell = reader.read<uint16_t>();
+            if (ch && x && y && x_subcell && y_subcell) {
+                message = ServerPlayerPositionMessage{
+                    .ch = *ch,
+                    .x = *x,
+                    .y = *y,
+                    .x_subcell = *x_subcell,
+                    .y_subcell = *y_subcell,
+                };
             }
             break;
         }

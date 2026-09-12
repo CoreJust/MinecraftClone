@@ -337,8 +337,8 @@ std::expected<RuntimeEvidence, std::string> runScenario(
                     break;
                 }
                 active_inputs[*index] = shared::Direction{
-                    .x = static_cast<uint8_t>(input->x),
-                    .y = static_cast<uint8_t>(input->y),
+                    .x = static_cast<uint8_t>(input->x * 127),
+                    .y = static_cast<uint8_t>(input->y * 127),
                 };
                 last_effective_tick = input->effective_boundary;
             } else if (auto const* const input = std::get_if<shared::ScenarioCameraInputOperation>(&operation.data)) {

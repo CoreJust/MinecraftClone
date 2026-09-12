@@ -50,6 +50,6 @@ void main() {
     outColor[2] = pc.line_color;
     outColor[3] = pc.line_color;
 
-    gl_PrimitiveTriangleIndicesEXT[0] = uvec3(0, 2, 1);
-    gl_PrimitiveTriangleIndicesEXT[1] = uvec3(2, 3, 1);
+    gl_PrimitiveTriangleIndicesEXT[0] = uvec3(0, 1, 2);
+    gl_PrimitiveTriangleIndicesEXT[1] = uvec3(2, 1, 3);
 }

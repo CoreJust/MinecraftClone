@@ -11,24 +11,24 @@ struct MovementIntent final {
     bool operator==(MovementIntent const&) const noexcept = default;
 };
 
-struct DiscreteMovement final {
+struct MovementDirection final {
     int8_t x = 0;
     int8_t y = 0;
 
-    bool operator==(DiscreteMovement const&) const noexcept = default;
+    bool operator==(MovementDirection const&) const noexcept = default;
 };
 
 class CameraController final {
 public:
     [[nodiscard]]
-    static DiscreteMovement cameraRelativeMovement(
+    static MovementDirection cameraRelativeMovement(
         MovementIntent const intent,
         double const yaw_degrees
     ) noexcept;
 
 private:
     [[nodiscard]]
-    static int8_t sign(double const value) noexcept;
+    static int8_t quantize(double value) noexcept;
 };
 
 } // namespace client

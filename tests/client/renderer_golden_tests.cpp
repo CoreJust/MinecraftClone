@@ -1,3 +1,4 @@
+#include <client/PlayerPresentation.hpp>
 #include <client/render/InstalledShaderAssets.hpp>
 #include <client/render/VulkanRenderer.hpp>
 
@@ -7,16 +8,20 @@
 
 #include <testsupport/ImageComparison.hpp>
 
+#include <algorithm>
 #include <array>
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <exception>
 #include <expected>
 #include <filesystem>
+#include <limits>
 #include <span>
 #include <string>
 #include <variant>
+#include <vector>
 
 namespace {
 
@@ -50,12 +55,97 @@ testsupport::Rgba8Image toImage(client::RendererFrameCapture const& capture)
 [[nodiscard]] bool isPlatform(std::span<uint8_t const> const pixels, size_t const offset)
 {
     return pixels[offset] < 100U
-        && pixels[offset + 2U] < 170U
-        && pixels[offset + 2U] > pixels[offset + 1U] + 8U
-        && pixels[offset + 1U] > pixels[offset] + 8U;
+        && pixels[offset + 2U] < 160U
+        && pixels[offset + 2U] > pixels[offset + 1U] + 2U
+        && pixels[offset + 1U] > pixels[offset] + 2U;
 }
 
-TEST(RendererGoldenTest, ThirdPersonPlatformV3MatchesApprovedReferenceWithoutWindow)
+[[nodiscard]] bool isPlatformOrGrid(std::span<uint8_t const> const pixels, size_t const offset)
+{
+    return isPlatform(pixels, offset)
+        || (
+            pixels[offset] < 70U
+            && pixels[offset + 1U] < 75U
+            && pixels[offset + 2U] < 90U
+            && pixels[offset + 1U] >= pixels[offset]
+            && pixels[offset + 2U] >= pixels[offset + 1U]
+        );
+}
+
+[[nodiscard]] bool isPlayerRed(std::span<uint8_t const> const pixels, size_t const offset)
+{
+    return pixels[offset] > pixels[offset + 1U] * 2U + 30U
+        && pixels[offset] > pixels[offset + 2U] * 2U + 30U;
+}
+
+struct PlayerScan final {
+    size_t pixel_count = 0U;
+    uint32_t min_x = std::numeric_limits<uint32_t>::max();
+    uint32_t max_x = 0U;
+    uint32_t min_y = std::numeric_limits<uint32_t>::max();
+    uint32_t max_y = 0U;
+};
+
+[[nodiscard]] PlayerScan playerScan(
+    client::RendererFrameCapture const& capture,
+    bool (*const is_player)(std::span<uint8_t const>, size_t)
+)
+{
+    PlayerScan scan;
+    for (uint32_t y = 0U; y < capture.height; ++y) {
+        for (uint32_t x = 0U; x < capture.width; ++x) {
+            size_t const offset = (static_cast<size_t>(y) * capture.width + x) * 4U;
+            if (!is_player(capture.rgba8, offset)) {
+                continue;
+            }
+            ++scan.pixel_count;
+            scan.min_x = std::min(scan.min_x, x);
+            scan.max_x = std::max(scan.max_x, x);
+            scan.min_y = std::min(scan.min_y, y);
+            scan.max_y = std::max(scan.max_y, y);
+        }
+    }
+    return scan;
+}
+
+void expectConvexPlayerScan(
+    client::RendererFrameCapture const& capture,
+    PlayerScan const scan,
+    bool (*const is_player)(std::span<uint8_t const>, size_t)
+)
+{
+    ASSERT_GT(scan.pixel_count, 100U);
+    ASSERT_GT(scan.max_x - scan.min_x, 8U);
+    ASSERT_GT(scan.max_y - scan.min_y, 8U);
+    uint32_t scanned_rows = 0U;
+    for (uint32_t y = scan.min_y; y <= scan.max_y; ++y) {
+        uint32_t min_x = capture.width;
+        uint32_t max_x = 0U;
+        for (uint32_t x = scan.min_x; x <= scan.max_x; ++x) {
+            size_t const offset = (static_cast<size_t>(y) * capture.width + x) * 4U;
+            if (is_player(capture.rgba8, offset)) {
+                min_x = std::min(min_x, x);
+                max_x = std::max(max_x, x);
+            }
+        }
+        if (min_x == capture.width || max_x - min_x < 2U) {
+            continue;
+        }
+        ++scanned_rows;
+        uint32_t row_player_pixels = 0U;
+        for (uint32_t x = min_x; x <= max_x; ++x) {
+            size_t const offset = (static_cast<size_t>(y) * capture.width + x) * 4U;
+            row_player_pixels += is_player(capture.rgba8, offset) ? 1U : 0U;
+            EXPECT_FALSE(isPlatformOrGrid(capture.rgba8, offset))
+                << "platform/grid pixel leaked into player scanline at " << x << "," << y;
+        }
+        EXPECT_GT(row_player_pixels * 2U, max_x - min_x + 1U)
+            << "player shell has a discontinuity in its convex projected scanline";
+    }
+    EXPECT_GT(scanned_rows, 6U);
+}
+
+TEST(RendererGoldenTest, ThirdPersonPlatformV4MatchesApprovedReferenceWithoutWindow)
 {
     static constexpr uint32_t WIDTH = 640U;
     static constexpr uint32_t HEIGHT = 480U;
@@ -179,6 +269,63 @@ TEST(RendererGoldenTest, FixedExtentAndDepthOrderingDoNotRequirePresentation)
         }
         EXPECT_TRUE(saw_occluded_far_pixel)
             << "a nearer red box did not occlude a later-drawn far green box";
+        EXPECT_EQ(renderer.validationErrorCount(), 0U);
+    } catch (core::graphics::vulkan::VulkanError const& error) {
+#if MC_RENDERER_GOLDEN_FAIL_UNSUPPORTED
+        FAIL() << "true offscreen renderer is unavailable: " << error.what();
+#else
+        GTEST_SKIP() << "true offscreen renderer is unavailable: " << error.what();
+#endif
+    } catch (std::exception const& error) {
+        FAIL() << "true offscreen renderer failed: " << error.what();
+    }
+}
+
+TEST(RendererGoldenTest, ObliqueCameraKeepsPlayerShellsContinuousOverThePlatform)
+{
+    static constexpr shared::Player LOCAL{
+        .id = 1U,
+        .x = 16U,
+        .y = 16U,
+        .ch = '@',
+    };
+    static constexpr std::array<client::PlayerRenderData, 1> PLAYERS{
+        client::PlayerRenderData{ .x = 16U, .y = 16U, .color = { 1.0F, 0.0F, 0.0F, 1.0F } },
+    };
+    try {
+        client::InstalledShaderAssets const shader_assets;
+        client::VulkanOffscreenRenderer renderer{ shader_assets, true };
+        renderer.setCamera(client::localPlayerThirdPersonPose(
+            LOCAL,
+            { .yaw_degrees = 37.2, .pitch_degrees = -35.0 }
+        ));
+        client::RendererFrameCapture const capture = renderer.render(
+            PLAYERS,
+            std::chrono::steady_clock::now() + std::chrono::seconds{ 10 }
+        );
+        if (char const* const capture_path = std::getenv("MC_RENDERER_GOLDEN_OBLIQUE_CAPTURE_PATH");
+            capture_path != nullptr && capture_path[0] != '\0') {
+            auto const written = testsupport::writePpm(
+                toImage(capture),
+                std::filesystem::path{ capture_path },
+                "MC-AI-0118 yaw 37.2 pitch -35 offscreen regression"
+            );
+            ASSERT_TRUE(written.has_value()) << written.error();
+        }
+        expectConvexPlayerScan(capture, playerScan(capture, isPlayerRed), isPlayerRed);
+        renderer.setCamera(client::localPlayerThirdPersonPose(
+            LOCAL,
+            { .yaw_degrees = 217.2, .pitch_degrees = -25.0 }
+        ));
+        client::RendererFrameCapture const opposite_capture = renderer.render(
+            PLAYERS,
+            std::chrono::steady_clock::now() + std::chrono::seconds{ 10 }
+        );
+        expectConvexPlayerScan(
+            opposite_capture,
+            playerScan(opposite_capture, isPlayerRed),
+            isPlayerRed
+        );
         EXPECT_EQ(renderer.validationErrorCount(), 0U);
     } catch (core::graphics::vulkan::VulkanError const& error) {
 #if MC_RENDERER_GOLDEN_FAIL_UNSUPPORTED

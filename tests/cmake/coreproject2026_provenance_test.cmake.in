@@ -1,4 +1,4 @@
-set(test_root "@CMAKE_CURRENT_BINARY_DIR@/coreproject2026-provenance")
+set(test_root "@MC_TEST_BINARY_DIR@/coreproject2026-provenance")
 file(MAKE_DIRECTORY "${test_root}")
 
 function(expect_rejected label revision dirty exact expected)
@@ -13,12 +13,12 @@ function(expect_rejected label revision dirty exact expected)
         "set(CoreProject2026_FOUND TRUE)\n"
     )
     execute_process(
-        COMMAND "@CMAKE_COMMAND@"
-            -S "@PROJECT_SOURCE_DIR@"
+        COMMAND "@MC_CMAKE_COMMAND@"
+            -S "@MC_PROJECT_SOURCE_DIR@"
             -B "${package_root}/build"
             "-DCoreProject2026_DIR=${package_root}"
-            "-DCoreCpp_DIR=@CoreCpp_DIR@"
-            "-DCMAKE_PREFIX_PATH=@CMAKE_PREFIX_PATH@"
+            "-DCoreCpp_DIR=@MC_CORECPP_DIR@"
+            "-DCMAKE_PREFIX_PATH=@MC_CMAKE_PREFIX_PATH@"
             -DBUILD_TESTING=OFF
             -DMC_ALLOW_INEXACT_CORECPP=ON
             -DCOREPROJECT2026_ALLOW_INEXACT_CORECPP=ON

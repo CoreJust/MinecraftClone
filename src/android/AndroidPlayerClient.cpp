@@ -50,7 +50,7 @@ shared::Direction AndroidPlayerClient::input()
         stop();
     }
     shared::Direction const input = m_input.direction();
-    client::DiscreteMovement const movement = client::CameraController::cameraRelativeMovement(
+    client::MovementDirection const movement = client::CameraController::cameraRelativeMovement(
         {
             .strafe = static_cast<int8_t>(input.x),
             .forward = static_cast<int8_t>(-static_cast<int8_t>(input.y)),
@@ -97,8 +97,8 @@ void AndroidPlayerClient::render()
     players.reserve(m_world.players().size());
     for (shared::Player const& player : m_world.players()) {
         players.push_back({
-            .x = player.x,
-            .y = player.y,
+            .x = static_cast<float>(shared::playerPositionX(player)),
+            .y = static_cast<float>(shared::playerPositionY(player)),
             .color = {
                 static_cast<float>(player.ch) / 256.0f,
                 1.0f - static_cast<float>(player.ch) / 256.0f,
@@ -110,8 +110,8 @@ void AndroidPlayerClient::render()
     client::DebugHudInput const debug_hud_input = [&] {
         client::DebugHudInput input;
         if (auto const player = m_world.playerByCharacter(m_local_character)) {
-            input.player_x = static_cast<float>(player->x);
-            input.player_y = static_cast<float>(player->y);
+            input.player_x = static_cast<float>(shared::playerPositionX(*player));
+            input.player_y = static_cast<float>(shared::playerPositionY(*player));
         }
         client::CameraAngles const angles = m_camera.pose().angles;
         input.camera_yaw_degrees = static_cast<float>(angles.yaw_degrees);

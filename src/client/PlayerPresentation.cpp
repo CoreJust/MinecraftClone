@@ -16,8 +16,8 @@ constexpr double DEGREES_TO_RADIANS = 0.017'453'292'519'943'295'769'236'907'684'
 glm::dvec3 localPlayerCenterPosition(shared::Player const& player) noexcept
 {
     return {
-        static_cast<double>(player.x) + PLAYER_CENTER_OFFSET,
-        static_cast<double>(player.y) + PLAYER_CENTER_OFFSET,
+        shared::playerPositionX(player) + PLAYER_CENTER_OFFSET,
+        shared::playerPositionY(player) + PLAYER_CENTER_OFFSET,
         PLAYER_CENTER_HEIGHT,
     };
 }

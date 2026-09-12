@@ -28,8 +28,8 @@ struct ANativeWindow;
 namespace client {
 
 struct PlayerRenderData final {
-    uint32_t x = 0;
-    uint32_t y = 0;
+    float x = 0.0F;
+    float y = 0.0F;
     std::array<float, 4> color{ 1.0f, 1.0f, 1.0f, 1.0f };
 };
 
@@ -150,6 +150,7 @@ public:
         std::span<PlayerRenderData const> players,
         std::chrono::steady_clock::time_point deadline = std::chrono::steady_clock::time_point::max()
     );
+    void setCamera(CameraPose pose) noexcept;
     [[nodiscard]] bool validationEnabled() const noexcept;
     [[nodiscard]] uint32_t validationErrorCount() const noexcept;
 private:

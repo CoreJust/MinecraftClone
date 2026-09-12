@@ -169,22 +169,33 @@ bool DebugHudState::formatText(DebugHudText& text) const noexcept {
 
     DebugHudSnapshot const values = snapshot();
     size_t offset = 0;
-    offset = appendText(text, offset, "FPS:");
-    offset = appendNumber(text, offset, values.presented_fps, 1);
-    offset = appendText(text, offset, "\nUPTIME:");
-    offset = appendNumber(text, offset, values.uptime_seconds, 1);
-    offset = appendText(text, offset, "s\nXYZ:");
-    offset = appendNumber(text, offset, values.input.player_x, 1);
-    offset = appendText(text, offset, ",");
-    offset = appendNumber(text, offset, values.input.player_y, 1);
-    offset = appendText(text, offset, ",");
-    offset = appendNumber(text, offset, values.input.player_z, 1);
-    offset = appendText(text, offset, "\nY/P/R(deg):");
-    offset = appendNumber(text, offset, values.input.camera_yaw_degrees, 1);
-    offset = appendText(text, offset, ",");
-    offset = appendNumber(text, offset, values.input.camera_pitch_degrees, 1);
-    offset = appendText(text, offset, ",");
-    offset = appendNumber(text, offset, values.input.camera_roll_degrees, 1);
+    size_t line_limit = offset + DEBUG_HUD_MAX_LINE_BYTES;
+    offset = appendText(text, offset, line_limit, "FPS:  ");
+    offset = appendNumber(text, offset, line_limit, values.presented_fps, 1);
+    offset = appendText(text, offset, text.bytes.size(), "\n");
+
+    line_limit = offset + DEBUG_HUD_MAX_LINE_BYTES;
+    offset = appendText(text, offset, line_limit, "UPTIME:  ");
+    offset = appendNumber(text, offset, line_limit, values.uptime_seconds, 1);
+    offset = appendText(text, offset, line_limit, "s");
+    offset = appendText(text, offset, text.bytes.size(), "\n");
+
+    line_limit = offset + DEBUG_HUD_MAX_LINE_BYTES;
+    offset = appendText(text, offset, line_limit, "XYZ:  ");
+    offset = appendNumber(text, offset, line_limit, values.input.player_x, 2);
+    offset = appendText(text, offset, line_limit, "   ");
+    offset = appendNumber(text, offset, line_limit, values.input.player_y, 2);
+    offset = appendText(text, offset, line_limit, "   ");
+    offset = appendNumber(text, offset, line_limit, values.input.player_z, 2);
+    offset = appendText(text, offset, text.bytes.size(), "\n");
+
+    line_limit = offset + DEBUG_HUD_MAX_LINE_BYTES;
+    offset = appendText(text, offset, line_limit, "YPR deg: ");
+    offset = appendNumber(text, offset, line_limit, values.input.camera_yaw_degrees, 1);
+    offset = appendText(text, offset, line_limit, "  ");
+    offset = appendNumber(text, offset, line_limit, values.input.camera_pitch_degrees, 1);
+    offset = appendText(text, offset, line_limit, "  ");
+    offset = appendNumber(text, offset, line_limit, values.input.camera_roll_degrees, 1);
     text.size = offset;
     return true;
 }
@@ -206,12 +217,14 @@ double DebugHudState::defaultNow(void*) noexcept {
 size_t DebugHudState::appendText(
     DebugHudText& text,
     size_t const offset,
+    size_t const limit,
     std::string_view const value
 ) const noexcept {
-    size_t const count = std::min(value.size(), text.bytes.size() - std::min(offset, text.bytes.size()));
-    if (offset >= text.bytes.size()) {
-        return text.bytes.size();
+    size_t const bounded_limit = std::min(limit, text.bytes.size());
+    if (offset >= bounded_limit) {
+        return bounded_limit;
     }
+    size_t const count = std::min(value.size(), bounded_limit - offset);
     std::memcpy(text.bytes.data() + offset, value.data(), count);
     return offset + count;
 }
@@ -219,20 +232,22 @@ size_t DebugHudState::appendText(
 size_t DebugHudState::appendNumber(
     DebugHudText& text,
     size_t const offset,
+    size_t const limit,
     double const value,
     int const decimals
 ) const noexcept {
-    if (offset >= text.bytes.size()) {
-        return text.bytes.size();
+    size_t const bounded_limit = std::min(limit, text.bytes.size());
+    if (offset >= bounded_limit) {
+        return bounded_limit;
     }
     size_t const count = formatter_.format(
         text.bytes.data() + offset,
-        text.bytes.size() - offset,
+        bounded_limit - offset,
         value,
         decimals,
         formatter_.context
     );
-    return std::min(text.bytes.size(), offset + count);
+    return std::min(bounded_limit, offset + count);
 }
 
 void DebugHudState::recordPresentation(
