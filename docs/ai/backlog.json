@@ -6631,5 +6631,41 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0204",
+    "title": "Fix exact-source trust shell syntax",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P0",
+    "route": "luna",
+    "milestone": "EarlyDev 0.1.0:4",
+    "depends_on": [],
+    "acceptance": "The manual exact-source trust branch is valid Bash, accepts an ancestor of ai-dev or ai-main, and remains fail-closed otherwise; a focused regression binds the required then separator.",
+    "evidence": "Run34757837161 reproduced the Bash syntax error before artifacts. Focused workflow tests passed15/15 after binding the semicolon-before-then form; task/docs/diff checks passed.",
+    "blocker": "",
+    "owner": "",
+    "level": "basic",
+    "parent": "MC-AI-0035",
+    "motivation": "Run 34757837161 failed before artifact jobs because a continued condition placed then without a shell separator.",
+    "context": "The prior guard test checked trust semantics as text but did not validate the multiline Bash grammar.",
+    "complexity": "low",
+    "created_at": "2026-09-13",
+    "resolved_at": "2026-09-13",
+    "resolution_changes": "Terminate the second merge-base condition with a semicolon before then and add a focused syntax regression.",
+    "plan": [
+      "Correct the Bash separator, cover the exact malformed form, and rerun focused workflow/task/docs checks."
+    ],
+    "product_changes": [],
+    "code_changes": [
+      ".github/workflows/snapshot-artifacts.yml and script/tests/test_workflow_contexts.py."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]

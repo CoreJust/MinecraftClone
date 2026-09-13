@@ -15,6 +15,11 @@ WORKFLOWS = (
 
 
 class WorkflowContextTests(unittest.TestCase):
+    def test_snapshot_trust_condition_has_valid_bash_then_separator(self):
+        workflow = WORKFLOWS[1].read_text(encoding="utf-8")
+        self.assertIn('refs/remotes/origin/ai-main; then', workflow)
+        self.assertNotIn('refs/remotes/origin/ai-main \\\n              then', workflow)
+
     def test_workflows_keep_runner_context_out_of_job_level_env(self):
         for workflow_path in WORKFLOWS:
             lines = workflow_path.read_text(encoding="utf-8").splitlines()

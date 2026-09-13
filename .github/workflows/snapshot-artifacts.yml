@@ -62,8 +62,7 @@ jobs:
               ;;
             workflow_dispatch)
               if git merge-base --is-ancestor "$source_commit" refs/remotes/origin/ai-dev \
-                || git merge-base --is-ancestor "$source_commit" refs/remotes/origin/ai-main \
-              then
+                || git merge-base --is-ancestor "$source_commit" refs/remotes/origin/ai-main; then
                 trusted=true
               fi
               ;;
