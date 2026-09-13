@@ -1423,7 +1423,7 @@
     ],
     "baseline_commit": "668685497505a4253fa7f471750e5a401cff5900",
     "commits": [],
-    "finalized": false,
+    "finalized": true,
     "retrospective": "",
     "docs_review": "",
     "environment_review": "",
