@@ -1423,7 +1423,7 @@
     ],
     "baseline_commit": "668685497505a4253fa7f471750e5a401cff5900",
     "commits": [],
-    "finalized": true,
+    "finalized": false,
     "retrospective": "",
     "docs_review": "",
     "environment_review": "",
@@ -6345,6 +6345,44 @@
       "Corrected the acknowledgement test observation race without weakening ordering/value assertions or changing timeouts."
     ],
     "baseline_commit": "85a5027fcd5fe82f80931d8bfb84be006a87f62b",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0187",
+    "title": "Install numeric build prerequisites in the checks workflow",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P1",
+    "route": "luna",
+    "milestone": "ED-010-S5",
+    "depends_on": [],
+    "acceptance": "Install the same four host autotools before macOS manifest dependency compilation in ai-checks, with valid workflow YAML and unchanged Windows behavior.",
+    "evidence": "Read the actual macOS acquisition path and pinned numeric ports; both require AUTORECONF and acquire.py does not install these host tools. Workflow YAML parse and whitespace validation passed.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0036",
+    "motivation": "Both release workflows compile GMP and MPFR; only the artifact workflow explicitly installed their required host autotools.",
+    "context": "The ai-checks macOS acquisition path bootstraps vcpkg but does not install host autotools; pinned GMP/MPFR ports invoke AUTORECONF.",
+    "complexity": "low",
+    "created_at": "2026-09-13",
+    "resolved_at": "2026-09-13",
+    "resolution_changes": "Mirrored the artifact workflow numeric build prerequisites into the macOS checks workflow before vcpkg manifest installation.",
+    "plan": [
+      "Add the existing macOS prerequisite step before manifest dependency installation and validate workflow structure."
+    ],
+    "product_changes": [
+      "No product behavior changed."
+    ],
+    "code_changes": [
+      "Install autoconf, autoconf-archive, automake and libtool in the ephemeral macOS checks runner."
+    ],
+    "baseline_commit": "69a8abec05622bc1ae725522a5fd25681a8caa36",
     "commits": [],
     "finalized": true,
     "retrospective": "",
