@@ -50,7 +50,7 @@ Set `VULKAN_SDK` to the SDK platform directory if CMake cannot find it. The SDK'
 
 ## Hosted desktop CI
 
-CI builds Debug/Release on `macos-15` arm64 and `windows-2022` with pinned tools. macOS installs autotools for GMP/MPFR. Windows uses the pinned GMP overlay, VS 2022 x64, and Vulkan runtime ZIP/license. CoreLang disables legacy Script; Ninja collects all independent compiler failures. Android retains nonfatal aggregate-initializer warnings. Jobs verify builds, tests, shaders, packages, checksums, and exclusions, then upload logs/toolchain metadata. Hosted `MC_ENABLE_RENDERER_SMOKE=OFF` provides no GPU acceptance; artifacts need separate runtime checks.
+CI builds Debug/Release on `macos-15` arm64 and `windows-2022` with pinned tools. macOS installs autotools for GMP/MPFR. Windows uses the pinned GMP overlay, VS 2022 x64, and Vulkan runtime ZIP/license. CoreLang disables legacy Script; Ninja collects all independent compiler failures. CI restores binary caches and saves dependencies before downstream builds. Android retains nonfatal aggregate-initializer warnings. Jobs verify builds, tests, shaders, packages, checksums, and exclusions, then upload logs/toolchain metadata. Hosted `MC_ENABLE_RENDERER_SMOKE=OFF` provides no GPU acceptance; artifacts need separate runtime checks.
 
 The renderer requests Vulkan 1.2 and requires dynamic rendering and synchronization2 extensions/features; maintenance4 is not a renderer requirement. Mesh shaders target Vulkan 1.3. Use a Vulkan 1.3-capable validation baseline and exercise the vertex fallback. A lower requested API number does not establish support for every Vulkan 1.2 driver. Vulkan 1.4 remains a project aspiration.
 
