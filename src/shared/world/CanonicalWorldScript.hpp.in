@@ -1,0 +1,10 @@
+#pragma once
+
+#include <string_view>
+
+namespace shared::detail {
+
+inline constexpr std::string_view CANONICAL_WORLD_SCRIPT =
+    R"s5_world_7A4C(@MC_CANONICAL_WORLD_SCRIPT@)s5_world_7A4C";
+
+} // namespace shared::detail

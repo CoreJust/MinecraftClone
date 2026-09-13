@@ -25,7 +25,7 @@
         "tests/acceptance/runtime_cli_tests.cmake",
         "tests/acceptance/scenario_runner_tests.cpp"
       ],
-      "sources_sha256": "f216f7e25ddfd4c7cde43efde83435d108cdc93390f2886d111ae7fcb0530318"
+      "sources_sha256": "7a6a61b480a0a91643fdcf8577a102d605da2992b721abd50b8d885827890bff"
     },
     {
       "guide": "docs/code/ANDROID.md",
@@ -133,7 +133,7 @@
         "vcpkg-configuration.json",
         "vcpkg.json"
       ],
-      "sources_sha256": "d581151557f051aeca1b9b4666dad29a8e621c76631500b4cdfc567084bbccff"
+      "sources_sha256": "3c713c4caeb9753bf67f1502363f77ce4c7870f7e2371bcbd4f3022235b3b930"
     },
     {
       "guide": "docs/code/CORE.md",
@@ -172,7 +172,7 @@
     },
     {
       "guide": "docs/code/GAMEPLAY.md",
-      "guide_sha256": "22f90d6f5e8005a1e6c36507af65d7b75b677c7c98753893030ec32d8f5d9c79",
+      "guide_sha256": "b4ed949ab362e5ace6b6175f4f6ea0534f3f9987d295db6c18f2a06ae6e006bc",
       "id": "gameplay",
       "sources": [
         "src/client/BotClient.cpp",
@@ -201,14 +201,19 @@
         "src/shared/include/shared/ProjectInfo.hpp",
         "src/shared/include/shared/net/Message.hpp",
         "src/shared/include/shared/scenario/Scenario.hpp",
+        "src/shared/include/shared/world/CanonicalWorld.hpp",
         "src/shared/include/shared/world/Chunk.hpp",
         "src/shared/include/shared/world/ChunkMesher.hpp",
+        "src/shared/include/shared/world/ScriptedWorld.hpp",
         "src/shared/include/shared/world/World.hpp",
         "src/shared/net/Message.cpp",
         "src/shared/scenario/CoreLangScenario.cpp",
         "src/shared/scenario/Scenario.cpp",
+        "src/shared/world/CanonicalWorld.cpp",
+        "src/shared/world/CanonicalWorldScript.hpp.in",
         "src/shared/world/Chunk.cpp",
         "src/shared/world/ChunkMesher.cpp",
+        "src/shared/world/ScriptedWorld.cpp",
         "src/shared/world/World.cpp",
         "tests/core/chunk_mesher_tests.cpp",
         "tests/core/chunk_tests.cpp",
@@ -217,10 +222,11 @@
         "tests/core/game_server_lifecycle_tests.cpp",
         "tests/core/game_server_tests.cpp",
         "tests/core/scenario_parser_tests.cpp",
+        "tests/core/scripted_world_tests.cpp",
         "tests/core/shared_message_tests.cpp",
         "tests/core/shared_world_tests.cpp"
       ],
-      "sources_sha256": "8ea8934eabd61695350f1838a0cc61eda55907464e0840ee1d7702809f606a77"
+      "sources_sha256": "34e5f73dfd8be6096eca33736199812908a0737bb45ca26efc189c853ec15343"
     },
     {
       "guide": "docs/code/RENDERING.md",
@@ -269,7 +275,7 @@
         "tests/testsupport/image_comparison_tests.cpp",
         "tests/testsupport/include/testsupport/ImageComparison.hpp"
       ],
-      "sources_sha256": "543e9048346a831ca813f3dc8f7e71af565b9a2ca02ea17228587dc597be6078"
+      "sources_sha256": "b326b24f9be9318bbb2400c7cac59d5113df008686891d8e233b1bb51ae93483"
     }
   ],
   "version": 1

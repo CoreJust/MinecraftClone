@@ -42,7 +42,7 @@ indefinitely if no valid cell remains.
 
 [Scenario.hpp](../../src/shared/include/shared/scenario/Scenario.hpp) defines
 bounded header-selected plans. Legacy `scenario 1` and CoreLang
-`@version("0.0.1")` validate source and limits before returning an immutable
+`@version("0.0.3")` validate source and limits before returning an immutable
 plan, so rejection cannot mutate a world or start the runner. Grammar and
 examples are in the [scripting guide](../scripting/README.md).
 
@@ -126,9 +126,11 @@ separate; see [renderer tests](RENDERING.md).
 
 `Chunk` stores 4096 Air/Stone IDs in a 16-cubed unit with signed chunk
 coordinates and checked local coordinates. Bulk construction rejects unsupported
-IDs; effective edits update revision and content hash. Coordinate-and-seed
-sampling is deterministic. The native seed-42 fixture is a test/reference
-implementation; scripted configuration and gameplay integration are separate tasks.
+IDs; effective edits update revision and content hash. `CanonicalWorld` embeds
+the trusted CoreLang 0.0.3 seed-42 generator at configure time. `ScriptedWorld`
+collects bounded callbacks into a private candidate and publishes it with its
+configuration identity only after coordinate, block, operation-budget, and
+completion validation succeed. There is no separate script-fuel setting.
 
 ## S5 exposed-face mesh
 

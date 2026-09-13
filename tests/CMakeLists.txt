@@ -119,6 +119,7 @@ add_executable(mc_tests
     core/scenario_parser_tests.cpp
     core/chunk_tests.cpp
     core/chunk_mesher_tests.cpp
+    core/scripted_world_tests.cpp
     core/shared_world_tests.cpp
     core/flight_world_tests.cpp
     core/span_utils_tests.cpp

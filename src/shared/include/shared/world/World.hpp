@@ -106,7 +106,7 @@ public:
     ) noexcept;
 
     [[nodiscard]]
-    static WorldConfiguration canonicalConfiguration() noexcept;
+    static WorldConfiguration canonicalConfiguration();
     [[nodiscard]]
     static bool isFlightPositionInBounds(PlayerPosition position) noexcept;
 

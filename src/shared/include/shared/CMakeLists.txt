@@ -6,6 +6,8 @@ target_sources(mc
             ProjectInfo.hpp
             net/Message.hpp
             scenario/Scenario.hpp
+            world/CanonicalWorld.hpp
+            world/ScriptedWorld.hpp
             world/Chunk.hpp
             world/ChunkMesher.hpp
             world/World.hpp

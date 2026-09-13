@@ -63,15 +63,11 @@ bool isAllowedCharacter(char const character) noexcept {
 [[nodiscard]]
 bool actorPlacementsConflict(
     ScenarioActor const& actor,
-    uint8_t const x,
-    uint8_t const y
+    int32_t const x,
+    int32_t const y
 ) noexcept {
-    uint32_t const actor_x = actor.x;
-    uint32_t const actor_y = actor.y;
-    uint32_t const candidate_x = x;
-    uint32_t const candidate_y = y;
-    uint32_t const delta_x = actor_x > candidate_x ? actor_x - candidate_x : candidate_x - actor_x;
-    uint32_t const delta_y = actor_y > candidate_y ? actor_y - candidate_y : candidate_y - actor_y;
+    int32_t const delta_x = std::abs(actor.x - x);
+    int32_t const delta_y = std::abs(actor.y - y);
     return delta_x <= 1 && delta_y <= 1;
 }
 
@@ -360,7 +356,8 @@ private:
             return std::unexpected(count.error());
         }
         if (!hasExactWords(*line, "profile", 2)) {
-            return std::unexpected(malformed(*line, "expected 'profile flat2d-v1' or 'profile flat3d-v1'"));
+            return std::unexpected(malformed(*line,
+                "expected 'profile flat2d-v1', 'profile flat3d-v1', or 'profile flight3d-v1'"));
         }
         if (line->tokens[1].kind != ScenarioTokenKind::Word) {
             return std::unexpected(diagnostic(
@@ -377,11 +374,15 @@ private:
             m_profile = ScenarioProfile::Flat3dV1;
             return {};
         }
+        if (line->tokens[1].text == "flight3d-v1") {
+            m_profile = ScenarioProfile::Flight3dV1;
+            return {};
+        }
         {
             return std::unexpected(diagnostic(
                 ScenarioDiagnosticCode::UnsupportedProfile,
                 line->tokens[1].location,
-                "only profiles flat2d-v1 and flat3d-v1 are supported"
+                "only profiles flat2d-v1, flat3d-v1, and flight3d-v1 are supported"
             ));
         }
     }
@@ -413,10 +414,12 @@ private:
             if (auto const count = expectStatement(*line); !count) {
                 return std::unexpected(count.error());
             }
-            uint64_t const player_tokens = m_profile == ScenarioProfile::Flat3dV1 ? 12U : 7U;
+            bool const is_three_dimensional = m_profile == ScenarioProfile::Flat3dV1
+                || m_profile == ScenarioProfile::Flight3dV1;
+            uint64_t const player_tokens = is_three_dimensional ? 12U : 7U;
             if (line->tokens.size() != player_tokens || !hasWord(*line, 2, "character")
                 || line->tokens[3].kind != ScenarioTokenKind::String || !hasWord(*line, 4, "at")
-                || (m_profile == ScenarioProfile::Flat3dV1 && !hasWord(*line, 8, "orientation"))) {
+                || (is_three_dimensional && !hasWord(*line, 8, "orientation"))) {
                 return std::unexpected(malformed(*line,
                     "expected 2D player or 'player <name> character <char> at <x> <y> <z> orientation <yaw> <pitch> <roll>'"));
             }
@@ -434,22 +437,25 @@ private:
                     "player character must be one of @ # $ % &"
                 ));
             }
-            auto const x = parsePosition(line->tokens[5]);
+            auto const x = m_profile == ScenarioProfile::Flight3dV1
+                ? parseFlightPosition(line->tokens[5]) : parsePosition(line->tokens[5]);
             if (!x) {
                 return std::unexpected(x.error());
             }
-            auto const y = parsePosition(line->tokens[6]);
+            auto const y = m_profile == ScenarioProfile::Flight3dV1
+                ? parseFlightPosition(line->tokens[6]) : parsePosition(line->tokens[6]);
             if (!y) {
                 return std::unexpected(y.error());
             }
-            uint8_t z{ 0 };
+            int32_t z{ 0 };
             int16_t yaw_degrees{ 0 };
             int16_t pitch_degrees{ 0 };
             int16_t roll_degrees{ 0 };
-            if (m_profile == ScenarioProfile::Flat3dV1) {
-                auto const parsed_z = parsePosition(line->tokens[7]);
+            if (is_three_dimensional) {
+                auto const parsed_z = m_profile == ScenarioProfile::Flight3dV1
+                    ? parseFlightPosition(line->tokens[7]) : parsePosition(line->tokens[7]);
                 if (!parsed_z) return std::unexpected(parsed_z.error());
-                if (*parsed_z != 0U) return std::unexpected(diagnostic(
+                if (m_profile == ScenarioProfile::Flat3dV1 && *parsed_z != 0) return std::unexpected(diagnostic(
                     ScenarioDiagnosticCode::InvalidRange, line->tokens[7].location,
                     "flat3d-v1 player z must be zero until authoritative vertical movement exists"));
                 auto const parsed_yaw = parseDegrees(line->tokens[9], 0, 359, "yaw degrees must be in 0..359");
@@ -485,7 +491,7 @@ private:
                         "player character must be unique"
                     ));
                 }
-                if (actorPlacementsConflict(actor, *x, *y)) {
+                if (m_profile != ScenarioProfile::Flight3dV1 && actorPlacementsConflict(actor, *x, *y)) {
                     return std::unexpected(diagnostic(
                         ScenarioDiagnosticCode::InvalidRange,
                         line->location,
@@ -579,13 +585,24 @@ private:
 
     [[nodiscard]]
     std::expected<void, ScenarioDiagnostic> parseInput(ScenarioLine const& line) {
-        if (m_profile == ScenarioProfile::Flat3dV1 && line.tokens.size() == 5 && hasWord(line, 2, "camera")) {
+        bool const is_flight = m_profile == ScenarioProfile::Flight3dV1;
+        bool const is_camera = (m_profile == ScenarioProfile::Flat3dV1 && line.tokens.size() == 5U)
+            || (is_flight && line.tokens.size() == 6U);
+        if (is_camera && hasWord(line, 2, "camera")) {
             auto const actor = actorId(line.tokens[1]);
             if (!actor) return std::unexpected(actor.error());
             auto const strafe = parseInputComponent(line.tokens[3]);
             if (!strafe) return std::unexpected(strafe.error());
             auto const forward = parseInputComponent(line.tokens[4]);
             if (!forward) return std::unexpected(forward.error());
+            int8_t vertical{ 0 };
+            if (is_flight) {
+                auto const parsed_vertical = parseInputComponent(line.tokens[5]);
+                if (!parsed_vertical) {
+                    return std::unexpected(parsed_vertical.error());
+                }
+                vertical = *parsed_vertical;
+            }
             if (m_boundary == std::numeric_limits<uint64_t>::max()) {
                 return std::unexpected(diagnostic(ScenarioDiagnosticCode::IntegerOverflow, line.location,
                     "input effective boundary overflows uint64"));
@@ -595,12 +612,15 @@ private:
                 .boundary = m_boundary,
                 .data = ScenarioCameraInputOperation{
                     .actor = *actor, .strafe = *strafe, .forward = *forward,
+                    .vertical = vertical,
                     .effective_boundary = m_boundary + 1U,
                 },
             });
         }
-        if (line.tokens.size() != 4) {
-            return std::unexpected(malformed(line, "expected 'input <player> <x> <y>'"));
+        uint64_t const input_tokens = is_flight ? 5U : 4U;
+        if (line.tokens.size() != input_tokens) {
+            return std::unexpected(malformed(line,
+                "expected 'input <player> <x> <y>' or 'input <player> <x> <y> <z>'"));
         }
         auto const actor = actorId(line.tokens[1]);
         if (!actor) {
@@ -613,6 +633,14 @@ private:
         auto const y = parseInputComponent(line.tokens[3]);
         if (!y) {
             return std::unexpected(y.error());
+        }
+        int8_t z{ 0 };
+        if (is_flight) {
+            auto const parsed_z = parseInputComponent(line.tokens[4]);
+            if (!parsed_z) {
+                return std::unexpected(parsed_z.error());
+            }
+            z = *parsed_z;
         }
         if (m_boundary == std::numeric_limits<uint64_t>::max()) {
             return std::unexpected(diagnostic(
@@ -628,6 +656,7 @@ private:
                 .actor = *actor,
                 .x = *x,
                 .y = *y,
+                .z = z,
                 .effective_boundary = m_boundary + 1,
             },
         });
@@ -687,7 +716,9 @@ private:
 
     [[nodiscard]]
     std::expected<void, ScenarioDiagnostic> parseExpectation(ScenarioLine const& line) {
-        uint64_t const expectation_tokens = m_profile == ScenarioProfile::Flat3dV1 ? 7U : 6U;
+        bool const is_three_dimensional = m_profile == ScenarioProfile::Flat3dV1
+            || m_profile == ScenarioProfile::Flight3dV1;
+        uint64_t const expectation_tokens = is_three_dimensional ? 7U : 6U;
         if (line.tokens.size() != expectation_tokens || !hasWord(line, 1, "player") || !hasWord(line, 3, "position")) {
             return std::unexpected(malformed(line, "expected 2D position or 'expect player <name> position <x> <y> <z>'"));
         }
@@ -695,19 +726,22 @@ private:
         if (!actor) {
             return std::unexpected(actor.error());
         }
-        auto const x = parsePosition(line.tokens[4]);
+        auto const x = m_profile == ScenarioProfile::Flight3dV1
+            ? parseFlightPosition(line.tokens[4]) : parsePosition(line.tokens[4]);
         if (!x) {
             return std::unexpected(x.error());
         }
-        auto const y = parsePosition(line.tokens[5]);
+        auto const y = m_profile == ScenarioProfile::Flight3dV1
+            ? parseFlightPosition(line.tokens[5]) : parsePosition(line.tokens[5]);
         if (!y) {
             return std::unexpected(y.error());
         }
-        uint8_t z{ 0 };
-        if (m_profile == ScenarioProfile::Flat3dV1) {
-            auto const parsed_z = parsePosition(line.tokens[6]);
+        int32_t z{ 0 };
+        if (is_three_dimensional) {
+            auto const parsed_z = m_profile == ScenarioProfile::Flight3dV1
+                ? parseFlightPosition(line.tokens[6]) : parsePosition(line.tokens[6]);
             if (!parsed_z) return std::unexpected(parsed_z.error());
-            if (*parsed_z != 0U) return std::unexpected(diagnostic(
+            if (m_profile == ScenarioProfile::Flat3dV1 && *parsed_z != 0) return std::unexpected(diagnostic(
                 ScenarioDiagnosticCode::InvalidRange, line.tokens[6].location,
                 "flat3d-v1 expected z must be zero until authoritative vertical movement exists"));
             z = *parsed_z;
@@ -815,7 +849,7 @@ private:
     }
 
     [[nodiscard]]
-    std::expected<uint8_t, ScenarioDiagnostic> parsePosition(ScenarioToken const& token) const {
+    std::expected<int32_t, ScenarioDiagnostic> parsePosition(ScenarioToken const& token) const {
         if (token.kind == ScenarioTokenKind::Word && token.text.size() > 1 && token.text.front() == '-') {
             ScenarioToken const magnitude_token{
                 .kind = token.kind,
@@ -842,7 +876,22 @@ private:
                 "position must be in 0..31"
             ));
         }
-        return static_cast<uint8_t>(*value);
+        return static_cast<int32_t>(*value);
+    }
+
+    [[nodiscard]]
+    std::expected<int32_t, ScenarioDiagnostic> parseFlightPosition(ScenarioToken const& token) const
+    {
+        auto const value = parseDegrees(
+            token,
+            static_cast<int16_t>(World::FLIGHT_MIN_CELL),
+            static_cast<int16_t>(World::FLIGHT_MAX_CELL),
+            "flight3d-v1 position must be in -64..64"
+        );
+        if (!value) {
+            return std::unexpected(value.error());
+        }
+        return static_cast<int32_t>(*value);
     }
 
     [[nodiscard]]
@@ -990,6 +1039,7 @@ std::string_view scenarioProfileName(ScenarioProfile const profile) noexcept {
     switch (profile) {
         case ScenarioProfile::Flat2dV1: return "flat2d-v1";
         case ScenarioProfile::Flat3dV1: return "flat3d-v1";
+        case ScenarioProfile::Flight3dV1: return "flight3d-v1";
     }
     return "unknown";
 }
@@ -997,11 +1047,19 @@ std::string_view scenarioProfileName(ScenarioProfile const profile) noexcept {
 Direction scenarioCameraRelativeDirection(
     int16_t const yaw_degrees,
     int8_t const strafe,
-    int8_t const forward
+    int8_t const forward,
+    int8_t const vertical
 ) noexcept {
     int8_t const clamped_strafe = strafe < 0 ? -1 : strafe > 0 ? 1 : 0;
     int8_t const clamped_forward = forward < 0 ? -1 : forward > 0 ? 1 : 0;
-    if (clamped_strafe == 0 && clamped_forward == 0) return { .x = 0, .y = 0 };
+    int8_t const clamped_vertical = vertical < 0 ? -1 : vertical > 0 ? 1 : 0;
+    if (clamped_strafe == 0 && clamped_forward == 0) {
+        return {
+            .x = 0,
+            .y = 0,
+            .z = static_cast<uint8_t>(clamped_vertical * 127),
+        };
+    }
 
     constexpr double DEGREES_TO_RADIANS = 0.017'453'292'519'943'295'769'236'907'684'89;
     int16_t normalized_yaw = static_cast<int16_t>(yaw_degrees % 360);
@@ -1016,6 +1074,7 @@ Direction scenarioCameraRelativeDirection(
     return {
         .x = static_cast<uint8_t>(static_cast<int8_t>(world_x / length * MAX_DIRECTION_COMPONENT)),
         .y = static_cast<uint8_t>(static_cast<int8_t>(world_y / length * MAX_DIRECTION_COMPONENT)),
+        .z = static_cast<uint8_t>(clamped_vertical * 127),
     };
 }
 
@@ -1035,9 +1094,9 @@ std::string scenarioReplayId(ScenarioPlan const& plan) {
         append(actor.name.size());
         for (char const character : actor.name) append(static_cast<uint8_t>(character));
         append(static_cast<uint8_t>(actor.character));
-        append(actor.x);
-        append(actor.y);
-        append(actor.z);
+        append(static_cast<uint64_t>(static_cast<int64_t>(actor.x)));
+        append(static_cast<uint64_t>(static_cast<int64_t>(actor.y)));
+        append(static_cast<uint64_t>(static_cast<int64_t>(actor.z)));
         append(static_cast<uint16_t>(actor.yaw_degrees));
         append(static_cast<uint16_t>(actor.pitch_degrees));
         append(static_cast<uint16_t>(actor.roll_degrees));
@@ -1048,13 +1107,14 @@ std::string scenarioReplayId(ScenarioPlan const& plan) {
         std::visit([&append](auto const& value) {
             if constexpr (requires { value.actor; }) append(value.actor);
             if constexpr (requires { value.x; }) {
-                append(static_cast<uint8_t>(value.x));
-                append(static_cast<uint8_t>(value.y));
+                append(static_cast<uint64_t>(static_cast<int64_t>(value.x)));
+                append(static_cast<uint64_t>(static_cast<int64_t>(value.y)));
             }
-            if constexpr (requires { value.z; }) append(value.z);
+            if constexpr (requires { value.z; }) append(static_cast<uint64_t>(static_cast<int64_t>(value.z)));
             if constexpr (requires { value.strafe; }) {
                 append(static_cast<uint8_t>(value.strafe));
                 append(static_cast<uint8_t>(value.forward));
+                append(static_cast<uint8_t>(value.vertical));
                 append(value.effective_boundary);
             }
             if constexpr (requires { value.ticks; }) append(value.ticks);

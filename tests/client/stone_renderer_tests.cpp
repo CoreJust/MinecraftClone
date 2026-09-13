@@ -1,9 +1,9 @@
 #include <client/render/InstalledShaderAssets.hpp>
 #include <client/render/VulkanRenderer.hpp>
 
-#include <core/graphics/vulkan/Vulkan.hpp>
-
 #include <shared/world/ChunkMesher.hpp>
+
+#include <core/graphics/vulkan/Vulkan.hpp>
 
 #include <gtest/gtest.h>
 

@@ -1,6 +1,6 @@
 #include <shared/world/World.hpp>
 
-#include <shared/world/Chunk.hpp>
+#include <shared/world/CanonicalWorld.hpp>
 
 #include <core/common/Assert.hpp>
 
@@ -16,15 +16,9 @@ World::World(WorldMode const mode, WorldConfiguration const configuration) noexc
 {
 }
 
-WorldConfiguration World::canonicalConfiguration() noexcept
+WorldConfiguration World::canonicalConfiguration()
 {
-    static WorldConfiguration const configuration = [] {
-        Chunk const chunk = Chunk::makeStoneFixture({}, WorldConfiguration::SEED);
-        return WorldConfiguration{
-            .chunk_content_digest = chunk.contentIdentity().content_hash,
-        };
-    }();
-    return configuration;
+    return canonicalWorld().configuration();
 }
 
 bool World::playerExists(char const ch) const noexcept
