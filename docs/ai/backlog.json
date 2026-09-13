@@ -6828,5 +6828,43 @@
     "docs_review": "Generated task and backlog views refreshed and checked.",
     "environment_review": "No Windows rerun or windowed game runtime was performed in this lane; the hosted failure is the motivating evidence.",
     "backlog_review": "Finalized MC-AI-0200 as one narrow MC-AI-0036 Windows portability repair."
+  },
+  {
+    "id": "MC-AI-0201",
+    "title": "Raise Windows Python test timeout for full suite",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P0",
+    "route": "luna",
+    "milestone": "ED-010-S5",
+    "depends_on": [],
+    "acceptance": "Windows source-checks allows the full Python suite to finish within 300 seconds and retains platform timeout coverage.",
+    "evidence": "Raw hosted Windows job log for run 34766217592 reports TIMEOUT python-tests exit 124 at 180 seconds. Updated Windows PYTHON_TEST_TIMEOUT to 300 seconds and the platform expectation; focused timeout contract and fast checks pass locally.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0036",
+    "motivation": "Hosted Windows source-checks times out the full Python suite at 180 seconds despite passing tests.",
+    "context": "The raw hosted log shows TIMEOUT python-tests exit 124, not a failed assertion.",
+    "complexity": "low",
+    "created_at": "2026-09-13",
+    "resolved_at": "2026-09-13",
+    "resolution_changes": "Raised only the Windows Python test phase timeout from 180 to 300 seconds; non-Windows remains 120 seconds.",
+    "plan": [
+      "Raise PYTHON_TEST_TIMEOUT on Windows from 180 to 300 seconds while preserving the 120-second non-Windows budget.",
+      "Update the exact platform-budget regression expectation and run the focused timeout test plus the fast task gate."
+    ],
+    "product_changes": [],
+    "code_changes": [
+      "script/ai_check.py and script/tests/test_ai_check.py use and assert the 300-second Windows Python-test budget.",
+      "script/ai_check.py and script/tests/test_ai_check.py use and assert the 300-second Windows Python-test budget."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]

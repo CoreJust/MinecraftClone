@@ -24,7 +24,7 @@ SHARED_PYTHON_SOURCES = {
     "ai_check.py", "ai_commit.py", "ai_docs.py", "ai_history.py", "ai_plan.py",
     "ai_publish.py", "ai_run.py", "ai_setup.py", "ai_tasks.py",
 }
-PYTHON_TEST_TIMEOUT = 180 if os.name == "nt" else 120
+PYTHON_TEST_TIMEOUT = 300 if os.name == "nt" else 120
 GOVERNED_PREFIXES = ("src/", "tests/", "docs/", "script/", ".githooks/", ".github/", ".codex/", ".agents/", "cmake/")
 PYTHON_WORKFLOW_PREFIXES = ("docs/ai/", "docs/code/", "script/", ".agents/", ".githooks/")
 NATIVE_BUILD_PREFIXES = ("src/", "tests/", "cmake/", "android/")
