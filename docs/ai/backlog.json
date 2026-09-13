@@ -5970,5 +5970,41 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0206",
+    "title": "Stage Windows runtime from the target owner directory",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P0",
+    "route": "luna",
+    "milestone": "EarlyDev 0.1.0:4",
+    "depends_on": [],
+    "acceptance": "CMake configures Windows runtime staging from the directory that owns mc_main while preserving all required dependency and Vulkan loader staging; non-Windows behavior is unchanged.",
+    "evidence": "Focused Windows runtime staging tests validate root ownership, preserved staging declaration, and removal from src/client. Local macOS configure/build remains unaffected; hosted Windows rerun pending.",
+    "blocker": "",
+    "owner": "",
+    "level": "basic",
+    "parent": "MC-AI-0035",
+    "motivation": "Hosted CMake3.31 rejects add_custom_command(TARGET mc_main) when invoked from src/client because mc_main is created at repository root.",
+    "context": "Run34758655921 proved loader acquisition and then failed exclusively on same-directory target ownership.",
+    "complexity": "low",
+    "created_at": "2026-09-13",
+    "resolved_at": "2026-09-13",
+    "resolution_changes": "Move the unchanged mc_main runtime staging declaration from src/client to root immediately after src is configured.",
+    "plan": [
+      "Move the declaration to the target-owning directory and run focused source-policy plus local configure/tests."
+    ],
+    "product_changes": [],
+    "code_changes": [
+      "CMakeLists.txt, src/client/CMakeLists.txt, and script/tests/test_windows_runtime_staging.py."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]

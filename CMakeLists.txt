@@ -130,6 +130,15 @@ if(MC_BUILD_CLIENT AND NOT ANDROID)
 endif()
 add_subdirectory(src)
 
+if(WIN32 AND MC_BUILD_CLIENT AND NOT ANDROID)
+    mc_stage_windows_runtime(
+        mc_main
+        RUNTIME_ROOT "$<TARGET_FILE_DIR:mc_main>"
+        DEPENDENCIES ${MC_WINDOWS_RUNTIME_DEPENDENCIES}
+        REQUIRED_FILES "${MC_VULKAN_RUNTIME_DLL}"
+    )
+endif()
+
 if(NOT MC_BUILD_CLIENT)
     foreach(forbidden_target IN ITEMS
         CoreCpp::RuntimeGraphics

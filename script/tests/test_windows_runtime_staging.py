@@ -32,9 +32,14 @@ class WindowsRuntimeStagingTests(unittest.TestCase):
         fixture = (
             REPOSITORY / "cmake/fixtures/corecpp_server_consumer/CMakeLists.txt"
         ).read_text(encoding="utf-8")
-        self.assertIn("mc_stage_windows_runtime(", client)
-        self.assertIn('RUNTIME_ROOT "$<TARGET_FILE_DIR:mc_main>"', client)
-        self.assertIn('REQUIRED_FILES "${MC_VULKAN_RUNTIME_DLL}"', client)
+        self.assertNotIn("mc_stage_windows_runtime(", client)
+        root_cmake = (REPOSITORY / "CMakeLists.txt").read_text(encoding="utf-8")
+        self.assertIn("if(WIN32 AND MC_BUILD_CLIENT AND NOT ANDROID)", root_cmake)
+        self.assertIn("mc_stage_windows_runtime(\n        mc_main", root_cmake)
+        self.assertLess(root_cmake.index("add_subdirectory(src)"), root_cmake.index("mc_stage_windows_runtime("))
+        self.assertIn('RUNTIME_ROOT "$<TARGET_FILE_DIR:mc_main>"', root_cmake)
+        self.assertIn('DEPENDENCIES ${MC_WINDOWS_RUNTIME_DEPENDENCIES}', root_cmake)
+        self.assertIn('REQUIRED_FILES "${MC_VULKAN_RUNTIME_DLL}"', root_cmake)
         self.assertIn('install(FILES "${MC_VULKAN_RUNTIME_DLL}" DESTINATION .)', client)
         for target in ("mc_tests", "mc_renderer_smoke", "mc_renderer_golden"):
             self.assertIn(f"{target}\n        RUNTIME_ROOT", tests)
