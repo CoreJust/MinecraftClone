@@ -102,6 +102,9 @@ class WindowsRuntimeStagingTests(unittest.TestCase):
                 "core.a",
                 "runtime.a",
                 "runtime-network.a",
+                "fmt.dll",
+                "spdlog.dll",
+                "enet.dll",
             ):
                 (root / name).write_bytes(b"fixture")
             config = (
@@ -116,8 +119,16 @@ class WindowsRuntimeStagingTests(unittest.TestCase):
                 f'set_target_properties(CoreCpp::Core PROPERTIES IMPORTED_LOCATION "{(root / "core.a").as_posix()}")\n'
                 f'set_target_properties(CoreCpp::Runtime PROPERTIES IMPORTED_LOCATION "{(root / "runtime.a").as_posix()}")\n'
                 f'set_target_properties(CoreCpp::RuntimeNetwork PROPERTIES IMPORTED_LOCATION "{(root / "runtime-network.a").as_posix()}")\n'
+                "add_library(fmt::fmt UNKNOWN IMPORTED)\n"
+                "add_library(spdlog::spdlog UNKNOWN IMPORTED)\n"
+                "add_library(unofficial::enet::enet UNKNOWN IMPORTED)\n"
+                f'set_target_properties(fmt::fmt PROPERTIES IMPORTED_LOCATION "{(root / "fmt.dll").as_posix()}")\n'
+                f'set_target_properties(spdlog::spdlog PROPERTIES IMPORTED_LOCATION "{(root / "spdlog.dll").as_posix()}")\n'
+                f'set_target_properties(unofficial::enet::enet PROPERTIES IMPORTED_LOCATION "{(root / "enet.dll").as_posix()}")\n'
             )
             (prefix / "CoreCppConfig.cmake").write_text(config, encoding="utf-8")
+            self.assertIn("add_library(fmt::fmt UNKNOWN IMPORTED)", config)
+            self.assertIn("fmt.dll", config)
             result = subprocess.run(
                 [
                     "cmake",

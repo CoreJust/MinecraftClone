@@ -5853,5 +5853,44 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0200",
+    "title": "MC-AI-0200",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P0",
+    "route": "luna",
+    "milestone": "EarlyDev 0.1.0:4",
+    "depends_on": [],
+    "acceptance": "The CoreCpp server-consumer Windows fixture defines realistic MinGW-style UNKNOWN imported runtime targets and existing files for fmt::fmt, spdlog::spdlog, and unofficial::enet::enet, so the production staging helper configures successfully. The helper continues to fail fast when a required dependency target is absent. A focused regression requires the fmt::fmt imported target and staged DLL path in the local package stub and configures the fixture.",
+    "evidence": "python3 -m unittest script.tests.test_windows_runtime_staging -v passed 6/6. The CoreCpp server-consumer fixture regression now creates fmt.dll, spdlog.dll, and enet.dll files and defines fmt::fmt, spdlog::spdlog, and unofficial::enet::enet as UNKNOWN IMPORTED targets with concrete IMPORTED_LOCATION paths; the fixture configures successfully. The same suite's missing-dependency and missing-required-file cases still fail closed with the expected diagnostics. python3 script/ai_docs.py refresh and check passed; no hosted Windows runner or production Windows build was run in this lane.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0035",
+    "motivation": "The hosted Windows runtime-staging regression fails while configuring the CoreCpp server-consumer fixture because its local package stub omits the fmt::fmt runtime dependency required by the production helper.",
+    "context": "Maintenance repair on exact base b679d0002adccdf9350346da142040d3a53fecce after the hosted Windows fixture selected MinGW and failed Helpers.cmake:105 with Windows runtime staging dependency is missing: fmt::fmt. Production missing-dependency fail-fast behavior must remain unchanged.",
+    "complexity": "low",
+    "created_at": "2026-09-13",
+    "resolved_at": "2026-09-13",
+    "resolution_changes": "Updated only the CoreCpp server-consumer test package stub to model the MinGW runtime dependency closure, including the missing fmt::fmt target and staged DLL path; tightened the focused regression to require that contract. Production Helpers.cmake behavior was unchanged.",
+    "plan": [
+      "Extend the local CoreCpp package stub with MinGW-style UNKNOWN imported runtime targets and fixture DLL files for fmt, spdlog, and enet.",
+      "Require the fmt target and DLL path in the focused configure regression, then retain missing-dependency fail-fast coverage."
+    ],
+    "product_changes": [
+      "Windows server-consumer fixture coverage now models the runtime dependency closure required by the staging helper."
+    ],
+    "code_changes": [
+      "script/tests/test_windows_runtime_staging.py: add realistic imported runtime targets/files to the CoreCpp package stub and assert the fmt::fmt fixture contract."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]
