@@ -43,6 +43,9 @@ class WindowsRuntimeStagingTests(unittest.TestCase):
         self.assertIn('install(FILES $<TARGET_PROPERTY:mc,MC_SHADER_FILES> DESTINATION shaders)', root_cmake)
         self.assertIn("if(WIN32)", tests)
         self.assertIn("mc_stage_windows_runtime(\n        mc_tests", tests)
+        server_stage_start = tests.index("set(MC_SERVER_NUMERIC_RUNTIME_FILES)")
+        server_stage_end = tests.index("if(MC_BUILD_CLIENT AND NOT ANDROID)", server_stage_start)
+        server_stage = tests[server_stage_start:server_stage_end]
         self.assertIn("CoreLangNumerics_MPFR_LIBRARY", tests)
         self.assertIn("CoreLangNumerics_GMP_LIBRARY", tests)
         self.assertIn('"${numeric_prefix}/bin/lib${numeric_name}*.dll"', tests)
@@ -57,7 +60,8 @@ class WindowsRuntimeStagingTests(unittest.TestCase):
             "spdlog::spdlog",
             "unofficial::enet::enet",
         ):
-            self.assertIn(dependency, tests)
+            self.assertIn(dependency, server_stage)
+        self.assertIn("GTest::gtest", server_stage)
         for target in ("mc_tests", "mc_renderer_smoke", "mc_renderer_golden"):
             self.assertIn(f"{target}\n        RUNTIME_ROOT", tests)
             self.assertIn(f'RUNTIME_ROOT "$<TARGET_FILE_DIR:{target}>"', tests)

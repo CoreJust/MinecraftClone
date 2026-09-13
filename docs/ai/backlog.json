@@ -6943,5 +6943,43 @@
     "docs_review": "Generated task/backlog views and code source state refreshed and checked.",
     "environment_review": "No windowed game launch; hosted Windows artifact rerun remains the release gate.",
     "backlog_review": "Closed one narrow MC-AI-0036 Windows packaging-test blocker."
+  },
+  {
+    "id": "MC-AI-0204",
+    "title": "Stage GoogleTest runtime for nested server-only tests",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P0",
+    "route": "luna",
+    "milestone": "ED-010-S5",
+    "depends_on": [],
+    "acceptance": "The nested MinecraftClone.ServerOnlyBuild CTest stages the GoogleTest runtime DLL when the Windows package uses a dynamic GoogleTest build, allowing mc_tests.exe discovery to start.",
+    "evidence": "Hosted Windows run 34769155176 copied the numeric, fmt, and spdlog runtime DLLs but MinecraftClone.ServerOnlyBuild still failed mc_tests discovery with exit code 0xc0000135. Added GTest::gtest to the server-only staging call; focused runtime staging tests pass and the hosted rerun is required.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0036",
+    "motivation": "Hosted Windows run 34769155176 copied numeric, fmt, and spdlog DLLs but mc_tests.exe still exited 0xc0000135; the server-only staging list omitted GTest::gtest even though the client staging list includes it.",
+    "context": "tests/CMakeLists.txt has separate server-only and client Windows runtime staging calls. The server-only call must include the same test executable runtime dependency for dynamic vcpkg configurations.",
+    "complexity": "low",
+    "created_at": "2026-09-13",
+    "resolved_at": "2026-09-13",
+    "resolution_changes": "Added GTest::gtest to the nested server-only mc_tests Windows runtime staging closure.",
+    "plan": [
+      "Add GTest::gtest to the server-only mc_tests runtime closure, update the static contract, run focused checks, and verify the hosted Windows artifact job."
+    ],
+    "product_changes": [
+      "Windows server-only validation starts successfully with dynamic GoogleTest."
+    ],
+    "code_changes": [
+      "tests/CMakeLists.txt includes GTest::gtest in the server-only mc_tests runtime staging dependencies."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "Generated task/backlog views and source state will be refreshed and checked.",
+    "environment_review": "No windowed game launch; hosted Windows artifact rerun remains the release gate.",
+    "backlog_review": "Closed one narrow follow-up to MC-AI-0203."
   }
 ]

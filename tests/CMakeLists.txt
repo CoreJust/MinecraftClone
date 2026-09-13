@@ -177,6 +177,7 @@ if(WIN32)
             fmt::fmt
             spdlog::spdlog
             unofficial::enet::enet
+            GTest::gtest
         REQUIRED_FILES ${MC_SERVER_NUMERIC_RUNTIME_FILES}
     )
 endif()
