@@ -43,6 +43,92 @@ public:
     [[nodiscard]] bool isCancellationRequested() const noexcept override { return true; }
 };
 
+TEST(CoreLangScenario, LowersComplexMultiClientFlightScriptIntoTypedNativeOperations)
+{
+    auto const result = shared::parseScenarioSource(
+        "s5_flight_multiplayer.core",
+        readScenario("s5_flight_multiplayer.core"),
+        scenarioLimits()
+    );
+
+    ASSERT_TRUE(result.has_value()) << result.error().message;
+    EXPECT_EQ(result->profile(), shared::ScenarioProfile::Flight3dV1);
+    EXPECT_EQ(result->seed(), 42U);
+    ASSERT_EQ(result->actors().size(), 2U);
+    EXPECT_EQ(result->actors()[0].x, -4);
+    EXPECT_EQ(result->actors()[0].z, 10);
+    EXPECT_EQ(result->actors()[1].yaw_degrees, 90);
+    ASSERT_EQ(result->operations().size(), 5U);
+    EXPECT_NE(std::get_if<shared::ScenarioInputOperation>(&result->operations()[0].data), nullptr);
+    EXPECT_NE(std::get_if<shared::ScenarioCameraInputOperation>(&result->operations()[1].data), nullptr);
+    EXPECT_EQ(result->totalTicks(), 10U);
+    EXPECT_EQ(result->evidenceCount(), 2U);
+    EXPECT_FALSE(shared::scenarioReplayId(*result).empty());
+}
+
+TEST(CoreLangScenario, RunsScriptedDirectAndCameraFlightThroughTheAuthoritativeRunner)
+{
+    auto const multiplayer = shared::parseScenarioSource(
+        "s5_flight_multiplayer.core",
+        readScenario("s5_flight_multiplayer.core"),
+        scenarioLimits()
+    );
+    auto const camera = shared::parseScenarioSource(
+        "s5_flight_camera.core",
+        readScenario("s5_flight_camera.core"),
+        scenarioLimits()
+    );
+    auto const boundary = shared::parseScenarioSource(
+        "s5_flight_boundary.core",
+        readScenario("s5_flight_boundary.core"),
+        scenarioLimits()
+    );
+    ASSERT_TRUE(multiplayer.has_value()) << multiplayer.error().message;
+    ASSERT_TRUE(camera.has_value()) << camera.error().message;
+    ASSERT_TRUE(boundary.has_value()) << boundary.error().message;
+
+    acceptance::ScenarioRunOptions const options{
+        .deadline = std::chrono::seconds{5},
+        .network_poll_interval = std::chrono::milliseconds{1},
+    };
+    auto const multiplayer_result = acceptance::runScenario(*multiplayer, options);
+    auto const camera_result = acceptance::runScenario(*camera, options);
+    auto const boundary_result = acceptance::runScenario(*boundary, options);
+
+    ASSERT_TRUE(multiplayer_result.has_value()) << multiplayer_result.error();
+    ASSERT_TRUE(camera_result.has_value()) << camera_result.error();
+    ASSERT_TRUE(boundary_result.has_value()) << boundary_result.error();
+    EXPECT_TRUE(multiplayer_result->passed);
+    EXPECT_TRUE(camera_result->passed);
+    EXPECT_TRUE(boundary_result->passed);
+    EXPECT_EQ(multiplayer_result->clients_accepted, 2U);
+    EXPECT_EQ(multiplayer_result->expectations_passed, 2U);
+    EXPECT_EQ(camera_result->clients_accepted, 1U);
+    EXPECT_EQ(camera_result->expectations_passed, 1U);
+    EXPECT_EQ(boundary_result->clients_accepted, 2U);
+    EXPECT_EQ(boundary_result->expectations_passed, 4U);
+}
+
+TEST(CoreLangScenario, RejectsInvalidScriptAfterPrivateCandidateMutation)
+{
+    auto const invalid = shared::parseScenarioSource(
+        "s5_flight_invalid.core",
+        readScenario("s5_flight_invalid.core"),
+        scenarioLimits()
+    );
+    ASSERT_FALSE(invalid.has_value());
+    EXPECT_EQ(invalid.error().code, shared::ScenarioDiagnosticCode::CoreLangRuntimeFailure);
+
+    auto const valid = shared::parseScenarioSource(
+        "s5_flight_camera.core",
+        readScenario("s5_flight_camera.core"),
+        scenarioLimits()
+    );
+    ASSERT_TRUE(valid.has_value()) << valid.error().message;
+    EXPECT_EQ(valid->actors().size(), 1U);
+    EXPECT_EQ(valid->operations().size(), 3U);
+}
+
 TEST(CoreLangScenario, RejectsUnknownMixedLimitedAndCancelledSourcesBeforePublishingAPlan)
 {
     static constexpr std::string_view VALID_PREFIX = R"(@version("0.0.3")

@@ -1,21 +1,32 @@
 # Scenario examples
 
-Every checked-in source in this directory is complete and parseable by the
-header-selected frontend documented in [the scripting guide](../docs/scripting/README.md).
+Checked-in sources are complete examples for the frontend selected by their
+header. See the [scripting guide](../docs/scripting/README.md) for the
+contracts.
 
-- [canonical_sample.mcscenario](canonical_sample.mcscenario) is the exact
-  canonical quickstart source: ten fixed 100 ms steps at 0.56 cells per step
-  reach `(9, 4)`.
-- [canonical_sample.core](canonical_sample.core) is the CoreLang equivalent;
-  it lowers to the same ten-tick authoritative plan.
-- [comment_and_boundary.mcscenario](comment_and_boundary.mcscenario) shows
-  blank lines, trailing comments, `"#"` as a character, and an expectation at
-  boundary zero.
-- [two_players.mcscenario](two_players.mcscenario) shows ordered input and
-  expectations for separate actors.
-- [camera_two_client.mcscenario](camera_two_client.mcscenario) is the bounded
-  `flat3d-v1` replay: two camera poses map forward input to the unchanged
-  authoritative cardinal direction wire, with Z explicitly fixed at zero.
+Legacy `.mcscenario` examples preserve the original line based syntax and flat
+profiles:
 
-The CoreLang sample uses `flat2d-v1`; `flat3d-v1` is currently a legacy-source
-camera/replay profile, not a compiler, VM, or JIT feature.
+- `canonical_sample.mcscenario` is the compact `scenario 1` quickstart.
+- `comment_and_boundary.mcscenario` covers comments, blank lines, `"#"`, and
+  a boundary-zero expectation.
+- `two_players.mcscenario` covers ordered input and separate actors.
+- `camera_two_client.mcscenario` exercises the legacy flat 3D camera replay.
+
+CoreLang `.core` examples use `@version("0.0.3")`, `@use minecraft`, and
+`pub fn scenario()`:
+
+- `canonical_sample.core` is the smallest typed flight scenario.
+- `s5_flight_boundary.core` uses functions and loops to move two players to
+  signed XYZ boundaries and back.
+- `s5_flight_camera.core` exercises typed camera input, yaw resolution, and
+  vertical movement.
+- `s5_flight_multiplayer.core` combines reusable functions, a condition,
+  direct XYZ input, camera input, and two players.
+- `s5_flight_invalid.core` is a negative fixture: duplicate characters must be
+  rejected before a plan is published.
+
+`world/canonical_world.core` is loaded separately at world-load time. Its
+`generate(seed)` function samples a deterministic 16x16x16 candidate using
+`z - 6 + random < 0`, writes stone block id `1`, and publishes only after the
+candidate is complete. It is seeded world content, not a per-tick scenario.

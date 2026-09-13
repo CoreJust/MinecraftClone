@@ -1,98 +1,66 @@
 # Scenario execution model
 
-## Boundaries, steps, and source order
+## Load and publication
 
-Setup creates the selected profile’s initial authoritative state at **boundary
-0**. It places every declared player and records the initial input as stopped
-`(0, 0)`. No authoritative simulation step has occurred at boundary 0.
+`parseScenarioSource` checks that all six scenario limits are positive, checks
+source bytes, observes an already requested cancellation, then selects the
+explicit header. Legacy text is parsed directly. CoreLang is compiled with the
+trusted `minecraft` ruleset, loaded into a runtime, and executes `scenario`.
+Host calls append to a private `ScenarioPlanCollector`. Compilation, runtime,
+host-call validation, and the final required declarations must all succeed
+before an immutable plan is returned. A failure cannot mutate the live world,
+network state, or authoritative runner.
 
-The command body is interpreted once, from first command to last command. At a
-given boundary, commands have the same source-order semantics as ordinary
-statements: each command observes all earlier commands at that boundary.
+The scenario runner then creates boundary-zero state, with declared players and
+stopped input. Commands are ordered by source position. An input recorded at
+boundary `B` is effective on the next authoritative step (`B + 1`) and remains
+active until replaced. `wait(N)` advances exactly `N` fixed authoritative
+steps and moves the boundary forward by `N`. `expect` records an observation at
+the current boundary and does not advance time. Camera input is converted from
+the actor's yaw into the authoritative XYZ direction; the server remains the
+authority. Replay identity excludes wall-clock duration.
 
-- `input` changes the named actor’s requested direction immediately for the
-  command stream, but that direction is consumed only by the **next**
-  authoritative step and later steps until another input replaces it.
-- `wait N` performs exactly `N` authoritative steps in sequence. A movement
-  submitted before the wait is therefore first applied on the first step it
-  advances. After it completes, the current boundary has increased by `N`.
-- `expect` reads the current boundary and does not advance time.
+## Host bounds
 
-For the canonical sample, `input alice 1 0` is set at boundary 0; `wait 10`
-advances steps 1 through 10; the fixed 100 ms authority applies 5,600 subcells
-per full-direction step, so Alice reaches `(9, 4)` at boundary 10. The
-subsequent stopped input is at boundary 10 and cannot retroactively affect
-those ten steps.
+The application scenario command currently supplies these limits:
 
-The scenario runner is authoritative. An expectation is evaluated against the
-authoritative profile state, never client prediction, renderer state, wall
-clock time, or transport delivery order. A failed expectation reports a
-diagnostic and stops successful scenario completion.
+| Limit | Value | Applies to |
+| --- | ---: | --- |
+| Source bytes | 65,536 | Entire source before parsing |
+| Statements | 256 | Every accepted host-call statement |
+| Actors | 4 | `playerXYZ` declarations |
+| Total ticks | 10,000 | Sum of all `wait` values |
+| Operations | 512 | Emitted inputs, waits, and expectations |
+| Evidence | 128 | `expectXYZ` operations |
 
-For `flat3d-v1`, `input ACTOR camera STRAFE FORWARD` is resolved from that
-actor's recorded yaw before it is sent through the unchanged `Direction` wire
-message. Yaw zero maps forward to +Y and positive yaw turns forward toward +X.
-Pitch and roll are replay metadata only. The authoritative server's 100 ms
-fixed-tick delay is calculated from each tick's elapsed server work; it has no
-renderer or presentation input. Scenario tick barriers directly invoke that
-same authoritative tick and are not measurements of display refresh.
+The API accepts other positive host configurations. Script input cannot raise,
+lower, or replace them. CoreLang functions, conditions, and loops can execute
+before or between host calls; these bounds limit accepted source and emitted
+scenario work, but they are not a general instruction fuel guarantee for
+arbitrary CoreLang control flow. The command wrapper also has a 30 second
+runtime watchdog; that is an application deadline, not a language termination
+proof.
 
-## Validation, limits, and safety
+## Cancellation and errors
 
-The runner must parse and fully validate the whole source before changing
-world state. Validation includes grammar, profile, all references, profile
-ranges, duplicate declarations, arithmetic conversion, and every configured
-limit. A rejected source has no setup, input, step, network, filesystem, or
-other execution side effect.
+Cancellation is checked before frontend selection and at each registered
+CoreLang host call. If it is observed, lowering returns `cancelled` and no plan
+is published. Cancellation is not a separate asynchronous interrupt supplied
+to arbitrary CoreLang instructions, so callers must keep packaged scripts
+bounded and finite.
 
-The host supplies immutable resource limits. Scripts cannot declare, override,
-or raise them. At minimum, hosts bound:
+Invalid limits, source size, compilation, typed host arguments, ranges,
+duplicate actors, operation budgets, tick budgets, evidence budgets, and final
+required declarations fail before publication. The legacy parser also validates
+the complete source before setup. See [Diagnostics](DIAGNOSTICS.md) for stable
+codes.
 
-| Limit | What it bounds |
-| --- | --- |
-| Source bytes | Entire input source, before parsing. |
-| Statements | Every nonblank directive line accepted in one source, including the header, setup, structural markers, and body commands. |
-| Actors | Declared players. |
-| Ticks | Total authoritative steps requested by all `wait` commands. |
-| Operations | Emitted `input`, `wait`, and `expect` plan operations. |
-| Evidence | `expect` operations recorded as plan evidence. |
+## Seeded world loading
 
-Host limit configuration is part of the runner’s trusted configuration. Every
-limit must be positive; an invalid configuration is rejected before a script
-can run. It is not silently clamped, ignored, or repaired from script input.
-Limits are checked with overflow-safe arithmetic.
-
-## Authority and safety
-
-Scenario source is the current finite scenario-automation subset. It requests
-only the typed, host-controlled authoritative operations defined below; it is
-not a general-purpose extension or operating-system automation environment. It
-has no loops, expressions, variables, imports, arbitrary file access, process
-or shell execution, direct network access, wall-clock access, random source
-other than the declared profile seed, or host-configuration API. It cannot
-spawn arbitrary processes, change the board beyond its declared bounded
-players, contact a server directly, or raise resource limits beyond the fixed
-grammar and selected profile contract.
-
-The only effects a valid script can request are the profile-defined initial
-state, player inputs, bounded authoritative steps, and bounded state checks.
-The embedding host remains responsible for deciding whether it records
-evidence, exposes results, or connects its simulation to external services.
-
-## Versions and profiles
-
-`scenario 1` selects this grammar; `flat2d-v1` and `flat3d-v1` select their
-explicit world/replay rules. Both
-are explicit compatibility boundaries. A runner must reject an unsupported
-format version or profile rather than guessing, falling back, or silently
-changing semantics.
-
-Any future format or profile must use a new, explicit version/profile
-identifier. Existing `scenario 1` and `flat2d-v1` sources retain their
-documented interpretation. In particular, a future runner must not silently
-reinterpret a `wait` as a different tick rate or as elapsed wall time. Any
-tick-rate policy change needs a new explicit compatibility contract.
-
-A future compiler, VM, or JIT could consume the same typed host operations, but
-none is implemented or part of current behavior. The public contract is the
-finite source grammar and authoritative semantics above.
+World generation uses a separate load-time CoreLang program and private
+candidate. `canonical_world.core` iterates a 16x16x16 chunk, calls the trusted
+seeded `terrain_random`, writes only stone block id `1` where
+`z - 6 + random < 0`, and calls `publish`. The world loader rejects invalid
+options, source overflow, compilation/runtime failure, host-call overflow, or
+incomplete publication; the live world is changed only by a completed chunk
+and its resulting configuration identity.
