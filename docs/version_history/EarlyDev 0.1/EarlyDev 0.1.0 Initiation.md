@@ -36,6 +36,13 @@ Additions:
 ## EarlyDev 0.1.0:4(26.09.13)
 
 Controllable 3D presentation of the authoritative flat multiplayer world.
+
+![Close third-person gameplay with the debug HUD](<images/earlydev-0.1.0-4-third-person-hud.png>)
+
+![Oblique view of the floating platform and local player](<images/earlydev-0.1.0-4-oblique-platform.png>)
+
+These historical screenshots are actual 640x480 GLFW gameplay captures from the MC-AI-0118 visual-acceptance pass. They show the Snapshot 4 presentation; exact final-source package and runtime identity is recorded separately in the release evidence.
+
 Additions:
 1. Deterministic close third-person camera, camera-relative desktop and Android controls, and fixed-step render scheduling.
 2. Depth-tested floating platform, grid, and player boxes with a reusable Runtime graphics/kernel path and fixed-size true-offscreen golden coverage.

@@ -87,11 +87,38 @@ if(MC_BUILD_CLIENT)
     endif()
 endif()
 
+if(WIN32 AND MC_BUILD_CLIENT AND NOT ANDROID)
+    file(TO_CMAKE_PATH "$ENV{VULKAN_SDK}" MC_VULKAN_SDK_ROOT)
+    if(NOT MC_VULKAN_SDK_ROOT)
+        message(FATAL_ERROR "VULKAN_SDK is required for desktop Windows runtime staging")
+    endif()
+    set(MC_VULKAN_RUNTIME_DLL "${MC_VULKAN_SDK_ROOT}/Bin/vulkan-1.dll")
+    if(NOT EXISTS "${MC_VULKAN_RUNTIME_DLL}")
+        message(FATAL_ERROR "Missing required Vulkan runtime loader: ${MC_VULKAN_RUNTIME_DLL}")
+    endif()
+endif()
+
 
 ###  CMAKE HELPERS  ###
 include(CTest)
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 include(Helpers)
+
+set(MC_WINDOWS_RUNTIME_DEPENDENCIES
+    CoreCpp::Core
+    CoreCpp::Runtime
+    CoreCpp::RuntimeNetwork
+    CoreCpp::RuntimeGraphics
+    CoreCpp::RuntimeGraphicsVulkan
+    CoreCpp::RuntimeGraphicsVulkanGlfw
+    CoreCpp::RuntimeKernel
+    CoreCpp::RuntimePlatformGlfw
+    CoreProject2026::CoreLang
+    fmt::fmt
+    glfw
+    spdlog::spdlog
+    unofficial::enet::enet
+)
 
 
 ###  BUILD  ###

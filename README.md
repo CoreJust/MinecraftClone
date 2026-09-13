@@ -4,6 +4,14 @@ A C++23 Minecraft-style game for learning networking, Vulkan graphics, and simul
 
 Version EarlyDev 0.1.0 Initiation.
 
+## Gameplay
+
+![Snapshot 4 close third-person gameplay with the debug HUD](<docs/version_history/EarlyDev 0.1/images/earlydev-0.1.0-4-third-person-hud.png>)
+
+![Snapshot 4 oblique view of the floating platform and local player](<docs/version_history/EarlyDev 0.1/images/earlydev-0.1.0-4-oblique-platform.png>)
+
+These are actual Snapshot 4 gameplay captures from its visual-acceptance work. The [version history](<docs/version_history/EarlyDev 0.1/EarlyDev 0.1.0 Initiation.md>) records their context and the exact release evidence separately.
+
 ## Development lines
 
 | Branch | Purpose |

@@ -177,6 +177,11 @@ if(MC_BUILD_CLIENT AND NOT ANDROID)
     )
     target_include_directories(mc_tests PRIVATE ${PROJECT_SOURCE_DIR}/src/android)
     mc_copy_target_shaders(mc_tests mc)
+    mc_stage_windows_runtime(
+        mc_tests
+        RUNTIME_ROOT "$<TARGET_FILE_DIR:mc_tests>"
+        DEPENDENCIES ${MC_WINDOWS_RUNTIME_DEPENDENCIES} GTest::gtest
+    )
 endif()
 
 gtest_discover_tests(mc_tests)
@@ -222,6 +227,11 @@ if(MC_BUILD_CLIENT AND NOT ANDROID AND MC_ENABLE_RENDERER_SMOKE)
     target_link_libraries(mc_renderer_smoke PRIVATE mc mc_test_support GTest::gtest)
     mc_apply_target_defaults(mc_renderer_smoke)
     mc_copy_target_shaders(mc_renderer_smoke mc)
+    mc_stage_windows_runtime(
+        mc_renderer_smoke
+        RUNTIME_ROOT "$<TARGET_FILE_DIR:mc_renderer_smoke>"
+        DEPENDENCIES ${MC_WINDOWS_RUNTIME_DEPENDENCIES} GTest::gtest
+    )
     add_test(NAME RendererSmokeTest COMMAND mc_renderer_smoke)
     set_tests_properties(RendererSmokeTest PROPERTIES
         TIMEOUT 45
@@ -271,6 +281,11 @@ if(MC_ENABLE_RENDERER_GOLDEN)
     target_link_libraries(mc_renderer_golden PRIVATE mc mc_test_support GTest::gtest)
     mc_apply_target_defaults(mc_renderer_golden)
     mc_copy_target_shaders(mc_renderer_golden mc)
+    mc_stage_windows_runtime(
+        mc_renderer_golden
+        RUNTIME_ROOT "$<TARGET_FILE_DIR:mc_renderer_golden>"
+        DEPENDENCIES ${MC_WINDOWS_RUNTIME_DEPENDENCIES} GTest::gtest
+    )
     add_test(NAME RendererGoldenTest COMMAND mc_renderer_golden)
     set_tests_properties(RendererGoldenTest PROPERTIES
         TIMEOUT 45

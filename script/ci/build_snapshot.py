@@ -358,7 +358,16 @@ def package_desktop(args: argparse.Namespace) -> None:
     ]
     if args.platform == "windows":
         runtime_roots = args.runtime_search or [args.vcpkg_installed]
+        loader = None
+        if args.vulkan_runtime is not None:
+            loader = require_file(args.vulkan_runtime, "Windows Vulkan runtime")
+            if loader.name.lower() != "vulkan-1.dll":
+                raise SnapshotBuildError("Windows Vulkan runtime must be vulkan-1.dll")
+            runtime_roots = [*runtime_roots, loader.parent]
         runtimes = resolve_windows_runtime(executable, runtime_roots)
+        if loader is not None:
+            runtimes.append(loader)
+            runtimes = sorted({runtime.resolve() for runtime in runtimes}, key=lambda item: item.name.lower())
         record_windows_runtime(args.toolchain_evidence, runtimes)
         for runtime in runtimes:
             command.extend(("--runtime", str(runtime)))
@@ -509,6 +518,7 @@ def parser() -> argparse.ArgumentParser:
     desktop.add_argument("--install-root", type=Path, required=True)
     desktop.add_argument("--vcpkg-installed", type=Path, required=True)
     desktop.add_argument("--runtime-search", type=Path, action="append", default=[])
+    desktop.add_argument("--vulkan-runtime", type=Path)
     desktop.add_argument("--sdk-root", type=Path)
     desktop.add_argument("--project-license", type=Path, default=Path("LICENSE"))
     desktop.add_argument("--packager", type=Path, default=Path("script/package_snapshot.py"))

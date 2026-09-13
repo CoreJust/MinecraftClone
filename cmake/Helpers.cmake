@@ -69,3 +69,57 @@ function(mc_copy_target_shaders TARGET SHADER_TARGET)
     )
     add_dependencies(${TARGET} ${TARGET}_shader_assets)
 endfunction()
+
+function(mc_stage_windows_runtime TARGET)
+    if(NOT WIN32)
+        return()
+    endif()
+
+    set(options)
+    set(one_value_arguments RUNTIME_ROOT)
+    set(multi_value_arguments DEPENDENCIES REQUIRED_FILES)
+    cmake_parse_arguments(MC_STAGE "${options}" "${one_value_arguments}" "${multi_value_arguments}" ${ARGN})
+
+    if(NOT TARGET "${TARGET}")
+        message(FATAL_ERROR "Cannot stage runtime for missing target: ${TARGET}")
+    endif()
+    get_target_property(target_type "${TARGET}" TYPE)
+    if(NOT target_type STREQUAL "EXECUTABLE" AND NOT target_type STREQUAL "SHARED_LIBRARY")
+        message(FATAL_ERROR "Windows runtime staging requires an executable or shared-library target: ${TARGET}")
+    endif()
+    if(NOT MC_STAGE_RUNTIME_ROOT)
+        set(MC_STAGE_RUNTIME_ROOT "$<TARGET_FILE_DIR:${TARGET}>")
+    endif()
+    if(NOT MC_STAGE_DEPENDENCIES AND NOT MC_STAGE_REQUIRED_FILES)
+        message(FATAL_ERROR "Windows runtime staging has no required files for target: ${TARGET}")
+    endif()
+
+    set(runtime_files ${MC_STAGE_REQUIRED_FILES})
+    foreach(required_file IN LISTS MC_STAGE_REQUIRED_FILES)
+        if(NOT EXISTS "${required_file}")
+            message(FATAL_ERROR "Windows runtime staging file is missing: ${required_file}")
+        endif()
+    endforeach()
+    foreach(dependency IN LISTS MC_STAGE_DEPENDENCIES)
+        if(NOT TARGET "${dependency}")
+            message(FATAL_ERROR "Windows runtime staging dependency is missing: ${dependency}")
+        endif()
+        get_target_property(dependency_type "${dependency}" TYPE)
+        if(
+            dependency_type STREQUAL "SHARED_LIBRARY"
+            OR dependency_type STREQUAL "MODULE_LIBRARY"
+            OR dependency_type STREQUAL "UNKNOWN_LIBRARY"
+        )
+            list(APPEND runtime_files "$<TARGET_FILE:${dependency}>")
+        endif()
+    endforeach()
+
+    foreach(runtime_file IN LISTS runtime_files)
+        add_custom_command(
+            TARGET ${TARGET}
+            POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different "${runtime_file}" "${MC_STAGE_RUNTIME_ROOT}"
+            VERBATIM
+        )
+    endforeach()
+endfunction()

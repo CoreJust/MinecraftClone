@@ -46,7 +46,7 @@
         "tests/android/input_state_tests.cpp",
         "tests/android/input_tests.cpp"
       ],
-      "sources_sha256": "462b572e924706f80a75c2d177078f91ef8cb2706016cd32033883b35b324a67"
+      "sources_sha256": "f898c130f46c9936f956421cec36f4826f2cc586f07e9c8f9b79c8d0515f236f"
     },
     {
       "guide": "docs/BUILD.md",
@@ -125,6 +125,7 @@
         "script/tests/test_pre_finalization_candidate.py",
         "script/tests/test_runtime_cli.py",
         "script/tests/test_verify_release_assets.py",
+        "script/tests/test_windows_runtime_staging.py",
         "script/tests/test_workflow_contexts.py",
         "src/CMakeLists.txt",
         "tests/CMakeLists.txt",
@@ -135,7 +136,7 @@
         "vcpkg-configuration.json",
         "vcpkg.json"
       ],
-      "sources_sha256": "b2116b184b749b767f952203e9304611e384fab52f6a9c57b058fa4a6d81acd7"
+      "sources_sha256": "f73162707929870cf017ab3d039cbb9e5099586f74e6de658fcb915315e4808b"
     },
     {
       "guide": "docs/code/CORE.md",
@@ -277,7 +278,7 @@
         "tests/testsupport/image_comparison_tests.cpp",
         "tests/testsupport/include/testsupport/ImageComparison.hpp"
       ],
-      "sources_sha256": "e02eab6ed7fdfc25458be60c86c380d04b5e5220c5ba73dca958c2d6962f9582"
+      "sources_sha256": "67dac9c75c20aac20f511fec06073bcfaf1d133ecdfdb3f3668f1be7dc1ab717"
     }
   ],
   "version": 1
