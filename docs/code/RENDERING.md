@@ -38,7 +38,7 @@ flip reverses winding, so grid/player/HUD triangles are reversed for the
 CoreCpp CCW back-face policy.
 
 Flight scenes submit cached stone faces; uploads occur only when mesh identity
-changes. Original 16-by-16 stone shaders are installed on desktop and Android.
+changes. Stone shaders use 16-by-16 seamless noise with mineral flecks on desktop/Android.
 `GridPushConstants` is 96 bytes and `BoxPushConstants` is 112 bytes; both carry
 the projection-view matrix, while the box block also carries independent XYZ
 origin and extent vectors. Their ABI must remain compatible with the GLSL push
