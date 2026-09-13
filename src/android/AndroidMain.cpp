@@ -146,7 +146,7 @@ extern "C" void android_main(android_app* const app)
     try {
         LaunchOptions const options = launchOptions(*app);
         CORE_INFO("Starting Android client {} as {}", options.server, options.character);
-        game_android::AndroidPlayerClient client{ *app };
+        game_android::AndroidPlayerClient client{ *app, shared::WorldMode::Flight };
         client.run(options.server, options.character);
     } catch (std::exception const& error) {
         CORE_ERROR("Android client terminated: {}", error.what());

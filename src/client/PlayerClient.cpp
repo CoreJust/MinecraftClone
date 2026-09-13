@@ -3,11 +3,15 @@
 #include <client/CameraController.hpp>
 #include <client/PlayerPresentation.hpp>
 
+#include <shared/world/CanonicalWorld.hpp>
+#include <shared/world/ChunkMesher.hpp>
+
 #define GLFW_INCLUDE_NONE
 #include <GLFW/glfw3.h>
 
 #include <algorithm>
 #include <optional>
+#include <string>
 
 namespace client {
 
@@ -15,6 +19,23 @@ PlayerClient::~PlayerClient()
 {
     if (m_window.nativeHandle() != nullptr) {
         glfwSetInputMode(m_window.nativeHandle(), GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+    }
+}
+
+PlayerClient::PlayerClient(shared::WorldMode const mode)
+    : GameClient{ mode }
+    , m_window(core::platform::glfw::WindowDescriptor{
+        .width = 1280U,
+        .height = 720U,
+        .title = std::string{ shared::PROJECT_NAME },
+    })
+    , m_renderer(VulkanRenderer::createPresentationContext(m_window), m_shader_assets)
+{
+    beginContinuousLook();
+    m_renderer.setDebugHudEnabled(true);
+    if (mode == shared::WorldMode::Flight) {
+        shared::ChunkMesher mesher;
+        m_renderer.setChunkMesh(mesher.update(shared::canonicalWorld().chunk()));
     }
 }
 
@@ -28,10 +49,14 @@ shared::Direction PlayerClient::input() {
         m_running = false;
     }
     MovementIntent const intent{
-        .strafe = static_cast<int8_t>(static_cast<int>(m_window.keyPressed(core::platform::glfw::WindowKey::D))
-            - static_cast<int>(m_window.keyPressed(core::platform::glfw::WindowKey::A))),
-        .forward = static_cast<int8_t>(static_cast<int>(m_window.keyPressed(core::platform::glfw::WindowKey::W))
-            - static_cast<int>(m_window.keyPressed(core::platform::glfw::WindowKey::S))),
+        .strafe = static_cast<int8_t>(
+            static_cast<int8_t>(m_window.keyPressed(core::platform::glfw::WindowKey::D))
+            - static_cast<int8_t>(m_window.keyPressed(core::platform::glfw::WindowKey::A))
+        ),
+        .forward = static_cast<int8_t>(
+            static_cast<int8_t>(m_window.keyPressed(core::platform::glfw::WindowKey::W))
+            - static_cast<int8_t>(m_window.keyPressed(core::platform::glfw::WindowKey::S))
+        ),
     };
     MovementDirection const movement = CameraController::cameraRelativeMovement(
         intent,
@@ -40,6 +65,11 @@ shared::Direction PlayerClient::input() {
     return shared::Direction{
         .x = static_cast<uint8_t>(movement.x),
         .y = static_cast<uint8_t>(movement.y),
+        .z = static_cast<uint8_t>(CameraController::verticalMovement(
+            glfwGetKey(m_window.nativeHandle(), GLFW_KEY_SPACE) == GLFW_PRESS,
+            glfwGetKey(m_window.nativeHandle(), GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS
+            || glfwGetKey(m_window.nativeHandle(), GLFW_KEY_RIGHT_SHIFT) == GLFW_PRESS
+        )),
     };
 }
 
@@ -67,7 +97,7 @@ void PlayerClient::render() {
     std::chrono::steady_clock::time_point const now = std::chrono::steady_clock::now();
     std::optional<PlayerPresentationPosition> const local_position = predictedLocalPresentation(now);
     if (local_position.has_value()) {
-        CameraPose const camera_pose = localPlayerThirdPersonPose(*local_position, m_camera.pose().angles);
+        CameraPose const camera_pose = localPlayerFirstPersonPose(*local_position, m_camera.pose().angles);
         static_cast<void>(m_camera.setPosition(camera_pose.position));
     }
     m_renderer.recreate(width, height);
@@ -75,13 +105,6 @@ void PlayerClient::render() {
     m_render_data.reserve(m_world.players().size());
     for (shared::Player const& p : m_world.players()) {
         if (p.ch == m_local_character) {
-            if (local_position.has_value()) {
-                m_render_data.push_back({
-                    .x = static_cast<float>(local_position->x),
-                    .y = static_cast<float>(local_position->y),
-                    .color = { float(p.ch) / 256.f, 1.f - float(p.ch) / 256.f, 1.f, 1.f },
-                });
-            }
             continue;
         }
         if (auto const position = m_player_presentation.sample(p.ch, now)) {
@@ -89,6 +112,7 @@ void PlayerClient::render() {
                 .x = static_cast<float>(position->x),
                 .y = static_cast<float>(position->y),
                 .color = { float(p.ch) / 256.f, 1.f - float(p.ch) / 256.f, 1.f, 1.f },
+                .z = static_cast<float>(position->z),
             });
         }
     }
@@ -97,6 +121,7 @@ void PlayerClient::render() {
         if (auto const player = m_world.playerByCharacter(m_local_character)) {
             input.player_x = static_cast<float>(shared::playerPositionX(*player));
             input.player_y = static_cast<float>(shared::playerPositionY(*player));
+            input.player_z = static_cast<float>(shared::playerPositionZ(*player));
         }
         CameraAngles const angles = m_camera.pose().angles;
         input.camera_yaw_degrees = static_cast<float>(angles.yaw_degrees);

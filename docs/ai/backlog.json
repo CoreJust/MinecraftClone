@@ -5905,35 +5905,39 @@
     "id": "MC-AI-0157",
     "title": "Integrate Minecraft-style flying controls",
     "kind": "feature",
-    "status": "backlog",
+    "status": "done",
     "priority": "P1",
     "route": "terra",
     "milestone": "ED-010-S5",
     "depends_on": [
       "MC-AI-0156"
     ],
-    "acceptance": "Desktop WASD with yaw-relative motion, Space ascent and Shift descent, first-person mouse camera, fixed spawn and smooth predicted/reconciled authoritative XYZ movement. Android remains build-compatible with usable vertical controls.",
-    "evidence": "",
+    "acceptance": "Desktop WASD with yaw-relative motion, Space ascent and Shift descent, first-person mouse camera, fixed spawn and smooth predicted/reconciled authoritative XYZ movement. Android remains build-compatible with usable vertical controls. Graphical launch connects to localhost automatically without real-player, character, or address prompts; character selection is obsolete per user feedback.",
+    "evidence": "Reconfigured and rebuilt mc_tests and mc_main. Ran 65 focused ScenarioParser, AndroidInputState, AndroidInput, CameraController, DebugHud, GameClientPrediction, and PlayerPresentation CTests: 65/65 passed. Documentation integrity check passed.",
     "blocker": "",
-    "owner": "",
+    "owner": "Codex",
     "level": "basic",
     "parent": "MC-AI-0036",
     "motivation": "Integrate Minecraft-style flying controls.",
     "context": "Implements the user-approved S5 design; coordinator owns integration and metadata.",
     "complexity": "high",
     "created_at": "2026-09-13",
-    "resolved_at": "",
-    "resolution_changes": "",
+    "resolved_at": "2026-09-13",
+    "resolution_changes": "Integrated desktop and Android flight controls, XYZ prediction and presentation, flight HUD state, vertical ±127 parser coverage, and direct no-prompt Flight-mode localhost player launch. Preserved existing S4 presentation tests and excluded the later explicit CLI parser.",
     "plan": [],
-    "product_changes": [],
-    "code_changes": [],
+    "product_changes": [
+      "Desktop flight uses yaw-relative WASD, Space and Shift vertical input, first-person camera, predicted/reconciled XYZ movement, and direct localhost graphical launch; Android supplies usable vertical touch controls."
+    ],
+    "code_changes": [
+      "Integrated flight-control client and Android sources, focused regression suites, scenario parser coverage, direct flight launch wiring, and relevant test registration."
+    ],
     "baseline_commit": "",
     "commits": [],
-    "finalized": false,
+    "finalized": true,
     "retrospective": "",
-    "docs_review": "",
-    "environment_review": "",
-    "backlog_review": ""
+    "docs_review": "Updated Gameplay launch behavior and refreshed the code-documentation inventory.",
+    "environment_review": "Focused desktop build and 65 targeted CTests passed.",
+    "backlog_review": "Finalized MC-AI-0157 after local build and flight-control regression evidence."
   },
   {
     "id": "MC-AI-0158",

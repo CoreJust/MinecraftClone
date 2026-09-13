@@ -11,6 +11,11 @@ void AndroidInput::setSurfaceWidth(uint32_t const width) noexcept
     m_surface_width = width;
 }
 
+void AndroidInput::setSurfaceHeight(uint32_t const height) noexcept
+{
+    m_surface_height = height;
+}
+
 void AndroidInput::setDensity(float const density) noexcept
 {
     m_state.setDensity(density);
@@ -23,6 +28,7 @@ void AndroidInput::clear() noexcept
     m_reload_requested = false;
     m_debug_hud_toggle.reset();
     m_debug_hud_toggle_requested = false;
+    cancelFlightTouches();
 }
 
 int32_t AndroidInput::handle(AInputEvent const* const event) noexcept
@@ -39,6 +45,14 @@ int32_t AndroidInput::handle(AInputEvent const* const event) noexcept
 shared::Direction AndroidInput::direction() const noexcept
 {
     return m_state.direction();
+}
+
+int8_t AndroidInput::flightDirection() const noexcept
+{
+    return static_cast<int8_t>(
+        static_cast<int8_t>(m_ascending_touch_pointer_id >= 0)
+        - static_cast<int8_t>(m_descending_touch_pointer_id >= 0)
+    );
 }
 
 bool AndroidInput::consumeStopRequest() noexcept
@@ -130,6 +144,7 @@ int32_t AndroidInput::handleMotion(AInputEvent const* const event) noexcept
     if (action_mask == AMOTION_EVENT_ACTION_CANCEL) {
         static_cast<void>(m_state.cancelTouch());
         static_cast<void>(m_state.cancelLookTouch());
+        cancelFlightTouches();
         return 1;
     }
 
@@ -137,6 +152,9 @@ int32_t AndroidInput::handleMotion(AInputEvent const* const event) noexcept
         float const x = AMotionEvent_getX(event, action_index);
         float const y = AMotionEvent_getY(event, action_index);
         int32_t const pointer_id = AMotionEvent_getPointerId(event, action_index);
+        if (beginFlightTouch(pointer_id, x, y)) {
+            return 1;
+        }
         if (m_state.beginLookTouch(pointer_id, x, y, m_surface_width)) {
             return 1;
         }
@@ -155,6 +173,7 @@ int32_t AndroidInput::handleMotion(AInputEvent const* const event) noexcept
             int32_t const pointer_id = AMotionEvent_getPointerId(event, index);
             float const x = AMotionEvent_getX(event, index);
             float const y = AMotionEvent_getY(event, index);
+            handled = isFlightTouch(pointer_id) || handled;
             handled = m_state.moveTouch(pointer_id, x, y) || handled;
             handled = m_state.moveLookTouch(pointer_id, x, y) || handled;
         }
@@ -163,12 +182,71 @@ int32_t AndroidInput::handleMotion(AInputEvent const* const event) noexcept
 
     if (action_mask == AMOTION_EVENT_ACTION_UP || action_mask == AMOTION_EVENT_ACTION_POINTER_UP) {
         int32_t const pointer_id = AMotionEvent_getPointerId(event, action_index);
+        if (endFlightTouch(pointer_id)) {
+            return 1;
+        }
         if (m_state.endLookTouch(pointer_id)) {
             return 1;
         }
         return m_state.endTouch(pointer_id) ? 1 : 0;
     }
     return 0;
+}
+
+bool AndroidInput::beginFlightTouch(
+    int32_t const pointer_id,
+    float const x,
+    float const y
+) noexcept
+{
+    if (pointer_id < 0) {
+        return false;
+    }
+    std::optional<int8_t> const direction = AndroidFlightTouchControls::direction(
+        x,
+        y,
+        m_surface_width,
+        m_surface_height
+    );
+    if (!direction.has_value()) {
+        return false;
+    }
+    int32_t& active_pointer_id = *direction > 0
+        ? m_ascending_touch_pointer_id
+        : m_descending_touch_pointer_id;
+    if (active_pointer_id >= 0) {
+        return false;
+    }
+    active_pointer_id = pointer_id;
+    return true;
+}
+
+bool AndroidInput::isFlightTouch(int32_t const pointer_id) const noexcept
+{
+    return pointer_id >= 0
+        && (pointer_id == m_ascending_touch_pointer_id || pointer_id == m_descending_touch_pointer_id);
+}
+
+bool AndroidInput::endFlightTouch(int32_t const pointer_id) noexcept
+{
+    if (pointer_id < 0) {
+        return false;
+    }
+    if (pointer_id == m_ascending_touch_pointer_id) {
+        m_ascending_touch_pointer_id = -1;
+        return true;
+    }
+    if (pointer_id == m_descending_touch_pointer_id) {
+        m_descending_touch_pointer_id = -1;
+        return true;
+    }
+    return false;
+}
+
+void AndroidInput::cancelFlightTouches() noexcept
+{
+    m_ascending_touch_pointer_id = -1;
+    m_descending_touch_pointer_id = -1;
 }
 
 } // namespace game_android

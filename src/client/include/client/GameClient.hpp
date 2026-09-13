@@ -18,7 +18,14 @@ class GameClient : public core::Client {
 public:
     static constexpr uint32_t MAX_PENDING_INPUTS = 64;
 
-    explicit GameClient() : core::Client { 1 } { }
+    explicit GameClient(
+        shared::WorldMode const mode = shared::WorldMode::Flat,
+        shared::WorldConfiguration const configuration = shared::World::canonicalConfiguration()
+    )
+        : core::Client{ 1 }
+        , m_world{ mode, configuration }
+        , m_predicted_world{ mode, configuration }
+    { }
 
     void run(core::Address const server_address, char const ch);
 protected:

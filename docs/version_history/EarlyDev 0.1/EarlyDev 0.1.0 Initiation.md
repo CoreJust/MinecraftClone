@@ -33,7 +33,7 @@ Additions:
 3. Relocatable macOS and Windows packages plus an arm64-v8a Android Vulkan application.
 4. Exact-source snapshot promotion, cross-platform CI, checksums, provenance, and release-asset verification.
 
-## EarlyDev 0.1.0:4(26.09.12)
+## EarlyDev 0.1.0:4(26.09.13)
 
 Controllable 3D presentation of the authoritative flat multiplayer world.
 Additions:

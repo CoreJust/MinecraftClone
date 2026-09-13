@@ -387,6 +387,31 @@ TEST(DebugHudTest, FormatsReadableSpacedGoldenValuesAndDegreeGroups)
     );
 }
 
+TEST(DebugHudTest, ReplacesUptimeWithTouchFlightControlsWhenRequested)
+{
+    client::DebugHudState hud;
+    hud.setEnabled(true);
+    hud.updateAt(
+        10.0,
+        client::DebugHudInput{
+            .touch_flight_help = true,
+            .player_x = 1.25F,
+            .player_y = -2.3F,
+            .player_z = 4.56F,
+            .camera_yaw_degrees = 45.0F,
+            .camera_pitch_degrees = -10.0F,
+            .camera_roll_degrees = 3.0F,
+        }
+    );
+    client::DebugHudText text;
+
+    ASSERT_TRUE(hud.formatText(text));
+    EXPECT_EQ(
+        std::string_view(text.bytes.data(), text.size),
+        "FPS:  0.0\nRIGHT: TOP UP / BOTTOM DOWN\nXYZ:  1.25   -2.30   4.56\nYPR deg: 45.0  -10.0  3.0"
+    );
+}
+
 TEST(DebugHudTest, ReservesFourBoundedRowsForExtremeInputValues)
 {
     client::DebugHudState hud;

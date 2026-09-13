@@ -1,22 +1,13 @@
 # Gameplay and networking
 
 The runnable entry point is [src/main.cpp](../../src/main.cpp). It initializes
-logging, crash handling, and networking, then starts a server for `--server` or
-prompts for a human/bot client, character, and address.
+logging, crash handling, and networking, then starts a Flight-mode server for
+`--server` or a graphical Flight-mode player at `127.0.0.1:20040` as `@` by
+default. The desktop entry point has no interactive character or address prompts.
 
 ## Runtime shape
 
-```text
-mc_main
-  server mode: GameServer -> authoritative World
-  client mode: PlayerClient or BotClient -> GameClient -> local World
-                                                | reliable RuntimeNetwork channel 0
-                                                v
-                                          GameServer callbacks
-```
-
-Shared interfaces are compiled once for both endpoints. Clients do not receive
-server `PlayerId`s and instead track remote players by character.
+Clients track remote players by character rather than server `PlayerId`.
 
 ## Shared simulation
 
@@ -88,19 +79,12 @@ input per player per tick. Joined disconnect broadcasts removal before despawn.
 ## Client roles and lifecycle
 
 [GameClient.hpp](../../src/client/include/client/GameClient.hpp) and
-[GameClient.cpp](../../src/client/GameClient.cpp) implement the common client
-state machine: connect with a one-second timeout, send a join, poll until an
-accept/reject/disconnect, then repeatedly poll and render presentation frames.
-`FrameScheduler` sends input reliably at the independent 100 ms authoritative
-cadence and sleeps at most one millisecond between presentation attempts, which
-permits normal windowed refresh without busy spinning or catch-up input bursts.
-Position messages update a local `World`; unknown characters receive locally
-assigned ids. `PlayerPresentation` retains one receive-time transition per
-character: the first update snaps, later updates interpolate from the current
-presented position to the newest authoritative position during one `TICK`, and
-gaps hold the latest position without extrapolation. The HUD, world, collision,
-and network state always remain authoritative. A disconnect or rejected join
-stops the loop.
+[GameClient.cpp](../../src/client/GameClient.cpp) connect, join, poll, and
+render. `FrameScheduler` sends input every 100 ms and sleeps at most one
+millisecond between presentation attempts. Position messages update a local
+`World`; unknown characters receive locally assigned ids. The first presentation
+update snaps; later updates interpolate during one `TICK` and gaps hold the last
+position. A disconnect or rejected join stops the loop.
 
 [PlayerClient.hpp](../../src/client/include/client/PlayerClient.hpp) and
 [PlayerClient.cpp](../../src/client/PlayerClient.cpp) provide the GLFW/Vulkan

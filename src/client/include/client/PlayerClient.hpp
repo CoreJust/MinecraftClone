@@ -15,17 +15,7 @@ namespace client {
 
 class PlayerClient final : public GameClient {
 public:
-    explicit PlayerClient()
-        : m_window(core::platform::glfw::WindowDescriptor{
-            .width = 1280U,
-            .height = 720U,
-            .title = std::string{ shared::PROJECT_NAME },
-        })
-        , m_renderer(VulkanRenderer::createPresentationContext(m_window), m_shader_assets)
-    {
-        beginContinuousLook();
-        m_renderer.setDebugHudEnabled(true);
-    }
+    explicit PlayerClient(shared::WorldMode const mode = shared::WorldMode::Flat);
     ~PlayerClient();
 private:
     shared::Direction input() override;
@@ -33,7 +23,7 @@ private:
 private:
     void beginContinuousLook() noexcept;
     Camera m_camera{
-        { .position = { 16.0, -20.0, 22.0 }, .angles = { .pitch_degrees = -35.0 } },
+        { .position = { 9.0, 9.0, 13.0 } },
     };
     core::platform::glfw::GlfwWindow m_window;
     InstalledShaderAssets m_shader_assets;

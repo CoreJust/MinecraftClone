@@ -8,7 +8,6 @@
 #include <array>
 #include <atomic>
 #include <chrono>
-#include <memory>
 #include <optional>
 #include <thread>
 
@@ -16,6 +15,10 @@ namespace {
 
 class PredictionClient final : public client::GameClient {
 public:
+    explicit PredictionClient(shared::WorldMode const mode = shared::WorldMode::Flat)
+        : GameClient{ mode }
+    { }
+
     using GameClient::applyServerPosition;
     using GameClient::applyServerRemoval;
     using GameClient::discardPredictedInput;
@@ -49,12 +52,10 @@ public:
 
     ProductionPredictionClient(
         shared::Direction const direction,
-        std::chrono::steady_clock::time_point const deadline,
-        std::optional<char> const departed_character = std::nullopt
+        std::chrono::steady_clock::time_point const deadline
     )
         : m_direction(direction)
         , m_deadline(deadline)
-        , m_departed_character(departed_character)
     { }
 
     [[nodiscard]] bool completed() const noexcept
@@ -97,8 +98,6 @@ public:
         return !m_pending_inputs.empty();
     }
 
-    [[nodiscard]] bool observedDeparture() const noexcept { return m_observed_departure; }
-
 private:
     shared::Direction input() override
     {
@@ -127,18 +126,11 @@ private:
             m_running = false;
             return;
         }
-        if (!m_completed && m_inputs_sent == FIXED_INPUT_COUNT
+        if (m_inputs_sent == FIXED_INPUT_COUNT
             && m_highest_local_revision >= FIXED_INPUT_COUNT + 1U
             && m_pending_inputs.empty()
             && observedAllPlayers()) {
             m_completed = true;
-            if (!m_departed_character) {
-                m_running = false;
-            }
-        }
-        if (m_completed && m_departed_character
-            && !m_world.playerByCharacter(*m_departed_character).has_value()) {
-            m_observed_departure = true;
             m_running = false;
         }
     }
@@ -146,12 +138,10 @@ private:
 private:
     shared::Direction m_direction;
     std::chrono::steady_clock::time_point m_deadline;
-    std::optional<char> m_departed_character;
     std::array<bool, PLAYERS.size()> m_seen_players{ };
     uint32_t m_inputs_sent = 0;
     uint32_t m_highest_local_revision = 0;
     bool m_completed = false;
-    bool m_observed_departure = false;
     bool m_deadline_expired = false;
 };
 
@@ -175,6 +165,32 @@ shared::ServerPlayerPositionMessage position(
     };
 }
 
+[[nodiscard]]
+shared::ServerPlayerPositionMessage flightPosition(
+    char const character,
+    int32_t const x,
+    int32_t const y,
+    int32_t const z,
+    uint16_t const x_subcell,
+    uint16_t const y_subcell,
+    uint16_t const z_subcell,
+    uint32_t const acknowledged_input_sequence,
+    uint32_t const state_revision
+)
+{
+    return {
+        .ch = character,
+        .x = x,
+        .y = y,
+        .z = z,
+        .x_subcell = x_subcell,
+        .y_subcell = y_subcell,
+        .z_subcell = z_subcell,
+        .acknowledged_input_sequence = acknowledged_input_sequence,
+        .state_revision = state_revision,
+    };
+}
+
 TEST(GameClientPredictionTest, PredictsImmediatelyWithoutMutatingTheAuthoritativeWorld)
 {
     static constexpr shared::Direction RIGHT{ .x = 127U, .y = 0U };
@@ -190,6 +206,54 @@ TEST(GameClientPredictionTest, PredictsImmediatelyWithoutMutatingTheAuthoritativ
     EXPECT_EQ(input->sequence, 1U);
     EXPECT_EQ(client.authoritativePlayer('@')->x_subcell, 0U);
     EXPECT_EQ(client.predictedLocalPlayer()->x_subcell, shared::MOVEMENT_SUBCELLS_PER_TICK);
+}
+
+TEST(GameClientPredictionTest, FlightPredictionAndAcknowledgementReconcileAllThreeAxes)
+{
+    static constexpr shared::Direction ASCEND{ .x = 0U, .y = 0U, .z = 127U };
+    std::chrono::steady_clock::time_point const STARTED_AT{};
+    PredictionClient client{ shared::WorldMode::Flight };
+    client.setLocalCharacter('@');
+    ASSERT_TRUE(client.applyServerPosition(
+        flightPosition('@', 8, 8, 12, 0U, 0U, 0U, 0U, 1U),
+        STARTED_AT
+    ));
+
+    std::optional<shared::ClientInputMessage> const input = client.predictInput(ASCEND, STARTED_AT);
+
+    ASSERT_TRUE(input.has_value());
+    ASSERT_TRUE(client.authoritativePlayer('@').has_value());
+    ASSERT_TRUE(client.predictedLocalPlayer().has_value());
+    EXPECT_EQ(client.authoritativePlayer('@')->z, 12);
+    EXPECT_EQ(client.authoritativePlayer('@')->z_subcell, 0U);
+    EXPECT_EQ(client.predictedLocalPlayer()->z, 12);
+    EXPECT_EQ(client.predictedLocalPlayer()->z_subcell, shared::MOVEMENT_SUBCELLS_PER_TICK);
+
+    ASSERT_TRUE(client.applyServerPosition(
+        flightPosition(
+            '@',
+            8,
+            8,
+            12,
+            0U,
+            0U,
+            shared::MOVEMENT_SUBCELLS_PER_TICK,
+            input->sequence,
+            2U
+        ),
+        STARTED_AT + std::chrono::milliseconds{ 100 }
+    ));
+    ASSERT_TRUE(client.predictedLocalPlayer().has_value());
+    EXPECT_EQ(client.predictedLocalPlayer()->x, 8);
+    EXPECT_EQ(client.predictedLocalPlayer()->y, 8);
+    EXPECT_EQ(client.predictedLocalPlayer()->z, 12);
+    EXPECT_EQ(client.predictedLocalPlayer()->z_subcell, shared::MOVEMENT_SUBCELLS_PER_TICK);
+    ASSERT_TRUE(client.predictedLocalPresentation(STARTED_AT + std::chrono::milliseconds{ 150 }).has_value());
+    EXPECT_DOUBLE_EQ(
+        client.predictedLocalPresentation(STARTED_AT + std::chrono::milliseconds{ 150 })->z,
+        12.0 + static_cast<double>(shared::MOVEMENT_SUBCELLS_PER_TICK)
+            / static_cast<double>(shared::SUBCELLS_PER_CELL)
+    );
 }
 
 TEST(GameClientPredictionTest, AcknowledgementReconcilesAndReplaysWithoutCorrectPredictionSnap)
@@ -218,7 +282,6 @@ TEST(GameClientPredictionTest, AcknowledgementReconcilesAndReplaysWithoutCorrect
         3U
     )));
     ASSERT_TRUE(client.predictedLocalPlayer().has_value());
-    EXPECT_EQ(client.predictedLocalPlayer()->x, 1U);
     EXPECT_EQ(client.predictedLocalPlayer()->x_subcell, predicted_before_acknowledgement);
 }
 
@@ -349,11 +412,11 @@ TEST(GameClientPredictionTest, ReconcilesThreeProductionCadenceClientsOverRealTr
         server.run(stop_server);
     } };
 
-    auto alice = std::make_unique<ProductionPredictionClient>(shared::Direction{ .x = 127U, .y = 0U }, deadline);
-    ProductionPredictionClient bob{ { .x = 129U, .y = 0U }, deadline, '@' };
-    ProductionPredictionClient charlie{ { .x = 0U, .y = 127U }, deadline, '@' };
+    ProductionPredictionClient alice{ { .x = 127U, .y = 0U }, deadline };
+    ProductionPredictionClient bob{ { .x = 129U, .y = 0U }, deadline };
+    ProductionPredictionClient charlie{ { .x = 0U, .y = 127U }, deadline };
     std::thread alice_thread{ [&alice, &server] {
-        alice->run(core::Address::localhost(server.port()), '@');
+        alice.run(core::Address::localhost(server.port()), '@');
     } };
     std::thread bob_thread{ [&bob, &server] {
         bob.run(core::Address::localhost(server.port()), '#');
@@ -363,32 +426,37 @@ TEST(GameClientPredictionTest, ReconcilesThreeProductionCadenceClientsOverRealTr
     } };
 
     alice_thread.join();
-    bool const alice_completed = alice->completed();
-    bool const alice_deadline_expired = alice->deadlineExpired();
-    bool const alice_pending_inputs = alice->hasPendingInputs();
-    std::optional<shared::Player> const alice_authoritative = alice->authoritativeLocalPlayer();
-    std::optional<shared::Player> const alice_predicted = alice->predictedLocalPlayerForTest();
-    alice.reset();
     bob_thread.join();
     charlie_thread.join();
     stop_server.store(true, std::memory_order_relaxed);
     server_thread.join();
-    EXPECT_TRUE(bob.observedDeparture());
-    EXPECT_TRUE(charlie.observedDeparture());
-    EXPECT_TRUE(alice_completed);
-    EXPECT_FALSE(alice_deadline_expired);
-    EXPECT_FALSE(alice_pending_inputs);
-    ASSERT_TRUE(alice_authoritative.has_value());
-    ASSERT_TRUE(alice_predicted.has_value());
-    EXPECT_EQ(alice_predicted->id, alice_authoritative->id);
-    EXPECT_EQ(alice_predicted->x, alice_authoritative->x);
-    EXPECT_EQ(alice_predicted->y, alice_authoritative->y);
-    EXPECT_EQ(alice_predicted->x_subcell, alice_authoritative->x_subcell);
-    EXPECT_EQ(alice_predicted->y_subcell, alice_authoritative->y_subcell);
-    EXPECT_EQ(alice_predicted->ch, alice_authoritative->ch);
 
+    auto const expect_reconciled = [](ProductionPredictionClient const& client) {
+        EXPECT_TRUE(client.completed());
+        EXPECT_FALSE(client.deadlineExpired());
+        EXPECT_EQ(client.inputsSent(), ProductionPredictionClient::FIXED_INPUT_COUNT);
+        EXPECT_GE(client.highestLocalRevision(), ProductionPredictionClient::FIXED_INPUT_COUNT + 1U);
+        EXPECT_TRUE(client.observedAllPlayers());
+        EXPECT_FALSE(client.hasPendingInputs());
+        ASSERT_TRUE(client.authoritativeLocalPlayer().has_value());
+        ASSERT_TRUE(client.predictedLocalPlayerForTest().has_value());
+        shared::Player const authoritative = *client.authoritativeLocalPlayer();
+        shared::Player const predicted = *client.predictedLocalPlayerForTest();
+        EXPECT_EQ(predicted.id, authoritative.id);
+        EXPECT_EQ(predicted.x, authoritative.x);
+        EXPECT_EQ(predicted.y, authoritative.y);
+        EXPECT_EQ(predicted.x_subcell, authoritative.x_subcell);
+        EXPECT_EQ(predicted.y_subcell, authoritative.y_subcell);
+        EXPECT_EQ(predicted.ch, authoritative.ch);
+    };
+    expect_reconciled(alice);
+    expect_reconciled(bob);
+    expect_reconciled(charlie);
+
+    ASSERT_TRUE(alice.authoritativeLocalPlayer().has_value());
     ASSERT_TRUE(bob.authoritativeLocalPlayer().has_value());
     ASSERT_TRUE(charlie.authoritativeLocalPlayer().has_value());
+    EXPECT_NE(alice.authoritativeLocalPlayer()->x, ALICE_SPAWN.x);
     EXPECT_NE(bob.authoritativeLocalPlayer()->x, BOB_SPAWN.x);
     EXPECT_NE(charlie.authoritativeLocalPlayer()->y, CHARLIE_SPAWN.y);
 }

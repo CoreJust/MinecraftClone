@@ -43,6 +43,7 @@ Files:
 - [`src/android/AndroidShaderAssets.hpp`](../../src/android/AndroidShaderAssets.hpp)
 - [`src/android/CMakeLists.txt`](../../src/android/CMakeLists.txt)
 - [`tests/android/input_state_tests.cpp`](../../tests/android/input_state_tests.cpp)
+- [`tests/android/input_tests.cpp`](../../tests/android/input_tests.cpp)
 
 ## `build`
 

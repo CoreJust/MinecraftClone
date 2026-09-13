@@ -21,6 +21,8 @@ void GameClient::run(core::Address const server_address, char const ch) {
     
     static_cast<void>(send(shared::JoinRequestMessage {
         .ch = ch,
+        .mode = m_world.mode(),
+        .configuration = m_world.configuration(),
     }));
     while (!m_accepted && m_running && isConnected()) {
         poll(std::chrono::milliseconds{ 100 });
@@ -136,11 +138,24 @@ bool GameClient::applyServerPosition(
     }
     m_state_revisions.insert_or_assign(message.ch, message.state_revision);
     if (auto const player = m_world.playerByCharacter(message.ch)) {
-        m_world.setPlayerPosition(player->id, message.x, message.y, message.x_subcell, message.y_subcell);
+        static_cast<void>(m_world.setPlayerPosition(player->id, {
+            .x = message.x,
+            .y = message.y,
+            .z = message.z,
+            .x_subcell = message.x_subcell,
+            .y_subcell = message.y_subcell,
+            .z_subcell = message.z_subcell,
+        }));
     } else {
         shared::PlayerId const id = m_next_id++;
-        m_world.spawnPlayer(id, message.ch, {{message.x, message.y}});
-        m_world.setPlayerPosition(id, message.x, message.y, message.x_subcell, message.y_subcell);
+        m_world.spawnPlayer(id, message.ch, {
+            .x = message.x,
+            .y = message.y,
+            .z = message.z,
+            .x_subcell = message.x_subcell,
+            .y_subcell = message.y_subcell,
+            .z_subcell = message.z_subcell,
+        });
     }
     if (message.ch == m_local_character) {
         while (!m_pending_inputs.empty()

@@ -157,6 +157,7 @@ if(MC_BUILD_CLIENT AND NOT ANDROID)
     client/frame_scheduler_tests.cpp
             client/game_client_prediction_tests.cpp
             client/player_presentation_tests.cpp
+            android/input_tests.cpp
             client/renderer_geometry_tests.cpp
             client/shader_assets_tests.cpp
             core/corelang_scenario_tests.cpp

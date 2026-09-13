@@ -42,9 +42,10 @@
         "src/android/AndroidShaderAssets.cpp",
         "src/android/AndroidShaderAssets.hpp",
         "src/android/CMakeLists.txt",
-        "tests/android/input_state_tests.cpp"
+        "tests/android/input_state_tests.cpp",
+        "tests/android/input_tests.cpp"
       ],
-      "sources_sha256": "16f6cdf7d744bd625757cd389a79efc12d635283a73fd2dcd6e1c363d8f62314"
+      "sources_sha256": "462b572e924706f80a75c2d177078f91ef8cb2706016cd32033883b35b324a67"
     },
     {
       "guide": "docs/BUILD.md",
@@ -133,7 +134,7 @@
         "vcpkg-configuration.json",
         "vcpkg.json"
       ],
-      "sources_sha256": "3c713c4caeb9753bf67f1502363f77ce4c7870f7e2371bcbd4f3022235b3b930"
+      "sources_sha256": "752047dad56d3e8dd084d857ac474ebb06a5c7a8258b20b4ae3dc2d8cfa21c4e"
     },
     {
       "guide": "docs/code/CORE.md",
@@ -172,7 +173,7 @@
     },
     {
       "guide": "docs/code/GAMEPLAY.md",
-      "guide_sha256": "b4ed949ab362e5ace6b6175f4f6ea0534f3f9987d295db6c18f2a06ae6e006bc",
+      "guide_sha256": "526a4155977c76bf1c8b2d277c015403b4c243ec4deade079acc09f5101b186f",
       "id": "gameplay",
       "sources": [
         "src/client/BotClient.cpp",
@@ -226,7 +227,7 @@
         "tests/core/shared_message_tests.cpp",
         "tests/core/shared_world_tests.cpp"
       ],
-      "sources_sha256": "ba3f6ccd5b20fa18de877664ccf2959caaef5233c157be80cbcf276ba197f9d6"
+      "sources_sha256": "3248db01c9687d6306c567063ad4fea46ae9430b9e28a31deb05adea52c6a70a"
     },
     {
       "guide": "docs/code/RENDERING.md",
@@ -275,7 +276,7 @@
         "tests/testsupport/image_comparison_tests.cpp",
         "tests/testsupport/include/testsupport/ImageComparison.hpp"
       ],
-      "sources_sha256": "b326b24f9be9318bbb2400c7cac59d5113df008686891d8e233b1bb51ae93483"
+      "sources_sha256": "f78e7510d9b4782287599017b74732cae44b301636f4d10b02f2c5a4df266776"
     }
   ],
   "version": 1

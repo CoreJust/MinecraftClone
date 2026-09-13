@@ -8,7 +8,7 @@ namespace {
 
 constexpr double DEGREES_TO_RADIANS = 0.017'453'292'519'943'295'769'236'907'684'89;
 constexpr double FULL_ROTATION_DEGREES = 360.0;
-constexpr double MAX_DIRECTION_COMPONENT = 127.0;
+constexpr int8_t MAX_DIRECTION_COMPONENT = 127;
 
 int8_t clampAxis(int8_t const value) noexcept {
     if (value < 0) {
@@ -58,8 +58,15 @@ MovementDirection CameraController::cameraRelativeMovement(
     };
 }
 
+int8_t CameraController::verticalMovement(bool const ascending, bool const descending) noexcept
+{
+    return static_cast<int8_t>(
+        (static_cast<int8_t>(ascending) - static_cast<int8_t>(descending)) * MAX_DIRECTION_COMPONENT
+    );
+}
+
 int8_t CameraController::quantize(double const value) noexcept {
-    return static_cast<int8_t>(value * MAX_DIRECTION_COMPONENT);
+    return static_cast<int8_t>(value * static_cast<double>(MAX_DIRECTION_COMPONENT));
 }
 
 } // namespace client

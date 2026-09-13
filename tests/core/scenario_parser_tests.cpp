@@ -158,6 +158,48 @@ end
     EXPECT_NE(shared::scenarioReplayId(*result), shared::scenarioReplayId(*alternate));
 }
 
+TEST(ScenarioParserTest, ParsesSignedFlightPlanAndCameraVerticalInput)
+{
+    static constexpr std::string_view SOURCE = R"(scenario 1
+profile flight3d-v1
+seed 42
+player alice character "@" at -4 3 12 orientation 0 0 0
+player bob character "#" at 8 -2 10 orientation 90 0 0
+begin
+input alice -1 1 1
+input bob camera 0 1 -1
+wait 2
+expect player alice position -5 4 13
+expect player bob position 9 -2 9
+end
+)";
+    auto const result = shared::parseScenario("sample.scenario", SOURCE, scenarioLimits());
+    ASSERT_TRUE(result.has_value()) << result.error().message;
+    EXPECT_EQ(result->profile(), shared::ScenarioProfile::Flight3dV1);
+    EXPECT_EQ(shared::scenarioProfileName(result->profile()), "flight3d-v1");
+    ASSERT_EQ(result->actors().size(), 2U);
+    EXPECT_EQ(result->actors()[0].x, -4);
+    EXPECT_EQ(result->actors()[1].y, -2);
+    ASSERT_EQ(result->operations().size(), 5U);
+    auto const* const direct = std::get_if<shared::ScenarioInputOperation>(&result->operations()[0].data);
+    ASSERT_NE(direct, nullptr);
+    EXPECT_EQ(direct->z, 1);
+    auto const* const camera = std::get_if<shared::ScenarioCameraInputOperation>(&result->operations()[1].data);
+    ASSERT_NE(camera, nullptr);
+    EXPECT_EQ(camera->vertical, -1);
+    shared::Direction const direction = shared::scenarioCameraRelativeDirection(90, 0, 1, -1);
+    EXPECT_EQ(direction.x, 127U);
+    EXPECT_EQ(direction.y, 0U);
+    EXPECT_EQ(direction.z, static_cast<uint8_t>(-127));
+    auto const* const expectation = std::get_if<shared::ScenarioExpectPositionOperation>(
+        &result->operations()[4].data
+    );
+    ASSERT_NE(expectation, nullptr);
+    EXPECT_EQ(expectation->x, 9);
+    EXPECT_EQ(expectation->y, -2);
+    EXPECT_EQ(expectation->z, 9);
+}
+
 TEST(ScenarioParserTest, RejectsNonFlat3dVerticalCoordinatesAndInvalidCameraAngles)
 {
     static constexpr std::string_view VERTICAL_PLAYER = R"(scenario 1
