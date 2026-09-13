@@ -361,10 +361,40 @@ def sanitized_icd(source: Path) -> bytes:
 def macos_launcher() -> bytes:
     return b"""#!/bin/sh
 set -eu
-bundle_root=$(CDPATH= cd -- \"$(dirname -- \"$0\")\" && pwd)
-export DYLD_LIBRARY_PATH=\"$bundle_root/lib${DYLD_LIBRARY_PATH:+:$DYLD_LIBRARY_PATH}\"
-export VK_DRIVER_FILES=\"$bundle_root/vulkan/icd.d/MoltenVK_icd.json\"
-exec \"$bundle_root/mc_main\" \"$@\"
+bundle_root=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+server_pid=''
+cleanup() {
+    if [ -n "$server_pid" ] && kill -0 "$server_pid" 2>/dev/null; then
+        kill "$server_pid" 2>/dev/null || true
+        wait "$server_pid" 2>/dev/null || true
+    fi
+}
+trap cleanup EXIT INT TERM
+export DYLD_LIBRARY_PATH="$bundle_root/lib${DYLD_LIBRARY_PATH:+:$DYLD_LIBRARY_PATH}"
+export VK_DRIVER_FILES="$bundle_root/vulkan/icd.d/MoltenVK_icd.json"
+if [ "$#" -gt 0 ]; then
+    exec "$bundle_root/mc_main" "$@"
+fi
+if /usr/sbin/lsof -nP -iUDP:20040 >/dev/null 2>&1; then
+    echo "Cannot start local server: 127.0.0.1:20040 is already in use." >&2
+    exit 1
+fi
+"$bundle_root/mc_main" --server &
+server_pid=$!
+server_ready=0
+for _ in 1 2 3 4 5 6 7 8 9 10; do
+    if /usr/sbin/lsof -a -p "$server_pid" -iUDP:20040 >/dev/null 2>&1; then
+        server_ready=1
+        break
+    fi
+    sleep 0.1
+done
+if [ "$server_ready" -ne 1 ]; then
+    echo "Local server did not become ready on 127.0.0.1:20040." >&2
+    exit 1
+fi
+echo "Starting MinecraftClone..."
+"$bundle_root/mc_main"
 """
 
 

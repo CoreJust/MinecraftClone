@@ -49,7 +49,9 @@ Current dependencies:
 6. glm;
 7. gtest;
 8. VMA;
-9. volk.
+9. volk;
+10. GMP;
+11. MPFR.
 
 The Vulkan SDK supplies the loader and shader compiler; macOS uses MoltenVK. Use a Vulkan 1.3-capable validation environment and test the vertex fallback on devices without mesh shaders. See the build guide for the distinction between requested API version and actual capabilities.
 
@@ -58,3 +60,8 @@ The Vulkan SDK supplies the loader and shader compiler; macOS uses MoltenVK. Use
 Learn by building a performant, extensible multiplayer game: world generation and updates, network authority under latency, graphics, and progressively richer entities/content. Keep module responsibilities clear as complexity grows. Vulkan 1.4, modding, and replaceable modules are goals rather than statements of current support.
 
 [Code conventions](docs/CODE_CONVENTIONS.md) · [Version/branch convention](docs/VERSION_CONVENTION.md) · [Version history](<docs/version_history/EarlyDev 0.1/EarlyDev 0.1.0 Initiation.md>)
+
+
+![S5 stone world gameplay](docs/version_history/EarlyDev%200.1/assets/s5-stone-world.png)
+
+S5 visible runtime overview: a seed-42 air-and-stone flight scene rendered with the original mottled 16-pixel stone texture. The frame comes from the controlled runtime camera during local acceptance.

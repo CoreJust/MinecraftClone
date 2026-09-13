@@ -212,4 +212,34 @@ TEST_F(StoneRendererAcceptanceTest, RepeatedAndUpdatedMeshesHaveExpectedFrameBeh
     EXPECT_EQ(m_renderer->validationErrorCount(), 0U);
 }
 
+TEST_F(StoneRendererAcceptanceTest, RemotePlayerAltitudeChangesItsVisiblePosition)
+{
+    m_renderer->setChunkMesh(deterministicChunk());
+    m_renderer->setCamera({ .position = { 8.0, -20.0, 12.0 }, .angles = {} });
+    std::array<client::PlayerRenderData, 1> players{
+        client::PlayerRenderData{ .x = 8.0F, .y = 4.0F, .color = { 1.0F, 0.0F, 0.0F, 1.0F }, .z = 10.0F },
+    };
+    auto const red_center = [](client::RendererFrameCapture const& frame) -> std::optional<double> {
+        uint64_t count = 0U;
+        uint64_t row_sum = 0U;
+        for (uint64_t offset = 0U; offset < frame.rgba8.size(); offset += 4U) {
+            if (frame.rgba8[offset] > 80U && frame.rgba8[offset + 1U] < 20U && frame.rgba8[offset + 2U] < 20U) {
+                ++count;
+                row_sum += offset / 4U / frame.width;
+            }
+        }
+        if (count == 0U) {
+            return std::nullopt;
+        }
+        return static_cast<double>(row_sum) / static_cast<double>(count);
+    };
+    auto const lower = red_center(m_renderer->render(players, std::chrono::steady_clock::now() + RENDER_TIMEOUT));
+    players[0].z = 14.0F;
+    auto const higher = red_center(m_renderer->render(players, std::chrono::steady_clock::now() + RENDER_TIMEOUT));
+    ASSERT_TRUE(lower.has_value()) << "remote player is not visible above the stone terrain";
+    ASSERT_TRUE(higher.has_value()) << "elevated remote player is not visible";
+    EXPECT_LT(*higher, *lower - 10.0) << "increasing world altitude must move the visible player upward";
+    EXPECT_EQ(m_renderer->validationErrorCount(), 0U);
+}
+
 } // namespace

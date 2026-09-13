@@ -20,38 +20,14 @@ World players -> PlayerClient / AndroidPlayerClient -> PlayerRenderData span
   -> VulkanRenderer -> PresentationContext::Frame callback -> present/readback
 ```
 
-Renderer clears to a light sky blue, draws a depth-tested 32-by-32 slate
-platform volume from `z=-1.0` through `z=0.0` (an exact one-unit visible
-thickness), then its subdued grid top and coloured 2-by-2-by-2 player boxes.
-The platform draw omits its coplanar top triangles; a single non-overlapping
-grid-material draw owns the complete `z=0` surface, fills every cell with slate,
-and fades its thin borders toward the surface colour with distance. This keeps
-strict `LESS` depth comparison without an epsilon or coplanar overlay. Player
-faces use restrained per-face shading so the silhouette remains readable
-against the platform and sky. Each authoritative
-local-player update targets the player center `(x+1, y+1, 1)` and places a
-close third-person camera six units behind and above it using the current
-yaw/pitch; cursor and touch orbit recompute that position every frame. Both
-the local and remote cubes are submitted. A right-handed Z-up camera supplies
-a zero-to-one projection with Y flipped for its positive-height viewport. The
-flip reverses winding, so grid/player/HUD triangles are reversed for the
-CoreCpp CCW back-face policy.
-
-Flight scenes submit cached stone faces; uploads occur only when mesh identity
-changes. Stone shaders use 16-by-16 seamless noise with mineral flecks on desktop/Android.
-`GridPushConstants` is 96 bytes and `BoxPushConstants` is 112 bytes; both carry
-the projection-view matrix, while the box block also carries independent XYZ
-origin and extent vectors. Their ABI must remain compatible with the GLSL push
-blocks. The grid and boxes use a same-scope depth attachment selected
-deterministically from `D32_SFLOAT`, then `D16_UNORM`, with the CC-0014
-explicit `LESS` depth test/write pipeline state. Each freshly
-created attachment receives an explicit `UNDEFINED` to
-`DEPTH_STENCIL_ATTACHMENT_OPTIMAL` barrier before the first dynamic-rendering
-pass; resize destruction releases view, image, and memory before its resource
-scope. The portable `RuntimeKernel::SpirvModule` boundary
-currently accepts vertex/fragment stages, so both desktop and Android use
-`grid.vert`, `player.vert`, and `trivial.frag`; mesh modules remain assets but
-are not a selected Client pipeline.
+The platform/grid/player scene is legacy flat-world Snapshot 4 coverage. Normal
+Flight clears to sky blue, submits cached exposed faces from the deterministic
+seed-42 16-by-16-by-16 air-and-stone chunk, and uses the original 16-by-16 stone
+texture. Flight uses a first-person camera at the authoritative local player
+position and draws remote players only. Mesh uploads occur only when content
+identity changes. The HUD reports authoritative Flight XYZ, including altitude,
+and camera yaw/pitch/roll in degrees. The camera remains right-handed Z-up with
+zero-to-one depth and the existing depth-tested scene policy.
 
 Shader assets are borrowed: desktop `InstalledShaderAssets` reads the installed
 `shaders/` directory and Android `AndroidShaderAssets` reads APK assets. Both
@@ -61,8 +37,8 @@ accept bare `.spv` names only; no source-tree fallback is allowed.
 
 `DebugHudState` defaults off for benchmark/capture and normal gameplay enables
 it. It formats four bounded allocation-free lines and packs four sanitized
-ASCII bytes into each instance word. The coordinate and angle rows use padded
-groups (`XYZ:  1.25   2.50   0.00` and `YPR deg: 45.0  -10.0  3.0`).
+ASCII bytes into each instance word. Coordinate and angle rows use padded
+groups (`XYZ: 1.25 2.50 0.00`, `YPR deg: 45.0 -10.0 3.0`).
 `debug_hud.vert` expands those instances into
 procedural 16-by-32 quads, twice the bitmap's native 8-by-16 glyph size, with
 a 40-pixel row advance. Its DPI scale is capped by the presentation extent so
@@ -72,13 +48,10 @@ glyph-row addressing. The renderer submits all packed words with one instanced
 draw through the same-device `GraphicsProgram` and `VulkanKernelCache` used by
 the scene.
 
-Desktop and Android supply the current local character's authoritative X/Y and
-plane-derived Z (`0` while the world remains flat), plus camera yaw/pitch/roll
-as `Y/P/R(deg):yaw,pitch,roll`. The HUD labels this `XYZ`; its plane-derived Z
-is documented here, not camera-eye elevation. The renderer overwrites the presentation bit from its
-own successful `PresentationContext::complete` result, so dropped or
-non-presented frames do not enter the one-second FPS window. The public
-`setDebugHudEnabled`/`toggleDebugHud` controls support performance measurements.
+Desktop and Android supply authoritative local Flight XYZ, including Z altitude,
+plus camera yaw/pitch/roll as `Y/P/R(deg)`. The renderer counts only frames whose
+`PresentationContext::complete` succeeds; public HUD controls support benchmark
+comparisons.
 
 ## Capture, input, and validation
 
@@ -112,6 +85,12 @@ bounded and a reference changes only after deliberate native-size review.
 `RendererSmokeTest` separately covers visible GLFW presentation, recreation,
 readback, input, and the default-on HUD.
 
+The S5 offscreen stone acceptance captures the cached chunk from above and
+below, verifies textured stone and sky pixels, checks that repeated identical
+meshes produce identical RGBA8 frames, and checks that replacing the mesh
+changes the frame without validation errors. Its altitude case verifies that a
+remote player's rendered position moves upward when authoritative Z increases.
+
 The benchmark uses shared renderer options; `--present-immediate` fails without
 immediate negotiation. Release evidence records negotiated mode, actual pixel
 resolution, scene, HUD state, sustained rate, p50/p95/p99/max, and stutters;
@@ -124,3 +103,8 @@ in framebuffer pixels. Their shared bounded GLFW setup converts the current
 pixel-to-logical scale into a checked logical resize before creating a
 `PresentationContext`; an exact framebuffer mismatch, no resize progress, or
 an oscillating adjustment fails rather than changing the recorded request.
+Capture additionally requires a completed transfer readback with the requested
+extent and both sky and textured stone content. Benchmark additionally requires
+a presented frame, a nonzero stone draw, and a stable cached mesh upload count;
+it records p50/p95/p99, maximum, mean, acquire, command-record, and completion
+wait timings within its monotonic deadline.

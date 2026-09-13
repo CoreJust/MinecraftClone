@@ -41,3 +41,13 @@ Additions:
 2. Depth-tested floating platform, grid, and player boxes with a reusable Runtime graphics/kernel path and fixed-size true-offscreen golden coverage.
 3. Default-on texture-free shader bitmap debug HUD with windowed FPS, monotonic uptime, player position, and camera angles.
 4. CoreLang 0.0.1 scripts, exact reusable CoreCpp/CoreProject2026 packages, and separated Runtime transport/game protocol boundaries.
+
+## EarlyDev 0.1.0:5(26.09.13)
+
+S5 adds the first textured voxel-world gameplay slice to the S4 foundation.
+![S5 stone world](assets/s5-stone-world.png)
+
+The visible runtime overview is shown above:
+a seed-42 air-and-stone flight scene rendered with the original mottled
+16-pixel stone texture. Actual GPU-rendered gameplay scene captured with the
+fixed acceptance camera.

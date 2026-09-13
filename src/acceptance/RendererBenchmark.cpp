@@ -4,6 +4,8 @@
 #include <client/render/VulkanRenderer.hpp>
 
 #include <shared/ProjectInfo.hpp>
+#include <shared/world/CanonicalWorld.hpp>
+#include <shared/world/ChunkMesher.hpp>
 
 #include <core/platform/glfw/GlfwWindow.hpp>
 
@@ -101,6 +103,18 @@ uint64_t percentileIndex(uint64_t const sample_count, uint64_t const percentile)
     return (sample_count * percentile + 99U) / 100U - 1U;
 }
 
+[[nodiscard]]
+shared::ChunkMesh makeS5ChunkMesh()
+{
+    shared::ChunkMesher mesher;
+    return mesher.update(shared::canonicalWorld().chunk());
+}
+
+constexpr client::CameraPose S5_CAMERA{
+    .position = { 8.0, -20.0, 18.0 },
+    .angles = { .pitch_degrees = -25.0 },
+};
+
 } // namespace
 
 FrameTimingSummary summarizeFrameTimings(std::span<std::chrono::nanoseconds const> const samples)
@@ -188,17 +202,23 @@ std::expected<RuntimeEvidence, std::string> runRendererBenchmark(
         renderer_options,
     };
     renderer.setDebugHudEnabled(options.debug_hud_enabled);
+    shared::ChunkMesh const chunk_mesh = makeS5ChunkMesh();
+    if (chunk_mesh.faces.empty()) {
+        return std::unexpected("renderer benchmark generated an empty S5 chunk mesh");
+    }
+    renderer.setCamera(S5_CAMERA);
+    renderer.setChunkMesh(chunk_mesh);
+    client::RendererRuntimeInfo const initial_runtime = renderer.runtimeInfo();
+    if (initial_runtime.chunk_face_count != chunk_mesh.faces.size()
+        || initial_runtime.chunk_mesh_upload_count == 0U
+    ) {
+        return std::unexpected("renderer benchmark did not upload the S5 chunk mesh");
+    }
     std::vector<std::chrono::nanoseconds> samples;
     std::vector<std::chrono::nanoseconds> acquire_wait_samples;
     std::vector<std::chrono::nanoseconds> command_record_samples;
     std::vector<std::chrono::nanoseconds> complete_present_wait_samples;
-    std::vector<client::PlayerRenderData> const players{
-        client::PlayerRenderData{
-            .x = 4U,
-            .y = 4U,
-            .color = { 1.0F, 1.0F, 1.0F, 1.0F },
-        },
-    };
+    std::span<client::PlayerRenderData const> const players{ };
     std::chrono::steady_clock::time_point const started_at = std::chrono::steady_clock::now();
     std::chrono::steady_clock::time_point const deadline = started_at + options.deadline;
     uint64_t rendered_frames{ 0 };
@@ -219,8 +239,11 @@ std::expected<RuntimeEvidence, std::string> runRendererBenchmark(
     if (!renderer.waitForSubmittedFrames(deadline)) {
         return std::unexpected("renderer benchmark exceeded its monotonic deadline while draining warmup frames");
     }
+    uint64_t const sample_initial_mesh_upload_count = renderer.runtimeInfo().chunk_mesh_upload_count;
     std::chrono::steady_clock::time_point const sample_started_at = std::chrono::steady_clock::now();
     uint64_t frame_count{ 0 };
+    bool observed_stone_draw = false;
+    bool sample_mesh_uploads_stayed_stable = true;
     while (std::chrono::steady_clock::now() - sample_started_at < options.sample_duration) {
         if (std::chrono::steady_clock::now() >= deadline) {
             return std::unexpected("renderer benchmark exceeded its monotonic deadline");
@@ -233,6 +256,14 @@ std::expected<RuntimeEvidence, std::string> runRendererBenchmark(
         }
         if (renderer.render(players, deadline)) {
             client::RendererRuntimeInfo const frame_runtime = renderer.runtimeInfo();
+            observed_stone_draw = observed_stone_draw
+                || (
+                    frame_runtime.chunk_face_count == chunk_mesh.faces.size()
+                    && frame_runtime.chunk_draw_count > 0U
+                );
+            if (frame_runtime.chunk_mesh_upload_count != sample_initial_mesh_upload_count) {
+                sample_mesh_uploads_stayed_stable = false;
+            }
             samples.push_back(frame_runtime.cpu_frame_duration);
             acquire_wait_samples.push_back(frame_runtime.cpu_acquire_wait_duration);
             command_record_samples.push_back(frame_runtime.cpu_command_record_duration);
@@ -256,6 +287,12 @@ std::expected<RuntimeEvidence, std::string> runRendererBenchmark(
     }
     if (!rendererBenchmarkPresentModeSatisfied(options, runtime.present_mode)) {
         return std::unexpected("renderer benchmark required immediate presentation but negotiated another mode");
+    }
+    if (runtime.chunk_face_count != chunk_mesh.faces.size()
+        || !observed_stone_draw
+        || !sample_mesh_uploads_stayed_stable
+    ) {
+        return std::unexpected("renderer benchmark did not retain and draw the cached S5 chunk mesh");
     }
     double const sample_elapsed_seconds = std::chrono::duration<double>(sample_elapsed).count();
     FrameTimingSummary const timings = summarizeFrameTimings(samples);

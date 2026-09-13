@@ -26,7 +26,7 @@
         "tests/acceptance/runtime_cli_tests.cmake",
         "tests/acceptance/scenario_runner_tests.cpp"
       ],
-      "sources_sha256": "12d7b3ccffe38a5b121cb56e977cd63bf645f25d71be3bd05deac330f21efcfc"
+      "sources_sha256": "cc95a9c21ae4cbc29c476119689a081f11c06ebb764f5323517859b8dca6b4d1"
     },
     {
       "guide": "docs/code/ANDROID.md",
@@ -135,7 +135,7 @@
         "vcpkg-configuration.json",
         "vcpkg.json"
       ],
-      "sources_sha256": "80e30e8d2b8d02e7ba08d28ef3655571382270a5b6128eadcc370bcd30825f0b"
+      "sources_sha256": "b2116b184b749b767f952203e9304611e384fab52f6a9c57b058fa4a6d81acd7"
     },
     {
       "guide": "docs/code/CORE.md",
@@ -228,11 +228,11 @@
         "tests/core/shared_message_tests.cpp",
         "tests/core/shared_world_tests.cpp"
       ],
-      "sources_sha256": "44aeef5111380f2473cc7afbeb8d1fa09184c90228fa1f87f9dbdc371d458751"
+      "sources_sha256": "0657e0ad9cc2d35558134a257c11aec51a8ccacdaf2fa8212cfa9551f7c5508d"
     },
     {
       "guide": "docs/code/RENDERING.md",
-      "guide_sha256": "85a947096d05cf685117a9f4832e6615f4068446c4cdb01d093cb55ef51a229a",
+      "guide_sha256": "b147b8cde9466a46f7dbe1e3bd582a888d19bdcb4779c709908f0281d4c78855",
       "id": "rendering",
       "sources": [
         "src/client/CMakeLists.txt",
@@ -277,7 +277,7 @@
         "tests/testsupport/image_comparison_tests.cpp",
         "tests/testsupport/include/testsupport/ImageComparison.hpp"
       ],
-      "sources_sha256": "11c2ddad3aeb0e30a79aacccb2d0b77a40ec2e6764e95107f1fd9e511d8d9fbd"
+      "sources_sha256": "a0ea0010e56ebfbf14eacc6500edc9f1515a1dcc13c02575f64e8256d4016f11"
     }
   ],
   "version": 1
