@@ -41,6 +41,25 @@ class WindowsRuntimeStagingTests(unittest.TestCase):
         self.assertIn('DEPENDENCIES ${MC_WINDOWS_RUNTIME_DEPENDENCIES}', root_cmake)
         self.assertIn('REQUIRED_FILES "${MC_VULKAN_RUNTIME_DLL}"', root_cmake)
         self.assertIn('install(FILES "${MC_VULKAN_RUNTIME_DLL}" DESTINATION .)', client)
+        self.assertIn("if(WIN32)\n    if(MC_BUILD_CLIENT)", tests)
+        self.assertIn(
+            "set(MC_TEST_WINDOWS_RUNTIME_DEPENDENCIES\n"
+            "            CoreCpp::Core\n"
+            "            CoreCpp::Runtime\n"
+            "            CoreCpp::RuntimeNetwork\n"
+            "            CoreProject2026::CoreLang\n"
+            "            fmt::fmt\n"
+            "            spdlog::spdlog\n"
+            "            unofficial::enet::enet\n"
+            "        )",
+            tests,
+        )
+        self.assertIn(
+            "DEPENDENCIES ${MC_TEST_WINDOWS_RUNTIME_DEPENDENCIES} GTest::gtest",
+            tests,
+        )
+        tests_stage = tests.index("mc_stage_windows_runtime(\n        mc_tests")
+        self.assertLess(tests_stage, tests.index("gtest_discover_tests(mc_tests)"))
         for target in ("mc_tests", "mc_renderer_smoke", "mc_renderer_golden"):
             self.assertIn(f"{target}\n        RUNTIME_ROOT", tests)
             self.assertIn(f'RUNTIME_ROOT "$<TARGET_FILE_DIR:{target}>"', tests)

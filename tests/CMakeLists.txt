@@ -145,10 +145,26 @@ if(MC_BUILD_CLIENT AND NOT ANDROID)
     )
     target_include_directories(mc_tests PRIVATE ${PROJECT_SOURCE_DIR}/src/android)
     mc_copy_target_shaders(mc_tests mc)
+endif()
+
+if(WIN32)
+    if(MC_BUILD_CLIENT)
+        set(MC_TEST_WINDOWS_RUNTIME_DEPENDENCIES ${MC_WINDOWS_RUNTIME_DEPENDENCIES})
+    else()
+        set(MC_TEST_WINDOWS_RUNTIME_DEPENDENCIES
+            CoreCpp::Core
+            CoreCpp::Runtime
+            CoreCpp::RuntimeNetwork
+            CoreProject2026::CoreLang
+            fmt::fmt
+            spdlog::spdlog
+            unofficial::enet::enet
+        )
+    endif()
     mc_stage_windows_runtime(
         mc_tests
         RUNTIME_ROOT "$<TARGET_FILE_DIR:mc_tests>"
-        DEPENDENCIES ${MC_WINDOWS_RUNTIME_DEPENDENCIES} GTest::gtest
+        DEPENDENCIES ${MC_TEST_WINDOWS_RUNTIME_DEPENDENCIES} GTest::gtest
     )
 endif()
 
