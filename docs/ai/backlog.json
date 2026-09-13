@@ -6389,5 +6389,39 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0188",
+    "title": "Repair Windows numeric dependency acquisition",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P0",
+    "route": "luna",
+    "milestone": "ED-010-S5",
+    "depends_on": [],
+    "acceptance": "Windows CI acquires verified numeric build tools and builds the S5 package; existing Mac and Android pins remain unchanged.",
+    "evidence": "24 focused acquisition tests pass; overlay applied successfully to actual pinned GMP port archive; downloaded replacement SHA512 matches upstream37bb045; Windows hosted package validation follows publication.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0036",
+    "motivation": "The pinned MSYS autoconf package was removed upstream, blocking Windows GMP acquisition.",
+    "context": "S5 tag artifact run34755396710 failed with HTTP404 for autoconf2.71-2.71-3-any.pkg.tar.zst before compilation.",
+    "complexity": "low",
+    "created_at": "2026-09-13",
+    "resolved_at": "2026-09-13",
+    "resolution_changes": "Generate a Windows-only GMP overlay replacing the removed autoconf artifact with the upstream verified URL and SHA512, retaining registry and other platform pins.",
+    "plan": [
+      "Copy the pinned GMP port into a Windows-only overlay and apply the upstream verified autoconf URL/checksum correction; retain all other platform and registry pins."
+    ],
+    "product_changes": [],
+    "code_changes": [],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]

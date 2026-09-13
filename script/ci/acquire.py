@@ -23,6 +23,12 @@ CMAKE_VERSION = "3.31.6"
 NINJA_VERSION = "1.13.1"
 PYTHON_VERSION = "3.12.10"
 VCPKG_COMMIT = "2b65c20fc66eda893aa15a15a453c3cf09500b19"
+GMP_PORT = "gmp"
+GMP_AUTOCONF_OVERLAY_ID = "gmp-autoconf-2.71-4"
+GMP_AUTOCONF_OLD_URL = "https://mirror.msys2.org/msys/x86_64/autoconf2.71-2.71-3-any.pkg.tar.zst"
+GMP_AUTOCONF_NEW_URL = "https://repo.msys2.org/msys/x86_64/autoconf2.71-2.71-4-any.pkg.tar.zst"
+GMP_AUTOCONF_OLD_SHA512 = "dd312c428b2e19afd00899eb53ea4255794dea4c19d1d6dea2419cb6a54209ea2130d48abbc20af12196b9f628143436f736fbf889809c2c2291be0c69c0e306"
+GMP_AUTOCONF_NEW_SHA512 = "c93b791eb55893cbe7c425e764074837355fd165deb7b1775f652c8e25d9d1f0cdd4120ab710d56fb859b7df55c4f971eccda7c112448f60615bff8a2dc81166"
 VULKAN_VERSION = "1.4.357.0"
 VULKAN_DOWNLOADS = {
     "windows": {
@@ -495,6 +501,35 @@ def install_vcpkg(root: Path) -> None:
     print(root)
 
 
+def install_windows_gmp_overlay(vcpkg_root: Path, installed_root: Path) -> Path:
+    """Copy and patch only the unavailable MSYS autoconf artifact in the pinned GMP port."""
+    source_port = vcpkg_root / "ports" / GMP_PORT
+    if source_port.is_symlink() or not source_port.is_dir():
+        raise CiError(f"pinned GMP port is missing: {source_port}")
+    overlay_root = installed_root.parent / "vcpkg-overlays"
+    overlay_port = overlay_root / GMP_PORT
+    if overlay_port.exists() or overlay_port.is_symlink():
+        raise CiError(f"Windows GMP overlay already exists: {overlay_port}")
+    portfile = source_port / "portfile.cmake"
+    if portfile.is_symlink() or not portfile.is_file():
+        raise CiError(f"pinned GMP portfile is missing: {portfile}")
+    contents = portfile.read_text(encoding="utf-8")
+    if contents.count(GMP_AUTOCONF_OLD_URL) != 1:
+        raise CiError("pinned GMP port autoconf URL does not match the expected unavailable artifact")
+    if contents.count(GMP_AUTOCONF_OLD_SHA512) != 1:
+        raise CiError("pinned GMP port autoconf SHA-512 does not match the expected unavailable artifact")
+    shutil.copytree(source_port, overlay_port)
+    patched_portfile = overlay_port / "portfile.cmake"
+    patched_portfile.write_text(
+        contents.replace(GMP_AUTOCONF_OLD_URL, GMP_AUTOCONF_NEW_URL).replace(
+            GMP_AUTOCONF_OLD_SHA512,
+            GMP_AUTOCONF_NEW_SHA512,
+        ),
+        encoding="utf-8",
+    )
+    return overlay_root
+
+
 def install_manifest_dependencies(vcpkg_root: Path, platform_name: str, installed_root: Path) -> Path:
     """Install repository manifest ports into an isolated, platform-specific root."""
     triplets = {
@@ -510,13 +545,16 @@ def install_manifest_dependencies(vcpkg_root: Path, platform_name: str, installe
     if installed_root.exists():
         raise CiError(f"vcpkg install root already exists: {installed_root}")
     repository = Path(__file__).resolve().parents[2]
-    run([
+    command = [
         str(executable),
         "install",
         f"--triplet={triplets[platform_name]}",
         f"--x-manifest-root={repository}",
         f"--x-install-root={installed_root}",
-    ])
+    ]
+    if platform_name == "windows":
+        command.append(f"--overlay-ports={install_windows_gmp_overlay(vcpkg_root, installed_root)}")
+    run(command)
     if not installed_root.is_dir():
         raise CiError(f"vcpkg did not create its install root: {installed_root}")
     write_github_env("VCPKG_INSTALLED_DIR", str(installed_root))
@@ -591,6 +629,7 @@ def record_metadata(platform_name: str, preset: str, output: Path) -> None:
     elif platform_name == "windows":
         metadata["msvc"] = command_version(["cl"], accepted=(0, 2))
         metadata["windows_sdk_include"] = str(expected_sdk_include())
+        metadata["vcpkg_gmp_overlay"] = GMP_AUTOCONF_OVERLAY_ID
     else:
         raise CiError(f"unsupported platform: {platform_name}")
     output.parent.mkdir(parents=True, exist_ok=True)
