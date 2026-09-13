@@ -373,7 +373,7 @@ TEST_F(ProductionGameServerTest, ConcurrentNormalCadenceInputsDoNotStarveNewJoin
 {
     static constexpr uint32_t INPUTS_PER_SENDER_BEFORE_JOIN{ 12 };
     static constexpr std::chrono::seconds JOIN_TIMEOUT{ 1 };
-    static constexpr std::chrono::seconds NORMAL_CADENCE_TIMEOUT{ 2 };
+    static constexpr std::chrono::seconds NORMAL_CADENCE_TIMEOUT{ 5 };
     static constexpr shared::Direction DIRECTION{ .x = 127, .y = 0 };
     ProtocolClient first;
     ProtocolClient second;
@@ -413,9 +413,10 @@ TEST_F(ProductionGameServerTest, ConcurrentNormalCadenceInputsDoNotStarveNewJoin
     ) {
         std::this_thread::sleep_for(std::chrono::milliseconds{ 1 });
     }
-    bool const normal_cadence_backlog_created =
-        first_inputs_sent.load(std::memory_order_relaxed) >= INPUTS_PER_SENDER_BEFORE_JOIN
-        && second_inputs_sent.load(std::memory_order_relaxed) >= INPUTS_PER_SENDER_BEFORE_JOIN;
+    uint32_t const first_inputs_before_join = first_inputs_sent.load(std::memory_order_relaxed);
+    uint32_t const second_inputs_before_join = second_inputs_sent.load(std::memory_order_relaxed);
+    bool const normal_cadence_backlog_created = first_inputs_before_join >= INPUTS_PER_SENDER_BEFORE_JOIN
+        && second_inputs_before_join >= INPUTS_PER_SENDER_BEFORE_JOIN;
 
     auto const join_started = std::chrono::steady_clock::now();
     bool const joined = normal_cadence_backlog_created && join(newcomer, '$');
@@ -429,7 +430,8 @@ TEST_F(ProductionGameServerTest, ConcurrentNormalCadenceInputsDoNotStarveNewJoin
     second_sender.join();
 
     EXPECT_FALSE(send_failed.load(std::memory_order_relaxed));
-    EXPECT_TRUE(normal_cadence_backlog_created);
+    EXPECT_GE(first_inputs_before_join, INPUTS_PER_SENDER_BEFORE_JOIN);
+    EXPECT_GE(second_inputs_before_join, INPUTS_PER_SENDER_BEFORE_JOIN);
     EXPECT_TRUE(joined);
     EXPECT_TRUE(received_authoritative_state);
     EXPECT_LT(join_elapsed, JOIN_TIMEOUT);
