@@ -6006,5 +6006,41 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0207",
+    "title": "Allow scheduler slack before cadence measurement",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P0",
+    "route": "luna",
+    "milestone": "EarlyDev 0.1.0:4",
+    "depends_on": [],
+    "acceptance": "The production concurrency regression allows bounded setup scheduling slack while preserving twelve inputs per sender and the one-second measured newcomer join bound.",
+    "evidence": "Rebuilt mc_tests and repeated the exact ProductionGameServerTest.ConcurrentNormalCadenceInputsDoNotStarveNewJoin regression ten times; measured one-second join bound remains unchanged.",
+    "blocker": "",
+    "owner": "",
+    "level": "basic",
+    "parent": "MC-AI-0035",
+    "motivation": "Hosted macOS run34758655921 failed during test preparation before measuring the join under test.",
+    "context": "The observed failure was normal_cadence_inputs_prepared=false; the newcomer connected and spawned, so no production starvation was demonstrated.",
+    "complexity": "low",
+    "created_at": "2026-09-13",
+    "resolved_at": "2026-09-13",
+    "resolution_changes": "Increase only the pre-measurement cadence preparation timeout from two to five seconds.",
+    "plan": [
+      "Adjust the bounded preparation timeout and repeat the exact focused regression."
+    ],
+    "product_changes": [],
+    "code_changes": [
+      "tests/core/game_server_tests.cpp."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]

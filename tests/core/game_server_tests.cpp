@@ -322,7 +322,7 @@ TEST_F(ProductionGameServerTest, ConcurrentNormalCadenceInputsDoNotStarveNewJoin
 {
     static constexpr uint32_t INPUTS_PER_SENDER_BEFORE_JOIN{ 12 };
     static constexpr std::chrono::seconds JOIN_TIMEOUT{ 1 };
-    static constexpr std::chrono::seconds NORMAL_CADENCE_TIMEOUT{ 2 };
+    static constexpr std::chrono::seconds NORMAL_CADENCE_TIMEOUT{ 5 };
     static constexpr shared::Direction DIRECTION{ .x = 127, .y = 0 };
     ProtocolClient first;
     ProtocolClient second;
