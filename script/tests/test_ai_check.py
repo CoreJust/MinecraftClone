@@ -338,6 +338,7 @@ class AiCheckTests(unittest.TestCase):
             fake_python = directory_path / "python"
             fake_python.write_text(
                 "#!/bin/sh\n"
+                "case \"$1\" in script/ci/release_guard.py) exit 0;; esac\n"
                 "printf '%s\\n' \"$*\" > \"$HOOK_LOG\"\n"
                 "exit \"${HOOK_EXIT:-0}\"\n",
                 encoding="utf-8",

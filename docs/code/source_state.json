@@ -100,6 +100,7 @@
         "script/ci/__init__.py",
         "script/ci/acquire.py",
         "script/ci/build_snapshot.py",
+        "script/ci/release_guard.py",
         "script/ci/verify_release_assets.py",
         "script/code_checks.py",
         "script/colored_print.py",
@@ -121,6 +122,7 @@
         "script/tests/test_ci_acquire.py",
         "script/tests/test_package_snapshot.py",
         "script/tests/test_pre_finalization_candidate.py",
+        "script/tests/test_release_guard.py",
         "script/tests/test_runtime_cli.py",
         "script/tests/test_verify_release_assets.py",
         "script/tests/test_windows_runtime_staging.py",
@@ -134,7 +136,7 @@
         "vcpkg-configuration.json",
         "vcpkg.json"
       ],
-      "sources_sha256": "58945d5b448b388286c792a2d78b51030bbf6cc40b5357f0f3bff3eca69b24c5"
+      "sources_sha256": "d047b080fd7c7dc4e8d8deaa4a1b186feb7f11673634c09bc60e370271df6260"
     },
     {
       "guide": "docs/code/CORE.md",
