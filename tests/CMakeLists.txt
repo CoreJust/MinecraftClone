@@ -84,6 +84,14 @@ if(MC_ENABLE_STONE_RENDERER_ACCEPTANCE)
 endif()
 
 if(MC_BUILD_CLIENT AND NOT ANDROID)
+    find_package(Python3 REQUIRED COMPONENTS Interpreter)
+    add_test(
+        NAME AcceptanceCli.AutomaticJoin
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/acceptance/client_launch_test.py
+            $<TARGET_FILE:mc_main>
+    )
+    set_tests_properties(AcceptanceCli.AutomaticJoin PROPERTIES TIMEOUT 30)
     add_test(
         NAME AcceptanceCli.RuntimeModes
         COMMAND ${CMAKE_COMMAND}

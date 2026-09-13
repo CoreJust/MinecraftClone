@@ -45,32 +45,36 @@ foreach(required_text
     endif()
 endforeach()
 
-set(valid_core_semicolon "${OUTPUT_DIRECTORY}/valid-semicolon.core")
-set(valid_core_semicolon_evidence "${OUTPUT_DIRECTORY}/valid-semicolon.json")
-file(WRITE "${valid_core_semicolon}" [=[@version("0.0.1");
-@use MinecraftScenario
-profile("flat2d-v1")
-seed(42u64)
-player("alice", '@', 4u8, 4u8)
-input("alice", 1i8, 0i8)
-wait(10u64)
-expect_position("alice", 9u8, 4u8)
+set(invalid_core_semicolon "${OUTPUT_DIRECTORY}/invalid-semicolon.core")
+set(invalid_core_semicolon_evidence "${OUTPUT_DIRECTORY}/invalid-semicolon.json")
+file(WRITE "${invalid_core_semicolon}" [=[@version("0.0.3");
+@use minecraft
+pub fn scenario() {
+    profile("flight3d-v1")
+    seed(42u64)
+    playerXYZ("alice", '@'c8, 4i32, 4i32, 0i32, 0i16, 0i16, 0i16)
+    moveXYZ("alice", 1i8, 0i8, 0i8)
+    wait(10u64)
+    expectXYZ("alice", 9i32, 4i32, 0i32)
+}
 ]=])
-execute_process(COMMAND "${MC_MAIN}" --scenario "${valid_core_semicolon}" --evidence "${valid_core_semicolon_evidence}" RESULT_VARIABLE valid_core_semicolon_result TIMEOUT 10)
-if(NOT valid_core_semicolon_result EQUAL 0)
-    message(FATAL_ERROR "semicolon-terminated CoreLang header failed")
+execute_process(COMMAND "${MC_MAIN}" --scenario "${invalid_core_semicolon}" --evidence "${invalid_core_semicolon_evidence}" RESULT_VARIABLE invalid_core_semicolon_result TIMEOUT 10)
+if(invalid_core_semicolon_result EQUAL 0)
+    message(FATAL_ERROR "CoreLang 0.0.3 unexpectedly accepted a redundant header separator")
 endif()
 
 set(valid_core "${OUTPUT_DIRECTORY}/valid.core")
 set(valid_core_evidence "${OUTPUT_DIRECTORY}/valid-core.json")
-file(WRITE "${valid_core}" [=[@version("0.0.1")
-@use MinecraftScenario
-profile("flat2d-v1")
-seed(42u64)
-player("alice", '@', 4u8, 4u8)
-input("alice", 1i8, 0i8)
-wait(10u64)
-expect_position("alice", 9u8, 4u8)
+file(WRITE "${valid_core}" [=[@version("0.0.3")
+@use minecraft
+pub fn scenario() {
+    profile("flight3d-v1")
+    seed(42u64)
+    playerXYZ("alice", '@'c8, 4i32, 4i32, 0i32, 0i16, 0i16, 0i16)
+    moveXYZ("alice", 1i8, 0i8, 0i8)
+    wait(10u64)
+    expectXYZ("alice", 9i32, 4i32, 0i32)
+}
 ]=])
 execute_process(
     COMMAND "${MC_MAIN}" --scenario "${valid_core}" --evidence "${valid_core_evidence}"
@@ -108,7 +112,7 @@ endif()
 
 set(mixed_header "${OUTPUT_DIRECTORY}/mixed.core")
 set(mixed_header_evidence "${OUTPUT_DIRECTORY}/mixed-core.json")
-file(WRITE "${mixed_header}" "@version(\"0.0.1\")\nscenario 1\n")
+file(WRITE "${mixed_header}" "@version(\"0.0.3\")\nscenario 1\n")
 execute_process(
     COMMAND "${MC_MAIN}" --scenario "${mixed_header}" --evidence "${mixed_header_evidence}"
     RESULT_VARIABLE mixed_header_result

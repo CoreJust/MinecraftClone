@@ -18,6 +18,7 @@
         "src/acceptance/include/acceptance/RenderCapture.hpp",
         "src/acceptance/include/acceptance/RendererBenchmark.hpp",
         "src/acceptance/include/acceptance/ScenarioRunner.hpp",
+        "tests/acceptance/client_launch_test.py",
         "tests/acceptance/evidence_json_tests.cpp",
         "tests/acceptance/framebuffer_extent_tests.cpp",
         "tests/acceptance/image_evidence_tests.cpp",
@@ -25,7 +26,7 @@
         "tests/acceptance/runtime_cli_tests.cmake",
         "tests/acceptance/scenario_runner_tests.cpp"
       ],
-      "sources_sha256": "7a6a61b480a0a91643fdcf8577a102d605da2992b721abd50b8d885827890bff"
+      "sources_sha256": "12d7b3ccffe38a5b121cb56e977cd63bf645f25d71be3bd05deac330f21efcfc"
     },
     {
       "guide": "docs/code/ANDROID.md",
@@ -134,7 +135,7 @@
         "vcpkg-configuration.json",
         "vcpkg.json"
       ],
-      "sources_sha256": "752047dad56d3e8dd084d857ac474ebb06a5c7a8258b20b4ae3dc2d8cfa21c4e"
+      "sources_sha256": "80e30e8d2b8d02e7ba08d28ef3655571382270a5b6128eadcc370bcd30825f0b"
     },
     {
       "guide": "docs/code/CORE.md",
@@ -173,7 +174,7 @@
     },
     {
       "guide": "docs/code/GAMEPLAY.md",
-      "guide_sha256": "526a4155977c76bf1c8b2d277c015403b4c243ec4deade079acc09f5101b186f",
+      "guide_sha256": "f0c2b10fe11187a18dd2c76f2f94056cf515d011042adce9d401f2aa807f8096",
       "id": "gameplay",
       "sources": [
         "src/client/BotClient.cpp",
@@ -227,7 +228,7 @@
         "tests/core/shared_message_tests.cpp",
         "tests/core/shared_world_tests.cpp"
       ],
-      "sources_sha256": "3248db01c9687d6306c567063ad4fea46ae9430b9e28a31deb05adea52c6a70a"
+      "sources_sha256": "44aeef5111380f2473cc7afbeb8d1fa09184c90228fa1f87f9dbdc371d458751"
     },
     {
       "guide": "docs/code/RENDERING.md",

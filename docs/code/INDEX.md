@@ -20,6 +20,7 @@ Files:
 - [`src/acceptance/include/acceptance/RenderCapture.hpp`](../../src/acceptance/include/acceptance/RenderCapture.hpp)
 - [`src/acceptance/include/acceptance/RendererBenchmark.hpp`](../../src/acceptance/include/acceptance/RendererBenchmark.hpp)
 - [`src/acceptance/include/acceptance/ScenarioRunner.hpp`](../../src/acceptance/include/acceptance/ScenarioRunner.hpp)
+- [`tests/acceptance/client_launch_test.py`](../../tests/acceptance/client_launch_test.py)
 - [`tests/acceptance/evidence_json_tests.cpp`](../../tests/acceptance/evidence_json_tests.cpp)
 - [`tests/acceptance/framebuffer_extent_tests.cpp`](../../tests/acceptance/framebuffer_extent_tests.cpp)
 - [`tests/acceptance/image_evidence_tests.cpp`](../../tests/acceptance/image_evidence_tests.cpp)

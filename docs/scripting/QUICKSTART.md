@@ -11,7 +11,7 @@ begin
 input alice 1 0 0
 wait 10
 input alice 0 0 0
-expect player alice position 5 4 0
+expect player alice position 9 4 0
 end
 ```
 
@@ -32,7 +32,7 @@ pub fn scenario() {
     playerXYZ("alice", '@'c8, 4i32, 4i32, 0i32, 0i16, 0i16, 0i16)
     if true { moveRight("alice") }
     wait(10u64)
-    expectXYZ("alice", 5i32, 4i32, 0i32)
+    expectXYZ("alice", 9i32, 4i32, 0i32)
 }
 ```
 

@@ -13,17 +13,24 @@ namespace client {
 
 void GameClient::run(core::Address const server_address, char const ch) {
     m_local_character = ch;
+    m_running = true;
+    m_accepted = false;
+    m_join_character_index = 0;
+    if (m_world.mode() == shared::WorldMode::Flight) {
+        auto const character = std::ranges::find(FLIGHT_CHARACTERS, ch);
+        if (character != FLIGHT_CHARACTERS.end()) {
+            m_join_character_index = static_cast<uint32_t>(character - FLIGHT_CHARACTERS.begin());
+        }
+    }
     if (!connect(server_address, std::chrono::milliseconds{ 1'000 })) {
         CORE_ERROR("Failed to connect to server {}", server_address);
         std::cerr << "Failed to connect to server" << std::endl;
         return;
     }
     
-    static_cast<void>(send(shared::JoinRequestMessage {
-        .ch = ch,
-        .mode = m_world.mode(),
-        .configuration = m_world.configuration(),
-    }));
+    if (!sendJoinRequest()) {
+        m_running = false;
+    }
     while (!m_accepted && m_running && isConnected()) {
         poll(std::chrono::milliseconds{ 100 });
     }
@@ -66,9 +73,21 @@ void GameClient::onReceived(core::ReceiveEvent event) {
     shared::Message* msg_ptr = &*maybe_msg;
     if (auto* msg = std::get_if<shared::JoinResponseMessage>(msg_ptr)) {
         auto const [accepted] = *msg;
-        m_accepted = accepted;
-        if (!accepted) {
+        if (accepted) {
+            m_accepted = true;
+        } else if (m_accepted) {
             m_running = false;
+        } else {
+            if (m_world.mode() != shared::WorldMode::Flight
+                || m_join_character_index + 1U >= FLIGHT_CHARACTERS.size()) {
+                m_running = false;
+            } else {
+                ++m_join_character_index;
+                m_local_character = FLIGHT_CHARACTERS[m_join_character_index];
+                if (!sendJoinRequest()) {
+                    m_running = false;
+                }
+            }
         }
     } else if (auto* msg = std::get_if<shared::ServerPlayerPositionMessage>(msg_ptr)) {
         static_cast<void>(applyServerPosition(*msg));
@@ -77,6 +96,15 @@ void GameClient::onReceived(core::ReceiveEvent event) {
     } else {
         CORE_ERROR("Received a message unsupported by the client {}", msg_ptr->index());
     }
+}
+
+bool GameClient::sendJoinRequest()
+{
+    return send(shared::JoinRequestMessage{
+        .ch = m_local_character,
+        .mode = m_world.mode(),
+        .configuration = m_world.configuration(),
+    });
 }
 
 void GameClient::applyServerRemoval(char const character)

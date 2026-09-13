@@ -1,9 +1,9 @@
 # Gameplay and networking
 
 The runnable entry point is [src/main.cpp](../../src/main.cpp). It initializes
-logging, crash handling, and networking, then starts a Flight-mode server for
-`--server` or a graphical Flight-mode player at `127.0.0.1:20040` as `@` by
-default. The desktop entry point has no interactive character or address prompts.
+logging, crash handling, and networking. Launch uses `--server [--port PORT]`,
+`--player-client`, or `--bot-client`; clients accept `--address IP:PORT`.
+No arguments start a graphical localhost player; Flight joins select free internal tokens automatically.
 
 ## Runtime shape
 

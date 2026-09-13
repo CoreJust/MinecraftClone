@@ -25,7 +25,7 @@ ctest --preset debug --output-on-failure --no-tests=error
 python3 script/ai_check.py
 ```
 
-From the repository root, run `./build/debug/mc_main --server`, then `./build/debug/mc_main` for a client. On Windows use `mc_main.exe`. See [build details](docs/BUILD.md) for SDK setup, configuration options, release-path limitations, and validation.
+From the repository root, run `./build/debug/mc_main --server` (optional `--port PORT`), then `./build/debug/mc_main` for the graphical player client. Use `--player-client` for the explicit graphical mode or `--bot-client` for a headless bot; either client accepts `--address IP:PORT` and defaults to `127.0.0.1:20040`. On Windows use `mc_main.exe`. See [build details](docs/BUILD.md) for SDK setup, configuration options, release-path limitations, and validation.
 
 ## Structure
 

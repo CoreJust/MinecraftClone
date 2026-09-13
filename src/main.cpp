@@ -1,3 +1,4 @@
+#include <client/BotClient.hpp>
 #include <client/PlayerClient.hpp>
 #include <server/GameServer.hpp>
 
@@ -13,7 +14,9 @@
 #include <acceptance/RendererBenchmark.hpp>
 #include <acceptance/ScenarioRunner.hpp>
 
+#include <charconv>
 #include <condition_variable>
+#include <cstdint>
 #include <cstdlib>
 #include <expected>
 #include <filesystem>
@@ -34,6 +37,17 @@ enum class RuntimeMode {
     RendererCapture,
 };
 
+enum class LaunchMode {
+    GraphicalPlayer,
+    BotClient,
+    Server,
+};
+
+struct LaunchCommand final {
+    LaunchMode mode;
+    core::Address address;
+};
+
 struct RuntimeCommand final {
     RuntimeMode mode;
     std::filesystem::path scenario_path;
@@ -42,6 +56,77 @@ struct RuntimeCommand final {
     bool require_immediate_present_mode{ false };
     bool debug_hud_enabled{ false };
 };
+
+[[nodiscard]]
+std::expected<core::Address, std::string> parseAddress(std::string_view const value)
+{
+    size_t const delimiter = value.rfind(':');
+    if (delimiter == std::string_view::npos || delimiter == 0 || delimiter + 1 == value.size()) {
+        return std::unexpected("address must use IP:PORT syntax");
+    }
+
+    uint32_t port = 0;
+    std::string_view const port_string = value.substr(delimiter + 1);
+    auto const [end, error] = std::from_chars(port_string.begin(), port_string.end(), port);
+    if (error != std::errc{} || end != port_string.end() || port == 0
+        || port > std::numeric_limits<uint16_t>::max()) {
+        return std::unexpected("address contains an invalid port");
+    }
+
+    auto address = core::Address::make(
+        std::string{ value.substr(0, delimiter) },
+        static_cast<uint16_t>(port)
+    );
+    if (!address) {
+        return std::unexpected("address contains an invalid IP address");
+    }
+    return *address;
+}
+
+[[nodiscard]]
+std::expected<LaunchCommand, std::string> parseLaunchCommand(int const argc, char** const argv)
+{
+    if (argc == 1) {
+        return LaunchCommand{ .mode = LaunchMode::GraphicalPlayer, .address = core::Address::localhost(20'040) };
+    }
+
+    LaunchMode mode;
+    std::string_view const mode_argument{ argv[1] };
+    if (mode_argument == "--server") {
+        mode = LaunchMode::Server;
+    } else if (mode_argument == "--player-client") {
+        mode = LaunchMode::GraphicalPlayer;
+    } else if (mode_argument == "--bot-client") {
+        mode = LaunchMode::BotClient;
+    } else {
+        return std::unexpected("unknown launch option: " + std::string{ mode_argument });
+    }
+
+    if (mode == LaunchMode::Server) {
+        if (argc == 2) {
+            return LaunchCommand{ .mode = mode, .address = core::Address::localhost(20'040) };
+        }
+        if (argc != 4 || std::string_view{ argv[2] } != "--port") {
+            return std::unexpected("server launch syntax is '--server [--port PORT]'");
+        }
+        auto const address = parseAddress("127.0.0.1:" + std::string{ argv[3] });
+        if (!address.has_value()) {
+            return std::unexpected(address.error());
+        }
+        return LaunchCommand{ .mode = mode, .address = *address };
+    }
+    if (argc == 2) {
+        return LaunchCommand{ .mode = mode, .address = core::Address::localhost(20'040) };
+    }
+    if (argc != 4 || std::string_view{ argv[2] } != "--address") {
+        return std::unexpected("client launch syntax is '<mode> [--address IP:PORT]'");
+    }
+    auto const address = parseAddress(argv[3]);
+    if (!address.has_value()) {
+        return std::unexpected(address.error());
+    }
+    return LaunchCommand{ .mode = mode, .address = *address };
+}
 
 class RuntimeDeadlineWatchdog final {
 public:
@@ -318,11 +403,11 @@ int main(int argc, char** argv) {
 
     int exit_code = 0;
     try {
-        bool const is_server = argc == 2 && std::string_view{ argv[1] } == "--server";
-        if (is_server) {
-            server::GameServer server{ 20'040, { }, shared::WorldMode::Flight };
-            server.run();
-        } else if (argc > 1) {
+        bool const is_runtime_command = argc > 1
+            && (std::string_view{ argv[1] } == "--scenario"
+                || std::string_view{ argv[1] } == "--benchmark-render"
+                || std::string_view{ argv[1] } == "--capture-render");
+        if (is_runtime_command) {
             auto const command = parseRuntimeCommand(argc, argv);
             if (!command.has_value()) {
                 std::cerr << command.error() << '\n';
@@ -335,8 +420,20 @@ int main(int argc, char** argv) {
                 exit_code = runRendererCaptureCommand(*command);
             }
         } else {
-            client::PlayerClient client{ shared::WorldMode::Flight };
-            client.run(core::Address::localhost(20'040), '@');
+            auto const command = parseLaunchCommand(argc, argv);
+            if (!command.has_value()) {
+                std::cerr << command.error() << '\n';
+                exit_code = 1;
+            } else if (command->mode == LaunchMode::Server) {
+                server::GameServer server{ command->address.port(), { }, shared::WorldMode::Flight };
+                server.run();
+            } else if (command->mode == LaunchMode::BotClient) {
+                client::BotClient client{ shared::WorldMode::Flight };
+                client.run(command->address, '#');
+            } else {
+                client::PlayerClient client{ shared::WorldMode::Flight };
+                client.run(command->address, '@');
+            }
         }
     } catch (std::runtime_error const& e) {
         CORE_CRITICAL("Received uncaught runtime error: {}", e.what());
