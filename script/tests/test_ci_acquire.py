@@ -361,6 +361,8 @@ class CiAcquireTests(unittest.TestCase):
                 self.assertTrue((all_platform_arguments - platform_arguments).isdisjoint(corecpp_command))
                 self.assertIn(f"-DCoreCpp_DIR={corecpp_config.parent.as_posix()}", coreproject_command)
                 self.assertIn("-DCOREPROJECT2026_BUILD_SCRIPT=OFF", coreproject_command)
+                aggregate_flag = "-DCMAKE_CXX_FLAGS=-Wno-error=missing-field-initializers"
+                self.assertEqual(aggregate_flag in coreproject_command, platform_name == "android")
                 corecpp_install_index = commands.index(["cmake", "--install", str(root / "CoreCpp-build")])
                 coreproject_configure_index = commands.index(coreproject_command)
                 self.assertLess(corecpp_install_index, coreproject_configure_index)

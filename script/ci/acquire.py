@@ -260,6 +260,8 @@ def install_private_dependencies(
                 raise CiError(f"installed CoreCpp package config is missing: {corecpp_config}")
             package_arguments.append(f"-DCoreCpp_DIR={corecpp_config.parent}")
             package_arguments.append("-DCOREPROJECT2026_BUILD_SCRIPT=OFF")
+            if platform_name == "android":
+                package_arguments.append("-DCMAKE_CXX_FLAGS=-Wno-error=missing-field-initializers")
         configure = [
             "cmake", "-S", str(source), "-B", str(build), "-G", "Ninja",
             f"-DCMAKE_BUILD_TYPE={build_type}", f"-DCMAKE_INSTALL_PREFIX={normalize_cmake_path(prefix)}",
