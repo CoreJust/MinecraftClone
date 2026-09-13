@@ -6789,5 +6789,44 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0200",
+    "title": "Fix MSVC bot input distributions",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P0",
+    "route": "luna",
+    "milestone": "ED-010-S5",
+    "depends_on": [],
+    "acceptance": "BotClient input compiles with MSVC by using supported integer distribution types for the existing 1/50 change and -1..1 direction ranges, while converting generated direction values to uint8_t and preserving bot behavior.",
+    "evidence": "Focused debug build compiled BotClient.cpp and linked mc_main and mc_tests successfully. ctest --preset debug -R GameServer|Client|Server passed 42/42. No new test was added because existing BotClient input is private and no behavior contract requires test coverage for this portability-only template change.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0036",
+    "motivation": "Hosted Windows run34765220976 fails BotClient.cpp line 9 because MSVC rejects std::uniform_int_distribution<uint8_t> with C2338.",
+    "context": "The bot currently uses uint8_t and int8_t as uniform_int_distribution template arguments. MSVC STL supports the distribution only for its listed integer types, so both byte aliases are rejected even though the host compiler accepts them. The existing gameplay contract is a persistent random direction changed with probability 1/50 per input call, with each selected component at -127 or 127.",
+    "complexity": "low",
+    "created_at": "2026-09-13",
+    "resolved_at": "2026-09-13",
+    "resolution_changes": "Changed both BotClient random distributions to int, retaining the explicit uint8_t casts for generated direction bytes and the existing ranges and update probability.",
+    "plan": [
+      "Clarify acceptance and implementation steps.",
+      "Use supported int distributions for change selection and signed direction generation while preserving existing ranges and explicit output conversion."
+    ],
+    "product_changes": [
+      "None; this is a portability correction preserving existing bot input behavior."
+    ],
+    "code_changes": [
+      "src/client/BotClient.cpp uses int distributions for MSVC portability and keeps uint8_t conversion for generated bot input."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "Generated task and backlog views refreshed and checked.",
+    "environment_review": "No Windows rerun or windowed game runtime was performed in this lane; the hosted failure is the motivating evidence.",
+    "backlog_review": "Finalized MC-AI-0200 as one narrow MC-AI-0036 Windows portability repair."
   }
 ]
