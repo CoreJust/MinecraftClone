@@ -272,7 +272,7 @@ def install_private_dependencies(
             "-DBUILD_TESTING=OFF",
         ]
         run(configure)
-        run(["cmake", "--build", str(build), "--parallel"])
+        run(["cmake", "--build", str(build), "--parallel", "--", "-k", "0"])
         run(["cmake", "--install", str(build)])
     write_github_env("MC_PRIVATE_DEPENDENCIES_PREFIX", str(prefix))
     write_github_env("CMAKE_PREFIX_PATH", str(prefix))

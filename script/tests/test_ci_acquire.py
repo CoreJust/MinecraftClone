@@ -348,6 +348,10 @@ class CiAcquireTests(unittest.TestCase):
                     )
                 commands = [call.args[0] for call in run.call_args_list]
                 configure_commands = [command for command in commands if command[0] == "cmake" and "-S" in command]
+                build_commands = [command for command in commands if command[:2] == ["cmake", "--build"]]
+                self.assertEqual(len(build_commands), len(acquire.PRIVATE_DEPENDENCIES))
+                for command in build_commands:
+                    self.assertEqual(command[-3:], ["--", "-k", "0"])
                 self.assertEqual(len(configure_commands), len(acquire.PRIVATE_DEPENDENCIES))
                 for command in configure_commands:
                     self.assertIn("-DCMAKE_BUILD_TYPE=Release", command)
