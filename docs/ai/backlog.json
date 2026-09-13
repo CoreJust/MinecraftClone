@@ -6152,5 +6152,43 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0184",
+    "title": "Align shader diagnostics with the pinned kernel API",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P1",
+    "route": "luna",
+    "milestone": "ED-010-S5",
+    "depends_on": [],
+    "acceptance": "Both missing-entry-point assertions match the pinned public diagnostic and the focused shader-assets suite passes.",
+    "evidence": "Full batch gate isolated two stale string expectations in one ShaderAssetsTest; exact CoreCpp Program.cpp:24 confirms the shared diagnostic. Focused ShaderAssetsTest suite validates both failures after alignment.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0036",
+    "motivation": "The S5 full gate caught stale graphics-only diagnostic wording after the shared graphics/compute kernel update.",
+    "context": "CoreCpp1a1d409 Program.cpp now emits a shared Program stage diagnostic; two assertions still expect the old Graphics program prefix.",
+    "complexity": "low",
+    "created_at": "2026-09-13",
+    "resolved_at": "2026-09-13",
+    "resolution_changes": "Updated two diagnostic expectations to the exact pinned CoreCpp shared Program wording; no product behavior changed.",
+    "plan": [
+      "Verify the exact dependency diagnostic, update only stale assertions, and rerun the owning suite."
+    ],
+    "product_changes": [
+      "No product behavior changed."
+    ],
+    "code_changes": [
+      "Aligned missing-entry-point diagnostic expectations with the pinned shared kernel API."
+    ],
+    "baseline_commit": "5bfecd81b6036eb4cfbae46eef44efa1f2e32da1",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]
