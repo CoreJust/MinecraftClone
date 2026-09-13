@@ -1,6 +1,8 @@
 #include <client/render/DepthFormat.hpp>
 #include <client/render/VulkanRenderer.hpp>
 
+#include <shared/world/ChunkMesher.hpp>
+
 #if defined(__ANDROID__)
 #include <core/graphics/vulkan/android/AndroidSurface.hpp>
 #else
@@ -20,6 +22,7 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <stdexcept>
 #include <unordered_map>
 #include <utility>
@@ -35,10 +38,11 @@ constexpr bool REQUIRE_VALIDATION = false;
 
 constexpr uint32_t GRID_WORKGROUPS_X = 32U;
 constexpr uint32_t GRID_WORKGROUPS_Y = 32U;
-constexpr uint32_t KERNEL_CACHE_CAPACITY = 8U;
+constexpr uint32_t KERNEL_CACHE_CAPACITY = 12U;
 constexpr uint32_t QUAD_VERTEX_COUNT = 6U;
 constexpr uint32_t GRID_VERTEX_COUNT = 30U;
 constexpr uint32_t BOX_VERTEX_COUNT = 36U;
+constexpr uint32_t STONE_FACE_VERTEX_COUNT = 6U;
 constexpr std::array DEPTH_FORMAT_CANDIDATES{
     VK_FORMAT_D32_SFLOAT,
     VK_FORMAT_D16_UNORM,
@@ -70,6 +74,245 @@ struct DebugHudPushConstants final {
 };
 static_assert(sizeof(DebugHudPushConstants) == 124U);
 
+void checkResult(VkResult const result, char const* const operation)
+{
+    if (result != VK_SUCCESS) {
+        throw std::runtime_error(std::string{ operation } + " failed with Vulkan result " + std::to_string(result));
+    }
+}
+
+struct alignas(16) StoneFaceInstance final {
+    uint32_t x = 0U;
+    uint32_t y = 0U;
+    uint32_t z = 0U;
+    uint32_t direction = 0U;
+
+    constexpr bool operator==(StoneFaceInstance const&) const noexcept = default;
+};
+static_assert(sizeof(StoneFaceInstance) == 16U);
+
+struct alignas(16) StonePushConstants final {
+    glm::mat4 projection_view{ 1.0F };
+};
+static_assert(sizeof(StonePushConstants) == 64U);
+
+[[nodiscard]]
+std::vector<StoneFaceInstance> stoneFaceInstances(shared::ChunkMesh const& mesh)
+{
+    if (mesh.faces.size() > shared::ChunkMesh::MAXIMUM_FACE_COUNT) {
+        throw std::invalid_argument("chunk mesh exceeds its face limit");
+    }
+    std::vector<StoneFaceInstance> instances;
+    instances.reserve(mesh.faces.size());
+    for (shared::MeshFace const& face : mesh.faces) {
+        uint32_t const direction = static_cast<uint32_t>(face.direction);
+        if (face.material != shared::Block::Stone || direction >= 6U) {
+            throw std::invalid_argument("chunk mesh contains an unsupported face");
+        }
+        instances.emplace_back(StoneFaceInstance{
+            .x = face.local_origin.x,
+            .y = face.local_origin.y,
+            .z = face.local_origin.z,
+            .direction = direction,
+        });
+    }
+    return instances;
+}
+
+class StoneFaceBuffer final {
+public:
+    StoneFaceBuffer(VkDevice const device, VkPhysicalDevice const physical_device)
+        : m_device(device)
+        , m_physical_device(physical_device)
+    {
+        try {
+            VkBufferCreateInfo buffer_info{};
+            buffer_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+            buffer_info.size = byteSize();
+            buffer_info.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+            buffer_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+            checkResult(vkCreateBuffer(m_device, &buffer_info, nullptr, &m_buffer), "vkCreateBuffer stone faces");
+            VkMemoryRequirements requirements{};
+            vkGetBufferMemoryRequirements(m_device, m_buffer, &requirements);
+            VkMemoryAllocateInfo allocation{};
+            allocation.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+            allocation.allocationSize = requirements.size;
+            allocation.memoryTypeIndex = memoryType(requirements.memoryTypeBits);
+            checkResult(vkAllocateMemory(m_device, &allocation, nullptr, &m_memory), "vkAllocateMemory stone faces");
+            checkResult(vkBindBufferMemory(m_device, m_buffer, m_memory, 0U), "vkBindBufferMemory stone faces");
+        } catch (std::exception const&) {
+            reset();
+            throw;
+        }
+    }
+
+    ~StoneFaceBuffer()
+    {
+        reset();
+    }
+
+    StoneFaceBuffer(StoneFaceBuffer const&) = delete;
+    StoneFaceBuffer& operator=(StoneFaceBuffer const&) = delete;
+
+    void upload(std::span<StoneFaceInstance const> const instances)
+    {
+        if (instances.size() > shared::ChunkMesh::MAXIMUM_FACE_COUNT) {
+            throw std::invalid_argument("stone face upload exceeds its buffer capacity");
+        }
+        if (instances.empty()) {
+            return;
+        }
+        void* mapped = nullptr;
+        checkResult(vkMapMemory(m_device, m_memory, 0U, byteSize(), 0U, &mapped), "vkMapMemory stone faces");
+        std::memcpy(mapped, instances.data(), instances.size_bytes());
+        vkUnmapMemory(m_device, m_memory);
+    }
+
+    [[nodiscard]] VkDescriptorBufferInfo descriptor() const noexcept
+    {
+        return {
+            .buffer = m_buffer,
+            .offset = 0U,
+            .range = byteSize(),
+        };
+    }
+
+    void destroy() noexcept
+    {
+        reset();
+    }
+
+private:
+    [[nodiscard]] uint32_t memoryType(uint32_t const memory_type_bits) const
+    {
+        VkPhysicalDeviceMemoryProperties properties{};
+        vkGetPhysicalDeviceMemoryProperties(m_physical_device, &properties);
+        for (uint32_t index = 0U; index < properties.memoryTypeCount; ++index) {
+            if ((memory_type_bits & (1U << index)) != 0U
+                && (properties.memoryTypes[index].propertyFlags
+                    & (VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT))
+                    == (VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)) {
+                return index;
+            }
+        }
+        throw std::runtime_error("Vulkan device has no coherent host-visible memory for stone faces");
+    }
+
+    [[nodiscard]] static constexpr VkDeviceSize byteSize() noexcept
+    {
+        return static_cast<VkDeviceSize>(shared::ChunkMesh::MAXIMUM_FACE_COUNT)
+            * static_cast<VkDeviceSize>(sizeof(StoneFaceInstance));
+    }
+
+    void reset() noexcept
+    {
+        if (m_buffer != VK_NULL_HANDLE) {
+            vkDestroyBuffer(m_device, m_buffer, nullptr);
+        }
+        if (m_memory != VK_NULL_HANDLE) {
+            vkFreeMemory(m_device, m_memory, nullptr);
+        }
+        m_buffer = VK_NULL_HANDLE;
+        m_memory = VK_NULL_HANDLE;
+    }
+
+    VkDevice m_device = VK_NULL_HANDLE;
+    VkPhysicalDevice m_physical_device = VK_NULL_HANDLE;
+    VkBuffer m_buffer = VK_NULL_HANDLE;
+    VkDeviceMemory m_memory = VK_NULL_HANDLE;
+};
+
+class StoneDescriptorSet final {
+public:
+    StoneDescriptorSet(VkDevice const device, StoneFaceBuffer const& buffer)
+        : m_device(device)
+    {
+        try {
+            VkDescriptorSetLayoutBinding binding{};
+            binding.binding = 0U;
+            binding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+            binding.descriptorCount = 1U;
+            binding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+            VkDescriptorSetLayoutCreateInfo layout_info{};
+            layout_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+            layout_info.bindingCount = 1U;
+            layout_info.pBindings = &binding;
+            checkResult(
+                vkCreateDescriptorSetLayout(m_device, &layout_info, nullptr, &m_layout),
+                "vkCreateDescriptorSetLayout stone faces"
+            );
+            VkDescriptorPoolSize pool_size{};
+            pool_size.type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+            pool_size.descriptorCount = 1U;
+            VkDescriptorPoolCreateInfo pool_info{};
+            pool_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+            pool_info.maxSets = 1U;
+            pool_info.poolSizeCount = 1U;
+            pool_info.pPoolSizes = &pool_size;
+            checkResult(
+                vkCreateDescriptorPool(m_device, &pool_info, nullptr, &m_pool),
+                "vkCreateDescriptorPool stone faces"
+            );
+            VkDescriptorSetAllocateInfo allocate_info{};
+            allocate_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+            allocate_info.descriptorPool = m_pool;
+            allocate_info.descriptorSetCount = 1U;
+            allocate_info.pSetLayouts = &m_layout;
+            checkResult(
+                vkAllocateDescriptorSets(m_device, &allocate_info, &m_set),
+                "vkAllocateDescriptorSets stone faces"
+            );
+            VkDescriptorBufferInfo const buffer_info = buffer.descriptor();
+            VkWriteDescriptorSet write{};
+            write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            write.dstSet = m_set;
+            write.dstBinding = 0U;
+            write.descriptorCount = 1U;
+            write.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+            write.pBufferInfo = &buffer_info;
+            vkUpdateDescriptorSets(m_device, 1U, &write, 0U, nullptr);
+        } catch (std::exception const&) {
+            reset();
+            throw;
+        }
+    }
+
+    ~StoneDescriptorSet()
+    {
+        reset();
+    }
+
+    StoneDescriptorSet(StoneDescriptorSet const&) = delete;
+    StoneDescriptorSet& operator=(StoneDescriptorSet const&) = delete;
+
+    [[nodiscard]] VkDescriptorSetLayout layout() const noexcept { return m_layout; }
+    [[nodiscard]] VkDescriptorSet set() const noexcept { return m_set; }
+
+    void destroy() noexcept
+    {
+        reset();
+    }
+
+private:
+    void reset() noexcept
+    {
+        if (m_pool != VK_NULL_HANDLE) {
+            vkDestroyDescriptorPool(m_device, m_pool, nullptr);
+        }
+        if (m_layout != VK_NULL_HANDLE) {
+            vkDestroyDescriptorSetLayout(m_device, m_layout, nullptr);
+        }
+        m_pool = VK_NULL_HANDLE;
+        m_layout = VK_NULL_HANDLE;
+        m_set = VK_NULL_HANDLE;
+    }
+
+    VkDevice m_device = VK_NULL_HANDLE;
+    VkDescriptorPool m_pool = VK_NULL_HANDLE;
+    VkDescriptorSetLayout m_layout = VK_NULL_HANDLE;
+    VkDescriptorSet m_set = VK_NULL_HANDLE;
+};
+
 [[nodiscard]]
 std::chrono::nanoseconds remaining(std::chrono::steady_clock::time_point const deadline)
 {
@@ -94,10 +337,36 @@ RendererPresentMode rendererPresentMode(VkPresentModeKHR const mode) noexcept
     }
 }
 
-void checkResult(VkResult const result, char const* const operation)
+void recordPlayers(
+    VkCommandBuffer const command,
+    VkPipeline const player_pipeline,
+    VkPipelineLayout const player_layout,
+    glm::mat4 const& projection_view,
+    std::span<PlayerRenderData const> const players
+)
 {
-    if (result != VK_SUCCESS) {
-        throw std::runtime_error(std::string{ operation } + " failed with Vulkan result " + std::to_string(result));
+    vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS, player_pipeline);
+    for (PlayerRenderData const& player : players) {
+        BoxPushConstants const push{
+            .projection_view = projection_view,
+            .origin = {
+                player.x,
+                player.y,
+                player.z,
+                0.0F,
+            },
+            .extent = { 2.0F, 2.0F, 2.0F, 0.0F },
+            .color = player.color,
+        };
+        vkCmdPushConstants(
+            command,
+            player_layout,
+            VK_SHADER_STAGE_VERTEX_BIT,
+            0U,
+            sizeof(push),
+            &push
+        );
+        vkCmdDraw(command, BOX_VERTEX_COUNT, 1U, 0U, 0U);
     }
 }
 
@@ -146,29 +415,45 @@ void recordFlat3dScene(
     );
     vkCmdDraw(command, GRID_VERTEX_COUNT, GRID_WORKGROUPS_X * GRID_WORKGROUPS_Y, 0U, 0U);
 
-    vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS, player_pipeline);
-    for (PlayerRenderData const& player : players) {
-        BoxPushConstants const push{
-            .projection_view = projection_view,
-            .origin = {
-                player.x,
-                player.y,
-                0.0F,
-                0.0F,
-            },
-            .extent = { 2.0F, 2.0F, 2.0F, 0.0F },
-            .color = player.color,
-        };
-        vkCmdPushConstants(
-            command,
-            player_layout,
-            VK_SHADER_STAGE_VERTEX_BIT,
-            0U,
-            sizeof(push),
-            &push
-        );
-        vkCmdDraw(command, BOX_VERTEX_COUNT, 1U, 0U, 0U);
+    recordPlayers(command, player_pipeline, player_layout, projection_view, players);
+}
+
+[[nodiscard]]
+bool recordStoneScene(
+    VkCommandBuffer const command,
+    VkPipeline const pipeline,
+    VkPipelineLayout const layout,
+    VkDescriptorSet const descriptor_set,
+    VkPipeline const player_pipeline,
+    VkPipelineLayout const player_layout,
+    Camera const& camera,
+    std::span<PlayerRenderData const> const players,
+    uint32_t const face_count,
+    VkExtent2D const extent
+)
+{
+    std::optional<glm::mat4> const projection = camera.projectionMatrix(extent.width, extent.height);
+    if (!projection.has_value()) {
+        return false;
     }
+    StonePushConstants const push{ .projection_view = *projection * camera.viewMatrix() };
+    if (face_count > 0U) {
+        vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+        vkCmdBindDescriptorSets(
+            command,
+            VK_PIPELINE_BIND_POINT_GRAPHICS,
+            layout,
+            0U,
+            1U,
+            &descriptor_set,
+            0U,
+            nullptr
+        );
+        vkCmdPushConstants(command, layout, VK_SHADER_STAGE_VERTEX_BIT, 0U, sizeof(push), &push);
+        vkCmdDraw(command, STONE_FACE_VERTEX_COUNT, face_count, 0U, 0U);
+    }
+    recordPlayers(command, player_pipeline, player_layout, push.projection_view, players);
+    return face_count > 0U;
 }
 
 } // namespace
@@ -318,6 +603,17 @@ struct VulkanRenderer::Impl final {
         static_cast<void>(m_camera.setAngles(pose.angles));
     }
 
+    void setChunkMesh(shared::ChunkMesh const& mesh)
+    {
+        std::vector<StoneFaceInstance> instances = stoneFaceInstances(mesh);
+        if (m_chunk_scene_enabled && instances == m_stone_faces) {
+            return;
+        }
+        m_stone_faces = std::move(instances);
+        m_chunk_scene_enabled = true;
+        recreate(m_context->info().extent, std::chrono::steady_clock::time_point::max());
+    }
+
     void hotReload()
     {
         recreate(m_context->info().extent, std::chrono::steady_clock::time_point::max());
@@ -389,6 +685,9 @@ struct VulkanRenderer::Impl final {
             .gpu_frame_duration = std::nullopt,
             .submitted_frame_count = m_submitted_frame_count,
             .debug_hud_draw_count = m_debug_hud_draw_count,
+            .chunk_face_count = static_cast<uint32_t>(m_stone_faces.size()),
+            .chunk_draw_count = m_chunk_draw_count,
+            .chunk_mesh_upload_count = m_chunk_mesh_upload_count,
         };
     }
 
@@ -429,6 +728,7 @@ private:
     void record(VkCommandBuffer const command)
     {
         m_debug_hud_draw_count = 0U;
+        m_chunk_draw_count = 0U;
         DepthTarget& depth_target = *m_current_depth_target;
         if (!depth_target.layout_initialized) {
             VkImageMemoryBarrier barrier{};
@@ -492,16 +792,31 @@ private:
         vkCmdSetViewport(command, 0U, 1U, &viewport);
         vkCmdSetScissor(command, 0U, 1U, &scissor);
 
-        recordFlat3dScene(
-            command,
-            m_grid_pipeline,
-            m_grid_layout,
-            m_player_pipeline,
-            m_player_layout,
-            m_camera,
-            m_players,
-            extent
-        );
+        if (m_chunk_scene_enabled) {
+            m_chunk_draw_count = recordStoneScene(
+                command,
+                m_stone_pipeline,
+                m_stone_layout,
+                m_stone_descriptors->set(),
+                m_player_pipeline,
+                m_player_layout,
+                m_camera,
+                m_players,
+                static_cast<uint32_t>(m_stone_faces.size()),
+                extent
+            ) ? 1U : 0U;
+        } else {
+            recordFlat3dScene(
+                command,
+                m_grid_pipeline,
+                m_grid_layout,
+                m_player_pipeline,
+                m_player_layout,
+                m_camera,
+                m_players,
+                extent
+            );
+        }
         if (m_debug_hud_batch.size > 0U) {
             m_debug_hud_draw_count = 1U;
             vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS, m_debug_hud_pipeline);
@@ -539,6 +854,26 @@ private:
         return layout;
     }
 
+    [[nodiscard]] VkPipelineLayout createStoneLayout() const
+    {
+        VkPushConstantRange range{};
+        range.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+        range.size = sizeof(StonePushConstants);
+        VkDescriptorSetLayout const descriptor_layout = m_stone_descriptors->layout();
+        VkPipelineLayoutCreateInfo info{};
+        info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+        info.setLayoutCount = 1U;
+        info.pSetLayouts = &descriptor_layout;
+        info.pushConstantRangeCount = 1U;
+        info.pPushConstantRanges = &range;
+        VkPipelineLayout layout = VK_NULL_HANDLE;
+        checkResult(
+            vkCreatePipelineLayout(m_resources->device(), &info, nullptr, &layout),
+            "vkCreatePipelineLayout stone"
+        );
+        return layout;
+    }
+
     void createResources()
     {
         m_resources.emplace(m_context->resources());
@@ -549,6 +884,12 @@ private:
             throw std::runtime_error("Vulkan presentation device does not expose dynamic rendering commands");
         }
         selectDepthFormat();
+        m_stone_face_buffer.emplace(m_resources->device(), m_resources->physicalDevice());
+        m_stone_descriptors.emplace(m_resources->device(), *m_stone_face_buffer);
+        if (!m_stone_faces.empty()) {
+            m_stone_face_buffer->upload(m_stone_faces);
+            ++m_chunk_mesh_upload_count;
+        }
         auto const grid = std::make_shared<core::kernel::SpirvModule const>(
             m_shader_assets.load("grid.vert.spv")
         );
@@ -558,11 +899,17 @@ private:
         auto const debug_hud = std::make_shared<core::kernel::SpirvModule const>(
             m_shader_assets.load("debug_hud.vert.spv")
         );
+        auto const stone = std::make_shared<core::kernel::SpirvModule const>(
+            m_shader_assets.load("stone.vert.spv")
+        );
         auto const fragment = std::make_shared<core::kernel::SpirvModule const>(
             m_shader_assets.load("trivial.frag.spv")
         );
         auto const debug_hud_fragment = std::make_shared<core::kernel::SpirvModule const>(
             m_shader_assets.load("debug_hud.frag.spv")
+        );
+        auto const stone_fragment = std::make_shared<core::kernel::SpirvModule const>(
+            m_shader_assets.load("stone.frag.spv")
         );
         m_grid_program.emplace(core::kernel::GraphicsProgram::create(
             {
@@ -600,9 +947,22 @@ private:
                 .required_bindings = {},
             }
         ));
+        m_stone_program.emplace(core::kernel::GraphicsProgram::create(
+            {
+                .module = stone,
+                .entrypoint = "main",
+                .required_bindings = { { .set = 0U, .binding = 0U } },
+            },
+            {
+                .module = stone_fragment,
+                .entrypoint = "main",
+                .required_bindings = {},
+            }
+        ));
         m_grid_layout = createLayout(static_cast<uint32_t>(sizeof(GridPushConstants)));
         m_player_layout = createLayout(static_cast<uint32_t>(sizeof(BoxPushConstants)));
         m_debug_hud_layout = createLayout(static_cast<uint32_t>(sizeof(DebugHudPushConstants)));
+        m_stone_layout = createStoneLayout();
         m_kernel_cache.emplace(KERNEL_CACHE_CAPACITY);
         core::graphics::vulkan::VulkanDeviceReference const device = m_resources->deviceReference();
         PresentationPipelineDescriptors const descriptors = presentationPipelineDescriptors(
@@ -627,6 +987,18 @@ private:
             *m_debug_hud_program,
             descriptors.debug_hud
         );
+        m_stone_pipeline = m_kernel_cache->pipelineFor(
+            device,
+            *m_stone_program,
+            {
+                .layout = m_stone_layout,
+                .color_format = m_resources->format(),
+                .depth_format = m_depth_format,
+                .depth_test_enabled = true,
+                .depth_write_enabled = true,
+                .depth_compare_op = VK_COMPARE_OP_LESS,
+            }
+        );
     }
 
     void destroyResources() noexcept
@@ -645,15 +1017,23 @@ private:
         if (m_debug_hud_layout != VK_NULL_HANDLE) {
             vkDestroyPipelineLayout(device, m_debug_hud_layout, nullptr);
         }
+        if (m_stone_layout != VK_NULL_HANDLE) {
+            vkDestroyPipelineLayout(device, m_stone_layout, nullptr);
+        }
         m_grid_pipeline = VK_NULL_HANDLE;
         m_player_pipeline = VK_NULL_HANDLE;
         m_debug_hud_pipeline = VK_NULL_HANDLE;
+        m_stone_pipeline = VK_NULL_HANDLE;
         m_grid_layout = VK_NULL_HANDLE;
         m_player_layout = VK_NULL_HANDLE;
         m_debug_hud_layout = VK_NULL_HANDLE;
+        m_stone_layout = VK_NULL_HANDLE;
         m_grid_program.reset();
         m_player_program.reset();
         m_debug_hud_program.reset();
+        m_stone_program.reset();
+        m_stone_descriptors.reset();
+        m_stone_face_buffer.reset();
         m_begin_rendering = nullptr;
         m_end_rendering = nullptr;
         m_resources.reset();
@@ -817,12 +1197,17 @@ private:
     std::optional<core::kernel::GraphicsProgram> m_grid_program;
     std::optional<core::kernel::GraphicsProgram> m_player_program;
     std::optional<core::kernel::GraphicsProgram> m_debug_hud_program;
+    std::optional<core::kernel::GraphicsProgram> m_stone_program;
+    std::optional<StoneFaceBuffer> m_stone_face_buffer;
+    std::optional<StoneDescriptorSet> m_stone_descriptors;
     VkPipelineLayout m_grid_layout = VK_NULL_HANDLE;
     VkPipelineLayout m_player_layout = VK_NULL_HANDLE;
     VkPipelineLayout m_debug_hud_layout = VK_NULL_HANDLE;
+    VkPipelineLayout m_stone_layout = VK_NULL_HANDLE;
     VkPipeline m_grid_pipeline = VK_NULL_HANDLE;
     VkPipeline m_player_pipeline = VK_NULL_HANDLE;
     VkPipeline m_debug_hud_pipeline = VK_NULL_HANDLE;
+    VkPipeline m_stone_pipeline = VK_NULL_HANDLE;
     PFN_vkCmdBeginRenderingKHR m_begin_rendering = nullptr;
     PFN_vkCmdEndRenderingKHR m_end_rendering = nullptr;
     FrameCaptureState m_capture_state = FrameCaptureState::Disabled;
@@ -839,6 +1224,10 @@ private:
     DebugHudPushConstants m_debug_hud_push;
     bool m_last_presented = false;
     uint32_t m_debug_hud_draw_count = 0U;
+    std::vector<StoneFaceInstance> m_stone_faces;
+    uint64_t m_chunk_mesh_upload_count = 0U;
+    uint32_t m_chunk_draw_count = 0U;
+    bool m_chunk_scene_enabled = false;
 };
 
 namespace {
@@ -948,6 +1337,8 @@ public:
         : m_device(std::move(device))
         , m_depth_format(selectDepthFormat())
         , m_depth(m_device, m_depth_format, { .width = OFFSCREEN_WIDTH, .height = OFFSCREEN_HEIGHT })
+        , m_stone_face_buffer(m_device->handle(), m_device->physicalDevice())
+        , m_stone_descriptors(m_device->handle(), m_stone_face_buffer)
     {
         try {
             auto const dynamic_rendering = m_device->dynamicRenderingCommands();
@@ -957,8 +1348,16 @@ public:
                 throw std::runtime_error("offscreen device does not expose dynamic rendering commands");
             }
             auto const grid = std::make_shared<core::kernel::SpirvModule const>(shader_assets.load("grid.vert.spv"));
-            auto const player = std::make_shared<core::kernel::SpirvModule const>(shader_assets.load("player.vert.spv"));
-            auto const fragment = std::make_shared<core::kernel::SpirvModule const>(shader_assets.load("trivial.frag.spv"));
+            auto const player = std::make_shared<core::kernel::SpirvModule const>(
+                shader_assets.load("player.vert.spv")
+            );
+            auto const stone = std::make_shared<core::kernel::SpirvModule const>(shader_assets.load("stone.vert.spv"));
+            auto const fragment = std::make_shared<core::kernel::SpirvModule const>(
+                shader_assets.load("trivial.frag.spv")
+            );
+            auto const stone_fragment = std::make_shared<core::kernel::SpirvModule const>(
+                shader_assets.load("stone.frag.spv")
+            );
             m_grid_program.emplace(core::kernel::GraphicsProgram::create(
                 { .module = grid, .entrypoint = "main", .required_bindings = {} },
                 { .module = fragment, .entrypoint = "main", .required_bindings = {} }
@@ -967,11 +1366,21 @@ public:
                 { .module = player, .entrypoint = "main", .required_bindings = {} },
                 { .module = fragment, .entrypoint = "main", .required_bindings = {} }
             ));
+            m_stone_program.emplace(core::kernel::GraphicsProgram::create(
+                {
+                    .module = stone,
+                    .entrypoint = "main",
+                    .required_bindings = { { .set = 0U, .binding = 0U } },
+                },
+                { .module = stone_fragment, .entrypoint = "main", .required_bindings = {} }
+            ));
             m_grid_layout = createLayout(static_cast<uint32_t>(sizeof(GridPushConstants)));
             m_player_layout = createLayout(static_cast<uint32_t>(sizeof(BoxPushConstants)));
+            m_stone_layout = createStoneLayout();
             core::graphics::vulkan::VulkanDeviceReference const reference = m_device->reference();
             m_grid_pipeline = m_cache.pipelineFor(reference, *m_grid_program, pipelineDescriptor(m_grid_layout));
             m_player_pipeline = m_cache.pipelineFor(reference, *m_player_program, pipelineDescriptor(m_player_layout));
+            m_stone_pipeline = m_cache.pipelineFor(reference, *m_stone_program, pipelineDescriptor(m_stone_layout));
         } catch (std::exception const&) {
             reset();
             throw;
@@ -991,8 +1400,16 @@ public:
     [[nodiscard]] VkPipelineLayout gridLayout() const noexcept { return m_grid_layout; }
     [[nodiscard]] VkPipeline playerPipeline() const noexcept { return m_player_pipeline; }
     [[nodiscard]] VkPipelineLayout playerLayout() const noexcept { return m_player_layout; }
+    [[nodiscard]] VkPipeline stonePipeline() const noexcept { return m_stone_pipeline; }
+    [[nodiscard]] VkPipelineLayout stoneLayout() const noexcept { return m_stone_layout; }
+    [[nodiscard]] VkDescriptorSet stoneDescriptorSet() const noexcept { return m_stone_descriptors.set(); }
     [[nodiscard]] PFN_vkCmdBeginRenderingKHR beginRendering() const noexcept { return m_begin_rendering; }
     [[nodiscard]] PFN_vkCmdEndRenderingKHR endRendering() const noexcept { return m_end_rendering; }
+
+    void uploadStoneFaces(std::span<StoneFaceInstance const> const faces)
+    {
+        m_stone_face_buffer.upload(faces);
+    }
 private:
     void reset() noexcept
     {
@@ -1006,10 +1423,17 @@ private:
         if (m_player_layout != VK_NULL_HANDLE) {
             vkDestroyPipelineLayout(m_device->handle(), m_player_layout, nullptr);
         }
+        if (m_stone_layout != VK_NULL_HANDLE) {
+            vkDestroyPipelineLayout(m_device->handle(), m_stone_layout, nullptr);
+        }
         m_grid_layout = VK_NULL_HANDLE;
         m_player_layout = VK_NULL_HANDLE;
+        m_stone_layout = VK_NULL_HANDLE;
         m_grid_pipeline = VK_NULL_HANDLE;
         m_player_pipeline = VK_NULL_HANDLE;
+        m_stone_pipeline = VK_NULL_HANDLE;
+        m_stone_descriptors.destroy();
+        m_stone_face_buffer.destroy();
     }
 
     [[nodiscard]] VkFormat selectDepthFormat() const
@@ -1046,6 +1470,26 @@ private:
         return layout;
     }
 
+    [[nodiscard]] VkPipelineLayout createStoneLayout() const
+    {
+        VkPushConstantRange range{};
+        range.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+        range.size = sizeof(StonePushConstants);
+        VkDescriptorSetLayout const descriptor_layout = m_stone_descriptors.layout();
+        VkPipelineLayoutCreateInfo info{};
+        info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+        info.setLayoutCount = 1U;
+        info.pSetLayouts = &descriptor_layout;
+        info.pushConstantRangeCount = 1U;
+        info.pPushConstantRanges = &range;
+        VkPipelineLayout layout = VK_NULL_HANDLE;
+        checkResult(
+            vkCreatePipelineLayout(m_device->handle(), &info, nullptr, &layout),
+            "vkCreatePipelineLayout offscreen stone"
+        );
+        return layout;
+    }
+
     [[nodiscard]] core::graphics::vulkan::PipelineDescriptor pipelineDescriptor(VkPipelineLayout const layout) const noexcept
     {
         return {
@@ -1064,10 +1508,15 @@ private:
     core::graphics::vulkan::VulkanKernelCache m_cache{ KERNEL_CACHE_CAPACITY };
     std::optional<core::kernel::GraphicsProgram> m_grid_program;
     std::optional<core::kernel::GraphicsProgram> m_player_program;
+    std::optional<core::kernel::GraphicsProgram> m_stone_program;
+    StoneFaceBuffer m_stone_face_buffer;
+    StoneDescriptorSet m_stone_descriptors;
     VkPipelineLayout m_grid_layout = VK_NULL_HANDLE;
     VkPipelineLayout m_player_layout = VK_NULL_HANDLE;
+    VkPipelineLayout m_stone_layout = VK_NULL_HANDLE;
     VkPipeline m_grid_pipeline = VK_NULL_HANDLE;
     VkPipeline m_player_pipeline = VK_NULL_HANDLE;
+    VkPipeline m_stone_pipeline = VK_NULL_HANDLE;
     PFN_vkCmdBeginRenderingKHR m_begin_rendering = nullptr;
     PFN_vkCmdEndRenderingKHR m_end_rendering = nullptr;
 };
@@ -1105,6 +1554,17 @@ struct VulkanOffscreenRenderer::Impl final {
     {
         static_cast<void>(m_camera.setPosition(pose.position));
         static_cast<void>(m_camera.setAngles(pose.angles));
+    }
+
+    void setChunkMesh(shared::ChunkMesh const& mesh)
+    {
+        std::vector<StoneFaceInstance> instances = stoneFaceInstances(mesh);
+        if (m_chunk_scene_enabled && instances == m_stone_faces) {
+            return;
+        }
+        m_resources->uploadStoneFaces(instances);
+        m_stone_faces = std::move(instances);
+        m_chunk_scene_enabled = true;
     }
 
     [[nodiscard]] bool validationEnabled() const noexcept { return m_instance->validationEnabled(); }
@@ -1172,16 +1632,31 @@ private:
         scissor.extent = recording.extent;
         vkCmdSetViewport(recording.command_buffer, 0U, 1U, &viewport);
         vkCmdSetScissor(recording.command_buffer, 0U, 1U, &scissor);
-        recordFlat3dScene(
-            recording.command_buffer,
-            resources.gridPipeline(),
-            resources.gridLayout(),
-            resources.playerPipeline(),
-            resources.playerLayout(),
-            self.m_camera,
-            self.m_players,
-            recording.extent
-        );
+        if (self.m_chunk_scene_enabled) {
+            static_cast<void>(recordStoneScene(
+                recording.command_buffer,
+                resources.stonePipeline(),
+                resources.stoneLayout(),
+                resources.stoneDescriptorSet(),
+                resources.playerPipeline(),
+                resources.playerLayout(),
+                self.m_camera,
+                self.m_players,
+                static_cast<uint32_t>(self.m_stone_faces.size()),
+                recording.extent
+            ));
+        } else {
+            recordFlat3dScene(
+                recording.command_buffer,
+                resources.gridPipeline(),
+                resources.gridLayout(),
+                resources.playerPipeline(),
+                resources.playerLayout(),
+                self.m_camera,
+                self.m_players,
+                recording.extent
+            );
+        }
         resources.endRendering()(recording.command_buffer);
     }
 
@@ -1190,7 +1665,9 @@ private:
     std::shared_ptr<OffscreenDrawResources> m_resources;
     std::unique_ptr<core::graphics::vulkan::VulkanOffscreenTarget> m_target;
     std::span<PlayerRenderData const> m_players;
+    std::vector<StoneFaceInstance> m_stone_faces;
     bool m_depth_initialized = false;
+    bool m_chunk_scene_enabled = false;
     Camera m_camera{
         { .position = { 16.0, -20.0, 22.0 }, .angles = { .pitch_degrees = -35.0 } },
     };
@@ -1293,6 +1770,11 @@ void VulkanRenderer::setCamera(CameraPose const pose) noexcept
     m_impl->setCamera(pose);
 }
 
+void VulkanRenderer::setChunkMesh(shared::ChunkMesh const& mesh)
+{
+    m_impl->setChunkMesh(mesh);
+}
+
 void VulkanRenderer::hotReload()
 {
     m_impl->hotReload();
@@ -1348,6 +1830,11 @@ RendererFrameCapture VulkanOffscreenRenderer::render(
 void VulkanOffscreenRenderer::setCamera(CameraPose const pose) noexcept
 {
     m_impl->setCamera(pose);
+}
+
+void VulkanOffscreenRenderer::setChunkMesh(shared::ChunkMesh const& mesh)
+{
+    m_impl->setChunkMesh(mesh);
 }
 
 bool VulkanOffscreenRenderer::validationEnabled() const noexcept

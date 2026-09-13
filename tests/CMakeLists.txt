@@ -64,6 +64,25 @@ if(MC_REGISTER_SERVER_ONLY_BUILD_TEST)
     endif()
 endif()
 
+option(MC_ENABLE_STONE_RENDERER_ACCEPTANCE "Run S5 offscreen stone acceptance" OFF)
+if(MC_ENABLE_STONE_RENDERER_ACCEPTANCE)
+    if(NOT MC_BUILD_CLIENT OR ANDROID)
+        message(FATAL_ERROR "Stone renderer acceptance requires a desktop Client build")
+    endif()
+    add_executable(mc_stone_renderer_acceptance client/stone_renderer_tests.cpp main.cpp)
+    target_compile_definitions(mc_stone_renderer_acceptance PRIVATE MC_STONE_RENDERER_FAIL_UNSUPPORTED=1)
+    target_link_libraries(mc_stone_renderer_acceptance PRIVATE mc mc_test_support GTest::gtest)
+    mc_apply_target_defaults(mc_stone_renderer_acceptance)
+    mc_copy_target_shaders(mc_stone_renderer_acceptance mc)
+    add_test(NAME StoneRendererAcceptanceTest COMMAND mc_stone_renderer_acceptance)
+    set_tests_properties(StoneRendererAcceptanceTest PROPERTIES
+        TIMEOUT 45
+        RUN_SERIAL TRUE
+        LABELS "renderer;gpu"
+        FAIL_REGULAR_EXPRESSION "Vulkan validation; error at ; critical at "
+    )
+endif()
+
 if(MC_BUILD_CLIENT AND NOT ANDROID)
     add_test(
         NAME AcceptanceCli.RuntimeModes

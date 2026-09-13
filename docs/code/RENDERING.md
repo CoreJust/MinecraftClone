@@ -36,6 +36,9 @@ the local and remote cubes are submitted. A right-handed Z-up camera supplies
 a zero-to-one projection with Y flipped for its positive-height viewport. The
 flip reverses winding, so grid/player/HUD triangles are reversed for the
 CoreCpp CCW back-face policy.
+
+Flight scenes submit cached stone faces; uploads occur only when mesh identity
+changes. Original 16-by-16 stone shaders are installed on desktop and Android.
 `GridPushConstants` is 96 bytes and `BoxPushConstants` is 112 bytes; both carry
 the projection-view matrix, while the box block also carries independent XYZ
 origin and extent vectors. Their ABI must remain compatible with the GLSL push

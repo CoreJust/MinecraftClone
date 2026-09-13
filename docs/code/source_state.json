@@ -133,7 +133,7 @@
         "vcpkg-configuration.json",
         "vcpkg.json"
       ],
-      "sources_sha256": "1829fd8102acac93cc901350249fafcceda15c9d256627c753f72dba930abbd7"
+      "sources_sha256": "d581151557f051aeca1b9b4666dad29a8e621c76631500b4cdfc567084bbccff"
     },
     {
       "guide": "docs/code/CORE.md",
@@ -224,7 +224,7 @@
     },
     {
       "guide": "docs/code/RENDERING.md",
-      "guide_sha256": "5e07cfbb8afdad3513321039351295cd2b9d73f84ebb357f5433e36311dd7bdd",
+      "guide_sha256": "104eda4d0a93acd38e5636d7c58f8c2c8b3d8d19b64f11295492d4ddab8084c8",
       "id": "rendering",
       "sources": [
         "src/client/CMakeLists.txt",
@@ -245,6 +245,8 @@
         "src/client/render/shaders/grid.vert",
         "src/client/render/shaders/player.mesh",
         "src/client/render/shaders/player.vert",
+        "src/client/render/shaders/stone.frag",
+        "src/client/render/shaders/stone.vert",
         "src/client/render/shaders/trivial.frag",
         "tests/client/camera_controller_tests.cpp",
         "tests/client/camera_tests.cpp",
@@ -262,11 +264,12 @@
         "tests/client/renderer_golden_tests.cpp",
         "tests/client/renderer_smoke_tests.cpp",
         "tests/client/shader_assets_tests.cpp",
+        "tests/client/stone_renderer_tests.cpp",
         "tests/testsupport/ImageComparison.cpp",
         "tests/testsupport/image_comparison_tests.cpp",
         "tests/testsupport/include/testsupport/ImageComparison.hpp"
       ],
-      "sources_sha256": "57307e9b3f1459d4d323ee9fc61b8e51858ae53ade80f588bce232f014fa8a24"
+      "sources_sha256": "543e9048346a831ca813f3dc8f7e71af565b9a2ca02ea17228587dc597be6078"
     }
   ],
   "version": 1

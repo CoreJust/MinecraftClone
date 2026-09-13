@@ -37,6 +37,8 @@ def requiredShaderAssets = [
     'debug_hud.vert.spv',
     'grid.vert.spv',
     'player.vert.spv',
+    'stone.vert.spv',
+    'stone.frag.spv',
     'trivial.frag.spv',
 ]
 def hudLicenseAssets = file("${buildDir}/generated/hud-licenses")
@@ -48,6 +50,8 @@ def stageFallbackShaders = tasks.register('stageFallbackShaders', Sync) {
     from('../../src/client/render/shaders') {
         include 'grid.vert'
         include 'player.vert'
+        include 'stone.vert'
+        include 'stone.frag'
         include 'trivial.frag'
         include 'debug_hud.vert'
         include 'debug_hud.frag'

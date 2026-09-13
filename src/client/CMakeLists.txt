@@ -24,6 +24,8 @@ if(NOT ANDROID)
         render/shaders/player.mesh
         render/shaders/grid.vert
         render/shaders/player.vert
+        render/shaders/stone.vert
+        render/shaders/stone.frag
         render/shaders/trivial.frag
         render/shaders/debug_hud.vert
         render/shaders/debug_hud.frag
