@@ -47,7 +47,7 @@ jobs:
           set -euo pipefail
           source_commit="$(git rev-parse HEAD)"
           trusted=false
-          git fetch --quiet --no-tags origin +refs/heads/ai-dev:refs/remotes/origin/ai-dev +refs/heads/ai-main:refs/remotes/origin/ai-main
+          git fetch --quiet origin +refs/heads/ai-dev:refs/remotes/origin/ai-dev +refs/heads/ai-main:refs/remotes/origin/ai-main '+refs/tags/ai/*:refs/tags/ai/*'
           case "$EVENT_NAME" in
             push)
               case "$EVENT_REF" in
@@ -62,7 +62,8 @@ jobs:
               ;;
             workflow_dispatch)
               if git merge-base --is-ancestor "$source_commit" refs/remotes/origin/ai-dev \
-                || git merge-base --is-ancestor "$source_commit" refs/remotes/origin/ai-main; then
+                || git merge-base --is-ancestor "$source_commit" refs/remotes/origin/ai-main \
+                || git tag --points-at "$source_commit" | grep -Eq '^ai/[^/]+/[0-9]+\.[0-9]+\.[0-9]+/[0-9]+_[0-9]{2}\.[0-9]{2}\.[0-9]{2}$'; then
                 trusted=true
               fi
               ;;

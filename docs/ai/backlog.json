@@ -6667,5 +6667,41 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0205",
+    "title": "Trust canonical tagged sources in manual artifact runs",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P0",
+    "route": "luna",
+    "milestone": "EarlyDev 0.1.0:4",
+    "depends_on": [],
+    "acceptance": "Manual artifact dispatch trusts an exact source that is either reachable from ai-dev or ai-main or directly named by one strictly canonical AI version tag; malformed and auxiliary tags remain untrusted.",
+    "evidence": "Run34758088139 proved the branch-ancestry-only rejection. Focused workflow and snapshot-build tests cover the canonical tag refspec and strict tag predicate; direct Bash syntax validation and task/docs checks pass.",
+    "blocker": "",
+    "owner": "",
+    "level": "basic",
+    "parent": "MC-AI-0035",
+    "motivation": "Run34758088139 rejected canonical S4 source b866 after S5 advanced both working branches beyond a divergent history.",
+    "context": "A single canonical snapshot tag is a permitted immutable source identity and must not require an auxiliary transport ref.",
+    "complexity": "low",
+    "created_at": "2026-09-13",
+    "resolved_at": "2026-09-13",
+    "resolution_changes": "Fetch only AI tags for trust evaluation and accept exact source commits directly named by the strict canonical tag grammar.",
+    "plan": [
+      "Extend exact-source trust to canonical tags, retain strict grammar, and run focused negative and positive checks."
+    ],
+    "product_changes": [],
+    "code_changes": [
+      ".github/workflows/snapshot-artifacts.yml, script/tests/test_workflow_contexts.py, and script/tests/test_build_snapshot.py."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]

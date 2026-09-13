@@ -17,7 +17,9 @@ WORKFLOWS = (
 class WorkflowContextTests(unittest.TestCase):
     def test_snapshot_trust_condition_has_valid_bash_then_separator(self):
         workflow = WORKFLOWS[1].read_text(encoding="utf-8")
-        self.assertIn('refs/remotes/origin/ai-main; then', workflow)
+        self.assertIn("git tag --points-at", workflow)
+        self.assertIn("'+refs/tags/ai/*:refs/tags/ai/*'", workflow)
+        self.assertIn("_[0-9]{2}\\.[0-9]{2}\\.[0-9]{2}$'; then", workflow)
         self.assertNotIn('refs/remotes/origin/ai-main \\\n              then', workflow)
 
     def test_workflows_keep_runner_context_out_of_job_level_env(self):
