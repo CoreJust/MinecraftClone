@@ -6553,5 +6553,43 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0202",
+    "title": "Guard canonical release refs and exact-source candidate builds",
+    "kind": "chore",
+    "status": "done",
+    "priority": "P0",
+    "route": "luna",
+    "milestone": "EarlyDev 0.1.0:4",
+    "depends_on": [],
+    "acceptance": "Manual snapshot artifact dispatch accepts an exact source commit that is an ancestor of remote ai-dev or ai-main without requiring an auxiliary tag, while private dependency trust remains fail-closed. The pre-push hook rejects noncanonical branch refs, malformed or *-maintenance AI tags, and duplicate tags for one version. Focused positive and negative tests cover both guards; release rules document that the canonical version tag is created once only after candidate artifacts and required local acceptance.",
+    "evidence": "Focused release-guard, workflow-context and snapshot-workflow tests passed 35/35; the broader ai_check fixture suite passed 36/36 after the hook test was updated for the guard invocation. Documentation and task checks are pending the final staged candidate gate.",
+    "blocker": "—",
+    "owner": "",
+    "level": "basic",
+    "parent": "MC-AI-0035",
+    "motivation": "The S4 release loop created auxiliary maintenance tags and could not dispatch a pre-tag exact-source candidate while preserving private dependency trust.",
+    "context": "Proven release failures show that the hosted snapshot workflow accepted only ai-main or finalized tags for trusted private dependencies, while agents may publish only ai-dev and ai-main and each version has one canonical tag.",
+    "complexity": "medium",
+    "created_at": "2026-09-13",
+    "resolved_at": "2026-09-13",
+    "resolution_changes": "Added a pure release-ref validator, exact ai-dev ancestor trust for manually dispatched artifact candidates, a concise single-tag release rule, and focused positive/negative coverage. No remote refs were pushed.",
+    "plan": [
+      "Add a pure release-ref guard shared by the pre-push hook and focused tests; extend snapshot workflow source trust to exact ancestors of ai-dev; document the single-tag release sequence; run focused tests and the fast gate."
+    ],
+    "product_changes": [
+      "No product behavior changed; release infrastructure now fails closed on invalid refs and supports trusted pre-tag candidates."
+    ],
+    "code_changes": [
+      ".githooks/pre-push, script/ci/release_guard.py, script/tests/test_release_guard.py, .github/workflows/snapshot-artifacts.yml, docs/ai/RELEASES.md"
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]
