@@ -67,8 +67,8 @@ std::expected<core::Address, std::string> parseAddress(std::string_view const va
 
     uint32_t port = 0;
     std::string_view const port_string = value.substr(delimiter + 1);
-    auto const [end, error] = std::from_chars(port_string.begin(), port_string.end(), port);
-    if (error != std::errc{} || end != port_string.end() || port == 0
+    auto const [end, error] = std::from_chars(port_string.data(), port_string.data() + port_string.size(), port);
+    if (error != std::errc{} || end != port_string.data() + port_string.size() || port == 0
         || port > std::numeric_limits<uint16_t>::max()) {
         return std::unexpected("address contains an invalid port");
     }
