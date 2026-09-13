@@ -251,6 +251,23 @@ jobs:
           --output build/source-identity.json
       - name: Verify finalized source policy
         run: python script/ci/acquire.py source-checks
+      - name: Stage pinned Windows Vulkan runtime
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        run: |
+          $archive = Join-Path $env:RUNNER_TEMP "vulkan-runtime-components.zip"
+          $extract = Join-Path $env:RUNNER_TEMP "vulkan-runtime-components"
+          Invoke-WebRequest -Uri "https://sdk.lunarg.com/sdk/download/1.4.357.0/windows/vulkan-runtime-components.zip" -OutFile $archive
+          $actual = (Get-FileHash -Algorithm SHA256 $archive).Hash
+          $expected = "A14672EFED15AAFC7F5A16572D35CD3A3416EADF670AEEE3CDF50EE32D5FBF83"
+          if ($actual -ne $expected) { throw "Vulkan runtime archive SHA-256 mismatch: $actual" }
+          Expand-Archive -Path $archive -DestinationPath $extract
+          $source = Join-Path $extract "VulkanRT-X64-1.4.357.0-Components/x64/vulkan-1.dll"
+          $destination = Join-Path $env:VULKAN_SDK "Bin/vulkan-1.dll"
+          if (!(Test-Path $source) -or (Get-Item $source).Length -le 0) { throw "Pinned Vulkan runtime loader is missing or empty" }
+          New-Item -ItemType Directory -Force -Path (Split-Path $destination) | Out-Null
+          Copy-Item -Force $source $destination
+          if (!(Test-Path $destination) -or (Get-Item $destination).Length -le 0) { throw "Staged Vulkan runtime loader is missing or empty" }
       - name: Build, test, and package macOS
         if: matrix.platform == 'macos'
         shell: bash

@@ -126,6 +126,23 @@ class WorkflowContextTests(unittest.TestCase):
             )
             self.assertIn("if errorlevel 1 exit /b %errorlevel%", private_step, workflow_path)
 
+    def test_windows_snapshot_stages_pinned_vulkan_loader(self):
+        workflow = WORKFLOWS[1].read_text(encoding="utf-8")
+        runtime_step = workflow.split("      - name: Stage pinned Windows Vulkan runtime\n", maxsplit=1)[1]
+        runtime_step = runtime_step.split("      - name:", maxsplit=1)[0]
+        url = "https://sdk.lunarg.com/sdk/download/1.4.357.0/windows/vulkan-runtime-components.zip"
+        self.assertIn(url, runtime_step)
+        self.assertIn("A14672EFED15AAFC7F5A16572D35CD3A3416EADF670AEEE3CDF50EE32D5FBF83", runtime_step)
+        self.assertIn("VulkanRT-X64-1.4.357.0-Components/x64/vulkan-1.dll", runtime_step)
+        self.assertIn('Join-Path $env:VULKAN_SDK "Bin/vulkan-1.dll"', runtime_step)
+        self.assertIn("Get-FileHash -Algorithm SHA256", runtime_step)
+        self.assertIn('if ($actual -ne $expected)', runtime_step)
+        self.assertIn("(Get-Item $destination).Length -le 0", runtime_step)
+        self.assertLess(runtime_step.index("Get-FileHash"), runtime_step.index("Expand-Archive"))
+        self.assertLess(runtime_step.index('if ($actual -ne $expected)'), runtime_step.index("Expand-Archive"))
+        self.assertLess(workflow.index("Stage pinned Windows Vulkan runtime"), workflow.index("Build, test, and package Windows"))
+        self.assertIn('--vulkan-runtime "build\\install\\vulkan-1.dll"', workflow)
+
     def test_windows_cmd_build_phases_guard_each_fallible_command(self):
         phase_names = ("Build, test, and validate shaders (Windows)", "Build, test, and package Windows")
         commands = ("cmake --preset", "cmake --build", "ctest --test-dir", "python script/ci/acquire.py validate-shaders")

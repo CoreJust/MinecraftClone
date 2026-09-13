@@ -6591,5 +6591,45 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0203",
+    "title": "Stage the pinned Windows Vulkan runtime",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P0",
+    "route": "luna",
+    "milestone": "EarlyDev 0.1.0:4",
+    "depends_on": [],
+    "acceptance": "The hosted Windows release workflow downloads the pinned LunarG 1.4.357.0 runtime-components ZIP, verifies its SHA-256 before extraction, requires a real non-empty x64/vulkan-1.dll member, copies it into the acquired SDK's Bin directory consumed by CMake, and retains package-desktop's explicit --vulkan-runtime staging. Non-Windows workflow behavior remains unchanged; focused workflow tests cover ordering, identity, and fail-fast checks.",
+    "evidence": "Workflow regression test covers the exact runtime-components URL and SHA-256, verification before extraction, the non-empty x64 loader member, copying into VULKAN_SDK/Bin before CMake, and preserved package handoff. Hosted Windows execution remains pending.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0035",
+    "motivation": "Hosted Windows configuration failed because the pinned SDK lacked VULKAN_SDK/Bin/vulkan-1.dll while CMake and packaging require a real Vulkan loader.",
+    "context": "Hosted failure run34756197005 on the exact S4 candidate configured the pinned SDK successfully but stopped before compilation when the expected Windows Vulkan runtime was absent. Acquire the exact official LunarG runtime archive independently and fail closed on any identity or content mismatch.",
+    "complexity": "low",
+    "created_at": "2026-09-13",
+    "resolved_at": "2026-09-13",
+    "resolution_changes": "The hosted Windows release step now hash-verifies the pinned official LunarG runtime archive, stages its validated x64 loader into the acquired SDK Bin directory before configure, and retains package-desktop's explicit build\\install\\vulkan-1.dll handoff.",
+    "plan": [
+      "Download the pinned official LunarG runtime archive and verify its SHA-256 before extraction.",
+      "Validate and copy its x64 loader into the acquired SDK Bin directory, then add a focused workflow regression test."
+    ],
+    "product_changes": [
+      "Hosted Windows release configuration now stages the pinned official Vulkan loader required by desktop runtime packaging."
+    ],
+    "code_changes": [
+      ".github/workflows/snapshot-artifacts.yml: hash-check the pinned runtime archive, require its non-empty x64 loader, copy it into the acquired SDK, and preserve explicit package staging.",
+      "script/tests/test_workflow_contexts.py: cover archive identity, loader path, ordering, and explicit package staging."
+    ],
+    "baseline_commit": "b866217b9209096c81e71b0baffde35012712527",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]
