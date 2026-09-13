@@ -1,36 +1,42 @@
 # Scenario diagnostics
 
-Diagnostics identify invalid source or invalid trusted host configuration.
-Their stable code and machine-readable name are part of the parser interface;
-human wording may add filename, line, column, and context without changing the
-code.
+Diagnostics identify invalid source, invalid trusted limits, or failed
+CoreLang lowering. The stable machine-readable name comes from
+`scenarioDiagnosticCodeName`; human text may include filename and source
+location.
 
-| Code | Machine-readable name | Meaning |
+| Code | Name | Meaning |
 | --- | --- | --- |
-| `InvalidLimits` | `invalid-limits` | At least one trusted host limit is not positive. |
-| `SourceTooLarge` | `source-too-large` | Source bytes exceed the configured source limit. |
-| `StatementLimitExceeded` | `statement-limit-exceeded` | Nonblank directive lines exceed the statement budget. |
-| `ActorLimitExceeded` | `actor-limit-exceeded` | Player declarations exceed the actor budget. |
-| `TickLimitExceeded` | `tick-limit-exceeded` | Requested `wait` ticks exceed the tick budget. |
-| `OperationLimitExceeded` | `operation-limit-exceeded` | Emitted `input`, `wait`, and `expect` plan operations exceed the operation budget. |
-| `EvidenceLimitExceeded` | `evidence-limit-exceeded` | `expect` operations exceed the evidence budget. |
-| `MalformedSyntax` | `malformed-syntax` | The finite grammar, strict order, tokenization, or EOF rule is violated. |
-| `UnsupportedVersion` | `unsupported-version` | The `scenario` version is not supported. |
-| `UnsupportedProfile` | `unsupported-profile` | The selected profile is not supported for this format. |
-| `DuplicateActor` | `duplicate-actor` | A player identifier or character is declared more than once. |
-| `UnknownActor` | `unknown-actor` | A command references a player that was not declared. |
-| `UnsupportedCommand` | `unsupported-command` | A syntactically command-like form is outside the supported command set. |
-| `IntegerOverflow` | `integer-overflow` | A base-10 integer cannot be represented by its target field. |
-| `InvalidInteger` | `invalid-integer` | A numeric token is not a permitted base-10 integer for its field. |
-| `InvalidRange` | `invalid-range` | A profile field, direction, coordinate, or count is outside its allowed range. |
-| `InvalidCharacter` | `invalid-character` | A character string is malformed or not supported by the selected profile. |
-| `UnknownSourceHeader` | `unknown-source-header` | The first source header selects neither `scenario 1` nor CoreLang `@version("0.0.1")`. |
-| `CoreLangCompileFailure` | `corelang-compile-failure` | CoreLang parsing, graph validation, or fixed-ruleset resolution failed before a plan exists. |
-| `CoreLangRuntimeFailure` | `corelang-runtime-failure` | A bounded CoreLang callback rejected its typed scenario operation before a plan exists. |
-| `Cancelled` | `cancelled` | Scenario lowering observed cancellation before returning a plan. |
-| `MissingPlayer` | `missing-player` | The required one-or-more player declarations are absent. |
+| `InvalidLimits` | `invalid-limits` | A scenario limit is zero. |
+| `SourceTooLarge` | `source-too-large` | Source bytes exceed the host limit. |
+| `StatementLimitExceeded` | `statement-limit-exceeded` | Accepted host-call statements exceed the statement limit. |
+| `ActorLimitExceeded` | `actor-limit-exceeded` | Player declarations exceed the actor limit. |
+| `TickLimitExceeded` | `tick-limit-exceeded` | Sum of `wait` ticks exceeds the tick limit. |
+| `OperationLimitExceeded` | `operation-limit-exceeded` | Emitted input, wait, and expectation operations exceed the operation limit. |
+| `EvidenceLimitExceeded` | `evidence-limit-exceeded` | Expectations exceed the evidence limit. |
+| `MalformedSyntax` | `malformed-syntax` | Legacy ordering, tokens, or EOF rules are invalid. |
+| `UnsupportedVersion` | `unsupported-version` | A legacy scenario version is not `1`. |
+| `UnsupportedProfile` | `unsupported-profile` | The selected profile is unsupported. |
+| `DuplicateActor` | `duplicate-actor` | A player name or character is repeated. |
+| `UnknownActor` | `unknown-actor` | An operation names no declared player. |
+| `UnsupportedCommand` | `unsupported-command` | A legacy command is outside the profile grammar. |
+| `IntegerOverflow` | `integer-overflow` | A numeric conversion or boundary overflows its target. |
+| `InvalidInteger` | `invalid-integer` | A numeric token is not valid canonical base ten. |
+| `InvalidRange` | `invalid-range` | A coordinate, orientation, direction, or count is out of range. |
+| `InvalidCharacter` | `invalid-character` | The player character is malformed or unsupported. |
+| `MissingPlayer` | `missing-player` | No player was declared. |
+| `UnknownSourceHeader` | `unknown-source-header` | The source is neither `scenario 1` nor CoreLang `@version("0.0.3")`. |
+| `CoreLangCompileFailure` | `corelang-compile-failure` | CoreLang parsing, type checking, or ruleset resolution failed. |
+| `CoreLangRuntimeFailure` | `corelang-runtime-failure` | A typed host call, required declaration, runtime load, or completion failed. |
+| `Cancelled` | `cancelled` | Cancellation was observed before a plan was returned. |
 
-Parse and validation failures have no scenario side effect. A runner may report
-an expectation mismatch as execution evidence after a fully validated plan has
-begun; it is distinct from these parser diagnostic codes and terminates
-successful scenario completion at the boundary where it is observed.
+All failures above occur before a scenario plan is published. The CoreLang
+collector may have accumulated a private candidate when a later call fails;
+that candidate is discarded. A legacy or CoreLang expectation mismatch is
+execution evidence after a valid plan has begun, and stops successful scenario
+completion at the observed boundary rather than changing the diagnostic code.
+
+World loading has a separate `ScriptedWorldErrorCode` family. It reports
+invalid options, source overflow, compilation/runtime failure, host-call limit
+exhaustion, or incomplete publication; those errors likewise discard the
+private chunk candidate.

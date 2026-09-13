@@ -1,6 +1,6 @@
 # Model routing and execution cost
 
-Use the least expensive route that can make the task's decisions reliably. All four routes use **high** reasoning. This is the owner's routing policy, not a claim of measured model superiority or token savings. For comparable work, the efficiency target is no more than 50% of the S4 RED elapsed time and no more than one-third of its usage; this remains a planning target until comparable evidence establishes a result.
+Use the least expensive route that can make the task's decisions reliably. Medium reasoning is the default for implementation and review; raise it only when the task needs deeper reasoning. This is the owner's routing policy, not a claim of measured model superiority or token savings. For comparable work, the efficiency target is no more than 50% of the S4 RED elapsed time and no more than one-third of its usage; this remains a planning target until comparable evidence establishes a result.
 
 | Route | Model | Work in this project | Output to the next step |
 |---|---|---|---|

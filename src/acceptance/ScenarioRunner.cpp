@@ -95,10 +95,11 @@ class ScenarioServerController final {
 public:
     ScenarioServerController(
         std::vector<server::GameServer::SpawnPoint> spawn_points,
+        shared::WorldMode const world_mode,
         std::chrono::milliseconds const poll_interval,
         std::chrono::steady_clock::time_point const deadline
     )
-        : m_server(0, std::move(spawn_points))
+        : m_server(0, std::move(spawn_points), world_mode)
         , m_poll_interval(poll_interval)
         , m_deadline(deadline)
     { }
@@ -183,6 +184,13 @@ std::optional<uint64_t> actorIndex(shared::ScenarioPlan const& plan, shared::Sce
 }
 
 [[nodiscard]]
+shared::WorldMode serverWorldMode(shared::ScenarioProfile const profile) noexcept
+{
+    return profile == shared::ScenarioProfile::Flight3dV1
+        ? shared::WorldMode::Flight : shared::WorldMode::Flat;
+}
+
+[[nodiscard]]
 std::chrono::milliseconds remainingTimeout(
     std::chrono::steady_clock::time_point const deadline
 )
@@ -214,7 +222,9 @@ std::expected<RuntimeEvidence, std::string> runScenario(
     ) {
         return std::unexpected("scenario runner requires positive monotonic limits");
     }
-    if (plan.profile() != shared::ScenarioProfile::Flat2dV1 && plan.profile() != shared::ScenarioProfile::Flat3dV1) {
+    if (plan.profile() != shared::ScenarioProfile::Flat2dV1
+        && plan.profile() != shared::ScenarioProfile::Flat3dV1
+        && plan.profile() != shared::ScenarioProfile::Flight3dV1) {
         return std::unexpected("scenario runner does not support this profile");
     }
     static constexpr uint64_t MAX_SERVER_CLIENTS{ 4 };
@@ -223,15 +233,17 @@ std::expected<RuntimeEvidence, std::string> runScenario(
     }
 
     std::vector<server::GameServer::SpawnPoint> spawn_points;
+    shared::WorldMode const world_mode = serverWorldMode(plan.profile());
     spawn_points.reserve(plan.actors().size());
     for (shared::ScenarioActor const& actor : plan.actors()) {
         spawn_points.push_back(server::GameServer::SpawnPoint{
             .character = actor.character,
             .x = actor.x,
             .y = actor.y,
+            .z = actor.z,
         });
     }
-    auto validated_spawn_points = server::GameServer::validateSpawnPoints(std::move(spawn_points));
+    auto validated_spawn_points = server::GameServer::validateSpawnPoints(std::move(spawn_points), world_mode);
     if (!validated_spawn_points.has_value()) {
         return std::unexpected(validated_spawn_points.error());
     }
@@ -241,6 +253,7 @@ std::expected<RuntimeEvidence, std::string> runScenario(
     std::chrono::steady_clock::time_point const deadline = started_at + options.deadline;
     ScenarioServerController server{
         std::move(*validated_spawn_points),
+        world_mode,
         options.network_poll_interval,
         deadline,
     };
@@ -268,7 +281,11 @@ std::expected<RuntimeEvidence, std::string> runScenario(
             failure = "scenario client could not connect";
             break;
         }
-        if (!client->sendMessage(shared::JoinRequestMessage{ .ch = actor.character })) {
+        if (!client->sendMessage(shared::JoinRequestMessage{
+            .ch = actor.character,
+            .mode = world_mode,
+            .configuration = shared::World::canonicalConfiguration(),
+        })) {
             failure = "scenario client could not send its join request";
             break;
         }
@@ -341,10 +358,12 @@ std::expected<RuntimeEvidence, std::string> runScenario(
                 active_inputs[*index] = shared::Direction{
                     .x = static_cast<uint8_t>(input->x * 127),
                     .y = static_cast<uint8_t>(input->y * 127),
+                    .z = static_cast<uint8_t>(input->z * 127),
                 };
                 last_effective_tick = input->effective_boundary;
             } else if (auto const* const input = std::get_if<shared::ScenarioCameraInputOperation>(&operation.data)) {
-                if (plan.profile() != shared::ScenarioProfile::Flat3dV1
+                if ((plan.profile() != shared::ScenarioProfile::Flat3dV1
+                        && plan.profile() != shared::ScenarioProfile::Flight3dV1)
                     || input->effective_boundary != logical_tick + 1U) {
                     failure = operationFailure(operation, "has an inconsistent camera input boundary");
                     break;
@@ -356,7 +375,7 @@ std::expected<RuntimeEvidence, std::string> runScenario(
                 }
                 shared::ScenarioActor const& actor = plan.actors()[*index];
                 active_inputs[*index] = shared::scenarioCameraRelativeDirection(
-                    actor.yaw_degrees, input->strafe, input->forward
+                    actor.yaw_degrees, input->strafe, input->forward, input->vertical
                 );
                 ++camera_relative_inputs;
                 last_effective_tick = input->effective_boundary;
@@ -386,7 +405,7 @@ std::expected<RuntimeEvidence, std::string> runScenario(
                         return position.has_value()
                             && position->x == expectation->x
                             && position->y == expectation->y
-                            && expectation->z == 0U;
+                            && position->z == expectation->z;
                     },
                     deadline,
                     options.network_poll_interval

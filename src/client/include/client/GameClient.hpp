@@ -7,6 +7,7 @@
 
 #include <core/net/Client.hpp>
 
+#include <array>
 #include <chrono>
 #include <deque>
 #include <optional>
@@ -18,7 +19,14 @@ class GameClient : public core::Client {
 public:
     static constexpr uint32_t MAX_PENDING_INPUTS = 64;
 
-    explicit GameClient() : core::Client { 1 } { }
+    explicit GameClient(
+        shared::WorldMode const mode = shared::WorldMode::Flat,
+        shared::WorldConfiguration const configuration = shared::World::canonicalConfiguration()
+    )
+        : core::Client{ 1 }
+        , m_world{ mode, configuration }
+        , m_predicted_world{ mode, configuration }
+    { }
 
     void run(core::Address const server_address, char const ch);
 protected:
@@ -47,6 +55,8 @@ protected:
         std::chrono::steady_clock::time_point now
     ) const noexcept;
 private:
+    static constexpr std::array<char, 5> FLIGHT_CHARACTERS{ '@', '#', '$', '%', '&' };
+
     void onDisconnected(core::DisconnectEvent const event) override;
     void onReceived(core::ReceiveEvent event) override;
 protected:
@@ -60,7 +70,9 @@ protected:
     char m_local_character = 0;
     bool m_running = true;
     bool m_accepted = false;
+    uint32_t m_join_character_index = 0;
 private:
+    [[nodiscard]] bool sendJoinRequest();
     void rebuildPrediction();
     void updatePredictedPresentation(std::chrono::steady_clock::time_point updated_at) noexcept;
 };

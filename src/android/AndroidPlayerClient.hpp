@@ -7,6 +7,9 @@
 #include <client/GameClient.hpp>
 #include <client/render/VulkanRenderer.hpp>
 
+#include <shared/world/Chunk.hpp>
+#include <shared/world/ChunkMesher.hpp>
+
 #include <android_native_app_glue.h>
 
 #include <cstdint>
@@ -16,7 +19,10 @@ namespace game_android {
 
 class AndroidPlayerClient final : public client::GameClient {
 public:
-    explicit AndroidPlayerClient(android_app& app);
+    explicit AndroidPlayerClient(
+        android_app& app,
+        shared::WorldMode mode = shared::WorldMode::Flat
+    );
     ~AndroidPlayerClient();
 private:
     shared::Direction input() override;
@@ -26,6 +32,7 @@ private:
     static int32_t handleInputEvent(android_app* app, AInputEvent* event);
 
     void onAppCommand(int32_t command);
+    [[nodiscard]] bool updateVerticalInput(AInputEvent const* event) noexcept;
     void createWindowResources();
     void destroyWindowResources() noexcept;
     void pollOneEvent(int32_t timeout_millis);
@@ -39,12 +46,16 @@ private:
     AndroidInput m_input;
     AndroidShaderAssets m_shader_assets;
     client::Camera m_camera{
-        { .position = { 16.0, -20.0, 22.0 }, .angles = { .pitch_degrees = -35.0 } },
+        { .position = { 9.0, 9.0, 13.0 } },
     };
+    shared::ChunkMesher m_chunk_mesher;
+    shared::ChunkMesh const* m_chunk_mesh = nullptr;
     std::unique_ptr<client::VulkanRenderer> m_renderer;
     float m_density_scale = 1.0F;
     bool m_resumed = false;
     bool m_has_focus = false;
+    bool m_ascend_pressed = false;
+    bool m_descend_pressed = false;
 };
 
 } // namespace game_android

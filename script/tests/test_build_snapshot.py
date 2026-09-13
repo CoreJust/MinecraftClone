@@ -151,9 +151,9 @@ class BuildSnapshotTests(unittest.TestCase):
         self.assertEqual(result, [first.resolve(), second.resolve()])
 
     def test_windows_package_includes_explicit_vulkan_loader_in_zip(self):
-        package_temporary = tempfile.TemporaryDirectory(dir="/private/tmp")
+        package_temporary = tempfile.TemporaryDirectory()
         self.addCleanup(package_temporary.cleanup)
-        package_root = Path(package_temporary.name)
+        package_root = Path(package_temporary.name).resolve()
         self.write("install/mc_main.exe", b"executable")
         self.write("install/shaders/grid.vert.spv", b"shader")
         runtime = self.write("runtime/fmt.dll", b"runtime")
@@ -181,6 +181,7 @@ class BuildSnapshotTests(unittest.TestCase):
             build_snapshot.package_desktop(arguments)
         with zipfile.ZipFile(arguments.output) as archive:
             self.assertNotIn("vulkan-1.dll", archive.namelist())
+            self.assertFalse(any(name.startswith("private-dependencies/") for name in archive.namelist()))
 
         arguments.vulkan_runtime = loader
         arguments.work_root = package_root / "work-with-loader"

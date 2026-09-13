@@ -14,7 +14,9 @@
 #include <acceptance/RendererBenchmark.hpp>
 #include <acceptance/ScenarioRunner.hpp>
 
+#include <charconv>
 #include <condition_variable>
+#include <cstdint>
 #include <cstdlib>
 #include <expected>
 #include <filesystem>
@@ -35,6 +37,17 @@ enum class RuntimeMode {
     RendererCapture,
 };
 
+enum class LaunchMode {
+    GraphicalPlayer,
+    BotClient,
+    Server,
+};
+
+struct LaunchCommand final {
+    LaunchMode mode;
+    core::Address address;
+};
+
 struct RuntimeCommand final {
     RuntimeMode mode;
     std::filesystem::path scenario_path;
@@ -43,6 +56,77 @@ struct RuntimeCommand final {
     bool require_immediate_present_mode{ false };
     bool debug_hud_enabled{ false };
 };
+
+[[nodiscard]]
+std::expected<core::Address, std::string> parseAddress(std::string_view const value)
+{
+    size_t const delimiter = value.rfind(':');
+    if (delimiter == std::string_view::npos || delimiter == 0 || delimiter + 1 == value.size()) {
+        return std::unexpected("address must use IP:PORT syntax");
+    }
+
+    uint32_t port = 0;
+    std::string_view const port_string = value.substr(delimiter + 1);
+    auto const [end, error] = std::from_chars(port_string.begin(), port_string.end(), port);
+    if (error != std::errc{} || end != port_string.end() || port == 0
+        || port > std::numeric_limits<uint16_t>::max()) {
+        return std::unexpected("address contains an invalid port");
+    }
+
+    auto address = core::Address::make(
+        std::string{ value.substr(0, delimiter) },
+        static_cast<uint16_t>(port)
+    );
+    if (!address) {
+        return std::unexpected("address contains an invalid IP address");
+    }
+    return *address;
+}
+
+[[nodiscard]]
+std::expected<LaunchCommand, std::string> parseLaunchCommand(int const argc, char** const argv)
+{
+    if (argc == 1) {
+        return LaunchCommand{ .mode = LaunchMode::GraphicalPlayer, .address = core::Address::localhost(20'040) };
+    }
+
+    LaunchMode mode;
+    std::string_view const mode_argument{ argv[1] };
+    if (mode_argument == "--server") {
+        mode = LaunchMode::Server;
+    } else if (mode_argument == "--player-client") {
+        mode = LaunchMode::GraphicalPlayer;
+    } else if (mode_argument == "--bot-client") {
+        mode = LaunchMode::BotClient;
+    } else {
+        return std::unexpected("unknown launch option: " + std::string{ mode_argument });
+    }
+
+    if (mode == LaunchMode::Server) {
+        if (argc == 2) {
+            return LaunchCommand{ .mode = mode, .address = core::Address::localhost(20'040) };
+        }
+        if (argc != 4 || std::string_view{ argv[2] } != "--port") {
+            return std::unexpected("server launch syntax is '--server [--port PORT]'");
+        }
+        auto const address = parseAddress("127.0.0.1:" + std::string{ argv[3] });
+        if (!address.has_value()) {
+            return std::unexpected(address.error());
+        }
+        return LaunchCommand{ .mode = mode, .address = *address };
+    }
+    if (argc == 2) {
+        return LaunchCommand{ .mode = mode, .address = core::Address::localhost(20'040) };
+    }
+    if (argc != 4 || std::string_view{ argv[2] } != "--address") {
+        return std::unexpected("client launch syntax is '<mode> [--address IP:PORT]'");
+    }
+    auto const address = parseAddress(argv[3]);
+    if (!address.has_value()) {
+        return std::unexpected(address.error());
+    }
+    return LaunchCommand{ .mode = mode, .address = *address };
+}
 
 class RuntimeDeadlineWatchdog final {
 public:
@@ -312,56 +396,6 @@ int runRendererCaptureCommand(RuntimeCommand const& command)
 
 } // namespace
 
-bool recoverFromInputError() {
-    if (std::cin.eof()) {
-        std::cout << "\nEOF detected\n";
-        return false;
-    }
-    std::cin.clear();
-    std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
-    return true;
-}
-
-char readChar(std::string_view const prompt, std::string_view const options) {
-    std::cout << prompt << ": ";
-    char result = '\0';
-    while (true) {
-        if (!(std::cin >> result)) {
-            if (!recoverFromInputError()) {
-                exit(1);
-            }
-            std::cout << "Expected one of {" << options << "}: ";
-            continue;
-        }
-        if (options.contains(result)) {
-            break;
-        }
-        std::cout << "Expected one of {" << options << "}: ";
-    }
-    return result;
-}
-
-std::optional<core::Address> readAddress() {
-    std::cout << "Server address (IP:PORT, default is 127.0.0.1:20040): ";
-    std::string line;
-    std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
-    std::getline(std::cin, line);
-    if (line.empty()) {
-        return core::Address::localhost(20'040);
-    }
-    size_t const delim = line.find(':');
-    if (delim == std::string::npos) {
-        std::cout << "Incorrect address format\n";
-        return std::nullopt;
-    }
-    unsigned long const port_value = std::stoul(line.substr(delim + 1));
-    if (port_value > std::numeric_limits<uint16_t>::max()) {
-        std::cout << "Port is out of range\n";
-        return std::nullopt;
-    }
-    return core::Address::make(line.substr(0, delim), static_cast<uint16_t>(port_value));
-}
-
 int main(int argc, char** argv) {
     core::Log::ensureInit(core::LogSettings{ .initial_level = spdlog::level::debug });
     core::setCrashHandler();
@@ -369,11 +403,11 @@ int main(int argc, char** argv) {
 
     int exit_code = 0;
     try {
-        bool const is_server = argc == 2 && std::string_view{ argv[1] } == "--server";
-        if (is_server) {
-            server::GameServer server{ };
-            server.run();
-        } else if (argc > 1) {
+        bool const is_runtime_command = argc > 1
+            && (std::string_view{ argv[1] } == "--scenario"
+                || std::string_view{ argv[1] } == "--benchmark-render"
+                || std::string_view{ argv[1] } == "--capture-render");
+        if (is_runtime_command) {
             auto const command = parseRuntimeCommand(argc, argv);
             if (!command.has_value()) {
                 std::cerr << command.error() << '\n';
@@ -386,17 +420,19 @@ int main(int argc, char** argv) {
                 exit_code = runRendererCaptureCommand(*command);
             }
         } else {
-            bool const is_real = readChar("Are you a real player? (y/n)", "yn") == 'y';
-            char const ch = readChar("Choose your character (@ # $ % &)", "@#$%&");
-            auto const address = readAddress();
-            if (!address) {
+            auto const command = parseLaunchCommand(argc, argv);
+            if (!command.has_value()) {
+                std::cerr << command.error() << '\n';
                 exit_code = 1;
-            } else if (is_real) {
-                client::PlayerClient client{ };
-                client.run(*address, ch);
+            } else if (command->mode == LaunchMode::Server) {
+                server::GameServer server{ command->address.port(), { }, shared::WorldMode::Flight };
+                server.run();
+            } else if (command->mode == LaunchMode::BotClient) {
+                client::BotClient client{ shared::WorldMode::Flight };
+                client.run(command->address, '#');
             } else {
-                client::BotClient client{ };
-                client.run(*address, ch);
+                client::PlayerClient client{ shared::WorldMode::Flight };
+                client.run(command->address, '@');
             }
         }
     } catch (std::runtime_error const& e) {

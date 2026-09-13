@@ -27,6 +27,10 @@ SHARED_PYTHON_SOURCES = {
 PYTHON_TEST_TIMEOUT = 180 if os.name == "nt" else 120
 GOVERNED_PREFIXES = ("src/", "tests/", "docs/", "script/", ".githooks/", ".github/", ".codex/", ".agents/", "cmake/")
 PYTHON_WORKFLOW_PREFIXES = ("docs/ai/", "docs/code/", "script/", ".agents/", ".githooks/")
+NATIVE_BUILD_PREFIXES = ("src/", "tests/", "cmake/", "android/")
+NATIVE_BUILD_FILES = {
+    "CMakeLists.txt", "CMakePresets.json", "vcpkg.json", "vcpkg-configuration.json",
+}
 GOVERNED_FILES = {
     ".gitattributes", ".gitignore", "AGENTS.md", "CLAUDE.md", "CMakeLists.txt", "CMakePresets.json", "README.md",
     "publish.py", "vcpkg.json", "vcpkg-configuration.json",
@@ -70,6 +74,14 @@ def repository_root() -> Path:
 
 def governed(path: str) -> bool:
     return path in GOVERNED_FILES or path.startswith(GOVERNED_PREFIXES)
+
+
+def metadata_path(path: str) -> bool:
+    return path.startswith("docs/") or path in {"README.md", "AGENTS.md"}
+
+
+def native_build_path(path: str) -> bool:
+    return path.startswith(NATIVE_BUILD_PREFIXES) or path in NATIVE_BUILD_FILES
 
 
 def changed_paths(root: Path, cached: bool) -> set[str]:
@@ -435,38 +447,45 @@ def changed_scope(root: Path) -> tuple[str, list[str]]:
     }
     if not paths:
         return "full-python", []
-    if all(path.startswith("docs/") or path in {"README.md", "AGENTS.md"} for path in paths):
+    if all(metadata_path(path) for path in paths):
         return "metadata-only", sorted(paths)
     python_sources = {
         path for path in paths
         if path.startswith("script/") and path.endswith(".py") and not path.startswith("script/tests/")
     }
-    if python_sources and python_sources == paths:
+    python_tests = {
+        path for path in paths
+        if path.startswith("script/tests/") and path.endswith(".py")
+    }
+    if python_sources:
         targets = []
         for source in sorted(python_sources):
             if Path(source).name in SHARED_PYTHON_SOURCES or "/ci/" in source:
                 return "full-python", sorted(paths)
             candidate = f"script/tests/test_{Path(source).stem}.py"
             # The exact one-file mapping is intentionally conservative. A
-            # missing test or any mixed change falls back to the full suite.
+            # missing test or unrelated mixed change falls back to the full suite.
             if not (root / candidate).is_file():
                 return "full-python", sorted(paths)
             targets.append(candidate)
+        metadata = paths - python_sources - python_tests
+        if not all(metadata_path(path) for path in metadata):
+            return "full-python", sorted(paths)
+        if python_tests and python_tests != set(targets):
+            return "full-python", sorted(paths)
         return "targeted-python:" + ":".join(targets), sorted(paths)
+    if python_tests:
+        return "full-python", sorted(paths)
     if all(
         path.startswith(PYTHON_WORKFLOW_PREFIXES) or path == "AGENTS.md"
         for path in paths
     ):
         return "full-python", sorted(paths)
-    if any(
-        path.startswith(("src/", "tests/", "cmake/"))
-        or path in {"CMakeLists.txt", "CMakePresets.json", "vcpkg.json", "vcpkg-configuration.json"}
-        for path in paths
-    ):
+    if all(native_build_path(path) or metadata_path(path) for path in paths):
         return "full-cpp", sorted(paths)
-    # Unknown governed inputs are not safely attributable to one test file;
-    # use the broad code/build fallback when the checkout supports it.
-    return "full-cpp", sorted(paths)
+    # Unknown inputs are not safely attributable to one test file; retain the
+    # broad Python policy checks rather than treating them as C++ changes.
+    return "full-python", sorted(paths)
 
 
 def write_summary(root: Path, scope: str, changed: Sequence[str], results: Sequence[PhaseResult]) -> None:
@@ -538,9 +557,21 @@ def main(argv: Sequence[str] | None = None) -> int:
         ("diff-working", ["git", "diff", "--check"], 30),
         ("diff-cached", ["git", "diff", "--cached", "--check"], 30),
     ]
-    if scope == "metadata-only":
-        results.append(PhaseResult("python-tests", (), 0, "metadata-only changes", skipped=True))
-    elif scope.startswith("targeted-python:"):
+    if args.fast and scope == "full-cpp":
+        try:
+            names, version = project_version_arguments(root)
+            phase_specs.append(
+                (
+                    "source-checks",
+                    [sys.executable, "publish.py", names, version, "--checks-only"],
+                    60,
+                )
+            )
+        except (OSError, ValueError) as error:
+            results.append(PhaseResult("source-checks", (), 1, str(error)))
+    if args.fast and scope in {"metadata-only", "full-cpp"}:
+        results.append(PhaseResult("python-tests", (), 0, f"{scope} changes", skipped=True))
+    elif args.fast and scope.startswith("targeted-python:"):
         targets = scope.split(":")[1:]
         phase_specs.append(
             (
@@ -602,9 +633,15 @@ def main(argv: Sequence[str] | None = None) -> int:
         # Only fast development checks may reuse a receipt. Candidate and
         # strict release checks always execute every phase.
         if args.fast:
-            results.append(run_phase(root, log_dir, name, command, timeout, reuse=True))
+            result = run_phase(root, log_dir, name, command, timeout, reuse=True)
         else:
-            results.append(run_phase(root, log_dir, name, command, timeout))
+            result = run_phase(root, log_dir, name, command, timeout)
+        if name == "source-checks":
+            result.allowed_failure = (
+                result.returncode not in {0, 124}
+                and publisher_failure_is_allowed(result.output, strict=False)
+            )
+        results.append(result)
     if not args.fast:
         try:
             names, version = project_version_arguments(root)

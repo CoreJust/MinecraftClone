@@ -18,6 +18,7 @@
         "src/acceptance/include/acceptance/RenderCapture.hpp",
         "src/acceptance/include/acceptance/RendererBenchmark.hpp",
         "src/acceptance/include/acceptance/ScenarioRunner.hpp",
+        "tests/acceptance/client_launch_test.py",
         "tests/acceptance/evidence_json_tests.cpp",
         "tests/acceptance/framebuffer_extent_tests.cpp",
         "tests/acceptance/image_evidence_tests.cpp",
@@ -25,7 +26,7 @@
         "tests/acceptance/runtime_cli_tests.cmake",
         "tests/acceptance/scenario_runner_tests.cpp"
       ],
-      "sources_sha256": "f216f7e25ddfd4c7cde43efde83435d108cdc93390f2886d111ae7fcb0530318"
+      "sources_sha256": "cc95a9c21ae4cbc29c476119689a081f11c06ebb764f5323517859b8dca6b4d1"
     },
     {
       "guide": "docs/code/ANDROID.md",
@@ -42,13 +43,14 @@
         "src/android/AndroidShaderAssets.cpp",
         "src/android/AndroidShaderAssets.hpp",
         "src/android/CMakeLists.txt",
-        "tests/android/input_state_tests.cpp"
+        "tests/android/input_state_tests.cpp",
+        "tests/android/input_tests.cpp"
       ],
-      "sources_sha256": "bbe71ea4787a4ae49f22ab0c81b5ea6487549e3fa30d81d68a7fda3ff525b84b"
+      "sources_sha256": "f898c130f46c9936f956421cec36f4826f2cc586f07e9c8f9b79c8d0515f236f"
     },
     {
       "guide": "docs/BUILD.md",
-      "guide_sha256": "bb043c0c3fb0f7fc98ca9c6d645f594f13501ea4d34254a8d49550e17258bb16",
+      "guide_sha256": "3cbed7eb0f543b93be5070e7e7d910dd8805a643cbf042f2a9556f816f15fd46",
       "id": "build",
       "sources": [
         ".agents/skills/backlog/SKILL.md",
@@ -134,7 +136,7 @@
         "vcpkg-configuration.json",
         "vcpkg.json"
       ],
-      "sources_sha256": "d4813a7387878c43c1aaea6fbab82af5545946f34c05e0274dd623ba8e6d0cf8"
+      "sources_sha256": "4b60b53ad883c21344b011495af328893b5931885fd91f46340a6670c36d4ff6"
     },
     {
       "guide": "docs/code/CORE.md",
@@ -173,7 +175,7 @@
     },
     {
       "guide": "docs/code/GAMEPLAY.md",
-      "guide_sha256": "65ff5f0abe52db20bf911b08344e775d5cd6e028076389cd3405395e4e3f3122",
+      "guide_sha256": "f0c2b10fe11187a18dd2c76f2f94056cf515d011042adce9d401f2aa807f8096",
       "id": "gameplay",
       "sources": [
         "src/client/BotClient.cpp",
@@ -202,23 +204,36 @@
         "src/shared/include/shared/ProjectInfo.hpp",
         "src/shared/include/shared/net/Message.hpp",
         "src/shared/include/shared/scenario/Scenario.hpp",
+        "src/shared/include/shared/world/CanonicalWorld.hpp",
+        "src/shared/include/shared/world/Chunk.hpp",
+        "src/shared/include/shared/world/ChunkMesher.hpp",
+        "src/shared/include/shared/world/ScriptedWorld.hpp",
         "src/shared/include/shared/world/World.hpp",
         "src/shared/net/Message.cpp",
         "src/shared/scenario/CoreLangScenario.cpp",
         "src/shared/scenario/Scenario.cpp",
+        "src/shared/world/CanonicalWorld.cpp",
+        "src/shared/world/CanonicalWorldScript.hpp.in",
+        "src/shared/world/Chunk.cpp",
+        "src/shared/world/ChunkMesher.cpp",
+        "src/shared/world/ScriptedWorld.cpp",
         "src/shared/world/World.cpp",
+        "tests/core/chunk_mesher_tests.cpp",
+        "tests/core/chunk_tests.cpp",
         "tests/core/corelang_scenario_tests.cpp",
+        "tests/core/flight_world_tests.cpp",
         "tests/core/game_server_lifecycle_tests.cpp",
         "tests/core/game_server_tests.cpp",
         "tests/core/scenario_parser_tests.cpp",
+        "tests/core/scripted_world_tests.cpp",
         "tests/core/shared_message_tests.cpp",
         "tests/core/shared_world_tests.cpp"
       ],
-      "sources_sha256": "355b8b321c52bfccfb246e4e7e9cb7c5abcc37496172807be669b9faa6f3aaaf"
+      "sources_sha256": "f6b0053d8d31cd2b05c438693110bf0ef573fbbe3597101dae64e86cfbde57ca"
     },
     {
       "guide": "docs/code/RENDERING.md",
-      "guide_sha256": "5e07cfbb8afdad3513321039351295cd2b9d73f84ebb357f5433e36311dd7bdd",
+      "guide_sha256": "b147b8cde9466a46f7dbe1e3bd582a888d19bdcb4779c709908f0281d4c78855",
       "id": "rendering",
       "sources": [
         "src/client/CMakeLists.txt",
@@ -239,6 +254,8 @@
         "src/client/render/shaders/grid.vert",
         "src/client/render/shaders/player.mesh",
         "src/client/render/shaders/player.vert",
+        "src/client/render/shaders/stone.frag",
+        "src/client/render/shaders/stone.vert",
         "src/client/render/shaders/trivial.frag",
         "tests/client/camera_controller_tests.cpp",
         "tests/client/camera_tests.cpp",
@@ -256,11 +273,12 @@
         "tests/client/renderer_golden_tests.cpp",
         "tests/client/renderer_smoke_tests.cpp",
         "tests/client/shader_assets_tests.cpp",
+        "tests/client/stone_renderer_tests.cpp",
         "tests/testsupport/ImageComparison.cpp",
         "tests/testsupport/image_comparison_tests.cpp",
         "tests/testsupport/include/testsupport/ImageComparison.hpp"
       ],
-      "sources_sha256": "db7783c39ee705a83d3acd28abfcaacb90c9404891eb835c606d8f793aea7505"
+      "sources_sha256": "67dac9c75c20aac20f511fec06073bcfaf1d133ecdfdb3f3668f1be7dc1ab717"
     }
   ],
   "version": 1

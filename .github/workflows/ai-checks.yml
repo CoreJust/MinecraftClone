@@ -136,6 +136,9 @@ jobs:
         run: python script/ci/acquire.py install-ninja --platform ${{ matrix.platform }} --root "${{ runner.temp }}/ninja"
       - name: Acquire pinned vcpkg
         run: python script/ci/acquire.py install-vcpkg --root "${{ runner.temp }}/vcpkg"
+      - name: Install host autotools for vcpkg GMP and MPFR (macOS)
+        if: matrix.platform == 'macos'
+        run: brew install autoconf autoconf-archive automake libtool
       - name: Install pinned vcpkg manifest dependencies (macOS)
         if: matrix.platform == 'macos'
         shell: bash

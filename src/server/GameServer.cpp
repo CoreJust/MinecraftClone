@@ -3,6 +3,7 @@
 #include <core/IO/Log.hpp>
 
 #include <algorithm>
+#include <cstdlib>
 #include <stdexcept>
 #include <thread>
 
@@ -46,7 +47,8 @@ uint64_t GameServer::tick(std::chrono::milliseconds const timeout) {
 }
 
 std::expected<std::vector<GameServer::SpawnPoint>, std::string> GameServer::validateSpawnPoints(
-    std::vector<SpawnPoint> spawn_points
+    std::vector<SpawnPoint> spawn_points,
+    shared::WorldMode const world_mode
 ) {
     for (SpawnPoint const& spawn_point : spawn_points) {
         bool const valid_character = spawn_point.character == '@'
@@ -57,8 +59,17 @@ std::expected<std::vector<GameServer::SpawnPoint>, std::string> GameServer::vali
         if (!valid_character) {
             return std::unexpected("spawn point has an unsupported character");
         }
-        if (spawn_point.x > shared::World::MAX_PLAYER_ORIGIN_CELL
-            || spawn_point.y > shared::World::MAX_PLAYER_ORIGIN_CELL) {
+        bool const outside_flat_world = world_mode == shared::WorldMode::Flat
+            && (spawn_point.x < 0 || spawn_point.x > shared::World::MAX_PLAYER_ORIGIN_CELL
+                || spawn_point.y < 0 || spawn_point.y > shared::World::MAX_PLAYER_ORIGIN_CELL
+                || spawn_point.z != 0);
+        bool const outside_flight_world = world_mode == shared::WorldMode::Flight
+            && !shared::World::isFlightPositionInBounds({
+                .x = spawn_point.x,
+                .y = spawn_point.y,
+                .z = spawn_point.z,
+            });
+        if (outside_flat_world || outside_flight_world) {
             return std::unexpected("spawn point is outside the world");
         }
     }
@@ -67,13 +78,10 @@ std::expected<std::vector<GameServer::SpawnPoint>, std::string> GameServer::vali
             if (first->character == second->character) {
                 return std::unexpected("spawn points contain duplicate characters");
             }
-            uint8_t const horizontal_distance = first->x >= second->x
-                ? first->x - second->x
-                : second->x - first->x;
-            uint8_t const vertical_distance = first->y >= second->y
-                ? first->y - second->y
-                : second->y - first->y;
-            if (horizontal_distance <= 1 && vertical_distance <= 1) {
+            int32_t const horizontal_distance = std::abs(first->x - second->x);
+            int32_t const vertical_distance = std::abs(first->y - second->y);
+            if (world_mode == shared::WorldMode::Flat
+                && horizontal_distance <= 1 && vertical_distance <= 1) {
                 return std::unexpected("spawn points overlap player collision neighborhoods");
             }
         }
@@ -82,10 +90,12 @@ std::expected<std::vector<GameServer::SpawnPoint>, std::string> GameServer::vali
 }
 
 std::vector<GameServer::SpawnPoint> GameServer::checkedSpawnPoints(
-    std::vector<SpawnPoint> spawn_points
+    std::vector<SpawnPoint> spawn_points,
+    shared::WorldMode const world_mode
 ) {
     auto validated = validateSpawnPoints(
-        std::move(spawn_points)
+        std::move(spawn_points),
+        world_mode
     );
     if (!validated.has_value()) {
         throw std::invalid_argument{ validated.error() };
@@ -122,7 +132,13 @@ void GameServer::onReceived(core::ServerReceiveEvent event) {
     shared::PlayerId const id = event.client_id;
     shared::Message* msg_ptr = &*maybe_msg;
     if (auto* msg = std::get_if<shared::JoinRequestMessage>(msg_ptr)) {
-        auto const [ch] = *msg;
+        if (msg->mode != m_world.mode() || msg->configuration != m_world.configuration()) {
+            sendTo(id, shared::JoinResponseMessage{
+                .accepted = false,
+            });
+            return;
+        }
+        char const ch = msg->ch;
         if (m_world.player(id) || m_world.playerExists(ch)) {
             sendTo(id, shared::JoinResponseMessage{
                 .accepted = false,
@@ -137,7 +153,11 @@ void GameServer::onReceived(core::ServerReceiveEvent event) {
         if (spawn_point == m_spawn_points.end()) {
             m_world.spawnPlayer(id, ch);
         } else {
-            m_world.spawnPlayer(id, ch, std::pair{ spawn_point->x, spawn_point->y });
+            m_world.spawnPlayer(id, ch, shared::PlayerPosition{
+                .x = spawn_point->x,
+                .y = spawn_point->y,
+                .z = spawn_point->z,
+            });
         }
         m_player_replications.push_back(PlayerReplication{ .id = id });
         sendTo(id, shared::JoinResponseMessage{
@@ -145,7 +165,7 @@ void GameServer::onReceived(core::ServerReceiveEvent event) {
         });
 
         shared::Player const p = m_world.player(id).value();
-        CORE_INFO("Player '{}' spawned at x {}, y {}", ch, static_cast<int>(p.x), static_cast<int>(p.y));
+        CORE_INFO("Player '{}' spawned at x {}, y {}, z {}", ch, p.x, p.y, p.z);
         for (shared::Player const& player : m_world.players()) {
             PlayerReplication* const replication = playerReplication(player.id);
             if (replication == nullptr) {
@@ -188,7 +208,7 @@ void GameServer::processInput(PlayerReplication& replication, shared::ClientInpu
 {
     replication.action_consumed_this_tick = true;
     bool moved = false;
-    if (input.direction.x != 0 || input.direction.y != 0) {
+    if (input.direction.x != 0 || input.direction.y != 0 || input.direction.z != 0) {
         moved = m_world.movePlayer(replication.id, input.direction);
     }
     replication.acknowledged_input_sequence = input.sequence;
@@ -223,8 +243,10 @@ shared::ServerPlayerPositionMessage GameServer::playerPositionMessage(
         .ch = player.ch,
         .x = player.x,
         .y = player.y,
+        .z = player.z,
         .x_subcell = player.x_subcell,
         .y_subcell = player.y_subcell,
+        .z_subcell = player.z_subcell,
         .acknowledged_input_sequence = replication.acknowledged_input_sequence,
         .state_revision = replication.state_revision,
     };

@@ -175,9 +175,13 @@ bool DebugHudState::formatText(DebugHudText& text) const noexcept {
     offset = appendText(text, offset, text.bytes.size(), "\n");
 
     line_limit = offset + DEBUG_HUD_MAX_LINE_BYTES;
-    offset = appendText(text, offset, line_limit, "UPTIME:  ");
-    offset = appendNumber(text, offset, line_limit, values.uptime_seconds, 1);
-    offset = appendText(text, offset, line_limit, "s");
+    if (values.input.touch_flight_help) {
+        offset = appendText(text, offset, line_limit, "RIGHT: TOP UP / BOTTOM DOWN");
+    } else {
+        offset = appendText(text, offset, line_limit, "UPTIME:  ");
+        offset = appendNumber(text, offset, line_limit, values.uptime_seconds, 1);
+        offset = appendText(text, offset, line_limit, "s");
+    }
     offset = appendText(text, offset, text.bytes.size(), "\n");
 
     line_limit = offset + DEBUG_HUD_MAX_LINE_BYTES;

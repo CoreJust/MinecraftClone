@@ -1,0 +1,23 @@
+@version("0.0.3")
+@use minecraft
+
+fn reverse(name: str, x: i8, y: i8, z: i8) {
+    for repetition in 0i32..1i32 { moveXYZ(name, x, y, z) }
+}
+
+pub fn scenario() {
+    profile("flight3d-v1")
+    seed(42u64)
+    playerXYZ("alice", '@'c8, 64i32, -64i32, 64i32, 0i16, 0i16, 0i16)
+    playerXYZ("bob", '#'c8, -64i32, 64i32, -64i32, 0i16, 0i16, 0i16)
+    reverse("alice", -1i8, 1i8, -1i8)
+    reverse("bob", 1i8, -1i8, 1i8)
+    wait(10u64)
+    expectXYZ("alice", 60i32, -61i32, 60i32)
+    expectXYZ("bob", -61i32, 60i32, -61i32)
+    reverse("alice", 1i8, -1i8, 1i8)
+    reverse("bob", -1i8, 1i8, -1i8)
+    wait(10u64)
+    expectXYZ("alice", 64i32, -64i32, 64i32)
+    expectXYZ("bob", -64i32, 64i32, -64i32)
+}

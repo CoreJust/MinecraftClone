@@ -64,7 +64,34 @@ if(MC_REGISTER_SERVER_ONLY_BUILD_TEST)
     endif()
 endif()
 
+option(MC_ENABLE_STONE_RENDERER_ACCEPTANCE "Run S5 offscreen stone acceptance" OFF)
+if(MC_ENABLE_STONE_RENDERER_ACCEPTANCE)
+    if(NOT MC_BUILD_CLIENT OR ANDROID)
+        message(FATAL_ERROR "Stone renderer acceptance requires a desktop Client build")
+    endif()
+    add_executable(mc_stone_renderer_acceptance client/stone_renderer_tests.cpp main.cpp)
+    target_compile_definitions(mc_stone_renderer_acceptance PRIVATE MC_STONE_RENDERER_FAIL_UNSUPPORTED=1)
+    target_link_libraries(mc_stone_renderer_acceptance PRIVATE mc mc_test_support GTest::gtest)
+    mc_apply_target_defaults(mc_stone_renderer_acceptance)
+    mc_copy_target_shaders(mc_stone_renderer_acceptance mc)
+    add_test(NAME StoneRendererAcceptanceTest COMMAND mc_stone_renderer_acceptance)
+    set_tests_properties(StoneRendererAcceptanceTest PROPERTIES
+        TIMEOUT 45
+        RUN_SERIAL TRUE
+        LABELS "renderer;gpu"
+        FAIL_REGULAR_EXPRESSION "Vulkan validation; error at ; critical at "
+    )
+endif()
+
 if(MC_BUILD_CLIENT AND NOT ANDROID)
+    find_package(Python3 REQUIRED COMPONENTS Interpreter)
+    add_test(
+        NAME AcceptanceCli.AutomaticJoin
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/acceptance/client_launch_test.py
+            $<TARGET_FILE:mc_main>
+    )
+    set_tests_properties(AcceptanceCli.AutomaticJoin PROPERTIES TIMEOUT 30)
     add_test(
         NAME AcceptanceCli.RuntimeModes
         COMMAND ${CMAKE_COMMAND}
@@ -98,7 +125,11 @@ add_executable(mc_tests
     core/range_span_tests.cpp
     core/shared_message_tests.cpp
     core/scenario_parser_tests.cpp
+    core/chunk_tests.cpp
+    core/chunk_mesher_tests.cpp
+    core/scripted_world_tests.cpp
     core/shared_world_tests.cpp
+    core/flight_world_tests.cpp
     core/span_utils_tests.cpp
     core/static_initializer_tests.cpp
     core/tagged_bool_tests.cpp
@@ -134,6 +165,7 @@ if(MC_BUILD_CLIENT AND NOT ANDROID)
     client/frame_scheduler_tests.cpp
             client/game_client_prediction_tests.cpp
             client/player_presentation_tests.cpp
+            android/input_tests.cpp
             client/renderer_geometry_tests.cpp
             client/shader_assets_tests.cpp
             core/corelang_scenario_tests.cpp

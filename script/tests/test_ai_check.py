@@ -43,6 +43,16 @@ class AiCheckTests(unittest.TestCase):
             "script/ai_docs.py": "raise SystemExit(0)\n",
             "script/ai_tasks.py": "raise SystemExit(0)\n",
             "script/ai_plan.py": "raise SystemExit(0)\n",
+            "publish.py": (
+                "import os\n"
+                "if os.environ.get('AI_CHECK_SOURCE_FAILURE'):\n"
+                "    print('[1/1] source files (.cpp/.hpp/.mesh etc.) mentioned exactly once ... FAIL bad source')\n"
+                "    raise SystemExit(1)\n"
+                "if os.environ.get('AI_CHECK_SOURCE_ORDINARY_FAILURE'):\n"
+                "    print('[1/2] no unstaged or uncommitted changes ... FAIL dirty')\n"
+                "    print('[2/2] latest snapshot date is today ... FAIL date')\n"
+                "    raise SystemExit(1)\n"
+            ),
             "script/tests/test_smoke.py": "import unittest\nclass Smoke(unittest.TestCase):\n    def test_ok(self): self.assertTrue(True)\n",
             "src/shared/include/shared/ProjectInfo.hpp": (
                 'constexpr std::string_view MAJOR_VERSION_NAME{ "Test" };\n'
@@ -56,7 +66,7 @@ class AiCheckTests(unittest.TestCase):
         self.git("init")
         self.git("config", "user.email", "ai-check@example.invalid")
         self.git("config", "user.name", "AI Check")
-        self.git("add", "script", "src")
+        self.git("add", "publish.py", "script", "src")
         self.git("commit", "--no-gpg-sign", "-m", "fixture")
 
     def tearDown(self):
@@ -578,7 +588,7 @@ class AiCheckTests(unittest.TestCase):
                 self.assertEqual(second.returncode, 0)
                 self.assertFalse(second.reused)
 
-    def test_python_tests_execute_after_non_script_input_changes(self):
+    def test_fast_cpp_changes_skip_unrelated_python_tests(self):
         source = self.root / "src/source_policy.cpp"
         source.write_text("int value = 1;\n", encoding="utf-8")
         test_file = self.root / "script/tests/test_source_policy.py"
@@ -600,12 +610,10 @@ class AiCheckTests(unittest.TestCase):
         source.write_text("x" * 81 + "\n", encoding="utf-8")
 
         second = self.run_check("--fast")
-        self.assertEqual(second.returncode, 1, second.stdout + second.stderr)
-        self.assertIn("FAIL python-tests", second.stdout)
-        self.assertNotIn("REUSED PASS python-tests", second.stdout)
+        self.assertEqual(second.returncode, 0, second.stdout + second.stderr)
+        self.assertIn("SKIP python-tests", second.stdout)
         summary = json.loads((self.root / "build/ai-checks/summary.json").read_text(encoding="utf-8"))
-        self.assertIn("python-tests", summary["executed_phases"])
-        self.assertNotIn("python-tests", summary["reused_phases"])
+        self.assertIn("python-tests", summary["skipped_phases"])
 
     def test_matching_receipt_keeps_hook_command_to_one_execution(self):
         marker = self.root / "build/ai-checks/docs-command-count"
@@ -691,8 +699,44 @@ class AiCheckTests(unittest.TestCase):
         with mock.patch.object(checker, "run_phase", side_effect=run_phase), contextlib.redirect_stdout(io.StringIO()) as output:
             self.assertEqual(checker.main(["--root", str(self.root), "--fast"]), 0)
         self.assertIn("full-cpp", output.getvalue())
+        self.assertIn("source-checks", calls)
+        self.assertNotIn("python-tests", calls)
         self.assertNotIn("build", calls)
         self.assertNotIn("ctest", calls)
+
+    def test_unknown_tooling_mixed_with_native_changes_keeps_full_python_scope(self):
+        checker = load_module()
+        changed = {"src/fixture.cpp", "publish.py"}
+        calls = []
+
+        def run_phase(root, log_dir, name, command, timeout, **kwargs):
+            calls.append(name)
+            return checker.PhaseResult(name, command, 0, "")
+
+        with mock.patch.object(checker, "changed_paths", return_value=changed), mock.patch.object(checker, "untracked_paths", return_value=set()), mock.patch.object(checker, "run_phase", side_effect=run_phase), contextlib.redirect_stdout(io.StringIO()) as output:
+            self.assertEqual(checker.main(["--root", str(self.root), "--fast"]), 0)
+        self.assertIn("full-python", output.getvalue())
+        self.assertIn("python-tests", calls)
+        self.assertNotIn("source-checks", calls)
+
+    def test_fast_cpp_source_policy_failure_propagates_without_python_suite(self):
+        (self.root / "CMakePresets.json").write_text("{}\n", encoding="utf-8")
+        (self.root / "src/fixture.cpp").write_text("changed\n", encoding="utf-8")
+        environment = os.environ | {"AI_CHECK_SOURCE_FAILURE": "1"}
+
+        result = self.run_check("--fast", environment=environment)
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("FAIL source-checks", result.stdout)
+        self.assertNotIn("PASS python-tests", result.stdout)
+        self.assertIn("SKIP python-tests", result.stdout)
+
+    def test_fast_cpp_source_checks_allow_ordinary_publisher_failures(self):
+        (self.root / "CMakePresets.json").write_text("{}\n", encoding="utf-8")
+        (self.root / "src/fixture.cpp").write_text("changed\n", encoding="utf-8")
+        environment = os.environ | {"AI_CHECK_SOURCE_ORDINARY_FAILURE": "1"}
+        result = self.run_check("--fast", environment=environment)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("ALLOWED source-checks", result.stdout)
 
     def test_full_and_strict_checks_still_run_and_propagate_build_failures(self):
         checker = load_module()
@@ -709,8 +753,32 @@ class AiCheckTests(unittest.TestCase):
                     result = checker.main(["--root", str(self.root), *arguments])
 
                 self.assertEqual(result, 1)
+                self.assertIn("python-tests", calls)
                 self.assertIn("build", calls)
                 self.assertIn("ctest", calls)
+
+    def test_full_and_strict_checks_run_full_python_for_focused_scopes(self):
+        checker = load_module()
+        (self.root / "script/ai_checks.json").write_text("[]\n", encoding="utf-8")
+
+        for scope in ("metadata-only", "targeted-python:script/tests/test_leaf.py"):
+            for arguments in ([], ["--strict"], ["--candidate"]):
+                with self.subTest(scope=scope, arguments=arguments):
+                    calls = []
+
+                    def run_phase(root, log_dir, name, command, timeout, **kwargs):
+                        calls.append((name, command))
+                        return checker.PhaseResult(name, command, 0, "")
+
+                    with mock.patch.object(checker, "changed_scope", return_value=(scope, [])), mock.patch.object(checker, "run_phase", side_effect=run_phase), contextlib.redirect_stdout(io.StringIO()):
+                        result = checker.main(["--root", str(self.root), *arguments])
+
+                    self.assertEqual(result, 0)
+                    python_tests = next(command for name, command in calls if name == "python-tests")
+                    self.assertEqual(
+                        python_tests,
+                        [sys.executable, "-m", "unittest", "discover", "-s", "script/tests", "-v"],
+                    )
 
     def test_workflow_only_changes_use_full_python_scope(self):
         checker = load_module()
@@ -764,6 +832,56 @@ class AiCheckTests(unittest.TestCase):
         result = self.run_check("--fast")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("CHECK SCOPE targeted-python:script/tests/test_check_options.py", result.stdout)
+
+    def test_leaf_python_mapping_targets_matching_test_with_metadata(self):
+        source = self.root / "script/check_options.py"
+        test_file = self.root / "script/tests/test_check_options.py"
+        metadata = self.root / "docs/ai/generated.md"
+        source.write_text("VALUE = 1\n", encoding="utf-8")
+        test_file.write_text(
+            "import unittest\n"
+            "class Options(unittest.TestCase):\n"
+            "    def test_ok(self): self.assertTrue(True)\n",
+            encoding="utf-8",
+        )
+        metadata.parent.mkdir(parents=True, exist_ok=True)
+        metadata.write_text("generated\n", encoding="utf-8")
+        self.git("add", "script/check_options.py", "script/tests/test_check_options.py", "docs/ai/generated.md")
+        self.git("commit", "--no-gpg-sign", "-m", "fixture leaf metadata")
+        source.write_text("VALUE = 2\n", encoding="utf-8")
+        test_file.write_text(test_file.read_text(encoding="utf-8") + "# focused\n", encoding="utf-8")
+        metadata.write_text("regenerated\n", encoding="utf-8")
+
+        result = self.run_check("--fast")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("CHECK SCOPE targeted-python:script/tests/test_check_options.py", result.stdout)
+        self.assertIn(
+            "PASS python-tests: " + " ".join([sys.executable, "-m", "unittest", "script/tests/test_check_options.py", "-v"]),
+            result.stdout,
+        )
+
+    def test_targeted_python_failure_propagates(self):
+        source = self.root / "script/check_options.py"
+        test_file = self.root / "script/tests/test_check_options.py"
+        source.write_text("VALUE = 1\n", encoding="utf-8")
+        test_file.write_text(
+            "import unittest\n"
+            "class Options(unittest.TestCase):\n"
+            "    def test_ok(self): self.assertTrue(True)\n",
+            encoding="utf-8",
+        )
+        self.git("add", "script/check_options.py", "script/tests/test_check_options.py")
+        self.git("commit", "--no-gpg-sign", "-m", "fixture leaf failure")
+        source.write_text("VALUE = 2\n", encoding="utf-8")
+        test_file.write_text(
+            test_file.read_text(encoding="utf-8").replace("self.assertTrue(True)", "self.assertTrue(False)"),
+            encoding="utf-8",
+        )
+
+        result = self.run_check("--fast")
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("FAIL python-tests", result.stdout)
+        self.assertIn("script/tests/test_check_options.py", result.stdout)
 
 
 if __name__ == "__main__":

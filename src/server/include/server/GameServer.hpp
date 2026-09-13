@@ -18,21 +18,26 @@ class GameServer final : public core::Server {
 public:
     struct SpawnPoint final {
         char character;
-        uint8_t x;
-        uint8_t y;
+        int32_t x;
+        int32_t y;
+        int32_t z = 0;
     };
 
     explicit GameServer(
         uint16_t port = 20'040,
-        std::vector<SpawnPoint> spawn_points = { }
+        std::vector<SpawnPoint> spawn_points = { },
+        shared::WorldMode world_mode = shared::WorldMode::Flat,
+        shared::WorldConfiguration configuration = shared::World::canonicalConfiguration()
     )
         : core::Server{ core::Address::localhost(port), 4, 1 }
-        , m_spawn_points{ checkedSpawnPoints(std::move(spawn_points)) }
+        , m_world{ world_mode, configuration }
+        , m_spawn_points{ checkedSpawnPoints(std::move(spawn_points), world_mode) }
     { }
 
     [[nodiscard]]
     static std::expected<std::vector<SpawnPoint>, std::string> validateSpawnPoints(
-        std::vector<SpawnPoint> spawn_points
+        std::vector<SpawnPoint> spawn_points,
+        shared::WorldMode world_mode = shared::WorldMode::Flat
     );
 
     [[nodiscard]]
@@ -70,7 +75,10 @@ private:
         PlayerReplication const& replication
     ) const noexcept;
     [[nodiscard]]
-    static std::vector<SpawnPoint> checkedSpawnPoints(std::vector<SpawnPoint> spawn_points);
+    static std::vector<SpawnPoint> checkedSpawnPoints(
+        std::vector<SpawnPoint> spawn_points,
+        shared::WorldMode world_mode
+    );
 private:
     shared::World m_world;
     std::vector<SpawnPoint> m_spawn_points;

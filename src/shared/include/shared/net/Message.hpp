@@ -10,8 +10,13 @@
 
 namespace shared {
 
+constexpr uint8_t PROTOCOL_MAGIC = 0x4DU;
+constexpr uint8_t PROTOCOL_VERSION = 1U;
+
 struct JoinRequestMessage final {
     char ch;
+    WorldMode mode = WorldMode::Flat;
+    WorldConfiguration configuration = World::canonicalConfiguration();
 };
 
 struct JoinResponseMessage final {
@@ -25,10 +30,12 @@ struct ClientInputMessage final {
 
 struct ServerPlayerPositionMessage final {
     char ch;
-    uint8_t x;
-    uint8_t y;
+    int32_t x;
+    int32_t y;
+    int32_t z = 0;
     uint16_t x_subcell;
     uint16_t y_subcell;
+    uint16_t z_subcell = 0;
     uint32_t acknowledged_input_sequence = 0;
     uint32_t state_revision = 0;
 };
@@ -50,7 +57,7 @@ constexpr bool isNewerSequence(uint32_t const candidate, uint32_t const referenc
     return candidate != reference && candidate - reference < (uint32_t{ 1 } << 31U);
 }
 
-std::vector<uint8_t> encodeMessage(Message const message);
-std::optional<Message> decodeMessage(std::span<uint8_t const> const data);
+std::vector<uint8_t> encodeMessage(Message message);
+std::optional<Message> decodeMessage(std::span<uint8_t const> data);
 
 } // namespace shared

@@ -149,10 +149,10 @@ TEST(ShaderAssetsTest, PropagatesDeterministicKernelProgramDiagnostics)
 
     EXPECT_EQ(
         graphicsProgramDiagnostic(programStage(fragment), programStage(fragment)),
-        "Graphics program stage entry point is missing from its SPIR-V module"
+        "Program stage entry point is missing from its SPIR-V module"
     );
     EXPECT_EQ(
         graphicsProgramDiagnostic(programStage(grid, "missing"), programStage(fragment)),
-        "Graphics program stage entry point is missing from its SPIR-V module"
+        "Program stage entry point is missing from its SPIR-V module"
     );
 }

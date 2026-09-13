@@ -1,9 +1,15 @@
-@version("0.0.1")
-@use MinecraftScenario
-profile("flat2d-v1")
-seed(42u64)
-player("alice", '@', 4u8, 4u8)
-input("alice", 1i8, 0i8)
-wait(10u64)
-input("alice", 0i8, 0i8)
-expect_position("alice", 9u8, 4u8)
+@version("0.0.3")
+@use minecraft
+
+fn moveRight(name: str) {
+    moveXYZ(name, 1i8, 0i8, 0i8)
+}
+
+pub fn scenario() {
+    profile("flight3d-v1")
+    seed(42u64)
+    playerXYZ("alice", '@'c8, 4i32, 4i32, 0i32, 0i16, 0i16, 0i16)
+    if true { moveRight("alice") }
+    wait(10u64)
+    expectXYZ("alice", 9i32, 4i32, 0i32)
+}

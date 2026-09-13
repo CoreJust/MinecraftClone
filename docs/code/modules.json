@@ -59,8 +59,14 @@
         "tests/core/scenario_parser_tests.cpp",
         "tests/core/corelang_scenario_tests.cpp",
         "tests/core/shared_world_tests.cpp",
+        "tests/core/flight_world_tests.cpp",
         "tests/core/game_server_tests.cpp",
-        "tests/core/game_server_lifecycle_tests.cpp"
+        "tests/core/game_server_lifecycle_tests.cpp",
+        "tests/core/chunk_tests.cpp",
+        "tests/core/chunk_mesher_tests.cpp",
+        "tests/core/scripted_world_tests.cpp",
+        "scenarios/canonical_sample.core",
+        "scenarios/world/canonical_world.core"
       ]
     },
     {

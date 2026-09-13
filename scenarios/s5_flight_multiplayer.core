@@ -1,0 +1,26 @@
+@version("0.0.3")
+@use minecraft
+
+fn directClimb(name: str) {
+    moveXYZ(name, 1i8, 1i8, 1i8)
+}
+
+fn cameraDescent(name: str, enabled: bool) {
+    if enabled {
+        cameraInputXYZ(name, 0i8, 1i8, -1i8)
+    } else {
+        moveXYZ(name, 0i8, 0i8, 0i8)
+    }
+}
+
+pub fn scenario() {
+    profile("flight3d-v1")
+    seed(42u64)
+    playerXYZ("alice", '@'c8, -4i32, 0i32, 10i32, 0i16, 0i16, 0i16)
+    playerXYZ("bob", '#'c8, 8i32, 0i32, 12i32, 90i16, 0i16, 0i16)
+    for index in 0i32..1i32 { directClimb("alice") }
+    cameraDescent("bob", true)
+    wait(10u64)
+    expectXYZ("alice", -1i32, 3i32, 13i32)
+    expectXYZ("bob", 11i32, 0i32, 8i32)
+}

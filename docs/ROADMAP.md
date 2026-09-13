@@ -10,7 +10,7 @@ Planned path to it (per snapshot):
 2. Network test and early project structure outline. The game can run a server and several clients, client have players 2x2 in a 32x32 flat world and generate random movements, the server handles the collision. Rendering is implemented via console.
 3. Rendering test. The logic stays the same, but now it is rendered within a window with real Vulkan graphics.
 4. 3D and controls test. The world becomes 3D (although flat in logic), the players can be real or bots, the real ones have a working camera and WASD movement. The world has a grid below and simple colored box players.
-5. Blocks test. The world consists of a single chunk with only 2 block types: air and dirt. The player flies around it.
+5. Blocks test. The world consists of a single chunk with only 2 block types: air and stone. The player flies around it.
 6. World test. The world is full 65'536 x 65'536 x 1'024 blocks. The chunks are still only air and stone with a simple generation pattern.
 7. Wrap test. The world becomes wrapped in X and Y directions, probably some rendering and network optimizations here.
 8. Player permissions and physics test. Now players require permissions to pass through blocks/other entities and to fly. Without those, physics are enabled - players can jump, do not fall through blocks and each other.

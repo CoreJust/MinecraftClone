@@ -76,6 +76,40 @@ TEST(PlayerPresentationTest, CameraFollowsAuthoritativeSubcellPosition)
     EXPECT_DOUBLE_EQ(pose.position.y, 15.25);
 }
 
+TEST(PlayerPresentationTest, FirstPersonCameraAndInterpolationFollowFlightHeight)
+{
+    static constexpr shared::Player INITIAL{
+        .id = 7U,
+        .x = 12,
+        .y = 20,
+        .z = 12,
+        .ch = '@',
+    };
+    static constexpr shared::Player TARGET{
+        .id = 7U,
+        .x = 12,
+        .y = 20,
+        .z = 13,
+        .z_subcell = 5'000U,
+        .ch = '@',
+    };
+    std::chrono::steady_clock::time_point const STARTED_AT{};
+    client::PlayerPresentation presentation;
+
+    presentation.update(INITIAL, STARTED_AT);
+    presentation.update(TARGET, STARTED_AT + std::chrono::milliseconds{ 100 });
+
+    ASSERT_TRUE(presentation.sample('@', STARTED_AT + std::chrono::milliseconds{ 150 }).has_value());
+    client::CameraPose const pose = client::localPlayerFirstPersonPose(
+        *presentation.sample('@', STARTED_AT + std::chrono::milliseconds{ 150 }),
+        { .yaw_degrees = 90.0 }
+    );
+    EXPECT_DOUBLE_EQ(pose.position.x, 13.0);
+    EXPECT_DOUBLE_EQ(pose.position.y, 21.0);
+    EXPECT_DOUBLE_EQ(pose.position.z, 13.75);
+    EXPECT_DOUBLE_EQ(pose.angles.yaw_degrees, 90.0);
+}
+
 TEST(PlayerPresentationTest, InitialAuthoritativePositionSnapsAndSubsequentPositionsInterpolate)
 {
     static constexpr shared::Player INITIAL{

@@ -49,6 +49,7 @@ struct DebugHudNumberFormatter {
 
 struct DebugHudInput {
     bool presented = false;
+    bool touch_flight_help = false;
     float player_x = 0.0F;
     float player_y = 0.0F;
     float player_z = 0.0F;

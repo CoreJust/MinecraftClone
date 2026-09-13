@@ -25,12 +25,17 @@ class GlfwWindow;
 
 struct ANativeWindow;
 
+namespace shared {
+struct ChunkMesh;
+} // namespace shared
+
 namespace client {
 
 struct PlayerRenderData final {
     float x = 0.0F;
     float y = 0.0F;
     std::array<float, 4> color{ 1.0f, 1.0f, 1.0f, 1.0f };
+    float z = 0.0F;
 };
 
 struct VulkanRendererOptions final {
@@ -77,6 +82,9 @@ struct RendererRuntimeInfo final {
     std::optional<std::chrono::nanoseconds> gpu_frame_duration;
     uint64_t submitted_frame_count{ 0 };
     uint32_t debug_hud_draw_count{ 0 };
+    uint32_t chunk_face_count{ 0 };
+    uint32_t chunk_draw_count{ 0 };
+    uint64_t chunk_mesh_upload_count{ 0 };
 };
 
 struct RendererFrameCapture final {
@@ -122,6 +130,7 @@ public:
     void setDebugHudEnabled(bool enabled) noexcept;
     void toggleDebugHud() noexcept;
     void setCamera(CameraPose pose) noexcept;
+    void setChunkMesh(shared::ChunkMesh const& mesh);
     void hotReload();
     void recreate(uint32_t width, uint32_t height);
     [[nodiscard]]
@@ -151,6 +160,7 @@ public:
         std::chrono::steady_clock::time_point deadline = std::chrono::steady_clock::time_point::max()
     );
     void setCamera(CameraPose pose) noexcept;
+    void setChunkMesh(shared::ChunkMesh const& mesh);
     [[nodiscard]] bool validationEnabled() const noexcept;
     [[nodiscard]] uint32_t validationErrorCount() const noexcept;
 private:

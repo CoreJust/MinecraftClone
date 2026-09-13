@@ -1,0 +1,9 @@
+@version("0.0.3")
+@use minecraft
+
+pub fn scenario() {
+    profile("flight3d-v1")
+    seed(42u64)
+    playerXYZ("alice", '@'c8, 0i32, 0i32, 0i32, 0i16, 0i16, 0i16)
+    playerXYZ("duplicate", '@'c8, 4i32, 4i32, 4i32, 0i16, 0i16, 0i16)
+}

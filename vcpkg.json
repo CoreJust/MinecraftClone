@@ -9,10 +9,12 @@
       "platform": "!android"
     },
     "glm",
+    "gmp",
     {
       "name": "gtest",
       "platform": "!android"
     },
+    "mpfr",
     "spdlog",
     "spirv-reflect",
     "volk",

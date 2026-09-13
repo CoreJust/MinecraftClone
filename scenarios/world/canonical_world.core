@@ -1,0 +1,16 @@
+@version("0.0.3")
+@use minecraft
+
+pub fn generate(seed: u64) {
+    for z in 0i32..16i32 {
+        for y in 0i32..16i32 {
+            for x in 0i32..16i32 {
+                let random = terrain_random(seed, x, y, z)
+                if z - 6i32 + random < 0i32 {
+                    set_block(x, y, z, 1i32)
+                }
+            }
+        }
+    }
+    publish()
+}

@@ -3,12 +3,16 @@
 #include <core/lang/CoreLang.hpp>
 
 #include <algorithm>
+#include <cstdint>
+#include <expected>
+#include <functional>
 #include <limits>
 #include <optional>
 #include <span>
 #include <string>
 #include <string_view>
 #include <utility>
+#include <variant>
 #include <vector>
 
 namespace shared {
@@ -17,40 +21,28 @@ namespace scenario_detail {
 
 namespace {
 
-static constexpr uint8_t MAX_POSITION = 31;
+static constexpr std::string_view FLIGHT_PROFILE = "flight3d-v1";
+static constexpr uint64_t HOST_ABI_MAJOR = 1U;
 
-[[nodiscard]] bool isAllowedCharacter(char const character) noexcept
-{
-    return character == '@' || character == '#' || character == '$' || character == '%' || character == '&';
-}
+enum class HostCall : uint8_t {
+    Profile,
+    Seed,
+    Player,
+    Move,
+    Camera,
+    Wait,
+    Expect,
+};
 
-[[nodiscard]] bool isIdentifier(std::string_view const text) noexcept
-{
-    if (text.empty() || !((text.front() >= 'a' && text.front() <= 'z')
-        || (text.front() >= 'A' && text.front() <= 'Z') || text.front() == '_')) {
-        return false;
-    }
-    return std::ranges::all_of(text.substr(1), [](char const character) {
-        return (character >= 'a' && character <= 'z') || (character >= 'A' && character <= 'Z')
-            || (character >= '0' && character <= '9') || character == '_' || character == '-';
-    });
-}
-
-[[nodiscard]] bool placementsConflict(ScenarioActor const& actor, uint8_t const x, uint8_t const y) noexcept
-{
-    uint32_t const delta_x = actor.x > x ? actor.x - x : x - actor.x;
-    uint32_t const delta_y = actor.y > y ? actor.y - y : y - actor.y;
-    return delta_x <= 1U && delta_y <= 1U;
-}
-
-[[nodiscard]] ScenarioDiagnostic diagnostic(
+[[nodiscard]]
+ScenarioDiagnostic diagnostic(
     ScenarioDiagnosticCode const code,
     std::string_view const filename,
     ScenarioLocation const location,
     std::string message
 )
 {
-    return ScenarioDiagnostic{
+    return {
         .code = code,
         .filename = std::string{filename},
         .location = location,
@@ -58,9 +50,118 @@ static constexpr uint8_t MAX_POSITION = 31;
     };
 }
 
+[[nodiscard]]
+ScenarioLocation sourceLocation(std::string_view const source, uint64_t const offset) noexcept
+{
+    uint32_t line = 1U;
+    uint32_t column = 1U;
+    for (uint64_t index = 0U; index < offset && index < source.size(); ++index) {
+        if (source[static_cast<std::string_view::size_type>(index)] == '\n') {
+            ++line;
+            column = 1U;
+        } else {
+            ++column;
+        }
+    }
+    return {.line = line, .column = column};
+}
+
+[[nodiscard]]
+core::lang::Type type(core::lang::TypeKind const kind)
+{
+    return {.kind = kind};
+}
+
+[[nodiscard]]
+core::lang::Value unitValue()
+{
+    return {.type = type(core::lang::TypeKind::Unit)};
+}
+
+[[nodiscard]]
+std::expected<void, std::string> count(
+    std::span<core::lang::Value const> const arguments,
+    uint64_t const expected
+)
+{
+    if (arguments.size() != expected) {
+        return std::unexpected("host call received the wrong number of arguments");
+    }
+    return {};
+}
+
+[[nodiscard]]
+std::expected<uint64_t, std::string> unsignedValue(
+    core::lang::Value const& value,
+    core::lang::TypeKind const expected,
+    uint8_t const byte_count
+)
+{
+    if (value.type != type(expected) || value.bytes.size() != byte_count || !value.elements.empty()) {
+        return std::unexpected("host call received an invalid integer argument");
+    }
+    uint64_t result = 0U;
+    for (uint8_t index = 0U; index < byte_count; ++index) {
+        result |= static_cast<uint64_t>(value.bytes[index]) << (index * 8U);
+    }
+    return result;
+}
+
+[[nodiscard]]
+std::expected<int32_t, std::string> signedValue(
+    core::lang::Value const& value,
+    core::lang::TypeKind const expected,
+    uint8_t const byte_count
+)
+{
+    auto const raw = unsignedValue(value, expected, byte_count);
+    if (!raw) {
+        return std::unexpected(raw.error());
+    }
+    uint64_t const sign_bit = uint64_t{1U} << (byte_count * 8U - 1U);
+    uint64_t const magnitude = *raw & (sign_bit - 1U);
+    int64_t const result = *raw & sign_bit
+        ? -static_cast<int64_t>(sign_bit) + static_cast<int64_t>(magnitude)
+        : static_cast<int64_t>(magnitude);
+    return static_cast<int32_t>(result);
+}
+
+[[nodiscard]]
+std::expected<std::string, std::string> textValue(core::lang::Value const& value)
+{
+    if (value.type != type(core::lang::TypeKind::Str) || !value.elements.empty()) {
+        return std::unexpected("host call received an invalid text argument");
+    }
+    std::string text;
+    text.reserve(value.bytes.size());
+    for (uint8_t const byte : value.bytes) {
+        text.push_back(static_cast<char>(byte));
+    }
+    return text;
+}
+
+[[nodiscard]]
+bool isIdentifier(std::string_view const text) noexcept
+{
+    if (text.empty() || !((text.front() >= 'a' && text.front() <= 'z')
+        || (text.front() >= 'A' && text.front() <= 'Z') || text.front() == '_')) {
+        return false;
+    }
+    return std::ranges::all_of(text.substr(1), [](char const character) {
+        return (character >= 'a' && character <= 'z') || (character >= 'A' && character <= 'Z')
+            || (character >= '0' && character <= '9') || character == '_';
+    });
+}
+
+[[nodiscard]]
+bool isAllowedCharacter(char const character) noexcept
+{
+    return character == '@' || character == '#' || character == '$' || character == '%' || character == '&';
+}
+
 } // namespace
 
-class ScenarioPlanCollector final : public core::lang::RuntimeServices {
+class ScenarioPlanCollector final {
 public:
     ScenarioPlanCollector(
         std::string_view const filename,
@@ -70,155 +171,275 @@ public:
         : m_filename(filename)
         , m_limits(limits)
         , m_cancellation(cancellation)
-    { }
-
-    [[nodiscard]] std::expected<core::lang::Value, std::string> profile(std::span<core::lang::Value const> arguments)
     {
-        if (auto const open = beginStatement(); !open) return std::unexpected(open.error());
-        if (m_profile_set || arguments[0].text != "flat2d-v1") {
-            return std::unexpected("scenario profile must be specified once as flat2d-v1");
+    }
+
+    [[nodiscard]]
+    std::expected<void, std::string> call(
+        HostCall const host_call,
+        std::span<core::lang::Value const> const arguments
+    )
+    {
+        if (isCancelled()) {
+            return std::unexpected("scenario compilation was cancelled");
+        }
+        if (m_statements >= m_limits.max_statements) {
+            return std::unexpected("scenario statement limit exceeded");
+        }
+        ++m_statements;
+        switch (host_call) {
+            case HostCall::Profile:
+                return profile(arguments);
+            case HostCall::Seed:
+                return seed(arguments);
+            case HostCall::Player:
+                return player(arguments);
+            case HostCall::Move:
+                return input(arguments, false);
+            case HostCall::Camera:
+                return input(arguments, true);
+            case HostCall::Wait:
+                return wait(arguments);
+            case HostCall::Expect:
+                return expect(arguments);
+        }
+        return std::unexpected("unknown scenario host call");
+    }
+
+    [[nodiscard]]
+    std::expected<ScenarioPlan, ScenarioDiagnostic> build() &&
+    {
+        if (isCancelled()) {
+            return std::unexpected(diagnostic(
+                ScenarioDiagnosticCode::Cancelled,
+                m_filename,
+                {.line = 1U, .column = 1U},
+                "scenario compilation was cancelled"
+            ));
+        }
+        if (!m_profile_set || !m_seed_set || m_actors.empty()) {
+            return std::unexpected(diagnostic(
+                ScenarioDiagnosticCode::CoreLangRuntimeFailure,
+                m_filename,
+                {.line = 1U, .column = 1U},
+                "CoreLang scenario must declare profile, seed, and at least one player"
+            ));
+        }
+        return ScenarioPlan{
+            1U,
+            ScenarioProfile::Flight3dV1,
+            m_seed,
+            std::move(m_actors),
+            std::move(m_operations),
+            m_total_ticks,
+            m_evidence_count,
+        };
+    }
+
+private:
+    [[nodiscard]]
+    std::expected<void, std::string> profile(std::span<core::lang::Value const> const arguments)
+    {
+        if (auto const valid_count = count(arguments, 1U); !valid_count) {
+            return valid_count;
+        }
+        auto const profile_name = textValue(arguments[0]);
+        if (!profile_name) {
+            return std::unexpected(profile_name.error());
+        }
+        if (m_profile_set || *profile_name != FLIGHT_PROFILE) {
+            return std::unexpected("scenario profile must be specified once as flight3d-v1");
         }
         m_profile_set = true;
-        return core::lang::Value::unit();
+        return {};
     }
 
-    [[nodiscard]] std::expected<core::lang::Value, std::string> seed(std::span<core::lang::Value const> arguments)
+    [[nodiscard]]
+    std::expected<void, std::string> seed(std::span<core::lang::Value const> const arguments)
     {
-        if (auto const open = beginStatement(); !open) return std::unexpected(open.error());
-        if (!m_profile_set || m_seed_set) return std::unexpected("scenario seed must follow profile and occur once");
-        m_seed = arguments[0].integer[1U];
+        if (auto const valid_count = count(arguments, 1U); !valid_count) {
+            return valid_count;
+        }
+        auto const value = unsignedValue(arguments[0], core::lang::TypeKind::U64, 8U);
+        if (!value) {
+            return std::unexpected(value.error());
+        }
+        if (!m_profile_set || m_seed_set) {
+            return std::unexpected("scenario seed must follow profile and occur once");
+        }
+        m_seed = *value;
         m_seed_set = true;
-        return core::lang::Value::unit();
+        return {};
     }
 
-    [[nodiscard]] std::expected<core::lang::Value, std::string> player(std::span<core::lang::Value const> arguments)
+    [[nodiscard]]
+    std::expected<void, std::string> player(std::span<core::lang::Value const> const arguments)
     {
-        if (auto const open = beginStatement(); !open) return std::unexpected(open.error());
-        if (!m_seed_set) return std::unexpected("scenario players must follow the seed");
-        std::string const& name = arguments[0].text;
-        char32_t const code_point = arguments[1].character;
-        if (code_point > 0x7fU) return std::unexpected("player character must be one of @ # $ % &");
-        char const character = static_cast<char>(code_point);
-        uint8_t const x = static_cast<uint8_t>(arguments[2].integer[1U]);
-        uint8_t const y = static_cast<uint8_t>(arguments[3].integer[1U]);
-        if (!isIdentifier(name)) return std::unexpected("player name must be an ASCII scenario identifier");
-        if (!isAllowedCharacter(character)) return std::unexpected("player character must be one of @ # $ % &");
-        if (x > MAX_POSITION || y > MAX_POSITION) return std::unexpected("player position is outside flat2d-v1");
-        if (m_actors.size() >= m_limits.max_actors) return std::unexpected("scenario actor limit exceeded");
+        if (auto const valid_count = count(arguments, 8U); !valid_count) {
+            return valid_count;
+        }
+        if (!m_seed_set) {
+            return std::unexpected("scenario players must follow the seed");
+        }
+        auto const name = textValue(arguments[0]);
+        auto const character = unsignedValue(arguments[1], core::lang::TypeKind::C8, 1U);
+        auto const x = signedValue(arguments[2], core::lang::TypeKind::I32, 4U);
+        auto const y = signedValue(arguments[3], core::lang::TypeKind::I32, 4U);
+        auto const z = signedValue(arguments[4], core::lang::TypeKind::I32, 4U);
+        auto const yaw = signedValue(arguments[5], core::lang::TypeKind::I16, 2U);
+        auto const pitch = signedValue(arguments[6], core::lang::TypeKind::I16, 2U);
+        auto const roll = signedValue(arguments[7], core::lang::TypeKind::I16, 2U);
+        if (!name || !character || !x || !y || !z || !yaw || !pitch || !roll) {
+            return std::unexpected("playerXYZ received an invalid typed argument");
+        }
+        char const player_character = static_cast<char>(*character);
+        if (!isIdentifier(*name) || !isAllowedCharacter(player_character)) {
+            return std::unexpected("playerXYZ received an invalid player identity");
+        }
+        if (*yaw < 0 || *yaw > 359 || *pitch < -89 || *pitch > 89 || *roll < -180 || *roll > 180) {
+            return std::unexpected("playerXYZ orientation is outside the supported range");
+        }
+        if (static_cast<uint64_t>(m_actors.size()) >= m_limits.max_actors) {
+            return std::unexpected("scenario actor limit exceeded");
+        }
         for (ScenarioActor const& actor : m_actors) {
-            if (actor.name == name || actor.character == character) {
+            if (actor.name == *name || actor.character == player_character) {
                 return std::unexpected("player names and characters must be unique");
             }
-            if (placementsConflict(actor, x, y)) return std::unexpected("player placement conflicts with an existing player");
         }
-        m_actors.push_back(ScenarioActor{
+        m_actors.push_back({
             .id = static_cast<ScenarioActorId>(m_actors.size()),
-            .name = name,
-            .character = character,
-            .x = x,
-            .y = y,
-            .z = 0U,
-            .yaw_degrees = 0,
-            .pitch_degrees = 0,
-            .roll_degrees = 0,
-            .location = { .line = 1, .column = 1 },
+            .name = std::move(*name),
+            .character = player_character,
+            .x = *x,
+            .y = *y,
+            .z = *z,
+            .yaw_degrees = static_cast<int16_t>(*yaw),
+            .pitch_degrees = static_cast<int16_t>(*pitch),
+            .roll_degrees = static_cast<int16_t>(*roll),
+            .location = {.line = 1U, .column = 1U},
         });
-        return core::lang::Value::unit();
+        return {};
     }
 
-    [[nodiscard]] std::expected<core::lang::Value, std::string> input(std::span<core::lang::Value const> arguments)
+    [[nodiscard]]
+    std::expected<void, std::string> input(
+        std::span<core::lang::Value const> const arguments,
+        bool const camera
+    )
     {
-        if (auto const open = beginStatement(); !open) return std::unexpected(open.error());
-        auto const actor = actorId(arguments[0].text);
-        if (!actor) return std::unexpected("input references an unknown player");
-        int8_t const x = signedByte(arguments[1]);
-        int8_t const y = signedByte(arguments[2]);
-        if (x < -1 || x > 1 || y < -1 || y > 1) return std::unexpected("input direction must be in -1..1");
+        if (auto const valid_count = count(arguments, 4U); !valid_count) {
+            return valid_count;
+        }
+        auto const actor = actorId(arguments[0]);
+        auto const first = signedValue(arguments[1], core::lang::TypeKind::I8, 1U);
+        auto const second = signedValue(arguments[2], core::lang::TypeKind::I8, 1U);
+        auto const third = signedValue(arguments[3], core::lang::TypeKind::I8, 1U);
+        if (!actor || !first || !second || !third) {
+            return std::unexpected("flight input received an invalid typed argument");
+        }
+        if (*first < -1 || *first > 1 || *second < -1 || *second > 1 || *third < -1 || *third > 1) {
+            return std::unexpected("flight input direction must be in -1..1");
+        }
         if (m_total_ticks == std::numeric_limits<uint64_t>::max()) {
             return std::unexpected("scenario tick boundary exceeds the supported range");
         }
-        if (auto const operation = appendOperation(ScenarioOperationData{ScenarioInputOperation{
-            .actor = *actor, .x = x, .y = y, .effective_boundary = m_total_ticks + 1U,
-        }}); !operation) return std::unexpected(operation.error());
-        return core::lang::Value::unit();
+        if (camera) {
+            return append(ScenarioCameraInputOperation{
+                .actor = *actor,
+                .strafe = static_cast<int8_t>(*first),
+                .forward = static_cast<int8_t>(*second),
+                .vertical = static_cast<int8_t>(*third),
+                .effective_boundary = m_total_ticks + 1U,
+            });
+        }
+        return append(ScenarioInputOperation{
+            .actor = *actor,
+            .x = static_cast<int8_t>(*first),
+            .y = static_cast<int8_t>(*second),
+            .z = static_cast<int8_t>(*third),
+            .effective_boundary = m_total_ticks + 1U,
+        });
     }
 
-    [[nodiscard]] std::expected<core::lang::Value, std::string> wait(std::span<core::lang::Value const> arguments)
+    [[nodiscard]]
+    std::expected<void, std::string> wait(std::span<core::lang::Value const> const arguments)
     {
-        if (auto const open = beginStatement(); !open) return std::unexpected(open.error());
-        uint64_t const ticks = arguments[0].integer[1U];
-        if (ticks == 0U || ticks > m_limits.max_total_ticks - m_total_ticks) {
+        if (auto const valid_count = count(arguments, 1U); !valid_count) {
+            return valid_count;
+        }
+        auto const ticks = unsignedValue(arguments[0], core::lang::TypeKind::U64, 8U);
+        if (!ticks) {
+            return std::unexpected(ticks.error());
+        }
+        if (*ticks == 0U || *ticks > m_limits.max_total_ticks - m_total_ticks) {
             return std::unexpected("scenario tick limit exceeded");
         }
-        if (auto const operation = appendOperation(ScenarioOperationData{ScenarioWaitOperation{.ticks = ticks}}); !operation) {
-            return std::unexpected(operation.error());
+        if (auto const appended = append(ScenarioWaitOperation{.ticks = *ticks}); !appended) {
+            return appended;
         }
-        m_total_ticks += ticks;
-        return core::lang::Value::unit();
-    }
-
-    [[nodiscard]] std::expected<core::lang::Value, std::string> expectPosition(std::span<core::lang::Value const> arguments)
-    {
-        if (auto const open = beginStatement(); !open) return std::unexpected(open.error());
-        auto const actor = actorId(arguments[0].text);
-        uint8_t const x = static_cast<uint8_t>(arguments[1].integer[1U]);
-        uint8_t const y = static_cast<uint8_t>(arguments[2].integer[1U]);
-        if (!actor) return std::unexpected("expect_position references an unknown player");
-        if (x > MAX_POSITION || y > MAX_POSITION) return std::unexpected("expected position is outside flat2d-v1");
-        if (m_evidence_count >= m_limits.max_evidence) return std::unexpected("scenario evidence limit exceeded");
-        if (auto const operation = appendOperation(ScenarioOperationData{ScenarioExpectPositionOperation{
-            .actor = *actor, .x = x, .y = y, .z = 0U,
-        }}); !operation) return std::unexpected(operation.error());
-        ++m_evidence_count;
-        return core::lang::Value::unit();
-    }
-
-    [[nodiscard]] std::expected<ScenarioPlan, ScenarioDiagnostic> build() &&
-    {
-        if (isCancellationRequested()) return std::unexpected(diagnostic(
-            ScenarioDiagnosticCode::Cancelled, m_filename, { .line = 1, .column = 1 }, "scenario compilation was cancelled"));
-        if (!m_profile_set || !m_seed_set || m_actors.empty()) return std::unexpected(diagnostic(
-            ScenarioDiagnosticCode::CoreLangRuntimeFailure, m_filename, { .line = 1, .column = 1 },
-            "CoreLang scenario must declare profile, seed, and at least one player"));
-        return ScenarioPlan{1U, ScenarioProfile::Flat2dV1, m_seed, std::move(m_actors), std::move(m_operations),
-            m_total_ticks, m_evidence_count};
-    }
-
-    [[nodiscard]] std::expected<std::string, std::string> readLine() override
-    { return std::unexpected("scenario scripts cannot read input"); }
-    [[nodiscard]] std::expected<void, std::string> write(std::string_view) override
-    { return std::unexpected("scenario scripts cannot write output"); }
-    [[nodiscard]] bool isCancellationRequested() const noexcept override
-    { return m_cancellation && m_cancellation->isCancellationRequested(); }
-
-private:
-    [[nodiscard]] std::expected<void, std::string> beginStatement()
-    {
-        if (isCancellationRequested()) return std::unexpected("scenario compilation was cancelled");
-        if (m_statements >= m_limits.max_statements) return std::unexpected("scenario statement limit exceeded");
-        ++m_statements;
+        m_total_ticks += *ticks;
         return {};
     }
 
-    [[nodiscard]] std::optional<ScenarioActorId> actorId(std::string_view const name) const
+    [[nodiscard]]
+    std::expected<void, std::string> expect(std::span<core::lang::Value const> const arguments)
     {
-        auto const actor = std::ranges::find(m_actors, name, &ScenarioActor::name);
+        if (auto const valid_count = count(arguments, 4U); !valid_count) {
+            return valid_count;
+        }
+        auto const actor = actorId(arguments[0]);
+        auto const x = signedValue(arguments[1], core::lang::TypeKind::I32, 4U);
+        auto const y = signedValue(arguments[2], core::lang::TypeKind::I32, 4U);
+        auto const z = signedValue(arguments[3], core::lang::TypeKind::I32, 4U);
+        if (!actor || !x || !y || !z) {
+            return std::unexpected("expectXYZ received an invalid typed argument");
+        }
+        if (m_evidence_count >= m_limits.max_evidence) {
+            return std::unexpected("scenario evidence limit exceeded");
+        }
+        if (auto const appended = append(ScenarioExpectPositionOperation{
+            .actor = *actor,
+            .x = *x,
+            .y = *y,
+            .z = *z,
+        }); !appended) {
+            return appended;
+        }
+        ++m_evidence_count;
+        return {};
+    }
+
+    [[nodiscard]]
+    std::optional<ScenarioActorId> actorId(core::lang::Value const& value) const
+    {
+        auto const name = textValue(value);
+        if (!name) {
+            return std::nullopt;
+        }
+        auto const actor = std::ranges::find(m_actors, *name, &ScenarioActor::name);
         return actor == m_actors.end() ? std::nullopt : std::optional{actor->id};
     }
 
-    [[nodiscard]] static int8_t signedByte(core::lang::Value const& value) noexcept
+    template<typename Operation>
+    [[nodiscard]]
+    std::expected<void, std::string> append(Operation operation)
     {
-        uint64_t const magnitude = value.integer[1U];
-        return static_cast<int8_t>(value.boolean ? -static_cast<int64_t>(magnitude) : static_cast<int64_t>(magnitude));
-    }
-
-    [[nodiscard]] std::expected<void, std::string> appendOperation(ScenarioOperationData data)
-    {
-        if (m_operations.size() >= m_limits.max_operations) return std::unexpected("scenario operation limit exceeded");
-        m_operations.push_back(ScenarioOperation{
-            .location = { .line = 1, .column = 1 }, .boundary = m_total_ticks, .data = std::move(data),
+        if (static_cast<uint64_t>(m_operations.size()) >= m_limits.max_operations) {
+            return std::unexpected("scenario operation limit exceeded");
+        }
+        m_operations.push_back({
+            .location = {.line = 1U, .column = 1U},
+            .boundary = m_total_ticks,
+            .data = std::move(operation),
         });
         return {};
+    }
+
+    [[nodiscard]]
+    bool isCancelled() const noexcept
+    {
+        return m_cancellation && m_cancellation->isCancellationRequested();
     }
 
 private:
@@ -235,105 +456,167 @@ private:
     std::vector<ScenarioOperation> m_operations;
 };
 
-namespace {
+struct HostSpec final {
+    std::string_view name;
+    HostCall call;
+    std::vector<core::lang::Type> arguments;
+};
 
-template<typename Callback>
-[[nodiscard]] core::lang::ExtensionDescriptor statementExtension(
-    std::string name, std::vector<core::lang::Type> types, Callback callback
-)
+[[nodiscard]]
+std::vector<HostSpec> hostSpecs()
 {
-    return core::lang::ExtensionDescriptor{
-        .name = std::move(name), .node_kind = core::lang::ExtensionNodeKind::CallStatement,
-        .input_types = types, .output_type = core::lang::Type::Unit, .effect = core::lang::ExtensionEffect::Host,
-        .child_types = std::move(types), .binding_shape = core::lang::ExtensionBindingShape::Immutable,
-        .evaluate = [callback = std::move(callback)](
-                        std::span<core::lang::Value const> arguments, core::lang::RuntimeServices& services
-                    ) {
-            auto* const collector = dynamic_cast<ScenarioPlanCollector*>(&services);
-            return collector ? callback(*collector, arguments)
-                : std::expected<core::lang::Value, std::string>{std::unexpected("invalid scenario runtime services")};
-        },
+    using TypeKind = core::lang::TypeKind;
+    return {
+        {"profile", HostCall::Profile, {type(TypeKind::Str)}},
+        {"seed", HostCall::Seed, {type(TypeKind::U64)}},
+        {"playerXYZ", HostCall::Player, {
+            type(TypeKind::Str), type(TypeKind::C8), type(TypeKind::I32), type(TypeKind::I32),
+            type(TypeKind::I32), type(TypeKind::I16), type(TypeKind::I16), type(TypeKind::I16),
+        }},
+        {"moveXYZ", HostCall::Move, {
+            type(TypeKind::Str), type(TypeKind::I8), type(TypeKind::I8), type(TypeKind::I8),
+        }},
+        {"cameraInputXYZ", HostCall::Camera, {
+            type(TypeKind::Str), type(TypeKind::I8), type(TypeKind::I8), type(TypeKind::I8),
+        }},
+        {"wait", HostCall::Wait, {type(TypeKind::U64)}},
+        {"expectXYZ", HostCall::Expect, {
+            type(TypeKind::Str), type(TypeKind::I32), type(TypeKind::I32), type(TypeKind::I32),
+        }},
     };
 }
 
-[[nodiscard]] core::lang::RuleSetDescriptor const& scenarioRuleset()
+[[nodiscard]]
+core::lang::CustomManifest manifest(HostSpec const& spec)
 {
-    static core::lang::RuleSetDescriptor const RULESET{
-        .id = "MinecraftScenario", .version = 1U, .extensions = {
-            statementExtension("profile", {core::lang::Type::Str}, [](auto& collector, auto arguments) {
-                return collector.profile(arguments);
-            }),
-            statementExtension("seed", {core::lang::Type::U64}, [](auto& collector, auto arguments) {
-                return collector.seed(arguments);
-            }),
-            statementExtension("player", {core::lang::Type::Str, core::lang::Type::C32,
-                core::lang::Type::U8, core::lang::Type::U8}, [](auto& collector, auto arguments) {
-                return collector.player(arguments);
-            }),
-            statementExtension("input", {core::lang::Type::Str, core::lang::Type::I8,
-                core::lang::Type::I8}, [](auto& collector, auto arguments) {
-                return collector.input(arguments);
-            }),
-            statementExtension("wait", {core::lang::Type::U64}, [](auto& collector, auto arguments) {
-                return collector.wait(arguments);
-            }),
-            statementExtension("expect_position", {core::lang::Type::Str, core::lang::Type::U8,
-                core::lang::Type::U8}, [](auto& collector, auto arguments) {
-                return collector.expectPosition(arguments);
-            }),
-        }, .opaque_callbacks = true,
+    core::lang::CustomManifest result{
+        .provider_key = "minecraft.scenario." + std::string{spec.name},
+        .abi_major = HOST_ABI_MAJOR,
+        .effect = core::lang::CustomEffect::Observable,
+        .arguments = spec.arguments,
+        .result = type(core::lang::TypeKind::Unit),
+        .borrow = {.parameters = std::vector<core::lang::BorrowAccess>(spec.arguments.size())},
     };
-    return RULESET;
+    result.digest = core::lang::customManifestDigest(result);
+    return result;
 }
-
-} // namespace
 
 class CoreLangScenarioLowerer final {
 public:
-    [[nodiscard]] static std::expected<ScenarioPlan, ScenarioDiagnostic> lower(
-        std::string_view filename,
-        std::string_view source,
+    [[nodiscard]]
+    static std::expected<ScenarioPlan, ScenarioDiagnostic> lower(
+        std::string_view const filename,
+        std::string_view const source,
         ScenarioLimits const& limits,
-        ScenarioCancellation const* cancellation
+        ScenarioCancellation const* const cancellation
     )
     {
-        if (cancellation && cancellation->isCancellationRequested()) return std::unexpected(diagnostic(
-            ScenarioDiagnosticCode::Cancelled, filename, { .line = 1, .column = 1 }, "scenario compilation was cancelled"));
-        uint64_t directives = 0U;
-        std::string_view remaining = source;
-        while (!remaining.empty()) {
-            size_t const end = remaining.find('\n');
-            std::string_view const line = remaining.substr(0U, end);
-            size_t const first = line.find_first_not_of(" \t\r");
-            std::string_view const trimmed = first == std::string_view::npos ? std::string_view{} : line.substr(first);
-            if (!trimmed.empty() && !trimmed.starts_with("//") && ++directives > limits.max_statements) {
-                return std::unexpected(diagnostic(ScenarioDiagnosticCode::CoreLangCompileFailure, filename,
-                    { .line = 1, .column = 1 }, "scenario statement limit exceeded"));
+        ScenarioPlanCollector collector{filename, limits, cancellation};
+        std::vector<HostSpec> const specs = hostSpecs();
+        core::lang::Ruleset ruleset{.id = "minecraft", .version = 1U};
+        std::vector<core::lang::CustomProvider> providers;
+        providers.reserve(specs.size());
+        for (HostSpec const& spec : specs) {
+            core::lang::CustomManifest const host_manifest = manifest(spec);
+            ruleset.operations.push_back({
+                .name = std::string{spec.name},
+                .kind = core::lang::ExtensionKind::Builtin,
+                .overrideExisting = spec.call == HostCall::Seed,
+                .arguments = host_manifest.arguments,
+                .result = host_manifest.result,
+                .effect = host_manifest.effect,
+                .custom = host_manifest,
+                .unsafe_callable = host_manifest.unsafe_,
+                .borrow = host_manifest.borrow,
+            });
+            providers.push_back({
+                .manifest = host_manifest,
+                .invoke = [&collector, host_call = spec.call](
+                    core::lang::CustomContext&,
+                    std::span<core::lang::Value const> const arguments
+                ) {
+                    auto const result = collector.call(host_call, arguments);
+                    if (!result) {
+                        return core::lang::CustomOutcome{core::lang::CustomFail{
+                            .code = 1U,
+                            .message = result.error(),
+                        }};
+                    }
+                    return core::lang::CustomOutcome{core::lang::CustomComplete{.value = unitValue()}};
+                },
+            });
+        }
+        core::lang::CompilerRegistry const registry{
+            .rulesets = {std::move(ruleset)},
+            .defaults = {"minecraft"},
+        };
+        auto const compiled = core::lang::compile(
+            core::lang::Source{.id = std::string{filename}, .text = std::string{source}},
+            registry
+        );
+        if (!compiled) {
+            if (compiled.error().empty()) {
+                return std::unexpected(diagnostic(
+                    ScenarioDiagnosticCode::CoreLangCompileFailure,
+                    filename,
+                    {.line = 1U, .column = 1U},
+                    "CoreLang compilation failed without diagnostics"
+                ));
             }
-            if (end == std::string_view::npos) break;
-            remaining.remove_prefix(end + 1U);
-        }
-        auto const& ruleset = scenarioRuleset();
-        auto const program = core::lang::compile(core::lang::CompileOptions{
-            .root = {.id = std::string{filename}, .text = std::string{source}},
-            .rulesets = std::span<core::lang::RuleSetDescriptor const>{&ruleset, 1U},
-            .limits = {.max_source_bytes = limits.max_source_bytes, .max_modules = 1U,
-                .max_tokens = limits.max_source_bytes, .max_nodes = limits.max_source_bytes},
-        });
-        if (!program) {
-            core::lang::Diagnostic const& error = program.error().front();
-            return std::unexpected(diagnostic(ScenarioDiagnosticCode::CoreLangCompileFailure, filename,
-                {.line = error.location.line, .column = error.location.column}, error.message));
-        }
-        auto collector = ScenarioPlanCollector{filename, limits, cancellation};
-        auto const executed = core::lang::execute(*program, collector, {.max_instructions = limits.max_source_bytes,
-            .cancellation_check_interval = 1U});
-        if (!executed) {
-            ScenarioDiagnosticCode const code = executed.error().code == core::lang::RuntimeErrorCode::Cancelled
-                ? ScenarioDiagnosticCode::Cancelled : ScenarioDiagnosticCode::CoreLangRuntimeFailure;
-            auto const location = executed.error().location.value_or(core::lang::SourceSpan{});
+            core::lang::Diagnostic const& error = compiled.error().front();
             return std::unexpected(diagnostic(
-                code, filename, {.line = location.line, .column = location.column}, executed.error().message
+                ScenarioDiagnosticCode::CoreLangCompileFailure,
+                filename,
+                sourceLocation(source, error.offset),
+                error.message
+            ));
+        }
+        core::lang::Runtime runtime;
+        for (core::lang::CustomProvider& provider : providers) {
+            auto const registered = runtime.registerProvider(std::move(provider));
+            if (!registered) {
+                return std::unexpected(diagnostic(
+                    ScenarioDiagnosticCode::CoreLangRuntimeFailure,
+                    filename,
+                    {.line = 1U, .column = 1U},
+                    registered.error().message
+                ));
+            }
+        }
+        auto const program = runtime.load(compiled->bytes);
+        if (!program) {
+            return std::unexpected(diagnostic(
+                ScenarioDiagnosticCode::CoreLangRuntimeFailure,
+                filename,
+                {.line = 1U, .column = 1U},
+                program.error().message
+            ));
+        }
+        auto const executed = runtime.execute(*program, filename, "scenario", {}, {});
+        if (!executed) {
+            return std::unexpected(diagnostic(
+                ScenarioDiagnosticCode::CoreLangRuntimeFailure,
+                filename,
+                {.line = 1U, .column = 1U},
+                executed.error().message
+            ));
+        }
+        if (auto const* const failed = std::get_if<core::lang::Failed>(&*executed)) {
+            return std::unexpected(diagnostic(
+                failed->failure.code == core::lang::FailureCode::Cancelled
+                    ? ScenarioDiagnosticCode::Cancelled
+                    : ScenarioDiagnosticCode::CoreLangRuntimeFailure,
+                filename,
+                {.line = 1U, .column = 1U},
+                failed->failure.message
+            ));
+        }
+        if (!std::holds_alternative<core::lang::Completed>(*executed)) {
+            return std::unexpected(diagnostic(
+                ScenarioDiagnosticCode::CoreLangRuntimeFailure,
+                filename,
+                {.line = 1U, .column = 1U},
+                "CoreLang scenario did not complete"
             ));
         }
         return std::move(collector).build();
@@ -344,29 +627,38 @@ public:
 
 namespace {
 
-[[nodiscard]] std::string_view firstHeader(std::string_view source) noexcept
+[[nodiscard]]
+std::string_view firstHeader(std::string_view source) noexcept
 {
     while (!source.empty()) {
         auto const first = source.find_first_not_of(" \t\r\n");
-        if (first == std::string_view::npos) return {};
+        if (first == std::string_view::npos) {
+            return {};
+        }
         source.remove_prefix(first);
-        if (!source.starts_with("#") && !source.starts_with("//")) return source;
+        if (!source.starts_with("#") && !source.starts_with("//")) {
+            return source;
+        }
         auto const newline = source.find_first_of("\r\n");
-        if (newline == std::string_view::npos) return {};
+        if (newline == std::string_view::npos) {
+            return {};
+        }
         source.remove_prefix(newline + 1U);
     }
     return {};
 }
 
-[[nodiscard]] bool isExplicitHeader(
-    std::string_view const source,
-    std::string_view const expected, bool const allow_semicolon = false
-) noexcept
+[[nodiscard]]
+bool isExplicitHeader(std::string_view const source, std::string_view const expected) noexcept
 {
-    if (!source.starts_with(expected)) return false;
-    if (source.size() == expected.size()) return true;
+    if (!source.starts_with(expected)) {
+        return false;
+    }
+    if (source.size() == expected.size()) {
+        return true;
+    }
     char const next = source[expected.size()];
-    return next == ' ' || next == '\t' || next == '\r' || next == '\n' || (allow_semicolon && next == ';');
+    return next == ' ' || next == '\t' || next == '\r' || next == '\n';
 }
 
 } // namespace
@@ -380,20 +672,42 @@ std::expected<ScenarioPlan, ScenarioDiagnostic> parseScenarioSource(
 {
     if (limits.max_source_bytes == 0U || limits.max_statements == 0U || limits.max_actors == 0U
         || limits.max_total_ticks == 0U || limits.max_operations == 0U || limits.max_evidence == 0U) {
-        return std::unexpected(scenario_detail::diagnostic(ScenarioDiagnosticCode::InvalidLimits, filename,
-            {.line = 1, .column = 1}, "all scenario limits must be positive"));
+        return std::unexpected(scenario_detail::diagnostic(
+            ScenarioDiagnosticCode::InvalidLimits,
+            filename,
+            {.line = 1U, .column = 1U},
+            "all scenario limits must be positive"
+        ));
     }
-    if (source.size() > limits.max_source_bytes) return std::unexpected(scenario_detail::diagnostic(
-        ScenarioDiagnosticCode::SourceTooLarge, filename, {.line = 1, .column = 1},
-        "scenario source exceeds the configured byte limit"));
-    if (cancellation && cancellation->isCancellationRequested()) return std::unexpected(scenario_detail::diagnostic(
-        ScenarioDiagnosticCode::Cancelled, filename, {.line = 1, .column = 1}, "scenario compilation was cancelled"));
+    if (source.size() > limits.max_source_bytes) {
+        return std::unexpected(scenario_detail::diagnostic(
+            ScenarioDiagnosticCode::SourceTooLarge,
+            filename,
+            {.line = 1U, .column = 1U},
+            "scenario source exceeds the configured byte limit"
+        ));
+    }
+    if (cancellation && cancellation->isCancellationRequested()) {
+        return std::unexpected(scenario_detail::diagnostic(
+            ScenarioDiagnosticCode::Cancelled,
+            filename,
+            {.line = 1U, .column = 1U},
+            "scenario compilation was cancelled"
+        ));
+    }
     std::string_view const header = firstHeader(source);
-    if (isExplicitHeader(header, "scenario 1")) return parseScenario(filename, source, limits);
-    if (isExplicitHeader(header, "@version(\"0.0.1\")", true)) return scenario_detail::CoreLangScenarioLowerer::lower(
-        filename, source, limits, cancellation);
-    return std::unexpected(scenario_detail::diagnostic(ScenarioDiagnosticCode::UnknownSourceHeader, filename,
-        {.line = 1, .column = 1}, "expected scenario 1 or @version(\"0.0.1\") source header"));
+    if (isExplicitHeader(header, "scenario 1")) {
+        return parseScenario(filename, source, limits);
+    }
+    if (isExplicitHeader(header, "@version(\"0.0.3\")")) {
+        return scenario_detail::CoreLangScenarioLowerer::lower(filename, source, limits, cancellation);
+    }
+    return std::unexpected(scenario_detail::diagnostic(
+        ScenarioDiagnosticCode::UnknownSourceHeader,
+        filename,
+        {.line = 1U, .column = 1U},
+        "expected scenario 1 or @version(\"0.0.3\") source header"
+    ));
 }
 
 } // namespace shared

@@ -115,7 +115,7 @@ class AiPlanTest(unittest.TestCase):
         self.assertEqual(prepared_task["parent"], "MC-AI-0003")
         self.assertEqual(prepared_task["status"], "active")
 
-    def test_missing_or_ambiguous_current_selection_is_rejected(self) -> None:
+    def test_explicit_snapshot_selection_allows_parallel_active_snapshots(self) -> None:
         self.write(hierarchy(task(4)))
         self.current.unlink()
         missing = self.run_cli("snapshot")
@@ -123,10 +123,41 @@ class AiPlanTest(unittest.TestCase):
         self.assertIn("cannot read", missing.stderr)
         self.current.write_text(json.dumps({"snapshot": "MC-AI-0003", "minor": "MC-AI-0002", "major": "MC-AI-0001"}), encoding="utf-8")
         second_snapshot = task(5, "snapshot", "MC-AI-0002", "active", title="Other 0.1.0:4")
-        self.write(hierarchy(task(4), second_snapshot))
-        ambiguous = self.run_cli("snapshot")
-        self.assertNotEqual(ambiguous.returncode, 0)
-        self.assertIn("current snapshot is ambiguous", ambiguous.stderr)
+        third_snapshot = task(6, "snapshot", "MC-AI-0002", "active", title="Third 0.1.0:4")
+        self.write(hierarchy(task(4), second_snapshot, third_snapshot))
+        selected = self.run_cli("snapshot")
+        self.assertEqual(selected.returncode, 0, selected.stderr)
+        self.assertTrue(selected.stdout.startswith("# Task 3 — EarlyDev 0.1.0:3"))
+        selected_other = self.run_cli("select", "snapshot", "5")
+        self.assertEqual(selected_other.returncode, 0, selected_other.stderr)
+        self.assertEqual(json.loads(self.current.read_text(encoding="utf-8"))["snapshot"], "MC-AI-0005")
+        inferred_ambiguity = self.run_cli("snapshot", "0.1.0:4")
+        self.assertNotEqual(inferred_ambiguity.returncode, 0)
+        self.assertIn("snapshot identifier 0.1.0:4 is ambiguous", inferred_ambiguity.stderr)
+
+    def test_current_snapshot_rejects_wrong_level_inactive_or_mismatched_selection(self) -> None:
+        self.write(hierarchy(task(4)))
+        self.current.write_text(json.dumps({"snapshot": "MC-AI-0002", "minor": "MC-AI-0002", "major": "MC-AI-0001"}), encoding="utf-8")
+        wrong_level = self.run_cli("snapshot")
+        self.assertNotEqual(wrong_level.returncode, 0)
+        self.assertIn("does not identify a snapshot", wrong_level.stderr)
+
+        inactive = hierarchy(task(4))
+        inactive[2]["status"] = "backlog"
+        inactive[2]["owner"] = ""
+        self.write(inactive)
+        self.current.write_text(json.dumps({"snapshot": "MC-AI-0003", "minor": "MC-AI-0002", "major": "MC-AI-0001"}), encoding="utf-8")
+        inactive_selection = self.run_cli("snapshot")
+        self.assertNotEqual(inactive_selection.returncode, 0)
+        self.assertIn("current snapshot must be active or done", inactive_selection.stderr)
+
+        other_minor = task(6, "minor", "MC-AI-0001", "backlog", title="Other 0.1.1")
+        other_snapshot = task(7, "snapshot", "MC-AI-0006", "active", title="Other 0.1.1:1")
+        self.write(hierarchy(task(4), other_minor, other_snapshot))
+        self.current.write_text(json.dumps({"snapshot": "MC-AI-0007", "minor": "MC-AI-0002", "major": "MC-AI-0001"}), encoding="utf-8")
+        mismatched = self.run_cli("snapshot")
+        self.assertNotEqual(mismatched.returncode, 0)
+        self.assertIn("current snapshot is not a child of current minor", mismatched.stderr)
 
     def test_plan_for_and_select_are_deterministic(self) -> None:
         self.write(hierarchy(task(4)))

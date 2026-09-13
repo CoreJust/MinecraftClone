@@ -24,6 +24,7 @@ class ScenarioPlanCollector;
 enum class ScenarioProfile : uint8_t {
     Flat2dV1,
     Flat3dV1,
+    Flight3dV1,
 };
 
 [[nodiscard]]
@@ -90,9 +91,9 @@ struct ScenarioActor final {
     ScenarioActorId id;
     std::string name;
     char character;
-    uint8_t x;
-    uint8_t y;
-    uint8_t z;
+    int32_t x;
+    int32_t y;
+    int32_t z;
     int16_t yaw_degrees;
     int16_t pitch_degrees;
     int16_t roll_degrees;
@@ -103,6 +104,7 @@ struct ScenarioInputOperation final {
     ScenarioActorId actor;
     int8_t x;
     int8_t y;
+    int8_t z = 0;
     uint64_t effective_boundary;
 };
 
@@ -110,6 +112,7 @@ struct ScenarioCameraInputOperation final {
     ScenarioActorId actor;
     int8_t strafe;
     int8_t forward;
+    int8_t vertical = 0;
     uint64_t effective_boundary;
 };
 
@@ -119,9 +122,9 @@ struct ScenarioWaitOperation final {
 
 struct ScenarioExpectPositionOperation final {
     ScenarioActorId actor;
-    uint8_t x;
-    uint8_t y;
-    uint8_t z;
+    int32_t x;
+    int32_t y;
+    int32_t z;
 };
 
 using ScenarioOperationData = std::variant<
@@ -145,7 +148,8 @@ class ScenarioPlan;
 Direction scenarioCameraRelativeDirection(
     int16_t yaw_degrees,
     int8_t strafe,
-    int8_t forward
+    int8_t forward,
+    int8_t vertical = 0
 ) noexcept;
 
 // Stable plan fingerprint recorded with runtime evidence.  It identifies the

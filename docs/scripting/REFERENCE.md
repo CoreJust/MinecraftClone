@@ -1,103 +1,70 @@
 # Scenario language reference
 
-This is the complete grammar for source format version `1`. Each declaration,
-structural marker, and command occupies one logical line. Spaces and tabs
-separate tokens within that line; a line ending terminates it.
+There are two source grammars. `scenario 1` is the legacy line based grammar;
+its declarations and flat profiles remain compatible. CoreLang uses the pinned
+0.0.3 compiler and the `minecraft` ruleset.
 
-## Lexical rules
+## Legacy frontend
 
-- An identifier is ASCII `[A-Za-z_][A-Za-z0-9_-]*`.
-- An integer is base-10 only: `-?[0-9]+`. Hexadecimal, binary, decimal-point,
-  exponent, `+`-prefixed, and non-finite forms are invalid. Fields that name a
-  version, seed, count, or coordinate further require a non-negative value.
-- A character is a quoted string containing exactly one supported character.
-  The current profile has no string escape syntax.
-- `#` starts a comment outside a quoted string, including after a command.
-  It is not a comment marker inside a character string, so `character "#"` is
-  valid.
-- Blank lines are ignored. LF, CRLF, and CR line endings are accepted.
+The order is strict: `scenario 1`, `profile`, `seed`, one or more `player`
+declarations, `begin`, zero or more commands, `end`, then EOF. Blank lines and
+comments are accepted. `flat2d-v1` uses coordinates `0..31`; `flat3d-v1` keeps
+the flat board and requires `z == 0`; `flight3d-v1` uses signed XYZ positions
+in `-64..64`. Player characters are one of `@ # $ % &`, names are ASCII
+identifiers, and names and characters are unique.
 
-## Grammar
+Legacy flight commands are:
 
-The notation uses `*` for zero or more repetitions, `+` for one or more, `|`
-for alternatives, and quoted text for literal tokens. Commas between the
-top-level productions require a logical line boundary; tokens inside a
-production are separated by spaces or tabs.
-
-```ebnf
-file          = scenario_header, profile, seed, player_declaration+, "begin",
-                command*, "end", EOF ;
-scenario_header = "scenario", format_version ;
-format_version = nonnegative_integer ;
-profile       = "profile", identifier ;
-seed          = "seed", nonnegative_integer ;
-player_declaration = player_2d | player_3d ;
-player_2d     = "player", identifier, "character", character,
-                "at", coordinate, coordinate ;
-player_3d     = "player", identifier, "character", character,
-                "at", coordinate, coordinate, coordinate, "orientation",
-                yaw_degrees, pitch_degrees, roll_degrees ;
-command       = input | wait | expect_position ;
-input         = direction_input | camera_input ;
-direction_input = "input", identifier, direction, direction ;
-camera_input  = "input", identifier, "camera", direction, direction ;
-wait          = "wait", positive_integer ;
-expect_position = expect_position_2d | expect_position_3d ;
-expect_position_2d = "expect", "player", identifier, "position",
-                     coordinate, coordinate ;
-expect_position_3d = "expect", "player", identifier, "position",
-                     coordinate, coordinate, coordinate ;
-identifier    = ASCII letter or "_", { ASCII letter | digit | "_" | "-" } ;
-integer       = [ "-" ], digit, { digit } ;
-nonnegative_integer = digit, { digit } ;
-positive_integer = digit_nonzero, { digit } ;
-coordinate    = integer ;
-direction     = integer ;
-character     = '"', one profile-supported character, '"' ;
-EOF           = end of source ;
+```text
+input PLAYER X Y Z
+input PLAYER camera STRAFE FORWARD VERTICAL
+wait POSITIVE_INTEGER
+expect player PLAYER position X Y Z
 ```
 
-The order is strict: header, profile, seed, at least one player, `begin`, zero
-or more commands, `end`, then EOF. A header or command cannot be moved,
-duplicated, omitted, or followed by another declaration after `begin`.
+Every input component is in `-1..1`. Flight orientation is supplied on the
+player declaration: yaw `0..359`, pitch `-89..89`, roll `-180..180`. Camera
+input is resolved using yaw; pitch and roll are replay metadata. The existing
+flat commands and their two dimensional forms remain available in their
+profiles.
 
-## Commands
+## CoreLang scenario frontend
 
-| Command | Meaning | Validation |
-| --- | --- | --- |
-| `input ACTOR DX DY` | Submit the named player’s direction for subsequent authoritative steps. | `ACTOR` was declared; each component is `-1`, `0`, or `1`. |
-| `wait N` | Advance exactly `N` authoritative simulation steps. | `N` is a positive base-10 integer and does not exceed remaining script/host budgets. |
-| `expect player ACTOR position X Y` | Compare the named player’s authoritative position at the current boundary. | `ACTOR` was declared; `X` and `Y` are valid profile coordinates. |
+The source must have this shape:
 
-## `flat2d-v1` profile
+```text
+@version("0.0.3")
+@use minecraft
 
-`flat2d-v1` provides:
+pub fn scenario() { /* typed host calls and CoreLang control flow */ }
+```
 
-| Item | Contract |
+The scenario profile must be `flight3d-v1`. The registered host operations are:
+
+| Call | Signature and contract |
 | --- | --- |
-| Board | Coordinates `(x, y)` with each component in `0..31`. |
-| Characters | Exactly one of `@`, `#`, `$`, `%`, `&` for each player declaration. |
-| Players | At least one declaration; identifiers and characters are unique. Initial cells must differ by at least two cells on one axis, keeping each player outside every other's 3 by 3 exclusion zone. |
-| Directions | Each `DX` and `DY` is an integer in `-1..1`. |
-| Waiting | `N` is an integer greater than zero. |
-| Seed | Recorded deterministic configuration. This profile currently performs no random operation, so changing the seed has no current state effect. |
+| `profile` | `profile(str)` exactly once, with `"flight3d-v1"` |
+| `seed` | `seed(u64)` once, after `profile` |
+| `playerXYZ` | `playerXYZ(str, c8, i32, i32, i32, i16, i16, i16)` |
+| `moveXYZ` | `moveXYZ(str, i8, i8, i8)`; components `-1..1` |
+| `cameraInputXYZ` | `cameraInputXYZ(str, i8, i8, i8)`; components `-1..1` |
+| `wait` | `wait(u64)`; value must be positive |
+| `expectXYZ` | `expectXYZ(str, i32, i32, i32)` |
 
-Profile validation happens before any setup or simulation mutation. The
-[execution model](EXECUTION.md) defines how a profile evolves in future source
-versions.
+`playerXYZ` accepts characters `@ # $ % &`, unique ASCII names and characters,
+positions in `-64..64`, yaw `0..359`, pitch `-89..89`, and roll `-180..180`.
+Player declarations follow `seed`. `moveXYZ` submits authoritative XYZ input;
+`cameraInputXYZ` submits strafe, forward, and vertical components and is
+resolved from the player's yaw. A camera operation's pitch and roll do not
+change movement.
 
-## `flat3d-v1` profile
+Functions, `if`, and `for` are supported by CoreLang and are useful for
+reusable scenario composition. There is no generic Minecraft instruction fuel
+or arbitrary host access in this integration. Keep control flow finite.
 
-The legacy `scenario 1` frontend also supports `flat3d-v1`. It is a replay and
-control profile over the current authoritative flat board, not vertical-world
-simulation. It uses `player_3d`, `expect_position_3d`, and `camera_input`.
+## World source
 
-| Item | Contract |
-| --- | --- |
-| Coordinates | `x` and `y` are board coordinates in `0..31`; `z` is explicitly recorded but must be `0`. |
-| Orientation | `yaw` is `0..359`, `pitch` is `-89..89`, and `roll` is `-180..180`, all in degrees. |
-| Camera input | `input ACTOR camera STRAFE FORWARD` accepts `-1..1` components. Yaw `0` faces +Y and positive yaw turns toward +X. The runner resolves it to the unchanged cardinal authoritative `Direction`; a diagonal tie chooses X. |
-| Evidence | Runtime records a deterministic plan replay ID, camera-relative input count, and the 100 ms authoritative tick. Wall-clock elapsed time is not part of the replay ID. |
-
-The existing CoreLang frontend remains limited to `flat2d-v1`; it continues to
-lower unchanged 2D source into the same authoritative plan.
+`scenarios/world/canonical_world.core` exports `generate(u64)`. Its trusted
+world host calls are `terrain_random(seed, x, y, z)`, `set_block(x, y, z, id)`,
+and `publish()`. The formula is `z - 6 + random < 0`; it fills a private
+16x16x16 candidate with stone block id `1`, then publishes once.

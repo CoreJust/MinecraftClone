@@ -70,6 +70,7 @@ PlayerPresentationPosition PlayerPresentation::position(shared::Player const& pl
     return {
         .x = shared::playerPositionX(player),
         .y = shared::playerPositionY(player),
+        .z = shared::playerPositionZ(player),
     };
 }
 
@@ -90,6 +91,7 @@ PlayerPresentationPosition PlayerPresentation::sample(
     return {
         .x = sample.from.x + (sample.to.x - sample.from.x) * alpha,
         .y = sample.from.y + (sample.to.y - sample.from.y) * alpha,
+        .z = sample.from.z + (sample.to.z - sample.from.z) * alpha,
     };
 }
 
@@ -98,7 +100,7 @@ glm::dvec3 localPlayerCenterPosition(PlayerPresentationPosition const position) 
     return {
         position.x + PLAYER_CENTER_OFFSET,
         position.y + PLAYER_CENTER_OFFSET,
-        PLAYER_CENTER_HEIGHT,
+        position.z + PLAYER_CENTER_HEIGHT,
     };
 }
 
@@ -107,7 +109,34 @@ glm::dvec3 localPlayerCenterPosition(shared::Player const& player) noexcept
     return localPlayerCenterPosition(PlayerPresentationPosition{
         .x = shared::playerPositionX(player),
         .y = shared::playerPositionY(player),
+        .z = shared::playerPositionZ(player),
     });
+}
+
+CameraPose localPlayerFirstPersonPose(
+    PlayerPresentationPosition const position,
+    CameraAngles const angles
+) noexcept
+{
+    return {
+        .position = localPlayerCenterPosition(position),
+        .angles = angles,
+    };
+}
+
+CameraPose localPlayerFirstPersonPose(
+    shared::Player const& player,
+    CameraAngles const angles
+) noexcept
+{
+    return localPlayerFirstPersonPose(
+        PlayerPresentationPosition{
+            .x = shared::playerPositionX(player),
+            .y = shared::playerPositionY(player),
+            .z = shared::playerPositionZ(player),
+        },
+        angles
+    );
 }
 
 CameraPose localPlayerThirdPersonPose(
@@ -138,6 +167,7 @@ CameraPose localPlayerThirdPersonPose(
         PlayerPresentationPosition{
             .x = shared::playerPositionX(player),
             .y = shared::playerPositionY(player),
+            .z = shared::playerPositionZ(player),
         },
         angles
     );

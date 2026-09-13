@@ -1,0 +1,19 @@
+@version("0.0.3")
+@use minecraft
+
+fn replayCamera(name: str, yaw_is_right: bool) {
+    if yaw_is_right {
+        cameraInputXYZ(name, 0i8, 1i8, -1i8)
+    } else {
+        cameraInputXYZ(name, 1i8, 0i8, 1i8)
+    }
+}
+
+pub fn scenario() {
+    profile("flight3d-v1")
+    seed(7u64)
+    playerXYZ("bob", '#'c8, 8i32, -2i32, 10i32, 90i16, 0i16, 0i16)
+    replayCamera("bob", true)
+    wait(2u64)
+    expectXYZ("bob", 8i32, -2i32, 9i32)
+}
