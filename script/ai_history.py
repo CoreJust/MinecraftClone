@@ -9,6 +9,7 @@ import json
 from pathlib import Path
 import subprocess
 import sys
+from typing import Sequence
 
 import ai_tasks
 
@@ -21,6 +22,32 @@ DEFAULT_OUTPUT = ROOT / "build/ai-tasks"
 
 class HistoryError(RuntimeError):
     pass
+
+
+PUBLICATION_LEDGER_MUTABLE_FIELDS = {
+    "status",
+    "owner",
+    "evidence",
+    "resolved_at",
+    "resolution_changes",
+}
+
+# Snapshot 3 was published before the ledger immutability check landed. Its
+# immutable commit also condensed finalized prose fields. The commit identity
+# makes this a closed historical exception; later ledgers retain the strict
+# field set above.
+LEGACY_PUBLICATION_LEDGER_FIELD_EXCEPTIONS = {
+    "8df27fb8fa08d9e0cd625b8cad85209fdd09251d": {
+        "context",
+        "plan",
+        "product_changes",
+        "code_changes",
+    },
+}
+
+
+def publication_ledger_mutable_fields(sha: str) -> set[str]:
+    return PUBLICATION_LEDGER_MUTABLE_FIELDS | LEGACY_PUBLICATION_LEDGER_FIELD_EXCEPTIONS.get(sha, set())
 
 
 def git(repo: Path, *args: str, check: bool = True) -> str:
@@ -63,11 +90,31 @@ def task_level(task: dict[str, object]) -> str:
     return str(task.get("level", "basic"))
 
 
-def trailer_commits(repo: Path, tasks: list[dict[str, object]]) -> dict[str, list[str]]:
+def trailer_commits(
+    repo: Path,
+    tasks: list[dict[str, object]],
+    exact_commits: Sequence[str] | None = None,
+) -> dict[str, list[str]]:
     by_id = {str(task["id"]): task for task in tasks}
     assigned: dict[str, str] = {}
     commits: dict[str, list[str]] = defaultdict(list)
-    output = git(repo, "log", "--all", "--format=%H%x00%(trailers:key=Task-ID,valueonly,unfold)%x00")
+    if exact_commits is None:
+        output = git(
+            repo,
+            "log",
+            "--all",
+            "--format=%H%x00%(trailers:key=Task-ID,valueonly,unfold)%x00",
+        )
+    elif exact_commits:
+        output = git(
+            repo,
+            "log",
+            "--no-walk",
+            "--format=%H%x00%(trailers:key=Task-ID,valueonly,unfold)%x00",
+            *exact_commits,
+        )
+    else:
+        output = ""
     fields = output.split("\0")
     for index in range(0, len(fields) - 1, 2):
         sha = fields[index].strip()
@@ -132,7 +179,9 @@ def range_commits(
 def mapped_range_ids(
     repo: Path, tasks: list[dict[str, object]], range_shas: list[str]
 ) -> set[str]:
-    commits = trailer_commits(repo, tasks)
+    # Validate only commits in the candidate range. Scanning --all would let
+    # an unrelated branch's malformed trailer block this candidate.
+    commits = trailer_commits(repo, tasks, exact_commits=range_shas)
     commit_to_task = {sha: task_id for task_id, shas in commits.items() for sha in shas}
     unassigned = [sha for sha in range_shas if sha not in commit_to_task]
     if unassigned:
@@ -174,9 +223,20 @@ def require_valid_prior_snapshot_ledgers(
 ) -> None:
     by_id = {str(task["id"]): task for task in tasks}
     current = by_id[snapshot_id]
-    task_commits = trailer_commits(repo, tasks)
+    baseline = revision(repo, str(current["baseline_commit"]))
+    promotion_parents: list[str] = []
+    if has_annotated_ai_tag(repo, baseline):
+        promotion_parents = git(repo, "show", "-s", "--format=%P", baseline).split()
+        if len(promotion_parents) != 2:
+            raise HistoryError(f"snapshot baseline {baseline} is not a two-parent promotion")
+    # The previous snapshot source is an ancestor of the promoted baseline,
+    # so include that explicit candidate-reachable head alongside this range.
+    # Do not scan every ref: unrelated branches must not block validation.
+    validation_commits = list(range_shas)
+    if promotion_parents:
+        validation_commits.append(promotion_parents[1])
+    task_commits = trailer_commits(repo, tasks, exact_commits=validation_commits)
     commit_to_task = {sha: task_id for task_id, shas in task_commits.items() for sha in shas}
-    mutable_fields = {"status", "owner", "evidence", "resolved_at", "resolution_changes"}
     validated_ledgers: set[str] = set()
 
     for sha in range_shas:
@@ -223,7 +283,7 @@ def require_valid_prior_snapshot_ledgers(
         if previous is None or published is None:
             raise HistoryError(f"publication ledger {sha} omits {task_id}")
         changed_fields = {key for key in previous if previous[key] != published[key]}
-        if not changed_fields <= mutable_fields:
+        if not changed_fields <= publication_ledger_mutable_fields(sha):
             raise HistoryError(f"publication ledger {sha} changes immutable {task_id} fields")
         if previous["status"] != "active" or previous["resolved_at"]:
             raise HistoryError(f"publication ledger {sha} does not start from an active snapshot")
@@ -231,8 +291,8 @@ def require_valid_prior_snapshot_ledgers(
             raise HistoryError(f"publication ledger {sha} does not record a published snapshot")
         if previous["finalized"] is not True or published["finalized"] is not True:
             raise HistoryError(f"publication ledger {sha} must preserve finalized state")
-        baseline = revision(repo, str(previous["baseline_commit"]))
-        if not has_tagged_promotion(repo, baseline, parents[0]):
+        ledger_baseline = revision(repo, str(previous["baseline_commit"]))
+        if not has_tagged_promotion(repo, ledger_baseline, parents[0]):
             raise HistoryError(f"publication ledger {sha} has no tagged immutable promotion")
         if published != task:
             raise HistoryError(f"publication ledger {sha} does not match current {task_id} metadata")
@@ -244,12 +304,9 @@ def require_valid_prior_snapshot_ledgers(
             raise HistoryError(f"publication ledger {sha} has stale task Markdown")
         validated_ledgers.add(task_id)
 
-    baseline = revision(repo, str(current["baseline_commit"]))
-    if not has_annotated_ai_tag(repo, baseline):
+    if not promotion_parents:
         return
-    promotion_parents = git(repo, "show", "-s", "--format=%P", baseline).split()
-    if len(promotion_parents) != 2:
-        raise HistoryError(f"snapshot baseline {baseline} is not a two-parent promotion")
+    baseline = revision(repo, str(current["baseline_commit"]))
     merged = git(
         repo, "merge-tree", "--write-tree", promotion_parents[0], promotion_parents[1]
     ).splitlines()
@@ -388,6 +445,8 @@ def finalize(
             child_id = str(child["id"])
             if child_id not in actual or child.get("status") != "done":
                 raise HistoryError(f"planned child {child_id} is missing or not done")
+            if child.get("finalized") is not True:
+                raise HistoryError(f"planned child {child_id} is not finalized")
         for child_id in actual:
             child = by_id[child_id]
             parent = task_parent(child)
@@ -404,6 +463,8 @@ def finalize(
         for child in children:
             if child.get("status") != "done":
                 raise HistoryError(f"child {child['id']} is not done")
+            if child.get("finalized") is not True:
+                raise HistoryError(f"child {child['id']} is not finalized")
         require_aggregate_coverage(tasks, task_id, linked_ids)
     require_finalization_fields(target, higher=level in {"minor", "major"})
     target["finalized"] = True

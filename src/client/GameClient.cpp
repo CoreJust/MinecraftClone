@@ -1,28 +1,34 @@
 #include <client/GameClient.hpp>
 
+#include <client/FrameScheduler.hpp>
+
 #include <core/common/SpanUtils.hpp>
 #include <core/IO/Log.hpp>
 
+#include <algorithm>
 #include <iostream>
+#include <optional>
 
 namespace client {
 
 void GameClient::run(core::Address const server_address, char const ch) {
+    m_local_character = ch;
     if (!connect(server_address, std::chrono::milliseconds{ 1'000 })) {
         CORE_ERROR("Failed to connect to server {}", server_address);
         std::cerr << "Failed to connect to server" << std::endl;
         return;
     }
     
-    send(shared::JoinRequestMessage {
+    static_cast<void>(send(shared::JoinRequestMessage {
         .ch = ch,
-    });
+    }));
     while (!m_accepted && m_running && isConnected()) {
         poll(std::chrono::milliseconds{ 100 });
     }
 
+    FrameScheduler scheduler{ std::chrono::steady_clock::now(), shared::TICK };
     while (m_running && isConnected()) {
-        poll(std::chrono::milliseconds{ 100 });
+        poll(std::chrono::milliseconds::zero());
         if (!m_running || !isConnected()) {
             break;
         }
@@ -30,10 +36,15 @@ void GameClient::run(core::Address const server_address, char const ch) {
         if (!m_running || !isConnected()) {
             break;
         }
-        send(shared::ClientInputMessage{
-            .direction = input(),
-        });
-        std::this_thread::sleep_for(std::chrono::milliseconds{ 100 });
+        std::chrono::steady_clock::time_point const now = std::chrono::steady_clock::now();
+        if (scheduler.simulationDue(now)) {
+            if (auto const predicted_input = predictInput(input(), now)) {
+                if (!send(*predicted_input)) {
+                    discardPredictedInput(predicted_input->sequence, now);
+                }
+            }
+        }
+        std::this_thread::sleep_for(scheduler.idleDelay(now));
     }
 }
 
@@ -58,27 +69,136 @@ void GameClient::onReceived(core::ReceiveEvent event) {
             m_running = false;
         }
     } else if (auto* msg = std::get_if<shared::ServerPlayerPositionMessage>(msg_ptr)) {
-        auto const [ch, x, y] = *msg;
-        if (auto p = m_world.playerByCharacter(ch)) {
-            m_world.setPlayerPosition(p->id, x, y);
-        } else {
-            m_world.spawnPlayer(m_next_id++, ch, {{x, y}});
-        }
+        static_cast<void>(applyServerPosition(*msg));
     } else if (auto* msg = std::get_if<shared::ServerRemovePlayerMessage>(msg_ptr)) {
-        auto const [ch] = *msg;
-        if (auto const p = m_world.playerByCharacter(ch)) {
-            m_world.despawnPlayer(p->id);
-        }
+        applyServerRemoval(msg->ch);
     } else {
         CORE_ERROR("Received a message unsupported by the client {}", msg_ptr->index());
     }
 }
 
-void GameClient::send(shared::Message const message) {
+void GameClient::applyServerRemoval(char const character)
+{
+    if (auto const player = m_world.playerByCharacter(character)) {
+        m_player_presentation.remove(character);
+        m_world.despawnPlayer(player->id);
+        m_state_revisions.erase(character);
+        rebuildPrediction();
+    }
+}
+
+std::optional<shared::ClientInputMessage> GameClient::predictInput(
+    shared::Direction const direction,
+    std::chrono::steady_clock::time_point const predicted_at
+)
+{
+    if (!m_predicted_world.playerByCharacter(m_local_character).has_value()
+        || m_pending_inputs.size() == MAX_PENDING_INPUTS) {
+        return std::nullopt;
+    }
+    shared::ClientInputMessage const input{
+        .direction = direction,
+        .sequence = m_next_input_sequence++,
+    };
+    m_pending_inputs.push_back(input);
+    shared::Player const player = *m_predicted_world.playerByCharacter(m_local_character);
+    static_cast<void>(m_predicted_world.movePlayer(player.id, direction));
+    updatePredictedPresentation(predicted_at);
+    return input;
+}
+
+void GameClient::discardPredictedInput(
+    uint32_t const sequence,
+    std::chrono::steady_clock::time_point const discarded_at
+)
+{
+    auto const found = std::find_if(m_pending_inputs.begin(), m_pending_inputs.end(), [sequence](
+        shared::ClientInputMessage const& input
+    ) {
+        return input.sequence == sequence;
+    });
+    if (found != m_pending_inputs.end()) {
+        m_pending_inputs.erase(found);
+        rebuildPrediction();
+        updatePredictedPresentation(discarded_at);
+    }
+}
+
+bool GameClient::applyServerPosition(
+    shared::ServerPlayerPositionMessage const& message,
+    std::chrono::steady_clock::time_point const received_at
+)
+{
+    auto const known_revision = m_state_revisions.find(message.ch);
+    if (known_revision != m_state_revisions.end()
+        && !shared::isNewerSequence(message.state_revision, known_revision->second)) {
+        return false;
+    }
+    m_state_revisions.insert_or_assign(message.ch, message.state_revision);
+    if (auto const player = m_world.playerByCharacter(message.ch)) {
+        m_world.setPlayerPosition(player->id, message.x, message.y, message.x_subcell, message.y_subcell);
+    } else {
+        shared::PlayerId const id = m_next_id++;
+        m_world.spawnPlayer(id, message.ch, {{message.x, message.y}});
+        m_world.setPlayerPosition(id, message.x, message.y, message.x_subcell, message.y_subcell);
+    }
+    if (message.ch == m_local_character) {
+        while (!m_pending_inputs.empty()
+            && !shared::isNewerSequence(
+                m_pending_inputs.front().sequence,
+                message.acknowledged_input_sequence
+            )) {
+            m_pending_inputs.pop_front();
+        }
+        rebuildPrediction();
+        updatePredictedPresentation(received_at);
+    } else {
+        rebuildPrediction();
+        updatePredictedPresentation(received_at);
+        if (auto const player = m_world.playerByCharacter(message.ch)) {
+            m_player_presentation.update(*player, received_at);
+        }
+    }
+    return true;
+}
+
+std::optional<shared::Player> GameClient::predictedLocalPlayer() const noexcept
+{
+    return m_predicted_world.playerByCharacter(m_local_character);
+}
+
+std::optional<PlayerPresentationPosition> GameClient::predictedLocalPresentation(
+    std::chrono::steady_clock::time_point const now
+) const noexcept
+{
+    return m_player_presentation.sample(m_local_character, now);
+}
+
+void GameClient::rebuildPrediction()
+{
+    m_predicted_world = m_world;
+    if (auto const player = m_predicted_world.playerByCharacter(m_local_character)) {
+        for (shared::ClientInputMessage const& input : m_pending_inputs) {
+            static_cast<void>(m_predicted_world.movePlayer(player->id, input.direction));
+        }
+    }
+}
+
+void GameClient::updatePredictedPresentation(std::chrono::steady_clock::time_point const updated_at) noexcept
+{
+    if (auto const player = m_predicted_world.playerByCharacter(m_local_character)) {
+        m_player_presentation.update(*player, updated_at);
+    }
+}
+
+bool GameClient::send(shared::Message const message)
+{
     std::vector const message_bytes = shared::encodeMessage(message);
     if (!core::Client::send(message_bytes, 0, core::SendMode{ core::SendMode::Reliable })) {
         CORE_ERROR("Failed to send a message");
+        return false;
     }
+    return true;
 }
 
 } // namespace client

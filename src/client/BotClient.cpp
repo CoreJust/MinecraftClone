@@ -9,8 +9,8 @@ shared::Direction BotClient::input() {
     std::uniform_int_distribution<int> change_distribution{ 0, 49 };
     std::uniform_int_distribution<int> direction_distribution{ -1, 1 };
     if (change_distribution(generator) == 0) {
-        m_direction.x = static_cast<uint8_t>(direction_distribution(generator));
-        m_direction.y = static_cast<uint8_t>(direction_distribution(generator));
+        m_direction.x = static_cast<uint8_t>(direction_distribution(generator) * 127);
+        m_direction.y = static_cast<uint8_t>(direction_distribution(generator) * 127);
     }
     return m_direction;
 }

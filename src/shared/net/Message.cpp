@@ -22,45 +22,55 @@ struct MessageEncoder final {
 
     std::vector<uint8_t> operator()(JoinRequestMessage const msg) {
         return writer
-            .reserve(sizeof(MessageType) + sizeof(msg))
-            .write(MessageType::JoinRequest)
-            .write(msg)
+            .reserve(sizeof(uint8_t) + sizeof(msg.ch))
+            .write(static_cast<uint8_t>(MessageType::JoinRequest))
+            .write(msg.ch)
             .build()
         ;
     }
 
     std::vector<uint8_t> operator()(JoinResponseMessage const msg) {
         return writer
-            .reserve(sizeof(MessageType) + sizeof(msg))
-            .write(MessageType::JoinResponse)
-            .write(msg)
+            .reserve(sizeof(uint8_t) + sizeof(uint8_t))
+            .write(static_cast<uint8_t>(MessageType::JoinResponse))
+            .write(static_cast<uint8_t>(msg.accepted))
             .build()
         ;
     }
 
     std::vector<uint8_t> operator()(ClientInputMessage const msg) {
         return writer
-            .reserve(sizeof(MessageType) + sizeof(msg))
-            .write(MessageType::ClientInput)
-            .write(msg)
+            .reserve(sizeof(uint8_t) + sizeof(msg.direction.x) + sizeof(msg.direction.y) + sizeof(msg.sequence))
+            .write(static_cast<uint8_t>(MessageType::ClientInput))
+            .write(msg.direction.x)
+            .write(msg.direction.y)
+            .write(msg.sequence)
             .build()
         ;
     }
 
     std::vector<uint8_t> operator()(ServerPlayerPositionMessage const msg) {
         return writer
-            .reserve(sizeof(MessageType) + sizeof(msg))
-            .write(MessageType::ServerPlayerPosition)
-            .write(msg)
+            .reserve(sizeof(uint8_t) + sizeof(msg.ch) + sizeof(msg.x) + sizeof(msg.y)
+                + sizeof(msg.x_subcell) + sizeof(msg.y_subcell) + sizeof(msg.acknowledged_input_sequence)
+                + sizeof(msg.state_revision))
+            .write(static_cast<uint8_t>(MessageType::ServerPlayerPosition))
+            .write(msg.ch)
+            .write(msg.x)
+            .write(msg.y)
+            .write(msg.x_subcell)
+            .write(msg.y_subcell)
+            .write(msg.acknowledged_input_sequence)
+            .write(msg.state_revision)
             .build()
         ;
     }
 
     std::vector<uint8_t> operator()(ServerRemovePlayerMessage const msg) {
         return writer
-            .reserve(sizeof(MessageType) + sizeof(msg))
-            .write(MessageType::ServerRemovePlayer)
-            .write(msg)
+            .reserve(sizeof(uint8_t) + sizeof(msg.ch))
+            .write(static_cast<uint8_t>(MessageType::ServerRemovePlayer))
+            .write(msg.ch)
             .build()
         ;
     }
@@ -71,7 +81,7 @@ bool isValidCharacter(char const ch) noexcept {
 }
 
 bool isValidDirection(uint8_t const value) noexcept {
-    return value == 0 || value == 1 || value == 255;
+    return value != 128;
 }
 
 bool isValidMessage(Message const& message) noexcept {
@@ -84,7 +94,9 @@ bool isValidMessage(Message const& message) noexcept {
         } else if constexpr (std::is_same_v<T, ClientInputMessage>) {
             return isValidDirection(value.direction.x) && isValidDirection(value.direction.y);
         } else if constexpr (std::is_same_v<T, ServerPlayerPositionMessage>) {
-            return isValidCharacter(value.ch) && value.x < World::WIDTH && value.y < World::HEIGHT;
+            return isValidCharacter(value.ch) && value.x <= World::MAX_PLAYER_ORIGIN_CELL
+                && value.y <= World::MAX_PLAYER_ORIGIN_CELL
+                && value.x_subcell < SUBCELLS_PER_CELL && value.y_subcell < SUBCELLS_PER_CELL;
         } else {
             return isValidCharacter(value.ch);
         }
@@ -100,14 +112,21 @@ std::vector<uint8_t> encodeMessage(Message const message) {
 
 std::optional<Message> decodeMessage(std::span<uint8_t const> const data) {
     core::ByteReader reader{ data };
-    auto const type = reader.read<MessageType>();
-    if (!type) {
+    auto const type_value = reader.read<uint8_t>();
+    if (!type_value) {
         return std::nullopt;
     }
+    auto const type = static_cast<MessageType>(*type_value);
 
     std::optional<Message> message;
-    switch (*type) {
-        case MessageType::JoinRequest:          message = reader.read<JoinRequestMessage>(); break;
+    switch (type) {
+        case MessageType::JoinRequest: {
+            auto const ch = reader.read<char>();
+            if (ch) {
+                message = JoinRequestMessage{ .ch = *ch };
+            }
+            break;
+        }
         case MessageType::JoinResponse: {
             auto const accepted = reader.read<uint8_t>();
             if (!accepted || *accepted > 1) {
@@ -116,9 +135,43 @@ std::optional<Message> decodeMessage(std::span<uint8_t const> const data) {
             message = JoinResponseMessage{ .accepted = *accepted == 1 };
             break;
         }
-        case MessageType::ClientInput:          message = reader.read<ClientInputMessage>(); break;
-        case MessageType::ServerPlayerPosition: message = reader.read<ServerPlayerPositionMessage>(); break;
-        case MessageType::ServerRemovePlayer:   message = reader.read<ServerRemovePlayerMessage>(); break;
+        case MessageType::ClientInput: {
+            auto const x = reader.read<uint8_t>();
+            auto const y = reader.read<uint8_t>();
+            auto const sequence = reader.read<uint32_t>();
+            if (x && y && sequence) {
+                message = ClientInputMessage{ .direction = { .x = *x, .y = *y }, .sequence = *sequence };
+            }
+            break;
+        }
+        case MessageType::ServerPlayerPosition: {
+            auto const ch = reader.read<char>();
+            auto const x = reader.read<uint8_t>();
+            auto const y = reader.read<uint8_t>();
+            auto const x_subcell = reader.read<uint16_t>();
+            auto const y_subcell = reader.read<uint16_t>();
+            auto const acknowledged_input_sequence = reader.read<uint32_t>();
+            auto const state_revision = reader.read<uint32_t>();
+            if (ch && x && y && x_subcell && y_subcell && acknowledged_input_sequence && state_revision) {
+                message = ServerPlayerPositionMessage{
+                    .ch = *ch,
+                    .x = *x,
+                    .y = *y,
+                    .x_subcell = *x_subcell,
+                    .y_subcell = *y_subcell,
+                    .acknowledged_input_sequence = *acknowledged_input_sequence,
+                    .state_revision = *state_revision,
+                };
+            }
+            break;
+        }
+        case MessageType::ServerRemovePlayer: {
+            auto const ch = reader.read<char>();
+            if (ch) {
+                message = ServerRemovePlayerMessage{ .ch = *ch };
+            }
+            break;
+        }
     default: return std::nullopt;
     }
     if (!message || reader.left() != 0 || !isValidMessage(*message)) {

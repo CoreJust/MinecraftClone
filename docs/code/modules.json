@@ -9,7 +9,6 @@
         "src/core/OS/**",
         "src/core/IO/**",
         "src/core/common/**",
-        "src/core/net/**",
         "src/core/window/**",
         "src/core/include/core/OS/**",
         "src/core/include/core/IO/**",
@@ -17,7 +16,6 @@
         "src/core/include/core/common/**",
         "src/core/include/core/macro/**",
         "src/core/include/core/meta/**",
-        "src/core/include/core/net/**",
         "src/core/include/core/window/**",
         "tests/core/algorithm_tests.cpp",
         "tests/core/byte_io_tests.cpp",
@@ -48,15 +46,6 @@
       ]
     },
     {
-      "id": "vulkan",
-      "guide": "docs/code/VULKAN.md",
-      "sources": [
-        "src/core/vulkan/**",
-        "src/core/include/core/vulkan/**",
-        "tests/core/vulkan/**"
-      ]
-    },
-    {
       "id": "gameplay",
       "guide": "docs/code/GAMEPLAY.md",
       "sources": [
@@ -68,6 +57,7 @@
         "src/client/include/client/CMakeLists.txt",
         "tests/core/shared_message_tests.cpp",
         "tests/core/scenario_parser_tests.cpp",
+        "tests/core/corelang_scenario_tests.cpp",
         "tests/core/shared_world_tests.cpp",
         "tests/core/game_server_tests.cpp",
         "tests/core/game_server_lifecycle_tests.cpp"
@@ -80,7 +70,8 @@
         "src/client/render/**",
         "src/client/include/client/render/**",
         "src/client/CMakeLists.txt",
-        "tests/client/**"
+        "tests/client/**",
+        "tests/testsupport/**"
       ]
     },
     {
@@ -104,12 +95,17 @@
       "guide": "docs/BUILD.md",
       "sources": [
         "CMakeLists.txt",
+        "dependencies.lock.json",
         "CMakePresets.json",
         "vcpkg*.json",
         "cmake/**",
         "android/**",
         "src/CMakeLists.txt",
         "tests/CMakeLists.txt",
+        "tests/cmake/corecpp_server_consumer_test.cmake.in",
+        "tests/cmake/minecraftclone_server_only_test.cmake.in",
+        "tests/cmake/coreproject2026_provenance_test.cmake.in",
+        "cmake/fixtures/corecpp_server_consumer/**",
         "tests/main.cpp",
         "publish.py",
         "script/*.py",

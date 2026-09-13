@@ -10,7 +10,14 @@ ctest --preset debug --output-on-failure --no-tests=error
 python3 script/ai_check.py
 ```
 
-Run CMake presets from the repository root. Use `release` in place of `debug` for an optimized build. `mc_main` is under `build/<preset>/`; Windows adds `.exe`. Start one `mc_main --server`, then clients with `mc_main`; [gameplay](code/GAMEPLAY.md) lists exact options. The build copies compiled shaders into `shaders/` beside each executable. Runtime lookup uses the executable location, so launch need not use the repository working directory. `cmake --install build/release --prefix <destination>` installs the executable and shaders together; retain that layout when distributing.
+Run CMake presets from the repository root; use `release` for an optimized
+build. Configure with installed CoreCpp and CoreProject2026 packages exposing
+`CoreCpp::Core`, `CoreCpp::Runtime`, and `CoreProject2026::CoreLang`; configure
+checks both exact revisions against [`dependencies.lock.json`](../dependencies.lock.json).
+CoreProject2026 provenance always fails closed for dirty, unknown, or mismatched
+packages. Local CoreCpp iteration may set `-DMC_ALLOW_INEXACT_CORECPP=ON`, which
+is not release evidence.
+`mc_main` is under `build/<preset>/`; `cmake --install` installs it with shaders.
 
 After building exact release inputs, use the deterministic [package tooling](PACKAGING.md) to create desktop archives or record Android APK evidence.
 See [runtime acceptance](ACCEPTANCE.md) for scenario, benchmark, and capture commands.
@@ -43,7 +50,7 @@ Set `VULKAN_SDK` to the SDK platform directory if CMake cannot find it. The SDK'
 
 ## Hosted desktop CI
 
-The GitHub workflow builds and runs CTest for both Debug and Release on `macos-15` arm64 and `windows-2022`. It acquires pinned CMake, Python, vcpkg, hash-verified upstream Ninja archives, and a hash-verified Vulkan SDK, then records the revision and actual tool output in diagnostic artifacts. It validates mesh SPIR-V against Vulkan 1.3 and fallback stages against Vulkan 1.2. Hosted runners set `MC_ENABLE_RENDERER_SMOKE=OFF`: build, CTest, and shader validation are not GPU/runtime acceptance. The workflow uploads only logs and toolchain metadata; packaging and release artifacts have a separate acceptance path.
+GitHub CI builds and tests Debug and Release on `macos-15` arm64 and `windows-2022`. It acquires pinned CMake, Python, vcpkg, Ninja, and Vulkan SDK, records toolchain metadata, and validates mesh SPIR-V for Vulkan 1.3 plus fallback stages for 1.2. Windows enters VS 2022 x64 before private dependencies and checks setup, build, test, shader, packaging, checksum, and exclusion commands. Hosted runners set `MC_ENABLE_RENDERER_SMOKE=OFF`; these checks are not GPU/runtime acceptance. CI uploads logs and toolchain metadata; packaging and release artifacts use separate acceptance.
 
 The renderer requests Vulkan 1.2 and requires dynamic rendering and synchronization2 extensions/features; maintenance4 is not a renderer requirement. Mesh shaders target Vulkan 1.3. Use a Vulkan 1.3-capable validation baseline and exercise the vertex fallback. A lower requested API number does not establish support for every Vulkan 1.2 driver. Vulkan 1.4 remains a project aspiration.
 
@@ -60,7 +67,7 @@ Strict warnings are enabled by presets. `MC_ENABLE_HIGH_ASSERT`, `MC_ENABLE_VULK
 | `ai_check.py --strict --level snapshot` | Same after commit, with a clean tree and valid snapshot metadata |
 | Task-specific smoke | Real renderer/network/persistence acceptance, recorded per task |
 
-The publisher is [publish.py](../publish.py), not `publish_version.py` as its legacy help text says. Checks-only takes explicit metadata, currently:
+The publisher is [publish.py](../publish.py). Checks-only takes explicit metadata:
 
 ```sh
 python3 publish.py 'EarlyDev:Initiation' 0.1.0:3 --checks-only
@@ -77,6 +84,11 @@ Additional [release gates](../script/ai_checks.json) require the windowed smoke 
 `mc_tests` uses GoogleTest discovery into CTest. Networking/server tests use local sockets; shader tests load executable-relative assets from another working directory. `ShaderSpirvTargetTest.*` validates the copied mesh shaders for Vulkan 1.3 and the vertex fallback set for Vulkan 1.2. Input tests drive callbacks without proving interactive controls. Python tooling suites live in `script/tests`.
 
 `script/ai_renderer_smoke.py` rejects foreign caches, configures its preset, builds `mc_renderer_smoke`, and runs `RendererSmokeTest` with bounded timeouts. It records `build/ai-checks/renderer-smoke.log` and fails on missing registration, device, validation, runtime, or timeout errors. This test checks pixels, resize, reload, and close across automatic and vertex-fallback pipelines. It does not prove controls, multiplayer, Windows, or headless goldens; hosted CI remains GPU-free.
+
+`MC_ENABLE_RENDERER_GOLDEN=ON` enables S4 readback against manual
+non-updating reference. `MC_RENDERER_GOLDEN_UNSUPPORTED_POLICY=fail` approves;
+`skip` is only unsupported. Mismatches fail.
+[golden guide](../tests/client/goldens/README.md) owns policy.
 
 New test sources must be listed once in [tests/CMakeLists.txt](../tests/CMakeLists.txt); shader/source membership is also checked by the publisher. Keep one test suite/file per source or tightly related unit. No test command is a substitute for checking the required observable result.
 

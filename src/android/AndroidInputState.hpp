@@ -26,6 +26,15 @@ public:
     [[nodiscard]]
     bool endTouch(int32_t pointer_id) noexcept;
     bool cancelTouch() noexcept;
+    [[nodiscard]]
+    bool beginLookTouch(int32_t pointer_id, float x, float y, uint32_t surface_width) noexcept;
+    [[nodiscard]]
+    bool moveLookTouch(int32_t pointer_id, float x, float y) noexcept;
+    [[nodiscard]]
+    bool endLookTouch(int32_t pointer_id) noexcept;
+    bool cancelLookTouch() noexcept;
+    [[nodiscard]]
+    bool consumeLookDelta(float& horizontal, float& vertical) noexcept;
 
     [[nodiscard]]
     shared::Direction direction() const noexcept;
@@ -45,6 +54,12 @@ private:
     float m_touch_origin_y = 0.0f;
     uint8_t m_touch_x = 0;
     uint8_t m_touch_y = 0;
+
+    int32_t m_look_pointer_id = -1;
+    float m_look_x = 0.0F;
+    float m_look_y = 0.0F;
+    float m_look_delta_x = 0.0F;
+    float m_look_delta_y = 0.0F;
 };
 
 } // namespace game_android

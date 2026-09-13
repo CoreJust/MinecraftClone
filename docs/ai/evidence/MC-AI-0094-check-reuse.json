@@ -1,0 +1,57 @@
+{
+  "schema_version": 1,
+  "task_id": "MC-AI-0094",
+  "source_head": "f7df796b4f300c2cec1cbceb6d3e9ea5b431c2a9",
+  "checks": {
+    "focused_regression": {
+      "command": "python3 -m unittest script.tests.test_ai_check.AiCheckTests.test_python_tests_execute_after_non_script_input_changes -v",
+      "result": "PASS",
+      "tests": 1
+    },
+    "python_suite": {
+      "command": "python3 -m unittest discover -s script/tests -v",
+      "result": "PASS",
+      "tests": 189
+    },
+    "metadata": [
+      "python3 script/ai_tasks.py check",
+      "python3 script/ai_docs.py check",
+      "git diff --check"
+    ],
+    "source_policy": {
+      "command": "python3 -c \"import script.code_checks; from script.checks_common import run_checks; raise SystemExit(0 if run_checks({}) else 1)\"",
+      "result": "PASS",
+      "checks": 11
+    }
+  },
+  "incident": {
+    "summary_jsonl_invocation": "1789095303146848000-38501",
+    "summary_jsonl_record_sha256": "fa305abb339bc925d1d9bc533cf878f0967687ed70713361e53d6bb2a0962308",
+    "changed_path_count": 26,
+    "reused_phases": [
+      "python-tests"
+    ],
+    "executed_phase_groups": "docs/diff/build/ctest",
+    "stale_receipt": {
+      "path": "/private/tmp/mc-ai-0049-corelang/build/ai-checks/python-tests.receipt.json",
+      "sha256": "1a20e9580438fe789d5ad8010b55a0c122dc087ceeddb258358ac1718159ad6c",
+      "relevant_inputs_fingerprint": "d0e333459b45a632158e27ff8bc53e6c694b3491c62aabff0af1738e35a0a8a2",
+      "script_path_count": 37,
+      "command": "/opt/homebrew/opt/python@3.14/bin/python3.14 -m unittest discover -s script/tests -v"
+    },
+    "direct_failure_log": {
+      "path": "/private/tmp/mc-ai-0049-corelang/build/ai-checks/python-tests.log",
+      "sha256": "1c993d41a1fa6ea3c45836f3c829de82c242987c80a834f3edf1598cc62e3067"
+    },
+    "mismatch": "The receipt input set excluded the non-script changed paths read by the full suite."
+  },
+  "input_sha256": {
+    "script/ai_check.py": "a963a789bfaf8e7c89d65223610174758260316ad388e9c6430540ecb7359973",
+    "script/tests/test_ai_check.py": "1078e35f48d835db1a8ac6d3d84930bacf86e73107f1cdbd61e000875d4b4f6b",
+    "docs/ai/backlog.json": "7d257a01b2c60d46a0b1bbdbcfbc56073017ec215f22f866302a05c3a58d042d",
+    "docs/ai/BACKLOG.md": "e3bca0e1a835a5c2566cf06188f00f672767c1d842ae538db7e7c79e26320a60",
+    "docs/ai/tasks/MC-AI-0035.md": "07a788968ea0e53facef23fe6f15293189a03d46c5ab25215107a77ada9f0c2e",
+    "docs/ai/tasks/MC-AI-0094.md": "cb4d7786482ada0a1680e0246dfb7ebdd7eb8970043baee6f92f154b3770bd51",
+    "docs/code/source_state.json": "13d53d4cdbaeeb3a7ef1452ec25df04d5e25becf0bc51c032d96eb4fbd2dcd12"
+  }
+}

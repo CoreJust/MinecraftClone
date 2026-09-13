@@ -36,7 +36,7 @@ AndroidShaderAssets::AndroidShaderAssets(AAssetManager* const asset_manager) noe
     ASSERT(m_asset_manager != nullptr, "Android shader assets require an asset manager");
 }
 
-core::vk::SpirV AndroidShaderAssets::load(std::string_view const name) const
+core::kernel::SpirvModule AndroidShaderAssets::load(std::string_view const name) const
 {
     ASSERT(m_asset_manager != nullptr, "Android shader assets have no asset manager");
     std::string const path = assetPath(name);
@@ -81,7 +81,7 @@ core::vk::SpirV AndroidShaderAssets::load(std::string_view const name) const
     if (magic != 0x0723'0203U) {
         throw std::runtime_error("Invalid Android SPIR-V magic: " + path);
     }
-    return core::vk::SpirV{ bytes };
+    return core::kernel::SpirvModule::fromBytes(bytes);
 }
 
 } // namespace game_android

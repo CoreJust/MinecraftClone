@@ -118,6 +118,8 @@ def task_candidate(root: Path, task_id: str) -> dict[str, str]:
     level = task.get("level")
     if level not in LEVELS:
         raise CommitGateError(f"{task_id}.level must be one of: {', '.join(sorted(LEVELS))}")
+    if level == "basic" and (task.get("status") != "done" or task.get("finalized") is not True):
+        raise CommitGateError(f"{task_id} is basic; staged metadata must set status to done and finalized to true")
     if level != "basic" and task.get("finalized") is not True:
         raise CommitGateError(f"{task_id} is {level}; staged metadata must set finalized to true")
     try:

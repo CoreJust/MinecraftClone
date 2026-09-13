@@ -13,15 +13,18 @@ arm64-v8a candidate artifacts for 14 days. Desktop candidates contain the
 relocatable package, package manifest, SHA-256 sidecar, toolchain record, source
 identity, CTest log, and hosted-build evidence. The Android candidate contains
 the unchanged CI development-signed APK, APK/package evidence, a deterministic
-dependency-license archive, SHA-256 sidecars, toolchain record, and source
-identity. Its filename includes `ci-development`: a hosted runner's varying
-debug certificate makes it build evidence, not the publishable Android asset.
+dependency-and-HUD-license archive, SHA-256 sidecars, toolchain record, and
+source identity. The APK itself contains the HUD attribution and Tamsyn font
+license under `assets/licenses/hud/`; package evidence verifies both files. Its
+filename includes `ci-development`: a hosted runner's varying debug certificate
+makes it build evidence, not the publishable Android asset.
 
 Desktop builds install the exact CMake 3.31.6 PyPI version and verify its
 reported version; that wheel is not selected by a checked-in SHA-256. They
 reuse `script/ci/acquire.py` for hash-verified Ninja and Vulkan SDK downloads
 and exact vcpkg revision acquisition. Package inputs include the project
-license and every installed vcpkg copyright. The macOS package additionally
+license, HUD attribution and Tamsyn font license, and every installed vcpkg
+copyright. The macOS package additionally
 downloads the Vulkan-Loader and MoltenVK licenses from pinned upstream
 revisions and verifies their SHA-256 digests. Windows runtime DLLs are
 discovered recursively from the release vcpkg installation and the approved

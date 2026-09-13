@@ -23,6 +23,7 @@ jobs:
       - run: python script/ai_check.py --fast
 
   desktop:
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/ai-main'
     name: desktop (${{ matrix.platform }}, ${{ matrix.preset }})
     runs-on: ${{ matrix.runner }}
     strategy:
@@ -50,6 +51,71 @@ jobs:
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: '3.12.10'
+      - name: Materialize private dependency deploy keys (macOS)
+        if: matrix.platform == 'macos'
+        shell: bash
+        env:
+          MC_CI_CORECPP_DEPLOY_KEY: ${{ secrets.MC_CI_CORECPP_DEPLOY_KEY }}
+          MC_CI_COREPROJECT2026_DEPLOY_KEY: ${{ secrets.MC_CI_COREPROJECT2026_DEPLOY_KEY }}
+        run: |
+          set -euo pipefail
+          key_root="$RUNNER_TEMP/private-dependency-keys"
+          install -d -m 700 "$key_root"
+          umask 077
+          printf '%s\n' "$MC_CI_CORECPP_DEPLOY_KEY" > "$key_root/corecpp"
+          printf '%s\n' "$MC_CI_COREPROJECT2026_DEPLOY_KEY" > "$key_root/coreproject2026"
+          echo "MC_CI_CORECPP_DEPLOY_KEY_FILE=$key_root/corecpp" >> "$GITHUB_ENV"
+          echo "MC_CI_COREPROJECT2026_DEPLOY_KEY_FILE=$key_root/coreproject2026" >> "$GITHUB_ENV"
+      - name: Materialize private dependency deploy keys (Windows)
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        env:
+          MC_CI_CORECPP_DEPLOY_KEY: ${{ secrets.MC_CI_CORECPP_DEPLOY_KEY }}
+          MC_CI_COREPROJECT2026_DEPLOY_KEY: ${{ secrets.MC_CI_COREPROJECT2026_DEPLOY_KEY }}
+        run: |
+          $keyRoot = Join-Path $env:RUNNER_TEMP 'private-dependency-keys'
+          New-Item -ItemType Directory -Force -Path $keyRoot | Out-Null
+          $coreCppKey = Join-Path $keyRoot 'corecpp'
+          $coreProjectKey = Join-Path $keyRoot 'coreproject2026'
+          $utf8NoBom = [System.Text.UTF8Encoding]::new($false)
+          $coreCppText = $env:MC_CI_CORECPP_DEPLOY_KEY.Replace("`r`n", "`n").Replace("`r", "`n").TrimEnd([char[]]"`n") + "`n"
+          $coreProjectText = $env:MC_CI_COREPROJECT2026_DEPLOY_KEY.Replace("`r`n", "`n").Replace("`r", "`n").TrimEnd([char[]]"`n") + "`n"
+          [System.IO.File]::WriteAllText($coreCppKey, $coreCppText, $utf8NoBom)
+          [System.IO.File]::WriteAllText($coreProjectKey, $coreProjectText, $utf8NoBom)
+          $currentUser = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
+          $grant = '{0}:F' -f $currentUser
+          foreach ($keyPath in @($keyRoot, $coreCppKey, $coreProjectKey)) {
+            & icacls.exe $keyPath /inheritance:r /grant:r $grant | Out-Null
+            if ($LASTEXITCODE -ne 0) {
+              throw "icacls failed for $keyPath with exit code $LASTEXITCODE"
+            }
+          }
+          foreach ($keyPath in @($coreCppKey, $coreProjectKey)) {
+            $bytes = [System.IO.File]::ReadAllBytes($keyPath)
+            if ($bytes.Length -lt 3 -or $bytes[-1] -ne 10 -or $bytes -contains 13 -or ($bytes[0] -eq 239 -and $bytes[1] -eq 187 -and $bytes[2] -eq 191)) {
+              throw "deploy key encoding validation failed for $keyPath"
+            }
+            & ssh-keygen.exe -y -f $keyPath *> $null
+            if ($LASTEXITCODE -ne 0) {
+              throw "ssh-keygen rejected deploy key $keyPath"
+            }
+          }
+          "MC_CI_CORECPP_DEPLOY_KEY_FILE=$coreCppKey" >> $env:GITHUB_ENV
+          "MC_CI_COREPROJECT2026_DEPLOY_KEY_FILE=$coreProjectKey" >> $env:GITHUB_ENV
+      - name: Fetch exact private dependency commits (macOS)
+        if: matrix.platform == 'macos'
+        shell: bash
+        run: >-
+          python script/ci/acquire.py fetch-private-dependencies
+          --root "$RUNNER_TEMP/private-dependencies"
+          --corecpp-key "$MC_CI_CORECPP_DEPLOY_KEY_FILE"
+          --coreproject2026-key "$MC_CI_COREPROJECT2026_DEPLOY_KEY_FILE"
+      - name: Fetch exact private dependency commits (Windows)
+        if: matrix.platform == 'windows'
+        shell: cmd
+        run: |
+          python script/ci/acquire.py fetch-private-dependencies --root "%RUNNER_TEMP%\private-dependencies" --corecpp-key "%MC_CI_CORECPP_DEPLOY_KEY_FILE%" --coreproject2026-key "%MC_CI_COREPROJECT2026_DEPLOY_KEY_FILE%"
+          if errorlevel 1 exit /b %errorlevel%
       - name: Configure vcpkg binary cache (macOS)
         if: matrix.platform == 'macos'
         shell: bash
@@ -62,20 +128,55 @@ jobs:
         shell: cmd
         run: |
           if not exist "%RUNNER_TEMP%\vcpkg-binary-cache" mkdir "%RUNNER_TEMP%\vcpkg-binary-cache"
+          if errorlevel 1 exit /b %errorlevel%
           echo VCPKG_DEFAULT_BINARY_CACHE=%RUNNER_TEMP%\vcpkg-binary-cache>>"%GITHUB_ENV%"
       - name: Install pinned CMake
-        run: python -m pip install --disable-pip-version-check --no-cache-dir cmake==3.31.6
+        run: python -m pip install --disable-pip-version-check --no-cache-dir cmake==3.31.6 tzdata==2025.2
       - name: Acquire pinned Ninja
         run: python script/ci/acquire.py install-ninja --platform ${{ matrix.platform }} --root "${{ runner.temp }}/ninja"
       - name: Acquire pinned vcpkg
         run: python script/ci/acquire.py install-vcpkg --root "${{ runner.temp }}/vcpkg"
+      - name: Install pinned vcpkg manifest dependencies (macOS)
+        if: matrix.platform == 'macos'
+        shell: bash
+        run: >-
+          python script/ci/acquire.py install-manifest-dependencies
+          --vcpkg-root "$RUNNER_TEMP/vcpkg" --platform macos
+          --installed-root "$RUNNER_TEMP/vcpkg-installed"
+      - name: Install pinned vcpkg manifest dependencies (Windows)
+        if: matrix.platform == 'windows'
+        shell: cmd
+        run: |
+          python script/ci/acquire.py install-manifest-dependencies --vcpkg-root "%RUNNER_TEMP%\vcpkg" --platform windows --installed-root "%RUNNER_TEMP%\vcpkg-installed"
+          if errorlevel 1 exit /b %errorlevel%
       - name: Acquire pinned Vulkan SDK (macOS)
         if: matrix.platform == 'macos'
         run: python script/ci/acquire.py install-vulkan --platform macos --root "$RUNNER_TEMP/vulkan-sdk"
       - name: Acquire pinned Vulkan SDK (Windows)
         if: matrix.platform == 'windows'
         shell: cmd
-        run: python script/ci/acquire.py install-vulkan --platform windows --root "%RUNNER_TEMP%\vulkan-sdk"
+        run: |
+          python script/ci/acquire.py install-vulkan --platform windows --root "%RUNNER_TEMP%\vulkan-sdk"
+          if errorlevel 1 exit /b %errorlevel%
+      - name: Install pinned private dependencies (macOS)
+        if: matrix.platform == 'macos'
+        shell: bash
+        run: >-
+          python script/ci/acquire.py install-private-dependencies
+          --root "$RUNNER_TEMP/private-dependencies" --platform macos
+          --preset "${{ matrix.preset }}"
+          --cmake-arg=-DCMAKE_TOOLCHAIN_FILE=$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake
+          --cmake-arg=-DVCPKG_MANIFEST_INSTALL=OFF
+      - name: Install pinned private dependencies (Windows)
+        if: matrix.platform == 'windows'
+        shell: cmd
+        run: |
+          set "MC_ACQUIRED_VCPKG_ROOT=%VCPKG_ROOT%"
+          call "%ProgramFiles%\Microsoft Visual Studio\2022\Enterprise\Common7\Tools\VsDevCmd.bat" -arch=amd64
+          if errorlevel 1 exit /b %errorlevel%
+          set "VCPKG_ROOT=%MC_ACQUIRED_VCPKG_ROOT%"
+          python script/ci/acquire.py install-private-dependencies --root "%RUNNER_TEMP%\private-dependencies" --platform windows --preset "${{ matrix.preset }}" "--cmake-arg=-DCMAKE_TOOLCHAIN_FILE=%VCPKG_ROOT%\scripts\buildsystems\vcpkg.cmake" --cmake-arg=-DVCPKG_MANIFEST_INSTALL=OFF
+          if errorlevel 1 exit /b %errorlevel%
       - name: Verify pre-finalization candidate source policy checks
         if: github.ref != 'refs/heads/ai-main'
         run: python script/ci/acquire.py source-checks --pre-finalization-candidate
@@ -88,7 +189,7 @@ jobs:
           sudo xcode-select --switch /Applications/Xcode_26.2.app/Contents/Developer
           python script/ci/acquire.py verify-tools --platform macos
           python script/ci/acquire.py record-metadata --platform macos --preset ${{ matrix.preset }} --output build/ci-metadata.json
-          cmake --preset ${{ matrix.preset }} -DMC_ENABLE_RENDERER_SMOKE=OFF
+          cmake --preset ${{ matrix.preset }} -DMC_ENABLE_RENDERER_SMOKE=OFF -DVCPKG_MANIFEST_INSTALL=OFF -DVCPKG_INSTALLED_DIR="$VCPKG_INSTALLED_DIR" -DCMAKE_PREFIX_PATH="$MC_PRIVATE_DEPENDENCIES_PREFIX" -DCoreCpp_DIR="$MC_PRIVATE_DEPENDENCIES_PREFIX/lib/cmake/CoreCpp" -DCoreProject2026_DIR="$MC_PRIVATE_DEPENDENCIES_PREFIX/lib/cmake/CoreProject2026"
           cmake --build --preset ${{ matrix.preset }}
           ctest --test-dir build/${{ matrix.preset }} --output-on-failure --no-tests=error --timeout 60
           python script/ci/acquire.py validate-shaders --build-dir build/${{ matrix.preset }}
@@ -98,16 +199,20 @@ jobs:
         run: |
           set "MC_ACQUIRED_VCPKG_ROOT=%VCPKG_ROOT%"
           call "%ProgramFiles%\Microsoft Visual Studio\2022\Enterprise\Common7\Tools\VsDevCmd.bat" -arch=amd64
-          if errorlevel 1 exit /b 1
+          if errorlevel 1 exit /b %errorlevel%
           set "VCPKG_ROOT=%MC_ACQUIRED_VCPKG_ROOT%"
           python script/ci/acquire.py verify-tools --platform windows
-          if errorlevel 1 exit /b 1
+          if errorlevel 1 exit /b %errorlevel%
           python script/ci/acquire.py record-metadata --platform windows --preset ${{ matrix.preset }} --output build/ci-metadata.json
-          if errorlevel 1 exit /b 1
-          cmake --preset ${{ matrix.preset }} -DMC_ENABLE_RENDERER_SMOKE=OFF
+          if errorlevel 1 exit /b %errorlevel%
+          cmake --preset ${{ matrix.preset }} -DMC_ENABLE_RENDERER_SMOKE=OFF -DVCPKG_MANIFEST_INSTALL=OFF -DVCPKG_INSTALLED_DIR="%VCPKG_INSTALLED_DIR%" -DCMAKE_PREFIX_PATH="%MC_PRIVATE_DEPENDENCIES_PREFIX%" -DCoreCpp_DIR="%MC_PRIVATE_DEPENDENCIES_PREFIX%/lib/cmake/CoreCpp" -DCoreProject2026_DIR="%MC_PRIVATE_DEPENDENCIES_PREFIX%/lib/cmake/CoreProject2026"
+          if errorlevel 1 exit /b %errorlevel%
           cmake --build --preset ${{ matrix.preset }}
+          if errorlevel 1 exit /b %errorlevel%
           ctest --test-dir build\${{ matrix.preset }} --output-on-failure --no-tests=error --timeout 60
+          if errorlevel 1 exit /b %errorlevel%
           python script/ci/acquire.py validate-shaders --build-dir build\${{ matrix.preset }}
+          if errorlevel 1 exit /b %errorlevel%
       - name: Upload desktop diagnostics
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

@@ -1,6 +1,6 @@
 # Model routing and execution cost
 
-Use the least expensive route that can make the task's decisions reliably. All four routes use **high** reasoning. This is the owner's routing policy, not a claim of measured model superiority or token savings.
+Use the least expensive route that can make the task's decisions reliably. All four routes use **high** reasoning. This is the owner's routing policy, not a claim of measured model superiority or token savings. For comparable work, the efficiency target is no more than 50% of the S4 RED elapsed time and no more than one-third of its usage; this remains a planning target until comparable evidence establishes a result.
 
 | Route | Model | Work in this project | Output to the next step |
 |---|---|---|---|
@@ -21,13 +21,13 @@ Do not run every change through all four models. Finish clean tasks on Luna. Spa
 
 ## Usage accounting
 
-Record actual provider input, cached-input, and output tokens when available; never infer or invent missing shares. Cumulative target bands are planning targets, not evidence: Luna 60–80%; Luna plus Terra 94–96%; Luna plus Terra plus Sol 98–99%; Astra 1–2%. Report measured shares and missing fields honestly at milestones.
+Record actual provider input, cached-input, and output tokens when available; never infer or invent missing shares. Measure elapsed time and usage only from comparable existing summaries; report missing fields as unavailable and never turn the efficiency target into an invented percentage or achieved result.
 
 ## Escalation and review
 
 If a worker fails the same acceptance predicate twice, stop retrying blindly. Send the failing test, smallest relevant diff, attempted approaches, and one precise question to the next suitable route. Escalate immediately for a newly discovered major contract decision. After the decision, return implementation to the original cheap route. Do not automatically ask Astra to review every completion.
 
-Deterministic checks remain the main debugging tool. Start from the immutable candidate, failing command, raw logs, and smallest relevant diff; do not guess from prose. Review timing, staged-tree identity, and testing priorities follow the [review and verification policy](../../AGENTS.md#review-and-verification-policy). Reuse still-valid evidence and avoid extra review rounds beyond [the commit policy](COMMITS.md).
+Deterministic checks remain the main debugging tool and run before review. Start from the immutable candidate, failing command, raw logs, and smallest relevant diff; do not guess from prose. Review timing, staged-tree identity, and testing priorities follow the [review and verification policy](../../AGENTS.md#review-and-verification-policy). Reuse still-valid evidence and avoid extra review rounds beyond [the commit policy](COMMITS.md).
 
 Examples: chunk coordinate design → Astra once; meshing contract → Sol if unresolved; meshing code → Terra; a specified block registry → Luna. Malformed-message regression → Terra; a wire-format compatibility decision → Astra or Sol according to its reach.
 

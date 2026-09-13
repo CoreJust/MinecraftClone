@@ -2,8 +2,8 @@
 
 #include "AndroidInput.hpp"
 #include "AndroidShaderAssets.hpp"
-#include "AndroidSurfaceProvider.hpp"
 
+#include <client/Camera.hpp>
 #include <client/GameClient.hpp>
 #include <client/render/VulkanRenderer.hpp>
 
@@ -38,8 +38,11 @@ private:
     android_app& m_app;
     AndroidInput m_input;
     AndroidShaderAssets m_shader_assets;
-    std::unique_ptr<AndroidSurfaceProvider> m_surface_provider;
+    client::Camera m_camera{
+        { .position = { 16.0, -20.0, 22.0 }, .angles = { .pitch_degrees = -35.0 } },
+    };
     std::unique_ptr<client::VulkanRenderer> m_renderer;
+    float m_density_scale = 1.0F;
     bool m_resumed = false;
     bool m_has_focus = false;
 };

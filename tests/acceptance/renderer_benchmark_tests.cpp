@@ -38,4 +38,50 @@ TEST(RendererBenchmark, ReportsNoStatisticsForNoFrames)
     EXPECT_EQ(summary.mean, std::chrono::nanoseconds::zero());
 }
 
+TEST(RendererBenchmark, MapsContextAndRendererOptionsFromOneBenchmarkConfiguration)
+{
+    acceptance::RendererBenchmarkOptions const benchmark_options{
+        .require_immediate_present_mode = true,
+        .require_validation = true,
+    };
+
+    client::VulkanRendererOptions const renderer_options =
+        acceptance::makeRendererBenchmarkVulkanOptions(benchmark_options);
+
+    EXPECT_TRUE(renderer_options.require_immediate_present_mode);
+    EXPECT_TRUE(renderer_options.require_validation);
+    EXPECT_FALSE(renderer_options.enable_frame_capture);
+}
+
+TEST(RendererBenchmark, DefaultsToValidationDisabledAndHudDisabled)
+{
+    acceptance::RendererBenchmarkOptions const benchmark_options{ };
+    client::VulkanRendererOptions const renderer_options =
+        acceptance::makeRendererBenchmarkVulkanOptions(benchmark_options);
+
+    EXPECT_FALSE(renderer_options.require_validation);
+    EXPECT_FALSE(benchmark_options.debug_hud_enabled);
+}
+
+TEST(RendererBenchmark, RejectsFifoWhenImmediatePresentationWasRequested)
+{
+    acceptance::RendererBenchmarkOptions const immediate_options{
+        .require_immediate_present_mode = true,
+    };
+    acceptance::RendererBenchmarkOptions const default_options{ };
+
+    EXPECT_TRUE(acceptance::rendererBenchmarkPresentModeSatisfied(
+        immediate_options,
+        client::RendererPresentMode::Immediate
+    ));
+    EXPECT_FALSE(acceptance::rendererBenchmarkPresentModeSatisfied(
+        immediate_options,
+        client::RendererPresentMode::FIFO
+    ));
+    EXPECT_TRUE(acceptance::rendererBenchmarkPresentModeSatisfied(
+        default_options,
+        client::RendererPresentMode::FIFO
+    ));
+}
+
 } // namespace

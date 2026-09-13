@@ -18,15 +18,24 @@ statements: each command observes all earlier commands at that boundary.
   advances. After it completes, the current boundary has increased by `N`.
 - `expect` reads the current boundary and does not advance time.
 
-For the canonical sample, `input alice 1 0` is set at boundary 0; `wait 5`
-advances steps 1 through 5; Alice reaches `(9, 4)` at boundary 5. The
-subsequent stopped input is at boundary 5 and cannot retroactively affect
-those five steps.
+For the canonical sample, `input alice 1 0` is set at boundary 0; `wait 10`
+advances steps 1 through 10; the fixed 100 ms authority applies 5,600 subcells
+per full-direction step, so Alice reaches `(9, 4)` at boundary 10. The
+subsequent stopped input is at boundary 10 and cannot retroactively affect
+those ten steps.
 
 The scenario runner is authoritative. An expectation is evaluated against the
 authoritative profile state, never client prediction, renderer state, wall
 clock time, or transport delivery order. A failed expectation reports a
 diagnostic and stops successful scenario completion.
+
+For `flat3d-v1`, `input ACTOR camera STRAFE FORWARD` is resolved from that
+actor's recorded yaw before it is sent through the unchanged `Direction` wire
+message. Yaw zero maps forward to +Y and positive yaw turns forward toward +X.
+Pitch and roll are replay metadata only. The authoritative server's 100 ms
+fixed-tick delay is calculated from each tick's elapsed server work; it has no
+renderer or presentation input. Scenario tick barriers directly invoke that
+same authoritative tick and are not measurements of display refresh.
 
 ## Validation, limits, and safety
 
@@ -72,7 +81,8 @@ evidence, exposes results, or connects its simulation to external services.
 
 ## Versions and profiles
 
-`scenario 1` selects this grammar; `flat2d-v1` selects its world rules. Both
+`scenario 1` selects this grammar; `flat2d-v1` and `flat3d-v1` select their
+explicit world/replay rules. Both
 are explicit compatibility boundaries. A runner must reject an unsupported
 format version or profile rather than guessing, falling back, or silently
 changing semantics.

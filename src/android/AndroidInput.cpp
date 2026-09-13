@@ -21,6 +21,8 @@ void AndroidInput::clear() noexcept
     m_state.clear();
     m_reload_pressed = false;
     m_reload_requested = false;
+    m_debug_hud_toggle.reset();
+    m_debug_hud_toggle_requested = false;
 }
 
 int32_t AndroidInput::handle(AInputEvent const* const event) noexcept
@@ -53,6 +55,18 @@ bool AndroidInput::consumeReloadRequest() noexcept
     return requested;
 }
 
+bool AndroidInput::consumeDebugHudToggleRequest() noexcept
+{
+    bool const requested = m_debug_hud_toggle_requested;
+    m_debug_hud_toggle_requested = false;
+    return requested;
+}
+
+bool AndroidInput::consumeLookDelta(float& horizontal, float& vertical) noexcept
+{
+    return m_state.consumeLookDelta(horizontal, vertical);
+}
+
 int32_t AndroidInput::handleKey(AInputEvent const* const event) noexcept
 {
     int32_t const action = AKeyEvent_getAction(event);
@@ -83,6 +97,11 @@ int32_t AndroidInput::handleKey(AInputEvent const* const event) noexcept
         }
         m_reload_pressed = pressed;
         return 1;
+    case AKEYCODE_F1:
+        if (m_debug_hud_toggle.update(pressed)) {
+            m_debug_hud_toggle_requested = true;
+        }
+        return 1;
     case AKEYCODE_BACK:
     case AKEYCODE_ESCAPE:
         if (pressed) {
@@ -110,34 +129,44 @@ int32_t AndroidInput::handleMotion(AInputEvent const* const event) noexcept
 
     if (action_mask == AMOTION_EVENT_ACTION_CANCEL) {
         static_cast<void>(m_state.cancelTouch());
+        static_cast<void>(m_state.cancelLookTouch());
         return 1;
     }
 
     if (action_mask == AMOTION_EVENT_ACTION_DOWN || action_mask == AMOTION_EVENT_ACTION_POINTER_DOWN) {
+        float const x = AMotionEvent_getX(event, action_index);
+        float const y = AMotionEvent_getY(event, action_index);
+        int32_t const pointer_id = AMotionEvent_getPointerId(event, action_index);
+        if (m_state.beginLookTouch(pointer_id, x, y, m_surface_width)) {
+            return 1;
+        }
         return m_state.beginTouch(
-            AMotionEvent_getPointerId(event, action_index),
-            AMotionEvent_getX(event, action_index),
-            AMotionEvent_getY(event, action_index),
+            pointer_id,
+            x,
+            y,
             m_surface_width
         ) ? 1 : 0;
     }
 
     if (action_mask == AMOTION_EVENT_ACTION_MOVE) {
         size_t const pointer_count = AMotionEvent_getPointerCount(event);
+        bool handled = false;
         for (size_t index = 0; index < pointer_count; ++index) {
-            if (m_state.moveTouch(
-                AMotionEvent_getPointerId(event, index),
-                AMotionEvent_getX(event, index),
-                AMotionEvent_getY(event, index)
-            )) {
-                return 1;
-            }
+            int32_t const pointer_id = AMotionEvent_getPointerId(event, index);
+            float const x = AMotionEvent_getX(event, index);
+            float const y = AMotionEvent_getY(event, index);
+            handled = m_state.moveTouch(pointer_id, x, y) || handled;
+            handled = m_state.moveLookTouch(pointer_id, x, y) || handled;
         }
-        return m_state.cancelTouch() ? 1 : 0;
+        return handled ? 1 : 0;
     }
 
     if (action_mask == AMOTION_EVENT_ACTION_UP || action_mask == AMOTION_EVENT_ACTION_POINTER_UP) {
-        return m_state.endTouch(AMotionEvent_getPointerId(event, action_index)) ? 1 : 0;
+        int32_t const pointer_id = AMotionEvent_getPointerId(event, action_index);
+        if (m_state.endLookTouch(pointer_id)) {
+            return 1;
+        }
+        return m_state.endTouch(pointer_id) ? 1 : 0;
     }
     return 0;
 }

@@ -9,7 +9,7 @@ seed 42
 player alice character "@" at 4 4
 begin
 input alice 1 0
-wait 5
+wait 10
 input alice 0 0
 expect player alice position 9 4
 end
@@ -17,8 +17,8 @@ end
 
 This is also the exact [canonical sample](../../scenarios/canonical_sample.mcscenario).
 It declares format version 1, selects `flat2d-v1`, records a seed, places one
-player at `(4, 4)`, holds rightward input for five authoritative steps, stops
-it, then checks the boundary-five position.
+player at `(4, 4)`, holds rightward input for ten authoritative 100 ms steps
+at 0.56 cells per step, stops it, then checks the boundary-ten position.
 
 Read the script in this order:
 

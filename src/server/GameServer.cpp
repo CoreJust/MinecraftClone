@@ -18,18 +18,30 @@ void GameServer::run(std::atomic_bool const& stop_requested)
 {
     while (!stop_requested.load(std::memory_order_relaxed)) {
         auto const start = std::chrono::steady_clock::now();
-        static_cast<void>(tick());
+        static_cast<void>(tick(shared::TICK));
         auto const tick_time = std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::steady_clock::now() - start
         );
-        if (tick_time < shared::TICK) {
-            std::this_thread::sleep_for(shared::TICK - tick_time);
+        if (auto const delay = fixedTickDelay(tick_time); delay > std::chrono::milliseconds::zero()) {
+            std::this_thread::sleep_for(delay);
         }
     }
 }
 
+std::chrono::milliseconds GameServer::fixedTickDelay(std::chrono::milliseconds const elapsed) noexcept
+{
+    return elapsed < shared::TICK ? shared::TICK - elapsed : std::chrono::milliseconds::zero();
+}
+
 uint64_t GameServer::tick(std::chrono::milliseconds const timeout) {
-    m_players_moved_this_tick.clear();
+    for (PlayerReplication& replication : m_player_replications) {
+        replication.action_consumed_this_tick = false;
+        if (!replication.pending_inputs.empty()) {
+            shared::ClientInputMessage const input = replication.pending_inputs.front();
+            replication.pending_inputs.pop_front();
+            processInput(replication, input);
+        }
+    }
     return static_cast<uint64_t>(poll(timeout));
 }
 
@@ -45,7 +57,8 @@ std::expected<std::vector<GameServer::SpawnPoint>, std::string> GameServer::vali
         if (!valid_character) {
             return std::unexpected("spawn point has an unsupported character");
         }
-        if (spawn_point.x >= shared::World::WIDTH || spawn_point.y >= shared::World::HEIGHT) {
+        if (spawn_point.x > shared::World::MAX_PLAYER_ORIGIN_CELL
+            || spawn_point.y > shared::World::MAX_PLAYER_ORIGIN_CELL) {
             return std::unexpected("spawn point is outside the world");
         }
     }
@@ -94,6 +107,9 @@ void GameServer::onDisconnected(core::ServerDisconnectEvent const client) {
         .ch = player->ch,
     });
     m_world.despawnPlayer(client.client_id);
+    std::erase_if(m_player_replications, [&client](PlayerReplication const& replication) {
+        return replication.id == client.client_id;
+    });
 }
 
 void GameServer::onReceived(core::ServerReceiveEvent event) {
@@ -123,6 +139,7 @@ void GameServer::onReceived(core::ServerReceiveEvent event) {
         } else {
             m_world.spawnPlayer(id, ch, std::pair{ spawn_point->x, spawn_point->y });
         }
+        m_player_replications.push_back(PlayerReplication{ .id = id });
         sendTo(id, shared::JoinResponseMessage{
             .accepted = true,
         });
@@ -130,11 +147,11 @@ void GameServer::onReceived(core::ServerReceiveEvent event) {
         shared::Player const p = m_world.player(id).value();
         CORE_INFO("Player '{}' spawned at x {}, y {}", ch, static_cast<int>(p.x), static_cast<int>(p.y));
         for (shared::Player const& player : m_world.players()) {
-            shared::ServerPlayerPositionMessage const position{
-                .ch = player.ch,
-                .x = player.x,
-                .y = player.y,
-            };
+            PlayerReplication* const replication = playerReplication(player.id);
+            if (replication == nullptr) {
+                continue;
+            }
+            shared::ServerPlayerPositionMessage const position = playerPositionMessage(player, *replication);
             if (player.id == id) {
                 send(position);
             } else {
@@ -143,27 +160,74 @@ void GameServer::onReceived(core::ServerReceiveEvent event) {
         }
     } else if (auto* msg = std::get_if<shared::ClientInputMessage>(msg_ptr)) {
         auto const player = m_world.player(id);
-        if (!player || m_players_moved_this_tick.contains(player->ch)) {
+        PlayerReplication* const replication = playerReplication(id);
+        if (!player || replication == nullptr) {
             return;
         }
-        auto const [direction] = *msg;
-        if (direction.x == 0 && direction.y == 0) {
+        if (replication->has_received_sequence
+            && !shared::isNewerSequence(msg->sequence, replication->latest_received_sequence)) {
             return;
         }
-        m_players_moved_this_tick += player->ch;
-        if (m_world.movePlayer(id, direction)) {
-            auto const moved_player = m_world.player(id);
-            if (moved_player) {
-                send(shared::ServerPlayerPositionMessage{
-                    .ch = moved_player->ch,
-                    .x = moved_player->x,
-                    .y = moved_player->y,
-                });
-            }
+        if ((replication->action_consumed_this_tick || !replication->pending_inputs.empty())
+            && replication->pending_inputs.size() == PlayerReplication::MAX_PENDING_INPUTS) {
+            return;
+        }
+        replication->latest_received_sequence = msg->sequence;
+        replication->has_received_sequence = true;
+        if (!replication->action_consumed_this_tick && replication->pending_inputs.empty()) {
+            processInput(*replication, *msg);
+        } else {
+            replication->pending_inputs.push_back(*msg);
         }
     } else {
         CORE_ERROR("Received a message unsupported by the server {}", msg_ptr->index());
     }
+}
+
+void GameServer::processInput(PlayerReplication& replication, shared::ClientInputMessage const input)
+{
+    replication.action_consumed_this_tick = true;
+    bool moved = false;
+    if (input.direction.x != 0 || input.direction.y != 0) {
+        moved = m_world.movePlayer(replication.id, input.direction);
+    }
+    replication.acknowledged_input_sequence = input.sequence;
+    ++replication.state_revision;
+    shared::ServerPlayerPositionMessage const position = playerPositionMessage(
+        *m_world.player(replication.id),
+        replication
+    );
+    if (moved) {
+        send(position);
+    } else {
+        sendTo(replication.id, position);
+    }
+}
+
+GameServer::PlayerReplication* GameServer::playerReplication(shared::PlayerId const id) noexcept
+{
+    for (PlayerReplication& replication : m_player_replications) {
+        if (replication.id == id) {
+            return &replication;
+        }
+    }
+    return nullptr;
+}
+
+shared::ServerPlayerPositionMessage GameServer::playerPositionMessage(
+    shared::Player const& player,
+    PlayerReplication const& replication
+) const noexcept
+{
+    return {
+        .ch = player.ch,
+        .x = player.x,
+        .y = player.y,
+        .x_subcell = player.x_subcell,
+        .y_subcell = player.y_subcell,
+        .acknowledged_input_sequence = replication.acknowledged_input_sequence,
+        .state_revision = replication.state_revision,
+    };
 }
 
 void GameServer::send(shared::Message const message) {

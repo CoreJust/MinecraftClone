@@ -23,14 +23,37 @@ void World::spawnPlayer(PlayerId const id, char const ch, std::optional<std::pai
     if (at) {
         x = at->first;
         y = at->second;
+        if (!canPlayerBeAt(
+            static_cast<uint32_t>(x) * SUBCELLS_PER_CELL,
+            static_cast<uint32_t>(y) * SUBCELLS_PER_CELL,
+            id
+        )) {
+            return;
+        }
     } else {
         static std::default_random_engine generator{ std::random_device{}() };
-        std::uniform_int_distribution<uint16_t> x_distribution{ 0, WIDTH - 1 };
-        std::uniform_int_distribution<uint16_t> y_distribution{ 0, HEIGHT - 1 };
-        do {
-            x = static_cast<uint8_t>(x_distribution(generator));
-            y = static_cast<uint8_t>(y_distribution(generator));
-        } while (!canPlayerBeAt(x, y, id));
+        std::vector<std::pair<uint8_t, uint8_t>> spawn_locations;
+        spawn_locations.reserve(static_cast<uint32_t>(MAX_PLAYER_ORIGIN_CELL + 1U)
+            * static_cast<uint32_t>(MAX_PLAYER_ORIGIN_CELL + 1U));
+        for (uint8_t candidate_x{ 0 }; candidate_x <= MAX_PLAYER_ORIGIN_CELL; ++candidate_x) {
+            for (uint8_t candidate_y{ 0 }; candidate_y <= MAX_PLAYER_ORIGIN_CELL; ++candidate_y) {
+                if (canPlayerBeAt(
+                    static_cast<uint32_t>(candidate_x) * SUBCELLS_PER_CELL,
+                    static_cast<uint32_t>(candidate_y) * SUBCELLS_PER_CELL,
+                    id
+                )) {
+                    spawn_locations.emplace_back(candidate_x, candidate_y);
+                }
+            }
+        }
+        ASSERT(!spawn_locations.empty());
+        std::uniform_int_distribution<uint32_t> location_distribution{
+            0U,
+            static_cast<uint32_t>(spawn_locations.size() - 1U),
+        };
+        auto const& location = spawn_locations[location_distribution(generator)];
+        x = location.first;
+        y = location.second;
     }
 
     m_players.emplace_back(Player{
@@ -51,7 +74,11 @@ void World::despawnPlayer(PlayerId const id) {
     }
 }
 
-bool World::movePlayer(PlayerId const id, Direction const direction) {
+bool World::movePlayer(
+    PlayerId const id,
+    Direction const direction,
+    std::chrono::milliseconds const elapsed
+) {
     Player* p = nullptr;
     for (Player& player : m_players) {
         if (player.id == id) {
@@ -61,26 +88,73 @@ bool World::movePlayer(PlayerId const id, Direction const direction) {
     if (!p) {
         return false;
     }
-
-    int const target_x = static_cast<int>(p->x) + static_cast<int8_t>(direction.x);
-    int const target_y = static_cast<int>(p->y) + static_cast<int8_t>(direction.y);
-    if (target_x < 0 || target_x >= WIDTH || target_y < 0 || target_y >= HEIGHT) {
-        return false;
-    }
-    if (!canPlayerBeAt(static_cast<uint8_t>(target_x), static_cast<uint8_t>(target_y), id)) {
+    if (elapsed < std::chrono::milliseconds::zero() || elapsed > TICK) {
         return false;
     }
 
-    p->x = static_cast<uint8_t>(target_x);
-    p->y = static_cast<uint8_t>(target_y);
+    int32_t const direction_x = static_cast<int8_t>(direction.x);
+    int32_t const direction_y = static_cast<int8_t>(direction.y);
+    if (direction_x == 0 && direction_y == 0) {
+        return true;
+    }
+    if (elapsed == std::chrono::milliseconds::zero()) {
+        return true;
+    }
+
+    uint32_t const squared_direction_length = static_cast<uint32_t>(
+        direction_x * direction_x + direction_y * direction_y
+    );
+    uint32_t direction_length = 0;
+    while (direction_length * direction_length < squared_direction_length) {
+        ++direction_length;
+    }
+    uint32_t const divisor = std::max<uint32_t>(127U, direction_length);
+    uint32_t const base_step = static_cast<uint32_t>(elapsed.count())
+        * MOVEMENT_SUBCELLS_PER_TICK / static_cast<uint32_t>(TICK.count());
+    int32_t const delta_x = static_cast<int32_t>(base_step * static_cast<uint32_t>(std::abs(direction_x)) / divisor)
+        * (direction_x < 0 ? -1 : 1);
+    int32_t const delta_y = static_cast<int32_t>(base_step * static_cast<uint32_t>(std::abs(direction_y)) / divisor)
+        * (direction_y < 0 ? -1 : 1);
+    int32_t position_x = static_cast<int32_t>(p->x) * SUBCELLS_PER_CELL + p->x_subcell;
+    int32_t position_y = static_cast<int32_t>(p->y) * SUBCELLS_PER_CELL + p->y_subcell;
+    bool applied_x = false;
+    bool applied_y = false;
+    int32_t const candidate_x = position_x + delta_x;
+    if (delta_x != 0 && candidate_x >= 0 && candidate_x <= static_cast<int32_t>(MAX_PLAYER_ORIGIN_SUBCELL)
+        && canPlayerBeAt(static_cast<uint32_t>(candidate_x), static_cast<uint32_t>(position_y), id)) {
+        position_x = candidate_x;
+        applied_x = true;
+    }
+    int32_t const candidate_y = position_y + delta_y;
+    if (delta_y != 0 && candidate_y >= 0 && candidate_y <= static_cast<int32_t>(MAX_PLAYER_ORIGIN_SUBCELL)
+        && canPlayerBeAt(static_cast<uint32_t>(position_x), static_cast<uint32_t>(candidate_y), id)) {
+        position_y = candidate_y;
+        applied_y = true;
+    }
+    if (!applied_x && !applied_y) {
+        return false;
+    }
+
+    p->x = static_cast<uint8_t>(position_x / SUBCELLS_PER_CELL);
+    p->y = static_cast<uint8_t>(position_y / SUBCELLS_PER_CELL);
+    p->x_subcell = static_cast<uint16_t>(position_x % SUBCELLS_PER_CELL);
+    p->y_subcell = static_cast<uint16_t>(position_y % SUBCELLS_PER_CELL);
     return true;
 }
 
-void World::setPlayerPosition(PlayerId const id, uint8_t const x, uint8_t y) {
+void World::setPlayerPosition(
+    PlayerId const id,
+    uint8_t const x,
+    uint8_t const y,
+    uint16_t const x_subcell,
+    uint16_t const y_subcell
+) {
     for (Player& p : m_players) {
         if (p.id == id) {
             p.x = x;
             p.y = y;
+            p.x_subcell = x_subcell;
+            p.y_subcell = y_subcell;
             break;
         }
     }
@@ -104,23 +178,19 @@ std::optional<Player> World::playerByCharacter(char const ch) const noexcept {
     return std::nullopt;
 }
 
-bool World::canPlayerBeAt(uint8_t const x, uint8_t const y, PlayerId const id) const {
-    if (x >= WIDTH || y >= HEIGHT) {
+bool World::canPlayerBeAt(uint32_t const x, uint32_t const y, PlayerId const id) const {
+    if (x > MAX_PLAYER_ORIGIN_SUBCELL || y > MAX_PLAYER_ORIGIN_SUBCELL) {
         return false;
     }
-    // Inefficient, but simple
+    constexpr uint32_t PLAYER_BOX_SIZE = PLAYER_FOOTPRINT_CELLS * SUBCELLS_PER_CELL;
     for (Player const& player : m_players) {
         if (player.id != id) {
-            int const min_x = std::max(0, static_cast<int>(player.x) - 1);
-            int const max_x = std::min(static_cast<int>(WIDTH) - 1, static_cast<int>(player.x) + 1);
-            int const min_y = std::max(0, static_cast<int>(player.y) - 1);
-            int const max_y = std::min(static_cast<int>(HEIGHT) - 1, static_cast<int>(player.y) + 1);
-            for (int p_x = min_x; p_x <= max_x; ++p_x) {
-                for (int p_y = min_y; p_y <= max_y; ++p_y) {
-                    if (p_x == x && p_y == y) {
-                        return false;
-                    }
-                }
+            uint32_t const player_x = static_cast<uint32_t>(player.x) * SUBCELLS_PER_CELL + player.x_subcell;
+            uint32_t const player_y = static_cast<uint32_t>(player.y) * SUBCELLS_PER_CELL + player.y_subcell;
+            bool const overlaps_x = x < player_x + PLAYER_BOX_SIZE && player_x < x + PLAYER_BOX_SIZE;
+            bool const overlaps_y = y < player_y + PLAYER_BOX_SIZE && player_y < y + PLAYER_BOX_SIZE;
+            if (overlaps_x && overlaps_y) {
+                return false;
             }
         }
     }

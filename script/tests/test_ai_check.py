@@ -17,6 +17,15 @@ SCRIPT = REPOSITORY / "script/ai_check.py"
 PRE_PUSH = REPOSITORY / ".githooks/pre-push"
 
 
+def pre_push_command():
+    if os.name != "nt":
+        return [str(PRE_PUSH)]
+    shell = shutil.which("sh")
+    if shell is None:
+        raise RuntimeError("POSIX shell 'sh' is required to execute the pre-push fixture on Windows")
+    return [shell, "-c", 'exec "$1"', "pre-push-fixture", str(PRE_PUSH)]
+
+
 def load_module():
     spec = importlib.util.spec_from_file_location("ai_check", SCRIPT)
     module = importlib.util.module_from_spec(spec)
@@ -91,7 +100,7 @@ class AiCheckTests(unittest.TestCase):
             self.assertEqual(checker.main(["--root", str(self.root), "--fast"]), 0)
         python_tests = next(item for item in calls if item[0] == "python-tests")
         self.assertEqual(python_tests[1][-1], "-v")
-        self.assertEqual(python_tests[2], 180 if os.name == "nt" else 60)
+        self.assertEqual(python_tests[2], 180 if os.name == "nt" else 120)
 
     def test_fast_rejects_partially_staged_governed_file(self):
         target = self.root / "src/changed.cpp"
@@ -112,8 +121,8 @@ class AiCheckTests(unittest.TestCase):
         self.git("add", "src/changed.cpp")
         note.write_text("unstaged\n", encoding="utf-8")
         result = self.run_check("--fast", "--require-index-match")
-        self.assertEqual(result.returncode, 1)
-        self.assertIn("CMakePresets.json", result.stdout)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertNotIn("CMakePresets.json", result.stdout)
 
     def test_index_check_rejects_untracked_governed_file_when_governed_content_is_staged(self):
         staged_doc = self.root / "docs/state.md"
@@ -133,6 +142,16 @@ class AiCheckTests(unittest.TestCase):
         result = ai_check.run_phase(self.root, log_dir, "missing", ["definitely-not-a-command"], 1)
         self.assertEqual(result.returncode, 127)
         self.assertTrue((log_dir / "missing.log").is_file())
+
+    def test_failed_phase_prints_complete_diagnostics(self):
+        ai_check = load_module()
+        diagnostics = "traceback-start\n" + ("diagnostic line\n" * 1_500) + "traceback-end"
+        result = ai_check.PhaseResult("python-tests", ["python", "-m", "unittest"], 1, diagnostics)
+        with contextlib.redirect_stdout(io.StringIO()) as output:
+            ai_check.print_result(result)
+        self.assertIn("traceback-start", output.getvalue())
+        self.assertIn("traceback-end", output.getvalue())
+        self.assertEqual(output.getvalue().count("diagnostic line"), 1_500)
 
     def test_python_test_environment_rejects_failed_or_malformed_git_discovery(self):
         checker = load_module()
@@ -183,7 +202,7 @@ class AiCheckTests(unittest.TestCase):
                 "\n"
                 "class GitFixture(unittest.TestCase):\n"
                 "    def test_creates_its_own_repository(self):\n"
-                "        for name in ('GIT_DIR', 'GIT_COMMON_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE'):\n"
+                "        for name in ('GIT_DIR', 'GIT_COMMON_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE', 'AI_TASK'):\n"
                 "            self.assertNotIn(name, os.environ)\n"
                 "        with tempfile.TemporaryDirectory() as directory:\n"
                 "            root = Path(directory)\n"
@@ -204,6 +223,7 @@ class AiCheckTests(unittest.TestCase):
                 "GIT_WORK_TREE": str(outer),
                 "GIT_INDEX_FILE": str(outer_git_dir / "index"),
                 "ISOLATION_MARKER": str(marker),
+                "AI_TASK": "MC-AI-0122",
             }
             result = self.run_check("--fast", environment=environment)
             self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
@@ -310,6 +330,48 @@ class AiCheckTests(unittest.TestCase):
         )
         self.assertEqual(log.read_text(encoding="utf-8").strip(), "script/ai_check.py --strict --require-index-match")
 
+    def test_ai_dev_pre_push_entrypoint_runs_fast_gate_and_propagates_failure(self):
+        self.git("branch", "-M", "ai-dev")
+        head = self.git("rev-parse", "HEAD").stdout.strip()
+        with tempfile.TemporaryDirectory() as directory:
+            directory_path = Path(directory)
+            fake_python = directory_path / "python"
+            fake_python.write_text(
+                "#!/bin/sh\n"
+                "printf '%s\\n' \"$*\" > \"$HOOK_LOG\"\n"
+                "exit \"${HOOK_EXIT:-0}\"\n",
+                encoding="utf-8",
+                newline="\n",
+            )
+            fake_python.chmod(0o755)
+            log = directory_path / "hook.log"
+            environment = os.environ | {
+                "PYTHON": str(fake_python),
+                "HOOK_LOG": str(log),
+            }
+            input_line = f"refs/heads/ai-dev {head} refs/heads/ai-dev {head}\n"
+            success = subprocess.run(
+                pre_push_command(), cwd=self.root, input=input_line, text=True,
+                capture_output=True, env=environment,
+            )
+            self.assertEqual(success.returncode, 0, success.stderr)
+            self.assertEqual(log.read_text(encoding="utf-8").strip(), "script/ai_check.py --fast --require-index-match")
+
+            failure = subprocess.run(
+                pre_push_command(), cwd=self.root, input=input_line, text=True,
+                capture_output=True, env=environment | {"HOOK_EXIT": "7"},
+            )
+            self.assertEqual(failure.returncode, 7, failure.stderr)
+            self.assertEqual(log.read_text(encoding="utf-8").strip(), "script/ai_check.py --fast --require-index-match")
+
+    def test_pre_push_command_uses_detected_posix_shell_on_windows(self):
+        with mock.patch.object(os, "name", "nt"), mock.patch.object(shutil, "which", return_value="sh.exe") as which:
+            self.assertEqual(
+                pre_push_command(),
+                ["sh.exe", "-c", 'exec "$1"', "pre-push-fixture", str(PRE_PUSH)],
+            )
+        which.assert_called_once_with("sh")
+
     def test_version_arguments_and_publisher_exceptions_are_precise(self):
         ai_check = load_module()
         self.assertEqual(ai_check.project_version_arguments(self.root), ("Test:Run", "1.2.3:4"))
@@ -371,6 +433,179 @@ class AiCheckTests(unittest.TestCase):
         summary = json.loads((self.root / "build/ai-checks/summary.json").read_text(encoding="utf-8"))
         self.assertIn("docs", summary["reused_phases"])
         self.assertTrue(summary["durations_seconds"]["docs"] >= 0)
+
+    def test_matching_fast_receipt_reuses_the_full_python_suite(self):
+        marker = self.root / "build/ai-checks/python-command-count"
+        test_file = self.root / "script/tests/test_receipt_marker.py"
+        test_file.write_text(
+            "import os\n"
+            "from pathlib import Path\n"
+            "import unittest\n"
+            "\n"
+            "class ReceiptMarker(unittest.TestCase):\n"
+            "    def test_suite_runs_once(self):\n"
+            "        marker = Path(os.environ['AI_CHECK_MARKER'])\n"
+            "        value = int(marker.read_text()) if marker.exists() else 0\n"
+            "        marker.parent.mkdir(parents=True, exist_ok=True)\n"
+            "        marker.write_text(str(value + 1))\n",
+            encoding="utf-8",
+        )
+        self.git("add", "script/tests/test_receipt_marker.py")
+        self.git("commit", "--no-gpg-sign", "-m", "receipt marker fixture")
+        environment = os.environ | {"AI_CHECK_MARKER": str(marker)}
+        first = self.run_check("--fast", environment=environment)
+        self.assertEqual(first.returncode, 0, first.stdout + first.stderr)
+        second = self.run_check("--fast", environment=environment)
+        self.assertEqual(second.returncode, 0, second.stdout + second.stderr)
+        self.assertEqual(marker.read_text(encoding="utf-8"), "1")
+        self.assertIn("REUSED PASS python-tests", second.stdout)
+        summary = json.loads((self.root / "build/ai-checks/summary.json").read_text(encoding="utf-8"))
+        self.assertIn("python-tests", summary["reused_phases"])
+
+    def test_ignored_discovered_test_changes_force_python_suite_execution(self):
+        ignore_file = self.root / ".gitignore"
+        ignore_file.write_text("script/tests/test_ignored_receipt.py\n", encoding="utf-8")
+        self.git("add", ".gitignore")
+        self.git("commit", "--no-gpg-sign", "-m", "ignore fixture")
+        marker = self.root / "build/ai-checks/ignored-test-count"
+        test_file = self.root / "script/tests/test_ignored_receipt.py"
+        test_file.write_text(
+            "import unittest\n"
+            "from pathlib import Path\n"
+            "\n"
+            "class IgnoredReceipt(unittest.TestCase):\n"
+            "    def test_discovered(self):\n"
+            "        marker = Path('build/ai-checks/ignored-test-count')\n"
+            "        value = int(marker.read_text()) if marker.exists() else 0\n"
+            "        marker.parent.mkdir(parents=True, exist_ok=True)\n"
+            "        marker.write_text(str(value + 1))\n",
+            encoding="utf-8",
+        )
+        first = self.run_check("--fast")
+        self.assertEqual(first.returncode, 0, first.stdout + first.stderr)
+        test_file.write_text(
+            test_file.read_text(encoding="utf-8")
+            + "        self.fail('changed ignored test')\n",
+            encoding="utf-8",
+        )
+        second = self.run_check("--fast")
+        self.assertEqual(second.returncode, 1, second.stdout + second.stderr)
+        self.assertEqual(marker.read_text(encoding="utf-8"), "2")
+        self.assertNotIn("REUSED PASS python-tests", second.stdout)
+
+    def test_content_equivalent_index_and_head_identity_does_not_invalidate_receipt(self):
+        source = self.root / "script/ai_docs.py"
+        source.write_text("raise SystemExit(0)\n# equivalent baseline\n", encoding="utf-8")
+        self.git("add", "script/ai_docs.py")
+        self.git("commit", "--no-gpg-sign", "-m", "equivalent baseline")
+        source.write_text("raise SystemExit(0)\n# equivalent changed\n", encoding="utf-8")
+        first = self.run_check("--fast")
+        self.assertEqual(first.returncode, 0, first.stdout + first.stderr)
+
+        self.git("reset", "HEAD", "--", "script/ai_docs.py")
+        second = self.run_check("--fast")
+        self.assertEqual(second.returncode, 0, second.stdout + second.stderr)
+        self.assertIn("REUSED PASS python-tests", second.stdout)
+
+        self.git("add", "script/ai_docs.py")
+        self.git("commit", "--no-gpg-sign", "-m", "equivalent content")
+        third = self.run_check("--fast")
+        self.assertEqual(third.returncode, 0, third.stdout + third.stderr)
+        self.assertIn("REUSED PASS python-tests", third.stdout)
+
+    def test_receipt_evidence_and_missing_receipt_force_execution(self):
+        first = self.run_check("--fast")
+        self.assertEqual(first.returncode, 0, first.stdout + first.stderr)
+        log = self.root / "build/ai-checks/python-tests.log"
+        log.write_text(log.read_text(encoding="utf-8") + "tampered\n", encoding="utf-8")
+        second = self.run_check("--fast")
+        self.assertEqual(second.returncode, 0, second.stdout + second.stderr)
+        self.assertIn("PASS python-tests", second.stdout)
+        self.assertNotIn("REUSED PASS python-tests", second.stdout)
+
+        receipt = self.root / "build/ai-checks/python-tests.receipt.json"
+        receipt.unlink()
+        third = self.run_check("--fast")
+        self.assertEqual(third.returncode, 0, third.stdout + third.stderr)
+        self.assertNotIn("REUSED PASS python-tests", third.stdout)
+
+        receipt.write_text("{malformed", encoding="utf-8")
+        fourth = self.run_check("--fast")
+        self.assertEqual(fourth.returncode, 0, fourth.stdout + fourth.stderr)
+        self.assertNotIn("REUSED PASS python-tests", fourth.stdout)
+
+    def test_receipt_command_mismatch_forces_execution(self):
+        checker = load_module()
+        log_dir = self.root / "build/ai-checks"
+        log_dir.mkdir(parents=True)
+        command = [sys.executable, "script/ai_docs.py", "check"]
+        first = checker.run_phase(self.root, log_dir, "docs", command, 60)
+        self.assertEqual(first.returncode, 0)
+        changed_command = [sys.executable, "script/ai_docs.py", "check", "--changed"]
+        second = checker.run_phase(self.root, log_dir, "docs", changed_command, 60, reuse=True)
+        self.assertEqual(second.returncode, 0)
+        self.assertFalse(second.reused)
+
+    def test_fingerprint_failure_invalidates_stale_receipt(self):
+        checker = load_module()
+        log_dir = self.root / "build/ai-checks"
+        log_dir.mkdir(parents=True)
+        command = [sys.executable, "script/ai_docs.py", "check"]
+
+        for failing_step in ("phase_environment", "relevant_inputs"):
+            with self.subTest(failing_step=failing_step):
+                first = checker.run_phase(self.root, log_dir, "docs", command, 60)
+                self.assertEqual(first.returncode, 0)
+                receipt = log_dir / "docs.receipt.json"
+                self.assertTrue(receipt.is_file())
+                with mock.patch.object(checker, failing_step, side_effect=RuntimeError("fingerprint unavailable")):
+                    second = checker.run_phase(
+                        self.root, log_dir, "docs", command, 60, reuse=True
+                    )
+                self.assertEqual(second.returncode, 127)
+                self.assertFalse(receipt.exists())
+
+    def test_build_and_ctest_receipts_are_never_reused(self):
+        checker = load_module()
+        log_dir = self.root / "build/ai-checks"
+        log_dir.mkdir(parents=True)
+        for name in ("build", "ctest"):
+            with self.subTest(name=name):
+                command = ["true"]
+                first = checker.run_phase(self.root, log_dir, name, command, 60)
+                self.assertEqual(first.returncode, 0)
+                second = checker.run_phase(self.root, log_dir, name, command, 60, reuse=True)
+                self.assertEqual(second.returncode, 0)
+                self.assertFalse(second.reused)
+
+    def test_python_tests_execute_after_non_script_input_changes(self):
+        source = self.root / "src/source_policy.cpp"
+        source.write_text("int value = 1;\n", encoding="utf-8")
+        test_file = self.root / "script/tests/test_source_policy.py"
+        test_file.write_text(
+            "from pathlib import Path\n"
+            "import unittest\n"
+            "\n"
+            "class SourcePolicy(unittest.TestCase):\n"
+            "    def test_source_lines_are_bounded(self):\n"
+            "        source = Path(__file__).parents[2] / 'src/source_policy.cpp'\n"
+            "        self.assertTrue(all(len(line) <= 80 for line in source.read_text().splitlines()))\n",
+            encoding="utf-8",
+        )
+        self.git("add", "src/source_policy.cpp", "script/tests/test_source_policy.py")
+        self.git("commit", "--no-gpg-sign", "-m", "source policy fixture")
+
+        first = self.run_check("--fast")
+        self.assertEqual(first.returncode, 0, first.stdout + first.stderr)
+        source.write_text("x" * 81 + "\n", encoding="utf-8")
+
+        second = self.run_check("--fast")
+        self.assertEqual(second.returncode, 1, second.stdout + second.stderr)
+        self.assertIn("FAIL python-tests", second.stdout)
+        self.assertNotIn("REUSED PASS python-tests", second.stdout)
+        summary = json.loads((self.root / "build/ai-checks/summary.json").read_text(encoding="utf-8"))
+        self.assertIn("python-tests", summary["executed_phases"])
+        self.assertNotIn("python-tests", summary["reused_phases"])
 
     def test_matching_receipt_keeps_hook_command_to_one_execution(self):
         marker = self.root / "build/ai-checks/docs-command-count"
@@ -443,7 +678,7 @@ class AiCheckTests(unittest.TestCase):
         self.assertEqual(second.returncode, 0, second.stdout + second.stderr)
         self.assertNotIn("REUSED PASS docs", second.stdout)
 
-    def test_cpp_changes_use_existing_build_and_ctest_fallback(self):
+    def test_fast_cpp_changes_defer_build_and_ctest_to_batch_gate(self):
         checker = load_module()
         (self.root / "CMakePresets.json").write_text("{}\n", encoding="utf-8")
         (self.root / "src/fixture.cpp").write_text("changed\n", encoding="utf-8")
@@ -456,8 +691,46 @@ class AiCheckTests(unittest.TestCase):
         with mock.patch.object(checker, "run_phase", side_effect=run_phase), contextlib.redirect_stdout(io.StringIO()) as output:
             self.assertEqual(checker.main(["--root", str(self.root), "--fast"]), 0)
         self.assertIn("full-cpp", output.getvalue())
-        self.assertIn("build", calls)
-        self.assertIn("ctest", calls)
+        self.assertNotIn("build", calls)
+        self.assertNotIn("ctest", calls)
+
+    def test_full_and_strict_checks_still_run_and_propagate_build_failures(self):
+        checker = load_module()
+
+        for arguments in ([], ["--strict"]):
+            with self.subTest(arguments=arguments):
+                calls = []
+
+                def run_phase(root, log_dir, name, command, timeout, **kwargs):
+                    calls.append(name)
+                    return checker.PhaseResult(name, command, 7 if name == "build" else 0, "failed build")
+
+                with mock.patch.object(checker, "run_phase", side_effect=run_phase), contextlib.redirect_stdout(io.StringIO()):
+                    result = checker.main(["--root", str(self.root), *arguments])
+
+                self.assertEqual(result, 1)
+                self.assertIn("build", calls)
+                self.assertIn("ctest", calls)
+
+    def test_workflow_only_changes_use_full_python_scope(self):
+        checker = load_module()
+        changed = {
+            "AGENTS.md",
+            ".agents/skills/implement/SKILL.md",
+            ".githooks/pre-push",
+            "docs/ai/WORKFLOW.md",
+            "docs/code/source_state.json",
+            "script/ai_check.py",
+            "script/tests/test_ai_check.py",
+        }
+        with mock.patch.object(
+            checker,
+            "changed_paths",
+            side_effect=lambda root, cached: changed if cached else set(),
+        ), mock.patch.object(checker, "untracked_paths", return_value=set()):
+            scope, paths = checker.changed_scope(self.root)
+        self.assertEqual(scope, "full-python")
+        self.assertEqual(paths, sorted(changed))
 
     def test_exact_python_mapping_targets_existing_test_and_unknown_falls_back(self):
         test_file = self.root / "script/tests/test_ai_tasks.py"

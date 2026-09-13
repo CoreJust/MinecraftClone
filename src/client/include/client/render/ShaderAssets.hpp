@@ -1,6 +1,6 @@
 #pragma once
 
-#include <core/vulkan/SpirV.hpp>
+#include <core/kernel/Spirv.hpp>
 
 #include <string_view>
 
@@ -11,7 +11,7 @@ public:
     virtual ~ShaderAssets();
 
     [[nodiscard]]
-    virtual core::vk::SpirV load(std::string_view name) const = 0;
+    virtual core::kernel::SpirvModule load(std::string_view name) const = 0;
 };
 
 } // namespace client

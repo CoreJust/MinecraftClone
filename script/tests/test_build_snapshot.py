@@ -76,6 +76,8 @@ class BuildSnapshotTests(unittest.TestCase):
         self.write("installed/arm64-osx/share/fmt/copyright", b"fmt")
         self.write("installed/duplicate/share/fmt/copyright", b"fmt")
         self.write("installed/arm64-osx/share/volk/copyright", b"volk")
+        self.write("src/client/render/shaders/DEBUG_HUD_ATTRIBUTION.md", b"HUD attribution")
+        self.write("src/client/render/shaders/TAMSYN_LICENSE.txt", b"Tamsyn license")
 
         def download(_url: str, digest: str, output: Path) -> None:
             output.write_text(digest, encoding="utf-8")
@@ -88,6 +90,8 @@ class BuildSnapshotTests(unittest.TestCase):
             sorted(path.relative_to(destination).as_posix() for path in destination.rglob("*") if path.is_file()),
             [
                 "MinecraftClone-LICENSE.txt",
+                "hud/DEBUG_HUD_ATTRIBUTION.md",
+                "hud/TAMSYN_LICENSE.txt",
                 "vcpkg/fmt-copyright.txt",
                 "vcpkg/volk-copyright.txt",
                 "vulkan/MoltenVK-LICENSE.txt",
@@ -107,6 +111,24 @@ class BuildSnapshotTests(unittest.TestCase):
         with zipfile.ZipFile(first) as archive:
             self.assertEqual(archive.namelist(), ["dependencies/fmt.txt", "project.txt"])
             self.assertTrue(all(item.date_time == (1980, 1, 1, 0, 0, 0) for item in archive.infolist()))
+
+    def test_license_material_rejects_empty_hud_files(self):
+        project_license = self.write("LICENSE", b"project")
+        self.write("installed/arm64-osx/share/fmt/copyright", b"fmt")
+        empty_attribution = self.write("hud/DEBUG_HUD_ATTRIBUTION.md", b"")
+        font_license = self.write("hud/TAMSYN_LICENSE.txt", b"Tamsyn license")
+
+        with self.assertRaisesRegex(build_snapshot.SnapshotBuildError, "must not be empty"):
+            build_snapshot.prepare_licenses(
+                project_license,
+                self.root / "installed",
+                self.root / "licenses",
+                False,
+                (
+                    ("hud/DEBUG_HUD_ATTRIBUTION.md", empty_attribution),
+                    ("hud/TAMSYN_LICENSE.txt", font_license),
+                ),
+            )
 
     def test_windows_runtime_closure_packages_recursive_non_system_dependencies(self):
         executable = self.write("install/mc_main.exe", b"exe")
@@ -128,12 +150,62 @@ class BuildSnapshotTests(unittest.TestCase):
             result = build_snapshot.resolve_windows_runtime(executable, [self.root / "runtime"])
         self.assertEqual(result, [first.resolve(), second.resolve()])
 
+    def test_windows_package_includes_explicit_vulkan_loader_in_zip(self):
+        package_temporary = tempfile.TemporaryDirectory(dir="/private/tmp")
+        self.addCleanup(package_temporary.cleanup)
+        package_root = Path(package_temporary.name)
+        self.write("install/mc_main.exe", b"executable")
+        self.write("install/shaders/grid.vert.spv", b"shader")
+        runtime = self.write("runtime/fmt.dll", b"runtime")
+        loader = self.write("install/vulkan-1.dll", b"vulkan loader")
+        self.write("installed/share/fmt/copyright", b"fmt")
+        project_license = self.write("LICENSE", b"project")
+        evidence = self.write("build/toolchain.json", b"{}")
+        arguments = argparse.Namespace(
+            platform="windows",
+            install_root=self.root / "install",
+            vcpkg_installed=self.root / "installed",
+            runtime_search=[self.root / "runtime"],
+            vulkan_runtime=None,
+            sdk_root=None,
+            project_license=project_license,
+            packager=REPOSITORY / "script/package_snapshot.py",
+            toolchain_evidence=evidence,
+            work_root=package_root / "work-without-loader",
+            version="0.1.0:3",
+            source_commit="d" * 40,
+            output=package_root / "without-loader.zip",
+        )
+
+        with mock.patch.object(build_snapshot, "windows_dependencies", return_value=["fmt.dll"]):
+            build_snapshot.package_desktop(arguments)
+        with zipfile.ZipFile(arguments.output) as archive:
+            self.assertNotIn("vulkan-1.dll", archive.namelist())
+
+        arguments.vulkan_runtime = loader
+        arguments.work_root = package_root / "work-with-loader"
+        arguments.output = package_root / "with-loader.zip"
+        with mock.patch.object(
+            build_snapshot,
+            "windows_dependencies",
+            return_value=["fmt.dll", "vulkan-1.dll"],
+        ):
+            build_snapshot.package_desktop(arguments)
+        with zipfile.ZipFile(arguments.output) as archive:
+            self.assertIn("vulkan-1.dll", archive.namelist())
+            self.assertEqual(archive.read("vulkan-1.dll"), b"vulkan loader")
+            self.assertFalse(any(name.startswith("private-dependencies/") for name in archive.namelist()))
+        runtime_files = json.loads(evidence.read_text())["windows_runtime"]["files"]
+        self.assertEqual([item["name"] for item in runtime_files], ["fmt.dll", "vulkan-1.dll"])
+
     def test_macos_package_call_uses_versioned_loader_and_one_license_tree(self):
         install_root = self.root / "install"
         self.write("install/mc_main", b"executable")
         self.write("install/shaders/grid.vert.spv", b"shader")
         self.write("installed/arm64-osx/share/fmt/copyright", b"fmt")
         project_license = self.write("LICENSE", b"project")
+        self.write("src/client/render/shaders/DEBUG_HUD_ATTRIBUTION.md", b"HUD attribution")
+        self.write("src/client/render/shaders/TAMSYN_LICENSE.txt", b"Tamsyn license")
         packager = self.write("script/package_snapshot.py", b"fixture")
         evidence = self.write("build/toolchain.json", b"{}")
         sdk_root = self.root / "sdk"
@@ -250,21 +322,47 @@ class BuildSnapshotTests(unittest.TestCase):
     def test_workflow_builds_resolved_commit_without_publishing(self):
         workflow = WORKFLOW.read_text(encoding="utf-8")
         self.assertIn("workflow_dispatch:", workflow)
-        self.assertIn("'codex/ai-release-*'", workflow)
         self.assertIn("'ai/*/*/*'", workflow)
-        self.assertIn("source_commit: ${{ steps.identity.outputs.source_commit }}", workflow)
+        self.assertIn("source_commit: ${{ steps.trust.outputs.source_commit }}", workflow)
+        self.assertIn("trusted_dependency_source: ${{ steps.trust.outputs.trusted_dependency_source }}", workflow)
+        self.assertIn("if: needs.source.outputs.trusted_dependency_source == 'true'", workflow)
+        self.assertIn("git merge-base --is-ancestor", workflow)
+        self.assertIn("refs/heads/ai-main|refs/tags/ai/*/*/*", workflow)
         self.assertGreaterEqual(workflow.count("ref: ${{ needs.source.outputs.source_commit }}"), 2)
         self.assertIn("runner: macos-15", workflow)
         self.assertIn("xcode-select --switch /Applications/Xcode_26.2.app/Contents/Developer", workflow)
         self.assertIn("runner: windows-2022", workflow)
         self.assertIn("runs-on: ubuntu-24.04", workflow)
-        self.assertIn("android/gradlew --no-daemon --stacktrace :app:assembleDebug", workflow)
+        self.assertIn("android/gradlew --no-daemon --stacktrace", workflow)
+        self.assertIn("-PvcpkgManifestInstall=OFF", workflow)
+        self.assertIn('-PvcpkgInstalledDir="$VCPKG_INSTALLED_DIR"', workflow)
+        self.assertIn('-PcmakePrefixPath="$MC_PRIVATE_DEPENDENCIES_PREFIX"', workflow)
+        self.assertIn('-PcoreCppDir="$MC_PRIVATE_DEPENDENCIES_PREFIX/lib/cmake/CoreCpp"', workflow)
+        self.assertIn('-PcoreProjectDir="$MC_PRIVATE_DEPENDENCIES_PREFIX/lib/cmake/CoreProject2026"', workflow)
+        self.assertIn(":app:assembleDebug", workflow)
         self.assertIn("--api-level 35 --abi arm64-v8a --signing development", workflow)
         self.assertNotIn("--abi arm64_v8a", workflow)
         self.assertEqual(workflow.count("build/toolchain-windows.json"), 3)
         self.assertNotIn(r"build\toolchain-windows.json", workflow)
         self.assertNotIn("gh release", workflow)
         self.assertNotIn("contents: write", workflow)
+
+    def test_private_dependency_workflow_uses_secrets_only_after_trust_and_excludes_checkouts(self):
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        source_job = workflow.split("\n  desktop:", maxsplit=1)[0]
+        self.assertNotIn("secrets.", source_job)
+        self.assertIn("MC_CI_CORECPP_DEPLOY_KEY", workflow)
+        self.assertIn("MC_CI_COREPROJECT2026_DEPLOY_KEY", workflow)
+        self.assertIn("fetch-private-dependencies", workflow)
+        self.assertIn("install-private-dependencies", workflow)
+        self.assertIn("install-manifest-dependencies", workflow)
+        self.assertNotIn("build/release/vcpkg_installed", workflow)
+        self.assertNotIn("android/app/.cxx", workflow)
+        self.assertIn("verify-private-dependency-artifact-exclusion", workflow)
+        self.assertNotIn("private-dependencies/**", workflow)
+        upload_paths = [block.split("\n          if-no-files-found", maxsplit=1)[0] for block in workflow.split("path: |")[1:]]
+        self.assertTrue(upload_paths)
+        self.assertTrue(all("private-dependency" not in path for path in upload_paths))
 
     def test_windows_workflows_restore_acquired_vcpkg_and_fail_closed_on_metadata(self):
         for workflow_path in (WORKFLOW, AI_WORKFLOW):
@@ -273,15 +371,87 @@ class BuildSnapshotTests(unittest.TestCase):
             self.assertIn(
                 'set "MC_ACQUIRED_VCPKG_ROOT=%VCPKG_ROOT%"\n'
                 '          call "%ProgramFiles%\\Microsoft Visual Studio\\2022\\Enterprise\\Common7\\Tools\\VsDevCmd.bat" -arch=amd64\n'
-                "          if errorlevel 1 exit /b 1\n"
+                "          if errorlevel 1 exit /b %errorlevel%\n"
                 '          set "VCPKG_ROOT=%MC_ACQUIRED_VCPKG_ROOT%"',
                 windows_step,
             )
             metadata = windows_step.index("record-metadata --platform windows")
             self.assertEqual(
                 windows_step[metadata:].splitlines()[1].strip(),
-                "if errorlevel 1 exit /b 1",
+                "if errorlevel 1 exit /b %errorlevel%",
             )
+
+    def test_windows_release_phase_stops_at_each_fallible_command(self):
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        windows_step = workflow.split("      - name: Build, test, and package Windows\n", maxsplit=1)[1]
+        windows_phase = windows_step.split("      - name: Upload desktop release candidate\n", maxsplit=1)[0]
+        commands = (
+            'call "%ProgramFiles%\\Microsoft Visual Studio\\2022\\Enterprise\\Common7\\Tools\\VsDevCmd.bat" -arch=amd64',
+            "python script/ci/acquire.py verify-tools --platform windows",
+            "python script/ci/acquire.py record-metadata --platform windows --preset release --output build/toolchain-windows.json",
+            "cmake --preset release -DMC_ENABLE_RENDERER_SMOKE=OFF",
+            "cmake --build --preset release",
+            "ctest --test-dir build\\release --output-on-failure --no-tests=error --timeout 60 > build\\release-tests-windows.log 2>&1",
+            "type build\\release-tests-windows.log",
+            "python script/ci/acquire.py validate-shaders --build-dir build\\release",
+            "cmake --install build\\release --prefix build\\install",
+            "if not exist dist mkdir dist",
+            "python script/ci/build_snapshot.py package-desktop --platform windows",
+            "python script/ci/build_snapshot.py write-evidence --platform windows",
+            "python script/ci/build_snapshot.py write-checksum",
+            "python script/ci/acquire.py verify-private-dependency-artifact-exclusion",
+        )
+        failure_guard = "if errorlevel 1 exit /b %errorlevel%"
+        lines = [line.strip() for line in windows_phase.splitlines()]
+        command_indices = [next(index for index, line in enumerate(lines) if line.startswith(command)) for command in commands]
+        for command, index in zip(commands, command_indices):
+            if command.startswith("ctest "):
+                self.assertEqual(
+                    lines[index + 1:index + 6],
+                    [
+                        'set "ctest_result=%errorlevel%"',
+                        "type build\\release-tests-windows.log",
+                        'set "ctest_log_result=%errorlevel%"',
+                        'if not "%ctest_result%"=="0" exit /b %ctest_result%',
+                        'if not "%ctest_log_result%"=="0" exit /b %ctest_log_result%',
+                    ],
+                )
+            elif command.startswith("type "):
+                continue
+            else:
+                self.assertEqual(lines[index + 1], failure_guard, command)
+
+        def run_extracted_phase(failed_command: str | None) -> tuple[int, list[str]]:
+            errorlevel = 0
+            ctest_result = 0
+            ctest_log_result = 0
+            executed = []
+            for line in lines:
+                command = next((item for item in commands if line.startswith(item)), None)
+                if command is not None:
+                    executed.append(command)
+                    errorlevel = int(command == failed_command)
+                    if command.startswith("ctest "):
+                        ctest_result = errorlevel
+                    elif command.startswith("type "):
+                        ctest_log_result = errorlevel
+                elif line.startswith('if not "%ctest_result%"') and ctest_result >= 1:
+                    return ctest_result, executed
+                elif line.startswith('if not "%ctest_log_result%"') and ctest_log_result >= 1:
+                    return ctest_log_result, executed
+                elif line.startswith("if errorlevel 1") and errorlevel >= 1:
+                    return errorlevel, executed
+            return errorlevel, executed
+
+        self.assertEqual(run_extracted_phase(None), (0, list(commands)))
+        for failed_command in commands:
+            exit_code, executed = run_extracted_phase(failed_command)
+            self.assertEqual(exit_code, 1)
+            if failed_command.startswith("ctest "):
+                self.assertEqual(executed[-1], "type build\\release-tests-windows.log")
+            else:
+                self.assertEqual(executed[-1], failed_command)
+            self.assertNotIn(commands[-1], executed[:-1])
 
 
 if __name__ == "__main__":

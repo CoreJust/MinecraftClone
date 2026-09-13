@@ -5,11 +5,21 @@ import json
 import subprocess
 import glob
 from pathlib import Path
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from typing import List, Tuple, Callable, Dict, Any
+from zoneinfo import ZoneInfo
 
 from script.colored_print import *
 from script.checks_common import *
+
+PROJECT_TIME_ZONE = ZoneInfo("Europe/Belgrade")
+
+
+def project_date(now: datetime | None = None) -> date:
+    current = now if now is not None else datetime.now(timezone.utc)
+    if current.tzinfo is None:
+        raise ValueError("project date requires an aware datetime")
+    return current.astimezone(PROJECT_TIME_ZONE).date()
 
 @register_file_check(FILES.VCPKG, "vcpkg.json version-string matches")
 def check_vcpkg(ctx, content):
@@ -205,7 +215,7 @@ def check_today_date(ctx):
         if ctx.get('pre_finalization_candidate', False) and latest[0] < ctx['snapshot_index']:
             return True, ""
         return False, f"latest snapshot index {latest[0]} != {ctx['snapshot_index']}"
-    today = date.today().strftime("%y.%m.%d")
+    today = project_date().strftime("%y.%m.%d")
     if latest[1] != today:
         return False, f"snapshot date is {latest[1]}, but today is {today}"
     return True, ""

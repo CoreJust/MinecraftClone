@@ -8,9 +8,11 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from datetime import date, datetime, timezone
 from pathlib import Path
 from unittest import mock
 
+from script import infrastructure_checks
 from script.ci import acquire
 
 
@@ -39,16 +41,24 @@ class PreFinalizationCandidateTests(unittest.TestCase):
             capture_output=True,
         )
         subprocess.run(["git", "init", "--quiet"], cwd=self.root, check=True)
+        # This fixture owns its temporary repository. Keep Git's background
+        # maintenance from racing TemporaryDirectory.cleanup after commits.
+        for key, value in (("gc.auto", "0"), ("maintenance.auto", "false")):
+            subprocess.run(["git", "config", key, value], cwd=self.root, check=True)
         subprocess.run(["git", "config", "user.email", "candidate@example.invalid"], cwd=self.root, check=True)
         subprocess.run(["git", "config", "user.name", "Candidate Validation"], cwd=self.root, check=True)
         for relative in ("publish.py", "script/infrastructure_checks.py"):
             source = REPOSITORY / relative
             target = self.root / relative
             shutil.copy2(source, target)
+        project_info = self.root / "src/shared/include/shared/ProjectInfo.hpp"
+        patch_match = re.search(r"\.patch = (\d+),", project_info.read_text(encoding="utf-8"))
+        self.assertIsNotNone(patch_match)
+        self.snapshot_index = int(patch_match.group(1))
         history = self.root / "docs/version_history/EarlyDev 0.1/EarlyDev 0.1.0 Initiation.md"
         undated, replacements = re.subn(
-            r"^## EarlyDev 0\.1\.0:3(?:\(\d{2}\.\d{2}\.\d{2}\))?$",
-            "## EarlyDev 0.1.0:3",
+            rf"^## EarlyDev 0\.1\.0:{self.snapshot_index}(?:\(\d{{2}}\.\d{{2}}\.\d{{2}}\))?$",
+            f"## EarlyDev 0.1.0:{self.snapshot_index}",
             history.read_text(encoding="utf-8"),
             count=1,
             flags=re.MULTILINE,
@@ -73,13 +83,23 @@ class PreFinalizationCandidateTests(unittest.TestCase):
     def tearDown(self) -> None:
         self.temporary.cleanup()
 
+    def test_owned_temp_repo_disables_background_git_maintenance(self) -> None:
+        config = subprocess.run(
+            ["git", "config", "--get-regexp", r"^(gc\.auto|maintenance\.auto)$"],
+            cwd=self.root,
+            check=True,
+            text=True,
+            capture_output=True,
+        ).stdout.splitlines()
+        self.assertEqual(config, ["gc.auto 0", "maintenance.auto false"])
+
     def run_publish(self, *extra: str) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
             [
                 sys.executable,
                 "publish.py",
                 "EarlyDev:Initiation",
-                "0.1.0:3",
+                f"0.1.0:{self.snapshot_index}",
                 "--checks-only",
                 *extra,
             ],
@@ -90,7 +110,11 @@ class PreFinalizationCandidateTests(unittest.TestCase):
 
     def commit_history(self, content: str) -> None:
         history = self.root / "docs/version_history/EarlyDev 0.1/EarlyDev 0.1.0 Initiation.md"
-        history.write_text(content, encoding="utf-8")
+        preceding_snapshots = "".join(
+            f"\n## EarlyDev 0.1.0:{index}(26.09.10)\nSnapshot {index}\n"
+            for index in range(3, self.snapshot_index)
+        )
+        history.write_text(content + preceding_snapshots, encoding="utf-8")
         subprocess.run(["git", "add", str(history.relative_to(self.root))], cwd=self.root, check=True)
         subprocess.run(
             ["git", "commit", "--quiet", "--no-gpg-sign", "-m", "candidate history fixture"],
@@ -101,7 +125,7 @@ class PreFinalizationCandidateTests(unittest.TestCase):
     def test_allows_only_absent_current_snapshot(self) -> None:
         ordinary = self.run_publish()
         self.assertNotEqual(ordinary.returncode, 0)
-        self.assertIn("missing snapshots: [3]", ordinary.stdout)
+        self.assertIn(f"missing snapshots: [{self.snapshot_index}]", ordinary.stdout)
 
         candidate = self.run_publish("--pre-finalization-candidate")
         self.assertEqual(candidate.returncode, 0, candidate.stdout + candidate.stderr)
@@ -179,15 +203,36 @@ class PreFinalizationCandidateTests(unittest.TestCase):
         self.assertEqual(candidate[1][:-1], ordinary[1])
         self.assertEqual(candidate[1][-1], "--pre-finalization-candidate")
 
-    def test_hosted_workflows_limit_the_flag_to_pre_finalization_candidates(self) -> None:
+    def test_project_date_uses_belgrade_midnight_on_every_runner(self) -> None:
+        before_midnight = datetime(2026, 9, 11, 21, 59, tzinfo=timezone.utc)
+        at_midnight = datetime(2026, 9, 11, 22, 0, tzinfo=timezone.utc)
+
+        self.assertEqual(infrastructure_checks.project_date(before_midnight).isoformat(), "2026-09-11")
+        self.assertEqual(infrastructure_checks.project_date(at_midnight).isoformat(), "2026-09-12")
+
+    def test_project_date_rejects_runner_local_naive_time(self) -> None:
+        with self.assertRaisesRegex(ValueError, "aware datetime"):
+            infrastructure_checks.project_date(datetime(2026, 9, 12))
+
+    def test_snapshot_date_still_rejects_a_project_date_mismatch(self) -> None:
+        context = {"_snapshots": [(4, "26.09.12")], "snapshot_index": 4}
+        with mock.patch.object(infrastructure_checks, "project_date", return_value=date(2026, 9, 13)):
+            passed, message = infrastructure_checks.check_today_date(context)
+
+        self.assertFalse(passed)
+        self.assertEqual(message, "snapshot date is 26.09.12, but today is 26.09.13")
+
+    def test_snapshot_artifact_workflow_reserves_private_dependencies_for_finalized_sources(self) -> None:
         ai_checks = AI_CHECKS_WORKFLOW.read_text(encoding="utf-8")
         snapshot = SNAPSHOT_WORKFLOW.read_text(encoding="utf-8")
 
+        self.assertEqual(ai_checks.count("tzdata==2025.2"), 1)
+        self.assertEqual(snapshot.count("tzdata==2025.2"), 2)
         self.assertIn("if: github.ref != 'refs/heads/ai-main'", ai_checks)
         self.assertIn("if: github.ref == 'refs/heads/ai-main'", ai_checks)
         self.assertIn("source-checks --pre-finalization-candidate", ai_checks)
-        self.assertIn("startsWith(github.ref, 'refs/heads/codex/ai-release-')", snapshot)
-        self.assertIn("source-checks --pre-finalization-candidate", snapshot)
+        self.assertNotIn("codex/ai-release-", snapshot)
+        self.assertNotIn("source-checks --pre-finalization-candidate", snapshot)
         self.assertIn("run: python script/ci/acquire.py source-checks", snapshot)
 
 

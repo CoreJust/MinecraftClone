@@ -118,7 +118,10 @@ class AiPublishTests(unittest.TestCase):
         snapshot_status: str = "active",
         **snapshot_changes: object,
     ) -> None:
-        basic = task("MC-AI-0001", "basic", "MC-AI-0032", basic_status)
+        basic = task(
+            "MC-AI-0001", "basic", "MC-AI-0032", basic_status,
+            finalized=basic_status == "done",
+        )
         if basic_status == "active":
             basic["owner"] = "Codex"
         snapshot = task(

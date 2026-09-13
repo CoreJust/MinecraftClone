@@ -4,6 +4,7 @@
 #include <core/net/Address.hpp>
 #include <core/net/Net.hpp>
 
+#include <android/looper.h>
 #include <android_native_app_glue.h>
 
 #include <charconv>
@@ -138,6 +139,18 @@ LaunchOptions launchOptions(android_app const& app)
 
 } // namespace
 
+void pumpUntilActivityDestroyed(android_app& app)
+{
+    while (!app.destroyRequested) {
+        void* data = nullptr;
+        int32_t const result = ALooper_pollOnce(-1, nullptr, nullptr, &data);
+        if (result >= 0 && data != nullptr) {
+            auto* const source = static_cast<android_poll_source*>(data);
+            source->process(&app, source);
+        }
+    }
+}
+
 extern "C" void android_main(android_app* const app)
 {
     core::Log::ensureInit();
@@ -152,4 +165,5 @@ extern "C" void android_main(android_app* const app)
         CORE_ERROR("Android client terminated: {}", error.what());
     }
     ANativeActivity_finish(app->activity);
+    pumpUntilActivityDestroyed(*app);
 }

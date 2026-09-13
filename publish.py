@@ -12,7 +12,6 @@ import json
 import subprocess
 import glob
 from pathlib import Path
-from datetime import date
 from typing import List, Tuple, Callable, Dict, Any
 
 from script.colored_print import *
@@ -124,7 +123,7 @@ def publish(ctx):
         print_fail(f"Must be on 'dev' branch, currently on '{branch}'")
         return False
 
-    today_str = date.today().strftime('%y.%m.%d')
+    today_str = script.infrastructure_checks.project_date().strftime('%y.%m.%d')
     msg = f"{ctx['major_name']} {ctx['version_str']}:{ctx['snapshot_index']}({today_str})"
     merge_cmd = ['git', 'merge', '--no-ff', 'dev', '-m', msg]
     print_info(f"Merging: {' '.join(merge_cmd)}")

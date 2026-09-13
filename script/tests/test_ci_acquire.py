@@ -5,9 +5,11 @@ from __future__ import annotations
 import hashlib
 import io
 import os
+import stat
 import tempfile
 import unittest
 import zipfile
+import json
 from pathlib import Path
 from unittest import mock
 
@@ -112,7 +114,169 @@ class CiAcquireTests(unittest.TestCase):
             self.assertEqual(write_env.call_args_list, [
                 mock.call("ANDROID_HOME", str(root)),
                 mock.call("ANDROID_SDK_ROOT", str(root)),
+                mock.call("ANDROID_NDK_HOME", str(root / "ndk" / acquire.ANDROID_NDK_VERSION)),
+                mock.call("ANDROID_NDK_ROOT", str(root / "ndk" / acquire.ANDROID_NDK_VERSION)),
             ])
+
+    def test_install_manifest_dependencies_uses_isolated_platform_triplets(self):
+        for platform_name, triplet in (
+            ("macos", "arm64-osx"),
+            ("windows", "x64-windows"),
+            ("android", "arm64-android"),
+        ):
+            with tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                vcpkg_root = root / "vcpkg"
+                vcpkg_root.mkdir()
+                executable = vcpkg_root / ("vcpkg.exe" if os.name == "nt" else "vcpkg")
+                executable.touch()
+                installed_root = root / "vcpkg-installed"
+
+                def install(command):
+                    installed_root.mkdir()
+                    return ""
+
+                with mock.patch.object(acquire, "run", side_effect=install) as run, mock.patch.object(acquire, "write_github_env") as write_env:
+                    result = acquire.install_manifest_dependencies(vcpkg_root, platform_name, installed_root)
+
+                repository = Path(__file__).resolve().parents[2]
+                self.assertEqual(result, installed_root)
+                run.assert_called_once_with([
+                    str(executable),
+                    "install",
+                    f"--triplet={triplet}",
+                    f"--x-manifest-root={repository}",
+                    f"--x-install-root={installed_root}",
+                ])
+                write_env.assert_called_once_with("VCPKG_INSTALLED_DIR", str(installed_root))
+
+    def test_install_private_dependencies_passes_exact_platform_component_closure(self):
+        expected_platform_arguments = {
+            "android": {"-DCORECPP_BUILD_RUNTIME_GRAPHICS_VULKAN_ANDROID=ON"},
+            "macos": {
+                "-DCORECPP_BUILD_RUNTIME_PLATFORM_GLFW=ON",
+                "-DCORECPP_BUILD_RUNTIME_GRAPHICS_VULKAN_GLFW=ON",
+            },
+            "windows": {
+                "-DCORECPP_BUILD_RUNTIME_PLATFORM_GLFW=ON",
+                "-DCORECPP_BUILD_RUNTIME_GRAPHICS_VULKAN_GLFW=ON",
+            },
+        }
+        all_platform_arguments = set().union(*expected_platform_arguments.values())
+        for platform_name, platform_arguments in expected_platform_arguments.items():
+            with self.subTest(platform_name=platform_name), tempfile.TemporaryDirectory() as directory, mock.patch.dict(
+                os.environ,
+                {"VCPKG_INSTALLED_DIR": "/tmp/vcpkg-installed"},
+            ):
+                root = Path(directory) / "private-dependencies"
+                for name in acquire.PRIVATE_DEPENDENCIES:
+                    source = root / name
+                    source.mkdir(parents=True)
+                    (source / "CMakeLists.txt").touch()
+                corecpp_config = root / "install/lib/cmake/CoreCpp/CoreCppConfig.cmake"
+
+                def run_command(command):
+                    if command[:2] == ["cmake", "--install"] and command[2].endswith("CoreCpp-build"):
+                        corecpp_config.parent.mkdir(parents=True)
+                        corecpp_config.touch()
+                    return ""
+
+                with mock.patch.object(acquire, "run", side_effect=run_command) as run, mock.patch.object(
+                    acquire,
+                    "write_github_env",
+                ):
+                    acquire.install_private_dependencies(
+                        root,
+                        platform_name,
+                        ["-DVCPKG_MANIFEST_INSTALL=OFF"],
+                    )
+                commands = [call.args[0] for call in run.call_args_list]
+                configure_commands = [command for command in commands if command[0] == "cmake" and "-S" in command]
+                self.assertEqual(len(configure_commands), len(acquire.PRIVATE_DEPENDENCIES))
+                for command in configure_commands:
+                    self.assertIn("-DCMAKE_BUILD_TYPE=Release", command)
+                    self.assertIn("-DVCPKG_INSTALLED_DIR=/tmp/vcpkg-installed", command)
+                    self.assertIn("-DVCPKG_MANIFEST_INSTALL=OFF", command)
+                    self.assertEqual(command[-1], "-DBUILD_TESTING=OFF")
+                corecpp_command, coreproject_command = configure_commands
+                for argument in acquire.CORECPP_COMMON_BUILD_ARGUMENTS:
+                    self.assertIn(argument, corecpp_command)
+                self.assertTrue(platform_arguments.issubset(corecpp_command))
+                self.assertTrue((all_platform_arguments - platform_arguments).isdisjoint(corecpp_command))
+                self.assertIn(f"-DCoreCpp_DIR={corecpp_config.parent.as_posix()}", coreproject_command)
+                corecpp_install_index = commands.index(["cmake", "--install", str(root / "CoreCpp-build")])
+                coreproject_configure_index = commands.index(coreproject_command)
+                self.assertLess(corecpp_install_index, coreproject_configure_index)
+
+    def test_private_dependency_install_requires_corecpp_package_before_dependent_configure(self):
+        with tempfile.TemporaryDirectory() as directory, mock.patch.dict(
+            os.environ,
+            {"VCPKG_INSTALLED_DIR": "/tmp/vcpkg-installed"},
+        ):
+            root = Path(directory) / "private-dependencies"
+            for name in acquire.PRIVATE_DEPENDENCIES:
+                source = root / name
+                source.mkdir(parents=True)
+                (source / "CMakeLists.txt").touch()
+            with mock.patch.object(acquire, "run", return_value=""):
+                with self.assertRaisesRegex(acquire.CiError, "installed CoreCpp package config is missing"):
+                    acquire.install_private_dependencies(root, "android", ["-DVCPKG_MANIFEST_INSTALL=OFF"])
+
+    def test_private_dependency_install_matches_requested_preset(self):
+        with tempfile.TemporaryDirectory() as directory, mock.patch.dict(
+            os.environ,
+            {"VCPKG_INSTALLED_DIR": "/tmp/vcpkg-installed"},
+        ):
+            root = Path(directory) / "private-dependencies"
+            for name in acquire.PRIVATE_DEPENDENCIES:
+                source = root / name
+                source.mkdir(parents=True)
+                (source / "CMakeLists.txt").touch()
+            corecpp_config = root / "install/lib/cmake/CoreCpp/CoreCppConfig.cmake"
+
+            def run_command(command):
+                if command[:2] == ["cmake", "--install"] and command[2].endswith("CoreCpp-build"):
+                    corecpp_config.parent.mkdir(parents=True)
+                    corecpp_config.touch()
+                return ""
+
+            with mock.patch.object(acquire, "run", side_effect=run_command) as run, mock.patch.object(
+                acquire,
+                "write_github_env",
+            ):
+                acquire.install_private_dependencies(
+                    root,
+                    "windows",
+                    ["-DVCPKG_MANIFEST_INSTALL=OFF"],
+                    "debug",
+                )
+            configure_commands = [
+                call.args[0]
+                for call in run.call_args_list
+                if call.args[0][0] == "cmake" and "-S" in call.args[0]
+            ]
+            self.assertEqual(len(configure_commands), len(acquire.PRIVATE_DEPENDENCIES))
+            self.assertTrue(all("-DCMAKE_BUILD_TYPE=Debug" in command for command in configure_commands))
+
+    def test_install_private_dependencies_rejects_test_override(self):
+        with tempfile.TemporaryDirectory() as directory, mock.patch.dict(
+            os.environ,
+            {"VCPKG_INSTALLED_DIR": "/tmp/vcpkg-installed"},
+        ):
+            with self.assertRaisesRegex(acquire.CiError, "own BUILD_TESTING=OFF"):
+                acquire.install_private_dependencies(
+                    Path(directory) / "private-dependencies",
+                    "android",
+                    ["-DBUILD_TESTING=ON"],
+                )
+
+    def test_install_private_dependencies_rejects_unknown_preset(self):
+        with tempfile.TemporaryDirectory() as directory, mock.patch.dict(
+            os.environ,
+            {"VCPKG_INSTALLED_DIR": "/tmp/vcpkg-installed"},
+        ):
+            with self.assertRaisesRegex(acquire.CiError, "unsupported private dependency preset"):
+                acquire.install_private_dependencies(Path(directory) / "private-dependencies", "windows", [], "profile")
 
     def test_verify_sha256_rejects_tampered_download(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -162,6 +326,156 @@ class CiAcquireTests(unittest.TestCase):
             with mock.patch.dict(os.environ, {"GITHUB_ENV": str(destination)}, clear=False):
                 acquire.write_github_env("VULKAN_SDK", "/tmp/sdk")
             self.assertEqual(destination.read_text(encoding="utf-8"), "VULKAN_SDK=/tmp/sdk\n")
+
+    def test_private_dependency_lock_requires_exact_allowlisted_repositories_and_pins(self):
+        with tempfile.TemporaryDirectory() as directory:
+            lock = Path(directory) / "dependencies.lock.json"
+            lock.write_text(
+                json.dumps(
+                    {
+                        "schema": 1,
+                        "dependencies": {
+                            "CoreCpp": {
+                                "repository": "CoreJust/CoreCpp",
+                                "revision": "a" * 40,
+                            },
+                            "CoreProject2026": {
+                                "repository": "CoreJust/CoreProject2026",
+                                "revision": "b" * 40,
+                            },
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            parsed = acquire.require_private_dependency_lock(lock)
+            self.assertEqual(parsed["CoreCpp"]["revision"], "a" * 40)
+            self.assertEqual(parsed["CoreProject2026"]["repository"], "CoreJust/CoreProject2026")
+            lock.write_text(
+                json.dumps(
+                    {
+                        "schema": 1,
+                        "dependencies": {
+                            "CoreCpp": {
+                                "repository": "CoreJust/Unapproved",
+                                "revision": "a" * 40,
+                            },
+                            "CoreProject2026": {
+                                "repository": "CoreJust/CoreProject2026",
+                                "revision": "main",
+                            },
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(acquire.CiError, "CoreCpp repository"):
+                acquire.require_private_dependency_lock(lock)
+
+    def test_repository_private_dependency_lock_is_complete(self):
+        lock = Path(__file__).resolve().parents[2] / "dependencies.lock.json"
+        parsed = acquire.require_private_dependency_lock(lock)
+        self.assertEqual(set(parsed), {"CoreCpp", "CoreProject2026"})
+
+    def test_private_dependency_fetch_pins_github_host_key(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            if os.name == "nt":
+                with mock.patch.object(Path, "chmod") as chmod_call:
+                    known_hosts = acquire.write_github_known_host(root)
+            else:
+                known_hosts = acquire.write_github_known_host(root)
+            self.assertEqual(known_hosts.read_text(encoding="utf-8"), acquire.GITHUB_SSH_KNOWN_HOST)
+            if os.name == "nt":
+                chmod_call.assert_called_once_with(stat.S_IRUSR | stat.S_IWUSR)
+            else:
+                self.assertEqual(known_hosts.stat().st_mode & 0o777, 0o600)
+
+    def test_private_dependency_fetch_uses_two_key_files_and_exact_detached_pins(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            lock = root / "dependencies.lock.json"
+            lock.write_text(
+                json.dumps(
+                    {
+                        "schema": 1,
+                        "dependencies": {
+                            "CoreCpp": {
+                                "repository": "CoreJust/CoreCpp",
+                                "revision": "a" * 40,
+                            },
+                            "CoreProject2026": {
+                                "repository": "CoreJust/CoreProject2026",
+                                "revision": "b" * 40,
+                            },
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            corecpp_key = root / "corecpp-key"
+            coreproject_key = root / "coreproject-key"
+            corecpp_key.touch()
+            coreproject_key.touch()
+            corecpp_key.chmod(0o600)
+            coreproject_key.chmod(0o600)
+            responses = iter(("", "", "", "", "a" * 40, "", "", "", "", "", "b" * 40, ""))
+            with mock.patch.object(acquire, "run", side_effect=lambda *_args, **_kwargs: next(responses)) as run:
+                sources = acquire.fetch_private_dependencies(
+                    lock,
+                    root / "sources",
+                    {"CoreCpp": corecpp_key, "CoreProject2026": coreproject_key},
+                )
+            self.assertEqual(sources, {"CoreCpp": root / "sources/CoreCpp", "CoreProject2026": root / "sources/CoreProject2026"})
+            commands = [call.args[0] for call in run.call_args_list]
+            self.assertIn(["git", "-C", str(root / "sources/CoreCpp"), "checkout", "--detach", "FETCH_HEAD"], commands)
+            self.assertIn(["git", "-C", str(root / "sources/CoreProject2026"), "checkout", "--detach", "FETCH_HEAD"], commands)
+            fetches = [command for command in commands if "fetch" in command]
+            self.assertEqual(len(fetches), 2)
+            remotes = [command for command in commands if "remote" in command]
+            self.assertEqual(
+                [command[-1] for command in remotes],
+                ["git@github.com:CoreJust/CoreCpp.git", "git@github.com:CoreJust/CoreProject2026.git"],
+            )
+            self.assertEqual(fetches[0][-1], "a" * 40)
+            self.assertEqual(fetches[1][-1], "b" * 40)
+            self.assertNotIn("PRIVATE KEY", "\n".join(" ".join(command) for command in commands))
+
+    def test_git_ssh_paths_preserve_windows_drives_spaces_and_option_boundaries(self):
+        self.assertEqual(
+            acquire.quote_git_ssh_path(r"D:\a\runner temp\private-dependency-keys\corecpp"),
+            "'D:/a/runner temp/private-dependency-keys/corecpp'",
+        )
+        self.assertEqual(
+            acquire.quote_git_ssh_path(r"D:\a\runner's temp\github-known-hosts"),
+            "'D:/a/runner'\"'\"'s temp/github-known-hosts'",
+        )
+        with self.assertRaisesRegex(acquire.CiError, "forbidden control character"):
+            acquire.quote_git_ssh_path("D:\\a\\key\n-o StrictHostKeyChecking=no")
+
+    def test_cmake_paths_normalize_windows_separators_without_changing_flags(self):
+        self.assertEqual(
+            acquire.normalize_cmake_path(r"D:\a\runner temp\vcpkg-installed"),
+            "D:/a/runner temp/vcpkg-installed",
+        )
+        self.assertEqual(
+            acquire.normalize_cmake_argument(r"-DCMAKE_TOOLCHAIN_FILE=D:\a\vcpkg\scripts\buildsystems\vcpkg.cmake"),
+            "-DCMAKE_TOOLCHAIN_FILE=D:/a/vcpkg/scripts/buildsystems/vcpkg.cmake",
+        )
+        self.assertEqual(acquire.normalize_cmake_argument("-DVCPKG_MANIFEST_INSTALL=OFF"), "-DVCPKG_MANIFEST_INSTALL=OFF")
+
+    def test_private_dependency_artifact_exclusion_rejects_checkout_links(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            private_root = root / "private-dependencies"
+            (private_root / "CoreCpp").mkdir(parents=True)
+            artifact_root = root / "dist"
+            artifact_root.mkdir()
+            (artifact_root / "game.bin").write_bytes(b"artifact")
+            acquire.verify_private_dependency_artifact_exclusion(artifact_root, private_root)
+            (artifact_root / "private-source").symlink_to(private_root / "CoreCpp", target_is_directory=True)
+            with self.assertRaisesRegex(acquire.CiError, "must not contain symlinks"):
+                acquire.verify_private_dependency_artifact_exclusion(artifact_root, private_root)
 
 
 if __name__ == "__main__":
