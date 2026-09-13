@@ -253,6 +253,7 @@ def install_private_dependencies(
             if not corecpp_config.is_file():
                 raise CiError(f"installed CoreCpp package config is missing: {corecpp_config}")
             package_arguments.append(f"-DCoreCpp_DIR={corecpp_config.parent}")
+            package_arguments.append("-DCOREPROJECT2026_BUILD_SCRIPT=OFF")
         configure = [
             "cmake", "-S", str(source), "-B", str(build), "-G", "Ninja",
             f"-DCMAKE_BUILD_TYPE={build_type}", f"-DCMAKE_INSTALL_PREFIX={normalize_cmake_path(prefix)}",
