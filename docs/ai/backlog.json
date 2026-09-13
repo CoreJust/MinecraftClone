@@ -5892,5 +5892,45 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0201",
+    "title": "Stabilize normal-cadence join fixture observation",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P1",
+    "route": "luna",
+    "milestone": "EarlyDev 0.1.0:4",
+    "depends_on": [],
+    "acceptance": "The production normal-cadence multiplayer regression proves that two established senders reach the intended preparation threshold, independently attempts and observes a newcomer join, and retains authoritative-state plus bounded join-elapsed assertions. It does not label local sender counts as server backlog evidence, change production behavior, or increase timeouts.",
+    "evidence": "Built mc_tests against the exact099 release CoreProject2026/CoreCpp packages and passed ProductionGameServerTest.ConcurrentNormalCadenceInputsDoNotStarveNewJoin 20 consecutive times (1/1 repeated 20, 100% pass, 27.83 s). The focused candidate renames the local sender-count predicate to normal_cadence_inputs_prepared and removes the short-circuit before join(); git diff --check, python3 script/ai_tasks.py check, and python3 script/ai_check.py --fast passed.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0035",
+    "motivation": "Hosted Mac evidence showed the production regression could skip the newcomer join entirely when its local sender-count readiness predicate was false, masking the actual starvation behavior.",
+    "context": "Exact maintenance base b679d0002adccdf9350346da142040d3a53fecce. Hosted failure reported normal_cadence_backlog_created=false and joined=false. Local sender counts establish only that sender threads reached a preparation threshold; they are not evidence of a server backlog. Scope is tests/core/game_server_tests.cpp and task metadata only; preserve production code, timeouts, and authoritative assertions.",
+    "complexity": "low",
+    "created_at": "2026-09-13",
+    "resolved_at": "2026-09-13",
+    "resolution_changes": "Renamed the sender-count readiness observation to normal_cadence_inputs_prepared and always attempted the newcomer join independently, while retaining the established-sender threshold assertion and authoritative-state and join-elapsed assertions. No production or timeout changes.",
+    "plan": [
+      "Inspect the hosted-failure fixture precondition and distinguish local sender preparation from server backlog evidence.",
+      "Always attempt the newcomer join independently of the sender preparation observation.",
+      "Build mc_tests, run the exact cadence regression repeatedly, and run the fast deterministic gate."
+    ],
+    "product_changes": [
+      "The normal-cadence join regression observes newcomer service independently from sender preparation."
+    ],
+    "code_changes": [
+      "tests/core/game_server_tests.cpp: truthfully rename sender preparation and remove the join short-circuit."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]

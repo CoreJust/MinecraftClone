@@ -362,12 +362,12 @@ TEST_F(ProductionGameServerTest, ConcurrentNormalCadenceInputsDoNotStarveNewJoin
     ) {
         std::this_thread::sleep_for(std::chrono::milliseconds{ 1 });
     }
-    bool const normal_cadence_backlog_created =
+    bool const normal_cadence_inputs_prepared =
         first_inputs_sent.load(std::memory_order_relaxed) >= INPUTS_PER_SENDER_BEFORE_JOIN
         && second_inputs_sent.load(std::memory_order_relaxed) >= INPUTS_PER_SENDER_BEFORE_JOIN;
 
     auto const join_started = std::chrono::steady_clock::now();
-    bool const joined = normal_cadence_backlog_created && join(newcomer, '$');
+    bool const joined = join(newcomer, '$');
     bool const received_authoritative_state = joined && newcomer.waitFor([&] {
         return !newcomer.positions('@').empty() && !newcomer.positions('#').empty();
     });
@@ -378,7 +378,7 @@ TEST_F(ProductionGameServerTest, ConcurrentNormalCadenceInputsDoNotStarveNewJoin
     second_sender.join();
 
     EXPECT_FALSE(send_failed.load(std::memory_order_relaxed));
-    EXPECT_TRUE(normal_cadence_backlog_created);
+    EXPECT_TRUE(normal_cadence_inputs_prepared);
     EXPECT_TRUE(joined);
     EXPECT_TRUE(received_authoritative_state);
     EXPECT_LT(join_elapsed, JOIN_TIMEOUT);
