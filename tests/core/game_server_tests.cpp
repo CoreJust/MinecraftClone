@@ -246,9 +246,16 @@ TEST(GameServerPredictionTest, IdleInputConsumesTheSingleAuthoritativeActionInAT
 
     ASSERT_TRUE(pumpUntil(server, client, [&client] {
         auto const positions = client.positions('@');
-        return !positions.empty() && positions.back().acknowledged_input_sequence == 1U;
+        return std::ranges::any_of(positions, [](auto const& position) {
+            return position.acknowledged_input_sequence == 1U;
+        });
     }));
-    auto const after_idle_tick = client.positions('@').back();
+    auto const positions = client.positions('@');
+    auto const after_idle_tick_position = std::ranges::find_if(positions, [](auto const& position) {
+        return position.acknowledged_input_sequence == 1U;
+    });
+    ASSERT_NE(after_idle_tick_position, positions.end());
+    auto const after_idle_tick = *after_idle_tick_position;
     EXPECT_EQ(after_idle_tick.x, start.x);
     EXPECT_EQ(after_idle_tick.y, start.y);
     EXPECT_EQ(after_idle_tick.x_subcell, 0U);
