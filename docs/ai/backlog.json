@@ -6751,5 +6751,43 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0199",
+    "title": "Move Windows runtime staging to the top-level CMake directory",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P0",
+    "route": "luna",
+    "milestone": "ED-010-S5",
+    "depends_on": [],
+    "acceptance": "Windows desktop configure and build can register runtime staging for mc_main from the target-owning top-level directory; the existing shader copy and mc_main/Vulkan-loader/shader install behavior remains intact, and macOS/Android configuration behavior is unchanged.",
+    "evidence": "python3 -m unittest script.tests.test_windows_runtime_staging -v passed 6/6. cmake --preset debug configured successfully and cmake --build --preset debug --target mc_main -j 4 completed with shader assets copied. python3 script/ai_docs.py refresh and check passed. git diff --check passed. No Windows hosted rerun or windowed runtime was performed in this lane.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0036",
+    "motivation": "Windows hosted configure rejects the mc_main runtime staging command because add_custom_command(TARGET) is declared from src/client while mc_main is created in the top-level CMakeLists.",
+    "context": "src/client/CMakeLists invokes mc_stage_windows_runtime(mc_main ...) after shader setup, but CMake requires TARGET post-build commands to be declared in the directory that created the target. The top-level CMakeLists creates mc_main before add_subdirectory(src); shader copying and install rules currently live in src/client.",
+    "complexity": "low",
+    "created_at": "2026-09-13",
+    "resolved_at": "2026-09-13",
+    "resolution_changes": "Moved mc_main Windows runtime staging and desktop install rules to the top-level CMakeLists after add_subdirectory(src), while retaining shader generation and executable shader copying in src/client.",
+    "plan": [
+      "Move only mc_stage_windows_runtime(mc_main ...) and the associated desktop mc_main/Vulkan-loader/shader install rules to the top-level CMakeLists after add_subdirectory(src), preserving shader generation/copy registration in src/client.",
+      "Run the focused Windows runtime staging regression, fast task gate, and bounded Luna/high staged review; commit exactly once with Task-ID MC-AI-0199."
+    ],
+    "product_changes": [],
+    "code_changes": [
+      "CMakeLists.txt and src/client/CMakeLists.txt; relocate target-owned Windows runtime staging and desktop install rules.",
+      "CMakeLists.txt and src/client/CMakeLists.txt relocate target-owned staging/install rules; script/tests/test_windows_runtime_staging.py asserts the owning-directory contract; generated task/backlog/code-state metadata refreshed."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]

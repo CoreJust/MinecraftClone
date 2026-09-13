@@ -27,15 +27,20 @@ class WindowsRuntimeStagingTests(unittest.TestCase):
         self.assertNotIn("TARGET_RUNTIME_DLLS", helpers)
 
     def test_game_and_fixture_targets_use_explicit_runtime_roots(self):
+        root_cmake = (REPOSITORY / "CMakeLists.txt").read_text(encoding="utf-8")
         client = (REPOSITORY / "src/client/CMakeLists.txt").read_text(encoding="utf-8")
         tests = (REPOSITORY / "tests/CMakeLists.txt").read_text(encoding="utf-8")
         fixture = (
             REPOSITORY / "cmake/fixtures/corecpp_server_consumer/CMakeLists.txt"
         ).read_text(encoding="utf-8")
-        self.assertIn("mc_stage_windows_runtime(", client)
-        self.assertIn('RUNTIME_ROOT "$<TARGET_FILE_DIR:mc_main>"', client)
-        self.assertIn('REQUIRED_FILES "${MC_VULKAN_RUNTIME_DLL}"', client)
-        self.assertIn('install(FILES "${MC_VULKAN_RUNTIME_DLL}" DESTINATION .)', client)
+        self.assertIn("add_subdirectory(src)\n\nif(MC_BUILD_CLIENT AND NOT ANDROID)", root_cmake)
+        self.assertIn("mc_stage_windows_runtime(\n        mc_main", root_cmake)
+        self.assertIn('RUNTIME_ROOT "$<TARGET_FILE_DIR:mc_main>"', root_cmake)
+        self.assertIn('REQUIRED_FILES "${MC_VULKAN_RUNTIME_DLL}"', root_cmake)
+        self.assertIn('install(FILES "${MC_VULKAN_RUNTIME_DLL}" DESTINATION .)', root_cmake)
+        self.assertNotIn("mc_stage_windows_runtime(", client)
+        self.assertIn("mc_copy_target_shaders(mc_main mc)", client)
+        self.assertIn('install(FILES $<TARGET_PROPERTY:mc,MC_SHADER_FILES> DESTINATION shaders)', root_cmake)
         for target in ("mc_tests", "mc_renderer_smoke", "mc_renderer_golden"):
             self.assertIn(f"{target}\n        RUNTIME_ROOT", tests)
             self.assertIn(f'RUNTIME_ROOT "$<TARGET_FILE_DIR:{target}>"', tests)
