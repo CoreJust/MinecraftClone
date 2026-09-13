@@ -446,16 +446,34 @@ TEST(GameServerPredictionTest, QueuedInputsApplyAtMostOncePerTickAndAcknowledgeI
 
     ASSERT_TRUE(pumpUntil(server, client, [&client] {
         auto const positions = client.positions('@');
-        return !positions.empty() && positions.back().acknowledged_input_sequence == 1U;
+        return std::ranges::any_of(positions, [](auto const& position) {
+            return position.acknowledged_input_sequence == 1U;
+        });
     }));
-    auto const after_first_tick = client.positions('@').back();
+    auto const positions_after_first_tick = client.positions('@');
+    auto const first_tick = std::ranges::find(
+        positions_after_first_tick,
+        1U,
+        &shared::ServerPlayerPositionMessage::acknowledged_input_sequence
+    );
+    ASSERT_NE(first_tick, positions_after_first_tick.end());
+    auto const after_first_tick = *first_tick;
     EXPECT_EQ(after_first_tick.x_subcell, shared::MOVEMENT_SUBCELLS_PER_TICK);
 
     ASSERT_TRUE(pumpUntil(server, client, [&client] {
         auto const positions = client.positions('@');
-        return !positions.empty() && positions.back().acknowledged_input_sequence == 2U;
+        return std::ranges::any_of(positions, [](auto const& position) {
+            return position.acknowledged_input_sequence == 2U;
+        });
     }));
-    auto const after_second_tick = client.positions('@').back();
+    auto const positions_after_second_tick = client.positions('@');
+    auto const second_tick = std::ranges::find(
+        positions_after_second_tick,
+        2U,
+        &shared::ServerPlayerPositionMessage::acknowledged_input_sequence
+    );
+    ASSERT_NE(second_tick, positions_after_second_tick.end());
+    auto const after_second_tick = *second_tick;
     uint32_t const expected_subcells = 2U * shared::MOVEMENT_SUBCELLS_PER_TICK;
     EXPECT_EQ(after_second_tick.x, expected_subcells / shared::SUBCELLS_PER_CELL);
     EXPECT_EQ(after_second_tick.x_subcell, expected_subcells % shared::SUBCELLS_PER_CELL);

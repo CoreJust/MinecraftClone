@@ -1423,7 +1423,7 @@
     ],
     "baseline_commit": "668685497505a4253fa7f471750e5a401cff5900",
     "commits": [],
-    "finalized": true,
+    "finalized": false,
     "retrospective": "",
     "docs_review": "",
     "environment_review": "",
@@ -6307,6 +6307,44 @@
       "Merged S4 release packaging fixes and used a portable temporary directory in the Windows ZIP test."
     ],
     "baseline_commit": "bcdad4626a0d15ae1811998609c40ac4765e57b2",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0186",
+    "title": "Observe ordered acknowledgements across batched delivery",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P1",
+    "route": "terra",
+    "milestone": "ED-010-S5",
+    "depends_on": [],
+    "acceptance": "Select the matching acknowledged snapshots from received history, retain movement/revision assertions, and pass repeated focused execution without relaxing timeout or server behavior.",
+    "evidence": "Original focused test reproduced the timeout on repeat3. After the fixture-only correction, mc_tests rebuilt and the focused test passed20 consecutive repetitions with unchanged timeout and server code; diff check passed.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0036",
+    "motivation": "The final strict gate reproduced a fixture race when ordered network snapshots arrive in one client poll.",
+    "context": "GameServerPredictionTest inspected only positions.back for ack1; if ack1 and ack2 arrive together, ack1 remains in history but can never be last. Focused repeat failed on run3. Server semantics are correct; no timeout change is needed.",
+    "complexity": "low",
+    "created_at": "2026-09-13",
+    "resolved_at": "2026-09-13",
+    "resolution_changes": "Observe both ordered acknowledgements anywhere in the received snapshot history and assert against the corresponding positions/revisions, preserving support for legitimate batched network delivery.",
+    "plan": [
+      "Find acknowledgements in snapshot history and verify their positions/revision order; run repeated focused regression."
+    ],
+    "product_changes": [
+      "No product behavior changed."
+    ],
+    "code_changes": [
+      "Corrected the acknowledgement test observation race without weakening ordering/value assertions or changing timeouts."
+    ],
+    "baseline_commit": "85a5027fcd5fe82f80931d8bfb84be006a87f62b",
     "commits": [],
     "finalized": true,
     "retrospective": "",
