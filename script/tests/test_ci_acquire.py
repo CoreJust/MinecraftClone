@@ -40,6 +40,14 @@ class CiAcquireTests(unittest.TestCase):
         (source_port / "vcpkg.json").write_text('{"name":"gmp"}\n', encoding="utf-8")
         return source_port
 
+    @staticmethod
+    def write_windows_runtime_archive(archive: Path, loader_path: str | None = None) -> None:
+        """Create the versioned Windows runtime layout supplied by LunarG."""
+        root = acquire.VULKAN_WINDOWS_RUNTIME["directory"]
+        with zipfile.ZipFile(archive, "w") as contents:
+            contents.writestr(loader_path or f"{root}/x64/vulkan-1.dll", b"vulkan loader")
+            contents.writestr(f"{root}/VulkanRT-License.txt", b"runtime license")
+
     def test_pinned_acquisitions_have_expected_immutable_values(self):
         self.assertEqual(acquire.CMAKE_VERSION, "3.31.6")
         self.assertEqual(acquire.NINJA_VERSION, "1.13.1")
@@ -53,6 +61,8 @@ class CiAcquireTests(unittest.TestCase):
         self.assertEqual(acquire.VULKAN_DOWNLOADS["macos"]["url"], "https://sdk.lunarg.com/sdk/download/1.4.357.0/mac/vulkan_sdk.zip")
         self.assertEqual(acquire.VULKAN_DOWNLOADS["windows"]["sha256"], "81f474711e9042f4cd22b31b2f7a8870db2e428b21586fb43dd80150be97310d")
         self.assertEqual(acquire.VULKAN_DOWNLOADS["macos"]["sha256"], "539433589c83522e6f31b1c7b418a4167e21597a4a361ab119e1dc0760cf3865")
+        self.assertEqual(acquire.VULKAN_WINDOWS_RUNTIME["url"], "https://sdk.lunarg.com/sdk/download/1.4.357.0/windows/vulkan-runtime-components.zip?Human=true")
+        self.assertEqual(acquire.VULKAN_WINDOWS_RUNTIME["sha256"], "a14672efed15aafc7f5a16572d35cd3a3416eadf670aeee3cdf50ee32d5fbf83")
         self.assertEqual(acquire.ANDROID_COMMAND_LINE_TOOLS["url"], "https://dl.google.com/android/repository/commandlinetools-linux-15859902_latest.zip")
         self.assertEqual(acquire.ANDROID_COMMAND_LINE_TOOLS["sha256"], "4e4c464f145a7512b57d088ac6c278c03c9eea610886b35a5e0804e74eedf583")
         self.assertEqual(acquire.NINJA_DOWNLOADS["windows"]["sha256"], "26a40fa8595694dec2fad4911e62d29e10525d2133c9a4230b66397774ae25bf")
@@ -99,6 +109,92 @@ class CiAcquireTests(unittest.TestCase):
                 "copy_only=1",
             ])
             self.assertEqual(result, sdk_root)
+
+    def test_install_windows_vulkan_stages_hash_verified_runtime_loader_and_license(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "vulkan"
+            runtime_archive = Path(directory) / "runtime.zip"
+            self.write_windows_runtime_archive(runtime_archive)
+            sdk_root = root / "1.4.357.0" / "x86_64"
+            compiler = sdk_root / "Bin" / "glslc.exe"
+
+            def download(url: str, destination: Path) -> None:
+                if url == acquire.VULKAN_WINDOWS_RUNTIME["url"]:
+                    destination.write_bytes(runtime_archive.read_bytes())
+                else:
+                    destination.touch()
+
+            def run(_command: list[str]) -> str:
+                compiler.parent.mkdir(parents=True)
+                compiler.touch()
+                return ""
+
+            with mock.patch.object(acquire, "download", side_effect=download) as download_mock, mock.patch.object(
+                acquire,
+                "verify_sha256",
+            ) as verify, mock.patch.object(acquire, "run", side_effect=run) as run_mock, mock.patch.object(
+                acquire,
+                "write_github_env",
+            ), mock.patch.object(acquire, "write_github_path"):
+                result = acquire.install_vulkan("windows", root)
+
+            config = acquire.VULKAN_DOWNLOADS["windows"]
+            self.assertEqual(result, sdk_root)
+            self.assertEqual(
+                download_mock.call_args_list,
+                [
+                    mock.call(f"{config['url']}?Human=true", root.parent / config["filename"]),
+                    mock.call(acquire.VULKAN_WINDOWS_RUNTIME["url"], root.parent / acquire.VULKAN_WINDOWS_RUNTIME["filename"]),
+                ],
+            )
+            self.assertEqual(
+                verify.call_args_list,
+                [
+                    mock.call(root.parent / config["filename"], config["sha256"]),
+                    mock.call(root.parent / acquire.VULKAN_WINDOWS_RUNTIME["filename"], acquire.VULKAN_WINDOWS_RUNTIME["sha256"]),
+                ],
+            )
+            run_mock.assert_called_once_with([
+                str(root.parent / config["filename"]),
+                "--root", str(root),
+                "--accept-licenses",
+                "--default-answer",
+                "--confirm-command", "install",
+                "copy_only=1",
+            ])
+            self.assertEqual((sdk_root / "Bin/vulkan-1.dll").read_bytes(), b"vulkan loader")
+            self.assertEqual((sdk_root / "VulkanRT-License.txt").read_bytes(), b"runtime license")
+
+    def test_windows_vulkan_runtime_rejects_bad_checksum_and_non_x64_archive(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "vulkan"
+            sdk_root = root / "sdk"
+            (sdk_root / "Bin").mkdir(parents=True)
+            archive = Path(directory) / "runtime.zip"
+            self.write_windows_runtime_archive(archive)
+
+            with mock.patch.object(acquire, "download", side_effect=lambda _url, destination: destination.write_bytes(archive.read_bytes())), mock.patch.object(
+                acquire,
+                "verify_sha256",
+                side_effect=acquire.CiError("SHA-256 mismatch"),
+            ):
+                with self.assertRaisesRegex(acquire.CiError, "SHA-256 mismatch"):
+                    acquire.install_windows_vulkan_runtime(root, sdk_root)
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "vulkan"
+            sdk_root = root / "sdk"
+            (sdk_root / "Bin").mkdir(parents=True)
+            archive = Path(directory) / "runtime.zip"
+            self.write_windows_runtime_archive(
+                archive,
+                f"{acquire.VULKAN_WINDOWS_RUNTIME['directory']}/x86/vulkan-1.dll",
+            )
+
+            with mock.patch.object(acquire, "download", side_effect=lambda _url, destination: destination.write_bytes(archive.read_bytes())), mock.patch.object(acquire, "verify_sha256"):
+                with self.assertRaisesRegex(acquire.CiError, "missing x64 loader"):
+                    acquire.install_windows_vulkan_runtime(root, sdk_root)
+            self.assertFalse((sdk_root / "Bin/vulkan-1.dll").exists())
 
     def test_download_uses_explicit_agent_request(self):
         with tempfile.TemporaryDirectory() as directory:

@@ -50,7 +50,7 @@ Set `VULKAN_SDK` to the SDK platform directory if CMake cannot find it. The SDK'
 
 ## Hosted desktop CI
 
-CI builds Debug/Release on `macos-15` arm64 and `windows-2022` with pinned tools and SDKs. Both macOS workflows install `autoconf`, `autoconf-archive`, `automake`, and `libtool` before building GMP/MPFR through vcpkg. Windows uses a GMP overlay with the upstream autoconf download fix, preserving pinned port versions, and enters VS 2022 x64 before private dependencies. CoreLang packages disable the unused legacy Script component. Jobs check builds, tests, shaders, packaging, checksums, and exclusions, then upload logs/toolchain metadata. Hosted `MC_ENABLE_RENDERER_SMOKE=OFF` checks provide no GPU acceptance; release artifacts need separate runtime checks.
+CI builds Debug/Release on `macos-15` arm64 and `windows-2022` with pinned tools and SDKs. macOS installs `autoconf`, `autoconf-archive`, `automake`, and `libtool` for GMP/MPFR. Windows uses the pinned GMP autoconf overlay and VS 2022 x64. Windows stages the pinned Vulkan runtime ZIP and license. CoreLang packages disable the unused legacy Script component. Jobs check builds, tests, shaders, packaging, checksums, and exclusions, then upload logs/toolchain metadata. Hosted `MC_ENABLE_RENDERER_SMOKE=OFF` checks provide no GPU acceptance; release artifacts need separate runtime checks.
 
 The renderer requests Vulkan 1.2 and requires dynamic rendering and synchronization2 extensions/features; maintenance4 is not a renderer requirement. Mesh shaders target Vulkan 1.3. Use a Vulkan 1.3-capable validation baseline and exercise the vertex fallback. A lower requested API number does not establish support for every Vulkan 1.2 driver. Vulkan 1.4 remains a project aspiration.
 

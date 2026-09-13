@@ -42,6 +42,12 @@ VULKAN_DOWNLOADS = {
         "filename": "vulkan_sdk.zip",
     },
 }
+VULKAN_WINDOWS_RUNTIME = {
+    "url": f"https://sdk.lunarg.com/sdk/download/{VULKAN_VERSION}/windows/vulkan-runtime-components.zip?Human=true",
+    "sha256": "a14672efed15aafc7f5a16572d35cd3a3416eadf670aeee3cdf50ee32d5fbf83",
+    "filename": "vulkan-runtime-components.zip",
+    "directory": f"VulkanRT-X64-{VULKAN_VERSION}-Components",
+}
 ANDROID_COMMAND_LINE_TOOLS = {
     "url": "https://dl.google.com/android/repository/commandlinetools-linux-15859902_latest.zip",
     "sha256": "4e4c464f145a7512b57d088ac6c278c03c9eea610886b35a5e0804e74eedf583",
@@ -416,6 +422,32 @@ def find_macos_vulkan_installer(root: Path) -> Path:
     return candidates[0]
 
 
+def install_windows_vulkan_runtime(root: Path, sdk_root: Path) -> None:
+    """Stage the hash-pinned Windows loader omitted by the SDK's copy-only install."""
+    archive = root.parent / VULKAN_WINDOWS_RUNTIME["filename"]
+    staging = root / "runtime-components"
+    if staging.exists() or staging.is_symlink():
+        raise CiError(f"Windows Vulkan runtime staging location already exists: {staging}")
+    download(VULKAN_WINDOWS_RUNTIME["url"], archive)
+    verify_sha256(archive, VULKAN_WINDOWS_RUNTIME["sha256"])
+    safe_extract(archive, staging)
+    runtime_root = staging / VULKAN_WINDOWS_RUNTIME["directory"]
+    loader = runtime_root / "x64" / "vulkan-1.dll"
+    license_file = runtime_root / "VulkanRT-License.txt"
+    if loader.is_symlink() or not loader.is_file():
+        raise CiError(f"Windows Vulkan runtime archive is missing x64 loader: {loader}")
+    if license_file.is_symlink() or not license_file.is_file():
+        raise CiError(f"Windows Vulkan runtime archive is missing license: {license_file}")
+    destination_loader = sdk_root / "Bin" / "vulkan-1.dll"
+    destination_license = sdk_root / "VulkanRT-License.txt"
+    if destination_loader.exists() or destination_loader.is_symlink():
+        raise CiError(f"Windows Vulkan SDK loader already exists: {destination_loader}")
+    if destination_license.exists() or destination_license.is_symlink():
+        raise CiError(f"Windows Vulkan SDK runtime license already exists: {destination_license}")
+    shutil.copyfile(loader, destination_loader)
+    shutil.copyfile(license_file, destination_license)
+
+
 def install_vulkan(platform_name: str, root: Path) -> Path:
     """Install the pinned Vulkan SDK and export its exact discovered location."""
     config = VULKAN_DOWNLOADS[platform_name]
@@ -449,6 +481,8 @@ def install_vulkan(platform_name: str, root: Path) -> Path:
         ])
         root = installed_root
     sdk_root, compiler = find_vulkan_sdk(root)
+    if platform_name == "windows":
+        install_windows_vulkan_runtime(root, sdk_root)
     write_github_env("VULKAN_SDK", str(sdk_root))
     write_github_path(compiler.parent)
     print(sdk_root)
@@ -630,6 +664,10 @@ def record_metadata(platform_name: str, preset: str, output: Path) -> None:
     elif platform_name == "windows":
         metadata["msvc"] = command_version(["cl"], accepted=(0, 2))
         metadata["windows_sdk_include"] = str(expected_sdk_include())
+        metadata["vulkan_runtime_components"] = {
+            "url": VULKAN_WINDOWS_RUNTIME["url"],
+            "sha256": VULKAN_WINDOWS_RUNTIME["sha256"],
+        }
         metadata["vcpkg_gmp_overlay"] = GMP_AUTOCONF_OVERLAY_ID
     else:
         raise CiError(f"unsupported platform: {platform_name}")

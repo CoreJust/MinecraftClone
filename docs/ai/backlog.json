@@ -6455,5 +6455,39 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0190",
+    "title": "Stage the Windows Vulkan loader in release builds",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P0",
+    "route": "luna",
+    "milestone": "ED-010-S5",
+    "depends_on": [],
+    "acceptance": "Windows SDK acquisition includes and validates the pinned runtime loader needed by CMake and packaging; Mac installer behavior is unchanged.",
+    "evidence": "44 acquisition/packaging tests pass; actual official ZIP SHA256 verified and exact x64 PE loader plus license staged successfully; archive regression verifies runtime and license inclusion.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0036",
+    "motivation": "Windows SDK installation omits the loader required by the release package; acquire its official runtime ZIP explicitly.",
+    "context": "S4 run34756197005 proves missing SDK Bin/vulkan-1.dll. LunarG docs do not guarantee changing copy-only mode supplies it; pin official runtime ZIP1.4.357.0 instead.",
+    "complexity": "low",
+    "created_at": "2026-09-13",
+    "resolved_at": "2026-09-13",
+    "resolution_changes": "Acquire the official version-pinned Windows Vulkan runtime ZIP, stage its x64 loader and license, record provenance, and include the license in the Windows package.",
+    "plan": [
+      "Verify and extract the official runtime ZIP, stage its exact x64 loader and license, record provenance, and package both without changing Mac or Android behavior."
+    ],
+    "product_changes": [],
+    "code_changes": [],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]

@@ -184,6 +184,11 @@ class BuildSnapshotTests(unittest.TestCase):
             self.assertFalse(any(name.startswith("private-dependencies/") for name in archive.namelist()))
 
         arguments.vulkan_runtime = loader
+        arguments.work_root = package_root / "work-missing-runtime-license"
+        with self.assertRaisesRegex(build_snapshot.SnapshotBuildError, "requires --sdk-root"):
+            build_snapshot.package_desktop(arguments)
+        arguments.sdk_root = self.root / "sdk"
+        self.write("sdk/VulkanRT-License.txt", b"runtime license")
         arguments.work_root = package_root / "work-with-loader"
         arguments.output = package_root / "with-loader.zip"
         with mock.patch.object(
@@ -195,6 +200,7 @@ class BuildSnapshotTests(unittest.TestCase):
         with zipfile.ZipFile(arguments.output) as archive:
             self.assertIn("vulkan-1.dll", archive.namelist())
             self.assertEqual(archive.read("vulkan-1.dll"), b"vulkan loader")
+            self.assertEqual(archive.read("licenses/VulkanRT-License.txt"), b"runtime license")
             self.assertFalse(any(name.startswith("private-dependencies/") for name in archive.namelist()))
         runtime_files = json.loads(evidence.read_text())["windows_runtime"]["files"]
         self.assertEqual([item["name"] for item in runtime_files], ["fmt.dll", "vulkan-1.dll"])

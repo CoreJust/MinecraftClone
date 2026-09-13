@@ -360,6 +360,12 @@ def package_desktop(args: argparse.Namespace) -> None:
         runtime_roots = args.runtime_search or [args.vcpkg_installed]
         loader = None
         if args.vulkan_runtime is not None:
+            if args.sdk_root is None:
+                raise SnapshotBuildError("Windows Vulkan runtime packaging requires --sdk-root for its license")
+            runtime_license = require_file(args.sdk_root / "VulkanRT-License.txt", "Windows Vulkan runtime license")
+            if not runtime_license.stat().st_size:
+                raise SnapshotBuildError("Windows Vulkan runtime license must not be empty")
+            shutil.copyfile(runtime_license, license_root / "VulkanRT-License.txt")
             loader = require_file(args.vulkan_runtime, "Windows Vulkan runtime")
             if loader.name.lower() != "vulkan-1.dll":
                 raise SnapshotBuildError("Windows Vulkan runtime must be vulkan-1.dll")
