@@ -123,6 +123,7 @@
         "script/tests/test_pre_finalization_candidate.py",
         "script/tests/test_runtime_cli.py",
         "script/tests/test_verify_release_assets.py",
+        "script/tests/test_windows_runtime_staging.py",
         "script/tests/test_workflow_contexts.py",
         "src/CMakeLists.txt",
         "tests/CMakeLists.txt",
@@ -133,7 +134,7 @@
         "vcpkg-configuration.json",
         "vcpkg.json"
       ],
-      "sources_sha256": "da633d5d11af9253999e1299a01bf02e55ac9ec1f3e7f6f420cb250b10e00256"
+      "sources_sha256": "d4813a7387878c43c1aaea6fbab82af5545946f34c05e0274dd623ba8e6d0cf8"
     },
     {
       "guide": "docs/code/CORE.md",
@@ -259,7 +260,7 @@
         "tests/testsupport/image_comparison_tests.cpp",
         "tests/testsupport/include/testsupport/ImageComparison.hpp"
       ],
-      "sources_sha256": "57307e9b3f1459d4d323ee9fc61b8e51858ae53ade80f588bce232f014fa8a24"
+      "sources_sha256": "db7783c39ee705a83d3acd28abfcaacb90c9404891eb835c606d8f793aea7505"
     }
   ],
   "version": 1

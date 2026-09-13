@@ -121,6 +121,7 @@ Files:
 - [`script/tests/test_pre_finalization_candidate.py`](../../script/tests/test_pre_finalization_candidate.py)
 - [`script/tests/test_runtime_cli.py`](../../script/tests/test_runtime_cli.py)
 - [`script/tests/test_verify_release_assets.py`](../../script/tests/test_verify_release_assets.py)
+- [`script/tests/test_windows_runtime_staging.py`](../../script/tests/test_windows_runtime_staging.py)
 - [`script/tests/test_workflow_contexts.py`](../../script/tests/test_workflow_contexts.py)
 - [`src/CMakeLists.txt`](../../src/CMakeLists.txt)
 - [`tests/CMakeLists.txt`](../../tests/CMakeLists.txt)

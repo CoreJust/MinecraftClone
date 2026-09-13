@@ -150,6 +150,54 @@ class BuildSnapshotTests(unittest.TestCase):
             result = build_snapshot.resolve_windows_runtime(executable, [self.root / "runtime"])
         self.assertEqual(result, [first.resolve(), second.resolve()])
 
+    def test_windows_package_includes_explicit_vulkan_loader_in_zip(self):
+        package_temporary = tempfile.TemporaryDirectory(dir="/private/tmp")
+        self.addCleanup(package_temporary.cleanup)
+        package_root = Path(package_temporary.name)
+        self.write("install/mc_main.exe", b"executable")
+        self.write("install/shaders/grid.vert.spv", b"shader")
+        runtime = self.write("runtime/fmt.dll", b"runtime")
+        loader = self.write("install/vulkan-1.dll", b"vulkan loader")
+        self.write("installed/share/fmt/copyright", b"fmt")
+        project_license = self.write("LICENSE", b"project")
+        evidence = self.write("build/toolchain.json", b"{}")
+        arguments = argparse.Namespace(
+            platform="windows",
+            install_root=self.root / "install",
+            vcpkg_installed=self.root / "installed",
+            runtime_search=[self.root / "runtime"],
+            vulkan_runtime=None,
+            sdk_root=None,
+            project_license=project_license,
+            packager=REPOSITORY / "script/package_snapshot.py",
+            toolchain_evidence=evidence,
+            work_root=package_root / "work-without-loader",
+            version="0.1.0:3",
+            source_commit="d" * 40,
+            output=package_root / "without-loader.zip",
+        )
+
+        with mock.patch.object(build_snapshot, "windows_dependencies", return_value=["fmt.dll"]):
+            build_snapshot.package_desktop(arguments)
+        with zipfile.ZipFile(arguments.output) as archive:
+            self.assertNotIn("vulkan-1.dll", archive.namelist())
+
+        arguments.vulkan_runtime = loader
+        arguments.work_root = package_root / "work-with-loader"
+        arguments.output = package_root / "with-loader.zip"
+        with mock.patch.object(
+            build_snapshot,
+            "windows_dependencies",
+            return_value=["fmt.dll", "vulkan-1.dll"],
+        ):
+            build_snapshot.package_desktop(arguments)
+        with zipfile.ZipFile(arguments.output) as archive:
+            self.assertIn("vulkan-1.dll", archive.namelist())
+            self.assertEqual(archive.read("vulkan-1.dll"), b"vulkan loader")
+            self.assertFalse(any(name.startswith("private-dependencies/") for name in archive.namelist()))
+        runtime_files = json.loads(evidence.read_text())["windows_runtime"]["files"]
+        self.assertEqual([item["name"] for item in runtime_files], ["fmt.dll", "vulkan-1.dll"])
+
     def test_macos_package_call_uses_versioned_loader_and_one_license_tree(self):
         install_root = self.root / "install"
         self.write("install/mc_main", b"executable")

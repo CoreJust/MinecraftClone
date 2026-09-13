@@ -6,6 +6,9 @@ set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/../..")
+include("${CMAKE_CURRENT_LIST_DIR}/../../Helpers.cmake")
+
 find_package(CoreCpp CONFIG REQUIRED COMPONENTS Core Runtime RuntimeNetwork)
 
 foreach(required_target IN ITEMS CoreCpp::Core CoreCpp::Runtime CoreCpp::RuntimeNetwork)
@@ -27,3 +30,14 @@ endforeach()
 
 add_executable(mc_corecpp_server_consumer main.cpp)
 target_link_libraries(mc_corecpp_server_consumer PRIVATE CoreCpp::RuntimeNetwork)
+mc_stage_windows_runtime(
+    mc_corecpp_server_consumer
+    RUNTIME_ROOT "$<TARGET_FILE_DIR:mc_corecpp_server_consumer>"
+    DEPENDENCIES
+        CoreCpp::Core
+        CoreCpp::Runtime
+        CoreCpp::RuntimeNetwork
+        fmt::fmt
+        spdlog::spdlog
+        unofficial::enet::enet
+)
