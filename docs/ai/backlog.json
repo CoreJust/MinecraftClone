@@ -6905,5 +6905,43 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0203",
+    "title": "Stage Windows runtime DLLs for nested server-only tests",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P0",
+    "route": "luna",
+    "milestone": "ED-010-S5",
+    "depends_on": [],
+    "acceptance": "The nested MinecraftClone.ServerOnlyBuild CTest launches mc_tests.exe on Windows by staging every dynamic dependency required by the server-only target; the server-only configuration still excludes optional graphics targets.",
+    "evidence": "Hosted Windows run 34767535367 built the release but failed MinecraftClone.ServerOnlyBuild at GoogleTest discovery with exit code 0xc0000135. Updated tests/CMakeLists.txt to stage CoreCpp::Core, CoreCpp::Runtime, CoreCpp::RuntimeNetwork, CoreProject2026::CoreLang, fmt, spdlog, enet, and libmpfr/libgmp numeric DLLs; focused runtime staging tests, full Python tests, docs check, and ai_check --fast pass. Hosted rerun is required for final release evidence.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0036",
+    "motivation": "Hosted Windows artifact run 34767535367 built mc_tests.exe but GoogleTest discovery failed with exit code 0xc0000135 because runtime DLLs were absent from the nested test output directory.",
+    "context": "The main desktop target already stages Windows runtime dependencies, while tests/CMakeLists.txt only stages mc_tests when MC_BUILD_CLIENT is enabled. The nested server-only build disables MC_BUILD_CLIENT but links the CoreCpp network/runtime closure and vcpkg DLL-backed libraries.",
+    "complexity": "low",
+    "created_at": "2026-09-13",
+    "resolved_at": "2026-09-13",
+    "resolution_changes": "Stage the Windows server-only mc_tests runtime closure, including vcpkg CoreLang numeric DLLs, and fail configure when numeric DLL discovery is empty.",
+    "plan": [
+      "Stage the server-only runtime dependency closure for mc_tests on Windows without loading optional graphics targets; update the source contract and run focused checks plus the hosted artifact workflow."
+    ],
+    "product_changes": [
+      "Windows server-only validation runs successfully during release packaging."
+    ],
+    "code_changes": [
+      "tests/CMakeLists.txt stages CoreCpp, CoreProject2026, fmt, spdlog, and enet runtime DLLs for mc_tests on Windows."
+    ],
+    "baseline_commit": "b777950b619e360d9b575cec5d5d767271296e1a",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "Generated task/backlog views and code source state refreshed and checked.",
+    "environment_review": "No windowed game launch; hosted Windows artifact rerun remains the release gate.",
+    "backlog_review": "Closed one narrow MC-AI-0036 Windows packaging-test blocker."
   }
 ]

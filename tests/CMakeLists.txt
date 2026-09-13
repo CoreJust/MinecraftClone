@@ -149,6 +149,38 @@ target_link_libraries(mc_tests
 )
 mc_apply_target_defaults(mc_tests)
 
+if(WIN32)
+    set(MC_SERVER_NUMERIC_RUNTIME_FILES)
+    foreach(numeric_library IN ITEMS CoreLangNumerics_MPFR_LIBRARY CoreLangNumerics_GMP_LIBRARY)
+        if(DEFINED ${numeric_library} AND EXISTS "${${numeric_library}}")
+            get_filename_component(numeric_library_dir "${${numeric_library}}" DIRECTORY)
+            get_filename_component(numeric_prefix "${numeric_library_dir}" DIRECTORY)
+            get_filename_component(numeric_name "${${numeric_library}}" NAME_WE)
+            file(GLOB numeric_runtime_files
+                "${numeric_prefix}/bin/${numeric_name}*.dll"
+                "${numeric_prefix}/bin/lib${numeric_name}*.dll"
+            )
+            if(NOT numeric_runtime_files)
+                message(FATAL_ERROR "Missing Windows runtime DLL for ${numeric_library}: ${numeric_prefix}/bin/${numeric_name}*.dll")
+            endif()
+            list(APPEND MC_SERVER_NUMERIC_RUNTIME_FILES ${numeric_runtime_files})
+        endif()
+    endforeach()
+    mc_stage_windows_runtime(
+        mc_tests
+        RUNTIME_ROOT "$<TARGET_FILE_DIR:mc_tests>"
+        DEPENDENCIES
+            CoreCpp::Core
+            CoreCpp::Runtime
+            CoreCpp::RuntimeNetwork
+            CoreProject2026::CoreLang
+            fmt::fmt
+            spdlog::spdlog
+            unofficial::enet::enet
+        REQUIRED_FILES ${MC_SERVER_NUMERIC_RUNTIME_FILES}
+    )
+endif()
+
 if(MC_BUILD_CLIENT AND NOT ANDROID)
     target_sources(mc_tests
         PRIVATE

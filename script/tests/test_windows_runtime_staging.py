@@ -41,6 +41,23 @@ class WindowsRuntimeStagingTests(unittest.TestCase):
         self.assertNotIn("mc_stage_windows_runtime(", client)
         self.assertIn("mc_copy_target_shaders(mc_main mc)", client)
         self.assertIn('install(FILES $<TARGET_PROPERTY:mc,MC_SHADER_FILES> DESTINATION shaders)', root_cmake)
+        self.assertIn("if(WIN32)", tests)
+        self.assertIn("mc_stage_windows_runtime(\n        mc_tests", tests)
+        self.assertIn("CoreLangNumerics_MPFR_LIBRARY", tests)
+        self.assertIn("CoreLangNumerics_GMP_LIBRARY", tests)
+        self.assertIn('"${numeric_prefix}/bin/lib${numeric_name}*.dll"', tests)
+        self.assertIn("Missing Windows runtime DLL", tests)
+        self.assertIn("REQUIRED_FILES ${MC_SERVER_NUMERIC_RUNTIME_FILES}", tests)
+        for dependency in (
+            "CoreCpp::Core",
+            "CoreCpp::Runtime",
+            "CoreCpp::RuntimeNetwork",
+            "CoreProject2026::CoreLang",
+            "fmt::fmt",
+            "spdlog::spdlog",
+            "unofficial::enet::enet",
+        ):
+            self.assertIn(dependency, tests)
         for target in ("mc_tests", "mc_renderer_smoke", "mc_renderer_golden"):
             self.assertIn(f"{target}\n        RUNTIME_ROOT", tests)
             self.assertIn(f'RUNTIME_ROOT "$<TARGET_FILE_DIR:{target}>"', tests)
