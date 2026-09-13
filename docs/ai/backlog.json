@@ -6713,5 +6713,43 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0198",
+    "title": "Repair Windows CoreCpp fixture package stub dependency closure",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P0",
+    "route": "luna",
+    "milestone": "ED-010-S5",
+    "depends_on": [],
+    "acceptance": "The local CoreCpp package stub used by test_corecpp_server_fixture_configures_with_local_package_stub defines every target named by the production fixture runtime staging list, and the focused test configures successfully on host and Windows CI.",
+    "evidence": "python3 -m unittest script.tests.test_windows_runtime_staging -v passed 6/6, including host-side Windows-path configure simulation with -DWIN32=TRUE. python3 script/ai_docs.py refresh and check passed. python3 script/ai_check.py --fast passed docs, backlog, current-plan, diff, and the full Python test suite. git diff --check passed. The hosted Windows failure log identified the omitted fmt::fmt target; no hosted rerun is claimed in this lane.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0036",
+    "motivation": "The Windows runtime staging regression does not model the external targets that the CoreCpp server fixture stages.",
+    "context": "The production fixture stages CoreCpp::Core, CoreCpp::Runtime, CoreCpp::RuntimeNetwork, fmt::fmt, spdlog::spdlog, and unofficial::enet::enet. The Windows CI configure path therefore fails against the current temporary package stub, which defines only the three CoreCpp targets. CoreCpp package metadata confirms fmt, spdlog, and ENet as the component closure dependencies.",
+    "complexity": "low",
+    "created_at": "2026-09-13",
+    "resolved_at": "2026-09-13",
+    "resolution_changes": "Extended the temporary CoreCpp package stub with representative static imported fmt::fmt, spdlog::spdlog, and unofficial::enet::enet archives, and forced the fixture configure regression through the Windows staging branch with -DWIN32=TRUE.",
+    "plan": [
+      "Clarify acceptance and implementation steps.",
+      "Define representative static imported targets for fmt::fmt, spdlog::spdlog, and unofficial::enet::enet in the temporary package stub using fixture archive files.",
+      "Run the focused Windows runtime staging suite and the fast task gate; preserve production CMake behavior."
+    ],
+    "product_changes": [],
+    "code_changes": [
+      "script/tests/test_windows_runtime_staging.py; temporary CoreCpp package stub covers the full fixture runtime dependency list."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]

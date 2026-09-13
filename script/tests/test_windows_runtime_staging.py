@@ -102,6 +102,9 @@ class WindowsRuntimeStagingTests(unittest.TestCase):
                 "core.a",
                 "runtime.a",
                 "runtime-network.a",
+                "fmt.a",
+                "spdlog.a",
+                "enet.a",
             ):
                 (root / name).write_bytes(b"fixture")
             config = (
@@ -117,6 +120,15 @@ class WindowsRuntimeStagingTests(unittest.TestCase):
                 f'set_target_properties(CoreCpp::Runtime PROPERTIES IMPORTED_LOCATION "{(root / "runtime.a").as_posix()}")\n'
                 f'set_target_properties(CoreCpp::RuntimeNetwork PROPERTIES IMPORTED_LOCATION "{(root / "runtime-network.a").as_posix()}")\n'
             )
+            for target, archive in (
+                ("fmt::fmt", "fmt.a"),
+                ("spdlog::spdlog", "spdlog.a"),
+                ("unofficial::enet::enet", "enet.a"),
+            ):
+                config += (
+                    f"add_library({target} STATIC IMPORTED)\n"
+                    f'set_target_properties({target} PROPERTIES IMPORTED_LOCATION "{(root / archive).as_posix()}")\n'
+                )
             (prefix / "CoreCppConfig.cmake").write_text(config, encoding="utf-8")
             result = subprocess.run(
                 [
@@ -129,6 +141,7 @@ class WindowsRuntimeStagingTests(unittest.TestCase):
                     "Ninja",
                     f"-DCMAKE_PREFIX_PATH={root / 'prefix'}",
                     "-DCMAKE_BUILD_TYPE=Debug",
+                    "-DWIN32=TRUE",
                 ],
                 text=True,
                 capture_output=True,
