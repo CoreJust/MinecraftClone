@@ -159,7 +159,7 @@ class WorkflowContextTests(unittest.TestCase):
         self.assertIn("--cmake-arg=-DCMAKE_CXX_COMPILER=clang-cl", windows_install)
         self.assertIn("corelang-windows-compat.cmake", windows_install)
         self.assertIn(
-            "add_compile_options^(-Wno-error=reorder-init-list -Wno-error=unused-command-line-argument -Wno-error=unknown-attributes^)",
+            "add_compile_options^(-Wno-error=reorder-init-list -Wno-error=unused-command-line-argument -Wno-error=unknown-attributes -Wno-c++98-compat -Wno-c++98-compat-pedantic -Wno-pre-c++17-compat^)",
             windows_install,
         )
         self.assertIn("--cmake-arg=-DCMAKE_PROJECT_INCLUDE_BEFORE=", windows_install)

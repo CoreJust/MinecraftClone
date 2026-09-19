@@ -7373,5 +7373,41 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0215",
+    "title": "Disable irrelevant legacy-standard warnings under Windows clang-cl",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P0",
+    "route": "luna",
+    "milestone": "EarlyDev 0.1.0:6",
+    "depends_on": [],
+    "acceptance": "The Windows artifact workflow disables only clang-cl legacy-standard compatibility warning groups that conflict with the explicit C++23 build, while retaining /WX and all ordinary diagnostics; deterministic workflow coverage locks the exact command.",
+    "evidence": "Hosted run 35462110184 isolated the legacy-standard warning groups after CoreCpp compiled successfully. Focused workflow regression passed 17/17; end-to-end platform acceptance remains on MC-AI-0037.",
+    "blocker": "",
+    "owner": "",
+    "level": "basic",
+    "parent": "MC-AI-0037",
+    "motivation": "Hosted run 35462110184 passed CoreCpp and reached CoreLang, where clang-cl -Wall enabled C++98 and pre-C++17 compatibility groups despite the explicit C++23 language mode and /WX promoted them.",
+    "context": "Keep tagged source and locks immutable. Extend only the Windows clang-cl temporary compatibility include; platform artifact acceptance remains on MC-AI-0037.",
+    "complexity": "low",
+    "created_at": "2026-09-19",
+    "resolved_at": "2026-09-19",
+    "resolution_changes": "Disabled the clang-cl c++98-compat, c++98-compat-pedantic, and pre-c++17-compat warning groups only in the Windows dependency compatibility include.",
+    "plan": [],
+    "product_changes": [
+      "No gameplay change."
+    ],
+    "code_changes": [
+      "Extend the Windows clang-cl temporary CMake compatibility include and exact workflow regression assertion."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]

@@ -252,7 +252,7 @@ jobs:
           call "%ProgramFiles%\Microsoft Visual Studio\2022\Enterprise\Common7\Tools\VsDevCmd.bat" -arch=amd64
           if errorlevel 1 exit /b %errorlevel%
           set "VCPKG_ROOT=%MC_ACQUIRED_VCPKG_ROOT%"
-          > "%RUNNER_TEMP%\corelang-windows-compat.cmake" echo add_compile_options^(-Wno-error=reorder-init-list -Wno-error=unused-command-line-argument -Wno-error=unknown-attributes^)
+          > "%RUNNER_TEMP%\corelang-windows-compat.cmake" echo add_compile_options^(-Wno-error=reorder-init-list -Wno-error=unused-command-line-argument -Wno-error=unknown-attributes -Wno-c++98-compat -Wno-c++98-compat-pedantic -Wno-pre-c++17-compat^)
           if errorlevel 1 exit /b %errorlevel%
           python script/ci/acquire.py install-private-dependencies --root "%RUNNER_TEMP%\private-dependencies" --platform windows --preset release "--cmake-arg=-DCMAKE_TOOLCHAIN_FILE=%VCPKG_ROOT%\scripts\buildsystems\vcpkg.cmake" --cmake-arg=-DCMAKE_C_COMPILER=clang-cl --cmake-arg=-DCMAKE_CXX_COMPILER=clang-cl "--cmake-arg=-DCMAKE_PROJECT_INCLUDE_BEFORE=%RUNNER_TEMP%\corelang-windows-compat.cmake" --cmake-arg=-DVCPKG_MANIFEST_INSTALL=OFF
           if errorlevel 1 exit /b %errorlevel%
