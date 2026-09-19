@@ -225,6 +225,7 @@ class WorkflowContextTests(unittest.TestCase):
                     "-Wno-error=unused-command-line-argument",
                     "-Wno-error=unknown-attributes",
               "-Wno-error=missing-designated-field-initializers",
+              "-Wno-error=unused-parameter",
                     "--",
                     "source.cpp",
                 ],
@@ -240,6 +241,7 @@ class WorkflowContextTests(unittest.TestCase):
                     "-Wno-error=unused-command-line-argument",
                     "-Wno-error=unknown-attributes",
               "-Wno-error=missing-designated-field-initializers",
+              "-Wno-error=unused-parameter",
                 ],
             ),
         )

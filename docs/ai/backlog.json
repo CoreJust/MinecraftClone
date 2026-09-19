@@ -7553,5 +7553,41 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0220",
+    "title": "Allow intentional crash-test callback parameter on clang-cl",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P0",
+    "route": "luna",
+    "milestone": "EarlyDev 0.1.0:6",
+    "depends_on": [],
+    "acceptance": "The unified Windows clang-cl launcher keeps /W4 /WX while making the tagged crash-handler test callback unused-parameter diagnostic non-fatal; both behavioral argv fixtures assert the exact exception.",
+    "evidence": "Hosted run 35464656091 reached the unified game build and isolated tests/core/crash_handler_tests.cpp signal_code as the sole compiler failure. Behavioral launcher coverage is updated; final hosted acceptance remains on MC-AI-0037.",
+    "blocker": "",
+    "owner": "",
+    "level": "basic",
+    "parent": "MC-AI-0037",
+    "motivation": "Hosted run 35464656091 proved dependency installation and unified clang-cl configuration succeed, then stopped on the single intentional unused callback parameter in crash_handler_tests.cpp.",
+    "context": "The tagged source is immutable. Add only the hosted-proven unused-parameter exception to the existing compiler launcher and tests.",
+    "complexity": "low",
+    "created_at": "2026-09-19",
+    "resolved_at": "2026-09-19",
+    "resolution_changes": "Added only -Wno-error=unused-parameter to the unified Windows clang-cl launcher and behavioral argv expectations.",
+    "plan": [],
+    "product_changes": [
+      "No gameplay change."
+    ],
+    "code_changes": [
+      "Extend the Windows launcher exception list and its executable fixtures."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]
