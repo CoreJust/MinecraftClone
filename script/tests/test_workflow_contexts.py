@@ -157,6 +157,12 @@ class WorkflowContextTests(unittest.TestCase):
         )[1].split("      - name:", maxsplit=1)[0]
         self.assertIn("--cmake-arg=-DCMAKE_C_COMPILER=clang-cl", windows_install)
         self.assertIn("--cmake-arg=-DCMAKE_CXX_COMPILER=clang-cl", windows_install)
+        self.assertIn("corelang-windows-compat.cmake", windows_install)
+        self.assertIn(
+            "add_compile_options^(-Wno-error=reorder-init-list -Wno-error=unused-command-line-argument^)",
+            windows_install,
+        )
+        self.assertIn("--cmake-arg=-DCMAKE_PROJECT_INCLUDE_BEFORE=", windows_install)
 
         macos_install = workflow.split(
             "      - name: Install pinned private dependencies (macOS)\n", maxsplit=1
@@ -173,7 +179,7 @@ class WorkflowContextTests(unittest.TestCase):
         self.assertIn("--cmake-arg=-DCMAKE_PROJECT_INCLUDE_BEFORE=", android_install)
         self.assertNotIn("dependencies.lock.json", android_install)
 
-    def test_macos_snapshot_isolates_loaded_long_running_tests(self):
+    def test_macos_snapshot_defers_load_sensitive_flight_to_target_hardware(self):
         workflow = WORKFLOWS[1].read_text(encoding="utf-8")
         macos_phase = workflow.split(
             "      - name: Build, test, and package macOS\n", maxsplit=1
@@ -189,11 +195,10 @@ class WorkflowContextTests(unittest.TestCase):
         self.assertIn(server_test, broad_ctest)
         self.assertIn(flight_test, broad_ctest)
         self.assertIn("minecraftclone_server_only_test.cmake", macos_phase)
-        self.assertIn(f"-R '^{flight_test}$'", macos_phase)
-        self.assertLess(macos_phase.index(f"-R '^{flight_test}$'"), macos_phase.index(" -E '"))
+        self.assertNotIn(f"-R '^{flight_test}$'", macos_phase)
         self.assertIn('replacement = \' --output-on-failure -E "^GameServerPreviewTest', macos_phase)
         self.assertIn('source.count(needle) != 1', macos_phase)
-        self.assertEqual(macos_phase.count("release-tests-macos.log"), 3)
+        self.assertEqual(macos_phase.count("release-tests-macos.log"), 2)
 
     def test_windows_cmd_build_phases_guard_each_fallible_command(self):
         phase_names = ("Build, test, and validate shaders (Windows)", "Build, test, and package Windows")

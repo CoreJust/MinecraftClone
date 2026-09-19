@@ -7301,5 +7301,41 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0213",
+    "title": "Complete immutable S6 hosted portability evidence",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P0",
+    "route": "luna",
+    "milestone": "EarlyDev 0.1.0:6",
+    "depends_on": [],
+    "acceptance": "The exact tagged S6 artifact workflow does not treat the known load-sensitive paced-flight integration as hosted Mac evidence; it retains that test unchanged for target-hardware/local acceptance, runs the remaining hosted suite and nested server-only coverage, and makes the pinned CoreLang designated-initializer compatibility explicit for both hosted Clang targets.",
+    "evidence": "Run 35460609224 reproduced the unchanged paced-flight test failure at 33 transient and 3 final acknowledgement lag on the 3-core hosted Mac even when run first and alone; the exact local candidate passed five consecutive 35-second repetitions and owner gameplay acceptance. The same run proved clang-cl reaches CoreCpp and fails only because its accepted-but-unused /Zc:preprocessor diagnostic is promoted by /WX. Focused workflow/build-snapshot tests pass after routing paced flight to target-hardware acceptance and making both Clang compatibility diagnostics non-fatal.",
+    "blocker": "",
+    "owner": "",
+    "level": "basic",
+    "parent": "MC-AI-0037",
+    "motivation": "Run 35460609224 reproduced the paced-flight transient lag only on the three-core hosted Mac even when isolated, while five exact local repetitions and user playtesting passed; Windows clang-cl may retain the same reorder diagnostic under warnings-as-errors.",
+    "context": "Do not weaken or edit the tagged test/source. Hosted build logs must show the exclusion; final downloaded macOS acceptance supplies the target-hardware evidence.",
+    "complexity": "medium",
+    "created_at": "2026-09-19",
+    "resolved_at": "2026-09-19",
+    "resolution_changes": "Kept the paced-flight assertion and tagged source unchanged, excluded that case from hosted macOS CTest and the duplicate nested server-only run, and retained it as required local target-hardware acceptance. Hosted Windows uses clang-cl with narrow non-error treatment for the pinned sources designated-initializer order and clang-cl-only unused /Zc:preprocessor diagnostic.",
+    "plan": [],
+    "product_changes": [
+      "No gameplay behavior changes; use truthful platform-specific acceptance evidence for the immutable S6 build."
+    ],
+    "code_changes": [
+      "Exclude the load-sensitive paced-flight case from hosted macOS CTest while retaining local acceptance, and add a temporary Windows Clang compatibility include without changing locks or tagged source."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]
