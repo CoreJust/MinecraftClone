@@ -7409,5 +7409,41 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0216",
+    "title": "Normalize immutable dependency warnings for Windows clang-cl",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P0",
+    "route": "luna",
+    "milestone": "EarlyDev 0.1.0:6",
+    "depends_on": [],
+    "acceptance": "The Windows private-dependency build normalizes clang-cl after target flags to native /W4 /WX, preventing GNU -Wall from enabling Clang all-diagnostics while preserving fatal native warnings and only the three proven pinned-source exceptions; deterministic workflow coverage locks the boundary.",
+    "evidence": "Hosted run 35462497987 proved CoreCpp passed and CoreLang failed because clang-cl GNU -Wall enabled broad all-diagnostics families under -Werror. The workflow fix normalizes trailing compiler options to native /W4 /WX with exact regression coverage; end-to-end platform acceptance remains on MC-AI-0037.",
+    "blocker": "",
+    "owner": "",
+    "level": "basic",
+    "parent": "MC-AI-0037",
+    "motivation": "Hosted run 35462497987 showed clang-cl GNU -Wall enables broad diagnostic families unrelated to native Windows /W4, producing dozens of C++98, switch, initializer, shadow, conversion, and CTAD failures in immutable CoreLang 0.1.2.",
+    "context": "Do not chase diagnostic families individually or edit the immutable dependency. Use clang-cl documented trailing _CL_ flags at the Windows private-dependency process boundary; product artifact acceptance remains on MC-AI-0037.",
+    "complexity": "low",
+    "created_at": "2026-09-19",
+    "resolved_at": "2026-09-19",
+    "resolution_changes": "Appended a native clang-cl warning profile through _CL_ for the Windows private-dependency build, restoring /W4 /WX after GNU target flags and retaining the three proven compatibility exceptions.",
+    "plan": [],
+    "product_changes": [
+      "No gameplay change."
+    ],
+    "code_changes": [
+      "Set the Windows clang-cl trailing environment options and assert their exact ordering in workflow tests."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]
