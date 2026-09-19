@@ -174,6 +174,7 @@ class WorkflowContextTests(unittest.TestCase):
                     "-Wno-error=reorder-init-list",
                     "-Wno-error=unused-command-line-argument",
                     "-Wno-error=unknown-attributes",
+              "-Wno-error=missing-designated-field-initializers",
                     "--",
                     "source.cpp",
                 ],
@@ -188,6 +189,7 @@ class WorkflowContextTests(unittest.TestCase):
                     "-Wno-error=reorder-init-list",
                     "-Wno-error=unused-command-line-argument",
                     "-Wno-error=unknown-attributes",
+              "-Wno-error=missing-designated-field-initializers",
                 ],
             ),
         )
