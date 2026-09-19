@@ -7337,5 +7337,41 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0214",
+    "title": "Allow pinned CoreCpp attribute on Windows clang-cl",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P0",
+    "route": "luna",
+    "milestone": "EarlyDev 0.1.0:6",
+    "depends_on": [],
+    "acceptance": "The Windows artifact workflow emits a Windows-only clang-cl compatibility include that demotes the pinned CoreCpp no_unique_address diagnostic while retaining warnings-as-errors for all other diagnostics, and deterministic workflow coverage locks the exact command.",
+    "evidence": "Hosted run 35461687220 reached CoreCpp compilation and isolated -Wunknown-attributes under /WX as the next failure. The narrow workflow implementation passed 17/17 focused tests; exact staged review found no implementation defect. End-to-end hosted Windows artifact acceptance remains owned by aggregate task MC-AI-0037.",
+    "blocker": "",
+    "owner": "",
+    "level": "basic",
+    "parent": "MC-AI-0037",
+    "motivation": "Hosted run 35461687220 reached CoreCpp compilation and clang-cl rejected the MSVC-accepted no_unique_address attribute solely because -Wunknown-attributes was promoted by /WX.",
+    "context": "Keep the exact tagged source and dependency locks immutable; narrow the existing temporary compiler compatibility include and assert its exact contents.",
+    "complexity": "low",
+    "created_at": "2026-09-19",
+    "resolved_at": "2026-09-19",
+    "resolution_changes": "Added only -Wno-error=unknown-attributes to the existing Windows clang-cl compatibility options and deterministic workflow coverage.",
+    "plan": [],
+    "product_changes": [
+      "No gameplay change."
+    ],
+    "code_changes": [
+      "Extend the Windows clang-cl temporary CMake compatibility include and its workflow regression test."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]
