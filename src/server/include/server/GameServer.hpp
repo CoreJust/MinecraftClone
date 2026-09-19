@@ -2,6 +2,8 @@
 
 #include <shared/net/Message.hpp>
 #include <shared/world/World.hpp>
+#include <shared/world/WorldGeneration.hpp>
+#include <shared/world/WorldGenerationScheduler.hpp>
 #include <core/net/Server.hpp>
 
 #include <atomic>
@@ -29,7 +31,7 @@ public:
         shared::WorldMode world_mode = shared::WorldMode::Flat,
         shared::WorldConfiguration configuration = shared::World::canonicalConfiguration()
     )
-        : core::Server{ core::Address::localhost(port), 4, 1 }
+        : core::Server{ core::Address::localhost(port), 4, 2 }
         , m_world{ world_mode, configuration }
         , m_spawn_points{ checkedSpawnPoints(std::move(spawn_points), world_mode) }
     { }
@@ -66,6 +68,10 @@ private:
 
     void send(shared::Message const message);
     void sendTo(std::optional<core::ClientId> const client_id, shared::Message message);
+    void sendPreviewTo(std::optional<core::ClientId> const client_id, shared::Message message);
+    void startPreviewSet(core::ClientId client_id, shared::Player player);
+    void processPendingPreviewSet();
+    void processPreviewStreams();
     void processInput(PlayerReplication& replication, shared::ClientInputMessage input);
     [[nodiscard]]
     PlayerReplication* playerReplication(shared::PlayerId id) noexcept;
@@ -83,6 +89,28 @@ private:
     shared::World m_world;
     std::vector<SpawnPoint> m_spawn_points;
     std::vector<PlayerReplication> m_player_replications;
+    std::deque<std::pair<core::ClientId, shared::Player>> m_pending_preview_sets;
+    struct PreviewStream final {
+        static constexpr uint32_t MAX_PREVIEW_CHUNKS = 320U;
+        static constexpr uint64_t WORLD_REVISION = 1U;
+
+        PreviewStream(core::ClientId client_id, shared::Player player)
+            : client_id(client_id)
+            , player(player)
+        { }
+
+        core::ClientId client_id;
+        shared::Player player;
+        shared::WorldGenerationScheduler scheduler{MAX_PREVIEW_CHUNKS};
+        std::vector<shared::PreviewChunkKey> coarse_keys;
+        std::vector<shared::HeightTile> coarse_tiles;
+        uint32_t coarse_completed = 0U;
+        uint32_t sent_chunks = 0U;
+        bool final_jobs_submitted = false;
+    };
+    std::vector<PreviewStream> m_preview_streams;
+    shared::TerrainGenerator m_preview_generator;
+    uint64_t m_next_preview_token = 1;
 };
 
 } // namespace server

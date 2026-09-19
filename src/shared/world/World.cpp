@@ -84,8 +84,12 @@ void World::spawnPlayer(
 void World::spawnPlayer(PlayerId const id, char const ch, PlayerPosition const at)
 {
     ASSERT(!playerExists(ch));
+    PlayerPosition normalized = at;
     if (m_mode == WorldMode::Flight) {
-        ASSERT(isFlightPositionInBounds(at));
+        constexpr int32_t EXTENT = FLIGHT_MAX_CELL + 1;
+        normalized.x = (normalized.x % EXTENT + EXTENT) % EXTENT;
+        normalized.y = (normalized.y % EXTENT + EXTENT) % EXTENT;
+        ASSERT(isFlightPositionInBounds(normalized));
     } else {
         ASSERT(at.x >= 0 && at.x <= MAX_PLAYER_ORIGIN_CELL);
         ASSERT(at.y >= 0 && at.y <= MAX_PLAYER_ORIGIN_CELL);
@@ -96,12 +100,12 @@ void World::spawnPlayer(PlayerId const id, char const ch, PlayerPosition const a
     }
     m_players.emplace_back(Player{
         .id = id,
-        .x = at.x,
-        .y = at.y,
-        .z = at.z,
-        .x_subcell = at.x_subcell,
-        .y_subcell = at.y_subcell,
-        .z_subcell = at.z_subcell,
+        .x = normalized.x,
+        .y = normalized.y,
+        .z = normalized.z,
+        .x_subcell = normalized.x_subcell,
+        .y_subcell = normalized.y_subcell,
+        .z_subcell = normalized.z_subcell,
         .ch = ch,
     });
 }
@@ -267,7 +271,7 @@ bool World::isFlightPositionInBounds(PlayerPosition const position) noexcept
 {
     return position.x >= FLIGHT_MIN_CELL && position.x <= FLIGHT_MAX_CELL
         && position.y >= FLIGHT_MIN_CELL && position.y <= FLIGHT_MAX_CELL
-        && position.z >= FLIGHT_MIN_CELL && position.z <= FLIGHT_MAX_CELL
+        && position.z >= FLIGHT_MIN_CELL && position.z <= FLIGHT_MAX_Z
         && position.x_subcell < SUBCELLS_PER_CELL && position.y_subcell < SUBCELLS_PER_CELL
         && position.z_subcell < SUBCELLS_PER_CELL;
 }
@@ -317,11 +321,17 @@ bool World::moveFlightPlayer(
         return static_cast<int32_t>(base_step * static_cast<uint32_t>(std::abs(component)) / divisor)
             * (component < 0 ? -1 : 1);
     };
-    PlayerPosition const candidate = positionFromSubcells(
+    PlayerPosition candidate = positionFromSubcells(
         player.x * SUBCELLS_PER_CELL + player.x_subcell + movementDelta(direction_x),
         player.y * SUBCELLS_PER_CELL + player.y_subcell + movementDelta(direction_y),
         player.z * SUBCELLS_PER_CELL + player.z_subcell + movementDelta(direction_z)
     );
+    auto const wrap = [](int32_t value) noexcept {
+        constexpr int32_t EXTENT = FLIGHT_MAX_CELL + 1;
+        return (value % EXTENT + EXTENT) % EXTENT;
+    };
+    candidate.x = wrap(candidate.x);
+    candidate.y = wrap(candidate.y);
     if (!isFlightPositionInBounds(candidate)) {
         return false;
     }

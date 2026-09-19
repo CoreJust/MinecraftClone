@@ -110,9 +110,9 @@ std::vector<StoneFaceInstance> stoneFaceInstances(shared::ChunkMesh const& mesh)
             throw std::invalid_argument("chunk mesh contains an unsupported face");
         }
         instances.emplace_back(StoneFaceInstance{
-            .x = face.local_origin.x,
-            .y = face.local_origin.y,
-            .z = face.local_origin.z,
+            .x = static_cast<uint32_t>(mesh.coordinate.x * shared::Chunk::SIDE_LENGTH + face.local_origin.x),
+            .y = static_cast<uint32_t>(mesh.coordinate.y * shared::Chunk::SIDE_LENGTH + face.local_origin.y),
+            .z = static_cast<uint32_t>(mesh.coordinate.z * shared::Chunk::SIDE_LENGTH + face.local_origin.z),
             .direction = direction,
         });
     }
@@ -606,6 +606,24 @@ struct VulkanRenderer::Impl final {
     void setChunkMesh(shared::ChunkMesh const& mesh)
     {
         std::vector<StoneFaceInstance> instances = stoneFaceInstances(mesh);
+        if (m_chunk_scene_enabled && instances == m_stone_faces) {
+            return;
+        }
+        m_stone_faces = std::move(instances);
+        m_chunk_scene_enabled = true;
+        recreate(m_context->info().extent, std::chrono::steady_clock::time_point::max());
+    }
+
+    void setChunkMeshes(std::span<shared::ChunkMesh const> const meshes)
+    {
+        std::vector<StoneFaceInstance> instances;
+        for (shared::ChunkMesh const& mesh : meshes) {
+            std::vector<StoneFaceInstance> chunk = stoneFaceInstances(mesh);
+            if (instances.size() + chunk.size() > shared::ChunkMesh::MAXIMUM_FACE_COUNT) {
+                throw std::invalid_argument("chunk mesh set exceeds its face limit");
+            }
+            instances.insert(instances.end(), chunk.begin(), chunk.end());
+        }
         if (m_chunk_scene_enabled && instances == m_stone_faces) {
             return;
         }
@@ -1773,6 +1791,11 @@ void VulkanRenderer::setCamera(CameraPose const pose) noexcept
 void VulkanRenderer::setChunkMesh(shared::ChunkMesh const& mesh)
 {
     m_impl->setChunkMesh(mesh);
+}
+
+void VulkanRenderer::setChunkMeshes(std::span<shared::ChunkMesh const> const meshes)
+{
+    m_impl->setChunkMeshes(meshes);
 }
 
 void VulkanRenderer::hotReload()

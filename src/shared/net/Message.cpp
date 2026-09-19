@@ -13,6 +13,9 @@ enum class MessageType : uint8_t {
     ClientInput,
     ServerPlayerPosition,
     ServerRemovePlayer,
+    ServerPreviewDescriptor,
+    ServerWorldRevision,
+    ServerChunkPreview,
 };
 
 [[nodiscard]]
@@ -58,6 +61,17 @@ void appendInt32(std::vector<uint8_t>& bytes, int32_t const value)
     appendUint32(bytes, static_cast<uint32_t>(value));
 }
 
+[[nodiscard]]
+uint64_t previewDigest(std::span<uint8_t const> const bytes) noexcept
+{
+    uint64_t hash = 14'695'981'039'346'656'037ULL;
+    for (uint8_t const byte : bytes) {
+        hash ^= byte;
+        hash *= 1'099'511'628'211ULL;
+    }
+    return hash;
+}
+
 struct MessageEncoder final {
     std::vector<uint8_t> bytes;
 
@@ -71,7 +85,7 @@ struct MessageEncoder final {
 
     std::vector<uint8_t> operator()(JoinRequestMessage const& message)
     {
-        begin(MessageType::JoinRequest, 25U);
+        begin(MessageType::JoinRequest, 26U);
         bytes.push_back(static_cast<uint8_t>(message.ch));
         bytes.push_back(static_cast<uint8_t>(message.mode));
         appendUint32(bytes, message.configuration.algorithm_version);
@@ -80,6 +94,7 @@ struct MessageEncoder final {
         bytes.push_back(message.configuration.chunk_height);
         bytes.push_back(message.configuration.chunk_depth);
         appendUint64(bytes, message.configuration.chunk_content_digest);
+        bytes.push_back(static_cast<uint8_t>(message.wants_previews));
         return std::move(bytes);
     }
 
@@ -121,6 +136,44 @@ struct MessageEncoder final {
         bytes.push_back(static_cast<uint8_t>(message.ch));
         return std::move(bytes);
     }
+
+    std::vector<uint8_t> operator()(ServerPreviewDescriptorMessage const& message)
+    {
+        begin(MessageType::ServerPreviewDescriptor, 39U);
+        appendUint32(bytes, message.configuration.algorithm_version);
+        appendUint64(bytes, message.configuration.seed);
+        bytes.push_back(message.configuration.chunk_width);
+        bytes.push_back(message.configuration.chunk_height);
+        bytes.push_back(message.configuration.chunk_depth);
+        appendUint64(bytes, message.configuration.chunk_content_digest);
+        appendUint64(bytes, message.world_revision);
+        appendUint32(bytes, message.max_preview_chunks);
+        appendUint32(bytes, message.max_preview_bytes);
+        return std::move(bytes);
+    }
+
+    std::vector<uint8_t> operator()(ServerWorldRevisionMessage const& message)
+    {
+        begin(MessageType::ServerWorldRevision, 8U);
+        appendUint64(bytes, message.world_revision);
+        return std::move(bytes);
+    }
+
+    std::vector<uint8_t> operator()(ServerChunkPreviewMessage const& message)
+    {
+        uint32_t const length = static_cast<uint32_t>(message.bytes.size());
+        begin(MessageType::ServerChunkPreview, 41U + length);
+        appendInt32(bytes, message.key.x);
+        appendInt32(bytes, message.key.y);
+        appendInt32(bytes, message.key.z);
+        appendUint64(bytes, message.revision);
+        appendUint64(bytes, message.token);
+        bytes.push_back(static_cast<uint8_t>(message.level));
+        appendUint32(bytes, length);
+        appendUint64(bytes, message.digest == 0U ? previewDigest(message.bytes) : message.digest);
+        bytes.insert(bytes.end(), message.bytes.begin(), message.bytes.end());
+        return std::move(bytes);
+    }
 };
 
 class MessageReader final {
@@ -133,7 +186,7 @@ public:
     [[nodiscard]]
     std::optional<uint8_t> readUint8() noexcept
     {
-        if (m_position == static_cast<uint64_t>(m_data.size())) {
+        if (m_position >= static_cast<uint64_t>(m_data.size())) {
             return std::nullopt;
         }
         return m_data.data()[m_position++];
@@ -242,8 +295,25 @@ bool isValidMessage(Message const& message) noexcept
                 .y_subcell = value.y_subcell,
                 .z_subcell = value.z_subcell,
             });
-        } else {
+        } else if constexpr (std::is_same_v<Value, ServerRemovePlayerMessage>) {
             return isValidCharacter(value.ch);
+        } else if constexpr (std::is_same_v<Value, ServerPreviewDescriptorMessage>) {
+            return isValidWorldConfiguration(value.configuration)
+                && value.world_revision != 0U
+                && value.max_preview_chunks != 0U
+                && value.max_preview_bytes != 0U
+                && value.max_preview_bytes <= PREVIEW_MAX_PAYLOAD_BYTES;
+        } else if constexpr (std::is_same_v<Value, ServerWorldRevisionMessage>) {
+            return value.world_revision != 0U;
+        } else {
+            return value.key == normalizePreviewChunkKey(value.key)
+                && value.key.z >= 0 && value.key.z < 64
+                && value.revision != 0U && value.token != 0U
+                && (value.level == PreviewLevel::Coarse || value.level == PreviewLevel::Final)
+                && value.length == value.bytes.size()
+                && value.length != 0U
+                && value.length <= PREVIEW_MAX_PAYLOAD_BYTES
+                && value.digest == previewDigest(value.bytes);
         }
     }, message);
 }
@@ -271,11 +341,13 @@ std::optional<Message> decodeMessage(std::span<uint8_t const> const data)
             auto const character = reader.readUint8();
             auto const mode = reader.readUint8();
             auto const configuration = readConfiguration(reader);
-            if (character && mode && configuration) {
+            auto const wants_previews = reader.readUint8();
+            if (character && mode && configuration && wants_previews && *wants_previews <= 1U) {
                 message = JoinRequestMessage{
                     .ch = static_cast<char>(*character),
                     .mode = static_cast<WorldMode>(*mode),
                     .configuration = *configuration,
+                    .wants_previews = *wants_previews == 1U,
                 };
             }
             break;
@@ -331,6 +403,64 @@ std::optional<Message> decodeMessage(std::span<uint8_t const> const data)
             auto const character = reader.readUint8();
             if (character) {
                 message = ServerRemovePlayerMessage{ .ch = static_cast<char>(*character) };
+            }
+            break;
+        }
+        case MessageType::ServerPreviewDescriptor: {
+            auto const configuration = readConfiguration(reader);
+            auto const world_revision = reader.readUint64();
+            auto const max_preview_chunks = reader.readUint32();
+            auto const max_preview_bytes = reader.readUint32();
+            if (configuration && world_revision && max_preview_chunks && max_preview_bytes) {
+                message = ServerPreviewDescriptorMessage{
+                    .configuration = *configuration,
+                    .world_revision = *world_revision,
+                    .max_preview_chunks = *max_preview_chunks,
+                    .max_preview_bytes = *max_preview_bytes,
+                };
+            }
+            break;
+        }
+        case MessageType::ServerWorldRevision: {
+            if (auto const world_revision = reader.readUint64()) {
+                message = ServerWorldRevisionMessage{ .world_revision = *world_revision };
+            }
+            break;
+        }
+        case MessageType::ServerChunkPreview: {
+            auto const x = reader.readInt32();
+            auto const y = reader.readInt32();
+            auto const z = reader.readInt32();
+            auto const revision = reader.readUint64();
+            auto const token = reader.readUint64();
+            auto const level = reader.readUint8();
+            auto const length = reader.readUint32();
+            auto const digest = reader.readUint64();
+            if (!x || !y || !z || !revision || !token || !level || !length || !digest
+                || *length > PREVIEW_MAX_PAYLOAD_BYTES
+                || static_cast<uint64_t>(*length) > data.size()) {
+                break;
+            }
+            std::vector<uint8_t> bytes;
+            bytes.reserve(*length);
+            for (uint32_t index{ 0 }; index < *length; ++index) {
+                auto const byte = reader.readUint8();
+                if (!byte) {
+                    bytes.clear();
+                    break;
+                }
+                bytes.push_back(*byte);
+            }
+            if (bytes.size() == *length) {
+                message = ServerChunkPreviewMessage{
+                    .key = { .x = *x, .y = *y, .z = *z },
+                    .revision = *revision,
+                    .token = *token,
+                    .level = static_cast<PreviewLevel>(*level),
+                    .length = *length,
+                    .digest = *digest,
+                    .bytes = std::move(bytes),
+                };
             }
             break;
         }

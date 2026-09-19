@@ -19,7 +19,7 @@ class ProtocolClient final : public core::Client {
 public:
     std::vector<shared::Message> messages;
 
-    ProtocolClient() : core::Client{ 1 } {}
+    ProtocolClient() : core::Client{ 2 } {}
 
     bool sendMessage(shared::Message const& message)
     {

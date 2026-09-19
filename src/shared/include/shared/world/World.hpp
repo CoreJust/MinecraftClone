@@ -96,9 +96,10 @@ public:
     static constexpr uint8_t MAX_PLAYER_ORIGIN_CELL = WIDTH - PLAYER_FOOTPRINT_CELLS;
     static constexpr uint32_t MAX_PLAYER_ORIGIN_SUBCELL = static_cast<uint32_t>(MAX_PLAYER_ORIGIN_CELL)
         * SUBCELLS_PER_CELL;
-    static constexpr int32_t FLIGHT_MIN_CELL = -64;
-    static constexpr int32_t FLIGHT_MAX_CELL = 64;
-    static constexpr PlayerPosition FLIGHT_SPAWN{ .x = 8, .y = 8, .z = 12 };
+    static constexpr int32_t FLIGHT_MIN_CELL = 0;
+    static constexpr int32_t FLIGHT_MAX_CELL = 65'535;
+    static constexpr int32_t FLIGHT_MAX_Z = 1'023;
+    static constexpr PlayerPosition FLIGHT_SPAWN{ .x = 32'864, .y = 32'768, .z = 10 };
 
     explicit World(
         WorldMode mode = WorldMode::Flat,

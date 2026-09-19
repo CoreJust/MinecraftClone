@@ -1,39 +1,12 @@
 # Scenario language reference
 
-There are two source grammars. `scenario 1` is the legacy line based grammar;
-its declarations and flat profiles remain compatible. CoreLang uses the pinned
-0.0.3 compiler and the `minecraft` ruleset.
-
-## Legacy frontend
-
-The order is strict: `scenario 1`, `profile`, `seed`, one or more `player`
-declarations, `begin`, zero or more commands, `end`, then EOF. Blank lines and
-comments are accepted. `flat2d-v1` uses coordinates `0..31`; `flat3d-v1` keeps
-the flat board and requires `z == 0`; `flight3d-v1` uses signed XYZ positions
-in `-64..64`. Player characters are one of `@ # $ % &`, names are ASCII
-identifiers, and names and characters are unique.
-
-Legacy flight commands are:
-
-```text
-input PLAYER X Y Z
-input PLAYER camera STRAFE FORWARD VERTICAL
-wait POSITIVE_INTEGER
-expect player PLAYER position X Y Z
-```
-
-Every input component is in `-1..1`. Flight orientation is supplied on the
-player declaration: yaw `0..359`, pitch `-89..89`, roll `-180..180`. Camera
-input is resolved using yaw; pitch and roll are replay metadata. The existing
-flat commands and their two dimensional forms remain available in their
-profiles.
-
-## CoreLang scenario frontend
+CoreLang 0.1.2 is the only scenario frontend. It uses the pinned `minecraft`
+ruleset.
 
 The source must have this shape:
 
 ```text
-@version("0.0.3")
+@version("0.1.2")
 @use minecraft
 
 pub fn scenario() { /* typed host calls and CoreLang control flow */ }

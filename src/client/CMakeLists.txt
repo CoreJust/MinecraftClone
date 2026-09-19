@@ -1,6 +1,7 @@
 target_sources(mc
     PRIVATE
         BotClient.cpp
+        PreviewResidency.cpp
     Camera.cpp
     CameraController.cpp
     DepthFormat.cpp

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "PlayerPresentation.hpp"
+#include "PreviewResidency.hpp"
 
 #include <shared/net/Message.hpp>
 #include <shared/world/World.hpp>
@@ -21,14 +22,19 @@ public:
 
     explicit GameClient(
         shared::WorldMode const mode = shared::WorldMode::Flat,
-        shared::WorldConfiguration const configuration = shared::World::canonicalConfiguration()
+        shared::WorldConfiguration const configuration = shared::World::canonicalConfiguration(),
+        bool const wants_previews = true
     )
-        : core::Client{ 1 }
+        : core::Client{ 2 }
         , m_world{ mode, configuration }
         , m_predicted_world{ mode, configuration }
+        , m_preview_residency{ { .generation = 1, .revision = 1 }, {} }
+        , m_wants_previews{ wants_previews }
     { }
 
     void run(core::Address const server_address, char const ch);
+    [[nodiscard]] PreviewResidency const& previewResidency() const noexcept { return m_preview_residency; }
+    [[nodiscard]] PreviewResidency& previewResidency() noexcept { return m_preview_residency; }
 protected:
     virtual shared::Direction input() = 0;
     virtual void render() = 0;
@@ -63,6 +69,9 @@ protected:
     shared::World m_world;
     shared::World m_predicted_world;
     PlayerPresentation m_player_presentation;
+    PreviewResidency m_preview_residency;
+    bool m_wants_previews;
+    PreviewRevision m_preview_revision{ .generation = 1, .revision = 1 };
     std::deque<shared::ClientInputMessage> m_pending_inputs;
     std::unordered_map<char, uint32_t> m_state_revisions;
     shared::PlayerId m_next_id = 0;
@@ -73,6 +82,9 @@ protected:
     uint32_t m_join_character_index = 0;
 private:
     [[nodiscard]] bool sendJoinRequest();
+    [[nodiscard]] bool applyPreview(shared::ServerChunkPreviewMessage const& message);
+    [[nodiscard]] bool applyPreviewDescriptor(shared::ServerPreviewDescriptorMessage const& message);
+    [[nodiscard]] bool applyWorldRevision(shared::ServerWorldRevisionMessage const& message);
     void rebuildPrediction();
     void updatePredictedPresentation(std::chrono::steady_clock::time_point updated_at) noexcept;
 };

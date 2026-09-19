@@ -157,6 +157,7 @@ ChunkMesher::InputSnapshot ChunkMesher::snapshot(
 )
 {
     InputSnapshot input{
+        .coordinate = chunk.coordinate(),
         .content_identity = chunk.contentIdentity(),
         .blocks = {},
         .neighbors = neighbors,
@@ -175,6 +176,7 @@ ChunkMesher::InputSnapshot ChunkMesher::snapshot(
 ChunkMesh ChunkMesher::build(InputSnapshot const& input)
 {
     ChunkMesh mesh{
+        .coordinate = input.coordinate,
         .content_identity = input.content_identity,
         .faces = {},
     };

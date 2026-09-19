@@ -71,7 +71,17 @@ void GameClient::onReceived(core::ReceiveEvent event) {
     }
 
     shared::Message* msg_ptr = &*maybe_msg;
-    if (auto* msg = std::get_if<shared::JoinResponseMessage>(msg_ptr)) {
+    if (event.channel_id == shared::PREVIEW_CHANNEL) {
+        if (auto* msg = std::get_if<shared::ServerPreviewDescriptorMessage>(msg_ptr)) {
+            static_cast<void>(applyPreviewDescriptor(*msg));
+        } else if (auto* msg = std::get_if<shared::ServerWorldRevisionMessage>(msg_ptr)) {
+            static_cast<void>(applyWorldRevision(*msg));
+        } else if (auto* msg = std::get_if<shared::ServerChunkPreviewMessage>(msg_ptr)) {
+            static_cast<void>(applyPreview(*msg));
+        }
+    } else if (event.channel_id != shared::GAME_CHANNEL) {
+        CORE_ERROR("Received a game message on an unsupported channel {}", event.channel_id);
+    } else if (auto* msg = std::get_if<shared::JoinResponseMessage>(msg_ptr)) {
         auto const [accepted] = *msg;
         if (accepted) {
             m_accepted = true;
@@ -104,6 +114,7 @@ bool GameClient::sendJoinRequest()
         .ch = m_local_character,
         .mode = m_world.mode(),
         .configuration = m_world.configuration(),
+        .wants_previews = m_wants_previews && m_world.mode() == shared::WorldMode::Flight,
     });
 }
 
@@ -237,11 +248,54 @@ void GameClient::updatePredictedPresentation(std::chrono::steady_clock::time_poi
 bool GameClient::send(shared::Message const message)
 {
     std::vector const message_bytes = shared::encodeMessage(message);
-    if (!core::Client::send(message_bytes, 0, core::SendMode{ core::SendMode::Reliable })) {
+    if (!core::Client::send(message_bytes, shared::GAME_CHANNEL, core::SendMode{ core::SendMode::Reliable })) {
         CORE_ERROR("Failed to send a message");
         return false;
     }
     return true;
+}
+
+bool GameClient::applyPreviewDescriptor(shared::ServerPreviewDescriptorMessage const& message)
+{
+    if (message.configuration != m_world.configuration() || message.world_revision == 0U
+        || message.max_preview_chunks == 0U || message.max_preview_bytes == 0U) {
+        return false;
+    }
+    if (message.world_revision != m_preview_revision.generation) {
+        m_preview_revision = { .generation = message.world_revision, .revision = 1 };
+        m_preview_residency.advanceRevision(m_preview_revision);
+    }
+    return true;
+}
+
+bool GameClient::applyWorldRevision(shared::ServerWorldRevisionMessage const& message)
+{
+    if (message.world_revision == 0U || message.world_revision < m_preview_revision.generation) {
+        return false;
+    }
+    if (message.world_revision != m_preview_revision.generation) {
+        m_preview_revision = { .generation = message.world_revision, .revision = 1 };
+        m_preview_residency.advanceRevision(m_preview_revision);
+    }
+    return true;
+}
+
+bool GameClient::applyPreview(shared::ServerChunkPreviewMessage const& message)
+{
+    if (message.key != shared::normalizePreviewChunkKey(message.key)
+        || message.length != message.bytes.size() || message.length == 0U
+        || message.length > shared::PREVIEW_MAX_PAYLOAD_BYTES || message.revision == 0U
+        || message.token == 0U || m_preview_revision.generation == 0U) {
+        return false;
+    }
+    PreviewReplacementResult const result = m_preview_residency.accept(
+        message.key,
+        { .generation = m_preview_revision.generation, .revision = message.revision },
+        message.level,
+        message.token,
+        message.bytes
+    );
+    return result.replacement == PreviewReplacement::Published;
 }
 
 } // namespace client

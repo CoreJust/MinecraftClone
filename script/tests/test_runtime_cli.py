@@ -47,7 +47,7 @@ class RuntimeCliTests(unittest.TestCase):
             output = result.stdout + result.stderr
             self.assertNotEqual(result.returncode, 0, output)
             self.assertIn("valid scenario command failed:", output)
-            diagnostic_scenario = f"{output_directory}/valid.mcscenario"
+            diagnostic_scenario = f"{output_directory}/valid.core"
             diagnostic_evidence = f"{output_directory}/valid.json"
             self.assertRegex(
                 output,

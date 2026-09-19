@@ -4,8 +4,8 @@
 
 `parseScenarioSource` checks that all six scenario limits are positive, checks
 source bytes, observes an already requested cancellation, then selects the
-explicit header. Legacy text is parsed directly. CoreLang is compiled with the
-trusted `minecraft` ruleset, loaded into a runtime, and executes `scenario`.
+explicit CoreLang header. CoreLang is compiled with the trusted `minecraft`
+ruleset, loaded into a runtime, and executes `scenario`.
 Host calls append to a private `ScenarioPlanCollector`. Compilation, runtime,
 host-call validation, and the final required declarations must all succeed
 before an immutable plan is returned. A failure cannot mutate the live world,
@@ -51,9 +51,8 @@ bounded and finite.
 
 Invalid limits, source size, compilation, typed host arguments, ranges,
 duplicate actors, operation budgets, tick budgets, evidence budgets, and final
-required declarations fail before publication. The legacy parser also validates
-the complete source before setup. See [Diagnostics](DIAGNOSTICS.md) for stable
-codes.
+required declarations fail before publication. See [Diagnostics](DIAGNOSTICS.md)
+for stable codes.
 
 ## Seeded world loading
 

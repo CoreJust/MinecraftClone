@@ -128,6 +128,10 @@ add_executable(mc_tests
     core/chunk_tests.cpp
     core/chunk_mesher_tests.cpp
     core/scripted_world_tests.cpp
+    core/world_generation_tests.cpp
+    core/sparse_world_tests.cpp
+    core/world_generation_scheduler_tests.cpp
+    core/game_server_preview_tests.cpp
     core/shared_world_tests.cpp
     core/flight_world_tests.cpp
     core/span_utils_tests.cpp

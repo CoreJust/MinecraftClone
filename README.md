@@ -37,7 +37,6 @@ From the repository root, run `./build/debug/mc_main --server` (optional `--port
 
 ## Structure
 
-- `src/core`: reusable utilities, networking, window/input, Vulkan infrastructure.
 - `src/shared`: world state, protocol, version metadata.
 - `src/server`, `src/client`: authoritative simulation and presentation.
 - `tests`: game/core tests; `script/tests`: development-tool tests.

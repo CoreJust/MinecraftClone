@@ -29,6 +29,8 @@ private:
     InstalledShaderAssets m_shader_assets;
     VulkanRenderer m_renderer;
     std::vector<PlayerRenderData> m_render_data;
+    std::vector<shared::ChunkMesh> m_preview_meshes;
+    uint64_t m_preview_mesh_serial = 0;
     DebugHudToggleLatch m_debug_hud_toggle;
     double m_last_cursor_x = 0.0;
     double m_last_cursor_y = 0.0;

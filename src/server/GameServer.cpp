@@ -1,11 +1,35 @@
 #include <server/GameServer.hpp>
 
+#include <shared/world/Chunk.hpp>
+#include <shared/world/WorldGeneration.hpp>
+
 #include <core/IO/Log.hpp>
 
 #include <algorithm>
 #include <cstdlib>
 #include <stdexcept>
 #include <thread>
+
+namespace {
+
+std::vector<uint8_t> materializePreviewBytes(shared::HeightTile const& tile, int32_t const chunk_z)
+{
+    std::vector<uint8_t> bytes;
+    bytes.reserve(shared::Chunk::BLOCK_COUNT);
+    for (uint8_t z = 0U; z < shared::Chunk::SIDE_LENGTH; ++z) {
+        uint32_t const world_z = static_cast<uint32_t>(chunk_z) * shared::Chunk::SIDE_LENGTH + z;
+        for (uint8_t y = 0U; y < shared::Chunk::SIDE_LENGTH; ++y) {
+            for (uint8_t x = 0U; x < shared::Chunk::SIDE_LENGTH; ++x) {
+                uint32_t const index = static_cast<uint32_t>(y) * shared::Chunk::SIDE_LENGTH + x;
+                bytes.push_back(static_cast<uint8_t>(world_z < tile.heights[index]
+                    ? shared::Block::Stone : shared::Block::Air));
+            }
+        }
+    }
+    return bytes;
+}
+
+} // namespace
 
 namespace server {
 
@@ -43,7 +67,10 @@ uint64_t GameServer::tick(std::chrono::milliseconds const timeout) {
             processInput(replication, input);
         }
     }
-    return static_cast<uint64_t>(poll(timeout));
+    uint64_t const events = static_cast<uint64_t>(poll(timeout));
+    processPendingPreviewSet();
+    processPreviewStreams();
+    return events;
 }
 
 std::expected<std::vector<GameServer::SpawnPoint>, std::string> GameServer::validateSpawnPoints(
@@ -64,11 +91,8 @@ std::expected<std::vector<GameServer::SpawnPoint>, std::string> GameServer::vali
                 || spawn_point.y < 0 || spawn_point.y > shared::World::MAX_PLAYER_ORIGIN_CELL
                 || spawn_point.z != 0);
         bool const outside_flight_world = world_mode == shared::WorldMode::Flight
-            && !shared::World::isFlightPositionInBounds({
-                .x = spawn_point.x,
-                .y = spawn_point.y,
-                .z = spawn_point.z,
-            });
+            && (spawn_point.z < shared::World::FLIGHT_MIN_CELL
+                || spawn_point.z > shared::World::FLIGHT_MAX_Z);
         if (outside_flat_world || outside_flight_world) {
             return std::unexpected("spawn point is outside the world");
         }
@@ -109,6 +133,16 @@ void GameServer::onConnected(core::ServerConnectEvent const client) {
 
 void GameServer::onDisconnected(core::ServerDisconnectEvent const client) {
     CORE_INFO("Server: onDisconnected {}", client.client.address());
+    std::erase_if(m_pending_preview_sets, [&client](auto const& pending) {
+        return pending.first == client.client_id;
+    });
+    std::erase_if(m_preview_streams, [&client](PreviewStream& stream) {
+        if (stream.client_id != client.client_id) {
+            return false;
+        }
+        stream.scheduler.invalidateRevision(PreviewStream::WORLD_REVISION);
+        return true;
+    });
     auto const player = m_world.player(client.client_id);
     if (!player.has_value()) {
         return;
@@ -177,6 +211,9 @@ void GameServer::onReceived(core::ServerReceiveEvent event) {
             } else {
                 sendTo(id, position);
             }
+        }
+        if (m_world.mode() == shared::WorldMode::Flight && m_spawn_points.empty() && msg->wants_previews) {
+            m_pending_preview_sets.emplace_back(id, p);
         }
     } else if (auto* msg = std::get_if<shared::ClientInputMessage>(msg_ptr)) {
         auto const player = m_world.player(id);
@@ -266,8 +303,148 @@ void GameServer::sendTo(std::optional<core::ClientId> const client_id, shared::M
             return;
         }
     }
-    if (!core::Server::send(peer, message_bytes, 0, core::SendMode{ core::SendMode::Reliable })) {
+    if (!core::Server::send(peer, message_bytes, shared::GAME_CHANNEL, core::SendMode{ core::SendMode::Reliable })) {
         CORE_ERROR("Failed to send a message");
+    }
+}
+
+void GameServer::sendPreviewTo(
+    std::optional<core::ClientId> const client_id,
+    shared::Message message
+) {
+    std::vector const message_bytes = shared::encodeMessage(std::move(message));
+    std::optional<core::Peer> peer;
+    if (client_id.has_value()) {
+        peer = client(*client_id);
+        if (!peer) {
+            return;
+        }
+    }
+    if (!core::Server::send(peer, message_bytes, shared::PREVIEW_CHANNEL, core::SendMode{ core::SendMode::Reliable })) {
+        CORE_ERROR("Failed to send a preview message");
+    }
+}
+
+void GameServer::startPreviewSet(const core::ClientId client_id, shared::Player player)
+{
+    sendPreviewTo(client_id, shared::ServerPreviewDescriptorMessage{
+        .configuration = m_world.configuration(),
+        .world_revision = PreviewStream::WORLD_REVISION,
+        .max_preview_chunks = PreviewStream::MAX_PREVIEW_CHUNKS,
+        .max_preview_bytes = shared::PREVIEW_MAX_PAYLOAD_BYTES,
+    });
+    sendPreviewTo(client_id, shared::ServerWorldRevisionMessage{ .world_revision = PreviewStream::WORLD_REVISION });
+
+    int32_t const center_x = player.x / shared::Chunk::SIDE_LENGTH;
+    int32_t const center_y = player.y / shared::Chunk::SIDE_LENGTH;
+    m_preview_streams.emplace_back(client_id, std::move(player));
+    PreviewStream& stream = m_preview_streams.back();
+    stream.coarse_keys.reserve(25U);
+    stream.coarse_tiles.reserve(25U);
+    for (int32_t dy = -2; dy <= 2; ++dy) {
+        for (int32_t dx = -2; dx <= 2; ++dx) {
+            shared::PreviewChunkKey const key = shared::normalizePreviewChunkKey({center_x + dx, center_y + dy, 0});
+            stream.coarse_keys.push_back(key);
+            shared::ChunkCoordinate const coordinate{key.x, key.y, 0};
+            static_cast<void>(stream.scheduler.submit(
+                coordinate,
+                PreviewStream::WORLD_REVISION,
+                shared::GenerationStage::HeightTile
+            ));
+        }
+    }
+}
+
+void GameServer::processPendingPreviewSet()
+{
+    if (m_pending_preview_sets.empty()) {
+        return;
+    }
+    auto const [client_id, player] = m_pending_preview_sets.front();
+    m_pending_preview_sets.pop_front();
+    if (client(client_id).has_value()) {
+        startPreviewSet(client_id, std::move(player));
+    }
+}
+
+void GameServer::processPreviewStreams()
+{
+    static constexpr uint32_t MAX_JOBS_PER_TICK = 8U;
+    uint32_t processed = 0U;
+    for (PreviewStream& stream : m_preview_streams) {
+        while (processed < MAX_JOBS_PER_TICK) {
+            auto const job = stream.scheduler.takeNext();
+            if (!job) {
+                break;
+            }
+            try {
+                if (job->stage == shared::GenerationStage::HeightTile) {
+                    shared::HeightTile tile = m_preview_generator.generateHeightTile({
+                        .x = job->coordinate.x,
+                        .y = job->coordinate.y,
+                    });
+                    uint16_t const height = *std::max_element(tile.heights.begin(), tile.heights.end());
+                    int32_t const surface_z = static_cast<int32_t>((height - 1U) / shared::Chunk::SIDE_LENGTH);
+                    std::vector<uint8_t> bytes = materializePreviewBytes(tile, surface_z);
+                    sendPreviewTo(stream.client_id, shared::ServerChunkPreviewMessage{
+                        .key = {.x = job->coordinate.x, .y = job->coordinate.y, .z = surface_z},
+                        .revision = PreviewStream::WORLD_REVISION,
+                        .token = m_next_preview_token++,
+                        .level = shared::PreviewLevel::Coarse,
+                        .length = static_cast<uint32_t>(bytes.size()),
+                        .bytes = std::move(bytes),
+                    });
+                    stream.coarse_tiles.push_back(std::move(tile));
+                    ++stream.coarse_completed;
+                } else {
+                    auto const tile = std::ranges::find_if(stream.coarse_tiles, [job](shared::HeightTile const& value) {
+                        return value.coordinate.x == job->coordinate.x && value.coordinate.y == job->coordinate.y;
+                    });
+                    if (tile == stream.coarse_tiles.end()) {
+                        throw std::runtime_error{"preview final job has no completed height tile"};
+                    }
+                    std::vector<uint8_t> bytes = materializePreviewBytes(*tile, job->coordinate.z);
+                    sendPreviewTo(stream.client_id, shared::ServerChunkPreviewMessage{
+                        .key = {.x = job->coordinate.x, .y = job->coordinate.y, .z = job->coordinate.z},
+                        .revision = PreviewStream::WORLD_REVISION,
+                        .token = m_next_preview_token++,
+                        .level = shared::PreviewLevel::Final,
+                        .length = static_cast<uint32_t>(bytes.size()),
+                        .bytes = std::move(bytes),
+                    });
+                }
+                static_cast<void>(stream.scheduler.complete(job->id, true));
+                static_cast<void>(stream.scheduler.takeResult());
+            } catch (...) {
+                static_cast<void>(stream.scheduler.complete(job->id, false));
+                auto const result = stream.scheduler.takeResult();
+                if (result && !result->succeeded) {
+                    static_cast<void>(stream.scheduler.retry(job->id));
+                }
+            }
+            ++stream.sent_chunks;
+            ++processed;
+        }
+        if (stream.coarse_completed == stream.coarse_keys.size() && !stream.final_jobs_submitted) {
+            stream.final_jobs_submitted = true;
+            uint32_t submitted = 0U;
+            for (shared::HeightTile const& tile : stream.coarse_tiles) {
+                uint16_t const height = *std::max_element(tile.heights.begin(), tile.heights.end());
+                int32_t const surface_z = static_cast<int32_t>((height - 1U) / shared::Chunk::SIDE_LENGTH);
+                for (int32_t z = 0; z <= surface_z && submitted < PreviewStream::MAX_PREVIEW_CHUNKS - 25U; ++z) {
+                    if (stream.scheduler.submit(
+                            {.x = tile.coordinate.x, .y = tile.coordinate.y, .z = z},
+                            PreviewStream::WORLD_REVISION,
+                            shared::GenerationStage::Materialize
+                        ) == shared::GenerationAdmission::Accepted) {
+                        ++submitted;
+                    }
+                }
+                if (submitted == PreviewStream::MAX_PREVIEW_CHUNKS - 25U) {
+                    break;
+                }
+            }
+        }
     }
 }
 

@@ -696,17 +696,14 @@ std::expected<ScenarioPlan, ScenarioDiagnostic> parseScenarioSource(
         ));
     }
     std::string_view const header = firstHeader(source);
-    if (isExplicitHeader(header, "scenario 1")) {
-        return parseScenario(filename, source, limits);
-    }
-    if (isExplicitHeader(header, "@version(\"0.0.3\")")) {
+    if (isExplicitHeader(header, "@version(\"0.1.2\")")) {
         return scenario_detail::CoreLangScenarioLowerer::lower(filename, source, limits, cancellation);
     }
     return std::unexpected(scenario_detail::diagnostic(
         ScenarioDiagnosticCode::UnknownSourceHeader,
         filename,
         {.line = 1U, .column = 1U},
-        "expected scenario 1 or @version(\"0.0.3\") source header"
+        "expected @version(\"0.1.2\") CoreLang source header"
     ));
 }
 

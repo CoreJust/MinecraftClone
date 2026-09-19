@@ -131,6 +131,7 @@ public:
     void toggleDebugHud() noexcept;
     void setCamera(CameraPose pose) noexcept;
     void setChunkMesh(shared::ChunkMesh const& mesh);
+    void setChunkMeshes(std::span<shared::ChunkMesh const> meshes);
     void hotReload();
     void recreate(uint32_t width, uint32_t height);
     [[nodiscard]]

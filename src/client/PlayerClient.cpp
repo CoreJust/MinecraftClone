@@ -95,6 +95,31 @@ void PlayerClient::render() {
     m_last_cursor_y = cursor_y;
     m_has_cursor_position = true;
     std::chrono::steady_clock::time_point const now = std::chrono::steady_clock::now();
+    std::vector<PreviewHandle> const previews = previewResidency().handles();
+    if (m_preview_mesh_serial != previewResidency().changeSerial()) {
+        m_preview_meshes.clear();
+        m_preview_meshes.reserve(previews.size());
+        shared::ChunkMesher mesher;
+        for (PreviewHandle const& preview : previews) {
+            if (preview->bytes().size() != shared::Chunk::BLOCK_COUNT) {
+                continue;
+            }
+            shared::Chunk::Blocks blocks{};
+            for (uint32_t index = 0U; index < shared::Chunk::BLOCK_COUNT; ++index) {
+                uint8_t const value = preview->bytes()[index];
+                blocks[index] = value == static_cast<uint8_t>(shared::Block::Stone)
+                    ? shared::Block::Stone : shared::Block::Air;
+            }
+            PreviewChunkKey const key = preview->key();
+            shared::Chunk const chunk{{.x = key.x, .y = key.y, .z = key.z}, std::move(blocks)};
+            m_preview_meshes.push_back(mesher.update(chunk));
+        }
+        m_preview_mesh_serial = previewResidency().changeSerial();
+        m_renderer.setChunkMeshes(m_preview_meshes);
+        for (PreviewHandle const& preview : previews) {
+            static_cast<void>(previewResidency().markUploaded(preview));
+        }
+    }
     std::optional<PlayerPresentationPosition> const local_position = predictedLocalPresentation(now);
     if (local_position.has_value()) {
         CameraPose const camera_pose = localPlayerFirstPersonPose(*local_position, m_camera.pose().angles);

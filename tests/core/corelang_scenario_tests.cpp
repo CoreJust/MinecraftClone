@@ -131,14 +131,14 @@ TEST(CoreLangScenario, RejectsInvalidScriptAfterPrivateCandidateMutation)
 
 TEST(CoreLangScenario, RejectsUnknownMixedLimitedAndCancelledSourcesBeforePublishingAPlan)
 {
-    static constexpr std::string_view VALID_PREFIX = R"(@version("0.0.3")
+    static constexpr std::string_view VALID_PREFIX = R"(@version("0.1.2")
 @use minecraft
 pub fn scenario() {
     profile("flight3d-v1")
     seed(1u64)
     playerXYZ("alice", '@'c8, 0i32, 0i32, 0i32, 0i16, 0i16, 0i16)
 )";
-    static constexpr std::string_view LIMITED = R"(@version("0.0.3")
+    static constexpr std::string_view LIMITED = R"(@version("0.1.2")
 @use minecraft
 pub fn scenario() {
     profile("flight3d-v1")
@@ -147,7 +147,7 @@ pub fn scenario() {
     wait(2u64)
 }
 )";
-    static constexpr std::string_view MAX_TICK_THEN_INPUT = R"(@version("0.0.3")
+    static constexpr std::string_view MAX_TICK_THEN_INPUT = R"(@version("0.1.2")
 @use minecraft
 pub fn scenario() {
     profile("flight3d-v1")
@@ -163,12 +163,12 @@ pub fn scenario() {
         shared::ScenarioDiagnosticCode::UnknownSourceHeader
     );
     EXPECT_EQ(
-        shared::parseScenarioSource("unknown-version.mcscenario", "scenario 10\n", scenarioLimits()).error().code,
+        shared::parseScenarioSource("unknown-version.core", "scenario 10\n", scenarioLimits()).error().code,
         shared::ScenarioDiagnosticCode::UnknownSourceHeader
     );
     EXPECT_EQ(
         shared::parseScenarioSource(
-            "mixed.core", "@version(\"0.0.3\")\nscenario 1\n", scenarioLimits()
+            "mixed.core", "@version(\"0.1.2\")\nscenario 1\n", scenarioLimits()
         ).error().code,
         shared::ScenarioDiagnosticCode::CoreLangCompileFailure
     );
@@ -192,28 +192,18 @@ pub fn scenario() {
     );
 }
 
-TEST(CoreLangScenario, PreservesLegacyScenarioFrontendAndMigratedFlatReplay)
+TEST(CoreLangScenario, LoadsCanonicalCoreLangScenario)
 {
-    auto const legacy = shared::parseScenarioSource(
-        "canonical_sample.mcscenario",
-        readScenario("canonical_sample.mcscenario"),
-        scenarioLimits()
-    );
     auto const migrated = shared::parseScenarioSource(
         "canonical_sample.core",
         readScenario("canonical_sample.core"),
         scenarioLimits()
     );
 
-    ASSERT_TRUE(legacy.has_value()) << legacy.error().message;
     ASSERT_TRUE(migrated.has_value()) << migrated.error().message;
-    ASSERT_EQ(legacy->actors().size(), 1U);
     ASSERT_EQ(migrated->actors().size(), 1U);
-    EXPECT_EQ(legacy->actors()[0].x, migrated->actors()[0].x);
-    EXPECT_EQ(legacy->actors()[0].y, migrated->actors()[0].y);
-    EXPECT_EQ(legacy->actors()[0].z, migrated->actors()[0].z);
-    EXPECT_EQ(legacy->totalTicks(), migrated->totalTicks());
-    EXPECT_EQ(legacy->evidenceCount(), migrated->evidenceCount());
+    EXPECT_GT(migrated->totalTicks(), 0U);
+    EXPECT_GT(migrated->evidenceCount(), 0U);
 }
 
 } // namespace

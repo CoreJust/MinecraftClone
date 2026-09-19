@@ -26,7 +26,7 @@
         "tests/acceptance/runtime_cli_tests.cmake",
         "tests/acceptance/scenario_runner_tests.cpp"
       ],
-      "sources_sha256": "cc95a9c21ae4cbc29c476119689a081f11c06ebb764f5323517859b8dca6b4d1"
+      "sources_sha256": "df722e72fa8fe34d3c3ad2b32f71278373b02cf7172e26bf6a6df1f7815c70bb"
     },
     {
       "guide": "docs/code/ANDROID.md",
@@ -138,15 +138,13 @@
         "vcpkg-configuration.json",
         "vcpkg.json"
       ],
-      "sources_sha256": "46b24d1673248566e154c7c7db273c79b149c848d81a67814cc8bacbc9f0254b"
+      "sources_sha256": "39e9504f7a403ce235e0aface5c9e822e42ac545cc9fa418bd95c7349057d493"
     },
     {
       "guide": "docs/code/CORE.md",
-      "guide_sha256": "7a608c7efb9657ad45559eb3cf620d5acb89d7864e73175a45356a0f24d5fa10",
+      "guide_sha256": "a99a22855f2f464ec5b1f2a937891b690c6c3df68f6067432e52a74433a2d0c0",
       "id": "core",
       "sources": [
-        "src/core/CMakeLists.txt",
-        "src/core/include/core/CMakeLists.txt",
         "tests/core/algorithm_tests.cpp",
         "tests/core/byte_io_tests.cpp",
         "tests/core/crash_handler_tests.cpp",
@@ -173,11 +171,11 @@
         "tests/core/vector_utils_tests.cpp",
         "tests/core/version_tests.cpp"
       ],
-      "sources_sha256": "25153935bd2871e0e86bb2890e2660e7fdb740e72462191195d5129e80c27fef"
+      "sources_sha256": "031a7f6f67061fd7cf345a11d68e60f19190fd8b79526d830b4bc7c88d36ba0b"
     },
     {
       "guide": "docs/code/GAMEPLAY.md",
-      "guide_sha256": "f0c2b10fe11187a18dd2c76f2f94056cf515d011042adce9d401f2aa807f8096",
+      "guide_sha256": "673e132533c330c4cd7850fd99bc64e35f4ef8d5b621076745641148354ddef5",
       "id": "gameplay",
       "sources": [
         "src/client/BotClient.cpp",
@@ -188,6 +186,7 @@
         "src/client/GameClient.cpp",
         "src/client/PlayerClient.cpp",
         "src/client/PlayerPresentation.cpp",
+        "src/client/PreviewResidency.cpp",
         "src/client/include/client/BotClient.hpp",
         "src/client/include/client/CMakeLists.txt",
         "src/client/include/client/Camera.hpp",
@@ -196,6 +195,7 @@
         "src/client/include/client/GameClient.hpp",
         "src/client/include/client/PlayerClient.hpp",
         "src/client/include/client/PlayerPresentation.hpp",
+        "src/client/include/client/PreviewResidency.hpp",
         "src/main.cpp",
         "src/server/CMakeLists.txt",
         "src/server/GameServer.cpp",
@@ -210,7 +210,10 @@
         "src/shared/include/shared/world/Chunk.hpp",
         "src/shared/include/shared/world/ChunkMesher.hpp",
         "src/shared/include/shared/world/ScriptedWorld.hpp",
+        "src/shared/include/shared/world/SparseWorld.hpp",
         "src/shared/include/shared/world/World.hpp",
+        "src/shared/include/shared/world/WorldGeneration.hpp",
+        "src/shared/include/shared/world/WorldGenerationScheduler.hpp",
         "src/shared/net/Message.cpp",
         "src/shared/scenario/CoreLangScenario.cpp",
         "src/shared/scenario/Scenario.cpp",
@@ -218,20 +221,28 @@
         "src/shared/world/CanonicalWorldScript.hpp.in",
         "src/shared/world/Chunk.cpp",
         "src/shared/world/ChunkMesher.cpp",
+        "src/shared/world/HeightTileScript.hpp.in",
         "src/shared/world/ScriptedWorld.cpp",
+        "src/shared/world/SparseWorld.cpp",
         "src/shared/world/World.cpp",
+        "src/shared/world/WorldGeneration.cpp",
+        "src/shared/world/WorldGenerationScheduler.cpp",
         "tests/core/chunk_mesher_tests.cpp",
         "tests/core/chunk_tests.cpp",
         "tests/core/corelang_scenario_tests.cpp",
         "tests/core/flight_world_tests.cpp",
         "tests/core/game_server_lifecycle_tests.cpp",
+        "tests/core/game_server_preview_tests.cpp",
         "tests/core/game_server_tests.cpp",
         "tests/core/scenario_parser_tests.cpp",
         "tests/core/scripted_world_tests.cpp",
         "tests/core/shared_message_tests.cpp",
-        "tests/core/shared_world_tests.cpp"
+        "tests/core/shared_world_tests.cpp",
+        "tests/core/sparse_world_tests.cpp",
+        "tests/core/world_generation_scheduler_tests.cpp",
+        "tests/core/world_generation_tests.cpp"
       ],
-      "sources_sha256": "d2d405329af5b098b6774f36ad1821b8f7c4cf77b2ec16426d1312da0d1bec92"
+      "sources_sha256": "5ea70492d35c26191dda3188b954e25bd22cf31c9c656a37ced4391e2eb7016d"
     },
     {
       "guide": "docs/code/RENDERING.md",
@@ -280,7 +291,7 @@
         "tests/testsupport/image_comparison_tests.cpp",
         "tests/testsupport/include/testsupport/ImageComparison.hpp"
       ],
-      "sources_sha256": "09959e0cbf2f6328089c38cd4e1fd70b09bdaf8c9e439b78916e32650180f452"
+      "sources_sha256": "921d7cb64f68692bc49d04e80616440874938d4dfdea118cd0d5d440778b7a6d"
     }
   ],
   "version": 1

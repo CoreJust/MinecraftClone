@@ -1433,7 +1433,7 @@
     "id": "MC-AI-0037",
     "title": "EarlyDev 0.1.0:6 — Sparse world snapshot",
     "kind": "feature",
-    "status": "backlog",
+    "status": "active",
     "priority": "P1",
     "route": "terra",
     "milestone": "ED-010-S6",
@@ -1443,7 +1443,7 @@
     "acceptance": "The 65,536 by 65,536 by 1,024 logical air-and-stone world is represented and traversed without dense allocation, using bounded executors, staged generation/materialization, deterministic audio acceptance and revisioned chunk previews; coordinate, inheritance, failure/retry, cancellation, memory and runtime evidence pass. The exact reviewed/tagged S6 build is published with named macOS, Windows and Android GitHub assets, SHA256 hashes, provenance, dependencies/licenses and truthful signing status. The exact downloaded macOS asset and exact released Android APK pass local runtime acceptance; Windows build/package evidence is required, while user Windows runtime is recorded separately and never inferred.",
     "evidence": "",
     "blocker": "",
-    "owner": "",
+    "owner": "s6-main",
     "level": "snapshot",
     "parent": "MC-AI-0033",
     "motivation": "Make the roadmap-scale world practical by separating its logical extent from resident chunk storage.",
@@ -7017,5 +7017,50 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0208",
+    "title": "Implement S6 sparse wrapped world bulk",
+    "kind": "feature",
+    "status": "done",
+    "priority": "P1",
+    "route": "luna",
+    "milestone": "ED-010-S6",
+    "depends_on": [
+      "MC-AI-0036"
+    ],
+    "acceptance": "Implement and commit the main S6 bulk: CoreLang0.1.2-only scripts and legacy .mcscenario removal; obsolete src/core removal; canonical 65536x65536x1024 world with X/Y wrapping and boundaries; bounded sparse16-cubed chunks; CoreLang16x16 heightmaps with C++ block placement and exact six-base/806-center/406-first-crest/64-spacing formula; bounded executor scheduling and stale-result rejection; server-authoritative bounded chunk streaming; client revisioned previews and practical LOD; start beside first wave; deterministic audio foundation and once-per-local-spawn sound where RuntimeAudio is available; non-windowed macOS build and focused/full tests. Preserve S5 behavior. Record blockers. Do not launch, capture screenshots, release, publish, push or promote.",
+    "evidence": "macOS Debug mc_main and mc_tests built successfully against CoreLang 0.1.2 fc02c0b and compatible CoreCpp 1a1d409; full CTest passed 294/294; ai_check.py --fast passed; docs/backlog/current-plan checks passed; no .mcscenario files remain and src/core is absent.",
+    "blocker": "The pinned compatible CoreCpp revision lacks a native RuntimeAudio output backend, so this batch cannot provide an audible once-per-spawn sound. CoreCpp audio/executor commits exist separately but cannot be adopted without rebuilding the verified CoreLang 0.1.2 dependency line.",
+    "owner": "s6-main",
+    "level": "basic",
+    "parent": "MC-AI-0037",
+    "motivation": "Deliver the user-approved S6 gameplay bulk while deferring launch, screenshots and release.",
+    "context": "Exact published S5 ledger f4edb22 with source e3cf09ff94a27a5a6e4ee40e5405846527abc2f7; CoreCpp1a1d4095bd553ed1ea382523eecd22c9748bbe9f; CoreLang0.1.2 fc02c0b896a6509f21f9832b68f8b24c925defd5. User authorized conditional implementation at15% remaining with10% reserve; no game launch, screenshots, release, push or promotion.",
+    "complexity": "high",
+    "created_at": "2026-09-13",
+    "resolved_at": "2026-09-13",
+    "resolution_changes": "Implemented CoreLang 0.1.2 terrain heightmaps with C++ block materialization, the fixed six-block-base fading wave terrain, sparse wrapped 65536x65536x1024 world storage and boundaries, bounded generation scheduling, preview protocol/residency/rendering, first-wave spawn, and legacy scenario/src/core cleanup. Added preview capability negotiation so non-rendering bots do not request terrain.",
+    "plan": [
+      "Clarify acceptance and implementation steps.",
+      "Implement the smallest vertically integrated sparse wrapped terrain path.",
+      "Add deterministic boundary, heightmap, storage, scheduling, streaming, preview and audio tests.",
+      "Build and run non-windowed macOS checks, commit reviewed task changes, then stop."
+    ],
+    "product_changes": [
+      "Normal flight sessions start beside the first wave and receive a rendered 5x5 terrain preview around the spawn.",
+      "Horizontal flight wraps across the 65536-cell world while vertical flight remains bounded to 1024 cells."
+    ],
+    "code_changes": [
+      "Added sparse world, CoreLang terrain generator, bounded scheduler, revisioned preview protocol/residency, server preview production, and multi-chunk client rendering.",
+      "Removed all checked-in .mcscenario files and the obsolete src/core tree; migrated scenario scripts to CoreLang 0.1.2."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "Preview generation must be negotiated and deferred beyond join handling; synchronous generation delayed protocol tests and bot joins until capability negotiation isolated rendering clients.",
+    "docs_review": "Refreshed and validated generated code documentation after reading the changed guides against source.",
+    "environment_review": "Built and tested non-windowed on macOS arm64. Per user instruction, did not launch the game or capture screenshots. Windows and Android runtime evidence remain snapshot gates.",
+    "backlog_review": "The aggregate S6 snapshot remains active for native spawn audio, dynamic travel streaming/true coarse LOD, screenshots, platform acceptance, review hold, and release work."
   }
 ]

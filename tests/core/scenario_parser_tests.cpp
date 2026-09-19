@@ -279,10 +279,10 @@ end
 
 TEST(ScenarioParserTest, ParsesEveryCheckedInScenarioExample) {
     static constexpr std::array<std::string_view, 4> EXAMPLES{
-        "camera_two_client.mcscenario",
-        "canonical_sample.mcscenario",
-        "comment_and_boundary.mcscenario",
-        "two_players.mcscenario",
+        "canonical_sample.core",
+        "s5_flight_boundary.core",
+        "s5_flight_camera.core",
+        "s5_flight_multiplayer.core",
     };
     std::filesystem::path const scenario_directory = scenarioRepositoryRoot() / "scenarios";
     for (std::string_view const example : EXAMPLES) {
@@ -293,7 +293,7 @@ TEST(ScenarioParserTest, ParsesEveryCheckedInScenarioExample) {
             std::istreambuf_iterator<char>{ file },
             std::istreambuf_iterator<char>{},
         };
-        auto const result = shared::parseScenario(example_path.string(), source, scenarioLimits());
+        auto const result = shared::parseScenarioSource(example_path.string(), source, scenarioLimits());
         ASSERT_TRUE(result.has_value()) << result.error().message;
     }
 }

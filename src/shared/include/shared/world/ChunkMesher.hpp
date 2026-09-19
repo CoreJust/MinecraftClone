@@ -35,8 +35,9 @@ struct MeshFace final {
 };
 
 struct ChunkMesh final {
-    static constexpr uint32_t MAXIMUM_FACE_COUNT = Chunk::BLOCK_COUNT * 6;
+    static constexpr uint32_t MAXIMUM_FACE_COUNT = Chunk::BLOCK_COUNT * 6 * 320;
 
+    ChunkCoordinate coordinate;
     ChunkContentIdentity content_identity;
     std::vector<MeshFace> faces;
 };
@@ -131,6 +132,7 @@ public:
 
 private:
     struct InputSnapshot final {
+        ChunkCoordinate coordinate;
         ChunkContentIdentity content_identity;
         std::array<Block, Chunk::BLOCK_COUNT> blocks;
         ChunkNeighborFaces neighbors;

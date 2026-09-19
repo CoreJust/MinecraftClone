@@ -32,9 +32,9 @@ indefinitely if no valid cell remains.
 ## Deterministic scenario plans
 
 [Scenario.hpp](../../src/shared/include/shared/scenario/Scenario.hpp) defines
-bounded header-selected plans. Legacy `scenario 1` and CoreLang
-`@version("0.0.3")` validate source and limits before returning an immutable
-plan, so rejection cannot mutate a world or start the runner. Grammar and
+bounded plans loaded only from CoreLang `@version("0.1.2")` sources. The host
+validates source and limits before returning an immutable plan, so rejection
+cannot mutate a world or start the runner. Grammar and
 examples are in the [scripting guide](../scripting/README.md).
 
 The legacy `flat3d-v1` profile records flat-plane `(x, y, z)` positions and
@@ -110,8 +110,9 @@ separate; see [renderer tests](RENDERING.md).
 
 `Chunk` stores 4096 Air/Stone IDs in a 16-cubed unit with signed chunk
 coordinates and checked local coordinates. Bulk construction rejects unsupported
-IDs; effective edits update revision and content hash. `CanonicalWorld` embeds
-the trusted CoreLang 0.0.3 seed-42 generator at configure time. `ScriptedWorld`
+IDs; effective edits update revision and content hash. The retained S5
+`CanonicalWorld` embeds its historical CoreLang 0.0.3 seed-42 generator at
+configure time, while S6 scenario and terrain scripts require CoreLang 0.1.2. `ScriptedWorld`
 collects bounded callbacks into a private candidate and publishes it with its
 configuration identity only after coordinate, block, operation-budget, and
 completion validation succeed. There is no separate script-fuel setting.

@@ -4,6 +4,7 @@ target_sources(mc
         BASE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}
         FILES
             BotClient.hpp
+            PreviewResidency.hpp
     Camera.hpp
     CameraController.hpp
     render/DepthFormat.hpp
