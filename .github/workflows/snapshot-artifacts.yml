@@ -244,6 +244,28 @@ jobs:
           --preset release
           --cmake-arg=-DCMAKE_TOOLCHAIN_FILE=$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake
           --cmake-arg=-DVCPKG_MANIFEST_INSTALL=OFF
+      - name: Create clang-cl warning policy launcher
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        run: |
+          @'
+          import subprocess
+          import sys
+
+          GNU_WARNING_POLICY = {"-Wall", "-Wextra", "-Wpedantic", "-Werror"}
+          NATIVE_WARNING_POLICY = [
+              "/W4",
+              "/WX",
+              "-Wno-error=reorder-init-list",
+              "-Wno-error=unused-command-line-argument",
+              "-Wno-error=unknown-attributes",
+          ]
+
+          command = [argument for argument in sys.argv[1:] if argument not in GNU_WARNING_POLICY]
+          separator = command.index("--") if "--" in command else len(command)
+          command[separator:separator] = NATIVE_WARNING_POLICY
+          raise SystemExit(subprocess.call(command))
+          '@ | Set-Content -Encoding utf8 "$env:RUNNER_TEMP\clang-cl-launcher.py"
       - name: Install pinned private dependencies (Windows)
         if: matrix.platform == 'windows'
         shell: cmd
@@ -252,10 +274,7 @@ jobs:
           call "%ProgramFiles%\Microsoft Visual Studio\2022\Enterprise\Common7\Tools\VsDevCmd.bat" -arch=amd64
           if errorlevel 1 exit /b %errorlevel%
           set "VCPKG_ROOT=%MC_ACQUIRED_VCPKG_ROOT%"
-          set "_CL_=-Wno-everything /W4 /WX -Wno-error=reorder-init-list -Wno-error=unused-command-line-argument -Wno-error=unknown-attributes"
-          > "%RUNNER_TEMP%\corelang-windows-compat.cmake" echo add_compile_options^(-Wno-error=reorder-init-list -Wno-error=unused-command-line-argument -Wno-error=unknown-attributes -Wno-c++98-compat -Wno-c++98-compat-pedantic -Wno-pre-c++17-compat^)
-          if errorlevel 1 exit /b %errorlevel%
-          python script/ci/acquire.py install-private-dependencies --root "%RUNNER_TEMP%\private-dependencies" --platform windows --preset release "--cmake-arg=-DCMAKE_TOOLCHAIN_FILE=%VCPKG_ROOT%\scripts\buildsystems\vcpkg.cmake" --cmake-arg=-DCMAKE_C_COMPILER=clang-cl --cmake-arg=-DCMAKE_CXX_COMPILER=clang-cl "--cmake-arg=-DCMAKE_PROJECT_INCLUDE_BEFORE=%RUNNER_TEMP%\corelang-windows-compat.cmake" --cmake-arg=-DVCPKG_MANIFEST_INSTALL=OFF
+          python script/ci/acquire.py install-private-dependencies --root "%RUNNER_TEMP%\private-dependencies" --platform windows --preset release "--cmake-arg=-DCMAKE_TOOLCHAIN_FILE=%VCPKG_ROOT%\scripts\buildsystems\vcpkg.cmake" --cmake-arg=-DCMAKE_C_COMPILER=clang-cl --cmake-arg=-DCMAKE_CXX_COMPILER=clang-cl "--cmake-arg=-DCMAKE_CXX_COMPILER_LAUNCHER=python;%RUNNER_TEMP%\clang-cl-launcher.py" --cmake-arg=-DVCPKG_MANIFEST_INSTALL=OFF
           if errorlevel 1 exit /b %errorlevel%
       - name: Verify exact source
         shell: bash

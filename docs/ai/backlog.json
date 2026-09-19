@@ -7445,5 +7445,41 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0217",
+    "title": "Translate immutable dependency warning policy for clang-cl",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P0",
+    "route": "luna",
+    "milestone": "EarlyDev 0.1.0:6",
+    "depends_on": [],
+    "acceptance": "The Windows artifact workflow generates and uses a bounded compiler launcher that removes only the immutable dependencies GNU warning-policy switches, inserts native clang-cl /W4 /WX plus the three proven compatibility exceptions before the source separator, and delegates every other argument unchanged; deterministic tests lock creation, ordering, launcher use, and translation code.",
+    "evidence": "Runs 35462497987 and 35462880045 established the GNU-policy mismatch and _CL_ post-separator failure. Focused workflow validation covers the launcher boundary; end-to-end hosted acceptance remains on MC-AI-0037.",
+    "blocker": "",
+    "owner": "",
+    "level": "basic",
+    "parent": "MC-AI-0037",
+    "motivation": "Hosted run 35462880045 proved clang-cl appends _CL_ after CMake’s -- source separator and treats those options as filenames, while earlier runs proved raw GNU -Wall activates a materially different all-diagnostics policy.",
+    "context": "Remove the failed environment technique. Do not edit tagged source or dependency locks. Translate only warning-policy spelling at the Windows private-dependency compiler boundary.",
+    "complexity": "medium",
+    "created_at": "2026-09-19",
+    "resolved_at": "2026-09-19",
+    "resolution_changes": "Replaced the invalid _CL_ mechanism and temporary CMake warning include with a generated Python compiler launcher that maps the immutable GNU warning policy to native clang-cl /W4 /WX and preserves all non-policy arguments.",
+    "plan": [],
+    "product_changes": [
+      "No gameplay change."
+    ],
+    "code_changes": [
+      "Generate the Windows compiler launcher in PowerShell, pass it through CMAKE_CXX_COMPILER_LAUNCHER, and add exact workflow boundary tests."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]

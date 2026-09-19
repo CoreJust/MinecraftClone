@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import re
+import sys
+import types
 import unittest
+from unittest import mock
 from pathlib import Path
 
 
@@ -150,6 +153,54 @@ class WorkflowContextTests(unittest.TestCase):
         self.assertLess(workflow.index("Stage pinned Windows Vulkan runtime"), workflow.index("Build, test, and package Windows"))
         self.assertIn('--vulkan-runtime "build\\install\\vulkan-1.dll"', workflow)
 
+    def test_snapshot_clang_cl_launcher_translates_warning_policy_before_source_separator(self):
+        workflow = WORKFLOWS[1].read_text(encoding="utf-8")
+        launcher_step = workflow.split("          @'\n", maxsplit=1)[1].split(
+            "          '@ | Set-Content", maxsplit=1
+        )[0]
+        launcher = "\n".join(
+            line.removeprefix("          ") for line in launcher_step.splitlines()
+        )
+
+        cases = (
+            (
+                ["clang-cl", "-Wall", "-Wextra", "-Wpedantic", "-Werror", "-DKEEP=1", "-c", "--", "source.cpp"],
+                [
+                    "clang-cl",
+                    "-DKEEP=1",
+                    "-c",
+                    "/W4",
+                    "/WX",
+                    "-Wno-error=reorder-init-list",
+                    "-Wno-error=unused-command-line-argument",
+                    "-Wno-error=unknown-attributes",
+                    "--",
+                    "source.cpp",
+                ],
+            ),
+            (
+                ["clang-cl", "-Wall", "input.cpp"],
+                [
+                    "clang-cl",
+                    "input.cpp",
+                    "/W4",
+                    "/WX",
+                    "-Wno-error=reorder-init-list",
+                    "-Wno-error=unused-command-line-argument",
+                    "-Wno-error=unknown-attributes",
+                ],
+            ),
+        )
+        for arguments, expected in cases:
+            calls: list[list[str]] = []
+            fake_subprocess = types.SimpleNamespace(call=lambda command: calls.append(command) or 0)
+            with self.subTest(arguments=arguments), mock.patch.dict(
+                sys.modules, {"subprocess": fake_subprocess}
+            ), mock.patch.object(sys, "argv", ["launcher.py", *arguments]):
+                with self.assertRaisesRegex(SystemExit, "0"):
+                    exec(compile(launcher, "clang-cl-launcher.py", "exec"), {})
+            self.assertEqual(calls, [expected])
+
     def test_snapshot_private_dependencies_use_portable_compilers_without_changing_locks(self):
         workflow = WORKFLOWS[1].read_text(encoding="utf-8")
         windows_install = workflow.split(
@@ -157,21 +208,16 @@ class WorkflowContextTests(unittest.TestCase):
         )[1].split("      - name:", maxsplit=1)[0]
         self.assertIn("--cmake-arg=-DCMAKE_C_COMPILER=clang-cl", windows_install)
         self.assertIn("--cmake-arg=-DCMAKE_CXX_COMPILER=clang-cl", windows_install)
-        self.assertIn("corelang-windows-compat.cmake", windows_install)
-        self.assertIn(
-            'set "_CL_=-Wno-everything /W4 /WX -Wno-error=reorder-init-list -Wno-error=unused-command-line-argument -Wno-error=unknown-attributes"',
-            windows_install,
-        )
-        self.assertIn(
-            "add_compile_options^(-Wno-error=reorder-init-list -Wno-error=unused-command-line-argument -Wno-error=unknown-attributes -Wno-c++98-compat -Wno-c++98-compat-pedantic -Wno-pre-c++17-compat^)",
-            windows_install,
-        )
-        self.assertIn("--cmake-arg=-DCMAKE_PROJECT_INCLUDE_BEFORE=", windows_install)
-        self.assertLess(windows_install.index("VsDevCmd.bat"), windows_install.index('set "_CL_='))
-        self.assertLess(
-            windows_install.index('set "_CL_='),
-            windows_install.index("python script/ci/acquire.py install-private-dependencies"),
-        )
+        self.assertIn("--cmake-arg=-DCMAKE_CXX_COMPILER_LAUNCHER=python;%RUNNER_TEMP%\\clang-cl-launcher.py", windows_install)
+        launcher_step = workflow.split(
+            "      - name: Create clang-cl warning policy launcher\n", maxsplit=1
+        )[1].split("      - name:", maxsplit=1)[0]
+        self.assertIn('GNU_WARNING_POLICY = {"-Wall", "-Wextra", "-Wpedantic", "-Werror"}', launcher_step)
+        self.assertIn('separator = command.index("--") if "--" in command else len(command)', launcher_step)
+        self.assertIn('command[separator:separator] = NATIVE_WARNING_POLICY', launcher_step)
+        self.assertIn('"/W4",', launcher_step)
+        self.assertIn('"/WX",', launcher_step)
+        self.assertLess(workflow.index("Create clang-cl warning policy launcher"), workflow.index("Install pinned private dependencies (Windows)"))
 
         macos_install = workflow.split(
             "      - name: Install pinned private dependencies (macOS)\n", maxsplit=1
