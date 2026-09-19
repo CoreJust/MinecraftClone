@@ -180,7 +180,7 @@ ChunkMesh ChunkMesher::build(InputSnapshot const& input)
         .content_identity = input.content_identity,
         .faces = {},
     };
-    mesh.faces.reserve(ChunkMesh::MAXIMUM_FACE_COUNT);
+    mesh.faces.reserve(ChunkMesh::MAXIMUM_CHUNK_FACE_COUNT);
 
     for (uint8_t z = 0; z < Chunk::SIDE_LENGTH; ++z) {
         for (uint8_t y = 0; y < Chunk::SIDE_LENGTH; ++y) {
@@ -202,6 +202,7 @@ ChunkMesh ChunkMesher::build(InputSnapshot const& input)
             }
         }
     }
+    mesh.faces.shrink_to_fit();
     return mesh;
 }
 

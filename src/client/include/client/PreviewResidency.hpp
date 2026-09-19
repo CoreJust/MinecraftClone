@@ -53,10 +53,10 @@ private:
 using PreviewHandle = std::shared_ptr<PreviewMesh const>;
 
 struct PreviewResidencyLimits final {
-    uint32_t max_resident_chunks = 320;
-    uint32_t max_pending_requests = 320;
-    uint64_t max_resident_bytes = 4U * 1024U * 1024U;
-    uint64_t max_pending_upload_bytes = 2U * 1024U * 1024U;
+    uint32_t max_resident_chunks = 1'024;
+    uint32_t max_pending_requests = 1'024;
+    uint64_t max_resident_bytes = 8U * 1024U * 1024U;
+    uint64_t max_pending_upload_bytes = 8U * 1024U * 1024U;
 };
 
 class PreviewRequest final {

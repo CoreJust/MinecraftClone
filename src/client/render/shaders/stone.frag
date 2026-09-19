@@ -29,10 +29,13 @@ const float kFaceShades[6] = float[](0.68, 0.84, 0.76, 0.9, 0.62, 1.0);
 void main() {
     const uvec2 pixel = min(uvec2(in_uv * 16.0), uvec2(15u));
     const uint rgb = kStonePixels[pixel.y * 16u + pixel.x];
-    const vec3 color = vec3(
+    const vec3 sampled = vec3(
         float((rgb >> 16u) & 0xffu),
         float((rgb >> 8u) & 0xffu),
         float(rgb & 0xffu)
     ) / 255.0;
+    const float luminance = dot(sampled, vec3(0.299, 0.587, 0.114));
+    const float stone = mix(0.42, 0.68, smoothstep(0.36, 0.62, luminance));
+    const vec3 color = vec3(stone * 0.96, stone * 0.98, stone);
     out_color = vec4(color * kFaceShades[in_face_direction], 1.0);
 }

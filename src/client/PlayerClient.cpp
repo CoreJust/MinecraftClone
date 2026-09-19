@@ -70,6 +70,8 @@ shared::Direction PlayerClient::input() {
             glfwGetKey(m_window.nativeHandle(), GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS
             || glfwGetKey(m_window.nativeHandle(), GLFW_KEY_RIGHT_SHIFT) == GLFW_PRESS
         )),
+        .accelerated = glfwGetKey(m_window.nativeHandle(), GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS
+            || glfwGetKey(m_window.nativeHandle(), GLFW_KEY_RIGHT_CONTROL) == GLFW_PRESS,
     };
 }
 
@@ -96,12 +98,26 @@ void PlayerClient::render() {
     m_has_cursor_position = true;
     std::chrono::steady_clock::time_point const now = std::chrono::steady_clock::now();
     std::vector<PreviewHandle> const previews = previewResidency().handles();
-    if (m_preview_mesh_serial != previewResidency().changeSerial()) {
-        m_preview_meshes.clear();
-        m_preview_meshes.reserve(previews.size());
+    uint64_t const preview_serial = previewResidency().changeSerial();
+    if (m_preview_observed_serial != preview_serial) {
+        m_preview_observed_serial = preview_serial;
+        m_preview_mesh_ready_at = now + std::chrono::milliseconds{100};
+    }
+    if (m_preview_mesh_serial != preview_serial && now >= m_preview_mesh_ready_at) {
+        std::vector<PreviewHandle> mesh_sources;
+        std::vector<shared::ChunkMesh> meshes;
+        mesh_sources.reserve(previews.size());
+        meshes.reserve(previews.size());
         shared::ChunkMesher mesher;
         for (PreviewHandle const& preview : previews) {
             if (preview->bytes().size() != shared::Chunk::BLOCK_COUNT) {
+                continue;
+            }
+            auto const existing = std::ranges::find(m_preview_mesh_sources, preview);
+            if (existing != m_preview_mesh_sources.end()) {
+                uint64_t const index = static_cast<uint64_t>(existing - m_preview_mesh_sources.begin());
+                mesh_sources.push_back(preview);
+                meshes.push_back(std::move(m_preview_meshes[index]));
                 continue;
             }
             shared::Chunk::Blocks blocks{};
@@ -112,9 +128,12 @@ void PlayerClient::render() {
             }
             PreviewChunkKey const key = preview->key();
             shared::Chunk const chunk{{.x = key.x, .y = key.y, .z = key.z}, std::move(blocks)};
-            m_preview_meshes.push_back(mesher.update(chunk));
+            mesh_sources.push_back(preview);
+            meshes.push_back(mesher.update(chunk));
         }
-        m_preview_mesh_serial = previewResidency().changeSerial();
+        m_preview_mesh_sources = std::move(mesh_sources);
+        m_preview_meshes = std::move(meshes);
+        m_preview_mesh_serial = preview_serial;
         m_renderer.setChunkMeshes(m_preview_meshes);
         for (PreviewHandle const& preview : previews) {
             static_cast<void>(previewResidency().markUploaded(preview));

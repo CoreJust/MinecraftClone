@@ -107,10 +107,11 @@ struct MessageEncoder final {
 
     std::vector<uint8_t> operator()(ClientInputMessage const& message)
     {
-        begin(MessageType::ClientInput, 7U);
+        begin(MessageType::ClientInput, 8U);
         bytes.push_back(message.direction.x);
         bytes.push_back(message.direction.y);
         bytes.push_back(message.direction.z);
+        bytes.push_back(static_cast<uint8_t>(message.direction.accelerated));
         appendUint32(bytes, message.sequence);
         return std::move(bytes);
     }
@@ -364,10 +365,16 @@ std::optional<Message> decodeMessage(std::span<uint8_t const> const data)
             auto const x = reader.readUint8();
             auto const y = reader.readUint8();
             auto const z = reader.readUint8();
+            auto const accelerated = reader.readUint8();
             auto const sequence = reader.readUint32();
-            if (x && y && z && sequence) {
+            if (x && y && z && accelerated && *accelerated <= 1U && sequence) {
                 message = ClientInputMessage{
-                    .direction = { .x = *x, .y = *y, .z = *z },
+                    .direction = {
+                        .x = *x,
+                        .y = *y,
+                        .z = *z,
+                        .accelerated = *accelerated == 1U,
+                    },
                     .sequence = *sequence,
                 };
             }

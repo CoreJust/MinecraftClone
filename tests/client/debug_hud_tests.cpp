@@ -383,7 +383,7 @@ TEST(DebugHudTest, FormatsReadableSpacedGoldenValuesAndDegreeGroups)
     ASSERT_TRUE(hud.formatText(text));
     EXPECT_EQ(
         std::string_view(text.bytes.data(), text.size),
-        "FPS:  0.0\nUPTIME:  0.0s\nXYZ:  1.25   -2.30   4.56\nYPR deg: 45.0  -10.0  3.0"
+        "FPS:  0.0\nUPTIME:  0.0s\nXYZ:1.2,-2.3,4.6\nYPR deg: 45.0  -10.0  3.0"
     );
 }
 
@@ -408,7 +408,7 @@ TEST(DebugHudTest, ReplacesUptimeWithTouchFlightControlsWhenRequested)
     ASSERT_TRUE(hud.formatText(text));
     EXPECT_EQ(
         std::string_view(text.bytes.data(), text.size),
-        "FPS:  0.0\nRIGHT: TOP UP / BOTTOM DOWN\nXYZ:  1.25   -2.30   4.56\nYPR deg: 45.0  -10.0  3.0"
+        "FPS:  0.0\nRIGHT: TOP UP / BOTTOM DOWN\nXYZ:1.2,-2.3,4.6\nYPR deg: 45.0  -10.0  3.0"
     );
 }
 
@@ -518,7 +518,7 @@ TEST(DebugHudTest, SupportsInjectedFormattingAndDpiToggleState)
     ASSERT_TRUE(hud.formatText(text));
     EXPECT_EQ(
         std::string_view(text.bytes.data(), text.size),
-        "FPS:  X\nUPTIME:  Xs\nXYZ:  X   X   X\nYPR deg: X  X  X"
+        "FPS:  X\nUPTIME:  Xs\nXYZ:X,X,X\nYPR deg: X  X  X"
     );
 
     hud.toggle();

@@ -35,6 +35,7 @@ struct MeshFace final {
 };
 
 struct ChunkMesh final {
+    static constexpr uint32_t MAXIMUM_CHUNK_FACE_COUNT = Chunk::BLOCK_COUNT * 6U;
     static constexpr uint32_t MAXIMUM_FACE_COUNT = Chunk::BLOCK_COUNT * 6 * 320;
 
     ChunkCoordinate coordinate;

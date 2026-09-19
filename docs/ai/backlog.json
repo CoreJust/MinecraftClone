@@ -7062,5 +7062,44 @@
     "docs_review": "Refreshed and validated generated code documentation after reading the changed guides against source.",
     "environment_review": "Built and tested non-windowed on macOS arm64. Per user instruction, did not launch the game or capture screenshots. Windows and Android runtime evidence remain snapshot gates.",
     "backlog_review": "The aggregate S6 snapshot remains active for native spawn audio, dynamic travel streaming/true coarse LOD, screenshots, platform acceptance, review hold, and release work."
+  },
+  {
+    "id": "MC-AI-0206",
+    "title": "Repair S6 playtest performance, reach, controls, spawn, HUD, and stone presentation",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P0",
+    "route": "luna",
+    "milestone": "ED-010-S6",
+    "depends_on": [],
+    "acceptance": "Mac build succeeds; all project tests pass; preview sends a radius-14 surface set within two seconds in the transport test; buried chunks are not streamed; Ctrl is exactly 5x on every flight axis; protocol compatibility is versioned; spawn and compact one-decimal XYZ are deterministic; stone shader is neutral grayscale. Actual 60+ FPS remains an S6 hands-on acceptance gate.",
+    "evidence": "Mac build passed. CTest 296/296 passed. Real transport delivered 841 surface chunks in 1.8 seconds. Focused mesher, protocol, flight, HUD, generation, and preview tests passed. Luna/high review found four issues; all were corrected and delta review passed.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0037",
+    "motivation": "Repair S6 playtest performance, reach, controls, spawn, HUD, and stone presentation",
+    "context": "User playtest measured 8-9 FPS, very slow generation, radius-2 coverage, misleading stone, unsafe spawn, missing acceleration, and truncated overprecise XYZ.",
+    "complexity": "high",
+    "created_at": "2026-09-13",
+    "resolved_at": "2026-09-13",
+    "resolution_changes": "Removed per-column VM execution; expanded preview radius 2 to 14 while eliminating buried chunks; batched generation and mesh upload; bounded mesh storage; added exact 5x Ctrl flight and protocol v3; fixed first-crest spawn and compact one-decimal XYZ; neutralized stone shading.",
+    "plan": [
+      "Clarify acceptance and implementation steps.",
+      "Use native batch evaluation for the CoreLang-authored height formula; stream surface chunks across a radius-14 square; reuse unchanged meshes; add authoritative accelerated input; repair spawn and HUD; revise stone shading; validate deterministic contracts and obtain runtime playtest evidence."
+    ],
+    "product_changes": [
+      "S6 streams a sevenfold-wider surface view without buried terrain, provides 5x Ctrl flight, safe first-crest spawn, compact XYZ, and neutral stone."
+    ],
+    "code_changes": [
+      "Native height evaluation, 64-job preview batches, 841 surface chunks, cached preview meshes, accelerated wire input, corrected spawn/HUD, revised stone shader, and focused regressions."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]

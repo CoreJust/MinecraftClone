@@ -7,11 +7,9 @@
 
 #include <algorithm>
 #include <array>
-#include <bit>
 #include <cmath>
 #include <cstdint>
 #include <numbers>
-#include <optional>
 #include <stdexcept>
 #include <utility>
 #include <vector>
@@ -29,37 +27,6 @@ constexpr uint16_t MAXIMUM_HEIGHT = static_cast<uint16_t>(shared::WorldExtent::D
 uint32_t sampleIndex(shared::BlockCoordinate const coordinate) noexcept
 {
     return static_cast<uint32_t>(coordinate.y) * HEIGHT_TILE_INDEX_MULTIPLIER + coordinate.x;
-}
-
-[[nodiscard]]
-core::lang::Type floatType()
-{
-    return {.kind = core::lang::TypeKind::F64};
-}
-
-[[nodiscard]]
-core::lang::Value floatValue(double const value)
-{
-    uint64_t const bits = std::bit_cast<uint64_t>(value);
-    std::vector<uint8_t> bytes(sizeof(bits));
-    for (uint64_t index = 0U; index < bytes.size(); ++index) {
-        bytes[static_cast<std::vector<uint8_t>::size_type>(index)] = static_cast<uint8_t>(bits >> (index * 8U));
-    }
-    return {.type = floatType(), .bytes = std::move(bytes)};
-}
-
-[[nodiscard]]
-std::optional<int32_t> signedValue(core::lang::Value const& value)
-{
-    if (value.type.kind != core::lang::TypeKind::I32 || value.bytes.size() != sizeof(uint32_t)) {
-        return std::nullopt;
-    }
-    uint32_t bits = 0U;
-    for (uint64_t index = 0U; index < value.bytes.size(); ++index) {
-        bits |= static_cast<uint32_t>(value.bytes[static_cast<std::vector<uint8_t>::size_type>(index)])
-            << (index * 8U);
-    }
-    return static_cast<int32_t>(bits);
 }
 
 [[nodiscard]]
@@ -123,30 +90,7 @@ uint16_t TerrainGenerator::nativeHeightAt(int64_t const x, int64_t const y) noex
 
 uint16_t TerrainGenerator::evaluateHeight(int64_t const x, int64_t const y) const noexcept
 {
-    if (!m_script || !m_script->program) {
-        return nativeHeightAt(x, y);
-    }
-    try {
-        std::array<core::lang::Type, 1U> const parameter_types{floatType()};
-        double const dx = static_cast<double>(x) - WORLD_CENTER;
-        double const dy = static_cast<double>(y) - WORLD_CENTER;
-        double const distance = std::sqrt(dx * dx + dy * dy);
-        std::array<core::lang::Value, 1U> const arguments{floatValue(distance)};
-        auto const outcome = m_script->runtime.execute(
-            *m_script->program,
-            "s6_height_tile",
-            "height",
-            parameter_types,
-            arguments
-        );
-        if (!outcome || !std::holds_alternative<core::lang::Completed>(*outcome)) {
-            return nativeHeightAt(x, y);
-        }
-        auto const value = signedValue(std::get<core::lang::Completed>(*outcome).value);
-        return value ? clampHeight(*value) : nativeHeightAt(x, y);
-    } catch (...) {
-        return nativeHeightAt(x, y);
-    }
+    return nativeHeightAt(x, y);
 }
 
 HeightTile TerrainGenerator::generateHeightTile(HeightTileCoordinate coordinate) const

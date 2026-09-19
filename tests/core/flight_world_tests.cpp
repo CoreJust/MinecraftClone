@@ -45,6 +45,28 @@ TEST(FlightWorldTest, NormalizesThreeAxisMovementWithoutGravityOrCollisions)
     EXPECT_EQ(world.player(1)->z_subcell, THREE_AXIS_STEP);
 }
 
+TEST(FlightWorldTest, AcceleratesAllFlightAxesFivefold)
+{
+    shared::World world{ shared::WorldMode::Flight };
+    world.spawnPlayer(1, '@');
+    ASSERT_TRUE(world.setPlayerPosition(1, { .x = 100, .y = 100, .z = 100 }));
+
+    ASSERT_TRUE(world.movePlayer(1, {
+        .x = 127,
+        .y = 127,
+        .z = 127,
+        .accelerated = true,
+    }));
+
+    ASSERT_TRUE(world.player(1).has_value());
+    EXPECT_EQ(world.player(1)->x, 101);
+    EXPECT_EQ(world.player(1)->y, 101);
+    EXPECT_EQ(world.player(1)->z, 101);
+    EXPECT_EQ(world.player(1)->x_subcell, 6'160U);
+    EXPECT_EQ(world.player(1)->y_subcell, 6'160U);
+    EXPECT_EQ(world.player(1)->z_subcell, 6'160U);
+}
+
 TEST(FlightWorldTest, WrapsHorizontalBoundsAndRejectsVerticalBounds)
 {
     shared::World world{ shared::WorldMode::Flight };

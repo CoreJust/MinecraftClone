@@ -82,7 +82,7 @@ TEST(MessageTest, UsesVersionedLittleEndianFixedWidthPayloads) {
     EXPECT_EQ(
         shared::encodeMessage(shared::JoinRequestMessage{ .ch = '@' }),
         (std::vector<uint8_t>{
-            0x4D, 2, 0, '@', 0,
+            0x4D, 3, 0, '@', 0,
             1, 0, 0, 0,
             42, 0, 0, 0, 0, 0, 0, 0,
             16, 16, 16,
@@ -91,15 +91,15 @@ TEST(MessageTest, UsesVersionedLittleEndianFixedWidthPayloads) {
     );
     EXPECT_EQ(
         shared::encodeMessage(shared::JoinResponseMessage{ .accepted = true }),
-        (std::vector<uint8_t>{ 0x4D, 2, 1, 1 })
+        (std::vector<uint8_t>{ 0x4D, 3, 1, 1 })
     );
     EXPECT_EQ(
         shared::encodeMessage(shared::JoinResponseMessage{ .accepted = false }),
-        (std::vector<uint8_t>{ 0x4D, 2, 1, 0 })
+        (std::vector<uint8_t>{ 0x4D, 3, 1, 0 })
     );
     EXPECT_EQ(
         shared::encodeMessage(shared::ClientInputMessage{ .direction = { 129, 127, 1 }, .sequence = 0x7856'3412U }),
-        (std::vector<uint8_t>{ 0x4D, 2, 2, 129, 127, 1, 18, 52, 86, 120 })
+        (std::vector<uint8_t>{ 0x4D, 3, 2, 129, 127, 1, 0, 18, 52, 86, 120 })
     );
     EXPECT_EQ(
         shared::encodeMessage(shared::ServerPlayerPositionMessage{
@@ -107,7 +107,7 @@ TEST(MessageTest, UsesVersionedLittleEndianFixedWidthPayloads) {
             .acknowledged_input_sequence = 0x7856'3412U, .state_revision = 0x1234'5678U,
         }),
         (std::vector<uint8_t>{
-            0x4D, 2, 3, '#',
+            0x4D, 3, 3, '#',
             30, 0, 0, 0,
             2, 0, 0, 0,
             12, 0, 0, 0,
@@ -117,13 +117,13 @@ TEST(MessageTest, UsesVersionedLittleEndianFixedWidthPayloads) {
     );
     EXPECT_EQ(
         shared::encodeMessage(shared::ServerRemovePlayerMessage{ .ch = '$' }),
-        (std::vector<uint8_t>{ 0x4D, 2, 4, '$' })
+        (std::vector<uint8_t>{ 0x4D, 3, 4, '$' })
     );
 }
 
 TEST(MessageTest, RejectsNoncanonicalAcceptanceByte) {
     for (uint16_t value = 2; value <= 255; ++value) {
-        std::array<uint8_t, 4> const bytes{ 0x4D, 2, 1, static_cast<uint8_t>(value) };
+        std::array<uint8_t, 4> const bytes{ 0x4D, 3, 1, static_cast<uint8_t>(value) };
         EXPECT_FALSE(shared::decodeMessage(bytes).has_value());
     }
 }

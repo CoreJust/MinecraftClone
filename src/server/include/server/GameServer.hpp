@@ -91,7 +91,9 @@ private:
     std::vector<PlayerReplication> m_player_replications;
     std::deque<std::pair<core::ClientId, shared::Player>> m_pending_preview_sets;
     struct PreviewStream final {
-        static constexpr uint32_t MAX_PREVIEW_CHUNKS = 320U;
+        static constexpr uint32_t PREVIEW_RADIUS = 14U;
+        static constexpr uint32_t PREVIEW_DIAMETER = PREVIEW_RADIUS * 2U + 1U;
+        static constexpr uint32_t MAX_PREVIEW_CHUNKS = PREVIEW_DIAMETER * PREVIEW_DIAMETER;
         static constexpr uint64_t WORLD_REVISION = 1U;
 
         PreviewStream(core::ClientId client_id, shared::Player player)
@@ -103,10 +105,8 @@ private:
         shared::Player player;
         shared::WorldGenerationScheduler scheduler{MAX_PREVIEW_CHUNKS};
         std::vector<shared::PreviewChunkKey> coarse_keys;
-        std::vector<shared::HeightTile> coarse_tiles;
         uint32_t coarse_completed = 0U;
         uint32_t sent_chunks = 0U;
-        bool final_jobs_submitted = false;
     };
     std::vector<PreviewStream> m_preview_streams;
     shared::TerrainGenerator m_preview_generator;

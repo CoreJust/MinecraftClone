@@ -68,6 +68,7 @@ struct Direction final {
     uint8_t x;
     uint8_t y;
     uint8_t z = 0;
+    bool accelerated = false;
 };
 
 [[nodiscard]]
@@ -99,7 +100,7 @@ public:
     static constexpr int32_t FLIGHT_MIN_CELL = 0;
     static constexpr int32_t FLIGHT_MAX_CELL = 65'535;
     static constexpr int32_t FLIGHT_MAX_Z = 1'023;
-    static constexpr PlayerPosition FLIGHT_SPAWN{ .x = 32'864, .y = 32'768, .z = 10 };
+    static constexpr PlayerPosition FLIGHT_SPAWN{ .x = 32'832, .y = 32'768, .z = 410 };
 
     explicit World(
         WorldMode mode = WorldMode::Flat,

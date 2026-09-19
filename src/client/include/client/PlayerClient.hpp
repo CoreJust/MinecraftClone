@@ -9,6 +9,7 @@
 
 #include <core/platform/glfw/GlfwWindow.hpp>
 
+#include <chrono>
 #include <vector>
 
 namespace client {
@@ -29,7 +30,10 @@ private:
     InstalledShaderAssets m_shader_assets;
     VulkanRenderer m_renderer;
     std::vector<PlayerRenderData> m_render_data;
+    std::vector<PreviewHandle> m_preview_mesh_sources;
     std::vector<shared::ChunkMesh> m_preview_meshes;
+    std::chrono::steady_clock::time_point m_preview_mesh_ready_at{};
+    uint64_t m_preview_observed_serial = 0;
     uint64_t m_preview_mesh_serial = 0;
     DebugHudToggleLatch m_debug_hud_toggle;
     double m_last_cursor_x = 0.0;

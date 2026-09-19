@@ -43,12 +43,11 @@ uint32_t previewCount(std::vector<shared::Message> const& messages)
 
 } // namespace
 
-TEST(GameServerPreviewTest, SendsCoarseCoverageThenAtMostAdvertisedFinalBudget)
+TEST(GameServerPreviewTest, SendsSevenfoldSurfaceCoverageWithinAdvertisedBudget)
 {
     static constexpr std::chrono::seconds TIMEOUT{15};
     static constexpr std::chrono::milliseconds POLL_INTERVAL{1};
-    static constexpr uint32_t MAX_PREVIEW_CHUNKS = 320U;
-    static constexpr uint32_t COARSE_CHUNKS = 25U;
+    static constexpr uint32_t MAX_PREVIEW_CHUNKS = 841U;
 
     server::GameServer server{0, {}, shared::WorldMode::Flight};
     std::atomic_bool stop_requested{false};
@@ -74,7 +73,6 @@ TEST(GameServerPreviewTest, SendsCoarseCoverageThenAtMostAdvertisedFinalBudget)
     ASSERT_EQ(previewCount(client.messages), MAX_PREVIEW_CHUNKS);
     uint32_t coarse_count = 0U;
     uint32_t final_count = 0U;
-    bool sent_final = false;
     uint32_t descriptor_count = 0U;
     for (shared::Message const& message : client.messages) {
         if (auto const* const descriptor = std::get_if<shared::ServerPreviewDescriptorMessage>(&message)) {
@@ -89,14 +87,12 @@ TEST(GameServerPreviewTest, SendsCoarseCoverageThenAtMostAdvertisedFinalBudget)
         EXPECT_EQ(preview->bytes.size(), shared::Chunk::BLOCK_COUNT);
         EXPECT_EQ(preview->length, shared::Chunk::BLOCK_COUNT);
         if (preview->level == shared::PreviewLevel::Coarse) {
-            EXPECT_FALSE(sent_final);
             ++coarse_count;
         } else {
-            sent_final = true;
             ++final_count;
         }
     }
     EXPECT_EQ(descriptor_count, 1U);
-    EXPECT_EQ(coarse_count, COARSE_CHUNKS);
-    EXPECT_EQ(final_count, MAX_PREVIEW_CHUNKS - COARSE_CHUNKS);
+    EXPECT_EQ(coarse_count, MAX_PREVIEW_CHUNKS);
+    EXPECT_EQ(final_count, 0U);
 }

@@ -339,10 +339,10 @@ void GameServer::startPreviewSet(const core::ClientId client_id, shared::Player 
     int32_t const center_y = player.y / shared::Chunk::SIDE_LENGTH;
     m_preview_streams.emplace_back(client_id, std::move(player));
     PreviewStream& stream = m_preview_streams.back();
-    stream.coarse_keys.reserve(25U);
-    stream.coarse_tiles.reserve(25U);
-    for (int32_t dy = -2; dy <= 2; ++dy) {
-        for (int32_t dx = -2; dx <= 2; ++dx) {
+    stream.coarse_keys.reserve(PreviewStream::MAX_PREVIEW_CHUNKS);
+    int32_t const radius = static_cast<int32_t>(PreviewStream::PREVIEW_RADIUS);
+    for (int32_t dy = -radius; dy <= radius; ++dy) {
+        for (int32_t dx = -radius; dx <= radius; ++dx) {
             shared::PreviewChunkKey const key = shared::normalizePreviewChunkKey({center_x + dx, center_y + dy, 0});
             stream.coarse_keys.push_back(key);
             shared::ChunkCoordinate const coordinate{key.x, key.y, 0};
@@ -369,7 +369,7 @@ void GameServer::processPendingPreviewSet()
 
 void GameServer::processPreviewStreams()
 {
-    static constexpr uint32_t MAX_JOBS_PER_TICK = 8U;
+    static constexpr uint32_t MAX_JOBS_PER_TICK = 64U;
     uint32_t processed = 0U;
     for (PreviewStream& stream : m_preview_streams) {
         while (processed < MAX_JOBS_PER_TICK) {
@@ -394,24 +394,7 @@ void GameServer::processPreviewStreams()
                         .length = static_cast<uint32_t>(bytes.size()),
                         .bytes = std::move(bytes),
                     });
-                    stream.coarse_tiles.push_back(std::move(tile));
                     ++stream.coarse_completed;
-                } else {
-                    auto const tile = std::ranges::find_if(stream.coarse_tiles, [job](shared::HeightTile const& value) {
-                        return value.coordinate.x == job->coordinate.x && value.coordinate.y == job->coordinate.y;
-                    });
-                    if (tile == stream.coarse_tiles.end()) {
-                        throw std::runtime_error{"preview final job has no completed height tile"};
-                    }
-                    std::vector<uint8_t> bytes = materializePreviewBytes(*tile, job->coordinate.z);
-                    sendPreviewTo(stream.client_id, shared::ServerChunkPreviewMessage{
-                        .key = {.x = job->coordinate.x, .y = job->coordinate.y, .z = job->coordinate.z},
-                        .revision = PreviewStream::WORLD_REVISION,
-                        .token = m_next_preview_token++,
-                        .level = shared::PreviewLevel::Final,
-                        .length = static_cast<uint32_t>(bytes.size()),
-                        .bytes = std::move(bytes),
-                    });
                 }
                 static_cast<void>(stream.scheduler.complete(job->id, true));
                 static_cast<void>(stream.scheduler.takeResult());
@@ -424,26 +407,6 @@ void GameServer::processPreviewStreams()
             }
             ++stream.sent_chunks;
             ++processed;
-        }
-        if (stream.coarse_completed == stream.coarse_keys.size() && !stream.final_jobs_submitted) {
-            stream.final_jobs_submitted = true;
-            uint32_t submitted = 0U;
-            for (shared::HeightTile const& tile : stream.coarse_tiles) {
-                uint16_t const height = *std::max_element(tile.heights.begin(), tile.heights.end());
-                int32_t const surface_z = static_cast<int32_t>((height - 1U) / shared::Chunk::SIDE_LENGTH);
-                for (int32_t z = 0; z <= surface_z && submitted < PreviewStream::MAX_PREVIEW_CHUNKS - 25U; ++z) {
-                    if (stream.scheduler.submit(
-                            {.x = tile.coordinate.x, .y = tile.coordinate.y, .z = z},
-                            PreviewStream::WORLD_REVISION,
-                            shared::GenerationStage::Materialize
-                        ) == shared::GenerationAdmission::Accepted) {
-                        ++submitted;
-                    }
-                }
-                if (submitted == PreviewStream::MAX_PREVIEW_CHUNKS - 25U) {
-                    break;
-                }
-            }
         }
     }
 }

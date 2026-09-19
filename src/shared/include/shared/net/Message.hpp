@@ -11,7 +11,7 @@
 namespace shared {
 
 constexpr uint8_t PROTOCOL_MAGIC = 0x4DU;
-constexpr uint8_t PROTOCOL_VERSION = 2U;
+constexpr uint8_t PROTOCOL_VERSION = 3U;
 constexpr uint8_t GAME_CHANNEL = 0U;
 constexpr uint8_t PREVIEW_CHANNEL = 1U;
 constexpr uint32_t PREVIEW_MAX_PAYLOAD_BYTES = 65'536U;
