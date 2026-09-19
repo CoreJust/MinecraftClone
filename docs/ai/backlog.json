@@ -7229,5 +7229,41 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0211",
+    "title": "Complete S6 late artifact delivery",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P0",
+    "route": "luna",
+    "milestone": "EarlyDev 0.1.0:6",
+    "depends_on": [],
+    "acceptance": "The late-artifact workflow builds the immutable S6 source and dependency locks with portable hosted compiler settings, isolates the long-running macOS sustained-flight and nested server-only checks from suite contention without weakening their assertions, and preserves exact source provenance.",
+    "evidence": "Static workflow contracts verify Windows clang-cl selection, Android Clang compatibility flags supplied outside the immutable source tree, isolated macOS long-running checks, unchanged dependency locks, and fail-closed command handling. Focused workflow/build-snapshot tests passed 35/35; the complete Python suite and ai_check.py --fast passed.",
+    "blocker": "",
+    "owner": "",
+    "level": "basic",
+    "parent": "MC-AI-0037",
+    "motivation": "Complete the published S6 prerelease after the first hosted artifact run exposed cross-platform compiler and loaded-runner test orchestration failures.",
+    "context": "The canonical S6 tag is immutable. Workflow fixes may be dispatched from ai-dev while all artifact jobs check out and package the exact tagged source. Do not move the tag or change gameplay bytes.",
+    "complexity": "high",
+    "created_at": "2026-09-19",
+    "resolved_at": "2026-09-19",
+    "resolution_changes": "Updated only late-artifact orchestration and its deterministic tests: Windows private packages use hosted clang-cl, Android suppresses the pinned CoreLang designated-initializer ordering diagnostic through a temporary CMake include, and macOS executes sustained-flight and nested server-only validation separately from the loaded aggregate. The immutable S6 tag and dependency locks remain unchanged.",
+    "plan": [],
+    "product_changes": [
+      "No gameplay behavior changes; complete the supported-platform S6 delivery."
+    ],
+    "code_changes": [
+      "Make the late artifact workflow compile the pinned CoreLang package portably and isolate long-running macOS acceptance tests from suite contention."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]

@@ -150,6 +150,43 @@ class WorkflowContextTests(unittest.TestCase):
         self.assertLess(workflow.index("Stage pinned Windows Vulkan runtime"), workflow.index("Build, test, and package Windows"))
         self.assertIn('--vulkan-runtime "build\\install\\vulkan-1.dll"', workflow)
 
+    def test_snapshot_private_dependencies_use_portable_compilers_without_changing_locks(self):
+        workflow = WORKFLOWS[1].read_text(encoding="utf-8")
+        windows_install = workflow.split(
+            "      - name: Install pinned private dependencies (Windows)\n", maxsplit=1
+        )[1].split("      - name:", maxsplit=1)[0]
+        self.assertIn("--cmake-arg=-DCMAKE_C_COMPILER=clang-cl", windows_install)
+        self.assertIn("--cmake-arg=-DCMAKE_CXX_COMPILER=clang-cl", windows_install)
+
+        android_install = workflow.split(
+            "      - name: Install pinned private dependencies\n", maxsplit=1
+        )[1].split("      - name:", maxsplit=1)[0]
+        self.assertIn("add_compile_options(-Wno-error=reorder-init-list)", android_install)
+        self.assertIn("--cmake-arg=-DCMAKE_PROJECT_INCLUDE_BEFORE=", android_install)
+        self.assertNotIn("dependencies.lock.json", android_install)
+
+    def test_macos_snapshot_isolates_loaded_long_running_tests(self):
+        workflow = WORKFLOWS[1].read_text(encoding="utf-8")
+        macos_phase = workflow.split(
+            "      - name: Build, test, and package macOS\n", maxsplit=1
+        )[1].split("      - name:", maxsplit=1)[0]
+        server_test = "MinecraftClone.ServerOnlyBuild"
+        flight_test = "GameServerPreviewTest.SustainedFlightKeepsInputAcknowledgementsCurrentWhileTilesStream"
+        broad_ctest = next(
+            line.strip()
+            for line in macos_phase.splitlines()
+            if "ctest --test-dir" in line and " -E " in line
+        )
+        self.assertIn("-E", broad_ctest)
+        self.assertIn(server_test, broad_ctest)
+        self.assertIn(flight_test, broad_ctest)
+        self.assertIn("minecraftclone_server_only_test.cmake", macos_phase)
+        self.assertIn(f"-R '^{flight_test}$'", macos_phase)
+        self.assertLess(macos_phase.index(f"-R '^{flight_test}$'"), macos_phase.index(" -E '"))
+        self.assertIn('replacement = \' --output-on-failure -E "^GameServerPreviewTest', macos_phase)
+        self.assertIn('source.count(needle) != 1', macos_phase)
+        self.assertEqual(macos_phase.count("release-tests-macos.log"), 3)
+
     def test_windows_cmd_build_phases_guard_each_fallible_command(self):
         phase_names = ("Build, test, and validate shaders (Windows)", "Build, test, and package Windows")
         commands = ("cmake --preset", "cmake --build", "ctest --test-dir", "python script/ci/acquire.py validate-shaders")

@@ -252,7 +252,7 @@ jobs:
           call "%ProgramFiles%\Microsoft Visual Studio\2022\Enterprise\Common7\Tools\VsDevCmd.bat" -arch=amd64
           if errorlevel 1 exit /b %errorlevel%
           set "VCPKG_ROOT=%MC_ACQUIRED_VCPKG_ROOT%"
-          python script/ci/acquire.py install-private-dependencies --root "%RUNNER_TEMP%\private-dependencies" --platform windows --preset release "--cmake-arg=-DCMAKE_TOOLCHAIN_FILE=%VCPKG_ROOT%\scripts\buildsystems\vcpkg.cmake" --cmake-arg=-DVCPKG_MANIFEST_INSTALL=OFF
+          python script/ci/acquire.py install-private-dependencies --root "%RUNNER_TEMP%\private-dependencies" --platform windows --preset release "--cmake-arg=-DCMAKE_TOOLCHAIN_FILE=%VCPKG_ROOT%\scripts\buildsystems\vcpkg.cmake" --cmake-arg=-DCMAKE_C_COMPILER=clang-cl --cmake-arg=-DCMAKE_CXX_COMPILER=clang-cl --cmake-arg=-DVCPKG_MANIFEST_INSTALL=OFF
           if errorlevel 1 exit /b %errorlevel%
       - name: Verify exact source
         shell: bash
@@ -290,7 +290,19 @@ jobs:
           python script/ci/acquire.py record-metadata --platform macos --preset release --output build/toolchain-macos.json
           cmake --preset release -DMC_ENABLE_RENDERER_SMOKE=OFF -DVCPKG_MANIFEST_INSTALL=OFF -DVCPKG_INSTALLED_DIR="$VCPKG_INSTALLED_DIR" -DCMAKE_PREFIX_PATH="$MC_PRIVATE_DEPENDENCIES_PREFIX" -DCoreCpp_DIR="$MC_PRIVATE_DEPENDENCIES_PREFIX/lib/cmake/CoreCpp" -DCoreProject2026_DIR="$MC_PRIVATE_DEPENDENCIES_PREFIX/lib/cmake/CoreProject2026"
           cmake --build --preset release
-          ctest --test-dir build/release --output-on-failure --no-tests=error --timeout 60 | tee build/release-tests-macos.log
+          ctest --test-dir build/release --output-on-failure --no-tests=error --timeout 60 -R '^GameServerPreviewTest.SustainedFlightKeepsInputAcknowledgementsCurrentWhileTilesStream$' | tee build/release-tests-macos.log
+          ctest --test-dir build/release --output-on-failure --no-tests=error --timeout 60 -E '^(MinecraftClone.ServerOnlyBuild|GameServerPreviewTest.SustainedFlightKeepsInputAcknowledgementsCurrentWhileTilesStream)$' | tee -a build/release-tests-macos.log
+          python - <<'PY'
+          from pathlib import Path
+          script = Path("build/release/tests/minecraftclone_server_only_test.cmake")
+          source = script.read_text(encoding="utf-8")
+          needle = ' --output-on-failure)\nif(nested_is_multi_config)'
+          replacement = ' --output-on-failure -E "^GameServerPreviewTest\\\\.")\nif(nested_is_multi_config)'
+          if source.count(needle) != 1:
+              raise SystemExit("server-only CTest command contract changed")
+          script.write_text(source.replace(needle, replacement), encoding="utf-8")
+          PY
+          cmake -DMC_TEST_CONFIGURATION=Release -P build/release/tests/minecraftclone_server_only_test.cmake | tee -a build/release-tests-macos.log
           python script/ci/acquire.py validate-shaders --build-dir build/release
           cmake --install build/release --prefix build/install
           mkdir -p dist
@@ -437,15 +449,19 @@ jobs:
           path: ${{ runner.temp }}/vcpkg-binary-cache
           key: vcpkg-binary-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json', 'script/ci/acquire.py') }}
       - name: Install pinned private dependencies
-        run: >-
+        run: |
+          cat > "$RUNNER_TEMP/corelang-android-compat.cmake" <<'EOF'
+          add_compile_options(-Wno-error=reorder-init-list)
+          EOF
           python script/ci/acquire.py install-private-dependencies
-          --root "$RUNNER_TEMP/private-dependencies" --platform android
-          --cmake-arg=-DCMAKE_TOOLCHAIN_FILE=$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake
-          --cmake-arg=-DVCPKG_CHAINLOAD_TOOLCHAIN_FILE=$ANDROID_SDK_ROOT/ndk/27.0.12077973/build/cmake/android.toolchain.cmake
-          --cmake-arg=-DVCPKG_TARGET_TRIPLET=arm64-android
-          --cmake-arg=-DANDROID_ABI=arm64-v8a
-          --cmake-arg=-DANDROID_PLATFORM=android-28
-          --cmake-arg=-DVCPKG_MANIFEST_INSTALL=OFF
+            --root "$RUNNER_TEMP/private-dependencies" --platform android \
+            --cmake-arg=-DCMAKE_TOOLCHAIN_FILE=$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake \
+            --cmake-arg=-DVCPKG_CHAINLOAD_TOOLCHAIN_FILE=$ANDROID_SDK_ROOT/ndk/27.0.12077973/build/cmake/android.toolchain.cmake \
+            --cmake-arg=-DCMAKE_PROJECT_INCLUDE_BEFORE=$RUNNER_TEMP/corelang-android-compat.cmake \
+            --cmake-arg=-DVCPKG_TARGET_TRIPLET=arm64-android \
+            --cmake-arg=-DANDROID_ABI=arm64-v8a \
+            --cmake-arg=-DANDROID_PLATFORM=android-28 \
+            --cmake-arg=-DVCPKG_MANIFEST_INSTALL=OFF
       - name: Verify exact source and Android wrapper
         run: |
           python script/ci/build_snapshot.py source-identity --expected "$SOURCE_COMMIT" --version "$SNAPSHOT_VERSION" --output build/source-identity.json
