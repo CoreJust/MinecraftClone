@@ -7517,5 +7517,41 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0219",
+    "title": "Use one Windows toolchain and bounded server-only test plan",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P0",
+    "route": "luna",
+    "milestone": "EarlyDev 0.1.0:6",
+    "depends_on": [],
+    "acceptance": "Windows private dependencies and the game use the same clang-cl compiler and warning launcher; hosted CTest runs the ordinary suite once, excludes only the nested server-only wrapper from that pass, patches the generated nested plan to avoid duplicate GameServerPreview tests, and then executes the remaining server-only plan without an outer timeout. Workflow tests lock compiler and test-plan boundaries.",
+    "evidence": "Run 35463551648 compiled and linked the complete game, then showed systemic 0xC0000409 failures only in the mixed MSVC/clang-cl runtime plus a distinct 180-second nested server-only timeout. Workflow regressions cover compiler consistency and bounded nested execution; final hosted acceptance remains on MC-AI-0037.",
+    "blocker": "",
+    "owner": "",
+    "level": "basic",
+    "parent": "MC-AI-0037",
+    "motivation": "Run 35463551648 built successfully but mixed clang-cl static dependencies with an MSVC game, producing 0xC0000409 failures across networking, CoreLang, scenarios, and acceptance; the nested server-only wrapper separately hit its 180-second outer timeout.",
+    "context": "Keep immutable source and dependencies. Use one ABI-compatible Windows compiler for all C++ and reuse the proven macOS nested server-only separation without excluding ordinary Windows tests.",
+    "complexity": "medium",
+    "created_at": "2026-09-19",
+    "resolved_at": "2026-09-19",
+    "resolution_changes": "Configured the Windows game with the same clang-cl launcher as its private dependencies and split the generated server-only wrapper from the ordinary CTest pass while removing duplicate preview cases from the nested suite.",
+    "plan": [],
+    "product_changes": [
+      "No gameplay change."
+    ],
+    "code_changes": [
+      "Add clang-cl and launcher arguments to the Windows game configure; generate a bounded server-only test-plan patcher; run outer and nested Windows suites separately."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]

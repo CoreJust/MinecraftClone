@@ -267,6 +267,18 @@ jobs:
           command[separator:separator] = NATIVE_WARNING_POLICY
           raise SystemExit(subprocess.call(command))
           '@ | Set-Content -Encoding utf8 "$env:RUNNER_TEMP\clang-cl-launcher.py"
+          @'
+          from pathlib import Path
+          import sys
+
+          script = Path(sys.argv[1])
+          source = script.read_text(encoding="utf-8")
+          needle = ' --output-on-failure)\nif(nested_is_multi_config)'
+          replacement = ' --output-on-failure -E "^GameServerPreviewTest\\.")\nif(nested_is_multi_config)'
+          if source.count(needle) != 1:
+              raise SystemExit("server-only CTest command contract changed")
+          script.write_text(source.replace(needle, replacement), encoding="utf-8")
+          '@ | Set-Content -Encoding utf8 "$env:RUNNER_TEMP\prepare-windows-server-only.py"
       - name: Install pinned private dependencies (Windows)
         if: matrix.platform == 'windows'
         shell: cmd
@@ -359,16 +371,23 @@ jobs:
           if errorlevel 1 exit /b %errorlevel%
           python script/ci/acquire.py record-metadata --platform windows --preset release --output build/toolchain-windows.json
           if errorlevel 1 exit /b %errorlevel%
-          cmake --preset release -DMC_ENABLE_RENDERER_SMOKE=OFF -DVCPKG_MANIFEST_INSTALL=OFF -DVCPKG_INSTALLED_DIR="%VCPKG_INSTALLED_DIR%" -DCMAKE_PREFIX_PATH="%MC_PRIVATE_DEPENDENCIES_PREFIX%" -DCoreCpp_DIR="%MC_PRIVATE_DEPENDENCIES_PREFIX%/lib/cmake/CoreCpp" -DCoreProject2026_DIR="%MC_PRIVATE_DEPENDENCIES_PREFIX%/lib/cmake/CoreProject2026"
+          cmake --preset release -DMC_ENABLE_RENDERER_SMOKE=OFF -DVCPKG_MANIFEST_INSTALL=OFF -DVCPKG_INSTALLED_DIR="%VCPKG_INSTALLED_DIR%" -DCMAKE_PREFIX_PATH="%MC_PRIVATE_DEPENDENCIES_PREFIX%" -DCoreCpp_DIR="%MC_PRIVATE_DEPENDENCIES_PREFIX%/lib/cmake/CoreCpp" -DCoreProject2026_DIR="%MC_PRIVATE_DEPENDENCIES_PREFIX%/lib/cmake/CoreProject2026" -DCMAKE_C_COMPILER=clang-cl -DCMAKE_CXX_COMPILER=clang-cl "-DCMAKE_CXX_COMPILER_LAUNCHER=python;%RUNNER_TEMP%\clang-cl-launcher.py"
           if errorlevel 1 exit /b %errorlevel%
           cmake --build --preset release
           if errorlevel 1 exit /b %errorlevel%
-          ctest --test-dir build\release --output-on-failure --no-tests=error --timeout 60 > build\release-tests-windows.log 2>&1
+          python "%RUNNER_TEMP%\prepare-windows-server-only.py" build\release\tests\minecraftclone_server_only_test.cmake
+          if errorlevel 1 exit /b %errorlevel%
+          ctest --test-dir build\release --output-on-failure --no-tests=error --timeout 60 -E "^MinecraftClone.ServerOnlyBuild$" > build\release-tests-windows.log 2>&1
           set "ctest_result=%errorlevel%"
           type build\release-tests-windows.log
           set "ctest_log_result=%errorlevel%"
           if not "%ctest_result%"=="0" exit /b %ctest_result%
           if not "%ctest_log_result%"=="0" exit /b %ctest_log_result%
+          cmake -DMC_TEST_CONFIGURATION=Release -P build\release\tests\minecraftclone_server_only_test.cmake >> build\release-tests-windows.log 2>&1
+          if errorlevel 1 (
+            type build\release-tests-windows.log
+            exit /b %errorlevel%
+          )
           python script/ci/acquire.py validate-shaders --build-dir build\release
           if errorlevel 1 exit /b %errorlevel%
           cmake --install build\release --prefix build\install

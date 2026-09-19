@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 import sys
+import tempfile
 import types
 import unittest
 from unittest import mock
@@ -152,6 +153,55 @@ class WorkflowContextTests(unittest.TestCase):
         self.assertLess(runtime_step.index('if ($actual -ne $expected)'), runtime_step.index("Expand-Archive"))
         self.assertLess(workflow.index("Stage pinned Windows Vulkan runtime"), workflow.index("Build, test, and package Windows"))
         self.assertIn('--vulkan-runtime "build\\install\\vulkan-1.dll"', workflow)
+
+    def test_windows_snapshot_uses_one_clang_cl_toolchain_and_bounded_server_only_plan(self):
+        workflow = WORKFLOWS[1].read_text(encoding="utf-8")
+        windows_build = workflow.split(
+            "      - name: Build, test, and package Windows\n", maxsplit=1
+        )[1].split("      - name:", maxsplit=1)[0]
+        self.assertIn("-DCMAKE_C_COMPILER=clang-cl", windows_build)
+        self.assertIn("-DCMAKE_CXX_COMPILER=clang-cl", windows_build)
+        self.assertIn("-DCMAKE_CXX_COMPILER_LAUNCHER=python;%RUNNER_TEMP%\\clang-cl-launcher.py", windows_build)
+        self.assertIn('-E "^MinecraftClone.ServerOnlyBuild$"', windows_build)
+        self.assertIn("prepare-windows-server-only.py", windows_build)
+        self.assertIn("-P build\\release\\tests\\minecraftclone_server_only_test.cmake", windows_build)
+        patcher = workflow.split(
+            "          from pathlib import Path\n          import sys\n", maxsplit=1
+        )[1].split(
+            "          '@ | Set-Content -Encoding utf8 \"$env:RUNNER_TEMP\\prepare-windows-server-only.py\"",
+            maxsplit=1,
+        )[0]
+        self.assertIn('source.count(needle) != 1', patcher)
+        self.assertIn('^GameServerPreviewTest\\\\.', patcher)
+
+    def test_windows_server_only_patcher_rewrites_exactly_once_and_fails_closed(self):
+        workflow = WORKFLOWS[1].read_text(encoding="utf-8")
+        patcher_step = workflow.split(
+            "          from pathlib import Path\n          import sys\n", maxsplit=1
+        )[1].split(
+            "          '@ | Set-Content -Encoding utf8 \"$env:RUNNER_TEMP\\prepare-windows-server-only.py\"",
+            maxsplit=1,
+        )[0]
+        patcher = "from pathlib import Path\nimport sys\n" + "\n".join(
+            line.removeprefix("          ") for line in patcher_step.splitlines()
+        )
+        needle = ' --output-on-failure)\nif(nested_is_multi_config)'
+        replacement = ' --output-on-failure -E "^GameServerPreviewTest\\.")\nif(nested_is_multi_config)'
+
+        with tempfile.TemporaryDirectory() as temporary:
+            target = Path(temporary) / "server-only.cmake"
+            target.write_text(f"prefix{needle}suffix", encoding="utf-8")
+            with mock.patch.object(sys, "argv", ["patcher.py", str(target)]):
+                exec(compile(patcher, "prepare-windows-server-only.py", "exec"), {})
+            self.assertEqual(target.read_text(encoding="utf-8"), f"prefix{replacement}suffix")
+
+            for invalid in ("no matching command", f"{needle}\n{needle}"):
+                target.write_text(invalid, encoding="utf-8")
+                with self.subTest(invalid=invalid), mock.patch.object(
+                    sys, "argv", ["patcher.py", str(target)]
+                ), self.assertRaisesRegex(SystemExit, "server-only CTest command contract changed"):
+                    exec(compile(patcher, "prepare-windows-server-only.py", "exec"), {})
+                self.assertEqual(target.read_text(encoding="utf-8"), invalid)
 
     def test_snapshot_clang_cl_launcher_translates_warning_policy_before_source_separator(self):
         workflow = WORKFLOWS[1].read_text(encoding="utf-8")
