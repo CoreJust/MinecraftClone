@@ -71,5 +71,5 @@ through `MinecraftClone.command`, then install and launch the retained exact
 Android APK on the acceptance device or emulator. Their retained hashes must
 match the verifier record. The user supplies Windows runtime acceptance; a
 hosted build and CTest pass must never be reported as Windows runtime evidence.
-Snapshot 8 publication must stop for user feedback and must not finalize or
+Snapshot 7 publication must stop for user feedback and must not finalize or
 publish the minor automatically.

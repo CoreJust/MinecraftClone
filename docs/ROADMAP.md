@@ -12,8 +12,7 @@ Planned path to it (per snapshot):
 4. 3D and controls test. The world becomes 3D (although flat in logic), the players can be real or bots, the real ones have a working camera and WASD movement. The world has a grid below and simple colored box players.
 5. Blocks test. The world consists of a single chunk with only 2 block types: air and stone. The player flies around it.
 6. World test. The world is full 65'536 x 65'536 x 1'024 blocks. The chunks are still only air and stone with a simple generation pattern.
-7. Wrap test. The world becomes wrapped in X and Y directions, probably some rendering and network optimizations here.
-8. Player permissions and physics test. Now players require permissions to pass through blocks/other entities and to fly. Without those, physics are enabled - players can jump, do not fall through blocks and each other.
+7. Player permissions and physics test. Players require permissions to pass through blocks/other entities and to fly. Without those, physics are enabled: players can jump and do not fall through blocks or each other. This snapshot also completes the reusable runtime, generation, LOD, audio, and profiling work deferred from Snapshot 6.
 
 Plans for EarlyDev 0.1.1 (not split into snapshots) - BasicBlocks:
 1. A basic set of blocks (grass, stone, bedrock, snow, ice, water).

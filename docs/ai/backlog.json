@@ -234,17 +234,16 @@
   {
     "level": "basic",
     "parent": "MC-AI-0038",
-    "motivation": "Implement the complete Snapshot 6 product slice without allocating the full world.",
-    "context": "Basic child of Snapshot 6. A dense byte representation would exceed 4 TiB and is prohibited by the acceptance architecture.",
+    "motivation": "Complete the reusable scripting and observation contracts deferred after S6 delivered its native sparse-world foundation.",
+    "context": "Deferred follow-up owned by Snapshot 7. S6 already delivers the sparse wrapped world, generation, streaming, and boundary behavior; this task must not reimplement them.",
     "complexity": "medium",
     "created_at": "2026-09-09",
     "resolved_at": "",
     "resolution_changes": "",
     "plan": [
-      "Deliver sparse S6 world without full-volume allocation.",
-      "Represent only bounded resident chunks inside the full logical coordinate range.",
-      "Generate air/stone deterministically independent of visit order.",
-      "Add boundary, eviction, memory-limit, and distant traversal tests."
+      "Expose versioned generator options and bounded world/chunk observations through scripts.",
+      "Prove scripted distant traversal without unbounded residency.",
+      "Preserve the native S6 generation and streaming architecture."
     ],
     "product_changes": [],
     "code_changes": [],
@@ -256,7 +255,7 @@
     "environment_review": "",
     "backlog_review": "",
     "id": "MC-AI-0005",
-    "title": "Deliver Snapshot 6",
+    "title": "Complete deferred sparse-world scripting contracts",
     "kind": "feature",
     "status": "backlog",
     "priority": "P1",
@@ -265,7 +264,7 @@
     "depends_on": [
       "MC-AI-0056"
     ],
-    "acceptance": "Deliver the logical 65,536 by 65,536 by 1,024 air/stone world through bounded lazy chunks, deterministic generation, interest management, and boundary/memory/runtime evidence. Expose versioned seed/generator options and bounded world/chunk observations through scripts; scripted distant traversal reproduces generation without unbounded residency.",
+    "acceptance": "Versioned generator options and bounded world/chunk observations are available to scripts; scripted distant traversal reproduces the delivered S6 generation without unbounded residency or a second world implementation.",
     "evidence": "",
     "blocker": "",
     "owner": ""
@@ -273,17 +272,16 @@
   {
     "level": "basic",
     "parent": "MC-AI-0038",
-    "motivation": "Implement the complete Snapshot 7 topology and measured optimization slice.",
-    "context": "Basic child of Snapshot 7. Vertical coordinates remain non-wrapping; all horizontal normalization must be centralized.",
+    "motivation": "Complete compatibility and profiling coverage that remains after S6 delivered horizontal wrapping and blink-free seam presentation.",
+    "context": "Deferred follow-up owned by Snapshot 7. Canonical modulo, shortest displacement, simulation/protocol wrapping and seam presentation already ship in S6; this task covers only unfulfilled compatibility and workload evidence.",
     "complexity": "medium",
     "created_at": "2026-09-09",
     "resolved_at": "",
     "resolution_changes": "",
     "plan": [
-      "Deliver S7 X/Y wrapping and performance decision.",
-      "Define canonical modulo and shortest-displacement primitives.",
-      "Use them at every simulation, networking, meshing, interest, collision, and presentation boundary.",
-      "Profile a fixed workload and optimize only verified hot paths."
+      "Audit S7 physics, permissions and deferred LOD against the delivered S6 wrapping primitives.",
+      "Add only missing seam compatibility and scripted multiplayer coverage.",
+      "Profile fixed full-game workloads and record justified budgets."
     ],
     "product_changes": [],
     "code_changes": [],
@@ -295,7 +293,7 @@
     "environment_review": "",
     "backlog_review": "",
     "id": "MC-AI-0006",
-    "title": "Deliver Snapshot 7",
+    "title": "Complete deferred wrapped-world compatibility coverage",
     "kind": "feature",
     "status": "backlog",
     "priority": "P1",
@@ -304,22 +302,22 @@
     "depends_on": [
       "MC-AI-0037"
     ],
-    "acceptance": "Deliver consistent X/Y wrapping across simulation, protocol, interest, mesh neighbors and presentation, with seam tests, cross-client smoke, and a profile-derived performance record. Add documented wrapping configuration and scripted seam/performance workloads with deterministic inputs and explicit measurement metadata.",
+    "acceptance": "Remaining wrapping compatibility coverage spans collision, permissions, deferred visual LOD, and scripted multiplayer workloads without reimplementing S6 coordinate normalization or presentation. Reproducible profiles record the resulting budgets.",
     "evidence": "",
     "blocker": "",
     "owner": ""
   },
   {
     "level": "basic",
-    "parent": "MC-AI-0039",
-    "motivation": "Implement the complete Snapshot 8 physics and permissions slice that closes the Initiation minor.",
-    "context": "Basic child of Snapshot 8. Permissions are independent server state; clients cannot grant themselves capabilities through packet contents.",
+    "parent": "MC-AI-0038",
+    "motivation": "Implement the Snapshot 7 physics and permissions slice that closes the Initiation minor.",
+    "context": "Basic child of Snapshot 7. Permissions are independent server state; clients cannot grant themselves capabilities through packet contents.",
     "complexity": "medium",
     "created_at": "2026-09-09",
     "resolved_at": "",
     "resolution_changes": "",
     "plan": [
-      "Deliver S8 permission-gated physics and multiplayer smoke.",
+      "Deliver S7 permission-gated physics and multiplayer smoke.",
       "Implement bounded fixed-tick authoritative movement and independently gated permissions.",
       "Implement block/entity collision and robust recovery at permission changes.",
       "Add deterministic scenario coverage, seam cases, and multiplayer runtime evidence."
@@ -334,14 +332,14 @@
     "environment_review": "",
     "backlog_review": "",
     "id": "MC-AI-0007",
-    "title": "Deliver Snapshot 8",
+    "title": "Deliver Snapshot 7",
     "kind": "feature",
     "status": "backlog",
     "priority": "P1",
     "route": "terra",
-    "milestone": "ED-010-S8",
+    "milestone": "ED-010-S7",
     "depends_on": [
-      "MC-AI-0038"
+      "MC-AI-0037"
     ],
     "acceptance": "Deliver deterministic server-authoritative flight/phasing permissions, gravity/jump, block/entity collision and seam behavior with full edge-case coverage and multiplayer smoke. Add server-owned permission setup, flight/phase/jump commands and physics assertions to the language; document/test all permission combinations and reproducible playthroughs.",
     "evidence": "",
@@ -378,7 +376,7 @@
     "milestone": "ED-010-S3",
     "depends_on": [],
     "acceptance": "Record axis, coordinate, and snapshot-version contracts.",
-    "evidence": "The existing EarlyDev 0.1.0 decision records the future-facing coordinate contract: right-handed horizontal X/Y with Z up, one block per unit, zero yaw toward +Y, +X right, and one explicit conversion into Vulkan. It also records that EarlyDev 0.1.0:3 is declared but unreleased and S4-S8 remain future commitments.",
+    "evidence": "The existing EarlyDev 0.1.0 decision records the future-facing coordinate contract: right-handed horizontal X/Y with Z up, one block per unit, zero yaw toward +Y, +X right, and one explicit conversion into Vulkan. It also records that EarlyDev 0.1.0:3 is declared but unreleased and S4-S7 remain future commitments.",
     "blocker": "",
     "owner": ""
   },
@@ -1280,7 +1278,7 @@
       "Plan and deliver snapshots4-8: 3D camera/controls, air-and-stone chunk, sparse large world, wrapping, and permission-aware physics.",
       "Create later snapshot tasks only when requested, before their implementation; link every actual snapshot on finalization.",
       "Complete snapshot checks plus Terra/high review of accumulated changes, documentation/environment checks, hindsight, and backlog maintenance.",
-      "After Snapshot 8 publication, report local/runtime/release evidence and wait for the user to test and provide feedback; create Snapshot 9 only if feedback requires it, then finalize/publish the minor only with subsequent explicit direction."
+      "After Snapshot 7 publication, report local/runtime/release evidence and wait for the user to test and provide feedback; create another snapshot only if feedback requires it, then finalize/publish the minor only with subsequent explicit direction."
     ],
     "product_changes": [],
     "code_changes": [],
@@ -1299,7 +1297,7 @@
     "route": "sol",
     "milestone": "EarlyDev 0.1.0 Initiation",
     "depends_on": [],
-    "acceptance": "All Initiation snapshot requirements through Snapshot 8 are complete and released with requested artifacts; after Snapshot 8 publication, report the verified state here and await user feedback before planning any Snapshot 9 or finalizing/publishing the minor. Include a well-documented, navigable scripting language for configurable block/world setup, deterministic authoritative playthroughs, player control and timed actions, growing with snapshot features through a narrow API suitable for a future compiler/VM. Measure full game-frame throughput against the user's Windows Ryzen9HX/RTX5070Ti Laptop/32GB target of at least5000FPS and several hundredFPS on this Mac; report unavailable Windows hardware validation honestly and retain weak-laptop smoothness as a design requirement. No minor publication before explicit feedback after Snapshot8.",
+    "acceptance": "All Initiation snapshot requirements through Snapshot 7 are complete and released with requested artifacts; after Snapshot 7 publication, report the verified state here and await user feedback before planning any another snapshot or finalizing/publishing the minor. Include a well-documented, navigable scripting language for configurable block/world setup, deterministic authoritative playthroughs, player control and timed actions, growing with snapshot features through a narrow API suitable for a future compiler/VM. Measure full game-frame throughput against the user's Windows Ryzen9HX/RTX5070Ti Laptop/32GB target of at least5000FPS and several hundredFPS on this Mac; report unavailable Windows hardware validation honestly and retain weak-laptop smoothness as a design requirement. No minor publication before explicit feedback after Snapshot 7.",
     "evidence": "",
     "blocker": "",
     "owner": "Codex"
@@ -1441,7 +1439,7 @@
       "MC-AI-0036"
     ],
     "acceptance": "The 65,536 by 65,536 by 1,024 logical air-and-stone world is represented and traversed without dense allocation. CoreLang 0.1.2 supplies deterministic height maps while native code owns bounded asynchronous generation, server-authoritative camera-independent circular residency, directional priority, transport, detailed meshing and incremental Vulkan rendering. Boundaries, world-seam presentation, cancellation, memory, runtime performance, GUI text and user-approved macOS gameplay evidence pass. The reviewed S6 source is promoted and tagged, with macOS, Windows and Android artifacts, SHA256 hashes, provenance, dependencies/licenses and truthful signing status; downloaded macOS and Android assets receive local acceptance while Windows runtime remains separately reported.",
-    "evidence": "",
+    "evidence": "Local release candidate on macOS arm64: complete ai_check gate passed build and 335 CTest cases after the deterministic frontier-test repair; source/style publisher checks pass; owner accepted the normal graphical candidate including continuous MAX-to-0 seam crossing; two 2560x1440 S6 gameplay captures are recorded in README and version history; renderer benchmark measured nominal 120 Hz with 8.84 ms p99. Cross-platform artifact and downloaded-asset acceptance remain the publication phase.",
     "blocker": "",
     "owner": "s6-main",
     "level": "snapshot",
@@ -1451,17 +1449,24 @@
     "complexity": "high",
     "created_at": "2026-09-09",
     "resolved_at": "",
-    "resolution_changes": "",
+    "resolution_changes": "Delivered CoreLang 0.1.2 configured fading-wave terrain in a sparse wrapped 65536x65536x1024 world; bounded asynchronous server generation and revisioned streaming; camera-independent 45-chunk circular residency with tiered directional priority and background fill; detailed neighbor-aware textured Vulkan meshes, fog and gradient sky; reusable GUI/world text with semantic HUD; toggle acceleration profiles through 500x; stable movement, world-boundary tests, and blink-free wrapped presentation.",
     "plan": [
       "Use an explicit sparse/chunked world representation; reject any full-volume allocation design.",
       "Bound resident data and generation work through a testable policy.",
       "Keep the hot render path restricted to visible resident mesh data."
     ],
-    "product_changes": [],
-    "code_changes": [],
-    "baseline_commit": "f4edb22bb90a166881e1131357af3423d44ace2b",
+    "product_changes": [
+      "Explore a sparse 65,536 by 65,536 by 1,024 fading-wave stone world with six-block valleys, an 806-block central peak, and horizontally wrapped travel.",
+      "Stream and render a camera-independent 45-chunk-radius world around the player while prioritizing nearby and forward terrain and filling the complete circle when stationary.",
+      "Use toggle acceleration profiles from 2x through 500x, readable semantic HUD values, textured stone, distance fog, and a gradient sky."
+    ],
+    "code_changes": [
+      "Added CoreLang 0.1.2 terrain configuration, native height-map evaluation/materialization, sparse world storage, bounded generation workers, revisioned height-tile transport, credit backpressure, directional scheduling, cancellation, and deterministic boundary coverage.",
+      "Added neighbor-aware detailed meshing, incremental Vulkan terrain uploads and culling, wrapped-coordinate presentation, textured stone, fog/sky rendering, reusable colored text, distinct GUI/world-text stages, and GPU/runtime performance acceptance."
+    ],
+    "baseline_commit": "a5964972936c4b6172ec2b4249f09e7b97a9a6f6",
     "commits": [],
-    "finalized": false,
+    "finalized": true,
     "retrospective": "",
     "docs_review": "",
     "environment_review": "",
@@ -1469,31 +1474,32 @@
   },
   {
     "id": "MC-AI-0038",
-    "title": "EarlyDev 0.1.0:7 — Wrapped world snapshot",
+    "title": "EarlyDev 0.1.0:7 — Physics and permissions snapshot",
     "kind": "feature",
     "status": "backlog",
     "priority": "P1",
-    "route": "terra",
+    "route": "sol",
     "milestone": "ED-010-S7",
     "depends_on": [
       "MC-AI-0037"
     ],
-    "acceptance": "World X/Y coordinates wrap consistently across simulation, chunk lookup, networking, camera-relative presentation and actual mesh/chunk LOD policy; seam/cancellation/residency tests and reproducible full-game performance evidence establish bounded work without substituting microbenchmarks for presented results. The exact reviewed/tagged S7 build is published with named macOS, Windows and Android GitHub assets, SHA256 hashes, provenance, dependencies/licenses and truthful signing status. The exact downloaded macOS asset and exact released Android APK pass local runtime acceptance; Windows build/package evidence is required, while the target-laptop runtime measurements from the user are recorded separately and never inferred.",
+    "acceptance": "Server-authoritative permissions gate flight and phasing; unprivileged players jump, fall and collide with blocks/entities deterministically, while unknown/preview terrain remains non-passable until bounded current-revision materialization and queued interactions are revalidated. Deferred generic executor, audio, staged-generation, preview/LOD, and full-game profiling work reaches its reusable production contracts without reopening the S6 wrapping behavior. Full edge-case, subsystem, multiplayer, performance and platform acceptance passes. The exact reviewed/tagged S7 build is published with named macOS, Windows and Android GitHub assets, SHA256 hashes, provenance, dependencies/licenses and truthful signing status. The exact downloaded macOS asset and exact released Android APK pass local runtime acceptance; Windows build/package evidence is required, while user Windows runtime is recorded separately and never inferred. After publication, report and wait with the minor active and unfinalized; do not invent S8.",
     "evidence": "",
     "blocker": "",
     "owner": "",
     "level": "snapshot",
     "parent": "MC-AI-0033",
-    "motivation": "Complete the finite-world topology before introducing permission-aware collision and gravity.",
-    "context": "Planned from the canonical EarlyDev 0.1.0 roadmap after Snapshot 6. This aggregate owns only the S7 scope and its committed basic children.",
+    "motivation": "Close the Initiation minor with authoritative gameplay rules and the reusable subsystems deferred from the mature S6 world foundation.",
+    "context": "The former wrapping-only S7 scope was merged into Snapshot 6 by product decision, and the former Snapshot 8 therefore becomes Snapshot 7. This aggregate owns physics, permissions, and explicitly deferred generic runtime/generation/LOD work.",
     "complexity": "high",
     "created_at": "2026-09-09",
     "resolved_at": "",
     "resolution_changes": "",
     "plan": [
-      "Centralize wrapping normalization and use it at every world-coordinate boundary.",
-      "Prove seam behavior through simulation and protocol tests.",
-      "Preserve bounded visibility and mesh residency near seams."
+      "Keep authoritative physics simulation separate from input transport and presentation.",
+      "Represent permissions as explicit server state and validate their protocol implications.",
+      "Complete the deferred reusable executor, audio, staged-generation, preview/LOD, and full-game profiling contracts.",
+      "Prove collision and movement behavior using deterministic fixed-tick tests."
     ],
     "product_changes": [],
     "code_changes": [],
@@ -1507,31 +1513,29 @@
   },
   {
     "id": "MC-AI-0039",
-    "title": "EarlyDev 0.1.0:8 — Physics and permissions snapshot",
+    "title": "Retired Snapshot 8 plan — merged into Snapshot 7",
     "kind": "feature",
-    "status": "backlog",
+    "status": "blocked",
     "priority": "P1",
-    "route": "sol",
-    "milestone": "ED-010-S8",
+    "route": "luna",
+    "milestone": "ED-010-S7",
     "depends_on": [
       "MC-AI-0038"
     ],
-    "acceptance": "Server-authoritative permissions gate flight and phasing; unprivileged players jump, fall and collide with blocks/entities deterministically, while unknown/preview terrain remains non-passable until bounded current-revision materialization and queued interactions are revalidated. Full edge-case, subsystem, multiplayer, performance and platform acceptance passes. The exact reviewed/tagged S8 build is published with named macOS, Windows and Android GitHub assets, SHA256 hashes, provenance, dependencies/licenses and truthful signing status. The exact downloaded macOS asset and exact released Android APK pass local runtime acceptance; Windows build/package evidence is required, while user Windows runtime is recorded separately and never inferred. After publication, report and wait with the minor active and unfinalized; do not invent S9.",
+    "acceptance": "This permanent historical task ID remains non-releaseable. Its former physics and permissions scope is owned by MC-AI-0038 as Snapshot 7 after wrapping moved into Snapshot 6; no Snapshot 8 may be created from this record.",
     "evidence": "",
-    "blocker": "",
+    "blocker": "Retired by the product decision that merged the old S7 wrapping scope into S6 and renumbered the old S8 as S7.",
     "owner": "",
     "level": "snapshot",
     "parent": "MC-AI-0033",
-    "motivation": "Close the Initiation minor with the first gameplay rules atop the established scalable world interfaces.",
-    "context": "Planned from the canonical EarlyDev 0.1.0 roadmap after Snapshot 7. This aggregate owns only the S8 scope and its committed basic children.",
+    "motivation": "Preserve the permanent task ID while preventing the superseded Snapshot 8 plan from being released or counted twice.",
+    "context": "Historical redirect only. MC-AI-0038 is the final Initiation snapshot.",
     "complexity": "high",
     "created_at": "2026-09-09",
     "resolved_at": "",
     "resolution_changes": "",
     "plan": [
-      "Keep authoritative physics simulation separate from input transport and presentation.",
-      "Represent permissions as explicit server state and validate their protocol implications.",
-      "Prove collision and movement behavior using deterministic fixed-tick tests."
+      "Keep this historical ID blocked and direct implementation and release work to MC-AI-0038."
     ],
     "product_changes": [],
     "code_changes": [],
@@ -1646,7 +1650,7 @@
     "level": "basic",
     "parent": "MC-AI-0032",
     "motivation": "Make every snapshot artifact build, publication and evidence flow reproducible without treating one workflow task as proof that later releases exist.",
-    "context": "Snapshot 3 release-workflow foundation. This task can finish before a snapshot is published by proving deterministic artifact production, verification and release orchestration. Each snapshot aggregate independently retains actual GitHub asset/hash and exact-platform runtime acceptance. Publication is external state authorized by the active minor request; private cross-repository CI access still needs separately approved deploy-key configuration. After Snapshot 8 release, report and await feedback before minor finalization.",
+    "context": "Snapshot 3 release-workflow foundation. This task can finish before a snapshot is published by proving deterministic artifact production, verification and release orchestration. Each snapshot aggregate independently retains actual GitHub asset/hash and exact-platform runtime acceptance. Publication is external state authorized by the active minor request; private cross-repository CI access still needs separately approved deploy-key configuration. After Snapshot 7 release, report and await feedback before minor finalization.",
     "complexity": "high",
     "created_at": "2026-09-09",
     "resolved_at": "2026-09-10",
@@ -1665,7 +1669,7 @@
     "retrospective": "",
     "docs_review": "The workflow, release-artifact guide, source index, Android ABI contract, and deterministic tests describe the same candidate-production and verification foundation; generated documentation checks remain valid.",
     "environment_review": "The X16 hosted receipt records terminal-success AI checks and snapshot-artifact jobs for the descendant candidate, including Windows package production plus macOS and Android candidate artifacts. No release publication or exact-platform runtime acceptance is claimed.",
-    "backlog_review": "Task is complete as the reusable artifact-workflow foundation. Per-snapshot GitHub publication, post-upload asset/hash verification, exact macOS/Android runtime acceptance, and separate user Windows runtime status remain owned by each aggregate; do not create evaluation-only tasks or start Snapshot 9."
+    "backlog_review": "Task is complete as the reusable artifact-workflow foundation. Per-snapshot GitHub publication, post-upload asset/hash verification, exact macOS/Android runtime acceptance, and separate user Windows runtime status remain owned by each aggregate; do not create evaluation-only tasks or start another snapshot."
   },
   {
     "id": "MC-AI-0043",
@@ -2408,7 +2412,7 @@
     "status": "backlog",
     "priority": "P1",
     "route": "sol",
-    "milestone": "ED-010-S8",
+    "milestone": "ED-010-S7",
     "depends_on": [
       "MC-AI-0007"
     ],
@@ -2417,9 +2421,9 @@
     "blocker": "",
     "owner": "",
     "level": "basic",
-    "parent": "MC-AI-0039",
+    "parent": "MC-AI-0038",
     "motivation": "Ensure permissions, collision and interaction never treat unknown progressively generated terrain as empty or trust client-generated state.",
-    "context": "Runs after the S8 physics/permissions product slice and integrates it with S6 generation. Clients transmit intentions only. Interaction may request bounded completion and wait; no unbounded generation chain may run inside a physics step.",
+    "context": "Runs after the S7 physics/permissions product slice and integrates it with S6 generation. Clients transmit intentions only. Interaction may request bounded completion and wait; no unbounded generation chain may run inside a physics step.",
     "complexity": "high",
     "created_at": "2026-09-09",
     "resolved_at": "",
@@ -2448,9 +2452,9 @@
     "route": "sol",
     "milestone": "Future-WorldGen",
     "depends_on": [
-      "MC-AI-0039"
+      "MC-AI-0038"
     ],
-    "acceptance": "After a future product scope assigns this task, deterministic scripts generate documented world-scale geography such as continents/oceans, climate, biomes, mountains, seas, lakes and rivers across selected refinement extents, with seam, inheritance, reproducibility and bounded-memory evidence. Until then this remains backlog intent and makes no S3-S8 content promise.",
+    "acceptance": "After a future product scope assigns this task, deterministic scripts generate documented world-scale geography such as continents/oceans, climate, biomes, mountains, seas, lakes and rivers across selected refinement extents, with seam, inheritance, reproducibility and bounded-memory evidence. Until then this remains backlog intent and makes no S3-S7 content promise.",
     "evidence": "",
     "blocker": "",
     "owner": "",
@@ -2524,7 +2528,7 @@
     "route": "sol",
     "milestone": "Future-Behavior",
     "depends_on": [
-      "MC-AI-0039"
+      "MC-AI-0038"
     ],
     "acceptance": "After future product design assigns the task, selected entity behaviors use documented server-authoritative LOD tiers with stable hysteresis, deterministic transitions, bounded work and no permission/physics/security degradation. Multiplayer tests establish fairness, observability and recovery when tiers change. Until then visual LOD remains independent and no behavior-LOD outcome is claimed.",
     "evidence": "",
@@ -2533,7 +2537,7 @@
     "level": "basic",
     "parent": "",
     "motivation": "Track distance-aware behavior simplification without coupling it to the visual LOD delivered in this minor.",
-    "context": "Explicit future extension, not S3-S8 acceptance. Physics and authority remain exact; behavior degradation needs later gameplay rules, observability and fairness constraints.",
+    "context": "Explicit future extension, not S3-S7 acceptance. Physics and authority remain exact; behavior degradation needs later gameplay rules, observability and fairness constraints.",
     "complexity": "high",
     "created_at": "2026-09-09",
     "resolved_at": "",
@@ -2598,7 +2602,7 @@
     "route": "astra",
     "milestone": "ED-010-S3",
     "depends_on": [],
-    "acceptance": "Every requirement in the immutable user request and architecture/repository addenda is traceable to the architecture decisions, an existing product task, or focused tasks48-66 with no omitted current-minor mechanism and no dependency cycle. Task42 owns reusable artifact workflow foundation while each snapshot aggregate independently requires actual GitHub assets/hashes/provenance, exact released macOS and Android runtime acceptance, and separately recorded user Windows runtime status. CoreCpp/CoreProject2026 ownership, bounded Script/worldgen/graphics/kernel/network/executor/audio/LOD/physics boundaries and compact future-content deferrals are explicit; decision documents meet prose budgets; canonical backlog render/check passes; and after S8 publication the minor remains active/unfinalized pending the user report and feedback.",
+    "acceptance": "Every requirement in the immutable user request and architecture/repository addenda is traceable to the architecture decisions, an existing product task, or focused tasks48-66 with no omitted current-minor mechanism and no dependency cycle. Task42 owns reusable artifact workflow foundation while each snapshot aggregate independently requires actual GitHub assets/hashes/provenance, exact released macOS and Android runtime acceptance, and separately recorded user Windows runtime status. CoreCpp/CoreProject2026 ownership, bounded Script/worldgen/graphics/kernel/network/executor/audio/LOD/physics boundaries and compact future-content deferrals are explicit; decision documents meet prose budgets; canonical backlog render/check passes; and after S7 publication the minor remains active/unfinalized pending the user report and feedback.",
     "evidence": "Requirements and addenda are reconciled into decision docs and focused tasks48-66 without dependency cycles; render/check passed and decision prose stayed within budgets. No architecture implementation, release, artifact, or runtime claim is made.",
     "blocker": "",
     "owner": "Codex",
@@ -2612,8 +2616,8 @@
     "resolution_changes": "Closed the architecture and snapshot-acceptance planning decision without claiming planned implementation or release completion.",
     "plan": [
       "Reconcile the exact user addenda against package and EarlyDev decision documents without making implementation claims.",
-      "Allocate and validate focused cycle-free S4-S8 and future tasks while preserving existing product tasks and statuses.",
-      "Separate artifact-workflow completion from real per-snapshot publication/runtime evidence and retain the S8 feedback hold.",
+      "Allocate and validate focused cycle-free S4-S7 and future tasks while preserving existing product tasks and statuses.",
+      "Separate artifact-workflow completion from real per-snapshot publication/runtime evidence and retain the S7 feedback hold.",
       "Record focused task-render, graph and documentation-budget evidence before the planning commit."
     ],
     "product_changes": [],
@@ -2977,7 +2981,7 @@
     "milestone": "AI development policy",
     "depends_on": [],
     "acceptance": "Until immediately before minor publication, each task uses exactly one minimal Luna/high staged review after deterministic automated checks. Unit, integration, screenshot and code checks remain primary; static analyzers and sanitizers remain deferred to the minor-publication review boundary. This policy does not weaken test, authority, release, or external-publication gates.",
-    "evidence": "The project now records one minimal Luna/high exact-staged-candidate review through minor development, CI candidates, and snapshot delivery. Deterministic unit, integration, screenshot, and code checks remain primary; static analyzers and sanitizers are deferred to the final pre-minor-publication boundary. The policy preserves test and publication-authority gates and the Snapshot 8 feedback hold.",
+    "evidence": "The project now records one minimal Luna/high exact-staged-candidate review through minor development, CI candidates, and snapshot delivery. Deterministic unit, integration, screenshot, and code checks remain primary; static analyzers and sanitizers are deferred to the final pre-minor-publication boundary. The policy preserves test and publication-authority gates and the Snapshot 7 feedback hold.",
     "blocker": "",
     "owner": "",
     "level": "basic",
@@ -3129,14 +3133,14 @@
     "route": "luna",
     "milestone": "AI development policy",
     "depends_on": [],
-    "acceptance": "The release policy requires launching the exact published macOS artifact after every snapshot publication and pausing for user notes before any work on the next snapshot. The checkpoint applies to Snapshots 3 through 8 and preserves the separate post-Snapshot-8 minor hold.",
+    "acceptance": "The release policy requires launching the exact published macOS artifact after every snapshot publication and pausing for user notes before any work on the next snapshot. The checkpoint applies to Snapshots 3 through 7 and preserves the separate post-Snapshot-7 minor hold.",
     "evidence": "docs/ai/RELEASES.md now records the mandatory post-publication local launch and user-feedback pause before the next snapshot.",
     "blocker": "",
     "owner": "",
     "level": "basic",
     "parent": "MC-AI-0032",
-    "motivation": "The user requires a visible runtime checkpoint after every published snapshot instead of uninterrupted Snapshot 3 through Snapshot 8 delivery.",
-    "context": "This supersedes continuous cross-snapshot execution without checkpoints; Snapshot 8's existing minor-feedback hold remains unchanged.",
+    "motivation": "The user requires a visible runtime checkpoint after every published snapshot instead of uninterrupted Snapshot 3 through Snapshot 7 delivery.",
+    "context": "This supersedes continuous cross-snapshot execution without checkpoints; Snapshot 7's existing minor-feedback hold remains unchanged.",
     "complexity": "low",
     "created_at": "2026-09-10",
     "resolved_at": "2026-09-10",
@@ -3514,7 +3518,7 @@
     "retrospective": "",
     "docs_review": "Reviewed the owning routing, workflow, commit, automation, release, and project-skill guidance after the follow-up; generated source-state and task views are refreshed after the summary-history reader and regression changes.",
     "environment_review": "Task89 remains project-local tooling, policy, metadata, tests, and configuration; no C++ runtime or release artifact acceptance is claimed. The installed local hook path was exercised; normal workspace hooks/config were not changed.",
-    "backlog_review": "The real five-task efficiency sample remains partial at 2/5 basic-task commits after baseline MC-AI-0089. Task88 and Task42 now have joined historical check summaries by immutable commit identity; elapsed time and model usage remain unavailable. No evaluation-only tasks, S3-scope change, auto-publication, or Snapshot 9 is introduced."
+    "backlog_review": "The real five-task efficiency sample remains partial at 2/5 basic-task commits after baseline MC-AI-0089. Task88 and Task42 now have joined historical check summaries by immutable commit identity; elapsed time and model usage remain unavailable. No evaluation-only tasks, S3-scope change, auto-publication, or another snapshot is introduced."
   },
   {
     "id": "MC-AI-0090",
@@ -4008,7 +4012,7 @@
     "level": "basic",
     "parent": "MC-AI-0035",
     "motivation": "The user must inspect the exact playable candidate immediately before publication so visible defects cannot be discovered only after immutable release creation.",
-    "context": "The existing release policy launches the macOS artifact only after publication. User instruction on 2026-09-11 supersedes that order while preserving authorized ai-* pushes and CI candidate builds, the post-publication verification, the stop before the next snapshot, and the Snapshot 8 minor-feedback hold.",
+    "context": "The existing release policy launches the macOS artifact only after publication. User instruction on 2026-09-11 supersedes that order while preserving authorized ai-* pushes and CI candidate builds, the post-publication verification, the stop before the next snapshot, and the Snapshot 7 minor-feedback hold.",
     "complexity": "low",
     "created_at": "2026-09-11",
     "resolved_at": "2026-09-11",

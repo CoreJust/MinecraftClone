@@ -19,17 +19,16 @@ This is an implementation queue, not the product specification. [../ROADMAP.md](
 | ED-010-S3 | S2 | Core Vulkan infrastructure, GLFW window, Vulkan+GLFW world rendering, and publish-check script; the S2 scene visibly renders. | validation-layer renderer smoke; fallback-capable GPU smoke; common gate. |
 | ED-010-S4 | S3 | 3D visual scene over still-flat logic; real or bot players; real-player camera and WASD; grid floor and colored box players. | input/camera math tests; bot and interactive movement smoke. |
 | ED-010-S5 | S4 | One chunk made only of air and stone; flying player can inspect its block geometry. | chunk/meshing tests; fly-through renderer smoke. |
-| ED-010-S6 | S5 | Sparse/chunked 65,536×65,536×1,024 addressable world with deterministic air/stone pattern; no full-world allocation. | boundary/streaming/memory tests; distant chunk smoke. |
-| ED-010-S7 | S6 | X/Y world wrapping across simulation, protocol, and rendering. D: profile first, then record justified render/network optimizations and budgets. | seam/collision/replication tests; wrap-crossing smoke; profile artifact. |
-| ED-010-S8 | S7 | Permission-gated flight and phasing through blocks/entities; without permission, jump, gravity, block collision, and entity collision work. | permission and physics edge-case tests; multiplayer smoke. |
+| ED-010-S6 | S5 | Sparse/chunked 65,536×65,536×1,024 addressable wrapped world with deterministic air/stone pattern, mature streaming and rendering, and no full-world allocation. | boundary/streaming/memory/seam tests; distant traversal and wrap-crossing smoke. |
+| ED-010-S7 | S6 | Permission-gated flight and phasing through blocks/entities; without permission, jump, gravity, block collision, and entity collision work. Complete the reusable runtime, staged-generation, preview/LOD, audio, and full-game profiling contracts deferred from S6. | permission, physics, seam and subsystem edge-case tests; multiplayer smoke; profile artifact. |
 
-`ED-010-S1`–`S3` are historical snapshot descriptions; use the same acceptance checks to establish their actual state before extending them. `S4`–`S8` are the remaining planned snapshots.
+`ED-010-S1`–`S3` are historical snapshot descriptions; use the same acceptance checks to establish their actual state before extending them. S6 absorbed the former wrapping-only S7, so the former S8 is now S7 and closes the minor.
 
 ## EarlyDev minor releases
 
 | ID | Depends on | Scope and acceptance | Validation |
 |---|---|---|---|
-| ED-011 BasicBlocks | ED-010-S8 | Grass, stone, bedrock, snow, ice, water; fixed-pattern worldgen; permission-aware place/break; correct first/second/third-person player models/views. | block-state, edit-authority, serialization tests; all-view multiplayer smoke. |
+| ED-011 BasicBlocks | ED-010-S7 | Grass, stone, bedrock, snow, ice, water; fixed-pattern worldgen; permission-aware place/break; correct first/second/third-person player models/views. | block-state, edit-authority, serialization tests; all-view multiplayer smoke. |
 | ED-012 GUI | ED-011 | Main screen; create/join-world screen; pause; hotbar and inventories; save/open world; F3 diagnostics. Save/load preserves world and inventory. | UI state/save compatibility tests; create, join, pause, reload smoke. |
 | ED-013 BasicWorldGen | ED-012 | Global height/temperature continents and oceans; local deep-ocean/ocean/beach/plains/hills/mountains biomes; sand; icy poles and extreme north/south ice wall; trees. | fixed-seed map/biome boundary tests; map preview smoke. |
 | ED-014 SkyGraphics | ED-013 | Lighting/effects, day/night, sun/moon/stars/clouds, and latitude-dependent sky position/block tint. D: choose lighting model and performance target. | deterministic time/latitude tests; day-cycle visual smoke. |
