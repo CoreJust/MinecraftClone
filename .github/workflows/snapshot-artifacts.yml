@@ -244,30 +244,10 @@ jobs:
           --preset release
           --cmake-arg=-DCMAKE_TOOLCHAIN_FILE=$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake
           --cmake-arg=-DVCPKG_MANIFEST_INSTALL=OFF
-      - name: Create clang-cl warning policy launcher
+      - name: Create bounded Windows server-only test plan
         if: matrix.platform == 'windows'
         shell: pwsh
         run: |
-          @'
-          import subprocess
-          import sys
-
-          GNU_WARNING_POLICY = {"-Wall", "-Wextra", "-Wpedantic", "-Werror"}
-          NATIVE_WARNING_POLICY = [
-              "/W4",
-              "/WX",
-              "-Wno-error=reorder-init-list",
-              "-Wno-error=unused-command-line-argument",
-              "-Wno-error=unknown-attributes",
-              "-Wno-error=missing-designated-field-initializers",
-              "-Wno-error=unused-parameter",
-          ]
-
-          command = [argument for argument in sys.argv[1:] if argument not in GNU_WARNING_POLICY]
-          separator = command.index("--") if "--" in command else len(command)
-          command[separator:separator] = NATIVE_WARNING_POLICY
-          raise SystemExit(subprocess.call(command))
-          '@ | Set-Content -Encoding utf8 "$env:RUNNER_TEMP\clang-cl-launcher.py"
           @'
           from pathlib import Path
           import sys
@@ -288,7 +268,7 @@ jobs:
           call "%ProgramFiles%\Microsoft Visual Studio\2022\Enterprise\Common7\Tools\VsDevCmd.bat" -arch=amd64
           if errorlevel 1 exit /b %errorlevel%
           set "VCPKG_ROOT=%MC_ACQUIRED_VCPKG_ROOT%"
-          python script/ci/acquire.py install-private-dependencies --root "%RUNNER_TEMP%\private-dependencies" --platform windows --preset release "--cmake-arg=-DCMAKE_TOOLCHAIN_FILE=%VCPKG_ROOT%\scripts\buildsystems\vcpkg.cmake" --cmake-arg=-DCMAKE_C_COMPILER=clang-cl --cmake-arg=-DCMAKE_CXX_COMPILER=clang-cl "--cmake-arg=-DCMAKE_CXX_COMPILER_LAUNCHER=python;%RUNNER_TEMP%\clang-cl-launcher.py" --cmake-arg=-DVCPKG_MANIFEST_INSTALL=OFF
+          python script/ci/acquire.py install-private-dependencies --root "%RUNNER_TEMP%\private-dependencies" --platform windows --preset release "--cmake-arg=-DCMAKE_TOOLCHAIN_FILE=%VCPKG_ROOT%\scripts\buildsystems\vcpkg.cmake" --cmake-arg=-DVCPKG_MANIFEST_INSTALL=OFF
           if errorlevel 1 exit /b %errorlevel%
       - name: Verify exact source
         shell: bash
@@ -372,7 +352,7 @@ jobs:
           if errorlevel 1 exit /b %errorlevel%
           python script/ci/acquire.py record-metadata --platform windows --preset release --output build/toolchain-windows.json
           if errorlevel 1 exit /b %errorlevel%
-          cmake --preset release -DMC_ENABLE_RENDERER_SMOKE=OFF -DVCPKG_MANIFEST_INSTALL=OFF -DVCPKG_INSTALLED_DIR="%VCPKG_INSTALLED_DIR%" -DCMAKE_PREFIX_PATH="%MC_PRIVATE_DEPENDENCIES_PREFIX%" -DCoreCpp_DIR="%MC_PRIVATE_DEPENDENCIES_PREFIX%/lib/cmake/CoreCpp" -DCoreProject2026_DIR="%MC_PRIVATE_DEPENDENCIES_PREFIX%/lib/cmake/CoreProject2026" -DCMAKE_C_COMPILER=clang-cl -DCMAKE_CXX_COMPILER=clang-cl "-DCMAKE_CXX_COMPILER_LAUNCHER=python;%RUNNER_TEMP%\clang-cl-launcher.py"
+          cmake --preset release -DMC_ENABLE_RENDERER_SMOKE=OFF -DVCPKG_MANIFEST_INSTALL=OFF -DVCPKG_INSTALLED_DIR="%VCPKG_INSTALLED_DIR%" -DCMAKE_PREFIX_PATH="%MC_PRIVATE_DEPENDENCIES_PREFIX%" -DCoreCpp_DIR="%MC_PRIVATE_DEPENDENCIES_PREFIX%/lib/cmake/CoreCpp" -DCoreProject2026_DIR="%MC_PRIVATE_DEPENDENCIES_PREFIX%/lib/cmake/CoreProject2026"
           if errorlevel 1 exit /b %errorlevel%
           cmake --build --preset release
           if errorlevel 1 exit /b %errorlevel%

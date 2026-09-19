@@ -7589,5 +7589,43 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0221",
+    "title": "Use native MSVC for the complete Windows artifact",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P0",
+    "route": "luna",
+    "milestone": "EarlyDev 0.1.0:6",
+    "depends_on": [],
+    "acceptance": "Windows private dependencies and MinecraftClone select one native MSVC toolchain through the initialized Visual Studio environment, preserve each project native MSVC warning policy, and keep the bounded server-only test plan. Deterministic workflow tests lock compiler selection, fail-closed command handling, and unchanged dependency pins; hosted artifact acceptance remains solely on MC-AI-0037.",
+    "evidence": "Run 35465157543 compiled unified clang-cl successfully but 36 CoreLang-dependent runtime tests aborted with 0xc0000409 while unrelated tests passed, isolating the compiler/runtime path. The replacement native-MSVC workflow contract and fail-closed command handling pass 37/37 focused workflow/package tests, backlog validation, and git diff checks. Final hosted acceptance remains aggregate-owned.",
+    "blocker": "",
+    "owner": "",
+    "level": "basic",
+    "parent": "MC-AI-0037",
+    "motivation": "Run 35465157543 proved unified clang-cl still aborts CoreLang 0.1.2 at runtime with 0xc0000409, cascading through terrain, server, scenario, and CLI tests, while the pinned CoreProject2026 source already owns an explicit supported MSVC warning/runtime path.",
+    "context": "Keep immutable S6 source/tag and dependency pins. Change only late-artifact orchestration. Prefer the upstream native Windows compiler contract over another clang compatibility exception.",
+    "complexity": "medium",
+    "created_at": "2026-09-19",
+    "resolved_at": "2026-09-19",
+    "resolution_changes": "Removed the clang-cl compiler and launcher overrides from the immutable-source Windows artifact path. Both private dependencies and MinecraftClone now use the Visual Studio environment native MSVC compiler and each project native warning policy; the bounded nested server-only plan remains unchanged.",
+    "plan": [
+      "Replace the clang-cl launcher path with native MSVC for private dependencies and the game; retain bounded server-only orchestration; lock the exact workflow contract; run focused policy tests and hosted acceptance."
+    ],
+    "product_changes": [
+      "No gameplay change."
+    ],
+    "code_changes": [
+      "Use the Visual Studio environment default cl compiler consistently across the Windows dependency and game configurations and remove the clang-only launcher."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]
