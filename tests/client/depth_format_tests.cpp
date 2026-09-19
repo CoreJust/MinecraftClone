@@ -60,6 +60,25 @@ TEST(DepthFormatTest, EveryPresentationPipelineDeclaresTheCommonDepthAttachment)
     EXPECT_FALSE(descriptors.debug_hud.depth_write_enabled);
 }
 
+TEST(DepthFormatTest, WorldTextUsesSceneDepthAndGuiUsesItsOwnColorOnlyStage)
+{
+    client::PresentationPipelineDescriptors const descriptors = client::presentationPipelineDescriptors(
+        VK_NULL_HANDLE,
+        VK_NULL_HANDLE,
+        VK_NULL_HANDLE,
+        VK_NULL_HANDLE,
+        VK_FORMAT_B8G8R8A8_UNORM,
+        VK_FORMAT_D32_SFLOAT
+    );
+
+    EXPECT_EQ(descriptors.world_text.depth_format, VK_FORMAT_D32_SFLOAT);
+    EXPECT_TRUE(descriptors.world_text.depth_test_enabled);
+    EXPECT_FALSE(descriptors.world_text.depth_write_enabled);
+    EXPECT_EQ(descriptors.gui_text.depth_format, VK_FORMAT_UNDEFINED);
+    EXPECT_FALSE(descriptors.gui_text.depth_test_enabled);
+    EXPECT_FALSE(descriptors.gui_text.depth_write_enabled);
+}
+
 TEST(DepthFormatTest, AllocatesOncePerSwapchainImageAndResetsOnRecreate)
 {
     client::DepthTargetSelection selection;

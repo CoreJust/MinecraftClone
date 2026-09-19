@@ -1,7 +1,10 @@
-#include <acceptance/RendererBenchmark.hpp>
+#include <shared/net/Message.hpp>
 
+#include <acceptance/RendererBenchmark.hpp>
 #include <gtest/gtest.h>
 
+#include <algorithm>
+#include <array>
 #include <chrono>
 #include <vector>
 
@@ -36,6 +39,16 @@ TEST(RendererBenchmark, ReportsNoStatisticsForNoFrames)
     EXPECT_EQ(summary.p99, std::chrono::nanoseconds::zero());
     EXPECT_EQ(summary.maximum, std::chrono::nanoseconds::zero());
     EXPECT_EQ(summary.mean, std::chrono::nanoseconds::zero());
+}
+
+TEST(RendererBenchmark, RequiresBoth120FpsAndStableFrameTiming)
+{
+    acceptance::FrameTimingSummary timings{ .p99 = std::chrono::nanoseconds{ 8'000'000 } };
+    EXPECT_TRUE(acceptance::rendererBenchmarkMeetsFrameTarget(120.0, timings));
+    EXPECT_TRUE(acceptance::rendererBenchmarkMeetsFrameTarget(118.8, timings));
+    EXPECT_FALSE(acceptance::rendererBenchmarkMeetsFrameTarget(118.79, timings));
+    timings.p99 = std::chrono::nanoseconds{ 10'000'001 };
+    EXPECT_FALSE(acceptance::rendererBenchmarkMeetsFrameTarget(150.0, timings));
 }
 
 TEST(RendererBenchmark, MapsContextAndRendererOptionsFromOneBenchmarkConfiguration)
@@ -82,6 +95,62 @@ TEST(RendererBenchmark, RejectsFifoWhenImmediatePresentationWasRequested)
         default_options,
         client::RendererPresentMode::FIFO
     ));
+}
+
+TEST(RendererBenchmark, StreamsOneFullColumnWhenMovingEast)
+{
+    shared::HeightTileCoordinate const center{ .x = 125, .y = -17 };
+
+    acceptance::RendererBenchmarkStreamUpdate const update =
+        acceptance::makeRendererBenchmarkStreamUpdate(center, 0U);
+
+    EXPECT_EQ(update.direction, acceptance::RendererBenchmarkStreamDirection::PositiveX);
+    EXPECT_EQ(update.center, (shared::HeightTileCoordinate{ .x = 126, .y = -17 }));
+    ASSERT_EQ(update.removals.size(), shared::HEIGHT_TILE_INTEREST_WIDTH);
+    ASSERT_EQ(update.additions.size(), shared::HEIGHT_TILE_INTEREST_WIDTH);
+    for (uint32_t row = 0U; row < shared::HEIGHT_TILE_INTEREST_WIDTH; ++row) {
+        EXPECT_EQ(
+            update.removals[row],
+            (shared::HeightTileCoordinate{ .x = 80, .y = -62 + static_cast<int32_t>(row) })
+        );
+        EXPECT_EQ(
+            update.additions[row],
+            (shared::HeightTileCoordinate{ .x = 170, .y = -62 + static_cast<int32_t>(row) })
+        );
+        EXPECT_EQ(std::ranges::count(update.removals, update.removals[row]), 1);
+        EXPECT_EQ(std::ranges::count(update.additions, update.additions[row]), 1);
+    }
+}
+
+TEST(RendererBenchmark, RotatesStreamingAcrossBothAxesAndReturnsToStart)
+{
+    shared::HeightTileCoordinate center{ .x = 0, .y = 0 };
+    std::array<acceptance::RendererBenchmarkStreamDirection, 4U> const expected_directions{
+        acceptance::RendererBenchmarkStreamDirection::PositiveX,
+        acceptance::RendererBenchmarkStreamDirection::PositiveY,
+        acceptance::RendererBenchmarkStreamDirection::NegativeX,
+        acceptance::RendererBenchmarkStreamDirection::NegativeY,
+    };
+
+    for (uint64_t update_index = 0U;
+         update_index < 4U * shared::HEIGHT_TILE_INTEREST_WIDTH;
+         ++update_index) {
+        acceptance::RendererBenchmarkStreamUpdate const update =
+            acceptance::makeRendererBenchmarkStreamUpdate(center, update_index);
+        EXPECT_EQ(
+            update.direction,
+            expected_directions[update_index / shared::HEIGHT_TILE_INTEREST_WIDTH]
+        );
+        ASSERT_EQ(update.removals.size(), shared::HEIGHT_TILE_INTEREST_WIDTH);
+        ASSERT_EQ(update.additions.size(), shared::HEIGHT_TILE_INTEREST_WIDTH);
+        for (shared::HeightTileCoordinate const removal : update.removals) {
+            EXPECT_EQ(std::ranges::count(update.removals, removal), 1);
+            EXPECT_EQ(std::ranges::count(update.additions, removal), 0);
+        }
+        center = update.center;
+    }
+
+    EXPECT_EQ(center, (shared::HeightTileCoordinate{ .x = 0, .y = 0 }));
 }
 
 } // namespace

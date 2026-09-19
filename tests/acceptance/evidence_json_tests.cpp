@@ -14,7 +14,7 @@ TEST(EvidenceJson, IncludesVersionedMetadataTimingAndCounters)
         .mode = "scenario",
         .scenario_version = "1",
         .profile = "flat2d-v1",
-        .scenario_name = "scenario 1",
+        .scenario_name = "canonical_sample.core",
         .seed = 42,
         .ticks = 6,
         .clients_requested = 1,

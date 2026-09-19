@@ -15,6 +15,10 @@ execute_process(
         -B "${test_root}/build"
         "-DCMAKE_PREFIX_PATH=${corecpp_prefix};${dependency_prefix}"
         "-DCoreProject2026_DIR=${coreproject_dir}"
+        "-DCoreLangNumerics_GMP_INCLUDE_DIR=@CoreLangNumerics_GMP_INCLUDE_DIR@"
+        "-DCoreLangNumerics_GMP_LIBRARY=@CoreLangNumerics_GMP_LIBRARY@"
+        "-DCoreLangNumerics_MPFR_INCLUDE_DIR=@CoreLangNumerics_MPFR_INCLUDE_DIR@"
+        "-DCoreLangNumerics_MPFR_LIBRARY=@CoreLangNumerics_MPFR_LIBRARY@"
         -DMC_BUILD_CLIENT=OFF
         -DMC_REGISTER_SERVER_ONLY_BUILD_TEST=OFF
         -DVCPKG_MANIFEST_INSTALL=OFF

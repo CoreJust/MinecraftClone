@@ -14,7 +14,7 @@ constexpr core::Version PROJECT_VERSION{
     .epoch = 0,
     .major = 1,
     .minor = 0,
-    .patch = 5,
+    .patch = 6,
 };
 
 } // namespace shared

@@ -399,12 +399,20 @@ std::expected<RuntimeEvidence, std::string> runScenario(
                     break;
                 }
                 char const character = plan.actors()[*index].character;
+                auto const wrap = [](int32_t value) noexcept {
+                    constexpr int32_t EXTENT = shared::World::FLIGHT_MAX_CELL + 1;
+                    return (value % EXTENT + EXTENT) % EXTENT;
+                };
+                int32_t const expected_x = plan.profile() == shared::ScenarioProfile::Flight3dV1
+                    ? wrap(expectation->x) : expectation->x;
+                int32_t const expected_y = plan.profile() == shared::ScenarioProfile::Flight3dV1
+                    ? wrap(expectation->y) : expectation->y;
                 if (!clients[*index]->waitFor(
-                    [&client = clients[*index], character, expectation] {
+                    [&client = clients[*index], character, expectation, expected_x, expected_y] {
                         auto const position = client->latestPosition(character);
                         return position.has_value()
-                            && position->x == expectation->x
-                            && position->y == expectation->y
+                            && position->x == expected_x
+                            && position->y == expected_y
                             && position->z == expectation->z;
                     },
                     deadline,

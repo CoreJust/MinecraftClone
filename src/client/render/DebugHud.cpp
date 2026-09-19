@@ -5,17 +5,24 @@
 #include <chrono>
 #include <cmath>
 #include <cstddef>
-#include <cstring>
 
 namespace client {
 
 namespace {
 
-constexpr uint8_t FIRST_GLYPH = 0x20;
-constexpr uint8_t LAST_GLYPH = 0x7f;
-constexpr uint8_t UNSUPPORTED_GLYPH = '?';
 constexpr float MIN_DPI_SCALE = 0.25F;
 constexpr float MAX_DPI_SCALE = 8.0F;
+
+[[nodiscard]] TextColor hudColor(DebugHudColor const color) noexcept {
+    switch (color) {
+    case DebugHudColor::White: return { 1.0F, 1.0F, 1.0F, 1.0F };
+    case DebugHudColor::Cyan: return { 0.48F, 0.88F, 1.0F, 1.0F };
+    case DebugHudColor::Gold: return { 1.0F, 0.82F, 0.38F, 1.0F };
+    case DebugHudColor::Green: return { 0.63F, 1.0F, 0.62F, 1.0F };
+    case DebugHudColor::Rose: return { 1.0F, 0.65F, 0.74F, 1.0F };
+    }
+    return {};
+}
 
 [[nodiscard]] size_t formatNumberWithToChars(
     char* const destination,
@@ -45,10 +52,7 @@ void DebugHudToggleLatch::reset() noexcept {
 }
 
 uint8_t sanitizeDebugHudByte(uint8_t const byte) noexcept {
-    if (byte == 0 || (byte >= FIRST_GLYPH && byte <= LAST_GLYPH)) {
-        return byte;
-    }
-    return UNSUPPORTED_GLYPH;
+    return sanitizeTextByte(byte);
 }
 
 uint32_t packDebugHudAscii(
@@ -57,39 +61,14 @@ uint32_t packDebugHudAscii(
     uint8_t const c2,
     uint8_t const c3
 ) noexcept {
-    uint32_t const sanitized_c0 = sanitizeDebugHudByte(c0);
-    uint32_t const sanitized_c1 = sanitizeDebugHudByte(c1);
-    uint32_t const sanitized_c2 = sanitizeDebugHudByte(c2);
-    uint32_t const sanitized_c3 = sanitizeDebugHudByte(c3);
-    return sanitized_c0
-        | (sanitized_c1 << 8)
-        | (sanitized_c2 << 16)
-        | (sanitized_c3 << 24);
+    return static_cast<uint32_t>(sanitizeDebugHudByte(c0))
+        | (static_cast<uint32_t>(sanitizeDebugHudByte(c1)) << 8U)
+        | (static_cast<uint32_t>(sanitizeDebugHudByte(c2)) << 16U)
+        | (static_cast<uint32_t>(sanitizeDebugHudByte(c3)) << 24U);
 }
 
-void packDebugHudText(DebugHudText const& text, DebugHudBatch& batch) noexcept {
-    batch.instances.fill({ });
-    batch.size = 0;
-    size_t const bounded_size = std::min(text.size, text.bytes.size());
-    size_t line = 0;
-    size_t column = 0;
-    for (size_t offset = 0; offset < bounded_size && line < DEBUG_HUD_LINE_COUNT; ++offset) {
-        uint8_t const character = static_cast<uint8_t>(text.bytes[offset]);
-        if (character == static_cast<uint8_t>('\n')) {
-            ++line;
-            column = 0;
-            continue;
-        }
-        if (column >= DEBUG_HUD_MAX_LINE_BYTES) {
-            continue;
-        }
-        size_t const word_index = line * DEBUG_HUD_WORDS_PER_LINE + column / 4;
-        uint32_t const character_shift = static_cast<uint32_t>(8 * (column % 4));
-        batch.instances[word_index].packed_ascii |=
-            static_cast<uint32_t>(sanitizeDebugHudByte(character)) << character_shift;
-        batch.size = std::max(batch.size, word_index + 1);
-        ++column;
-    }
+void packDebugHudText(DebugHudText const& text, DebugHudBatch& batch) {
+    packText(text, batch);
 }
 
 DebugHudState::DebugHudState(
@@ -145,6 +124,12 @@ void DebugHudState::setDpiScale(float const dpi_scale) noexcept {
     dpi_scale_ = std::clamp(dpi_scale, MIN_DPI_SCALE, MAX_DPI_SCALE);
 }
 
+void DebugHudState::setLineColor(size_t const line, DebugHudColor const color) noexcept {
+    if (line < line_colors_.size() && color <= DebugHudColor::Rose) {
+        line_colors_[line] = color;
+    }
+}
+
 DebugHudSnapshot DebugHudState::snapshot() const noexcept {
     double const duration = presented_size_ < 2
         ? 0.0
@@ -161,55 +146,83 @@ DebugHudSnapshot DebugHudState::snapshot() const noexcept {
     };
 }
 
-bool DebugHudState::formatText(DebugHudText& text) const noexcept {
-    text.size = 0;
+std::array<TextColor, DEBUG_HUD_LINE_COUNT> DebugHudState::lineColors() const noexcept {
+    std::array<TextColor, DEBUG_HUD_LINE_COUNT> colors{};
+    for (size_t line = 0U; line < colors.size(); ++line) {
+        colors[line] = hudColor(line_colors_[line]);
+    }
+    return colors;
+}
+
+bool DebugHudState::formatText(DebugHudText& text) const {
+    clearText(text);
     if (!enabled_) {
         return false;
     }
 
     DebugHudSnapshot const values = snapshot();
-    size_t offset = 0;
-    size_t line_limit = offset + DEBUG_HUD_MAX_LINE_BYTES;
-    offset = appendText(text, offset, line_limit, "FPS:  ");
-    offset = appendNumber(text, offset, line_limit, values.presented_fps, 1);
-    offset = appendText(text, offset, text.bytes.size(), "\n");
+    size_t offset = 0U;
+    size_t line_limit = offset + DEBUG_HUD_LINE_BYTES[0];
+    offset = appendText(text, offset, line_limit, "FPS:  ", hudColor(line_colors_[0]));
+    offset = appendNumber(text, offset, line_limit, values.presented_fps, 1, hudColor(line_colors_[0]));
+    offset = appendText(text, offset, text.size() + 1U, "\n", hudColor(line_colors_[0]));
 
-    line_limit = offset + DEBUG_HUD_MAX_LINE_BYTES;
+    line_limit = offset + DEBUG_HUD_LINE_BYTES[1];
     if (values.input.touch_flight_help) {
-        offset = appendText(text, offset, line_limit, "RIGHT: TOP UP / BOTTOM DOWN");
+        offset = appendText(text, offset, line_limit, "TOUCH: UP/DOWN", hudColor(line_colors_[1]));
     } else {
-        offset = appendText(text, offset, line_limit, "UPTIME:  ");
-        offset = appendNumber(text, offset, line_limit, values.uptime_seconds, 1);
-        offset = appendText(text, offset, line_limit, "s");
+        offset = appendText(text, offset, line_limit, "UPTIME:  ", hudColor(line_colors_[1]));
+        offset = appendNumber(text, offset, line_limit, values.uptime_seconds, 1, hudColor(line_colors_[1]));
+        offset = appendText(text, offset, line_limit, "s", hudColor(line_colors_[1]));
     }
-    offset = appendText(text, offset, text.bytes.size(), "\n");
+    offset = appendText(text, offset, text.size() + 1U, "\n", hudColor(line_colors_[1]));
 
-    line_limit = offset + DEBUG_HUD_MAX_LINE_BYTES;
-    offset = appendText(text, offset, line_limit, "XYZ:  ");
-    offset = appendNumber(text, offset, line_limit, values.input.player_x, 2);
-    offset = appendText(text, offset, line_limit, "   ");
-    offset = appendNumber(text, offset, line_limit, values.input.player_y, 2);
-    offset = appendText(text, offset, line_limit, "   ");
-    offset = appendNumber(text, offset, line_limit, values.input.player_z, 2);
-    offset = appendText(text, offset, text.bytes.size(), "\n");
+    line_limit = offset + DEBUG_HUD_LINE_BYTES[2];
+    offset = appendText(text, offset, line_limit, "SPEED:", hudColor(line_colors_[2]));
+    offset = appendNumber(text, offset, line_limit, values.input.speedup, 0, hudColor(line_colors_[2]));
+    offset = appendText(text, offset, line_limit, "x(", hudColor(line_colors_[2]));
+    if (values.input.acceleration_enabled) {
+        offset = appendText(text, offset, line_limit, "ON", hudColor(line_colors_[2]));
+    } else {
+        offset = appendNumber(text, offset, line_limit, values.input.selected_speedup, 0, hudColor(line_colors_[2]));
+        offset = appendText(text, offset, line_limit, "x", hudColor(line_colors_[2]));
+    }
+    offset = appendText(text, offset, line_limit, ")", hudColor(line_colors_[2]));
+    offset = appendText(text, offset, text.size() + 1U, "\n", hudColor(line_colors_[2]));
 
-    line_limit = offset + DEBUG_HUD_MAX_LINE_BYTES;
-    offset = appendText(text, offset, line_limit, "YPR deg: ");
-    offset = appendNumber(text, offset, line_limit, values.input.camera_yaw_degrees, 1);
-    offset = appendText(text, offset, line_limit, "  ");
-    offset = appendNumber(text, offset, line_limit, values.input.camera_pitch_degrees, 1);
-    offset = appendText(text, offset, line_limit, "  ");
-    offset = appendNumber(text, offset, line_limit, values.input.camera_roll_degrees, 1);
-    text.size = offset;
+    line_limit = offset + DEBUG_HUD_LINE_BYTES[3];
+    TextColor const white = hudColor(DebugHudColor::White);
+    offset = appendText(text, offset, line_limit, "XYZ: ", white);
+    offset = appendNumber(text, offset, line_limit, values.input.player_x, 1, hudColor(DebugHudColor::Cyan));
+    offset = appendText(text, offset, line_limit, " ", white);
+    offset = appendNumber(text, offset, line_limit, values.input.player_z, 1, hudColor(DebugHudColor::Gold));
+    offset = appendText(text, offset, line_limit, " ", white);
+    offset = appendNumber(text, offset, line_limit, values.input.player_y, 1, hudColor(DebugHudColor::Green));
+    offset = appendText(text, offset, text.size() + 1U, "\n", white);
+
+    line_limit = offset + DEBUG_HUD_LINE_BYTES[4];
+    offset = appendText(text, offset, line_limit, "YPR deg: ", white);
+    offset = appendNumber(text, offset, line_limit, values.input.camera_yaw_degrees, 1, hudColor(DebugHudColor::Cyan));
+    offset = appendText(text, offset, line_limit, " ", white);
+    offset = appendNumber(
+        text,
+        offset,
+        line_limit,
+        values.input.camera_pitch_degrees,
+        1,
+        hudColor(DebugHudColor::Gold)
+    );
+    offset = appendText(text, offset, line_limit, " ", white);
+    offset = appendNumber(text, offset, line_limit, values.input.camera_roll_degrees, 1, hudColor(DebugHudColor::Rose));
     return true;
 }
 
-bool DebugHudState::buildBatch(DebugHudText& text, DebugHudBatch& batch) const noexcept {
+bool DebugHudState::buildBatch(DebugHudText& text, DebugHudBatch& batch) const {
     if (!formatText(text)) {
-        batch.size = 0;
+        batch = {};
         return false;
     }
-    packDebugHudText(text, batch);
+    packText(text, batch, TextPlacement{}, {}, {});
     return true;
 }
 
@@ -222,14 +235,21 @@ size_t DebugHudState::appendText(
     DebugHudText& text,
     size_t const offset,
     size_t const limit,
-    std::string_view const value
-) const noexcept {
-    size_t const bounded_limit = std::min(limit, text.bytes.size());
+    std::string_view const value,
+    TextColor const color
+) const {
+    size_t const bounded_limit = std::min(limit, DEBUG_HUD_MAX_TEXT_BYTES);
     if (offset >= bounded_limit) {
         return bounded_limit;
     }
     size_t const count = std::min(value.size(), bounded_limit - offset);
-    std::memcpy(text.bytes.data() + offset, value.data(), count);
+    if (text.value.size() < offset) {
+        text.value.resize(offset, '\0');
+    }
+    if (text.value.size() > offset) {
+        text.value.resize(offset);
+    }
+    static_cast<void>(::client::appendText(text, value.substr(0U, count), color));
     return offset + count;
 }
 
@@ -238,20 +258,28 @@ size_t DebugHudState::appendNumber(
     size_t const offset,
     size_t const limit,
     double const value,
-    int const decimals
-) const noexcept {
-    size_t const bounded_limit = std::min(limit, text.bytes.size());
+    int const decimals,
+    TextColor const color
+    ) const {
+    size_t const bounded_limit = std::min(limit, DEBUG_HUD_MAX_TEXT_BYTES);
     if (offset >= bounded_limit) {
         return bounded_limit;
     }
+    std::array<char, 128U> formatted{};
     size_t const count = formatter_.format(
-        text.bytes.data() + offset,
-        bounded_limit - offset,
+        formatted.data(),
+        std::min(formatted.size(), bounded_limit - offset),
         value,
         decimals,
         formatter_.context
     );
-    return std::min(bounded_limit, offset + count);
+    size_t const bounded_count = std::min(count, bounded_limit - offset);
+    static_cast<void>(::client::appendText(
+        text,
+        std::string_view(formatted.data(), bounded_count),
+        color
+    ));
+    return offset + bounded_count;
 }
 
 void DebugHudState::recordPresentation(

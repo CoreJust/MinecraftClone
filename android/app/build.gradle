@@ -33,12 +33,15 @@ def coreProjectDir = providers.gradleProperty('coreProjectDir')
 
 def fallbackShaderSources = layout.buildDirectory.dir('generated/fallback-shaders')
 def requiredShaderAssets = [
-    'debug_hud.frag.spv',
-    'debug_hud.vert.spv',
+    'text.frag.spv',
+    'text.vert.spv',
     'grid.vert.spv',
     'player.vert.spv',
     'stone.vert.spv',
     'stone.frag.spv',
+    'stone_solid.frag.spv',
+    'sky.vert.spv',
+    'sky.frag.spv',
     'trivial.frag.spv',
 ]
 def hudLicenseAssets = file("${buildDir}/generated/hud-licenses")
@@ -53,8 +56,11 @@ def stageFallbackShaders = tasks.register('stageFallbackShaders', Sync) {
         include 'stone.vert'
         include 'stone.frag'
         include 'trivial.frag'
-        include 'debug_hud.vert'
-        include 'debug_hud.frag'
+        include 'text.vert'
+        include 'text.frag'
+        include 'stone_solid.frag'
+        include 'sky.vert'
+        include 'sky.frag'
     }
     into(fallbackShaderSources)
 }

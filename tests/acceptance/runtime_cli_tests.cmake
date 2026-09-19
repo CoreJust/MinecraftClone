@@ -4,17 +4,18 @@ endif()
 
 file(MAKE_DIRECTORY "${OUTPUT_DIRECTORY}")
 
-set(valid_scenario "${OUTPUT_DIRECTORY}/valid.mcscenario")
+set(valid_scenario "${OUTPUT_DIRECTORY}/valid.core")
 set(valid_evidence "${OUTPUT_DIRECTORY}/valid.json")
-file(WRITE "${valid_scenario}" [=[scenario 1
-profile flat2d-v1
-seed 42
-player alice character "@" at 4 4
-begin
-input alice 1 0
-wait 10
-expect player alice position 9 4
-end
+file(WRITE "${valid_scenario}" [=[@version("0.1.2")
+@use minecraft
+pub fn scenario() {
+    profile("flight3d-v1")
+    seed(42u64)
+    playerXYZ("alice", '@'c8, 4i32, 4i32, 0i32, 0i16, 0i16, 0i16)
+    moveXYZ("alice", 1i8, 0i8, 0i8)
+    wait(10u64)
+    expectXYZ("alice", 9i32, 4i32, 0i32)
+}
 ]=])
 execute_process(
     COMMAND "${MC_MAIN}" --scenario "${valid_scenario}" --evidence "${valid_evidence}"
@@ -47,7 +48,7 @@ endforeach()
 
 set(invalid_core_semicolon "${OUTPUT_DIRECTORY}/invalid-semicolon.core")
 set(invalid_core_semicolon_evidence "${OUTPUT_DIRECTORY}/invalid-semicolon.json")
-file(WRITE "${invalid_core_semicolon}" [=[@version("0.0.3");
+file(WRITE "${invalid_core_semicolon}" [=[@version("0.1.2");
 @use minecraft
 pub fn scenario() {
     profile("flight3d-v1")
@@ -60,38 +61,8 @@ pub fn scenario() {
 ]=])
 execute_process(COMMAND "${MC_MAIN}" --scenario "${invalid_core_semicolon}" --evidence "${invalid_core_semicolon_evidence}" RESULT_VARIABLE invalid_core_semicolon_result TIMEOUT 10)
 if(invalid_core_semicolon_result EQUAL 0)
-    message(FATAL_ERROR "CoreLang 0.0.3 unexpectedly accepted a redundant header separator")
+    message(FATAL_ERROR "CoreLang 0.1.2 unexpectedly accepted a redundant header separator")
 endif()
-
-set(valid_core "${OUTPUT_DIRECTORY}/valid.core")
-set(valid_core_evidence "${OUTPUT_DIRECTORY}/valid-core.json")
-file(WRITE "${valid_core}" [=[@version("0.0.3")
-@use minecraft
-pub fn scenario() {
-    profile("flight3d-v1")
-    seed(42u64)
-    playerXYZ("alice", '@'c8, 4i32, 4i32, 0i32, 0i16, 0i16, 0i16)
-    moveXYZ("alice", 1i8, 0i8, 0i8)
-    wait(10u64)
-    expectXYZ("alice", 9i32, 4i32, 0i32)
-}
-]=])
-execute_process(
-    COMMAND "${MC_MAIN}" --scenario "${valid_core}" --evidence "${valid_core_evidence}"
-    RESULT_VARIABLE valid_core_result
-    ERROR_VARIABLE valid_core_stderr
-    TIMEOUT 10
-)
-if(NOT valid_core_result EQUAL 0)
-    message(FATAL_ERROR "valid CoreLang scenario command failed: ${valid_core_stderr}")
-endif()
-file(READ "${valid_core_evidence}" valid_core_json)
-foreach(required_text "\"passed\": true" "\"ticks\": 10" "\"clients_accepted\": 1")
-    string(FIND "${valid_core_json}" "${required_text}" match_index)
-    if(match_index EQUAL -1)
-        message(FATAL_ERROR "valid CoreLang evidence is missing ${required_text}")
-    endif()
-endforeach()
 
 set(unknown_header "${OUTPUT_DIRECTORY}/unknown.core")
 set(unknown_header_evidence "${OUTPUT_DIRECTORY}/unknown-core.json")
@@ -112,29 +83,31 @@ endif()
 
 set(mixed_header "${OUTPUT_DIRECTORY}/mixed.core")
 set(mixed_header_evidence "${OUTPUT_DIRECTORY}/mixed-core.json")
-file(WRITE "${mixed_header}" "@version(\"0.0.3\")\nscenario 1\n")
+file(WRITE "${mixed_header}" "scenario 1\n")
 execute_process(
     COMMAND "${MC_MAIN}" --scenario "${mixed_header}" --evidence "${mixed_header_evidence}"
     RESULT_VARIABLE mixed_header_result
     TIMEOUT 10
 )
 if(mixed_header_result EQUAL 0)
-    message(FATAL_ERROR "mixed scenario headers unexpectedly succeeded")
+    message(FATAL_ERROR "legacy scenario header unexpectedly succeeded")
 endif()
 file(READ "${mixed_header_evidence}" mixed_header_json)
-string(FIND "${mixed_header_json}" "corelang-compile-failure" match_index)
+string(FIND "${mixed_header_json}" "unknown-source-header" match_index)
 if(match_index EQUAL -1)
-    message(FATAL_ERROR "mixed scenario header diagnostic is missing")
+    message(FATAL_ERROR "legacy scenario header diagnostic is missing")
 endif()
 
-set(invalid_scenario "${OUTPUT_DIRECTORY}/invalid.mcscenario")
+set(invalid_scenario "${OUTPUT_DIRECTORY}/invalid.core")
 set(invalid_evidence "${OUTPUT_DIRECTORY}/invalid.json")
-file(WRITE "${invalid_scenario}" [=[scenario 1
-profile "flat2d-v1"
-seed 42
-player alice character "@" at 4 4
-begin
-end
+file(WRITE "${invalid_scenario}" [=[@version("0.1.2")
+@use minecraft
+pub fn scenario() {
+    profile("flight3d-v1")
+    seed(42u64)
+    playerXYZ("alice", '@'c8, 4i32, 4i32, 0i32, 0i16, 0i16, 0i16)
+    profile("flight3d-v1")
+}
 ]=])
 execute_process(
     COMMAND "${MC_MAIN}" --scenario "${invalid_scenario}" --evidence "${invalid_evidence}"
@@ -147,14 +120,14 @@ if(invalid_result EQUAL 0)
     message(FATAL_ERROR "invalid scenario command unexpectedly succeeded")
 endif()
 file(READ "${invalid_evidence}" invalid_json)
-foreach(required_text "\"passed\": false" "malformed-syntax")
+foreach(required_text "\"passed\": false" "corelang-runtime-failure")
     string(FIND "${invalid_json}" "${required_text}" match_index)
     if(match_index EQUAL -1)
         message(FATAL_ERROR "invalid scenario evidence is missing ${required_text}")
     endif()
 endforeach()
 
-set(oversized_scenario "${OUTPUT_DIRECTORY}/oversized.mcscenario")
+set(oversized_scenario "${OUTPUT_DIRECTORY}/oversized.core")
 set(oversized_evidence "${OUTPUT_DIRECTORY}/oversized.json")
 string(REPEAT "x" 65537 oversized_source)
 file(WRITE "${oversized_scenario}" "${oversized_source}")
@@ -176,18 +149,19 @@ foreach(required_text "\"passed\": false" "65536-byte input limit before parsing
     endif()
 endforeach()
 
-set(aliased_scenario "${OUTPUT_DIRECTORY}/aliased.mcscenario")
-file(WRITE "${aliased_scenario}" [=[scenario 1
-profile flat2d-v1
-seed 42
-player alice character "@" at 4 4
-begin
-end
+set(aliased_scenario "${OUTPUT_DIRECTORY}/aliased.core")
+file(WRITE "${aliased_scenario}" [=[@version("0.1.2")
+@use minecraft
+pub fn scenario() {
+    profile("flight3d-v1")
+    seed(42u64)
+    playerXYZ("alice", '@'c8, 4i32, 4i32, 0i32, 0i16, 0i16, 0i16)
+}
 ]=])
 file(READ "${aliased_scenario}" aliased_source_before)
 execute_process(
     COMMAND "${MC_MAIN}" --scenario "${aliased_scenario}"
-        --evidence "${OUTPUT_DIRECTORY}/./aliased.mcscenario"
+        --evidence "${OUTPUT_DIRECTORY}/./aliased.core"
     RESULT_VARIABLE aliased_result
     OUTPUT_VARIABLE aliased_stdout
     ERROR_VARIABLE aliased_stderr

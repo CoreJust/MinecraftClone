@@ -1,0 +1,7 @@
+#pragma once
+
+namespace shared::detail {
+
+inline constexpr char S6_HEIGHT_TILE_SCRIPT[] = R"corelang(@MC_S6_HEIGHT_TILE_SCRIPT@)corelang";
+
+} // namespace shared::detail

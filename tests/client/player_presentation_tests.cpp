@@ -140,6 +140,69 @@ TEST(PlayerPresentationTest, InitialAuthoritativePositionSnapsAndSubsequentPosit
     EXPECT_DOUBLE_EQ(presentation.sample('@', started_at + std::chrono::milliseconds{ 200 })->x, 0.4);
 }
 
+TEST(PlayerPresentationTest, HorizontalInterpolationCrossesWorldSeamByShortestPath)
+{
+    static constexpr shared::Player BEFORE_SEAM{
+        .id = 1U,
+        .x = 65'535U,
+        .y = 0U,
+        .x_subcell = 9'000U,
+        .y_subcell = 1'000U,
+        .ch = '@',
+    };
+    static constexpr shared::Player AFTER_SEAM{
+        .id = 1U,
+        .x = 0U,
+        .y = 65'535U,
+        .x_subcell = 1'000U,
+        .y_subcell = 9'000U,
+        .ch = '@',
+    };
+    std::chrono::steady_clock::time_point const started_at{};
+    client::PlayerPresentation presentation;
+
+    presentation.update(BEFORE_SEAM, started_at);
+    presentation.update(AFTER_SEAM, started_at + std::chrono::milliseconds{ 100 });
+
+    auto const quarter = presentation.sample('@', started_at + std::chrono::milliseconds{ 125 });
+    auto const midpoint = presentation.sample('@', started_at + std::chrono::milliseconds{ 150 });
+    auto const three_quarters = presentation.sample('@', started_at + std::chrono::milliseconds{ 175 });
+    ASSERT_TRUE(quarter.has_value());
+    ASSERT_TRUE(midpoint.has_value());
+    ASSERT_TRUE(three_quarters.has_value());
+    EXPECT_NEAR(quarter->x, 65'535.95, 1e-9);
+    EXPECT_NEAR(midpoint->x, 0.0, 1e-9);
+    EXPECT_NEAR(three_quarters->x, 0.05, 1e-9);
+    EXPECT_NEAR(quarter->y, 0.05, 1e-9);
+    EXPECT_NEAR(midpoint->y, 0.0, 1e-9);
+    EXPECT_NEAR(three_quarters->y, 65'535.95, 1e-9);
+}
+
+TEST(PlayerPresentationTest, HorizontalInterpolationCrossesWorldSeamInReverse)
+{
+    static constexpr shared::Player AFTER_SEAM{
+        .id = 1U,
+        .x = 0U,
+        .x_subcell = 1'000U,
+        .ch = '@',
+    };
+    static constexpr shared::Player BEFORE_SEAM{
+        .id = 1U,
+        .x = 65'535U,
+        .x_subcell = 9'000U,
+        .ch = '@',
+    };
+    std::chrono::steady_clock::time_point const started_at{};
+    client::PlayerPresentation presentation;
+
+    presentation.update(AFTER_SEAM, started_at);
+    presentation.update(BEFORE_SEAM, started_at + std::chrono::milliseconds{ 100 });
+
+    auto const midpoint = presentation.sample('@', started_at + std::chrono::milliseconds{ 150 });
+    ASSERT_TRUE(midpoint.has_value());
+    EXPECT_NEAR(midpoint->x, 0.0, 1e-9);
+}
+
 TEST(PlayerPresentationTest, SamplingDoesNotDependOnPriorRenderFrames)
 {
     static constexpr shared::Player INITIAL{

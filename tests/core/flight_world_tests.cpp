@@ -3,7 +3,7 @@
 
 #include <gtest/gtest.h>
 
-TEST(FlightWorldTest, UsesFixedClearAirSpawnAndSignedCoordinates)
+TEST(FlightWorldTest, UsesFirstWaveSpawnAndWrappedCoordinates)
 {
     shared::World world{ shared::WorldMode::Flight };
     world.spawnPlayer(1, '@');
@@ -20,9 +20,9 @@ TEST(FlightWorldTest, UsesFixedClearAirSpawnAndSignedCoordinates)
     }));
     ASSERT_TRUE(world.movePlayer(1, { .x = static_cast<uint8_t>(-127), .y = 0, .z = 0 }));
     ASSERT_TRUE(world.player(1).has_value());
-    EXPECT_EQ(world.player(1)->x, -1);
+    EXPECT_EQ(world.player(1)->x, shared::World::FLIGHT_MAX_CELL);
     EXPECT_EQ(world.player(1)->x_subcell, 6'400U);
-    EXPECT_DOUBLE_EQ(shared::playerPositionX(*world.player(1)), -0.36);
+    EXPECT_DOUBLE_EQ(shared::playerPositionX(*world.player(1)), 65'535.64);
 }
 
 TEST(FlightWorldTest, NormalizesThreeAxisMovementWithoutGravityOrCollisions)
@@ -45,7 +45,58 @@ TEST(FlightWorldTest, NormalizesThreeAxisMovementWithoutGravityOrCollisions)
     EXPECT_EQ(world.player(1)->z_subcell, THREE_AXIS_STEP);
 }
 
-TEST(FlightWorldTest, RejectsBoundsWithoutMutatingAuthoritativePosition)
+TEST(FlightWorldTest, AcceleratesAllFlightAxesFivefold)
+{
+    shared::World world{ shared::WorldMode::Flight };
+    world.spawnPlayer(1, '@');
+    ASSERT_TRUE(world.setPlayerPosition(1, { .x = 100, .y = 100, .z = 100 }));
+
+    ASSERT_TRUE(world.movePlayer(1, {
+        .x = 127,
+        .y = 127,
+        .z = 127,
+        .accelerated = true,
+    }));
+
+    ASSERT_TRUE(world.player(1).has_value());
+    EXPECT_EQ(world.player(1)->x, 101);
+    EXPECT_EQ(world.player(1)->y, 101);
+    EXPECT_EQ(world.player(1)->z, 101);
+    EXPECT_EQ(world.player(1)->x_subcell, 6'160U);
+    EXPECT_EQ(world.player(1)->y_subcell, 6'160U);
+    EXPECT_EQ(world.player(1)->z_subcell, 6'160U);
+}
+
+TEST(FlightWorldTest, UsesSelectedAccelerationProfile)
+{
+    shared::World world{ shared::WorldMode::Flight };
+    world.spawnPlayer(1, '@');
+    ASSERT_TRUE(world.setPlayerPosition(1, { .x = 100, .y = 100, .z = 100 }));
+
+    ASSERT_TRUE(world.movePlayer(1, {
+        .x = 127,
+        .y = 127,
+        .z = 127,
+        .accelerated = true,
+        .speedup = 80U,
+    }));
+
+    ASSERT_TRUE(world.player(1).has_value());
+    EXPECT_EQ(world.player(1)->x, 125);
+    EXPECT_EQ(world.player(1)->y, 125);
+    EXPECT_EQ(world.player(1)->z, 125);
+    EXPECT_EQ(world.player(1)->x_subcell, 8'560U);
+    EXPECT_EQ(world.player(1)->y_subcell, 8'560U);
+    EXPECT_EQ(world.player(1)->z_subcell, 8'560U);
+}
+
+TEST(FlightWorldTest, SupportsExtremeAccelerationProfiles)
+{
+    EXPECT_TRUE(shared::isFlightSpeedupProfile(200U));
+    EXPECT_TRUE(shared::isFlightSpeedupProfile(500U));
+}
+
+TEST(FlightWorldTest, WrapsHorizontalBoundsAndRejectsVerticalBounds)
 {
     shared::World world{ shared::WorldMode::Flight };
     world.spawnPlayer(1, '@');
@@ -54,18 +105,18 @@ TEST(FlightWorldTest, RejectsBoundsWithoutMutatingAuthoritativePosition)
         .y = 0,
         .z = 0,
     }));
-    EXPECT_FALSE(world.movePlayer(1, { .x = static_cast<uint8_t>(-127), .y = 0, .z = 0 }));
+    EXPECT_TRUE(world.movePlayer(1, { .x = static_cast<uint8_t>(-127), .y = 0, .z = 0 }));
     ASSERT_TRUE(world.player(1).has_value());
-    EXPECT_EQ(world.player(1)->x, shared::World::FLIGHT_MIN_CELL);
-    EXPECT_EQ(world.player(1)->x_subcell, 0U);
+    EXPECT_EQ(world.player(1)->x, shared::World::FLIGHT_MAX_CELL);
+    EXPECT_EQ(world.player(1)->x_subcell, 4'400U);
 
     EXPECT_FALSE(world.setPlayerPosition(1, {
-        .x = shared::World::FLIGHT_MAX_CELL + 1,
+        .x = shared::World::FLIGHT_MIN_CELL,
         .y = 0,
-        .z = 0,
+        .z = shared::World::FLIGHT_MAX_Z + 1,
     }));
     ASSERT_TRUE(world.player(1).has_value());
-    EXPECT_EQ(world.player(1)->x, shared::World::FLIGHT_MIN_CELL);
+    EXPECT_EQ(world.player(1)->x, shared::World::FLIGHT_MAX_CELL);
 }
 
 TEST(FlightWorldTest, CanonicalConfigurationIdentifiesTheSeededChunk)

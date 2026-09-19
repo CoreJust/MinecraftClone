@@ -37,11 +37,9 @@ void GameClient::run(core::Address const server_address, char const ch) {
 
     FrameScheduler scheduler{ std::chrono::steady_clock::now(), shared::TICK };
     while (m_running && isConnected()) {
-        poll(std::chrono::milliseconds::zero());
-        if (!m_running || !isConnected()) {
-            break;
+        while (poll(std::chrono::milliseconds::zero()) > 0) {
         }
-        render();
+        processPendingHeightTileDeliveries();
         if (!m_running || !isConnected()) {
             break;
         }
@@ -52,6 +50,10 @@ void GameClient::run(core::Address const server_address, char const ch) {
                     discardPredictedInput(predicted_input->sequence, now);
                 }
             }
+        }
+        render();
+        if (!m_running || !isConnected()) {
+            break;
         }
         std::this_thread::sleep_for(scheduler.idleDelay(now));
     }
@@ -71,7 +73,21 @@ void GameClient::onReceived(core::ReceiveEvent event) {
     }
 
     shared::Message* msg_ptr = &*maybe_msg;
-    if (auto* msg = std::get_if<shared::JoinResponseMessage>(msg_ptr)) {
+    if (event.channel_id == shared::HEIGHT_TILE_CHANNEL) {
+        if (auto* msg = std::get_if<shared::ServerHeightTileDescriptorMessage>(msg_ptr)) {
+            static_cast<void>(applyHeightTileDescriptor(*msg));
+        } else if (auto* msg = std::get_if<shared::ServerWorldRevisionMessage>(msg_ptr)) {
+            static_cast<void>(applyWorldRevision(*msg));
+        } else if (auto* msg = std::get_if<shared::ServerHeightTileMessage>(msg_ptr)) {
+            static_cast<void>(applyHeightTile(*msg));
+        } else if (auto* msg = std::get_if<shared::ServerHeightTileBatchMessage>(msg_ptr)) {
+            static_cast<void>(queueHeightTileDelivery(std::move(*msg)));
+        } else if (auto* msg = std::get_if<shared::ServerRemoveHeightTileMessage>(msg_ptr)) {
+            static_cast<void>(applyHeightTileRemoval(*msg));
+        }
+    } else if (event.channel_id != shared::GAME_CHANNEL) {
+        CORE_ERROR("Received a game message on an unsupported channel {}", event.channel_id);
+    } else if (auto* msg = std::get_if<shared::JoinResponseMessage>(msg_ptr)) {
         auto const [accepted] = *msg;
         if (accepted) {
             m_accepted = true;
@@ -104,6 +120,7 @@ bool GameClient::sendJoinRequest()
         .ch = m_local_character,
         .mode = m_world.mode(),
         .configuration = m_world.configuration(),
+        .wants_previews = m_wants_previews && m_world.mode() == shared::WorldMode::Flight,
     });
 }
 
@@ -237,11 +254,138 @@ void GameClient::updatePredictedPresentation(std::chrono::steady_clock::time_poi
 bool GameClient::send(shared::Message const message)
 {
     std::vector const message_bytes = shared::encodeMessage(message);
-    if (!core::Client::send(message_bytes, 0, core::SendMode{ core::SendMode::Reliable })) {
+    if (!core::Client::send(message_bytes, shared::GAME_CHANNEL, core::SendMode{ core::SendMode::Reliable })) {
         CORE_ERROR("Failed to send a message");
         return false;
     }
     return true;
+}
+
+bool GameClient::applyHeightTileDescriptor(shared::ServerHeightTileDescriptorMessage const& message)
+{
+    if (message.configuration != m_world.configuration() || message.world_revision == 0U
+        || message.max_height_tiles < shared::HEIGHT_TILE_INTEREST_COUNT
+        || message.max_height_tile_bytes != shared::HEIGHT_TILE_PAYLOAD_BYTES) {
+        return false;
+    }
+    if (message.world_revision != m_height_tile_revision.generation) {
+        m_height_tile_revision = {
+            .generation = message.world_revision,
+            .revision = message.world_revision,
+        };
+        m_height_tile_residency.advanceRevision(m_height_tile_revision);
+        m_pending_height_tile_deliveries.clear();
+        m_pending_height_tile_delivery_tokens.clear();
+    }
+    if (m_height_tile_credit_revision == message.world_revision) {
+        return true;
+    }
+    m_height_tile_credit_revision = message.world_revision;
+    return grantHeightTileCredit(0U, shared::HEIGHT_TILE_DELIVERY_WINDOW);
+}
+
+bool GameClient::applyWorldRevision(shared::ServerWorldRevisionMessage const& message)
+{
+    if (message.world_revision == 0U || message.world_revision < m_height_tile_revision.generation) {
+        return false;
+    }
+    if (message.world_revision != m_height_tile_revision.generation) {
+        m_height_tile_revision = {
+            .generation = message.world_revision,
+            .revision = message.world_revision,
+        };
+        m_height_tile_residency.advanceRevision(m_height_tile_revision);
+        m_pending_height_tile_deliveries.clear();
+        m_pending_height_tile_delivery_tokens.clear();
+    }
+    if (m_height_tile_credit_revision == message.world_revision) {
+        return true;
+    }
+    m_height_tile_credit_revision = message.world_revision;
+    return grantHeightTileCredit(0U, shared::HEIGHT_TILE_DELIVERY_WINDOW);
+}
+
+bool GameClient::grantHeightTileCredit(uint64_t const delivery_token, uint8_t const credits)
+{
+    return send(shared::ClientHeightTileCreditMessage{
+        .world_revision = m_height_tile_revision.generation,
+        .delivery_token = delivery_token,
+        .credits = credits,
+    });
+}
+
+bool GameClient::queueHeightTileDelivery(shared::ServerHeightTileBatchMessage message)
+{
+    if (message.delivery_token == 0U
+        || m_pending_height_tile_deliveries.size() >= shared::HEIGHT_TILE_DELIVERY_WINDOW
+        || !m_pending_height_tile_delivery_tokens.insert(message.delivery_token).second) {
+        return false;
+    }
+    m_pending_height_tile_deliveries.push_back(std::move(message));
+    return true;
+}
+
+void GameClient::processPendingHeightTileDeliveries()
+{
+    uint32_t constexpr MAX_PENDING_HANDOFF_CHANGES = shared::HEIGHT_TILE_BATCH_CAPACITY
+        * shared::HEIGHT_TILE_DELIVERY_WINDOW;
+    while (!m_pending_height_tile_deliveries.empty()) {
+        shared::ServerHeightTileBatchMessage const& delivery = m_pending_height_tile_deliveries.front();
+        uint32_t const operation_count = static_cast<uint32_t>(
+            delivery.tiles.size() + delivery.removals.size()
+        );
+        if (m_height_tile_residency.pendingChangeCount() + operation_count > MAX_PENDING_HANDOFF_CHANGES) {
+            return;
+        }
+        for (shared::ServerHeightTileMessage const& tile : delivery.tiles) {
+            static_cast<void>(applyHeightTile(tile));
+        }
+        for (shared::ServerRemoveHeightTileMessage const& removal : delivery.removals) {
+            static_cast<void>(applyHeightTileRemoval(removal));
+        }
+        uint64_t const delivery_token = delivery.delivery_token;
+        m_pending_height_tile_delivery_tokens.erase(delivery_token);
+        m_pending_height_tile_deliveries.pop_front();
+        if (!grantHeightTileCredit(delivery_token, 1U)) {
+            m_running = false;
+            return;
+        }
+    }
+}
+
+bool GameClient::applyHeightTile(shared::ServerHeightTileMessage const& message)
+{
+    if (message.key != shared::normalizeHeightTileKey(message.key) || message.revision == 0U
+        || message.token == 0U || m_height_tile_revision.generation == 0U) {
+        return false;
+    }
+    HeightTileReplacementResult const result = m_height_tile_residency.accept(
+        message.key,
+        { .generation = m_height_tile_revision.generation, .revision = message.revision },
+        message.token,
+        message.heights
+    );
+    return result.replacement == HeightTileReplacement::Published;
+}
+
+void GameClient::applyHeightTileBatch(shared::ServerHeightTileBatchMessage const& message)
+{
+    for (shared::ServerHeightTileMessage const& tile : message.tiles) {
+        static_cast<void>(applyHeightTile(tile));
+    }
+}
+
+bool GameClient::applyHeightTileRemoval(shared::ServerRemoveHeightTileMessage const& message)
+{
+    if (message.key != shared::normalizeHeightTileKey(message.key) || message.revision == 0U
+        || message.token == 0U || m_height_tile_revision.generation == 0U) {
+        return false;
+    }
+    return m_height_tile_residency.evict(
+        message.key,
+        { .generation = m_height_tile_revision.generation, .revision = message.revision },
+        message.token
+    );
 }
 
 } // namespace client

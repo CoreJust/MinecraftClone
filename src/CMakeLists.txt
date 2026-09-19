@@ -49,7 +49,6 @@ endif()
 
 target_include_directories(mc
     PUBLIC
-        ${CMAKE_CURRENT_SOURCE_DIR}/core/include
         ${CMAKE_CURRENT_SOURCE_DIR}/shared/include
         ${CMAKE_CURRENT_SOURCE_DIR}/server/include
 )
@@ -57,7 +56,6 @@ if(MC_BUILD_CLIENT)
     target_include_directories(mc PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/client/include)
 endif()
 
-add_subdirectory(core)
 add_subdirectory(shared)
 add_subdirectory(server)
 if(MC_BUILD_CLIENT)

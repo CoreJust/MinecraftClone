@@ -39,6 +39,7 @@ enum class RuntimeMode {
 
 enum class LaunchMode {
     GraphicalPlayer,
+    GraphicalPlayerCapture,
     BotClient,
     Server,
 };
@@ -46,6 +47,7 @@ enum class LaunchMode {
 struct LaunchCommand final {
     LaunchMode mode;
     core::Address address;
+    std::filesystem::path image_path;
 };
 
 struct RuntimeCommand final {
@@ -96,6 +98,8 @@ std::expected<LaunchCommand, std::string> parseLaunchCommand(int const argc, cha
         mode = LaunchMode::Server;
     } else if (mode_argument == "--player-client") {
         mode = LaunchMode::GraphicalPlayer;
+    } else if (mode_argument == "--player-client-capture") {
+        mode = LaunchMode::GraphicalPlayerCapture;
     } else if (mode_argument == "--bot-client") {
         mode = LaunchMode::BotClient;
     } else {
@@ -114,6 +118,19 @@ std::expected<LaunchCommand, std::string> parseLaunchCommand(int const argc, cha
             return std::unexpected(address.error());
         }
         return LaunchCommand{ .mode = mode, .address = *address };
+    }
+    if (mode == LaunchMode::GraphicalPlayerCapture) {
+        if (argc != 6 || std::string_view{argv[2]} != "--address"
+            || std::string_view{argv[4]} != "--image") {
+            return std::unexpected(
+                "capture launch syntax is '--player-client-capture --address IP:PORT --image PATH'"
+            );
+        }
+        auto const address = parseAddress(argv[3]);
+        if (!address.has_value()) {
+            return std::unexpected(address.error());
+        }
+        return LaunchCommand{.mode = mode, .address = *address, .image_path = argv[5]};
     }
     if (argc == 2) {
         return LaunchCommand{ .mode = mode, .address = core::Address::localhost(20'040) };
@@ -430,6 +447,12 @@ int main(int argc, char** argv) {
             } else if (command->mode == LaunchMode::BotClient) {
                 client::BotClient client{ shared::WorldMode::Flight };
                 client.run(command->address, '#');
+            } else if (command->mode == LaunchMode::GraphicalPlayerCapture) {
+                client::PlayerClient client{
+                    shared::WorldMode::Flight,
+                    client::PlayerClientCaptureOptions{.image_path = command->image_path},
+                };
+                client.run(command->address, '@');
             } else {
                 client::PlayerClient client{ shared::WorldMode::Flight };
                 client.run(command->address, '@');

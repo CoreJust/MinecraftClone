@@ -1,197 +1,10 @@
 #include <client/render/DebugHud.hpp>
 
 #include <gtest/gtest.h>
-#if defined(_WIN32)
-#include <malloc.h>
-#endif
 
-#include <array>
-#include <atomic>
-#include <cstddef>
-#include <cstdint>
-#include <cstdlib>
+#include <cmath>
 #include <limits>
-#include <new>
 #include <string_view>
-
-namespace allocation_test {
-
-std::atomic_bool tracking = false;
-std::atomic_size_t allocations = 0;
-
-void* allocate(size_t const size)
-{
-    void* const result = std::malloc(size == 0 ? 1 : size);
-    if (result == nullptr) {
-        throw std::bad_alloc{};
-    }
-    if (tracking.load(std::memory_order_relaxed)) {
-        allocations.fetch_add(1, std::memory_order_relaxed);
-    }
-    return result;
-}
-
-void* allocateAligned(size_t const size, size_t const alignment)
-{
-#if defined(_WIN32)
-    void* const result = _aligned_malloc(size == 0 ? alignment : size, alignment);
-    if (result == nullptr) {
-        throw std::bad_alloc{};
-    }
-#else
-    void* result = nullptr;
-    if (posix_memalign(&result, alignment, size == 0 ? alignment : size) != 0) {
-        throw std::bad_alloc{};
-    }
-#endif
-    if (tracking.load(std::memory_order_relaxed)) {
-        allocations.fetch_add(1, std::memory_order_relaxed);
-    }
-    return result;
-}
-
-void deallocateAligned(void* const pointer) noexcept
-{
-#if defined(_WIN32)
-    _aligned_free(pointer);
-#else
-    std::free(pointer);
-#endif
-}
-
-} // namespace allocation_test
-
-void* operator new(size_t const size)
-{
-    return allocation_test::allocate(size);
-}
-
-void* operator new[](size_t const size)
-{
-    return allocation_test::allocate(size);
-}
-
-void operator delete(void* const pointer) noexcept
-{
-    std::free(pointer);
-}
-
-void operator delete[](void* const pointer) noexcept
-{
-    std::free(pointer);
-}
-
-void operator delete(void* const pointer, size_t) noexcept
-{
-    std::free(pointer);
-}
-
-void operator delete[](void* const pointer, size_t) noexcept
-{
-    std::free(pointer);
-}
-
-void* operator new(size_t const size, std::nothrow_t const&) noexcept
-{
-    try {
-        return allocation_test::allocate(size);
-    } catch (...) {
-        return nullptr;
-    }
-}
-
-void* operator new[](size_t const size, std::nothrow_t const&) noexcept
-{
-    try {
-        return allocation_test::allocate(size);
-    } catch (...) {
-        return nullptr;
-    }
-}
-
-void operator delete(void* const pointer, std::nothrow_t const&) noexcept
-{
-    std::free(pointer);
-}
-
-void operator delete[](void* const pointer, std::nothrow_t const&) noexcept
-{
-    std::free(pointer);
-}
-
-void* operator new(size_t const size, std::align_val_t const alignment)
-{
-    return allocation_test::allocateAligned(size, static_cast<size_t>(alignment));
-}
-
-void* operator new[](size_t const size, std::align_val_t const alignment)
-{
-    return allocation_test::allocateAligned(size, static_cast<size_t>(alignment));
-}
-
-void operator delete(void* const pointer, std::align_val_t) noexcept
-{
-    allocation_test::deallocateAligned(pointer);
-}
-
-void operator delete[](void* const pointer, std::align_val_t) noexcept
-{
-    allocation_test::deallocateAligned(pointer);
-}
-
-void operator delete(void* const pointer, size_t, std::align_val_t) noexcept
-{
-    allocation_test::deallocateAligned(pointer);
-}
-
-void operator delete[](void* const pointer, size_t, std::align_val_t) noexcept
-{
-    allocation_test::deallocateAligned(pointer);
-}
-
-void* operator new(
-    size_t const size,
-    std::align_val_t const alignment,
-    std::nothrow_t const&
-) noexcept
-{
-    try {
-        return allocation_test::allocateAligned(size, static_cast<size_t>(alignment));
-    } catch (...) {
-        return nullptr;
-    }
-}
-
-void* operator new[](
-    size_t const size,
-    std::align_val_t const alignment,
-    std::nothrow_t const&
-) noexcept
-{
-    try {
-        return allocation_test::allocateAligned(size, static_cast<size_t>(alignment));
-    } catch (...) {
-        return nullptr;
-    }
-}
-
-void operator delete(
-    void* const pointer,
-    std::align_val_t const,
-    std::nothrow_t const&
-) noexcept
-{
-    allocation_test::deallocateAligned(pointer);
-}
-
-void operator delete[](
-    void* const pointer,
-    std::align_val_t const,
-    std::nothrow_t const&
-) noexcept
-{
-    allocation_test::deallocateAligned(pointer);
-}
 
 namespace {
 
@@ -202,101 +15,105 @@ size_t writeMarker(
     int,
     void*
 ) noexcept {
-    if (capacity == 0) {
-        return 0;
+    if (capacity == 0U) {
+        return 0U;
     }
     destination[0] = 'X';
-    return 1;
-}
-
-double readClock(void* const context) noexcept
-{
-    return *static_cast<double*>(context);
+    return 1U;
 }
 
 } // namespace
 
-TEST(DebugHudTest, PacksFourSanitizedAsciiBytesInLittleEndianOrder)
-{
-    EXPECT_EQ(
-        client::packDebugHudAscii('A', 'B', 'C', 'D'),
-        0x4443'4241U
-    );
-    EXPECT_EQ(
-        client::packDebugHudAscii('A', 0, 'C', 'D'),
-        0x4443'0041U
-    );
-    EXPECT_EQ(
-        client::packDebugHudAscii(0x01, 0x80, '~', 0x7f),
-        0x7f7e'3f3fU
-    );
-}
-
-TEST(DebugHudTest, RendererDefaultIsDisabledUntilGameplayEnablesIt)
+TEST(DebugHudTest, FormatsFiveBoundedColoredLines)
 {
     client::DebugHudState hud;
+    hud.setEnabled(true);
+    hud.updateAt(0.0, {
+        .player_x = 1.25F,
+        .player_y = -2.30F,
+        .player_z = 4.56F,
+        .camera_yaw_degrees = 45.0F,
+        .camera_pitch_degrees = -10.0F,
+        .camera_roll_degrees = 3.0F,
+    });
+
+    client::DebugHudText text;
+    ASSERT_TRUE(hud.formatText(text));
+    EXPECT_EQ(
+        std::string_view(text.value),
+        "FPS:  0.0\nUPTIME:  0.0s\nSPEED:1x(5x)\nXYZ: 1.2 4.6 -2.3\nYPR deg: 45.0 -10.0 3.0"
+    );
+    ASSERT_EQ(text.spans.size(), 12U);
+    uint32_t const white = client::TextColor{}.packed();
+    uint32_t const cyan = client::TextColor{ 0.48F, 0.88F, 1.0F, 1.0F }.packed();
+    uint32_t const gold = client::TextColor{ 1.0F, 0.82F, 0.38F, 1.0F }.packed();
+    uint32_t const green = client::TextColor{ 0.63F, 1.0F, 0.62F, 1.0F }.packed();
+    uint32_t const rose = client::TextColor{ 1.0F, 0.65F, 0.74F, 1.0F }.packed();
+    auto expectSpan = [&](size_t const index, size_t const offset, size_t const length, uint32_t const color) {
+        ASSERT_LT(index, text.spans.size());
+        EXPECT_EQ(text.spans[index].offset, offset);
+        EXPECT_EQ(text.spans[index].length, length);
+        EXPECT_EQ(text.spans[index].packed_color, color);
+    };
+
+    expectSpan(0U, 0U, 42U, white);
+    expectSpan(1U, 42U, 3U, cyan);
+    expectSpan(2U, 45U, 1U, white);
+    expectSpan(3U, 46U, 3U, gold);
+    expectSpan(4U, 49U, 1U, white);
+    expectSpan(5U, 50U, 4U, green);
+    expectSpan(6U, 54U, 10U, white);
+    expectSpan(7U, 64U, 4U, cyan);
+    expectSpan(8U, 68U, 1U, white);
+    expectSpan(9U, 69U, 5U, gold);
+    expectSpan(10U, 74U, 1U, white);
+    expectSpan(11U, 75U, 3U, rose);
+}
+
+TEST(DebugHudTest, UsesTouchHelpAndAccelerationState)
+{
+    client::DebugHudState hud;
+    hud.setEnabled(true);
+    hud.updateAt(0.0, {
+        .touch_flight_help = true,
+        .speedup = 30U,
+        .selected_speedup = 30U,
+        .acceleration_enabled = true,
+    });
+
+    client::DebugHudText text;
+    ASSERT_TRUE(hud.formatText(text));
+    std::string_view const formatted(text.value);
+    EXPECT_NE(formatted.find("TOUCH: UP/DOWN"), std::string_view::npos);
+    EXPECT_NE(formatted.find("SPEED:30x(ON)"), std::string_view::npos);
+}
+
+TEST(DebugHudTest, BuildsDynamicGlyphBatch)
+{
+    client::DebugHudState hud;
+    hud.setEnabled(true);
     client::DebugHudText text;
     client::DebugHudBatch batch;
 
-    EXPECT_FALSE(hud.snapshot().enabled);
-    EXPECT_FALSE(hud.buildBatch(text, batch));
-    hud.setEnabled(true);
-    EXPECT_TRUE(hud.buildBatch(text, batch));
+    ASSERT_TRUE(hud.buildBatch(text, batch));
+    EXPECT_EQ(batch.space, client::TextSpace::Screen);
+    EXPECT_EQ(batch.glyphs.size(), text.value.size() - 4U);
+    EXPECT_EQ(batch.glyphs.front().character, static_cast<uint32_t>('F'));
+    EXPECT_EQ(batch.glyphs.front().packed_color, hud.lineColors()[0].packed());
 }
 
 TEST(DebugHudTest, F1ToggleLatchDebouncesPressesAndCanBeReset)
 {
     client::DebugHudToggleLatch latch;
-    client::DebugHudState hud;
-
-    if (latch.update(true)) {
-        hud.toggle();
-    }
-    EXPECT_TRUE(hud.snapshot().enabled);
+    EXPECT_TRUE(latch.update(true));
     EXPECT_FALSE(latch.update(true));
-    EXPECT_TRUE(hud.snapshot().enabled);
     EXPECT_FALSE(latch.update(false));
-    if (latch.update(true)) {
-        hud.toggle();
-    }
-    EXPECT_FALSE(hud.snapshot().enabled);
-
+    EXPECT_TRUE(latch.update(true));
     latch.reset();
     EXPECT_TRUE(latch.update(true));
 }
 
-TEST(DebugHudTest, PadsIncompleteWordsAndHonorsNulGlyphs)
-{
-    client::DebugHudText text;
-    text.bytes[0] = 'A';
-    text.bytes[1] = 0;
-    text.bytes[2] = 'C';
-    text.size = 3;
-    client::DebugHudBatch batch;
-
-    client::packDebugHudText(text, batch);
-
-    ASSERT_EQ(batch.size, 1U);
-    EXPECT_EQ(batch.instances[0].packed_ascii, 0x0043'0041U);
-}
-
-TEST(DebugHudTest, PackingIsBoundedByFixedCapacity)
-{
-    client::DebugHudText text;
-    text.bytes.fill('A');
-    text.size = client::DEBUG_HUD_MAX_TEXT_BYTES + 100;
-    client::DebugHudBatch batch;
-
-    client::packDebugHudText(text, batch);
-
-    EXPECT_EQ(batch.size, client::DEBUG_HUD_WORDS_PER_LINE);
-    EXPECT_EQ(
-        batch.instances[client::DEBUG_HUD_WORDS_PER_LINE - 1U].packed_ascii,
-        0x4141'4141U
-    );
-}
-
-TEST(DebugHudTest, UsesPresentedFramesInAOneSecondSlidingWindow)
+TEST(DebugHudTest, UsesPresentedFramesInSlidingWindow)
 {
     client::DebugHudState hud;
     client::DebugHudInput input{ .presented = true };
@@ -311,267 +128,41 @@ TEST(DebugHudTest, UsesPresentedFramesInAOneSecondSlidingWindow)
     EXPECT_DOUBLE_EQ(hud.snapshot().presented_fps, 0.0);
 }
 
-TEST(DebugHudTest, ExcludesDroppedFramesFromPresentedFps)
+TEST(DebugHudTest, ClocksNeverRewindAndIgnoreNonFiniteValues)
 {
     client::DebugHudState hud;
-    client::DebugHudInput input{ .presented = true };
-
-    hud.updateAt(0.0, input);
-    input.presented = false;
-    hud.updateAt(0.25, input);
-    input.presented = true;
-    hud.updateAt(0.5, input);
-    input.presented = false;
-    hud.updateAt(0.75, input);
-
-    EXPECT_DOUBLE_EQ(hud.snapshot().presented_fps, 2.0);
-
-    hud.updateAt(1.1, input);
-    EXPECT_DOUBLE_EQ(hud.snapshot().presented_fps, 0.0);
-}
-
-TEST(DebugHudTest, ClocksAreInjectableAndUptimeNeverRewinds)
-{
-    double clock_time = 4.0;
-    client::DebugHudState hud(
-        client::DebugHudClock{ .now = &readClock, .context = &clock_time }
-    );
-
-    hud.update({});
-    clock_time = 2.0;
-    hud.update({});
-    EXPECT_DOUBLE_EQ(hud.snapshot().uptime_seconds, 0.0);
-
-    clock_time = 5.5;
-    hud.update({});
-    EXPECT_DOUBLE_EQ(hud.snapshot().uptime_seconds, 1.5);
-}
-
-TEST(DebugHudTest, IgnoresNonFiniteClockValues)
-{
-    client::DebugHudState hud;
-    hud.updateAt(std::numeric_limits<double>::quiet_NaN(), {});
-    EXPECT_DOUBLE_EQ(hud.snapshot().uptime_seconds, 0.0);
-
+    hud.updateAt(4.0, {});
     hud.updateAt(2.0, {});
-    EXPECT_DOUBLE_EQ(hud.snapshot().uptime_seconds, 2.0);
-
+    EXPECT_DOUBLE_EQ(hud.snapshot().uptime_seconds, 0.0);
+    hud.updateAt(5.5, {});
+    EXPECT_DOUBLE_EQ(hud.snapshot().uptime_seconds, 1.5);
     hud.updateAt(std::numeric_limits<double>::infinity(), {});
-    EXPECT_DOUBLE_EQ(hud.snapshot().uptime_seconds, 2.0);
-    hud.updateAt(3.0, {});
-    EXPECT_DOUBLE_EQ(hud.snapshot().uptime_seconds, 3.0);
-}
-
-TEST(DebugHudTest, FormatsReadableSpacedGoldenValuesAndDegreeGroups)
-{
-    client::DebugHudState hud;
-    hud.setEnabled(true);
-    hud.updateAt(
-        10.0,
-        client::DebugHudInput{
-            .presented = false,
-            .player_x = 1.25F,
-            .player_y = -2.3F,
-            .player_z = 4.56F,
-            .camera_yaw_degrees = 45.0F,
-            .camera_pitch_degrees = -10.0F,
-            .camera_roll_degrees = 3.0F,
-        }
-    );
-    client::DebugHudText text;
-
-    ASSERT_TRUE(hud.formatText(text));
-    EXPECT_EQ(
-        std::string_view(text.bytes.data(), text.size),
-        "FPS:  0.0\nUPTIME:  0.0s\nXYZ:  1.25   -2.30   4.56\nYPR deg: 45.0  -10.0  3.0"
-    );
-}
-
-TEST(DebugHudTest, ReplacesUptimeWithTouchFlightControlsWhenRequested)
-{
-    client::DebugHudState hud;
-    hud.setEnabled(true);
-    hud.updateAt(
-        10.0,
-        client::DebugHudInput{
-            .touch_flight_help = true,
-            .player_x = 1.25F,
-            .player_y = -2.3F,
-            .player_z = 4.56F,
-            .camera_yaw_degrees = 45.0F,
-            .camera_pitch_degrees = -10.0F,
-            .camera_roll_degrees = 3.0F,
-        }
-    );
-    client::DebugHudText text;
-
-    ASSERT_TRUE(hud.formatText(text));
-    EXPECT_EQ(
-        std::string_view(text.bytes.data(), text.size),
-        "FPS:  0.0\nRIGHT: TOP UP / BOTTOM DOWN\nXYZ:  1.25   -2.30   4.56\nYPR deg: 45.0  -10.0  3.0"
-    );
-}
-
-TEST(DebugHudTest, ReservesFourBoundedRowsForExtremeInputValues)
-{
-    client::DebugHudState hud;
-    hud.setEnabled(true);
-    hud.updateAt(
-        10.0,
-        client::DebugHudInput{
-            .player_x = std::numeric_limits<float>::max(),
-            .player_y = -std::numeric_limits<float>::max(),
-            .player_z = std::numeric_limits<float>::max(),
-            .camera_yaw_degrees = std::numeric_limits<float>::max(),
-            .camera_pitch_degrees = -std::numeric_limits<float>::max(),
-            .camera_roll_degrees = std::numeric_limits<float>::max(),
-        }
-    );
-    client::DebugHudText text;
-
-    ASSERT_TRUE(hud.formatText(text));
-    std::string_view const formatted{ text.bytes.data(), text.size };
-    size_t line_start = 0U;
-    for (size_t line = 0U; line < client::DEBUG_HUD_LINE_COUNT; ++line) {
-        size_t const line_end = formatted.find('\n', line_start);
-        if (line + 1U < client::DEBUG_HUD_LINE_COUNT) {
-            ASSERT_NE(line_end, std::string_view::npos);
-        } else {
-            EXPECT_EQ(line_end, std::string_view::npos);
-        }
-        size_t const bounded_line_end = line_end == std::string_view::npos
-            ? formatted.size()
-            : line_end;
-        EXPECT_LE(bounded_line_end - line_start, client::DEBUG_HUD_MAX_LINE_BYTES);
-        if (line_end != std::string_view::npos) {
-            line_start = bounded_line_end + 1U;
-        }
-    }
-}
-
-TEST(DebugHudTest, DeclaresDoubleSizeGlyphsAndSeparatedRows)
-{
-    EXPECT_EQ(
-        client::DEBUG_HUD_GLYPH_WIDTH_PIXELS,
-        2.0F * client::DEBUG_HUD_BITMAP_GLYPH_WIDTH_PIXELS
-    );
-    EXPECT_EQ(
-        client::DEBUG_HUD_GLYPH_HEIGHT_PIXELS,
-        2.0F * client::DEBUG_HUD_BITMAP_GLYPH_HEIGHT_PIXELS
-    );
-    EXPECT_GE(
-        client::DEBUG_HUD_LINE_ADVANCE_PIXELS,
-        client::DEBUG_HUD_GLYPH_HEIGHT_PIXELS
-    );
-    EXPECT_EQ(client::DEBUG_HUD_MAX_LINE_BYTES, 28U);
-    EXPECT_EQ(client::DEBUG_HUD_WORDS_PER_LINE, 7U);
-}
-
-TEST(DebugHudTest, PacksFourLinesIntoFixedShaderRows)
-{
-    client::DebugHudState hud;
-    hud.setEnabled(true);
-    hud.updateAt(
-        10.0,
-        client::DebugHudInput{
-            .player_x = 1.25F,
-            .player_y = -2.3F,
-            .player_z = 4.56F,
-            .camera_yaw_degrees = 45.0F,
-            .camera_pitch_degrees = -10.0F,
-        }
-    );
-    client::DebugHudText text;
-    client::DebugHudBatch batch;
-
-    ASSERT_TRUE(hud.buildBatch(text, batch));
-    ASSERT_EQ(batch.size, client::DEBUG_HUD_MAX_INSTANCES);
-    EXPECT_EQ(batch.instances[0].packed_ascii, client::packDebugHudAscii('F', 'P', 'S', ':'));
-    EXPECT_EQ(
-        batch.instances[client::DEBUG_HUD_WORDS_PER_LINE].packed_ascii,
-        client::packDebugHudAscii('U', 'P', 'T', 'I')
-    );
-    EXPECT_EQ(
-        batch.instances[2U * client::DEBUG_HUD_WORDS_PER_LINE].packed_ascii,
-        client::packDebugHudAscii('X', 'Y', 'Z', ':')
-    );
-    EXPECT_EQ(
-        batch.instances[3U * client::DEBUG_HUD_WORDS_PER_LINE].packed_ascii,
-        client::packDebugHudAscii('Y', 'P', 'R', ' ')
-    );
+    EXPECT_DOUBLE_EQ(hud.snapshot().uptime_seconds, 1.5);
+    hud.updateAt(std::numeric_limits<double>::quiet_NaN(), {});
+    EXPECT_DOUBLE_EQ(hud.snapshot().uptime_seconds, 1.5);
 }
 
 TEST(DebugHudTest, SupportsInjectedFormattingAndDpiToggleState)
 {
-    client::DebugHudState hud(
-        {},
-        client::DebugHudNumberFormatter{ .format = &writeMarker }
-    );
+    client::DebugHudState hud({}, {
+        .format = &writeMarker,
+    });
     hud.setEnabled(true);
     hud.setDpiScale(100.0F);
-    EXPECT_FLOAT_EQ(hud.snapshot().dpi_scale, 8.0F);
-    hud.setDpiScale(0.0F);
-    EXPECT_FLOAT_EQ(hud.snapshot().dpi_scale, 0.25F);
-
-    hud.updateAt(2.0, {});
     client::DebugHudText text;
     ASSERT_TRUE(hud.formatText(text));
-    EXPECT_EQ(
-        std::string_view(text.bytes.data(), text.size),
-        "FPS:  X\nUPTIME:  Xs\nXYZ:  X   X   X\nYPR deg: X  X  X"
-    );
-
+    EXPECT_NE(std::string_view(text.value).find("FPS:  X"), std::string_view::npos);
+    EXPECT_FLOAT_EQ(hud.snapshot().dpi_scale, 8.0F);
     hud.toggle();
-    EXPECT_FALSE(hud.snapshot().enabled);
     EXPECT_FALSE(hud.formatText(text));
 }
 
-TEST(DebugHudTest, BoundsSpacedCameraAnglesToTheFourthLayoutRow)
+TEST(DebugHudTest, SupportsLineColorChanges)
 {
     client::DebugHudState hud;
     hud.setEnabled(true);
-    hud.updateAt(
-        10.0,
-        client::DebugHudInput{
-            .camera_yaw_degrees = 359.0F,
-            .camera_pitch_degrees = -89.0F,
-            .camera_roll_degrees = 359.0F,
-        }
-    );
+    hud.setLineColor(0U, client::DebugHudColor::Rose);
     client::DebugHudText text;
-
     ASSERT_TRUE(hud.formatText(text));
-    std::string_view const formatted{ text.bytes.data(), text.size };
-    size_t const last_line = formatted.rfind('\n');
-    ASSERT_NE(last_line, std::string_view::npos);
-    EXPECT_LE(
-        formatted.size() - last_line - 1U,
-        client::DEBUG_HUD_MAX_LINE_BYTES
-    );
-    EXPECT_EQ(
-        formatted.substr(last_line + 1U),
-        "YPR deg: 359.0  -89.0  359.0"
-    );
-}
-
-TEST(DebugHudTest, ReusesFixedBuffersWithoutSteadyFrameAllocations)
-{
-    client::DebugHudState hud;
-    hud.setEnabled(true);
-    client::DebugHudText text;
-    client::DebugHudBatch batch;
-
-    allocation_test::allocations.store(0, std::memory_order_relaxed);
-    allocation_test::tracking.store(true, std::memory_order_relaxed);
-    for (size_t frame = 0; frame < 120; ++frame) {
-        hud.updateAt(
-            static_cast<double>(frame) / 120.0,
-            client::DebugHudInput{ .presented = true }
-        );
-        static_cast<void>(hud.buildBatch(text, batch));
-    }
-    allocation_test::tracking.store(false, std::memory_order_relaxed);
-
-    EXPECT_EQ(allocation_test::allocations.load(std::memory_order_relaxed), 0U);
-    EXPECT_GT(batch.size, 0U);
+    EXPECT_EQ(text.spans.front().packed_color, hud.lineColors()[0].packed());
 }

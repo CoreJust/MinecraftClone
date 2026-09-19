@@ -1,5 +1,7 @@
 #include <client/PlayerPresentation.hpp>
 
+#include <shared/world/SparseWorld.hpp>
+
 #include <algorithm>
 #include <cmath>
 
@@ -11,6 +13,26 @@ constexpr double PLAYER_CENTER_OFFSET = 1.0;
 constexpr double PLAYER_CENTER_HEIGHT = 1.0;
 constexpr double THIRD_PERSON_DISTANCE = 6.0;
 constexpr double DEGREES_TO_RADIANS = 0.017'453'292'519'943'295'769'236'907'684'89;
+constexpr double WORLD_WRAP_PERIOD = static_cast<double>(shared::WorldExtent::WIDTH);
+
+[[nodiscard]] double interpolateWrappedHorizontal(
+    double const from,
+    double const to,
+    double const alpha
+) noexcept
+{
+    double delta = to - from;
+    if (delta > WORLD_WRAP_PERIOD * 0.5) {
+        delta -= WORLD_WRAP_PERIOD;
+    } else if (delta < -WORLD_WRAP_PERIOD * 0.5) {
+        delta += WORLD_WRAP_PERIOD;
+    }
+    double result = std::fmod(from + delta * alpha, WORLD_WRAP_PERIOD);
+    if (result < 0.0) {
+        result += WORLD_WRAP_PERIOD;
+    }
+    return result;
+}
 
 } // namespace
 
@@ -89,8 +111,8 @@ PlayerPresentationPosition PlayerPresentation::sample(
             / static_cast<double>(std::chrono::duration_cast<std::chrono::steady_clock::duration>(shared::TICK).count())
     );
     return {
-        .x = sample.from.x + (sample.to.x - sample.from.x) * alpha,
-        .y = sample.from.y + (sample.to.y - sample.from.y) * alpha,
+        .x = interpolateWrappedHorizontal(sample.from.x, sample.to.x, alpha),
+        .y = interpolateWrappedHorizontal(sample.from.y, sample.to.y, alpha),
         .z = sample.from.z + (sample.to.z - sample.from.z) * alpha,
     };
 }

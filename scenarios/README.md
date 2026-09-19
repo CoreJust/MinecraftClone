@@ -1,19 +1,9 @@
 # Scenario examples
 
-Checked-in sources are complete examples for the frontend selected by their
-header. See the [scripting guide](../docs/scripting/README.md) for the
-contracts.
+Checked-in sources are CoreLang scripts. See the
+[scripting guide](../docs/scripting/README.md) for the contracts.
 
-Legacy `.mcscenario` examples preserve the original line based syntax and flat
-profiles:
-
-- `canonical_sample.mcscenario` is the compact `scenario 1` quickstart.
-- `comment_and_boundary.mcscenario` covers comments, blank lines, `"#"`, and
-  a boundary-zero expectation.
-- `two_players.mcscenario` covers ordered input and separate actors.
-- `camera_two_client.mcscenario` exercises the legacy flat 3D camera replay.
-
-CoreLang `.core` examples use `@version("0.0.3")`, `@use minecraft`, and
+CoreLang `.core` examples use `@version("0.1.2")`, `@use minecraft`, and
 `pub fn scenario()`:
 
 - `canonical_sample.core` is the smallest typed flight scenario.

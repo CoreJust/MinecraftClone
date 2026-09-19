@@ -127,7 +127,13 @@ add_executable(mc_tests
     core/scenario_parser_tests.cpp
     core/chunk_tests.cpp
     core/chunk_mesher_tests.cpp
+    core/height_tile_surface_mesher_tests.cpp
+    core/height_tile_interest_tests.cpp
     core/scripted_world_tests.cpp
+    core/world_generation_tests.cpp
+    core/sparse_world_tests.cpp
+    core/world_generation_scheduler_tests.cpp
+    core/game_server_preview_tests.cpp
     core/shared_world_tests.cpp
     core/flight_world_tests.cpp
     core/span_utils_tests.cpp
@@ -195,12 +201,15 @@ if(MC_BUILD_CLIENT AND NOT ANDROID)
     client/depth_format_tests.cpp
             client/camera_tests.cpp
             client/debug_hud_tests.cpp
-    client/frame_scheduler_tests.cpp
+            client/frame_scheduler_tests.cpp
+            client/gui_renderer_tests.cpp
             client/game_client_prediction_tests.cpp
             client/player_presentation_tests.cpp
+            client/preview_meshing_tests.cpp
             android/input_tests.cpp
             client/renderer_geometry_tests.cpp
             client/shader_assets_tests.cpp
+            client/text_renderer_tests.cpp
             core/corelang_scenario_tests.cpp
     )
     target_compile_definitions(
@@ -233,8 +242,8 @@ if(MC_BUILD_CLIENT AND NOT ANDROID)
         "grid.vert.spv;vulkan1.2"
         "player.vert.spv;vulkan1.2"
         "trivial.frag.spv;vulkan1.2"
-        "debug_hud.vert.spv;vulkan1.2"
-        "debug_hud.frag.spv;vulkan1.2"
+        "text.vert.spv;vulkan1.2"
+        "text.frag.spv;vulkan1.2"
     )
         list(GET SHADER_TARGET_ENV 0 SHADER_FILE)
         list(GET SHADER_TARGET_ENV 1 VULKAN_TARGET_ENV)
@@ -271,6 +280,17 @@ if(MC_BUILD_CLIENT AND NOT ANDROID AND MC_ENABLE_RENDERER_SMOKE)
         RUN_SERIAL TRUE
         LABELS "renderer;gpu"
         FAIL_REGULAR_EXPRESSION "Vulkan validation; error at ; critical at "
+    )
+    add_test(
+        NAME PlayerPlaytestCaptureTest
+        COMMAND "${Python3_EXECUTABLE}"
+            "${CMAKE_CURRENT_SOURCE_DIR}/acceptance/player_playtest_capture_test.py"
+            "$<TARGET_FILE:mc_main>"
+    )
+    set_tests_properties(PlayerPlaytestCaptureTest PROPERTIES
+        TIMEOUT 20
+        RUN_SERIAL TRUE
+        LABELS "renderer;gpu;network;acceptance"
     )
 endif()
 

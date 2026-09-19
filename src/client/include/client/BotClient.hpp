@@ -7,7 +7,7 @@ namespace client {
 class BotClient final : public GameClient {
 public:
     explicit BotClient(shared::WorldMode const mode = shared::WorldMode::Flat)
-        : GameClient{ mode }
+        : GameClient{ mode, shared::World::canonicalConfiguration(), false }
     { }
 private:
     shared::Direction input() override;

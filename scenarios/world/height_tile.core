@@ -1,0 +1,5 @@
+@version("0.1.2")
+
+pub fn base_height() -> f64 { 6.0f64 }
+pub fn crest_spacing() -> f64 { 128.0f64 }
+pub fn crest_amplitude() -> f64 { 800.0f64 }

@@ -3,9 +3,8 @@
 This is a development map of the current checkout, including local changes; it
 does not describe a shipped release. MinecraftClone consumes reusable Core
 utilities and Runtime base services from the exact CoreCpp package revision in
-[`dependencies.lock.json`](../../dependencies.lock.json). Game-local `core`
-contains only game-specific utility glue. Public contracts live under
-[`src/core/include/core`](../../src/core/include/core) and the installed
+[`dependencies.lock.json`](../../dependencies.lock.json). The obsolete
+game-local `src/core` tree has been removed. Public contracts live in the installed
 CoreCpp package; graphics, platform windows, Vulkan presentation, and shader
 loading are supplied by installed optional Runtime components.
 
@@ -35,8 +34,7 @@ and asserts the forbidden imported and linked targets are absent.
 
 ## Boundaries and build layout
 
-[`src/core/CMakeLists.txt`](../../src/core/CMakeLists.txt) contains only the
-remaining game-local core target layout. Reusable headers, Runtime sources,
+There is no game-local core target. Reusable headers, Runtime sources,
 Runtime network transport, and graphics/platform bridges are supplied by
 installed CoreCpp targets. Depend on the narrowest public header, not a
 directory-wide umbrella.

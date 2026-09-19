@@ -2,7 +2,7 @@
 
 // Tamsyn 1.11 8x16 bitmap data, Copyright 2010 Scott Fial.
 // The separate attribution and license are in TAMSYN_LICENSE.txt.
-// The packed four-character draw technique is adapted from
+// The packed four-character text draw technique is adapted from
 // tgfrerer/island, commit 3ee89fb531f3e2b5571ceced8823d31637af8714,
 // MIT licensed; see DEBUG_HUD_ATTRIBUTION.md.
 const uvec4 FONT_DATA[96] = {
@@ -106,22 +106,20 @@ const uvec4 FONT_DATA[96] = {
 
 const uint GLYPH_WIDTH = 8u;
 const uint GLYPH_HEIGHT = 16u;
-const uint GLYPH_COUNT = 4u;
 
 layout(location = 0) in vec2 in_pixel_position;
-layout(location = 1) flat in uint in_packed_ascii;
+layout(location = 1) flat in uint in_character;
+layout(location = 2) flat in uint in_packed_color;
 layout(location = 0) out vec4 out_color;
 
 void main() {
     const ivec2 pixel = ivec2(floor(in_pixel_position));
-    if (pixel.x < 0 || pixel.x >= int(GLYPH_WIDTH * GLYPH_COUNT)
+    if (pixel.x < 0 || pixel.x >= int(GLYPH_WIDTH)
         || pixel.y < 0 || pixel.y >= int(GLYPH_HEIGHT)) {
         discard;
     }
 
-    const uint glyph_index = uint(pixel.x) / GLYPH_WIDTH;
-    const uint packed_shift = 8u * glyph_index;
-    const uint character = (in_packed_ascii >> packed_shift) & 0xffu;
+    const uint character = in_character & 0xffu;
     if (character == 0u) {
         discard;
     }
@@ -136,5 +134,11 @@ void main() {
     if (current_pixel == 0u) {
         discard;
     }
-    out_color = vec4(1.0);
+    const vec4 color = vec4(
+        float(in_packed_color & 0xffu),
+        float((in_packed_color >> 8u) & 0xffu),
+        float((in_packed_color >> 16u) & 0xffu),
+        float((in_packed_color >> 24u) & 0xffu)
+    ) / 255.0;
+    out_color = color;
 }

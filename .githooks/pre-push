@@ -3,12 +3,17 @@ set -eu
 
 branch="$(git branch --show-current)"
 head_sha="$(git rev-parse HEAD)"
+
+remote_name="${1:-origin}"
+remote_url="${2:-$remote_name}"
+push_input="$(cat)"
+printf '%s\n' "$push_input" | "${PYTHON:-python3}" script/ci/release_guard.py pre-push --remote "$remote_name" --remote-url "$remote_url"
 is_ai_branch() {
-    case "$1" in ai-dev|ai-main|codex/ai-*) return 0;; esac
+    case "$1" in ai-dev|ai-main) return 0;; esac
     return 1
 }
 is_ai_ref() {
-    case "$1" in refs/heads/ai-dev|refs/heads/ai-main|refs/heads/codex/ai-*|refs/tags/ai/*) return 0;; esac
+    case "$1" in refs/heads/ai-dev|refs/heads/ai-main|refs/tags/ai/*) return 0;; esac
     return 1
 }
 
@@ -39,7 +44,9 @@ while read -r local_ref local_sha remote_ref remote_sha; do
             *) [ "$check_mode" = "strict" ] || check_mode="fast";;
         esac
     fi
-done
+done <<EOF
+$push_input
+EOF
 
 case "$check_mode" in
     strict)

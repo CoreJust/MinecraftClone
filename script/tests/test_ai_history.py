@@ -412,6 +412,54 @@ class AiHistoryTest(unittest.TestCase):
         self.assertIn(f"https://github.com/CoreJust/MinecraftClone/commit/{sha}", rendered)
         self.assertEqual(self.git_run("git", "status", "--porcelain"), "")
 
+    def test_refresh_ignores_unknown_task_on_unrelated_branch(self) -> None:
+        tasks = self.hierarchy()
+        known = self.commit("first task\n\nTask-ID: MC-AI-0001")
+        self.git_run("git", "checkout", "-q", "-b", "unrelated", self.baseline)
+        self.commit("obsolete task\n\nTask-ID: MC-AI-9999")
+        self.git_run("git", "checkout", "-q", "master")
+
+        output = self.repo / "build/ai-tasks"
+        ai_history.render_records(self.repo, tasks, output)
+
+        rendered = (output / "MC-AI-0001.md").read_text(encoding="utf-8")
+        self.assertIn(known, rendered)
+
+    def test_refresh_rejects_unknown_task_reachable_from_head(self) -> None:
+        tasks = self.hierarchy()
+        self.commit("obsolete task\n\nTask-ID: MC-AI-9999")
+
+        with self.assertRaisesRegex(ai_history.HistoryError, "unknown Task-ID MC-AI-9999"):
+            ai_history.render_records(self.repo, tasks, self.repo / "build/ai-tasks")
+
+    def test_finalize_cli_renders_from_selected_head(self) -> None:
+        tasks = self.hierarchy()
+        self.commit("first task\n\nTask-ID: MC-AI-0001")
+        candidate = self.commit("second task\n\nTask-ID: MC-AI-0002")
+        snapshot = tasks[2]
+        snapshot.update({
+            "status": "active",
+            "owner": "Codex",
+            "product_changes": ["None"],
+            "code_changes": ["None"],
+            "evidence": "checked",
+            "resolution_changes": "prepared",
+        })
+        self.write_task_metadata(tasks)
+        self.commit("unrelated current task\n\nTask-ID: MC-AI-9999")
+
+        result = ai_history.main([
+            "--repo", str(self.repo),
+            "--backlog", str(self.repo / "docs/ai/backlog.json"),
+            "--markdown", str(self.repo / "docs/ai/BACKLOG.md"),
+            "--output", str(self.repo / "build/ai-tasks"),
+            "finalize", "MC-AI-0101", "--head", candidate,
+        ])
+
+        self.assertEqual(result, 0)
+        rendered = (self.repo / "build/ai-tasks/MC-AI-0002.md").read_text(encoding="utf-8")
+        self.assertIn(candidate, rendered)
+
     def test_finalize_rejects_missing_or_undone_planned_basic_task(self) -> None:
         tasks = self.hierarchy(first_status="ready")
         self.commit("first task\n\nTask-ID: MC-AI-0001")

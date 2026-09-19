@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import copy
+import json
 import re
 import subprocess
 import sys
@@ -28,6 +29,9 @@ COMMIT_ID = re.compile(r"[0-9a-f]{40}(?:[0-9a-f]{24})?")
 
 class PublishError(RuntimeError):
     pass
+
+
+PROMOTION_STATE = "ai-publish-state.json"
 
 
 def repository_root() -> Path:
@@ -153,6 +157,36 @@ def expected_merge_tree(root: Path, baseline: str, source: str) -> str:
     return values[0]
 
 
+def promotion_state_path(root: Path) -> Path:
+    git_directory = Path(git(root, "rev-parse", "--git-dir").strip())
+    if not git_directory.is_absolute():
+        git_directory = root / git_directory
+    return git_directory / PROMOTION_STATE
+
+
+def write_promotion_state(root: Path, task_id: str, source: str, promotion_base: str) -> None:
+    state = {
+        "task_id": task_id,
+        "source": source,
+        "promotion_base": promotion_base,
+    }
+    promotion_state_path(root).write_text(json.dumps(state, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def read_promotion_state(root: Path, task_id: str, source: str) -> str:
+    path = promotion_state_path(root)
+    try:
+        state = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise PublishError("finish requires the promotion state created by prepare") from error
+    if not isinstance(state, dict) or state.get("task_id") != task_id or state.get("source") != source:
+        raise PublishError("pending promotion state does not match the requested task and source")
+    promotion_base = state.get("promotion_base")
+    if not isinstance(promotion_base, str) or not COMMIT_ID.fullmatch(promotion_base):
+        raise PublishError("pending promotion state has an invalid ai-main base")
+    return revision(root, promotion_base)
+
+
 def require_expected_pending_tree(root: Path, baseline: str, source: str) -> str:
     unresolved = git(root, "diff", "--name-only", "--diff-filter=U").strip()
     if unresolved:
@@ -198,18 +232,18 @@ def prepare(root: Path, task_id: str, source_text: str) -> None:
     if source != revision(root, "HEAD"):
         raise PublishError("source must equal the current ai-dev HEAD")
     task = load_snapshot(root, task_id, source)
-    baseline = revision(root, task["baseline_commit"])
-    if revision(root, AI_MAIN) != baseline:
-        raise PublishError("ai-main no longer equals the snapshot baseline")
+    revision(root, task["baseline_commit"])
+    promotion_base = revision(root, AI_MAIN)
     require_task_trailer(root, source, task_id)
     run_check(root, "--strict", "--level", "snapshot", "--require-index-match")
     if current_branch(root) != AI_DEV or revision(root, "HEAD") != source:
         raise PublishError("ai-dev changed while release checks were running")
-    if revision(root, AI_MAIN) != baseline:
+    if revision(root, AI_MAIN) != promotion_base:
         raise PublishError("ai-main changed while release checks were running")
-    expected_merge_tree(root, baseline, source)
+    expected_merge_tree(root, promotion_base, source)
     git(root, "checkout", AI_MAIN)
     git(root, "merge", "--no-ff", "--no-commit", source)
+    write_promotion_state(root, task_id, source, promotion_base)
     print("Pending promotion created. Review it, record its ai_commit receipt, then run finish.")
 
 
@@ -219,24 +253,25 @@ def finish(root: Path, task_id: str, source_text: str) -> None:
     source = revision(root, source_text)
     if merge_head(root) != source:
         raise PublishError("pending merge does not match the requested immutable source commit")
-    task = load_snapshot(root, task_id, source)
-    baseline = revision(root, task["baseline_commit"])
-    if revision(root, "HEAD") != baseline:
+    load_snapshot(root, task_id, source)
+    promotion_base = read_promotion_state(root, task_id, source)
+    if revision(root, "HEAD") != promotion_base:
         raise PublishError("ai-main changed after prepare; abort this merge and prepare again")
     require_pending_merge_clean(root)
-    require_expected_pending_tree(root, baseline, source)
+    require_expected_pending_tree(root, promotion_base, source)
     check_ai_commit(root)
     run_check(root, "--candidate", "--level", "snapshot", "--require-index-match")
     require_pending_merge_clean(root)
-    require_expected_pending_tree(root, baseline, source)
+    require_expected_pending_tree(root, promotion_base, source)
     check_ai_commit(root)
     git(root, "commit", "-m", f"Promote {task_id} to ai-main", "-m", f"Task-ID: {task_id}")
     promoted = revision(root, "HEAD")
     parents = git(root, "show", "-s", "--format=%P", promoted).split()
-    if parents != [baseline, source]:
+    if parents != [promotion_base, source]:
         raise PublishError("promotion commit parents changed unexpectedly")
     require_task_trailer(root, promoted, task_id)
-    require_expected_promoted_tree(root, baseline, source, promoted)
+    require_expected_promoted_tree(root, promotion_base, source, promoted)
+    promotion_state_path(root).unlink(missing_ok=True)
     require_clean(root)
     run_check(root, "--strict", "--level", "snapshot", "--require-index-match")
     print(promoted)
@@ -247,14 +282,14 @@ def tag(root: Path, task_id: str) -> None:
     require_clean(root)
     task = load_snapshot(root, task_id, "HEAD")
     promoted = revision(root, "HEAD")
-    baseline = revision(root, task["baseline_commit"])
+    revision(root, task["baseline_commit"])
     parents = git(root, "show", "-s", "--format=%P", promoted).split()
-    if len(parents) != 2 or parents[0] != baseline:
+    if len(parents) != 2:
         raise PublishError("HEAD is not the expected ai-main promotion commit")
-    source = parents[1]
+    promotion_base, source = parents
     require_task_trailer(root, promoted, task_id)
     require_task_trailer(root, source, task_id)
-    require_expected_promoted_tree(root, baseline, source, promoted)
+    require_expected_promoted_tree(root, promotion_base, source, promoted)
     name = expected_tag(root, promoted)
     git(root, "check-ref-format", f"refs/tags/{name}")
     existing = subprocess.run(

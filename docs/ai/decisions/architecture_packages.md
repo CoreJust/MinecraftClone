@@ -1,10 +1,7 @@
-# Package architecture through Snapshot 8
+# Package architecture through Snapshot 7
 
-The owner's architecture/repository addenda extend this minor's roadmap.
-These are implementation requirements, not completion evidence. S3 finishes
-its existing foundation; extraction starts before S4 gameplay changes.
-Standalone preparation may use frozen S3 inputs in isolation; game dependency
-migration still waits for S3 publication and reviewed dependency revisions.
+These are implementation requirements, not completion evidence. Package
+extraction starts before S4 gameplay changes.
 
 ## Ownership and builds
 
@@ -19,15 +16,14 @@ networking or executor subsystems. Runtime owns generic network, executors,
 allocation, graphics, kernels and audio. Shared owns protocols, world storage,
 generation and physics; Client owns scene rendering and visual LOD policy.
 
-Expose component-aware installed CMake packages, not cross-repository source
-includes. CoreCpp targets use `CoreCpp::`; Script uses
+Expose component-aware installed CMake packages. CoreCpp targets use
+`CoreCpp::`; Script uses
 `CoreProject2026::Script`. A server-only build must not require Vulkan, GLFW,
 audio or window initialization. Optional graphics/platform components carry
-their dependencies. Each repository owns its README, minimal future-work ledger and tests.
-TestSupport is opt-in and never a production dependency.
+their dependencies. TestSupport is opt-in and never a production dependency.
 
-Pin dependencies to immutable commits in a lock file. Export the actual CoreCpp
-revision and require Script's CoreCpp revision to match the game's selection.
+Pin dependencies to immutable commits. Require Script's CoreCpp revision to
+match the game's selection.
 Release provenance records all three revisions, toolchains and dirty states;
 unknown or dirty dependencies cannot be claimed as exact releases. Private CI
 access must be narrowly authorized; never publish personal tokens or keys.
@@ -37,8 +33,8 @@ access must be narrowly authorized; never publish personal tokens or keys.
 Provide a usable Vulkan service boundary with encapsulated resources, device,
 render targets, submission, presentation and readback. Separate ordinary
 texture targets from presentation so no window is needed for subsystem tests.
-Implement only operations needed by current consumers; do not build a full
-multi-backend RHI. Future backends must not leak into Core or game simulation.
+Implement only operations needed by current consumers. Future backends must not
+leak into Core or game simulation.
 
 Kernel accepts SPIR-V files/bytes, validates/reflects entrypoints and bindings,
 caches modules/programs and compiles GPU pipelines. Support graphics use and
@@ -53,7 +49,6 @@ callback. Prefer an established minimal backend over custom OS audio stacks.
 
 ## Generic Script and game DSL
 
-CoreProject2023-2025 inform design; do not import unfinished compiler scope.
 Use a bounded typed interpreter with explicit entrypoints, values, calls,
 conditions and bounded iteration. Frozen source-compatible C++ extension
 registries provide checked builtins/types; per-run host environments provide
@@ -65,7 +60,7 @@ Shared defines game operations and stage schemas. Preserve `scenario 1` and
 `flat2d-v1` as a fully supported compatibility frontend, not generic Script's
 grammar. S4 onward documentation may prefer the new Core language. Both forms
 use the same host operations for headless tests and visible scripted playback.
-Provide complete navigable language and game-DSL references with tested examples.
+Provide navigable language and game-DSL references with tested examples.
 
 ## Generation, materialization and LOD
 
@@ -96,11 +91,12 @@ Behavior LOD remains an explicit future extension.
 
 S4 extracts packages, establishes generic Script and Runtime/Client texture
 tests, then delivers camera/controls. S5 adds block/mesh and compute-kernel
-contracts. S6 integrates staged sparse generation, audio and chunk previews.
-S7 adds wrapping-aware LOD, resource/performance instrumentation and profiling.
-S8 integrates permissions/physics with materialization and finishes subsystem
-and platform acceptance. After S8 publication, record real evidence and report;
-keep the minor active until the owner's feedback. Never invent S9 prematurely.
+contracts. S6 delivers the native sparse wrapped world, streaming, rendering,
+and performance foundation. S7 completes the deferred executor, audio, staged
+generation, preview/LOD, and profiling contracts; integrates permissions and
+physics with materialization; and finishes subsystem and platform acceptance.
+After S7 publication, record real evidence and report; keep the minor active
+until the owner's feedback. Do not invent another snapshot prematurely.
 
 The implementation ledger keeps existing product tasks and adds prerequisites
 without cycles:
@@ -110,11 +106,14 @@ without cycles:
   Runtime/Shared networking `53`; product task `3`.
 - **S5 / `36`:** standalone compute `54`; mesh-LOD foundation `55`; product
   task `4`.
-- **S6 / `37`:** executors `56`; audio `57`; sparse-world product task `5`;
-  staged generation `58`; revisioned previews `59`.
-- **S7 / `38`:** wrapping product task `6`; visual LOD `60`; full-game
-  performance work `61`.
-- **S8 / `39`:** physics/permissions product task `7`; materialization `62`.
+- **S6 / `37`:** native sparse wrapped-world delivery `205`–`207`.
+- **S7 / `38`:** deferred scripting/compatibility tasks `5` and `6`; executors
+  `56`; audio `57`; staged generation `58`; revisioned previews `59`; visual
+  LOD `60`; full-game performance `61`; physics/permissions product task `7`;
+  materialization `62`.
+
+Task `39` is the permanent historical ID for the retired Snapshot 8 plan. Its
+former scope moved to Snapshot 7 and it cannot be released independently.
 
 Tasks `63`-`65` retain rich geography, structures/decoration/lazy loot and
 behavior LOD as future backlog. Task `42` establishes artifact workflow only;

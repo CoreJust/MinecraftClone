@@ -23,7 +23,7 @@ std::string canonicalWorldScript()
 [[nodiscard]]
 std::string_view missingPublicationScript()
 {
-    return R"(@version("0.0.3")
+    return R"(@version("0.1.2")
 @use minecraft
 pub fn generate(seed: u64) {
     let ignored = seed
@@ -34,7 +34,7 @@ pub fn generate(seed: u64) {
 [[nodiscard]]
 std::string_view outOfBoundsScript()
 {
-    return R"(@version("0.0.3")
+    return R"(@version("0.1.2")
 @use minecraft
 pub fn generate(seed: u64) {
     set_block(16i32, 0i32, 0i32, 1i32)
@@ -79,7 +79,7 @@ TEST(ScriptedWorldTest, FailuresDoNotPublishCandidateData)
     ASSERT_TRUE(published.has_value()) << published.error().message;
     shared::ChunkContentIdentity const original_identity = published->chunk().contentIdentity();
 
-    auto const malformed = shared::ScriptedWorld::load("@version(\"0.0.3\")\nthis is invalid");
+    auto const malformed = shared::ScriptedWorld::load("@version(\"0.1.2\")\nthis is invalid");
     auto const missing_publication = shared::ScriptedWorld::load(missingPublicationScript());
     auto const out_of_bounds = shared::ScriptedWorld::load(outOfBoundsScript());
 

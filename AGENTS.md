@@ -12,7 +12,7 @@ Read [docs/ai/README.md](docs/ai/README.md), then only the guide and backlog ite
 
 Until the final pre-publication gate after the requested feedback hold, use one bounded, exact-task Luna/high review batch per immutable staged candidate. Review genuine correctness findings; for corrections, send only the delta to the same reviewer and renew the receipt. Defer non-blocking cosmetic suggestions. Do not add independent-range, dual-reviewer, or higher-model reviews without a request. At final pre-minor publication after the hold, add the accumulated-change review required by [the release policy](docs/ai/RELEASES.md), and no other boundary.
 
-Keep one `Task-ID` trailer per commit, staged identity, automated evidence, Mac/Android acceptance, and separate user Windows runtime status; publication remains separately authorized. Honor review opt-out; deterministic/release gates still apply. After Snapshot 8, hold the minor for feedback; no automatic minor publication or Snapshot 9.
+Keep one `Task-ID` trailer per commit, staged identity, automated evidence, Mac/Android acceptance, and separate user Windows runtime status; publication remains separately authorized. Honor review opt-out; deterministic/release gates still apply. After Snapshot 7, hold the minor for feedback; no automatic minor publication or another snapshot.
 
 Maximize deterministic public-contract coverage: unit, subsystem integration, fixed-seed/replay, offscreen screenshot, and code checks. Run focused tests, formatters, and source-policy checks before final staging. Reuse receipts only when the checker confirms unchanged inputs; never skip checks or auto-bless goldens.
 

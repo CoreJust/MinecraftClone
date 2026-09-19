@@ -23,18 +23,15 @@ authoritative player has a 2 by 2 footprint, so its origin is limited to cells
 0 through 30 inclusive (0 through 300,000 subcells) on both axes; its
 footprint may end at, but never exceed, the platform edge.
 
-A valid location is not within the 3 by 3 neighborhood of another player's
-cell, including diagonals. This is the collision invariant used for random
-spawns and movement. Explicit spawn and `setPlayerPosition` do not apply that
-check, so callers own their preconditions. Random spawning can also continue
-indefinitely if no valid cell remains.
+A valid location excludes another player from its 3 by 3 neighborhood. Random
+spawn and movement enforce this; explicit placement callers own the precondition.
 
 ## Deterministic scenario plans
 
 [Scenario.hpp](../../src/shared/include/shared/scenario/Scenario.hpp) defines
-bounded header-selected plans. Legacy `scenario 1` and CoreLang
-`@version("0.0.3")` validate source and limits before returning an immutable
-plan, so rejection cannot mutate a world or start the runner. Grammar and
+bounded plans loaded only from CoreLang `@version("0.1.2")` sources. The host
+validates source and limits before returning an immutable plan, so rejection
+cannot mutate a world or start the runner. Grammar and
 examples are in the [scripting guide](../scripting/README.md).
 
 The legacy `flat3d-v1` profile records flat-plane `(x, y, z)` positions and
@@ -46,16 +43,11 @@ camera-input count, and 100 ms server tick separately from presentation cadence.
 
 ## Wire protocol
 
-[Message.hpp](../../src/shared/include/shared/net/Message.hpp) exposes a
-`std::variant` with five versioned, fixed-width little-endian messages:
-
-| Direction | Message | Payload |
-| --- | --- | --- |
-| client → server | `JoinRequest` | character, world mode, and configuration identity |
-| server → client | `JoinResponse` | acceptance boolean |
-| client → server | `ClientInput` | three signed normalized direction bytes (`-127..127`) |
-| server → client | `ServerPlayerPosition` | character, XYZ cell, and three subcell remainders |
-| server → client | `ServerRemovePlayer` | character |
+[Message.hpp](../../src/shared/include/shared/net/Message.hpp) defines versioned,
+little-endian join, input, player-position/removal, and height-tile streaming
+messages. Inputs carry normalized three-axis direction, horizontal view heading,
+and a sequence; positions
+carry authoritative coordinates, subcell remainders, and acknowledgement.
 
 `Message.cpp` prepends a magic byte, protocol version, and tag. Decoding
 requires a known, complete, valid, non-trailing payload and rejects old or
@@ -100,18 +92,24 @@ the renderer on a press edge stored per client instance.
 `BotClient` renders nothing and changes a persistent random direction with
 probability 1/50 per input call.
 
-## Direct test mapping
+## S6 moving terrain
 
-Message, world, server, transport, scenario, camera, and scheduler tests are
-registered in `mc_tests`. Full UI and cross-process runtime acceptance remain
-separate; see [renderer tests](RENDERING.md).
+Residency is a camera-independent radius-45 circle. Generation fills radius-3
+and radius-8 circles, then a directional ellipse reaching the outer circle.
+Rate-limited background work completes the circle after the player settles.
+Sixteen stable heading sectors affect priority only; rotation never changes
+residency. The same ordering drives bounded server generation and client meshing.
+CoreLang 0.1.2 supplies wave parameters once; C++ evaluates heights and stone.
+Terrain has six base layers, 128-block spacing, and a first-wave spawn.
+HUD acceleration profiles are 2x, 3x, 5x, 8x, 15x, 30x, 80x, 200x, and 500x.
 
 ## S5 chunk data
 
 `Chunk` stores 4096 Air/Stone IDs in a 16-cubed unit with signed chunk
 coordinates and checked local coordinates. Bulk construction rejects unsupported
-IDs; effective edits update revision and content hash. `CanonicalWorld` embeds
-the trusted CoreLang 0.0.3 seed-42 generator at configure time. `ScriptedWorld`
+IDs; effective edits update revision and content hash. The retained S5
+`CanonicalWorld` embeds its historical CoreLang 0.0.3 seed-42 generator at
+configure time, while S6 scenario and terrain scripts require CoreLang 0.1.2. `ScriptedWorld`
 collects bounded callbacks into a private candidate and publishes it with its
 configuration identity only after coordinate, block, operation-budget, and
 completion validation succeed. There is no separate script-fuel setting.

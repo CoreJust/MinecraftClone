@@ -884,8 +884,8 @@ private:
     {
         auto const value = parseDegrees(
             token,
-            static_cast<int16_t>(World::FLIGHT_MIN_CELL),
-            static_cast<int16_t>(World::FLIGHT_MAX_CELL),
+            -64,
+            64,
             "flight3d-v1 position must be in -64..64"
         );
         if (!value) {

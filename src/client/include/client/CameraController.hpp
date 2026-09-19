@@ -28,8 +28,6 @@ public:
 
     [[nodiscard]]
     static int8_t verticalMovement(bool ascending, bool descending) noexcept;
-
-private:
     [[nodiscard]]
     static int8_t quantize(double value) noexcept;
 };

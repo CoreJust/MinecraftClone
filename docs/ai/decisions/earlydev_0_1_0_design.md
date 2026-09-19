@@ -1,6 +1,6 @@
 # EarlyDev 0.1.0 implementation decisions
 
-Implementation contracts for [Initiation](../tasks/MC-AI-0033.md), S3–S8;
+Implementation contracts for [Initiation](../tasks/MC-AI-0033.md), S3–S7;
 the roadmaps own scope and acceptance. This is not release evidence.
 
 ## Boundaries and modularity
@@ -17,15 +17,15 @@ binary plugin ABI, persistence/transport frameworks or unmeasured hot-path
 allocation, indirection and copying.
 
 Generation stays deterministic and independent of visual residency. S6 supplies
-the required registered region/chunk stages, explicit bounded retry and simple
-air/stone proof; rich content stays future. [Package architecture](architecture_packages.md)
+the native bounded sparse-world and air/stone proof; S7 completes the deferred
+generic staged-generation contracts. Rich content stays future. [Package architecture](architecture_packages.md)
 owns the module, scripting, kernel, audio and LOD contracts.
 
 `EarlyDev 0.1.0:3` is declared but not released. S3 decides the version naming
-and portable-wire direction; S4–S8 changes remain future commitments. After
-Snapshot 8 is published, report its evidence and artifacts here and wait for
+and portable-wire direction; S4–S7 changes remain future commitments. After
+Snapshot 7 is published, report its evidence and artifacts here and wait for
 the user's hands-on feedback. Do not finalize or publish the minor
-automatically. Plan Snapshot 9 only if feedback requires it.
+automatically. Plan another snapshot only if feedback requires it.
 
 ## Coordinates and protocol
 
@@ -55,19 +55,18 @@ player, never packet content.
   the vertex fallback matches optional mesh output.
 - **S6:** expose `[0,65536)² × [0,1024)` without dense storage (one byte per
   block would be 4 TiB). Lazily generate bounded resident 16³ chunks with a
-  deterministic versioned air/stone function. Eviction/regeneration must be
-  identical; visual residency never changes collision authority.
-- **S7:** centralize positive X/Y modulo 65536 and shortest wrapped offset for
-  simulation, chunk keys, meshing, collision, interest, replication, and
-  camera presentation. Z never wraps. Profile a fixed warmed/cold workload
-  before selecting optimizations; record p50/p95/max CPU/tick and GPU timing
-  when available, residency/mesh bytes, work, and network traffic. Structural
-  budgets prohibit work proportional to world volume or travel history.
-- **S8:** use a fixed initially 20 ms server step with bounded catch-up and
+  deterministic versioned air/stone function. Centralize positive X/Y modulo
+  and shortest wrapped offset through simulation, protocol, interest, meshing,
+  and presentation; Z never wraps. Eviction/regeneration must be identical;
+  visual residency never changes collision authority.
+- **S7:** use a fixed initially 20 ms server step with bounded catch-up and
   collision work. Flight, block phasing, and entity phasing are independent
   server grants. Otherwise apply gravity, grounded jump, solid AABB and entity
   collision, including seams; swept tests/bounded substeps prevent tunnelling.
-  Permission revocation must recover a valid position.
+  Permission revocation must recover a valid position. Complete the reusable
+  executor, audio, staged-generation, preview/LOD, and profiling contracts
+  deferred from S6. Structural budgets prohibit work proportional to world
+  volume or travel history.
 
 ## Configuration and scripting
 
@@ -92,8 +91,8 @@ bounded real processes for authority, join/disconnect and replication. Renderer
 acceptance must inspect presented content and validation output, not survival.
 S3 proves codec rejection, two-client multiplayer, resize/reload/close and
 vertex fallback. S4 proves camera/cadence/depth; S5 golden packets and meshing;
-S6 boundaries/determinism/cache; S7 seams and profiles; S8 every permission and
-collision edge case. Windows/macOS packages need executable-relative shaders
+S6 boundaries/determinism/cache/seams; S7 every permission and collision edge
+case plus reproducible full-game profiles. Windows/macOS packages need executable-relative shaders
 and platform-specific launch evidence. Missing GPU/platform evidence stays
 reported as missing, never substituted by unit tests. Every snapshot also ships
 an installable Android executable using shared simulation/rendering and narrow

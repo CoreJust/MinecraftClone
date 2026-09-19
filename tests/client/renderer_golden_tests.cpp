@@ -2,6 +2,9 @@
 #include <client/render/InstalledShaderAssets.hpp>
 #include <client/render/VulkanRenderer.hpp>
 
+#include <shared/world/CanonicalWorld.hpp>
+#include <shared/world/ChunkMesher.hpp>
+
 #include <core/graphics/vulkan/Vulkan.hpp>
 
 #include <gtest/gtest.h>
@@ -281,6 +284,44 @@ TEST(RendererGoldenTest, FixedExtentAndDepthOrderingDoNotRequirePresentation)
     }
 }
 
+TEST(RendererGoldenTest, TerrainAcrossWorldSeamRemainsVisible)
+{
+    static constexpr std::array<client::PlayerRenderData, 0U> NO_PLAYERS{};
+    try {
+        client::InstalledShaderAssets const shader_assets;
+        client::VulkanOffscreenRenderer renderer{ shader_assets, true };
+        shared::ChunkMesher mesher;
+        shared::ChunkMesh const mesh = mesher.update(shared::canonicalWorld().chunk());
+        ASSERT_FALSE(mesh.faces.empty());
+        renderer.setChunkMesh(mesh);
+        renderer.setCamera({
+            .position = { 65'530.0, 8.0, 18.0 },
+            .angles = { .yaw_degrees = 90.0, .pitch_degrees = -25.0 },
+        });
+
+        client::RendererFrameCapture const capture = renderer.render(
+            NO_PLAYERS,
+            std::chrono::steady_clock::now() + std::chrono::seconds{ 10 }
+        );
+
+        uint64_t terrain_pixels = 0U;
+        for (size_t offset = 0U; offset < capture.rgba8.size(); offset += 4U) {
+            terrain_pixels += isPlatformOrGrid(capture.rgba8, offset) ? 1U : 0U;
+        }
+        EXPECT_GT(terrain_pixels, 500U)
+            << "the canonical terrain disappeared when viewed across the wrapped world seam";
+        EXPECT_EQ(renderer.validationErrorCount(), 0U);
+    } catch (core::graphics::vulkan::VulkanError const& error) {
+#if MC_RENDERER_GOLDEN_FAIL_UNSUPPORTED
+        FAIL() << "true offscreen renderer is unavailable: " << error.what();
+#else
+        GTEST_SKIP() << "true offscreen renderer is unavailable: " << error.what();
+#endif
+    } catch (std::exception const& error) {
+        FAIL() << "true offscreen renderer failed: " << error.what();
+    }
+}
+
 TEST(RendererGoldenTest, ObliqueCameraKeepsPlayerShellsContinuousOverThePlatform)
 {
     static constexpr shared::Player LOCAL{
@@ -326,6 +367,56 @@ TEST(RendererGoldenTest, ObliqueCameraKeepsPlayerShellsContinuousOverThePlatform
             playerScan(opposite_capture, isPlayerRed),
             isPlayerRed
         );
+        EXPECT_EQ(renderer.validationErrorCount(), 0U);
+    } catch (core::graphics::vulkan::VulkanError const& error) {
+#if MC_RENDERER_GOLDEN_FAIL_UNSUPPORTED
+        FAIL() << "true offscreen renderer is unavailable: " << error.what();
+#else
+        GTEST_SKIP() << "true offscreen renderer is unavailable: " << error.what();
+#endif
+    } catch (std::exception const& error) {
+        FAIL() << "true offscreen renderer failed: " << error.what();
+    }
+}
+
+TEST(RendererGoldenTest, HudProducesTopLeftPixelsWithoutPresentation)
+{
+    static constexpr uint32_t MAXIMUM_HUD_X = 400U;
+    static constexpr uint32_t MAXIMUM_HUD_Y = 240U;
+    static constexpr uint32_t MINIMUM_HUD_PIXEL_COUNT = 20U;
+    static constexpr std::array<client::PlayerRenderData, 0U> NO_PLAYERS{};
+    try {
+        client::InstalledShaderAssets const shader_assets;
+        client::VulkanOffscreenRenderer renderer{ shader_assets, true };
+        renderer.setDebugHudEnabled(true);
+        client::RendererFrameCapture const capture = renderer.render(
+            NO_PLAYERS,
+            std::chrono::steady_clock::now() + std::chrono::seconds{ 10 }
+        );
+
+        uint32_t hud_pixel_count = 0U;
+        uint32_t bright_pixel_count = 0U;
+        uint32_t minimum_bright_y = capture.height;
+        uint32_t maximum_bright_y = 0U;
+        for (uint32_t y = 0U; y < capture.height; ++y) {
+            for (uint32_t x = 0U; x < capture.width; ++x) {
+                uint64_t const offset = (static_cast<uint64_t>(y) * capture.width + x) * 4U;
+                bool const is_hud_pixel = capture.rgba8[offset] > 180U
+                    && capture.rgba8[offset + 1U] > 180U
+                    && capture.rgba8[offset + 2U] > 180U;
+                if (is_hud_pixel) {
+                    ++bright_pixel_count;
+                    minimum_bright_y = std::min(minimum_bright_y, y);
+                    maximum_bright_y = std::max(maximum_bright_y, y);
+                    if (x < MAXIMUM_HUD_X && y < MAXIMUM_HUD_Y) {
+                        ++hud_pixel_count;
+                    }
+                }
+            }
+        }
+        EXPECT_GE(hud_pixel_count, MINIMUM_HUD_PIXEL_COUNT)
+            << "all bright pixels: " << bright_pixel_count
+            << "; vertical range: " << minimum_bright_y << '-' << maximum_bright_y;
         EXPECT_EQ(renderer.validationErrorCount(), 0U);
     } catch (core::graphics::vulkan::VulkanError const& error) {
 #if MC_RENDERER_GOLDEN_FAIL_UNSUPPORTED

@@ -1,25 +1,10 @@
 # Scenario quickstart
 
-The legacy frontend remains useful for compact line based replays:
-
-```text
-scenario 1
-profile flight3d-v1
-seed 42
-player alice character "@" at 4 4 0 orientation 0 0 0
-begin
-input alice 1 0 0
-wait 10
-input alice 0 0 0
-expect player alice position 9 4 0
-end
-```
-
-For S5 scenarios, save a `.core` source with the explicit CoreLang header and
+Save a `.core` source with the explicit CoreLang header and
 public entry point:
 
 ```text
-@version("0.0.3")
+@version("0.1.2")
 @use minecraft
 
 fn moveRight(name: str) {

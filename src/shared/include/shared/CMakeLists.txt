@@ -10,5 +10,10 @@ target_sources(mc
             world/ScriptedWorld.hpp
             world/Chunk.hpp
             world/ChunkMesher.hpp
+            world/HeightTileInterest.hpp
+            world/HeightTileSurfaceMesher.hpp
+            world/WorldGeneration.hpp
+            world/WorldGenerationScheduler.hpp
+            world/SparseWorld.hpp
             world/World.hpp
 )

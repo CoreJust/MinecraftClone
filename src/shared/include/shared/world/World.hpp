@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <chrono>
 #include <cstdint>
 #include <optional>
@@ -68,7 +69,24 @@ struct Direction final {
     uint8_t x;
     uint8_t y;
     uint8_t z = 0;
+    bool accelerated = false;
+    uint16_t speedup = 5U;
+    int8_t view_x = 0;
+    int8_t view_y = 127;
 };
+
+inline constexpr std::array<uint16_t, 9> FLIGHT_SPEEDUP_PROFILES{2U, 3U, 5U, 8U, 15U, 30U, 80U, 200U, 500U};
+
+[[nodiscard]]
+constexpr bool isFlightSpeedupProfile(uint16_t const speedup) noexcept
+{
+    for (uint16_t const profile : FLIGHT_SPEEDUP_PROFILES) {
+        if (profile == speedup) {
+            return true;
+        }
+    }
+    return false;
+}
 
 [[nodiscard]]
 constexpr double playerPositionX(Player const& player) noexcept {
@@ -96,9 +114,10 @@ public:
     static constexpr uint8_t MAX_PLAYER_ORIGIN_CELL = WIDTH - PLAYER_FOOTPRINT_CELLS;
     static constexpr uint32_t MAX_PLAYER_ORIGIN_SUBCELL = static_cast<uint32_t>(MAX_PLAYER_ORIGIN_CELL)
         * SUBCELLS_PER_CELL;
-    static constexpr int32_t FLIGHT_MIN_CELL = -64;
-    static constexpr int32_t FLIGHT_MAX_CELL = 64;
-    static constexpr PlayerPosition FLIGHT_SPAWN{ .x = 8, .y = 8, .z = 12 };
+    static constexpr int32_t FLIGHT_MIN_CELL = 0;
+    static constexpr int32_t FLIGHT_MAX_CELL = 65'535;
+    static constexpr int32_t FLIGHT_MAX_Z = 1'023;
+    static constexpr PlayerPosition FLIGHT_SPAWN{ .x = 32'896, .y = 32'768, .z = 410 };
 
     explicit World(
         WorldMode mode = WorldMode::Flat,
