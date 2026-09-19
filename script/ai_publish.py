@@ -209,7 +209,7 @@ def require_expected_promoted_tree(root: Path, baseline: str, source: str, promo
         raise PublishError("promotion tree differs from the expected immutable merge tree")
 
 
-def expected_tag(root: Path, promoted: str) -> str:
+def expected_tag(root: Path, promoted: str, revision_number: int | None = None) -> str:
     names, version = ai_check.project_version_arguments(root)
     major_name, separator, _minor_name = names.partition(":")
     numeric, separator2, snapshot = version.partition(":")
@@ -221,7 +221,27 @@ def expected_tag(root: Path, promoted: str) -> str:
         date = f"{year[2:]}.{month}.{day}"
     except ValueError as error:
         raise PublishError(f"{promoted} has no usable promotion date") from error
-    return f"ai/{major_name}/{numeric}/{snapshot}_{date}"
+    revision_suffix = "" if revision_number is None else f"-r{revision_number}"
+    return f"ai/{major_name}/{numeric}/{snapshot}{revision_suffix}_{date}"
+
+
+def require_next_revision_tag(root: Path, promoted: str, revision_number: int) -> None:
+    canonical = expected_tag(root, promoted).rsplit("_", 1)[0]
+    prefix = f"{canonical}-r"
+    existing = git(root, "tag", "--list", f"{canonical}_*", f"{prefix}*_*" ).splitlines()
+    has_canonical = any(name.startswith(f"{canonical}_") for name in existing)
+    revisions: list[int] = []
+    for name in existing:
+        if not name.startswith(prefix):
+            continue
+        number, separator, _date = name.removeprefix(prefix).partition("_")
+        if separator and number.isdigit() and int(number) >= 1:
+            revisions.append(int(number))
+    if not has_canonical:
+        raise PublishError("a correction tag requires the existing canonical snapshot tag")
+    expected = max(revisions, default=0) + 1
+    if revision_number != expected:
+        raise PublishError(f"the next correction tag must use revision {expected}")
 
 
 def prepare(root: Path, task_id: str, source_text: str) -> None:
@@ -277,7 +297,7 @@ def finish(root: Path, task_id: str, source_text: str) -> None:
     print(promoted)
 
 
-def tag(root: Path, task_id: str) -> None:
+def tag(root: Path, task_id: str, revision_number: int | None = None) -> None:
     require_branch(root, AI_MAIN)
     require_clean(root)
     task = load_snapshot(root, task_id, "HEAD")
@@ -290,7 +310,9 @@ def tag(root: Path, task_id: str) -> None:
     require_task_trailer(root, promoted, task_id)
     require_task_trailer(root, source, task_id)
     require_expected_promoted_tree(root, promotion_base, source, promoted)
-    name = expected_tag(root, promoted)
+    if revision_number is not None:
+        require_next_revision_tag(root, promoted, revision_number)
+    name = expected_tag(root, promoted, revision_number)
     git(root, "check-ref-format", f"refs/tags/{name}")
     existing = subprocess.run(
         ["git", "show-ref", "--verify", "--quiet", f"refs/tags/{name}"], cwd=root, check=False
@@ -314,6 +336,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         command.add_argument("source_commit")
     tag_command = commands.add_parser("tag")
     tag_command.add_argument("task_id")
+    tag_command.add_argument("--revision", type=int, choices=range(1, 1000))
     args = parser.parse_args(argv)
     root = args.root.resolve()
     try:
@@ -322,7 +345,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         elif args.command == "finish":
             finish(root, args.task_id, args.source_commit)
         else:
-            tag(root, args.task_id)
+            tag(root, args.task_id, args.revision)
     except (OSError, PublishError, ai_tasks.BacklogError, ValueError) as error:
         print(f"AI publish: {error}", file=sys.stderr)
         return 1

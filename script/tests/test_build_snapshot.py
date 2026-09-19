@@ -337,6 +337,7 @@ class BuildSnapshotTests(unittest.TestCase):
         self.assertIn("+refs/heads/ai-dev:refs/remotes/origin/ai-dev", workflow)
         self.assertIn('git merge-base --is-ancestor "$source_commit" refs/remotes/origin/ai-dev', workflow)
         self.assertIn("refs/tags/ai/[^/]+/[0-9]+\\.[0-9]+\\.[0-9]+", workflow)
+        self.assertIn("(-r[1-9][0-9]*)?", workflow)
         self.assertIn("git tag --points-at", workflow)
         self.assertIn("'+refs/tags/ai/*:refs/tags/ai/*'", workflow)
         self.assertIn("refs/heads/ai-main)", workflow)

@@ -10,7 +10,9 @@ import re
 
 
 ALLOWED_BRANCHES = frozenset(("ai-dev", "ai-main"))
-CANONICAL_TAG = re.compile(r"^refs/tags/ai/([^/]+)/([0-9]+\.[0-9]+\.[0-9]+)/([0-9]+)_([0-9]{2}\.[0-9]{2}\.[0-9]{2})$")
+CANONICAL_TAG = re.compile(
+    r"^refs/tags/ai/([^/]+)/([0-9]+\.[0-9]+\.[0-9]+)/([0-9]+)(?:-r([1-9][0-9]*))?_([0-9]{2}\.[0-9]{2}\.[0-9]{2})$"
+)
 ZERO = "0" * 40
 
 
@@ -18,12 +20,21 @@ class ReleaseRefError(ValueError):
     """A proposed remote ref violates the repository publication contract."""
 
 
-def version_key(ref: str) -> str | None:
+def tag_identity(ref: str) -> tuple[str, int | None] | None:
     match = CANONICAL_TAG.fullmatch(ref)
     if match is None:
         return None
-    major, version, snapshot, _date = match.groups()
-    return f"{major}/{version}/{snapshot}"
+    major, version, snapshot, revision, _date = match.groups()
+    return f"{major}/{version}/{snapshot}", None if revision is None else int(revision)
+
+
+def version_key(ref: str) -> str | None:
+    identity = tag_identity(ref)
+    if identity is None:
+        return None
+    base, revision = identity
+    suffix = "" if revision is None else f"-r{revision}"
+    return f"{base}{suffix}"
 
 
 def validate_ref(ref: str) -> None:
@@ -40,9 +51,9 @@ def validate_ref(ref: str) -> None:
 
 
 def validate_push(lines: list[str], existing_tags: list[str], remote_tags: list[str] | None = None) -> None:
-    all_existing_tags = [*existing_tags, *(remote_tags or [])]
-    existing_versions = {key for tag in all_existing_tags if (key := version_key(tag))}
-    pushed_versions: set[str] = set()
+    authoritative_tags = remote_tags if remote_tags is not None else existing_tags
+    existing_identities = {identity for tag in authoritative_tags if (identity := tag_identity(tag))}
+    pushed_identities: set[tuple[str, int | None]] = set()
     for line in lines:
         fields = line.split()
         if len(fields) != 4:
@@ -54,11 +65,24 @@ def validate_push(lines: list[str], existing_tags: list[str], remote_tags: list[
         if remote_ref.startswith("refs/tags/"):
             if remote_sha != ZERO:
                 raise ReleaseRefError(f"canonical AI tags are immutable: {remote_ref}")
-            key = version_key(remote_ref)
-            assert key is not None
-            if key in existing_versions or key in pushed_versions:
+            identity = tag_identity(remote_ref)
+            assert identity is not None
+            base, revision = identity
+            known = existing_identities | pushed_identities
+            if identity in known:
                 raise ReleaseRefError(f"one canonical tag per version is allowed: {remote_ref}")
-            pushed_versions.add(key)
+            if revision is None:
+                if any(candidate_base == base for candidate_base, _candidate_revision in known):
+                    raise ReleaseRefError(f"canonical snapshot tag already exists: {remote_ref}")
+            else:
+                if (base, None) not in known:
+                    raise ReleaseRefError(f"correction tag requires the canonical snapshot tag: {remote_ref}")
+                prior = [candidate_revision for candidate_base, candidate_revision in known
+                         if candidate_base == base and candidate_revision is not None]
+                expected = max(prior, default=0) + 1
+                if revision != expected:
+                    raise ReleaseRefError(f"next correction tag must use revision {expected}: {remote_ref}")
+            pushed_identities.add(identity)
 
 
 def _existing_ai_tags() -> list[str]:

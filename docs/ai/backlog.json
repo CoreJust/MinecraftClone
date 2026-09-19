@@ -7665,5 +7665,44 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0223",
+    "title": "Reissue S6 with the upstream CoreLang Windows portability fix",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P0",
+    "route": "luna",
+    "milestone": "EarlyDev 0.1.0:6",
+    "depends_on": [],
+    "acceptance": "MinecraftClone pins reviewed immutable CoreProject2026 048a3abb8f3d18d97c41dbd618eb37fd0247f285, correction tags are supported without permitting tag rewrites, focused tooling tests and the complete local macOS build/test gate pass, and the source candidate is ready for aggregate cross-platform artifact validation and corrected S6 publication. The aggregate MC-AI-0037 retains ownership of public assets, macOS/Android runtime acceptance, native Windows MinecraftClone evidence, superseding the original prerelease, and final release reconciliation.",
+    "evidence": "CoreLang 0.1.2.1 was independently reviewed twice with no findings, published as immutable tag v0.1.2.1 at 048a3abb8f3d18d97c41dbd618eb37fd0247f285, and read back from GitHub. Its exact AppleClang and native VS2022 x64 builds passed 25/25 CTests, including the installed-package consumer. MinecraftClone configured and built locally against the exact clean CoreCpp 1a1d4095bd553ed1ea382523eecd22c9748bbe9f and CoreProject2026 048a3abb8f3d18d97c41dbd618eb37fd0247f285 packages; focused correction-tag tooling tests passed. Aggregate artifact and downloaded-runtime evidence remains with MC-AI-0037 after this source commit is published.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0037",
+    "motivation": "The immutable S6 tag locks CoreProject2026 fc02c0b, which clang-cl compiles but aborts in CoreLang-dependent tests and native MSVC correctly rejects for real designated-initializer and Bytecode namespace defects. No compiler flag can truthfully repair that source.",
+    "context": "Never move or delete ai/EarlyDev/0.1.0/6_26.09.19. Preserve it as the failed candidate. Do not overlay dirty dependency patches or publish assets whose effective dependency differs from dependencies.lock.json.",
+    "complexity": "high",
+    "created_at": "2026-09-19",
+    "resolved_at": "2026-09-20",
+    "resolution_changes": "Pinned the reviewed CoreLang 0.1.2.1 maintenance commit and added immutable -rN correction-tag support across publication validation, artifact trust, tests, and release policy documentation.",
+    "plan": [
+      "Publish the reviewed CoreLang 0.1.2.1 maintenance tag; repin MinecraftClone; validate the local source candidate; then let aggregate MC-AI-0037 own promotion, hosted artifacts, runtime acceptance, release publication, and final reconciliation."
+    ],
+    "product_changes": [
+      "No intended gameplay change; the correction makes the declared CoreLang 0.1.2 dependency portable and executable on Windows."
+    ],
+    "code_changes": [
+      "Pin CoreProject2026 048a3abb8f3d18d97c41dbd618eb37fd0247f285 exactly.",
+      "Accept immutable -rN snapshot correction tags in the publisher, release guard, and artifact workflow while preserving existing canonical tags."
+    ],
+    "baseline_commit": "eba8263daa1bbc89966ef89f25db57ad3ea1827f",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]
