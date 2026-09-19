@@ -1439,7 +1439,7 @@
       "MC-AI-0036"
     ],
     "acceptance": "The 65,536 by 65,536 by 1,024 logical air-and-stone world is represented and traversed without dense allocation. CoreLang 0.1.2 supplies deterministic height maps while native code owns bounded asynchronous generation, server-authoritative camera-independent circular residency, directional priority, transport, detailed meshing and incremental Vulkan rendering. Boundaries, world-seam presentation, cancellation, memory, runtime performance, GUI text and user-approved macOS gameplay evidence pass. The reviewed S6 source is promoted and tagged, with macOS, Windows and Android artifacts, SHA256 hashes, provenance, dependencies/licenses and truthful signing status; downloaded macOS and Android assets receive local acceptance while Windows runtime remains separately reported.",
-    "evidence": "Local release candidate on macOS arm64: complete ai_check gate passed build and 335 CTest cases after the deterministic frontier-test repair; source/style publisher checks pass; owner accepted the normal graphical candidate including continuous MAX-to-0 seam crossing; two 2560x1440 S6 gameplay captures are recorded in README and version history; renderer benchmark measured nominal 120 Hz with 8.84 ms p99. Cross-platform artifact and downloaded-asset acceptance remain the publication phase.",
+    "evidence": "Local release candidate on macOS arm64: complete ai_check gate passed build and 335 CTest cases after the deterministic frontier-test repair; source/style publisher checks pass; owner accepted the normal graphical candidate including continuous MAX-to-0 seam crossing; two 2560x1440 S6 gameplay captures are recorded in README and version history; renderer benchmark measured nominal 120 Hz with 8.84 ms p99. Snapshot promotion now also covers exact ai-main base persistence and candidate-scoped history rendering with focused regressions. Cross-platform artifact and downloaded-asset acceptance remain the publication phase.",
     "blocker": "",
     "owner": "s6-main",
     "level": "snapshot",
@@ -1449,7 +1449,7 @@
     "complexity": "high",
     "created_at": "2026-09-09",
     "resolved_at": "",
-    "resolution_changes": "Delivered CoreLang 0.1.2 configured fading-wave terrain in a sparse wrapped 65536x65536x1024 world; bounded asynchronous server generation and revisioned streaming; camera-independent 45-chunk circular residency with tiered directional priority and background fill; detailed neighbor-aware textured Vulkan meshes, fog and gradient sky; reusable GUI/world text with semantic HUD; toggle acceleration profiles through 500x; stable movement, world-boundary tests, and blink-free wrapped presentation.",
+    "resolution_changes": "Delivered CoreLang 0.1.2 configured fading-wave terrain in a sparse wrapped 65536x65536x1024 world; bounded asynchronous server generation and revisioned streaming; camera-independent 45-chunk circular residency with tiered directional priority and background fill; detailed neighbor-aware textured Vulkan meshes, fog and gradient sky; reusable GUI/world text with semantic HUD; toggle acceleration profiles through 500x; stable movement, world-boundary tests, blink-free wrapped presentation, and deterministic promotion tooling for post-release ledgers.",
     "plan": [
       "Use an explicit sparse/chunked world representation; reject any full-volume allocation design.",
       "Bound resident data and generation work through a testable policy.",
@@ -1462,7 +1462,9 @@
     ],
     "code_changes": [
       "Added CoreLang 0.1.2 terrain configuration, native height-map evaluation/materialization, sparse world storage, bounded generation workers, revisioned height-tile transport, credit backpressure, directional scheduling, cancellation, and deterministic boundary coverage.",
-      "Added neighbor-aware detailed meshing, incremental Vulkan terrain uploads and culling, wrapped-coordinate presentation, textured stone, fog/sky rendering, reusable colored text, distinct GUI/world-text stages, and GPU/runtime performance acceptance."
+      "Added neighbor-aware detailed meshing, incremental Vulkan terrain uploads and culling, wrapped-coordinate presentation, textured stone, fog/sky rendering, reusable colored text, distinct GUI/world-text stages, and GPU/runtime performance acceptance.",
+      "Separated the snapshot history baseline from the exact ai-main promotion base, persisting and validating the promotion base, merge tree, parents, and tag identity.",
+      "Scoped task-history rendering and finalization to the selected candidate head while retaining unknown-trailer rejection for reachable commits."
     ],
     "baseline_commit": "a5964972936c4b6172ec2b4249f09e7b97a9a6f6",
     "commits": [],
