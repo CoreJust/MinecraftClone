@@ -163,6 +163,7 @@ class WorkflowContextTests(unittest.TestCase):
 
     def test_nested_server_only_fixture_excludes_duplicate_preview_in_source(self):
         fixture = (REPOSITORY / "tests/cmake/minecraftclone_server_only_test.cmake.in").read_text(encoding="utf-8")
+        self.assertIn('-G "@CMAKE_GENERATOR@"', fixture)
         self.assertIn('-E "^GameServerPreviewTest\\\\."', fixture)
 
     def test_snapshot_private_dependencies_use_portable_compilers_without_changing_locks(self):
