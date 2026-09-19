@@ -453,7 +453,7 @@ jobs:
           cat > "$RUNNER_TEMP/corelang-android-compat.cmake" <<'EOF'
           add_compile_options(-Wno-error=reorder-init-list)
           EOF
-          python script/ci/acquire.py install-private-dependencies
+          python script/ci/acquire.py install-private-dependencies \
             --root "$RUNNER_TEMP/private-dependencies" --platform android \
             --cmake-arg=-DCMAKE_TOOLCHAIN_FILE=$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake \
             --cmake-arg=-DVCPKG_CHAINLOAD_TOOLCHAIN_FILE=$ANDROID_SDK_ROOT/ndk/27.0.12077973/build/cmake/android.toolchain.cmake \

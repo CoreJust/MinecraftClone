@@ -158,9 +158,17 @@ class WorkflowContextTests(unittest.TestCase):
         self.assertIn("--cmake-arg=-DCMAKE_C_COMPILER=clang-cl", windows_install)
         self.assertIn("--cmake-arg=-DCMAKE_CXX_COMPILER=clang-cl", windows_install)
 
+        macos_install = workflow.split(
+            "      - name: Install pinned private dependencies (macOS)\n", maxsplit=1
+        )[1].split("      - name:", maxsplit=1)[0]
+        self.assertIn("run: >-", macos_install)
+        self.assertIn("python script/ci/acquire.py install-private-dependencies\n", macos_install)
+        self.assertNotIn("install-private-dependencies \\", macos_install)
+
         android_install = workflow.split(
             "      - name: Install pinned private dependencies\n", maxsplit=1
         )[1].split("      - name:", maxsplit=1)[0]
+        self.assertIn("python script/ci/acquire.py install-private-dependencies \\\n", android_install)
         self.assertIn("add_compile_options(-Wno-error=reorder-init-list)", android_install)
         self.assertIn("--cmake-arg=-DCMAKE_PROJECT_INCLUDE_BEFORE=", android_install)
         self.assertNotIn("dependencies.lock.json", android_install)

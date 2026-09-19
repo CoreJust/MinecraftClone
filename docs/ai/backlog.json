@@ -7265,5 +7265,41 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0212",
+    "title": "Fix Android late-artifact command continuation",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P0",
+    "route": "luna",
+    "milestone": "EarlyDev 0.1.0:6",
+    "depends_on": [],
+    "acceptance": "The Android late-artifact private-dependency command passes root, platform, and all CMake arguments in one fail-closed invocation, with a deterministic regression covering the command continuation boundary.",
+    "evidence": "Hosted run 35460609224 failed before Android dependency compilation because the subcommand executed without required arguments. The exact command-boundary regression now passes within the focused 35/35 workflow/build-snapshot suite; git diff --check passes.",
+    "blocker": "",
+    "owner": "",
+    "level": "basic",
+    "parent": "MC-AI-0037",
+    "motivation": "Hosted S6 run 35460609224 exposed a missing shell continuation before any Android dependency compilation began.",
+    "context": "Follow-up to MC-AI-0211; preserve the immutable S6 tag, locks, and all compiler compatibility settings.",
+    "complexity": "low",
+    "created_at": "2026-09-19",
+    "resolved_at": "2026-09-19",
+    "resolution_changes": "Added the missing shell continuation after the Android install-private-dependencies subcommand and a deterministic assertion for that exact boundary.",
+    "plan": [],
+    "product_changes": [
+      "No gameplay behavior changes; restore the Android hosted artifact lane."
+    ],
+    "code_changes": [
+      "Continue the Android private-dependency command after its subcommand and test the exact boundary."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]
