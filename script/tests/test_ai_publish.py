@@ -217,11 +217,27 @@ class AiPublishTests(unittest.TestCase):
         self.assertNotEqual(old.returncode, 0)
         self.assertIn("will not be rewritten", old.stderr)
 
-    def test_snapshot_revision_tag_has_an_independent_immutable_identity(self) -> None:
+    def test_snapshot_revision_tag_rejects_the_canonical_promotion(self) -> None:
         self.prepare()
         self.finish()
         canonical = self.run_publish("tag", "MC-AI-0032")
         self.assertEqual(canonical.returncode, 0, canonical.stderr)
+        tagged = self.run_publish("tag", "MC-AI-0032", "--revision", "1")
+        self.assertNotEqual(tagged.returncode, 0)
+        self.assertIn("newly promoted corrected source", tagged.stderr)
+
+    def test_snapshot_revision_tag_accepts_a_newly_promoted_corrected_source(self) -> None:
+        self.prepare()
+        self.finish()
+        canonical = self.run_publish("tag", "MC-AI-0032")
+        self.assertEqual(canonical.returncode, 0, canonical.stderr)
+        self.git("checkout", "-q", "ai-dev")
+        (self.root / "src" / "fixture.txt").write_text("corrected\n", encoding="utf-8")
+        self.git("add", "src/fixture.txt")
+        self.git("commit", "--no-gpg-sign", "-q", "-m", "correction\n\nTask-ID: MC-AI-0032")
+        self.source = self.git_output("rev-parse", "HEAD")
+        self.prepare()
+        self.finish()
         tagged = self.run_publish("tag", "MC-AI-0032", "--revision", "1")
         self.assertEqual(tagged.returncode, 0, tagged.stderr)
         promoted = self.git_output("rev-parse", "HEAD")

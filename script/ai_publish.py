@@ -242,6 +242,16 @@ def require_next_revision_tag(root: Path, promoted: str, revision_number: int) -
     expected = max(revisions, default=0) + 1
     if revision_number != expected:
         raise PublishError(f"the next correction tag must use revision {expected}")
+    promoted_source = git(root, "show", "-s", "--format=%P", promoted).split()
+    if len(promoted_source) != 2:
+        raise PublishError("a correction tag requires an ai-main promotion commit")
+    for name in existing:
+        previous_promotion = revision(root, f"{name}^{{commit}}")
+        previous_parents = git(root, "show", "-s", "--format=%P", previous_promotion).split()
+        if len(previous_parents) != 2:
+            raise PublishError(f"existing snapshot tag is not an ai-main promotion: {name}")
+        if previous_promotion == promoted or previous_parents[1] == promoted_source[1]:
+            raise PublishError("a correction tag requires a newly promoted corrected source")
 
 
 def prepare(root: Path, task_id: str, source_text: str) -> None:

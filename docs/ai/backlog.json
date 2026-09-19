@@ -7781,5 +7781,43 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0226",
+    "title": "Require corrected source for snapshot revision tags",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P0",
+    "route": "luna",
+    "milestone": "ED-010-S6",
+    "depends_on": [],
+    "acceptance": "A correction tag is rejected unless HEAD is a new promotion of a source commit distinct from every existing canonical or revision tag in the snapshot lineage; focused regressions cover alias rejection and a valid corrected promotion.",
+    "evidence": "Publisher regressions pass: an unchanged canonical promotion is rejected for -r1, while a newly promoted corrected source is accepted; lineage numbering and immutable tag checks remain covered.",
+    "blocker": "",
+    "owner": "",
+    "level": "basic",
+    "parent": "MC-AI-0037",
+    "motivation": "The final S6 promotion review found that -r1 could alias the original promotion and falsely claim a correction.",
+    "context": "The canonical S6 tag is immutable. Correction revisions must prove a newly promoted corrected source while retaining sequential immutable tag lineage.",
+    "complexity": "low",
+    "created_at": "2026-09-20",
+    "resolved_at": "2026-09-20",
+    "resolution_changes": "Correction tags now require a promotion and source distinct from every existing tag in the snapshot lineage.",
+    "plan": [
+      "Resolve every existing lineage tag to its promotion and second-parent source before permitting the next revision."
+    ],
+    "product_changes": [
+      "Correction release identities cannot alias an earlier snapshot source."
+    ],
+    "code_changes": [
+      "Strengthen ai_publish correction-tag validation and add focused publisher tests."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]
