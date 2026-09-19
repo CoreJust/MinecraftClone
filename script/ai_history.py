@@ -147,8 +147,15 @@ def output_path(output: Path, task_id: str) -> Path:
     return output / f"{task_id}.md"
 
 
-def render_records(repo: Path, tasks: list[dict[str, object]], output: Path, only: str | None = None) -> list[Path]:
-    commits = trailer_commits(repo, tasks)
+def render_records(
+    repo: Path,
+    tasks: list[dict[str, object]],
+    output: Path,
+    only: str | None = None,
+    head_ref: str = "HEAD",
+) -> list[Path]:
+    reachable = git(repo, "rev-list", revision(repo, head_ref)).split()
+    commits = trailer_commits(repo, tasks, exact_commits=reachable)
     output.mkdir(parents=True, exist_ok=True)
     rendered: list[Path] = []
     for task in tasks:
@@ -505,7 +512,7 @@ def main(argv: list[str] | None = None) -> int:
             finalize(args.repo, tasks, args.task_id, args.head)
             ai_tasks.write_backlog_atomic(args.backlog, tasks)
             ai_tasks.write_rendered_backlog(args.markdown, tasks)
-            render_records(args.repo, tasks, args.output)
+            render_records(args.repo, tasks, args.output, head_ref=args.head)
     except (HistoryError, ai_tasks.BacklogError) as error:
         print(f"error: {error}", file=sys.stderr)
         return 2

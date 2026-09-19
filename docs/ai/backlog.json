@@ -7188,5 +7188,44 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0210",
+    "title": "Ignore unrelated refs when rendering task history",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P0",
+    "route": "luna",
+    "milestone": "ED-010-S6",
+    "depends_on": [
+      "MC-AI-0209"
+    ],
+    "acceptance": "Task history rendering and aggregate finalization inspect commits reachable from the selected candidate head and are not blocked by branch-only commits outside that history; unknown task trailers reachable from the candidate still fail.",
+    "evidence": "Focused ai_history suite passes 24/24. Unrelated branch-only unknown task trailers no longer block rendering, while a reachable unknown trailer still fails.",
+    "blocker": "",
+    "owner": "",
+    "level": "basic",
+    "parent": "MC-AI-0037",
+    "motivation": "The S6 aggregate validates its exact range successfully but finalization fails while rendering because trailer collection scans every remote branch.",
+    "context": "Found during final S6 publication after the publisher promotion-base repair. Obsolete snapshot branches contain task IDs intentionally absent from the reconciled canonical ledger.",
+    "complexity": "low",
+    "created_at": "2026-09-19",
+    "resolved_at": "2026-09-19",
+    "resolution_changes": "Restrict rendered history collection to the selected candidate head while preserving unknown-trailer rejection within that reachable history.",
+    "plan": [
+      "Pass an explicit reachable commit set into history rendering.",
+      "Add regressions for unrelated branch-only and reachable unknown trailers."
+    ],
+    "product_changes": [],
+    "code_changes": [
+      "Updated ai_history rendering to scope trailer validation to the selected head."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]
