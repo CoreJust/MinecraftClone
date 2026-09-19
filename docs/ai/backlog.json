@@ -7627,5 +7627,43 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0222",
+    "title": "Default native Windows work to the dedicated build host",
+    "kind": "chore",
+    "status": "done",
+    "priority": "P1",
+    "route": "luna",
+    "milestone": "EarlyDev 0.1.0:6",
+    "depends_on": [],
+    "acceptance": "Project-local agent policy requires the shared windows-build-host skill and the dedicated windows-build SSH alias by default for Windows-native compilation, tests, executable inspection, and authorized playtest staging; independent Windows checkouts and exact revision evidence remain mandatory, while hosted CI remains the release artifact gate.",
+    "evidence": "The windows-build alias connected to DESKTOP-VV19SVU as the dedicated codexbuild account and PowerShell 7.6.1. Project-local policy links the shared skill without duplicating connection details or secrets; backlog and documentation checks pass.",
+    "blocker": "",
+    "owner": "",
+    "level": "basic",
+    "parent": "MC-AI-0037",
+    "motivation": "The dedicated Windows laptop connection is now established, and repeated hosted-only diagnosis made Windows artifact iteration unnecessarily slow.",
+    "context": "Reference the shared skill rather than duplicating connection details or secrets. Tailscale remains forbidden by the shared skill setup. Do not weaken hosted release evidence.",
+    "complexity": "low",
+    "created_at": "2026-09-19",
+    "resolved_at": "2026-09-19",
+    "resolution_changes": "Added project-local skill policy that defaults Windows compilation, tests, executable inspection, and authorized playtest staging to the shared windows-build-host skill and dedicated SSH alias while preserving independent checkouts, exact revisions, logs, and hosted release gates.",
+    "plan": [
+      "Add one native Windows execution policy paragraph to the project-local skill guide, validate generated task documentation, and commit separately."
+    ],
+    "product_changes": [
+      "No gameplay change."
+    ],
+    "code_changes": [
+      "Document the default native Windows execution path in the project-local skill guide."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]
