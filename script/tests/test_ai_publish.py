@@ -242,7 +242,7 @@ class AiPublishTests(unittest.TestCase):
         self.assertIn("expected immutable merge tree", rejected.stderr)
         self.assertEqual(self.git_output("rev-parse", "HEAD"), original_head)
 
-    def test_prepare_rejects_dirty_symbolic_and_mismatched_ai_main(self) -> None:
+    def test_prepare_rejects_dirty_and_symbolic_source(self) -> None:
         (self.root / "untracked.txt").write_text("dirty\n", encoding="utf-8")
         dirty = self.run_publish("prepare", "MC-AI-0032", self.source)
         self.assertNotEqual(dirty.returncode, 0)
@@ -251,12 +251,38 @@ class AiPublishTests(unittest.TestCase):
         symbolic = self.run_publish("prepare", "MC-AI-0032", "ai-dev")
         self.assertNotEqual(symbolic.returncode, 0)
         self.assertIn("immutable", symbolic.stderr)
-        self.git("checkout", "-q", "ai-main")
-        self.git("commit", "--allow-empty", "--no-gpg-sign", "-q", "-m", "advance main")
-        self.git("checkout", "-q", "ai-dev")
-        mismatch = self.run_publish("prepare", "MC-AI-0032", self.source)
-        self.assertNotEqual(mismatch.returncode, 0)
-        self.assertIn("baseline", mismatch.stderr)
+
+    def test_prepare_uses_current_ai_main_when_task_baseline_is_older(self) -> None:
+        promotion_base = self.git_output("rev-parse", "ai-main")
+        self.git("merge", "--no-ff", "--no-gpg-sign", "-q", "-m", "reconcile main", "ai-main")
+        task_baseline = self.git_output("rev-parse", "HEAD")
+        self.git(
+            "commit", "--allow-empty", "--no-gpg-sign", "-q",
+            "-m", "replayed basic\n\nTask-ID: MC-AI-0001",
+        )
+        records = json.loads((self.root / "docs" / "ai" / "backlog.json").read_text())
+        snapshot = next(record for record in records if record["id"] == "MC-AI-0032")
+        snapshot["baseline_commit"] = task_baseline
+        (self.root / "docs" / "ai" / "backlog.json").write_text(
+            json.dumps(records, indent=2) + "\n", encoding="utf-8"
+        )
+        self.git("add", "docs/ai/backlog.json")
+        self.git(
+            "commit", "--no-gpg-sign", "-q",
+            "-m", "refinalize snapshot\n\nTask-ID: MC-AI-0032",
+        )
+        self.source = self.git_output("rev-parse", "HEAD")
+        self.prepare()
+        self.assertEqual(self.git_output("rev-parse", "HEAD"), promotion_base)
+        self.assertEqual(self.git_output("rev-parse", "MERGE_HEAD"), self.source)
+        self.finish()
+        promoted = self.git_output("rev-parse", "HEAD")
+        self.assertEqual(
+            self.git_output("show", "-s", "--format=%P", promoted).split(),
+            [promotion_base, self.source],
+        )
+        tagged = self.run_publish("tag", "MC-AI-0032")
+        self.assertEqual(tagged.returncode, 0, tagged.stderr)
 
     def test_prepare_rejects_unfinished_children_and_non_snapshot_tasks(self) -> None:
         minor = self.run_publish("prepare", "MC-AI-0033", self.source)

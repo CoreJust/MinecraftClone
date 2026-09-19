@@ -22,9 +22,9 @@ Create snapshot/minor/major tasks in advance on request. Their plans and child h
 
 `script/ai_publish.py` performs the local snapshot-only sequence with immutable
 source hashes. Run `prepare <snapshot-task> <ai-dev-HEAD>` from clean `ai-dev`;
-it validates the finalized aggregate and exact `ai-main` baseline, runs strict
-gates, and proves the immutable inputs merge cleanly before leaving a no-commit
-merge on `ai-main`. Review that merged index and record its normal
+it validates the finalized aggregate, records the current `ai-main` promotion
+base, runs strict gates, and proves the immutable inputs merge cleanly before
+leaving a no-commit merge on `ai-main`. Review that merged index and record its normal
 `ai_commit.py` receipt. `finish` rejects an index that differs from that
 deterministic merge tree, commits the two-parent promotion, and reruns strict
 gates. `tag` validates the same merge tree before creating the

@@ -7147,5 +7147,46 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0209",
+    "title": "Allow promotion after post-release ai-dev ledgers",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P0",
+    "route": "luna",
+    "milestone": "ED-010-S6",
+    "depends_on": [
+      "MC-AI-0207"
+    ],
+    "acceptance": "Snapshot publication records the current ai-main promotion base separately from the snapshot history baseline; prepare and finish preserve race detection, exact merge-tree validation and two-parent identity when ai-dev contains post-release ledger or reconciliation commits; tag validates the committed promotion parents without requiring the history baseline to equal ai-main.",
+    "evidence": "Focused ai_publish suite passes 9/9, including a regression where the task baseline follows the current ai-main tip through a reconciliation commit; existing race, index-tamper, conflict, status and immutable-tag cases remain green.",
+    "blocker": "",
+    "owner": "",
+    "level": "basic",
+    "parent": "MC-AI-0037",
+    "motivation": "The publisher incorrectly equated the snapshot history baseline with the current ai-main promotion base, blocking every snapshot after a post-release ai-dev ledger.",
+    "context": "Found by the required S6 promotion review. The valid S6 source contains the S5 ledger and canonical release-guard reconciliation while ai-main remains at the immutable S5 promotion line.",
+    "complexity": "medium",
+    "created_at": "2026-09-19",
+    "resolved_at": "2026-09-19",
+    "resolution_changes": "Separated the immutable snapshot history baseline from the current ai-main promotion base. Prepare now records the exact base in Git-local state; finish rejects races or mismatched task/source state and validates the exact tree and parents; tag validates the committed two-parent promotion independently of the history baseline.",
+    "plan": [
+      "Persist the exact ai-main base during prepare and validate it during finish.",
+      "Validate tag parents from the committed merge while retaining snapshot history validation.",
+      "Cover older task baselines, raced ai-main, tampered indexes and immutable tags."
+    ],
+    "product_changes": [],
+    "code_changes": [
+      "Updated ai_publish prepare/finish/tag to distinguish history baseline from promotion base and persist exact local promotion state.",
+      "Added regression coverage for post-release ledger/reconciliation history while preserving race and tamper rejection."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]
