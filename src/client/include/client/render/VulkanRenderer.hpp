@@ -3,6 +3,7 @@
 #include <client/Camera.hpp>
 #include <client/render/DebugHud.hpp>
 #include <client/render/ShaderAssets.hpp>
+#include <client/render/TextRenderer.hpp>
 
 #include <core/common/NonCopyable.hpp>
 #include <core/common/NonMovable.hpp>
@@ -17,6 +18,7 @@
 #include <optional>
 #include <span>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace core::platform::glfw {
@@ -27,6 +29,8 @@ struct ANativeWindow;
 
 namespace shared {
 struct ChunkMesh;
+struct HeightTileCoordinate;
+struct HeightTileSurfaceMesh;
 } // namespace shared
 
 namespace client {
@@ -85,6 +89,7 @@ struct RendererRuntimeInfo final {
     uint32_t chunk_face_count{ 0 };
     uint32_t chunk_draw_count{ 0 };
     uint64_t chunk_mesh_upload_count{ 0 };
+    uint32_t height_tile_mesh_count{ 0 };
 };
 
 struct RendererFrameCapture final {
@@ -129,9 +134,17 @@ public:
     );
     void setDebugHudEnabled(bool enabled) noexcept;
     void toggleDebugHud() noexcept;
+    void setGuiText(std::string_view text, TextColor color = {});
+    void addGuiText(std::string_view text, TextPlacement placement, TextColor color = {});
+    void clearGuiText() noexcept;
+    void setWorldText(std::string_view text, TextPlacement placement, TextColor color = {});
+    void addWorldText(std::string_view text, TextPlacement placement, TextColor color = {});
+    void clearWorldText() noexcept;
     void setCamera(CameraPose pose) noexcept;
     void setChunkMesh(shared::ChunkMesh const& mesh);
     void setChunkMeshes(std::span<shared::ChunkMesh const> meshes);
+    void upsertHeightTileMesh(shared::HeightTileSurfaceMesh const& mesh);
+    [[nodiscard]] bool removeHeightTileMesh(shared::HeightTileCoordinate coordinate);
     void hotReload();
     void recreate(uint32_t width, uint32_t height);
     [[nodiscard]]
@@ -162,6 +175,7 @@ public:
     );
     void setCamera(CameraPose pose) noexcept;
     void setChunkMesh(shared::ChunkMesh const& mesh);
+    void setDebugHudEnabled(bool enabled) noexcept;
     [[nodiscard]] bool validationEnabled() const noexcept;
     [[nodiscard]] uint32_t validationErrorCount() const noexcept;
 private:

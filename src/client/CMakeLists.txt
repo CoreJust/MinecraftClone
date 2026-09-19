@@ -9,7 +9,9 @@ target_sources(mc
         GameClient.cpp
         PlayerPresentation.cpp
         render/DebugHud.cpp
+        render/GuiRenderer.cpp
         render/ShaderAssets.cpp
+        render/TextRenderer.cpp
         render/PresentationRenderer.cpp
 )
 if(NOT ANDROID)
@@ -27,9 +29,12 @@ if(NOT ANDROID)
         render/shaders/player.vert
         render/shaders/stone.vert
         render/shaders/stone.frag
+        render/shaders/stone_solid.frag
+        render/shaders/sky.vert
+        render/shaders/sky.frag
         render/shaders/trivial.frag
-        render/shaders/debug_hud.vert
-        render/shaders/debug_hud.frag
+        render/shaders/text.vert
+        render/shaders/text.frag
     )
 
     mc_copy_target_shaders(mc_main mc)

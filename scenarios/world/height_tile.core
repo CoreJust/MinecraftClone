@@ -1,7 +1,5 @@
 @version("0.1.2")
 
-pub fn height(distance: f64) -> i32 {
-    let n: f64 = floor(distance / 64.0f64 + 0.5f64)
-    let angle: f64 = 3.141592653589793238462643383279502884f64 * distance / 64.0f64
-    floor(6.0f64 + 800.0f64 / (n + 1.0f64) * cos(angle) * cos(angle)) as i32
-}
+pub fn base_height() -> f64 { 6.0f64 }
+pub fn crest_spacing() -> f64 { 128.0f64 }
+pub fn crest_amplitude() -> f64 { 800.0f64 }

@@ -11,6 +11,7 @@
 
 #include <testsupport/ImageComparison.hpp>
 
+#include <algorithm>
 #include <array>
 #include <chrono>
 #include <cstdint>
@@ -107,9 +108,27 @@ struct CaptureColorClasses final {
     }
 };
 
+[[nodiscard]] bool isObservableHudPixel(
+    uint8_t const red,
+    uint8_t const green,
+    uint8_t const blue
+)
+{
+    uint8_t const maximum = std::max(red, std::max(green, blue));
+    uint8_t const minimum = std::min(red, std::min(green, blue));
+    bool const bright_color = maximum >= 220U && maximum - minimum >= 35U;
+    bool const bright_neutral = minimum >= 180U;
+    // The presentation background is a blue-dominant sky. Keep its high blue
+    // channel from being mistaken for generic colored text, while allowing the
+    // brighter cyan HUD row through.
+    bool const sky_like = blue > green + 20U && green > red + 20U && green < 200U;
+    return bright_neutral || (bright_color && !sky_like);
+}
+
 [[nodiscard]] CaptureColorClasses classifyCaptureColors(client::RendererFrameCapture const& capture)
 {
     CaptureColorClasses classes;
+    uint32_t debug_hud_pixel_count = 0U;
     uint8_t const grid_min = capture.srgb_encoded ? 90U : 32U;
     uint8_t const grid_max = capture.srgb_encoded ? 160U : 64U;
     for (uint64_t offset = 0U; offset < capture.rgba8.size(); offset += 4U) {
@@ -145,10 +164,11 @@ struct CaptureColorClasses final {
         classes.has_green_player = classes.has_green_player || (
             red < 80U && green > 150U && blue < 80U
         );
-        classes.has_debug_hud = classes.has_debug_hud || (
-            x < 220U && y < 80U && red > 180U && green > 180U && blue > 180U
-        );
+        if (x < 220U && y < 80U && isObservableHudPixel(red, green, blue)) {
+            ++debug_hud_pixel_count;
+        }
     }
+    classes.has_debug_hud = debug_hud_pixel_count >= 20U;
     return classes;
 }
 

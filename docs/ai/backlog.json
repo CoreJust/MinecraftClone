@@ -233,7 +233,7 @@
   },
   {
     "level": "basic",
-    "parent": "MC-AI-0037",
+    "parent": "MC-AI-0038",
     "motivation": "Implement the complete Snapshot 6 product slice without allocating the full world.",
     "context": "Basic child of Snapshot 6. A dense byte representation would exceed 4 TiB and is prohibited by the acceptance architecture.",
     "complexity": "medium",
@@ -261,7 +261,7 @@
     "status": "backlog",
     "priority": "P1",
     "route": "terra",
-    "milestone": "ED-010-S6",
+    "milestone": "ED-010-S7",
     "depends_on": [
       "MC-AI-0056"
     ],
@@ -1440,7 +1440,7 @@
     "depends_on": [
       "MC-AI-0036"
     ],
-    "acceptance": "The 65,536 by 65,536 by 1,024 logical air-and-stone world is represented and traversed without dense allocation, using bounded executors, staged generation/materialization, deterministic audio acceptance and revisioned chunk previews; coordinate, inheritance, failure/retry, cancellation, memory and runtime evidence pass. The exact reviewed/tagged S6 build is published with named macOS, Windows and Android GitHub assets, SHA256 hashes, provenance, dependencies/licenses and truthful signing status. The exact downloaded macOS asset and exact released Android APK pass local runtime acceptance; Windows build/package evidence is required, while user Windows runtime is recorded separately and never inferred.",
+    "acceptance": "The 65,536 by 65,536 by 1,024 logical air-and-stone world is represented and traversed without dense allocation. CoreLang 0.1.2 supplies deterministic height maps while native code owns bounded asynchronous generation, server-authoritative camera-independent circular residency, directional priority, transport, detailed meshing and incremental Vulkan rendering. Boundaries, world-seam presentation, cancellation, memory, runtime performance, GUI text and user-approved macOS gameplay evidence pass. The reviewed S6 source is promoted and tagged, with macOS, Windows and Android artifacts, SHA256 hashes, provenance, dependencies/licenses and truthful signing status; downloaded macOS and Android assets receive local acceptance while Windows runtime remains separately reported.",
     "evidence": "",
     "blocker": "",
     "owner": "s6-main",
@@ -1459,7 +1459,7 @@
     ],
     "product_changes": [],
     "code_changes": [],
-    "baseline_commit": "",
+    "baseline_commit": "f4edb22bb90a166881e1131357af3423d44ace2b",
     "commits": [],
     "finalized": false,
     "retrospective": "",
@@ -2140,7 +2140,7 @@
     "status": "backlog",
     "priority": "P1",
     "route": "terra",
-    "milestone": "ED-010-S6",
+    "milestone": "ED-010-S7",
     "depends_on": [
       "MC-AI-0035"
     ],
@@ -2149,7 +2149,7 @@
     "blocker": "",
     "owner": "",
     "level": "basic",
-    "parent": "MC-AI-0037",
+    "parent": "MC-AI-0038",
     "motivation": "Make mesh detail an explicit deterministic data contract before the world grows beyond one resident chunk.",
     "context": "User permits LOD in S6/S7; S5 uses one full-detail resident chunk. Revisit the existing unintegrated LOD candidate when multiple chunks justify selection and residency policy.",
     "complexity": "high",
@@ -2178,7 +2178,7 @@
     "status": "backlog",
     "priority": "P1",
     "route": "sol",
-    "milestone": "ED-010-S6",
+    "milestone": "ED-010-S7",
     "depends_on": [
       "MC-AI-0036"
     ],
@@ -2187,7 +2187,7 @@
     "blocker": "",
     "owner": "",
     "level": "basic",
-    "parent": "MC-AI-0037",
+    "parent": "MC-AI-0038",
     "motivation": "Run generation and streaming work outside authoritative physics ticks with explicit capacity, cancellation and deterministic publication contracts.",
     "context": "CoreCpp Runtime owns generic executor/queue mechanics. Shared owns generation jobs and priority semantics. Deterministic world results must not depend on traversal or worker order.",
     "complexity": "high",
@@ -2216,7 +2216,7 @@
     "status": "backlog",
     "priority": "P1",
     "route": "terra",
-    "milestone": "ED-010-S6",
+    "milestone": "ED-010-S7",
     "depends_on": [
       "MC-AI-0036"
     ],
@@ -2225,7 +2225,7 @@
     "blocker": "",
     "owner": "",
     "level": "basic",
-    "parent": "MC-AI-0037",
+    "parent": "MC-AI-0038",
     "motivation": "Add the requested reusable audio subsystem without coupling game logic to OS device drivers or nondeterministic callbacks.",
     "context": "CoreCpp Runtime owns generic mixing/control and a minimal native output adapter; MinecraftClone may expose a narrow Client use. Decoding and device management stay outside the real-time mix callback.",
     "complexity": "high",
@@ -2254,7 +2254,7 @@
     "status": "backlog",
     "priority": "P1",
     "route": "sol",
-    "milestone": "ED-010-S6",
+    "milestone": "ED-010-S7",
     "depends_on": [
       "MC-AI-0005",
       "MC-AI-0056"
@@ -2264,7 +2264,7 @@
     "blocker": "",
     "owner": "",
     "level": "basic",
-    "parent": "MC-AI-0037",
+    "parent": "MC-AI-0038",
     "motivation": "Implement the scalable generation mechanism requested for the large world while keeping this minor’s actual content intentionally simple.",
     "context": "Shared owns stage schemas, generation state and bounded priorities; Script declares optional entrypoints and stage configuration; Runtime only executes jobs. Demonstrate with versioned seeded air/stone. Rich geography, structures, decoration and loot are future tasks.",
     "complexity": "high",
@@ -2293,7 +2293,7 @@
     "status": "backlog",
     "priority": "P1",
     "route": "terra",
-    "milestone": "ED-010-S6",
+    "milestone": "ED-010-S7",
     "depends_on": [
       "MC-AI-0055",
       "MC-AI-0058"
@@ -2303,7 +2303,7 @@
     "blocker": "",
     "owner": "",
     "level": "basic",
-    "parent": "MC-AI-0037",
+    "parent": "MC-AI-0038",
     "motivation": "Show useful distant terrain progressively without confusing visual residency with authoritative materialization.",
     "context": "Client visual previews consume server-originated revisioned generation output. Clients send intentions, never speculative generated world data; preview meshes never supply physics/collision authority.",
     "complexity": "high",
@@ -7093,6 +7093,48 @@
     ],
     "code_changes": [
       "Native height evaluation, 64-job preview batches, 841 surface chunks, cached preview meshes, accelerated wire input, corrected spawn/HUD, revised stone shader, and focused regressions."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0207",
+    "title": "Replace S6 preview terrain with mature large-world chunk streaming and rendering architecture",
+    "kind": "feature",
+    "status": "done",
+    "priority": "P0",
+    "route": "luna",
+    "milestone": "ED-010-S6",
+    "depends_on": [],
+    "acceptance": "One shared sparse-world lifecycle supports local and network play; residency follows the player as a camera-independent circle with a 45-chunk radius. Camera rotation never removes or hides resident chunks. Generation fills fixed radius-3 and radius-8 circles first, then a movement/view-oriented medium-priority ellipse reaching the outer circle, then rate-limited background chunks until a stationary player receives the complete circle. Chunks enter ahead and evict behind without near-camera holes; generation is asynchronous, deterministic, and bounded; CoreLang configures the native height-map kernel while C++ owns blocks; neighbor-aware meshes have no floating slabs or hidden internal faces; renderer incrementally uploads and culls chunks; CPU, GPU, network, and queue memory are bounded. Stone retains texture over the visible range, with distant fog flowing into a gradient sky. Movement remains continuous at the streaming edge; HUD shows acceleration speed on its own line; wave spacing is 128 blocks. Target stable 120 presented FPS in real Mac streaming, with recorded p50/p95/p99 frame and generation timings. A reusable text API lays out arbitrary-length colored labels for both depth-tested world placement and screen-space GUI; HUD is a GUI client, and GUI records in its own rendering stage rather than relying on HUD-specific shader layout.",
+    "evidence": "2026-09-19 local and owner acceptance: 335 top-level CTest cases cover circular residency, priority bands, asynchronous streaming, movement, wrapped boundaries, renderer correctness, text/GUI, and CoreLang generation. The fast-flight frontier integration test passed five consecutive controlled-credit runs. The exact normal macOS candidate passed owner playtest, including the final 65535-to-0 seam crossing. Foreground 1920x1080 HUD-on maximum-capacity benchmark sustained nominal 120 Hz with 8.84 ms p99; receipt /private/tmp/mc-s6-directional-final.json. ai_check.py --fast passed.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0037",
+    "motivation": "Replace S6 preview terrain with mature large-world chunk streaming and rendering architecture",
+    "context": "Owner rejected the fixed spawn preview, isolated surface chunks, 29x29 coverage, and performance collapse. S6 must establish mature foundations before future blocks, mechanics, entities, and graphics increase workload.",
+    "complexity": "high",
+    "created_at": "2026-09-18",
+    "resolved_at": "2026-09-19",
+    "resolution_changes": "Replaced fixed preview terrain with a bounded camera-independent 45-chunk circular residency lifecycle, tiered directional generation priorities, background fill, asynchronous workers, revisioned height-tile transport, neighbor-aware detailed meshes, incremental Vulkan uploads and culling, textured stone, fog/sky integration, reusable GUI/world text, semantic HUD, selectable acceleration through 500x, continuous movement, and shortest-path presentation across the wrapped world seam. Added deterministic unit, integration, transport, sustained-flight, GPU, benchmark, and seam regressions.",
+    "plan": [
+      "Clarify acceptance and implementation steps.",
+      "Replace preview DTOs with compact height-tile/chunk lifecycle messages and removals; implement moving interest diff and directional priority; build neighbor-aware heightfield/voxel surface meshes; use persistent chunk GPU allocations with incremental upload and culling; add deterministic lifecycle, seam, cancellation, budget, transport, and benchmark coverage; validate the exact normal Mac candidate.",
+      "Replace the HUD-shaped text shader and fixed word packing with dynamic glyph batches; add a depth-tested world-text path and a distinct screen-space GUI pass, then prove long labels, color spans, and placement with focused tests."
+    ],
+    "product_changes": [
+      "S6 establishes mature large-world generation, streaming, and rendering foundations with a view/movement-oriented terrain ellipse and stable 120 FPS target.",
+      "S6 establishes mature large-world generation, streaming, and rendering foundations with camera-independent circular residency, tiered directional generation priority, and a stable 120 FPS target."
+    ],
+    "code_changes": [
+      "Shared chunk lifecycle, height-map transport, moving server interest, bounded scheduling/cache eviction, neighbor-aware meshing, persistent renderer allocations, culling, instrumentation, and performance gates.",
+      "Reusable glyph layout and GPU text path; separate world-text and GUI recording stages with HUD as a GUI client."
     ],
     "baseline_commit": "",
     "commits": [],

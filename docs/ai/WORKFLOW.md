@@ -1,6 +1,8 @@
 # Task-driven development policy
 
-Every change belongs to a task created before work. [backlog.json](backlog.json) is canonical; `ai_tasks.py render` creates the backlog and a separate [task document](tasks/MC-AI-0031.md) for each record. Use `show <id>` for small context. GitHub issues may supplement these records without becoming a second independent task state.
+Every change belongs to a task. [backlog.json](backlog.json) is canonical;
+`ai_tasks.py render` creates the backlog and task documents. GitHub issues may
+supplement these records without becoming separate task state.
 
 ## Task contract
 
@@ -17,16 +19,19 @@ Every change belongs to a task created before work. [backlog.json](backlog.json)
 | Change lists | Product changes first, code changes second |
 | Commit relation | Exactly one task commit with one `Task-ID` trailer; derived hashes and GitHub links |
 
-Public task IDs are sequential numbers; file/trailer IDs retain the `MC-AI-####` namespace. The [project skills](SKILLS.md) resolve them deterministically. Basic tasks may be unassigned in the backlog; assign active implementation to the current snapshot. Hierarchy: **basic → snapshot → minor → major**. Parentage groups work; dependencies order it. Aggregates are created on request before implementation, initially with plans and unresolved resolution fields. Future stages remain plans, not completion claims.
+Public task IDs are sequential; files and trailers retain `MC-AI-####`. The
+[project skills](SKILLS.md) resolve them. Hierarchy: **basic → snapshot → minor → major**.
+Parentage groups work; dependencies order it. Future stages remain plans.
 
 ## Basic task loop
 
-1. Choose authorized work with `ai_tasks.py ready`; create missing tasks with `add`. Inspect status/diff, read the task and one relevant code guide. Record motivation/context before editing.
-2. Set owner and active status. Follow [model routing](MODELS.md); use Luna/high by default for well-specified work and delegate only independent owned paths. The coordinator owns full integration checks; workers run focused tests and do not start their own review pipelines.
-3. Implement the smallest accepted change, including meaningful tests. Build and test the affected module for the task, with advanced deterministic gameplay/replay checks introduced early when they protect the public contract. Record unrelated findings as tasks. Update affected guides, explicitly refresh documentation hashes, and generate task documents.
-4. Resolve the task only with actual resolution date, changes, and acceptance evidence. Stage only its changes; metadata updates required for its parent/traceability belong to the same task.
+1. Choose authorized work with `ai_tasks.py ready`; create missing tasks with `add`. Inspect status/diff, the task, and one relevant code guide.
+2. Set owner and active status. Follow [model routing](MODELS.md); delegate only independent owned paths. The coordinator owns integration checks.
+3. Implement the smallest accepted change with meaningful tests. Record unrelated findings as tasks. Update guides, hashes, and generated task documents.
+   Asynchronous or mutable systems require bounded ownership, backpressure or cancellation, deterministic ordering, and headless contract coverage. Use deterministic clocks, inputs, and mocks for cross-system behavior.
+4. Resolve only with actual changes and acceptance evidence. Stage only task changes and required traceability metadata.
 5. Run one bounded **Luna/high review batch** for the exact staged task candidate. [Commit gates](COMMITS.md) bind the review to the exact staged tree; reuse that receipt only when inputs are unchanged and do not add a duplicate precommit wrapper. Fix genuine findings before commit; send only a changed delta to the same reviewer, and defer non-blocking cosmetic suggestions.
-6. Commit exactly once with exactly one trailer: `Task-ID: MC-AI-####`. A later change requires a new task; do not silently rewrite published history. The post-commit hook refreshes local task pages with exact commit backlinks.
+6. Commit once with one `Task-ID: MC-AI-####` trailer. Later changes require new tasks.
 
 The commit/push hooks own `ai_check.py --fast`: docs, backlog, plan, index,
 whitespace and receipt checks always run. Exact nonshared Python module/test

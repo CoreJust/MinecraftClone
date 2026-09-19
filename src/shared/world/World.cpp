@@ -317,7 +317,9 @@ bool World::moveFlightPlayer(
     uint32_t const divisor = std::max<uint32_t>(127U, direction_length);
     uint32_t const base_step = static_cast<uint32_t>(elapsed.count())
         * MOVEMENT_SUBCELLS_PER_TICK / static_cast<uint32_t>(TICK.count());
-    uint32_t const acceleration = direction.accelerated ? 5U : 1U;
+    uint32_t const acceleration = direction.accelerated && isFlightSpeedupProfile(direction.speedup)
+        ? direction.speedup
+        : 1U;
     auto const movementDelta = [base_step, divisor, acceleration](int32_t const component) {
         return static_cast<int32_t>(base_step * static_cast<uint32_t>(std::abs(component)) / divisor * acceleration)
             * (component < 0 ? -1 : 1);

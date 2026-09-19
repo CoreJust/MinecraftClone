@@ -6,11 +6,17 @@ Version EarlyDev 0.1.0 Initiation.
 
 ## Gameplay
 
+![Snapshot 6 textured wave ridge with semantic HUD](<docs/version_history/EarlyDev 0.1/images/earlydev-0.1.0-6-wave-ridge.png>)
+
+![Snapshot 6 streamed terrain horizon after camera rotation](<docs/version_history/EarlyDev 0.1/images/earlydev-0.1.0-6-streamed-horizon.png>)
+
+Snapshot 6 establishes the large-world foundation: CoreLang-authored fading-wave terrain, bounded asynchronous generation and network streaming, a 45-chunk circular residency radius, textured detailed meshes, fog, wrapped horizontal travel, and accelerated flight profiles through 500x. These are actual 2560x1440 macOS gameplay captures from the accepted release candidate.
+
 ![Snapshot 4 close third-person gameplay with the debug HUD](<docs/version_history/EarlyDev 0.1/images/earlydev-0.1.0-4-third-person-hud.png>)
 
 ![Snapshot 4 oblique view of the floating platform and local player](<docs/version_history/EarlyDev 0.1/images/earlydev-0.1.0-4-oblique-platform.png>)
 
-These are actual Snapshot 4 gameplay captures from its visual-acceptance work. The [version history](<docs/version_history/EarlyDev 0.1/EarlyDev 0.1.0 Initiation.md>) records their context and the exact release evidence separately.
+The [version history](<docs/version_history/EarlyDev 0.1/EarlyDev 0.1.0 Initiation.md>) records screenshot context and exact release evidence separately.
 
 ## Development lines
 

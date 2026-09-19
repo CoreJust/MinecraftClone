@@ -33,31 +33,45 @@ Shader assets are borrowed: desktop `InstalledShaderAssets` reads the installed
 `shaders/` directory and Android `AndroidShaderAssets` reads APK assets. Both
 accept bare `.spv` names only; no source-tree fallback is allowed.
 
-## Debug HUD boundary
+S6 terrain presentation uses a persistent GPU mesh arena and incremental tile
+uploads. Its heightfield surface mesher emits exposed tops and walls against
+neighbor heights, including tile seams. Stone samples the attributed 16-by-16
+texture from a buffer, with distance fog blending into a gradient sky. Frustum
+culling affects drawing only; tile residency follows a camera-independent
+45-tile-radius circle around the player. View and movement direction affect
+generation and meshing priority only. Mesh construction runs on
+worker threads, outside the presentation callback.
+[`height_tile_surface_mesher_tests.cpp`](../../tests/core/height_tile_surface_mesher_tests.cpp)
+covers flat tiles, exposed height differences, neighbor seams, and generated
+column tops.
 
-`DebugHudState` defaults off for benchmark/capture and normal gameplay enables
-it. It formats four bounded allocation-free lines and packs four sanitized
-ASCII bytes into each instance word. Coordinate and angle rows use padded
-groups (`XYZ: 1.25 2.50 0.00`, `YPR deg: 45.0 -10.0 3.0`).
-`debug_hud.vert` expands those instances into
-procedural 16-by-32 quads, twice the bitmap's native 8-by-16 glyph size, with
-a 40-pixel row advance. Its DPI scale is capped by the presentation extent so
-all four rows remain top-left and non-overlapping at high scale. `debug_hud.frag`
-owns the texture-free bitmap constants and performs the factor-of-eight
-glyph-row addressing. The renderer submits all packed words with one instanced
-draw through the same-device `GraphicsProgram` and `VulkanKernelCache` used by
-the scene.
+## Text and GUI boundary
 
-Desktop and Android supply authoritative local Flight XYZ, including Z altitude,
-plus camera yaw/pitch/roll as `Y/P/R(deg)`. The renderer counts only frames whose
-`PresentationContext::complete` succeeds; public HUD controls support benchmark
-comparisons.
+`TextRenderer` lays out dynamically sized strings and RGBA color spans as glyph
+instances. Placement supports screen coordinates or a world origin with right
+and up basis vectors, so text is not tied to the HUD's five-line format.
+`text.vert` expands glyph instances into quads; `text.frag` samples the
+attributed bitmap. The current bitmap covers printable ASCII and substitutes a
+fallback glyph for unsupported characters.
+UTF-8 input consumes one fallback glyph per unsupported code point. Presentation
+accepts up to 16,384 glyphs across world and GUI labels in a frame and reports
+an unsuccessful render before frame acquisition when that budget is exceeded.
+
+World text is submitted with depth testing in the world scene. `GuiRenderer`
+owns screen-space text and records it in a separate color-load GUI stage after
+the world scene, without depth testing. `DebugHudState` formats five lines and
+submits them through that GUI API. The HUD presents gameplay Z as user-facing Y
+(height), with separated coordinate and angle values.
+`VulkanRenderer` exposes set/add/clear calls for GUI and world labels; add calls
+allow multiple labels with independent colors and placements in one frame.
+
+The renderer counts only frames whose `PresentationContext::complete` succeeds.
 
 ## Capture, input, and validation
 
 Capture enables transfer-source presentation and returns an owned RGBA8 vector
-after submission. Ordinary frames allocate neither draw data nor readback;
-recreation, resize, and Android window replacement preserve that contract.
+after submission. Readback allocation occurs only on capture; recreation,
+resize, and Android window replacement retain the capture contract.
 
 Desktop GLFW cursor deltas control yaw/pitch; W/A/S/D lower through
 `CameraController` into unchanged authoritative `Direction` packets. Escape,
@@ -65,13 +79,9 @@ R, and debounced F1 remain window input; R reloads shaders and F1 toggles HUD.
 Android maps left drag to movement and right drag to yaw/pitch before the same
 lowering while retaining its asset and `AndroidInput` glue.
 
-[`renderer_smoke_tests.cpp`](../../tests/client/renderer_smoke_tests.cpp), when
-enabled with `MC_ENABLE_RENDERER_SMOKE`, deterministically tests the GLFW
-input adapter and runs the real presentation/context recreate/readback case on
-a Vulkan-capable desktop. The latter is a hardware smoke, not a replacement for
-normal CTest. Android package compilation links the exact installed Android
-RuntimeGraphics components; emulator presentation remains separate runtime
-acceptance.
+[`renderer_smoke_tests.cpp`](../../tests/client/renderer_smoke_tests.cpp)
+tests GLFW input and presentation/recreation/readback on a Vulkan desktop.
+Android package compilation and emulator presentation remain separate gates.
 
 `renderer_golden_tests.cpp` captures the fixed 640-by-480
 EarlyDev 0.1.0 snapshot 4 scene without GLFW, a surface, or a swapchain. Its
@@ -81,30 +91,33 @@ Client owns depth and invokes the same scene recorder and pipelines as
 presentation. Strict approval enables validation and checks the active
 versioned reference plus independent depth/scene predicates. Diagnostics are
 bounded and a reference changes only after deliberate native-size review.
+An offscreen HUD regression draws through the GUI stage and checks top-left
+pixels without a window.
 
 `RendererSmokeTest` separately covers visible GLFW presentation, recreation,
 readback, input, and the default-on HUD.
 
-The S5 offscreen stone acceptance captures the cached chunk from above and
-below, verifies textured stone and sky pixels, checks that repeated identical
-meshes produce identical RGBA8 frames, and checks that replacing the mesh
-changes the frame without validation errors. Its altitude case verifies that a
-remote player's rendered position moves upward when authoritative Z increases.
+S5 offscreen acceptance verifies textured stone, sky, deterministic frames,
+mesh replacement, validation, and remote-player altitude.
 
-The benchmark uses shared renderer options; `--present-immediate` fails without
-immediate negotiation. Release evidence records negotiated mode, actual pixel
-resolution, scene, HUD state, sustained rate, p50/p95/p99/max, and stutters;
-it records CPU acquire, record, and complete timings—not GPU timestamps.
-Release disables validation; `--hud` supports paired runs. Missing CoreGraphics
-display metadata stays unavailable.
+The benchmark fails if requested immediate presentation is unavailable. Evidence
+includes mode, resolution, scene, HUD, rate, p50/p95/p99/max, stutters, and CPU
+phase timings, but no GPU timestamps.
+Release disables validation; `--hud` supports paired runs. The S6 benchmark uses
+the maximum 90-by-90 capacity as a rendering stress case, evicts and uploads
+bounded edge work across all axes, and includes streaming work in frame timings
+to expose stalls. Normal gameplay uses the smaller directional ellipse documented
+in [GAMEPLAY.md](GAMEPLAY.md).
+It requires the nominal 120 Hz presentation rate within a one-percent host-clock
+measurement tolerance and p99 at or below 10 ms, including the display wait and
+scheduler jitter around the 8.33 ms deadline.
 
-Visible acceptance benchmark and capture modes keep their requested resolutions
-in framebuffer pixels. Their shared bounded GLFW setup converts the current
-pixel-to-logical scale into a checked logical resize before creating a
-`PresentationContext`; an exact framebuffer mismatch, no resize progress, or
-an oscillating adjustment fails rather than changing the recorded request.
-Capture additionally requires a completed transfer readback with the requested
-extent and both sky and textured stone content. Benchmark additionally requires
-a presented frame, a nonzero stone draw, and a stable cached mesh upload count;
-it records p50/p95/p99, maximum, mean, acquire, command-record, and completion
-wait timings within its monotonic deadline.
+Visible benchmark and capture modes preserve requested framebuffer pixels.
+Bounded GLFW setup checks logical resizing before creating a `PresentationContext`;
+extent mismatch or oscillation fails. Capture requires completed readback, sky,
+and textured stone. Benchmark requires presentation and a stone draw, and
+records frame and phase timing within its deadline. The opt-in networked
+playtest capture launches the production server and player client, waits for
+1,024 streamed meshes, rotates 90 degrees toward the central peak, proves that
+the resident-key set is identical, then validates the real framebuffer's terrain
+coverage, texture variation, HUD visibility, completion time, and process health.

@@ -67,6 +67,35 @@ TEST(FlightWorldTest, AcceleratesAllFlightAxesFivefold)
     EXPECT_EQ(world.player(1)->z_subcell, 6'160U);
 }
 
+TEST(FlightWorldTest, UsesSelectedAccelerationProfile)
+{
+    shared::World world{ shared::WorldMode::Flight };
+    world.spawnPlayer(1, '@');
+    ASSERT_TRUE(world.setPlayerPosition(1, { .x = 100, .y = 100, .z = 100 }));
+
+    ASSERT_TRUE(world.movePlayer(1, {
+        .x = 127,
+        .y = 127,
+        .z = 127,
+        .accelerated = true,
+        .speedup = 80U,
+    }));
+
+    ASSERT_TRUE(world.player(1).has_value());
+    EXPECT_EQ(world.player(1)->x, 125);
+    EXPECT_EQ(world.player(1)->y, 125);
+    EXPECT_EQ(world.player(1)->z, 125);
+    EXPECT_EQ(world.player(1)->x_subcell, 8'560U);
+    EXPECT_EQ(world.player(1)->y_subcell, 8'560U);
+    EXPECT_EQ(world.player(1)->z_subcell, 8'560U);
+}
+
+TEST(FlightWorldTest, SupportsExtremeAccelerationProfiles)
+{
+    EXPECT_TRUE(shared::isFlightSpeedupProfile(200U));
+    EXPECT_TRUE(shared::isFlightSpeedupProfile(500U));
+}
+
 TEST(FlightWorldTest, WrapsHorizontalBoundsAndRejectsVerticalBounds)
 {
     shared::World world{ shared::WorldMode::Flight };

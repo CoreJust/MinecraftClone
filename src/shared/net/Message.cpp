@@ -1,5 +1,8 @@
 #include <shared/net/Message.hpp>
 
+#include <shared/world/SparseWorld.hpp>
+
+#include <algorithm>
 #include <type_traits>
 #include <utility>
 
@@ -11,11 +14,14 @@ enum class MessageType : uint8_t {
     JoinRequest,
     JoinResponse,
     ClientInput,
+    ClientHeightTileCredit,
     ServerPlayerPosition,
     ServerRemovePlayer,
-    ServerPreviewDescriptor,
+    ServerHeightTileDescriptor,
     ServerWorldRevision,
-    ServerChunkPreview,
+    ServerHeightTile,
+    ServerRemoveHeightTile,
+    ServerHeightTileBatch,
 };
 
 [[nodiscard]]
@@ -61,15 +67,23 @@ void appendInt32(std::vector<uint8_t>& bytes, int32_t const value)
     appendUint32(bytes, static_cast<uint32_t>(value));
 }
 
-[[nodiscard]]
-uint64_t previewDigest(std::span<uint8_t const> const bytes) noexcept
+void appendHeightTile(std::vector<uint8_t>& bytes, ServerHeightTileMessage const& message)
 {
-    uint64_t hash = 14'695'981'039'346'656'037ULL;
-    for (uint8_t const byte : bytes) {
-        hash ^= byte;
-        hash *= 1'099'511'628'211ULL;
+    appendInt32(bytes, message.key.x);
+    appendInt32(bytes, message.key.y);
+    appendUint64(bytes, message.revision);
+    appendUint64(bytes, message.token);
+    for (uint16_t const height : message.heights) {
+        appendUint16(bytes, height);
     }
-    return hash;
+}
+
+void appendHeightTileRemoval(std::vector<uint8_t>& bytes, ServerRemoveHeightTileMessage const& message)
+{
+    appendInt32(bytes, message.key.x);
+    appendInt32(bytes, message.key.y);
+    appendUint64(bytes, message.revision);
+    appendUint64(bytes, message.token);
 }
 
 struct MessageEncoder final {
@@ -107,12 +121,24 @@ struct MessageEncoder final {
 
     std::vector<uint8_t> operator()(ClientInputMessage const& message)
     {
-        begin(MessageType::ClientInput, 8U);
+        begin(MessageType::ClientInput, 12U);
         bytes.push_back(message.direction.x);
         bytes.push_back(message.direction.y);
         bytes.push_back(message.direction.z);
         bytes.push_back(static_cast<uint8_t>(message.direction.accelerated));
+        appendUint16(bytes, message.direction.speedup);
+        bytes.push_back(static_cast<uint8_t>(message.direction.view_x));
+        bytes.push_back(static_cast<uint8_t>(message.direction.view_y));
         appendUint32(bytes, message.sequence);
+        return std::move(bytes);
+    }
+
+    std::vector<uint8_t> operator()(ClientHeightTileCreditMessage const& message)
+    {
+        begin(MessageType::ClientHeightTileCredit, 17U);
+        appendUint64(bytes, message.world_revision);
+        appendUint64(bytes, message.delivery_token);
+        bytes.push_back(message.credits);
         return std::move(bytes);
     }
 
@@ -138,9 +164,9 @@ struct MessageEncoder final {
         return std::move(bytes);
     }
 
-    std::vector<uint8_t> operator()(ServerPreviewDescriptorMessage const& message)
+    std::vector<uint8_t> operator()(ServerHeightTileDescriptorMessage const& message)
     {
-        begin(MessageType::ServerPreviewDescriptor, 39U);
+        begin(MessageType::ServerHeightTileDescriptor, 39U);
         appendUint32(bytes, message.configuration.algorithm_version);
         appendUint64(bytes, message.configuration.seed);
         bytes.push_back(message.configuration.chunk_width);
@@ -148,8 +174,8 @@ struct MessageEncoder final {
         bytes.push_back(message.configuration.chunk_depth);
         appendUint64(bytes, message.configuration.chunk_content_digest);
         appendUint64(bytes, message.world_revision);
-        appendUint32(bytes, message.max_preview_chunks);
-        appendUint32(bytes, message.max_preview_bytes);
+        appendUint32(bytes, message.max_height_tiles);
+        appendUint32(bytes, message.max_height_tile_bytes);
         return std::move(bytes);
     }
 
@@ -160,19 +186,37 @@ struct MessageEncoder final {
         return std::move(bytes);
     }
 
-    std::vector<uint8_t> operator()(ServerChunkPreviewMessage const& message)
+    std::vector<uint8_t> operator()(ServerHeightTileMessage const& message)
     {
-        uint32_t const length = static_cast<uint32_t>(message.bytes.size());
-        begin(MessageType::ServerChunkPreview, 41U + length);
-        appendInt32(bytes, message.key.x);
-        appendInt32(bytes, message.key.y);
-        appendInt32(bytes, message.key.z);
-        appendUint64(bytes, message.revision);
-        appendUint64(bytes, message.token);
-        bytes.push_back(static_cast<uint8_t>(message.level));
-        appendUint32(bytes, length);
-        appendUint64(bytes, message.digest == 0U ? previewDigest(message.bytes) : message.digest);
-        bytes.insert(bytes.end(), message.bytes.begin(), message.bytes.end());
+        begin(MessageType::ServerHeightTile, 24U + HEIGHT_TILE_PAYLOAD_BYTES);
+        appendHeightTile(bytes, message);
+        return std::move(bytes);
+    }
+
+    std::vector<uint8_t> operator()(ServerHeightTileBatchMessage const& message)
+    {
+        uint64_t const tile_bytes = 24U + HEIGHT_TILE_PAYLOAD_BYTES;
+        uint64_t constexpr removal_bytes = 24U;
+        begin(
+            MessageType::ServerHeightTileBatch,
+            10U + tile_bytes * message.tiles.size() + removal_bytes * message.removals.size()
+        );
+        appendUint64(bytes, message.delivery_token);
+        bytes.push_back(static_cast<uint8_t>(message.tiles.size()));
+        bytes.push_back(static_cast<uint8_t>(message.removals.size()));
+        for (ServerHeightTileMessage const& tile : message.tiles) {
+            appendHeightTile(bytes, tile);
+        }
+        for (ServerRemoveHeightTileMessage const& removal : message.removals) {
+            appendHeightTileRemoval(bytes, removal);
+        }
+        return std::move(bytes);
+    }
+
+    std::vector<uint8_t> operator()(ServerRemoveHeightTileMessage const& message)
+    {
+        begin(MessageType::ServerRemoveHeightTile, 24U);
+        appendHeightTileRemoval(bytes, message);
         return std::move(bytes);
     }
 };
@@ -242,8 +286,8 @@ public:
         return static_cast<int32_t>(*value);
     }
 
-    [[nodiscard]]
-    bool atEnd() const noexcept
+[[nodiscard]]
+bool atEnd() const noexcept
     {
         return m_position == static_cast<uint64_t>(m_data.size());
     }
@@ -251,6 +295,32 @@ private:
     std::span<uint8_t const> m_data;
     uint64_t m_position = 0;
 };
+
+[[nodiscard]]
+std::optional<ServerHeightTileMessage> readHeightTile(MessageReader& reader) noexcept
+{
+    auto const x = reader.readInt32();
+    auto const y = reader.readInt32();
+    auto const revision = reader.readUint64();
+    auto const token = reader.readUint64();
+    if (!x || !y || !revision || !token) {
+        return std::nullopt;
+    }
+    std::array<uint16_t, HEIGHT_TILE_SAMPLE_COUNT> heights{};
+    for (uint32_t index{ 0U }; index < HEIGHT_TILE_SAMPLE_COUNT; ++index) {
+        auto const height = reader.readUint16();
+        if (!height) {
+            return std::nullopt;
+        }
+        heights[index] = *height;
+    }
+    return ServerHeightTileMessage{
+        .key = { .x = *x, .y = *y },
+        .revision = *revision,
+        .token = *token,
+        .heights = heights,
+    };
+}
 
 [[nodiscard]]
 std::optional<WorldConfiguration> readConfiguration(MessageReader& reader) noexcept
@@ -275,6 +345,16 @@ std::optional<WorldConfiguration> readConfiguration(MessageReader& reader) noexc
 }
 
 [[nodiscard]]
+bool isValidHeightTile(ServerHeightTileMessage const& message) noexcept
+{
+    return message.key == normalizeHeightTileKey(message.key)
+        && message.revision != 0U && message.token != 0U
+        && std::ranges::all_of(message.heights, [](uint16_t const height) {
+            return height <= WorldExtent::DEPTH;
+        });
+}
+
+[[nodiscard]]
 bool isValidMessage(Message const& message) noexcept
 {
     return std::visit([](auto const& value) {
@@ -286,7 +366,12 @@ bool isValidMessage(Message const& message) noexcept
             return true;
         } else if constexpr (std::is_same_v<Value, ClientInputMessage>) {
             return isValidDirection(value.direction.x) && isValidDirection(value.direction.y)
-                && isValidDirection(value.direction.z);
+                && isValidDirection(value.direction.z)
+                && isValidDirection(static_cast<uint8_t>(value.direction.view_x))
+                && isValidDirection(static_cast<uint8_t>(value.direction.view_y));
+        } else if constexpr (std::is_same_v<Value, ClientHeightTileCreditMessage>) {
+            return value.world_revision != 0U && value.credits > 0U
+                && value.credits <= HEIGHT_TILE_DELIVERY_WINDOW;
         } else if constexpr (std::is_same_v<Value, ServerPlayerPositionMessage>) {
             return isValidCharacter(value.ch) && World::isFlightPositionInBounds(PlayerPosition{
                 .x = value.x,
@@ -298,23 +383,29 @@ bool isValidMessage(Message const& message) noexcept
             });
         } else if constexpr (std::is_same_v<Value, ServerRemovePlayerMessage>) {
             return isValidCharacter(value.ch);
-        } else if constexpr (std::is_same_v<Value, ServerPreviewDescriptorMessage>) {
+        } else if constexpr (std::is_same_v<Value, ServerHeightTileDescriptorMessage>) {
             return isValidWorldConfiguration(value.configuration)
                 && value.world_revision != 0U
-                && value.max_preview_chunks != 0U
-                && value.max_preview_bytes != 0U
-                && value.max_preview_bytes <= PREVIEW_MAX_PAYLOAD_BYTES;
+                && value.max_height_tiles == HEIGHT_TILE_INTEREST_COUNT
+                && value.max_height_tile_bytes == HEIGHT_TILE_PAYLOAD_BYTES;
         } else if constexpr (std::is_same_v<Value, ServerWorldRevisionMessage>) {
             return value.world_revision != 0U;
+        } else if constexpr (std::is_same_v<Value, ServerHeightTileMessage>) {
+            return isValidHeightTile(value);
+        } else if constexpr (std::is_same_v<Value, ServerHeightTileBatchMessage>) {
+            return value.delivery_token != 0U
+                && (!value.tiles.empty() || !value.removals.empty())
+                && value.tiles.size() + value.removals.size() <= HEIGHT_TILE_BATCH_CAPACITY
+                && std::ranges::all_of(value.tiles, [](ServerHeightTileMessage const& tile) {
+                    return isValidHeightTile(tile);
+                })
+                && std::ranges::all_of(value.removals, [](ServerRemoveHeightTileMessage const& removal) {
+                    return removal.key == normalizeHeightTileKey(removal.key)
+                        && removal.revision != 0U && removal.token != 0U;
+                });
         } else {
-            return value.key == normalizePreviewChunkKey(value.key)
-                && value.key.z >= 0 && value.key.z < 64
-                && value.revision != 0U && value.token != 0U
-                && (value.level == PreviewLevel::Coarse || value.level == PreviewLevel::Final)
-                && value.length == value.bytes.size()
-                && value.length != 0U
-                && value.length <= PREVIEW_MAX_PAYLOAD_BYTES
-                && value.digest == previewDigest(value.bytes);
+            return value.key == normalizeHeightTileKey(value.key)
+                && value.revision != 0U && value.token != 0U;
         }
     }, message);
 }
@@ -366,16 +457,36 @@ std::optional<Message> decodeMessage(std::span<uint8_t const> const data)
             auto const y = reader.readUint8();
             auto const z = reader.readUint8();
             auto const accelerated = reader.readUint8();
+            auto const speedup = reader.readUint16();
+            auto const view_x = reader.readUint8();
+            auto const view_y = reader.readUint8();
             auto const sequence = reader.readUint32();
-            if (x && y && z && accelerated && *accelerated <= 1U && sequence) {
+            if (x && y && z && accelerated && *accelerated <= 1U && speedup
+                && isFlightSpeedupProfile(*speedup) && view_x && view_y && sequence) {
                 message = ClientInputMessage{
                     .direction = {
                         .x = *x,
                         .y = *y,
                         .z = *z,
                         .accelerated = *accelerated == 1U,
+                        .speedup = *speedup,
+                        .view_x = static_cast<int8_t>(*view_x),
+                        .view_y = static_cast<int8_t>(*view_y),
                     },
                     .sequence = *sequence,
+                };
+            }
+            break;
+        }
+        case MessageType::ClientHeightTileCredit: {
+            auto const world_revision = reader.readUint64();
+            auto const delivery_token = reader.readUint64();
+            auto const credits = reader.readUint8();
+            if (world_revision && credits) {
+                message = ClientHeightTileCreditMessage{
+                    .world_revision = *world_revision,
+                    .delivery_token = *delivery_token,
+                    .credits = *credits,
                 };
             }
             break;
@@ -413,17 +524,17 @@ std::optional<Message> decodeMessage(std::span<uint8_t const> const data)
             }
             break;
         }
-        case MessageType::ServerPreviewDescriptor: {
+        case MessageType::ServerHeightTileDescriptor: {
             auto const configuration = readConfiguration(reader);
             auto const world_revision = reader.readUint64();
-            auto const max_preview_chunks = reader.readUint32();
-            auto const max_preview_bytes = reader.readUint32();
-            if (configuration && world_revision && max_preview_chunks && max_preview_bytes) {
-                message = ServerPreviewDescriptorMessage{
+            auto const max_height_tiles = reader.readUint32();
+            auto const max_height_tile_bytes = reader.readUint32();
+            if (configuration && world_revision && max_height_tiles && max_height_tile_bytes) {
+                message = ServerHeightTileDescriptorMessage{
                     .configuration = *configuration,
                     .world_revision = *world_revision,
-                    .max_preview_chunks = *max_preview_chunks,
-                    .max_preview_bytes = *max_preview_bytes,
+                    .max_height_tiles = *max_height_tiles,
+                    .max_height_tile_bytes = *max_height_tile_bytes,
                 };
             }
             break;
@@ -434,39 +545,65 @@ std::optional<Message> decodeMessage(std::span<uint8_t const> const data)
             }
             break;
         }
-        case MessageType::ServerChunkPreview: {
-            auto const x = reader.readInt32();
-            auto const y = reader.readInt32();
-            auto const z = reader.readInt32();
-            auto const revision = reader.readUint64();
-            auto const token = reader.readUint64();
-            auto const level = reader.readUint8();
-            auto const length = reader.readUint32();
-            auto const digest = reader.readUint64();
-            if (!x || !y || !z || !revision || !token || !level || !length || !digest
-                || *length > PREVIEW_MAX_PAYLOAD_BYTES
-                || static_cast<uint64_t>(*length) > data.size()) {
+        case MessageType::ServerHeightTile: {
+            if (auto const tile = readHeightTile(reader)) {
+                message = *tile;
+            }
+            break;
+        }
+        case MessageType::ServerHeightTileBatch: {
+            auto const delivery_token = reader.readUint64();
+            auto const tile_count = reader.readUint8();
+            auto const removal_count = reader.readUint8();
+            if (!delivery_token || !tile_count || !removal_count
+                || (*tile_count == 0U && *removal_count == 0U)
+                || *tile_count + *removal_count > HEIGHT_TILE_BATCH_CAPACITY) {
                 break;
             }
-            std::vector<uint8_t> bytes;
-            bytes.reserve(*length);
-            for (uint32_t index{ 0 }; index < *length; ++index) {
-                auto const byte = reader.readUint8();
-                if (!byte) {
-                    bytes.clear();
+            std::vector<ServerHeightTileMessage> tiles;
+            tiles.reserve(*tile_count);
+            for (uint8_t index = 0U; index < *tile_count; ++index) {
+                auto const tile = readHeightTile(reader);
+                if (!tile) {
                     break;
                 }
-                bytes.push_back(*byte);
+                tiles.push_back(*tile);
             }
-            if (bytes.size() == *length) {
-                message = ServerChunkPreviewMessage{
-                    .key = { .x = *x, .y = *y, .z = *z },
+            std::vector<ServerRemoveHeightTileMessage> removals;
+            removals.reserve(*removal_count);
+            for (uint8_t index = 0U; tiles.size() == *tile_count && index < *removal_count; ++index) {
+                auto const x = reader.readInt32();
+                auto const y = reader.readInt32();
+                auto const revision = reader.readUint64();
+                auto const token = reader.readUint64();
+                if (!x || !y || !revision || !token) {
+                    break;
+                }
+                removals.push_back({
+                    .key = {.x = *x, .y = *y},
                     .revision = *revision,
                     .token = *token,
-                    .level = static_cast<PreviewLevel>(*level),
-                    .length = *length,
-                    .digest = *digest,
-                    .bytes = std::move(bytes),
+                });
+            }
+            if (tiles.size() == *tile_count && removals.size() == *removal_count) {
+                message = ServerHeightTileBatchMessage{
+                    .delivery_token = *delivery_token,
+                    .tiles = std::move(tiles),
+                    .removals = std::move(removals),
+                };
+            }
+            break;
+        }
+        case MessageType::ServerRemoveHeightTile: {
+            auto const x = reader.readInt32();
+            auto const y = reader.readInt32();
+            auto const revision = reader.readUint64();
+            auto const token = reader.readUint64();
+            if (x && y && revision && token) {
+                message = ServerRemoveHeightTileMessage{
+                    .key = { .x = *x, .y = *y },
+                    .revision = *revision,
+                    .token = *token,
                 };
             }
             break;

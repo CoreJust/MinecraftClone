@@ -45,7 +45,7 @@ only.
 [`AndroidShaderAssets`](../../src/android/AndroidShaderAssets.hpp) reads
 bare `.spv` names from the APK asset manager under `shaders/`, validates their
 SPIR-V word alignment and magic, and returns the portable renderer input. The
-Gradle source set stages all five selected vertex/fragment shader sources,
-including `debug_hud.vert` and `debug_hud.frag`, so the APK contains their
+Gradle source set stages the scene and text shaders, including `text.vert`
+and `text.frag`, so the APK contains their
 compiled `shaders/*.spv` assets; see the Android section of [the build
 guide](../BUILD.md) for packaging and environment requirements.

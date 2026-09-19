@@ -58,3 +58,22 @@ The visible runtime overview is shown above:
 a seed-42 air-and-stone flight scene rendered with the original mottled
 16-pixel stone texture. Actual GPU-rendered gameplay scene captured with the
 fixed acceptance camera.
+
+## EarlyDev 0.1.0:6(26.09.19)
+
+S6 replaces the fixed preview with the mature sparse-world generation, streaming, and rendering foundation.
+
+![Textured fading-wave ridge with the semantic HUD](images/earlydev-0.1.0-6-wave-ridge.png)
+
+![Streamed terrain horizon after camera rotation](images/earlydev-0.1.0-6-streamed-horizon.png)
+
+These are actual 2560x1440 macOS gameplay captures from the owner-accepted release candidate. The first shows detailed textured blocks and the semantic HUD near a wave ridge. The second shows camera-independent terrain residency after rotation toward the distant generated horizon.
+
+Additions:
+1. A sparse 65,536 by 65,536 by 1,024 air-and-stone world with horizontal wrapping, bounded resident state, and explicit vertical boundaries.
+2. CoreLang 0.1.2 height-map configuration for a six-block base and fading concentric waves, with native block materialization and a central peak reaching 806 blocks.
+3. Server-authoritative asynchronous terrain streaming with fixed near priority bands, a movement/view-oriented generation ellipse, rate-limited background fill, and a camera-independent 45-chunk residency circle.
+4. Neighbor-aware detailed chunk meshes, incremental Vulkan uploads and frustum culling, textured stone, distance fog, and a gradient sky.
+5. Continuous flight with toggle acceleration and 2x, 3x, 5x, 8x, 15x, 30x, 80x, 200x, and 500x profiles.
+6. A reusable colored text renderer with separate GUI and world-text stages; the HUD reports readable coordinates, rotation, frame timing, uptime, and acceleration state.
+7. Automated boundary, seam, scheduling, transport, sustained-flight, GPU capture, and 120 Hz renderer benchmark coverage.

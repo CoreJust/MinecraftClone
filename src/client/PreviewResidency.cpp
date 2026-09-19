@@ -1,314 +1,186 @@
 #include <client/PreviewResidency.hpp>
 
 #include <algorithm>
+#include <utility>
 
 namespace client {
 
-namespace {
-
-[[nodiscard]] bool present(PreviewHandle const& handle) noexcept
-{
-    return static_cast<bool>(handle);
-}
-
-[[nodiscard]] bool before(PreviewChunkKey const left, PreviewChunkKey const right) noexcept
-{
-    if (left.x != right.x) {
-        return left.x < right.x;
-    }
-    if (left.y != right.y) {
-        return left.y < right.y;
-    }
-    return left.z < right.z;
-}
-
-} // namespace
-
-void PreviewResidency::advanceRevision(const PreviewRevision revision) noexcept
+void PreviewResidency::advanceRevision(HeightTileRevision const revision)
 {
     if (revision == m_revision) {
         return;
     }
+    for (auto const& [key, resident] : m_residents) {
+        static_cast<void>(resident);
+        markChanged(key, HeightTileChangeKind::Remove);
+    }
     m_revision = revision;
-    ++m_change_serial;
-    m_pending.clear();
     m_residents.clear();
-    m_resident_bytes = 0;
-    m_pending_upload_bytes = 0;
+    m_tokens.clear();
+    m_resident_order.clear();
+    m_token_order.clear();
+    m_resident_bytes = 0U;
 }
 
-PreviewRequestResult PreviewResidency::request(
-    const PreviewChunkKey key,
-    const PreviewLevel level,
-    const PreviewRevision revision
+HeightTileReplacementResult PreviewResidency::accept(
+    HeightTileKey const key,
+    HeightTileRevision const revision,
+    uint64_t const token,
+    std::array<uint16_t, shared::HEIGHT_TILE_SAMPLE_COUNT> heights
 )
 {
-    if (revision != m_revision) {
-        return { .admission = PreviewRequestAdmission::StaleRevision };
+    if (revision != m_revision || token == 0U || token <= knownToken(key)) {
+        return { .replacement = HeightTileReplacement::Stale };
     }
-    std::erase_if(m_pending, [key, level](Pending const& pending) {
-        return pending.request.key() == key && pending.request.level() == level;
-    });
-    if (m_pending.size() >= m_limits.max_pending_requests) {
-        return { .admission = PreviewRequestAdmission::Saturated };
+    auto existing = m_residents.find(key);
+    if (existing == m_residents.end() && !makeRoom(key)) {
+        return { .replacement = HeightTileReplacement::BudgetExceeded };
     }
-    PreviewRequest value{ m_next_token++, key, revision, level };
-    m_pending.push_back(Pending{ .request = value });
-    return { .admission = PreviewRequestAdmission::Accepted, .request = std::move(value) };
+
+    HeightTileHandle const tile{ new HeightTile{ key, revision, token, std::move(heights) } };
+    uint64_t const touch = m_touch++;
+    if (existing == m_residents.end()) {
+        m_residents.emplace(key, Resident{ .tile = tile, .touch = touch });
+        m_resident_bytes += HeightTile::byteSize();
+    } else {
+        existing->second = Resident{ .tile = tile, .touch = touch };
+    }
+    m_resident_order.emplace_back(key, touch);
+    recordToken(key, token);
+    markChanged(key, HeightTileChangeKind::Upsert);
+    return { .replacement = HeightTileReplacement::Published, .handle = tile };
 }
 
-void PreviewResidency::cancel(PreviewRequest const& request) noexcept
+bool PreviewResidency::evict(
+    HeightTileKey const key,
+    HeightTileRevision const revision,
+    uint64_t const token
+)
 {
-    for (Pending& pending : m_pending) {
-        if (pending.request.m_token == request.m_token) {
-            pending.cancelled = true;
+    if (revision != m_revision || token == 0U || token < knownToken(key)) {
+        return false;
+    }
+    recordToken(key, token);
+    auto const resident = m_residents.find(key);
+    if (resident == m_residents.end()) {
+        return false;
+    }
+    m_residents.erase(resident);
+    m_resident_bytes -= HeightTile::byteSize();
+    markChanged(key, HeightTileChangeKind::Remove);
+    return true;
+}
+
+HeightTileHandle PreviewResidency::resident(HeightTileKey const key) const noexcept
+{
+    auto const found = m_residents.find(key);
+    return found == m_residents.end() ? nullptr : found->second.tile;
+}
+
+uint32_t PreviewResidency::pendingChangeCount() const noexcept
+{
+    return static_cast<uint32_t>(m_change_order.size());
+}
+
+std::vector<HeightTileChange> PreviewResidency::takeChanges(uint32_t const maximum_changes)
+{
+    uint32_t const count = std::min<uint32_t>(maximum_changes, static_cast<uint32_t>(m_change_order.size()));
+    std::vector<HeightTileChange> result;
+    result.reserve(count);
+    for (uint32_t index = 0U; index < count; ++index) {
+        HeightTileKey const key = m_change_order.front();
+        m_change_order.pop_front();
+        auto const change = m_changes.find(key);
+        result.push_back({.key = key, .kind = change->second});
+        m_changes.erase(change);
+    }
+    return result;
+}
+
+PreviewResidencyStats PreviewResidency::stats() const noexcept
+{
+    return {
+        .resident_tiles = static_cast<uint32_t>(m_residents.size()),
+        .resident_bytes = m_resident_bytes,
+        .eviction_count = m_eviction_count,
+    };
+}
+
+uint64_t PreviewResidency::HeightTileKeyHash::operator()(HeightTileKey const key) const noexcept
+{
+    uint64_t const x = static_cast<uint32_t>(key.x);
+    uint64_t const y = static_cast<uint32_t>(key.y);
+    return x << 32U | y;
+}
+
+uint64_t PreviewResidency::knownToken(HeightTileKey const key) const noexcept
+{
+    auto const found = m_tokens.find(key);
+    return found == m_tokens.end() ? 0U : found->second;
+}
+
+void PreviewResidency::recordToken(HeightTileKey const key, uint64_t const token)
+{
+    m_tokens.insert_or_assign(key, token);
+    m_token_order.emplace_back(key, token);
+    uint64_t const maximum_tokens = static_cast<uint64_t>(m_limits.max_resident_tiles)
+        + PreviewResidencyLimits::HYSTERESIS_TILES;
+    while (static_cast<uint64_t>(m_tokens.size()) > maximum_tokens) {
+        while (!m_token_order.empty()) {
+            auto const [candidate_key, candidate_token] = m_token_order.front();
+            auto const candidate = m_tokens.find(candidate_key);
+            if (candidate != m_tokens.end() && candidate->second == candidate_token
+                && !m_residents.contains(candidate_key)) {
+                m_tokens.erase(candidate);
+                m_token_order.pop_front();
+                break;
+            }
+            m_token_order.pop_front();
+        }
+        if (m_token_order.empty() && static_cast<uint64_t>(m_tokens.size()) > maximum_tokens) {
             return;
         }
     }
 }
 
-PreviewReplacementResult PreviewResidency::replace(
-    PreviewRequest const& request,
-    std::vector<uint8_t> bytes
-)
+void PreviewResidency::markChanged(HeightTileKey const key, HeightTileChangeKind const kind)
 {
-    auto const pending = std::find_if(m_pending.begin(), m_pending.end(), [&request](Pending const& value) {
-        return value.request.m_token == request.m_token;
-    });
-    if (pending == m_pending.end() || request.revision() != m_revision) {
-        return { .replacement = PreviewReplacement::Stale };
-    }
-    if (pending->cancelled) {
-        m_pending.erase(pending);
-        return { .replacement = PreviewReplacement::Cancelled };
-    }
-    PreviewReplacementResult result = accept(
-        request.key(), request.revision(), request.level(), request.m_token, std::move(bytes)
-    );
-    if (result.replacement != PreviewReplacement::Published) {
-        m_pending.erase(pending);
+    auto const found = m_changes.find(key);
+    if (found == m_changes.end()) {
+        m_changes.emplace(key, kind);
+        m_change_order.push_back(key);
     } else {
-        m_pending.erase(pending);
+        found->second = kind;
     }
-    return result;
 }
 
-PreviewReplacementResult PreviewResidency::accept(
-    const PreviewChunkKey key,
-    const PreviewRevision revision,
-    const PreviewLevel level,
-    const uint64_t token,
-    std::vector<uint8_t> bytes
-)
+bool PreviewResidency::makeRoom(HeightTileKey const protected_key)
 {
-    if (revision != m_revision || token == 0U || bytes.empty()
-        || bytes.size() > shared::PREVIEW_MAX_PAYLOAD_BYTES) {
-        return { .replacement = PreviewReplacement::Stale };
-    }
-    Resident* chunk = resident(key);
-    uint64_t* previous_token = chunk == nullptr
-        ? nullptr
-        : (level == PreviewLevel::Coarse ? &chunk->coarse_token : &chunk->final_token);
-    if (previous_token != nullptr && token <= *previous_token) {
-        return { .replacement = PreviewReplacement::Stale };
-    }
-    if (level == PreviewLevel::Coarse && chunk != nullptr && present(chunk->final)) {
-        return { .replacement = PreviewReplacement::Superseded };
-    }
-    uint64_t const size = bytes.size();
-    PreviewHandle old = chunk == nullptr ? nullptr : (level == PreviewLevel::Coarse
-        ? chunk->coarse : chunk->final);
-    uint64_t const old_size = old == nullptr ? 0U : old->byteSize();
-    if (old != nullptr) {
-        m_resident_bytes -= old_size;
-        bool const pending = level == PreviewLevel::Coarse ? chunk->coarse_pending : chunk->final_pending;
-        if (pending) {
-            m_pending_upload_bytes -= old_size;
-        }
-    }
-    if (size > m_limits.max_resident_bytes
-        || size > m_limits.max_pending_upload_bytes
-        || m_pending_upload_bytes > m_limits.max_pending_upload_bytes - size
-        || !makeRoom(key, size)) {
-        m_resident_bytes += old_size;
-        if (old != nullptr) {
-            bool const pending = level == PreviewLevel::Coarse ? chunk->coarse_pending : chunk->final_pending;
-            if (pending) {
-                m_pending_upload_bytes += old_size;
-            }
-        }
-        return { .replacement = PreviewReplacement::BudgetExceeded };
-    }
-    if (chunk == nullptr) {
-        m_residents.push_back(Resident{ .key = key });
-        chunk = &m_residents.back();
-    }
-    PreviewHandle handle{ new PreviewMesh{ key, revision, level, std::move(bytes) } };
-    if (level == PreviewLevel::Coarse) {
-        chunk->coarse = handle;
-        chunk->coarse_token = token;
-        chunk->coarse_pending = true;
-    } else {
-        chunk->final = handle;
-        chunk->final_token = token;
-        chunk->final_pending = true;
-    }
-    ++m_change_serial;
-    chunk->touch = m_touch++;
-    m_resident_bytes += size;
-    m_pending_upload_bytes += size;
-    return { .replacement = PreviewReplacement::Published, .handle = std::move(handle) };
-}
-
-bool PreviewResidency::markUploaded(PreviewHandle const& handle) noexcept
-{
-    if (handle == nullptr || handle->revision() != m_revision) {
+    if (HeightTile::byteSize() > m_limits.max_resident_bytes) {
         return false;
     }
-    Resident* const chunk = resident(handle->key());
-    if (chunk == nullptr) {
-        return false;
-    }
-    bool* pending = handle->level() == PreviewLevel::Coarse ? &chunk->coarse_pending : &chunk->final_pending;
-    PreviewHandle const& stored = handle->level() == PreviewLevel::Coarse ? chunk->coarse : chunk->final;
-    if (stored.get() != handle.get() || !*pending) {
-        return false;
-    }
-    *pending = false;
-    m_pending_upload_bytes -= handle->byteSize();
-    m_uploaded_bytes += handle->byteSize();
-    return true;
-}
-
-bool PreviewResidency::evict(const PreviewChunkKey key) noexcept
-{
-    Resident* const chunk = resident(key);
-    if (chunk == nullptr || (!present(chunk->coarse) && !present(chunk->final))) {
-        return false;
-    }
-    remove(*chunk);
-    ++m_eviction_count;
-    ++m_change_serial;
-    return true;
-}
-
-PreviewSelection PreviewResidency::select(
-    const PreviewChunkKey key,
-    const PreviewLevel requested_level,
-    const PreviewRevision revision
-) const noexcept
-{
-    if (revision != m_revision) {
-        return { .kind = PreviewSelectionKind::Fallback };
-    }
-    Resident const* const chunk = resident(key);
-    if (chunk == nullptr) {
-        return { .kind = PreviewSelectionKind::Fallback };
-    }
-    if (requested_level == PreviewLevel::Final && present(chunk->final)) {
-        return { .kind = PreviewSelectionKind::Final, .handle = chunk->final };
-    }
-    if (present(chunk->coarse)) {
-        return { .kind = PreviewSelectionKind::Coarse, .handle = chunk->coarse };
-    }
-    return { .kind = PreviewSelectionKind::Fallback };
-}
-
-PreviewResidencyStats PreviewResidency::stats() const noexcept
-{
-    PreviewResidencyStats result{
-        .resident_bytes = m_resident_bytes,
-        .pending_upload_bytes = m_pending_upload_bytes,
-        .uploaded_bytes = m_uploaded_bytes,
-        .eviction_count = m_eviction_count,
-    };
-    result.pending_requests = static_cast<uint32_t>(m_pending.size());
-    for (Resident const& chunk : m_residents) {
-        bool const coarse = present(chunk.coarse);
-        bool const final = present(chunk.final);
-        result.resident_chunks += static_cast<uint32_t>(coarse || final);
-        result.resident_meshes += static_cast<uint32_t>(coarse) + static_cast<uint32_t>(final);
-    }
-    return result;
-}
-
-std::vector<PreviewHandle> PreviewResidency::handles() const
-{
-    std::vector<PreviewHandle> result;
-    result.reserve(m_residents.size());
-    for (Resident const& resident : m_residents) {
-        PreviewHandle const& handle = resident.final ? resident.final : resident.coarse;
-        if (handle) {
-            result.push_back(handle);
-        }
-    }
-    return result;
-}
-
-PreviewResidency::Resident* PreviewResidency::resident(const PreviewChunkKey key) noexcept
-{
-    auto const found = std::find_if(m_residents.begin(), m_residents.end(), [key](Resident const& item) {
-        return item.key == key;
-    });
-    return found == m_residents.end() ? nullptr : &*found;
-}
-
-PreviewResidency::Resident const* PreviewResidency::resident(const PreviewChunkKey key) const noexcept
-{
-    auto const found = std::find_if(m_residents.cbegin(), m_residents.cend(), [key](Resident const& item) {
-        return item.key == key;
-    });
-    return found == m_residents.cend() ? nullptr : &*found;
-}
-
-void PreviewResidency::remove(Resident& value) noexcept
-{
-    for (PreviewHandle const& handle : { value.coarse, value.final }) {
-        if (handle != nullptr) {
-            m_resident_bytes -= handle->byteSize();
-        }
-    }
-    if (value.coarse_pending) {
-        m_pending_upload_bytes -= value.coarse->byteSize();
-    }
-    if (value.final_pending) {
-        m_pending_upload_bytes -= value.final->byteSize();
-    }
-    auto const found = std::find_if(m_residents.begin(), m_residents.end(), [&value](Resident const& item) {
-        return &item == &value;
-    });
-    if (found != m_residents.end()) {
-        m_residents.erase(found);
-    }
-}
-
-bool PreviewResidency::makeRoom(const PreviewChunkKey protected_key, const uint64_t bytes) noexcept
-{
-    auto count = [this]() {
-        uint32_t result = 0;
-        for (Resident const& chunk : m_residents) {
-            result += static_cast<uint32_t>(present(chunk.coarse) || present(chunk.final));
-        }
-        return result;
-    };
-    while (m_resident_bytes > m_limits.max_resident_bytes
-        || bytes > m_limits.max_resident_bytes - std::min(m_resident_bytes, m_limits.max_resident_bytes)
-        || (resident(protected_key) == nullptr && count() >= m_limits.max_resident_chunks)) {
+    while (m_residents.size() >= m_limits.max_resident_tiles
+        || m_resident_bytes > m_limits.max_resident_bytes - HeightTile::byteSize()) {
         auto victim = m_residents.end();
-        for (auto candidate = m_residents.begin(); candidate != m_residents.end(); ++candidate) {
-            if (candidate->key == protected_key || (!present(candidate->coarse) && !present(candidate->final))) {
-                continue;
-            }
-            if (victim == m_residents.end() || candidate->touch < victim->touch
-                || (candidate->touch == victim->touch && before(candidate->key, victim->key))) {
+        while (!m_resident_order.empty()) {
+            auto const [candidate_key, candidate_touch] = m_resident_order.front();
+            m_resident_order.pop_front();
+            auto const candidate = m_residents.find(candidate_key);
+            if (candidate != m_residents.end() && candidate->second.touch == candidate_touch
+                && candidate_key != protected_key) {
                 victim = candidate;
+                break;
             }
         }
         if (victim == m_residents.end()) {
             return false;
         }
-        remove(*victim);
+        HeightTileKey const key = victim->first;
+        recordToken(key, victim->second.tile->token());
+        m_residents.erase(victim);
+        m_resident_bytes -= HeightTile::byteSize();
         ++m_eviction_count;
+        markChanged(key, HeightTileChangeKind::Remove);
     }
     return true;
 }

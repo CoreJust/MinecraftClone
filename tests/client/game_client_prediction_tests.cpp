@@ -21,6 +21,9 @@ public:
 
     using GameClient::applyServerPosition;
     using GameClient::applyServerRemoval;
+    using GameClient::applyHeightTile;
+    using GameClient::applyHeightTileBatch;
+    using GameClient::applyHeightTileRemoval;
     using GameClient::discardPredictedInput;
     using GameClient::predictInput;
     using GameClient::predictedLocalPlayer;
@@ -208,6 +211,85 @@ TEST(GameClientPredictionTest, PredictsImmediatelyWithoutMutatingTheAuthoritativ
     EXPECT_EQ(client.predictedLocalPlayer()->x_subcell, shared::MOVEMENT_SUBCELLS_PER_TICK);
 }
 
+TEST(GameClientPredictionTest, HeightTileRemovalRejectsStaleTileAndEvictsTheResidentTile)
+{
+    static constexpr shared::HeightTileKey KEY{ .x = 41, .y = 23 };
+    static constexpr uint64_t INITIAL_TOKEN = 4U;
+    static constexpr uint64_t REMOVAL_TOKEN = 5U;
+    PredictionClient client;
+    shared::ServerHeightTileMessage const tile{
+        .key = KEY,
+        .revision = 1U,
+        .token = INITIAL_TOKEN,
+    };
+
+    ASSERT_TRUE(client.applyHeightTile(tile));
+    ASSERT_NE(client.heightTileResidency().resident(KEY), nullptr);
+    ASSERT_TRUE(client.applyHeightTileRemoval({
+        .key = KEY,
+        .revision = 1U,
+        .token = REMOVAL_TOKEN,
+    }));
+
+    EXPECT_EQ(client.heightTileResidency().resident(KEY), nullptr);
+    EXPECT_FALSE(client.applyHeightTile(tile));
+}
+
+TEST(GameClientPredictionTest, HeightTileBatchDispatchesEveryTile)
+{
+    static constexpr shared::HeightTileKey FIRST_KEY{ .x = 41, .y = 23 };
+    static constexpr shared::HeightTileKey SECOND_KEY{ .x = 42, .y = 23 };
+    PredictionClient client;
+    client.applyHeightTileBatch({
+        .tiles = {
+            {
+                .key = FIRST_KEY,
+                .revision = 1U,
+                .token = 4U,
+            },
+            {
+                .key = SECOND_KEY,
+                .revision = 1U,
+                .token = 5U,
+            },
+        },
+    });
+
+    EXPECT_NE(client.heightTileResidency().resident(FIRST_KEY), nullptr);
+    EXPECT_NE(client.heightTileResidency().resident(SECOND_KEY), nullptr);
+}
+
+TEST(GameClientPredictionTest, HeightTileResidencyEvictsWithinItsBoundedHysteresisBudget)
+{
+    static constexpr client::HeightTileRevision REVISION{ .generation = 1U, .revision = 1U };
+    static constexpr client::PreviewResidencyLimits LIMITS{
+        .max_resident_tiles = 2U,
+        .max_resident_bytes = 2U * shared::HEIGHT_TILE_PAYLOAD_BYTES,
+    };
+    static constexpr shared::HeightTileKey FIRST_KEY{ .x = 1, .y = 1 };
+    static constexpr shared::HeightTileKey SECOND_KEY{ .x = 2, .y = 1 };
+    static constexpr shared::HeightTileKey THIRD_KEY{ .x = 3, .y = 1 };
+    client::PreviewResidency residency{ REVISION, LIMITS };
+
+    ASSERT_EQ(
+        residency.accept(FIRST_KEY, REVISION, 1U, {}).replacement,
+        client::HeightTileReplacement::Published
+    );
+    ASSERT_EQ(
+        residency.accept(SECOND_KEY, REVISION, 2U, {}).replacement,
+        client::HeightTileReplacement::Published
+    );
+    ASSERT_EQ(
+        residency.accept(THIRD_KEY, REVISION, 3U, {}).replacement,
+        client::HeightTileReplacement::Published
+    );
+
+    EXPECT_EQ(residency.stats().resident_tiles, LIMITS.max_resident_tiles);
+    EXPECT_EQ(residency.resident(FIRST_KEY), nullptr);
+    EXPECT_NE(residency.resident(THIRD_KEY), nullptr);
+    EXPECT_FALSE(residency.evict(FIRST_KEY, REVISION, 1U));
+}
+
 TEST(GameClientPredictionTest, FlightPredictionAndAcknowledgementReconcileAllThreeAxes)
 {
     static constexpr shared::Direction ASCEND{ .x = 0U, .y = 0U, .z = 127U };
@@ -341,6 +423,28 @@ TEST(GameClientPredictionTest, PredictedLocalPresentationInterpolatesFrameSample
         { }
     );
     EXPECT_DOUBLE_EQ(frame_camera.position.x, 1.0 + STEP * 0.75);
+}
+
+TEST(GameClientPredictionTest, AuthoritativeWorldWrapKeepsPresentedCameraAtTheSeam)
+{
+    std::chrono::steady_clock::time_point const STARTED_AT{};
+    PredictionClient client{ shared::WorldMode::Flight };
+    client.setLocalCharacter('@');
+    ASSERT_TRUE(client.applyServerPosition(
+        flightPosition('@', 65'535, 20, 12, 9'000U, 0U, 0U, 0U, 1U),
+        STARTED_AT
+    ));
+    ASSERT_TRUE(client.applyServerPosition(
+        flightPosition('@', 0, 20, 12, 1'000U, 0U, 0U, 0U, 2U),
+        STARTED_AT + std::chrono::milliseconds{ 100 }
+    ));
+
+    auto const presented = client.predictedLocalPresentation(STARTED_AT + std::chrono::milliseconds{ 150 });
+    ASSERT_TRUE(presented.has_value());
+    EXPECT_NEAR(presented->x, 0.0, 1e-9);
+    EXPECT_NEAR(client::localPlayerFirstPersonPose(*presented, {}).position.x, 1.0, 1e-9);
+    ASSERT_TRUE(client.predictedLocalPlayer().has_value());
+    EXPECT_EQ(client.predictedLocalPlayer()->x, 0U);
 }
 
 TEST(GameClientPredictionTest, DiscardedAndCollisionRejectedInputsDoNotLeavePhantomPrediction)

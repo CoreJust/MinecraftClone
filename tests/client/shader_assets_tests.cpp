@@ -60,8 +60,8 @@ TEST(ShaderAssetsTest, LoadsEveryCompiledShaderOutsideTheBuildDirectory)
 {
     static constexpr uint32_t SPIRV_MAGIC = 0x0723'0203;
     static constexpr std::array<std::string_view, 5> SHADERS{
-        "debug_hud.frag.spv",
-        "debug_hud.vert.spv",
+        "text.frag.spv",
+        "text.vert.spv",
         "grid.vert.spv",
         "player.vert.spv",
         "trivial.frag.spv",
@@ -92,36 +92,36 @@ TEST(ShaderAssetsTest, CreatesStableDistinctGraphicsProgramsFromInstalledShaders
     client::InstalledShaderAssets const assets;
     auto const grid = std::make_shared<core::kernel::SpirvModule const>(assets.load("grid.vert.spv"));
     auto const player = std::make_shared<core::kernel::SpirvModule const>(assets.load("player.vert.spv"));
-    auto const debug_hud_vertex = std::make_shared<core::kernel::SpirvModule const>(
-        assets.load("debug_hud.vert.spv")
+    auto const text_vertex = std::make_shared<core::kernel::SpirvModule const>(
+        assets.load("text.vert.spv")
     );
     auto const fragment = std::make_shared<core::kernel::SpirvModule const>(assets.load("trivial.frag.spv"));
-    auto const debug_hud_fragment = std::make_shared<core::kernel::SpirvModule const>(
-        assets.load("debug_hud.frag.spv")
+    auto const text_fragment = std::make_shared<core::kernel::SpirvModule const>(
+        assets.load("text.frag.spv")
     );
 
     ASSERT_TRUE(grid->hasEntrypoint(core::kernel::ShaderStage::Vertex, "main"));
     ASSERT_TRUE(player->hasEntrypoint(core::kernel::ShaderStage::Vertex, "main"));
     ASSERT_TRUE(fragment->hasEntrypoint(core::kernel::ShaderStage::Fragment, "main"));
-    ASSERT_TRUE(debug_hud_vertex->hasEntrypoint(core::kernel::ShaderStage::Vertex, "main"));
-    ASSERT_TRUE(debug_hud_fragment->hasEntrypoint(core::kernel::ShaderStage::Fragment, "main"));
+    ASSERT_TRUE(text_vertex->hasEntrypoint(core::kernel::ShaderStage::Vertex, "main"));
+    ASSERT_TRUE(text_fragment->hasEntrypoint(core::kernel::ShaderStage::Fragment, "main"));
     EXPECT_TRUE(grid->bindings().empty());
     EXPECT_TRUE(player->bindings().empty());
     EXPECT_TRUE(fragment->bindings().empty());
-    EXPECT_TRUE(debug_hud_vertex->bindings().empty());
-    EXPECT_TRUE(debug_hud_fragment->bindings().empty());
+    ASSERT_EQ(text_vertex->bindings().size(), 1U);
+    EXPECT_TRUE(text_fragment->bindings().empty());
 
     core::kernel::GraphicsProgram const grid_program = graphicsProgram(grid, fragment);
     core::kernel::GraphicsProgram const repeated_grid_program = graphicsProgram(grid, fragment);
     core::kernel::GraphicsProgram const player_program = graphicsProgram(player, fragment);
-    core::kernel::GraphicsProgram const debug_hud_program = graphicsProgram(
-        debug_hud_vertex,
-        debug_hud_fragment
+    core::kernel::GraphicsProgram const text_program = core::kernel::GraphicsProgram::create(
+        { .module = text_vertex, .entrypoint = "main", .required_bindings = { { .set = 0U, .binding = 0U } } },
+        { .module = text_fragment, .entrypoint = "main", .required_bindings = {} }
     );
 
     EXPECT_EQ(grid_program.fingerprint(), repeated_grid_program.fingerprint());
     EXPECT_NE(grid_program.fingerprint(), player_program.fingerprint());
-    EXPECT_NE(grid_program.fingerprint(), debug_hud_program.fingerprint());
+    EXPECT_NE(grid_program.fingerprint(), text_program.fingerprint());
     EXPECT_EQ(grid_program.vertex().entrypoint, "main");
     EXPECT_EQ(grid_program.fragment().entrypoint, "main");
     EXPECT_TRUE(grid_program.vertex().required_bindings.empty());

@@ -7,6 +7,8 @@ target_sources(mc
         world/ScriptedWorld.cpp
         world/Chunk.cpp
         world/ChunkMesher.cpp
+        world/HeightTileSurfaceMesher.cpp
+        world/HeightTileInterest.cpp
         world/WorldGeneration.cpp
         world/WorldGenerationScheduler.cpp
         world/SparseWorld.cpp

@@ -4,16 +4,20 @@ target_sources(mc
         BASE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}
         FILES
             BotClient.hpp
-            PreviewResidency.hpp
-    Camera.hpp
-    CameraController.hpp
-    render/DepthFormat.hpp
+            Camera.hpp
+            CameraController.hpp
             FrameScheduler.hpp
             GameClient.hpp
             PlayerClient.hpp
             PlayerPresentation.hpp
+            PreviewMeshing.hpp
+            PreviewResidency.hpp
             render/DebugHud.hpp
+            render/DepthFormat.hpp
+            render/GuiRenderer.hpp
             render/InstalledShaderAssets.hpp
             render/ShaderAssets.hpp
+            render/StoneTexture.hpp
+            render/TextRenderer.hpp
             render/VulkanRenderer.hpp
 )

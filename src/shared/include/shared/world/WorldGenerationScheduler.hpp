@@ -4,6 +4,7 @@
 
 #include <cstdint>
 #include <deque>
+#include <functional>
 #include <optional>
 #include <unordered_map>
 
@@ -43,6 +44,7 @@ struct GenerationResult final {
 class WorldGenerationScheduler final {
 public:
     static constexpr uint8_t MAX_RETRIES = 1U;
+    using JobOrder = std::function<bool(GenerationJob const&, GenerationJob const&)>;
 
     explicit WorldGenerationScheduler(uint64_t max_pending_jobs = 32U);
 
@@ -57,6 +59,9 @@ public:
     std::optional<GenerationJob> takeNext() noexcept;
 
     [[nodiscard]]
+    std::optional<GenerationJob> peekNext() const noexcept;
+
+    [[nodiscard]]
     bool complete(GenerationJobId id, bool succeeded, bool cancelled = false) noexcept;
 
     [[nodiscard]]
@@ -64,6 +69,9 @@ public:
 
     [[nodiscard]]
     bool cancel(GenerationJobId id) noexcept;
+    void cancelQueued() noexcept;
+    void cancelQueuedIf(std::function<bool(GenerationJob const&)> const& should_cancel);
+    void reorderQueued(JobOrder const& order);
 
     void invalidateRevision(uint64_t revision) noexcept;
 

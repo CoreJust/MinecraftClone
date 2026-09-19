@@ -6,8 +6,11 @@ from pathlib import Path
 class AndroidShaderAssetTests(unittest.TestCase):
     ROOT = Path(__file__).resolve().parents[2]
     REQUIRED_SOURCES = (
-        "debug_hud.frag",
-        "debug_hud.vert",
+        "text.frag",
+        "text.vert",
+        "stone_solid.frag",
+        "sky.vert",
+        "sky.frag",
         "grid.vert",
         "player.vert",
         "trivial.frag",

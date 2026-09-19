@@ -1,5 +1,7 @@
 #pragma once
 
+#include <client/render/TextRenderer.hpp>
+
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -7,14 +9,23 @@
 
 namespace client {
 
-inline constexpr size_t DEBUG_HUD_MAX_TEXT_BYTES = 116;
-inline constexpr size_t DEBUG_HUD_LINE_COUNT = 4;
-inline constexpr size_t DEBUG_HUD_MAX_LINE_BYTES =
-    (DEBUG_HUD_MAX_TEXT_BYTES - (DEBUG_HUD_LINE_COUNT - 1U)) / DEBUG_HUD_LINE_COUNT;
-inline constexpr size_t DEBUG_HUD_WORDS_PER_LINE =
-    (DEBUG_HUD_MAX_LINE_BYTES + 3) / 4;
-inline constexpr size_t DEBUG_HUD_MAX_INSTANCES =
-    DEBUG_HUD_LINE_COUNT * DEBUG_HUD_WORDS_PER_LINE;
+inline constexpr size_t DEBUG_HUD_LINE_COUNT = 5U;
+inline constexpr std::array<size_t, DEBUG_HUD_LINE_COUNT> DEBUG_HUD_LINE_BYTES{
+    32U,
+    32U,
+    32U,
+    64U,
+    64U,
+};
+inline constexpr std::array<size_t, DEBUG_HUD_LINE_COUNT> DEBUG_HUD_LINE_WORD_OFFSETS{
+    0U,
+    8U,
+    16U,
+    24U,
+    40U,
+};
+inline constexpr size_t DEBUG_HUD_MAX_TEXT_BYTES = 228U;
+inline constexpr size_t DEBUG_HUD_MAX_INSTANCES = 56U;
 inline constexpr size_t DEBUG_HUD_MAX_PRESENTED_SAMPLES = 256;
 inline constexpr double DEBUG_HUD_FPS_WINDOW_SECONDS = 1.0;
 inline constexpr float DEBUG_HUD_BITMAP_GLYPH_WIDTH_PIXELS = 8.0F;
@@ -56,20 +67,21 @@ struct DebugHudInput {
     float camera_yaw_degrees = 0.0F;
     float camera_pitch_degrees = 0.0F;
     float camera_roll_degrees = 0.0F;
+    uint16_t speedup = 1U;
+    uint16_t selected_speedup = 5U;
+    bool acceleration_enabled = false;
 };
 
-struct DebugHudText {
-    std::array<char, DEBUG_HUD_MAX_TEXT_BYTES> bytes{};
-    size_t size = 0;
-};
+using DebugHudText = TextDocument;
+using DebugHudInstance = TextGlyph;
+using DebugHudBatch = TextBatch;
 
-struct DebugHudInstance {
-    uint32_t packed_ascii = 0;
-};
-
-struct DebugHudBatch {
-    std::array<DebugHudInstance, DEBUG_HUD_MAX_INSTANCES> instances{};
-    size_t size = 0;
+enum class DebugHudColor : uint8_t {
+    White,
+    Cyan,
+    Gold,
+    Green,
+    Rose,
 };
 
 struct DebugHudSnapshot {
@@ -101,7 +113,7 @@ private:
     uint8_t c3
 ) noexcept;
 
-void packDebugHudText(DebugHudText const& text, DebugHudBatch& batch) noexcept;
+void packDebugHudText(DebugHudText const& text, DebugHudBatch& batch);
 
 class DebugHudState final {
 public:
@@ -116,27 +128,38 @@ public:
     void setEnabled(bool enabled) noexcept;
     void toggle() noexcept;
     void setDpiScale(float dpi_scale) noexcept;
+    void setLineColor(size_t line, DebugHudColor color) noexcept;
 
     [[nodiscard]] DebugHudSnapshot snapshot() const noexcept;
-    [[nodiscard]] bool formatText(DebugHudText& text) const noexcept;
-    [[nodiscard]] bool buildBatch(DebugHudText& text, DebugHudBatch& batch) const noexcept;
+    [[nodiscard]] bool formatText(DebugHudText& text) const;
+    [[nodiscard]] std::array<TextColor, DEBUG_HUD_LINE_COUNT> lineColors() const noexcept;
+    [[nodiscard]] bool buildBatch(DebugHudText& text, DebugHudBatch& batch) const;
 
 private:
+    std::array<DebugHudColor, DEBUG_HUD_LINE_COUNT> line_colors_{
+        DebugHudColor::White,
+        DebugHudColor::White,
+        DebugHudColor::White,
+        DebugHudColor::White,
+        DebugHudColor::White,
+    };
     static double defaultNow(void*) noexcept;
 
     [[nodiscard]] size_t appendText(
         DebugHudText& text,
         size_t offset,
         size_t limit,
-        std::string_view value
-    ) const noexcept;
+        std::string_view value,
+        TextColor color
+    ) const;
     [[nodiscard]] size_t appendNumber(
         DebugHudText& text,
         size_t offset,
         size_t limit,
         double value,
-        int decimals
-    ) const noexcept;
+        int decimals,
+        TextColor color
+    ) const;
     void recordPresentation(double monotonic_seconds, bool presented) noexcept;
 
     DebugHudClock clock_{};

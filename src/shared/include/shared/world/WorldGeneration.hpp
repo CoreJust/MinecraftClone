@@ -40,7 +40,7 @@ public:
     TerrainGenerator& operator=(TerrainGenerator&&) noexcept;
 
     [[nodiscard]]
-    static uint16_t nativeHeightAt(int64_t x, int64_t y) noexcept;
+    uint16_t heightAt(int64_t x, int64_t y) const noexcept;
 
     [[nodiscard]]
     HeightTile generateHeightTile(HeightTileCoordinate coordinate) const;
@@ -53,11 +53,6 @@ public:
 
 private:
     struct ScriptState;
-
-    [[nodiscard]]
-    uint16_t evaluateHeight(int64_t x, int64_t y) const noexcept;
-
-private:
     std::shared_ptr<ScriptState> m_script;
 };
 

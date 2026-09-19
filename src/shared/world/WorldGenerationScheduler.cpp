@@ -68,6 +68,18 @@ std::optional<GenerationJob> WorldGenerationScheduler::takeNext() noexcept
     return std::nullopt;
 }
 
+std::optional<GenerationJob> WorldGenerationScheduler::peekNext() const noexcept
+{
+    for (GenerationJobId const id : m_queue) {
+        auto const iterator = m_jobs.find(id);
+        if (iterator != m_jobs.end() && !iterator->second.stale && !iterator->second.cancelled
+            && !iterator->second.running && iterator->second.job.retries <= MAX_RETRIES) {
+            return iterator->second.job;
+        }
+    }
+    return std::nullopt;
+}
+
 bool WorldGenerationScheduler::complete(
     GenerationJobId const id,
     bool const succeeded,
@@ -134,6 +146,41 @@ bool WorldGenerationScheduler::cancel(GenerationJobId const id) noexcept
         iterator->second.cancelled = true;
     }
     return true;
+}
+
+void WorldGenerationScheduler::cancelQueued() noexcept
+{
+    for (GenerationJobId const id : m_queue) {
+        m_jobs.erase(id);
+    }
+    m_queue.clear();
+}
+
+void WorldGenerationScheduler::cancelQueuedIf(std::function<bool(GenerationJob const&)> const& should_cancel)
+{
+    auto queued = m_queue.begin();
+    while (queued != m_queue.end()) {
+        auto const state = m_jobs.find(*queued);
+        if (state == m_jobs.end() || should_cancel(state->second.job)) {
+            if (state != m_jobs.end()) {
+                m_jobs.erase(state);
+            }
+            queued = m_queue.erase(queued);
+        } else {
+            ++queued;
+        }
+    }
+}
+
+void WorldGenerationScheduler::reorderQueued(JobOrder const& order)
+{
+    std::stable_sort(m_queue.begin(), m_queue.end(), [this, &order](GenerationJobId const first, GenerationJobId const second) {
+        auto const first_state = m_jobs.find(first);
+        auto const second_state = m_jobs.find(second);
+        return first_state != m_jobs.end()
+            && second_state != m_jobs.end()
+            && order(first_state->second.job, second_state->second.job);
+    });
 }
 
 void WorldGenerationScheduler::invalidateRevision(uint64_t const revision) noexcept
