@@ -3,10 +3,7 @@
 from __future__ import annotations
 
 import re
-import sys
-import tempfile
 import unittest
-from unittest import mock
 from pathlib import Path
 
 
@@ -161,45 +158,12 @@ class WorkflowContextTests(unittest.TestCase):
         self.assertNotIn("clang-cl", windows_build)
         self.assertNotIn("CMAKE_CXX_COMPILER_LAUNCHER", windows_build)
         self.assertIn('-E "^MinecraftClone.ServerOnlyBuild$"', windows_build)
-        self.assertIn("prepare-windows-server-only.py", windows_build)
+        self.assertNotIn("prepare-windows-server-only.py", workflow)
         self.assertIn("-P build\\release\\tests\\minecraftclone_server_only_test.cmake", windows_build)
-        patcher = workflow.split(
-            "          from pathlib import Path\n          import sys\n", maxsplit=1
-        )[1].split(
-            "          '@ | Set-Content -Encoding utf8 \"$env:RUNNER_TEMP\\prepare-windows-server-only.py\"",
-            maxsplit=1,
-        )[0]
-        self.assertIn('source.count(needle) != 1', patcher)
-        self.assertIn('^GameServerPreviewTest\\\\.', patcher)
 
-    def test_windows_server_only_patcher_rewrites_exactly_once_and_fails_closed(self):
-        workflow = WORKFLOWS[1].read_text(encoding="utf-8")
-        patcher_step = workflow.split(
-            "          from pathlib import Path\n          import sys\n", maxsplit=1
-        )[1].split(
-            "          '@ | Set-Content -Encoding utf8 \"$env:RUNNER_TEMP\\prepare-windows-server-only.py\"",
-            maxsplit=1,
-        )[0]
-        patcher = "from pathlib import Path\nimport sys\n" + "\n".join(
-            line.removeprefix("          ") for line in patcher_step.splitlines()
-        )
-        needle = ' --output-on-failure)\nif(nested_is_multi_config)'
-        replacement = ' --output-on-failure -E "^GameServerPreviewTest\\.")\nif(nested_is_multi_config)'
-
-        with tempfile.TemporaryDirectory() as temporary:
-            target = Path(temporary) / "server-only.cmake"
-            target.write_text(f"prefix{needle}suffix", encoding="utf-8")
-            with mock.patch.object(sys, "argv", ["patcher.py", str(target)]):
-                exec(compile(patcher, "prepare-windows-server-only.py", "exec"), {})
-            self.assertEqual(target.read_text(encoding="utf-8"), f"prefix{replacement}suffix")
-
-            for invalid in ("no matching command", f"{needle}\n{needle}"):
-                target.write_text(invalid, encoding="utf-8")
-                with self.subTest(invalid=invalid), mock.patch.object(
-                    sys, "argv", ["patcher.py", str(target)]
-                ), self.assertRaisesRegex(SystemExit, "server-only CTest command contract changed"):
-                    exec(compile(patcher, "prepare-windows-server-only.py", "exec"), {})
-                self.assertEqual(target.read_text(encoding="utf-8"), invalid)
+    def test_nested_server_only_fixture_excludes_duplicate_preview_in_source(self):
+        fixture = (REPOSITORY / "tests/cmake/minecraftclone_server_only_test.cmake.in").read_text(encoding="utf-8")
+        self.assertIn('-E "^GameServerPreviewTest\\\\."', fixture)
 
     def test_snapshot_private_dependencies_use_portable_compilers_without_changing_locks(self):
         workflow = WORKFLOWS[1].read_text(encoding="utf-8")
@@ -208,7 +172,7 @@ class WorkflowContextTests(unittest.TestCase):
         )[1].split("      - name:", maxsplit=1)[0]
         self.assertNotIn("clang-cl", windows_install)
         self.assertNotIn("CMAKE_CXX_COMPILER_LAUNCHER", windows_install)
-        self.assertLess(workflow.index("Create bounded Windows server-only test plan"), workflow.index("Install pinned private dependencies (Windows)"))
+        self.assertNotIn("Create bounded Windows server-only test plan", workflow)
 
         macos_install = workflow.split(
             "      - name: Install pinned private dependencies (macOS)\n", maxsplit=1
@@ -225,7 +189,7 @@ class WorkflowContextTests(unittest.TestCase):
         self.assertIn("--cmake-arg=-DCMAKE_PROJECT_INCLUDE_BEFORE=", android_install)
         self.assertNotIn("dependencies.lock.json", android_install)
 
-    def test_macos_snapshot_defers_load_sensitive_flight_to_target_hardware(self):
+    def test_macos_snapshot_runs_preview_once_in_outer_suite(self):
         workflow = WORKFLOWS[1].read_text(encoding="utf-8")
         macos_phase = workflow.split(
             "      - name: Build, test, and package macOS\n", maxsplit=1
@@ -239,11 +203,12 @@ class WorkflowContextTests(unittest.TestCase):
         )
         self.assertIn("-E", broad_ctest)
         self.assertIn(server_test, broad_ctest)
-        self.assertIn(flight_test, broad_ctest)
+        self.assertNotIn(flight_test, broad_ctest)
         self.assertIn("minecraftclone_server_only_test.cmake", macos_phase)
-        self.assertNotIn(f"-R '^{flight_test}$'", macos_phase)
-        self.assertIn('replacement = \' --output-on-failure -E "^GameServerPreviewTest', macos_phase)
-        self.assertIn('source.count(needle) != 1', macos_phase)
+        self.assertIn("^GameServerPreviewTest", (
+            REPOSITORY / "tests/cmake/minecraftclone_server_only_test.cmake.in"
+        ).read_text(encoding="utf-8"))
+        self.assertNotIn("source.count(needle)", macos_phase)
         self.assertEqual(macos_phase.count("release-tests-macos.log"), 2)
 
     def test_windows_cmd_build_phases_guard_each_fallible_command(self):

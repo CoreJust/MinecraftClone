@@ -7704,5 +7704,44 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0224",
+    "title": "Make nested server-only validation deterministic",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P0",
+    "route": "luna",
+    "milestone": "EarlyDev 0.1.0:6",
+    "depends_on": [],
+    "acceptance": "The nested server-only package build verifies compilation and the non-preview server suite without duplicating GameServerPreview integration tests already executed by the enclosing complete CTest run. The exclusion is a permanent source contract used identically on macOS, Windows, and local gates; release workflows contain no generated-script rewriting for this behavior. The complete outer suite and focused nested build pass.",
+    "evidence": "The owned nested CMake fixture excludes only ^GameServerPreviewTest\\\\., while the enclosing complete CTest retains the full preview suite. The 19 workflow-context contracts passed, the game rebuilt against exact CoreCpp 1a1d4095bd553ed1ea382523eecd22c9748bbe9f and CoreProject2026 048a3abb8f3d18d97c41dbd618eb37fd0247f285 packages, and the standalone Debug nested server-only configure/build/non-preview CTest completed successfully. CI-time Python rewriting was removed from both macOS and Windows paths.",
+    "blocker": "",
+    "owner": "",
+    "level": "basic",
+    "parent": "MC-AI-0037",
+    "motivation": "The formal correction gate exposed a load-sensitive duplicate sustained-flight run inside MinecraftClone.ServerOnlyBuild after the same integration test had already passed in the enclosing suite.",
+    "context": "The duplicate run adds roughly 35 seconds, can fail on host scheduling variance, and was previously suppressed by CI-only generated CMake rewriting. Preserve the strict outer integration assertion and remove the workflow patching.",
+    "complexity": "medium",
+    "created_at": "2026-09-20",
+    "resolved_at": "2026-09-20",
+    "resolution_changes": "Moved the duplicate preview-suite exclusion into the source-owned nested server-only CMake fixture and removed platform-specific workflow patchers.",
+    "plan": [
+      "Move the preview-suite exclusion into the owned nested CMake fixture, delete platform workflow patchers, update contract tests, and validate both outer and nested paths."
+    ],
+    "product_changes": [
+      "No gameplay behavior changes; release validation becomes deterministic and identical across local and hosted platforms."
+    ],
+    "code_changes": [
+      "Exclude GameServerPreviewTest only from the nested server-only package-consumer CTest because the enclosing suite runs it once.",
+      "Remove macOS and Windows workflow-time rewriting of generated CMake."
+    ],
+    "baseline_commit": "161055a68b36cd55456666291d0c8c7aee7b1b10",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]
