@@ -8744,5 +8744,39 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0251",
+    "title": "Accept selected advanced review efforts in the local commit gate",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P1",
+    "route": "luna",
+    "milestone": "ED-010-S7",
+    "depends_on": [],
+    "acceptance": "The local commit-review gate accepts truthful Luna/xhigh review receipts routed by the active Post-apocalyptic effort policy, while retaining candidate identity, model, verdict, and evidence validation. Focused deterministic regressions cover xhigh acceptance and unsupported effort rejection.",
+    "evidence": "Focused ai_commit regressions pass: xhigh and medium receipts are accepted, while low effort, invalid model, task, and head values remain rejected. Documentation/backlog integrity and plan checks pass.",
+    "blocker": "",
+    "owner": "",
+    "level": "basic",
+    "parent": "MC-AI-0038",
+    "motivation": "The S7 player task received the active Post-apocalyptic Luna/xhigh review but the old gate rejected its truthful receipt because it allowed only medium/high.",
+    "context": "This is a narrow compatibility repair for the user-selected effort policy; it does not change model identity, review requirements, or candidate binding.",
+    "complexity": "low",
+    "created_at": "2026-09-20",
+    "resolved_at": "2026-09-20",
+    "resolution_changes": "Extended the accepted review receipt effort set with xhigh and added an xhigh regression while retaining low-effort rejection.",
+    "plan": [
+      "Expand the accepted receipt effort set to the supported routed values and cover xhigh acceptance plus unsupported-value rejection."
+    ],
+    "product_changes": [],
+    "code_changes": [],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]

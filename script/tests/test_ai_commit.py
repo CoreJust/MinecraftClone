@@ -182,10 +182,12 @@ class AiCommitTests(unittest.TestCase):
                 result = self.record(candidate, **changes)
                 self.assertEqual(result.returncode, 1)
 
-    def test_medium_effort_report_is_accepted(self) -> None:
+    def test_advanced_effort_reports_are_accepted(self) -> None:
         candidate = self.candidate()
-        result = self.record(candidate, effort="medium")
-        self.assertEqual(result.returncode, 0, result.stderr)
+        for effort in ("medium", "xhigh"):
+            with self.subTest(effort=effort):
+                result = self.record(candidate, effort=effort)
+                self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_commit_message_requires_one_matching_trailer(self) -> None:
         candidate = self.candidate()
