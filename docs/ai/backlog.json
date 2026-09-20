@@ -1439,8 +1439,8 @@
       "MC-AI-0036"
     ],
     "acceptance": "Represent and traverse the sparse 65,536 by 65,536 by 1,024 air-and-stone world. CoreLang 0.1.2 supplies deterministic height maps; native code owns bounded generation, server-authoritative circular residency, directional priority, transport, detailed meshing, and incremental Vulkan rendering. Boundaries, seam presentation, cancellation, memory, performance, GUI text, and user-approved macOS gameplay pass. Publish reviewed source and macOS, Windows, and Android artifacts with hashes, provenance, licenses, signing status, downloaded macOS/Android acceptance, and separately reported Windows runtime status.",
-    "evidence": "The obsolete S6 prerelease and r1-r3 tags were removed under the one-release-per-snapshot policy. CoreLang 0.1.2.2 is published at 62bd3857 after macOS and native Windows Debug/Release tests. MC-AI-0231 through MC-AI-0239 plus MC-AI-0241 and MC-AI-0242 correct cold start, throughput, removal, control latency, global delivery, generation fairness, bounded terrain arena growth, and its deterministic host-Vulkan restoration proof. Candidate source 0cdee637d71cf96ff709d0754b937a2b5d3ff7e5 passes generated task and source-documentation checks; host GUI RendererSmokeTest passed after recreation.",
-    "blocker": "Promotion still requires strict source gates, a reviewed ai-main merge, one canonical S6 tag, fresh hosted macOS/Windows/Android artifacts, exact public asset reconciliation, and separately reported Windows runtime status.",
+    "evidence": "Published canonical S6 source 5b2fe72a63e114ee408160d52cc456da2f94d097 through reviewed ai-main merge 0514890690c10d80b7475fd0b76204e800948db3 and immutable tag ai/EarlyDev/0.1.0/6_26.09.20. GitHub Snapshot artifacts run 35520945351 passed for macOS, Windows, and Android. The non-draft GitHub Release contains the six selected payload/checksum assets and passed script/ci/verify_release_assets.py against the three schema-1 evidence records; published hashes include macOS 1a402a52f540523753579ab8f8fc1979e8858da82b276f3e06b47be2e83e8fba, Windows e8e3deda6f91165257064ab11f3896bb4a7bb734d7ff27345f363bf32e4a74e2, and locally built development-signed Android 6397f606623425cb41888a55d96b5aa3b3e67050501468f773c7187f1dcc4708. Downloaded macOS artifact and released Android APK runtime acceptance were deliberately not run: the user forbade automatic game launches.",
+    "blocker": "User-authorized runtime acceptance remains required for the downloaded macOS artifact and released Android APK. Do not launch either automatically. Record Windows runtime status separately; do not infer it.",
     "owner": "s6-main",
     "level": "snapshot",
     "parent": "MC-AI-0033",
@@ -1470,9 +1470,9 @@
     "commits": [],
     "finalized": true,
     "retrospective": "",
-    "docs_review": "",
-    "environment_review": "",
-    "backlog_review": ""
+    "docs_review": "Release notes and the public six-asset release were read back; the repository verifier accepted the tagged macOS, Windows, and Android bytes and sidecars.",
+    "environment_review": "The local Android development-signed APK was built from the exact tagged source with the pinned Android toolchain. No game or APK was launched, per the user instruction.",
+    "backlog_review": "Retain the active snapshot record until the explicitly held macOS and Android runtime acceptance is supplied; do not infer Windows runtime acceptance."
   },
   {
     "id": "MC-AI-0038",
