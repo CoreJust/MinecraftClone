@@ -677,21 +677,22 @@ void GameServer::acknowledgeHeightTileDelivery(
     queueDepartedResidentTiles(*stream);
 }
 
-void GameServer::admitHeightTileDeliveries(PreviewStream& stream)
+uint32_t GameServer::admitHeightTileDeliveries(
+    PreviewStream& stream,
+    uint32_t const maximum_batches
+)
 {
-    // Keep bulk terrain traffic below the game channel's latency budget. Credits
-    // bound retained client work, while this per-tick budget prevents an eager
-    // client from immediately recycling the whole window and filling the reliable
-    // transport ahead of movement acknowledgements.
-    static constexpr uint32_t MAX_ADMITTED_BATCHES_PER_PUMP = 4U;
+    // Credits bound retained client work. The caller supplies this stream's share
+    // of the server-wide pump budget so concurrent clients cannot multiply bulk
+    // traffic ahead of movement acknowledgements.
     uint32_t const available_batches = std::min<uint32_t>({
         stream.delivery_credits,
         static_cast<uint32_t>(shared::HEIGHT_TILE_DELIVERY_WINDOW - stream.inflight_deliveries.size()),
-        MAX_ADMITTED_BATCHES_PER_PUMP,
+        maximum_batches,
     });
     uint32_t const maximum_operations = available_batches * shared::HEIGHT_TILE_DELIVERY_BATCH_CAPACITY;
     if (maximum_operations == 0U) {
-        return;
+        return 0U;
     }
 
     std::vector<shared::HeightTileKey> const pending_removals{
@@ -741,7 +742,7 @@ void GameServer::admitHeightTileDeliveries(PreviewStream& stream)
     uint32_t admitted_batches = 0U;
     while (stream.delivery_credits > 0U
         && stream.inflight_deliveries.size() < shared::HEIGHT_TILE_DELIVERY_WINDOW
-        && admitted_batches < MAX_ADMITTED_BATCHES_PER_PUMP) {
+        && admitted_batches < maximum_batches) {
         shared::ServerHeightTileBatchMessage batch{
             .delivery_token = nextHeightTileToken(m_next_height_tile_token),
         };
@@ -774,7 +775,7 @@ void GameServer::admitHeightTileDeliveries(PreviewStream& stream)
             });
         }
         if (delivery.additions.empty() && delivery.removals.empty()) {
-            return;
+            return admitted_batches;
         }
         uint64_t const delivery_token = batch.delivery_token;
         stream.inflight_deliveries.emplace(delivery_token, std::move(delivery));
@@ -782,6 +783,7 @@ void GameServer::admitHeightTileDeliveries(PreviewStream& stream)
         sendHeightTileTo(stream.client_id, std::move(batch));
         ++admitted_batches;
     }
+    return admitted_batches;
 }
 
 void GameServer::refreshHeightTileInterest(PreviewStream& stream, shared::Player const& player)
@@ -914,9 +916,28 @@ void GameServer::processHeightTileStreams(bool const admit_deliveries)
     publishHeightTileResults();
     for (PreviewStream& stream : m_preview_streams) {
         fillHeightTileQueue(stream);
-        if (admit_deliveries) {
-            admitHeightTileDeliveries(stream);
+    }
+    if (admit_deliveries && !m_preview_streams.empty()) {
+        static constexpr uint32_t MAX_ADMITTED_BATCHES_PER_PUMP = 4U;
+        uint32_t remaining_batches = MAX_ADMITTED_BATCHES_PER_PUMP;
+        size_t const stream_count = m_preview_streams.size();
+        size_t round_start = m_next_preview_admission % stream_count;
+        while (remaining_batches > 0U) {
+            bool admitted = false;
+            for (size_t offset = 0U; offset < stream_count && remaining_batches > 0U; ++offset) {
+                size_t const index = (round_start + offset) % stream_count;
+                uint32_t const admitted_batches = admitHeightTileDeliveries(
+                    m_preview_streams[index], 1U
+                );
+                remaining_batches -= admitted_batches;
+                admitted = admitted || admitted_batches != 0U;
+            }
+            if (!admitted) {
+                break;
+            }
+            round_start = (round_start + 1U) % stream_count;
         }
+        m_next_preview_admission = (m_next_preview_admission + 1U) % stream_count;
     }
     dispatchHeightTileWork();
 }
