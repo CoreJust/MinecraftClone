@@ -86,7 +86,7 @@ private:
     void processHeightTileStreams(bool admit_deliveries);
     void dispatchHeightTileWork();
     void publishHeightTileResults();
-    void admitHeightTileDeliveries(PreviewStream& stream);
+    [[nodiscard]] uint32_t admitHeightTileDeliveries(PreviewStream& stream, uint32_t maximum_batches);
     void queueDepartedResidentTiles(PreviewStream& stream);
     void processInput(PlayerReplication& replication, shared::ClientInputMessage input);
     [[nodiscard]]
@@ -154,6 +154,7 @@ private:
             std::chrono::steady_clock::now() + std::chrono::milliseconds{250};
     };
     std::vector<PreviewStream> m_preview_streams;
+    size_t m_next_preview_admission = 0U;
     std::unique_ptr<HeightTileWorkerPool> m_height_tile_workers;
     uint64_t m_next_height_tile_token = 1;
 };

@@ -1439,7 +1439,7 @@
       "MC-AI-0036"
     ],
     "acceptance": "The 65,536 by 65,536 by 1,024 logical air-and-stone world is represented and traversed without dense allocation. CoreLang 0.1.2 supplies deterministic height maps while native code owns bounded asynchronous generation, server-authoritative camera-independent circular residency, directional priority, transport, detailed meshing and incremental Vulkan rendering. Boundaries, world-seam presentation, cancellation, memory, runtime performance, GUI text and user-approved macOS gameplay evidence pass. The reviewed S6 source is promoted and tagged, with macOS, Windows and Android artifacts, SHA256 hashes, provenance, dependencies/licenses and truthful signing status; downloaded macOS and Android assets receive local acceptance while Windows runtime remains separately reported.",
-    "evidence": "The original S6 and failed r1/r2/r3 tags remain immutable. CoreLang 0.1.2.1 is published at 048a3abb8f3d18d97c41dbd618eb37fd0247f285 after 25/25 macOS and native Windows tests. Hosted r3 passed Android but exposed cold-start initialization, low-core throughput, and repeated delivery sorting. MC-AI-0231 prepares immutable interest orders before ingress, retains one control CPU, and bounds admission to the negotiated window. MC-AI-0233 filters in-flight removals before bounded selection. MC-AI-0234 reserves cleanup capacity during saturated additions, cancels queued removals when interest returns, and recovers already-sent removals; its exhausted-credit 500x reversal regressions and the full nine-test preview suite pass, including the 35-second sustained-flight acknowledgement bound. MC-AI-0232 gives the complete policy suite its measured 300-second runtime budget. A new corrected promotion, fresh all-platform artifacts, downloaded runtime acceptance, public release, and final checksums remain pending.",
+    "evidence": "Original S6 and failed r1/r2/r3 tags remain immutable. CoreLang 0.1.2.1 is published at 048a3abb after macOS and native Windows tests. Hosted r3 passed Android but exposed initialization, throughput, sorting, removal-reconciliation, and control-latency defects. MC-AI-0231, MC-AI-0233, MC-AI-0234, and MC-AI-0235 correct those runtime defects; MC-AI-0232 aligns the policy-suite timeout with measured runtime, and MC-AI-0236 covers first-input and concurrent-client latency; MC-AI-0237 enforces one fair four-batch server-wide budget and covers all four supported clients. Focused regressions and the nine-test preview suite pass, including sustained 500x four-client acknowledgement bounds. A corrected promotion, fresh platform artifacts, downloaded acceptance, public release, and final checksums remain pending.",
     "blocker": "Corrected source is locally accepted and ready for promotion; aggregate completion still requires fresh hosted macOS, native Windows, and Android artifacts plus exact public asset and runtime reconciliation.",
     "owner": "s6-main",
     "level": "snapshot",
@@ -8117,6 +8117,123 @@
     ],
     "code_changes": [
       "Correct GameServer height-tile removal scheduling and lifecycle tests."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0235",
+    "title": "Bound terrain delivery admission so reliable preview traffic cannot delay movement acknowledgements during sustained high-speed streaming",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P0",
+    "route": "luna",
+    "milestone": "Unassigned",
+    "depends_on": [],
+    "acceptance": "During sustained 500x flight with terrain streaming, movement acknowledgements remain within the existing 16-input latency ceiling while the complete preview-stream suite retains ordering, frontier speed, cleanup, recovery, and bounded ownership behavior.",
+    "evidence": "Release-mode GameServerPreviewTest suite: 9/9 passed, including the 35-second SustainedFlight acknowledgement test; three additional consecutive sustained-flight runs passed with the conservative two-batch probe before final tuning.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0037",
+    "motivation": "Bound terrain delivery admission so reliable preview traffic cannot delay movement acknowledgements during sustained high-speed streaming",
+    "context": "Hosted macOS Release gates for S6 failed because an eager preview client could recycle all eight terrain delivery credits per server tick; sustained 500x flight reached 34-39 unacknowledged inputs despite the dedicated terrain channel.",
+    "complexity": "medium",
+    "created_at": "2026-09-20",
+    "resolved_at": "2026-09-20",
+    "resolution_changes": "Separated the terrain retained-work window from a four-batch per-tick transport budget and submitted movement acknowledgements before new terrain fragments, preserving throughput without allowing bulk reliable traffic to hide gameplay responses.",
+    "plan": [
+      "Clarify acceptance and implementation steps.",
+      "Submit each movement acknowledgement before admitting bulk terrain for that tick; cap terrain admission independently from the retained-work credit window; verify in Release mode with the complete GameServerPreviewTest suite and the full snapshot gates."
+    ],
+    "product_changes": [
+      "High-speed flight remains responsive while 45-chunk terrain streams continuously."
+    ],
+    "code_changes": [
+      "Flush latency-sensitive movement responses before terrain admission and cap terrain delivery at four 16-tile batches per server tick.",
+      "Document the distinction between retained-work credits and the per-tick transport latency budget."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0236",
+    "title": "Cover initial and concurrent-client movement acknowledgement latency during sustained high-speed terrain streaming",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P0",
+    "route": "luna",
+    "milestone": "Unassigned",
+    "depends_on": [],
+    "acceptance": "The sustained 500x regression measures acknowledgement lag from the first input across two concurrent preview clients and retains the 16-input maximum plus final catch-up bounds.",
+    "evidence": "Release-mode GameServerPreviewTest.SustainedFlightKeepsInputAcknowledgementsCurrentWhileTilesStream passed with two concurrent 500x clients for 35 seconds while enforcing the 16-input bound from input one.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0037",
+    "motivation": "Cover initial and concurrent-client movement acknowledgement latency during sustained high-speed terrain streaming",
+    "context": "The pre-push adversarial review found that the sustained 500x acknowledgement regression ignored the first 30 inputs and used only one preview client, allowing an early freeze or per-stream serialization defect to escape.",
+    "complexity": "medium",
+    "created_at": "2026-09-20",
+    "resolved_at": "2026-09-20",
+    "resolution_changes": "Closed the initial-stream blind spot and added concurrent preview-client coverage without changing production behavior.",
+    "plan": [
+      "Clarify acceptance and implementation steps.",
+      "Make PreviewClient track its joined character; run two simultaneous streaming clients through the existing sustained-flight test; measure the worse acknowledgement lag from input one; rerun Release and aggregate gates."
+    ],
+    "product_changes": [
+      "Automated acceptance now guards startup and concurrent-client movement responsiveness during high-speed terrain streaming."
+    ],
+    "code_changes": [
+      "Parameterize the preview test client character and strengthen the sustained-flight regression to drive two concurrent clients from the first input."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0237",
+    "title": "Share the terrain admission budget fairly across clients",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P0",
+    "route": "luna",
+    "milestone": "ED-010-S6",
+    "depends_on": [],
+    "acceptance": "Terrain admission is capped globally at four batches per server pump across all preview clients, with fair round-robin service and sustained four-client 500x movement acknowledgements no more than 16 inputs behind.",
+    "evidence": "Release GameServerPreviewTest suite passed 9/9 in 71.97 seconds; the sustained four-client 500x case passed in 35.46 seconds with terrain delivered to every client and acknowledgement lag bounded from the first input.",
+    "blocker": "",
+    "owner": "",
+    "level": "basic",
+    "parent": "MC-AI-0037",
+    "motivation": "Prevent supported concurrent preview clients from multiplying the reliable terrain traffic budget and delaying authoritative movement acknowledgements.",
+    "context": "Final S6 adversarial review found that the per-stream four-batch cap permits four clients to admit sixteen batches in one pump.",
+    "complexity": "medium",
+    "created_at": "2026-09-20",
+    "resolved_at": "2026-09-20",
+    "resolution_changes": "Applied one four-batch server-wide terrain admission budget with rotating round-robin service across preview streams and expanded sustained 500x coverage to four concurrent clients with per-client terrain progress and acknowledgement bounds.",
+    "plan": [
+      "Apply one global per-pump budget and distribute it round-robin among streams."
+    ],
+    "product_changes": [
+      "Keep movement acknowledgements responsive while four players stream terrain concurrently."
+    ],
+    "code_changes": [
+      "Bound aggregate terrain admission and cover the full supported preview-client count."
     ],
     "baseline_commit": "",
     "commits": [],

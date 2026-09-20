@@ -9,6 +9,7 @@
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <cstdlib>
@@ -22,11 +23,13 @@ class PreviewClient final : public core::Client {
 public:
     explicit PreviewClient(
         bool const acknowledges_deliveries = true,
-        bool const starts_deliveries = true
+        bool const starts_deliveries = true,
+        char const tracked_character = '@'
     )
         : core::Client{2}
         , m_acknowledges_deliveries{acknowledges_deliveries}
         , m_starts_deliveries{starts_deliveries}
+        , m_tracked_character{tracked_character}
     { }
 
     std::vector<shared::Message> messages;
@@ -71,7 +74,7 @@ private:
                 }), shared::GAME_CHANNEL, core::SendMode{core::SendMode::Reliable}));
             }
             if (auto const* position = std::get_if<shared::ServerPlayerPositionMessage>(&*message);
-                position != nullptr && position->ch == '@') {
+                position != nullptr && position->ch == m_tracked_character) {
                 last_acknowledged_input = position->acknowledged_input_sequence;
                 last_player_x = position->x;
             }
@@ -80,6 +83,7 @@ private:
 
     bool m_acknowledges_deliveries;
     bool m_starts_deliveries;
+    char m_tracked_character;
 };
 
 uint32_t heightTileCount(std::vector<shared::Message> const& messages)
@@ -694,11 +698,25 @@ TEST(GameServerPreviewTest, SustainedFlightKeepsInputAcknowledgementsCurrentWhil
     server::GameServer server{0, {}, shared::WorldMode::Flight};
     std::atomic_bool stop_requested{false};
     std::thread server_thread{[&server, &stop_requested] { server.run(stop_requested); }};
-    PreviewClient client;
-    bool const connected = client.connect(core::Address::localhost(server.port()), std::chrono::seconds{2});
-    bool joined = connected && client.send(shared::encodeMessage(shared::JoinRequestMessage{
-        .ch = '@', .mode = shared::WorldMode::Flight, .wants_previews = true,
-    }), 0, core::SendMode{core::SendMode::Reliable});
+    PreviewClient first_client;
+    PreviewClient second_client{true, true, '#'};
+    PreviewClient third_client{true, true, '$'};
+    PreviewClient fourth_client{true, true, '%'};
+    std::array<PreviewClient*, 4> const clients{
+        &first_client, &second_client, &third_client, &fourth_client,
+    };
+    std::array<char, 4> const characters{'@', '#', '$', '%'};
+    bool connected = true;
+    bool joined = true;
+    for (size_t index = 0U; index < clients.size(); ++index) {
+        connected = clients[index]->connect(
+            core::Address::localhost(server.port()), std::chrono::seconds{2}
+        ) && connected;
+        joined = clients[index]->send(shared::encodeMessage(shared::JoinRequestMessage{
+            .ch = characters[index], .mode = shared::WorldMode::Flight, .wants_previews = true,
+        }), 0, core::SendMode{core::SendMode::Reliable}) && joined;
+    }
+    joined = connected && joined;
     uint32_t sent = 0U;
     uint32_t maximum_ack_lag = 0U;
     uint32_t sent_at_maximum_ack_lag = 0U;
@@ -709,27 +727,39 @@ TEST(GameServerPreviewTest, SustainedFlightKeepsInputAcknowledgementsCurrentWhil
         auto const now = std::chrono::steady_clock::now();
         if (now >= next_input) {
             ++sent;
-            all_sent = client.send(shared::encodeMessage(shared::ClientInputMessage{
+            std::vector<uint8_t> const input = shared::encodeMessage(shared::ClientInputMessage{
                 .direction = {.x = 127U, .accelerated = true, .speedup = 500U},
                 .sequence = sent,
-            }), 0, core::SendMode{core::SendMode::Reliable}) && all_sent;
+            });
+            for (PreviewClient* const client : clients) {
+                all_sent = client->send(input, 0, core::SendMode{core::SendMode::Reliable}) && all_sent;
+            }
             next_input += INPUT_PERIOD;
         }
-        while (client.poll(std::chrono::milliseconds::zero()) > 0) {
-        }
-        if (sent > 30U) {
-            uint32_t const lag = sent - client.last_acknowledged_input;
-            if (lag > maximum_ack_lag) {
-                maximum_ack_lag = lag;
-                sent_at_maximum_ack_lag = sent;
+        for (PreviewClient* const client : clients) {
+            while (client->poll(std::chrono::milliseconds::zero()) > 0) {
             }
+        }
+        uint32_t lag = 0U;
+        for (PreviewClient const* const client : clients) {
+            lag = std::max(lag, sent - client->last_acknowledged_input);
+        }
+        if (lag > maximum_ack_lag) {
+            maximum_ack_lag = lag;
+            sent_at_maximum_ack_lag = sent;
         }
         std::this_thread::sleep_for(std::chrono::milliseconds{16});
     }
     auto const catch_up_deadline = std::chrono::steady_clock::now() + std::chrono::seconds{1};
-    while (sent - client.last_acknowledged_input > 2U
-        && std::chrono::steady_clock::now() < catch_up_deadline) {
-        client.poll(std::chrono::milliseconds{1});
+    auto const all_caught_up = [&clients, sent] {
+        return std::ranges::all_of(clients, [sent](PreviewClient const* const client) {
+            return sent - client->last_acknowledged_input <= 2U;
+        });
+    };
+    while (!all_caught_up() && std::chrono::steady_clock::now() < catch_up_deadline) {
+        for (PreviewClient* const client : clients) {
+            client->poll(std::chrono::milliseconds{1});
+        }
     }
     stop_requested.store(true, std::memory_order_relaxed);
     server_thread.join();
@@ -742,6 +772,12 @@ TEST(GameServerPreviewTest, SustainedFlightKeepsInputAcknowledgementsCurrentWhil
     // terrain-loaded lag far below the 64-input safety bound and require catch-up.
     EXPECT_LE(maximum_ack_lag, 16U)
         << "maximum lag occurred after input " << sent_at_maximum_ack_lag
-        << ", last acknowledgement " << client.last_acknowledged_input;
-    EXPECT_LE(sent - client.last_acknowledged_input, 2U);
+        << ", last acknowledgements " << first_client.last_acknowledged_input << ", "
+        << second_client.last_acknowledged_input << ", " << third_client.last_acknowledged_input
+        << ", and " << fourth_client.last_acknowledged_input;
+    for (PreviewClient const* const client : clients) {
+        EXPECT_LE(sent - client->last_acknowledged_input, 2U);
+        EXPECT_GT(deliveryBatchCount(client->messages), 0U);
+        EXPECT_GT(heightTileCount(client->messages), 0U);
+    }
 }
