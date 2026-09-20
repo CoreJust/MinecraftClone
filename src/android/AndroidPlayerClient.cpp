@@ -4,6 +4,7 @@
 #include <client/PlayerPresentation.hpp>
 
 #include <shared/world/CanonicalWorld.hpp>
+#include <shared/world/SparseWorld.hpp>
 
 #include <core/IO/Log.hpp>
 
@@ -12,6 +13,7 @@
 #include <android/native_window.h>
 
 #include <chrono>
+#include <cmath>
 #include <optional>
 #include <vector>
 
@@ -64,7 +66,7 @@ shared::Direction AndroidPlayerClient::input()
             .strafe = static_cast<int8_t>(input.x),
             .forward = static_cast<int8_t>(-static_cast<int8_t>(input.y)),
         },
-        m_camera.pose().angles.yaw_degrees
+        m_look_camera.pose().angles.yaw_degrees
     );
     return {
         .x = static_cast<uint8_t>(movement.x),
@@ -93,37 +95,38 @@ void AndroidPlayerClient::render()
     float look_horizontal = 0.0F;
     float look_vertical = 0.0F;
     if (m_input.consumeLookDelta(look_horizontal, look_vertical)) {
-        static_cast<void>(m_camera.rotate(
+        static_cast<void>(m_look_camera.rotate(
             static_cast<double>(look_horizontal) * 0.15,
             static_cast<double>(-look_vertical) * 0.15
         ));
     }
+    if (m_input.consumeCameraPerspectiveCycleRequest()) {
+        m_camera_perspective = client::nextCameraPerspective(m_camera_perspective);
+    }
     std::chrono::steady_clock::time_point const now = std::chrono::steady_clock::now();
     std::optional<client::PlayerPresentationPosition> const local_position = predictedLocalPresentation(now);
     if (local_position.has_value()) {
-        client::CameraPose const camera_pose = client::localPlayerFirstPersonPose(
+        client::PlayerCameraView const camera_view = client::resolveLocalPlayerCamera(
             *local_position,
-            m_camera.pose().angles
+            m_look_camera.pose().angles,
+            m_camera_perspective,
+            maximumUnobstructedCameraDistance(*local_position)
         );
-        static_cast<void>(m_camera.setPosition(camera_pose.position));
+        static_cast<void>(m_camera.setPosition(camera_view.pose.position));
+        static_cast<void>(m_camera.setAngles(camera_view.pose.angles));
     }
 
     std::vector<client::PlayerRenderData> players;
     players.reserve(m_world.players().size());
     for (shared::Player const& player : m_world.players()) {
-        if (player.ch == m_local_character) {
+        if (!client::shouldRenderPlayerBody(player, m_local_character, m_camera_perspective)) {
             continue;
         }
         if (auto const position = m_player_presentation.sample(player.ch, now)) {
             players.push_back({
                 .x = static_cast<float>(position->x),
                 .y = static_cast<float>(position->y),
-                .color = {
-                    static_cast<float>(player.ch) / 256.0f,
-                    1.0f - static_cast<float>(player.ch) / 256.0f,
-                    1.0f,
-                    1.0f,
-                },
+                .color = client::playerPaletteColor(player.palette_index),
                 .z = static_cast<float>(position->z),
             });
         }
@@ -155,6 +158,44 @@ void AndroidPlayerClient::render()
     if (m_input.consumeReloadRequest()) {
         m_renderer->hotReload();
     }
+}
+
+double AndroidPlayerClient::maximumUnobstructedCameraDistance(
+    client::PlayerPresentationPosition const& local_position
+) const noexcept
+{
+    if (m_camera_perspective == client::CameraPerspective::FirstPerson || !m_chunk_mesh) {
+        return client::MAX_LOCAL_PLAYER_CAMERA_DISTANCE;
+    }
+
+    shared::Chunk const& chunk = shared::canonicalWorld().chunk();
+    glm::dvec3 const center = client::localPlayerCenterPosition(local_position);
+    client::PlayerCameraView const intended_camera = client::resolveLocalPlayerCamera(
+        local_position,
+        m_look_camera.pose().angles,
+        m_camera_perspective,
+        client::MAX_LOCAL_PLAYER_CAMERA_DISTANCE
+    );
+    glm::dvec3 const ray = (intended_camera.pose.position - center)
+        / client::MAX_LOCAL_PLAYER_CAMERA_DISTANCE;
+    for (double distance = 0.25;
+         distance <= client::MAX_LOCAL_PLAYER_CAMERA_DISTANCE;
+         distance += 0.25) {
+        glm::dvec3 const probe = center + ray * distance;
+        shared::WorldCoordinate const coordinate{
+            .x = static_cast<int64_t>(std::floor(probe.x)),
+            .y = static_cast<int64_t>(std::floor(probe.y)),
+            .z = static_cast<int64_t>(std::floor(probe.z)),
+        };
+        std::optional<shared::WorldCoordinate> const normalized = shared::WorldBounds::normalize(coordinate);
+        if (!normalized || shared::WorldBounds::chunkCoordinate(*normalized) != chunk.coordinate()) {
+            continue;
+        }
+        if (chunk.blockAt(shared::WorldBounds::blockCoordinate(*normalized)) == shared::Block::Stone) {
+            return std::max(0.0, distance - 0.25);
+        }
+    }
+    return client::MAX_LOCAL_PLAYER_CAMERA_DISTANCE;
 }
 
 void AndroidPlayerClient::handleAppCommand(android_app* const app, int32_t const command)

@@ -144,8 +144,9 @@ struct MessageEncoder final {
 
     std::vector<uint8_t> operator()(ServerPlayerPositionMessage const& message)
     {
-        begin(MessageType::ServerPlayerPosition, 27U);
+        begin(MessageType::ServerPlayerPosition, 28U);
         bytes.push_back(static_cast<uint8_t>(message.ch));
+        bytes.push_back(message.palette_index);
         appendInt32(bytes, message.x);
         appendInt32(bytes, message.y);
         appendInt32(bytes, message.z);
@@ -373,7 +374,8 @@ bool isValidMessage(Message const& message) noexcept
             return value.world_revision != 0U && value.credits > 0U
                 && value.credits <= HEIGHT_TILE_DELIVERY_WINDOW;
         } else if constexpr (std::is_same_v<Value, ServerPlayerPositionMessage>) {
-            return isValidCharacter(value.ch) && World::isFlightPositionInBounds(PlayerPosition{
+            return isValidCharacter(value.ch) && isValidPlayerPaletteIndex(value.palette_index)
+                && World::isFlightPositionInBounds(PlayerPosition{
                 .x = value.x,
                 .y = value.y,
                 .z = value.z,
@@ -493,6 +495,7 @@ std::optional<Message> decodeMessage(std::span<uint8_t const> const data)
         }
         case MessageType::ServerPlayerPosition: {
             auto const character = reader.readUint8();
+            auto const palette_index = reader.readUint8();
             auto const x = reader.readInt32();
             auto const y = reader.readInt32();
             auto const z = reader.readInt32();
@@ -501,10 +504,11 @@ std::optional<Message> decodeMessage(std::span<uint8_t const> const data)
             auto const z_subcell = reader.readUint16();
             auto const acknowledged_input_sequence = reader.readUint32();
             auto const state_revision = reader.readUint32();
-            if (character && x && y && z && x_subcell && y_subcell && z_subcell
+            if (character && palette_index && x && y && z && x_subcell && y_subcell && z_subcell
                 && acknowledged_input_sequence && state_revision) {
                 message = ServerPlayerPositionMessage{
                     .ch = static_cast<char>(*character),
+                    .palette_index = *palette_index,
                     .x = *x,
                     .y = *y,
                     .z = *z,

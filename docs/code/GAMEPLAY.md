@@ -10,7 +10,7 @@ Clients track remote players by character rather than server `PlayerId`.
 
 [World.hpp](../../src/shared/include/shared/world/World.hpp) defines the 100 ms
 `TICK`, byte-valued normalized XYZ `Direction`, and players with deterministic
-10,000-subcell remainders. `World` owns player lookup, spawn, fixed-step
+10,000-subcell remainders plus a validated four-bit palette identity. `World` owns player lookup, spawn, fixed-step
 movement, despawn, and replicated positions. Flat mode retains the 32 by 32
 board and its two-dimensional collision rules. Flight mode uses signed XYZ
 coordinates, a fixed clear-air spawn, bounds checks without gravity or player
@@ -20,16 +20,15 @@ authoritative player has a 2 by 2 footprint, so its origin is limited to cells
 0 through 30 inclusive (0 through 300,000 subcells) on both axes; its
 footprint may end at, but never exceed, the platform edge.
 
-A valid location excludes another player from its 3 by 3 neighborhood. Random
-spawn and movement enforce this; explicit placement callers own the precondition.
+A valid location excludes another player from its 3 by 3 neighborhood; random
+spawn and movement enforce it.
 
 ## Deterministic scenario plans
 
 [Scenario.hpp](../../src/shared/include/shared/scenario/Scenario.hpp) defines
-bounded plans loaded only from CoreLang `@version("0.1.2")` sources. The host
-validates source and limits before returning an immutable plan, so rejection
-cannot mutate a world or start the runner. Grammar and
-examples are in the [scripting guide](../scripting/README.md).
+bounded CoreLang `@version("0.1.2")` plans. The host validates source and limits
+before publishing an immutable plan; rejection cannot mutate a world or start
+the runner. Grammar is in the [scripting guide](../scripting/README.md).
 
 The legacy `flat3d-v1` profile records flat-plane `(x, y, z)` positions and
 yaw/pitch/roll degrees for reproducible camera replay. Z must remain zero while
@@ -43,8 +42,10 @@ camera-input count, and 100 ms server tick separately from presentation cadence.
 [Message.hpp](../../src/shared/include/shared/net/Message.hpp) defines versioned,
 little-endian join, input, player-position/removal, and height-tile streaming
 messages. Inputs carry normalized three-axis direction, horizontal view heading,
-and a sequence; positions
-carry authoritative coordinates, subcell remainders, and acknowledgement.
+and a sequence; positions carry authoritative coordinates, subcell remainders,
+palette identity, and acknowledgement. The server assigns a stable
+pseudo-random palette index from the character identity, so reconnecting with
+that identity receives the same one of the documented 16 opaque colors.
 
 `Message.cpp` prepends a magic byte, protocol version, and tag. Decoding
 requires a known, complete, valid, non-trailing payload and rejects old or
@@ -64,10 +65,8 @@ monotonic state revision in each replicated position.
 The server rejects duplicate characters, ignores unjoined input, and allows one
 nonzero input per player per tick. A joined disconnect broadcasts removal.
 
-Height-tile delivery uses bounded credits and reserves cleanup capacity.
-Interest refresh cancels removals for desired-again tiles; completed removals
-re-enter generation. Movement responses precede the per-tick bulk budget, and
-generation dispatch rotates across clients so one frontier cannot starve another.
+Height-tile delivery uses bounded credits and cleanup capacity. Movement
+responses precede bulk terrain, whose dispatch rotates across clients.
 
 ## Client roles and lifecycle
 
@@ -86,9 +85,14 @@ W/S and A/D become camera-relative normalized horizontal directions.
 The shared client predicts only its local player's queued input, then rebuilds
 that prediction from acknowledged server state; it never mutates the
 authoritative `World`. Each render samples
-every received player presentation into colored 2 by 2 render records and
-centers the third-person camera from the sampled local presentation. R reloads
-the renderer on a press edge stored per client instance.
+every received player presentation into colored 2 by 2 render records. F5
+cycles first person, rear third person, and front-facing third person; only
+the display camera changes, while input and interest headings continue to use
+the independent local look camera. First person hides the local body and both
+third-person modes draw it. The pure resolver accepts a bounded unobstructed
+distance, so terrain/collision presentation can clip a third-person camera
+without changing authority or packets. R reloads the renderer on a press edge
+stored per client instance.
 
 `BotClient` renders nothing and changes a persistent random direction with
 probability 1/50 per input call.
@@ -106,18 +110,12 @@ HUD acceleration profiles are 2x, 3x, 5x, 8x, 15x, 30x, 80x, 200x, and 500x.
 
 ## S5 chunk data
 
-`Chunk` stores 4096 Air/Stone IDs in a checked 16-cubed unit. Construction
-rejects unsupported IDs; edits update revision and content hash. The retained S5
-`CanonicalWorld` embeds its historical CoreLang 0.0.3 seed-42 generator at
-configure time, while S6 scenario and terrain scripts require CoreLang 0.1.2. `ScriptedWorld`
-collects bounded callbacks into a private candidate and publishes it with its
-configuration identity only after coordinate, block, operation-budget, and
-completion validation succeed. There is no separate script-fuel setting.
+`Chunk` stores checked 16-cubed Air/Stone IDs and tracks revision/content hash.
+The retained S5 `CanonicalWorld` embeds its CoreLang 0.0.3 seed-42 generator;
+S6 scripts require CoreLang 0.1.2. `ScriptedWorld` validates a private bounded
+candidate completely before publication.
 
 ## S5 exposed-face mesh
 
-`ChunkMesher` emits local origin, material and outward direction for each
-exposed face in stable order. Optional neighbor boundary planes suppress solid
-seams. Cache validity compares the exact block and neighbor inputs plus revision;
-a content hash alone never authorizes reuse. Repeated identical updates preserve
-the mesh and build count. Renderer integration is tracked separately.
+`ChunkMesher` emits stable exposed faces. Neighbor planes suppress seams; cache
+validity requires exact blocks, neighbors, and revision, not a content hash alone.

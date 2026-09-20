@@ -66,6 +66,8 @@ public:
     [[nodiscard]]
     bool consumeDebugHudToggleRequest() noexcept;
     [[nodiscard]]
+    bool consumeCameraPerspectiveCycleRequest() noexcept;
+    [[nodiscard]]
     bool consumeLookDelta(float& horizontal, float& vertical) noexcept;
 private:
     [[nodiscard]]
@@ -86,9 +88,11 @@ private:
 
     bool m_reload_pressed = false;
     client::DebugHudToggleLatch m_debug_hud_toggle;
+    client::DebugHudToggleLatch m_camera_perspective_toggle;
     bool m_stop_requested = false;
     bool m_reload_requested = false;
     bool m_debug_hud_toggle_requested = false;
+    bool m_camera_perspective_cycle_requested = false;
     int32_t m_ascending_touch_pointer_id = -1;
     int32_t m_descending_touch_pointer_id = -1;
 };

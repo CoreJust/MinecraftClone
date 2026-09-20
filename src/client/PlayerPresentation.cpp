@@ -11,9 +11,40 @@ namespace {
 
 constexpr double PLAYER_CENTER_OFFSET = 1.0;
 constexpr double PLAYER_CENTER_HEIGHT = 1.0;
-constexpr double THIRD_PERSON_DISTANCE = 6.0;
+constexpr double THIRD_PERSON_DISTANCE = MAX_LOCAL_PLAYER_CAMERA_DISTANCE;
 constexpr double DEGREES_TO_RADIANS = 0.017'453'292'519'943'295'769'236'907'684'89;
 constexpr double WORLD_WRAP_PERIOD = static_cast<double>(shared::WorldExtent::WIDTH);
+
+constexpr std::array<std::array<float, 4>, shared::PLAYER_PALETTE_COUNT> PLAYER_PALETTE{{
+    { 0.91F, 0.24F, 0.24F, 1.0F }, { 0.95F, 0.53F, 0.17F, 1.0F },
+    { 0.94F, 0.82F, 0.22F, 1.0F }, { 0.55F, 0.80F, 0.24F, 1.0F },
+    { 0.18F, 0.75F, 0.42F, 1.0F }, { 0.15F, 0.77F, 0.70F, 1.0F },
+    { 0.19F, 0.62F, 0.92F, 1.0F }, { 0.32F, 0.45F, 0.93F, 1.0F },
+    { 0.53F, 0.34F, 0.91F, 1.0F }, { 0.75F, 0.30F, 0.87F, 1.0F },
+    { 0.91F, 0.27F, 0.64F, 1.0F }, { 0.87F, 0.34F, 0.43F, 1.0F },
+    { 0.55F, 0.30F, 0.18F, 1.0F }, { 0.45F, 0.48F, 0.55F, 1.0F },
+    { 0.75F, 0.78F, 0.82F, 1.0F }, { 0.94F, 0.94F, 0.94F, 1.0F },
+}};
+
+[[nodiscard]] glm::dvec3 forward(CameraAngles const angles) noexcept
+{
+    double const yaw = angles.yaw_degrees * DEGREES_TO_RADIANS;
+    double const pitch = angles.pitch_degrees * DEGREES_TO_RADIANS;
+    double const cosine_pitch = std::cos(pitch);
+    return {
+        std::sin(yaw) * cosine_pitch,
+        std::cos(yaw) * cosine_pitch,
+        std::sin(pitch),
+    };
+}
+
+[[nodiscard]] double clippedThirdPersonDistance(double const maximum_unobstructed_distance) noexcept
+{
+    if (!std::isfinite(maximum_unobstructed_distance) || maximum_unobstructed_distance <= 0.0) {
+        return 0.0;
+    }
+    return std::min(THIRD_PERSON_DISTANCE, maximum_unobstructed_distance);
+}
 
 [[nodiscard]] double interpolateWrappedHorizontal(
     double const from,
@@ -166,18 +197,89 @@ CameraPose localPlayerThirdPersonPose(
     CameraAngles const angles
 ) noexcept
 {
-    double const yaw = angles.yaw_degrees * DEGREES_TO_RADIANS;
-    double const pitch = angles.pitch_degrees * DEGREES_TO_RADIANS;
-    double const cosine_pitch = std::cos(pitch);
-    glm::dvec3 const forward{
-        std::sin(yaw) * cosine_pitch,
-        std::cos(yaw) * cosine_pitch,
-        std::sin(pitch),
-    };
     return {
-        .position = localPlayerCenterPosition(position) - forward * THIRD_PERSON_DISTANCE,
+        .position = localPlayerCenterPosition(position) - forward(angles) * THIRD_PERSON_DISTANCE,
         .angles = angles,
     };
+}
+
+PlayerCameraView resolveLocalPlayerCamera(
+    PlayerPresentationPosition const position,
+    CameraAngles const look_angles,
+    CameraPerspective const perspective,
+    double const maximum_unobstructed_distance
+) noexcept
+{
+    glm::dvec3 const center = localPlayerCenterPosition(position);
+    double const distance = clippedThirdPersonDistance(maximum_unobstructed_distance);
+    switch (perspective) {
+    case CameraPerspective::FirstPerson:
+        return { .pose = { .position = center, .angles = look_angles }, .renders_local_body = false };
+    case CameraPerspective::ThirdPersonRear:
+        return {
+            .pose = { .position = center - forward(look_angles) * distance, .angles = look_angles },
+            .renders_local_body = true,
+        };
+    case CameraPerspective::ThirdPersonFront:
+        return {
+            .pose = {
+                .position = center + forward(look_angles) * distance,
+                .angles = {
+                    .yaw_degrees = look_angles.yaw_degrees + 180.0,
+                    .pitch_degrees = -look_angles.pitch_degrees,
+                    .roll_degrees = -look_angles.roll_degrees,
+                },
+            },
+            .renders_local_body = true,
+        };
+    }
+    return { .pose = { .position = center, .angles = look_angles }, .renders_local_body = false };
+}
+
+PlayerCameraView resolveLocalPlayerCamera(
+    shared::Player const& player,
+    CameraAngles const look_angles,
+    CameraPerspective const perspective,
+    double const maximum_unobstructed_distance
+) noexcept
+{
+    return resolveLocalPlayerCamera(
+        PlayerPresentationPosition{
+            .x = shared::playerPositionX(player),
+            .y = shared::playerPositionY(player),
+            .z = shared::playerPositionZ(player),
+        },
+        look_angles,
+        perspective,
+        maximum_unobstructed_distance
+    );
+}
+
+CameraPerspective nextCameraPerspective(CameraPerspective const perspective) noexcept
+{
+    switch (perspective) {
+    case CameraPerspective::FirstPerson:
+        return CameraPerspective::ThirdPersonRear;
+    case CameraPerspective::ThirdPersonRear:
+        return CameraPerspective::ThirdPersonFront;
+    case CameraPerspective::ThirdPersonFront:
+        return CameraPerspective::FirstPerson;
+    }
+    return CameraPerspective::FirstPerson;
+}
+
+bool shouldRenderPlayerBody(
+    shared::Player const& player,
+    char const local_character,
+    CameraPerspective const perspective
+) noexcept
+{
+    return player.ch != local_character || perspective != CameraPerspective::FirstPerson;
+}
+
+std::array<float, 4> playerPaletteColor(shared::PlayerPaletteIndex const palette_index) noexcept
+{
+    return PLAYER_PALETTE[shared::isValidPlayerPaletteIndex(palette_index) ? palette_index : 0U];
 }
 
 CameraPose localPlayerThirdPersonPose(

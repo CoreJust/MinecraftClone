@@ -31,7 +31,7 @@
     },
     {
       "guide": "docs/code/ANDROID.md",
-      "guide_sha256": "56cc62fe49ffd4260d90c5d584295645e60d9ac6819f783de0b1c8a78437dc0a",
+      "guide_sha256": "7efceb6a3f06b114f5fc665c7fd068a504587094e3e5bddc84561fb3601c05fe",
       "id": "android",
       "sources": [
         "src/android/AndroidInput.cpp",
@@ -47,7 +47,7 @@
         "tests/android/input_state_tests.cpp",
         "tests/android/input_tests.cpp"
       ],
-      "sources_sha256": "f898c130f46c9936f956421cec36f4826f2cc586f07e9c8f9b79c8d0515f236f"
+      "sources_sha256": "263e5fa1ada9bdb2fee7c52b6ee00f00b863f9dfb9768ffafa2932f40b437044"
     },
     {
       "guide": "docs/BUILD.md",
@@ -176,7 +176,7 @@
     },
     {
       "guide": "docs/code/GAMEPLAY.md",
-      "guide_sha256": "275435277cdae8e99a71aa7fdf758d7fee8da00c522056c370eb4023c800fb85",
+      "guide_sha256": "021dbf62900aea3c1c25ec908ac5cac89aba3a0cdb24df8b7fdeb5e2b3fc757f",
       "id": "gameplay",
       "sources": [
         "src/client/BotClient.cpp",
@@ -250,11 +250,11 @@
         "tests/core/world_generation_scheduler_tests.cpp",
         "tests/core/world_generation_tests.cpp"
       ],
-      "sources_sha256": "e84a1f8abe4b3a3a073f6419843980f6bda9ee155210a7cc62a7669d58ebd8e9"
+      "sources_sha256": "ded94005338b0b508cda7073a7881f58b23f72ee46e3a0648eebf9c805eea2c1"
     },
     {
       "guide": "docs/code/RENDERING.md",
-      "guide_sha256": "80bf69dcafb60a5681480ea57702c9020fe2d839ffeaa904eb6c10c04649df89",
+      "guide_sha256": "8bbd9c503f61666578d535e940d1f519f031bac78b08333c3acec49e9ee36144",
       "id": "rendering",
       "sources": [
         "src/client/CMakeLists.txt",
@@ -310,7 +310,7 @@
         "tests/testsupport/image_comparison_tests.cpp",
         "tests/testsupport/include/testsupport/ImageComparison.hpp"
       ],
-      "sources_sha256": "be36633403b9afac9a59470905a1ea48ae24e6f9288d4dff670bafc8249db1a7"
+      "sources_sha256": "2822814d70fb582c8ba2a3a015cc1f2b9d58b6f116359405df9200f4adb8a547"
     }
   ],
   "version": 1

@@ -28,6 +28,8 @@ void AndroidInput::clear() noexcept
     m_reload_requested = false;
     m_debug_hud_toggle.reset();
     m_debug_hud_toggle_requested = false;
+    m_camera_perspective_toggle.reset();
+    m_camera_perspective_cycle_requested = false;
     cancelFlightTouches();
 }
 
@@ -76,6 +78,13 @@ bool AndroidInput::consumeDebugHudToggleRequest() noexcept
     return requested;
 }
 
+bool AndroidInput::consumeCameraPerspectiveCycleRequest() noexcept
+{
+    bool const requested = m_camera_perspective_cycle_requested;
+    m_camera_perspective_cycle_requested = false;
+    return requested;
+}
+
 bool AndroidInput::consumeLookDelta(float& horizontal, float& vertical) noexcept
 {
     return m_state.consumeLookDelta(horizontal, vertical);
@@ -114,6 +123,11 @@ int32_t AndroidInput::handleKey(AInputEvent const* const event) noexcept
     case AKEYCODE_F1:
         if (m_debug_hud_toggle.update(pressed)) {
             m_debug_hud_toggle_requested = true;
+        }
+        return 1;
+    case AKEYCODE_F5:
+        if (m_camera_perspective_toggle.update(pressed)) {
+            m_camera_perspective_cycle_requested = true;
         }
         return 1;
     case AKEYCODE_BACK:

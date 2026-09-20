@@ -6,6 +6,7 @@
 
 #include <glm/vec3.hpp>
 
+#include <array>
 #include <chrono>
 #include <optional>
 #include <vector>
@@ -19,6 +20,19 @@ struct PlayerPresentationPosition final {
 
     bool operator==(PlayerPresentationPosition const&) const noexcept = default;
 };
+
+enum class CameraPerspective : uint8_t {
+    FirstPerson,
+    ThirdPersonRear,
+    ThirdPersonFront,
+};
+
+struct PlayerCameraView final {
+    CameraPose pose;
+    bool renders_local_body = false;
+};
+
+constexpr double MAX_LOCAL_PLAYER_CAMERA_DISTANCE = 6.0;
 
 class PlayerPresentation final {
 public:
@@ -73,6 +87,35 @@ CameraPose localPlayerThirdPersonPose(
     PlayerPresentationPosition position,
     CameraAngles angles
 ) noexcept;
+
+[[nodiscard]]
+PlayerCameraView resolveLocalPlayerCamera(
+    PlayerPresentationPosition position,
+    CameraAngles look_angles,
+    CameraPerspective perspective,
+    double maximum_unobstructed_distance
+) noexcept;
+
+[[nodiscard]]
+PlayerCameraView resolveLocalPlayerCamera(
+    shared::Player const& player,
+    CameraAngles look_angles,
+    CameraPerspective perspective,
+    double maximum_unobstructed_distance
+) noexcept;
+
+[[nodiscard]]
+CameraPerspective nextCameraPerspective(CameraPerspective perspective) noexcept;
+
+[[nodiscard]]
+bool shouldRenderPlayerBody(
+    shared::Player const& player,
+    char local_character,
+    CameraPerspective perspective
+) noexcept;
+
+[[nodiscard]]
+std::array<float, 4> playerPaletteColor(shared::PlayerPaletteIndex palette_index) noexcept;
 
 [[nodiscard]]
 CameraPose localPlayerThirdPersonPose(

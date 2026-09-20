@@ -34,11 +34,13 @@ bool World::playerExists(char const ch) const noexcept
 void World::spawnPlayer(
     PlayerId const id,
     char const ch,
-    std::optional<std::pair<uint8_t, uint8_t>> const& at
+    std::optional<std::pair<uint8_t, uint8_t>> const& at,
+    PlayerPaletteIndex const palette_index
 ) {
     ASSERT(!playerExists(ch));
+    ASSERT(isValidPlayerPaletteIndex(palette_index));
     if (m_mode == WorldMode::Flight) {
-        spawnPlayer(id, ch, FLIGHT_SPAWN);
+        spawnPlayer(id, ch, FLIGHT_SPAWN, palette_index);
         return;
     }
 
@@ -78,12 +80,19 @@ void World::spawnPlayer(
         .x = x,
         .y = y,
         .ch = ch,
+        .palette_index = palette_index,
     });
 }
 
-void World::spawnPlayer(PlayerId const id, char const ch, PlayerPosition const at)
+void World::spawnPlayer(
+    PlayerId const id,
+    char const ch,
+    PlayerPosition const at,
+    PlayerPaletteIndex const palette_index
+)
 {
     ASSERT(!playerExists(ch));
+    ASSERT(isValidPlayerPaletteIndex(palette_index));
     PlayerPosition normalized = at;
     if (m_mode == WorldMode::Flight) {
         constexpr int32_t EXTENT = FLIGHT_MAX_CELL + 1;
@@ -107,6 +116,7 @@ void World::spawnPlayer(PlayerId const id, char const ch, PlayerPosition const a
         .y_subcell = normalized.y_subcell,
         .z_subcell = normalized.z_subcell,
         .ch = ch,
+        .palette_index = palette_index,
     });
 }
 
@@ -221,6 +231,20 @@ bool World::setPlayerPosition(PlayerId const id, PlayerPosition const position)
             player.x_subcell = position.x_subcell;
             player.y_subcell = position.y_subcell;
             player.z_subcell = position.z_subcell;
+            return true;
+        }
+    }
+    return false;
+}
+
+bool World::setPlayerPaletteIndex(PlayerId const id, PlayerPaletteIndex const palette_index) noexcept
+{
+    if (!isValidPlayerPaletteIndex(palette_index)) {
+        return false;
+    }
+    for (Player& player : m_players) {
+        if (player.id == id) {
+            player.palette_index = palette_index;
             return true;
         }
     }

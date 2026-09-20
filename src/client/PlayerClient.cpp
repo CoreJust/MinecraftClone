@@ -14,6 +14,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <condition_variable>
 #include <cstdlib>
 #include <fstream>
@@ -30,6 +31,7 @@ namespace {
 
 static constexpr uint32_t MAX_HEIGHT_TILE_CHANGES_PER_FRAME = 16U;
 static constexpr uint32_t MAX_PREVIEW_MESHES_PER_FRAME = 16U;
+constexpr double CAMERA_OBSTRUCTION_SAMPLE_SPACING = 0.25;
 
 [[nodiscard]] HeightTileKey offsetHeightTileKey(
     HeightTileKey const key,
@@ -439,9 +441,9 @@ shared::Direction PlayerClient::input() {
     };
     MovementDirection const movement = CameraController::cameraRelativeMovement(
         intent,
-        m_camera.pose().angles.yaw_degrees
+        m_look_camera.pose().angles.yaw_degrees
     );
-    glm::dvec3 const view = m_camera.forward();
+    glm::dvec3 const view = m_look_camera.forward();
     int8_t const view_x = CameraController::quantize(view.x);
     int8_t const view_y = CameraController::quantize(view.y);
     m_interest_heading_x = movement.x != 0 || movement.y != 0 ? movement.x : view_x;
@@ -475,7 +477,7 @@ void PlayerClient::render() {
     double cursor_y = 0.0;
     glfwGetCursorPos(m_window.nativeHandle(), &cursor_x, &cursor_y);
     if (m_has_cursor_position) {
-        static_cast<void>(m_camera.rotate(
+        static_cast<void>(m_look_camera.rotate(
             (cursor_x - m_last_cursor_x) * 0.15,
             (m_last_cursor_y - cursor_y) * 0.15
         ));
@@ -483,6 +485,10 @@ void PlayerClient::render() {
     m_last_cursor_x = cursor_x;
     m_last_cursor_y = cursor_y;
     m_has_cursor_position = true;
+    bool const camera_perspective_pressed = glfwGetKey(m_window.nativeHandle(), GLFW_KEY_F5) == GLFW_PRESS;
+    if (m_camera_perspective_latch.update(camera_perspective_pressed)) {
+        m_camera_perspective = nextCameraPerspective(m_camera_perspective);
+    }
     std::chrono::steady_clock::time_point const now = std::chrono::steady_clock::now();
     if (auto const player = m_world.playerByCharacter(m_local_character)) {
         refreshHeightTileInterest(*player);
@@ -510,21 +516,27 @@ void PlayerClient::render() {
     }
     std::optional<PlayerPresentationPosition> const local_position = predictedLocalPresentation(now);
     if (local_position.has_value()) {
-        CameraPose const camera_pose = localPlayerFirstPersonPose(*local_position, m_camera.pose().angles);
-        static_cast<void>(m_camera.setPosition(camera_pose.position));
+        PlayerCameraView const camera_view = resolveLocalPlayerCamera(
+            *local_position,
+            m_look_camera.pose().angles,
+            m_camera_perspective,
+            maximumUnobstructedCameraDistance(*local_position)
+        );
+        static_cast<void>(m_camera.setPosition(camera_view.pose.position));
+        static_cast<void>(m_camera.setAngles(camera_view.pose.angles));
     }
     m_renderer.recreate(width, height);
     m_render_data.clear();
     m_render_data.reserve(m_world.players().size());
     for (shared::Player const& p : m_world.players()) {
-        if (p.ch == m_local_character) {
+        if (!shouldRenderPlayerBody(p, m_local_character, m_camera_perspective)) {
             continue;
         }
         if (auto const position = m_player_presentation.sample(p.ch, now)) {
             m_render_data.push_back({
                 .x = static_cast<float>(position->x),
                 .y = static_cast<float>(position->y),
-                .color = { float(p.ch) / 256.f, 1.f - float(p.ch) / 256.f, 1.f, 1.f },
+                .color = playerPaletteColor(p.palette_index),
                 .z = static_cast<float>(position->z),
             });
         }
@@ -567,11 +579,11 @@ void PlayerClient::render() {
         if (!m_capture_pre_rotation_interest.has_value()
             && runtime.height_tile_mesh_count >= m_capture->minimum_height_tile_meshes) {
             m_capture_pre_rotation_interest = m_height_tile_interest;
-            CameraAngles angles = m_camera.pose().angles;
+            CameraAngles angles = m_look_camera.pose().angles;
             // The flight spawn is east of the world center. Rotate west so the
             // acceptance capture also proves that the central peak remains drawn.
             angles.yaw_degrees -= 90.0;
-            static_cast<void>(m_camera.setAngles(angles));
+            static_cast<void>(m_look_camera.setAngles(angles));
             m_capture_rotation_frames = 1U;
         } else if (m_capture_pre_rotation_interest.has_value() && !m_capture_requested) {
             ++m_capture_rotation_frames;
@@ -603,6 +615,51 @@ void PlayerClient::render() {
         m_renderer.hotReload();
     }
     m_was_reload_pressed = reload_pressed;
+}
+
+double PlayerClient::maximumUnobstructedCameraDistance(
+    PlayerPresentationPosition const& local_position
+) const noexcept
+{
+    if (m_camera_perspective == CameraPerspective::FirstPerson) {
+        return MAX_LOCAL_PLAYER_CAMERA_DISTANCE;
+    }
+
+    glm::dvec3 const center = localPlayerCenterPosition(local_position);
+    PlayerCameraView const intended_camera = resolveLocalPlayerCamera(
+        local_position,
+        m_look_camera.pose().angles,
+        m_camera_perspective,
+        MAX_LOCAL_PLAYER_CAMERA_DISTANCE
+    );
+    glm::dvec3 const ray = (intended_camera.pose.position - center)
+        / MAX_LOCAL_PLAYER_CAMERA_DISTANCE;
+    for (double distance = CAMERA_OBSTRUCTION_SAMPLE_SPACING;
+         distance <= MAX_LOCAL_PLAYER_CAMERA_DISTANCE;
+         distance += CAMERA_OBSTRUCTION_SAMPLE_SPACING) {
+        glm::dvec3 const probe = center + ray * distance;
+        int64_t const probe_z = static_cast<int64_t>(std::floor(probe.z));
+        if (!shared::WorldBounds::isValidZ(probe_z)) {
+            continue;
+        }
+        uint32_t const world_x = shared::WorldBounds::wrapHorizontal(static_cast<int64_t>(std::floor(probe.x)));
+        uint32_t const world_y = shared::WorldBounds::wrapHorizontal(static_cast<int64_t>(std::floor(probe.y)));
+        HeightTileKey const key = shared::normalizeHeightTileKey({
+            .x = static_cast<int32_t>(world_x / shared::HEIGHT_TILE_SIDE_LENGTH),
+            .y = static_cast<int32_t>(world_y / shared::HEIGHT_TILE_SIDE_LENGTH),
+        });
+        HeightTileHandle const tile = heightTileResidency().resident(key);
+        if (!tile) {
+            continue;
+        }
+        uint32_t const tile_x = world_x % shared::HEIGHT_TILE_SIDE_LENGTH;
+        uint32_t const tile_y = world_y % shared::HEIGHT_TILE_SIDE_LENGTH;
+        uint16_t const terrain_height = tile->heights()[tile_y * shared::HEIGHT_TILE_SIDE_LENGTH + tile_x];
+        if (probe_z < static_cast<int64_t>(terrain_height)) {
+            return std::max(0.0, distance - CAMERA_OBSTRUCTION_SAMPLE_SPACING);
+        }
+    }
+    return MAX_LOCAL_PLAYER_CAMERA_DISTANCE;
 }
 
 } // namespace client

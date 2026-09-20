@@ -5,6 +5,7 @@
 
 #include <client/Camera.hpp>
 #include <client/GameClient.hpp>
+#include <client/PlayerPresentation.hpp>
 #include <client/render/VulkanRenderer.hpp>
 
 #include <shared/world/Chunk.hpp>
@@ -40,12 +41,20 @@ private:
     void stop() noexcept;
 
     [[nodiscard]]
+    double maximumUnobstructedCameraDistance(
+        client::PlayerPresentationPosition const& local_position
+    ) const noexcept;
+
+    [[nodiscard]]
     bool canRender() const noexcept;
 private:
     android_app& m_app;
     AndroidInput m_input;
     AndroidShaderAssets m_shader_assets;
     client::Camera m_camera{
+        { .position = { 9.0, 9.0, 13.0 } },
+    };
+    client::Camera m_look_camera{
         { .position = { 9.0, 9.0, 13.0 } },
     };
     shared::ChunkMesher m_chunk_mesher;
@@ -56,6 +65,7 @@ private:
     bool m_has_focus = false;
     bool m_ascend_pressed = false;
     bool m_descend_pressed = false;
+    client::CameraPerspective m_camera_perspective = client::CameraPerspective::FirstPerson;
 };
 
 } // namespace game_android

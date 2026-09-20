@@ -14,6 +14,27 @@ constexpr uint16_t SUBCELLS_PER_CELL = 10'000;
 constexpr uint16_t MOVEMENT_SUBCELLS_PER_TICK = 5'600;
 
 using PlayerId = uint32_t;
+using PlayerPaletteIndex = uint8_t;
+
+constexpr PlayerPaletteIndex PLAYER_PALETTE_COUNT = 16U;
+
+[[nodiscard]]
+constexpr bool isValidPlayerPaletteIndex(PlayerPaletteIndex const index) noexcept
+{
+    return index < PLAYER_PALETTE_COUNT;
+}
+
+// This is intentionally a stable pseudo-random assignment: the server owns
+// the result and repeats it when the same character identity reconnects.
+[[nodiscard]]
+constexpr PlayerPaletteIndex defaultPlayerPaletteIndex(char const character) noexcept
+{
+    uint32_t value = static_cast<uint8_t>(character);
+    value ^= value << 13U;
+    value ^= value >> 17U;
+    value ^= value << 5U;
+    return static_cast<PlayerPaletteIndex>(value & (PLAYER_PALETTE_COUNT - 1U));
+}
 
 enum class WorldMode : uint8_t {
     Flat,
@@ -63,6 +84,7 @@ struct Player final {
     uint16_t y_subcell = 0;
     uint16_t z_subcell = 0;
     char ch;
+    PlayerPaletteIndex palette_index = 0U;
 };
 
 struct Direction final {
@@ -138,9 +160,10 @@ public:
     void spawnPlayer(
         PlayerId id,
         char ch,
-        std::optional<std::pair<uint8_t, uint8_t>> const& at = std::nullopt
+        std::optional<std::pair<uint8_t, uint8_t>> const& at = std::nullopt,
+        PlayerPaletteIndex palette_index = 0U
     );
-    void spawnPlayer(PlayerId id, char ch, PlayerPosition at);
+    void spawnPlayer(PlayerId id, char ch, PlayerPosition at, PlayerPaletteIndex palette_index = 0U);
     void despawnPlayer(PlayerId id);
 
     [[nodiscard]]
@@ -160,6 +183,7 @@ public:
     );
     [[nodiscard]]
     bool setPlayerPosition(PlayerId id, PlayerPosition position);
+    bool setPlayerPaletteIndex(PlayerId id, PlayerPaletteIndex palette_index) noexcept;
 
     [[nodiscard]]
     std::optional<Player> player(PlayerId id) const noexcept;

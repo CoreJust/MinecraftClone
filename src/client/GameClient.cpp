@@ -191,6 +191,7 @@ bool GameClient::applyServerPosition(
             .y_subcell = message.y_subcell,
             .z_subcell = message.z_subcell,
         }));
+        static_cast<void>(m_world.setPlayerPaletteIndex(player->id, message.palette_index));
     } else {
         shared::PlayerId const id = m_next_id++;
         m_world.spawnPlayer(id, message.ch, {
@@ -200,7 +201,7 @@ bool GameClient::applyServerPosition(
             .x_subcell = message.x_subcell,
             .y_subcell = message.y_subcell,
             .z_subcell = message.z_subcell,
-        });
+        }, message.palette_index);
     }
     if (message.ch == m_local_character) {
         while (!m_pending_inputs.empty()

@@ -12,7 +12,7 @@
 namespace shared {
 
 constexpr uint8_t PROTOCOL_MAGIC = 0x4DU;
-constexpr uint8_t PROTOCOL_VERSION = 7U;
+constexpr uint8_t PROTOCOL_VERSION = 8U;
 constexpr uint8_t GAME_CHANNEL = 0U;
 constexpr uint8_t HEIGHT_TILE_CHANNEL = 1U;
 constexpr uint32_t HEIGHT_TILE_SIDE_LENGTH = 16U;
@@ -58,6 +58,7 @@ struct ClientHeightTileCreditMessage final {
 
 struct ServerPlayerPositionMessage final {
     char ch;
+    PlayerPaletteIndex palette_index = 0U;
     int32_t x;
     int32_t y;
     int32_t z = 0;

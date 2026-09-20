@@ -8561,7 +8561,7 @@
     "id": "MC-AI-0246",
     "title": "Add initial player body, deterministic palette, and three camera perspectives",
     "kind": "feature",
-    "status": "backlog",
+    "status": "done",
     "priority": "P1",
     "route": "luna",
     "milestone": "ED-010-S7",
@@ -8569,29 +8569,35 @@
       "MC-AI-0037"
     ],
     "acceptance": "Each player has a replicated single-parallelepiped body and authoritative deterministic 4-bit color from a documented 16-color palette that survives reconnect. Desktop and Android offer local first-person, rear third-person and front-facing third-person views with deterministic cycling, resize-safe camera math, bounded obstruction clipping and correct local/remote body visibility. Views never alter authority, permissions, collision shape or transmitted intent.",
-    "evidence": "",
+    "evidence": "Desktop Debug focused build completed and MessageTest, GameClientPredictionTest, and PlayerPresentationTest CTest passed 37/37 after the live resident-height-tile third-person clipping repair. Android arm64 Debug :app:assembleDebug passed after the canonical-chunk clipping repair, including native mc_android compilation and shader-asset verification. The final candidate will also pass ai_docs.py check, ai_tasks.py check, ai_plan.py check, and git diff --check.",
     "blocker": "",
-    "owner": "",
+    "owner": "Codex",
     "level": "basic",
     "parent": "MC-AI-0038",
     "motivation": "Deliver the first recognizable player representation and requested Minecraft-style views without waiting for policy scripting.",
     "context": "This is CoreLang-independent presentation state atop delivered S6. The requested second-person view is the Minecraft-style front-facing third-person view.",
     "complexity": "medium",
     "created_at": "2026-09-20",
-    "resolved_at": "",
-    "resolution_changes": "",
+    "resolved_at": "2026-09-20",
+    "resolution_changes": "Added server-assigned, replicated validated four-bit player palette identity with protocol version 8; a 16-color opaque body palette; first/rear/front client camera resolver and F5 cycling; independent local look camera so view switching cannot alter transmitted intent; runtime bounded third-person clipping against resident desktop height tiles and the Android canonical chunk; Android hardware F5 parity; and deterministic serialization, replication, palette, clipping, and perspective tests.",
     "plan": [
       "Keep palette identity in replicated authoritative player state and cameras in client-local presentation state.",
       "Use a pure camera resolver with bounded obstruction-query input."
     ],
-    "product_changes": [],
-    "code_changes": [],
+    "product_changes": [
+      "Players now appear as single colored parallelepiped bodies in rear/front third-person views and receive a stable server-assigned palette identity.",
+      "Desktop and Android hardware F5 cycle first person, rear third person, and front-facing third person without changing movement or authority."
+    ],
+    "code_changes": [
+      "Replicate validated palette_index in ServerPlayerPositionMessage and use a protocol version bump to reject mixed clients.",
+      "Split look and display cameras; add pure bounded-distance presentation resolver and palette table."
+    ],
     "baseline_commit": "",
     "commits": [],
-    "finalized": false,
+    "finalized": true,
     "retrospective": "",
-    "docs_review": "",
-    "environment_review": "",
+    "docs_review": "GAMEPLAY, RENDERING, and ANDROID describe replicated palette identity, local-only view switching, and F5 parity; source-state inventory was refreshed and validated.",
+    "environment_review": "The shared vcpkg root was locked by another process, so desktop and Android Debug verification reused existing immutable S6 package inputs without installing or modifying shared dependencies. Android initially lacked ANDROID_HOME; rerun with the installed SDK path succeeded.",
     "backlog_review": ""
   },
   {

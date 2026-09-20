@@ -211,6 +211,37 @@ TEST(GameClientPredictionTest, PredictsImmediatelyWithoutMutatingTheAuthoritativ
     EXPECT_EQ(client.predictedLocalPlayer()->x_subcell, shared::MOVEMENT_SUBCELLS_PER_TICK);
 }
 
+TEST(GameClientPredictionTest, ServerPaletteIdentityUpdatesTheReplicatedPlayer)
+{
+    PredictionClient client;
+    client.setLocalCharacter('@');
+
+    ASSERT_TRUE(client.applyServerPosition({
+        .ch = '@',
+        .palette_index = 11U,
+        .x = 2,
+        .y = 3,
+        .x_subcell = 0U,
+        .y_subcell = 0U,
+        .acknowledged_input_sequence = 0U,
+        .state_revision = 1U,
+    }));
+    ASSERT_TRUE(client.authoritativePlayer('@').has_value());
+    EXPECT_EQ(client.authoritativePlayer('@')->palette_index, 11U);
+
+    ASSERT_TRUE(client.applyServerPosition({
+        .ch = '@',
+        .palette_index = 4U,
+        .x = 2,
+        .y = 3,
+        .x_subcell = 0U,
+        .y_subcell = 0U,
+        .acknowledged_input_sequence = 0U,
+        .state_revision = 2U,
+    }));
+    EXPECT_EQ(client.authoritativePlayer('@')->palette_index, 4U);
+}
+
 TEST(GameClientPredictionTest, HeightTileRemovalRejectsStaleTileAndEvictsTheResidentTile)
 {
     static constexpr shared::HeightTileKey KEY{ .x = 41, .y = 23 };

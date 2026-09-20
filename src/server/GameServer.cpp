@@ -479,13 +479,13 @@ void GameServer::onReceived(core::ServerReceiveEvent event) {
             &SpawnPoint::character
         );
         if (spawn_point == m_spawn_points.end()) {
-            m_world.spawnPlayer(id, ch);
+            m_world.spawnPlayer(id, ch, std::nullopt, shared::defaultPlayerPaletteIndex(ch));
         } else {
             m_world.spawnPlayer(id, ch, shared::PlayerPosition{
                 .x = spawn_point->x,
                 .y = spawn_point->y,
                 .z = spawn_point->z,
-            });
+            }, shared::defaultPlayerPaletteIndex(ch));
         }
         m_player_replications.push_back(PlayerReplication{ .id = id });
         sendTo(id, shared::JoinResponseMessage{
@@ -584,6 +584,7 @@ shared::ServerPlayerPositionMessage GameServer::playerPositionMessage(
 {
     return {
         .ch = player.ch,
+        .palette_index = player.palette_index,
         .x = player.x,
         .y = player.y,
         .z = player.z,

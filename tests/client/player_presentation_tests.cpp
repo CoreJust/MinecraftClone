@@ -365,4 +365,86 @@ TEST(PlayerPresentationTest, SampledPresentationDrivesCameraAndRemotePlayersWhil
     );
 }
 
+TEST(PlayerPresentationTest, CameraPerspectivesKeepLookIntentSeparateFromDisplayedView)
+{
+    static constexpr client::PlayerPresentationPosition POSITION{ .x = 12.0, .y = 20.0, .z = 0.0 };
+    static constexpr client::CameraAngles LOOK{ .yaw_degrees = 0.0, .pitch_degrees = 0.0 };
+
+    client::PlayerCameraView const first_person = client::resolveLocalPlayerCamera(
+        POSITION,
+        LOOK,
+        client::CameraPerspective::FirstPerson,
+        client::MAX_LOCAL_PLAYER_CAMERA_DISTANCE
+    );
+    client::PlayerCameraView const rear_third_person = client::resolveLocalPlayerCamera(
+        POSITION,
+        LOOK,
+        client::CameraPerspective::ThirdPersonRear,
+        client::MAX_LOCAL_PLAYER_CAMERA_DISTANCE
+    );
+    client::PlayerCameraView const front_third_person = client::resolveLocalPlayerCamera(
+        POSITION,
+        LOOK,
+        client::CameraPerspective::ThirdPersonFront,
+        client::MAX_LOCAL_PLAYER_CAMERA_DISTANCE
+    );
+
+    EXPECT_EQ(first_person.pose.position, (glm::dvec3{ 13.0, 21.0, 1.0 }));
+    EXPECT_EQ(first_person.pose.angles, LOOK);
+    EXPECT_FALSE(first_person.renders_local_body);
+    EXPECT_EQ(rear_third_person.pose.position, (glm::dvec3{ 13.0, 15.0, 1.0 }));
+    EXPECT_EQ(rear_third_person.pose.angles, LOOK);
+    EXPECT_TRUE(rear_third_person.renders_local_body);
+    EXPECT_EQ(front_third_person.pose.position, (glm::dvec3{ 13.0, 27.0, 1.0 }));
+    EXPECT_EQ(front_third_person.pose.angles.yaw_degrees, 180.0);
+    EXPECT_TRUE(front_third_person.renders_local_body);
+    EXPECT_NEAR(client::Camera{ front_third_person.pose }.forward().y, -1.0, 1e-12);
+}
+
+TEST(PlayerPresentationTest, CameraObstructionDistanceIsBoundedAndLocalBodyVisibilityFollowsPerspective)
+{
+    static constexpr client::PlayerPresentationPosition POSITION{ .x = 0.0, .y = 0.0, .z = 0.0 };
+    static constexpr shared::Player LOCAL{ .id = 1U, .x = 0, .y = 0, .ch = '@' };
+    static constexpr shared::Player REMOTE{ .id = 2U, .x = 0, .y = 0, .ch = '#' };
+    client::PlayerCameraView const clipped = client::resolveLocalPlayerCamera(
+        POSITION,
+        { },
+        client::CameraPerspective::ThirdPersonRear,
+        1.5
+    );
+
+    EXPECT_DOUBLE_EQ(clipped.pose.position.y, -0.5);
+    EXPECT_FALSE(client::shouldRenderPlayerBody(LOCAL, '@', client::CameraPerspective::FirstPerson));
+    EXPECT_TRUE(client::shouldRenderPlayerBody(LOCAL, '@', client::CameraPerspective::ThirdPersonRear));
+    EXPECT_TRUE(client::shouldRenderPlayerBody(REMOTE, '@', client::CameraPerspective::FirstPerson));
+    EXPECT_EQ(
+        client::nextCameraPerspective(client::CameraPerspective::FirstPerson),
+        client::CameraPerspective::ThirdPersonRear
+    );
+    EXPECT_EQ(
+        client::nextCameraPerspective(client::CameraPerspective::ThirdPersonRear),
+        client::CameraPerspective::ThirdPersonFront
+    );
+    EXPECT_EQ(
+        client::nextCameraPerspective(client::CameraPerspective::ThirdPersonFront),
+        client::CameraPerspective::FirstPerson
+    );
+}
+
+TEST(PlayerPresentationTest, PaletteMapsEveryAuthoritativeFourBitIdentityToOpaqueColor)
+{
+    std::array<float, 4> const first = client::playerPaletteColor(0U);
+    std::array<float, 4> const second = client::playerPaletteColor(1U);
+    EXPECT_NE(first, second);
+    for (shared::PlayerPaletteIndex index = 0U; index < shared::PLAYER_PALETTE_COUNT; ++index) {
+        std::array<float, 4> const color = client::playerPaletteColor(index);
+        EXPECT_EQ(color[3], 1.0F);
+        for (float const component : color) {
+            EXPECT_GE(component, 0.0F);
+            EXPECT_LE(component, 1.0F);
+        }
+    }
+    EXPECT_EQ(client::playerPaletteColor(shared::PLAYER_PALETTE_COUNT), first);
+}
+
 } // namespace

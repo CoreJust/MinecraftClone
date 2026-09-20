@@ -60,6 +60,7 @@ void expectRoundTrip(MessageTy const expected) {
         EXPECT_EQ(actual.credits, expected.credits);
     } else if constexpr (std::is_same_v<MessageTy, shared::ServerPlayerPositionMessage>) {
         EXPECT_EQ(actual.ch, expected.ch);
+        EXPECT_EQ(actual.palette_index, expected.palette_index);
         EXPECT_EQ(actual.x, expected.x);
         EXPECT_EQ(actual.y, expected.y);
         EXPECT_EQ(actual.z, expected.z);
@@ -114,7 +115,7 @@ TEST(MessageTest, RoundTripsEveryMessageKind) {
         .world_revision = 7U, .delivery_token = 11U, .credits = 1U,
     });
     expectRoundTrip(shared::ServerPlayerPositionMessage{
-        .ch = '#', .x = 30, .y = 2, .z = 12, .x_subcell = 9'999, .y_subcell = 500, .z_subcell = 1,
+        .ch = '#', .palette_index = 7U, .x = 30, .y = 2, .z = 12, .x_subcell = 9'999, .y_subcell = 500, .z_subcell = 1,
         .acknowledged_input_sequence = 0x7856'3412U, .state_revision = 0x1234'5678U,
     });
     expectRoundTrip(shared::ServerRemovePlayerMessage{ .ch = '$' });
@@ -136,7 +137,7 @@ TEST(MessageTest, RejectsTruncatedAndUnknownPayloads) {
         shared::ClientInputMessage{ .direction = { 129, 127, 1 }, .sequence = 0x7856'3412U },
         shared::ClientHeightTileCreditMessage{ .world_revision = 7U, .delivery_token = 11U, .credits = 1U },
         shared::ServerPlayerPositionMessage{
-            .ch = '#', .x = 30, .y = 2, .z = 12, .x_subcell = 9'999, .y_subcell = 500, .z_subcell = 1,
+            .ch = '#', .palette_index = 7U, .x = 30, .y = 2, .z = 12, .x_subcell = 9'999, .y_subcell = 500, .z_subcell = 1,
             .acknowledged_input_sequence = 0x7856'3412U, .state_revision = 0x1234'5678U,
         },
         shared::ServerRemovePlayerMessage{ .ch = '$' },
@@ -164,7 +165,7 @@ TEST(MessageTest, UsesVersionedLittleEndianFixedWidthPayloads) {
     EXPECT_EQ(
         shared::encodeMessage(shared::JoinRequestMessage{ .ch = '@' }),
         (std::vector<uint8_t>{
-            0x4D, 7, 0, '@', 0,
+            0x4D, 8, 0, '@', 0,
             1, 0, 0, 0,
             42, 0, 0, 0, 0, 0, 0, 0,
             16, 16, 16,
@@ -173,23 +174,23 @@ TEST(MessageTest, UsesVersionedLittleEndianFixedWidthPayloads) {
     );
     EXPECT_EQ(
         shared::encodeMessage(shared::JoinResponseMessage{ .accepted = true }),
-        (std::vector<uint8_t>{ 0x4D, 7, 1, 1 })
+        (std::vector<uint8_t>{ 0x4D, 8, 1, 1 })
     );
     EXPECT_EQ(
         shared::encodeMessage(shared::JoinResponseMessage{ .accepted = false }),
-        (std::vector<uint8_t>{ 0x4D, 7, 1, 0 })
+        (std::vector<uint8_t>{ 0x4D, 8, 1, 0 })
     );
     EXPECT_EQ(
         shared::encodeMessage(shared::ClientInputMessage{ .direction = { 129, 127, 1 }, .sequence = 0x7856'3412U }),
-        (std::vector<uint8_t>{ 0x4D, 7, 2, 129, 127, 1, 0, 5, 0, 0, 127, 18, 52, 86, 120 })
+        (std::vector<uint8_t>{ 0x4D, 8, 2, 129, 127, 1, 0, 5, 0, 0, 127, 18, 52, 86, 120 })
     );
     EXPECT_EQ(
         shared::encodeMessage(shared::ServerPlayerPositionMessage{
-            .ch = '#', .x = 30, .y = 2, .z = 12, .x_subcell = 9'999, .y_subcell = 500, .z_subcell = 1,
+            .ch = '#', .palette_index = 7U, .x = 30, .y = 2, .z = 12, .x_subcell = 9'999, .y_subcell = 500, .z_subcell = 1,
             .acknowledged_input_sequence = 0x7856'3412U, .state_revision = 0x1234'5678U,
         }),
         (std::vector<uint8_t>{
-            0x4D, 7, 4, '#',
+            0x4D, 8, 4, '#', 7,
             30, 0, 0, 0,
             2, 0, 0, 0,
             12, 0, 0, 0,
@@ -199,7 +200,7 @@ TEST(MessageTest, UsesVersionedLittleEndianFixedWidthPayloads) {
     );
     EXPECT_EQ(
         shared::encodeMessage(shared::ServerRemovePlayerMessage{ .ch = '$' }),
-        (std::vector<uint8_t>{ 0x4D, 7, 5, '$' })
+        (std::vector<uint8_t>{ 0x4D, 8, 5, '$' })
     );
     auto const height_tile = shared::encodeMessage(heightTileMessage());
     EXPECT_EQ(height_tile.size(), 3U + 24U + shared::HEIGHT_TILE_PAYLOAD_BYTES);
@@ -262,18 +263,15 @@ TEST(MessageTest, RejectsInvalidPayloadValues) {
         .ch = '@', .x = 1, .y = 1, .x_subcell = 0, .y_subcell = 0,
         .acknowledged_input_sequence = 0U, .state_revision = 1U,
     });
-    position[4] = 0;
-    position[5] = 0;
-    position[6] = 1;
-    position[7] = 0;
+    position[4] = shared::PLAYER_PALETTE_COUNT;
     EXPECT_FALSE(shared::decodeMessage(position).has_value());
 
     position = shared::encodeMessage(shared::ServerPlayerPositionMessage{
         .ch = '@', .x = 1, .y = 1, .x_subcell = 0, .y_subcell = 0,
         .acknowledged_input_sequence = 0U, .state_revision = 1U,
     });
-    position[16] = 16;
-    position[17] = 39;
+    position[17] = 16;
+    position[18] = 39;
     EXPECT_FALSE(shared::decodeMessage(position).has_value());
 
     auto join = shared::encodeMessage(shared::JoinRequestMessage{ .ch = '\n' });
