@@ -488,6 +488,11 @@ TEST(GameServerPreviewTest, SustainedFlightKeepsInputAcknowledgementsCurrentWhil
         }
         std::this_thread::sleep_for(std::chrono::milliseconds{16});
     }
+    auto const catch_up_deadline = std::chrono::steady_clock::now() + std::chrono::seconds{1};
+    while (sent - client.last_acknowledged_input > 2U
+        && std::chrono::steady_clock::now() < catch_up_deadline) {
+        client.poll(std::chrono::milliseconds{1});
+    }
     stop_requested.store(true, std::memory_order_relaxed);
     server_thread.join();
 

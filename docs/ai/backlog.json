@@ -1439,7 +1439,7 @@
       "MC-AI-0036"
     ],
     "acceptance": "The 65,536 by 65,536 by 1,024 logical air-and-stone world is represented and traversed without dense allocation. CoreLang 0.1.2 supplies deterministic height maps while native code owns bounded asynchronous generation, server-authoritative camera-independent circular residency, directional priority, transport, detailed meshing and incremental Vulkan rendering. Boundaries, world-seam presentation, cancellation, memory, runtime performance, GUI text and user-approved macOS gameplay evidence pass. The reviewed S6 source is promoted and tagged, with macOS, Windows and Android artifacts, SHA256 hashes, provenance, dependencies/licenses and truthful signing status; downloaded macOS and Android assets receive local acceptance while Windows runtime remains separately reported.",
-    "evidence": "The original S6 and failed r1/r2 tags remain immutable. CoreLang 0.1.2.1 is published at 048a3abb8f3d18d97c41dbd618eb37fd0247f285 after 25/25 macOS and native Windows tests. Hosted r1/r2 passed Android but exposed macOS acknowledgement lag when terrain delivery began. MC-AI-0227 reserves control CPU capacity, MC-AI-0228 caches seam-continuous interest order, and MC-AI-0229 separates frequent generation pumping from control-first tick-paced terrain network admission. Queue cadence, interest ordering, frontier deadline, stalled-client credit window, and sustained-flight tests pass with the 16-tick contract unchanged. A new corrected promotion, fresh all-platform artifacts, downloaded runtime acceptance, public release, and final checksums remain pending.",
+    "evidence": "The original S6 and failed r1/r2 tags remain immutable. CoreLang 0.1.2.1 is published at 048a3abb8f3d18d97c41dbd618eb37fd0247f285 after 25/25 macOS and native Windows tests. Hosted r1/r2 passed Android but exposed macOS acknowledgement lag when terrain delivery began. MC-AI-0227 reserves control CPU capacity, MC-AI-0228 caches seam-continuous interest order, and MC-AI-0229 separates frequent generation pumping from control-first tick-paced terrain network admission. MC-AI-0230 retains the 35-second maximum-lag measurement and observes bounded final catch-up before shutdown. Queue cadence, interest ordering, frontier deadline, stalled-client window, and sustained-flight tests pass with the 16-tick contract unchanged. A new corrected promotion, fresh all-platform artifacts, downloaded runtime acceptance, public release, and final checksums remain pending.",
     "blocker": "Corrected source is locally accepted and ready for promotion; aggregate completion still requires hosted macOS, native Windows, and Android artifacts plus exact public asset and runtime reconciliation.",
     "owner": "s6-main",
     "level": "snapshot",
@@ -7926,6 +7926,44 @@
     ],
     "code_changes": [
       "Make terrain delivery tick-paced and control-first while keeping generation workers asynchronous."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0230",
+    "title": "Let sustained-flight acceptance observe catch-up",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P0",
+    "route": "luna",
+    "milestone": "ED-010-S6",
+    "depends_on": [],
+    "acceptance": "The sustained-flight test measures the unchanged maximum lag during its full 35-second load window, then gives the running server a bounded catch-up interval before asserting final lag and stopping it.",
+    "evidence": "The unchanged 35-second maximum-lag and final two-input assertions pass twice consecutively; only the final assertion receives a bounded one-second live-server drain after load measurement.",
+    "blocker": "",
+    "owner": "",
+    "level": "basic",
+    "parent": "MC-AI-0037",
+    "motivation": "After the control-first fix removed maximum-lag failures, the test intermittently stopped the server with three final inputs in flight and asserted a two-input bound without allowing another tick.",
+    "context": "The bounded post-load drain must not alter or reset the maximum lag collected during the stressed interval.",
+    "complexity": "low",
+    "created_at": "2026-09-20",
+    "resolved_at": "2026-09-20",
+    "resolution_changes": "Added a bounded post-load acknowledgement observation interval before server shutdown.",
+    "plan": [
+      "Poll the connected client for at most one second until final lag reaches two, then stop and retain both original assertions."
+    ],
+    "product_changes": [
+      "No gameplay behavior change; acceptance now distinguishes sustained stalls from inputs sent immediately before shutdown."
+    ],
+    "code_changes": [
+      "Add a bounded post-load acknowledgement drain to the sustained-flight integration test."
     ],
     "baseline_commit": "",
     "commits": [],
