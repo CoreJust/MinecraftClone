@@ -20,9 +20,14 @@ Planning tasks are created on request before work. Current plans: [snapshot 0.1.
 
 ## Enabled checks
 
-[ai_checks.json](../../script/ai_checks.json) is the extension registry. The full gate always runs build, the complete CTest suite, tooling/doc/task checks, whitespace, and `publish.py --checks-only` for all current source/style/version verifications. Enabled registry commands add tests without replacing existing checks. A failed or invalid enabled check blocks closure.
+[ai_checks.json](../../script/ai_checks.json) registers extra checks. The full gate runs build, complete CTest, tooling/doc/task checks, whitespace and `publish.py --checks-only`; enabled commands add checks, and any failure blocks closure.
 
-The screenshot entry is disabled with an explicit reason until screenshot tests are implemented. Enable its command when ready; snapshots, minors and majors then run it automatically. Minor/major environment diagnostics supplement the recorded environment review. A doctor command is not proof that every SDK/platform path works; record the supported-platform evidence and any unresolved limitation.
+Screenshot tests stay disabled with an explicit reason until implemented. Platform diagnostics supplement, but never replace, actual platform evidence and recorded limitations.
+
+From Snapshot 7, the MC-AI-0249 automated sanitizer and static-analysis matrix
+is an enabled candidate, strict and promotion gate. The exact candidate needs
+receipts for every required platform/tool row; a missing tool, device, result
+or receipt fails the release rather than creating an exception.
 
 ## Publish
 
