@@ -330,6 +330,10 @@ TEST(RendererSmokeTest, GrowsStoneFaceArenaWithoutBreakingPresentation)
     static constexpr uint32_t LOGICAL_HEIGHT = 240U;
     static constexpr uint32_t TILE_COUNT = 65U;
     static constexpr uint32_t INITIAL_CAPACITY = 65'536U;
+    static constexpr double CAMERA_Y = -20.0;
+    static constexpr double CAMERA_Z = 18.0;
+    static constexpr double CAMERA_X_OFFSET = 8.0;
+    static constexpr double CAMERA_PITCH_DEGREES = -25.0;
     static constexpr auto TIMEOUT = std::chrono::seconds{ 10 };
     core::platform::glfw::GlfwWindow window{
         core::platform::glfw::WindowDescriptor{
@@ -352,13 +356,32 @@ TEST(RendererSmokeTest, GrowsStoneFaceArenaWithoutBreakingPresentation)
         renderer.upsertHeightTileMesh(denseHeightTileMesh(static_cast<int32_t>(tile_index)));
     }
     EXPECT_GT(renderer.runtimeInfo().stone_face_capacity, INITIAL_CAPACITY);
-    ASSERT_TRUE(window.nextFrame());
-    EXPECT_TRUE(renderer.render(
-        {},
-        client::DebugHudInput{},
-        1.0F,
-        std::chrono::steady_clock::now() + TIMEOUT
-    ));
+
+    for (uint32_t tile_index = 1U; tile_index < TILE_COUNT - 1U; ++tile_index) {
+        EXPECT_TRUE(renderer.removeHeightTileMesh({ .x = static_cast<int32_t>(tile_index), .y = 0 }));
+    }
+
+    auto const renderVisibleTile = [&renderer, &window](int32_t const tile_x) {
+        renderer.setCamera({
+            .position = {
+                static_cast<double>(tile_x * static_cast<int32_t>(shared::HeightTile::SIDE_LENGTH))
+                    + CAMERA_X_OFFSET,
+                CAMERA_Y,
+                CAMERA_Z,
+            },
+            .angles = { .pitch_degrees = CAMERA_PITCH_DEGREES },
+        });
+        ASSERT_TRUE(window.nextFrame());
+        EXPECT_TRUE(renderer.render(
+            {},
+            client::DebugHudInput{},
+            1.0F,
+            std::chrono::steady_clock::now() + TIMEOUT
+        ));
+        EXPECT_GT(renderer.runtimeInfo().chunk_draw_count, 0U);
+    };
+    renderVisibleTile(0);
+    renderVisibleTile(static_cast<int32_t>(TILE_COUNT - 1U));
 }
 
 TEST(RendererSmokeTest, RejectsASelectedTransformThatRequiresClientCompensation)

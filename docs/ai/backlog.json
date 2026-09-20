@@ -8366,5 +8366,42 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0241",
+    "title": "Strengthen the S6 stone-face arena smoke test: prove controlled cameras draw both the pre-growth and post-growth resident terrain ranges after capacity recreation.",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P0",
+    "route": "luna",
+    "milestone": "Unassigned",
+    "depends_on": [],
+    "acceptance": "The host-Vulkan smoke test grows the S6 arena and proves controlled near cameras issue at least one stone terrain draw for both the resident range uploaded before growth and the range uploaded after growth.",
+    "evidence": "Host GUI Vulkan renderer-smoke build and RendererSmokeTest passed: the test grew 65 dense height tiles beyond the 65,536-face arena, then used controlled near cameras to verify nonzero terrain draw counts for tile 0 and tile 64.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0037",
+    "motivation": "Strengthen the S6 stone-face arena smoke test: prove controlled cameras draw both the pre-growth and post-growth resident terrain ranges after capacity recreation.",
+    "context": "Created through the task planning interface.",
+    "complexity": "medium",
+    "created_at": "2026-09-20",
+    "resolved_at": "2026-09-20",
+    "resolution_changes": "Added deterministic post-growth evidence for both the resident pre-growth and post-growth ranges: the test removes every intervening tile after recreation, then verifies a nonzero terrain draw from a controlled camera beside each isolated endpoint tile.",
+    "plan": [
+      "Clarify acceptance and implementation steps.",
+      "Add camera-controlled draw assertions for the first and last resident dense height tiles after arena recreation."
+    ],
+    "product_changes": [],
+    "code_changes": [
+      "Extend renderer_smoke_tests.cpp with deterministic pre-growth and post-growth terrain draw evidence."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]
