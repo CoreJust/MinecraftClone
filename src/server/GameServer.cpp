@@ -687,6 +687,25 @@ void GameServer::admitHeightTileDeliveries(PreviewStream& stream)
         return;
     }
 
+    std::vector<shared::HeightTileKey> const pending_removals{
+        stream.pending_removals.begin(), stream.pending_removals.end()
+    };
+    std::vector<shared::HeightTileKey> const inflight_removals{
+        stream.inflight_removal_keys.begin(), stream.inflight_removal_keys.end()
+    };
+    std::vector<shared::HeightTileKey> removal_keys = shared::selectHeightTileRemovalCandidates(
+        stream.center,
+        stream.heading_x,
+        stream.heading_y,
+        pending_removals,
+        inflight_removals,
+        available_batches
+    );
+    std::erase_if(removal_keys, [&stream](shared::HeightTileKey const key) {
+        return stream.desired_key_set.contains(key);
+    });
+
+    uint32_t const maximum_additions = maximum_operations - static_cast<uint32_t>(removal_keys.size());
     std::vector<shared::HeightTileKey> ready_keys;
     ready_keys.reserve(stream.ready_tiles.size());
     for (auto const& [key, tile] : stream.ready_tiles) {
@@ -699,32 +718,16 @@ void GameServer::admitHeightTileDeliveries(PreviewStream& stream)
         return heightTilePriority(stream.center, stream.heading_x, stream.heading_y, first)
             < heightTilePriority(stream.center, stream.heading_x, stream.heading_y, second);
     };
-    if (ready_keys.size() > maximum_operations) {
+    if (ready_keys.size() > maximum_additions) {
         std::ranges::partial_sort(
             ready_keys,
-            ready_keys.begin() + maximum_operations,
+            ready_keys.begin() + maximum_additions,
             ready_order
         );
-        ready_keys.resize(maximum_operations);
+        ready_keys.resize(maximum_additions);
     } else {
         std::ranges::sort(ready_keys, ready_order);
     }
-
-    uint32_t const maximum_removals = maximum_operations - static_cast<uint32_t>(ready_keys.size());
-    std::vector<shared::HeightTileKey> const pending_removals{
-        stream.pending_removals.begin(), stream.pending_removals.end()
-    };
-    std::vector<shared::HeightTileKey> const inflight_removals{
-        stream.inflight_removal_keys.begin(), stream.inflight_removal_keys.end()
-    };
-    std::vector<shared::HeightTileKey> const removal_keys = shared::selectHeightTileRemovalCandidates(
-        stream.center,
-        stream.heading_x,
-        stream.heading_y,
-        pending_removals,
-        inflight_removals,
-        maximum_removals
-    );
 
     auto ready = ready_keys.begin();
     auto removal = removal_keys.begin();
@@ -798,6 +801,9 @@ void GameServer::refreshHeightTileInterest(PreviewStream& stream, shared::Player
     stream.desired_key_set.clear();
     stream.desired_key_set.reserve(stream.desired_keys.size());
     stream.desired_key_set.insert(stream.desired_keys.begin(), stream.desired_keys.end());
+    std::erase_if(stream.pending_removals, [&stream](shared::HeightTileKey const key) {
+        return stream.desired_key_set.contains(key);
+    });
     if (center_changed) {
         auto const now = std::chrono::steady_clock::now();
         stream.background_generation_tokens = 0.0;

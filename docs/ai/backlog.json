@@ -8087,5 +8087,43 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0234",
+    "title": "Reconcile terrain removals across reprioritization",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P1",
+    "route": "luna",
+    "milestone": "EarlyDev 0.1.0:6",
+    "depends_on": [],
+    "acceptance": "Terrain removals make bounded progress while additions are saturated; queued removals are cancelled when tiles re-enter interest; already-sent removals recover automatically after acknowledgement; transport-level tests cover saturated cleanup and outward-then-return movement.",
+    "evidence": "Focused transport regressions pass for exhausted-credit outward/return cancellation and saturated-addition removal progress with inflight reclaim recovery. The 35-second 500x sustained-flight acknowledgement contract passes after the correction, and the remaining preview-stream suite passed unchanged.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0037",
+    "motivation": "Pre-publication review found server/client terrain residency can diverge or expose holes during continuous streaming and direction reversal.",
+    "context": "Fix the removal lifecycle in the S6 height-tile streaming protocol without weakening addition throughput or render distance.",
+    "complexity": "medium",
+    "created_at": "2026-09-20",
+    "resolved_at": "2026-09-20",
+    "resolution_changes": "Reserved one removal operation per available delivery batch before filling additions, pruned restored-interest removals during refresh, defensively rejects restored keys at admission, and added end-to-end stalled-credit reversal and inflight recovery tests.",
+    "plan": [
+      "Reserve bounded removal capacity before additions, prune reclaimed pending removals on interest refresh and admission, requeue desired tiles after acknowledged inflight removal, and add focused transport regressions."
+    ],
+    "product_changes": [
+      "Terrain remains continuous while flying and reversing direction during background generation."
+    ],
+    "code_changes": [
+      "Correct GameServer height-tile removal scheduling and lifecycle tests."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]
