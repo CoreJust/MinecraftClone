@@ -82,6 +82,21 @@ TEST(HeightTileInterestTest, WrapsAtWorldBoundariesWithoutChangingShape)
     EXPECT_TRUE(contains(boundary, 0, 4'095));
     EXPECT_TRUE(contains(boundary, 4'050, 4'095));
     EXPECT_EQ(boundary.keys.front(), (shared::HeightTileKey{.x = 4'095, .y = 4'095}));
+    auto const displacement = [](int32_t const center, int32_t const coordinate) {
+        int32_t value = coordinate - center;
+        if (value > 2'048) {
+            value -= 4'096;
+        } else if (value < -2'048) {
+            value += 4'096;
+        }
+        return value;
+    };
+    for (uint32_t index = 0U; index < interior.keys.size(); ++index) {
+        EXPECT_EQ(
+            std::pair(displacement(2'000, interior.keys[index].x), displacement(2'000, interior.keys[index].y)),
+            std::pair(displacement(4'095, boundary.keys[index].x), displacement(4'095, boundary.keys[index].y))
+        ) << "priority order changed at index " << index;
+    }
 }
 
 TEST(HeightTileInterestTest, KeepsResidencyStableForSmallHeadingJitter)

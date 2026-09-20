@@ -7857,5 +7857,44 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0228",
+    "title": "Cache translation-invariant terrain interest order",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P0",
+    "route": "luna",
+    "milestone": "ED-010-S6",
+    "depends_on": [],
+    "acceptance": "Moving the stream center reuses a pre-ranked circular offset table for the quantized heading instead of sorting the full 45-chunk interest set; ordering, wrapped boundaries, and sustained-flight acknowledgement tests pass.",
+    "evidence": "Height-tile interest shape, rotation, priority bands, heading jitter, and wrapped-boundary tests pass, including exact translation-invariant priority order across the seam. The 35-second sustained-flight acknowledgement test passed three consecutive fresh-process runs with the 16-tick contract unchanged.",
+    "blocker": "",
+    "owner": "",
+    "level": "basic",
+    "parent": "MC-AI-0037",
+    "motivation": "The full S6 gate still observed an 18-tick acknowledgement spike because every tile-center change synchronously regenerated and sorted more than six thousand priorities.",
+    "context": "The interest shape and priority are translation invariant for each of 16 quantized headings, so their relative order is immutable and safely reusable.",
+    "complexity": "medium",
+    "created_at": "2026-09-20",
+    "resolved_at": "2026-09-20",
+    "resolution_changes": "Precomputed ranked relative offsets once for each of the 16 canonical headings; center movement now translates cached offsets instead of sorting the full radius.",
+    "plan": [
+      "Precompute ranked relative offsets once per quantized heading, translate them around each center, retain wrapped normalization, and verify ordering plus sustained flight.",
+      "Precompute ranked relative offsets once per quantized heading, preserve relative priority order across wrapped centers, translate them around each center, and verify ordering plus sustained flight."
+    ],
+    "product_changes": [
+      "Fast flight no longer stalls authority when crossing terrain-tile boundaries."
+    ],
+    "code_changes": [
+      "Cache ranked height-tile interest offsets by canonical heading and remove repeated full-window sorting."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]
