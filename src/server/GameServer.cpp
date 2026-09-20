@@ -311,7 +311,7 @@ void GameServer::run(std::atomic_bool const& stop_requested)
         } else {
             while (poll(std::chrono::milliseconds::zero()) > 0) {
             }
-            processHeightTileStreams();
+            processHeightTileStreams(false);
         }
         std::this_thread::sleep_until(std::min(
             next_simulation,
@@ -338,11 +338,6 @@ uint32_t GameServer::terrainWorkerCount(uint32_t const hardware_concurrency) noe
 uint64_t GameServer::tick(std::chrono::milliseconds const timeout) {
     for (PlayerReplication& replication : m_player_replications) {
         replication.action_consumed_this_tick = false;
-        if (!replication.pending_inputs.empty()) {
-            shared::ClientInputMessage const input = replication.pending_inputs.front();
-            replication.pending_inputs.pop_front();
-            processInput(replication, input);
-        }
     }
     uint64_t events = static_cast<uint64_t>(poll(timeout));
     while (true) {
@@ -352,7 +347,14 @@ uint64_t GameServer::tick(std::chrono::milliseconds const timeout) {
         }
         events += static_cast<uint64_t>(drained);
     }
-    processHeightTileStreams();
+    for (PlayerReplication& replication : m_player_replications) {
+        if (!replication.action_consumed_this_tick && !replication.pending_inputs.empty()) {
+            shared::ClientInputMessage const input = replication.pending_inputs.front();
+            replication.pending_inputs.pop_front();
+            processInput(replication, input);
+        }
+    }
+    processHeightTileStreams(true);
     return events;
 }
 
@@ -645,7 +647,6 @@ void GameServer::acknowledgeHeightTileDelivery(
             return;
         }
         stream->delivery_credits = credit.credits;
-        admitHeightTileDeliveries(*stream);
         return;
     }
     if (credit.credits != 1U) {
@@ -669,7 +670,6 @@ void GameServer::acknowledgeHeightTileDelivery(
         ++stream->delivery_credits;
     }
     queueDepartedResidentTiles(*stream);
-    admitHeightTileDeliveries(*stream);
 }
 
 void GameServer::admitHeightTileDeliveries(PreviewStream& stream)
@@ -859,7 +859,7 @@ void GameServer::fillHeightTileQueue(PreviewStream& stream)
     }
 }
 
-void GameServer::processHeightTileStreams()
+void GameServer::processHeightTileStreams(bool const admit_deliveries)
 {
     for (PreviewStream& stream : m_preview_streams) {
         auto const player = m_world.player(stream.client_id);
@@ -871,7 +871,9 @@ void GameServer::processHeightTileStreams()
     publishHeightTileResults();
     for (PreviewStream& stream : m_preview_streams) {
         fillHeightTileQueue(stream);
-        admitHeightTileDeliveries(stream);
+        if (admit_deliveries) {
+            admitHeightTileDeliveries(stream);
+        }
     }
     dispatchHeightTileWork();
 }

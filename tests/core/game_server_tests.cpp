@@ -461,6 +461,14 @@ TEST(GameServerPredictionTest, QueuedInputsApplyAtMostOncePerTickAndAcknowledgeI
     ASSERT_NE(first_tick, positions_after_first_tick.end());
     auto const after_first_tick = *first_tick;
     EXPECT_EQ(after_first_tick.x_subcell, shared::MOVEMENT_SUBCELLS_PER_TICK);
+    EXPECT_EQ(
+        std::ranges::find(
+            positions_after_first_tick,
+            2U,
+            &shared::ServerPlayerPositionMessage::acknowledged_input_sequence
+        ),
+        positions_after_first_tick.end()
+    );
 
     ASSERT_TRUE(pumpUntil(server, client, [&client] {
         auto const positions = client.positions('@');

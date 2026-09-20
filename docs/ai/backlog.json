@@ -7896,5 +7896,43 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0229",
+    "title": "Schedule terrain delivery behind authoritative control",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P0",
+    "route": "luna",
+    "milestone": "ED-010-S6",
+    "depends_on": [],
+    "acceptance": "Terrain generation may pump asynchronously, but network terrain admission occurs only once per authoritative tick after polling and processing control input; the unchanged 16-tick sustained-flight acknowledgement contract passes locally and on hosted macOS.",
+    "evidence": "Focused queued-input cadence, frontier-deadline, stalled-client window, and 35-second sustained-flight tests pass. Each tick resets consumption before polling, processes at most one input per player, then admits at most two terrain batches; idle pumps generate and publish results without network admission.",
+    "blocker": "",
+    "owner": "",
+    "level": "basic",
+    "parent": "MC-AI-0037",
+    "motivation": "Hosted r2 still showed a deterministic 43-tick lag when generated tiles became ready, indicating terrain delivery bursts from the 5 ms idle pump were overtaking control responsiveness.",
+    "context": "Credit acknowledgements restore capacity but must not synchronously transmit terrain. The authoritative tick owns outbound terrain admission after control ingress and movement state.",
+    "complexity": "medium",
+    "created_at": "2026-09-20",
+    "resolved_at": "2026-09-20",
+    "resolution_changes": "Separated asynchronous terrain generation/result pumping from control-first, tick-paced network delivery admission.",
+    "plan": [
+      "Split frequent generation/result pumping from tick-paced delivery admission, poll ingress before simulation, and test delivery pacing plus sustained flight."
+    ],
+    "product_changes": [
+      "Completed terrain batches no longer cause multi-second movement acknowledgement stalls."
+    ],
+    "code_changes": [
+      "Make terrain delivery tick-paced and control-first while keeping generation workers asynchronous."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]

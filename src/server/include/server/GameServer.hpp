@@ -83,7 +83,7 @@ private:
     );
     void refreshHeightTileInterest(PreviewStream& stream, shared::Player const& player);
     void fillHeightTileQueue(PreviewStream& stream);
-    void processHeightTileStreams();
+    void processHeightTileStreams(bool admit_deliveries);
     void dispatchHeightTileWork();
     void publishHeightTileResults();
     void admitHeightTileDeliveries(PreviewStream& stream);
