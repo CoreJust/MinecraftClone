@@ -139,7 +139,7 @@
         "vcpkg-configuration.json",
         "vcpkg.json"
       ],
-      "sources_sha256": "92deefdb7e37f92951f83d9da35db12bd585006f02bf5ab60452307173f7c529"
+      "sources_sha256": "ad84cd628580af62091ab8cca94362d1984afbd27b7758f869f38572451866b0"
     },
     {
       "guide": "docs/code/CORE.md",
@@ -176,7 +176,7 @@
     },
     {
       "guide": "docs/code/GAMEPLAY.md",
-      "guide_sha256": "78964e6af48bd34ca46cea4445e659556dbd5d8c71264039481edb4a503f3bb5",
+      "guide_sha256": "275435277cdae8e99a71aa7fdf758d7fee8da00c522056c370eb4023c800fb85",
       "id": "gameplay",
       "sources": [
         "src/client/BotClient.cpp",
@@ -250,11 +250,11 @@
         "tests/core/world_generation_scheduler_tests.cpp",
         "tests/core/world_generation_tests.cpp"
       ],
-      "sources_sha256": "4629fb9cc88d47620565b288eebfad7523921a8cdc1db564c48a648bd3e69c88"
+      "sources_sha256": "e84a1f8abe4b3a3a073f6419843980f6bda9ee155210a7cc62a7669d58ebd8e9"
     },
     {
       "guide": "docs/code/RENDERING.md",
-      "guide_sha256": "dcc61d0fa6fdbef4238885aa58c0b5132c671b79771a8e522f3821944ce21699",
+      "guide_sha256": "80bf69dcafb60a5681480ea57702c9020fe2d839ffeaa904eb6c10c04649df89",
       "id": "rendering",
       "sources": [
         "src/client/CMakeLists.txt",
@@ -310,7 +310,7 @@
         "tests/testsupport/image_comparison_tests.cpp",
         "tests/testsupport/include/testsupport/ImageComparison.hpp"
       ],
-      "sources_sha256": "d1e345626254de5c1ffea6f8bcca7870329eb4e32a6e92752fda89062863bb86"
+      "sources_sha256": "be36633403b9afac9a59470905a1ea48ae24e6f9288d4dff670bafc8249db1a7"
     }
   ],
   "version": 1

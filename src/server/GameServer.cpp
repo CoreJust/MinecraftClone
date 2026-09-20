@@ -190,12 +190,21 @@ struct GameServer::HeightTileWorkerPool final {
         std::function<bool(Work const&, Work const&)> const& order
     ) {
         std::lock_guard lock{m_mutex};
-        std::stable_sort(m_work.begin(), m_work.end(), [client_id, &order](Work const& first, Work const& second) {
-            if (first.client_id != client_id || second.client_id != client_id) {
-                return first.client_id < second.client_id;
+        std::vector<Work> client_work;
+        client_work.reserve(m_work.size());
+        for (Work const& work : m_work) {
+            if (work.client_id == client_id) {
+                client_work.push_back(work);
             }
-            return order(first, second);
-        });
+        }
+        std::stable_sort(client_work.begin(), client_work.end(), order);
+        auto reordered = client_work.begin();
+        for (Work& work : m_work) {
+            if (work.client_id == client_id) {
+                work = std::move(*reordered);
+                ++reordered;
+            }
+        }
     }
 
     [[nodiscard]]
@@ -947,9 +956,8 @@ void GameServer::dispatchHeightTileWork()
     static constexpr uint32_t MAX_DISPATCHED_TILES_PER_TICK = PreviewStream::MAX_QUEUED_TILES;
     static constexpr double BACKGROUND_TILES_PER_SECOND = 256.0;
     static constexpr double MAXIMUM_BACKGROUND_BURST = 24.0;
-    uint32_t dispatched = 0U;
+    auto const now = std::chrono::steady_clock::now();
     for (PreviewStream& stream : m_preview_streams) {
-        auto const now = std::chrono::steady_clock::now();
         double const elapsed_seconds = now >= stream.background_generation_eligible_at
             ? std::chrono::duration<double>(now - std::max(
                 stream.background_budget_updated_at,
@@ -961,10 +969,23 @@ void GameServer::dispatchHeightTileWork()
             MAXIMUM_BACKGROUND_BURST,
             stream.background_generation_tokens + elapsed_seconds * BACKGROUND_TILES_PER_SECOND
         );
-        while (dispatched < MAX_DISPATCHED_TILES_PER_TICK && m_height_tile_workers->canAccept()) {
+    }
+    if (m_preview_streams.empty()) {
+        return;
+    }
+
+    uint32_t dispatched = 0U;
+    size_t const stream_count = m_preview_streams.size();
+    size_t round_start = m_next_preview_dispatch % stream_count;
+    while (dispatched < MAX_DISPATCHED_TILES_PER_TICK && m_height_tile_workers->canAccept()) {
+        bool dispatched_round = false;
+        for (size_t offset = 0U; offset < stream_count
+            && dispatched < MAX_DISPATCHED_TILES_PER_TICK
+            && m_height_tile_workers->canAccept(); ++offset) {
+            PreviewStream& stream = m_preview_streams[(round_start + offset) % stream_count];
             auto const next = stream.scheduler.peekNext();
             if (!next.has_value()) {
-                break;
+                continue;
             }
             bool const background = shared::heightTileGenerationBand(
                 stream.center,
@@ -973,11 +994,11 @@ void GameServer::dispatchHeightTileWork()
                 {.x = next->coordinate.x, .y = next->coordinate.y}
             ) == shared::HeightTileGenerationBand::Background;
             if (background && stream.background_generation_tokens < 1.0) {
-                break;
+                continue;
             }
             auto const job = stream.scheduler.takeNext();
             if (!job) {
-                break;
+                continue;
             }
             shared::HeightTileKey const key{.x = job->coordinate.x, .y = job->coordinate.y};
             stream.queued_keys.erase(key);
@@ -994,8 +1015,14 @@ void GameServer::dispatchHeightTileWork()
                 stream.background_generation_tokens -= 1.0;
             }
             ++dispatched;
+            dispatched_round = true;
         }
+        if (!dispatched_round) {
+            break;
+        }
+        round_start = (round_start + 1U) % stream_count;
     }
+    m_next_preview_dispatch = (m_next_preview_dispatch + 1U) % stream_count;
 }
 
 void GameServer::publishHeightTileResults()

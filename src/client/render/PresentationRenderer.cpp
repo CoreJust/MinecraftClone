@@ -56,6 +56,7 @@ constexpr uint32_t MAXIMUM_TEXT_GLYPH_COUNT = 16'384U;
 constexpr size_t MAXIMUM_TEXT_UPDATE_GLYPHS = 65'536U / sizeof(TextGlyph);
 constexpr uint32_t MAXIMUM_RENDERED_STONE_FACE_COUNT =
     shared::HeightTileSurfaceMesh::MAXIMUM_QUAD_COUNT * shared::HEIGHT_TILE_INTEREST_COUNT;
+constexpr uint32_t INITIAL_RENDERED_STONE_FACE_CAPACITY = 65'536U;
 constexpr double WORLD_WRAP_PERIOD = 65'536.0;
 constexpr std::array DEPTH_FORMAT_CANDIDATES{
     VK_FORMAT_D32_SFLOAT,
@@ -197,10 +198,18 @@ std::vector<StoneFaceInstance> stoneFaceInstances(shared::HeightTileSurfaceMesh 
 
 class StoneFaceBuffer final {
 public:
-    StoneFaceBuffer(VkDevice const device, VkPhysicalDevice const physical_device)
+    StoneFaceBuffer(
+        VkDevice const device,
+        VkPhysicalDevice const physical_device,
+        uint32_t const capacity
+    )
         : m_device(device)
         , m_physical_device(physical_device)
+        , m_capacity(capacity)
     {
+        if (m_capacity == 0U || m_capacity > MAXIMUM_RENDERED_STONE_FACE_COUNT) {
+            throw std::invalid_argument("stone face buffer capacity is invalid");
+        }
         try {
             VkBufferCreateInfo buffer_info{};
             buffer_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
@@ -233,8 +242,7 @@ public:
 
     void upload(uint32_t const first_instance, std::span<StoneFaceInstance const> const instances)
     {
-        if (first_instance > MAXIMUM_RENDERED_STONE_FACE_COUNT
-            || instances.size() > MAXIMUM_RENDERED_STONE_FACE_COUNT - first_instance) {
+        if (first_instance > m_capacity || instances.size() > m_capacity - first_instance) {
             throw std::invalid_argument("stone face upload exceeds its buffer capacity");
         }
         if (instances.empty()) {
@@ -252,6 +260,8 @@ public:
             .range = byteSize(),
         };
     }
+
+    [[nodiscard]] uint32_t capacity() const noexcept { return m_capacity; }
 
     void destroy() noexcept
     {
@@ -274,9 +284,9 @@ private:
         throw std::runtime_error("Vulkan device has no coherent host-visible memory for stone faces");
     }
 
-    [[nodiscard]] static constexpr VkDeviceSize byteSize() noexcept
+    [[nodiscard]] VkDeviceSize byteSize() const noexcept
     {
-        return static_cast<VkDeviceSize>(MAXIMUM_RENDERED_STONE_FACE_COUNT)
+        return static_cast<VkDeviceSize>(m_capacity)
             * static_cast<VkDeviceSize>(sizeof(StoneFaceInstance));
     }
 
@@ -301,6 +311,7 @@ private:
     VkBuffer m_buffer = VK_NULL_HANDLE;
     VkDeviceMemory m_memory = VK_NULL_HANDLE;
     void* m_mapped = nullptr;
+    uint32_t m_capacity = 0U;
 };
 
 class StoneTextureBuffer final {
@@ -1205,8 +1216,10 @@ struct VulkanRenderer::Impl final {
         m_stone_faces = std::move(instances);
         m_legacy_draw_range = { .first_instance = 0U, .instance_count = static_cast<uint32_t>(m_stone_faces.size()) };
         m_chunk_scene_enabled = true;
-        m_stone_face_buffer->upload(0U, m_stone_faces);
-        ++m_chunk_mesh_upload_count;
+        if (!ensureStoneFaceCapacity(static_cast<uint32_t>(m_stone_faces.size()))) {
+            m_stone_face_buffer->upload(0U, m_stone_faces);
+            ++m_chunk_mesh_upload_count;
+        }
     }
 
     void setChunkMeshes(std::span<shared::ChunkMesh const> const meshes)
@@ -1228,8 +1241,10 @@ struct VulkanRenderer::Impl final {
         m_stone_faces = std::move(instances);
         m_legacy_draw_range = { .first_instance = 0U, .instance_count = static_cast<uint32_t>(m_stone_faces.size()) };
         m_chunk_scene_enabled = true;
-        m_stone_face_buffer->upload(0U, m_stone_faces);
-        ++m_chunk_mesh_upload_count;
+        if (!ensureStoneFaceCapacity(static_cast<uint32_t>(m_stone_faces.size()))) {
+            m_stone_face_buffer->upload(0U, m_stone_faces);
+            ++m_chunk_mesh_upload_count;
+        }
     }
 
     void upsertHeightTileMesh(shared::HeightTileSurfaceMesh const& mesh)
@@ -1274,7 +1289,6 @@ struct VulkanRenderer::Impl final {
             minimum = glm::min(minimum, origin);
             maximum = glm::max(maximum, origin + extent);
         }
-        m_stone_face_buffer->upload(range.first_instance, instances);
         m_height_tile_slots.emplace(mesh.coordinate, HeightTileSlot{
             .range = range,
             .instances = std::move(instances),
@@ -1282,7 +1296,12 @@ struct VulkanRenderer::Impl final {
             .maximum = maximum,
         });
         m_chunk_scene_enabled = true;
-        ++m_chunk_mesh_upload_count;
+        uint32_t const required_capacity = range.first_instance + range.instance_count;
+        if (!ensureStoneFaceCapacity(required_capacity)) {
+            HeightTileSlot const& slot = m_height_tile_slots.at(mesh.coordinate);
+            m_stone_face_buffer->upload(slot.range.first_instance, slot.instances);
+            ++m_chunk_mesh_upload_count;
+        }
     }
 
     [[nodiscard]] bool removeHeightTileMesh(shared::HeightTileCoordinate const coordinate)
@@ -1375,6 +1394,7 @@ struct VulkanRenderer::Impl final {
             .chunk_draw_count = m_chunk_draw_count,
             .chunk_mesh_upload_count = m_chunk_mesh_upload_count,
             .height_tile_mesh_count = static_cast<uint32_t>(m_height_tile_slots.size()),
+            .stone_face_capacity = m_stone_face_buffer->capacity(),
         };
     }
 
@@ -1486,6 +1506,27 @@ private:
         m_free_stone_ranges.clear();
         m_retired_stone_ranges.clear();
         m_next_stone_face = 0U;
+    }
+
+    [[nodiscard]] bool ensureStoneFaceCapacity(uint32_t const required_capacity)
+    {
+        if (required_capacity > MAXIMUM_RENDERED_STONE_FACE_COUNT) {
+            throw std::invalid_argument("stone face arena exceeds its maximum capacity");
+        }
+        if (required_capacity <= m_stone_face_capacity) {
+            return false;
+        }
+        uint32_t next_capacity = m_stone_face_capacity;
+        while (next_capacity < required_capacity) {
+            if (next_capacity > MAXIMUM_RENDERED_STONE_FACE_COUNT / 2U) {
+                next_capacity = MAXIMUM_RENDERED_STONE_FACE_COUNT;
+                break;
+            }
+            next_capacity *= 2U;
+        }
+        m_stone_face_capacity = next_capacity;
+        recreate(m_context->info().extent, std::chrono::steady_clock::time_point::max());
+        return true;
     }
 
     void uploadStoredMeshes()
@@ -1821,7 +1862,11 @@ private:
             throw std::runtime_error("Vulkan presentation device does not expose dynamic rendering commands");
         }
         selectDepthFormat();
-        m_stone_face_buffer.emplace(m_resources->device(), m_resources->physicalDevice());
+        m_stone_face_buffer.emplace(
+            m_resources->device(),
+            m_resources->physicalDevice(),
+            m_stone_face_capacity
+        );
         m_stone_texture_buffer.emplace(m_resources->device(), m_resources->physicalDevice());
         m_stone_descriptors.emplace(m_resources->device(), *m_stone_face_buffer, *m_stone_texture_buffer);
         m_text_glyph_buffer.emplace(m_resources->device(), m_resources->physicalDevice());
@@ -2241,6 +2286,7 @@ private:
     bool m_last_presented = false;
     uint32_t m_debug_hud_draw_count = 0U;
     std::vector<StoneFaceInstance> m_stone_faces;
+    uint32_t m_stone_face_capacity = INITIAL_RENDERED_STONE_FACE_CAPACITY;
     StoneDrawRange m_legacy_draw_range;
     std::unordered_map<shared::HeightTileCoordinate, HeightTileSlot, HeightTileCoordinateHash> m_height_tile_slots;
     std::vector<StoneDrawRange> m_visible_stone_draw_ranges;
@@ -2360,7 +2406,11 @@ public:
         : m_device(std::move(device))
         , m_depth_format(selectDepthFormat())
         , m_depth(m_device, m_depth_format, { .width = OFFSCREEN_WIDTH, .height = OFFSCREEN_HEIGHT })
-        , m_stone_face_buffer(m_device->handle(), m_device->physicalDevice())
+        , m_stone_face_buffer(
+            m_device->handle(),
+            m_device->physicalDevice(),
+            shared::ChunkMesh::MAXIMUM_FACE_COUNT
+        )
         , m_stone_texture_buffer(m_device->handle(), m_device->physicalDevice())
         , m_stone_descriptors(m_device->handle(), m_stone_face_buffer, m_stone_texture_buffer)
     {

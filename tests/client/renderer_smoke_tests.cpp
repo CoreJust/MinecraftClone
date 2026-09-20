@@ -3,6 +3,8 @@
 #include <client/render/InstalledShaderAssets.hpp>
 #include <client/render/VulkanRenderer.hpp>
 
+#include <shared/world/HeightTileSurfaceMesher.hpp>
+
 #include <core/platform/glfw/GlfwWindow.hpp>
 
 #define GLFW_INCLUDE_NONE
@@ -108,6 +110,22 @@ struct CaptureColorClasses final {
     }
 };
 
+[[nodiscard]] shared::HeightTileSurfaceMesh denseHeightTileMesh(int32_t const tile_x)
+{
+    shared::HeightTileSurfaceMesh mesh{ .coordinate = { .x = tile_x, .y = 0 } };
+    mesh.quads.reserve(shared::HeightTileSurfaceMesh::MAXIMUM_QUAD_COUNT);
+    for (uint32_t index = 0U; index < shared::HeightTileSurfaceMesh::MAXIMUM_QUAD_COUNT; ++index) {
+        mesh.quads.push_back({
+            .x = tile_x * static_cast<int32_t>(shared::HeightTile::SIDE_LENGTH)
+                + static_cast<int32_t>(index % shared::HeightTile::SIDE_LENGTH),
+            .y = static_cast<int32_t>(index / shared::HeightTile::SIDE_LENGTH),
+            .z = 6,
+            .direction = shared::HeightTileSurfaceDirection::PositiveZ,
+        });
+    }
+    return mesh;
+}
+
 [[nodiscard]] bool isObservableHudPixel(
     uint8_t const red,
     uint8_t const green,
@@ -179,6 +197,7 @@ TEST(RendererSmokeTest, CompletedCaptureSurvivesRecreateAndReadsBack)
     static constexpr int32_t RESIZED_WIDTH = 400;
     static constexpr int32_t RESIZED_HEIGHT = 300;
     static constexpr uint32_t MAX_CAPTURE_FRAMES = 12U;
+    static constexpr uint32_t MAXIMUM_INITIAL_STONE_FACE_CAPACITY = 65'536U;
     static constexpr auto TIMEOUT = std::chrono::seconds{ 10 };
     core::platform::glfw::GlfwWindow window{
         core::platform::glfw::WindowDescriptor{
@@ -202,6 +221,7 @@ TEST(RendererSmokeTest, CompletedCaptureSurvivesRecreateAndReadsBack)
         { .require_validation = true, .enable_frame_capture = true },
     };
     renderer.setDebugHudEnabled(false);
+    EXPECT_LE(renderer.runtimeInfo().stone_face_capacity, MAXIMUM_INITIAL_STONE_FACE_CAPACITY);
     std::array<client::PlayerRenderData, 2> const players{
         client::PlayerRenderData{ .x = 2U, .y = 3U, .color = { 1.0F, 0.0F, 0.0F, 1.0F } },
         client::PlayerRenderData{ .x = 29U, .y = 28U, .color = { 0.0F, 1.0F, 0.0F, 1.0F } },
@@ -302,6 +322,66 @@ TEST(RendererSmokeTest, CompletedCaptureSurvivesRecreateAndReadsBack)
         << "; the platform/grid/sky scene may cover every physical framebuffer sample";
     EXPECT_GE(rendered_frames, 3U);
     EXPECT_EQ(renderer.runtimeInfo().pipeline_path, client::RendererPipelinePath::Vertex);
+}
+
+TEST(RendererSmokeTest, GrowsStoneFaceArenaWithoutBreakingPresentation)
+{
+    static constexpr uint32_t LOGICAL_WIDTH = 320U;
+    static constexpr uint32_t LOGICAL_HEIGHT = 240U;
+    static constexpr uint32_t TILE_COUNT = 65U;
+    static constexpr uint32_t INITIAL_CAPACITY = 65'536U;
+    static constexpr double CAMERA_Y = -20.0;
+    static constexpr double CAMERA_Z = 18.0;
+    static constexpr double CAMERA_X_OFFSET = 8.0;
+    static constexpr double CAMERA_PITCH_DEGREES = -25.0;
+    static constexpr auto TIMEOUT = std::chrono::seconds{ 10 };
+    core::platform::glfw::GlfwWindow window{
+        core::platform::glfw::WindowDescriptor{
+            .width = LOGICAL_WIDTH,
+            .height = LOGICAL_HEIGHT,
+            .title = "MinecraftClone stone-face arena smoke",
+        },
+    };
+    client::InstalledShaderAssets const shader_assets;
+    client::VulkanRenderer renderer{
+        client::VulkanRenderer::createPresentationContext(
+            window,
+            { .require_validation = true }
+        ),
+        shader_assets,
+        { .require_validation = true },
+    };
+    EXPECT_EQ(renderer.runtimeInfo().stone_face_capacity, INITIAL_CAPACITY);
+    for (uint32_t tile_index = 0U; tile_index < TILE_COUNT; ++tile_index) {
+        renderer.upsertHeightTileMesh(denseHeightTileMesh(static_cast<int32_t>(tile_index)));
+    }
+    EXPECT_GT(renderer.runtimeInfo().stone_face_capacity, INITIAL_CAPACITY);
+
+    for (uint32_t tile_index = 1U; tile_index < TILE_COUNT - 1U; ++tile_index) {
+        EXPECT_TRUE(renderer.removeHeightTileMesh({ .x = static_cast<int32_t>(tile_index), .y = 0 }));
+    }
+
+    auto const renderVisibleTile = [&renderer, &window](int32_t const tile_x) {
+        renderer.setCamera({
+            .position = {
+                static_cast<double>(tile_x * static_cast<int32_t>(shared::HeightTile::SIDE_LENGTH))
+                    + CAMERA_X_OFFSET,
+                CAMERA_Y,
+                CAMERA_Z,
+            },
+            .angles = { .pitch_degrees = CAMERA_PITCH_DEGREES },
+        });
+        ASSERT_TRUE(window.nextFrame());
+        EXPECT_TRUE(renderer.render(
+            {},
+            client::DebugHudInput{},
+            1.0F,
+            std::chrono::steady_clock::now() + TIMEOUT
+        ));
+        EXPECT_GT(renderer.runtimeInfo().chunk_draw_count, 0U);
+    };
+    renderVisibleTile(0);
+    renderVisibleTile(static_cast<int32_t>(TILE_COUNT - 1U));
 }
 
 TEST(RendererSmokeTest, RejectsASelectedTransformThatRequiresClientCompensation)

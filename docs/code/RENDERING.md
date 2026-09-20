@@ -33,9 +33,8 @@ Shader assets are borrowed: desktop `InstalledShaderAssets` reads the installed
 `shaders/` directory and Android `AndroidShaderAssets` reads APK assets. Both
 accept bare `.spv` names only; no source-tree fallback is allowed.
 
-S6 terrain presentation uses a persistent GPU mesh arena and incremental tile
-uploads. Its heightfield surface mesher emits exposed tops and walls against
-neighbor heights, including tile seams. Stone samples the attributed 16-by-16
+S6 arena has 65,536 faces, grows to the 45-radius cap, and restores meshes
+out-of-frame. Stone samples the attributed 16-by-16
 texture from a buffer, with distance fog blending into a gradient sky. Frustum
 culling affects drawing only; tile residency follows a camera-independent
 45-tile-radius circle around the player. View and movement direction affect

@@ -90,6 +90,7 @@ struct RendererRuntimeInfo final {
     uint32_t chunk_draw_count{ 0 };
     uint64_t chunk_mesh_upload_count{ 0 };
     uint32_t height_tile_mesh_count{ 0 };
+    uint32_t stone_face_capacity{ 0 };
 };
 
 struct RendererFrameCapture final {
