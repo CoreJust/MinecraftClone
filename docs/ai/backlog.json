@@ -1439,7 +1439,7 @@
       "MC-AI-0036"
     ],
     "acceptance": "The 65,536 by 65,536 by 1,024 logical air-and-stone world is represented and traversed without dense allocation. CoreLang 0.1.2 supplies deterministic height maps while native code owns bounded asynchronous generation, server-authoritative camera-independent circular residency, directional priority, transport, detailed meshing and incremental Vulkan rendering. Boundaries, world-seam presentation, cancellation, memory, runtime performance, GUI text and user-approved macOS gameplay evidence pass. The reviewed S6 source is promoted and tagged, with macOS, Windows and Android artifacts, SHA256 hashes, provenance, dependencies/licenses and truthful signing status; downloaded macOS and Android assets receive local acceptance while Windows runtime remains separately reported.",
-    "evidence": "The user-approved S6 gameplay source remains unchanged. Original published refs are ai-dev 03276bd246695d02160e6d8ae82adc8a0a96f754, ai-main 37d87d8e09d7872f889d3be199d8afe754082f8f, and immutable tag ai/EarlyDev/0.1.0/6_26.09.19; its asset-free prerelease is retained as the failed candidate. CoreLang 0.1.2.1 was independently reviewed, passed 25/25 CTests on macOS arm64 and native Windows VS2022 x64, and was published at exact commit 048a3abb8f3d18d97c41dbd618eb37fd0247f285. MinecraftClone commits 161055a, ce399b0, bdd3602, and bd535c7 pin that dependency, make nested validation deterministic, and require every correction revision to promote a source distinct from all prior lineage tags. The macOS candidate built against exact packages; all 334 outer CTests, renderer smoke, the fresh nested suite, and focused correction-tag regressions passed. Corrected promotion, hosted macOS/Windows/Android artifacts, downloaded runtime acceptance, public release, and final checksums remain pending.",
+    "evidence": "The original S6 tag and failed r1 tag remain immutable. CoreLang 0.1.2.1 is published at 048a3abb8f3d18d97c41dbd618eb37fd0247f285 after 25/25 macOS and native Windows tests. Hosted r1 validation passed Android but exposed macOS acknowledgement lag under constrained terrain load. MC-AI-0227 reserves authority/transport CPU capacity, and MC-AI-0228 removes the repeated full-radius priority sort by caching translation-invariant order for all 16 headings. Interest shape, rotation, bands, jitter, exact seam-relative order, worker-budget boundaries, and three consecutive 35-second sustained-flight tests pass with the 16-tick contract unchanged. A new corrected promotion, fresh all-platform artifacts, downloaded runtime acceptance, public release, and final checksums remain pending.",
     "blocker": "Corrected source is locally accepted and ready for promotion; aggregate completion still requires hosted macOS, native Windows, and Android artifacts plus exact public asset and runtime reconciliation.",
     "owner": "s6-main",
     "level": "snapshot",
@@ -7811,6 +7811,83 @@
     ],
     "code_changes": [
       "Strengthen ai_publish correction-tag validation and add focused publisher tests."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0227",
+    "title": "Reserve server capacity from terrain generation",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P0",
+    "route": "luna",
+    "milestone": "ED-010-S6",
+    "depends_on": [],
+    "acceptance": "The terrain worker pool reserves CPU capacity for the authoritative server and network loop, including deterministic 1/2/3-core policy tests, and the sustained-flight acknowledgement contract passes under constrained concurrency.",
+    "evidence": "Deterministic worker-budget boundaries pass for 0, 1, 2, 3, 4, 10, and 64 reported logical CPUs. Focused build and sustained 35-second flight acknowledgement test pass with the 16-tick contract unchanged.",
+    "blocker": "",
+    "owner": "",
+    "level": "basic",
+    "parent": "MC-AI-0037",
+    "motivation": "Hosted macOS S6 validation reproduced 47 ticks of input acknowledgement lag when terrain workers saturated a 3-core runner.",
+    "context": "Do not weaken the 16-tick acknowledgement contract. Generation remains asynchronous but must not consume every logical CPU needed by authority and transport.",
+    "complexity": "medium",
+    "created_at": "2026-09-20",
+    "resolved_at": "2026-09-20",
+    "resolution_changes": "Server terrain generation now reserves two logical CPUs for authority and transport when available, uses one worker on constrained hosts, and remains capped at eight workers.",
+    "plan": [
+      "Centralize the server terrain-worker budget, reserve two logical CPUs when available, test low-core boundaries, and rerun sustained flight plus full gates."
+    ],
+    "product_changes": [
+      "Terrain streaming no longer starves movement acknowledgements on constrained hosts."
+    ],
+    "code_changes": [
+      "Use a tested reserved-core worker budget for the server height-tile pool."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0228",
+    "title": "Cache translation-invariant terrain interest order",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P0",
+    "route": "luna",
+    "milestone": "ED-010-S6",
+    "depends_on": [],
+    "acceptance": "Moving the stream center reuses a pre-ranked circular offset table for the quantized heading instead of sorting the full 45-chunk interest set; ordering, wrapped boundaries, and sustained-flight acknowledgement tests pass.",
+    "evidence": "Height-tile interest shape, rotation, priority bands, heading jitter, and wrapped-boundary tests pass, including exact translation-invariant priority order across the seam. The 35-second sustained-flight acknowledgement test passed three consecutive fresh-process runs with the 16-tick contract unchanged.",
+    "blocker": "",
+    "owner": "",
+    "level": "basic",
+    "parent": "MC-AI-0037",
+    "motivation": "The full S6 gate still observed an 18-tick acknowledgement spike because every tile-center change synchronously regenerated and sorted more than six thousand priorities.",
+    "context": "The interest shape and priority are translation invariant for each of 16 quantized headings, so their relative order is immutable and safely reusable.",
+    "complexity": "medium",
+    "created_at": "2026-09-20",
+    "resolved_at": "2026-09-20",
+    "resolution_changes": "Precomputed ranked relative offsets once for each of the 16 canonical headings; center movement now translates cached offsets instead of sorting the full radius.",
+    "plan": [
+      "Precompute ranked relative offsets once per quantized heading, translate them around each center, retain wrapped normalization, and verify ordering plus sustained flight.",
+      "Precompute ranked relative offsets once per quantized heading, preserve relative priority order across wrapped centers, translate them around each center, and verify ordering plus sustained flight."
+    ],
+    "product_changes": [
+      "Fast flight no longer stalls authority when crossing terrain-tile boundaries."
+    ],
+    "code_changes": [
+      "Cache ranked height-tile interest offsets by canonical heading and remove repeated full-window sorting."
     ],
     "baseline_commit": "",
     "commits": [],
