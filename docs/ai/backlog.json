@@ -1439,7 +1439,7 @@
       "MC-AI-0036"
     ],
     "acceptance": "The 65,536 by 65,536 by 1,024 logical air-and-stone world is represented and traversed without dense allocation. CoreLang 0.1.2 supplies deterministic height maps while native code owns bounded asynchronous generation, server-authoritative camera-independent circular residency, directional priority, transport, detailed meshing and incremental Vulkan rendering. Boundaries, world-seam presentation, cancellation, memory, runtime performance, GUI text and user-approved macOS gameplay evidence pass. The reviewed S6 source is promoted and tagged, with macOS, Windows and Android artifacts, SHA256 hashes, provenance, dependencies/licenses and truthful signing status; downloaded macOS and Android assets receive local acceptance while Windows runtime remains separately reported.",
-    "evidence": "The original S6 tag and failed r1 tag remain immutable. CoreLang 0.1.2.1 is published at 048a3abb8f3d18d97c41dbd618eb37fd0247f285 after 25/25 macOS and native Windows tests. Hosted r1 validation passed Android but exposed macOS acknowledgement lag under constrained terrain load. MC-AI-0227 reserves authority/transport CPU capacity, and MC-AI-0228 removes the repeated full-radius priority sort by caching translation-invariant order for all 16 headings. Interest shape, rotation, bands, jitter, exact seam-relative order, worker-budget boundaries, and three consecutive 35-second sustained-flight tests pass with the 16-tick contract unchanged. A new corrected promotion, fresh all-platform artifacts, downloaded runtime acceptance, public release, and final checksums remain pending.",
+    "evidence": "The original S6 and failed r1/r2 tags remain immutable. CoreLang 0.1.2.1 is published at 048a3abb8f3d18d97c41dbd618eb37fd0247f285 after 25/25 macOS and native Windows tests. Hosted r1/r2 passed Android but exposed macOS acknowledgement lag when terrain delivery began. MC-AI-0227 reserves control CPU capacity, MC-AI-0228 caches seam-continuous interest order, and MC-AI-0229 separates frequent generation pumping from control-first tick-paced terrain network admission. Queue cadence, interest ordering, frontier deadline, stalled-client credit window, and sustained-flight tests pass with the 16-tick contract unchanged. A new corrected promotion, fresh all-platform artifacts, downloaded runtime acceptance, public release, and final checksums remain pending.",
     "blocker": "Corrected source is locally accepted and ready for promotion; aggregate completion still requires hosted macOS, native Windows, and Android artifacts plus exact public asset and runtime reconciliation.",
     "owner": "s6-main",
     "level": "snapshot",
@@ -7888,6 +7888,44 @@
     ],
     "code_changes": [
       "Cache ranked height-tile interest offsets by canonical heading and remove repeated full-window sorting."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0229",
+    "title": "Schedule terrain delivery behind authoritative control",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P0",
+    "route": "luna",
+    "milestone": "ED-010-S6",
+    "depends_on": [],
+    "acceptance": "Terrain generation may pump asynchronously, but network terrain admission occurs only once per authoritative tick after polling and processing control input; the unchanged 16-tick sustained-flight acknowledgement contract passes locally and on hosted macOS.",
+    "evidence": "Focused queued-input cadence, frontier-deadline, stalled-client window, and 35-second sustained-flight tests pass. Each tick resets consumption before polling, processes at most one input per player, then admits at most two terrain batches; idle pumps generate and publish results without network admission.",
+    "blocker": "",
+    "owner": "",
+    "level": "basic",
+    "parent": "MC-AI-0037",
+    "motivation": "Hosted r2 still showed a deterministic 43-tick lag when generated tiles became ready, indicating terrain delivery bursts from the 5 ms idle pump were overtaking control responsiveness.",
+    "context": "Credit acknowledgements restore capacity but must not synchronously transmit terrain. The authoritative tick owns outbound terrain admission after control ingress and movement state.",
+    "complexity": "medium",
+    "created_at": "2026-09-20",
+    "resolved_at": "2026-09-20",
+    "resolution_changes": "Separated asynchronous terrain generation/result pumping from control-first, tick-paced network delivery admission.",
+    "plan": [
+      "Split frequent generation/result pumping from tick-paced delivery admission, poll ingress before simulation, and test delivery pacing plus sustained flight."
+    ],
+    "product_changes": [
+      "Completed terrain batches no longer cause multi-second movement acknowledgement stalls."
+    ],
+    "code_changes": [
+      "Make terrain delivery tick-paced and control-first while keeping generation workers asynchronous."
     ],
     "baseline_commit": "",
     "commits": [],
