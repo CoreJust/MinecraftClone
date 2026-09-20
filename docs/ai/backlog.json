@@ -8284,5 +8284,87 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0239",
+    "title": "Make the S6 stone-face GPU arena grow on demand",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P0",
+    "route": "luna",
+    "milestone": "ED-010-S6",
+    "depends_on": [],
+    "acceptance": "An empty presentation renderer allocates only a small valid stone-face buffer; tile and chunk uploads grow capacity safely up to the existing 45-radius maximum without corrupting draw offsets or descriptors; the renderer smoke suite completes within its configured timeout; focused renderer and strict snapshot gates pass.",
+    "evidence": "The sandboxed GLFW test process timed out before its first input event because it lacked a macOS window-service connection; the same host-GUI run passed. The fixed host RendererSmokeTest suite passed 6/6 in 1.31 seconds with validation enabled, including capacity growth from 65,536 to 131,072 faces and a successful post-growth presentation. The renderer-smoke target rebuilt successfully.",
+    "blocker": "",
+    "owner": "codex",
+    "level": "basic",
+    "parent": "MC-AI-0037",
+    "motivation": "The mandatory S6 renderer smoke gate cannot start because the empty renderer reserves the full 45-radius terrain arena before its first frame.",
+    "context": "The strict snapshot gate reproducibly times out RendererSmokeTest.CompletedCaptureSurvivesRecreateAndReadsBack at 45 seconds before a frame. StoneFaceBuffer allocates MAXIMUM_RENDERED_STONE_FACE_COUNT times 32 bytes, approximately 253 MiB, during renderer construction.",
+    "complexity": "medium",
+    "created_at": "2026-09-20",
+    "resolved_at": "2026-09-20",
+    "resolution_changes": "Replaced the eager full-radius stone-face allocation with a 65,536-face bounded geometric arena. Capacity expansion rebuilds presentation resources outside frame recording and reuploads CPU-owned resident meshes. Added smoke coverage for small initial capacity and post-growth presentation.",
+    "plan": [
+      "Clarify acceptance and implementation steps.",
+      "Replace fixed-capacity stone-face allocation with a bounded geometric-growth arena.",
+      "Preserve descriptor validity, previously uploaded ranges, and draw offsets across growth.",
+      "Add capacity-contract coverage and run the mandatory smoke regression."
+    ],
+    "product_changes": [
+      "S6 starts promptly while retaining its 45-radius terrain capacity."
+    ],
+    "code_changes": [
+      "Manage stone-face GPU buffer capacity on demand and update its descriptor after a safe resource replacement."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0240",
+    "title": "Expose presentation validation diagnostics to renderer tests",
+    "kind": "feature",
+    "status": "backlog",
+    "priority": "P1",
+    "route": "luna",
+    "milestone": "ED-010-S7",
+    "depends_on": [],
+    "acceptance": "CoreCpp exposes a stable presentation validation-error count without leaking implementation ownership; MinecraftClone forwards it through VulkanRenderer; a presentation smoke regression asserts zero errors after a resource-recreation path; package consumers on supported platforms remain compatible.",
+    "evidence": "",
+    "blocker": "",
+    "owner": "",
+    "level": "basic",
+    "parent": "MC-AI-0038",
+    "motivation": "Renderer smoke tests need to prove validation-clean presentation resource changes, not only successful rendering.",
+    "context": "MC-AI-0239 verifies presentation arena growth under validation, but CoreCpp PresentationContext currently hides its VulkanInstance validation error counter. The generic diagnostic must be exposed in CoreCpp before MinecraftClone can assert it after presentation frames.",
+    "complexity": "medium",
+    "created_at": "2026-09-20",
+    "resolved_at": "",
+    "resolution_changes": "",
+    "plan": [
+      "Clarify acceptance and implementation steps.",
+      "Add a generic read-only presentation validation diagnostic in CoreCpp.",
+      "Forward it through MinecraftClone renderer diagnostics.",
+      "Assert it after a real presentation resource-recreation regression."
+    ],
+    "product_changes": [
+      "Renderer tests catch validation-layer errors from future resource changes."
+    ],
+    "code_changes": [
+      "Add a generic CoreCpp diagnostic API and MinecraftClone forwarding coverage."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": false,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]

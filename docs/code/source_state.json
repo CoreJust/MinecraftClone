@@ -254,7 +254,7 @@
     },
     {
       "guide": "docs/code/RENDERING.md",
-      "guide_sha256": "dcc61d0fa6fdbef4238885aa58c0b5132c671b79771a8e522f3821944ce21699",
+      "guide_sha256": "80bf69dcafb60a5681480ea57702c9020fe2d839ffeaa904eb6c10c04649df89",
       "id": "rendering",
       "sources": [
         "src/client/CMakeLists.txt",
@@ -310,7 +310,7 @@
         "tests/testsupport/image_comparison_tests.cpp",
         "tests/testsupport/include/testsupport/ImageComparison.hpp"
       ],
-      "sources_sha256": "d1e345626254de5c1ffea6f8bcca7870329eb4e32a6e92752fda89062863bb86"
+      "sources_sha256": "717295a170bb0c09d43f36803146d7405c5617a38158e7946551a5bd30c89617"
     }
   ],
   "version": 1
