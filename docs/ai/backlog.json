@@ -8048,5 +8048,44 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0233",
+    "title": "Keep removal credits progressing across partial acknowledgements",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P0",
+    "route": "luna",
+    "milestone": "ED-010-S6",
+    "depends_on": [],
+    "acceptance": "When one terrain-delivery credit returns while other removal batches remain in flight, the server immediately uses that credit for the next eligible departed tiles instead of repeatedly selecting already-in-flight removals.",
+    "evidence": "The regression constructs a highest-priority in-flight prefix twice the 16-operation delivery capacity and proves the next 16 eligible removals are selected. Existing player-centered removal and stalled-client window integration tests pass.",
+    "blocker": "",
+    "owner": "",
+    "level": "basic",
+    "parent": "MC-AI-0037",
+    "motivation": "Independent pre-push contract and adversarial reviewers found that bounded partial selection truncated pending removals before excluding in-flight keys, allowing a freed credit to emit no cleanup despite eligible removals behind the selected prefix.",
+    "context": "Pending removals intentionally remain present until acknowledgement. Candidate selection must exclude their in-flight subset before applying the bounded priority selection.",
+    "complexity": "medium",
+    "created_at": "2026-09-20",
+    "resolved_at": "2026-09-20",
+    "resolution_changes": "Moved eligibility filtering ahead of bounded removal selection and isolated the contract in the shared height-tile scheduling helper.",
+    "plan": [
+      "Filter in-flight removals before bounded partial ordering and add a transport-level partial-ack movement regression.",
+      "Filter in-flight removals before bounded partial ordering and add a focused selection regression plus existing transport removal checks."
+    ],
+    "product_changes": [
+      "Keep departed terrain cleanup progressing when removal acknowledgements arrive out of order."
+    ],
+    "code_changes": [
+      "Select only eligible non-inflight removals before partial sorting and truncation."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]

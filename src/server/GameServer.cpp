@@ -711,23 +711,20 @@ void GameServer::admitHeightTileDeliveries(PreviewStream& stream)
     }
 
     uint32_t const maximum_removals = maximum_operations - static_cast<uint32_t>(ready_keys.size());
-    std::vector<shared::HeightTileKey> removal_keys{
+    std::vector<shared::HeightTileKey> const pending_removals{
         stream.pending_removals.begin(), stream.pending_removals.end()
     };
-    auto const removal_order = [&stream](shared::HeightTileKey const first, shared::HeightTileKey const second) {
-        return heightTilePriority(stream.center, stream.heading_x, stream.heading_y, first)
-            > heightTilePriority(stream.center, stream.heading_x, stream.heading_y, second);
+    std::vector<shared::HeightTileKey> const inflight_removals{
+        stream.inflight_removal_keys.begin(), stream.inflight_removal_keys.end()
     };
-    if (removal_keys.size() > maximum_removals) {
-        std::ranges::partial_sort(
-            removal_keys,
-            removal_keys.begin() + maximum_removals,
-            removal_order
-        );
-        removal_keys.resize(maximum_removals);
-    } else {
-        std::ranges::sort(removal_keys, removal_order);
-    }
+    std::vector<shared::HeightTileKey> const removal_keys = shared::selectHeightTileRemovalCandidates(
+        stream.center,
+        stream.heading_x,
+        stream.heading_y,
+        pending_removals,
+        inflight_removals,
+        maximum_removals
+    );
 
     auto ready = ready_keys.begin();
     auto removal = removal_keys.begin();
@@ -758,9 +755,6 @@ void GameServer::admitHeightTileDeliveries(PreviewStream& stream)
             && batch.tiles.size() + batch.removals.size() < shared::HEIGHT_TILE_DELIVERY_BATCH_CAPACITY) {
             shared::HeightTileKey const key = *removal;
             ++removal;
-            if (stream.inflight_removal_keys.contains(key)) {
-                continue;
-            }
             delivery.removals.push_back(key);
             stream.inflight_removal_keys.insert(key);
             batch.removals.push_back({

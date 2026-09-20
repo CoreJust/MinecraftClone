@@ -7,6 +7,7 @@
 #include <array>
 #include <cmath>
 #include <tuple>
+#include <unordered_set>
 
 namespace shared {
 
@@ -207,6 +208,53 @@ HeightTileInterest makeHeightTileInterest(
         result.keys.push_back(normalizeHeightTileKey({.x = center.x + offset.x, .y = center.y + offset.y}));
     }
     return result;
+}
+
+std::vector<HeightTileKey> selectHeightTileRemovalCandidates(
+    HeightTileKey const center,
+    int8_t const heading_x,
+    int8_t const heading_y,
+    std::span<HeightTileKey const> const pending,
+    std::span<HeightTileKey const> const inflight,
+    uint32_t const maximum_count
+) {
+    struct HeightTileKeyHash final {
+        [[nodiscard]]
+        uint64_t operator()(HeightTileKey const key) const noexcept
+        {
+            return (static_cast<uint64_t>(static_cast<uint32_t>(key.x)) << 32U)
+                ^ static_cast<uint32_t>(key.y);
+        }
+    };
+
+    std::unordered_set<HeightTileKey, HeightTileKeyHash> const inflight_set{
+        inflight.begin(), inflight.end()
+    };
+    std::vector<HeightTileKey> candidates;
+    candidates.reserve(pending.size());
+    for (HeightTileKey const key : pending) {
+        if (!inflight_set.contains(key)) {
+            candidates.push_back(key);
+        }
+    }
+    auto const order = [center, heading_x, heading_y](HeightTileKey const first, HeightTileKey const second) {
+        return std::tuple{
+            heightTileInterestPriority(center, heading_x, heading_y, first),
+            first.y,
+            first.x,
+        } > std::tuple{
+            heightTileInterestPriority(center, heading_x, heading_y, second),
+            second.y,
+            second.x,
+        };
+    };
+    if (candidates.size() > maximum_count) {
+        std::ranges::partial_sort(candidates, candidates.begin() + maximum_count, order);
+        candidates.resize(maximum_count);
+    } else {
+        std::ranges::sort(candidates, order);
+    }
+    return candidates;
 }
 
 } // namespace shared

@@ -3,6 +3,7 @@
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <span>
 
@@ -120,6 +121,63 @@ TEST(HeightTileInterestTest, ClassifiesFixedNearBandsDirectionalMiddleAndBackgro
     EXPECT_EQ(shared::heightTileGenerationBand(center, 127, 0, {.x = 2'040, .y = 2'000}), Directional);
     EXPECT_EQ(shared::heightTileGenerationBand(center, 127, 0, {.x = 1'960, .y = 2'000}), Background);
     EXPECT_EQ(shared::heightTileGenerationBand(center, 0, 127, {.x = 2'000, .y = 2'040}), Directional);
+}
+
+TEST(HeightTileInterestTest, SelectsEligibleRemovalsBeyondInflightPriorityPrefix)
+{
+    static constexpr uint32_t DELIVERY_CAPACITY = 16U;
+    shared::HeightTileKey constexpr center{.x = 2'000, .y = 2'000};
+    shared::HeightTileInterest const interest = shared::makeHeightTileInterest(center, 127, 0);
+    std::vector<shared::HeightTileKey> pending{
+        interest.keys.rbegin(), interest.keys.rbegin() + 2U * DELIVERY_CAPACITY
+    };
+    std::vector<shared::HeightTileKey> const inflight{
+        pending.begin(), pending.begin() + DELIVERY_CAPACITY
+    };
+
+    std::vector<shared::HeightTileKey> const selected = shared::selectHeightTileRemovalCandidates(
+        center,
+        127,
+        0,
+        pending,
+        inflight,
+        DELIVERY_CAPACITY
+    );
+
+    ASSERT_EQ(selected.size(), DELIVERY_CAPACITY);
+    for (shared::HeightTileKey const key : selected) {
+        EXPECT_EQ(std::ranges::find(inflight, key), inflight.end());
+    }
+}
+
+TEST(HeightTileInterestTest, RemovalSelectionBreaksEqualPriorityTiesDeterministically)
+{
+    shared::HeightTileKey constexpr center{.x = 2'000, .y = 2'000};
+    shared::HeightTileKey constexpr positive{.x = 2'010, .y = 2'000};
+    shared::HeightTileKey constexpr negative{.x = 1'990, .y = 2'000};
+    std::array<shared::HeightTileKey, 2> const forward{positive, negative};
+    std::array<shared::HeightTileKey, 2> const reverse{negative, positive};
+
+    std::vector<shared::HeightTileKey> const first = shared::selectHeightTileRemovalCandidates(
+        center,
+        0,
+        127,
+        forward,
+        {},
+        1U
+    );
+    std::vector<shared::HeightTileKey> const second = shared::selectHeightTileRemovalCandidates(
+        center,
+        0,
+        127,
+        reverse,
+        {},
+        1U
+    );
+
+    ASSERT_EQ(first.size(), 1U);
+    EXPECT_EQ(first, second);
+    EXPECT_EQ(first.front(), positive);
 }
 
 } // namespace
