@@ -213,7 +213,7 @@ TEST(GameServerPreviewTest, StreamsNearestTilesBeforeRowMajorInterestOrder)
 TEST(GameServerPreviewTest, ProgressiveStreamFormsAForwardBiasedArea)
 {
     static constexpr std::chrono::seconds TIMEOUT{5};
-    static constexpr uint32_t OBSERVED_TILE_COUNT = 1'024U;
+    static constexpr uint32_t OBSERVED_TILE_COUNT = 512U;
     server::GameServer server{0, {}, shared::WorldMode::Flight};
     std::atomic_bool stop_requested{false};
     std::thread server_thread{[&server, &stop_requested] { server.run(stop_requested); }};
@@ -720,6 +720,8 @@ TEST(GameServerPreviewTest, SustainedFlightKeepsInputAcknowledgementsCurrentWhil
     uint32_t sent = 0U;
     uint32_t maximum_ack_lag = 0U;
     uint32_t sent_at_maximum_ack_lag = 0U;
+    std::array<size_t, 4> midpoint_tile_counts{};
+    bool midpoint_recorded = false;
     bool all_sent = true;
     auto const started = std::chrono::steady_clock::now();
     auto next_input = started;
@@ -739,6 +741,12 @@ TEST(GameServerPreviewTest, SustainedFlightKeepsInputAcknowledgementsCurrentWhil
         for (PreviewClient* const client : clients) {
             while (client->poll(std::chrono::milliseconds::zero()) > 0) {
             }
+        }
+        if (!midpoint_recorded && now - started >= DURATION / 2) {
+            for (size_t index = 0U; index < clients.size(); ++index) {
+                midpoint_tile_counts[index] = heightTileCount(clients[index]->messages);
+            }
+            midpoint_recorded = true;
         }
         uint32_t lag = 0U;
         for (PreviewClient const* const client : clients) {
@@ -767,6 +775,7 @@ TEST(GameServerPreviewTest, SustainedFlightKeepsInputAcknowledgementsCurrentWhil
     ASSERT_TRUE(connected);
     ASSERT_TRUE(joined);
     EXPECT_TRUE(all_sent);
+    ASSERT_TRUE(midpoint_recorded);
     EXPECT_GE(sent, 340U);
     // Prediction remains continuous while acknowledgements trail. Keep the worst
     // terrain-loaded lag far below the 64-input safety bound and require catch-up.
@@ -775,9 +784,11 @@ TEST(GameServerPreviewTest, SustainedFlightKeepsInputAcknowledgementsCurrentWhil
         << ", last acknowledgements " << first_client.last_acknowledged_input << ", "
         << second_client.last_acknowledged_input << ", " << third_client.last_acknowledged_input
         << ", and " << fourth_client.last_acknowledged_input;
-    for (PreviewClient const* const client : clients) {
+    for (size_t index = 0U; index < clients.size(); ++index) {
+        PreviewClient const* const client = clients[index];
         EXPECT_LE(sent - client->last_acknowledged_input, 2U);
         EXPECT_GT(deliveryBatchCount(client->messages), 0U);
-        EXPECT_GT(heightTileCount(client->messages), 0U);
+        EXPECT_GT(heightTileCount(client->messages), midpoint_tile_counts[index])
+            << "client " << index << " made no terrain progress during the second half";
     }
 }

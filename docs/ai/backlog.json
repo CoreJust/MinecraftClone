@@ -1252,14 +1252,14 @@
     "environment_review": "",
     "backlog_review": "",
     "id": "MC-AI-0032",
-    "title": "EarlyDev 0.1.0:3 — Rendering snapshot",
+    "title": "EarlyDev 0.1.0:3 \u2014 Rendering snapshot",
     "kind": "feature",
     "status": "done",
     "priority": "P1",
     "route": "sol",
     "milestone": "ED-010-S3",
     "depends_on": [],
-    "acceptance": "Snapshot 3 roadmap rendering acceptance and every scoped basic child are complete; full enabled release checks pass; actual product/code changes and promotion evidence are recorded. The exact reviewed/tagged build is published with named macOS, Windows and Android GitHub assets, SHA256 hashes, provenance, dependencies/licenses and truthful signing status. The exact downloaded macOS asset and exact released Android APK pass local runtime acceptance; Windows build/package evidence is required, while runtime results from the user’s Windows laptop are recorded separately and never inferred.",
+    "acceptance": "Snapshot 3 roadmap rendering acceptance and every scoped basic child are complete; full enabled release checks pass; actual product/code changes and promotion evidence are recorded. The exact reviewed/tagged build is published with named macOS, Windows and Android GitHub assets, SHA256 hashes, provenance, dependencies/licenses and truthful signing status. The exact downloaded macOS asset and exact released Android APK pass local runtime acceptance; Windows build/package evidence is required, while runtime results from the user\u2019s Windows laptop are recorded separately and never inferred.",
     "evidence": "Release https://github.com/CoreJust/MinecraftClone/releases/tag/ai/EarlyDev/0.1.0/3_26.09.10 resolves to ai-main c5100f5dc77a151a2644079575e25efd0f93a85d from ai-dev 24519b0683252d6496a18621875b243c729e37d4. Strict gates passed 182 Python tests, build, 205 CTests, packaged MoltenVK smoke, and publisher validation. Runs 34501182172 and 34501182171 passed; duplicate run 34502895257 was cancelled. Hosted artifacts: macOS 10162102089; Windows 10162273049; Android evidence 10162077337. Verifier receipt /private/tmp/mc-s3-final-artifacts/github-release-verification.json passed with SHA256 2aee1432ced9b8d8d6607f5b1e30d9bb595ff93488b697a415a4edc3eb5370ba. Signing: annotated tag unsigned; macOS and Windows package signing not asserted; Android stable development-signed. Published SHA256: macOS 674f2a321ab20c8cba9dc7dae074b2a5d0e8190ffa5987ebb31b23573f541347; Windows 8f5c2b63432f933a0e2f19c9831f9d8be2a889c9967355b0fa32f3a69495fdc1; Android 159ef62cbe2f8eba6eaefccfdbed10582876dcf74770c645a5d97fa687d8c28a. The CI Android APK was not published. Exact macOS Apple M3 Pro packaged-MoltenVK runtime passed. Android post-publication receipt /private/tmp/mc-s3-android-final/android-post-publication-acceptance.json passed on API35 emulator-5556 with SHA256 4b94cbe07e8746bdcbb357e49503349a4ef96d2eb26a3c308ad4f4f35f92bebd. Windows runtime is pending user-owned evidence. ",
     "blocker": "",
     "owner": "Codex"
@@ -1290,7 +1290,7 @@
     "environment_review": "",
     "backlog_review": "",
     "id": "MC-AI-0033",
-    "title": "EarlyDev 0.1.0 — Initiation",
+    "title": "EarlyDev 0.1.0 \u2014 Initiation",
     "kind": "feature",
     "status": "active",
     "priority": "P1",
@@ -1327,7 +1327,7 @@
     "environment_review": "",
     "backlog_review": "",
     "id": "MC-AI-0034",
-    "title": "EarlyDev 0.1 — Core playable foundations",
+    "title": "EarlyDev 0.1 \u2014 Core playable foundations",
     "kind": "feature",
     "status": "active",
     "priority": "P1",
@@ -1341,7 +1341,7 @@
   },
   {
     "id": "MC-AI-0035",
-    "title": "EarlyDev 0.1.0:4 — 3D controls snapshot",
+    "title": "EarlyDev 0.1.0:4 \u2014 3D controls snapshot",
     "kind": "feature",
     "status": "active",
     "priority": "P1",
@@ -1384,7 +1384,7 @@
   },
   {
     "id": "MC-AI-0036",
-    "title": "EarlyDev 0.1.0:5 — Blocks snapshot",
+    "title": "EarlyDev 0.1.0:5 \u2014 Blocks snapshot",
     "kind": "feature",
     "status": "done",
     "priority": "P1",
@@ -1429,7 +1429,7 @@
   },
   {
     "id": "MC-AI-0037",
-    "title": "EarlyDev 0.1.0:6 — Sparse world snapshot",
+    "title": "EarlyDev 0.1.0:6 \u2014 Sparse world snapshot",
     "kind": "feature",
     "status": "active",
     "priority": "P1",
@@ -1438,8 +1438,8 @@
     "depends_on": [
       "MC-AI-0036"
     ],
-    "acceptance": "The 65,536 by 65,536 by 1,024 logical air-and-stone world is represented and traversed without dense allocation. CoreLang 0.1.2 supplies deterministic height maps while native code owns bounded asynchronous generation, server-authoritative camera-independent circular residency, directional priority, transport, detailed meshing and incremental Vulkan rendering. Boundaries, world-seam presentation, cancellation, memory, runtime performance, GUI text and user-approved macOS gameplay evidence pass. The reviewed S6 source is promoted and tagged, with macOS, Windows and Android artifacts, SHA256 hashes, provenance, dependencies/licenses and truthful signing status; downloaded macOS and Android assets receive local acceptance while Windows runtime remains separately reported.",
-    "evidence": "Original S6 and failed r1/r2/r3 tags remain immutable. CoreLang 0.1.2.1 is published at 048a3abb after macOS and native Windows tests. Hosted r3 passed Android but exposed initialization, throughput, sorting, removal-reconciliation, and control-latency defects. MC-AI-0231, MC-AI-0233, MC-AI-0234, and MC-AI-0235 correct those runtime defects; MC-AI-0232 aligns the policy-suite timeout with measured runtime, and MC-AI-0236 covers first-input and concurrent-client latency; MC-AI-0237 enforces one fair four-batch server-wide budget and covers all four supported clients. Focused regressions and the nine-test preview suite pass, including sustained 500x four-client acknowledgement bounds. A corrected promotion, fresh platform artifacts, downloaded acceptance, public release, and final checksums remain pending.",
+    "acceptance": "Represent and traverse the sparse 65,536 by 65,536 by 1,024 air-and-stone world. CoreLang 0.1.2 supplies deterministic height maps; native code owns bounded generation, server-authoritative circular residency, directional priority, transport, detailed meshing, and incremental Vulkan rendering. Boundaries, seam presentation, cancellation, memory, performance, GUI text, and user-approved macOS gameplay pass. Publish reviewed source and macOS, Windows, and Android artifacts with hashes, provenance, licenses, signing status, downloaded macOS/Android acceptance, and separately reported Windows runtime status.",
+    "evidence": "Failed S6 r1-r3 tags remain immutable. CoreLang 0.1.2.2 is published at 62bd3857 after macOS and native Windows Debug/Release tests. MC-AI-0231 through MC-AI-0238 correct cold start, throughput, removal, control latency, global delivery, and generation fairness. The preview suite and repeated four-client 500x stress pass. Corrected promotion, platform artifacts, downloaded acceptance, release, and checksums remain pending.",
     "blocker": "Corrected source is locally accepted and ready for promotion; aggregate completion still requires fresh hosted macOS, native Windows, and Android artifacts plus exact public asset and runtime reconciliation.",
     "owner": "s6-main",
     "level": "snapshot",
@@ -1449,7 +1449,7 @@
     "complexity": "high",
     "created_at": "2026-09-09",
     "resolved_at": "",
-    "resolution_changes": "Delivered CoreLang 0.1.2 configured fading-wave terrain in a sparse wrapped 65536x65536x1024 world; bounded asynchronous server generation and revisioned streaming; camera-independent 45-chunk circular residency with tiered directional priority and background fill; detailed neighbor-aware textured Vulkan meshes, fog and gradient sky; reusable GUI/world text with semantic HUD; toggle acceleration profiles through 500x; stable movement, world-boundary tests, blink-free wrapped presentation, and deterministic promotion tooling for post-release ledgers.",
+    "resolution_changes": "Delivered the sparse wrapped fading-wave world; bounded server generation and streaming; directional circular residency; detailed textured Vulkan terrain, fog, sky, GUI/world text and HUD; acceleration through 500x; stable movement and seams; boundary tests; and deterministic release tooling.",
     "plan": [
       "Use an explicit sparse/chunked world representation; reject any full-volume allocation design.",
       "Bound resident data and generation work through a testable policy.",
@@ -1476,7 +1476,7 @@
   },
   {
     "id": "MC-AI-0038",
-    "title": "EarlyDev 0.1.0:7 — Physics and permissions snapshot",
+    "title": "EarlyDev 0.1.0:7 \u2014 Physics and permissions snapshot",
     "kind": "feature",
     "status": "backlog",
     "priority": "P1",
@@ -1515,7 +1515,7 @@
   },
   {
     "id": "MC-AI-0039",
-    "title": "Retired Snapshot 8 plan — merged into Snapshot 7",
+    "title": "Retired Snapshot 8 plan \u2014 merged into Snapshot 7",
     "kind": "feature",
     "status": "blocked",
     "priority": "P1",
@@ -1869,7 +1869,7 @@
     "level": "basic",
     "parent": "MC-AI-0035",
     "motivation": "Make reusable utilities and generic stateful services independently buildable and consumable without game-source coupling before S4 expands the client.",
-    "context": "CoreJust/CoreCpp is a private repository created at the user’s request. It owns generic Core and Runtime source, README, build/tests and a minimal independent ledger; MinecraftClone consumes only reviewed immutable installed-package revisions. The user approved separate read-only deploy keys for CoreCpp and CoreProject2026 in trusted release workflows; private dependency sources are excluded from public artifacts.",
+    "context": "CoreJust/CoreCpp is a private repository created at the user\u2019s request. It owns generic Core and Runtime source, README, build/tests and a minimal independent ledger; MinecraftClone consumes only reviewed immutable installed-package revisions. The user approved separate read-only deploy keys for CoreCpp and CoreProject2026 in trusted release workflows; private dependency sources are excluded from public artifacts.",
     "complexity": "high",
     "created_at": "2026-09-09",
     "resolved_at": "2026-09-10",
@@ -2271,7 +2271,7 @@
     "owner": "",
     "level": "basic",
     "parent": "MC-AI-0038",
-    "motivation": "Implement the scalable generation mechanism requested for the large world while keeping this minor’s actual content intentionally simple.",
+    "motivation": "Implement the scalable generation mechanism requested for the large world while keeping this minor\u2019s actual content intentionally simple.",
     "context": "Shared owns stage schemas, generation state and bounded priorities; Script declares optional entrypoints and stage configuration; Runtime only executes jobs. Demonstrate with versioned seeded air/stone. Rich geography, structures, decoration and loot are future tasks.",
     "complexity": "high",
     "created_at": "2026-09-09",
@@ -2386,7 +2386,7 @@
     "owner": "",
     "level": "basic",
     "parent": "MC-AI-0038",
-    "motivation": "Turn the owner’s performance goals into reproducible measurements and profile-guided decisions instead of unsupported FPS claims.",
+    "motivation": "Turn the owner\u2019s performance goals into reproducible measurements and profile-guided decisions instead of unsupported FPS claims.",
     "context": "The targets are at least 5000 completed full-frame render/submit/present-request game-loop iterations per second on the specified Ryzen 9 HX/RTX 5070 Ti laptop and several hundred on this Mac, with weaker-laptop smoothness. They do not mean 5000 physical screen refreshes; actual displayed cadence is measured separately. The existing roughly 120 sample is renderer-only submit/present-request throughput with constant state and no server/network/simulation, so it establishes neither full-game throughput nor displayed cadence.",
     "complexity": "high",
     "created_at": "2026-09-09",
@@ -3477,7 +3477,7 @@
     "route": "luna",
     "milestone": "ED-010-S3",
     "depends_on": [],
-    "acceptance": "Project-local routing and workflow guidance select Luna/high by default for well-specified work, define the Terra/Sol/Astra escalation boundaries, and record only actual input/cached/output usage with cumulative target bands of Luna 60–80%, Luna+Terra 94–96%, Luna+Terra+Sol 98–99%, and Astra 1–2% when measured. Reusable dependency checks and one hook receipt eliminate duplicate precommit work; CI fails fast; automated packets include a next-five ordinary-task comparison; debugging is evidence-first and tests remain deterministic. Existing review, exact asset/signing, full release gates, per-snapshot publish→launch→pause, one Task-ID, and S3 pause rules remain intact.",
+    "acceptance": "Project-local routing and workflow guidance select Luna/high by default for well-specified work, define the Terra/Sol/Astra escalation boundaries, and record only actual input/cached/output usage with cumulative target bands of Luna 60\u201380%, Luna+Terra 94\u201396%, Luna+Terra+Sol 98\u201399%, and Astra 1\u20132% when measured. Reusable dependency checks and one hook receipt eliminate duplicate precommit work; CI fails fast; automated packets include a next-five ordinary-task comparison; debugging is evidence-first and tests remain deterministic. Existing review, exact asset/signing, full release gates, per-snapshot publish\u2192launch\u2192pause, one Task-ID, and S3 pause rules remain intact.",
     "evidence": "Final follow-up validation: script.tests.test_ai_tasks passed 16/16. The real efficiency-cohort command with baseline 824d9f50d1909775ca8e20ace268b1a8117bb922 reads existing summary.jsonl history, deduplicates the latest summary.json by invocation ID, ignores malformed history lines, and joins actual Task88 and Task42 summaries by parent HEAD and commit tree. It selected 2 of the target 5 tasks, with both check-summary histories joined; elapsed and model-usage fields remain unavailable and are not inferred. Receipt fingerprint behavior remains covered by the prior focused ai_check tests and the installed hook evidence.",
     "blocker": "",
     "owner": "Codex",
@@ -3488,7 +3488,7 @@
     "complexity": "medium",
     "created_at": "2026-09-10",
     "resolved_at": "2026-09-10",
-    "resolution_changes": "Changed project-local routing and config to Luna/high for well-specified implementation, tests, tooling, metadata, reviews, and handoffs; documented Terra/Sol/Astra escalation, honest token accounting, evidence-first debugging, deterministic testing, reusable dependency/check receipts, no duplicate precommit work, fail-fast CI, exact release verification, and publish→launch→pause. Added bounded packet, CI-record, efficiency-cohort, and token-usage tooling with conservative receipt invalidation and partial-result reporting; corrected project skill and generated-plan defaults to Luna. Follow-up closes the observed efficiency-cohort identity gap by matching taskless summaries to actual parent HEAD and commit tree, reading the existing summary history with latest-invocation deduplication and malformed-line tolerance, and making commit-hook reuse stable without weakening explicit Git executable-path invalidation.",
+    "resolution_changes": "Changed project-local routing and config to Luna/high for well-specified implementation, tests, tooling, metadata, reviews, and handoffs; documented Terra/Sol/Astra escalation, honest token accounting, evidence-first debugging, deterministic testing, reusable dependency/check receipts, no duplicate precommit work, fail-fast CI, exact release verification, and publish\u2192launch\u2192pause. Added bounded packet, CI-record, efficiency-cohort, and token-usage tooling with conservative receipt invalidation and partial-result reporting; corrected project skill and generated-plan defaults to Luna. Follow-up closes the observed efficiency-cohort identity gap by matching taskless summaries to actual parent HEAD and commit tree, reading the existing summary history with latest-invocation deduplication and malformed-line tolerance, and making commit-hook reuse stable without weakening explicit Git executable-path invalidation.",
     "plan": [
       "Make project-local configuration and model-routing guidance use Luna/high as the efficient default, with explicit escalation boundaries and honest usage accounting.",
       "Add reusable dependency/check and hook-receipt guidance without duplicate precommit execution; keep CI fail-fast and preserve release and review gates.",
@@ -5944,7 +5944,7 @@
     "complexity": "high",
     "created_at": "2026-09-13",
     "resolved_at": "2026-09-13",
-    "resolution_changes": "Integrated desktop and Android flight controls, XYZ prediction and presentation, flight HUD state, vertical ±127 parser coverage, and direct no-prompt Flight-mode localhost player launch. Preserved existing S4 presentation tests and excluded the later explicit CLI parser.",
+    "resolution_changes": "Integrated desktop and Android flight controls, XYZ prediction and presentation, flight HUD state, vertical \u00b1127 parser coverage, and direct no-prompt Flight-mode localhost player launch. Preserved existing S4 presentation tests and excluded the later explicit CLI parser.",
     "plan": [],
     "product_changes": [
       "Desktop flight uses yaw-relative WASD, Space and Shift vertical input, first-person camera, predicted/reconciled XYZ movement, and direct localhost graphical launch; Android supplies usable vertical touch controls."
@@ -7461,7 +7461,7 @@
     "owner": "",
     "level": "basic",
     "parent": "MC-AI-0037",
-    "motivation": "Hosted run 35462880045 proved clang-cl appends _CL_ after CMake’s -- source separator and treats those options as filenames, while earlier runs proved raw GNU -Wall activates a materially different all-diagnostics policy.",
+    "motivation": "Hosted run 35462880045 proved clang-cl appends _CL_ after CMake\u2019s -- source separator and treats those options as filenames, while earlier runs proved raw GNU -Wall activates a materially different all-diagnostics policy.",
     "context": "Remove the failed environment technique. Do not edit tagged source or dependency locks. Translate only warning-policy spelling at the Windows private-dependency compiler boundary.",
     "complexity": "medium",
     "created_at": "2026-09-19",
@@ -8234,6 +8234,48 @@
     ],
     "code_changes": [
       "Bound aggregate terrain admission and cover the full supported preview-client count."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0238",
+    "title": "Repin CoreLang 0.1.2.2 and fairly dispatch terrain generation",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P0",
+    "route": "luna",
+    "milestone": "ED-010-S6",
+    "depends_on": [
+      "MC-AI-0237"
+    ],
+    "acceptance": "MinecraftClone pins immutable CoreLang 0.1.2.2 commit 62bd3857df428c115b3c804ab8c8c9387c1d7294; server terrain generation dispatch is fair across all four supported preview clients; the progressive priority test validates a sufficiently large deterministic prefix without using throughput as a shape oracle; focused and full release gates pass on macOS and native Windows.",
+    "evidence": "CoreLang v0.1.2.2 tag and release resolve to 62bd3857df428c115b3c804ab8c8c9387c1d7294 after macOS and native Windows Debug/Release 25/25 CTests. MinecraftClone Release built against that exact clean package. GameServerPreviewTest passed 9/9 in 72.91 seconds; the progressive and sustained four-client tests passed three additional consecutive iterations, with each progressive prefix completing in about one second and each four-client 500x run delivering terrain to every client.",
+    "blocker": "",
+    "owner": "codex",
+    "level": "basic",
+    "parent": "MC-AI-0037",
+    "motivation": "Remove the final cross-platform S6 release blockers without weakening the terrain ordering or multiplayer streaming contracts.",
+    "context": "Hosted macOS produced only 640 of an arbitrary 1024-tile shape sample within five seconds, while the sustained four-client case gave some clients no terrain because the global worker queue was filled by earlier streams. CoreLang 0.1.2.1 also failed MSVC Debug and is superseded by reviewed v0.1.2.2.",
+    "complexity": "medium",
+    "created_at": "2026-09-20",
+    "resolved_at": "2026-09-20",
+    "resolution_changes": "Pinned reviewed CoreLang 0.1.2.2, rotated the server-wide generation dispatch budget fairly across preview streams, and changed the forward-priority regression to inspect a 512-tile prefix while retaining its five-second deadline.",
+    "plan": [
+      "Repin the immutable CoreLang 0.1.2.2 release.",
+      "Dispatch generation work round-robin across preview streams under the existing global worker budget.",
+      "Separate priority-shape assertions from sustained throughput deadlines and verify all four clients make terrain progress."
+    ],
+    "product_changes": [
+      "Keep multiplayer terrain generation moving for every connected player while movement remains responsive."
+    ],
+    "code_changes": [
+      "Fairly share generation dispatch, repin CoreLang, and harden hosted streaming regressions."
     ],
     "baseline_commit": "",
     "commits": [],

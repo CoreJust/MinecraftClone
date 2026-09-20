@@ -155,6 +155,7 @@ private:
     };
     std::vector<PreviewStream> m_preview_streams;
     size_t m_next_preview_admission = 0U;
+    size_t m_next_preview_dispatch = 0U;
     std::unique_ptr<HeightTileWorkerPool> m_height_tile_workers;
     uint64_t m_next_height_tile_token = 1;
 };

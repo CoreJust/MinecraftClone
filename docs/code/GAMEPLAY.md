@@ -64,11 +64,10 @@ monotonic state revision in each replicated position.
 The server rejects duplicate characters, ignores unjoined input, and allows one
 nonzero input per player per tick. A joined disconnect broadcasts removal.
 
-Height-tile delivery uses bounded credits and reserves cleanup capacity before
-additions. Interest refresh cancels removals for desired-again tiles;
-already-delivered removals complete and those tiles re-enter generation. A
-per-tick budget limits bulk batches, and movement responses are submitted first,
-so eager credit recycling cannot delay acknowledgements.
+Height-tile delivery uses bounded credits and reserves cleanup capacity.
+Interest refresh cancels removals for desired-again tiles; completed removals
+re-enter generation. Movement responses precede the per-tick bulk budget, and
+generation dispatch rotates across clients so one frontier cannot starve another.
 
 ## Client roles and lifecycle
 
@@ -107,9 +106,8 @@ HUD acceleration profiles are 2x, 3x, 5x, 8x, 15x, 30x, 80x, 200x, and 500x.
 
 ## S5 chunk data
 
-`Chunk` stores 4096 Air/Stone IDs in a 16-cubed unit with signed chunk
-coordinates and checked local coordinates. Bulk construction rejects unsupported
-IDs; effective edits update revision and content hash. The retained S5
+`Chunk` stores 4096 Air/Stone IDs in a checked 16-cubed unit. Construction
+rejects unsupported IDs; edits update revision and content hash. The retained S5
 `CanonicalWorld` embeds its historical CoreLang 0.0.3 seed-42 generator at
 configure time, while S6 scenario and terrain scripts require CoreLang 0.1.2. `ScriptedWorld`
 collects bounded callbacks into a private candidate and publishes it with its
