@@ -8012,5 +8012,41 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0232",
+    "title": "Give the complete policy suite its measured runtime budget",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P0",
+    "route": "luna",
+    "milestone": "ED-010-S6",
+    "depends_on": [],
+    "acceptance": "The full Python policy suite completes within the configured non-Windows and Windows budgets during snapshot candidate checks, while timeout propagation remains covered.",
+    "evidence": "The exact timeout contract unit test passes and the configured budget now matches the existing Windows allowance.",
+    "blocker": "",
+    "owner": "",
+    "level": "basic",
+    "parent": "MC-AI-0037",
+    "motivation": "The S6 candidate gate twice reached the final policy tests but was killed by the fixed 120-second POSIX budget. The suite has grown beyond that historical limit and completes near the boundary under aggregate load.",
+    "context": "Windows already uses a 300-second budget. The complete cross-platform policy suite should use the same explicit bounded budget; focused development checks remain scoped and fast.",
+    "complexity": "low",
+    "created_at": "2026-09-20",
+    "resolved_at": "2026-09-20",
+    "resolution_changes": "Raised the complete Python policy-suite budget from 120 seconds on POSIX to a uniform bounded 300 seconds on every platform.",
+    "plan": [
+      "Set the complete Python-suite timeout to 300 seconds on every platform and update the timeout contract test."
+    ],
+    "product_changes": [],
+    "code_changes": [
+      "Use a uniform 300-second timeout for the complete Python policy suite."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]
