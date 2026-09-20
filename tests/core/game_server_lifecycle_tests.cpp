@@ -123,4 +123,15 @@ TEST(GameServerLifecycle, FixedCadenceIsIndependentOfPresentationWork)
     EXPECT_EQ(server::GameServer::fixedTickDelay(std::chrono::milliseconds{ 250 }), std::chrono::milliseconds::zero());
 }
 
+TEST(GameServerLifecycle, TerrainWorkersReserveCapacityForAuthorityAndTransport)
+{
+    EXPECT_EQ(server::GameServer::terrainWorkerCount(0U), 1U);
+    EXPECT_EQ(server::GameServer::terrainWorkerCount(1U), 1U);
+    EXPECT_EQ(server::GameServer::terrainWorkerCount(2U), 1U);
+    EXPECT_EQ(server::GameServer::terrainWorkerCount(3U), 1U);
+    EXPECT_EQ(server::GameServer::terrainWorkerCount(4U), 2U);
+    EXPECT_EQ(server::GameServer::terrainWorkerCount(10U), 8U);
+    EXPECT_EQ(server::GameServer::terrainWorkerCount(64U), 8U);
+}
+
 } // namespace

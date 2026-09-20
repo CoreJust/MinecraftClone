@@ -90,7 +90,7 @@ struct GameServer::HeightTileWorkerPool final {
 
     HeightTileWorkerPool()
     {
-        uint32_t const worker_count = std::clamp(std::thread::hardware_concurrency(), 2U, 8U);
+        uint32_t const worker_count = GameServer::terrainWorkerCount(std::thread::hardware_concurrency());
         m_workers.reserve(worker_count);
         for (uint32_t worker{ 0U }; worker < worker_count; ++worker) {
             m_workers.emplace_back([this] {
@@ -323,6 +323,16 @@ void GameServer::run(std::atomic_bool const& stop_requested)
 std::chrono::milliseconds GameServer::fixedTickDelay(std::chrono::milliseconds const elapsed) noexcept
 {
     return elapsed < shared::TICK ? shared::TICK - elapsed : std::chrono::milliseconds::zero();
+}
+
+uint32_t GameServer::terrainWorkerCount(uint32_t const hardware_concurrency) noexcept
+{
+    static constexpr uint32_t RESERVED_SERVER_THREADS{ 2U };
+    static constexpr uint32_t MAXIMUM_TERRAIN_WORKERS{ 8U };
+    uint32_t const available = hardware_concurrency > RESERVED_SERVER_THREADS
+        ? hardware_concurrency - RESERVED_SERVER_THREADS
+        : 1U;
+    return std::min(available, MAXIMUM_TERRAIN_WORKERS);
 }
 
 uint64_t GameServer::tick(std::chrono::milliseconds const timeout) {
