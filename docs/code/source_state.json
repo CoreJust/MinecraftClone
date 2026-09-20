@@ -310,7 +310,7 @@
         "tests/testsupport/image_comparison_tests.cpp",
         "tests/testsupport/include/testsupport/ImageComparison.hpp"
       ],
-      "sources_sha256": "717295a170bb0c09d43f36803146d7405c5617a38158e7946551a5bd30c89617"
+      "sources_sha256": "be36633403b9afac9a59470905a1ea48ae24e6f9288d4dff670bafc8249db1a7"
     }
   ],
   "version": 1

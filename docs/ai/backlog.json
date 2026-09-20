@@ -8403,5 +8403,42 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0242",
+    "title": "Refresh the generated source-state contract after S6 stone-face arena rendering changes so the documentation gate accepts the release candidate.",
+    "kind": "chore",
+    "status": "done",
+    "priority": "P0",
+    "route": "luna",
+    "milestone": "Unassigned",
+    "depends_on": [],
+    "acceptance": "The generated source-state contract reflects the current S6 renderer sources and python3 script/ai_docs.py check passes.",
+    "evidence": "python3 script/ai_docs.py refresh regenerated the source-state inventory and python3 script/ai_docs.py check passed.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0037",
+    "motivation": "Refresh the generated source-state contract after S6 stone-face arena rendering changes so the documentation gate accepts the release candidate.",
+    "context": "Created through the task planning interface.",
+    "complexity": "medium",
+    "created_at": "2026-09-20",
+    "resolved_at": "2026-09-20",
+    "resolution_changes": "Refreshed the generated source-state digest for the current S6 renderer candidate.",
+    "plan": [
+      "Clarify acceptance and implementation steps.",
+      "Refresh the source-state digest after the released S6 renderer changes and verify the documentation gate."
+    ],
+    "product_changes": [],
+    "code_changes": [
+      "Regenerate docs/code/source_state.json."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]
