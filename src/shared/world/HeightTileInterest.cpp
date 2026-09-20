@@ -105,6 +105,11 @@ OrderedHeightTileOffsets const& orderedHeightTileOffsets(HeightTileHeading const
 
 } // namespace
 
+void prepareHeightTileInterestOrders()
+{
+    static_cast<void>(orderedHeightTileOffsets({.x = 0, .y = 127}));
+}
+
 HeightTileGenerationBand heightTileGenerationBand(
     HeightTileKey const center,
     int8_t const heading_x,

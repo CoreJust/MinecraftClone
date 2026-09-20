@@ -289,8 +289,10 @@ GameServer::GameServer(
     : core::Server{core::Address::localhost(port), 4, 2}
     , m_world{world_mode, configuration}
     , m_spawn_points{checkedSpawnPoints(std::move(spawn_points), world_mode)}
-    , m_height_tile_workers{std::make_unique<HeightTileWorkerPool>()}
-{}
+{
+    shared::prepareHeightTileInterestOrders();
+    m_height_tile_workers = std::make_unique<HeightTileWorkerPool>();
+}
 
 GameServer::~GameServer() = default;
 
@@ -327,7 +329,7 @@ std::chrono::milliseconds GameServer::fixedTickDelay(std::chrono::milliseconds c
 
 uint32_t GameServer::terrainWorkerCount(uint32_t const hardware_concurrency) noexcept
 {
-    static constexpr uint32_t RESERVED_SERVER_THREADS{ 2U };
+    static constexpr uint32_t RESERVED_SERVER_THREADS{ 1U };
     static constexpr uint32_t MAXIMUM_TERRAIN_WORKERS{ 8U };
     uint32_t const available = hardware_concurrency > RESERVED_SERVER_THREADS
         ? hardware_concurrency - RESERVED_SERVER_THREADS
@@ -674,41 +676,75 @@ void GameServer::acknowledgeHeightTileDelivery(
 
 void GameServer::admitHeightTileDeliveries(PreviewStream& stream)
 {
+    static constexpr uint32_t MAX_ADMITTED_BATCHES_PER_PUMP = shared::HEIGHT_TILE_DELIVERY_WINDOW;
+    uint32_t const available_batches = std::min<uint32_t>({
+        stream.delivery_credits,
+        static_cast<uint32_t>(shared::HEIGHT_TILE_DELIVERY_WINDOW - stream.inflight_deliveries.size()),
+        MAX_ADMITTED_BATCHES_PER_PUMP,
+    });
+    uint32_t const maximum_operations = available_batches * shared::HEIGHT_TILE_DELIVERY_BATCH_CAPACITY;
+    if (maximum_operations == 0U) {
+        return;
+    }
+
+    std::vector<shared::HeightTileKey> ready_keys;
+    ready_keys.reserve(stream.ready_tiles.size());
+    for (auto const& [key, tile] : stream.ready_tiles) {
+        static_cast<void>(tile);
+        if (stream.desired_key_set.contains(key) && !stream.inflight_addition_keys.contains(key)) {
+            ready_keys.push_back(key);
+        }
+    }
+    auto const ready_order = [&stream](shared::HeightTileKey const first, shared::HeightTileKey const second) {
+        return heightTilePriority(stream.center, stream.heading_x, stream.heading_y, first)
+            < heightTilePriority(stream.center, stream.heading_x, stream.heading_y, second);
+    };
+    if (ready_keys.size() > maximum_operations) {
+        std::ranges::partial_sort(
+            ready_keys,
+            ready_keys.begin() + maximum_operations,
+            ready_order
+        );
+        ready_keys.resize(maximum_operations);
+    } else {
+        std::ranges::sort(ready_keys, ready_order);
+    }
+
+    uint32_t const maximum_removals = maximum_operations - static_cast<uint32_t>(ready_keys.size());
+    std::vector<shared::HeightTileKey> removal_keys{
+        stream.pending_removals.begin(), stream.pending_removals.end()
+    };
+    auto const removal_order = [&stream](shared::HeightTileKey const first, shared::HeightTileKey const second) {
+        return heightTilePriority(stream.center, stream.heading_x, stream.heading_y, first)
+            > heightTilePriority(stream.center, stream.heading_x, stream.heading_y, second);
+    };
+    if (removal_keys.size() > maximum_removals) {
+        std::ranges::partial_sort(
+            removal_keys,
+            removal_keys.begin() + maximum_removals,
+            removal_order
+        );
+        removal_keys.resize(maximum_removals);
+    } else {
+        std::ranges::sort(removal_keys, removal_order);
+    }
+
+    auto ready = ready_keys.begin();
+    auto removal = removal_keys.begin();
     uint32_t admitted_batches = 0U;
-    static constexpr uint32_t MAX_ADMITTED_BATCHES_PER_PUMP = 2U;
     while (stream.delivery_credits > 0U
         && stream.inflight_deliveries.size() < shared::HEIGHT_TILE_DELIVERY_WINDOW
         && admitted_batches < MAX_ADMITTED_BATCHES_PER_PUMP) {
-        std::vector<shared::HeightTileKey> ready_keys;
-        ready_keys.reserve(stream.ready_tiles.size());
-        for (auto const& [key, tile] : stream.ready_tiles) {
-            static_cast<void>(tile);
-            if (stream.desired_key_set.contains(key) && !stream.inflight_addition_keys.contains(key)) {
-                ready_keys.push_back(key);
-            }
-        }
-        std::ranges::sort(ready_keys, [&stream](shared::HeightTileKey const first, shared::HeightTileKey const second) {
-            return heightTilePriority(stream.center, stream.heading_x, stream.heading_y, first)
-                < heightTilePriority(stream.center, stream.heading_x, stream.heading_y, second);
-        });
-        std::vector<shared::HeightTileKey> removal_keys{
-            stream.pending_removals.begin(), stream.pending_removals.end()
-        };
-        std::ranges::sort(removal_keys, [&stream](shared::HeightTileKey const first, shared::HeightTileKey const second) {
-            return heightTilePriority(stream.center, stream.heading_x, stream.heading_y, first)
-                > heightTilePriority(stream.center, stream.heading_x, stream.heading_y, second);
-        });
-
         shared::ServerHeightTileBatchMessage batch{
             .delivery_token = nextHeightTileToken(m_next_height_tile_token),
         };
         PreviewStream::Delivery delivery;
         batch.tiles.reserve(shared::HEIGHT_TILE_DELIVERY_BATCH_CAPACITY);
         batch.removals.reserve(shared::HEIGHT_TILE_DELIVERY_BATCH_CAPACITY);
-        for (shared::HeightTileKey const key : ready_keys) {
-            if (batch.tiles.size() + batch.removals.size() == shared::HEIGHT_TILE_DELIVERY_BATCH_CAPACITY) {
-                break;
-            }
+        while (ready != ready_keys.end()
+            && batch.tiles.size() + batch.removals.size() < shared::HEIGHT_TILE_DELIVERY_BATCH_CAPACITY) {
+            shared::HeightTileKey const key = *ready;
+            ++ready;
             auto const tile = stream.ready_tiles.find(key);
             if (tile == stream.ready_tiles.end()) {
                 continue;
@@ -718,10 +754,10 @@ void GameServer::admitHeightTileDeliveries(PreviewStream& stream)
             batch.tiles.push_back(std::move(tile->second));
             stream.ready_tiles.erase(tile);
         }
-        for (shared::HeightTileKey const key : removal_keys) {
-            if (batch.tiles.size() + batch.removals.size() == shared::HEIGHT_TILE_DELIVERY_BATCH_CAPACITY) {
-                break;
-            }
+        while (removal != removal_keys.end()
+            && batch.tiles.size() + batch.removals.size() < shared::HEIGHT_TILE_DELIVERY_BATCH_CAPACITY) {
+            shared::HeightTileKey const key = *removal;
+            ++removal;
             if (stream.inflight_removal_keys.contains(key)) {
                 continue;
             }

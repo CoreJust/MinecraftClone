@@ -27,6 +27,8 @@ enum class HeightTileGenerationBand : uint8_t {
     Background,
 };
 
+void prepareHeightTileInterestOrders();
+
 [[nodiscard]]
 HeightTileInterest makeHeightTileInterest(
     HeightTileKey center,

@@ -7972,5 +7972,45 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0231",
+    "title": "Remove cold-start terrain stalls and restore throughput",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P0",
+    "route": "luna",
+    "milestone": "ED-010-S6",
+    "depends_on": [],
+    "acceptance": "Cold-start terrain priority initialization cannot stall authoritative input after a player connects; initial progressive streaming delivers at least 1024 nearest-first tiles within five seconds on hosted macOS; the unchanged sustained-flight acknowledgement lag remains at most 16 inputs.",
+    "evidence": "Cold-start preview tests pass: 1024 nearest-first tiles arrive in about one second locally, the full preview suite passes, stalled clients remain bounded to the eight-batch window, and 35 seconds of 500x flight stays within the unchanged 16-input acknowledgement limit. Worker policy tests cover 0, 1, 2, 3, 4, 9, and 64 reported CPUs.",
+    "blocker": "",
+    "owner": "",
+    "level": "basic",
+    "parent": "MC-AI-0037",
+    "motivation": "The r3 hosted macOS gate deterministically stalls at the first terrain-interest request: each isolated test process constructs and sorts all 16 direction orders on the authoritative server thread after join, producing a 42-input lag. Tick-only delivery also caps initial throughput below the established five-second contract.",
+    "context": "Terrain interest topology is immutable process-wide and can be prepared before the server accepts players. One CPU remains dedicated to authority and transport; remaining cores may generate terrain up to the eight-worker cap. Control-first tick admission remains bounded by the advertised eight-batch credit window.",
+    "complexity": "medium",
+    "created_at": "2026-09-20",
+    "resolved_at": "2026-09-20",
+    "resolution_changes": "Prepared immutable terrain-interest ordering before gameplay ingress, restored two terrain workers on three-core hosts while retaining one control CPU, admitted the full negotiated window per tick, and sorted bounded delivery candidates only once per tick.",
+    "plan": [
+      "Prepare immutable terrain-interest orders during server construction before worker/network activity, use the full negotiated per-tick delivery window, and retain cold-start end-to-end regressions.",
+      "Prepare immutable terrain-interest orders during server construction before worker/network activity, reserve one CPU for authority and transport, use the full negotiated per-tick delivery window, and retain cold-start end-to-end regressions."
+    ],
+    "product_changes": [
+      "Eliminate the cold-start movement freeze when terrain streaming begins and restore fast initial terrain fill."
+    ],
+    "code_changes": [
+      "Add explicit terrain-interest preparation before server startup and admit up to the negotiated terrain delivery window per tick.",
+      "Prepare terrain-interest orders before accepting players, reserve one CPU while using other cores for generation, and admit up to the negotiated terrain delivery window per tick."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]
