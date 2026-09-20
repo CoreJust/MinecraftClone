@@ -22,11 +22,13 @@ class PreviewClient final : public core::Client {
 public:
     explicit PreviewClient(
         bool const acknowledges_deliveries = true,
-        bool const starts_deliveries = true
+        bool const starts_deliveries = true,
+        char const tracked_character = '@'
     )
         : core::Client{2}
         , m_acknowledges_deliveries{acknowledges_deliveries}
         , m_starts_deliveries{starts_deliveries}
+        , m_tracked_character{tracked_character}
     { }
 
     std::vector<shared::Message> messages;
@@ -71,7 +73,7 @@ private:
                 }), shared::GAME_CHANNEL, core::SendMode{core::SendMode::Reliable}));
             }
             if (auto const* position = std::get_if<shared::ServerPlayerPositionMessage>(&*message);
-                position != nullptr && position->ch == '@') {
+                position != nullptr && position->ch == m_tracked_character) {
                 last_acknowledged_input = position->acknowledged_input_sequence;
                 last_player_x = position->x;
             }
@@ -80,6 +82,7 @@ private:
 
     bool m_acknowledges_deliveries;
     bool m_starts_deliveries;
+    char m_tracked_character;
 };
 
 uint32_t heightTileCount(std::vector<shared::Message> const& messages)
@@ -694,11 +697,17 @@ TEST(GameServerPreviewTest, SustainedFlightKeepsInputAcknowledgementsCurrentWhil
     server::GameServer server{0, {}, shared::WorldMode::Flight};
     std::atomic_bool stop_requested{false};
     std::thread server_thread{[&server, &stop_requested] { server.run(stop_requested); }};
-    PreviewClient client;
-    bool const connected = client.connect(core::Address::localhost(server.port()), std::chrono::seconds{2});
-    bool joined = connected && client.send(shared::encodeMessage(shared::JoinRequestMessage{
+    PreviewClient first_client;
+    PreviewClient second_client{true, true, '#'};
+    bool const connected = first_client.connect(
+        core::Address::localhost(server.port()), std::chrono::seconds{2}
+    ) && second_client.connect(core::Address::localhost(server.port()), std::chrono::seconds{2});
+    bool joined = connected && first_client.send(shared::encodeMessage(shared::JoinRequestMessage{
         .ch = '@', .mode = shared::WorldMode::Flight, .wants_previews = true,
-    }), 0, core::SendMode{core::SendMode::Reliable});
+    }), 0, core::SendMode{core::SendMode::Reliable})
+        && second_client.send(shared::encodeMessage(shared::JoinRequestMessage{
+            .ch = '#', .mode = shared::WorldMode::Flight, .wants_previews = true,
+        }), 0, core::SendMode{core::SendMode::Reliable});
     uint32_t sent = 0U;
     uint32_t maximum_ack_lag = 0U;
     uint32_t sent_at_maximum_ack_lag = 0U;
@@ -709,27 +718,35 @@ TEST(GameServerPreviewTest, SustainedFlightKeepsInputAcknowledgementsCurrentWhil
         auto const now = std::chrono::steady_clock::now();
         if (now >= next_input) {
             ++sent;
-            all_sent = client.send(shared::encodeMessage(shared::ClientInputMessage{
+            std::vector<uint8_t> const input = shared::encodeMessage(shared::ClientInputMessage{
                 .direction = {.x = 127U, .accelerated = true, .speedup = 500U},
                 .sequence = sent,
-            }), 0, core::SendMode{core::SendMode::Reliable}) && all_sent;
+            });
+            all_sent = first_client.send(input, 0, core::SendMode{core::SendMode::Reliable})
+                && second_client.send(input, 0, core::SendMode{core::SendMode::Reliable})
+                && all_sent;
             next_input += INPUT_PERIOD;
         }
-        while (client.poll(std::chrono::milliseconds::zero()) > 0) {
+        while (first_client.poll(std::chrono::milliseconds::zero()) > 0) {
         }
-        if (sent > 30U) {
-            uint32_t const lag = sent - client.last_acknowledged_input;
-            if (lag > maximum_ack_lag) {
-                maximum_ack_lag = lag;
-                sent_at_maximum_ack_lag = sent;
-            }
+        while (second_client.poll(std::chrono::milliseconds::zero()) > 0) {
+        }
+        uint32_t const lag = std::max(
+            sent - first_client.last_acknowledged_input,
+            sent - second_client.last_acknowledged_input
+        );
+        if (lag > maximum_ack_lag) {
+            maximum_ack_lag = lag;
+            sent_at_maximum_ack_lag = sent;
         }
         std::this_thread::sleep_for(std::chrono::milliseconds{16});
     }
     auto const catch_up_deadline = std::chrono::steady_clock::now() + std::chrono::seconds{1};
-    while (sent - client.last_acknowledged_input > 2U
+    while ((sent - first_client.last_acknowledged_input > 2U
+        || sent - second_client.last_acknowledged_input > 2U)
         && std::chrono::steady_clock::now() < catch_up_deadline) {
-        client.poll(std::chrono::milliseconds{1});
+        first_client.poll(std::chrono::milliseconds{1});
+        second_client.poll(std::chrono::milliseconds{1});
     }
     stop_requested.store(true, std::memory_order_relaxed);
     server_thread.join();
@@ -742,6 +759,8 @@ TEST(GameServerPreviewTest, SustainedFlightKeepsInputAcknowledgementsCurrentWhil
     // terrain-loaded lag far below the 64-input safety bound and require catch-up.
     EXPECT_LE(maximum_ack_lag, 16U)
         << "maximum lag occurred after input " << sent_at_maximum_ack_lag
-        << ", last acknowledgement " << client.last_acknowledged_input;
-    EXPECT_LE(sent - client.last_acknowledged_input, 2U);
+        << ", last acknowledgements " << first_client.last_acknowledged_input
+        << " and " << second_client.last_acknowledged_input;
+    EXPECT_LE(sent - first_client.last_acknowledged_input, 2U);
+    EXPECT_LE(sent - second_client.last_acknowledged_input, 2U);
 }

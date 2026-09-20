@@ -8165,5 +8165,44 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0236",
+    "title": "Cover initial and concurrent-client movement acknowledgement latency during sustained high-speed terrain streaming",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P0",
+    "route": "luna",
+    "milestone": "Unassigned",
+    "depends_on": [],
+    "acceptance": "The sustained 500x regression measures acknowledgement lag from the first input across two concurrent preview clients and retains the 16-input maximum plus final catch-up bounds.",
+    "evidence": "Release-mode GameServerPreviewTest.SustainedFlightKeepsInputAcknowledgementsCurrentWhileTilesStream passed with two concurrent 500x clients for 35 seconds while enforcing the 16-input bound from input one.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0037",
+    "motivation": "Cover initial and concurrent-client movement acknowledgement latency during sustained high-speed terrain streaming",
+    "context": "The pre-push adversarial review found that the sustained 500x acknowledgement regression ignored the first 30 inputs and used only one preview client, allowing an early freeze or per-stream serialization defect to escape.",
+    "complexity": "medium",
+    "created_at": "2026-09-20",
+    "resolved_at": "2026-09-20",
+    "resolution_changes": "Closed the initial-stream blind spot and added concurrent preview-client coverage without changing production behavior.",
+    "plan": [
+      "Clarify acceptance and implementation steps.",
+      "Make PreviewClient track its joined character; run two simultaneous streaming clients through the existing sustained-flight test; measure the worse acknowledgement lag from input one; rerun Release and aggregate gates."
+    ],
+    "product_changes": [
+      "Automated acceptance now guards startup and concurrent-client movement responsiveness during high-speed terrain streaming."
+    ],
+    "code_changes": [
+      "Parameterize the preview test client character and strengthen the sustained-flight regression to drive two concurrent clients from the first input."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]
