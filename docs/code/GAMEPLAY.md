@@ -61,14 +61,14 @@ input per player, rejects joins whose mode or configuration differs from its
 authoritative world, and includes the acknowledged input sequence plus a
 monotonic state revision in each replicated position.
 
-The server rejects duplicate/already-joined characters, privately accepts a
-success, broadcasts positions, ignores unjoined input, and allows one nonzero
-input per player per tick. Joined disconnect broadcasts removal before despawn.
+The server rejects duplicate characters, ignores unjoined input, and allows one
+nonzero input per player per tick. A joined disconnect broadcasts removal.
 
 Height-tile delivery uses bounded credits and reserves cleanup capacity before
-additions, preventing generation from starving departed removals. Interest
-refresh cancels removals for desired-again tiles; already-delivered removals
-complete and those tiles re-enter the bounded generation queue.
+additions. Interest refresh cancels removals for desired-again tiles;
+already-delivered removals complete and those tiles re-enter generation. A
+per-tick budget limits bulk batches, and movement responses are submitted first,
+so eager credit recycling cannot delay acknowledgements.
 
 ## Client roles and lifecycle
 

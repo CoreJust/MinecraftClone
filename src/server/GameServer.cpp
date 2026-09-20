@@ -553,6 +553,9 @@ void GameServer::processInput(PlayerReplication& replication, shared::ClientInpu
     } else {
         sendTo(replication.id, position);
     }
+    // Submit the latency-sensitive acknowledgement before this tick admits
+    // additional reliable terrain fragments on the bulk channel.
+    flush();
 }
 
 GameServer::PlayerReplication* GameServer::playerReplication(shared::PlayerId const id) noexcept
@@ -676,7 +679,11 @@ void GameServer::acknowledgeHeightTileDelivery(
 
 void GameServer::admitHeightTileDeliveries(PreviewStream& stream)
 {
-    static constexpr uint32_t MAX_ADMITTED_BATCHES_PER_PUMP = shared::HEIGHT_TILE_DELIVERY_WINDOW;
+    // Keep bulk terrain traffic below the game channel's latency budget. Credits
+    // bound retained client work, while this per-tick budget prevents an eager
+    // client from immediately recycling the whole window and filling the reliable
+    // transport ahead of movement acknowledgements.
+    static constexpr uint32_t MAX_ADMITTED_BATCHES_PER_PUMP = 4U;
     uint32_t const available_batches = std::min<uint32_t>({
         stream.delivery_credits,
         static_cast<uint32_t>(shared::HEIGHT_TILE_DELIVERY_WINDOW - stream.inflight_deliveries.size()),
