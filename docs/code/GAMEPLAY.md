@@ -3,10 +3,7 @@
 The runnable entry point is [src/main.cpp](../../src/main.cpp). It initializes
 logging, crash handling, and networking. Launch uses `--server [--port PORT]`,
 `--player-client`, or `--bot-client`; clients accept `--address IP:PORT`.
-No arguments start a graphical localhost player; Flight joins select free internal tokens automatically.
-
-## Runtime shape
-
+No arguments start a graphical localhost player; Flight joins select free tokens.
 Clients track remote players by character rather than server `PlayerId`.
 
 ## Shared simulation
@@ -68,6 +65,11 @@ The server rejects duplicate/already-joined characters, privately accepts a
 success, broadcasts positions, ignores unjoined input, and allows one nonzero
 input per player per tick. Joined disconnect broadcasts removal before despawn.
 
+Height-tile delivery uses bounded credits and reserves cleanup capacity before
+additions, preventing generation from starving departed removals. Interest
+refresh cancels removals for desired-again tiles; already-delivered removals
+complete and those tiles re-enter the bounded generation queue.
+
 ## Client roles and lifecycle
 
 [GameClient.hpp](../../src/client/include/client/GameClient.hpp) and
@@ -80,8 +82,8 @@ position. A disconnect or rejected join stops the loop.
 
 [PlayerClient.hpp](../../src/client/include/client/PlayerClient.hpp) and
 [PlayerClient.cpp](../../src/client/PlayerClient.cpp) provide the GLFW/Vulkan
-client. Normal gameplay enables the HUD by default. GLFW cursor movement controls local yaw/pitch; W/S and A/D become
-camera-relative normalized horizontal directions through the GLFW-independent controller.
+client. Gameplay enables the HUD. GLFW cursor movement controls yaw/pitch;
+W/S and A/D become camera-relative normalized horizontal directions.
 The shared client predicts only its local player's queued input, then rebuilds
 that prediction from acknowledged server state; it never mutates the
 authoritative `World`. Each render samples

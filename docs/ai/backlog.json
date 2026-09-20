@@ -1439,8 +1439,8 @@
       "MC-AI-0036"
     ],
     "acceptance": "The 65,536 by 65,536 by 1,024 logical air-and-stone world is represented and traversed without dense allocation. CoreLang 0.1.2 supplies deterministic height maps while native code owns bounded asynchronous generation, server-authoritative camera-independent circular residency, directional priority, transport, detailed meshing and incremental Vulkan rendering. Boundaries, world-seam presentation, cancellation, memory, runtime performance, GUI text and user-approved macOS gameplay evidence pass. The reviewed S6 source is promoted and tagged, with macOS, Windows and Android artifacts, SHA256 hashes, provenance, dependencies/licenses and truthful signing status; downloaded macOS and Android assets receive local acceptance while Windows runtime remains separately reported.",
-    "evidence": "The original S6 and failed r1/r2 tags remain immutable. CoreLang 0.1.2.1 is published at 048a3abb8f3d18d97c41dbd618eb37fd0247f285 after 25/25 macOS and native Windows tests. Hosted r1/r2 passed Android but exposed macOS acknowledgement lag when terrain delivery began. MC-AI-0227 reserves control CPU capacity, MC-AI-0228 caches seam-continuous interest order, and MC-AI-0229 separates frequent generation pumping from control-first tick-paced terrain network admission. MC-AI-0230 retains the 35-second maximum-lag measurement and observes bounded final catch-up before shutdown. Queue cadence, interest ordering, frontier deadline, stalled-client window, and sustained-flight tests pass with the 16-tick contract unchanged. A new corrected promotion, fresh all-platform artifacts, downloaded runtime acceptance, public release, and final checksums remain pending.",
-    "blocker": "Corrected source is locally accepted and ready for promotion; aggregate completion still requires hosted macOS, native Windows, and Android artifacts plus exact public asset and runtime reconciliation.",
+    "evidence": "The original S6 and failed r1/r2/r3 tags remain immutable. CoreLang 0.1.2.1 is published at 048a3abb8f3d18d97c41dbd618eb37fd0247f285 after 25/25 macOS and native Windows tests. Hosted r3 passed Android but exposed cold-start initialization, low-core throughput, and repeated delivery sorting. MC-AI-0231 prepares immutable interest orders before ingress, retains one control CPU, and bounds admission to the negotiated window. MC-AI-0233 filters in-flight removals before bounded selection. MC-AI-0234 reserves cleanup capacity during saturated additions, cancels queued removals when interest returns, and recovers already-sent removals; its exhausted-credit 500x reversal regressions and the full nine-test preview suite pass, including the 35-second sustained-flight acknowledgement bound. MC-AI-0232 gives the complete policy suite its measured 300-second runtime budget. A new corrected promotion, fresh all-platform artifacts, downloaded runtime acceptance, public release, and final checksums remain pending.",
+    "blocker": "Corrected source is locally accepted and ready for promotion; aggregate completion still requires fresh hosted macOS, native Windows, and Android artifacts plus exact public asset and runtime reconciliation.",
     "owner": "s6-main",
     "level": "snapshot",
     "parent": "MC-AI-0033",
@@ -7964,6 +7964,159 @@
     ],
     "code_changes": [
       "Add a bounded post-load acknowledgement drain to the sustained-flight integration test."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0231",
+    "title": "Remove cold-start terrain stalls and restore throughput",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P0",
+    "route": "luna",
+    "milestone": "ED-010-S6",
+    "depends_on": [],
+    "acceptance": "Cold-start terrain priority initialization cannot stall authoritative input after a player connects; initial progressive streaming delivers at least 1024 nearest-first tiles within five seconds on hosted macOS; the unchanged sustained-flight acknowledgement lag remains at most 16 inputs.",
+    "evidence": "Cold-start preview tests pass: 1024 nearest-first tiles arrive in about one second locally, the full preview suite passes, stalled clients remain bounded to the eight-batch window, and 35 seconds of 500x flight stays within the unchanged 16-input acknowledgement limit. Worker policy tests cover 0, 1, 2, 3, 4, 9, and 64 reported CPUs.",
+    "blocker": "",
+    "owner": "",
+    "level": "basic",
+    "parent": "MC-AI-0037",
+    "motivation": "The r3 hosted macOS gate deterministically stalls at the first terrain-interest request: each isolated test process constructs and sorts all 16 direction orders on the authoritative server thread after join, producing a 42-input lag. Tick-only delivery also caps initial throughput below the established five-second contract.",
+    "context": "Terrain interest topology is immutable process-wide and can be prepared before the server accepts players. One CPU remains dedicated to authority and transport; remaining cores may generate terrain up to the eight-worker cap. Control-first tick admission remains bounded by the advertised eight-batch credit window.",
+    "complexity": "medium",
+    "created_at": "2026-09-20",
+    "resolved_at": "2026-09-20",
+    "resolution_changes": "Prepared immutable terrain-interest ordering before gameplay ingress, restored two terrain workers on three-core hosts while retaining one control CPU, admitted the full negotiated window per tick, and sorted bounded delivery candidates only once per tick.",
+    "plan": [
+      "Prepare immutable terrain-interest orders during server construction before worker/network activity, use the full negotiated per-tick delivery window, and retain cold-start end-to-end regressions.",
+      "Prepare immutable terrain-interest orders during server construction before worker/network activity, reserve one CPU for authority and transport, use the full negotiated per-tick delivery window, and retain cold-start end-to-end regressions."
+    ],
+    "product_changes": [
+      "Eliminate the cold-start movement freeze when terrain streaming begins and restore fast initial terrain fill."
+    ],
+    "code_changes": [
+      "Add explicit terrain-interest preparation before server startup and admit up to the negotiated terrain delivery window per tick.",
+      "Prepare terrain-interest orders before accepting players, reserve one CPU while using other cores for generation, and admit up to the negotiated terrain delivery window per tick."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0232",
+    "title": "Give the complete policy suite its measured runtime budget",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P0",
+    "route": "luna",
+    "milestone": "ED-010-S6",
+    "depends_on": [],
+    "acceptance": "The full Python policy suite completes within the configured non-Windows and Windows budgets during snapshot candidate checks, while timeout propagation remains covered.",
+    "evidence": "The exact timeout contract unit test passes and the configured budget now matches the existing Windows allowance.",
+    "blocker": "",
+    "owner": "",
+    "level": "basic",
+    "parent": "MC-AI-0037",
+    "motivation": "The S6 candidate gate twice reached the final policy tests but was killed by the fixed 120-second POSIX budget. The suite has grown beyond that historical limit and completes near the boundary under aggregate load.",
+    "context": "Windows already uses a 300-second budget. The complete cross-platform policy suite should use the same explicit bounded budget; focused development checks remain scoped and fast.",
+    "complexity": "low",
+    "created_at": "2026-09-20",
+    "resolved_at": "2026-09-20",
+    "resolution_changes": "Raised the complete Python policy-suite budget from 120 seconds on POSIX to a uniform bounded 300 seconds on every platform.",
+    "plan": [
+      "Set the complete Python-suite timeout to 300 seconds on every platform and update the timeout contract test."
+    ],
+    "product_changes": [],
+    "code_changes": [
+      "Use a uniform 300-second timeout for the complete Python policy suite."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0233",
+    "title": "Keep removal credits progressing across partial acknowledgements",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P0",
+    "route": "luna",
+    "milestone": "ED-010-S6",
+    "depends_on": [],
+    "acceptance": "When one terrain-delivery credit returns while other removal batches remain in flight, the server immediately uses that credit for the next eligible departed tiles instead of repeatedly selecting already-in-flight removals.",
+    "evidence": "The regression constructs a highest-priority in-flight prefix twice the 16-operation delivery capacity and proves the next 16 eligible removals are selected. Existing player-centered removal and stalled-client window integration tests pass.",
+    "blocker": "",
+    "owner": "",
+    "level": "basic",
+    "parent": "MC-AI-0037",
+    "motivation": "Independent pre-push contract and adversarial reviewers found that bounded partial selection truncated pending removals before excluding in-flight keys, allowing a freed credit to emit no cleanup despite eligible removals behind the selected prefix.",
+    "context": "Pending removals intentionally remain present until acknowledgement. Candidate selection must exclude their in-flight subset before applying the bounded priority selection.",
+    "complexity": "medium",
+    "created_at": "2026-09-20",
+    "resolved_at": "2026-09-20",
+    "resolution_changes": "Moved eligibility filtering ahead of bounded removal selection and isolated the contract in the shared height-tile scheduling helper.",
+    "plan": [
+      "Filter in-flight removals before bounded partial ordering and add a transport-level partial-ack movement regression.",
+      "Filter in-flight removals before bounded partial ordering and add a focused selection regression plus existing transport removal checks."
+    ],
+    "product_changes": [
+      "Keep departed terrain cleanup progressing when removal acknowledgements arrive out of order."
+    ],
+    "code_changes": [
+      "Select only eligible non-inflight removals before partial sorting and truncation."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0234",
+    "title": "Reconcile terrain removals across reprioritization",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P1",
+    "route": "luna",
+    "milestone": "EarlyDev 0.1.0:6",
+    "depends_on": [],
+    "acceptance": "Terrain removals make bounded progress while additions are saturated; queued removals are cancelled when tiles re-enter interest; already-sent removals recover automatically after acknowledgement; transport-level tests cover saturated cleanup and outward-then-return movement.",
+    "evidence": "Focused transport regressions pass for exhausted-credit outward/return cancellation and saturated-addition removal progress with inflight reclaim recovery. The 35-second 500x sustained-flight acknowledgement contract passes after the correction, and the remaining preview-stream suite passed unchanged.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0037",
+    "motivation": "Pre-publication review found server/client terrain residency can diverge or expose holes during continuous streaming and direction reversal.",
+    "context": "Fix the removal lifecycle in the S6 height-tile streaming protocol without weakening addition throughput or render distance.",
+    "complexity": "medium",
+    "created_at": "2026-09-20",
+    "resolved_at": "2026-09-20",
+    "resolution_changes": "Reserved one removal operation per available delivery batch before filling additions, pruned restored-interest removals during refresh, defensively rejects restored keys at admission, and added end-to-end stalled-credit reversal and inflight recovery tests.",
+    "plan": [
+      "Reserve bounded removal capacity before additions, prune reclaimed pending removals on interest refresh and admission, requeue desired tiles after acknowledged inflight removal, and add focused transport regressions."
+    ],
+    "product_changes": [
+      "Terrain remains continuous while flying and reversing direction during background generation."
+    ],
+    "code_changes": [
+      "Correct GameServer height-tile removal scheduling and lifecycle tests."
     ],
     "baseline_commit": "",
     "commits": [],

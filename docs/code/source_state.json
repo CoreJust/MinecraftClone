@@ -139,7 +139,7 @@
         "vcpkg-configuration.json",
         "vcpkg.json"
       ],
-      "sources_sha256": "8cdd962d4c7dabde77637e7cb75c3b6aa74e5c1fabf4465e34c281bdac39d8f6"
+      "sources_sha256": "92deefdb7e37f92951f83d9da35db12bd585006f02bf5ab60452307173f7c529"
     },
     {
       "guide": "docs/code/CORE.md",
@@ -176,7 +176,7 @@
     },
     {
       "guide": "docs/code/GAMEPLAY.md",
-      "guide_sha256": "ca20dd8436041602bb3049559ce099f78391daacdab7f2b96cd604841d09cde8",
+      "guide_sha256": "dec546b3ed0443095a5b161116691fdceb32956efcd680547d86e6696a7c75b2",
       "id": "gameplay",
       "sources": [
         "src/client/BotClient.cpp",
@@ -250,7 +250,7 @@
         "tests/core/world_generation_scheduler_tests.cpp",
         "tests/core/world_generation_tests.cpp"
       ],
-      "sources_sha256": "5f75092be59511fb66ad5c73d0113d822f2091f7b2b8159c995b3e72bbf47d15"
+      "sources_sha256": "cc8456f81b47dd29dec155b87d94d05da65567754f3e4e1764fd834df46a729e"
     },
     {
       "guide": "docs/code/RENDERING.md",

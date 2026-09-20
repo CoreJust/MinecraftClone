@@ -3,6 +3,7 @@
 #include <shared/net/Message.hpp>
 
 #include <cstdint>
+#include <span>
 #include <vector>
 
 namespace shared {
@@ -27,6 +28,8 @@ enum class HeightTileGenerationBand : uint8_t {
     Background,
 };
 
+void prepareHeightTileInterestOrders();
+
 [[nodiscard]]
 HeightTileInterest makeHeightTileInterest(
     HeightTileKey center,
@@ -49,5 +52,15 @@ HeightTileInterest makeHeightTileInterest(
     int8_t heading_y,
     HeightTileKey key
 ) noexcept;
+
+[[nodiscard]]
+std::vector<HeightTileKey> selectHeightTileRemovalCandidates(
+    HeightTileKey center,
+    int8_t heading_x,
+    int8_t heading_y,
+    std::span<HeightTileKey const> pending,
+    std::span<HeightTileKey const> inflight,
+    uint32_t maximum_count
+);
 
 } // namespace shared
