@@ -55,7 +55,7 @@ jobs:
                   git merge-base --is-ancestor "$source_commit" refs/remotes/origin/ai-main && trusted=true
                   ;;
                 refs/tags/ai/*)
-                  if printf '%s' "$EVENT_REF" | grep -Eq '^refs/tags/ai/[^/]+/[0-9]+\.[0-9]+\.[0-9]+/[0-9]+_[0-9]{2}\.[0-9]{2}\.[0-9]{2}$' \
+                  if printf '%s' "$EVENT_REF" | grep -Eq '^refs/tags/ai/[^/]+/[0-9]+\.[0-9]+\.[0-9]+/[0-9]+(-r[1-9][0-9]*)?_[0-9]{2}\.[0-9]{2}\.[0-9]{2}$' \
                     && git merge-base --is-ancestor "$source_commit" refs/remotes/origin/ai-main; then trusted=true; fi
                   ;;
               esac
@@ -63,7 +63,7 @@ jobs:
             workflow_dispatch)
               if git merge-base --is-ancestor "$source_commit" refs/remotes/origin/ai-dev \
                 || git merge-base --is-ancestor "$source_commit" refs/remotes/origin/ai-main \
-                || git tag --points-at "$source_commit" | grep -Eq '^ai/[^/]+/[0-9]+\.[0-9]+\.[0-9]+/[0-9]+_[0-9]{2}\.[0-9]{2}\.[0-9]{2}$'; then
+                || git tag --points-at "$source_commit" | grep -Eq '^ai/[^/]+/[0-9]+\.[0-9]+\.[0-9]+/[0-9]+(-r[1-9][0-9]*)?_[0-9]{2}\.[0-9]{2}\.[0-9]{2}$'; then
                 trusted=true
               fi
               ;;
@@ -290,7 +290,8 @@ jobs:
           python script/ci/acquire.py record-metadata --platform macos --preset release --output build/toolchain-macos.json
           cmake --preset release -DMC_ENABLE_RENDERER_SMOKE=OFF -DVCPKG_MANIFEST_INSTALL=OFF -DVCPKG_INSTALLED_DIR="$VCPKG_INSTALLED_DIR" -DCMAKE_PREFIX_PATH="$MC_PRIVATE_DEPENDENCIES_PREFIX" -DCoreCpp_DIR="$MC_PRIVATE_DEPENDENCIES_PREFIX/lib/cmake/CoreCpp" -DCoreProject2026_DIR="$MC_PRIVATE_DEPENDENCIES_PREFIX/lib/cmake/CoreProject2026"
           cmake --build --preset release
-          ctest --test-dir build/release --output-on-failure --no-tests=error --timeout 60 | tee build/release-tests-macos.log
+          ctest --test-dir build/release --output-on-failure --no-tests=error --timeout 60 -E '^MinecraftClone.ServerOnlyBuild$' | tee build/release-tests-macos.log
+          cmake -DMC_TEST_CONFIGURATION=Release -P build/release/tests/minecraftclone_server_only_test.cmake | tee -a build/release-tests-macos.log
           python script/ci/acquire.py validate-shaders --build-dir build/release
           cmake --install build/release --prefix build/install
           mkdir -p dist
@@ -329,12 +330,17 @@ jobs:
           if errorlevel 1 exit /b %errorlevel%
           cmake --build --preset release
           if errorlevel 1 exit /b %errorlevel%
-          ctest --test-dir build\release --output-on-failure --no-tests=error --timeout 60 > build\release-tests-windows.log 2>&1
+          ctest --test-dir build\release --output-on-failure --no-tests=error --timeout 60 -E "^MinecraftClone.ServerOnlyBuild$" > build\release-tests-windows.log 2>&1
           set "ctest_result=%errorlevel%"
           type build\release-tests-windows.log
           set "ctest_log_result=%errorlevel%"
           if not "%ctest_result%"=="0" exit /b %ctest_result%
           if not "%ctest_log_result%"=="0" exit /b %ctest_log_result%
+          cmake -DMC_TEST_CONFIGURATION=Release -P build\release\tests\minecraftclone_server_only_test.cmake >> build\release-tests-windows.log 2>&1
+          if errorlevel 1 (
+            type build\release-tests-windows.log
+            exit /b %errorlevel%
+          )
           python script/ci/acquire.py validate-shaders --build-dir build\release
           if errorlevel 1 exit /b %errorlevel%
           cmake --install build\release --prefix build\install
@@ -437,15 +443,19 @@ jobs:
           path: ${{ runner.temp }}/vcpkg-binary-cache
           key: vcpkg-binary-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json', 'script/ci/acquire.py') }}
       - name: Install pinned private dependencies
-        run: >-
-          python script/ci/acquire.py install-private-dependencies
-          --root "$RUNNER_TEMP/private-dependencies" --platform android
-          --cmake-arg=-DCMAKE_TOOLCHAIN_FILE=$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake
-          --cmake-arg=-DVCPKG_CHAINLOAD_TOOLCHAIN_FILE=$ANDROID_SDK_ROOT/ndk/27.0.12077973/build/cmake/android.toolchain.cmake
-          --cmake-arg=-DVCPKG_TARGET_TRIPLET=arm64-android
-          --cmake-arg=-DANDROID_ABI=arm64-v8a
-          --cmake-arg=-DANDROID_PLATFORM=android-28
-          --cmake-arg=-DVCPKG_MANIFEST_INSTALL=OFF
+        run: |
+          cat > "$RUNNER_TEMP/corelang-android-compat.cmake" <<'EOF'
+          add_compile_options(-Wno-error=reorder-init-list)
+          EOF
+          python script/ci/acquire.py install-private-dependencies \
+            --root "$RUNNER_TEMP/private-dependencies" --platform android \
+            --cmake-arg=-DCMAKE_TOOLCHAIN_FILE=$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake \
+            --cmake-arg=-DVCPKG_CHAINLOAD_TOOLCHAIN_FILE=$ANDROID_SDK_ROOT/ndk/27.0.12077973/build/cmake/android.toolchain.cmake \
+            --cmake-arg=-DCMAKE_PROJECT_INCLUDE_BEFORE=$RUNNER_TEMP/corelang-android-compat.cmake \
+            --cmake-arg=-DVCPKG_TARGET_TRIPLET=arm64-android \
+            --cmake-arg=-DANDROID_ABI=arm64-v8a \
+            --cmake-arg=-DANDROID_PLATFORM=android-28 \
+            --cmake-arg=-DVCPKG_MANIFEST_INSTALL=OFF
       - name: Verify exact source and Android wrapper
         run: |
           python script/ci/build_snapshot.py source-identity --expected "$SOURCE_COMMIT" --version "$SNAPSHOT_VERSION" --output build/source-identity.json

@@ -59,7 +59,7 @@ a seed-42 air-and-stone flight scene rendered with the original mottled
 16-pixel stone texture. Actual GPU-rendered gameplay scene captured with the
 fixed acceptance camera.
 
-## EarlyDev 0.1.0:6(26.09.19)
+## EarlyDev 0.1.0:6(26.09.20)
 
 S6 replaces the fixed preview with the mature sparse-world generation, streaming, and rendering foundation.
 

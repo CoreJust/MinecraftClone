@@ -217,6 +217,47 @@ class AiPublishTests(unittest.TestCase):
         self.assertNotEqual(old.returncode, 0)
         self.assertIn("will not be rewritten", old.stderr)
 
+    def test_snapshot_revision_tag_rejects_the_canonical_promotion(self) -> None:
+        self.prepare()
+        self.finish()
+        canonical = self.run_publish("tag", "MC-AI-0032")
+        self.assertEqual(canonical.returncode, 0, canonical.stderr)
+        tagged = self.run_publish("tag", "MC-AI-0032", "--revision", "1")
+        self.assertNotEqual(tagged.returncode, 0)
+        self.assertIn("newly promoted corrected source", tagged.stderr)
+
+    def test_snapshot_revision_tag_accepts_a_newly_promoted_corrected_source(self) -> None:
+        self.prepare()
+        self.finish()
+        canonical = self.run_publish("tag", "MC-AI-0032")
+        self.assertEqual(canonical.returncode, 0, canonical.stderr)
+        self.git("checkout", "-q", "ai-dev")
+        (self.root / "src" / "fixture.txt").write_text("corrected\n", encoding="utf-8")
+        self.git("add", "src/fixture.txt")
+        self.git("commit", "--no-gpg-sign", "-q", "-m", "correction\n\nTask-ID: MC-AI-0032")
+        self.source = self.git_output("rev-parse", "HEAD")
+        self.prepare()
+        self.finish()
+        tagged = self.run_publish("tag", "MC-AI-0032", "--revision", "1")
+        self.assertEqual(tagged.returncode, 0, tagged.stderr)
+        promoted = self.git_output("rev-parse", "HEAD")
+        year, month, day = self.git_output("show", "-s", "--format=%cs", promoted).split("-")
+        name = f"ai/EarlyDev/0.1.0/3-r1_{year[2:]}.{month}.{day}"
+        self.assertEqual(tagged.stdout.strip(), name)
+        self.assertEqual(self.git_output("rev-parse", f"{name}^{{commit}}"), promoted)
+
+    def test_snapshot_revision_tag_requires_canonical_lineage_and_next_number(self) -> None:
+        self.prepare()
+        self.finish()
+        missing = self.run_publish("tag", "MC-AI-0032", "--revision", "1")
+        self.assertNotEqual(missing.returncode, 0)
+        self.assertIn("requires the existing canonical", missing.stderr)
+        canonical = self.run_publish("tag", "MC-AI-0032")
+        self.assertEqual(canonical.returncode, 0, canonical.stderr)
+        gap = self.run_publish("tag", "MC-AI-0032", "--revision", "2")
+        self.assertNotEqual(gap.returncode, 0)
+        self.assertIn("must use revision 1", gap.stderr)
+
     def test_finish_rejects_a_staged_post_prepare_edit_before_commit(self) -> None:
         self.prepare()
         tampered = self.root / "src" / "tampered.txt"

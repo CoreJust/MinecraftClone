@@ -150,6 +150,68 @@ class WorkflowContextTests(unittest.TestCase):
         self.assertLess(workflow.index("Stage pinned Windows Vulkan runtime"), workflow.index("Build, test, and package Windows"))
         self.assertIn('--vulkan-runtime "build\\install\\vulkan-1.dll"', workflow)
 
+    def test_windows_snapshot_uses_one_native_msvc_toolchain_and_bounded_server_only_plan(self):
+        workflow = WORKFLOWS[1].read_text(encoding="utf-8")
+        windows_build = workflow.split(
+            "      - name: Build, test, and package Windows\n", maxsplit=1
+        )[1].split("      - name:", maxsplit=1)[0]
+        self.assertNotIn("clang-cl", windows_build)
+        self.assertNotIn("CMAKE_CXX_COMPILER_LAUNCHER", windows_build)
+        self.assertIn('-E "^MinecraftClone.ServerOnlyBuild$"', windows_build)
+        self.assertNotIn("prepare-windows-server-only.py", workflow)
+        self.assertIn("-P build\\release\\tests\\minecraftclone_server_only_test.cmake", windows_build)
+
+    def test_nested_server_only_fixture_excludes_duplicate_preview_in_source(self):
+        fixture = (REPOSITORY / "tests/cmake/minecraftclone_server_only_test.cmake.in").read_text(encoding="utf-8")
+        self.assertIn('-G "@CMAKE_GENERATOR@"', fixture)
+        self.assertIn('-E "^GameServerPreviewTest\\\\."', fixture)
+
+    def test_snapshot_private_dependencies_use_portable_compilers_without_changing_locks(self):
+        workflow = WORKFLOWS[1].read_text(encoding="utf-8")
+        windows_install = workflow.split(
+            "      - name: Install pinned private dependencies (Windows)\n", maxsplit=1
+        )[1].split("      - name:", maxsplit=1)[0]
+        self.assertNotIn("clang-cl", windows_install)
+        self.assertNotIn("CMAKE_CXX_COMPILER_LAUNCHER", windows_install)
+        self.assertNotIn("Create bounded Windows server-only test plan", workflow)
+
+        macos_install = workflow.split(
+            "      - name: Install pinned private dependencies (macOS)\n", maxsplit=1
+        )[1].split("      - name:", maxsplit=1)[0]
+        self.assertIn("run: >-", macos_install)
+        self.assertIn("python script/ci/acquire.py install-private-dependencies\n", macos_install)
+        self.assertNotIn("install-private-dependencies \\", macos_install)
+
+        android_install = workflow.split(
+            "      - name: Install pinned private dependencies\n", maxsplit=1
+        )[1].split("      - name:", maxsplit=1)[0]
+        self.assertIn("python script/ci/acquire.py install-private-dependencies \\\n", android_install)
+        self.assertIn("add_compile_options(-Wno-error=reorder-init-list)", android_install)
+        self.assertIn("--cmake-arg=-DCMAKE_PROJECT_INCLUDE_BEFORE=", android_install)
+        self.assertNotIn("dependencies.lock.json", android_install)
+
+    def test_macos_snapshot_runs_preview_once_in_outer_suite(self):
+        workflow = WORKFLOWS[1].read_text(encoding="utf-8")
+        macos_phase = workflow.split(
+            "      - name: Build, test, and package macOS\n", maxsplit=1
+        )[1].split("      - name:", maxsplit=1)[0]
+        server_test = "MinecraftClone.ServerOnlyBuild"
+        flight_test = "GameServerPreviewTest.SustainedFlightKeepsInputAcknowledgementsCurrentWhileTilesStream"
+        broad_ctest = next(
+            line.strip()
+            for line in macos_phase.splitlines()
+            if "ctest --test-dir" in line and " -E " in line
+        )
+        self.assertIn("-E", broad_ctest)
+        self.assertIn(server_test, broad_ctest)
+        self.assertNotIn(flight_test, broad_ctest)
+        self.assertIn("minecraftclone_server_only_test.cmake", macos_phase)
+        self.assertIn("^GameServerPreviewTest", (
+            REPOSITORY / "tests/cmake/minecraftclone_server_only_test.cmake.in"
+        ).read_text(encoding="utf-8"))
+        self.assertNotIn("source.count(needle)", macos_phase)
+        self.assertEqual(macos_phase.count("release-tests-macos.log"), 2)
+
     def test_windows_cmd_build_phases_guard_each_fallible_command(self):
         phase_names = ("Build, test, and validate shaders (Windows)", "Build, test, and package Windows")
         commands = ("cmake --preset", "cmake --build", "ctest --test-dir", "python script/ci/acquire.py validate-shaders")

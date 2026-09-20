@@ -17,6 +17,11 @@ Task IDs are sequential numbers, starting at 1. The stable file/trailer spelling
 
 Lookup commands are read-only. `ai_plan.py implement ... --prepare` only prepares state; the skill must then perform the coding, validation and commit. Likewise, aggregate backend commands print an ordered work queue, not a completion claim. Descriptions remain data, passed as a single safely quoted argument.
 
+For native Windows builds, tests, inspection, and authorized playtests, use the
+shared `$windows-build-host` skill and `windows-build` SSH alias by default.
+Keep an independent exact-revision checkout and logs. Hosted CI remains the
+release artifact gate.
+
 ## Aggregate execution
 
 1. Resolve the explicitly selected aggregate and inspect its plan, children and dependencies. A snapshot implementation requires an in-development snapshot. Block on unresolved product decisions; implement all already-authorized independent work first.

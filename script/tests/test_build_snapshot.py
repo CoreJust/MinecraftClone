@@ -337,6 +337,7 @@ class BuildSnapshotTests(unittest.TestCase):
         self.assertIn("+refs/heads/ai-dev:refs/remotes/origin/ai-dev", workflow)
         self.assertIn('git merge-base --is-ancestor "$source_commit" refs/remotes/origin/ai-dev', workflow)
         self.assertIn("refs/tags/ai/[^/]+/[0-9]+\\.[0-9]+\\.[0-9]+", workflow)
+        self.assertIn("(-r[1-9][0-9]*)?", workflow)
         self.assertIn("git tag --points-at", workflow)
         self.assertIn("'+refs/tags/ai/*:refs/tags/ai/*'", workflow)
         self.assertIn("refs/heads/ai-main)", workflow)
@@ -404,8 +405,7 @@ class BuildSnapshotTests(unittest.TestCase):
             "python script/ci/acquire.py record-metadata --platform windows --preset release --output build/toolchain-windows.json",
             "cmake --preset release -DMC_ENABLE_RENDERER_SMOKE=OFF",
             "cmake --build --preset release",
-            "ctest --test-dir build\\release --output-on-failure --no-tests=error --timeout 60 > build\\release-tests-windows.log 2>&1",
-            "type build\\release-tests-windows.log",
+            "ctest --test-dir build\\release --output-on-failure --no-tests=error --timeout 60 -E \"^MinecraftClone.ServerOnlyBuild$\" > build\\release-tests-windows.log 2>&1",
             "python script/ci/acquire.py validate-shaders --build-dir build\\release",
             "cmake --install build\\release --prefix build\\install",
             "if not exist dist mkdir dist",
@@ -429,8 +429,6 @@ class BuildSnapshotTests(unittest.TestCase):
                         'if not "%ctest_log_result%"=="0" exit /b %ctest_log_result%',
                     ],
                 )
-            elif command.startswith("type "):
-                continue
             else:
                 self.assertEqual(lines[index + 1], failure_guard, command)
 
@@ -446,8 +444,6 @@ class BuildSnapshotTests(unittest.TestCase):
                     errorlevel = int(command == failed_command)
                     if command.startswith("ctest "):
                         ctest_result = errorlevel
-                    elif command.startswith("type "):
-                        ctest_log_result = errorlevel
                 elif line.startswith('if not "%ctest_result%"') and ctest_result >= 1:
                     return ctest_result, executed
                 elif line.startswith('if not "%ctest_log_result%"') and ctest_log_result >= 1:
@@ -461,7 +457,7 @@ class BuildSnapshotTests(unittest.TestCase):
             exit_code, executed = run_extracted_phase(failed_command)
             self.assertEqual(exit_code, 1)
             if failed_command.startswith("ctest "):
-                self.assertEqual(executed[-1], "type build\\release-tests-windows.log")
+                self.assertEqual(executed[-1], failed_command)
             else:
                 self.assertEqual(executed[-1], failed_command)
             self.assertNotIn(commands[-1], executed[:-1])
