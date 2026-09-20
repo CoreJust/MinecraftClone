@@ -1,7 +1,7 @@
 # S7 architecture: authority, policy and presentation
 
 This decision refines [Snapshot 7](../tasks/MC-AI-0038.md) on top of the
-verified S6 baseline. CoreLang 0.1.3.2 source and public API are finalized
+verified S6 baseline. CoreLang 0.1.3.1 source and public API are finalized
 design input. Only its released, provenance-verified package may enter the
 game dependency graph.
 
@@ -62,7 +62,7 @@ reconnect. The renderer consumes only the resulting presentation snapshot.
 
 - MC-AI-0243 records this architecture and release gates.
 - MC-AI-0246 implements the CoreLang-free palette/body/camera slice now.
-- MC-AI-0244 waits for the exact CoreLang 0.1.3.2 package; MC-AI-0245 then
+- MC-AI-0244 waits for the exact CoreLang 0.1.3.1 package; MC-AI-0245 then
   implements entity-wide permissions and the physics consumer.
 - MC-AI-0247 adds deterministic impaired-network acceptance; MC-AI-0248
   measures the complete candidate, including the `x200` speed modifier.
