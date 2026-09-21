@@ -1,4 +1,5 @@
 #include <client/Camera.hpp>
+#include <client/CameraObstruction.hpp>
 #include <client/PlayerPresentation.hpp>
 
 #include <gtest/gtest.h>
@@ -145,6 +146,52 @@ TEST(PlayerPresentationTest, InitialAuthoritativePositionSnapsAndSubsequentPosit
     EXPECT_DOUBLE_EQ(presentation.sample('@', started_at + std::chrono::milliseconds{ 150 })->x, 0.2);
     EXPECT_DOUBLE_EQ(presentation.sample('@', started_at + std::chrono::milliseconds{ 175 })->x, 0.3);
     EXPECT_DOUBLE_EQ(presentation.sample('@', started_at + std::chrono::milliseconds{ 200 })->x, 0.4);
+}
+
+TEST(PlayerPresentationTest, VerticalInterpolationKeepsVelocityContinuousAcrossTicks)
+{
+    static constexpr shared::Player INITIAL{
+        .id = 1U,
+        .x = 0U,
+        .y = 0U,
+        .z = 0,
+        .ch = '@',
+    };
+    static constexpr shared::Player FIRST_TARGET{
+        .id = 1U,
+        .x = 0U,
+        .y = 0U,
+        .z = 1,
+        .ch = '@',
+    };
+    static constexpr shared::Player SECOND_TARGET{
+        .id = 1U,
+        .x = 0U,
+        .y = 0U,
+        .z = 1,
+        .z_subcell = 5'000U,
+        .ch = '@',
+    };
+    std::chrono::steady_clock::time_point const started_at{};
+    client::PlayerPresentation presentation;
+    presentation.update(INITIAL, started_at);
+    presentation.update(FIRST_TARGET, started_at + std::chrono::milliseconds{ 100 });
+    presentation.update(SECOND_TARGET, started_at + std::chrono::milliseconds{ 200 });
+
+    EXPECT_NEAR(
+        presentation.sample('@', started_at + std::chrono::milliseconds{ 250 })->z,
+        1.3125,
+        1e-9
+    );
+    double const before_retarget = presentation.sample(
+        '@',
+        started_at + std::chrono::milliseconds{ 199 }
+    )->z;
+    double const after_retarget = presentation.sample(
+        '@',
+        started_at + std::chrono::milliseconds{ 201 }
+    )->z;
+    EXPECT_LT(after_retarget - before_retarget, 0.03);
 }
 
 TEST(PlayerPresentationTest, HorizontalInterpolationCrossesWorldSeamByShortestPath)
@@ -436,6 +483,20 @@ TEST(PlayerPresentationTest, CameraObstructionDistanceIsBoundedAndLocalBodyVisib
         client::nextCameraPerspective(client::CameraPerspective::ThirdPersonFront),
         client::CameraPerspective::FirstPerson
     );
+}
+
+TEST(PlayerPresentationTest, CameraObstructionAtTheMaximumSampleStillRetractsTheCamera)
+{
+    double const distance = client::maximumUnobstructedCameraDistance(
+        6.0,
+        24U,
+        8U,
+        0.03,
+        [](double const sample) { return sample >= 6.0; }
+    );
+
+    EXPECT_LT(distance, 6.0);
+    EXPECT_GT(distance, 5.9);
 }
 
 TEST(PlayerPresentationTest, PaletteMapsEveryAuthoritativeFourBitIdentityToOpaqueColor)

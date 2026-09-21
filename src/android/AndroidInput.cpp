@@ -30,6 +30,7 @@ void AndroidInput::clear() noexcept
     m_debug_hud_toggle_requested = false;
     m_camera_perspective_toggle.reset();
     m_camera_perspective_cycle_requested = false;
+    m_ascending_touch_input.clear();
     cancelFlightTouches();
 }
 
@@ -55,6 +56,11 @@ int8_t AndroidInput::flightDirection() const noexcept
         static_cast<int8_t>(m_ascending_touch_pointer_id >= 0)
         - static_cast<int8_t>(m_descending_touch_pointer_id >= 0)
     );
+}
+
+bool AndroidInput::consumeFlightAscendRequest() noexcept
+{
+    return m_ascending_touch_input.consumePress();
 }
 
 bool AndroidInput::consumeStopRequest() noexcept
@@ -232,6 +238,9 @@ bool AndroidInput::beginFlightTouch(
         return false;
     }
     active_pointer_id = pointer_id;
+    if (*direction > 0) {
+        m_ascending_touch_input.setPressed(true);
+    }
     return true;
 }
 
@@ -248,6 +257,7 @@ bool AndroidInput::endFlightTouch(int32_t const pointer_id) noexcept
     }
     if (pointer_id == m_ascending_touch_pointer_id) {
         m_ascending_touch_pointer_id = -1;
+        m_ascending_touch_input.setPressed(false);
         return true;
     }
     if (pointer_id == m_descending_touch_pointer_id) {
@@ -261,6 +271,7 @@ void AndroidInput::cancelFlightTouches() noexcept
 {
     m_ascending_touch_pointer_id = -1;
     m_descending_touch_pointer_id = -1;
+    m_ascending_touch_input.cancel();
 }
 
 } // namespace game_android

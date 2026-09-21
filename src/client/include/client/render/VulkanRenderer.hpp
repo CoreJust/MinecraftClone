@@ -40,6 +40,7 @@ struct PlayerRenderData final {
     float y = 0.0F;
     std::array<float, 4> color{ 1.0f, 1.0f, 1.0f, 1.0f };
     float z = 0.0F;
+    bool render_on_top = false;
 };
 
 struct VulkanRendererOptions final {

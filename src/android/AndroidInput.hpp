@@ -12,6 +12,36 @@ struct AInputEvent;
 
 namespace game_android {
 
+class AndroidFlightInputLatch final {
+public:
+    void setPressed(bool const pressed) noexcept
+    {
+        m_requested = m_requested || (pressed && !m_pressed);
+        m_pressed = pressed;
+    }
+
+    [[nodiscard]] bool isPressed() const noexcept { return m_pressed; }
+
+    [[nodiscard]] bool consumePress() noexcept
+    {
+        bool const requested = m_requested;
+        m_requested = false;
+        return requested;
+    }
+
+    void clear() noexcept
+    {
+        m_pressed = false;
+        m_requested = false;
+    }
+
+    void cancel() noexcept { clear(); }
+
+private:
+    bool m_pressed = false;
+    bool m_requested = false;
+};
+
 class AndroidFlightTouchControls final {
 public:
     [[nodiscard]]
@@ -60,6 +90,8 @@ public:
     [[nodiscard]]
     int8_t flightDirection() const noexcept;
     [[nodiscard]]
+    bool consumeFlightAscendRequest() noexcept;
+    [[nodiscard]]
     bool consumeStopRequest() noexcept;
     [[nodiscard]]
     bool consumeReloadRequest() noexcept;
@@ -93,6 +125,7 @@ private:
     bool m_reload_requested = false;
     bool m_debug_hud_toggle_requested = false;
     bool m_camera_perspective_cycle_requested = false;
+    AndroidFlightInputLatch m_ascending_touch_input;
     int32_t m_ascending_touch_pointer_id = -1;
     int32_t m_descending_touch_pointer_id = -1;
 };

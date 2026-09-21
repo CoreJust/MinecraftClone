@@ -72,6 +72,7 @@ private:
     CameraPerspective m_camera_perspective = CameraPerspective::FirstPerson;
     size_t m_speedup_profile_index = 2U;
     bool m_acceleration_enabled = false;
+    bool m_jump_queued = false;
     double m_last_cursor_x = 0.0;
     double m_last_cursor_y = 0.0;
     bool m_has_cursor_position = false;

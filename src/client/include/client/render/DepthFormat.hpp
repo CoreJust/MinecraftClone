@@ -16,6 +16,7 @@ struct DepthFormatSupport final {
 struct PresentationPipelineDescriptors final {
     core::graphics::vulkan::PipelineDescriptor grid{};
     core::graphics::vulkan::PipelineDescriptor player{};
+    core::graphics::vulkan::PipelineDescriptor player_overlay{};
     core::graphics::vulkan::PipelineDescriptor world_text{};
     core::graphics::vulkan::PipelineDescriptor gui_text{};
     core::graphics::vulkan::PipelineDescriptor debug_hud{};
@@ -47,6 +48,7 @@ constexpr PresentationPipelineDescriptors presentationPipelineDescriptors(
     return {
         .grid = descriptor(grid_layout, true, true),
         .player = descriptor(player_layout, true, true),
+        .player_overlay = descriptor(player_layout, false, false),
         .world_text = descriptor(debug_hud_layout, false, false),
         .gui_text = descriptor(debug_hud_layout, false, false),
         .debug_hud = descriptor(debug_hud_layout, false, false),
@@ -93,6 +95,7 @@ constexpr PresentationPipelineDescriptors presentationPipelineDescriptors(
     return {
         .grid = descriptor(grid_layout, true, true, depth_format),
         .player = descriptor(player_layout, true, true, depth_format),
+        .player_overlay = descriptor(player_layout, false, false, depth_format),
         .world_text = world_text,
         .gui_text = gui_text,
         .debug_hud = gui_text,

@@ -165,7 +165,8 @@ public:
     static constexpr uint8_t PLAYER_FOOTPRINT_CELLS = 2;
     static constexpr uint32_t PLAYER_WIDTH_SUBCELLS = 6'250U;
     static constexpr uint32_t PLAYER_HEIGHT_SUBCELLS = 18'125U;
-    static constexpr int32_t PLAYER_JUMP_IMPULSE_SUBCELLS = 11'200;
+    static constexpr int32_t PLAYER_JUMP_IMPULSE_SUBCELLS = 7'000;
+    static constexpr int32_t PLAYER_GRAVITY_SUBCELLS_PER_TICK = 1'750;
     static constexpr uint8_t MAX_PLAYER_ORIGIN_CELL = WIDTH - PLAYER_FOOTPRINT_CELLS;
     static constexpr uint32_t MAX_PLAYER_ORIGIN_SUBCELL = static_cast<uint32_t>(MAX_PLAYER_ORIGIN_CELL)
         * SUBCELLS_PER_CELL;

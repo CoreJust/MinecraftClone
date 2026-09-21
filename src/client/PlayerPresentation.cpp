@@ -16,6 +16,7 @@ constexpr double PLAYER_BODY_CENTER_HEIGHT = static_cast<double>(shared::World::
 constexpr double THIRD_PERSON_DISTANCE = MAX_LOCAL_PLAYER_CAMERA_DISTANCE;
 constexpr double DEGREES_TO_RADIANS = 0.017'453'292'519'943'295'769'236'907'684'89;
 constexpr double WORLD_WRAP_PERIOD = static_cast<double>(shared::WorldExtent::WIDTH);
+constexpr double PRESENTATION_TICK_SECONDS = 0.1;
 
 constexpr std::array<std::array<float, 4>, shared::PLAYER_PALETTE_COUNT> PLAYER_PALETTE{{
     { 0.91F, 0.24F, 0.24F, 1.0F }, { 0.95F, 0.53F, 0.17F, 1.0F },
@@ -80,11 +81,22 @@ void PlayerPresentation::update(
             if (sample.to == target) {
                 return;
             }
+            double const elapsed_seconds = std::chrono::duration<double>(received_at - sample.updated_at).count();
+            double const target_vertical_velocity = elapsed_seconds > 0.0
+                ? (target.z - sample.to.z) / elapsed_seconds
+                : 0.0;
+            double const from_vertical_velocity = sample.has_transition
+                ? verticalVelocity(sample, received_at)
+                : target_vertical_velocity;
             sample = {
                 .character = player.ch,
                 .from = PlayerPresentation::sample(sample, received_at),
                 .to = target,
+                .from_vertical_velocity = from_vertical_velocity,
+                .to_vertical_velocity = target_vertical_velocity,
+                .has_transition = true,
                 .started_at = received_at,
+                .updated_at = received_at,
             };
             return;
         }
@@ -94,6 +106,7 @@ void PlayerPresentation::update(
         .from = target,
         .to = target,
         .started_at = received_at,
+        .updated_at = received_at,
     });
 }
 
@@ -143,11 +156,45 @@ PlayerPresentationPosition PlayerPresentation::sample(
         static_cast<double>(elapsed.count())
             / static_cast<double>(std::chrono::duration_cast<std::chrono::steady_clock::duration>(shared::TICK).count())
     );
+    double const h00 = 2.0 * alpha * alpha * alpha - 3.0 * alpha * alpha + 1.0;
+    double const h10 = alpha * alpha * alpha - 2.0 * alpha * alpha + alpha;
+    double const h01 = -2.0 * alpha * alpha * alpha + 3.0 * alpha * alpha;
+    double const h11 = alpha * alpha * alpha - alpha * alpha;
     return {
         .x = interpolateWrappedHorizontal(sample.from.x, sample.to.x, alpha),
         .y = interpolateWrappedHorizontal(sample.from.y, sample.to.y, alpha),
-        .z = sample.from.z + (sample.to.z - sample.from.z) * alpha,
+        .z = h00 * sample.from.z
+            + h10 * sample.from_vertical_velocity * PRESENTATION_TICK_SECONDS
+            + h01 * sample.to.z
+            + h11 * sample.to_vertical_velocity * PRESENTATION_TICK_SECONDS,
     };
+}
+
+double PlayerPresentation::verticalVelocity(
+    Sample const& sample,
+    std::chrono::steady_clock::time_point const now
+) noexcept
+{
+    if (!sample.has_transition) {
+        return 0.0;
+    }
+    if (now <= sample.started_at) {
+        return sample.from_vertical_velocity;
+    }
+    double const alpha = std::min(
+        1.0,
+        std::chrono::duration<double>(now - sample.started_at).count() / PRESENTATION_TICK_SECONDS
+    );
+    double const dh00 = 6.0 * alpha * alpha - 6.0 * alpha;
+    double const dh10 = 3.0 * alpha * alpha - 4.0 * alpha + 1.0;
+    double const dh01 = -6.0 * alpha * alpha + 6.0 * alpha;
+    double const dh11 = 3.0 * alpha * alpha - 2.0 * alpha;
+    return (
+        dh00 * sample.from.z
+        + dh10 * sample.from_vertical_velocity * PRESENTATION_TICK_SECONDS
+        + dh01 * sample.to.z
+        + dh11 * sample.to_vertical_velocity * PRESENTATION_TICK_SECONDS
+    ) / PRESENTATION_TICK_SECONDS;
 }
 
 glm::dvec3 localPlayerCenterPosition(PlayerPresentationPosition const position) noexcept

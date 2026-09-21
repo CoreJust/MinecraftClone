@@ -33,6 +33,7 @@ private:
     static int32_t handleInputEvent(android_app* app, AInputEvent* event);
 
     void onAppCommand(int32_t command);
+    void onConnectionStateReset() override;
     [[nodiscard]] bool updateVerticalInput(AInputEvent const* event) noexcept;
     void createWindowResources();
     void destroyWindowResources() noexcept;
@@ -63,7 +64,7 @@ private:
     float m_density_scale = 1.0F;
     bool m_resumed = false;
     bool m_has_focus = false;
-    bool m_ascend_pressed = false;
+    AndroidFlightInputLatch m_ascend_input;
     bool m_descend_pressed = false;
     client::CameraPerspective m_camera_perspective = client::CameraPerspective::FirstPerson;
 };

@@ -187,6 +187,7 @@ Files:
 - [`src/client/include/client/CMakeLists.txt`](../../src/client/include/client/CMakeLists.txt)
 - [`src/client/include/client/Camera.hpp`](../../src/client/include/client/Camera.hpp)
 - [`src/client/include/client/CameraController.hpp`](../../src/client/include/client/CameraController.hpp)
+- [`src/client/include/client/CameraObstruction.hpp`](../../src/client/include/client/CameraObstruction.hpp)
 - [`src/client/include/client/FrameScheduler.hpp`](../../src/client/include/client/FrameScheduler.hpp)
 - [`src/client/include/client/GameClient.hpp`](../../src/client/include/client/GameClient.hpp)
 - [`src/client/include/client/PlayerClient.hpp`](../../src/client/include/client/PlayerClient.hpp)

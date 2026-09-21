@@ -292,7 +292,7 @@ bool World::movePlayer(
             : int64_t{ 0 };
     };
     int64_t const gravity_step = static_cast<int64_t>(elapsed.count())
-        * MOVEMENT_SUBCELLS_PER_TICK / TICK.count();
+        * PLAYER_GRAVITY_SUBCELLS_PER_TICK / TICK.count();
     auto const horizontalIntervalsOverlap = [this](
         int64_t const first,
         int64_t const second,
@@ -779,7 +779,14 @@ bool World::moveFlightPlayer(
                 int64_t sample_z = start_z + delta_z * step / vertical_steps;
                 int64_t const surface = terrainSurfaceUnderPlayer(resolved_x, resolved_y);
                 if (sample_z < surface) {
-                    if (delta_z < 0 && surface <= starting_surface) {
+                    if (delta_z > 0) {
+                        // The player may have advanced onto a higher terrain
+                        // column during the horizontal sweep. Keep ascending
+                        // until the body clears that column instead of freezing
+                        // at the old height.
+                        continue;
+                    }
+                    if (surface <= starting_surface) {
                         last_z = surface;
                     }
                     break;

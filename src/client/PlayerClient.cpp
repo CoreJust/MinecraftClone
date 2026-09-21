@@ -1,6 +1,7 @@
 #include <client/PlayerClient.hpp>
 
 #include <client/CameraController.hpp>
+#include <client/CameraObstruction.hpp>
 #include <client/PlayerPresentation.hpp>
 #include <client/PreviewMeshing.hpp>
 
@@ -31,7 +32,9 @@ namespace {
 
 static constexpr uint32_t MAX_HEIGHT_TILE_CHANGES_PER_FRAME = 16U;
 static constexpr uint32_t MAX_PREVIEW_MESHES_PER_FRAME = 16U;
-constexpr double CAMERA_OBSTRUCTION_SAMPLE_SPACING = 0.25;
+constexpr uint32_t CAMERA_OBSTRUCTION_SAMPLE_COUNT = 24U;
+constexpr uint32_t CAMERA_OBSTRUCTION_BINARY_STEPS = 8U;
+constexpr double CAMERA_OBSTRUCTION_MARGIN = 0.03;
 
 [[nodiscard]] bool functionKeyPressed(GLFWwindow* window, int const function_key, int const fallback_key) noexcept
 {
@@ -220,6 +223,7 @@ PlayerClient::~PlayerClient()
 
 void PlayerClient::onConnectionStateReset()
 {
+    m_jump_queued = false;
     ++m_preview_mesh_epoch;
     for (HeightTileKey const key : m_visible_preview_meshes) {
         static_cast<void>(m_renderer.removeHeightTileMesh({ .x = key.x, .y = key.y }));
@@ -515,13 +519,16 @@ shared::Direction PlayerClient::input() {
     bool const movement_capability_cycle = m_movement_capability_latch.update(
         functionKeyPressed(m_window.nativeHandle(), GLFW_KEY_F6, GLFW_KEY_6)
     );
+    bool const jump_pressed = m_jump_queued
+        || glfwGetKey(m_window.nativeHandle(), GLFW_KEY_SPACE) == GLFW_PRESS;
+    m_jump_queued = false;
     m_interest_heading_x = movement.x != 0 || movement.y != 0 ? movement.x : view_x;
     m_interest_heading_y = movement.x != 0 || movement.y != 0 ? movement.y : view_y;
     return shared::Direction{
         .x = static_cast<uint8_t>(movement.x),
         .y = static_cast<uint8_t>(movement.y),
         .z = static_cast<uint8_t>(CameraController::verticalMovement(
-            glfwGetKey(m_window.nativeHandle(), GLFW_KEY_SPACE) == GLFW_PRESS,
+            jump_pressed,
             glfwGetKey(m_window.nativeHandle(), GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS
             || glfwGetKey(m_window.nativeHandle(), GLFW_KEY_RIGHT_SHIFT) == GLFW_PRESS
         )),
@@ -538,6 +545,11 @@ void PlayerClient::render() {
         m_running = false;
         return;
     }
+    // Simulation is intentionally fixed at the 100 ms network tick. Preserve
+    // a jump pressed between ticks so a short tap is consumed by the next
+    // authoritative input instead of being lost to polling cadence.
+    m_jump_queued = m_jump_queued
+        || glfwGetKey(m_window.nativeHandle(), GLFW_KEY_SPACE) == GLFW_PRESS;
     updateFlightControlToggles();
 
     uint32_t width = 0U;
@@ -594,12 +606,14 @@ void PlayerClient::render() {
     }
     processPendingPreviewMeshes(MAX_PREVIEW_MESHES_PER_FRAME);
     std::optional<PlayerPresentationPosition> const local_position = predictedLocalPresentation(now);
+    double camera_distance = MAX_LOCAL_PLAYER_CAMERA_DISTANCE;
     if (local_position.has_value()) {
+        camera_distance = maximumUnobstructedCameraDistance(*local_position);
         PlayerCameraView const camera_view = resolveLocalPlayerCamera(
             *local_position,
             m_look_camera.pose().angles,
             m_camera_perspective,
-            maximumUnobstructedCameraDistance(*local_position)
+            camera_distance
         );
         static_cast<void>(m_camera.setPosition(camera_view.pose.position));
         static_cast<void>(m_camera.setAngles(camera_view.pose.angles));
@@ -617,6 +631,9 @@ void PlayerClient::render() {
                 .y = static_cast<float>(position->y),
                 .color = playerPaletteColor(p.palette_index),
                 .z = static_cast<float>(position->z),
+                .render_on_top = p.ch == m_local_character
+                    && m_camera_perspective != CameraPerspective::FirstPerson
+                    && camera_distance <= 0.0,
             });
         }
     }
@@ -720,13 +737,11 @@ double PlayerClient::maximumUnobstructedCameraDistance(
     );
     glm::dvec3 const ray = (intended_camera.pose.position - eye)
         / MAX_LOCAL_PLAYER_CAMERA_DISTANCE;
-    for (double distance = CAMERA_OBSTRUCTION_SAMPLE_SPACING;
-         distance <= MAX_LOCAL_PLAYER_CAMERA_DISTANCE;
-         distance += CAMERA_OBSTRUCTION_SAMPLE_SPACING) {
+    auto const obstructed = [&](double const distance) {
         glm::dvec3 const probe = eye + ray * distance;
         int64_t const probe_z = static_cast<int64_t>(std::floor(probe.z));
         if (!shared::WorldBounds::isValidZ(probe_z)) {
-            continue;
+            return false;
         }
         uint32_t const world_x = shared::WorldBounds::wrapHorizontal(static_cast<int64_t>(std::floor(probe.x)));
         uint32_t const world_y = shared::WorldBounds::wrapHorizontal(static_cast<int64_t>(std::floor(probe.y)));
@@ -736,16 +751,23 @@ double PlayerClient::maximumUnobstructedCameraDistance(
         });
         HeightTileHandle const tile = heightTileResidency().resident(key);
         if (!tile) {
-            continue;
+            return false;
         }
         uint32_t const tile_x = world_x % shared::HEIGHT_TILE_SIDE_LENGTH;
         uint32_t const tile_y = world_y % shared::HEIGHT_TILE_SIDE_LENGTH;
         uint16_t const terrain_height = tile->heights()[tile_y * shared::HEIGHT_TILE_SIDE_LENGTH + tile_x];
-        if (probe_z < static_cast<int64_t>(terrain_height)) {
-            return std::max(0.0, distance - CAMERA_OBSTRUCTION_SAMPLE_SPACING);
-        }
+        return probe_z < static_cast<int64_t>(terrain_height);
+    };
+    if (obstructed(0.0)) {
+        return 0.0;
     }
-    return MAX_LOCAL_PLAYER_CAMERA_DISTANCE;
+    return ::client::maximumUnobstructedCameraDistance(
+        MAX_LOCAL_PLAYER_CAMERA_DISTANCE,
+        CAMERA_OBSTRUCTION_SAMPLE_COUNT,
+        CAMERA_OBSTRUCTION_BINARY_STEPS,
+        CAMERA_OBSTRUCTION_MARGIN,
+        obstructed
+    );
 }
 
 } // namespace client

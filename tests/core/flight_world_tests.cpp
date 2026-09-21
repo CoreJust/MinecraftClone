@@ -4,6 +4,8 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
+
 TEST(FlightWorldTest, UsesFirstWaveSpawnAndWrappedCoordinates)
 {
     shared::World world{ shared::WorldMode::Flight };
@@ -228,6 +230,27 @@ TEST(FlightWorldTest, AcceleratedFlightSweepsTerrainInsteadOfTunnelingThroughRid
     EXPECT_LT(world.player(1U)->x, before.x + 112);
 }
 
+TEST(FlightWorldTest, AcceleratedFlightCanClimbAfterAdvancingAcrossTerrainStep)
+{
+    shared::TerrainGenerator const terrain;
+    static constexpr int32_t X = 29'000;
+    static constexpr int32_t Y = 32'185;
+    uint16_t const terrain_height = terrain.heightAt(X, Y);
+    shared::World world{ shared::WorldMode::Flight };
+    world.spawnPlayer(1U, '@', { .x = X, .y = Y, .z = terrain_height });
+    ASSERT_TRUE(world.setPlayerMovementCapabilities(1U, { .bits = 1U }));
+
+    EXPECT_TRUE(world.movePlayer(1U, {
+        .x = 127U,
+        .y = 127U,
+        .z = 127U,
+        .accelerated = true,
+        .speedup = 200U,
+    }));
+    ASSERT_TRUE(world.player(1U).has_value());
+    EXPECT_GT(shared::playerPositionZ(*world.player(1U)), static_cast<double>(terrain_height));
+}
+
 TEST(FlightWorldTest, CollisionSweepsDescendingDiagonalFlightThroughAnotherBody)
 {
     shared::World world{ shared::WorldMode::Flight };
@@ -333,6 +356,32 @@ TEST(FlightWorldTest, NonFlightSpaceJumpsAndClearsAdjacentTerrainStep)
     EXPECT_TRUE(world.movePlayer(1U, { .x = 127U }));
     ASSERT_TRUE(world.player(1U).has_value());
     EXPECT_GT(shared::playerPositionX(*world.player(1U)), 32'767.5);
+}
+
+TEST(FlightWorldTest, NonFlightJumpUsesAStableAirborneCurve)
+{
+    static constexpr int32_t X = 100;
+    static constexpr int32_t Y = 100;
+    shared::TerrainGenerator const terrain;
+    uint16_t const terrain_height = terrain.heightAt(X, Y);
+    shared::World world{ shared::WorldMode::Flight };
+    world.spawnPlayer(1U, '@', { .x = X, .y = Y, .z = terrain_height });
+    ASSERT_TRUE(world.setPlayerMovementCapabilities(1U, {}));
+
+    ASSERT_TRUE(world.movePlayer(1U, { .z = 127U }));
+    ASSERT_TRUE(world.player(1U).has_value());
+    double const first_height = shared::playerPositionZ(*world.player(1U));
+    EXPECT_DOUBLE_EQ(first_height, static_cast<double>(terrain_height) + 0.7);
+
+    double maximum_height = first_height;
+    for (uint8_t tick = 0U; tick < 8U; ++tick) {
+        ASSERT_TRUE(world.movePlayer(1U, {}));
+        ASSERT_TRUE(world.player(1U).has_value());
+        maximum_height = std::max(maximum_height, shared::playerPositionZ(*world.player(1U)));
+    }
+    EXPECT_NEAR(maximum_height, static_cast<double>(terrain_height) + 1.75, 1e-9);
+    ASSERT_TRUE(world.player(1U).has_value());
+    EXPECT_DOUBLE_EQ(shared::playerPositionZ(*world.player(1U)), static_cast<double>(terrain_height));
 }
 
 TEST(FlightWorldTest, NonFlightMovementSlidesAlongAAdjacentTerrainWall)

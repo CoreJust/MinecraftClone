@@ -8826,5 +8826,58 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0253",
+    "title": "Fix S7 jump responsiveness, flight collision escape, third-person body visibility, and camera clipping",
+    "kind": "chore",
+    "status": "done",
+    "priority": "P2",
+    "route": "luna",
+    "milestone": "Unassigned",
+    "depends_on": [],
+    "acceptance": "Correct short jump input taps at the fixed simulation cadence on desktop and Android; provide a stable roughly 0.9-second, approximately 1.75-block survival jump arc that still clears one-block terrain steps; render authoritative vertical movement continuously across ticks without ragged jumps or falls; allow collision-enabled flight to ascend out of a terrain step after forward contact; keep the local parallelepiped visible in third-person collision-bypass mode while its camera is inside terrain; and make camera obstruction resolution smooth near terrain without coarse jumps or major clipping.",
+    "evidence": "Focused verification passed 63/63, including the stable survival jump curve, upward flight escape, Android short-tap and reconnect-reset latch regressions, continuous vertical interpolation, and maximum-sample camera obstruction regressions; the AndroidPlayerClient.cpp translation unit passed the API35/NDK27 arm64 NDK syntax compile with the candidate headers; desktop mc_tests and mc_main rebuilt successfully; full CTest passed 375/375 against the restored exact CoreProject2026 0.1.3.1 package pin 89e862bc4fcc97106bca7fb86cf63fedbc6794e. The Python policy suite and documentation integrity checks are rerun after this candidate refresh, and the rebuilt feedback client/server pair is verified by the guarded single-pair launcher on UDP 20158.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0038",
+    "motivation": "Fix S7 jump responsiveness, flight collision escape, third-person body visibility, and camera clipping",
+    "context": "Created through the task planning interface.",
+    "complexity": "medium",
+    "created_at": "2026-09-21",
+    "resolved_at": "2026-09-21",
+    "resolution_changes": "Replaced the coarse 1.12-block impulse and 0.56-block gravity decrement with a 0.7-block impulse and 0.175-block decrement, preserving one-block step traversal while producing a stable approximately 0.9-second jump arc; retained the queued desktop jump input, added an Android edge latch for short hardware/touch ascends, and added client-side cubic-Hermite vertical presentation so authoritative 100 ms updates render as continuous jumps and falls; retained the upward terrain-step sweep, bounded binary camera obstruction search with endpoint handling, and clipped local-body overlay.",
+    "plan": [
+      "Clarify acceptance and implementation steps.",
+      "Trace each playtest symptom to the fixed-tick input, authoritative flight sweep, or presentation depth/camera path.",
+      "Add deterministic regression coverage for upward escape and overlay pipeline state, then build the desktop client and focused/full test suites.",
+      "Refresh generated documentation state, run the policy checks, and verify one connected feedback-build playtest pair."
+    ],
+    "product_changes": [
+      "Short jump taps are retained until the next authoritative simulation tick instead of being lost between polls.",
+      "Collision-enabled flight can climb after horizontal movement reaches a higher terrain column.",
+      "The local body remains visible in third-person when terrain contains the camera.",
+      "Third-person camera distance retracts continuously with binary obstruction search instead of 0.25-block jumps.",
+      "Survival jumps now follow a stable approximately 0.9-second, approximately 1.75-block arc and still clear one-block terrain steps.",
+      "Vertical presentation keeps jump and fall velocity continuous between authoritative ticks instead of visibly stepping.",
+      "Android short ascend taps are retained through the fixed simulation cadence."
+    ],
+    "code_changes": [
+      "Added fixed-cadence jump queuing and reset cleanup in desktop PlayerClient.",
+      "Added the upward terrain-step regression and continued-ascent logic in World flight movement.",
+      "Replaced coarse desktop and Android camera obstruction samples with bounded scan plus binary search.",
+      "Added a depth-disabled player-overlay pipeline and render_on_top flag for the clipped local body.",
+      "Added explicit gravity tuning and a deterministic airborne-curve regression for non-flight movement.",
+      "Added a shared camera obstruction helper with a found-obstruction boundary contract and regressions.",
+      "Added Android hardware/touch ascend latching, connection-reset cleanup, and a cubic-Hermite vertical presentation interpolator with continuity coverage; rebuilt the Android client path to catch platform-only compile errors."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]

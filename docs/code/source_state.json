@@ -48,7 +48,7 @@
         "tests/android/input_state_tests.cpp",
         "tests/android/input_tests.cpp"
       ],
-      "sources_sha256": "0cb9d56b79b13a465343a1b2b0731ff84fbdc5770ae53dbc829c14c63afabbd0"
+      "sources_sha256": "011a464c44fb585f30971428bb09b5cb076f5d1e94846a35b6907a5684831782"
     },
     {
       "guide": "docs/BUILD.md",
@@ -140,7 +140,7 @@
         "vcpkg-configuration.json",
         "vcpkg.json"
       ],
-      "sources_sha256": "0c80af34b013c4f1ca2d289163a63aedd11f15d86ddce434bdc00d498da8a069"
+      "sources_sha256": "9b7e22fe53e999174fbbc6a738ffd03a0a7cff353fc9274fe4f26d7fd7933ecb"
     },
     {
       "guide": "docs/code/CORE.md",
@@ -193,6 +193,7 @@
         "src/client/include/client/CMakeLists.txt",
         "src/client/include/client/Camera.hpp",
         "src/client/include/client/CameraController.hpp",
+        "src/client/include/client/CameraObstruction.hpp",
         "src/client/include/client/FrameScheduler.hpp",
         "src/client/include/client/GameClient.hpp",
         "src/client/include/client/PlayerClient.hpp",
@@ -251,7 +252,7 @@
         "tests/core/world_generation_scheduler_tests.cpp",
         "tests/core/world_generation_tests.cpp"
       ],
-      "sources_sha256": "18e73ccdc0d7d62be04f1841c3e6a1cfe0ae8d4a19250d943863dc9215a1a9b6"
+      "sources_sha256": "229d1063a044b7b4badcef578d4a1664dc4c86e1d2aa3c96af220553d96d2285"
     },
     {
       "guide": "docs/code/RENDERING.md",
@@ -312,7 +313,7 @@
         "tests/testsupport/image_comparison_tests.cpp",
         "tests/testsupport/include/testsupport/ImageComparison.hpp"
       ],
-      "sources_sha256": "a117e12a76d2904cc06b324ed1fd58577a29f74d26030afaaa9007d5b6f7a1c4"
+      "sources_sha256": "febc99949f6d5bb21a9db534e370b6af549cac74be1de6be4ae5fb4fe6437ece"
     }
   ],
   "version": 1

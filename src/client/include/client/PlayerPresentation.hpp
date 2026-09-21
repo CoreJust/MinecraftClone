@@ -56,13 +56,22 @@ private:
         char character;
         PlayerPresentationPosition from;
         PlayerPresentationPosition to;
+        double from_vertical_velocity = 0.0;
+        double to_vertical_velocity = 0.0;
+        bool has_transition = false;
         std::chrono::steady_clock::time_point started_at;
+        std::chrono::steady_clock::time_point updated_at;
     };
 
     [[nodiscard]]
     static PlayerPresentationPosition position(shared::Player const& player) noexcept;
     [[nodiscard]]
     static PlayerPresentationPosition sample(
+        Sample const& sample,
+        std::chrono::steady_clock::time_point now
+    ) noexcept;
+    [[nodiscard]]
+    static double verticalVelocity(
         Sample const& sample,
         std::chrono::steady_clock::time_point now
     ) noexcept;

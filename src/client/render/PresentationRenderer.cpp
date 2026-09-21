@@ -739,39 +739,47 @@ RendererPresentMode rendererPresentMode(VkPresentModeKHR const mode) noexcept
 void recordPlayers(
     VkCommandBuffer const command,
     VkPipeline const player_pipeline,
+    VkPipeline const player_overlay_pipeline,
     VkPipelineLayout const player_layout,
     glm::mat4 const& projection_view,
     std::span<PlayerRenderData const> const players
 )
 {
-    vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS, player_pipeline);
-    for (PlayerRenderData const& player : players) {
-        BoxPushConstants const push{
-            .projection_view = projection_view,
-            .origin = {
-                player.x,
-                player.y,
-                player.z,
-                0.0F,
-            },
-            .extent = {
-                PLAYER_BODY_DIMENSIONS.x,
-                PLAYER_BODY_DIMENSIONS.y,
-                PLAYER_BODY_DIMENSIONS.z,
-                0.0F,
-            },
-            .color = player.color,
-        };
-        vkCmdPushConstants(
-            command,
-            player_layout,
-            VK_SHADER_STAGE_VERTEX_BIT,
-            0U,
-            sizeof(push),
-            &push
-        );
-        vkCmdDraw(command, BOX_VERTEX_COUNT, 1U, 0U, 0U);
-    }
+    auto const draw = [&](VkPipeline const pipeline, bool const overlay) {
+        vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+        for (PlayerRenderData const& player : players) {
+            if (player.render_on_top != overlay) {
+                continue;
+            }
+            BoxPushConstants const push{
+                .projection_view = projection_view,
+                .origin = {
+                    player.x,
+                    player.y,
+                    player.z,
+                    0.0F,
+                },
+                .extent = {
+                    PLAYER_BODY_DIMENSIONS.x,
+                    PLAYER_BODY_DIMENSIONS.y,
+                    PLAYER_BODY_DIMENSIONS.z,
+                    0.0F,
+                },
+                .color = player.color,
+            };
+            vkCmdPushConstants(
+                command,
+                player_layout,
+                VK_SHADER_STAGE_VERTEX_BIT,
+                0U,
+                sizeof(push),
+                &push
+            );
+            vkCmdDraw(command, BOX_VERTEX_COUNT, 1U, 0U, 0U);
+        }
+    };
+    draw(player_pipeline, false);
+    draw(player_overlay_pipeline, true);
 }
 
 void recordFlat3dScene(
@@ -779,6 +787,7 @@ void recordFlat3dScene(
     VkPipeline const grid_pipeline,
     VkPipelineLayout const grid_layout,
     VkPipeline const player_pipeline,
+    VkPipeline const player_overlay_pipeline,
     VkPipelineLayout const player_layout,
     Camera const& camera,
     std::span<PlayerRenderData const> const players,
@@ -819,7 +828,7 @@ void recordFlat3dScene(
     );
     vkCmdDraw(command, GRID_VERTEX_COUNT, GRID_WORKGROUPS_X * GRID_WORKGROUPS_Y, 0U, 0U);
 
-    recordPlayers(command, player_pipeline, player_layout, projection_view, players);
+    recordPlayers(command, player_pipeline, player_overlay_pipeline, player_layout, projection_view, players);
 }
 
 [[nodiscard]]
@@ -830,6 +839,7 @@ uint32_t recordStoneScene(
     VkPipelineLayout const layout,
     VkDescriptorSet const descriptor_set,
     VkPipeline const player_pipeline,
+    VkPipeline const player_overlay_pipeline,
     VkPipelineLayout const player_layout,
     Camera const& camera,
     std::span<PlayerRenderData const> const players,
@@ -891,7 +901,14 @@ uint32_t recordStoneScene(
             vkCmdDraw(command, STONE_FACE_VERTEX_COUNT, range.instance_count, 0U, range.first_instance);
         }
     }
-    recordPlayers(command, player_pipeline, player_layout, *projection * camera.viewMatrix(), players);
+    recordPlayers(
+        command,
+        player_pipeline,
+        player_overlay_pipeline,
+        player_layout,
+        *projection * camera.viewMatrix(),
+        players
+    );
     return static_cast<uint32_t>(draw_ranges.size() + solid_draw_ranges.size());
 }
 
@@ -1715,6 +1732,7 @@ private:
                 m_stone_layout,
                 m_stone_descriptors->set(),
                 m_player_pipeline,
+                m_player_overlay_pipeline,
                 m_player_layout,
                 m_camera,
                 m_players,
@@ -1728,6 +1746,7 @@ private:
                 m_grid_pipeline,
                 m_grid_layout,
                 m_player_pipeline,
+                m_player_overlay_pipeline,
                 m_player_layout,
                 m_camera,
                 m_players,
@@ -1998,6 +2017,11 @@ private:
             *m_player_program,
             descriptors.player
         );
+        m_player_overlay_pipeline = m_kernel_cache->pipelineFor(
+            device,
+            *m_player_program,
+            descriptors.player_overlay
+        );
         m_world_text_pipeline = m_kernel_cache->pipelineFor(
             device,
             *m_text_program,
@@ -2069,6 +2093,7 @@ private:
         }
         m_grid_pipeline = VK_NULL_HANDLE;
         m_player_pipeline = VK_NULL_HANDLE;
+        m_player_overlay_pipeline = VK_NULL_HANDLE;
         m_world_text_pipeline = VK_NULL_HANDLE;
         m_gui_text_pipeline = VK_NULL_HANDLE;
         m_stone_pipeline = VK_NULL_HANDLE;
@@ -2266,6 +2291,7 @@ private:
     VkPipelineLayout m_stone_layout = VK_NULL_HANDLE;
     VkPipeline m_grid_pipeline = VK_NULL_HANDLE;
     VkPipeline m_player_pipeline = VK_NULL_HANDLE;
+    VkPipeline m_player_overlay_pipeline = VK_NULL_HANDLE;
     VkPipeline m_world_text_pipeline = VK_NULL_HANDLE;
     VkPipeline m_gui_text_pipeline = VK_NULL_HANDLE;
     VkPipeline m_stone_pipeline = VK_NULL_HANDLE;
@@ -2482,6 +2508,11 @@ public:
             core::graphics::vulkan::VulkanDeviceReference const reference = m_device->reference();
             m_grid_pipeline = m_cache.pipelineFor(reference, *m_grid_program, pipelineDescriptor(m_grid_layout));
             m_player_pipeline = m_cache.pipelineFor(reference, *m_player_program, pipelineDescriptor(m_player_layout));
+            m_player_overlay_pipeline = m_cache.pipelineFor(
+                reference,
+                *m_player_program,
+                pipelineDescriptor(m_player_layout, false, false)
+            );
             m_gui_text_pipeline = m_cache.pipelineFor(
                 reference,
                 *m_text_program,
@@ -2512,6 +2543,7 @@ public:
     [[nodiscard]] VkPipeline gridPipeline() const noexcept { return m_grid_pipeline; }
     [[nodiscard]] VkPipelineLayout gridLayout() const noexcept { return m_grid_layout; }
     [[nodiscard]] VkPipeline playerPipeline() const noexcept { return m_player_pipeline; }
+    [[nodiscard]] VkPipeline playerOverlayPipeline() const noexcept { return m_player_overlay_pipeline; }
     [[nodiscard]] VkPipelineLayout playerLayout() const noexcept { return m_player_layout; }
     [[nodiscard]] VkPipeline guiTextPipeline() const noexcept { return m_gui_text_pipeline; }
     [[nodiscard]] VkPipelineLayout guiTextLayout() const noexcept { return m_gui_text_layout; }
@@ -2557,6 +2589,7 @@ private:
         m_stone_layout = VK_NULL_HANDLE;
         m_grid_pipeline = VK_NULL_HANDLE;
         m_player_pipeline = VK_NULL_HANDLE;
+        m_player_overlay_pipeline = VK_NULL_HANDLE;
         m_gui_text_pipeline = VK_NULL_HANDLE;
         m_stone_pipeline = VK_NULL_HANDLE;
         m_text_program.reset();
@@ -2641,14 +2674,18 @@ private:
         return layout;
     }
 
-    [[nodiscard]] core::graphics::vulkan::PipelineDescriptor pipelineDescriptor(VkPipelineLayout const layout) const noexcept
+    [[nodiscard]] core::graphics::vulkan::PipelineDescriptor pipelineDescriptor(
+        VkPipelineLayout const layout,
+        bool const depth_test_enabled = true,
+        bool const depth_write_enabled = true
+    ) const noexcept
     {
         return {
             .layout = layout,
             .color_format = VK_FORMAT_R8G8B8A8_UNORM,
             .depth_format = m_depth_format,
-            .depth_test_enabled = true,
-            .depth_write_enabled = true,
+            .depth_test_enabled = depth_test_enabled,
+            .depth_write_enabled = depth_write_enabled,
             .depth_compare_op = VK_COMPARE_OP_LESS,
         };
     }
@@ -2672,6 +2709,7 @@ private:
     VkPipelineLayout m_stone_layout = VK_NULL_HANDLE;
     VkPipeline m_grid_pipeline = VK_NULL_HANDLE;
     VkPipeline m_player_pipeline = VK_NULL_HANDLE;
+    VkPipeline m_player_overlay_pipeline = VK_NULL_HANDLE;
     VkPipeline m_gui_text_pipeline = VK_NULL_HANDLE;
     VkPipeline m_stone_pipeline = VK_NULL_HANDLE;
     PFN_vkCmdBeginRenderingKHR m_begin_rendering = nullptr;
@@ -2825,6 +2863,7 @@ private:
                 resources.stoneLayout(),
                 resources.stoneDescriptorSet(),
                 resources.playerPipeline(),
+                resources.playerOverlayPipeline(),
                 resources.playerLayout(),
                 self.m_camera,
                 self.m_players,
@@ -2838,6 +2877,7 @@ private:
                 resources.gridPipeline(),
                 resources.gridLayout(),
                 resources.playerPipeline(),
+                resources.playerOverlayPipeline(),
                 resources.playerLayout(),
                 self.m_camera,
                 self.m_players,

@@ -1,6 +1,7 @@
 #include "AndroidPlayerClient.hpp"
 
 #include <client/CameraController.hpp>
+#include <client/CameraObstruction.hpp>
 #include <client/PlayerPresentation.hpp>
 
 #include <shared/world/CanonicalWorld.hpp>
@@ -21,6 +22,9 @@ namespace game_android {
 namespace {
 
 constexpr std::chrono::milliseconds ANDROID_PRESENT_WAIT_BUDGET{ 1 };
+constexpr uint32_t CAMERA_OBSTRUCTION_SAMPLE_COUNT = 24U;
+constexpr uint32_t CAMERA_OBSTRUCTION_BINARY_STEPS = 8U;
+constexpr double CAMERA_OBSTRUCTION_MARGIN = 0.03;
 
 } // namespace
 
@@ -68,11 +72,13 @@ shared::Direction AndroidPlayerClient::input()
         },
         m_look_camera.pose().angles.yaw_degrees
     );
+    bool const ascend_requested = m_ascend_input.consumePress()
+        || m_input.consumeFlightAscendRequest();
     return {
         .x = static_cast<uint8_t>(movement.x),
         .y = static_cast<uint8_t>(movement.y),
         .z = static_cast<uint8_t>(client::CameraController::verticalMovement(
-            m_ascend_pressed || touch_flight_direction > 0,
+            m_ascend_input.isPressed() || touch_flight_direction > 0 || ascend_requested,
             m_descend_pressed || touch_flight_direction < 0
         )),
     };
@@ -105,12 +111,14 @@ void AndroidPlayerClient::render()
     }
     std::chrono::steady_clock::time_point const now = std::chrono::steady_clock::now();
     std::optional<client::PlayerPresentationPosition> const local_position = predictedLocalPresentation(now);
+    double camera_distance = client::MAX_LOCAL_PLAYER_CAMERA_DISTANCE;
     if (local_position.has_value()) {
+        camera_distance = maximumUnobstructedCameraDistance(*local_position);
         client::PlayerCameraView const camera_view = client::resolveLocalPlayerCamera(
             *local_position,
             m_look_camera.pose().angles,
             m_camera_perspective,
-            maximumUnobstructedCameraDistance(*local_position)
+            camera_distance
         );
         static_cast<void>(m_camera.setPosition(camera_view.pose.position));
         static_cast<void>(m_camera.setAngles(camera_view.pose.angles));
@@ -128,6 +136,9 @@ void AndroidPlayerClient::render()
                 .y = static_cast<float>(position->y),
                 .color = client::playerPaletteColor(player.palette_index),
                 .z = static_cast<float>(position->z),
+                .render_on_top = player.ch == m_local_character
+                    && m_camera_perspective != client::CameraPerspective::FirstPerson
+                    && camera_distance <= 0.0,
             });
         }
     }
@@ -178,9 +189,7 @@ double AndroidPlayerClient::maximumUnobstructedCameraDistance(
     );
     glm::dvec3 const ray = (intended_camera.pose.position - eye)
         / client::MAX_LOCAL_PLAYER_CAMERA_DISTANCE;
-    for (double distance = 0.25;
-         distance <= client::MAX_LOCAL_PLAYER_CAMERA_DISTANCE;
-         distance += 0.25) {
+    auto const obstructed = [&](double const distance) {
         glm::dvec3 const probe = eye + ray * distance;
         shared::WorldCoordinate const coordinate{
             .x = static_cast<int64_t>(std::floor(probe.x)),
@@ -189,13 +198,23 @@ double AndroidPlayerClient::maximumUnobstructedCameraDistance(
         };
         std::optional<shared::WorldCoordinate> const normalized = shared::WorldBounds::normalize(coordinate);
         if (!normalized || shared::WorldBounds::chunkCoordinate(*normalized) != chunk.coordinate()) {
-            continue;
+            return false;
         }
         if (chunk.blockAt(shared::WorldBounds::blockCoordinate(*normalized)) == shared::Block::Stone) {
-            return std::max(0.0, distance - 0.25);
+            return true;
         }
+        return false;
+    };
+    if (obstructed(0.0)) {
+        return 0.0;
     }
-    return client::MAX_LOCAL_PLAYER_CAMERA_DISTANCE;
+    return client::maximumUnobstructedCameraDistance(
+        client::MAX_LOCAL_PLAYER_CAMERA_DISTANCE,
+        CAMERA_OBSTRUCTION_SAMPLE_COUNT,
+        CAMERA_OBSTRUCTION_BINARY_STEPS,
+        CAMERA_OBSTRUCTION_MARGIN,
+        obstructed
+    );
 }
 
 void AndroidPlayerClient::handleAppCommand(android_app* const app, int32_t const command)
@@ -229,7 +248,7 @@ bool AndroidPlayerClient::updateVerticalInput(AInputEvent const* const event) no
     switch (AKeyEvent_getKeyCode(event)) {
     case AKEYCODE_SPACE:
     case AKEYCODE_BUTTON_R1:
-        m_ascend_pressed = pressed;
+        m_ascend_input.setPressed(pressed);
         return true;
     case AKEYCODE_SHIFT_LEFT:
     case AKEYCODE_SHIFT_RIGHT:
@@ -275,7 +294,7 @@ void AndroidPlayerClient::onAppCommand(int32_t const command)
         m_resumed = false;
         m_has_focus = false;
         m_input.clear();
-        m_ascend_pressed = false;
+        m_ascend_input.clear();
         m_descend_pressed = false;
         break;
     case APP_CMD_GAINED_FOCUS:
@@ -287,6 +306,13 @@ void AndroidPlayerClient::onAppCommand(int32_t const command)
     default:
         break;
     }
+}
+
+void AndroidPlayerClient::onConnectionStateReset()
+{
+    m_input.clear();
+    m_ascend_input.clear();
+    m_descend_pressed = false;
 }
 
 void AndroidPlayerClient::createWindowResources()
@@ -366,7 +392,7 @@ void AndroidPlayerClient::stop() noexcept
     m_running = false;
     m_resumed = false;
     m_has_focus = false;
-    m_ascend_pressed = false;
+    m_ascend_input.clear();
     m_descend_pressed = false;
     destroyWindowResources();
 }

@@ -6,6 +6,7 @@ target_sources(mc
             BotClient.hpp
             Camera.hpp
             CameraController.hpp
+            CameraObstruction.hpp
             FrameScheduler.hpp
             GameClient.hpp
             PlayerClient.hpp
