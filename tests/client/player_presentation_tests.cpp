@@ -7,6 +7,13 @@
 
 namespace {
 
+TEST(PlayerPresentationTest, PlayerBodyUsesMinecraftScaleParallelepipedDimensions)
+{
+    EXPECT_EQ(client::PLAYER_BODY_DIMENSIONS.x, 0.625F);
+    EXPECT_EQ(client::PLAYER_BODY_DIMENSIONS.y, 0.625F);
+    EXPECT_EQ(client::PLAYER_BODY_DIMENSIONS.z, 1.8125F);
+}
+
 TEST(PlayerPresentationTest, LocalPlayerThirdPersonPoseOrbitsAroundPlayerCenter)
 {
     static constexpr shared::Player PLAYER{
@@ -18,22 +25,22 @@ TEST(PlayerPresentationTest, LocalPlayerThirdPersonPoseOrbitsAroundPlayerCenter)
     client::CameraAngles const angles{ .yaw_degrees = 0.0, .pitch_degrees = 0.0, .roll_degrees = 10.0 };
     client::CameraPose const pose = client::localPlayerThirdPersonPose(PLAYER, angles);
 
-    EXPECT_EQ(client::localPlayerCenterPosition(PLAYER), (glm::dvec3{ 13.0, 21.0, 1.0 }));
-    EXPECT_EQ(pose.position, (glm::dvec3{ 13.0, 15.0, 1.0 }));
+    EXPECT_EQ(client::localPlayerCenterPosition(PLAYER), (glm::dvec3{ 12.3125, 20.3125, 0.9'0625 }));
+    EXPECT_EQ(pose.position, (glm::dvec3{ 12.3125, 14.3125, 1.625 }));
     EXPECT_EQ(pose.angles, angles);
 
     client::CameraPose const side_pose = client::localPlayerThirdPersonPose(
         PLAYER,
         { .yaw_degrees = 90.0, .pitch_degrees = 0.0 }
     );
-    EXPECT_EQ(side_pose.position, (glm::dvec3{ 7.0, 21.0, 1.0 }));
+    EXPECT_EQ(side_pose.position, (glm::dvec3{ 6.3125, 20.3125, 1.625 }));
 
     client::CameraPose const elevated_pose = client::localPlayerThirdPersonPose(
         PLAYER,
         { .yaw_degrees = 0.0, .pitch_degrees = -30.0 }
     );
-    EXPECT_NEAR(elevated_pose.position.y, 15.803'847'577'3, 1e-9);
-    EXPECT_NEAR(elevated_pose.position.z, 4.0, 1e-9);
+    EXPECT_NEAR(elevated_pose.position.y, 15.116'347'577'3, 1e-9);
+    EXPECT_NEAR(elevated_pose.position.z, 4.625, 1e-9);
 
     client::Camera const camera{ elevated_pose };
     EXPECT_NEAR(camera.forward().x, 0.0, 1e-12);
@@ -72,8 +79,8 @@ TEST(PlayerPresentationTest, CameraFollowsAuthoritativeSubcellPosition)
     };
 
     client::CameraPose const pose = client::localPlayerThirdPersonPose(PLAYER, { });
-    EXPECT_DOUBLE_EQ(pose.position.x, 13.5);
-    EXPECT_DOUBLE_EQ(pose.position.y, 15.25);
+    EXPECT_DOUBLE_EQ(pose.position.x, 12.8125);
+    EXPECT_DOUBLE_EQ(pose.position.y, 14.5625);
 }
 
 TEST(PlayerPresentationTest, FirstPersonCameraAndInterpolationFollowFlightHeight)
@@ -104,9 +111,9 @@ TEST(PlayerPresentationTest, FirstPersonCameraAndInterpolationFollowFlightHeight
         *presentation.sample('@', STARTED_AT + std::chrono::milliseconds{ 150 }),
         { .yaw_degrees = 90.0 }
     );
-    EXPECT_DOUBLE_EQ(pose.position.x, 13.0);
-    EXPECT_DOUBLE_EQ(pose.position.y, 21.0);
-    EXPECT_DOUBLE_EQ(pose.position.z, 13.75);
+    EXPECT_DOUBLE_EQ(pose.position.x, 12.3125);
+    EXPECT_DOUBLE_EQ(pose.position.y, 20.3125);
+    EXPECT_DOUBLE_EQ(pose.position.z, 14.375);
     EXPECT_DOUBLE_EQ(pose.angles.yaw_degrees, 90.0);
 }
 
@@ -361,7 +368,7 @@ TEST(PlayerPresentationTest, SampledPresentationDrivesCameraAndRemotePlayersWhil
             *presentation.sample('@', started_at + std::chrono::milliseconds{ 125 }),
             { }
         ).position.x,
-        1.1
+        0.4125
     );
 }
 
@@ -389,13 +396,13 @@ TEST(PlayerPresentationTest, CameraPerspectivesKeepLookIntentSeparateFromDisplay
         client::MAX_LOCAL_PLAYER_CAMERA_DISTANCE
     );
 
-    EXPECT_EQ(first_person.pose.position, (glm::dvec3{ 13.0, 21.0, 1.0 }));
+    EXPECT_EQ(first_person.pose.position, (glm::dvec3{ 12.3125, 20.3125, 1.625 }));
     EXPECT_EQ(first_person.pose.angles, LOOK);
     EXPECT_FALSE(first_person.renders_local_body);
-    EXPECT_EQ(rear_third_person.pose.position, (glm::dvec3{ 13.0, 15.0, 1.0 }));
+    EXPECT_EQ(rear_third_person.pose.position, (glm::dvec3{ 12.3125, 14.3125, 1.625 }));
     EXPECT_EQ(rear_third_person.pose.angles, LOOK);
     EXPECT_TRUE(rear_third_person.renders_local_body);
-    EXPECT_EQ(front_third_person.pose.position, (glm::dvec3{ 13.0, 27.0, 1.0 }));
+    EXPECT_EQ(front_third_person.pose.position, (glm::dvec3{ 12.3125, 26.3125, 1.625 }));
     EXPECT_EQ(front_third_person.pose.angles.yaw_degrees, 180.0);
     EXPECT_TRUE(front_third_person.renders_local_body);
     EXPECT_NEAR(client::Camera{ front_third_person.pose }.forward().y, -1.0, 1e-12);
@@ -413,7 +420,7 @@ TEST(PlayerPresentationTest, CameraObstructionDistanceIsBoundedAndLocalBodyVisib
         1.5
     );
 
-    EXPECT_DOUBLE_EQ(clipped.pose.position.y, -0.5);
+    EXPECT_DOUBLE_EQ(clipped.pose.position.y, -1.1875);
     EXPECT_FALSE(client::shouldRenderPlayerBody(LOCAL, '@', client::CameraPerspective::FirstPerson));
     EXPECT_TRUE(client::shouldRenderPlayerBody(LOCAL, '@', client::CameraPerspective::ThirdPersonRear));
     EXPECT_TRUE(client::shouldRenderPlayerBody(REMOTE, '@', client::CameraPerspective::FirstPerson));

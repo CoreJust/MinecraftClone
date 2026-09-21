@@ -169,19 +169,19 @@ double AndroidPlayerClient::maximumUnobstructedCameraDistance(
     }
 
     shared::Chunk const& chunk = shared::canonicalWorld().chunk();
-    glm::dvec3 const center = client::localPlayerCenterPosition(local_position);
+    glm::dvec3 const eye = client::localPlayerEyePosition(local_position);
     client::PlayerCameraView const intended_camera = client::resolveLocalPlayerCamera(
         local_position,
         m_look_camera.pose().angles,
         m_camera_perspective,
         client::MAX_LOCAL_PLAYER_CAMERA_DISTANCE
     );
-    glm::dvec3 const ray = (intended_camera.pose.position - center)
+    glm::dvec3 const ray = (intended_camera.pose.position - eye)
         / client::MAX_LOCAL_PLAYER_CAMERA_DISTANCE;
     for (double distance = 0.25;
          distance <= client::MAX_LOCAL_PLAYER_CAMERA_DISTANCE;
          distance += 0.25) {
-        glm::dvec3 const probe = center + ray * distance;
+        glm::dvec3 const probe = eye + ray * distance;
         shared::WorldCoordinate const coordinate{
             .x = static_cast<int64_t>(std::floor(probe.x)),
             .y = static_cast<int64_t>(std::floor(probe.y)),

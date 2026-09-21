@@ -9,8 +9,10 @@
 
 namespace client {
 
-inline constexpr size_t DEBUG_HUD_LINE_COUNT = 5U;
+inline constexpr size_t DEBUG_HUD_LINE_COUNT = 7U;
 inline constexpr std::array<size_t, DEBUG_HUD_LINE_COUNT> DEBUG_HUD_LINE_BYTES{
+    32U,
+    32U,
     32U,
     32U,
     32U,
@@ -22,10 +24,12 @@ inline constexpr std::array<size_t, DEBUG_HUD_LINE_COUNT> DEBUG_HUD_LINE_WORD_OF
     8U,
     16U,
     24U,
+    32U,
     40U,
+    56U,
 };
-inline constexpr size_t DEBUG_HUD_MAX_TEXT_BYTES = 228U;
-inline constexpr size_t DEBUG_HUD_MAX_INSTANCES = 56U;
+inline constexpr size_t DEBUG_HUD_MAX_TEXT_BYTES = 292U;
+inline constexpr size_t DEBUG_HUD_MAX_INSTANCES = 72U;
 inline constexpr size_t DEBUG_HUD_MAX_PRESENTED_SAMPLES = 256;
 inline constexpr double DEBUG_HUD_FPS_WINDOW_SECONDS = 1.0;
 inline constexpr float DEBUG_HUD_BITMAP_GLYPH_WIDTH_PIXELS = 8.0F;
@@ -70,6 +74,9 @@ struct DebugHudInput {
     uint16_t speedup = 1U;
     uint16_t selected_speedup = 5U;
     bool acceleration_enabled = false;
+    uint8_t view_index = 0U;
+    bool flight_enabled = false;
+    bool collision_bypass_enabled = false;
 };
 
 using DebugHudText = TextDocument;

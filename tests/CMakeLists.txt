@@ -193,6 +193,7 @@ if(MC_BUILD_CLIENT AND NOT ANDROID)
         PRIVATE
             android/input_state_tests.cpp
             acceptance/evidence_json_tests.cpp
+            acceptance/adverse_network_tests.cpp
             acceptance/framebuffer_extent_tests.cpp
             acceptance/image_evidence_tests.cpp
             acceptance/renderer_benchmark_tests.cpp
@@ -262,7 +263,12 @@ endif()
 
 option(MC_ENABLE_RENDERER_SMOKE "Run noninteractive GPU smoke (requires a desktop and Vulkan validation)" OFF)
 if(MC_BUILD_CLIENT AND NOT ANDROID AND MC_ENABLE_RENDERER_SMOKE)
-    add_executable(mc_renderer_smoke client/renderer_smoke_tests.cpp main.cpp)
+    add_executable(
+        mc_renderer_smoke
+        client/player_client_reset_tests.cpp
+        client/renderer_smoke_tests.cpp
+        main.cpp
+    )
     set_target_properties(mc_renderer_smoke PROPERTIES
         RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/renderer-smoke"
     )

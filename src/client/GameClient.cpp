@@ -11,6 +11,13 @@
 
 namespace client {
 
+namespace {
+
+constexpr std::chrono::milliseconds CONNECTION_ATTEMPT_TIMEOUT{ 1'000 };
+constexpr std::chrono::milliseconds CONNECTION_RETRY_DELAY{ 250 };
+
+} // namespace
+
 void GameClient::run(core::Address const server_address, char const ch) {
     m_local_character = ch;
     m_running = true;
@@ -22,26 +29,33 @@ void GameClient::run(core::Address const server_address, char const ch) {
             m_join_character_index = static_cast<uint32_t>(character - FLIGHT_CHARACTERS.begin());
         }
     }
-    if (!connect(server_address, std::chrono::milliseconds{ 1'000 })) {
-        CORE_ERROR("Failed to connect to server {}", server_address);
-        std::cerr << "Failed to connect to server" << std::endl;
-        return;
-    }
-    
-    if (!sendJoinRequest()) {
-        m_running = false;
-    }
-    while (!m_accepted && m_running && isConnected()) {
-        poll(std::chrono::milliseconds{ 100 });
-    }
-
     FrameScheduler scheduler{ std::chrono::steady_clock::now(), shared::TICK };
-    while (m_running && isConnected()) {
+    while (m_running) {
+        if (!isConnected()) {
+            if (!connect(server_address, CONNECTION_ATTEMPT_TIMEOUT)) {
+                CORE_INFO("Waiting to connect to server {}", server_address);
+                std::this_thread::sleep_for(CONNECTION_RETRY_DELAY);
+                continue;
+            }
+            m_accepted = false;
+            if (!sendJoinRequest()) {
+                continue;
+            }
+        }
+        while (!m_accepted && m_running && isConnected()) {
+            poll(std::chrono::milliseconds{ 100 });
+        }
+        if (!m_running) {
+            break;
+        }
+        if (!isConnected()) {
+            continue;
+        }
         while (poll(std::chrono::milliseconds::zero()) > 0) {
         }
         processPendingHeightTileDeliveries();
         if (!m_running || !isConnected()) {
-            break;
+            continue;
         }
         std::chrono::steady_clock::time_point const now = std::chrono::steady_clock::now();
         if (scheduler.simulationDue(now)) {
@@ -53,7 +67,7 @@ void GameClient::run(core::Address const server_address, char const ch) {
         }
         render();
         if (!m_running || !isConnected()) {
-            break;
+            continue;
         }
         std::this_thread::sleep_for(scheduler.idleDelay(now));
     }
@@ -62,7 +76,25 @@ void GameClient::run(core::Address const server_address, char const ch) {
 void GameClient::onDisconnected(core::DisconnectEvent const event) {
     CORE_INFO("Server disconnected: {}", event.peer.address());
     std::cout << "[SERVER DISCONNECTED] address " << fmt::format("{}", event.peer.address()) << std::endl;
-    m_running = false;
+    m_accepted = false;
+    resetConnectionState();
+}
+
+void GameClient::resetConnectionState()
+{
+    m_world = shared::World{ m_world.mode(), m_world.configuration() };
+    m_predicted_world = shared::World{ m_world.mode(), m_world.configuration() };
+    m_player_presentation = {};
+    m_next_id = 0U;
+    m_state_revisions.clear();
+    m_pending_inputs.clear();
+    m_next_input_sequence = 1U;
+    m_height_tile_residency = PreviewResidency{ { .generation = 0U, .revision = 0U } };
+    m_height_tile_revision = { .generation = 0U, .revision = 0U };
+    m_height_tile_credit_revision = 0U;
+    m_pending_height_tile_deliveries.clear();
+    m_pending_height_tile_delivery_tokens.clear();
+    onConnectionStateReset();
 }
 
 void GameClient::onReceived(core::ReceiveEvent event) {
@@ -192,6 +224,7 @@ bool GameClient::applyServerPosition(
             .z_subcell = message.z_subcell,
         }));
         static_cast<void>(m_world.setPlayerPaletteIndex(player->id, message.palette_index));
+        static_cast<void>(m_world.setPlayerMovementCapabilities(player->id, message.movement_capabilities));
     } else {
         shared::PlayerId const id = m_next_id++;
         m_world.spawnPlayer(id, message.ch, {
@@ -202,6 +235,12 @@ bool GameClient::applyServerPosition(
             .y_subcell = message.y_subcell,
             .z_subcell = message.z_subcell,
         }, message.palette_index);
+        if (auto const player = m_world.playerByCharacter(message.ch)) {
+            static_cast<void>(m_world.setPlayerMovementCapabilities(
+                player->id,
+                message.movement_capabilities
+            ));
+        }
     }
     if (message.ch == m_local_character) {
         while (!m_pending_inputs.empty()

@@ -4,7 +4,6 @@ The runnable entry point is [src/main.cpp](../../src/main.cpp). It initializes
 logging, crash handling, and networking. Launch uses `--server [--port PORT]`,
 `--player-client`, or `--bot-client`; clients accept `--address IP:PORT`.
 No arguments start a graphical localhost player; Flight joins select free tokens.
-Clients track remote players by character rather than server `PlayerId`.
 
 ## Shared simulation
 
@@ -12,16 +11,19 @@ Clients track remote players by character rather than server `PlayerId`.
 `TICK`, byte-valued normalized XYZ `Direction`, and players with deterministic
 10,000-subcell remainders plus a validated four-bit palette identity. `World` owns player lookup, spawn, fixed-step
 movement, despawn, and replicated positions. Flat mode retains the 32 by 32
-board and its two-dimensional collision rules. Flight mode uses signed XYZ
-coordinates, a fixed clear-air spawn, bounds checks without gravity or player
-collisions, and normalized three-axis movement. A normal tick advances 0.56
-cells at full direction magnitude; the remainder persists across ticks. Each
-authoritative player has a 2 by 2 footprint, so its origin is limited to cells
+board and its two-dimensional collision rules. Flight mode uses wrapped XYZ
+coordinates and a fixed clear-air spawn. The independent movement capabilities
+allow flight, collision bypass, or both; flight without collision bypass sweeps
+terrain and other player bodies with tangential wall sliding, while players
+without flight use gravity, terrain support, jumps, and the same player-body
+collision rules. A normal tick advances 0.56
+The remainder persists across ticks. Each
+authoritative player has a 2 by 2 footprint in flat mode and a 10/16-cell
+footprint in flight mode, so its origin is limited to cells
 0 through 30 inclusive (0 through 300,000 subcells) on both axes; its
 footprint may end at, but never exceed, the platform edge.
 
-A valid location excludes another player from its 3 by 3 neighborhood; random
-spawn and movement enforce it.
+Spawn and movement enforce player separation.
 
 ## Deterministic scenario plans
 
@@ -76,7 +78,8 @@ render. `FrameScheduler` sends input every 100 ms and sleeps at most one
 millisecond between presentation attempts. Position messages update a local
 `World`; unknown characters receive locally assigned ids. The first presentation
 update snaps; later updates interpolate during one `TICK` and gaps hold the last
-position. A disconnect or rejected join stops the loop.
+position. A disconnect clears connection state and retries the join while the
+game remains alive.
 
 [PlayerClient.hpp](../../src/client/include/client/PlayerClient.hpp) and
 [PlayerClient.cpp](../../src/client/PlayerClient.cpp) provide the GLFW/Vulkan
@@ -89,7 +92,9 @@ every received player presentation into colored 2 by 2 render records. F5
 cycles first person, rear third person, and front-facing third person; only
 the display camera changes, while input and interest headings continue to use
 the independent local look camera. First person hides the local body and both
-third-person modes draw it. The pure resolver accepts a bounded unobstructed
+third-person modes draw it. The HUD displays the perspective and F5/5 fallback;
+macOS may reserve bare function-row F5/F6, so number-row aliases are reliable.
+The pure resolver accepts a bounded unobstructed
 distance, so terrain/collision presentation can clip a third-person camera
 without changing authority or packets. R reloads the renderer on a press edge
 stored per client instance.
@@ -110,10 +115,8 @@ HUD acceleration profiles are 2x, 3x, 5x, 8x, 15x, 30x, 80x, 200x, and 500x.
 
 ## S5 chunk data
 
-`Chunk` stores checked 16-cubed Air/Stone IDs and tracks revision/content hash.
-The retained S5 `CanonicalWorld` embeds its CoreLang 0.0.3 seed-42 generator;
-S6 scripts require CoreLang 0.1.2. `ScriptedWorld` validates a private bounded
-candidate completely before publication.
+`Chunk` stores checked 16-cubed Air/Stone IDs and tracks revision/content hash;
+S6 scripts use CoreLang 0.1.2 and validate bounded candidates before publication.
 
 ## S5 exposed-face mesh
 

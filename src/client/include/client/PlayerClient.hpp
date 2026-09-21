@@ -35,9 +35,11 @@ public:
     );
     ~PlayerClient();
 private:
+    friend struct PlayerClientTestAccess;
     class PreviewMeshWorkerPool;
     shared::Direction input() override;
     void render() override;
+    void onConnectionStateReset() override;
 private:
     void beginContinuousLook() noexcept;
     void updateFlightControlToggles();
@@ -47,7 +49,9 @@ private:
         PlayerPresentationPosition const& local_position
     ) const noexcept;
     void queuePreviewMesh(shared::HeightTileKey key);
+    void queuePreviewRemoval(shared::HeightTileKey key);
     void processPendingPreviewMeshes(uint32_t maximum_meshes);
+    [[nodiscard]] bool hasCurrentPreviewMeshCoverage() const noexcept;
     Camera m_camera{
         { .position = { 9.0, 9.0, 13.0 } },
     };
@@ -64,6 +68,7 @@ private:
     DebugHudToggleLatch m_speedup_decrease_latch;
     DebugHudToggleLatch m_acceleration_toggle_latch;
     DebugHudToggleLatch m_camera_perspective_latch;
+    DebugHudToggleLatch m_movement_capability_latch;
     CameraPerspective m_camera_perspective = CameraPerspective::FirstPerson;
     size_t m_speedup_profile_index = 2U;
     bool m_acceleration_enabled = false;
@@ -78,11 +83,14 @@ private:
     std::optional<shared::HeightTileKey> m_height_tile_center;
     std::unordered_set<shared::HeightTileKey, PlayerHeightTileKeyHash> m_height_tile_interest;
     std::deque<shared::HeightTileKey> m_pending_preview_removals;
+    std::unordered_set<shared::HeightTileKey, PlayerHeightTileKeyHash> m_pending_preview_removal_set;
     std::deque<shared::HeightTileKey> m_pending_preview_meshes;
     std::unordered_set<shared::HeightTileKey, PlayerHeightTileKeyHash> m_pending_preview_mesh_set;
     std::unordered_set<shared::HeightTileKey, PlayerHeightTileKeyHash> m_preview_mesh_jobs;
     std::unordered_set<shared::HeightTileKey, PlayerHeightTileKeyHash> m_preview_mesh_dirty_jobs;
+    std::unordered_set<shared::HeightTileKey, PlayerHeightTileKeyHash> m_visible_preview_meshes;
     std::unique_ptr<PreviewMeshWorkerPool> m_preview_mesh_workers;
+    uint64_t m_preview_mesh_epoch = 1U;
     bool m_capture_requested = false;
     std::optional<std::unordered_set<shared::HeightTileKey, PlayerHeightTileKeyHash>>
         m_capture_pre_rotation_interest;

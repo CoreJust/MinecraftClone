@@ -121,12 +121,13 @@ struct MessageEncoder final {
 
     std::vector<uint8_t> operator()(ClientInputMessage const& message)
     {
-        begin(MessageType::ClientInput, 12U);
+        begin(MessageType::ClientInput, 13U);
         bytes.push_back(message.direction.x);
         bytes.push_back(message.direction.y);
         bytes.push_back(message.direction.z);
         bytes.push_back(static_cast<uint8_t>(message.direction.accelerated));
         appendUint16(bytes, message.direction.speedup);
+        bytes.push_back(static_cast<uint8_t>(message.direction.cycle_movement_capabilities));
         bytes.push_back(static_cast<uint8_t>(message.direction.view_x));
         bytes.push_back(static_cast<uint8_t>(message.direction.view_y));
         appendUint32(bytes, message.sequence);
@@ -144,9 +145,10 @@ struct MessageEncoder final {
 
     std::vector<uint8_t> operator()(ServerPlayerPositionMessage const& message)
     {
-        begin(MessageType::ServerPlayerPosition, 28U);
+        begin(MessageType::ServerPlayerPosition, 29U);
         bytes.push_back(static_cast<uint8_t>(message.ch));
         bytes.push_back(message.palette_index);
+        bytes.push_back(message.movement_capabilities.bits);
         appendInt32(bytes, message.x);
         appendInt32(bytes, message.y);
         appendInt32(bytes, message.z);
@@ -375,6 +377,7 @@ bool isValidMessage(Message const& message) noexcept
                 && value.credits <= HEIGHT_TILE_DELIVERY_WINDOW;
         } else if constexpr (std::is_same_v<Value, ServerPlayerPositionMessage>) {
             return isValidCharacter(value.ch) && isValidPlayerPaletteIndex(value.palette_index)
+                && isValidMovementCapabilities(value.movement_capabilities)
                 && World::isFlightPositionInBounds(PlayerPosition{
                 .x = value.x,
                 .y = value.y,
@@ -460,10 +463,12 @@ std::optional<Message> decodeMessage(std::span<uint8_t const> const data)
             auto const z = reader.readUint8();
             auto const accelerated = reader.readUint8();
             auto const speedup = reader.readUint16();
+            auto const cycle_movement_capabilities = reader.readUint8();
             auto const view_x = reader.readUint8();
             auto const view_y = reader.readUint8();
             auto const sequence = reader.readUint32();
             if (x && y && z && accelerated && *accelerated <= 1U && speedup
+                && cycle_movement_capabilities && *cycle_movement_capabilities <= 1U
                 && isFlightSpeedupProfile(*speedup) && view_x && view_y && sequence) {
                 message = ClientInputMessage{
                     .direction = {
@@ -472,6 +477,7 @@ std::optional<Message> decodeMessage(std::span<uint8_t const> const data)
                         .z = *z,
                         .accelerated = *accelerated == 1U,
                         .speedup = *speedup,
+                        .cycle_movement_capabilities = *cycle_movement_capabilities == 1U,
                         .view_x = static_cast<int8_t>(*view_x),
                         .view_y = static_cast<int8_t>(*view_y),
                     },
@@ -496,6 +502,7 @@ std::optional<Message> decodeMessage(std::span<uint8_t const> const data)
         case MessageType::ServerPlayerPosition: {
             auto const character = reader.readUint8();
             auto const palette_index = reader.readUint8();
+            auto const movement_capabilities = reader.readUint8();
             auto const x = reader.readInt32();
             auto const y = reader.readInt32();
             auto const z = reader.readInt32();
@@ -504,11 +511,12 @@ std::optional<Message> decodeMessage(std::span<uint8_t const> const data)
             auto const z_subcell = reader.readUint16();
             auto const acknowledged_input_sequence = reader.readUint32();
             auto const state_revision = reader.readUint32();
-            if (character && palette_index && x && y && z && x_subcell && y_subcell && z_subcell
+            if (character && palette_index && movement_capabilities && x && y && z && x_subcell && y_subcell && z_subcell
                 && acknowledged_input_sequence && state_revision) {
                 message = ServerPlayerPositionMessage{
                     .ch = static_cast<char>(*character),
                     .palette_index = *palette_index,
+                    .movement_capabilities = { .bits = *movement_capabilities },
                     .x = *x,
                     .y = *y,
                     .z = *z,

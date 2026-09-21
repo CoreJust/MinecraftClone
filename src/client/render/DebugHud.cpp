@@ -163,7 +163,7 @@ bool DebugHudState::formatText(DebugHudText& text) const {
     DebugHudSnapshot const values = snapshot();
     size_t offset = 0U;
     size_t line_limit = offset + DEBUG_HUD_LINE_BYTES[0];
-    offset = appendText(text, offset, line_limit, "FPS:  ", hudColor(line_colors_[0]));
+    offset = appendText(text, offset, line_limit, "FPS: ", hudColor(line_colors_[0]));
     offset = appendNumber(text, offset, line_limit, values.presented_fps, 1, hudColor(line_colors_[0]));
     offset = appendText(text, offset, text.size() + 1U, "\n", hudColor(line_colors_[0]));
 
@@ -171,7 +171,7 @@ bool DebugHudState::formatText(DebugHudText& text) const {
     if (values.input.touch_flight_help) {
         offset = appendText(text, offset, line_limit, "TOUCH: UP/DOWN", hudColor(line_colors_[1]));
     } else {
-        offset = appendText(text, offset, line_limit, "UPTIME:  ", hudColor(line_colors_[1]));
+        offset = appendText(text, offset, line_limit, "UPTIME: ", hudColor(line_colors_[1]));
         offset = appendNumber(text, offset, line_limit, values.uptime_seconds, 1, hudColor(line_colors_[1]));
         offset = appendText(text, offset, line_limit, "s", hudColor(line_colors_[1]));
     }
@@ -191,6 +191,33 @@ bool DebugHudState::formatText(DebugHudText& text) const {
     offset = appendText(text, offset, text.size() + 1U, "\n", hudColor(line_colors_[2]));
 
     line_limit = offset + DEBUG_HUD_LINE_BYTES[3];
+    std::string_view const view = values.input.view_index == 0U
+        ? "FIRST" : (values.input.view_index == 1U ? "REAR" : "FRONT");
+    offset = appendText(text, offset, line_limit, "VIEW: ", hudColor(line_colors_[3]));
+    offset = appendText(text, offset, line_limit, view, hudColor(line_colors_[3]));
+    offset = appendText(text, offset, line_limit, " (F5/5)\n", hudColor(line_colors_[3]));
+
+    line_limit = offset + DEBUG_HUD_LINE_BYTES[4];
+    offset = appendText(text, offset, line_limit, "FLIGHT: ", hudColor(line_colors_[4]));
+    offset = appendText(
+        text,
+        offset,
+        line_limit,
+        values.input.flight_enabled ? "ON" : "OFF",
+        hudColor(line_colors_[4])
+    );
+    offset = appendText(text, offset, line_limit, " BYPASS: ", hudColor(line_colors_[4]));
+    offset = appendText(
+        text,
+        offset,
+        line_limit,
+        values.input.collision_bypass_enabled ? "ON" : "OFF",
+        hudColor(line_colors_[4])
+    );
+    offset = appendText(text, offset, line_limit, " (6/F6)", hudColor(line_colors_[4]));
+    offset = appendText(text, offset, text.size() + 1U, "\n", hudColor(line_colors_[4]));
+
+    line_limit = offset + DEBUG_HUD_LINE_BYTES[5];
     TextColor const white = hudColor(DebugHudColor::White);
     offset = appendText(text, offset, line_limit, "XYZ: ", white);
     offset = appendNumber(text, offset, line_limit, values.input.player_x, 1, hudColor(DebugHudColor::Cyan));
@@ -200,7 +227,7 @@ bool DebugHudState::formatText(DebugHudText& text) const {
     offset = appendNumber(text, offset, line_limit, values.input.player_y, 1, hudColor(DebugHudColor::Green));
     offset = appendText(text, offset, text.size() + 1U, "\n", white);
 
-    line_limit = offset + DEBUG_HUD_LINE_BYTES[4];
+    line_limit = offset + DEBUG_HUD_LINE_BYTES[6];
     offset = appendText(text, offset, line_limit, "YPR deg: ", white);
     offset = appendNumber(text, offset, line_limit, values.input.camera_yaw_degrees, 1, hudColor(DebugHudColor::Cyan));
     offset = appendText(text, offset, line_limit, " ", white);

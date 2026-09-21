@@ -540,8 +540,21 @@ void GameServer::onReceived(core::ServerReceiveEvent event) {
 void GameServer::processInput(PlayerReplication& replication, shared::ClientInputMessage const input)
 {
     replication.action_consumed_this_tick = true;
+    bool capabilities_changed = false;
+    if (input.direction.cycle_movement_capabilities) {
+        shared::Player const player = *m_world.player(replication.id);
+        uint8_t const next_bits = player.movement_capabilities.bits == 3U
+            ? 1U : (player.movement_capabilities.bits == 1U ? 0U : 3U);
+        capabilities_changed = m_world.setPlayerMovementCapabilities(
+            replication.id,
+            { .bits = next_bits }
+        );
+    }
+    shared::Player const player_before_movement = *m_world.player(replication.id);
+    bool const should_simulate = input.direction.x != 0 || input.direction.y != 0 || input.direction.z != 0
+        || !player_before_movement.movement_capabilities.allows(shared::MovementCapability::Flight);
     bool moved = false;
-    if (input.direction.x != 0 || input.direction.y != 0 || input.direction.z != 0) {
+    if (should_simulate) {
         moved = m_world.movePlayer(replication.id, input.direction);
     }
     replication.acknowledged_input_sequence = input.sequence;
@@ -557,7 +570,7 @@ void GameServer::processInput(PlayerReplication& replication, shared::ClientInpu
         *m_world.player(replication.id),
         replication
     );
-    if (moved) {
+    if (moved || capabilities_changed) {
         send(position);
     } else {
         sendTo(replication.id, position);
@@ -585,6 +598,7 @@ shared::ServerPlayerPositionMessage GameServer::playerPositionMessage(
     return {
         .ch = player.ch,
         .palette_index = player.palette_index,
+        .movement_capabilities = player.movement_capabilities,
         .x = player.x,
         .y = player.y,
         .z = player.z,

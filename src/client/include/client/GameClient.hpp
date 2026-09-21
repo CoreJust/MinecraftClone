@@ -71,10 +71,14 @@ protected:
     void applyHeightTileBatch(shared::ServerHeightTileBatchMessage const& message);
     [[nodiscard]] bool applyHeightTileRemoval(shared::ServerRemoveHeightTileMessage const& message);
     void processPendingHeightTileDeliveries();
-private:
+protected:
     static constexpr std::array<char, 5> FLIGHT_CHARACTERS{ '@', '#', '$', '%', '&' };
 
     void onDisconnected(core::DisconnectEvent const event) override;
+    virtual void onConnectionStateReset() { }
+    void resetConnectionState();
+
+private:
     void onReceived(core::ReceiveEvent event) override;
 protected:
     shared::World m_world;

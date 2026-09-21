@@ -261,6 +261,55 @@ TEST(GameServerFlightTest, AcceptsMatchingFlightModeAndReplicatesVerticalAuthori
     EXPECT_EQ(moved.z_subcell, shared::MOVEMENT_SUBCELLS_PER_TICK);
 }
 
+TEST(GameServerFlightTest, CyclesOnlyTheThreeServerValidatedMovementCapabilityStates)
+{
+    server::GameServer server{ 0, {}, shared::WorldMode::Flight };
+    ProtocolClient client;
+    ASSERT_TRUE(joinManually(server, client, '@', shared::WorldMode::Flight));
+    ASSERT_EQ(client.positions('@').back().movement_capabilities.bits, 3U);
+
+    for (uint32_t sequence = 1U; sequence <= 3U; ++sequence) {
+        ASSERT_TRUE(client.sendMessage(shared::ClientInputMessage{
+            .direction = { .cycle_movement_capabilities = true },
+            .sequence = sequence,
+        }));
+        ASSERT_TRUE(pumpUntil(server, client, [&client, sequence] {
+            auto const positions = client.positions('@');
+            return !positions.empty() && positions.back().acknowledged_input_sequence == sequence;
+        }));
+    }
+
+    std::vector<shared::ServerPlayerPositionMessage> const positions = client.positions('@');
+    ASSERT_GE(positions.size(), 4U);
+    EXPECT_EQ(positions[positions.size() - 3U].movement_capabilities.bits, 1U);
+    EXPECT_EQ(positions[positions.size() - 2U].movement_capabilities.bits, 0U);
+    EXPECT_EQ(positions.back().movement_capabilities.bits, 3U);
+}
+
+TEST_F(GameServerTest, CapabilityChangesReachStationaryObservers)
+{
+    ProtocolClient first;
+    ProtocolClient observer;
+    ASSERT_TRUE(join(first, '@'));
+    ASSERT_TRUE(join(observer, '#'));
+    size_t const observer_messages_before = observer.positions('@').size();
+
+    ASSERT_TRUE(first.sendMessage(shared::ClientInputMessage{
+        .direction = { .cycle_movement_capabilities = true },
+        .sequence = 1U,
+    }));
+    ASSERT_TRUE(first.waitFor([&first] {
+        std::vector<shared::ServerPlayerPositionMessage> const positions = first.positions('@');
+        return !positions.empty() && positions.back().acknowledged_input_sequence == 1U;
+    }));
+    ASSERT_TRUE(observer.waitFor([&observer, observer_messages_before] {
+        return observer.positions('@').size() > observer_messages_before;
+    }));
+
+    EXPECT_EQ(first.positions('@').back().movement_capabilities.bits, 3U);
+    EXPECT_EQ(observer.positions('@').back().movement_capabilities.bits, 3U);
+}
+
 TEST_F(GameServerTest, MalformedPacketFromUnjoinedPeerDoesNotPreventJoinOrMovement)
 {
     static constexpr std::array<uint8_t, 1> TRUNCATED_JOIN_REQUEST{ 0 };

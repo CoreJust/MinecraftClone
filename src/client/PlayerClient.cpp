@@ -33,6 +33,15 @@ static constexpr uint32_t MAX_HEIGHT_TILE_CHANGES_PER_FRAME = 16U;
 static constexpr uint32_t MAX_PREVIEW_MESHES_PER_FRAME = 16U;
 constexpr double CAMERA_OBSTRUCTION_SAMPLE_SPACING = 0.25;
 
+[[nodiscard]] bool functionKeyPressed(GLFWwindow* window, int const function_key, int const fallback_key) noexcept
+{
+    // macOS can expose the top-row keys as media controls unless the user holds
+    // Fn.  The number-row aliases keep the controls usable without changing the
+    // user's system-wide keyboard preference.
+    return glfwGetKey(window, function_key) == GLFW_PRESS
+        || glfwGetKey(window, fallback_key) == GLFW_PRESS;
+}
+
 [[nodiscard]] HeightTileKey offsetHeightTileKey(
     HeightTileKey const key,
     int32_t const x_offset,
@@ -61,12 +70,14 @@ public:
     struct Job final {
         HeightTileKey key;
         PreviewMeshSource source;
+        uint64_t epoch;
     };
 
     struct Result final {
         HeightTileKey key;
         HeightTileHandle tile;
         shared::HeightTileSurfaceMesh mesh;
+        uint64_t epoch;
     };
 
     PreviewMeshWorkerPool()
@@ -180,6 +191,7 @@ private:
                 .key = job.key,
                 .tile = job.source.tile,
                 .mesh = buildPreviewMesh(job.source),
+                .epoch = job.epoch,
             };
             std::lock_guard lock{m_mutex};
             m_results.push_back(std::move(result));
@@ -204,6 +216,33 @@ PlayerClient::~PlayerClient()
     if (m_window.nativeHandle() != nullptr) {
         glfwSetInputMode(m_window.nativeHandle(), GLFW_CURSOR, GLFW_CURSOR_NORMAL);
     }
+}
+
+void PlayerClient::onConnectionStateReset()
+{
+    ++m_preview_mesh_epoch;
+    for (HeightTileKey const key : m_visible_preview_meshes) {
+        static_cast<void>(m_renderer.removeHeightTileMesh({ .x = key.x, .y = key.y }));
+    }
+    m_visible_preview_meshes.clear();
+    m_height_tile_center.reset();
+    m_height_tile_interest.clear();
+    m_pending_preview_removals.clear();
+    m_pending_preview_removal_set.clear();
+    m_pending_preview_meshes.clear();
+    m_pending_preview_mesh_set.clear();
+    m_preview_mesh_dirty_jobs.clear();
+    for (HeightTileKey const key : m_preview_mesh_workers->cancelQueuedOutsideInterest(m_height_tile_interest)) {
+        m_preview_mesh_jobs.erase(key);
+    }
+    m_preview_mesh_jobs.clear();
+    m_interest_heading_x = 0;
+    m_interest_heading_y = 127;
+    m_applied_interest_heading_x = 0;
+    m_applied_interest_heading_y = 0;
+    m_capture_pre_rotation_interest.reset();
+    m_capture_rotation_frames = 0U;
+    m_capture_requested = false;
 }
 
 PlayerClient::PlayerClient(
@@ -271,7 +310,7 @@ void PlayerClient::refreshHeightTileInterest(shared::Player const& player)
     };
     auto const remove = [this](HeightTileKey const key) {
         if (m_height_tile_interest.erase(key) > 0U) {
-            m_pending_preview_removals.push_back(key);
+            queuePreviewRemoval(key);
         }
     };
     std::vector<HeightTileKey> departed;
@@ -318,9 +357,31 @@ void PlayerClient::queuePreviewMesh(HeightTileKey const key)
     }
 }
 
+void PlayerClient::queuePreviewRemoval(HeightTileKey const key)
+{
+    if (m_pending_preview_removal_set.insert(key).second) {
+        m_pending_preview_removals.push_back(key);
+    }
+}
+
+bool PlayerClient::hasCurrentPreviewMeshCoverage() const noexcept
+{
+    if (m_height_tile_interest.empty()) {
+        return false;
+    }
+    for (HeightTileKey const key : m_height_tile_interest) {
+        if (!m_visible_preview_meshes.contains(key)) {
+            return false;
+        }
+    }
+    return true;
+}
+
 void PlayerClient::processPendingPreviewMeshes(uint32_t const maximum_meshes)
 {
     if (!m_height_tile_center.has_value()) {
+        while (m_preview_mesh_workers->takeResult().has_value()) {
+        }
         return;
     }
     auto const upload_started = std::chrono::steady_clock::now();
@@ -329,10 +390,14 @@ void PlayerClient::processPendingPreviewMeshes(uint32_t const maximum_meshes)
         if (!result.has_value()) {
             break;
         }
+        if (result->epoch != m_preview_mesh_epoch) {
+            continue;
+        }
         m_preview_mesh_jobs.erase(result->key);
         HeightTileHandle const current = heightTileResidency().resident(result->key);
         if (m_height_tile_interest.contains(result->key) && current == result->tile) {
             m_renderer.upsertHeightTileMesh(result->mesh);
+            m_visible_preview_meshes.insert(result->key);
         }
         if (m_preview_mesh_dirty_jobs.erase(result->key) > 0U || current != result->tile) {
             queuePreviewMesh(result->key);
@@ -385,6 +450,7 @@ void PlayerClient::processPendingPreviewMeshes(uint32_t const maximum_meshes)
                     heightTileResidency().resident(offsetHeightTileKey(key, 0, 1)),
                 },
             },
+            .epoch = m_preview_mesh_epoch,
         };
         if (!m_preview_mesh_workers->enqueue(std::move(job))) {
             break;
@@ -446,6 +512,9 @@ shared::Direction PlayerClient::input() {
     glm::dvec3 const view = m_look_camera.forward();
     int8_t const view_x = CameraController::quantize(view.x);
     int8_t const view_y = CameraController::quantize(view.y);
+    bool const movement_capability_cycle = m_movement_capability_latch.update(
+        functionKeyPressed(m_window.nativeHandle(), GLFW_KEY_F6, GLFW_KEY_6)
+    );
     m_interest_heading_x = movement.x != 0 || movement.y != 0 ? movement.x : view_x;
     m_interest_heading_y = movement.x != 0 || movement.y != 0 ? movement.y : view_y;
     return shared::Direction{
@@ -458,6 +527,7 @@ shared::Direction PlayerClient::input() {
         )),
         .accelerated = m_acceleration_enabled,
         .speedup = shared::FLIGHT_SPEEDUP_PROFILES[m_speedup_profile_index],
+        .cycle_movement_capabilities = movement_capability_cycle,
         .view_x = view_x,
         .view_y = view_y,
     };
@@ -485,7 +555,11 @@ void PlayerClient::render() {
     m_last_cursor_x = cursor_x;
     m_last_cursor_y = cursor_y;
     m_has_cursor_position = true;
-    bool const camera_perspective_pressed = glfwGetKey(m_window.nativeHandle(), GLFW_KEY_F5) == GLFW_PRESS;
+    bool const camera_perspective_pressed = functionKeyPressed(
+        m_window.nativeHandle(),
+        GLFW_KEY_F5,
+        GLFW_KEY_5
+    );
     if (m_camera_perspective_latch.update(camera_perspective_pressed)) {
         m_camera_perspective = nextCameraPerspective(m_camera_perspective);
     }
@@ -496,7 +570,7 @@ void PlayerClient::render() {
     processPendingPreviewMeshes(MAX_PREVIEW_MESHES_PER_FRAME);
     for (HeightTileChange const change : heightTileResidency().takeChanges(MAX_HEIGHT_TILE_CHANGES_PER_FRAME)) {
         if (change.kind == HeightTileChangeKind::Remove) {
-            static_cast<void>(m_renderer.removeHeightTileMesh({.x = change.key.x, .y = change.key.y}));
+            queuePreviewRemoval(change.key);
         } else {
             queuePreviewMesh(change.key);
         }
@@ -506,14 +580,19 @@ void PlayerClient::render() {
         queuePreviewMesh(offsetHeightTileKey(change.key, 0, 1));
     }
     for (uint32_t removed = 0U;
-         removed < MAX_HEIGHT_TILE_CHANGES_PER_FRAME && !m_pending_preview_removals.empty();
+         removed < MAX_HEIGHT_TILE_CHANGES_PER_FRAME
+         && hasCurrentPreviewMeshCoverage()
+         && !m_pending_preview_removals.empty();
          ++removed) {
         HeightTileKey const key = m_pending_preview_removals.front();
         m_pending_preview_removals.pop_front();
+        m_pending_preview_removal_set.erase(key);
         if (!m_height_tile_interest.contains(key)) {
             static_cast<void>(m_renderer.removeHeightTileMesh({.x = key.x, .y = key.y}));
+            m_visible_preview_meshes.erase(key);
         }
     }
+    processPendingPreviewMeshes(MAX_PREVIEW_MESHES_PER_FRAME);
     std::optional<PlayerPresentationPosition> const local_position = predictedLocalPresentation(now);
     if (local_position.has_value()) {
         PlayerCameraView const camera_view = resolveLocalPlayerCamera(
@@ -557,6 +636,13 @@ void PlayerClient::render() {
             : 1U;
         input.selected_speedup = shared::FLIGHT_SPEEDUP_PROFILES[m_speedup_profile_index];
         input.acceleration_enabled = m_acceleration_enabled;
+        input.view_index = static_cast<uint8_t>(m_camera_perspective);
+        if (auto const player = m_world.playerByCharacter(m_local_character)) {
+            input.flight_enabled = player->movement_capabilities.allows(shared::MovementCapability::Flight);
+            input.collision_bypass_enabled = player->movement_capabilities.allows(
+                shared::MovementCapability::CollisionBypass
+            );
+        }
         return input;
     }();
     float content_scale_x = 1.0F;
@@ -625,19 +711,19 @@ double PlayerClient::maximumUnobstructedCameraDistance(
         return MAX_LOCAL_PLAYER_CAMERA_DISTANCE;
     }
 
-    glm::dvec3 const center = localPlayerCenterPosition(local_position);
+    glm::dvec3 const eye = localPlayerEyePosition(local_position);
     PlayerCameraView const intended_camera = resolveLocalPlayerCamera(
         local_position,
         m_look_camera.pose().angles,
         m_camera_perspective,
         MAX_LOCAL_PLAYER_CAMERA_DISTANCE
     );
-    glm::dvec3 const ray = (intended_camera.pose.position - center)
+    glm::dvec3 const ray = (intended_camera.pose.position - eye)
         / MAX_LOCAL_PLAYER_CAMERA_DISTANCE;
     for (double distance = CAMERA_OBSTRUCTION_SAMPLE_SPACING;
          distance <= MAX_LOCAL_PLAYER_CAMERA_DISTANCE;
          distance += CAMERA_OBSTRUCTION_SAMPLE_SPACING) {
-        glm::dvec3 const probe = center + ray * distance;
+        glm::dvec3 const probe = eye + ray * distance;
         int64_t const probe_z = static_cast<int64_t>(std::floor(probe.z));
         if (!shared::WorldBounds::isValidZ(probe_z)) {
             continue;

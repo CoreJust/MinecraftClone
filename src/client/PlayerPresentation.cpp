@@ -9,8 +9,10 @@ namespace client {
 
 namespace {
 
-constexpr double PLAYER_CENTER_OFFSET = 1.0;
-constexpr double PLAYER_CENTER_HEIGHT = 1.0;
+constexpr double PLAYER_BODY_CENTER_OFFSET = static_cast<double>(shared::World::PLAYER_WIDTH_SUBCELLS)
+    / static_cast<double>(shared::SUBCELLS_PER_CELL) / 2.0;
+constexpr double PLAYER_BODY_CENTER_HEIGHT = static_cast<double>(shared::World::PLAYER_HEIGHT_SUBCELLS)
+    / static_cast<double>(shared::SUBCELLS_PER_CELL) / 2.0;
 constexpr double THIRD_PERSON_DISTANCE = MAX_LOCAL_PLAYER_CAMERA_DISTANCE;
 constexpr double DEGREES_TO_RADIANS = 0.017'453'292'519'943'295'769'236'907'684'89;
 constexpr double WORLD_WRAP_PERIOD = static_cast<double>(shared::WorldExtent::WIDTH);
@@ -151,9 +153,9 @@ PlayerPresentationPosition PlayerPresentation::sample(
 glm::dvec3 localPlayerCenterPosition(PlayerPresentationPosition const position) noexcept
 {
     return {
-        position.x + PLAYER_CENTER_OFFSET,
-        position.y + PLAYER_CENTER_OFFSET,
-        position.z + PLAYER_CENTER_HEIGHT,
+        position.x + PLAYER_BODY_CENTER_OFFSET,
+        position.y + PLAYER_BODY_CENTER_OFFSET,
+        position.z + PLAYER_BODY_CENTER_HEIGHT,
     };
 }
 
@@ -166,13 +168,31 @@ glm::dvec3 localPlayerCenterPosition(shared::Player const& player) noexcept
     });
 }
 
+glm::dvec3 localPlayerEyePosition(PlayerPresentationPosition const position) noexcept
+{
+    return {
+        position.x + PLAYER_BODY_CENTER_OFFSET,
+        position.y + PLAYER_BODY_CENTER_OFFSET,
+        position.z + PLAYER_EYE_HEIGHT,
+    };
+}
+
+glm::dvec3 localPlayerEyePosition(shared::Player const& player) noexcept
+{
+    return localPlayerEyePosition(PlayerPresentationPosition{
+        .x = shared::playerPositionX(player),
+        .y = shared::playerPositionY(player),
+        .z = shared::playerPositionZ(player),
+    });
+}
+
 CameraPose localPlayerFirstPersonPose(
     PlayerPresentationPosition const position,
     CameraAngles const angles
 ) noexcept
 {
     return {
-        .position = localPlayerCenterPosition(position),
+        .position = localPlayerEyePosition(position),
         .angles = angles,
     };
 }
@@ -198,7 +218,7 @@ CameraPose localPlayerThirdPersonPose(
 ) noexcept
 {
     return {
-        .position = localPlayerCenterPosition(position) - forward(angles) * THIRD_PERSON_DISTANCE,
+        .position = localPlayerEyePosition(position) - forward(angles) * THIRD_PERSON_DISTANCE,
         .angles = angles,
     };
 }
@@ -210,20 +230,20 @@ PlayerCameraView resolveLocalPlayerCamera(
     double const maximum_unobstructed_distance
 ) noexcept
 {
-    glm::dvec3 const center = localPlayerCenterPosition(position);
+    glm::dvec3 const eye = localPlayerEyePosition(position);
     double const distance = clippedThirdPersonDistance(maximum_unobstructed_distance);
     switch (perspective) {
     case CameraPerspective::FirstPerson:
-        return { .pose = { .position = center, .angles = look_angles }, .renders_local_body = false };
+        return { .pose = { .position = eye, .angles = look_angles }, .renders_local_body = false };
     case CameraPerspective::ThirdPersonRear:
         return {
-            .pose = { .position = center - forward(look_angles) * distance, .angles = look_angles },
+            .pose = { .position = eye - forward(look_angles) * distance, .angles = look_angles },
             .renders_local_body = true,
         };
     case CameraPerspective::ThirdPersonFront:
         return {
             .pose = {
-                .position = center + forward(look_angles) * distance,
+                .position = eye + forward(look_angles) * distance,
                 .angles = {
                     .yaw_degrees = look_angles.yaw_degrees + 180.0,
                     .pitch_degrees = -look_angles.pitch_degrees,
@@ -233,7 +253,7 @@ PlayerCameraView resolveLocalPlayerCamera(
             .renders_local_body = true,
         };
     }
-    return { .pose = { .position = center, .angles = look_angles }, .renders_local_body = false };
+    return { .pose = { .position = eye, .angles = look_angles }, .renders_local_body = false };
 }
 
 PlayerCameraView resolveLocalPlayerCamera(

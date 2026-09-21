@@ -45,7 +45,7 @@ if(nested_configuration_types)
     set(nested_is_multi_config TRUE)
 endif()
 
-set(build_command "@MC_CMAKE_COMMAND@" --build "${test_root}/build" --parallel 8)
+set(build_command "@MC_CMAKE_COMMAND@" --build "${test_root}/build" --target mc_tests --parallel 8)
 if(nested_is_multi_config)
     list(APPEND build_command --config "${MC_TEST_CONFIGURATION}")
 endif()

@@ -69,6 +69,43 @@ class ClientLaunchTest(unittest.TestCase):
                         server.terminate()
                     server.wait(timeout=5)
 
+    def test_bot_remains_alive_until_delayed_server_starts(self):
+        with socket.socket() as probe:
+            probe.bind(("127.0.0.1", 0))
+            port = probe.getsockname()[1]
+
+        with tempfile.TemporaryDirectory() as directory:
+            log_path = Path(directory) / "server.log"
+            address = f"127.0.0.1:{port}"
+            client = subprocess.Popen(
+                [str(self.binary), "--bot-client", "--address", address],
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            server = None
+            try:
+                time.sleep(1.5)
+                self.assertIsNone(client.poll(), "client exited before delayed server startup")
+                with log_path.open("w+") as log:
+                    server = subprocess.Popen(
+                        [str(self.binary), "--server", "--port", str(port)],
+                        stdin=subprocess.DEVNULL,
+                        stdout=log,
+                        stderr=subprocess.STDOUT,
+                    )
+                    self.wait_for_text(log_path, "Created host", server)
+                    self.wait_for_text(log_path, "Player '#' spawned", server)
+                    self.assertIsNone(client.poll())
+            finally:
+                if client.poll() is None:
+                    client.terminate()
+                client.wait(timeout=5)
+                if server is not None and server.poll() is None:
+                    server.terminate()
+                if server is not None:
+                    server.wait(timeout=5)
+
     def test_invalid_launch_arguments_fail(self):
         cases = [
             ("--server", "--port", "0"),

@@ -41,6 +41,33 @@ enum class WorldMode : uint8_t {
     Flight,
 };
 
+enum class MovementCapability : uint8_t {
+    Flight = 1U,
+    CollisionBypass = 2U,
+};
+
+struct MovementCapabilities final {
+    uint8_t bits = 0U;
+
+    [[nodiscard]]
+    constexpr bool allows(MovementCapability const capability) const noexcept
+    {
+        return (bits & static_cast<uint8_t>(capability)) != 0U;
+    }
+
+    constexpr bool operator==(MovementCapabilities const&) const noexcept = default;
+};
+
+[[nodiscard]]
+constexpr bool isValidMovementCapabilities(MovementCapabilities const capabilities) noexcept
+{
+    constexpr uint8_t VALID_BITS = static_cast<uint8_t>(MovementCapability::Flight)
+        | static_cast<uint8_t>(MovementCapability::CollisionBypass);
+    return (capabilities.bits & ~VALID_BITS) == 0U
+        && (!capabilities.allows(MovementCapability::CollisionBypass)
+            || capabilities.allows(MovementCapability::Flight));
+}
+
 struct WorldConfiguration final {
     static constexpr uint32_t ALGORITHM_VERSION = 1;
     static constexpr uint64_t SEED = 42;
@@ -85,6 +112,8 @@ struct Player final {
     uint16_t z_subcell = 0;
     char ch;
     PlayerPaletteIndex palette_index = 0U;
+    MovementCapabilities movement_capabilities{};
+    int32_t vertical_velocity_subcells = 0;
 };
 
 struct Direction final {
@@ -93,6 +122,7 @@ struct Direction final {
     uint8_t z = 0;
     bool accelerated = false;
     uint16_t speedup = 5U;
+    bool cycle_movement_capabilities = false;
     int8_t view_x = 0;
     int8_t view_y = 127;
 };
@@ -133,6 +163,9 @@ public:
     static constexpr uint8_t WIDTH = 32;
     static constexpr uint8_t HEIGHT = 32;
     static constexpr uint8_t PLAYER_FOOTPRINT_CELLS = 2;
+    static constexpr uint32_t PLAYER_WIDTH_SUBCELLS = 6'250U;
+    static constexpr uint32_t PLAYER_HEIGHT_SUBCELLS = 18'125U;
+    static constexpr int32_t PLAYER_JUMP_IMPULSE_SUBCELLS = 11'200;
     static constexpr uint8_t MAX_PLAYER_ORIGIN_CELL = WIDTH - PLAYER_FOOTPRINT_CELLS;
     static constexpr uint32_t MAX_PLAYER_ORIGIN_SUBCELL = static_cast<uint32_t>(MAX_PLAYER_ORIGIN_CELL)
         * SUBCELLS_PER_CELL;
@@ -184,6 +217,8 @@ public:
     [[nodiscard]]
     bool setPlayerPosition(PlayerId id, PlayerPosition position);
     bool setPlayerPaletteIndex(PlayerId id, PlayerPaletteIndex palette_index) noexcept;
+    [[nodiscard]]
+    bool setPlayerMovementCapabilities(PlayerId id, MovementCapabilities capabilities) noexcept;
 
     [[nodiscard]]
     std::optional<Player> player(PlayerId id) const noexcept;
@@ -193,7 +228,14 @@ public:
     constexpr std::vector<Player> const& players() const noexcept { return m_players; }
 private:
     [[nodiscard]]
-    bool canPlayerBeAt(uint32_t x, uint32_t y, PlayerId id) const;
+    bool canPlayerBeAt(uint32_t x, uint32_t y, int64_t z, PlayerId id) const;
+    [[nodiscard]]
+    bool canFlightPlayerBeAt(
+        Player const& player,
+        int64_t x_subcells,
+        int64_t y_subcells,
+        int64_t z_subcells
+    ) const;
     [[nodiscard]]
     static PlayerPosition positionFromSubcells(int32_t x, int32_t y, int32_t z) noexcept;
     [[nodiscard]]

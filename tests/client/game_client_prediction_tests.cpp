@@ -28,6 +28,7 @@ public:
     using GameClient::predictInput;
     using GameClient::predictedLocalPlayer;
     using GameClient::predictedLocalPresentation;
+    using GameClient::resetConnectionState;
 
     void setLocalCharacter(char const character) noexcept
     {
@@ -37,6 +38,16 @@ public:
     [[nodiscard]] std::optional<shared::Player> authoritativePlayer(char const character) const noexcept
     {
         return m_world.playerByCharacter(character);
+    }
+
+    [[nodiscard]] client::HeightTileRevision heightTileRevision() const noexcept
+    {
+        return m_height_tile_revision;
+    }
+
+    [[nodiscard]] uint64_t heightTileCreditRevision() const noexcept
+    {
+        return m_height_tile_credit_revision;
     }
 
 private:
@@ -148,6 +159,57 @@ private:
     bool m_deadline_expired = false;
 };
 
+class DelayedServerClient final : public client::GameClient {
+public:
+    explicit DelayedServerClient(std::chrono::steady_clock::time_point const deadline)
+        : m_deadline(deadline)
+    { }
+
+    [[nodiscard]] bool joined() const noexcept
+    {
+        return m_joined;
+    }
+
+    [[nodiscard]] bool deadlineExpired() const noexcept
+    {
+        return m_deadline_expired;
+    }
+
+private:
+    shared::Direction input() override
+    {
+        return { };
+    }
+
+    void render() override
+    {
+        if (m_world.playerByCharacter(m_local_character).has_value()) {
+            m_joined = true;
+            m_running = false;
+        } else if (std::chrono::steady_clock::now() >= m_deadline) {
+            m_deadline_expired = true;
+            m_running = false;
+        }
+    }
+
+private:
+    std::chrono::steady_clock::time_point m_deadline;
+    bool m_joined = false;
+    bool m_deadline_expired = false;
+};
+
+class PortReservation final : public core::Server {
+public:
+    PortReservation()
+        : Server{ core::Address::localhost(0), 1U, 2U }
+    { }
+
+private:
+    void onConnected(core::ServerConnectEvent const) override {}
+    void onDisconnected(core::ServerDisconnectEvent const) override {}
+    void onReceived(core::ServerReceiveEvent) override {}
+};
+
 [[nodiscard]]
 shared::ServerPlayerPositionMessage position(
     char const character,
@@ -183,6 +245,7 @@ shared::ServerPlayerPositionMessage flightPosition(
 {
     return {
         .ch = character,
+        .movement_capabilities = { .bits = 3U },
         .x = x,
         .y = y,
         .z = z,
@@ -240,6 +303,31 @@ TEST(GameClientPredictionTest, ServerPaletteIdentityUpdatesTheReplicatedPlayer)
         .state_revision = 2U,
     }));
     EXPECT_EQ(client.authoritativePlayer('@')->palette_index, 4U);
+}
+
+TEST(GameClientPredictionTest, ReconnectResetDropsOldPlayersAndTerrainEpoch)
+{
+    static constexpr shared::HeightTileKey KEY{ .x = 41, .y = 23 };
+    PredictionClient client{ shared::WorldMode::Flight };
+    client.setLocalCharacter('@');
+    ASSERT_TRUE(client.applyServerPosition(flightPosition('@', 100, 100, 800, 0U, 0U, 0U, 0U, 1U)));
+    ASSERT_TRUE(client.applyServerPosition(flightPosition('#', 104, 100, 800, 0U, 0U, 0U, 0U, 1U)));
+    ASSERT_TRUE(client.applyHeightTile({
+        .key = KEY,
+        .revision = 1U,
+        .token = 1U,
+    }));
+    ASSERT_TRUE(client.authoritativePlayer('#').has_value());
+    ASSERT_EQ(client.heightTileResidency().stats().resident_tiles, 1U);
+
+    client.resetConnectionState();
+
+    EXPECT_FALSE(client.authoritativePlayer('@').has_value());
+    EXPECT_FALSE(client.authoritativePlayer('#').has_value());
+    EXPECT_EQ(client.predictedLocalPresentation(std::chrono::steady_clock::now()), std::nullopt);
+    EXPECT_EQ(client.heightTileResidency().stats().resident_tiles, 0U);
+    EXPECT_EQ(client.heightTileRevision(), (client::HeightTileRevision{ .generation = 0U, .revision = 0U }));
+    EXPECT_EQ(client.heightTileCreditRevision(), 0U);
 }
 
 TEST(GameClientPredictionTest, HeightTileRemovalRejectsStaleTileAndEvictsTheResidentTile)
@@ -453,7 +541,7 @@ TEST(GameClientPredictionTest, PredictedLocalPresentationInterpolatesFrameSample
         *sampled_each_frame.predictedLocalPresentation(STARTED_AT + std::chrono::milliseconds{ 75 }),
         { }
     );
-    EXPECT_DOUBLE_EQ(frame_camera.position.x, 1.0 + STEP * 0.75);
+    EXPECT_DOUBLE_EQ(frame_camera.position.x, 0.3125 + STEP * 0.75);
 }
 
 TEST(GameClientPredictionTest, AuthoritativeWorldWrapKeepsPresentedCameraAtTheSeam)
@@ -473,7 +561,7 @@ TEST(GameClientPredictionTest, AuthoritativeWorldWrapKeepsPresentedCameraAtTheSe
     auto const presented = client.predictedLocalPresentation(STARTED_AT + std::chrono::milliseconds{ 150 });
     ASSERT_TRUE(presented.has_value());
     EXPECT_NEAR(presented->x, 0.0, 1e-9);
-    EXPECT_NEAR(client::localPlayerFirstPersonPose(*presented, {}).position.x, 1.0, 1e-9);
+    EXPECT_NEAR(client::localPlayerFirstPersonPose(*presented, {}).position.x, 0.3125, 1e-9);
     ASSERT_TRUE(client.predictedLocalPlayer().has_value());
     EXPECT_EQ(client.predictedLocalPlayer()->x, 0U);
 }
@@ -594,6 +682,35 @@ TEST(GameClientPredictionTest, ReconcilesThreeProductionCadenceClientsOverRealTr
     EXPECT_NE(alice.authoritativeLocalPlayer()->x, ALICE_SPAWN.x);
     EXPECT_NE(bob.authoritativeLocalPlayer()->x, BOB_SPAWN.x);
     EXPECT_NE(charlie.authoritativeLocalPlayer()->y, CHARLIE_SPAWN.y);
+}
+
+TEST(GameClientPredictionTest, RetriesUntilAnInitiallyUnavailableServerStarts)
+{
+    static constexpr std::chrono::milliseconds SERVER_START_DELAY{ 500 };
+    static constexpr std::chrono::seconds CLIENT_DEADLINE{ 5 };
+    uint16_t port = 0U;
+    {
+        PortReservation const reservation;
+        port = reservation.port();
+    }
+    std::atomic_bool stop_server{ false };
+    DelayedServerClient client{ std::chrono::steady_clock::now() + CLIENT_DEADLINE };
+    std::thread client_thread{ [&client, port] {
+        client.run(core::Address::localhost(port), '@');
+    } };
+
+    std::this_thread::sleep_for(SERVER_START_DELAY);
+    server::GameServer server{ port };
+    std::thread server_thread{ [&server, &stop_server] {
+        server.run(stop_server);
+    } };
+
+    client_thread.join();
+    stop_server.store(true, std::memory_order_relaxed);
+    server_thread.join();
+
+    EXPECT_TRUE(client.joined());
+    EXPECT_FALSE(client.deadlineExpired());
 }
 
 } // namespace

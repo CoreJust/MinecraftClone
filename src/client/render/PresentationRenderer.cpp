@@ -1,3 +1,5 @@
+#include <client/PlayerPresentation.hpp>
+
 #include <client/render/DepthFormat.hpp>
 #include <client/render/GuiRenderer.hpp>
 #include <client/render/StoneTexture.hpp>
@@ -752,7 +754,12 @@ void recordPlayers(
                 player.z,
                 0.0F,
             },
-            .extent = { 2.0F, 2.0F, 2.0F, 0.0F },
+            .extent = {
+                PLAYER_BODY_DIMENSIONS.x,
+                PLAYER_BODY_DIMENSIONS.y,
+                PLAYER_BODY_DIMENSIONS.z,
+                0.0F,
+            },
             .color = player.color,
         };
         vkCmdPushConstants(

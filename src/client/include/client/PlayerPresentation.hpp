@@ -33,6 +33,12 @@ struct PlayerCameraView final {
 };
 
 constexpr double MAX_LOCAL_PLAYER_CAMERA_DISTANCE = 6.0;
+inline constexpr glm::vec3 PLAYER_BODY_DIMENSIONS{
+    static_cast<float>(shared::World::PLAYER_WIDTH_SUBCELLS) / static_cast<float>(shared::SUBCELLS_PER_CELL),
+    static_cast<float>(shared::World::PLAYER_WIDTH_SUBCELLS) / static_cast<float>(shared::SUBCELLS_PER_CELL),
+    static_cast<float>(shared::World::PLAYER_HEIGHT_SUBCELLS) / static_cast<float>(shared::SUBCELLS_PER_CELL),
+};
+inline constexpr double PLAYER_EYE_HEIGHT = 1.625;
 
 class PlayerPresentation final {
 public:
@@ -69,6 +75,12 @@ glm::dvec3 localPlayerCenterPosition(PlayerPresentationPosition position) noexce
 
 [[nodiscard]]
 glm::dvec3 localPlayerCenterPosition(shared::Player const& player) noexcept;
+
+[[nodiscard]]
+glm::dvec3 localPlayerEyePosition(PlayerPresentationPosition position) noexcept;
+
+[[nodiscard]]
+glm::dvec3 localPlayerEyePosition(shared::Player const& player) noexcept;
 
 [[nodiscard]]
 CameraPose localPlayerFirstPersonPose(
