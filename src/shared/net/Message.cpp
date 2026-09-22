@@ -145,7 +145,7 @@ struct MessageEncoder final {
 
     std::vector<uint8_t> operator()(ServerPlayerPositionMessage const& message)
     {
-        begin(MessageType::ServerPlayerPosition, 29U);
+        begin(MessageType::ServerPlayerPosition, 33U);
         bytes.push_back(static_cast<uint8_t>(message.ch));
         bytes.push_back(message.palette_index);
         bytes.push_back(message.movement_capabilities.bits);
@@ -155,6 +155,7 @@ struct MessageEncoder final {
         appendUint16(bytes, message.x_subcell);
         appendUint16(bytes, message.y_subcell);
         appendUint16(bytes, message.z_subcell);
+        appendInt32(bytes, message.vertical_velocity_subcells);
         appendUint32(bytes, message.acknowledged_input_sequence);
         appendUint32(bytes, message.state_revision);
         return std::move(bytes);
@@ -509,10 +510,11 @@ std::optional<Message> decodeMessage(std::span<uint8_t const> const data)
             auto const x_subcell = reader.readUint16();
             auto const y_subcell = reader.readUint16();
             auto const z_subcell = reader.readUint16();
+            auto const vertical_velocity_subcells = reader.readInt32();
             auto const acknowledged_input_sequence = reader.readUint32();
             auto const state_revision = reader.readUint32();
             if (character && palette_index && movement_capabilities && x && y && z && x_subcell && y_subcell && z_subcell
-                && acknowledged_input_sequence && state_revision) {
+                && vertical_velocity_subcells && acknowledged_input_sequence && state_revision) {
                 message = ServerPlayerPositionMessage{
                     .ch = static_cast<char>(*character),
                     .palette_index = *palette_index,
@@ -523,6 +525,7 @@ std::optional<Message> decodeMessage(std::span<uint8_t const> const data)
                     .x_subcell = *x_subcell,
                     .y_subcell = *y_subcell,
                     .z_subcell = *z_subcell,
+                    .vertical_velocity_subcells = *vertical_velocity_subcells,
                     .acknowledged_input_sequence = *acknowledged_input_sequence,
                     .state_revision = *state_revision,
                 };

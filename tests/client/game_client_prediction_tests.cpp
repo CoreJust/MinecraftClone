@@ -257,6 +257,33 @@ shared::ServerPlayerPositionMessage flightPosition(
     };
 }
 
+[[nodiscard]]
+shared::ServerPlayerPositionMessage collisionPosition(
+    char const character,
+    int32_t const x,
+    int32_t const y,
+    int32_t const z,
+    uint16_t const z_subcell,
+    int32_t const vertical_velocity_subcells,
+    uint32_t const acknowledged_input_sequence,
+    uint32_t const state_revision
+)
+{
+    return {
+        .ch = character,
+        .movement_capabilities = {},
+        .x = x,
+        .y = y,
+        .z = z,
+        .x_subcell = 0U,
+        .y_subcell = 0U,
+        .z_subcell = z_subcell,
+        .vertical_velocity_subcells = vertical_velocity_subcells,
+        .acknowledged_input_sequence = acknowledged_input_sequence,
+        .state_revision = state_revision,
+    };
+}
+
 TEST(GameClientPredictionTest, PredictsImmediatelyWithoutMutatingTheAuthoritativeWorld)
 {
     static constexpr shared::Direction RIGHT{ .x = 127U, .y = 0U };
@@ -454,6 +481,49 @@ TEST(GameClientPredictionTest, FlightPredictionAndAcknowledgementReconcileAllThr
         client.predictedLocalPresentation(STARTED_AT + std::chrono::milliseconds{ 150 })->z,
         12.0 + static_cast<double>(shared::MOVEMENT_SUBCELLS_PER_TICK)
             / static_cast<double>(shared::SUBCELLS_PER_CELL)
+    );
+}
+
+TEST(GameClientPredictionTest, DelayedCollisionJumpAcknowledgementDoesNotCreateVerticalOvershoot)
+{
+    static constexpr int32_t X = 100;
+    static constexpr int32_t Y = 100;
+    static constexpr shared::Direction JUMP{ .z = 127U };
+    std::chrono::steady_clock::time_point const started_at{};
+    shared::TerrainGenerator const terrain;
+    uint16_t const surface = terrain.heightAt(X, Y);
+    PredictionClient client{ shared::WorldMode::Flight };
+    client.setLocalCharacter('@');
+
+    ASSERT_TRUE(client.applyServerPosition(
+        collisionPosition('@', X, Y, surface, 0U, 0, 0U, 1U),
+        started_at
+    ));
+    ASSERT_TRUE(client.predictInput(JUMP, started_at).has_value());
+    ASSERT_TRUE(client.predictInput({}, started_at + std::chrono::milliseconds{ 100 }).has_value());
+
+    ASSERT_TRUE(client.applyServerPosition(
+        collisionPosition(
+            '@',
+            X,
+            Y,
+            surface,
+            shared::MOVEMENT_SUBCELLS_PER_TICK,
+            5'250,
+            1U,
+            2U
+        ),
+        started_at + std::chrono::milliseconds{ 110 }
+    ));
+    ASSERT_TRUE(client.authoritativePlayer('@').has_value());
+    EXPECT_EQ(client.authoritativePlayer('@')->vertical_velocity_subcells, 5'250);
+
+    ASSERT_TRUE(client.predictedLocalPresentation(
+        started_at + std::chrono::milliseconds{ 160 }
+    ).has_value());
+    EXPECT_LT(
+        client.predictedLocalPresentation(started_at + std::chrono::milliseconds{ 160 })->z,
+        static_cast<double>(surface) + 1.3
     );
 }
 

@@ -225,6 +225,7 @@ bool GameClient::applyServerPosition(
         }));
         static_cast<void>(m_world.setPlayerPaletteIndex(player->id, message.palette_index));
         static_cast<void>(m_world.setPlayerMovementCapabilities(player->id, message.movement_capabilities));
+        static_cast<void>(m_world.setPlayerVerticalVelocity(player->id, message.vertical_velocity_subcells));
     } else {
         shared::PlayerId const id = m_next_id++;
         m_world.spawnPlayer(id, message.ch, {
@@ -240,6 +241,7 @@ bool GameClient::applyServerPosition(
                 player->id,
                 message.movement_capabilities
             ));
+            static_cast<void>(m_world.setPlayerVerticalVelocity(player->id, message.vertical_velocity_subcells));
         }
     }
     if (message.ch == m_local_character) {

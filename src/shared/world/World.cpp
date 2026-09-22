@@ -527,6 +527,20 @@ bool World::setPlayerMovementCapabilities(
     return false;
 }
 
+bool World::setPlayerVerticalVelocity(
+    PlayerId const id,
+    int32_t const vertical_velocity_subcells
+) noexcept
+{
+    for (Player& player : m_players) {
+        if (player.id == id) {
+            player.vertical_velocity_subcells = vertical_velocity_subcells;
+            return true;
+        }
+    }
+    return false;
+}
+
 std::optional<Player> World::player(PlayerId const id) const noexcept
 {
     for (Player const& player : m_players) {

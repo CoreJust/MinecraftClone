@@ -605,6 +605,7 @@ shared::ServerPlayerPositionMessage GameServer::playerPositionMessage(
         .x_subcell = player.x_subcell,
         .y_subcell = player.y_subcell,
         .z_subcell = player.z_subcell,
+        .vertical_velocity_subcells = player.vertical_velocity_subcells,
         .acknowledged_input_sequence = replication.acknowledged_input_sequence,
         .state_revision = replication.state_revision,
     };

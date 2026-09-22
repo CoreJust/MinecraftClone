@@ -72,6 +72,7 @@ void expectRoundTrip(MessageTy const expected) {
         EXPECT_EQ(actual.x_subcell, expected.x_subcell);
         EXPECT_EQ(actual.y_subcell, expected.y_subcell);
         EXPECT_EQ(actual.z_subcell, expected.z_subcell);
+        EXPECT_EQ(actual.vertical_velocity_subcells, expected.vertical_velocity_subcells);
         EXPECT_EQ(actual.acknowledged_input_sequence, expected.acknowledged_input_sequence);
         EXPECT_EQ(actual.state_revision, expected.state_revision);
     } else if constexpr (std::is_same_v<MessageTy, shared::ServerRemovePlayerMessage>) {
@@ -125,6 +126,7 @@ TEST(MessageTest, RoundTripsEveryMessageKind) {
     expectRoundTrip(shared::ServerPlayerPositionMessage{
         .ch = '#', .palette_index = 7U, .movement_capabilities = { .bits = 3U },
         .x = 30, .y = 2, .z = 12, .x_subcell = 9'999, .y_subcell = 500, .z_subcell = 1,
+        .vertical_velocity_subcells = 5'250,
         .acknowledged_input_sequence = 0x7856'3412U, .state_revision = 0x1234'5678U,
     });
     expectRoundTrip(shared::ServerRemovePlayerMessage{ .ch = '$' });
@@ -174,7 +176,7 @@ TEST(MessageTest, UsesVersionedLittleEndianFixedWidthPayloads) {
     EXPECT_EQ(
         shared::encodeMessage(shared::JoinRequestMessage{ .ch = '@' }),
         (std::vector<uint8_t>{
-            0x4D, 9, 0, '@', 0,
+            0x4D, 10, 0, '@', 0,
             1, 0, 0, 0,
             42, 0, 0, 0, 0, 0, 0, 0,
             16, 16, 16,
@@ -183,33 +185,35 @@ TEST(MessageTest, UsesVersionedLittleEndianFixedWidthPayloads) {
     );
     EXPECT_EQ(
         shared::encodeMessage(shared::JoinResponseMessage{ .accepted = true }),
-        (std::vector<uint8_t>{ 0x4D, 9, 1, 1 })
+        (std::vector<uint8_t>{ 0x4D, 10, 1, 1 })
     );
     EXPECT_EQ(
         shared::encodeMessage(shared::JoinResponseMessage{ .accepted = false }),
-        (std::vector<uint8_t>{ 0x4D, 9, 1, 0 })
+        (std::vector<uint8_t>{ 0x4D, 10, 1, 0 })
     );
     EXPECT_EQ(
         shared::encodeMessage(shared::ClientInputMessage{ .direction = { 129, 127, 1 }, .sequence = 0x7856'3412U }),
-        (std::vector<uint8_t>{ 0x4D, 9, 2, 129, 127, 1, 0, 5, 0, 0, 0, 127, 18, 52, 86, 120 })
+        (std::vector<uint8_t>{ 0x4D, 10, 2, 129, 127, 1, 0, 5, 0, 0, 0, 127, 18, 52, 86, 120 })
     );
     EXPECT_EQ(
         shared::encodeMessage(shared::ServerPlayerPositionMessage{
             .ch = '#', .palette_index = 7U, .x = 30, .y = 2, .z = 12, .x_subcell = 9'999, .y_subcell = 500, .z_subcell = 1,
+            .vertical_velocity_subcells = 5'250,
             .acknowledged_input_sequence = 0x7856'3412U, .state_revision = 0x1234'5678U,
         }),
         (std::vector<uint8_t>{
-            0x4D, 9, 4, '#', 7, 0,
+            0x4D, 10, 4, '#', 7, 0,
             30, 0, 0, 0,
             2, 0, 0, 0,
             12, 0, 0, 0,
             15, 39, 244, 1, 1, 0,
+            0x82, 0x14, 0, 0,
             18, 52, 86, 120, 120, 86, 52, 18,
         })
     );
     EXPECT_EQ(
         shared::encodeMessage(shared::ServerRemovePlayerMessage{ .ch = '$' }),
-        (std::vector<uint8_t>{ 0x4D, 9, 5, '$' })
+        (std::vector<uint8_t>{ 0x4D, 10, 5, '$' })
     );
     auto const height_tile = shared::encodeMessage(heightTileMessage());
     EXPECT_EQ(height_tile.size(), 3U + 24U + shared::HEIGHT_TILE_PAYLOAD_BYTES);

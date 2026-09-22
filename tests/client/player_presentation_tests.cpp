@@ -162,6 +162,7 @@ TEST(PlayerPresentationTest, VerticalInterpolationKeepsVelocityContinuousAcrossT
         .x = 0U,
         .y = 0U,
         .z = 1,
+        .vertical_velocity_subcells = 5'250,
         .ch = '@',
     };
     static constexpr shared::Player SECOND_TARGET{
@@ -170,6 +171,7 @@ TEST(PlayerPresentationTest, VerticalInterpolationKeepsVelocityContinuousAcrossT
         .y = 0U,
         .z = 1,
         .z_subcell = 5'000U,
+        .vertical_velocity_subcells = 3'500,
         .ch = '@',
     };
     std::chrono::steady_clock::time_point const started_at{};
@@ -180,7 +182,7 @@ TEST(PlayerPresentationTest, VerticalInterpolationKeepsVelocityContinuousAcrossT
 
     EXPECT_NEAR(
         presentation.sample('@', started_at + std::chrono::milliseconds{ 250 })->z,
-        1.3125,
+        1.271'875,
         1e-9
     );
     double const before_retarget = presentation.sample(
@@ -192,6 +194,56 @@ TEST(PlayerPresentationTest, VerticalInterpolationKeepsVelocityContinuousAcrossT
         started_at + std::chrono::milliseconds{ 201 }
     )->z;
     EXPECT_LT(after_retarget - before_retarget, 0.03);
+}
+
+TEST(PlayerPresentationTest, SamePositionAcknowledgementUpdatesVerticalVelocity)
+{
+    static constexpr shared::Player INITIAL{
+        .id = 1U,
+        .x = 0U,
+        .y = 0U,
+        .z = 0U,
+        .ch = '@',
+    };
+    static constexpr shared::Player AIRBORNE{
+        .id = 1U,
+        .x = 0U,
+        .y = 0U,
+        .z = 1U,
+        .vertical_velocity_subcells = 5'250,
+        .ch = '@',
+    };
+    static constexpr shared::Player STOPPED{
+        .id = 1U,
+        .x = 0U,
+        .y = 0U,
+        .z = 1U,
+        .vertical_velocity_subcells = 0,
+        .ch = '@',
+    };
+    static constexpr shared::Player NEXT_TARGET{
+        .id = 1U,
+        .x = 0U,
+        .y = 0U,
+        .z = 1U,
+        .z_subcell = 5'000U,
+        .vertical_velocity_subcells = 3'500,
+        .ch = '@',
+    };
+    std::chrono::steady_clock::time_point const started_at{};
+    client::PlayerPresentation presentation;
+
+    presentation.update(INITIAL, started_at);
+    presentation.update(AIRBORNE, started_at + std::chrono::milliseconds{ 100 });
+    presentation.update(STOPPED, started_at + std::chrono::milliseconds{ 220 });
+    presentation.update(NEXT_TARGET, started_at + std::chrono::milliseconds{ 300 });
+
+    ASSERT_TRUE(presentation.sample('@', started_at + std::chrono::milliseconds{ 350 }).has_value());
+    EXPECT_NEAR(
+        presentation.sample('@', started_at + std::chrono::milliseconds{ 350 })->z,
+        1.206'25,
+        1e-9
+    );
 }
 
 TEST(PlayerPresentationTest, HorizontalInterpolationCrossesWorldSeamByShortestPath)

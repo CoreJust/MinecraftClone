@@ -68,6 +68,16 @@ constexpr std::array<std::array<float, 4>, shared::PLAYER_PALETTE_COUNT> PLAYER_
     return result;
 }
 
+[[nodiscard]] double simulationVerticalVelocity(shared::Player const& player) noexcept
+{
+    if (player.movement_capabilities.allows(shared::MovementCapability::Flight)) {
+        return 0.0;
+    }
+    return static_cast<double>(player.vertical_velocity_subcells)
+        / static_cast<double>(shared::SUBCELLS_PER_CELL)
+        / PRESENTATION_TICK_SECONDS;
+}
+
 } // namespace
 
 void PlayerPresentation::update(
@@ -76,18 +86,38 @@ void PlayerPresentation::update(
 ) noexcept
 {
     PlayerPresentationPosition const target = position(player);
+    double const target_vertical_velocity = simulationVerticalVelocity(player);
     for (Sample& sample : m_samples) {
         if (sample.character == player.ch) {
             if (sample.to == target) {
+                if (sample.to_vertical_velocity == target_vertical_velocity) {
+                    return;
+                }
+                if (!sample.has_transition || received_at >= sample.started_at + shared::TICK) {
+                    sample.from = target;
+                    sample.to = target;
+                    sample.from_vertical_velocity = target_vertical_velocity;
+                    sample.to_vertical_velocity = target_vertical_velocity;
+                    sample.has_transition = false;
+                    sample.started_at = received_at;
+                    return;
+                }
+                PlayerPresentationPosition const current = PlayerPresentation::sample(sample, received_at);
+                double const current_vertical_velocity = verticalVelocity(sample, received_at);
+                sample = {
+                    .character = player.ch,
+                    .from = current,
+                    .to = target,
+                    .from_vertical_velocity = current_vertical_velocity,
+                    .to_vertical_velocity = target_vertical_velocity,
+                    .has_transition = true,
+                    .started_at = received_at,
+                };
                 return;
             }
-            double const elapsed_seconds = std::chrono::duration<double>(received_at - sample.updated_at).count();
-            double const target_vertical_velocity = elapsed_seconds > 0.0
-                ? (target.z - sample.to.z) / elapsed_seconds
-                : 0.0;
             double const from_vertical_velocity = sample.has_transition
                 ? verticalVelocity(sample, received_at)
-                : target_vertical_velocity;
+                : sample.to_vertical_velocity;
             sample = {
                 .character = player.ch,
                 .from = PlayerPresentation::sample(sample, received_at),
@@ -96,7 +126,6 @@ void PlayerPresentation::update(
                 .to_vertical_velocity = target_vertical_velocity,
                 .has_transition = true,
                 .started_at = received_at,
-                .updated_at = received_at,
             };
             return;
         }
@@ -105,8 +134,8 @@ void PlayerPresentation::update(
         .character = player.ch,
         .from = target,
         .to = target,
+        .to_vertical_velocity = target_vertical_velocity,
         .started_at = received_at,
-        .updated_at = received_at,
     });
 }
 
