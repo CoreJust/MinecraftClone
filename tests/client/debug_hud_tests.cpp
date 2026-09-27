@@ -41,8 +41,8 @@ TEST(DebugHudTest, FormatsBoundedTelemetryViewAndAuthorityLines)
     ASSERT_TRUE(hud.formatText(text));
     EXPECT_EQ(
         std::string_view(text.value),
-        "FPS: 0.0\nUPTIME: 0.0s\nSPEED:1x(5x)\nVIEW: FIRST (F5/5)\n"
-        "FLIGHT: OFF BYPASS: OFF (6/F6)\nXYZ: 1.2 4.6 -2.3\nYPR deg: 45.0 -10.0 3.0"
+        "FPS:0.0\nUPTIME:0.0s\nSPEED:1x(5x)\nVIEW: FIRST (F5 or 5)\n"
+        "FLIGHT: OFF BYPASS: OFF (F6 or 6)\nXYZ: 1.2 4.6 -2.3\nYPR deg: 45.0 -10.0 3.0"
     );
     ASSERT_EQ(text.spans.size(), 12U);
     uint32_t const white = client::TextColor{}.packed();
@@ -57,18 +57,18 @@ TEST(DebugHudTest, FormatsBoundedTelemetryViewAndAuthorityLines)
         EXPECT_EQ(text.spans[index].packed_color, color);
     };
 
-    expectSpan(0U, 0U, 90U, white);
-    expectSpan(1U, 90U, 3U, cyan);
-    expectSpan(2U, 93U, 1U, white);
-    expectSpan(3U, 94U, 3U, gold);
-    expectSpan(4U, 97U, 1U, white);
-    expectSpan(5U, 98U, 4U, green);
-    expectSpan(6U, 102U, 10U, white);
-    expectSpan(7U, 112U, 4U, cyan);
-    expectSpan(8U, 116U, 1U, white);
-    expectSpan(9U, 117U, 5U, gold);
-    expectSpan(10U, 122U, 1U, white);
-    expectSpan(11U, 123U, 3U, rose);
+    expectSpan(0U, 0U, 94U, white);
+    expectSpan(1U, 94U, 3U, cyan);
+    expectSpan(2U, 97U, 1U, white);
+    expectSpan(3U, 98U, 3U, gold);
+    expectSpan(4U, 101U, 1U, white);
+    expectSpan(5U, 102U, 4U, green);
+    expectSpan(6U, 106U, 10U, white);
+    expectSpan(7U, 116U, 4U, cyan);
+    expectSpan(8U, 120U, 1U, white);
+    expectSpan(9U, 121U, 5U, gold);
+    expectSpan(10U, 126U, 1U, white);
+    expectSpan(11U, 127U, 3U, rose);
 }
 
 TEST(DebugHudTest, UsesTouchHelpAndAccelerationState)
@@ -102,8 +102,8 @@ TEST(DebugHudTest, NamesEveryCameraViewAndAuthorityWithoutGameplayArchetypes)
     client::DebugHudText text;
     ASSERT_TRUE(hud.formatText(text));
     std::string_view const formatted(text.value);
-    EXPECT_NE(formatted.find("VIEW: FRONT (F5/5)"), std::string_view::npos);
-    EXPECT_NE(formatted.find("FLIGHT: ON BYPASS: ON (6/F6)"), std::string_view::npos);
+    EXPECT_NE(formatted.find("VIEW: FRONT (F5 or 5)"), std::string_view::npos);
+    EXPECT_NE(formatted.find("FLIGHT: ON BYPASS: ON (F6 or 6)"), std::string_view::npos);
     EXPECT_EQ(formatted.find("SURVIVAL"), std::string_view::npos);
     EXPECT_EQ(formatted.find("CREATIVE"), std::string_view::npos);
     EXPECT_EQ(formatted.find("SPECTATOR"), std::string_view::npos);
@@ -172,7 +172,7 @@ TEST(DebugHudTest, SupportsInjectedFormattingAndDpiToggleState)
     hud.setDpiScale(100.0F);
     client::DebugHudText text;
     ASSERT_TRUE(hud.formatText(text));
-    EXPECT_NE(std::string_view(text.value).find("FPS: X"), std::string_view::npos);
+    EXPECT_NE(std::string_view(text.value).find("FPS:X"), std::string_view::npos);
     EXPECT_FLOAT_EQ(hud.snapshot().dpi_scale, 8.0F);
     hud.toggle();
     EXPECT_FALSE(hud.formatText(text));

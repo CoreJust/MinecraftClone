@@ -8971,5 +8971,84 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0260",
+    "title": "Clarify HUD telemetry spacing and function-key hints",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P1",
+    "route": "luna",
+    "milestone": "ED-010-S7",
+    "depends_on": [],
+    "acceptance": "FPS and UPTIME labels have no space after the colon. The HUD spells out both usable aliases for camera and capability cycling (F5 or 5; F6 or 6), preserves existing bindings, and does not change system-wide keyboard settings. Focused tests assert the exact display.",
+    "evidence": "The exact Release mc_tests target rebuilt successfully with cmake --build build/s7-exact-release --target mc_tests --parallel 4. The focused DebugHudTest suite passed 9/9, including exact FPS/UPTIME spacing, F5 or 5 and F6 or 6 hints, line capacities, and color spans. git diff --check passed.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0038",
+    "motivation": "Make telemetry compact and camera/capability shortcuts immediately usable on macOS when function keys are consumed by system actions.",
+    "context": "The HUD previously rendered spaces after FPS: and UPTIME:, and abbreviated its working aliases as F5/5 and 6/F6. Input accepts F5 or number-row 5 for camera views and F6 or number-row 6 for capability cycling; macOS may reserve function keys unless Fn is held.",
+    "complexity": "low",
+    "created_at": "2026-09-27",
+    "resolved_at": "2026-09-27",
+    "resolution_changes": "Removed the spaces after FPS: and UPTIME: and clarified the supported F5 or 5 and F6 or 6 shortcuts without changing system-wide keyboard settings.",
+    "plan": [
+      "Clarify the exact working aliases in HUD text, add focused formatting regression coverage, regenerate task/docs metadata, and run the focused HUD suite.",
+      "Remove telemetry label padding and clarify both working input aliases; expand only the needed bounded line capacity and adjust color-span expectations."
+    ],
+    "product_changes": [
+      "HUD telemetry spacing and macOS function-key fallback hints are explicit and compact.",
+      "The HUD now shows compact telemetry and explicit camera/capability shortcut alternatives."
+    ],
+    "code_changes": [
+      "DebugHud formats FPS:/UPTIME: without padding and displays F5 or 5 and F6 or 6; tests verify exact lines, bounds, and spans.",
+      "DebugHud formats FPS:/UPTIME: without padding and displays both usable function-key/number-row aliases; exact-line, bounds, and span tests pass."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0261",
+    "title": "Fix stale movement-count reference in preview tests",
+    "kind": "bug",
+    "status": "active",
+    "priority": "P1",
+    "route": "luna",
+    "milestone": "ED-010-S7",
+    "depends_on": [],
+    "acceptance": "The exact-pinned Release mc_tests target builds after the preview regression uses its declared MOVEMENT_INPUT_COUNT; the focused GameServerPreviewTest suite passes, with no gameplay behavior change.",
+    "evidence": "The exact Release mc_tests target rebuilt successfully, and the focused GameServerPreviewTest suite passed 9/9 in the combined S7 worktree. The stale counter fix is isolated for its own task commit.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0038",
+    "motivation": "Keep the S7 integrated build viable while preview streaming and permission work evolves.",
+    "context": "A preview test loop still used INPUT_COUNT after the local test constant was renamed to MOVEMENT_INPUT_COUNT. Preview-stream implementation/header changes belong to their own S7 feature tasks.",
+    "complexity": "low",
+    "created_at": "2026-09-27",
+    "resolved_at": "",
+    "resolution_changes": "",
+    "plan": [
+      "Replace the stale movement-count reference, rebuild the exact mc_tests target, and run the focused preview suite."
+    ],
+    "product_changes": [
+      "No gameplay behavior change."
+    ],
+    "code_changes": [
+      "Correct the stale GameServerPreviewTest counter identifier; no gameplay runtime code changes."
+    ],
+    "baseline_commit": "af1a95970785ec4c62ea98328433a87269473073",
+    "commits": [],
+    "finalized": false,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]

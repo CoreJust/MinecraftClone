@@ -15,7 +15,7 @@ inline constexpr std::array<size_t, DEBUG_HUD_LINE_COUNT> DEBUG_HUD_LINE_BYTES{
     32U,
     32U,
     32U,
-    32U,
+    40U,
     64U,
     64U,
 };

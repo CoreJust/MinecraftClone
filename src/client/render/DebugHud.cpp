@@ -163,7 +163,7 @@ bool DebugHudState::formatText(DebugHudText& text) const {
     DebugHudSnapshot const values = snapshot();
     size_t offset = 0U;
     size_t line_limit = offset + DEBUG_HUD_LINE_BYTES[0];
-    offset = appendText(text, offset, line_limit, "FPS: ", hudColor(line_colors_[0]));
+    offset = appendText(text, offset, line_limit, "FPS:", hudColor(line_colors_[0]));
     offset = appendNumber(text, offset, line_limit, values.presented_fps, 1, hudColor(line_colors_[0]));
     offset = appendText(text, offset, text.size() + 1U, "\n", hudColor(line_colors_[0]));
 
@@ -171,7 +171,7 @@ bool DebugHudState::formatText(DebugHudText& text) const {
     if (values.input.touch_flight_help) {
         offset = appendText(text, offset, line_limit, "TOUCH: UP/DOWN", hudColor(line_colors_[1]));
     } else {
-        offset = appendText(text, offset, line_limit, "UPTIME: ", hudColor(line_colors_[1]));
+        offset = appendText(text, offset, line_limit, "UPTIME:", hudColor(line_colors_[1]));
         offset = appendNumber(text, offset, line_limit, values.uptime_seconds, 1, hudColor(line_colors_[1]));
         offset = appendText(text, offset, line_limit, "s", hudColor(line_colors_[1]));
     }
@@ -195,7 +195,7 @@ bool DebugHudState::formatText(DebugHudText& text) const {
         ? "FIRST" : (values.input.view_index == 1U ? "REAR" : "FRONT");
     offset = appendText(text, offset, line_limit, "VIEW: ", hudColor(line_colors_[3]));
     offset = appendText(text, offset, line_limit, view, hudColor(line_colors_[3]));
-    offset = appendText(text, offset, line_limit, " (F5/5)\n", hudColor(line_colors_[3]));
+    offset = appendText(text, offset, line_limit, " (F5 or 5)\n", hudColor(line_colors_[3]));
 
     line_limit = offset + DEBUG_HUD_LINE_BYTES[4];
     offset = appendText(text, offset, line_limit, "FLIGHT: ", hudColor(line_colors_[4]));
@@ -214,7 +214,7 @@ bool DebugHudState::formatText(DebugHudText& text) const {
         values.input.collision_bypass_enabled ? "ON" : "OFF",
         hudColor(line_colors_[4])
     );
-    offset = appendText(text, offset, line_limit, " (6/F6)", hudColor(line_colors_[4]));
+    offset = appendText(text, offset, line_limit, " (F6 or 6)", hudColor(line_colors_[4]));
     offset = appendText(text, offset, text.size() + 1U, "\n", hudColor(line_colors_[4]));
 
     line_limit = offset + DEBUG_HUD_LINE_BYTES[5];
