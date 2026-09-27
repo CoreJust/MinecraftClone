@@ -30,9 +30,9 @@ class AiRunTests(unittest.TestCase):
     def test_all_routes_select_expected_model(self):
         expected_models = {
             "astra": "gpt-6-astra",
-            "sol": "gpt-5.6-sol",
-            "terra": "gpt-5.6-terra",
-            "luna": "gpt-5.6-luna",
+            "sol": "gpt-6-sol",
+            "terra": "gpt-6-sol",
+            "luna": "gpt-6-luna",
         }
         for route, model in expected_models.items():
             with self.subTest(route=route), mock.patch.object(
@@ -55,7 +55,48 @@ class AiRunTests(unittest.TestCase):
             return_value=subprocess.CompletedProcess([], 0),
         ) as run:
             self.assertEqual(ai_run.main([]), 0)
-        self.assertEqual(run.call_args.args[0][2], "gpt-5.6-luna")
+        self.assertEqual(run.call_args.args[0][2], "gpt-6-luna")
+        self.assertEqual(run.call_args.args[0][4], 'model_reasoning_effort="high"')
+
+    def test_reasoning_effort_can_be_selected_before_the_route(self):
+        with mock.patch.object(
+            ai_run.subprocess,
+            "run",
+            return_value=subprocess.CompletedProcess([], 0),
+        ) as run:
+            self.assertEqual(ai_run.main(["--effort", "low", "luna", "--", "--version"]), 0)
+        self.assertEqual(
+            run.call_args.args[0],
+            ["codex", "--model", "gpt-6-luna", "-c", 'model_reasoning_effort="low"', "--version"],
+        )
+
+    def test_luna_extra_high_effort_can_be_selected(self):
+        with mock.patch.object(
+            ai_run.subprocess,
+            "run",
+            return_value=subprocess.CompletedProcess([], 0),
+        ) as run:
+            self.assertEqual(ai_run.main(["--effort", "xhigh", "luna", "--", "--version"]), 0)
+        self.assertEqual(run.call_args.args[0][4], 'model_reasoning_effort="xhigh"')
+
+    def test_sol_and_astra_support_ultra_effort(self):
+        for route, model in (("sol", "gpt-6-sol"), ("astra", "gpt-6-astra")):
+            with self.subTest(route=route), mock.patch.object(
+                ai_run.subprocess,
+                "run",
+                return_value=subprocess.CompletedProcess([], 0),
+            ) as run:
+                self.assertEqual(ai_run.main(["--effort", "ultra", route, "--", "--version"]), 0)
+            self.assertEqual(
+                run.call_args.args[0],
+                ["codex", "--model", model, "-c", 'model_reasoning_effort="ultra"', "--version"],
+            )
+
+    def test_reasoning_effort_must_be_supported_by_the_selected_model(self):
+        with contextlib.redirect_stderr(io.StringIO()):
+            with self.assertRaises(SystemExit) as error:
+                ai_run.main(["--effort", "ultra", "luna", "--", "--version"])
+        self.assertEqual(error.exception.code, 2)
 
     def test_token_usage_uses_final_cumulative_record_without_double_counting(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -237,7 +278,7 @@ class AiRunTests(unittest.TestCase):
         self.assertEqual(result, 0)
         self.assertEqual(
             output.getvalue(),
-            'codex --model gpt-5.6-luna -c \'model_reasoning_effort="high"\' \'arg with spaces\'\n',
+            'codex --model gpt-6-luna -c \'model_reasoning_effort="high"\' \'arg with spaces\'\n',
         )
         run.assert_not_called()
 

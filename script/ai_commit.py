@@ -20,9 +20,9 @@ from typing import Any, Sequence
 
 
 LEVELS = frozenset({"basic", "snapshot", "minor", "major"})
-MODELS = frozenset({"gpt-5.6-luna", "gpt-5.6-terra"})
-LUNA_MODEL = "gpt-5.6-luna"
-TERRA_MODEL = "gpt-5.6-terra"
+MODELS = frozenset({"gpt-6-luna", "gpt-6-sol"})
+LUNA_MODEL = "gpt-6-luna"
+SOL_MODEL = "gpt-6-sol"
 
 
 class CommitGateError(ValueError):
@@ -177,7 +177,7 @@ def validate_report(report: Any, candidate: dict[str, str]) -> dict[str, Any]:
             raise CommitGateError(f"review report {field} does not match the staged candidate")
     model = report.get("model")
     if model not in MODELS:
-        raise CommitGateError("review report model must be gpt-5.6-luna or gpt-5.6-terra")
+        raise CommitGateError("review report model must be gpt-6-luna or gpt-6-sol")
     if report.get("effort") not in {"medium", "high", "xhigh"}:
         raise CommitGateError("review report effort must be medium, high, or xhigh")
     if report.get("verdict") != "approved":
@@ -269,7 +269,7 @@ def check(root: Path, message_path: Path | None = None) -> dict[str, str]:
     candidate = task_candidate(root, task_id)
     read_receipt(root, candidate, LUNA_MODEL)
     if candidate["level"] in {"minor", "major"}:
-        read_receipt(root, candidate, TERRA_MODEL)
+        read_receipt(root, candidate, SOL_MODEL)
     if message_path is not None:
         check_message(root, message_path, task_id)
     return candidate

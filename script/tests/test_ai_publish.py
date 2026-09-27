@@ -166,7 +166,7 @@ class AiPublishTests(unittest.TestCase):
         )
         report = json.loads(candidate.stdout)
         report.update({
-            "model": "gpt-5.6-luna",
+            "model": "gpt-6-luna",
             "effort": "high",
             "verdict": "approved",
             "evidence": "Reviewed the exact pending promotion index.",

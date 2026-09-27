@@ -42,7 +42,17 @@ def relative_path(root: Path, file_path: Path) -> str:
 def regular_files(directory: Path) -> list[Path]:
     if not directory.is_dir():
         return []
-    return sorted((path for path in directory.rglob("*") if path.is_file() and not path.is_symlink()), key=str)
+    return sorted(
+        (
+            path
+            for path in directory.rglob("*")
+            if path.is_file()
+            and not path.is_symlink()
+            and "__pycache__" not in path.relative_to(directory).parts
+            and path.suffix not in {".pyc", ".pyo"}
+        ),
+        key=str,
+    )
 
 
 def collect_source_files(root: Path) -> list[Path]:

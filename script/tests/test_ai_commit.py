@@ -131,7 +131,7 @@ class AiCommitTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         return json.loads(result.stdout)
 
-    def write_report(self, candidate: dict[str, object], model: str = "gpt-5.6-luna", **overrides: object) -> Path:
+    def write_report(self, candidate: dict[str, object], model: str = "gpt-6-luna", **overrides: object) -> Path:
         report = dict(candidate) | {
             "model": model,
             "effort": "high",
@@ -143,7 +143,7 @@ class AiCommitTests(unittest.TestCase):
         target.write_text(json.dumps(report), encoding="utf-8")
         return target
 
-    def record(self, candidate: dict[str, object], model: str = "gpt-5.6-luna", **overrides: object) -> subprocess.CompletedProcess[str]:
+    def record(self, candidate: dict[str, object], model: str = "gpt-6-luna", **overrides: object) -> subprocess.CompletedProcess[str]:
         return self.run_command("record-review", str(self.write_report(candidate, model, **overrides)))
 
     def test_missing_receipt_and_selector_are_rejected(self) -> None:
@@ -158,7 +158,7 @@ class AiCommitTests(unittest.TestCase):
         selector.write_text(json.dumps(candidate), encoding="utf-8")
         result = self.run_command("check")
         self.assertEqual(result.returncode, 1)
-        self.assertIn("missing gpt-5.6-luna review receipt", result.stderr)
+        self.assertIn("missing gpt-6-luna review receipt", result.stderr)
 
     def test_staging_change_invalidates_recorded_luna_review(self) -> None:
         candidate = self.candidate()
@@ -168,12 +168,12 @@ class AiCommitTests(unittest.TestCase):
         self.git("add", "src/fixture.cpp")
         result = self.run_command("check")
         self.assertEqual(result.returncode, 1)
-        self.assertIn("missing gpt-5.6-luna review receipt", result.stderr)
+        self.assertIn("missing gpt-6-luna review receipt", result.stderr)
 
     def test_report_rejects_wrong_model_task_and_head(self) -> None:
         candidate = self.candidate()
         for name, changes in (
-            ("model", {"model": "gpt-5.6-sol"}),
+            ("model", {"model": "gpt-5.6-luna"}),
             ("task", {"task_id": "MC-AI-9999"}),
             ("head", {"head": "0" * 40}),
             ("effort", {"effort": "low"}),
@@ -220,7 +220,7 @@ class AiCommitTests(unittest.TestCase):
         candidate = self.candidate()
         self.assertEqual(candidate["level"], "basic")
 
-    def test_minor_requires_terra_and_finalized_metadata(self) -> None:
+    def test_minor_requires_sol_and_finalized_metadata(self) -> None:
         self.stage_task(level="snapshot", finalized=True, baseline_commit="")
         missing_baseline = self.run_command("candidate", "MC-AI-0001")
         self.assertEqual(missing_baseline.returncode, 1)
@@ -236,8 +236,8 @@ class AiCommitTests(unittest.TestCase):
         self.assertEqual(self.record(candidate).returncode, 0)
         missing_terra = self.run_command("check")
         self.assertEqual(missing_terra.returncode, 1)
-        self.assertIn("gpt-5.6-terra", missing_terra.stderr)
-        self.assertEqual(self.record(candidate, "gpt-5.6-terra").returncode, 0)
+        self.assertIn("gpt-6-sol", missing_terra.stderr)
+        self.assertEqual(self.record(candidate, "gpt-6-sol").returncode, 0)
         self.assertEqual(self.run_command("check").returncode, 0)
 
     def test_aggregate_candidate_revalidates_history(self) -> None:
@@ -271,7 +271,7 @@ class AiCommitTests(unittest.TestCase):
         self.assertNotEqual(second["merge_head"], first["merge_head"])
         stale = self.run_command("check")
         self.assertEqual(stale.returncode, 1)
-        self.assertIn("missing gpt-5.6-luna review receipt", stale.stderr)
+        self.assertIn("missing gpt-6-luna review receipt", stale.stderr)
 
     def test_divergent_promotion_is_accepted_and_validates_the_union(self) -> None:
         self.git("checkout", "-b", "promotion", self.baseline)
