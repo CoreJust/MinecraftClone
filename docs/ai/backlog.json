@@ -2229,7 +2229,7 @@
     "id": "MC-AI-0057",
     "title": "Provide deterministic Runtime audio foundation",
     "kind": "feature",
-    "status": "backlog",
+    "status": "done",
     "priority": "P1",
     "route": "terra",
     "milestone": "ED-010-S7",
@@ -2237,27 +2237,31 @@
       "MC-AI-0036"
     ],
     "acceptance": "CoreCpp Runtime Audio has bounded voice/control storage, deterministic offline mixing, explicit sample/clock/lifetime contracts and a minimal established native output adapter; the real-time callback performs no decoding, blocking I/O or unbounded allocation. Golden/sample-level offline tests cover mixing, clipping, start/stop and capacity, device-open failure is diagnostic and recoverable, server-only consumers exclude audio, and MinecraftClone proves one controlled Client playback path without making audio simulation-authoritative.",
-    "evidence": "",
+    "evidence": "Exact CoreCpp package revision f15293f83b784433eb386766157486155fac847b was verified from the clean cross-project checkout. In its exact build, both audio test targets built and CTest -R 'AudioMixer|AudioOutput' passed 13/13. MinecraftClone's exact Release mc_main and mc_tests targets built; ClientAudioTest plus GameClientAudioTest passed 4/4, covering the controlled join cue, lifecycle, and recoverable output-start failure. The previously run exact-package MinecraftClone.ServerOnlyBuild passed; its configuration excludes client audio. The CoreCpp audio tests use a fake device; physical speaker playback was not exercised.",
     "blocker": "",
-    "owner": "",
+    "owner": "Codex",
     "level": "basic",
     "parent": "MC-AI-0038",
     "motivation": "Add the requested reusable audio subsystem without coupling game logic to OS device drivers or nondeterministic callbacks.",
     "context": "CoreCpp Runtime owns generic mixing/control and a minimal native output adapter; MinecraftClone may expose a narrow Client use. Decoding and device management stay outside the real-time mix callback.",
     "complexity": "high",
     "created_at": "2026-09-09",
-    "resolved_at": "",
-    "resolution_changes": "",
+    "resolved_at": "2026-09-27",
+    "resolution_changes": "Integrated CoreCpp RuntimeAudioOutput through a client-only adapter; a controlled join cue starts only after authoritative server acceptance and stops when the client run ends. Server-only consumers remain audio-free.",
     "plan": [
       "Choose the smallest supported backend and specify the mixer/control/device separation and hard capacities.",
       "Implement deterministic offline mixing plus a thin native output adapter outside decoding/game policy.",
       "Add sample goldens, lifecycle/failure tests and one Client smoke while preserving server-only optionality."
     ],
-    "product_changes": [],
-    "code_changes": [],
-    "baseline_commit": "",
+    "product_changes": [
+      "The client plays one bounded join cue after the server accepts the player."
+    ],
+    "code_changes": [
+      "Added the client audio adapter, CoreCpp output linkage only for client builds, deterministic fake-output lifecycle tests, and a GameClient join-acceptance regression."
+    ],
+    "baseline_commit": "af1a95970785ec4c62ea98328433a87269473073",
     "commits": [],
-    "finalized": false,
+    "finalized": true,
     "retrospective": "",
     "docs_review": "",
     "environment_review": "",

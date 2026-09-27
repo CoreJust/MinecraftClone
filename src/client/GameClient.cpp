@@ -71,6 +71,7 @@ void GameClient::run(core::Address const server_address, char const ch) {
         }
         std::this_thread::sleep_for(scheduler.idleDelay(now));
     }
+    m_client_audio.stop();
 }
 
 void GameClient::onDisconnected(core::DisconnectEvent const event) {
@@ -122,7 +123,13 @@ void GameClient::onReceived(core::ReceiveEvent event) {
     } else if (auto* msg = std::get_if<shared::JoinResponseMessage>(msg_ptr)) {
         auto const [accepted] = *msg;
         if (accepted) {
+            bool const first_accept = !m_accepted;
             m_accepted = true;
+            if (first_accept && m_client_audio.start()) {
+                static_cast<void>(m_client_audio.playJoinCue());
+            } else if (first_accept) {
+                CORE_ERROR("Client audio output could not start; continuing without audio");
+            }
         } else if (m_accepted) {
             m_running = false;
         } else {

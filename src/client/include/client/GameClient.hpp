@@ -1,5 +1,6 @@
 #pragma once
 
+#include "ClientAudio.hpp"
 #include "PlayerPresentation.hpp"
 #include "PreviewResidency.hpp"
 
@@ -11,9 +12,11 @@
 #include <array>
 #include <chrono>
 #include <deque>
+#include <memory>
 #include <optional>
 #include <unordered_map>
 #include <unordered_set>
+#include <utility>
 
 namespace client {
 
@@ -24,13 +27,15 @@ public:
     explicit GameClient(
         shared::WorldMode const mode = shared::WorldMode::Flat,
         shared::WorldConfiguration const configuration = shared::World::canonicalConfiguration(),
-        bool const wants_previews = true
+        bool const wants_previews = true,
+        std::unique_ptr<ClientAudioOutput> audio_output = {}
     )
         : core::Client{ 2 }
         , m_world{ mode, configuration }
         , m_predicted_world{ mode, configuration }
         , m_height_tile_residency{ { .generation = 1, .revision = 1 }, {} }
         , m_wants_previews{ wants_previews }
+        , m_client_audio{ std::move(audio_output) }
     { }
 
     void run(core::Address const server_address, char const ch);
@@ -86,6 +91,7 @@ protected:
     PlayerPresentation m_player_presentation;
     PreviewResidency m_height_tile_residency;
     bool m_wants_previews;
+    ClientAudio m_client_audio;
     HeightTileRevision m_height_tile_revision{ .generation = 1, .revision = 1 };
     std::deque<shared::ServerHeightTileBatchMessage> m_pending_height_tile_deliveries;
     std::unordered_set<uint64_t> m_pending_height_tile_delivery_tokens;

@@ -7,6 +7,7 @@ target_sources(mc
             Camera.hpp
             CameraController.hpp
             CameraObstruction.hpp
+            ClientAudio.hpp
             FrameScheduler.hpp
             GameClient.hpp
             PlayerClient.hpp

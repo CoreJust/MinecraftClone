@@ -203,7 +203,9 @@ if(MC_BUILD_CLIENT AND NOT ANDROID)
             client/camera_tests.cpp
             client/debug_hud_tests.cpp
             client/frame_scheduler_tests.cpp
+            client/game_client_audio_tests.cpp
             client/gui_renderer_tests.cpp
+            client/client_audio_tests.cpp
             client/game_client_prediction_tests.cpp
             client/player_presentation_tests.cpp
             client/preview_meshing_tests.cpp
