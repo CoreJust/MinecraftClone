@@ -10,6 +10,7 @@
 #include <barrier>
 #include <chrono>
 #include <functional>
+#include <string_view>
 #include <thread>
 #include <vector>
 
@@ -172,6 +173,46 @@ bool joinManually(
     return joined;
 }
 
+shared::PolicyCapabilityRegistry movementPolicyRegistry()
+{
+    return {
+        .definitions = {
+            {
+                .key = "minecraft:flight",
+                .default_value = 1,
+                .minimum_value = 0,
+                .maximum_value = 1,
+                .hard_restriction = shared::PolicyRestriction::Maximum,
+            },
+            {
+                .key = "minecraft:collision-bypass",
+                .default_value = 1,
+                .minimum_value = 0,
+                .maximum_value = 1,
+                .hard_restriction = shared::PolicyRestriction::Maximum,
+            },
+        },
+    };
+}
+
+std::expected<shared::PolicyCompilation, shared::PolicyDiagnostic> hardMovementDenyPolicy()
+{
+    static constexpr std::string_view SOURCE = R"core(@version("0.1.3.1")
+@use minecraft
+pub fn policy() {
+    policyRule("lock", "minecraft:flight", 0i64, 1u8)
+    policyRule("lock", "minecraft:collision-bypass", 0i64, 1u8)
+    policyAssign("all", "lock", 1u8)
+}
+)core";
+    shared::PolicyHost compiler;
+    auto compiled = compiler.compile("hard-movement-deny.core", SOURCE, {
+        .jit_mode = shared::PolicyJitMode::Disabled,
+        .require_interpreter_parity = true,
+    });
+    return compiled;
+}
+
 } // namespace
 
 TEST_F(GameServerTest, JoinRepliesArePrivateAndNewPlayersReachExistingClients)
@@ -284,6 +325,55 @@ TEST(GameServerFlightTest, CyclesOnlyTheThreeServerValidatedMovementCapabilitySt
     EXPECT_EQ(positions[positions.size() - 3U].movement_capabilities.bits, 1U);
     EXPECT_EQ(positions[positions.size() - 2U].movement_capabilities.bits, 0U);
     EXPECT_EQ(positions.back().movement_capabilities.bits, 3U);
+}
+
+TEST(GameServerFlightTest, HardPermissionsPreserveCollisionAcrossTheWrappedSeam)
+{
+    static constexpr uint32_t WORLD_EDGE_X = static_cast<uint32_t>(shared::World::FLIGHT_MAX_CELL);
+    static constexpr uint32_t Y = 100U;
+    shared::TerrainGenerator const terrain;
+    int32_t const spawn_z = std::max(
+        static_cast<int32_t>(terrain.heightAt(WORLD_EDGE_X, Y)),
+        static_cast<int32_t>(terrain.heightAt(0U, Y))
+    );
+    server::GameServer server{ 0, {
+        { .character = '@', .x = shared::World::FLIGHT_MAX_CELL, .y = static_cast<int32_t>(Y), .z = spawn_z },
+        { .character = '#', .x = 0, .y = static_cast<int32_t>(Y), .z = spawn_z },
+    }, shared::WorldMode::Flight };
+    ProtocolClient first;
+    ProtocolClient second;
+    ASSERT_TRUE(joinManually(server, first, '@', shared::WorldMode::Flight));
+    ASSERT_TRUE(joinManually(server, second, '#', shared::WorldMode::Flight));
+
+    auto compilation = hardMovementDenyPolicy();
+    ASSERT_TRUE(compilation.has_value()) << compilation.error().message;
+    auto const published = server.publishPermissions(std::move(*compilation), movementPolicyRegistry());
+    ASSERT_TRUE(published.has_value()) << published.error().message;
+    auto const hasHardRestriction = [](ProtocolClient const& client, char const character) {
+        std::vector<shared::ServerPlayerPositionMessage> const positions = client.positions(character);
+        return !positions.empty() && positions.back().movement_capabilities.bits == 0U;
+    };
+    ASSERT_TRUE(pumpUntil(server, first, [&] {
+        return hasHardRestriction(first, '@') && hasHardRestriction(first, '#');
+    }));
+    ASSERT_TRUE(pumpUntil(server, second, [&] {
+        return hasHardRestriction(second, '@') && hasHardRestriction(second, '#');
+    }));
+
+    shared::ServerPlayerPositionMessage const before = first.positions('@').back();
+    ASSERT_TRUE(first.sendMessage(shared::ClientInputMessage{
+        .direction = { .x = 127U },
+        .sequence = 1U,
+    }));
+    ASSERT_TRUE(pumpUntil(server, first, [&] {
+        std::vector<shared::ServerPlayerPositionMessage> const positions = first.positions('@');
+        return !positions.empty() && positions.back().acknowledged_input_sequence == 1U;
+    }));
+
+    shared::ServerPlayerPositionMessage const after = first.positions('@').back();
+    EXPECT_EQ(after.x, shared::World::FLIGHT_MAX_CELL);
+    EXPECT_EQ(after.x_subcell, before.x_subcell);
+    EXPECT_EQ(after.movement_capabilities.bits, 0U);
 }
 
 TEST_F(GameServerTest, CapabilityChangesReachStationaryObservers)

@@ -276,18 +276,22 @@
     "context": "Deferred follow-up owned by Snapshot 7. Canonical modulo, shortest displacement, simulation/protocol wrapping and seam presentation already ship in S6; this task covers only unfulfilled compatibility and workload evidence.",
     "complexity": "medium",
     "created_at": "2026-09-09",
-    "resolved_at": "",
-    "resolution_changes": "",
+    "resolved_at": "2026-09-27",
+    "resolution_changes": "Completed the deferred wrapped-world compatibility matrix without reimplementing S6 coordinate normalization or seam presentation; recorded reproducible five-scenario full-game budgets and retained the separate failed cadence gate.",
     "plan": [
       "Audit S7 physics, permissions and deferred LOD against the delivered S6 wrapping primitives.",
       "Add only missing seam compatibility and scripted multiplayer coverage.",
       "Profile fixed full-game workloads and record justified budgets."
     ],
-    "product_changes": [],
-    "code_changes": [],
+    "product_changes": [
+      "Hard-denied collision bypass remains authoritative when players meet across the wrapped world seam."
+    ],
+    "code_changes": [
+      "Added a two-client GameServer regression for hard permission publication and collision at the wrap seam; reconciled existing wrapped LOD, adverse-transport, and benchmark evidence."
+    ],
     "baseline_commit": "",
     "commits": [],
-    "finalized": false,
+    "finalized": true,
     "retrospective": "",
     "docs_review": "",
     "environment_review": "",
@@ -295,17 +299,17 @@
     "id": "MC-AI-0006",
     "title": "Complete deferred wrapped-world compatibility coverage",
     "kind": "feature",
-    "status": "backlog",
+    "status": "done",
     "priority": "P1",
-    "route": "terra",
+    "route": "luna",
     "milestone": "ED-010-S7",
     "depends_on": [
       "MC-AI-0037"
     ],
     "acceptance": "Remaining wrapping compatibility coverage spans collision, permissions, deferred visual LOD, and scripted multiplayer workloads without reimplementing S6 coordinate normalization or presentation. Reproducible profiles record the resulting budgets.",
-    "evidence": "",
+    "evidence": "Five focused Release regressions passed: a real GameServer test publishes hard movement permissions to two connected clients and proves the edge player cannot cross into its neighbor at x=65535→0; existing tests prove wrapped collision adjacency, nearest-world-image LOD bounds with the confirmed projected-area ≤2 px² cutoff, and deterministic two-client adverse-transport authority convergence. The current five-scenario full-game profile records ordinary, x200, wrapped-border, permission/collision, and adverse-network budgets (raw JSON SHA-256 5f513a61567232e0d9451eb2e45e9345aa106fb1c052692d077e301ab1edd1e2). Its terrain readiness was 27.290 s; 120 Hz p99.8 remains unmet at 9.350–9.603 ms and stays open in MC-AI-0061/0248.",
     "blocker": "",
-    "owner": ""
+    "owner": "Codex"
   },
   {
     "level": "basic",
