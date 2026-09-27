@@ -15,6 +15,7 @@ target_link_libraries(mc
         fmt::fmt
         spdlog::spdlog
     PRIVATE
+        CoreCpp::RuntimeExecutors
         glm::glm
 )
 if(MC_BUILD_CLIENT)

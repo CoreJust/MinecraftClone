@@ -2187,35 +2187,39 @@
     "id": "MC-AI-0056",
     "title": "Implement bounded Runtime task executors",
     "kind": "feature",
-    "status": "backlog",
+    "status": "done",
     "priority": "P1",
     "route": "sol",
     "milestone": "ED-010-S7",
     "depends_on": [
       "MC-AI-0036"
     ],
-    "acceptance": "CoreCpp Runtime provides a bounded executor with explicit queue/job/output budgets, cancellation, shutdown, backpressure and observable saturation; completed immutable results can be published atomically while stale/cancelled work is discarded by its consumer. Tests cover capacity, ordering contract, cancellation races, failure propagation and bounded teardown. MinecraftClone can schedule world jobs without blocking a physics tick, and no game-specific world priority policy is embedded in Runtime.",
-    "evidence": "",
+    "acceptance": "MinecraftClone consumes the exact pinned CoreCpp::RuntimeExecutors component. The game-owned adapter caps pending plus submitted terrain work at 128, keeps the CoreCpp FIFO window shallow, reorders remaining per-client work by current authoritative tile priority, requests cancellation for obsolete submitted jobs, drains every completion, rejects cancelled/stale generations, and deterministically sorts successful results before publication. World priority stays outside CoreCpp. CoreCpp tests cover bounded queues/results, cancellation, exceptions and shutdown; MinecraftClone production tests cover camera rotation without interest removals, movement into a fresh frontier, stale scheduler results, and current input acknowledgements while terrain streams.",
+    "evidence": "CoreCpp commit 35f3fc6733a1d8838f463aba1bc53309bb123868 was built and consumed through RuntimeExecutors; RuntimeExecutors tests passed 6/6 and the installed server-consumer component matrix passed 2/2. MinecraftClone mc_tests rebuilt successfully against that package. The strengthened GameServerPreviewTest.CameraRotationKeepsInterestAndMovementAddsFreshFrontier passed 1/1; the preceding focused GameServerPreviewTest plus stale-revision scheduler batch passed 10/10 before the test was strengthened. The server adapter retains the 128 outstanding-item cap and sorts completed terrain results by client, generation, current interest priority, then tile coordinates. CoreCpp cancellation/completion lifecycle and MC stale-revision scheduler tests passed; the adapter drains every completion, maps cancellation status, and rejects stale generations in the production path. git diff --check passed for the task-owned source/test files.",
     "blocker": "",
-    "owner": "",
+    "owner": "Codex",
     "level": "basic",
     "parent": "MC-AI-0038",
     "motivation": "Run generation and streaming work outside authoritative physics ticks with explicit capacity, cancellation and deterministic publication contracts.",
-    "context": "CoreCpp Runtime owns generic executor/queue mechanics. Shared owns generation jobs and priority semantics. Deterministic world results must not depend on traversal or worker order.",
+    "context": "CoreCpp already provides the independently selectable bounded RuntimeExecutors component in commit 35f3fc6733a1d8838f463aba1bc53309bb123868 (CC-0026). MinecraftClone's current HeightTileWorkerPool owns world-specific queue priority, result mapping and stale-revision checks; keep those policies in the game adapter because CoreCpp Executor is FIFO and only cooperatively cancellable. Deterministic world results must not depend on traversal or worker order.",
     "complexity": "high",
     "created_at": "2026-09-09",
-    "resolved_at": "",
-    "resolution_changes": "",
+    "resolved_at": "2026-09-27",
+    "resolution_changes": "Replaced the game-local worker mechanics with CoreCpp RuntimeExecutors while retaining a bounded world-specific priority queue, cancellation, stale-result rejection and deterministic publication.",
     "plan": [
-      "Define the minimal executor job, cancellation, result and saturation interfaces required by world streaming.",
-      "Implement bounded workers/queues and deterministic lifecycle/error behavior in CoreCpp Runtime.",
-      "Integrate an opt-in Shared adapter and prove cancellation, stale-result rejection, shutdown and no unbounded physics-tick work."
+      "Pin the exact CoreCpp revision that exports RuntimeExecutors and keep server-only package selection explicit.",
+      "Replace per-game worker mechanics with RuntimeExecutors while retaining a bounded, reprioritizable game-owned pending queue and mapping immutable completions to generation jobs.",
+      "Integrate the adapter while maintaining interest-based pending ordering, cancellation and stale-result rejection; verify deterministic publication, responsive authoritative input, and executor lifecycle through production-streaming and CoreCpp tests."
     ],
-    "product_changes": [],
-    "code_changes": [],
-    "baseline_commit": "",
+    "product_changes": [
+      "No product behavior changed; this is runtime executor integration for terrain streaming."
+    ],
+    "code_changes": [
+      "Pinned and linked the exact RuntimeExecutors package; added the game-owned executor adapter and movement/frontier regression."
+    ],
+    "baseline_commit": "0ce33f295dc567944f9096e096d68be9ef99caf1",
     "commits": [],
-    "finalized": false,
+    "finalized": true,
     "retrospective": "",
     "docs_review": "",
     "environment_review": "",

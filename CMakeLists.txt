@@ -53,7 +53,7 @@ endif()
 ###  DEPENDENCIES SETUP  ###
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/CoreCppProvenance.cmake")
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/CoreProject2026Provenance.cmake")
-find_package(CoreCpp CONFIG REQUIRED COMPONENTS Core Runtime RuntimeNetwork)
+find_package(CoreCpp CONFIG REQUIRED COMPONENTS Core Runtime RuntimeNetwork RuntimeExecutors)
 if(MC_BUILD_CLIENT)
     if(ANDROID)
         find_package(CoreCpp CONFIG REQUIRED COMPONENTS

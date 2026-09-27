@@ -3,13 +3,15 @@
 #include <shared/world/HeightTileInterest.hpp>
 #include <shared/world/WorldGeneration.hpp>
 
+#include <core/executor/Executor.hpp>
 #include <core/IO/Log.hpp>
 
 #include <algorithm>
-#include <condition_variable>
+#include <cstddef>
 #include <cstdlib>
 #include <functional>
 #include <mutex>
+#include <optional>
 #include <stdexcept>
 #include <thread>
 #include <tuple>
@@ -85,31 +87,33 @@ struct GameServer::HeightTileWorkerPool final {
         uint64_t generation;
         shared::GenerationJob job;
         bool succeeded = false;
+        bool cancelled = false;
         shared::HeightTile tile{};
+    };
+
+    struct Submitted final {
+        Work work;
+        std::shared_ptr<Result> result;
+        core::executor::JobHandle handle;
     };
 
     HeightTileWorkerPool()
     {
         uint32_t const worker_count = GameServer::terrainWorkerCount(std::thread::hardware_concurrency());
-        m_workers.reserve(worker_count);
-        for (uint32_t worker{ 0U }; worker < worker_count; ++worker) {
-            m_workers.emplace_back([this] {
-                workerLoop();
-            });
-        }
+        // Keep the executor FIFO shallow so the remaining game-owned work can be reprioritized.
+        m_submission_window = worker_count * 2U;
+        m_executor = std::make_unique<core::executor::Executor>(
+            core::executor::ExecutorLimits{
+                .queue_capacity = worker_count,
+                .result_capacity = MAX_OUTSTANDING_WORK,
+            },
+            worker_count
+        );
     }
 
     ~HeightTileWorkerPool()
     {
-        {
-            std::lock_guard lock{m_mutex};
-            m_stopping = true;
-            m_work.clear();
-        }
-        m_work_available.notify_all();
-        for (std::thread& worker : m_workers) {
-            worker.join();
-        }
+        m_executor->shutdown();
     }
 
     [[nodiscard]]
@@ -122,27 +126,27 @@ struct GameServer::HeightTileWorkerPool final {
     [[nodiscard]]
     bool enqueue(Work work)
     {
-        {
-            std::lock_guard lock{m_mutex};
-            if (m_stopping || outstandingCount() >= MAX_OUTSTANDING_WORK) {
-                return false;
-            }
-            m_work.push_back(std::move(work));
+        std::lock_guard lock{m_mutex};
+        if (outstandingCount() >= MAX_OUTSTANDING_WORK) {
+            return false;
         }
-        m_work_available.notify_one();
+        m_pending.push_back(std::move(work));
+        submitPending();
         return true;
     }
 
     void cancel(core::ClientId const client_id, uint64_t const generation)
     {
         std::lock_guard lock{m_mutex};
-        std::erase_if(m_work, [client_id, generation](Work const& work) {
+        std::erase_if(m_pending, [client_id, generation](Work const& work) {
             return work.client_id == client_id && work.generation == generation;
         });
-        std::erase_if(m_results, [client_id, generation](Result const& result) {
-            return result.client_id == client_id && result.generation == generation;
-        });
-        m_result_space_available.notify_all();
+        for (auto& [id, submitted] : m_submitted) {
+            static_cast<void>(id);
+            if (submitted.work.client_id == client_id && submitted.work.generation == generation) {
+                static_cast<void>(submitted.handle.requestCancellation());
+            }
+        }
     }
 
     [[nodiscard]]
@@ -152,16 +156,13 @@ struct GameServer::HeightTileWorkerPool final {
     ) {
         std::vector<shared::GenerationJob> cancelled;
         std::lock_guard lock{m_mutex};
-        std::erase_if(m_work, [&](Work const& work) {
+        std::erase_if(m_pending, [&](Work const& work) {
             if (work.client_id != client_id || work.generation != generation) {
                 return false;
             }
             cancelled.push_back(work.job);
             return true;
         });
-        if (!cancelled.empty()) {
-            m_result_space_available.notify_all();
-        }
         return cancelled;
     }
 
@@ -172,15 +173,18 @@ struct GameServer::HeightTileWorkerPool final {
     ) {
         std::vector<shared::GenerationJob> cancelled;
         std::lock_guard lock{m_mutex};
-        std::erase_if(m_work, [&](Work const& work) {
+        std::erase_if(m_pending, [&](Work const& work) {
             if (work.client_id != client_id || !should_cancel(work)) {
                 return false;
             }
             cancelled.push_back(work.job);
             return true;
         });
-        if (!cancelled.empty()) {
-            m_result_space_available.notify_all();
+        for (auto& [id, submitted] : m_submitted) {
+            static_cast<void>(id);
+            if (submitted.work.client_id == client_id && should_cancel(submitted.work)) {
+                static_cast<void>(submitted.handle.requestCancellation());
+            }
         }
         return cancelled;
     }
@@ -190,16 +194,16 @@ struct GameServer::HeightTileWorkerPool final {
         std::function<bool(Work const&, Work const&)> const& order
     ) {
         std::lock_guard lock{m_mutex};
-        std::vector<Work> client_work;
-        client_work.reserve(m_work.size());
-        for (Work const& work : m_work) {
+        std::vector<Work> client_pending;
+        client_pending.reserve(m_pending.size());
+        for (Work const& work : m_pending) {
             if (work.client_id == client_id) {
-                client_work.push_back(work);
+                client_pending.push_back(work);
             }
         }
-        std::stable_sort(client_work.begin(), client_work.end(), order);
-        auto reordered = client_work.begin();
-        for (Work& work : m_work) {
+        std::ranges::stable_sort(client_pending, order);
+        auto reordered = client_pending.begin();
+        for (Work& work : m_pending) {
             if (work.client_id == client_id) {
                 work = std::move(*reordered);
                 ++reordered;
@@ -211,82 +215,78 @@ struct GameServer::HeightTileWorkerPool final {
     std::vector<Result> takeResults(uint32_t const maximum_results)
     {
         std::vector<Result> results;
-        {
-            std::lock_guard lock{m_mutex};
-            results.reserve(std::min<uint32_t>(maximum_results, static_cast<uint32_t>(m_results.size())));
-            while (!m_results.empty() && results.size() < maximum_results) {
-                results.push_back(std::move(m_results.front()));
-                m_results.pop_front();
+        std::lock_guard lock{m_mutex};
+        results.reserve(std::min<uint32_t>(
+            maximum_results,
+            static_cast<uint32_t>(m_submitted.size())
+        ));
+        while (static_cast<uint32_t>(results.size()) < maximum_results) {
+            std::optional<core::executor::JobResult> const completion = m_executor->tryTakeResult();
+            if (!completion.has_value()) {
+                break;
             }
+            auto const submitted = m_submitted.find(completion->id());
+            if (submitted == m_submitted.end()) {
+                continue;
+            }
+            submitted->second.result->cancelled = completion->status()
+                == core::executor::CompletionStatus::Cancelled;
+            submitted->second.result->succeeded = completion->status()
+                == core::executor::CompletionStatus::Succeeded;
+            results.push_back(std::move(*submitted->second.result));
+            m_submitted.erase(submitted);
         }
-        m_result_space_available.notify_all();
+        submitPending();
         return results;
     }
 
 private:
-    [[nodiscard]]
-    uint32_t outstandingCount() const noexcept
+    [[nodiscard]] uint32_t outstandingCount() const noexcept
     {
-        return static_cast<uint32_t>(m_work.size() + m_active_workers + m_results.size());
+        return static_cast<uint32_t>(m_pending.size() + m_submitted.size());
     }
 
-    void workerLoop()
+    void submitPending()
     {
-        shared::TerrainGenerator terrain_generator;
-        while (true) {
-            Work work{};
-            {
-                std::unique_lock lock{m_mutex};
-                m_work_available.wait(lock, [this] {
-                    return m_stopping || !m_work.empty();
-                });
-                if (m_stopping) {
-                    return;
-                }
-                work = std::move(m_work.front());
-                m_work.pop_front();
-                ++m_active_workers;
-            }
-
-            Result result{
+        while (!m_pending.empty() && m_submitted.size() < m_submission_window) {
+            Work work = std::move(m_pending.front());
+            m_pending.erase(m_pending.begin());
+            auto result = std::make_shared<Result>(Result{
                 .client_id = work.client_id,
                 .generation = work.generation,
                 .job = work.job,
-            };
-            try {
-                shared::HeightTileCoordinate const coordinate{
-                    .x = work.job.coordinate.x,
-                    .y = work.job.coordinate.y,
-                };
-                result.tile = terrain_generator.generateHeightTile(coordinate);
-                result.succeeded = true;
-            } catch (...) {
-                result.succeeded = false;
-            }
-
-            {
-                std::unique_lock lock{m_mutex};
-                --m_active_workers;
-                m_result_space_available.wait(lock, [this] {
-                    return m_stopping || outstandingCount() < MAX_OUTSTANDING_WORK;
-                });
-                if (m_stopping) {
-                    return;
+            });
+            core::executor::Submission submission = m_executor->trySubmit(
+                [result](core::executor::CancellationToken const token) {
+                    if (token.isCancellationRequested()) {
+                        return;
+                    }
+                    thread_local shared::TerrainGenerator terrain_generator;
+                    shared::HeightTileCoordinate const coordinate{
+                        .x = result->job.coordinate.x,
+                        .y = result->job.coordinate.y,
+                    };
+                    result->tile = terrain_generator.generateHeightTile(coordinate);
                 }
-                m_results.push_back(std::move(result));
+            );
+            if (submission.status != core::executor::SubmissionStatus::Accepted) {
+                m_pending.insert(m_pending.begin(), std::move(work));
+                break;
             }
+            m_submitted.emplace(submission.handle.id(), Submitted{
+                .work = std::move(work),
+                .result = std::move(result),
+                .handle = std::move(submission.handle),
+            });
         }
     }
 
 private:
     mutable std::mutex m_mutex;
-    std::condition_variable m_work_available;
-    std::condition_variable m_result_space_available;
-    std::deque<Work> m_work;
-    std::deque<Result> m_results;
-    std::vector<std::thread> m_workers;
-    uint32_t m_active_workers = 0U;
-    bool m_stopping = false;
+    std::unique_ptr<core::executor::Executor> m_executor;
+    std::vector<Work> m_pending;
+    std::unordered_map<uint64_t, Submitted> m_submitted;
+    uint32_t m_submission_window = 0U;
 };
 
 GameServer::GameServer(

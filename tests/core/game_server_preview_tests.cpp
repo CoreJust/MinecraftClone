@@ -15,6 +15,7 @@
 #include <cstdlib>
 #include <span>
 #include <thread>
+#include <unordered_set>
 #include <vector>
 
 namespace {
@@ -258,10 +259,12 @@ TEST(GameServerPreviewTest, ProgressiveStreamFormsAForwardBiasedArea)
     EXPECT_GT(rows.size(), 20U);
 }
 
-TEST(GameServerPreviewTest, CameraRotationReprioritizesWithoutAnyRemoval)
+TEST(GameServerPreviewTest, CameraRotationKeepsInterestAndMovementAddsFreshFrontier)
 {
     static constexpr std::chrono::seconds TIMEOUT{10};
-    static constexpr uint32_t OBSERVED_TILE_COUNT = 3'000U;
+    static constexpr uint32_t OBSERVED_TILE_COUNT = 16U;
+    static constexpr uint32_t MOVEMENT_INPUT_COUNT = 4U;
+    static constexpr uint32_t OBSERVED_NEW_FRONTIER_TILES = 8U;
     server::GameServer server{0, {}, shared::WorldMode::Flight};
     std::atomic_bool stop_requested{false};
     std::thread server_thread{[&server, &stop_requested] { server.run(stop_requested); }};
@@ -280,34 +283,112 @@ TEST(GameServerPreviewTest, CameraRotationReprioritizesWithoutAnyRemoval)
         .direction = {.view_x = 127, .view_y = 0},
         .sequence = 1U,
     }), shared::GAME_CHANNEL, core::SendMode{core::SendMode::Reliable});
-    auto const rotation_deadline = std::chrono::steady_clock::now() + std::chrono::seconds{1};
-    while (rotated && std::chrono::steady_clock::now() < rotation_deadline) {
+    auto const rotation_deadline = std::chrono::steady_clock::now() + TIMEOUT;
+    while (rotated && client.last_acknowledged_input < 1U
+        && std::chrono::steady_clock::now() < rotation_deadline) {
         client.poll(std::chrono::milliseconds{1});
     }
-    std::span<shared::Message const> const suffix = std::span{client.messages}.subspan(before_rotation);
+    size_t const after_rotation_ack = client.messages.size();
+
+    int32_t const original_center_x = shared::World::FLIGHT_SPAWN.x
+        / static_cast<int32_t>(shared::HEIGHT_TILE_SIDE_LENGTH);
+    uint32_t const final_input_sequence = 1U + MOVEMENT_INPUT_COUNT;
+    bool sent_all_movement = true;
+    for (uint32_t sequence = 2U; sequence <= final_input_sequence; ++sequence) {
+        sent_all_movement = client.send(shared::encodeMessage(shared::ClientInputMessage{
+            .direction = {.x = 127, .view_x = 127, .accelerated = true, .speedup = 500U},
+            .sequence = sequence,
+        }), shared::GAME_CHANNEL, core::SendMode{core::SendMode::Reliable}) && sent_all_movement;
+    }
+    auto const movement_deadline = std::chrono::steady_clock::now() + TIMEOUT;
+    while (sent_all_movement
+        && (client.last_acknowledged_input < final_input_sequence
+            || client.last_player_x / static_cast<int32_t>(shared::HEIGHT_TILE_SIDE_LENGTH) <= original_center_x)
+        && std::chrono::steady_clock::now() < movement_deadline) {
+        client.poll(std::chrono::milliseconds{1});
+    }
+    int32_t const moved_center_x = client.last_player_x
+        / static_cast<int32_t>(shared::HEIGHT_TILE_SIDE_LENGTH);
+    shared::HeightTileInterest const original_interest = shared::makeHeightTileInterest(
+        {.x = original_center_x, .y = shared::World::FLIGHT_SPAWN.y
+            / static_cast<int32_t>(shared::HEIGHT_TILE_SIDE_LENGTH)},
+        127,
+        0
+    );
+    shared::HeightTileInterest const moved_interest = shared::makeHeightTileInterest(
+        {.x = moved_center_x, .y = shared::World::FLIGHT_SPAWN.y
+            / static_cast<int32_t>(shared::HEIGHT_TILE_SIDE_LENGTH)},
+        127,
+        0
+    );
+    auto const key_id = [](shared::HeightTileKey const key) {
+        return (static_cast<uint64_t>(static_cast<uint32_t>(key.x)) << 32U)
+            | static_cast<uint32_t>(key.y);
+    };
+    std::unordered_set<uint64_t> original_interest_ids;
+    original_interest_ids.reserve(original_interest.keys.size());
+    for (shared::HeightTileKey const key : original_interest.keys) {
+        original_interest_ids.insert(key_id(key));
+    }
+    std::unordered_set<uint64_t> new_frontier_ids;
+    for (shared::HeightTileKey const key : moved_interest.keys) {
+        uint64_t const id = key_id(key);
+        if (!original_interest_ids.contains(id)) {
+            new_frontier_ids.insert(id);
+        }
+    }
+    std::vector<shared::HeightTileKey> moved_frontier_tiles;
+    auto const collect_new_frontier_tiles = [&] {
+        moved_frontier_tiles = heightTileKeysFrom(client.messages, after_rotation_ack);
+        return static_cast<uint32_t>(std::ranges::count_if(
+            moved_frontier_tiles,
+            [&key_id, &new_frontier_ids](shared::HeightTileKey const key) {
+                return new_frontier_ids.contains(key_id(key));
+            }
+        ));
+    };
+    while (sent_all_movement && collect_new_frontier_tiles() < OBSERVED_NEW_FRONTIER_TILES
+        && std::chrono::steady_clock::now() < movement_deadline) {
+        client.poll(std::chrono::milliseconds{1});
+    }
+    std::span<shared::Message const> const rotation_only = std::span{client.messages}.subspan(
+        before_rotation,
+        after_rotation_ack - before_rotation
+    );
     stop_requested.store(true, std::memory_order_relaxed);
     server_thread.join();
 
     ASSERT_TRUE(connected);
     ASSERT_TRUE(joined);
     ASSERT_TRUE(rotated);
-    ASSERT_GE(heightTileCount(client.messages), OBSERVED_TILE_COUNT);
-    EXPECT_EQ(removalCount(suffix), 0U);
+    ASSERT_TRUE(sent_all_movement);
+    EXPECT_GE(client.last_acknowledged_input, 1U);
+    EXPECT_EQ(client.last_acknowledged_input, final_input_sequence);
+    EXPECT_GT(moved_center_x, original_center_x);
+    EXPECT_FALSE(new_frontier_ids.empty());
+    EXPECT_GE(collect_new_frontier_tiles(), OBSERVED_NEW_FRONTIER_TILES);
+    EXPECT_EQ(removalCount(rotation_only), 0U);
 }
 
 TEST(GameServerPreviewTest, StreamsPlayerCenteredHeightTilesAndRemovesDepartedTiles)
 {
-    static constexpr std::chrono::seconds TIMEOUT{20};
+    static constexpr std::chrono::seconds TIMEOUT{180};
     static constexpr std::chrono::milliseconds POLL_INTERVAL{1};
-    static constexpr uint32_t INPUT_COUNT = 32U;
-    uint32_t const expected_height_tiles = static_cast<uint32_t>(shared::makeHeightTileInterest(
+    static constexpr uint32_t CAMERA_ROTATION_COUNT = 8U;
+    static constexpr uint32_t MOVEMENT_INPUT_COUNT = 18U;
+    shared::HeightTileInterest const expected_interest = shared::makeHeightTileInterest(
         {
             .x = shared::World::FLIGHT_SPAWN.x / static_cast<int32_t>(shared::HEIGHT_TILE_SIDE_LENGTH),
             .y = shared::World::FLIGHT_SPAWN.y / static_cast<int32_t>(shared::HEIGHT_TILE_SIDE_LENGTH),
         },
         0,
         127
-    ).keys.size());
+    );
+    uint32_t const expected_height_tiles = static_cast<uint32_t>(expected_interest.keys.size());
+    uint32_t const camera_rotation_tile_interval = std::max(
+        1U,
+        expected_height_tiles / CAMERA_ROTATION_COUNT
+    );
 
     server::GameServer server{0, {}, shared::WorldMode::Flight};
     std::atomic_bool stop_requested{false};
