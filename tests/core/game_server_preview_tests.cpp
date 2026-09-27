@@ -434,7 +434,7 @@ TEST(GameServerPreviewTest, StreamsPlayerCenteredHeightTilesAndRemovesDepartedTi
     bool const received_one_descriptor = descriptor_count == 1U;
 
     bool sent_all_inputs = true;
-    for (uint32_t sequence{1U}; sequence <= INPUT_COUNT; ++sequence) {
+    for (uint32_t sequence{1U}; sequence <= MOVEMENT_INPUT_COUNT; ++sequence) {
         sent_all_inputs = client.send(shared::encodeMessage(shared::ClientInputMessage{
             .direction = {.x = 127U},
             .sequence = sequence,
