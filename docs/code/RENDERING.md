@@ -46,6 +46,16 @@ priority only, and workers build meshes outside the presentation callback.
 covers flat tiles, exposed height differences, neighbor seams, and generated
 column tops.
 
+`ChunkMeshLodBuilder` creates bounded `Fine` and `Coarse` variants from a
+revisioned mesh. Coarse quads merge adjacent coplanar faces only when direction
+and material match; both variants retain content identity and full-chunk bounds.
+`MeshLodSelector` accepts caller-supplied squared-distance thresholds, applies
+hysteresis, and falls back to an available variant. The caller derives the
+cutoffs; this API does not hardcode a chunk distance. Building is explicit, so
+per-frame selection does not remesh. Invalid face directions are rejected
+before grid indexing. [`chunk_mesh_lod_tests.cpp`](../../tests/core/chunk_mesh_lod_tests.cpp)
+covers these contracts.
+
 ## Text and GUI boundary
 
 `TextRenderer` lays out colored glyph instances in screen or world space.

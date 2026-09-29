@@ -140,7 +140,7 @@
         "vcpkg-configuration.json",
         "vcpkg.json"
       ],
-      "sources_sha256": "03faa28ceda8047dcb27f240b22ceaf3052e42eeeab7c7b5b4e3b10a6105fc3d"
+      "sources_sha256": "45bc2f4581ff17034a6dd46da76aad71e364afaec6dbc6eaf67b59d6bdb9039c"
     },
     {
       "guide": "docs/code/CORE.md",
@@ -183,6 +183,7 @@
         "src/client/BotClient.cpp",
         "src/client/Camera.cpp",
         "src/client/CameraController.cpp",
+        "src/client/ClientAudio.cpp",
         "src/client/DepthFormat.cpp",
         "src/client/FrameScheduler.cpp",
         "src/client/GameClient.cpp",
@@ -194,6 +195,7 @@
         "src/client/include/client/Camera.hpp",
         "src/client/include/client/CameraController.hpp",
         "src/client/include/client/CameraObstruction.hpp",
+        "src/client/include/client/ClientAudio.hpp",
         "src/client/include/client/FrameScheduler.hpp",
         "src/client/include/client/GameClient.hpp",
         "src/client/include/client/PlayerClient.hpp",
@@ -212,6 +214,7 @@
         "src/shared/include/shared/scenario/Scenario.hpp",
         "src/shared/include/shared/world/CanonicalWorld.hpp",
         "src/shared/include/shared/world/Chunk.hpp",
+        "src/shared/include/shared/world/ChunkMeshLod.hpp",
         "src/shared/include/shared/world/ChunkMesher.hpp",
         "src/shared/include/shared/world/HeightTileInterest.hpp",
         "src/shared/include/shared/world/HeightTileSurfaceMesher.hpp",
@@ -226,6 +229,7 @@
         "src/shared/world/CanonicalWorld.cpp",
         "src/shared/world/CanonicalWorldScript.hpp.in",
         "src/shared/world/Chunk.cpp",
+        "src/shared/world/ChunkMeshLod.cpp",
         "src/shared/world/ChunkMesher.cpp",
         "src/shared/world/HeightTileInterest.cpp",
         "src/shared/world/HeightTileScript.hpp.in",
@@ -235,6 +239,7 @@
         "src/shared/world/World.cpp",
         "src/shared/world/WorldGeneration.cpp",
         "src/shared/world/WorldGenerationScheduler.cpp",
+        "tests/core/chunk_mesh_lod_tests.cpp",
         "tests/core/chunk_mesher_tests.cpp",
         "tests/core/chunk_tests.cpp",
         "tests/core/corelang_scenario_tests.cpp",
@@ -252,11 +257,11 @@
         "tests/core/world_generation_scheduler_tests.cpp",
         "tests/core/world_generation_tests.cpp"
       ],
-      "sources_sha256": "2419fa772702ed5a8e9710d93f9b0ebcf353e87c9a5ad716fa2a579a461bc69d"
+      "sources_sha256": "9206221ab7a8b9958a8077859dd94b6b3a785a354b0ef80af62f7a4243c3e5f2"
     },
     {
       "guide": "docs/code/RENDERING.md",
-      "guide_sha256": "8bbd9c503f61666578d535e940d1f519f031bac78b08333c3acec49e9ee36144",
+      "guide_sha256": "4e94fed2623111006ec316276f79a2f87b6087fadfd0b39f2d0099179a9e0a1b",
       "id": "rendering",
       "sources": [
         "src/client/CMakeLists.txt",
@@ -290,9 +295,11 @@
         "src/client/render/shaders/trivial.frag",
         "tests/client/camera_controller_tests.cpp",
         "tests/client/camera_tests.cpp",
+        "tests/client/client_audio_tests.cpp",
         "tests/client/debug_hud_tests.cpp",
         "tests/client/depth_format_tests.cpp",
         "tests/client/frame_scheduler_tests.cpp",
+        "tests/client/game_client_audio_tests.cpp",
         "tests/client/game_client_prediction_tests.cpp",
         "tests/client/goldens/README.md",
         "tests/client/goldens/earlydev-0.1.0-snapshot-4-third-person-platform-v3.ppm",
@@ -313,7 +320,7 @@
         "tests/testsupport/image_comparison_tests.cpp",
         "tests/testsupport/include/testsupport/ImageComparison.hpp"
       ],
-      "sources_sha256": "d86cfd4b975e68c09923d5255e963c67069094184b966265a76e56a7956cde02"
+      "sources_sha256": "0b1c16fab50dba03efdda8b54e960577d10dd27ffada6b20e0e74d1d765c5e13"
     }
   ],
   "version": 1
