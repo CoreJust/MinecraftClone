@@ -2,7 +2,7 @@
   "modules": [
     {
       "guide": "docs/ACCEPTANCE.md",
-      "guide_sha256": "8c6f34ee1e4fd73a21703f7e40091ddf65fde641a40ce614f71022ac97775493",
+      "guide_sha256": "bd4642e26d4926eb91454edd4985425e487985b354bf9913e0009654e085dd3f",
       "id": "acceptance",
       "sources": [
         "src/acceptance/CMakeLists.txt",
@@ -31,7 +31,7 @@
         "tests/acceptance/runtime_cli_tests.cmake",
         "tests/acceptance/scenario_runner_tests.cpp"
       ],
-      "sources_sha256": "dede504f1bb49b99414faa37ca08cdacc2f4d5f805cf8b387cb69eff5ba2d9fd"
+      "sources_sha256": "7d483f336ce506a4fda27d52236f62a9500693d03ac729350a374c9b65c2d696"
     },
     {
       "guide": "docs/code/ANDROID.md",
@@ -155,7 +155,7 @@
         "vcpkg-configuration.json",
         "vcpkg.json"
       ],
-      "sources_sha256": "3d2670180de62cf3662ac6c9671af395bcffa27d49854703cba23c1335f208cf"
+      "sources_sha256": "3a7d03c478412d41ddb5693b5d5f3cc93772e3fc1df808d87bf34278d80a4224"
     },
     {
       "guide": "docs/code/CORE.md",
@@ -337,11 +337,13 @@
         "tests/client/shader_assets_tests.cpp",
         "tests/client/stone_renderer_tests.cpp",
         "tests/client/text_renderer_tests.cpp",
+        "tests/testsupport/AdverseTransport.cpp",
         "tests/testsupport/ImageComparison.cpp",
         "tests/testsupport/image_comparison_tests.cpp",
+        "tests/testsupport/include/testsupport/AdverseTransport.hpp",
         "tests/testsupport/include/testsupport/ImageComparison.hpp"
       ],
-      "sources_sha256": "9022325cf2c5ee8dd16de0162b310da736bb3a0a27f926b3d5f7d316eaee4908"
+      "sources_sha256": "675898cda42cdbaf8352c73df042e432151358687d44996fc0f9e919d924b727"
     }
   ],
   "version": 1

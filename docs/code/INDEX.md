@@ -329,6 +329,8 @@ Files:
 - [`tests/client/shader_assets_tests.cpp`](../../tests/client/shader_assets_tests.cpp)
 - [`tests/client/stone_renderer_tests.cpp`](../../tests/client/stone_renderer_tests.cpp)
 - [`tests/client/text_renderer_tests.cpp`](../../tests/client/text_renderer_tests.cpp)
+- [`tests/testsupport/AdverseTransport.cpp`](../../tests/testsupport/AdverseTransport.cpp)
 - [`tests/testsupport/ImageComparison.cpp`](../../tests/testsupport/ImageComparison.cpp)
 - [`tests/testsupport/image_comparison_tests.cpp`](../../tests/testsupport/image_comparison_tests.cpp)
+- [`tests/testsupport/include/testsupport/AdverseTransport.hpp`](../../tests/testsupport/include/testsupport/AdverseTransport.hpp)
 - [`tests/testsupport/include/testsupport/ImageComparison.hpp`](../../tests/testsupport/include/testsupport/ImageComparison.hpp)

@@ -9,6 +9,8 @@ file(TO_CMAKE_PATH "${CoreCpp_DIR}" MC_CORECPP_DIR)
 file(TO_CMAKE_PATH "${CoreProject2026_DIR}" MC_COREPROJECT2026_DIR)
 
 add_library(mc_test_support STATIC
+    testsupport/AdverseTransport.cpp
+    testsupport/include/testsupport/AdverseTransport.hpp
     testsupport/ImageComparison.cpp
     testsupport/include/testsupport/ImageComparison.hpp
 )
@@ -234,7 +236,7 @@ if(MC_BUILD_CLIENT AND NOT ANDROID)
     )
 endif()
 
-gtest_discover_tests(mc_tests)
+gtest_discover_tests(mc_tests PROPERTIES TIMEOUT 120)
 
 if(MC_BUILD_CLIENT AND NOT ANDROID)
     find_program(MC_SPIRV_VAL_EXECUTABLE

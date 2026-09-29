@@ -58,3 +58,19 @@ bounded 1,024-mesh startup threshold; that short capture does not prove that the
 entire S7 radius-256 disk has finished generating and meshing. Full-radius Mac
 visual/runtime evidence remains a coordinated batch gate and is not substituted
 by unit, offscreen, or renderer-only checks.
+
+The S7 adverse-network acceptance runs two production `GameClient` instances
+through a test-only ENet relay into a production `GameServer`. Each client has
+independent seeded client-to-server and server-to-client schedules for latency,
+jitter, loss, duplication, reordering, bounded queues, freezes, and recovery
+bursts. The impairment window ends at a recorded logical tick; normal delivery
+then gives delayed authoritative state a bounded recovery period. The GoogleTest
+XML property records the seed, per-direction traffic and schedule, server
+authority, relay-delivered stale-input rejection, direct stale-revision snapshot
+probes on both clients, queue bounds, and final convergence. Separate checks
+cover a 15-second delivery freeze and reconnecting after server replacement.
+The production reconnect test supplies the client's existing stop/deadline hooks,
+so timeout cleanup can stop and join while disconnected or awaiting `JoinResponse`;
+a short regression checks cancellation while disconnected. Each discovered
+`mc_tests` case also has a 120-second CTest timeout. The relay is test-only and
+does not alter shipping physics or rendering timing.

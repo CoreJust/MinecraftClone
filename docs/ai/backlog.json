@@ -8657,7 +8657,7 @@
     "id": "MC-AI-0247",
     "title": "Add deterministic adverse-network S7 acceptance",
     "kind": "chore",
-    "status": "backlog",
+    "status": "done",
     "priority": "P1",
     "route": "luna",
     "milestone": "ED-010-S7",
@@ -8665,30 +8665,32 @@
       "MC-AI-0007"
     ],
     "acceptance": "A seeded test-only bidirectional transport impairment layer independently models latency, jitter, packet loss, bounded freezes with recovery bursts, reordering and duplication. Multi-client S7 cases prove authority, bounded queues/catch-up, stale-state rejection and eventual convergence while recording seed, schedule, traffic and convergence facts.",
-    "evidence": "",
+    "evidence": "Client-enabled CMake configuration and the mc_tests target build passed. The focused CTest selection passed 6/6 AdverseNetworkTest cases, including the original five and a disconnected-run cancellation regression; the production two-client relay case passed in 13.10 s, and remote-server replacement/rejoin passed in 4.20 s plus a 4.21 s repeat. Two real GameClient instances ran through a test-only ENet relay into a production GameServer with seeded bidirectional schedules, checking impairment counters, recovery, queue bounds, authority rejection of relay-delivered stale inputs, and final convergence. Stale snapshot rejection is separately checked with a direct older-revision probe through the exposed GameClient::applyServerPosition seam in the AdverseGameClient test subclass on both clients, asserting unchanged state and revision; this is not network-delivered stale-snapshot coverage. The reconnect run uses the existing should_stop/deadline hooks so failure cleanup can join while disconnected or awaiting JoinResponse; a 100 ms hook deadline regression returns disconnected in 1.29 s. Each discovered mc_tests case has a 120 s CTest timeout. ai_docs.py check and ai_check.py --fast passed, with only the allowlisted stale snapshot-date and dirty-candidate publisher diagnostics.",
     "blocker": "",
-    "owner": "",
+    "owner": "Codex",
     "level": "basic",
     "parent": "MC-AI-0038",
     "motivation": "Exercise client-server authority under realistic degraded links without contaminating production timing paths.",
     "context": "Impairments are injected at bounded test transport/scheduler boundaries, never by sleeps in shipping physics or rendering.",
     "complexity": "high",
     "created_at": "2026-09-20",
-    "resolved_at": "",
-    "resolution_changes": "",
+    "resolved_at": "2026-09-29",
+    "resolution_changes": "Added the deterministic test-only AdverseTransport ENet relay and production two-client adverse-network acceptance suite; registered the support source, documented its contract, refreshed the code source-state registry, and used an existing GameClient test seam for direct stale-revision probes without adding production benchmark hooks. Bounded reconnect-test cleanup with the existing GameClient should_stop/deadline hooks and added a disconnected cancellation regression plus per-case CTest timeout.",
     "plan": [
       "Implement deterministic directional scheduling and machine-readable receipts.",
       "Cover loss, fixed/unstable ping, freezes, reorder and duplication individually and in selected combinations."
     ],
     "product_changes": [],
-    "code_changes": [],
+    "code_changes": [
+      "Added testsupport/AdverseTransport.hpp/.cpp and tests/acceptance/adverse_network_tests.cpp; registered test support in tests/CMakeLists.txt; recorded seeded per-direction schedule and traffic, authority, queue, direct stale-revision probe, and convergence facts; bounded reconnect test cleanup and added disconnected-stop regression plus CTest timeout."
+    ],
     "baseline_commit": "",
     "commits": [],
-    "finalized": false,
-    "retrospective": "",
-    "docs_review": "",
-    "environment_review": "",
-    "backlog_review": ""
+    "finalized": true,
+    "retrospective": "A prior source-only branch carried incidental receive-count benchmark hooks; the relay itself needs no production hook, so stale-snapshot acceptance now directly probes the existing revision seam while stale-input rejection remains end-to-end over ENet.",
+    "docs_review": "docs/ACCEPTANCE.md distinguishes relay-delivered stale-input rejection from direct stale-snapshot probes; ai_docs.py refresh and check passed.",
+    "environment_review": "Configured and built the client-enabled macOS mc_tests target; the focused CTest selection discovered and passed all six AdverseNetworkTest cases, including the bounded disconnected-stop regression, with a 120-second timeout applied to each discovered test. The first headless cache listed zero matching tests and was not counted; final evidence is from MC_BUILD_CLIENT=ON.",
+    "backlog_review": "No sibling task was edited; MC-AI-0248 remains independently in backlog with its dependency on this task."
   },
   {
     "id": "MC-AI-0248",
