@@ -38,12 +38,10 @@ Shader assets are borrowed: desktop `InstalledShaderAssets` reads the installed
 `shaders/` directory and Android `AndroidShaderAssets` reads APK assets. Both
 accept bare `.spv` names only; no source-tree fallback is allowed.
 
-The arena grows to the 45-radius cap; restoration shares the frame deadline.
-Gameplay bounds uploads and rendering to 8 ms, deferring only the overdue tile
-for retry. Stone
-uses the attributed texture with fog and gradient sky. Frustum culling affects
-drawing only; residency is camera-independent. View/movement affect generation
-priority only, and workers build meshes outside the presentation callback.
+The arena grows with streamed residency; restoration shares the frame deadline.
+Gameplay bounds uploads and rendering to 8 ms, deferring overdue tiles.
+Stone uses the attributed texture with fog and gradient sky. Frustum culling
+affects drawing only; workers build meshes outside presentation.
 [`height_tile_surface_mesher_tests.cpp`](../../tests/core/height_tile_surface_mesher_tests.cpp)
 covers flat tiles, exposed height differences, neighbor seams, and generated
 column tops.
@@ -70,6 +68,9 @@ scene without depth. `DebugHudState` formats five lines, presenting gameplay Z
 as user-facing height. `VulkanRenderer` supports independent GUI/world labels.
 
 The renderer counts only frames whose `PresentationContext::complete` succeeds.
+`VulkanRenderer::validationErrorCount()` forwards the presentation instance's
+validation error total for smoke checks; enable validation when interpreting
+the count.
 
 ## Capture, input, and validation
 
@@ -105,17 +106,11 @@ readback, input, and the default-on HUD.
 S5 offscreen acceptance verifies textured stone, sky, deterministic frames,
 mesh replacement, validation, and remote-player altitude.
 
-The benchmark fails if requested immediate presentation is unavailable. Evidence
-includes mode, resolution, scene, HUD, rate, p50/p95/p99/max, stutters, and CPU
-phase timings, but no GPU timestamps.
-Release disables validation; `--hud` supports paired runs. The S6 benchmark uses
-the maximum 90-by-90 capacity as a rendering stress case, evicts and uploads
-bounded edge work across all axes, and includes streaming work in frame timings
-to expose stalls. Normal gameplay uses the smaller directional ellipse documented
-in [GAMEPLAY.md](GAMEPLAY.md).
-It requires the nominal 120 Hz presentation rate within a one-percent host-clock
-measurement tolerance and p99 at or below 10 ms, including the display wait and
-scheduler jitter around the 8.33 ms deadline.
+The benchmark requires immediate presentation and records mode, resolution,
+scene, HUD, rate, p50/p95/p99/max, stutters, and CPU phases, but no GPU
+timestamps. Release disables validation; `--hud` supports paired runs. The S6
+90-by-90 scene stresses bounded edge uploads. Its historical 120 Hz and p99
+targets include display wait and scheduler jitter.
 
 Visible benchmark and capture modes preserve requested framebuffer pixels.
 Bounded GLFW setup checks logical resizing before creating a `PresentationContext`;

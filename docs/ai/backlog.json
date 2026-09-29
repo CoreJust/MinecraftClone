@@ -8361,38 +8361,37 @@
     "id": "MC-AI-0240",
     "title": "Expose presentation validation diagnostics to renderer tests",
     "kind": "feature",
-    "status": "backlog",
+    "status": "done",
     "priority": "P1",
     "route": "luna",
     "milestone": "ED-010-S7",
     "depends_on": [],
     "acceptance": "CoreCpp exposes a stable presentation validation-error count without leaking implementation ownership; MinecraftClone forwards it through VulkanRenderer; a presentation smoke regression asserts zero errors after a resource-recreation path; package consumers on supported platforms remain compatible.",
-    "evidence": "",
+    "evidence": "Installed S7 package metadata confirmed clean/exact CoreCpp b14b018c1732e6ac1e9f37ab75c85f778fbcdcba and CoreProject2026 8ccca886282468c0d5f400b0557e985eae000a85, with the package requiring the same CoreCpp revision. MinecraftClone configured with that prefix and matching arm64-osx vcpkg install and built mc_renderer_smoke. Terminal.app ran RendererSmokeTest.GrowsStoneFaceArenaWithoutBreakingPresentation: 1 test passed in 847 ms, exit status 0 (2026-09-29T20:05:54Z); the test process was absent on readback. CoreCpp needed no changes because the pinned revision already provides validationErrorCount().",
     "blocker": "",
-    "owner": "",
+    "owner": "Codex",
     "level": "basic",
     "parent": "MC-AI-0038",
     "motivation": "Renderer smoke tests need to prove validation-clean presentation resource changes, not only successful rendering.",
-    "context": "MC-AI-0239 verifies presentation arena growth under validation, but CoreCpp PresentationContext currently hides its VulkanInstance validation error counter. The generic diagnostic must be exposed in CoreCpp before MinecraftClone can assert it after presentation frames.",
+    "context": "MC-AI-0239 verifies presentation arena growth under validation. The exact CoreCpp revision pinned by MinecraftClone, b14b018c1732e6ac1e9f37ab75c85f778fbcdcba, already exposes PresentationContext::validationErrorCount(); MinecraftClone does not yet forward that count through VulkanRenderer.",
     "complexity": "medium",
     "created_at": "2026-09-20",
-    "resolved_at": "",
-    "resolution_changes": "",
+    "resolved_at": "2026-09-29",
+    "resolution_changes": "Forwarded the pinned CoreCpp PresentationContext validation diagnostic through VulkanRenderer, documented the renderer contract, and added a zero-validation-error assertion after pre-growth and post-growth presentation. The exact validation-enabled smoke passed in Terminal.app on the host GUI.",
     "plan": [
-      "Clarify acceptance and implementation steps.",
-      "Add a generic read-only presentation validation diagnostic in CoreCpp.",
+      "Verify the exact pinned CoreCpp diagnostic API and installed-package consumer contract.",
       "Forward it through MinecraftClone renderer diagnostics.",
-      "Assert it after a real presentation resource-recreation regression."
+      "Assert zero validation errors after the validation-enabled stone-face arena growth presentation regression."
     ],
     "product_changes": [
       "Renderer tests catch validation-layer errors from future resource changes."
     ],
     "code_changes": [
-      "Add a generic CoreCpp diagnostic API and MinecraftClone forwarding coverage."
+      "Forward the pinned CoreCpp presentation validation count through VulkanRenderer and assert it in the renderer smoke test."
     ],
     "baseline_commit": "",
     "commits": [],
-    "finalized": false,
+    "finalized": true,
     "retrospective": "",
     "docs_review": "",
     "environment_review": "",

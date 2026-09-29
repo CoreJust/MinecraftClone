@@ -162,6 +162,7 @@ public:
     [[nodiscard]] FrameCaptureState captureState() const;
     [[nodiscard]] std::optional<RendererFrameCapture> takeFrameCapture();
     [[nodiscard]] RendererRuntimeInfo runtimeInfo() const;
+    [[nodiscard]] uint32_t validationErrorCount() const noexcept;
 private:
     struct Impl;
     std::unique_ptr<Impl> m_impl;

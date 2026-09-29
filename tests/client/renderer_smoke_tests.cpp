@@ -389,6 +389,7 @@ TEST(RendererSmokeTest, GrowsStoneFaceArenaWithoutBreakingPresentation)
     };
     renderVisibleTile(0);
     renderVisibleTile(static_cast<int32_t>(TILE_COUNT - 1U));
+    EXPECT_EQ(renderer.validationErrorCount(), 0U);
 }
 
 TEST(RendererSmokeTest, FailedStoneFaceArenaGrowthRetriesWithOriginalDeadlineAndRestoresCapacity)

@@ -1450,6 +1450,11 @@ struct VulkanRenderer::Impl final {
         );
     }
 
+    [[nodiscard]] uint32_t validationErrorCount() const noexcept
+    {
+        return m_context->validationErrorCount();
+    }
+
 private:
     [[nodiscard]] HeightTileSlot* heightTileSlot(shared::HeightTileCoordinate const coordinate) noexcept
     {
@@ -3197,6 +3202,11 @@ std::optional<RendererFrameCapture> VulkanRenderer::takeFrameCapture()
 RendererRuntimeInfo VulkanRenderer::runtimeInfo() const
 {
     return m_impl->runtimeInfo();
+}
+
+uint32_t VulkanRenderer::validationErrorCount() const noexcept
+{
+    return m_impl->validationErrorCount();
 }
 
 VulkanOffscreenRenderer::VulkanOffscreenRenderer(
