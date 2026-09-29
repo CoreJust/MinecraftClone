@@ -98,6 +98,92 @@ uint64_t nextHeightTileToken(uint64_t& next_token) noexcept
     return token;
 }
 
+[[nodiscard]]
+std::vector<uint8_t> generateRegionOutput(
+    shared::GenerationJob const& job,
+    shared::TerrainGenerator const& terrain_generator
+)
+{
+    if (!job.region.has_value()) {
+        throw std::runtime_error{"world refinement job is missing its bounded region"};
+    }
+    static constexpr uint32_t SAMPLE_SIDE = 16U;
+    static constexpr uint32_t SAMPLE_COUNT = SAMPLE_SIDE * SAMPLE_SIDE;
+    static constexpr uint32_t SAMPLE_BYTES = sizeof(uint16_t);
+    static constexpr uint32_t REGION_HEADER_BYTES = 3U * sizeof(uint32_t);
+    static constexpr uint32_t REGION_OUTPUT_BYTES = REGION_HEADER_BYTES + SAMPLE_COUNT * SAMPLE_BYTES;
+    if (job.inherited_ancestor_data != nullptr
+        && job.inherited_ancestor_data->size() != REGION_OUTPUT_BYTES) {
+        throw std::runtime_error{"world refinement ancestor has an invalid sample payload"};
+    }
+    std::vector<uint8_t> output(REGION_OUTPUT_BYTES);
+    auto write_header = [&output](uint32_t const offset, uint32_t const value) {
+        for (uint32_t byte = 0U; byte < sizeof(uint32_t); ++byte) {
+            output[offset + byte] = static_cast<uint8_t>(value >> (byte * 8U));
+        }
+    };
+    write_header(0U, static_cast<uint32_t>(job.region->origin_x));
+    write_header(sizeof(uint32_t), static_cast<uint32_t>(job.region->origin_y));
+    write_header(2U * sizeof(uint32_t), job.region->extent);
+    for (uint32_t y = 0U; y < SAMPLE_SIDE; ++y) {
+        for (uint32_t x = 0U; x < SAMPLE_SIDE; ++x) {
+            uint64_t const sample_x = static_cast<uint64_t>(2U * x + 1U)
+                * job.region->extent / (2U * SAMPLE_SIDE);
+            uint64_t const sample_y = static_cast<uint64_t>(2U * y + 1U)
+                * job.region->extent / (2U * SAMPLE_SIDE);
+            uint16_t height = terrain_generator.heightAt(
+                static_cast<int64_t>(job.region->origin_x) + static_cast<int64_t>(sample_x),
+                static_cast<int64_t>(job.region->origin_y) + static_cast<int64_t>(sample_y)
+            );
+            uint32_t const sample_index = y * SAMPLE_SIDE + x;
+            if (job.inherited_ancestor_data != nullptr) {
+                auto const& ancestor = *job.inherited_ancestor_data;
+                auto read_header = [&ancestor](uint32_t const offset) {
+                    uint32_t value = 0U;
+                    for (uint32_t byte = 0U; byte < sizeof(uint32_t); ++byte) {
+                        value |= static_cast<uint32_t>(ancestor[offset + byte]) << (byte * 8U);
+                    }
+                    return value;
+                };
+                uint32_t const ancestor_origin_x = read_header(0U);
+                uint32_t const ancestor_origin_y = read_header(sizeof(uint32_t));
+                uint32_t const ancestor_extent = read_header(2U * sizeof(uint32_t));
+                if (ancestor_extent <= job.region->extent
+                    || ancestor_origin_x > static_cast<uint32_t>(job.region->origin_x)
+                    || ancestor_origin_y > static_cast<uint32_t>(job.region->origin_y)
+                    || static_cast<uint64_t>(ancestor_origin_x) + ancestor_extent
+                        < static_cast<uint64_t>(job.region->origin_x) + job.region->extent
+                    || static_cast<uint64_t>(ancestor_origin_y) + ancestor_extent
+                        < static_cast<uint64_t>(job.region->origin_y) + job.region->extent) {
+                    throw std::runtime_error{"world refinement ancestor does not contain its child"};
+                }
+                uint64_t const offset_x = static_cast<uint64_t>(job.region->origin_x)
+                    + sample_x - ancestor_origin_x;
+                uint64_t const offset_y = static_cast<uint64_t>(job.region->origin_y)
+                    + sample_y - ancestor_origin_y;
+                uint32_t const ancestor_x = std::min<uint32_t>(
+                    SAMPLE_SIDE - 1U,
+                    static_cast<uint32_t>(offset_x * SAMPLE_SIDE / ancestor_extent)
+                );
+                uint32_t const ancestor_y = std::min<uint32_t>(
+                    SAMPLE_SIDE - 1U,
+                    static_cast<uint32_t>(offset_y * SAMPLE_SIDE / ancestor_extent)
+                );
+                uint32_t const ancestor_index = ancestor_y * SAMPLE_SIDE + ancestor_x;
+                uint16_t const inherited_height = static_cast<uint16_t>(ancestor[
+                    REGION_HEADER_BYTES + ancestor_index * SAMPLE_BYTES
+                ]) | static_cast<uint16_t>(static_cast<uint16_t>(ancestor[
+                    REGION_HEADER_BYTES + ancestor_index * SAMPLE_BYTES + 1U
+                ]) << 8U);
+                height = static_cast<uint16_t>((static_cast<uint32_t>(height) + inherited_height) / 2U);
+            }
+            output[REGION_HEADER_BYTES + sample_index * SAMPLE_BYTES] = static_cast<uint8_t>(height);
+            output[REGION_HEADER_BYTES + sample_index * SAMPLE_BYTES + 1U] = static_cast<uint8_t>(height >> 8U);
+        }
+    }
+    return output;
+}
+
 } // namespace
 
 namespace server {
@@ -109,15 +195,19 @@ struct GameServer::HeightTileWorkerPool final {
         core::ClientId client_id;
         uint64_t generation;
         shared::GenerationJob job;
+        bool world_generation = false;
     };
 
     struct Result final {
         core::ClientId client_id;
         uint64_t generation;
         shared::GenerationJob job;
+        bool world_generation = false;
         bool succeeded = false;
         bool cancelled = false;
         shared::HeightTile tile{};
+        shared::Chunk chunk{};
+        std::vector<uint8_t> generation_output;
     };
 
     struct Submitted final {
@@ -168,11 +258,12 @@ struct GameServer::HeightTileWorkerPool final {
     {
         std::lock_guard lock{m_mutex};
         std::erase_if(m_pending, [client_id, generation](Work const& work) {
-            return work.client_id == client_id && work.generation == generation;
+            return !work.world_generation && work.client_id == client_id && work.generation == generation;
         });
         for (auto& [id, submitted] : m_submitted) {
             static_cast<void>(id);
-            if (submitted.work.client_id == client_id && submitted.work.generation == generation) {
+            if (!submitted.work.world_generation && submitted.work.client_id == client_id
+                && submitted.work.generation == generation) {
                 static_cast<void>(submitted.handle.requestCancellation());
             }
         }
@@ -186,7 +277,7 @@ struct GameServer::HeightTileWorkerPool final {
         std::vector<shared::GenerationJob> cancelled;
         std::lock_guard lock{m_mutex};
         std::erase_if(m_pending, [&](Work const& work) {
-            if (work.client_id != client_id || work.generation != generation) {
+            if (work.world_generation || work.client_id != client_id || work.generation != generation) {
                 return false;
             }
             cancelled.push_back(work.job);
@@ -203,7 +294,7 @@ struct GameServer::HeightTileWorkerPool final {
         std::vector<shared::GenerationJob> cancelled;
         std::lock_guard lock{m_mutex};
         std::erase_if(m_pending, [&](Work const& work) {
-            if (work.client_id != client_id || !should_cancel(work)) {
+            if (work.world_generation || work.client_id != client_id || !should_cancel(work)) {
                 return false;
             }
             cancelled.push_back(work.job);
@@ -211,7 +302,8 @@ struct GameServer::HeightTileWorkerPool final {
         });
         for (auto& [id, submitted] : m_submitted) {
             static_cast<void>(id);
-            if (submitted.work.client_id == client_id && should_cancel(submitted.work)) {
+            if (!submitted.work.world_generation && submitted.work.client_id == client_id
+                && should_cancel(submitted.work)) {
                 static_cast<void>(submitted.handle.requestCancellation());
             }
         }
@@ -226,14 +318,14 @@ struct GameServer::HeightTileWorkerPool final {
         std::vector<Work> client_pending;
         client_pending.reserve(m_pending.size());
         for (Work const& work : m_pending) {
-            if (work.client_id == client_id) {
+            if (!work.world_generation && work.client_id == client_id) {
                 client_pending.push_back(work);
             }
         }
         std::ranges::stable_sort(client_pending, order);
         auto reordered = client_pending.begin();
         for (Work& work : m_pending) {
-            if (work.client_id == client_id) {
+            if (!work.world_generation && work.client_id == client_id) {
                 work = std::move(*reordered);
                 ++reordered;
             }
@@ -275,6 +367,24 @@ private:
         return static_cast<uint32_t>(m_pending.size() + m_submitted.size());
     }
 
+    static void executeGenerationJob(Result& result, shared::TerrainGenerator const& generator)
+    {
+        if (result.job.stage == shared::GenerationStage::Materialize) {
+            if (result.job.inherited_ancestor_data != nullptr) {
+                result.chunk = generator.generateChunk(result.job.coordinate, *result.job.inherited_ancestor_data);
+            } else {
+                result.chunk = generator.generateChunk(result.job.coordinate);
+            }
+        } else if (result.job.stage == shared::GenerationStage::HeightTile) {
+            result.tile = generator.generateHeightTile({
+                .x = result.job.coordinate.x,
+                .y = result.job.coordinate.y,
+            });
+        } else {
+            result.generation_output = generateRegionOutput(result.job, generator);
+        }
+    }
+
     void submitPending()
     {
         while (!m_pending.empty() && m_submitted.size() < m_submission_window) {
@@ -284,6 +394,7 @@ private:
                 .client_id = work.client_id,
                 .generation = work.generation,
                 .job = work.job,
+                .world_generation = work.world_generation,
             });
             core::executor::Submission submission = m_executor->trySubmit(
                 [result](core::executor::CancellationToken const token) {
@@ -291,6 +402,10 @@ private:
                         return;
                     }
                     thread_local shared::TerrainGenerator terrain_generator;
+                    if (result->world_generation) {
+                        executeGenerationJob(*result, terrain_generator);
+                        return;
+                    }
                     shared::HeightTileCoordinate const coordinate{
                         .x = result->job.coordinate.x,
                         .y = result->job.coordinate.y,
@@ -326,6 +441,13 @@ GameServer::GameServer(
 )
     : core::Server{core::Address::localhost(port), 4, 2}
     , m_world{world_mode, configuration}
+    , m_physics_world{shared::SparseWorldOptions{
+        .seed = configuration.seed,
+        .revision = configuration.algorithm_version,
+    }}
+    , m_world_generation{32U, configuration.algorithm_version, configuration.seed}
+    , m_terrain_generator{std::make_shared<shared::TerrainGenerator const>()}
+    , m_generation_plan{m_terrain_generator->generationPlan()}
     , m_spawn_points{checkedSpawnPoints(std::move(spawn_points), world_mode)}
 {
     shared::prepareHeightTileInterestOrders();
@@ -449,6 +571,23 @@ uint64_t GameServer::tick(std::chrono::milliseconds const timeout) {
             shared::ClientInputMessage const input = replication.pending_inputs.front();
             replication.pending_inputs.pop_front();
             processInput(replication, input);
+        }
+    }
+    if (m_world.mode() == shared::WorldMode::Flight) {
+        for (PlayerReplication const& replication : m_player_replications) {
+            auto const player = m_world.player(replication.id);
+            if (!player.has_value()) {
+                continue;
+            }
+            shared::ChunkCoordinate const coordinate{
+                .x = player->x / static_cast<int32_t>(shared::Chunk::SIDE_LENGTH),
+                .y = player->y / static_cast<int32_t>(shared::Chunk::SIDE_LENGTH),
+                .z = player->z / static_cast<int32_t>(shared::Chunk::SIDE_LENGTH),
+            };
+            if (shared::WorldBounds::isValidChunk(coordinate)
+                && m_physics_world.residentChunk(coordinate) == nullptr) {
+                static_cast<void>(m_world_generation.requestPlan(coordinate, m_generation_plan));
+            }
         }
     }
     processHeightTileStreams(true);
@@ -1212,7 +1351,31 @@ void GameServer::processHeightTileStreams(bool const admit_deliveries)
         }
         m_next_preview_admission = (m_next_preview_admission + 1U) % stream_count;
     }
+    dispatchWorldMaterialization();
     dispatchHeightTileWork();
+}
+
+void GameServer::dispatchWorldMaterialization()
+{
+    static constexpr uint32_t MAX_DISPATCHED_PER_PUMP = 16U;
+    uint32_t dispatched = 0U;
+    while (dispatched < MAX_DISPATCHED_PER_PUMP && m_height_tile_workers->canAccept()) {
+        auto const job = m_world_generation.takeNext();
+        if (!job.has_value()) {
+            break;
+        }
+        if (!m_height_tile_workers->enqueue({
+                .client_id = 0U,
+                .generation = job->revision,
+                .job = *job,
+                .world_generation = true,
+            })) {
+            static_cast<void>(m_world_generation.complete(job->id, false));
+            static_cast<void>(m_world_generation.takeResult());
+            break;
+        }
+        ++dispatched;
+    }
 }
 
 void GameServer::dispatchHeightTileWork()
@@ -1292,14 +1455,22 @@ void GameServer::dispatchHeightTileWork()
 void GameServer::publishHeightTileResults()
 {
     static constexpr uint32_t MAX_PUBLISHED_TILES_PER_TICK = 2U * shared::HEIGHT_TILE_BATCH_CAPACITY;
-    std::vector<HeightTileWorkerPool::Result> const results = m_height_tile_workers->takeResults(
+    std::vector<HeightTileWorkerPool::Result> results = m_height_tile_workers->takeResults(
         MAX_PUBLISHED_TILES_PER_TICK
     );
-    std::vector<HeightTileWorkerPool::Result> ordered_results = results;
-    std::ranges::stable_sort(ordered_results, [this](
+    std::ranges::stable_sort(results, [this](
         HeightTileWorkerPool::Result const& first,
         HeightTileWorkerPool::Result const& second
     ) {
+        if (first.world_generation != second.world_generation) {
+            return first.world_generation;
+        }
+        if (first.world_generation) {
+            return std::tie(first.job.revision, first.job.coordinate.z, first.job.coordinate.y,
+                first.job.coordinate.x, first.job.id)
+                < std::tie(second.job.revision, second.job.coordinate.z, second.job.coordinate.y,
+                    second.job.coordinate.x, second.job.id);
+        }
         if (first.client_id != second.client_id) {
             return first.client_id < second.client_id;
         }
@@ -1320,7 +1491,53 @@ void GameServer::publishHeightTileResults()
         };
         return priority(first.job) < priority(second.job);
     });
-    for (HeightTileWorkerPool::Result const& result : ordered_results) {
+    for (HeightTileWorkerPool::Result& result : results) {
+        if (result.world_generation) {
+            bool const current_identity = result.job.revision == m_world.configuration().algorithm_version
+                && result.job.seed == m_world.configuration().seed;
+            if (!current_identity || result.cancelled) {
+                static_cast<void>(m_world_generation.complete(result.job.id, false, true));
+                continue;
+            }
+            std::vector<uint8_t> output = result.job.stage == shared::GenerationStage::Pregen
+                    || result.job.stage == shared::GenerationStage::Refinement
+                ? std::move(result.generation_output)
+                : std::vector<uint8_t>{};
+            if (!m_world_generation.complete(result.job.id, result.succeeded, false, std::move(output))) {
+                continue;
+            }
+            auto const generated = m_world_generation.takeResult();
+            if (!generated.has_value() || generated->job.id != result.job.id || !generated->succeeded) {
+                continue;
+            }
+            if (result.job.stage == shared::GenerationStage::Materialize) {
+                if (m_physics_world.publishMaterializedChunk(
+                        std::move(result.chunk), result.job.revision, result.job.seed
+                    )) {
+                    static_cast<void>(m_world_generation.acceptResult(result.job.id));
+                } else {
+                    static_cast<void>(m_world_generation.cancel(
+                        result.job.coordinate, result.job.revision, result.job.seed
+                    ));
+                }
+                continue;
+            }
+            if (result.job.stage == shared::GenerationStage::HeightTile) {
+                if (!m_physics_world.publishPreview(
+                        result.job.coordinate,
+                        std::move(result.tile),
+                        result.job.revision,
+                        result.job.seed
+                    )) {
+                    static_cast<void>(m_world_generation.cancel(
+                        result.job.coordinate, result.job.revision, result.job.seed
+                    ));
+                    continue;
+                }
+            }
+            static_cast<void>(m_world_generation.acceptResult(result.job.id));
+            continue;
+        }
         auto const stream = std::ranges::find(m_preview_streams, result.client_id, &PreviewStream::client_id);
         if (stream == m_preview_streams.end()) {
             continue;

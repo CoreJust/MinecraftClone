@@ -1,11 +1,14 @@
 #pragma once
 
 #include <shared/world/Chunk.hpp>
+#include <shared/world/WorldGenerationScheduler.hpp>
 
 #include <array>
 #include <cstdint>
 #include <memory>
 #include <optional>
+#include <span>
+#include <string_view>
 
 namespace shared {
 
@@ -32,6 +35,7 @@ struct HeightTile final {
 class TerrainGenerator final {
 public:
     TerrainGenerator();
+    explicit TerrainGenerator(std::string_view script_source);
     ~TerrainGenerator();
 
     TerrainGenerator(TerrainGenerator const&) = delete;
@@ -43,15 +47,24 @@ public:
     uint16_t heightAt(int64_t x, int64_t y) const noexcept;
 
     [[nodiscard]]
+    WorldGenerationPlan const& generationPlan() const noexcept;
+
+    [[nodiscard]]
     HeightTile generateHeightTile(HeightTileCoordinate coordinate) const;
 
     [[nodiscard]]
     Chunk generateChunk(ChunkCoordinate coordinate) const;
 
     [[nodiscard]]
+    Chunk generateChunk(ChunkCoordinate coordinate, std::span<uint8_t const> refinement_output) const;
+
+    [[nodiscard]]
     bool usingCoreLang() const noexcept;
 
 private:
+    [[nodiscard]]
+    Chunk chunkFromHeightTile(ChunkCoordinate coordinate, HeightTile const& tile) const;
+
     struct ScriptState;
     std::shared_ptr<ScriptState> m_script;
 };

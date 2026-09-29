@@ -2278,7 +2278,7 @@
     "id": "MC-AI-0058",
     "title": "Integrate staged world generation and materialization scheduling",
     "kind": "feature",
-    "status": "backlog",
+    "status": "done",
     "priority": "P1",
     "route": "sol",
     "milestone": "ED-010-S7",
@@ -2287,27 +2287,31 @@
       "MC-AI-0056"
     ],
     "acceptance": "Shared supports optional world pregen, registered XY refinement extents 16384/4096/1024/256/64 with inherited completed ancestor data, and ordered optional virtual-chunk stages, with materialization only after the final current-revision stage. Script-declared distance/view/movement priorities are validated and bounded; seeds/results are independent of traversal/worker order; queues, jobs, outputs, resident data and uploads are bounded; stale revisions/cancellations are discarded. Failed stages expose an explicit bounded retry request and never auto-retry forever. Tests cover absent stages, ordering/inheritance, determinism, failure/retry limits, cancellation, eviction/regeneration and distant travel using simple air/stone.",
-    "evidence": "",
+    "evidence": "Headless mc_tests: 36 generation and sparse-world tests passed, including cancel-then-resubmit and late-result capacity; server mc library built. Full client test target is blocked by existing GameClientBenchmarkHooks mismatch in unrelated client audio test.",
     "blocker": "",
-    "owner": "",
+    "owner": "codex",
     "level": "basic",
     "parent": "MC-AI-0038",
     "motivation": "Implement the scalable generation mechanism requested for the large world while keeping this minor’s actual content intentionally simple.",
     "context": "Shared owns stage schemas, generation state and bounded priorities; Script declares optional entrypoints and stage configuration; Runtime only executes jobs. Demonstrate with versioned seeded air/stone. Rich geography, structures, decoration and loot are future tasks.",
     "complexity": "high",
     "created_at": "2026-09-09",
-    "resolved_at": "",
-    "resolution_changes": "",
+    "resolved_at": "2026-09-29",
+    "resolution_changes": "Added versioned CoreLang generation plans, ordered region refinements, bounded coordinator and executor scheduling, current-identity SparseWorld publication, and deterministic generation tests.",
     "plan": [
       "Define immutable generation identities, optional entrypoints, region inheritance and virtual-chunk stage state in Shared/Script.",
       "Schedule validated bounded priorities through Runtime executors; publish completed current-revision results atomically and expose explicit bounded retry after failure.",
       "Prove the mechanism with simple seeded air/stone across every refinement extent, stage omission, cancellation, eviction and worker-order permutations."
     ],
-    "product_changes": [],
-    "code_changes": [],
+    "product_changes": [
+      "Flight-world chunks generate through bounded staged jobs with current-revision publication."
+    ],
+    "code_changes": [
+      "Shared generation plan, scheduler, SparseWorld, server executor integration, script, and focused tests."
+    ],
     "baseline_commit": "",
     "commits": [],
-    "finalized": false,
+    "finalized": true,
     "retrospective": "",
     "docs_review": "",
     "environment_review": "",

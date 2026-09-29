@@ -7,10 +7,10 @@ arguments launch a graphical localhost player. Flight joins select free tokens.
 ## Shared simulation
 
 [World.hpp](../../src/shared/include/shared/world/World.hpp) defines the 100 ms
-`TICK`, byte-valued normalized XYZ `Direction`, and players with deterministic
-10,000-subcell remainders plus a validated four-bit palette identity. `World` owns player lookup, spawn, fixed-step
-movement, despawn, and replicated positions. Flat mode retains the 32 by 32
-board and its two-dimensional collision rules. Flight mode uses wrapped XYZ
+`TICK`, normalized XYZ `Direction`, deterministic 10,000-subcell remainders,
+and four-bit palette identity. `World` owns player spawn, movement, despawn,
+and replication. Flat mode retains the 32 by 32 board and collision rules.
+Flight mode uses wrapped XYZ
 coordinates and a fixed clear-air spawn. Movement capabilities independently
 enable flight, collision bypass, or both. Flight without bypass sweeps terrain
 and player bodies with tangential wall sliding; non-flight uses gravity,
@@ -22,7 +22,7 @@ footprint in flight mode, so its origin is limited to cells
 0 through 30 inclusive (0 through 300,000 subcells) on both axes; its
 footprint may end at, but never exceed, the platform edge.
 
-Spawn and movement enforce player separation.
+Spawn and movement enforce separation.
 
 ## Deterministic scenario plans
 
@@ -69,8 +69,8 @@ input per player, rejects joins whose mode or configuration differs from its
 authoritative world, and includes the acknowledged input sequence plus a
 monotonic state revision in each replicated position.
 
-The server rejects duplicate characters, ignores unjoined input, and allows one
-nonzero input per player per tick. A joined disconnect broadcasts removal.
+The server rejects duplicate characters and unjoined input, and allows one
+nonzero input per player per tick. Disconnect broadcasts removal.
 
 Height-tile delivery uses bounded credits and cleanup capacity. Movement
 responses precede bulk terrain, whose dispatch rotates across clients.
@@ -111,18 +111,22 @@ probability 1/50 per input call.
 
 Residency is a camera-independent radius-45 circle. Generation fills radius-3
 and radius-8 circles, then a directional ellipse reaching the outer circle.
-Rate-limited background work completes the circle after the player settles.
-Sixteen stable heading sectors affect priority only; rotation never changes
-residency. The same ordering drives bounded server generation and client meshing.
+Rate-limited background work completes residency after settling. Heading affects
+priority, not residency, and also orders server work and client meshing.
 CoreLang 0.1.2 supplies wave parameters once; C++ evaluates heights and stone.
 Terrain has six base layers, 128-block spacing, and a first-wave spawn.
 HUD acceleration profiles are 2x, 3x, 5x, 8x, 15x, 30x, 80x, 200x, and 500x.
 
 ## S5 chunk data
 
-`Chunk` stores checked 16-cubed Air/Stone IDs and tracks revision/content hash;
-S6 generation uses CoreLang 0.1.2; sparse-world scripts use CoreLang 0.1.3
-through the bounded `SparseWorld`.
+`Chunk` stores checked Air/Stone IDs and content identity. CoreLang terrain and
+staged generation feed bounded `SparseWorld` residency.
+
+## S7 staged generation
+
+`WorldGenerationCoordinator` runs bounded, seeded stages through the server
+executor. Refinements inherit completed ancestor data; materialization publishes
+only for the current revision. Failed stages require explicit bounded retry.
 
 ## S5 exposed-face mesh
 

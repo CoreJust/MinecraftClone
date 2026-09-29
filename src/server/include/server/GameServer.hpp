@@ -2,6 +2,7 @@
 
 #include <shared/net/Message.hpp>
 #include <shared/policy/Policy.hpp>
+#include <shared/world/SparseWorld.hpp>
 #include <shared/world/World.hpp>
 #include <shared/world/WorldGeneration.hpp>
 #include <shared/world/WorldGenerationScheduler.hpp>
@@ -93,6 +94,7 @@ private:
     void processHeightTileStreams(bool admit_deliveries);
     void dispatchHeightTileWork();
     void publishHeightTileResults();
+    void dispatchWorldMaterialization();
     [[nodiscard]] uint32_t admitHeightTileDeliveries(PreviewStream& stream, uint32_t maximum_batches);
     void queueDepartedResidentTiles(PreviewStream& stream);
     void processInput(PlayerReplication& replication, shared::ClientInputMessage input);
@@ -121,6 +123,12 @@ private:
     );
 private:
     shared::World m_world;
+    shared::SparseWorld m_physics_world;
+    shared::WorldGenerationCoordinator m_world_generation;
+    std::shared_ptr<shared::TerrainGenerator const> m_terrain_generator;
+    shared::WorldGenerationPlan m_generation_plan{
+        .chunk_stages = {shared::GenerationStage::Materialize},
+    };
     shared::PolicyHost m_permission_host;
     shared::PolicyCapabilityRegistry m_permission_registry;
     std::optional<shared::PolicyCapabilityKeyId> m_flight_permission;

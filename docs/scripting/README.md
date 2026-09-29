@@ -45,3 +45,11 @@ World generation is also a separate load-time CoreLang source. The packaged
 `scenarios/world/canonical_world.core` calls `terrain_random`, `set_block`, and
 `publish` while building a private 16x16x16 candidate. A failed compile,
 runtime call, or incomplete publication leaves the live world unchanged.
+
+The packaged `height_tile.core` may declare `configure_generation()` at load time.
+Version 1 registers optional world pre-generation, refinement extents from
+16384, 4096, 1024, 256, and 64 blocks, ordered virtual-chunk stages, and a
+unique distance/view/movement priority order. An absent entrypoint uses direct
+materialization. Invalid stages, extents, or duplicate priorities reject the
+plan before generation starts. Stage output is bounded and current revision
+results publish only after the final configured stage.
