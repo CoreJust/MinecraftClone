@@ -9113,5 +9113,41 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0264",
+    "title": "Accept Luna max reasoning effort in staged review receipts",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P1",
+    "route": "luna",
+    "milestone": "ED-010-S7",
+    "depends_on": [],
+    "acceptance": "The review receipt validator accepts a GPT-6 Luna/max approved report bound to the staged candidate while retaining the existing candidate, model, verdict, evidence, and unsupported-effort checks. Focused regression coverage accepts max and continues to reject low.",
+    "evidence": "Focused suite: python3 -m unittest script.tests.test_ai_commit passed 15/15. Documentation inventory refresh and ai_docs.py check passed. ai_check.py --fast passed documentation, backlog, current-plan, diff checks, and the full Python suite. The tests accept max and retain low, model, task, and head rejection coverage; the single staged-candidate review is pending.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0038",
+    "motivation": "The active effort selection requires GPT-6 Luna/max for basic reviews, but the local receipt validator rejects max, preventing the truthful review result from being recorded.",
+    "context": "The Luna launcher supports max. This task changes the receipt effort allowlist and its regression coverage, plus the owning review instructions; candidate identity and other receipt checks remain unchanged.",
+    "complexity": "low",
+    "created_at": "2026-09-29",
+    "resolved_at": "2026-09-29",
+    "resolution_changes": "Accepted max reasoning effort in local staged-review receipts, added focused coverage, and aligned the review instructions with the active effort selection.",
+    "plan": [
+      "Allow the supported max effort in review receipt validation, cover max acceptance and low rejection, and update the review protocol wording."
+    ],
+    "product_changes": [],
+    "code_changes": [
+      "Extended receipt validation and regression coverage for max; updated WORKFLOW.md and COMMITS.md to use the selected review effort."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]

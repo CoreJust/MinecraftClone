@@ -184,7 +184,7 @@ class AiCommitTests(unittest.TestCase):
 
     def test_advanced_effort_reports_are_accepted(self) -> None:
         candidate = self.candidate()
-        for effort in ("medium", "xhigh"):
+        for effort in ("medium", "xhigh", "max"):
             with self.subTest(effort=effort):
                 result = self.record(candidate, effort=effort)
                 self.assertEqual(result.returncode, 0, result.stderr)

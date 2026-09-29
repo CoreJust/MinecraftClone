@@ -178,8 +178,8 @@ def validate_report(report: Any, candidate: dict[str, str]) -> dict[str, Any]:
     model = report.get("model")
     if model not in MODELS:
         raise CommitGateError("review report model must be gpt-6-luna or gpt-6-sol")
-    if report.get("effort") not in {"medium", "high", "xhigh"}:
-        raise CommitGateError("review report effort must be medium, high, or xhigh")
+    if report.get("effort") not in {"medium", "high", "xhigh", "max"}:
+        raise CommitGateError("review report effort must be medium, high, xhigh, or max")
     if report.get("verdict") != "approved":
         raise CommitGateError("review report verdict must be approved")
     if not isinstance(report.get("evidence"), str) or not report["evidence"].strip():
