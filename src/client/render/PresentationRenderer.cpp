@@ -873,7 +873,12 @@ uint32_t recordStoneScene(
     StonePushConstants const push{
         .projection_view = *projection * relative_view,
         .world_origin = world_origin,
-        .camera_fog = { relative_eye, 720.0F },
+        .camera_fog = {
+            relative_eye,
+            static_cast<float>(camera.projection().far_plane > 1'200.0
+                ? camera.projection().far_plane * 0.9
+                : 720.0),
+        },
     };
     if (!draw_ranges.empty()) {
         vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
@@ -1227,6 +1232,12 @@ struct VulkanRenderer::Impl final {
     {
         static_cast<void>(m_camera.setPosition(pose.position));
         static_cast<void>(m_camera.setAngles(pose.angles));
+    }
+
+    void setCamera(CameraPose const pose, CameraProjection const projection) noexcept
+    {
+        setCamera(pose);
+        static_cast<void>(m_camera.setProjection(projection));
     }
 
     void setChunkMesh(shared::ChunkMesh const& mesh)
@@ -3144,6 +3155,11 @@ void VulkanRenderer::clearWorldText() noexcept
 void VulkanRenderer::setCamera(CameraPose const pose) noexcept
 {
     m_impl->setCamera(pose);
+}
+
+void VulkanRenderer::setCamera(CameraPose const pose, CameraProjection const projection) noexcept
+{
+    m_impl->setCamera(pose, projection);
 }
 
 void VulkanRenderer::setChunkMesh(shared::ChunkMesh const& mesh)

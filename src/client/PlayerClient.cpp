@@ -19,6 +19,7 @@
 #include <condition_variable>
 #include <cstdlib>
 #include <fstream>
+#include <limits>
 #include <mutex>
 #include <optional>
 #include <string>
@@ -78,7 +79,7 @@ public:
 
     struct Result final {
         HeightTileKey key;
-        HeightTileHandle tile;
+        PreviewMeshSource source;
         shared::HeightTileSurfaceMesh mesh;
         uint64_t epoch;
     };
@@ -190,10 +191,11 @@ private:
                 job = std::move(*next);
                 m_work.erase(next);
             }
+            shared::HeightTileSurfaceMesh mesh = buildPreviewMesh(job.source);
             Result result{
                 .key = job.key,
-                .tile = job.source.tile,
-                .mesh = buildPreviewMesh(job.source),
+                .source = std::move(job.source),
+                .mesh = std::move(mesh),
                 .epoch = job.epoch,
             };
             std::lock_guard lock{m_mutex};
@@ -229,7 +231,12 @@ void PlayerClient::onConnectionStateReset()
         static_cast<void>(m_renderer.removeHeightTileMesh({ .x = key.x, .y = key.y }));
     }
     m_visible_preview_meshes.clear();
+    m_visible_preview_mesh_bases.clear();
+    m_visible_preview_mesh_seam_bridges.clear();
+    m_preview_mesh_details.clear();
+    m_preview_tile_elevations.clear();
     m_height_tile_center.reset();
+    m_has_lod_viewer_bounds = false;
     m_height_tile_interest.clear();
     m_pending_preview_removals.clear();
     m_pending_preview_removal_set.clear();
@@ -271,7 +278,11 @@ PlayerClient::PlayerClient(
     , m_preview_mesh_workers(std::make_unique<PreviewMeshWorkerPool>())
 {
     beginContinuousLook();
-    static_cast<void>(m_camera.setProjection({ .far_plane = 1'200.0 }));
+    static_cast<void>(m_camera.setProjection({
+        .far_plane = static_cast<double>(shared::HEIGHT_TILE_INTEREST_RADIUS)
+                * shared::HEIGHT_TILE_SIDE_LENGTH
+            + shared::WorldExtent::DEPTH,
+    }));
     m_renderer.setDebugHudEnabled(true);
 }
 
@@ -281,7 +292,10 @@ size_t PlayerHeightTileKeyHash::operator()(shared::HeightTileKey const key) cons
         ^ static_cast<uint32_t>(key.y));
 }
 
-void PlayerClient::refreshHeightTileInterest(shared::Player const& player)
+void PlayerClient::refreshHeightTileInterest(
+    shared::Player const& player,
+    shared::HeightTileSurfaceProjection const projection
+)
 {
     shared::HeightTileKey const center = shared::normalizeHeightTileKey({
         .x = floorDivideByHeightTileSide(player.x),
@@ -290,51 +304,67 @@ void PlayerClient::refreshHeightTileInterest(shared::Player const& player)
     shared::HeightTileHeading const heading = shared::canonicalHeightTileHeading(
         m_interest_heading_x, m_interest_heading_y
     );
-    if (m_height_tile_center == center
-        && m_applied_interest_heading_x == heading.x
-        && m_applied_interest_heading_y == heading.y) {
-        return;
-    }
-    shared::HeightTileInterest const next = shared::makeHeightTileInterest(
-        center, heading.x, heading.y
-    );
-    std::unordered_set<HeightTileKey, PlayerHeightTileKeyHash> next_interest{
-        next.keys.begin(), next.keys.end()
+    double const tile_origin_x = static_cast<double>(center.x) * shared::HEIGHT_TILE_SIDE_LENGTH;
+    double const tile_origin_y = static_cast<double>(center.y) * shared::HEIGHT_TILE_SIDE_LENGTH;
+    double constexpr PLAYER_WIDTH = static_cast<double>(shared::World::PLAYER_WIDTH_SUBCELLS)
+        / static_cast<double>(shared::SUBCELLS_PER_CELL);
+    double constexpr PLAYER_HEIGHT = static_cast<double>(shared::World::PLAYER_HEIGHT_SUBCELLS)
+        / static_cast<double>(shared::SUBCELLS_PER_CELL);
+    double const player_x = shared::playerPositionX(player);
+    double const player_y = shared::playerPositionY(player);
+    double const player_z = shared::playerPositionZ(player);
+    shared::HeightTileSurfaceBounds const viewer_bounds{
+        .min_x_blocks = player_x - tile_origin_x,
+        .max_x_blocks = player_x - tile_origin_x + PLAYER_WIDTH,
+        .min_y_blocks = player_y - tile_origin_y,
+        .max_y_blocks = player_y - tile_origin_y + PLAYER_WIDTH,
+        .min_z_blocks = player_z,
+        .max_z_blocks = player_z + PLAYER_HEIGHT,
     };
-    if (m_height_tile_center == center && m_height_tile_interest == next_interest) {
-        m_applied_interest_heading_x = heading.x;
-        m_applied_interest_heading_y = heading.y;
-        m_preview_mesh_workers->setPriority(center, heading.x, heading.y);
+    bool const center_changed = !m_height_tile_center.has_value() || *m_height_tile_center != center;
+    bool const heading_changed = m_applied_interest_heading_x != heading.x
+        || m_applied_interest_heading_y != heading.y;
+    bool const lod_inputs_changed = !m_has_lod_viewer_bounds
+        || m_preview_mesh_projection != projection
+        || m_lod_viewer_bounds != viewer_bounds;
+    if (!center_changed && !heading_changed && !lod_inputs_changed) {
         return;
     }
-    auto const add = [this](HeightTileKey const key) {
-        if (m_height_tile_interest.insert(key).second) {
-            queuePreviewMesh(key);
+
+    bool membership_changed = false;
+    if (center_changed || heading_changed) {
+        shared::HeightTileInterest const next = shared::makeHeightTileInterest(
+            center, heading.x, heading.y
+        );
+        std::unordered_set<HeightTileKey, PlayerHeightTileKeyHash> const next_interest{
+            next.keys.begin(), next.keys.end()
+        };
+        membership_changed = m_height_tile_interest != next_interest;
+        std::vector<HeightTileKey> departed;
+        departed.reserve(m_height_tile_interest.size());
+        for (HeightTileKey const key : m_height_tile_interest) {
+            if (!next_interest.contains(key)) {
+                departed.push_back(key);
+            }
         }
-    };
-    auto const remove = [this](HeightTileKey const key) {
-        if (m_height_tile_interest.erase(key) > 0U) {
+        for (HeightTileKey const key : departed) {
+            m_height_tile_interest.erase(key);
+            m_preview_mesh_details.erase(key);
+            m_preview_tile_elevations.erase(key);
             queuePreviewRemoval(key);
         }
-    };
-    std::vector<HeightTileKey> departed;
-    departed.reserve(m_height_tile_interest.size());
-    for (HeightTileKey const key : m_height_tile_interest) {
-        if (!next_interest.contains(key)) {
-            departed.push_back(key);
-        }
-    }
-    for (HeightTileKey const key : departed) {
-        remove(key);
-    }
-    for (HeightTileKey const key : next.keys) {
-        if (!m_height_tile_interest.contains(key)) {
-            add(key);
+        for (HeightTileKey const key : next.keys) {
+            if (m_height_tile_interest.insert(key).second) {
+                queuePreviewMesh(key);
+            }
         }
     }
     m_height_tile_center = center;
     m_applied_interest_heading_x = heading.x;
     m_applied_interest_heading_y = heading.y;
+    m_preview_mesh_projection = projection;
+    m_lod_viewer_bounds = viewer_bounds;
+    m_has_lod_viewer_bounds = true;
     std::erase_if(m_pending_preview_meshes, [this](HeightTileKey const key) {
         if (m_height_tile_interest.contains(key)) {
             return false;
@@ -342,11 +372,221 @@ void PlayerClient::refreshHeightTileInterest(shared::Player const& player)
         m_pending_preview_mesh_set.erase(key);
         return true;
     });
-    m_preview_mesh_workers->setPriority(center, heading.x, heading.y);
-    for (HeightTileKey const key : m_preview_mesh_workers->cancelQueuedOutsideInterest(m_height_tile_interest)) {
-        m_preview_mesh_jobs.erase(key);
-        m_preview_mesh_dirty_jobs.erase(key);
+    if (center_changed || heading_changed) {
+        m_preview_mesh_workers->setPriority(center, heading.x, heading.y);
+        if (center_changed || membership_changed) {
+            for (HeightTileKey const key : m_preview_mesh_workers->cancelQueuedOutsideInterest(
+                     m_height_tile_interest
+                 )) {
+                m_preview_mesh_jobs.erase(key);
+                m_preview_mesh_dirty_jobs.erase(key);
+            }
+        }
     }
+    if (center_changed || lod_inputs_changed || membership_changed) {
+        for (HeightTileKey const key : m_height_tile_interest) {
+            HeightTileHandle const tile = heightTileResidency().resident(key);
+            if (!tile) {
+                continue;
+            }
+            auto const previous = m_preview_mesh_details.find(key);
+            std::optional<shared::HeightTileSurfaceDetail> const previous_detail = previous
+                    == m_preview_mesh_details.end()
+                ? std::nullopt
+                : std::optional<shared::HeightTileSurfaceDetail>{ previous->second };
+            shared::HeightTileSurfaceDetail const detail = previewMeshDetail(key, tile);
+            if (!previous_detail.has_value() || *previous_detail != detail) {
+                queuePreviewMesh(key);
+                std::array<HeightTileKey, 4> const adjacent_keys{
+                    offsetHeightTileKey(key, -1, 0),
+                    offsetHeightTileKey(key, 1, 0),
+                    offsetHeightTileKey(key, 0, -1),
+                    offsetHeightTileKey(key, 0, 1),
+                };
+                for (HeightTileKey const adjacent : adjacent_keys) {
+                    queuePreviewMesh(adjacent);
+                }
+            }
+        }
+    }
+}
+
+std::array<HeightTileHandle, 4> PlayerClient::previewMeshNeighbors(HeightTileKey const key) const
+{
+    return {
+        heightTileResidency().resident(offsetHeightTileKey(key, -1, 0)),
+        heightTileResidency().resident(offsetHeightTileKey(key, 1, 0)),
+        heightTileResidency().resident(offsetHeightTileKey(key, 0, -1)),
+        heightTileResidency().resident(offsetHeightTileKey(key, 0, 1)),
+    };
+}
+
+std::array<shared::HeightTileSurfaceDetail, 4> PlayerClient::previewMeshNeighborDetails(
+    HeightTileKey const key
+)
+{
+    std::array<HeightTileKey, 4> const neighbor_keys{
+        offsetHeightTileKey(key, -1, 0),
+        offsetHeightTileKey(key, 1, 0),
+        offsetHeightTileKey(key, 0, -1),
+        offsetHeightTileKey(key, 0, 1),
+    };
+    std::array<HeightTileHandle, 4> const neighbors = previewMeshNeighbors(key);
+    std::array<shared::HeightTileSurfaceDetail, 4> details{
+        shared::HeightTileSurfaceDetail::Fine,
+        shared::HeightTileSurfaceDetail::Fine,
+        shared::HeightTileSurfaceDetail::Fine,
+        shared::HeightTileSurfaceDetail::Fine,
+    };
+    for (size_t index = 0U; index < neighbors.size(); ++index) {
+        if (neighbors[index]) {
+            details[index] = previewMeshDetail(neighbor_keys[index], neighbors[index]);
+        }
+    }
+    return details;
+}
+
+void PlayerClient::refreshVisiblePreviewMesh(
+    HeightTileKey const key,
+    std::chrono::steady_clock::time_point const deadline
+)
+{
+    auto const base = m_visible_preview_mesh_bases.find(key);
+    if (base == m_visible_preview_mesh_bases.end()) {
+        return;
+    }
+    shared::HeightTileSurfaceMesh mesh = base->second;
+    auto const seams = m_visible_preview_mesh_seam_bridges.find(key);
+    if (seams != m_visible_preview_mesh_seam_bridges.end()) {
+        mesh = seams->second.compose(base->second);
+    }
+    if (m_renderer.upsertHeightTileMesh(mesh, deadline)) {
+        m_visible_preview_meshes.insert(key);
+    } else {
+        m_visible_preview_meshes.erase(key);
+        queuePreviewMesh(key);
+    }
+}
+
+void PlayerClient::publishPreviewMesh(
+    HeightTileKey const key,
+    shared::HeightTileSurfaceMesh mesh,
+    std::chrono::steady_clock::time_point const deadline
+)
+{
+    m_visible_preview_mesh_bases.insert_or_assign(key, std::move(mesh));
+    PreviewMeshSeamBridgeSet& own_bridges = m_visible_preview_mesh_seam_bridges[key];
+    std::array<HeightTileKey, MAX_PREVIEW_MESH_NEIGHBOR_UPSERTS_PER_RESULT> const adjacent_keys{
+        offsetHeightTileKey(key, -1, 0),
+        offsetHeightTileKey(key, 1, 0),
+        offsetHeightTileKey(key, 0, -1),
+        offsetHeightTileKey(key, 0, 1),
+    };
+    std::array<PreviewMeshSeamNeighbor, MAX_PREVIEW_MESH_NEIGHBOR_UPSERTS_PER_RESULT> neighbors;
+    for (size_t index = 0U; index < adjacent_keys.size(); ++index) {
+        auto const neighbor_base = m_visible_preview_mesh_bases.find(adjacent_keys[index]);
+        if (neighbor_base != m_visible_preview_mesh_bases.end()) {
+            neighbors[index] = {
+                .mesh = &neighbor_base->second,
+                .bridges = &m_visible_preview_mesh_seam_bridges[adjacent_keys[index]],
+            };
+        }
+    }
+    PreviewMeshSeamNeighborUpdates const updates = updatePreviewMeshSeamBridgesForVisibleNeighbors(
+        m_visible_preview_mesh_bases.at(key),
+        own_bridges,
+        neighbors
+    );
+    std::vector<HeightTileKey> changed_neighbors;
+    changed_neighbors.reserve(updates.count);
+    for (size_t index = 0U; index < updates.changed.size(); ++index) {
+        if (updates.changed[index]) {
+            changed_neighbors.push_back(adjacent_keys[index]);
+        }
+    }
+    refreshVisiblePreviewMesh(key, deadline);
+    for (HeightTileKey const adjacent : changed_neighbors) {
+        refreshVisiblePreviewMesh(adjacent, deadline);
+    }
+}
+
+shared::HeightTileSurfaceDetail PlayerClient::previewMeshDetail(
+    HeightTileKey const key,
+    HeightTileHandle const& tile
+)
+{
+    if (!tile || !m_height_tile_center.has_value() || !m_has_lod_viewer_bounds) {
+        return shared::HeightTileSurfaceDetail::Fine;
+    }
+    std::array<HeightTileHandle, 4> const neighbors = previewMeshNeighbors(key);
+    std::array<uint64_t, 4> neighbor_tokens{};
+    for (size_t index = 0U; index < neighbors.size(); ++index) {
+        if (neighbors[index]) {
+            neighbor_tokens[index] = neighbors[index]->token();
+        }
+    }
+    auto elevation = m_preview_tile_elevations.find(key);
+    if (elevation == m_preview_tile_elevations.end()
+        || elevation->second.tile_token != tile->token()
+        || elevation->second.neighbor_tokens != neighbor_tokens) {
+        uint16_t minimum = std::numeric_limits<uint16_t>::max();
+        uint16_t maximum = 0U;
+        auto const includeHeight = [&minimum, &maximum](uint16_t const height) {
+            minimum = std::min(minimum, height);
+            maximum = std::max(maximum, height);
+        };
+        for (uint16_t const height : tile->heights()) {
+            includeHeight(height);
+        }
+        constexpr uint32_t SIDE = shared::HEIGHT_TILE_SIDE_LENGTH;
+        for (uint32_t offset = 0U; offset < SIDE; ++offset) {
+            if (neighbors[0]) {
+                includeHeight(neighbors[0]->heights()[offset * SIDE + SIDE - 1U]);
+            } else {
+                includeHeight(0U);
+            }
+            if (neighbors[1]) {
+                includeHeight(neighbors[1]->heights()[offset * SIDE]);
+            } else {
+                includeHeight(0U);
+            }
+            if (neighbors[2]) {
+                includeHeight(neighbors[2]->heights()[(SIDE - 1U) * SIDE + offset]);
+            } else {
+                includeHeight(0U);
+            }
+            if (neighbors[3]) {
+                includeHeight(neighbors[3]->heights()[offset]);
+            } else {
+                includeHeight(0U);
+            }
+        }
+        elevation = m_preview_tile_elevations.insert_or_assign(key, PreviewTileElevation{
+            .tile_token = tile->token(),
+            .neighbor_tokens = neighbor_tokens,
+            .minimum = minimum,
+            .maximum = maximum,
+        }).first;
+    }
+    shared::HeightTileSurfaceBounds const surface_bounds = shared::HeightTileSurfaceMesher::boundsForTile(
+        { .x = m_height_tile_center->x, .y = m_height_tile_center->y },
+        { .x = tile->key().x, .y = tile->key().y },
+        elevation->second.minimum,
+        elevation->second.maximum
+    );
+    auto const current = m_preview_mesh_details.find(key);
+    std::optional<shared::HeightTileSurfaceDetail> const current_detail = current
+            == m_preview_mesh_details.end()
+        ? std::nullopt
+        : std::optional<shared::HeightTileSurfaceDetail>{ current->second };
+    shared::HeightTileSurfaceLodPolicy const policy{ m_preview_mesh_projection };
+    shared::HeightTileSurfaceDetail const selected = policy.detailFor(
+        m_lod_viewer_bounds,
+        surface_bounds,
+        current_detail
+    );
+    m_preview_mesh_details.insert_or_assign(key, selected);
+    return selected;
 }
 
 void PlayerClient::queuePreviewMesh(HeightTileKey const key)
@@ -402,14 +642,18 @@ void PlayerClient::processPendingPreviewMeshes(
         }
         m_preview_mesh_jobs.erase(result->key);
         HeightTileHandle const current = heightTileResidency().resident(result->key);
-        if (m_height_tile_interest.contains(result->key) && current == result->tile) {
-            if (!m_renderer.upsertHeightTileMesh(result->mesh, deadline)) {
-                queuePreviewMesh(result->key);
-                break;
-            }
-            m_visible_preview_meshes.insert(result->key);
+        bool source_current = false;
+        bool detail_current = false;
+        if (m_height_tile_interest.contains(result->key) && current) {
+            source_current = current == result->source.tile
+                && previewMeshNeighbors(result->key) == result->source.neighbors
+                && previewMeshNeighborDetails(result->key) == result->source.neighbor_details;
+            detail_current = previewMeshDetail(result->key, current) == result->mesh.detail;
         }
-        if (m_preview_mesh_dirty_jobs.erase(result->key) > 0U || current != result->tile) {
+        if (source_current && detail_current) {
+            publishPreviewMesh(result->key, std::move(result->mesh), deadline);
+        }
+        if (m_preview_mesh_dirty_jobs.erase(result->key) > 0U || !source_current || !detail_current) {
             queuePreviewMesh(result->key);
         }
         if (std::chrono::steady_clock::now() - upload_started >= std::chrono::milliseconds{2}) {
@@ -449,16 +693,14 @@ void PlayerClient::processPendingPreviewMeshes(
             m_pending_preview_meshes.pop_front();
             continue;
         }
+        std::array<HeightTileHandle, 4> const neighbors = previewMeshNeighbors(key);
         PreviewMeshWorkerPool::Job job{
             .key = key,
             .source = {
                 .tile = tile,
-                .neighbors = {
-                    heightTileResidency().resident(offsetHeightTileKey(key, -1, 0)),
-                    heightTileResidency().resident(offsetHeightTileKey(key, 1, 0)),
-                    heightTileResidency().resident(offsetHeightTileKey(key, 0, -1)),
-                    heightTileResidency().resident(offsetHeightTileKey(key, 0, 1)),
-                },
+                .neighbors = neighbors,
+                .detail = previewMeshDetail(key, tile),
+                .neighbor_details = previewMeshNeighborDetails(key),
             },
             .epoch = m_preview_mesh_epoch,
         };
@@ -583,8 +825,13 @@ void PlayerClient::render() {
     }
     std::chrono::steady_clock::time_point const now = std::chrono::steady_clock::now();
     std::chrono::steady_clock::time_point const renderer_deadline = now + std::chrono::milliseconds{ 8 };
+    shared::HeightTileSurfaceProjection const mesh_projection{
+        .vertical_fov_degrees = m_camera.projection().vertical_fov_degrees,
+        .viewport_width_pixels = width > 0U ? width : m_preview_mesh_projection.viewport_width_pixels,
+        .viewport_height_pixels = height > 0U ? height : m_preview_mesh_projection.viewport_height_pixels,
+    };
     if (auto const player = m_world.playerByCharacter(m_local_character)) {
-        refreshHeightTileInterest(*player);
+        refreshHeightTileInterest(*player, mesh_projection);
     }
     processPendingPreviewMeshes(MAX_PREVIEW_MESHES_PER_FRAME, renderer_deadline);
     for (HeightTileChange const change : heightTileResidency().takeChanges(MAX_HEIGHT_TILE_CHANGES_PER_FRAME)) {
@@ -609,6 +856,23 @@ void PlayerClient::render() {
         if (!m_height_tile_interest.contains(key)) {
             static_cast<void>(m_renderer.removeHeightTileMesh({.x = key.x, .y = key.y}));
             m_visible_preview_meshes.erase(key);
+            m_visible_preview_mesh_bases.erase(key);
+            m_visible_preview_mesh_seam_bridges.erase(key);
+            static constexpr std::array<size_t, 4> OPPOSITE_EDGES{ 1U, 0U, 3U, 2U };
+            size_t edge_index = 0U;
+            for (HeightTileKey const adjacent : {
+                     offsetHeightTileKey(key, -1, 0),
+                     offsetHeightTileKey(key, 1, 0),
+                     offsetHeightTileKey(key, 0, -1),
+                     offsetHeightTileKey(key, 0, 1),
+                 }) {
+                auto const seams = m_visible_preview_mesh_seam_bridges.find(adjacent);
+                if (seams != m_visible_preview_mesh_seam_bridges.end()
+                    && seams->second.replace(OPPOSITE_EDGES[edge_index], {})) {
+                    refreshVisiblePreviewMesh(adjacent, renderer_deadline);
+                }
+                ++edge_index;
+            }
         }
     }
     processPendingPreviewMeshes(MAX_PREVIEW_MESHES_PER_FRAME, renderer_deadline);
@@ -676,7 +940,7 @@ void PlayerClient::render() {
     if (m_debug_hud_toggle.update(debug_hud_pressed)) {
         m_renderer.toggleDebugHud();
     }
-    m_renderer.setCamera(m_camera.pose());
+    m_renderer.setCamera(m_camera.pose(), m_camera.projection());
     static_cast<void>(m_renderer.render(
         m_render_data,
         debug_hud_input,

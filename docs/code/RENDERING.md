@@ -21,39 +21,38 @@ World players -> PlayerClient / AndroidPlayerClient -> PlayerRenderData span
 ```
 
 The platform/grid/player scene is legacy flat-world Snapshot 4 coverage. Normal
-Flight clears to sky blue, submits cached exposed faces from the deterministic
-seed-42 16-by-16-by-16 air-and-stone chunk, and uses the original 16-by-16 stone
-texture. Flight uses a local first-person, rear third-person, or front-facing
-third-person camera at the sampled player position. The display camera is
-separate from the look camera that lowers input, so switching views cannot
-reverse movement. First person omits the local single-parallelepiped body;
-both third-person modes draw it. Bodies use the server-replicated four-bit
-palette identity and the 16-color opaque presentation table. Mesh uploads
-occur only when content identity changes. The HUD reports authoritative Flight
-XYZ, including altitude, and camera yaw/pitch/roll in degrees. The camera
-remains right-handed Z-up with zero-to-one depth and the existing depth-tested
-scene policy.
+Flight clears sky blue and draws the deterministic seed-42 16³ air-and-stone
+chunk with the original 16² stone texture. A local first-/third-person camera
+uses the sampled player position; its look camera remains separate from input.
+First person hides the local body; both third-person modes draw it. Replicated
+four-bit palette identities map to 16 opaque colors. Mesh uploads follow content
+identity. The HUD reports authoritative Flight XYZ and camera angles. The
+camera remains right-handed Z-up with zero-to-one depth and depth testing.
 
 Shader assets are borrowed: desktop `InstalledShaderAssets` reads the installed
 `shaders/` directory and Android `AndroidShaderAssets` reads APK assets. Both
 accept bare `.spv` names only; no source-tree fallback is allowed.
 
+S7 streams the camera-independent radius-256 disk (205,861 tiles); frustum only
+culls drawing. LOD uses shortest wrapped player distance and current vertical
+FOV/framebuffer extent, limiting simplified faces to 2 projected pixels² with
+hysteresis. Stale tile/neighbor/detail jobs are discarded. Cached per-edge seam
+spans cover out-of-order uploads; only adjacent meshes with changed spans are
+re-uploaded before draw, without waiting for their jobs. LOD never changes
+terrain or collision. Far plane and fog cover the disk; workers mesh outside
+presentation.
 The arena grows with streamed residency; restoration shares the frame deadline.
 Gameplay bounds uploads and rendering to 8 ms, deferring overdue tiles.
-Stone uses the attributed texture with fog and gradient sky. Frustum culling
-affects drawing only; workers build meshes outside presentation.
 [`height_tile_surface_mesher_tests.cpp`](../../tests/core/height_tile_surface_mesher_tests.cpp)
 covers flat tiles, exposed height differences, neighbor seams, and generated
 column tops.
 
-`ChunkMeshLodBuilder` creates bounded `Fine` and `Coarse` variants from a
-revisioned mesh. Coarse quads merge adjacent coplanar faces only when direction
-and material match; both variants retain content identity and full-chunk bounds.
-`MeshLodSelector` accepts caller-supplied squared-distance thresholds, applies
-hysteresis, and falls back to an available variant. The caller derives the
-cutoffs; this API does not hardcode a chunk distance. Building is explicit, so
-per-frame selection does not remesh. Invalid face directions are rejected
-before grid indexing. [`chunk_mesh_lod_tests.cpp`](../../tests/core/chunk_mesh_lod_tests.cpp)
+`ChunkMeshLodBuilder` creates bounded `Fine`/`Coarse` variants by merging
+coplanar faces only when direction and material match; both retain content
+identity and full-chunk bounds. `MeshLodSelector` uses caller-supplied squared
+distance thresholds, hysteresis, and available-variant fallback; it sets no
+distance and selection does not remesh. Invalid directions are rejected before
+grid indexing. [`chunk_mesh_lod_tests.cpp`](../../tests/core/chunk_mesh_lod_tests.cpp)
 covers these contracts.
 
 ## Text and GUI boundary

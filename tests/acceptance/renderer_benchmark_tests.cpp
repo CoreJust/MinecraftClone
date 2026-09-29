@@ -106,9 +106,9 @@ TEST(RendererBenchmark, StreamsOneFullColumnWhenMovingEast)
 
     EXPECT_EQ(update.direction, acceptance::RendererBenchmarkStreamDirection::PositiveX);
     EXPECT_EQ(update.center, (shared::HeightTileCoordinate{ .x = 126, .y = -17 }));
-    ASSERT_EQ(update.removals.size(), shared::HEIGHT_TILE_INTEREST_WIDTH);
-    ASSERT_EQ(update.additions.size(), shared::HEIGHT_TILE_INTEREST_WIDTH);
-    for (uint32_t row = 0U; row < shared::HEIGHT_TILE_INTEREST_WIDTH; ++row) {
+    ASSERT_EQ(update.removals.size(), acceptance::S6_RENDERER_BENCHMARK_TILE_WIDTH);
+    ASSERT_EQ(update.additions.size(), acceptance::S6_RENDERER_BENCHMARK_TILE_WIDTH);
+    for (uint32_t row = 0U; row < acceptance::S6_RENDERER_BENCHMARK_TILE_WIDTH; ++row) {
         EXPECT_EQ(
             update.removals[row],
             (shared::HeightTileCoordinate{ .x = 80, .y = -62 + static_cast<int32_t>(row) })
@@ -133,16 +133,16 @@ TEST(RendererBenchmark, RotatesStreamingAcrossBothAxesAndReturnsToStart)
     };
 
     for (uint64_t update_index = 0U;
-         update_index < 4U * shared::HEIGHT_TILE_INTEREST_WIDTH;
+         update_index < 4U * acceptance::S6_RENDERER_BENCHMARK_TILE_WIDTH;
          ++update_index) {
         acceptance::RendererBenchmarkStreamUpdate const update =
             acceptance::makeRendererBenchmarkStreamUpdate(center, update_index);
         EXPECT_EQ(
             update.direction,
-            expected_directions[update_index / shared::HEIGHT_TILE_INTEREST_WIDTH]
+            expected_directions[update_index / acceptance::S6_RENDERER_BENCHMARK_TILE_WIDTH]
         );
-        ASSERT_EQ(update.removals.size(), shared::HEIGHT_TILE_INTEREST_WIDTH);
-        ASSERT_EQ(update.additions.size(), shared::HEIGHT_TILE_INTEREST_WIDTH);
+        ASSERT_EQ(update.removals.size(), acceptance::S6_RENDERER_BENCHMARK_TILE_WIDTH);
+        ASSERT_EQ(update.additions.size(), acceptance::S6_RENDERER_BENCHMARK_TILE_WIDTH);
         for (shared::HeightTileCoordinate const removal : update.removals) {
             EXPECT_EQ(std::ranges::count(update.removals, removal), 1);
             EXPECT_EQ(std::ranges::count(update.additions, removal), 0);

@@ -33,3 +33,9 @@ unrepresentable, no-progress, or two-step oscillating dimensions fail with
 explicit evidence rather than silently comparing logical and framebuffer units.
 
 Scenario source and evidence paths must be distinct, as must image and evidence paths. A zero exit status means the requested operation completed and its assertions passed; it does not replace manual review of the captured frame or prove a different platform, driver, or package.
+
+The networked player-capture test verifies the real terrain stream after its
+bounded 1,024-mesh startup threshold; that short capture does not prove that the
+entire S7 radius-256 disk has finished generating and meshing. Full-radius Mac
+visual/runtime evidence remains a coordinated batch gate and is not substituted
+by unit, offscreen, or renderer-only checks.

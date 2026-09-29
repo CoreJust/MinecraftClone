@@ -7,22 +7,17 @@ arguments launch a graphical localhost player. Flight joins select free tokens.
 ## Shared simulation
 
 [World.hpp](../../src/shared/include/shared/world/World.hpp) defines the 100 ms
-`TICK`, normalized XYZ `Direction`, deterministic 10,000-subcell remainders,
-and four-bit palette identity. `World` owns player spawn, movement, despawn,
-and replication. Flat mode retains the 32 by 32 board and collision rules.
-Flight mode uses wrapped XYZ
-coordinates and a fixed clear-air spawn. Movement capabilities independently
+`TICK`, normalized XYZ `Direction`, 10,000-subcell remainders, and four-bit
+palette identity. `World` owns spawn, movement, despawn, and replication. Flat
+mode retains its 32 by 32 board; Flight wraps XYZ and spawns in clear air.
+Movement capabilities independently
 enable flight, collision bypass, or both. Flight without bypass sweeps terrain
 and player bodies with tangential wall sliding; non-flight uses gravity,
 terrain support, jumps, and body collision. Elapsed-time gravity matches jump
 displacement to replicated post-tick vertical velocity; takeoff presentation
-preserves the impulse. Remainders persist across ticks. Each
-authoritative player has a 2 by 2 footprint in flat mode and a 10/16-cell
-footprint in flight mode, so its origin is limited to cells
-0 through 30 inclusive (0 through 300,000 subcells) on both axes; its
-footprint may end at, but never exceed, the platform edge.
-
-Spawn and movement enforce separation.
+preserves the impulse. Remainders persist. Player footprints are 2 by 2 cells
+in Flat and 10/16 cell in Flight; origins fit cells 0–30 without crossing the
+platform edge. Spawn and movement enforce separation.
 
 ## Deterministic scenario plans
 
@@ -31,12 +26,10 @@ bounded CoreLang `@version("0.1.2")` plans. The host validates source and limits
 before publishing an immutable plan; rejection cannot mutate a world or start
 the runner. Grammar is in the [scripting guide](../scripting/README.md).
 
-The legacy `flat3d-v1` profile records flat-plane `(x, y, z)` positions and
-yaw/pitch/roll degrees. Z must remain zero while
-the authoritative `World` is flat. Its camera-relative commands lower with yaw
-zero forward at +Y and positive yaw toward +X, then use the unchanged cardinal
-`Direction` wire payload. Runtime evidence records the stable replay ID,
-camera-input count, and 100 ms server tick separately from presentation cadence.
+Legacy `flat3d-v1` records flat-plane positions and yaw/pitch/roll; Z remains
+zero. Camera-relative commands lower yaw-zero forward to +Y and positive yaw
+toward +X using the cardinal `Direction` payload. Evidence separates replay ID,
+camera-input count, 100 ms server ticks, and presentation cadence.
 
 ## Permissions
 
@@ -50,11 +43,11 @@ replicated capabilities and velocity. Collision bypass requires flight. See
 little-endian join, input, player-position/removal, and height-tile streaming
 messages. Inputs carry normalized three-axis direction, horizontal view heading,
 and a sequence; positions carry authoritative coordinates, subcell remainders,
-palette identity, and acknowledgement. The server assigns a stable
-pseudo-random palette index from the character identity, so reconnecting with
-that identity receives the same one of the documented 16 opaque colors.
+palette identity, and acknowledgement. The server derives one of 16 stable
+palette colors from character identity.
 
-`Message.cpp` prepends a magic byte, protocol version, and tag. Decoding
+`Message.cpp` prepends a magic byte, protocol version, and tag. Version 11
+advertises the full radius-256 height-tile capacity. Decoding
 requires a known, complete, valid, non-trailing payload and rejects old or
 mixed versions before any authority mutation. The join configuration identifies
 the selected seeded world and the server rejects mismatches before gameplay.
@@ -107,15 +100,22 @@ stored per client instance.
 `BotClient` renders nothing and changes a persistent random direction with
 probability 1/50 per input call.
 
-## S6 moving terrain
+## S6/S7 moving terrain
 
-Residency is a camera-independent radius-45 circle. Generation fills radius-3
-and radius-8 circles, then a directional ellipse reaching the outer circle.
-Rate-limited background work completes residency after settling. Heading affects
-priority, not residency, and also orders server work and client meshing.
-CoreLang 0.1.2 supplies wave parameters once; C++ evaluates heights and stone.
-Terrain has six base layers, 128-block spacing, and a first-wave spawn.
-HUD acceleration profiles are 2x, 3x, 5x, 8x, 15x, 30x, 80x, 200x, and 500x.
+S6 used a camera-independent radius-45 circle; S7 streams a radius-256 disk of
+205,861 height tiles with X/Y wrapping. Membership ignores heading and frustum;
+heading only reorders generation, which prioritizes radius-3/radius-8 circles,
+then a directional ellipse to the former S6 band and rate-limited background.
+CoreLang 0.1.2 supplies wave parameters; C++ evaluates heights and stone. Six
+terrain layers use 128-block spacing; spawn is on the first wave. HUD profiles
+range from 2x to 500x.
+
+Height-tile surface LOD is visual only. It uses shortest wrapped distance from
+the player, never view angle or frustum visibility, and selects detail from the
+current vertical FOV and physical framebuffer extent. The conservative
+projected-face bound is at most 2 px² for a simplified source face; adjacent
+meshes are rebuilt when captured tile or neighbor revisions change. Authoritative
+terrain heights and collision do not use these simplified meshes.
 
 ## S5 chunk data
 

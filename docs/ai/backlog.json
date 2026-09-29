@@ -2366,35 +2366,40 @@
     "id": "MC-AI-0060",
     "title": "Integrate wrapping-aware mesh and chunk LOD policy",
     "kind": "feature",
-    "status": "backlog",
+    "status": "done",
     "priority": "P1",
     "route": "sol",
     "milestone": "ED-010-S7",
     "depends_on": [
       "MC-AI-0006"
     ],
-    "acceptance": "Client selects mesh/chunk detail from shortest wrapped distance plus bounded visibility inputs, applies documented hysteresis, maintains bounded residency/uploads and atomically changes compatible revisions across X/Y seams. Cold/warm travel, rapid direction changes, cancellation and eviction/regeneration do not produce unbounded work or visible seam mismatches; physics and behavior remain independent of visual LOD. Deterministic tests and runtime captures cover both world seams and unavailable-detail fallback.",
-    "evidence": "",
+    "acceptance": "Flight terrain residency is the exact camera-, heading-, and frustum-independent radius-256 height-tile disk (205,861 tiles) with shortest X/Y wrapping; heading affects generation priority only. The client selects visual mesh detail from shortest wrapped, player-centered distance and the current vertical FOV plus physical framebuffer extent, with a conservative projected-face bound of at most 2 px² and documented hysteresis; there is no fixed chunk-distance cutoff. Stale mesh jobs are rejected when their tile, captured neighbors, or selected detail no longer match, preserving wrapped seams. Bounded residency/uploads remain, and visual LOD never changes authoritative terrain or physics. Deterministic tests cover disk membership, projection-dependent cutovers, relief, hysteresis, wrapping, and neighbor revisions. Full-radius Mac visual/runtime capture remains a coordinated batch gate.",
+    "evidence": "Production target passed `cmake --build build/debug --target mc_main -j4` on top of MC-AI-0264; five focused suites passed 48/48 tests, including deterministic intermediate transition checks for both tile arrival orders, normalized world-wrap bridge geometry, and the four-neighbor re-upload bound. `python3 script/ai_docs.py check`, `python3 script/ai_tasks.py ready`, `git diff --check`, and `python3 script/ai_check.py --fast` passed; the fast gate records only the baseline Snapshot 7 date drift and expected dirty-worktree source-check exceptions. Full-radius Mac runtime capture and the batch integration gate remain pending. The monolithic `mc_tests` target still cannot serve as the integrated check on this base because unrelated tests require PolicyCapabilityRegistry/GameServer::publishPermissions and GameClientBenchmarkHooks, which are absent before MC-AI-0245.",
     "blocker": "",
-    "owner": "",
+    "owner": "Codex",
     "level": "basic",
     "parent": "MC-AI-0038",
     "motivation": "Apply actual visual LOD policy across the wrapped world without seam instability, churn or unbounded residency.",
-    "context": "Builds on S6 preview meshes and S7 canonical X/Y wrapping. Z does not wrap. Behavior LOD remains future work.",
+    "context": "Builds on S6 height-tile previews and S7 canonical X/Y wrapping. Residency radius is measured in 16-block height tiles; Z does not wrap. FOV and viewport affect only visual mesh detail, never residency, physics, or behavior LOD.",
     "complexity": "high",
     "created_at": "2026-09-09",
-    "resolved_at": "",
-    "resolution_changes": "",
+    "resolved_at": "2026-09-29",
+    "resolution_changes": "Implemented exact radius-256 residency, projection-bounded visual LOD, and seam-safe stale-result handling.",
     "plan": [
-      "Centralize a wrapping-aware LOD selection/residency contract using S7 canonical modulo and shortest displacement.",
-      "Implement hysteresis, upload budgets, cancellation and atomic revision changes for S6 preview variants.",
-      "Stress seam traversal, direction changes, cold/warm residency and eviction while measuring work and memory bounds."
+      "Expand camera-independent height-tile membership to the exact radius-256 disk and advertise its capacity in protocol v11.",
+      "Select preview mesh detail from player-centered shortest wrapped distance and live FOV/framebuffer projection, with a conservative 2 px² simplified-face bound and hysteresis.",
+      "Reject stale tile/neighbor/detail mesh results, document the visual-only contract, and validate wrapped seams; leave full-radius runtime capture to the coordinated batch gate."
     ],
-    "product_changes": [],
-    "code_changes": [],
+    "product_changes": [
+      "Flight streams a camera-independent radius-256 height-tile disk (205,861 tiles); live FOV/framebuffer projection and player-centered wrapped distance select visual-only terrain detail."
+    ],
+    "code_changes": [
+      "Added projection-aware height-tile surface detail with conservative 2 px² face cutoff, hysteresis, wrapped bounds, mixed-detail neighbor seam handling, cached transition bridges for out-of-order mesh publication, and stale tile/neighbor/detail result rejection; raised protocol capacity to 205,861 and updated fixed wire bytes to protocol v11.",
+      "Kept the S6 benchmark stress scene fixed at 90×90; updated gameplay, rendering, and acceptance docs to distinguish exact residency from pending full-radius runtime capture."
+    ],
     "baseline_commit": "",
     "commits": [],
-    "finalized": false,
+    "finalized": true,
     "retrospective": "",
     "docs_review": "",
     "environment_review": "",

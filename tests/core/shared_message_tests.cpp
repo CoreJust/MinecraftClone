@@ -176,7 +176,7 @@ TEST(MessageTest, UsesVersionedLittleEndianFixedWidthPayloads) {
     EXPECT_EQ(
         shared::encodeMessage(shared::JoinRequestMessage{ .ch = '@' }),
         (std::vector<uint8_t>{
-            0x4D, 10, 0, '@', 0,
+            0x4D, 11, 0, '@', 0,
             1, 0, 0, 0,
             42, 0, 0, 0, 0, 0, 0, 0,
             16, 16, 16,
@@ -185,15 +185,15 @@ TEST(MessageTest, UsesVersionedLittleEndianFixedWidthPayloads) {
     );
     EXPECT_EQ(
         shared::encodeMessage(shared::JoinResponseMessage{ .accepted = true }),
-        (std::vector<uint8_t>{ 0x4D, 10, 1, 1 })
+        (std::vector<uint8_t>{ 0x4D, 11, 1, 1 })
     );
     EXPECT_EQ(
         shared::encodeMessage(shared::JoinResponseMessage{ .accepted = false }),
-        (std::vector<uint8_t>{ 0x4D, 10, 1, 0 })
+        (std::vector<uint8_t>{ 0x4D, 11, 1, 0 })
     );
     EXPECT_EQ(
         shared::encodeMessage(shared::ClientInputMessage{ .direction = { 129, 127, 1 }, .sequence = 0x7856'3412U }),
-        (std::vector<uint8_t>{ 0x4D, 10, 2, 129, 127, 1, 0, 5, 0, 0, 0, 127, 18, 52, 86, 120 })
+        (std::vector<uint8_t>{ 0x4D, 11, 2, 129, 127, 1, 0, 5, 0, 0, 0, 127, 18, 52, 86, 120 })
     );
     EXPECT_EQ(
         shared::encodeMessage(shared::ServerPlayerPositionMessage{
@@ -202,7 +202,7 @@ TEST(MessageTest, UsesVersionedLittleEndianFixedWidthPayloads) {
             .acknowledged_input_sequence = 0x7856'3412U, .state_revision = 0x1234'5678U,
         }),
         (std::vector<uint8_t>{
-            0x4D, 10, 4, '#', 7, 0,
+            0x4D, 11, 4, '#', 7, 0,
             30, 0, 0, 0,
             2, 0, 0, 0,
             12, 0, 0, 0,
@@ -213,7 +213,7 @@ TEST(MessageTest, UsesVersionedLittleEndianFixedWidthPayloads) {
     );
     EXPECT_EQ(
         shared::encodeMessage(shared::ServerRemovePlayerMessage{ .ch = '$' }),
-        (std::vector<uint8_t>{ 0x4D, 10, 5, '$' })
+        (std::vector<uint8_t>{ 0x4D, 11, 5, '$' })
     );
     auto const height_tile = shared::encodeMessage(heightTileMessage());
     EXPECT_EQ(height_tile.size(), 3U + 24U + shared::HEIGHT_TILE_PAYLOAD_BYTES);

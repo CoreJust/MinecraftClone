@@ -14,6 +14,10 @@
 
 namespace acceptance {
 
+constexpr uint32_t S6_RENDERER_BENCHMARK_TILE_WIDTH = 90U;
+constexpr uint32_t S6_RENDERER_BENCHMARK_TILE_COUNT =
+    S6_RENDERER_BENCHMARK_TILE_WIDTH * S6_RENDERER_BENCHMARK_TILE_WIDTH;
+
 struct RendererBenchmarkOptions final {
     uint32_t requested_width{ 1'920 };
     uint32_t requested_height{ 1'080 };

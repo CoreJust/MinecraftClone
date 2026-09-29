@@ -2,7 +2,7 @@
   "modules": [
     {
       "guide": "docs/ACCEPTANCE.md",
-      "guide_sha256": "5ba3757ccab260d6980a68df3c2656c3124fe286b641a55b4f4ace468abffd96",
+      "guide_sha256": "df7d7340c084703ffd05fd7bcd792a51a3b57e56b8a4ec79eb814985572edc67",
       "id": "acceptance",
       "sources": [
         "src/acceptance/CMakeLists.txt",
@@ -28,7 +28,7 @@
         "tests/acceptance/runtime_cli_tests.cmake",
         "tests/acceptance/scenario_runner_tests.cpp"
       ],
-      "sources_sha256": "cc2654a36133ba4898d163fa3b9f029fca664e18da66ce68bc0ae3d111a25fb0"
+      "sources_sha256": "cb520806296788eb021d07d02bff32f7510a0a9657f98b7a4e96070740b91bbc"
     },
     {
       "guide": "docs/code/ANDROID.md",
@@ -189,7 +189,7 @@
     },
     {
       "guide": "docs/code/GAMEPLAY.md",
-      "guide_sha256": "03b2447f8451e9d14f0ee154f81364898bec8a4e0443b2d3e135504d1075ddb1",
+      "guide_sha256": "0d831bfa3d6cd6e40c34a2b9d584864f64233e0d6e226e4a6fbdb26576af1869",
       "id": "gameplay",
       "sources": [
         "src/client/BotClient.cpp",
@@ -273,11 +273,11 @@
         "tests/core/world_generation_scheduler_tests.cpp",
         "tests/core/world_generation_tests.cpp"
       ],
-      "sources_sha256": "88978bb5aa3cfe01d1d7ab2299cd861077bc7280c37d9dc1f4b9b059f9f80f16"
+      "sources_sha256": "6b801b88040af6e70f5176ad2ec77b9de519c35a5386740359e3dca2ced6d4aa"
     },
     {
       "guide": "docs/code/RENDERING.md",
-      "guide_sha256": "692d1334acfcbec8a63c061f179224a369b1e3498b463bf6c24755168ce6da9a",
+      "guide_sha256": "d3b4a32d0b5ea9cb61437154226d8d68a1e6b6c5b5dad41dea5fd9f89c0ab639",
       "id": "rendering",
       "sources": [
         "src/client/CMakeLists.txt",
@@ -337,7 +337,7 @@
         "tests/testsupport/image_comparison_tests.cpp",
         "tests/testsupport/include/testsupport/ImageComparison.hpp"
       ],
-      "sources_sha256": "c95d7b191f984cfa7cb2232d9b973afceea69a83ec10770a0098295c977dbf84"
+      "sources_sha256": "51120bb3337881f152a408e1453e2c90419ccdd097b6ab05cb4bc4d5188ec195"
     }
   ],
   "version": 1

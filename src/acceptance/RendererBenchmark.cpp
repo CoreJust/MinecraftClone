@@ -124,7 +124,7 @@ shared::HeightTileSurfaceNeighbors heightTileNeighbors(
     uint32_t const y
 )
 {
-    uint32_t constexpr side = shared::HEIGHT_TILE_INTEREST_WIDTH;
+    uint32_t constexpr side = S6_RENDERER_BENCHMARK_TILE_WIDTH;
     auto const neighbor = [&tiles](uint32_t const neighbor_x, uint32_t const neighbor_y) {
         return std::optional<shared::HeightTile::Heights>{tiles[neighbor_y * side + neighbor_x].heights};
     };
@@ -145,7 +145,7 @@ std::vector<shared::HeightTile> makeS6HeightTileWindow(
     static constexpr int32_t NEGATIVE_RADIUS = 45;
     static constexpr int32_t POSITIVE_RADIUS = 44;
     std::vector<shared::HeightTile> tiles;
-    tiles.reserve(shared::HEIGHT_TILE_INTEREST_COUNT);
+    tiles.reserve(S6_RENDERER_BENCHMARK_TILE_COUNT);
     for (int32_t y_offset = -NEGATIVE_RADIUS; y_offset <= POSITIVE_RADIUS; ++y_offset) {
         for (int32_t x_offset = -NEGATIVE_RADIUS; x_offset <= POSITIVE_RADIUS; ++x_offset) {
             tiles.push_back(generator.generateHeightTile({
@@ -182,7 +182,7 @@ client::CameraPose cameraForHeightTileCenter(shared::HeightTileCoordinate const 
 [[nodiscard]]
 uint32_t tileIndex(uint32_t const x, uint32_t const y) noexcept
 {
-    return y * shared::HEIGHT_TILE_INTEREST_WIDTH + x;
+    return y * S6_RENDERER_BENCHMARK_TILE_WIDTH + x;
 }
 
 void shiftHeightTileWindow(
@@ -191,7 +191,7 @@ void shiftHeightTileWindow(
     shared::TerrainGenerator const& generator
 )
 {
-    uint32_t constexpr side = shared::HEIGHT_TILE_INTEREST_WIDTH;
+    uint32_t constexpr side = S6_RENDERER_BENCHMARK_TILE_WIDTH;
     switch (update.direction) {
         case RendererBenchmarkStreamDirection::PositiveX:
             for (uint32_t y = 0U; y < side; ++y) {
@@ -231,13 +231,13 @@ struct PendingMeshUpdate final {
 [[nodiscard]]
 std::vector<PendingMeshUpdate> windowEdgeMeshUpdates(RendererBenchmarkStreamUpdate const& update)
 {
-    uint32_t constexpr side = shared::HEIGHT_TILE_INTEREST_WIDTH;
+    uint32_t constexpr side = S6_RENDERER_BENCHMARK_TILE_WIDTH;
     std::vector<uint32_t> order(side);
     for (uint32_t index = 0U; index < side; ++index) {
         order[index] = index;
     }
     std::ranges::stable_sort(order, [](uint32_t const first, uint32_t const second) {
-        int32_t const center = static_cast<int32_t>(shared::HEIGHT_TILE_INTEREST_WIDTH) - 1;
+        int32_t const center = static_cast<int32_t>(S6_RENDERER_BENCHMARK_TILE_WIDTH) - 1;
         return std::abs(static_cast<int32_t>(first * 2U) - center)
             < std::abs(static_cast<int32_t>(second * 2U) - center);
     });
@@ -279,13 +279,13 @@ RendererBenchmarkStreamUpdate makeRendererBenchmarkStreamUpdate(
 {
     int32_t constexpr negative_radius = -45;
     int32_t constexpr positive_radius = 44;
-    uint64_t constexpr side = shared::HEIGHT_TILE_INTEREST_WIDTH;
+    uint64_t constexpr side = S6_RENDERER_BENCHMARK_TILE_WIDTH;
     RendererBenchmarkStreamDirection const direction = static_cast<RendererBenchmarkStreamDirection>(
         (completed_updates / side) % 4U
     );
     RendererBenchmarkStreamUpdate update{ .center = center, .direction = direction };
-    update.removals.reserve(shared::HEIGHT_TILE_INTEREST_WIDTH);
-    update.additions.reserve(shared::HEIGHT_TILE_INTEREST_WIDTH);
+    update.removals.reserve(S6_RENDERER_BENCHMARK_TILE_WIDTH);
+    update.additions.reserve(S6_RENDERER_BENCHMARK_TILE_WIDTH);
     for (int32_t offset = negative_radius; offset <= positive_radius; ++offset) {
         switch (direction) {
             case RendererBenchmarkStreamDirection::PositiveX:
@@ -420,15 +420,15 @@ std::expected<RuntimeEvidence, std::string> runRendererBenchmark(
     };
     shared::TerrainGenerator const generator;
     std::vector<shared::HeightTile> stream_tiles = makeS6HeightTileWindow(stream_center, generator);
-    if (stream_tiles.size() != shared::HEIGHT_TILE_INTEREST_COUNT) {
+    if (stream_tiles.size() != S6_RENDERER_BENCHMARK_TILE_COUNT) {
         return std::unexpected("renderer benchmark generated an invalid S6 height-tile scene");
     }
     renderer.setCamera(cameraForHeightTileCenter(stream_center));
     shared::HeightTileSurfaceMesher const mesher;
     std::chrono::steady_clock::time_point const scene_upload_deadline = std::chrono::steady_clock::now()
         + options.deadline;
-    for (uint32_t y = 0U; y < shared::HEIGHT_TILE_INTEREST_WIDTH; ++y) {
-        for (uint32_t x = 0U; x < shared::HEIGHT_TILE_INTEREST_WIDTH; ++x) {
+    for (uint32_t y = 0U; y < S6_RENDERER_BENCHMARK_TILE_WIDTH; ++y) {
+        for (uint32_t x = 0U; x < S6_RENDERER_BENCHMARK_TILE_WIDTH; ++x) {
             if (!renderer.upsertHeightTileMesh(
                     mesher.build(stream_tiles[tileIndex(x, y)], heightTileNeighbors(stream_tiles, x, y)),
                     scene_upload_deadline
@@ -438,9 +438,9 @@ std::expected<RuntimeEvidence, std::string> runRendererBenchmark(
         }
     }
     client::RendererRuntimeInfo const initial_runtime = renderer.runtimeInfo();
-    if (initial_runtime.height_tile_mesh_count != shared::HEIGHT_TILE_INTEREST_COUNT
+    if (initial_runtime.height_tile_mesh_count != S6_RENDERER_BENCHMARK_TILE_COUNT
         || initial_runtime.chunk_face_count == 0U
-        || initial_runtime.chunk_mesh_upload_count != shared::HEIGHT_TILE_INTEREST_COUNT
+        || initial_runtime.chunk_mesh_upload_count != S6_RENDERER_BENCHMARK_TILE_COUNT
     ) {
         return std::unexpected("renderer benchmark did not fully upload the S6 height-tile scene");
     }
@@ -562,7 +562,7 @@ std::expected<RuntimeEvidence, std::string> runRendererBenchmark(
             client::RendererRuntimeInfo const frame_runtime = renderer.runtimeInfo();
             observed_stone_draw = observed_stone_draw
                 || (
-                    frame_runtime.height_tile_mesh_count == shared::HEIGHT_TILE_INTEREST_COUNT
+                    frame_runtime.height_tile_mesh_count == S6_RENDERER_BENCHMARK_TILE_COUNT
                     && frame_runtime.chunk_draw_count > 0U
                 );
             samples.push_back(std::chrono::duration_cast<std::chrono::nanoseconds>(
@@ -592,7 +592,7 @@ std::expected<RuntimeEvidence, std::string> runRendererBenchmark(
         return std::unexpected("renderer benchmark required immediate presentation but negotiated another mode");
     }
     if (completed_stream_updates == 0U
-        || runtime.height_tile_mesh_count != shared::HEIGHT_TILE_INTEREST_COUNT
+        || runtime.height_tile_mesh_count != S6_RENDERER_BENCHMARK_TILE_COUNT
         || !observed_stone_draw
     ) {
         return std::unexpected("renderer benchmark did not stream and draw the resident S6 height-tile scene");

@@ -20,13 +20,14 @@ TEST(HeightTileInterestTest, BuildsCameraIndependentCircularResidency)
     shared::HeightTileInterest const interest = shared::makeHeightTileInterest(center, 127, 0);
 
     ASSERT_FALSE(interest.keys.empty());
-    EXPECT_LE(interest.keys.size(), shared::HEIGHT_TILE_INTEREST_COUNT);
+    EXPECT_EQ(interest.keys.size(), shared::HEIGHT_TILE_INTEREST_COUNT);
     EXPECT_EQ(interest.keys.front(), center);
-    EXPECT_TRUE(contains(interest, center.x + 45, center.y));
-    EXPECT_TRUE(contains(interest, center.x - 45, center.y));
-    EXPECT_TRUE(contains(interest, center.x, center.y + 45));
-    EXPECT_FALSE(contains(interest, center.x + 32, center.y + 32));
-    EXPECT_FALSE(contains(interest, center.x - 46, center.y));
+    EXPECT_TRUE(contains(interest, center.x + 256, center.y));
+    EXPECT_TRUE(contains(interest, center.x - 256, center.y));
+    EXPECT_TRUE(contains(interest, center.x, center.y + 256));
+    EXPECT_TRUE(contains(interest, center.x + 181, center.y + 181));
+    EXPECT_FALSE(contains(interest, center.x + 182, center.y + 182));
+    EXPECT_FALSE(contains(interest, center.x + 257, center.y));
 }
 
 TEST(HeightTileInterestTest, RotationChangesPriorityWithoutChangingResidency)
@@ -41,6 +42,7 @@ TEST(HeightTileInterestTest, RotationChangesPriorityWithoutChangingResidency)
     std::ranges::sort(north_keys, {}, [](shared::HeightTileKey const key) { return std::pair{key.x, key.y}; });
     EXPECT_EQ(east_keys, north_keys);
     EXPECT_NE(east.keys, north.keys);
+    EXPECT_EQ(east.keys.size(), 205'861U);
 }
 
 TEST(HeightTileInterestTest, ProgressivePriorityUsesNearCirclesThenDirectionalEllipse)
@@ -109,6 +111,11 @@ TEST(HeightTileInterestTest, KeepsResidencyStableForSmallHeadingJitter)
 
     EXPECT_EQ(jittered.keys, first.keys);
     EXPECT_NE(turned.keys, first.keys);
+    std::vector<shared::HeightTileKey> first_membership = first.keys;
+    std::vector<shared::HeightTileKey> turned_membership = turned.keys;
+    std::ranges::sort(first_membership, {}, [](shared::HeightTileKey const key) { return std::pair{key.x, key.y}; });
+    std::ranges::sort(turned_membership, {}, [](shared::HeightTileKey const key) { return std::pair{key.x, key.y}; });
+    EXPECT_EQ(turned_membership, first_membership);
 }
 
 TEST(HeightTileInterestTest, ClassifiesFixedNearBandsDirectionalMiddleAndBackground)

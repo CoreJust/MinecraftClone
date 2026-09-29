@@ -143,6 +143,7 @@ public:
     void addWorldText(std::string_view text, TextPlacement placement, TextColor color = {});
     void clearWorldText() noexcept;
     void setCamera(CameraPose pose) noexcept;
+    void setCamera(CameraPose pose, CameraProjection projection) noexcept;
     void setChunkMesh(shared::ChunkMesh const& mesh);
     void setChunkMeshes(std::span<shared::ChunkMesh const> meshes);
     [[nodiscard]]

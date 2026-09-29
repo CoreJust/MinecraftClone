@@ -44,7 +44,7 @@ struct HeightTileOffsetOrder final {
 
 std::array<HeightTileOffsetOrder, 16> buildHeightTileOffsetOrders()
 {
-    constexpr int32_t RESIDENCY_RADIUS = 45;
+    constexpr int32_t RESIDENCY_RADIUS = static_cast<int32_t>(HEIGHT_TILE_INTEREST_RADIUS);
     constexpr double PI = 3.141'592'653'589'793'238'46;
     std::array<HeightTileOffsetOrder, 16> orders;
     for (uint32_t sector = 0U; sector < orders.size(); ++sector) {
