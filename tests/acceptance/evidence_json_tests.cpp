@@ -100,6 +100,7 @@ TEST(EvidenceJson, SeparatesFullGameRequestsFromPhysicalDisplayCadence)
     acceptance::RuntimeEvidence const evidence{
         .mode = "benchmark-game",
         .game_benchmark = acceptance::GameBenchmarkEvidence{
+            .workload = "speed-200-movement-v1",
             .client_message_payload_bytes_sent = 128U,
             .client_message_payload_bytes_received = 256U,
             .excluded_present_requests = 1U,
@@ -131,6 +132,8 @@ TEST(EvidenceJson, SeparatesFullGameRequestsFromPhysicalDisplayCadence)
     std::string const json = acceptance::evidenceJson(evidence);
 
     EXPECT_NE(json.find("\"measurement_kind\": \"full-game-render-submit-present-request\""), std::string::npos);
+    EXPECT_NE(json.find("\"workload\": \"speed-200-movement-v1\""), std::string::npos);
+    EXPECT_NE(json.find("\"p99_8\": 0"), std::string::npos);
     EXPECT_NE(json.find("\"displayed_cadence_hz\": null"), std::string::npos);
     EXPECT_NE(json.find("\"gpu\": null"), std::string::npos);
     EXPECT_NE(json.find("\"client_message_payload_bytes_sent\": 128"), std::string::npos);

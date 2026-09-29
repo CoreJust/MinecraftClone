@@ -1,5 +1,6 @@
-#include <acceptance/GameBenchmark.hpp>
+#include <shared/world/World.hpp>
 
+#include <acceptance/GameBenchmark.hpp>
 #include <gtest/gtest.h>
 
 #include <chrono>
@@ -22,4 +23,29 @@ TEST(GameBenchmark, ClassifiesCompletedRequestsWithinHalfOpenIntervals)
     EXPECT_EQ(gameBenchmarkPhaseAt(first + 6s - 1ns, first, options), GameBenchmarkPhase::Uncapped);
     EXPECT_EQ(gameBenchmarkPhaseAt(first + 6s, first, options), GameBenchmarkPhase::Outside);
     EXPECT_EQ(gameBenchmarkPhaseAt(first + 6s + 1ns, first, options), GameBenchmarkPhase::Outside);
+}
+
+TEST(GameBenchmark, ScriptsDistinctMovementAndCapabilityWorkloads)
+{
+    using acceptance::GameBenchmarkWorkload;
+    using acceptance::gameBenchmarkDirection;
+
+    shared::Direction const ordinary = gameBenchmarkDirection(GameBenchmarkWorkload::OrdinaryMovement, 0U);
+    shared::Direction const speed = gameBenchmarkDirection(GameBenchmarkWorkload::Speed200Movement, 0U);
+    shared::Direction const border = gameBenchmarkDirection(GameBenchmarkWorkload::WrappedBorder, 0U);
+    shared::Direction const churn = gameBenchmarkDirection(GameBenchmarkWorkload::PermissionCollisionChurn, 0U);
+
+    EXPECT_EQ(ordinary.x, 1U);
+    EXPECT_FALSE(ordinary.accelerated);
+    EXPECT_EQ(speed.x, ordinary.x);
+    EXPECT_TRUE(speed.accelerated);
+    EXPECT_EQ(speed.speedup, 200U);
+    EXPECT_EQ(border.speedup, 200U);
+    EXPECT_EQ(gameBenchmarkDirection(GameBenchmarkWorkload::WrappedBorder, 25U).x, 127U);
+    EXPECT_FALSE(churn.cycle_movement_capabilities);
+    EXPECT_FALSE(gameBenchmarkDirection(GameBenchmarkWorkload::PermissionCollisionChurn, 1U)
+        .cycle_movement_capabilities);
+    EXPECT_EQ(acceptance::gameBenchmarkWorkloadName(GameBenchmarkWorkload::PermissionCollisionChurn),
+        "permission-collision-churn-v1");
+    EXPECT_EQ(static_cast<int8_t>(gameBenchmarkDirection(GameBenchmarkWorkload::OrdinaryMovement, 20U).x), -1);
 }

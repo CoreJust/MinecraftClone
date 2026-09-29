@@ -67,6 +67,7 @@ std::string frameTimingSummaryJson(FrameTimingSummary const& summary)
         "      \"p50\": " + std::to_string(nanosecondsCount(summary.p50)) + ",\n"
         "      \"p95\": " + std::to_string(nanosecondsCount(summary.p95)) + ",\n"
         "      \"p99\": " + std::to_string(nanosecondsCount(summary.p99)) + ",\n"
+        "      \"p99_8\": " + std::to_string(nanosecondsCount(summary.p99_8)) + ",\n"
         "      \"max\": " + std::to_string(nanosecondsCount(summary.maximum)) + ",\n"
         "      \"mean\": " + std::to_string(nanosecondsCount(summary.mean)) + "\n"
         "    }";
@@ -132,7 +133,7 @@ std::string captureJson(RendererCaptureEvidence const& capture)
 std::string gameBenchmarkJson(GameBenchmarkEvidence const& benchmark)
 {
     std::string result = "{\n"
-        "    \"workload\": \"loopback-flight-v1\",\n"
+        "    \"workload\": " + jsonString(benchmark.workload) + ",\n"
         "    \"measurement_kind\": \"full-game-render-submit-present-request\",\n"
         "    \"package_id\": " + jsonString(benchmark.package_id) + ",\n"
         "    \"hardware\": " + jsonString(benchmark.hardware) + ",\n"
@@ -156,6 +157,12 @@ std::string gameBenchmarkJson(GameBenchmarkEvidence const& benchmark)
         "    \"inputs_sent\": " + std::to_string(benchmark.inputs_sent) + ",\n"
         "    \"authoritative_player_updates\": "
             + std::to_string(benchmark.authoritative_player_updates) + ",\n"
+        "    \"observed_wrap_crossings\": "
+            + std::to_string(benchmark.observed_wrap_crossings) + ",\n"
+        "    \"observed_capability_transitions\": "
+            + std::to_string(benchmark.observed_capability_transitions) + ",\n"
+        "    \"permission_publishes\": "
+            + std::to_string(benchmark.permission_publishes) + ",\n"
         "    \"successful_present_requests\": "
             + std::to_string(benchmark.successful_present_requests) + ",\n"
         "    \"failed_present_requests\": "
@@ -171,12 +178,21 @@ std::string gameBenchmarkJson(GameBenchmarkEvidence const& benchmark)
         "    \"uncapped_loop_timings_ns\": "
             + frameTimingSummaryJson(benchmark.uncapped_loop_timings) + ",\n"
         "    \"server_tick_timings_ns\": " + frameTimingSummaryJson(benchmark.server_tick_timings) + ",\n"
+        "    \"permission_publish_timings_ns\": "
+            + frameTimingSummaryJson(benchmark.permission_publish_timings) + ",\n"
         "    \"raw_server_tick_durations_ns\": [";
     for (uint64_t index = 0U; index < benchmark.raw_server_tick_durations_ns.size(); ++index) {
         if (index != 0U) {
             result += ", ";
         }
         result += std::to_string(benchmark.raw_server_tick_durations_ns[index]);
+    }
+    result += "],\n    \"raw_permission_publish_durations_ns\": [";
+    for (uint64_t index = 0U; index < benchmark.raw_permission_publish_durations_ns.size(); ++index) {
+        if (index != 0U) {
+            result += ", ";
+        }
+        result += std::to_string(benchmark.raw_permission_publish_durations_ns[index]);
     }
     result += "],\n    \"raw_frames\": [\n";
     for (uint64_t index = 0U; index < benchmark.raw_frames.size(); ++index) {

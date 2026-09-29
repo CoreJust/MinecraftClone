@@ -16,6 +16,7 @@ struct FrameTimingSummary final {
     std::chrono::nanoseconds p50{ 0 };
     std::chrono::nanoseconds p95{ 0 };
     std::chrono::nanoseconds p99{ 0 };
+    std::chrono::nanoseconds p99_8{ 0 };
     std::chrono::nanoseconds maximum{ 0 };
     std::chrono::nanoseconds mean{ 0 };
 };
@@ -76,6 +77,7 @@ struct GameBenchmarkFrameSample final {
 };
 
 struct GameBenchmarkEvidence final {
+    std::string workload;
     std::string package_id;
     std::string hardware;
     std::optional<std::string> gpu;
@@ -91,6 +93,9 @@ struct GameBenchmarkEvidence final {
     uint64_t client_message_payload_bytes_received = 0U;
     uint64_t inputs_sent = 0U;
     uint64_t authoritative_player_updates = 0U;
+    uint64_t observed_wrap_crossings = 0U;
+    uint64_t observed_capability_transitions = 0U;
+    uint64_t permission_publishes = 0U;
     uint64_t successful_present_requests = 0U;
     uint64_t failed_present_requests = 0U;
     uint64_t excluded_present_requests = 0U;
@@ -100,8 +105,10 @@ struct GameBenchmarkEvidence final {
     FrameTimingSummary warm_loop_timings;
     FrameTimingSummary uncapped_loop_timings;
     FrameTimingSummary server_tick_timings;
+    FrameTimingSummary permission_publish_timings;
     std::vector<GameBenchmarkFrameSample> raw_frames;
     std::vector<uint64_t> raw_server_tick_durations_ns;
+    std::vector<uint64_t> raw_permission_publish_durations_ns;
 };
 
 struct RuntimeEvidence final {

@@ -23,6 +23,7 @@
 #include <iostream>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <thread>
 #include <utility>
 #include <vector>
@@ -119,7 +120,88 @@ struct ServerTickSample final {
     uint64_t network_events;
 };
 
+shared::PolicyCapabilityRegistry movementPolicyRegistry()
+{
+    return {
+        .definitions = {
+            {
+                .key = "minecraft:flight",
+                .default_value = 1,
+                .minimum_value = 0,
+                .maximum_value = 1,
+                .hard_restriction = shared::PolicyRestriction::Maximum,
+            },
+            {
+                .key = "minecraft:collision-bypass",
+                .default_value = 1,
+                .minimum_value = 0,
+                .maximum_value = 1,
+                .hard_restriction = shared::PolicyRestriction::Maximum,
+            },
+        },
+    };
+}
+
+std::expected<shared::PolicyCompilation, shared::PolicyDiagnostic> compileMovementPolicy(
+    bool const collision_bypass_allowed
+)
+{
+    static constexpr std::string_view ALLOW_SOURCE = R"core(@version("0.1.3.1")
+@use minecraft
+pub fn policy() {
+    policyRule("collision", "minecraft:collision-bypass", 1i64, 1u8)
+    policyAssign("all", "collision", 1u8)
+}
+)core";
+    static constexpr std::string_view DENY_SOURCE = R"core(@version("0.1.3.1")
+@use minecraft
+pub fn policy() {
+    policyRule("collision", "minecraft:collision-bypass", 0i64, 1u8)
+    policyAssign("all", "collision", 1u8)
+}
+)core";
+    shared::PolicyHost compiler;
+    return compiler.compile(
+        "benchmark-movement.core",
+        collision_bypass_allowed ? ALLOW_SOURCE : DENY_SOURCE,
+        {
+            .jit_mode = shared::PolicyJitMode::Disabled,
+            .require_interpreter_parity = true,
+        }
+    );
+}
+
 } // namespace
+
+shared::Direction gameBenchmarkDirection(
+    GameBenchmarkWorkload const workload,
+    uint64_t const ordinal
+) noexcept
+{
+    uint8_t const x = workload == GameBenchmarkWorkload::WrappedBorder
+        ? 127U : (ordinal % 40U < 20U ? 1U : static_cast<uint8_t>(-1));
+    uint16_t const speedup = workload == GameBenchmarkWorkload::Speed200Movement
+        || workload == GameBenchmarkWorkload::WrappedBorder ? 200U : 5U;
+    return shared::Direction{
+        .x = x,
+        .y = 0U,
+        .accelerated = workload == GameBenchmarkWorkload::Speed200Movement
+            || workload == GameBenchmarkWorkload::WrappedBorder,
+        .speedup = speedup,
+        .cycle_movement_capabilities = false,
+    };
+}
+
+std::string_view gameBenchmarkWorkloadName(GameBenchmarkWorkload const workload) noexcept
+{
+    switch (workload) {
+        case GameBenchmarkWorkload::OrdinaryMovement: return "ordinary-movement-v1";
+        case GameBenchmarkWorkload::Speed200Movement: return "speed-200-movement-v1";
+        case GameBenchmarkWorkload::WrappedBorder: return "wrapped-border-v1";
+        case GameBenchmarkWorkload::PermissionCollisionChurn: return "permission-collision-churn-v1";
+    }
+    return "unknown";
+}
 
 GameBenchmarkPhase gameBenchmarkPhaseAt(
     Clock::time_point const completed_at,
@@ -151,10 +233,25 @@ std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOption
         || options.deadline <= options.cold_duration + options.warm_duration + options.uncapped_duration) {
         return std::unexpected("game benchmark has invalid duration limits");
     }
+    if (gameBenchmarkWorkloadName(options.workload) == "unknown") {
+        return std::unexpected("game benchmark has an unknown workload");
+    }
 
-    server::GameServer server{ 0U, {}, shared::WorldMode::Flight };
+    std::vector<server::GameServer::SpawnPoint> const spawn_points =
+        options.workload == GameBenchmarkWorkload::WrappedBorder
+            ? std::vector<server::GameServer::SpawnPoint>{
+                { .character = '@', .x = shared::World::FLIGHT_MAX_CELL - 2,
+                    .y = shared::World::FLIGHT_SPAWN.y, .z = shared::World::FLIGHT_SPAWN.z },
+            }
+            : std::vector<server::GameServer::SpawnPoint>{};
+    server::GameServer server{ 0U, spawn_points, shared::WorldMode::Flight };
     std::vector<ServerTickSample> raw_server_ticks;
     raw_server_ticks.reserve(512U);
+    std::vector<std::chrono::nanoseconds> raw_permission_publish_durations;
+    std::optional<std::string> permission_error;
+    std::atomic<int64_t> measurement_end_ns{ 0 };
+    uint64_t measured_tick_count = 0U;
+    uint64_t permission_publish_count = 0U;
     server::GameServer::BenchmarkHooks const server_hooks{
         .on_tick = [&](std::chrono::nanoseconds const duration, uint64_t const events) {
             raw_server_ticks.push_back(ServerTickSample{
@@ -162,6 +259,32 @@ std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOption
                 .duration = duration,
                 .network_events = events,
             });
+            int64_t const end_ns = measurement_end_ns.load(std::memory_order_acquire);
+            if (options.workload != GameBenchmarkWorkload::PermissionCollisionChurn
+                || end_ns == 0 || Clock::now().time_since_epoch() >= std::chrono::nanoseconds{ end_ns }
+                || permission_error) {
+                return;
+            }
+            ++measured_tick_count;
+            if (measured_tick_count % 10U != 0U) {
+                return;
+            }
+            auto const publish_started_at = Clock::now();
+            bool const allow_collision_bypass = permission_publish_count % 2U != 0U;
+            auto compilation = compileMovementPolicy(allow_collision_bypass);
+            if (!compilation) {
+                permission_error = compilation.error().message;
+                return;
+            }
+            auto published = server.publishPermissions(std::move(*compilation), movementPolicyRegistry());
+            if (!published) {
+                permission_error = published.error().message;
+                return;
+            }
+            raw_permission_publish_durations.push_back(
+                std::chrono::duration_cast<std::chrono::nanoseconds>(Clock::now() - publish_started_at)
+            );
+            ++permission_publish_count;
         },
     };
     ServerRunGuard server_run{ server, server_hooks };
@@ -176,6 +299,7 @@ std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOption
     std::cout << "[benchmark-game] player renderer ready; connecting\n" << std::flush;
 
     GameBenchmarkEvidence benchmark{
+        .workload = std::string{ gameBenchmarkWorkloadName(options.workload) },
         .package_id = std::string{ shared::PROJECT_NAME },
         .hardware = hardwareName(),
 #if defined(NDEBUG)
@@ -202,6 +326,7 @@ std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOption
     uint8_t reported_phase = 0U;
     uint64_t warm_successful_present_requests = 0U;
     uint64_t uncapped_successful_present_requests = 0U;
+    std::optional<shared::Player> previous_authoritative_player;
     client::GameClientBenchmarkHooks const client_hooks{
         .deadline = started_at + options.deadline,
         .should_stop = [&] {
@@ -213,13 +338,19 @@ std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOption
             return first_loop_at
                 && Clock::now() >= *first_loop_at + options.cold_duration + options.warm_duration;
         },
-        .input_override = [](uint64_t const ordinal) -> std::optional<shared::Direction> {
-            uint8_t const x = ordinal % 40U < 20U ? 1U : 255U;
-            return shared::Direction{ .x = x, .y = 0U, .z = 0U };
+        .input_override = [&options](uint64_t const ordinal) -> std::optional<shared::Direction> {
+            return gameBenchmarkDirection(options.workload, ordinal);
         },
         .on_loop = [&](client::GameClientLoopSample const& sample) {
             if (!first_loop_at) {
                 first_loop_at = sample.started_at;
+                measurement_end_ns.store(
+                    std::chrono::duration_cast<std::chrono::nanoseconds>(
+                        (*first_loop_at + options.cold_duration + options.warm_duration
+                            + options.uncapped_duration).time_since_epoch()
+                    ).count(),
+                    std::memory_order_release
+                );
                 std::cout << "[benchmark-game] connected; cold interval started\n" << std::flush;
             }
             GameBenchmarkPhase const phase = gameBenchmarkPhaseAt(sample.completed_at, *first_loop_at, options);
@@ -278,12 +409,27 @@ std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOption
                     : std::nullopt,
             });
         },
-        .on_authoritative_player = [&](shared::Player const&) {
+        .on_authoritative_player = [&](shared::Player const& player) {
             ++benchmark.authoritative_player_updates;
+            if (previous_authoritative_player) {
+                if (previous_authoritative_player->x > shared::World::FLIGHT_MAX_CELL - 256
+                    && player.x < 256) {
+                    ++benchmark.observed_wrap_crossings;
+                }
+                if (previous_authoritative_player->movement_capabilities
+                    != player.movement_capabilities) {
+                    ++benchmark.observed_capability_transitions;
+                }
+            }
+            previous_authoritative_player = player;
         },
     };
     player.run(core::Address::localhost(server.port()), '@', &client_hooks);
     server_run.stopAndJoin();
+
+    if (permission_error) {
+        return std::unexpected("game benchmark permission publication failed: " + *permission_error);
+    }
 
     std::vector<std::chrono::nanoseconds> server_tick_durations;
     server_tick_durations.reserve(raw_server_ticks.size());
@@ -319,9 +465,15 @@ std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOption
     benchmark.warm_loop_timings = summarizeFrameTimings(warm_durations);
     benchmark.uncapped_loop_timings = summarizeFrameTimings(uncapped_durations);
     benchmark.server_tick_timings = summarizeFrameTimings(server_tick_durations);
+    benchmark.permission_publish_timings = summarizeFrameTimings(raw_permission_publish_durations);
+    benchmark.permission_publishes = permission_publish_count;
     benchmark.raw_server_tick_durations_ns.reserve(server_tick_durations.size());
     for (std::chrono::nanoseconds const duration : server_tick_durations) {
         benchmark.raw_server_tick_durations_ns.push_back(positiveNanoseconds(duration));
+    }
+    benchmark.raw_permission_publish_durations_ns.reserve(raw_permission_publish_durations.size());
+    for (std::chrono::nanoseconds const duration : raw_permission_publish_durations) {
+        benchmark.raw_permission_publish_durations_ns.push_back(positiveNanoseconds(duration));
     }
     if (benchmark.cold_loop_timings.sample_count == 0U
         || benchmark.warm_loop_timings.sample_count == 0U
@@ -329,13 +481,18 @@ std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOption
         || benchmark.server_tick_timings.sample_count == 0U
         || benchmark.inputs_sent == 0U
         || benchmark.authoritative_player_updates == 0U
-        || server_events_processed == 0U) {
+        || server_events_processed == 0U
+        || (options.workload == GameBenchmarkWorkload::WrappedBorder
+            && benchmark.observed_wrap_crossings == 0U)
+        || (options.workload == GameBenchmarkWorkload::PermissionCollisionChurn
+            && (benchmark.observed_capability_transitions == 0U
+                || benchmark.permission_publishes < 2U))) {
         return std::unexpected("game benchmark did not complete the scripted full-game workload");
     }
     return RuntimeEvidence{
         .mode = "benchmark-game",
         .profile = "flight",
-        .scenario_name = "loopback-flight-v1",
+        .scenario_name = std::string{ gameBenchmarkWorkloadName(options.workload) },
         .seed = shared::WorldConfiguration::SEED,
         .ticks = static_cast<uint64_t>(server_tick_durations.size()),
         .clients_requested = 1U,

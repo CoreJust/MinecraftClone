@@ -334,6 +334,7 @@ FrameTimingSummary summarizeFrameTimings(std::span<std::chrono::nanoseconds cons
         .p50 = sorted_samples[percentileIndex(sample_count, 50U)],
         .p95 = sorted_samples[percentileIndex(sample_count, 95U)],
         .p99 = sorted_samples[percentileIndex(sample_count, 99U)],
+        .p99_8 = sorted_samples[(sample_count * 998U + 999U) / 1000U - 1U],
         .maximum = sorted_samples.back(),
         .mean = std::chrono::nanoseconds{
             static_cast<int64_t>(total_nanoseconds / sample_count),

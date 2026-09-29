@@ -59,6 +59,8 @@ struct RuntimeCommand final {
     std::filesystem::path evidence_path;
     bool require_immediate_present_mode{ false };
     bool debug_hud_enabled{ false };
+    acceptance::GameBenchmarkWorkload game_benchmark_workload =
+        acceptance::GameBenchmarkWorkload::OrdinaryMovement;
 };
 
 [[nodiscard]]
@@ -231,17 +233,34 @@ std::expected<RuntimeCommand, std::string> parseRuntimeCommand(int const argc, c
         }
         return command;
     }
-    if ((argc == 4 || argc == 5) && std::string_view{ argv[1] } == "--benchmark-game"
+    if (argc >= 4 && argc <= 7 && std::string_view{ argv[1] } == "--benchmark-game"
         && std::string_view{ argv[argc - 2] } == "--evidence") {
         RuntimeCommand command{
             .mode = RuntimeMode::GameBenchmark,
             .evidence_path = argv[argc - 1],
         };
-        if (argc == 5) {
-            if (std::string_view{ argv[2] } != "--present-immediate") {
-                return std::unexpected("invalid game benchmark option: " + std::string{ argv[2] });
+        bool workload_selected = false;
+        for (int argument_index = 2; argument_index < argc - 2; ++argument_index) {
+            std::string_view const argument{ argv[argument_index] };
+            if (argument == "--present-immediate" && !command.require_immediate_present_mode) {
+                command.require_immediate_present_mode = true;
+            } else if (argument == "--workload" && !workload_selected && argument_index + 1 < argc - 2) {
+                std::string_view const name{ argv[++argument_index] };
+                if (name == "ordinary") {
+                    command.game_benchmark_workload = acceptance::GameBenchmarkWorkload::OrdinaryMovement;
+                } else if (name == "speed-200") {
+                    command.game_benchmark_workload = acceptance::GameBenchmarkWorkload::Speed200Movement;
+                } else if (name == "wrapped-border") {
+                    command.game_benchmark_workload = acceptance::GameBenchmarkWorkload::WrappedBorder;
+                } else if (name == "permission-collision") {
+                    command.game_benchmark_workload = acceptance::GameBenchmarkWorkload::PermissionCollisionChurn;
+                } else {
+                    return std::unexpected("invalid game benchmark workload: " + std::string{ name });
+                }
+                workload_selected = true;
+            } else {
+                return std::unexpected("invalid game benchmark option: " + std::string{ argument });
             }
-            command.require_immediate_present_mode = true;
         }
         return command;
     }
@@ -258,7 +277,8 @@ std::expected<RuntimeCommand, std::string> parseRuntimeCommand(int const argc, c
     return std::unexpected(
         "expected '--scenario <file> --evidence <file>', "
         "'--benchmark-render [--present-immediate] [--hud] --evidence <file>', "
-        "'--benchmark-game [--present-immediate] --evidence <file>', "
+        "'--benchmark-game [--present-immediate] "
+        "[--workload ordinary|speed-200|wrapped-border|permission-collision] --evidence <file>', "
         "or '--capture-render --image <ppm> --evidence <file>'"
     );
 }
@@ -413,6 +433,7 @@ int runGameBenchmarkCommand(RuntimeCommand const& command)
 {
     acceptance::GameBenchmarkOptions const options{
         .require_immediate_present_mode = command.require_immediate_present_mode,
+        .workload = command.game_benchmark_workload,
     };
     RuntimeDeadlineWatchdog watchdog{ command.evidence_path, "benchmark-game", options.deadline };
     acceptance::RuntimeEvidence evidence = acceptance::collectRuntimeEvidence(

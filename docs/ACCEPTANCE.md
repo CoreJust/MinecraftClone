@@ -5,7 +5,7 @@ The desktop executable provides bounded, noninteractive modes for snapshot evide
 ```sh
 mc_main --scenario <file> --evidence <json>
 mc_main --benchmark-render [--present-immediate] [--hud] --evidence <json>
-mc_main --benchmark-game [--present-immediate] --evidence <json>
+mc_main --benchmark-game [--present-immediate] [--workload ordinary|speed-200|wrapped-border|permission-collision] --evidence <json>
 mc_main --capture-render --image <ppm> --evidence <json>
 ```
 
@@ -20,8 +20,19 @@ with each result; do not treat a hardware-specific request rate as a portable FP
 GPU-performance threshold.
 
 `--benchmark-game` runs the production loopback server, networked Flight client,
-authoritative simulation, and Vulkan player renderer with a fixed alternating
-movement input. It records the first two seconds of connected loops as cold,
+authoritative simulation, and Vulkan player renderer. The benchmark API selects
+ordinary alternating movement, accelerated movement with the actual x200 speed
+modifier, a border spawn followed by wrapped traversal, or alternating server
+permission policies that change collision bypass. `--workload` selects one
+script; the default is `ordinary`. Run each script to compare separate receipts.
+Wrapped traversal and permission publication require observed authoritative state
+changes to count as complete. Policy compilation and publication times are
+recorded separately from measured server tick times. Deterministic impaired transport, including loss, jitter, freezes,
+reordering and duplication, is covered separately by the MC-AI-0247
+`AdverseNetwork` acceptance tests; the loopback renderer benchmark does not
+claim to measure frame timing under that impairment.
+
+The benchmark records the first two seconds of connected loops as cold,
 the next three as warm, and the final second without the client idle delay as
 uncapped. The JSON keeps every loop and server tick duration, successful and
 failed present requests, traffic event counts, and per-loop resident terrain
@@ -31,7 +42,8 @@ renderer sample and may lag the corresponding request. Its request rates count c
 requests completed inside each half-open measurement interval; a request
 completed after the final interval is recorded as excluded, not counted in its
 rate. `displayed_cadence_hz` is null because the client does not observe
-physical scanout. Resident mesh bytes and power mode are
+physical scanout. Timing summaries include p50/p95/p99/p99.8/max; raw samples
+remain in the JSON. Resident mesh bytes and power mode are
 unavailable in this mode and are marked accordingly. GPU identity is also null
 when the renderer reports only its generic presentation context. The benchmark succeeds
 when every phase includes a completed request and the workload sends inputs

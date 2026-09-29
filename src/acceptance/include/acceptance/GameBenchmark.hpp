@@ -6,8 +6,22 @@
 #include <cstdint>
 #include <expected>
 #include <string>
+#include <string_view>
+
+namespace shared {
+
+struct Direction;
+
+} // namespace shared
 
 namespace acceptance {
+
+enum class GameBenchmarkWorkload : uint8_t {
+    OrdinaryMovement,
+    Speed200Movement,
+    WrappedBorder,
+    PermissionCollisionChurn,
+};
 
 struct GameBenchmarkOptions final {
     std::chrono::seconds cold_duration{ 2 };
@@ -15,7 +29,14 @@ struct GameBenchmarkOptions final {
     std::chrono::seconds uncapped_duration{ 1 };
     std::chrono::seconds deadline{ 60 };
     bool require_immediate_present_mode = false;
+    GameBenchmarkWorkload workload = GameBenchmarkWorkload::OrdinaryMovement;
 };
+
+[[nodiscard]]
+shared::Direction gameBenchmarkDirection(GameBenchmarkWorkload workload, uint64_t ordinal) noexcept;
+
+[[nodiscard]]
+std::string_view gameBenchmarkWorkloadName(GameBenchmarkWorkload workload) noexcept;
 
 enum class GameBenchmarkPhase : uint8_t {
     Cold,

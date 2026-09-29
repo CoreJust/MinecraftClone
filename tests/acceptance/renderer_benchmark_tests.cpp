@@ -25,6 +25,7 @@ TEST(RendererBenchmark, SummarizesOrderedCpuPresentationRequestDurations)
     EXPECT_EQ(summary.p50, std::chrono::nanoseconds{ 2 });
     EXPECT_EQ(summary.p95, std::chrono::nanoseconds{ 4 });
     EXPECT_EQ(summary.p99, std::chrono::nanoseconds{ 4 });
+    EXPECT_EQ(summary.p99_8, std::chrono::nanoseconds{ 4 });
     EXPECT_EQ(summary.maximum, std::chrono::nanoseconds{ 4 });
     EXPECT_EQ(summary.mean, std::chrono::nanoseconds{ 2 });
 }
@@ -37,8 +38,24 @@ TEST(RendererBenchmark, ReportsNoStatisticsForNoFrames)
     EXPECT_EQ(summary.p50, std::chrono::nanoseconds::zero());
     EXPECT_EQ(summary.p95, std::chrono::nanoseconds::zero());
     EXPECT_EQ(summary.p99, std::chrono::nanoseconds::zero());
+    EXPECT_EQ(summary.p99_8, std::chrono::nanoseconds::zero());
     EXPECT_EQ(summary.maximum, std::chrono::nanoseconds::zero());
     EXPECT_EQ(summary.mean, std::chrono::nanoseconds::zero());
+}
+
+TEST(RendererBenchmark, ReportsP998SeparatelyFromMaximum)
+{
+    static constexpr uint32_t SAMPLE_COUNT = 500U;
+    std::vector<std::chrono::nanoseconds> samples;
+    samples.reserve(SAMPLE_COUNT);
+    for (uint32_t index = 1U; index <= SAMPLE_COUNT; ++index) {
+        samples.emplace_back(index);
+    }
+
+    acceptance::FrameTimingSummary const summary = acceptance::summarizeFrameTimings(samples);
+
+    EXPECT_EQ(summary.p99_8, std::chrono::nanoseconds{ 499 });
+    EXPECT_EQ(summary.maximum, std::chrono::nanoseconds{ 500 });
 }
 
 TEST(RendererBenchmark, RequiresBoth120FpsAndStableFrameTiming)

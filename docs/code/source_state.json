@@ -2,7 +2,7 @@
   "modules": [
     {
       "guide": "docs/ACCEPTANCE.md",
-      "guide_sha256": "bd4642e26d4926eb91454edd4985425e487985b354bf9913e0009654e085dd3f",
+      "guide_sha256": "eceb32fc5f400c830a848974cbf5ff2eaa68651a267b3f1fbad2497f1be6d853",
       "id": "acceptance",
       "sources": [
         "src/acceptance/CMakeLists.txt",
@@ -31,7 +31,7 @@
         "tests/acceptance/runtime_cli_tests.cmake",
         "tests/acceptance/scenario_runner_tests.cpp"
       ],
-      "sources_sha256": "7d483f336ce506a4fda27d52236f62a9500693d03ac729350a374c9b65c2d696"
+      "sources_sha256": "10caf977fa3ef80748a0bebf80f85ba23a343ac0d1948811b987927ce2e24162"
     },
     {
       "guide": "docs/code/ANDROID.md",
@@ -276,7 +276,7 @@
         "tests/core/world_generation_scheduler_tests.cpp",
         "tests/core/world_generation_tests.cpp"
       ],
-      "sources_sha256": "4754b4a9d5bf421002d00571690b5e0e536566f21de505ff8a5094673646ba51"
+      "sources_sha256": "29f856d69a6367ba2df8ccc70836ce508bd072503f5a304b2a566a11d4495877"
     },
     {
       "guide": "docs/code/RENDERING.md",
