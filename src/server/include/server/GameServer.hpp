@@ -13,6 +13,7 @@
 #include <cstdint>
 #include <deque>
 #include <expected>
+#include <functional>
 #include <memory>
 #include <unordered_map>
 #include <unordered_set>
@@ -23,6 +24,9 @@ namespace server {
 
 class GameServer final : public core::Server {
 public:
+    struct BenchmarkHooks final {
+        std::function<void(std::chrono::nanoseconds, uint64_t)> on_tick;
+    };
     struct SpawnPoint final {
         char character;
         int32_t x;
@@ -53,6 +57,7 @@ public:
 
     void run();
     void run(std::atomic_bool const& stop_requested);
+    void run(std::atomic_bool const& stop_requested, BenchmarkHooks const* benchmark_hooks);
     [[nodiscard]]
     uint64_t tick(std::chrono::milliseconds timeout = std::chrono::milliseconds::zero());
 

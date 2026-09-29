@@ -18,7 +18,14 @@ constexpr std::chrono::milliseconds CONNECTION_RETRY_DELAY{ 250 };
 
 } // namespace
 
-void GameClient::run(core::Address const server_address, char const ch) {
+void GameClient::run(
+    core::Address const server_address,
+    char const ch,
+    GameClientBenchmarkHooks const* const benchmark_hooks
+) {
+    m_benchmark_hooks = benchmark_hooks;
+    m_benchmark_bytes_sent = 0U;
+    m_benchmark_bytes_received = 0U;
     m_local_character = ch;
     m_running = true;
     m_accepted = false;
@@ -30,7 +37,14 @@ void GameClient::run(core::Address const server_address, char const ch) {
         }
     }
     FrameScheduler scheduler{ std::chrono::steady_clock::now(), shared::TICK };
-    while (m_running) {
+    auto const benchmark_stopped = [benchmark_hooks] {
+        return benchmark_hooks && (
+            (benchmark_hooks->deadline && std::chrono::steady_clock::now() >= *benchmark_hooks->deadline)
+            || (benchmark_hooks->should_stop && benchmark_hooks->should_stop())
+        );
+    };
+    uint64_t input_ordinal = 0U;
+    while (m_running && !benchmark_stopped()) {
         if (!isConnected()) {
             if (!connect(server_address, CONNECTION_ATTEMPT_TIMEOUT)) {
                 CORE_INFO("Waiting to connect to server {}", server_address);
@@ -42,36 +56,88 @@ void GameClient::run(core::Address const server_address, char const ch) {
                 continue;
             }
         }
-        while (!m_accepted && m_running && isConnected()) {
+        while (!m_accepted && m_running && isConnected() && !benchmark_stopped()) {
             poll(std::chrono::milliseconds{ 100 });
         }
-        if (!m_running) {
+        if (!m_running || benchmark_stopped()) {
             break;
         }
         if (!isConnected()) {
             continue;
         }
-        while (poll(std::chrono::milliseconds::zero()) > 0) {
+        auto const loop_started_at = benchmark_hooks
+            ? std::chrono::steady_clock::now()
+            : std::chrono::steady_clock::time_point{};
+        auto const network_poll_started_at = loop_started_at;
+        uint64_t network_event_count = 0U;
+        uint32_t polled_event_count = 0U;
+        while ((polled_event_count = poll(std::chrono::milliseconds::zero())) > 0U) {
+            network_event_count += polled_event_count;
         }
+        auto const network_poll_completed_at = benchmark_hooks
+            ? std::chrono::steady_clock::now()
+            : std::chrono::steady_clock::time_point{};
         processPendingHeightTileDeliveries();
+        auto const height_tile_delivery_completed_at = benchmark_hooks
+            ? std::chrono::steady_clock::now()
+            : std::chrono::steady_clock::time_point{};
         if (!m_running || !isConnected()) {
             continue;
         }
         std::chrono::steady_clock::time_point const now = std::chrono::steady_clock::now();
+        bool input_sent = false;
         if (scheduler.simulationDue(now)) {
-            if (auto const predicted_input = predictInput(input(), now)) {
-                if (!send(*predicted_input)) {
+            std::optional<shared::Direction> direction;
+            if (benchmark_hooks && benchmark_hooks->input_override) {
+                direction = benchmark_hooks->input_override(input_ordinal);
+            }
+            ++input_ordinal;
+            if (!direction) {
+                direction = input();
+            }
+            if (auto const predicted_input = predictInput(*direction, now)) {
+                input_sent = send(*predicted_input);
+                if (!input_sent) {
                     discardPredictedInput(predicted_input->sequence, now);
                 }
             }
         }
+        auto const render_started_at = benchmark_hooks
+            ? std::chrono::steady_clock::now()
+            : std::chrono::steady_clock::time_point{};
         render();
+        auto const render_completed_at = benchmark_hooks
+            ? std::chrono::steady_clock::now()
+            : std::chrono::steady_clock::time_point{};
         if (!m_running || !isConnected()) {
             continue;
         }
-        std::this_thread::sleep_for(scheduler.idleDelay(now));
+        if (benchmark_hooks && benchmark_hooks->on_loop) {
+            benchmark_hooks->on_loop(GameClientLoopSample{
+                .started_at = loop_started_at,
+                .completed_at = render_completed_at,
+                .network_poll_duration = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                    network_poll_completed_at - network_poll_started_at
+                ),
+                .height_tile_delivery_duration = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                    height_tile_delivery_completed_at - network_poll_completed_at
+                ),
+                .render_duration = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                    render_completed_at - render_started_at
+                ),
+                .network_event_count = network_event_count,
+                .client_message_payload_bytes_sent = m_benchmark_bytes_sent,
+                .client_message_payload_bytes_received = m_benchmark_bytes_received,
+                .input_sent = input_sent,
+                .presentation_succeeded = presentationSucceeded(),
+            });
+        }
+        if (!benchmark_hooks || !benchmark_hooks->is_uncapped_phase || !benchmark_hooks->is_uncapped_phase()) {
+            std::this_thread::sleep_for(scheduler.idleDelay(now));
+        }
     }
     m_client_audio.stop();
+    m_benchmark_hooks = nullptr;
 }
 
 void GameClient::onDisconnected(core::DisconnectEvent const event) {
@@ -99,6 +165,9 @@ void GameClient::resetConnectionState()
 }
 
 void GameClient::onReceived(core::ReceiveEvent event) {
+    if (m_benchmark_hooks) {
+        m_benchmark_bytes_received += event.data.size();
+    }
     std::optional maybe_msg = shared::decodeMessage(event.data);
     if (!maybe_msg) {
         CORE_ERROR("Received a corrupted message");
@@ -145,7 +214,12 @@ void GameClient::onReceived(core::ReceiveEvent event) {
             }
         }
     } else if (auto* msg = std::get_if<shared::ServerPlayerPositionMessage>(msg_ptr)) {
-        static_cast<void>(applyServerPosition(*msg));
+        if (applyServerPosition(*msg) && m_benchmark_hooks
+            && m_benchmark_hooks->on_authoritative_player) {
+            if (auto const player = m_world.playerByCharacter(msg->ch)) {
+                m_benchmark_hooks->on_authoritative_player(*player);
+            }
+        }
     } else if (auto* msg = std::get_if<shared::ServerRemovePlayerMessage>(msg_ptr)) {
         applyServerRemoval(msg->ch);
     } else {
@@ -306,6 +380,9 @@ bool GameClient::send(shared::Message const message)
     if (!core::Client::send(message_bytes, shared::GAME_CHANNEL, core::SendMode{ core::SendMode::Reliable })) {
         CORE_ERROR("Failed to send a message");
         return false;
+    }
+    if (m_benchmark_hooks) {
+        m_benchmark_bytes_sent += message_bytes.size();
     }
     return true;
 }

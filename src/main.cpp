@@ -10,6 +10,7 @@
 #include <core/net/Net.hpp>
 
 #include <acceptance/EvidenceJson.hpp>
+#include <acceptance/GameBenchmark.hpp>
 #include <acceptance/RenderCapture.hpp>
 #include <acceptance/RendererBenchmark.hpp>
 #include <acceptance/ScenarioRunner.hpp>
@@ -34,6 +35,7 @@ namespace {
 enum class RuntimeMode {
     Scenario,
     RendererBenchmark,
+    GameBenchmark,
     RendererCapture,
 };
 
@@ -229,6 +231,20 @@ std::expected<RuntimeCommand, std::string> parseRuntimeCommand(int const argc, c
         }
         return command;
     }
+    if ((argc == 4 || argc == 5) && std::string_view{ argv[1] } == "--benchmark-game"
+        && std::string_view{ argv[argc - 2] } == "--evidence") {
+        RuntimeCommand command{
+            .mode = RuntimeMode::GameBenchmark,
+            .evidence_path = argv[argc - 1],
+        };
+        if (argc == 5) {
+            if (std::string_view{ argv[2] } != "--present-immediate") {
+                return std::unexpected("invalid game benchmark option: " + std::string{ argv[2] });
+            }
+            command.require_immediate_present_mode = true;
+        }
+        return command;
+    }
     if (argc == 6 && std::string_view{ argv[1] } == "--capture-render"
         && std::string_view{ argv[2] } == "--image"
         && std::string_view{ argv[4] } == "--evidence"
@@ -242,6 +258,7 @@ std::expected<RuntimeCommand, std::string> parseRuntimeCommand(int const argc, c
     return std::unexpected(
         "expected '--scenario <file> --evidence <file>', "
         "'--benchmark-render [--present-immediate] [--hud] --evidence <file>', "
+        "'--benchmark-game [--present-immediate] --evidence <file>', "
         "or '--capture-render --image <ppm> --evidence <file>'"
     );
 }
@@ -392,6 +409,22 @@ int runRendererBenchmarkCommand(RuntimeCommand const& command)
 }
 
 [[nodiscard]]
+int runGameBenchmarkCommand(RuntimeCommand const& command)
+{
+    acceptance::GameBenchmarkOptions const options{
+        .require_immediate_present_mode = command.require_immediate_present_mode,
+    };
+    RuntimeDeadlineWatchdog watchdog{ command.evidence_path, "benchmark-game", options.deadline };
+    acceptance::RuntimeEvidence evidence = acceptance::collectRuntimeEvidence(
+        "benchmark-game",
+        [&options] { return acceptance::runGameBenchmark(options); }
+    );
+    evidence.deadline = std::chrono::duration_cast<std::chrono::milliseconds>(options.deadline);
+    watchdog.complete();
+    return writeRuntimeEvidence(command.evidence_path, evidence);
+}
+
+[[nodiscard]]
 int runRendererCaptureCommand(RuntimeCommand const& command)
 {
     if (normalizedOutputPath(command.image_path) == normalizedOutputPath(command.evidence_path)) {
@@ -423,6 +456,7 @@ int main(int argc, char** argv) {
         bool const is_runtime_command = argc > 1
             && (std::string_view{ argv[1] } == "--scenario"
                 || std::string_view{ argv[1] } == "--benchmark-render"
+                || std::string_view{ argv[1] } == "--benchmark-game"
                 || std::string_view{ argv[1] } == "--capture-render");
         if (is_runtime_command) {
             auto const command = parseRuntimeCommand(argc, argv);
@@ -433,6 +467,8 @@ int main(int argc, char** argv) {
                 exit_code = runScenarioCommand(*command);
             } else if (command->mode == RuntimeMode::RendererBenchmark) {
                 exit_code = runRendererBenchmarkCommand(*command);
+            } else if (command->mode == RuntimeMode::GameBenchmark) {
+                exit_code = runGameBenchmarkCommand(*command);
             } else {
                 exit_code = runRendererCaptureCommand(*command);
             }

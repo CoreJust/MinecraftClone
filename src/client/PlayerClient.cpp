@@ -258,10 +258,12 @@ void PlayerClient::onConnectionStateReset()
 
 PlayerClient::PlayerClient(
     shared::WorldMode const mode,
-    std::optional<PlayerClientCaptureOptions> capture
+    std::optional<PlayerClientCaptureOptions> capture,
+    std::optional<PlayerClientBenchmarkOptions> benchmark
 )
     : GameClient{ mode }
     , m_capture(std::move(capture))
+    , m_benchmark(std::move(benchmark))
     , m_window(core::platform::glfw::WindowDescriptor{
         .width = 1280U,
         .height = 720U,
@@ -270,10 +272,18 @@ PlayerClient::PlayerClient(
     , m_renderer(
         VulkanRenderer::createPresentationContext(
             m_window,
-            {.enable_frame_capture = m_capture.has_value()}
+            {
+                .enable_frame_capture = m_capture.has_value(),
+                .require_immediate_present_mode = m_benchmark
+                    && m_benchmark->require_immediate_present_mode,
+            }
         ),
         m_shader_assets,
-        {.enable_frame_capture = m_capture.has_value()}
+        {
+            .enable_frame_capture = m_capture.has_value(),
+            .require_immediate_present_mode = m_benchmark
+                && m_benchmark->require_immediate_present_mode,
+        }
     )
     , m_preview_mesh_workers(std::make_unique<PreviewMeshWorkerPool>())
 {
@@ -284,6 +294,19 @@ PlayerClient::PlayerClient(
             + shared::WorldExtent::DEPTH,
     }));
     m_renderer.setDebugHudEnabled(true);
+    if (m_benchmark) {
+        m_renderer.setDebugHudEnabled(false);
+    }
+}
+
+RendererRuntimeInfo PlayerClient::benchmarkRuntimeInfo() const
+{
+    return m_renderer.runtimeInfo();
+}
+
+bool PlayerClient::presentationSucceeded() const
+{
+    return m_last_presentation_succeeded;
 }
 
 size_t PlayerHeightTileKeyHash::operator()(shared::HeightTileKey const key) const noexcept
@@ -941,12 +964,12 @@ void PlayerClient::render() {
         m_renderer.toggleDebugHud();
     }
     m_renderer.setCamera(m_camera.pose(), m_camera.projection());
-    static_cast<void>(m_renderer.render(
+    m_last_presentation_succeeded = m_renderer.render(
         m_render_data,
         debug_hud_input,
         std::max(content_scale_x, content_scale_y),
         renderer_deadline
-    ));
+    );
 
     if (m_capture.has_value()) {
         RendererRuntimeInfo const runtime = m_renderer.runtimeInfo();

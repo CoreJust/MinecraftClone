@@ -195,6 +195,7 @@ if(MC_BUILD_CLIENT AND NOT ANDROID)
         PRIVATE
             android/input_state_tests.cpp
             acceptance/evidence_json_tests.cpp
+            acceptance/game_benchmark_tests.cpp
             acceptance/adverse_network_tests.cpp
             acceptance/framebuffer_extent_tests.cpp
             acceptance/image_evidence_tests.cpp
@@ -206,6 +207,7 @@ if(MC_BUILD_CLIENT AND NOT ANDROID)
             client/debug_hud_tests.cpp
             client/frame_scheduler_tests.cpp
             client/game_client_audio_tests.cpp
+            client/game_client_benchmark_tests.cpp
             client/gui_renderer_tests.cpp
             client/client_audio_tests.cpp
             client/game_client_prediction_tests.cpp

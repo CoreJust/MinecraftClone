@@ -12,6 +12,7 @@
 #include <array>
 #include <chrono>
 #include <deque>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <unordered_map>
@@ -19,6 +20,28 @@
 #include <utility>
 
 namespace client {
+
+struct GameClientLoopSample final {
+    std::chrono::steady_clock::time_point started_at;
+    std::chrono::steady_clock::time_point completed_at;
+    std::chrono::nanoseconds network_poll_duration{ 0 };
+    std::chrono::nanoseconds height_tile_delivery_duration{ 0 };
+    std::chrono::nanoseconds render_duration{ 0 };
+    uint64_t network_event_count = 0U;
+    uint64_t client_message_payload_bytes_sent = 0U;
+    uint64_t client_message_payload_bytes_received = 0U;
+    bool input_sent = false;
+    bool presentation_succeeded = false;
+};
+
+struct GameClientBenchmarkHooks final {
+    std::optional<std::chrono::steady_clock::time_point> deadline;
+    std::function<bool()> should_stop;
+    std::function<bool()> is_uncapped_phase;
+    std::function<std::optional<shared::Direction>(uint64_t)> input_override;
+    std::function<void(GameClientLoopSample const&)> on_loop;
+    std::function<void(shared::Player const&)> on_authoritative_player;
+};
 
 class GameClient : public core::Client {
 public:
@@ -38,7 +61,11 @@ public:
         , m_client_audio{ std::move(audio_output) }
     { }
 
-    void run(core::Address const server_address, char const ch);
+    void run(
+        core::Address server_address,
+        char ch,
+        GameClientBenchmarkHooks const* benchmark_hooks = nullptr
+    );
     [[nodiscard]] PreviewResidency const& heightTileResidency() const noexcept
     {
         return m_height_tile_residency;
@@ -50,6 +77,7 @@ public:
 protected:
     virtual shared::Direction input() = 0;
     virtual void render() = 0;
+    [[nodiscard]] virtual bool presentationSucceeded() const { return false; }
 
     [[nodiscard]] bool send(shared::Message const message);
     [[nodiscard]]
@@ -104,6 +132,9 @@ protected:
     bool m_running = true;
     bool m_accepted = false;
     uint32_t m_join_character_index = 0;
+    GameClientBenchmarkHooks const* m_benchmark_hooks = nullptr;
+    uint64_t m_benchmark_bytes_sent = 0U;
+    uint64_t m_benchmark_bytes_received = 0U;
 private:
     [[nodiscard]] bool sendJoinRequest();
     [[nodiscard]] bool applyHeightTileDescriptor(shared::ServerHeightTileDescriptorMessage const& message);

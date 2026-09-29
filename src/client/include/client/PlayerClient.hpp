@@ -27,6 +27,10 @@ struct PlayerClientCaptureOptions final {
     uint32_t minimum_height_tile_meshes = 1'024U;
 };
 
+struct PlayerClientBenchmarkOptions final {
+    bool require_immediate_present_mode = false;
+};
+
 struct PlayerHeightTileKeyHash final {
     [[nodiscard]] size_t operator()(shared::HeightTileKey key) const noexcept;
 };
@@ -35,9 +39,11 @@ class PlayerClient final : public GameClient {
 public:
     explicit PlayerClient(
         shared::WorldMode mode = shared::WorldMode::Flat,
-        std::optional<PlayerClientCaptureOptions> capture = std::nullopt
+        std::optional<PlayerClientCaptureOptions> capture = std::nullopt,
+        std::optional<PlayerClientBenchmarkOptions> benchmark = std::nullopt
     );
     ~PlayerClient();
+    [[nodiscard]] RendererRuntimeInfo benchmarkRuntimeInfo() const;
 private:
     friend struct PlayerClientTestAccess;
     class PreviewMeshWorkerPool;
@@ -49,6 +55,7 @@ private:
     };
     shared::Direction input() override;
     void render() override;
+    [[nodiscard]] bool presentationSucceeded() const override;
     void onConnectionStateReset() override;
 private:
     void beginContinuousLook() noexcept;
@@ -92,6 +99,8 @@ private:
         { .position = { 9.0, 9.0, 13.0 } },
     };
     std::optional<PlayerClientCaptureOptions> m_capture;
+    std::optional<PlayerClientBenchmarkOptions> m_benchmark;
+    bool m_last_presentation_succeeded = false;
     core::platform::glfw::GlfwWindow m_window;
     InstalledShaderAssets m_shader_assets;
     VulkanRenderer m_renderer;

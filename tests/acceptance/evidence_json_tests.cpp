@@ -95,6 +95,57 @@ TEST(EvidenceJson, LabelsBenchmarkSamplesAsCpuPresentationRequestsAndPhases)
     EXPECT_EQ(json.find("\"frame_timings_ns\""), std::string::npos);
 }
 
+TEST(EvidenceJson, SeparatesFullGameRequestsFromPhysicalDisplayCadence)
+{
+    acceptance::RuntimeEvidence const evidence{
+        .mode = "benchmark-game",
+        .game_benchmark = acceptance::GameBenchmarkEvidence{
+            .client_message_payload_bytes_sent = 128U,
+            .client_message_payload_bytes_received = 256U,
+            .excluded_present_requests = 1U,
+            .warm_present_requests_per_second = 87.5,
+            .uncapped_present_requests_per_second = 150.0,
+            .raw_frames = {
+                acceptance::GameBenchmarkFrameSample{
+                    .warm = true,
+                    .presentation_succeeded = true,
+                    .loop_duration_ns = 12'000U,
+                    .network_event_count = 2U,
+                    .latest_gpu_frame_duration_ns = 42U,
+                },
+                acceptance::GameBenchmarkFrameSample{
+                    .uncapped = true,
+                    .presentation_succeeded = false,
+                    .loop_duration_ns = 4'000U,
+                },
+                acceptance::GameBenchmarkFrameSample{
+                    .excluded = true,
+                    .presentation_succeeded = true,
+                    .loop_duration_ns = 5'000U,
+                },
+            },
+            .raw_server_tick_durations_ns = { 100U, 200U },
+        },
+    };
+
+    std::string const json = acceptance::evidenceJson(evidence);
+
+    EXPECT_NE(json.find("\"measurement_kind\": \"full-game-render-submit-present-request\""), std::string::npos);
+    EXPECT_NE(json.find("\"displayed_cadence_hz\": null"), std::string::npos);
+    EXPECT_NE(json.find("\"gpu\": null"), std::string::npos);
+    EXPECT_NE(json.find("\"client_message_payload_bytes_sent\": 128"), std::string::npos);
+    EXPECT_NE(json.find("\"client_message_payload_bytes_received\": 256"), std::string::npos);
+    EXPECT_EQ(json.find("\"network_bytes_sent\""), std::string::npos);
+    EXPECT_NE(json.find("\"excluded_present_requests\": 1"), std::string::npos);
+    EXPECT_NE(json.find("\"latest_gpu_frame_duration_ns\": 42"), std::string::npos);
+    EXPECT_NE(json.find("\"warm_present_requests_per_second\": 87.500000"), std::string::npos);
+    EXPECT_NE(json.find("\"uncapped_present_requests_per_second\": 150.000000"), std::string::npos);
+    EXPECT_NE(json.find("\"phase\": \"warm\", \"presentation_succeeded\": true"), std::string::npos);
+    EXPECT_NE(json.find("\"phase\": \"uncapped\", \"presentation_succeeded\": false"), std::string::npos);
+    EXPECT_NE(json.find("\"phase\": \"excluded\", \"presentation_succeeded\": true"), std::string::npos);
+    EXPECT_NE(json.find("\"raw_server_tick_durations_ns\": [100, 200]"), std::string::npos);
+}
+
 TEST(EvidenceJson, ConvertsExpectedFailureToSerializableEvidence)
 {
     acceptance::RuntimeEvidence const evidence = acceptance::collectRuntimeEvidence(

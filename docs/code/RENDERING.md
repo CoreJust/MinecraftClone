@@ -105,11 +105,16 @@ readback, input, and the default-on HUD.
 S5 offscreen acceptance verifies textured stone, sky, deterministic frames,
 mesh replacement, validation, and remote-player altitude.
 
-The benchmark requires immediate presentation and records mode, resolution,
-scene, HUD, rate, p50/p95/p99/max, stutters, and CPU phases, but no GPU
-timestamps. Release disables validation; `--hud` supports paired runs. The S6
-90-by-90 scene stresses bounded edge uploads. Its historical 120 Hz and p99
-targets include display wait and scheduler jitter.
+The fixed-scene `--benchmark-render` excludes server, network, and gameplay;
+`--benchmark-game` counts completed player-client present requests with those
+systems running. Neither observes physical scanout. Immediate-mode requests
+fail if unavailable. Renderer evidence includes resolution, GPU, HUD, rate,
+p50/p95/p99/max, and CPU phases; GPU timestamps are unavailable. Release
+disables validation, and `--hud` supports paired runs. The S6 renderer stress
+scene uses maximum 90-by-90 capacity and bounded edge streaming; gameplay uses
+the smaller directional ellipse in [GAMEPLAY.md](GAMEPLAY.md). Its renderer-only
+gate requires nominal 120 Hz within one percent and p99 at most 10 ms,
+including display wait and scheduler jitter.
 
 Visible benchmark and capture modes preserve requested framebuffer pixels.
 Bounded GLFW setup checks logical resizing before creating a `PresentationContext`;

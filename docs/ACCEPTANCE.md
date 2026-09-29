@@ -5,6 +5,7 @@ The desktop executable provides bounded, noninteractive modes for snapshot evide
 ```sh
 mc_main --scenario <file> --evidence <json>
 mc_main --benchmark-render [--present-immediate] [--hud] --evidence <json>
+mc_main --benchmark-game [--present-immediate] --evidence <json>
 mc_main --capture-render --image <ppm> --evidence <json>
 ```
 
@@ -17,6 +18,24 @@ sample durations, frame count, and CPU timing percentiles. The historical total
 complete/submit/present call; acquire is separately reported. Preserve these fields
 with each result; do not treat a hardware-specific request rate as a portable FPS or
 GPU-performance threshold.
+
+`--benchmark-game` runs the production loopback server, networked Flight client,
+authoritative simulation, and Vulkan player renderer with a fixed alternating
+movement input. It records the first two seconds of connected loops as cold,
+the next three as warm, and the final second without the client idle delay as
+uncapped. The JSON keeps every loop and server tick duration, successful and
+failed present requests, traffic event counts, and per-loop resident terrain
+tiles, visible faces, and client application-message payload bytes (excluding
+transport overhead). Available GPU durations are recorded as the latest
+renderer sample and may lag the corresponding request. Its request rates count completed render/submit/present
+requests completed inside each half-open measurement interval; a request
+completed after the final interval is recorded as excluded, not counted in its
+rate. `displayed_cadence_hz` is null because the client does not observe
+physical scanout. Resident mesh bytes and power mode are
+unavailable in this mode and are marked accordingly. GPU identity is also null
+when the renderer reports only its generic presentation context. The benchmark succeeds
+when every phase includes a completed request and the workload sends inputs
+and processes server events; it does not gate on a device-specific FPS target.
 
 `--present-immediate` requires immediate negotiation and fails instead of reporting
 FIFO as an immediate result. The Release default leaves validation disabled. For a

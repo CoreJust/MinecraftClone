@@ -574,11 +574,30 @@ void GameServer::run()
 
 void GameServer::run(std::atomic_bool const& stop_requested)
 {
+    run(stop_requested, nullptr);
+}
+
+void GameServer::run(
+    std::atomic_bool const& stop_requested,
+    BenchmarkHooks const* const benchmark_hooks
+)
+{
     auto next_simulation = std::chrono::steady_clock::now();
     while (!stop_requested.load(std::memory_order_relaxed)) {
         auto const now = std::chrono::steady_clock::now();
         if (now >= next_simulation) {
-            static_cast<void>(tick(std::chrono::milliseconds::zero()));
+            auto const tick_started_at = benchmark_hooks
+                ? std::chrono::steady_clock::now()
+                : std::chrono::steady_clock::time_point{};
+            uint64_t const events = tick(std::chrono::milliseconds::zero());
+            if (benchmark_hooks && benchmark_hooks->on_tick) {
+                benchmark_hooks->on_tick(
+                    std::chrono::duration_cast<std::chrono::nanoseconds>(
+                        std::chrono::steady_clock::now() - tick_started_at
+                    ),
+                    events
+                );
+            }
             next_simulation += shared::TICK;
         } else {
             while (poll(std::chrono::milliseconds::zero()) > 0) {

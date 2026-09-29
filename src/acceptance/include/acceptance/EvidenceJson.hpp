@@ -7,6 +7,7 @@
 #include <functional>
 #include <optional>
 #include <string>
+#include <vector>
 
 namespace acceptance {
 
@@ -56,6 +57,53 @@ struct RendererCaptureEvidence final {
     bool content_verified{ false };
 };
 
+struct GameBenchmarkFrameSample final {
+    bool warm = false;
+    bool uncapped = false;
+    bool excluded = false;
+    bool presentation_succeeded = false;
+    uint64_t started_offset_ns = 0U;
+    uint64_t loop_duration_ns = 0U;
+    uint64_t render_duration_ns = 0U;
+    uint64_t network_poll_duration_ns = 0U;
+    uint64_t height_tile_delivery_duration_ns = 0U;
+    uint64_t network_event_count = 0U;
+    uint64_t client_message_payload_bytes_sent = 0U;
+    uint64_t client_message_payload_bytes_received = 0U;
+    uint32_t resident_terrain_tile_count = 0U;
+    uint32_t visible_surface_face_count = 0U;
+    std::optional<uint64_t> latest_gpu_frame_duration_ns;
+};
+
+struct GameBenchmarkEvidence final {
+    std::string package_id;
+    std::string hardware;
+    std::optional<std::string> gpu;
+    std::string present_mode;
+    std::string build_mode;
+    uint64_t cold_duration_ms = 0U;
+    uint64_t warm_duration_ms = 0U;
+    uint64_t uncapped_duration_ms = 0U;
+    uint32_t framebuffer_width = 0U;
+    uint32_t framebuffer_height = 0U;
+    uint64_t server_events_processed = 0U;
+    uint64_t client_message_payload_bytes_sent = 0U;
+    uint64_t client_message_payload_bytes_received = 0U;
+    uint64_t inputs_sent = 0U;
+    uint64_t authoritative_player_updates = 0U;
+    uint64_t successful_present_requests = 0U;
+    uint64_t failed_present_requests = 0U;
+    uint64_t excluded_present_requests = 0U;
+    double warm_present_requests_per_second = 0.0;
+    double uncapped_present_requests_per_second = 0.0;
+    FrameTimingSummary cold_loop_timings;
+    FrameTimingSummary warm_loop_timings;
+    FrameTimingSummary uncapped_loop_timings;
+    FrameTimingSummary server_tick_timings;
+    std::vector<GameBenchmarkFrameSample> raw_frames;
+    std::vector<uint64_t> raw_server_tick_durations_ns;
+};
+
 struct RuntimeEvidence final {
     std::string mode;
     std::string scenario_version;
@@ -78,6 +126,7 @@ struct RuntimeEvidence final {
     std::chrono::milliseconds deadline{ 0 };
     bool passed{ false };
     std::optional<RendererBenchmarkEvidence> benchmark;
+    std::optional<GameBenchmarkEvidence> game_benchmark;
     std::optional<RendererCaptureEvidence> capture;
 };
 

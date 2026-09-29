@@ -2,18 +2,20 @@
   "modules": [
     {
       "guide": "docs/ACCEPTANCE.md",
-      "guide_sha256": "df7d7340c084703ffd05fd7bcd792a51a3b57e56b8a4ec79eb814985572edc67",
+      "guide_sha256": "8c6f34ee1e4fd73a21703f7e40091ddf65fde641a40ce614f71022ac97775493",
       "id": "acceptance",
       "sources": [
         "src/acceptance/CMakeLists.txt",
         "src/acceptance/EvidenceJson.cpp",
         "src/acceptance/FramebufferExtent.cpp",
+        "src/acceptance/GameBenchmark.cpp",
         "src/acceptance/ImageEvidence.cpp",
         "src/acceptance/RenderCapture.cpp",
         "src/acceptance/RendererBenchmark.cpp",
         "src/acceptance/ScenarioRunner.cpp",
         "src/acceptance/include/acceptance/EvidenceJson.hpp",
         "src/acceptance/include/acceptance/FramebufferExtent.hpp",
+        "src/acceptance/include/acceptance/GameBenchmark.hpp",
         "src/acceptance/include/acceptance/ImageEvidence.hpp",
         "src/acceptance/include/acceptance/RenderCapture.hpp",
         "src/acceptance/include/acceptance/RendererBenchmark.hpp",
@@ -22,13 +24,14 @@
         "tests/acceptance/client_launch_test.py",
         "tests/acceptance/evidence_json_tests.cpp",
         "tests/acceptance/framebuffer_extent_tests.cpp",
+        "tests/acceptance/game_benchmark_tests.cpp",
         "tests/acceptance/image_evidence_tests.cpp",
         "tests/acceptance/player_playtest_capture_test.py",
         "tests/acceptance/renderer_benchmark_tests.cpp",
         "tests/acceptance/runtime_cli_tests.cmake",
         "tests/acceptance/scenario_runner_tests.cpp"
       ],
-      "sources_sha256": "cb520806296788eb021d07d02bff32f7510a0a9657f98b7a4e96070740b91bbc"
+      "sources_sha256": "dede504f1bb49b99414faa37ca08cdacc2f4d5f805cf8b387cb69eff5ba2d9fd"
     },
     {
       "guide": "docs/code/ANDROID.md",
@@ -152,7 +155,7 @@
         "vcpkg-configuration.json",
         "vcpkg.json"
       ],
-      "sources_sha256": "970b8ca046776687acf2b5be9b515a7c48fb108a7c464c55ac03e33acad3cd13"
+      "sources_sha256": "3d2670180de62cf3662ac6c9671af395bcffa27d49854703cba23c1335f208cf"
     },
     {
       "guide": "docs/code/CORE.md",
@@ -189,7 +192,7 @@
     },
     {
       "guide": "docs/code/GAMEPLAY.md",
-      "guide_sha256": "0d831bfa3d6cd6e40c34a2b9d584864f64233e0d6e226e4a6fbdb26576af1869",
+      "guide_sha256": "bba35a8d2cc7febef74b3819e9c44b154286f2169836aa823fb88293edee5a0e",
       "id": "gameplay",
       "sources": [
         "src/client/BotClient.cpp",
@@ -273,11 +276,11 @@
         "tests/core/world_generation_scheduler_tests.cpp",
         "tests/core/world_generation_tests.cpp"
       ],
-      "sources_sha256": "5f581870b05cd356f32c25e629dd2a279b2f1cc5209077ef3bb78f2e877ef5d4"
+      "sources_sha256": "4754b4a9d5bf421002d00571690b5e0e536566f21de505ff8a5094673646ba51"
     },
     {
       "guide": "docs/code/RENDERING.md",
-      "guide_sha256": "d3b4a32d0b5ea9cb61437154226d8d68a1e6b6c5b5dad41dea5fd9f89c0ab639",
+      "guide_sha256": "3a6ce944a13efde20c1a23a5ca60135362c70dc811b99ce7c13a2dc0f28a3f31",
       "id": "rendering",
       "sources": [
         "src/client/CMakeLists.txt",
@@ -317,6 +320,7 @@
         "tests/client/depth_format_tests.cpp",
         "tests/client/frame_scheduler_tests.cpp",
         "tests/client/game_client_audio_tests.cpp",
+        "tests/client/game_client_benchmark_tests.cpp",
         "tests/client/game_client_prediction_tests.cpp",
         "tests/client/goldens/README.md",
         "tests/client/goldens/earlydev-0.1.0-snapshot-4-third-person-platform-v3.ppm",
@@ -337,7 +341,7 @@
         "tests/testsupport/image_comparison_tests.cpp",
         "tests/testsupport/include/testsupport/ImageComparison.hpp"
       ],
-      "sources_sha256": "51120bb3337881f152a408e1453e2c90419ccdd097b6ab05cb4bc4d5188ec195"
+      "sources_sha256": "9022325cf2c5ee8dd16de0162b310da736bb3a0a27f926b3d5f7d316eaee4908"
     }
   ],
   "version": 1

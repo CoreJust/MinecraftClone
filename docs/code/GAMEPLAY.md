@@ -73,11 +73,13 @@ responses precede bulk terrain, whose dispatch rotates across clients.
 [GameClient.hpp](../../src/client/include/client/GameClient.hpp) and
 [GameClient.cpp](../../src/client/GameClient.cpp) connect, join, poll, and
 render. `FrameScheduler` sends input every 100 ms and sleeps at most one
-millisecond between presentation attempts. Position messages update a local
-`World`; unknown characters receive locally assigned ids. The first presentation
-update snaps; later updates interpolate during one `TICK` and gaps hold the last
-position. A disconnect clears connection state and retries the join while the
-game remains alive.
+millisecond between presentation attempts. Replicated positions update the
+local world; the first presentation snaps, later updates interpolate for one
+`TICK`, and gaps hold. Disconnect resets the connection and retries.
+
+`GameClientBenchmarkHooks` times connected production loops, supplies scripted
+input, and skips idle delay only for `--benchmark-game`. The server's optional
+hook times authoritative ticks.
 
 [PlayerClient.hpp](../../src/client/include/client/PlayerClient.hpp) and
 [PlayerClient.cpp](../../src/client/PlayerClient.cpp) provide the GLFW/Vulkan
