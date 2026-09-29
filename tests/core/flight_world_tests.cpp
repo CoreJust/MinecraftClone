@@ -6,6 +6,7 @@
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <array>
 #include <utility>
 
 TEST(FlightWorldTest, UsesFirstWaveSpawnAndWrappedCoordinates)
@@ -57,6 +58,16 @@ TEST(FlightWorldTest, MaterializedBlocksAreCollisionAuthority)
     ASSERT_TRUE(world.setPlayerMovementCapabilities(1U, {.bits = 1U}));
     world.setCollisionWorld(&blocks);
     EXPECT_FALSE(world.movePlayer(1U, {.x = 127U}));
+    shared::HeightTile preview{.coordinate = {.x = 6, .y = 6}};
+    preview.heights.fill(64U);
+    ASSERT_TRUE(blocks.publishPreview(
+        {.x = 6, .y = 6, .z = 50},
+        std::move(preview),
+        blocks.options().revision,
+        blocks.options().seed
+    ));
+    EXPECT_EQ(blocks.queryBlock({100, 100, 800}).state, shared::GenerationState::Preview);
+    EXPECT_FALSE(world.movePlayer(1U, {.x = 127U}));
     shared::Chunk const air{{.x = 6, .y = 6, .z = 50}};
     ASSERT_TRUE(blocks.publishMaterializedChunk(air, blocks.options().revision, blocks.options().seed));
     EXPECT_TRUE(world.movePlayer(1U, {.x = 127U}));
@@ -66,6 +77,37 @@ TEST(FlightWorldTest, MaterializedBlocksAreCollisionAuthority)
     ASSERT_TRUE(world.player(1U).has_value());
     EXPECT_EQ(world.player(1U)->x, 100);
     EXPECT_LT(world.player(1U)->x_subcell, 3'750U);
+}
+
+TEST(FlightWorldTest, OnlyCollisionBypassSkipsMaterializationCandidates)
+{
+    static constexpr std::array<uint8_t, 3> VALID_CAPABILITY_BITS{0U, 1U, 3U};
+    shared::SparseWorld unknown_world;
+
+    for (uint8_t const capability_bits : VALID_CAPABILITY_BITS) {
+        shared::World world{shared::WorldMode::Flight};
+        world.spawnPlayer(1U, '@', {.x = 100, .y = 100, .z = 800});
+        ASSERT_TRUE(world.setPlayerMovementCapabilities(1U, {.bits = capability_bits}));
+        world.setCollisionWorld(&unknown_world);
+
+        std::vector<shared::ChunkCoordinate> const candidates = world.flightCollisionChunks(
+            1U,
+            {.x = 127U}
+        );
+
+        if (capability_bits == 3U) {
+            EXPECT_TRUE(candidates.empty());
+            continue;
+        }
+        ASSERT_FALSE(candidates.empty()) << "capability bits: " << static_cast<uint32_t>(capability_bits);
+        for (shared::ChunkCoordinate const coordinate : candidates) {
+            EXPECT_EQ(unknown_world.queryBlock({
+                .x = static_cast<int64_t>(coordinate.x) * shared::Chunk::SIDE_LENGTH,
+                .y = static_cast<int64_t>(coordinate.y) * shared::Chunk::SIDE_LENGTH,
+                .z = static_cast<int64_t>(coordinate.z) * shared::Chunk::SIDE_LENGTH,
+            }).state, shared::GenerationState::Unknown);
+        }
+    }
 }
 
 TEST(FlightWorldTest, MaterializedTerrainSupportsLandingAndJumping)

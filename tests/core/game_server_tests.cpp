@@ -354,7 +354,7 @@ TEST(GameServerFlightTest, DefersUnknownTerrainAndRevalidatesPermissionsBeforeAp
     ASSERT_TRUE(joinManually(server, client, '@', shared::WorldMode::Flight));
     shared::ServerPlayerPositionMessage const spawn = client.positions('@').back();
     ASSERT_TRUE(client.sendMessage(shared::ClientInputMessage{
-        .direction = {.x = 0U, .y = 0U, .z = 127U},
+        .direction = {.x = 0U, .y = 0U, .z = 127U, .cycle_movement_capabilities = true},
         .sequence = 1U,
     }));
 
@@ -363,6 +363,7 @@ TEST(GameServerFlightTest, DefersUnknownTerrainAndRevalidatesPermissionsBeforeAp
     ASSERT_FALSE(client.positions('@').empty());
     EXPECT_EQ(client.positions('@').back().acknowledged_input_sequence, 0U);
     EXPECT_EQ(client.positions('@').back().z_subcell, spawn.z_subcell);
+    EXPECT_EQ(client.positions('@').back().movement_capabilities.bits, spawn.movement_capabilities.bits);
 
     auto compilation = hardMovementDenyPolicy();
     ASSERT_TRUE(compilation.has_value()) << compilation.error().message;
@@ -385,7 +386,7 @@ TEST(GameServerFlightTest, ResumesDeferredInputAfterTerrainMaterializes)
     ASSERT_TRUE(joinManually(server, client, '@', shared::WorldMode::Flight));
     shared::ServerPlayerPositionMessage const spawn = client.positions('@').back();
     ASSERT_TRUE(client.sendMessage(shared::ClientInputMessage{
-        .direction = {.x = 0U, .y = 0U, .z = 127U},
+        .direction = {.x = 0U, .y = 0U, .z = 127U, .cycle_movement_capabilities = true},
         .sequence = 1U,
     }));
 
@@ -401,7 +402,7 @@ TEST(GameServerFlightTest, ResumesDeferredInputAfterTerrainMaterializes)
     }));
     shared::ServerPlayerPositionMessage const completed = client.positions('@').back();
     EXPECT_EQ(completed.z_subcell, shared::MOVEMENT_SUBCELLS_PER_TICK);
-    EXPECT_EQ(completed.movement_capabilities.bits, spawn.movement_capabilities.bits);
+    EXPECT_EQ(completed.movement_capabilities.bits, 1U);
 }
 
 TEST(GameServerFlightTest, DefersMixedJumpUntilAdjacentHorizontalChunkMaterializes)
