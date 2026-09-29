@@ -27,6 +27,7 @@ foreach(forbidden_target IN ITEMS
     CoreCpp::RuntimePlatformGlfw
     CoreCpp::RuntimePlatformAndroid
     CoreCpp::RuntimeAudio
+    CoreCpp::RuntimeAudioOutput
 )
     if(TARGET "${forbidden_target}")
         message(FATAL_ERROR "Server-only consumer loaded optional target: ${forbidden_target}")

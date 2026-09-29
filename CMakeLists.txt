@@ -53,8 +53,13 @@ endif()
 ###  DEPENDENCIES SETUP  ###
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/CoreCppProvenance.cmake")
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/CoreProject2026Provenance.cmake")
+# Resolve transitive packages from the selected vcpkg triplet before host-installed packages.
+if(VCPKG_INSTALLED_DIR AND VCPKG_TARGET_TRIPLET)
+    list(PREPEND CMAKE_PREFIX_PATH "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}")
+endif()
 find_package(CoreCpp CONFIG REQUIRED COMPONENTS Core Runtime RuntimeNetwork RuntimeExecutors)
 if(MC_BUILD_CLIENT)
+    find_package(CoreCpp CONFIG REQUIRED COMPONENTS RuntimeAudioOutput)
     if(ANDROID)
         find_package(CoreCpp CONFIG REQUIRED COMPONENTS
             RuntimeGraphics
@@ -152,6 +157,7 @@ if(NOT MC_BUILD_CLIENT)
         CoreCpp::RuntimeGraphicsVulkanAndroid
         CoreCpp::RuntimePlatformGlfw
         CoreCpp::RuntimeAudio
+        CoreCpp::RuntimeAudioOutput
         Vulkan::Vulkan
     )
         if(TARGET "${forbidden_target}")
@@ -166,6 +172,7 @@ if(NOT MC_BUILD_CLIENT)
         CoreCpp::RuntimeGraphicsVulkanAndroid
         CoreCpp::RuntimePlatformGlfw
         CoreCpp::RuntimeAudio
+        CoreCpp::RuntimeAudioOutput
         Vulkan::Vulkan
     )
         if("${server_only_links}" MATCHES "${forbidden_target}")

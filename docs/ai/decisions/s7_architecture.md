@@ -62,8 +62,9 @@ reconnect. The renderer consumes only the resulting presentation snapshot.
 
 - MC-AI-0243 records this architecture and release gates.
 - MC-AI-0246 implements the CoreLang-free palette/body/camera slice now.
-- MC-AI-0244 waits for the exact CoreLang 0.1.3.1 package; MC-AI-0245 then
-  implements entity-wide permissions and the physics consumer.
+- MC-AI-0244 integrates the exact CoreLang 0.1.3.3 maintenance package built
+  from the finalized 0.1.3.1 source/API; MC-AI-0245 then implements entity-wide
+  permissions and the physics consumer.
 - MC-AI-0247 adds deterministic impaired-network acceptance; MC-AI-0248
   measures the complete candidate, including the `x200` speed modifier.
 - MC-AI-0249 makes sanitizer and static-analysis receipts a fail-closed S7

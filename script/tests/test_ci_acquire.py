@@ -316,6 +316,8 @@ class CiAcquireTests(unittest.TestCase):
 
     def test_install_private_dependencies_passes_exact_platform_component_closure(self):
         common_arguments = set(acquire.CORECPP_COMMON_BUILD_ARGUMENTS)
+        self.assertIn("-DCORECPP_BUILD_RUNTIME_AUDIO=ON", common_arguments)
+        self.assertIn("-DCORECPP_BUILD_RUNTIME_AUDIO_OUTPUT=ON", common_arguments)
         analysis_arguments = set(acquire.CORECPP_ANALYSIS_BUILD_ARGUMENTS)
         platform_arguments = {
             name: set(arguments)

@@ -64,7 +64,8 @@ Current dependencies:
 8. VMA;
 9. volk;
 10. GMP;
-11. MPFR.
+11. MPFR;
+12. miniaudio.
 
 The Vulkan SDK supplies the loader and shader compiler; macOS uses MoltenVK. Use a Vulkan 1.3-capable validation environment and test the vertex fallback on devices without mesh shaders. See the build guide for the distinction between requested API version and actual capabilities.
 
