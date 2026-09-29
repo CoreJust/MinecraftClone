@@ -340,12 +340,13 @@ bool World::movePlayer(
         player->vertical_velocity_subcells = PLAYER_JUMP_IMPULSE_SUBCELLS;
     }
     int64_t const vertical_velocity = player->vertical_velocity_subcells;
-    // A player that was placed or switched into collision mode while airborne
-    // has no stored velocity yet. Start that tick with one gravity step rather
-    // than treating the zero velocity as a suspension.
-    int64_t const vertical_displacement = vertical_velocity == 0 && current_z > current_surface
-        ? -gravity_step
-        : vertical_velocity;
+    int64_t const elapsed_count = elapsed.count();
+    int64_t const tick_count = TICK.count();
+    int64_t const vertical_displacement = vertical_velocity != 0 || current_z > current_surface
+        ? vertical_velocity * elapsed_count / tick_count
+            - static_cast<int64_t>(PLAYER_GRAVITY_SUBCELLS_PER_TICK) * elapsed_count * elapsed_count
+                / (2 * tick_count * tick_count)
+        : 0;
     int64_t const proposed_z = current_z + vertical_displacement;
     bool applied_x = false;
     bool applied_y = false;

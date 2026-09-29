@@ -278,6 +278,7 @@ Files:
 - [`src/client/include/client/render/GuiRenderer.hpp`](../../src/client/include/client/render/GuiRenderer.hpp)
 - [`src/client/include/client/render/InstalledShaderAssets.hpp`](../../src/client/include/client/render/InstalledShaderAssets.hpp)
 - [`src/client/include/client/render/ShaderAssets.hpp`](../../src/client/include/client/render/ShaderAssets.hpp)
+- [`src/client/include/client/render/StoneFaceCapacity.hpp`](../../src/client/include/client/render/StoneFaceCapacity.hpp)
 - [`src/client/include/client/render/StoneTexture.hpp`](../../src/client/include/client/render/StoneTexture.hpp)
 - [`src/client/include/client/render/TextRenderer.hpp`](../../src/client/include/client/render/TextRenderer.hpp)
 - [`src/client/include/client/render/VulkanRenderer.hpp`](../../src/client/include/client/render/VulkanRenderer.hpp)

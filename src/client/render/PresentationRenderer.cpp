@@ -2,6 +2,7 @@
 
 #include <client/render/DepthFormat.hpp>
 #include <client/render/GuiRenderer.hpp>
+#include <client/render/StoneFaceCapacity.hpp>
 #include <client/render/StoneTexture.hpp>
 #include <client/render/VulkanRenderer.hpp>
 
@@ -1271,25 +1272,40 @@ struct VulkanRenderer::Impl final {
         }
     }
 
-    void upsertHeightTileMesh(shared::HeightTileSurfaceMesh const& mesh)
+    [[nodiscard]] bool upsertHeightTileMesh(
+        shared::HeightTileSurfaceMesh const& mesh,
+        std::chrono::steady_clock::time_point const deadline
+    )
     {
         std::vector<StoneFaceInstance> instances = stoneFaceInstances(mesh);
+        HeightTileSlot* const existing = heightTileSlot(mesh.coordinate);
+        if (existing != nullptr && existing->instances == instances) {
+            return true;
+        }
+        if (instances.empty()) {
+            if (existing != nullptr) {
+                releaseRange(existing->range);
+                m_height_tile_slots.erase(mesh.coordinate);
+            }
+            if (m_height_tile_slots.empty() && m_stone_faces.empty()) {
+                m_chunk_scene_enabled = false;
+            }
+            return true;
+        }
+        StoneDrawRange const range = allocateRange(static_cast<uint32_t>(instances.size()));
+        uint32_t const required_capacity = range.first_instance + range.instance_count;
+        if (!tryEnsureStoneFaceCapacity(required_capacity, deadline)) {
+            makeRangeReusable(range);
+            return false;
+        }
         if (!m_stone_faces.empty()) {
             m_stone_faces.clear();
             m_legacy_draw_range = {};
-        }
-        HeightTileSlot* const existing = heightTileSlot(mesh.coordinate);
-        if (existing != nullptr && existing->instances == instances) {
-            return;
         }
         if (existing != nullptr) {
             releaseRange(existing->range);
             m_height_tile_slots.erase(mesh.coordinate);
         }
-        if (instances.empty()) {
-            return;
-        }
-        StoneDrawRange const range = allocateRange(static_cast<uint32_t>(instances.size()));
         glm::vec3 minimum{
             static_cast<float>(instances.front().x),
             static_cast<float>(instances.front().y),
@@ -1320,12 +1336,10 @@ struct VulkanRenderer::Impl final {
             .maximum = maximum,
         });
         m_chunk_scene_enabled = true;
-        uint32_t const required_capacity = range.first_instance + range.instance_count;
-        if (!ensureStoneFaceCapacity(required_capacity)) {
-            HeightTileSlot const& slot = m_height_tile_slots.at(mesh.coordinate);
-            m_stone_face_buffer->upload(slot.range.first_instance, slot.instances);
-            ++m_chunk_mesh_upload_count;
-        }
+        HeightTileSlot const& slot = m_height_tile_slots.at(mesh.coordinate);
+        m_stone_face_buffer->upload(slot.range.first_instance, slot.instances);
+        ++m_chunk_mesh_upload_count;
+        return true;
     }
 
     [[nodiscard]] bool removeHeightTileMesh(shared::HeightTileCoordinate const coordinate)
@@ -1424,6 +1438,7 @@ struct VulkanRenderer::Impl final {
 
     void recreate(VkExtent2D const extent, std::chrono::steady_clock::time_point const deadline)
     {
+        m_recreation_resources_destroyed = false;
         m_context->recreate(
             extent,
             {
@@ -1553,6 +1568,39 @@ private:
         return true;
     }
 
+    [[nodiscard]] bool tryEnsureStoneFaceCapacity(
+        uint32_t const required_capacity,
+        std::chrono::steady_clock::time_point const deadline
+    )
+    {
+        bool first_attempt = true;
+        bool rollback_required = false;
+        return detail::tryGrowStoneFaceCapacity(
+            m_stone_face_capacity,
+            required_capacity,
+            MAXIMUM_RENDERED_STONE_FACE_COUNT,
+            deadline,
+            [this, &first_attempt, &rollback_required](
+                std::chrono::steady_clock::time_point const frame_deadline
+            ) {
+                if (!first_attempt && !rollback_required) {
+                    return;
+                }
+                first_attempt = false;
+                rollback_required = false;
+                try {
+                    recreate(m_context->info().extent, frame_deadline);
+                    if (m_stone_face_buffer->capacity() != m_stone_face_capacity) {
+                        throw std::runtime_error("stone face arena recreation was deferred");
+                    }
+                } catch (...) {
+                    rollback_required = m_recreation_resources_destroyed;
+                    throw;
+                }
+            }
+        );
+    }
+
     void uploadStoredMeshes()
     {
         if (!m_stone_faces.empty()) {
@@ -1569,7 +1617,9 @@ private:
 
     static void beforeRecreate(void* const user_data)
     {
-        static_cast<Impl*>(user_data)->destroyResources();
+        Impl& self = *static_cast<Impl*>(user_data);
+        self.m_recreation_resources_destroyed = true;
+        self.destroyResources();
     }
 
     static void afterRecreate(
@@ -1580,6 +1630,7 @@ private:
         Impl& self = *static_cast<Impl*>(user_data);
         self.createResources();
         self.refreshCaptureState();
+        self.m_recreation_resources_destroyed = false;
     }
 
     static void recordFrame(VkCommandBuffer const command, void* const user_data)
@@ -2262,6 +2313,7 @@ private:
     }
 
     std::shared_ptr<PresentationContext> m_context;
+    bool m_recreation_resources_destroyed = false;
     ShaderAssets const& m_shader_assets;
     VulkanRendererOptions m_options;
     std::optional<ResourceScope> m_resources;
@@ -3099,9 +3151,12 @@ void VulkanRenderer::setChunkMeshes(std::span<shared::ChunkMesh const> const mes
     m_impl->setChunkMeshes(meshes);
 }
 
-void VulkanRenderer::upsertHeightTileMesh(shared::HeightTileSurfaceMesh const& mesh)
+bool VulkanRenderer::upsertHeightTileMesh(
+    shared::HeightTileSurfaceMesh const& mesh,
+    std::chrono::steady_clock::time_point const deadline
+)
 {
-    m_impl->upsertHeightTileMesh(mesh);
+    return m_impl->upsertHeightTileMesh(mesh, deadline);
 }
 
 bool VulkanRenderer::removeHeightTileMesh(shared::HeightTileCoordinate const coordinate)

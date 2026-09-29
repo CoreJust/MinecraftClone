@@ -17,6 +17,8 @@ constexpr double THIRD_PERSON_DISTANCE = MAX_LOCAL_PLAYER_CAMERA_DISTANCE;
 constexpr double DEGREES_TO_RADIANS = 0.017'453'292'519'943'295'769'236'907'684'89;
 constexpr double WORLD_WRAP_PERIOD = static_cast<double>(shared::WorldExtent::WIDTH);
 constexpr double PRESENTATION_TICK_SECONDS = 0.1;
+constexpr double PRESENTATION_GRAVITY = static_cast<double>(shared::World::PLAYER_GRAVITY_SUBCELLS_PER_TICK)
+    / static_cast<double>(shared::SUBCELLS_PER_CELL) / PRESENTATION_TICK_SECONDS;
 
 constexpr std::array<std::array<float, 4>, shared::PLAYER_PALETTE_COUNT> PLAYER_PALETTE{{
     { 0.91F, 0.24F, 0.24F, 1.0F }, { 0.95F, 0.53F, 0.17F, 1.0F },
@@ -115,9 +117,13 @@ void PlayerPresentation::update(
                 };
                 return;
             }
-            double const from_vertical_velocity = sample.has_transition
-                ? verticalVelocity(sample, received_at)
-                : sample.to_vertical_velocity;
+            double const from_vertical_velocity = !sample.has_transition
+                && sample.to_vertical_velocity == 0.0 && target.z > sample.to.z
+                && target_vertical_velocity > 0.0
+                ? target_vertical_velocity + PRESENTATION_GRAVITY
+                : sample.has_transition
+                    ? verticalVelocity(sample, received_at)
+                    : sample.to_vertical_velocity;
             sample = {
                 .character = player.ch,
                 .from = PlayerPresentation::sample(sample, received_at),

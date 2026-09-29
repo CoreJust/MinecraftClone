@@ -196,6 +196,43 @@ TEST(PlayerPresentationTest, VerticalInterpolationKeepsVelocityContinuousAcrossT
     EXPECT_LT(after_retarget - before_retarget, 0.03);
 }
 
+TEST(PlayerPresentationTest, TakeoffPresentationStartsWithTheAuthoritativeJumpImpulse)
+{
+    static constexpr shared::Player INITIAL{
+        .id = 1U,
+        .x = 0U,
+        .y = 0U,
+        .z = 0U,
+        .ch = '@',
+    };
+    static constexpr shared::Player TAKEOFF{
+        .id = 1U,
+        .x = 0U,
+        .y = 0U,
+        .z = 0U,
+        .z_subcell = 6'125U,
+        .vertical_velocity_subcells = 5'250,
+        .ch = '@',
+    };
+    std::chrono::steady_clock::time_point const started_at{};
+    client::PlayerPresentation presentation;
+
+    presentation.update(INITIAL, started_at);
+    presentation.update(TAKEOFF, started_at + std::chrono::milliseconds{ 100 });
+
+    ASSERT_TRUE(presentation.sample('@', started_at + std::chrono::milliseconds{ 125 }).has_value());
+    EXPECT_NEAR(
+        presentation.sample('@', started_at + std::chrono::milliseconds{ 125 })->z,
+        0.169'531'25,
+        1e-9
+    );
+    EXPECT_NEAR(
+        presentation.sample('@', started_at + std::chrono::milliseconds{ 150 })->z,
+        0.328'125,
+        1e-9
+    );
+}
+
 TEST(PlayerPresentationTest, SamePositionAcknowledgementUpdatesVerticalVelocity)
 {
     static constexpr shared::Player INITIAL{
@@ -241,7 +278,7 @@ TEST(PlayerPresentationTest, SamePositionAcknowledgementUpdatesVerticalVelocity)
     ASSERT_TRUE(presentation.sample('@', started_at + std::chrono::milliseconds{ 350 }).has_value());
     EXPECT_NEAR(
         presentation.sample('@', started_at + std::chrono::milliseconds{ 350 })->z,
-        1.206'25,
+        1.271'875,
         1e-9
     );
 }

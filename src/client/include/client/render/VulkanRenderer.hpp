@@ -145,7 +145,11 @@ public:
     void setCamera(CameraPose pose) noexcept;
     void setChunkMesh(shared::ChunkMesh const& mesh);
     void setChunkMeshes(std::span<shared::ChunkMesh const> meshes);
-    void upsertHeightTileMesh(shared::HeightTileSurfaceMesh const& mesh);
+    [[nodiscard]]
+    bool upsertHeightTileMesh(
+        shared::HeightTileSurfaceMesh const& mesh,
+        std::chrono::steady_clock::time_point deadline
+    );
     [[nodiscard]] bool removeHeightTileMesh(shared::HeightTileCoordinate coordinate);
     void hotReload();
     void recreate(uint32_t width, uint32_t height);

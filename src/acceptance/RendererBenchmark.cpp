@@ -425,11 +425,16 @@ std::expected<RuntimeEvidence, std::string> runRendererBenchmark(
     }
     renderer.setCamera(cameraForHeightTileCenter(stream_center));
     shared::HeightTileSurfaceMesher const mesher;
+    std::chrono::steady_clock::time_point const scene_upload_deadline = std::chrono::steady_clock::now()
+        + options.deadline;
     for (uint32_t y = 0U; y < shared::HEIGHT_TILE_INTEREST_WIDTH; ++y) {
         for (uint32_t x = 0U; x < shared::HEIGHT_TILE_INTEREST_WIDTH; ++x) {
-            renderer.upsertHeightTileMesh(
-                mesher.build(stream_tiles[tileIndex(x, y)], heightTileNeighbors(stream_tiles, x, y))
-            );
+            if (!renderer.upsertHeightTileMesh(
+                    mesher.build(stream_tiles[tileIndex(x, y)], heightTileNeighbors(stream_tiles, x, y)),
+                    scene_upload_deadline
+                )) {
+                return std::unexpected("renderer benchmark exceeded its deadline while uploading the initial scene");
+            }
         }
     }
     client::RendererRuntimeInfo const initial_runtime = renderer.runtimeInfo();
@@ -471,10 +476,15 @@ std::expected<RuntimeEvidence, std::string> runRendererBenchmark(
             if (update.removal && !renderer.removeHeightTileMesh(*update.removal)) {
                 return std::unexpected("renderer benchmark did not evict an outgoing S6 height tile");
             }
-            renderer.upsertHeightTileMesh(mesher.build(
-                stream_tiles[tileIndex(update.x, update.y)],
-                heightTileNeighbors(stream_tiles, update.x, update.y)
-            ));
+            if (!renderer.upsertHeightTileMesh(
+                    mesher.build(
+                        stream_tiles[tileIndex(update.x, update.y)],
+                        heightTileNeighbors(stream_tiles, update.x, update.y)
+                    ),
+                    deadline
+                )) {
+                return std::unexpected("renderer benchmark deferred a terrain mesh before its deadline");
+            }
             ++processed;
         }
         if (pending_mesh_cursor == pending_mesh_updates.size()) {

@@ -11,11 +11,12 @@ arguments launch a graphical localhost player. Flight joins select free tokens.
 10,000-subcell remainders plus a validated four-bit palette identity. `World` owns player lookup, spawn, fixed-step
 movement, despawn, and replicated positions. Flat mode retains the 32 by 32
 board and its two-dimensional collision rules. Flight mode uses wrapped XYZ
-coordinates and a fixed clear-air spawn. The independent movement capabilities
-allow flight, collision bypass, or both; flight without collision bypass sweeps
-terrain and other player bodies with tangential wall sliding, while players
-without flight use gravity, terrain support, jumps, and the same player-body
-collision rules. Remainders persist across ticks. Each
+coordinates and a fixed clear-air spawn. Movement capabilities independently
+enable flight, collision bypass, or both. Flight without bypass sweeps terrain
+and player bodies with tangential wall sliding; non-flight uses gravity,
+terrain support, jumps, and body collision. Elapsed-time gravity matches jump
+displacement to replicated post-tick vertical velocity; takeoff presentation
+preserves the impulse. Remainders persist across ticks. Each
 authoritative player has a 2 by 2 footprint in flat mode and a 10/16-cell
 footprint in flight mode, so its origin is limited to cells
 0 through 30 inclusive (0 through 300,000 subcells) on both axes; its

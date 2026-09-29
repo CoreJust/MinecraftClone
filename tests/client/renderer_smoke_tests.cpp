@@ -1,6 +1,7 @@
 #include <client/Camera.hpp>
 #include <client/PlayerPresentation.hpp>
 #include <client/render/InstalledShaderAssets.hpp>
+#include <client/render/StoneFaceCapacity.hpp>
 #include <client/render/VulkanRenderer.hpp>
 
 #include <shared/world/HeightTileSurfaceMesher.hpp>
@@ -21,8 +22,10 @@
 #include <filesystem>
 #include <memory>
 #include <span>
+#include <stdexcept>
 #include <string>
 #include <utility>
+#include <vector>
 
 namespace {
 
@@ -352,8 +355,12 @@ TEST(RendererSmokeTest, GrowsStoneFaceArenaWithoutBreakingPresentation)
         { .require_validation = true },
     };
     EXPECT_EQ(renderer.runtimeInfo().stone_face_capacity, INITIAL_CAPACITY);
+    std::chrono::steady_clock::time_point const arena_deadline = std::chrono::steady_clock::now() + TIMEOUT;
     for (uint32_t tile_index = 0U; tile_index < TILE_COUNT; ++tile_index) {
-        renderer.upsertHeightTileMesh(denseHeightTileMesh(static_cast<int32_t>(tile_index)));
+        ASSERT_TRUE(renderer.upsertHeightTileMesh(
+            denseHeightTileMesh(static_cast<int32_t>(tile_index)),
+            arena_deadline
+        ));
     }
     EXPECT_GT(renderer.runtimeInfo().stone_face_capacity, INITIAL_CAPACITY);
 
@@ -382,6 +389,45 @@ TEST(RendererSmokeTest, GrowsStoneFaceArenaWithoutBreakingPresentation)
     };
     renderVisibleTile(0);
     renderVisibleTile(static_cast<int32_t>(TILE_COUNT - 1U));
+}
+
+TEST(RendererSmokeTest, FailedStoneFaceArenaGrowthRetriesWithOriginalDeadlineAndRestoresCapacity)
+{
+    static constexpr uint32_t INITIAL_CAPACITY = 8U;
+    static constexpr uint32_t REQUIRED_CAPACITY = 9U;
+    static constexpr uint32_t MAXIMUM_CAPACITY = 16U;
+    static constexpr auto FRAME_DEADLINE = std::chrono::steady_clock::time_point{
+        std::chrono::steady_clock::duration{ 123'456 }
+    };
+    static constexpr std::array<uint32_t, 2> EXPECTED_CAPACITIES{ 16U, INITIAL_CAPACITY };
+
+    uint32_t capacity = INITIAL_CAPACITY;
+    std::vector<uint32_t> recreated_capacities;
+    std::vector<std::chrono::steady_clock::time_point> recreation_deadlines;
+    recreated_capacities.reserve(EXPECTED_CAPACITIES.size());
+    recreation_deadlines.reserve(EXPECTED_CAPACITIES.size());
+    auto recreate = [&](std::chrono::steady_clock::time_point const deadline) {
+        recreated_capacities.push_back(capacity);
+        recreation_deadlines.push_back(deadline);
+        if (recreated_capacities.size() == 1U) {
+            throw std::runtime_error("simulated capacity growth failure");
+        }
+    };
+
+    EXPECT_FALSE(client::detail::tryGrowStoneFaceCapacity(
+        capacity,
+        REQUIRED_CAPACITY,
+        MAXIMUM_CAPACITY,
+        FRAME_DEADLINE,
+        recreate
+    ));
+
+    EXPECT_EQ(capacity, INITIAL_CAPACITY);
+    EXPECT_EQ(recreated_capacities, (std::vector<uint32_t>{ 16U, INITIAL_CAPACITY }));
+    EXPECT_EQ(
+        recreation_deadlines,
+        (std::vector<std::chrono::steady_clock::time_point>{ FRAME_DEADLINE, FRAME_DEADLINE })
+    );
 }
 
 TEST(RendererSmokeTest, RejectsASelectedTransformThatRequiresClientCompensation)

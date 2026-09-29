@@ -362,6 +362,10 @@ TEST(FlightWorldTest, NonFlightJumpUsesAStableAirborneCurve)
 {
     static constexpr int32_t X = 100;
     static constexpr int32_t Y = 100;
+    static constexpr uint8_t TICKS_TO_APEX = 7U;
+    static constexpr int32_t FIRST_TICK_VERTICAL_VELOCITY = 5'250;
+    static constexpr double FIRST_TICK_HEIGHT_DELTA = 0.6125;
+    static constexpr double MAXIMUM_HEIGHT_DELTA = 1.4;
     shared::TerrainGenerator const terrain;
     uint16_t const terrain_height = terrain.heightAt(X, Y);
     shared::World world{ shared::WorldMode::Flight };
@@ -371,15 +375,16 @@ TEST(FlightWorldTest, NonFlightJumpUsesAStableAirborneCurve)
     ASSERT_TRUE(world.movePlayer(1U, { .z = 127U }));
     ASSERT_TRUE(world.player(1U).has_value());
     double const first_height = shared::playerPositionZ(*world.player(1U));
-    EXPECT_DOUBLE_EQ(first_height, static_cast<double>(terrain_height) + 0.7);
+    EXPECT_DOUBLE_EQ(first_height, static_cast<double>(terrain_height) + FIRST_TICK_HEIGHT_DELTA);
+    EXPECT_EQ(world.player(1U)->vertical_velocity_subcells, FIRST_TICK_VERTICAL_VELOCITY);
 
     double maximum_height = first_height;
-    for (uint8_t tick = 0U; tick < 8U; ++tick) {
+    for (uint8_t tick = 0U; tick < TICKS_TO_APEX; ++tick) {
         ASSERT_TRUE(world.movePlayer(1U, {}));
         ASSERT_TRUE(world.player(1U).has_value());
         maximum_height = std::max(maximum_height, shared::playerPositionZ(*world.player(1U)));
     }
-    EXPECT_NEAR(maximum_height, static_cast<double>(terrain_height) + 1.75, 1e-9);
+    EXPECT_NEAR(maximum_height, static_cast<double>(terrain_height) + MAXIMUM_HEIGHT_DELTA, 1e-9);
     ASSERT_TRUE(world.player(1U).has_value());
     EXPECT_DOUBLE_EQ(shared::playerPositionZ(*world.player(1U)), static_cast<double>(terrain_height));
 }

@@ -50,7 +50,10 @@ private:
     ) const noexcept;
     void queuePreviewMesh(shared::HeightTileKey key);
     void queuePreviewRemoval(shared::HeightTileKey key);
-    void processPendingPreviewMeshes(uint32_t maximum_meshes);
+    void processPendingPreviewMeshes(
+        uint32_t maximum_meshes,
+        std::chrono::steady_clock::time_point deadline
+    );
     [[nodiscard]] bool hasCurrentPreviewMeshCoverage() const noexcept;
     Camera m_camera{
         { .position = { 9.0, 9.0, 13.0 } },

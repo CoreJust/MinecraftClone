@@ -38,7 +38,9 @@ Shader assets are borrowed: desktop `InstalledShaderAssets` reads the installed
 `shaders/` directory and Android `AndroidShaderAssets` reads APK assets. Both
 accept bare `.spv` names only; no source-tree fallback is allowed.
 
-S6 arena grows to the 45-radius cap and restores meshes out-of-frame. Stone
+The arena grows to the 45-radius cap; restoration shares the frame deadline.
+Gameplay bounds uploads and rendering to 8 ms, deferring only the overdue tile
+for retry. Stone
 uses the attributed texture with fog and gradient sky. Frustum culling affects
 drawing only; residency is camera-independent. View/movement affect generation
 priority only, and workers build meshes outside the presentation callback.

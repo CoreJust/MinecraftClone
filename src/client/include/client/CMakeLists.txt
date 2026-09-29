@@ -19,6 +19,7 @@ target_sources(mc
             render/GuiRenderer.hpp
             render/InstalledShaderAssets.hpp
             render/ShaderAssets.hpp
+            render/StoneFaceCapacity.hpp
             render/StoneTexture.hpp
             render/TextRenderer.hpp
             render/VulkanRenderer.hpp

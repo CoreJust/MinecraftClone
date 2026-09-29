@@ -381,7 +381,10 @@ bool PlayerClient::hasCurrentPreviewMeshCoverage() const noexcept
     return true;
 }
 
-void PlayerClient::processPendingPreviewMeshes(uint32_t const maximum_meshes)
+void PlayerClient::processPendingPreviewMeshes(
+    uint32_t const maximum_meshes,
+    std::chrono::steady_clock::time_point const deadline
+)
 {
     if (!m_height_tile_center.has_value()) {
         while (m_preview_mesh_workers->takeResult().has_value()) {
@@ -400,7 +403,10 @@ void PlayerClient::processPendingPreviewMeshes(uint32_t const maximum_meshes)
         m_preview_mesh_jobs.erase(result->key);
         HeightTileHandle const current = heightTileResidency().resident(result->key);
         if (m_height_tile_interest.contains(result->key) && current == result->tile) {
-            m_renderer.upsertHeightTileMesh(result->mesh);
+            if (!m_renderer.upsertHeightTileMesh(result->mesh, deadline)) {
+                queuePreviewMesh(result->key);
+                break;
+            }
             m_visible_preview_meshes.insert(result->key);
         }
         if (m_preview_mesh_dirty_jobs.erase(result->key) > 0U || current != result->tile) {
@@ -576,10 +582,11 @@ void PlayerClient::render() {
         m_camera_perspective = nextCameraPerspective(m_camera_perspective);
     }
     std::chrono::steady_clock::time_point const now = std::chrono::steady_clock::now();
+    std::chrono::steady_clock::time_point const renderer_deadline = now + std::chrono::milliseconds{ 8 };
     if (auto const player = m_world.playerByCharacter(m_local_character)) {
         refreshHeightTileInterest(*player);
     }
-    processPendingPreviewMeshes(MAX_PREVIEW_MESHES_PER_FRAME);
+    processPendingPreviewMeshes(MAX_PREVIEW_MESHES_PER_FRAME, renderer_deadline);
     for (HeightTileChange const change : heightTileResidency().takeChanges(MAX_HEIGHT_TILE_CHANGES_PER_FRAME)) {
         if (change.kind == HeightTileChangeKind::Remove) {
             queuePreviewRemoval(change.key);
@@ -604,7 +611,7 @@ void PlayerClient::render() {
             m_visible_preview_meshes.erase(key);
         }
     }
-    processPendingPreviewMeshes(MAX_PREVIEW_MESHES_PER_FRAME);
+    processPendingPreviewMeshes(MAX_PREVIEW_MESHES_PER_FRAME, renderer_deadline);
     std::optional<PlayerPresentationPosition> const local_position = predictedLocalPresentation(now);
     double camera_distance = MAX_LOCAL_PLAYER_CAMERA_DISTANCE;
     if (local_position.has_value()) {
@@ -674,7 +681,7 @@ void PlayerClient::render() {
         m_render_data,
         debug_hud_input,
         std::max(content_scale_x, content_scale_y),
-        std::chrono::steady_clock::now() + std::chrono::milliseconds{8}
+        renderer_deadline
     ));
 
     if (m_capture.has_value()) {
