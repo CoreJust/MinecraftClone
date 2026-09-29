@@ -347,6 +347,111 @@ TEST(GameServerFlightTest, AcceptsMatchingFlightModeAndReplicatesVerticalAuthori
     EXPECT_EQ(moved.z_subcell, shared::MOVEMENT_SUBCELLS_PER_TICK);
 }
 
+TEST(GameServerFlightTest, DefersUnknownTerrainAndRevalidatesPermissionsBeforeApplyingInput)
+{
+    server::GameServer server{0, {}, shared::WorldMode::Flight};
+    ProtocolClient client;
+    ASSERT_TRUE(joinManually(server, client, '@', shared::WorldMode::Flight));
+    shared::ServerPlayerPositionMessage const spawn = client.positions('@').back();
+    ASSERT_TRUE(client.sendMessage(shared::ClientInputMessage{
+        .direction = {.x = 0U, .y = 0U, .z = 127U},
+        .sequence = 1U,
+    }));
+
+    static_cast<void>(server.tick(std::chrono::milliseconds{5}));
+    client.poll(std::chrono::milliseconds{5});
+    ASSERT_FALSE(client.positions('@').empty());
+    EXPECT_EQ(client.positions('@').back().acknowledged_input_sequence, 0U);
+    EXPECT_EQ(client.positions('@').back().z_subcell, spawn.z_subcell);
+
+    auto compilation = hardMovementDenyPolicy();
+    ASSERT_TRUE(compilation.has_value()) << compilation.error().message;
+    auto const published = server.publishPermissions(std::move(*compilation), movementPolicyRegistry());
+    ASSERT_TRUE(published.has_value()) << published.error().message;
+    ASSERT_TRUE(pumpUntil(server, client, [&client] {
+        std::vector<shared::ServerPlayerPositionMessage> const positions = client.positions('@');
+        return !positions.empty() && positions.back().acknowledged_input_sequence == 1U;
+    }));
+
+    shared::ServerPlayerPositionMessage const completed = client.positions('@').back();
+    EXPECT_EQ(completed.movement_capabilities.bits, 0U);
+    EXPECT_NE(completed.z_subcell, shared::MOVEMENT_SUBCELLS_PER_TICK);
+}
+
+TEST(GameServerFlightTest, ResumesDeferredInputAfterTerrainMaterializes)
+{
+    server::GameServer server{0, {}, shared::WorldMode::Flight};
+    ProtocolClient client;
+    ASSERT_TRUE(joinManually(server, client, '@', shared::WorldMode::Flight));
+    shared::ServerPlayerPositionMessage const spawn = client.positions('@').back();
+    ASSERT_TRUE(client.sendMessage(shared::ClientInputMessage{
+        .direction = {.x = 0U, .y = 0U, .z = 127U},
+        .sequence = 1U,
+    }));
+
+    static_cast<void>(server.tick(std::chrono::milliseconds{5}));
+    client.poll(std::chrono::milliseconds{5});
+    ASSERT_FALSE(client.positions('@').empty());
+    EXPECT_EQ(client.positions('@').back().acknowledged_input_sequence, 0U);
+    EXPECT_EQ(client.positions('@').back().z_subcell, spawn.z_subcell);
+
+    ASSERT_TRUE(pumpUntil(server, client, [&client] {
+        std::vector<shared::ServerPlayerPositionMessage> const positions = client.positions('@');
+        return !positions.empty() && positions.back().acknowledged_input_sequence == 1U;
+    }));
+    shared::ServerPlayerPositionMessage const completed = client.positions('@').back();
+    EXPECT_EQ(completed.z_subcell, shared::MOVEMENT_SUBCELLS_PER_TICK);
+    EXPECT_EQ(completed.movement_capabilities.bits, spawn.movement_capabilities.bits);
+}
+
+TEST(GameServerFlightTest, DefersMixedJumpUntilAdjacentHorizontalChunkMaterializes)
+{
+    server::GameServer server{
+        0,
+        {{.character = '@', .x = 14, .y = 100, .z = 801}},
+        shared::WorldMode::Flight,
+    };
+    ProtocolClient client;
+    ASSERT_TRUE(joinManually(server, client, '@', shared::WorldMode::Flight));
+
+    for (uint32_t sequence = 1U; sequence <= 2U; ++sequence) {
+        ASSERT_TRUE(client.sendMessage(shared::ClientInputMessage{
+            .direction = {
+                .x = static_cast<uint8_t>(sequence == 1U ? 127U : 80U),
+                .cycle_movement_capabilities = sequence == 1U,
+            },
+            .sequence = sequence,
+        }));
+        ASSERT_TRUE(pumpUntil(server, client, [&client, sequence] {
+            return client.positions('@').back().acknowledged_input_sequence == sequence;
+        }));
+    }
+    ASSERT_EQ(client.positions('@').back().x, 14);
+    ASSERT_EQ(client.positions('@').back().x_subcell, 9'127U);
+
+    ASSERT_TRUE(client.sendMessage(shared::ClientInputMessage{
+        .direction = {.cycle_movement_capabilities = true},
+        .sequence = 3U,
+    }));
+    ASSERT_TRUE(pumpUntil(server, client, [&client] {
+        return client.positions('@').back().acknowledged_input_sequence == 3U;
+    }));
+    ASSERT_EQ(client.positions('@').back().movement_capabilities.bits, 0U);
+
+    ASSERT_TRUE(client.sendMessage(shared::ClientInputMessage{
+        .direction = {.x = 127U, .z = 127U},
+        .sequence = 4U,
+    }));
+    static_cast<void>(server.tick(std::chrono::milliseconds{5}));
+    client.poll(std::chrono::milliseconds{5});
+    EXPECT_EQ(client.positions('@').back().acknowledged_input_sequence, 3U);
+    ASSERT_TRUE(pumpUntil(server, client, [&client] {
+        return client.positions('@').back().acknowledged_input_sequence == 4U;
+    }));
+    EXPECT_EQ(client.positions('@').back().x, 15);
+    EXPECT_EQ(client.positions('@').back().x_subcell, 4'727U);
+}
+
 TEST(GameServerFlightTest, CyclesOnlyTheThreeServerValidatedMovementCapabilityStates)
 {
     server::GameServer server{ 0, {}, shared::WorldMode::Flight };

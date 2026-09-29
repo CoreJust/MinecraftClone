@@ -1,5 +1,7 @@
 #pragma once
 
+#include <shared/world/Chunk.hpp>
+
 #include <array>
 #include <chrono>
 #include <cstdint>
@@ -8,6 +10,8 @@
 #include <vector>
 
 namespace shared {
+
+class SparseWorld;
 
 constexpr std::chrono::milliseconds TICK { 100 };
 constexpr uint16_t SUBCELLS_PER_CELL = 10'000;
@@ -189,6 +193,7 @@ public:
     constexpr WorldMode mode() const noexcept { return m_mode; }
     [[nodiscard]]
     constexpr WorldConfiguration const& configuration() const noexcept { return m_configuration; }
+    void setCollisionWorld(SparseWorld const* collision_world) noexcept { m_collision_world = collision_world; }
     [[nodiscard]]
     bool playerExists(char ch) const noexcept;
     void spawnPlayer(
@@ -206,6 +211,13 @@ public:
         Direction direction,
         std::chrono::milliseconds elapsed = TICK
     );
+
+    [[nodiscard]]
+    std::vector<ChunkCoordinate> flightCollisionChunks(
+        PlayerId id,
+        Direction direction,
+        std::chrono::milliseconds elapsed = TICK
+    ) const;
 
     [[nodiscard]]
     bool setPlayerPosition(
@@ -248,6 +260,7 @@ private:
 private:
     WorldMode m_mode;
     WorldConfiguration m_configuration;
+    SparseWorld const* m_collision_world = nullptr;
     std::vector<Player> m_players;
 };
 

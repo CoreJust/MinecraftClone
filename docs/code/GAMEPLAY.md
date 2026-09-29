@@ -40,9 +40,9 @@ camera-input count, and 100 ms server tick separately from presentation cadence.
 
 ## Permissions
 
-The server publishes generation-tagged movement capability snapshots; policy
-declarations, compilation limits, selector resolution, and precedence are
-documented in [POLICY.md](POLICY.md).
+The server publishes generation-tagged movement permissions. Scenarios verify
+replicated capabilities and velocity. Collision bypass requires flight. See
+[POLICY.md](POLICY.md).
 
 ## Wire protocol
 

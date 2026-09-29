@@ -13,6 +13,8 @@ CoreLang `.core` examples use `@version("0.1.2")`, `@use minecraft`, and
   vertical movement.
 - `s5_flight_multiplayer.core` combines reusable functions, a condition,
   direct XYZ input, camera input, and two players.
+- `s7_permissions_physics.core` publishes movement permissions, exercises
+  flight, collision bypass, and jump with two clients, and checks replicated state.
 - `s5_flight_invalid.core` is a negative fixture: duplicate characters must be
   rejected before a plan is published.
 

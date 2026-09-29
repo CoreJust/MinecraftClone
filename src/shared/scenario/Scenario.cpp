@@ -1113,12 +1113,24 @@ std::string scenarioReplayId(ScenarioPlan const& plan) {
                 append(static_cast<uint64_t>(static_cast<int64_t>(value.y)));
             }
             if constexpr (requires { value.z; }) append(static_cast<uint64_t>(static_cast<int64_t>(value.z)));
+            if constexpr (requires { value.intent; }) append(static_cast<uint8_t>(value.intent));
+            if constexpr (requires { value.flight; }) append(value.flight ? 1U : 0U);
+            if constexpr (requires { value.collision_bypass; }) {
+                append(value.collision_bypass ? 1U : 0U);
+            }
+            if constexpr (requires { value.velocity_subcells; }) {
+                append(static_cast<uint64_t>(static_cast<int64_t>(value.velocity_subcells)));
+            }
             if constexpr (requires { value.generator_version; }) {
                 append(value.generator_version);
                 append(value.max_resident_chunks);
             }
-            if constexpr (requires { value.block; }) append(static_cast<uint8_t>(value.block));
-            if constexpr (requires { value.count; }) append(value.count);
+            if constexpr (requires { value.block; }) {
+                append(static_cast<uint8_t>(value.block));
+            }
+            if constexpr (requires { value.count; }) {
+                append(value.count);
+            }
             if constexpr (requires { value.strafe; }) {
                 append(static_cast<uint8_t>(value.strafe));
                 append(static_cast<uint8_t>(value.forward));

@@ -67,6 +67,7 @@ private:
 
     struct PlayerReplication final {
         static constexpr uint32_t MAX_PENDING_INPUTS = 64;
+        static constexpr uint32_t MAX_MATERIALIZATION_ADMISSION_FAILURES = 8;
 
         shared::PlayerId id;
         uint32_t latest_received_sequence = 0;
@@ -75,6 +76,7 @@ private:
         std::deque<shared::ClientInputMessage> pending_inputs;
         bool has_received_sequence = false;
         bool action_consumed_this_tick = false;
+        uint32_t materialization_admission_failures = 0U;
     };
 
     void onConnected(core::ServerConnectEvent const event) override;
@@ -97,7 +99,7 @@ private:
     void dispatchWorldMaterialization();
     [[nodiscard]] uint32_t admitHeightTileDeliveries(PreviewStream& stream, uint32_t maximum_batches);
     void queueDepartedResidentTiles(PreviewStream& stream);
-    void processInput(PlayerReplication& replication, shared::ClientInputMessage input);
+    [[nodiscard]] bool processInput(PlayerReplication& replication, shared::ClientInputMessage input);
     [[nodiscard]] std::vector<shared::PolicySubject> permissionSubjects() const;
     [[nodiscard]]
     bool canApplyPublishedPermissions(

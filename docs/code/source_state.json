@@ -28,7 +28,7 @@
         "tests/acceptance/runtime_cli_tests.cmake",
         "tests/acceptance/scenario_runner_tests.cpp"
       ],
-      "sources_sha256": "3cf4e5ce573d3b29e56712be29613db268fd0e819be6b9014ffdd550075668ee"
+      "sources_sha256": "cc2654a36133ba4898d163fa3b9f029fca664e18da66ce68bc0ae3d111a25fb0"
     },
     {
       "guide": "docs/code/ANDROID.md",
@@ -189,7 +189,7 @@
     },
     {
       "guide": "docs/code/GAMEPLAY.md",
-      "guide_sha256": "44dce436ccb99f1ee2b8a1456778b7e5d2803758218b747f87d6a839995aac07",
+      "guide_sha256": "03b2447f8451e9d14f0ee154f81364898bec8a4e0443b2d3e135504d1075ddb1",
       "id": "gameplay",
       "sources": [
         "src/client/BotClient.cpp",
@@ -273,7 +273,7 @@
         "tests/core/world_generation_scheduler_tests.cpp",
         "tests/core/world_generation_tests.cpp"
       ],
-      "sources_sha256": "26bbc4f3e01e91184f0cc164bfcb7c981a18896ddd5cdc2381abf03688e9240f"
+      "sources_sha256": "88978bb5aa3cfe01d1d7ab2299cd861077bc7280c37d9dc1f4b9b059f9f80f16"
     },
     {
       "guide": "docs/code/RENDERING.md",

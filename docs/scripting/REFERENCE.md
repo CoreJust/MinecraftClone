@@ -21,9 +21,15 @@ The scenario profile must be `flight3d-v1`. The registered host operations are:
 | `seed` | `seed(u64)` once, after `profile` |
 | `playerXYZ` | `playerXYZ(str, c8, i32, i32, i32, i16, i16, i16)` |
 | `moveXYZ` | `moveXYZ(str, i8, i8, i8)`; components `-1..1` |
+| `flightXYZ` | `flightXYZ(str, i8, i8, i8)`; requires server-granted flight permission |
+| `phaseXYZ` | `phaseXYZ(str, i8, i8, i8)`; requires server-granted collision-bypass permission |
 | `cameraInputXYZ` | `cameraInputXYZ(str, i8, i8, i8)`; components `-1..1` |
+| `movementPermissions` | `movementPermissions(bool, bool)`; publishes server-owned flight and collision-bypass permissions |
+| `jump` | `jump(str)`; sends one jump input tick when flight is disabled |
 | `wait` | `wait(u64)`; value must be positive |
 | `expectXYZ` | `expectXYZ(str, i32, i32, i32)` |
+| `expectMovementPermissions` | `expectMovementPermissions(str, bool, bool)`; checks replicated capabilities |
+| `expectVerticalVelocity` | `expectVerticalVelocity(str, i32)`; checks replicated velocity in subcells per tick |
 
 `playerXYZ` accepts characters `@ # $ % &`, unique ASCII names and characters,
 positions in `-64..64`, yaw `0..359`, pitch `-89..89`, and roll `-180..180`.
@@ -31,6 +37,12 @@ Player declarations follow `seed`. `moveXYZ` submits authoritative XYZ input;
 `cameraInputXYZ` submits strafe, forward, and vertical components and is
 resolved from the player's yaw. A camera operation's pitch and roll do not
 change movement.
+
+`movementPermissions` is applied by the scenario server; clients cannot grant
+capabilities through input packets. The valid combinations are both enabled,
+flight only, or both disabled. `flightXYZ` and `phaseXYZ` check the corresponding
+published capability before sending input. `jump` lasts one tick, and the
+physics expectations observe authoritative replicated state.
 
 Functions, `if`, and `for` are supported by CoreLang and are useful for
 reusable scenario composition. There is no generic Minecraft instruction fuel

@@ -1,0 +1,29 @@
+@version("0.1.2")
+@use minecraft
+
+pub fn scenario() {
+    profile("flight3d-v1")
+    seed(7u64)
+    playerXYZ("alice", '@'c8, 4i32, 4i32, 16i32, 0i16, 0i16, 0i16)
+    playerXYZ("bob", '#'c8, 20i32, 4i32, 16i32, 0i16, 0i16, 0i16)
+
+    movementPermissions(false, false)
+    expectMovementPermissions("alice", false, false)
+    expectMovementPermissions("bob", false, false)
+    moveXYZ("alice", 0i8, 0i8, 0i8)
+    wait(32u64)
+    jump("alice")
+    expectVerticalVelocity("alice", 5250i32)
+
+    movementPermissions(true, false)
+    expectMovementPermissions("alice", true, false)
+    expectMovementPermissions("bob", true, false)
+    flightXYZ("alice", 0i8, 0i8, 1i8)
+    wait(2u64)
+
+    movementPermissions(true, true)
+    expectMovementPermissions("alice", true, true)
+    phaseXYZ("alice", 0i8, 0i8, -1i8)
+    wait(12u64)
+    expectXYZ("alice", 4i32, 4i32, 1i32)
+}

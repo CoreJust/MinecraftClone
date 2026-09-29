@@ -1,10 +1,12 @@
 #include <shared/world/Chunk.hpp>
+#include <shared/world/SparseWorld.hpp>
 #include <shared/world/World.hpp>
 #include <shared/world/WorldGeneration.hpp>
 
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <utility>
 
 TEST(FlightWorldTest, UsesFirstWaveSpawnAndWrappedCoordinates)
 {
@@ -26,6 +28,185 @@ TEST(FlightWorldTest, UsesFirstWaveSpawnAndWrappedCoordinates)
     EXPECT_EQ(world.player(1)->x, shared::World::FLIGHT_MAX_CELL);
     EXPECT_EQ(world.player(1)->x_subcell, 6'400U);
     EXPECT_DOUBLE_EQ(shared::playerPositionX(*world.player(1)), 65'535.64);
+}
+
+TEST(FlightWorldTest, CollisionMaterializationCandidatesIncludeBothSidesOfHorizontalSeams)
+{
+    shared::World world{shared::WorldMode::Flight};
+    world.spawnPlayer(1U, '@', {.x = shared::World::FLIGHT_MAX_CELL, .y = 100, .z = 800});
+    ASSERT_TRUE(world.setPlayerMovementCapabilities(1U, {.bits = 1U}));
+
+    std::vector<shared::ChunkCoordinate> const chunks = world.flightCollisionChunks(
+        1U,
+        {.x = 127U, .y = 0U, .z = 0U}
+    );
+
+    EXPECT_TRUE(std::ranges::any_of(chunks, [](shared::ChunkCoordinate const coordinate) {
+        return coordinate.x == shared::World::FLIGHT_MAX_CELL / shared::Chunk::SIDE_LENGTH;
+    }));
+    EXPECT_TRUE(std::ranges::any_of(chunks, [](shared::ChunkCoordinate const coordinate) {
+        return coordinate.x == 0;
+    }));
+}
+
+TEST(FlightWorldTest, MaterializedBlocksAreCollisionAuthority)
+{
+    shared::SparseWorld blocks;
+    shared::World world{shared::WorldMode::Flight};
+    world.spawnPlayer(1U, '@', {.x = 100, .y = 100, .z = 800});
+    ASSERT_TRUE(world.setPlayerMovementCapabilities(1U, {.bits = 1U}));
+    world.setCollisionWorld(&blocks);
+    EXPECT_FALSE(world.movePlayer(1U, {.x = 127U}));
+    shared::Chunk const air{{.x = 6, .y = 6, .z = 50}};
+    ASSERT_TRUE(blocks.publishMaterializedChunk(air, blocks.options().revision, blocks.options().seed));
+    EXPECT_TRUE(world.movePlayer(1U, {.x = 127U}));
+    ASSERT_TRUE(world.setPlayerPosition(1U, {.x = 100, .y = 100, .z = 800}));
+    ASSERT_TRUE(blocks.setBlock({.x = 101, .y = 100, .z = 800}, shared::Block::Stone));
+    static_cast<void>(world.movePlayer(1U, {.x = 127U}));
+    ASSERT_TRUE(world.player(1U).has_value());
+    EXPECT_EQ(world.player(1U)->x, 100);
+    EXPECT_LT(world.player(1U)->x_subcell, 3'750U);
+}
+
+TEST(FlightWorldTest, MaterializedTerrainSupportsLandingAndJumping)
+{
+    static constexpr uint8_t TERRAIN_HEIGHT = 8U;
+    static constexpr uint8_t FALL_TICKS = 32U;
+    shared::SparseWorld collision_world;
+    shared::Chunk::Blocks blocks;
+    blocks.fill(shared::Block::Air);
+    for (uint8_t block_z = 0U; block_z < TERRAIN_HEIGHT; ++block_z) {
+        uint32_t const block_index = static_cast<uint32_t>(block_z)
+                * shared::Chunk::SIDE_LENGTH * shared::Chunk::SIDE_LENGTH
+            + 4U * shared::Chunk::SIDE_LENGTH + 4U;
+        blocks[block_index] = shared::Block::Stone;
+    }
+    ASSERT_TRUE(collision_world.publishMaterializedChunk(
+        shared::Chunk{ { .x = 0, .y = 0, .z = 0 }, std::move(blocks) },
+        collision_world.options().revision,
+        collision_world.options().seed
+    ));
+
+    shared::World world{ shared::WorldMode::Flight };
+    world.spawnPlayer(1U, '@', { .x = 4, .y = 4, .z = 16 });
+    ASSERT_TRUE(world.setPlayerMovementCapabilities(1U, {}));
+    world.setCollisionWorld(&collision_world);
+
+    for (uint8_t tick = 0U; tick < FALL_TICKS; ++tick) {
+        static_cast<void>(world.movePlayer(1U, {}));
+    }
+
+    ASSERT_TRUE(world.player(1U).has_value());
+    EXPECT_DOUBLE_EQ(shared::playerPositionZ(*world.player(1U)), TERRAIN_HEIGHT);
+    EXPECT_TRUE(world.movePlayer(1U, { .z = 127U }));
+    ASSERT_TRUE(world.player(1U).has_value());
+    EXPECT_DOUBLE_EQ(
+        shared::playerPositionZ(*world.player(1U)),
+        static_cast<double>(TERRAIN_HEIGHT) + 0.6125
+    );
+}
+
+TEST(FlightWorldTest, MaterializedSupportUsesTheHighestColumnUnderThePlayerFootprint)
+{
+    static constexpr uint8_t FALL_TICKS = 32U;
+    shared::SparseWorld collision_world;
+    for (int32_t chunk_z = 1; chunk_z <= 2; ++chunk_z) {
+        ASSERT_TRUE(collision_world.publishMaterializedChunk(
+            shared::Chunk{ { .x = 0, .y = 0, .z = chunk_z } },
+            collision_world.options().revision,
+            collision_world.options().seed
+        ));
+    }
+    shared::Chunk::Blocks blocks;
+    blocks.fill(shared::Block::Air);
+    for (uint8_t block_z = 0U; block_z < 5U; ++block_z) {
+        uint32_t const block_index = static_cast<uint32_t>(block_z)
+                * shared::Chunk::SIDE_LENGTH * shared::Chunk::SIDE_LENGTH
+            + 4U * shared::Chunk::SIDE_LENGTH + 4U;
+        blocks[block_index] = shared::Block::Stone;
+    }
+    for (uint8_t block_z = 0U; block_z < 16U; ++block_z) {
+        uint32_t const block_index = static_cast<uint32_t>(block_z)
+                * shared::Chunk::SIDE_LENGTH * shared::Chunk::SIDE_LENGTH
+            + 4U * shared::Chunk::SIDE_LENGTH + 5U;
+        blocks[block_index] = shared::Block::Stone;
+    }
+    ASSERT_TRUE(collision_world.publishMaterializedChunk(
+        shared::Chunk{ { .x = 0, .y = 0, .z = 0 }, std::move(blocks) },
+        collision_world.options().revision,
+        collision_world.options().seed
+    ));
+
+    shared::World world{ shared::WorldMode::Flight };
+    world.spawnPlayer(1U, '@', {
+        .x = 4,
+        .y = 4,
+        .z = 20,
+        .x_subcell = 7'500U,
+    });
+    ASSERT_TRUE(world.setPlayerMovementCapabilities(1U, {}));
+    world.setCollisionWorld(&collision_world);
+
+    for (uint8_t tick = 0U; tick < FALL_TICKS; ++tick) {
+        static_cast<void>(world.movePlayer(1U, {}));
+    }
+
+    ASSERT_TRUE(world.player(1U).has_value());
+    EXPECT_DOUBLE_EQ(shared::playerPositionZ(*world.player(1U)), 16.0);
+}
+
+TEST(FlightWorldTest, MaterializationCandidatesCoverSweptBodyHeight)
+{
+    shared::SparseWorld blocks;
+    shared::World world{shared::WorldMode::Flight};
+    world.spawnPlayer(1U, '@', {.x = 100, .y = 100, .z = 15});
+    ASSERT_TRUE(world.setPlayerMovementCapabilities(1U, {.bits = 1U}));
+    world.setCollisionWorld(&blocks);
+
+    std::vector<shared::ChunkCoordinate> const chunks = world.flightCollisionChunks(
+        1U, {.z = 127U}
+    );
+    EXPECT_TRUE(std::ranges::any_of(chunks, [](shared::ChunkCoordinate const coordinate) {
+        return coordinate.x == 6 && coordinate.y == 6 && coordinate.z == 0;
+    }));
+    EXPECT_TRUE(std::ranges::any_of(chunks, [](shared::ChunkCoordinate const coordinate) {
+        return coordinate.x == 6 && coordinate.y == 6 && coordinate.z == 1;
+    }));
+}
+
+TEST(FlightWorldTest, AirborneJumpInputIncludesGravityCrossingIntoLowerChunk)
+{
+    shared::SparseWorld blocks;
+    shared::World world{shared::WorldMode::Flight};
+    world.spawnPlayer(1U, '@', {.x = 100, .y = 100, .z = 16});
+    ASSERT_TRUE(world.setPlayerMovementCapabilities(1U, {}));
+    world.setCollisionWorld(&blocks);
+
+    std::vector<shared::ChunkCoordinate> const chunks = world.flightCollisionChunks(
+        1U, {.z = 127U}
+    );
+    EXPECT_TRUE(std::ranges::any_of(chunks, [](shared::ChunkCoordinate const coordinate) {
+        return coordinate.x == 6 && coordinate.y == 6 && coordinate.z == 0;
+    }));
+    EXPECT_TRUE(std::ranges::any_of(chunks, [](shared::ChunkCoordinate const coordinate) {
+        return coordinate.x == 6 && coordinate.y == 6 && coordinate.z == 1;
+    }));
+}
+
+TEST(FlightWorldTest, NonFlightJumpInputIncludesHorizontalBoundaryCrossing)
+{
+    shared::SparseWorld blocks;
+    shared::World world{shared::WorldMode::Flight};
+    world.spawnPlayer(1U, '@', {.x = 15, .y = 100, .z = 16, .x_subcell = 1'000U});
+    ASSERT_TRUE(world.setPlayerMovementCapabilities(1U, {}));
+    world.setCollisionWorld(&blocks);
+
+    std::vector<shared::ChunkCoordinate> const chunks = world.flightCollisionChunks(
+        1U, {.x = 127U, .z = 127U}
+    );
+    EXPECT_TRUE(std::ranges::any_of(chunks, [](shared::ChunkCoordinate const coordinate) {
+        return coordinate.x == 1 && coordinate.y == 6 && coordinate.z == 1;
+    }));
 }
 
 TEST(FlightWorldTest, NormalizesThreeAxisMovementWithoutCollisionBypass)
@@ -482,6 +663,42 @@ TEST(FlightWorldTest, AuthoritativeCapabilitiesAllowOnlyTheThreeValidCombination
     EXPECT_TRUE(world.setPlayerMovementCapabilities(1U, { .bits = 3U }));
     ASSERT_TRUE(world.player(1U).has_value());
     EXPECT_EQ(world.player(1U)->movement_capabilities.bits, 3U);
+}
+
+TEST(FlightWorldTest, RejectsRemovingCollisionBypassWhilePlayerIsEmbeddedInTerrain)
+{
+    static constexpr uint32_t X = 4U;
+    static constexpr uint32_t Y = 4U;
+    shared::TerrainGenerator const terrain;
+    shared::World world{ shared::WorldMode::Flight };
+    world.spawnPlayer(1U, '@', {
+        .x = X,
+        .y = Y,
+        .z = static_cast<uint16_t>(terrain.heightAt(X, Y) - 1U),
+    });
+
+    EXPECT_FALSE(world.canSetPlayerMovementCapabilities(1U, {}));
+    EXPECT_FALSE(world.setPlayerMovementCapabilities(1U, {}));
+    EXPECT_TRUE(world.canSetPlayerMovementCapabilities(1U, { .bits = 3U }));
+}
+
+TEST(FlightWorldTest, RejectsRemovingCollisionBypassInsideMaterializedStone)
+{
+    shared::SparseWorld blocks;
+    ASSERT_TRUE(blocks.publishMaterializedChunk(
+        shared::Chunk{{.x = 0, .y = 0, .z = 0}},
+        blocks.options().revision,
+        blocks.options().seed
+    ));
+    ASSERT_TRUE(blocks.setBlock({.x = 4, .y = 4, .z = 10}, shared::Block::Stone));
+
+    shared::World world{shared::WorldMode::Flight};
+    world.spawnPlayer(1U, '@', {.x = 4, .y = 4, .z = 10});
+    world.setCollisionWorld(&blocks);
+
+    EXPECT_FALSE(world.canSetPlayerMovementCapabilities(1U, {.bits = 1U}));
+    EXPECT_FALSE(world.setPlayerMovementCapabilities(1U, {.bits = 1U}));
+    EXPECT_TRUE(world.canSetPlayerMovementCapabilities(1U, {.bits = 3U}));
 }
 
 TEST(FlightWorldTest, FlightIsGrantedPerPlayerRatherThanByClientIntent)

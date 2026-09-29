@@ -31,9 +31,15 @@ enum class HostCall : uint8_t {
     Seed,
     Player,
     Move,
+    Flight,
+    Phase,
     Camera,
+    MovementPermissions,
+    Jump,
     Wait,
     Expect,
+    ExpectMovementPermissions,
+    ExpectVerticalVelocity,
     SparseWorldOptions,
     ExpectBlock,
     ExpectResidentChunks,
@@ -161,6 +167,16 @@ std::expected<std::string, std::string> textValue(core::lang::Value const& value
 }
 
 [[nodiscard]]
+std::expected<bool, std::string> booleanValue(core::lang::Value const& value)
+{
+    if (value.type != type(core::lang::TypeKind::Bool) || value.bytes.size() != 1U
+        || !value.elements.empty() || value.bytes.front() > 1U) {
+        return std::unexpected("host call received an invalid boolean argument");
+    }
+    return value.bytes.front() != 0U;
+}
+
+[[nodiscard]]
 bool isIdentifier(std::string_view const text) noexcept
 {
     if (text.empty() || !((text.front() >= 'a' && text.front() <= 'z')
@@ -217,13 +233,25 @@ public:
             case HostCall::Player:
                 return player(arguments);
             case HostCall::Move:
-                return input(arguments, false);
+                return input(arguments, false, ScenarioInputOperation::Intent::Direct);
+            case HostCall::Flight:
+                return input(arguments, false, ScenarioInputOperation::Intent::Flight);
+            case HostCall::Phase:
+                return input(arguments, false, ScenarioInputOperation::Intent::Phase);
             case HostCall::Camera:
-                return input(arguments, true);
+                return input(arguments, true, ScenarioInputOperation::Intent::Direct);
+            case HostCall::MovementPermissions:
+                return movementPermissions(arguments);
+            case HostCall::Jump:
+                return jump(arguments);
             case HostCall::Wait:
                 return wait(arguments);
             case HostCall::Expect:
                 return expect(arguments);
+            case HostCall::ExpectMovementPermissions:
+                return expectMovementPermissions(arguments);
+            case HostCall::ExpectVerticalVelocity:
+                return expectVerticalVelocity(arguments);
             case HostCall::SparseWorldOptions:
                 return sparseWorldOptions(arguments);
             case HostCall::ExpectBlock:
@@ -366,7 +394,8 @@ private:
     [[nodiscard]]
     std::expected<void, std::string> input(
         std::span<core::lang::Value const> const arguments,
-        bool const camera
+        bool const camera,
+        ScenarioInputOperation::Intent const intent
     )
     {
         if (auto const valid_count = count(arguments, 4U); !valid_count) {
@@ -400,7 +429,53 @@ private:
             .y = static_cast<int8_t>(*second),
             .z = static_cast<int8_t>(*third),
             .effective_boundary = m_total_ticks + 1U,
+            .intent = intent,
         });
+    }
+
+    [[nodiscard]]
+    std::expected<void, std::string> movementPermissions(
+        std::span<core::lang::Value const> const arguments
+    )
+    {
+        if (auto const valid_count = count(arguments, 2U); !valid_count) {
+            return valid_count;
+        }
+        auto const flight = booleanValue(arguments[0]);
+        auto const collision_bypass = booleanValue(arguments[1]);
+        if (!flight || !collision_bypass) {
+            return std::unexpected("movementPermissions received an invalid boolean argument");
+        }
+        if (m_profile == ScenarioProfile::SparseWorldV1) {
+            return std::unexpected("sparse-world scenarios do not support movement permissions");
+        }
+        if (*collision_bypass && !*flight) {
+            return std::unexpected("collision bypass requires flight permission");
+        }
+        return append(ScenarioMovementPermissionsOperation{
+            .flight = *flight,
+            .collision_bypass = *collision_bypass,
+        });
+    }
+
+    [[nodiscard]]
+    std::expected<void, std::string> jump(std::span<core::lang::Value const> const arguments)
+    {
+        if (auto const valid_count = count(arguments, 1U); !valid_count) {
+            return valid_count;
+        }
+        auto const actor = actorId(arguments[0]);
+        if (!actor) {
+            return std::unexpected("jump references an unknown player");
+        }
+        if (m_total_ticks >= m_limits.max_total_ticks) {
+            return std::unexpected("scenario tick limit exceeded");
+        }
+        if (auto const appended = append(ScenarioJumpOperation{.actor = *actor}); !appended) {
+            return appended;
+        }
+        ++m_total_ticks;
+        return {};
     }
 
     [[nodiscard]]
@@ -448,6 +523,63 @@ private:
             .y = *y,
             .z = *z,
         }); !appended) {
+            return appended;
+        }
+        ++m_evidence_count;
+        return {};
+    }
+
+    [[nodiscard]]
+    std::expected<void, std::string> expectMovementPermissions(
+        std::span<core::lang::Value const> const arguments
+    )
+    {
+        if (auto const valid_count = count(arguments, 3U); !valid_count) {
+            return valid_count;
+        }
+        auto const actor = actorId(arguments[0]);
+        auto const flight = booleanValue(arguments[1]);
+        auto const collision_bypass = booleanValue(arguments[2]);
+        if (!actor || !flight || !collision_bypass) {
+            return std::unexpected("expectMovementPermissions received an invalid argument");
+        }
+        if (*collision_bypass && !*flight) {
+            return std::unexpected("collision bypass requires flight permission");
+        }
+        if (m_evidence_count >= m_limits.max_evidence) {
+            return std::unexpected("scenario evidence limit exceeded");
+        }
+        if (auto const appended = append(ScenarioExpectMovementPermissionsOperation{
+                .actor = *actor,
+                .flight = *flight,
+                .collision_bypass = *collision_bypass,
+            }); !appended) {
+            return appended;
+        }
+        ++m_evidence_count;
+        return {};
+    }
+
+    [[nodiscard]]
+    std::expected<void, std::string> expectVerticalVelocity(
+        std::span<core::lang::Value const> const arguments
+    )
+    {
+        if (auto const valid_count = count(arguments, 2U); !valid_count) {
+            return valid_count;
+        }
+        auto const actor = actorId(arguments[0]);
+        auto const velocity = signedValue(arguments[1], core::lang::TypeKind::I32, 4U);
+        if (!actor || !velocity) {
+            return std::unexpected("expectVerticalVelocity received an invalid argument");
+        }
+        if (m_evidence_count >= m_limits.max_evidence) {
+            return std::unexpected("scenario evidence limit exceeded");
+        }
+        if (auto const appended = append(ScenarioExpectVerticalVelocityOperation{
+                .actor = *actor,
+                .velocity_subcells = *velocity,
+            }); !appended) {
             return appended;
         }
         ++m_evidence_count;
@@ -633,12 +765,28 @@ std::vector<HostSpec> hostSpecs(bool const supports_sparse_world)
         {"moveXYZ", HostCall::Move, {
             type(TypeKind::Str), type(TypeKind::I8), type(TypeKind::I8), type(TypeKind::I8),
         }},
+        {"flightXYZ", HostCall::Flight, {
+            type(TypeKind::Str), type(TypeKind::I8), type(TypeKind::I8), type(TypeKind::I8),
+        }},
+        {"phaseXYZ", HostCall::Phase, {
+            type(TypeKind::Str), type(TypeKind::I8), type(TypeKind::I8), type(TypeKind::I8),
+        }},
         {"cameraInputXYZ", HostCall::Camera, {
             type(TypeKind::Str), type(TypeKind::I8), type(TypeKind::I8), type(TypeKind::I8),
         }},
+        {"movementPermissions", HostCall::MovementPermissions, {
+            type(TypeKind::Bool), type(TypeKind::Bool),
+        }},
+        {"jump", HostCall::Jump, {type(TypeKind::Str)}},
         {"wait", HostCall::Wait, {type(TypeKind::U64)}},
         {"expectXYZ", HostCall::Expect, {
             type(TypeKind::Str), type(TypeKind::I32), type(TypeKind::I32), type(TypeKind::I32),
+        }},
+        {"expectMovementPermissions", HostCall::ExpectMovementPermissions, {
+            type(TypeKind::Str), type(TypeKind::Bool), type(TypeKind::Bool),
+        }},
+        {"expectVerticalVelocity", HostCall::ExpectVerticalVelocity, {
+            type(TypeKind::Str), type(TypeKind::I32),
         }},
     };
     if (supports_sparse_world) {

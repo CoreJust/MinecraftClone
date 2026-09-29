@@ -109,6 +109,11 @@ struct ScenarioInputOperation final {
     int8_t y;
     int8_t z = 0;
     uint64_t effective_boundary;
+    enum class Intent : uint8_t {
+        Direct,
+        Flight,
+        Phase,
+    } intent = Intent::Direct;
 };
 
 struct ScenarioCameraInputOperation final {
@@ -128,6 +133,26 @@ struct ScenarioExpectPositionOperation final {
     int32_t x;
     int32_t y;
     int32_t z;
+};
+
+struct ScenarioMovementPermissionsOperation final {
+    bool flight;
+    bool collision_bypass;
+};
+
+struct ScenarioJumpOperation final {
+    ScenarioActorId actor;
+};
+
+struct ScenarioExpectMovementPermissionsOperation final {
+    ScenarioActorId actor;
+    bool flight;
+    bool collision_bypass;
+};
+
+struct ScenarioExpectVerticalVelocityOperation final {
+    ScenarioActorId actor;
+    int32_t velocity_subcells;
 };
 
 struct ScenarioSparseWorldOptionsOperation final {
@@ -151,6 +176,10 @@ using ScenarioOperationData = std::variant<
     ScenarioCameraInputOperation,
     ScenarioWaitOperation,
     ScenarioExpectPositionOperation,
+    ScenarioMovementPermissionsOperation,
+    ScenarioJumpOperation,
+    ScenarioExpectMovementPermissionsOperation,
+    ScenarioExpectVerticalVelocityOperation,
     ScenarioSparseWorldOptionsOperation,
     ScenarioExpectBlockOperation,
     ScenarioExpectResidentChunksOperation>;

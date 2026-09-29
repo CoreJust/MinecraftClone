@@ -1,6 +1,7 @@
 #include <shared/world/World.hpp>
 
 #include <shared/world/Chunk.hpp>
+#include <shared/world/SparseWorld.hpp>
 #include <shared/world/WorldGeneration.hpp>
 
 #include <core/common/Assert.hpp>
@@ -58,6 +59,107 @@ namespace {
         }
     }
     return surface;
+}
+
+[[nodiscard]] int64_t materializedTerrainSurfaceUnderPlayer(
+    SparseWorld const& world,
+    int64_t const x_subcells,
+    int64_t const y_subcells,
+    int64_t const upper_z_subcells
+)
+{
+    if (upper_z_subcells < 0) {
+        return 0;
+    }
+
+    constexpr int64_t WIDTH = static_cast<int64_t>(World::PLAYER_WIDTH_SUBCELLS);
+    constexpr int64_t LAST_SUBCELL_OFFSET = WIDTH - 1;
+    int64_t const first_x = floorDivide(x_subcells, SUBCELLS_PER_CELL);
+    int64_t const last_x = floorDivide(x_subcells + LAST_SUBCELL_OFFSET, SUBCELLS_PER_CELL);
+    int64_t const first_y = floorDivide(y_subcells, SUBCELLS_PER_CELL);
+    int64_t const last_y = floorDivide(y_subcells + LAST_SUBCELL_OFFSET, SUBCELLS_PER_CELL);
+    int64_t const upper_block = std::min<int64_t>(
+        floorDivide(upper_z_subcells, SUBCELLS_PER_CELL),
+        World::FLIGHT_MAX_Z
+    );
+    int64_t surface = 0;
+    for (int64_t cell_x = first_x; cell_x <= last_x; ++cell_x) {
+        int32_t const wrapped_x = wrapFlightCell(cell_x);
+        for (int64_t cell_y = first_y; cell_y <= last_y; ++cell_y) {
+            int32_t const wrapped_y = wrapFlightCell(cell_y);
+            int64_t const chunk_x = wrapped_x / Chunk::SIDE_LENGTH;
+            int64_t const chunk_y = wrapped_y / Chunk::SIDE_LENGTH;
+            int64_t const upper_chunk_z = upper_block / Chunk::SIDE_LENGTH;
+            bool found_column_support = false;
+            for (int64_t chunk_z = upper_chunk_z; chunk_z >= 0; --chunk_z) {
+                Chunk const* const chunk = world.residentChunk({
+                    .x = static_cast<int32_t>(chunk_x),
+                    .y = static_cast<int32_t>(chunk_y),
+                    .z = static_cast<int32_t>(chunk_z),
+                });
+                if (chunk == nullptr) {
+                    continue;
+                }
+                int64_t const chunk_bottom = chunk_z * Chunk::SIDE_LENGTH;
+                int64_t const first_block_z = std::min<int64_t>(
+                    upper_block,
+                    chunk_bottom + Chunk::SIDE_LENGTH - 1
+                );
+                for (int64_t block_z = first_block_z; block_z >= chunk_bottom; --block_z) {
+                    std::optional<Block> const block = chunk->blockAt({
+                        .x = static_cast<uint8_t>(wrapped_x % Chunk::SIDE_LENGTH),
+                        .y = static_cast<uint8_t>(wrapped_y % Chunk::SIDE_LENGTH),
+                        .z = static_cast<uint8_t>(block_z % Chunk::SIDE_LENGTH),
+                    });
+                    if (block == Block::Stone) {
+                        surface = std::max(surface, (block_z + 1) * SUBCELLS_PER_CELL);
+                        found_column_support = true;
+                        break;
+                    }
+                }
+                if (found_column_support) {
+                    break;
+                }
+            }
+        }
+    }
+    return surface;
+}
+
+enum class UnknownCollisionPolicy : uint8_t {
+    Block,
+    Ignore,
+};
+
+[[nodiscard]] bool materializedBodyIsBlocked(
+    SparseWorld const& world,
+    int64_t const x_subcells,
+    int64_t const y_subcells,
+    int64_t const z_subcells,
+    UnknownCollisionPolicy const unknown_policy
+) noexcept
+{
+    int64_t const first_x = floorDivide(x_subcells, SUBCELLS_PER_CELL);
+    int64_t const last_x = floorDivide(x_subcells + World::PLAYER_WIDTH_SUBCELLS - 1, SUBCELLS_PER_CELL);
+    int64_t const first_y = floorDivide(y_subcells, SUBCELLS_PER_CELL);
+    int64_t const last_y = floorDivide(y_subcells + World::PLAYER_WIDTH_SUBCELLS - 1, SUBCELLS_PER_CELL);
+    int64_t const first_z = floorDivide(z_subcells, SUBCELLS_PER_CELL);
+    int64_t const last_z = floorDivide(z_subcells + World::PLAYER_HEIGHT_SUBCELLS - 1, SUBCELLS_PER_CELL);
+    for (int64_t cell_x = first_x; cell_x <= last_x; ++cell_x) {
+        for (int64_t cell_y = first_y; cell_y <= last_y; ++cell_y) {
+            for (int64_t cell_z = first_z; cell_z <= last_z; ++cell_z) {
+                SparseBlockQuery const query = world.queryBlock({.x = cell_x, .y = cell_y, .z = cell_z});
+                if (query.state != GenerationState::Materialized) {
+                    if (unknown_policy == UnknownCollisionPolicy::Block) {
+                        return true;
+                    }
+                } else if (query.block != Block::Air) {
+                    return true;
+                }
+            }
+        }
+    }
+    return false;
 }
 
 [[nodiscard]] bool isInsideTerrain(
@@ -286,10 +388,13 @@ bool World::movePlayer(
         return (value % extent + extent) % extent;
     };
     int64_t const current_z = static_cast<int64_t>(player->z) * SUBCELLS_PER_CELL + player->z_subcell;
-    auto const surfaceAt = [this](int64_t const x, int64_t const y) {
-        return m_mode == WorldMode::Flight
+    auto const surfaceAt = [this](int64_t const x, int64_t const y, int64_t const upper_z) {
+        if (m_mode != WorldMode::Flight) {
+            return int64_t{ 0 };
+        }
+        return m_collision_world == nullptr
             ? terrainSurfaceUnderPlayer(x, y)
-            : int64_t{ 0 };
+            : materializedTerrainSurfaceUnderPlayer(*m_collision_world, x, y, upper_z);
     };
     int64_t const gravity_step = static_cast<int64_t>(elapsed.count())
         * PLAYER_GRAVITY_SUBCELLS_PER_TICK / TICK.count();
@@ -313,7 +418,7 @@ bool World::movePlayer(
         int64_t const upper_z,
         PlayerId const ignored_id
     ) {
-        int64_t support = surfaceAt(x, y);
+        int64_t support = surfaceAt(x, y, upper_z);
         int64_t const collision_width = m_mode == WorldMode::Flight
             ? PLAYER_WIDTH_SUBCELLS
             : static_cast<int64_t>(PLAYER_FOOTPRINT_CELLS) * SUBCELLS_PER_CELL;
@@ -354,7 +459,9 @@ bool World::movePlayer(
     if (delta_x != 0 && candidate_x >= 0 && candidate_x <= maximum_horizontal_subcell
         && canPlayerBeAt(static_cast<uint32_t>(candidate_x), static_cast<uint32_t>(position_y),
             proposed_z, id)
-        && proposed_z >= surfaceAt(candidate_x, position_y)) {
+        && (m_mode != WorldMode::Flight || m_collision_world == nullptr
+            || canFlightPlayerBeAt(*player, candidate_x, position_y, proposed_z))
+        && proposed_z >= surfaceAt(candidate_x, position_y, proposed_z)) {
         position_x = candidate_x;
         applied_x = true;
     }
@@ -362,7 +469,9 @@ bool World::movePlayer(
     if (delta_y != 0 && candidate_y >= 0 && candidate_y <= maximum_horizontal_subcell
         && canPlayerBeAt(static_cast<uint32_t>(position_x), static_cast<uint32_t>(candidate_y),
             proposed_z, id)
-        && proposed_z >= surfaceAt(position_x, candidate_y)) {
+        && (m_mode != WorldMode::Flight || m_collision_world == nullptr
+            || canFlightPlayerBeAt(*player, position_x, candidate_y, proposed_z))
+        && proposed_z >= surfaceAt(position_x, candidate_y, proposed_z)) {
         position_y = candidate_y;
         applied_y = true;
     }
@@ -376,10 +485,11 @@ bool World::movePlayer(
         static_cast<uint32_t>(position_y),
         falling_z,
         id
-    )) {
+    ) || (m_mode == WorldMode::Flight && m_collision_world != nullptr
+        && !canFlightPlayerBeAt(*player, position_x, position_y, falling_z))) {
         vertical_blocked = true;
         if (vertical_displacement < 0) {
-            int64_t support = surfaceAt(position_x, position_y);
+            int64_t support = surfaceAt(position_x, position_y, current_z);
             int64_t const collision_width = m_mode == WorldMode::Flight
                 ? PLAYER_WIDTH_SUBCELLS
                 : static_cast<int64_t>(PLAYER_FOOTPRINT_CELLS) * SUBCELLS_PER_CELL;
@@ -448,6 +558,144 @@ bool World::movePlayer(
     return applied_x || applied_y || moved_vertically;
 }
 
+std::vector<ChunkCoordinate> World::flightCollisionChunks(
+    PlayerId const id,
+    Direction const direction,
+    std::chrono::milliseconds const elapsed
+) const
+{
+    std::vector<ChunkCoordinate> chunks;
+    if (m_mode != WorldMode::Flight || elapsed < std::chrono::milliseconds::zero() || elapsed > TICK) {
+        return chunks;
+    }
+    auto const player_iterator = std::ranges::find(m_players, id, &Player::id);
+    if (player_iterator == m_players.end()
+        || player_iterator->movement_capabilities.allows(MovementCapability::CollisionBypass)) {
+        return chunks;
+    }
+
+    int32_t const direction_x = static_cast<int8_t>(direction.x);
+    int32_t const direction_y = static_cast<int8_t>(direction.y);
+    int32_t const direction_z = static_cast<int8_t>(direction.z);
+    bool const flies = player_iterator->movement_capabilities.allows(MovementCapability::Flight);
+    uint32_t const squared_direction_length = static_cast<uint32_t>(
+        direction_x * direction_x + direction_y * direction_y
+            + (flies ? direction_z * direction_z : 0)
+    );
+    uint32_t direction_length = 0U;
+    while (direction_length * direction_length < squared_direction_length) {
+        ++direction_length;
+    }
+    uint32_t const divisor = std::max<uint32_t>(127U, direction_length);
+    uint32_t const base_step = static_cast<uint32_t>(elapsed.count())
+        * MOVEMENT_SUBCELLS_PER_TICK / static_cast<uint32_t>(TICK.count());
+    uint32_t const acceleration = flies && direction.accelerated && isFlightSpeedupProfile(direction.speedup)
+        ? direction.speedup
+        : 1U;
+    auto const movementDelta = [base_step, divisor, acceleration](int32_t const component) {
+        return static_cast<int64_t>(base_step * static_cast<uint32_t>(std::abs(component)) / divisor * acceleration)
+            * (component < 0 ? -1 : 1);
+    };
+    int64_t const start_x = static_cast<int64_t>(player_iterator->x) * SUBCELLS_PER_CELL
+        + player_iterator->x_subcell;
+    int64_t const start_y = static_cast<int64_t>(player_iterator->y) * SUBCELLS_PER_CELL
+        + player_iterator->y_subcell;
+    int64_t const delta_x = movementDelta(direction_x);
+    int64_t const delta_y = movementDelta(direction_y);
+    int64_t delta_z = movementDelta(direction_z);
+    int64_t falling_delta = delta_z;
+    if (!flies) {
+        int64_t const velocity = player_iterator->vertical_velocity_subcells;
+        int64_t const elapsed_count = elapsed.count();
+        int64_t const tick_count = TICK.count();
+        falling_delta = velocity * elapsed_count / tick_count
+            - static_cast<int64_t>(PLAYER_GRAVITY_SUBCELLS_PER_TICK) * elapsed_count * elapsed_count
+                / (2 * tick_count * tick_count);
+        delta_z = direction_z > 0 ? std::max<int64_t>(falling_delta, PLAYER_JUMP_IMPULSE_SUBCELLS)
+            : falling_delta;
+    }
+    auto const addChunk = [&chunks](ChunkCoordinate const coordinate) {
+        if (std::ranges::find(chunks, coordinate) == chunks.end()) {
+            chunks.push_back(coordinate);
+        }
+    };
+    int64_t const start_z = static_cast<int64_t>(player_iterator->z) * SUBCELLS_PER_CELL
+        + player_iterator->z_subcell;
+    auto const addTerrainAt = [&addChunk, this](
+        int64_t const x_subcells, int64_t const y_subcells, int64_t const z_subcells
+    ) {
+        constexpr int64_t LAST_SUBCELL_OFFSET = static_cast<int64_t>(PLAYER_WIDTH_SUBCELLS) - 1;
+        int64_t const first_x = floorDivide(x_subcells, SUBCELLS_PER_CELL);
+        int64_t const last_x = floorDivide(x_subcells + LAST_SUBCELL_OFFSET, SUBCELLS_PER_CELL);
+        int64_t const first_y = floorDivide(y_subcells, SUBCELLS_PER_CELL);
+        int64_t const last_y = floorDivide(y_subcells + LAST_SUBCELL_OFFSET, SUBCELLS_PER_CELL);
+        for (int64_t cell_x = first_x; cell_x <= last_x; ++cell_x) {
+            for (int64_t cell_y = first_y; cell_y <= last_y; ++cell_y) {
+                int32_t const wrapped_x = wrapFlightCell(cell_x);
+                int32_t const wrapped_y = wrapFlightCell(cell_y);
+                if (m_collision_world != nullptr) {
+                    int64_t const first_z = std::max<int64_t>(0, floorDivide(z_subcells, SUBCELLS_PER_CELL));
+                    int64_t const last_z = std::min<int64_t>(FLIGHT_MAX_Z, floorDivide(
+                        z_subcells + PLAYER_HEIGHT_SUBCELLS - 1, SUBCELLS_PER_CELL
+                    ));
+                    for (int64_t cell_z = first_z; cell_z <= last_z; ++cell_z) {
+                        addChunk({
+                            .x = wrapped_x / Chunk::SIDE_LENGTH,
+                            .y = wrapped_y / Chunk::SIDE_LENGTH,
+                            .z = static_cast<int32_t>(cell_z / Chunk::SIDE_LENGTH),
+                        });
+                    }
+                } else {
+                    uint16_t const height = collisionTerrain().heightAt(wrapped_x, wrapped_y);
+                    uint16_t const terrain_z = height == 0U ? 0U : static_cast<uint16_t>(height - 1U);
+                    addChunk({
+                        .x = wrapped_x / Chunk::SIDE_LENGTH,
+                        .y = wrapped_y / Chunk::SIDE_LENGTH,
+                        .z = static_cast<int32_t>(terrain_z / Chunk::SIDE_LENGTH),
+                    });
+                }
+            }
+        }
+    };
+    constexpr int64_t SWEEP_STRIDE = SUBCELLS_PER_CELL / 2;
+    auto const absolute = [](int64_t const value) noexcept {
+        return value < 0 ? -value : value;
+    };
+    auto const addSweep = [&addTerrainAt, &absolute, start_z](
+        int64_t const from_x,
+        int64_t const from_y,
+        int64_t const sweep_x,
+        int64_t const sweep_y,
+        int64_t const sweep_z
+    ) {
+        int64_t const sweep_steps = std::max<int64_t>(
+            1,
+            (std::max({absolute(sweep_x), absolute(sweep_y), absolute(sweep_z)}) + SWEEP_STRIDE - 1)
+                / SWEEP_STRIDE
+        );
+        for (int64_t step = 1; step <= sweep_steps; ++step) {
+            addTerrainAt(
+                from_x + sweep_x * step / sweep_steps,
+                from_y + sweep_y * step / sweep_steps,
+                start_z + sweep_z * step / sweep_steps
+            );
+        }
+    };
+
+    addTerrainAt(start_x, start_y, start_z);
+    addSweep(start_x, start_y, delta_x, delta_y, delta_z);
+    addSweep(start_x, start_y, delta_x, 0, delta_z);
+    addSweep(start_x, start_y, 0, delta_y, delta_z);
+    addTerrainAt(start_x + delta_x, start_y + delta_y, start_z + delta_z);
+    if (falling_delta != delta_z) {
+        addSweep(start_x, start_y, delta_x, delta_y, falling_delta);
+        addSweep(start_x, start_y, delta_x, 0, falling_delta);
+        addSweep(start_x, start_y, 0, delta_y, falling_delta);
+        addTerrainAt(start_x + delta_x, start_y + delta_y, start_z + falling_delta);
+    }
+    return chunks;
+}
+
 bool World::setPlayerPosition(
     PlayerId const id,
     uint8_t const x,
@@ -513,12 +761,20 @@ bool World::canSetPlayerMovementCapabilities(
     }
     for (Player const& player : m_players) {
         if (player.id == id) {
-            if (m_mode == WorldMode::Flight
-                && !capabilities.allows(MovementCapability::CollisionBypass)
-                && !canFlightPlayerBeAt(player, player.x * SUBCELLS_PER_CELL + player.x_subcell,
-                    player.y * SUBCELLS_PER_CELL + player.y_subcell,
-                    static_cast<int64_t>(player.z) * SUBCELLS_PER_CELL + player.z_subcell)) {
-                return false;
+            if (m_mode == WorldMode::Flight && !capabilities.allows(MovementCapability::CollisionBypass)) {
+                int64_t const x = static_cast<int64_t>(player.x) * SUBCELLS_PER_CELL + player.x_subcell;
+                int64_t const y = static_cast<int64_t>(player.y) * SUBCELLS_PER_CELL + player.y_subcell;
+                int64_t const z = static_cast<int64_t>(player.z) * SUBCELLS_PER_CELL + player.z_subcell;
+                if (m_collision_world == nullptr) {
+                    if (!canFlightPlayerBeAt(player, x, y, z)) {
+                        return false;
+                    }
+                } else {
+                    if (materializedBodyIsBlocked(*m_collision_world, x, y, z, UnknownCollisionPolicy::Ignore)
+                        || !canPlayerBeAt(static_cast<uint32_t>(x), static_cast<uint32_t>(y), z, id)) {
+                        return false;
+                    }
+                }
             }
             return true;
         }
@@ -625,8 +881,20 @@ bool World::canFlightPlayerBeAt(
     PlayerPosition normalized = position;
     normalized.x = wrapFlightCell(normalized.x);
     normalized.y = wrapFlightCell(normalized.y);
-    if (!isFlightPositionInBounds(normalized)
-        || isInsideTerrain(x_subcells, y_subcells, z_subcells)) {
+    if (!isFlightPositionInBounds(normalized)) {
+        return false;
+    }
+    if (m_collision_world != nullptr) {
+        if (materializedBodyIsBlocked(
+                *m_collision_world,
+                x_subcells,
+                y_subcells,
+                z_subcells,
+                UnknownCollisionPolicy::Block
+            )) {
+            return false;
+        }
+    } else if (isInsideTerrain(x_subcells, y_subcells, z_subcells)) {
         return false;
     }
     return canPlayerBeAt(
@@ -702,7 +970,7 @@ bool World::moveFlightPlayer(
     int64_t const delta_z = movementDelta(direction_z);
     int64_t target_z = start_z + delta_z;
     bool const collision_bypass = player.movement_capabilities.allows(MovementCapability::CollisionBypass);
-    if (!collision_bypass && delta_z < 0 && delta_x == 0 && delta_y == 0) {
+    if (!collision_bypass && m_collision_world == nullptr && delta_z < 0 && delta_x == 0 && delta_y == 0) {
         target_z = std::max(target_z, terrainSurfaceUnderPlayer(start_x, start_y));
     }
 
@@ -800,7 +1068,8 @@ bool World::moveFlightPlayer(
         }
 
         if (delta_z != 0) {
-            int64_t const starting_surface = terrainSurfaceUnderPlayer(resolved_x, resolved_y);
+            int64_t const starting_surface = m_collision_world == nullptr
+                ? terrainSurfaceUnderPlayer(resolved_x, resolved_y) : 0;
             int64_t const vertical_steps = std::max<int64_t>(
                 1,
                 (absolute(delta_z) + SWEEP_STRIDE - 1) / SWEEP_STRIDE
@@ -808,7 +1077,8 @@ bool World::moveFlightPlayer(
             int64_t last_z = start_z;
             for (int64_t step = 1; step <= vertical_steps; ++step) {
                 int64_t sample_z = start_z + delta_z * step / vertical_steps;
-                int64_t const surface = terrainSurfaceUnderPlayer(resolved_x, resolved_y);
+                int64_t const surface = m_collision_world == nullptr
+                    ? terrainSurfaceUnderPlayer(resolved_x, resolved_y) : 0;
                 if (sample_z < surface) {
                     if (delta_z > 0) {
                         // The player may have advanced onto a higher terrain
