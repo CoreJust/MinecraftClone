@@ -20,7 +20,8 @@
       "inherits": "base",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
-        "MC_ENABLE_HIGH_ASSERT": "ON"
+        "MC_ENABLE_HIGH_ASSERT": "ON",
+        "MC_ENABLE_RENDERER_SMOKE": "OFF"
       }
     },
     {
@@ -37,6 +38,135 @@
       "cacheVariables": {
         "MC_ENABLE_RENDERER_SMOKE": "ON"
       }
+    },
+    {
+      "name": "analysis-base",
+      "hidden": true,
+      "inherits": "release",
+      "cacheVariables": {
+        "MC_ENABLE_SANITIZERS": "ON",
+        "VCPKG_MANIFEST_INSTALL": "OFF",
+        "VCPKG_INSTALLED_DIR": "$env{VCPKG_INSTALLED_DIR}",
+        "CMAKE_PREFIX_PATH": "$env{MC_PRIVATE_DEPENDENCIES_PREFIX}",
+        "CoreCpp_DIR": "$env{MC_PRIVATE_DEPENDENCIES_PREFIX}/lib/cmake/CoreCpp",
+        "CoreProject2026_DIR": "$env{MC_PRIVATE_DEPENDENCIES_PREFIX}/lib/cmake/CoreProject2026"
+      }
+    },
+    {
+      "name": "analysis-macos-asan",
+      "inherits": "analysis-base",
+      "cacheVariables": {
+        "MC_SANITIZER": "address"
+      }
+    },
+    {
+      "name": "analysis-macos-ubsan",
+      "inherits": "analysis-base",
+      "cacheVariables": {
+        "MC_SANITIZER": "undefined"
+      }
+    },
+    {
+      "name": "analysis-macos-tsan",
+      "inherits": "analysis-base",
+      "cacheVariables": {
+        "MC_SANITIZER": "thread"
+      }
+    },
+    {
+      "name": "analysis-windows-asan",
+      "inherits": "analysis-base",
+      "cacheVariables": {
+        "MC_SANITIZER": "address"
+      }
+    },
+    {
+      "name": "analysis-windows-analyze",
+      "inherits": "debug",
+      "cacheVariables": {
+        "VCPKG_MANIFEST_INSTALL": "OFF",
+        "CMAKE_C_FLAGS": "/analyze /W4 /WX",
+        "CMAKE_CXX_FLAGS": "/analyze /W4 /WX"
+      }
+    },
+    {
+      "name": "analysis-linux-base",
+      "hidden": true,
+      "inherits": "analysis-base",
+      "cacheVariables": {
+        "MC_ANALYSIS_HOST": "ON",
+        "MC_BUILD_CLIENT": "OFF",
+        "MC_REGISTER_SERVER_ONLY_BUILD_TEST": "OFF",
+        "CMAKE_C_COMPILER": "clang",
+        "CMAKE_CXX_COMPILER": "clang++"
+      }
+    },
+    {
+      "name": "analysis-linux-lsan",
+      "inherits": "analysis-linux-base",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": {
+        "MC_SANITIZER": "leak",
+        "VCPKG_TARGET_TRIPLET": "x64-linux-lsan"
+      }
+    },
+    {
+      "name": "analysis-linux-msan",
+      "inherits": "analysis-linux-base",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": {
+        "MC_SANITIZER": "memory",
+        "VCPKG_TARGET_TRIPLET": "x64-linux-msan",
+        "CMAKE_C_FLAGS": "-fsanitize=memory -fsanitize-memory-track-origins=2 -fno-omit-frame-pointer",
+        "CMAKE_CXX_FLAGS": "-stdlib=libc++ -isystem $env{MC_MSAN_LIBCXX_PREFIX}/include/c++/v1",
+        "CMAKE_EXE_LINKER_FLAGS": "-stdlib=libc++ -L$env{MC_MSAN_LIBCXX_PREFIX}/lib -Wl,-rpath,$env{MC_MSAN_LIBCXX_PREFIX}/lib",
+        "CMAKE_SHARED_LINKER_FLAGS": "-stdlib=libc++ -L$env{MC_MSAN_LIBCXX_PREFIX}/lib -Wl,-rpath,$env{MC_MSAN_LIBCXX_PREFIX}/lib"
+      }
+    },
+    {
+      "name": "analysis-static-base",
+      "hidden": true,
+      "inherits": "debug",
+      "cacheVariables": {
+        "VCPKG_MANIFEST_INSTALL": "OFF",
+        "VCPKG_INSTALLED_DIR": "$env{VCPKG_INSTALLED_DIR}",
+        "CMAKE_PREFIX_PATH": "$env{MC_PRIVATE_DEPENDENCIES_PREFIX}",
+        "CoreCpp_DIR": "$env{MC_PRIVATE_DEPENDENCIES_PREFIX}/lib/cmake/CoreCpp",
+        "CoreProject2026_DIR": "$env{MC_PRIVATE_DEPENDENCIES_PREFIX}/lib/cmake/CoreProject2026"
+      }
+    },
+    {
+      "name": "analysis-clang-static",
+      "inherits": "analysis-static-base",
+      "cacheVariables": {
+        "CMAKE_C_FLAGS": "-Xanalyzer -analyzer-output=text",
+        "CMAKE_CXX_FLAGS": "-Xanalyzer -analyzer-output=text",
+        "CMAKE_C_COMPILER_LAUNCHER": "scan-build;--status-bugs;-v",
+        "CMAKE_CXX_COMPILER_LAUNCHER": "scan-build;--status-bugs;-v"
+      }
+    },
+    {
+      "name": "analysis-clang-tidy",
+      "inherits": "analysis-static-base",
+      "cacheVariables": {
+        "CMAKE_C_CLANG_TIDY": "clang-tidy;--checks=bugprone-*,performance-*;--warnings-as-errors=*",
+        "CMAKE_CXX_CLANG_TIDY": "clang-tidy;--checks=bugprone-*,performance-*;--warnings-as-errors=*"
+      }
+    },
+    {
+      "name": "analysis-iwyu",
+      "inherits": "analysis-static-base",
+      "cacheVariables": {
+        "CMAKE_CXX_INCLUDE_WHAT_YOU_USE": "include-what-you-use;-Xiwyu;--error"
+      }
+    },
+    {
+      "name": "analysis-cppcheck",
+      "inherits": "analysis-static-base",
+      "cacheVariables": {
+        "CMAKE_C_CPPCHECK": "cppcheck;--enable=all;--error-exitcode=1;--inline-suppr",
+        "CMAKE_CXX_CPPCHECK": "cppcheck;--enable=all;--error-exitcode=1;--inline-suppr"
+      }
     }
   ],
   "buildPresets": [
@@ -51,6 +181,50 @@
     {
       "name": "renderer-smoke",
       "configurePreset": "renderer-smoke"
+    },
+    {
+      "name": "analysis-macos-asan",
+      "configurePreset": "analysis-macos-asan"
+    },
+    {
+      "name": "analysis-macos-ubsan",
+      "configurePreset": "analysis-macos-ubsan"
+    },
+    {
+      "name": "analysis-macos-tsan",
+      "configurePreset": "analysis-macos-tsan"
+    },
+    {
+      "name": "analysis-windows-asan",
+      "configurePreset": "analysis-windows-asan"
+    },
+    {
+      "name": "analysis-windows-analyze",
+      "configurePreset": "analysis-windows-analyze"
+    },
+    {
+      "name": "analysis-linux-lsan",
+      "configurePreset": "analysis-linux-lsan"
+    },
+    {
+      "name": "analysis-linux-msan",
+      "configurePreset": "analysis-linux-msan"
+    },
+    {
+      "name": "analysis-clang-static",
+      "configurePreset": "analysis-clang-static"
+    },
+    {
+      "name": "analysis-clang-tidy",
+      "configurePreset": "analysis-clang-tidy"
+    },
+    {
+      "name": "analysis-iwyu",
+      "configurePreset": "analysis-iwyu"
+    },
+    {
+      "name": "analysis-cppcheck",
+      "configurePreset": "analysis-cppcheck"
     }
   ],
   "testPresets": [
@@ -65,6 +239,34 @@
     {
       "name": "renderer-smoke",
       "configurePreset": "renderer-smoke"
+    },
+    {
+      "name": "analysis-macos-asan",
+      "configurePreset": "analysis-macos-asan"
+    },
+    {
+      "name": "analysis-macos-ubsan",
+      "configurePreset": "analysis-macos-ubsan"
+    },
+    {
+      "name": "analysis-macos-tsan",
+      "configurePreset": "analysis-macos-tsan"
+    },
+    {
+      "name": "analysis-windows-asan",
+      "configurePreset": "analysis-windows-asan"
+    },
+    {
+      "name": "analysis-windows-analyze",
+      "configurePreset": "analysis-windows-analyze"
+    },
+    {
+      "name": "analysis-linux-lsan",
+      "configurePreset": "analysis-linux-lsan"
+    },
+    {
+      "name": "analysis-linux-msan",
+      "configurePreset": "analysis-linux-msan"
     }
   ]
 }

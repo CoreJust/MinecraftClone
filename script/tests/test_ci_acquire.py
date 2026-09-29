@@ -243,6 +243,8 @@ class CiAcquireTests(unittest.TestCase):
             ("macos", "arm64-osx"),
             ("windows", "x64-windows"),
             ("android", "arm64-android"),
+            ("android-hwasan", "arm64-android-hwasan"),
+            ("linux-analysis", "x64-linux-lsan"),
         ):
             with tempfile.TemporaryDirectory() as directory:
                 root = Path(directory)
@@ -258,7 +260,9 @@ class CiAcquireTests(unittest.TestCase):
                     installed_root.mkdir()
                     return ""
 
-                with mock.patch.object(acquire, "run", side_effect=install) as run, mock.patch.object(acquire, "write_github_env") as write_env:
+                with mock.patch.dict(os.environ, {"MC_VCPKG_ANALYSIS_TRIPLET": triplet}), mock.patch.object(
+                    acquire, "run", side_effect=install
+                ) as run, mock.patch.object(acquire, "write_github_env") as write_env:
                     result = acquire.install_manifest_dependencies(vcpkg_root, platform_name, installed_root)
 
                 repository = Path(__file__).resolve().parents[2]
@@ -271,6 +275,10 @@ class CiAcquireTests(unittest.TestCase):
                 ]
                 if platform_name == "windows":
                     command.append(f"--overlay-ports={installed_root.parent / 'vcpkg-overlays'}")
+                if platform_name == "linux-analysis":
+                    command.append(f"--overlay-triplets={Path(acquire.__file__).resolve().parent / 'vcpkg-triplets'}")
+                if platform_name == "android-hwasan":
+                    command.append(f"--overlay-triplets={Path(acquire.__file__).resolve().parent / 'vcpkg-triplets'}")
                 self.assertEqual(result, installed_root)
                 run.assert_called_once_with(command)
                 write_env.assert_called_once_with("VCPKG_INSTALLED_DIR", str(installed_root))
@@ -307,19 +315,26 @@ class CiAcquireTests(unittest.TestCase):
                 acquire.install_windows_gmp_overlay(vcpkg_root, root / "vcpkg-installed")
 
     def test_install_private_dependencies_passes_exact_platform_component_closure(self):
-        expected_platform_arguments = {
-            "android": {"-DCORECPP_BUILD_RUNTIME_GRAPHICS_VULKAN_ANDROID=ON"},
-            "macos": {
-                "-DCORECPP_BUILD_RUNTIME_PLATFORM_GLFW=ON",
-                "-DCORECPP_BUILD_RUNTIME_GRAPHICS_VULKAN_GLFW=ON",
-            },
-            "windows": {
-                "-DCORECPP_BUILD_RUNTIME_PLATFORM_GLFW=ON",
-                "-DCORECPP_BUILD_RUNTIME_GRAPHICS_VULKAN_GLFW=ON",
-            },
+        common_arguments = set(acquire.CORECPP_COMMON_BUILD_ARGUMENTS)
+        analysis_arguments = set(acquire.CORECPP_ANALYSIS_BUILD_ARGUMENTS)
+        platform_arguments = {
+            name: set(arguments)
+            for name, arguments in acquire.CORECPP_PLATFORM_BUILD_ARGUMENTS.items()
         }
-        all_platform_arguments = set().union(*expected_platform_arguments.values())
-        for platform_name, platform_arguments in expected_platform_arguments.items():
+        expected_component_arguments = {
+            name: common_arguments | platform_arguments[name]
+            for name in platform_arguments
+        }
+        expected_component_arguments["android-hwasan"] = (
+            common_arguments | platform_arguments["android"]
+        )
+        expected_component_arguments["linux-analysis"] = analysis_arguments
+        all_component_arguments = (
+            common_arguments
+            | analysis_arguments
+            | set().union(*platform_arguments.values())
+        )
+        for platform_name, expected_arguments in expected_component_arguments.items():
             with self.subTest(platform_name=platform_name), tempfile.TemporaryDirectory() as directory, mock.patch.dict(
                 os.environ,
                 {"VCPKG_INSTALLED_DIR": "/tmp/vcpkg-installed"},
@@ -359,14 +374,21 @@ class CiAcquireTests(unittest.TestCase):
                     self.assertIn("-DVCPKG_MANIFEST_INSTALL=OFF", command)
                     self.assertEqual(command[-1], "-DBUILD_TESTING=OFF")
                 corecpp_command, coreproject_command = configure_commands
-                for argument in acquire.CORECPP_COMMON_BUILD_ARGUMENTS:
-                    self.assertIn(argument, corecpp_command)
-                self.assertTrue(platform_arguments.issubset(corecpp_command))
-                self.assertTrue((all_platform_arguments - platform_arguments).isdisjoint(corecpp_command))
+                if platform_name == "linux-analysis":
+                    self.assertFalse(set().union(*platform_arguments.values()).intersection(corecpp_command))
+                else:
+                    for argument in acquire.CORECPP_COMMON_BUILD_ARGUMENTS:
+                        self.assertIn(argument, corecpp_command)
+                configured_components = all_component_arguments.intersection(corecpp_command)
+                self.assertEqual(configured_components, expected_arguments)
                 self.assertIn(f"-DCoreCpp_DIR={corecpp_config.parent.as_posix()}", coreproject_command)
                 self.assertIn("-DCOREPROJECT2026_BUILD_SCRIPT=OFF", coreproject_command)
                 aggregate_flag = "-DCMAKE_CXX_FLAGS=-Wno-error=missing-field-initializers"
-                self.assertEqual(aggregate_flag in coreproject_command, platform_name == "android")
+                self.assertEqual(aggregate_flag in coreproject_command, platform_name in {"android", "android-hwasan"})
+                if platform_name == "android-hwasan":
+                    self.assertIn("-DVCPKG_TARGET_TRIPLET=arm64-android-hwasan", corecpp_command)
+                    self.assertIn("-DANDROID_PLATFORM=android-29", corecpp_command)
+                    self.assertIn("-DANDROID_SANITIZE=hwaddress", corecpp_command)
                 corecpp_install_index = commands.index(["cmake", "--install", str(root / "CoreCpp-build")])
                 coreproject_configure_index = commands.index(coreproject_command)
                 self.assertLess(corecpp_install_index, coreproject_configure_index)
@@ -539,6 +561,46 @@ class CiAcquireTests(unittest.TestCase):
         lock = Path(__file__).resolve().parents[2] / "dependencies.lock.json"
         parsed = acquire.require_private_dependency_lock(lock)
         self.assertEqual(set(parsed), {"CoreCpp", "CoreProject2026"})
+
+    def test_android_hwasan_private_dependencies_share_the_instrumented_ndk_triplet(self):
+        with tempfile.TemporaryDirectory() as directory, mock.patch.dict(
+            os.environ,
+            {"VCPKG_INSTALLED_DIR": "/tmp/vcpkg-installed"},
+        ):
+            root = Path(directory) / "private-dependencies"
+            for name in acquire.PRIVATE_DEPENDENCIES:
+                source = root / name
+                source.mkdir(parents=True)
+                (source / "CMakeLists.txt").touch()
+            corecpp_config = root / "install/lib/cmake/CoreCpp/CoreCppConfig.cmake"
+            chainload = "-DVCPKG_CHAINLOAD_TOOLCHAIN_FILE=/ndk/build/cmake/android.toolchain.cmake"
+
+            def run_command(command):
+                if command[:2] == ["cmake", "--install"] and command[2].endswith("CoreCpp-build"):
+                    corecpp_config.parent.mkdir(parents=True)
+                    corecpp_config.touch()
+                return ""
+
+            with mock.patch.object(acquire, "run", side_effect=run_command) as run, mock.patch.object(
+                acquire, "write_github_env"
+            ):
+                acquire.install_private_dependencies(root, "android-hwasan", [chainload])
+
+            configure_commands = [
+                call.args[0]
+                for call in run.call_args_list
+                if call.args[0][:2] == ["cmake", "-S"]
+            ]
+            self.assertEqual(len(configure_commands), 2)
+            for command in configure_commands:
+                self.assertIn(chainload, command)
+                self.assertIn("-DVCPKG_TARGET_TRIPLET=arm64-android-hwasan", command)
+                self.assertIn("-DANDROID_PLATFORM=android-29", command)
+                self.assertIn("-DANDROID_STL=c++_shared", command)
+                self.assertIn("-DANDROID_SANITIZE=hwaddress", command)
+            triplet = Path(acquire.__file__).resolve().parent / "vcpkg-triplets/arm64-android-hwasan.cmake"
+            self.assertIn("set(VCPKG_CMAKE_SYSTEM_VERSION 29)", triplet.read_text(encoding="utf-8"))
+            self.assertIn("set(VCPKG_CHAINLOAD_TOOLCHAIN_FILE", triplet.read_text(encoding="utf-8"))
 
     def test_private_dependency_fetch_pins_github_host_key(self):
         with tempfile.TemporaryDirectory() as directory:

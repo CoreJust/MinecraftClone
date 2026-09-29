@@ -303,8 +303,10 @@ def finish(root: Path, task_id: str, source_text: str) -> None:
     require_expected_promoted_tree(root, promotion_base, source, promoted)
     promotion_state_path(root).unlink(missing_ok=True)
     require_clean(root)
-    run_check(root, "--strict", "--level", "snapshot", "--require-index-match")
-    print(promoted)
+    print(
+        f"Promotion commit created: {promoted}\n"
+        "Push this exact ai-main commit and wait for its hosted analysis gate before running tag."
+    )
 
 
 def tag(root: Path, task_id: str, revision_number: int | None = None) -> None:
