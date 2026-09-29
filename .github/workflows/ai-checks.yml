@@ -441,6 +441,9 @@ jobs:
           --coreproject2026-key "$MC_CI_COREPROJECT2026_DEPLOY_KEY_FILE"
       - name: Bootstrap pinned Android SDK and NDK
         run: python script/ci/acquire.py install-android-sdk --root "$RUNNER_TEMP/android-sdk"
+      - name: Expose Android NDK clang-tidy
+        shell: bash
+        run: echo "$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin" >> "$GITHUB_PATH"
       - name: Install host autotools for vcpkg GMP and MPFR
         run: |
           sudo apt-get update
@@ -475,6 +478,18 @@ jobs:
           -PcoreCppDir="$MC_PRIVATE_DEPENDENCIES_PREFIX/lib/cmake/CoreCpp"
           -PcoreProjectDir="$MC_PRIVATE_DEPENDENCIES_PREFIX/lib/cmake/CoreProject2026"
           :app:assembleRelease
+      - name: Run candidate-bound Android clang-tidy row
+        run: >-
+          python script/ai_analysis_matrix.py run-row build/ai-analysis/android_clang_tidy.json
+          --row android_clang_tidy
+      - name: Upload Android clang-tidy receipt
+        if: always()
+        uses: actions/upload-artifact@ea165f8a106dfd1bfe6b101ff036ccbb1cb2b2f9 # v4.6.2
+        with:
+          name: analysis-android-static-${{ github.sha }}
+          path: build/ai-analysis/android_clang_tidy.json
+          if-no-files-found: warn
+          retention-days: 14
       - name: Upload HWASan APK for arm64 runtime
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:

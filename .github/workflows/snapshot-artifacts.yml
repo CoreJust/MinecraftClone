@@ -456,6 +456,8 @@ jobs:
         run: |
           cat > "$RUNNER_TEMP/corelang-android-compat.cmake" <<'EOF'
           add_compile_options(-Wno-error=reorder-init-list)
+          add_compile_options(-Wno-error=missing-field-initializers)
+          add_compile_options(-Wno-error=unused-parameter)
           EOF
           python script/ci/acquire.py install-private-dependencies \
             --root "$RUNNER_TEMP/private-dependencies" --platform android \

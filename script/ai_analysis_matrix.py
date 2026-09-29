@@ -38,6 +38,7 @@ REQUIRED_ROW_IDS = (
     "windows_msvc_asan",
     "windows_msvc_analyze",
     "android_arm64_hwasan",
+    "android_clang_tidy",
     "linux_lsan",
     "linux_msan",
     "clang_static_analysis",
@@ -91,6 +92,20 @@ ANALYSIS_TOOL_MARKERS = {
     "clang_tidy": ["clang-tidy", "--checks=bugprone-*,performance-*", "--warnings-as-errors=*"],
     "iwyu": ["include-what-you-use", "-Xiwyu", "--error"],
     "cppcheck": ["cppcheck", "--enable=all", "--error-exitcode=1", "--inline-suppr"],
+}
+REQUIRED_DIRECT_ANALYSIS_COMMANDS = {
+    "android_clang_tidy": [
+        "python3",
+        "script/ci/android_clang_tidy.py",
+        "--compile-commands-dir",
+        "android/app/.cxx/Release",
+        "--repository-root",
+        ".",
+        "--clang-tidy",
+        "clang-tidy",
+        "--checks=clang-analyzer-*",
+        "--warnings-as-errors=clang-analyzer-*",
+    ]
 }
 
 
@@ -186,6 +201,13 @@ def validate_manifest(manifest: Any) -> dict[str, Any]:
             raise MatrixError(f"manifest row {row_id}.tool_probes must be a non-empty list")
         for probe_index, probe in enumerate(probes):
             _require_string_list(probe, f"manifest row {row_id}.tool_probes[{probe_index}]")
+        if row_id in REQUIRED_DIRECT_ANALYSIS_COMMANDS:
+            if row.get("platform") != "android-arm64":
+                raise MatrixError(f"manifest row {row_id} must run on the Android arm64 toolchain")
+            if commands != [REQUIRED_DIRECT_ANALYSIS_COMMANDS[row_id]]:
+                raise MatrixError(f"manifest row {row_id} must invoke its required analyzer command")
+            if ["clang-tidy", "--version"] not in probes:
+                raise MatrixError(f"manifest row {row_id} must probe the clang-tidy version")
         timeout = row.get("timeout_seconds")
         if not isinstance(timeout, int) or isinstance(timeout, bool) or timeout <= 0 or timeout > 3600:
             raise MatrixError(f"manifest row {row_id}.timeout_seconds must be between 1 and 3600")
@@ -431,6 +453,8 @@ def _validate_row_receipt(row: Any, manifest_row: Mapping[str, Any], candidate: 
         argv = _require_string_list(execution.get("argv"), f"{field}.argv")
         if argv[0] != declared[0]:
             raise MatrixError(f"{field}.argv does not invoke the declared executable")
+        if row_id in REQUIRED_DIRECT_ANALYSIS_COMMANDS and argv != declared:
+            raise MatrixError(f"{field}.argv must execute the exact required analyzer command")
         if row_id in REQUIRED_ANALYSIS_CONFIGURATION and declared[:2] == ["cmake", "--build"] and "--verbose" not in argv:
             raise MatrixError(f"{field}.argv must enable verbose analyzer command capture")
         if execution.get("return_code") != 0:

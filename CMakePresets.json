@@ -82,9 +82,8 @@
     },
     {
       "name": "analysis-windows-analyze",
-      "inherits": "debug",
+      "inherits": "analysis-static-base",
       "cacheVariables": {
-        "VCPKG_MANIFEST_INSTALL": "OFF",
         "CMAKE_C_FLAGS": "/analyze /W4 /WX",
         "CMAKE_CXX_FLAGS": "/analyze /W4 /WX"
       }

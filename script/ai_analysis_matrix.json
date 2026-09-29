@@ -73,6 +73,16 @@
       "timeout_seconds": 1800
     },
     {
+      "id": "android_clang_tidy",
+      "label": "Android arm64 NDK clang-tidy",
+      "platform": "android-arm64",
+      "capability": "android-arm64-clang-tidy",
+      "flags": ["--checks=clang-analyzer-*", "--warnings-as-errors=clang-analyzer-*", "aarch64 Android compile target"],
+      "tool_probes": [["clang-tidy", "--version"]],
+      "commands": [["python3", "script/ci/android_clang_tidy.py", "--compile-commands-dir", "android/app/.cxx/Release", "--repository-root", ".", "--clang-tidy", "clang-tidy", "--checks=clang-analyzer-*", "--warnings-as-errors=clang-analyzer-*"]],
+      "timeout_seconds": 1800
+    },
+    {
       "id": "linux_lsan",
       "label": "Linux standalone LeakSanitizer",
       "platform": "linux",

@@ -240,7 +240,9 @@ bool DebugHudState::formatText(DebugHudText& text) const {
         hudColor(DebugHudColor::Gold)
     );
     offset = appendText(text, offset, line_limit, " ", white);
-    offset = appendNumber(text, offset, line_limit, values.input.camera_roll_degrees, 1, hudColor(DebugHudColor::Rose));
+    static_cast<void>(
+        appendNumber(text, offset, line_limit, values.input.camera_roll_degrees, 1, hudColor(DebugHudColor::Rose))
+    );
     return true;
 }
 

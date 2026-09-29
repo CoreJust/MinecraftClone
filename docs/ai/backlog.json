@@ -9059,5 +9059,47 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0263",
+    "title": "Close Android and Windows static-analysis matrix gaps",
+    "kind": "chore",
+    "status": "done",
+    "priority": "P1",
+    "route": "luna",
+    "milestone": "ED-010-S7",
+    "depends_on": [
+      "MC-AI-0249"
+    ],
+    "acceptance": "The exact-candidate S7 hosted analysis matrix runs the Android NDK clang static analyzer through clang-tidy on every Android arm64 project translation unit; analyzer diagnostics are errors, and the command, tool version, Android target validation, and success are recorded. Missing or host-target compile databases fail closed. The Windows /analyze preset inherits the shared static-analysis package paths so its required CoreCpp and CoreProject dependencies remain resolvable.",
+    "evidence": "Focused Python tests and fast gate pass in the isolated 0263 worktree; local NDK clang-analyzer coverage was previously observed on 35 Android arm64 project translation units. Hosted exact-candidate matrix receipt remains required at release.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0038",
+    "motivation": "The current required matrix has Android runtime HWASan but no Android-target static-analysis receipt, while the Windows /analyze preset drops the package-path settings it needs to configure.",
+    "context": "User requires automated sanitizer/static-analysis checks across supported platforms where possible; NDK clang-tidy is available and Android compile commands can be validated as arm64 Android targets.",
+    "complexity": "medium",
+    "created_at": "2026-09-29",
+    "resolved_at": "2026-09-29",
+    "resolution_changes": "Added an Android arm64 NDK clang-analyzer row to the S7 required matrix, with multi-database target validation, exact analyzer command/tool receipt validation, and execution after the HWASan Release build. Fixed the two analyzer findings found during local validation and restored the Windows /analyze preset's shared package-path inheritance.",
+    "plan": [
+      "Add a fail-closed Android NDK compile-database runner for clang-analyzer checks, register it as a required candidate-bound analysis row, execute it after the HWASan Release build, and test receipts and workflow wiring.",
+      "Keep the Windows /analyze preset on the shared static-analysis dependency configuration."
+    ],
+    "product_changes": [
+      "No product behavior changed."
+    ],
+    "code_changes": [
+      "Added script/ci/android_clang_tidy.py, manifest/workflow/receipt validation and tests, Android NDK analyzer wiring, safe ScriptedWorldError defaulting and failure propagation, and an explicit discarded HUD formatting result.",
+      "Restored Windows /analyze preset inheritance from analysis-static-base and added a preset regression test."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]

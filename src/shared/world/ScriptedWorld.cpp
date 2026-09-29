@@ -306,19 +306,15 @@ private:
 };
 
 [[nodiscard]]
-std::expected<void, shared::ScriptedWorldError> registerProviders(
+std::expected<void, std::string> registerProviders(
     core003::Runtime& runtime,
     CandidateWorld& candidate
 )
 {
-    auto register_provider = [&runtime](core003::CustomProvider provider)
-        -> std::expected<void, shared::ScriptedWorldError> {
+    auto register_provider = [&runtime](core003::CustomProvider provider) -> std::expected<void, std::string> {
         auto const result = runtime.registerProvider(std::move(provider));
         if (!result) {
-            return std::unexpected(shared::ScriptedWorldError{
-                .code = shared::ScriptedWorldErrorCode::RuntimeFailed,
-                .message = result.error().message,
-            });
+            return std::unexpected(result.error().message);
         }
         return {};
     };
@@ -423,7 +419,10 @@ std::expected<ScriptedWorld, ScriptedWorldError> ScriptedWorld::load(
     CandidateWorld candidate{options};
     core003::Runtime runtime;
     if (auto const registered = registerProviders(runtime, candidate); !registered) {
-        return std::unexpected(registered.error());
+        return std::unexpected(ScriptedWorldError{
+            .code = ScriptedWorldErrorCode::RuntimeFailed,
+            .message = registered.error(),
+        });
     }
     auto const program = runtime.load(compiled->bytes);
     if (!program) {

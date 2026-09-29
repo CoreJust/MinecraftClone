@@ -98,6 +98,21 @@ class AnalysisMatrixTests(unittest.TestCase):
             self.matrix.REQUIRED_ROW_IDS,
         )
 
+    def test_android_clang_tidy_is_a_required_matrix_row(self):
+        self.assertIn("android_clang_tidy", self.matrix.REQUIRED_ROW_IDS)
+        row = next(item for item in self.manifest["rows"] if item["id"] == "android_clang_tidy")
+        self.assertEqual(row["platform"], "android-arm64")
+        self.assertIn("clang-tidy", row["tool_probes"][0])
+        self.assertIn("--checks=clang-analyzer-*", row["commands"][0])
+        self.assertIn("--warnings-as-errors=clang-analyzer-*", row["commands"][0])
+
+    def test_android_clang_tidy_receipt_requires_the_exact_analyzer_invocation(self):
+        receipt = self.receipt()
+        row = next(item for item in receipt["rows"] if item["id"] == "android_clang_tidy")
+        row["executed_commands"][0]["argv"].remove("--warnings-as-errors=clang-analyzer-*")
+        with self.assertRaisesRegex(self.matrix.MatrixError, "exact required analyzer command"):
+            self.matrix.validate_receipt(receipt, self.manifest, CANDIDATE)
+
     def test_complete_candidate_bound_receipt_passes(self):
         self.assertIsNotNone(self.matrix.validate_receipt(self.receipt(), self.manifest, CANDIDATE))
 
@@ -535,6 +550,8 @@ class AnalysisMatrixTests(unittest.TestCase):
         self.assertIn(":app:assembleRelease", build_job)
         self.assertIn("outputs/apk/release/app-release.apk", build_job)
         self.assertNotIn(":app:assembleDebug", build_job)
+        self.assertIn("android_clang_tidy.json", build_job)
+        self.assertLess(build_job.index(":app:assembleRelease"), build_job.index("android_clang_tidy.json"))
 
     def test_linux_analysis_workflow_triplets_exist(self):
         workflow = (REPOSITORY / ".github/workflows/ai-checks.yml").read_text(encoding="utf-8")
@@ -554,7 +571,6 @@ class AnalysisMatrixTests(unittest.TestCase):
                     (REPOSITORY / "script/ci/vcpkg-triplets" / f"{triplet}.cmake").is_file(),
                     f"Linux analysis references missing vcpkg triplet {triplet}",
                 )
-
 
 if __name__ == "__main__":
     unittest.main()

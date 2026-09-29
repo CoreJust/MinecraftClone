@@ -105,6 +105,7 @@
         "script/checks_common.py",
         "script/ci/__init__.py",
         "script/ci/acquire.py",
+        "script/ci/android_clang_tidy.py",
         "script/ci/build_snapshot.py",
         "script/ci/install_msan_libcxx.py",
         "script/ci/release_guard.py",
@@ -126,6 +127,8 @@
         "script/tests/test_ai_run.py",
         "script/tests/test_ai_setup.py",
         "script/tests/test_ai_tasks.py",
+        "script/tests/test_analysis_presets.py",
+        "script/tests/test_android_clang_tidy.py",
         "script/tests/test_android_shader_assets.py",
         "script/tests/test_build_snapshot.py",
         "script/tests/test_checks_common.py",
@@ -149,7 +152,7 @@
         "vcpkg-configuration.json",
         "vcpkg.json"
       ],
-      "sources_sha256": "d4640dbaff0a79b969d62f02250100ad788cc948ef806277f8979d5d9dcb2ee4"
+      "sources_sha256": "4a2907ca5d2ed404ad41773dce8b6872a3e077a66aec4eb301faf9d35463910d"
     },
     {
       "guide": "docs/code/CORE.md",
@@ -266,7 +269,7 @@
         "tests/core/world_generation_scheduler_tests.cpp",
         "tests/core/world_generation_tests.cpp"
       ],
-      "sources_sha256": "9206221ab7a8b9958a8077859dd94b6b3a785a354b0ef80af62f7a4243c3e5f2"
+      "sources_sha256": "56e51224d6e5d7d6607c1c70ecc173006439ea4d3ae3a8debd07aaddf43f617d"
     },
     {
       "guide": "docs/code/RENDERING.md",
@@ -329,7 +332,7 @@
         "tests/testsupport/image_comparison_tests.cpp",
         "tests/testsupport/include/testsupport/ImageComparison.hpp"
       ],
-      "sources_sha256": "0b1c16fab50dba03efdda8b54e960577d10dd27ffada6b20e0e74d1d765c5e13"
+      "sources_sha256": "f2f67ab5fbc06f813b7d4665c09d050f6f96754b5dd44b0766a9d7486f8b5a1c"
     }
   ],
   "version": 1
