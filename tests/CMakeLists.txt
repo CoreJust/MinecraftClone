@@ -106,6 +106,7 @@ add_executable(mc_tests
     core/algorithm_tests.cpp
     core/byte_io_tests.cpp
     core/crash_handler_tests.cpp
+    core/corelang_policy_tests.cpp
     core/defer_tests.cpp
     core/enum_bits_tests.cpp
     core/field_requirement_tests.cpp

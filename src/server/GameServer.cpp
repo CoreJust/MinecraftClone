@@ -13,11 +13,40 @@
 #include <mutex>
 #include <optional>
 #include <stdexcept>
+#include <string>
+#include <string_view>
 #include <thread>
 #include <tuple>
 
 namespace {
 
+[[nodiscard]]
+shared::PolicyDiagnostic policyDiagnostic(
+    shared::PolicyDiagnosticCode const code,
+    std::string source_id,
+    std::string message
+)
+{
+    return {
+        .code = code,
+        .source_id = std::move(source_id),
+        .message = std::move(message),
+    };
+}
+
+[[nodiscard]]
+std::optional<shared::PolicyCapabilityKeyId> capabilityKey(
+    shared::PolicyCapabilityRegistry const& registry,
+    std::string_view const key
+) noexcept
+{
+    for (shared::PolicyCapabilityKeyId index = 0U; index < registry.definitions.size(); ++index) {
+        if (registry.definitions[index].key == key) {
+            return index;
+        }
+    }
+    return std::nullopt;
+}
 
 [[nodiscard]]
 int32_t floorDivideByHeightTileSide(int32_t const value) noexcept
@@ -305,6 +334,63 @@ GameServer::GameServer(
 
 GameServer::~GameServer() = default;
 
+std::expected<uint64_t, shared::PolicyDiagnostic> GameServer::publishPermissions(
+    shared::PolicyCompilation compilation,
+    shared::PolicyCapabilityRegistry registry
+)
+{
+    std::optional<shared::PolicyCapabilityKeyId> const flight_permission = capabilityKey(
+        registry,
+        "minecraft:flight"
+    );
+    std::optional<shared::PolicyCapabilityKeyId> const collision_bypass_permission = capabilityKey(
+        registry,
+        "minecraft:collision-bypass"
+    );
+    if (!flight_permission.has_value() || !collision_bypass_permission.has_value()) {
+        return std::unexpected(policyDiagnostic(
+            shared::PolicyDiagnosticCode::InvalidDeclaration,
+            std::string{compilation.plan.sourceId()},
+            "movement permission registry must define flight and collision bypass"
+        ));
+    }
+    for (shared::PolicyCapabilityKeyId const key : {*flight_permission, *collision_bypass_permission}) {
+        shared::PolicyCapabilityDefinition const& definition = registry.definitions[key];
+        if (definition.minimum_value != 0 || definition.maximum_value != 1
+            || definition.hard_restriction != shared::PolicyRestriction::Maximum) {
+            return std::unexpected(policyDiagnostic(
+                shared::PolicyDiagnosticCode::InvalidDeclaration,
+                std::string{compilation.plan.sourceId()},
+                "movement permissions must be boolean capabilities with maximum hard restrictions"
+            ));
+        }
+    }
+
+    std::vector<shared::PolicySubject> const subjects = permissionSubjects();
+    auto capabilities = m_permission_host.materialize(compilation.plan, subjects, registry);
+    if (!capabilities) {
+        return std::unexpected(capabilities.error());
+    }
+    if (!canApplyPublishedPermissions(*capabilities, registry)) {
+        return std::unexpected(policyDiagnostic(
+            shared::PolicyDiagnosticCode::InvalidDeclaration,
+            std::string{compilation.plan.sourceId()},
+            "movement policy is invalid for an active player or would strand a player in solid geometry"
+        ));
+    }
+
+    auto const published = m_permission_host.publish(std::move(compilation), std::move(*capabilities));
+    if (!published) {
+        return std::unexpected(published.error());
+    }
+    m_permission_registry = std::move(registry);
+    m_flight_permission = flight_permission;
+    m_collision_bypass_permission = collision_bypass_permission;
+    m_permissions_published = true;
+    applyPublishedPermissions();
+    return *published;
+}
+
 void GameServer::run()
 {
     std::atomic_bool const never_stop{ false };
@@ -448,6 +534,14 @@ void GameServer::onDisconnected(core::ServerDisconnectEvent const client) {
     std::erase_if(m_player_replications, [&client](PlayerReplication const& replication) {
         return replication.id == client.client_id;
     });
+    if (m_permissions_published) {
+        auto const refreshed = refreshPublishedPermissions(
+            static_cast<shared::PolicyEntityId>(client.client_id)
+        );
+        if (!refreshed) {
+            CORE_ERROR("Failed to refresh permissions after player departure: {}", refreshed.error().message);
+        }
+    }
 }
 
 void GameServer::onReceived(core::ServerReceiveEvent event) {
@@ -488,6 +582,21 @@ void GameServer::onReceived(core::ServerReceiveEvent event) {
             }, shared::defaultPlayerPaletteIndex(ch));
         }
         m_player_replications.push_back(PlayerReplication{ .id = id });
+        if (m_permissions_published) {
+            auto const refreshed = refreshPublishedPermissions();
+            if (!refreshed) {
+                CORE_ERROR("Rejected player join because active permissions could not be materialized: {}",
+                    refreshed.error().message);
+                m_world.despawnPlayer(id);
+                std::erase_if(m_player_replications, [id](PlayerReplication const& replication) {
+                    return replication.id == id;
+                });
+                sendTo(id, shared::JoinResponseMessage{
+                    .accepted = false,
+                });
+                return;
+            }
+        }
         sendTo(id, shared::JoinResponseMessage{
             .accepted = true,
         });
@@ -543,8 +652,24 @@ void GameServer::processInput(PlayerReplication& replication, shared::ClientInpu
     bool capabilities_changed = false;
     if (input.direction.cycle_movement_capabilities) {
         shared::Player const player = *m_world.player(replication.id);
-        uint8_t const next_bits = player.movement_capabilities.bits == 3U
+        uint8_t next_bits = player.movement_capabilities.bits == 3U
             ? 1U : (player.movement_capabilities.bits == 1U ? 0U : 3U);
+        if (m_permissions_published) {
+            std::shared_ptr<shared::PolicySnapshot const> const policy = m_permission_host.snapshot();
+            std::shared_ptr<shared::PolicyCapabilitySnapshot const> const effective = policy
+                ? policy->capabilities() : nullptr;
+            if (effective == nullptr || !m_flight_permission.has_value()
+                || !m_collision_bypass_permission.has_value()) {
+                next_bits = 0U;
+            } else {
+                uint8_t allowed_bits = effective->allows(replication.id, *m_flight_permission) ? 1U : 0U;
+                if ((allowed_bits & 1U) != 0U
+                    && effective->allows(replication.id, *m_collision_bypass_permission)) {
+                    allowed_bits |= 2U;
+                }
+                next_bits &= allowed_bits;
+            }
+        }
         capabilities_changed = m_world.setPlayerMovementCapabilities(
             replication.id,
             { .bits = next_bits }
@@ -627,6 +752,129 @@ void GameServer::sendTo(std::optional<core::ClientId> const client_id, shared::M
     }
     if (!core::Server::send(peer, message_bytes, shared::GAME_CHANNEL, core::SendMode{ core::SendMode::Reliable })) {
         CORE_ERROR("Failed to send a message");
+    }
+}
+
+std::vector<shared::PolicySubject> GameServer::permissionSubjects() const
+{
+    std::vector<shared::PolicySubject> subjects;
+    subjects.reserve(m_world.players().size());
+    for (shared::Player const& player : m_world.players()) {
+        subjects.push_back({
+            .id = player.id,
+            .entity_class = shared::PolicyEntityClass::Player,
+            .kind = "player",
+        });
+    }
+    return subjects;
+}
+
+bool GameServer::canApplyPublishedPermissions(
+    shared::PolicyCapabilitySnapshot const& capabilities,
+    shared::PolicyCapabilityRegistry const& registry
+) const
+{
+    std::optional<shared::PolicyCapabilityKeyId> const flight_permission = capabilityKey(
+        registry,
+        "minecraft:flight"
+    );
+    std::optional<shared::PolicyCapabilityKeyId> const collision_bypass_permission = capabilityKey(
+        registry,
+        "minecraft:collision-bypass"
+    );
+    if (!flight_permission.has_value() || !collision_bypass_permission.has_value()) {
+        return false;
+    }
+    for (shared::Player const& player : m_world.players()) {
+        std::optional<int64_t> const flight = capabilities.value(player.id, *flight_permission);
+        std::optional<int64_t> const collision_bypass = capabilities.value(player.id, *collision_bypass_permission);
+        if (!flight.has_value() || !collision_bypass.has_value()
+            || (*flight != 0 && *flight != 1)
+            || (*collision_bypass != 0 && *collision_bypass != 1)) {
+            return false;
+        }
+        shared::MovementCapabilities const movement{
+            .bits = static_cast<uint8_t>((*flight != 0 ? 1U : 0U) | (*collision_bypass != 0 ? 2U : 0U)),
+        };
+        if (!shared::isValidMovementCapabilities(movement)
+            || !m_world.canSetPlayerMovementCapabilities(player.id, movement)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+std::expected<uint64_t, shared::PolicyDiagnostic> GameServer::refreshPublishedPermissions(
+    std::optional<shared::PolicyEntityId> const expired_subject
+)
+{
+    std::shared_ptr<shared::PolicySnapshot const> const active = m_permission_host.snapshot();
+    if (!m_permissions_published || active == nullptr) {
+        return 0U;
+    }
+    shared::PolicyCompilation compilation{
+        .plan = active->plan(),
+        .jit_mode = active->jitMode(),
+        .jit_prepared = active->jitPrepared(),
+        .interpreter_parity = active->interpreterParity(),
+    };
+    if (expired_subject.has_value()) {
+        compilation.plan = compilation.plan.withoutSubject(*expired_subject);
+    }
+    std::vector<shared::PolicySubject> const subjects = permissionSubjects();
+    auto capabilities = m_permission_host.materialize(compilation.plan, subjects, m_permission_registry);
+    if (!capabilities) {
+        return std::unexpected(capabilities.error());
+    }
+    if (!canApplyPublishedPermissions(*capabilities, m_permission_registry)) {
+        return std::unexpected(policyDiagnostic(
+            shared::PolicyDiagnosticCode::InvalidDeclaration,
+            std::string{compilation.plan.sourceId()},
+            "active movement policy is invalid for an active player or would strand a player in solid geometry"
+        ));
+    }
+    auto const published = m_permission_host.publish(std::move(compilation), std::move(*capabilities));
+    if (!published) {
+        return std::unexpected(published.error());
+    }
+    applyPublishedPermissions();
+    return *published;
+}
+
+void GameServer::applyPublishedPermissions()
+{
+    std::shared_ptr<shared::PolicySnapshot const> const active = m_permission_host.snapshot();
+    if (active == nullptr || !m_flight_permission.has_value() || !m_collision_bypass_permission.has_value()) {
+        return;
+    }
+    std::shared_ptr<shared::PolicyCapabilitySnapshot const> const capabilities = active->capabilities();
+    if (capabilities == nullptr) {
+        return;
+    }
+    for (shared::Player const& player : m_world.players()) {
+        std::optional<int64_t> const flight = capabilities->value(player.id, *m_flight_permission);
+        std::optional<int64_t> const collision_bypass = capabilities->value(
+            player.id,
+            *m_collision_bypass_permission
+        );
+        if (!flight.has_value() || !collision_bypass.has_value()) {
+            continue;
+        }
+        shared::MovementCapabilities const movement{
+            .bits = static_cast<uint8_t>((*flight != 0 ? 1U : 0U) | (*collision_bypass != 0 ? 2U : 0U)),
+        };
+        if (movement == player.movement_capabilities) {
+            continue;
+        }
+        if (!m_world.setPlayerMovementCapabilities(player.id, movement)) {
+            CORE_ERROR("Validated permission update could not be applied to player {}", player.id);
+            continue;
+        }
+        PlayerReplication* const replication = playerReplication(player.id);
+        if (replication != nullptr) {
+            ++replication->state_revision;
+            send(playerPositionMessage(*m_world.player(player.id), *replication));
+        }
     }
 }
 

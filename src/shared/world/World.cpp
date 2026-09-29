@@ -502,15 +502,15 @@ bool World::setPlayerPaletteIndex(PlayerId const id, PlayerPaletteIndex const pa
     return false;
 }
 
-bool World::setPlayerMovementCapabilities(
+bool World::canSetPlayerMovementCapabilities(
     PlayerId const id,
     MovementCapabilities const capabilities
-) noexcept
+) const noexcept
 {
     if (!isValidMovementCapabilities(capabilities)) {
         return false;
     }
-    for (Player& player : m_players) {
+    for (Player const& player : m_players) {
         if (player.id == id) {
             if (m_mode == WorldMode::Flight
                 && !capabilities.allows(MovementCapability::CollisionBypass)
@@ -519,6 +519,22 @@ bool World::setPlayerMovementCapabilities(
                     static_cast<int64_t>(player.z) * SUBCELLS_PER_CELL + player.z_subcell)) {
                 return false;
             }
+            return true;
+        }
+    }
+    return false;
+}
+
+bool World::setPlayerMovementCapabilities(
+    PlayerId const id,
+    MovementCapabilities const capabilities
+) noexcept
+{
+    if (!canSetPlayerMovementCapabilities(id, capabilities)) {
+        return false;
+    }
+    for (Player& player : m_players) {
+        if (player.id == id) {
             player.vertical_velocity_subcells = 0;
             player.movement_capabilities = capabilities;
             return true;

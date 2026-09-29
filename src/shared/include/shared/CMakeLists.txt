@@ -5,6 +5,7 @@ target_sources(mc
         FILES
             ProjectInfo.hpp
             net/Message.hpp
+            policy/Policy.hpp
             scenario/Scenario.hpp
             world/CanonicalWorld.hpp
             world/ScriptedWorld.hpp

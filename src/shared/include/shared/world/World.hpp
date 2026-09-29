@@ -219,6 +219,8 @@ public:
     bool setPlayerPosition(PlayerId id, PlayerPosition position);
     bool setPlayerPaletteIndex(PlayerId id, PlayerPaletteIndex palette_index) noexcept;
     [[nodiscard]]
+    bool canSetPlayerMovementCapabilities(PlayerId id, MovementCapabilities capabilities) const noexcept;
+    [[nodiscard]]
     bool setPlayerMovementCapabilities(PlayerId id, MovementCapabilities capabilities) noexcept;
     [[nodiscard]]
     bool setPlayerVerticalVelocity(PlayerId id, int32_t vertical_velocity_subcells) noexcept;

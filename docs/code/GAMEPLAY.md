@@ -1,9 +1,8 @@
 # Gameplay and networking
 
-The runnable entry point is [src/main.cpp](../../src/main.cpp). It initializes
-logging, crash handling, and networking. Launch uses `--server [--port PORT]`,
-`--player-client`, or `--bot-client`; clients accept `--address IP:PORT`.
-No arguments start a graphical localhost player; Flight joins select free tokens.
+Run [src/main.cpp](../../src/main.cpp) with `--server [--port PORT]`,
+`--player-client`, or `--bot-client`; clients use `--address IP:PORT`. No
+arguments launch a graphical localhost player. Flight joins select free tokens.
 
 ## Shared simulation
 
@@ -16,8 +15,7 @@ coordinates and a fixed clear-air spawn. The independent movement capabilities
 allow flight, collision bypass, or both; flight without collision bypass sweeps
 terrain and other player bodies with tangential wall sliding, while players
 without flight use gravity, terrain support, jumps, and the same player-body
-collision rules. A normal tick advances 0.56
-The remainder persists across ticks. Each
+collision rules. Remainders persist across ticks. Each
 authoritative player has a 2 by 2 footprint in flat mode and a 10/16-cell
 footprint in flight mode, so its origin is limited to cells
 0 through 30 inclusive (0 through 300,000 subcells) on both axes; its
@@ -33,11 +31,17 @@ before publishing an immutable plan; rejection cannot mutate a world or start
 the runner. Grammar is in the [scripting guide](../scripting/README.md).
 
 The legacy `flat3d-v1` profile records flat-plane `(x, y, z)` positions and
-yaw/pitch/roll degrees for reproducible camera replay. Z must remain zero while
+yaw/pitch/roll degrees. Z must remain zero while
 the authoritative `World` is flat. Its camera-relative commands lower with yaw
 zero forward at +Y and positive yaw toward +X, then use the unchanged cardinal
 `Direction` wire payload. Runtime evidence records the stable replay ID,
 camera-input count, and 100 ms server tick separately from presentation cadence.
+
+## Permissions
+
+The server publishes generation-tagged movement capability snapshots; policy
+declarations, compilation limits, selector resolution, and precedence are
+documented in [POLICY.md](POLICY.md).
 
 ## Wire protocol
 

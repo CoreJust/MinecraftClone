@@ -1,6 +1,7 @@
 target_sources(mc
     PRIVATE
         net/Message.cpp
+        policy/CoreLangPolicy.cpp
         scenario/CoreLangScenario.cpp
         scenario/Scenario.cpp
         world/CanonicalWorld.cpp

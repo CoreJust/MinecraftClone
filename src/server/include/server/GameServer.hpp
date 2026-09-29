@@ -1,6 +1,7 @@
 #pragma once
 
 #include <shared/net/Message.hpp>
+#include <shared/policy/Policy.hpp>
 #include <shared/world/World.hpp>
 #include <shared/world/WorldGeneration.hpp>
 #include <shared/world/WorldGenerationScheduler.hpp>
@@ -53,6 +54,12 @@ public:
     void run(std::atomic_bool const& stop_requested);
     [[nodiscard]]
     uint64_t tick(std::chrono::milliseconds timeout = std::chrono::milliseconds::zero());
+
+    [[nodiscard]]
+    std::expected<uint64_t, shared::PolicyDiagnostic> publishPermissions(
+        shared::PolicyCompilation compilation,
+        shared::PolicyCapabilityRegistry registry
+    );
 private:
     struct HeightTileWorkerPool;
     struct PreviewStream;
@@ -89,6 +96,17 @@ private:
     [[nodiscard]] uint32_t admitHeightTileDeliveries(PreviewStream& stream, uint32_t maximum_batches);
     void queueDepartedResidentTiles(PreviewStream& stream);
     void processInput(PlayerReplication& replication, shared::ClientInputMessage input);
+    [[nodiscard]] std::vector<shared::PolicySubject> permissionSubjects() const;
+    [[nodiscard]]
+    bool canApplyPublishedPermissions(
+        shared::PolicyCapabilitySnapshot const& capabilities,
+        shared::PolicyCapabilityRegistry const& registry
+    ) const;
+    [[nodiscard]]
+    std::expected<uint64_t, shared::PolicyDiagnostic> refreshPublishedPermissions(
+        std::optional<shared::PolicyEntityId> expired_subject = std::nullopt
+    );
+    void applyPublishedPermissions();
     [[nodiscard]]
     PlayerReplication* playerReplication(shared::PlayerId id) noexcept;
     [[nodiscard]]
@@ -103,6 +121,11 @@ private:
     );
 private:
     shared::World m_world;
+    shared::PolicyHost m_permission_host;
+    shared::PolicyCapabilityRegistry m_permission_registry;
+    std::optional<shared::PolicyCapabilityKeyId> m_flight_permission;
+    std::optional<shared::PolicyCapabilityKeyId> m_collision_bypass_permission;
+    bool m_permissions_published{false};
     std::vector<SpawnPoint> m_spawn_points;
     std::vector<PlayerReplication> m_player_replications;
     struct PreviewStream final {

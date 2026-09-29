@@ -10,6 +10,7 @@
 #include <barrier>
 #include <chrono>
 #include <functional>
+#include <string>
 #include <string_view>
 #include <thread>
 #include <vector>
@@ -213,6 +214,50 @@ pub fn policy() {
     return compiled;
 }
 
+std::expected<shared::PolicyCompilation, shared::PolicyDiagnostic> invalidMovementPolicy()
+{
+    static constexpr std::string_view SOURCE = R"core(@version("0.1.3.1")
+@use minecraft
+pub fn policy() {
+    policyRule("invalid", "minecraft:flight", 0i64, 1u8)
+    policyRule("invalid", "minecraft:collision-bypass", 1i64, 1u8)
+    policyAssign("players", "invalid", 1u8)
+}
+)core";
+    shared::PolicyHost compiler;
+    auto compiled = compiler.compile("invalid-movement-permissions.core", SOURCE, {
+        .jit_mode = shared::PolicyJitMode::Disabled,
+        .require_interpreter_parity = true,
+    });
+    return compiled;
+}
+
+std::expected<shared::PolicyCompilation, shared::PolicyDiagnostic> explicitMovementPermissionPolicy(
+    shared::PolicyEntityId const subject
+)
+{
+    static constexpr std::string_view SOURCE_PREFIX = R"core(@version("0.1.3.1")
+@use minecraft
+pub fn policy() {
+    policyGroup("departing", 5u8, "")
+    policyMember("departing", )core";
+    static constexpr std::string_view SOURCE_SUFFIX = R"core(u64)
+    policyRule("deny", "minecraft:flight", 0i64, 1u8)
+    policyRule("deny", "minecraft:collision-bypass", 0i64, 1u8)
+    policyAssign("departing", "deny", 1u8)
+}
+)core";
+    std::string const source = std::string{SOURCE_PREFIX}
+        + std::to_string(subject)
+        + std::string{SOURCE_SUFFIX};
+    shared::PolicyHost compiler;
+    auto compiled = compiler.compile("explicit-movement-permission.core", source, {
+        .jit_mode = shared::PolicyJitMode::Disabled,
+        .require_interpreter_parity = true,
+    });
+    return compiled;
+}
+
 } // namespace
 
 TEST_F(GameServerTest, JoinRepliesArePrivateAndNewPlayersReachExistingClients)
@@ -325,6 +370,138 @@ TEST(GameServerFlightTest, CyclesOnlyTheThreeServerValidatedMovementCapabilitySt
     EXPECT_EQ(positions[positions.size() - 3U].movement_capabilities.bits, 1U);
     EXPECT_EQ(positions[positions.size() - 2U].movement_capabilities.bits, 0U);
     EXPECT_EQ(positions.back().movement_capabilities.bits, 3U);
+}
+
+TEST(GameServerFlightTest, PublishedHardPermissionsOverrideAndReplicateMovementCapabilities)
+{
+    server::GameServer server{ 0, {}, shared::WorldMode::Flight };
+    ProtocolClient client;
+    ASSERT_TRUE(joinManually(server, client, '@', shared::WorldMode::Flight));
+    ASSERT_EQ(client.positions('@').back().movement_capabilities.bits, 3U);
+
+    auto compilation = hardMovementDenyPolicy();
+    ASSERT_TRUE(compilation.has_value()) << compilation.error().message;
+    auto const published = server.publishPermissions(std::move(*compilation), movementPolicyRegistry());
+    ASSERT_TRUE(published.has_value()) << published.error().message;
+    ASSERT_TRUE(pumpUntil(server, client, [&client] {
+        std::vector<shared::ServerPlayerPositionMessage> const positions = client.positions('@');
+        return !positions.empty() && positions.back().movement_capabilities.bits == 0U;
+    }));
+    EXPECT_EQ(client.positions('@').back().movement_capabilities.bits, 0U);
+
+    ASSERT_TRUE(client.sendMessage(shared::ClientInputMessage{
+        .direction = { .cycle_movement_capabilities = true },
+        .sequence = 1U,
+    }));
+    ASSERT_TRUE(pumpUntil(server, client, [&client] {
+        std::vector<shared::ServerPlayerPositionMessage> const positions = client.positions('@');
+        return !positions.empty() && positions.back().acknowledged_input_sequence == 1U;
+    }));
+    EXPECT_EQ(client.positions('@').back().movement_capabilities.bits, 0U);
+}
+
+TEST(GameServerFlightTest, RejectsInvalidMovementPolicyWithoutChangingPublishedState)
+{
+    server::GameServer server{ 0, {}, shared::WorldMode::Flight };
+    ProtocolClient client;
+    ASSERT_TRUE(joinManually(server, client, '@', shared::WorldMode::Flight));
+    ASSERT_EQ(client.positions('@').back().movement_capabilities.bits, 3U);
+
+    auto compilation = invalidMovementPolicy();
+    ASSERT_TRUE(compilation.has_value()) << compilation.error().message;
+    auto const published = server.publishPermissions(std::move(*compilation), movementPolicyRegistry());
+    EXPECT_FALSE(published.has_value());
+    EXPECT_EQ(client.positions('@').back().movement_capabilities.bits, 3U);
+
+    ASSERT_TRUE(client.sendMessage(shared::ClientInputMessage{
+        .direction = { .x = 0U, .y = 0U, .z = 127U },
+        .sequence = 1U,
+    }));
+    ASSERT_TRUE(pumpUntil(server, client, [&client] {
+        std::vector<shared::ServerPlayerPositionMessage> const positions = client.positions('@');
+        return !positions.empty() && positions.back().acknowledged_input_sequence == 1U;
+    }));
+    EXPECT_EQ(client.positions('@').back().z_subcell, shared::MOVEMENT_SUBCELLS_PER_TICK);
+}
+
+TEST(GameServerFlightTest, AppliesPublishedPermissionsBeforeAcceptingNewPlayers)
+{
+    server::GameServer server{ 0, {}, shared::WorldMode::Flight };
+    ProtocolClient first;
+    ProtocolClient newcomer;
+    ProtocolClient observer;
+    ASSERT_TRUE(joinManually(server, first, '@', shared::WorldMode::Flight));
+    ASSERT_TRUE(joinManually(server, observer, '$', shared::WorldMode::Flight));
+
+    auto compilation = hardMovementDenyPolicy();
+    ASSERT_TRUE(compilation.has_value()) << compilation.error().message;
+    auto const published = server.publishPermissions(std::move(*compilation), movementPolicyRegistry());
+    ASSERT_TRUE(published.has_value()) << published.error().message;
+    auto const firstHasRestriction = [&first] {
+        std::vector<shared::ServerPlayerPositionMessage> const positions = first.positions('@');
+        return !positions.empty() && positions.back().movement_capabilities.bits == 0U;
+    };
+    ASSERT_TRUE(pumpUntil(server, first, firstHasRestriction));
+    ASSERT_TRUE(pumpUntil(server, observer, [&observer] {
+        std::vector<shared::ServerPlayerPositionMessage> const positions = observer.positions('@');
+        return !positions.empty() && positions.back().movement_capabilities.bits == 0U;
+    }));
+
+    ASSERT_TRUE(joinManually(server, newcomer, '#', shared::WorldMode::Flight));
+    ASSERT_TRUE(pumpUntil(server, newcomer, [&newcomer] {
+        std::vector<shared::ServerPlayerPositionMessage> const own = newcomer.positions('#');
+        std::vector<shared::ServerPlayerPositionMessage> const first_player = newcomer.positions('@');
+        return !own.empty() && !first_player.empty()
+            && own.back().movement_capabilities.bits == 0U
+            && first_player.back().movement_capabilities.bits == 0U;
+    }));
+    ASSERT_TRUE(pumpUntil(server, observer, [&observer] {
+        std::vector<shared::ServerPlayerPositionMessage> const newcomer_positions = observer.positions('#');
+        return !newcomer_positions.empty() && newcomer_positions.back().movement_capabilities.bits == 0U;
+    }));
+}
+
+TEST(GameServerFlightTest, ExpiresExplicitPermissionMembershipAfterDisconnect)
+{
+    static constexpr std::chrono::seconds DISCONNECT_TIMEOUT{ 1 };
+    static constexpr std::chrono::milliseconds SERVER_POLL_INTERVAL{ 1 };
+    server::GameServer server{ 0, {}, shared::WorldMode::Flight };
+    ProtocolClient departing;
+    ProtocolClient observer;
+    ProtocolClient replacement;
+    ASSERT_TRUE(joinManually(server, departing, '@', shared::WorldMode::Flight));
+    std::vector<core::ClientId> const connected_clients = server.collectConnectedClients();
+    ASSERT_EQ(connected_clients.size(), 1U);
+    ASSERT_TRUE(joinManually(server, observer, '$', shared::WorldMode::Flight));
+
+    auto compilation = explicitMovementPermissionPolicy(connected_clients.front());
+    ASSERT_TRUE(compilation.has_value()) << compilation.error().message;
+    auto const published = server.publishPermissions(std::move(*compilation), movementPolicyRegistry());
+    ASSERT_TRUE(published.has_value()) << published.error().message;
+    ASSERT_TRUE(pumpUntil(server, departing, [&departing] {
+        std::vector<shared::ServerPlayerPositionMessage> const positions = departing.positions('@');
+        return !positions.empty() && positions.back().movement_capabilities.bits == 0U;
+    }));
+
+    std::atomic_bool stop_requested{ false };
+    std::thread server_thread{ [&server, &stop_requested] {
+        while (!stop_requested.load(std::memory_order_relaxed)) {
+            static_cast<void>(server.poll(SERVER_POLL_INTERVAL));
+        }
+    } };
+    bool const disconnected = departing.disconnect(DISCONNECT_TIMEOUT);
+    stop_requested.store(true, std::memory_order_relaxed);
+    server_thread.join();
+    ASSERT_TRUE(disconnected);
+    ASSERT_TRUE(observer.waitFor([&observer] {
+        return std::ranges::any_of(observer.messages, [](shared::Message const& message) {
+            auto const* removal = std::get_if<shared::ServerRemovePlayerMessage>(&message);
+            return removal != nullptr && removal->ch == '@';
+        });
+    }));
+
+    ASSERT_TRUE(joinManually(server, replacement, '#', shared::WorldMode::Flight));
+    EXPECT_EQ(replacement.positions('#').back().movement_capabilities.bits, 3U);
 }
 
 TEST(GameServerFlightTest, HardPermissionsPreserveCollisionAcrossTheWrappedSeam)

@@ -8548,34 +8548,41 @@
     "id": "MC-AI-0245",
     "title": "Implement general high-performance entity permissions",
     "kind": "feature",
-    "status": "backlog",
+    "status": "done",
     "priority": "P1",
     "route": "sol",
     "milestone": "ED-010-S7",
     "depends_on": [
       "MC-AI-0244"
     ],
-    "acceptance": "Implement server-owned permissions for all entity subjects with built-in all, players, mobs, technical-entities and per-kind groups; bounded custom explicit/selector groups; individual overrides; namespaced keys; deterministic hard restrictions and soft defaults; and immutable generation-tagged hot-path capability snapshots. Physics observes only O(1) dense checks or bounded parameter tables; unknown authoritative subjects and keys fail closed.",
-    "evidence": "",
+    "acceptance": "Implement server-owned permissions for all entity subjects with typed bounded CoreLang declarations for built-in all, players, mobs, entities (technical entities that are neither players nor normal mobs), and per-kind groups; custom explicit groups and selector groups whose initial criterion matches an entity kind within an inclusive stable-ID range; individual overrides; namespaced keys; deterministic hard restrictions and soft defaults; and immutable generation-tagged hot-path capability snapshots. Resolve selector membership before publication. Physics observes only O(1) dense checks or bounded parameter tables; unknown authoritative subjects and keys fail closed. World subjects remain unimplemented and the world/world: target namespace stays reserved.",
+    "evidence": "Debug server-only mc_tests build passed; direct CoreLangPolicyTest and GameServerFlightTest filters passed 34/34, including explicit membership and entity override expiry, same-ID rematerialization denial, disconnect publication, and later join. ai_docs.py refresh/check, ai_tasks.py check, ai_plan.py check, and git diff --check passed. ai_check.py --fast exited 0 with allowed source-check failures for the stale snapshot date (26.09.20 vs 26.09.29) and dirty workspace. The client-enabled mc_tests build still hits the pre-existing missing GameClientBenchmarkHooks reference in tests/client/game_client_audio_tests.cpp; changed policy/server translation units compiled in the focused server-only build.",
     "blocker": "",
-    "owner": "",
+    "owner": "Codex",
     "level": "basic",
     "parent": "MC-AI-0038",
     "motivation": "Make permissions extensible for future players, mobs, technical entities and mods rather than player flags.",
     "context": "World subjects remain a reserved future namespace. Players are the only current entity kind.",
     "complexity": "high",
     "created_at": "2026-09-20",
-    "resolved_at": "",
-    "resolution_changes": "",
+    "resolved_at": "2026-09-29",
+    "resolution_changes": "Added bounded CoreLang policy declarations and deterministic compilation/materialization into immutable generation-tagged dense capability snapshots, integrated server movement enforcement and replication, and verified the focused policy/server suites 34/34 in a Debug server-only build. Disconnect now expires explicit group membership and direct entity-targeted assignments before rematerializing permissions, preventing departed IDs from blocking joins or inheriting concrete grants if reused.",
     "plan": [
-      "Freeze deterministic policy precedence and mutation-time snapshot publication.",
-      "Keep group traversal, selector evaluation and CoreLang outside physics checks."
+      "Define bounded typed policy, preset, group, selector, and assignment declarations over the finalized CoreLang API.",
+      "Freeze deterministic policy precedence and resolve selector/group membership at mutation time.",
+      "Publish generation-tagged immutable capability rows; keep CoreLang execution and all membership traversal outside physics checks."
     ],
-    "product_changes": [],
-    "code_changes": [],
+    "product_changes": [
+      "Server movement capabilities now obey published flight and collision-bypass permissions."
+    ],
+    "code_changes": [
+      "Add typed, bounded CoreLang declarations, deterministic precedence, selector resolution, and fail-closed dense capability snapshots.",
+      "Integrate permission publication with server movement validation, player joins, and replicated capability changes.",
+      "Add policy and server integration tests plus policy contract documentation."
+    ],
     "baseline_commit": "",
     "commits": [],
-    "finalized": false,
+    "finalized": true,
     "retrospective": "",
     "docs_review": "",
     "environment_review": "",

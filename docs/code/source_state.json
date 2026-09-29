@@ -152,7 +152,7 @@
         "vcpkg-configuration.json",
         "vcpkg.json"
       ],
-      "sources_sha256": "62f356780b5e52d1dacd1f90f65f3d814ed8f7b46347bea7bafa35d67518783d"
+      "sources_sha256": "4ae917c575d4f83b4d107ff1ea41a381610e8c2178c38b7df913c9c854716465"
     },
     {
       "guide": "docs/code/CORE.md",
@@ -189,7 +189,7 @@
     },
     {
       "guide": "docs/code/GAMEPLAY.md",
-      "guide_sha256": "e4bc44f277b149827079afb7529bab728a73bbd1d5ef29dcdf26281af178caff",
+      "guide_sha256": "b51e98ca1a72ac65da41b0ac4ebdc55bc21a76fc6b4d545985f2cdfeaeee2f36",
       "id": "gameplay",
       "sources": [
         "src/client/BotClient.cpp",
@@ -223,6 +223,7 @@
         "src/shared/include/shared/CMakeLists.txt",
         "src/shared/include/shared/ProjectInfo.hpp",
         "src/shared/include/shared/net/Message.hpp",
+        "src/shared/include/shared/policy/Policy.hpp",
         "src/shared/include/shared/scenario/Scenario.hpp",
         "src/shared/include/shared/world/CanonicalWorld.hpp",
         "src/shared/include/shared/world/Chunk.hpp",
@@ -236,6 +237,7 @@
         "src/shared/include/shared/world/WorldGeneration.hpp",
         "src/shared/include/shared/world/WorldGenerationScheduler.hpp",
         "src/shared/net/Message.cpp",
+        "src/shared/policy/CoreLangPolicy.cpp",
         "src/shared/scenario/CoreLangScenario.cpp",
         "src/shared/scenario/Scenario.cpp",
         "src/shared/world/CanonicalWorld.cpp",
@@ -254,6 +256,7 @@
         "tests/core/chunk_mesh_lod_tests.cpp",
         "tests/core/chunk_mesher_tests.cpp",
         "tests/core/chunk_tests.cpp",
+        "tests/core/corelang_policy_tests.cpp",
         "tests/core/corelang_scenario_tests.cpp",
         "tests/core/corelang_sparse_world_scenario_tests.cpp",
         "tests/core/flight_world_tests.cpp",
@@ -270,7 +273,7 @@
         "tests/core/world_generation_scheduler_tests.cpp",
         "tests/core/world_generation_tests.cpp"
       ],
-      "sources_sha256": "531f172124ba038825db5b5fbd74500b9b29d337815746a04d6434c56f6fe1a1"
+      "sources_sha256": "e81607d2ab126af64a16b3d41d35cbfb30158bf93d1785372761f9190e745dd2"
     },
     {
       "guide": "docs/code/RENDERING.md",
