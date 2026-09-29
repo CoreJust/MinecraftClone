@@ -28,7 +28,7 @@
         "tests/acceptance/runtime_cli_tests.cmake",
         "tests/acceptance/scenario_runner_tests.cpp"
       ],
-      "sources_sha256": "55d041efdcf9c62f6a48fe4a5d3b1813ef55a780689a25af2c8412ebbe79978a"
+      "sources_sha256": "d2d5dba76d6775c400af1a93caab8749e8cc36b67a478af19708fd6870006d84"
     },
     {
       "guide": "docs/code/ANDROID.md",
@@ -152,7 +152,7 @@
         "vcpkg-configuration.json",
         "vcpkg.json"
       ],
-      "sources_sha256": "4a2907ca5d2ed404ad41773dce8b6872a3e077a66aec4eb301faf9d35463910d"
+      "sources_sha256": "62f356780b5e52d1dacd1f90f65f3d814ed8f7b46347bea7bafa35d67518783d"
     },
     {
       "guide": "docs/code/CORE.md",
@@ -189,7 +189,7 @@
     },
     {
       "guide": "docs/code/GAMEPLAY.md",
-      "guide_sha256": "0f285d5dd8d5b0cf71a5df290649920605510b32c921a9c7ab6d05abcbdfc006",
+      "guide_sha256": "e4bc44f277b149827079afb7529bab728a73bbd1d5ef29dcdf26281af178caff",
       "id": "gameplay",
       "sources": [
         "src/client/BotClient.cpp",
@@ -255,6 +255,7 @@
         "tests/core/chunk_mesher_tests.cpp",
         "tests/core/chunk_tests.cpp",
         "tests/core/corelang_scenario_tests.cpp",
+        "tests/core/corelang_sparse_world_scenario_tests.cpp",
         "tests/core/flight_world_tests.cpp",
         "tests/core/game_server_lifecycle_tests.cpp",
         "tests/core/game_server_preview_tests.cpp",
@@ -269,7 +270,7 @@
         "tests/core/world_generation_scheduler_tests.cpp",
         "tests/core/world_generation_tests.cpp"
       ],
-      "sources_sha256": "56e51224d6e5d7d6607c1c70ecc173006439ea4d3ae3a8debd07aaddf43f617d"
+      "sources_sha256": "531f172124ba038825db5b5fbd74500b9b29d337815746a04d6434c56f6fe1a1"
     },
     {
       "guide": "docs/code/RENDERING.md",

@@ -249,6 +249,7 @@ Files:
 - [`tests/core/chunk_mesher_tests.cpp`](../../tests/core/chunk_mesher_tests.cpp)
 - [`tests/core/chunk_tests.cpp`](../../tests/core/chunk_tests.cpp)
 - [`tests/core/corelang_scenario_tests.cpp`](../../tests/core/corelang_scenario_tests.cpp)
+- [`tests/core/corelang_sparse_world_scenario_tests.cpp`](../../tests/core/corelang_sparse_world_scenario_tests.cpp)
 - [`tests/core/flight_world_tests.cpp`](../../tests/core/flight_world_tests.cpp)
 - [`tests/core/game_server_lifecycle_tests.cpp`](../../tests/core/game_server_lifecycle_tests.cpp)
 - [`tests/core/game_server_preview_tests.cpp`](../../tests/core/game_server_preview_tests.cpp)

@@ -116,7 +116,8 @@ HUD acceleration profiles are 2x, 3x, 5x, 8x, 15x, 30x, 80x, 200x, and 500x.
 ## S5 chunk data
 
 `Chunk` stores checked 16-cubed Air/Stone IDs and tracks revision/content hash;
-S6 scripts use CoreLang 0.1.2 and validate bounded candidates before publication.
+S6 generation uses CoreLang 0.1.2; sparse-world scripts use CoreLang 0.1.3
+through the bounded `SparseWorld`.
 
 ## S5 exposed-face mesh
 

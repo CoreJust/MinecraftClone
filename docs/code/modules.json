@@ -45,6 +45,7 @@
         "tests/core/shared_message_tests.cpp",
         "tests/core/scenario_parser_tests.cpp",
         "tests/core/corelang_scenario_tests.cpp",
+        "tests/core/corelang_sparse_world_scenario_tests.cpp",
         "tests/core/shared_world_tests.cpp",
         "tests/core/flight_world_tests.cpp",
         "tests/core/game_server_tests.cpp",

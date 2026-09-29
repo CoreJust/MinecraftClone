@@ -302,7 +302,8 @@ private:
             || m_limits.max_actors == 0
             || m_limits.max_total_ticks == 0
             || m_limits.max_operations == 0
-            || m_limits.max_evidence == 0) {
+            || m_limits.max_evidence == 0
+            || m_limits.max_sparse_world_resident_chunks == 0) {
             return std::unexpected(diagnostic(
                 ScenarioDiagnosticCode::InvalidLimits,
                 { .line = 1, .column = 1 },
@@ -1040,6 +1041,7 @@ std::string_view scenarioProfileName(ScenarioProfile const profile) noexcept {
         case ScenarioProfile::Flat2dV1: return "flat2d-v1";
         case ScenarioProfile::Flat3dV1: return "flat3d-v1";
         case ScenarioProfile::Flight3dV1: return "flight3d-v1";
+        case ScenarioProfile::SparseWorldV1: return "sparse-world-v1";
     }
     return "unknown";
 }
@@ -1111,6 +1113,12 @@ std::string scenarioReplayId(ScenarioPlan const& plan) {
                 append(static_cast<uint64_t>(static_cast<int64_t>(value.y)));
             }
             if constexpr (requires { value.z; }) append(static_cast<uint64_t>(static_cast<int64_t>(value.z)));
+            if constexpr (requires { value.generator_version; }) {
+                append(value.generator_version);
+                append(value.max_resident_chunks);
+            }
+            if constexpr (requires { value.block; }) append(static_cast<uint8_t>(value.block));
+            if constexpr (requires { value.count; }) append(value.count);
             if constexpr (requires { value.strafe; }) {
                 append(static_cast<uint8_t>(value.strafe));
                 append(static_cast<uint8_t>(value.forward));
@@ -1217,7 +1225,8 @@ std::expected<ScenarioPlan, ScenarioDiagnostic> parseScenario(
         || limits.max_actors == 0
         || limits.max_total_ticks == 0
         || limits.max_operations == 0
-        || limits.max_evidence == 0) {
+        || limits.max_evidence == 0
+        || limits.max_sparse_world_resident_chunks == 0) {
         return std::unexpected(scenario_detail::makeDiagnostic(
             ScenarioDiagnosticCode::InvalidLimits,
             filename,

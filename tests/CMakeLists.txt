@@ -215,6 +215,7 @@ if(MC_BUILD_CLIENT AND NOT ANDROID)
             client/shader_assets_tests.cpp
             client/text_renderer_tests.cpp
             core/corelang_scenario_tests.cpp
+            core/corelang_sparse_world_scenario_tests.cpp
     )
     target_compile_definitions(
         mc_tests

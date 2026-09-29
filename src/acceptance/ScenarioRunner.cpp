@@ -3,6 +3,7 @@
 #include <server/GameServer.hpp>
 
 #include <shared/net/Message.hpp>
+#include <shared/world/SparseWorld.hpp>
 
 #include <core/net/Client.hpp>
 #include <core/net/Net.hpp>
@@ -210,6 +211,94 @@ std::string operationFailure(shared::ScenarioOperation const& operation, std::st
         + std::to_string(operation.location.column) + " " + message;
 }
 
+[[nodiscard]]
+std::expected<RuntimeEvidence, std::string> runSparseWorldScenario(
+    shared::ScenarioPlan const& plan,
+    ScenarioRunOptions const& options,
+    std::chrono::steady_clock::time_point const started_at
+)
+{
+    if (!plan.actors().empty() || plan.totalTicks() != 0U || plan.operations().empty()) {
+        return std::unexpected("sparse-world scenarios cannot contain players or tick operations");
+    }
+    auto const* const configuration = std::get_if<shared::ScenarioSparseWorldOptionsOperation>(
+        &plan.operations().front().data
+    );
+    if (configuration == nullptr || configuration->generator_version != 1U
+        || configuration->max_resident_chunks == 0U) {
+        return std::unexpected("sparse-world scenario requires supported generator options first");
+    }
+
+    shared::SparseWorld world{
+        shared::SparseWorldOptions{
+            .seed = plan.seed(),
+            .max_resident_chunks = configuration->max_resident_chunks,
+        },
+    };
+    std::chrono::steady_clock::time_point const deadline = started_at + options.deadline;
+    uint64_t expectations_passed{0U};
+    for (uint64_t index = 1U; index < static_cast<uint64_t>(plan.operations().size()); ++index) {
+        shared::ScenarioOperation const& operation = plan.operations()[index];
+        if (std::chrono::steady_clock::now() >= deadline) {
+            return std::unexpected(operationFailure(operation, "exceeded the monotonic deadline"));
+        }
+        if (operation.boundary != 0U) {
+            return std::unexpected(operationFailure(operation, "has an inconsistent sparse-world boundary"));
+        }
+        if (auto const* const expected = std::get_if<shared::ScenarioExpectBlockOperation>(&operation.data)) {
+            std::optional<shared::Block> const observed = world.blockAt({
+                .x = expected->x,
+                .y = expected->y,
+                .z = expected->z,
+            });
+            if (!observed.has_value() || *observed != expected->block) {
+                return std::unexpected(operationFailure(operation, "did not observe the expected generated block"));
+            }
+        } else if (auto const* const expected = std::get_if<
+                       shared::ScenarioExpectResidentChunksOperation
+                   >(&operation.data)) {
+            if (world.residentChunkCount() != expected->count) {
+                return std::unexpected(operationFailure(operation, "observed an unexpected resident chunk count"));
+            }
+        } else {
+            return std::unexpected(operationFailure(operation, "contains an unsupported sparse-world operation"));
+        }
+        if (world.residentChunkCount() > world.maxResidentChunks()) {
+            return std::unexpected(operationFailure(operation, "exceeded its configured residency bound"));
+        }
+        ++expectations_passed;
+        if (std::chrono::steady_clock::now() >= deadline) {
+            return std::unexpected(operationFailure(operation, "exceeded the monotonic deadline"));
+        }
+    }
+    if (expectations_passed != plan.evidenceCount()) {
+        return std::unexpected("sparse-world evidence count did not match executed observations");
+    }
+
+    return RuntimeEvidence{
+        .mode = "scenario",
+        .scenario_version = std::to_string(plan.version()),
+        .profile = std::string{shared::scenarioProfileName(plan.profile())},
+        .seed = plan.seed(),
+        .ticks = 0U,
+        .clients_requested = 0U,
+        .clients_accepted = 0U,
+        .server_events_processed = 0U,
+        .accepted_tick = 0U,
+        .last_effective_tick = 0U,
+        .inputs_sent = 0U,
+        .camera_relative_inputs = 0U,
+        .expectations_passed = expectations_passed,
+        .authoritative_tick_ms = 0U,
+        .replay_id = shared::scenarioReplayId(plan),
+        .elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now() - started_at
+        ),
+        .deadline = std::chrono::duration_cast<std::chrono::milliseconds>(options.deadline),
+        .passed = true,
+    };
+}
+
 } // namespace
 
 std::expected<RuntimeEvidence, std::string> runScenario(
@@ -221,6 +310,9 @@ std::expected<RuntimeEvidence, std::string> runScenario(
         || options.network_poll_interval <= std::chrono::milliseconds::zero()
     ) {
         return std::unexpected("scenario runner requires positive monotonic limits");
+    }
+    if (plan.profile() == shared::ScenarioProfile::SparseWorldV1) {
+        return runSparseWorldScenario(plan, options, std::chrono::steady_clock::now());
     }
     if (plan.profile() != shared::ScenarioProfile::Flat2dV1
         && plan.profile() != shared::ScenarioProfile::Flat3dV1
