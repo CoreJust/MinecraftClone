@@ -1252,12 +1252,12 @@ uint32_t GameServer::admitHeightTileDeliveries(
     uint32_t const maximum_batches
 )
 {
-    // Credits bound retained client work. The caller supplies this stream's share
-    // of the server-wide pump budget so concurrent clients cannot multiply bulk
-    // traffic ahead of movement acknowledgements.
+    // Credits are an upper bound, not a requirement to fill the transport window.
+    // Four maximum-size batches retain 34,356 bytes, leaving gameplay headroom in
+    // the default 65,536-byte ENet reliable window shared by both channels.
     uint32_t const available_batches = std::min<uint32_t>({
         stream.delivery_credits,
-        static_cast<uint32_t>(shared::HEIGHT_TILE_DELIVERY_WINDOW - stream.inflight_deliveries.size()),
+        static_cast<uint32_t>(PreviewStream::MAX_INFLIGHT_DELIVERIES - stream.inflight_deliveries.size()),
         maximum_batches,
     });
     uint32_t const maximum_operations = available_batches * shared::HEIGHT_TILE_DELIVERY_BATCH_CAPACITY;
@@ -1311,7 +1311,7 @@ uint32_t GameServer::admitHeightTileDeliveries(
     auto removal = removal_keys.begin();
     uint32_t admitted_batches = 0U;
     while (stream.delivery_credits > 0U
-        && stream.inflight_deliveries.size() < shared::HEIGHT_TILE_DELIVERY_WINDOW
+        && stream.inflight_deliveries.size() < PreviewStream::MAX_INFLIGHT_DELIVERIES
         && admitted_batches < maximum_batches) {
         shared::ServerHeightTileBatchMessage batch{
             .delivery_token = nextHeightTileToken(m_next_height_tile_token),

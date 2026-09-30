@@ -61,10 +61,11 @@ and consumes at most one queued input per player. Mismatched-world joins,
 duplicate characters and unjoined inputs are rejected. Positions carry
 acknowledged sequences and monotonic revisions; disconnect broadcasts removal.
 
-After movement responses, network pumps rotate four 16-operation batches across
-clients. Credits bound delivery; streams cap ready plus dispatched tiles at 128,
-observed by `BenchmarkHooks::on_preview_buffered`. Acknowledgements
-reconcile keys and reset refill after restored-interest removals.
+After movement, four 16-operation batches rotate among clients.
+Four outstanding credited batches/peer (34,356 bytes) leave gameplay headroom
+in ENet's shared 65,536-byte default window; negotiation/throttling may shrink it.
+Ready/dispatched tiles cap at 128
+(`BenchmarkHooks::on_preview_buffered`). ACKs reconcile keys/refill after restored-interest removals.
 
 ## Client roles and lifecycle
 
@@ -87,10 +88,10 @@ The shared client predicts only its local player's queued input, then rebuilds
 that prediction from acknowledged server state; it never mutates the
 authoritative `World`. Each render samples
 every received player presentation into colored 2 by 2 render records. F5
-cycles first person, rear third person, and front-facing third person; only
-the display camera changes, while input and interest headings continue to use
-the independent local look camera. First person hides the local body and both
-third-person modes draw it. The HUD displays the perspective and F5/5 fallback;
+cycles first person, rear third person and front-facing third person.
+Only display-camera perspective changes; input/interest retain independent look.
+First person hides the local body; third-person modes draw it.
+HUD shows perspective and F5/5 fallback;
 macOS may reserve bare function-row F5/F6, so number-row aliases are reliable.
 The pure resolver accepts a bounded unobstructed
 distance, so terrain/collision presentation can clip a third-person camera

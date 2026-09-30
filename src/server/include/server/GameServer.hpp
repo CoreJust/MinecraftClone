@@ -155,6 +155,7 @@ private:
 
         static constexpr uint32_t MAX_QUEUED_TILES = 128U;
         static constexpr uint32_t MAX_BUFFERED_TILES = 128U;
+        static constexpr uint32_t MAX_INFLIGHT_DELIVERIES = 4U;
         static constexpr uint64_t WORLD_REVISION = 1U;
 
         struct Delivery final {
