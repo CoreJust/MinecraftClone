@@ -2,7 +2,7 @@
   "modules": [
     {
       "guide": "docs/ACCEPTANCE.md",
-      "guide_sha256": "eceb32fc5f400c830a848974cbf5ff2eaa68651a267b3f1fbad2497f1be6d853",
+      "guide_sha256": "25ab251fc670ac33044298e9ec0d4f25715fafdcd594c97eaebe073ea97632b7",
       "id": "acceptance",
       "sources": [
         "src/acceptance/CMakeLists.txt",
@@ -31,7 +31,7 @@
         "tests/acceptance/runtime_cli_tests.cmake",
         "tests/acceptance/scenario_runner_tests.cpp"
       ],
-      "sources_sha256": "10caf977fa3ef80748a0bebf80f85ba23a343ac0d1948811b987927ce2e24162"
+      "sources_sha256": "2f77168ba976c0ce6c7d3aee516d4692b0b9fdef11a000753e65f896022cc760"
     },
     {
       "guide": "docs/code/ANDROID.md",
@@ -155,7 +155,7 @@
         "vcpkg-configuration.json",
         "vcpkg.json"
       ],
-      "sources_sha256": "519fb7bb4740f6f9a2215907b07c6b498b93d41e912dc24a9e7086ea0550a661"
+      "sources_sha256": "9f808fc70330351daabf9c11c62894d4fc0a712698d039ae4e31896038896c0e"
     },
     {
       "guide": "docs/code/CORE.md",
@@ -276,11 +276,11 @@
         "tests/core/world_generation_scheduler_tests.cpp",
         "tests/core/world_generation_tests.cpp"
       ],
-      "sources_sha256": "28f39f44c25fc4b41938abbc0fe096a49e28acbdcc92ea79f730ef9db2d61661"
+      "sources_sha256": "df853d42345a4985d126dd969047505ffaf9d7165a8bb520930fad3516fb69f2"
     },
     {
       "guide": "docs/code/RENDERING.md",
-      "guide_sha256": "c8de18cbd66b55c4d18fbb32b295faad3fb7ba6123b65fb64cab375c845e7da0",
+      "guide_sha256": "4055a9405f5fffaa5c8bc0ce3492002c188e92b424cf9a53907eeffac3e23e1f",
       "id": "rendering",
       "sources": [
         "src/client/CMakeLists.txt",
@@ -328,6 +328,7 @@
         "tests/client/goldens/s4_flat3d_v2.ppm",
         "tests/client/goldens/s4_scene_v1.ppm",
         "tests/client/gui_renderer_tests.cpp",
+        "tests/client/player_client_capture_plan_tests.cpp",
         "tests/client/player_client_reset_tests.cpp",
         "tests/client/player_presentation_tests.cpp",
         "tests/client/preview_meshing_tests.cpp",
@@ -343,7 +344,7 @@
         "tests/testsupport/include/testsupport/AdverseTransport.hpp",
         "tests/testsupport/include/testsupport/ImageComparison.hpp"
       ],
-      "sources_sha256": "30d0e5dc2a24d5c00c8e4a63252eda16a928c0fcfdcfb9a942e3db0559f9ea83"
+      "sources_sha256": "b0e4dbee95570b1bda09e05a268d37078a291c888baec50bc6981820942b9e84"
     }
   ],
   "version": 1

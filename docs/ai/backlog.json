@@ -2336,7 +2336,7 @@
       "MC-AI-0058"
     ],
     "acceptance": "Client can render bounded revisioned coarse and final chunk preview meshes, uses deterministic fallback when a level is unavailable, and atomically replaces only matching current-revision output without cracks or stale flashes. Server/Shared remain authoritative; clients never upload speculative generated terrain; physics never reads visual proxies. Tests cover seam compatibility, stale/cancelled replacement, bounded upload/residency, eviction/regeneration and visible distant traversal.",
-    "evidence": "Integrated debug mc_tests build passed; PreviewMeshingTest 13/13 passed. Combined Release capture tree 79c1d97d8d02ecc03a4d9dec47ea674dba851efd passed the real client/server 256-chunk-radius central-spike capture (205861 resident/uploaded, 16-heading sweep, 2560x1440 PPM, 858.396 seconds, exit 0); this proves distant preview visibility and residency, not final screenshot composition. Atomic renderer batch smoke passed on the transport candidate. Full aggregate checks remain the snapshot gate.",
+    "evidence": "Integrated debug mc_tests build passed; PreviewMeshingTest 13/13 passed. Release capture binary 9868d7 was built from source tree aaeb862005cb75f4bc1c3857e4c86e85e2b22a41 and passed the real client/server 256-chunk-radius central-spike capture (205861 resident/uploaded, 16-heading sweep, 2560x1440 PPM, 858.396 seconds, exit 0; log /private/tmp/MC-S7-full-capture-readyfix-9868d7.log). The later tree 79c1d97d8d02ecc03a4d9dec47ea674dba851efd contains formatting-only changes and is not the binary source identity. This proves distant preview visibility and residency, not final screenshot composition. Atomic renderer batch smoke passed on the transport candidate. Full aggregate checks remain the snapshot gate.",
     "blocker": "",
     "owner": "Codex",
     "level": "basic",
@@ -9013,6 +9013,49 @@
     "code_changes": [
       "Integrated vertical gravity over the authoritative elapsed interval instead of moving a full pre-gravity velocity step, retained zero grounded displacement, and updated the deterministic jump curve plus takeoff presentation fixtures.",
       "Added deterministic stone-face arena recovery policy coverage and reused the original frame deadline for any recreation retry, avoiding the previous unbounded-deadline fallback."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0257",
+    "title": "Keep streamed terrain coverage stable across camera rotations",
+    "kind": "chore",
+    "status": "done",
+    "priority": "P1",
+    "route": "luna",
+    "milestone": "ED-010-S7",
+    "depends_on": [],
+    "acceptance": "Guarantee player-position-only terrain generation and current uploaded-mesh residency for the 256-chunk disk (205,861 tiles); retain exact per-block heights and reduce only derived meshes. For live vertical FOV fv, physical framebuffer W×H, tv=tan(radians(fv)/2), th=tv*W/H, S=1+th²+tv², and f=H/(2tv), each visible unit-block face at minimum Euclidean camera-to-tile-bound separation r is bounded by f²S^(3/2)/r² pixels². An L×L detail cell represents top faces of area L² and cliff faces up to L×R, where R is the height envelope of the tile and neighbor samples used for edge meshes. Coarsen only when the bound for A=max(L²,L×R) is ≤2 pixels²; coplanar render-quad merging does not change A. Derive each 2×2/4×4/8×8/16×16 cutoff from live projection, terrain envelope, and conservative bounds; prescribe no chunk distance. Test exact and nearer cutoffs across FOVs, framebuffer sizes/aspects, height ranges, wrapping, and camera/tile bounds. Heading, frustum, projection, and fog may not reduce generation, residency, or current mesh coverage; never evict in-range data or meshes. Complete center and origin mesh-key comparisons through 16 stationary headings and verify X/Y seams. A 100-chunk-radius 60-second readiness target and frame-pacing samples are diagnostic only, not release proof gates.",
+    "evidence": "Capture source tree 209fafa50c4dec1748fe07593dd7a9ae480304f4 and binary SHA256 ccff35c36669c30cda4f0bc28ce820433b27f30b3964e5a65175f2372018b25c passed full 205,861-tile residency/current-mesh checks and 16-heading key-set comparisons at the central scene and wrapped origin. Trench full-coverage capture also passed. The 2560x1440 central, trench and origin images were inspected; their PPM SHA256 values are a18def94537180159b8e833fb54599f4a69ebc60521ff69eb7cb40f66f29bef1, a1de38f40349f1118f1324ea5869fe50e44f8cfb4f9c360e4fd8eaf87f6d5799 and 36fc71f1cb2d56a6ec13ac859af18b7c75083d0bd77730e978a8a9a0106e34d9. The four-scene wrapper finished with 3 passing tests and 1 mountain failure: full terrain coverage succeeded there, but collision height disagreed with the capture target; that production defect is tracked separately as MC-AI-0268 and S7 remains open. Integrated mc_main/mc_tests builds and 49/49 focused tests passed; after skipping the empty-removal coverage scan, rebuild and all 13 capture-plan tests passed. The reset GPU target also builds after removing its obsolete queue-member assertion. Capture timings and HUD FPS are diagnostics, not proof of the performance target.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0038",
+    "motivation": "Prevent camera turns from exposing missing chunks at the edge of the rendered world while preserving bounded streaming and frustum-culling performance.",
+    "context": "Rendering distance guarantees terrain and uploaded meshes by player position, never by frustum. S7 radius 256 is 205,861 tiles (about 100.5 MiB raw heights); preserve exact heights and reduce only derived terrain geometry. Bound top faces by L² and cliffs by L×R, where R covers tile and neighbor edge heights. Derive cutoffs from current projection and bounds; merged coplanar render quads do not change source area. This height-field implementation does not promise content-aware LOD for caves, edits, structures, materials, or mods.",
+    "complexity": "high",
+    "created_at": "2026-09-23",
+    "resolved_at": "2026-09-30",
+    "resolution_changes": "Completed full-radius current-mesh coverage and camera-invariance acceptance at an interior point and both wrapped origin seams, with bounded prioritized mesh work and high-resolution labeled captures. Kept the separately reproduced mountain collision-height defect and final S7 release gates open.",
+    "plan": [
+      "Guarantee exact data and uploaded meshes in the player-centered 256-tile disk; derive 2/4/8/16-cell detail from the live-projection ≤2 px² bound for top/cliff faces, including neighbor heights. Never let projection or fog reduce residency.",
+      "Verify the whole 256-radius circular interest set, including exact boundary inclusion and exclusion, is invariant across headings and remains correctly wrapped at both world seams.",
+      "Prove server generation, client residency budgets, and GPU mesh storage retain every in-range tile and current uploaded mesh without eviction or device-limit violations.",
+      "Run full-stream production capture sweeps at an interior point and X/Y wrap seams; compare player-centered tile and uploaded-mesh key sets before and after all 16 camera headings.",
+      "Complete 256-radius generation and mesh upload, then treat frame-pacing samples as diagnostics. Keep exact source heights distinct from derived LOD meshes and record actual viewport/FOV-derived cutovers."
+    ],
+    "product_changes": [
+      "Terrain residency remains player-centered through camera turns; capture readiness verifies the entire 256-chunk disk rather than only the current view."
+    ],
+    "code_changes": [
+      "Added exact resident/current-uploaded-mesh coverage checks, deterministic 16-heading capture sweeps, wrapped-origin validation, bounded priority-queue mesh work, and labeled 2560x1440 capture plans.",
+      "Avoided scanning full mesh coverage when no removals are pending and updated the reset test for the encapsulated pending-mesh queue."
     ],
     "baseline_commit": "",
     "commits": [],

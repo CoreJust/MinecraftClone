@@ -320,6 +320,7 @@ Files:
 - [`tests/client/goldens/s4_flat3d_v2.ppm`](../../tests/client/goldens/s4_flat3d_v2.ppm)
 - [`tests/client/goldens/s4_scene_v1.ppm`](../../tests/client/goldens/s4_scene_v1.ppm)
 - [`tests/client/gui_renderer_tests.cpp`](../../tests/client/gui_renderer_tests.cpp)
+- [`tests/client/player_client_capture_plan_tests.cpp`](../../tests/client/player_client_capture_plan_tests.cpp)
 - [`tests/client/player_client_reset_tests.cpp`](../../tests/client/player_client_reset_tests.cpp)
 - [`tests/client/player_presentation_tests.cpp`](../../tests/client/player_presentation_tests.cpp)
 - [`tests/client/preview_meshing_tests.cpp`](../../tests/client/preview_meshing_tests.cpp)

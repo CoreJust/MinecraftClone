@@ -214,6 +214,7 @@ if(MC_BUILD_CLIENT AND NOT ANDROID)
             client/client_audio_tests.cpp
             client/game_client_prediction_tests.cpp
             client/player_presentation_tests.cpp
+            client/player_client_capture_plan_tests.cpp
             client/preview_meshing_tests.cpp
             android/input_tests.cpp
             client/renderer_geometry_tests.cpp
@@ -303,7 +304,7 @@ if(MC_BUILD_CLIENT AND NOT ANDROID AND MC_ENABLE_RENDERER_SMOKE)
             "$<TARGET_FILE:mc_main>"
     )
     set_tests_properties(PlayerPlaytestCaptureTest PROPERTIES
-        TIMEOUT 20
+        TIMEOUT 3600
         RUN_SERIAL TRUE
         LABELS "renderer;gpu;network;acceptance"
     )

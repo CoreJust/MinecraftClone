@@ -65,12 +65,6 @@ explicit evidence rather than silently comparing logical and framebuffer units.
 
 Scenario source and evidence paths must be distinct, as must image and evidence paths. A zero exit status means the requested operation completed and its assertions passed; it does not replace manual review of the captured frame or prove a different platform, driver, or package.
 
-The networked player-capture test verifies the real terrain stream after its
-bounded 1,024-mesh startup threshold; that short capture does not prove that the
-entire S7 radius-256 disk has finished generating and meshing. Full-radius Mac
-visual/runtime evidence remains a coordinated batch gate and is not substituted
-by unit, offscreen, or renderer-only checks.
-
 The S7 adverse-network acceptance runs two production `GameClient` instances
 through a test-only ENet relay into a production `GameServer`. Each client has
 independent seeded client-to-server and server-to-client schedules for latency,
@@ -86,3 +80,14 @@ so timeout cleanup can stop and join while disconnected or awaiting `JoinRespons
 a short regression checks cancellation while disconnected. Each discovered
 `mc_tests` case also has a 120-second CTest timeout. The relay is test-only and
 does not alter shipping physics or rendering timing.
+
+The networked player-capture test uses `--player-client-capture --address IP:PORT
+--preset NAME --image PATH` with the central-spike, trench-first-spike,
+mountain-climb, and first-person-origin presets. Each run waits for the complete
+205,861-tile player-centered disk and matching CPU and renderer mesh counts,
+then compares resident and uploaded mesh keys across 16 camera headings before
+writing a PPM. The origin preset starts the server at X/Y (0,0) to exercise
+world wrapping. The portable test requires at least 1000x600 framebuffer
+pixels and a lower-center label. Set `MC_S7_REQUIRE_2560X1440=1` when producing
+the final Mac assets to require exactly 2560x1440. Test success does not replace
+visual inspection of all four frames or prove another platform.

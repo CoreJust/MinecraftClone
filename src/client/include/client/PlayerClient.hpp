@@ -16,15 +16,53 @@
 #include <filesystem>
 #include <memory>
 #include <optional>
+#include <string_view>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
 
 namespace client {
 
+enum class PlayerClientCapturePreset : uint8_t {
+    CentralSpike,
+    TrenchFirstSpike,
+    MountainClimb,
+    FirstPersonOrigin,
+};
+
+struct PlayerClientCapturePlan final {
+    PlayerClientCapturePreset preset;
+    std::string_view name;
+    std::string_view title;
+    CameraPerspective perspective;
+    CameraAngles look_angles;
+    shared::PlayerPosition target;
+    std::optional<shared::MovementCapabilities> final_movement_capabilities;
+    double vertical_fov_degrees = CameraProjection{}.vertical_fov_degrees;
+    double rear_camera_distance = MAX_LOCAL_PLAYER_CAMERA_DISTANCE;
+};
+
+[[nodiscard]] std::optional<PlayerClientCapturePreset> parsePlayerClientCapturePreset(std::string_view value) noexcept;
+[[nodiscard]] PlayerClientCapturePlan playerClientCapturePlan(PlayerClientCapturePreset preset) noexcept;
+[[nodiscard]] std::array<PlayerClientCapturePreset, 4> playerClientCapturePresets() noexcept;
+[[nodiscard]] uint16_t playerClientCaptureSpeedup(int64_t distance_subcells) noexcept;
+[[nodiscard]] std::chrono::milliseconds playerClientRendererFrameBudget(bool capture_enabled) noexcept;
+[[nodiscard]] uint32_t playerClientHeightTileChangeBudget(bool capture_enabled) noexcept;
+[[nodiscard]] uint32_t playerClientPreviewMeshJobBudget(bool capture_enabled) noexcept;
+[[nodiscard]] bool playerClientShouldQueuePreviewRemoval(bool capture_enabled, bool mesh_visible) noexcept;
+[[nodiscard]] uint32_t playerClientPreviewRemovalBudget(bool capture_enabled, bool current_coverage) noexcept;
+[[nodiscard]] uint32_t playerClientCaptureLogicalSize(
+    uint32_t logical_size,
+    uint32_t framebuffer_size,
+    uint32_t target_framebuffer_size
+) noexcept;
+
 struct PlayerClientCaptureOptions final {
     std::filesystem::path image_path;
-    uint32_t minimum_height_tile_meshes = 1'024U;
+    PlayerClientCapturePreset preset = PlayerClientCapturePreset::CentralSpike;
+    uint32_t minimum_height_tile_meshes = shared::HEIGHT_TILE_INTEREST_COUNT;
+    std::chrono::milliseconds readiness_deadline{ std::chrono::minutes{ 15 } };
+    std::chrono::milliseconds sweep_deadline{ std::chrono::minutes{ 5 } };
 };
 
 struct PlayerClientBenchmarkOptions final {
@@ -33,6 +71,44 @@ struct PlayerClientBenchmarkOptions final {
 
 struct PlayerHeightTileKeyHash final {
     [[nodiscard]] size_t operator()(shared::HeightTileKey key) const noexcept;
+};
+
+[[nodiscard]] bool playerClientCaptureCoverageComplete(
+    std::unordered_set<shared::HeightTileKey, PlayerHeightTileKeyHash> const& interest,
+    std::unordered_set<shared::HeightTileKey, PlayerHeightTileKeyHash> const& visible_meshes,
+    PreviewResidency const& residency,
+    uint32_t expected_tile_count,
+    size_t pending_preview_removals
+) noexcept;
+
+class PlayerPreviewMeshQueue final {
+public:
+    void clear() noexcept;
+    [[nodiscard]] bool push(shared::HeightTileKey key);
+    void resetPriority(
+        shared::HeightTileKey center,
+        int8_t heading_x,
+        int8_t heading_y,
+        std::unordered_set<shared::HeightTileKey, PlayerHeightTileKeyHash> const& interest
+    );
+    [[nodiscard]] bool empty() const noexcept;
+    [[nodiscard]] size_t size() const noexcept;
+    [[nodiscard]] shared::HeightTileKey top() const noexcept;
+    void pop();
+
+private:
+    struct Entry final {
+        double priority;
+        shared::HeightTileKey key;
+    };
+    [[nodiscard]] Entry entryFor(shared::HeightTileKey key) const noexcept;
+    [[nodiscard]] static bool lowerPriority(Entry const& first, Entry const& second) noexcept;
+
+    std::vector<Entry> m_heap;
+    std::unordered_set<shared::HeightTileKey, PlayerHeightTileKeyHash> m_keys;
+    shared::HeightTileKey m_center{};
+    int8_t m_heading_x = 0;
+    int8_t m_heading_y = 127;
 };
 
 class PlayerClient final : public GameClient {
@@ -44,6 +120,7 @@ public:
     );
     ~PlayerClient();
     [[nodiscard]] RendererRuntimeInfo benchmarkRuntimeInfo() const;
+    [[nodiscard]] bool captureSucceeded() const noexcept { return m_capture_succeeded; }
 private:
     friend struct PlayerClientTestAccess;
     class PreviewMeshWorkerPool;
@@ -94,6 +171,12 @@ private:
         std::chrono::steady_clock::time_point deadline
     );
     [[nodiscard]] bool hasCurrentPreviewMeshCoverage() const noexcept;
+    [[nodiscard]] bool hasExactCurrentPreviewMeshCoverage() const noexcept;
+    [[nodiscard]] bool hasExactCurrentRendererMeshCoverage() const;
+    [[nodiscard]] shared::Direction captureInput() noexcept;
+    [[nodiscard]] bool captureAtTarget(shared::Player const& player) const noexcept;
+    [[nodiscard]] bool captureSceneReady() const;
+    void failCapture(std::string_view reason) noexcept;
     Camera m_camera{
         { .position = { 9.0, 9.0, 13.0 } },
     };
@@ -129,8 +212,7 @@ private:
     std::unordered_set<shared::HeightTileKey, PlayerHeightTileKeyHash> m_height_tile_interest;
     std::deque<shared::HeightTileKey> m_pending_preview_removals;
     std::unordered_set<shared::HeightTileKey, PlayerHeightTileKeyHash> m_pending_preview_removal_set;
-    std::deque<shared::HeightTileKey> m_pending_preview_meshes;
-    std::unordered_set<shared::HeightTileKey, PlayerHeightTileKeyHash> m_pending_preview_mesh_set;
+    PlayerPreviewMeshQueue m_pending_preview_meshes;
     std::unordered_set<shared::HeightTileKey, PlayerHeightTileKeyHash> m_preview_mesh_jobs;
     std::unordered_set<shared::HeightTileKey, PlayerHeightTileKeyHash> m_preview_mesh_dirty_jobs;
     std::unordered_set<shared::HeightTileKey, PlayerHeightTileKeyHash> m_visible_preview_meshes;
@@ -150,9 +232,23 @@ private:
     std::unique_ptr<PreviewMeshWorkerPool> m_preview_mesh_workers;
     uint64_t m_preview_mesh_epoch = 1U;
     bool m_capture_requested = false;
-    std::optional<std::unordered_set<shared::HeightTileKey, PlayerHeightTileKeyHash>>
-        m_capture_pre_rotation_interest;
-    uint32_t m_capture_rotation_frames = 0U;
+    bool m_capture_label_initialized = false;
+    std::optional<std::chrono::steady_clock::time_point> m_capture_started_at;
+    std::optional<std::chrono::steady_clock::time_point> m_capture_rotation_started_at;
+    std::optional<std::chrono::steady_clock::time_point> m_capture_last_progress_at;
+    uint64_t m_capture_frames = 0U;
+    uint64_t m_capture_height_changes = 0U;
+    uint64_t m_capture_mesh_results = 0U;
+    uint64_t m_capture_mesh_publish_failures = 0U;
+    uint64_t m_capture_mesh_drain_micros = 0U;
+    uint64_t m_capture_mesh_reprioritize_micros = 0U;
+    std::optional<uint8_t> m_capture_last_capability_cycle_source;
+    std::unordered_set<shared::HeightTileKey, PlayerHeightTileKeyHash> m_capture_interest_baseline;
+    std::unordered_set<shared::HeightTileKey, PlayerHeightTileKeyHash> m_capture_mesh_baseline;
+    uint32_t m_capture_rotation_step = 0U;
+    bool m_capture_rotation_started = false;
+    bool m_capture_succeeded = false;
+    bool m_capture_failed = false;
 };
 
 } // namespace client

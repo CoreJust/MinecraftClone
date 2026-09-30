@@ -15,6 +15,7 @@
 #include <acceptance/RendererBenchmark.hpp>
 #include <acceptance/ScenarioRunner.hpp>
 
+#include <array>
 #include <charconv>
 #include <condition_variable>
 #include <cstdint>
@@ -25,10 +26,12 @@
 #include <iostream>
 #include <limits>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <thread>
 #include <utility>
+#include <vector>
 
 namespace {
 
@@ -50,6 +53,8 @@ struct LaunchCommand final {
     LaunchMode mode;
     core::Address address;
     std::filesystem::path image_path;
+    client::PlayerClientCapturePreset capture_preset = client::PlayerClientCapturePreset::CentralSpike;
+    std::optional<shared::PlayerPosition> spawn;
 };
 
 struct RuntimeCommand final {
@@ -114,27 +119,56 @@ std::expected<LaunchCommand, std::string> parseLaunchCommand(int const argc, cha
         if (argc == 2) {
             return LaunchCommand{ .mode = mode, .address = core::Address::localhost(20'040) };
         }
-        if (argc != 4 || std::string_view{ argv[2] } != "--port") {
-            return std::unexpected("server launch syntax is '--server [--port PORT]'");
+        if ((argc != 4 && argc != 8) || std::string_view{ argv[2] } != "--port"
+            || (argc == 8 && std::string_view{ argv[4] } != "--spawn")) {
+            return std::unexpected("server launch syntax is '--server [--port PORT [--spawn X Y Z]]'");
         }
         auto const address = parseAddress("127.0.0.1:" + std::string{ argv[3] });
         if (!address.has_value()) {
             return std::unexpected(address.error());
         }
-        return LaunchCommand{ .mode = mode, .address = *address };
+        std::optional<shared::PlayerPosition> spawn;
+        if (argc == 8) {
+            std::array<int32_t, 3> coordinates{};
+            for (uint32_t index = 0U; index < coordinates.size(); ++index) {
+                std::string_view const argument{ argv[5 + index] };
+                auto const [end, error] = std::from_chars(
+                    argument.data(), argument.data() + argument.size(), coordinates[index]
+                );
+                if (error != std::errc{} || end != argument.data() + argument.size()) {
+                    return std::unexpected("server spawn contains an invalid coordinate");
+                }
+            }
+            auto const checked = server::GameServer::validateSpawnPoints({{
+                .character = '@', .x = coordinates[0], .y = coordinates[1], .z = coordinates[2],
+            }}, shared::WorldMode::Flight);
+            if (!checked.has_value()) {
+                return std::unexpected(checked.error());
+            }
+            spawn = { .x = coordinates[0], .y = coordinates[1], .z = coordinates[2] };
+        }
+        return LaunchCommand{ .mode = mode, .address = *address, .spawn = spawn };
     }
     if (mode == LaunchMode::GraphicalPlayerCapture) {
-        if (argc != 6 || std::string_view{argv[2]} != "--address"
-            || std::string_view{argv[4]} != "--image") {
+        if (argc != 8 || std::string_view{argv[2]} != "--address"
+            || std::string_view{argv[4]} != "--preset"
+            || std::string_view{argv[6]} != "--image") {
             return std::unexpected(
-                "capture launch syntax is '--player-client-capture --address IP:PORT --image PATH'"
+                "capture launch syntax is '--player-client-capture --address IP:PORT "
+                "--preset central-spike|trench-first-spike|mountain-climb|first-person-origin --image PATH'"
             );
         }
         auto const address = parseAddress(argv[3]);
         if (!address.has_value()) {
             return std::unexpected(address.error());
         }
-        return LaunchCommand{.mode = mode, .address = *address, .image_path = argv[5]};
+        auto const preset = client::parsePlayerClientCapturePreset(argv[5]);
+        if (!preset.has_value()) {
+            return std::unexpected("capture preset is unknown");
+        }
+        return LaunchCommand{
+            .mode = mode, .address = *address, .image_path = argv[7], .capture_preset = *preset,
+        };
     }
     if (argc == 2) {
         return LaunchCommand{ .mode = mode, .address = core::Address::localhost(20'040) };
@@ -499,7 +533,16 @@ int main(int argc, char** argv) {
                 std::cerr << command.error() << '\n';
                 exit_code = 1;
             } else if (command->mode == LaunchMode::Server) {
-                server::GameServer server{ command->address.port(), { }, shared::WorldMode::Flight };
+                std::vector<server::GameServer::SpawnPoint> spawn_points;
+                if (command->spawn.has_value()) {
+                    spawn_points.push_back({
+                        .character = '@', .x = command->spawn->x,
+                        .y = command->spawn->y, .z = command->spawn->z,
+                    });
+                }
+                server::GameServer server{
+                    command->address.port(), std::move(spawn_points), shared::WorldMode::Flight,
+                };
                 server.run();
             } else if (command->mode == LaunchMode::BotClient) {
                 client::BotClient client{ shared::WorldMode::Flight };
@@ -507,9 +550,13 @@ int main(int argc, char** argv) {
             } else if (command->mode == LaunchMode::GraphicalPlayerCapture) {
                 client::PlayerClient client{
                     shared::WorldMode::Flight,
-                    client::PlayerClientCaptureOptions{.image_path = command->image_path},
+                    client::PlayerClientCaptureOptions{
+                        .image_path = command->image_path,
+                        .preset = command->capture_preset,
+                    },
                 };
                 client.run(command->address, '@');
+                exit_code = client.captureSucceeded() ? 0 : 1;
             } else {
                 client::PlayerClient client{ shared::WorldMode::Flight };
                 client.run(command->address, '@');

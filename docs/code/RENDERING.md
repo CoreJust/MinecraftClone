@@ -21,8 +21,8 @@ World players -> PlayerClient / AndroidPlayerClient -> PlayerRenderData span
 ```
 
 The platform/grid/player scene is legacy flat-world Snapshot 4 coverage. Normal
-Flight clears sky blue and draws the deterministic seed-42 16³ air-and-stone
-chunk with the original 16² stone texture. Local first-/third-person cameras use
+Flight clears sky blue and draws server-streamed height-tile terrain with the
+original 16² stone texture. Local first-/third-person cameras use
 sampled player position, separately from input look. First person hides the
 local body; third-person modes draw it. Four-bit replicated palette identities
 map to 16 opaque colors; mesh uploads follow content identity. The HUD reports
@@ -124,8 +124,8 @@ the smaller directional ellipse in [GAMEPLAY.md](GAMEPLAY.md). Its renderer-only
 gate requires nominal 120 Hz within one percent and p99 at most 10 ms,
 including display wait and scheduler jitter.
 
-Benchmark and capture modes preserve requested framebuffer pixels; unstable
-GLFW extent fails before rendering. Capture verifies readback, sky, stone, HUD,
-and exact player-centered radius-256 mesh coverage through a 16-heading sweep
-against a production local server. Benchmark requires presented stone and records
-frame and phase timing.
+Benchmark and renderer capture preserve requested framebuffer pixels through
+bounded GLFW resizing. Capture checks readback, sky, and stone; benchmark checks
+presentation, a stone draw, and phase timing. Networked S7 capture runs the
+production server/client, waits for all 205,861 resident tiles and uploaded
+meshes, compares keys across 16 headings, and validates terrain, HUD, and label.
