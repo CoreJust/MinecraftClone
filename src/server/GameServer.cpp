@@ -272,7 +272,7 @@ struct GameServer::HeightTileWorkerPool final {
     {
         uint32_t const worker_count = GameServer::terrainWorkerCount(std::thread::hardware_concurrency());
         // Keep the executor FIFO shallow so the remaining game-owned work can be reprioritized.
-        m_submission_window = worker_count * 2U;
+        m_submission_window = worker_count * 4U;
         m_executor = std::make_unique<core::executor::Executor>(
             core::executor::ExecutorLimits{
                 .queue_capacity = worker_count,
@@ -598,7 +598,15 @@ void GameServer::run(
         } else {
             while (poll(std::chrono::milliseconds::zero()) > 0) {
             }
-            processHeightTileStreams(false);
+            processHeightTileStreams();
+        }
+        if (benchmark_hooks && benchmark_hooks->on_preview_buffered) {
+            for (PreviewStream const& stream : m_preview_streams) {
+                benchmark_hooks->on_preview_buffered(
+                    stream.client_id,
+                    static_cast<uint32_t>(stream.ready_tiles.size() + stream.dispatched_keys.size())
+                );
+            }
         }
         std::this_thread::sleep_until(std::min(
             next_simulation,
@@ -660,7 +668,7 @@ uint64_t GameServer::tick(std::chrono::milliseconds const timeout) {
             }
         }
     }
-    processHeightTileStreams(true);
+    processHeightTileStreams();
     return events;
 }
 
@@ -1220,17 +1228,22 @@ void GameServer::acknowledgeHeightTileDelivery(
     for (shared::HeightTileKey const key : delivery->second.additions) {
         stream->inflight_addition_keys.erase(key);
         stream->resident_keys.insert(key);
+        if (!stream->desired_key_set.contains(key) && !stream->inflight_removal_keys.contains(key)) {
+            stream->pending_removals.insert(key);
+        }
     }
     for (shared::HeightTileKey const key : delivery->second.removals) {
         stream->inflight_removal_keys.erase(key);
         stream->pending_removals.erase(key);
         stream->resident_keys.erase(key);
+        if (stream->desired_key_set.contains(key)) {
+            stream->priority_cursor = 0U;
+        }
     }
     stream->inflight_deliveries.erase(delivery);
     if (stream->delivery_credits < shared::HEIGHT_TILE_DELIVERY_WINDOW) {
         ++stream->delivery_credits;
     }
-    queueDepartedResidentTiles(*stream);
 }
 
 uint32_t GameServer::admitHeightTileDeliveries(
@@ -1468,7 +1481,7 @@ void GameServer::fillHeightTileQueue(PreviewStream& stream)
     }
 }
 
-void GameServer::processHeightTileStreams(bool const admit_deliveries)
+void GameServer::processHeightTileStreams()
 {
     for (PreviewStream& stream : m_preview_streams) {
         auto const player = m_world.player(stream.client_id);
@@ -1481,7 +1494,7 @@ void GameServer::processHeightTileStreams(bool const admit_deliveries)
     for (PreviewStream& stream : m_preview_streams) {
         fillHeightTileQueue(stream);
     }
-    if (admit_deliveries && !m_preview_streams.empty()) {
+    if (!m_preview_streams.empty()) {
         static constexpr uint32_t MAX_ADMITTED_BATCHES_PER_PUMP = 4U;
         uint32_t remaining_batches = MAX_ADMITTED_BATCHES_PER_PUMP;
         size_t const stream_count = m_preview_streams.size();
@@ -1532,9 +1545,9 @@ void GameServer::dispatchWorldMaterialization()
 
 void GameServer::dispatchHeightTileWork()
 {
-    static constexpr uint32_t MAX_DISPATCHED_TILES_PER_TICK = PreviewStream::MAX_QUEUED_TILES;
-    static constexpr double BACKGROUND_TILES_PER_SECOND = 256.0;
-    static constexpr double MAXIMUM_BACKGROUND_BURST = 24.0;
+    static constexpr uint32_t MAX_DISPATCHED_TILES_PER_PUMP = PreviewStream::MAX_QUEUED_TILES;
+    static constexpr double BACKGROUND_TILES_PER_SECOND = 8'192.0;
+    static constexpr double MAXIMUM_BACKGROUND_BURST = 128.0;
     auto const now = std::chrono::steady_clock::now();
     for (PreviewStream& stream : m_preview_streams) {
         double const elapsed_seconds = now >= stream.background_generation_eligible_at
@@ -1556,12 +1569,15 @@ void GameServer::dispatchHeightTileWork()
     uint32_t dispatched = 0U;
     size_t const stream_count = m_preview_streams.size();
     size_t round_start = m_next_preview_dispatch % stream_count;
-    while (dispatched < MAX_DISPATCHED_TILES_PER_TICK && m_height_tile_workers->canAccept()) {
+    while (dispatched < MAX_DISPATCHED_TILES_PER_PUMP && m_height_tile_workers->canAccept()) {
         bool dispatched_round = false;
         for (size_t offset = 0U; offset < stream_count
-            && dispatched < MAX_DISPATCHED_TILES_PER_TICK
+            && dispatched < MAX_DISPATCHED_TILES_PER_PUMP
             && m_height_tile_workers->canAccept(); ++offset) {
             PreviewStream& stream = m_preview_streams[(round_start + offset) % stream_count];
+            if (stream.ready_tiles.size() + stream.dispatched_keys.size() >= PreviewStream::MAX_BUFFERED_TILES) {
+                continue;
+            }
             auto const next = stream.scheduler.peekNext();
             if (!next.has_value()) {
                 continue;
@@ -1587,6 +1603,7 @@ void GameServer::dispatchHeightTileWork()
                 .job = *job,
             })) {
                 static_cast<void>(stream.scheduler.complete(job->id, false, true));
+                stream.priority_cursor = 0U;
                 break;
             }
             stream.dispatched_keys.insert(key);
@@ -1606,9 +1623,9 @@ void GameServer::dispatchHeightTileWork()
 
 void GameServer::publishHeightTileResults()
 {
-    static constexpr uint32_t MAX_PUBLISHED_TILES_PER_TICK = 2U * shared::HEIGHT_TILE_BATCH_CAPACITY;
+    static constexpr uint32_t MAX_PUBLISHED_TILES_PER_PUMP = 2U * shared::HEIGHT_TILE_BATCH_CAPACITY;
     std::vector<HeightTileWorkerPool::Result> results = m_height_tile_workers->takeResults(
-        MAX_PUBLISHED_TILES_PER_TICK
+        MAX_PUBLISHED_TILES_PER_PUMP
     );
     std::ranges::stable_sort(results, [this](
         HeightTileWorkerPool::Result const& first,
@@ -1708,7 +1725,9 @@ void GameServer::publishHeightTileResults()
             continue;
         }
         if (!scheduler_result->succeeded) {
-            if (!stream->scheduler.retry(result.job.id)) {
+            if (stream->scheduler.retry(result.job.id)) {
+                stream->queued_keys.insert(key);
+            } else {
                 stream->priority_cursor = 0U;
             }
             continue;

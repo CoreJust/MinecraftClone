@@ -26,6 +26,7 @@ class GameServer final : public core::Server {
 public:
     struct BenchmarkHooks final {
         std::function<void(std::chrono::nanoseconds, uint64_t)> on_tick;
+        std::function<void(core::ClientId, uint32_t)> on_preview_buffered;
     };
     struct SpawnPoint final {
         char character;
@@ -98,7 +99,7 @@ private:
     );
     void refreshHeightTileInterest(PreviewStream& stream, shared::Player const& player);
     void fillHeightTileQueue(PreviewStream& stream);
-    void processHeightTileStreams(bool admit_deliveries);
+    void processHeightTileStreams();
     void dispatchHeightTileWork();
     void publishHeightTileResults();
     void dispatchWorldMaterialization();
@@ -153,6 +154,7 @@ private:
         };
 
         static constexpr uint32_t MAX_QUEUED_TILES = 128U;
+        static constexpr uint32_t MAX_BUFFERED_TILES = 128U;
         static constexpr uint64_t WORLD_REVISION = 1U;
 
         struct Delivery final {

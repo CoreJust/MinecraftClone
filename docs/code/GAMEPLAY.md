@@ -55,18 +55,16 @@ the selected seeded world and the server rejects mismatches before gameplay.
 ## Server authority
 
 [GameServer.hpp](../../src/server/include/server/GameServer.hpp) creates a
-localhost server on default port `20040` (constructor accepts another port);
-[GameServer.cpp](../../src/server/GameServer.cpp)
-drains pending events within each 100 ms tick, processes at most one queued
-input per player, rejects joins whose mode or configuration differs from its
-authoritative world, and includes the acknowledged input sequence plus a
-monotonic state revision in each replicated position.
+localhost server on configurable port `20040`.
+[GameServer.cpp](../../src/server/GameServer.cpp) drains events each 100 ms tick
+and consumes at most one queued input per player. Mismatched-world joins,
+duplicate characters and unjoined inputs are rejected. Positions carry
+acknowledged sequences and monotonic revisions; disconnect broadcasts removal.
 
-The server rejects duplicate characters and unjoined input, and allows one
-nonzero input per player per tick. Disconnect broadcasts removal.
-
-Height-tile delivery uses bounded credits and cleanup capacity. Movement
-responses precede bulk terrain, whose dispatch rotates across clients.
+After movement responses, network pumps rotate four 16-operation batches across
+clients. Credits bound delivery; streams cap ready plus dispatched tiles at 128,
+observed by `BenchmarkHooks::on_preview_buffered`. Acknowledgements
+reconcile keys and reset refill after restored-interest removals.
 
 ## Client roles and lifecycle
 
@@ -107,7 +105,8 @@ probability 1/50 per input call.
 S6 used a camera-independent radius-45 circle; S7 streams a radius-256 disk of
 205,861 height tiles with X/Y wrapping. Membership ignores heading and frustum;
 heading only reorders generation, which prioritizes radius-3/radius-8 circles,
-then a directional ellipse to the former S6 band and rate-limited background.
+then a directional ellipse to the former S6 band and background limited to
+8,192 tiles/s per stream with a 128-tile burst after 250 ms at a settled center.
 CoreLang 0.1.2 supplies wave parameters; C++ evaluates heights and stone. Six
 terrain layers use 128-block spacing; spawn is on the first wave. HUD profiles
 range from 2x to 500x.
