@@ -25,6 +25,23 @@ TEST(GameBenchmark, ClassifiesCompletedRequestsWithinHalfOpenIntervals)
     EXPECT_EQ(gameBenchmarkPhaseAt(first + 6s + 1ns, first, options), GameBenchmarkPhase::Outside);
 }
 
+TEST(GameBenchmark, KeepsDiagnosticStationaryInputsMotionlessAcrossScriptBoundaries)
+{
+    using acceptance::GameBenchmarkWorkload;
+    for (uint64_t const ordinal : { 0U, 19U, 20U, 39U, 40U, 100'000U }) {
+        shared::Direction const direction = acceptance::gameBenchmarkDirection(
+            GameBenchmarkWorkload::DiagnosticStationary, ordinal
+        );
+        EXPECT_EQ(direction.x, 0U);
+        EXPECT_EQ(direction.y, 0U);
+        EXPECT_EQ(direction.z, 0U);
+        EXPECT_FALSE(direction.accelerated);
+        EXPECT_FALSE(direction.cycle_movement_capabilities);
+    }
+    EXPECT_EQ(acceptance::gameBenchmarkWorkloadName(GameBenchmarkWorkload::DiagnosticStationary),
+        "diagnostic-stationary-v1");
+}
+
 TEST(GameBenchmark, ScriptsDistinctMovementAndCapabilityWorkloads)
 {
     using acceptance::GameBenchmarkWorkload;

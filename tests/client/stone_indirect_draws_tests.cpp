@@ -1,7 +1,10 @@
 #include <client/render/StoneIndirectDraws.hpp>
 
+#include <shared/world/ChunkMesher.hpp>
+
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <array>
 #include <cstdint>
 #include <memory>
@@ -23,6 +26,7 @@ struct Batch final {
 
 struct BufferState final {
     std::vector<VkDrawIndirectCommand> commands;
+    std::vector<VkDrawIndexedIndirectCommand> indexed_commands;
     std::vector<Batch> batches;
     bool submitted = false;
     bool destroyed = false;
@@ -43,13 +47,19 @@ public:
 
     [[nodiscard]] uint32_t capacity() const noexcept override
     {
-        return static_cast<uint32_t>(m_state->commands.size());
+        return static_cast<uint32_t>(std::max(m_state->commands.size(), m_state->indexed_commands.size()));
     }
 
     [[nodiscard]] std::span<VkDrawIndirectCommand> mappedCommands() override
     {
         m_state->touched_while_submitted = m_state->touched_while_submitted || m_state->submitted;
         return m_state->commands;
+    }
+
+    [[nodiscard]] std::span<VkDrawIndexedIndirectCommand> mappedIndexedCommands() override
+    {
+        m_state->touched_while_submitted = m_state->touched_while_submitted || m_state->submitted;
+        return m_state->indexed_commands;
     }
 
     void record(VkCommandBuffer, VkDeviceSize const offset, uint32_t const draw_count) const override
@@ -66,12 +76,17 @@ struct FactoryProbe final {
     std::optional<VkResult> failure;
     uint32_t attempts = 0U;
     bool fail_cpp_allocation = false;
+    bool indexed = false;
 
     [[nodiscard]] std::unique_ptr<Draws::Buffer> create(uint32_t const capacity)
     {
         ++attempts;
         auto state = std::make_shared<BufferState>();
-        state->commands.resize(capacity);
+        if (indexed) {
+            state->indexed_commands.resize(capacity);
+        } else {
+            state->commands.resize(capacity);
+        }
         created.push_back(state);
         auto buffer = std::make_unique<TestBuffer>(state);
         if (fail_cpp_allocation) {
@@ -167,6 +182,84 @@ TEST(StoneIndirectDrawsTest, PacksExactDrawCommandsAndBoundsBatchesForBothPipeli
     EXPECT_EQ(batches[2].offset, 3U * sizeof(VkDrawIndirectCommand));
     EXPECT_EQ(batches[2].draw_count, 2U);
     EXPECT_EQ(prepared.logical_draw_count, 5U);
+}
+
+TEST(StoneIndirectDrawsTest, QuadIndicesPreserveBothTriangleVerticesAndWindingForEveryFace)
+{
+    for (uint32_t direction_index = 0U; direction_index < 6U; ++direction_index) {
+        shared::FaceDirection const direction = static_cast<shared::FaceDirection>(direction_index);
+        auto const corners = shared::faceVertexOffsets(direction);
+        std::array const expected{
+            corners[0], corners[1], corners[2], corners[0], corners[2], corners[3],
+        };
+        for (uint32_t vertex = 0U; vertex < Draws::QUAD_INDICES.size(); ++vertex) {
+            ASSERT_LT(Draws::QUAD_INDICES[vertex], corners.size());
+            EXPECT_EQ(corners[Draws::QUAD_INDICES[vertex]], expected[vertex]);
+        }
+    }
+}
+
+TEST(StoneIndirectDrawsTest, IndexedQuadsPreserveInstancesAndUseIndexedCommandStride)
+{
+    static constexpr uint32_t MAXIMUM_COMMAND_COUNT = 16U;
+    static constexpr uint32_t MAXIMUM_DRAW_COUNT = 2U;
+    static constexpr uint32_t INDEX_COUNT = 6U;
+    std::array const textured{ Draws::Range{ 10U, 3U }, Draws::Range{ 30U, 0U }, Draws::Range{ 50U, 7U } };
+    std::array const solid{ Draws::Range{ 100U, 11U } };
+    FactoryProbe probe;
+    probe.indexed = true;
+    Draws draws{
+        MAXIMUM_COMMAND_COUNT,
+        MAXIMUM_DRAW_COUNT,
+        true,
+        true,
+        [&probe](uint32_t const capacity) { return probe.create(capacity); },
+        true,
+    };
+    Draws::Prepared const prepared = draws.prepareAcquiredSlot(91U, textured, solid);
+    ASSERT_NE(prepared.buffer, nullptr);
+    ASSERT_EQ(probe.created.size(), 1U);
+    EXPECT_TRUE(prepared.indexed);
+    EXPECT_EQ(prepared.logical_draw_count, 4U);
+    auto const& commands = probe.created[0]->indexed_commands;
+    std::array const expected{ textured[0], textured[1], textured[2], solid[0] };
+    for (uint32_t index = 0U; index < expected.size(); ++index) {
+        EXPECT_EQ(commands[index].indexCount, INDEX_COUNT);
+        EXPECT_EQ(commands[index].instanceCount, expected[index].instance_count);
+        EXPECT_EQ(commands[index].firstIndex, 0U);
+        EXPECT_EQ(commands[index].vertexOffset, 0);
+        EXPECT_EQ(commands[index].firstInstance, expected[index].first_instance);
+    }
+    prepared.record(VK_NULL_HANDLE, 0U, 3U);
+    prepared.record(VK_NULL_HANDLE, 3U, 1U);
+    auto const& batches = probe.created[0]->batches;
+    ASSERT_EQ(batches.size(), 3U);
+    EXPECT_EQ(batches[0].offset, 0U);
+    EXPECT_EQ(batches[0].draw_count, 2U);
+    EXPECT_EQ(batches[1].offset, 2U * sizeof(VkDrawIndexedIndirectCommand));
+    EXPECT_EQ(batches[1].draw_count, 1U);
+    EXPECT_EQ(batches[2].offset, 3U * sizeof(VkDrawIndexedIndirectCommand));
+    EXPECT_EQ(batches[2].draw_count, 1U);
+}
+
+TEST(StoneIndirectDrawsTest, IndexedFeatureFallbackRetainsLogicalDrawsWithoutAllocation)
+{
+    static constexpr uint32_t MAXIMUM_COMMAND_COUNT = 16U;
+    std::array const ranges{ Draws::Range{ 10U, 3U } };
+    FactoryProbe probe;
+    Draws draws{
+        MAXIMUM_COMMAND_COUNT,
+        4U,
+        false,
+        true,
+        [&probe](uint32_t const capacity) { return probe.create(capacity); },
+        true,
+    };
+    Draws::Prepared const prepared = draws.prepareAcquiredSlot(7U, ranges, {});
+    EXPECT_TRUE(prepared.indexed);
+    EXPECT_EQ(prepared.buffer, nullptr);
+    EXPECT_EQ(prepared.logical_draw_count, 1U);
+    EXPECT_EQ(probe.attempts, 0U);
 }
 
 TEST(StoneIndirectDrawsTest, SingleDrawDeviceLimitRetainsEveryCommandAndChecksSubranges)

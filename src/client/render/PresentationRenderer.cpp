@@ -37,11 +37,14 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <cstring>
+#include <limits>
 #include <memory>
 #include <new>
 #include <ranges>
 #include <stdexcept>
+#include <string_view>
 #include <unordered_map>
 #include <utility>
 
@@ -63,6 +66,7 @@ constexpr uint32_t QUAD_VERTEX_COUNT = 6U;
 constexpr uint32_t GRID_VERTEX_COUNT = 30U;
 constexpr uint32_t BOX_VERTEX_COUNT = 36U;
 constexpr uint32_t STONE_FACE_VERTEX_COUNT = 6U;
+constexpr auto STONE_QUAD_INDICES = StoneIndirectDraws::QUAD_INDICES;
 constexpr uint32_t MAXIMUM_TEXT_GLYPH_COUNT = 16'384U;
 constexpr size_t MAXIMUM_TEXT_UPDATE_GLYPHS = 65'536U / sizeof(TextGlyph);
 constexpr uint32_t MAXIMUM_RENDERED_STONE_FACE_COUNT =
@@ -301,15 +305,30 @@ private:
     uint32_t m_capacity = 0U;
 };
 
-class VulkanStoneIndirectBuffer final : public StoneIndirectDraws::Buffer {
+[[nodiscard]]
+bool diagnosticIndexedStoneQuads()
+{
+    char const* const requested = std::getenv("MC_DIAGNOSTIC_INDEXED_STONE_QUADS");
+    return requested == nullptr || std::string_view{ requested } != "0";
+}
+
+enum class StoneDrawBufferKind {
+    Indirect,
+    IndexedIndirect,
+    QuadIndices,
+};
+
+class VulkanStoneDrawBuffer final : public StoneIndirectDraws::Buffer {
 public:
-    VulkanStoneIndirectBuffer(
+    VulkanStoneDrawBuffer(
         VkDevice const device,
         VkPhysicalDevice const physical_device,
-        uint32_t const command_count
+        uint32_t const command_count,
+        StoneDrawBufferKind const kind = StoneDrawBufferKind::Indirect
     )
         : m_device(device)
         , m_capacity(command_count)
+        , m_kind(kind)
     {
         if (command_count == 0U || command_count > MAXIMUM_RENDERED_STONE_FACE_COUNT) {
             throw std::invalid_argument("stone indirect command count is invalid");
@@ -317,8 +336,12 @@ public:
         try {
             VkBufferCreateInfo buffer_info{};
             buffer_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-            buffer_info.size = static_cast<VkDeviceSize>(m_capacity) * sizeof(VkDrawIndirectCommand);
-            buffer_info.usage = VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT;
+            buffer_info.size = m_kind == StoneDrawBufferKind::QuadIndices
+                ? sizeof(STONE_QUAD_INDICES)
+                : static_cast<VkDeviceSize>(m_capacity) * (m_kind == StoneDrawBufferKind::IndexedIndirect
+                    ? sizeof(VkDrawIndexedIndirectCommand) : sizeof(VkDrawIndirectCommand));
+            buffer_info.usage = m_kind == StoneDrawBufferKind::QuadIndices
+                ? VK_BUFFER_USAGE_INDEX_BUFFER_BIT : VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT;
             buffer_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
             checkIndirectAllocationResult(
                 vkCreateBuffer(m_device, &buffer_info, nullptr, &m_buffer), "vkCreateBuffer stone indirect"
@@ -355,25 +378,34 @@ public:
             checkIndirectAllocationResult(
                 vkMapMemory(m_device, m_memory, 0U, VK_WHOLE_SIZE, 0U, &m_mapped), "vkMapMemory stone indirect"
             );
+            if (m_kind == StoneDrawBufferKind::QuadIndices) {
+                std::memcpy(m_mapped, STONE_QUAD_INDICES.data(), sizeof(STONE_QUAD_INDICES));
+            }
         } catch (...) {
             reset();
             throw;
         }
     }
 
-    ~VulkanStoneIndirectBuffer() override
+    ~VulkanStoneDrawBuffer() override
     {
         reset();
     }
 
-    VulkanStoneIndirectBuffer(VulkanStoneIndirectBuffer const&) = delete;
-    VulkanStoneIndirectBuffer& operator=(VulkanStoneIndirectBuffer const&) = delete;
+    VulkanStoneDrawBuffer(VulkanStoneDrawBuffer const&) = delete;
+    VulkanStoneDrawBuffer& operator=(VulkanStoneDrawBuffer const&) = delete;
 
     [[nodiscard]] uint32_t capacity() const noexcept override { return m_capacity; }
+    [[nodiscard]] VkBuffer handle() const noexcept { return m_buffer; }
 
     [[nodiscard]] std::span<VkDrawIndirectCommand> mappedCommands() override
     {
         return { static_cast<VkDrawIndirectCommand*>(m_mapped), m_capacity };
+    }
+
+    [[nodiscard]] std::span<VkDrawIndexedIndirectCommand> mappedIndexedCommands() override
+    {
+        return { static_cast<VkDrawIndexedIndirectCommand*>(m_mapped), m_capacity };
     }
 
     void record(
@@ -382,7 +414,11 @@ public:
         uint32_t const draw_count
     ) const override
     {
-        vkCmdDrawIndirect(command, m_buffer, offset, draw_count, sizeof(VkDrawIndirectCommand));
+        if (m_kind == StoneDrawBufferKind::IndexedIndirect) {
+            vkCmdDrawIndexedIndirect(command, m_buffer, offset, draw_count, sizeof(VkDrawIndexedIndirectCommand));
+        } else {
+            vkCmdDrawIndirect(command, m_buffer, offset, draw_count, sizeof(VkDrawIndirectCommand));
+        }
     }
 
 private:
@@ -407,6 +443,7 @@ private:
     VkDeviceMemory m_memory = VK_NULL_HANDLE;
     void* m_mapped = nullptr;
     uint32_t m_capacity = 0U;
+    StoneDrawBufferKind m_kind = StoneDrawBufferKind::Indirect;
 };
 
 class StoneTextureBuffer final {
@@ -939,7 +976,9 @@ uint32_t recordStoneScene(
     std::span<StoneDrawRange const> const draw_ranges,
     std::span<StoneDrawRange const> const solid_draw_ranges,
     VkExtent2D const extent,
-    StoneIndirectDraws::Prepared const prepared = {}
+    StoneIndirectDraws::Prepared const prepared = {},
+    VkBuffer const quad_index_buffer = VK_NULL_HANDLE,
+    VkQueryPool const diagnostic_query_pool = VK_NULL_HANDLE
 )
 {
     std::optional<glm::mat4> const projection = camera.projectionMatrix(extent.width, extent.height);
@@ -951,7 +990,7 @@ uint32_t recordStoneScene(
         static_cast<int32_t>(std::floor(camera_pose.position.x)),
         static_cast<int32_t>(std::floor(camera_pose.position.y)),
         static_cast<int32_t>(std::floor(camera_pose.position.z)),
-        0,
+        quad_index_buffer != VK_NULL_HANDLE ? 1 : 0,
     };
     glm::vec3 const relative_eye{
         static_cast<float>(camera_pose.position.x - world_origin[0]),
@@ -973,6 +1012,12 @@ uint32_t recordStoneScene(
                 : 720.0),
         },
     };
+    if (quad_index_buffer != VK_NULL_HANDLE) {
+        vkCmdBindIndexBuffer(command, quad_index_buffer, 0U, VK_INDEX_TYPE_UINT16);
+    }
+    if (diagnostic_query_pool != VK_NULL_HANDLE) {
+        vkCmdWriteTimestamp(command, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, diagnostic_query_pool, 0U);
+    }
     if (!draw_ranges.empty()) {
         vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
         vkCmdBindDescriptorSets(
@@ -990,7 +1035,11 @@ uint32_t recordStoneScene(
             prepared.record(command, 0U, static_cast<uint32_t>(draw_ranges.size()));
         } else {
             for (StoneDrawRange const range : draw_ranges) {
-                vkCmdDraw(command, STONE_FACE_VERTEX_COUNT, range.instance_count, 0U, range.first_instance);
+                if (quad_index_buffer != VK_NULL_HANDLE) {
+                    vkCmdDrawIndexed(command, STONE_FACE_VERTEX_COUNT, range.instance_count, 0U, 0, range.first_instance);
+                } else {
+                    vkCmdDraw(command, STONE_FACE_VERTEX_COUNT, range.instance_count, 0U, range.first_instance);
+                }
             }
         }
     }
@@ -1008,9 +1057,16 @@ uint32_t recordStoneScene(
             );
         } else {
             for (StoneDrawRange const range : solid_draw_ranges) {
-                vkCmdDraw(command, STONE_FACE_VERTEX_COUNT, range.instance_count, 0U, range.first_instance);
+                if (quad_index_buffer != VK_NULL_HANDLE) {
+                    vkCmdDrawIndexed(command, STONE_FACE_VERTEX_COUNT, range.instance_count, 0U, 0, range.first_instance);
+                } else {
+                    vkCmdDraw(command, STONE_FACE_VERTEX_COUNT, range.instance_count, 0U, range.first_instance);
+                }
             }
         }
+    }
+    if (diagnostic_query_pool != VK_NULL_HANDLE) {
+        vkCmdWriteTimestamp(command, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, diagnostic_query_pool, 1U);
     }
     recordPlayers(
         command,
@@ -1120,6 +1176,14 @@ struct VulkanRenderer::Impl final {
         bool layout_initialized = false;
     };
 
+    struct DiagnosticQuerySlot final {
+        VkQueryPool pool = VK_NULL_HANDLE;
+        uint64_t attempt_id = 0U;
+        uint64_t quad_count = 0U;
+        uint32_t draw_count = 0U;
+        bool submitted = false;
+    };
+
     Impl(
         std::shared_ptr<PresentationContext> context,
         ShaderAssets const& shader_assets,
@@ -1165,6 +1229,15 @@ struct VulkanRenderer::Impl final {
         std::chrono::steady_clock::time_point const deadline
     )
     {
+        ++m_diagnostic_render_attempt_id;
+        m_diagnostic_frame_recorded = false;
+        m_diagnostic_stone_indirect = false;
+        m_diagnostic_submitted_stone_quad_count = 0U;
+        m_current_diagnostic_query_pool = VK_NULL_HANDLE;
+        m_cpu_acquire_wait_duration = std::chrono::nanoseconds::zero();
+        m_cpu_command_record_duration = std::chrono::nanoseconds::zero();
+        m_cpu_complete_present_wait_duration = std::chrono::nanoseconds::zero();
+        m_cpu_frame_duration = std::chrono::nanoseconds::zero();
         debug_hud_input.presented = m_last_presented;
         m_debug_hud_state.setDpiScale(debug_hud_dpi_scale);
         m_debug_hud_state.update(debug_hud_input);
@@ -1222,14 +1295,23 @@ struct VulkanRenderer::Impl final {
         m_players = players;
         m_image_view = frame->imageView();
         m_current_frame_slot = frame->slotIndex();
+        acquireDiagnosticQuerySlot();
         m_current_depth_target = &depthTargetFor(frame->image());
         frame->record(&Impl::recordFrame, this);
+        m_diagnostic_frame_recorded = true;
         m_cpu_command_record_duration = std::chrono::duration_cast<std::chrono::nanoseconds>(
             std::chrono::steady_clock::now() - command_record_started_at
         );
         std::chrono::steady_clock::time_point const complete_present_started_at =
             std::chrono::steady_clock::now();
         m_context->complete(*frame);
+        if (m_current_diagnostic_query_pool != VK_NULL_HANDLE) {
+            DiagnosticQuerySlot& slot = m_diagnostic_query_slots.at(m_current_frame_slot);
+            slot.attempt_id = m_diagnostic_render_attempt_id;
+            slot.quad_count = m_diagnostic_submitted_stone_quad_count;
+            slot.draw_count = m_chunk_draw_count;
+            slot.submitted = true;
+        }
         m_cpu_complete_present_wait_duration = std::chrono::duration_cast<std::chrono::nanoseconds>(
             std::chrono::steady_clock::now() - complete_present_started_at
         );
@@ -1677,6 +1759,30 @@ struct VulkanRenderer::Impl final {
             .chunk_mesh_upload_count = m_chunk_mesh_upload_count,
             .height_tile_mesh_count = static_cast<uint32_t>(m_height_tile_slots.size()),
             .stone_face_capacity = m_stone_face_buffer->capacity(),
+            .diagnostic_render_attempt_id = m_diagnostic_render_attempt_id,
+            .diagnostic_frame_recorded = m_diagnostic_frame_recorded,
+            .diagnostic_indexed_stone_quads = m_diagnostic_indexed_stone_quads,
+            .diagnostic_stone_indirect = m_diagnostic_stone_indirect,
+            .diagnostic_frame_slot = m_diagnostic_frame_recorded
+                ? std::optional<uint32_t>{ m_current_frame_slot } : std::nullopt,
+            .diagnostic_submitted_stone_quad_count = m_diagnostic_submitted_stone_quad_count,
+            .diagnostic_stone_draw_count = m_diagnostic_frame_recorded ? m_chunk_draw_count : 0U,
+            .diagnostic_camera = {
+                m_camera.pose().position.x,
+                m_camera.pose().position.y,
+                m_camera.pose().position.z,
+                m_camera.pose().angles.yaw_degrees,
+                m_camera.pose().angles.pitch_degrees,
+                m_camera.pose().angles.roll_degrees,
+                m_camera.projection().vertical_fov_degrees,
+            },
+            .diagnostic_gpu_timestamps_enabled = m_diagnostic_timestamp_valid_bits != 0U,
+            .diagnostic_gpu_timestamp_reason = m_diagnostic_gpu_timestamp_reason,
+            .diagnostic_gpu_sample_attempt_id = m_diagnostic_gpu_sample_attempt_id,
+            .diagnostic_gpu_sample_slot = m_diagnostic_gpu_sample_slot,
+            .diagnostic_gpu_sample_quad_count = m_diagnostic_gpu_sample_quad_count,
+            .diagnostic_gpu_sample_draw_count = m_diagnostic_gpu_sample_draw_count,
+            .diagnostic_gpu_terrain_duration = m_diagnostic_gpu_terrain_duration,
         };
     }
 
@@ -1928,6 +2034,9 @@ private:
 
     void record(VkCommandBuffer const command)
     {
+        if (m_current_diagnostic_query_pool != VK_NULL_HANDLE) {
+            vkCmdResetQueryPool(command, m_current_diagnostic_query_pool, 0U, 2U);
+        }
         m_debug_hud_draw_count = 0U;
         m_chunk_draw_count = 0U;
         m_text_glyph_upload.clear();
@@ -2061,6 +2170,7 @@ private:
             StoneIndirectDraws::Prepared const prepared = m_stone_indirect_draws->prepareAcquiredSlot(
                 m_current_frame_slot, m_visible_stone_draw_ranges, m_visible_solid_stone_draw_ranges
             );
+            m_diagnostic_stone_indirect = prepared.buffer != nullptr;
             for (std::span<StoneDrawRange const> const ranges : {
                 std::span<StoneDrawRange const>{ m_visible_stone_draw_ranges },
                 std::span<StoneDrawRange const>{ m_visible_solid_stone_draw_ranges },
@@ -2069,6 +2179,7 @@ private:
                     m_chunk_draw_face_count += range.instance_count;
                 }
             }
+            m_diagnostic_submitted_stone_quad_count = m_chunk_draw_face_count;
             m_chunk_draw_count = recordStoneScene(
                 command,
                 m_stone_pipeline,
@@ -2083,7 +2194,9 @@ private:
                 m_visible_stone_draw_ranges,
                 m_visible_solid_stone_draw_ranges,
                 extent,
-                prepared
+                prepared,
+                m_stone_quad_indices ? m_stone_quad_indices->handle() : VK_NULL_HANDLE,
+                m_current_diagnostic_query_pool
             );
         } else {
             recordFlat3dScene(
@@ -2223,21 +2336,120 @@ private:
         return layout;
     }
 
+    void initializeDiagnosticTimestamps(VkPhysicalDeviceProperties const& properties)
+    {
+        m_diagnostic_gpu_timestamp_reason = "not requested or timestamp capability unsupported";
+        char const* const requested = std::getenv("MC_DIAGNOSTIC_GPU_TIMESTAMPS");
+        if (requested == nullptr || std::string_view{ requested } != "1"
+            || !std::isfinite(properties.limits.timestampPeriod) || properties.limits.timestampPeriod <= 0.0F) {
+            return;
+        }
+        VkPhysicalDeviceDriverProperties driver_properties{
+            .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DRIVER_PROPERTIES,
+        };
+        VkPhysicalDeviceProperties2 driver_query{
+            .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2,
+            .pNext = &driver_properties,
+        };
+        vkGetPhysicalDeviceProperties2(m_resources->physicalDevice(), &driver_query);
+        if (driver_properties.driverID == VK_DRIVER_ID_MOLTENVK) {
+            // Stage-based Metal counters may defer both terrain markers to the end of one render encoder.
+            m_diagnostic_gpu_timestamp_reason = "unsupported: MoltenVK may defer in-render-pass timestamps";
+            return;
+        }
+        uint32_t family_count = 0U;
+        vkGetPhysicalDeviceQueueFamilyProperties(m_resources->physicalDevice(), &family_count, nullptr);
+        std::vector<VkQueueFamilyProperties> families(family_count);
+        vkGetPhysicalDeviceQueueFamilyProperties(m_resources->physicalDevice(), &family_count, families.data());
+        uint32_t common_valid_bits = 64U;
+        bool found_graphics = false;
+        for (uint32_t index = 0U; index < family_count; ++index) {
+            VkQueueFamilyProperties const& family = families[index];
+            if (family.queueCount == 0U || (family.queueFlags & VK_QUEUE_GRAPHICS_BIT) == 0U) {
+                continue;
+            }
+            found_graphics = true;
+            if (family.timestampValidBits == 0U) {
+                return;
+            }
+            common_valid_bits = std::min(common_valid_bits, family.timestampValidBits);
+        }
+        if (found_graphics) {
+            m_diagnostic_timestamp_valid_bits = common_valid_bits;
+            m_diagnostic_timestamp_period = properties.limits.timestampPeriod;
+            m_diagnostic_gpu_timestamp_reason = "enabled: asynchronous terrain interval, not whole frame";
+        }
+    }
+
+    void acquireDiagnosticQuerySlot()
+    {
+        if (m_diagnostic_timestamp_valid_bits == 0U) {
+            return;
+        }
+        DiagnosticQuerySlot& slot = m_diagnostic_query_slots[m_current_frame_slot];
+        if (slot.pool == VK_NULL_HANDLE) {
+            VkQueryPoolCreateInfo const info{
+                .sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO,
+                .queryType = VK_QUERY_TYPE_TIMESTAMP,
+                .queryCount = 2U,
+            };
+            checkResult(vkCreateQueryPool(m_resources->device(), &info, nullptr, &slot.pool),
+                "vkCreateQueryPool diagnostic terrain timestamps");
+        }
+        if (slot.submitted) {
+            std::array<uint64_t, 2> values{};
+            VkResult const result = vkGetQueryPoolResults(
+                m_resources->device(), slot.pool, 0U, 2U, sizeof(values), values.data(), sizeof(uint64_t),
+                VK_QUERY_RESULT_64_BIT
+            );
+            m_diagnostic_gpu_terrain_duration.reset();
+            m_diagnostic_gpu_sample_attempt_id = slot.attempt_id;
+            m_diagnostic_gpu_sample_slot = m_current_frame_slot;
+            m_diagnostic_gpu_sample_quad_count = slot.quad_count;
+            m_diagnostic_gpu_sample_draw_count = slot.draw_count;
+            if (result == VK_SUCCESS) {
+                uint64_t const mask = m_diagnostic_timestamp_valid_bits == 64U
+                    ? std::numeric_limits<uint64_t>::max() : (uint64_t{ 1U } << m_diagnostic_timestamp_valid_bits) - 1U;
+                uint64_t const elapsed_ticks = (values[1] - values[0]) & mask;
+                long double const elapsed_ns = static_cast<long double>(elapsed_ticks) * m_diagnostic_timestamp_period;
+                if (std::isfinite(elapsed_ns)
+                    && elapsed_ns <= static_cast<long double>(std::numeric_limits<int64_t>::max())) {
+                    m_diagnostic_gpu_terrain_duration = std::chrono::nanoseconds{ static_cast<int64_t>(elapsed_ns) };
+                }
+            } else if (result != VK_NOT_READY) {
+                checkResult(result, "vkGetQueryPoolResults diagnostic terrain timestamps");
+            }
+            slot.submitted = false;
+        }
+        m_current_diagnostic_query_pool = slot.pool;
+    }
+
     void createResources()
     {
         m_resources.emplace(m_context->resources());
         VkPhysicalDeviceProperties properties{};
         vkGetPhysicalDeviceProperties(m_resources->physicalDevice(), &properties);
+        initializeDiagnosticTimestamps(properties);
         VkDevice const indirect_device = m_resources->device();
         VkPhysicalDevice const indirect_physical_device = m_resources->physicalDevice();
+        if (m_diagnostic_indexed_stone_quads) {
+            m_stone_quad_indices.emplace(indirect_device, indirect_physical_device, 1U, StoneDrawBufferKind::QuadIndices);
+        }
+        StoneDrawBufferKind const indirect_kind = m_diagnostic_indexed_stone_quads
+            ? StoneDrawBufferKind::IndexedIndirect : StoneDrawBufferKind::Indirect;
+        char const* const direct_requested = std::getenv("MC_DIAGNOSTIC_DIRECT_STONE_DRAWS");
+        bool const force_direct = direct_requested != nullptr && std::string_view{ direct_requested } == "1";
         m_stone_indirect_draws.emplace(
             MAXIMUM_RENDERED_STONE_FACE_COUNT,
             properties.limits.maxDrawIndirectCount,
-            m_context->info().multi_draw_indirect_enabled,
+            m_context->info().multi_draw_indirect_enabled && !force_direct,
             m_context->info().draw_indirect_first_instance_enabled,
-            [indirect_device, indirect_physical_device](uint32_t const capacity) {
-                return std::make_unique<VulkanStoneIndirectBuffer>(indirect_device, indirect_physical_device, capacity);
-            }
+            [indirect_device, indirect_physical_device, indirect_kind](uint32_t const capacity) {
+                return std::make_unique<VulkanStoneDrawBuffer>(
+                    indirect_device, indirect_physical_device, capacity, indirect_kind
+                );
+            },
+            m_diagnostic_indexed_stone_quads
         );
         auto const dynamic_rendering = m_resources->dynamicRenderingCommands();
         m_begin_rendering = dynamic_rendering.begin;
@@ -2472,6 +2684,20 @@ private:
         m_stone_texture_buffer.reset();
         m_stone_face_buffer.reset();
         m_stone_indirect_draws.reset();
+        m_stone_quad_indices.reset();
+        for (auto const& [slot_index, slot] : m_diagnostic_query_slots) {
+            static_cast<void>(slot_index);
+            vkDestroyQueryPool(device, slot.pool, nullptr);
+        }
+        m_diagnostic_query_slots.clear();
+        m_current_diagnostic_query_pool = VK_NULL_HANDLE;
+        m_diagnostic_timestamp_valid_bits = 0U;
+        m_diagnostic_timestamp_period = 0.0F;
+        m_diagnostic_gpu_terrain_duration.reset();
+        m_diagnostic_gpu_sample_attempt_id = 0U;
+        m_diagnostic_gpu_sample_slot = 0U;
+        m_diagnostic_gpu_sample_quad_count = 0U;
+        m_diagnostic_gpu_sample_draw_count = 0U;
         m_text_descriptors.reset();
         m_text_glyph_buffer.reset();
         m_begin_rendering = nullptr;
@@ -2643,6 +2869,22 @@ private:
     std::optional<core::kernel::GraphicsProgram> m_sky_program;
     std::optional<StoneFaceBuffer> m_stone_face_buffer;
     std::optional<StoneIndirectDraws> m_stone_indirect_draws;
+    std::optional<VulkanStoneDrawBuffer> m_stone_quad_indices;
+    bool m_diagnostic_indexed_stone_quads = diagnosticIndexedStoneQuads();
+    uint64_t m_diagnostic_render_attempt_id = 0U;
+    bool m_diagnostic_frame_recorded = false;
+    bool m_diagnostic_stone_indirect = false;
+    uint64_t m_diagnostic_submitted_stone_quad_count = 0U;
+    std::unordered_map<uint32_t, DiagnosticQuerySlot> m_diagnostic_query_slots;
+    VkQueryPool m_current_diagnostic_query_pool = VK_NULL_HANDLE;
+    uint32_t m_diagnostic_timestamp_valid_bits = 0U;
+    std::string_view m_diagnostic_gpu_timestamp_reason = "not requested or timestamp capability unsupported";
+    float m_diagnostic_timestamp_period = 0.0F;
+    uint64_t m_diagnostic_gpu_sample_attempt_id = 0U;
+    uint32_t m_diagnostic_gpu_sample_slot = 0U;
+    uint64_t m_diagnostic_gpu_sample_quad_count = 0U;
+    uint32_t m_diagnostic_gpu_sample_draw_count = 0U;
+    std::optional<std::chrono::nanoseconds> m_diagnostic_gpu_terrain_duration;
     uint32_t m_current_frame_slot = 0U;
     std::optional<StoneTextureBuffer> m_stone_texture_buffer;
     std::optional<StoneDescriptorSet> m_stone_descriptors;
@@ -2820,6 +3062,11 @@ public:
             if (m_begin_rendering == nullptr || m_end_rendering == nullptr) {
                 throw std::runtime_error("offscreen device does not expose dynamic rendering commands");
             }
+            if (diagnosticIndexedStoneQuads()) {
+                m_stone_quad_indices.emplace(
+                    m_device->handle(), m_device->physicalDevice(), 1U, StoneDrawBufferKind::QuadIndices
+                );
+            }
             m_text_glyph_buffer.emplace(m_device->handle(), m_device->physicalDevice());
             m_text_descriptors.emplace(m_device->handle(), *m_text_glyph_buffer);
             auto const grid = std::make_shared<core::kernel::SpirvModule const>(shader_assets.load("grid.vert.spv"));
@@ -2915,6 +3162,10 @@ public:
     [[nodiscard]] VkPipelineLayout guiTextLayout() const noexcept { return m_gui_text_layout; }
     [[nodiscard]] VkDescriptorSet textDescriptorSet() const noexcept { return m_text_descriptors->set(); }
     [[nodiscard]] VkPipeline stonePipeline() const noexcept { return m_stone_pipeline; }
+    [[nodiscard]] VkBuffer stoneQuadIndices() const noexcept
+    {
+        return m_stone_quad_indices ? m_stone_quad_indices->handle() : VK_NULL_HANDLE;
+    }
     [[nodiscard]] VkPipelineLayout stoneLayout() const noexcept { return m_stone_layout; }
     [[nodiscard]] VkDescriptorSet stoneDescriptorSet() const noexcept { return m_stone_descriptors.set(); }
     [[nodiscard]] PFN_vkCmdBeginRenderingKHR beginRendering() const noexcept { return m_begin_rendering; }
@@ -2964,6 +3215,7 @@ private:
         m_stone_descriptors.destroy();
         m_stone_texture_buffer.destroy();
         m_stone_face_buffer.destroy();
+        m_stone_quad_indices.reset();
     }
 
     [[nodiscard]] VkFormat selectDepthFormat() const
@@ -3065,6 +3317,7 @@ private:
     std::optional<core::kernel::GraphicsProgram> m_text_program;
     std::optional<core::kernel::GraphicsProgram> m_stone_program;
     StoneFaceBuffer m_stone_face_buffer;
+    std::optional<VulkanStoneDrawBuffer> m_stone_quad_indices;
     StoneTextureBuffer m_stone_texture_buffer;
     StoneDescriptorSet m_stone_descriptors;
     std::optional<TextGlyphBuffer> m_text_glyph_buffer;
@@ -3235,7 +3488,9 @@ private:
                 self.m_players,
                 std::span<StoneDrawRange const>{ &range, self.m_stone_faces.empty() ? 0U : 1U },
                 {},
-                recording.extent
+                recording.extent,
+                {},
+                resources.stoneQuadIndices()
             ));
         } else {
             recordFlat3dScene(

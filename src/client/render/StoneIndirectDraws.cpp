@@ -25,6 +25,11 @@ StoneIndirectDraws::AllocationError::AllocationError(VkResult const result, char
     , m_result(result)
 {}
 
+std::span<VkDrawIndexedIndirectCommand> StoneIndirectDraws::Buffer::mappedIndexedCommands()
+{
+    throw std::logic_error("stone indirect buffer does not support indexed commands");
+}
+
 void StoneIndirectDraws::Prepared::record(
     VkCommandBuffer const command,
     uint32_t first_command,
@@ -38,7 +43,8 @@ void StoneIndirectDraws::Prepared::record(
         uint32_t const batch_count = std::min(command_count, maximum_draw_count);
         buffer->record(
             command,
-            static_cast<VkDeviceSize>(first_command) * sizeof(VkDrawIndirectCommand),
+            static_cast<VkDeviceSize>(first_command)
+                * (indexed ? sizeof(VkDrawIndexedIndirectCommand) : sizeof(VkDrawIndirectCommand)),
             batch_count
         );
         first_command += batch_count;
@@ -51,12 +57,14 @@ StoneIndirectDraws::StoneIndirectDraws(
     uint32_t const maximum_draw_count,
     bool const multi_draw_indirect_enabled,
     bool const draw_indirect_first_instance_enabled,
-    Factory factory
+    Factory factory,
+    bool const indexed
 )
     : m_maximum_command_count(maximum_command_count)
     , m_maximum_draw_count(multi_draw_indirect_enabled && draw_indirect_first_instance_enabled
         ? maximum_draw_count : 0U)
     , m_factory(std::move(factory))
+    , m_indexed(indexed)
 {
     if (m_maximum_command_count == 0U || !m_factory) {
         throw std::invalid_argument("stone indirect configuration is invalid");
@@ -77,7 +85,11 @@ StoneIndirectDraws::Prepared StoneIndirectDraws::prepareAcquiredSlot(
         throw std::invalid_argument("visible stone ranges exceed the indirect command limit");
     }
     uint32_t const command_count = textured_count + static_cast<uint32_t>(solid_draw_ranges.size());
-    Prepared prepared{ .logical_draw_count = command_count, .maximum_draw_count = m_maximum_draw_count };
+    Prepared prepared{
+        .logical_draw_count = command_count,
+        .maximum_draw_count = m_maximum_draw_count,
+        .indexed = m_indexed,
+    };
     if (m_maximum_draw_count == 0U || command_count == 0U) {
         return prepared;
     }
@@ -105,6 +117,26 @@ StoneIndirectDraws::Prepared StoneIndirectDraws::prepareAcquiredSlot(
         } catch (std::bad_alloc const&) {
             return prepared;
         }
+    }
+    if (m_indexed) {
+        std::span<VkDrawIndexedIndirectCommand> const commands = entry->second->mappedIndexedCommands();
+        if (commands.size() < command_count) {
+            throw std::logic_error("stone indexed indirect buffer has insufficient mapped capacity");
+        }
+        uint32_t command_index = 0U;
+        for (std::span<Range const> const ranges : { draw_ranges, solid_draw_ranges }) {
+            for (Range const range : ranges) {
+                commands[command_index++] = {
+                    .indexCount = STONE_FACE_VERTEX_COUNT,
+                    .instanceCount = range.instance_count,
+                    .firstIndex = 0U,
+                    .vertexOffset = 0,
+                    .firstInstance = range.first_instance,
+                };
+            }
+        }
+        prepared.buffer = entry->second.get();
+        return prepared;
     }
     std::span<VkDrawIndirectCommand> const commands = entry->second->mappedCommands();
     if (commands.size() < command_count) {

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <chrono>
 #include <cstdint>
 #include <expected>
@@ -7,6 +8,7 @@
 #include <functional>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace acceptance {
@@ -73,6 +75,24 @@ struct GameBenchmarkFrameSample final {
     uint64_t client_message_payload_bytes_received = 0U;
     uint32_t resident_terrain_tile_count = 0U;
     uint32_t visible_surface_face_count = 0U;
+    uint64_t diagnostic_render_attempt_id = 0U;
+    bool diagnostic_frame_recorded = false;
+    bool diagnostic_indexed_stone_quads = false;
+    bool diagnostic_stone_indirect = false;
+    std::optional<uint32_t> diagnostic_frame_slot;
+    uint64_t diagnostic_submitted_stone_quad_count = 0U;
+    uint32_t diagnostic_stone_draw_count = 0U;
+    std::array<double, 7> diagnostic_camera{};
+    uint64_t diagnostic_cpu_acquire_wait_duration_ns = 0U;
+    uint64_t diagnostic_cpu_command_record_duration_ns = 0U;
+    uint64_t diagnostic_cpu_complete_present_wait_duration_ns = 0U;
+    bool diagnostic_gpu_timestamps_enabled = false;
+    std::string_view diagnostic_gpu_timestamp_reason;
+    uint64_t diagnostic_gpu_sample_attempt_id = 0U;
+    uint32_t diagnostic_gpu_sample_slot = 0U;
+    uint64_t diagnostic_gpu_sample_quad_count = 0U;
+    uint32_t diagnostic_gpu_sample_draw_count = 0U;
+    std::optional<uint64_t> diagnostic_gpu_terrain_duration_ns;
     std::optional<uint64_t> latest_gpu_frame_duration_ns;
 };
 

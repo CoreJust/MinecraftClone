@@ -21,6 +21,7 @@ enum class GameBenchmarkWorkload : uint8_t {
     Speed200Movement,
     WrappedBorder,
     PermissionCollisionChurn,
+    DiagnosticStationary,
 };
 
 struct GameBenchmarkOptions final {

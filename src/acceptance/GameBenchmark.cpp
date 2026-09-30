@@ -178,6 +178,9 @@ shared::Direction gameBenchmarkDirection(
     uint64_t const ordinal
 ) noexcept
 {
+    if (workload == GameBenchmarkWorkload::DiagnosticStationary) {
+        return {};
+    }
     uint8_t const x = workload == GameBenchmarkWorkload::WrappedBorder
         ? 127U : (ordinal % 40U < 20U ? 1U : static_cast<uint8_t>(-1));
     uint16_t const speedup = workload == GameBenchmarkWorkload::Speed200Movement
@@ -199,6 +202,7 @@ std::string_view gameBenchmarkWorkloadName(GameBenchmarkWorkload const workload)
         case GameBenchmarkWorkload::Speed200Movement: return "speed-200-movement-v1";
         case GameBenchmarkWorkload::WrappedBorder: return "wrapped-border-v1";
         case GameBenchmarkWorkload::PermissionCollisionChurn: return "permission-collision-churn-v1";
+        case GameBenchmarkWorkload::DiagnosticStationary: return "diagnostic-stationary-v1";
     }
     return "unknown";
 }
@@ -294,6 +298,7 @@ std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOption
         std::nullopt,
         client::PlayerClientBenchmarkOptions{
             .require_immediate_present_mode = options.require_immediate_present_mode,
+            .freeze_camera = options.workload == GameBenchmarkWorkload::DiagnosticStationary,
         },
     };
     std::cout << "[benchmark-game] player renderer ready; connecting\n" << std::flush;
@@ -404,6 +409,28 @@ std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOption
                 .client_message_payload_bytes_received = sample.client_message_payload_bytes_received,
                 .resident_terrain_tile_count = runtime.height_tile_mesh_count,
                 .visible_surface_face_count = runtime.chunk_face_count,
+                .diagnostic_render_attempt_id = runtime.diagnostic_render_attempt_id,
+                .diagnostic_frame_recorded = runtime.diagnostic_frame_recorded,
+                .diagnostic_indexed_stone_quads = runtime.diagnostic_indexed_stone_quads,
+                .diagnostic_stone_indirect = runtime.diagnostic_stone_indirect,
+                .diagnostic_frame_slot = runtime.diagnostic_frame_slot,
+                .diagnostic_submitted_stone_quad_count = runtime.diagnostic_submitted_stone_quad_count,
+                .diagnostic_stone_draw_count = runtime.diagnostic_stone_draw_count,
+                .diagnostic_camera = runtime.diagnostic_camera,
+                .diagnostic_cpu_acquire_wait_duration_ns = positiveNanoseconds(runtime.cpu_acquire_wait_duration),
+                .diagnostic_cpu_command_record_duration_ns = positiveNanoseconds(runtime.cpu_command_record_duration),
+                .diagnostic_cpu_complete_present_wait_duration_ns = positiveNanoseconds(
+                    runtime.cpu_complete_present_wait_duration
+                ),
+                .diagnostic_gpu_timestamps_enabled = runtime.diagnostic_gpu_timestamps_enabled,
+                .diagnostic_gpu_timestamp_reason = runtime.diagnostic_gpu_timestamp_reason,
+                .diagnostic_gpu_sample_attempt_id = runtime.diagnostic_gpu_sample_attempt_id,
+                .diagnostic_gpu_sample_slot = runtime.diagnostic_gpu_sample_slot,
+                .diagnostic_gpu_sample_quad_count = runtime.diagnostic_gpu_sample_quad_count,
+                .diagnostic_gpu_sample_draw_count = runtime.diagnostic_gpu_sample_draw_count,
+                .diagnostic_gpu_terrain_duration_ns = runtime.diagnostic_gpu_terrain_duration
+                    ? std::optional<uint64_t>{ positiveNanoseconds(*runtime.diagnostic_gpu_terrain_duration) }
+                    : std::nullopt,
                 .latest_gpu_frame_duration_ns = runtime.gpu_frame_duration
                     ? std::optional<uint64_t>{ positiveNanoseconds(*runtime.gpu_frame_duration) }
                     : std::nullopt,

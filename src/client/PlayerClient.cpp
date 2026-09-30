@@ -1474,7 +1474,7 @@ void PlayerClient::render() {
         });
         m_capture_label_initialized = true;
     }
-    if (!m_capture.has_value()) {
+    if (!m_capture.has_value() && !(m_benchmark && m_benchmark->freeze_camera)) {
         double cursor_x = 0.0;
         double cursor_y = 0.0;
         glfwGetCursorPos(m_window.nativeHandle(), &cursor_x, &cursor_y);
@@ -1493,7 +1493,7 @@ void PlayerClient::render() {
         if (m_camera_perspective_latch.update(camera_perspective_pressed)) {
             m_camera_perspective = nextCameraPerspective(m_camera_perspective);
         }
-    } else {
+    } else if (m_capture.has_value()) {
         CameraAngles angles = playerClientCapturePlan(m_capture->preset).look_angles;
         angles.yaw_degrees += 360.0 / CAPTURE_ROTATION_SECTORS * m_capture_rotation_step;
         static_cast<void>(m_look_camera.setAngles(angles));

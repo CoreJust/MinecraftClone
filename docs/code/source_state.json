@@ -31,7 +31,7 @@
         "tests/acceptance/runtime_cli_tests.cmake",
         "tests/acceptance/scenario_runner_tests.cpp"
       ],
-      "sources_sha256": "2f77168ba976c0ce6c7d3aee516d4692b0b9fdef11a000753e65f896022cc760"
+      "sources_sha256": "74ded79cabc877e6f1766f23910d928165d879c358a68e3a0a2e88ba3db80d8a"
     },
     {
       "guide": "docs/code/ANDROID.md",
@@ -278,11 +278,11 @@
         "tests/core/world_generation_scheduler_tests.cpp",
         "tests/core/world_generation_tests.cpp"
       ],
-      "sources_sha256": "299260aba6610f64af4829585314b3bf82bbd352a5c6045f660c0a0629246f05"
+      "sources_sha256": "f88a7aaa8d02455a0f00703fca2cf0e86b0235d8ae8de938c52dc76d0579f6ff"
     },
     {
       "guide": "docs/code/RENDERING.md",
-      "guide_sha256": "d1858e1ef88b7ee8dea31e4c9ca1b68b01a09b6071d58250f8f76e3f299ebfe2",
+      "guide_sha256": "675f8627cdc12a2c78c6a05d6cd16a9a5c5db0640c58c60f44c3a8978e3e6bb6",
       "id": "rendering",
       "sources": [
         "src/client/CMakeLists.txt",
@@ -356,7 +356,7 @@
         "tests/testsupport/include/testsupport/AdverseTransport.hpp",
         "tests/testsupport/include/testsupport/ImageComparison.hpp"
       ],
-      "sources_sha256": "53b45cb1a601c34fd7c51a9da2e4ed41235a7d4fc80dc8e2c999e1049bb9c985"
+      "sources_sha256": "a517c38c4edb97ba49d0e888586041400571fface91d37e852e41bae69e9b4fb"
     }
   ],
   "version": 1

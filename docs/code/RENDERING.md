@@ -15,6 +15,9 @@ Acquired slots own indirect buffers after fence completion; recreation
 releases them. `multiDrawIndirect` + `drawIndirectFirstInstance` enable
 `maxDrawIndirectCount`-bounded batches; direct fallback preserves logical counts.
 Recoverable allocation/mapping failures use direct draws; device loss propagates.
+Indexed terrain shares `0,1,2,0,2,3`, preserving instances, winding and diagonal.
+Diagnostic overrides: `MC_DIAGNOSTIC_INDEXED_STONE_QUADS=0` selects six vertices;
+`MC_DIAGNOSTIC_DIRECT_STONE_DRAWS=1` forces direct submission.
 
 ## Scene and shader policy
 
@@ -100,16 +103,12 @@ and `AndroidInput`; hardware F5 uses the same cycle.
 tests desktop GLFW input, presentation/recreation/readback, HUD and resident face counts.
 Android package compilation and emulator presentation remain separate gates.
 
-`renderer_golden_tests.cpp` captures the fixed 640-by-480
-EarlyDev 0.1.0 snapshot 4 scene without GLFW, a surface, or a swapchain.
-Oblique regressions cover yaw `37.2`, its opposite, and pitch `-35`.
-`VulkanOffscreenTarget` owns its linear color target, submission, and readback;
-Client owns depth and invokes the same scene recorder and pipelines as
-presentation. Strict approval enables validation and checks the active
-versioned reference plus independent depth/scene predicates. Diagnostics are
-bounded and a reference changes only after deliberate native-size review.
-Offscreen HUD regression draws through the GUI stage and checks top-left
-pixels without a window.
+`renderer_golden_tests.cpp` captures the fixed 640-by-480 S4 scene without
+GLFW/surface/swapchain; oblique cases cover yaw `37.2`, its opposite and pitch `-35`.
+`VulkanOffscreenTarget` owns linear color, submission/readback; Client owns depth
+and shared presentation recording/pipelines. Strict approval requires validation,
+the active versioned reference and independent depth/scene checks. References
+change only after bounded native-size review. Offscreen GUI/HUD checks top-left pixels.
 
 S5 offscreen acceptance verifies textured stone, sky, deterministic frames,
 mesh replacement, validation, and remote-player altitude.
@@ -117,8 +116,11 @@ mesh replacement, validation, and remote-player altitude.
 The fixed-scene `--benchmark-render` excludes server/network/gameplay;
 `--benchmark-game` counts completed player-client present requests with all three.
 Neither observes physical scanout; unavailable immediate mode fails. Evidence
-includes resolution, GPU, HUD, rate, p50/p95/p99/max and CPU phases, without GPU
-timestamps. Release disables validation; `--hud` supports paired runs.
+includes resolution, GPU, HUD, rate, p50/p95/p99/max, CPU phases and submitted work.
+`DiagnosticStationary` freezes movement/look for diagnostic A/B, not gameplay
+acceptance. Opt-in terrain timestamps are not whole-frame time; MoltenVK reports
+unsupported/null because in-render-pass markers may be deferred to encoder end.
+Release disables validation; `--hud` supports paired runs.
 S6 renderer stress uses 90-by-90 maximum capacity and bounded edge streaming; S6 gameplay uses
 the smaller directional ellipse in [GAMEPLAY.md](GAMEPLAY.md). Its renderer-only
 gate requires nominal 120 Hz within one percent and p99 at most 10 ms,

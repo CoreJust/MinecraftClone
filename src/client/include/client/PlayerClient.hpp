@@ -68,6 +68,7 @@ struct PlayerClientCaptureOptions final {
 
 struct PlayerClientBenchmarkOptions final {
     bool require_immediate_present_mode = false;
+    bool freeze_camera = false;
 };
 
 struct PlayerHeightTileKeyHash final {

@@ -1,9 +1,11 @@
 #include <acceptance/EvidenceJson.hpp>
 
 #include <array>
+#include <charconv>
 #include <cstdint>
 #include <exception>
 #include <fstream>
+#include <limits>
 #include <string_view>
 #include <utility>
 
@@ -130,6 +132,26 @@ std::string captureJson(RendererCaptureEvidence const& capture)
         "  }";
 }
 
+std::string diagnosticCameraJson(std::array<double, 7> const& camera)
+{
+    std::string result = "[";
+    for (size_t index = 0U; index < camera.size(); ++index) {
+        if (index != 0U) {
+            result += ", ";
+        }
+        std::array<char, 64> buffer{};
+        auto const converted = std::to_chars(
+            buffer.data(),
+            buffer.data() + buffer.size(),
+            camera[index],
+            std::chars_format::general,
+            std::numeric_limits<double>::max_digits10
+        );
+        result.append(buffer.data(), converted.ptr);
+    }
+    return result + "]";
+}
+
 std::string gameBenchmarkJson(GameBenchmarkEvidence const& benchmark)
 {
     std::string result = "{\n"
@@ -220,6 +242,31 @@ std::string gameBenchmarkJson(GameBenchmarkEvidence const& benchmark)
                 + std::to_string(sample.resident_terrain_tile_count)
             + ", \"visible_surface_face_count\": "
                 + std::to_string(sample.visible_surface_face_count)
+            + ", \"diagnostic_render_attempt_id\": " + std::to_string(sample.diagnostic_render_attempt_id)
+            + ", \"diagnostic_frame_recorded\": " + (sample.diagnostic_frame_recorded ? "true" : "false")
+            + ", \"diagnostic_indexed_stone_quads\": " + (sample.diagnostic_indexed_stone_quads ? "true" : "false")
+            + ", \"diagnostic_stone_indirect\": " + (sample.diagnostic_stone_indirect ? "true" : "false")
+            + ", \"diagnostic_frame_slot\": "
+                + (sample.diagnostic_frame_slot ? std::to_string(*sample.diagnostic_frame_slot) : "null")
+            + ", \"diagnostic_submitted_stone_quad_count\": "
+                + std::to_string(sample.diagnostic_submitted_stone_quad_count)
+            + ", \"diagnostic_stone_draw_count\": " + std::to_string(sample.diagnostic_stone_draw_count)
+            + ", \"diagnostic_camera\": " + diagnosticCameraJson(sample.diagnostic_camera)
+            + ", \"diagnostic_cpu_acquire_wait_duration_ns\": "
+                + std::to_string(sample.diagnostic_cpu_acquire_wait_duration_ns)
+            + ", \"diagnostic_cpu_command_record_duration_ns\": "
+                + std::to_string(sample.diagnostic_cpu_command_record_duration_ns)
+            + ", \"diagnostic_cpu_complete_present_wait_duration_ns\": "
+                + std::to_string(sample.diagnostic_cpu_complete_present_wait_duration_ns)
+            + ", \"diagnostic_gpu_timestamps_enabled\": " + (sample.diagnostic_gpu_timestamps_enabled ? "true" : "false")
+            + ", \"diagnostic_gpu_timestamp_reason\": " + jsonString(sample.diagnostic_gpu_timestamp_reason)
+            + ", \"diagnostic_gpu_sample_attempt_id\": " + std::to_string(sample.diagnostic_gpu_sample_attempt_id)
+            + ", \"diagnostic_gpu_sample_slot\": " + std::to_string(sample.diagnostic_gpu_sample_slot)
+            + ", \"diagnostic_gpu_sample_quad_count\": " + std::to_string(sample.diagnostic_gpu_sample_quad_count)
+            + ", \"diagnostic_gpu_sample_draw_count\": " + std::to_string(sample.diagnostic_gpu_sample_draw_count)
+            + ", \"diagnostic_gpu_terrain_duration_ns\": "
+                + (sample.diagnostic_gpu_terrain_duration_ns
+                    ? std::to_string(*sample.diagnostic_gpu_terrain_duration_ns) : "null")
             + ", \"latest_gpu_frame_duration_ns\": "
             + (sample.latest_gpu_frame_duration_ns
                 ? std::to_string(*sample.latest_gpu_frame_duration_ns) : "null")

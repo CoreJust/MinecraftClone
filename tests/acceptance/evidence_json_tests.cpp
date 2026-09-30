@@ -149,6 +149,60 @@ TEST(EvidenceJson, SeparatesFullGameRequestsFromPhysicalDisplayCadence)
     EXPECT_NE(json.find("\"raw_server_tick_durations_ns\": [100, 200]"), std::string::npos);
 }
 
+TEST(EvidenceJson, SeparatesFailedRenderAttemptsFromLaggedTerrainGpuSamples)
+{
+    acceptance::RuntimeEvidence const evidence{
+        .mode = "benchmark-game",
+        .game_benchmark = acceptance::GameBenchmarkEvidence{
+            .raw_frames = {
+                acceptance::GameBenchmarkFrameSample{
+                    .presentation_succeeded = false,
+                    .visible_surface_face_count = 1'000U,
+                    .diagnostic_render_attempt_id = 42U,
+                    .diagnostic_frame_recorded = false,
+                    .diagnostic_indexed_stone_quads = true,
+                    .diagnostic_camera = { 1.0, 2.0, 3.0, 90.0, -17.0, 0.0, 70.0 },
+                    .diagnostic_cpu_acquire_wait_duration_ns = 10'000'000U,
+                    .diagnostic_gpu_timestamps_enabled = true,
+                    .diagnostic_gpu_sample_attempt_id = 40U,
+                    .diagnostic_gpu_sample_slot = 1U,
+                    .diagnostic_gpu_sample_quad_count = 18U,
+                    .diagnostic_gpu_sample_draw_count = 3U,
+                    .diagnostic_gpu_terrain_duration_ns = 5'000'000U,
+                },
+            },
+        },
+    };
+    std::string const json = acceptance::evidenceJson(evidence);
+    EXPECT_NE(json.find("\"diagnostic_render_attempt_id\": 42"), std::string::npos);
+    EXPECT_NE(json.find("\"diagnostic_frame_recorded\": false"), std::string::npos);
+    EXPECT_NE(json.find("\"diagnostic_stone_indirect\": false"), std::string::npos);
+    EXPECT_NE(json.find("\"diagnostic_frame_slot\": null"), std::string::npos);
+    EXPECT_NE(json.find("\"diagnostic_submitted_stone_quad_count\": 0"), std::string::npos);
+    EXPECT_NE(json.find("\"diagnostic_stone_draw_count\": 0"), std::string::npos);
+    EXPECT_NE(json.find("\"diagnostic_camera\": [1, 2, 3, 90, -17, 0, 70]"), std::string::npos);
+    EXPECT_NE(json.find("\"diagnostic_cpu_acquire_wait_duration_ns\": 10000000"), std::string::npos);
+    EXPECT_NE(json.find("\"diagnostic_cpu_command_record_duration_ns\": 0"), std::string::npos);
+    EXPECT_NE(json.find("\"diagnostic_gpu_sample_attempt_id\": 40"), std::string::npos);
+    EXPECT_NE(json.find("\"diagnostic_gpu_sample_quad_count\": 18"), std::string::npos);
+    EXPECT_NE(json.find("\"diagnostic_gpu_terrain_duration_ns\": 5000000"), std::string::npos);
+    EXPECT_NE(json.find("\"latest_gpu_frame_duration_ns\": null"), std::string::npos);
+}
+
+TEST(EvidenceJson, ReportsUnsupportedTerrainTimestampScopeWithoutInventingGpuDuration)
+{
+    acceptance::RuntimeEvidence evidence;
+    evidence.game_benchmark.emplace();
+    evidence.game_benchmark->raw_frames.push_back({
+        .diagnostic_gpu_timestamp_reason = "unsupported: MoltenVK may defer in-render-pass timestamps",
+    });
+    std::string const json = acceptance::evidenceJson(evidence);
+    EXPECT_NE(json.find("\"diagnostic_gpu_timestamps_enabled\": false"), std::string::npos);
+    EXPECT_NE(json.find("\"diagnostic_gpu_timestamp_reason\": \"unsupported: MoltenVK"), std::string::npos);
+    EXPECT_NE(json.find("\"diagnostic_gpu_terrain_duration_ns\": null"), std::string::npos);
+    EXPECT_NE(json.find("\"latest_gpu_frame_duration_ns\": null"), std::string::npos);
+}
+
 TEST(EvidenceJson, ConvertsExpectedFailureToSerializableEvidence)
 {
     acceptance::RuntimeEvidence const evidence = acceptance::collectRuntimeEvidence(

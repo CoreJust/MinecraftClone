@@ -93,6 +93,21 @@ struct RendererRuntimeInfo final {
     uint64_t chunk_mesh_upload_count{ 0 };
     uint32_t height_tile_mesh_count{ 0 };
     uint32_t stone_face_capacity{ 0 };
+    uint64_t diagnostic_render_attempt_id{ 0 };
+    bool diagnostic_frame_recorded = false;
+    bool diagnostic_indexed_stone_quads = false;
+    bool diagnostic_stone_indirect = false;
+    std::optional<uint32_t> diagnostic_frame_slot;
+    uint64_t diagnostic_submitted_stone_quad_count = 0U;
+    uint32_t diagnostic_stone_draw_count = 0U;
+    std::array<double, 7> diagnostic_camera{};
+    bool diagnostic_gpu_timestamps_enabled = false;
+    std::string_view diagnostic_gpu_timestamp_reason;
+    uint64_t diagnostic_gpu_sample_attempt_id = 0U;
+    uint32_t diagnostic_gpu_sample_slot = 0U;
+    uint64_t diagnostic_gpu_sample_quad_count = 0U;
+    uint32_t diagnostic_gpu_sample_draw_count = 0U;
+    std::optional<std::chrono::nanoseconds> diagnostic_gpu_terrain_duration;
 };
 
 struct RendererFrameCapture final {
