@@ -55,7 +55,7 @@
     },
     {
       "guide": "docs/BUILD.md",
-      "guide_sha256": "57becc87a81662fe3bda56164b33b3eab562c0ded2ad8b785f58cd89a9aa636e",
+      "guide_sha256": "e5d1a2efe44ee54235f8d42692104743ec66afa9a002ec4a0ae1ad0e226a41de",
       "id": "build",
       "sources": [
         ".agents/skills/backlog/SKILL.md",

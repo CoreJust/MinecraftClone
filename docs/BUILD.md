@@ -24,7 +24,7 @@ See [runtime acceptance](ACCEPTANCE.md) for scenario, benchmark, and capture com
 
 ## Android debug APK
 
-Install SDK API 35, NDK 27.0.12077973, and CMake 3.30.5. Set `ANDROID_SDK_ROOT`, Java 21 `JAVA_HOME`, and `VCPKG_ROOT`; do not commit host paths.
+Set `ANDROID_SDK_ROOT`, Java 21 `JAVA_HOME`, and `VCPKG_ROOT`; keep host paths untracked.
 
 ```sh
 export ANDROID_SDK_ROOT=/path/to/android-sdk
@@ -34,6 +34,9 @@ export VCPKG_ROOT=/path/to/vcpkg
 ```
 
 The result is `android/app/build/outputs/apk/debug/app-debug.apk`: arm64-v8a, API 28 minimum, development-signed only. Gradle derives its version name/code from `PROJECT_VERSION`, including the snapshot index.
+
+`assembleRelease` selects native `Release` (`-O3 -DNDEBUG`) and stages HUD
+licenses before lint; signing is unchanged.
 
 Launch options are string extras. `server` is numeric `IP:PORT`; `character` is one of `@#$%&`. Defaults are `10.0.2.2:20040` (emulator host-loopback alias) and `@`:
 

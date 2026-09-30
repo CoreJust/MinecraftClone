@@ -9701,5 +9701,44 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0276",
+    "title": "Fix Android Release asset dependencies and native optimization",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P1",
+    "route": "luna",
+    "milestone": "ED-010-S7",
+    "depends_on": [],
+    "acceptance": "The actual Android Release task graph declares HUD license generation before lint consumers, assembles an APK without disabling lint or task validation, and uses native CMake Release with -O3 and NDEBUG. Preserve Debug configuration, arm64-v8a/API28, dependency provenance and existing signing policy. Verify required shader/license assets, package integrity and development signature using a temporary environment-only signer; make no runtime or final Snapshot 7 artifact claim.",
+    "evidence": "Actual Gradle 8.13/AGP 8.13.2 assembleRelease plus signingReport passed in 6 s against the corrected build.gradle candidate, with lint model, analysis and report tasks enabled. Native cache reports Release and -O3 -DNDEBUG; configureCMakeDebug passed and retained Debug/arm64-v8a/android-28. APK ZIP integrity, four-byte alignment, ten SPIR-V shader assets, exact HUD attribution/license bytes, arm64 native libraries and stable Android Debug certificate verified. Candidate APK SHA256 fe2903ee966ae61d5cfd6851ab39ec5aef6a0c91e6954118814392761dd227e3; certificate SHA256 b41a19e18164005e5f95a830e5c82c81a798467cfa9eae13a204233966c5a940. Exact CoreCpp 6273573/CoreProject2026 bd23164 provenance remains enforced. Existing shader-assets unit test and fast/docs gates pass with inherited development-only snapshot-date/dirty exceptions. Local SDK CMake 3.30.5/NDK 27/API 28/Java 17 used; metadata/signing environment remained temporary, with no native/lint init overrides. This candidate source uses Snapshot 6 version 0.1.0:6; package preflight does not establish final S7 publication or runtime acceptance.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0038",
+    "motivation": "Unblock the Android Release package preflight with truthful native optimization and a valid generated-asset task graph.",
+    "context": "Immutable da96d97a Android native compilation succeeds, but Gradle 8.13 rejects generateReleaseLintVitalReportModel and lintVitalAnalyzeRelease because they consume stageHudLicenses output without a dependency. AGP 8.13.2 defaults its Release variant to native RelWithDebInfo (-O2 -g -DNDEBUG); the intended native Release configuration must be explicit. CoreCpp 6273573 and CoreProject2026 bd23164 packages are clean and exact.",
+    "complexity": "low",
+    "created_at": "2026-09-30",
+    "resolved_at": "2026-09-30",
+    "resolution_changes": "Declared HUD license staging for lint task consumers and configured native Release with -O3 -DNDEBUG; kept Debug, ABI, dependency and signing policy unchanged.",
+    "plan": [
+      "Declare the HUD license producer dependency for lint task consumers and explicitly configure native Release optimization without changing Debug or signing.",
+      "Build the actual Release task graph against exact packages, verify the APK and native flags, and record bounded review before one local task commit."
+    ],
+    "product_changes": [
+      "Make the Android Release package build complete with its generated attribution assets and intended native optimization."
+    ],
+    "code_changes": [
+      "Wire lint tasks to stageHudLicenses and explicitly configure Release native optimization; document the build contract."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]

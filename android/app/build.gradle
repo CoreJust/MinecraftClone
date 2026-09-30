@@ -162,6 +162,15 @@ android {
         debug {
             // Android's standard debug keystore is intentionally the only signer.
         }
+        release {
+            externalNativeBuild {
+                cmake {
+                    arguments '-DCMAKE_BUILD_TYPE=Release',
+                        '-DCMAKE_CXX_FLAGS_RELEASE=-O3 -DNDEBUG',
+                        '-DCMAKE_C_FLAGS_RELEASE=-O3 -DNDEBUG'
+                }
+            }
+        }
     }
 }
 
@@ -216,6 +225,9 @@ if (coreProjectDir != null && !coreProjectDir.trim().isEmpty()) {
 }
 
 tasks.configureEach {
+    if (name ==~ /.*[Ll]int.*/) {
+        dependsOn(stageHudLicenses)
+    }
     if (name ==~ /(merge|compile).+Shaders/) {
         dependsOn(stageFallbackShaders)
     }
