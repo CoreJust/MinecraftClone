@@ -9,6 +9,7 @@
 #include <shared/world/SparseWorld.hpp>
 #include <shared/world/World.hpp>
 
+#include <core/common/Assert.hpp>
 #include <core/IO/Log.hpp>
 
 #define GLFW_INCLUDE_NONE
@@ -380,13 +381,13 @@ void PlayerClient::onConnectionStateReset()
         static_cast<void>(m_renderer.removeHeightTileMesh({ .x = key.x, .y = key.y }));
     }
     m_visible_preview_meshes.clear();
+    m_preview_mesh_coverage.clear();
     m_visible_preview_mesh_tiles.clear();
     m_visible_preview_mesh_bases.clear();
     m_visible_preview_mesh_seam_bridges.clear();
-    m_preview_mesh_details.clear();
+    m_preview_lod.clear();
     m_preview_tile_elevations.clear();
     m_height_tile_center.reset();
-    m_has_lod_viewer_bounds = false;
     m_height_tile_interest.clear();
     m_pending_preview_removals.clear();
     m_pending_preview_removal_set.clear();
@@ -505,9 +506,32 @@ size_t PlayerHeightTileKeyHash::operator()(shared::HeightTileKey const key) cons
         ^ static_cast<uint32_t>(key.y));
 }
 
+void PlayerPreviewMeshCoverage::interestAdded(bool const already_visible) noexcept
+{
+    if (already_visible) {
+        ++m_visible_count;
+    }
+}
+
+void PlayerPreviewMeshCoverage::interestRemoved(bool const visible) noexcept
+{
+    if (visible) {
+        ASSERT(m_visible_count > 0U, "Visible interest count cannot underflow");
+        --m_visible_count;
+    }
+}
+
+void PlayerPreviewMeshCoverage::meshPublished(bool const newly_visible, bool const interested) noexcept
+{
+    if (newly_visible && interested) {
+        ++m_visible_count;
+    }
+}
+
 void PlayerPreviewMeshQueue::clear() noexcept
 {
     m_heap.clear();
+    m_unranked.clear();
     m_keys.clear();
 }
 
@@ -528,6 +552,10 @@ void PlayerPreviewMeshQueue::resetPriority(
     std::unordered_set<HeightTileKey, PlayerHeightTileKeyHash> const& interest
 )
 {
+    for (auto& heap : m_unranked) {
+        m_heap.insert(m_heap.end(), heap.begin(), heap.end());
+    }
+    m_unranked.clear();
     m_center = center;
     m_heading_x = heading_x;
     m_heading_y = heading_y;
@@ -544,14 +572,59 @@ void PlayerPreviewMeshQueue::resetPriority(
     std::make_heap(m_heap.begin(), m_heap.end(), lowerPriority);
 }
 
+void PlayerPreviewMeshQueue::beginPriorityRefresh(
+    HeightTileKey const center,
+    int8_t const heading_x,
+    int8_t const heading_y
+)
+{
+    m_center = center;
+    m_heading_x = heading_x;
+    m_heading_y = heading_y;
+    if (!m_heap.empty()) {
+        m_unranked.push_back(std::move(m_heap));
+        m_heap = {};
+    }
+}
+
+uint32_t PlayerPreviewMeshQueue::refreshPriority(
+    uint32_t const maximum_entries,
+    std::unordered_set<HeightTileKey, PlayerHeightTileKeyHash> const& interest
+)
+{
+    uint32_t refreshed = 0U;
+    while (refreshed < maximum_entries && !m_unranked.empty()) {
+        std::vector<Entry>& heap = m_unranked.front();
+        std::pop_heap(heap.begin(), heap.end(), lowerPriority);
+        HeightTileKey const key = heap.back().key;
+        heap.pop_back();
+        if (heap.empty()) {
+            m_unranked.pop_front();
+        }
+        ++refreshed;
+        if (!interest.contains(key)) {
+            m_keys.erase(key);
+            continue;
+        }
+        m_heap.push_back(entryFor(key));
+        std::push_heap(m_heap.begin(), m_heap.end(), lowerPriority);
+    }
+    return refreshed;
+}
+
 bool PlayerPreviewMeshQueue::empty() const noexcept
 {
-    return m_heap.empty();
+    return m_keys.empty();
+}
+
+bool PlayerPreviewMeshQueue::hasReady() const noexcept
+{
+    return !m_heap.empty();
 }
 
 size_t PlayerPreviewMeshQueue::size() const noexcept
 {
-    return m_heap.size();
+    return m_keys.size();
 }
 
 HeightTileKey PlayerPreviewMeshQueue::top() const noexcept
@@ -635,37 +708,24 @@ void PlayerClient::refreshHeightTileInterest(
     bool const center_changed = !m_height_tile_center.has_value() || *m_height_tile_center != center;
     bool const heading_changed = m_applied_interest_heading_x != heading.x
         || m_applied_interest_heading_y != heading.y;
-    bool const lod_inputs_changed = !m_has_lod_viewer_bounds
-        || m_preview_mesh_projection != projection
-        || m_lod_viewer_bounds != viewer_bounds;
-    if (!center_changed && !heading_changed && !lod_inputs_changed) {
-        return;
-    }
-
-    bool membership_changed = false;
-    if (center_changed || heading_changed) {
-        shared::HeightTileInterest const next = shared::makeHeightTileInterest(
-            center, heading.x, heading.y
-        );
-        std::unordered_set<HeightTileKey, PlayerHeightTileKeyHash> const next_interest{
-            next.keys.begin(), next.keys.end()
-        };
-        membership_changed = m_height_tile_interest != next_interest;
-        std::vector<HeightTileKey> departed;
-        departed.reserve(m_height_tile_interest.size());
-        for (HeightTileKey const key : m_height_tile_interest) {
-            if (!next_interest.contains(key)) {
-                departed.push_back(key);
-            }
+    if (center_changed) {
+        PlayerPreviewInterestDelta delta;
+        if (m_height_tile_center) {
+            delta = playerPreviewInterestDelta(*m_height_tile_center, center);
+        } else {
+            delta.additions = shared::makeHeightTileInterest(center, heading.x, heading.y).keys;
+            m_height_tile_interest.reserve(delta.additions.size());
         }
-        for (HeightTileKey const key : departed) {
+        for (HeightTileKey const key : delta.removals) {
+            m_preview_mesh_coverage.interestRemoved(m_visible_preview_meshes.contains(key));
             m_height_tile_interest.erase(key);
-            m_preview_mesh_details.erase(key);
+            m_preview_lod.erase(key);
             m_preview_tile_elevations.erase(key);
             queuePreviewRemoval(key);
         }
-        for (HeightTileKey const key : next.keys) {
+        for (HeightTileKey const key : delta.additions) {
             if (m_height_tile_interest.insert(key).second) {
+                m_preview_mesh_coverage.interestAdded(m_visible_preview_meshes.contains(key));
                 queuePreviewMesh(key);
             }
         }
@@ -674,20 +734,22 @@ void PlayerClient::refreshHeightTileInterest(
     m_applied_interest_heading_x = heading.x;
     m_applied_interest_heading_y = heading.y;
     m_preview_mesh_projection = projection;
-    m_lod_viewer_bounds = viewer_bounds;
-    m_has_lod_viewer_bounds = true;
-    auto const priority_started = std::chrono::steady_clock::now();
-    m_pending_preview_meshes.resetPriority(center, heading.x, heading.y, m_height_tile_interest);
-    if (m_capture.has_value()) {
-        m_capture_mesh_reprioritize_micros += static_cast<uint64_t>(
-            std::chrono::duration_cast<std::chrono::microseconds>(
-                std::chrono::steady_clock::now() - priority_started
-            ).count()
-        );
-    }
     if (center_changed || heading_changed) {
+        auto const priority_started = std::chrono::steady_clock::now();
+        if (m_capture) {
+            m_pending_preview_meshes.resetPriority(center, heading.x, heading.y, m_height_tile_interest);
+        } else {
+            m_pending_preview_meshes.beginPriorityRefresh(center, heading.x, heading.y);
+        }
+        if (m_capture.has_value()) {
+            m_capture_mesh_reprioritize_micros += static_cast<uint64_t>(
+                std::chrono::duration_cast<std::chrono::microseconds>(
+                    std::chrono::steady_clock::now() - priority_started
+                ).count()
+            );
+        }
         m_preview_mesh_workers->setPriority(center, heading.x, heading.y);
-        if (center_changed || membership_changed) {
+        if (center_changed) {
             for (HeightTileKey const key : m_preview_mesh_workers->cancelQueuedOutsideInterest(
                      m_height_tile_interest
                  )) {
@@ -696,30 +758,16 @@ void PlayerClient::refreshHeightTileInterest(
             }
         }
     }
-    if (center_changed || lod_inputs_changed || membership_changed) {
-        for (HeightTileKey const key : m_height_tile_interest) {
-            HeightTileHandle const tile = heightTileResidency().resident(key);
-            if (!tile) {
-                continue;
-            }
-            auto const previous = m_preview_mesh_details.find(key);
-            std::optional<shared::HeightTileSurfaceDetail> const previous_detail = previous
-                    == m_preview_mesh_details.end()
-                ? std::nullopt
-                : std::optional<shared::HeightTileSurfaceDetail>{ previous->second };
-            shared::HeightTileSurfaceDetail const detail = previewMeshDetail(key, tile);
-            if (!previous_detail.has_value() || *previous_detail != detail) {
-                queuePreviewMesh(key);
-                std::array<HeightTileKey, 4> const adjacent_keys{
-                    offsetHeightTileKey(key, -1, 0),
-                    offsetHeightTileKey(key, 1, 0),
-                    offsetHeightTileKey(key, 0, -1),
-                    offsetHeightTileKey(key, 0, 1),
-                };
-                for (HeightTileKey const adjacent : adjacent_keys) {
-                    queuePreviewMesh(adjacent);
-                }
-            }
+    PlayerPreviewLodRefresh const refresh = m_preview_lod.refresh(center, viewer_bounds, projection);
+    for (HeightTileKey const key : refresh.changed_keys) {
+        queuePreviewMesh(key);
+        for (HeightTileKey const adjacent : {
+                 offsetHeightTileKey(key, -1, 0),
+                 offsetHeightTileKey(key, 1, 0),
+                 offsetHeightTileKey(key, 0, -1),
+                 offsetHeightTileKey(key, 0, 1),
+             }) {
+            queuePreviewMesh(adjacent);
         }
     }
 }
@@ -778,7 +826,7 @@ bool PlayerClient::refreshVisiblePreviewMesh(
     }
     shared::HeightTileSurfaceMesh mesh = bridges == nullptr ? base->second : bridges->compose(base->second);
     if (m_renderer.upsertHeightTileMesh(mesh, deadline)) {
-        m_visible_preview_meshes.insert(key);
+        markPreviewMeshVisible(key);
         if (candidate_bridges != nullptr) {
             m_visible_preview_mesh_seam_bridges.insert_or_assign(key, *candidate_bridges);
         }
@@ -836,13 +884,13 @@ void PlayerClient::publishPreviewMesh(
             return m_renderer.upsertHeightTileMeshes(candidates, deadline);
         },
         [this, key, &mesh, &tile, &adjacent_keys](PreviewMeshSeamPublicationPlan& accepted_plan) {
-            m_visible_preview_meshes.insert(key);
+            markPreviewMeshVisible(key);
             m_visible_preview_mesh_bases.insert_or_assign(key, std::move(mesh));
             m_visible_preview_mesh_seam_bridges.insert_or_assign(key, std::move(accepted_plan.center_bridges));
             m_visible_preview_mesh_tiles.insert_or_assign(key, tile);
             for (uint32_t index = 0U; index < accepted_plan.changed_neighbors.size(); ++index) {
                 if (accepted_plan.changed_neighbors[index]) {
-                    m_visible_preview_meshes.insert(adjacent_keys[index]);
+                    markPreviewMeshVisible(adjacent_keys[index]);
                     m_visible_preview_mesh_seam_bridges.insert_or_assign(
                         adjacent_keys[index],
                         std::move(accepted_plan.neighbor_bridges[index])
@@ -864,7 +912,7 @@ shared::HeightTileSurfaceDetail PlayerClient::previewMeshDetail(
     HeightTileHandle const& tile
 )
 {
-    if (!tile || !m_height_tile_center.has_value() || !m_has_lod_viewer_bounds) {
+    if (!tile || !m_height_tile_center.has_value()) {
         return shared::HeightTileSurfaceDetail::Fine;
     }
     std::array<HeightTileHandle, 4> const neighbors = previewMeshNeighbors(key);
@@ -917,25 +965,7 @@ shared::HeightTileSurfaceDetail PlayerClient::previewMeshDetail(
             .maximum = maximum,
         }).first;
     }
-    shared::HeightTileSurfaceBounds const surface_bounds = shared::HeightTileSurfaceMesher::boundsForTile(
-        { .x = m_height_tile_center->x, .y = m_height_tile_center->y },
-        { .x = tile->key().x, .y = tile->key().y },
-        elevation->second.minimum,
-        elevation->second.maximum
-    );
-    auto const current = m_preview_mesh_details.find(key);
-    std::optional<shared::HeightTileSurfaceDetail> const current_detail = current
-            == m_preview_mesh_details.end()
-        ? std::nullopt
-        : std::optional<shared::HeightTileSurfaceDetail>{ current->second };
-    shared::HeightTileSurfaceLodPolicy const policy{ m_preview_mesh_projection };
-    shared::HeightTileSurfaceDetail const selected = policy.detailFor(
-        m_lod_viewer_bounds,
-        surface_bounds,
-        current_detail
-    );
-    m_preview_mesh_details.insert_or_assign(key, selected);
-    return selected;
+    return m_preview_lod.selectDetail(key, elevation->second.minimum, elevation->second.maximum);
 }
 
 void PlayerClient::queuePreviewMesh(HeightTileKey const key)
@@ -960,17 +990,15 @@ void PlayerClient::queuePreviewRemoval(HeightTileKey const key)
     }
 }
 
+void PlayerClient::markPreviewMeshVisible(HeightTileKey const key)
+{
+    bool const newly_visible = m_visible_preview_meshes.insert(key).second;
+    m_preview_mesh_coverage.meshPublished(newly_visible, m_height_tile_interest.contains(key));
+}
+
 bool PlayerClient::hasCurrentPreviewMeshCoverage() const noexcept
 {
-    if (m_height_tile_interest.empty()) {
-        return false;
-    }
-    for (HeightTileKey const key : m_height_tile_interest) {
-        if (!m_visible_preview_meshes.contains(key)) {
-            return false;
-        }
-    }
-    return true;
+    return m_preview_mesh_coverage.complete(static_cast<uint32_t>(m_height_tile_interest.size()));
 }
 
 bool PlayerClient::hasExactCurrentPreviewMeshCoverage() const noexcept
@@ -1005,6 +1033,8 @@ void PlayerClient::processPendingPreviewMeshes(
         }
         return;
     }
+    static constexpr uint32_t PRIORITY_REFRESH_BUDGET = 256U;
+    static_cast<void>(m_pending_preview_meshes.refreshPriority(PRIORITY_REFRESH_BUDGET, m_height_tile_interest));
     auto const upload_started = std::chrono::steady_clock::now();
     for (uint32_t completed = 0U; completed < maximum_meshes; ++completed) {
         std::optional<PreviewMeshWorkerPool::Result> result = m_preview_mesh_workers->takeResult();
@@ -1075,7 +1105,7 @@ void PlayerClient::processPendingPreviewMeshes(
     if (!m_preview_mesh_workers->canAccept()) {
         return;
     }
-    while (!m_pending_preview_meshes.empty()) {
+    while (m_pending_preview_meshes.hasReady()) {
         HeightTileKey const key = m_pending_preview_meshes.top();
         HeightTileHandle const tile = heightTileResidency().resident(key);
         if (!m_height_tile_interest.contains(key) || !tile) {

@@ -9579,5 +9579,47 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0273",
+    "title": "Avoid full-residency LOD and interest scans during S7 player movement",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P0",
+    "route": "sol",
+    "milestone": "ED-010-S7",
+    "depends_on": [],
+    "acceptance": "Preserve the exact player-position-only wrapped radius-256 disk of 205861 generated and meshed tiles, and preserve the shared conservative projected-face area limit of at most 2 px squared from actual vertical FOV and physical framebuffer extent. Ordinary fractional movement and x200 movement must avoid reevaluating every resident tile or rebuilding disk membership. Compare indexed selections with the unchanged full-scan policy over fixed-seed movement, tile crossings, wrap, elevation changes and projection tightening; unknown or changed bounds must not omit finer detail. Preserve worker source, neighbor and target-detail staleness rejection. Bound normal pending-priority refresh and verify exact disk membership after boundary deltas. Run focused Release tests and fast/docs gates; coordinator owns GPU/runtime acceptance, review, commit and publication.",
+    "evidence": "Exact-pinned Release build passes. Worker 50/50 and integrated 68/68 focused tests pass; integrated 11/11 native renderer/reset tests pass. Independent Luna/high review approved the frozen implementation. First fractional refresh evaluates 10,478 of 205,861 tiles; identical inputs evaluate zero; queue reranking is bounded to 256 entries per processing call. Combined staged tree 5769c280a67042c1307484e60ad145b8875d6885 with 6273573/bd23164 dependencies passed normal-game workload checks at 2560x1440 with immediate presentation. Full 205,861 residency was first observed at 145.449 s and remained exact throughout measured intervals; warm/uncapped successful requests were 23.5/23.6 per second. This establishes full-residency runtime execution, not the unmet aggregate 120 FPS/99.8 percent or 200-iteration target. Renderer profiling remains separate. Game binary SHA-256 b21de0f076a6a752fc6acbebde7976f15b5452b3f7aceee08b3bb39a955929ff; temporary public-API benchmark harness SHA-256 4219a7673358aa7fc1b15a026b1e987bd0473afaa6cc004b6b3f44ffa8c1deb0. Raw evidence: /private/tmp/MC-S7-integrated-resident-ordinary.json. Docs/task/fast checks pass with existing development-only snapshot-date/dirty exceptions.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0038",
+    "motivation": "Keep S7 player movement responsive with full terrain residency and conservative visual quality.",
+    "context": "The production warm benchmark at 163959 resident tiles reports about 24.5 successful presentation requests per second. PlayerClient refresh currently reacts to every fractional authoritative position by reevaluating all 205861 interest keys, including neighbor/elevation lookups and a new LOD policy per tile, and rebuilds pending priority. Heading changes reconstruct the camera-independent disk. The renderer deadline is established before this work. These source costs are the bounded-repair hypothesis, not final runtime proof.",
+    "complexity": "high",
+    "created_at": "2026-09-30",
+    "resolved_at": "2026-09-30",
+    "resolution_changes": "Replaced full-disk movement refresh with conservative indexed LOD, exact boundary membership deltas, bounded priority reranking and maintained coverage; preserved reference policy and stale-result contracts.",
+    "plan": [
+      "Keep the unchanged shared LOD policy and add a client-specific conservative bucket index over cached tile elevation bounds.",
+      "Update exact disk membership from row boundary differences and rerank pending meshes in bounded normal-play batches.",
+      "Compare with the full policy and disk reference using fixed inputs, run focused Release and metadata checks, and freeze the candidate for coordinator runtime acceptance."
+    ],
+    "product_changes": [
+      "Preserve full camera-independent terrain residency and conservative LOD while reducing movement and turning refresh work."
+    ],
+    "code_changes": [
+      "Replace repeated tile-neighbor/elevation scans with a conservative client LOD bucket index and a cached projection policy.",
+      "Apply wrapped disk boundary deltas and bound normal pending priority reranking to 256 entries per processing call.",
+      "Add exact full-policy, disk, wrap, x200, projection, elevation, captured-detail and priority-progress regressions."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]

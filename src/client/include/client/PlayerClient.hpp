@@ -2,6 +2,7 @@
 
 #include "Camera.hpp"
 #include "GameClient.hpp"
+#include "PlayerPreviewLod.hpp"
 #include "PreviewMeshing.hpp"
 #include "render/InstalledShaderAssets.hpp"
 #include "render/VulkanRenderer.hpp"
@@ -73,6 +74,22 @@ struct PlayerHeightTileKeyHash final {
     [[nodiscard]] size_t operator()(shared::HeightTileKey key) const noexcept;
 };
 
+class PlayerPreviewMeshCoverage final {
+public:
+    void clear() noexcept { m_visible_count = 0U; }
+    void interestAdded(bool already_visible) noexcept;
+    void interestRemoved(bool visible) noexcept;
+    void meshPublished(bool newly_visible, bool interested) noexcept;
+    [[nodiscard]] uint32_t visibleCount() const noexcept { return m_visible_count; }
+    [[nodiscard]] bool complete(uint32_t interest_count) const noexcept
+    {
+        return interest_count != 0U && m_visible_count == interest_count;
+    }
+
+private:
+    uint32_t m_visible_count = 0U;
+};
+
 [[nodiscard]] bool playerClientCaptureCoverageComplete(
     std::unordered_set<shared::HeightTileKey, PlayerHeightTileKeyHash> const& interest,
     std::unordered_set<shared::HeightTileKey, PlayerHeightTileKeyHash> const& visible_meshes,
@@ -91,7 +108,14 @@ public:
         int8_t heading_y,
         std::unordered_set<shared::HeightTileKey, PlayerHeightTileKeyHash> const& interest
     );
+    void beginPriorityRefresh(shared::HeightTileKey center, int8_t heading_x, int8_t heading_y);
+    [[nodiscard]]
+    uint32_t refreshPriority(
+        uint32_t maximum_entries,
+        std::unordered_set<shared::HeightTileKey, PlayerHeightTileKeyHash> const& interest
+    );
     [[nodiscard]] bool empty() const noexcept;
+    [[nodiscard]] bool hasReady() const noexcept;
     [[nodiscard]] size_t size() const noexcept;
     [[nodiscard]] shared::HeightTileKey top() const noexcept;
     void pop();
@@ -105,6 +129,7 @@ private:
     [[nodiscard]] static bool lowerPriority(Entry const& first, Entry const& second) noexcept;
 
     std::vector<Entry> m_heap;
+    std::deque<std::vector<Entry>> m_unranked;
     std::unordered_set<shared::HeightTileKey, PlayerHeightTileKeyHash> m_keys;
     shared::HeightTileKey m_center{};
     int8_t m_heading_x = 0;
@@ -155,6 +180,7 @@ private:
     ) const noexcept;
     void queuePreviewMesh(shared::HeightTileKey key);
     void queuePreviewRemoval(shared::HeightTileKey key);
+    void markPreviewMeshVisible(shared::HeightTileKey key);
     void publishPreviewMesh(
         shared::HeightTileKey key,
         shared::HeightTileSurfaceMesh mesh,
@@ -216,19 +242,17 @@ private:
     std::unordered_set<shared::HeightTileKey, PlayerHeightTileKeyHash> m_preview_mesh_jobs;
     std::unordered_set<shared::HeightTileKey, PlayerHeightTileKeyHash> m_preview_mesh_dirty_jobs;
     std::unordered_set<shared::HeightTileKey, PlayerHeightTileKeyHash> m_visible_preview_meshes;
+    PlayerPreviewMeshCoverage m_preview_mesh_coverage;
     std::unordered_map<shared::HeightTileKey, HeightTileHandle, PlayerHeightTileKeyHash>
         m_visible_preview_mesh_tiles;
     std::unordered_map<shared::HeightTileKey, shared::HeightTileSurfaceMesh, PlayerHeightTileKeyHash>
         m_visible_preview_mesh_bases;
     std::unordered_map<shared::HeightTileKey, PreviewMeshSeamBridgeSet, PlayerHeightTileKeyHash>
         m_visible_preview_mesh_seam_bridges;
-    std::unordered_map<shared::HeightTileKey, shared::HeightTileSurfaceDetail, PlayerHeightTileKeyHash>
-        m_preview_mesh_details;
+    PlayerPreviewLod m_preview_lod;
     std::unordered_map<shared::HeightTileKey, PreviewTileElevation, PlayerHeightTileKeyHash>
         m_preview_tile_elevations;
     shared::HeightTileSurfaceProjection m_preview_mesh_projection{};
-    shared::HeightTileSurfaceBounds m_lod_viewer_bounds{};
-    bool m_has_lod_viewer_bounds = false;
     std::unique_ptr<PreviewMeshWorkerPool> m_preview_mesh_workers;
     uint64_t m_preview_mesh_epoch = 1U;
     bool m_capture_requested = false;

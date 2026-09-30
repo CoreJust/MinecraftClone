@@ -11,6 +11,7 @@ target_sources(mc
             FrameScheduler.hpp
             GameClient.hpp
             PlayerClient.hpp
+            PlayerPreviewLod.hpp
             PlayerPresentation.hpp
             PreviewMeshing.hpp
             PreviewResidency.hpp

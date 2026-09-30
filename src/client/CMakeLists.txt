@@ -21,6 +21,7 @@ if(NOT ANDROID)
     target_sources(mc
         PRIVATE
             PlayerClient.cpp
+            PlayerPreviewLod.cpp
             render/InstalledShaderAssets.cpp
     )
 endif()

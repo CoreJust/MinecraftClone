@@ -267,3 +267,124 @@ TEST(PlayerClientCapturePlanTest, PendingMeshesReprioritizePruneAndRetainFailedE
     EXPECT_TRUE(queue.push(east));
     EXPECT_EQ(queue.top(), east);
 }
+
+TEST(PlayerClientCapturePlanTest, PendingPriorityRefreshIsBoundedAndSurvivesRepeatedHeadingChanges)
+{
+    static constexpr shared::HeightTileKey CENTER{ 2'000, 2'000 };
+    static constexpr uint32_t KEY_COUNT = 2'048U;
+    static constexpr uint32_t REFRESH_BUDGET = 32U;
+    client::PlayerPreviewMeshQueue queue;
+    std::unordered_set<shared::HeightTileKey, client::PlayerHeightTileKeyHash> interest;
+    for (uint32_t index = 0U; index < KEY_COUNT; ++index) {
+        shared::HeightTileKey const key{
+            CENTER.x + static_cast<int32_t>(index % 64U),
+            CENTER.y + static_cast<int32_t>(index / 64U),
+        };
+        interest.insert(key);
+        ASSERT_TRUE(queue.push(key));
+    }
+    std::unordered_set<shared::HeightTileKey, client::PlayerHeightTileKeyHash> consumed;
+    for (uint32_t step = 0U; step < KEY_COUNT; ++step) {
+        queue.beginPriorityRefresh(CENTER, step % 2U == 0U ? 127 : -127, 0);
+        EXPECT_EQ(queue.size(), KEY_COUNT - consumed.size());
+        EXPECT_FALSE(queue.hasReady());
+        uint32_t const refreshed = queue.refreshPriority(REFRESH_BUDGET, interest);
+        EXPECT_LE(refreshed, REFRESH_BUDGET);
+        ASSERT_TRUE(queue.hasReady());
+        ASSERT_TRUE(consumed.insert(queue.top()).second);
+        queue.pop();
+    }
+    EXPECT_TRUE(queue.empty());
+    EXPECT_FALSE(queue.hasReady());
+    EXPECT_EQ(consumed, interest);
+}
+
+TEST(PlayerClientCapturePlanTest, BoundedPriorityRefreshPrunesDeparturesAndKeepsFreshArrivalsReady)
+{
+    static constexpr shared::HeightTileKey CENTER{ 2'000, 2'000 };
+    static constexpr shared::HeightTileKey DEPARTED{ 1'999, 2'000 };
+    static constexpr shared::HeightTileKey RETAINED{ 2'001, 2'000 };
+    static constexpr shared::HeightTileKey ARRIVED{ 2'002, 2'000 };
+    static constexpr uint32_t REFRESH_BUDGET = 1U;
+    client::PlayerPreviewMeshQueue queue;
+    ASSERT_TRUE(queue.push(DEPARTED));
+    ASSERT_TRUE(queue.push(RETAINED));
+    queue.beginPriorityRefresh(CENTER, 127, 0);
+    ASSERT_TRUE(queue.push(ARRIVED));
+    EXPECT_TRUE(queue.hasReady());
+    std::unordered_set<shared::HeightTileKey, client::PlayerHeightTileKeyHash> const interest{RETAINED, ARRIVED};
+    EXPECT_EQ(queue.refreshPriority(REFRESH_BUDGET, interest), REFRESH_BUDGET);
+    EXPECT_EQ(queue.refreshPriority(REFRESH_BUDGET, interest), REFRESH_BUDGET);
+    EXPECT_EQ(queue.size(), 2U);
+    EXPECT_EQ(queue.top(), RETAINED);
+    queue.pop();
+    EXPECT_EQ(queue.top(), ARRIVED);
+    queue.pop();
+    EXPECT_TRUE(queue.empty());
+}
+
+TEST(PlayerClientCapturePlanTest, MaintainedCoverageMatchesVisibleInterestThroughPublicationAndReset)
+{
+    static constexpr uint32_t KEY_COUNT = 32U;
+    static constexpr uint32_t STEPS = 1'024U;
+    static constexpr uint32_t INITIAL_SEED = 0x5EEDU;
+    client::PlayerPreviewMeshCoverage coverage;
+    std::unordered_set<uint32_t> interest;
+    std::unordered_set<uint32_t> visible;
+    uint32_t seed = INITIAL_SEED;
+    for (uint32_t step = 0U; step < STEPS; ++step) {
+        seed = seed * 1'664'525U + 1'013'904'223U;
+        uint32_t const key = (seed >> 8U) % KEY_COUNT;
+        switch (seed % 6U) {
+        case 0U:
+            if (interest.insert(key).second) {
+                coverage.interestAdded(visible.contains(key));
+            }
+            break;
+        case 1U:
+            coverage.meshPublished(visible.insert(key).second, interest.contains(key));
+            break;
+        case 2U:
+            if (interest.erase(key) > 0U) {
+                coverage.interestRemoved(visible.contains(key));
+            }
+            break;
+        case 3U:
+            if (!interest.contains(key)) {
+                visible.erase(key);
+            }
+            break;
+        case 4U:
+            if (visible.contains(key)) {
+                coverage.meshPublished(false, interest.contains(key));
+            }
+            break;
+        case 5U:
+            if (step % 31U == 0U) {
+                coverage.clear();
+                interest.clear();
+                visible.clear();
+            }
+            break;
+        }
+        uint32_t expected_visible = 0U;
+        for (uint32_t const interested : interest) {
+            if (visible.contains(interested)) {
+                ++expected_visible;
+            }
+        }
+        EXPECT_EQ(coverage.visibleCount(), expected_visible) << step;
+        EXPECT_EQ(
+            coverage.complete(static_cast<uint32_t>(interest.size())),
+            !interest.empty() && expected_visible == interest.size()
+        ) << step;
+    }
+    for (uint32_t const key : interest) {
+        coverage.meshPublished(visible.insert(key).second, true);
+    }
+    ASSERT_FALSE(interest.empty());
+    EXPECT_TRUE(coverage.complete(static_cast<uint32_t>(interest.size())));
+    coverage.clear();
+    EXPECT_EQ(coverage.visibleCount(), 0U);
+    EXPECT_FALSE(coverage.complete(0U));
+}

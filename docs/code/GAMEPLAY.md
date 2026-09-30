@@ -102,21 +102,20 @@ probability 1/50 per input call.
 
 ## S6/S7 moving terrain
 
-S6 used a camera-independent radius-45 circle; S7 streams a radius-256 disk of
-205,861 height tiles with X/Y wrapping. Membership ignores heading and frustum;
-heading only reorders generation, which prioritizes radius-3/radius-8 circles,
-then a directional ellipse to the former S6 band and background limited to
-8,192 tiles/s per stream with a 128-tile burst after 250 ms at a settled center.
-CoreLang 0.1.2 supplies wave parameters; C++ evaluates heights and stone. Six
-terrain layers use 128-block spacing; spawn is on the first wave. HUD profiles
-range from 2x to 500x.
+S7 replaces S6's radius-45 circle with a wrapped radius-256 disk (205,861 tiles).
+Membership depends solely on player position; heading prioritizes radius-3/radius-8
+circles and a directional ellipse to the former S6 band. Background generation
+permits 8,192 tiles/s, with 128-tile bursts after 250 ms settled. CoreLang 0.1.2
+supplies wave parameters; C++ computes heights/stone. Six terrain layers are
+128 blocks apart; spawn uses the first wave. HUD speedups span 2x–500x.
 
-Height-tile surface LOD is visual only. It uses shortest wrapped distance from
-the player, never view angle or frustum visibility, and selects detail from the
-current vertical FOV and physical framebuffer extent. The conservative
-projected-face bound is at most 2 px² for a simplified source face; adjacent
-meshes are rebuilt when captured tile or neighbor revisions change. Authoritative
-terrain heights and collision do not use these simplified meshes.
+Visual LOD uses shortest wrapped player distance, actual vertical FOV and physical
+framebuffer extent; simplified source faces conservatively occupy at most 2 px².
+Terrain/collision remain exact. Client membership uses boundary strips; cached
+elevation bounds in 4×4 tile buckets certify unchanged detail over viewer regions.
+Projection changes invalidate certificates. Jobs recheck tile/neighbor revisions
+and target detail. Normal play reranks 256 pending meshes per processing call;
+removal admission uses an exact maintained coverage count.
 
 ## S5 chunk data
 
