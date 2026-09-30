@@ -15,6 +15,7 @@ CoreLang `.core` examples use `@version("0.1.2")`, `@use minecraft`, and
   direct XYZ input, camera input, and two players.
 - `s7_permissions_physics.core` publishes movement permissions, exercises
   flight, collision bypass, and jump with two clients, and checks replicated state.
+  Alice settles at exact terrain height 8 before jumping and phases down to Z=3.
 - `s5_flight_invalid.core` is a negative fixture: duplicate characters must be
   rejected before a plan is published.
 

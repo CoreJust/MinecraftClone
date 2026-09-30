@@ -216,7 +216,7 @@ TEST(CoreLangScenario, LowersServerOwnedMovementPermissionAndPhysicsCommands)
 
     ASSERT_TRUE(parsed.has_value()) << parsed.error().message;
     EXPECT_EQ(parsed->totalTicks(), 47U);
-    EXPECT_EQ(parsed->evidenceCount(), 7U);
+    EXPECT_EQ(parsed->evidenceCount(), 8U);
     EXPECT_EQ(parsed->actors().size(), 2U);
     std::string const replay_id = shared::scenarioReplayId(*parsed);
     EXPECT_FALSE(replay_id.empty());
@@ -249,7 +249,7 @@ TEST(CoreLangScenario, RunsPermissionFlightPhaseAndJumpAssertionsOnTheAuthoritat
     EXPECT_EQ(result->clients_accepted, 2U);
     EXPECT_EQ(result->ticks, 47U);
     EXPECT_EQ(result->inputs_sent, 47U);
-    EXPECT_EQ(result->expectations_passed, 7U);
+    EXPECT_EQ(result->expectations_passed, 8U);
 
     auto const replay = acceptance::runScenario(*parsed, {
         .deadline = std::chrono::seconds{5},

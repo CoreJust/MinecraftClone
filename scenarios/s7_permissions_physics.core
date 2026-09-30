@@ -12,6 +12,7 @@ pub fn scenario() {
     expectMovementPermissions("bob", false, false)
     moveXYZ("alice", 0i8, 0i8, 0i8)
     wait(32u64)
+    expectXYZ("alice", 4i32, 4i32, 8i32)
     jump("alice")
     expectVerticalVelocity("alice", 5250i32)
 
@@ -25,5 +26,5 @@ pub fn scenario() {
     expectMovementPermissions("alice", true, true)
     phaseXYZ("alice", 0i8, 0i8, -1i8)
     wait(12u64)
-    expectXYZ("alice", 4i32, 4i32, 1i32)
+    expectXYZ("alice", 4i32, 4i32, 3i32)
 }
