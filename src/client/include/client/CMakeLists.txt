@@ -20,7 +20,9 @@ target_sources(mc
             render/InstalledShaderAssets.hpp
             render/ShaderAssets.hpp
             render/StoneFaceCapacity.hpp
+            render/StoneIndirectDraws.hpp
             render/StoneTexture.hpp
             render/TextRenderer.hpp
             render/VulkanRenderer.hpp
+            render/VulkanFrustum.hpp
 )

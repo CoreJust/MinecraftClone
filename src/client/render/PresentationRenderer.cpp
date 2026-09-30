@@ -3,7 +3,9 @@
 #include <client/render/DepthFormat.hpp>
 #include <client/render/GuiRenderer.hpp>
 #include <client/render/StoneFaceCapacity.hpp>
+#include <client/render/StoneIndirectDraws.hpp>
 #include <client/render/StoneTexture.hpp>
+#include <client/render/VulkanFrustum.hpp>
 #include <client/render/VulkanRenderer.hpp>
 
 #include <shared/net/Message.hpp>
@@ -34,6 +36,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <memory>
 #include <ranges>
 #include <stdexcept>
 #include <unordered_map>
@@ -41,6 +44,8 @@
 
 namespace client {
 namespace {
+
+using StoneDrawRange = StoneIndirectDraws::Range;
 
 #if (!defined(__ANDROID__) && defined(_CORE_DEBUG)) || defined(_MC_VK_VALIDATION_LAYERS)
 constexpr bool REQUIRE_VALIDATION = true;
@@ -60,7 +65,6 @@ constexpr size_t MAXIMUM_TEXT_UPDATE_GLYPHS = 65'536U / sizeof(TextGlyph);
 constexpr uint32_t MAXIMUM_RENDERED_STONE_FACE_COUNT =
     shared::HeightTileSurfaceMesh::MAXIMUM_QUAD_COUNT * shared::HEIGHT_TILE_INTEREST_COUNT;
 constexpr uint32_t INITIAL_RENDERED_STONE_FACE_CAPACITY = 65'536U;
-constexpr double WORLD_WRAP_PERIOD = 65'536.0;
 constexpr std::array DEPTH_FORMAT_CANDIDATES{
     VK_FORMAT_D32_SFLOAT,
     VK_FORMAT_D16_UNORM,
@@ -100,6 +104,13 @@ void checkResult(VkResult const result, char const* const operation)
     }
 }
 
+void checkIndirectAllocationResult(VkResult const result, char const* const operation)
+{
+    if (result != VK_SUCCESS) {
+        throw StoneIndirectDraws::AllocationError(result, operation);
+    }
+}
+
 struct alignas(16) StoneFaceInstance final {
     int32_t x = 0;
     int32_t y = 0;
@@ -120,36 +131,6 @@ struct alignas(16) StonePushConstants final {
     glm::vec4 camera_fog{ 0.0F, 0.0F, 0.0F, 720.0F };
 };
 static_assert(sizeof(StonePushConstants) == 96U);
-
-struct StoneDrawRange final {
-    uint32_t first_instance = 0U;
-    uint32_t instance_count = 0U;
-};
-
-struct WrappedBounds final {
-    glm::vec3 minimum{};
-    glm::vec3 maximum{};
-};
-
-[[nodiscard]] WrappedBounds boundsNearestToCamera(
-    glm::vec3 const minimum,
-    glm::vec3 const maximum,
-    glm::dvec3 const camera_position
-) noexcept {
-    glm::vec3 const center = (minimum + maximum) * 0.5F;
-    float const x_shift = static_cast<float>(
-        std::round((camera_position.x - static_cast<double>(center.x)) / WORLD_WRAP_PERIOD)
-        * WORLD_WRAP_PERIOD
-    );
-    float const y_shift = static_cast<float>(
-        std::round((camera_position.y - static_cast<double>(center.y)) / WORLD_WRAP_PERIOD)
-        * WORLD_WRAP_PERIOD
-    );
-    return {
-        .minimum = { minimum.x + x_shift, minimum.y + y_shift, minimum.z },
-        .maximum = { maximum.x + x_shift, maximum.y + y_shift, maximum.z },
-    };
-}
 
 [[nodiscard]]
 std::vector<StoneFaceInstance> stoneFaceInstances(shared::ChunkMesh const& mesh)
@@ -311,6 +292,114 @@ private:
 
     VkDevice m_device = VK_NULL_HANDLE;
     VkPhysicalDevice m_physical_device = VK_NULL_HANDLE;
+    VkBuffer m_buffer = VK_NULL_HANDLE;
+    VkDeviceMemory m_memory = VK_NULL_HANDLE;
+    void* m_mapped = nullptr;
+    uint32_t m_capacity = 0U;
+};
+
+class VulkanStoneIndirectBuffer final : public StoneIndirectDraws::Buffer {
+public:
+    VulkanStoneIndirectBuffer(
+        VkDevice const device,
+        VkPhysicalDevice const physical_device,
+        uint32_t const command_count
+    )
+        : m_device(device)
+        , m_capacity(command_count)
+    {
+        if (command_count == 0U || command_count > MAXIMUM_RENDERED_STONE_FACE_COUNT) {
+            throw std::invalid_argument("stone indirect command count is invalid");
+        }
+        try {
+            VkBufferCreateInfo buffer_info{};
+            buffer_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+            buffer_info.size = static_cast<VkDeviceSize>(m_capacity) * sizeof(VkDrawIndirectCommand);
+            buffer_info.usage = VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT;
+            buffer_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+            checkIndirectAllocationResult(
+                vkCreateBuffer(m_device, &buffer_info, nullptr, &m_buffer), "vkCreateBuffer stone indirect"
+            );
+            VkMemoryRequirements requirements{};
+            vkGetBufferMemoryRequirements(m_device, m_buffer, &requirements);
+            VkPhysicalDeviceMemoryProperties properties{};
+            vkGetPhysicalDeviceMemoryProperties(physical_device, &properties);
+            std::optional<uint32_t> memory_type;
+            for (uint32_t index = 0U; index < properties.memoryTypeCount; ++index) {
+                if ((requirements.memoryTypeBits & (1U << index)) != 0U
+                    && (properties.memoryTypes[index].propertyFlags
+                        & (VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT))
+                        == (VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)) {
+                    memory_type = index;
+                    break;
+                }
+            }
+            if (!memory_type.has_value()) {
+                throw StoneIndirectDraws::AllocationError(
+                    VK_ERROR_MEMORY_MAP_FAILED, "coherent host-visible memory selection for stone indirect"
+                );
+            }
+            VkMemoryAllocateInfo allocation{};
+            allocation.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+            allocation.allocationSize = requirements.size;
+            allocation.memoryTypeIndex = *memory_type;
+            checkIndirectAllocationResult(
+                vkAllocateMemory(m_device, &allocation, nullptr, &m_memory), "vkAllocateMemory stone indirect"
+            );
+            checkIndirectAllocationResult(
+                vkBindBufferMemory(m_device, m_buffer, m_memory, 0U), "vkBindBufferMemory stone indirect"
+            );
+            checkIndirectAllocationResult(
+                vkMapMemory(m_device, m_memory, 0U, VK_WHOLE_SIZE, 0U, &m_mapped), "vkMapMemory stone indirect"
+            );
+        } catch (...) {
+            reset();
+            throw;
+        }
+    }
+
+    ~VulkanStoneIndirectBuffer() override
+    {
+        reset();
+    }
+
+    VulkanStoneIndirectBuffer(VulkanStoneIndirectBuffer const&) = delete;
+    VulkanStoneIndirectBuffer& operator=(VulkanStoneIndirectBuffer const&) = delete;
+
+    [[nodiscard]] uint32_t capacity() const noexcept override { return m_capacity; }
+
+    [[nodiscard]] std::span<VkDrawIndirectCommand> mappedCommands() override
+    {
+        return { static_cast<VkDrawIndirectCommand*>(m_mapped), m_capacity };
+    }
+
+    void record(
+        VkCommandBuffer const command,
+        VkDeviceSize const offset,
+        uint32_t const draw_count
+    ) const override
+    {
+        vkCmdDrawIndirect(command, m_buffer, offset, draw_count, sizeof(VkDrawIndirectCommand));
+    }
+
+private:
+    void reset() noexcept
+    {
+        if (m_buffer != VK_NULL_HANDLE) {
+            vkDestroyBuffer(m_device, m_buffer, nullptr);
+        }
+        if (m_memory != VK_NULL_HANDLE) {
+            if (m_mapped != nullptr) {
+                vkUnmapMemory(m_device, m_memory);
+            }
+            vkFreeMemory(m_device, m_memory, nullptr);
+        }
+        m_buffer = VK_NULL_HANDLE;
+        m_memory = VK_NULL_HANDLE;
+        m_mapped = nullptr;
+    }
+
+    VkDevice m_device = VK_NULL_HANDLE;
     VkBuffer m_buffer = VK_NULL_HANDLE;
     VkDeviceMemory m_memory = VK_NULL_HANDLE;
     void* m_mapped = nullptr;
@@ -846,7 +935,8 @@ uint32_t recordStoneScene(
     std::span<PlayerRenderData const> const players,
     std::span<StoneDrawRange const> const draw_ranges,
     std::span<StoneDrawRange const> const solid_draw_ranges,
-    VkExtent2D const extent
+    VkExtent2D const extent,
+    StoneIndirectDraws::Prepared const prepared = {}
 )
 {
     std::optional<glm::mat4> const projection = camera.projectionMatrix(extent.width, extent.height);
@@ -893,8 +983,12 @@ uint32_t recordStoneScene(
             nullptr
         );
         vkCmdPushConstants(command, layout, VK_SHADER_STAGE_VERTEX_BIT, 0U, sizeof(push), &push);
-        for (StoneDrawRange const range : draw_ranges) {
-            vkCmdDraw(command, STONE_FACE_VERTEX_COUNT, range.instance_count, 0U, range.first_instance);
+        if (prepared.buffer != nullptr) {
+            prepared.record(command, 0U, static_cast<uint32_t>(draw_ranges.size()));
+        } else {
+            for (StoneDrawRange const range : draw_ranges) {
+                vkCmdDraw(command, STONE_FACE_VERTEX_COUNT, range.instance_count, 0U, range.first_instance);
+            }
         }
     }
     if (!solid_draw_ranges.empty()) {
@@ -903,8 +997,16 @@ uint32_t recordStoneScene(
             command, VK_PIPELINE_BIND_POINT_GRAPHICS, layout, 0U, 1U, &descriptor_set, 0U, nullptr
         );
         vkCmdPushConstants(command, layout, VK_SHADER_STAGE_VERTEX_BIT, 0U, sizeof(push), &push);
-        for (StoneDrawRange const range : solid_draw_ranges) {
-            vkCmdDraw(command, STONE_FACE_VERTEX_COUNT, range.instance_count, 0U, range.first_instance);
+        if (prepared.buffer != nullptr) {
+            prepared.record(
+                command,
+                static_cast<uint32_t>(draw_ranges.size()),
+                static_cast<uint32_t>(solid_draw_ranges.size())
+            );
+        } else {
+            for (StoneDrawRange const range : solid_draw_ranges) {
+                vkCmdDraw(command, STONE_FACE_VERTEX_COUNT, range.instance_count, 0U, range.first_instance);
+            }
         }
     }
     recordPlayers(
@@ -981,32 +1083,6 @@ void recordText(
     vkCmdPushConstants(command, layout, VK_SHADER_STAGE_VERTEX_BIT, 0U, sizeof(push), &push);
     vkCmdDraw(command, QUAD_VERTEX_COUNT, static_cast<uint32_t>(count), 0U, first_instance);
     ++draw_count;
-}
-
-[[nodiscard]]
-bool isVisibleInFrustum(glm::vec3 const minimum, glm::vec3 const maximum, glm::mat4 const& projection_view)
-{
-    std::array<glm::vec4, 8> const corners{
-        glm::vec4{ minimum.x, minimum.y, minimum.z, 1.0F },
-        glm::vec4{ maximum.x, minimum.y, minimum.z, 1.0F },
-        glm::vec4{ minimum.x, maximum.y, minimum.z, 1.0F },
-        glm::vec4{ maximum.x, maximum.y, minimum.z, 1.0F },
-        glm::vec4{ minimum.x, minimum.y, maximum.z, 1.0F },
-        glm::vec4{ maximum.x, minimum.y, maximum.z, 1.0F },
-        glm::vec4{ minimum.x, maximum.y, maximum.z, 1.0F },
-        glm::vec4{ maximum.x, maximum.y, maximum.z, 1.0F },
-    };
-    std::array<bool, 6> outside{ true, true, true, true, true, true };
-    for (glm::vec4 const corner : corners) {
-        glm::vec4 const clip = projection_view * corner;
-        outside[0] = outside[0] && clip.x < -clip.w;
-        outside[1] = outside[1] && clip.x > clip.w;
-        outside[2] = outside[2] && clip.y < -clip.w;
-        outside[3] = outside[3] && clip.y > clip.w;
-        outside[4] = outside[4] && clip.z < 0.0F;
-        outside[5] = outside[5] && clip.z > clip.w;
-    }
-    return std::ranges::none_of(outside, [](bool const value) { return value; });
 }
 
 } // namespace
@@ -1144,6 +1220,7 @@ struct VulkanRenderer::Impl final {
             std::chrono::steady_clock::now();
         m_players = players;
         m_image_view = frame->imageView();
+        m_current_frame_slot = frame->slotIndex();
         m_current_depth_target = &depthTargetFor(frame->image());
         frame->record(&Impl::recordFrame, this);
         m_cpu_command_record_duration = std::chrono::duration_cast<std::chrono::nanoseconds>(
@@ -1296,6 +1373,7 @@ struct VulkanRenderer::Impl final {
         if (instances.empty()) {
             if (existing != nullptr) {
                 releaseRange(existing->range);
+                m_height_tile_face_count -= existing->range.instance_count;
                 m_height_tile_slots.erase(mesh.coordinate);
             }
             if (m_height_tile_slots.empty() && m_stone_faces.empty()) {
@@ -1315,6 +1393,7 @@ struct VulkanRenderer::Impl final {
         }
         if (existing != nullptr) {
             releaseRange(existing->range);
+            m_height_tile_face_count -= existing->range.instance_count;
             m_height_tile_slots.erase(mesh.coordinate);
         }
         glm::vec3 minimum{
@@ -1346,6 +1425,7 @@ struct VulkanRenderer::Impl final {
             .minimum = minimum,
             .maximum = maximum,
         });
+        m_height_tile_face_count += range.instance_count;
         m_chunk_scene_enabled = true;
         HeightTileSlot const& slot = m_height_tile_slots.at(mesh.coordinate);
         m_stone_face_buffer->upload(slot.range.first_instance, slot.instances);
@@ -1477,10 +1557,12 @@ struct VulkanRenderer::Impl final {
             auto const existing = m_height_tile_slots.find(candidate.coordinate);
             if (existing != m_height_tile_slots.end()) {
                 releaseRange(existing->second.range);
+                m_height_tile_face_count -= existing->second.range.instance_count;
                 m_height_tile_slots.erase(existing);
             }
             if (!candidate.slot->instances.empty()) {
                 HeightTileSlot& slot = m_height_tile_slots.emplace(candidate.coordinate, std::move(*candidate.slot)).first->second;
+                m_height_tile_face_count += slot.range.instance_count;
                 m_stone_face_buffer->upload(slot.range.first_instance, slot.instances);
                 ++m_chunk_mesh_upload_count;
             }
@@ -1502,6 +1584,7 @@ struct VulkanRenderer::Impl final {
             return false;
         }
         releaseRange(existing->second.range);
+        m_height_tile_face_count -= existing->second.range.instance_count;
         m_height_tile_slots.erase(existing);
         if (m_height_tile_slots.empty() && m_stone_faces.empty()) {
             m_chunk_scene_enabled = false;
@@ -1581,7 +1664,7 @@ struct VulkanRenderer::Impl final {
             .submitted_frame_count = m_submitted_frame_count,
             .debug_hud_draw_count = m_debug_hud_draw_count,
             .chunk_face_count = m_height_tile_slots.empty()
-                ? static_cast<uint32_t>(m_stone_faces.size()) : heightTileFaceCount(),
+                ? static_cast<uint32_t>(m_stone_faces.size()) : m_height_tile_face_count,
             .chunk_draw_count = m_chunk_draw_count,
             .chunk_mesh_upload_count = m_chunk_mesh_upload_count,
             .height_tile_mesh_count = static_cast<uint32_t>(m_height_tile_slots.size()),
@@ -1613,16 +1696,6 @@ private:
     {
         auto const existing = m_height_tile_slots.find(coordinate);
         return existing == m_height_tile_slots.end() ? nullptr : &existing->second;
-    }
-
-    [[nodiscard]] uint32_t heightTileFaceCount() const noexcept
-    {
-        uint32_t result = 0U;
-        for (auto const& [coordinate, slot] : m_height_tile_slots) {
-            static_cast<void>(coordinate);
-            result += static_cast<uint32_t>(slot.instances.size());
-        }
-        return result;
     }
 
     [[nodiscard]] StoneDrawRange allocateRange(uint32_t const instance_count)
@@ -1700,6 +1773,7 @@ private:
     void clearHeightTileMeshes()
     {
         m_height_tile_slots.clear();
+        m_height_tile_face_count = 0U;
         m_free_stone_ranges.clear();
         m_retired_stone_ranges.clear();
         m_next_stone_face = 0U;
@@ -1896,14 +1970,14 @@ private:
                 std::optional<glm::mat4> const projection = m_camera.projectionMatrix(extent.width, extent.height);
                 if (projection.has_value()) {
                     glm::dvec3 const camera_position = m_camera.pose().position;
-                    glm::mat4 const projection_view = *projection * m_camera.viewMatrix();
+                    VulkanFrustum const frustum{ *projection * m_camera.viewMatrix() };
                     for (auto const& [coordinate, slot] : m_height_tile_slots) {
                         WrappedBounds const wrapped = boundsNearestToCamera(
                             slot.minimum,
                             slot.maximum,
                             camera_position
                         );
-                        if (!isVisibleInFrustum(wrapped.minimum, wrapped.maximum, projection_view)) {
+                        if (!frustum.intersects(wrapped.minimum, wrapped.maximum)) {
                             continue;
                         }
                         if (coordinate.x < 0 || coordinate.y < 0) {
@@ -1934,6 +2008,9 @@ private:
                     m_visible_stone_draw_ranges.push_back(*fallback_draw_range);
                 }
             }
+            StoneIndirectDraws::Prepared const prepared = m_stone_indirect_draws->prepareAcquiredSlot(
+                m_current_frame_slot, m_visible_stone_draw_ranges, m_visible_solid_stone_draw_ranges
+            );
             m_chunk_draw_count = recordStoneScene(
                 command,
                 m_stone_pipeline,
@@ -1947,7 +2024,8 @@ private:
                 m_players,
                 m_visible_stone_draw_ranges,
                 m_visible_solid_stone_draw_ranges,
-                extent
+                extent,
+                prepared
             );
         } else {
             recordFlat3dScene(
@@ -2090,6 +2168,19 @@ private:
     void createResources()
     {
         m_resources.emplace(m_context->resources());
+        VkPhysicalDeviceProperties properties{};
+        vkGetPhysicalDeviceProperties(m_resources->physicalDevice(), &properties);
+        VkDevice const indirect_device = m_resources->device();
+        VkPhysicalDevice const indirect_physical_device = m_resources->physicalDevice();
+        m_stone_indirect_draws.emplace(
+            MAXIMUM_RENDERED_STONE_FACE_COUNT,
+            properties.limits.maxDrawIndirectCount,
+            m_context->info().multi_draw_indirect_enabled,
+            m_context->info().draw_indirect_first_instance_enabled,
+            [indirect_device, indirect_physical_device](uint32_t const capacity) {
+                return std::make_unique<VulkanStoneIndirectBuffer>(indirect_device, indirect_physical_device, capacity);
+            }
+        );
         auto const dynamic_rendering = m_resources->dynamicRenderingCommands();
         m_begin_rendering = dynamic_rendering.begin;
         m_end_rendering = dynamic_rendering.end;
@@ -2322,6 +2413,7 @@ private:
         m_stone_descriptors.reset();
         m_stone_texture_buffer.reset();
         m_stone_face_buffer.reset();
+        m_stone_indirect_draws.reset();
         m_text_descriptors.reset();
         m_text_glyph_buffer.reset();
         m_begin_rendering = nullptr;
@@ -2492,6 +2584,8 @@ private:
     std::optional<core::kernel::GraphicsProgram> m_stone_solid_program;
     std::optional<core::kernel::GraphicsProgram> m_sky_program;
     std::optional<StoneFaceBuffer> m_stone_face_buffer;
+    std::optional<StoneIndirectDraws> m_stone_indirect_draws;
+    uint32_t m_current_frame_slot = 0U;
     std::optional<StoneTextureBuffer> m_stone_texture_buffer;
     std::optional<StoneDescriptorSet> m_stone_descriptors;
     VkPipelineLayout m_grid_layout = VK_NULL_HANDLE;
@@ -2532,6 +2626,7 @@ private:
     uint32_t m_stone_face_capacity = INITIAL_RENDERED_STONE_FACE_CAPACITY;
     StoneDrawRange m_legacy_draw_range;
     std::unordered_map<shared::HeightTileCoordinate, HeightTileSlot, HeightTileCoordinateHash> m_height_tile_slots;
+    uint32_t m_height_tile_face_count = 0U;
     std::vector<StoneDrawRange> m_visible_stone_draw_ranges;
     std::vector<StoneDrawRange> m_visible_solid_stone_draw_ranges;
     std::vector<StoneDrawRange> m_free_stone_ranges;

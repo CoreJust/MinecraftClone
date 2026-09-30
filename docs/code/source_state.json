@@ -155,7 +155,7 @@
         "vcpkg-configuration.json",
         "vcpkg.json"
       ],
-      "sources_sha256": "cf3178d6bd4f39af1a433202b2e9c53365f541d66963b3daf36cd9bf923375ca"
+      "sources_sha256": "a83ffac15abc55d629ecbab349a8173e2b09f0da7c92ca2134934fdb0875bd62"
     },
     {
       "guide": "docs/code/CORE.md",
@@ -276,11 +276,11 @@
         "tests/core/world_generation_scheduler_tests.cpp",
         "tests/core/world_generation_tests.cpp"
       ],
-      "sources_sha256": "9bcda199057867dc5db92dc163c0412c52561197758342d9f82e14bc9649dc9a"
+      "sources_sha256": "0f07b95fc31dae29851ebd595b7b7171acce2e32ddb9eb1c52048ad5cbfa2083"
     },
     {
       "guide": "docs/code/RENDERING.md",
-      "guide_sha256": "4055a9405f5fffaa5c8bc0ce3492002c188e92b424cf9a53907eeffac3e23e1f",
+      "guide_sha256": "332dec270fdc2b987d78ba6f46487443361820f70866f2405b6d855a9d6d6f0c",
       "id": "rendering",
       "sources": [
         "src/client/CMakeLists.txt",
@@ -290,15 +290,19 @@
         "src/client/include/client/render/InstalledShaderAssets.hpp",
         "src/client/include/client/render/ShaderAssets.hpp",
         "src/client/include/client/render/StoneFaceCapacity.hpp",
+        "src/client/include/client/render/StoneIndirectDraws.hpp",
         "src/client/include/client/render/StoneTexture.hpp",
         "src/client/include/client/render/TextRenderer.hpp",
+        "src/client/include/client/render/VulkanFrustum.hpp",
         "src/client/include/client/render/VulkanRenderer.hpp",
         "src/client/render/DebugHud.cpp",
         "src/client/render/GuiRenderer.cpp",
         "src/client/render/InstalledShaderAssets.cpp",
         "src/client/render/PresentationRenderer.cpp",
         "src/client/render/ShaderAssets.cpp",
+        "src/client/render/StoneIndirectDraws.cpp",
         "src/client/render/TextRenderer.cpp",
+        "src/client/render/VulkanFrustum.cpp",
         "src/client/render/shaders/DEBUG_HUD_ATTRIBUTION.md",
         "src/client/render/shaders/TAMSYN_LICENSE.txt",
         "src/client/render/shaders/grid.mesh",
@@ -336,15 +340,17 @@
         "tests/client/renderer_golden_tests.cpp",
         "tests/client/renderer_smoke_tests.cpp",
         "tests/client/shader_assets_tests.cpp",
+        "tests/client/stone_indirect_draws_tests.cpp",
         "tests/client/stone_renderer_tests.cpp",
         "tests/client/text_renderer_tests.cpp",
+        "tests/client/vulkan_frustum_tests.cpp",
         "tests/testsupport/AdverseTransport.cpp",
         "tests/testsupport/ImageComparison.cpp",
         "tests/testsupport/image_comparison_tests.cpp",
         "tests/testsupport/include/testsupport/AdverseTransport.hpp",
         "tests/testsupport/include/testsupport/ImageComparison.hpp"
       ],
-      "sources_sha256": "b0e4dbee95570b1bda09e05a268d37078a291c888baec50bc6981820942b9e84"
+      "sources_sha256": "a8999d238243e7ada6b3cd5c2888eff6bd9af8858c69a8e452cca5f1d7cbe321"
     }
   ],
   "version": 1

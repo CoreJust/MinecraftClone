@@ -219,7 +219,9 @@ if(MC_BUILD_CLIENT AND NOT ANDROID)
             android/input_tests.cpp
             client/renderer_geometry_tests.cpp
             client/shader_assets_tests.cpp
+            client/stone_indirect_draws_tests.cpp
             client/text_renderer_tests.cpp
+            client/vulkan_frustum_tests.cpp
             core/corelang_scenario_tests.cpp
             core/corelang_sparse_world_scenario_tests.cpp
     )

@@ -12,8 +12,10 @@ target_sources(mc
         render/DebugHud.cpp
         render/GuiRenderer.cpp
         render/ShaderAssets.cpp
+        render/StoneIndirectDraws.cpp
         render/TextRenderer.cpp
         render/PresentationRenderer.cpp
+        render/VulkanFrustum.cpp
 )
 if(NOT ANDROID)
     target_sources(mc

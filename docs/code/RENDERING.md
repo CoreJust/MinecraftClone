@@ -3,15 +3,18 @@
 ## Boundary and ownership
 
 [`VulkanRenderer.hpp`](../../src/client/include/client/render/VulkanRenderer.hpp)
-owns Client scene order, push constants, shaders, camera policy, pipeline
-layouts, and program/cache lifetimes. CoreCpp validates programs and manages
-Vulkan instance/device, queues, commands, synchronization, swapchain/views, and
-GLFW/Android surfaces through one `PresentationContext`.
+owns scene order, push constants, shaders, camera, layouts and program/cache
+lifetimes. CoreCpp owns program validation, device/queues, commands,
+synchronization, swapchain/views and surfaces via `PresentationContext`.
 
-Client device children use the current `PresentationResourceScope`, recording
-only during an acquired frame. Recreation releases cache, programs, layouts,
-and stale scope before rebuilding. `waitForSubmittedFrames()` drains bounded
-slots without steady-state `vkDeviceWaitIdle` or draw allocation.
+Client device children use `PresentationResourceScope` during acquired
+frames. Recreation releases cache, programs, layouts and scope before rebuilding.
+`waitForSubmittedFrames()` drains slots without steady-state `vkDeviceWaitIdle`.
+
+Acquired slots own indirect buffers after fence completion; recreation
+releases them. `multiDrawIndirect` + `drawIndirectFirstInstance` enable
+`maxDrawIndirectCount`-bounded batches; direct fallback preserves logical counts.
+Recoverable allocation/mapping failures use direct draws; device loss propagates.
 
 ## Scene and shader policy
 
@@ -22,23 +25,26 @@ World players -> PlayerClient / AndroidPlayerClient -> PlayerRenderData span
 
 The platform/grid/player scene is legacy flat-world Snapshot 4 coverage. Normal
 Flight clears sky blue and draws server-streamed height-tile terrain with the
-original 16² stone texture. Local first-/third-person cameras use
-sampled player position, separately from input look. First person hides the
+original 16² stone texture. Local cameras sample player position separately
+from input look. First person hides the
 local body; third-person modes draw it. Four-bit replicated palette identities
 map to 16 opaque colors; mesh uploads follow content identity. The HUD reports
-authoritative Flight XYZ and camera angles. The camera is right-handed Z-up with
-zero-to-one depth and depth testing.
+authoritative Flight XYZ and camera angles. Camera: right-handed Z-up,
+zero-to-one depth, depth testing.
 
 Desktop `InstalledShaderAssets` reads installed `shaders/`; Android
-`AndroidShaderAssets` reads APK assets. Both accept bare `.spv` names only, with
+`AndroidShaderAssets` reads APK assets. Both require bare `.spv` names;
 no source-tree fallback.
 
 S7 streams the camera-independent radius-256 disk (205,861 tiles); frustum only
-culls drawing. LOD uses shortest wrapped player distance and current vertical
+culls drawing. Per-frame `VulkanFrustum` conservatively culls wrapped
+AABBs; [`tests`](../../tests/client/vulkan_frustum_tests.cpp) cover boundaries,
+near crossings, camera-inside bounds, seams and radii 256/1,024.
+LOD uses shortest wrapped player distance and current vertical
 FOV/framebuffer extent, limiting simplified faces to 2 projected pixels² with
 hysteresis. Stale tile/neighbor/detail jobs are discarded. Cached per-edge seam
 spans cover out-of-order uploads; only adjacent meshes with changed spans are
-re-uploaded before draw, without waiting for their jobs. LOD never changes
+re-uploaded before draw. LOD never changes
 terrain or collision. Far plane and fog cover the disk; workers mesh outside
 presentation.
 
@@ -51,6 +57,7 @@ capacity/deadline failure leaves renderer slots and client seam state unchanged.
 
 The arena grows with streamed residency; restoration shares the frame deadline.
 Gameplay bounds uploads and rendering to 8 ms, deferring overdue tiles.
+Runtime face counts track published slots without rescanning residency.
 [`height_tile_surface_mesher_tests.cpp`](../../tests/core/height_tile_surface_mesher_tests.cpp)
 covers flat tiles, exposed height differences, neighbor seams, and generated
 column tops.
@@ -75,9 +82,8 @@ scene without depth. `DebugHudState` formats five lines, presenting gameplay Z
 as user-facing height. `VulkanRenderer` supports independent GUI/world labels.
 
 The renderer counts only frames whose `PresentationContext::complete` succeeds.
-`VulkanRenderer::validationErrorCount()` forwards the presentation instance's
-validation error total for smoke checks; enable validation when interpreting
-the count.
+`VulkanRenderer::validationErrorCount()` forwards presentation validation errors;
+enable validation when interpreting the count.
 
 ## Capture, input, and validation
 
@@ -93,22 +99,19 @@ movement and right drag to yaw/pitch before the same lowering while retaining
 its asset and `AndroidInput` glue; its hardware F5 input uses the same cycle.
 
 [`renderer_smoke_tests.cpp`](../../tests/client/renderer_smoke_tests.cpp)
-tests GLFW input and presentation/recreation/readback on a Vulkan desktop.
+tests desktop GLFW input, presentation/recreation/readback, HUD and resident face counts.
 Android package compilation and emulator presentation remain separate gates.
 
 `renderer_golden_tests.cpp` captures the fixed 640-by-480
-EarlyDev 0.1.0 snapshot 4 scene without GLFW, a surface, or a swapchain. Its
-oblique regression exercises yaw `37.2` and pitch `-35`, plus the opposite yaw.
+EarlyDev 0.1.0 snapshot 4 scene without GLFW, a surface, or a swapchain.
+Oblique regressions cover yaw `37.2`, its opposite, and pitch `-35`.
 `VulkanOffscreenTarget` owns its linear color target, submission, and readback;
 Client owns depth and invokes the same scene recorder and pipelines as
 presentation. Strict approval enables validation and checks the active
 versioned reference plus independent depth/scene predicates. Diagnostics are
 bounded and a reference changes only after deliberate native-size review.
-An offscreen HUD regression draws through the GUI stage and checks top-left
+Offscreen HUD regression draws through the GUI stage and checks top-left
 pixels without a window.
-
-`RendererSmokeTest` separately covers visible GLFW presentation, recreation,
-readback, input, and the default-on HUD.
 
 S5 offscreen acceptance verifies textured stone, sky, deterministic frames,
 mesh replacement, validation, and remote-player altitude.
@@ -119,7 +122,7 @@ systems running. Neither observes physical scanout. Immediate-mode requests
 fail if unavailable. Renderer evidence includes resolution, GPU, HUD, rate,
 p50/p95/p99/max, and CPU phases; GPU timestamps are unavailable. Release
 disables validation, and `--hud` supports paired runs. The S6 renderer stress
-scene uses maximum 90-by-90 capacity and bounded edge streaming; gameplay uses
+scene uses 90-by-90 maximum capacity and bounded edge streaming; gameplay uses
 the smaller directional ellipse in [GAMEPLAY.md](GAMEPLAY.md). Its renderer-only
 gate requires nominal 120 Hz within one percent and p99 at most 10 ms,
 including display wait and scheduler jitter.
@@ -129,3 +132,5 @@ bounded GLFW resizing. Capture checks readback, sky, and stone; benchmark checks
 presentation, a stone draw, and phase timing. Networked S7 capture runs the
 production server/client, waits for all 205,861 resident tiles and uploaded
 meshes, compares keys across 16 headings, and validates terrain, HUD, and label.
+Capture HUD FPS includes full-disk readiness scans and heading-key comparisons,
+so is not normal-game throughput.
