@@ -689,6 +689,76 @@ TEST(HeightTileSurfaceMesherTest, SurfaceBoundsIncludeTerrainNeighborHeights)
     EXPECT_EQ(bounds.max_z_blocks, 12.0);
 }
 
+TEST(HeightTileSurfaceMesherTest, SurfaceBoundsEncloseReducedNeighborInteriorAtTheSeam)
+{
+    static constexpr uint16_t HEIGHT = 1'024U;
+    static constexpr uint32_t SIDE = shared::HeightTile::SIDE_LENGTH;
+    static constexpr shared::HeightTileCoordinate CENTER{ .x = 0, .y = 0 };
+    shared::HeightTile tile{ .coordinate = { .x = 200, .y = 0 } };
+    tile.heights.fill(HEIGHT);
+    shared::HeightTile::Heights neighbor{};
+    for (uint32_t offset = 0U; offset < SIDE; ++offset) {
+        neighbor[offset * SIDE] = HEIGHT;
+    }
+    shared::HeightTileSurfaceNeighbors const neighbors{
+        .negative_x = tile.heights,
+        .positive_x = neighbor,
+        .negative_y = tile.heights,
+        .positive_y = tile.heights,
+        .positive_x_detail = shared::HeightTileSurfaceDetail::Coarse2,
+    };
+
+    shared::HeightTileSurfaceMesh const mesh = shared::HeightTileSurfaceMesher{}.build(
+        tile, neighbors, shared::HeightTileSurfaceDetail::Coarse2
+    );
+    ASSERT_TRUE(hasQuad(
+        mesh, 3'215, 0, HEIGHT / 2U, shared::HeightTileSurfaceDirection::PositiveX, SIDE, HEIGHT / 2U
+    ));
+    shared::HeightTileSurfaceBounds const bounds = shared::HeightTileSurfaceMesher::boundsForTile(
+        CENTER, tile, neighbors
+    );
+    EXPECT_LE(bounds.min_z_blocks, HEIGHT / 2U);
+    EXPECT_GE(bounds.max_z_blocks, HEIGHT);
+    EXPECT_EQ(
+        shared::HeightTileSurfaceMesher::detailFor(
+            { .min_z_blocks = HEIGHT, .max_z_blocks = HEIGHT }, bounds
+        ),
+        shared::HeightTileSurfaceDetail::Fine
+    );
+}
+
+TEST(HeightTileSurfaceMesherTest, InstalledEdgeElevationRangeIncludesTopAndWallProfiles)
+{
+    static constexpr uint16_t HEIGHT = 1'024U;
+    static constexpr uint16_t WALL_BOTTOM = 512U;
+    static constexpr uint16_t SIDE = shared::HeightTile::SIDE_LENGTH;
+    shared::HeightTileSurfaceMesh const mesh{
+        .quads = {
+            { .z = HEIGHT - 1, .u_extent = SIDE, .v_extent = SIDE },
+            {
+                .x = SIDE - 1,
+                .z = WALL_BOTTOM,
+                .direction = shared::HeightTileSurfaceDirection::PositiveX,
+                .u_extent = SIDE,
+                .v_extent = HEIGHT - WALL_BOTTOM,
+            },
+        },
+    };
+
+    EXPECT_EQ(
+        shared::heightTileSurfaceEdgeElevationRange(mesh, shared::HeightTileSurfaceDirection::PositiveX),
+        (shared::HeightTileSurfaceElevationRange{ .minimum = WALL_BOTTOM, .maximum = HEIGHT })
+    );
+    EXPECT_EQ(
+        shared::heightTileSurfaceEdgeElevationRange(mesh, shared::HeightTileSurfaceDirection::NegativeX),
+        (shared::HeightTileSurfaceElevationRange{ .minimum = HEIGHT, .maximum = HEIGHT })
+    );
+    EXPECT_EQ(
+        shared::heightTileSurfaceEdgeElevationRange({}, shared::HeightTileSurfaceDirection::NegativeX),
+        shared::HeightTileSurfaceElevationRange{}
+    );
+}
+
 TEST(HeightTileSurfaceMesherTest, SurfaceBoundsUseNearestWorldWrapAndAabbSeparation)
 {
     static constexpr shared::HeightTileCoordinate CENTER{ .x = 0, .y = 0 };

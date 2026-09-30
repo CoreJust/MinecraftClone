@@ -26,18 +26,7 @@ enum class PreviewMeshStage : uint8_t {
     shared::HeightTileSurfaceDetail const detail
 ) noexcept
 {
-    switch (detail) {
-    case shared::HeightTileSurfaceDetail::Fine:
-        return shared::HeightTileSurfaceDetail::Coarse2;
-    case shared::HeightTileSurfaceDetail::Coarse2:
-        return shared::HeightTileSurfaceDetail::Coarse4;
-    case shared::HeightTileSurfaceDetail::Coarse4:
-        return shared::HeightTileSurfaceDetail::Coarse;
-    case shared::HeightTileSurfaceDetail::Coarse:
-    case shared::HeightTileSurfaceDetail::Distant:
-        return shared::HeightTileSurfaceDetail::Distant;
-    }
-    return shared::HeightTileSurfaceDetail::Distant;
+    return detail;
 }
 
 [[nodiscard]] inline PreviewMeshStage previewMeshStageForTile(

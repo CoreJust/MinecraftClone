@@ -83,6 +83,18 @@ struct HeightTileSurfaceSeamBridge final {
     std::vector<HeightTileSurfaceQuad> second;
 };
 
+struct HeightTileSurfaceElevationRange final {
+    uint16_t minimum = 0U;
+    uint16_t maximum = 0U;
+
+    constexpr bool operator==(HeightTileSurfaceElevationRange const&) const noexcept = default;
+};
+
+[[nodiscard]] HeightTileSurfaceElevationRange heightTileSurfaceEdgeElevationRange(
+    HeightTileSurfaceMesh const& mesh,
+    HeightTileSurfaceDirection edge
+);
+
 [[nodiscard]] HeightTileSurfaceSeamBridge heightTileSurfaceSeamBridge(
     HeightTileSurfaceMesh const& first,
     HeightTileSurfaceMesh const& second,

@@ -398,7 +398,7 @@ HeightTileSurfaceLodPolicy::HeightTileSurfaceLodPolicy(
         + vertical_tangent * vertical_tangent;
     double const focal_length_pixels = static_cast<double>(projection.viewport_height_pixels)
         / (2.0 * vertical_tangent);
-    // This conservative corner bound sets the projected-area limit for a source face.
+    // The corner bound is scaled by each replacement cell's largest possible face area.
     m_first_reduction_distance = focal_length_pixels
         * std::pow(viewport_scale_squared, 0.75)
         / std::sqrt(MAXIMUM_SIMPLIFIED_FACE_AREA_PIXELS_SQUARED);
@@ -549,35 +549,46 @@ HeightTileSurfaceBounds HeightTileSurfaceMesher::boundsForTile(
     for (uint16_t const height : tile.heights) {
         includeHeight(height);
     }
-    for (uint32_t offset = 0U; offset < SIDE_LENGTH; ++offset) {
-        uint32_t const local_offset = static_cast<uint32_t>(offset);
-        if (neighbors.negative_x.has_value()) {
-            includeHeight((*neighbors.negative_x)[index(SIDE_LENGTH - 1U, local_offset)]);
-        } else {
+    auto const includeNeighbor = [&includeHeight](std::optional<HeightTile::Heights> const& heights) noexcept {
+        if (!heights.has_value()) {
             includeHeight(0U);
+            return;
         }
-        if (neighbors.positive_x.has_value()) {
-            includeHeight((*neighbors.positive_x)[index(0U, local_offset)]);
-        } else {
-            includeHeight(0U);
+        for (uint16_t const height : *heights) {
+            includeHeight(height);
         }
-        if (neighbors.negative_y.has_value()) {
-            includeHeight((*neighbors.negative_y)[index(local_offset, SIDE_LENGTH - 1U)]);
-        } else {
-            includeHeight(0U);
-        }
-        if (neighbors.positive_y.has_value()) {
-            includeHeight((*neighbors.positive_y)[index(local_offset, 0U)]);
-        } else {
-            includeHeight(0U);
-        }
-    }
+    };
+    includeNeighbor(neighbors.negative_x);
+    includeNeighbor(neighbors.positive_x);
+    includeNeighbor(neighbors.negative_y);
+    includeNeighbor(neighbors.positive_y);
     return boundsForTile(
         player_tile,
         tile.coordinate,
         static_cast<double>(min_height),
         static_cast<double>(max_height)
     );
+}
+
+HeightTileSurfaceElevationRange heightTileSurfaceEdgeElevationRange(
+    HeightTileSurfaceMesh const& mesh,
+    HeightTileSurfaceDirection const edge
+)
+{
+    static_cast<void>(oppositeDirection(edge));
+    EdgeSurfaceProfile const profile = edgeSurfaceProfile(mesh, edge);
+    int32_t minimum = *std::ranges::min_element(profile.top);
+    int32_t maximum = *std::ranges::max_element(profile.top);
+    for (auto const& walls : profile.walls) {
+        for (auto const& wall : walls) {
+            minimum = std::min(minimum, wall.lower);
+            maximum = std::max(maximum, wall.upper);
+        }
+    }
+    return {
+        .minimum = static_cast<uint16_t>(minimum),
+        .maximum = static_cast<uint16_t>(maximum),
+    };
 }
 
 HeightTileSurfaceMesh HeightTileSurfaceMesher::build(

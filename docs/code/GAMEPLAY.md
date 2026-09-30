@@ -109,13 +109,15 @@ permits 8,192 tiles/s, with 128-tile bursts after 250 ms settled. CoreLang 0.1.2
 supplies wave parameters; C++ computes heights/stone. Six terrain layers are
 128 blocks apart; spawn uses the first wave. HUD speedups span 2x–500x.
 
-Visual LOD uses shortest wrapped player distance, actual vertical FOV and physical
-framebuffer extent; simplified source faces conservatively occupy at most 2 px².
-Terrain/collision remain exact. Client membership uses boundary strips; cached
-elevation bounds in 4×4 tile buckets certify unchanged detail over viewer regions.
-Projection changes invalidate certificates. Jobs recheck tile/neighbor revisions
-and target detail. Normal play reranks 256 pending meshes per processing call;
-removal admission uses an exact maintained coverage count.
+LOD uses wrapped player distance and vertical FOV/framebuffer extent to
+bound replacement LOD-cell faces to 2 px². Terrain/collision remain exact. Boundary
+strips maintain membership; 4×4 buckets certify detail.
+Bounds enclose complete raw neighbors and installed edge profiles, including
+retained revisions/detail. Accepted base publication/removal recertifies neighbors;
+failed uploads retain inputs. Revision/projection changes invalidate certificates. Jobs
+recheck revisions and target detail; publication uses certified
+detail directly. Displayed meshes refine asynchronously after movement/projection/profile
+changes. Play reranks 256 pending meshes per call; coverage counts control removal.
 
 ## S5 chunk data
 

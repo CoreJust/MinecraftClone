@@ -43,20 +43,16 @@ resolved planes with exact individual wrapped-AABB visibility; ambiguous wrap
 cuts use individual images. Visible ranges merge without sorting or freed spans.
 [`Tests`](../../tests/client/height_tile_draw_index_tests.cpp) cover moving cameras,
 mutation/failure, seams and radii 256/1,024.
-LOD uses shortest wrapped player distance and current vertical
-FOV/framebuffer extent, limiting simplified faces to 2 projected pixels² with
-hysteresis. Stale tile/neighbor/detail jobs are discarded. Cached per-edge seam
-spans cover out-of-order uploads; only adjacent meshes with changed spans are
-re-uploaded before draw. LOD never changes
-terrain or collision. Far plane and fog cover the disk; workers mesh outside
-presentation.
-
-New tiles publish coarse meshes before selected LOD. Results must match revision,
-tile, neighbors, detail, and epoch; late coarse output cannot replace final. Both
-passes share bounded workers and seam bridges; previews never affect authority
-or collision. Deferred uploads retain the installed revision and retry the same
-stage. Seam publication batches the center and changed neighbors atomically;
-capacity/deadline failure leaves renderer slots and client seam state unchanged.
+LOD uses wrapped player distance and actual vertical FOV/framebuffer extent,
+hysteresis, and replacement cell faces bounded to 2 px². Bounds enclose complete
+raw neighbors and installed edge profiles, including retained revisions/detail.
+First publication uses certified detail directly without duplicate coarse/final
+work. Jobs recheck revisions, neighbors, detail and epoch. Failed uploads retain
+installed geometry/certificate inputs; displayed meshes refine asynchronously
+after movement/FOV/profile changes. Seam batches atomically publish the center and
+changed neighbors; failure retains renderer/client state. Cached seam spans handle
+out-of-order uploads. LOD preserves terrain/collision; far plane/fog cover the disk,
+and workers mesh outside presentation.
 
 The arena grows with streamed residency; restoration shares the frame deadline.
 Gameplay bounds uploads and rendering to 8 ms, deferring overdue tiles.

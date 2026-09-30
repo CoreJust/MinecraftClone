@@ -9858,5 +9858,48 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0279",
+    "title": "Certify S7 LOD against reduced and installed neighbor seam profiles",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P1",
+    "route": "sol",
+    "milestone": "ED-010-S7",
+    "depends_on": [],
+    "acceptance": "Preserve player-position-only wrapped terrain residency and the current conservative replacement LOD-cell-face projected area limit of at most 2 px squared using actual vertical FOV and physical framebuffer extent. Include every possible reduced raw-neighbor height and installed neighbor base profile, including older revisions or details, in cached elevation bounds; invalidate and recertify affected neighbors when installed inputs change. New preview publications must use no coarser detail than the current certified target, without duplicating identical coarse and final meshing. Preserve atomic seam publication, rejection retaining installed state, source/neighbor/target/epoch staleness checks, and existing seam/revision/FOV/wrap oracles. Reproduce the own/edge1024 neighbor-interior0 reduced-edge512 counterexample and installed-profile replacement/removal. Do not relax projection, radius, geometry bounds or dependencies; document asynchronous refinement limits without claiming instantaneous global refinement. Coordinator owns review, commit and runtime acceptance.",
+    "evidence": "Baseline focused regressions failed 3/3 (/private/tmp/MC-AI-0279-before.xml): reduced neighbor edge 512 escaped the raw-edge 1024 bound, and first/new-revision stages exceeded certified detail. Initial native tests exposed reused tokens across revisions retaining stale bounds (MC-AI-0279-native.xml); explicit revision identity fixes this without weakening expected detail. Exact CoreCpp 6273573/CoreProject2026 bd23164 macOS Release builds passed. Worker focused tests passed 44/44 (MC-AI-0279-focused.xml); integrated Release rebuild passed 29 actions and focused tests passed 45/45 including the newer coordinate-hash regression (/private/tmp/MC-AI-0279-integrated-focused.xml). Corrected worker native PlayerClientResetTest passed 3/3 in 667 ms, exit 0 (/private/tmp/MC-AI-0279-native-corrected.xml, .log, .exit), verifying raw heights, equal tokens under distinct revisions, wrapped neighbor revisions, cached 512..512 then 512..1024 then 1024..1024 bounds, rejected uploads, accepted replacement/removal recertification and reset. Fast/docs/backlog gates passed with existing development snapshot-date and dirty-tree exceptions. Later renderer/hash code and guide changes were preserved during integration. Review binds to the final staged candidate through the commit gate; aggregate native/runtime/FPS acceptance remains separate.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0038",
+    "motivation": "Preserve the user's LOD visual quality requirement and projected area at most 2 px squared while retaining camera-independent full terrain residency.",
+    "context": "The authoritative user request is /private/tmp/MC-AI-0271-request.txt with SHA-256 dc90027a8fb7ae0ecc96ed7642e585aa0582f17c97fb48e9e8444f95497b59f3. Raw touching-edge extrema can miss reduced neighbor averages: own tile and touching edge 1024, neighbor interior 0 produces a Coarse2 edge 512. Seam bridges also consume actually installed bases, which can retain older revision/detail profiles. New-tile staging currently meshes one level coarser than the certified target. The existing strict replacement-cell-face bound remains authoritative during the pending source-versus-replacement clarification; lossless coplanar greedy merges do not reduce quality.",
+    "complexity": "high",
+    "created_at": "2026-09-30",
+    "resolved_at": "2026-09-30",
+    "resolution_changes": "Bounded complete raw neighbor extrema so all reduced edge averages are enclosed. Bound cached raw inputs to explicit revision identity as well as tokens, since revision advancement permits token reuse. Cached installed base edge-profile ranges, retained them across upload rejection, and locally recertified affected neighbors after accepted base publication/removal. Published the certified target directly without identical coarse/final meshing. Added reduced-neighbor, retained old-profile, expired-publication, replacement/removal, first-publication and new-revision regressions; documented asynchronous displayed-mesh refinement limits without relaxing projection, radius or geometry constraints.",
+    "plan": [
+      "Reproduce missing reduced-neighbor bounds and unsafe first-publication staging with focused regressions.",
+      "Bound complete raw neighbor data and installed edge profiles, update cache inputs only with accepted publications/removals, and recertify affected neighbors.",
+      "Publish the certified target directly, retain asynchronous staleness/seam contracts, update owning guides, and freeze focused verification evidence for the coordinator."
+    ],
+    "product_changes": [
+      "Certify new terrain preview publications against current raw data and retained installed seam geometry without over-coarse first publication."
+    ],
+    "code_changes": [
+      "Include complete raw neighbor extrema and installed touching-edge profile ranges in cached LOD elevation inputs, binding cache identity to revisions and tokens.",
+      "Update installed range inputs only with accepted atomic publication/removal and locally recertify affected neighbor targets.",
+      "Mesh each certified target once and preserve generic stale-stage, seam-batch and retry contracts.",
+      "Cover reduced-edge height 512 from raw edge 1024/interior 0, older installed profiles, failed publication, accepted replacement/removal, and certified first/new-revision staging."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]

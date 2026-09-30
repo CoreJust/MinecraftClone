@@ -132,32 +132,34 @@ TEST(PreviewMeshingTest, AppliesTheSelectedVisualDetail)
     EXPECT_LT(mesh.quads.size(), shared::HeightTileSurfaceMesh::MAXIMUM_QUAD_COUNT);
 }
 
-TEST(PreviewMeshingTest, ChoosesDeterministicCoarseFallbackForEachFinalDetail)
+TEST(PreviewMeshingTest, FirstPublicationUsesEachCertifiedDetailWithoutDuplicateMeshing)
 {
-    EXPECT_EQ(
-        client::previewMeshCoarseDetail(shared::HeightTileSurfaceDetail::Fine),
-        shared::HeightTileSurfaceDetail::Coarse2
-    );
-    EXPECT_EQ(
-        client::previewMeshCoarseDetail(shared::HeightTileSurfaceDetail::Coarse2),
-        shared::HeightTileSurfaceDetail::Coarse4
-    );
-    EXPECT_EQ(
-        client::previewMeshCoarseDetail(shared::HeightTileSurfaceDetail::Coarse4),
-        shared::HeightTileSurfaceDetail::Coarse
-    );
-    EXPECT_EQ(
-        client::previewMeshCoarseDetail(shared::HeightTileSurfaceDetail::Coarse),
-        shared::HeightTileSurfaceDetail::Distant
-    );
-    EXPECT_EQ(
-        client::previewMeshCoarseDetail(shared::HeightTileSurfaceDetail::Distant),
-        shared::HeightTileSurfaceDetail::Distant
-    );
-    EXPECT_EQ(
-        client::previewMeshCoarseDetail(static_cast<shared::HeightTileSurfaceDetail>(255U)),
-        shared::HeightTileSurfaceDetail::Distant
-    );
+    static constexpr std::array<shared::HeightTileSurfaceDetail, 5U> DETAILS{
+        shared::HeightTileSurfaceDetail::Fine,
+        shared::HeightTileSurfaceDetail::Coarse2,
+        shared::HeightTileSurfaceDetail::Coarse4,
+        shared::HeightTileSurfaceDetail::Coarse,
+        shared::HeightTileSurfaceDetail::Distant,
+    };
+    static constexpr shared::HeightTileKey KEY{ .x = 100, .y = 101 };
+    static constexpr client::HeightTileRevision REVISION{ .generation = 1U, .revision = 1U };
+    static constexpr client::HeightTileRevision NEXT_REVISION{ .generation = 2U, .revision = 2U };
+    client::PreviewResidency residency{ REVISION };
+    auto const current = residency.accept(KEY, REVISION, 1U, {});
+    ASSERT_EQ(current.replacement, client::HeightTileReplacement::Published);
+    residency.advanceRevision(NEXT_REVISION);
+    auto const next = residency.accept(KEY, NEXT_REVISION, 2U, {});
+    ASSERT_EQ(next.replacement, client::HeightTileReplacement::Published);
+    for (shared::HeightTileSurfaceDetail const detail : DETAILS) {
+        EXPECT_EQ(client::previewMeshCoarseDetail(detail), detail);
+        EXPECT_EQ(client::previewMeshStageForTile({}, current.handle, detail), client::PreviewMeshStage::Final);
+        EXPECT_EQ(
+            client::previewMeshStageForTile(current.handle, current.handle, detail), client::PreviewMeshStage::Final
+        );
+        EXPECT_EQ(
+            client::previewMeshStageForTile(current.handle, next.handle, detail), client::PreviewMeshStage::Final
+        );
+    }
 }
 
 TEST(PreviewMeshingTest, PublishesOnlyCurrentRevisionAndNeverRegressesToCoarse)
@@ -222,7 +224,7 @@ TEST(PreviewMeshingTest, KeepsFinalRetryWhenFailedUploadRetainsCurrentVisibleTil
             current.handle,
             shared::HeightTileSurfaceDetail::Fine
         ),
-        client::PreviewMeshStage::Coarse
+        client::PreviewMeshStage::Final
     );
 
     residency.advanceRevision(NEXT_REVISION);
@@ -234,7 +236,7 @@ TEST(PreviewMeshingTest, KeepsFinalRetryWhenFailedUploadRetainsCurrentVisibleTil
             next.handle,
             shared::HeightTileSurfaceDetail::Fine
         ),
-        client::PreviewMeshStage::Coarse
+        client::PreviewMeshStage::Final
     );
     EXPECT_EQ(
         client::previewMeshStageForTile(

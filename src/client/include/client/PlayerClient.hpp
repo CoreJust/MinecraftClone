@@ -150,8 +150,10 @@ private:
     friend struct PlayerClientTestAccess;
     class PreviewMeshWorkerPool;
     struct PreviewTileElevation final {
+        HeightTileRevision tile_revision{};
         uint64_t tile_token = 0U;
         std::array<uint64_t, 4> neighbor_tokens{};
+        std::array<std::optional<shared::HeightTileSurfaceElevationRange>, 4> neighbor_mesh_ranges{};
         uint16_t minimum = 0U;
         uint16_t maximum = 0U;
     };
@@ -171,6 +173,7 @@ private:
         HeightTileHandle const& tile
     );
     [[nodiscard]] std::array<HeightTileHandle, 4> previewMeshNeighbors(shared::HeightTileKey key) const;
+    void refreshPreviewMeshNeighborElevations(shared::HeightTileKey key);
     [[nodiscard]] std::array<shared::HeightTileSurfaceDetail, 4> previewMeshNeighborDetails(
         shared::HeightTileKey key
     );
@@ -187,6 +190,7 @@ private:
         HeightTileHandle const& tile,
         std::chrono::steady_clock::time_point deadline
     );
+    void removePreviewMesh(shared::HeightTileKey key, std::chrono::steady_clock::time_point deadline);
     [[nodiscard]] bool refreshVisiblePreviewMesh(
         shared::HeightTileKey key,
         std::chrono::steady_clock::time_point deadline,
@@ -247,6 +251,11 @@ private:
         m_visible_preview_mesh_tiles;
     std::unordered_map<shared::HeightTileKey, shared::HeightTileSurfaceMesh, PlayerHeightTileKeyHash>
         m_visible_preview_mesh_bases;
+    std::unordered_map<
+        shared::HeightTileKey,
+        std::array<shared::HeightTileSurfaceElevationRange, 4>,
+        PlayerHeightTileKeyHash
+    > m_visible_preview_mesh_elevation_ranges;
     std::unordered_map<shared::HeightTileKey, PreviewMeshSeamBridgeSet, PlayerHeightTileKeyHash>
         m_visible_preview_mesh_seam_bridges;
     PlayerPreviewLod m_preview_lod;
