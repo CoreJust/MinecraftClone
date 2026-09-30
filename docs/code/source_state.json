@@ -35,7 +35,7 @@
     },
     {
       "guide": "docs/code/ANDROID.md",
-      "guide_sha256": "7efceb6a3f06b114f5fc665c7fd068a504587094e3e5bddc84561fb3601c05fe",
+      "guide_sha256": "80714fef29dd336cb41b0006d57d64ea6d772a25b0485846e7e53e3281374775",
       "id": "android",
       "sources": [
         "src/android/AndroidInput.cpp",
@@ -51,7 +51,7 @@
         "tests/android/input_state_tests.cpp",
         "tests/android/input_tests.cpp"
       ],
-      "sources_sha256": "011a464c44fb585f30971428bb09b5cb076f5d1e94846a35b6907a5684831782"
+      "sources_sha256": "2b687ad84a33f16c0d11da7a3aecddae4c24023be07deef8ebceb5c0ae4821c1"
     },
     {
       "guide": "docs/BUILD.md",
@@ -155,7 +155,7 @@
         "vcpkg-configuration.json",
         "vcpkg.json"
       ],
-      "sources_sha256": "2d623bf4d7819fd79fff5282bd469c41733b64dd4652aa4f474102266918c83f"
+      "sources_sha256": "7af194f9747e4ab2e841a57eba372d95c3c2155af469e563bb348690e90998f2"
     },
     {
       "guide": "docs/code/CORE.md",
@@ -192,7 +192,7 @@
     },
     {
       "guide": "docs/code/GAMEPLAY.md",
-      "guide_sha256": "ec0169abf440345abcaa8ce42b065f1ed09a3db399cb236353f941904a3dafe3",
+      "guide_sha256": "99e781231ab5b3466257f41311274a5110e5364c536d77ad0873f24be64fe044",
       "id": "gameplay",
       "sources": [
         "src/client/BotClient.cpp",
@@ -278,7 +278,7 @@
         "tests/core/world_generation_scheduler_tests.cpp",
         "tests/core/world_generation_tests.cpp"
       ],
-      "sources_sha256": "c6c35d8a5e465a464ed6096d1b829b437ce072d992a507c27634fa9c771e8df8"
+      "sources_sha256": "eaaf198d4eafcab8f9cd0f7e1d3d08d3a02000de8fece8d9b243c18c65fa93fe"
     },
     {
       "guide": "docs/code/RENDERING.md",
@@ -329,6 +329,7 @@
         "tests/client/frame_scheduler_tests.cpp",
         "tests/client/game_client_audio_tests.cpp",
         "tests/client/game_client_benchmark_tests.cpp",
+        "tests/client/game_client_lifecycle_tests.cpp",
         "tests/client/game_client_prediction_tests.cpp",
         "tests/client/goldens/README.md",
         "tests/client/goldens/earlydev-0.1.0-snapshot-4-third-person-platform-v3.ppm",
@@ -356,7 +357,7 @@
         "tests/testsupport/include/testsupport/AdverseTransport.hpp",
         "tests/testsupport/include/testsupport/ImageComparison.hpp"
       ],
-      "sources_sha256": "a517c38c4edb97ba49d0e888586041400571fface91d37e852e41bae69e9b4fb"
+      "sources_sha256": "6af29fec972b476ca55d0e841d479729c7374748f1fa97d660ba64e2e94b469a"
     }
   ],
   "version": 1

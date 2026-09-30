@@ -13,8 +13,9 @@ namespace client {
 
 namespace {
 
-constexpr std::chrono::milliseconds CONNECTION_ATTEMPT_TIMEOUT{ 1'000 };
+constexpr std::chrono::seconds CONNECTION_ATTEMPT_TIMEOUT{ 30 };
 constexpr std::chrono::milliseconds CONNECTION_RETRY_DELAY{ 250 };
+constexpr std::chrono::milliseconds PLATFORM_SERVICE_INTERVAL{ 25 };
 
 } // namespace
 
@@ -43,12 +44,30 @@ void GameClient::run(
             || (benchmark_hooks->should_stop && benchmark_hooks->should_stop())
         );
     };
+    auto const service_connection = [&] {
+        servicePlatformEvents();
+        return m_running && !benchmark_stopped()
+            ? core::ControlFlow::Continue : core::ControlFlow::Break;
+    };
     uint64_t input_ordinal = 0U;
     while (m_running && !benchmark_stopped()) {
+        servicePlatformEvents();
+        if (!m_running || benchmark_stopped()) {
+            break;
+        }
         if (!isConnected()) {
-            if (!connect(server_address, CONNECTION_ATTEMPT_TIMEOUT)) {
+            if (!connect(server_address, CONNECTION_ATTEMPT_TIMEOUT, service_connection)) {
                 CORE_INFO("Waiting to connect to server {}", server_address);
-                std::this_thread::sleep_for(CONNECTION_RETRY_DELAY);
+                auto const retry_deadline = std::chrono::steady_clock::now() + CONNECTION_RETRY_DELAY;
+                while (service_connection() == core::ControlFlow::Continue
+                    && std::chrono::steady_clock::now() < retry_deadline) {
+                    std::this_thread::sleep_for((std::min)(
+                        PLATFORM_SERVICE_INTERVAL,
+                        std::chrono::duration_cast<std::chrono::milliseconds>(
+                            retry_deadline - std::chrono::steady_clock::now()
+                        )
+                    ));
+                }
                 continue;
             }
             m_accepted = false;
@@ -57,7 +76,11 @@ void GameClient::run(
             }
         }
         while (!m_accepted && m_running && isConnected() && !benchmark_stopped()) {
-            poll(std::chrono::milliseconds{ 100 });
+            servicePlatformEvents();
+            if (!m_running || benchmark_stopped()) {
+                break;
+            }
+            poll(PLATFORM_SERVICE_INTERVAL);
         }
         if (!m_running || benchmark_stopped()) {
             break;

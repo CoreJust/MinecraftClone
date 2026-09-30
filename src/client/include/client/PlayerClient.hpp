@@ -159,6 +159,7 @@ private:
         uint16_t maximum = 0U;
     };
     shared::Direction input() override;
+    void servicePlatformEvents() override;
     void render() override;
     [[nodiscard]] bool presentationSucceeded() const override;
     void onConnectionStateReset() override;

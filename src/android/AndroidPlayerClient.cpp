@@ -84,9 +84,21 @@ shared::Direction AndroidPlayerClient::input()
     };
 }
 
-void AndroidPlayerClient::render()
+void AndroidPlayerClient::servicePlatformEvents()
 {
     drainEvents();
+    if (m_app.destroyRequested || m_input.consumeStopRequest()) {
+        stop();
+        return;
+    }
+    if (m_running && !m_accepted && canRender()) {
+        presentFrame();
+    }
+}
+
+void AndroidPlayerClient::render()
+{
+    servicePlatformEvents();
     while (m_running && !m_app.destroyRequested && !canRender()) {
         pollOneEvent(-1);
     }
@@ -97,7 +109,11 @@ void AndroidPlayerClient::render()
     if (!m_running || !canRender()) {
         return;
     }
+    presentFrame();
+}
 
+void AndroidPlayerClient::presentFrame()
+{
     float look_horizontal = 0.0F;
     float look_vertical = 0.0F;
     if (m_input.consumeLookDelta(look_horizontal, look_vertical)) {

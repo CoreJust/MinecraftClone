@@ -1442,6 +1442,13 @@ shared::Direction PlayerClient::input() {
     };
 }
 
+void PlayerClient::servicePlatformEvents() {
+    m_window.pollEvents();
+    if (m_window.shouldClose()) {
+        m_running = false;
+    }
+}
+
 void PlayerClient::render() {
     if (!m_window.nextFrame()) {
         m_running = false;

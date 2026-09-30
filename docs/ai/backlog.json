@@ -9980,5 +9980,45 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0282",
+    "title": "Keep connection handshakes and platform lifecycle responsive",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P1",
+    "route": "luna",
+    "milestone": "ED-010-S7",
+    "depends_on": [],
+    "acceptance": "Retain one ENet peer through a30-second aggregate connection attempt and service Android lifecycle and desktop window events between transport waits of at most25ms; promptly cancel pending attempts,250ms retry waits and join waits. Preserve ENet timeout policy, protocol, authoritative join and no gameplay before acceptance. Present the existing ready Android surface while connecting. Verify actual server handshake replies withheld for at least15seconds in GameClient, cancellation mid-attempt and retry, and no-server/reachable-server platform responsiveness. Consume exact clean reviewed successor CoreCpp/CoreProject packages without changing CoreLang language,API,CoreBC or SLJIT.",
+    "evidence": "Native Release focused CTest passed 8/8 on the exact 0282 source and successor package prefix; the held handshake joined after 15.570 seconds with one attempt, pending-connect cancellation took 90 ms, and retry service stayed below the asserted 200 ms gap. XML SHA256 4374583f057330d3faa9344778367f3ade82852a88df8332ac09fdc0e70c912c; log SHA256 214e7572929df99df65c5fc181ea0c761e0094580a6d6d1dfad0db03a5be95c2. Android Release assembleRelease and lintVitalRelease passed 52/52 tasks using the current 0282 source, exact CoreCpp f2fe7db86a068b464dde1c5f7f4a13ddcefda26d and CoreProject2026 92c8058dcfbff13010502a5bd46d7920b52815ea pins, NDK 27/API 28/CMake 3.30.5/JDK 21/Gradle 8.13. Original unsigned APK SHA256 1374b3b38dbe18e5e9845e8380a9463a11613f830118bbc85071e4a38a712c85. Because the APK is unsigned, emulator installation used a separate ephemeral-key test copy at /private/tmp/mc-s7-0282-emulator.23D6uk/app-release-emulator-signed.apk; apksigner verify passed and its SHA256 is 5e76fe1ac5afd97c0adc17c40f76d27b5722de5a0e08dd6c90b74ddc1c200bfc. Its embedded libmc_android.so matches the original Release library hash 73b08c0b555a103b6719c914f6000758bf0a220786be9cf226a2e81b6932573f. Emulator Medium_Phone_API_35, API 35 arm64-v8a, serial emulator-5554: with host UDP 20040 unbound, NativeActivity remained live for about 7m36s; HOME and relaunch returned to the same activity, and filtered error logcat showed no app errors. With the host Release mc_main server at 127.0.0.1:20040, server logged onConnected 127.0.0.1:61959 and spawn x32896/y410/z32768; the foreground HUD reflected that position. Screenshots: no_server_initial_step.png SHA256 143ff82d287ca40b2e62612f273c6c9096ea6a3a2763b8ec082ecc94b441e529; no_server_after_wait_step.png SHA256 bb04b260d848ce8d5402cd14d3b6600fa803a536f2d7b60ee5c2fde6d55d294a; reachable_server_step.png SHA256 c366fa6002a2af4e2b1e9c7879161115f1dd5f0d8d1c66dfb9fcb92fa8eb5454; reachable_server_after_load_step.png SHA256 1b3a09b3f6f098e86d335b990865fd3e8166e65bd5394acbff0c315a6071f358. The post-join view still showed sky after 15 seconds under emulator software rendering; this is recorded as an observation only, not terrain or FPS acceptance. Windows successor dependencies passed their exact Release/install and Net 30/30 plus CoreProject 28/28 consumer gates; no MinecraftClone Windows build/runtime is claimed. No aggregate S7/release acceptance is claimed.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0038",
+    "motivation": "Keep the native activity responsive and show a valid initial surface even when its game server is temporarily unavailable.",
+    "context": "A diagnostic Release APK executes android_main and completes initialization and canonical meshing, but failed ENet attempts leave Android lifecycle commands unprocessed because their pump is reached only in render after accepted join. The exact UDP connection cause is a separate diagnosis; this task must not claim to fix it. Start from clean integration 0b122d26b47e41fac1c1ce5f9b0a191c259e2a4a and preserve the reviewed MC-AI-0276 worktree and immutable baseline APK. The same reviewer rejected boundary-only pumping because1000msconnect and250msretry remained blocking. Read-only contract inspection also proved each short attempt reset its ENet peer, violating the user's15-second ping requirement. Root authorized a cohesive0282 expansion, separateCoreCppCC0038/CoreProjectCP0035 commits, and released unused0285. The original staged candidate/rejectedreview/runtimeevidence remain preserved. Successor starts fromeea813baa0fcccc1f24a7dba22a71909e635b006.",
+    "complexity": "medium",
+    "created_at": "2026-09-30",
+    "resolved_at": "2026-09-30",
+    "resolution_changes": "The cooperative GameClient retained one peer through the 15.570-second handshake test, stayed responsive during cancellation and retry, and continued servicing Android lifecycle and desktop window events during bounded transport waits. The exact successor CoreCpp and CoreProject pair passed focused native and Android Release checks. On Medium_Phone_API_35, the exact-source Android Release library stayed live with UDP 20040 unbound for about 7 minutes 36 seconds; HOME and relaunch returned to NativeActivity. With the host Release server bound, the emulator joined and its HUD position matched the server spawn. Terrain visibility and frame-rate acceptance are not inferred from this lifecycle test.",
+    "plan": [
+      "Adopt the reviewed exact cooperative dependency pair; retain one peer for30seconds while servicing both platform hooks and cancellable retry waits.",
+      "Cover actual15-second serverreply delay and mid-attempt/retry/join cancellation; refresh Android/desktop checks and renew the same0282reviewer."
+    ],
+    "product_changes": [
+      "Remain responsive while connecting and support delayed handshakes without resetting the peer every second."
+    ],
+    "code_changes": [
+      "Add cooperative GameClient connect/retry/join servicing, Android pre-join presentation and desktop window-close pumping; consume exact successor pins.",
+      "Test public delayed-handshake identity and cancellation contracts, preserving prior red/green evidence and review rejection."
+    ],
+    "baseline_commit": "eea813baa0fcccc1f24a7dba22a71909e635b006",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]

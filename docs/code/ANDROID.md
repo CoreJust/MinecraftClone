@@ -14,6 +14,13 @@ render eligibility. It drains the Android looper before a frame and blocks
 on the looper while paused, unfocused, or without a usable window. Teardown
 destroys renderer resources before the window is released.
 
+Connection, retry, and join waits also service lifecycle commands and shutdown
+requests independently of rendering. A ready foreground surface presents the
+existing scene while connecting, without simulating or submitting player input
+before an authoritative join. The shared connection attempt retains one ENet
+peer for 30 seconds, with lifecycle servicing between transport waits of at
+most 25 ms; retry and join waits also service cancellation.
+
 Network messages are serviced only while the render loop is active. Pause or
 focus loss clears input before blocking; losing the native window destroys the
 renderer. The client recreates rendering on resume but does not reconnect if

@@ -75,6 +75,7 @@ public:
         return m_height_tile_residency;
     }
 protected:
+    virtual void servicePlatformEvents() {}
     virtual shared::Direction input() = 0;
     virtual void render() = 0;
     [[nodiscard]] virtual bool presentationSucceeded() const { return false; }

@@ -71,18 +71,18 @@ Ready/dispatched tiles cap at 128
 
 [GameClient.hpp](../../src/client/include/client/GameClient.hpp) and
 [GameClient.cpp](../../src/client/GameClient.cpp) connect, join, poll, and
-render. `FrameScheduler` sends input every 100 ms and sleeps at most one
-millisecond between presentation attempts. Replicated positions update the
-local world; the first presentation snaps, later updates interpolate for one
-`TICK`, and gaps hold. Disconnect resets the connection and retries.
+render. Connect retains one peer for 30 seconds. Both platforms pump events
+between 25 ms polls and through 250 ms retries; stop cancels.
+`FrameScheduler` sends input every 100 ms with 1 ms maximum sleep. Positions
+update world: presentation snaps, then interpolates for one
+`TICK`; gaps hold. Disconnect resets and retries.
 
-`GameClientBenchmarkHooks` times connected production loops, supplies scripted
-input, and skips idle delay only for `--benchmark-game`. The server's optional
-hook times authoritative ticks.
+`GameClientBenchmarkHooks` times loops, scripts input, and skips idle delay only
+for `--benchmark-game`. The server hook times ticks.
 
 [PlayerClient.hpp](../../src/client/include/client/PlayerClient.hpp) and
 [PlayerClient.cpp](../../src/client/PlayerClient.cpp) provide the GLFW/Vulkan
-client. Gameplay enables the HUD. GLFW cursor movement controls yaw/pitch;
+client and gameplay HUD. Cursor movement controls yaw/pitch;
 W/S and A/D become camera-relative normalized horizontal directions.
 The shared client predicts only its local player's queued input, then rebuilds
 that prediction from acknowledged server state; it never mutates the
