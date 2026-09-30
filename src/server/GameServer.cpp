@@ -465,7 +465,8 @@ private:
                 m_pending.insert(m_pending.begin(), std::move(work));
                 break;
             }
-            m_submitted.emplace(submission.handle.id(), Submitted{
+            uint64_t const job_id = submission.handle.id();
+            m_submitted.emplace(job_id, Submitted{
                 .work = std::move(work),
                 .result = std::move(result),
                 .handle = std::move(submission.handle),

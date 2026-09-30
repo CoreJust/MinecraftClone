@@ -9740,5 +9740,45 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0278",
+    "title": "Preserve terrain job identity before moving executor handles",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P0",
+    "route": "sol",
+    "milestone": "ED-010-S7",
+    "depends_on": [
+      "MC-AI-0275"
+    ],
+    "acceptance": "Capture the accepted executor job ID before moving its handle into the terrain submission map. Preserve queue capacity, cancellation, result matching, terrain semantics and existing deadlines. Confirm native MSVC reproduces old ID-zero insertion and recovers public deferred-input and terrain generation contracts with exact Release dependencies. Inspect related GameServer submission paths for the same read/move pattern. Report remaining runtime failures separately; full release acceptance is not this bounded task. No API, timeout increase, test exclusion or GUI acceptance claim.",
+    "evidence": "Native MSVC19.44 x64 Release public ManualExecutor probe against exact CoreCpp627 confirms original accepted ID1 is stored under key0 and misses completion; explicit captured ID2 matches completion. Serial unchanged-deadline rerun of two deferred-input and nearest-preview tests fails3/3 before fix. The two-line production repair passes6/6 incremental build actions and22/24 focused CTests in141.80s. All ten Flight tests and12/13 Preview tests pass; full205861-tile residency completes46.99s versus zero tiles after90s before fix. AutomaticJoin passes. Residual SustainedFlight ack lag321 at input350 and CoreLang permission/physics scenario expected z1 observed z3 remain explicit separate Windows failures; no full545 rerun or release acceptance claimed. Related delivery submission already captures token before move; no other handle read/move pattern found. Docs/backlog/plan/fast/source checks pass with existing development-only snapshot-date/dirty exceptions. Exact logs and probe are retained at /private/tmp/mc-s7-windows-preflight.cr0MN6/.",
+    "blocker": "",
+    "owner": "s7_corecpp_audio_fix",
+    "level": "basic",
+    "parent": "MC-AI-0038",
+    "motivation": "Restore terrain completion and deferred movement progress on native Windows.",
+    "context": "Native MSVC19.44 Release on da96d97 plus the two MC-AI-0275 test-only corrections builds but fails20/545 CTests. Terrain streams receive zero tiles even after90s; Clang completes the same full-radius contract. A standalone MSVC probe using exact CoreCpp627 public ManualExecutor/JobHandle confirms the original emplace expression stores ID0 after moving the handle, while capturing the ID first preserves completion lookup.",
+    "complexity": "low",
+    "created_at": "2026-09-30",
+    "resolved_at": "2026-09-30",
+    "resolution_changes": "Capture the accepted terrain job ID in a separate statement before constructing and moving Submitted, so completion IDs match on every conforming argument evaluation order. Preserve all queue, ownership, cancellation and terrain behavior.",
+    "plan": [
+      "Reproduce the native MSVC ordering result and existing terrain failures, capture the ID in a preceding statement, inspect related submission paths, then run focused native non-GUI tests without changing deadlines. Keep remaining failures explicit and continue read-only diagnosis; defer full-suite acceptance until the failure class is resolved."
+    ],
+    "product_changes": [
+      "Restore native Windows deferred movement and terrain generation progress after executor completion."
+    ],
+    "code_changes": [
+      "Sequence JobHandle ID capture before moving the handle into the terrain submission map; reuse the actual public executor probe and existing terrain regressions without changing tests or deadlines."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]
