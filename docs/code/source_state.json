@@ -278,7 +278,7 @@
         "tests/core/world_generation_scheduler_tests.cpp",
         "tests/core/world_generation_tests.cpp"
       ],
-      "sources_sha256": "1163e1d920583c5967bce80d67b5fe494398beccc58a85fa51be35582eb9ecdd"
+      "sources_sha256": "5801f8a21f616d1671a9ef68f07b1292ea7a5eea919974ff9886b17db17d9b1f"
     },
     {
       "guide": "docs/code/RENDERING.md",
@@ -353,7 +353,7 @@
         "tests/testsupport/include/testsupport/AdverseTransport.hpp",
         "tests/testsupport/include/testsupport/ImageComparison.hpp"
       ],
-      "sources_sha256": "66de87b4cf0e592d4c36c7108b5b8aac7ce20b5bac67f0ff9d24c8d5cdb1dbfb"
+      "sources_sha256": "b1ecd974e7977fd5e52dd8e122f54d5ca731d3cb512e225814e34462a07c40a0"
     }
   ],
   "version": 1

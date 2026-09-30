@@ -9621,5 +9621,43 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0275",
+    "title": "Keep S7 movement test fixtures portable to MSVC",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P1",
+    "route": "luna",
+    "milestone": "ED-010-S7",
+    "depends_on": [
+      "MC-AI-0270"
+    ],
+    "acceptance": "Order the seven existing Direction/Player test initializers according to their declarations without changing values, assertions or production behavior. Rebuild and run the affected terrain and presentation regressions; obtain native MSVC compilation evidence without disabling diagnostics.",
+    "evidence": "macOS Release mc_tests rebuild passed; 21/21 affected GameServerPreview/PlayerPresentation regressions passed (MC-AI-0275-focused.xml). Native MSVC 19.44 Release incremental build passed all 5 actions, including both previously failing objects and mc_tests link, after transferring exactly the two source files with matching SHA-256. This is a dirty two-file diagnostic over da96d97 with exact CoreCpp 6273573/CoreProject bd23164 dependencies, not final immutable game acceptance; full Windows CTest is tracked separately.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0038",
+    "motivation": "Unblock the required native Windows game preflight.",
+    "context": "Native MSVC 19.44 compilation of da96d97 failed with C7560 in the camera/frontier test and six player-presentation fixtures. Their designated initializers differ from Direction/Player declaration order. Clang accepted these as extensions; values, assertions and production behavior need no changes.",
+    "complexity": "low",
+    "created_at": "2026-09-30",
+    "resolved_at": "2026-09-30",
+    "resolution_changes": "Reordered the seven Direction/Player designated initializers to match their declarations; preserved field values, assertions and production source.",
+    "plan": [
+      "Reorder the seven initializers, rebuild and run the affected regressions, then retain native MSVC evidence separately from final game acceptance."
+    ],
+    "product_changes": [],
+    "code_changes": [
+      "Use declaration order for the existing Direction and Player test fixtures."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]

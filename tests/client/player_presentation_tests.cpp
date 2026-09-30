@@ -162,8 +162,8 @@ TEST(PlayerPresentationTest, VerticalInterpolationKeepsVelocityContinuousAcrossT
         .x = 0U,
         .y = 0U,
         .z = 1,
-        .vertical_velocity_subcells = 5'250,
         .ch = '@',
+        .vertical_velocity_subcells = 5'250,
     };
     static constexpr shared::Player SECOND_TARGET{
         .id = 1U,
@@ -171,8 +171,8 @@ TEST(PlayerPresentationTest, VerticalInterpolationKeepsVelocityContinuousAcrossT
         .y = 0U,
         .z = 1,
         .z_subcell = 5'000U,
-        .vertical_velocity_subcells = 3'500,
         .ch = '@',
+        .vertical_velocity_subcells = 3'500,
     };
     std::chrono::steady_clock::time_point const started_at{};
     client::PlayerPresentation presentation;
@@ -211,8 +211,8 @@ TEST(PlayerPresentationTest, TakeoffPresentationStartsWithTheAuthoritativeJumpIm
         .y = 0U,
         .z = 0U,
         .z_subcell = 6'125U,
-        .vertical_velocity_subcells = 5'250,
         .ch = '@',
+        .vertical_velocity_subcells = 5'250,
     };
     std::chrono::steady_clock::time_point const started_at{};
     client::PlayerPresentation presentation;
@@ -247,16 +247,16 @@ TEST(PlayerPresentationTest, SamePositionAcknowledgementUpdatesVerticalVelocity)
         .x = 0U,
         .y = 0U,
         .z = 1U,
-        .vertical_velocity_subcells = 5'250,
         .ch = '@',
+        .vertical_velocity_subcells = 5'250,
     };
     static constexpr shared::Player STOPPED{
         .id = 1U,
         .x = 0U,
         .y = 0U,
         .z = 1U,
-        .vertical_velocity_subcells = 0,
         .ch = '@',
+        .vertical_velocity_subcells = 0,
     };
     static constexpr shared::Player NEXT_TARGET{
         .id = 1U,
@@ -264,8 +264,8 @@ TEST(PlayerPresentationTest, SamePositionAcknowledgementUpdatesVerticalVelocity)
         .y = 0U,
         .z = 1U,
         .z_subcell = 5'000U,
-        .vertical_velocity_subcells = 3'500,
         .ch = '@',
+        .vertical_velocity_subcells = 3'500,
     };
     std::chrono::steady_clock::time_point const started_at{};
     client::PlayerPresentation presentation;

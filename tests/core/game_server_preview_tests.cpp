@@ -488,7 +488,7 @@ TEST(GameServerPreviewTest, CameraRotationKeepsInterestAndMovementAddsFreshFront
     bool sent_all_movement = true;
     for (uint32_t sequence = 2U; sequence <= final_input_sequence; ++sequence) {
         sent_all_movement = client.send(shared::encodeMessage(shared::ClientInputMessage{
-            .direction = {.x = 127, .view_x = 127, .accelerated = true, .speedup = FLIGHT_SPEEDUP},
+            .direction = {.x = 127, .accelerated = true, .speedup = FLIGHT_SPEEDUP, .view_x = 127},
             .sequence = sequence,
         }), shared::GAME_CHANNEL, core::SendMode{core::SendMode::Reliable}) && sent_all_movement;
     }
