@@ -265,7 +265,7 @@ def prepare(root: Path, task_id: str, source_text: str) -> None:
     revision(root, task["baseline_commit"])
     promotion_base = revision(root, AI_MAIN)
     require_task_trailer(root, source, task_id)
-    run_check(root, "--strict", "--level", "snapshot", "--require-index-match")
+    run_check(root, "--candidate", "--level", "snapshot", "--require-index-match")
     if current_branch(root) != AI_DEV or revision(root, "HEAD") != source:
         raise PublishError("ai-dev changed while release checks were running")
     if revision(root, AI_MAIN) != promotion_base:

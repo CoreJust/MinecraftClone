@@ -68,9 +68,7 @@ class AiPublishTests(unittest.TestCase):
             "def project_version_arguments(root):\n"
             "    return ('EarlyDev:Initiation', '0.1.0:3')\n"
             "if __name__ == '__main__':\n"
-            "    if '--strict' in sys.argv and subprocess.check_output(\n"
-            "        ['git', 'branch', '--show-current'], text=True\n"
-            "    ).strip() == 'ai-main':\n"
+            "    if '--strict' in sys.argv:\n"
             "        expected = os.environ.get('MC_TEST_HOSTED_MATRIX_COMMIT')\n"
             "        current = subprocess.check_output(\n"
             "            ['git', 'rev-parse', 'HEAD'], text=True\n"
@@ -78,6 +76,9 @@ class AiPublishTests(unittest.TestCase):
             "        if expected is not None and expected != current:\n"
             "            print('missing exact ai-main hosted matrix receipt')\n"
             "            raise SystemExit(3)\n"
+            "    if '--candidate' in sys.argv and os.environ.get('MC_TEST_FAIL_CANDIDATE'):\n"
+            "        print('candidate release gate failed')\n"
+            "        raise SystemExit(4)\n"
             "    mutation_root = os.environ.get('MC_TEST_PUBLISH_STAGE_DURING_CHECK')\n"
             "    if mutation_root:\n"
             "        target = Path(mutation_root) / 'src' / 'check_side_effect.txt'\n"
@@ -262,6 +263,22 @@ class AiPublishTests(unittest.TestCase):
             env={"MC_TEST_HOSTED_MATRIX_COMMIT": promoted},
         )
         self.assertEqual(tagged.returncode, 0, tagged.stderr)
+
+    def test_prepare_defers_hosted_matrix_but_requires_candidate_gate(self) -> None:
+        blocked = self.run_publish(
+            "prepare", "MC-AI-0032", self.source,
+            env={"MC_TEST_FAIL_CANDIDATE": "1"},
+        )
+        self.assertNotEqual(blocked.returncode, 0)
+        self.assertIn("candidate release gate failed", blocked.stdout)
+        self.assertEqual(self.git_output("branch", "--show-current"), "ai-dev")
+
+        prepared = self.run_publish(
+            "prepare", "MC-AI-0032", self.source,
+            env={"MC_TEST_HOSTED_MATRIX_COMMIT": "not-yet-published"},
+        )
+        self.assertEqual(prepared.returncode, 0, prepared.stderr)
+        self.assertEqual(self.git_output("branch", "--show-current"), "ai-main")
 
     def test_snapshot_revision_tag_rejects_the_canonical_promotion(self) -> None:
         self.prepare()

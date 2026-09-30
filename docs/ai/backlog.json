@@ -9216,5 +9216,42 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0266",
+    "title": "Allow Snapshot 7 promotion preparation before hosted matrix receipts exist",
+    "kind": "chore",
+    "status": "done",
+    "priority": "P1",
+    "route": "luna",
+    "milestone": "ED-010-S7",
+    "depends_on": [],
+    "acceptance": "Promotion prepare runs the full local candidate gate and rejects local gate failures; finish validates the immutable merge candidate; tag requires strict checks and a successful exact-promotion-commit hosted matrix receipt. Regression tests cover both the deferred and enforced gates.",
+    "evidence": "test_ai_publish: 14 passed; ai_check.py --fast passed; ai_docs.py check and ai_tasks.py check passed.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0038",
+    "motivation": "Promotion preparation currently requests a hosted matrix receipt before the ai-main promotion commit exists, blocking Snapshot 7 publication.",
+    "context": "The matrix runs on pushed ai-main commits. Candidate checks already defer only the hosted matrix, while tag performs strict exact-commit verification.",
+    "complexity": "medium",
+    "created_at": "2026-09-30",
+    "resolved_at": "2026-09-30",
+    "resolution_changes": "Promotion preparation now runs the full candidate gate, leaving the hosted matrix deferred until the exact ai-main promotion commit can be checked by the strict tag gate.",
+    "plan": [
+      "Use the candidate gate before creating the promotion commit; keep strict verification at tagging; test the invocation sequence and update the release procedure."
+    ],
+    "product_changes": [],
+    "code_changes": [
+      "Use the candidate gate in ai_publish.prepare and add regression coverage for local gate failure and deferred hosted receipt.",
+      "Update release documentation to state candidate, hosted matrix, and strict tag ordering."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]

@@ -24,12 +24,12 @@ Planning tasks are created on request before work. Current plans: [snapshot 0.1.
 
 Screenshot tests stay disabled with an explicit reason until implemented. Platform diagnostics supplement, but never replace, actual platform evidence and recorded limitations.
 
-From Snapshot 7, the MC-AI-0249 sanitizer/static-analysis matrix is a required
-hosted pre-promotion and strict/tag gate. Local candidate checks defer only
-this matrix; hosted receipts bind to the immutable commit/tree, and tag checks
-require its successful exact-commit result. Missing tools, devices, results, or
-receipts fail closed. Linux is a tests-only sanitizer host, not a product
-target.
+From Snapshot 7, the MC-AI-0249 sanitizer/static-analysis matrix is required
+after the promotion commit is pushed and before tagging. Local candidate checks
+defer only this hosted matrix; hosted receipts bind to the immutable promotion
+commit/tree, and strict tag checks require its successful exact-commit result.
+Missing tools, devices, results, or receipts fail closed. Linux is a tests-only
+sanitizer host, not a product target.
 
 ## Publish
 
