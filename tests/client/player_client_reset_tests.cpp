@@ -87,6 +87,7 @@ struct PlayerClientTestAccess final {
             && client.m_pending_preview_mesh_set.empty()
             && client.m_preview_mesh_jobs.empty()
             && client.m_preview_mesh_dirty_jobs.empty()
+            && client.m_visible_preview_mesh_tiles.empty()
             && client.m_visible_preview_meshes.empty();
     }
 

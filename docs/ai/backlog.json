@@ -2327,7 +2327,7 @@
     "id": "MC-AI-0059",
     "title": "Render revisioned coarse and final chunk previews",
     "kind": "feature",
-    "status": "backlog",
+    "status": "done",
     "priority": "P1",
     "route": "terra",
     "milestone": "ED-010-S7",
@@ -2336,27 +2336,31 @@
       "MC-AI-0058"
     ],
     "acceptance": "Client can render bounded revisioned coarse and final chunk preview meshes, uses deterministic fallback when a level is unavailable, and atomically replaces only matching current-revision output without cracks or stale flashes. Server/Shared remain authoritative; clients never upload speculative generated terrain; physics never reads visual proxies. Tests cover seam compatibility, stale/cancelled replacement, bounded upload/residency, eviction/regeneration and visible distant traversal.",
-    "evidence": "",
+    "evidence": "Integrated debug mc_tests build passed; PreviewMeshingTest 13/13 passed. Combined Release capture tree 79c1d97d8d02ecc03a4d9dec47ea674dba851efd passed the real client/server 256-chunk-radius central-spike capture (205861 resident/uploaded, 16-heading sweep, 2560x1440 PPM, 858.396 seconds, exit 0); this proves distant preview visibility and residency, not final screenshot composition. Atomic renderer batch smoke passed on the transport candidate. Full aggregate checks remain the snapshot gate.",
     "blocker": "",
-    "owner": "",
+    "owner": "Codex",
     "level": "basic",
     "parent": "MC-AI-0038",
     "motivation": "Show useful distant terrain progressively without confusing visual residency with authoritative materialization.",
     "context": "Client visual previews consume server-originated revisioned generation output. Clients send intentions, never speculative generated world data; preview meshes never supply physics/collision authority.",
     "complexity": "high",
     "created_at": "2026-09-09",
-    "resolved_at": "",
-    "resolution_changes": "",
+    "resolved_at": "2026-09-30",
+    "resolution_changes": "Revisioned coarse/final visual previews now publish through bounded workers and atomic center/neighbor seam batches; stale or failed batches preserve installed meshes, while authority and collision remain server-owned.",
     "plan": [
       "Define server-originated preview revision/payload and Client residency contracts independent of authoritative block queries.",
       "Build bounded coarse/final mesh variants and atomically replace only current-revision uploads.",
       "Test seams, cancellation, eviction/regeneration, stale result rejection and the prohibition on preview-derived collision."
     ],
-    "product_changes": [],
-    "code_changes": [],
+    "product_changes": [
+      "New height-tile previews become visible at deterministic coarser detail before the selected final visual detail is published."
+    ],
+    "code_changes": [
+      "Added coarse/final preview stages and current-handle publication guards. Center and changed-neighbor seam meshes publish in one bounded renderer batch; failed batches preserve all installed meshes and client seam metadata. Tests cover deterministic fallback, stale revision rejection, non-regression, batch failure, distant-interest stage traversal, and reset metadata; documented the rendering contract."
+    ],
     "baseline_commit": "",
     "commits": [],
-    "finalized": false,
+    "finalized": true,
     "retrospective": "",
     "docs_review": "",
     "environment_review": "",

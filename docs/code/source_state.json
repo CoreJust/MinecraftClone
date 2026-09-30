@@ -276,11 +276,11 @@
         "tests/core/world_generation_scheduler_tests.cpp",
         "tests/core/world_generation_tests.cpp"
       ],
-      "sources_sha256": "29f856d69a6367ba2df8ccc70836ce508bd072503f5a304b2a566a11d4495877"
+      "sources_sha256": "28f39f44c25fc4b41938abbc0fe096a49e28acbdcc92ea79f730ef9db2d61661"
     },
     {
       "guide": "docs/code/RENDERING.md",
-      "guide_sha256": "3a6ce944a13efde20c1a23a5ca60135362c70dc811b99ce7c13a2dc0f28a3f31",
+      "guide_sha256": "c8de18cbd66b55c4d18fbb32b295faad3fb7ba6123b65fb64cab375c845e7da0",
       "id": "rendering",
       "sources": [
         "src/client/CMakeLists.txt",
@@ -343,7 +343,7 @@
         "tests/testsupport/include/testsupport/AdverseTransport.hpp",
         "tests/testsupport/include/testsupport/ImageComparison.hpp"
       ],
-      "sources_sha256": "675898cda42cdbaf8352c73df042e432151358687d44996fc0f9e919d924b727"
+      "sources_sha256": "30d0e5dc2a24d5c00c8e4a63252eda16a928c0fcfdcfb9a942e3db0559f9ea83"
     }
   ],
   "version": 1

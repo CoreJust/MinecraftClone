@@ -4,14 +4,14 @@
 
 [`VulkanRenderer.hpp`](../../src/client/include/client/render/VulkanRenderer.hpp)
 owns Client scene order, push constants, shaders, camera policy, pipeline
-layouts, and program/cache lifetimes. CoreCpp validates programs and owns Vulkan
-instance/device, queues, commands, synchronization, swapchain, views, and
-GLFW/Android surface integration through one `PresentationContext`.
+layouts, and program/cache lifetimes. CoreCpp validates programs and manages
+Vulkan instance/device, queues, commands, synchronization, swapchain/views, and
+GLFW/Android surfaces through one `PresentationContext`.
 
-Client device children use the current `PresentationResourceScope`; it records
-only into an acquired frame callback. Recreation releases cache, programs,
-layouts, and the stale scope before rebuilding. `waitForSubmittedFrames()`
-drains bounded slots without steady-state `vkDeviceWaitIdle` or draw allocation.
+Client device children use the current `PresentationResourceScope`, recording
+only during an acquired frame. Recreation releases cache, programs, layouts,
+and stale scope before rebuilding. `waitForSubmittedFrames()` drains bounded
+slots without steady-state `vkDeviceWaitIdle` or draw allocation.
 
 ## Scene and shader policy
 
@@ -22,16 +22,16 @@ World players -> PlayerClient / AndroidPlayerClient -> PlayerRenderData span
 
 The platform/grid/player scene is legacy flat-world Snapshot 4 coverage. Normal
 Flight clears sky blue and draws the deterministic seed-42 16³ air-and-stone
-chunk with the original 16² stone texture. A local first-/third-person camera
-uses the sampled player position; its look camera remains separate from input.
-First person hides the local body; both third-person modes draw it. Replicated
-four-bit palette identities map to 16 opaque colors. Mesh uploads follow content
-identity. The HUD reports authoritative Flight XYZ and camera angles. The
-camera remains right-handed Z-up with zero-to-one depth and depth testing.
+chunk with the original 16² stone texture. Local first-/third-person cameras use
+sampled player position, separately from input look. First person hides the
+local body; third-person modes draw it. Four-bit replicated palette identities
+map to 16 opaque colors; mesh uploads follow content identity. The HUD reports
+authoritative Flight XYZ and camera angles. The camera is right-handed Z-up with
+zero-to-one depth and depth testing.
 
-Shader assets are borrowed: desktop `InstalledShaderAssets` reads the installed
-`shaders/` directory and Android `AndroidShaderAssets` reads APK assets. Both
-accept bare `.spv` names only; no source-tree fallback is allowed.
+Desktop `InstalledShaderAssets` reads installed `shaders/`; Android
+`AndroidShaderAssets` reads APK assets. Both accept bare `.spv` names only, with
+no source-tree fallback.
 
 S7 streams the camera-independent radius-256 disk (205,861 tiles); frustum only
 culls drawing. LOD uses shortest wrapped player distance and current vertical
@@ -41,6 +41,14 @@ spans cover out-of-order uploads; only adjacent meshes with changed spans are
 re-uploaded before draw, without waiting for their jobs. LOD never changes
 terrain or collision. Far plane and fog cover the disk; workers mesh outside
 presentation.
+
+New tiles publish coarse meshes before selected LOD. Results must match revision,
+tile, neighbors, detail, and epoch; late coarse output cannot replace final. Both
+passes share bounded workers and seam bridges; previews never affect authority
+or collision. Deferred uploads retain the installed revision and retry the same
+stage. Seam publication batches the center and changed neighbors atomically;
+capacity/deadline failure leaves renderer slots and client seam state unchanged.
+
 The arena grows with streamed residency; restoration shares the frame deadline.
 Gameplay bounds uploads and rendering to 8 ms, deferring overdue tiles.
 [`height_tile_surface_mesher_tests.cpp`](../../tests/core/height_tile_surface_mesher_tests.cpp)
@@ -116,12 +124,8 @@ the smaller directional ellipse in [GAMEPLAY.md](GAMEPLAY.md). Its renderer-only
 gate requires nominal 120 Hz within one percent and p99 at most 10 ms,
 including display wait and scheduler jitter.
 
-Visible benchmark and capture modes preserve requested framebuffer pixels.
-Bounded GLFW setup checks logical resizing before creating a `PresentationContext`;
-extent mismatch or oscillation fails. Capture requires completed readback, sky,
-and textured stone. Benchmark requires presentation and a stone draw, and
-records frame and phase timing within its deadline. The opt-in networked
-playtest capture launches the production server and player client, waits for
-1,024 streamed meshes, rotates 90 degrees toward the central peak, proves that
-the resident-key set is identical, then validates the real framebuffer's terrain
-coverage, texture variation, HUD visibility, completion time, and process health.
+Benchmark and capture modes preserve requested framebuffer pixels; unstable
+GLFW extent fails before rendering. Capture verifies readback, sky, stone, HUD,
+and exact player-centered radius-256 mesh coverage through a 16-heading sweep
+against a production local server. Benchmark requires presented stone and records
+frame and phase timing.

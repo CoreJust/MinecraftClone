@@ -151,6 +151,11 @@ public:
         shared::HeightTileSurfaceMesh const& mesh,
         std::chrono::steady_clock::time_point deadline
     );
+    [[nodiscard]]
+    bool upsertHeightTileMeshes(
+        std::span<shared::HeightTileSurfaceMesh const> meshes,
+        std::chrono::steady_clock::time_point deadline
+    );
     [[nodiscard]] bool removeHeightTileMesh(shared::HeightTileCoordinate coordinate);
     void hotReload();
     void recreate(uint32_t width, uint32_t height);

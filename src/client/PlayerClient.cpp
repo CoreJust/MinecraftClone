@@ -74,6 +74,8 @@ public:
     struct Job final {
         HeightTileKey key;
         PreviewMeshSource source;
+        shared::HeightTileSurfaceDetail target_detail;
+        PreviewMeshStage stage;
         uint64_t epoch;
     };
 
@@ -81,6 +83,8 @@ public:
         HeightTileKey key;
         PreviewMeshSource source;
         shared::HeightTileSurfaceMesh mesh;
+        shared::HeightTileSurfaceDetail target_detail;
+        PreviewMeshStage stage;
         uint64_t epoch;
     };
 
@@ -196,6 +200,8 @@ private:
                 .key = job.key,
                 .source = std::move(job.source),
                 .mesh = std::move(mesh),
+                .target_detail = job.target_detail,
+                .stage = job.stage,
                 .epoch = job.epoch,
             };
             std::lock_guard lock{m_mutex};
@@ -231,6 +237,7 @@ void PlayerClient::onConnectionStateReset()
         static_cast<void>(m_renderer.removeHeightTileMesh({ .x = key.x, .y = key.y }));
     }
     m_visible_preview_meshes.clear();
+    m_visible_preview_mesh_tiles.clear();
     m_visible_preview_mesh_bases.clear();
     m_visible_preview_mesh_seam_bridges.clear();
     m_preview_mesh_details.clear();
@@ -469,67 +476,97 @@ std::array<shared::HeightTileSurfaceDetail, 4> PlayerClient::previewMeshNeighbor
     return details;
 }
 
-void PlayerClient::refreshVisiblePreviewMesh(
+bool PlayerClient::refreshVisiblePreviewMesh(
     HeightTileKey const key,
-    std::chrono::steady_clock::time_point const deadline
+    std::chrono::steady_clock::time_point const deadline,
+    PreviewMeshSeamBridgeSet const* candidate_bridges
 )
 {
     auto const base = m_visible_preview_mesh_bases.find(key);
     if (base == m_visible_preview_mesh_bases.end()) {
-        return;
+        return false;
     }
-    shared::HeightTileSurfaceMesh mesh = base->second;
-    auto const seams = m_visible_preview_mesh_seam_bridges.find(key);
-    if (seams != m_visible_preview_mesh_seam_bridges.end()) {
-        mesh = seams->second.compose(base->second);
+    PreviewMeshSeamBridgeSet const* bridges = candidate_bridges;
+    if (bridges == nullptr) {
+        auto const seams = m_visible_preview_mesh_seam_bridges.find(key);
+        if (seams != m_visible_preview_mesh_seam_bridges.end()) {
+            bridges = &seams->second;
+        }
     }
+    shared::HeightTileSurfaceMesh mesh = bridges == nullptr ? base->second : bridges->compose(base->second);
     if (m_renderer.upsertHeightTileMesh(mesh, deadline)) {
         m_visible_preview_meshes.insert(key);
+        if (candidate_bridges != nullptr) {
+            m_visible_preview_mesh_seam_bridges.insert_or_assign(key, *candidate_bridges);
+        }
+        return true;
     } else {
-        m_visible_preview_meshes.erase(key);
         queuePreviewMesh(key);
+        return false;
     }
 }
 
 void PlayerClient::publishPreviewMesh(
     HeightTileKey const key,
     shared::HeightTileSurfaceMesh mesh,
+    HeightTileHandle const& tile,
     std::chrono::steady_clock::time_point const deadline
 )
 {
-    m_visible_preview_mesh_bases.insert_or_assign(key, std::move(mesh));
-    PreviewMeshSeamBridgeSet& own_bridges = m_visible_preview_mesh_seam_bridges[key];
+    PreviewMeshSeamBridgeSet center_bridges;
+    auto const current_bridges = m_visible_preview_mesh_seam_bridges.find(key);
+    if (current_bridges != m_visible_preview_mesh_seam_bridges.end()) {
+        center_bridges = current_bridges->second;
+    }
     std::array<HeightTileKey, MAX_PREVIEW_MESH_NEIGHBOR_UPSERTS_PER_RESULT> const adjacent_keys{
         offsetHeightTileKey(key, -1, 0),
         offsetHeightTileKey(key, 1, 0),
         offsetHeightTileKey(key, 0, -1),
         offsetHeightTileKey(key, 0, 1),
     };
-    std::array<PreviewMeshSeamNeighbor, MAX_PREVIEW_MESH_NEIGHBOR_UPSERTS_PER_RESULT> neighbors;
-    for (size_t index = 0U; index < adjacent_keys.size(); ++index) {
+    std::array<PreviewMeshSeamNeighborSnapshot, MAX_PREVIEW_MESH_NEIGHBOR_UPSERTS_PER_RESULT> neighbors;
+    for (uint32_t index = 0U; index < adjacent_keys.size(); ++index) {
         auto const neighbor_base = m_visible_preview_mesh_bases.find(adjacent_keys[index]);
         if (neighbor_base != m_visible_preview_mesh_bases.end()) {
+            auto const neighbor_bridges = m_visible_preview_mesh_seam_bridges.find(adjacent_keys[index]);
             neighbors[index] = {
                 .mesh = &neighbor_base->second,
-                .bridges = &m_visible_preview_mesh_seam_bridges[adjacent_keys[index]],
+                .bridges = neighbor_bridges == m_visible_preview_mesh_seam_bridges.end()
+                    ? nullptr
+                    : &neighbor_bridges->second,
             };
         }
     }
-    PreviewMeshSeamNeighborUpdates const updates = updatePreviewMeshSeamBridgesForVisibleNeighbors(
-        m_visible_preview_mesh_bases.at(key),
-        own_bridges,
+    PreviewMeshSeamPublicationPlan plan = planPreviewMeshSeamPublication(
+        mesh,
+        center_bridges,
         neighbors
     );
-    std::vector<HeightTileKey> changed_neighbors;
-    changed_neighbors.reserve(updates.count);
-    for (size_t index = 0U; index < updates.changed.size(); ++index) {
-        if (updates.changed[index]) {
-            changed_neighbors.push_back(adjacent_keys[index]);
+    PreviewMeshSeamPublicationBatch const batch = buildPreviewMeshSeamPublicationBatch(plan, neighbors);
+    bool const published = publishPreviewMeshSeamPlan(
+        plan,
+        batch,
+        [this, deadline](std::span<shared::HeightTileSurfaceMesh const> candidates) {
+            return m_renderer.upsertHeightTileMeshes(candidates, deadline);
+        },
+        [this, key, &mesh, &tile, &adjacent_keys](PreviewMeshSeamPublicationPlan& accepted_plan) {
+            m_visible_preview_meshes.insert(key);
+            m_visible_preview_mesh_bases.insert_or_assign(key, std::move(mesh));
+            m_visible_preview_mesh_seam_bridges.insert_or_assign(key, std::move(accepted_plan.center_bridges));
+            m_visible_preview_mesh_tiles.insert_or_assign(key, tile);
+            for (uint32_t index = 0U; index < accepted_plan.changed_neighbors.size(); ++index) {
+                if (accepted_plan.changed_neighbors[index]) {
+                    m_visible_preview_meshes.insert(adjacent_keys[index]);
+                    m_visible_preview_mesh_seam_bridges.insert_or_assign(
+                        adjacent_keys[index],
+                        std::move(accepted_plan.neighbor_bridges[index])
+                    );
+                }
+            }
         }
-    }
-    refreshVisiblePreviewMesh(key, deadline);
-    for (HeightTileKey const adjacent : changed_neighbors) {
-        refreshVisiblePreviewMesh(adjacent, deadline);
+    );
+    if (!published) {
+        queuePreviewMesh(key);
     }
 }
 
@@ -671,10 +708,38 @@ void PlayerClient::processPendingPreviewMeshes(
             source_current = current == result->source.tile
                 && previewMeshNeighbors(result->key) == result->source.neighbors
                 && previewMeshNeighborDetails(result->key) == result->source.neighbor_details;
-            detail_current = previewMeshDetail(result->key, current) == result->mesh.detail;
+            shared::HeightTileSurfaceDetail const expected_mesh_detail = result->stage
+                    == PreviewMeshStage::Coarse
+                ? previewMeshCoarseDetail(result->target_detail)
+                : result->target_detail;
+            detail_current = previewMeshDetail(result->key, current) == result->target_detail
+                && result->mesh.detail == expected_mesh_detail;
         }
-        if (source_current && detail_current) {
-            publishPreviewMesh(result->key, std::move(result->mesh), deadline);
+        HeightTileHandle visible_tile;
+        auto const visible = m_visible_preview_mesh_tiles.find(result->key);
+        if (visible != m_visible_preview_mesh_tiles.end()) {
+            visible_tile = visible->second;
+        }
+        bool const can_publish = previewMeshCanPublish(
+            visible_tile,
+            result->source.tile,
+            result->stage,
+            current
+        );
+        if (source_current && detail_current && can_publish) {
+            publishPreviewMesh(
+                result->key,
+                std::move(result->mesh),
+                result->source.tile,
+                deadline
+            );
+            if (result->stage == PreviewMeshStage::Coarse
+                && m_visible_preview_mesh_tiles.contains(result->key)) {
+                queuePreviewMesh(result->key);
+            }
+        } else if (source_current && detail_current && !can_publish
+            && result->stage == PreviewMeshStage::Coarse) {
+            queuePreviewMesh(result->key);
         }
         if (m_preview_mesh_dirty_jobs.erase(result->key) > 0U || !source_current || !detail_current) {
             queuePreviewMesh(result->key);
@@ -717,14 +782,26 @@ void PlayerClient::processPendingPreviewMeshes(
             continue;
         }
         std::array<HeightTileHandle, 4> const neighbors = previewMeshNeighbors(key);
+        shared::HeightTileSurfaceDetail const target_detail = previewMeshDetail(key, tile);
+        auto const visible_tile = m_visible_preview_mesh_tiles.find(key);
+        PreviewMeshStage const stage = previewMeshStageForTile(
+            visible_tile == m_visible_preview_mesh_tiles.end() ? HeightTileHandle{} : visible_tile->second,
+            tile,
+            target_detail
+        );
+        shared::HeightTileSurfaceDetail const mesh_detail = stage == PreviewMeshStage::Coarse
+            ? previewMeshCoarseDetail(target_detail)
+            : target_detail;
         PreviewMeshWorkerPool::Job job{
             .key = key,
             .source = {
                 .tile = tile,
                 .neighbors = neighbors,
-                .detail = previewMeshDetail(key, tile),
+                .detail = mesh_detail,
                 .neighbor_details = previewMeshNeighborDetails(key),
             },
+            .target_detail = target_detail,
+            .stage = stage,
             .epoch = m_preview_mesh_epoch,
         };
         if (!m_preview_mesh_workers->enqueue(std::move(job))) {
@@ -879,6 +956,7 @@ void PlayerClient::render() {
         if (!m_height_tile_interest.contains(key)) {
             static_cast<void>(m_renderer.removeHeightTileMesh({.x = key.x, .y = key.y}));
             m_visible_preview_meshes.erase(key);
+            m_visible_preview_mesh_tiles.erase(key);
             m_visible_preview_mesh_bases.erase(key);
             m_visible_preview_mesh_seam_bridges.erase(key);
             static constexpr std::array<size_t, 4> OPPOSITE_EDGES{ 1U, 0U, 3U, 2U };
@@ -890,9 +968,15 @@ void PlayerClient::render() {
                      offsetHeightTileKey(key, 0, 1),
                  }) {
                 auto const seams = m_visible_preview_mesh_seam_bridges.find(adjacent);
-                if (seams != m_visible_preview_mesh_seam_bridges.end()
-                    && seams->second.replace(OPPOSITE_EDGES[edge_index], {})) {
-                    refreshVisiblePreviewMesh(adjacent, renderer_deadline);
+                if (seams != m_visible_preview_mesh_seam_bridges.end()) {
+                    PreviewMeshSeamBridgeSet candidate_bridges = seams->second;
+                    if (candidate_bridges.replace(OPPOSITE_EDGES[edge_index], {})) {
+                        static_cast<void>(refreshVisiblePreviewMesh(
+                            adjacent,
+                            renderer_deadline,
+                            &candidate_bridges
+                        ));
+                    }
                 }
                 ++edge_index;
             }

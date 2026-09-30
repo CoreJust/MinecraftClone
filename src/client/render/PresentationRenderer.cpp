@@ -1353,6 +1353,148 @@ struct VulkanRenderer::Impl final {
         return true;
     }
 
+    [[nodiscard]] bool upsertHeightTileMeshes(
+        std::span<shared::HeightTileSurfaceMesh const> const meshes,
+        std::chrono::steady_clock::time_point const deadline
+    )
+    {
+        if (meshes.size() > 5U) {
+            throw std::invalid_argument("height tile mesh batch exceeds five tiles");
+        }
+
+        struct PreparedMesh final {
+            shared::HeightTileCoordinate coordinate;
+            std::optional<HeightTileSlot> slot;
+        };
+        std::vector<PreparedMesh> prepared;
+        prepared.reserve(meshes.size());
+        std::vector<StoneDrawRange> free_ranges = m_free_stone_ranges;
+        std::vector<RetiredStoneRange> retired_ranges;
+        retired_ranges.reserve(m_retired_stone_ranges.size());
+        for (RetiredStoneRange const retired : m_retired_stone_ranges) {
+            if (retired.reusable_after_frame <= m_submitted_frame_count) {
+                free_ranges.push_back(retired.range);
+            } else {
+                retired_ranges.push_back(retired);
+            }
+        }
+        std::ranges::sort(free_ranges, {}, &StoneDrawRange::first_instance);
+        std::vector<StoneDrawRange> merged_ranges;
+        merged_ranges.reserve(free_ranges.size());
+        for (StoneDrawRange const range : free_ranges) {
+            if (!merged_ranges.empty()
+                && merged_ranges.back().first_instance + merged_ranges.back().instance_count == range.first_instance) {
+                merged_ranges.back().instance_count += range.instance_count;
+            } else {
+                merged_ranges.push_back(range);
+            }
+        }
+        free_ranges = std::move(merged_ranges);
+        uint32_t next_stone_face = m_next_stone_face;
+        uint32_t required_capacity = m_stone_face_capacity;
+
+        for (shared::HeightTileSurfaceMesh const& mesh : meshes) {
+            if (std::ranges::any_of(prepared, [&mesh](PreparedMesh const& candidate) {
+                return candidate.coordinate == mesh.coordinate;
+            })) {
+                throw std::invalid_argument("height tile mesh batch contains duplicate coordinates");
+            }
+            std::vector<StoneFaceInstance> instances = stoneFaceInstances(mesh);
+            HeightTileSlot const* const existing = heightTileSlot(mesh.coordinate);
+            if (existing != nullptr && existing->instances == instances) {
+                prepared.push_back({ .coordinate = mesh.coordinate, .slot = std::nullopt });
+                continue;
+            }
+            if (instances.empty()) {
+                prepared.push_back({ .coordinate = mesh.coordinate, .slot = HeightTileSlot{} });
+                continue;
+            }
+            uint32_t const instance_count = static_cast<uint32_t>(instances.size());
+            StoneDrawRange range{};
+            auto const reusable = std::find_if(free_ranges.begin(), free_ranges.end(), [instance_count](
+                StoneDrawRange const available
+            ) { return available.instance_count >= instance_count; });
+            if (reusable != free_ranges.end()) {
+                range = { .first_instance = reusable->first_instance, .instance_count = instance_count };
+                reusable->first_instance += instance_count;
+                reusable->instance_count -= instance_count;
+                if (reusable->instance_count == 0U) {
+                    free_ranges.erase(reusable);
+                }
+            } else {
+                if (next_stone_face > MAXIMUM_RENDERED_STONE_FACE_COUNT - instance_count) {
+                    return false;
+                }
+                range = { .first_instance = next_stone_face, .instance_count = instance_count };
+                next_stone_face += instance_count;
+            }
+            required_capacity = std::max(required_capacity, range.first_instance + range.instance_count);
+            glm::vec3 minimum{
+                static_cast<float>(instances.front().x),
+                static_cast<float>(instances.front().y),
+                static_cast<float>(instances.front().z),
+            };
+            glm::vec3 maximum = minimum;
+            for (StoneFaceInstance const& instance : instances) {
+                glm::vec3 const origin{
+                    static_cast<float>(instance.x),
+                    static_cast<float>(instance.y),
+                    static_cast<float>(instance.z),
+                };
+                glm::vec3 extent{ 0.0F };
+                if (instance.direction <= 1U) {
+                    extent = { 1.0F, static_cast<float>(instance.u_extent), static_cast<float>(instance.v_extent) };
+                } else if (instance.direction <= 3U) {
+                    extent = { static_cast<float>(instance.u_extent), 1.0F, static_cast<float>(instance.v_extent) };
+                } else {
+                    extent = { static_cast<float>(instance.u_extent), static_cast<float>(instance.v_extent), 1.0F };
+                }
+                minimum = glm::min(minimum, origin);
+                maximum = glm::max(maximum, origin + extent);
+            }
+            prepared.push_back({
+                .coordinate = mesh.coordinate,
+                .slot = HeightTileSlot{
+                    .range = range,
+                    .instances = std::move(instances),
+                    .minimum = minimum,
+                    .maximum = maximum,
+                },
+            });
+        }
+
+        if (std::chrono::steady_clock::now() >= deadline || !tryEnsureStoneFaceCapacity(required_capacity, deadline)
+            || std::chrono::steady_clock::now() >= deadline) {
+            return false;
+        }
+        m_free_stone_ranges = std::move(free_ranges);
+        m_retired_stone_ranges = std::move(retired_ranges);
+        m_next_stone_face = next_stone_face;
+        for (PreparedMesh& candidate : prepared) {
+            if (!candidate.slot.has_value()) {
+                continue;
+            }
+            auto const existing = m_height_tile_slots.find(candidate.coordinate);
+            if (existing != m_height_tile_slots.end()) {
+                releaseRange(existing->second.range);
+                m_height_tile_slots.erase(existing);
+            }
+            if (!candidate.slot->instances.empty()) {
+                HeightTileSlot& slot = m_height_tile_slots.emplace(candidate.coordinate, std::move(*candidate.slot)).first->second;
+                m_stone_face_buffer->upload(slot.range.first_instance, slot.instances);
+                ++m_chunk_mesh_upload_count;
+            }
+        }
+        if (!m_height_tile_slots.empty()) {
+            m_stone_faces.clear();
+            m_legacy_draw_range = {};
+            m_chunk_scene_enabled = true;
+        } else if (m_stone_faces.empty()) {
+            m_chunk_scene_enabled = false;
+        }
+        return true;
+    }
+
     [[nodiscard]] bool removeHeightTileMesh(shared::HeightTileCoordinate const coordinate)
     {
         auto const existing = m_height_tile_slots.find(coordinate);
@@ -3178,6 +3320,14 @@ bool VulkanRenderer::upsertHeightTileMesh(
 )
 {
     return m_impl->upsertHeightTileMesh(mesh, deadline);
+}
+
+bool VulkanRenderer::upsertHeightTileMeshes(
+    std::span<shared::HeightTileSurfaceMesh const> const meshes,
+    std::chrono::steady_clock::time_point const deadline
+)
+{
+    return m_impl->upsertHeightTileMeshes(meshes, deadline);
 }
 
 bool VulkanRenderer::removeHeightTileMesh(shared::HeightTileCoordinate const coordinate)

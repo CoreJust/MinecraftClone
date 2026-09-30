@@ -5,14 +5,65 @@
 #include <shared/world/HeightTileSurfaceMesher.hpp>
 
 #include <array>
+#include <concepts>
 #include <cstddef>
+#include <cstdint>
 #include <optional>
+#include <span>
 #include <utility>
 #include <vector>
 
 namespace client {
 
 inline constexpr size_t MAX_PREVIEW_MESH_NEIGHBOR_UPSERTS_PER_RESULT = 4U;
+
+enum class PreviewMeshStage : uint8_t {
+    Coarse,
+    Final,
+};
+
+[[nodiscard]] inline shared::HeightTileSurfaceDetail previewMeshCoarseDetail(
+    shared::HeightTileSurfaceDetail const detail
+) noexcept
+{
+    switch (detail) {
+    case shared::HeightTileSurfaceDetail::Fine:
+        return shared::HeightTileSurfaceDetail::Coarse2;
+    case shared::HeightTileSurfaceDetail::Coarse2:
+        return shared::HeightTileSurfaceDetail::Coarse4;
+    case shared::HeightTileSurfaceDetail::Coarse4:
+        return shared::HeightTileSurfaceDetail::Coarse;
+    case shared::HeightTileSurfaceDetail::Coarse:
+    case shared::HeightTileSurfaceDetail::Distant:
+        return shared::HeightTileSurfaceDetail::Distant;
+    }
+    return shared::HeightTileSurfaceDetail::Distant;
+}
+
+[[nodiscard]] inline PreviewMeshStage previewMeshStageForTile(
+    HeightTileHandle const& visible_tile,
+    HeightTileHandle const& current_tile,
+    shared::HeightTileSurfaceDetail const target_detail
+) noexcept
+{
+    if (visible_tile == current_tile || previewMeshCoarseDetail(target_detail) == target_detail) {
+        return PreviewMeshStage::Final;
+    }
+    return PreviewMeshStage::Coarse;
+}
+
+[[nodiscard]] inline bool previewMeshCanPublish(
+    HeightTileHandle const& visible_tile,
+    HeightTileHandle const& candidate_tile,
+    PreviewMeshStage const candidate_stage,
+    HeightTileHandle const& current_tile
+) noexcept
+{
+    if (!candidate_tile || candidate_tile != current_tile) {
+        return false;
+    }
+    return visible_tile != candidate_tile || candidate_stage == PreviewMeshStage::Final;
+}
 
 struct PreviewMeshSeamBridgeSet final {
     static constexpr std::array<size_t, 4> OPPOSITE_EDGES{ 1U, 0U, 3U, 2U };
@@ -67,6 +118,23 @@ struct PreviewMeshSeamNeighborUpdates final {
     size_t count = 0U;
 };
 
+struct PreviewMeshSeamNeighborSnapshot final {
+    shared::HeightTileSurfaceMesh const* mesh = nullptr;
+    PreviewMeshSeamBridgeSet const* bridges = nullptr;
+};
+
+struct PreviewMeshSeamPublicationPlan final {
+    shared::HeightTileSurfaceMesh center_mesh;
+    PreviewMeshSeamBridgeSet center_bridges;
+    std::array<PreviewMeshSeamBridgeSet, MAX_PREVIEW_MESH_NEIGHBOR_UPSERTS_PER_RESULT> neighbor_bridges;
+    std::array<bool, MAX_PREVIEW_MESH_NEIGHBOR_UPSERTS_PER_RESULT> changed_neighbors{};
+};
+
+struct PreviewMeshSeamPublicationBatch final {
+    std::array<shared::HeightTileSurfaceMesh, MAX_PREVIEW_MESH_NEIGHBOR_UPSERTS_PER_RESULT + 1U> meshes;
+    uint32_t count = 0U;
+};
+
 [[nodiscard]] inline PreviewMeshSeamUpdate updatePreviewMeshSeamBridges(
     shared::HeightTileSurfaceMesh const& first,
     size_t const first_edge,
@@ -111,6 +179,81 @@ struct PreviewMeshSeamNeighborUpdates final {
         updates.count += update.second_changed ? 1U : 0U;
     }
     return updates;
+}
+
+[[nodiscard]]
+inline PreviewMeshSeamPublicationPlan planPreviewMeshSeamPublication(
+    shared::HeightTileSurfaceMesh const& center_mesh,
+    PreviewMeshSeamBridgeSet const& center_bridges,
+    std::array<PreviewMeshSeamNeighborSnapshot, MAX_PREVIEW_MESH_NEIGHBOR_UPSERTS_PER_RESULT> const& neighbors
+)
+{
+    PreviewMeshSeamPublicationPlan plan{
+        .center_bridges = center_bridges,
+    };
+    for (uint32_t edge = 0U; edge < neighbors.size(); ++edge) {
+        PreviewMeshSeamNeighborSnapshot const& neighbor = neighbors[edge];
+        if (neighbor.mesh == nullptr) {
+            static_cast<void>(plan.center_bridges.replace(edge, {}));
+            continue;
+        }
+        if (neighbor.bridges != nullptr) {
+            plan.neighbor_bridges[edge] = *neighbor.bridges;
+        }
+        PreviewMeshSeamUpdate const update = updatePreviewMeshSeamBridges(
+            center_mesh,
+            edge,
+            plan.center_bridges,
+            *neighbor.mesh,
+            plan.neighbor_bridges[edge]
+        );
+        plan.changed_neighbors[edge] = update.second_changed;
+    }
+    plan.center_mesh = plan.center_bridges.compose(center_mesh);
+    return plan;
+}
+
+[[nodiscard]]
+inline PreviewMeshSeamPublicationBatch buildPreviewMeshSeamPublicationBatch(
+    PreviewMeshSeamPublicationPlan const& plan,
+    std::array<PreviewMeshSeamNeighborSnapshot, MAX_PREVIEW_MESH_NEIGHBOR_UPSERTS_PER_RESULT> const& neighbors
+)
+{
+    PreviewMeshSeamPublicationBatch batch;
+    batch.meshes[batch.count++] = plan.center_mesh;
+    for (uint32_t edge = 0U; edge < neighbors.size(); ++edge) {
+        if (!plan.changed_neighbors[edge] || neighbors[edge].mesh == nullptr) {
+            continue;
+        }
+        batch.meshes[batch.count++] = plan.neighbor_bridges[edge].compose(*neighbors[edge].mesh);
+    }
+    return batch;
+}
+
+template <typename Upload, typename Commit>
+requires requires(
+    Upload&& upload,
+    Commit&& commit,
+    std::span<shared::HeightTileSurfaceMesh const> meshes,
+    PreviewMeshSeamPublicationPlan& plan
+) {
+    { std::forward<Upload>(upload)(meshes) } -> std::same_as<bool>;
+    std::forward<Commit>(commit)(plan);
+}
+[[nodiscard]]
+inline bool publishPreviewMeshSeamPlan(
+    PreviewMeshSeamPublicationPlan& plan,
+    PreviewMeshSeamPublicationBatch const& batch,
+    Upload&& upload,
+    Commit&& commit
+)
+{
+    std::span<shared::HeightTileSurfaceMesh const> const meshes{ batch.meshes.data(), batch.count };
+    if (!std::forward<Upload>(upload)(meshes)) {
+        return false;
+    }
+    std::forward<Commit>(commit)(plan);
+    return true;
 }
 
 struct PreviewMeshSource final {

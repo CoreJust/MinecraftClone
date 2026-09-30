@@ -81,11 +81,13 @@ private:
     void publishPreviewMesh(
         shared::HeightTileKey key,
         shared::HeightTileSurfaceMesh mesh,
+        HeightTileHandle const& tile,
         std::chrono::steady_clock::time_point deadline
     );
-    void refreshVisiblePreviewMesh(
+    [[nodiscard]] bool refreshVisiblePreviewMesh(
         shared::HeightTileKey key,
-        std::chrono::steady_clock::time_point deadline
+        std::chrono::steady_clock::time_point deadline,
+        PreviewMeshSeamBridgeSet const* candidate_bridges = nullptr
     );
     void processPendingPreviewMeshes(
         uint32_t maximum_meshes,
@@ -132,6 +134,8 @@ private:
     std::unordered_set<shared::HeightTileKey, PlayerHeightTileKeyHash> m_preview_mesh_jobs;
     std::unordered_set<shared::HeightTileKey, PlayerHeightTileKeyHash> m_preview_mesh_dirty_jobs;
     std::unordered_set<shared::HeightTileKey, PlayerHeightTileKeyHash> m_visible_preview_meshes;
+    std::unordered_map<shared::HeightTileKey, HeightTileHandle, PlayerHeightTileKeyHash>
+        m_visible_preview_mesh_tiles;
     std::unordered_map<shared::HeightTileKey, shared::HeightTileSurfaceMesh, PlayerHeightTileKeyHash>
         m_visible_preview_mesh_bases;
     std::unordered_map<shared::HeightTileKey, PreviewMeshSeamBridgeSet, PlayerHeightTileKeyHash>
