@@ -175,6 +175,8 @@ private:
         int8_t applied_heading_y = 0;
         bool has_center = false;
         std::vector<shared::HeightTileKey> desired_keys;
+        uint32_t priority_cursor = 0U;
+        uint64_t priority_cursor_generation = 0U;
         std::unordered_set<shared::HeightTileKey, HeightTileKeyHash> desired_key_set;
         std::unordered_set<shared::HeightTileKey, HeightTileKeyHash> resident_keys;
         std::unordered_set<shared::HeightTileKey, HeightTileKeyHash> queued_keys;

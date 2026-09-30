@@ -9450,5 +9450,41 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0265",
+    "title": "Avoid rescanning full S7 height-tile interest during queue refill",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P1",
+    "route": "luna",
+    "milestone": "ED-010-S7",
+    "depends_on": [],
+    "acceptance": "Server height-tile refill resumes from a per-stream cursor in the existing nearest-first, direction-aware list. The cursor advances only over keys handled or already unavailable, remains at the first unhandled key when the scheduler is full, and resets on interest center, canonical heading, or scheduler generation changes. Failed terminal generation remains retryable, deduplication is preserved, and a reconnect starts from the new stream priority head. Preview integration coverage proves refill progresses beyond 128 queued jobs and a heading change after cursor progress schedules an early key from the new priority order.",
+    "evidence": "Focused mc_tests build passed. Focused CTest passed 2/2: ProgressiveStreamFormsAForwardBiasedArea and ResetsPriorityCursorAfterProgressWhenHeadingChanges. ai_docs.py refresh and check passed. ai_check.py --fast passed docs, backlog, current-plan, and diff checks; source checks report the existing latest-snapshot date mismatch (26.09.20 versus environment date 26.09.30) plus the expected dirty-tree check before commit. CameraRotationKeepsInterestAndMovementAddsFreshFrontier failed 0/8 with both optimized and original full-scan server implementations, so its failure is baseline behavior in this checkout.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0038",
+    "motivation": "Avoid repeated full-interest scans during S7 server pumps so the fixed simulation cadence remains responsive while height tiles stream.",
+    "context": "S7 interest contains 205861 keys and the per-stream scheduler is capped at 128 pending jobs. GameServer::fillHeightTileQueue currently begins at the first priority key on each pump, revisiting the already queued prefix. The ordered interest is rebuilt when center or canonical heading changes; each stream has a scheduler generation and reconnect creates a fresh stream.",
+    "complexity": "medium",
+    "created_at": "2026-09-30",
+    "resolved_at": "2026-09-30",
+    "resolution_changes": "Added the per-stream queue cursor and reset handling for interest-order changes, scheduler-generation changes, and failed terminal retries; added the post-progress heading-change integration regression.",
+    "plan": [
+      "Add a persistent priority cursor to each server preview stream, reset it with the interest ordering and scheduler generation, and preserve retry behavior. Add a reset-after-progress integration regression and run focused preview tests plus the project fast gate."
+    ],
+    "product_changes": [],
+    "code_changes": [
+      "Added a per-stream cursor over the existing nearest-first height-tile priority list, reset it on interest-order rebuild, scheduler generation change, and terminal retry failure, and added a heading-change-after-progress preview integration test."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]

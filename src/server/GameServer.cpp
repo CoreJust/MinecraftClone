@@ -1363,6 +1363,8 @@ void GameServer::refreshHeightTileInterest(PreviewStream& stream, shared::Player
     stream.applied_heading_x = heading.x;
     stream.applied_heading_y = heading.y;
     stream.desired_keys = next_interest.keys;
+    stream.priority_cursor = 0U;
+    stream.priority_cursor_generation = stream.generation;
     stream.desired_key_set.clear();
     stream.desired_key_set.reserve(stream.desired_keys.size());
     stream.desired_key_set.insert(stream.desired_keys.begin(), stream.desired_keys.end());
@@ -1433,13 +1435,18 @@ void GameServer::queueDepartedResidentTiles(PreviewStream& stream)
 
 void GameServer::fillHeightTileQueue(PreviewStream& stream)
 {
+    if (stream.priority_cursor_generation != stream.generation) {
+        stream.priority_cursor = 0U;
+        stream.priority_cursor_generation = stream.generation;
+    }
     if (stream.scheduler.pendingCount() >= PreviewStream::MAX_QUEUED_TILES) {
         return;
     }
-    // desired_keys is already nearest-first and direction-aware. Walk it directly;
-    // rebuilding and sorting thousands of candidates every terrain pump starves the
-    // fixed simulation cadence while the initial window is filling.
-    for (shared::HeightTileKey const key : stream.desired_keys) {
+    if (stream.priority_cursor > stream.desired_keys.size()) {
+        stream.priority_cursor = 0U;
+    }
+    while (stream.priority_cursor < stream.desired_keys.size()) {
+        shared::HeightTileKey const key = stream.desired_keys.at(stream.priority_cursor);
         if (!stream.resident_keys.contains(key)
             && !stream.queued_keys.contains(key)
             && !stream.dispatched_keys.contains(key)
@@ -1451,12 +1458,13 @@ void GameServer::fillHeightTileQueue(PreviewStream& stream)
                 shared::GenerationStage::HeightTile
             );
             if (admission == shared::GenerationAdmission::QueueFull) {
-                break;
+                return;
             }
             if (admission == shared::GenerationAdmission::Accepted) {
                 stream.queued_keys.insert(key);
             }
         }
+        ++stream.priority_cursor;
     }
 }
 
@@ -1700,7 +1708,9 @@ void GameServer::publishHeightTileResults()
             continue;
         }
         if (!scheduler_result->succeeded) {
-            static_cast<void>(stream->scheduler.retry(result.job.id));
+            if (!stream->scheduler.retry(result.job.id)) {
+                stream->priority_cursor = 0U;
+            }
             continue;
         }
         if (!stream->desired_key_set.contains(key) || stream->resident_keys.contains(key)
