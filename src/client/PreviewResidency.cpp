@@ -1,5 +1,7 @@
 #include <client/PreviewResidency.hpp>
 
+#include <shared/world/HeightTileInterest.hpp>
+
 #include <algorithm>
 #include <utility>
 
@@ -108,9 +110,7 @@ PreviewResidencyStats PreviewResidency::stats() const noexcept
 
 uint64_t PreviewResidency::HeightTileKeyHash::operator()(HeightTileKey const key) const noexcept
 {
-    uint64_t const x = static_cast<uint32_t>(key.x);
-    uint64_t const y = static_cast<uint32_t>(key.y);
-    return x << 32U | y;
+    return shared::heightTileCoordinateHash(key.x, key.y);
 }
 
 uint64_t PreviewResidency::knownToken(HeightTileKey const key) const noexcept

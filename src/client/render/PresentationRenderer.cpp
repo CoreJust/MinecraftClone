@@ -11,6 +11,7 @@
 
 #include <shared/net/Message.hpp>
 #include <shared/world/ChunkMesher.hpp>
+#include <shared/world/HeightTileInterest.hpp>
 #include <shared/world/HeightTileSurfaceMesher.hpp>
 
 #if defined(__ANDROID__)
@@ -1096,9 +1097,7 @@ struct VulkanRenderer::Impl final {
     struct HeightTileCoordinateHash final {
         [[nodiscard]] size_t operator()(shared::HeightTileCoordinate const coordinate) const noexcept
         {
-            uint64_t const x = static_cast<uint32_t>(coordinate.x);
-            uint64_t const y = static_cast<uint32_t>(coordinate.y);
-            return static_cast<size_t>((x << 32U) ^ y);
+            return static_cast<size_t>(shared::heightTileCoordinateHash(coordinate.x, coordinate.y));
         }
     };
 

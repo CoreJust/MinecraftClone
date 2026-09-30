@@ -2,6 +2,7 @@
 
 #include <shared/net/Message.hpp>
 #include <shared/policy/Policy.hpp>
+#include <shared/world/HeightTileInterest.hpp>
 #include <shared/world/SparseWorld.hpp>
 #include <shared/world/World.hpp>
 #include <shared/world/WorldGeneration.hpp>
@@ -148,8 +149,7 @@ private:
         struct HeightTileKeyHash final {
             [[nodiscard]] size_t operator()(shared::HeightTileKey const key) const noexcept
             {
-                return static_cast<size_t>((static_cast<uint64_t>(static_cast<uint32_t>(key.x)) << 32U)
-                    ^ static_cast<uint32_t>(key.y));
+                return static_cast<size_t>(shared::heightTileCoordinateHash(key.x, key.y));
             }
         };
 

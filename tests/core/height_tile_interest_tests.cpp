@@ -30,6 +30,33 @@ TEST(HeightTileInterestTest, BuildsCameraIndependentCircularResidency)
     EXPECT_FALSE(contains(interest, center.x + 257, center.y));
 }
 
+TEST(HeightTileInterestTest, DistributesFullDiskWrappedAndNegativeKeysAcrossPowerOfTwoBuckets)
+{
+    static constexpr uint32_t BUCKET_COUNT = 262'144U;
+    static constexpr uint32_t MINIMUM_OCCUPIED_BUCKETS = BUCKET_COUNT / 2U;
+    static constexpr uint32_t MAXIMUM_BUCKET_OCCUPANCY = 16U;
+    static constexpr std::array CENTERS{
+        shared::HeightTileKey{.x = 2'048, .y = 2'048},
+        shared::HeightTileKey{.x = 4'095, .y = 0},
+        shared::HeightTileKey{.x = -2'048, .y = -2'048},
+    };
+    for (shared::HeightTileKey const center : CENTERS) {
+        std::vector<uint32_t> buckets(BUCKET_COUNT, 0U);
+        shared::HeightTileInterest const interest = shared::makeHeightTileInterest(center, 127, 0);
+        ASSERT_EQ(interest.keys.size(), shared::HEIGHT_TILE_INTEREST_COUNT);
+        for (shared::HeightTileKey const key : interest.keys) {
+            uint64_t const hash = shared::heightTileCoordinateHash(
+                center.x < 0 ? key.x - 4'096 : key.x,
+                center.y < 0 ? key.y - 4'096 : key.y
+            );
+            ++buckets[hash & (BUCKET_COUNT - 1U)];
+        }
+        EXPECT_GE(std::ranges::count_if(buckets, [](uint32_t const count) { return count != 0U; }),
+            MINIMUM_OCCUPIED_BUCKETS);
+        EXPECT_LE(*std::ranges::max_element(buckets), MAXIMUM_BUCKET_OCCUPANCY);
+    }
+}
+
 TEST(HeightTileInterestTest, RotationChangesPriorityWithoutChangingResidency)
 {
     shared::HeightTileKey constexpr center{.x = 2'000, .y = 2'000};

@@ -8,6 +8,19 @@
 
 namespace shared {
 
+[[nodiscard]]
+constexpr uint64_t heightTileCoordinateHash(int32_t const x, int32_t const y) noexcept
+{
+    uint64_t hash = (static_cast<uint64_t>(static_cast<uint32_t>(x)) << 32U)
+        ^ static_cast<uint32_t>(y);
+    // Mix both axes into low bits for power-of-two unordered-container buckets.
+    hash ^= hash >> 30U;
+    hash *= 0xbf58'476d'1ce4'e5b9ULL;
+    hash ^= hash >> 27U;
+    hash *= 0x94d0'49bb'1331'11ebULL;
+    return hash ^ (hash >> 31U);
+}
+
 struct HeightTileHeading final {
     int8_t x = 0;
     int8_t y = 127;

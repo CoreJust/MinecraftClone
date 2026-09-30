@@ -9818,5 +9818,45 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0281",
+    "title": "Mix height-tile coordinate hashes for native bucket distribution",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P0",
+    "route": "sol",
+    "milestone": "ED-010-S7",
+    "depends_on": [
+      "MC-AI-0278"
+    ],
+    "acceptance": "Repair confirmed packed-coordinate low-bit hash defects in server, player, renderer, removal selection and residency without changing identity keys, tokens, ordering, priority, protocol or deadlines. Use a narrowly shared hash and deterministic power-of-two distribution regression over the full205861 disk and negative/wrapped keys. Run native Release focused acknowledgements and complete non-GUI CTest with explicit0278 plus0280 fixture composition and exact627/bd dependencies; report remaining failures separately. For client-only PreviewResidency addition, preserve ongoing full-suite composition and run focused residency tests afterward; coordinator finalbatch covers combined code. No GUI or push.",
+    "evidence": "Native MSVC19.44 x64 Release confirms packed hashes occupy only513/262144 buckets for205861 keys, maximumbucket513; mixed comparison occupies142306 with maximumbucket9 and reduces insert289.441ms to10.2616ms. Initial22-action build passes; exact final distribution tests pass for full interior/wrapped/negative disk. Focused17/18 tests41.30s retain early acklag19 vs16, finalacks350 for all4. Full dirty0278+0280+four-hash-delegate composition passes545/546 in269.23s (exit8): only early sustained acklag20 atinput42 fails; consumers, provenance and nested server-only build pass. Afterwards client-only PreviewResidency hash delegate builds6actions and final focused GameClientPrediction/PreviewMeshing/PlayerClientCapturePlan/HeightTileInterest53/53 pass8.07s. Public hook probe now has351ticks35.018s, mean2.69384ms versus old1170.63ms; at3s31ticks mean0.69ms but laterclients ack14/13 versus30/30, confirming residual fairness/transport class0283. Maxlag16 assertion and deadlines unchanged. Exact path hashes and composition are in /private/tmp/mc-s7-windows-preflight.cr0MN6/mc0281-receipt.json. No full-green, GPU, manual Windows or release claim. Fast/docs/backlog checks pass with existing date/dirty development exceptions.",
+    "blocker": "",
+    "owner": "s7_corecpp_audio_fix",
+    "level": "basic",
+    "parent": "MC-AI-0038",
+    "motivation": "Keep authoritative input processing responsive under full-radius streaming on native Windows.",
+    "context": "MSVC uses power-of-two unordered-container buckets; packed x in high32 and y in low32 leaves all x values for a y in one bucket. The same actual hash class appears in five paths: GameServer, PlayerClient, PresentationRenderer, HeightTileInterest removal selection and PreviewResidency. Canonical relative interest ordering is already cached; no broad scheduler or interest redesign is needed.",
+    "complexity": "low",
+    "created_at": "2026-09-30",
+    "resolved_at": "2026-09-30",
+    "resolution_changes": "Share a64-bit coordinate mixer for five actual unordered-container hashes. Preserve coordinate equality, token identity, ordering, priority and protocol. Add full205861-disk power-of-two histogram regression at interior/wrapped/negative coordinates. Native full-suite and final residency results remain separately scoped; residual early transport lag belongs to0283.",
+    "plan": [
+      "Inspect the four assigned hash functions and coordinate ownership, share only the confirmed mixing repair, protect both-axis low-bit distribution, then run native focused and full non-GUI validation with exact dirty composition and truthful identity receipts."
+    ],
+    "product_changes": [
+      "Remove native Windows full-radius hash collision CPU starvation without changing terrain residency or movement deadlines."
+    ],
+    "code_changes": [
+      "Delegate GameServer, PlayerClient, PresentationRenderer, HeightTileInterest removal selection and PreviewResidency actual coordinate hashes to one existing-header mixer; protect broad low-bit distribution without hardcoded avalanche outputs."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]

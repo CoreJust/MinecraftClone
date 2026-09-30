@@ -502,8 +502,7 @@ bool PlayerClient::presentationSucceeded() const
 
 size_t PlayerHeightTileKeyHash::operator()(shared::HeightTileKey const key) const noexcept
 {
-    return static_cast<size_t>((static_cast<uint64_t>(static_cast<uint32_t>(key.x)) << 32U)
-        ^ static_cast<uint32_t>(key.y));
+    return static_cast<size_t>(shared::heightTileCoordinateHash(key.x, key.y));
 }
 
 void PlayerPreviewMeshCoverage::interestAdded(bool const already_visible) noexcept

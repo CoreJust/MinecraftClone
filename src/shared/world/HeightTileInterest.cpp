@@ -222,8 +222,7 @@ std::vector<HeightTileKey> selectHeightTileRemovalCandidates(
         [[nodiscard]]
         uint64_t operator()(HeightTileKey const key) const noexcept
         {
-            return (static_cast<uint64_t>(static_cast<uint32_t>(key.x)) << 32U)
-                ^ static_cast<uint32_t>(key.y);
+            return heightTileCoordinateHash(key.x, key.y);
         }
     };
 
