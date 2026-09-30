@@ -60,8 +60,24 @@ VulkanFrustum::VulkanFrustum(glm::mat4 const& projection_view) noexcept
 
 bool VulkanFrustum::intersects(glm::vec3 const minimum, glm::vec3 const maximum) const noexcept
 {
+    uint32_t plane_tests = 0U;
+    return intersects(minimum, maximum, ALL_PLANES, plane_tests);
+}
+
+bool VulkanFrustum::intersects(
+    glm::vec3 const minimum,
+    glm::vec3 const maximum,
+    uint8_t const plane_mask,
+    uint32_t& plane_tests
+) const noexcept
+{
     glm::dvec4 const maximum_magnitude{ glm::max(glm::abs(minimum), glm::abs(maximum)), 1.0 };
-    for (Plane const& plane : m_planes) {
+    for (uint32_t index = 0U; index < m_planes.size(); ++index) {
+        if ((plane_mask & (1U << index)) == 0U) {
+            continue;
+        }
+        ++plane_tests;
+        Plane const& plane = m_planes[index];
         glm::dvec4 const support{
             plane.coefficients.x >= 0.0 ? maximum.x : minimum.x,
             plane.coefficients.y >= 0.0 ? maximum.y : minimum.y,
@@ -77,6 +93,41 @@ bool VulkanFrustum::intersects(glm::vec3 const minimum, glm::vec3 const maximum)
         }
     }
     return true;
+}
+
+VulkanFrustum::Classification VulkanFrustum::classify(
+    glm::vec3 const minimum,
+    glm::vec3 const maximum
+) const noexcept
+{
+    Classification result;
+    glm::dvec4 const maximum_magnitude{ glm::max(glm::abs(minimum), glm::abs(maximum)), 1.0 };
+    for (uint32_t index = 0U; index < m_planes.size(); ++index) {
+        ++result.plane_tests;
+        Plane const& plane = m_planes[index];
+        glm::dvec4 const upper{
+            plane.coefficients.x >= 0.0 ? maximum.x : minimum.x,
+            plane.coefficients.y >= 0.0 ? maximum.y : minimum.y,
+            plane.coefficients.z >= 0.0 ? maximum.z : minimum.z,
+            1.0,
+        };
+        double const rounding_bound = CLIP_ROUNDING_TOLERANCE
+            * glm::dot(plane.error_coefficients, maximum_magnitude);
+        if (glm::dot(plane.coefficients, upper) < -rounding_bound) {
+            result.outside = true;
+            return result;
+        }
+        glm::dvec4 const lower{
+            plane.coefficients.x >= 0.0 ? minimum.x : maximum.x,
+            plane.coefficients.y >= 0.0 ? minimum.y : maximum.y,
+            plane.coefficients.z >= 0.0 ? minimum.z : maximum.z,
+            1.0,
+        };
+        if (glm::dot(plane.coefficients, lower) >= 0.0) {
+            result.plane_mask &= static_cast<uint8_t>(~(1U << index));
+        }
+    }
+    return result;
 }
 
 } // namespace client

@@ -2,6 +2,7 @@
 
 #include <client/render/DepthFormat.hpp>
 #include <client/render/GuiRenderer.hpp>
+#include <client/render/HeightTileDrawIndex.hpp>
 #include <client/render/StoneFaceCapacity.hpp>
 #include <client/render/StoneIndirectDraws.hpp>
 #include <client/render/StoneTexture.hpp>
@@ -37,6 +38,7 @@
 #include <cstdint>
 #include <cstring>
 #include <memory>
+#include <new>
 #include <ranges>
 #include <stdexcept>
 #include <unordered_map>
@@ -1375,6 +1377,7 @@ struct VulkanRenderer::Impl final {
                 releaseRange(existing->range);
                 m_height_tile_face_count -= existing->range.instance_count;
                 m_height_tile_slots.erase(mesh.coordinate);
+                m_height_tile_draw_index.remove(mesh.coordinate);
             }
             if (m_height_tile_slots.empty() && m_stone_faces.empty()) {
                 m_chunk_scene_enabled = false;
@@ -1429,6 +1432,7 @@ struct VulkanRenderer::Impl final {
         m_chunk_scene_enabled = true;
         HeightTileSlot const& slot = m_height_tile_slots.at(mesh.coordinate);
         m_stone_face_buffer->upload(slot.range.first_instance, slot.instances);
+        indexHeightTileSlot(mesh.coordinate, slot);
         ++m_chunk_mesh_upload_count;
         return true;
     }
@@ -1564,7 +1568,10 @@ struct VulkanRenderer::Impl final {
                 HeightTileSlot& slot = m_height_tile_slots.emplace(candidate.coordinate, std::move(*candidate.slot)).first->second;
                 m_height_tile_face_count += slot.range.instance_count;
                 m_stone_face_buffer->upload(slot.range.first_instance, slot.instances);
+                indexHeightTileSlot(candidate.coordinate, slot);
                 ++m_chunk_mesh_upload_count;
+            } else {
+                m_height_tile_draw_index.remove(candidate.coordinate);
             }
         }
         if (!m_height_tile_slots.empty()) {
@@ -1586,6 +1593,7 @@ struct VulkanRenderer::Impl final {
         releaseRange(existing->second.range);
         m_height_tile_face_count -= existing->second.range.instance_count;
         m_height_tile_slots.erase(existing);
+        m_height_tile_draw_index.remove(coordinate);
         if (m_height_tile_slots.empty() && m_stone_faces.empty()) {
             m_chunk_scene_enabled = false;
         }
@@ -1666,6 +1674,7 @@ struct VulkanRenderer::Impl final {
             .chunk_face_count = m_height_tile_slots.empty()
                 ? static_cast<uint32_t>(m_stone_faces.size()) : m_height_tile_face_count,
             .chunk_draw_count = m_chunk_draw_count,
+            .chunk_draw_face_count = m_chunk_draw_face_count,
             .chunk_mesh_upload_count = m_chunk_mesh_upload_count,
             .height_tile_mesh_count = static_cast<uint32_t>(m_height_tile_slots.size()),
             .stone_face_capacity = m_stone_face_buffer->capacity(),
@@ -1692,6 +1701,52 @@ struct VulkanRenderer::Impl final {
     }
 
 private:
+    [[nodiscard]]
+    std::optional<StoneDrawRange> appendUnindexedRanges(
+        VulkanFrustum const& frustum,
+        glm::dvec3 const camera_position
+    )
+    {
+        if (m_height_tile_draw_index_valid && !m_height_tile_draw_index.hasFallbackRecords()) {
+            return std::nullopt;
+        }
+        std::optional<StoneDrawRange> fallback;
+        for (auto const& [coordinate, slot] : m_height_tile_slots) {
+            if (m_height_tile_draw_index_valid && coordinate.x >= 0 && coordinate.y >= 0) {
+                continue;
+            }
+            WrappedBounds const wrapped = boundsNearestToCamera(slot.minimum, slot.maximum, camera_position);
+            if (!frustum.intersects(wrapped.minimum, wrapped.maximum)) {
+                continue;
+            }
+            if (coordinate.x < 0 || coordinate.y < 0) {
+                fallback = slot.range;
+            } else {
+                m_visible_stone_draw_ranges.push_back(slot.range);
+            }
+        }
+        return fallback;
+    }
+
+    void indexHeightTileSlot(shared::HeightTileCoordinate const coordinate, HeightTileSlot const& slot)
+    {
+        if (!m_height_tile_draw_index_valid) {
+            return;
+        }
+        try {
+            m_height_tile_draw_index.upsert({
+                .coordinate = coordinate,
+                .range = slot.range,
+                .minimum = slot.minimum,
+                .maximum = slot.maximum,
+            });
+        } catch (std::bad_alloc const&) {
+            // Optional CPU indexing must not prevent already-published geometry from drawing.
+            m_height_tile_draw_index.clear();
+            m_height_tile_draw_index_valid = false;
+        }
+    }
+
     [[nodiscard]] HeightTileSlot* heightTileSlot(shared::HeightTileCoordinate const coordinate) noexcept
     {
         auto const existing = m_height_tile_slots.find(coordinate);
@@ -1773,6 +1828,8 @@ private:
     void clearHeightTileMeshes()
     {
         m_height_tile_slots.clear();
+        m_height_tile_draw_index.clear();
+        m_height_tile_draw_index_valid = true;
         m_height_tile_face_count = 0U;
         m_free_stone_ranges.clear();
         m_retired_stone_ranges.clear();
@@ -1954,6 +2011,7 @@ private:
         vkCmdDraw(command, 3U, 1U, 0U, 0U);
 
 
+        m_chunk_draw_face_count = 0U;
         if (m_chunk_scene_enabled) {
             if (m_height_tile_slots.empty()) {
                 m_visible_solid_stone_draw_ranges.clear();
@@ -1971,21 +2029,12 @@ private:
                 if (projection.has_value()) {
                     glm::dvec3 const camera_position = m_camera.pose().position;
                     VulkanFrustum const frustum{ *projection * m_camera.viewMatrix() };
-                    for (auto const& [coordinate, slot] : m_height_tile_slots) {
-                        WrappedBounds const wrapped = boundsNearestToCamera(
-                            slot.minimum,
-                            slot.maximum,
-                            camera_position
-                        );
-                        if (!frustum.intersects(wrapped.minimum, wrapped.maximum)) {
-                            continue;
-                        }
-                        if (coordinate.x < 0 || coordinate.y < 0) {
-                            fallback_draw_range = slot.range;
-                            continue;
-                        }
-                        m_visible_stone_draw_ranges.push_back(slot.range);
+                    if (m_height_tile_draw_index_valid) {
+                        static_cast<void>(m_height_tile_draw_index.collect(
+                            frustum, camera_position, m_visible_stone_draw_ranges
+                        ));
                     }
+                    fallback_draw_range = appendUnindexedRanges(frustum, camera_position);
                 }
                 auto const merge_ranges = [](std::vector<StoneDrawRange>& ranges) {
                     std::ranges::sort(ranges, {}, &StoneDrawRange::first_instance);
@@ -2002,8 +2051,10 @@ private:
                     }
                     ranges.erase(merged_end, ranges.end());
                 };
-                merge_ranges(m_visible_stone_draw_ranges);
-                merge_ranges(m_visible_solid_stone_draw_ranges);
+                if (!m_height_tile_draw_index_valid) {
+                    merge_ranges(m_visible_stone_draw_ranges);
+                    merge_ranges(m_visible_solid_stone_draw_ranges);
+                }
                 if (fallback_draw_range.has_value()) {
                     m_visible_stone_draw_ranges.push_back(*fallback_draw_range);
                 }
@@ -2011,6 +2062,14 @@ private:
             StoneIndirectDraws::Prepared const prepared = m_stone_indirect_draws->prepareAcquiredSlot(
                 m_current_frame_slot, m_visible_stone_draw_ranges, m_visible_solid_stone_draw_ranges
             );
+            for (std::span<StoneDrawRange const> const ranges : {
+                std::span<StoneDrawRange const>{ m_visible_stone_draw_ranges },
+                std::span<StoneDrawRange const>{ m_visible_solid_stone_draw_ranges },
+            }) {
+                for (StoneDrawRange const range : ranges) {
+                    m_chunk_draw_face_count += range.instance_count;
+                }
+            }
             m_chunk_draw_count = recordStoneScene(
                 command,
                 m_stone_pipeline,
@@ -2627,6 +2686,8 @@ private:
     StoneDrawRange m_legacy_draw_range;
     std::unordered_map<shared::HeightTileCoordinate, HeightTileSlot, HeightTileCoordinateHash> m_height_tile_slots;
     uint32_t m_height_tile_face_count = 0U;
+    HeightTileDrawIndex m_height_tile_draw_index;
+    bool m_height_tile_draw_index_valid = true;
     std::vector<StoneDrawRange> m_visible_stone_draw_ranges;
     std::vector<StoneDrawRange> m_visible_solid_stone_draw_ranges;
     std::vector<StoneDrawRange> m_free_stone_ranges;
@@ -2634,6 +2695,7 @@ private:
     uint32_t m_next_stone_face = 0U;
     uint64_t m_chunk_mesh_upload_count = 0U;
     uint32_t m_chunk_draw_count = 0U;
+    uint32_t m_chunk_draw_face_count = 0U;
     bool m_chunk_scene_enabled = false;
 };
 

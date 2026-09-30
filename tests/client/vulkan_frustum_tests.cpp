@@ -85,6 +85,31 @@ TEST(VulkanFrustumTest, RetainsBoxesWhoseFaceIntersectsWithoutAnInsideCorner)
     EXPECT_TRUE(frustum.intersects({ -2.0F, -0.2F, -1.0F }, { 2.0F, 0.2F, 2.0F }));
 }
 
+TEST(VulkanFrustumTest, ParentClassificationRetainsExactChildVisibilityAtUnresolvedBoundaries)
+{
+    static constexpr uint8_t RIGHT_PLANE = 2U;
+    static constexpr float BOUNDARY_OFFSET = 0.01F;
+    static constexpr std::array<float, 3> X_POSITIONS{ 0.0F, 1.0F, 1.0F + BOUNDARY_OFFSET };
+    client::VulkanFrustum const frustum{ glm::mat4{ 1.0F } };
+    client::VulkanFrustum::Classification const inside = frustum.classify(
+        { -0.5F, -0.5F, 0.1F }, { 0.5F, 0.5F, 0.9F }
+    );
+    EXPECT_FALSE(inside.outside);
+    EXPECT_EQ(inside.plane_mask, 0U);
+    client::VulkanFrustum::Classification const crossing = frustum.classify(
+        { -1.0F, -0.5F, 0.1F }, { 1.5F, 0.5F, 0.9F }
+    );
+    EXPECT_FALSE(crossing.outside);
+    EXPECT_EQ(crossing.plane_mask, RIGHT_PLANE);
+    for (float const x : X_POSITIONS) {
+        glm::vec3 const child{ x, 0.0F, 0.5F };
+        uint32_t plane_tests = 0U;
+        EXPECT_EQ(frustum.intersects(child, child, crossing.plane_mask, plane_tests), frustum.intersects(child, child));
+        EXPECT_EQ(plane_tests, 1U);
+    }
+    EXPECT_TRUE(frustum.classify({ 1.0F + BOUNDARY_OFFSET, 0.0F, 0.5F }, { 1.5F, 0.5F, 0.9F }).outside);
+}
+
 TEST(VulkanFrustumTest, WrapsBoundsToTheSameNearestWorldImageAcrossTheSeam)
 {
     static constexpr uint32_t WIDTH = 1'920U;

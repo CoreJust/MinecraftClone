@@ -155,7 +155,7 @@
         "vcpkg-configuration.json",
         "vcpkg.json"
       ],
-      "sources_sha256": "eb6c41f8f85da1d91b67ef082fce03db81a22bd98cfcbe0442e39fbd3d97b2a9"
+      "sources_sha256": "2d623bf4d7819fd79fff5282bd469c41733b64dd4652aa4f474102266918c83f"
     },
     {
       "guide": "docs/code/CORE.md",
@@ -278,17 +278,18 @@
         "tests/core/world_generation_scheduler_tests.cpp",
         "tests/core/world_generation_tests.cpp"
       ],
-      "sources_sha256": "5801f8a21f616d1671a9ef68f07b1292ea7a5eea919974ff9886b17db17d9b1f"
+      "sources_sha256": "d9672f4a86b48fbc4bd1667580028cfb59254bd0206c91ccd56c57c77437e574"
     },
     {
       "guide": "docs/code/RENDERING.md",
-      "guide_sha256": "332dec270fdc2b987d78ba6f46487443361820f70866f2405b6d855a9d6d6f0c",
+      "guide_sha256": "4a96f2087f82045331e53b973b82a78665b1546d69034fdd3cdce393f9db7e39",
       "id": "rendering",
       "sources": [
         "src/client/CMakeLists.txt",
         "src/client/include/client/render/DebugHud.hpp",
         "src/client/include/client/render/DepthFormat.hpp",
         "src/client/include/client/render/GuiRenderer.hpp",
+        "src/client/include/client/render/HeightTileDrawIndex.hpp",
         "src/client/include/client/render/InstalledShaderAssets.hpp",
         "src/client/include/client/render/ShaderAssets.hpp",
         "src/client/include/client/render/StoneFaceCapacity.hpp",
@@ -299,6 +300,7 @@
         "src/client/include/client/render/VulkanRenderer.hpp",
         "src/client/render/DebugHud.cpp",
         "src/client/render/GuiRenderer.cpp",
+        "src/client/render/HeightTileDrawIndex.cpp",
         "src/client/render/InstalledShaderAssets.cpp",
         "src/client/render/PresentationRenderer.cpp",
         "src/client/render/ShaderAssets.cpp",
@@ -334,6 +336,7 @@
         "tests/client/goldens/s4_flat3d_v2.ppm",
         "tests/client/goldens/s4_scene_v1.ppm",
         "tests/client/gui_renderer_tests.cpp",
+        "tests/client/height_tile_draw_index_tests.cpp",
         "tests/client/player_client_capture_plan_tests.cpp",
         "tests/client/player_client_reset_tests.cpp",
         "tests/client/player_presentation_tests.cpp",
@@ -353,7 +356,7 @@
         "tests/testsupport/include/testsupport/AdverseTransport.hpp",
         "tests/testsupport/include/testsupport/ImageComparison.hpp"
       ],
-      "sources_sha256": "b1ecd974e7977fd5e52dd8e122f54d5ca731d3cb512e225814e34462a07c40a0"
+      "sources_sha256": "af9ec3cb8c2454fb9cf178580e760b4778528d1c3993eb669c0d6a3ecf83671b"
     }
   ],
   "version": 1

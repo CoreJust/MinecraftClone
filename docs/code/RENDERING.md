@@ -37,9 +37,12 @@ Desktop `InstalledShaderAssets` reads installed `shaders/`; Android
 no source-tree fallback.
 
 S7 streams the camera-independent radius-256 disk (205,861 tiles); frustum only
-culls drawing. Per-frame `VulkanFrustum` conservatively culls wrapped
-AABBs; [`tests`](../../tests/client/vulkan_frustum_tests.cpp) cover boundaries,
-near crossings, camera-inside bounds, seams and radii 256/1,024.
+culls drawing. `HeightTileDrawIndex` incrementally orders live arena ranges and
+refreshes affected 16²-tile groups. Per-frame `VulkanFrustum` classification skips
+resolved planes with exact individual wrapped-AABB visibility; ambiguous wrap
+cuts use individual images. Visible ranges merge without sorting or freed spans.
+[`Tests`](../../tests/client/height_tile_draw_index_tests.cpp) cover moving cameras,
+mutation/failure, seams and radii 256/1,024.
 LOD uses shortest wrapped player distance and current vertical
 FOV/framebuffer extent, limiting simplified faces to 2 projected pixels² with
 hysteresis. Stale tile/neighbor/detail jobs are discarded. Cached per-edge seam
@@ -57,18 +60,18 @@ capacity/deadline failure leaves renderer slots and client seam state unchanged.
 
 The arena grows with streamed residency; restoration shares the frame deadline.
 Gameplay bounds uploads and rendering to 8 ms, deferring overdue tiles.
-Runtime face counts track published slots without rescanning residency.
+Runtime face counts track residency; `chunk_draw_face_count` sums recorded quads
+and `chunk_draw_count` counts logical ranges.
 [`height_tile_surface_mesher_tests.cpp`](../../tests/core/height_tile_surface_mesher_tests.cpp)
 covers flat tiles, exposed height differences, neighbor seams, and generated
 column tops.
 
 `ChunkMeshLodBuilder` creates bounded `Fine`/`Coarse` variants by merging
-coplanar faces only when direction and material match; both retain content
-identity and full-chunk bounds. `MeshLodSelector` uses caller-supplied squared
-distance thresholds, hysteresis, and available-variant fallback; it sets no
-distance and selection does not remesh. Invalid directions are rejected before
-grid indexing. [`chunk_mesh_lod_tests.cpp`](../../tests/core/chunk_mesh_lod_tests.cpp)
-covers these contracts.
+same-direction/material coplanar faces; both retain content identity and full-chunk
+bounds. `MeshLodSelector` uses caller-supplied squared distance thresholds,
+hysteresis and available-variant fallback; it neither sets distance nor remeshes.
+Invalid directions are rejected before grid indexing.
+[`Tests`](../../tests/core/chunk_mesh_lod_tests.cpp) cover these contracts.
 
 ## Text and GUI boundary
 
@@ -92,11 +95,10 @@ after submission. Readback allocation occurs only on capture; recreation,
 resize, and Android window replacement retain the capture contract.
 
 Desktop GLFW cursor deltas control yaw/pitch; W/A/S/D lower through
-`CameraController` into unchanged authoritative `Direction` packets. Escape,
-R, debounced F1, and debounced F5 remain window input; R reloads shaders, F1
-toggles HUD, and F5 cycles camera perspective. Android maps left drag to
-movement and right drag to yaw/pitch before the same lowering while retaining
-its asset and `AndroidInput` glue; its hardware F5 input uses the same cycle.
+`CameraController` into unchanged authoritative `Direction` packets. Window input
+retains Escape, shader-reload R, debounced F1 HUD-toggle and debounced F5 camera-cycle.
+Android lowers left-drag movement/right-drag yaw/pitch identically, retaining assets
+and `AndroidInput`; hardware F5 uses the same cycle.
 
 [`renderer_smoke_tests.cpp`](../../tests/client/renderer_smoke_tests.cpp)
 tests desktop GLFW input, presentation/recreation/readback, HUD and resident face counts.
@@ -116,13 +118,12 @@ pixels without a window.
 S5 offscreen acceptance verifies textured stone, sky, deterministic frames,
 mesh replacement, validation, and remote-player altitude.
 
-The fixed-scene `--benchmark-render` excludes server, network, and gameplay;
-`--benchmark-game` counts completed player-client present requests with those
-systems running. Neither observes physical scanout. Immediate-mode requests
-fail if unavailable. Renderer evidence includes resolution, GPU, HUD, rate,
-p50/p95/p99/max, and CPU phases; GPU timestamps are unavailable. Release
-disables validation, and `--hud` supports paired runs. The S6 renderer stress
-scene uses 90-by-90 maximum capacity and bounded edge streaming; gameplay uses
+The fixed-scene `--benchmark-render` excludes server/network/gameplay;
+`--benchmark-game` counts completed player-client present requests with all three.
+Neither observes physical scanout; unavailable immediate mode fails. Evidence
+includes resolution, GPU, HUD, rate, p50/p95/p99/max and CPU phases, without GPU
+timestamps. Release disables validation; `--hud` supports paired runs.
+S6 renderer stress uses 90-by-90 maximum capacity and bounded edge streaming; S6 gameplay uses
 the smaller directional ellipse in [GAMEPLAY.md](GAMEPLAY.md). Its renderer-only
 gate requires nominal 120 Hz within one percent and p99 at most 10 ms,
 including display wait and scheduler jitter.

@@ -387,6 +387,7 @@ TEST(RendererSmokeTest, GrowsStoneFaceArenaWithoutBreakingPresentation)
             std::chrono::steady_clock::now() + TIMEOUT
         ));
         EXPECT_GT(renderer.runtimeInfo().chunk_draw_count, 0U);
+        EXPECT_EQ(renderer.runtimeInfo().chunk_draw_face_count, shared::HeightTileSurfaceMesh::MAXIMUM_QUAD_COUNT);
     };
     renderVisibleTile(0);
     renderVisibleTile(static_cast<int32_t>(TILE_COUNT - 1U));

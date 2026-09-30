@@ -18,6 +18,7 @@ target_sources(mc
             render/DebugHud.hpp
             render/DepthFormat.hpp
             render/GuiRenderer.hpp
+            render/HeightTileDrawIndex.hpp
             render/InstalledShaderAssets.hpp
             render/ShaderAssets.hpp
             render/StoneFaceCapacity.hpp
