@@ -15,6 +15,16 @@ WORKFLOWS = (
 
 
 class WorkflowContextTests(unittest.TestCase):
+    def test_artifact_uploads_use_the_verified_immutable_revision(self):
+        expected_revision = "ea165f8d65b6e75b540449e92b4886f43607fa02"
+        for workflow_path in WORKFLOWS:
+            workflow = workflow_path.read_text(encoding="utf-8")
+            revisions = re.findall(r"uses:\s+actions/upload-artifact@([^\s#]+)", workflow)
+            self.assertTrue(revisions, workflow_path)
+            for revision in revisions:
+                with self.subTest(workflow=workflow_path.name, revision=revision):
+                    self.assertEqual(revision, expected_revision)
+
     def test_snapshot_trust_condition_has_valid_bash_then_separator(self):
         workflow = WORKFLOWS[1].read_text(encoding="utf-8")
         self.assertIn("git tag --points-at", workflow)

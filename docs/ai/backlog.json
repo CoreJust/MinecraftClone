@@ -9300,5 +9300,41 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0267",
+    "title": "Repair the Android analyzer artifact-upload action pin",
+    "kind": "chore",
+    "status": "done",
+    "priority": "P1",
+    "route": "luna",
+    "milestone": "ED-010-S7",
+    "depends_on": [],
+    "acceptance": "The Android clang-tidy receipt upload uses the verified immutable upload-artifact revision already selected for the release workflows. A focused offline regression rejects mistyped upload pins without changing analysis requirements or receipt validation.",
+    "evidence": "GitHub commit API rejected the old action SHA with HTTP 422 and resolved the replacement SHA. The new regression failed on the old pin, then all 21 WorkflowContextTests passed after correction. No analyzer requirement or receipt validation changed.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0038",
+    "motivation": "Prevent the mandatory Android analysis receipt job from failing before artifact upload because its action revision does not exist.",
+    "context": "GitHub returned HTTP 422 for ea165f8a106dfd1bfe6b101ff036ccbb1cb2b2f9; its commit API confirmed the existing workflow pin ea165f8d65b6e75b540449e92b4886f43607fa02.",
+    "complexity": "low",
+    "created_at": "2026-09-30",
+    "resolved_at": "2026-09-30",
+    "resolution_changes": "Correct the Android clang-tidy receipt upload to the verified v4.6.2 action revision and guard release-workflow upload pins against transcription errors.",
+    "plan": [
+      "Add a regression for upload-artifact pins, correct the invalid Android pin, and run workflow contract tests."
+    ],
+    "product_changes": [],
+    "code_changes": [
+      "Correct the Android clang-tidy receipt upload action SHA; add an offline upload-pin contract regression."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]

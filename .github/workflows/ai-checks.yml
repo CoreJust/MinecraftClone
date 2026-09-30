@@ -484,7 +484,7 @@ jobs:
           --row android_clang_tidy
       - name: Upload Android clang-tidy receipt
         if: always()
-        uses: actions/upload-artifact@ea165f8a106dfd1bfe6b101ff036ccbb1cb2b2f9 # v4.6.2
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: analysis-android-static-${{ github.sha }}
           path: build/ai-analysis/android_clang_tidy.json
