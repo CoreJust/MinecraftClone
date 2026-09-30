@@ -3,9 +3,21 @@
 #include <acceptance/GameBenchmark.hpp>
 #include <gtest/gtest.h>
 
+#include <array>
 #include <chrono>
 
 using namespace std::chrono_literals;
+
+TEST(GameBenchmark, DefaultsTo256AndRejectsUnsupportedRenderDistancesBeforeLaunch)
+{
+    static constexpr std::array<uint32_t, 3> INVALID_RADII{0U, 257U, 1'024U};
+    EXPECT_EQ(acceptance::GameBenchmarkOptions{}.render_distance, 256U);
+    for (uint32_t const radius : INVALID_RADII) {
+        auto const result = acceptance::runGameBenchmark({.render_distance = radius});
+        ASSERT_FALSE(result);
+        EXPECT_EQ(result.error(), "render distance must be an integer chunk radius from 1 to 256");
+    }
+}
 
 TEST(GameBenchmark, ClassifiesCompletedRequestsWithinHalfOpenIntervals)
 {

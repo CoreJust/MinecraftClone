@@ -66,6 +66,11 @@ public:
         char ch,
         GameClientBenchmarkHooks const* benchmark_hooks = nullptr
     );
+    [[nodiscard]] std::optional<uint32_t> renderDistance() const noexcept { return m_render_distance; }
+    [[nodiscard]] uint32_t requiredHeightTileCount() const noexcept
+    {
+        return m_render_distance ? shared::heightTileInterestCount(*m_render_distance) : 0U;
+    }
     [[nodiscard]] PreviewResidency const& heightTileResidency() const noexcept
     {
         return m_height_tile_residency;
@@ -104,6 +109,7 @@ protected:
     void applyHeightTileBatch(shared::ServerHeightTileBatchMessage const& message);
     [[nodiscard]] bool applyHeightTileRemoval(shared::ServerRemoveHeightTileMessage const& message);
     void processPendingHeightTileDeliveries();
+    [[nodiscard]] bool applyHeightTileDescriptor(shared::ServerHeightTileDescriptorMessage const& message);
 protected:
     static constexpr std::array<char, 5> FLIGHT_CHARACTERS{ '@', '#', '$', '%', '&' };
 
@@ -121,6 +127,7 @@ protected:
     bool m_wants_previews;
     ClientAudio m_client_audio;
     HeightTileRevision m_height_tile_revision{ .generation = 1, .revision = 1 };
+    std::optional<uint32_t> m_render_distance;
     std::deque<shared::ServerHeightTileBatchMessage> m_pending_height_tile_deliveries;
     std::unordered_set<uint64_t> m_pending_height_tile_delivery_tokens;
     uint64_t m_height_tile_credit_revision = 0U;
@@ -137,7 +144,6 @@ protected:
     uint64_t m_benchmark_bytes_received = 0U;
 private:
     [[nodiscard]] bool sendJoinRequest();
-    [[nodiscard]] bool applyHeightTileDescriptor(shared::ServerHeightTileDescriptorMessage const& message);
     [[nodiscard]] bool applyWorldRevision(shared::ServerWorldRevisionMessage const& message);
     [[nodiscard]] bool grantHeightTileCredit(uint64_t delivery_token, uint8_t credits);
     [[nodiscard]] bool queueHeightTileDelivery(shared::ServerHeightTileBatchMessage message);

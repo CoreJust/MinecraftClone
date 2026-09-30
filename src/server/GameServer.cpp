@@ -486,7 +486,8 @@ GameServer::GameServer(
     uint16_t const port,
     std::vector<SpawnPoint> spawn_points,
     shared::WorldMode const world_mode,
-    shared::WorldConfiguration const configuration
+    shared::WorldConfiguration const configuration,
+    uint32_t const render_distance
 )
     : core::Server{core::Address::localhost(port), 4, 2}
     , m_world{world_mode, configuration}
@@ -498,9 +499,9 @@ GameServer::GameServer(
     , m_terrain_generator{std::make_shared<shared::TerrainGenerator const>()}
     , m_generation_plan{m_terrain_generator->generationPlan()}
     , m_spawn_points{checkedSpawnPoints(std::move(spawn_points), world_mode)}
+    , m_height_tile_interest_orders{shared::prepareHeightTileInterestOrders(render_distance)}
 {
     m_world.setCollisionWorld(&m_physics_world);
-    shared::prepareHeightTileInterestOrders();
     m_height_tile_workers = std::make_unique<HeightTileWorkerPool>();
 }
 
@@ -1192,7 +1193,7 @@ void GameServer::startHeightTileStream(core::ClientId const client_id)
     sendHeightTileTo(client_id, shared::ServerHeightTileDescriptorMessage{
         .configuration = m_world.configuration(),
         .world_revision = PreviewStream::WORLD_REVISION,
-        .max_height_tiles = shared::HEIGHT_TILE_INTEREST_COUNT,
+        .max_height_tiles = shared::heightTileInterestCount(m_height_tile_interest_orders->radius),
         .max_height_tile_bytes = shared::HEIGHT_TILE_PAYLOAD_BYTES,
     });
     sendHeightTileTo(client_id, shared::ServerWorldRevisionMessage{ .world_revision = PreviewStream::WORLD_REVISION });
@@ -1368,7 +1369,7 @@ void GameServer::refreshHeightTileInterest(PreviewStream& stream, shared::Player
         return;
     }
     shared::HeightTileInterest const next_interest = shared::makeHeightTileInterest(
-        next_center, heading.x, heading.y
+        next_center, heading.x, heading.y, *m_height_tile_interest_orders
     );
 
     bool const center_changed = !stream.has_center || stream.center != next_center;

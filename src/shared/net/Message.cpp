@@ -392,7 +392,7 @@ bool isValidMessage(Message const& message) noexcept
         } else if constexpr (std::is_same_v<Value, ServerHeightTileDescriptorMessage>) {
             return isValidWorldConfiguration(value.configuration)
                 && value.world_revision != 0U
-                && value.max_height_tiles == HEIGHT_TILE_INTEREST_COUNT
+                && heightTileInterestRadiusForCount(value.max_height_tiles).has_value()
                 && value.max_height_tile_bytes == HEIGHT_TILE_PAYLOAD_BYTES;
         } else if constexpr (std::is_same_v<Value, ServerWorldRevisionMessage>) {
             return value.world_revision != 0U;

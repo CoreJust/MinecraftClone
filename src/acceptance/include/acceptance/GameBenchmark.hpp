@@ -1,5 +1,7 @@
 #pragma once
 
+#include <shared/net/Message.hpp>
+
 #include <acceptance/EvidenceJson.hpp>
 
 #include <chrono>
@@ -31,6 +33,7 @@ struct GameBenchmarkOptions final {
     std::chrono::seconds deadline{ 60 };
     bool require_immediate_present_mode = false;
     GameBenchmarkWorkload workload = GameBenchmarkWorkload::OrdinaryMovement;
+    uint32_t render_distance = shared::HEIGHT_TILE_INTEREST_RADIUS;
 };
 
 [[nodiscard]]

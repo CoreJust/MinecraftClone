@@ -2,7 +2,9 @@
 
 #include <shared/net/Message.hpp>
 
+#include <array>
 #include <cstdint>
+#include <memory>
 #include <span>
 #include <vector>
 
@@ -34,6 +36,11 @@ struct HeightTileInterest final {
     int8_t heading_y = 127;
 };
 
+struct HeightTileInterestOrders final {
+    uint32_t radius;
+    std::array<HeightTileInterest, 16> orders;
+};
+
 enum class HeightTileGenerationBand : uint8_t {
     Immediate,
     Near,
@@ -41,13 +48,25 @@ enum class HeightTileGenerationBand : uint8_t {
     Background,
 };
 
-void prepareHeightTileInterestOrders();
+[[nodiscard]]
+std::shared_ptr<HeightTileInterestOrders const> prepareHeightTileInterestOrders(
+    uint32_t radius = HEIGHT_TILE_INTEREST_RADIUS
+);
 
 [[nodiscard]]
 HeightTileInterest makeHeightTileInterest(
     HeightTileKey center,
     int8_t heading_x,
-    int8_t heading_y
+    int8_t heading_y,
+    uint32_t radius = HEIGHT_TILE_INTEREST_RADIUS
+);
+
+[[nodiscard]]
+HeightTileInterest makeHeightTileInterest(
+    HeightTileKey center,
+    int8_t heading_x,
+    int8_t heading_y,
+    HeightTileInterestOrders const& orders
 );
 
 [[nodiscard]] HeightTileHeading canonicalHeightTileHeading(int8_t x, int8_t y) noexcept;

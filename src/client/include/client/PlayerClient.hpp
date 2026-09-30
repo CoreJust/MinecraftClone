@@ -61,7 +61,7 @@ struct PlayerClientCapturePlan final {
 struct PlayerClientCaptureOptions final {
     std::filesystem::path image_path;
     PlayerClientCapturePreset preset = PlayerClientCapturePreset::CentralSpike;
-    uint32_t minimum_height_tile_meshes = shared::HEIGHT_TILE_INTEREST_COUNT;
+    uint32_t minimum_height_tile_meshes = 0U;
     std::chrono::milliseconds readiness_deadline{ std::chrono::minutes{ 15 } };
     std::chrono::milliseconds sweep_deadline{ std::chrono::minutes{ 5 } };
 };

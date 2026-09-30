@@ -9940,5 +9940,46 @@
     "docs_review": "Rendering guide checked against indexed-default/diagnostic overrides, frozen CPU index, native output parity and truthful unsupported MoltenVK terrain scope; generated inventory/source state refreshed and ai_docs check passed within the 900-word limit.",
     "environment_review": "Exact 627/bd Release mc_main, mc_tests, stone acceptance and renderer smoke builds passed; focused CPU tests passed 40/40. Coordinator-authorized native Terminal parity passed without skips or validation errors; raw A/B files are /private/tmp/MC-AI-0277-stationary-{six,indexed}.json, native receipts /private/tmp/MC-AI-0277-native-parity-corrected.xml and /private/tmp/MC-AI-0277-native-parity-final.xml. ai_check --fast passed, including the complete Python suite; docs/tasks checks and all source-code policy checks passed. The broader publisher check is not a release receipt: only the existing 26.09.20 snapshot date and dirty-worktree release checks fail, outside this active uncommitted worker task.",
     "backlog_review": "Reserved only MC-AI-0277 as active in the isolated worktree; no main metadata, dependency pin, commit, push or finalized state changed."
+  },
+  {
+    "id": "MC-AI-0286",
+    "title": "Configure real server-authoritative S7 terrain render distance",
+    "kind": "feature",
+    "status": "done",
+    "priority": "P0",
+    "route": "sol",
+    "milestone": "ED-010-S7",
+    "depends_on": [],
+    "acceptance": "Normal server gameplay and the full-game benchmark share a validated server-wide chunk radius from 1 through 256, defaulting to 256 and supporting selected 128. Protocol 12 maps the descriptor exact disk count to a unique accepted radius and rejects malformed counts, incompatible versions, and conflicting descriptors before mutation. Derive generation, camera-independent wrapped disk membership and movement frontiers, client residency and coverage readiness, far plane and fog from that accepted radius. Preserve actual framebuffer/FOV replacement-face projected area at most 2 px squared, default radius, exact dependencies, and 1024 projection/culling mathematical coverage. Cover 128/256 disks, rotation, wrap and movement deltas, descriptor validation and both public command paths. No UI, per-client negotiation, publication, or 1024 runtime performance/capacity claim. Coordinator owns aggregate native/performance acceptance.",
+    "evidence": "Exact-pinned Release mc_main, mc_tests and mc_renderer_smoke built with at most two jobs. Initial focused suite passed 93/94; only six literal protocol-header goldens still expected version 11. After changing those bytes to 12, the corrected focused run passed 82/82 in 5.892 s, XML /private/tmp/MC-AI-0286-corrected.xml; the other 12 GameServerPreview tests had already passed in /private/tmp/MC-AI-0286-focused.xml and were not redundantly rerun. Public CLI acceptance passed 5/5, including selected server128 startup and both command parsers. Coordinator-authorized native MoltenVK PlayerClientResetTest passed 4/4 without skips in 1.502 s, XML /private/tmp/MC-AI-0286-native.xml and exit=0; selected128/256 camera/interest agreement and unchanged FOV are covered. Exact disk/count, all supported count-radius mappings, incompatible/malformed/conflicting descriptors before mutation, heading invariance, wrapped movement frontiers, client budget and connected production-server agreement pass. Existing actual-projection LOD and 1024 culling mathematical tests pass; no 1024 runtime capacity/performance claim or full-game performance result is made. Documentation integrity and ai_check --fast pass; coordinator owns integrated checks and performance acceptance.",
+    "blocker": "",
+    "owner": "Codex render-distance worker",
+    "level": "basic",
+    "parent": "MC-AI-0038",
+    "motivation": "Measure the requested 100-plus-chunk workload through a real production setting, preserving the default 256 disk and terrain-quality contract.",
+    "context": "Authoritative request /private/tmp/MC-AI-0286-request.txt SHA256 810ebeab1c4cbc6dd819be7029a6d36f64dbf365b19a2796f79510ea18411dd7. Isolated base e6a2de0259e83a1abf0e8a82d9cb7fd6aa801a6d; root coordinates independent connection lifecycle, terrain admission and diagnostic changes. Protocol 11 accepted only count 205861, so configurable exact counts require explicit protocol compatibility change.",
+    "complexity": "high",
+    "created_at": "2026-09-30",
+    "resolved_at": "2026-09-30",
+    "resolution_changes": "Added a validated server-wide chunk radius1..256, default256, shared by normal server and benchmark CLI. Protocol12 preserves descriptor layout but uniquely maps exact disk counts to accepted radii before client mutation. Selected-radius immutable orders, incremental wrapped movement frontiers, residency budget, capture readiness and camera/fog follow the accepted radius; actual framebuffer/FOV LOD is unchanged. Source is staged for one bounded Luna/high review, with no worker commit or publication; coordinator renews the same reviewer on integration.",
+    "plan": [
+      "Validate a bounded server-wide radius and exact disk-cardinality descriptor using protocol 12 without new wire fields.",
+      "Reuse immutable selected-radius interest orders and incremental client movement frontiers, propagate accepted radius through residency, readiness and camera.",
+      "Connect normal and benchmark CLI options, cover public contracts with focused deterministic checks, and freeze a bounded Luna review receipt for integration."
+    ],
+    "product_changes": [
+      "Normal --server and --benchmark-game accept --render-distance CHUNKS; the default remains256, and selected128 is a real server generation/residency setting."
+    ],
+    "code_changes": [
+      "Validate protocol12 descriptor exact count-to-radius agreement, retain bounded shared immutable selected-radius orders, and derive client budgets, coverage readiness and camera projection from the accepted server setting.",
+      "Add deterministic shared, client, movement, public-command and native camera/reset tests without changing the projected-area LOD rule or dependencies."
+    ],
+    "baseline_commit": "e6a2de0259e83a1abf0e8a82d9cb7fd6aa801a6d",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "Report-only audit: compile native-only fixtures before claiming test coverage; a missing explicit SparseWorld header was found and fixed there. Protocol compatibility goldens must change literal header bytes along with the version; the one stale golden was corrected, not auto-blessed. Native startup uses the established scoped Terminal/MoltenVK path; automatic approval timed out once and its allowed retry succeeded. No harness, dependency, permission or global instruction repair was authorized or necessary.",
+    "docs_review": "Read gameplay and rendering contracts against source; both owning guides now document accepted-radius disk/cardinality, protocol12 compatibility, shared commands and far-plane/fog behavior, retaining 1024 mathematical-only scope. Each guide has899 prose words. ai_docs refresh and check pass; integrated newer terrain-admission prose must be preserved by the coordinator.",
+    "environment_review": "Task-local Release build uses strict CoreCpp6273573 and CoreProject2026bd23164 installed packages and the existing arm64-osx vcpkg tree, with manifest installation disabled and max2jobs. CPU corrected82/82, preceding12 server-preview tests, publicCLI5/5 and native4/4 pass. ai_check --fast passes; only existing publisher date/dirty-tree release exceptions are allowed. No GPU performance measurement, Windows runtime or Android runtime acceptance was performed in this lane.",
+    "backlog_review": "Explicit reserved0286 was added and finalized only in this isolated backlog. No main metadata, integration history, dependency pin or other task was changed; parent task0038 and BACKLOG are generated traceability updates. Coordinator imports and commits once after integration and same-reviewer renewal."
   }
 ]
