@@ -1500,25 +1500,22 @@
     "depends_on": [
       "MC-AI-0037"
     ],
-    "acceptance": "A general server-authoritative permission system covers all entity subjects through built-in, kind, custom and selector-defined groups, deterministic hard restrictions and overridable soft defaults, individual overrides, namespaced custom permission keys and immutable generation-tagged hot-path capability snapshots. S7 uses it for movement, flight, block/entity phasing and collision without becoming player-only; world-level subjects remain reserved future work. CoreLang 0.1.3.1 is an exact verified dependency for authored policy and parity-tested eligible native/JIT kernels, with no unbounded script execution in physics ticks. Seeded adverse-network tests cover loss, latency, jitter, freezes, reordering and duplication. The candidate includes a replicated single-parallelepiped player body with a deterministic 16-color palette and first-person, rear third-person and front-facing third-person camera modes. On the Apple M3 Pro it meets the S7 visible 120 FPS/99.8% frame-time contract and records at least 200 uncapped full-game iterations per second, including x200 speed-modified movement. Before release, the exact candidate passes the fully automated, fail-closed MC-AI-0249 sanitizer and static-analysis matrix with complete receipts. Full edge-case, subsystem, multiplayer, performance and platform acceptance passes; after publication, report and wait with the minor active and unfinalized; do not invent S8.",
+    "acceptance": "Deliver general server-authoritative permissions for all entities: fixed all, players, mobs, technical entities, per-kind, explicit-member and selector groups; namespaced custom keys; hard restrictions that only narrow rights; overridable soft defaults; and immutable generation-tagged hot-path snapshots. Defer world subjects. Cover movement, flight, collision/phasing, blocks, inventory, invincibility and commands. Use provenance-verified CoreLang 0.1.3.1; test interpreter/JIT parity, prepare required kernels atomically, and keep compilation and unbounded scripts out of physics ticks. Test deterministic loss, latency, jitter, freezes, reordering and duplication. Add a replicated 29/16-tall, 10/16-square parallelepiped player with a deterministic 16-color palette and first, rear-third and front-third views. On Apple M3 Pro, meet visible 120 FPS in 99.8% of frames and 200 uncapped full-game iterations/s with x200 movement. Pass full gameplay/platform checks and the automated fail-closed MC-AI-0249 sanitizer/analyzer matrix with complete receipts before release. Publish S7, hold the minor active/unfinalized for feedback, and do not start S8.",
     "evidence": "",
     "blocker": "",
     "owner": "Codex",
     "level": "snapshot",
     "parent": "MC-AI-0033",
-    "motivation": "Close the Initiation minor with authoritative gameplay rules and the reusable subsystems deferred from the mature S6 world foundation.",
-    "context": "The former wrapping-only S7 scope was merged into Snapshot 6 by product decision, and the former Snapshot 8 therefore becomes Snapshot 7. S7 uses the finalized CoreLang 0.1.3.1 design and exact released package before integration; CoreLang 0.1.3.2 is delayed by a terminal architecture issue and is not an S7 dependency. The aggregate owns entity-wide permissions, physics, player presentation, degraded-network acceptance, performance and the required diagnostic matrix.",
+    "motivation": "Complete S7 authoritative gameplay and deferred S6 subsystems.",
+    "context": "Wrapping-only S7 was merged into S6; Snapshot 8 became S7. CoreLang 0.1.3.1 is required; 0.1.3.2 is delayed by an architectural defect. S7 covers entity-wide permissions, physics, presentation, impaired networking, performance and diagnostics.",
     "complexity": "high",
     "created_at": "2026-09-09",
     "resolved_at": "",
     "resolution_changes": "",
     "plan": [
-      "Keep authoritative physics simulation separate from input transport and presentation.",
-      "Compile general permission policy at mutation time into immutable entity capability snapshots rather than player-only flags.",
-      "Keep CoreLang preparation, selector evaluation and policy publication outside fixed physics ticks.",
-      "Start the independent palette/body/camera presentation slice before the released CoreLang package arrives.",
-      "Complete the deferred reusable executor, audio, staged-generation, preview/LOD, and full-game profiling contracts.",
-      "Prove authority, collision and movement with deterministic fixed-tick and impaired-network tests, then pass the fail-closed analysis matrix."
+      "Implement bounded authoritative movement and general immutable permissions; keep policy compilation outside physics ticks.",
+      "Add player body/views and adverse-network tests; verify authority and movement with fixed-tick scenarios.",
+      "Complete executor/audio/generation/LOD/performance diagnostics; pass sanitizer and platform gates, publish S7, then hold the minor for feedback."
     ],
     "product_changes": [],
     "code_changes": [],
@@ -10014,6 +10011,47 @@
       "Test public delayed-handshake identity and cancellation contracts, preserving prior red/green evidence and review rejection."
     ],
     "baseline_commit": "eea813baa0fcccc1f24a7dba22a71909e635b006",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0284",
+    "title": "Make S7 integration tests configuration-correct and size nested CTest timeout from measured runtime",
+    "kind": "chore",
+    "status": "done",
+    "priority": "P1",
+    "route": "luna",
+    "milestone": "ED-010-S7",
+    "depends_on": [],
+    "acceptance": "Start the production prediction-client deadline after GameServer construction and immediately before client execution; preserve the four-second live-client budget, six inputs per client, all-player observation, pending-input drain, and exact predicted/authoritative state assertions, with the focused test passing in Debug and Release. Keep the four-client streaming acknowledgement/catch-up/tile-progress limits unchanged and execute them in Release; the Debug configuration must explicitly report this optimized-throughput-only case as skipped rather than failing on non-optimized service throughput. Give the server-only wrapper at least 300 seconds on both Windows and non-Windows so clean nested configure/build plus CTest fits; prove a clean outer invocation completes and reports all nested tests. Run the full batch gate after the fixes.",
+    "evidence": "Fresh exact-pin Release test build passed. SustainedFlightKeepsInputAcknowledgementsCurrentWhileTilesStream and ReconcilesThreeProductionCadenceClientsOverRealTransport passed 2/2 in 36.91 s (35.74 s and 1.16 s). Debug focused CTest passed 2/2 with the throughput-only test explicitly skipped and prediction reconciliation passing in 5.03 s. Full Debug build passed; CTest passed 568/568 in 588.19 s with one intentional skip. The clean nested MinecraftClone.ServerOnlyBuild passed in 153.76 s and its nested suite passed 306/306. ai_docs refresh/check passed; the focused workflow-context Python suite passed 21/21. The full ai_check run recorded build and CTest passes but preceded the final docs/Python-contract corrections.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0038",
+    "motivation": "Keep the full S7 integration gate reliable without weakening optimized-build throughput acceptance or counting test fixture preparation as gameplay time.",
+    "context": "On exact candidate 9a21f8a with the pinned CoreCpp/CoreProject pair, fresh Release build and the two affected stress tests pass 2/2: four-client terrain-stream acknowledgement stress in 35.76 seconds and three-client prediction reconciliation in 1.13 seconds. The Debug prediction test starts its four-second deadline before constructing GameServer; the constructor takes 4.335 seconds before the first client Host appears, so the gameplay budget is exhausted during fixture setup. The Debug four-client streaming test exceeds its latency bound under the unoptimized full-radius workload while the exact Release run passes. The server-only nested CTest passed 306/306 in 137.92 seconds after its generated build existed; its outer non-Windows CTest timeout is 120 seconds and its prior clean run was terminated at 186/306. The outer test also configures and builds that nested tree.",
+    "complexity": "medium",
+    "created_at": "2026-09-30",
+    "resolved_at": "2026-09-30",
+    "resolution_changes": "Moved the production prediction deadline to begin after GameServer setup, kept the original full-latency thresholds mandatory in Release while explicitly skipping that throughput-only test in Debug, raised the server-only CTest budget to 300 seconds, and updated its workflow-contract assertion. Condensed the generated S7 parent-task summary without dropping its requirements and refreshed the generated source-state inventory.",
+    "plan": [
+      "Move the prediction deadline start past costly server setup without changing the live-client assertion budget.",
+      "Separate optimized-build streaming latency acceptance from Debug functional coverage without weakening Release thresholds.",
+      "Set an evidence-based outer budget for the clean nested server-only build and test run, then verify it from a clean nested directory."
+    ],
+    "product_changes": [
+      "No player-facing behavior change; improve determinism and honesty of automated S7 gates."
+    ],
+    "code_changes": [
+      "Correct prediction-test deadline placement and configuration-specific handling for the streaming latency test.",
+      "Raise the server-only outer CTest timeout to cover measured nested suite duration plus configure/build overhead."
+    ],
+    "baseline_commit": "9a21f8a554d7de279a0e3b2898440deb9de87535",
     "commits": [],
     "finalized": true,
     "retrospective": "",

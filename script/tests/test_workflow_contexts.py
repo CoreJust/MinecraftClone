@@ -301,10 +301,10 @@ class WorkflowContextTests(unittest.TestCase):
         minecraftclone_template = (REPOSITORY / "tests/cmake/minecraftclone_server_only_test.cmake.in").read_text(encoding="utf-8")
         self.assertIn("list(APPEND test_command -C \"${MC_TEST_CONFIGURATION}\")", minecraftclone_template)
 
-    def test_server_only_build_test_has_platform_timeout(self):
+    def test_server_only_build_timeout_covers_nested_suite(self):
         cmake_lists = (REPOSITORY / "tests/CMakeLists.txt").read_text(encoding="utf-8")
-        self.assertIn("set_tests_properties(MinecraftClone.ServerOnlyBuild PROPERTIES TIMEOUT 180)", cmake_lists)
-        self.assertIn("set_tests_properties(MinecraftClone.ServerOnlyBuild PROPERTIES TIMEOUT 120)", cmake_lists)
+        self.assertIn("set_tests_properties(MinecraftClone.ServerOnlyBuild PROPERTIES TIMEOUT 300)", cmake_lists)
+        self.assertNotRegex(cmake_lists, r"MinecraftClone\.ServerOnlyBuild PROPERTIES TIMEOUT (120|180)")
 
 
 if __name__ == "__main__":

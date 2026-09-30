@@ -698,13 +698,13 @@ TEST(GameClientPredictionTest, ReconcilesThreeProductionCadenceClientsOverRealTr
         .x = 22U,
         .y = 18U,
     };
-    auto const deadline = std::chrono::steady_clock::now() + CLIENT_DEADLINE;
     server::GameServer server{ 0, { ALICE_SPAWN, BOB_SPAWN, CHARLIE_SPAWN } };
     std::atomic_bool stop_server{ false };
     std::thread server_thread{ [&server, &stop_server] {
         server.run(stop_server);
     } };
 
+    auto const deadline = std::chrono::steady_clock::now() + CLIENT_DEADLINE;
     ProductionPredictionClient alice{ { .x = 127U, .y = 0U }, deadline };
     ProductionPredictionClient bob{ { .x = 129U, .y = 0U }, deadline };
     ProductionPredictionClient charlie{ { .x = 0U, .y = 127U }, deadline };

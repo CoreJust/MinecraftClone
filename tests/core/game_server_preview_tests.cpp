@@ -1136,6 +1136,9 @@ TEST(GameServerPreviewTest, SaturatedAdditionsDoNotStarveRemovalsAndInflightRecl
 
 TEST(GameServerPreviewTest, SustainedFlightKeepsInputAcknowledgementsCurrentWhileTilesStream)
 {
+#ifndef NDEBUG
+    GTEST_SKIP() << "Four-peer full-radius latency acceptance requires an optimized Release build";
+#else
     static constexpr auto DURATION = std::chrono::seconds{35};
     static constexpr auto INPUT_PERIOD = std::chrono::milliseconds{100};
     server::GameServer server{0, {}, shared::WorldMode::Flight};
@@ -1234,4 +1237,5 @@ TEST(GameServerPreviewTest, SustainedFlightKeepsInputAcknowledgementsCurrentWhil
         EXPECT_GT(client->received_height_tiles, midpoint_tile_counts[index])
             << "client " << index << " made no terrain progress during the second half";
     }
+#endif
 }
