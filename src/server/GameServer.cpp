@@ -422,11 +422,7 @@ private:
     static void executeGenerationJob(Result& result, shared::TerrainGenerator const& generator)
     {
         if (result.job.stage == shared::GenerationStage::Materialize) {
-            if (result.job.inherited_ancestor_data != nullptr) {
-                result.chunk = generator.generateChunk(result.job.coordinate, *result.job.inherited_ancestor_data);
-            } else {
-                result.chunk = generator.generateChunk(result.job.coordinate);
-            }
+            result.chunk = generator.generateChunk(result.job.coordinate);
         } else if (result.job.stage == shared::GenerationStage::HeightTile) {
             result.tile = generator.generateHeightTile({
                 .x = result.job.coordinate.x,

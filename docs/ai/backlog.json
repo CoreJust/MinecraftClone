@@ -9376,5 +9376,79 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0268",
+    "title": "Materialize exact terrain consistent with streamed height previews",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P1",
+    "route": "luna",
+    "milestone": "ED-010-S7",
+    "depends_on": [],
+    "acceptance": "The built-in server materializes exact terrain matching streamed height tiles. A production network regression at (32880,32768) cycles capabilities 3 -> 1 -> 0 and settles at height 347 rather than inherited coarse height 144. Bounded staged scheduling, immutable ancestor inheritance, and footprint collision contracts remain unchanged.",
+    "evidence": "Debug server-only mc_tests built with exact pinned CoreCpp b14b018 and CoreProject2026 8ccca886, parallel 2. The new production regression failed before the fix (landing 144 versus preview 347; 10.740 s) and passed after it (4.626 s). GameServerFlightTest, FlightWorldTest, WorldGenerationTest, and WorldGenerationSchedulerTest passed 76/76 in 5.644 s, including highest-footprint support and coarse ancestor inheritance. Existing unused preview-test declarations were removed; incremental build emitted no warning from this suite. Source policy passed 11/11, docs/backlog checks and ai_check.py --fast passed. Full-stream timeout investigation is separate MC-AI-0270; no full-batch or hosted-matrix pass is claimed.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0038",
+    "motivation": "Mountain runtime capture exposed a final authoritative collision surface hundreds of cells below the rendered exact preview, so normal movement could not rest on the visible terrain.",
+    "context": "The server used inherited refinement samples for the final Materialize stage, although height tiles used exact generation. The generic coarse generateChunk overload and scheduler inheritance remain valid staged-generation APIs.",
+    "complexity": "medium",
+    "created_at": "2026-09-30",
+    "resolved_at": "2026-09-30",
+    "resolution_changes": "Final server materialization now uses exact generation. Added the production preview-versus-landing regression and documented the collision authority contract.",
+    "plan": [
+      "Reproduce the built-in mountain preview/collision mismatch through public server messages, add a red regression, use exact final materialization, and verify terrain, footprint, capability-cycle, and scheduler contracts."
+    ],
+    "product_changes": [
+      "Materialized collision now agrees with the exact terrain shown by height previews."
+    ],
+    "code_changes": [
+      "Generate final server chunks from exact terrain rather than inherited coarse refinement data.",
+      "Add a production network mountain landing regression; remove obsolete unused declarations from the touched preview suite.",
+      "Document exact final collision materialization while preserving refinement inheritance."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "Read GAMEPLAY.md against the server materialization path and updated its S7 generation contract.",
+    "environment_review": "Used an isolated server-only Debug build with the branch's exact pinned persistent dependencies; no live capture binary was changed.",
+    "backlog_review": "Recorded the incompatible existing full-stream validation deadline separately as MC-AI-0270."
+  },
+  {
+    "id": "MC-AI-0270",
+    "title": "Make full-radius preview stream validation compatible with bounded production generation",
+    "kind": "bug",
+    "status": "backlog",
+    "priority": "P1",
+    "route": "luna",
+    "milestone": "ED-010-S7",
+    "depends_on": [],
+    "acceptance": "Preview validation retains full-coverage proof while using an explicit test contour or bounded scheduling contract compatible with production radius 256 and the 256 background tiles/second limit. It passes applicable CTest and analysis deadlines without arbitrary timeout increases or weaker full-coverage claims. Polling consumes each received message once instead of repeatedly scanning growing history.",
+    "evidence": "The unchanged direct StreamsPlayerCenteredHeightTilesAndRemovesDepartedTiles test failed after 363.980 seconds: received_all_height_tiles=false and received_removal=false. Log: /private/tmp/MC-AI-0268-existing-full-stream.log. It expects all 205861 tiles within 180 seconds, then waits another 180 seconds for movement removal. Production background generation is limited to 256 tiles/second. CTest discovery sets 120 seconds; LSan/MSan analysis lanes use 60 seconds. Its 18 unaccelerated movement inputs cover only 10.08 cells from a tile boundary, less than the 16-cell center transition needed to remove tiles.",
+    "blocker": "",
+    "owner": "",
+    "level": "basic",
+    "parent": "MC-AI-0038",
+    "motivation": "The increased full-world preview radius makes the existing all-tiles test incompatible with the bounded production generation budget and hosted test deadlines.",
+    "context": "PreviewClient uses normal delivery-window acknowledgements and no scheduling override. heightTileCount rescans the growing message history on every 1 ms poll. Removal validation must explicitly cross a tile-center boundary. GUI capture remains the full production-radius acceptance contour.",
+    "complexity": "medium",
+    "created_at": "2026-09-30",
+    "resolved_at": "",
+    "resolution_changes": "",
+    "plan": [
+      "Record the unchanged failure, define a bounded test contour without weakening full-radius runtime coverage, make tile accounting incremental, and verify ordinary and analysis test deadlines."
+    ],
+    "product_changes": [],
+    "code_changes": [],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": false,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]

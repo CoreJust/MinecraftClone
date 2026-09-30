@@ -13,6 +13,7 @@
 #include <atomic>
 #include <chrono>
 #include <cstdlib>
+#include <optional>
 #include <span>
 #include <thread>
 #include <unordered_set>
@@ -163,6 +164,92 @@ std::vector<shared::ServerHeightTileBatchMessage> deliveryBatchesFrom(
 }
 
 } // namespace
+
+TEST(GameServerPreviewTest, MaterializedLandingMatchesTheStreamedMountainHeight)
+{
+    static constexpr std::chrono::seconds TIMEOUT{15};
+    static constexpr std::chrono::milliseconds POLL_INTERVAL{1};
+    static constexpr int32_t TARGET_X = 32'880;
+    static constexpr int32_t TARGET_Y = 32'768;
+    static constexpr int32_t TARGET_HEIGHT = 347;
+    static constexpr uint32_t STABLE_GROUNDED_INPUTS = 5U;
+    static constexpr shared::HeightTileKey TARGET_TILE{.x = 2'055, .y = 2'048};
+
+    server::GameServer server{0, {{.character = '@', .x = TARGET_X, .y = TARGET_Y, .z = TARGET_HEIGHT}},
+        shared::WorldMode::Flight};
+    std::atomic_bool stop_requested{false};
+    std::thread server_thread{[&server, &stop_requested] { server.run(stop_requested); }};
+    PreviewClient client{false};
+    bool const connected = client.connect(core::Address::localhost(server.port()), TIMEOUT);
+    bool const joined = connected && client.send(shared::encodeMessage(shared::JoinRequestMessage{
+        .ch = '@', .mode = shared::WorldMode::Flight, .wants_previews = true,
+    }), shared::GAME_CHANNEL, core::SendMode{core::SendMode::Reliable});
+    auto const deadline = std::chrono::steady_clock::now() + TIMEOUT;
+    std::optional<shared::ServerPlayerPositionMessage> position;
+    std::optional<uint16_t> preview_height;
+    uint32_t inspected_messages = 0U;
+    uint32_t sequence = 1U;
+    uint32_t stable_grounded_inputs = 0U;
+    uint8_t last_cycle_source = 255U;
+    bool saw_collision_enabled_flight = false;
+    bool sent_all_inputs = true;
+    while (joined && sent_all_inputs && stable_grounded_inputs < STABLE_GROUNDED_INPUTS
+        && std::chrono::steady_clock::now() < deadline) {
+        client.poll(POLL_INTERVAL);
+        while (inspected_messages < client.messages.size()) {
+            shared::Message const& message = client.messages[inspected_messages++];
+            if (auto const* const update = std::get_if<shared::ServerPlayerPositionMessage>(&message)) {
+                position = *update;
+                saw_collision_enabled_flight |= update->movement_capabilities.bits == 1U;
+                if (update->movement_capabilities.bits == 0U && update->vertical_velocity_subcells == 0) {
+                    ++stable_grounded_inputs;
+                } else {
+                    stable_grounded_inputs = 0U;
+                }
+            }
+            auto const inspect_tile = [&preview_height](shared::ServerHeightTileMessage const& tile) {
+                if (tile.key == TARGET_TILE) {
+                    preview_height = tile.heights[0U];
+                }
+            };
+            if (auto const* const tile = std::get_if<shared::ServerHeightTileMessage>(&message)) {
+                inspect_tile(*tile);
+            } else if (auto const* const batch = std::get_if<shared::ServerHeightTileBatchMessage>(&message)) {
+                for (shared::ServerHeightTileMessage const& tile : batch->tiles) {
+                    inspect_tile(tile);
+                }
+            }
+        }
+        if (!position.has_value() || position->acknowledged_input_sequence + 1U != sequence) {
+            continue;
+        }
+        uint8_t const capability_bits = position->movement_capabilities.bits;
+        bool const cycle = capability_bits != 0U && last_cycle_source != capability_bits;
+        if (cycle) {
+            last_cycle_source = capability_bits;
+        }
+        sent_all_inputs = client.send(shared::encodeMessage(shared::ClientInputMessage{
+            .direction = {.cycle_movement_capabilities = cycle}, .sequence = sequence++,
+        }), shared::GAME_CHANNEL, core::SendMode{core::SendMode::Reliable});
+    }
+    stop_requested.store(true, std::memory_order_relaxed);
+    server_thread.join();
+
+    ASSERT_TRUE(connected);
+    ASSERT_TRUE(joined);
+    ASSERT_TRUE(sent_all_inputs);
+    ASSERT_TRUE(saw_collision_enabled_flight);
+    ASSERT_TRUE(preview_height.has_value());
+    EXPECT_EQ(*preview_height, TARGET_HEIGHT);
+    ASSERT_TRUE(position.has_value());
+    ASSERT_EQ(stable_grounded_inputs, STABLE_GROUNDED_INPUTS);
+    EXPECT_EQ(position->movement_capabilities.bits, 0U);
+    EXPECT_EQ(position->x, TARGET_X);
+    EXPECT_EQ(position->y, TARGET_Y);
+    EXPECT_EQ(position->z, *preview_height);
+    EXPECT_EQ(position->z_subcell, 0U);
+    EXPECT_EQ(position->vertical_velocity_subcells, 0);
+}
 
 TEST(GameServerPreviewTest, StreamsNearestTilesBeforeRowMajorInterestOrder)
 {
@@ -374,7 +461,6 @@ TEST(GameServerPreviewTest, StreamsPlayerCenteredHeightTilesAndRemovesDepartedTi
 {
     static constexpr std::chrono::seconds TIMEOUT{180};
     static constexpr std::chrono::milliseconds POLL_INTERVAL{1};
-    static constexpr uint32_t CAMERA_ROTATION_COUNT = 8U;
     static constexpr uint32_t MOVEMENT_INPUT_COUNT = 18U;
     shared::HeightTileInterest const expected_interest = shared::makeHeightTileInterest(
         {
@@ -385,10 +471,6 @@ TEST(GameServerPreviewTest, StreamsPlayerCenteredHeightTilesAndRemovesDepartedTi
         127
     );
     uint32_t const expected_height_tiles = static_cast<uint32_t>(expected_interest.keys.size());
-    uint32_t const camera_rotation_tile_interval = std::max(
-        1U,
-        expected_height_tiles / CAMERA_ROTATION_COUNT
-    );
 
     server::GameServer server{0, {}, shared::WorldMode::Flight};
     std::atomic_bool stop_requested{false};

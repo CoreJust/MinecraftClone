@@ -126,9 +126,9 @@ staged generation feed bounded `SparseWorld` residency.
 
 ## S7 staged generation
 
-`WorldGenerationCoordinator` runs bounded, seeded stages through the server
-executor. Refinements inherit completed ancestor data; materialization publishes
-only for the current revision. Failed stages require explicit bounded retry.
+`WorldGenerationCoordinator` runs bounded seeded server stages. Refinements
+inherit ancestor samples; final materialization uses exact height-tile terrain
+for current-revision collision. Failed stages require explicit bounded retry.
 
 ## S5 exposed-face mesh
 

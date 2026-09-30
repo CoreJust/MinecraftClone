@@ -192,7 +192,7 @@
     },
     {
       "guide": "docs/code/GAMEPLAY.md",
-      "guide_sha256": "bba35a8d2cc7febef74b3819e9c44b154286f2169836aa823fb88293edee5a0e",
+      "guide_sha256": "0ffe316bfc83dd59fe3fae10f060607a90b608de71494fdc813de9f67576d95c",
       "id": "gameplay",
       "sources": [
         "src/client/BotClient.cpp",
@@ -276,7 +276,7 @@
         "tests/core/world_generation_scheduler_tests.cpp",
         "tests/core/world_generation_tests.cpp"
       ],
-      "sources_sha256": "df853d42345a4985d126dd969047505ffaf9d7165a8bb520930fad3516fb69f2"
+      "sources_sha256": "c81e057e2da0f26d2deb9affb13dbb42d71b559cc6d8f48c0528b90cabeb7c26"
     },
     {
       "guide": "docs/code/RENDERING.md",
