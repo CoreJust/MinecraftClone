@@ -1,6 +1,6 @@
 # Gameplay and networking
 
-Run [src/main.cpp](../../src/main.cpp) with `--server [--port PORT]`,
+Run [src/main.cpp](../../src/main.cpp) with `--server [--port PORT] [--render-distance CHUNKS]`,
 `--player-client`, or `--bot-client`; clients use `--address IP:PORT`. No
 arguments launch a graphical localhost player. Flight joins select free tokens.
 
@@ -46,11 +46,10 @@ and a sequence; positions carry authoritative coordinates, subcell remainders,
 palette identity, and acknowledgement. The server derives one of 16 stable
 palette colors from character identity.
 
-`Message.cpp` prepends a magic byte, protocol version, and tag. Version 11
-advertises the full radius-256 height-tile capacity. Decoding
-requires a known, complete, valid, non-trailing payload and rejects old or
-mixed versions before any authority mutation. The join configuration identifies
-the selected seeded world and the server rejects mismatches before gameplay.
+Protocol 12 retains the descriptor layout. `max_height_tiles` must match a
+radius 1–256 disk cardinality; clients derive radius and residency budgets.
+Malformed counts/payloads, conflicting radii, and old/mixed versions fail before
+mutation. Seeded-world join mismatches fail before gameplay.
 
 ## Server authority
 
@@ -103,7 +102,8 @@ probability 1/50 per input call.
 
 ## S6/S7 moving terrain
 
-S7 replaces S6's radius-45 circle with a wrapped radius-256 disk (205,861 tiles).
+S7 server/benchmark `--render-distance CHUNKS` selects radius 1–256 (default 256):
+128 has 51,433 tiles; 256 has 205,861. Selected-radius orders have shared ownership.
 Membership depends solely on player position; heading prioritizes radius-3/radius-8
 circles and a directional ellipse to the former S6 band. Background generation
 permits 8,192 tiles/s, with 128-tile bursts after 250 ms settled. CoreLang 0.1.2

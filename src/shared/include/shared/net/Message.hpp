@@ -12,13 +12,15 @@
 namespace shared {
 
 constexpr uint8_t PROTOCOL_MAGIC = 0x4DU;
-constexpr uint8_t PROTOCOL_VERSION = 11U;
+constexpr uint8_t PROTOCOL_VERSION = 12U;
 constexpr uint8_t GAME_CHANNEL = 0U;
 constexpr uint8_t HEIGHT_TILE_CHANNEL = 1U;
 constexpr uint32_t HEIGHT_TILE_SIDE_LENGTH = 16U;
 constexpr uint32_t HEIGHT_TILE_SAMPLE_COUNT = HEIGHT_TILE_SIDE_LENGTH * HEIGHT_TILE_SIDE_LENGTH;
 constexpr uint32_t HEIGHT_TILE_PAYLOAD_BYTES = HEIGHT_TILE_SAMPLE_COUNT * sizeof(uint16_t);
 constexpr uint32_t HEIGHT_TILE_INTEREST_RADIUS = 256U;
+constexpr uint32_t MIN_HEIGHT_TILE_INTEREST_RADIUS = 1U;
+constexpr uint32_t MAX_HEIGHT_TILE_INTEREST_RADIUS = 256U;
 constexpr uint32_t HEIGHT_TILE_INTEREST_WIDTH = HEIGHT_TILE_INTEREST_RADIUS * 2U + 1U;
 
 [[nodiscard]]
@@ -46,6 +48,32 @@ constexpr uint32_t heightTileInterestCount(uint32_t const radius) noexcept
 }
 
 constexpr uint32_t HEIGHT_TILE_INTEREST_COUNT = heightTileInterestCount(HEIGHT_TILE_INTEREST_RADIUS);
+
+[[nodiscard]]
+constexpr bool isValidHeightTileInterestRadius(uint32_t const radius) noexcept
+{
+    return radius >= MIN_HEIGHT_TILE_INTEREST_RADIUS && radius <= MAX_HEIGHT_TILE_INTEREST_RADIUS;
+}
+
+[[nodiscard]]
+constexpr std::optional<uint32_t> heightTileInterestRadiusForCount(uint32_t const count) noexcept
+{
+    uint32_t low = MIN_HEIGHT_TILE_INTEREST_RADIUS;
+    uint32_t high = MAX_HEIGHT_TILE_INTEREST_RADIUS;
+    while (low <= high) {
+        uint32_t const radius = low + (high - low) / 2U;
+        uint32_t const disk_count = heightTileInterestCount(radius);
+        if (disk_count == count) {
+            return radius;
+        }
+        if (disk_count < count) {
+            low = radius + 1U;
+        } else {
+            high = radius - 1U;
+        }
+    }
+    return std::nullopt;
+}
 constexpr uint8_t HEIGHT_TILE_BATCH_CAPACITY = 16U;
 constexpr uint8_t HEIGHT_TILE_DELIVERY_WINDOW = 8U;
 constexpr uint8_t HEIGHT_TILE_DELIVERY_BATCH_CAPACITY = HEIGHT_TILE_BATCH_CAPACITY;

@@ -40,7 +40,8 @@ public:
         uint16_t port = 20'040,
         std::vector<SpawnPoint> spawn_points = { },
         shared::WorldMode world_mode = shared::WorldMode::Flat,
-        shared::WorldConfiguration configuration = shared::World::canonicalConfiguration()
+        shared::WorldConfiguration configuration = shared::World::canonicalConfiguration(),
+        uint32_t render_distance = shared::HEIGHT_TILE_INTEREST_RADIUS
     );
 
     ~GameServer() override;
@@ -199,6 +200,7 @@ private:
     std::vector<PreviewStream> m_preview_streams;
     size_t m_next_preview_admission = 0U;
     size_t m_next_preview_dispatch = 0U;
+    std::shared_ptr<shared::HeightTileInterestOrders const> m_height_tile_interest_orders;
     std::unique_ptr<HeightTileWorkerPool> m_height_tile_workers;
     uint64_t m_next_height_tile_token = 1;
 };

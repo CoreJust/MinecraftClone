@@ -39,8 +39,9 @@ Desktop `InstalledShaderAssets` reads installed `shaders/`; Android
 `AndroidShaderAssets` reads APK assets. Both require bare `.spv` names;
 no source-tree fallback.
 
-S7 streams the camera-independent radius-256 disk (205,861 tiles); frustum only
-culls drawing. `HeightTileDrawIndex` incrementally orders live arena ranges and
+S7 streams server-selected camera-independent disks (default 256: 205,861 tiles;
+128: 51,433); frustum only culls drawing.
+`HeightTileDrawIndex` incrementally orders live arena ranges and
 refreshes affected 16²-tile groups. Per-frame `VulkanFrustum` classification skips
 resolved planes with exact individual wrapped-AABB visibility; ambiguous wrap
 cuts use individual images. Visible ranges merge without sorting or freed spans.
@@ -54,7 +55,8 @@ work. Jobs recheck revisions, neighbors, detail and epoch. Failed uploads retain
 installed geometry/certificate inputs; displayed meshes refine asynchronously
 after movement/FOV/profile changes. Seam batches atomically publish the center and
 changed neighbors; failure retains renderer/client state. Cached seam spans handle
-out-of-order uploads. LOD preserves terrain/collision; far plane/fog cover the disk,
+out-of-order uploads. LOD preserves terrain/collision; far plane/fog scale with
+the accepted radius,
 and workers mesh outside presentation.
 
 The arena grows with streamed residency; restoration shares the frame deadline.
@@ -129,7 +131,8 @@ including display wait and scheduler jitter.
 Benchmark and renderer capture preserve requested framebuffer pixels through
 bounded GLFW resizing. Capture checks readback, sky, and stone; benchmark checks
 presentation, a stone draw, and phase timing. Networked S7 capture runs the
-production server/client, waits for all 205,861 resident tiles and uploaded
+production server/client, waits for the accepted radius's exact resident tiles and uploaded
 meshes, compares keys across 16 headings, and validates terrain, HUD, and label.
 Capture HUD FPS includes full-disk readiness scans and heading-key comparisons,
-so is not normal-game throughput.
+so is not normal-game throughput. Radius 1,024 coverage is mathematical;
+runtime capacity/performance is unmeasured.

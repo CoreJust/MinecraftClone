@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <array>
 #include <cstdint>
+#include <iterator>
 #include <optional>
 #include <set>
 #include <tuple>
@@ -229,4 +230,41 @@ TEST(PlayerPreviewLodTest, BoundaryStripsMatchTheExactDiskForCrossingJumpsAndWra
     auto const stationary = client::playerPreviewInterestDelta(CENTERS.front(), CENTERS.front());
     EXPECT_TRUE(stationary.additions.empty());
     EXPECT_TRUE(stationary.removals.empty());
+}
+
+TEST(PlayerPreviewLodTest, SelectedRadiusMovementDeltasMatchExactDiskSetDifferences)
+{
+    static constexpr int32_t TILE_EXTENT = shared::WorldExtent::WIDTH / shared::HEIGHT_TILE_SIDE_LENGTH;
+    static constexpr uint32_t RADIUS_128 = 128U;
+    static constexpr uint32_t RADIUS_256 = 256U;
+    static constexpr std::array<uint32_t, 2> RADII{ RADIUS_128, RADIUS_256 };
+    static constexpr std::array<shared::HeightTileKey, 4> CENTERS{
+        shared::HeightTileKey{ TILE_EXTENT - 2, TILE_EXTENT - 6 },
+        shared::HeightTileKey{ 3, 4 },
+        shared::HeightTileKey{ 120, 80 },
+        shared::HeightTileKey{ TILE_EXTENT - 96, TILE_EXTENT - 110 },
+    };
+
+    for (uint32_t const radius : RADII) {
+        for (uint32_t step = 1U; step < CENTERS.size(); ++step) {
+            KeySet const previous = keySet(shared::makeHeightTileInterest(CENTERS[step - 1U], 0, 127, radius).keys);
+            KeySet const next = keySet(shared::makeHeightTileInterest(CENTERS[step], 127, 0, radius).keys);
+            KeySet expected_additions;
+            KeySet expected_removals;
+            std::ranges::set_difference(next, previous, std::inserter(expected_additions, expected_additions.end()));
+            std::ranges::set_difference(previous, next, std::inserter(expected_removals, expected_removals.end()));
+
+            auto const delta = client::playerPreviewInterestDelta(CENTERS[step - 1U], CENTERS[step], radius);
+            KeySet const actual_additions = keySet(delta.additions);
+            KeySet const actual_removals = keySet(delta.removals);
+            EXPECT_EQ(actual_additions, expected_additions) << "radius " << radius << ", step " << step;
+            EXPECT_EQ(actual_removals, expected_removals) << "radius " << radius << ", step " << step;
+            EXPECT_EQ(actual_additions.size(), delta.additions.size());
+            EXPECT_EQ(actual_removals.size(), delta.removals.size());
+        }
+
+        auto const stationary = client::playerPreviewInterestDelta(CENTERS.back(), CENTERS.back(), radius);
+        EXPECT_TRUE(stationary.additions.empty());
+        EXPECT_TRUE(stationary.removals.empty());
+    }
 }

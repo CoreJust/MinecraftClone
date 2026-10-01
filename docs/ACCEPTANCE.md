@@ -81,13 +81,15 @@ a short regression checks cancellation while disconnected. Each discovered
 `mc_tests` case also has a 120-second CTest timeout. The relay is test-only and
 does not alter shipping physics or rendering timing.
 
-The networked player-capture test uses `--player-client-capture --address IP:PORT
---preset NAME --image PATH` with the central-spike, trench-first-spike,
-mountain-climb, and first-person-origin presets. Each run waits for the complete
-205,861-tile player-centered disk and matching CPU and renderer mesh counts,
-then compares resident and uploaded mesh keys across 16 camera headings before
-writing a PPM. The origin preset starts the server at X/Y (0,0) to exercise
-world wrapping. The portable test requires at least 1000x600 framebuffer
-pixels and a lower-center label. Set `MC_S7_REQUIRE_2560X1440=1` when producing
-the final Mac assets to require exactly 2560x1440. Test success does not replace
-visual inspection of all four frames or prove another platform.
+Capture tests use `--player-client-capture` and four named presets. They wait
+for the full server-selected disk and CPU/renderer mesh coverage, compare keys
+across 16 headings, then write PPMs. Default radius is 256 (205,861 tiles);
+origin spawns at X/Y (0,0). Portable size is at least 1000x600; set
+`MC_S7_REQUIRE_2560X1440=1` for exact Mac assets. Visually inspect every frame.
+
+The four Mac images must be distinct: (1) third-person flying by the central
+spike at server distance 72 (16,241 tiles), showing the whole spike, most of
+the first ring and terrain behind it, with the player clear; (2) trench by the
+first spike at its existing distance; (3) mountain climb; (4) first-person at
+X/Z (0,0). Wait for the full selected disk and meshes. Export 2560x1440, inspect
+each, and use a large bottom-center label below the HUD.

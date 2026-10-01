@@ -2,7 +2,7 @@
   "modules": [
     {
       "guide": "docs/ACCEPTANCE.md",
-      "guide_sha256": "25ab251fc670ac33044298e9ec0d4f25715fafdcd594c97eaebe073ea97632b7",
+      "guide_sha256": "ecf18f208a46eb3107dbcbe0eba996d179b9ef69ed13c61a1dad6659c79781ff",
       "id": "acceptance",
       "sources": [
         "src/acceptance/CMakeLists.txt",
@@ -31,7 +31,7 @@
         "tests/acceptance/runtime_cli_tests.cmake",
         "tests/acceptance/scenario_runner_tests.cpp"
       ],
-      "sources_sha256": "74ded79cabc877e6f1766f23910d928165d879c358a68e3a0a2e88ba3db80d8a"
+      "sources_sha256": "3a60e32dd74f5c0e3653135e0998cde4596ebc0426fb2d0fc33c5f89edfe0a95"
     },
     {
       "guide": "docs/code/ANDROID.md",
@@ -155,7 +155,7 @@
         "vcpkg-configuration.json",
         "vcpkg.json"
       ],
-      "sources_sha256": "c1a961ee1d6d2e118108daba31c26dd0ef9930c77153aa80b02dc3e7894961c3"
+      "sources_sha256": "099eeef168ddc35168cb2d890e69a1051d4bf398da38544ffd11313a81402b7b"
     },
     {
       "guide": "docs/code/CORE.md",
@@ -192,7 +192,7 @@
     },
     {
       "guide": "docs/code/GAMEPLAY.md",
-      "guide_sha256": "99e781231ab5b3466257f41311274a5110e5364c536d77ad0873f24be64fe044",
+      "guide_sha256": "eb1fae0ccac2779f4b89902012a81bb023d2bbc455307f5480bb6e9c25162970",
       "id": "gameplay",
       "sources": [
         "src/client/BotClient.cpp",
@@ -278,11 +278,11 @@
         "tests/core/world_generation_scheduler_tests.cpp",
         "tests/core/world_generation_tests.cpp"
       ],
-      "sources_sha256": "cc9a49fe171cfa56dc25eb787f3abe7086bb23744fe328ee01600124f3c59a6e"
+      "sources_sha256": "c8f7642638ef48873a39d85bbf92faf0e20af5f30c2cb0ffae58922dc7a8c7bd"
     },
     {
       "guide": "docs/code/RENDERING.md",
-      "guide_sha256": "675f8627cdc12a2c78c6a05d6cd16a9a5c5db0640c58c60f44c3a8978e3e6bb6",
+      "guide_sha256": "fdebb1fc5cb0523329800b2937c916d9379fbfe55180497c91bee412ae852945",
       "id": "rendering",
       "sources": [
         "src/client/CMakeLists.txt",
@@ -357,7 +357,7 @@
         "tests/testsupport/include/testsupport/AdverseTransport.hpp",
         "tests/testsupport/include/testsupport/ImageComparison.hpp"
       ],
-      "sources_sha256": "356f3ba6858ccdd656f5ac5baabc751207f2f840b104bb10f2b2428e2af7879e"
+      "sources_sha256": "0fd3665c266f76c5a4b79122c7ec8e2b93a8d918aa54d67d708d1e2780eae9fd"
     }
   ],
   "version": 1

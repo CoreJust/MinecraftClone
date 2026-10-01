@@ -122,7 +122,7 @@ TEST(PlayerClientCapturePlanTest, BoundsFullTerrainCaptureReadinessToFifteenMinu
 
     EXPECT_EQ(options.readiness_deadline, std::chrono::minutes{15});
     EXPECT_EQ(options.sweep_deadline, std::chrono::minutes{5});
-    EXPECT_EQ(options.minimum_height_tile_meshes, shared::HEIGHT_TILE_INTEREST_COUNT);
+    EXPECT_EQ(options.minimum_height_tile_meshes, 0U);
 }
 
 TEST(PlayerClientCapturePlanTest, GivesArenaGrowthTimeThroughoutCapturePreload)

@@ -1500,22 +1500,22 @@
     "depends_on": [
       "MC-AI-0037"
     ],
-    "acceptance": "Deliver general server-authoritative permissions for all entities: fixed all, players, mobs, technical entities, per-kind, explicit-member and selector groups; namespaced custom keys; hard restrictions that only narrow rights; overridable soft defaults; and immutable generation-tagged hot-path snapshots. Defer world subjects. Cover movement, flight, collision/phasing, blocks, inventory, invincibility and commands. Use provenance-verified CoreLang 0.1.3.1; test interpreter/JIT parity, prepare required kernels atomically, and keep compilation and unbounded scripts out of physics ticks. Test deterministic loss, latency, jitter, freezes, reordering and duplication. Add a replicated 29/16-tall, 10/16-square parallelepiped player with a deterministic 16-color palette and first, rear-third and front-third views. On Apple M3 Pro, meet visible 120 FPS in 99.8% of frames and 200 uncapped full-game iterations/s with x200 movement. Pass full gameplay/platform checks and the automated fail-closed MC-AI-0249 sanitizer/analyzer matrix with complete receipts before release. Publish S7, hold the minor active/unfinalized for feedback, and do not start S8.",
+    "acceptance": "Deliver server-authoritative entity permissions: fixed all/players/mobs/technical-entities/per-kind groups, explicit-member and selector groups, namespaced custom keys, non-upliftable hard restrictions, overridable soft defaults, and immutable generation-tagged hot-path snapshots. Defer world subjects. Cover movement, flight/collision, blocks, inventory, invincibility, commands, and mode presets. Use CoreLang 0.1.3.1 APIs (only documented 0.1.3.3 maintenance), test interpreter/JIT parity, and prepare kernels atomically outside physics ticks. Test latency, loss, jitter, freezes, reordering, and duplication. Add a replicated 29/16 × 10/16 × 10/16 player, deterministic 16-color palette, and first/rear-third/front-third views. Keep position-driven, camera-independent terrain residency at default radius 256 and projection-derived face LOD bounded to 2 px². Provide four visually inspected, labeled native Mac screenshots. Optimize toward stable 120 FPS at x200 and the world border; measurements are diagnostic, not proof. Pass platform and fail-closed MC-AI-0249 sanitizer/static-analysis gates; retain the documented CoreCpp extension as later work. Release S7, hold the minor active/unfinalized for feedback, and do not start S8.",
     "evidence": "",
     "blocker": "",
     "owner": "Codex",
     "level": "snapshot",
     "parent": "MC-AI-0033",
     "motivation": "Complete S7 authoritative gameplay and deferred S6 subsystems.",
-    "context": "Wrapping-only S7 was merged into S6; Snapshot 8 became S7. CoreLang 0.1.3.1 is required; 0.1.3.2 is delayed by an architectural defect. S7 covers entity-wide permissions, physics, presentation, impaired networking, performance and diagnostics.",
+    "context": "Wrapping-only S7 was merged into S6; Snapshot 8 became S7. The user selected CoreLang 0.1.3.1 after 0.1.3.2 was delayed by an architectural defect; 0.1.3.3 is permitted only as the explicitly tracked maintenance package that retains the selected API. S7 covers entity-wide permissions, physics, presentation, impaired networking, terrain streaming/visual quality, diagnostics, and the required automated sanitizer/analyzer matrix.",
     "complexity": "high",
     "created_at": "2026-09-09",
     "resolved_at": "",
     "resolution_changes": "",
     "plan": [
       "Implement bounded authoritative movement and general immutable permissions; keep policy compilation outside physics ticks.",
-      "Add player body/views and adverse-network tests; verify authority and movement with fixed-tick scenarios.",
-      "Complete executor/audio/generation/LOD/performance diagnostics; pass sanitizer and platform gates, publish S7, then hold the minor for feedback."
+      "Add the player body/views, adverse-network tests, position-driven terrain coverage, and projection-derived visual LOD.",
+      "Complete executor/audio/generation/performance diagnostics, required analysis and platform checks, screenshots and publication; make no unverified performance claim, then hold the minor for feedback."
     ],
     "product_changes": [],
     "code_changes": [],
@@ -8779,14 +8779,14 @@
     "status": "done",
     "priority": "P1",
     "route": "luna",
-    "milestone": "ED-010-S6",
+    "milestone": "ED-010-S7",
     "depends_on": [],
     "acceptance": "The task registry records the verified S6 ai-main promotion at 0514890690c10d80b7475fd0b76204e800948db3, marks S6 done without inventing unobserved artifact claims, activates and selects S7 under the existing Initiation minor, and consistently retargets its blocked CoreLang integration contract from delayed 0.1.3.2 to owner-required 0.1.3.1.",
     "evidence": "Verified origin/ai-main 0514890690c10d80b7475fd0b76204e800948db3 is Promote MC-AI-0037 to ai-main; owner explicitly confirmed S6 delivery and changed S7 CoreLang target to 0.1.3.1; ai_tasks.py check and ai_plan.py check pass after selection.",
     "blocker": "",
     "owner": "Codex",
     "level": "basic",
-    "parent": "MC-AI-0037",
+    "parent": "MC-AI-0038",
     "motivation": "Repair the stale current-snapshot registry so dependency-ready S7 work can start after the verified S6 promotion.",
     "context": "Remote origin/ai-main identifies 0514890 as Promote MC-AI-0037 to ai-main. The owner confirms S6 is delivered; the local registry incorrectly remains active.",
     "complexity": "low",
@@ -10058,5 +10058,46 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0286",
+    "title": "Configure real server-authoritative S7 terrain render distance",
+    "kind": "feature",
+    "status": "done",
+    "priority": "P0",
+    "route": "sol",
+    "milestone": "ED-010-S7",
+    "depends_on": [],
+    "acceptance": "Normal server gameplay and the full-game benchmark share a validated server-wide chunk radius from 1 through 256, defaulting to 256 and supporting selected 128. Protocol 12 maps the descriptor exact disk count to a unique accepted radius and rejects malformed counts, incompatible versions, and conflicting descriptors before mutation. Derive generation, camera-independent wrapped disk membership and movement frontiers, client residency and coverage readiness, far plane and fog from that accepted radius. Preserve actual framebuffer/FOV replacement-face projected area at most 2 px squared, default radius, exact dependencies, and 1024 projection/culling mathematical coverage. Cover 128/256 disks, rotation, wrap and movement deltas, descriptor validation and both public command paths. No UI, per-client negotiation, publication, or 1024 runtime performance/capacity claim. Coordinator owns aggregate native/performance acceptance.",
+    "evidence": "Exact-pinned Release mc_main, mc_tests and mc_renderer_smoke built with at most two jobs. Initial focused suite passed 93/94; only six literal protocol-header goldens still expected version 11. After changing those bytes to 12, the corrected focused run passed 82/82 in 5.892 s, XML /private/tmp/MC-AI-0286-corrected.xml; the other 12 GameServerPreview tests had already passed in /private/tmp/MC-AI-0286-focused.xml and were not redundantly rerun. Public CLI acceptance passed 5/5, including selected server128 startup and both command parsers. Coordinator-authorized native MoltenVK PlayerClientResetTest passed 4/4 without skips in 1.502 s, XML /private/tmp/MC-AI-0286-native.xml and exit=0; selected128/256 camera/interest agreement and unchanged FOV are covered. Exact disk/count, all supported count-radius mappings, incompatible/malformed/conflicting descriptors before mutation, heading invariance, wrapped movement frontiers, client budget and connected production-server agreement pass. Existing actual-projection LOD and 1024 culling mathematical tests pass; no 1024 runtime capacity/performance claim or full-game performance result is made. Documentation integrity and ai_check --fast pass; coordinator owns integrated checks and performance acceptance.",
+    "blocker": "",
+    "owner": "Codex render-distance worker",
+    "level": "basic",
+    "parent": "MC-AI-0038",
+    "motivation": "Measure the requested 100-plus-chunk workload through a real production setting, preserving the default 256 disk and terrain-quality contract.",
+    "context": "Authoritative request /private/tmp/MC-AI-0286-request.txt SHA256 810ebeab1c4cbc6dd819be7029a6d36f64dbf365b19a2796f79510ea18411dd7. Isolated base e6a2de0259e83a1abf0e8a82d9cb7fd6aa801a6d; root coordinates independent connection lifecycle, terrain admission and diagnostic changes. Protocol 11 accepted only count 205861, so configurable exact counts require explicit protocol compatibility change.",
+    "complexity": "high",
+    "created_at": "2026-09-30",
+    "resolved_at": "2026-09-30",
+    "resolution_changes": "Added a validated server-wide chunk radius1..256, default256, shared by normal server and benchmark CLI. Protocol12 preserves descriptor layout but uniquely maps exact disk counts to accepted radii before client mutation. Selected-radius immutable orders, incremental wrapped movement frontiers, residency budget, capture readiness and camera/fog follow the accepted radius; actual framebuffer/FOV LOD is unchanged. Source is staged for one bounded Luna/high review, with no worker commit or publication; coordinator renews the same reviewer on integration.",
+    "plan": [
+      "Validate a bounded server-wide radius and exact disk-cardinality descriptor using protocol 12 without new wire fields.",
+      "Reuse immutable selected-radius interest orders and incremental client movement frontiers, propagate accepted radius through residency, readiness and camera.",
+      "Connect normal and benchmark CLI options, cover public contracts with focused deterministic checks, and freeze a bounded Luna review receipt for integration."
+    ],
+    "product_changes": [
+      "Normal --server and --benchmark-game accept --render-distance CHUNKS; the default remains256, and selected128 is a real server generation/residency setting."
+    ],
+    "code_changes": [
+      "Validate protocol12 descriptor exact count-to-radius agreement, retain bounded shared immutable selected-radius orders, and derive client budgets, coverage readiness and camera projection from the accepted server setting.",
+      "Add deterministic shared, client, movement, public-command and native camera/reset tests without changing the projected-area LOD rule or dependencies."
+    ],
+    "baseline_commit": "e6a2de0259e83a1abf0e8a82d9cb7fd6aa801a6d",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "Report-only audit: compile native-only fixtures before claiming test coverage; a missing explicit SparseWorld header was found and fixed there. Protocol compatibility goldens must change literal header bytes along with the version; the one stale golden was corrected, not auto-blessed. Native startup uses the established scoped Terminal/MoltenVK path; automatic approval timed out once and its allowed retry succeeded. No harness, dependency, permission or global instruction repair was authorized or necessary.",
+    "docs_review": "Read gameplay and rendering contracts against source; both owning guides now document accepted-radius disk/cardinality, protocol12 compatibility, shared commands and far-plane/fog behavior, retaining 1024 mathematical-only scope. Each guide has899 prose words. ai_docs refresh and check pass; integrated newer terrain-admission prose must be preserved by the coordinator.",
+    "environment_review": "Task-local Release build uses strict CoreCpp6273573 and CoreProject2026bd23164 installed packages and the existing arm64-osx vcpkg tree, with manifest installation disabled and max2jobs. CPU corrected82/82, preceding12 server-preview tests, publicCLI5/5 and native4/4 pass. ai_check --fast passes; only existing publisher date/dirty-tree release exceptions are allowed. No GPU performance measurement, Windows runtime or Android runtime acceptance was performed in this lane.",
+    "backlog_review": "Explicit reserved0286 was added and finalized only in this isolated backlog. No main metadata, integration history, dependency pin or other task was changed; parent task0038 and BACKLOG are generated traceability updates. Coordinator imports and commits once after integration and same-reviewer renewal."
   }
 ]

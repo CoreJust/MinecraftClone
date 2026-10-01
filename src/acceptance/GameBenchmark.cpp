@@ -240,6 +240,9 @@ std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOption
     if (gameBenchmarkWorkloadName(options.workload) == "unknown") {
         return std::unexpected("game benchmark has an unknown workload");
     }
+    if (!shared::isValidHeightTileInterestRadius(options.render_distance)) {
+        return std::unexpected("render distance must be an integer chunk radius from 1 to 256");
+    }
 
     std::vector<server::GameServer::SpawnPoint> const spawn_points =
         options.workload == GameBenchmarkWorkload::WrappedBorder
@@ -248,7 +251,10 @@ std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOption
                     .y = shared::World::FLIGHT_SPAWN.y, .z = shared::World::FLIGHT_SPAWN.z },
             }
             : std::vector<server::GameServer::SpawnPoint>{};
-    server::GameServer server{ 0U, spawn_points, shared::WorldMode::Flight };
+    server::GameServer server{
+        0U, spawn_points, shared::WorldMode::Flight,
+        shared::World::canonicalConfiguration(), options.render_distance,
+    };
     std::vector<ServerTickSample> raw_server_ticks;
     raw_server_ticks.reserve(512U);
     std::vector<std::chrono::nanoseconds> raw_permission_publish_durations;

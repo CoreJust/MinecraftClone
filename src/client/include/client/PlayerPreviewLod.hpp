@@ -19,7 +19,8 @@ struct PlayerPreviewInterestDelta final {
 [[nodiscard]]
 PlayerPreviewInterestDelta playerPreviewInterestDelta(
     shared::HeightTileKey previous_center,
-    shared::HeightTileKey next_center
+    shared::HeightTileKey next_center,
+    uint32_t radius = shared::HEIGHT_TILE_INTEREST_RADIUS
 );
 
 struct PlayerPreviewLodRefresh final {

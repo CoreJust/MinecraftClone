@@ -27,26 +27,25 @@ constexpr int32_t TILE_EXTENT = static_cast<int32_t>(
     return difference;
 }
 
-[[nodiscard]] int32_t rowHalfWidth(int32_t const offset) noexcept
+[[nodiscard]] int32_t rowHalfWidth(int32_t const offset, int32_t const radius) noexcept
 {
-    constexpr int32_t RADIUS = static_cast<int32_t>(shared::HEIGHT_TILE_INTEREST_RADIUS);
-    if (offset < -RADIUS || offset > RADIUS) {
+    if (offset < -radius || offset > radius) {
         return -1;
     }
-    return static_cast<int32_t>(std::sqrt(static_cast<double>(RADIUS * RADIUS - offset * offset)));
+    return static_cast<int32_t>(std::sqrt(static_cast<double>(radius * radius - offset * offset)));
 }
 
 void appendDifference(
     std::vector<shared::HeightTileKey>& keys,
     shared::HeightTileKey const center,
     int32_t const center_dx,
-    int32_t const center_dy
+    int32_t const center_dy,
+    int32_t const radius
 )
 {
-    constexpr int32_t RADIUS = static_cast<int32_t>(shared::HEIGHT_TILE_INTEREST_RADIUS);
-    for (int32_t y = -RADIUS; y <= RADIUS; ++y) {
-        int32_t const half_width = rowHalfWidth(y);
-        int32_t const other_half_width = rowHalfWidth(y + center_dy);
+    for (int32_t y = -radius; y <= radius; ++y) {
+        int32_t const half_width = rowHalfWidth(y, radius);
+        int32_t const other_half_width = rowHalfWidth(y + center_dy, radius);
         int32_t const first_end = other_half_width < 0
             ? half_width
             : std::min(half_width, -center_dx - other_half_width - 1);
@@ -132,17 +131,19 @@ void appendDifference(
 
 PlayerPreviewInterestDelta playerPreviewInterestDelta(
     shared::HeightTileKey const previous_center,
-    shared::HeightTileKey const next_center
+    shared::HeightTileKey const next_center,
+    uint32_t const radius
 )
 {
+    ASSERT(shared::isValidHeightTileInterestRadius(radius), "invalid render distance");
     PlayerPreviewInterestDelta result;
     int32_t const dx = shortestDelta(previous_center.x, next_center.x);
     int32_t const dy = shortestDelta(previous_center.y, next_center.y);
     if (dx == 0 && dy == 0) {
         return result;
     }
-    appendDifference(result.additions, next_center, dx, dy);
-    appendDifference(result.removals, previous_center, -dx, -dy);
+    appendDifference(result.additions, next_center, dx, dy, static_cast<int32_t>(radius));
+    appendDifference(result.removals, previous_center, -dx, -dy, static_cast<int32_t>(radius));
     return result;
 }
 

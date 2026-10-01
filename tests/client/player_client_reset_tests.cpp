@@ -1,5 +1,6 @@
 #include <client/PlayerClient.hpp>
 
+#include <shared/world/SparseWorld.hpp>
 #include <shared/world/World.hpp>
 
 #include <gtest/gtest.h>
@@ -107,8 +108,16 @@ struct PlayerClientTestAccess final {
         client.removePreviewMesh(key, std::chrono::steady_clock::now() + std::chrono::seconds{ 2 });
     }
 
-    static shared::HeightTileKey seedPreviewState(PlayerClient& client)
+    static shared::HeightTileKey seedPreviewState(
+        PlayerClient& client,
+        uint32_t const radius = shared::HEIGHT_TILE_INTEREST_RADIUS
+    )
     {
+        client.m_height_tile_credit_revision = 1U;
+        static_cast<void>(client.applyHeightTileDescriptor({
+            .configuration = client.m_world.configuration(),
+            .max_height_tiles = shared::heightTileInterestCount(radius),
+        }));
         client.m_local_character = '@';
         shared::PlayerPosition const spawn = shared::World::FLIGHT_SPAWN;
         client.m_world.spawnPlayer(0U, '@', spawn);
@@ -126,6 +135,16 @@ struct PlayerClientTestAccess final {
         client.refreshHeightTileInterest(*client.m_world.playerByCharacter('@'));
         client.processPendingPreviewMeshes(1U, std::chrono::steady_clock::now() + std::chrono::seconds{ 2 });
         return key;
+    }
+
+    static uint32_t interestCount(PlayerClient const& client)
+    {
+        return static_cast<uint32_t>(client.m_height_tile_interest.size());
+    }
+
+    static CameraProjection cameraProjection(PlayerClient const& client)
+    {
+        return client.m_camera.projection();
     }
 
     static bool waitForVisibleMesh(PlayerClient& client, shared::HeightTileKey const key)
@@ -194,6 +213,24 @@ struct PlayerClientTestAccess final {
 };
 
 } // namespace client
+
+TEST(PlayerClientResetTest, AcceptedServerRadiusDefinesCameraAndInterestWithoutChangingFov)
+{
+    static constexpr std::array<uint32_t, 2> RADII{128U, 256U};
+    for (uint32_t const radius : RADII) {
+        client::PlayerClient player_client{shared::WorldMode::Flight};
+        auto const initial_projection = client::PlayerClientTestAccess::cameraProjection(player_client);
+        static_cast<void>(client::PlayerClientTestAccess::seedPreviewState(player_client, radius));
+        EXPECT_EQ(player_client.renderDistance(), radius);
+        EXPECT_EQ(
+            client::PlayerClientTestAccess::interestCount(player_client), shared::heightTileInterestCount(radius)
+        );
+        auto const projection = client::PlayerClientTestAccess::cameraProjection(player_client);
+        EXPECT_EQ(projection.far_plane,
+            static_cast<double>(radius) * shared::HEIGHT_TILE_SIDE_LENGTH + shared::WorldExtent::DEPTH);
+        EXPECT_EQ(projection.vertical_fov_degrees, initial_projection.vertical_fov_degrees);
+    }
+}
 
 TEST(PlayerClientResetTest, ClearsRendererInterestAndDropsQueuedWorkerResults)
 {

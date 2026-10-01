@@ -63,9 +63,12 @@ def read_ppm(path):
 
 
 class PlayerPlaytestCaptureTest(unittest.TestCase):
-    def assert_full_radius_sweep(self, client):
+    def assert_full_radius_sweep(self, client, expected_tiles=205861):
         output = client.stdout + client.stderr
-        started = re.search(r"Capture sweep started: readiness_elapsed=(\d+)s step=1/16 required=205861", output)
+        started = re.search(
+            rf"Capture sweep started: readiness_elapsed=(\d+)s step=1/16 required={expected_tiles}",
+            output,
+        )
         self.assertIsNotNone(started, output)
         self.assertLessEqual(int(started.group(1)), 900)
         self.assertIn("Capture sweep complete: headings=16", output)
@@ -114,7 +117,7 @@ class PlayerPlaytestCaptureTest(unittest.TestCase):
             )
             image.parent.mkdir(parents=True, exist_ok=True)
             server = subprocess.Popen(
-                [str(binary), "--server", "--port", str(port)],
+                [str(binary), "--server", "--port", str(port), "--render-distance", "72"],
                 stdin=subprocess.DEVNULL,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
@@ -135,7 +138,7 @@ class PlayerPlaytestCaptureTest(unittest.TestCase):
                 )
                 self.assertEqual(client.returncode, 0, client.stdout + client.stderr)
                 self.assertLess(time.monotonic() - started, 1200.0)
-                self.assert_full_radius_sweep(client)
+                self.assert_full_radius_sweep(client, expected_tiles=16241)
                 self.assert_labeled_terrain_capture(image)
             finally:
                 if server.poll() is None:

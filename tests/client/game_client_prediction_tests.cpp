@@ -24,6 +24,7 @@ public:
     using GameClient::applyHeightTile;
     using GameClient::applyHeightTileBatch;
     using GameClient::applyHeightTileRemoval;
+    using GameClient::applyHeightTileDescriptor;
     using GameClient::discardPredictedInput;
     using GameClient::predictInput;
     using GameClient::predictedLocalPlayer;
@@ -282,6 +283,75 @@ shared::ServerPlayerPositionMessage collisionPosition(
         .acknowledged_input_sequence = acknowledged_input_sequence,
         .state_revision = state_revision,
     };
+}
+
+TEST(GameClientPredictionTest, RejectsMalformedAndConflictingRenderDistanceDescriptorsBeforeMutation)
+{
+    static constexpr uint32_t RADIUS = 128U;
+    PredictionClient client;
+    shared::ServerHeightTileDescriptorMessage descriptor{
+        .world_revision = 7U,
+        .max_height_tiles = shared::heightTileInterestCount(RADIUS),
+    };
+    auto malformed = descriptor;
+    ++malformed.max_height_tiles;
+    EXPECT_FALSE(client.applyHeightTileDescriptor(malformed));
+    EXPECT_FALSE(client.renderDistance());
+    EXPECT_EQ(client.heightTileRevision(), (client::HeightTileRevision{1U, 1U}));
+    static_cast<void>(client.applyHeightTileDescriptor(descriptor));
+    EXPECT_EQ(client.renderDistance(), RADIUS);
+    EXPECT_EQ(client.requiredHeightTileCount(), 51'433U);
+    EXPECT_EQ(client.heightTileRevision(), (client::HeightTileRevision{7U, 7U}));
+    EXPECT_TRUE(client.applyHeightTile({.key = {0, 0}, .revision = 7U, .token = 1U}));
+    auto incompatible = descriptor;
+    incompatible.max_height_tiles = shared::HEIGHT_TILE_INTEREST_COUNT;
+    incompatible.world_revision = 8U;
+    EXPECT_FALSE(client.applyHeightTileDescriptor(incompatible));
+    EXPECT_EQ(client.renderDistance(), RADIUS);
+    EXPECT_EQ(client.heightTileRevision(), (client::HeightTileRevision{7U, 7U}));
+    EXPECT_TRUE(client.heightTileResidency().resident({0, 0}));
+    client.resetConnectionState();
+    EXPECT_FALSE(client.renderDistance());
+    EXPECT_EQ(client.requiredHeightTileCount(), 0U);
+    static_cast<void>(client.applyHeightTileDescriptor(incompatible));
+    EXPECT_EQ(client.renderDistance(), shared::HEIGHT_TILE_INTEREST_RADIUS);
+}
+
+TEST(GameClientPredictionTest, RejectsDescriptorWorldAndPayloadMismatches)
+{
+    PredictionClient client;
+    auto wrong_world = shared::ServerHeightTileDescriptorMessage{};
+    ++wrong_world.configuration.seed;
+    EXPECT_FALSE(client.applyHeightTileDescriptor(wrong_world));
+    EXPECT_FALSE(client.renderDistance());
+    auto wrong_payload = shared::ServerHeightTileDescriptorMessage{};
+    ++wrong_payload.max_height_tile_bytes;
+    EXPECT_FALSE(client.applyHeightTileDescriptor(wrong_payload));
+    EXPECT_FALSE(client.renderDistance());
+    auto wrong_revision = shared::ServerHeightTileDescriptorMessage{.world_revision = 0U};
+    EXPECT_FALSE(client.applyHeightTileDescriptor(wrong_revision));
+    EXPECT_FALSE(client.renderDistance());
+}
+
+TEST(GameClientPredictionTest, AcceptedRadiusSetsTheResidencyHysteresisBudget)
+{
+    static constexpr uint32_t RADIUS = 1U;
+    static constexpr uint32_t CAPACITY = shared::heightTileInterestCount(RADIUS)
+        + client::PreviewResidencyLimits::HYSTERESIS_TILES;
+    PredictionClient client;
+    static_cast<void>(client.applyHeightTileDescriptor({
+        .max_height_tiles = shared::heightTileInterestCount(RADIUS),
+    }));
+    for (uint32_t index = 0U; index <= CAPACITY; ++index) {
+        EXPECT_TRUE(client.applyHeightTile({
+            .key = {static_cast<int32_t>(index), 0}, .token = index + 1U,
+        }));
+    }
+    EXPECT_EQ(client.heightTileResidency().stats().resident_tiles, CAPACITY);
+    EXPECT_EQ(client.heightTileResidency().stats().resident_bytes,
+        static_cast<uint64_t>(CAPACITY) * shared::HEIGHT_TILE_PAYLOAD_BYTES);
+    EXPECT_EQ(client.heightTileResidency().stats().eviction_count, 1U);
+    EXPECT_FALSE(client.heightTileResidency().resident({0, 0}));
 }
 
 TEST(GameClientPredictionTest, PredictsImmediatelyWithoutMutatingTheAuthoritativeWorld)

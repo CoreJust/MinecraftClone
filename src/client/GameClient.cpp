@@ -181,6 +181,7 @@ void GameClient::resetConnectionState()
     m_next_input_sequence = 1U;
     m_height_tile_residency = PreviewResidency{ { .generation = 0U, .revision = 0U } };
     m_height_tile_revision = { .generation = 0U, .revision = 0U };
+    m_render_distance.reset();
     m_height_tile_credit_revision = 0U;
     m_pending_height_tile_deliveries.clear();
     m_pending_height_tile_delivery_tokens.clear();
@@ -201,6 +202,9 @@ void GameClient::onReceived(core::ReceiveEvent event) {
     if (event.channel_id == shared::HEIGHT_TILE_CHANNEL) {
         if (auto* msg = std::get_if<shared::ServerHeightTileDescriptorMessage>(msg_ptr)) {
             static_cast<void>(applyHeightTileDescriptor(*msg));
+        } else if (!m_render_distance) {
+            CORE_ERROR("Received terrain before a valid server render-distance descriptor");
+            return;
         } else if (auto* msg = std::get_if<shared::ServerWorldRevisionMessage>(msg_ptr)) {
             static_cast<void>(applyWorldRevision(*msg));
         } else if (auto* msg = std::get_if<shared::ServerHeightTileMessage>(msg_ptr)) {
@@ -412,10 +416,20 @@ bool GameClient::send(shared::Message const message)
 
 bool GameClient::applyHeightTileDescriptor(shared::ServerHeightTileDescriptorMessage const& message)
 {
+    std::optional<uint32_t> const radius = shared::heightTileInterestRadiusForCount(message.max_height_tiles);
     if (message.configuration != m_world.configuration() || message.world_revision == 0U
-        || message.max_height_tiles < shared::HEIGHT_TILE_INTEREST_COUNT
+        || message.world_revision < m_height_tile_revision.generation || !radius
+        || (m_render_distance && *m_render_distance != *radius)
         || message.max_height_tile_bytes != shared::HEIGHT_TILE_PAYLOAD_BYTES) {
         return false;
+    }
+    if (!m_render_distance) {
+        uint32_t const capacity = message.max_height_tiles + PreviewResidencyLimits::HYSTERESIS_TILES;
+        m_height_tile_residency = PreviewResidency{m_height_tile_revision, {
+            .max_resident_tiles = capacity,
+            .max_resident_bytes = static_cast<uint64_t>(capacity) * shared::HEIGHT_TILE_PAYLOAD_BYTES,
+        }};
+        m_render_distance = *radius;
     }
     if (message.world_revision != m_height_tile_revision.generation) {
         m_height_tile_revision = {
