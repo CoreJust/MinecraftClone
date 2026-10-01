@@ -30,6 +30,10 @@ def coreCppDir = providers.gradleProperty('coreCppDir')
 def coreProjectDir = providers.gradleProperty('coreProjectDir')
     .orElse(providers.environmentVariable('COREPROJECT2026_DIR'))
     .orNull
+def sanitizer = providers.gradleProperty('sanitizer').orNull
+def androidApi = sanitizer == 'hwasan' ? 29 : 28
+def vcpkgTargetTriplet = sanitizer == 'hwasan' ? 'arm64-android-hwasan' : 'arm64-android'
+def vcpkgOverlayTriplets = file('../../script/ci/vcpkg-triplets')
 
 def fallbackShaderSources = layout.buildDirectory.dir('generated/fallback-shaders')
 def requiredShaderAssets = [
@@ -45,6 +49,7 @@ def requiredShaderAssets = [
     'trivial.frag.spv',
 ]
 def hudLicenseAssets = file("${buildDir}/generated/hud-licenses")
+def hwasanWrapAssets = layout.buildDirectory.dir('generated/hwasan-wrap')
 def requiredHudLicenseAssets = [
     'licenses/hud/DEBUG_HUD_ATTRIBUTION.md',
     'licenses/hud/TAMSYN_LICENSE.txt',
@@ -70,6 +75,20 @@ def stageHudLicenses = tasks.register('stageHudLicenses', Sync) {
         include 'TAMSYN_LICENSE.txt'
     }
     into(new File(hudLicenseAssets, 'licenses/hud'))
+}
+def stageHwasanWrap = tasks.register('stageHwasanWrap') {
+    outputs.dir(hwasanWrapAssets)
+    doLast {
+        File libDirectory = new File(hwasanWrapAssets.get().asFile, 'arm64-v8a')
+        if (!libDirectory.mkdirs() && !libDirectory.isDirectory()) {
+            throw new GradleException("Cannot create HWASan wrap directory: ${libDirectory}")
+        }
+        File wrap = new File(libDirectory, 'wrap.sh')
+        wrap.setText('#!/system/bin/sh\nLD_HWASAN=1 exec "$@"\n', 'UTF-8')
+        if (!wrap.setExecutable(true, false)) {
+            throw new GradleException("Cannot mark HWASan wrap script executable: ${wrap}")
+        }
+    }
 }
 
 def projectInfoText = file('../../src/shared/include/shared/ProjectInfo.hpp').getText('UTF-8')
@@ -103,7 +122,7 @@ android {
 
     defaultConfig {
         applicationId 'com.corejust.minecraftclone'
-        minSdk 28
+        minSdk androidApi
         targetSdk 35
         versionCode projectVersionCode
         versionName projectVersionName
@@ -115,8 +134,8 @@ android {
         externalNativeBuild {
             cmake {
                 arguments '-DANDROID_STL=c++_shared',
-                    '-DANDROID_PLATFORM=android-28',
-                    '-DVCPKG_TARGET_TRIPLET=arm64-android'
+                    "-DANDROID_PLATFORM=android-${androidApi}",
+                    "-DVCPKG_TARGET_TRIPLET=${vcpkgTargetTriplet}"
                 targets 'mc_android'
             }
         }
@@ -133,12 +152,24 @@ android {
         main {
             shaders.setSrcDirs([fallbackShaderSources])
             assets.setSrcDirs([hudLicenseAssets])
+            if (sanitizer == 'hwasan') {
+                jniLibs.srcDir(hwasanWrapAssets)
+            }
         }
     }
 
     buildTypes {
         debug {
             // Android's standard debug keystore is intentionally the only signer.
+        }
+        release {
+            externalNativeBuild {
+                cmake {
+                    arguments '-DCMAKE_BUILD_TYPE=Release',
+                        '-DCMAKE_CXX_FLAGS_RELEASE=-O3 -DNDEBUG',
+                        '-DCMAKE_C_FLAGS_RELEASE=-O3 -DNDEBUG'
+                }
+            }
         }
     }
 }
@@ -155,6 +186,23 @@ android.defaultConfig.externalNativeBuild.cmake.arguments.addAll([
     "-DVCPKG_CHAINLOAD_TOOLCHAIN_FILE=${ndkToolchain.absolutePath}",
     "-DVCPKG_MANIFEST_INSTALL=${vcpkgManifestInstall}"
 ])
+if (sanitizer != null) {
+    if (sanitizer != 'hwasan') {
+        throw new GradleException("Unsupported Android sanitizer '${sanitizer}'; only hwasan is supported")
+    }
+    android.defaultConfig.externalNativeBuild.cmake.arguments.addAll([
+        '-DCMAKE_BUILD_TYPE=Release',
+        '-DMC_ENABLE_HIGH_ASSERT=OFF',
+        '-DMC_ENABLE_SANITIZERS=ON',
+        '-DMC_SANITIZER=hwaddress',
+        '-DANDROID_SANITIZE=hwaddress',
+        "-DVCPKG_OVERLAY_TRIPLETS=${vcpkgOverlayTriplets.absolutePath}"
+    ])
+    android.buildTypes.release.signingConfig android.signingConfigs.debug
+    tasks.named('preBuild').configure {
+        dependsOn(stageHwasanWrap)
+    }
+}
 if (vcpkgInstalledDir != null && !vcpkgInstalledDir.trim().isEmpty()) {
     android.defaultConfig.externalNativeBuild.cmake.arguments.add(
         "-DVCPKG_INSTALLED_DIR=${file(vcpkgInstalledDir).absolutePath}"
@@ -177,6 +225,9 @@ if (coreProjectDir != null && !coreProjectDir.trim().isEmpty()) {
 }
 
 tasks.configureEach {
+    if (name ==~ /.*[Ll]int.*/) {
+        dependsOn(stageHudLicenses)
+    }
     if (name ==~ /(merge|compile).+Shaders/) {
         dependsOn(stageFallbackShaders)
     }
@@ -202,6 +253,9 @@ def verifyDebugShaderAssets = tasks.register('verifyDebugShaderAssets') {
                 if (zip.getEntry("assets/${asset}") == null) {
                     throw new GradleException("Debug APK is missing HUD attribution/license asset: ${asset}")
                 }
+            }
+            if (sanitizer == 'hwasan' && zip.getEntry('lib/arm64-v8a/wrap.sh') == null) {
+                throw new GradleException('HWASan APK is missing lib/arm64-v8a/wrap.sh')
             }
         } finally {
             zip.close()

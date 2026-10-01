@@ -265,7 +265,7 @@ def prepare(root: Path, task_id: str, source_text: str) -> None:
     revision(root, task["baseline_commit"])
     promotion_base = revision(root, AI_MAIN)
     require_task_trailer(root, source, task_id)
-    run_check(root, "--strict", "--level", "snapshot", "--require-index-match")
+    run_check(root, "--candidate", "--level", "snapshot", "--require-index-match")
     if current_branch(root) != AI_DEV or revision(root, "HEAD") != source:
         raise PublishError("ai-dev changed while release checks were running")
     if revision(root, AI_MAIN) != promotion_base:
@@ -303,8 +303,10 @@ def finish(root: Path, task_id: str, source_text: str) -> None:
     require_expected_promoted_tree(root, promotion_base, source, promoted)
     promotion_state_path(root).unlink(missing_ok=True)
     require_clean(root)
-    run_check(root, "--strict", "--level", "snapshot", "--require-index-match")
-    print(promoted)
+    print(
+        f"Promotion commit created: {promoted}\n"
+        "Push this exact ai-main commit and wait for its hosted analysis gate before running tag."
+    )
 
 
 def tag(root: Path, task_id: str, revision_number: int | None = None) -> None:

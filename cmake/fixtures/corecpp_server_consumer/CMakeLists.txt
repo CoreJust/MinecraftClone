@@ -9,9 +9,14 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/../..")
 include("${CMAKE_CURRENT_LIST_DIR}/../../Helpers.cmake")
 
-find_package(CoreCpp CONFIG REQUIRED COMPONENTS Core Runtime RuntimeNetwork)
+find_package(CoreCpp CONFIG REQUIRED COMPONENTS Core Runtime RuntimeNetwork RuntimeExecutors)
 
-foreach(required_target IN ITEMS CoreCpp::Core CoreCpp::Runtime CoreCpp::RuntimeNetwork)
+foreach(required_target IN ITEMS
+    CoreCpp::Core
+    CoreCpp::Runtime
+    CoreCpp::RuntimeNetwork
+    CoreCpp::RuntimeExecutors
+)
     if(NOT TARGET "${required_target}")
         message(FATAL_ERROR "Missing CoreCpp dependency closure target: ${required_target}")
     endif()
@@ -22,6 +27,7 @@ foreach(forbidden_target IN ITEMS
     CoreCpp::RuntimePlatformGlfw
     CoreCpp::RuntimePlatformAndroid
     CoreCpp::RuntimeAudio
+    CoreCpp::RuntimeAudioOutput
 )
     if(TARGET "${forbidden_target}")
         message(FATAL_ERROR "Server-only consumer loaded optional target: ${forbidden_target}")
@@ -29,7 +35,12 @@ foreach(forbidden_target IN ITEMS
 endforeach()
 
 add_executable(mc_corecpp_server_consumer main.cpp)
-target_link_libraries(mc_corecpp_server_consumer PRIVATE CoreCpp::RuntimeNetwork)
+target_link_libraries(
+    mc_corecpp_server_consumer
+    PRIVATE
+        CoreCpp::RuntimeExecutors
+        CoreCpp::RuntimeNetwork
+)
 mc_stage_windows_runtime(
     mc_corecpp_server_consumer
     RUNTIME_ROOT "$<TARGET_FILE_DIR:mc_corecpp_server_consumer>"

@@ -10,10 +10,12 @@
 #include <core/net/Net.hpp>
 
 #include <acceptance/EvidenceJson.hpp>
+#include <acceptance/GameBenchmark.hpp>
 #include <acceptance/RenderCapture.hpp>
 #include <acceptance/RendererBenchmark.hpp>
 #include <acceptance/ScenarioRunner.hpp>
 
+#include <array>
 #include <charconv>
 #include <condition_variable>
 #include <cstdint>
@@ -24,16 +26,19 @@
 #include <iostream>
 #include <limits>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <thread>
 #include <utility>
+#include <vector>
 
 namespace {
 
 enum class RuntimeMode {
     Scenario,
     RendererBenchmark,
+    GameBenchmark,
     RendererCapture,
 };
 
@@ -48,6 +53,9 @@ struct LaunchCommand final {
     LaunchMode mode;
     core::Address address;
     std::filesystem::path image_path;
+    client::PlayerClientCapturePreset capture_preset = client::PlayerClientCapturePreset::CentralSpike;
+    std::optional<shared::PlayerPosition> spawn;
+    uint32_t render_distance = shared::HEIGHT_TILE_INTEREST_RADIUS;
 };
 
 struct RuntimeCommand final {
@@ -57,7 +65,22 @@ struct RuntimeCommand final {
     std::filesystem::path evidence_path;
     bool require_immediate_present_mode{ false };
     bool debug_hud_enabled{ false };
+    acceptance::GameBenchmarkWorkload game_benchmark_workload =
+        acceptance::GameBenchmarkWorkload::OrdinaryMovement;
+    uint32_t render_distance = shared::HEIGHT_TILE_INTEREST_RADIUS;
 };
+
+[[nodiscard]]
+std::expected<uint32_t, std::string> parseRenderDistance(std::string_view const argument)
+{
+    uint32_t radius = 0U;
+    auto const [end, error] = std::from_chars(argument.data(), argument.data() + argument.size(), radius);
+    if (error != std::errc{} || end != argument.data() + argument.size()
+        || !shared::isValidHeightTileInterestRadius(radius)) {
+        return std::unexpected("render distance must be an integer chunk radius from 1 to 256");
+    }
+    return radius;
+}
 
 [[nodiscard]]
 std::expected<core::Address, std::string> parseAddress(std::string_view const value)
@@ -107,30 +130,74 @@ std::expected<LaunchCommand, std::string> parseLaunchCommand(int const argc, cha
     }
 
     if (mode == LaunchMode::Server) {
-        if (argc == 2) {
-            return LaunchCommand{ .mode = mode, .address = core::Address::localhost(20'040) };
+        LaunchCommand command{ .mode = mode, .address = core::Address::localhost(20'040) };
+        bool port_selected = false;
+        bool radius_selected = false;
+        for (int index = 2; index < argc; ++index) {
+            std::string_view const option{argv[index]};
+            if (option == "--port" && !port_selected && index + 1 < argc) {
+                auto const address = parseAddress("127.0.0.1:" + std::string{argv[++index]});
+                if (!address) {
+                    return std::unexpected(address.error());
+                }
+                command.address = *address;
+                port_selected = true;
+                continue;
+            }
+            if (option == "--render-distance" && !radius_selected && index + 1 < argc) {
+                auto const radius = parseRenderDistance(argv[++index]);
+                if (!radius) {
+                    return std::unexpected(radius.error());
+                }
+                command.render_distance = *radius;
+                radius_selected = true;
+                continue;
+            }
+            if (option != "--spawn" || command.spawn || index + 3 >= argc) {
+                return std::unexpected(
+                    "server launch syntax is '--server [--port PORT] [--spawn X Y Z] [--render-distance CHUNKS]'"
+                );
+            }
+            std::array<int32_t, 3> coordinates{};
+            for (uint32_t coordinate = 0U; coordinate < coordinates.size(); ++coordinate) {
+                std::string_view const argument{argv[++index]};
+                auto const [end, error] = std::from_chars(
+                    argument.data(), argument.data() + argument.size(), coordinates[coordinate]
+                );
+                if (error != std::errc{} || end != argument.data() + argument.size()) {
+                    return std::unexpected("server spawn contains an invalid coordinate");
+                }
+            }
+            auto const checked = server::GameServer::validateSpawnPoints({{
+                .character = '@', .x = coordinates[0], .y = coordinates[1], .z = coordinates[2],
+            }}, shared::WorldMode::Flight);
+            if (!checked.has_value()) {
+                return std::unexpected(checked.error());
+            }
+            command.spawn = { .x = coordinates[0], .y = coordinates[1], .z = coordinates[2] };
         }
-        if (argc != 4 || std::string_view{ argv[2] } != "--port") {
-            return std::unexpected("server launch syntax is '--server [--port PORT]'");
-        }
-        auto const address = parseAddress("127.0.0.1:" + std::string{ argv[3] });
-        if (!address.has_value()) {
-            return std::unexpected(address.error());
-        }
-        return LaunchCommand{ .mode = mode, .address = *address };
+        return command;
     }
     if (mode == LaunchMode::GraphicalPlayerCapture) {
-        if (argc != 6 || std::string_view{argv[2]} != "--address"
-            || std::string_view{argv[4]} != "--image") {
+        if (argc != 8 || std::string_view{argv[2]} != "--address"
+            || std::string_view{argv[4]} != "--preset"
+            || std::string_view{argv[6]} != "--image") {
             return std::unexpected(
-                "capture launch syntax is '--player-client-capture --address IP:PORT --image PATH'"
+                "capture launch syntax is '--player-client-capture --address IP:PORT "
+                "--preset central-spike|trench-first-spike|mountain-climb|first-person-origin --image PATH'"
             );
         }
         auto const address = parseAddress(argv[3]);
         if (!address.has_value()) {
             return std::unexpected(address.error());
         }
-        return LaunchCommand{.mode = mode, .address = *address, .image_path = argv[5]};
+        auto const preset = client::parsePlayerClientCapturePreset(argv[5]);
+        if (!preset.has_value()) {
+            return std::unexpected("capture preset is unknown");
+        }
+        return LaunchCommand{
+            .mode = mode, .address = *address, .image_path = argv[7], .capture_preset = *preset,
+        };
     }
     if (argc == 2) {
         return LaunchCommand{ .mode = mode, .address = core::Address::localhost(20'040) };
@@ -229,6 +296,45 @@ std::expected<RuntimeCommand, std::string> parseRuntimeCommand(int const argc, c
         }
         return command;
     }
+    if (argc >= 4 && argc <= 9 && std::string_view{ argv[1] } == "--benchmark-game"
+        && std::string_view{ argv[argc - 2] } == "--evidence") {
+        RuntimeCommand command{
+            .mode = RuntimeMode::GameBenchmark,
+            .evidence_path = argv[argc - 1],
+        };
+        bool workload_selected = false;
+        bool radius_selected = false;
+        for (int argument_index = 2; argument_index < argc - 2; ++argument_index) {
+            std::string_view const argument{ argv[argument_index] };
+            if (argument == "--present-immediate" && !command.require_immediate_present_mode) {
+                command.require_immediate_present_mode = true;
+            } else if (argument == "--render-distance" && !radius_selected && argument_index + 1 < argc - 2) {
+                auto const radius = parseRenderDistance(argv[++argument_index]);
+                if (!radius) {
+                    return std::unexpected(radius.error());
+                }
+                command.render_distance = *radius;
+                radius_selected = true;
+            } else if (argument == "--workload" && !workload_selected && argument_index + 1 < argc - 2) {
+                std::string_view const name{ argv[++argument_index] };
+                if (name == "ordinary") {
+                    command.game_benchmark_workload = acceptance::GameBenchmarkWorkload::OrdinaryMovement;
+                } else if (name == "speed-200") {
+                    command.game_benchmark_workload = acceptance::GameBenchmarkWorkload::Speed200Movement;
+                } else if (name == "wrapped-border") {
+                    command.game_benchmark_workload = acceptance::GameBenchmarkWorkload::WrappedBorder;
+                } else if (name == "permission-collision") {
+                    command.game_benchmark_workload = acceptance::GameBenchmarkWorkload::PermissionCollisionChurn;
+                } else {
+                    return std::unexpected("invalid game benchmark workload: " + std::string{ name });
+                }
+                workload_selected = true;
+            } else {
+                return std::unexpected("invalid game benchmark option: " + std::string{ argument });
+            }
+        }
+        return command;
+    }
     if (argc == 6 && std::string_view{ argv[1] } == "--capture-render"
         && std::string_view{ argv[2] } == "--image"
         && std::string_view{ argv[4] } == "--evidence"
@@ -242,6 +348,9 @@ std::expected<RuntimeCommand, std::string> parseRuntimeCommand(int const argc, c
     return std::unexpected(
         "expected '--scenario <file> --evidence <file>', "
         "'--benchmark-render [--present-immediate] [--hud] --evidence <file>', "
+        "'--benchmark-game [--present-immediate] "
+        "[--workload ordinary|speed-200|wrapped-border|permission-collision] "
+        "[--render-distance CHUNKS] --evidence <file>', "
         "or '--capture-render --image <ppm> --evidence <file>'"
     );
 }
@@ -392,6 +501,24 @@ int runRendererBenchmarkCommand(RuntimeCommand const& command)
 }
 
 [[nodiscard]]
+int runGameBenchmarkCommand(RuntimeCommand const& command)
+{
+    acceptance::GameBenchmarkOptions const options{
+        .require_immediate_present_mode = command.require_immediate_present_mode,
+        .workload = command.game_benchmark_workload,
+        .render_distance = command.render_distance,
+    };
+    RuntimeDeadlineWatchdog watchdog{ command.evidence_path, "benchmark-game", options.deadline };
+    acceptance::RuntimeEvidence evidence = acceptance::collectRuntimeEvidence(
+        "benchmark-game",
+        [&options] { return acceptance::runGameBenchmark(options); }
+    );
+    evidence.deadline = std::chrono::duration_cast<std::chrono::milliseconds>(options.deadline);
+    watchdog.complete();
+    return writeRuntimeEvidence(command.evidence_path, evidence);
+}
+
+[[nodiscard]]
 int runRendererCaptureCommand(RuntimeCommand const& command)
 {
     if (normalizedOutputPath(command.image_path) == normalizedOutputPath(command.evidence_path)) {
@@ -423,6 +550,7 @@ int main(int argc, char** argv) {
         bool const is_runtime_command = argc > 1
             && (std::string_view{ argv[1] } == "--scenario"
                 || std::string_view{ argv[1] } == "--benchmark-render"
+                || std::string_view{ argv[1] } == "--benchmark-game"
                 || std::string_view{ argv[1] } == "--capture-render");
         if (is_runtime_command) {
             auto const command = parseRuntimeCommand(argc, argv);
@@ -433,6 +561,8 @@ int main(int argc, char** argv) {
                 exit_code = runScenarioCommand(*command);
             } else if (command->mode == RuntimeMode::RendererBenchmark) {
                 exit_code = runRendererBenchmarkCommand(*command);
+            } else if (command->mode == RuntimeMode::GameBenchmark) {
+                exit_code = runGameBenchmarkCommand(*command);
             } else {
                 exit_code = runRendererCaptureCommand(*command);
             }
@@ -442,7 +572,17 @@ int main(int argc, char** argv) {
                 std::cerr << command.error() << '\n';
                 exit_code = 1;
             } else if (command->mode == LaunchMode::Server) {
-                server::GameServer server{ command->address.port(), { }, shared::WorldMode::Flight };
+                std::vector<server::GameServer::SpawnPoint> spawn_points;
+                if (command->spawn.has_value()) {
+                    spawn_points.push_back({
+                        .character = '@', .x = command->spawn->x,
+                        .y = command->spawn->y, .z = command->spawn->z,
+                    });
+                }
+                server::GameServer server{
+                    command->address.port(), std::move(spawn_points), shared::WorldMode::Flight,
+                    shared::World::canonicalConfiguration(), command->render_distance,
+                };
                 server.run();
             } else if (command->mode == LaunchMode::BotClient) {
                 client::BotClient client{ shared::WorldMode::Flight };
@@ -450,9 +590,13 @@ int main(int argc, char** argv) {
             } else if (command->mode == LaunchMode::GraphicalPlayerCapture) {
                 client::PlayerClient client{
                     shared::WorldMode::Flight,
-                    client::PlayerClientCaptureOptions{.image_path = command->image_path},
+                    client::PlayerClientCaptureOptions{
+                        .image_path = command->image_path,
+                        .preset = command->capture_preset,
+                    },
                 };
                 client.run(command->address, '@');
+                exit_code = client.captureSucceeded() ? 0 : 1;
             } else {
                 client::PlayerClient client{ shared::WorldMode::Flight };
                 client.run(command->address, '@');

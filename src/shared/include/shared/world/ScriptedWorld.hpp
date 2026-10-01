@@ -21,7 +21,7 @@ enum class ScriptedWorldErrorCode : uint8_t {
 };
 
 struct ScriptedWorldError final {
-    ScriptedWorldErrorCode code;
+    ScriptedWorldErrorCode code = ScriptedWorldErrorCode::RuntimeFailed;
     std::string message;
 };
 

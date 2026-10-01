@@ -1,4 +1,5 @@
 #include <client/Camera.hpp>
+#include <client/CameraObstruction.hpp>
 #include <client/PlayerPresentation.hpp>
 
 #include <gtest/gtest.h>
@@ -6,6 +7,13 @@
 #include <chrono>
 
 namespace {
+
+TEST(PlayerPresentationTest, PlayerBodyUsesMinecraftScaleParallelepipedDimensions)
+{
+    EXPECT_EQ(client::PLAYER_BODY_DIMENSIONS.x, 0.625F);
+    EXPECT_EQ(client::PLAYER_BODY_DIMENSIONS.y, 0.625F);
+    EXPECT_EQ(client::PLAYER_BODY_DIMENSIONS.z, 1.8125F);
+}
 
 TEST(PlayerPresentationTest, LocalPlayerThirdPersonPoseOrbitsAroundPlayerCenter)
 {
@@ -18,22 +26,22 @@ TEST(PlayerPresentationTest, LocalPlayerThirdPersonPoseOrbitsAroundPlayerCenter)
     client::CameraAngles const angles{ .yaw_degrees = 0.0, .pitch_degrees = 0.0, .roll_degrees = 10.0 };
     client::CameraPose const pose = client::localPlayerThirdPersonPose(PLAYER, angles);
 
-    EXPECT_EQ(client::localPlayerCenterPosition(PLAYER), (glm::dvec3{ 13.0, 21.0, 1.0 }));
-    EXPECT_EQ(pose.position, (glm::dvec3{ 13.0, 15.0, 1.0 }));
+    EXPECT_EQ(client::localPlayerCenterPosition(PLAYER), (glm::dvec3{ 12.3125, 20.3125, 0.9'0625 }));
+    EXPECT_EQ(pose.position, (glm::dvec3{ 12.3125, 14.3125, 1.625 }));
     EXPECT_EQ(pose.angles, angles);
 
     client::CameraPose const side_pose = client::localPlayerThirdPersonPose(
         PLAYER,
         { .yaw_degrees = 90.0, .pitch_degrees = 0.0 }
     );
-    EXPECT_EQ(side_pose.position, (glm::dvec3{ 7.0, 21.0, 1.0 }));
+    EXPECT_EQ(side_pose.position, (glm::dvec3{ 6.3125, 20.3125, 1.625 }));
 
     client::CameraPose const elevated_pose = client::localPlayerThirdPersonPose(
         PLAYER,
         { .yaw_degrees = 0.0, .pitch_degrees = -30.0 }
     );
-    EXPECT_NEAR(elevated_pose.position.y, 15.803'847'577'3, 1e-9);
-    EXPECT_NEAR(elevated_pose.position.z, 4.0, 1e-9);
+    EXPECT_NEAR(elevated_pose.position.y, 15.116'347'577'3, 1e-9);
+    EXPECT_NEAR(elevated_pose.position.z, 4.625, 1e-9);
 
     client::Camera const camera{ elevated_pose };
     EXPECT_NEAR(camera.forward().x, 0.0, 1e-12);
@@ -72,8 +80,8 @@ TEST(PlayerPresentationTest, CameraFollowsAuthoritativeSubcellPosition)
     };
 
     client::CameraPose const pose = client::localPlayerThirdPersonPose(PLAYER, { });
-    EXPECT_DOUBLE_EQ(pose.position.x, 13.5);
-    EXPECT_DOUBLE_EQ(pose.position.y, 15.25);
+    EXPECT_DOUBLE_EQ(pose.position.x, 12.8125);
+    EXPECT_DOUBLE_EQ(pose.position.y, 14.5625);
 }
 
 TEST(PlayerPresentationTest, FirstPersonCameraAndInterpolationFollowFlightHeight)
@@ -104,9 +112,9 @@ TEST(PlayerPresentationTest, FirstPersonCameraAndInterpolationFollowFlightHeight
         *presentation.sample('@', STARTED_AT + std::chrono::milliseconds{ 150 }),
         { .yaw_degrees = 90.0 }
     );
-    EXPECT_DOUBLE_EQ(pose.position.x, 13.0);
-    EXPECT_DOUBLE_EQ(pose.position.y, 21.0);
-    EXPECT_DOUBLE_EQ(pose.position.z, 13.75);
+    EXPECT_DOUBLE_EQ(pose.position.x, 12.3125);
+    EXPECT_DOUBLE_EQ(pose.position.y, 20.3125);
+    EXPECT_DOUBLE_EQ(pose.position.z, 14.375);
     EXPECT_DOUBLE_EQ(pose.angles.yaw_degrees, 90.0);
 }
 
@@ -138,6 +146,141 @@ TEST(PlayerPresentationTest, InitialAuthoritativePositionSnapsAndSubsequentPosit
     EXPECT_DOUBLE_EQ(presentation.sample('@', started_at + std::chrono::milliseconds{ 150 })->x, 0.2);
     EXPECT_DOUBLE_EQ(presentation.sample('@', started_at + std::chrono::milliseconds{ 175 })->x, 0.3);
     EXPECT_DOUBLE_EQ(presentation.sample('@', started_at + std::chrono::milliseconds{ 200 })->x, 0.4);
+}
+
+TEST(PlayerPresentationTest, VerticalInterpolationKeepsVelocityContinuousAcrossTicks)
+{
+    static constexpr shared::Player INITIAL{
+        .id = 1U,
+        .x = 0U,
+        .y = 0U,
+        .z = 0,
+        .ch = '@',
+    };
+    static constexpr shared::Player FIRST_TARGET{
+        .id = 1U,
+        .x = 0U,
+        .y = 0U,
+        .z = 1,
+        .ch = '@',
+        .vertical_velocity_subcells = 5'250,
+    };
+    static constexpr shared::Player SECOND_TARGET{
+        .id = 1U,
+        .x = 0U,
+        .y = 0U,
+        .z = 1,
+        .z_subcell = 5'000U,
+        .ch = '@',
+        .vertical_velocity_subcells = 3'500,
+    };
+    std::chrono::steady_clock::time_point const started_at{};
+    client::PlayerPresentation presentation;
+    presentation.update(INITIAL, started_at);
+    presentation.update(FIRST_TARGET, started_at + std::chrono::milliseconds{ 100 });
+    presentation.update(SECOND_TARGET, started_at + std::chrono::milliseconds{ 200 });
+
+    EXPECT_NEAR(
+        presentation.sample('@', started_at + std::chrono::milliseconds{ 250 })->z,
+        1.271'875,
+        1e-9
+    );
+    double const before_retarget = presentation.sample(
+        '@',
+        started_at + std::chrono::milliseconds{ 199 }
+    )->z;
+    double const after_retarget = presentation.sample(
+        '@',
+        started_at + std::chrono::milliseconds{ 201 }
+    )->z;
+    EXPECT_LT(after_retarget - before_retarget, 0.03);
+}
+
+TEST(PlayerPresentationTest, TakeoffPresentationStartsWithTheAuthoritativeJumpImpulse)
+{
+    static constexpr shared::Player INITIAL{
+        .id = 1U,
+        .x = 0U,
+        .y = 0U,
+        .z = 0U,
+        .ch = '@',
+    };
+    static constexpr shared::Player TAKEOFF{
+        .id = 1U,
+        .x = 0U,
+        .y = 0U,
+        .z = 0U,
+        .z_subcell = 6'125U,
+        .ch = '@',
+        .vertical_velocity_subcells = 5'250,
+    };
+    std::chrono::steady_clock::time_point const started_at{};
+    client::PlayerPresentation presentation;
+
+    presentation.update(INITIAL, started_at);
+    presentation.update(TAKEOFF, started_at + std::chrono::milliseconds{ 100 });
+
+    ASSERT_TRUE(presentation.sample('@', started_at + std::chrono::milliseconds{ 125 }).has_value());
+    EXPECT_NEAR(
+        presentation.sample('@', started_at + std::chrono::milliseconds{ 125 })->z,
+        0.169'531'25,
+        1e-9
+    );
+    EXPECT_NEAR(
+        presentation.sample('@', started_at + std::chrono::milliseconds{ 150 })->z,
+        0.328'125,
+        1e-9
+    );
+}
+
+TEST(PlayerPresentationTest, SamePositionAcknowledgementUpdatesVerticalVelocity)
+{
+    static constexpr shared::Player INITIAL{
+        .id = 1U,
+        .x = 0U,
+        .y = 0U,
+        .z = 0U,
+        .ch = '@',
+    };
+    static constexpr shared::Player AIRBORNE{
+        .id = 1U,
+        .x = 0U,
+        .y = 0U,
+        .z = 1U,
+        .ch = '@',
+        .vertical_velocity_subcells = 5'250,
+    };
+    static constexpr shared::Player STOPPED{
+        .id = 1U,
+        .x = 0U,
+        .y = 0U,
+        .z = 1U,
+        .ch = '@',
+        .vertical_velocity_subcells = 0,
+    };
+    static constexpr shared::Player NEXT_TARGET{
+        .id = 1U,
+        .x = 0U,
+        .y = 0U,
+        .z = 1U,
+        .z_subcell = 5'000U,
+        .ch = '@',
+        .vertical_velocity_subcells = 3'500,
+    };
+    std::chrono::steady_clock::time_point const started_at{};
+    client::PlayerPresentation presentation;
+
+    presentation.update(INITIAL, started_at);
+    presentation.update(AIRBORNE, started_at + std::chrono::milliseconds{ 100 });
+    presentation.update(STOPPED, started_at + std::chrono::milliseconds{ 220 });
+    presentation.update(NEXT_TARGET, started_at + std::chrono::milliseconds{ 300 });
+
+    ASSERT_TRUE(presentation.sample('@', started_at + std::chrono::milliseconds{ 350 }).has_value());
+    EXPECT_NEAR(
+        presentation.sample('@', started_at + std::chrono::milliseconds{ 350 })->z,
+        1.271'875,
+        1e-9
+    );
 }
 
 TEST(PlayerPresentationTest, HorizontalInterpolationCrossesWorldSeamByShortestPath)
@@ -361,8 +504,104 @@ TEST(PlayerPresentationTest, SampledPresentationDrivesCameraAndRemotePlayersWhil
             *presentation.sample('@', started_at + std::chrono::milliseconds{ 125 }),
             { }
         ).position.x,
-        1.1
+        0.4125
     );
+}
+
+TEST(PlayerPresentationTest, CameraPerspectivesKeepLookIntentSeparateFromDisplayedView)
+{
+    static constexpr client::PlayerPresentationPosition POSITION{ .x = 12.0, .y = 20.0, .z = 0.0 };
+    static constexpr client::CameraAngles LOOK{ .yaw_degrees = 0.0, .pitch_degrees = 0.0 };
+
+    client::PlayerCameraView const first_person = client::resolveLocalPlayerCamera(
+        POSITION,
+        LOOK,
+        client::CameraPerspective::FirstPerson,
+        client::MAX_LOCAL_PLAYER_CAMERA_DISTANCE
+    );
+    client::PlayerCameraView const rear_third_person = client::resolveLocalPlayerCamera(
+        POSITION,
+        LOOK,
+        client::CameraPerspective::ThirdPersonRear,
+        client::MAX_LOCAL_PLAYER_CAMERA_DISTANCE
+    );
+    client::PlayerCameraView const front_third_person = client::resolveLocalPlayerCamera(
+        POSITION,
+        LOOK,
+        client::CameraPerspective::ThirdPersonFront,
+        client::MAX_LOCAL_PLAYER_CAMERA_DISTANCE
+    );
+
+    EXPECT_EQ(first_person.pose.position, (glm::dvec3{ 12.3125, 20.3125, 1.625 }));
+    EXPECT_EQ(first_person.pose.angles, LOOK);
+    EXPECT_FALSE(first_person.renders_local_body);
+    EXPECT_EQ(rear_third_person.pose.position, (glm::dvec3{ 12.3125, 14.3125, 1.625 }));
+    EXPECT_EQ(rear_third_person.pose.angles, LOOK);
+    EXPECT_TRUE(rear_third_person.renders_local_body);
+    EXPECT_EQ(front_third_person.pose.position, (glm::dvec3{ 12.3125, 26.3125, 1.625 }));
+    EXPECT_EQ(front_third_person.pose.angles.yaw_degrees, 180.0);
+    EXPECT_TRUE(front_third_person.renders_local_body);
+    EXPECT_NEAR(client::Camera{ front_third_person.pose }.forward().y, -1.0, 1e-12);
+}
+
+TEST(PlayerPresentationTest, CameraObstructionDistanceIsBoundedAndLocalBodyVisibilityFollowsPerspective)
+{
+    static constexpr client::PlayerPresentationPosition POSITION{ .x = 0.0, .y = 0.0, .z = 0.0 };
+    static constexpr shared::Player LOCAL{ .id = 1U, .x = 0, .y = 0, .ch = '@' };
+    static constexpr shared::Player REMOTE{ .id = 2U, .x = 0, .y = 0, .ch = '#' };
+    client::PlayerCameraView const clipped = client::resolveLocalPlayerCamera(
+        POSITION,
+        { },
+        client::CameraPerspective::ThirdPersonRear,
+        1.5
+    );
+
+    EXPECT_DOUBLE_EQ(clipped.pose.position.y, -1.1875);
+    EXPECT_FALSE(client::shouldRenderPlayerBody(LOCAL, '@', client::CameraPerspective::FirstPerson));
+    EXPECT_TRUE(client::shouldRenderPlayerBody(LOCAL, '@', client::CameraPerspective::ThirdPersonRear));
+    EXPECT_TRUE(client::shouldRenderPlayerBody(REMOTE, '@', client::CameraPerspective::FirstPerson));
+    EXPECT_EQ(
+        client::nextCameraPerspective(client::CameraPerspective::FirstPerson),
+        client::CameraPerspective::ThirdPersonRear
+    );
+    EXPECT_EQ(
+        client::nextCameraPerspective(client::CameraPerspective::ThirdPersonRear),
+        client::CameraPerspective::ThirdPersonFront
+    );
+    EXPECT_EQ(
+        client::nextCameraPerspective(client::CameraPerspective::ThirdPersonFront),
+        client::CameraPerspective::FirstPerson
+    );
+}
+
+TEST(PlayerPresentationTest, CameraObstructionAtTheMaximumSampleStillRetractsTheCamera)
+{
+    double const distance = client::maximumUnobstructedCameraDistance(
+        6.0,
+        24U,
+        8U,
+        0.03,
+        [](double const sample) { return sample >= 6.0; }
+    );
+
+    EXPECT_LT(distance, 6.0);
+    EXPECT_GT(distance, 5.9);
+}
+
+TEST(PlayerPresentationTest, PaletteMapsEveryAuthoritativeFourBitIdentityToOpaqueColor)
+{
+    std::array<float, 4> const first = client::playerPaletteColor(0U);
+    std::array<float, 4> const second = client::playerPaletteColor(1U);
+    EXPECT_NE(first, second);
+    for (shared::PlayerPaletteIndex index = 0U; index < shared::PLAYER_PALETTE_COUNT; ++index) {
+        std::array<float, 4> const color = client::playerPaletteColor(index);
+        EXPECT_EQ(color[3], 1.0F);
+        for (float const component : color) {
+            EXPECT_GE(component, 0.0F);
+            EXPECT_LE(component, 1.0F);
+        }
+    }
+    EXPECT_EQ(client::playerPaletteColor(shared::PLAYER_PALETTE_COUNT), first);
 }
 
 } // namespace

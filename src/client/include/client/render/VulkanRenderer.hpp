@@ -40,6 +40,7 @@ struct PlayerRenderData final {
     float y = 0.0F;
     std::array<float, 4> color{ 1.0f, 1.0f, 1.0f, 1.0f };
     float z = 0.0F;
+    bool render_on_top = false;
 };
 
 struct VulkanRendererOptions final {
@@ -88,9 +89,25 @@ struct RendererRuntimeInfo final {
     uint32_t debug_hud_draw_count{ 0 };
     uint32_t chunk_face_count{ 0 };
     uint32_t chunk_draw_count{ 0 };
+    uint32_t chunk_draw_face_count{ 0 };
     uint64_t chunk_mesh_upload_count{ 0 };
     uint32_t height_tile_mesh_count{ 0 };
     uint32_t stone_face_capacity{ 0 };
+    uint64_t diagnostic_render_attempt_id{ 0 };
+    bool diagnostic_frame_recorded = false;
+    bool diagnostic_indexed_stone_quads = false;
+    bool diagnostic_stone_indirect = false;
+    std::optional<uint32_t> diagnostic_frame_slot;
+    uint64_t diagnostic_submitted_stone_quad_count = 0U;
+    uint32_t diagnostic_stone_draw_count = 0U;
+    std::array<double, 7> diagnostic_camera{};
+    bool diagnostic_gpu_timestamps_enabled = false;
+    std::string_view diagnostic_gpu_timestamp_reason;
+    uint64_t diagnostic_gpu_sample_attempt_id = 0U;
+    uint32_t diagnostic_gpu_sample_slot = 0U;
+    uint64_t diagnostic_gpu_sample_quad_count = 0U;
+    uint32_t diagnostic_gpu_sample_draw_count = 0U;
+    std::optional<std::chrono::nanoseconds> diagnostic_gpu_terrain_duration;
 };
 
 struct RendererFrameCapture final {
@@ -142,9 +159,19 @@ public:
     void addWorldText(std::string_view text, TextPlacement placement, TextColor color = {});
     void clearWorldText() noexcept;
     void setCamera(CameraPose pose) noexcept;
+    void setCamera(CameraPose pose, CameraProjection projection) noexcept;
     void setChunkMesh(shared::ChunkMesh const& mesh);
     void setChunkMeshes(std::span<shared::ChunkMesh const> meshes);
-    void upsertHeightTileMesh(shared::HeightTileSurfaceMesh const& mesh);
+    [[nodiscard]]
+    bool upsertHeightTileMesh(
+        shared::HeightTileSurfaceMesh const& mesh,
+        std::chrono::steady_clock::time_point deadline
+    );
+    [[nodiscard]]
+    bool upsertHeightTileMeshes(
+        std::span<shared::HeightTileSurfaceMesh const> meshes,
+        std::chrono::steady_clock::time_point deadline
+    );
     [[nodiscard]] bool removeHeightTileMesh(shared::HeightTileCoordinate coordinate);
     void hotReload();
     void recreate(uint32_t width, uint32_t height);
@@ -157,6 +184,7 @@ public:
     [[nodiscard]] FrameCaptureState captureState() const;
     [[nodiscard]] std::optional<RendererFrameCapture> takeFrameCapture();
     [[nodiscard]] RendererRuntimeInfo runtimeInfo() const;
+    [[nodiscard]] uint32_t validationErrorCount() const noexcept;
 private:
     struct Impl;
     std::unique_ptr<Impl> m_impl;

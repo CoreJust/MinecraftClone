@@ -228,6 +228,52 @@ jobs:
           if errorlevel 1 exit /b %errorlevel%
           python script/ci/acquire.py validate-shaders --build-dir build\${{ matrix.preset }}
           if errorlevel 1 exit /b %errorlevel%
+      - name: Install macOS static-analysis tools
+        if: matrix.platform == 'macos' && matrix.preset == 'debug'
+        shell: bash
+        run: |
+          set -euo pipefail
+          brew install llvm cppcheck include-what-you-use
+          echo "$(brew --prefix llvm)/bin" >> "$GITHUB_PATH"
+      - name: Run required macOS analysis rows
+        if: matrix.platform == 'macos' && matrix.preset == 'debug'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p build/ai-analysis
+          for row in macos_asan macos_ubsan macos_tsan clang_static_analysis clang_tidy iwyu cppcheck; do
+            python script/ai_analysis_matrix.py run-row "build/ai-analysis/$row.json" --row "$row"
+          done
+      - name: Run required Windows analysis rows
+        if: matrix.platform == 'windows' && matrix.preset == 'debug'
+        shell: cmd
+        run: |
+          set "MC_ACQUIRED_VCPKG_ROOT=%VCPKG_ROOT%"
+          call "%ProgramFiles%\Microsoft Visual Studio\2022\Enterprise\Common7\Tools\VsDevCmd.bat" -arch=amd64
+          if errorlevel 1 exit /b %errorlevel%
+          set "VCPKG_ROOT=%MC_ACQUIRED_VCPKG_ROOT%"
+          if not exist build\ai-analysis mkdir build\ai-analysis
+          if errorlevel 1 exit /b %errorlevel%
+          for %%R in (windows_msvc_asan windows_msvc_analyze) do (
+            python script/ai_analysis_matrix.py run-row build\ai-analysis\%%R.json --row %%R
+            if errorlevel 1 exit /b %errorlevel%
+          )
+      - name: Upload macOS analysis row receipts
+        if: always() && matrix.platform == 'macos' && matrix.preset == 'debug'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: analysis-desktop-macos-${{ github.sha }}
+          path: build/ai-analysis/*.json
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Upload Windows analysis row receipts
+        if: always() && matrix.platform == 'windows' && matrix.preset == 'debug'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: analysis-desktop-windows-${{ github.sha }}
+          path: build/ai-analysis/*.json
+          if-no-files-found: warn
+          retention-days: 14
       - name: Upload desktop diagnostics
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -237,5 +283,333 @@ jobs:
             build/ci-metadata.json
             build/${{ matrix.preset }}/Testing/**
             build/${{ matrix.preset }}/**/*.log
+            build/ai-analysis/*.json
           if-no-files-found: warn
           retention-days: 14
+
+  linux-analysis:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/ai-main'
+    name: Linux analysis (${{ matrix.row }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - row: linux_lsan
+            triplet: x64-linux-lsan
+          - row: linux_msan
+            triplet: x64-linux-msan
+    env:
+      CC: clang
+      CXX: clang++
+      MC_VCPKG_ANALYSIS_TRIPLET: ${{ matrix.triplet }}
+      MC_VCPKG_CHAINLOAD_TOOLCHAIN_FILE: ${{ github.workspace }}/script/ci/vcpkg-clang-toolchain.cmake
+      VCPKG_DISABLE_METRICS: '1'
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: '3.12.10'
+      - name: Install Clang and pinned CMake, Ninja
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends --yes clang
+          python -m pip install --disable-pip-version-check --no-cache-dir cmake==3.31.6 ninja==1.13.1
+      - name: Materialize private dependency deploy keys
+        shell: bash
+        env:
+          MC_CI_CORECPP_DEPLOY_KEY: ${{ secrets.MC_CI_CORECPP_DEPLOY_KEY }}
+          MC_CI_COREPROJECT2026_DEPLOY_KEY: ${{ secrets.MC_CI_COREPROJECT2026_DEPLOY_KEY }}
+        run: |
+          set -euo pipefail
+          key_root="$RUNNER_TEMP/private-dependency-keys"
+          install -d -m 700 "$key_root"
+          umask 077
+          printf '%s\n' "$MC_CI_CORECPP_DEPLOY_KEY" > "$key_root/corecpp"
+          printf '%s\n' "$MC_CI_COREPROJECT2026_DEPLOY_KEY" > "$key_root/coreproject2026"
+          echo "MC_CI_CORECPP_DEPLOY_KEY_FILE=$key_root/corecpp" >> "$GITHUB_ENV"
+          echo "MC_CI_COREPROJECT2026_DEPLOY_KEY_FILE=$key_root/coreproject2026" >> "$GITHUB_ENV"
+      - name: Fetch exact private dependency commits
+        shell: bash
+        run: >-
+          python script/ci/acquire.py fetch-private-dependencies
+          --root "$RUNNER_TEMP/private-dependencies"
+          --corecpp-key "$MC_CI_CORECPP_DEPLOY_KEY_FILE"
+          --coreproject2026-key "$MC_CI_COREPROJECT2026_DEPLOY_KEY_FILE"
+      - name: Select Clang for sanitizer dependencies
+        run: |
+          echo "CC=$(command -v clang)" >> "$GITHUB_ENV"
+          echo "CXX=$(command -v clang++)" >> "$GITHUB_ENV"
+      - name: Build and verify MemorySanitizer libc++
+        if: matrix.row == 'linux_msan'
+        run: >-
+          python script/ci/install_msan_libcxx.py
+          --source-root "$RUNNER_TEMP/llvm-project"
+          --build-root "$RUNNER_TEMP/llvm-msan-build"
+          --prefix "$RUNNER_TEMP/msan-libcxx"
+      - name: Acquire pinned vcpkg
+        run: python script/ci/acquire.py install-vcpkg --root "$RUNNER_TEMP/vcpkg"
+      - name: Install instrumented vcpkg dependencies
+        run: >-
+          python script/ci/acquire.py install-manifest-dependencies
+          --vcpkg-root "$RUNNER_TEMP/vcpkg" --platform linux-analysis
+          --installed-root "$RUNNER_TEMP/vcpkg-installed"
+      - name: Install instrumented private dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          args=(
+            "--cmake-arg=-DCMAKE_TOOLCHAIN_FILE=$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake"
+            "--cmake-arg=-DVCPKG_MANIFEST_INSTALL=OFF"
+            "--cmake-arg=-DVCPKG_OVERLAY_TRIPLETS=$GITHUB_WORKSPACE/script/ci/vcpkg-triplets"
+            "--cmake-arg=-DVCPKG_TARGET_TRIPLET=$MC_VCPKG_ANALYSIS_TRIPLET"
+            "--cmake-arg=-DCMAKE_C_COMPILER=$CC"
+            "--cmake-arg=-DCMAKE_CXX_COMPILER=$CXX"
+          )
+          if [[ "${{ matrix.row }}" == linux_lsan ]]; then
+            args+=(
+              '--cmake-arg=-DCMAKE_C_FLAGS=-fsanitize=leak -fno-omit-frame-pointer'
+              '--cmake-arg=-DCMAKE_CXX_FLAGS=-fsanitize=leak -fno-omit-frame-pointer'
+              '--cmake-arg=-DCMAKE_EXE_LINKER_FLAGS=-fsanitize=leak'
+              '--cmake-arg=-DCMAKE_SHARED_LINKER_FLAGS=-fsanitize=leak'
+            )
+          else
+            args+=(
+              "--cmake-arg=-DCMAKE_C_FLAGS=-fsanitize=memory -fsanitize-memory-track-origins=2 -fno-omit-frame-pointer"
+              "--cmake-arg=-DCMAKE_CXX_FLAGS=-fsanitize=memory -fsanitize-memory-track-origins=2 -fno-omit-frame-pointer -stdlib=libc++ -isystem $MC_MSAN_LIBCXX_PREFIX/include/c++/v1"
+              "--cmake-arg=-DCMAKE_EXE_LINKER_FLAGS=-fsanitize=memory -stdlib=libc++ -L$MC_MSAN_LIBCXX_PREFIX/lib -Wl,-rpath,$MC_MSAN_LIBCXX_PREFIX/lib"
+              "--cmake-arg=-DCMAKE_SHARED_LINKER_FLAGS=-fsanitize=memory -stdlib=libc++ -L$MC_MSAN_LIBCXX_PREFIX/lib -Wl,-rpath,$MC_MSAN_LIBCXX_PREFIX/lib"
+            )
+          fi
+          python script/ci/acquire.py install-private-dependencies \
+            --root "$RUNNER_TEMP/private-dependencies" --platform linux-analysis \
+            "${args[@]}"
+      - name: Run candidate-bound Linux sanitizer row
+        run: >-
+          python script/ai_analysis_matrix.py run-row
+          "build/ai-analysis/${{ matrix.row }}.json" --row "${{ matrix.row }}"
+      - name: Upload Linux sanitizer receipt
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: analysis-linux-${{ matrix.row }}-${{ github.sha }}
+          path: build/ai-analysis/${{ matrix.row }}.json
+          if-no-files-found: warn
+          retention-days: 14
+
+  android-hwasan-build:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/ai-main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    env:
+      VCPKG_DISABLE_METRICS: '1'
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: '3.12.10'
+      - name: Select Java 21 from the hosted tool cache
+        run: |
+          echo "JAVA_HOME=$JAVA_HOME_21_X64" >> "$GITHUB_ENV"
+          echo "$JAVA_HOME_21_X64/bin" >> "$GITHUB_PATH"
+      - name: Materialize private dependency deploy keys
+        shell: bash
+        env:
+          MC_CI_CORECPP_DEPLOY_KEY: ${{ secrets.MC_CI_CORECPP_DEPLOY_KEY }}
+          MC_CI_COREPROJECT2026_DEPLOY_KEY: ${{ secrets.MC_CI_COREPROJECT2026_DEPLOY_KEY }}
+        run: |
+          set -euo pipefail
+          key_root="$RUNNER_TEMP/private-dependency-keys"
+          install -d -m 700 "$key_root"
+          umask 077
+          printf '%s\n' "$MC_CI_CORECPP_DEPLOY_KEY" > "$key_root/corecpp"
+          printf '%s\n' "$MC_CI_COREPROJECT2026_DEPLOY_KEY" > "$key_root/coreproject2026"
+          echo "MC_CI_CORECPP_DEPLOY_KEY_FILE=$key_root/corecpp" >> "$GITHUB_ENV"
+          echo "MC_CI_COREPROJECT2026_DEPLOY_KEY_FILE=$key_root/coreproject2026" >> "$GITHUB_ENV"
+      - name: Fetch exact private dependency commits
+        shell: bash
+        run: >-
+          python script/ci/acquire.py fetch-private-dependencies
+          --root "$RUNNER_TEMP/private-dependencies"
+          --corecpp-key "$MC_CI_CORECPP_DEPLOY_KEY_FILE"
+          --coreproject2026-key "$MC_CI_COREPROJECT2026_DEPLOY_KEY_FILE"
+      - name: Bootstrap pinned Android SDK and NDK
+        run: python script/ci/acquire.py install-android-sdk --root "$RUNNER_TEMP/android-sdk"
+      - name: Expose Android NDK clang-tidy
+        shell: bash
+        run: echo "$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin" >> "$GITHUB_PATH"
+      - name: Install host autotools for vcpkg GMP and MPFR
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends --yes autoconf autoconf-archive automake libtool
+      - name: Acquire pinned vcpkg
+        run: python script/ci/acquire.py install-vcpkg --root "$RUNNER_TEMP/vcpkg"
+      - name: Install HWASan-instrumented vcpkg dependencies
+        run: >-
+          python script/ci/acquire.py install-manifest-dependencies
+          --vcpkg-root "$RUNNER_TEMP/vcpkg" --platform android-hwasan
+          --installed-root "$RUNNER_TEMP/vcpkg-installed"
+      - name: Install HWASan-instrumented private dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > "$RUNNER_TEMP/corelang-android-compat.cmake" <<'EOF'
+          add_compile_options(-Wno-error=reorder-init-list)
+          EOF
+          python script/ci/acquire.py install-private-dependencies \
+            --root "$RUNNER_TEMP/private-dependencies" --platform android-hwasan \
+            --cmake-arg=-DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" \
+            --cmake-arg=-DVCPKG_CHAINLOAD_TOOLCHAIN_FILE="$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake" \
+            --cmake-arg=-DCMAKE_PROJECT_INCLUDE_BEFORE="$RUNNER_TEMP/corelang-android-compat.cmake" \
+            --cmake-arg=-DANDROID_ABI=arm64-v8a \
+            --cmake-arg=-DVCPKG_MANIFEST_INSTALL=OFF
+      - name: Build and verify the HWASan APK
+        run: >-
+          android/gradlew --no-daemon --stacktrace
+          -Psanitizer=hwasan -PvcpkgManifestInstall=OFF
+          -PvcpkgInstalledDir="$VCPKG_INSTALLED_DIR"
+          -PcmakePrefixPath="$MC_PRIVATE_DEPENDENCIES_PREFIX"
+          -PcoreCppDir="$MC_PRIVATE_DEPENDENCIES_PREFIX/lib/cmake/CoreCpp"
+          -PcoreProjectDir="$MC_PRIVATE_DEPENDENCIES_PREFIX/lib/cmake/CoreProject2026"
+          :app:assembleRelease
+      - name: Run candidate-bound Android clang-tidy row
+        run: >-
+          python script/ai_analysis_matrix.py run-row build/ai-analysis/android_clang_tidy.json
+          --row android_clang_tidy
+      - name: Upload Android clang-tidy receipt
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: analysis-android-static-${{ github.sha }}
+          path: build/ai-analysis/android_clang_tidy.json
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Upload HWASan APK for arm64 runtime
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: hwasan-apk-${{ github.sha }}
+          path: android/app/build/outputs/apk/release/app-release.apk
+          if-no-files-found: error
+          retention-days: 14
+
+  android-hwasan-runtime:
+    needs: android-hwasan-build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/ai-main'
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: '3.12.10'
+      - name: Select Java 21 from the hosted tool cache
+        run: |
+          if [[ -n "${JAVA_HOME_21_ARM64:-}" ]]; then
+            java_home="$JAVA_HOME_21_ARM64"
+          elif [[ -n "${JAVA_HOME_21_X64:-}" ]]; then
+            java_home="$JAVA_HOME_21_X64"
+          else
+            echo 'Java 21 is not present on this ARM64 runner.' >&2
+            exit 1
+          fi
+          echo "JAVA_HOME=$java_home" >> "$GITHUB_ENV"
+          echo "$java_home/bin" >> "$GITHUB_PATH"
+      - name: Bootstrap pinned Android SDK tools
+        run: python script/ci/acquire.py install-android-sdk --root "$RUNNER_TEMP/android-sdk"
+      - name: Expose Android platform tools and emulator
+        run: |
+          echo "$ANDROID_SDK_ROOT/platform-tools" >> "$GITHUB_PATH"
+          echo "$ANDROID_SDK_ROOT/emulator" >> "$GITHUB_PATH"
+      - name: Download HWASan APK
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: hwasan-apk-${{ github.sha }}
+          path: build/hwasan
+      - name: Start matching ARM64 Android emulator
+        shell: bash
+        run: |
+          set -euo pipefail
+          sdkmanager="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+          avdmanager="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/avdmanager"
+          emulator_bin="$ANDROID_SDK_ROOT/emulator/emulator"
+          "$sdkmanager" --install emulator 'system-images;android-35;google_apis;arm64-v8a'
+          "$avdmanager" create avd --force --name mc-hwasan --package 'system-images;android-35;google_apis;arm64-v8a' --device pixel_2
+          "$emulator_bin" -accel-check
+          "$emulator_bin" -avd mc-hwasan -no-window -no-audio -no-boot-anim -no-snapshot -gpu swiftshader_indirect > "$RUNNER_TEMP/android-emulator.log" 2>&1 &
+          echo $! > "$RUNNER_TEMP/android-emulator.pid"
+          adb wait-for-device
+          for attempt in $(seq 1 180); do
+            if [[ "$(adb shell getprop sys.boot_completed | tr -d '\r')" == 1 ]]; then
+              echo 'ANDROID_SERIAL=emulator-5554' >> "$GITHUB_ENV"
+              adb shell input keyevent 82
+              exit 0
+            fi
+            sleep 2
+          done
+          cat "$RUNNER_TEMP/android-emulator.log"
+          echo 'ARM64 Android emulator did not finish booting.' >&2
+          exit 1
+      - name: Run candidate-bound Android HWASan runtime row
+        run: >-
+          python script/ai_analysis_matrix.py run-row build/ai-analysis/android_arm64_hwasan.json
+          --row android_arm64_hwasan
+      - name: Upload Android HWASan runtime receipt
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: analysis-android-${{ github.sha }}
+          path: build/ai-analysis/android_arm64_hwasan.json
+          if-no-files-found: warn
+          retention-days: 14
+
+  analysis-matrix:
+    name: S7 sanitizer and static-analysis matrix
+    needs: [desktop, linux-analysis, android-hwasan-runtime]
+    if: always() && github.event_name == 'push' && github.ref == 'refs/heads/ai-main'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: '3.12.10'
+      - name: Download candidate-bound row receipts
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: analysis-*-${{ github.sha }}
+          path: build/ai-checks/rows
+          merge-multiple: true
+      - name: Merge and verify the complete exact-candidate matrix
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          receipts=(build/ai-checks/rows/*.json)
+          if (( ${#receipts[@]} == 0 )); then
+            echo 'No sanitizer/static-analysis receipts were uploaded.' >&2
+            exit 1
+          fi
+          receipt_arguments=()
+          for receipt in "${receipts[@]}"; do
+            receipt_arguments+=(--row-receipt "$receipt")
+          done
+          python script/ai_analysis_matrix.py merge \
+            --receipt build/ai-checks/analysis-matrix.json \
+            "${receipt_arguments[@]}"
+          python script/ai_analysis_matrix.py verify build/ai-checks/analysis-matrix.json
+      - name: Upload complete S7 analysis receipt
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: analysis-matrix-${{ github.sha }}
+          path: build/ai-checks/analysis-matrix.json
+          if-no-files-found: error
+          retention-days: 90

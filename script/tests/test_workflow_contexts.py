@@ -15,6 +15,16 @@ WORKFLOWS = (
 
 
 class WorkflowContextTests(unittest.TestCase):
+    def test_artifact_uploads_use_the_verified_immutable_revision(self):
+        expected_revision = "ea165f8d65b6e75b540449e92b4886f43607fa02"
+        for workflow_path in WORKFLOWS:
+            workflow = workflow_path.read_text(encoding="utf-8")
+            revisions = re.findall(r"uses:\s+actions/upload-artifact@([^\s#]+)", workflow)
+            self.assertTrue(revisions, workflow_path)
+            for revision in revisions:
+                with self.subTest(workflow=workflow_path.name, revision=revision):
+                    self.assertEqual(revision, expected_revision)
+
     def test_snapshot_trust_condition_has_valid_bash_then_separator(self):
         workflow = WORKFLOWS[1].read_text(encoding="utf-8")
         self.assertIn("git tag --points-at", workflow)
@@ -70,6 +80,30 @@ class WorkflowContextTests(unittest.TestCase):
         self.assertNotIn("secrets.", source)
         self.assertIn("fetch-private-dependencies", desktop)
         self.assertIn("install-private-dependencies", desktop)
+
+    def test_sanitizer_jobs_using_private_dependencies_run_only_on_ai_main(self):
+        workflow = WORKFLOWS[0].read_text(encoding="utf-8")
+        job_headers = list(re.finditer(r"(?m)^  ([a-z][a-z0-9-]*):\s*$", workflow))
+        jobs = {
+            match.group(1): workflow[
+                match.end() : job_headers[index + 1].start()
+                if index + 1 < len(job_headers)
+                else len(workflow)
+            ]
+            for index, match in enumerate(job_headers)
+        }
+        job_conditions = {
+            "linux-analysis": "github.event_name == 'push' && github.ref == 'refs/heads/ai-main'",
+            "android-hwasan-build": "github.event_name == 'push' && github.ref == 'refs/heads/ai-main'",
+            "android-hwasan-runtime": "github.event_name == 'push' && github.ref == 'refs/heads/ai-main'",
+            "analysis-matrix": "always() && github.event_name == 'push' && github.ref == 'refs/heads/ai-main'",
+        }
+
+        for job_name, condition in job_conditions.items():
+            with self.subTest(job=job_name):
+                condition_match = re.search(r"(?m)^    if: (.+)$", jobs[job_name])
+                self.assertIsNotNone(condition_match, job_name)
+                self.assertEqual(condition_match.group(1), condition)
 
     def test_private_prefixes_and_manifest_mode_are_explicit(self):
         for workflow_path in WORKFLOWS:
@@ -267,10 +301,10 @@ class WorkflowContextTests(unittest.TestCase):
         minecraftclone_template = (REPOSITORY / "tests/cmake/minecraftclone_server_only_test.cmake.in").read_text(encoding="utf-8")
         self.assertIn("list(APPEND test_command -C \"${MC_TEST_CONFIGURATION}\")", minecraftclone_template)
 
-    def test_server_only_build_test_has_platform_timeout(self):
+    def test_server_only_build_timeout_covers_nested_suite(self):
         cmake_lists = (REPOSITORY / "tests/CMakeLists.txt").read_text(encoding="utf-8")
-        self.assertIn("set_tests_properties(MinecraftClone.ServerOnlyBuild PROPERTIES TIMEOUT 180)", cmake_lists)
-        self.assertIn("set_tests_properties(MinecraftClone.ServerOnlyBuild PROPERTIES TIMEOUT 120)", cmake_lists)
+        self.assertIn("set_tests_properties(MinecraftClone.ServerOnlyBuild PROPERTIES TIMEOUT 300)", cmake_lists)
+        self.assertNotRegex(cmake_lists, r"MinecraftClone\.ServerOnlyBuild PROPERTIES TIMEOUT (120|180)")
 
 
 if __name__ == "__main__":

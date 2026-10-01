@@ -3,9 +3,13 @@
 #include <shared/world/SparseWorld.hpp>
 #include <shared/world/World.hpp>
 
+#include <core/common/Assert.hpp>
+
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <mutex>
+#include <stdexcept>
 #include <tuple>
 #include <unordered_set>
 
@@ -35,20 +39,13 @@ struct RankedHeightTileOffset final {
     double negative_ahead;
 };
 
-using OrderedHeightTileOffsets = std::vector<HeightTileKey>;
-
-struct HeightTileOffsetOrder final {
-    HeightTileHeading heading;
-    OrderedHeightTileOffsets offsets;
-};
-
-std::array<HeightTileOffsetOrder, 16> buildHeightTileOffsetOrders()
+HeightTileInterestOrders buildHeightTileOffsetOrders(uint32_t const radius)
 {
-    constexpr int32_t RESIDENCY_RADIUS = 45;
+    int32_t const residency_radius = static_cast<int32_t>(radius);
     constexpr double PI = 3.141'592'653'589'793'238'46;
-    std::array<HeightTileOffsetOrder, 16> orders;
-    for (uint32_t sector = 0U; sector < orders.size(); ++sector) {
-        double const angle = static_cast<double>(sector) * 2.0 * PI / static_cast<double>(orders.size());
+    HeightTileInterestOrders result{.radius = radius};
+    for (uint32_t sector = 0U; sector < result.orders.size(); ++sector) {
+        double const angle = static_cast<double>(sector) * 2.0 * PI / static_cast<double>(result.orders.size());
         HeightTileHeading const heading{
             .x = static_cast<int8_t>(std::round(std::cos(angle) * 127.0)),
             .y = static_cast<int8_t>(std::round(std::sin(angle) * 127.0)),
@@ -57,11 +54,11 @@ std::array<HeightTileOffsetOrder, 16> buildHeightTileOffsetOrders()
         double const forward_x = static_cast<double>(heading.x) / heading_length;
         double const forward_y = static_cast<double>(heading.y) / heading_length;
         std::vector<RankedHeightTileOffset> ranked;
-        ranked.reserve(HEIGHT_TILE_INTEREST_COUNT);
-        for (int32_t y = -RESIDENCY_RADIUS; y <= RESIDENCY_RADIUS; ++y) {
-            for (int32_t x = -RESIDENCY_RADIUS; x <= RESIDENCY_RADIUS; ++x) {
+        ranked.reserve(heightTileInterestCount(radius));
+        for (int32_t y = -residency_radius; y <= residency_radius; ++y) {
+            for (int32_t x = -residency_radius; x <= residency_radius; ++x) {
                 int64_t const distance_squared = static_cast<int64_t>(x) * x + static_cast<int64_t>(y) * y;
-                if (distance_squared > RESIDENCY_RADIUS * RESIDENCY_RADIUS) {
+                if (distance_squared > residency_radius * residency_radius) {
                     continue;
                 }
                 HeightTileKey const offset{.x = x, .y = y};
@@ -88,27 +85,37 @@ std::array<HeightTileOffsetOrder, 16> buildHeightTileOffsetOrders()
                 second.offset.x
             );
         });
-        orders[sector].heading = heading;
-        orders[sector].offsets.reserve(ranked.size());
+        HeightTileInterest& order = result.orders[sector];
+        order.heading_x = heading.x;
+        order.heading_y = heading.y;
+        order.keys.reserve(ranked.size());
         for (RankedHeightTileOffset const& entry : ranked) {
-            orders[sector].offsets.push_back(entry.offset);
+            order.keys.push_back(entry.offset);
         }
     }
-    return orders;
-}
-
-OrderedHeightTileOffsets const& orderedHeightTileOffsets(HeightTileHeading const heading)
-{
-    static std::array<HeightTileOffsetOrder, 16> const orders = buildHeightTileOffsetOrders();
-    auto const order = std::ranges::find(orders, heading, &HeightTileOffsetOrder::heading);
-    return order->offsets;
+    return result;
 }
 
 } // namespace
 
-void prepareHeightTileInterestOrders()
+std::shared_ptr<HeightTileInterestOrders const> prepareHeightTileInterestOrders(uint32_t const radius)
 {
-    static_cast<void>(orderedHeightTileOffsets({.x = 0, .y = 127}));
+    if (!isValidHeightTileInterestRadius(radius)) {
+        throw std::invalid_argument{"render distance must be an integer chunk radius from 1 to 256"};
+    }
+    static std::mutex cache_mutex;
+    static std::array<std::weak_ptr<HeightTileInterestOrders const>, MAX_HEIGHT_TILE_INTEREST_RADIUS + 1U> cache;
+    static std::shared_ptr<HeightTileInterestOrders const> default_orders;
+    std::lock_guard const lock{cache_mutex};
+    if (auto const existing = cache[radius].lock()) {
+        return existing;
+    }
+    auto const orders = std::make_shared<HeightTileInterestOrders const>(buildHeightTileOffsetOrders(radius));
+    cache[radius] = orders;
+    if (radius == HEIGHT_TILE_INTEREST_RADIUS) {
+        default_orders = orders;
+    }
+    return orders;
 }
 
 HeightTileGenerationBand heightTileGenerationBand(
@@ -194,7 +201,23 @@ HeightTileHeading canonicalHeightTileHeading(int8_t heading_x, int8_t heading_y)
 HeightTileInterest makeHeightTileInterest(
     HeightTileKey const center,
     int8_t heading_x,
-    int8_t heading_y
+    int8_t heading_y,
+    uint32_t const radius
+)
+{
+    if (radius == HEIGHT_TILE_INTEREST_RADIUS) {
+        static auto const default_orders = prepareHeightTileInterestOrders();
+        return makeHeightTileInterest(center, heading_x, heading_y, *default_orders);
+    }
+    auto const orders = prepareHeightTileInterestOrders(radius);
+    return makeHeightTileInterest(center, heading_x, heading_y, *orders);
+}
+
+HeightTileInterest makeHeightTileInterest(
+    HeightTileKey const center,
+    int8_t heading_x,
+    int8_t heading_y,
+    HeightTileInterestOrders const& orders
 )
 {
     HeightTileHeading const heading = canonicalHeightTileHeading(heading_x, heading_y);
@@ -202,9 +225,13 @@ HeightTileInterest makeHeightTileInterest(
     heading_y = heading.y;
 
     HeightTileInterest result{.heading_x = heading_x, .heading_y = heading_y};
-    OrderedHeightTileOffsets const& offsets = orderedHeightTileOffsets(heading);
-    result.keys.reserve(offsets.size());
-    for (HeightTileKey const offset : offsets) {
+    auto const order = std::ranges::find_if(orders.orders, [heading](HeightTileInterest const& order) {
+        return order.heading_x == heading.x && order.heading_y == heading.y;
+    });
+    ASSERT(order != orders.orders.end(), "invalid height-tile interest orders");
+    HeightTileInterest const& offsets = *order;
+    result.keys.reserve(offsets.keys.size());
+    for (HeightTileKey const offset : offsets.keys) {
         result.keys.push_back(normalizeHeightTileKey({.x = center.x + offset.x, .y = center.y + offset.y}));
     }
     return result;
@@ -222,8 +249,7 @@ std::vector<HeightTileKey> selectHeightTileRemovalCandidates(
         [[nodiscard]]
         uint64_t operator()(HeightTileKey const key) const noexcept
         {
-            return (static_cast<uint64_t>(static_cast<uint32_t>(key.x)) << 32U)
-                ^ static_cast<uint32_t>(key.y);
+            return heightTileCoordinateHash(key.x, key.y);
         }
     };
 

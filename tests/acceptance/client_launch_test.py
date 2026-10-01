@@ -69,6 +69,43 @@ class ClientLaunchTest(unittest.TestCase):
                         server.terminate()
                     server.wait(timeout=5)
 
+    def test_bot_remains_alive_until_delayed_server_starts(self):
+        with socket.socket() as probe:
+            probe.bind(("127.0.0.1", 0))
+            port = probe.getsockname()[1]
+
+        with tempfile.TemporaryDirectory() as directory:
+            log_path = Path(directory) / "server.log"
+            address = f"127.0.0.1:{port}"
+            client = subprocess.Popen(
+                [str(self.binary), "--bot-client", "--address", address],
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            server = None
+            try:
+                time.sleep(1.5)
+                self.assertIsNone(client.poll(), "client exited before delayed server startup")
+                with log_path.open("w+") as log:
+                    server = subprocess.Popen(
+                        [str(self.binary), "--server", "--port", str(port)],
+                        stdin=subprocess.DEVNULL,
+                        stdout=log,
+                        stderr=subprocess.STDOUT,
+                    )
+                    self.wait_for_text(log_path, "Created host", server)
+                    self.wait_for_text(log_path, "Player '#' spawned", server)
+                    self.assertIsNone(client.poll())
+            finally:
+                if client.poll() is None:
+                    client.terminate()
+                client.wait(timeout=5)
+                if server is not None and server.poll() is None:
+                    server.terminate()
+                if server is not None:
+                    server.wait(timeout=5)
+
     def test_invalid_launch_arguments_fail(self):
         cases = [
             ("--server", "--port", "0"),
@@ -87,6 +124,47 @@ class ClientLaunchTest(unittest.TestCase):
                     timeout=5,
                 )
                 self.assertNotEqual(result.returncode, 0)
+
+    def test_render_distance_is_validated_by_server_and_game_benchmark(self):
+        for value in ("0", "257", "1024", "-1", "128x", "128.5", "4294967296"):
+            for mode in ("--server", "--benchmark-game"):
+                arguments = [mode, "--render-distance", value]
+                if mode == "--benchmark-game":
+                    arguments.extend(("--evidence", "unused-radius-evidence.json"))
+                with self.subTest(mode=mode, radius=value):
+                    result = subprocess.run(
+                        [str(self.binary), *arguments], capture_output=True, text=True, timeout=5,
+                    )
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertIn("render distance must be an integer chunk radius from 1 to 256",
+                                  result.stderr)
+        for value in ("128", "256"):
+            with self.subTest(radius=value):
+                result = subprocess.run(
+                    [str(self.binary), "--benchmark-game", "--render-distance", value,
+                     "--workload", "invalid", "--evidence", "unused-radius-evidence.json"],
+                    capture_output=True, text=True, timeout=5,
+                )
+                self.assertIn("invalid game benchmark workload", result.stderr)
+
+    def test_normal_server_accepts_selected_render_distance(self):
+        with socket.socket() as probe:
+            probe.bind(("127.0.0.1", 0))
+            port = probe.getsockname()[1]
+        with tempfile.TemporaryDirectory() as directory:
+            log_path = Path(directory) / "server.log"
+            with log_path.open("w+") as log:
+                server = subprocess.Popen(
+                    [str(self.binary), "--server", "--render-distance", "128", "--port", str(port)],
+                    stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT,
+                )
+                try:
+                    self.wait_for_text(log_path, "Created host", server)
+                    self.assertIsNone(server.poll())
+                finally:
+                    if server.poll() is None:
+                        server.terminate()
+                    server.wait(timeout=5)
 
 
 if __name__ == "__main__":

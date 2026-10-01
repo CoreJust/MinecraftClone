@@ -122,10 +122,32 @@ class AiHistoryTest(unittest.TestCase):
             ["MC-AI-0001", "MC-AI-0002"],
         )
 
+    def test_tagged_promotion_accepts_distinct_history_and_promotion_bases(self) -> None:
+        self.git_run("git", "checkout", "-q", "-b", "snapshot-source")
+        history_baseline = self.commit("snapshot history baseline")
+        source = self.commit("snapshot source\n\nTask-ID: MC-AI-0101")
+        self.git_run("git", "checkout", "-q", "-b", "ai-main", self.baseline)
+        self.commit("current ai-main promotion base")
+        self.git_run(
+            "git", "merge", "--no-ff", "-q", source,
+            "-m", "promote snapshot\n\nTask-ID: MC-AI-0101",
+        )
+        promoted = self.git_run("git", "rev-parse", "HEAD")
+        self.git_run(
+            "git", "tag", "-a", "ai/Test/0.1.0/1_26.09.09", promoted,
+            "-m", "published snapshot",
+        )
+
+        self.assertTrue(ai_history.has_tagged_promotion(self.repo, history_baseline, source))
+        self.assertFalse(ai_history.has_tagged_promotion(self.repo, history_baseline, self.baseline))
+
     def test_snapshot_three_publication_exception_is_exactly_scoped(self) -> None:
         standard = ai_history.PUBLICATION_LEDGER_MUTABLE_FIELDS
         historical = ai_history.publication_ledger_mutable_fields(
             "8df27fb8fa08d9e0cd625b8cad85209fdd09251d"
+        )
+        s6_ledger = ai_history.publication_ledger_mutable_fields(
+            "3fa4861abafa7eb20163b89f6957bf915c10ed63"
         )
 
         self.assertEqual(
@@ -133,9 +155,26 @@ class AiHistoryTest(unittest.TestCase):
             {"context", "plan", "product_changes", "code_changes"},
         )
         self.assertEqual(
+            s6_ledger - standard,
+            {"blocker", "docs_review", "environment_review", "backlog_review"},
+        )
+        self.assertEqual(
             ai_history.publication_ledger_mutable_fields("0" * 40),
             standard,
         )
+
+    def test_s6_publication_ledger_preserves_open_runtime_state_only_for_exact_commit(self) -> None:
+        s6_ledger = "3fa4861abafa7eb20163b89f6957bf915c10ed63"
+        active_published_snapshot = task(
+            "MC-AI-0037", "snapshot", status="active", finalized=True,
+        )
+        self.assertTrue(ai_history.has_published_ledger_state(s6_ledger, active_published_snapshot))
+        self.assertFalse(ai_history.has_published_ledger_state("0" * 40, active_published_snapshot))
+
+        completed_snapshot = task(
+            "MC-AI-0037", "snapshot", status="done", resolved_at="2026-09-20", finalized=True,
+        )
+        self.assertTrue(ai_history.has_published_ledger_state("0" * 40, completed_snapshot))
 
     def test_publication_ledger_exception_reaches_commit_validation(self) -> None:
         tasks = self.hierarchy()

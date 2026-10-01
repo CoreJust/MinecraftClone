@@ -5,11 +5,13 @@ target_sources(mc
         FILES
             ProjectInfo.hpp
             net/Message.hpp
+            policy/Policy.hpp
             scenario/Scenario.hpp
             world/CanonicalWorld.hpp
             world/ScriptedWorld.hpp
             world/Chunk.hpp
             world/ChunkMesher.hpp
+            world/ChunkMeshLod.hpp
             world/HeightTileInterest.hpp
             world/HeightTileSurfaceMesher.hpp
             world/WorldGeneration.hpp

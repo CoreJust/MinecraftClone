@@ -5,6 +5,7 @@
 
 #include <client/Camera.hpp>
 #include <client/GameClient.hpp>
+#include <client/PlayerPresentation.hpp>
 #include <client/render/VulkanRenderer.hpp>
 
 #include <shared/world/Chunk.hpp>
@@ -25,19 +26,27 @@ public:
     );
     ~AndroidPlayerClient();
 private:
+    void servicePlatformEvents() override;
     shared::Direction input() override;
     void render() override;
+    void presentFrame();
 
     static void handleAppCommand(android_app* app, int32_t command);
     static int32_t handleInputEvent(android_app* app, AInputEvent* event);
 
     void onAppCommand(int32_t command);
+    void onConnectionStateReset() override;
     [[nodiscard]] bool updateVerticalInput(AInputEvent const* event) noexcept;
     void createWindowResources();
     void destroyWindowResources() noexcept;
     void pollOneEvent(int32_t timeout_millis);
     void drainEvents();
     void stop() noexcept;
+
+    [[nodiscard]]
+    double maximumUnobstructedCameraDistance(
+        client::PlayerPresentationPosition const& local_position
+    ) const noexcept;
 
     [[nodiscard]]
     bool canRender() const noexcept;
@@ -48,14 +57,18 @@ private:
     client::Camera m_camera{
         { .position = { 9.0, 9.0, 13.0 } },
     };
+    client::Camera m_look_camera{
+        { .position = { 9.0, 9.0, 13.0 } },
+    };
     shared::ChunkMesher m_chunk_mesher;
     shared::ChunkMesh const* m_chunk_mesh = nullptr;
     std::unique_ptr<client::VulkanRenderer> m_renderer;
     float m_density_scale = 1.0F;
     bool m_resumed = false;
     bool m_has_focus = false;
-    bool m_ascend_pressed = false;
+    AndroidFlightInputLatch m_ascend_input;
     bool m_descend_pressed = false;
+    client::CameraPerspective m_camera_perspective = client::CameraPerspective::FirstPerson;
 };
 
 } // namespace game_android

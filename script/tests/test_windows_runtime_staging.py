@@ -128,23 +128,27 @@ class WindowsRuntimeStagingTests(unittest.TestCase):
                 "core.a",
                 "runtime.a",
                 "runtime-network.a",
+                "runtime-executors.a",
                 "fmt.a",
                 "spdlog.a",
                 "enet.a",
             ):
                 (root / name).write_bytes(b"fixture")
             config = (
-                "set(CoreCpp_AVAILABLE_COMPONENTS Core Runtime RuntimeNetwork)\n"
+                "set(CoreCpp_AVAILABLE_COMPONENTS Core Runtime RuntimeNetwork RuntimeExecutors)\n"
                 "set(CoreCpp_Core_FOUND TRUE)\n"
                 "set(CoreCpp_Runtime_FOUND TRUE)\n"
                 "set(CoreCpp_RuntimeNetwork_FOUND TRUE)\n"
+                "set(CoreCpp_RuntimeExecutors_FOUND TRUE)\n"
                 "set(CoreCpp_FOUND TRUE)\n"
                 "add_library(CoreCpp::Core STATIC IMPORTED)\n"
                 "add_library(CoreCpp::Runtime STATIC IMPORTED)\n"
                 "add_library(CoreCpp::RuntimeNetwork STATIC IMPORTED)\n"
+                "add_library(CoreCpp::RuntimeExecutors STATIC IMPORTED)\n"
                 f'set_target_properties(CoreCpp::Core PROPERTIES IMPORTED_LOCATION "{(root / "core.a").as_posix()}")\n'
                 f'set_target_properties(CoreCpp::Runtime PROPERTIES IMPORTED_LOCATION "{(root / "runtime.a").as_posix()}")\n'
                 f'set_target_properties(CoreCpp::RuntimeNetwork PROPERTIES IMPORTED_LOCATION "{(root / "runtime-network.a").as_posix()}")\n'
+                f'set_target_properties(CoreCpp::RuntimeExecutors PROPERTIES IMPORTED_LOCATION "{(root / "runtime-executors.a").as_posix()}")\n'
             )
             for target, archive in (
                 ("fmt::fmt", "fmt.a"),

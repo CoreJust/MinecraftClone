@@ -58,6 +58,7 @@ ANDROID_SDK_PACKAGES = (
     "platforms;android-35",
     f"ndk;{ANDROID_NDK_VERSION}",
     "cmake;3.30.5",
+    "platform-tools",
 )
 DOWNLOAD_USER_AGENT = "MinecraftClone CI acquisition"
 NINJA_DOWNLOADS = {
@@ -92,6 +93,8 @@ CORECPP_COMMON_BUILD_ARGUMENTS = (
     "-DCORECPP_BUILD_RUNTIME_KERNEL=ON",
     "-DCORECPP_BUILD_RUNTIME_GRAPHICS=ON",
     "-DCORECPP_BUILD_RUNTIME_GRAPHICS_VULKAN=ON",
+    "-DCORECPP_BUILD_RUNTIME_AUDIO=ON",
+    "-DCORECPP_BUILD_RUNTIME_AUDIO_OUTPUT=ON",
 )
 CORECPP_PLATFORM_BUILD_ARGUMENTS = {
     "macos": (
@@ -104,6 +107,12 @@ CORECPP_PLATFORM_BUILD_ARGUMENTS = {
     ),
     "android": ("-DCORECPP_BUILD_RUNTIME_GRAPHICS_VULKAN_ANDROID=ON",),
 }
+CORECPP_ANALYSIS_BUILD_ARGUMENTS = (
+    "-DCORECPP_BUILD_CORE=ON",
+    "-DCORECPP_BUILD_RUNTIME=ON",
+    "-DCORECPP_BUILD_RUNTIME_NETWORK=ON",
+    "-DCORECPP_BUILD_RUNTIME_KERNEL=ON",
+)
 GIT_REVISION_RE = re.compile(r"[0-9a-f]{40}")
 GITHUB_SSH_KNOWN_HOST = (
     "github.com ssh-ed25519 "
@@ -233,8 +242,18 @@ def install_private_dependencies(
     preset: str = "release",
 ) -> Path:
     """Build/install private CMake packages in dependency order and export their prefix."""
-    if platform_name not in {"macos", "windows", "android"}:
+    if platform_name not in {"macos", "windows", "android", "android-hwasan", "linux-analysis"}:
         raise CiError(f"unsupported private dependency platform: {platform_name}")
+    if platform_name == "android-hwasan":
+        overlay_triplets = Path(__file__).resolve().parent / "vcpkg-triplets"
+        cmake_arguments = [
+            *cmake_arguments,
+            f"-DVCPKG_OVERLAY_TRIPLETS={normalize_cmake_path(overlay_triplets)}",
+            "-DVCPKG_TARGET_TRIPLET=arm64-android-hwasan",
+            "-DANDROID_PLATFORM=android-29",
+            "-DANDROID_STL=c++_shared",
+            "-DANDROID_SANITIZE=hwaddress",
+        ]
     if preset not in {"debug", "release"}:
         raise CiError(f"unsupported private dependency preset: {preset}")
     build_type = preset.capitalize()
@@ -252,15 +271,19 @@ def install_private_dependencies(
         build = root / f"{name}-build"
         package_arguments: list[str] = []
         if name == "CoreCpp":
-            package_arguments.extend(CORECPP_COMMON_BUILD_ARGUMENTS)
-            package_arguments.extend(CORECPP_PLATFORM_BUILD_ARGUMENTS[platform_name])
+            if platform_name == "linux-analysis":
+                package_arguments.extend(CORECPP_ANALYSIS_BUILD_ARGUMENTS)
+            else:
+                package_arguments.extend(CORECPP_COMMON_BUILD_ARGUMENTS)
+                corecpp_platform = "android" if platform_name == "android-hwasan" else platform_name
+                package_arguments.extend(CORECPP_PLATFORM_BUILD_ARGUMENTS[corecpp_platform])
         else:
             corecpp_config = prefix / "lib" / "cmake" / "CoreCpp" / "CoreCppConfig.cmake"
             if not corecpp_config.is_file():
                 raise CiError(f"installed CoreCpp package config is missing: {corecpp_config}")
             package_arguments.append(f"-DCoreCpp_DIR={corecpp_config.parent}")
             package_arguments.append("-DCOREPROJECT2026_BUILD_SCRIPT=OFF")
-            if platform_name == "android":
+            if platform_name in {"android", "android-hwasan"}:
                 package_arguments.append("-DCMAKE_CXX_FLAGS=-Wno-error=missing-field-initializers")
         configure = [
             "cmake", "-S", str(source), "-B", str(build), "-G", "Ninja",
@@ -573,7 +596,17 @@ def install_manifest_dependencies(vcpkg_root: Path, platform_name: str, installe
         "macos": "arm64-osx",
         "windows": "x64-windows",
         "android": "arm64-android",
+        "android-hwasan": "arm64-android-hwasan",
     }
+    if platform_name == "linux-analysis":
+        triplet = os.environ.get("MC_VCPKG_ANALYSIS_TRIPLET", "")
+        if triplet not in {"x64-linux-lsan", "x64-linux-msan"}:
+            raise CiError("MC_VCPKG_ANALYSIS_TRIPLET must select the pinned LSan or MSan analysis triplet")
+        triplets[platform_name] = triplet
+    if platform_name == "android-hwasan":
+        overlay_triplets = Path(__file__).resolve().parent / "vcpkg-triplets"
+        if not (overlay_triplets / "arm64-android-hwasan.cmake").is_file():
+            raise CiError(f"Android HWASan vcpkg triplet is missing: {overlay_triplets}")
     if platform_name not in triplets:
         raise CiError(f"unsupported manifest dependency platform: {platform_name}")
     executable = vcpkg_root / ("vcpkg.exe" if os.name == "nt" else "vcpkg")
@@ -589,6 +622,13 @@ def install_manifest_dependencies(vcpkg_root: Path, platform_name: str, installe
         f"--x-manifest-root={repository}",
         f"--x-install-root={installed_root}",
     ]
+    if platform_name == "linux-analysis":
+        overlay_triplets = Path(__file__).resolve().parent / "vcpkg-triplets"
+        if not overlay_triplets.is_dir():
+            raise CiError(f"Linux analysis vcpkg triplets are missing: {overlay_triplets}")
+        command.append(f"--overlay-triplets={overlay_triplets}")
+    if platform_name == "android-hwasan":
+        command.append(f"--overlay-triplets={Path(__file__).resolve().parent / 'vcpkg-triplets'}")
     if platform_name == "windows":
         command.append(f"--overlay-ports={install_windows_gmp_overlay(vcpkg_root, installed_root)}")
     run(command)
@@ -736,7 +776,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     install_vcpkg_parser.add_argument("--root", type=Path, required=True)
     manifest_parser = commands.add_parser("install-manifest-dependencies")
     manifest_parser.add_argument("--vcpkg-root", type=Path, required=True)
-    manifest_parser.add_argument("--platform", choices=("macos", "windows", "android"), required=True)
+    manifest_parser.add_argument("--platform", choices=("macos", "windows", "android", "android-hwasan", "linux-analysis"), required=True)
     manifest_parser.add_argument("--installed-root", type=Path, required=True)
     install_android_parser = commands.add_parser("install-android-sdk")
     install_android_parser.add_argument("--root", type=Path, required=True)
@@ -757,7 +797,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     fetch_private_parser.add_argument("--coreproject2026-key", type=Path, required=True)
     install_private_parser = commands.add_parser("install-private-dependencies")
     install_private_parser.add_argument("--root", type=Path, required=True)
-    install_private_parser.add_argument("--platform", choices=("macos", "windows", "android"), required=True)
+    install_private_parser.add_argument("--platform", choices=("macos", "windows", "android", "android-hwasan", "linux-analysis"), required=True)
     install_private_parser.add_argument("--preset", choices=("debug", "release"), default="release")
     install_private_parser.add_argument("--cmake-arg", action="append", default=[])
     artifact_exclusion_parser = commands.add_parser("verify-private-dependency-artifact-exclusion")

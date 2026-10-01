@@ -3,6 +3,7 @@
 #include <shared/world/Chunk.hpp>
 #include <shared/world/World.hpp>
 #include <shared/world/WorldGeneration.hpp>
+#include <shared/world/WorldGenerationScheduler.hpp>
 
 #include <cstdint>
 #include <optional>
@@ -88,6 +89,12 @@ struct SparseWorldOptions final {
 
     uint64_t seed = WorldConfiguration::SEED;
     uint64_t max_resident_chunks = DEFAULT_MAX_RESIDENT_CHUNKS;
+    uint64_t revision = 1U;
+};
+
+struct SparseBlockQuery final {
+    GenerationState state = GenerationState::Unknown;
+    std::optional<Block> block;
 };
 
 class SparseWorld final {
@@ -99,6 +106,22 @@ public:
 
     [[nodiscard]]
     std::optional<Block> blockAt(WorldCoordinate coordinate) const noexcept;
+
+    [[nodiscard]]
+    SparseBlockQuery queryBlock(WorldCoordinate coordinate) const noexcept;
+
+    [[nodiscard]]
+    bool publishPreview(
+        ChunkCoordinate coordinate,
+        HeightTile tile,
+        uint64_t revision,
+        uint64_t seed
+    );
+
+    [[nodiscard]]
+    bool publishMaterializedChunk(Chunk chunk, uint64_t revision, uint64_t seed);
+
+    void setWorldIdentity(uint64_t revision, uint64_t seed) noexcept;
 
     [[nodiscard]]
     bool setBlock(WorldCoordinate coordinate, Block block);
@@ -119,6 +142,9 @@ public:
     uint64_t maxResidentChunks() const noexcept;
 
     [[nodiscard]]
+    uint64_t previewCount() const noexcept;
+
+    [[nodiscard]]
     SparseWorldOptions const& options() const noexcept;
 
 private:
@@ -134,6 +160,14 @@ private:
 
     using ResidentChunks = std::unordered_map<ChunkCoordinate, ResidentChunk, ChunkCoordinateHash>;
 
+    struct Preview final {
+        HeightTile tile;
+        uint64_t revision;
+        uint64_t seed;
+    };
+
+    using PreviewChunks = std::unordered_map<ChunkCoordinate, Preview, ChunkCoordinateHash>;
+
     void touch(ResidentChunk& resident) noexcept;
     void evictIfFull() noexcept;
 
@@ -141,6 +175,7 @@ private:
     SparseWorldOptions m_options;
     TerrainGenerator m_generator;
     ResidentChunks m_resident;
+    PreviewChunks m_previews;
     uint64_t m_access_clock = 0U;
 };
 

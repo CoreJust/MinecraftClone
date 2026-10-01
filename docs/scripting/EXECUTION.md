@@ -2,7 +2,7 @@
 
 ## Load and publication
 
-`parseScenarioSource` checks that all six scenario limits are positive, checks
+`parseScenarioSource` checks that all seven scenario limits are positive, checks
 source bytes, observes an already requested cancellation, then selects the
 explicit CoreLang header. CoreLang is compiled with the trusted `minecraft`
 ruleset, loaded into a runtime, and executes `scenario`.
@@ -11,14 +11,24 @@ host-call validation, and the final required declarations must all succeed
 before an immutable plan is returned. A failure cannot mutate the live world,
 network state, or authoritative runner.
 
-The scenario runner then creates boundary-zero state, with declared players and
-stopped input. Commands are ordered by source position. An input recorded at
-boundary `B` is effective on the next authoritative step (`B + 1`) and remains
-active until replaced. `wait(N)` advances exactly `N` fixed authoritative
-steps and moves the boundary forward by `N`. `expect` records an observation at
-the current boundary and does not advance time. Camera input is converted from
-the actor's yaw into the authoritative XYZ direction; the server remains the
-authority. Replay identity excludes wall-clock duration.
+For `flight3d-v1`, the runner creates boundary-zero state, with declared players
+and stopped input. Commands are ordered by source position. An input recorded
+at boundary `B` is effective on the next authoritative step (`B + 1`) and
+remains active until replaced. `wait(N)` advances exactly `N` fixed
+authoritative steps and moves the boundary forward by `N`. `expect` records an
+observation at the current boundary and does not advance time. Camera input is
+converted from the actor's yaw into the authoritative XYZ direction; the server
+remains the authority. Replay identity excludes wall-clock duration.
+
+The `sparse-world-v1` profile uses the `0.1.3` frontend and has no players or
+tick operations. After `profile` and `seed`, `sparseWorldOptions(u32, u64)`
+selects generator version `1` and a positive resident-chunk bound. The bound
+cannot exceed the host limit. `expectBlockXYZ(i64, i64, i64, u8)` materializes
+and checks Air (`0`) or Stone (`1`) at a world coordinate;
+`expectResidentChunks(u64)` checks current residency. Each observation counts
+as one operation and one evidence item. Execution reuses `SparseWorld` and
+`TerrainGenerator`; distant block observations evict chunks under the selected
+residency bound.
 
 ## Host bounds
 
@@ -30,8 +40,9 @@ The application scenario command currently supplies these limits:
 | Statements | 256 | Every accepted host-call statement |
 | Actors | 4 | `playerXYZ` declarations |
 | Total ticks | 10,000 | Sum of all `wait` values |
-| Operations | 512 | Emitted inputs, waits, and expectations |
-| Evidence | 128 | `expectXYZ` operations |
+| Operations | 512 | Emitted inputs, waits, expectations, sparse-world options, and observations |
+| Evidence | 128 | `expectXYZ`, `expectBlockXYZ`, and `expectResidentChunks` operations |
+| Resident chunks | 128 | Maximum accepted `sparseWorldOptions` bound |
 
 The API accepts other positive host configurations. Script input cannot raise,
 lower, or replace them. CoreLang functions, conditions, and loops can execute

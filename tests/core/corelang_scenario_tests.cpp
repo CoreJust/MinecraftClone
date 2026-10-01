@@ -206,4 +206,81 @@ TEST(CoreLangScenario, LoadsCanonicalCoreLangScenario)
     EXPECT_GT(migrated->evidenceCount(), 0U);
 }
 
+TEST(CoreLangScenario, LowersServerOwnedMovementPermissionAndPhysicsCommands)
+{
+    auto const parsed = shared::parseScenarioSource(
+        "s7_permissions_physics.core",
+        readScenario("s7_permissions_physics.core"),
+        scenarioLimits()
+    );
+
+    ASSERT_TRUE(parsed.has_value()) << parsed.error().message;
+    EXPECT_EQ(parsed->totalTicks(), 47U);
+    EXPECT_EQ(parsed->evidenceCount(), 8U);
+    EXPECT_EQ(parsed->actors().size(), 2U);
+    std::string const replay_id = shared::scenarioReplayId(*parsed);
+    EXPECT_FALSE(replay_id.empty());
+    auto const repeated = shared::parseScenarioSource(
+        "s7_permissions_physics.core",
+        readScenario("s7_permissions_physics.core"),
+        scenarioLimits()
+    );
+    ASSERT_TRUE(repeated.has_value()) << repeated.error().message;
+    EXPECT_EQ(shared::scenarioReplayId(*repeated), replay_id);
+}
+
+TEST(CoreLangScenario, RunsPermissionFlightPhaseAndJumpAssertionsOnTheAuthoritativeServer)
+{
+    auto const parsed = shared::parseScenarioSource(
+        "s7_permissions_physics.core",
+        readScenario("s7_permissions_physics.core"),
+        scenarioLimits()
+    );
+    ASSERT_TRUE(parsed.has_value()) << parsed.error().message;
+
+    auto const result = acceptance::runScenario(*parsed, {
+        .deadline = std::chrono::seconds{5},
+        .network_poll_interval = std::chrono::milliseconds{1},
+    });
+
+    ASSERT_TRUE(result.has_value()) << result.error();
+    EXPECT_TRUE(result->passed);
+    EXPECT_EQ(result->clients_requested, 2U);
+    EXPECT_EQ(result->clients_accepted, 2U);
+    EXPECT_EQ(result->ticks, 47U);
+    EXPECT_EQ(result->inputs_sent, 47U);
+    EXPECT_EQ(result->expectations_passed, 8U);
+
+    auto const replay = acceptance::runScenario(*parsed, {
+        .deadline = std::chrono::seconds{5},
+        .network_poll_interval = std::chrono::milliseconds{1},
+    });
+    ASSERT_TRUE(replay.has_value()) << replay.error();
+    EXPECT_TRUE(replay->passed);
+    EXPECT_EQ(replay->replay_id, result->replay_id);
+    EXPECT_EQ(replay->ticks, result->ticks);
+    EXPECT_EQ(replay->inputs_sent, result->inputs_sent);
+    EXPECT_EQ(replay->expectations_passed, result->expectations_passed);
+}
+
+TEST(CoreLangScenario, RejectsCollisionBypassWithoutFlightPermission)
+{
+    static constexpr std::string_view SOURCE = R"(@version("0.1.2")
+@use minecraft
+pub fn scenario() {
+    profile("flight3d-v1")
+    seed(7u64)
+    playerXYZ("alice", '@'c8, 4i32, 4i32, 16i32, 0i16, 0i16, 0i16)
+    movementPermissions(false, true)
+}
+)";
+
+    auto const parsed = shared::parseScenarioSource("invalid-movement-permissions.core", SOURCE, scenarioLimits());
+
+    ASSERT_FALSE(parsed.has_value());
+    EXPECT_EQ(parsed.error().code, shared::ScenarioDiagnosticCode::CoreLangRuntimeFailure);
+    EXPECT_NE(parsed.error().message.find("collision bypass requires flight permission"), std::string::npos);
+}
+
+
 } // namespace

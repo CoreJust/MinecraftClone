@@ -14,6 +14,13 @@ render eligibility. It drains the Android looper before a frame and blocks
 on the looper while paused, unfocused, or without a usable window. Teardown
 destroys renderer resources before the window is released.
 
+Connection, retry, and join waits also service lifecycle commands and shutdown
+requests independently of rendering. A ready foreground surface presents the
+existing scene while connecting, without simulating or submitting player input
+before an authoritative join. The shared connection attempt retains one ENet
+peer for 30 seconds, with lifecycle servicing between transport waits of at
+most 25 ms; retry and join waits also service cancellation.
+
 Network messages are serviced only while the render loop is active. Pause or
 focus loss clears input before blocking; losing the native window destroys the
 renderer. The client recreates rendering on resume but does not reconnect if
@@ -37,8 +44,9 @@ normalized authoritative direction packet used by desktop. Server positions
 carry fixed-point subcell remainders and are converted to floats only for
 camera and rendering presentation.
 Back/Escape requests client shutdown; a debounced F1 key-down toggles the
-performance HUD, enabled by default for normal gameplay, while R retains its
-shader-reload action (holding either key does not repeat its action). The Android client uses the portable vertex path
+performance HUD and hardware F5 cycles first, rear-third, and front-third
+perspectives. R retains its shader-reload action; holding any of these keys
+does not repeat its action. The Android client uses the portable vertex path
 because `RuntimeKernel::SpirvModule` currently exposes vertex/fragment modules
 only.
 

@@ -3,6 +3,8 @@
 #include <server/GameServer.hpp>
 
 #include <shared/net/Message.hpp>
+#include <shared/policy/Policy.hpp>
+#include <shared/world/SparseWorld.hpp>
 
 #include <core/net/Client.hpp>
 #include <core/net/Net.hpp>
@@ -24,6 +26,12 @@ namespace {
 std::chrono::milliseconds remainingTimeout(
     std::chrono::steady_clock::time_point const deadline
 );
+
+[[nodiscard]]
+shared::PolicyCapabilityRegistry movementPermissionRegistry();
+
+[[nodiscard]]
+std::string movementPermissionPolicySource(bool flight, bool collision_bypass);
 
 class ScenarioClient final : public core::Client {
 public:
@@ -146,6 +154,35 @@ public:
     }
 
     [[nodiscard]]
+    std::expected<uint64_t, std::string> publishMovementPermissions(
+        bool const flight,
+        bool const collision_bypass
+    )
+    {
+        if (m_worker.has_value()) {
+            return std::unexpected("scenario movement permissions require a stopped server tick loop");
+        }
+        if (collision_bypass && !flight) {
+            return std::unexpected("collision bypass requires flight permission");
+        }
+        shared::PolicyHost compiler;
+        std::string const source = movementPermissionPolicySource(flight, collision_bypass);
+        auto compilation = compiler.compile("scenario-movement-permissions.core", source);
+        if (!compilation) {
+            return std::unexpected("scenario permission compilation failed: " + compilation.error().message);
+        }
+        auto const published = m_server.publishPermissions(
+            std::move(*compilation),
+            movementPermissionRegistry()
+        );
+        if (!published) {
+            return std::unexpected("scenario permission publication failed: " + published.error().message);
+        }
+        m_server.flush();
+        return *published;
+    }
+
+    [[nodiscard]]
     uint64_t eventsProcessed() const
     {
         return m_events_processed.load();
@@ -210,6 +247,132 @@ std::string operationFailure(shared::ScenarioOperation const& operation, std::st
         + std::to_string(operation.location.column) + " " + message;
 }
 
+[[nodiscard]]
+shared::PolicyCapabilityRegistry movementPermissionRegistry()
+{
+    return {
+        .definitions = {
+            {
+                .key = "minecraft:flight",
+                .default_value = 1,
+                .minimum_value = 0,
+                .maximum_value = 1,
+                .hard_restriction = shared::PolicyRestriction::Maximum,
+            },
+            {
+                .key = "minecraft:collision-bypass",
+                .default_value = 1,
+                .minimum_value = 0,
+                .maximum_value = 1,
+                .hard_restriction = shared::PolicyRestriction::Maximum,
+            },
+        },
+    };
+}
+
+[[nodiscard]]
+std::string movementPermissionPolicySource(bool const flight, bool const collision_bypass)
+{
+    std::string source =
+        "@version(\"0.1.3.1\")\n"
+        "@use minecraft\n"
+        "pub fn policy() {\n"
+        "    policyRule(\"scenario-movement\", \"minecraft:flight\", ";
+    source.append(flight ? "1i64" : "0i64");
+    source.append(", 0u8)\n    policyRule(\"scenario-movement\", \"minecraft:collision-bypass\", ");
+    source.append(collision_bypass ? "1i64" : "0i64");
+    source.append(", 0u8)\n    policyAssign(\"players\", \"scenario-movement\", 0u8)\n}\n");
+    return source;
+}
+
+[[nodiscard]]
+std::expected<RuntimeEvidence, std::string> runSparseWorldScenario(
+    shared::ScenarioPlan const& plan,
+    ScenarioRunOptions const& options,
+    std::chrono::steady_clock::time_point const started_at
+)
+{
+    if (!plan.actors().empty() || plan.totalTicks() != 0U || plan.operations().empty()) {
+        return std::unexpected("sparse-world scenarios cannot contain players or tick operations");
+    }
+    auto const* const configuration = std::get_if<shared::ScenarioSparseWorldOptionsOperation>(
+        &plan.operations().front().data
+    );
+    if (configuration == nullptr || configuration->generator_version != 1U
+        || configuration->max_resident_chunks == 0U) {
+        return std::unexpected("sparse-world scenario requires supported generator options first");
+    }
+
+    shared::SparseWorld world{
+        shared::SparseWorldOptions{
+            .seed = plan.seed(),
+            .max_resident_chunks = configuration->max_resident_chunks,
+        },
+    };
+    std::chrono::steady_clock::time_point const deadline = started_at + options.deadline;
+    uint64_t expectations_passed{0U};
+    for (uint64_t index = 1U; index < static_cast<uint64_t>(plan.operations().size()); ++index) {
+        shared::ScenarioOperation const& operation = plan.operations()[index];
+        if (std::chrono::steady_clock::now() >= deadline) {
+            return std::unexpected(operationFailure(operation, "exceeded the monotonic deadline"));
+        }
+        if (operation.boundary != 0U) {
+            return std::unexpected(operationFailure(operation, "has an inconsistent sparse-world boundary"));
+        }
+        if (auto const* const expected = std::get_if<shared::ScenarioExpectBlockOperation>(&operation.data)) {
+            std::optional<shared::Block> const observed = world.blockAt({
+                .x = expected->x,
+                .y = expected->y,
+                .z = expected->z,
+            });
+            if (!observed.has_value() || *observed != expected->block) {
+                return std::unexpected(operationFailure(operation, "did not observe the expected generated block"));
+            }
+        } else if (auto const* const expected = std::get_if<
+                       shared::ScenarioExpectResidentChunksOperation
+                   >(&operation.data)) {
+            if (world.residentChunkCount() != expected->count) {
+                return std::unexpected(operationFailure(operation, "observed an unexpected resident chunk count"));
+            }
+        } else {
+            return std::unexpected(operationFailure(operation, "contains an unsupported sparse-world operation"));
+        }
+        if (world.residentChunkCount() > world.maxResidentChunks()) {
+            return std::unexpected(operationFailure(operation, "exceeded its configured residency bound"));
+        }
+        ++expectations_passed;
+        if (std::chrono::steady_clock::now() >= deadline) {
+            return std::unexpected(operationFailure(operation, "exceeded the monotonic deadline"));
+        }
+    }
+    if (expectations_passed != plan.evidenceCount()) {
+        return std::unexpected("sparse-world evidence count did not match executed observations");
+    }
+
+    return RuntimeEvidence{
+        .mode = "scenario",
+        .scenario_version = std::to_string(plan.version()),
+        .profile = std::string{shared::scenarioProfileName(plan.profile())},
+        .seed = plan.seed(),
+        .ticks = 0U,
+        .clients_requested = 0U,
+        .clients_accepted = 0U,
+        .server_events_processed = 0U,
+        .accepted_tick = 0U,
+        .last_effective_tick = 0U,
+        .inputs_sent = 0U,
+        .camera_relative_inputs = 0U,
+        .expectations_passed = expectations_passed,
+        .authoritative_tick_ms = 0U,
+        .replay_id = shared::scenarioReplayId(plan),
+        .elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now() - started_at
+        ),
+        .deadline = std::chrono::duration_cast<std::chrono::milliseconds>(options.deadline),
+        .passed = true,
+    };
+}
+
 } // namespace
 
 std::expected<RuntimeEvidence, std::string> runScenario(
@@ -221,6 +384,9 @@ std::expected<RuntimeEvidence, std::string> runScenario(
         || options.network_poll_interval <= std::chrono::milliseconds::zero()
     ) {
         return std::unexpected("scenario runner requires positive monotonic limits");
+    }
+    if (plan.profile() == shared::ScenarioProfile::SparseWorldV1) {
+        return runSparseWorldScenario(plan, options, std::chrono::steady_clock::now());
     }
     if (plan.profile() != shared::ScenarioProfile::Flat2dV1
         && plan.profile() != shared::ScenarioProfile::Flat3dV1
@@ -260,6 +426,7 @@ std::expected<RuntimeEvidence, std::string> runScenario(
     std::vector<std::unique_ptr<ScenarioClient>> clients;
     clients.reserve(plan.actors().size());
     std::vector<std::optional<shared::Direction>> active_inputs(plan.actors().size());
+    std::vector<uint8_t> pending_jumps(plan.actors().size(), 0U);
     std::vector<uint32_t> input_sequences(plan.actors().size(), 1U);
     std::optional<std::string> failure;
     uint64_t logical_tick{ 0 };
@@ -311,30 +478,56 @@ std::expected<RuntimeEvidence, std::string> runScenario(
 
     auto advanceOneTick = [&]() -> std::expected<void, std::string> {
         uint64_t active_count{ 0 };
+        std::vector<std::optional<uint32_t>> submitted_sequences(clients.size());
         for (uint64_t index{ 0 }; index < static_cast<uint64_t>(clients.size()); ++index) {
-            if (!active_inputs[index].has_value()) {
+            bool const jump = pending_jumps[index] != 0U;
+            if (!active_inputs[index].has_value() && !jump) {
                 continue;
             }
+            shared::Direction direction = active_inputs[index].value_or(shared::Direction{});
+            if (jump) {
+                direction.z = 127U;
+                pending_jumps[index] = 0U;
+                if (active_inputs[index].has_value()) {
+                    active_inputs[index]->z = 0U;
+                }
+            }
+            uint32_t const sequence = input_sequences[index]++;
             if (!clients[index]->sendMessage(shared::ClientInputMessage{
-                .direction = *active_inputs[index],
-                .sequence = input_sequences[index]++,
+                .direction = direction,
+                .sequence = sequence,
             })) {
                 return std::unexpected("scenario client could not send active input");
             }
             clients[index]->flush();
+            submitted_sequences[index] = sequence;
             ++active_count;
             ++inputs_sent;
         }
-        uint64_t observed_events{ 0 };
+        bool acknowledged = active_count == 0U;
         do {
             if (std::chrono::steady_clock::now() >= deadline) {
                 return std::unexpected("scenario runner exceeded its monotonic deadline at a tick barrier");
             }
-            observed_events += server.tick(detail::boundedNetworkPollTimeout(
+            static_cast<void>(server.tick(detail::boundedNetworkPollTimeout(
                 options.network_poll_interval,
                 remainingTimeout(deadline)
-            ));
-        } while (observed_events < active_count);
+            )));
+            // Unknown collision chunks defer input until materialization; packet receipt alone is not completion.
+            acknowledged = true;
+            for (uint64_t index{ 0 }; index < static_cast<uint64_t>(clients.size()); ++index) {
+                if (!submitted_sequences[index].has_value()) {
+                    continue;
+                }
+                static_cast<void>(clients[index]->poll(std::chrono::milliseconds::zero()));
+                std::optional<shared::ServerPlayerPositionMessage> const position =
+                    clients[index]->latestPosition(plan.actors()[index].character);
+                if (!position.has_value()
+                    || position->acknowledged_input_sequence != *submitted_sequences[index]) {
+                    acknowledged = false;
+                }
+            }
+        } while (!acknowledged);
         ++logical_tick;
         return { };
     };
@@ -354,6 +547,29 @@ std::expected<RuntimeEvidence, std::string> runScenario(
                 if (!index.has_value()) {
                     failure = operationFailure(operation, "references an unknown actor");
                     break;
+                }
+                if (input->intent != shared::ScenarioInputOperation::Intent::Direct) {
+                    char const character = plan.actors()[*index].character;
+                    bool const requires_phase = input->intent == shared::ScenarioInputOperation::Intent::Phase;
+                    bool const permission_observed = clients[*index]->waitFor(
+                        [&client = clients[*index], character, requires_phase] {
+                            auto const position = client->latestPosition(character);
+                            auto const flight = shared::MovementCapability::Flight;
+                            auto const phase = shared::MovementCapability::CollisionBypass;
+                            bool const has_flight = position.has_value() && position->movement_capabilities.allows(flight);
+                            bool const has_phase = position.has_value() && position->movement_capabilities.allows(phase);
+                            return has_flight && (!requires_phase || has_phase);
+                        },
+                        deadline,
+                        options.network_poll_interval
+                    );
+                    if (!permission_observed) {
+                        char const* const reason = input->intent == shared::ScenarioInputOperation::Intent::Flight
+                            ? "flightXYZ requires server-granted flight permission"
+                            : "phaseXYZ requires server-granted collision-bypass permission";
+                        failure = operationFailure(operation, reason);
+                        break;
+                    }
                 }
                 active_inputs[*index] = shared::Direction{
                     .x = static_cast<uint8_t>(input->x * 127),
@@ -379,6 +595,44 @@ std::expected<RuntimeEvidence, std::string> runScenario(
                 );
                 ++camera_relative_inputs;
                 last_effective_tick = input->effective_boundary;
+            } else if (auto const* const permissions = std::get_if<shared::ScenarioMovementPermissionsOperation>(
+                &operation.data
+            )) {
+                auto const published = server.publishMovementPermissions(
+                    permissions->flight,
+                    permissions->collision_bypass
+                );
+                if (!published.has_value()) {
+                    failure = operationFailure(operation, published.error());
+                    break;
+                }
+            } else if (auto const* const jump = std::get_if<shared::ScenarioJumpOperation>(&operation.data)) {
+                auto const index = actorIndex(plan, jump->actor);
+                if (!index.has_value()) {
+                    failure = operationFailure(operation, "references an unknown actor");
+                    break;
+                }
+                char const character = plan.actors()[*index].character;
+                bool const flight_disabled = clients[*index]->waitFor(
+                    [&client = clients[*index], character] {
+                        auto const position = client->latestPosition(character);
+                        return position.has_value()
+                            && !position->movement_capabilities.allows(shared::MovementCapability::Flight);
+                    },
+                    deadline,
+                    options.network_poll_interval
+                );
+                if (!flight_disabled) {
+                    failure = operationFailure(operation, "jump requires flight permission to be disabled");
+                    break;
+                }
+                pending_jumps[*index] = 1U;
+                last_effective_tick = logical_tick + 1U;
+                auto const advanced = advanceOneTick();
+                if (!advanced.has_value()) {
+                    failure = operationFailure(operation, advanced.error());
+                    break;
+                }
             } else if (auto const* const wait = std::get_if<shared::ScenarioWaitOperation>(&operation.data)) {
                 for (uint64_t tick{ 0 }; tick < wait->ticks; ++tick) {
                     auto const advanced = advanceOneTick();
@@ -418,7 +672,76 @@ std::expected<RuntimeEvidence, std::string> runScenario(
                     deadline,
                     options.network_poll_interval
                 )) {
-                    failure = operationFailure(operation, "did not observe the expected authoritative position");
+                    std::optional<shared::ServerPlayerPositionMessage> const observed =
+                        clients[*index]->latestPosition(character);
+                    std::string reason = "did not observe expected authoritative position ("
+                        + std::to_string(expected_x) + ", " + std::to_string(expected_y) + ", "
+                        + std::to_string(expectation->z) + ")";
+                    if (observed.has_value()) {
+                        reason += "; last observed (" + std::to_string(observed->x) + ", "
+                            + std::to_string(observed->y) + ", " + std::to_string(observed->z)
+                            + "), ack=" + std::to_string(observed->acknowledged_input_sequence)
+                            + ", velocity=" + std::to_string(observed->vertical_velocity_subcells)
+                            + ", capabilities=" + std::to_string(observed->movement_capabilities.bits);
+                    } else {
+                        reason += "; no authoritative position was received";
+                    }
+                    failure = operationFailure(operation, std::move(reason));
+                    break;
+                }
+                ++expectations_passed;
+            } else if (auto const* const expectation = std::get_if<
+                           shared::ScenarioExpectMovementPermissionsOperation
+                       >(&operation.data)) {
+                auto const index = actorIndex(plan, expectation->actor);
+                if (!index.has_value()) {
+                    failure = operationFailure(operation, "references an unknown actor");
+                    break;
+                }
+                char const character = plan.actors()[*index].character;
+                uint8_t const expected_bits = static_cast<uint8_t>(
+                    (expectation->flight ? static_cast<uint8_t>(shared::MovementCapability::Flight) : 0U)
+                    | (expectation->collision_bypass
+                        ? static_cast<uint8_t>(shared::MovementCapability::CollisionBypass) : 0U)
+                );
+                if (!clients[*index]->waitFor(
+                    [&client = clients[*index], character, expected_bits] {
+                        auto const position = client->latestPosition(character);
+                        return position.has_value() && position->movement_capabilities.bits == expected_bits;
+                    },
+                    deadline,
+                    options.network_poll_interval
+                )) {
+                    std::optional<shared::ServerPlayerPositionMessage> const observed =
+                        clients[*index]->latestPosition(character);
+                    std::string reason = "did not observe an authoritative movement permission state";
+                    if (observed.has_value()) {
+                        reason = "expected movement capability bits " + std::to_string(expected_bits)
+                            + " but observed " + std::to_string(observed->movement_capabilities.bits);
+                    }
+                    failure = operationFailure(operation, reason);
+                    break;
+                }
+                ++expectations_passed;
+            } else if (auto const* const expectation = std::get_if<
+                           shared::ScenarioExpectVerticalVelocityOperation
+                       >(&operation.data)) {
+                auto const index = actorIndex(plan, expectation->actor);
+                if (!index.has_value()) {
+                    failure = operationFailure(operation, "references an unknown actor");
+                    break;
+                }
+                char const character = plan.actors()[*index].character;
+                if (!clients[*index]->waitFor(
+                    [&client = clients[*index], character, expectation] {
+                        auto const position = client->latestPosition(character);
+                        return position.has_value()
+                            && position->vertical_velocity_subcells == expectation->velocity_subcells;
+                    },
+                    deadline,
+                    options.network_poll_interval
+                )) {
+                    failure = operationFailure(operation, "did not observe the expected authoritative vertical velocity");
                     break;
                 }
                 ++expectations_passed;
@@ -436,7 +759,9 @@ std::expected<RuntimeEvidence, std::string> runScenario(
     server.start();
     for (std::unique_ptr<ScenarioClient> const& client : clients) {
         if (client->isConnected() && !client->disconnect(remainingTimeout(deadline))) {
-            failure = "scenario client teardown was not graceful while the server was polling";
+            if (!failure.has_value()) {
+                failure = "scenario client teardown was not graceful while the server was polling";
+            }
         }
     }
     server.stop();

@@ -35,7 +35,7 @@ vec3 faceCorner(uint direction, uint corner) {
 
 void main() {
     const FaceInstance instance = face_instances.instances[gl_InstanceIndex];
-    const uint corner = kTriangleCorners[gl_VertexIndex];
+    const uint corner = pc.world_origin.w != 0 ? uint(gl_VertexIndex) : kTriangleCorners[gl_VertexIndex];
     const uint direction = uint(instance.origin_direction.w);
     vec3 local = faceCorner(direction, corner);
     if (direction <= 1u) {

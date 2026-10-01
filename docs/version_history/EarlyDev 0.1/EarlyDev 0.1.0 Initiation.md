@@ -77,3 +77,25 @@ Additions:
 5. Continuous flight with toggle acceleration and 2x, 3x, 5x, 8x, 15x, 30x, 80x, 200x, and 500x profiles.
 6. A reusable colored text renderer with separate GUI and world-text stages; the HUD reports readable coordinates, rotation, frame timing, uptime, and acceleration state.
 7. Automated boundary, seam, scheduling, transport, sustained-flight, GPU capture, and 120 Hz renderer benchmark coverage.
+
+## EarlyDev 0.1.0:7(26.10.01)
+
+S7 adds server-authoritative permissions, movement, player presentation, and long-distance terrain rendering to the S6 world foundation.
+
+![Third-person flight beside the central spike, with the first ring and surrounding terrain visible](images/earlydev-0.1.0-7-central-spike.png)
+
+![Player in the trench beside the first spike](images/earlydev-0.1.0-7-trench-first-spike.png)
+
+![Player climbing a mountain](images/earlydev-0.1.0-7-mountain-climb.png)
+
+![First-person view at horizontal coordinates X/Z 0,0](images/earlydev-0.1.0-7-first-person-origin.png)
+
+These are distinct 2560x1440 macOS gameplay captures from the S7 integration candidate. The central-spike composition uses a 72-chunk server radius; the other three wait for the default 256-chunk terrain radius and mesh coverage before capture. Each image has an in-frame label below the HUD.
+
+Additions:
+1. General entity permissions with hard restrictions, overridable soft defaults, group resolution, and player mode presets.
+2. Authoritative movement, collision and flight permissions, a correctly proportioned 16-color player body, and first-, rear-third-, and front-third-person views.
+3. Client/server connection resilience and deterministic acceptance for latency, loss, jitter, freezes, reordering, and duplication.
+4. Camera-independent, position-driven terrain residency with projection-derived mesh detail and validated render distance up to 256 chunks.
+5. CoreLang 0.1.3.1 integration, reusable Runtime execution/audio foundations, and presentation diagnostics.
+6. Full-game performance and capture harnesses plus required automated sanitizer and static-analysis release checks.

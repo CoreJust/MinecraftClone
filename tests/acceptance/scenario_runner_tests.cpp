@@ -316,4 +316,39 @@ end
     EXPECT_NE(result.error().find("at most 4 actors"), std::string::npos);
 }
 
+TEST(ScenarioRunner, TraversesDistantGeneratedChunksWithinTheConfiguredResidencyBound)
+{
+    static constexpr std::string_view SOURCE = R"(@version("0.1.3")
+@use minecraft
+pub fn scenario() {
+    profile("sparse-world-v1")
+    seed(42u64)
+    sparseWorldOptions(1u32, 1u64)
+    expectBlockXYZ(0i64, 0i64, 0i64, 1u8)
+    expectResidentChunks(1u64)
+    expectBlockXYZ(32768i64, 32768i64, 10i64, 1u8)
+    expectResidentChunks(1u64)
+    expectBlockXYZ(60000i64, 60000i64, 0i64, 1u8)
+    expectResidentChunks(1u64)
+    expectBlockXYZ(65536i64, 65536i64, 10i64, 0u8)
+    expectResidentChunks(1u64)
+}
+)";
+    auto const parsed = shared::parseScenarioSource("distant-world-traversal.core", SOURCE, scenarioLimits());
+    ASSERT_TRUE(parsed.has_value()) << parsed.error().message;
+
+    auto const result = acceptance::runScenario(*parsed, {
+        .deadline = std::chrono::seconds{5},
+        .network_poll_interval = std::chrono::milliseconds{1},
+    });
+
+    ASSERT_TRUE(result.has_value()) << result.error();
+    EXPECT_TRUE(result->passed);
+    EXPECT_EQ(result->profile, "sparse-world-v1");
+    EXPECT_EQ(result->clients_requested, 0U);
+    EXPECT_EQ(result->ticks, 0U);
+    EXPECT_EQ(result->expectations_passed, 8U);
+    EXPECT_EQ(result->replay_id, shared::scenarioReplayId(*parsed));
+}
+
 } // namespace

@@ -12,14 +12,68 @@
 namespace shared {
 
 constexpr uint8_t PROTOCOL_MAGIC = 0x4DU;
-constexpr uint8_t PROTOCOL_VERSION = 7U;
+constexpr uint8_t PROTOCOL_VERSION = 12U;
 constexpr uint8_t GAME_CHANNEL = 0U;
 constexpr uint8_t HEIGHT_TILE_CHANNEL = 1U;
 constexpr uint32_t HEIGHT_TILE_SIDE_LENGTH = 16U;
 constexpr uint32_t HEIGHT_TILE_SAMPLE_COUNT = HEIGHT_TILE_SIDE_LENGTH * HEIGHT_TILE_SIDE_LENGTH;
 constexpr uint32_t HEIGHT_TILE_PAYLOAD_BYTES = HEIGHT_TILE_SAMPLE_COUNT * sizeof(uint16_t);
-constexpr uint32_t HEIGHT_TILE_INTEREST_WIDTH = 90U;
-constexpr uint32_t HEIGHT_TILE_INTEREST_COUNT = HEIGHT_TILE_INTEREST_WIDTH * HEIGHT_TILE_INTEREST_WIDTH;
+constexpr uint32_t HEIGHT_TILE_INTEREST_RADIUS = 256U;
+constexpr uint32_t MIN_HEIGHT_TILE_INTEREST_RADIUS = 1U;
+constexpr uint32_t MAX_HEIGHT_TILE_INTEREST_RADIUS = 256U;
+constexpr uint32_t HEIGHT_TILE_INTEREST_WIDTH = HEIGHT_TILE_INTEREST_RADIUS * 2U + 1U;
+
+[[nodiscard]]
+constexpr uint32_t heightTileInterestCount(uint32_t const radius) noexcept
+{
+    uint32_t const signed_radius = radius;
+    uint32_t count = 0U;
+    for (int32_t y = -static_cast<int32_t>(signed_radius);
+         y <= static_cast<int32_t>(signed_radius);
+         ++y) {
+        uint32_t const y_squared = static_cast<uint32_t>(y * y);
+        uint32_t low = 0U;
+        uint32_t high = signed_radius;
+        while (low < high) {
+            uint32_t const middle = low + (high - low + 1U) / 2U;
+            if (middle * middle <= radius * radius - y_squared) {
+                low = middle;
+            } else {
+                high = middle - 1U;
+            }
+        }
+        count += low * 2U + 1U;
+    }
+    return count;
+}
+
+constexpr uint32_t HEIGHT_TILE_INTEREST_COUNT = heightTileInterestCount(HEIGHT_TILE_INTEREST_RADIUS);
+
+[[nodiscard]]
+constexpr bool isValidHeightTileInterestRadius(uint32_t const radius) noexcept
+{
+    return radius >= MIN_HEIGHT_TILE_INTEREST_RADIUS && radius <= MAX_HEIGHT_TILE_INTEREST_RADIUS;
+}
+
+[[nodiscard]]
+constexpr std::optional<uint32_t> heightTileInterestRadiusForCount(uint32_t const count) noexcept
+{
+    uint32_t low = MIN_HEIGHT_TILE_INTEREST_RADIUS;
+    uint32_t high = MAX_HEIGHT_TILE_INTEREST_RADIUS;
+    while (low <= high) {
+        uint32_t const radius = low + (high - low) / 2U;
+        uint32_t const disk_count = heightTileInterestCount(radius);
+        if (disk_count == count) {
+            return radius;
+        }
+        if (disk_count < count) {
+            low = radius + 1U;
+        } else {
+            high = radius - 1U;
+        }
+    }
+    return std::nullopt;
+}
 constexpr uint8_t HEIGHT_TILE_BATCH_CAPACITY = 16U;
 constexpr uint8_t HEIGHT_TILE_DELIVERY_WINDOW = 8U;
 constexpr uint8_t HEIGHT_TILE_DELIVERY_BATCH_CAPACITY = HEIGHT_TILE_BATCH_CAPACITY;
@@ -58,12 +112,15 @@ struct ClientHeightTileCreditMessage final {
 
 struct ServerPlayerPositionMessage final {
     char ch;
+    PlayerPaletteIndex palette_index = 0U;
+    MovementCapabilities movement_capabilities{};
     int32_t x;
     int32_t y;
     int32_t z = 0;
     uint16_t x_subcell;
     uint16_t y_subcell;
     uint16_t z_subcell = 0;
+    int32_t vertical_velocity_subcells = 0;
     uint32_t acknowledged_input_sequence = 0;
     uint32_t state_revision = 0;
 };

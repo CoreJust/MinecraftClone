@@ -1,12 +1,14 @@
 target_sources(mc
     PRIVATE
         net/Message.cpp
+        policy/CoreLangPolicy.cpp
         scenario/CoreLangScenario.cpp
         scenario/Scenario.cpp
         world/CanonicalWorld.cpp
         world/ScriptedWorld.cpp
         world/Chunk.cpp
         world/ChunkMesher.cpp
+        world/ChunkMeshLod.cpp
         world/HeightTileSurfaceMesher.cpp
         world/HeightTileInterest.cpp
         world/WorldGeneration.cpp

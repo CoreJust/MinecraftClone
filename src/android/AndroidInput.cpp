@@ -28,6 +28,9 @@ void AndroidInput::clear() noexcept
     m_reload_requested = false;
     m_debug_hud_toggle.reset();
     m_debug_hud_toggle_requested = false;
+    m_camera_perspective_toggle.reset();
+    m_camera_perspective_cycle_requested = false;
+    m_ascending_touch_input.clear();
     cancelFlightTouches();
 }
 
@@ -55,6 +58,11 @@ int8_t AndroidInput::flightDirection() const noexcept
     );
 }
 
+bool AndroidInput::consumeFlightAscendRequest() noexcept
+{
+    return m_ascending_touch_input.consumePress();
+}
+
 bool AndroidInput::consumeStopRequest() noexcept
 {
     bool const requested = m_stop_requested;
@@ -73,6 +81,13 @@ bool AndroidInput::consumeDebugHudToggleRequest() noexcept
 {
     bool const requested = m_debug_hud_toggle_requested;
     m_debug_hud_toggle_requested = false;
+    return requested;
+}
+
+bool AndroidInput::consumeCameraPerspectiveCycleRequest() noexcept
+{
+    bool const requested = m_camera_perspective_cycle_requested;
+    m_camera_perspective_cycle_requested = false;
     return requested;
 }
 
@@ -114,6 +129,11 @@ int32_t AndroidInput::handleKey(AInputEvent const* const event) noexcept
     case AKEYCODE_F1:
         if (m_debug_hud_toggle.update(pressed)) {
             m_debug_hud_toggle_requested = true;
+        }
+        return 1;
+    case AKEYCODE_F5:
+        if (m_camera_perspective_toggle.update(pressed)) {
+            m_camera_perspective_cycle_requested = true;
         }
         return 1;
     case AKEYCODE_BACK:
@@ -218,6 +238,9 @@ bool AndroidInput::beginFlightTouch(
         return false;
     }
     active_pointer_id = pointer_id;
+    if (*direction > 0) {
+        m_ascending_touch_input.setPressed(true);
+    }
     return true;
 }
 
@@ -234,6 +257,7 @@ bool AndroidInput::endFlightTouch(int32_t const pointer_id) noexcept
     }
     if (pointer_id == m_ascending_touch_pointer_id) {
         m_ascending_touch_pointer_id = -1;
+        m_ascending_touch_input.setPressed(false);
         return true;
     }
     if (pointer_id == m_descending_touch_pointer_id) {
@@ -247,6 +271,7 @@ void AndroidInput::cancelFlightTouches() noexcept
 {
     m_ascending_touch_pointer_id = -1;
     m_descending_touch_pointer_id = -1;
+    m_ascending_touch_input.cancel();
 }
 
 } // namespace game_android

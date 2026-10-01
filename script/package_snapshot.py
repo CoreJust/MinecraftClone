@@ -394,7 +394,7 @@ if [ "$server_ready" -ne 1 ]; then
     exit 1
 fi
 echo "Starting MinecraftClone..."
-"$bundle_root/mc_main"
+"$bundle_root/mc_main" --player-client
 """
 
 

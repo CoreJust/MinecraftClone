@@ -1,0 +1,160 @@
+{
+  "schema_version": 1,
+  "task_id": "MC-AI-0249",
+  "rows": [
+    {
+      "id": "macos_asan",
+      "label": "macOS AddressSanitizer with native at-exit leak inspection",
+      "platform": "macos",
+      "capability": "clang-address-sanitizer",
+      "flags": ["-DCMAKE_BUILD_TYPE=Release", "-DMC_ENABLE_HIGH_ASSERT=OFF", "-DMC_ENABLE_SANITIZERS=ON", "-DMC_SANITIZER=address", "leaks -atExit"],
+      "compile_commands": "build/analysis-macos-asan/compile_commands.json",
+      "required_compile_flags": ["-fsanitize=address"],
+      "environment": {"ASAN_OPTIONS": "detect_leaks=1"},
+      "tool_probes": [["clang", "--version"], ["clang++", "--version"], ["cmake", "--version"], ["leaks", "-h"]],
+      "commands": [["cmake", "--preset", "analysis-macos-asan"], ["cmake", "--build", "--preset", "analysis-macos-asan"], ["ctest", "--test-dir", "build/analysis-macos-asan", "--output-on-failure", "--no-tests=error"], ["leaks", "--atExit", "--", "build/analysis-macos-asan/tests/mc_tests", "--gtest_filter=CoreLangPolicyTest.*:FlightWorldTest.*:PlayerPresentationTest.*"]],
+      "timeout_seconds": 900
+    },
+    {
+      "id": "macos_ubsan",
+      "label": "macOS UndefinedBehaviorSanitizer",
+      "platform": "macos",
+      "capability": "clang-undefined-behavior-sanitizer",
+      "flags": ["-DCMAKE_BUILD_TYPE=Release", "-DMC_ENABLE_HIGH_ASSERT=OFF", "-DMC_ENABLE_SANITIZERS=ON", "-DMC_SANITIZER=undefined"],
+      "compile_commands": "build/analysis-macos-ubsan/compile_commands.json",
+      "required_compile_flags": ["-fsanitize=undefined"],
+      "environment": {"UBSAN_OPTIONS": "halt_on_error=1:print_stacktrace=1"},
+      "tool_probes": [["clang", "--version"], ["cmake", "--version"]],
+      "commands": [["cmake", "--preset", "analysis-macos-ubsan"], ["cmake", "--build", "--preset", "analysis-macos-ubsan"], ["ctest", "--test-dir", "build/analysis-macos-ubsan", "--output-on-failure", "--no-tests=error"]],
+      "timeout_seconds": 900
+    },
+    {
+      "id": "macos_tsan",
+      "label": "macOS ThreadSanitizer",
+      "platform": "macos",
+      "capability": "clang-thread-sanitizer",
+      "flags": ["-DCMAKE_BUILD_TYPE=Release", "-DMC_ENABLE_HIGH_ASSERT=OFF", "-DMC_ENABLE_SANITIZERS=ON", "-DMC_SANITIZER=thread"],
+      "compile_commands": "build/analysis-macos-tsan/compile_commands.json",
+      "required_compile_flags": ["-fsanitize=thread"],
+      "tool_probes": [["clang", "--version"], ["cmake", "--version"]],
+      "commands": [["cmake", "--preset", "analysis-macos-tsan"], ["cmake", "--build", "--preset", "analysis-macos-tsan"], ["ctest", "--test-dir", "build/analysis-macos-tsan", "--output-on-failure", "--no-tests=error"]],
+      "timeout_seconds": 900
+    },
+    {
+      "id": "windows_msvc_asan",
+      "label": "Windows MSVC AddressSanitizer",
+      "platform": "windows",
+      "capability": "msvc-address-sanitizer",
+      "flags": ["-DCMAKE_BUILD_TYPE=Release", "-DMC_ENABLE_HIGH_ASSERT=OFF", "-DMC_ENABLE_SANITIZERS=ON", "-DMC_SANITIZER=address", "/fsanitize=address"],
+      "compile_commands": "build/analysis-windows-asan/compile_commands.json",
+      "required_compile_flags": ["/fsanitize=address"],
+      "tool_probes": [["cl.exe", "/Bv"], ["cmake", "--version"]],
+      "commands": [["cmake", "--preset", "analysis-windows-asan"], ["cmake", "--build", "--preset", "analysis-windows-asan"], ["ctest", "--test-dir", "build/analysis-windows-asan", "--output-on-failure", "--no-tests=error"]],
+      "timeout_seconds": 1200
+    },
+    {
+      "id": "windows_msvc_analyze",
+      "label": "Windows MSVC /analyze",
+      "platform": "windows",
+      "capability": "msvc-analyze",
+      "flags": ["/analyze", "/W4", "/WX"],
+      "tool_probes": [["cl.exe", "/Bv"], ["cmake", "--version"]],
+      "commands": [["cmake", "--preset", "analysis-windows-analyze"], ["cmake", "--build", "--preset", "analysis-windows-analyze"], ["ctest", "--test-dir", "build/analysis-windows-analyze", "--output-on-failure", "--no-tests=error"]],
+      "timeout_seconds": 1200
+    },
+    {
+      "id": "android_arm64_hwasan",
+      "label": "Android arm64 HWASan runtime",
+      "platform": "android-arm64",
+      "capability": "android-arm64-hwasan-runtime",
+      "flags": ["-DCMAKE_BUILD_TYPE=Release", "-DMC_ENABLE_HIGH_ASSERT=OFF", "-DMC_ENABLE_SANITIZERS=ON", "-DMC_SANITIZER=hwaddress", "ANDROID_ABI=arm64-v8a"],
+      "tool_probes": [["adb", "version"]],
+      "commands": [["python3", "script/ci/verify_android_hwasan.py", "--apk", "build/hwasan/app-release.apk", "--serial", "emulator-5554"]],
+      "timeout_seconds": 1800
+    },
+    {
+      "id": "android_clang_tidy",
+      "label": "Android arm64 NDK clang-tidy",
+      "platform": "android-arm64",
+      "capability": "android-arm64-clang-tidy",
+      "flags": ["--checks=clang-analyzer-*", "--warnings-as-errors=clang-analyzer-*", "aarch64 Android compile target"],
+      "tool_probes": [["clang-tidy", "--version"]],
+      "commands": [["python3", "script/ci/android_clang_tidy.py", "--compile-commands-dir", "android/app/.cxx/Release", "--repository-root", ".", "--clang-tidy", "clang-tidy", "--checks=clang-analyzer-*", "--warnings-as-errors=clang-analyzer-*"]],
+      "timeout_seconds": 1800
+    },
+    {
+      "id": "linux_lsan",
+      "label": "Linux standalone LeakSanitizer",
+      "platform": "linux",
+      "capability": "clang-leak-sanitizer",
+      "flags": ["-DCMAKE_BUILD_TYPE=Release", "-DMC_ENABLE_HIGH_ASSERT=OFF", "-DMC_ANALYSIS_HOST=ON", "-DMC_BUILD_CLIENT=OFF", "-DMC_ENABLE_SANITIZERS=ON", "-DMC_SANITIZER=leak", "-fsanitize=leak"],
+      "compile_commands": "build/analysis-linux-lsan/compile_commands.json",
+      "required_compile_flags": ["-fsanitize=leak"],
+      "environment": {"LSAN_OPTIONS": "exitcode=23:print_suppressions=0"},
+      "tool_probes": [["clang++", "--version"], ["cmake", "--version"], ["ninja", "--version"]],
+      "commands": [
+        ["cmake", "--preset", "analysis-linux-lsan", "-DCMAKE_TOOLCHAIN_FILE={env:VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake", "-DVCPKG_INSTALLED_DIR={env:VCPKG_INSTALLED_DIR}", "-DCMAKE_PREFIX_PATH={env:MC_PRIVATE_DEPENDENCIES_PREFIX}", "-DCoreCpp_DIR={env:MC_PRIVATE_DEPENDENCIES_PREFIX}/lib/cmake/CoreCpp", "-DCoreProject2026_DIR={env:MC_PRIVATE_DEPENDENCIES_PREFIX}/lib/cmake/CoreProject2026"],
+        ["cmake", "--build", "--preset", "analysis-linux-lsan", "--verbose"],
+        ["ctest", "--test-dir", "build/analysis-linux-lsan", "--output-on-failure", "--no-tests=error", "--timeout", "60"]
+      ],
+      "timeout_seconds": 3600
+    },
+    {
+      "id": "linux_msan",
+      "label": "Linux MemorySanitizer with instrumented dependencies and libc++",
+      "platform": "linux",
+      "capability": "clang-memory-sanitizer",
+      "flags": ["-DCMAKE_BUILD_TYPE=Release", "-DMC_ENABLE_HIGH_ASSERT=OFF", "-DMC_ANALYSIS_HOST=ON", "-DMC_BUILD_CLIENT=OFF", "-DMC_ENABLE_SANITIZERS=ON", "-DMC_SANITIZER=memory", "-fsanitize=memory", "-fsanitize-memory-track-origins=2", "-stdlib=libc++", "LLVM_USE_SANITIZER=MemoryWithOrigins"],
+      "compile_commands": "build/analysis-linux-msan/compile_commands.json",
+      "required_compile_flags": ["-fsanitize=memory", "-fsanitize-memory-track-origins=2", "-stdlib=libc++"],
+      "environment": {"MSAN_OPTIONS": "halt_on_error=1:print_stats=1"},
+      "tool_probes": [["clang", "--version"], ["clang++", "--version"], ["cmake", "--version"], ["ninja", "--version"], ["git", "-C", "{env:MC_LLVM_PROJECT_ROOT}", "rev-parse", "HEAD"]],
+      "commands": [
+        ["cmake", "--preset", "analysis-linux-msan", "-DCMAKE_TOOLCHAIN_FILE={env:VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake", "-DVCPKG_INSTALLED_DIR={env:VCPKG_INSTALLED_DIR}", "-DCMAKE_PREFIX_PATH={env:MC_PRIVATE_DEPENDENCIES_PREFIX}", "-DCoreCpp_DIR={env:MC_PRIVATE_DEPENDENCIES_PREFIX}/lib/cmake/CoreCpp", "-DCoreProject2026_DIR={env:MC_PRIVATE_DEPENDENCIES_PREFIX}/lib/cmake/CoreProject2026"],
+        ["cmake", "--build", "--preset", "analysis-linux-msan", "--verbose"],
+        ["ctest", "--test-dir", "build/analysis-linux-msan", "--output-on-failure", "--no-tests=error", "--timeout", "60"]
+      ],
+      "timeout_seconds": 3600
+    },
+    {
+      "id": "clang_static_analysis",
+      "label": "Clang static analyzer",
+      "platform": "hosted",
+      "capability": "clang-analyzer",
+      "flags": ["scan-build interposition", "-Xanalyzer", "-analyzer-output=text"],
+      "tool_probes": [["clang", "--version"], ["scan-build", "--version"]],
+      "commands": [["cmake", "--preset", "analysis-clang-static"], ["cmake", "--build", "--preset", "analysis-clang-static"]],
+      "timeout_seconds": 900
+    },
+    {
+      "id": "clang_tidy",
+      "label": "clang-tidy",
+      "platform": "hosted",
+      "capability": "clang-tidy",
+      "flags": ["--checks=bugprone-*,performance-*", "--warnings-as-errors=*"],
+      "tool_probes": [["clang-tidy", "--version"]],
+      "commands": [["cmake", "--preset", "analysis-clang-tidy"], ["cmake", "--build", "--preset", "analysis-clang-tidy"]],
+      "timeout_seconds": 900
+    },
+    {
+      "id": "iwyu",
+      "label": "Include What You Use",
+      "platform": "hosted",
+      "capability": "include-what-you-use",
+      "flags": ["CMAKE_CXX_INCLUDE_WHAT_YOU_USE=include-what-you-use", "-Xiwyu", "--error"],
+      "tool_probes": [["include-what-you-use", "--version"]],
+      "commands": [["cmake", "--preset", "analysis-iwyu"], ["cmake", "--build", "--preset", "analysis-iwyu"]],
+      "timeout_seconds": 900
+    },
+    {
+      "id": "cppcheck",
+      "label": "cppcheck",
+      "platform": "hosted",
+      "capability": "cppcheck",
+      "flags": ["--enable=all", "--error-exitcode=1", "--inline-suppr"],
+      "tool_probes": [["cppcheck", "--version"]],
+      "commands": [["cmake", "--preset", "analysis-cppcheck"], ["cmake", "--build", "--preset", "analysis-cppcheck"]],
+      "timeout_seconds": 900
+    }
+  ]
+}

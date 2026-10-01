@@ -45,17 +45,21 @@ TEST(DepthFormatTest, EveryPresentationPipelineDeclaresTheCommonDepthAttachment)
 
     EXPECT_EQ(descriptors.grid.layout, GRID_LAYOUT);
     EXPECT_EQ(descriptors.player.layout, PLAYER_LAYOUT);
+    EXPECT_EQ(descriptors.player_overlay.layout, PLAYER_LAYOUT);
     EXPECT_EQ(descriptors.debug_hud.layout, DEBUG_HUD_LAYOUT);
     EXPECT_EQ(descriptors.grid.color_format, COLOR_FORMAT);
     EXPECT_EQ(descriptors.player.color_format, COLOR_FORMAT);
     EXPECT_EQ(descriptors.debug_hud.color_format, COLOR_FORMAT);
     EXPECT_EQ(descriptors.grid.depth_format, DEPTH_FORMAT);
     EXPECT_EQ(descriptors.player.depth_format, DEPTH_FORMAT);
+    EXPECT_EQ(descriptors.player_overlay.depth_format, DEPTH_FORMAT);
     EXPECT_EQ(descriptors.debug_hud.depth_format, DEPTH_FORMAT);
     EXPECT_TRUE(descriptors.grid.depth_test_enabled);
     EXPECT_TRUE(descriptors.grid.depth_write_enabled);
     EXPECT_TRUE(descriptors.player.depth_test_enabled);
     EXPECT_TRUE(descriptors.player.depth_write_enabled);
+    EXPECT_FALSE(descriptors.player_overlay.depth_test_enabled);
+    EXPECT_FALSE(descriptors.player_overlay.depth_write_enabled);
     EXPECT_FALSE(descriptors.debug_hud.depth_test_enabled);
     EXPECT_FALSE(descriptors.debug_hud.depth_write_enabled);
 }

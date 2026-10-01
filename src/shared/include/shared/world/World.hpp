@@ -1,5 +1,7 @@
 #pragma once
 
+#include <shared/world/Chunk.hpp>
+
 #include <array>
 #include <chrono>
 #include <cstdint>
@@ -9,16 +11,66 @@
 
 namespace shared {
 
+class SparseWorld;
+
 constexpr std::chrono::milliseconds TICK { 100 };
 constexpr uint16_t SUBCELLS_PER_CELL = 10'000;
 constexpr uint16_t MOVEMENT_SUBCELLS_PER_TICK = 5'600;
 
 using PlayerId = uint32_t;
+using PlayerPaletteIndex = uint8_t;
+
+constexpr PlayerPaletteIndex PLAYER_PALETTE_COUNT = 16U;
+
+[[nodiscard]]
+constexpr bool isValidPlayerPaletteIndex(PlayerPaletteIndex const index) noexcept
+{
+    return index < PLAYER_PALETTE_COUNT;
+}
+
+// This is intentionally a stable pseudo-random assignment: the server owns
+// the result and repeats it when the same character identity reconnects.
+[[nodiscard]]
+constexpr PlayerPaletteIndex defaultPlayerPaletteIndex(char const character) noexcept
+{
+    uint32_t value = static_cast<uint8_t>(character);
+    value ^= value << 13U;
+    value ^= value >> 17U;
+    value ^= value << 5U;
+    return static_cast<PlayerPaletteIndex>(value & (PLAYER_PALETTE_COUNT - 1U));
+}
 
 enum class WorldMode : uint8_t {
     Flat,
     Flight,
 };
+
+enum class MovementCapability : uint8_t {
+    Flight = 1U,
+    CollisionBypass = 2U,
+};
+
+struct MovementCapabilities final {
+    uint8_t bits = 0U;
+
+    [[nodiscard]]
+    constexpr bool allows(MovementCapability const capability) const noexcept
+    {
+        return (bits & static_cast<uint8_t>(capability)) != 0U;
+    }
+
+    constexpr bool operator==(MovementCapabilities const&) const noexcept = default;
+};
+
+[[nodiscard]]
+constexpr bool isValidMovementCapabilities(MovementCapabilities const capabilities) noexcept
+{
+    constexpr uint8_t VALID_BITS = static_cast<uint8_t>(MovementCapability::Flight)
+        | static_cast<uint8_t>(MovementCapability::CollisionBypass);
+    return (capabilities.bits & ~VALID_BITS) == 0U
+        && (!capabilities.allows(MovementCapability::CollisionBypass)
+            || capabilities.allows(MovementCapability::Flight));
+}
 
 struct WorldConfiguration final {
     static constexpr uint32_t ALGORITHM_VERSION = 1;
@@ -63,6 +115,9 @@ struct Player final {
     uint16_t y_subcell = 0;
     uint16_t z_subcell = 0;
     char ch;
+    PlayerPaletteIndex palette_index = 0U;
+    MovementCapabilities movement_capabilities{};
+    int32_t vertical_velocity_subcells = 0;
 };
 
 struct Direction final {
@@ -71,6 +126,7 @@ struct Direction final {
     uint8_t z = 0;
     bool accelerated = false;
     uint16_t speedup = 5U;
+    bool cycle_movement_capabilities = false;
     int8_t view_x = 0;
     int8_t view_y = 127;
 };
@@ -111,6 +167,10 @@ public:
     static constexpr uint8_t WIDTH = 32;
     static constexpr uint8_t HEIGHT = 32;
     static constexpr uint8_t PLAYER_FOOTPRINT_CELLS = 2;
+    static constexpr uint32_t PLAYER_WIDTH_SUBCELLS = 6'250U;
+    static constexpr uint32_t PLAYER_HEIGHT_SUBCELLS = 18'125U;
+    static constexpr int32_t PLAYER_JUMP_IMPULSE_SUBCELLS = 7'000;
+    static constexpr int32_t PLAYER_GRAVITY_SUBCELLS_PER_TICK = 1'750;
     static constexpr uint8_t MAX_PLAYER_ORIGIN_CELL = WIDTH - PLAYER_FOOTPRINT_CELLS;
     static constexpr uint32_t MAX_PLAYER_ORIGIN_SUBCELL = static_cast<uint32_t>(MAX_PLAYER_ORIGIN_CELL)
         * SUBCELLS_PER_CELL;
@@ -133,14 +193,16 @@ public:
     constexpr WorldMode mode() const noexcept { return m_mode; }
     [[nodiscard]]
     constexpr WorldConfiguration const& configuration() const noexcept { return m_configuration; }
+    void setCollisionWorld(SparseWorld const* collision_world) noexcept { m_collision_world = collision_world; }
     [[nodiscard]]
     bool playerExists(char ch) const noexcept;
     void spawnPlayer(
         PlayerId id,
         char ch,
-        std::optional<std::pair<uint8_t, uint8_t>> const& at = std::nullopt
+        std::optional<std::pair<uint8_t, uint8_t>> const& at = std::nullopt,
+        PlayerPaletteIndex palette_index = 0U
     );
-    void spawnPlayer(PlayerId id, char ch, PlayerPosition at);
+    void spawnPlayer(PlayerId id, char ch, PlayerPosition at, PlayerPaletteIndex palette_index = 0U);
     void despawnPlayer(PlayerId id);
 
     [[nodiscard]]
@@ -149,6 +211,13 @@ public:
         Direction direction,
         std::chrono::milliseconds elapsed = TICK
     );
+
+    [[nodiscard]]
+    std::vector<ChunkCoordinate> flightCollisionChunks(
+        PlayerId id,
+        Direction direction,
+        std::chrono::milliseconds elapsed = TICK
+    ) const;
 
     [[nodiscard]]
     bool setPlayerPosition(
@@ -160,6 +229,13 @@ public:
     );
     [[nodiscard]]
     bool setPlayerPosition(PlayerId id, PlayerPosition position);
+    bool setPlayerPaletteIndex(PlayerId id, PlayerPaletteIndex palette_index) noexcept;
+    [[nodiscard]]
+    bool canSetPlayerMovementCapabilities(PlayerId id, MovementCapabilities capabilities) const noexcept;
+    [[nodiscard]]
+    bool setPlayerMovementCapabilities(PlayerId id, MovementCapabilities capabilities) noexcept;
+    [[nodiscard]]
+    bool setPlayerVerticalVelocity(PlayerId id, int32_t vertical_velocity_subcells) noexcept;
 
     [[nodiscard]]
     std::optional<Player> player(PlayerId id) const noexcept;
@@ -169,7 +245,14 @@ public:
     constexpr std::vector<Player> const& players() const noexcept { return m_players; }
 private:
     [[nodiscard]]
-    bool canPlayerBeAt(uint32_t x, uint32_t y, PlayerId id) const;
+    bool canPlayerBeAt(uint32_t x, uint32_t y, int64_t z, PlayerId id) const;
+    [[nodiscard]]
+    bool canFlightPlayerBeAt(
+        Player const& player,
+        int64_t x_subcells,
+        int64_t y_subcells,
+        int64_t z_subcells
+    ) const;
     [[nodiscard]]
     static PlayerPosition positionFromSubcells(int32_t x, int32_t y, int32_t z) noexcept;
     [[nodiscard]]
@@ -177,6 +260,7 @@ private:
 private:
     WorldMode m_mode;
     WorldConfiguration m_configuration;
+    SparseWorld const* m_collision_world = nullptr;
     std::vector<Player> m_players;
 };
 

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <shared/world/Chunk.hpp>
 #include <shared/world/World.hpp>
 
 #include <cstdint>
@@ -25,6 +26,7 @@ enum class ScenarioProfile : uint8_t {
     Flat2dV1,
     Flat3dV1,
     Flight3dV1,
+    SparseWorldV1,
 };
 
 [[nodiscard]]
@@ -37,6 +39,7 @@ struct ScenarioLimits final {
     uint64_t max_total_ticks;
     uint64_t max_operations;
     uint64_t max_evidence;
+    uint64_t max_sparse_world_resident_chunks = 128U;
 };
 
 struct ScenarioLocation final {
@@ -106,6 +109,11 @@ struct ScenarioInputOperation final {
     int8_t y;
     int8_t z = 0;
     uint64_t effective_boundary;
+    enum class Intent : uint8_t {
+        Direct,
+        Flight,
+        Phase,
+    } intent = Intent::Direct;
 };
 
 struct ScenarioCameraInputOperation final {
@@ -127,11 +135,54 @@ struct ScenarioExpectPositionOperation final {
     int32_t z;
 };
 
+struct ScenarioMovementPermissionsOperation final {
+    bool flight;
+    bool collision_bypass;
+};
+
+struct ScenarioJumpOperation final {
+    ScenarioActorId actor;
+};
+
+struct ScenarioExpectMovementPermissionsOperation final {
+    ScenarioActorId actor;
+    bool flight;
+    bool collision_bypass;
+};
+
+struct ScenarioExpectVerticalVelocityOperation final {
+    ScenarioActorId actor;
+    int32_t velocity_subcells;
+};
+
+struct ScenarioSparseWorldOptionsOperation final {
+    uint32_t generator_version;
+    uint64_t max_resident_chunks;
+};
+
+struct ScenarioExpectBlockOperation final {
+    int64_t x;
+    int64_t y;
+    int64_t z;
+    Block block;
+};
+
+struct ScenarioExpectResidentChunksOperation final {
+    uint64_t count;
+};
+
 using ScenarioOperationData = std::variant<
     ScenarioInputOperation,
     ScenarioCameraInputOperation,
     ScenarioWaitOperation,
-    ScenarioExpectPositionOperation>;
+    ScenarioExpectPositionOperation,
+    ScenarioMovementPermissionsOperation,
+    ScenarioJumpOperation,
+    ScenarioExpectMovementPermissionsOperation,
+    ScenarioExpectVerticalVelocityOperation,
+    ScenarioSparseWorldOptionsOperation,
+    ScenarioExpectBlockOperation,
+    ScenarioExpectResidentChunksOperation>;
 
 struct ScenarioOperation final {
     ScenarioLocation location;

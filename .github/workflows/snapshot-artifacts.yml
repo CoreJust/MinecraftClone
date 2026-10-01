@@ -19,6 +19,8 @@ on:
 
 permissions:
   contents: read
+  checks: read
+  actions: read
 
 jobs:
   source:
@@ -73,6 +75,14 @@ jobs:
             printf 'source_commit=%s\n' "$source_commit"
             printf 'trusted_dependency_source=true\n'
           } >> "$GITHUB_OUTPUT"
+      - name: Require a successful S7 analysis matrix for the exact source
+        if: steps.trust.outputs.trusted_dependency_source == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          python script/ci/verify_analysis_gate.py
+          --root "$GITHUB_WORKSPACE"
+          --commit "${{ steps.trust.outputs.source_commit }}"
       - name: Resolve immutable source identity
         id: identity
         env:
@@ -446,6 +456,8 @@ jobs:
         run: |
           cat > "$RUNNER_TEMP/corelang-android-compat.cmake" <<'EOF'
           add_compile_options(-Wno-error=reorder-init-list)
+          add_compile_options(-Wno-error=missing-field-initializers)
+          add_compile_options(-Wno-error=unused-parameter)
           EOF
           python script/ci/acquire.py install-private-dependencies \
             --root "$RUNNER_TEMP/private-dependencies" --platform android \

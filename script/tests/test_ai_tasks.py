@@ -123,6 +123,23 @@ class AiTasksTest(unittest.TestCase):
         with self.assertRaisesRegex(ai_tasks.BacklogError, "unfinished dependency MC-AI-0002"):
             ai_tasks.validate_backlog([complete, actionable, invalid])
 
+    def test_finalized_snapshot_with_post_release_hold_satisfies_dependency(self) -> None:
+        major = make_task("MC-AI-0001", level="major")
+        minor = make_task("MC-AI-0002", level="minor", parent=major["id"])
+        snapshot = make_task(
+            "MC-AI-0003", level="snapshot", parent=minor["id"],
+            status="active", owner="release owner", finalized=True,
+        )
+        dependent = make_task(
+            "MC-AI-0004", parent=snapshot["id"], status="ready", priority="P1",
+            depends_on=[snapshot["id"]],
+        )
+        self.assertEqual([dependent], ai_tasks.ready_tasks([major, minor, snapshot, dependent]))
+
+        snapshot["finalized"] = False
+        with self.assertRaisesRegex(ai_tasks.BacklogError, "unfinished dependency MC-AI-0003"):
+            ai_tasks.validate_backlog([major, minor, snapshot, dependent])
+
     def test_render_task_and_check_include_generated_task_documents(self) -> None:
         sha = "a" * 40
         parent = make_task("MC-AI-0001", level="major", plan=["Plan the work."], product_changes=["Product outcome."], code_changes=["Code outcome."], commits=[sha])

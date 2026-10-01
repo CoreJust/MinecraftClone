@@ -13,7 +13,7 @@ Keep facts at one owner. Source and tests define current behavior; [product road
 
 ## Freshness gate
 
-`ai_docs.py check` requires each source/test/build/tool file to have exactly one module owner, validates local documentation links and word limits, and compares the generated index and per-module source/guide hashes. New paths cannot silently disappear from the map. It does not parse C++ semantics or prove prose true.
+`ai_docs.py check` requires each source/test/build/tool file to have exactly one module owner, validates local documentation links and word limits, and compares the generated index and per-module source/guide hashes. Generated task records allow up to 1,200 words for large aggregate snapshots with many child tasks; other `docs/ai` prose stays within 900 words except the roadmap. New paths cannot silently disappear from the map. It does not parse C++ semantics or prove prose true.
 
 After a change, read the affected guide against the changed source. Update it only where facts changed; unchanged contracts need no filler sentence. Run `python3 script/ai_docs.py refresh` to acknowledge that comparison, then `check`. Never put `refresh` in CI or a hook: automatic acknowledgment would hide stale prose.
 

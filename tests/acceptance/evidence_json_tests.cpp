@@ -95,6 +95,114 @@ TEST(EvidenceJson, LabelsBenchmarkSamplesAsCpuPresentationRequestsAndPhases)
     EXPECT_EQ(json.find("\"frame_timings_ns\""), std::string::npos);
 }
 
+TEST(EvidenceJson, SeparatesFullGameRequestsFromPhysicalDisplayCadence)
+{
+    acceptance::RuntimeEvidence const evidence{
+        .mode = "benchmark-game",
+        .game_benchmark = acceptance::GameBenchmarkEvidence{
+            .workload = "speed-200-movement-v1",
+            .client_message_payload_bytes_sent = 128U,
+            .client_message_payload_bytes_received = 256U,
+            .excluded_present_requests = 1U,
+            .warm_present_requests_per_second = 87.5,
+            .uncapped_present_requests_per_second = 150.0,
+            .raw_frames = {
+                acceptance::GameBenchmarkFrameSample{
+                    .warm = true,
+                    .presentation_succeeded = true,
+                    .loop_duration_ns = 12'000U,
+                    .network_event_count = 2U,
+                    .latest_gpu_frame_duration_ns = 42U,
+                },
+                acceptance::GameBenchmarkFrameSample{
+                    .uncapped = true,
+                    .presentation_succeeded = false,
+                    .loop_duration_ns = 4'000U,
+                },
+                acceptance::GameBenchmarkFrameSample{
+                    .excluded = true,
+                    .presentation_succeeded = true,
+                    .loop_duration_ns = 5'000U,
+                },
+            },
+            .raw_server_tick_durations_ns = { 100U, 200U },
+        },
+    };
+
+    std::string const json = acceptance::evidenceJson(evidence);
+
+    EXPECT_NE(json.find("\"measurement_kind\": \"full-game-render-submit-present-request\""), std::string::npos);
+    EXPECT_NE(json.find("\"workload\": \"speed-200-movement-v1\""), std::string::npos);
+    EXPECT_NE(json.find("\"p99_8\": 0"), std::string::npos);
+    EXPECT_NE(json.find("\"displayed_cadence_hz\": null"), std::string::npos);
+    EXPECT_NE(json.find("\"gpu\": null"), std::string::npos);
+    EXPECT_NE(json.find("\"client_message_payload_bytes_sent\": 128"), std::string::npos);
+    EXPECT_NE(json.find("\"client_message_payload_bytes_received\": 256"), std::string::npos);
+    EXPECT_EQ(json.find("\"network_bytes_sent\""), std::string::npos);
+    EXPECT_NE(json.find("\"excluded_present_requests\": 1"), std::string::npos);
+    EXPECT_NE(json.find("\"latest_gpu_frame_duration_ns\": 42"), std::string::npos);
+    EXPECT_NE(json.find("\"warm_present_requests_per_second\": 87.500000"), std::string::npos);
+    EXPECT_NE(json.find("\"uncapped_present_requests_per_second\": 150.000000"), std::string::npos);
+    EXPECT_NE(json.find("\"phase\": \"warm\", \"presentation_succeeded\": true"), std::string::npos);
+    EXPECT_NE(json.find("\"phase\": \"uncapped\", \"presentation_succeeded\": false"), std::string::npos);
+    EXPECT_NE(json.find("\"phase\": \"excluded\", \"presentation_succeeded\": true"), std::string::npos);
+    EXPECT_NE(json.find("\"raw_server_tick_durations_ns\": [100, 200]"), std::string::npos);
+}
+
+TEST(EvidenceJson, SeparatesFailedRenderAttemptsFromLaggedTerrainGpuSamples)
+{
+    acceptance::RuntimeEvidence const evidence{
+        .mode = "benchmark-game",
+        .game_benchmark = acceptance::GameBenchmarkEvidence{
+            .raw_frames = {
+                acceptance::GameBenchmarkFrameSample{
+                    .presentation_succeeded = false,
+                    .visible_surface_face_count = 1'000U,
+                    .diagnostic_render_attempt_id = 42U,
+                    .diagnostic_frame_recorded = false,
+                    .diagnostic_indexed_stone_quads = true,
+                    .diagnostic_camera = { 1.0, 2.0, 3.0, 90.0, -17.0, 0.0, 70.0 },
+                    .diagnostic_cpu_acquire_wait_duration_ns = 10'000'000U,
+                    .diagnostic_gpu_timestamps_enabled = true,
+                    .diagnostic_gpu_sample_attempt_id = 40U,
+                    .diagnostic_gpu_sample_slot = 1U,
+                    .diagnostic_gpu_sample_quad_count = 18U,
+                    .diagnostic_gpu_sample_draw_count = 3U,
+                    .diagnostic_gpu_terrain_duration_ns = 5'000'000U,
+                },
+            },
+        },
+    };
+    std::string const json = acceptance::evidenceJson(evidence);
+    EXPECT_NE(json.find("\"diagnostic_render_attempt_id\": 42"), std::string::npos);
+    EXPECT_NE(json.find("\"diagnostic_frame_recorded\": false"), std::string::npos);
+    EXPECT_NE(json.find("\"diagnostic_stone_indirect\": false"), std::string::npos);
+    EXPECT_NE(json.find("\"diagnostic_frame_slot\": null"), std::string::npos);
+    EXPECT_NE(json.find("\"diagnostic_submitted_stone_quad_count\": 0"), std::string::npos);
+    EXPECT_NE(json.find("\"diagnostic_stone_draw_count\": 0"), std::string::npos);
+    EXPECT_NE(json.find("\"diagnostic_camera\": [1, 2, 3, 90, -17, 0, 70]"), std::string::npos);
+    EXPECT_NE(json.find("\"diagnostic_cpu_acquire_wait_duration_ns\": 10000000"), std::string::npos);
+    EXPECT_NE(json.find("\"diagnostic_cpu_command_record_duration_ns\": 0"), std::string::npos);
+    EXPECT_NE(json.find("\"diagnostic_gpu_sample_attempt_id\": 40"), std::string::npos);
+    EXPECT_NE(json.find("\"diagnostic_gpu_sample_quad_count\": 18"), std::string::npos);
+    EXPECT_NE(json.find("\"diagnostic_gpu_terrain_duration_ns\": 5000000"), std::string::npos);
+    EXPECT_NE(json.find("\"latest_gpu_frame_duration_ns\": null"), std::string::npos);
+}
+
+TEST(EvidenceJson, ReportsUnsupportedTerrainTimestampScopeWithoutInventingGpuDuration)
+{
+    acceptance::RuntimeEvidence evidence;
+    evidence.game_benchmark.emplace();
+    evidence.game_benchmark->raw_frames.push_back({
+        .diagnostic_gpu_timestamp_reason = "unsupported: MoltenVK may defer in-render-pass timestamps",
+    });
+    std::string const json = acceptance::evidenceJson(evidence);
+    EXPECT_NE(json.find("\"diagnostic_gpu_timestamps_enabled\": false"), std::string::npos);
+    EXPECT_NE(json.find("\"diagnostic_gpu_timestamp_reason\": \"unsupported: MoltenVK"), std::string::npos);
+    EXPECT_NE(json.find("\"diagnostic_gpu_terrain_duration_ns\": null"), std::string::npos);
+    EXPECT_NE(json.find("\"latest_gpu_frame_duration_ns\": null"), std::string::npos);
+}
+
 TEST(EvidenceJson, ConvertsExpectedFailureToSerializableEvidence)
 {
     acceptance::RuntimeEvidence const evidence = acceptance::collectRuntimeEvidence(

@@ -15,9 +15,11 @@ target_link_libraries(mc
         fmt::fmt
         spdlog::spdlog
     PRIVATE
+        CoreCpp::RuntimeExecutors
         glm::glm
 )
 if(MC_BUILD_CLIENT)
+    target_link_libraries(mc PRIVATE CoreCpp::RuntimeAudioOutput)
     if(NOT ANDROID)
         target_link_libraries(mc
             PRIVATE
