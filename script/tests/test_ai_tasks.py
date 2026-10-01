@@ -123,6 +123,39 @@ class AiTasksTest(unittest.TestCase):
         with self.assertRaisesRegex(ai_tasks.BacklogError, "unfinished dependency MC-AI-0002"):
             ai_tasks.validate_backlog([complete, actionable, invalid])
 
+    def test_finalized_active_aggregate_satisfies_a_dependency(self) -> None:
+        major = make_task("MC-AI-0001", level="major")
+        minor = make_task("MC-AI-0002", level="minor", parent=major["id"])
+        snapshot = make_task(
+            "MC-AI-0003",
+            level="snapshot",
+            parent=minor["id"],
+            status="active",
+            owner="Codex",
+            finalized=True,
+        )
+        actionable = make_task("MC-AI-0004", status="ready", depends_on=[snapshot["id"]])
+
+        self.assertEqual(
+            [task["id"] for task in ai_tasks.ready_tasks([major, minor, snapshot, actionable])],
+            ["MC-AI-0004"],
+        )
+
+    def test_unfinalized_active_aggregate_does_not_satisfy_a_dependency(self) -> None:
+        major = make_task("MC-AI-0001", level="major")
+        minor = make_task("MC-AI-0002", level="minor", parent=major["id"])
+        snapshot = make_task(
+            "MC-AI-0003",
+            level="snapshot",
+            parent=minor["id"],
+            status="active",
+            owner="Codex",
+        )
+        actionable = make_task("MC-AI-0004", status="ready", depends_on=[snapshot["id"]])
+
+        with self.assertRaisesRegex(ai_tasks.BacklogError, "unfinished dependency MC-AI-0003"):
+            ai_tasks.validate_backlog([major, minor, snapshot, actionable])
+
     def test_render_task_and_check_include_generated_task_documents(self) -> None:
         sha = "a" * 40
         parent = make_task("MC-AI-0001", level="major", plan=["Plan the work."], product_changes=["Product outcome."], code_changes=["Code outcome."], commits=[sha])
@@ -147,6 +180,32 @@ class AiTasksTest(unittest.TestCase):
             (markdown_path.parent / "tasks" / "MC-AI-0001.md").write_text("stale\n", encoding="utf-8")
             with self.assertRaisesRegex(ai_tasks.BacklogError, "generated task Markdown is stale"):
                 ai_tasks.check(backlog_path, markdown_path)
+
+    def test_large_aggregate_links_child_inventory_from_canonical_backlog(self) -> None:
+        major = make_task("MC-AI-0001", level="major")
+        minor = make_task("MC-AI-0002", level="minor", parent=major["id"])
+        snapshot = make_task("MC-AI-0003", level="snapshot", parent=minor["id"])
+        children = [
+            make_task(
+                f"MC-AI-{task_number:04d}",
+                title=f"Feature child {task_number}",
+                status="active",
+                owner="Codex",
+                parent=snapshot["id"],
+            )
+            for task_number in range(4, 21)
+        ]
+        tasks = [major, minor, snapshot, *children]
+
+        rendered_task = ai_tasks.render_task(snapshot, tasks)
+        rendered_backlog = ai_tasks.render_backlog(tasks)
+
+        self.assertIn(
+            "- All 17 child tasks are listed in the [canonical backlog](../BACKLOG.md).",
+            rendered_task,
+        )
+        self.assertNotIn("Feature child 4", rendered_task)
+        self.assertIn("|MC-AI-0004|Feature child 4|basic|", rendered_backlog)
 
     def test_cli_add_and_update_append_lists_without_clearing(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

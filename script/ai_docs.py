@@ -276,6 +276,8 @@ def document_errors(root: Path, modules: list[dict[str, Any]], include_index: bo
             limit = 500
         elif relative == "docs/ai/ROADMAP.md":
             limit = 1400
+        elif relative.startswith("docs/ai/tasks/"):
+            limit = 1200
         elif relative.startswith("docs/ai/") and relative != "docs/ai/BACKLOG.md":
             limit = 900
         else:

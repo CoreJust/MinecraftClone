@@ -22,6 +22,10 @@ supplement these records without becoming separate task state.
 Public task IDs are sequential; files and trailers retain `MC-AI-####`. The
 [project skills](SKILLS.md) resolve them. Hierarchy: **basic → snapshot → minor → major**.
 Parentage groups work; dependencies order it. Future stages remain plans.
+An active aggregate dependency is satisfied only after it is finalized; this
+lets implementation continue while a completed snapshot waits on platform
+gates or feedback. Active unfinalized aggregates and unfinished basic tasks
+remain unresolved dependencies.
 
 ## Basic task loop
 

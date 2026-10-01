@@ -102,6 +102,24 @@ class AiDocsTest(unittest.TestCase):
             ai_docs.refresh(root)
             ai_docs.check(root)
 
+    def test_detailed_task_records_allow_release_evidence(self) -> None:
+        with self.make_repo() as temporary:
+            root = Path(temporary)
+            self.write(root, "docs/ai/tasks/MC-AI-0037.md", "release-evidence " * 1_100)
+
+            errors = ai_docs.document_errors(root, ai_docs.load_registry(root), include_index=False)
+
+            self.assertEqual([], errors)
+
+    def test_non_task_ai_documents_keep_the_standard_limit(self) -> None:
+        with self.make_repo() as temporary:
+            root = Path(temporary)
+            self.write(root, "docs/ai/NOTES.md", "release-evidence " * 901)
+
+            errors = ai_docs.document_errors(root, ai_docs.load_registry(root), include_index=False)
+
+            self.assertIn("docs/ai/NOTES.md: prose exceeds 900 words", errors)
+
     def test_coverage_rejects_overlap_and_uncovered_files(self) -> None:
         with self.make_repo() as temporary:
             root = Path(temporary)

@@ -1446,7 +1446,7 @@
     "id": "MC-AI-0037",
     "title": "EarlyDev 0.1.0:6 — Sparse world snapshot",
     "kind": "feature",
-    "status": "done",
+    "status": "active",
     "priority": "P1",
     "route": "terra",
     "milestone": "ED-010-S6",
@@ -1454,8 +1454,8 @@
       "MC-AI-0036"
     ],
     "acceptance": "Represent and traverse the sparse 65,536 by 65,536 by 1,024 air-and-stone world. CoreLang 0.1.2 supplies deterministic height maps; native code owns bounded generation, server-authoritative circular residency, directional priority, transport, detailed meshing, and incremental Vulkan rendering. Boundaries, seam presentation, cancellation, memory, performance, GUI text, and user-approved macOS gameplay pass. Publish reviewed source and macOS, Windows, and Android artifacts with hashes, provenance, licenses, signing status, downloaded macOS/Android acceptance, and separately reported Windows runtime status.",
-    "evidence": "Verified source promotion: origin/ai-main 0514890690c10d80b7475fd0b76204e800948db3 is Promote MC-AI-0037 to ai-main. The owner confirmed S6 is delivered. Existing task evidence records the completed S6 candidate work; this registry reconciliation does not invent additional artifact claims.",
-    "blocker": "",
+    "evidence": "Published canonical S6 source 5b2fe72a63e114ee408160d52cc456da2f94d097 through reviewed ai-main merge 0514890690c10d80b7475fd0b76204e800948db3 and immutable tag ai/EarlyDev/0.1.0/6_26.09.20. GitHub Snapshot artifacts run 35520945351 passed for macOS, Windows, and Android. The non-draft GitHub Release contains the six selected payload/checksum assets and passed script/ci/verify_release_assets.py against the three schema-1 evidence records; published hashes include macOS 1a402a52f540523753579ab8f8fc1979e8858da82b276f3e06b47be2e83e8fba, Windows e8e3deda6f91165257064ab11f3896bb4a7bb734d7ff27345f363bf32e4a74e2, and locally built development-signed Android 6397f606623425cb41888a55d96b5aa3b3e67050501468f773c7187f1dcc4708. Downloaded macOS artifact and released Android APK runtime acceptance were deliberately not run: the user forbade automatic game launches.",
+    "blocker": "User-authorized runtime acceptance remains required for the downloaded macOS artifact and released Android APK. Do not launch either automatically. Record Windows runtime status separately; do not infer it.",
     "owner": "s6-main",
     "level": "snapshot",
     "parent": "MC-AI-0033",
@@ -1463,7 +1463,7 @@
     "context": "Planned from the canonical EarlyDev 0.1.0 roadmap after Snapshot 5. This aggregate owns only the S6 scope and its committed basic children.",
     "complexity": "high",
     "created_at": "2026-09-09",
-    "resolved_at": "2026-09-20",
+    "resolved_at": "",
     "resolution_changes": "Delivered the sparse wrapped fading-wave world; bounded server generation and streaming; directional circular residency; detailed textured Vulkan terrain, fog, sky, GUI/world text and HUD; acceleration through 500x; stable movement and seams; boundary tests; and deterministic release tooling.",
     "plan": [
       "Use an explicit sparse/chunked world representation; reject any full-volume allocation design.",
@@ -1485,9 +1485,9 @@
     "commits": [],
     "finalized": true,
     "retrospective": "",
-    "docs_review": "",
-    "environment_review": "",
-    "backlog_review": ""
+    "docs_review": "Release notes and the public six-asset release were read back; the repository verifier accepted the tagged macOS, Windows, and Android bytes and sidecars.",
+    "environment_review": "The local Android development-signed APK was built from the exact tagged source with the pinned Android toolchain. No game or APK was launched, per the user instruction.",
+    "backlog_review": "Retain the active snapshot record until the explicitly held macOS and Android runtime acceptance is supplied; do not infer Windows runtime acceptance."
   },
   {
     "id": "MC-AI-0038",
@@ -1500,9 +1500,9 @@
     "depends_on": [
       "MC-AI-0037"
     ],
-    "acceptance": "Deliver server-authoritative entity permissions: fixed all/players/mobs/technical-entities/per-kind groups, explicit-member and selector groups, namespaced custom keys, non-upliftable hard restrictions, overridable soft defaults, and immutable generation-tagged hot-path snapshots. Defer world subjects. Cover movement, flight/collision, blocks, inventory, invincibility, commands, and mode presets. Use CoreLang 0.1.3.1 APIs (only documented 0.1.3.3 maintenance), test interpreter/JIT parity, and prepare kernels atomically outside physics ticks. Test latency, loss, jitter, freezes, reordering, and duplication. Add a replicated 29/16 × 10/16 × 10/16 player, deterministic 16-color palette, and first/rear-third/front-third views. Keep position-driven, camera-independent terrain residency at default radius 256 and projection-derived face LOD bounded to 2 px². Provide four visually inspected, labeled native Mac screenshots. Optimize toward stable 120 FPS at x200 and the world border; measurements are diagnostic, not proof. Pass platform and fail-closed MC-AI-0249 sanitizer/static-analysis gates; retain the documented CoreCpp extension as later work. Release S7, hold the minor active/unfinalized for feedback, and do not start S8.",
-    "evidence": "",
-    "blocker": "",
+    "acceptance": "Deliver immutable, generation-tagged hard/soft entity permissions for all/players/mobs/technical-entities/per-kind and explicit-member/selector groups; namespace custom keys and defer world subjects. Cover movement, flight/collision, blocks, inventory, invincibility, commands, and permission-backed mode presets. Use CoreLang 0.1.3.1 (only documented 0.1.3.3 maintenance), retain interpreter/JIT parity, and prepare kernels off physics ticks. Test latency, loss, jitter, freezes, reordering, and duplication. Replicate a 29/16 × 10/16 × 10/16 player, 16-color palette, and first/rear-third/front-third views. Keep position-driven radius-256 terrain camera-independent and face LOD at projected area ≤2 px². Supply four inspected, labeled Mac captures. Target stable 120 FPS at x200 and the world border as diagnostic only. Pass platform and automated MC-AI-0249 gates; keep the documented CoreCpp extension as later work. Release S7, hold the minor open for feedback, and do not start S8.",
+    "evidence": "All 53 S7 children are finalized; four labeled Mac captures were inspected. The macOS package launcher starts one loopback server, waits for readiness, starts one client, and cleans up; 27/27 package tests pass. The earlier playtest failure was caused by an orphan server-only mc_main from the s7-integration worktree; its exact PID was stopped after confirming no client was attached. The adverse-network fixture starts impairment clocks at join and uses separated one-second freezes; its focused scenario passed 10/10 in 130.80 s. Earlier candidate f59df131829f24e8f578edeb6989c3a5e7c787d3 passed 349 Python tests, the Debug build, 577 CTest entries (one intentional skip), and renderer smoke. The latest rerun passed Python, build, and CTest; its renderer-smoke attempt ran inside the restricted Codex command sandbox and does not establish host renderer behavior. The sandbox also cannot inspect the host process table or Launch Services, so the earlier host-cache diagnosis was unsupported. On 2026-10-01, the exact Release binary (SHA-256 469668d427424fc692d20b0b8e6b87ce16189c312f908c24ceffdfa2591e99e1) ran in host-GUI context: server PID 12946 and exactly one client PID 19957; the client logged successful connection to 127.0.0.1:20040. No Launch Services repair, Spotlight setting change, or reboot was needed. RendererSmokeTest still requires a host-GUI rerun. Emulator-5556 resumes at 60 FPS; Android streamed terrain remains sky-only. Windows runtime, exact-candidate hosted analysis, and publication remain pending; the FPS target is unclaimed.",
+    "blocker": "Pass the current exact-candidate renderer and platform gates, pass the MC-AI-0249 hosted matrix for the promotion revision, and publish the snapshot artifacts. Keep Windows runtime status separate; do not claim the FPS target passed.",
     "owner": "Codex",
     "level": "snapshot",
     "parent": "MC-AI-0033",
@@ -1511,20 +1511,27 @@
     "complexity": "high",
     "created_at": "2026-09-09",
     "resolved_at": "",
-    "resolution_changes": "",
+    "resolution_changes": "Implemented the S7 child scope; corrected the package launcher and stabilized production adverse-network freeze coverage. Keep S7 active until the current exact-candidate, platform, hosted-analysis, and publication gates close; then hold the minor for feedback and do not start S8.",
     "plan": [
-      "Implement bounded authoritative movement and general immutable permissions; keep policy compilation outside physics ticks.",
-      "Add the player body/views, adverse-network tests, position-driven terrain coverage, and projection-derived visual LOD.",
-      "Complete executor/audio/generation/performance diagnostics, required analysis and platform checks, screenshots and publication; make no unverified performance claim, then hold the minor for feedback."
+      "Complete authoritative movement, immutable permissions, and cross-client acceptance; keep policy compilation outside physics ticks.",
+      "Finish player/views, adverse networking, camera-independent terrain/LOD, diagnostics, platform and analysis gates, captures, and S7 publication; then hold the minor for feedback."
     ],
-    "product_changes": [],
-    "code_changes": [],
+    "product_changes": [
+      "General entity-wide hard/soft permissions, group inheritance, and permission-backed player modes, with world subjects deferred.",
+      "Authoritative movement and presentation, a modeled player with three views, camera-independent terrain coverage and projected-area LOD, and impaired-network resilience.",
+      "Runtime executor/audio/generation foundations, diagnostics, and automated sanitizer/static-analysis release checks."
+    ],
+    "code_changes": [
+      "CoreLang 0.1.3.1-compatible S7 with the permitted 0.1.3.3 maintenance package; native CoreCpp client/server/renderer integration and contract tests.",
+      "Automated analysis workflows, compact aggregate task pages, exact candidate/runtime records, four labeled Mac captures, and robust two-client adverse-network freeze coverage.",
+      "Correct the no-argument macOS package launcher to start one player client with its required mode and loopback server; cover generated output with a regression test."
+    ],
     "baseline_commit": "0514890690c10d80b7475fd0b76204e800948db3",
     "commits": [],
-    "finalized": false,
+    "finalized": true,
     "retrospective": "",
     "docs_review": "",
-    "environment_review": "",
+    "environment_review": "The restricted Codex shell cannot inspect host process state or use host Launch Services; do not treat its renderer startup errors as host failures. Use one host-GUI execution for runtime acceptance. One exact Release client connected to the existing S7 server; no Launch Services repair, Spotlight change, or reboot was needed.",
     "backlog_review": ""
   },
   {

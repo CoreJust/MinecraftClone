@@ -31,7 +31,7 @@
         "tests/acceptance/runtime_cli_tests.cmake",
         "tests/acceptance/scenario_runner_tests.cpp"
       ],
-      "sources_sha256": "3a60e32dd74f5c0e3653135e0998cde4596ebc0426fb2d0fc33c5f89edfe0a95"
+      "sources_sha256": "c55c80bc3dd717ad5083e152c1cf7fc1fb031296ff8a1d2c4ef453e2e80eac62"
     },
     {
       "guide": "docs/code/ANDROID.md",
@@ -55,7 +55,7 @@
     },
     {
       "guide": "docs/BUILD.md",
-      "guide_sha256": "e5d1a2efe44ee54235f8d42692104743ec66afa9a002ec4a0ae1ad0e226a41de",
+      "guide_sha256": "b0ad610c7a7da636256c3cbc900490a7206ab3fa7b658dc1354427cf9f149290",
       "id": "build",
       "sources": [
         ".agents/skills/backlog/SKILL.md",
@@ -155,7 +155,7 @@
         "vcpkg-configuration.json",
         "vcpkg.json"
       ],
-      "sources_sha256": "099eeef168ddc35168cb2d890e69a1051d4bf398da38544ffd11313a81402b7b"
+      "sources_sha256": "1c4fb09127943d9df86deb5a76fa1d0b316713e0e774a0953f1105ef41cae168"
     },
     {
       "guide": "docs/code/CORE.md",
@@ -278,7 +278,7 @@
         "tests/core/world_generation_scheduler_tests.cpp",
         "tests/core/world_generation_tests.cpp"
       ],
-      "sources_sha256": "c8f7642638ef48873a39d85bbf92faf0e20af5f30c2cb0ffae58922dc7a8c7bd"
+      "sources_sha256": "92a9256e7b39af35f89f518bb6a2f29ca704170a4bcf4c2d2fcb5aa8feb9be5a"
     },
     {
       "guide": "docs/code/RENDERING.md",
@@ -357,7 +357,7 @@
         "tests/testsupport/include/testsupport/AdverseTransport.hpp",
         "tests/testsupport/include/testsupport/ImageComparison.hpp"
       ],
-      "sources_sha256": "6d5d8113cc19ca2f7e3ad86ab7cf8ff185f69d130c54c4f26036eff9b5096555"
+      "sources_sha256": "1b1111482e4341e86f1031fd753514281134e014a3720d11bf6c794fa9f6df02"
     }
   ],
   "version": 1

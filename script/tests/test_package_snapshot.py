@@ -260,6 +260,11 @@ class PackageSnapshotTests(unittest.TestCase):
             self.assertIn("licenses/hud/DEBUG_HUD_ATTRIBUTION.md", archive.getnames())
         self.assertIn('bundle_root=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)', launcher)
         self.assertIn('VK_DRIVER_FILES="$bundle_root/vulkan/icd.d/MoltenVK_icd.json"', launcher)
+        self.assertIn(
+            '"$bundle_root/mc_main" --player-client --address 127.0.0.1:20040',
+            launcher,
+        )
+        self.assertNotIn('"$bundle_root/mc_main"\n', launcher)
         self.assertEqual(packaged_icd["ICD"]["library_path"], "../../lib/libMoltenVK.dylib")
         self.assertEqual(manifest["runtime"]["vulkan_loader"], "lib/libvulkan.1.dylib")
         self.assertEqual(manifest["runtime"]["moltenvk"], "lib/libMoltenVK.dylib")

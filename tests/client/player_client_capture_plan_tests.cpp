@@ -20,7 +20,8 @@
 TEST(PlayerClientCapturePlanTest, FramesTheCentralSpikeAndFirstRingTogether)
 {
     static constexpr int32_t WORLD_CENTER = 32'768;
-    static constexpr int32_t PLAYER_DISTANCE = 298;
+    static constexpr int32_t PLAYER_DISTANCE = 243;
+    static constexpr int32_t PLAYER_HEIGHT = 440;
     static constexpr int32_t FIRST_RING_RADIUS = 128;
     static constexpr uint32_t FRAME_WIDTH = 2560U;
     static constexpr uint32_t FRAME_HEIGHT = 1440U;
@@ -29,9 +30,9 @@ TEST(PlayerClientCapturePlanTest, FramesTheCentralSpikeAndFirstRingTogether)
     );
     EXPECT_EQ(plan.target.x, WORLD_CENTER - PLAYER_DISTANCE);
     EXPECT_EQ(plan.target.y, WORLD_CENTER);
-    EXPECT_EQ(plan.target.z, 480);
+    EXPECT_EQ(plan.target.z, PLAYER_HEIGHT);
     EXPECT_EQ(plan.look_angles.yaw_degrees, 110.0);
-    EXPECT_EQ(plan.look_angles.pitch_degrees, 8.0);
+    EXPECT_EQ(plan.look_angles.pitch_degrees, 18.0);
     EXPECT_EQ(plan.vertical_fov_degrees, 90.0);
     EXPECT_EQ(plan.rear_camera_distance, 12.0);
 

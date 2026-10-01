@@ -152,15 +152,16 @@ public:
     static constexpr std::chrono::milliseconds LOGICAL_TICK{ 10 };
     static constexpr uint32_t STALE_PROBE_TICK = 350U;
 
-    explicit AdverseNetworkRelay(uint16_t const game_server_port)
+    explicit AdverseNetworkRelay(uint16_t const game_server_port, uint32_t const initial_tick)
         : core::Server{ core::Address::localhost(0U), 4U, 2U }
         , m_game_server_port{ game_server_port }
+        , m_tick{ initial_tick }
     { }
 
     void run(std::atomic_bool const& stop_requested)
     {
         auto next_tick = std::chrono::steady_clock::now();
-        uint32_t tick = 0U;
+        uint32_t tick = m_tick;
         while (!stop_requested.load(std::memory_order_acquire)) {
             static_cast<void>(poll(std::chrono::milliseconds{ 1 }));
             for (auto& [client_id, link] : m_links) {
@@ -260,6 +261,7 @@ private:
         { }
 
         core::ClientId id;
+        uint32_t connection_start_tick = 0U;
         char character = 0;
         std::unique_ptr<UpstreamClient> upstream;
         std::unique_ptr<AdverseTransport> transport;
@@ -307,6 +309,7 @@ private:
             }
             if (auto const* const join = std::get_if<shared::JoinRequestMessage>(&*decoded)) {
                 link.character = join->ch;
+                link.connection_start_tick = m_tick;
                 link.transport = std::make_unique<AdverseTransport>(
                     seedForCharacter(join->ch),
                     CLIENT_TO_SERVER,
@@ -316,7 +319,7 @@ private:
                 if (auto const* const input = std::get_if<shared::ClientInputMessage>(&*decoded)) {
                     static_cast<void>(link.transport->send(
                         AdverseDirection::ClientToServer,
-                        m_tick,
+                        tickSinceJoin(link, m_tick),
                         event.data
                     ));
                     static_cast<void>(input);
@@ -364,7 +367,7 @@ private:
                     }
                     static_cast<void>(link.transport->send(
                         AdverseDirection::ServerToClient,
-                        m_tick,
+                        tickSinceJoin(link, m_tick),
                         event.data
                     ));
                     return;
@@ -395,10 +398,11 @@ private:
             if (!link.transport) {
                 continue;
             }
-            requestStaleProbe(link, tick);
+            uint32_t const link_tick = tickSinceJoin(link, tick);
+            requestStaleProbe(link, link_tick);
             for (AdversePacket const& packet : link.transport->receive(
                 AdverseDirection::ClientToServer,
-                tick
+                link_tick
             )) {
                 std::optional<shared::Message> const decoded = shared::decodeMessage(packet.bytes);
                 auto const* const input = decoded.has_value()
@@ -425,7 +429,7 @@ private:
             }
             for (AdversePacket const& packet : link.transport->receive(
                 AdverseDirection::ServerToClient,
-                tick
+                link_tick
             )) {
                 if (!sendToDownstream(link, packet.bytes, shared::GAME_CHANNEL)) {
                     ++link.relay_send_failures;
@@ -462,6 +466,11 @@ private:
         }
     }
 
+    [[nodiscard]] static uint32_t tickSinceJoin(Link const& link, uint32_t const tick) noexcept
+    {
+        return tick - link.connection_start_tick;
+    }
+
     [[nodiscard]] static uint64_t seedForCharacter(char const character) noexcept
     {
         return BASE_SEED ^ (
@@ -476,8 +485,8 @@ private:
         .loss_per_mille = 120U,
         .duplicate_per_mille = 360U,
         .reorder_delay_ticks = 14U,
-        .freeze_begin_tick = 35U,
-        .freeze_duration_ticks = 24U,
+        .freeze_begin_tick = 0U,
+        .freeze_duration_ticks = 100U,
         .impairment_end_tick = 450U,
         .recovery_burst_per_tick = 4U,
         .max_deliveries_per_tick = 8U,
@@ -491,8 +500,9 @@ private:
         .loss_per_mille = 160U,
         .duplicate_per_mille = 360U,
         .reorder_delay_ticks = 16U,
-        .freeze_begin_tick = 55U,
-        .freeze_duration_ticks = 28U,
+        // Leave time for client-to-server freeze recovery and its maximum delivery delay.
+        .freeze_begin_tick = 150U,
+        .freeze_duration_ticks = 100U,
         .impairment_end_tick = 450U,
         .recovery_burst_per_tick = 4U,
         .max_deliveries_per_tick = 8U,
@@ -655,12 +665,13 @@ TEST(AdverseNetworkTest, RecoversPacketsAfterFifteenSecondDeliveryFreeze)
 
 TEST(AdverseNetworkTest, ProductionTwoClientsConvergeAcrossSeededBidirectionalImpairment)
 {
+    static constexpr uint32_t INITIAL_RELAY_TICK = 500U;
     static constexpr std::chrono::seconds MOVEMENT_DURATION{ 5 };
     static constexpr std::chrono::seconds RUN_DURATION{ 7 };
     static constexpr shared::Direction MOVEMENT{ .x = 127U, .y = 0U, .view_y = 127 };
 
     server::GameServer game_server{ 0U, {}, shared::WorldMode::Flight };
-    AdverseNetworkRelay relay{ game_server.port() };
+    AdverseNetworkRelay relay{ game_server.port(), INITIAL_RELAY_TICK };
     std::atomic_bool stop_server{ false };
     std::atomic_bool stop_relay{ false };
     std::thread server_thread{ [&] {
@@ -670,6 +681,8 @@ TEST(AdverseNetworkTest, ProductionTwoClientsConvergeAcrossSeededBidirectionalIm
         relay.run(stop_relay);
     } };
 
+    AdverseGameClient first_client;
+    AdverseGameClient second_client;
     auto const scenario_start = std::chrono::steady_clock::now();
     auto const movement_end = scenario_start + MOVEMENT_DURATION;
     auto const deadline = scenario_start + RUN_DURATION;
@@ -692,8 +705,6 @@ TEST(AdverseNetworkTest, ProductionTwoClientsConvergeAcrossSeededBidirectionalIm
     client::GameClientBenchmarkHooks first_hooks = make_hooks(first_facts);
     client::GameClientBenchmarkHooks second_hooks = make_hooks(second_facts);
 
-    AdverseGameClient first_client;
-    AdverseGameClient second_client;
     std::thread first_client_thread{ [&] {
         first_client.run(core::Address::localhost(relay.port()), '@', &first_hooks);
     } };
@@ -728,7 +739,6 @@ TEST(AdverseNetworkTest, ProductionTwoClientsConvergeAcrossSeededBidirectionalIm
         EXPECT_GT(facts.lost_packets, 0U);
         EXPECT_GT(facts.duplicated_packets, 0U);
         EXPECT_GT(facts.reordered_packets, 0U);
-        EXPECT_GT(facts.freeze_delayed_packets, 0U);
         EXPECT_EQ(facts.queue_overflow_packets, 0U);
         EXPECT_EQ(facts.oversized_packets, 0U);
         EXPECT_EQ(facts.schedule_records_dropped, 0U);
@@ -854,6 +864,16 @@ TEST(AdverseNetworkTest, ProductionTwoClientsConvergeAcrossSeededBidirectionalIm
         '@',
         second_stale_snapshot_rejections
     );
+    uint64_t const client_to_server_freeze_delayed_packets =
+        first_receipt->client_to_server_facts.freeze_delayed_packets
+        + second_receipt->client_to_server_facts.freeze_delayed_packets;
+    uint64_t const server_to_client_freeze_delayed_packets =
+        first_receipt->server_to_client_facts.freeze_delayed_packets
+        + second_receipt->server_to_client_facts.freeze_delayed_packets;
+    EXPECT_GT(client_to_server_freeze_delayed_packets, 0U)
+        << "Neither client exercised the client-to-server freeze";
+    EXPECT_GT(server_to_client_freeze_delayed_packets, 0U)
+        << "Neither client exercised the server-to-client freeze";
     EXPECT_TRUE(first_converged);
     EXPECT_TRUE(second_converged);
     std::optional<shared::Player> const first_authoritative_at = first_client.authoritativePlayer('@');

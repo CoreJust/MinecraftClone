@@ -53,8 +53,8 @@ PlayerClientCapturePlan playerClientCapturePlan(PlayerClientCapturePreset const 
     switch (preset) {
     case PlayerClientCapturePreset::CentralSpike:
         return { preset, "central-spike", "S7 CAPTURE: FLYING THIRD PERSON / CENTRAL SPIKE",
-            CameraPerspective::ThirdPersonRear, { .yaw_degrees = 110.0, .pitch_degrees = 8.0 },
-            { .x = 32'470, .y = 32'768, .z = 480 }, std::nullopt, 90.0, 12.0 };
+            CameraPerspective::ThirdPersonRear, { .yaw_degrees = 110.0, .pitch_degrees = 18.0 },
+            { .x = 32'525, .y = 32'768, .z = 440 }, std::nullopt, 90.0, 12.0 };
     case PlayerClientCapturePreset::TrenchFirstSpike:
         return { preset, "trench-first-spike", "S7 CAPTURE: TRENCH / FIRST SPIKE",
             CameraPerspective::ThirdPersonRear, { .yaw_degrees = -90.0, .pitch_degrees = 10.0 },

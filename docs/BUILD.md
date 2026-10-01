@@ -45,6 +45,9 @@ adb shell am start -n com.corejust.minecraftclone/android.app.NativeActivity \
     --es server 10.0.2.2:20040 --es character @
 ```
 
+See the [Android runbook](ANDROID_ACCEPTANCE.md).
+See the [macOS graphical acceptance runbook](MACOS_ACCEPTANCE.md).
+
 ENet uses UDP, while `adb reverse` forwards only TCP. Physical devices therefore need a network-reachable server; this snapshot's desktop server binds to loopback, so local acceptance uses the emulator. [Android architecture](code/ANDROID.md) owns NativeActivity lifecycle, input, asset, and renderer constraints.
 
 ## SDK and compiler

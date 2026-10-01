@@ -9,6 +9,7 @@ import json
 from pathlib import Path
 import subprocess
 import sys
+import types
 from typing import Sequence
 
 import ai_tasks
@@ -27,9 +28,13 @@ class HistoryError(RuntimeError):
 PUBLICATION_LEDGER_MUTABLE_FIELDS = {
     "status",
     "owner",
+    "blocker",
     "evidence",
     "resolved_at",
     "resolution_changes",
+    "docs_review",
+    "environment_review",
+    "backlog_review",
 }
 
 # Snapshot 3 was published before the ledger immutability check landed. Its
@@ -67,6 +72,14 @@ def git(repo: Path, *args: str, check: bool = True) -> str:
 
 def revision(repo: Path, ref: str) -> str:
     return git(repo, "rev-parse", "--verify", f"{ref}^{{commit}}").strip()
+
+
+def historical_ai_tasks(repo: Path, commit: str) -> types.ModuleType:
+    source = git(repo, "show", f"{commit}:script/ai_tasks.py")
+    module = types.ModuleType(f"ai_tasks_at_{commit[:12]}")
+    module.__file__ = str(repo / "script/ai_tasks.py")
+    exec(compile(source, module.__file__, "exec"), module.__dict__)
+    return module
 
 
 def require_common_ancestor(repo: Path, baseline: str, head: str) -> None:
@@ -197,18 +210,22 @@ def mapped_range_ids(
 
 
 def has_tagged_promotion(repo: Path, baseline: str, source: str) -> bool:
-    merged = git(repo, "merge-tree", "--write-tree", baseline, source).splitlines()
-    if not merged:
-        return False
-    expected_tree = merged[0]
     tag_refs = git(repo, "for-each-ref", "--format=%(refname)", "refs/tags/ai/").splitlines()
     for tag_ref in tag_refs:
         if git(repo, "cat-file", "-t", tag_ref).strip() != "tag":
             continue
         promoted = revision(repo, tag_ref)
         parents = git(repo, "show", "-s", "--format=%P", promoted).split()
+        if len(parents) != 2 or parents[1] != source:
+            continue
+        # The task baseline is from ai-dev; ai-main may advance before promotion.
+        if git(repo, "merge-base", baseline, parents[0], check=False).strip() != baseline:
+            continue
+        merged = git(repo, "merge-tree", "--write-tree", parents[0], source).splitlines()
+        if not merged:
+            continue
         tree = git(repo, "rev-parse", f"{promoted}^{{tree}}").strip()
-        if parents == [baseline, source] and tree == expected_tree:
+        if tree == merged[0]:
             return True
     return False
 
@@ -294,8 +311,12 @@ def require_valid_prior_snapshot_ledgers(
             raise HistoryError(f"publication ledger {sha} changes immutable {task_id} fields")
         if previous["status"] != "active" or previous["resolved_at"]:
             raise HistoryError(f"publication ledger {sha} does not start from an active snapshot")
-        if published["status"] != "done" or not published["resolved_at"]:
-            raise HistoryError(f"publication ledger {sha} does not record a published snapshot")
+        if published["status"] not in {"active", "done"}:
+            raise HistoryError(f"publication ledger {sha} has an invalid post-publication status")
+        if published["status"] == "done" and not published["resolved_at"]:
+            raise HistoryError(f"publication ledger {sha} closes a snapshot without resolved_at")
+        if published["status"] == "active" and published["resolved_at"]:
+            raise HistoryError(f"publication ledger {sha} keeps an active snapshot resolved")
         if previous["finalized"] is not True or published["finalized"] is not True:
             raise HistoryError(f"publication ledger {sha} must preserve finalized state")
         ledger_baseline = revision(repo, str(previous["baseline_commit"]))
@@ -305,9 +326,10 @@ def require_valid_prior_snapshot_ledgers(
             raise HistoryError(f"publication ledger {sha} does not match current {task_id} metadata")
         rendered_backlog = git(repo, "show", f"{sha}:docs/ai/BACKLOG.md")
         rendered_task = git(repo, "show", f"{sha}:docs/ai/tasks/{task_id}.md")
-        if rendered_backlog != ai_tasks.render_backlog(after):
+        ledger_renderer = historical_ai_tasks(repo, sha)
+        if rendered_backlog != ledger_renderer.render_backlog(after):
             raise HistoryError(f"publication ledger {sha} has stale backlog Markdown")
-        if rendered_task != ai_tasks.render_task(published, after):
+        if rendered_task != ledger_renderer.render_task(published, after):
             raise HistoryError(f"publication ledger {sha} has stale task Markdown")
         validated_ledgers.add(task_id)
 
@@ -491,9 +513,11 @@ def parser() -> argparse.ArgumentParser:
     collect = subparsers.add_parser("collect")
     collect.add_argument("task_id")
     collect.add_argument("--head", default="HEAD")
+    collect.add_argument("--additional-head")
     finalize_parser = subparsers.add_parser("finalize")
     finalize_parser.add_argument("task_id")
     finalize_parser.add_argument("--head", default="HEAD")
+    finalize_parser.add_argument("--additional-head")
     return result
 
 
@@ -507,9 +531,11 @@ def main(argv: list[str] | None = None) -> int:
         elif args.command == "show":
             print(render_records(args.repo, tasks, args.output, args.task_id)[0])
         elif args.command == "collect":
-            print("\n".join(collect_aggregate(args.repo, tasks, args.task_id, args.head)))
+            print("\n".join(collect_aggregate(
+                args.repo, tasks, args.task_id, args.head, args.additional_head
+            )))
         else:
-            finalize(args.repo, tasks, args.task_id, args.head)
+            finalize(args.repo, tasks, args.task_id, args.head, args.additional_head)
             ai_tasks.write_backlog_atomic(args.backlog, tasks)
             ai_tasks.write_rendered_backlog(args.markdown, tasks)
             render_records(args.repo, tasks, args.output, head_ref=args.head)

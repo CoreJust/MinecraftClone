@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from contextlib import redirect_stdout
+import io
 import json
 import locale
 from pathlib import Path
@@ -62,7 +64,10 @@ class AiHistoryTest(unittest.TestCase):
         self.git_run("git", "config", "user.email", "test@example.com")
         self.git_run("git", "remote", "add", "origin", "https://github.com/example/history.git")
         (self.repo / ".gitignore").write_text("build/\n", encoding="utf-8")
-        self.git_run("git", "add", ".gitignore")
+        history_script = self.repo / "script/ai_tasks.py"
+        history_script.parent.mkdir(parents=True)
+        history_script.write_bytes((SCRIPT_DIR / "ai_tasks.py").read_bytes())
+        self.git_run("git", "add", ".gitignore", "script/ai_tasks.py")
         self.baseline = self.commit("baseline")
 
     def tearDown(self) -> None:
@@ -121,6 +126,27 @@ class AiHistoryTest(unittest.TestCase):
             ai_history.collect_snapshot(self.repo, tasks, "MC-AI-0101", "HEAD"),
             ["MC-AI-0001", "MC-AI-0002"],
         )
+
+    def test_history_cli_collects_explicit_additional_head(self) -> None:
+        tasks = self.hierarchy()
+        self.git_run("git", "checkout", "-q", "-b", "additional-head")
+        self.commit("second task\n\nTask-ID: MC-AI-0002")
+        self.git_run("git", "checkout", "-q", "master")
+        self.commit("first task\n\nTask-ID: MC-AI-0001")
+        backlog = self.repo / "docs/ai/backlog.json"
+        backlog.parent.mkdir(parents=True)
+        backlog.write_text(json.dumps(tasks), encoding="utf-8")
+
+        output = io.StringIO()
+        with redirect_stdout(output):
+            result = ai_history.main([
+                "--repo", str(self.repo), "--backlog", str(backlog),
+                "collect", "MC-AI-0101", "--head", "HEAD",
+                "--additional-head", "additional-head",
+            ])
+
+        self.assertEqual(result, 0)
+        self.assertEqual(output.getvalue().splitlines(), ["MC-AI-0001", "MC-AI-0002"])
 
     def test_snapshot_three_publication_exception_is_exactly_scoped(self) -> None:
         standard = ai_history.PUBLICATION_LEDGER_MUTABLE_FIELDS
@@ -205,6 +231,9 @@ class AiHistoryTest(unittest.TestCase):
 
     def test_collect_next_snapshot_excludes_post_publication_aggregate_ledger(self) -> None:
         tasks = self.hierarchy()
+        self.git_run("git", "checkout", "-q", "-b", "ai-main-base")
+        promotion_base = self.commit("ai-main metadata advance")
+        self.git_run("git", "checkout", "-q", "master")
         self.commit("first task\n\nTask-ID: MC-AI-0001")
         self.commit("second task\n\nTask-ID: MC-AI-0002")
         previous = tasks[2]
@@ -219,7 +248,7 @@ class AiHistoryTest(unittest.TestCase):
         ai_history.finalize(self.repo, tasks, "MC-AI-0101", "HEAD")
         self.write_task_metadata(tasks)
         source = self.commit("finalize snapshot\n\nTask-ID: MC-AI-0101")
-        self.git_run("git", "checkout", "-q", "-b", "ai-main", self.baseline)
+        self.git_run("git", "checkout", "-q", "-b", "ai-main", promotion_base)
         self.git_run(
             "git", "merge", "--no-ff", "-q", source,
             "-m", "promote snapshot\n\nTask-ID: MC-AI-0101",
@@ -227,11 +256,15 @@ class AiHistoryTest(unittest.TestCase):
         promoted = self.git_run("git", "rev-parse", "HEAD")
         self.git_run("git", "checkout", "-q", "-b", "ai-dev", source)
         previous.update({
-            "status": "done",
-            "owner": "",
+            "status": "active",
+            "owner": "Codex",
             "evidence": "Published snapshot artifacts verified.",
-            "resolved_at": "2026-09-09",
+            "blocker": "Windows runtime remains separately reported.",
+            "resolved_at": "",
             "resolution_changes": "Recorded the published snapshot.",
+            "docs_review": "Published documentation read back.",
+            "environment_review": "Release evidence verified.",
+            "backlog_review": "No follow-up task was dropped.",
         })
         self.write_task_metadata(tasks)
         self.commit("publication ledger\n\nTask-ID: MC-AI-0101")
@@ -264,7 +297,7 @@ class AiHistoryTest(unittest.TestCase):
         previous["evidence"] = "Repeated publication acknowledgment."
         self.write_task_metadata(tasks[:-2])
         self.commit("duplicate publication ledger\n\nTask-ID: MC-AI-0101")
-        with self.assertRaisesRegex(ai_history.HistoryError, "does not start from an active snapshot"):
+        with self.assertRaisesRegex(ai_history.HistoryError, "has no tagged immutable promotion"):
             ai_history.finalize(self.repo, tasks, "MC-AI-0102", "HEAD")
 
         self.git_run("git", "checkout", "-q", "ai-dev")
@@ -295,10 +328,14 @@ class AiHistoryTest(unittest.TestCase):
             ai_history.finalize(self.repo, tasks, "MC-AI-0102", "HEAD")
 
         self.assertTrue(next(item for item in tasks if item["id"] == "MC-AI-0102")["finalized"])
-        self.assertEqual(
-            ai_history.collect_snapshot(self.repo, tasks, "MC-AI-0102", "HEAD"),
-            ["MC-AI-0003"],
-        )
+        with (
+            mock.patch.object(ai_history.ai_tasks, "render_backlog", return_value="new backlog format"),
+            mock.patch.object(ai_history.ai_tasks, "render_task", return_value="new task format"),
+        ):
+            self.assertEqual(
+                ai_history.collect_snapshot(self.repo, tasks, "MC-AI-0102", "HEAD"),
+                ["MC-AI-0003"],
+            )
 
     def test_rejects_unknown_trailer_and_duplicate_legacy_import(self) -> None:
         tasks = self.hierarchy()
