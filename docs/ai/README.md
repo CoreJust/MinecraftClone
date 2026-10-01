@@ -24,7 +24,7 @@ python3 script/ai_setup.py
 python3 script/ai_tasks.py ready
 ```
 
-The project Codex config selects `gpt-5.6-luna`; an explicit task/app model override wins. Start a new session to reload project instructions/config. Other agents use the same Markdown entrypoints and Python tools.
+The project Codex config selects `gpt-6-luna`; an explicit task/app model override wins. Start a new session to reload project instructions/config. Other agents use the same Markdown entrypoints and Python tools.
 
 ## Initial state
 

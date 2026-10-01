@@ -2,8 +2,10 @@
 #include <client/render/VulkanRenderer.hpp>
 
 #include <shared/world/ChunkMesher.hpp>
+#include <shared/world/HeightTileSurfaceMesher.hpp>
 
 #include <core/graphics/vulkan/Vulkan.hpp>
+#include <core/platform/glfw/GlfwWindow.hpp>
 
 #include <gtest/gtest.h>
 
@@ -18,8 +20,10 @@
 #include <filesystem>
 #include <optional>
 #include <span>
+#include <stdexcept>
 #include <string>
 #include <variant>
+#include <vector>
 
 #ifndef MC_STONE_RENDERER_FAIL_UNSUPPORTED
 #define MC_STONE_RENDERER_FAIL_UNSUPPORTED 0
@@ -30,6 +34,38 @@ namespace {
 constexpr uint32_t WIDTH = 640U;
 constexpr uint32_t HEIGHT = 480U;
 constexpr auto RENDER_TIMEOUT = std::chrono::seconds{ 10 };
+
+class ScopedStoneSetting final {
+public:
+    ScopedStoneSetting(char const* const variable, char const* const value)
+        : m_variable(variable)
+    {
+        if (char const* const previous = std::getenv(m_variable)) {
+            m_previous = previous;
+        }
+        if (assign(value) != 0) {
+            throw std::runtime_error("cannot select the diagnostic stone quad mode");
+        }
+    }
+
+    ~ScopedStoneSetting() { static_cast<void>(assign(m_previous ? m_previous->c_str() : nullptr)); }
+    ScopedStoneSetting(ScopedStoneSetting const&) = delete;
+    ScopedStoneSetting& operator=(ScopedStoneSetting const&) = delete;
+
+private:
+    [[nodiscard]]
+    int assign(char const* const value) const
+    {
+#if defined(_WIN32)
+        return _putenv_s(m_variable, value == nullptr ? "" : value);
+#else
+        return value == nullptr ? unsetenv(m_variable) : setenv(m_variable, value, 1);
+#endif
+    }
+
+    char const* const m_variable;
+    std::optional<std::string> m_previous;
+};
 
 constexpr client::CameraPose ABOVE_CAMERA{
     .position = { 8.0, -20.0, 18.0 },
@@ -176,6 +212,108 @@ TEST_F(StoneRendererAcceptanceTest, DeterministicChunkRendersFromAboveAndBelow)
     client::RendererFrameCapture const below = render(*m_renderer);
     expectVisibleTerrain(below);
     EXPECT_EQ(m_renderer->validationErrorCount(), 0U);
+}
+
+TEST_F(StoneRendererAcceptanceTest, IndexedAndSixVertexQuadsHaveByteIdenticalOffscreenOutput)
+{
+    std::array const cameras{
+        ABOVE_CAMERA,
+        BELOW_CAMERA,
+        client::CameraPose{ .position = { -12.0, 8.0, 8.0 }, .angles = { .yaw_degrees = 90.0 } },
+        client::CameraPose{ .position = { 28.0, 8.0, 8.0 }, .angles = { .yaw_degrees = -90.0 } },
+        client::CameraPose{ .position = { 8.0, 28.0, 8.0 }, .angles = { .yaw_degrees = 180.0 } },
+    };
+    shared::ChunkMesh const mesh = deterministicChunk();
+    auto const capture_mode = [&](char const* const mode) {
+        ScopedStoneSetting const selected{ "MC_DIAGNOSTIC_INDEXED_STONE_QUADS", mode };
+        client::VulkanOffscreenRenderer renderer{ m_shader_assets, true };
+        renderer.setChunkMesh(mesh);
+        std::vector<client::RendererFrameCapture> captures;
+        for (client::CameraPose const camera : cameras) {
+            renderer.setCamera(camera);
+            captures.push_back(render(renderer));
+        }
+        EXPECT_EQ(renderer.validationErrorCount(), 0U);
+        return captures;
+    };
+    auto const six_vertex = capture_mode("0");
+    auto const indexed = capture_mode("1");
+    ASSERT_EQ(six_vertex.size(), indexed.size());
+    for (size_t view = 0U; view < indexed.size(); ++view) {
+        EXPECT_GT(stonePixelCount(indexed[view]), 0U) << view;
+        EXPECT_EQ(indexed[view].rgba8, six_vertex[view].rgba8) << view;
+    }
+}
+
+TEST_F(StoneRendererAcceptanceTest, DirectAndIndirectSubmissionPreserveIndexedAndSixVertexOutput)
+{
+    core::platform::glfw::GlfwWindow window{
+        core::platform::glfw::WindowDescriptor{
+            .width = WIDTH,
+            .height = HEIGHT,
+            .title = "MinecraftClone stone submission parity",
+        },
+    };
+    auto const context = client::VulkanRenderer::createPresentationContext(
+        window, { .require_validation = true, .enable_frame_capture = true }
+    );
+    if (!context->info().multi_draw_indirect_enabled || !context->info().draw_indirect_first_instance_enabled) {
+        GTEST_SKIP() << "presentation device does not enable optional indirect stone draws";
+    }
+    std::array<shared::HeightTileSurfaceMesh, 3> meshes;
+    for (uint32_t tile = 0U; tile < meshes.size(); ++tile) {
+        meshes[tile].coordinate = { .x = static_cast<int32_t>(tile), .y = 0 };
+        meshes[tile].quads = { {
+            .x = static_cast<int32_t>(tile * 16U),
+            .z = static_cast<int32_t>(tile * 2U),
+            .u_extent = 16U,
+            .v_extent = 16U,
+        } };
+    }
+    // Keep the intervening arena range live but behind the camera, so visible commands cannot merge.
+    meshes[1].quads[0].y = -100;
+    auto const capture_mode = [&](char const* const quad_mode, char const* const direct_mode) {
+        ScopedStoneSetting const quads{ "MC_DIAGNOSTIC_INDEXED_STONE_QUADS", quad_mode };
+        ScopedStoneSetting const direct{ "MC_DIAGNOSTIC_DIRECT_STONE_DRAWS", direct_mode };
+        client::VulkanRenderer renderer{
+            context, m_shader_assets, { .require_validation = true, .enable_frame_capture = true }
+        };
+        renderer.setDebugHudEnabled(false);
+        renderer.setCamera({ .position = { 24.0, -40.0, 25.0 }, .angles = { .pitch_degrees = -25.0 } });
+        auto const deadline = std::chrono::steady_clock::now() + RENDER_TIMEOUT;
+        EXPECT_TRUE(renderer.upsertHeightTileMeshes(meshes, deadline));
+        renderer.requestFrameCapture();
+        for (uint32_t frame = 0U; frame < 32U && std::chrono::steady_clock::now() < deadline; ++frame) {
+            if (!window.nextFrame()) {
+                break;
+            }
+            static_cast<void>(renderer.render(std::span<client::PlayerRenderData const>{}, deadline));
+            if (renderer.captureState() == client::FrameCaptureState::Completed) {
+                break;
+            }
+        }
+        EXPECT_EQ(renderer.captureState(), client::FrameCaptureState::Completed);
+        client::RendererRuntimeInfo const info = renderer.runtimeInfo();
+        EXPECT_EQ(info.height_tile_mesh_count, 3U);
+        EXPECT_EQ(info.diagnostic_submitted_stone_quad_count, 2U);
+        EXPECT_EQ(info.diagnostic_stone_draw_count, 2U);
+        EXPECT_EQ(info.diagnostic_indexed_stone_quads, quad_mode[0] == '1');
+        EXPECT_EQ(info.diagnostic_stone_indirect, direct_mode[0] != '1');
+        RecordProperty("terrain_timestamp_reason", std::string{ info.diagnostic_gpu_timestamp_reason });
+        EXPECT_TRUE(info.diagnostic_gpu_timestamps_enabled || !info.diagnostic_gpu_terrain_duration.has_value());
+        EXPECT_EQ(renderer.validationErrorCount(), 0U);
+        return renderer.takeFrameCapture();
+    };
+    auto const six_direct = capture_mode("0", "1");
+    auto const six_indirect = capture_mode("0", "0");
+    auto const indexed_direct = capture_mode("1", "1");
+    auto const indexed_indirect = capture_mode("1", "0");
+    ASSERT_TRUE(six_direct.has_value());
+    for (auto const& capture : { six_indirect, indexed_direct, indexed_indirect }) {
+        ASSERT_TRUE(capture.has_value());
+        EXPECT_GT(stonePixelCount(*capture), 0U);
+        EXPECT_EQ(capture->rgba8, six_direct->rgba8);
+    }
 }
 
 TEST_F(StoneRendererAcceptanceTest, RepeatedAndUpdatedMeshesHaveExpectedFrameBehavior)

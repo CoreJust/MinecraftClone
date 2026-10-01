@@ -20,13 +20,20 @@ Planning tasks are created on request before work. Current plans: [snapshot 0.1.
 
 ## Enabled checks
 
-[ai_checks.json](../../script/ai_checks.json) is the extension registry. The full gate always runs build, the complete CTest suite, tooling/doc/task checks, whitespace, and `publish.py --checks-only` for all current source/style/version verifications. Enabled registry commands add tests without replacing existing checks. A failed or invalid enabled check blocks closure.
+[ai_checks.json](../../script/ai_checks.json) registers extra checks. The full gate runs build, complete CTest, tooling/doc/task checks, whitespace and `publish.py --checks-only`; enabled commands add checks, and any failure blocks closure.
 
-The screenshot entry is disabled with an explicit reason until screenshot tests are implemented. Enable its command when ready; snapshots, minors and majors then run it automatically. Minor/major environment diagnostics supplement the recorded environment review. A doctor command is not proof that every SDK/platform path works; record the supported-platform evidence and any unresolved limitation.
+Screenshot tests stay disabled with an explicit reason until implemented. Platform diagnostics supplement, but never replace, actual platform evidence and recorded limitations.
+
+From Snapshot 7, the MC-AI-0249 sanitizer/static-analysis matrix is required
+after the promotion commit is pushed and before tagging. Local candidate checks
+defer only this hosted matrix; hosted receipts bind to the immutable promotion
+commit/tree, and strict tag checks require its successful exact-commit result.
+Missing tools, devices, results, or receipts fail closed. Linux is a tests-only
+sanitizer host, not a product target.
 
 ## Publish
 
-Use [the version/branch procedure](../VERSION_CONVENTION.md). The finalization commit and the subsequent `ai-main` promotion commit reference the same aggregate task. Both need the minimal Luna review; the final pre-publication minor/major aggregate gate also needs the Terra accumulated-change review described by the [review and verification policy](../../AGENTS.md#review-and-verification-policy). Validate the merge candidate before creating its commit, then strict checks after it is clean. Failed validation stops promotion; never create a passing receipt or release date merely to bypass a check.
+Use [the version/branch procedure](../VERSION_CONVENTION.md). Finalization and `ai-main` promotion commits use the aggregate task and need Luna review. Final minor/major publication also needs Terra review. Validate the merge candidate before committing; push the exact promotion commit for hosted analysis, then require strict checks and its exact receipt before tagging. Failed validation blocks promotion; never fabricate receipts or release dates.
 
 Local commits/tags and remote publication are distinct. A request to create planning tasks does not authorize either release execution or remote mutation. A later release request authorizes its scoped local workflow; push/releases need the requested external authority. After actual publication, make an `ai-dev` metadata ledger commit with the aggregate `Task-ID`, real published refs/artifacts, `resolved_at`, and `done` status. Snapshot and tag dates use the canonical `Europe/Belgrade` project date so local and hosted runners agree across UTC midnight. This record follows the immutable tag and is excluded from the next snapshot's basic-task collection. Snapshot 7 uses the same ledger record; its minor remains active and unfinalized until requested feedback, without creating another snapshot.
 

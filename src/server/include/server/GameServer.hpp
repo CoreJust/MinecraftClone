@@ -1,6 +1,9 @@
 #pragma once
 
 #include <shared/net/Message.hpp>
+#include <shared/policy/Policy.hpp>
+#include <shared/world/HeightTileInterest.hpp>
+#include <shared/world/SparseWorld.hpp>
 #include <shared/world/World.hpp>
 #include <shared/world/WorldGeneration.hpp>
 #include <shared/world/WorldGenerationScheduler.hpp>
@@ -11,6 +14,7 @@
 #include <cstdint>
 #include <deque>
 #include <expected>
+#include <functional>
 #include <memory>
 #include <unordered_map>
 #include <unordered_set>
@@ -21,6 +25,10 @@ namespace server {
 
 class GameServer final : public core::Server {
 public:
+    struct BenchmarkHooks final {
+        std::function<void(std::chrono::nanoseconds, uint64_t)> on_tick;
+        std::function<void(core::ClientId, uint32_t)> on_preview_buffered;
+    };
     struct SpawnPoint final {
         char character;
         int32_t x;
@@ -32,7 +40,8 @@ public:
         uint16_t port = 20'040,
         std::vector<SpawnPoint> spawn_points = { },
         shared::WorldMode world_mode = shared::WorldMode::Flat,
-        shared::WorldConfiguration configuration = shared::World::canonicalConfiguration()
+        shared::WorldConfiguration configuration = shared::World::canonicalConfiguration(),
+        uint32_t render_distance = shared::HEIGHT_TILE_INTEREST_RADIUS
     );
 
     ~GameServer() override;
@@ -51,14 +60,22 @@ public:
 
     void run();
     void run(std::atomic_bool const& stop_requested);
+    void run(std::atomic_bool const& stop_requested, BenchmarkHooks const* benchmark_hooks);
     [[nodiscard]]
     uint64_t tick(std::chrono::milliseconds timeout = std::chrono::milliseconds::zero());
+
+    [[nodiscard]]
+    std::expected<uint64_t, shared::PolicyDiagnostic> publishPermissions(
+        shared::PolicyCompilation compilation,
+        shared::PolicyCapabilityRegistry registry
+    );
 private:
     struct HeightTileWorkerPool;
     struct PreviewStream;
 
     struct PlayerReplication final {
         static constexpr uint32_t MAX_PENDING_INPUTS = 64;
+        static constexpr uint32_t MAX_MATERIALIZATION_ADMISSION_FAILURES = 8;
 
         shared::PlayerId id;
         uint32_t latest_received_sequence = 0;
@@ -67,6 +84,7 @@ private:
         std::deque<shared::ClientInputMessage> pending_inputs;
         bool has_received_sequence = false;
         bool action_consumed_this_tick = false;
+        uint32_t materialization_admission_failures = 0U;
     };
 
     void onConnected(core::ServerConnectEvent const event) override;
@@ -83,12 +101,24 @@ private:
     );
     void refreshHeightTileInterest(PreviewStream& stream, shared::Player const& player);
     void fillHeightTileQueue(PreviewStream& stream);
-    void processHeightTileStreams(bool admit_deliveries);
+    void processHeightTileStreams();
     void dispatchHeightTileWork();
     void publishHeightTileResults();
+    void dispatchWorldMaterialization();
     [[nodiscard]] uint32_t admitHeightTileDeliveries(PreviewStream& stream, uint32_t maximum_batches);
     void queueDepartedResidentTiles(PreviewStream& stream);
-    void processInput(PlayerReplication& replication, shared::ClientInputMessage input);
+    [[nodiscard]] bool processInput(PlayerReplication& replication, shared::ClientInputMessage input);
+    [[nodiscard]] std::vector<shared::PolicySubject> permissionSubjects() const;
+    [[nodiscard]]
+    bool canApplyPublishedPermissions(
+        shared::PolicyCapabilitySnapshot const& capabilities,
+        shared::PolicyCapabilityRegistry const& registry
+    ) const;
+    [[nodiscard]]
+    std::expected<uint64_t, shared::PolicyDiagnostic> refreshPublishedPermissions(
+        std::optional<shared::PolicyEntityId> expired_subject = std::nullopt
+    );
+    void applyPublishedPermissions();
     [[nodiscard]]
     PlayerReplication* playerReplication(shared::PlayerId id) noexcept;
     [[nodiscard]]
@@ -103,18 +133,30 @@ private:
     );
 private:
     shared::World m_world;
+    shared::SparseWorld m_physics_world;
+    shared::WorldGenerationCoordinator m_world_generation;
+    std::shared_ptr<shared::TerrainGenerator const> m_terrain_generator;
+    shared::WorldGenerationPlan m_generation_plan{
+        .chunk_stages = {shared::GenerationStage::Materialize},
+    };
+    shared::PolicyHost m_permission_host;
+    shared::PolicyCapabilityRegistry m_permission_registry;
+    std::optional<shared::PolicyCapabilityKeyId> m_flight_permission;
+    std::optional<shared::PolicyCapabilityKeyId> m_collision_bypass_permission;
+    bool m_permissions_published{false};
     std::vector<SpawnPoint> m_spawn_points;
     std::vector<PlayerReplication> m_player_replications;
     struct PreviewStream final {
         struct HeightTileKeyHash final {
             [[nodiscard]] size_t operator()(shared::HeightTileKey const key) const noexcept
             {
-                return static_cast<size_t>((static_cast<uint64_t>(static_cast<uint32_t>(key.x)) << 32U)
-                    ^ static_cast<uint32_t>(key.y));
+                return static_cast<size_t>(shared::heightTileCoordinateHash(key.x, key.y));
             }
         };
 
         static constexpr uint32_t MAX_QUEUED_TILES = 128U;
+        static constexpr uint32_t MAX_BUFFERED_TILES = 128U;
+        static constexpr uint32_t MAX_INFLIGHT_DELIVERIES = 4U;
         static constexpr uint64_t WORLD_REVISION = 1U;
 
         struct Delivery final {
@@ -137,6 +179,8 @@ private:
         int8_t applied_heading_y = 0;
         bool has_center = false;
         std::vector<shared::HeightTileKey> desired_keys;
+        uint32_t priority_cursor = 0U;
+        uint64_t priority_cursor_generation = 0U;
         std::unordered_set<shared::HeightTileKey, HeightTileKeyHash> desired_key_set;
         std::unordered_set<shared::HeightTileKey, HeightTileKeyHash> resident_keys;
         std::unordered_set<shared::HeightTileKey, HeightTileKeyHash> queued_keys;
@@ -156,6 +200,7 @@ private:
     std::vector<PreviewStream> m_preview_streams;
     size_t m_next_preview_admission = 0U;
     size_t m_next_preview_dispatch = 0U;
+    std::shared_ptr<shared::HeightTileInterestOrders const> m_height_tile_interest_orders;
     std::unique_ptr<HeightTileWorkerPool> m_height_tile_workers;
     uint64_t m_next_height_tile_token = 1;
 };

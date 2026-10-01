@@ -15,3 +15,5 @@ Guides describe the current checkout, including pre-existing uncommitted work. C
 The build links a shared `mc` library into `mc_main` and `mc_tests`; logical client/server/core folders are not independently loadable plugins. Mod support and hot reload beyond the existing renderer path remain roadmap ideas. Shared world/protocol code connects server authority and client presentation; reusable core code must not acquire game-specific dependencies.
 
 [Documentation maintenance](../ai/MAINTENANCE.md) defines how to keep this map current. Rendering resource lifetime and presentation ownership are documented in [RENDERING.md](RENDERING.md).
+
+Entity permission declarations and snapshot semantics are documented in [POLICY.md](POLICY.md).

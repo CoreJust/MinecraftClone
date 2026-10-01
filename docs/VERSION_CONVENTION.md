@@ -15,19 +15,21 @@ Create snapshot/minor/major tasks in advance on request. Their plans and child h
 
 1. Complete the scoped basic tasks on `ai-dev`. Every commit has exactly one `Task-ID` trailer and passes Luna/high review plus minimal checks.
 2. Finalize the aggregate from its immutable baseline: collect all task commits since the preceding snapshot boundary, reconcile planned/actual children, and record product changes before code changes. Minor/major closure adds full-range Terra/high review, docs/environment review, hindsight and backlog maintenance.
-3. Stage snapshot finalization with truthful local gate evidence and change lists. Keep an active snapshot's `resolved_at` empty until external publication; a `done` task requires its actual resolution date. Obtain the candidate review receipts and run `ai_check.py --candidate --level <snapshot|minor|major>`. Commit using the aggregate task ID, then require a clean tree and run `ai_check.py --strict --level <level>` plus runtime acceptance.
-4. Record the exact `ai-dev` commit. In a clean checkout, switch to `ai-main` and run `git merge --no-ff --no-commit <recorded-commit>`. Review and check this merged index through the same task's candidate protocol before creating the promotion commit. Its message also includes exactly one `Task-ID` trailer for that aggregate. Recheck the clean promoted result with strict gates.
-5. Tag the verified promotion commit under `ai/<MajorName>/<Epoch.Major.Minor>/<snapshot>_<yy.mm.dd>`, using that immutable promotion commit's date. Minor/major completion keeps its own aggregate task linkage and release notes while including the final snapshot workflow. Never rewrite an existing tag.
-6. Only when remote publication is authorized, push the exact `ai-main` ref and selected tag; publish executable assets when authorized. Then record the real refs/artifacts, resolution date, and `done` status in a separate `ai-dev` aggregate metadata ledger commit. It follows the immutable tag and does not create another snapshot. After Snapshot 7, record that ledger but leave the minor active and unfinalized until user feedback; do not invent another snapshot. Avoid `--all` and `--follow-tags`, which can collect unrelated refs.
+3. Stage snapshot finalization with truthful local gate evidence and change lists. Keep an active snapshot's `resolved_at` empty until external publication; a `done` task requires its actual resolution date. Obtain the candidate review receipts and run `ai_check.py --candidate --level <snapshot|minor|major>`. Commit using the aggregate task ID, then require a clean tree and complete runtime acceptance. The hosted matrix has no receipt until the promotion commit is pushed, so strict checks run before tagging.
+4. Record the exact `ai-dev` commit. In a clean checkout, switch to `ai-main` and run `git merge --no-ff --no-commit <recorded-commit>`. Review and check this merged index through the same task's candidate protocol before creating its commit. Its message also includes exactly one `Task-ID` trailer for that aggregate. `finish` creates the verified two-parent promotion commit; do not require its hosted receipt before pushing it.
+5. Push only the exact promoted `ai-main` commit so its push workflow can produce the required exact-commit sanitizer/analyzer receipts. After the hosted gate passes, run `tag`, which reruns strict checks and creates the immutable tag under `ai/<MajorName>/<Epoch.Major.Minor>/<snapshot>_<yy.mm.dd>` using the promotion commit's date. Never create the tag before that receipt, and never rewrite an existing tag.
+6. Only when remote publication is authorized, push the selected tag and publish executable assets when authorized. Then record the real refs/artifacts, resolution date, and `done` status in a separate `ai-dev` aggregate metadata ledger commit. It follows the immutable tag and does not create another snapshot. After Snapshot 7, record that ledger but leave the minor active and unfinalized until user feedback; do not invent another snapshot. Avoid `--all` and `--follow-tags`, which can collect unrelated refs.
 
 `script/ai_publish.py` performs the local snapshot-only sequence with immutable
 source hashes. Run `prepare <snapshot-task> <ai-dev-HEAD>` from clean `ai-dev`;
 it validates the finalized aggregate, records the current `ai-main` promotion
-base, runs strict gates, and proves the immutable inputs merge cleanly before
-leaving a no-commit merge on `ai-main`. Review that merged index and record its normal
+base, runs the full candidate gate (which defers the hosted matrix), and proves
+the immutable inputs merge cleanly before leaving a no-commit merge on `ai-main`.
+Review that merged index and record its normal
 `ai_commit.py` receipt. `finish` rejects an index that differs from that
-deterministic merge tree, commits the two-parent promotion, and reruns strict
-gates. `tag` validates the same merge tree before creating the
+deterministic merge tree and commits the two-parent promotion. Push that exact
+commit to `ai-main`, wait for its successful hosted matrix receipt, then run
+`tag`; it validates the same merge tree and reruns strict checks before creating the
 one canonical annotated AI tag only if it does not already exist. It never
 pushes, changes `dev`/`main`, rewrites tags, creates a successor snapshot, or
 publishes a minor/major; those actions remain separately authorized workflows.

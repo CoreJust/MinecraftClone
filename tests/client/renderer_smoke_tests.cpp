@@ -1,8 +1,10 @@
 #include <client/Camera.hpp>
 #include <client/PlayerPresentation.hpp>
 #include <client/render/InstalledShaderAssets.hpp>
+#include <client/render/StoneFaceCapacity.hpp>
 #include <client/render/VulkanRenderer.hpp>
 
+#include <shared/world/ChunkMesher.hpp>
 #include <shared/world/HeightTileSurfaceMesher.hpp>
 
 #include <core/platform/glfw/GlfwWindow.hpp>
@@ -21,8 +23,10 @@
 #include <filesystem>
 #include <memory>
 #include <span>
+#include <stdexcept>
 #include <string>
 #include <utility>
+#include <vector>
 
 namespace {
 
@@ -352,8 +356,12 @@ TEST(RendererSmokeTest, GrowsStoneFaceArenaWithoutBreakingPresentation)
         { .require_validation = true },
     };
     EXPECT_EQ(renderer.runtimeInfo().stone_face_capacity, INITIAL_CAPACITY);
+    std::chrono::steady_clock::time_point const arena_deadline = std::chrono::steady_clock::now() + TIMEOUT;
     for (uint32_t tile_index = 0U; tile_index < TILE_COUNT; ++tile_index) {
-        renderer.upsertHeightTileMesh(denseHeightTileMesh(static_cast<int32_t>(tile_index)));
+        ASSERT_TRUE(renderer.upsertHeightTileMesh(
+            denseHeightTileMesh(static_cast<int32_t>(tile_index)),
+            arena_deadline
+        ));
     }
     EXPECT_GT(renderer.runtimeInfo().stone_face_capacity, INITIAL_CAPACITY);
 
@@ -379,9 +387,208 @@ TEST(RendererSmokeTest, GrowsStoneFaceArenaWithoutBreakingPresentation)
             std::chrono::steady_clock::now() + TIMEOUT
         ));
         EXPECT_GT(renderer.runtimeInfo().chunk_draw_count, 0U);
+        EXPECT_EQ(renderer.runtimeInfo().chunk_draw_face_count, shared::HeightTileSurfaceMesh::MAXIMUM_QUAD_COUNT);
     };
     renderVisibleTile(0);
     renderVisibleTile(static_cast<int32_t>(TILE_COUNT - 1U));
+    EXPECT_EQ(renderer.validationErrorCount(), 0U);
+}
+
+TEST(RendererSmokeTest, HeightTileBatchKeepsBothOldMeshesWhenDeadlinePreventsArenaGrowth)
+{
+    static constexpr uint32_t LOGICAL_WIDTH = 320U;
+    static constexpr uint32_t LOGICAL_HEIGHT = 240U;
+    static constexpr uint32_t FILLER_TILE_COUNT = 63U;
+    static constexpr uint32_t INITIAL_CAPACITY = 65'536U;
+    static constexpr uint32_t BATCH_TILE_COUNT = 2U;
+    static constexpr auto TIMEOUT = std::chrono::seconds{ 10 };
+
+    core::platform::glfw::GlfwWindow window{
+        core::platform::glfw::WindowDescriptor{
+            .width = LOGICAL_WIDTH,
+            .height = LOGICAL_HEIGHT,
+            .title = "MinecraftClone height tile batch smoke",
+        },
+    };
+    client::InstalledShaderAssets const shader_assets;
+    client::VulkanRenderer renderer{
+        client::VulkanRenderer::createPresentationContext(window, { .require_validation = true }),
+        shader_assets,
+        { .require_validation = true },
+    };
+    std::chrono::steady_clock::time_point const setup_deadline = std::chrono::steady_clock::now() + TIMEOUT;
+    for (uint32_t index = 0U; index < FILLER_TILE_COUNT; ++index) {
+        ASSERT_TRUE(renderer.upsertHeightTileMesh(denseHeightTileMesh(static_cast<int32_t>(index)), setup_deadline));
+    }
+
+    std::array<shared::HeightTileSurfaceMesh, BATCH_TILE_COUNT> replacements;
+    for (uint32_t index = 0U; index < BATCH_TILE_COUNT; ++index) {
+        int32_t const tile_x = static_cast<int32_t>(FILLER_TILE_COUNT + index);
+        shared::HeightTileSurfaceMesh original{ .coordinate = { .x = tile_x, .y = 0 } };
+        original.quads.push_back({
+            .x = tile_x * static_cast<int32_t>(shared::HeightTile::SIDE_LENGTH),
+            .y = 0,
+            .z = 6,
+            .direction = shared::HeightTileSurfaceDirection::PositiveZ,
+        });
+        ASSERT_TRUE(renderer.upsertHeightTileMesh(original, setup_deadline));
+        replacements[index] = denseHeightTileMesh(tile_x);
+    }
+
+    uint32_t const original_face_count = FILLER_TILE_COUNT * shared::HeightTileSurfaceMesh::MAXIMUM_QUAD_COUNT
+        + BATCH_TILE_COUNT;
+    ASSERT_EQ(renderer.runtimeInfo().stone_face_capacity, INITIAL_CAPACITY);
+    ASSERT_EQ(renderer.runtimeInfo().height_tile_mesh_count, FILLER_TILE_COUNT + BATCH_TILE_COUNT);
+    ASSERT_EQ(renderer.runtimeInfo().chunk_face_count, original_face_count);
+
+    EXPECT_FALSE(renderer.upsertHeightTileMeshes(replacements, std::chrono::steady_clock::now()));
+    EXPECT_EQ(renderer.runtimeInfo().stone_face_capacity, INITIAL_CAPACITY);
+    EXPECT_EQ(renderer.runtimeInfo().height_tile_mesh_count, FILLER_TILE_COUNT + BATCH_TILE_COUNT);
+    EXPECT_EQ(renderer.runtimeInfo().chunk_face_count, original_face_count);
+
+    ASSERT_TRUE(renderer.upsertHeightTileMeshes(replacements, std::chrono::steady_clock::now() + TIMEOUT));
+    EXPECT_GT(renderer.runtimeInfo().stone_face_capacity, INITIAL_CAPACITY);
+    EXPECT_EQ(renderer.runtimeInfo().height_tile_mesh_count, FILLER_TILE_COUNT + BATCH_TILE_COUNT);
+    EXPECT_EQ(
+        renderer.runtimeInfo().chunk_face_count,
+        (FILLER_TILE_COUNT + BATCH_TILE_COUNT) * shared::HeightTileSurfaceMesh::MAXIMUM_QUAD_COUNT
+    );
+    EXPECT_EQ(renderer.validationErrorCount(), 0U);
+}
+
+TEST(RendererSmokeTest, ReportsExactResidentFaceCountsAcrossPublicationRemovalAndLegacyReset)
+{
+    static constexpr auto TIMEOUT = std::chrono::seconds{ 10 };
+    static constexpr uint32_t FIRST_FACE_COUNT = 3U;
+    static constexpr uint32_t SECOND_FACE_COUNT = 5U;
+    static constexpr uint32_t REPLACEMENT_FACE_COUNT = 2U;
+    core::platform::glfw::GlfwWindow window{
+        { .width = 320U, .height = 240U, .title = "MinecraftClone resident face-count smoke" },
+    };
+    client::InstalledShaderAssets const shader_assets;
+    client::VulkanRenderer renderer{
+        client::VulkanRenderer::createPresentationContext(window, { .require_validation = true }),
+        shader_assets,
+        { .require_validation = true },
+    };
+    auto const deadline = [] { return std::chrono::steady_clock::now() + TIMEOUT; };
+    shared::HeightTileSurfaceMesh first = denseHeightTileMesh(0);
+    shared::HeightTileSurfaceMesh second = denseHeightTileMesh(1);
+    shared::HeightTileSurfaceMesh third = denseHeightTileMesh(2);
+    first.quads.resize(FIRST_FACE_COUNT);
+    second.quads.resize(SECOND_FACE_COUNT);
+    third.quads.resize(REPLACEMENT_FACE_COUNT);
+    EXPECT_EQ(renderer.runtimeInfo().chunk_face_count, 0U);
+    ASSERT_TRUE(renderer.upsertHeightTileMesh(first, deadline()));
+    ASSERT_TRUE(renderer.upsertHeightTileMesh(first, deadline()));
+    EXPECT_EQ(renderer.runtimeInfo().chunk_face_count, FIRST_FACE_COUNT);
+    ASSERT_TRUE(renderer.upsertHeightTileMesh(second, deadline()));
+    EXPECT_EQ(renderer.runtimeInfo().chunk_face_count, FIRST_FACE_COUNT + SECOND_FACE_COUNT);
+    first.quads.resize(REPLACEMENT_FACE_COUNT);
+    ASSERT_TRUE(renderer.upsertHeightTileMesh(first, deadline()));
+    EXPECT_EQ(renderer.runtimeInfo().chunk_face_count, REPLACEMENT_FACE_COUNT + SECOND_FACE_COUNT);
+
+    first.quads.clear();
+    second.quads.resize(FIRST_FACE_COUNT);
+    std::array const batch{ first, second, third };
+    ASSERT_TRUE(renderer.upsertHeightTileMeshes(batch, deadline()));
+    EXPECT_EQ(renderer.runtimeInfo().chunk_face_count, FIRST_FACE_COUNT + REPLACEMENT_FACE_COUNT);
+    EXPECT_EQ(renderer.runtimeInfo().height_tile_mesh_count, 2U);
+    second.quads.clear();
+    ASSERT_TRUE(renderer.upsertHeightTileMesh(second, deadline()));
+    EXPECT_EQ(renderer.runtimeInfo().chunk_face_count, REPLACEMENT_FACE_COUNT);
+    EXPECT_FALSE(renderer.removeHeightTileMesh(second.coordinate));
+    EXPECT_EQ(renderer.runtimeInfo().chunk_face_count, REPLACEMENT_FACE_COUNT);
+    ASSERT_TRUE(renderer.removeHeightTileMesh(third.coordinate));
+    EXPECT_EQ(renderer.runtimeInfo().chunk_face_count, 0U);
+    ASSERT_TRUE(renderer.upsertHeightTileMesh(third, deadline()));
+    renderer.hotReload();
+    EXPECT_EQ(renderer.runtimeInfo().chunk_face_count, REPLACEMENT_FACE_COUNT);
+
+    shared::ChunkMesher mesher;
+    shared::ChunkMesh const legacy = mesher.update(shared::Chunk::makeStoneFixture({}));
+    ASSERT_FALSE(legacy.faces.empty());
+    renderer.setChunkMesh(legacy);
+    EXPECT_EQ(renderer.runtimeInfo().chunk_face_count, legacy.faces.size());
+    EXPECT_EQ(renderer.runtimeInfo().height_tile_mesh_count, 0U);
+    ASSERT_TRUE(renderer.upsertHeightTileMesh(third, deadline()));
+    EXPECT_EQ(renderer.runtimeInfo().chunk_face_count, REPLACEMENT_FACE_COUNT);
+    std::array const legacy_batch{ legacy, legacy };
+    renderer.setChunkMeshes(legacy_batch);
+    EXPECT_EQ(renderer.runtimeInfo().chunk_face_count, legacy.faces.size() * legacy_batch.size());
+    EXPECT_EQ(renderer.runtimeInfo().height_tile_mesh_count, 0U);
+    renderer.setChunkMeshes({});
+    EXPECT_EQ(renderer.runtimeInfo().chunk_face_count, 0U);
+    ASSERT_TRUE(renderer.upsertHeightTileMesh(third, deadline()));
+    renderer.setChunkMesh({});
+    EXPECT_EQ(renderer.runtimeInfo().chunk_face_count, 0U);
+    EXPECT_EQ(renderer.runtimeInfo().height_tile_mesh_count, 0U);
+    EXPECT_EQ(renderer.validationErrorCount(), 0U);
+}
+
+TEST(RendererSmokeTest, RejectedDuplicateBatchDoesNotChangeResidentFaceCounts)
+{
+    static constexpr auto TIMEOUT = std::chrono::seconds{ 10 };
+    static constexpr uint32_t ORIGINAL_FACE_COUNT = 3U;
+    core::platform::glfw::GlfwWindow window{
+        { .width = 320U, .height = 240U, .title = "MinecraftClone rejected face-count smoke" },
+    };
+    client::InstalledShaderAssets const shader_assets;
+    client::VulkanRenderer renderer{
+        client::VulkanRenderer::createPresentationContext(window, { .require_validation = true }),
+        shader_assets,
+        { .require_validation = true },
+    };
+    shared::HeightTileSurfaceMesh original = denseHeightTileMesh(0);
+    original.quads.resize(ORIGINAL_FACE_COUNT);
+    ASSERT_TRUE(renderer.upsertHeightTileMesh(original, std::chrono::steady_clock::now() + TIMEOUT));
+    std::array const duplicate_batch{ denseHeightTileMesh(0), denseHeightTileMesh(0) };
+    EXPECT_THROW(
+        static_cast<void>(renderer.upsertHeightTileMeshes(duplicate_batch, std::chrono::steady_clock::now() + TIMEOUT)),
+        std::invalid_argument
+    );
+    EXPECT_EQ(renderer.runtimeInfo().chunk_face_count, ORIGINAL_FACE_COUNT);
+    EXPECT_EQ(renderer.runtimeInfo().height_tile_mesh_count, 1U);
+    EXPECT_EQ(renderer.validationErrorCount(), 0U);
+}
+
+TEST(RendererSmokeTest, FailedStoneFaceArenaGrowthRetriesWithOriginalDeadlineAndRestoresCapacity)
+{
+    static constexpr uint32_t INITIAL_CAPACITY = 8U;
+    static constexpr uint32_t REQUIRED_CAPACITY = 9U;
+    static constexpr uint32_t MAXIMUM_CAPACITY = 16U;
+    static constexpr auto FRAME_DEADLINE = std::chrono::steady_clock::time_point{
+        std::chrono::steady_clock::duration{ 123'456 }
+    };
+    static constexpr std::array<uint32_t, 2> EXPECTED_CAPACITIES{ 16U, INITIAL_CAPACITY };
+
+    uint32_t capacity = INITIAL_CAPACITY;
+    std::vector<uint32_t> recreated_capacities;
+    std::vector<std::chrono::steady_clock::time_point> recreation_deadlines;
+    recreated_capacities.reserve(EXPECTED_CAPACITIES.size());
+    recreation_deadlines.reserve(EXPECTED_CAPACITIES.size());
+    auto recreate = [&](std::chrono::steady_clock::time_point const deadline) {
+        recreated_capacities.push_back(capacity);
+        recreation_deadlines.push_back(deadline);
+        if (recreated_capacities.size() == 1U) {
+            throw std::runtime_error("simulated capacity growth failure");
+        }
+    };
+
+    EXPECT_FALSE(client::detail::tryGrowStoneFaceCapacity(
+        capacity,
+        REQUIRED_CAPACITY,
+        MAXIMUM_CAPACITY,
+        FRAME_DEADLINE,
+        recreate
+    ));
+
+    EXPECT_EQ(capacity, INITIAL_CAPACITY);
+    EXPECT_EQ(recreated_capacities, (std::vector<uint32_t>{ 16U, INITIAL_CAPACITY }));
+    EXPECT_EQ(
+        recreation_deadlines,
+        (std::vector<std::chrono::steady_clock::time_point>{ FRAME_DEADLINE, FRAME_DEADLINE })
+    );
 }
 
 TEST(RendererSmokeTest, RejectsASelectedTransformThatRequiresClientCompensation)

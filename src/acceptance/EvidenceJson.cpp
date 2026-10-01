@@ -1,9 +1,11 @@
 #include <acceptance/EvidenceJson.hpp>
 
 #include <array>
+#include <charconv>
 #include <cstdint>
 #include <exception>
 #include <fstream>
+#include <limits>
 #include <string_view>
 #include <utility>
 
@@ -67,6 +69,7 @@ std::string frameTimingSummaryJson(FrameTimingSummary const& summary)
         "      \"p50\": " + std::to_string(nanosecondsCount(summary.p50)) + ",\n"
         "      \"p95\": " + std::to_string(nanosecondsCount(summary.p95)) + ",\n"
         "      \"p99\": " + std::to_string(nanosecondsCount(summary.p99)) + ",\n"
+        "      \"p99_8\": " + std::to_string(nanosecondsCount(summary.p99_8)) + ",\n"
         "      \"max\": " + std::to_string(nanosecondsCount(summary.maximum)) + ",\n"
         "      \"mean\": " + std::to_string(nanosecondsCount(summary.mean)) + "\n"
         "    }";
@@ -129,6 +132,150 @@ std::string captureJson(RendererCaptureEvidence const& capture)
         "  }";
 }
 
+std::string diagnosticCameraJson(std::array<double, 7> const& camera)
+{
+    std::string result = "[";
+    for (size_t index = 0U; index < camera.size(); ++index) {
+        if (index != 0U) {
+            result += ", ";
+        }
+        std::array<char, 64> buffer{};
+        auto const converted = std::to_chars(
+            buffer.data(),
+            buffer.data() + buffer.size(),
+            camera[index],
+            std::chars_format::general,
+            std::numeric_limits<double>::max_digits10
+        );
+        result.append(buffer.data(), converted.ptr);
+    }
+    return result + "]";
+}
+
+std::string gameBenchmarkJson(GameBenchmarkEvidence const& benchmark)
+{
+    std::string result = "{\n"
+        "    \"workload\": " + jsonString(benchmark.workload) + ",\n"
+        "    \"measurement_kind\": \"full-game-render-submit-present-request\",\n"
+        "    \"package_id\": " + jsonString(benchmark.package_id) + ",\n"
+        "    \"hardware\": " + jsonString(benchmark.hardware) + ",\n"
+        "    \"gpu\": " + (benchmark.gpu ? jsonString(*benchmark.gpu) : "null") + ",\n"
+        "    \"present_mode\": " + jsonString(benchmark.present_mode) + ",\n"
+        "    \"build_mode\": " + jsonString(benchmark.build_mode) + ",\n"
+        "    \"cold_duration_ms\": " + std::to_string(benchmark.cold_duration_ms) + ",\n"
+        "    \"warm_duration_ms\": " + std::to_string(benchmark.warm_duration_ms) + ",\n"
+        "    \"uncapped_duration_ms\": " + std::to_string(benchmark.uncapped_duration_ms) + ",\n"
+        "    \"framebuffer\": { \"width\": " + std::to_string(benchmark.framebuffer_width)
+            + ", \"height\": " + std::to_string(benchmark.framebuffer_height) + " },\n"
+        "    \"power_mode\": null,\n"
+        "    \"displayed_cadence_hz\": null,\n"
+        "    \"gpu_timing_attribution\": \"latest renderer sample; may lag request\",\n"
+        "    \"resident_mesh_bytes\": null,\n"
+        "    \"client_message_payload_bytes_sent\": "
+            + std::to_string(benchmark.client_message_payload_bytes_sent) + ",\n"
+        "    \"client_message_payload_bytes_received\": "
+            + std::to_string(benchmark.client_message_payload_bytes_received) + ",\n"
+        "    \"server_events_processed\": " + std::to_string(benchmark.server_events_processed) + ",\n"
+        "    \"inputs_sent\": " + std::to_string(benchmark.inputs_sent) + ",\n"
+        "    \"authoritative_player_updates\": "
+            + std::to_string(benchmark.authoritative_player_updates) + ",\n"
+        "    \"observed_wrap_crossings\": "
+            + std::to_string(benchmark.observed_wrap_crossings) + ",\n"
+        "    \"observed_capability_transitions\": "
+            + std::to_string(benchmark.observed_capability_transitions) + ",\n"
+        "    \"permission_publishes\": "
+            + std::to_string(benchmark.permission_publishes) + ",\n"
+        "    \"successful_present_requests\": "
+            + std::to_string(benchmark.successful_present_requests) + ",\n"
+        "    \"failed_present_requests\": "
+            + std::to_string(benchmark.failed_present_requests) + ",\n"
+        "    \"excluded_present_requests\": "
+            + std::to_string(benchmark.excluded_present_requests) + ",\n"
+        "    \"warm_present_requests_per_second\": "
+            + std::to_string(benchmark.warm_present_requests_per_second) + ",\n"
+        "    \"uncapped_present_requests_per_second\": "
+            + std::to_string(benchmark.uncapped_present_requests_per_second) + ",\n"
+        "    \"cold_loop_timings_ns\": " + frameTimingSummaryJson(benchmark.cold_loop_timings) + ",\n"
+        "    \"warm_loop_timings_ns\": " + frameTimingSummaryJson(benchmark.warm_loop_timings) + ",\n"
+        "    \"uncapped_loop_timings_ns\": "
+            + frameTimingSummaryJson(benchmark.uncapped_loop_timings) + ",\n"
+        "    \"server_tick_timings_ns\": " + frameTimingSummaryJson(benchmark.server_tick_timings) + ",\n"
+        "    \"permission_publish_timings_ns\": "
+            + frameTimingSummaryJson(benchmark.permission_publish_timings) + ",\n"
+        "    \"raw_server_tick_durations_ns\": [";
+    for (uint64_t index = 0U; index < benchmark.raw_server_tick_durations_ns.size(); ++index) {
+        if (index != 0U) {
+            result += ", ";
+        }
+        result += std::to_string(benchmark.raw_server_tick_durations_ns[index]);
+    }
+    result += "],\n    \"raw_permission_publish_durations_ns\": [";
+    for (uint64_t index = 0U; index < benchmark.raw_permission_publish_durations_ns.size(); ++index) {
+        if (index != 0U) {
+            result += ", ";
+        }
+        result += std::to_string(benchmark.raw_permission_publish_durations_ns[index]);
+    }
+    result += "],\n    \"raw_frames\": [\n";
+    for (uint64_t index = 0U; index < benchmark.raw_frames.size(); ++index) {
+        GameBenchmarkFrameSample const& sample = benchmark.raw_frames[index];
+        if (index != 0U) {
+            result += ",\n";
+        }
+        result += "      { \"phase\": "
+            + jsonString(sample.excluded ? "excluded" : sample.uncapped ? "uncapped"
+                : sample.warm ? "warm" : "cold")
+            + ", \"presentation_succeeded\": "
+            + std::string(sample.presentation_succeeded ? "true" : "false")
+            + ", \"started_offset_ns\": " + std::to_string(sample.started_offset_ns)
+            + ", \"loop_duration_ns\": " + std::to_string(sample.loop_duration_ns)
+            + ", \"render_duration_ns\": " + std::to_string(sample.render_duration_ns)
+            + ", \"network_poll_duration_ns\": " + std::to_string(sample.network_poll_duration_ns)
+            + ", \"height_tile_delivery_duration_ns\": "
+                + std::to_string(sample.height_tile_delivery_duration_ns)
+            + ", \"network_event_count\": " + std::to_string(sample.network_event_count)
+            + ", \"cumulative_client_message_payload_bytes_sent\": "
+                + std::to_string(sample.client_message_payload_bytes_sent)
+            + ", \"cumulative_client_message_payload_bytes_received\": "
+                + std::to_string(sample.client_message_payload_bytes_received)
+            + ", \"resident_terrain_tile_count\": "
+                + std::to_string(sample.resident_terrain_tile_count)
+            + ", \"visible_surface_face_count\": "
+                + std::to_string(sample.visible_surface_face_count)
+            + ", \"diagnostic_render_attempt_id\": " + std::to_string(sample.diagnostic_render_attempt_id)
+            + ", \"diagnostic_frame_recorded\": " + (sample.diagnostic_frame_recorded ? "true" : "false")
+            + ", \"diagnostic_indexed_stone_quads\": " + (sample.diagnostic_indexed_stone_quads ? "true" : "false")
+            + ", \"diagnostic_stone_indirect\": " + (sample.diagnostic_stone_indirect ? "true" : "false")
+            + ", \"diagnostic_frame_slot\": "
+                + (sample.diagnostic_frame_slot ? std::to_string(*sample.diagnostic_frame_slot) : "null")
+            + ", \"diagnostic_submitted_stone_quad_count\": "
+                + std::to_string(sample.diagnostic_submitted_stone_quad_count)
+            + ", \"diagnostic_stone_draw_count\": " + std::to_string(sample.diagnostic_stone_draw_count)
+            + ", \"diagnostic_camera\": " + diagnosticCameraJson(sample.diagnostic_camera)
+            + ", \"diagnostic_cpu_acquire_wait_duration_ns\": "
+                + std::to_string(sample.diagnostic_cpu_acquire_wait_duration_ns)
+            + ", \"diagnostic_cpu_command_record_duration_ns\": "
+                + std::to_string(sample.diagnostic_cpu_command_record_duration_ns)
+            + ", \"diagnostic_cpu_complete_present_wait_duration_ns\": "
+                + std::to_string(sample.diagnostic_cpu_complete_present_wait_duration_ns)
+            + ", \"diagnostic_gpu_timestamps_enabled\": " + (sample.diagnostic_gpu_timestamps_enabled ? "true" : "false")
+            + ", \"diagnostic_gpu_timestamp_reason\": " + jsonString(sample.diagnostic_gpu_timestamp_reason)
+            + ", \"diagnostic_gpu_sample_attempt_id\": " + std::to_string(sample.diagnostic_gpu_sample_attempt_id)
+            + ", \"diagnostic_gpu_sample_slot\": " + std::to_string(sample.diagnostic_gpu_sample_slot)
+            + ", \"diagnostic_gpu_sample_quad_count\": " + std::to_string(sample.diagnostic_gpu_sample_quad_count)
+            + ", \"diagnostic_gpu_sample_draw_count\": " + std::to_string(sample.diagnostic_gpu_sample_draw_count)
+            + ", \"diagnostic_gpu_terrain_duration_ns\": "
+                + (sample.diagnostic_gpu_terrain_duration_ns
+                    ? std::to_string(*sample.diagnostic_gpu_terrain_duration_ns) : "null")
+            + ", \"latest_gpu_frame_duration_ns\": "
+            + (sample.latest_gpu_frame_duration_ns
+                ? std::to_string(*sample.latest_gpu_frame_duration_ns) : "null")
+            + " }";
+    }
+    result += "\n    ]\n  }";
+    return result;
+}
+
 } // namespace
 
 std::string evidenceJson(RuntimeEvidence const& evidence)
@@ -161,9 +308,14 @@ std::string evidenceJson(RuntimeEvidence const& evidence)
         "  },\n"
         "  \"passed\": " + std::string(evidence.passed ? "true" : "false") + ",\n"
         "  \"failure\": " + jsonString(evidence.failure) + ",\n"
-        "  \"benchmark\": " + (
+    "  \"benchmark\": " + (
             evidence.benchmark.has_value()
                 ? benchmarkJson(*evidence.benchmark)
+                : "null"
+        ) + ",\n"
+        "  \"game_benchmark\": " + (
+            evidence.game_benchmark.has_value()
+                ? gameBenchmarkJson(*evidence.game_benchmark)
                 : "null"
         ) + ",\n"
         "  \"capture\": " + (

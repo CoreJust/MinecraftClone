@@ -1,5 +1,6 @@
 #pragma once
 
+#include "ClientAudio.hpp"
 #include "PlayerPresentation.hpp"
 #include "PreviewResidency.hpp"
 
@@ -11,11 +12,36 @@
 #include <array>
 #include <chrono>
 #include <deque>
+#include <functional>
+#include <memory>
 #include <optional>
 #include <unordered_map>
 #include <unordered_set>
+#include <utility>
 
 namespace client {
+
+struct GameClientLoopSample final {
+    std::chrono::steady_clock::time_point started_at;
+    std::chrono::steady_clock::time_point completed_at;
+    std::chrono::nanoseconds network_poll_duration{ 0 };
+    std::chrono::nanoseconds height_tile_delivery_duration{ 0 };
+    std::chrono::nanoseconds render_duration{ 0 };
+    uint64_t network_event_count = 0U;
+    uint64_t client_message_payload_bytes_sent = 0U;
+    uint64_t client_message_payload_bytes_received = 0U;
+    bool input_sent = false;
+    bool presentation_succeeded = false;
+};
+
+struct GameClientBenchmarkHooks final {
+    std::optional<std::chrono::steady_clock::time_point> deadline;
+    std::function<bool()> should_stop;
+    std::function<bool()> is_uncapped_phase;
+    std::function<std::optional<shared::Direction>(uint64_t)> input_override;
+    std::function<void(GameClientLoopSample const&)> on_loop;
+    std::function<void(shared::Player const&)> on_authoritative_player;
+};
 
 class GameClient : public core::Client {
 public:
@@ -24,16 +50,27 @@ public:
     explicit GameClient(
         shared::WorldMode const mode = shared::WorldMode::Flat,
         shared::WorldConfiguration const configuration = shared::World::canonicalConfiguration(),
-        bool const wants_previews = true
+        bool const wants_previews = true,
+        std::unique_ptr<ClientAudioOutput> audio_output = {}
     )
         : core::Client{ 2 }
         , m_world{ mode, configuration }
         , m_predicted_world{ mode, configuration }
         , m_height_tile_residency{ { .generation = 1, .revision = 1 }, {} }
         , m_wants_previews{ wants_previews }
+        , m_client_audio{ std::move(audio_output) }
     { }
 
-    void run(core::Address const server_address, char const ch);
+    void run(
+        core::Address server_address,
+        char ch,
+        GameClientBenchmarkHooks const* benchmark_hooks = nullptr
+    );
+    [[nodiscard]] std::optional<uint32_t> renderDistance() const noexcept { return m_render_distance; }
+    [[nodiscard]] uint32_t requiredHeightTileCount() const noexcept
+    {
+        return m_render_distance ? shared::heightTileInterestCount(*m_render_distance) : 0U;
+    }
     [[nodiscard]] PreviewResidency const& heightTileResidency() const noexcept
     {
         return m_height_tile_residency;
@@ -43,8 +80,10 @@ public:
         return m_height_tile_residency;
     }
 protected:
+    virtual void servicePlatformEvents() {}
     virtual shared::Direction input() = 0;
     virtual void render() = 0;
+    [[nodiscard]] virtual bool presentationSucceeded() const { return false; }
 
     [[nodiscard]] bool send(shared::Message const message);
     [[nodiscard]]
@@ -71,10 +110,15 @@ protected:
     void applyHeightTileBatch(shared::ServerHeightTileBatchMessage const& message);
     [[nodiscard]] bool applyHeightTileRemoval(shared::ServerRemoveHeightTileMessage const& message);
     void processPendingHeightTileDeliveries();
-private:
+    [[nodiscard]] bool applyHeightTileDescriptor(shared::ServerHeightTileDescriptorMessage const& message);
+protected:
     static constexpr std::array<char, 5> FLIGHT_CHARACTERS{ '@', '#', '$', '%', '&' };
 
     void onDisconnected(core::DisconnectEvent const event) override;
+    virtual void onConnectionStateReset() { }
+    void resetConnectionState();
+
+private:
     void onReceived(core::ReceiveEvent event) override;
 protected:
     shared::World m_world;
@@ -82,7 +126,9 @@ protected:
     PlayerPresentation m_player_presentation;
     PreviewResidency m_height_tile_residency;
     bool m_wants_previews;
+    ClientAudio m_client_audio;
     HeightTileRevision m_height_tile_revision{ .generation = 1, .revision = 1 };
+    std::optional<uint32_t> m_render_distance;
     std::deque<shared::ServerHeightTileBatchMessage> m_pending_height_tile_deliveries;
     std::unordered_set<uint64_t> m_pending_height_tile_delivery_tokens;
     uint64_t m_height_tile_credit_revision = 0U;
@@ -94,9 +140,11 @@ protected:
     bool m_running = true;
     bool m_accepted = false;
     uint32_t m_join_character_index = 0;
+    GameClientBenchmarkHooks const* m_benchmark_hooks = nullptr;
+    uint64_t m_benchmark_bytes_sent = 0U;
+    uint64_t m_benchmark_bytes_received = 0U;
 private:
     [[nodiscard]] bool sendJoinRequest();
-    [[nodiscard]] bool applyHeightTileDescriptor(shared::ServerHeightTileDescriptorMessage const& message);
     [[nodiscard]] bool applyWorldRevision(shared::ServerWorldRevisionMessage const& message);
     [[nodiscard]] bool grantHeightTileCredit(uint64_t delivery_token, uint8_t credits);
     [[nodiscard]] bool queueHeightTileDelivery(shared::ServerHeightTileBatchMessage message);

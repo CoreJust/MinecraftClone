@@ -1,6 +1,7 @@
 target_sources(mc
     PRIVATE
         BotClient.cpp
+        ClientAudio.cpp
         PreviewResidency.cpp
     Camera.cpp
     CameraController.cpp
@@ -10,14 +11,18 @@ target_sources(mc
         PlayerPresentation.cpp
         render/DebugHud.cpp
         render/GuiRenderer.cpp
+        render/HeightTileDrawIndex.cpp
         render/ShaderAssets.cpp
+        render/StoneIndirectDraws.cpp
         render/TextRenderer.cpp
         render/PresentationRenderer.cpp
+        render/VulkanFrustum.cpp
 )
 if(NOT ANDROID)
     target_sources(mc
         PRIVATE
             PlayerClient.cpp
+            PlayerPreviewLod.cpp
             render/InstalledShaderAssets.cpp
     )
 endif()

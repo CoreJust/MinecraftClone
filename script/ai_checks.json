@@ -1,5 +1,14 @@
 [
   {
+    "name": "sanitizer-static-analysis",
+    "enabled": true,
+    "levels": ["basic", "snapshot", "minor", "major"],
+    "command": ["{python}", "script/ci/verify_analysis_gate.py", "--commit", "HEAD"],
+    "timeout": 60,
+    "reason": "Strict release pushes must have a successful hosted matrix check on the exact immutable candidate.",
+    "when": "strict"
+  },
+  {
     "name": "renderer-smoke",
     "enabled": true,
     "levels": ["snapshot", "minor", "major"],

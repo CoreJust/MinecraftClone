@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run a project Codex task with a selected model and high reasoning effort."""
+"""Run a project Codex task with a selected model and reasoning effort."""
 
 from __future__ import annotations
 
@@ -15,21 +15,27 @@ from typing import Any, Sequence
 
 MODELS = {
     "astra": "gpt-6-astra",
-    "sol": "gpt-5.6-sol",
-    "terra": "gpt-5.6-terra",
-    "luna": "gpt-5.6-luna",
+    "sol": "gpt-6-sol",
+    "terra": "gpt-6-sol",
+    "luna": "gpt-6-luna",
+}
+MODEL_EFFORTS = {
+    "astra": {"low", "medium", "high", "xhigh", "max", "ultra"},
+    "sol": {"low", "medium", "high", "xhigh", "max", "ultra"},
+    "terra": {"low", "medium", "high", "xhigh", "max", "ultra"},
+    "luna": {"low", "medium", "high", "xhigh", "max"},
 }
 REPOSITORY_ROOT = Path(__file__).resolve().parent.parent
 USAGE_FIELDS = ("input_tokens", "cached_input_tokens", "output_tokens")
 
 
-def make_command(route: str, codex_args: Sequence[str]) -> list[str]:
+def make_command(route: str, effort: str, codex_args: Sequence[str]) -> list[str]:
     return [
         "codex",
         "--model",
         MODELS[route],
         "-c",
-        'model_reasoning_effort="high"',
+        f'model_reasoning_effort="{effort}"',
         *codex_args,
     ]
 
@@ -256,6 +262,12 @@ def write_immutable_json(target_path: Path, payload: dict[str, Any]) -> None:
 def make_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dry-run", action="store_true", help="print the command without launching Codex")
+    parser.add_argument(
+        "--effort",
+        choices=("low", "medium", "high", "xhigh", "max", "ultra"),
+        default="high",
+        help="reasoning effort (must be supported by the selected model; default: high)",
+    )
     parser.add_argument("route", choices=tuple(MODELS), nargs="?", default="luna", help="model route to use")
     parser.add_argument("codex_args", nargs=argparse.REMAINDER, help="arguments forwarded to Codex")
     return parser
@@ -281,8 +293,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         except ValueError as error:
             print(f"ai_run: {error}", file=sys.stderr)
             return 1
-    args = make_parser().parse_args(argv)
-    command = make_command(args.route, args.codex_args)
+    parser = make_parser()
+    args = parser.parse_args(argv)
+    if args.effort not in MODEL_EFFORTS[args.route]:
+        parser.error(f"{args.route} does not support reasoning effort {args.effort!r}")
+    command = make_command(args.route, args.effort, args.codex_args)
     if args.dry_run:
         print(shlex.join(command))
         return 0

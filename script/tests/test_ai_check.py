@@ -424,6 +424,33 @@ class AiCheckTests(unittest.TestCase):
         with mock.patch.object(checker, "run_phase", side_effect=run_phase), contextlib.redirect_stdout(io.StringIO()):
             self.assertEqual(checker.main(["--root", str(self.root), "--candidate", "--level", "snapshot"]), 1)
 
+    def test_strict_only_release_check_waits_for_committed_hosted_receipts(self):
+        checker = load_module()
+        config_path = self.root / "script/ai_checks.json"
+        config = [{"name": "matrix", "enabled": True, "levels": ["snapshot"],
+                   "command": ["{python}", "verify.py"], "timeout": 7,
+                   "reason": "", "when": "strict"}]
+        config_path.write_text(json.dumps(config))
+        commands = []
+
+        def run_phase(root, log_dir, name, command, timeout, **kwargs):
+            commands.append((name, command, timeout))
+            return checker.PhaseResult(name, command, 0, "")
+
+        with mock.patch.object(checker, "run_phase", side_effect=run_phase), contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(checker.main(["--root", str(self.root), "--candidate", "--level", "snapshot"]), 0)
+        self.assertNotIn(("extra-matrix", [sys.executable, "verify.py"], 7), commands)
+
+        commands.clear()
+        with mock.patch.object(checker, "run_phase", side_effect=run_phase), contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(checker.main(["--root", str(self.root), "--strict", "--level", "snapshot"]), 0)
+        self.assertIn(("extra-matrix", [sys.executable, "verify.py"], 7), commands)
+
+        config[0]["when"] = "later"
+        config_path.write_text(json.dumps(config))
+        with mock.patch.object(checker, "run_phase", side_effect=run_phase), contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(checker.main(["--root", str(self.root), "--strict", "--level", "snapshot"]), 1)
+
     def test_metadata_only_scope_skips_python_tests_and_writes_summary(self):
         metadata = self.root / "docs/ai/notes.md"
         metadata.parent.mkdir(parents=True, exist_ok=True)
@@ -757,6 +784,22 @@ class AiCheckTests(unittest.TestCase):
                 self.assertIn("python-tests", calls)
                 self.assertIn("build", calls)
                 self.assertIn("ctest", calls)
+
+    def test_full_ctest_has_budget_for_full_residency_stream_tests(self):
+        checker = load_module()
+        (self.root / "script/ai_checks.json").write_text("[]\n", encoding="utf-8")
+        calls = []
+
+        def run_phase(root, log_dir, name, command, timeout, **kwargs):
+            calls.append((name, command, timeout))
+            return checker.PhaseResult(name, command, 0, "")
+
+        with mock.patch.object(checker, "run_phase", side_effect=run_phase), contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(checker.main(["--root", str(self.root)]), 0)
+
+        ctest = next(call for call in calls if call[0] == "ctest")
+        self.assertEqual(ctest[1][-2:], ["--timeout", "240"])
+        self.assertGreaterEqual(ctest[2], 900)
 
     def test_full_and_strict_checks_run_full_python_for_focused_scopes(self):
         checker = load_module()

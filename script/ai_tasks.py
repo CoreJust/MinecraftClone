@@ -168,7 +168,7 @@ def validate_backlog(tasks: Sequence[dict[str, Any]]) -> None:
         for dependency in task["depends_on"]:
             if dependency not in task_by_id:
                 raise BacklogError(f"{task['id']} depends on missing task {dependency}")
-            if task["status"] in {"ready", "active", "done"} and task_by_id[dependency]["status"] != "done":
+            if task["status"] in {"ready", "active", "done"} and not dependency_satisfied(task_by_id[dependency]):
                 raise BacklogError(f"{task['id']} has unfinished dependency {dependency}")
 
     visiting: set[str] = set()
@@ -760,7 +760,11 @@ def render_task(task: dict[str, Any], tasks: Sequence[dict[str, Any]], commits: 
 def ready_tasks(tasks: Sequence[dict[str, Any]]) -> list[dict[str, Any]]:
     validate_backlog(tasks)
     task_by_id = {task["id"]: task for task in tasks}
-    return sorted((task for task in tasks if task["status"] == "ready" and all(task_by_id[dependency]["status"] == "done" for dependency in task["depends_on"])), key=lambda item: (PRIORITY_ORDER[item["priority"]], item["id"]))
+    return sorted((task for task in tasks if task["status"] == "ready" and all(dependency_satisfied(task_by_id[dependency]) for dependency in task["depends_on"])), key=lambda item: (PRIORITY_ORDER[item["priority"]], item["id"]))
+
+
+def dependency_satisfied(task: dict[str, Any]) -> bool:
+    return task["status"] == "done" or (task["level"] == "snapshot" and task["finalized"])
 
 
 def next_task_id(tasks: Iterable[dict[str, Any]]) -> str:

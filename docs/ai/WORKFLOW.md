@@ -22,6 +22,7 @@ supplement these records without becoming separate task state.
 Public task IDs are sequential; files and trailers retain `MC-AI-####`. The
 [project skills](SKILLS.md) resolve them. Hierarchy: **basic → snapshot → minor → major**.
 Parentage groups work; dependencies order it. Future stages remain plans.
+A finalized snapshot ledger satisfies code dependencies even if its status stays active for separately tracked post-publication runtime acceptance; its blocker remains open.
 
 ## Basic task loop
 
@@ -30,7 +31,7 @@ Parentage groups work; dependencies order it. Future stages remain plans.
 3. Implement the smallest accepted change with meaningful tests. Record unrelated findings as tasks. Update guides, hashes, and generated task documents.
    Asynchronous or mutable systems require bounded ownership, backpressure or cancellation, deterministic ordering, and headless contract coverage. Use deterministic clocks, inputs, and mocks for cross-system behavior.
 4. Resolve only with actual changes and acceptance evidence. Stage only task changes and required traceability metadata.
-5. Run one bounded **Luna/high review batch** for the exact staged task candidate. [Commit gates](COMMITS.md) bind the review to the exact staged tree; reuse that receipt only when inputs are unchanged and do not add a duplicate precommit wrapper. Fix genuine findings before commit; send only a changed delta to the same reviewer, and defer non-blocking cosmetic suggestions.
+5. Run one bounded **Luna review batch** at the active selected effort, including **max** when selected, for the exact staged task candidate. [Commit gates](COMMITS.md) bind the review to the exact staged tree; reuse that receipt only when inputs are unchanged and do not add a duplicate precommit wrapper. Fix genuine findings before commit; send only a changed delta to the same reviewer, and defer non-blocking cosmetic suggestions.
 6. Commit once with one `Task-ID: MC-AI-####` trailer. Later changes require new tasks.
 
 The commit/push hooks own `ai_check.py --fast`: docs, backlog, plan, index,

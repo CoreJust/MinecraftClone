@@ -9,12 +9,34 @@ All deterministic tools are local Python scripts, require no model calls or keys
 | `script/ai_history.py` | Trace commits, collect/finalize aggregate children, refresh local task backlinks |
 | `script/ai_run.py <route>` | Explicit local model/high preset; `--dry-run` prints the command without invoking a model |
 | `script/ai_setup.py` | Read-only prerequisite report; `--install-hooks` installs this repository's Git hooks without replacing existing active hooks |
+| `script/ai_analysis_matrix.py` | Fail-closed MC-AI-0249 sanitizer/static-analysis receipt verifier; see below |
 | `script/ai_docs.py check` | Coverage, links, word limits, index/source-state freshness |
 | `script/ai_docs.py refresh` | Explicitly acknowledge guide review and regenerate mechanical artifacts |
 | `script/ai_tasks.py` | Validate, render, add/update, and list ready backlog items; see `--help` |
 | `script/ai_check.py --fast` | Documentation/planner checks, Python tooling tests, whitespace |
 | `script/ai_check.py` | Fast checks plus debug build, CTest, and publisher checks-only |
 | `script/ai_check.py --strict` | Full checks with no development publisher exceptions |
+
+MC-AI-0249's exact-candidate matrix is declared in
+[`script/ai_analysis_matrix.json`](../../script/ai_analysis_matrix.json). Run a
+row, merge one passing receipt per row, then verify the merged candidate:
+
+```sh
+python3 script/ai_analysis_matrix.py run-row build/ai-checks/macos-asan.json \
+  --row macos_asan --head <HEAD_SHA> --tree <INDEX_TREE_SHA>
+python3 script/ai_analysis_matrix.py merge build/ai-checks/analysis-matrix.json \
+  --row-receipt build/ai-checks/macos-asan.json --head <HEAD_SHA> --tree <INDEX_TREE_SHA>
+python3 script/ai_analysis_matrix.py verify build/ai-checks/analysis-matrix.json \
+  --head <HEAD_SHA> --tree <INDEX_TREE_SHA>
+```
+
+Receipts bind the candidate, manifest, flags, tools, commands and diagnostics;
+missing, unavailable or stale rows fail closed. macOS runs ASan/leaks, UBSan and
+TSan; Windows runs MSVC ASan and analysis; Android uses Release HWASan; Linux is
+tests-only LSan/MSan with libc++ and instrumented C++ dependencies. Sanitizer
+CTest rows reject empty discovery, UBSan halts on diagnostics, and performance
+is measured in ordinary Release. Local candidate checks defer hosted receipts;
+CI binds them to the immutable tree before promotion and strict/tag checks.
 
 ## Git hooks and CI
 
@@ -28,7 +50,7 @@ immutable. One exact historical compatibility entry recognizes Snapshot 3 commit
 condensed four prose fields. The exception is commit-scoped; later ledgers use
 only the standard publication fields.
 
-[GitHub workflow](../../.github/workflows/ai-checks.yml) runs fast checks on AI branches and pull requests. It has read-only permissions and does not call a model, publish, or run arbitrary scheduled work. Linux CI validates tooling only: the application supports macOS and Windows. GPU/multiplayer acceptance belongs to a supported runner and the task evidence. Enabling remote rules or workflows requires publishing and separate repository administration; this setup performs neither.
+[GitHub workflow](../../.github/workflows/ai-checks.yml) runs fast checks on pull requests and desktop plus analysis gates on AI-branch pushes. It has read-only permissions and does not call a model, publish, or run arbitrary scheduled work. GPU/multiplayer acceptance belongs to supported runners and task evidence. Enabling remote rules or workflows requires separate repository administration; this setup does neither.
 
 ## Project skills and future hooks
 

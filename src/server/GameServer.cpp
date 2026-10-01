@@ -3,19 +3,50 @@
 #include <shared/world/HeightTileInterest.hpp>
 #include <shared/world/WorldGeneration.hpp>
 
+#include <core/executor/Executor.hpp>
 #include <core/IO/Log.hpp>
 
 #include <algorithm>
-#include <condition_variable>
+#include <cstddef>
 #include <cstdlib>
 #include <functional>
 #include <mutex>
+#include <optional>
 #include <stdexcept>
+#include <string>
+#include <string_view>
 #include <thread>
 #include <tuple>
 
 namespace {
 
+[[nodiscard]]
+shared::PolicyDiagnostic policyDiagnostic(
+    shared::PolicyDiagnosticCode const code,
+    std::string source_id,
+    std::string message
+)
+{
+    return {
+        .code = code,
+        .source_id = std::move(source_id),
+        .message = std::move(message),
+    };
+}
+
+[[nodiscard]]
+std::optional<shared::PolicyCapabilityKeyId> capabilityKey(
+    shared::PolicyCapabilityRegistry const& registry,
+    std::string_view const key
+) noexcept
+{
+    for (shared::PolicyCapabilityKeyId index = 0U; index < registry.definitions.size(); ++index) {
+        if (registry.definitions[index].key == key) {
+            return index;
+        }
+    }
+    return std::nullopt;
+}
 
 [[nodiscard]]
 int32_t floorDivideByHeightTileSide(int32_t const value) noexcept
@@ -57,6 +88,58 @@ std::tuple<double, int32_t, int32_t> heightTilePriority(
 }
 
 [[nodiscard]]
+int32_t shortestWrappedChunkDelta(int32_t const target, int32_t const center) noexcept
+{
+    static constexpr int32_t CHUNK_COUNT = static_cast<int32_t>(
+        shared::WorldExtent::WIDTH / shared::Chunk::SIDE_LENGTH
+    );
+    static constexpr int32_t HALF_WORLD = CHUNK_COUNT / 2;
+    int32_t delta = target - center;
+    if (delta > HALF_WORLD) {
+        delta -= CHUNK_COUNT;
+    } else if (delta < -HALF_WORLD) {
+        delta += CHUNK_COUNT;
+    }
+    return delta;
+}
+
+[[nodiscard]]
+uint32_t directionalPriorityScore(int64_t const projection) noexcept
+{
+    static constexpr int64_t PRIORITY_BIAS = 1'000'000;
+    return static_cast<uint32_t>(std::clamp(
+        PRIORITY_BIAS - projection,
+        int64_t{0},
+        PRIORITY_BIAS * 2
+    ));
+}
+
+[[nodiscard]]
+shared::GenerationPriorityScores generationPriorityScores(
+    shared::Player const& player,
+    shared::Direction const direction,
+    shared::ChunkCoordinate const coordinate
+) noexcept
+{
+    int32_t const center_x = player.x / static_cast<int32_t>(shared::Chunk::SIDE_LENGTH);
+    int32_t const center_y = player.y / static_cast<int32_t>(shared::Chunk::SIDE_LENGTH);
+    int32_t const center_z = player.z / static_cast<int32_t>(shared::Chunk::SIDE_LENGTH);
+    int32_t const delta_x = shortestWrappedChunkDelta(coordinate.x, center_x);
+    int32_t const delta_y = shortestWrappedChunkDelta(coordinate.y, center_y);
+    int32_t const delta_z = coordinate.z - center_z;
+    int64_t const view_projection = static_cast<int64_t>(delta_x) * direction.view_x
+        + static_cast<int64_t>(delta_y) * direction.view_y;
+    int64_t const movement_projection = static_cast<int64_t>(delta_x) * static_cast<int8_t>(direction.x)
+        + static_cast<int64_t>(delta_y) * static_cast<int8_t>(direction.y)
+        + static_cast<int64_t>(delta_z) * static_cast<int8_t>(direction.z);
+    return {
+        .distance = static_cast<uint32_t>(std::abs(delta_x) + std::abs(delta_y) + std::abs(delta_z)),
+        .view = directionalPriorityScore(view_projection),
+        .movement = directionalPriorityScore(movement_projection),
+    };
+}
+
+[[nodiscard]]
 uint64_t nextHeightTileToken(uint64_t& next_token) noexcept
 {
     uint64_t const token = next_token;
@@ -65,6 +148,92 @@ uint64_t nextHeightTileToken(uint64_t& next_token) noexcept
         next_token = 1U;
     }
     return token;
+}
+
+[[nodiscard]]
+std::vector<uint8_t> generateRegionOutput(
+    shared::GenerationJob const& job,
+    shared::TerrainGenerator const& terrain_generator
+)
+{
+    if (!job.region.has_value()) {
+        throw std::runtime_error{"world refinement job is missing its bounded region"};
+    }
+    static constexpr uint32_t SAMPLE_SIDE = 16U;
+    static constexpr uint32_t SAMPLE_COUNT = SAMPLE_SIDE * SAMPLE_SIDE;
+    static constexpr uint32_t SAMPLE_BYTES = sizeof(uint16_t);
+    static constexpr uint32_t REGION_HEADER_BYTES = 3U * sizeof(uint32_t);
+    static constexpr uint32_t REGION_OUTPUT_BYTES = REGION_HEADER_BYTES + SAMPLE_COUNT * SAMPLE_BYTES;
+    if (job.inherited_ancestor_data != nullptr
+        && job.inherited_ancestor_data->size() != REGION_OUTPUT_BYTES) {
+        throw std::runtime_error{"world refinement ancestor has an invalid sample payload"};
+    }
+    std::vector<uint8_t> output(REGION_OUTPUT_BYTES);
+    auto write_header = [&output](uint32_t const offset, uint32_t const value) {
+        for (uint32_t byte = 0U; byte < sizeof(uint32_t); ++byte) {
+            output[offset + byte] = static_cast<uint8_t>(value >> (byte * 8U));
+        }
+    };
+    write_header(0U, static_cast<uint32_t>(job.region->origin_x));
+    write_header(sizeof(uint32_t), static_cast<uint32_t>(job.region->origin_y));
+    write_header(2U * sizeof(uint32_t), job.region->extent);
+    for (uint32_t y = 0U; y < SAMPLE_SIDE; ++y) {
+        for (uint32_t x = 0U; x < SAMPLE_SIDE; ++x) {
+            uint64_t const sample_x = static_cast<uint64_t>(2U * x + 1U)
+                * job.region->extent / (2U * SAMPLE_SIDE);
+            uint64_t const sample_y = static_cast<uint64_t>(2U * y + 1U)
+                * job.region->extent / (2U * SAMPLE_SIDE);
+            uint16_t height = terrain_generator.heightAt(
+                static_cast<int64_t>(job.region->origin_x) + static_cast<int64_t>(sample_x),
+                static_cast<int64_t>(job.region->origin_y) + static_cast<int64_t>(sample_y)
+            );
+            uint32_t const sample_index = y * SAMPLE_SIDE + x;
+            if (job.inherited_ancestor_data != nullptr) {
+                auto const& ancestor = *job.inherited_ancestor_data;
+                auto read_header = [&ancestor](uint32_t const offset) {
+                    uint32_t value = 0U;
+                    for (uint32_t byte = 0U; byte < sizeof(uint32_t); ++byte) {
+                        value |= static_cast<uint32_t>(ancestor[offset + byte]) << (byte * 8U);
+                    }
+                    return value;
+                };
+                uint32_t const ancestor_origin_x = read_header(0U);
+                uint32_t const ancestor_origin_y = read_header(sizeof(uint32_t));
+                uint32_t const ancestor_extent = read_header(2U * sizeof(uint32_t));
+                if (ancestor_extent <= job.region->extent
+                    || ancestor_origin_x > static_cast<uint32_t>(job.region->origin_x)
+                    || ancestor_origin_y > static_cast<uint32_t>(job.region->origin_y)
+                    || static_cast<uint64_t>(ancestor_origin_x) + ancestor_extent
+                        < static_cast<uint64_t>(job.region->origin_x) + job.region->extent
+                    || static_cast<uint64_t>(ancestor_origin_y) + ancestor_extent
+                        < static_cast<uint64_t>(job.region->origin_y) + job.region->extent) {
+                    throw std::runtime_error{"world refinement ancestor does not contain its child"};
+                }
+                uint64_t const offset_x = static_cast<uint64_t>(job.region->origin_x)
+                    + sample_x - ancestor_origin_x;
+                uint64_t const offset_y = static_cast<uint64_t>(job.region->origin_y)
+                    + sample_y - ancestor_origin_y;
+                uint32_t const ancestor_x = std::min<uint32_t>(
+                    SAMPLE_SIDE - 1U,
+                    static_cast<uint32_t>(offset_x * SAMPLE_SIDE / ancestor_extent)
+                );
+                uint32_t const ancestor_y = std::min<uint32_t>(
+                    SAMPLE_SIDE - 1U,
+                    static_cast<uint32_t>(offset_y * SAMPLE_SIDE / ancestor_extent)
+                );
+                uint32_t const ancestor_index = ancestor_y * SAMPLE_SIDE + ancestor_x;
+                uint16_t const inherited_height = static_cast<uint16_t>(ancestor[
+                    REGION_HEADER_BYTES + ancestor_index * SAMPLE_BYTES
+                ]) | static_cast<uint16_t>(static_cast<uint16_t>(ancestor[
+                    REGION_HEADER_BYTES + ancestor_index * SAMPLE_BYTES + 1U
+                ]) << 8U);
+                height = static_cast<uint16_t>((static_cast<uint32_t>(height) + inherited_height) / 2U);
+            }
+            output[REGION_HEADER_BYTES + sample_index * SAMPLE_BYTES] = static_cast<uint8_t>(height);
+            output[REGION_HEADER_BYTES + sample_index * SAMPLE_BYTES + 1U] = static_cast<uint8_t>(height >> 8U);
+        }
+    }
+    return output;
 }
 
 } // namespace
@@ -78,38 +247,44 @@ struct GameServer::HeightTileWorkerPool final {
         core::ClientId client_id;
         uint64_t generation;
         shared::GenerationJob job;
+        bool world_generation = false;
     };
 
     struct Result final {
         core::ClientId client_id;
         uint64_t generation;
         shared::GenerationJob job;
+        bool world_generation = false;
         bool succeeded = false;
+        bool cancelled = false;
         shared::HeightTile tile{};
+        shared::Chunk chunk{};
+        std::vector<uint8_t> generation_output;
+    };
+
+    struct Submitted final {
+        Work work;
+        std::shared_ptr<Result> result;
+        core::executor::JobHandle handle;
     };
 
     HeightTileWorkerPool()
     {
         uint32_t const worker_count = GameServer::terrainWorkerCount(std::thread::hardware_concurrency());
-        m_workers.reserve(worker_count);
-        for (uint32_t worker{ 0U }; worker < worker_count; ++worker) {
-            m_workers.emplace_back([this] {
-                workerLoop();
-            });
-        }
+        // Keep the executor FIFO shallow so the remaining game-owned work can be reprioritized.
+        m_submission_window = worker_count * 4U;
+        m_executor = std::make_unique<core::executor::Executor>(
+            core::executor::ExecutorLimits{
+                .queue_capacity = worker_count,
+                .result_capacity = MAX_OUTSTANDING_WORK,
+            },
+            worker_count
+        );
     }
 
     ~HeightTileWorkerPool()
     {
-        {
-            std::lock_guard lock{m_mutex};
-            m_stopping = true;
-            m_work.clear();
-        }
-        m_work_available.notify_all();
-        for (std::thread& worker : m_workers) {
-            worker.join();
-        }
+        m_executor->shutdown();
     }
 
     [[nodiscard]]
@@ -122,27 +297,28 @@ struct GameServer::HeightTileWorkerPool final {
     [[nodiscard]]
     bool enqueue(Work work)
     {
-        {
-            std::lock_guard lock{m_mutex};
-            if (m_stopping || outstandingCount() >= MAX_OUTSTANDING_WORK) {
-                return false;
-            }
-            m_work.push_back(std::move(work));
+        std::lock_guard lock{m_mutex};
+        if (outstandingCount() >= MAX_OUTSTANDING_WORK) {
+            return false;
         }
-        m_work_available.notify_one();
+        m_pending.push_back(std::move(work));
+        submitPending();
         return true;
     }
 
     void cancel(core::ClientId const client_id, uint64_t const generation)
     {
         std::lock_guard lock{m_mutex};
-        std::erase_if(m_work, [client_id, generation](Work const& work) {
-            return work.client_id == client_id && work.generation == generation;
+        std::erase_if(m_pending, [client_id, generation](Work const& work) {
+            return !work.world_generation && work.client_id == client_id && work.generation == generation;
         });
-        std::erase_if(m_results, [client_id, generation](Result const& result) {
-            return result.client_id == client_id && result.generation == generation;
-        });
-        m_result_space_available.notify_all();
+        for (auto& [id, submitted] : m_submitted) {
+            static_cast<void>(id);
+            if (!submitted.work.world_generation && submitted.work.client_id == client_id
+                && submitted.work.generation == generation) {
+                static_cast<void>(submitted.handle.requestCancellation());
+            }
+        }
     }
 
     [[nodiscard]]
@@ -152,16 +328,13 @@ struct GameServer::HeightTileWorkerPool final {
     ) {
         std::vector<shared::GenerationJob> cancelled;
         std::lock_guard lock{m_mutex};
-        std::erase_if(m_work, [&](Work const& work) {
-            if (work.client_id != client_id || work.generation != generation) {
+        std::erase_if(m_pending, [&](Work const& work) {
+            if (work.world_generation || work.client_id != client_id || work.generation != generation) {
                 return false;
             }
             cancelled.push_back(work.job);
             return true;
         });
-        if (!cancelled.empty()) {
-            m_result_space_available.notify_all();
-        }
         return cancelled;
     }
 
@@ -172,15 +345,19 @@ struct GameServer::HeightTileWorkerPool final {
     ) {
         std::vector<shared::GenerationJob> cancelled;
         std::lock_guard lock{m_mutex};
-        std::erase_if(m_work, [&](Work const& work) {
-            if (work.client_id != client_id || !should_cancel(work)) {
+        std::erase_if(m_pending, [&](Work const& work) {
+            if (work.world_generation || work.client_id != client_id || !should_cancel(work)) {
                 return false;
             }
             cancelled.push_back(work.job);
             return true;
         });
-        if (!cancelled.empty()) {
-            m_result_space_available.notify_all();
+        for (auto& [id, submitted] : m_submitted) {
+            static_cast<void>(id);
+            if (!submitted.work.world_generation && submitted.work.client_id == client_id
+                && should_cancel(submitted.work)) {
+                static_cast<void>(submitted.handle.requestCancellation());
+            }
         }
         return cancelled;
     }
@@ -190,17 +367,17 @@ struct GameServer::HeightTileWorkerPool final {
         std::function<bool(Work const&, Work const&)> const& order
     ) {
         std::lock_guard lock{m_mutex};
-        std::vector<Work> client_work;
-        client_work.reserve(m_work.size());
-        for (Work const& work : m_work) {
-            if (work.client_id == client_id) {
-                client_work.push_back(work);
+        std::vector<Work> client_pending;
+        client_pending.reserve(m_pending.size());
+        for (Work const& work : m_pending) {
+            if (!work.world_generation && work.client_id == client_id) {
+                client_pending.push_back(work);
             }
         }
-        std::stable_sort(client_work.begin(), client_work.end(), order);
-        auto reordered = client_work.begin();
-        for (Work& work : m_work) {
-            if (work.client_id == client_id) {
+        std::ranges::stable_sort(client_pending, order);
+        auto reordered = client_pending.begin();
+        for (Work& work : m_pending) {
+            if (!work.world_generation && work.client_id == client_id) {
                 work = std::move(*reordered);
                 ++reordered;
             }
@@ -211,99 +388,181 @@ struct GameServer::HeightTileWorkerPool final {
     std::vector<Result> takeResults(uint32_t const maximum_results)
     {
         std::vector<Result> results;
-        {
-            std::lock_guard lock{m_mutex};
-            results.reserve(std::min<uint32_t>(maximum_results, static_cast<uint32_t>(m_results.size())));
-            while (!m_results.empty() && results.size() < maximum_results) {
-                results.push_back(std::move(m_results.front()));
-                m_results.pop_front();
+        std::lock_guard lock{m_mutex};
+        results.reserve(std::min<uint32_t>(
+            maximum_results,
+            static_cast<uint32_t>(m_submitted.size())
+        ));
+        while (static_cast<uint32_t>(results.size()) < maximum_results) {
+            std::optional<core::executor::JobResult> const completion = m_executor->tryTakeResult();
+            if (!completion.has_value()) {
+                break;
             }
+            auto const submitted = m_submitted.find(completion->id());
+            if (submitted == m_submitted.end()) {
+                continue;
+            }
+            submitted->second.result->cancelled = completion->status()
+                == core::executor::CompletionStatus::Cancelled;
+            submitted->second.result->succeeded = completion->status()
+                == core::executor::CompletionStatus::Succeeded;
+            results.push_back(std::move(*submitted->second.result));
+            m_submitted.erase(submitted);
         }
-        m_result_space_available.notify_all();
+        submitPending();
         return results;
     }
 
 private:
-    [[nodiscard]]
-    uint32_t outstandingCount() const noexcept
+    [[nodiscard]] uint32_t outstandingCount() const noexcept
     {
-        return static_cast<uint32_t>(m_work.size() + m_active_workers + m_results.size());
+        return static_cast<uint32_t>(m_pending.size() + m_submitted.size());
     }
 
-    void workerLoop()
+    static void executeGenerationJob(Result& result, shared::TerrainGenerator const& generator)
     {
-        shared::TerrainGenerator terrain_generator;
-        while (true) {
-            Work work{};
-            {
-                std::unique_lock lock{m_mutex};
-                m_work_available.wait(lock, [this] {
-                    return m_stopping || !m_work.empty();
-                });
-                if (m_stopping) {
-                    return;
-                }
-                work = std::move(m_work.front());
-                m_work.pop_front();
-                ++m_active_workers;
-            }
+        if (result.job.stage == shared::GenerationStage::Materialize) {
+            result.chunk = generator.generateChunk(result.job.coordinate);
+        } else if (result.job.stage == shared::GenerationStage::HeightTile) {
+            result.tile = generator.generateHeightTile({
+                .x = result.job.coordinate.x,
+                .y = result.job.coordinate.y,
+            });
+        } else {
+            result.generation_output = generateRegionOutput(result.job, generator);
+        }
+    }
 
-            Result result{
+    void submitPending()
+    {
+        while (!m_pending.empty() && m_submitted.size() < m_submission_window) {
+            Work work = std::move(m_pending.front());
+            m_pending.erase(m_pending.begin());
+            auto result = std::make_shared<Result>(Result{
                 .client_id = work.client_id,
                 .generation = work.generation,
                 .job = work.job,
-            };
-            try {
-                shared::HeightTileCoordinate const coordinate{
-                    .x = work.job.coordinate.x,
-                    .y = work.job.coordinate.y,
-                };
-                result.tile = terrain_generator.generateHeightTile(coordinate);
-                result.succeeded = true;
-            } catch (...) {
-                result.succeeded = false;
-            }
-
-            {
-                std::unique_lock lock{m_mutex};
-                --m_active_workers;
-                m_result_space_available.wait(lock, [this] {
-                    return m_stopping || outstandingCount() < MAX_OUTSTANDING_WORK;
-                });
-                if (m_stopping) {
-                    return;
+                .world_generation = work.world_generation,
+            });
+            core::executor::Submission submission = m_executor->trySubmit(
+                [result](core::executor::CancellationToken const token) {
+                    if (token.isCancellationRequested()) {
+                        return;
+                    }
+                    thread_local shared::TerrainGenerator terrain_generator;
+                    if (result->world_generation) {
+                        executeGenerationJob(*result, terrain_generator);
+                        return;
+                    }
+                    shared::HeightTileCoordinate const coordinate{
+                        .x = result->job.coordinate.x,
+                        .y = result->job.coordinate.y,
+                    };
+                    result->tile = terrain_generator.generateHeightTile(coordinate);
                 }
-                m_results.push_back(std::move(result));
+            );
+            if (submission.status != core::executor::SubmissionStatus::Accepted) {
+                m_pending.insert(m_pending.begin(), std::move(work));
+                break;
             }
+            uint64_t const job_id = submission.handle.id();
+            m_submitted.emplace(job_id, Submitted{
+                .work = std::move(work),
+                .result = std::move(result),
+                .handle = std::move(submission.handle),
+            });
         }
     }
 
 private:
     mutable std::mutex m_mutex;
-    std::condition_variable m_work_available;
-    std::condition_variable m_result_space_available;
-    std::deque<Work> m_work;
-    std::deque<Result> m_results;
-    std::vector<std::thread> m_workers;
-    uint32_t m_active_workers = 0U;
-    bool m_stopping = false;
+    std::unique_ptr<core::executor::Executor> m_executor;
+    std::vector<Work> m_pending;
+    std::unordered_map<uint64_t, Submitted> m_submitted;
+    uint32_t m_submission_window = 0U;
 };
 
 GameServer::GameServer(
     uint16_t const port,
     std::vector<SpawnPoint> spawn_points,
     shared::WorldMode const world_mode,
-    shared::WorldConfiguration const configuration
+    shared::WorldConfiguration const configuration,
+    uint32_t const render_distance
 )
     : core::Server{core::Address::localhost(port), 4, 2}
     , m_world{world_mode, configuration}
+    , m_physics_world{shared::SparseWorldOptions{
+        .seed = configuration.seed,
+        .revision = configuration.algorithm_version,
+    }}
+    , m_world_generation{32U, configuration.algorithm_version, configuration.seed}
+    , m_terrain_generator{std::make_shared<shared::TerrainGenerator const>()}
+    , m_generation_plan{m_terrain_generator->generationPlan()}
     , m_spawn_points{checkedSpawnPoints(std::move(spawn_points), world_mode)}
+    , m_height_tile_interest_orders{shared::prepareHeightTileInterestOrders(render_distance)}
 {
-    shared::prepareHeightTileInterestOrders();
+    m_world.setCollisionWorld(&m_physics_world);
     m_height_tile_workers = std::make_unique<HeightTileWorkerPool>();
 }
 
 GameServer::~GameServer() = default;
+
+std::expected<uint64_t, shared::PolicyDiagnostic> GameServer::publishPermissions(
+    shared::PolicyCompilation compilation,
+    shared::PolicyCapabilityRegistry registry
+)
+{
+    std::optional<shared::PolicyCapabilityKeyId> const flight_permission = capabilityKey(
+        registry,
+        "minecraft:flight"
+    );
+    std::optional<shared::PolicyCapabilityKeyId> const collision_bypass_permission = capabilityKey(
+        registry,
+        "minecraft:collision-bypass"
+    );
+    if (!flight_permission.has_value() || !collision_bypass_permission.has_value()) {
+        return std::unexpected(policyDiagnostic(
+            shared::PolicyDiagnosticCode::InvalidDeclaration,
+            std::string{compilation.plan.sourceId()},
+            "movement permission registry must define flight and collision bypass"
+        ));
+    }
+    for (shared::PolicyCapabilityKeyId const key : {*flight_permission, *collision_bypass_permission}) {
+        shared::PolicyCapabilityDefinition const& definition = registry.definitions[key];
+        if (definition.minimum_value != 0 || definition.maximum_value != 1
+            || definition.hard_restriction != shared::PolicyRestriction::Maximum) {
+            return std::unexpected(policyDiagnostic(
+                shared::PolicyDiagnosticCode::InvalidDeclaration,
+                std::string{compilation.plan.sourceId()},
+                "movement permissions must be boolean capabilities with maximum hard restrictions"
+            ));
+        }
+    }
+
+    std::vector<shared::PolicySubject> const subjects = permissionSubjects();
+    auto capabilities = m_permission_host.materialize(compilation.plan, subjects, registry);
+    if (!capabilities) {
+        return std::unexpected(capabilities.error());
+    }
+    if (!canApplyPublishedPermissions(*capabilities, registry)) {
+        return std::unexpected(policyDiagnostic(
+            shared::PolicyDiagnosticCode::InvalidDeclaration,
+            std::string{compilation.plan.sourceId()},
+            "movement policy is invalid for an active player or would strand a player in solid geometry"
+        ));
+    }
+
+    auto const published = m_permission_host.publish(std::move(compilation), std::move(*capabilities));
+    if (!published) {
+        return std::unexpected(published.error());
+    }
+    m_permission_registry = std::move(registry);
+    m_flight_permission = flight_permission;
+    m_collision_bypass_permission = collision_bypass_permission;
+    m_permissions_published = true;
+    applyPublishedPermissions();
+    return *published;
+}
 
 void GameServer::run()
 {
@@ -313,16 +572,43 @@ void GameServer::run()
 
 void GameServer::run(std::atomic_bool const& stop_requested)
 {
+    run(stop_requested, nullptr);
+}
+
+void GameServer::run(
+    std::atomic_bool const& stop_requested,
+    BenchmarkHooks const* const benchmark_hooks
+)
+{
     auto next_simulation = std::chrono::steady_clock::now();
     while (!stop_requested.load(std::memory_order_relaxed)) {
         auto const now = std::chrono::steady_clock::now();
         if (now >= next_simulation) {
-            static_cast<void>(tick(std::chrono::milliseconds::zero()));
+            auto const tick_started_at = benchmark_hooks
+                ? std::chrono::steady_clock::now()
+                : std::chrono::steady_clock::time_point{};
+            uint64_t const events = tick(std::chrono::milliseconds::zero());
+            if (benchmark_hooks && benchmark_hooks->on_tick) {
+                benchmark_hooks->on_tick(
+                    std::chrono::duration_cast<std::chrono::nanoseconds>(
+                        std::chrono::steady_clock::now() - tick_started_at
+                    ),
+                    events
+                );
+            }
             next_simulation += shared::TICK;
         } else {
             while (poll(std::chrono::milliseconds::zero()) > 0) {
             }
-            processHeightTileStreams(false);
+            processHeightTileStreams();
+        }
+        if (benchmark_hooks && benchmark_hooks->on_preview_buffered) {
+            for (PreviewStream const& stream : m_preview_streams) {
+                benchmark_hooks->on_preview_buffered(
+                    stream.client_id,
+                    static_cast<uint32_t>(stream.ready_tiles.size() + stream.dispatched_keys.size())
+                );
+            }
         }
         std::this_thread::sleep_until(std::min(
             next_simulation,
@@ -362,10 +648,29 @@ uint64_t GameServer::tick(std::chrono::milliseconds const timeout) {
         if (!replication.action_consumed_this_tick && !replication.pending_inputs.empty()) {
             shared::ClientInputMessage const input = replication.pending_inputs.front();
             replication.pending_inputs.pop_front();
-            processInput(replication, input);
+            if (!processInput(replication, input)) {
+                replication.pending_inputs.push_front(input);
+            }
         }
     }
-    processHeightTileStreams(true);
+    if (m_world.mode() == shared::WorldMode::Flight) {
+        for (PlayerReplication const& replication : m_player_replications) {
+            auto const player = m_world.player(replication.id);
+            if (!player.has_value()) {
+                continue;
+            }
+            shared::ChunkCoordinate const coordinate{
+                .x = player->x / static_cast<int32_t>(shared::Chunk::SIDE_LENGTH),
+                .y = player->y / static_cast<int32_t>(shared::Chunk::SIDE_LENGTH),
+                .z = player->z / static_cast<int32_t>(shared::Chunk::SIDE_LENGTH),
+            };
+            if (shared::WorldBounds::isValidChunk(coordinate)
+                && m_physics_world.residentChunk(coordinate) == nullptr) {
+                static_cast<void>(m_world_generation.requestPlan(coordinate, m_generation_plan));
+            }
+        }
+    }
+    processHeightTileStreams();
     return events;
 }
 
@@ -448,6 +753,14 @@ void GameServer::onDisconnected(core::ServerDisconnectEvent const client) {
     std::erase_if(m_player_replications, [&client](PlayerReplication const& replication) {
         return replication.id == client.client_id;
     });
+    if (m_permissions_published) {
+        auto const refreshed = refreshPublishedPermissions(
+            static_cast<shared::PolicyEntityId>(client.client_id)
+        );
+        if (!refreshed) {
+            CORE_ERROR("Failed to refresh permissions after player departure: {}", refreshed.error().message);
+        }
+    }
 }
 
 void GameServer::onReceived(core::ServerReceiveEvent event) {
@@ -479,15 +792,30 @@ void GameServer::onReceived(core::ServerReceiveEvent event) {
             &SpawnPoint::character
         );
         if (spawn_point == m_spawn_points.end()) {
-            m_world.spawnPlayer(id, ch);
+            m_world.spawnPlayer(id, ch, std::nullopt, shared::defaultPlayerPaletteIndex(ch));
         } else {
             m_world.spawnPlayer(id, ch, shared::PlayerPosition{
                 .x = spawn_point->x,
                 .y = spawn_point->y,
                 .z = spawn_point->z,
-            });
+            }, shared::defaultPlayerPaletteIndex(ch));
         }
         m_player_replications.push_back(PlayerReplication{ .id = id });
+        if (m_permissions_published) {
+            auto const refreshed = refreshPublishedPermissions();
+            if (!refreshed) {
+                CORE_ERROR("Rejected player join because active permissions could not be materialized: {}",
+                    refreshed.error().message);
+                m_world.despawnPlayer(id);
+                std::erase_if(m_player_replications, [id](PlayerReplication const& replication) {
+                    return replication.id == id;
+                });
+                sendTo(id, shared::JoinResponseMessage{
+                    .accepted = false,
+                });
+                return;
+            }
+        }
         sendTo(id, shared::JoinResponseMessage{
             .accepted = true,
         });
@@ -526,7 +854,9 @@ void GameServer::onReceived(core::ServerReceiveEvent event) {
         replication->latest_received_sequence = msg->sequence;
         replication->has_received_sequence = true;
         if (!replication->action_consumed_this_tick && replication->pending_inputs.empty()) {
-            processInput(*replication, *msg);
+            if (!processInput(*replication, *msg)) {
+                replication->pending_inputs.push_back(*msg);
+            }
         } else {
             replication->pending_inputs.push_back(*msg);
         }
@@ -537,13 +867,113 @@ void GameServer::onReceived(core::ServerReceiveEvent event) {
     }
 }
 
-void GameServer::processInput(PlayerReplication& replication, shared::ClientInputMessage const input)
+bool GameServer::processInput(PlayerReplication& replication, shared::ClientInputMessage const input)
 {
-    replication.action_consumed_this_tick = true;
-    bool moved = false;
-    if (input.direction.x != 0 || input.direction.y != 0 || input.direction.z != 0) {
-        moved = m_world.movePlayer(replication.id, input.direction);
+    shared::Player const player_before_input = *m_world.player(replication.id);
+    bool capabilities_changed = false;
+    if (input.direction.cycle_movement_capabilities) {
+        uint8_t next_bits = player_before_input.movement_capabilities.bits == 3U
+            ? 1U : (player_before_input.movement_capabilities.bits == 1U ? 0U : 3U);
+        if (m_permissions_published) {
+            std::shared_ptr<shared::PolicySnapshot const> const policy = m_permission_host.snapshot();
+            std::shared_ptr<shared::PolicyCapabilitySnapshot const> const effective = policy
+                ? policy->capabilities() : nullptr;
+            if (effective == nullptr || !m_flight_permission.has_value()
+                || !m_collision_bypass_permission.has_value()) {
+                next_bits = 0U;
+            } else {
+                uint8_t allowed_bits = effective->allows(replication.id, *m_flight_permission) ? 1U : 0U;
+                if ((allowed_bits & 1U) != 0U
+                    && effective->allows(replication.id, *m_collision_bypass_permission)) {
+                    allowed_bits |= 2U;
+                }
+                next_bits &= allowed_bits;
+            }
+        }
+        capabilities_changed = m_world.setPlayerMovementCapabilities(
+            replication.id,
+            { .bits = next_bits }
+        );
     }
+    shared::Player const player_before_movement = *m_world.player(replication.id);
+    bool const should_simulate = input.direction.x != 0 || input.direction.y != 0 || input.direction.z != 0
+        || !player_before_movement.movement_capabilities.allows(shared::MovementCapability::Flight);
+    bool moved = false;
+    bool generation_failed = false;
+    if (should_simulate) {
+        uint64_t const revision = m_world.configuration().algorithm_version;
+        uint64_t const seed = m_world.configuration().seed;
+        std::vector<shared::ChunkCoordinate> missing_chunks;
+        for (shared::ChunkCoordinate const coordinate : m_world.flightCollisionChunks(
+                 replication.id,
+                 input.direction
+             )) {
+            if (m_physics_world.queryBlock({
+                    .x = static_cast<int64_t>(coordinate.x) * shared::Chunk::SIDE_LENGTH,
+                    .y = static_cast<int64_t>(coordinate.y) * shared::Chunk::SIDE_LENGTH,
+                    .z = static_cast<int64_t>(coordinate.z) * shared::Chunk::SIDE_LENGTH,
+                }).state == shared::GenerationState::Materialized) {
+                continue;
+            }
+            shared::GenerationState const state = m_world_generation.state(coordinate, revision, seed);
+            if (state == shared::GenerationState::Failed
+                && !m_world_generation.requestRetry(coordinate, revision, seed)) {
+                generation_failed = true;
+                break;
+            }
+            if (state == shared::GenerationState::Cancelled) {
+                generation_failed = true;
+                break;
+            }
+            missing_chunks.push_back(coordinate);
+        }
+        bool const plan_materializes_chunks = std::ranges::find(
+            m_generation_plan.chunk_stages,
+            shared::GenerationStage::Materialize
+        ) != m_generation_plan.chunk_stages.end();
+        if (!missing_chunks.empty() && !plan_materializes_chunks) {
+            generation_failed = true;
+        }
+        bool queue_full = false;
+        if (!generation_failed) {
+            for (shared::ChunkCoordinate const coordinate : missing_chunks) {
+                shared::GenerationAdmission const admission = m_world_generation.requestPlan(
+                    coordinate,
+                    m_generation_plan,
+                    generationPriorityScores(player_before_movement, input.direction, coordinate)
+                );
+                if (admission == shared::GenerationAdmission::InvalidPlan) {
+                    generation_failed = true;
+                    break;
+                }
+                if (admission == shared::GenerationAdmission::QueueFull) {
+                    queue_full = true;
+                    if (++replication.materialization_admission_failures
+                        >= PlayerReplication::MAX_MATERIALIZATION_ADMISSION_FAILURES) {
+                        generation_failed = true;
+                    }
+                    break;
+                }
+            }
+        }
+        if (!queue_full) {
+            replication.materialization_admission_failures = 0U;
+        }
+        if (!missing_chunks.empty() && !generation_failed) {
+            if (capabilities_changed) {
+                static_cast<void>(m_world.setPlayerMovementCapabilities(
+                    replication.id,
+                    player_before_input.movement_capabilities
+                ));
+            }
+            return false;
+        }
+        if (!generation_failed) {
+            moved = m_world.movePlayer(replication.id, input.direction);
+        }
+    }
+    replication.materialization_admission_failures = 0U;
+    replication.action_consumed_this_tick = true;
     replication.acknowledged_input_sequence = input.sequence;
     auto const stream = std::ranges::find(m_preview_streams, replication.id, &PreviewStream::client_id);
     if (stream != m_preview_streams.end()) {
@@ -557,7 +987,7 @@ void GameServer::processInput(PlayerReplication& replication, shared::ClientInpu
         *m_world.player(replication.id),
         replication
     );
-    if (moved) {
+    if (moved || capabilities_changed) {
         send(position);
     } else {
         sendTo(replication.id, position);
@@ -565,6 +995,7 @@ void GameServer::processInput(PlayerReplication& replication, shared::ClientInpu
     // Submit the latency-sensitive acknowledgement before this tick admits
     // additional reliable terrain fragments on the bulk channel.
     flush();
+    return true;
 }
 
 GameServer::PlayerReplication* GameServer::playerReplication(shared::PlayerId const id) noexcept
@@ -584,12 +1015,15 @@ shared::ServerPlayerPositionMessage GameServer::playerPositionMessage(
 {
     return {
         .ch = player.ch,
+        .palette_index = player.palette_index,
+        .movement_capabilities = player.movement_capabilities,
         .x = player.x,
         .y = player.y,
         .z = player.z,
         .x_subcell = player.x_subcell,
         .y_subcell = player.y_subcell,
         .z_subcell = player.z_subcell,
+        .vertical_velocity_subcells = player.vertical_velocity_subcells,
         .acknowledged_input_sequence = replication.acknowledged_input_sequence,
         .state_revision = replication.state_revision,
     };
@@ -611,6 +1045,129 @@ void GameServer::sendTo(std::optional<core::ClientId> const client_id, shared::M
     }
     if (!core::Server::send(peer, message_bytes, shared::GAME_CHANNEL, core::SendMode{ core::SendMode::Reliable })) {
         CORE_ERROR("Failed to send a message");
+    }
+}
+
+std::vector<shared::PolicySubject> GameServer::permissionSubjects() const
+{
+    std::vector<shared::PolicySubject> subjects;
+    subjects.reserve(m_world.players().size());
+    for (shared::Player const& player : m_world.players()) {
+        subjects.push_back({
+            .id = player.id,
+            .entity_class = shared::PolicyEntityClass::Player,
+            .kind = "player",
+        });
+    }
+    return subjects;
+}
+
+bool GameServer::canApplyPublishedPermissions(
+    shared::PolicyCapabilitySnapshot const& capabilities,
+    shared::PolicyCapabilityRegistry const& registry
+) const
+{
+    std::optional<shared::PolicyCapabilityKeyId> const flight_permission = capabilityKey(
+        registry,
+        "minecraft:flight"
+    );
+    std::optional<shared::PolicyCapabilityKeyId> const collision_bypass_permission = capabilityKey(
+        registry,
+        "minecraft:collision-bypass"
+    );
+    if (!flight_permission.has_value() || !collision_bypass_permission.has_value()) {
+        return false;
+    }
+    for (shared::Player const& player : m_world.players()) {
+        std::optional<int64_t> const flight = capabilities.value(player.id, *flight_permission);
+        std::optional<int64_t> const collision_bypass = capabilities.value(player.id, *collision_bypass_permission);
+        if (!flight.has_value() || !collision_bypass.has_value()
+            || (*flight != 0 && *flight != 1)
+            || (*collision_bypass != 0 && *collision_bypass != 1)) {
+            return false;
+        }
+        shared::MovementCapabilities const movement{
+            .bits = static_cast<uint8_t>((*flight != 0 ? 1U : 0U) | (*collision_bypass != 0 ? 2U : 0U)),
+        };
+        if (!shared::isValidMovementCapabilities(movement)
+            || !m_world.canSetPlayerMovementCapabilities(player.id, movement)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+std::expected<uint64_t, shared::PolicyDiagnostic> GameServer::refreshPublishedPermissions(
+    std::optional<shared::PolicyEntityId> const expired_subject
+)
+{
+    std::shared_ptr<shared::PolicySnapshot const> const active = m_permission_host.snapshot();
+    if (!m_permissions_published || active == nullptr) {
+        return 0U;
+    }
+    shared::PolicyCompilation compilation{
+        .plan = active->plan(),
+        .jit_mode = active->jitMode(),
+        .jit_prepared = active->jitPrepared(),
+        .interpreter_parity = active->interpreterParity(),
+    };
+    if (expired_subject.has_value()) {
+        compilation.plan = compilation.plan.withoutSubject(*expired_subject);
+    }
+    std::vector<shared::PolicySubject> const subjects = permissionSubjects();
+    auto capabilities = m_permission_host.materialize(compilation.plan, subjects, m_permission_registry);
+    if (!capabilities) {
+        return std::unexpected(capabilities.error());
+    }
+    if (!canApplyPublishedPermissions(*capabilities, m_permission_registry)) {
+        return std::unexpected(policyDiagnostic(
+            shared::PolicyDiagnosticCode::InvalidDeclaration,
+            std::string{compilation.plan.sourceId()},
+            "active movement policy is invalid for an active player or would strand a player in solid geometry"
+        ));
+    }
+    auto const published = m_permission_host.publish(std::move(compilation), std::move(*capabilities));
+    if (!published) {
+        return std::unexpected(published.error());
+    }
+    applyPublishedPermissions();
+    return *published;
+}
+
+void GameServer::applyPublishedPermissions()
+{
+    std::shared_ptr<shared::PolicySnapshot const> const active = m_permission_host.snapshot();
+    if (active == nullptr || !m_flight_permission.has_value() || !m_collision_bypass_permission.has_value()) {
+        return;
+    }
+    std::shared_ptr<shared::PolicyCapabilitySnapshot const> const capabilities = active->capabilities();
+    if (capabilities == nullptr) {
+        return;
+    }
+    for (shared::Player const& player : m_world.players()) {
+        std::optional<int64_t> const flight = capabilities->value(player.id, *m_flight_permission);
+        std::optional<int64_t> const collision_bypass = capabilities->value(
+            player.id,
+            *m_collision_bypass_permission
+        );
+        if (!flight.has_value() || !collision_bypass.has_value()) {
+            continue;
+        }
+        shared::MovementCapabilities const movement{
+            .bits = static_cast<uint8_t>((*flight != 0 ? 1U : 0U) | (*collision_bypass != 0 ? 2U : 0U)),
+        };
+        if (movement == player.movement_capabilities) {
+            continue;
+        }
+        if (!m_world.setPlayerMovementCapabilities(player.id, movement)) {
+            CORE_ERROR("Validated permission update could not be applied to player {}", player.id);
+            continue;
+        }
+        PlayerReplication* const replication = playerReplication(player.id);
+        if (replication != nullptr) {
+            ++replication->state_revision;
+            send(playerPositionMessage(*m_world.player(player.id), *replication));
+        }
     }
 }
 
@@ -636,7 +1193,7 @@ void GameServer::startHeightTileStream(core::ClientId const client_id)
     sendHeightTileTo(client_id, shared::ServerHeightTileDescriptorMessage{
         .configuration = m_world.configuration(),
         .world_revision = PreviewStream::WORLD_REVISION,
-        .max_height_tiles = shared::HEIGHT_TILE_INTEREST_COUNT,
+        .max_height_tiles = shared::heightTileInterestCount(m_height_tile_interest_orders->radius),
         .max_height_tile_bytes = shared::HEIGHT_TILE_PAYLOAD_BYTES,
     });
     sendHeightTileTo(client_id, shared::ServerWorldRevisionMessage{ .world_revision = PreviewStream::WORLD_REVISION });
@@ -673,17 +1230,22 @@ void GameServer::acknowledgeHeightTileDelivery(
     for (shared::HeightTileKey const key : delivery->second.additions) {
         stream->inflight_addition_keys.erase(key);
         stream->resident_keys.insert(key);
+        if (!stream->desired_key_set.contains(key) && !stream->inflight_removal_keys.contains(key)) {
+            stream->pending_removals.insert(key);
+        }
     }
     for (shared::HeightTileKey const key : delivery->second.removals) {
         stream->inflight_removal_keys.erase(key);
         stream->pending_removals.erase(key);
         stream->resident_keys.erase(key);
+        if (stream->desired_key_set.contains(key)) {
+            stream->priority_cursor = 0U;
+        }
     }
     stream->inflight_deliveries.erase(delivery);
     if (stream->delivery_credits < shared::HEIGHT_TILE_DELIVERY_WINDOW) {
         ++stream->delivery_credits;
     }
-    queueDepartedResidentTiles(*stream);
 }
 
 uint32_t GameServer::admitHeightTileDeliveries(
@@ -691,12 +1253,12 @@ uint32_t GameServer::admitHeightTileDeliveries(
     uint32_t const maximum_batches
 )
 {
-    // Credits bound retained client work. The caller supplies this stream's share
-    // of the server-wide pump budget so concurrent clients cannot multiply bulk
-    // traffic ahead of movement acknowledgements.
+    // Credits are an upper bound, not a requirement to fill the transport window.
+    // Four maximum-size batches retain 34,356 bytes, leaving gameplay headroom in
+    // the default 65,536-byte ENet reliable window shared by both channels.
     uint32_t const available_batches = std::min<uint32_t>({
         stream.delivery_credits,
-        static_cast<uint32_t>(shared::HEIGHT_TILE_DELIVERY_WINDOW - stream.inflight_deliveries.size()),
+        static_cast<uint32_t>(PreviewStream::MAX_INFLIGHT_DELIVERIES - stream.inflight_deliveries.size()),
         maximum_batches,
     });
     uint32_t const maximum_operations = available_batches * shared::HEIGHT_TILE_DELIVERY_BATCH_CAPACITY;
@@ -750,7 +1312,7 @@ uint32_t GameServer::admitHeightTileDeliveries(
     auto removal = removal_keys.begin();
     uint32_t admitted_batches = 0U;
     while (stream.delivery_credits > 0U
-        && stream.inflight_deliveries.size() < shared::HEIGHT_TILE_DELIVERY_WINDOW
+        && stream.inflight_deliveries.size() < PreviewStream::MAX_INFLIGHT_DELIVERIES
         && admitted_batches < maximum_batches) {
         shared::ServerHeightTileBatchMessage batch{
             .delivery_token = nextHeightTileToken(m_next_height_tile_token),
@@ -807,7 +1369,7 @@ void GameServer::refreshHeightTileInterest(PreviewStream& stream, shared::Player
         return;
     }
     shared::HeightTileInterest const next_interest = shared::makeHeightTileInterest(
-        next_center, heading.x, heading.y
+        next_center, heading.x, heading.y, *m_height_tile_interest_orders
     );
 
     bool const center_changed = !stream.has_center || stream.center != next_center;
@@ -816,6 +1378,8 @@ void GameServer::refreshHeightTileInterest(PreviewStream& stream, shared::Player
     stream.applied_heading_x = heading.x;
     stream.applied_heading_y = heading.y;
     stream.desired_keys = next_interest.keys;
+    stream.priority_cursor = 0U;
+    stream.priority_cursor_generation = stream.generation;
     stream.desired_key_set.clear();
     stream.desired_key_set.reserve(stream.desired_keys.size());
     stream.desired_key_set.insert(stream.desired_keys.begin(), stream.desired_keys.end());
@@ -886,13 +1450,18 @@ void GameServer::queueDepartedResidentTiles(PreviewStream& stream)
 
 void GameServer::fillHeightTileQueue(PreviewStream& stream)
 {
+    if (stream.priority_cursor_generation != stream.generation) {
+        stream.priority_cursor = 0U;
+        stream.priority_cursor_generation = stream.generation;
+    }
     if (stream.scheduler.pendingCount() >= PreviewStream::MAX_QUEUED_TILES) {
         return;
     }
-    // desired_keys is already nearest-first and direction-aware. Walk it directly;
-    // rebuilding and sorting thousands of candidates every terrain pump starves the
-    // fixed simulation cadence while the initial window is filling.
-    for (shared::HeightTileKey const key : stream.desired_keys) {
+    if (stream.priority_cursor > stream.desired_keys.size()) {
+        stream.priority_cursor = 0U;
+    }
+    while (stream.priority_cursor < stream.desired_keys.size()) {
+        shared::HeightTileKey const key = stream.desired_keys.at(stream.priority_cursor);
         if (!stream.resident_keys.contains(key)
             && !stream.queued_keys.contains(key)
             && !stream.dispatched_keys.contains(key)
@@ -904,16 +1473,17 @@ void GameServer::fillHeightTileQueue(PreviewStream& stream)
                 shared::GenerationStage::HeightTile
             );
             if (admission == shared::GenerationAdmission::QueueFull) {
-                break;
+                return;
             }
             if (admission == shared::GenerationAdmission::Accepted) {
                 stream.queued_keys.insert(key);
             }
         }
+        ++stream.priority_cursor;
     }
 }
 
-void GameServer::processHeightTileStreams(bool const admit_deliveries)
+void GameServer::processHeightTileStreams()
 {
     for (PreviewStream& stream : m_preview_streams) {
         auto const player = m_world.player(stream.client_id);
@@ -926,7 +1496,7 @@ void GameServer::processHeightTileStreams(bool const admit_deliveries)
     for (PreviewStream& stream : m_preview_streams) {
         fillHeightTileQueue(stream);
     }
-    if (admit_deliveries && !m_preview_streams.empty()) {
+    if (!m_preview_streams.empty()) {
         static constexpr uint32_t MAX_ADMITTED_BATCHES_PER_PUMP = 4U;
         uint32_t remaining_batches = MAX_ADMITTED_BATCHES_PER_PUMP;
         size_t const stream_count = m_preview_streams.size();
@@ -948,14 +1518,38 @@ void GameServer::processHeightTileStreams(bool const admit_deliveries)
         }
         m_next_preview_admission = (m_next_preview_admission + 1U) % stream_count;
     }
+    dispatchWorldMaterialization();
     dispatchHeightTileWork();
+}
+
+void GameServer::dispatchWorldMaterialization()
+{
+    static constexpr uint32_t MAX_DISPATCHED_PER_PUMP = 16U;
+    uint32_t dispatched = 0U;
+    while (dispatched < MAX_DISPATCHED_PER_PUMP && m_height_tile_workers->canAccept()) {
+        auto const job = m_world_generation.takeNext();
+        if (!job.has_value()) {
+            break;
+        }
+        if (!m_height_tile_workers->enqueue({
+                .client_id = 0U,
+                .generation = job->revision,
+                .job = *job,
+                .world_generation = true,
+            })) {
+            static_cast<void>(m_world_generation.complete(job->id, false));
+            static_cast<void>(m_world_generation.takeResult());
+            break;
+        }
+        ++dispatched;
+    }
 }
 
 void GameServer::dispatchHeightTileWork()
 {
-    static constexpr uint32_t MAX_DISPATCHED_TILES_PER_TICK = PreviewStream::MAX_QUEUED_TILES;
-    static constexpr double BACKGROUND_TILES_PER_SECOND = 256.0;
-    static constexpr double MAXIMUM_BACKGROUND_BURST = 24.0;
+    static constexpr uint32_t MAX_DISPATCHED_TILES_PER_PUMP = PreviewStream::MAX_QUEUED_TILES;
+    static constexpr double BACKGROUND_TILES_PER_SECOND = 8'192.0;
+    static constexpr double MAXIMUM_BACKGROUND_BURST = 128.0;
     auto const now = std::chrono::steady_clock::now();
     for (PreviewStream& stream : m_preview_streams) {
         double const elapsed_seconds = now >= stream.background_generation_eligible_at
@@ -977,12 +1571,15 @@ void GameServer::dispatchHeightTileWork()
     uint32_t dispatched = 0U;
     size_t const stream_count = m_preview_streams.size();
     size_t round_start = m_next_preview_dispatch % stream_count;
-    while (dispatched < MAX_DISPATCHED_TILES_PER_TICK && m_height_tile_workers->canAccept()) {
+    while (dispatched < MAX_DISPATCHED_TILES_PER_PUMP && m_height_tile_workers->canAccept()) {
         bool dispatched_round = false;
         for (size_t offset = 0U; offset < stream_count
-            && dispatched < MAX_DISPATCHED_TILES_PER_TICK
+            && dispatched < MAX_DISPATCHED_TILES_PER_PUMP
             && m_height_tile_workers->canAccept(); ++offset) {
             PreviewStream& stream = m_preview_streams[(round_start + offset) % stream_count];
+            if (stream.ready_tiles.size() + stream.dispatched_keys.size() >= PreviewStream::MAX_BUFFERED_TILES) {
+                continue;
+            }
             auto const next = stream.scheduler.peekNext();
             if (!next.has_value()) {
                 continue;
@@ -1008,6 +1605,7 @@ void GameServer::dispatchHeightTileWork()
                 .job = *job,
             })) {
                 static_cast<void>(stream.scheduler.complete(job->id, false, true));
+                stream.priority_cursor = 0U;
                 break;
             }
             stream.dispatched_keys.insert(key);
@@ -1027,15 +1625,23 @@ void GameServer::dispatchHeightTileWork()
 
 void GameServer::publishHeightTileResults()
 {
-    static constexpr uint32_t MAX_PUBLISHED_TILES_PER_TICK = 2U * shared::HEIGHT_TILE_BATCH_CAPACITY;
-    std::vector<HeightTileWorkerPool::Result> const results = m_height_tile_workers->takeResults(
-        MAX_PUBLISHED_TILES_PER_TICK
+    static constexpr uint32_t MAX_PUBLISHED_TILES_PER_PUMP = 2U * shared::HEIGHT_TILE_BATCH_CAPACITY;
+    std::vector<HeightTileWorkerPool::Result> results = m_height_tile_workers->takeResults(
+        MAX_PUBLISHED_TILES_PER_PUMP
     );
-    std::vector<HeightTileWorkerPool::Result> ordered_results = results;
-    std::ranges::stable_sort(ordered_results, [this](
+    std::ranges::stable_sort(results, [this](
         HeightTileWorkerPool::Result const& first,
         HeightTileWorkerPool::Result const& second
     ) {
+        if (first.world_generation != second.world_generation) {
+            return first.world_generation;
+        }
+        if (first.world_generation) {
+            return std::tie(first.job.revision, first.job.coordinate.z, first.job.coordinate.y,
+                first.job.coordinate.x, first.job.id)
+                < std::tie(second.job.revision, second.job.coordinate.z, second.job.coordinate.y,
+                    second.job.coordinate.x, second.job.id);
+        }
         if (first.client_id != second.client_id) {
             return first.client_id < second.client_id;
         }
@@ -1056,7 +1662,53 @@ void GameServer::publishHeightTileResults()
         };
         return priority(first.job) < priority(second.job);
     });
-    for (HeightTileWorkerPool::Result const& result : ordered_results) {
+    for (HeightTileWorkerPool::Result& result : results) {
+        if (result.world_generation) {
+            bool const current_identity = result.job.revision == m_world.configuration().algorithm_version
+                && result.job.seed == m_world.configuration().seed;
+            if (!current_identity || result.cancelled) {
+                static_cast<void>(m_world_generation.complete(result.job.id, false, true));
+                continue;
+            }
+            std::vector<uint8_t> output = result.job.stage == shared::GenerationStage::Pregen
+                    || result.job.stage == shared::GenerationStage::Refinement
+                ? std::move(result.generation_output)
+                : std::vector<uint8_t>{};
+            if (!m_world_generation.complete(result.job.id, result.succeeded, false, std::move(output))) {
+                continue;
+            }
+            auto const generated = m_world_generation.takeResult();
+            if (!generated.has_value() || generated->job.id != result.job.id || !generated->succeeded) {
+                continue;
+            }
+            if (result.job.stage == shared::GenerationStage::Materialize) {
+                if (m_physics_world.publishMaterializedChunk(
+                        std::move(result.chunk), result.job.revision, result.job.seed
+                    )) {
+                    static_cast<void>(m_world_generation.acceptResult(result.job.id));
+                } else {
+                    static_cast<void>(m_world_generation.cancel(
+                        result.job.coordinate, result.job.revision, result.job.seed
+                    ));
+                }
+                continue;
+            }
+            if (result.job.stage == shared::GenerationStage::HeightTile) {
+                if (!m_physics_world.publishPreview(
+                        result.job.coordinate,
+                        std::move(result.tile),
+                        result.job.revision,
+                        result.job.seed
+                    )) {
+                    static_cast<void>(m_world_generation.cancel(
+                        result.job.coordinate, result.job.revision, result.job.seed
+                    ));
+                    continue;
+                }
+            }
+            static_cast<void>(m_world_generation.acceptResult(result.job.id));
+            continue;
+        }
         auto const stream = std::ranges::find(m_preview_streams, result.client_id, &PreviewStream::client_id);
         if (stream == m_preview_streams.end()) {
             continue;
@@ -1075,7 +1727,11 @@ void GameServer::publishHeightTileResults()
             continue;
         }
         if (!scheduler_result->succeeded) {
-            static_cast<void>(stream->scheduler.retry(result.job.id));
+            if (stream->scheduler.retry(result.job.id)) {
+                stream->queued_keys.insert(key);
+            } else {
+                stream->priority_cursor = 0U;
+            }
             continue;
         }
         if (!stream->desired_key_set.contains(key) || stream->resident_keys.contains(key)

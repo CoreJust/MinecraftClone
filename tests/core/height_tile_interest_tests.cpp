@@ -5,7 +5,9 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <memory>
 #include <span>
+#include <utility>
 
 namespace {
 
@@ -20,13 +22,41 @@ TEST(HeightTileInterestTest, BuildsCameraIndependentCircularResidency)
     shared::HeightTileInterest const interest = shared::makeHeightTileInterest(center, 127, 0);
 
     ASSERT_FALSE(interest.keys.empty());
-    EXPECT_LE(interest.keys.size(), shared::HEIGHT_TILE_INTEREST_COUNT);
+    EXPECT_EQ(interest.keys.size(), shared::HEIGHT_TILE_INTEREST_COUNT);
     EXPECT_EQ(interest.keys.front(), center);
-    EXPECT_TRUE(contains(interest, center.x + 45, center.y));
-    EXPECT_TRUE(contains(interest, center.x - 45, center.y));
-    EXPECT_TRUE(contains(interest, center.x, center.y + 45));
-    EXPECT_FALSE(contains(interest, center.x + 32, center.y + 32));
-    EXPECT_FALSE(contains(interest, center.x - 46, center.y));
+    EXPECT_TRUE(contains(interest, center.x + 256, center.y));
+    EXPECT_TRUE(contains(interest, center.x - 256, center.y));
+    EXPECT_TRUE(contains(interest, center.x, center.y + 256));
+    EXPECT_TRUE(contains(interest, center.x + 181, center.y + 181));
+    EXPECT_FALSE(contains(interest, center.x + 182, center.y + 182));
+    EXPECT_FALSE(contains(interest, center.x + 257, center.y));
+}
+
+TEST(HeightTileInterestTest, DistributesFullDiskWrappedAndNegativeKeysAcrossPowerOfTwoBuckets)
+{
+    static constexpr uint32_t BUCKET_COUNT = 262'144U;
+    static constexpr uint32_t MINIMUM_OCCUPIED_BUCKETS = BUCKET_COUNT / 2U;
+    static constexpr uint32_t MAXIMUM_BUCKET_OCCUPANCY = 16U;
+    static constexpr std::array CENTERS{
+        shared::HeightTileKey{.x = 2'048, .y = 2'048},
+        shared::HeightTileKey{.x = 4'095, .y = 0},
+        shared::HeightTileKey{.x = -2'048, .y = -2'048},
+    };
+    for (shared::HeightTileKey const center : CENTERS) {
+        std::vector<uint32_t> buckets(BUCKET_COUNT, 0U);
+        shared::HeightTileInterest const interest = shared::makeHeightTileInterest(center, 127, 0);
+        ASSERT_EQ(interest.keys.size(), shared::HEIGHT_TILE_INTEREST_COUNT);
+        for (shared::HeightTileKey const key : interest.keys) {
+            uint64_t const hash = shared::heightTileCoordinateHash(
+                center.x < 0 ? key.x - 4'096 : key.x,
+                center.y < 0 ? key.y - 4'096 : key.y
+            );
+            ++buckets[hash & (BUCKET_COUNT - 1U)];
+        }
+        EXPECT_GE(std::ranges::count_if(buckets, [](uint32_t const count) { return count != 0U; }),
+            MINIMUM_OCCUPIED_BUCKETS);
+        EXPECT_LE(*std::ranges::max_element(buckets), MAXIMUM_BUCKET_OCCUPANCY);
+    }
 }
 
 TEST(HeightTileInterestTest, RotationChangesPriorityWithoutChangingResidency)
@@ -41,6 +71,7 @@ TEST(HeightTileInterestTest, RotationChangesPriorityWithoutChangingResidency)
     std::ranges::sort(north_keys, {}, [](shared::HeightTileKey const key) { return std::pair{key.x, key.y}; });
     EXPECT_EQ(east_keys, north_keys);
     EXPECT_NE(east.keys, north.keys);
+    EXPECT_EQ(east.keys.size(), 205'861U);
 }
 
 TEST(HeightTileInterestTest, ProgressivePriorityUsesNearCirclesThenDirectionalEllipse)
@@ -109,6 +140,74 @@ TEST(HeightTileInterestTest, KeepsResidencyStableForSmallHeadingJitter)
 
     EXPECT_EQ(jittered.keys, first.keys);
     EXPECT_NE(turned.keys, first.keys);
+    std::vector<shared::HeightTileKey> first_membership = first.keys;
+    std::vector<shared::HeightTileKey> turned_membership = turned.keys;
+    std::ranges::sort(first_membership, {}, [](shared::HeightTileKey const key) { return std::pair{key.x, key.y}; });
+    std::ranges::sort(turned_membership, {}, [](shared::HeightTileKey const key) { return std::pair{key.x, key.y}; });
+    EXPECT_EQ(turned_membership, first_membership);
+}
+
+TEST(HeightTileInterestTest, SelectedRadiusOrdersPreserveExactDiskAcrossHeadingsAndWrap)
+{
+    static constexpr uint32_t RADIUS_128 = 128U;
+    static constexpr uint32_t RADIUS_256 = 256U;
+    static constexpr uint32_t COUNT_128 = 51'433U;
+    static constexpr uint32_t COUNT_256 = 205'861U;
+    static constexpr int32_t TILE_EXTENT = 4'096;
+    static constexpr shared::HeightTileKey INTERIOR{ .x = 2'000, .y = 2'000 };
+    static constexpr shared::HeightTileKey BOUNDARY{ .x = TILE_EXTENT - 1, .y = TILE_EXTENT - 1 };
+    static constexpr std::array<uint32_t, 2> RADII{ RADIUS_128, RADIUS_256 };
+
+    std::shared_ptr<shared::HeightTileInterestOrders const> retained_orders;
+    for (uint32_t const radius : RADII) {
+        auto const orders = shared::prepareHeightTileInterestOrders(radius);
+        ASSERT_NE(orders, nullptr);
+        EXPECT_EQ(orders->radius, radius);
+        if (radius == RADIUS_128) {
+            retained_orders = orders;
+        }
+
+        uint32_t const expected_count = radius == RADIUS_128 ? COUNT_128 : COUNT_256;
+        for (shared::HeightTileKey const center : { INTERIOR, BOUNDARY }) {
+            std::vector<shared::HeightTileKey> expected_membership;
+            for (uint32_t heading_index = 0U; heading_index < orders->orders.size(); ++heading_index) {
+                auto const heading = orders->orders[heading_index];
+                auto const interest = shared::makeHeightTileInterest(
+                    center, heading.heading_x, heading.heading_y, *orders
+                );
+                ASSERT_EQ(interest.keys.size(), expected_count);
+                EXPECT_EQ(interest.keys.front(), center);
+                if (heading_index == 0U) {
+                    expected_membership = interest.keys;
+                    std::ranges::sort(
+                        expected_membership,
+                        {},
+                        [](shared::HeightTileKey const key) { return std::pair{key.x, key.y}; }
+                    );
+                } else {
+                    auto membership = interest.keys;
+                    std::ranges::sort(
+                        membership,
+                        {},
+                        [](shared::HeightTileKey const key) { return std::pair{key.x, key.y}; }
+                    );
+                    EXPECT_EQ(membership, expected_membership);
+                }
+            }
+
+            auto direct = shared::makeHeightTileInterest(center, 127, 0, radius);
+            std::ranges::sort(direct.keys, {}, [](shared::HeightTileKey const key) {
+                return std::pair{key.x, key.y};
+            });
+            EXPECT_EQ(direct.keys, expected_membership);
+        }
+    }
+
+    ASSERT_NE(retained_orders, nullptr);
+    EXPECT_EQ(retained_orders->radius, RADIUS_128);
+    for (auto const& order : retained_orders->orders) {
+        EXPECT_EQ(order.keys.size(), COUNT_128);
+    }
 }
 
 TEST(HeightTileInterestTest, ClassifiesFixedNearBandsDirectionalMiddleAndBackground)

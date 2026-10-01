@@ -10,6 +10,7 @@
     },
     "glm",
     "gmp",
+    "miniaudio",
     {
       "name": "gtest",
       "platform": "!android"

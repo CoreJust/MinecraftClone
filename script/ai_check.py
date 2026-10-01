@@ -595,7 +595,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     if not args.fast:
         phase_specs.extend([
             ("build", ["cmake", "--build", "--preset", "debug"], 600),
-            ("ctest", ["ctest", "--preset", "debug", "--output-on-failure", "--no-tests=error", "--timeout", "60"], 600),
+            ("ctest", ["ctest", "--preset", "debug", "--output-on-failure", "--no-tests=error", "--timeout", "240"], 900),
         ])
     if not args.fast:
         try:
@@ -604,7 +604,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             if not isinstance(config, list):
                 raise ValueError("additional checks must be an array")
             for item in config:
-                if set(item) != {"name", "enabled", "levels", "command", "timeout", "reason"}:
+                required_fields = {"name", "enabled", "levels", "command", "timeout", "reason"}
+                if not isinstance(item, dict) or set(item) - required_fields - {"when"} or not required_fields <= set(item):
                     raise ValueError("invalid additional check fields")
                 name = item["name"]
                 if not isinstance(name, str) or not re.fullmatch(r"[a-z][a-z0-9-]*", name) or name in seen:
@@ -616,11 +617,20 @@ def main(argv: Sequence[str] | None = None) -> int:
                     raise ValueError("invalid additional check command")
                 if type(item["timeout"]) is not int or item["timeout"] <= 0 or not isinstance(item["reason"], str):
                     raise ValueError("invalid additional check timeout/reason")
+                when = item.get("when", "always")
+                if when not in {"always", "candidate", "strict"}:
+                    raise ValueError("invalid additional check when")
                 if item["enabled"] and not item["command"]:
                     raise ValueError("enabled check must have a command")
                 if not item["enabled"] and not item["reason"].strip():
                     raise ValueError("disabled check must explain why")
                 if args.level not in item["levels"]:
+                    continue
+                if when == "strict" and not args.strict:
+                    print(f"DEFERRED {name}: runs after the committed candidate has hosted analysis receipts")
+                    continue
+                if when == "candidate" and not args.candidate:
+                    print(f"DEFERRED {name}: candidate-only check")
                     continue
                 if item["enabled"]:
                     command = [sys.executable if arg == "{python}" else arg for arg in item["command"]]

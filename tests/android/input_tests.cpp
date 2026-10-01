@@ -46,5 +46,39 @@ TEST(AndroidInputTest, RejectsInvalidFlightTouchCoordinates)
     EXPECT_FALSE(AndroidFlightTouchControls::direction(900.0F, 100.0F, SURFACE_WIDTH, 0U));
 }
 
+TEST(AndroidInputTest, FlightAscendTapIsLatchedUntilTheNextSimulationInput)
+{
+    AndroidFlightInputLatch input;
+    input.setPressed(true);
+    input.setPressed(false);
+
+    EXPECT_TRUE(input.consumePress());
+    EXPECT_FALSE(input.consumePress());
+
+    input.setPressed(true);
+    EXPECT_TRUE(input.isPressed());
+    EXPECT_TRUE(input.consumePress());
+}
+
+TEST(AndroidInputTest, FlightAscendLatchClearDropsPendingTapAfterConnectionReset)
+{
+    AndroidFlightInputLatch input;
+    input.setPressed(true);
+    input.clear();
+
+    EXPECT_FALSE(input.isPressed());
+    EXPECT_FALSE(input.consumePress());
+}
+
+TEST(AndroidInputTest, FlightAscendCancelDropsPendingTapBeforeNextSimulationInput)
+{
+    AndroidFlightInputLatch input;
+    input.setPressed(true);
+    input.cancel();
+
+    EXPECT_FALSE(input.isPressed());
+    EXPECT_FALSE(input.consumePress());
+}
+
 } // namespace
 } // namespace game_android

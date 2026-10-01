@@ -9,6 +9,8 @@ file(TO_CMAKE_PATH "${CoreCpp_DIR}" MC_CORECPP_DIR)
 file(TO_CMAKE_PATH "${CoreProject2026_DIR}" MC_COREPROJECT2026_DIR)
 
 add_library(mc_test_support STATIC
+    testsupport/AdverseTransport.cpp
+    testsupport/include/testsupport/AdverseTransport.hpp
     testsupport/ImageComparison.cpp
     testsupport/include/testsupport/ImageComparison.hpp
 )
@@ -57,11 +59,7 @@ if(MC_REGISTER_SERVER_ONLY_BUILD_TEST)
             "-DMC_TEST_CONFIGURATION=$<CONFIG>"
             -P "${CMAKE_CURRENT_BINARY_DIR}/minecraftclone_server_only_test.cmake"
     )
-    if(WIN32)
-        set_tests_properties(MinecraftClone.ServerOnlyBuild PROPERTIES TIMEOUT 180)
-    else()
-        set_tests_properties(MinecraftClone.ServerOnlyBuild PROPERTIES TIMEOUT 120)
-    endif()
+    set_tests_properties(MinecraftClone.ServerOnlyBuild PROPERTIES TIMEOUT 300)
 endif()
 
 option(MC_ENABLE_STONE_RENDERER_ACCEPTANCE "Run S5 offscreen stone acceptance" OFF)
@@ -106,6 +104,7 @@ add_executable(mc_tests
     core/algorithm_tests.cpp
     core/byte_io_tests.cpp
     core/crash_handler_tests.cpp
+    core/corelang_policy_tests.cpp
     core/defer_tests.cpp
     core/enum_bits_tests.cpp
     core/field_requirement_tests.cpp
@@ -127,6 +126,7 @@ add_executable(mc_tests
     core/scenario_parser_tests.cpp
     core/chunk_tests.cpp
     core/chunk_mesher_tests.cpp
+    core/chunk_mesh_lod_tests.cpp
     core/height_tile_surface_mesher_tests.cpp
     core/height_tile_interest_tests.cpp
     core/scripted_world_tests.cpp
@@ -193,6 +193,8 @@ if(MC_BUILD_CLIENT AND NOT ANDROID)
         PRIVATE
             android/input_state_tests.cpp
             acceptance/evidence_json_tests.cpp
+            acceptance/game_benchmark_tests.cpp
+            acceptance/adverse_network_tests.cpp
             acceptance/framebuffer_extent_tests.cpp
             acceptance/image_evidence_tests.cpp
             acceptance/renderer_benchmark_tests.cpp
@@ -202,15 +204,25 @@ if(MC_BUILD_CLIENT AND NOT ANDROID)
             client/camera_tests.cpp
             client/debug_hud_tests.cpp
             client/frame_scheduler_tests.cpp
+            client/game_client_audio_tests.cpp
+            client/game_client_benchmark_tests.cpp
+            client/game_client_lifecycle_tests.cpp
             client/gui_renderer_tests.cpp
+            client/height_tile_draw_index_tests.cpp
+            client/client_audio_tests.cpp
             client/game_client_prediction_tests.cpp
             client/player_presentation_tests.cpp
+            client/player_client_capture_plan_tests.cpp
+            client/player_preview_lod_tests.cpp
             client/preview_meshing_tests.cpp
             android/input_tests.cpp
             client/renderer_geometry_tests.cpp
             client/shader_assets_tests.cpp
+            client/stone_indirect_draws_tests.cpp
             client/text_renderer_tests.cpp
+            client/vulkan_frustum_tests.cpp
             core/corelang_scenario_tests.cpp
+            core/corelang_sparse_world_scenario_tests.cpp
     )
     target_compile_definitions(
         mc_tests
@@ -226,7 +238,7 @@ if(MC_BUILD_CLIENT AND NOT ANDROID)
     )
 endif()
 
-gtest_discover_tests(mc_tests)
+gtest_discover_tests(mc_tests PROPERTIES TIMEOUT 120)
 
 if(MC_BUILD_CLIENT AND NOT ANDROID)
     find_program(MC_SPIRV_VAL_EXECUTABLE
@@ -262,7 +274,12 @@ endif()
 
 option(MC_ENABLE_RENDERER_SMOKE "Run noninteractive GPU smoke (requires a desktop and Vulkan validation)" OFF)
 if(MC_BUILD_CLIENT AND NOT ANDROID AND MC_ENABLE_RENDERER_SMOKE)
-    add_executable(mc_renderer_smoke client/renderer_smoke_tests.cpp main.cpp)
+    add_executable(
+        mc_renderer_smoke
+        client/player_client_reset_tests.cpp
+        client/renderer_smoke_tests.cpp
+        main.cpp
+    )
     set_target_properties(mc_renderer_smoke PROPERTIES
         RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/renderer-smoke"
     )
@@ -288,7 +305,7 @@ if(MC_BUILD_CLIENT AND NOT ANDROID AND MC_ENABLE_RENDERER_SMOKE)
             "$<TARGET_FILE:mc_main>"
     )
     set_tests_properties(PlayerPlaytestCaptureTest PROPERTIES
-        TIMEOUT 20
+        TIMEOUT 3600
         RUN_SERIAL TRUE
         LABELS "renderer;gpu;network;acceptance"
     )

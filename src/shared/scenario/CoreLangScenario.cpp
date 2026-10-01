@@ -22,16 +22,27 @@ namespace scenario_detail {
 namespace {
 
 static constexpr std::string_view FLIGHT_PROFILE = "flight3d-v1";
+static constexpr std::string_view SPARSE_WORLD_PROFILE = "sparse-world-v1";
 static constexpr uint64_t HOST_ABI_MAJOR = 1U;
+static constexpr uint32_t SPARSE_WORLD_GENERATOR_VERSION = 1U;
 
 enum class HostCall : uint8_t {
     Profile,
     Seed,
     Player,
     Move,
+    Flight,
+    Phase,
     Camera,
+    MovementPermissions,
+    Jump,
     Wait,
     Expect,
+    ExpectMovementPermissions,
+    ExpectVerticalVelocity,
+    SparseWorldOptions,
+    ExpectBlock,
+    ExpectResidentChunks,
 };
 
 [[nodiscard]]
@@ -127,6 +138,21 @@ std::expected<int32_t, std::string> signedValue(
 }
 
 [[nodiscard]]
+std::expected<int64_t, std::string> signed64Value(core::lang::Value const& value)
+{
+    auto const raw = unsignedValue(value, core::lang::TypeKind::I64, 8U);
+    if (!raw) {
+        return std::unexpected(raw.error());
+    }
+    uint64_t const sign_bit = uint64_t{1U} << 63U;
+    uint64_t const magnitude = *raw & (sign_bit - 1U);
+    if (*raw & sign_bit) {
+        return std::numeric_limits<int64_t>::min() + static_cast<int64_t>(magnitude);
+    }
+    return static_cast<int64_t>(*raw);
+}
+
+[[nodiscard]]
 std::expected<std::string, std::string> textValue(core::lang::Value const& value)
 {
     if (value.type != type(core::lang::TypeKind::Str) || !value.elements.empty()) {
@@ -138,6 +164,16 @@ std::expected<std::string, std::string> textValue(core::lang::Value const& value
         text.push_back(static_cast<char>(byte));
     }
     return text;
+}
+
+[[nodiscard]]
+std::expected<bool, std::string> booleanValue(core::lang::Value const& value)
+{
+    if (value.type != type(core::lang::TypeKind::Bool) || value.bytes.size() != 1U
+        || !value.elements.empty() || value.bytes.front() > 1U) {
+        return std::unexpected("host call received an invalid boolean argument");
+    }
+    return value.bytes.front() != 0U;
 }
 
 [[nodiscard]]
@@ -166,11 +202,13 @@ public:
     ScenarioPlanCollector(
         std::string_view const filename,
         ScenarioLimits const& limits,
-        ScenarioCancellation const* const cancellation
+        ScenarioCancellation const* const cancellation,
+        bool const supports_sparse_world
     )
         : m_filename(filename)
         , m_limits(limits)
         , m_cancellation(cancellation)
+        , m_supports_sparse_world(supports_sparse_world)
     {
     }
 
@@ -195,13 +233,31 @@ public:
             case HostCall::Player:
                 return player(arguments);
             case HostCall::Move:
-                return input(arguments, false);
+                return input(arguments, false, ScenarioInputOperation::Intent::Direct);
+            case HostCall::Flight:
+                return input(arguments, false, ScenarioInputOperation::Intent::Flight);
+            case HostCall::Phase:
+                return input(arguments, false, ScenarioInputOperation::Intent::Phase);
             case HostCall::Camera:
-                return input(arguments, true);
+                return input(arguments, true, ScenarioInputOperation::Intent::Direct);
+            case HostCall::MovementPermissions:
+                return movementPermissions(arguments);
+            case HostCall::Jump:
+                return jump(arguments);
             case HostCall::Wait:
                 return wait(arguments);
             case HostCall::Expect:
                 return expect(arguments);
+            case HostCall::ExpectMovementPermissions:
+                return expectMovementPermissions(arguments);
+            case HostCall::ExpectVerticalVelocity:
+                return expectVerticalVelocity(arguments);
+            case HostCall::SparseWorldOptions:
+                return sparseWorldOptions(arguments);
+            case HostCall::ExpectBlock:
+                return expectBlock(arguments);
+            case HostCall::ExpectResidentChunks:
+                return expectResidentChunks(arguments);
         }
         return std::unexpected("unknown scenario host call");
     }
@@ -217,17 +273,20 @@ public:
                 "scenario compilation was cancelled"
             ));
         }
-        if (!m_profile_set || !m_seed_set || m_actors.empty()) {
+        bool const sparse_world_profile = m_profile == ScenarioProfile::SparseWorldV1;
+        if (!m_profile_set || !m_seed_set
+            || (sparse_world_profile && (!m_world_options_set || !m_actors.empty() || m_total_ticks != 0U))
+            || (!sparse_world_profile && (m_actors.empty() || m_world_options_set))) {
             return std::unexpected(diagnostic(
                 ScenarioDiagnosticCode::CoreLangRuntimeFailure,
                 m_filename,
                 {.line = 1U, .column = 1U},
-                "CoreLang scenario must declare profile, seed, and at least one player"
+                "CoreLang scenario declarations do not match its selected profile"
             ));
         }
         return ScenarioPlan{
             1U,
-            ScenarioProfile::Flight3dV1,
+            m_profile,
             m_seed,
             std::move(m_actors),
             std::move(m_operations),
@@ -247,8 +306,15 @@ private:
         if (!profile_name) {
             return std::unexpected(profile_name.error());
         }
-        if (m_profile_set || *profile_name != FLIGHT_PROFILE) {
-            return std::unexpected("scenario profile must be specified once as flight3d-v1");
+        if (m_profile_set) {
+            return std::unexpected("scenario profile must be specified once");
+        }
+        if (*profile_name == FLIGHT_PROFILE) {
+            m_profile = ScenarioProfile::Flight3dV1;
+        } else if (m_supports_sparse_world && *profile_name == SPARSE_WORLD_PROFILE) {
+            m_profile = ScenarioProfile::SparseWorldV1;
+        } else {
+            return std::unexpected("scenario profile is unsupported by this CoreLang contract");
         }
         m_profile_set = true;
         return {};
@@ -277,6 +343,9 @@ private:
     {
         if (auto const valid_count = count(arguments, 8U); !valid_count) {
             return valid_count;
+        }
+        if (m_profile == ScenarioProfile::SparseWorldV1) {
+            return std::unexpected("sparse-world scenarios cannot declare players");
         }
         if (!m_seed_set) {
             return std::unexpected("scenario players must follow the seed");
@@ -325,7 +394,8 @@ private:
     [[nodiscard]]
     std::expected<void, std::string> input(
         std::span<core::lang::Value const> const arguments,
-        bool const camera
+        bool const camera,
+        ScenarioInputOperation::Intent const intent
     )
     {
         if (auto const valid_count = count(arguments, 4U); !valid_count) {
@@ -359,7 +429,53 @@ private:
             .y = static_cast<int8_t>(*second),
             .z = static_cast<int8_t>(*third),
             .effective_boundary = m_total_ticks + 1U,
+            .intent = intent,
         });
+    }
+
+    [[nodiscard]]
+    std::expected<void, std::string> movementPermissions(
+        std::span<core::lang::Value const> const arguments
+    )
+    {
+        if (auto const valid_count = count(arguments, 2U); !valid_count) {
+            return valid_count;
+        }
+        auto const flight = booleanValue(arguments[0]);
+        auto const collision_bypass = booleanValue(arguments[1]);
+        if (!flight || !collision_bypass) {
+            return std::unexpected("movementPermissions received an invalid boolean argument");
+        }
+        if (m_profile == ScenarioProfile::SparseWorldV1) {
+            return std::unexpected("sparse-world scenarios do not support movement permissions");
+        }
+        if (*collision_bypass && !*flight) {
+            return std::unexpected("collision bypass requires flight permission");
+        }
+        return append(ScenarioMovementPermissionsOperation{
+            .flight = *flight,
+            .collision_bypass = *collision_bypass,
+        });
+    }
+
+    [[nodiscard]]
+    std::expected<void, std::string> jump(std::span<core::lang::Value const> const arguments)
+    {
+        if (auto const valid_count = count(arguments, 1U); !valid_count) {
+            return valid_count;
+        }
+        auto const actor = actorId(arguments[0]);
+        if (!actor) {
+            return std::unexpected("jump references an unknown player");
+        }
+        if (m_total_ticks >= m_limits.max_total_ticks) {
+            return std::unexpected("scenario tick limit exceeded");
+        }
+        if (auto const appended = append(ScenarioJumpOperation{.actor = *actor}); !appended) {
+            return appended;
+        }
+        ++m_total_ticks;
+        return {};
     }
 
     [[nodiscard]]
@@ -371,6 +487,9 @@ private:
         auto const ticks = unsignedValue(arguments[0], core::lang::TypeKind::U64, 8U);
         if (!ticks) {
             return std::unexpected(ticks.error());
+        }
+        if (m_profile == ScenarioProfile::SparseWorldV1) {
+            return std::unexpected("sparse-world scenarios do not support tick waits");
         }
         if (*ticks == 0U || *ticks > m_limits.max_total_ticks - m_total_ticks) {
             return std::unexpected("scenario tick limit exceeded");
@@ -411,6 +530,172 @@ private:
     }
 
     [[nodiscard]]
+    std::expected<void, std::string> expectMovementPermissions(
+        std::span<core::lang::Value const> const arguments
+    )
+    {
+        if (auto const valid_count = count(arguments, 3U); !valid_count) {
+            return valid_count;
+        }
+        auto const actor = actorId(arguments[0]);
+        auto const flight = booleanValue(arguments[1]);
+        auto const collision_bypass = booleanValue(arguments[2]);
+        if (!actor || !flight || !collision_bypass) {
+            return std::unexpected("expectMovementPermissions received an invalid argument");
+        }
+        if (*collision_bypass && !*flight) {
+            return std::unexpected("collision bypass requires flight permission");
+        }
+        if (m_evidence_count >= m_limits.max_evidence) {
+            return std::unexpected("scenario evidence limit exceeded");
+        }
+        if (auto const appended = append(ScenarioExpectMovementPermissionsOperation{
+                .actor = *actor,
+                .flight = *flight,
+                .collision_bypass = *collision_bypass,
+            }); !appended) {
+            return appended;
+        }
+        ++m_evidence_count;
+        return {};
+    }
+
+    [[nodiscard]]
+    std::expected<void, std::string> expectVerticalVelocity(
+        std::span<core::lang::Value const> const arguments
+    )
+    {
+        if (auto const valid_count = count(arguments, 2U); !valid_count) {
+            return valid_count;
+        }
+        auto const actor = actorId(arguments[0]);
+        auto const velocity = signedValue(arguments[1], core::lang::TypeKind::I32, 4U);
+        if (!actor || !velocity) {
+            return std::unexpected("expectVerticalVelocity received an invalid argument");
+        }
+        if (m_evidence_count >= m_limits.max_evidence) {
+            return std::unexpected("scenario evidence limit exceeded");
+        }
+        if (auto const appended = append(ScenarioExpectVerticalVelocityOperation{
+                .actor = *actor,
+                .velocity_subcells = *velocity,
+            }); !appended) {
+            return appended;
+        }
+        ++m_evidence_count;
+        return {};
+    }
+
+    [[nodiscard]]
+    std::expected<void, std::string> sparseWorldOptions(
+        std::span<core::lang::Value const> const arguments
+    )
+    {
+        if (auto const valid_count = count(arguments, 2U); !valid_count) {
+            return valid_count;
+        }
+        auto const generator_version = unsignedValue(arguments[0], core::lang::TypeKind::U32, 4U);
+        auto const max_resident_chunks = unsignedValue(arguments[1], core::lang::TypeKind::U64, 8U);
+        if (!generator_version || !max_resident_chunks) {
+            return std::unexpected("sparseWorldOptions received an invalid typed argument");
+        }
+        if (!m_supports_sparse_world || !m_profile_set || !m_seed_set
+            || m_profile != ScenarioProfile::SparseWorldV1 || m_world_options_set) {
+            return std::unexpected("sparseWorldOptions must follow the sparse-world profile and seed once");
+        }
+        if (*generator_version != SPARSE_WORLD_GENERATOR_VERSION) {
+            return std::unexpected("sparse-world generator version is unsupported");
+        }
+        if (*max_resident_chunks == 0U
+            || *max_resident_chunks > m_limits.max_sparse_world_resident_chunks) {
+            return std::unexpected("sparse-world resident chunk bound is outside the configured limits");
+        }
+        if (auto const appended = append(ScenarioSparseWorldOptionsOperation{
+                .generator_version = static_cast<uint32_t>(*generator_version),
+                .max_resident_chunks = *max_resident_chunks,
+            }); !appended) {
+            return appended;
+        }
+        m_max_resident_chunks = *max_resident_chunks;
+        m_world_options_set = true;
+        return {};
+    }
+
+    [[nodiscard]]
+    std::expected<void, std::string> expectBlock(std::span<core::lang::Value const> const arguments)
+    {
+        if (auto const valid_count = count(arguments, 4U); !valid_count) {
+            return valid_count;
+        }
+        auto const x = signed64Value(arguments[0]);
+        auto const y = signed64Value(arguments[1]);
+        auto const z = signed64Value(arguments[2]);
+        auto const block = unsignedValue(arguments[3], core::lang::TypeKind::U8, 1U);
+        if (!x || !y || !z || !block) {
+            return std::unexpected("expectBlockXYZ received an invalid typed argument");
+        }
+        if (!sparseWorldReady()) {
+            return std::unexpected("expectBlockXYZ requires configured sparse-world options");
+        }
+        if (*block > static_cast<uint64_t>(Block::Stone)) {
+            return std::unexpected("expectBlockXYZ received an unsupported block id");
+        }
+        if (m_evidence_count >= m_limits.max_evidence) {
+            return std::unexpected("scenario evidence limit exceeded");
+        }
+        if (auto const appended = append(ScenarioExpectBlockOperation{
+                .x = *x,
+                .y = *y,
+                .z = *z,
+                .block = static_cast<Block>(*block),
+            }); !appended) {
+            return appended;
+        }
+        ++m_evidence_count;
+        return {};
+    }
+
+    [[nodiscard]]
+    std::expected<void, std::string> expectResidentChunks(
+        std::span<core::lang::Value const> const arguments
+    )
+    {
+        if (auto const valid_count = count(arguments, 1U); !valid_count) {
+            return valid_count;
+        }
+        auto const count_value = unsignedValue(arguments[0], core::lang::TypeKind::U64, 8U);
+        if (!count_value) {
+            return std::unexpected(count_value.error());
+        }
+        if (!sparseWorldReady()) {
+            return std::unexpected("expectResidentChunks requires configured sparse-world options");
+        }
+        if (*count_value > m_max_resident_chunks) {
+            return std::unexpected("expected resident chunk count exceeds the configured bound");
+        }
+        if (m_evidence_count >= m_limits.max_evidence) {
+            return std::unexpected("scenario evidence limit exceeded");
+        }
+        if (auto const appended = append(ScenarioExpectResidentChunksOperation{
+                .count = *count_value,
+            }); !appended) {
+            return appended;
+        }
+        ++m_evidence_count;
+        return {};
+    }
+
+    [[nodiscard]]
+    bool sparseWorldReady() const noexcept
+    {
+        return m_supports_sparse_world
+            && m_profile_set
+            && m_profile == ScenarioProfile::SparseWorldV1
+            && m_seed_set
+            && m_world_options_set;
+    }
+
+    [[nodiscard]]
     std::optional<ScenarioActorId> actorId(core::lang::Value const& value) const
     {
         auto const name = textValue(value);
@@ -446,9 +731,13 @@ private:
     std::string m_filename;
     ScenarioLimits const& m_limits;
     ScenarioCancellation const* m_cancellation;
+    bool m_supports_sparse_world;
     bool m_profile_set{false};
     bool m_seed_set{false};
+    bool m_world_options_set{false};
+    ScenarioProfile m_profile{ScenarioProfile::Flat2dV1};
     uint64_t m_seed{0U};
+    uint64_t m_max_resident_chunks{0U};
     uint64_t m_statements{0U};
     uint64_t m_total_ticks{0U};
     uint64_t m_evidence_count{0U};
@@ -463,10 +752,10 @@ struct HostSpec final {
 };
 
 [[nodiscard]]
-std::vector<HostSpec> hostSpecs()
+std::vector<HostSpec> hostSpecs(bool const supports_sparse_world)
 {
     using TypeKind = core::lang::TypeKind;
-    return {
+    std::vector<HostSpec> specs{
         {"profile", HostCall::Profile, {type(TypeKind::Str)}},
         {"seed", HostCall::Seed, {type(TypeKind::U64)}},
         {"playerXYZ", HostCall::Player, {
@@ -476,14 +765,42 @@ std::vector<HostSpec> hostSpecs()
         {"moveXYZ", HostCall::Move, {
             type(TypeKind::Str), type(TypeKind::I8), type(TypeKind::I8), type(TypeKind::I8),
         }},
+        {"flightXYZ", HostCall::Flight, {
+            type(TypeKind::Str), type(TypeKind::I8), type(TypeKind::I8), type(TypeKind::I8),
+        }},
+        {"phaseXYZ", HostCall::Phase, {
+            type(TypeKind::Str), type(TypeKind::I8), type(TypeKind::I8), type(TypeKind::I8),
+        }},
         {"cameraInputXYZ", HostCall::Camera, {
             type(TypeKind::Str), type(TypeKind::I8), type(TypeKind::I8), type(TypeKind::I8),
         }},
+        {"movementPermissions", HostCall::MovementPermissions, {
+            type(TypeKind::Bool), type(TypeKind::Bool),
+        }},
+        {"jump", HostCall::Jump, {type(TypeKind::Str)}},
         {"wait", HostCall::Wait, {type(TypeKind::U64)}},
         {"expectXYZ", HostCall::Expect, {
             type(TypeKind::Str), type(TypeKind::I32), type(TypeKind::I32), type(TypeKind::I32),
         }},
+        {"expectMovementPermissions", HostCall::ExpectMovementPermissions, {
+            type(TypeKind::Str), type(TypeKind::Bool), type(TypeKind::Bool),
+        }},
+        {"expectVerticalVelocity", HostCall::ExpectVerticalVelocity, {
+            type(TypeKind::Str), type(TypeKind::I32),
+        }},
     };
+    if (supports_sparse_world) {
+        specs.push_back({"sparseWorldOptions", HostCall::SparseWorldOptions, {
+            type(TypeKind::U32), type(TypeKind::U64),
+        }});
+        specs.push_back({"expectBlockXYZ", HostCall::ExpectBlock, {
+            type(TypeKind::I64), type(TypeKind::I64), type(TypeKind::I64), type(TypeKind::U8),
+        }});
+        specs.push_back({"expectResidentChunks", HostCall::ExpectResidentChunks, {
+            type(TypeKind::U64),
+        }});
+    }
+    return specs;
 }
 
 [[nodiscard]]
@@ -508,11 +825,12 @@ public:
         std::string_view const filename,
         std::string_view const source,
         ScenarioLimits const& limits,
-        ScenarioCancellation const* const cancellation
+        ScenarioCancellation const* const cancellation,
+        bool const supports_sparse_world
     )
     {
-        ScenarioPlanCollector collector{filename, limits, cancellation};
-        std::vector<HostSpec> const specs = hostSpecs();
+        ScenarioPlanCollector collector{filename, limits, cancellation, supports_sparse_world};
+        std::vector<HostSpec> const specs = hostSpecs(supports_sparse_world);
         core::lang::Ruleset ruleset{.id = "minecraft", .version = 1U};
         std::vector<core::lang::CustomProvider> providers;
         providers.reserve(specs.size());
@@ -671,7 +989,8 @@ std::expected<ScenarioPlan, ScenarioDiagnostic> parseScenarioSource(
 )
 {
     if (limits.max_source_bytes == 0U || limits.max_statements == 0U || limits.max_actors == 0U
-        || limits.max_total_ticks == 0U || limits.max_operations == 0U || limits.max_evidence == 0U) {
+        || limits.max_total_ticks == 0U || limits.max_operations == 0U || limits.max_evidence == 0U
+        || limits.max_sparse_world_resident_chunks == 0U) {
         return std::unexpected(scenario_detail::diagnostic(
             ScenarioDiagnosticCode::InvalidLimits,
             filename,
@@ -697,13 +1016,16 @@ std::expected<ScenarioPlan, ScenarioDiagnostic> parseScenarioSource(
     }
     std::string_view const header = firstHeader(source);
     if (isExplicitHeader(header, "@version(\"0.1.2\")")) {
-        return scenario_detail::CoreLangScenarioLowerer::lower(filename, source, limits, cancellation);
+        return scenario_detail::CoreLangScenarioLowerer::lower(filename, source, limits, cancellation, false);
+    }
+    if (isExplicitHeader(header, "@version(\"0.1.3\")")) {
+        return scenario_detail::CoreLangScenarioLowerer::lower(filename, source, limits, cancellation, true);
     }
     return std::unexpected(scenario_detail::diagnostic(
         ScenarioDiagnosticCode::UnknownSourceHeader,
         filename,
         {.line = 1U, .column = 1U},
-        "expected @version(\"0.1.2\") CoreLang source header"
+        "expected @version(\"0.1.2\") or @version(\"0.1.3\") CoreLang source header"
     ));
 }
 
