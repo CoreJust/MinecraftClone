@@ -291,18 +291,19 @@ TEST(GameClientLifecycleTest, DelayedHandshakeReplyPreservesOneAttemptAndJoins)
     EXPECT_GT(game_client.renderCalls(), 0U);
 }
 
-TEST(GameClientLifecycleTest, DelayedServerJoinsAfterLifecycleServiceDuringRetry)
+TEST(GameClientLifecycleTest, DelayedServerServicingAfterConnectionStartsStillJoins)
 {
     static constexpr std::chrono::seconds DEADLINE{ 5 };
     static constexpr uint32_t START_AFTER_SERVICE = 2U;
     uint16_t const port = unusedPort();
-    std::optional<server::GameServer> server;
+    server::GameServer server{ port };
     std::atomic_bool stop_server{ false };
     std::thread server_thread;
+    bool server_started = false;
     LifecycleClient game_client{ [&](LifecycleClient& client) {
-        if (!server.has_value() && client.serviceCalls() == START_AFTER_SERVICE) {
-            server.emplace(port);
-            server_thread = std::thread{ [&] { server->run(stop_server); } };
+        if (!server_started && client.serviceCalls() == START_AFTER_SERVICE) {
+            server_started = true;
+            server_thread = std::thread{ [&] { server.run(stop_server); } };
         }
     } };
     client::GameClientBenchmarkHooks const hooks{
@@ -314,7 +315,7 @@ TEST(GameClientLifecycleTest, DelayedServerJoinsAfterLifecycleServiceDuringRetry
         server_thread.join();
     }
 
-    EXPECT_TRUE(server.has_value());
+    EXPECT_TRUE(server_started);
     EXPECT_TRUE(game_client.joined());
     EXPECT_TRUE(game_client.accepted());
     EXPECT_GT(game_client.renderCalls(), 0U);

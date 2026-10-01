@@ -10099,5 +10099,44 @@
     "docs_review": "Read gameplay and rendering contracts against source; both owning guides now document accepted-radius disk/cardinality, protocol12 compatibility, shared commands and far-plane/fog behavior, retaining 1024 mathematical-only scope. Each guide has899 prose words. ai_docs refresh and check pass; integrated newer terrain-admission prose must be preserved by the coordinator.",
     "environment_review": "Task-local Release build uses strict CoreCpp6273573 and CoreProject2026bd23164 installed packages and the existing arm64-osx vcpkg tree, with manifest installation disabled and max2jobs. CPU corrected82/82, preceding12 server-preview tests, publicCLI5/5 and native4/4 pass. ai_check --fast passes; only existing publisher date/dirty-tree release exceptions are allowed. No GPU performance measurement, Windows runtime or Android runtime acceptance was performed in this lane.",
     "backlog_review": "Explicit reserved0286 was added and finalized only in this isolated backlog. No main metadata, integration history, dependency pin or other task was changed; parent task0038 and BACKLOG are generated traceability updates. Coordinator imports and commits once after integration and same-reviewer renewal."
+  },
+  {
+    "id": "MC-AI-0287",
+    "title": "Stabilize delayed-server lifecycle acceptance",
+    "kind": "chore",
+    "status": "done",
+    "priority": "P1",
+    "route": "luna",
+    "milestone": "ED-010-S7",
+    "depends_on": [
+      "MC-AI-0282"
+    ],
+    "acceptance": "Construct GameServer before the client benchmark deadline starts, then begin only its service loop after the second lifecycle service callback. Keep the five-second test deadline and production 30-second connect timeout unchanged; name the test for delayed server servicing, not retry. Repeated focused test and all client lifecycle CTests pass.",
+    "evidence": "The cause was confirmed from source and timing: CoreCpp creates the peer, calls the lifecycle service callback before its first poll, then checks the benchmark deadline after the callback returns. The callback had synchronously constructed a default-radius-256 GameServer, whose cold height-tile interest-order setup could consume most of the five-second deadline. The callback count was not a reconnect retry. After moving server construction before the deadline and deferring only server.run, the corrected test passed 5/5 direct repetitions; the cold first process took 3831 ms, and subsequent runs took 145-159 ms. Incremental Debug mc_tests build passed in 3 actions. All six GameClientLifecycleTest CTests passed 6/6 in 53.45 s, including the intended 15-second delayed handshake and 30-second stop-during-connect cases. Production connection timeout and five-second acceptance deadline were unchanged.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0038",
+    "motivation": "Prevent cold server initialization from consuming the client connection deadline and intermittently failing the S7 aggregate test gate.",
+    "context": "The delayed-server lifecycle fixture currently constructs a default-radius-256 GameServer synchronously inside servicePlatformEvents on call two. CoreCpp invokes this callback before the first transport poll and checks the benchmark deadline after it returns; setup can exceed the test five-second deadline and cancel the peer. Call two is not an outer reconnect retry. Preconstruct the test server before GameClient::run, start only the server run loop on the lifecycle callback, and name the scenario accurately. This is a test-fixture correction, not a production timeout or performance change.",
+    "complexity": "low",
+    "created_at": "2026-10-01",
+    "resolved_at": "2026-10-01",
+    "resolution_changes": "Prepared GameServer outside the timed callback; deferred its service thread until the client connection attempt began; renamed the fixture to describe delayed server servicing accurately. No production code or timeout changed.",
+    "plan": [
+      "Construct the test server before starting the client deadline, but defer its service loop until the client has created a connection attempt.",
+      "Rename the lifecycle case to state that it delays server servicing, then repeat it and run the focused client lifecycle suite without changing production timeouts."
+    ],
+    "product_changes": [],
+    "code_changes": [
+      "Move default-radius server construction outside the lifecycle callback/deadline, defer only the run loop until service call two, and rename the test from a retry claim to delayed server servicing."
+    ],
+    "baseline_commit": "f199991f3587971b5e58baf617a311a32bb0f2c8",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "A test callback accidentally included cold server initialization in its client deadline and its name described a retry that did not occur. Reuse only the lifecycle behavior under test and keep slow fixture preparation outside measured time.",
+    "docs_review": "No runtime contracts or owning guides changed; task and generated backlog documents record the corrected fixture scope.",
+    "environment_review": "Debug mc_tests target rebuilt with three Ninja actions. The corrected focused test passed 5/5 direct repetitions, and the six-test GameClientLifecycleTest CTest selection passed 6/6 in 53.45 s. ai_docs refresh/check, ai_tasks check, ai_plan check, and git diff --check passed. This fixture task makes no platform runtime claim.",
+    "backlog_review": "MC-AI-0287 is a child of active MC-AI-0038 and depends on completed MC-AI-0282. Generated task and backlog render/check remain part of the exact candidate gate."
   }
 ]
