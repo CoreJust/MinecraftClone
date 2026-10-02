@@ -105,6 +105,17 @@ class WorkflowContextTests(unittest.TestCase):
                 self.assertIsNotNone(condition_match, job_name)
                 self.assertEqual(condition_match.group(1), condition)
 
+    def test_linux_sanitizer_bootstrap_uses_published_ninja_wheel(self):
+        workflow = WORKFLOWS[0].read_text(encoding="utf-8")
+        linux_analysis = workflow.split("\n  linux-analysis:", maxsplit=1)[1].split(
+            "\n  android-hwasan-build:", maxsplit=1
+        )[0]
+        self.assertIn(
+            "python -m pip install --disable-pip-version-check --no-cache-dir "
+            "cmake==3.31.6 ninja==1.13.2",
+            linux_analysis,
+        )
+
     def test_private_prefixes_and_manifest_mode_are_explicit(self):
         for workflow_path in WORKFLOWS:
             workflow = workflow_path.read_text(encoding="utf-8")

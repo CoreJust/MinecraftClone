@@ -318,7 +318,7 @@ jobs:
           set -euo pipefail
           sudo apt-get update
           sudo apt-get install --no-install-recommends --yes clang
-          python -m pip install --disable-pip-version-check --no-cache-dir cmake==3.31.6 ninja==1.13.1
+          python -m pip install --disable-pip-version-check --no-cache-dir cmake==3.31.6 ninja==1.13.2
       - name: Materialize private dependency deploy keys
         shell: bash
         env:
