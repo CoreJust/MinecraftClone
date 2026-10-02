@@ -12,6 +12,7 @@ emulator="$sdk_root/emulator/emulator"
 adb="$sdk_root/platform-tools/adb"
 zipalign="$sdk_root/build-tools/35.0.0/zipalign"
 apksigner="$sdk_root/build-tools/35.0.0/apksigner"
+export ADB="$adb"
 ```
 
 The verified macOS profile is a cold boot with no snapshot restore or save,
@@ -46,7 +47,23 @@ launching. Use `"$adb" devices -l` to discover the serial, verify
 pass that exact serial to every ADB command.
 Before launch, require `sys.boot_completed=1`, `pm path android` to return the
 framework APK, `dumpsys -l` to include `package` and `activity`, and every
-`adb-agent doctor` subcheck to pass.
+`adb-agent doctor` subcheck to pass. Then use the repository launch guard as
+the sole activity-launch entry point:
+
+```sh
+serial=emulator-5556 # replace with the verified serial for the S7 AVD
+adb-agent doctor -d "$serial" --json
+python3 script/android_playtest.py --serial "$serial"
+```
+
+The guard checks the AVD name, requires all listed devices to be ready, scans
+each one for an existing game process, and refuses cross-device duplicates.
+It reuses a top-resumed client, brings an existing background game task forward
+without creating another activity, or performs one start when only a leftover
+process remains without a game activity record. It waits for the same
+`NativeActivity` to be top-resumed and in `RESUMED` state. Do not run a second
+`app launch` or `am start` after the guard succeeds. If it refuses, resolve the
+reported device state rather than retrying launch commands blindly.
 
 Release APKs are unsigned. For emulator-only installation, align and sign a
 temporary copy with the stable local Android debug keystore; do not sign or
@@ -77,8 +94,8 @@ therefore a known Android rendering limitation, not a successful terrain
 visual check.
 
 An `am start` success message or a process ID alone is not launch evidence.
-Wait until `NativeActivity` is top-resumed (`state=RESUMED`) and confirm it
-remains alive. If ActivityManager reports `failed to attach` or `start timeout`,
-the process never attached; capture logcat and classify the attempt as an
+The guard’s successful JSON receipt requires `NativeActivity` to be top-resumed
+(`state=RESUMED`) and reports its serial and PID. If ActivityManager reports
+`failed to attach` or `start timeout`, capture logcat and classify this as an
 Android emulator/process-start failure, not a game playtest result. Do not
 blindly relaunch while framework services are unresponsive.
