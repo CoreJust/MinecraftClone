@@ -78,7 +78,7 @@ Additions:
 6. A reusable colored text renderer with separate GUI and world-text stages; the HUD reports readable coordinates, rotation, frame timing, uptime, and acceleration state.
 7. Automated boundary, seam, scheduling, transport, sustained-flight, GPU capture, and 120 Hz renderer benchmark coverage.
 
-## EarlyDev 0.1.0:7(26.10.02)
+## EarlyDev 0.1.0:7(26.10.03)
 
 S7 adds server-authoritative permissions, movement, player presentation, and long-distance terrain rendering to the S6 world foundation.
 
