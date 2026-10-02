@@ -1,0 +1,12 @@
+cmake_minimum_required(VERSION 3.25)
+project(CoreCppProvenanceFixture NONE)
+
+include("@MC_PROJECT_SOURCE_DIR@/cmake/CoreCppProvenance.cmake")
+
+if(NOT DEFINED CoreCpp_REVISION)
+    message(FATAL_ERROR "The test must provide CoreCpp_REVISION")
+endif()
+set(CoreCpp_DIRTY FALSE)
+set(CoreCpp_REVISION_EXACT TRUE)
+
+mc_check_corecpp_provenance()

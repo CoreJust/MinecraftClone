@@ -75,7 +75,7 @@ NINJA_DOWNLOADS = {
 }
 MESH_SHADERS = ("grid.mesh.spv", "player.mesh.spv")
 VULKAN_12_SHADERS = ("grid.vert.spv", "player.vert.spv", "trivial.frag.spv")
-PRIVATE_DEPENDENCY_LOCK_SCHEMA = 1
+PRIVATE_DEPENDENCY_LOCK_SCHEMA = 2
 PRIVATE_DEPENDENCIES = {
     "CoreCpp": {
         "repository": "CoreJust/CoreCpp",
@@ -114,6 +114,7 @@ CORECPP_ANALYSIS_BUILD_ARGUMENTS = (
     "-DCORECPP_BUILD_RUNTIME_KERNEL=ON",
 )
 GIT_REVISION_RE = re.compile(r"[0-9a-f]{40}")
+GIT_REF_COMPONENT_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
 GITHUB_SSH_KNOWN_HOST = (
     "github.com ssh-ed25519 "
     "AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl\n"
@@ -149,7 +150,7 @@ def normalize_cmake_argument(argument: str) -> str:
 
 
 def require_private_dependency_lock(lock_file: Path) -> dict[str, dict[str, str]]:
-    """Read the fixed private-dependency allowlist without accepting mutable refs."""
+    """Read immutable pins and their validated branch retrieval refs."""
     if lock_file.is_symlink() or not lock_file.is_file():
         raise CiError(f"private dependency lock must be a regular file: {lock_file}")
     try:
@@ -166,16 +167,35 @@ def require_private_dependency_lock(lock_file: Path) -> dict[str, dict[str, str]
     result: dict[str, dict[str, str]] = {}
     for name, expected in PRIVATE_DEPENDENCIES.items():
         dependency = dependencies[name]
-        if not isinstance(dependency, dict) or set(dependency) != {"repository", "revision"}:
-            raise CiError(f"{name} lock entry must contain only repository and revision")
+        if not isinstance(dependency, dict) or set(dependency) != {"repository", "revision", "fetch_ref"}:
+            raise CiError(f"{name} lock entry must contain only repository, revision and fetch_ref")
         repository = dependency["repository"]
         revision = dependency["revision"]
+        fetch_ref = dependency["fetch_ref"]
         if repository != expected["repository"]:
             raise CiError(f"{name} repository must be {expected['repository']}")
         if not isinstance(revision, str) or GIT_REVISION_RE.fullmatch(revision) is None:
             raise CiError(f"{name} revision must be a 40-character lowercase hexadecimal commit")
-        result[name] = {"repository": repository, "revision": revision}
+        if not isinstance(fetch_ref, str) or not is_safe_private_dependency_ref(fetch_ref):
+            raise CiError(f"{name} fetch_ref must be a safe full refs/heads branch name")
+        result[name] = {"repository": repository, "revision": revision, "fetch_ref": fetch_ref}
     return result
+
+
+def is_safe_private_dependency_ref(fetch_ref: str) -> bool:
+    """Accept only ordinary branch refs with no Git revision/path metacharacters."""
+    prefix = "refs/heads/"
+    if not fetch_ref.startswith(prefix):
+        return False
+    branch = fetch_ref[len(prefix):]
+    components = branch.split("/")
+    return bool(components) and all(
+        GIT_REF_COMPONENT_RE.fullmatch(component)
+        and ".." not in component
+        and not component.endswith(".")
+        and not component.endswith(".lock")
+        for component in components
+    )
 
 
 def write_github_known_host(root: Path) -> Path:
@@ -210,7 +230,7 @@ def git_with_key(key_file: Path, known_hosts_file: Path, command: Sequence[str])
 
 
 def fetch_private_dependencies(lock_file: Path, root: Path, key_files: dict[str, Path]) -> dict[str, Path]:
-    """Fetch and detach exactly the two immutable private dependency revisions."""
+    """Fetch branch history, then detach and verify only each immutable revision."""
     dependencies = require_private_dependency_lock(lock_file)
     if root.exists():
         raise CiError(f"private dependency root already exists: {root}")
@@ -224,8 +244,15 @@ def fetch_private_dependencies(lock_file: Path, root: Path, key_files: dict[str,
         source = root / name
         run(["git", "init", str(source)])
         run(["git", "-C", str(source), "remote", "add", "origin", f"git@github.com:{dependency['repository']}.git"])
-        run(git_with_key(key_file, known_hosts_file, ["-C", str(source), "fetch", "--depth", "1", "origin", dependency["revision"]]))
-        run(["git", "-C", str(source), "checkout", "--detach", "FETCH_HEAD"])
+        run(git_with_key(key_file, known_hosts_file, ["-C", str(source), "fetch", "--no-tags", "origin", dependency["fetch_ref"]]))
+        try:
+            run(["git", "-C", str(source), "cat-file", "-e", f"{dependency['revision']}^{{commit}}"])
+        except CiError as error:
+            raise CiError(
+                f"{name} locked revision {dependency['revision']} is not reachable from "
+                f"{dependency['fetch_ref']}: {error}"
+            ) from error
+        run(["git", "-C", str(source), "checkout", "--detach", dependency["revision"]])
         actual_revision = run(["git", "-C", str(source), "rev-parse", "HEAD"])
         if actual_revision != dependency["revision"]:
             raise CiError(f"{name} revision mismatch: expected {dependency['revision']}, got {actual_revision}")

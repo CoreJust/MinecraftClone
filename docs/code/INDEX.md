@@ -146,6 +146,8 @@ Files:
 - [`script/tests/test_workflow_contexts.py`](../../script/tests/test_workflow_contexts.py)
 - [`src/CMakeLists.txt`](../../src/CMakeLists.txt)
 - [`tests/CMakeLists.txt`](../../tests/CMakeLists.txt)
+- [`tests/cmake/corecpp_provenance_fixture.cmake.in`](../../tests/cmake/corecpp_provenance_fixture.cmake.in)
+- [`tests/cmake/corecpp_provenance_test.cmake.in`](../../tests/cmake/corecpp_provenance_test.cmake.in)
 - [`tests/cmake/corecpp_server_consumer_test.cmake.in`](../../tests/cmake/corecpp_server_consumer_test.cmake.in)
 - [`tests/cmake/coreproject2026_provenance_test.cmake.in`](../../tests/cmake/coreproject2026_provenance_test.cmake.in)
 - [`tests/cmake/minecraftclone_server_only_test.cmake.in`](../../tests/cmake/minecraftclone_server_only_test.cmake.in)

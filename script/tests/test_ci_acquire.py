@@ -6,6 +6,7 @@ import hashlib
 import io
 import os
 import stat
+import subprocess
 import tempfile
 import unittest
 import zipfile
@@ -520,15 +521,17 @@ class CiAcquireTests(unittest.TestCase):
             lock.write_text(
                 json.dumps(
                     {
-                        "schema": 1,
+                        "schema": 2,
                         "dependencies": {
                             "CoreCpp": {
                                 "repository": "CoreJust/CoreCpp",
                                 "revision": "a" * 40,
+                                "fetch_ref": "refs/heads/codex/corecpp-pin",
                             },
                             "CoreProject2026": {
                                 "repository": "CoreJust/CoreProject2026",
                                 "revision": "b" * 40,
+                                "fetch_ref": "refs/heads/codex/coreproject-pin",
                             },
                         },
                     }
@@ -541,15 +544,17 @@ class CiAcquireTests(unittest.TestCase):
             lock.write_text(
                 json.dumps(
                     {
-                        "schema": 1,
+                        "schema": 2,
                         "dependencies": {
                             "CoreCpp": {
                                 "repository": "CoreJust/Unapproved",
                                 "revision": "a" * 40,
+                                "fetch_ref": "refs/heads/codex/corecpp-pin",
                             },
                             "CoreProject2026": {
                                 "repository": "CoreJust/CoreProject2026",
                                 "revision": "main",
+                                "fetch_ref": "refs/heads/codex/coreproject-pin",
                             },
                         },
                     }
@@ -563,6 +568,60 @@ class CiAcquireTests(unittest.TestCase):
         lock = Path(__file__).resolve().parents[2] / "dependencies.lock.json"
         parsed = acquire.require_private_dependency_lock(lock)
         self.assertEqual(set(parsed), {"CoreCpp", "CoreProject2026"})
+        self.assertEqual(parsed["CoreCpp"]["fetch_ref"], "refs/heads/codex/ai-mc-s7-cooperative-connect")
+        self.assertEqual(parsed["CoreProject2026"]["fetch_ref"], "refs/heads/codex/ai-s7-cooperative-corecpp-pin")
+
+    def test_private_dependency_lock_rejects_non_branch_fetch_ref(self):
+        with tempfile.TemporaryDirectory() as directory:
+            lock = Path(directory) / "dependencies.lock.json"
+            lock.write_text(
+                json.dumps(
+                    {
+                        "schema": 2,
+                        "dependencies": {
+                            "CoreCpp": {
+                                "repository": "CoreJust/CoreCpp",
+                                "revision": "a" * 40,
+                                "fetch_ref": "refs/tags/v1.0",
+                            },
+                            "CoreProject2026": {
+                                "repository": "CoreJust/CoreProject2026",
+                                "revision": "b" * 40,
+                                "fetch_ref": "refs/heads/codex/coreproject-pin",
+                            },
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(acquire.CiError, "safe full refs/heads branch name"):
+                acquire.require_private_dependency_lock(lock)
+
+    def test_private_dependency_lock_rejects_unsafe_branch_components(self):
+        with tempfile.TemporaryDirectory() as directory:
+            lock = Path(directory) / "dependencies.lock.json"
+            lock.write_text(
+                json.dumps(
+                    {
+                        "schema": 2,
+                        "dependencies": {
+                            "CoreCpp": {
+                                "repository": "CoreJust/CoreCpp",
+                                "revision": "a" * 40,
+                                "fetch_ref": "refs/heads/codex/../main",
+                            },
+                            "CoreProject2026": {
+                                "repository": "CoreJust/CoreProject2026",
+                                "revision": "b" * 40,
+                                "fetch_ref": "refs/heads/codex/coreproject-pin",
+                            },
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(acquire.CiError, "safe full refs/heads branch name"):
+                acquire.require_private_dependency_lock(lock)
 
     def test_android_hwasan_private_dependencies_share_the_instrumented_ndk_triplet(self):
         with tempfile.TemporaryDirectory() as directory, mock.patch.dict(
@@ -625,15 +684,17 @@ class CiAcquireTests(unittest.TestCase):
             lock.write_text(
                 json.dumps(
                     {
-                        "schema": 1,
+                        "schema": 2,
                         "dependencies": {
                             "CoreCpp": {
                                 "repository": "CoreJust/CoreCpp",
                                 "revision": "a" * 40,
+                                "fetch_ref": "refs/heads/codex/corecpp-pin",
                             },
                             "CoreProject2026": {
                                 "repository": "CoreJust/CoreProject2026",
                                 "revision": "b" * 40,
+                                "fetch_ref": "refs/heads/codex/coreproject-pin",
                             },
                         },
                     }
@@ -646,7 +707,7 @@ class CiAcquireTests(unittest.TestCase):
             coreproject_key.touch()
             corecpp_key.chmod(0o600)
             coreproject_key.chmod(0o600)
-            responses = iter(("", "", "", "", "a" * 40, "", "", "", "", "", "b" * 40, ""))
+            responses = iter(("", "", "", "", "", "a" * 40, "", "", "", "", "", "", "b" * 40, ""))
             with mock.patch.object(acquire, "run", side_effect=lambda *_args, **_kwargs: next(responses)) as run:
                 sources = acquire.fetch_private_dependencies(
                     lock,
@@ -655,8 +716,10 @@ class CiAcquireTests(unittest.TestCase):
                 )
             self.assertEqual(sources, {"CoreCpp": root / "sources/CoreCpp", "CoreProject2026": root / "sources/CoreProject2026"})
             commands = [call.args[0] for call in run.call_args_list]
-            self.assertIn(["git", "-C", str(root / "sources/CoreCpp"), "checkout", "--detach", "FETCH_HEAD"], commands)
-            self.assertIn(["git", "-C", str(root / "sources/CoreProject2026"), "checkout", "--detach", "FETCH_HEAD"], commands)
+            self.assertIn(["git", "-C", str(root / "sources/CoreCpp"), "cat-file", "-e", f"{'a' * 40}^{{commit}}"], commands)
+            self.assertIn(["git", "-C", str(root / "sources/CoreCpp"), "checkout", "--detach", "a" * 40], commands)
+            self.assertIn(["git", "-C", str(root / "sources/CoreProject2026"), "cat-file", "-e", f"{'b' * 40}^{{commit}}"], commands)
+            self.assertIn(["git", "-C", str(root / "sources/CoreProject2026"), "checkout", "--detach", "b" * 40], commands)
             fetches = [command for command in commands if "fetch" in command]
             self.assertEqual(len(fetches), 2)
             remotes = [command for command in commands if "remote" in command]
@@ -664,9 +727,126 @@ class CiAcquireTests(unittest.TestCase):
                 [command[-1] for command in remotes],
                 ["git@github.com:CoreJust/CoreCpp.git", "git@github.com:CoreJust/CoreProject2026.git"],
             )
-            self.assertEqual(fetches[0][-1], "a" * 40)
-            self.assertEqual(fetches[1][-1], "b" * 40)
+            self.assertEqual(fetches[0][-3:], ["--no-tags", "origin", "refs/heads/codex/corecpp-pin"])
+            self.assertEqual(fetches[1][-3:], ["--no-tags", "origin", "refs/heads/codex/coreproject-pin"])
             self.assertNotIn("PRIVATE KEY", "\n".join(" ".join(command) for command in commands))
+
+    def test_private_dependency_fetch_fails_clearly_when_pin_is_not_in_fetched_ref(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            lock = root / "dependencies.lock.json"
+            lock.write_text(
+                json.dumps(
+                    {
+                        "schema": 2,
+                        "dependencies": {
+                            "CoreCpp": {
+                                "repository": "CoreJust/CoreCpp",
+                                "revision": "a" * 40,
+                                "fetch_ref": "refs/heads/codex/corecpp-pin",
+                            },
+                            "CoreProject2026": {
+                                "repository": "CoreJust/CoreProject2026",
+                                "revision": "b" * 40,
+                                "fetch_ref": "refs/heads/codex/coreproject-pin",
+                            },
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            corecpp_key = root / "corecpp-key"
+            coreproject_key = root / "coreproject-key"
+            corecpp_key.touch()
+            coreproject_key.touch()
+            corecpp_key.chmod(0o600)
+            coreproject_key.chmod(0o600)
+
+            def fail_on_missing_pin(command):
+                if "cat-file" in command:
+                    raise acquire.CiError("missing object")
+                return ""
+
+            with mock.patch.object(acquire, "run", side_effect=fail_on_missing_pin) as run:
+                with self.assertRaisesRegex(
+                    acquire.CiError,
+                    f"CoreCpp locked revision {'a' * 40} is not reachable from refs/heads/codex/corecpp-pin",
+                ):
+                    acquire.fetch_private_dependencies(
+                        lock,
+                        root / "sources",
+                        {"CoreCpp": corecpp_key, "CoreProject2026": coreproject_key},
+                    )
+            self.assertFalse(any("checkout" in call.args[0] for call in run.call_args_list))
+
+    def test_private_dependency_fetches_branch_history_but_checks_out_exact_ancestor_pin(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            key_files = {}
+            remotes = {}
+            dependencies = {}
+            for name, repository in (
+                ("CoreCpp", "CoreJust/CoreCpp"),
+                ("CoreProject2026", "CoreJust/CoreProject2026"),
+            ):
+                remote = root / f"{name}.git"
+                seed = root / f"{name}-seed"
+                subprocess.run(["git", "init", "--bare", str(remote)], capture_output=True, check=True)
+                subprocess.run(["git", "init", str(seed)], capture_output=True, check=True)
+                subprocess.run(["git", "-C", str(seed), "config", "user.name", "CI fixture"], capture_output=True, check=True)
+                subprocess.run(["git", "-C", str(seed), "config", "user.email", "ci-fixture@example.invalid"], capture_output=True, check=True)
+                branch = f"codex/{name.lower()}-pin"
+                subprocess.run(["git", "-C", str(seed), "checkout", "-b", branch], capture_output=True, check=True)
+                fixture_file = seed / "pin.txt"
+                fixture_file.write_text("pinned ancestor\n", encoding="utf-8")
+                subprocess.run(["git", "-C", str(seed), "add", "pin.txt"], capture_output=True, check=True)
+                subprocess.run(["git", "-C", str(seed), "commit", "-m", "pinned commit"], capture_output=True, check=True)
+                revision = subprocess.run(
+                    ["git", "-C", str(seed), "rev-parse", "HEAD"],
+                    capture_output=True,
+                    check=True,
+                    text=True,
+                ).stdout.strip()
+                fixture_file.write_text("later branch tip\n", encoding="utf-8")
+                subprocess.run(["git", "-C", str(seed), "commit", "-am", "later branch tip"], capture_output=True, check=True)
+                subprocess.run(["git", "-C", str(seed), "push", str(remote), f"HEAD:refs/heads/{branch}"], capture_output=True, check=True)
+                key_file = root / f"{name}-key"
+                key_file.touch()
+                key_file.chmod(0o600)
+                key_files[name] = key_file
+                remotes[repository] = remote
+                dependencies[name] = {
+                    "repository": repository,
+                    "revision": revision,
+                    "fetch_ref": f"refs/heads/{branch}",
+                }
+
+            lock = root / "dependencies.lock.json"
+            lock.write_text(json.dumps({"schema": 2, "dependencies": dependencies}), encoding="utf-8")
+            real_run = acquire.run
+
+            def run_against_local_remotes(command):
+                if len(command) >= 7 and command[:2] == ["git", "-C"] and command[3:6] == ["remote", "add", "origin"]:
+                    repository = command[-1].removeprefix("git@github.com:").removesuffix(".git")
+                    command = [*command[:-1], str(remotes[repository])]
+                return real_run(command)
+
+            with mock.patch.object(acquire, "git_with_key", side_effect=lambda _key, _hosts, command: ["git", *command]), mock.patch.object(
+                acquire,
+                "run",
+                side_effect=run_against_local_remotes,
+            ):
+                sources = acquire.fetch_private_dependencies(lock, root / "sources", key_files)
+
+            for name, dependency in dependencies.items():
+                actual_revision = subprocess.run(
+                    ["git", "-C", str(sources[name]), "rev-parse", "HEAD"],
+                    capture_output=True,
+                    check=True,
+                    text=True,
+                ).stdout.strip()
+                self.assertEqual(actual_revision, dependency["revision"])
+                self.assertEqual((sources[name] / "pin.txt").read_text(encoding="utf-8"), "pinned ancestor\n")
 
     def test_git_ssh_paths_preserve_windows_drives_spaces_and_option_boundaries(self):
         self.assertEqual(

@@ -11,12 +11,12 @@ python3 script/ai_check.py
 ```
 
 Run CMake presets from the repository root; use `release` for an optimized
-build. Configure with installed CoreCpp and CoreProject2026 packages exposing
-`CoreCpp::Core`, `CoreCpp::Runtime`, and `CoreProject2026::CoreLang`; configure
-checks both exact revisions against [`dependencies.lock.json`](../dependencies.lock.json).
-CoreProject2026 provenance always fails closed for dirty, unknown, or mismatched
-packages. Local CoreCpp iteration may set `-DMC_ALLOW_INEXACT_CORECPP=ON`, which
-is not release evidence.
+build. Configure packages exposing `CoreCpp::Core`, `CoreCpp::Runtime`, and
+`CoreProject2026::CoreLang`; CMake checks their exact SHAs against
+[`dependencies.lock.json`](../dependencies.lock.json). Schema 2 uses `fetch_ref`
+locators for validated branches; CI fetches their history but builds only locked commits.
+CoreProject2026 rejects dirty, unknown, or mismatched packages.
+`-DMC_ALLOW_INEXACT_CORECPP=ON` is development-only.
 `mc_main` is under `build/<preset>/`; `cmake --install` installs it with shaders.
 
 After building exact release inputs, use the deterministic [package tooling](PACKAGING.md) to create desktop archives or record Android APK evidence.

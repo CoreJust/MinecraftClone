@@ -55,7 +55,7 @@
     },
     {
       "guide": "docs/BUILD.md",
-      "guide_sha256": "b0ad610c7a7da636256c3cbc900490a7206ab3fa7b658dc1354427cf9f149290",
+      "guide_sha256": "5696d519ebf2120c54a46f538b07b8c814100d09ec0c961ffe95fe2c40af5cc7",
       "id": "build",
       "sources": [
         ".agents/skills/backlog/SKILL.md",
@@ -148,6 +148,8 @@
         "script/tests/test_workflow_contexts.py",
         "src/CMakeLists.txt",
         "tests/CMakeLists.txt",
+        "tests/cmake/corecpp_provenance_fixture.cmake.in",
+        "tests/cmake/corecpp_provenance_test.cmake.in",
         "tests/cmake/corecpp_server_consumer_test.cmake.in",
         "tests/cmake/coreproject2026_provenance_test.cmake.in",
         "tests/cmake/minecraftclone_server_only_test.cmake.in",
@@ -155,7 +157,7 @@
         "vcpkg-configuration.json",
         "vcpkg.json"
       ],
-      "sources_sha256": "0f9302a17a09a5b708074cf7831fbcf37619a4b682fcb564d666a232cc478a13"
+      "sources_sha256": "916b6e8765bd0a57684cc0ac6e327d4b7cb7708043d5801b1fc5f42c2be852b1"
     },
     {
       "guide": "docs/code/CORE.md",
