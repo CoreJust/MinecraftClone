@@ -10226,5 +10226,82 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0290",
+    "title": "Prevent Android playtests from targeting the wrong AVD or launching duplicate clients",
+    "kind": "bug",
+    "status": "active",
+    "priority": "P1",
+    "route": "luna",
+    "milestone": "ED-010-S7",
+    "depends_on": [],
+    "acceptance": "A reusable command requires an explicit connected serial, verifies it is the documented S7 AVD and that Android framework services are ready, scans every connected device for an existing game process before launch, reuses only a sole top-resumed client on the selected AVD, and refuses wrong-AVD or duplicate-process states without launching. From a clean target it starts the activity once and proves NativeActivity is top-resumed with RESUMED state. Automated tests cover wrong AVD, duplicates, readiness failures, reuse, and one-launch success; the Android acceptance guide uses the command.",
+    "evidence": "",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0038",
+    "motivation": "The Android acceptance guide names one disposable S7 AVD, but launch preparation selected an emulator serial without checking its AVD name or whether the game was already running on another connected device, producing a misleading duplicate-window playtest.",
+    "context": "On 2026-10-02 both emulator-5554 and emulator-5556 had the game foreground. Their AVD names differed: emulator-5554 was Medium_Phone_API_35 and emulator-5556 was the documented MinecraftClone_S7_ReleaseClean_API_35. The extra app was stopped without clearing or uninstalling data, then one client was launched on the correct AVD.",
+    "complexity": "medium",
+    "created_at": "2026-10-02",
+    "resolved_at": "",
+    "resolution_changes": "",
+    "plan": [
+      "Clarify acceptance and implementation steps.",
+      "Implement a repository-owned Android playtest preflight/launch command bound to the exact S7 AVD.",
+      "Add deterministic tests for target identity, cross-device duplicates, readiness, reuse, and launch verification.",
+      "Document the one-command procedure and refresh the generated code/task indexes."
+    ],
+    "product_changes": [],
+    "code_changes": [],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": false,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0291",
+    "title": "Accept full stable task IDs when preparing implementation work",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P2",
+    "route": "luna",
+    "milestone": "ED-010-S7",
+    "depends_on": [],
+    "acceptance": "The implementation-preparation CLI accepts both numeric task numbers and canonical MC-AI-#### IDs as existing tasks, rejects malformed prefixed IDs without creating a task, and retains description-based task creation. A focused regression proves a prefixed ID updates only the existing task; command help and the project implement skill document the accepted forms.",
+    "evidence": "python3 -B -m unittest script.tests.test_ai_plan -v passed 11/11. The new regression selects MC-AI-0004 without creating MC-AI-0005, and the malformed-ID regression leaves backlog.json byte-for-byte unchanged. Project implementation skill and CLI help now document full stable IDs.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0038",
+    "motivation": "The task-preparation CLI documented a task ID or description, but only numeric IDs were recognized as existing tasks; a full MC-AI-#### ID was treated as a new description and could allocate an accidental duplicate.",
+    "context": "While preparing MC-AI-0290, invoking ai_plan.py implement MC-AI-0290 --prepare created an empty MC-AI-0291 task instead of selecting MC-AI-0290. This task uses that ID to fix the CLI contract and add regression coverage; the Android launch fix itself remains scoped to MC-AI-0290.",
+    "complexity": "low",
+    "created_at": "2026-10-02",
+    "resolved_at": "2026-10-02",
+    "resolution_changes": "Extended ai_plan.py implement to accept a canonical full MC-AI-#### ID, reject malformed prefixed identifiers without treating them as descriptions, and display accepted forms in --help. Added two focused regressions and updated the project implementation skill.",
+    "plan": [
+      "Clarify acceptance and implementation steps.",
+      "Accept and validate a canonical MC-AI-#### ID in ai_plan.py implement while preserving numeric and description forms.",
+      "Add focused regressions for prefixed IDs and malformed prefixed IDs, then align command help and the project implement skill."
+    ],
+    "product_changes": [
+      "No game behavior changed; implementation tasks can now be selected by their stable full IDs without accidental duplicate task allocation."
+    ],
+    "code_changes": [
+      "Updated script/ai_plan.py, script/tests/test_ai_plan.py, and .agents/skills/implement/SKILL.md."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]
