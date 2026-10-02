@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+import multiprocessing
+import tempfile
 import sys
+import threading
+import time
 from pathlib import Path
 import unittest
 from unittest import mock
@@ -35,6 +39,58 @@ def ready_outputs(playtest: android_playtest) -> list[str]:
         "package:/system/framework/framework-res.apk",
         "activity\npackage\nwindow\n",
     ]
+
+
+def _run_simultaneous_guard(barrier, initial_scan_barrier, launch_count, process_running, result_queue, lock_path: str) -> None:
+    playtest = android_playtest
+    playtest._launch_lock_path = lambda: Path(lock_path)
+
+    def run_adb(serial: str | None, *arguments: str, timeout: int = 30) -> str:
+        if arguments == ("shell", "getprop", "ro.boot.qemu.avd_name"):
+            return playtest.S7_AVD
+        if arguments == ("shell", "getprop", "sys.boot_completed"):
+            return "1"
+        if arguments == ("shell", "pm", "path", "android"):
+            return "package:/system/framework/framework-res.apk"
+        if arguments == ("shell", "dumpsys", "-l"):
+            return "activity\npackage\nwindow\n"
+        if arguments == ("shell", "dumpsys", "activity", "activities"):
+            return activity_dump(playtest.COMPONENT, playtest.COMPONENT, "RESUMED")
+        if arguments[:3] == ("shell", "am", "start"):
+            with launch_count.get_lock():
+                launch_count.value += 1
+            with process_running.get_lock():
+                process_running.value = 1
+            return "Status: ok"
+        raise AssertionError(f"unexpected fake ADB command: {arguments}")
+
+    def running_process_id(serial: str) -> str:
+        with process_running.get_lock():
+            running = bool(process_running.value)
+        if not running:
+            try:
+                initial_scan_barrier.wait(timeout=1)
+            except threading.BrokenBarrierError:
+                pass
+        return "123" if running else ""
+
+    playtest.connected_devices = lambda: ["emulator-5556"]
+    playtest.run_adb = run_adb
+    playtest.running_process_id = running_process_id
+
+    try:
+        barrier.wait(timeout=10)
+        result = playtest.launch_or_reuse("emulator-5556", timeout_seconds=5)
+        result_queue.put({"action": result["action"]})
+    except Exception as error:
+        result_queue.put({"error": repr(error)})
+
+
+def _hold_launch_lock(lock_path: str, acquired) -> None:
+    with android_playtest._launch_lock(5, Path(lock_path)):
+        acquired.set()
+        while True:
+            time.sleep(1)
 
 
 class AndroidPlaytestTest(unittest.TestCase):
@@ -141,15 +197,66 @@ class AndroidPlaytestTest(unittest.TestCase):
             self.playtest, "run_adb", side_effect=lambda *args, **kwargs: next(command_outputs)
         ) as run_adb, mock.patch.object(
             self.playtest, "running_process_id", side_effect=["", "789"]
-        ), mock.patch.object(self.playtest, "time") as time_module:
-            time_module.monotonic.side_effect = [0, 0]
-            time_module.sleep.return_value = None
+        ):
             receipt = self.playtest.launch_or_reuse("emulator-5556", timeout_seconds=5)
 
         self.assertEqual(receipt["action"], "launched")
         self.assertEqual(receipt["pid"], "789")
         launch_calls = [call for call in run_adb.call_args_list if call.args[1:4] == ("shell", "am", "start")]
         self.assertEqual(len(launch_calls), 1)
+
+    def test_concurrent_processes_start_once_and_second_reuses_activity(self) -> None:
+        context = multiprocessing.get_context("spawn")
+        with tempfile.TemporaryDirectory() as temp_dir:
+            lock_path = str(Path(temp_dir) / "android-playtest.lock")
+            barrier = context.Barrier(2)
+            initial_scan_barrier = context.Barrier(2)
+            launch_count = context.Value("i", 0)
+            process_running = context.Value("i", 0)
+            result_queue = context.Queue()
+            processes = [
+                context.Process(
+                    target=_run_simultaneous_guard,
+                    args=(barrier, initial_scan_barrier, launch_count, process_running, result_queue, lock_path),
+                )
+                for _ in range(2)
+            ]
+            try:
+                for process in processes:
+                    process.start()
+                for process in processes:
+                    process.join(timeout=15)
+                self.assertTrue(all(not process.is_alive() for process in processes))
+                self.assertEqual([process.exitcode for process in processes], [0, 0])
+                results = [result_queue.get(timeout=3) for _ in processes]
+            finally:
+                for process in processes:
+                    if process.is_alive():
+                        process.kill()
+                        process.join(timeout=5)
+
+        self.assertEqual(launch_count.value, 1)
+        self.assertCountEqual([result.get("action") for result in results], ["launched", "reused"])
+        self.assertFalse(any("error" in result for result in results), results)
+
+    def test_hard_process_exit_releases_the_launch_lock(self) -> None:
+        context = multiprocessing.get_context("spawn")
+        with tempfile.TemporaryDirectory() as temp_dir:
+            lock_path = str(Path(temp_dir) / "android-playtest.lock")
+            acquired = context.Event()
+            process = context.Process(target=_hold_launch_lock, args=(lock_path, acquired))
+            process.start()
+            try:
+                self.assertTrue(acquired.wait(timeout=10))
+                process.kill()
+                process.join(timeout=5)
+                self.assertFalse(process.is_alive())
+                with self.playtest._launch_lock(1, Path(lock_path)):
+                    pass
+            finally:
+                if process.is_alive():
+                    process.kill()
+                    process.join(timeout=5)
 
     def test_framework_not_ready_prevents_stale_process_recovery(self) -> None:
         with mock.patch.object(self.playtest, "connected_devices", return_value=["emulator-5556"]), mock.patch.object(

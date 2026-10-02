@@ -56,14 +56,21 @@ adb-agent doctor -d "$serial" --json
 python3 script/android_playtest.py --serial "$serial"
 ```
 
-The guard checks the AVD name, requires all listed devices to be ready, scans
-each one for an existing game process, and refuses cross-device duplicates.
-It reuses a top-resumed client, brings an existing background game task forward
-without creating another activity, or performs one start when only a leftover
-process remains without a game activity record. It waits for the same
-`NativeActivity` to be top-resumed and in `RESUMED` state. Do not run a second
-`app launch` or `am start` after the guard succeeds. If it refuses, resolve the
-reported device state rather than retrying launch commands blindly.
+The guard takes a per-user, per-AVD operating-system lock across the whole
+check-and-start sequence. Concurrent invocations wait for the lock, then repeat
+device, framework, process and activity checks before deciding what to do; the
+second invocation therefore reuses the activity started by the first instead
+of racing another `am start`. The OS releases the lock if the launcher exits
+unexpectedly; an unlocked lock file may remain in the temporary directory.
+Within the lock, the guard checks the AVD name, requires all listed devices to
+be ready, scans each one for an existing game process, and refuses
+cross-device duplicates. It reuses a top-resumed client, brings an existing
+background game task forward without creating another activity, or performs
+one start when only a leftover process remains without a game activity record.
+It waits for the same `NativeActivity` to be top-resumed and in `RESUMED` state.
+Do not run a second `app launch` or `am start` after the guard succeeds. If it
+refuses, resolve the reported device state rather than retrying launch commands
+blindly.
 
 Release APKs are unsigned. For emulator-only installation, align and sign a
 temporary copy with the stable local Android debug keystore; do not sign or

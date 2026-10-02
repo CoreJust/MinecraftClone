@@ -10308,5 +10308,47 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0292",
+    "title": "Serialize Android playtest launch attempts across processes",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P1",
+    "route": "luna",
+    "milestone": "ED-010-S7",
+    "depends_on": [],
+    "acceptance": "Concurrent invocations for the documented S7 AVD serialize across host processes. After lock acquisition each invocation revalidates the exact AVD/framework, scans connected devices for existing game clients, and checks the existing activity before deciding whether to start. Under a controlled simultaneous-start regression exactly one am start occurs; the other invocation reuses or foregrounds the same NativeActivity, or fails with a bounded actionable timeout. The OS releases the lock when a process exits, so stale lock files do not block later playtests. Existing wrong-AVD, unavailable-device, duplicate-client, and foreground-verification behavior remains unchanged.",
+    "evidence": "python3 -B -m unittest script.tests.test_android_playtest -v passed 13/13. A barrier-controlled multiprocessing regression synchronized both callers before the no-client scan and verified exactly one am start while the other reused the same NativeActivity. A hard-killed lock owner released the lock for immediate reacquisition. adb-agent doctor -d emulator-5556 passed all 3 checks; the guarded live invocation returned action=reused, PID 6547, on MinecraftClone_S7_ReleaseClean_API_35, and adb-agent app current confirmed NativeActivity remained foreground. No second activity was started.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0038",
+    "motivation": "The S7 Android guard has a time-of-check/time-of-use race: concurrent playtest invocations can each observe no client and start duplicate NativeActivity instances.",
+    "context": "A fresh immutable review reproduced the race with a barrier-controlled concurrent probe: two launch_or_reuse calls both observed no PID and both issued am start. The Android manifest uses the default standard activity launch mode, so concurrent launches are not guaranteed to coalesce. The guard must serialize independent host processes and recheck state after acquiring the lock.",
+    "complexity": "medium",
+    "created_at": "2026-10-03",
+    "resolved_at": "2026-10-03",
+    "resolution_changes": "Added a per-user operating-system launch lock around the full Android check-and-start sequence. Concurrent callers revalidate framework, connected devices, process ownership, and activity state only after acquiring the lock; kernel release makes hard process exit recoverable.",
+    "plan": [
+      "Clarify acceptance and implementation steps.",
+      "Implement a portable OS-managed cross-process launch lock with bounded acquisition and guaranteed descriptor release.",
+      "Recheck device identity, framework readiness, clients, and activity after acquiring the lock before launching.",
+      "Add deterministic concurrent-process regression coverage and preserve all existing Android guard tests.",
+      "Update Android acceptance documentation and task evidence, then run the focused suite and project fast gate."
+    ],
+    "product_changes": [
+      "Concurrent Android playtest launches now resolve to one validated game activity instead of racing duplicate NativeActivity starts."
+    ],
+    "code_changes": [
+      "Added a bounded cross-process OS lock with post-lock device/framework/process/activity revalidation, deterministic two-process race and hard-exit regressions, and Android acceptance guidance."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]

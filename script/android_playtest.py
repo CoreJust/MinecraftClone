@@ -4,13 +4,17 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
+import errno
 import json
 import os
 import re
 import subprocess
 import sys
+import tempfile
 import time
-from typing import Sequence
+from pathlib import Path
+from typing import Iterator, Sequence
 
 
 PACKAGE = "com.corejust.minecraftclone"
@@ -21,6 +25,71 @@ S7_AVD = "MinecraftClone_S7_ReleaseClean_API_35"
 
 class AndroidPlaytestError(RuntimeError):
     """The requested Android playtest could not be started safely."""
+
+
+def _launch_lock_path() -> Path:
+    user = str(os.getuid()) if hasattr(os, "getuid") else os.environ.get("USERNAME", "user")
+    user = re.sub(r"[^A-Za-z0-9_.-]", "_", user)
+    return Path(tempfile.gettempdir()) / f"minecraftclone-{user}-{S7_AVD}-playtest.lock"
+
+
+def _lock_contention(error: OSError) -> bool:
+    if os.name == "nt":
+        return error.errno in {errno.EACCES, errno.EAGAIN} or getattr(error, "winerror", None) in {32, 33}
+    return error.errno in {errno.EACCES, errno.EAGAIN}
+
+
+@contextlib.contextmanager
+def _launch_lock(timeout_seconds: float, lock_path: Path | None = None) -> Iterator[None]:
+    """Serialize check-and-start across processes; the OS releases this lock on exit."""
+    if timeout_seconds <= 0:
+        raise ValueError("launch lock timeout must be positive")
+    selected_path = lock_path or _launch_lock_path()
+    lock_file = selected_path.open("a+b")
+    locked = False
+    try:
+        if os.name == "nt":
+            import msvcrt
+
+            lock_file.seek(0, os.SEEK_END)
+            if lock_file.tell() == 0:
+                lock_file.write(b"\0")
+                lock_file.flush()
+        else:
+            import fcntl
+
+        deadline = time.monotonic() + timeout_seconds
+        while True:
+            try:
+                if os.name == "nt":
+                    lock_file.seek(0)
+                    msvcrt.locking(lock_file.fileno(), msvcrt.LK_NBLCK, 1)
+                else:
+                    fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                locked = True
+                break
+            except OSError as error:
+                if not _lock_contention(error):
+                    raise
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise AndroidPlaytestError(
+                        "another Android playtest launch is still in progress; "
+                        "wait for it to finish and retry"
+                    ) from error
+                time.sleep(min(0.05, remaining))
+
+        try:
+            yield
+        finally:
+            if locked:
+                if os.name == "nt":
+                    lock_file.seek(0)
+                    msvcrt.locking(lock_file.fileno(), msvcrt.LK_UNLCK, 1)
+                else:
+                    fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+    finally:
+        lock_file.close()
 
 
 def run_adb(serial: str | None, *arguments: str, timeout: int = 30) -> str:
@@ -124,6 +193,11 @@ def require_framework_ready(serial: str) -> None:
 
 
 def launch_or_reuse(serial: str, timeout_seconds: int = 60) -> dict[str, str]:
+    with _launch_lock(timeout_seconds):
+        return _launch_or_reuse_locked(serial, timeout_seconds)
+
+
+def _launch_or_reuse_locked(serial: str, timeout_seconds: int) -> dict[str, str]:
     devices = connected_devices()
     if serial not in devices:
         raise AndroidPlaytestError(f"selected serial {serial} is not ready; available devices: {', '.join(devices) or 'none'}")
