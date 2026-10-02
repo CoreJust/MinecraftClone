@@ -28,19 +28,13 @@ class HistoryError(RuntimeError):
 PUBLICATION_LEDGER_MUTABLE_FIELDS = {
     "status",
     "owner",
-    "blocker",
     "evidence",
     "resolved_at",
     "resolution_changes",
-    "docs_review",
-    "environment_review",
-    "backlog_review",
 }
 
-# Snapshot 3 was published before the ledger immutability check landed. Its
-# immutable commit also condensed finalized prose fields. The commit identity
-# makes this a closed historical exception; later ledgers retain the strict
-# field set above.
+# These exact historical ledger commits predate or bypassed the current narrow
+# field contract. Commit identity makes each exception closed and auditable.
 LEGACY_PUBLICATION_LEDGER_FIELD_EXCEPTIONS = {
     "8df27fb8fa08d9e0cd625b8cad85209fdd09251d": {
         "context",
@@ -48,11 +42,26 @@ LEGACY_PUBLICATION_LEDGER_FIELD_EXCEPTIONS = {
         "product_changes",
         "code_changes",
     },
+    "3fa4861abafa7eb20163b89f6957bf915c10ed63": {
+        "blocker",
+        "docs_review",
+        "environment_review",
+        "backlog_review",
+    },
+}
+ACTIVE_PUBLICATION_LEDGER_EXCEPTIONS = {
+    "3fa4861abafa7eb20163b89f6957bf915c10ed63",
 }
 
 
 def publication_ledger_mutable_fields(sha: str) -> set[str]:
     return PUBLICATION_LEDGER_MUTABLE_FIELDS | LEGACY_PUBLICATION_LEDGER_FIELD_EXCEPTIONS.get(sha, set())
+
+
+def has_published_ledger_state(sha: str, task: dict[str, object]) -> bool:
+    if sha in ACTIVE_PUBLICATION_LEDGER_EXCEPTIONS:
+        return task["status"] == "active" and not task["resolved_at"]
+    return task["status"] == "done" and bool(task["resolved_at"])
 
 
 def git(repo: Path, *args: str, check: bool = True) -> str:
@@ -68,6 +77,15 @@ def git(repo: Path, *args: str, check: bool = True) -> str:
     if check and result.returncode:
         raise HistoryError(result.stderr.strip() or "git " + " ".join(args) + " failed")
     return result.stdout
+
+
+def _unique_json_object(pairs: list[tuple[str, object]]) -> dict[str, object]:
+    result: dict[str, object] = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError(f"duplicate JSON object key: {key}")
+        result[key] = value
+    return result
 
 
 def revision(repo: Path, ref: str) -> str:
@@ -210,6 +228,11 @@ def mapped_range_ids(
 
 
 def has_tagged_promotion(repo: Path, baseline: str, source: str) -> bool:
+    if subprocess.run(
+        ["git", "merge-base", "--is-ancestor", baseline, source], cwd=repo,
+        capture_output=True, check=False,
+    ).returncode:
+        return False
     tag_refs = git(repo, "for-each-ref", "--format=%(refname)", "refs/tags/ai/").splitlines()
     for tag_ref in tag_refs:
         if git(repo, "cat-file", "-t", tag_ref).strip() != "tag":
@@ -218,14 +241,14 @@ def has_tagged_promotion(repo: Path, baseline: str, source: str) -> bool:
         parents = git(repo, "show", "-s", "--format=%P", promoted).split()
         if len(parents) != 2 or parents[1] != source:
             continue
-        # The task baseline is from ai-dev; ai-main may advance before promotion.
-        if git(repo, "merge-base", baseline, parents[0], check=False).strip() != baseline:
-            continue
-        merged = git(repo, "merge-tree", "--write-tree", parents[0], source).splitlines()
-        if not merged:
+        merged = subprocess.run(
+            ["git", "merge-tree", "--write-tree", parents[0], source],
+            cwd=repo, text=True, capture_output=True, check=False,
+        )
+        if merged.returncode or not merged.stdout.splitlines():
             continue
         tree = git(repo, "rev-parse", f"{promoted}^{{tree}}").strip()
-        if tree == merged[0]:
+        if tree == merged.stdout.splitlines()[0]:
             return True
     return False
 
@@ -285,10 +308,16 @@ def require_valid_prior_snapshot_ledgers(
         if not required_paths <= changed_paths or not changed_paths <= allowed_paths:
             raise HistoryError(f"publication ledger {sha} changes non-ledger paths")
         try:
-            before = json.loads(git(repo, "show", f"{parents[0]}:docs/ai/backlog.json"))
-            after = json.loads(git(repo, "show", f"{sha}:docs/ai/backlog.json"))
-        except (json.JSONDecodeError, HistoryError) as error:
-            raise HistoryError(f"publication ledger {sha} has invalid backlog metadata") from error
+            before = json.loads(
+                git(repo, "show", f"{parents[0]}:docs/ai/backlog.json"),
+                object_pairs_hook=_unique_json_object,
+            )
+            after = json.loads(
+                git(repo, "show", f"{sha}:docs/ai/backlog.json"),
+                object_pairs_hook=_unique_json_object,
+            )
+        except (ValueError, HistoryError) as error:
+            raise HistoryError(f"publication ledger {sha} has invalid backlog metadata: {error}") from error
         if not isinstance(before, list) or not isinstance(after, list):
             raise HistoryError(f"publication ledger {sha} backlog must be a list")
         try:
@@ -306,22 +335,18 @@ def require_valid_prior_snapshot_ledgers(
         published = after_by_id.get(task_id)
         if previous is None or published is None:
             raise HistoryError(f"publication ledger {sha} omits {task_id}")
+        ledger_baseline = revision(repo, str(previous["baseline_commit"]))
+        if not has_tagged_promotion(repo, ledger_baseline, parents[0]):
+            raise HistoryError(f"publication ledger {sha} has no tagged immutable promotion")
         changed_fields = {key for key in previous if previous[key] != published[key]}
         if not changed_fields <= publication_ledger_mutable_fields(sha):
             raise HistoryError(f"publication ledger {sha} changes immutable {task_id} fields")
         if previous["status"] != "active" or previous["resolved_at"]:
             raise HistoryError(f"publication ledger {sha} does not start from an active snapshot")
-        if published["status"] not in {"active", "done"}:
-            raise HistoryError(f"publication ledger {sha} has an invalid post-publication status")
-        if published["status"] == "done" and not published["resolved_at"]:
-            raise HistoryError(f"publication ledger {sha} closes a snapshot without resolved_at")
-        if published["status"] == "active" and published["resolved_at"]:
-            raise HistoryError(f"publication ledger {sha} keeps an active snapshot resolved")
         if previous["finalized"] is not True or published["finalized"] is not True:
             raise HistoryError(f"publication ledger {sha} must preserve finalized state")
-        ledger_baseline = revision(repo, str(previous["baseline_commit"]))
-        if not has_tagged_promotion(repo, ledger_baseline, parents[0]):
-            raise HistoryError(f"publication ledger {sha} has no tagged immutable promotion")
+        if not has_published_ledger_state(sha, published):
+            raise HistoryError(f"publication ledger {sha} does not record a published snapshot")
         if published != task:
             raise HistoryError(f"publication ledger {sha} does not match current {task_id} metadata")
         rendered_backlog = git(repo, "show", f"{sha}:docs/ai/BACKLOG.md")

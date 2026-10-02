@@ -148,10 +148,32 @@ class AiHistoryTest(unittest.TestCase):
         self.assertEqual(result, 0)
         self.assertEqual(output.getvalue().splitlines(), ["MC-AI-0001", "MC-AI-0002"])
 
+    def test_tagged_promotion_accepts_distinct_history_and_promotion_bases(self) -> None:
+        self.git_run("git", "checkout", "-q", "-b", "snapshot-source")
+        history_baseline = self.commit("snapshot history baseline")
+        source = self.commit("snapshot source\n\nTask-ID: MC-AI-0101")
+        self.git_run("git", "checkout", "-q", "-b", "ai-main", self.baseline)
+        self.commit("current ai-main promotion base")
+        self.git_run(
+            "git", "merge", "--no-ff", "-q", source,
+            "-m", "promote snapshot\n\nTask-ID: MC-AI-0101",
+        )
+        promoted = self.git_run("git", "rev-parse", "HEAD")
+        self.git_run(
+            "git", "tag", "-a", "ai/Test/0.1.0/1_26.09.09", promoted,
+            "-m", "published snapshot",
+        )
+
+        self.assertTrue(ai_history.has_tagged_promotion(self.repo, history_baseline, source))
+        self.assertFalse(ai_history.has_tagged_promotion(self.repo, history_baseline, self.baseline))
+
     def test_snapshot_three_publication_exception_is_exactly_scoped(self) -> None:
         standard = ai_history.PUBLICATION_LEDGER_MUTABLE_FIELDS
         historical = ai_history.publication_ledger_mutable_fields(
             "8df27fb8fa08d9e0cd625b8cad85209fdd09251d"
+        )
+        s6_ledger = ai_history.publication_ledger_mutable_fields(
+            "3fa4861abafa7eb20163b89f6957bf915c10ed63"
         )
 
         self.assertEqual(
@@ -159,9 +181,26 @@ class AiHistoryTest(unittest.TestCase):
             {"context", "plan", "product_changes", "code_changes"},
         )
         self.assertEqual(
+            s6_ledger - standard,
+            {"blocker", "docs_review", "environment_review", "backlog_review"},
+        )
+        self.assertEqual(
             ai_history.publication_ledger_mutable_fields("0" * 40),
             standard,
         )
+
+    def test_s6_publication_ledger_preserves_open_runtime_state_only_for_exact_commit(self) -> None:
+        s6_ledger = "3fa4861abafa7eb20163b89f6957bf915c10ed63"
+        active_published_snapshot = task(
+            "MC-AI-0037", "snapshot", status="active", finalized=True,
+        )
+        self.assertTrue(ai_history.has_published_ledger_state(s6_ledger, active_published_snapshot))
+        self.assertFalse(ai_history.has_published_ledger_state("0" * 40, active_published_snapshot))
+
+        completed_snapshot = task(
+            "MC-AI-0037", "snapshot", status="done", resolved_at="2026-09-20", finalized=True,
+        )
+        self.assertTrue(ai_history.has_published_ledger_state("0" * 40, completed_snapshot))
 
     def test_publication_ledger_exception_reaches_commit_validation(self) -> None:
         tasks = self.hierarchy()
@@ -256,15 +295,11 @@ class AiHistoryTest(unittest.TestCase):
         promoted = self.git_run("git", "rev-parse", "HEAD")
         self.git_run("git", "checkout", "-q", "-b", "ai-dev", source)
         previous.update({
-            "status": "active",
-            "owner": "Codex",
+            "status": "done",
+            "owner": "",
             "evidence": "Published snapshot artifacts verified.",
-            "blocker": "Windows runtime remains separately reported.",
-            "resolved_at": "",
+            "resolved_at": "2026-09-20",
             "resolution_changes": "Recorded the published snapshot.",
-            "docs_review": "Published documentation read back.",
-            "environment_review": "Release evidence verified.",
-            "backlog_review": "No follow-up task was dropped.",
         })
         self.write_task_metadata(tasks)
         self.commit("publication ledger\n\nTask-ID: MC-AI-0101")
@@ -298,6 +333,29 @@ class AiHistoryTest(unittest.TestCase):
         self.write_task_metadata(tasks[:-2])
         self.commit("duplicate publication ledger\n\nTask-ID: MC-AI-0101")
         with self.assertRaisesRegex(ai_history.HistoryError, "has no tagged immutable promotion"):
+            ai_history.finalize(self.repo, tasks, "MC-AI-0102", "HEAD")
+
+        self.git_run("git", "checkout", "-q", "ai-dev")
+        previous["evidence"] = previous_evidence
+        self.git_run("git", "checkout", "-q", "-b", "duplicate-json-ledger", "ai-dev")
+        previous["evidence"] = "Repeated publication acknowledgment."
+        self.write_task_metadata(tasks[:-2])
+        backlog_path = self.repo / "docs/ai/backlog.json"
+        backlog_json = backlog_path.read_text(encoding="utf-8")
+        ledger_start = backlog_json.index('"id": "MC-AI-0101"')
+        status_position = backlog_json.index('"status": "done"', ledger_start)
+        status_line_start = backlog_json.rfind("\n", 0, status_position) + 1
+        status_indent = backlog_json[status_line_start:status_position]
+        backlog_json = (
+            backlog_json[:status_position]
+            + '"status": "active",\n'
+            + status_indent
+            + backlog_json[status_position:]
+        )
+        backlog_path.write_text(backlog_json, encoding="utf-8")
+        self.git_run("git", "add", "docs/ai/backlog.json")
+        self.commit("duplicate JSON key ledger\n\nTask-ID: MC-AI-0101")
+        with self.assertRaisesRegex(ai_history.HistoryError, "duplicate JSON object key: status"):
             ai_history.finalize(self.repo, tasks, "MC-AI-0102", "HEAD")
 
         self.git_run("git", "checkout", "-q", "ai-dev")

@@ -265,6 +265,11 @@ class PackageSnapshotTests(unittest.TestCase):
             launcher,
         )
         self.assertNotIn('"$bundle_root/mc_main"\n', launcher)
+        self.assertEqual(launcher.count('"$bundle_root/mc_main" --server &'), 1)
+        self.assertEqual(
+            launcher.count('"$bundle_root/mc_main" --player-client --address 127.0.0.1:20040'),
+            1,
+        )
         self.assertEqual(packaged_icd["ICD"]["library_path"], "../../lib/libMoltenVK.dylib")
         self.assertEqual(manifest["runtime"]["vulkan_loader"], "lib/libvulkan.1.dylib")
         self.assertEqual(manifest["runtime"]["moltenvk"], "lib/libMoltenVK.dylib")

@@ -183,6 +183,18 @@ class AiDocsTest(unittest.TestCase):
             error = self.assert_docs_error(lambda: ai_docs.refresh(root))
             self.assertIn("guide resolves outside the repository", str(error))
 
+    def test_snapshot_task_records_allow_large_aggregate_but_remain_bounded(self) -> None:
+        with self.make_repo() as temporary:
+            root = Path(temporary)
+            task_record = root / "docs/ai/tasks/MC-AI-0037.md"
+            task_record.parent.mkdir(parents=True)
+            task_record.write_text("word " * 1121, encoding="utf-8")
+            self.assertEqual([], ai_docs.document_errors(root, [], include_index=False))
+
+            task_record.write_text("word " * 1201, encoding="utf-8")
+            errors = ai_docs.document_errors(root, [], include_index=False)
+            self.assertIn("docs/ai/tasks/MC-AI-0037.md: prose exceeds 1200 words", errors)
+
 
 if __name__ == "__main__":
     unittest.main()
