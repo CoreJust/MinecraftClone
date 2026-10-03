@@ -17,6 +17,7 @@ build. Configure packages exposing `CoreCpp::Core`, `CoreCpp::Runtime`, and
 locators for validated branches; CI fetches their history but builds only locked commits.
 CoreProject2026 rejects dirty, unknown, or mismatched packages.
 `-DMC_ALLOW_INEXACT_CORECPP=ON` is development-only.
+Standard presets keep vcpkg installs under `build/<preset>/vcpkg_installed`.
 `mc_main` is under `build/<preset>/`; `cmake --install` installs it with shaders.
 
 After building exact release inputs, use the deterministic [package tooling](PACKAGING.md) to create desktop archives or record Android APK evidence.

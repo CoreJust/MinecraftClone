@@ -10630,5 +10630,44 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0300",
+    "title": "Keep vcpkg installs local to each configure preset",
+    "kind": "chore",
+    "status": "done",
+    "priority": "P1",
+    "route": "luna",
+    "milestone": "ED-010-S7",
+    "depends_on": [],
+    "acceptance": "Debug, release, and renderer-smoke presets set VCPKG_INSTALLED_DIR to their own build/<preset>/vcpkg_installed directory. Analysis presets preserve their explicit VCPKG_INSTALLED_DIR environment override. A focused preset regression and CMake configure prove standard installs stay under the selected worktree while analysis paths remain unchanged.",
+    "evidence": "python3 -m unittest script.tests.test_analysis_presets -v passed 2/2, covering standard preset locality and preserving the Windows analysis override. After setting VCPKG_ROOT to the installed vcpkg checkout, plain `cmake --preset debug` completed and CMakeCache readback confirmed VCPKG_INSTALLED_DIR=/Users/core-just/.codex/worktrees/s7-release-recovery/MinecraftClone/build/debug/vcpkg_installed; exact CoreCpp f2fe7db and CoreProject2026 92c8058 remained read-only. The local vcpkg install restored 16 packages from cache and built only missing MPFR into this worktree install tree.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0038",
+    "motivation": "A stale build/debug CMake cache pointed vcpkg into the dirty ai-s7-player worktree and began writing a package there during the S7 candidate gate. Keep standard configure-preset install trees local so the cross-worktree mutation cannot recur.",
+    "context": "The active release worktree cache held VCPKG_INSTALLED_DIR=/Users/core-just/MinecraftClone/.worktrees/ai-s7-player/build/s7-feedback/vcpkg_installed and VCPKG_MANIFEST_INSTALL=ON. The standard debug preset inherited no deterministic install prefix, while analysis presets deliberately override it with their validated environment prefix.",
+    "complexity": "medium",
+    "created_at": "2026-10-03",
+    "resolved_at": "2026-10-03",
+    "resolution_changes": "Changes: Standard debug, release, and renderer-smoke configure presets now resolve VCPKG_INSTALLED_DIR under each preset build directory. Analysis presets retain their explicit environment override. Build guidance records the isolation contract.",
+    "plan": [
+      "Set the vcpkg install prefix in the shared standard configure-preset base using the active source and preset names.",
+      "Add a focused regression for standard worktree-local paths and analysis override preservation; document the behavior."
+    ],
+    "product_changes": [
+      "None; this is a build-workflow isolation fix."
+    ],
+    "code_changes": [
+      "CMakePresets.json assigns per-preset vcpkg installation directories; analysis presets retain explicit validated dependency paths."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]
