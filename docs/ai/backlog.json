@@ -10669,5 +10669,47 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0301",
+    "title": "Fresh-configure stale renderer-smoke cache graphs",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P1",
+    "route": "luna",
+    "milestone": "ED-010-S7",
+    "depends_on": [
+      "MC-AI-0300"
+    ],
+    "acceptance": "When the renderer-smoke configure stamp does not match the current configure command/cache, the gate must run CMake with --fresh so cached imported-library paths from an earlier vcpkg prefix are discarded before the target build. A regression seeds a same-checkout cache whose VCPKG_INSTALLED_DIR is correct but whose CoreLangNumerics MPFR/GMP paths point elsewhere, and proves the gate regenerates it fresh; an exact matching successful cache remains reusable.",
+    "evidence": "python3 -B -m unittest script.tests.test_ai_renderer_smoke -v passed 14/14. VCPKG_ROOT=/Users/core-just/vcpkg python3 script/ai_renderer_smoke.py passed after fresh configuration; RendererSmokeTest passed 1/1 in host GUI context (5.63 s). A restricted-shell attempt had /bin/ps and Launch Services IPC denied; the host-context run confirms this was an execution-sandbox limitation, not a product launch failure.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0038",
+    "motivation": "The full S7 candidate passed native build and CTest but renderer smoke reconfigured successfully while retaining stale imported MPFR/GMP paths from a sibling checkout; Ninja then failed on the missing sibling libmpfr.a. The smoke runner recorded the successful configure as reusable, making the failure repeat.",
+    "context": "Current-run evidence: build/ai-checks/renderer-smoke.log shows cmake configure exit 0 followed by Ninja requiring /Users/core-just/MinecraftClone/.worktrees/ai-s7-player/build/s7-feedback/vcpkg_installed/arm64-osx/debug/lib/libmpfr.a. The renderer-smoke CMakeCache had VCPKG_INSTALLED_DIR in the active worktree but CoreLangNumerics_MPFR_LIBRARY and related imported paths in the sibling checkout. In script/ai_renderer_smoke.py, command/cache-stamp mismatch triggers a normal configure, and successful configure writes the stamp before build; the cache usability check trusts the exact stamp without rebuilding generated import paths.",
+    "complexity": "medium",
+    "created_at": "2026-10-03",
+    "resolved_at": "2026-10-03",
+    "resolution_changes": "Make renderer-smoke reconfiguration use CMake --fresh so stale imported MPFR/GMP paths from an earlier checkout are discarded; add a regression proving legacy stale cache graphs are regenerated while exact successful configurations remain reusable.",
+    "plan": [
+      "Add a focused regression with correct active vcpkg path and stale same-checkout imported-library paths; prove the renderer gate requests a fresh configure.",
+      "Use CMake --fresh whenever the exact smoke configuration is not reusable, then preserve stamp-based reuse for unchanged successfully configured caches.",
+      "Run the renderer-smoke unit suite and full S7 aggregate candidate gate."
+    ],
+    "product_changes": [
+      "None; this repairs build-gate repeatability."
+    ],
+    "code_changes": [
+      "Make script/ai_renderer_smoke.py discard stale CMake-generated dependency paths on configure mismatch and cover it in script/tests/test_ai_renderer_smoke.py."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]

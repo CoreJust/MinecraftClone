@@ -88,7 +88,7 @@ def renderer_configure_command(root: Path, preset: str) -> tuple[list[str] | Non
     if toolchain is None:
         return None, "VCPKG_ROOT is unset and no matching build/debug cache provides a valid vcpkg toolchain"
 
-    command = ["cmake", "--preset", preset, f"-DCMAKE_TOOLCHAIN_FILE={toolchain}"]
+    command = ["cmake", "--fresh", "--preset", preset, f"-DCMAKE_TOOLCHAIN_FILE={toolchain}"]
     if debug_cache is None or cached_toolchain is None:
         return command, None
 

@@ -64,7 +64,7 @@ class RendererSmokeGateTests(unittest.TestCase):
         self.assertEqual(result, 0)
         self.assertIsNone(failure)
         self.assertEqual(len(commands), 3)
-        self.assertEqual(calls[0][1][:3], ["cmake", "--preset", "renderer-smoke"])
+        self.assertEqual(calls[0][1][:4], ["cmake", "--fresh", "--preset", "renderer-smoke"])
         self.assertIn(f"-DCMAKE_TOOLCHAIN_FILE={self.vcpkg_root}/scripts/buildsystems/vcpkg.cmake", calls[0][1])
         self.assertEqual(calls[1][1], ["cmake", "--build", "--preset", "renderer-smoke", "--target", "mc_renderer_smoke"])
         self.assertEqual(
@@ -86,6 +86,56 @@ class RendererSmokeGateTests(unittest.TestCase):
         self.assertIsNone(failure)
         self.assertEqual(len(commands), 2)
         self.assertEqual(run_command.call_args_list[0].args[1][:3], ["cmake", "--build", "--preset"])
+
+    def test_legacy_smoke_cache_with_stale_import_paths_is_regenerated_fresh(self):
+        legacy_command = [
+            "cmake",
+            "--preset",
+            "renderer-smoke",
+            f"-DCMAKE_TOOLCHAIN_FILE={self.vcpkg_root}/scripts/buildsystems/vcpkg.cmake",
+        ]
+        cache = self.write_smoke_cache(legacy_command)
+        stale_vcpkg = self.root / "old-checkout/build/vcpkg_installed/arm64-osx"
+        stale_paths = (
+            stale_vcpkg / "debug/lib/libmpfr.a",
+            stale_vcpkg / "debug/lib/libgmp.a",
+        )
+        with cache.open("a", encoding="utf-8") as stream:
+            for key, stale_path in zip(
+                ("CoreLangNumerics_MPFR_LIBRARY", "CoreLangNumerics_GMP_LIBRARY"),
+                stale_paths,
+            ):
+                stream.write(f"{key}:FILEPATH={stale_path}\n")
+        self.gate._write_configure_stamp(self.root, "renderer-smoke", legacy_command)
+        calls = []
+
+        def run_command(root, command, timeout):
+            calls.append(command)
+            if command[:4] == ["cmake", "--fresh", "--preset", "renderer-smoke"]:
+                cache.write_text(
+                    "CMAKE_HOME_DIRECTORY:INTERNAL=" + str(self.root) + "\n"
+                    "MC_ENABLE_RENDERER_SMOKE:BOOL=ON\n"
+                    "CMAKE_GENERATOR:INTERNAL=Ninja\n",
+                    encoding="utf-8",
+                )
+            return self.gate.CommandResult(command, 0, "completed\n")
+
+        with mock.patch.object(self.gate, "run_command", side_effect=run_command):
+            result, commands, failure = self.gate.run_smoke(self.root, "renderer-smoke", 840)
+            self.assertEqual(result, 0)
+            self.assertIsNone(failure)
+            self.assertEqual(commands[0].command[:4], ["cmake", "--fresh", "--preset", "renderer-smoke"])
+            self.assertNotIn(str(stale_vcpkg), cache.read_text(encoding="utf-8"))
+
+            calls.clear()
+            reused_result, reused_commands, reused_failure = self.gate.run_smoke(
+                self.root, "renderer-smoke", 840
+            )
+
+        self.assertEqual(reused_result, 0)
+        self.assertIsNone(reused_failure)
+        self.assertEqual(len(reused_commands), 2)
+        self.assertEqual(calls[0][:3], ["cmake", "--build", "--preset"])
 
     def test_matching_debug_cache_toolchain_takes_precedence_over_environment(self):
         other_vcpkg_root = self.root / "other-vcpkg"
@@ -138,7 +188,7 @@ class RendererSmokeGateTests(unittest.TestCase):
         configure_commands = []
 
         def run_command(root, command, timeout):
-            if command[:3] == ["cmake", "--preset", "renderer-smoke"]:
+            if command[:4] == ["cmake", "--fresh", "--preset", "renderer-smoke"]:
                 configure_commands.append(command)
                 cache = root / "build/renderer-smoke/CMakeCache.txt"
                 cache.parent.mkdir(parents=True, exist_ok=True)
@@ -165,7 +215,10 @@ class RendererSmokeGateTests(unittest.TestCase):
         self.assertEqual(second_result, 0)
         self.assertIsNone(second_failure)
         self.assertEqual(len(configure_commands), 2)
-        self.assertEqual(second_commands[0].command[:3], ["cmake", "--preset", "renderer-smoke"])
+        self.assertEqual(
+            second_commands[0].command[:4],
+            ["cmake", "--fresh", "--preset", "renderer-smoke"],
+        )
         self.assertEqual(len(first_commands), 1)
 
     def test_long_running_command_emits_liveness(self):
