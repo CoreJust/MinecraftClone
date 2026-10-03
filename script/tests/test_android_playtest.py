@@ -97,6 +97,83 @@ class AndroidPlaytestTest(unittest.TestCase):
     def setUp(self) -> None:
         self.playtest = android_playtest
 
+    def test_documented_adb_path_precedes_legacy_override_and_sdk_roots(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            configured_adb = root / "configured-adb"
+            legacy_adb = root / "legacy-adb"
+            sdk_adb = root / "sdk" / "platform-tools" / "adb"
+            configured_adb.touch()
+            legacy_adb.touch()
+            sdk_adb.parent.mkdir(parents=True)
+            sdk_adb.touch()
+            environment = {
+                "ADB_PATH": str(configured_adb),
+                "ADB": str(legacy_adb),
+                "ANDROID_SDK_ROOT": str(sdk_adb.parents[1]),
+                "ANDROID_HOME": str(root / "other-sdk"),
+                "PATH": "",
+            }
+            with mock.patch.dict("os.environ", environment, clear=True):
+                self.assertEqual(self.playtest._adb_executable(), str(configured_adb.resolve()))
+
+    def test_android_sdk_root_finds_adb_without_a_path_entry(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            sdk_adb = Path(temp_dir) / "platform-tools" / "adb"
+            sdk_adb.parent.mkdir()
+            sdk_adb.touch()
+            environment = {"ANDROID_SDK_ROOT": str(sdk_adb.parent.parent), "PATH": ""}
+            with mock.patch.dict("os.environ", environment, clear=True):
+                self.assertEqual(self.playtest._adb_executable(), str(sdk_adb.resolve()))
+
+    def test_android_home_is_used_when_sdk_root_has_no_adb(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            sdk_adb = root / "android-home" / "platform-tools" / "adb"
+            sdk_adb.parent.mkdir(parents=True)
+            sdk_adb.touch()
+            environment = {
+                "ANDROID_SDK_ROOT": str(root / "incomplete-sdk"),
+                "ANDROID_HOME": str(sdk_adb.parents[1]),
+                "PATH": "",
+            }
+            with mock.patch.dict("os.environ", environment, clear=True):
+                self.assertEqual(self.playtest._adb_executable(), str(sdk_adb.resolve()))
+
+    def test_path_lookup_is_the_fallback_after_sdk_discovery(self) -> None:
+        environment = {"ANDROID_SDK_ROOT": "", "ANDROID_HOME": "", "PATH": ""}
+        with mock.patch.dict("os.environ", environment, clear=True), mock.patch(
+            "shutil.which", return_value="/host-tools/adb"
+        ) as which:
+            self.assertEqual(self.playtest._adb_executable(), "/host-tools/adb")
+
+        which.assert_called_once_with("adb")
+
+    def test_missing_explicit_adb_path_fails_with_setup_guidance(self) -> None:
+        environment = {"ADB_PATH": "/missing/android/adb", "PATH": ""}
+        with mock.patch.dict("os.environ", environment, clear=True), mock.patch(
+            "shutil.which", return_value="/other/adb"
+        ) as which:
+            with self.assertRaisesRegex(self.playtest.AndroidPlaytestError, "ADB_PATH"):
+                self.playtest._adb_executable()
+
+        which.assert_not_called()
+
+    def test_adb_subprocesses_share_the_resolved_executable(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            configured_adb = Path(temp_dir) / "adb"
+            configured_adb.touch()
+            with mock.patch.dict("os.environ", {"ADB_PATH": str(configured_adb)}, clear=True), mock.patch.object(
+                self.playtest.subprocess,
+                "run",
+                return_value=mock.Mock(returncode=0, stdout="123\n", stderr=""),
+            ) as run:
+                self.playtest.run_adb(None, "devices", "-l")
+                self.playtest.running_process_id("emulator-5556")
+
+        self.assertEqual(run.call_args_list[0].args[0][0], str(configured_adb.resolve()))
+        self.assertEqual(run.call_args_list[1].args[0][0], str(configured_adb.resolve()))
+
     def test_wrong_avd_is_rejected_before_inspecting_or_launching_game(self) -> None:
         with mock.patch.object(self.playtest, "connected_devices", return_value=["emulator-5554"]), mock.patch.object(
             self.playtest, "run_adb", return_value="Medium_Phone_API_35"

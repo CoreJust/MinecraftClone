@@ -12,8 +12,14 @@ emulator="$sdk_root/emulator/emulator"
 adb="$sdk_root/platform-tools/adb"
 zipalign="$sdk_root/build-tools/35.0.0/zipalign"
 apksigner="$sdk_root/build-tools/35.0.0/apksigner"
-export ADB="$adb"
+export ADB_PATH="$adb"
 ```
+
+The guarded playtest launcher resolves ADB from `ADB_PATH`, the legacy `ADB`
+override, the `ANDROID_SDK_ROOT` or `ANDROID_HOME` SDK, then `PATH`. Its client
+launch does not depend on an interactive shell startup file adding Android
+tools to `PATH`; the `emulator`, `zipalign`, and `apksigner` commands above
+still use the explicit SDK paths.
 
 The verified macOS profile is a cold boot with no snapshot restore or save,
 four virtual cores, 4 GiB RAM, and the host GPU.

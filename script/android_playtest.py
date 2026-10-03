@@ -9,6 +9,7 @@ import errno
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -25,6 +26,42 @@ S7_AVD = "MinecraftClone_S7_ReleaseClean_API_35"
 
 class AndroidPlaytestError(RuntimeError):
     """The requested Android playtest could not be started safely."""
+
+
+def _adb_executable() -> str:
+    configured = os.environ.get("ADB_PATH") or os.environ.get("ADB")
+    if configured:
+        candidate = Path(configured).expanduser()
+        if candidate.is_file():
+            return str(candidate.resolve())
+        has_path_component = candidate.is_absolute() or os.sep in configured or (
+            os.altsep is not None and os.altsep in configured
+        )
+        found = None if has_path_component else shutil.which(configured)
+        if found:
+            return found
+        setting = "ADB_PATH" if os.environ.get("ADB_PATH") else "ADB"
+        raise AndroidPlaytestError(
+            f"{setting} does not identify an Android Debug Bridge executable: {configured!r}; "
+            "set it to the SDK platform-tools/adb path"
+        )
+
+    executable = "adb.exe" if os.name == "nt" else "adb"
+    for setting in ("ANDROID_SDK_ROOT", "ANDROID_HOME"):
+        sdk_root = os.environ.get(setting)
+        if not sdk_root:
+            continue
+        candidate = Path(sdk_root).expanduser() / "platform-tools" / executable
+        if candidate.is_file():
+            return str(candidate.resolve())
+
+    found = shutil.which(executable)
+    if found:
+        return found
+    raise AndroidPlaytestError(
+        "Android Debug Bridge was not found; set ADB_PATH or ANDROID_SDK_ROOT/ANDROID_HOME, "
+        "or add Android SDK platform-tools to PATH"
+    )
 
 
 def _launch_lock_path() -> Path:
@@ -93,7 +130,7 @@ def _launch_lock(timeout_seconds: float, lock_path: Path | None = None) -> Itera
 
 
 def run_adb(serial: str | None, *arguments: str, timeout: int = 30) -> str:
-    command = [os.environ.get("ADB", "adb")]
+    command = [_adb_executable()]
     if serial is not None:
         command.extend(("-s", serial))
     command.extend(arguments)
@@ -128,7 +165,7 @@ def connected_devices() -> list[str]:
 
 def running_process_id(serial: str) -> str:
     completed = subprocess.run(
-        [os.environ.get("ADB", "adb"), "-s", serial, "shell", "pidof", PACKAGE],
+        [_adb_executable(), "-s", serial, "shell", "pidof", PACKAGE],
         text=True,
         capture_output=True,
         timeout=30,
