@@ -105,6 +105,7 @@
         "src/CMakeLists.txt",
         "tests/CMakeLists.txt",
         "tests/cmake/corecpp_server_consumer_test.cmake.in",
+        "tests/cmake/corecpp_provenance_*.cmake.in",
         "tests/cmake/minecraftclone_server_only_test.cmake.in",
         "tests/cmake/coreproject2026_provenance_test.cmake.in",
         "cmake/fixtures/corecpp_server_consumer/**",

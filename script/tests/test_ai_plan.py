@@ -100,6 +100,28 @@ class AiPlanTest(unittest.TestCase):
         self.assertIn("unfinished dependencies: 4", with_prepare.stderr)
         self.assertEqual(self.backlog.read_text(encoding="utf-8"), original)
 
+    def test_implement_accepts_full_task_id_without_creating_a_duplicate(self) -> None:
+        existing = task(4, parent="MC-AI-0003")
+        self.write(hierarchy(existing))
+
+        prepared = self.run_cli("implement", "MC-AI-0004", "--prepare")
+
+        self.assertEqual(prepared.returncode, 0, prepared.stderr)
+        self.assertTrue(prepared.stdout.startswith("4\tbasic\tactive"))
+        records = json.loads(self.backlog.read_text(encoding="utf-8"))
+        self.assertEqual([record["id"] for record in records], ["MC-AI-0001", "MC-AI-0002", "MC-AI-0003", "MC-AI-0004"])
+        self.assertEqual(records[-1]["status"], "active")
+
+    def test_implement_rejects_malformed_full_task_id_without_creating_a_task(self) -> None:
+        self.write(hierarchy(task(4, parent="MC-AI-0003")))
+        original = self.backlog.read_text(encoding="utf-8")
+
+        malformed = self.run_cli("implement", "MC-AI-004", "--prepare")
+
+        self.assertNotEqual(malformed.returncode, 0)
+        self.assertIn("full task IDs must use MC-AI-#### format", malformed.stderr)
+        self.assertEqual(self.backlog.read_text(encoding="utf-8"), original)
+
     def test_implement_prepares_basic_and_aggregate_commands_order_dependencies(self) -> None:
         first = task(4, parent="MC-AI-0003")
         second = task(5, parent="MC-AI-0003", depends_on=["MC-AI-0004"])

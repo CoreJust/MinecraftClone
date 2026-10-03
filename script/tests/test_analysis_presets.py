@@ -27,6 +27,16 @@ def effective_cache_variables(preset_name: str) -> dict[str, object]:
 
 
 class AnalysisPresetTests(unittest.TestCase):
+    def test_standard_presets_install_vcpkg_packages_inside_their_build_tree(self):
+        expected = "${sourceDir}/build/${presetName}/vcpkg_installed"
+
+        for preset_name in ("debug", "release", "renderer-smoke"):
+            with self.subTest(preset=preset_name):
+                self.assertEqual(
+                    effective_cache_variables(preset_name).get("VCPKG_INSTALLED_DIR"),
+                    expected,
+                )
+
     def test_windows_analyzer_resolves_pinned_private_package_paths(self):
         cache_variables = effective_cache_variables("analysis-windows-analyze")
 

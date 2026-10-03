@@ -11,8 +11,8 @@ function(mc_check_corecpp_provenance)
     endif()
     file(READ "${lock_file}" lock_json)
     string(JSON lock_schema ERROR_VARIABLE lock_error GET "${lock_json}" schema)
-    if(lock_error OR NOT lock_schema EQUAL 1)
-        message(FATAL_ERROR "dependencies.lock.json must use schema 1")
+    if(lock_error OR NOT lock_schema EQUAL 2)
+        message(FATAL_ERROR "dependencies.lock.json must use schema 2")
     endif()
     string(
         JSON required_revision

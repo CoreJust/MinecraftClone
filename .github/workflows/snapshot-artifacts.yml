@@ -25,6 +25,7 @@ permissions:
 jobs:
   source:
     runs-on: ubuntu-24.04
+    timeout-minutes: 360
     outputs:
       source_commit: ${{ steps.trust.outputs.source_commit }}
       version: ${{ steps.identity.outputs.version }}
@@ -76,13 +77,22 @@ jobs:
             printf 'trusted_dependency_source=true\n'
           } >> "$GITHUB_OUTPUT"
       - name: Require a successful S7 analysis matrix for the exact source
-        if: steps.trust.outputs.trusted_dependency_source == 'true'
+        if: steps.trust.outputs.trusted_dependency_source == 'true' && (github.event_name != 'push' || github.ref != 'refs/heads/ai-main')
         env:
           GH_TOKEN: ${{ github.token }}
         run: >-
           python script/ci/verify_analysis_gate.py
           --root "$GITHUB_WORKSPACE"
           --commit "${{ steps.trust.outputs.source_commit }}"
+      - name: Wait for successful S7 analysis matrix on ai-main push
+        if: steps.trust.outputs.trusted_dependency_source == 'true' && github.event_name == 'push' && github.ref == 'refs/heads/ai-main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          python script/ci/verify_analysis_gate.py
+          --root "$GITHUB_WORKSPACE"
+          --commit "${{ steps.trust.outputs.source_commit }}"
+          --wait --timeout-seconds 21000 --poll-interval-seconds 30
       - name: Resolve immutable source identity
         id: identity
         env:
@@ -206,7 +216,7 @@ jobs:
         uses: actions/cache/restore@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
         with:
           path: ${{ runner.temp }}/vcpkg-binary-cache
-          key: vcpkg-binary-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json', 'script/ci/acquire.py') }}
+          key: vcpkg-binary-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json', 'script/ci/acquire.py', 'script/ci/vcpkg-overlays/**') }}
           restore-keys: |
             vcpkg-binary-${{ runner.os }}-${{ runner.arch }}-
       - name: Install pinned CMake
@@ -235,7 +245,7 @@ jobs:
         uses: actions/cache/save@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
         with:
           path: ${{ runner.temp }}/vcpkg-binary-cache
-          key: vcpkg-binary-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json', 'script/ci/acquire.py') }}
+          key: vcpkg-binary-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json', 'script/ci/acquire.py', 'script/ci/vcpkg-overlays/**') }}
       - name: Acquire pinned Vulkan SDK (macOS)
         if: matrix.platform == 'macos'
         run: python script/ci/acquire.py install-vulkan --platform macos --root "$RUNNER_TEMP/vulkan-sdk"
@@ -437,7 +447,7 @@ jobs:
         uses: actions/cache/restore@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
         with:
           path: ${{ runner.temp }}/vcpkg-binary-cache
-          key: vcpkg-binary-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json', 'script/ci/acquire.py') }}
+          key: vcpkg-binary-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json', 'script/ci/acquire.py', 'script/ci/vcpkg-overlays/**') }}
           restore-keys: |
             vcpkg-binary-${{ runner.os }}-${{ runner.arch }}-
       - name: Acquire pinned vcpkg
@@ -451,7 +461,7 @@ jobs:
         uses: actions/cache/save@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
         with:
           path: ${{ runner.temp }}/vcpkg-binary-cache
-          key: vcpkg-binary-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json', 'script/ci/acquire.py') }}
+          key: vcpkg-binary-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json', 'script/ci/acquire.py', 'script/ci/vcpkg-overlays/**') }}
       - name: Install pinned private dependencies
         run: |
           cat > "$RUNNER_TEMP/corelang-android-compat.cmake" <<'EOF'

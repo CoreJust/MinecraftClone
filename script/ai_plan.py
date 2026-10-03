@@ -180,6 +180,11 @@ def write_tasks(backlog_path: Path, markdown_path: Path, tasks: Sequence[dict[st
 
 def prepare_implementation(tasks: list[dict[str, Any]], target: str, current_path: Path, owner: str) -> dict[str, Any]:
     snapshot = current_tasks(tasks, current_path, "snapshot", require_active=True)["snapshot"]
+    if target.startswith(ai_tasks.ID_PREFIX):
+        number = target[len(ai_tasks.ID_PREFIX):]
+        if len(number) != 4 or not number.isdecimal():
+            raise PlanError(f"full task IDs must use {ai_tasks.ID_PREFIX}#### format")
+        target = number
     if target.isdecimal():
         task = task_by_number(tasks, target)
         if task["level"] != "basic":
@@ -269,7 +274,7 @@ def make_parser() -> argparse.ArgumentParser:
     plan_for = commands.add_parser("plan-for", help="create an unassigned basic task")
     plan_for.add_argument("description")
     implement = commands.add_parser("implement", help="prepare one basic task; does not implement code")
-    implement.add_argument("target")
+    implement.add_argument("target", help="task number, full MC-AI-#### ID, or a new task description")
     implement.add_argument("--prepare", action="store_true")
     implement.add_argument("--owner", default="Codex")
     select = commands.add_parser("select", help="set one coherent current aggregate")

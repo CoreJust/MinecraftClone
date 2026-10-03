@@ -31,7 +31,7 @@
         "tests/acceptance/runtime_cli_tests.cmake",
         "tests/acceptance/scenario_runner_tests.cpp"
       ],
-      "sources_sha256": "3a60e32dd74f5c0e3653135e0998cde4596ebc0426fb2d0fc33c5f89edfe0a95"
+      "sources_sha256": "998dc4cbc3c00b134cb26d15537ede0c93364c41f48b2383c695f87913d9ac35"
     },
     {
       "guide": "docs/code/ANDROID.md",
@@ -51,11 +51,11 @@
         "tests/android/input_state_tests.cpp",
         "tests/android/input_tests.cpp"
       ],
-      "sources_sha256": "2b687ad84a33f16c0d11da7a3aecddae4c24023be07deef8ebceb5c0ae4821c1"
+      "sources_sha256": "73da350a73e1e90f0343cc226f6e26716bf08cb1514de39fd755ca894250ddb9"
     },
     {
       "guide": "docs/BUILD.md",
-      "guide_sha256": "e5d1a2efe44ee54235f8d42692104743ec66afa9a002ec4a0ae1ad0e226a41de",
+      "guide_sha256": "75193db12183cc1d01baf1b8d64f38f48ca62909c3a65f0f86b6a78ddaf08175",
       "id": "build",
       "sources": [
         ".agents/skills/backlog/SKILL.md",
@@ -104,6 +104,8 @@
         "script/ai_run.py",
         "script/ai_setup.py",
         "script/ai_tasks.py",
+        "script/android_pair_playtest.py",
+        "script/android_playtest.py",
         "script/check_options.py",
         "script/checks_common.py",
         "script/ci/__init__.py",
@@ -132,6 +134,8 @@
         "script/tests/test_ai_tasks.py",
         "script/tests/test_analysis_presets.py",
         "script/tests/test_android_clang_tidy.py",
+        "script/tests/test_android_pair_playtest.py",
+        "script/tests/test_android_playtest.py",
         "script/tests/test_android_shader_assets.py",
         "script/tests/test_build_snapshot.py",
         "script/tests/test_checks_common.py",
@@ -148,6 +152,8 @@
         "script/tests/test_workflow_contexts.py",
         "src/CMakeLists.txt",
         "tests/CMakeLists.txt",
+        "tests/cmake/corecpp_provenance_fixture.cmake.in",
+        "tests/cmake/corecpp_provenance_test.cmake.in",
         "tests/cmake/corecpp_server_consumer_test.cmake.in",
         "tests/cmake/coreproject2026_provenance_test.cmake.in",
         "tests/cmake/minecraftclone_server_only_test.cmake.in",
@@ -155,7 +161,7 @@
         "vcpkg-configuration.json",
         "vcpkg.json"
       ],
-      "sources_sha256": "7ecab76e8e16cc6b663d91ce386d668ed3c72d502139906a49dd9b044df61a0e"
+      "sources_sha256": "89fff33cabe5070e7074eec50af025000c316fb4beb2bec1ff72c0bb997e76a4"
     },
     {
       "guide": "docs/code/CORE.md",
@@ -217,6 +223,7 @@
         "src/client/include/client/PlayerClient.hpp",
         "src/client/include/client/PlayerPresentation.hpp",
         "src/client/include/client/PlayerPreviewLod.hpp",
+        "src/client/include/client/PreviewMeshWorkQueue.hpp",
         "src/client/include/client/PreviewMeshing.hpp",
         "src/client/include/client/PreviewResidency.hpp",
         "src/main.cpp",
@@ -278,7 +285,7 @@
         "tests/core/world_generation_scheduler_tests.cpp",
         "tests/core/world_generation_tests.cpp"
       ],
-      "sources_sha256": "c8f7642638ef48873a39d85bbf92faf0e20af5f30c2cb0ffae58922dc7a8c7bd"
+      "sources_sha256": "069f6b7ccf447a9e5bfb720c0cf2c65963c9ff9c6b851dc7ebb538592b3df488"
     },
     {
       "guide": "docs/code/RENDERING.md",
@@ -342,6 +349,7 @@
         "tests/client/player_client_reset_tests.cpp",
         "tests/client/player_presentation_tests.cpp",
         "tests/client/player_preview_lod_tests.cpp",
+        "tests/client/preview_mesh_work_queue_tests.cpp",
         "tests/client/preview_meshing_tests.cpp",
         "tests/client/renderer_geometry_tests.cpp",
         "tests/client/renderer_golden_tests.cpp",
@@ -357,7 +365,7 @@
         "tests/testsupport/include/testsupport/AdverseTransport.hpp",
         "tests/testsupport/include/testsupport/ImageComparison.hpp"
       ],
-      "sources_sha256": "0fd3665c266f76c5a4b79122c7ec8e2b93a8d918aa54d67d708d1e2780eae9fd"
+      "sources_sha256": "09edf50e816a9407516a74363cc52fc2297ae7d987e10d45c8a53e5abf01315e"
     }
   ],
   "version": 1

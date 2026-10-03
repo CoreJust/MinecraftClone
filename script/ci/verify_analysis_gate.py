@@ -10,6 +10,7 @@ import json
 import re
 import subprocess
 import sys
+import time
 import zipfile
 from pathlib import Path
 from typing import Any, Sequence
@@ -23,6 +24,10 @@ GITHUB_REMOTE_PATTERN = re.compile(r"github\.com[:/]([^/]+/[^/]+?)(?:\.git)?$")
 
 class GateError(RuntimeError):
     """The exact candidate has no successful hosted matrix check."""
+
+
+class GatePending(GateError):
+    """The exact candidate's matrix has not reported a terminal result yet."""
 
 
 def git(root: Path, *arguments: str) -> str:
@@ -157,13 +162,8 @@ def verify_gate(root: Path, commit: str, repository: str | None = None) -> dict[
         if run.get("name") == CHECK_NAME and run.get("head_sha") == commit
     ]
     if not matching:
-        raise GateError(f"{CHECK_NAME!r} has not reported on {commit}; wait for ai-dev CI before promotion")
+        raise GatePending(f"{CHECK_NAME!r} has not reported on {commit}")
     latest = max(matching, key=lambda run: (run.get("started_at", ""), run.get("id", 0)))
-    if latest.get("status") != "completed" or latest.get("conclusion") != "success":
-        raise GateError(
-            f"{CHECK_NAME!r} for {commit} is not successful "
-            f"(status={latest.get('status')!r}, conclusion={latest.get('conclusion')!r})"
-        )
     app = latest.get("app")
     if not isinstance(app, dict) or app.get("slug") != "github-actions":
         raise GateError(f"{CHECK_NAME!r} was not emitted by GitHub Actions")
@@ -173,9 +173,34 @@ def verify_gate(root: Path, commit: str, repository: str | None = None) -> dict[
         raise GateError("check run has no matching GitHub Actions workflow job URL")
     run_id = int(match.group(1))
     workflow = fetch_workflow_run(repo, run_id)
-    if (workflow.get("id") != run_id or workflow.get("path") != WORKFLOW_PATH or workflow.get("head_sha") != commit
-            or workflow.get("event") != "push" or workflow.get("status") != "completed" or workflow.get("conclusion") != "success"):
+    if (workflow.get("id") != run_id or workflow.get("path") != WORKFLOW_PATH
+            or workflow.get("head_sha") != commit or workflow.get("event") != "push"):
+        raise GateError("check run does not belong to the exact-candidate ai-checks workflow")
+    workflow_status = workflow.get("status")
+    workflow_pending = workflow_status in {"queued", "in_progress", "waiting", "pending", "requested"}
+    if not workflow_pending and workflow_status != "completed":
+        raise GateError(f"exact-candidate ai-checks workflow has unexpected status {workflow_status!r}")
+    if workflow_status == "completed" and workflow.get("conclusion") != "success":
         raise GateError("check run does not belong to a successful exact-candidate ai-checks workflow")
+
+    status = latest.get("status")
+    conclusion = latest.get("conclusion")
+    if status in {"queued", "in_progress", "waiting", "pending", "requested"}:
+        raise GatePending(
+            f"{CHECK_NAME!r} for {commit} is still running (status={status!r})"
+        )
+    if status != "completed":
+        raise GateError(f"{CHECK_NAME!r} for {commit} has unexpected status {status!r}")
+    if conclusion != "success":
+        raise GateError(
+            f"{CHECK_NAME!r} for {commit} is not successful "
+            f"(status={status!r}, conclusion={conclusion!r})"
+        )
+    if workflow_pending:
+        raise GatePending(
+            f"exact-candidate ai-checks workflow for {commit} is still running "
+            f"(status={workflow_status!r})"
+        )
     tree = git(root, "rev-parse", "--verify", f"{commit}^{{tree}}")
     _validate_aggregate_receipt(fetch_aggregate_receipt(repo, run_id, commit), root, commit, tree)
     return {
@@ -190,15 +215,61 @@ def verify_gate(root: Path, commit: str, repository: str | None = None) -> dict[
     }
 
 
+def wait_for_gate(
+    root: Path,
+    commit: str,
+    repository: str | None = None,
+    *,
+    timeout_seconds: int = 6 * 60 * 60,
+    poll_interval_seconds: int = 30,
+) -> dict[str, Any]:
+    if timeout_seconds <= 0 or poll_interval_seconds <= 0:
+        raise GateError("wait timeout and poll interval must be positive")
+
+    deadline = time.monotonic() + timeout_seconds
+    while True:
+        try:
+            return verify_gate(root, commit, repository)
+        except GatePending as error:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise GateError(
+                    f"timed out after {timeout_seconds}s waiting for the exact analysis matrix "
+                    f"for {commit}: {error}"
+                ) from error
+            elapsed = timeout_seconds - remaining
+            delay = min(poll_interval_seconds, remaining)
+            print(
+                f"Waiting for the exact analysis matrix for {commit}: {error}; "
+                f"elapsed {elapsed:.0f}s, retrying in {delay:.0f}s",
+                flush=True,
+            )
+            time.sleep(delay)
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", type=Path, default=Path.cwd())
     parser.add_argument("--commit", default="HEAD")
     parser.add_argument("--repo", help="GitHub OWNER/REPOSITORY; inferred from origin by default")
+    parser.add_argument("--wait", action="store_true", help="poll until the exact matrix succeeds or fails")
+    parser.add_argument("--timeout-seconds", type=int, default=6 * 60 * 60)
+    parser.add_argument("--poll-interval-seconds", type=int, default=30)
     args = parser.parse_args(argv)
     try:
         commit = git(args.root.resolve(), "rev-parse", "--verify", f"{args.commit}^{{commit}}")
-        print(json.dumps(verify_gate(args.root.resolve(), commit, args.repo), sort_keys=True))
+        result = (
+            wait_for_gate(
+                args.root.resolve(),
+                commit,
+                args.repo,
+                timeout_seconds=args.timeout_seconds,
+                poll_interval_seconds=args.poll_interval_seconds,
+            )
+            if args.wait
+            else verify_gate(args.root.resolve(), commit, args.repo)
+        )
+        print(json.dumps(result, sort_keys=True))
         return 0
     except (GateError, OSError, subprocess.SubprocessError) as error:
         print(f"FAIL sanitizer/static-analysis gate: {error}", file=sys.stderr)

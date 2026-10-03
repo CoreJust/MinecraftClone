@@ -47,6 +47,24 @@ add_test(
     COMMAND ${CMAKE_COMMAND}
         -P "${CMAKE_CURRENT_BINARY_DIR}/coreproject2026_provenance_test.cmake"
 )
+
+set(MC_CORECPP_PROVENANCE_FIXTURE_DIR "${CMAKE_CURRENT_BINARY_DIR}/corecpp-provenance-fixture")
+file(MAKE_DIRECTORY "${MC_CORECPP_PROVENANCE_FIXTURE_DIR}")
+configure_file(
+    cmake/corecpp_provenance_fixture.cmake.in
+    "${MC_CORECPP_PROVENANCE_FIXTURE_DIR}/CMakeLists.txt"
+    @ONLY
+)
+configure_file(
+    cmake/corecpp_provenance_test.cmake.in
+    "${CMAKE_CURRENT_BINARY_DIR}/corecpp_provenance_test.cmake"
+    @ONLY
+)
+add_test(
+    NAME CoreCpp.Provenance
+    COMMAND ${CMAKE_COMMAND}
+        -P "${CMAKE_CURRENT_BINARY_DIR}/corecpp_provenance_test.cmake"
+)
 option(
     MC_REGISTER_SERVER_ONLY_BUILD_TEST
     "Register the nested MinecraftClone server-only build test"
@@ -214,6 +232,7 @@ if(MC_BUILD_CLIENT AND NOT ANDROID)
             client/player_presentation_tests.cpp
             client/player_client_capture_plan_tests.cpp
             client/player_preview_lod_tests.cpp
+            client/preview_mesh_work_queue_tests.cpp
             client/preview_meshing_tests.cpp
             android/input_tests.cpp
             client/renderer_geometry_tests.cpp

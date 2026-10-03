@@ -6,15 +6,21 @@
 #include <client/Camera.hpp>
 #include <client/GameClient.hpp>
 #include <client/PlayerPresentation.hpp>
+#include <client/PlayerPreviewLod.hpp>
+#include <client/PreviewMeshing.hpp>
+#include <client/PreviewMeshWorkQueue.hpp>
 #include <client/render/VulkanRenderer.hpp>
 
 #include <shared/world/Chunk.hpp>
 #include <shared/world/ChunkMesher.hpp>
+#include <shared/world/HeightTileSurfaceMesher.hpp>
 
 #include <android_native_app_glue.h>
 
 #include <cstdint>
 #include <memory>
+#include <optional>
+#include <unordered_map>
 
 namespace game_android {
 
@@ -37,6 +43,12 @@ private:
     void onAppCommand(int32_t command);
     void onConnectionStateReset() override;
     [[nodiscard]] bool updateVerticalInput(AInputEvent const* event) noexcept;
+    void refreshPreviewTerrain(client::PlayerPresentationPosition const& local_position);
+    void processPreviewTerrain();
+    void enqueuePreviewMeshIfCurrent(shared::HeightTileKey key);
+    [[nodiscard]]
+    bool isPreviewTileInInterest(shared::HeightTileKey key) const;
+    void clearPreviewTerrain(bool remove_renderer_meshes) noexcept;
     void createWindowResources();
     void destroyWindowResources() noexcept;
     void pollOneEvent(int32_t timeout_millis);
@@ -63,6 +75,20 @@ private:
     shared::ChunkMesher m_chunk_mesher;
     shared::ChunkMesh const* m_chunk_mesh = nullptr;
     std::unique_ptr<client::VulkanRenderer> m_renderer;
+    struct PreviewMeshKeyHash final {
+        [[nodiscard]] uint64_t operator()(client::HeightTileKey const key) const noexcept
+        {
+            return shared::heightTileCoordinateHash(key.x, key.y);
+        }
+    };
+    client::PreviewMeshWorkQueue m_preview_mesh_work;
+    client::PlayerPreviewLod m_preview_lod;
+    std::optional<shared::HeightTileKey> m_preview_interest_center;
+    std::optional<uint32_t> m_preview_interest_radius;
+    std::unordered_map<client::HeightTileKey, shared::HeightTileSurfaceMesh, PreviewMeshKeyHash>
+        m_visible_preview_mesh_bases;
+    std::unordered_map<client::HeightTileKey, client::PreviewMeshSeamBridgeSet, PreviewMeshKeyHash>
+        m_visible_preview_mesh_seam_bridges;
     float m_density_scale = 1.0F;
     bool m_resumed = false;
     bool m_has_focus = false;

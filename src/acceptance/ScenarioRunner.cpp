@@ -107,7 +107,13 @@ public:
         std::chrono::milliseconds const poll_interval,
         std::chrono::steady_clock::time_point const deadline
     )
-        : m_server(0, std::move(spawn_points), world_mode)
+        : m_server{
+            0,
+            std::move(spawn_points),
+            world_mode,
+            shared::World::canonicalConfiguration(),
+            shared::MIN_HEIGHT_TILE_INTEREST_RADIUS
+        }
         , m_poll_interval(poll_interval)
         , m_deadline(deadline)
     { }

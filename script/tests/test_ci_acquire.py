@@ -6,6 +6,7 @@ import hashlib
 import io
 import os
 import stat
+import subprocess
 import tempfile
 import unittest
 import zipfile
@@ -18,27 +19,6 @@ from script.ci import acquire
 
 class CiAcquireTests(unittest.TestCase):
     """Verify immutable pins and the separate shader validation contracts."""
-
-    @staticmethod
-    def write_pinned_gmp_port(vcpkg_root: Path, portfile: str | None = None) -> Path:
-        """Create the minimal pinned port layout used by Windows overlay regressions."""
-        source_port = vcpkg_root / "ports" / acquire.GMP_PORT
-        source_port.mkdir(parents=True)
-        (source_port / "portfile.cmake").write_text(
-            portfile
-            or "\n".join(
-                (
-                    "vcpkg_download_distfile(ARCHIVE",
-                    f"    URLS {acquire.GMP_AUTOCONF_OLD_URL}",
-                    f"    SHA512 {acquire.GMP_AUTOCONF_OLD_SHA512}",
-                    ")",
-                    "",
-                ),
-            ),
-            encoding="utf-8",
-        )
-        (source_port / "vcpkg.json").write_text('{"name":"gmp"}\n', encoding="utf-8")
-        return source_port
 
     @staticmethod
     def write_windows_runtime_archive(archive: Path, loader_path: str | None = None) -> None:
@@ -54,8 +34,6 @@ class CiAcquireTests(unittest.TestCase):
         self.assertEqual(acquire.PYTHON_VERSION, "3.12.10")
         self.assertEqual(acquire.VCPKG_COMMIT, "2b65c20fc66eda893aa15a15a453c3cf09500b19")
         self.assertEqual(acquire.GMP_AUTOCONF_OVERLAY_ID, "gmp-autoconf-2.71-4")
-        self.assertEqual(acquire.GMP_AUTOCONF_NEW_URL, "https://repo.msys2.org/msys/x86_64/autoconf2.71-2.71-4-any.pkg.tar.zst")
-        self.assertEqual(acquire.GMP_AUTOCONF_NEW_SHA512, "c93b791eb55893cbe7c425e764074837355fd165deb7b1775f652c8e25d9d1f0cdd4120ab710d56fb859b7df55c4f971eccda7c112448f60615bff8a2dc81166")
         self.assertEqual(acquire.VULKAN_VERSION, "1.4.357.0")
         self.assertEqual(acquire.VULKAN_DOWNLOADS["windows"]["url"], "https://sdk.lunarg.com/sdk/download/1.4.357.0/windows/vulkan_sdk.exe")
         self.assertEqual(acquire.VULKAN_DOWNLOADS["macos"]["url"], "https://sdk.lunarg.com/sdk/download/1.4.357.0/mac/vulkan_sdk.zip")
@@ -67,6 +45,23 @@ class CiAcquireTests(unittest.TestCase):
         self.assertEqual(acquire.ANDROID_COMMAND_LINE_TOOLS["sha256"], "4e4c464f145a7512b57d088ac6c278c03c9eea610886b35a5e0804e74eedf583")
         self.assertEqual(acquire.NINJA_DOWNLOADS["windows"]["sha256"], "26a40fa8595694dec2fad4911e62d29e10525d2133c9a4230b66397774ae25bf")
         self.assertEqual(acquire.NINJA_DOWNLOADS["macos"]["sha256"], "da7797794153629aca5570ef7c813342d0be214ba84632af886856e8f0063dd9")
+
+    def test_project_vcpkg_configuration_selects_the_verified_gmp_overlay(self):
+        repository = Path(__file__).resolve().parents[2]
+        configuration = json.loads((repository / "vcpkg-configuration.json").read_text(encoding="utf-8"))
+        self.assertEqual(configuration["overlay-ports"], ["script/ci/vcpkg-overlays"])
+        overlay_root = repository / configuration["overlay-ports"][0]
+        port = overlay_root / "gmp"
+        manifest = json.loads((port / "vcpkg.json").read_text(encoding="utf-8"))
+        portfile = (port / "portfile.cmake").read_text(encoding="utf-8")
+
+        self.assertEqual(manifest["name"], "gmp")
+        self.assertIn("https://repo.msys2.org/msys/x86_64/autoconf2.71-2.71-4-any.pkg.tar.zst", portfile)
+        self.assertIn(
+            "c93b791eb55893cbe7c425e764074837355fd165deb7b1775f652c8e25d9d1f0cdd4120ab710d56fb859b7df55c4f971eccda7c112448f60615bff8a2dc81166",
+            portfile,
+        )
+        self.assertNotIn("autoconf2.71-2.71-3-any.pkg.tar.zst", portfile)
 
     def test_install_ninja_uses_hash_verified_upstream_archive(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -253,9 +248,6 @@ class CiAcquireTests(unittest.TestCase):
                 executable = vcpkg_root / ("vcpkg.exe" if os.name == "nt" else "vcpkg")
                 executable.touch()
                 installed_root = root / "vcpkg-installed"
-                if platform_name == "windows":
-                    self.write_pinned_gmp_port(vcpkg_root)
-
                 def install(command):
                     installed_root.mkdir()
                     return ""
@@ -273,8 +265,6 @@ class CiAcquireTests(unittest.TestCase):
                     f"--x-manifest-root={repository}",
                     f"--x-install-root={installed_root}",
                 ]
-                if platform_name == "windows":
-                    command.append(f"--overlay-ports={installed_root.parent / 'vcpkg-overlays'}")
                 if platform_name == "linux-analysis":
                     command.append(f"--overlay-triplets={Path(acquire.__file__).resolve().parent / 'vcpkg-triplets'}")
                 if platform_name == "android-hwasan":
@@ -282,37 +272,6 @@ class CiAcquireTests(unittest.TestCase):
                 self.assertEqual(result, installed_root)
                 run.assert_called_once_with(command)
                 write_env.assert_called_once_with("VCPKG_INSTALLED_DIR", str(installed_root))
-
-    def test_windows_gmp_overlay_copies_pinned_port_and_patches_only_autoconf_artifact(self):
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            vcpkg_root = root / "vcpkg"
-            source_port = self.write_pinned_gmp_port(vcpkg_root)
-            source_portfile = source_port / "portfile.cmake"
-            original = source_portfile.read_text(encoding="utf-8")
-            installed_root = root / "vcpkg-installed"
-
-            overlay_root = acquire.install_windows_gmp_overlay(vcpkg_root, installed_root)
-
-            patched = (overlay_root / acquire.GMP_PORT / "portfile.cmake").read_text(encoding="utf-8")
-            self.assertEqual(source_portfile.read_text(encoding="utf-8"), original)
-            self.assertEqual(
-                patched,
-                original.replace(acquire.GMP_AUTOCONF_OLD_URL, acquire.GMP_AUTOCONF_NEW_URL).replace(
-                    acquire.GMP_AUTOCONF_OLD_SHA512,
-                    acquire.GMP_AUTOCONF_NEW_SHA512,
-                ),
-            )
-            self.assertEqual((overlay_root / acquire.GMP_PORT / "vcpkg.json").read_text(encoding="utf-8"), '{"name":"gmp"}\n')
-
-    def test_windows_gmp_overlay_rejects_unexpected_pinned_port(self):
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            vcpkg_root = root / "vcpkg"
-            self.write_pinned_gmp_port(vcpkg_root, "URLS https://example.test/autoconf.pkg.tar.zst\n")
-
-            with self.assertRaisesRegex(acquire.CiError, "autoconf URL does not match"):
-                acquire.install_windows_gmp_overlay(vcpkg_root, root / "vcpkg-installed")
 
     def test_install_private_dependencies_passes_exact_platform_component_closure(self):
         common_arguments = set(acquire.CORECPP_COMMON_BUILD_ARGUMENTS)
@@ -520,15 +479,17 @@ class CiAcquireTests(unittest.TestCase):
             lock.write_text(
                 json.dumps(
                     {
-                        "schema": 1,
+                        "schema": 2,
                         "dependencies": {
                             "CoreCpp": {
                                 "repository": "CoreJust/CoreCpp",
                                 "revision": "a" * 40,
+                                "fetch_ref": "refs/heads/codex/corecpp-pin",
                             },
                             "CoreProject2026": {
                                 "repository": "CoreJust/CoreProject2026",
                                 "revision": "b" * 40,
+                                "fetch_ref": "refs/heads/codex/coreproject-pin",
                             },
                         },
                     }
@@ -541,15 +502,17 @@ class CiAcquireTests(unittest.TestCase):
             lock.write_text(
                 json.dumps(
                     {
-                        "schema": 1,
+                        "schema": 2,
                         "dependencies": {
                             "CoreCpp": {
                                 "repository": "CoreJust/Unapproved",
                                 "revision": "a" * 40,
+                                "fetch_ref": "refs/heads/codex/corecpp-pin",
                             },
                             "CoreProject2026": {
                                 "repository": "CoreJust/CoreProject2026",
                                 "revision": "main",
+                                "fetch_ref": "refs/heads/codex/coreproject-pin",
                             },
                         },
                     }
@@ -563,6 +526,60 @@ class CiAcquireTests(unittest.TestCase):
         lock = Path(__file__).resolve().parents[2] / "dependencies.lock.json"
         parsed = acquire.require_private_dependency_lock(lock)
         self.assertEqual(set(parsed), {"CoreCpp", "CoreProject2026"})
+        self.assertEqual(parsed["CoreCpp"]["fetch_ref"], "refs/heads/codex/ai-mc-s7-cooperative-connect")
+        self.assertEqual(parsed["CoreProject2026"]["fetch_ref"], "refs/heads/codex/ai-s7-cooperative-corecpp-pin")
+
+    def test_private_dependency_lock_rejects_non_branch_fetch_ref(self):
+        with tempfile.TemporaryDirectory() as directory:
+            lock = Path(directory) / "dependencies.lock.json"
+            lock.write_text(
+                json.dumps(
+                    {
+                        "schema": 2,
+                        "dependencies": {
+                            "CoreCpp": {
+                                "repository": "CoreJust/CoreCpp",
+                                "revision": "a" * 40,
+                                "fetch_ref": "refs/tags/v1.0",
+                            },
+                            "CoreProject2026": {
+                                "repository": "CoreJust/CoreProject2026",
+                                "revision": "b" * 40,
+                                "fetch_ref": "refs/heads/codex/coreproject-pin",
+                            },
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(acquire.CiError, "safe full refs/heads branch name"):
+                acquire.require_private_dependency_lock(lock)
+
+    def test_private_dependency_lock_rejects_unsafe_branch_components(self):
+        with tempfile.TemporaryDirectory() as directory:
+            lock = Path(directory) / "dependencies.lock.json"
+            lock.write_text(
+                json.dumps(
+                    {
+                        "schema": 2,
+                        "dependencies": {
+                            "CoreCpp": {
+                                "repository": "CoreJust/CoreCpp",
+                                "revision": "a" * 40,
+                                "fetch_ref": "refs/heads/codex/../main",
+                            },
+                            "CoreProject2026": {
+                                "repository": "CoreJust/CoreProject2026",
+                                "revision": "b" * 40,
+                                "fetch_ref": "refs/heads/codex/coreproject-pin",
+                            },
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(acquire.CiError, "safe full refs/heads branch name"):
+                acquire.require_private_dependency_lock(lock)
 
     def test_android_hwasan_private_dependencies_share_the_instrumented_ndk_triplet(self):
         with tempfile.TemporaryDirectory() as directory, mock.patch.dict(
@@ -625,15 +642,17 @@ class CiAcquireTests(unittest.TestCase):
             lock.write_text(
                 json.dumps(
                     {
-                        "schema": 1,
+                        "schema": 2,
                         "dependencies": {
                             "CoreCpp": {
                                 "repository": "CoreJust/CoreCpp",
                                 "revision": "a" * 40,
+                                "fetch_ref": "refs/heads/codex/corecpp-pin",
                             },
                             "CoreProject2026": {
                                 "repository": "CoreJust/CoreProject2026",
                                 "revision": "b" * 40,
+                                "fetch_ref": "refs/heads/codex/coreproject-pin",
                             },
                         },
                     }
@@ -646,7 +665,7 @@ class CiAcquireTests(unittest.TestCase):
             coreproject_key.touch()
             corecpp_key.chmod(0o600)
             coreproject_key.chmod(0o600)
-            responses = iter(("", "", "", "", "a" * 40, "", "", "", "", "", "b" * 40, ""))
+            responses = iter(("", "", "", "", "", "a" * 40, "", "", "", "", "", "", "b" * 40, ""))
             with mock.patch.object(acquire, "run", side_effect=lambda *_args, **_kwargs: next(responses)) as run:
                 sources = acquire.fetch_private_dependencies(
                     lock,
@@ -655,8 +674,10 @@ class CiAcquireTests(unittest.TestCase):
                 )
             self.assertEqual(sources, {"CoreCpp": root / "sources/CoreCpp", "CoreProject2026": root / "sources/CoreProject2026"})
             commands = [call.args[0] for call in run.call_args_list]
-            self.assertIn(["git", "-C", str(root / "sources/CoreCpp"), "checkout", "--detach", "FETCH_HEAD"], commands)
-            self.assertIn(["git", "-C", str(root / "sources/CoreProject2026"), "checkout", "--detach", "FETCH_HEAD"], commands)
+            self.assertIn(["git", "-C", str(root / "sources/CoreCpp"), "cat-file", "-e", f"{'a' * 40}^{{commit}}"], commands)
+            self.assertIn(["git", "-C", str(root / "sources/CoreCpp"), "checkout", "--detach", "a" * 40], commands)
+            self.assertIn(["git", "-C", str(root / "sources/CoreProject2026"), "cat-file", "-e", f"{'b' * 40}^{{commit}}"], commands)
+            self.assertIn(["git", "-C", str(root / "sources/CoreProject2026"), "checkout", "--detach", "b" * 40], commands)
             fetches = [command for command in commands if "fetch" in command]
             self.assertEqual(len(fetches), 2)
             remotes = [command for command in commands if "remote" in command]
@@ -664,9 +685,126 @@ class CiAcquireTests(unittest.TestCase):
                 [command[-1] for command in remotes],
                 ["git@github.com:CoreJust/CoreCpp.git", "git@github.com:CoreJust/CoreProject2026.git"],
             )
-            self.assertEqual(fetches[0][-1], "a" * 40)
-            self.assertEqual(fetches[1][-1], "b" * 40)
+            self.assertEqual(fetches[0][-3:], ["--no-tags", "origin", "refs/heads/codex/corecpp-pin"])
+            self.assertEqual(fetches[1][-3:], ["--no-tags", "origin", "refs/heads/codex/coreproject-pin"])
             self.assertNotIn("PRIVATE KEY", "\n".join(" ".join(command) for command in commands))
+
+    def test_private_dependency_fetch_fails_clearly_when_pin_is_not_in_fetched_ref(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            lock = root / "dependencies.lock.json"
+            lock.write_text(
+                json.dumps(
+                    {
+                        "schema": 2,
+                        "dependencies": {
+                            "CoreCpp": {
+                                "repository": "CoreJust/CoreCpp",
+                                "revision": "a" * 40,
+                                "fetch_ref": "refs/heads/codex/corecpp-pin",
+                            },
+                            "CoreProject2026": {
+                                "repository": "CoreJust/CoreProject2026",
+                                "revision": "b" * 40,
+                                "fetch_ref": "refs/heads/codex/coreproject-pin",
+                            },
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            corecpp_key = root / "corecpp-key"
+            coreproject_key = root / "coreproject-key"
+            corecpp_key.touch()
+            coreproject_key.touch()
+            corecpp_key.chmod(0o600)
+            coreproject_key.chmod(0o600)
+
+            def fail_on_missing_pin(command):
+                if "cat-file" in command:
+                    raise acquire.CiError("missing object")
+                return ""
+
+            with mock.patch.object(acquire, "run", side_effect=fail_on_missing_pin) as run:
+                with self.assertRaisesRegex(
+                    acquire.CiError,
+                    f"CoreCpp locked revision {'a' * 40} is not reachable from refs/heads/codex/corecpp-pin",
+                ):
+                    acquire.fetch_private_dependencies(
+                        lock,
+                        root / "sources",
+                        {"CoreCpp": corecpp_key, "CoreProject2026": coreproject_key},
+                    )
+            self.assertFalse(any("checkout" in call.args[0] for call in run.call_args_list))
+
+    def test_private_dependency_fetches_branch_history_but_checks_out_exact_ancestor_pin(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            key_files = {}
+            remotes = {}
+            dependencies = {}
+            for name, repository in (
+                ("CoreCpp", "CoreJust/CoreCpp"),
+                ("CoreProject2026", "CoreJust/CoreProject2026"),
+            ):
+                remote = root / f"{name}.git"
+                seed = root / f"{name}-seed"
+                subprocess.run(["git", "init", "--bare", str(remote)], capture_output=True, check=True)
+                subprocess.run(["git", "init", str(seed)], capture_output=True, check=True)
+                subprocess.run(["git", "-C", str(seed), "config", "user.name", "CI fixture"], capture_output=True, check=True)
+                subprocess.run(["git", "-C", str(seed), "config", "user.email", "ci-fixture@example.invalid"], capture_output=True, check=True)
+                branch = f"codex/{name.lower()}-pin"
+                subprocess.run(["git", "-C", str(seed), "checkout", "-b", branch], capture_output=True, check=True)
+                fixture_file = seed / "pin.txt"
+                fixture_file.write_text("pinned ancestor\n", encoding="utf-8")
+                subprocess.run(["git", "-C", str(seed), "add", "pin.txt"], capture_output=True, check=True)
+                subprocess.run(["git", "-C", str(seed), "commit", "-m", "pinned commit"], capture_output=True, check=True)
+                revision = subprocess.run(
+                    ["git", "-C", str(seed), "rev-parse", "HEAD"],
+                    capture_output=True,
+                    check=True,
+                    text=True,
+                ).stdout.strip()
+                fixture_file.write_text("later branch tip\n", encoding="utf-8")
+                subprocess.run(["git", "-C", str(seed), "commit", "-am", "later branch tip"], capture_output=True, check=True)
+                subprocess.run(["git", "-C", str(seed), "push", str(remote), f"HEAD:refs/heads/{branch}"], capture_output=True, check=True)
+                key_file = root / f"{name}-key"
+                key_file.touch()
+                key_file.chmod(0o600)
+                key_files[name] = key_file
+                remotes[repository] = remote
+                dependencies[name] = {
+                    "repository": repository,
+                    "revision": revision,
+                    "fetch_ref": f"refs/heads/{branch}",
+                }
+
+            lock = root / "dependencies.lock.json"
+            lock.write_text(json.dumps({"schema": 2, "dependencies": dependencies}), encoding="utf-8")
+            real_run = acquire.run
+
+            def run_against_local_remotes(command):
+                if len(command) >= 7 and command[:2] == ["git", "-C"] and command[3:6] == ["remote", "add", "origin"]:
+                    repository = command[-1].removeprefix("git@github.com:").removesuffix(".git")
+                    command = [*command[:-1], str(remotes[repository])]
+                return real_run(command)
+
+            with mock.patch.object(acquire, "git_with_key", side_effect=lambda _key, _hosts, command: ["git", *command]), mock.patch.object(
+                acquire,
+                "run",
+                side_effect=run_against_local_remotes,
+            ):
+                sources = acquire.fetch_private_dependencies(lock, root / "sources", key_files)
+
+            for name, dependency in dependencies.items():
+                actual_revision = subprocess.run(
+                    ["git", "-C", str(sources[name]), "rev-parse", "HEAD"],
+                    capture_output=True,
+                    check=True,
+                    text=True,
+                ).stdout.strip()
+                self.assertEqual(actual_revision, dependency["revision"])
+                self.assertEqual((sources[name] / "pin.txt").read_text(encoding="utf-8"), "pinned ancestor\n")
 
     def test_git_ssh_paths_preserve_windows_drives_spaces_and_option_boundaries(self):
         self.assertEqual(

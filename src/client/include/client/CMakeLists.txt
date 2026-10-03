@@ -13,6 +13,7 @@ target_sources(mc
             PlayerClient.hpp
             PlayerPreviewLod.hpp
             PlayerPresentation.hpp
+            PreviewMeshWorkQueue.hpp
             PreviewMeshing.hpp
             PreviewResidency.hpp
             render/DebugHud.hpp

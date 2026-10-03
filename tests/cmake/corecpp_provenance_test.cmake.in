@@ -1,0 +1,43 @@
+set(test_root "@MC_TEST_BINARY_DIR@/corecpp-provenance")
+set(fixture_root "@MC_CORECPP_PROVENANCE_FIXTURE_DIR@")
+file(MAKE_DIRECTORY "${test_root}")
+file(COPY_FILE
+    "@MC_PROJECT_SOURCE_DIR@/dependencies.lock.json"
+    "${fixture_root}/dependencies.lock.json"
+)
+file(READ "${fixture_root}/dependencies.lock.json" lock_json)
+string(JSON locked_revision GET "${lock_json}" dependencies CoreCpp revision)
+
+execute_process(
+    COMMAND "@MC_CMAKE_COMMAND@"
+        -S "${fixture_root}"
+        -B "${test_root}/exact"
+        "-DCoreCpp_REVISION=${locked_revision}"
+    RESULT_VARIABLE exact_result
+    OUTPUT_VARIABLE exact_stdout
+    ERROR_VARIABLE exact_stderr
+)
+if(NOT exact_result EQUAL 0)
+    message(FATAL_ERROR "Current locked CoreCpp provenance was rejected:\n${exact_stdout}${exact_stderr}")
+endif()
+
+set(mismatch_revision "0000000000000000000000000000000000000000")
+if(mismatch_revision STREQUAL locked_revision)
+    set(mismatch_revision "1111111111111111111111111111111111111111")
+endif()
+execute_process(
+    COMMAND "@MC_CMAKE_COMMAND@"
+        -S "${fixture_root}"
+        -B "${test_root}/mismatch"
+        "-DCoreCpp_REVISION=${mismatch_revision}"
+    RESULT_VARIABLE mismatch_result
+    OUTPUT_VARIABLE mismatch_stdout
+    ERROR_VARIABLE mismatch_stderr
+)
+if(mismatch_result EQUAL 0)
+    message(FATAL_ERROR "MinecraftClone accepted a mismatched CoreCpp revision")
+endif()
+string(FIND "${mismatch_stdout}${mismatch_stderr}" "CoreCpp revision mismatch" mismatch_index)
+if(mismatch_index EQUAL -1)
+    message(FATAL_ERROR "Mismatched revision failed for an unexpected reason:\n${mismatch_stdout}${mismatch_stderr}")
+endif()

@@ -1,13 +1,15 @@
 {
-  "schema": 1,
+  "schema": 2,
   "dependencies": {
     "CoreCpp": {
       "repository": "CoreJust/CoreCpp",
-      "revision": "f2fe7db86a068b464dde1c5f7f4a13ddcefda26d"
+      "revision": "f2fe7db86a068b464dde1c5f7f4a13ddcefda26d",
+      "fetch_ref": "refs/heads/codex/ai-mc-s7-cooperative-connect"
     },
     "CoreProject2026": {
       "repository": "CoreJust/CoreProject2026",
-      "revision": "92c8058dcfbff13010502a5bd46d7920b52815ea"
+      "revision": "92c8058dcfbff13010502a5bd46d7920b52815ea",
+      "fetch_ref": "refs/heads/codex/ai-s7-cooperative-corecpp-pin"
     }
   }
 }

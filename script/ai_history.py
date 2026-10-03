@@ -9,6 +9,7 @@ import json
 from pathlib import Path
 import subprocess
 import sys
+import types
 from typing import Sequence
 
 import ai_tasks
@@ -78,8 +79,25 @@ def git(repo: Path, *args: str, check: bool = True) -> str:
     return result.stdout
 
 
+def _unique_json_object(pairs: list[tuple[str, object]]) -> dict[str, object]:
+    result: dict[str, object] = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError(f"duplicate JSON object key: {key}")
+        result[key] = value
+    return result
+
+
 def revision(repo: Path, ref: str) -> str:
     return git(repo, "rev-parse", "--verify", f"{ref}^{{commit}}").strip()
+
+
+def historical_ai_tasks(repo: Path, commit: str) -> types.ModuleType:
+    source = git(repo, "show", f"{commit}:script/ai_tasks.py")
+    module = types.ModuleType(f"ai_tasks_at_{commit[:12]}")
+    module.__file__ = str(repo / "script/ai_tasks.py")
+    exec(compile(source, module.__file__, "exec"), module.__dict__)
+    return module
 
 
 def require_common_ancestor(repo: Path, baseline: str, head: str) -> None:
@@ -290,10 +308,16 @@ def require_valid_prior_snapshot_ledgers(
         if not required_paths <= changed_paths or not changed_paths <= allowed_paths:
             raise HistoryError(f"publication ledger {sha} changes non-ledger paths")
         try:
-            before = json.loads(git(repo, "show", f"{parents[0]}:docs/ai/backlog.json"))
-            after = json.loads(git(repo, "show", f"{sha}:docs/ai/backlog.json"))
-        except (json.JSONDecodeError, HistoryError) as error:
-            raise HistoryError(f"publication ledger {sha} has invalid backlog metadata") from error
+            before = json.loads(
+                git(repo, "show", f"{parents[0]}:docs/ai/backlog.json"),
+                object_pairs_hook=_unique_json_object,
+            )
+            after = json.loads(
+                git(repo, "show", f"{sha}:docs/ai/backlog.json"),
+                object_pairs_hook=_unique_json_object,
+            )
+        except (ValueError, HistoryError) as error:
+            raise HistoryError(f"publication ledger {sha} has invalid backlog metadata: {error}") from error
         if not isinstance(before, list) or not isinstance(after, list):
             raise HistoryError(f"publication ledger {sha} backlog must be a list")
         try:
@@ -311,25 +335,26 @@ def require_valid_prior_snapshot_ledgers(
         published = after_by_id.get(task_id)
         if previous is None or published is None:
             raise HistoryError(f"publication ledger {sha} omits {task_id}")
+        ledger_baseline = revision(repo, str(previous["baseline_commit"]))
+        if not has_tagged_promotion(repo, ledger_baseline, parents[0]):
+            raise HistoryError(f"publication ledger {sha} has no tagged immutable promotion")
         changed_fields = {key for key in previous if previous[key] != published[key]}
         if not changed_fields <= publication_ledger_mutable_fields(sha):
             raise HistoryError(f"publication ledger {sha} changes immutable {task_id} fields")
         if previous["status"] != "active" or previous["resolved_at"]:
             raise HistoryError(f"publication ledger {sha} does not start from an active snapshot")
-        if not has_published_ledger_state(sha, published):
-            raise HistoryError(f"publication ledger {sha} does not record a published snapshot")
         if previous["finalized"] is not True or published["finalized"] is not True:
             raise HistoryError(f"publication ledger {sha} must preserve finalized state")
-        ledger_baseline = revision(repo, str(previous["baseline_commit"]))
-        if not has_tagged_promotion(repo, ledger_baseline, parents[0]):
-            raise HistoryError(f"publication ledger {sha} has no tagged immutable promotion")
+        if not has_published_ledger_state(sha, published):
+            raise HistoryError(f"publication ledger {sha} does not record a published snapshot")
         if published != task:
             raise HistoryError(f"publication ledger {sha} does not match current {task_id} metadata")
         rendered_backlog = git(repo, "show", f"{sha}:docs/ai/BACKLOG.md")
         rendered_task = git(repo, "show", f"{sha}:docs/ai/tasks/{task_id}.md")
-        if rendered_backlog != ai_tasks.render_backlog(after):
+        ledger_renderer = historical_ai_tasks(repo, sha)
+        if rendered_backlog != ledger_renderer.render_backlog(after):
             raise HistoryError(f"publication ledger {sha} has stale backlog Markdown")
-        if rendered_task != ai_tasks.render_task(published, after):
+        if rendered_task != ledger_renderer.render_task(published, after):
             raise HistoryError(f"publication ledger {sha} has stale task Markdown")
         validated_ledgers.add(task_id)
 
@@ -513,9 +538,11 @@ def parser() -> argparse.ArgumentParser:
     collect = subparsers.add_parser("collect")
     collect.add_argument("task_id")
     collect.add_argument("--head", default="HEAD")
+    collect.add_argument("--additional-head")
     finalize_parser = subparsers.add_parser("finalize")
     finalize_parser.add_argument("task_id")
     finalize_parser.add_argument("--head", default="HEAD")
+    finalize_parser.add_argument("--additional-head")
     return result
 
 
@@ -529,9 +556,11 @@ def main(argv: list[str] | None = None) -> int:
         elif args.command == "show":
             print(render_records(args.repo, tasks, args.output, args.task_id)[0])
         elif args.command == "collect":
-            print("\n".join(collect_aggregate(args.repo, tasks, args.task_id, args.head)))
+            print("\n".join(collect_aggregate(
+                args.repo, tasks, args.task_id, args.head, args.additional_head
+            )))
         else:
-            finalize(args.repo, tasks, args.task_id, args.head)
+            finalize(args.repo, tasks, args.task_id, args.head, args.additional_head)
             ai_tasks.write_backlog_atomic(args.backlog, tasks)
             ai_tasks.write_rendered_backlog(args.markdown, tasks)
             render_records(args.repo, tasks, args.output, head_ref=args.head)

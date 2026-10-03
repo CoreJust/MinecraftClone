@@ -32,6 +32,30 @@ class WorkflowContextTests(unittest.TestCase):
         self.assertIn("_[0-9]{2}\\.[0-9]{2}\\.[0-9]{2}$'; then", workflow)
         self.assertNotIn('refs/remotes/origin/ai-main \\\n              then', workflow)
 
+    def test_snapshot_push_waits_for_exact_analysis_but_other_events_stay_strict(self):
+        workflow = WORKFLOWS[1].read_text(encoding="utf-8")
+        source_job = workflow.split("\n  source:", maxsplit=1)[1].split("\n  desktop:", maxsplit=1)[0]
+        wait_step = source_job.split("      - name: Wait for successful S7 analysis matrix", maxsplit=1)[1].split(
+            "      - name:", maxsplit=1
+        )[0]
+        strict_step = source_job.split(
+            "      - name: Require a successful S7 analysis matrix for the exact source", maxsplit=1
+        )[1].split("      - name:", maxsplit=1)[0]
+
+        self.assertIn(
+            "if: steps.trust.outputs.trusted_dependency_source == 'true' "
+            "&& github.event_name == 'push' && github.ref == 'refs/heads/ai-main'",
+            wait_step,
+        )
+        self.assertIn("--wait --timeout-seconds 21000 --poll-interval-seconds 30", wait_step)
+        self.assertIn("timeout-minutes: 360", source_job)
+        self.assertIn(
+            "if: steps.trust.outputs.trusted_dependency_source == 'true' "
+            "&& (github.event_name != 'push' || github.ref != 'refs/heads/ai-main')",
+            strict_step,
+        )
+        self.assertNotIn("--wait", strict_step)
+
     def test_workflows_keep_runner_context_out_of_job_level_env(self):
         for workflow_path in WORKFLOWS:
             lines = workflow_path.read_text(encoding="utf-8").splitlines()
@@ -104,6 +128,17 @@ class WorkflowContextTests(unittest.TestCase):
                 condition_match = re.search(r"(?m)^    if: (.+)$", jobs[job_name])
                 self.assertIsNotNone(condition_match, job_name)
                 self.assertEqual(condition_match.group(1), condition)
+
+    def test_linux_sanitizer_bootstrap_uses_published_ninja_wheel(self):
+        workflow = WORKFLOWS[0].read_text(encoding="utf-8")
+        linux_analysis = workflow.split("\n  linux-analysis:", maxsplit=1)[1].split(
+            "\n  android-hwasan-build:", maxsplit=1
+        )[0]
+        self.assertIn(
+            "python -m pip install --disable-pip-version-check --no-cache-dir "
+            "cmake==3.31.6 ninja==1.13.2",
+            linux_analysis,
+        )
 
     def test_private_prefixes_and_manifest_mode_are_explicit(self):
         for workflow_path in WORKFLOWS:

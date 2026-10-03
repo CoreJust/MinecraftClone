@@ -116,6 +116,23 @@ TEST(PlayerPreviewLodTest, UnchangedProjectionAndSubtileMovementAvoidFullResiden
     EXPECT_TRUE(unchanged.changed_keys.empty());
 }
 
+TEST(PlayerPreviewLodTest, PositionInterestUsesTheExactWrappedDisk)
+{
+    static constexpr int32_t TILE_EXTENT = static_cast<int32_t>(
+        shared::WorldExtent::WIDTH / shared::HEIGHT_TILE_SIDE_LENGTH
+    );
+    static constexpr uint32_t RADIUS = 2U;
+    static constexpr shared::HeightTileKey CENTER{ 0, 0 };
+
+    EXPECT_TRUE(client::playerPreviewTileWithinInterest(CENTER, CENTER, RADIUS));
+    EXPECT_TRUE(client::playerPreviewTileWithinInterest(CENTER, { 2, 0 }, RADIUS));
+    EXPECT_TRUE(client::playerPreviewTileWithinInterest(CENTER, { TILE_EXTENT - 2, 0 }, RADIUS));
+    EXPECT_TRUE(client::playerPreviewTileWithinInterest(CENTER, { TILE_EXTENT - 1, TILE_EXTENT - 1 }, RADIUS));
+    EXPECT_FALSE(client::playerPreviewTileWithinInterest(CENTER, { 2, 1 }, RADIUS));
+    EXPECT_FALSE(client::playerPreviewTileWithinInterest(CENTER, { TILE_EXTENT - 2, TILE_EXTENT - 1 }, RADIUS));
+    EXPECT_FALSE(client::playerPreviewTileWithinInterest(CENTER, { 0, 3 }, RADIUS));
+}
+
 TEST(PlayerPreviewLodTest, SeededMovementAndX200StepsMatchFullPolicyAcrossWrap)
 {
     static constexpr int32_t TILE_EXTENT = shared::WorldExtent::WIDTH / shared::HEIGHT_TILE_SIDE_LENGTH;

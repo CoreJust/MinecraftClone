@@ -1,10 +1,12 @@
 from __future__ import annotations
 
-import importlib.util
 import hashlib
+import importlib.util
+import io
 import json
 import sys
 import unittest
+from contextlib import redirect_stdout
 from pathlib import Path
 from unittest import mock
 
@@ -118,6 +120,20 @@ class VerifyAnalysisGateTests(unittest.TestCase):
             with self.assertRaisesRegex(self.gate.GateError, "workflow"):
                 self.gate.verify_gate(Path("."), COMMIT)
 
+    def test_gate_rejects_pending_check_from_other_workflow_immediately(self):
+        workflow = self.workflow_run(path=".github/workflows/other.yml")
+        with mock.patch.object(self.gate, "git", side_effect=[COMMIT, "b" * 40]), mock.patch.object(
+            self.gate, "github_repository", return_value="CoreJust/MinecraftClone"
+        ), mock.patch.object(
+            self.gate, "fetch_check_runs", return_value=[self.check_run(status="queued", conclusion="")]
+        ), mock.patch.object(self.gate, "fetch_workflow_run", return_value=workflow) as fetch_workflow:
+            with self.assertRaises(self.gate.GateError) as error:
+                self.gate.verify_gate(Path("."), COMMIT)
+
+        self.assertIs(type(error.exception), self.gate.GateError)
+        self.assertIn("workflow", str(error.exception))
+        fetch_workflow.assert_called_once_with("CoreJust/MinecraftClone", 456)
+
     def test_gate_rejects_missing_or_invalid_aggregate_receipt(self):
         for receipt in (None, {"candidate": {"head": COMMIT, "tree": "b" * 40}, "rows": []}):
             with self.subTest(receipt=receipt), mock.patch.object(self.gate, "git", side_effect=[COMMIT, "b" * 40]), mock.patch.object(
@@ -180,7 +196,7 @@ class VerifyAnalysisGateTests(unittest.TestCase):
             self.gate,
             "fetch_check_runs",
             return_value=[self.check_run(conclusion="failure")],
-        ):
+        ), mock.patch.object(self.gate, "fetch_workflow_run", return_value=self.workflow_run()):
             with self.assertRaisesRegex(self.gate.GateError, "not successful"):
                 self.gate.verify_gate(Path("."), COMMIT)
 
@@ -192,9 +208,92 @@ class VerifyAnalysisGateTests(unittest.TestCase):
             self.gate,
             "github_repository",
             return_value="CoreJust/MinecraftClone",
-        ), mock.patch.object(self.gate, "fetch_check_runs", return_value=[older, newer]):
-            with self.assertRaisesRegex(self.gate.GateError, "not successful"):
+        ), mock.patch.object(self.gate, "fetch_check_runs", return_value=[older, newer]), mock.patch.object(
+            self.gate, "fetch_workflow_run", return_value=self.workflow_run()
+        ):
+            with self.assertRaisesRegex(self.gate.GatePending, "still running"):
                 self.gate.verify_gate(Path("."), COMMIT)
+
+    def test_wait_for_gate_retries_a_pending_exact_candidate_until_success(self):
+        expected = {"commit": COMMIT, "conclusion": "success"}
+        output = io.StringIO()
+        with mock.patch.object(
+            self.gate,
+            "verify_gate",
+            side_effect=[self.gate.GatePending("matrix has not reported"), expected],
+        ) as verify, mock.patch.object(self.gate.time, "monotonic", side_effect=[0.0, 0.0]), mock.patch.object(
+            self.gate.time,
+            "sleep",
+        ) as sleep, redirect_stdout(output):
+            result = self.gate.wait_for_gate(
+                Path("."),
+                COMMIT,
+                "CoreJust/MinecraftClone",
+                timeout_seconds=10,
+                poll_interval_seconds=3,
+            )
+
+        self.assertEqual(result, expected)
+        self.assertEqual(verify.call_count, 2)
+        sleep.assert_called_once_with(3)
+        self.assertIn(COMMIT, output.getvalue())
+
+    def test_wait_for_gate_fails_immediately_when_matrix_completed_unsuccessfully(self):
+        with mock.patch.object(
+            self.gate,
+            "verify_gate",
+            side_effect=self.gate.GateError("matrix completed with conclusion='failure'"),
+        ), mock.patch.object(self.gate.time, "sleep") as sleep:
+            with self.assertRaisesRegex(self.gate.GateError, "failure"):
+                self.gate.wait_for_gate(
+                    Path("."),
+                    COMMIT,
+                    "CoreJust/MinecraftClone",
+                    timeout_seconds=10,
+                    poll_interval_seconds=3,
+                )
+
+        sleep.assert_not_called()
+
+    def test_wait_for_gate_does_not_retry_an_api_or_receipt_error(self):
+        with mock.patch.object(
+            self.gate,
+            "verify_gate",
+            side_effect=self.gate.GateError("GitHub receipt query failed"),
+        ), mock.patch.object(self.gate.time, "sleep") as sleep:
+            with self.assertRaisesRegex(self.gate.GateError, "receipt query failed"):
+                self.gate.wait_for_gate(
+                    Path("."),
+                    COMMIT,
+                    "CoreJust/MinecraftClone",
+                    timeout_seconds=10,
+                    poll_interval_seconds=3,
+                )
+
+        sleep.assert_not_called()
+
+    def test_wait_for_gate_times_out_while_exact_matrix_remains_pending(self):
+        output = io.StringIO()
+        with mock.patch.object(
+            self.gate,
+            "verify_gate",
+            side_effect=self.gate.GatePending("matrix has not reported"),
+        ) as verify, mock.patch.object(self.gate.time, "monotonic", side_effect=[0.0, 0.0, 10.0]), mock.patch.object(
+            self.gate.time,
+            "sleep",
+        ) as sleep, redirect_stdout(output):
+            with self.assertRaisesRegex(self.gate.GateError, "timed out"):
+                self.gate.wait_for_gate(
+                    Path("."),
+                    COMMIT,
+                    "CoreJust/MinecraftClone",
+                    timeout_seconds=10,
+                    poll_interval_seconds=6,
+                )
+
+        self.assertEqual(verify.call_count, 2)
+        sleep.assert_called_once_with(6)
+        self.assertIn("retrying in 6s", output.getvalue())
 
     def test_check_run_pages_fail_closed_when_api_data_is_malformed(self):
         with self.assertRaisesRegex(self.gate.GateError, "malformed"):
