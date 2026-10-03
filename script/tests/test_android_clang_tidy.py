@@ -14,6 +14,36 @@ SCRIPT = REPOSITORY / "script/ci/android_clang_tidy.py"
 
 
 class AndroidClangTidyTests(unittest.TestCase):
+    def create_fake_clang_tidy(self, root: Path, argument_log: Path) -> tuple[Path, dict[str, str]]:
+        fake_script = root / "fake_clang_tidy.py"
+        fake_script.write_text(
+            "#!/usr/bin/env python3\n"
+            "import json\n"
+            "import os\n"
+            "import sys\n"
+            "with open(os.environ['ANDROID_CLANG_TIDY_ARGV'], 'a', encoding='utf-8') as log:\n"
+            "    log.write(json.dumps(sys.argv[1:]) + '\\n')\n",
+            encoding="utf-8",
+        )
+        if os.name == "nt":
+            clang_tidy = root / "clang-tidy.cmd"
+            clang_tidy.write_text(
+                '@echo off\r\n'
+                '"%PYTHON%" "%ANDROID_CLANG_TIDY_FAKE_SCRIPT%" %*\r\n'
+                'exit /b %errorlevel%\r\n',
+                encoding="utf-8",
+            )
+            environment = {
+                "ANDROID_CLANG_TIDY_FAKE_SCRIPT": str(fake_script),
+                "PYTHON": sys.executable,
+            }
+        else:
+            clang_tidy = fake_script
+            clang_tidy.chmod(0o755)
+            environment = {}
+        environment["ANDROID_CLANG_TIDY_ARGV"] = str(argument_log)
+        return clang_tidy, environment
+
     def create_fixture(self, root: Path, target: str) -> tuple[Path, list[Path]]:
         sources = [root / "src/android/Player.cpp", root / "src/shared/World.cpp"]
         for source in sources:
@@ -42,14 +72,9 @@ class AndroidClangTidyTests(unittest.TestCase):
                 root, "aarch64-none-linux-android28"
             )
             argument_log = root / "clang-tidy-arguments.txt"
-            clang_tidy = root / "clang-tidy"
-            clang_tidy.write_text(
-                "#!/bin/sh\nprintf '%s\\n' '--database--' \"$@\" >> \"$ANDROID_CLANG_TIDY_ARGV\"\n",
-                encoding="utf-8",
-            )
-            clang_tidy.chmod(0o755)
             environment = os.environ.copy()
-            environment["ANDROID_CLANG_TIDY_ARGV"] = str(argument_log)
+            clang_tidy, fake_environment = self.create_fake_clang_tidy(root, argument_log)
+            environment.update(fake_environment)
 
             result = subprocess.run(
                 [
@@ -70,7 +95,7 @@ class AndroidClangTidyTests(unittest.TestCase):
             )
 
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-            arguments = argument_log.read_text(encoding="utf-8").splitlines()
+            arguments = json.loads(argument_log.read_text(encoding="utf-8").splitlines()[0])
             self.assertIn("--checks=clang-analyzer-*", arguments)
             self.assertIn("--warnings-as-errors=clang-analyzer-*", arguments)
             self.assertEqual(arguments[arguments.index("-p") + 1], str(compile_commands_dir.resolve()))
@@ -106,14 +131,9 @@ class AndroidClangTidyTests(unittest.TestCase):
                 encoding="utf-8",
             )
             argument_log = root / "clang-tidy-arguments.txt"
-            clang_tidy = root / "clang-tidy"
-            clang_tidy.write_text(
-                "#!/bin/sh\nprintf '%s\\n' '--database--' \"$@\" >> \"$ANDROID_CLANG_TIDY_ARGV\"\n",
-                encoding="utf-8",
-            )
-            clang_tidy.chmod(0o755)
             environment = os.environ.copy()
-            environment["ANDROID_CLANG_TIDY_ARGV"] = str(argument_log)
+            clang_tidy, fake_environment = self.create_fake_clang_tidy(root, argument_log)
+            environment.update(fake_environment)
 
             result = subprocess.run(
                 [
@@ -134,8 +154,11 @@ class AndroidClangTidyTests(unittest.TestCase):
             )
 
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-            arguments = argument_log.read_text(encoding="utf-8").splitlines()
-            self.assertEqual(arguments.count("--database--"), 2)
+            argument_sets = [
+                json.loads(line) for line in argument_log.read_text(encoding="utf-8").splitlines()
+            ]
+            self.assertEqual(len(argument_sets), 2)
+            arguments = [argument for argument_set in argument_sets for argument in argument_set]
             for source in [*sources, second_source]:
                 self.assertIn(str(source.resolve()), arguments)
 
@@ -153,7 +176,7 @@ class AndroidClangTidyTests(unittest.TestCase):
                     "--repository-root",
                     str(root),
                     "--clang-tidy",
-                    "/bin/true",
+                    "unused-clang-tidy",
                 ],
                 cwd=root,
                 capture_output=True,

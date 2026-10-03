@@ -10754,5 +10754,43 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0303",
+    "title": "Make Python CI tests portable on Windows",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P1",
+    "route": "luna",
+    "milestone": "ED-010-S7",
+    "depends_on": [],
+    "acceptance": "Repair the identified Windows failures in the Python fast suite without disabling coverage: use platform-native path semantics, discover native .exe tools and ADB consistently, and create portable fake clang-tidy executables. Preserve assertions on selected build/test targets and exact runtime commands. Prove focused and full local Python gates, and configure the exact-candidate fast workflow to run on Windows; its hosted Windows result remains an aggregate MC-AI-0038 release gate.",
+    "evidence": "Focused portability suites passed 45/45. The complete Python suite and full local integration gate passed on macOS. The exact-candidate fast workflow now runs on both Ubuntu and Windows; its hosted Windows result remains required before S7 release and is tracked by MC-AI-0038.",
+    "blocker": "",
+    "owner": "",
+    "level": "basic",
+    "parent": "MC-AI-0038",
+    "motivation": "The required Windows Release matrix built successfully but its fast Python suite failed eight checks/errors because tests encoded POSIX paths and executables.",
+    "context": "Run 37146581666 attempt 2, job 111288077802: renderer-smoke tests compared slash-only paths, Android playtest expected adb instead of adb.exe, fake clang-tidy scripts were not Windows executables, and pair-playtest expected mc_main with POSIX separators. Exact failing test names are in the task handoff.",
+    "complexity": "medium",
+    "created_at": "2026-10-03",
+    "resolved_at": "2026-10-04",
+    "resolution_changes": "Repaired platform-specific path and executable expectations across Windows fast Python tests and added the Windows candidate workflow matrix. Focused portability tests passed 45/45 and the full local Python suite passed; the hosted Windows result remains an MC-AI-0038 release gate.",
+    "plan": [
+      "Fix only the failing Python test helpers/assertions with pathlib/native executable semantics and portable fake tools; run focused and full local Python checks.",
+      "Run the exact-candidate fast CI gate on both Ubuntu and Windows so Windows path/executable regressions are checked before promotion."
+    ],
+    "product_changes": [],
+    "code_changes": [
+      "Windows-portable path, executable discovery, and fake-tool handling in the affected test suites.",
+      "Candidate fast CI matrix on Windows as well as Ubuntu; its exact Windows result remains an aggregate S7 gate."
+    ],
+    "baseline_commit": "c5b35c0e143eab2aeedf82ae6adcdfa6c8c621ec",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]
