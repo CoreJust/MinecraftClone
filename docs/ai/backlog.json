@@ -1501,8 +1501,8 @@
       "MC-AI-0037"
     ],
     "acceptance": "Deliver immutable, generation-tagged hard/soft entity permissions for all/players/mobs/technical-entities/per-kind and explicit-member/selector groups; namespace custom keys and defer world subjects. Cover movement, flight/collision, blocks, inventory, invincibility, commands, and permission-backed mode presets. Use CoreLang 0.1.3.1 (only documented 0.1.3.3 maintenance), retain interpreter/JIT parity, and prepare kernels off physics ticks. Test latency, loss, jitter, freezes, reordering, and duplication. Replicate a 29/16 × 10/16 × 10/16 player, 16-color palette, and first/rear-third/front-third views. Keep position-driven radius-256 terrain camera-independent and face LOD at projected area ≤2 px². Supply four inspected, labeled Mac captures. Target stable 120 FPS at x200 and the world border as diagnostic only. Pass platform and automated MC-AI-0249 gates; include the accepted CoreCpp scope MC-AI-0056 Runtime executors, MC-AI-0057 Runtime audio, and MC-AI-0240 renderer diagnostics in this snapshot. Release S7, hold the minor open for feedback, and do not start S8.",
-    "evidence": "Sixty-six earlier S7 child tasks were recorded before MC-AI-0301; all 67 child task commits are now reconciled by ai_history collect. The prior exact staged candidate, before MC-AI-0301, passed 382/382 Python tests, the Debug build, 577/578 CTest entries with one intentional skip and zero failures, and RendererSmokeTest 1/1. Four labeled Mac captures were inspected. The macOS package launcher starts one loopback server and exactly one client; 27/27 package tests pass. The adverse-network fixture passed 10/10 scenarios in 130.80 s. The Android Release APK installed on emulator-5556 matched the signed test APK byte-for-byte and launched with terrain in a resumed NativeActivity; SHA-256 0d78d640fdea3fffbf440467d6b22c04b0f70c1d0af1e804bfa1664a50a0c8eb. MC-AI-0301 fixes stale renderer-smoke imported-library caches with CMake --fresh; its focused suite passed 14/14 and host-GUI RendererSmokeTest passed 1/1 in 5.63 s. Restricted-shell Launch Services, process inspection, GUI, and Git-object failures were sandbox artifacts: host Launch Services registers Terminal and iTerm, and host-context smoke/history checks pass. Windows runtime, hosted analysis matrix, and publication remain pending; the FPS target remains unclaimed.",
-    "blocker": "Complete Windows Release runtime acceptance and remaining platform validation; pass the MC-AI-0249 hosted matrix for the exact promotion revision; publish the snapshot artifacts. Do not claim the x200/world-border FPS target without measurement.",
+    "evidence": "Sixty-six earlier S7 child tasks were recorded before MC-AI-0301; all 67 prior child task commits remain reconciled by ai_history collect, with MC-AI-0303/0304 added for final Windows-test portability and Mac stream diagnostics. The full local gate on 2026-10-04 passed the complete Python suite, Debug build, and CTest 583/583 with one documented intentional skip and zero failures; the server-only rebuild plus nested test suite also passed (MinecraftClone.ServerOnlyBuild, 150.93 s). The exact Mac Release radius-256 stream delivered all 205861/205861 tiles with exact membership/payload and movement/removal checks in 47.11 s; stage counters are recorded in MC-AI-0304. Four labeled Mac captures were inspected. The macOS package launcher starts one loopback server and exactly one client; 27/27 package tests pass. The adverse-network fixture passed 10/10 scenarios in 130.80 s. The Android Release APK installed on emulator-5556 matched the signed test APK byte-for-byte and launched with terrain in a resumed NativeActivity; SHA-256 0d78d640fdea3fffbf440467d6b22c04b0f70c1d0af1e804bfa1664a50a0c8eb. MC-AI-0301 fixes stale renderer-smoke imported-library caches with CMake --fresh; its focused suite passed 14/14 and host-GUI RendererSmokeTest passed 1/1 in 5.63 s. Restricted-shell Launch Services, process inspection, GUI, and Git-object failures were sandbox artifacts: host Launch Services registers Terminal and iTerm, and host-context smoke/history checks pass. The full gate's publisher check remains development-allowed because the latest snapshot date is still 26.10.03 and the task checkout is dirty. Exact-candidate Windows fast CI, Windows Release runtime, renderer-smoke candidate gate, hosted platform/sanitizer/static-analysis matrix, and snapshot publication remain pending; the prior Mac hosted slowdown has not been reproduced with telemetry, and the FPS target remains unclaimed.",
+    "blocker": "Before S7 release, run the exact-candidate Windows fast job and Windows Release runtime acceptance; pass MC-AI-0249 on the exact promotion commit (macOS/Windows Debug and Release, ASan/UBSan/TSan, Linux LSan/MSan, Android HWASan/clang-tidy/runtime, and registered static analyzers); pass snapshot candidate/strict checks and renderer-smoke; resolve any recurrence of the historical Mac full-radius slowdown using MC-AI-0304 telemetry; then publish the snapshot artifacts. Do not claim the x200/world-border FPS target without measurement.",
     "owner": "Codex",
     "level": "snapshot",
     "parent": "MC-AI-0033",
@@ -1511,7 +1511,7 @@
     "complexity": "high",
     "created_at": "2026-09-09",
     "resolved_at": "",
-    "resolution_changes": "Implemented the S7 child scope; corrected the package launcher, stabilized production adverse-network freeze coverage, and bounded only the acceptance runner's tile-interest setup. Keep S7 active until exact-candidate, platform, hosted-analysis, and publication gates close; then hold the minor for feedback and do not start S8.",
+    "resolution_changes": "Implemented the S7 child scope; corrected the package launcher, stabilized production adverse-network freeze coverage, and bounded only the acceptance runner's tile-interest setup. The full local Debug/Python/CTest integration gate now passes, and the exact Mac Release full-radius case plus stage diagnostics pass locally. Keep S7 active until exact-candidate, Windows runtime, hosted-analysis, renderer-smoke, and publication gates close; then hold the minor for feedback and do not start S8.",
     "plan": [
       "Complete authoritative movement, immutable permissions, and cross-client acceptance; keep policy compilation outside physics ticks.",
       "Finish player/views, adverse networking, camera-independent terrain/LOD, diagnostics, platform and analysis gates, captures, and S7 publication; then hold the minor for feedback."
@@ -10784,6 +10784,46 @@
     "code_changes": [
       "Windows-portable path, executable discovery, and fake-tool handling in the affected test suites.",
       "Candidate fast CI matrix on Windows as well as Ubuntu; its exact Windows result remains an aggregate S7 gate."
+    ],
+    "baseline_commit": "c5b35c0e143eab2aeedf82ae6adcdfa6c8c621ec",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0304",
+    "title": "Diagnose macOS full-radius terrain stream throughput",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P0",
+    "route": "sol",
+    "milestone": "ED-010-S7",
+    "depends_on": [
+      "MC-AI-0302"
+    ],
+    "acceptance": "On the exact radius-256 Mac Release test path, restore delivery and exact membership/payload validation for all 205,861 height tiles within the existing 90-second stream deadline; do not reduce radius, prune generated interest, weaken the full-radius assertion, or bypass the transport/backpressure contract. Separate the subsequent movement/removal phase onto its own bounded deadline so full-stream timeout cannot create misleading secondary failures. Add focused deterministic coverage for the deadline phases and record stage-level evidence for generation/buffering versus delivery/credit progress.",
+    "evidence": "The exact Release radius-256 GameServerPreviewTest passed 1/1 on macOS: all 205861/205861 height tiles, exact membership and payload checks, and subsequent movement/removal completed in 47.22 s. Hardware concurrency was 12 (8 terrain workers). At 10 s, client receipt was 46731 tiles/2921 batches/2922 credit messages; the server reported queued=0, dispatched=128, worker-pending=96, executor-submitted=32, ready=0, inflight=4, additions=64, credits=4, resident=46635. At 40 s, client receipt was 187049/205861; the same worker-pending/submitted and stream-stage counts were observed. Final client counts were 12868 batches and 12869 successfully queued credit messages. Executor-submitted counts include accepted work not yet collected and do not claim how many jobs were actively executing.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0038",
+    "motivation": "The required Mac Release matrix now streams only 26,153/205,861 tiles in 90 seconds, versus the recorded earlier 52.03-second full pass; movement/removal assertions also reuse the expired stream deadline and fail as a cascade.",
+    "context": "Hosted run 37146581666 attempt 2, Mac Release job 111288077749, log: 2677, 5698, 8712, 11716, 14785, 17856, 20849, 23737, 26153 tiles at 10,20,30,40,50,60,70,80,90 seconds respectively. Source diff from MC-AI-0270 shows four inflight-batch cap and render-radius configurability as relevant changes; native Windows with four cap previously passed in 43.27 seconds. Cause remains to be established, not assumed.",
+    "complexity": "high",
+    "created_at": "2026-10-03",
+    "resolved_at": "2026-10-04",
+    "resolution_changes": "Added test-only worker/stream-stage metrics and separated the full-stream timeout from movement/removal validation without reducing radius or weakening exact tile checks. The exact Mac Release case passes locally in 47.22 seconds; the historical hosted slowdown remains unproven until the exact S7 matrix reruns and is tracked as a parent release gate.",
+    "plan": [
+      "Instrument worker, ready-buffer, delivery-batch, and client-credit progress on the exact Mac Release path. Retain the full-radius and backpressure contracts, separate movement/removal onto its own bounded deadline, and use the exact candidate Mac matrix telemetry to guide any further fix if the hosted failure reproduces."
+    ],
+    "product_changes": [
+      "No product behavior changed; test-only stream telemetry diagnoses platform-specific regressions."
+    ],
+    "code_changes": [
+      "Test-only worker-pool/server-stream metrics and deterministic full-radius/deadline diagnostics in GameServerPreviewTest."
     ],
     "baseline_commit": "c5b35c0e143eab2aeedf82ae6adcdfa6c8c621ec",
     "commits": [],

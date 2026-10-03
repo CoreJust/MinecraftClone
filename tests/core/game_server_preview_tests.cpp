@@ -39,6 +39,8 @@ public:
 
     std::vector<shared::Message> messages;
     uint32_t received_height_tiles = 0U;
+    uint32_t received_delivery_batches = 0U;
+    uint32_t sent_delivery_credit_messages = 0U;
     uint32_t last_acknowledged_input = 0U;
     int32_t last_player_x = 0;
 
@@ -67,22 +69,27 @@ private:
             if (std::holds_alternative<shared::ServerHeightTileMessage>(*message)) {
                 ++received_height_tiles;
             } else if (auto const* const batch = std::get_if<shared::ServerHeightTileBatchMessage>(&*message)) {
+                ++received_delivery_batches;
                 received_height_tiles += static_cast<uint32_t>(batch->tiles.size());
             }
             if (auto const* const descriptor = std::get_if<shared::ServerHeightTileDescriptorMessage>(&*message);
                 descriptor != nullptr && m_starts_deliveries) {
-                static_cast<void>(send(shared::encodeMessage(shared::ClientHeightTileCreditMessage{
+                if (send(shared::encodeMessage(shared::ClientHeightTileCreditMessage{
                     .world_revision = descriptor->world_revision,
                     .delivery_token = 0U,
                     .credits = shared::HEIGHT_TILE_DELIVERY_WINDOW,
-                }), shared::GAME_CHANNEL, core::SendMode{core::SendMode::Reliable}));
+                }), shared::GAME_CHANNEL, core::SendMode{core::SendMode::Reliable})) {
+                    ++sent_delivery_credit_messages;
+                }
             } else if (auto const* const batch = std::get_if<shared::ServerHeightTileBatchMessage>(&*message);
                 batch != nullptr && m_acknowledges_deliveries) {
-                static_cast<void>(send(shared::encodeMessage(shared::ClientHeightTileCreditMessage{
+                if (send(shared::encodeMessage(shared::ClientHeightTileCreditMessage{
                     .world_revision = 1U,
                     .delivery_token = batch->delivery_token,
                     .credits = 1U,
-                }), shared::GAME_CHANNEL, core::SendMode{core::SendMode::Reliable}));
+                }), shared::GAME_CHANNEL, core::SendMode{core::SendMode::Reliable})) {
+                    ++sent_delivery_credit_messages;
+                }
             }
             if (auto const* position = std::get_if<shared::ServerPlayerPositionMessage>(&*message);
                 position != nullptr && position->ch == m_tracked_character) {
@@ -564,7 +571,8 @@ TEST(GameServerPreviewTest, CameraRotationKeepsInterestAndMovementAddsFreshFront
 
 TEST(GameServerPreviewTest, StreamsPlayerCenteredHeightTilesAndRemovesDepartedTiles)
 {
-    static constexpr std::chrono::seconds TIMEOUT{90};
+    static constexpr std::chrono::seconds STREAM_TIMEOUT{90};
+    static constexpr std::chrono::seconds MOVEMENT_TIMEOUT{10};
     static constexpr std::chrono::seconds PROGRESS_INTERVAL{10};
     static constexpr std::chrono::milliseconds POLL_INTERVAL{1};
     static constexpr uint32_t MOVEMENT_INPUT_COUNT = (
@@ -581,29 +589,83 @@ TEST(GameServerPreviewTest, StreamsPlayerCenteredHeightTilesAndRemovesDepartedTi
     );
     uint32_t const expected_height_tiles = static_cast<uint32_t>(expected_interest.keys.size());
 
+    uint32_t const hardware_thread_count = static_cast<uint32_t>(std::thread::hardware_concurrency());
+    auto const server_started_at = std::chrono::steady_clock::now();
+    auto next_server_progress = server_started_at + PROGRESS_INTERVAL;
+    server::GameServer::BenchmarkHooks const hooks{
+        .on_preview_metrics = [server_started_at, &next_server_progress](
+            core::ClientId,
+            server::GameServer::PreviewStreamMetrics const metrics
+        ) {
+            auto const now = std::chrono::steady_clock::now();
+            if (now < next_server_progress) {
+                return;
+            }
+            CORE_INFO(
+                "Server preview at {} ms: queued={}, dispatched={}, worker pending={}, worker submitted={}, "
+                "ready={}, in-flight batches={}, in-flight additions={}, credits={}, resident={}",
+                std::chrono::duration_cast<std::chrono::milliseconds>(now - server_started_at).count(),
+                metrics.queued_tiles,
+                metrics.dispatched_tiles,
+                metrics.pending_worker_jobs,
+                metrics.submitted_worker_jobs,
+                metrics.ready_tiles,
+                metrics.inflight_deliveries,
+                metrics.inflight_additions,
+                metrics.delivery_credits,
+                metrics.resident_tiles
+            );
+            next_server_progress += PROGRESS_INTERVAL;
+        },
+    };
+
+    CORE_INFO(
+        "Full-radius preview worker budget: hardware threads={}, terrain workers={}",
+        hardware_thread_count,
+        server::GameServer::terrainWorkerCount(hardware_thread_count)
+    );
     server::GameServer server{0, {}, shared::WorldMode::Flight};
     std::atomic_bool stop_requested{false};
-    std::thread server_thread{[&server, &stop_requested] {
-        server.run(stop_requested);
+    std::thread server_thread{[&server, &stop_requested, &hooks] {
+        server.run(stop_requested, &hooks);
     }};
     PreviewClient client;
-    ASSERT_TRUE(client.connect(core::Address::localhost(server.port()), TIMEOUT));
-    ASSERT_TRUE(client.send(shared::encodeMessage(shared::JoinRequestMessage{
+    if (!client.connect(core::Address::localhost(server.port()), STREAM_TIMEOUT)) {
+        stop_requested.store(true, std::memory_order_relaxed);
+        server_thread.join();
+        ADD_FAILURE() << "Client failed to connect within " << STREAM_TIMEOUT.count() << " seconds";
+        return;
+    }
+    if (!client.send(shared::encodeMessage(shared::JoinRequestMessage{
         .ch = '@',
         .mode = shared::WorldMode::Flight,
         .wants_previews = true,
-    }), 0, core::SendMode{core::SendMode::Reliable}));
+    }), 0, core::SendMode{core::SendMode::Reliable})) {
+        stop_requested.store(true, std::memory_order_relaxed);
+        server_thread.join();
+        ADD_FAILURE() << "Client failed to join the preview stream";
+        return;
+    }
 
     auto const started_at = std::chrono::steady_clock::now();
-    auto const deadline = started_at + TIMEOUT;
+    auto const stream_deadline = started_at + STREAM_TIMEOUT;
     auto next_progress = started_at + PROGRESS_INTERVAL;
+    uint32_t poll_iterations = 0U;
     while (client.received_height_tiles < expected_height_tiles
-        && std::chrono::steady_clock::now() < deadline) {
+        && std::chrono::steady_clock::now() < stream_deadline) {
         client.poll(POLL_INTERVAL);
+        ++poll_iterations;
         auto const now = std::chrono::steady_clock::now();
         if (now >= next_progress) {
-            CORE_INFO("Full-radius preview: {}/{} tiles after {} ms", client.received_height_tiles,
-                expected_height_tiles, std::chrono::duration_cast<std::chrono::milliseconds>(now - started_at).count());
+            CORE_INFO(
+                "Client preview: {}/{} tiles, {} batches, {} credit messages, {} poll iterations after {} ms",
+                client.received_height_tiles,
+                expected_height_tiles,
+                client.received_delivery_batches,
+                client.sent_delivery_credit_messages,
+                poll_iterations,
+                std::chrono::duration_cast<std::chrono::milliseconds>(now - started_at).count()
+            );
             next_progress += PROGRESS_INTERVAL;
         }
     }
@@ -646,14 +708,27 @@ TEST(GameServerPreviewTest, StreamsPlayerCenteredHeightTilesAndRemovesDepartedTi
             .sequence = sequence,
         }), 0, core::SendMode{core::SendMode::Reliable}) && sent_all_inputs;
     }
+    auto const movement_deadline = std::chrono::steady_clock::now() + MOVEMENT_TIMEOUT;
     while (removalCount(client.messages) == 0U
-        && std::chrono::steady_clock::now() < deadline) {
+        && std::chrono::steady_clock::now() < movement_deadline) {
         client.poll(POLL_INTERVAL);
     }
     bool const received_removal = removalCount(client.messages) > 0U;
     stop_requested.store(true, std::memory_order_relaxed);
     server_thread.join();
 
+    CORE_INFO(
+        "Full-radius preview result: {}/{} tiles, {} batches, {} credit messages, "
+        "{} poll iterations; connected-to-result duration={} ms",
+        client.received_height_tiles,
+        expected_height_tiles,
+        client.received_delivery_batches,
+        client.sent_delivery_credit_messages,
+        poll_iterations,
+        std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now() - started_at
+        ).count()
+    );
     EXPECT_TRUE(received_all_height_tiles) << "received " << client.received_height_tiles
         << " of " << expected_height_tiles;
     EXPECT_EQ(received_keys, expected_keys);

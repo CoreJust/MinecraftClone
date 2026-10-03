@@ -25,9 +25,21 @@ namespace server {
 
 class GameServer final : public core::Server {
 public:
+    struct PreviewStreamMetrics final {
+        uint32_t queued_tiles = 0U;
+        uint32_t dispatched_tiles = 0U;
+        uint32_t pending_worker_jobs = 0U;
+        uint32_t submitted_worker_jobs = 0U;
+        uint32_t ready_tiles = 0U;
+        uint32_t inflight_deliveries = 0U;
+        uint32_t inflight_additions = 0U;
+        uint32_t delivery_credits = 0U;
+        uint32_t resident_tiles = 0U;
+    };
     struct BenchmarkHooks final {
         std::function<void(std::chrono::nanoseconds, uint64_t)> on_tick;
         std::function<void(core::ClientId, uint32_t)> on_preview_buffered;
+        std::function<void(core::ClientId, PreviewStreamMetrics)> on_preview_metrics;
     };
     struct SpawnPoint final {
         char character;
