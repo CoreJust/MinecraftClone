@@ -21,27 +21,6 @@ class CiAcquireTests(unittest.TestCase):
     """Verify immutable pins and the separate shader validation contracts."""
 
     @staticmethod
-    def write_pinned_gmp_port(vcpkg_root: Path, portfile: str | None = None) -> Path:
-        """Create the minimal pinned port layout used by Windows overlay regressions."""
-        source_port = vcpkg_root / "ports" / acquire.GMP_PORT
-        source_port.mkdir(parents=True)
-        (source_port / "portfile.cmake").write_text(
-            portfile
-            or "\n".join(
-                (
-                    "vcpkg_download_distfile(ARCHIVE",
-                    f"    URLS {acquire.GMP_AUTOCONF_OLD_URL}",
-                    f"    SHA512 {acquire.GMP_AUTOCONF_OLD_SHA512}",
-                    ")",
-                    "",
-                ),
-            ),
-            encoding="utf-8",
-        )
-        (source_port / "vcpkg.json").write_text('{"name":"gmp"}\n', encoding="utf-8")
-        return source_port
-
-    @staticmethod
     def write_windows_runtime_archive(archive: Path, loader_path: str | None = None) -> None:
         """Create the versioned Windows runtime layout supplied by LunarG."""
         root = acquire.VULKAN_WINDOWS_RUNTIME["directory"]
@@ -55,8 +34,6 @@ class CiAcquireTests(unittest.TestCase):
         self.assertEqual(acquire.PYTHON_VERSION, "3.12.10")
         self.assertEqual(acquire.VCPKG_COMMIT, "2b65c20fc66eda893aa15a15a453c3cf09500b19")
         self.assertEqual(acquire.GMP_AUTOCONF_OVERLAY_ID, "gmp-autoconf-2.71-4")
-        self.assertEqual(acquire.GMP_AUTOCONF_NEW_URL, "https://repo.msys2.org/msys/x86_64/autoconf2.71-2.71-4-any.pkg.tar.zst")
-        self.assertEqual(acquire.GMP_AUTOCONF_NEW_SHA512, "c93b791eb55893cbe7c425e764074837355fd165deb7b1775f652c8e25d9d1f0cdd4120ab710d56fb859b7df55c4f971eccda7c112448f60615bff8a2dc81166")
         self.assertEqual(acquire.VULKAN_VERSION, "1.4.357.0")
         self.assertEqual(acquire.VULKAN_DOWNLOADS["windows"]["url"], "https://sdk.lunarg.com/sdk/download/1.4.357.0/windows/vulkan_sdk.exe")
         self.assertEqual(acquire.VULKAN_DOWNLOADS["macos"]["url"], "https://sdk.lunarg.com/sdk/download/1.4.357.0/mac/vulkan_sdk.zip")
@@ -68,6 +45,23 @@ class CiAcquireTests(unittest.TestCase):
         self.assertEqual(acquire.ANDROID_COMMAND_LINE_TOOLS["sha256"], "4e4c464f145a7512b57d088ac6c278c03c9eea610886b35a5e0804e74eedf583")
         self.assertEqual(acquire.NINJA_DOWNLOADS["windows"]["sha256"], "26a40fa8595694dec2fad4911e62d29e10525d2133c9a4230b66397774ae25bf")
         self.assertEqual(acquire.NINJA_DOWNLOADS["macos"]["sha256"], "da7797794153629aca5570ef7c813342d0be214ba84632af886856e8f0063dd9")
+
+    def test_project_vcpkg_configuration_selects_the_verified_gmp_overlay(self):
+        repository = Path(__file__).resolve().parents[2]
+        configuration = json.loads((repository / "vcpkg-configuration.json").read_text(encoding="utf-8"))
+        self.assertEqual(configuration["overlay-ports"], ["script/ci/vcpkg-overlays"])
+        overlay_root = repository / configuration["overlay-ports"][0]
+        port = overlay_root / "gmp"
+        manifest = json.loads((port / "vcpkg.json").read_text(encoding="utf-8"))
+        portfile = (port / "portfile.cmake").read_text(encoding="utf-8")
+
+        self.assertEqual(manifest["name"], "gmp")
+        self.assertIn("https://repo.msys2.org/msys/x86_64/autoconf2.71-2.71-4-any.pkg.tar.zst", portfile)
+        self.assertIn(
+            "c93b791eb55893cbe7c425e764074837355fd165deb7b1775f652c8e25d9d1f0cdd4120ab710d56fb859b7df55c4f971eccda7c112448f60615bff8a2dc81166",
+            portfile,
+        )
+        self.assertNotIn("autoconf2.71-2.71-3-any.pkg.tar.zst", portfile)
 
     def test_install_ninja_uses_hash_verified_upstream_archive(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -254,9 +248,6 @@ class CiAcquireTests(unittest.TestCase):
                 executable = vcpkg_root / ("vcpkg.exe" if os.name == "nt" else "vcpkg")
                 executable.touch()
                 installed_root = root / "vcpkg-installed"
-                if platform_name == "windows":
-                    self.write_pinned_gmp_port(vcpkg_root)
-
                 def install(command):
                     installed_root.mkdir()
                     return ""
@@ -274,8 +265,6 @@ class CiAcquireTests(unittest.TestCase):
                     f"--x-manifest-root={repository}",
                     f"--x-install-root={installed_root}",
                 ]
-                if platform_name == "windows":
-                    command.append(f"--overlay-ports={installed_root.parent / 'vcpkg-overlays'}")
                 if platform_name == "linux-analysis":
                     command.append(f"--overlay-triplets={Path(acquire.__file__).resolve().parent / 'vcpkg-triplets'}")
                 if platform_name == "android-hwasan":
@@ -283,37 +272,6 @@ class CiAcquireTests(unittest.TestCase):
                 self.assertEqual(result, installed_root)
                 run.assert_called_once_with(command)
                 write_env.assert_called_once_with("VCPKG_INSTALLED_DIR", str(installed_root))
-
-    def test_windows_gmp_overlay_copies_pinned_port_and_patches_only_autoconf_artifact(self):
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            vcpkg_root = root / "vcpkg"
-            source_port = self.write_pinned_gmp_port(vcpkg_root)
-            source_portfile = source_port / "portfile.cmake"
-            original = source_portfile.read_text(encoding="utf-8")
-            installed_root = root / "vcpkg-installed"
-
-            overlay_root = acquire.install_windows_gmp_overlay(vcpkg_root, installed_root)
-
-            patched = (overlay_root / acquire.GMP_PORT / "portfile.cmake").read_text(encoding="utf-8")
-            self.assertEqual(source_portfile.read_text(encoding="utf-8"), original)
-            self.assertEqual(
-                patched,
-                original.replace(acquire.GMP_AUTOCONF_OLD_URL, acquire.GMP_AUTOCONF_NEW_URL).replace(
-                    acquire.GMP_AUTOCONF_OLD_SHA512,
-                    acquire.GMP_AUTOCONF_NEW_SHA512,
-                ),
-            )
-            self.assertEqual((overlay_root / acquire.GMP_PORT / "vcpkg.json").read_text(encoding="utf-8"), '{"name":"gmp"}\n')
-
-    def test_windows_gmp_overlay_rejects_unexpected_pinned_port(self):
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            vcpkg_root = root / "vcpkg"
-            self.write_pinned_gmp_port(vcpkg_root, "URLS https://example.test/autoconf.pkg.tar.zst\n")
-
-            with self.assertRaisesRegex(acquire.CiError, "autoconf URL does not match"):
-                acquire.install_windows_gmp_overlay(vcpkg_root, root / "vcpkg-installed")
 
     def test_install_private_dependencies_passes_exact_platform_component_closure(self):
         common_arguments = set(acquire.CORECPP_COMMON_BUILD_ARGUMENTS)

@@ -1,1 +1,4 @@
 * text=auto eol=lf
+
+# Preserve whitespace that is part of the vendored GMP patch payloads.
+script/ci/vcpkg-overlays/gmp/*.patch whitespace=-blank-at-eol,-space-before-tab

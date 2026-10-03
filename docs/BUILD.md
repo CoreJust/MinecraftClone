@@ -1,6 +1,6 @@
 # Build and verification
 
-Supported application platforms: Windows, macOS, and arm64 Android. Desktop builds require C++23, CMake **3.25+** (preset schema 6), Ninja, vcpkg (`VCPKG_ROOT`), Python 3.12+ for development checks, and a Vulkan SDK with loader/headers/`glslc`. Android builds use the Gradle wrapper, Android SDK API 35, NDK **27.0.12077973**, bundled CMake 3.30.5, Java 21, and vcpkg's pinned builtin `arm64-android` triplet at API floor 28. Text checkouts use LF through `.gitattributes`, keeping hooks and source hashes consistent across platforms. Dependencies are pinned by [vcpkg-configuration.json](../vcpkg-configuration.json); packages are in [vcpkg.json](../vcpkg.json).
+Supported application platforms: Windows, macOS, and arm64 Android. Desktop builds require C++23, CMake **3.25+** (preset schema 6), Ninja, vcpkg (`VCPKG_ROOT`), Python 3.12+ for development checks, and a Vulkan SDK with loader/headers/`glslc`. Android builds use the Gradle wrapper, Android SDK API 35, NDK **27.0.12077973**, bundled CMake 3.30.5, Java 21, and vcpkg's pinned builtin `arm64-android` triplet at API floor 28. Text checkouts use LF through `.gitattributes`, keeping hooks and source hashes consistent across platforms. [Configuration](../vcpkg-configuration.json) pins dependencies and selects the Windows GMP overlay; [manifest](../vcpkg.json) lists packages.
 
 ```sh
 python3 script/ai_setup.py
@@ -56,7 +56,7 @@ Set `VULKAN_SDK` to the SDK platform directory if CMake cannot find it. The SDK'
 
 ## Hosted desktop CI
 
-CI builds Debug/Release on `macos-15` arm64 and `windows-2022` with pinned tools. macOS installs autotools for GMP/MPFR. Windows uses the pinned GMP overlay, VS 2022 x64, and Vulkan runtime ZIP/license. CoreLang disables legacy Script; Ninja collects all independent compiler failures. CI restores binary caches and saves dependencies before downstream builds. Android retains nonfatal aggregate-initializer warnings. Jobs verify builds, tests, shaders, packages, checksums, and exclusions, then upload logs/toolchain metadata. Hosted `MC_ENABLE_RENDERER_SMOKE=OFF` provides no GPU acceptance; artifacts need separate runtime checks.
+CI builds Debug/Release on `macos-15` arm64 and `windows-2022` with pinned tools. macOS installs autotools for GMP/MPFR. Windows uses the project-configured GMP overlay, VS 2022 x64, and Vulkan runtime ZIP/license. CoreLang disables legacy Script; Ninja collects all independent compiler failures. CI restores binary caches and saves dependencies before downstream builds. Android retains nonfatal aggregate-initializer warnings. Jobs verify builds, tests, shaders, packages, checksums, and exclusions, then upload logs/toolchain metadata. Hosted `MC_ENABLE_RENDERER_SMOKE=OFF` provides no GPU acceptance; artifacts need separate runtime checks.
 
 The renderer requests Vulkan 1.2 and requires dynamic rendering and synchronization2 extensions/features; maintenance4 is not a renderer requirement. Mesh shaders target Vulkan 1.3. Use a Vulkan 1.3-capable validation baseline and exercise the vertex fallback. A lower requested API number does not establish support for every Vulkan 1.2 driver. Vulkan 1.4 remains a project aspiration.
 
