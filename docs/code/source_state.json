@@ -51,11 +51,11 @@
         "tests/android/input_state_tests.cpp",
         "tests/android/input_tests.cpp"
       ],
-      "sources_sha256": "2b687ad84a33f16c0d11da7a3aecddae4c24023be07deef8ebceb5c0ae4821c1"
+      "sources_sha256": "73da350a73e1e90f0343cc226f6e26716bf08cb1514de39fd755ca894250ddb9"
     },
     {
       "guide": "docs/BUILD.md",
-      "guide_sha256": "d027cf736479ea7db931109360fed0b141fa9a78635095a46ba63e42bedb4aaf",
+      "guide_sha256": "4cd1cf7cb423a88f871917f83d596cdd3a891a60427debcb413324584f42fc12",
       "id": "build",
       "sources": [
         ".agents/skills/backlog/SKILL.md",
@@ -161,7 +161,7 @@
         "vcpkg-configuration.json",
         "vcpkg.json"
       ],
-      "sources_sha256": "676535b93a2422be92e056b8046a2083098ff41bfb293ef9b0fc11a816a73688"
+      "sources_sha256": "cf624e39d557fc1918ff0c683f475599a38126ca8ff20ad1b4eb15a931b77f80"
     },
     {
       "guide": "docs/code/CORE.md",
@@ -223,6 +223,7 @@
         "src/client/include/client/PlayerClient.hpp",
         "src/client/include/client/PlayerPresentation.hpp",
         "src/client/include/client/PlayerPreviewLod.hpp",
+        "src/client/include/client/PreviewMeshWorkQueue.hpp",
         "src/client/include/client/PreviewMeshing.hpp",
         "src/client/include/client/PreviewResidency.hpp",
         "src/main.cpp",
@@ -284,7 +285,7 @@
         "tests/core/world_generation_scheduler_tests.cpp",
         "tests/core/world_generation_tests.cpp"
       ],
-      "sources_sha256": "92a9256e7b39af35f89f518bb6a2f29ca704170a4bcf4c2d2fcb5aa8feb9be5a"
+      "sources_sha256": "069f6b7ccf447a9e5bfb720c0cf2c65963c9ff9c6b851dc7ebb538592b3df488"
     },
     {
       "guide": "docs/code/RENDERING.md",
@@ -348,6 +349,7 @@
         "tests/client/player_client_reset_tests.cpp",
         "tests/client/player_presentation_tests.cpp",
         "tests/client/player_preview_lod_tests.cpp",
+        "tests/client/preview_mesh_work_queue_tests.cpp",
         "tests/client/preview_meshing_tests.cpp",
         "tests/client/renderer_geometry_tests.cpp",
         "tests/client/renderer_golden_tests.cpp",
@@ -363,7 +365,7 @@
         "tests/testsupport/include/testsupport/AdverseTransport.hpp",
         "tests/testsupport/include/testsupport/ImageComparison.hpp"
       ],
-      "sources_sha256": "1b1111482e4341e86f1031fd753514281134e014a3720d11bf6c794fa9f6df02"
+      "sources_sha256": "09edf50e816a9407516a74363cc52fc2297ae7d987e10d45c8a53e5abf01315e"
     }
   ],
   "version": 1

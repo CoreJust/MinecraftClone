@@ -1,6 +1,6 @@
 # Build and verification
 
-Supported application platforms: Windows, macOS, and arm64 Android. Desktop builds require C++23, CMake **3.25+** (preset schema 6), Ninja, vcpkg (`VCPKG_ROOT`), Python 3.12+ for development checks, and a Vulkan SDK with loader/headers/`glslc`. Android builds use the Gradle wrapper, Android SDK API 35, NDK **27.0.12077973**, bundled CMake 3.30.5, Java 21, and vcpkg's pinned builtin `arm64-android` triplet at API floor 28. Text checkouts use LF through `.gitattributes`, keeping hooks and source hashes consistent across platforms. [Configuration](../vcpkg-configuration.json) pins dependencies and selects the Windows GMP overlay; [manifest](../vcpkg.json) lists packages.
+Supported application platforms: Windows, macOS, and arm64 Android. Desktop builds require C++23, CMake **3.25+** (preset schema 6), Ninja, vcpkg (`VCPKG_ROOT`), Python 3.12+ for development checks, and a Vulkan SDK with loader/headers/`glslc`. Android uses the Gradle wrapper, Android SDK API 35, NDK **27.0.12077973**, bundled CMake 3.30.5, Java 21, and vcpkg's builtin `arm64-android` triplet (API 28 floor). `.gitattributes` enforces LF. [vcpkg configuration](../vcpkg-configuration.json) pins dependencies and the Windows GMP overlay; [manifest](../vcpkg.json) lists packages.
 
 ```sh
 python3 script/ai_setup.py
@@ -24,16 +24,29 @@ See [runtime acceptance](ACCEPTANCE.md) for scenario, benchmark, and capture com
 
 ## Android debug APK
 
-Set `ANDROID_SDK_ROOT`, Java 21 `JAVA_HOME`, and `VCPKG_ROOT`; keep host paths untracked.
+Set Android SDK/NDK, Java 21, vcpkg, and pinned Android CoreCpp/CoreProject2026
+paths as below; vcpkg's compiler probe requires `ANDROID_NDK_HOME`.
 
 ```sh
 export ANDROID_SDK_ROOT=/path/to/android-sdk
 export JAVA_HOME=/path/to/java-21
 export VCPKG_ROOT=/path/to/vcpkg
-./android/gradlew :app:assembleDebug
+export ANDROID_NDK_HOME="$ANDROID_SDK_ROOT/ndk/27.0.12077973"
+export MC_CMAKE_PREFIX_PATH=/path/to/android-dependency-prefix
+export CORECPP_DIR="$MC_CMAKE_PREFIX_PATH/lib/cmake/CoreCpp"
+export COREPROJECT2026_DIR="$MC_CMAKE_PREFIX_PATH/lib/cmake/CoreProject2026"
+test -f "$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake"
+test -f "$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake"
+test -f "$CORECPP_DIR/CoreCppConfig.cmake"
+test -f "$COREPROJECT2026_DIR/CoreProject2026Config.cmake"
+./android/gradlew \
+    -PcmakePrefixPath="$MC_CMAKE_PREFIX_PATH" \
+    -PcoreCppDir="$CORECPP_DIR" \
+    -PcoreProjectDir="$COREPROJECT2026_DIR" \
+    :app:assembleDebug
 ```
 
-The result is `android/app/build/outputs/apk/debug/app-debug.apk`: arm64-v8a, API 28 minimum, development-signed only. Gradle derives its version name/code from `PROJECT_VERSION`, including the snapshot index.
+The APK is arm64-v8a, API 28 minimum, and development-signed; its version derives from `PROJECT_VERSION`.
 
 `assembleRelease` selects native `Release` (`-O3 -DNDEBUG`) and stages HUD
 licenses before lint; signing is unchanged.

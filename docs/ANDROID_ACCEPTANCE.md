@@ -112,12 +112,13 @@ ReleaseClean AVD, then uninstall only `com.corejust.minecraftclone` from that
 serial before reinstalling. This resets app data only in the disposable test
 instance; never do it on an unrelated emulator or physical device.
 
-S7 Android runtime acceptance covers NativeActivity lifecycle and network
-connectivity. It does not establish streamed-terrain visual acceptance:
-`AndroidPlayerClient` currently renders the legacy canonical chunk and does
-not publish the streamed height-tile meshes. A sky-only post-join frame is
-therefore a known Android rendering limitation, not a successful terrain
-visual check.
+S7 Android runtime acceptance covers NativeActivity lifecycle, network
+connectivity, and streamed terrain rendering. After the client joins, wait for
+height tiles to arrive and verify a non-sky terrain view in the emulator. The
+Android client uses the same projected-area LOD and seam-aware tile mesher as
+desktop, keeps the renderer's tile interest tied to player position, and
+applies the negotiated render distance to the camera far plane; a sky-only
+post-join frame is a failed terrain check.
 
 An `am start` success message or a process ID alone is not launch evidence.
 The guard’s successful JSON receipt requires `NativeActivity` to be top-resumed

@@ -147,6 +147,23 @@ PlayerPreviewInterestDelta playerPreviewInterestDelta(
     return result;
 }
 
+bool playerPreviewTileWithinInterest(
+    shared::HeightTileKey const center,
+    shared::HeightTileKey const key,
+    uint32_t const radius
+)
+{
+    ASSERT(shared::isValidHeightTileInterestRadius(radius), "invalid render distance");
+    shared::HeightTileKey const normalized_center = shared::normalizeHeightTileKey(center);
+    shared::HeightTileKey const normalized_key = shared::normalizeHeightTileKey(key);
+    int32_t const dx = shortestDelta(normalized_center.x, normalized_key.x);
+    int32_t const dy = shortestDelta(normalized_center.y, normalized_key.y);
+    int64_t const distance_squared = static_cast<int64_t>(dx) * dx
+        + static_cast<int64_t>(dy) * dy;
+    int64_t const radius_squared = static_cast<int64_t>(radius) * radius;
+    return distance_squared <= radius_squared;
+}
+
 void PlayerPreviewLod::clear() noexcept
 {
     m_buckets.clear();

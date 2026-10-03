@@ -23,6 +23,13 @@ PlayerPreviewInterestDelta playerPreviewInterestDelta(
     uint32_t radius = shared::HEIGHT_TILE_INTEREST_RADIUS
 );
 
+[[nodiscard]]
+bool playerPreviewTileWithinInterest(
+    shared::HeightTileKey center,
+    shared::HeightTileKey key,
+    uint32_t radius
+);
+
 struct PlayerPreviewLodRefresh final {
     std::vector<shared::HeightTileKey> changed_keys;
     uint32_t classified_buckets = 0U;

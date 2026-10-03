@@ -8,6 +8,7 @@ target_sources(mc
     DepthFormat.cpp
         FrameScheduler.cpp
         GameClient.cpp
+        PlayerPreviewLod.cpp
         PlayerPresentation.cpp
         render/DebugHud.cpp
         render/GuiRenderer.cpp
@@ -22,7 +23,6 @@ if(NOT ANDROID)
     target_sources(mc
         PRIVATE
             PlayerClient.cpp
-            PlayerPreviewLod.cpp
             render/InstalledShaderAssets.cpp
     )
 endif()
