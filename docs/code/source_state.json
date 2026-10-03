@@ -104,6 +104,7 @@
         "script/ai_run.py",
         "script/ai_setup.py",
         "script/ai_tasks.py",
+        "script/android_pair_playtest.py",
         "script/android_playtest.py",
         "script/check_options.py",
         "script/checks_common.py",
@@ -133,6 +134,7 @@
         "script/tests/test_ai_tasks.py",
         "script/tests/test_analysis_presets.py",
         "script/tests/test_android_clang_tidy.py",
+        "script/tests/test_android_pair_playtest.py",
         "script/tests/test_android_playtest.py",
         "script/tests/test_android_shader_assets.py",
         "script/tests/test_build_snapshot.py",
@@ -159,7 +161,7 @@
         "vcpkg-configuration.json",
         "vcpkg.json"
       ],
-      "sources_sha256": "86970821ef06a103082f7e10d729a1ba379be83a34c591fe3441e307b90f0b73"
+      "sources_sha256": "c8b121638cb05320fd6b129b9fa4a945364d8033f9ec1de351f3176ed1bb7485"
     },
     {
       "guide": "docs/code/CORE.md",

@@ -47,30 +47,43 @@ launching. Use `"$adb" devices -l` to discover the serial, verify
 pass that exact serial to every ADB command.
 Before launch, require `sys.boot_completed=1`, `pm path android` to return the
 framework APK, `dumpsys -l` to include `package` and `activity`, and every
-`adb-agent doctor` subcheck to pass. Then use the repository launch guard as
-the sole activity-launch entry point:
+`adb-agent doctor` subcheck to pass. Android's game client connects to the host
+at `10.0.2.2:20040`; launching only the client leaves it waiting in the sky.
+Build and launch the optimized host and guarded client together from the
+repository root:
 
 ```sh
+cmake --preset release
+cmake --build --preset release
 serial=emulator-5556 # replace with the verified serial for the S7 AVD
 adb-agent doctor -d "$serial" --json
-python3 script/android_playtest.py --serial "$serial"
+python3 script/android_pair_playtest.py --serial "$serial"
 ```
 
-The guard takes a per-user, per-AVD operating-system lock across the whole
-check-and-start sequence. Concurrent invocations wait for the lock, then repeat
-device, framework, process and activity checks before deciding what to do; the
-second invocation therefore reuses the activity started by the first instead
-of racing another `am start`. The OS releases the lock if the launcher exits
-unexpectedly; an unlocked lock file may remain in the temporary directory.
-Within the lock, the guard checks the AVD name, requires all listed devices to
-be ready, scans each one for an existing game process, and refuses
+The paired runner uses only `build/release/mc_main` (or `mc_main.exe` on
+Windows), refuses a missing Release executable or occupied host UDP port, and
+starts one loopback server at render distance 72. It waits for the port to bind
+before calling the client guard exactly once, then stays attached to the host
+server for the duration of the playtest. Leave the command running while
+playing; Ctrl-C stops only the server process that command started. If startup
+fails, it reports the reason and cleans up only that same child process. Never
+kill an unknown process that already owns port 20040.
+
+The client guard takes a per-user, per-AVD operating-system lock across the
+whole check-and-start sequence. Concurrent invocations wait for the lock, then
+repeat device, framework, process and activity checks before deciding what to
+do; the second invocation therefore reuses the activity started by the first
+instead of racing another `am start`. The OS releases the lock if the launcher
+exits unexpectedly; an unlocked lock file may remain in the temporary
+directory. Within the lock, the guard checks the AVD name, requires all listed
+devices to be ready, scans each one for an existing game process, and refuses
 cross-device duplicates. It reuses a top-resumed client, brings an existing
 background game task forward without creating another activity, or performs
 one start when only a leftover process remains without a game activity record.
 It waits for the same `NativeActivity` to be top-resumed and in `RESUMED` state.
-Do not run a second `app launch` or `am start` after the guard succeeds. If it
-refuses, resolve the reported device state rather than retrying launch commands
-blindly.
+Do not start another runner, or run a second `app launch` or `am start`, after
+the paired command succeeds. If it refuses, resolve the reported device state
+rather than retrying launch commands blindly.
 
 Release APKs are unsigned. For emulator-only installation, align and sign a
 temporary copy with the stable local Android debug keystore; do not sign or
