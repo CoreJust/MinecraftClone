@@ -32,6 +32,30 @@ class WorkflowContextTests(unittest.TestCase):
         self.assertIn("_[0-9]{2}\\.[0-9]{2}\\.[0-9]{2}$'; then", workflow)
         self.assertNotIn('refs/remotes/origin/ai-main \\\n              then', workflow)
 
+    def test_snapshot_push_waits_for_exact_analysis_but_other_events_stay_strict(self):
+        workflow = WORKFLOWS[1].read_text(encoding="utf-8")
+        source_job = workflow.split("\n  source:", maxsplit=1)[1].split("\n  desktop:", maxsplit=1)[0]
+        wait_step = source_job.split("      - name: Wait for successful S7 analysis matrix", maxsplit=1)[1].split(
+            "      - name:", maxsplit=1
+        )[0]
+        strict_step = source_job.split(
+            "      - name: Require a successful S7 analysis matrix for the exact source", maxsplit=1
+        )[1].split("      - name:", maxsplit=1)[0]
+
+        self.assertIn(
+            "if: steps.trust.outputs.trusted_dependency_source == 'true' "
+            "&& github.event_name == 'push' && github.ref == 'refs/heads/ai-main'",
+            wait_step,
+        )
+        self.assertIn("--wait --timeout-seconds 21000 --poll-interval-seconds 30", wait_step)
+        self.assertIn("timeout-minutes: 360", source_job)
+        self.assertIn(
+            "if: steps.trust.outputs.trusted_dependency_source == 'true' "
+            "&& (github.event_name != 'push' || github.ref != 'refs/heads/ai-main')",
+            strict_step,
+        )
+        self.assertNotIn("--wait", strict_step)
+
     def test_workflows_keep_runner_context_out_of_job_level_env(self):
         for workflow_path in WORKFLOWS:
             lines = workflow_path.read_text(encoding="utf-8").splitlines()

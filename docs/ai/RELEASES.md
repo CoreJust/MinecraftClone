@@ -31,6 +31,10 @@ commit/tree, and strict tag checks require its successful exact-commit result.
 Missing tools, devices, results, or receipts fail closed. Linux is a tests-only
 sanitizer host, not a product target.
 
+On `ai-main` pushes, artifact packaging logs 30-second polls for that exact
+matrix receipt (350-minute cap); tag and manual-dispatch builds verify
+immediately.
+
 ## Publish
 
 Use [the version/branch procedure](../VERSION_CONVENTION.md). Finalization and `ai-main` promotion commits use the aggregate task and need Luna review. Final minor/major publication also needs Terra review. Validate the merge candidate before committing; push the exact promotion commit for hosted analysis, then require strict checks and its exact receipt before tagging. Failed validation blocks promotion; never fabricate receipts or release dates.

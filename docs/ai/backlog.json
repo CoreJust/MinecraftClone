@@ -10506,5 +10506,44 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0297",
+    "title": "Wait for the exact S7 analysis matrix before packaging snapshot artifacts",
+    "kind": "chore",
+    "status": "done",
+    "priority": "P1",
+    "route": "luna",
+    "milestone": "ED-010-S7",
+    "depends_on": [],
+    "acceptance": "On ai-main push, packaging proceeds only after the successful sanitizer/static-analysis receipt validates for the exact pushed commit. Missing receipts are polled with progress output and a bounded timeout only after the check app, job URL, and workflow ID/path/head SHA/event match the exact GitHub Actions source; malformed or mismatched provenance fails immediately. A completed failure or timeout fails closed. Tag and workflow-dispatch paths retain immediate exact-source validation. Automated tests cover pending-then-success, invalid pending provenance, failure, timeout, and workflow routing; focused tests and ai_check.py --fast pass.",
+    "evidence": "Focused verifier/workflow suites passed 36/36; the fast-gate Python suite passed 393/393. Tests cover pending then success, immediate rejection of a pending check from another workflow, fail-fast terminal and API errors, bounded timeout with progress output, and strict routing for non-ai-main-push triggers. python3 script/ai_check.py --fast passed docs, backlog, current-plan, and whitespace checks. Exact hosted candidate-matrix and artifact execution remain part of aggregate S7 release acceptance.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0038",
+    "motivation": "The snapshot-artifacts workflow starts on the same ai-main push as the sanitizer matrix, then immediately queries for its exact-commit receipt. In run 36830663124, artifact processing failed at 07:30:16Z, while the associated matrix run 36830663189 completed at 07:31:29Z. Packaging must wait for the actual gate result instead of racing it.",
+    "context": "GitHub workflow_run is not available for this repository workflow without adding the workflow file to default main; the project keeps main on the original line. The active S7 candidate already contains the exact private-dependency retrieval and Linux Ninja pin corrections for prior matrix producer failures. This task addresses only the consumer-before-producer race and preserves fail-closed exact-source receipt validation.",
+    "complexity": "medium",
+    "created_at": "2026-10-03",
+    "resolved_at": "2026-10-03",
+    "resolution_changes": "Added bounded, progress-logged polling for the exact analysis matrix on the same ai-main push. The verifier validates check and workflow provenance before treating any check as pending; malformed or mismatched source metadata and terminal failures stop immediately. Polling is capped below the source-job timeout; tag and manual-dispatch builds retain strict immediate verification.",
+    "plan": [
+      "Clarify acceptance and implementation steps.",
+      "Add bounded polling only for the same-push ai-main packaging gate; keep strict one-shot checks for tags and manual dispatch; test gate states and workflow routing."
+    ],
+    "product_changes": [
+      "No product behavior changed; only release automation sequencing changed."
+    ],
+    "code_changes": [
+      "script/ci/verify_analysis_gate.py gained a fail-closed bounded wait mode; snapshot-artifacts.yml uses it only for ai-main pushes. Release policy and regression tests document the contract."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]
