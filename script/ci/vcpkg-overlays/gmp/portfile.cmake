@@ -85,9 +85,14 @@ if(VCPKG_HOST_IS_WINDOWS)
     # dumpbin detection fails with autoconf 2.72
     set(ENV{WANT_AUTOCONF} 2.71)
 endif()
+set(build_triplet_options)
+if(VCPKG_TARGET_IS_ANDROID)
+    list(APPEND build_triplet_options BUILD_TRIPLET "--host=aarch64-linux-android")
+endif()
 vcpkg_configure_make(
     SOURCE_PATH "${SOURCE_PATH}"
     AUTOCONFIG
+    ${build_triplet_options}
     ADDITIONAL_MSYS_PACKAGES
         DIRECT_PACKAGES
             "https://repo.msys2.org/msys/x86_64/autoconf2.71-2.71-4-any.pkg.tar.zst"

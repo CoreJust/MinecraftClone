@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import os
 import platform
+import re
 import shutil
 import subprocess
 import sys
@@ -14,8 +15,8 @@ from typing import Sequence
 
 
 LLVM_REPOSITORY = "https://github.com/llvm/llvm-project.git"
-LLVM_TAG = "llvmorg-22.1.7"
-LLVM_COMMIT = "a255c1ed36a1d06f79bd2633ba9f8d900153007c"
+LLVM_TAG = "llvmorg-18.1.3"
+LLVM_COMMIT = "c13b7485b87909fcf739f62cfa382b55407433c0"
 
 
 class ToolchainError(RuntimeError):
@@ -51,6 +52,20 @@ def resolve_tool(value: str, name: str) -> str:
     if resolved is None:
         raise ToolchainError(f"required {name} compiler is not on PATH: {value}")
     return str(Path(resolved).resolve())
+
+
+def require_compatible_clang(output: str, compiler: str) -> None:
+    source_match = re.match(r"llvmorg-(\d+)\.", LLVM_TAG)
+    compiler_match = re.search(r"clang version (\d+)\.", output, re.IGNORECASE)
+    if source_match is None:
+        raise ToolchainError(f"cannot determine the pinned LLVM major version from {LLVM_TAG}")
+    if compiler_match is None:
+        raise ToolchainError(f"selected compiler did not identify itself as Clang: {compiler}")
+    if compiler_match.group(1) != source_match.group(1):
+        raise ToolchainError(
+            f"Clang/LLVM major version mismatch for {compiler}: "
+            f"Clang {compiler_match.group(1)}, LLVM {source_match.group(1)}"
+        )
 
 
 def configure_command(source: Path, build: Path, prefix: Path, clang: str, clangxx: str) -> list[str]:
@@ -200,10 +215,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                 raise ToolchainError(f"refusing to reuse existing {name} directory: {directory}")
         clang = resolve_tool(args.clang, "Clang C")
         clangxx = resolve_tool(args.clangxx, "Clang C++")
-        if "clang version" not in run([clang, "--version"]).lower():
-            raise ToolchainError("selected C compiler did not identify itself as Clang")
-        if "clang version" not in run([clangxx, "--version"]).lower():
-            raise ToolchainError("selected C++ compiler did not identify itself as Clang")
+        require_compatible_clang(run([clang, "--version"]), clang)
+        require_compatible_clang(run([clangxx, "--version"]), clangxx)
 
         args.source_root.parent.mkdir(parents=True, exist_ok=True)
         args.build_root.parent.mkdir(parents=True, exist_ok=True)

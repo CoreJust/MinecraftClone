@@ -140,6 +140,19 @@ class WorkflowContextTests(unittest.TestCase):
             linux_analysis,
         )
 
+    def test_linux_sanitizer_bootstrap_pins_compatible_clang_and_glfw_headers(self):
+        workflow = WORKFLOWS[0].read_text(encoding="utf-8")
+        linux_analysis = workflow.split("\n  linux-analysis:", maxsplit=1)[1].split(
+            "\n  android-hwasan-build:", maxsplit=1
+        )[0]
+        self.assertIn("CC: clang-18", linux_analysis)
+        self.assertIn("CXX: clang++-18", linux_analysis)
+        self.assertIn("sudo apt-get install --no-install-recommends --yes clang-18", linux_analysis)
+        for package in ("libx11-dev", "libxrandr-dev", "libxinerama-dev", "libxcursor-dev", "libxi-dev"):
+            with self.subTest(package=package):
+                self.assertIn(package, linux_analysis)
+        self.assertIn('--clang "$CC" --clangxx "$CXX"', linux_analysis)
+
     def test_private_prefixes_and_manifest_mode_are_explicit(self):
         for workflow_path in WORKFLOWS:
             workflow = workflow_path.read_text(encoding="utf-8")
