@@ -11054,5 +11054,41 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0323",
+    "title": "Wait for loopback echo before stopping its test server",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P1",
+    "route": "luna",
+    "milestone": "ED-010-S7",
+    "depends_on": [],
+    "acceptance": "Make the single-channel loopback test wait for its exact echoed payload before stopping the server, using the existing bounded poll helper; pass the focused network suite and commit fast gate. Production transport behavior must remain unchanged.",
+    "evidence": "Rebuilt mc_tests from this exact checkout. Focused CTest NetClientServer suite passed 17/17 in 5.50 seconds, including SendReceiveSingleChannelTest (#97) in 0.15 seconds. The commit fast gate remains enforced by the installed local hook.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0038",
+    "motivation": "The S7 Windows Debug test run lost a valid loopback reply because the fixture performed one 10 ms client poll and immediately stopped the server.",
+    "context": "The server thread receives the request and enqueues the echo asynchronously. TestClient::pollAndWait polls the client once for DEFAULT_TIMEOUT (10 ms). In SendReceiveSingleChannelTest, after send, a single poll is not an event-completion contract; under scheduling delay, the assertion races the response. The suite already provides pollUntil with a bounded one-second deadline.",
+    "complexity": "low",
+    "created_at": "2026-10-04",
+    "resolved_at": "2026-10-04",
+    "resolution_changes": "Changed the single-channel loopback fixture to poll until the exact echoed payload arrives before joining the server. No production transport code changed.",
+    "plan": [
+      "Replace the one-shot poll with a predicate wait for client_received == msg, retain exact send/receive assertions, run the focused test suite, then the batch gate."
+    ],
+    "product_changes": [],
+    "code_changes": [
+      "Replace a one-shot 10 ms poll in the loopback echo test with the existing bounded predicate wait for the exact response."
+    ],
+    "baseline_commit": "a4720b8391967f1c4676eaf2164c643307540e1c",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]

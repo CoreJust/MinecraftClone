@@ -195,7 +195,7 @@
         "tests/core/vector_utils_tests.cpp",
         "tests/core/version_tests.cpp"
       ],
-      "sources_sha256": "031a7f6f67061fd7cf345a11d68e60f19190fd8b79526d830b4bc7c88d36ba0b"
+      "sources_sha256": "1de99c3f10f2b326fe729446b6237d509f4842f89845ad0a04fd9f18a9234c24"
     },
     {
       "guide": "docs/code/GAMEPLAY.md",
