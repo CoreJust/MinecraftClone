@@ -11018,5 +11018,41 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0322",
+    "title": "Preserve distinct MSan C and C++ compiler aliases",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P1",
+    "route": "luna",
+    "milestone": "ED-010-S7",
+    "depends_on": [],
+    "acceptance": "Preserve distinct clang and clang++ executable paths when they are symlinks to the same Clang binary; add a regression for driver alias preservation; pass the focused installer tests and fast gate. The exact promotion-bound MSan row remains an aggregate S7 release gate under MC-AI-0038.",
+    "evidence": "Focused MSan installer suite passed 7/7, including the compiler-alias regression. The task commit hook remains the required fast-gate check; exact promotion-bound MSan validation is still required under MC-AI-0038.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0038",
+    "motivation": "The exact promoted Linux MSan row fails during GMP Autoconf because resolving the clang++ symlink erases its C++ driver identity and leaves CXX pointing at clang.",
+    "context": "The installer currently calls Path.resolve() on shutil.which() output. On the GitHub runner, /usr/bin/clang-18 and /usr/bin/clang++-18 resolve to one physical target, so the script exports the same path for CC and CXX. The GMP C++ configure probe then fails with undefined std::cout references. Keep the strict probe and compiler checks; do not special-case GMP.",
+    "complexity": "low",
+    "created_at": "2026-10-04",
+    "resolved_at": "2026-10-04",
+    "resolution_changes": "Preserved clang and clang++ driver aliases without dereferencing the shared compiler symlink, and added a regression that fails if Path.resolve collapses the two driver names.",
+    "plan": [
+      "Preserve the executable alias without dereferencing symlinks, add a deterministic regression, run the focused suite and the one batch fast gate, and leave exact MSan proof to the next promotion."
+    ],
+    "product_changes": [],
+    "code_changes": [
+      "Preserve Clang C/C++ driver aliases in the MSan toolchain installer and test that symlink targets do not erase argv[0] identity."
+    ],
+    "baseline_commit": "56d966a047022908dc03e05c8fd0f45efa67b880",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]

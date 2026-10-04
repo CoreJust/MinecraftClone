@@ -25,6 +25,26 @@ class InstallMsanLibcxxTests(unittest.TestCase):
     def setUp(self):
         self.toolchain = load_module()
 
+    def test_resolve_tool_preserves_clang_driver_aliases(self):
+        with (
+            mock.patch.object(
+                self.toolchain.shutil,
+                "which",
+                side_effect=["/usr/bin/clang-18", "/usr/bin/clang++-18"],
+            ),
+            mock.patch.object(
+                self.toolchain.Path,
+                "resolve",
+                return_value=Path("/usr/lib/llvm-18/bin/clang"),
+            ) as resolve,
+        ):
+            clang = self.toolchain.resolve_tool("clang-18", "Clang C")
+            clangxx = self.toolchain.resolve_tool("clang++-18", "Clang C++")
+
+        self.assertEqual(clang, "/usr/bin/clang-18")
+        self.assertEqual(clangxx, "/usr/bin/clang++-18")
+        resolve.assert_not_called()
+
     def test_runtime_build_is_pinned_and_instrumented(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
