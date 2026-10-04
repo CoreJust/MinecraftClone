@@ -10941,5 +10941,44 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0320",
+    "title": "Repair second-wave S7 sanitizer bootstrap failures",
+    "kind": "chore",
+    "status": "done",
+    "priority": "P1",
+    "route": "luna",
+    "milestone": "ED-010-S7",
+    "depends_on": [],
+    "acceptance": "Install Linux Autotools required by the pinned MPFR port; set Android HWASan's Autotools host triplet; build libc++ experimental before the MSan install. Add focused regressions and pass the focused suites plus the full fast gate. Exact hosted Linux LSan/MSan and Android HWASan rows remain aggregate S7 release gates under MC-AI-0038.",
+    "evidence": "On 2026-10-04, the three focused regression suites passed 61/61 after adding the Autotools package contract, Android HWASan Autoconf host contract, and MSan cxx_experimental build target. python3 script/ai_tasks.py check, python3 script/ai_docs.py check, git diff --check, and python3 script/ai_check.py --fast all passed. Exact post-fix hosted Linux LSan, Linux MSan, and Android HWASan rows remain required and have not yet run on a new immutable promotion.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0038",
+    "motivation": "The exact ai-main promotion matrix 37206275934 passes both fast rows but three analysis rows fail during dependency bootstrap before their required analyzer/runtime steps can execute.",
+    "context": "Linux LSan MPFR reports missing autoconf, autoconf-archive, automake, and libtoolize. Android HWASan MPFR configure detects the x86_64 runner as host while compiling for aarch64 Android because the custom triplet omits VCPKG_MAKE_BUILD_TRIPLET. Linux MSan builds libc++ and libc++abi with pinned Clang/LLVM 18.1.3 but CMake install requests lib/libc++experimental.a that is absent. These are distinct from completed MC-AI-0302 setup fixes and must be verified on the exact new promotion.",
+    "complexity": "medium",
+    "created_at": "2026-10-04",
+    "resolved_at": "2026-10-04",
+    "resolution_changes": "Added and regression-tested the Linux LSan Autotools provisioning, Android HWASan Autotools host, and libc++ experimental build target; the focused suites and full fast gate passed. Exact hosted LSan/MSan/HWASan results remain open under the MC-AI-0038 S7 release gate and are not claimed by this task.",
+    "plan": [
+      "Install missing Linux Autotools and guard the package contract in workflow tests.",
+      "Add the Android Autotools host to the HWASan triplet and assert it in acquisition tests.",
+      "Build the independently declared libc++ experimental target before the install step and guard target selection in the MSan script tests.",
+      "Run focused suites and the full fast gate; leave the exact hosted analysis rows to the parent S7 promotion gate."
+    ],
+    "product_changes": [],
+    "code_changes": [
+      "Correct Linux LSan MPFR tool provisioning, Android HWASan Autoconf host selection, and MSan libc++ experimental-target build; add focused regressions."
+    ],
+    "baseline_commit": "fb9d24458f60ca71c3857fd3a57169c27e958170",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]

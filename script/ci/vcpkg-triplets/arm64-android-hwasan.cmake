@@ -3,6 +3,7 @@ set(VCPKG_CRT_LINKAGE dynamic)
 set(VCPKG_LIBRARY_LINKAGE static)
 set(VCPKG_CMAKE_SYSTEM_NAME Android)
 set(VCPKG_CMAKE_SYSTEM_VERSION 29)
+set(VCPKG_MAKE_BUILD_TRIPLET "--host=aarch64-linux-android")
 
 if(NOT DEFINED ENV{ANDROID_NDK_HOME})
     message(FATAL_ERROR "ANDROID_NDK_HOME must select the pinned NDK for HWASan ports")

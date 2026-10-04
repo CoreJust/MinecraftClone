@@ -324,7 +324,7 @@ jobs:
         run: |
           set -euo pipefail
           sudo apt-get update
-          sudo apt-get install --no-install-recommends --yes clang-18 libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev
+          sudo apt-get install --no-install-recommends --yes clang-18 libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev autoconf autoconf-archive automake libtool
           python -m pip install --disable-pip-version-check --no-cache-dir cmake==3.31.6 ninja==1.13.2
       - name: Materialize private dependency deploy keys
         shell: bash

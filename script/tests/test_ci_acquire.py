@@ -618,8 +618,13 @@ class CiAcquireTests(unittest.TestCase):
                 self.assertIn("-DANDROID_STL=c++_shared", command)
                 self.assertIn("-DANDROID_SANITIZE=hwaddress", command)
             triplet = Path(acquire.__file__).resolve().parent / "vcpkg-triplets/arm64-android-hwasan.cmake"
-            self.assertIn("set(VCPKG_CMAKE_SYSTEM_VERSION 29)", triplet.read_text(encoding="utf-8"))
-            self.assertIn("set(VCPKG_CHAINLOAD_TOOLCHAIN_FILE", triplet.read_text(encoding="utf-8"))
+            triplet_contents = triplet.read_text(encoding="utf-8")
+            self.assertIn("set(VCPKG_CMAKE_SYSTEM_VERSION 29)", triplet_contents)
+            self.assertIn("set(VCPKG_CHAINLOAD_TOOLCHAIN_FILE", triplet_contents)
+            self.assertIn(
+                'set(VCPKG_MAKE_BUILD_TRIPLET "--host=aarch64-linux-android")',
+                triplet_contents,
+            )
 
     def test_private_dependency_fetch_pins_github_host_key(self):
         with tempfile.TemporaryDirectory() as directory:
