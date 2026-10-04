@@ -527,7 +527,14 @@ class CiAcquireTests(unittest.TestCase):
         parsed = acquire.require_private_dependency_lock(lock)
         self.assertEqual(set(parsed), {"CoreCpp", "CoreProject2026"})
         self.assertEqual(parsed["CoreCpp"]["fetch_ref"], "refs/heads/codex/ai-mc-s7-cooperative-connect")
-        self.assertEqual(parsed["CoreProject2026"]["fetch_ref"], "refs/heads/codex/ai-s7-cooperative-corecpp-pin")
+        self.assertEqual(
+            parsed["CoreProject2026"]["revision"],
+            "0094c4efa4efd76664a2b44aa0c07307b622f395",
+        )
+        self.assertEqual(
+            parsed["CoreProject2026"]["fetch_ref"],
+            "refs/heads/codex/ai-s7-msvc-constexpr-operator-tables",
+        )
 
     def test_private_dependency_lock_rejects_non_branch_fetch_ref(self):
         with tempfile.TemporaryDirectory() as directory:

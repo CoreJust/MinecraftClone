@@ -10980,5 +10980,43 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0321",
+    "title": "Pin S7 to the reviewed CoreLang MSVC maintenance fix",
+    "kind": "chore",
+    "status": "done",
+    "priority": "P1",
+    "route": "luna",
+    "milestone": "ED-010-S7",
+    "depends_on": [],
+    "acceptance": "Pin CoreProject2026 to reviewed commit 0094c4efa4efd76664a2b44aa0c07307b622f395 and fetch_ref refs/heads/codex/ai-s7-msvc-constexpr-operator-tables in dependencies.lock.json, preserving the CoreCpp pin. Add a regression that guards both exact values and pass the focused dependency-acquisition suite. The repository fast gate is still required before commit; exact hosted Windows Debug verification remains an aggregate S7 release gate under MC-AI-0038.",
+    "evidence": "The dependency-acquisition suite passed 30/30 after first reproducing a red failure against the old lock revision. On 2026-10-04, python3 script/ai_check.py --fast passed for this task candidate: docs, backlog, current-plan, working/index whitespace, and the full Python test suite exited 0. Exact hosted Windows Debug verification remains pending at the MC-AI-0038 release gate.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0038",
+    "motivation": "The exact S7 promotion's Windows Debug build failed in CoreLang Syntax.cpp because constexpr operator arrays own std::string; reviewed CP-0036 fixes this on the S7 dependency line.",
+    "context": "At task start the MinecraftClone lock pinned CoreProject2026 revision 92c8058dcfbff13010502a5bd46d7920b52815ea through refs/heads/codex/ai-s7-cooperative-corecpp-pin. The reviewed CP-0036 maintenance fix is commit 0094c4efa4efd76664a2b44aa0c07307b622f395 on refs/heads/codex/ai-s7-msvc-constexpr-operator-tables. Preserve the CoreCpp pin and do not claim exact hosted Windows Debug success until a new promotion reports it.",
+    "complexity": "low",
+    "created_at": "2026-10-04",
+    "resolved_at": "2026-10-04",
+    "resolution_changes": "Updated the CoreProject2026 lock revision/ref to the reviewed CP-0036 maintenance commit while preserving CoreCpp; extended the existing regression to assert both exact values. The focused dependency-acquisition suite passed 30/30.",
+    "plan": [
+      "Pin CoreProject2026 revision and fetch_ref to reviewed CP-0036 while preserving CoreCpp.",
+      "Assert the immutable revision/ref pair in the existing private dependency lock regression.",
+      "Run focused checks and fast gate; leave exact Windows Debug result on MC-AI-0038."
+    ],
+    "product_changes": [],
+    "code_changes": [
+      "Retarget the S7 CoreProject2026 dependency lock to the reviewed MSVC Debug maintenance fix and guard the immutable revision/ref."
+    ],
+    "baseline_commit": "397e0cad495b7c21801daa1d3434559761304eff",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]
