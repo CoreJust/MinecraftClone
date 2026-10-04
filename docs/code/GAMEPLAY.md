@@ -65,13 +65,17 @@ Four outstanding credited batches/peer (34,356 bytes) leave gameplay headroom
 in ENet's shared 65,536-byte default window; negotiation/throttling may shrink it.
 Ready/dispatched tiles cap at 128
 (`BenchmarkHooks::on_preview_buffered`). ACKs reconcile keys/refill after restored-interest removals.
+The optional `on_preview_metrics` hook collects steady-clock worker-stage,
+loop/tick/pump/sleep, input-progress, and credit-turnaround aggregates. S7 stress
+tests log at most once per second; without the hook, per-job timing records and
+loop metrics stay disabled.
 
 ## Client roles and lifecycle
 
 [GameClient.hpp](../../src/client/include/client/GameClient.hpp) and
 [GameClient.cpp](../../src/client/GameClient.cpp) connect, join, poll, and
-render. Connect retains one peer for 30 seconds. Both platforms pump events
-between 25 ms polls and through 250 ms retries; stop cancels.
+render. Connect retains one peer for 30 seconds; polling is 25 ms with 250 ms
+retries and stop cancellation.
 `FrameScheduler` sends input every 100 ms with 1 ms maximum sleep. Positions
 update world: presentation snaps, then interpolates for one
 `TICK`; gaps hold. Disconnect resets and retries.
@@ -81,24 +85,21 @@ for `--benchmark-game`. The server hook times ticks.
 
 [PlayerClient.hpp](../../src/client/include/client/PlayerClient.hpp) and
 [PlayerClient.cpp](../../src/client/PlayerClient.cpp) provide the GLFW/Vulkan
-client and gameplay HUD. Cursor movement controls yaw/pitch;
-W/S and A/D become camera-relative normalized horizontal directions.
-The shared client predicts only its local player's queued input, then rebuilds
-that prediction from acknowledged server state; it never mutates the
-authoritative `World`. Each render samples
-every received player presentation into colored 2 by 2 render records. F5
+client and HUD. Cursor movement controls yaw/pitch; WASD becomes camera-relative
+normalized horizontal input. Client prediction replays queued local input from
+acknowledged server state without mutating the authoritative `World`. Each
+render samples received players into colored 2 by 2 records. F5
 cycles first person, rear third person and front-facing third person.
 Only display-camera perspective changes; input/interest retain independent look.
 First person hides the local body; third-person modes draw it.
 HUD shows perspective and F5/5 fallback;
 macOS may reserve bare function-row F5/F6, so number-row aliases are reliable.
 The pure resolver accepts a bounded unobstructed
-distance, so terrain/collision presentation can clip a third-person camera
-without changing authority or packets. R reloads the renderer on a press edge
-stored per client instance.
+distance; collision clips camera presentation without changing authority or
+packets. R reloads the renderer on press.
 
-`BotClient` renders nothing and changes a persistent random direction with
-probability 1/50 per input call.
+`BotClient` renders nothing and changes direction with probability 1/50 per
+input call.
 
 ## S6/S7 moving terrain
 

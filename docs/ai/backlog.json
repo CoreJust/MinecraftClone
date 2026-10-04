@@ -11130,5 +11130,41 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0325",
+    "title": "Instrument S7 terrain-stream and input-ack stages",
+    "kind": "chore",
+    "status": "done",
+    "priority": "P0",
+    "route": "luna",
+    "milestone": "ED-010-S7",
+    "depends_on": [],
+    "acceptance": "Add bounded opt-in aggregate diagnostics to the existing Release tests for full-radius terrain streaming and four-client flight acknowledgements. Metrics must distinguish height-tile versus world-materialization job enqueue/start/finish/collection and queue/run/collect delays; GameServer loop, tick, stream-pump, and wake gaps; per-client received/acknowledged/pending input sequences; and ready/inflight credits with delivery-credit turnaround. Emit at most once per second, use steady-clock durations, and add no per-job logging or production-loop metrics when hooks are absent. Run both unchanged acceptance tests and report measured stage evidence sufficient to identify the dominant bottleneck or the next discriminating run. Preserve every current membership, deadline, lag, catch-up, movement, and removal assertion.",
+    "evidence": "After adding null-hook guards so production worker callbacks and result collection avoid diagnostic timestamp reads and metric atomics, the Release rebuild passed and both unchanged acceptance tests passed on local Mac hardware (12 hardware threads, 8 terrain workers). Full-radius streaming delivered 205861/205861 tiles in 43.320 seconds (43.70 seconds CTest wall time), below the unchanged 90-second limit. Final worker snapshot: submitted/started/finished/collected 205861/205861/205861/205861; tile enqueue-submit/executor/run/completion-collection average/max 18/28, 0/4, 0/5, and 6/9 ms; 12870 delivery-credit samples averaged 12 ms with 15 ms maximum. Four-client flight processed all 350 inputs with maximum acknowledgement lag 7 at input 28 (limit 16), final acknowledgements 350/350/350/350, and 35.002-second duration (35.71 seconds CTest wall time). These remain local-only results from a 12-thread/8-worker host and do not explain the hosted two-/three-worker failures. The next discriminating run remains the exact hosted low-core matrix after aligning the CoreProject maintenance pin. No thresholds changed and no root-cause or S7 release claim is made.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0038",
+    "motivation": "S7 Release acceptance fails full-radius terrain throughput and sustained-flight acknowledgement lag on hosted Mac and Windows workers. Existing queue gauges and end-state acknowledgements do not isolate generation, executor, pump, delivery-credit, or input-processing delay.",
+    "context": "GitHub run 37225008757 at e4c2bc83 showed repeated MC-AI-0304 failures (Mac Release 30,728/205,861 tiles within the 90-second window; Windows Release 203,468/205,861) and MC-AI-0247 maximum acknowledgement lag 20 against limit 16. Existing server metrics report queue sizes every ten seconds but do not distinguish submitted/running/completed/collected work or stage durations. Prior source analysis has not established a root cause; do not change thresholds or claim a performance fix from source inspection.",
+    "complexity": "high",
+    "created_at": "2026-10-04",
+    "resolved_at": "2026-10-05",
+    "resolution_changes": "Added opt-in steady-clock counters and stage durations for tile and world-generation jobs, per-client input acknowledgement latency, GameServer loop/tick/pump/sleep, and delivery-credit turnaround. The stress-test hooks log at most once per second and production paths allocate no per-job timers without the metrics callback. Updated the gameplay code guide.",
+    "plan": [
+      "Instrument the existing benchmark hooks and two acceptance tests with one-second bounded stage aggregates; distinguish preview and world-generation work, loop/pump timings, input backlog, and delivery-credit latency."
+    ],
+    "product_changes": [],
+    "code_changes": [
+      "Opt-in bounded test diagnostics in GameServer benchmark hooks and focused integration tests; document the measurement contract."
+    ],
+    "baseline_commit": "b8b6dda59671c64f622ead90bc7342fa26c110e1",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]

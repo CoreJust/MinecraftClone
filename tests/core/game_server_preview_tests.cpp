@@ -26,6 +26,8 @@ namespace {
 
 class PreviewClient final : public core::Client {
 public:
+    static constexpr uint32_t MAX_TRACKED_INPUTS = 512U;
+
     explicit PreviewClient(
         bool const acknowledges_deliveries = true,
         bool const starts_deliveries = true,
@@ -43,6 +45,16 @@ public:
     uint32_t sent_delivery_credit_messages = 0U;
     uint32_t last_acknowledged_input = 0U;
     int32_t last_player_x = 0;
+    uint64_t acknowledgement_latency_samples = 0U;
+    uint64_t acknowledgement_latency_total_ns = 0U;
+    uint64_t acknowledgement_latency_max_ns = 0U;
+
+    void trackInputSent(uint32_t const sequence)
+    {
+        if (sequence < MAX_TRACKED_INPUTS) {
+            m_input_sent_at[sequence] = std::chrono::steady_clock::now();
+        }
+    }
 
     void setAcknowledgesDeliveries(bool const acknowledges_deliveries) noexcept
     {
@@ -93,8 +105,22 @@ private:
             }
             if (auto const* position = std::get_if<shared::ServerPlayerPositionMessage>(&*message);
                 position != nullptr && position->ch == m_tracked_character) {
+                uint32_t const previous_acknowledged_input = last_acknowledged_input;
                 last_acknowledged_input = position->acknowledged_input_sequence;
                 last_player_x = position->x;
+                if (position->acknowledged_input_sequence > previous_acknowledged_input
+                    && position->acknowledged_input_sequence < MAX_TRACKED_INPUTS) {
+                    auto const sent_at = m_input_sent_at[position->acknowledged_input_sequence];
+                    if (sent_at.time_since_epoch().count() != 0) {
+                        auto const latency = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                            std::chrono::steady_clock::now() - sent_at
+                        );
+                        uint64_t const latency_ns = static_cast<uint64_t>(latency.count());
+                        ++acknowledgement_latency_samples;
+                        acknowledgement_latency_total_ns += latency_ns;
+                        acknowledgement_latency_max_ns = std::max(acknowledgement_latency_max_ns, latency_ns);
+                    }
+                }
             }
         }
     }
@@ -102,6 +128,7 @@ private:
     bool m_acknowledges_deliveries;
     bool m_starts_deliveries;
     char m_tracked_character;
+    std::array<std::chrono::steady_clock::time_point, MAX_TRACKED_INPUTS> m_input_sent_at{};
 };
 
 uint32_t heightTileCount(std::vector<shared::Message> const& messages)
@@ -573,7 +600,7 @@ TEST(GameServerPreviewTest, StreamsPlayerCenteredHeightTilesAndRemovesDepartedTi
 {
     static constexpr std::chrono::seconds STREAM_TIMEOUT{90};
     static constexpr std::chrono::seconds MOVEMENT_TIMEOUT{10};
-    static constexpr std::chrono::seconds PROGRESS_INTERVAL{10};
+    static constexpr std::chrono::seconds PROGRESS_INTERVAL{1};
     static constexpr std::chrono::milliseconds POLL_INTERVAL{1};
     static constexpr uint32_t MOVEMENT_INPUT_COUNT = (
         shared::HEIGHT_TILE_SIDE_LENGTH * shared::SUBCELLS_PER_CELL
@@ -601,9 +628,23 @@ TEST(GameServerPreviewTest, StreamsPlayerCenteredHeightTilesAndRemovesDepartedTi
             if (now < next_server_progress) {
                 return;
             }
+            auto const average_ms = [](
+                std::chrono::nanoseconds const total,
+                uint64_t const samples
+            ) {
+                return samples == 0U
+                    ? int64_t{0}
+                    : total.count() / static_cast<int64_t>(samples) / 1'000'000;
+            };
             CORE_INFO(
                 "Server preview at {} ms: queued={}, dispatched={}, worker pending={}, worker submitted={}, "
-                "ready={}, in-flight batches={}, in-flight additions={}, credits={}, resident={}",
+                "ready={}, in-flight batches={}, in-flight additions={}, credits={}, resident={}, "
+                "tile jobs submitted/started/finished/collected={}/{}/{}/{}, "
+                "tile enqueue-submit/executor/run/collect avg/max ms={}/{}/{}/{}/{}/{}/{}/{}, "
+                "world jobs submitted/started/finished/collected={}/{}/{}/{}, "
+                "world enqueue-submit/executor/run/collect avg/max ms={}/{}/{}/{}/{}/{}/{}/{}, "
+                "loop interval/work/tick/pump/sleep ms={}/{}/{}/{}/{}, input received/ack/pending/failures={}/{}/{}/{}, "
+                "credit samples/avg/max ms={}/{}/{}",
                 std::chrono::duration_cast<std::chrono::milliseconds>(now - server_started_at).count(),
                 metrics.queued_tiles,
                 metrics.dispatched_tiles,
@@ -613,9 +654,60 @@ TEST(GameServerPreviewTest, StreamsPlayerCenteredHeightTilesAndRemovesDepartedTi
                 metrics.inflight_deliveries,
                 metrics.inflight_additions,
                 metrics.delivery_credits,
-                metrics.resident_tiles
+                metrics.resident_tiles,
+                metrics.height_tile_jobs.submitted_total,
+                metrics.height_tile_jobs.started_total,
+                metrics.height_tile_jobs.finished_total,
+                metrics.height_tile_jobs.collected_total,
+                average_ms(
+                    metrics.height_tile_jobs.enqueue_to_submit_total,
+                    metrics.height_tile_jobs.submitted_total
+                ),
+                metrics.height_tile_jobs.enqueue_to_submit_max.count() / 1'000'000,
+                average_ms(metrics.height_tile_jobs.executor_queue_total, metrics.height_tile_jobs.started_total),
+                metrics.height_tile_jobs.executor_queue_max.count() / 1'000'000,
+                average_ms(metrics.height_tile_jobs.execution_total, metrics.height_tile_jobs.finished_total),
+                metrics.height_tile_jobs.execution_max.count() / 1'000'000,
+                average_ms(
+                    metrics.height_tile_jobs.completion_to_collection_total,
+                    metrics.height_tile_jobs.collected_total
+                ),
+                metrics.height_tile_jobs.completion_to_collection_max.count() / 1'000'000,
+                metrics.world_generation_jobs.submitted_total,
+                metrics.world_generation_jobs.started_total,
+                metrics.world_generation_jobs.finished_total,
+                metrics.world_generation_jobs.collected_total,
+                average_ms(
+                    metrics.world_generation_jobs.enqueue_to_submit_total,
+                    metrics.world_generation_jobs.submitted_total
+                ),
+                metrics.world_generation_jobs.enqueue_to_submit_max.count() / 1'000'000,
+                average_ms(metrics.world_generation_jobs.executor_queue_total, metrics.world_generation_jobs.started_total),
+                metrics.world_generation_jobs.executor_queue_max.count() / 1'000'000,
+                average_ms(metrics.world_generation_jobs.execution_total, metrics.world_generation_jobs.finished_total),
+                metrics.world_generation_jobs.execution_max.count() / 1'000'000,
+                average_ms(
+                    metrics.world_generation_jobs.completion_to_collection_total,
+                    metrics.world_generation_jobs.collected_total
+                ),
+                metrics.world_generation_jobs.completion_to_collection_max.count() / 1'000'000,
+                metrics.server_loop_interval.count() / 1'000'000,
+                metrics.server_loop_work.count() / 1'000'000,
+                metrics.server_tick.count() / 1'000'000,
+                metrics.stream_pump.count() / 1'000'000,
+                metrics.previous_sleep.count() / 1'000'000,
+                metrics.latest_received_input_sequence,
+                metrics.acknowledged_input_sequence,
+                metrics.pending_input_count,
+                metrics.materialization_admission_failures,
+                metrics.delivery_credit_samples,
+                metrics.delivery_credit_samples == 0U
+                    ? 0U
+                    : metrics.delivery_credit_total.count()
+                        / static_cast<int64_t>(metrics.delivery_credit_samples) / 1'000'000,
+                metrics.delivery_credit_max.count() / 1'000'000
             );
-            next_server_progress += PROGRESS_INTERVAL;
+            next_server_progress = now + PROGRESS_INTERVAL;
         },
     };
 
@@ -666,7 +758,7 @@ TEST(GameServerPreviewTest, StreamsPlayerCenteredHeightTilesAndRemovesDepartedTi
                 poll_iterations,
                 std::chrono::duration_cast<std::chrono::milliseconds>(now - started_at).count()
             );
-            next_progress += PROGRESS_INTERVAL;
+            next_progress = now + PROGRESS_INTERVAL;
         }
     }
 
@@ -1216,9 +1308,122 @@ TEST(GameServerPreviewTest, SustainedFlightKeepsInputAcknowledgementsCurrentWhil
 #else
     static constexpr auto DURATION = std::chrono::seconds{35};
     static constexpr auto INPUT_PERIOD = std::chrono::milliseconds{100};
+    static constexpr auto PROGRESS_INTERVAL = std::chrono::seconds{1};
     server::GameServer server{0, {}, shared::WorldMode::Flight};
     std::atomic_bool stop_requested{false};
-    std::thread server_thread{[&server, &stop_requested] { server.run(stop_requested); }};
+    struct ClientProgress final {
+        core::ClientId client_id = 0U;
+        std::chrono::steady_clock::time_point next_log{};
+        bool active = false;
+    };
+    std::array<ClientProgress, 4> server_progress{};
+    auto const server_started = std::chrono::steady_clock::now();
+    server::GameServer::BenchmarkHooks const hooks{
+        .on_preview_metrics = [server_started, &server_progress](
+            core::ClientId const client_id,
+            server::GameServer::PreviewStreamMetrics const metrics
+        ) {
+            auto const progress = std::ranges::find(server_progress, client_id, &ClientProgress::client_id);
+            auto const slot = progress != server_progress.end()
+                ? progress
+                : std::ranges::find(server_progress, false, &ClientProgress::active);
+            if (slot == server_progress.end()) {
+                return;
+            }
+            if (!slot->active) {
+                slot->active = true;
+                slot->client_id = client_id;
+            }
+            auto const now = std::chrono::steady_clock::now();
+            if (now < slot->next_log) {
+                return;
+            }
+            slot->next_log = now + PROGRESS_INTERVAL;
+            auto const average_ms = [](
+                std::chrono::nanoseconds const total,
+                uint64_t const samples
+            ) {
+                return samples == 0U
+                    ? int64_t{0}
+                    : total.count() / static_cast<int64_t>(samples) / 1'000'000;
+            };
+            CORE_INFO(
+                "Flight server client {} at {} ms: input received/ack/unacked/pending/materialization-failures="
+                "{}/{}/{}/{}/{}, jobs pending/queued/running/finished-uncollected={}/{}/{}/{}, "
+                "tile jobs submitted/started/finished/collected={}/{}/{}/{}, "
+                "enqueue-submit/executor/run/collect avg/max ms={}/{}/{}/{}/{}/{}/{}/{}, "
+                "world jobs submitted/started/finished/collected={}/{}/{}/{}, "
+                "enqueue-submit/executor/run/collect avg/max ms={}/{}/{}/{}/{}/{}/{}/{}, "
+                "ready/inflight/credits={}/{}/{}, "
+                "credit samples/avg/max ms={}/{}/{}, loop interval/work/tick/pump/sleep ms={}/{}/{}/{}/{}",
+                client_id,
+                std::chrono::duration_cast<std::chrono::milliseconds>(now - server_started).count(),
+                metrics.latest_received_input_sequence,
+                metrics.acknowledged_input_sequence,
+                metrics.unacknowledged_input_count,
+                metrics.pending_input_count,
+                metrics.materialization_admission_failures,
+                metrics.pending_worker_jobs,
+                metrics.height_tile_jobs.executor_queued_jobs + metrics.world_generation_jobs.executor_queued_jobs,
+                metrics.height_tile_jobs.running_jobs + metrics.world_generation_jobs.running_jobs,
+                metrics.height_tile_jobs.completed_uncollected_jobs
+                    + metrics.world_generation_jobs.completed_uncollected_jobs,
+                metrics.height_tile_jobs.submitted_total,
+                metrics.height_tile_jobs.started_total,
+                metrics.height_tile_jobs.finished_total,
+                metrics.height_tile_jobs.collected_total,
+                average_ms(
+                    metrics.height_tile_jobs.enqueue_to_submit_total,
+                    metrics.height_tile_jobs.submitted_total
+                ),
+                metrics.height_tile_jobs.enqueue_to_submit_max.count() / 1'000'000,
+                average_ms(metrics.height_tile_jobs.executor_queue_total, metrics.height_tile_jobs.started_total),
+                metrics.height_tile_jobs.executor_queue_max.count() / 1'000'000,
+                average_ms(metrics.height_tile_jobs.execution_total, metrics.height_tile_jobs.finished_total),
+                metrics.height_tile_jobs.execution_max.count() / 1'000'000,
+                average_ms(
+                    metrics.height_tile_jobs.completion_to_collection_total,
+                    metrics.height_tile_jobs.collected_total
+                ),
+                metrics.height_tile_jobs.completion_to_collection_max.count() / 1'000'000,
+                metrics.world_generation_jobs.submitted_total,
+                metrics.world_generation_jobs.started_total,
+                metrics.world_generation_jobs.finished_total,
+                metrics.world_generation_jobs.collected_total,
+                average_ms(
+                    metrics.world_generation_jobs.enqueue_to_submit_total,
+                    metrics.world_generation_jobs.submitted_total
+                ),
+                metrics.world_generation_jobs.enqueue_to_submit_max.count() / 1'000'000,
+                average_ms(
+                    metrics.world_generation_jobs.executor_queue_total,
+                    metrics.world_generation_jobs.started_total
+                ),
+                metrics.world_generation_jobs.executor_queue_max.count() / 1'000'000,
+                average_ms(metrics.world_generation_jobs.execution_total, metrics.world_generation_jobs.finished_total),
+                metrics.world_generation_jobs.execution_max.count() / 1'000'000,
+                average_ms(
+                    metrics.world_generation_jobs.completion_to_collection_total,
+                    metrics.world_generation_jobs.collected_total
+                ),
+                metrics.world_generation_jobs.completion_to_collection_max.count() / 1'000'000,
+                metrics.ready_tiles,
+                metrics.inflight_deliveries,
+                metrics.delivery_credits,
+                metrics.delivery_credit_samples,
+                average_ms(metrics.delivery_credit_total, metrics.delivery_credit_samples),
+                metrics.delivery_credit_max.count() / 1'000'000,
+                metrics.server_loop_interval.count() / 1'000'000,
+                metrics.server_loop_work.count() / 1'000'000,
+                metrics.server_tick.count() / 1'000'000,
+                metrics.stream_pump.count() / 1'000'000,
+                metrics.previous_sleep.count() / 1'000'000
+            );
+        },
+    };
+    std::thread server_thread{[&server, &stop_requested, &hooks] {
+        server.run(stop_requested, &hooks);
+    }};
     PreviewClient first_client;
     PreviewClient second_client{true, true, '#'};
     PreviewClient third_client{true, true, '$'};
@@ -1245,6 +1450,7 @@ TEST(GameServerPreviewTest, SustainedFlightKeepsInputAcknowledgementsCurrentWhil
     bool midpoint_recorded = false;
     bool all_sent = true;
     auto const started = std::chrono::steady_clock::now();
+    auto next_client_progress = started + PROGRESS_INTERVAL;
     auto next_input = started;
     while (joined && std::chrono::steady_clock::now() - started < DURATION) {
         auto const now = std::chrono::steady_clock::now();
@@ -1255,6 +1461,7 @@ TEST(GameServerPreviewTest, SustainedFlightKeepsInputAcknowledgementsCurrentWhil
                 .sequence = sent,
             });
             for (PreviewClient* const client : clients) {
+                client->trackInputSent(sent);
                 all_sent = client->send(input, 0, core::SendMode{core::SendMode::Reliable}) && all_sent;
             }
             next_input += INPUT_PERIOD;
@@ -1262,6 +1469,27 @@ TEST(GameServerPreviewTest, SustainedFlightKeepsInputAcknowledgementsCurrentWhil
         for (PreviewClient* const client : clients) {
             while (client->poll(std::chrono::milliseconds::zero()) > 0) {
             }
+        }
+        if (now >= next_client_progress) {
+            for (size_t index = 0U; index < clients.size(); ++index) {
+                PreviewClient const* const client = clients[index];
+                uint64_t const latency_samples = client->acknowledgement_latency_samples;
+                CORE_INFO(
+                    "Flight client {} sent/ack/lag={}/{}/{}, ack latency samples/avg/max ms={}/{}/{}, "
+                    "received tiles={}",
+                    index,
+                    sent,
+                    client->last_acknowledged_input,
+                    sent - client->last_acknowledged_input,
+                    latency_samples,
+                    latency_samples == 0U
+                        ? 0U
+                        : client->acknowledgement_latency_total_ns / latency_samples / 1'000'000U,
+                    client->acknowledgement_latency_max_ns / 1'000'000U,
+                    client->received_height_tiles
+                );
+            }
+            next_client_progress = now + PROGRESS_INTERVAL;
         }
         if (!midpoint_recorded && now - started >= DURATION / 2) {
             for (size_t index = 0U; index < clients.size(); ++index) {
@@ -1290,6 +1518,33 @@ TEST(GameServerPreviewTest, SustainedFlightKeepsInputAcknowledgementsCurrentWhil
             client->poll(std::chrono::milliseconds{1});
         }
     }
+    CORE_INFO(
+        "Flight summary sent={}, maximum ack lag={} at input={}, final acknowledgements={}/{}/{}/{}, duration={} ms",
+        sent,
+        maximum_ack_lag,
+        sent_at_maximum_ack_lag,
+        first_client.last_acknowledged_input,
+        second_client.last_acknowledged_input,
+        third_client.last_acknowledged_input,
+        fourth_client.last_acknowledged_input,
+        std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now() - started
+        ).count()
+    );
+    for (size_t index = 0U; index < clients.size(); ++index) {
+        PreviewClient const* const client = clients[index];
+        uint64_t const latency_samples = client->acknowledgement_latency_samples;
+        CORE_INFO(
+            "Flight result client {} ack latency samples/avg/max ms={}/{}/{}, received tiles={}",
+            index,
+            latency_samples,
+            latency_samples == 0U
+                ? 0U
+                : client->acknowledgement_latency_total_ns / latency_samples / 1'000'000U,
+            client->acknowledgement_latency_max_ns / 1'000'000U,
+            client->received_height_tiles
+        );
+    }
     stop_requested.store(true, std::memory_order_relaxed);
     server_thread.join();
 
@@ -1308,6 +1563,8 @@ TEST(GameServerPreviewTest, SustainedFlightKeepsInputAcknowledgementsCurrentWhil
     for (size_t index = 0U; index < clients.size(); ++index) {
         PreviewClient const* const client = clients[index];
         EXPECT_LE(sent - client->last_acknowledged_input, 2U);
+        EXPECT_GT(client->acknowledgement_latency_samples, 0U)
+            << "client " << index << " produced no input acknowledgement latency samples";
         EXPECT_GT(deliveryBatchCount(client->messages), 0U);
         EXPECT_GT(client->received_height_tiles, midpoint_tile_counts[index])
             << "client " << index << " made no terrain progress during the second half";
