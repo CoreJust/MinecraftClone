@@ -11090,5 +11090,45 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0324",
+    "title": "Pin S7 to the reviewed CoreCpp executor portability fix",
+    "kind": "chore",
+    "status": "done",
+    "priority": "P1",
+    "route": "luna",
+    "milestone": "ED-010-S7",
+    "depends_on": [
+      "MC-AI-0056"
+    ],
+    "acceptance": "Pin MinecraftClone to the exact reviewed CoreCpp commit that fixes the RuntimeExecutors -Werror failures, with a published safe branch fetch_ref; keep revision verification immutable. Add a regression for the exact CoreCpp revision/ref pair and pass focused acquisition tests. Keep the sanitizer and all other platform matrix rows as aggregate S7 gates.",
+    "evidence": "python3 -B -m unittest script.tests.test_ci_acquire -v passed 30/30. A fresh depth-one fetch of refs/heads/codex/ai-cc-0040-explicit-submission-handle contained the locked commit; detached checkout matched the exact SHA and had a clean worktree. The hosted sanitizer rows remain aggregate S7 gates.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0038",
+    "motivation": "The exact S7 Linux LSan and Android HWASan builds fail compiling the pinned RuntimeExecutors because two rejected Submission returns omit the empty JobHandle field under -Werror.",
+    "context": "CoreCpp now publishes reviewed commit 8e1d633680533632faf59a7ad0a2277deaad1e9d on refs/heads/codex/ai-cc-0040-explicit-submission-handle. It contains the explicit empty-handle fix from 754495f318026795c5b1e21fccbb2393f048cf15 and a separate task-record correction. The dependency fetcher fetches the branch and checks out the locked exact revision; preserve that immutable identity and do not suppress strict warnings.",
+    "complexity": "low",
+    "created_at": "2026-10-04",
+    "resolved_at": "2026-10-04",
+    "resolution_changes": "Pinned CoreCpp to exact reviewed revision 8e1d633680533632faf59a7ad0a2277deaad1e9d from its published safe branch and extended the repository-lock regression to assert both immutable values.",
+    "plan": [
+      "Update the CoreCpp lock pair to the exact reviewed published revision and branch; update the repository-lock regression; run focused dependency-acquisition checks and verify exact clean package consumption."
+    ],
+    "product_changes": [
+      "No product behavior changed; this advances the S7 RuntimeExecutors dependency to its reviewed warning-clean fix."
+    ],
+    "code_changes": [
+      "Update dependencies.lock.json and its acquisition regression to the exact reviewed CoreCpp revision and safe fetch_ref."
+    ],
+    "baseline_commit": "20ad0ca15c6b4a264ce3bfd86e27d689e7607695",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]

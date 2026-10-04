@@ -3,8 +3,8 @@
   "dependencies": {
     "CoreCpp": {
       "repository": "CoreJust/CoreCpp",
-      "revision": "f2fe7db86a068b464dde1c5f7f4a13ddcefda26d",
-      "fetch_ref": "refs/heads/codex/ai-mc-s7-cooperative-connect"
+      "revision": "8e1d633680533632faf59a7ad0a2277deaad1e9d",
+      "fetch_ref": "refs/heads/codex/ai-cc-0040-explicit-submission-handle"
     },
     "CoreProject2026": {
       "repository": "CoreJust/CoreProject2026",
