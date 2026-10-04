@@ -527,7 +527,14 @@ class CiAcquireTests(unittest.TestCase):
         parsed = acquire.require_private_dependency_lock(lock)
         self.assertEqual(set(parsed), {"CoreCpp", "CoreProject2026"})
         self.assertEqual(parsed["CoreCpp"]["fetch_ref"], "refs/heads/codex/ai-mc-s7-cooperative-connect")
-        self.assertEqual(parsed["CoreProject2026"]["fetch_ref"], "refs/heads/codex/ai-s7-cooperative-corecpp-pin")
+        self.assertEqual(
+            parsed["CoreProject2026"]["revision"],
+            "0094c4efa4efd76664a2b44aa0c07307b622f395",
+        )
+        self.assertEqual(
+            parsed["CoreProject2026"]["fetch_ref"],
+            "refs/heads/codex/ai-s7-msvc-constexpr-operator-tables",
+        )
 
     def test_private_dependency_lock_rejects_non_branch_fetch_ref(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -618,8 +625,13 @@ class CiAcquireTests(unittest.TestCase):
                 self.assertIn("-DANDROID_STL=c++_shared", command)
                 self.assertIn("-DANDROID_SANITIZE=hwaddress", command)
             triplet = Path(acquire.__file__).resolve().parent / "vcpkg-triplets/arm64-android-hwasan.cmake"
-            self.assertIn("set(VCPKG_CMAKE_SYSTEM_VERSION 29)", triplet.read_text(encoding="utf-8"))
-            self.assertIn("set(VCPKG_CHAINLOAD_TOOLCHAIN_FILE", triplet.read_text(encoding="utf-8"))
+            triplet_contents = triplet.read_text(encoding="utf-8")
+            self.assertIn("set(VCPKG_CMAKE_SYSTEM_VERSION 29)", triplet_contents)
+            self.assertIn("set(VCPKG_CHAINLOAD_TOOLCHAIN_FILE", triplet_contents)
+            self.assertIn(
+                'set(VCPKG_MAKE_BUILD_TRIPLET "--host=aarch64-linux-android")',
+                triplet_contents,
+            )
 
     def test_private_dependency_fetch_pins_github_host_key(self):
         with tempfile.TemporaryDirectory() as directory:

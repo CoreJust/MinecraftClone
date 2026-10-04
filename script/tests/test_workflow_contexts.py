@@ -155,7 +155,17 @@ class WorkflowContextTests(unittest.TestCase):
         self.assertIn("CC: clang-18", linux_analysis)
         self.assertIn("CXX: clang++-18", linux_analysis)
         self.assertIn("sudo apt-get install --no-install-recommends --yes clang-18", linux_analysis)
-        for package in ("libx11-dev", "libxrandr-dev", "libxinerama-dev", "libxcursor-dev", "libxi-dev"):
+        for package in (
+            "libx11-dev",
+            "libxrandr-dev",
+            "libxinerama-dev",
+            "libxcursor-dev",
+            "libxi-dev",
+            "autoconf",
+            "autoconf-archive",
+            "automake",
+            "libtool",
+        ):
             with self.subTest(package=package):
                 self.assertIn(package, linux_analysis)
         self.assertIn('--clang "$CC" --clangxx "$CXX"', linux_analysis)

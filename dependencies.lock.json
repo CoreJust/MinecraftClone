@@ -8,8 +8,8 @@
     },
     "CoreProject2026": {
       "repository": "CoreJust/CoreProject2026",
-      "revision": "92c8058dcfbff13010502a5bd46d7920b52815ea",
-      "fetch_ref": "refs/heads/codex/ai-s7-cooperative-corecpp-pin"
+      "revision": "0094c4efa4efd76664a2b44aa0c07307b622f395",
+      "fetch_ref": "refs/heads/codex/ai-s7-msvc-constexpr-operator-tables"
     }
   }
 }

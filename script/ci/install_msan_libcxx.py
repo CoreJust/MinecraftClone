@@ -90,6 +90,21 @@ def configure_command(source: Path, build: Path, prefix: Path, clang: str, clang
     ]
 
 
+def build_command(build: Path, jobs: int) -> list[str]:
+    return [
+        "cmake",
+        "--build",
+        str(build),
+        "--target",
+        "cxx",
+        "cxx_experimental",
+        "cxxabi",
+        "unwind",
+        "--parallel",
+        str(jobs),
+    ]
+
+
 def verify_install(prefix: Path, clangxx: str, build: Path) -> None:
     include_dir = prefix / "include" / "c++" / "v1"
     if not include_dir.is_dir():
@@ -233,7 +248,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         print("[msan-libcxx] Phase 2/4: configure instrumented libc++, libc++abi, and libunwind", flush=True)
         run(configure_command(args.source_root, args.build_root, args.prefix, clang, clangxx))
         print(f"[msan-libcxx] Phase 3/4: build and install runtimes using {args.jobs} jobs", flush=True)
-        run(["cmake", "--build", str(args.build_root), "--target", "cxx", "cxxabi", "unwind", "--parallel", str(args.jobs)])
+        run(build_command(args.build_root, args.jobs))
         run(["cmake", "--install", str(args.build_root)])
 
         print("[msan-libcxx] Phase 4/4: verify linked libc++ and an expected MSan diagnostic", flush=True)

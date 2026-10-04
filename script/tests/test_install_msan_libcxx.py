@@ -41,6 +41,15 @@ class InstallMsanLibcxxTests(unittest.TestCase):
         self.assertIn("-DLLVM_ENABLE_RUNTIMES=libcxx;libcxxabi;libunwind", command)
         self.assertIn("-DLIBCXX_USE_COMPILER_RT=ON", command)
 
+    def test_build_includes_every_runtime_registered_for_install(self):
+        command = self.toolchain.build_command(Path("build"), jobs=4)
+        target_index = command.index("--target")
+        parallel_index = command.index("--parallel")
+        self.assertEqual(
+            command[target_index + 1 : parallel_index],
+            ["cxx", "cxx_experimental", "cxxabi", "unwind"],
+        )
+
     def test_compiler_major_must_match_pinned_llvm_sources(self):
         self.toolchain.require_compatible_clang("Ubuntu clang version 18.1.3", "clang-18")
         with self.assertRaisesRegex(self.toolchain.ToolchainError, "Clang 22, LLVM 18"):
