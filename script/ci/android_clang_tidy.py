@@ -22,6 +22,10 @@ class AndroidClangTidyError(ValueError):
     """A missing, malformed, or non-Android compile database."""
 
 
+def _requires_windows_shell(executable: str, *, platform_name: str = os.name) -> bool:
+    return platform_name == "nt" and Path(executable).suffix.lower() in {".bat", ".cmd"}
+
+
 def _compile_databases(directory: Path) -> list[Path]:
     if not directory.is_dir():
         raise AndroidClangTidyError(f"compile database directory does not exist: {directory}")
@@ -131,7 +135,12 @@ def main(argv: list[str] | None = None) -> int:
             *(str(source) for source in sources),
         ]
         try:
-            completed = subprocess.run(command, cwd=root, check=False)
+            completed = subprocess.run(
+                command,
+                cwd=root,
+                check=False,
+                shell=_requires_windows_shell(args.clang_tidy),
+            )
         except OSError as error:
             print(f"Android clang-tidy could not start: {error}", file=sys.stderr)
             return 2

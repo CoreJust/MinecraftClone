@@ -15,6 +15,13 @@ WORKFLOWS = (
 
 
 class WorkflowContextTests(unittest.TestCase):
+    def test_windows_fast_checks_install_the_pinned_project_timezone_database(self):
+        workflow = (REPOSITORY / ".github/workflows/ai-checks.yml").read_text(encoding="utf-8")
+        fast_job = workflow.split("\n  desktop:", maxsplit=1)[0]
+
+        self.assertIn("if: runner.os == 'Windows'", fast_job)
+        self.assertIn("--no-cache-dir tzdata==2025.2", fast_job)
+
     def test_artifact_uploads_use_the_verified_immutable_revision(self):
         expected_revision = "ea165f8d65b6e75b540449e92b4886f43607fa02"
         for workflow_path in WORKFLOWS:
