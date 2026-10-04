@@ -268,6 +268,11 @@ struct GameServer::HeightTileWorkerPool final {
         core::executor::JobHandle handle;
     };
 
+    struct QueueMetrics final {
+        uint32_t pending = 0U;
+        uint32_t submitted = 0U;
+    };
+
     HeightTileWorkerPool()
     {
         uint32_t const worker_count = GameServer::terrainWorkerCount(std::thread::hardware_concurrency());
@@ -292,6 +297,16 @@ struct GameServer::HeightTileWorkerPool final {
     {
         std::lock_guard lock{m_mutex};
         return outstandingCount() < MAX_OUTSTANDING_WORK;
+    }
+
+    [[nodiscard]]
+    QueueMetrics queueMetrics() const
+    {
+        std::lock_guard lock{m_mutex};
+        return {
+            .pending = static_cast<uint32_t>(m_pending.size()),
+            .submitted = static_cast<uint32_t>(m_submitted.size()),
+        };
     }
 
     [[nodiscard]]
@@ -608,6 +623,22 @@ void GameServer::run(
                     stream.client_id,
                     static_cast<uint32_t>(stream.ready_tiles.size() + stream.dispatched_keys.size())
                 );
+            }
+        }
+        if (benchmark_hooks && benchmark_hooks->on_preview_metrics) {
+            HeightTileWorkerPool::QueueMetrics const worker_queue_metrics = m_height_tile_workers->queueMetrics();
+            for (PreviewStream const& stream : m_preview_streams) {
+                benchmark_hooks->on_preview_metrics(stream.client_id, {
+                    .queued_tiles = static_cast<uint32_t>(stream.queued_keys.size()),
+                    .dispatched_tiles = static_cast<uint32_t>(stream.dispatched_keys.size()),
+                    .pending_worker_jobs = worker_queue_metrics.pending,
+                    .submitted_worker_jobs = worker_queue_metrics.submitted,
+                    .ready_tiles = static_cast<uint32_t>(stream.ready_tiles.size()),
+                    .inflight_deliveries = static_cast<uint32_t>(stream.inflight_deliveries.size()),
+                    .inflight_additions = static_cast<uint32_t>(stream.inflight_addition_keys.size()),
+                    .delivery_credits = stream.delivery_credits,
+                    .resident_tiles = static_cast<uint32_t>(stream.resident_keys.size()),
+                });
             }
         }
         std::this_thread::sleep_until(std::min(

@@ -39,6 +39,10 @@ class AndroidPairPlaytestTest(unittest.TestCase):
     def setUp(self) -> None:
         self.pair = android_pair_playtest
 
+    @staticmethod
+    def release_server_path() -> Path:
+        return Path("/project") / "build" / "release" / "mc_main"
+
     def test_missing_release_server_fails_with_build_command(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             missing_server = Path(temporary_directory) / "release" / "mc_main"
@@ -74,17 +78,18 @@ class AndroidPairPlaytestTest(unittest.TestCase):
     def test_runner_starts_exactly_one_release_server_and_client(self) -> None:
         server = FakeServer()
         receipt = {"action": "reused", "serial": "emulator-5556"}
-        with mock.patch.object(self.pair, "_require_release_server", return_value=Path("/project/build/release/mc_main")), mock.patch.object(
+        server_path = self.release_server_path()
+        with mock.patch.object(self.pair, "_require_release_server", return_value=server_path), mock.patch.object(
             self.pair, "_require_port_free"
         ), mock.patch.object(self.pair, "_wait_for_server") as wait_ready, mock.patch.object(
             self.pair.subprocess, "Popen", return_value=server
         ) as popen, mock.patch.object(self.pair.android_playtest, "launch_or_reuse", return_value=receipt) as launch_client:
             with self.assertRaises(KeyboardInterrupt):
-                self.pair.run_playtest("emulator-5556", Path("/project/build/release/mc_main"))
+                self.pair.run_playtest("emulator-5556", server_path)
 
         popen.assert_called_once_with(
             [
-                "/project/build/release/mc_main",
+                str(server_path),
                 "--server",
                 "--port",
                 "20040",
@@ -98,20 +103,22 @@ class AndroidPairPlaytestTest(unittest.TestCase):
         self.assertFalse(server.killed)
 
     def test_port_conflict_does_not_start_server_or_client(self) -> None:
-        with mock.patch.object(self.pair, "_require_release_server", return_value=Path("/project/build/release/mc_main")), mock.patch.object(
+        server_path = self.release_server_path()
+        with mock.patch.object(self.pair, "_require_release_server", return_value=server_path), mock.patch.object(
             self.pair, "_require_port_free", side_effect=self.pair.AndroidPairPlaytestError("UDP 20040 is already in use")
         ), mock.patch.object(self.pair.subprocess, "Popen") as popen, mock.patch.object(
             self.pair.android_playtest, "launch_or_reuse"
         ) as launch_client:
             with self.assertRaisesRegex(self.pair.AndroidPairPlaytestError, "already in use"):
-                self.pair.run_playtest("emulator-5556", Path("/project/build/release/mc_main"))
+                self.pair.run_playtest("emulator-5556", server_path)
 
         popen.assert_not_called()
         launch_client.assert_not_called()
 
     def test_client_launch_failure_stops_only_the_started_server(self) -> None:
         server = FakeServer()
-        with mock.patch.object(self.pair, "_require_release_server", return_value=Path("/project/build/release/mc_main")), mock.patch.object(
+        server_path = self.release_server_path()
+        with mock.patch.object(self.pair, "_require_release_server", return_value=server_path), mock.patch.object(
             self.pair, "_require_port_free"
         ), mock.patch.object(self.pair, "_wait_for_server"), mock.patch.object(
             self.pair.subprocess, "Popen", return_value=server
@@ -121,7 +128,7 @@ class AndroidPairPlaytestTest(unittest.TestCase):
             side_effect=self.pair.android_playtest.AndroidPlaytestError("wrong AVD"),
         ):
             with self.assertRaisesRegex(self.pair.android_playtest.AndroidPlaytestError, "wrong AVD"):
-                self.pair.run_playtest("emulator-5556", Path("/project/build/release/mc_main"))
+                self.pair.run_playtest("emulator-5556", server_path)
 
         self.assertTrue(server.terminated)
         self.assertFalse(server.killed)

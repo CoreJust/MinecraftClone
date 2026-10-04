@@ -8,8 +8,10 @@ import json
 import os
 import re
 import shlex
+import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -20,6 +22,35 @@ CPP_SUFFIXES = {".c", ".cc", ".cpp", ".cxx", ".m", ".mm"}
 
 class AndroidClangTidyError(ValueError):
     """A missing, malformed, or non-Android compile database."""
+
+
+def _uses_response_file(executable: str, *, platform_name: str = os.name) -> bool:
+    if platform_name != "nt":
+        return False
+    resolved = shutil.which(executable) or executable
+    return Path(resolved).suffix.lower() in {".bat", ".cmd"}
+
+
+def _run_clang_tidy(
+    command: list[str], root: Path, *, platform_name: str = os.name
+) -> subprocess.CompletedProcess[bytes]:
+    if not _uses_response_file(command[0], platform_name=platform_name):
+        return subprocess.run(command, cwd=root, check=False)
+
+    with tempfile.TemporaryDirectory(prefix=".clang-tidy-args-", dir=root) as directory:
+        response_file = Path(directory) / "arguments.rsp"
+        response_file.write_text(
+            subprocess.list2cmdline(command[1:]) + "\n",
+            encoding="utf-8",
+            newline="\n",
+        )
+        relative_response_file = response_file.relative_to(root)
+        return subprocess.run(
+            [command[0], f"@{relative_response_file}"],
+            cwd=root,
+            check=False,
+            shell=os.name == "nt",
+        )
 
 
 def _compile_databases(directory: Path) -> list[Path]:
@@ -131,9 +162,9 @@ def main(argv: list[str] | None = None) -> int:
             *(str(source) for source in sources),
         ]
         try:
-            completed = subprocess.run(command, cwd=root, check=False)
+            completed = _run_clang_tidy(command, root)
         except OSError as error:
-            print(f"Android clang-tidy could not start: {error}", file=sys.stderr)
+            print(f"Android clang-tidy invocation failed: {error}", file=sys.stderr)
             return 2
         if completed.returncode:
             return completed.returncode

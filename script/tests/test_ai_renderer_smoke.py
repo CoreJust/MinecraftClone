@@ -14,6 +14,11 @@ REPOSITORY = Path(__file__).resolve().parents[2]
 SCRIPT = REPOSITORY / "script/ai_renderer_smoke.py"
 
 
+def toolchain_argument(root):
+    toolchain = root / "scripts" / "buildsystems" / "vcpkg.cmake"
+    return f"-DCMAKE_TOOLCHAIN_FILE={toolchain}"
+
+
 def load_module():
     spec = importlib.util.spec_from_file_location("ai_renderer_smoke", SCRIPT)
     module = importlib.util.module_from_spec(spec)
@@ -65,7 +70,7 @@ class RendererSmokeGateTests(unittest.TestCase):
         self.assertIsNone(failure)
         self.assertEqual(len(commands), 3)
         self.assertEqual(calls[0][1][:4], ["cmake", "--fresh", "--preset", "renderer-smoke"])
-        self.assertIn(f"-DCMAKE_TOOLCHAIN_FILE={self.vcpkg_root}/scripts/buildsystems/vcpkg.cmake", calls[0][1])
+        self.assertIn(toolchain_argument(self.vcpkg_root), calls[0][1])
         self.assertEqual(calls[1][1], ["cmake", "--build", "--preset", "renderer-smoke", "--target", "mc_renderer_smoke"])
         self.assertEqual(
             calls[2][1],
@@ -92,7 +97,7 @@ class RendererSmokeGateTests(unittest.TestCase):
             "cmake",
             "--preset",
             "renderer-smoke",
-            f"-DCMAKE_TOOLCHAIN_FILE={self.vcpkg_root}/scripts/buildsystems/vcpkg.cmake",
+            toolchain_argument(self.vcpkg_root),
         ]
         cache = self.write_smoke_cache(legacy_command)
         stale_vcpkg = self.root / "old-checkout/build/vcpkg_installed/arm64-osx"
@@ -170,13 +175,13 @@ class RendererSmokeGateTests(unittest.TestCase):
             command, failure = self.gate.renderer_configure_command(self.root, "renderer-smoke")
 
         self.assertIsNone(failure)
-        self.assertIn(f"-DCMAKE_TOOLCHAIN_FILE={self.vcpkg_root}/scripts/buildsystems/vcpkg.cmake", command)
+        self.assertIn(toolchain_argument(self.vcpkg_root), command)
         self.assertIn("-DVCPKG_MANIFEST_INSTALL=OFF", command)
         self.assertIn(f"-DVCPKG_INSTALLED_DIR={installed}", command)
         self.assertIn(f"-DCMAKE_PREFIX_PATH={prefix}", command)
         self.assertIn(f"-DCoreCpp_DIR={corecpp}", command)
         self.assertIn(f"-DCoreProject2026_DIR={coreproject}", command)
-        self.assertNotIn(f"-DCMAKE_TOOLCHAIN_FILE={other_toolchain}", command)
+        self.assertNotIn(toolchain_argument(other_vcpkg_root), command)
 
     def test_missing_toolchain_fails_early_with_actionable_diagnostic(self):
         with mock.patch.dict(os.environ, {"VCPKG_ROOT": ""}):

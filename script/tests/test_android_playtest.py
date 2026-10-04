@@ -97,12 +97,16 @@ class AndroidPlaytestTest(unittest.TestCase):
     def setUp(self) -> None:
         self.playtest = android_playtest
 
+    @staticmethod
+    def adb_name() -> str:
+        return "adb.exe" if sys.platform == "win32" else "adb"
+
     def test_documented_adb_path_precedes_legacy_override_and_sdk_roots(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
             configured_adb = root / "configured-adb"
             legacy_adb = root / "legacy-adb"
-            sdk_adb = root / "sdk" / "platform-tools" / "adb"
+            sdk_adb = root / "sdk" / "platform-tools" / self.adb_name()
             configured_adb.touch()
             legacy_adb.touch()
             sdk_adb.parent.mkdir(parents=True)
@@ -119,7 +123,7 @@ class AndroidPlaytestTest(unittest.TestCase):
 
     def test_android_sdk_root_finds_adb_without_a_path_entry(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
-            sdk_adb = Path(temp_dir) / "platform-tools" / "adb"
+            sdk_adb = Path(temp_dir) / "platform-tools" / self.adb_name()
             sdk_adb.parent.mkdir()
             sdk_adb.touch()
             environment = {"ANDROID_SDK_ROOT": str(sdk_adb.parent.parent), "PATH": ""}
@@ -129,7 +133,7 @@ class AndroidPlaytestTest(unittest.TestCase):
     def test_android_home_is_used_when_sdk_root_has_no_adb(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
-            sdk_adb = root / "android-home" / "platform-tools" / "adb"
+            sdk_adb = root / "android-home" / "platform-tools" / self.adb_name()
             sdk_adb.parent.mkdir(parents=True)
             sdk_adb.touch()
             environment = {
@@ -142,12 +146,13 @@ class AndroidPlaytestTest(unittest.TestCase):
 
     def test_path_lookup_is_the_fallback_after_sdk_discovery(self) -> None:
         environment = {"ANDROID_SDK_ROOT": "", "ANDROID_HOME": "", "PATH": ""}
+        expected_adb = f"/host-tools/{self.adb_name()}"
         with mock.patch.dict("os.environ", environment, clear=True), mock.patch(
-            "shutil.which", return_value="/host-tools/adb"
+            "shutil.which", return_value=expected_adb
         ) as which:
-            self.assertEqual(self.playtest._adb_executable(), "/host-tools/adb")
+            self.assertEqual(self.playtest._adb_executable(), expected_adb)
 
-        which.assert_called_once_with("adb")
+        which.assert_called_once_with(self.adb_name())
 
     def test_missing_explicit_adb_path_fails_with_setup_guidance(self) -> None:
         environment = {"ADB_PATH": "/missing/android/adb", "PATH": ""}

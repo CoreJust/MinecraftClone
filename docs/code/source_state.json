@@ -140,6 +140,7 @@
         "script/tests/test_build_snapshot.py",
         "script/tests/test_checks_common.py",
         "script/tests/test_ci_acquire.py",
+        "script/tests/test_gmp_vcpkg_overlay.py",
         "script/tests/test_install_msan_libcxx.py",
         "script/tests/test_package_snapshot.py",
         "script/tests/test_pre_finalization_candidate.py",
@@ -161,7 +162,7 @@
         "vcpkg-configuration.json",
         "vcpkg.json"
       ],
-      "sources_sha256": "89fff33cabe5070e7074eec50af025000c316fb4beb2bec1ff72c0bb997e76a4"
+      "sources_sha256": "cb053f742783cf0ea61082f9a56d191901e715d9f8f5f6427c2807a23d5adebf"
     },
     {
       "guide": "docs/code/CORE.md",
@@ -285,7 +286,7 @@
         "tests/core/world_generation_scheduler_tests.cpp",
         "tests/core/world_generation_tests.cpp"
       ],
-      "sources_sha256": "069f6b7ccf447a9e5bfb720c0cf2c65963c9ff9c6b851dc7ebb538592b3df488"
+      "sources_sha256": "655cca278ce30025900a76e6cb870c0e3fa01bf1367d3617cc28db80c034030e"
     },
     {
       "guide": "docs/code/RENDERING.md",

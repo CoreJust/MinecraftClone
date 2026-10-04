@@ -15,6 +15,13 @@ WORKFLOWS = (
 
 
 class WorkflowContextTests(unittest.TestCase):
+    def test_windows_fast_checks_install_the_pinned_project_timezone_database(self):
+        workflow = (REPOSITORY / ".github/workflows/ai-checks.yml").read_text(encoding="utf-8")
+        fast_job = workflow.split("\n  desktop:", maxsplit=1)[0]
+
+        self.assertIn("if: runner.os == 'Windows'", fast_job)
+        self.assertIn("--no-cache-dir tzdata==2025.2", fast_job)
+
     def test_artifact_uploads_use_the_verified_immutable_revision(self):
         expected_revision = "ea165f8d65b6e75b540449e92b4886f43607fa02"
         for workflow_path in WORKFLOWS:
@@ -139,6 +146,19 @@ class WorkflowContextTests(unittest.TestCase):
             "cmake==3.31.6 ninja==1.13.2",
             linux_analysis,
         )
+
+    def test_linux_sanitizer_bootstrap_pins_compatible_clang_and_glfw_headers(self):
+        workflow = WORKFLOWS[0].read_text(encoding="utf-8")
+        linux_analysis = workflow.split("\n  linux-analysis:", maxsplit=1)[1].split(
+            "\n  android-hwasan-build:", maxsplit=1
+        )[0]
+        self.assertIn("CC: clang-18", linux_analysis)
+        self.assertIn("CXX: clang++-18", linux_analysis)
+        self.assertIn("sudo apt-get install --no-install-recommends --yes clang-18", linux_analysis)
+        for package in ("libx11-dev", "libxrandr-dev", "libxinerama-dev", "libxcursor-dev", "libxi-dev"):
+            with self.subTest(package=package):
+                self.assertIn(package, linux_analysis)
+        self.assertIn('--clang "$CC" --clangxx "$CXX"', linux_analysis)
 
     def test_private_prefixes_and_manifest_mode_are_explicit(self):
         for workflow_path in WORKFLOWS:

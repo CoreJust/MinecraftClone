@@ -35,11 +35,18 @@ class InstallMsanLibcxxTests(unittest.TestCase):
                 "/usr/bin/clang",
                 "/usr/bin/clang++",
             )
-        self.assertEqual(self.toolchain.LLVM_TAG, "llvmorg-22.1.7")
-        self.assertEqual(len(self.toolchain.LLVM_COMMIT), 40)
+        self.assertEqual(self.toolchain.LLVM_TAG, "llvmorg-18.1.3")
+        self.assertEqual(self.toolchain.LLVM_COMMIT, "c13b7485b87909fcf739f62cfa382b55407433c0")
         self.assertIn("-DLLVM_USE_SANITIZER=MemoryWithOrigins", command)
         self.assertIn("-DLLVM_ENABLE_RUNTIMES=libcxx;libcxxabi;libunwind", command)
         self.assertIn("-DLIBCXX_USE_COMPILER_RT=ON", command)
+
+    def test_compiler_major_must_match_pinned_llvm_sources(self):
+        self.toolchain.require_compatible_clang("Ubuntu clang version 18.1.3", "clang-18")
+        with self.assertRaisesRegex(self.toolchain.ToolchainError, "Clang 22, LLVM 18"):
+            self.toolchain.require_compatible_clang("clang version 22.1.7", "clang-22")
+        with self.assertRaisesRegex(self.toolchain.ToolchainError, "did not identify itself as Clang"):
+            self.toolchain.require_compatible_clang("gcc version 13.2.0", "gcc")
 
     def test_setup_refuses_non_linux_hosts(self):
         with mock.patch.object(self.toolchain.platform, "system", return_value="Darwin"):
