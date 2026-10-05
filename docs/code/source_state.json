@@ -31,7 +31,7 @@
         "tests/acceptance/runtime_cli_tests.cmake",
         "tests/acceptance/scenario_runner_tests.cpp"
       ],
-      "sources_sha256": "998dc4cbc3c00b134cb26d15537ede0c93364c41f48b2383c695f87913d9ac35"
+      "sources_sha256": "42075a12ecbe2e062b974cf0506fb29cc716f82434e35f309d7e9804bb62e0ff"
     },
     {
       "guide": "docs/code/ANDROID.md",
@@ -162,7 +162,7 @@
         "vcpkg-configuration.json",
         "vcpkg.json"
       ],
-      "sources_sha256": "49d49589108711d1cb6849356af5d0e48ec3a7f54bb1148b7b18494730cb8fb0"
+      "sources_sha256": "8ab68db5ab7d7a1b07986a5831b56817f5afa57ce7555837b0b3e7fc08be80f6"
     },
     {
       "guide": "docs/code/CORE.md",
