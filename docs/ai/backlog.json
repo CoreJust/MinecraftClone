@@ -11243,5 +11243,46 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0328",
+    "title": "Permit the first ai-main promotion push to start its exact-SHA analysis matrix while retaining strict pre-tag verification",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P1",
+    "route": "luna",
+    "milestone": "ED-010-S7",
+    "depends_on": [],
+    "acceptance": "Only a structurally validated ai_publish snapshot promotion whose first parent matches destination ai-main, task trailers identify the snapshot, and metadata and merge tree pass existing promotion checks may use fast indexed pre-push to start the exact-SHA matrix. Ordinary ai-main pushes remain strict. Keep the full candidate gate in finish and strict checks for tag creation and pushes; absent or failed exact-SHA receipts block tags. Cover valid promotion, ordinary commit, wrong remote base, and strict-tag paths with regressions; document bootstrap order.",
+    "evidence": "Added tests proving exact promotion bootstrap succeeds, ordinary one-parent commits and a mismatched remote base fail verification, and ordinary ai-dev HEAD targeting ai-main falls back to strict rather than fast. test_ai_check.py passed 46/46 and test_ai_publish.py passed 17/17; sh -n .githooks/pre-push, ai_docs.py refresh, ai_docs.py check, and ai_tasks.py check passed. Existing publisher coverage still blocks tag creation without the exact hosted receipt. Exact task push CI remains a separate release gate.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0038",
+    "motivation": "The first ai-main promotion push must trigger the exact-SHA sanitizer/static-analysis matrix; requiring its receipt in pre-push creates a circular release gate.",
+    "context": "ai_publish.finish creates the exact promotion commit locally after the full snapshot candidate gate. The hosted desktop and MC-AI-0249 matrix are triggered only by pushing that commit to ai-main, while the current pre-push hook invokes ai_check.py --strict and verify_analysis_gate.py requires the not-yet-generated exact-SHA receipt.",
+    "complexity": "medium",
+    "created_at": "2026-10-05",
+    "resolved_at": "2026-10-05",
+    "resolution_changes": "The pre-push hook now grants fast bootstrap only after the snapshot promotion verifier confirms the current remote first parent, two-parent structure, snapshot task metadata/trailers, and expected merge tree; ordinary ai-main pushes and all tag pushes remain strict.",
+    "plan": [
+      "Update pre-push dispatch and regression tests so ai-main promotion can bootstrap hosted checks without the not-yet-created analysis receipt.",
+      "Preserve ai_publish candidate validation and strict ai-main tag checks; add a test proving missing exact-SHA receipt blocks tagging.",
+      "Document promotion push, exact hosted matrix, strict verification, and tag order; run focused and batch checks.",
+      "Validate the two-parent promotion, remote base, snapshot task/trailers, and expected merge tree before granting fast bootstrap; route all other ai-main pushes through strict checks."
+    ],
+    "product_changes": [
+      "S7 ai-main promotion can start the exact-SHA release matrix; the snapshot tag remains protected by strict checks."
+    ],
+    "code_changes": [
+      "Fix release pre-push mode selection, regression coverage, and workflow documentation."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]
