@@ -51,7 +51,8 @@ def resolve_tool(value: str, name: str) -> str:
     resolved = shutil.which(value)
     if resolved is None:
         raise ToolchainError(f"required {name} compiler is not on PATH: {value}")
-    return str(Path(resolved).resolve())
+    # Clang uses argv[0] to distinguish clang from clang++; resolving symlinks erases that identity.
+    return os.path.abspath(resolved)
 
 
 def require_compatible_clang(output: str, compiler: str) -> None:

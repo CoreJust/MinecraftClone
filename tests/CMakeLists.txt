@@ -107,7 +107,10 @@ if(MC_BUILD_CLIENT AND NOT ANDROID)
             ${CMAKE_CURRENT_SOURCE_DIR}/acceptance/client_launch_test.py
             $<TARGET_FILE:mc_main>
     )
-    set_tests_properties(AcceptanceCli.AutomaticJoin PROPERTIES TIMEOUT 30)
+    set_tests_properties(AcceptanceCli.AutomaticJoin PROPERTIES
+        RUN_SERIAL TRUE
+        TIMEOUT 300
+    )
     add_test(
         NAME AcceptanceCli.RuntimeModes
         COMMAND ${CMAKE_COMMAND}

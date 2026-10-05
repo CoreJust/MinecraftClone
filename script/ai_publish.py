@@ -209,6 +209,30 @@ def require_expected_promoted_tree(root: Path, baseline: str, source: str, promo
         raise PublishError("promotion tree differs from the expected immutable merge tree")
 
 
+def verify_promotion_bootstrap(root: Path, promoted_text: str, remote_base_text: str) -> None:
+    require_exact_commit(promoted_text)
+    require_exact_commit(remote_base_text)
+    promoted = revision(root, promoted_text)
+    if promoted != revision(root, "HEAD"):
+        raise PublishError("bootstrap promotion must be the checked HEAD")
+    remote_base = revision(root, remote_base_text)
+    parents = git(root, "show", "-s", "--format=%P", promoted).split()
+    if len(parents) != 2:
+        raise PublishError("bootstrap promotion must have exactly two parents")
+    promotion_base, source = parents
+    if promotion_base != remote_base:
+        raise PublishError("bootstrap promotion does not extend the destination ai-main")
+    subject = git(root, "show", "-s", "--format=%s", promoted).strip()
+    match = re.fullmatch(r"Promote (MC-AI-[0-9]+) to ai-main", subject)
+    if match is None:
+        raise PublishError("bootstrap commit is not an ai_publish snapshot promotion")
+    task_id = match.group(1)
+    load_snapshot(root, task_id, source)
+    require_task_trailer(root, promoted, task_id)
+    require_task_trailer(root, source, task_id)
+    require_expected_promoted_tree(root, promotion_base, source, promoted)
+
+
 def expected_tag(root: Path, promoted: str, revision_number: int | None = None) -> str:
     names, version = ai_check.project_version_arguments(root)
     major_name, separator, _minor_name = names.partition(":")
@@ -346,6 +370,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         command = commands.add_parser(name)
         command.add_argument("task_id")
         command.add_argument("source_commit")
+    bootstrap_command = commands.add_parser("verify-promotion-bootstrap")
+    bootstrap_command.add_argument("promotion_commit")
+    bootstrap_command.add_argument("remote_base")
     tag_command = commands.add_parser("tag")
     tag_command.add_argument("task_id")
     tag_command.add_argument("--revision", type=int, choices=range(1, 1000))
@@ -356,8 +383,11 @@ def main(argv: Sequence[str] | None = None) -> int:
             prepare(root, args.task_id, args.source_commit)
         elif args.command == "finish":
             finish(root, args.task_id, args.source_commit)
-        else:
+        elif args.command == "tag":
             tag(root, args.task_id, args.revision)
+        else:
+            verify_promotion_bootstrap(root, args.promotion_commit, args.remote_base)
+            print(f"Validated exact snapshot promotion {args.promotion_commit}")
     except (OSError, PublishError, ai_tasks.BacklogError, ValueError) as error:
         print(f"AI publish: {error}", file=sys.stderr)
         return 1

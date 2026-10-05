@@ -264,6 +264,31 @@ class AiPublishTests(unittest.TestCase):
         )
         self.assertEqual(tagged.returncode, 0, tagged.stderr)
 
+    def test_bootstrap_verification_accepts_the_exact_ai_main_promotion(self) -> None:
+        self.prepare()
+        self.finish()
+        promoted = self.git_output("rev-parse", "HEAD")
+        verified = self.run_publish("verify-promotion-bootstrap", promoted, self.baseline)
+        self.assertEqual(verified.returncode, 0, verified.stderr)
+        self.assertIn("Validated exact snapshot promotion", verified.stdout)
+
+    def test_bootstrap_verification_rejects_a_nonpromotion_commit(self) -> None:
+        rejected = self.run_publish(
+            "verify-promotion-bootstrap", self.source, self.baseline,
+        )
+        self.assertNotEqual(rejected.returncode, 0)
+        self.assertIn("must have exactly two parents", rejected.stderr)
+
+    def test_bootstrap_verification_rejects_a_mismatched_remote_base(self) -> None:
+        self.prepare()
+        self.finish()
+        promoted = self.git_output("rev-parse", "HEAD")
+        rejected = self.run_publish(
+            "verify-promotion-bootstrap", promoted, self.source,
+        )
+        self.assertNotEqual(rejected.returncode, 0)
+        self.assertIn("does not extend the destination ai-main", rejected.stderr)
+
     def test_prepare_defers_hosted_matrix_but_requires_candidate_gate(self) -> None:
         blocked = self.run_publish(
             "prepare", "MC-AI-0032", self.source,

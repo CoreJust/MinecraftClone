@@ -24,16 +24,14 @@ Planning tasks are created on request before work. Current plans: [snapshot 0.1.
 
 Screenshot tests stay disabled with an explicit reason until implemented. Platform diagnostics supplement, but never replace, actual platform evidence and recorded limitations.
 
-From Snapshot 7, the MC-AI-0249 sanitizer/static-analysis matrix is required
-after the promotion commit is pushed and before tagging. Local candidate checks
-defer only this hosted matrix; hosted receipts bind to the immutable promotion
-commit/tree, and strict tag checks require its successful exact-commit result.
-Missing tools, devices, results, or receipts fail closed. Linux is a tests-only
-sanitizer host, not a product target.
-
-On `ai-main` pushes, artifact packaging logs 30-second polls for that exact
-matrix receipt (350-minute cap); tag and manual-dispatch builds verify
-immediately.
+Snapshot 7 requires the exact-promotion-commit MC-AI-0249 sanitizer/static-
+analysis matrix before tagging; missing evidence blocks release. Linux is
+analysis-only. `ai_publish.py finish` runs the local candidate gate. Pre-push
+grants fast mode only to a verified two-parent snapshot promotion matching the
+remote base, task trailers, and expected merge tree; other `ai-main` pushes
+stay strict. `ai_publish.py tag` and tag pushes require the successful
+exact-commit receipt. Packaging polls `ai-main` every 30 seconds (350-minute
+cap); tag/manual dispatch verify immediately.
 
 ## Publish
 

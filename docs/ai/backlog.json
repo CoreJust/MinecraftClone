@@ -1501,8 +1501,8 @@
       "MC-AI-0037"
     ],
     "acceptance": "Deliver immutable, generation-tagged hard/soft entity permissions for all/players/mobs/technical-entities/per-kind and explicit-member/selector groups; namespace custom keys and defer world subjects. Cover movement, flight/collision, blocks, inventory, invincibility, commands, and permission-backed mode presets. Use CoreLang 0.1.3.1 (only documented 0.1.3.3 maintenance), retain interpreter/JIT parity, and prepare kernels off physics ticks. Test latency, loss, jitter, freezes, reordering, and duplication. Replicate a 29/16 × 10/16 × 10/16 player, 16-color palette, and first/rear-third/front-third views. Keep position-driven radius-256 terrain camera-independent and derive face LOD at projected area ≤2 px². Provide four inspected 2560x1440 Mac screenshots with prominent labels centered below the HUD: (1) the flying third-person player offset from the central spike, with the full spike, most of its first ring, and terrain beyond visible from slightly above while emphasizing the central landform's mass; (2) the player in the trench near the first spike; (3) the player climbing the mountain; and (4) first-person at horizontal X/Z (0, 0). Target stable 120 FPS at x200 and the world border as diagnostic only. Pass platform and automated MC-AI-0249 gates; include the accepted CoreCpp scope MC-AI-0056 Runtime executors, MC-AI-0057 Runtime audio, and MC-AI-0240 renderer diagnostics in this snapshot. Release S7, hold the minor open for feedback, and do not start S8.",
-    "evidence": "Exact ai-dev source commit 43f4542e9123a69eb9454d3b25c5dc4207906042, tree 96992f6436aa11aefe5cd86c11c1827a7f3d9d27: ai_history collect reconciles the planned child task commits and ai_tasks ready is empty. The full local ai_check.py gate passed on this source: docs/backlog/plan and source-policy checks, Python 412/412, Debug build, CTest 583/583 (one documented intentional skip). GameServerPreviewTest.StreamsPlayerCenteredHeightTilesAndRemovesDepartedTiles validated all 205861 tiles plus movement/removal. Focused sanitizer-bootstrap task tests passed 61/61 (MC-AI-0320) and dependency-pin tests 30/30 (MC-AI-0321). GitHub ai-dev run 37215001114 on this exact SHA passed both Ubuntu and Windows fast jobs; promotion-bound desktop and analysis rows were skipped as designed and emitted no artifacts. Inspected Mac screenshots (all 2560x1440, with bottom-centered labels below the HUD): central spike `docs/version_history/EarlyDev 0.1/images/earlydev-0.1.0-7-central-spike.png` SHA-256 5cc66572943d05af9a21894567b35fe2ffad2bd3a2c87ce96be0097ddeca4161; first-spike trench `docs/version_history/EarlyDev 0.1/images/earlydev-0.1.0-7-trench-first-spike.png` SHA-256 8608534cd001bf835279ce4ff53969b6453b6906e4a6a3497dbb55b7f2542af6; mountain climb `docs/version_history/EarlyDev 0.1/images/earlydev-0.1.0-7-mountain-climb.png` SHA-256 9ad8cd09b1a91356e74b5cab2ee373d908d9bb7c5680fc3b9f8129003ef9288a; first-person origin `docs/version_history/EarlyDev 0.1/images/earlydev-0.1.0-7-first-person-origin.png` SHA-256 38c350a3f0772d6445cbde8c372ffb3b385884b7027493a9ceb66a58b81dbfc8. Existing child evidence also records the server-only build, radius-256 Mac stream, adverse-network 10/10, one-server/one-client Mac package tests, and Android emulator launch; none substitutes for hands-on Windows acceptance on the exact release archive.",
-    "blocker": "Next promote the reviewed exact ai-dev source to ai-main to run full desktop builds/package jobs and the required MC-AI-0249 sanitizer/static-analysis matrix bound to the promotion commit. Windows hands-on runtime acceptance must come from the user using the exact Windows archive; CI is not runtime evidence. Run strict exact-promotion checks and tag only after every hosted receipt and user runtime acceptance passes. No Windows runtime or FPS claim is made.",
+    "evidence": "The preceding S7 aggregate commit is 56765dc4c8095c2cf0a4b5c7d85121ad1c639aa9, tree 007485cc1dad74ae735b2d2fad8a30204dd5b55c. The full local snapshot candidate gate passed on that tree. The follow-up receipt commit 580052e593421d66c80d1a91d1bb9a67f4244faa, tree 2ca700b7e97cb7d3a28856e01edb5d42dca073cc, also passed the full gate: 418 Python tests, Debug build, CTest 582 passed and one documented intentional skip (583 total), and renderer smoke 1/1. History collection on source 07006048c204f10ed9432cadaeaeb35e4a07f478 found all 82 planned child task IDs, and ai_tasks ready was empty. GitHub run 37252935929 passed Ubuntu and Windows fast jobs on that base SHA; it does not cover the aggregate commits. Desktop/package, Linux analysis, Android HWASAN, and the S7 sanitizer/static-analysis matrix are not yet release evidence. Existing child records include server-only build, radius-256 Mac terrain streaming, adverse-network 10/10, single-server/single-client Mac package tests, and Android emulator launch. Four inspected Mac screenshots remain 2560x1440: central spike 5cc66572943d05af9a21894567b35fe2ffad2bd3a2c87ce96be0097ddeca4161; first-spike trench 8608534cd001bf835279ce4ff53969b6453b6906e4a6a3497dbb55b7f2542af6; mountain climb 9ad8cd09b1a91356e74b5cab2ee373d908d9bb7c5680fc3b9f8129003ef9288a; first-person origin 38c350a3f0772d6445cbde8c372ffb3b385884b7027493a9ceb66a58b81dbfc8.",
+    "blocker": "Both recorded aggregate source and receipt-update trees passed the full local candidate gate. Still required: committed-range review, push the exact aggregate range to ai-dev, wait for its exact hosted workflow, promote that source to ai-main, pass exact-promotion desktop/package jobs and the full MC-AI-0249 sanitizer/static-analysis matrix, pass strict exact-SHA checks, and publish the immutable S7 tag/artifacts with the required ledger. Hands-on runtime acceptance on the exact Windows archive must still come from the user; CI is not runtime evidence. No Windows runtime or FPS claim is made. Keep the minor in its feedback hold and do not start S8.",
     "owner": "Codex",
     "level": "snapshot",
     "parent": "MC-AI-0033",
@@ -1511,7 +1511,7 @@
     "complexity": "high",
     "created_at": "2026-09-09",
     "resolved_at": "",
-    "resolution_changes": "Committed and pushed MC-AI-0320 at 397e0cad495b7c21801daa1d3434559761304eff (sanitizer bootstrap repairs) and MC-AI-0321 at 43f4542e9123a69eb9454d3b25c5dc4207906042 (CoreProject2026 0.1.3.3 maintenance pin). On the exact 43f4542 source, the full local gate and both hosted ai-dev fast jobs passed; ai_history collect reconciles the planned children and ai_tasks ready is empty. The snapshot remains active while promotion-bound desktop/package and sanitizer-analysis results, exact Windows user runtime acceptance, strict checks, and publication are pending.",
+    "resolution_changes": "MC-AI-0320 and MC-AI-0321 repaired the sanitizer bootstrap and pinned CoreProject2026; MC-AI-0328 repaired the first-ai-main-promotion bootstrap gate and was pushed as 07006048c204f10ed9432cadaeaeb35e4a07f478. Its exact ai-dev fast workflow 37252935929 passed on Ubuntu and Windows. The 82-child S7 history reconciles and the ready queue is empty. Updated the S7 history date to the current Europe/Belgrade date, 26.10.05, and revalidated documentation/task/plan checks. The aggregate tree 007485cc1dad74ae735b2d2fad8a30204dd5b55c and receipt-update tree 2ca700b7e97cb7d3a28856e01edb5d42dca073cc both passed the full local candidate gate; the latter included Python 418/418, Debug build, CTest 583 entries (582 passed, one intentional skip), and renderer smoke 1/1. This receipt records the authorized non-destructive Launch Services attempt. S7 remains active pending committed-range review, exact hosted workflow, promotion-bound platform and sanitizer/static-analysis matrix, exact Windows runtime acceptance, strict checks, and authorized publication.",
     "plan": [
       "Complete authoritative movement, immutable permissions, and cross-client acceptance; keep policy compilation outside physics ticks.",
       "Finish player/views, adverse networking, camera-independent terrain/LOD, diagnostics, platform and analysis gates, captures, and S7 publication; then hold the minor for feedback."
@@ -1533,7 +1533,7 @@
     "finalized": true,
     "retrospective": "",
     "docs_review": "",
-    "environment_review": "The restricted Codex shell cannot inspect host process state or use host Launch Services; do not treat its renderer startup errors as host failures. Use one host-GUI execution for runtime acceptance. One exact Release client connected to the existing S7 server; no Launch Services repair, Spotlight change, or reboot was needed.",
+    "environment_review": "An authorized additive Launch Services seed/register attempt did not create app bundle records. Renderer smoke passed when run outside the restricted shell; no Launch Services cache deletion or reboot was performed.",
     "backlog_review": ""
   },
   {
@@ -11012,6 +11012,272 @@
       "Retarget the S7 CoreProject2026 dependency lock to the reviewed MSVC Debug maintenance fix and guard the immutable revision/ref."
     ],
     "baseline_commit": "397e0cad495b7c21801daa1d3434559761304eff",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0322",
+    "title": "Preserve distinct MSan C and C++ compiler aliases",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P1",
+    "route": "luna",
+    "milestone": "ED-010-S7",
+    "depends_on": [],
+    "acceptance": "Preserve distinct clang and clang++ executable paths when they are symlinks to the same Clang binary; add a regression for driver alias preservation; pass the focused installer tests and fast gate. The exact promotion-bound MSan row remains an aggregate S7 release gate under MC-AI-0038.",
+    "evidence": "Focused MSan installer suite passed 7/7, including the compiler-alias regression. The task commit hook remains the required fast-gate check; exact promotion-bound MSan validation is still required under MC-AI-0038.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0038",
+    "motivation": "The exact promoted Linux MSan row fails during GMP Autoconf because resolving the clang++ symlink erases its C++ driver identity and leaves CXX pointing at clang.",
+    "context": "The installer currently calls Path.resolve() on shutil.which() output. On the GitHub runner, /usr/bin/clang-18 and /usr/bin/clang++-18 resolve to one physical target, so the script exports the same path for CC and CXX. The GMP C++ configure probe then fails with undefined std::cout references. Keep the strict probe and compiler checks; do not special-case GMP.",
+    "complexity": "low",
+    "created_at": "2026-10-04",
+    "resolved_at": "2026-10-04",
+    "resolution_changes": "Preserved clang and clang++ driver aliases without dereferencing the shared compiler symlink, and added a regression that fails if Path.resolve collapses the two driver names.",
+    "plan": [
+      "Preserve the executable alias without dereferencing symlinks, add a deterministic regression, run the focused suite and the one batch fast gate, and leave exact MSan proof to the next promotion."
+    ],
+    "product_changes": [],
+    "code_changes": [
+      "Preserve Clang C/C++ driver aliases in the MSan toolchain installer and test that symlink targets do not erase argv[0] identity."
+    ],
+    "baseline_commit": "56d966a047022908dc03e05c8fd0f45efa67b880",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0323",
+    "title": "Wait for loopback echo before stopping its test server",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P1",
+    "route": "luna",
+    "milestone": "ED-010-S7",
+    "depends_on": [],
+    "acceptance": "Make the single-channel loopback test wait for its exact echoed payload before stopping the server, using the existing bounded poll helper; pass the focused network suite and commit fast gate. Production transport behavior must remain unchanged.",
+    "evidence": "Rebuilt mc_tests from this exact checkout. Focused CTest NetClientServer suite passed 17/17 in 5.50 seconds, including SendReceiveSingleChannelTest (#97) in 0.15 seconds. The commit fast gate remains enforced by the installed local hook.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0038",
+    "motivation": "The S7 Windows Debug test run lost a valid loopback reply because the fixture performed one 10 ms client poll and immediately stopped the server.",
+    "context": "The server thread receives the request and enqueues the echo asynchronously. TestClient::pollAndWait polls the client once for DEFAULT_TIMEOUT (10 ms). In SendReceiveSingleChannelTest, after send, a single poll is not an event-completion contract; under scheduling delay, the assertion races the response. The suite already provides pollUntil with a bounded one-second deadline.",
+    "complexity": "low",
+    "created_at": "2026-10-04",
+    "resolved_at": "2026-10-04",
+    "resolution_changes": "Changed the single-channel loopback fixture to poll until the exact echoed payload arrives before joining the server. No production transport code changed.",
+    "plan": [
+      "Replace the one-shot poll with a predicate wait for client_received == msg, retain exact send/receive assertions, run the focused test suite, then the batch gate."
+    ],
+    "product_changes": [],
+    "code_changes": [
+      "Replace a one-shot 10 ms poll in the loopback echo test with the existing bounded predicate wait for the exact response."
+    ],
+    "baseline_commit": "a4720b8391967f1c4676eaf2164c643307540e1c",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0324",
+    "title": "Pin S7 to the reviewed CoreCpp executor portability fix",
+    "kind": "chore",
+    "status": "done",
+    "priority": "P1",
+    "route": "luna",
+    "milestone": "ED-010-S7",
+    "depends_on": [
+      "MC-AI-0056"
+    ],
+    "acceptance": "Pin MinecraftClone to the exact reviewed CoreCpp commit that fixes the RuntimeExecutors -Werror failures, with a published safe branch fetch_ref; keep revision verification immutable. Add a regression for the exact CoreCpp revision/ref pair and pass focused acquisition tests. Keep the sanitizer and all other platform matrix rows as aggregate S7 gates.",
+    "evidence": "python3 -B -m unittest script.tests.test_ci_acquire -v passed 30/30. A fresh depth-one fetch of refs/heads/codex/ai-cc-0040-explicit-submission-handle contained the locked commit; detached checkout matched the exact SHA and had a clean worktree. The hosted sanitizer rows remain aggregate S7 gates.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0038",
+    "motivation": "The exact S7 Linux LSan and Android HWASan builds fail compiling the pinned RuntimeExecutors because two rejected Submission returns omit the empty JobHandle field under -Werror.",
+    "context": "CoreCpp now publishes reviewed commit 8e1d633680533632faf59a7ad0a2277deaad1e9d on refs/heads/codex/ai-cc-0040-explicit-submission-handle. It contains the explicit empty-handle fix from 754495f318026795c5b1e21fccbb2393f048cf15 and a separate task-record correction. The dependency fetcher fetches the branch and checks out the locked exact revision; preserve that immutable identity and do not suppress strict warnings.",
+    "complexity": "low",
+    "created_at": "2026-10-04",
+    "resolved_at": "2026-10-04",
+    "resolution_changes": "Pinned CoreCpp to exact reviewed revision 8e1d633680533632faf59a7ad0a2277deaad1e9d from its published safe branch and extended the repository-lock regression to assert both immutable values.",
+    "plan": [
+      "Update the CoreCpp lock pair to the exact reviewed published revision and branch; update the repository-lock regression; run focused dependency-acquisition checks and verify exact clean package consumption."
+    ],
+    "product_changes": [
+      "No product behavior changed; this advances the S7 RuntimeExecutors dependency to its reviewed warning-clean fix."
+    ],
+    "code_changes": [
+      "Update dependencies.lock.json and its acquisition regression to the exact reviewed CoreCpp revision and safe fetch_ref."
+    ],
+    "baseline_commit": "20ad0ca15c6b4a264ce3bfd86e27d689e7607695",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0325",
+    "title": "Instrument S7 terrain-stream and input-ack stages",
+    "kind": "chore",
+    "status": "done",
+    "priority": "P0",
+    "route": "luna",
+    "milestone": "ED-010-S7",
+    "depends_on": [],
+    "acceptance": "Add bounded opt-in aggregate diagnostics to the existing Release tests for full-radius terrain streaming and four-client flight acknowledgements. Metrics must distinguish height-tile versus world-materialization job enqueue/start/finish/collection and queue/run/collect delays; GameServer loop, tick, stream-pump, and wake gaps; per-client received/acknowledged/pending input sequences; and ready/inflight credits with delivery-credit turnaround. Emit at most once per second, use steady-clock durations, and add no per-job logging or production-loop metrics when hooks are absent. Run both unchanged acceptance tests and report measured stage evidence sufficient to identify the dominant bottleneck or the next discriminating run. Preserve every current membership, deadline, lag, catch-up, movement, and removal assertion.",
+    "evidence": "After adding null-hook guards so production worker callbacks and result collection avoid diagnostic timestamp reads and metric atomics, the Release rebuild passed and both unchanged acceptance tests passed on local Mac hardware (12 hardware threads, 8 terrain workers). Full-radius streaming delivered 205861/205861 tiles in 43.320 seconds (43.70 seconds CTest wall time), below the unchanged 90-second limit. Final worker snapshot: submitted/started/finished/collected 205861/205861/205861/205861; tile enqueue-submit/executor/run/completion-collection average/max 18/28, 0/4, 0/5, and 6/9 ms; 12870 delivery-credit samples averaged 12 ms with 15 ms maximum. Four-client flight processed all 350 inputs with maximum acknowledgement lag 7 at input 28 (limit 16), final acknowledgements 350/350/350/350, and 35.002-second duration (35.71 seconds CTest wall time). These remain local-only results from a 12-thread/8-worker host and do not explain the hosted two-/three-worker failures. The next discriminating run remains the exact hosted low-core matrix after aligning the CoreProject maintenance pin. No thresholds changed and no root-cause or S7 release claim is made.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0038",
+    "motivation": "S7 Release acceptance fails full-radius terrain throughput and sustained-flight acknowledgement lag on hosted Mac and Windows workers. Existing queue gauges and end-state acknowledgements do not isolate generation, executor, pump, delivery-credit, or input-processing delay.",
+    "context": "GitHub run 37225008757 at e4c2bc83 showed repeated MC-AI-0304 failures (Mac Release 30,728/205,861 tiles within the 90-second window; Windows Release 203,468/205,861) and MC-AI-0247 maximum acknowledgement lag 20 against limit 16. Existing server metrics report queue sizes every ten seconds but do not distinguish submitted/running/completed/collected work or stage durations. Prior source analysis has not established a root cause; do not change thresholds or claim a performance fix from source inspection.",
+    "complexity": "high",
+    "created_at": "2026-10-04",
+    "resolved_at": "2026-10-05",
+    "resolution_changes": "Added opt-in steady-clock counters and stage durations for tile and world-generation jobs, per-client input acknowledgement latency, GameServer loop/tick/pump/sleep, and delivery-credit turnaround. The stress-test hooks log at most once per second and production paths allocate no per-job timers without the metrics callback. Updated the gameplay code guide.",
+    "plan": [
+      "Instrument the existing benchmark hooks and two acceptance tests with one-second bounded stage aggregates; distinguish preview and world-generation work, loop/pump timings, input backlog, and delivery-credit latency."
+    ],
+    "product_changes": [],
+    "code_changes": [
+      "Opt-in bounded test diagnostics in GameServer benchmark hooks and focused integration tests; document the measurement contract."
+    ],
+    "baseline_commit": "b8b6dda59671c64f622ead90bc7342fa26c110e1",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0326",
+    "title": "Pin S7 to the reviewed CoreProject 0.1.3.3 maintenance package",
+    "kind": "chore",
+    "status": "done",
+    "priority": "P1",
+    "route": "luna",
+    "milestone": "ED-010-S7",
+    "depends_on": [
+      "MC-AI-0324"
+    ],
+    "acceptance": "Pin dependencies.lock.json CoreProject2026 to revision 10200a380a883ffd70806627710c3c0c25971cbb and fetch_ref refs/heads/codex/ai-s7-coreproject-pin-reviewed without changing the CoreCpp pin. Add exact revision/ref regression assertions. Verify clean depth-one acquisition resolves the exact commit, reconfigure the MinecraftClone Release package against the exact CoreCpp and CoreProject package metadata, run focused consumer/build and server-stream regressions, and record exact evidence. This task does not replace the promotion-bound cross-platform sanitizer/static-analysis or Windows hands-on runtime gates.",
+    "evidence": "The reviewed CoreProject2026 0.1.3.3 candidate was published at refs/heads/codex/ai-s7-coreproject-pin-reviewed and read back as 10200a380a883ffd70806627710c3c0c25971cbb. A fresh clean HTTPS depth-one checkout from that branch was shallow, detached at the exact SHA, and clean; local CI deploy-key files were unavailable, so the hosted workflow still owns SSH-auth validation. Exact CoreProject Release configuration with COREPROJECT2026_ALLOW_INEXACT_CORECPP=OFF built and installed 87/87 steps; installed metadata reports revision 10200a380a883ffd70806627710c3c0c25971cbb, DIRTY=FALSE, REVISION_EXACT=TRUE, and required CoreCpp 8e1d633680533632faf59a7ad0a2277deaad1e9d. CoreProject CTest passed 28/28 including PackageConsumer. MinecraftClone Release reconfigured against exact CoreCpp/CoreProject prefixes, built 127/127 steps (one existing narrowing warning in tests/core/net_client_server_tests.cpp:344), and passed tests #241 in 48.68s and #247 in 35.71s. Private dependency lock regression passed 30/30; ai_tasks check passed. CoreProject range received high-two contract/adversarial approval at fingerprint c17513b760bcda75bec4c70cb339b237a22906341d56d3952b436b4e98114df9.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0038",
+    "motivation": "The S7 private-dependency lock still selects CoreProject2026 0094c4efa4efd76664a2b44aa0c07307b622f395. The reviewed 0.1.3.3 maintenance candidate is at 10200a380a883ffd70806627710c3c0c25971cbb and has been built against the exact CoreCpp 8e1d633680533632faf59a7ad0a2277deaad1e9d package; S7 must consume that immutable package before promotion-bound validation.",
+    "context": "The published maintenance branch codex/ai-s7-coreproject-pin-reviewed resolves to exact source 10200a380a883ffd70806627710c3c0c25971cbb. A clean HTTPS depth-one acquisition resolves the exact lock SHA. Exact local package metadata/build and 28/28 tests pass against CoreCpp 8e1d633680533632faf59a7ad0a2277deaad1e9d; the local CI deploy-key path is separately exercised by hosted workflows.",
+    "complexity": "medium",
+    "created_at": "2026-10-05",
+    "resolved_at": "2026-10-05",
+    "resolution_changes": "Pinned S7 to the published, reviewed CoreProject2026 0.1.3.3 maintenance commit and verified exact package provenance, full CoreProject tests, fresh shallow source acquisition, MinecraftClone Release build, and both focused streaming/acknowledgement regressions. Refreshed and checked the generated code source inventory after the dependency lock and acquisition test changed. The hosted authenticated deploy-key workflow remains an aggregate release gate.",
+    "plan": [
+      "Clarify acceptance and implementation steps.",
+      "Publish and read back the reviewed CoreProject2026 maintenance branch at the exact immutable commit; update the lock and regression to the exact revision/ref pair; verify fresh acquisition and package provenance; rebuild the Release candidate against both exact dependencies; run focused package and streaming tests and record receipts."
+    ],
+    "product_changes": [
+      "No gameplay behavior changes; S7 consumes the explicitly reviewed CoreProject2026 0.1.3.3 maintenance package."
+    ],
+    "code_changes": [
+      "Update dependencies.lock.json and its private-dependency lock regression to the reviewed immutable CoreProject2026 revision and fetch ref; refresh generated docs/code/source_state.json for the changed source inventory."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "No narrative code guide contract changed. Refreshed docs/code/source_state.json after the dependency lock and acquisition regression changed, then python3 script/ai_docs.py check passed.",
+    "environment_review": "",
+    "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0327",
+    "title": "Make the S7 MSan compiler-alias regression portable across hosts",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P1",
+    "route": "luna",
+    "milestone": "ED-010-S7",
+    "depends_on": [],
+    "acceptance": "On every host, the regression computes expected paths with that host’s os.path.abspath spelling while proving the C and C++ aliases remain distinct and Path.resolve is not called. The focused installer suite and local fast gate pass; the exact hosted Windows fast rerun remains an aggregate MC-AI-0038 gate before promotion.",
+    "evidence": "GitHub ai-dev run 37247763643 isolated the Windows-only failure: the fake /usr/bin/clang-18 path became a D:-rooted Windows path under host normalization, while the test expected POSIX spelling. The updated regression derives expected spellings from the host and checks both aliases remain distinct. Focused installer suite passed 7/7 on macOS; python3 script/ai_check.py --fast passed on the exact candidate after refreshing docs/code/source_state.json. The corrected hosted Windows fast rerun remains an aggregate MC-AI-0038 gate.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0038",
+    "motivation": "The exact ai-dev Windows fast run fails the new compiler-alias test because a mocked POSIX compiler path is normalized to a Windows drive path.",
+    "context": "MC-AI-0322 correctly preserves the Clang driver alias with os.path.abspath. On Windows, the test double returns POSIX /usr/bin paths, and ntpath normalizes them to drive-rooted Windows paths. This is a test fixture portability failure, not a production MSan issue; keep installer behavior unchanged.",
+    "complexity": "low",
+    "created_at": "2026-10-05",
+    "resolved_at": "2026-10-05",
+    "resolution_changes": "Changed the regression to compare compiler aliases using the host’s os.path.abspath spelling while still asserting Path.resolve is never called; the production installer is unchanged.",
+    "plan": [
+      "Use host-native normalized expected paths in the compiler-alias test while retaining the assertion that Path.resolve is never called. Run the focused installer suite, fast gate, exact hosted Windows rerun, and then resume snapshot finalization."
+    ],
+    "product_changes": [],
+    "code_changes": [
+      "Make the MSan compiler-alias regression portable across host path conventions without changing the Linux-only installer."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0328",
+    "title": "Permit the first ai-main promotion push to start its exact-SHA analysis matrix while retaining strict pre-tag verification",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P1",
+    "route": "luna",
+    "milestone": "ED-010-S7",
+    "depends_on": [],
+    "acceptance": "Only a structurally validated ai_publish snapshot promotion whose first parent matches destination ai-main, task trailers identify the snapshot, and metadata and merge tree pass existing promotion checks may use fast indexed pre-push to start the exact-SHA matrix. Ordinary ai-main pushes remain strict. Keep the full candidate gate in finish and strict checks for tag creation and pushes; absent or failed exact-SHA receipts block tags. Cover valid promotion, ordinary commit, wrong remote base, and strict-tag paths with regressions; document bootstrap order.",
+    "evidence": "Added tests proving exact promotion bootstrap succeeds, ordinary one-parent commits and a mismatched remote base fail verification, and ordinary ai-dev HEAD targeting ai-main falls back to strict rather than fast. test_ai_check.py passed 46/46 and test_ai_publish.py passed 17/17; sh -n .githooks/pre-push, ai_docs.py refresh, ai_docs.py check, and ai_tasks.py check passed. Existing publisher coverage still blocks tag creation without the exact hosted receipt. Exact task push CI remains a separate release gate.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0038",
+    "motivation": "The first ai-main promotion push must trigger the exact-SHA sanitizer/static-analysis matrix; requiring its receipt in pre-push creates a circular release gate.",
+    "context": "ai_publish.finish creates the exact promotion commit locally after the full snapshot candidate gate. The hosted desktop and MC-AI-0249 matrix are triggered only by pushing that commit to ai-main, while the current pre-push hook invokes ai_check.py --strict and verify_analysis_gate.py requires the not-yet-generated exact-SHA receipt.",
+    "complexity": "medium",
+    "created_at": "2026-10-05",
+    "resolved_at": "2026-10-05",
+    "resolution_changes": "The pre-push hook now grants fast bootstrap only after the snapshot promotion verifier confirms the current remote first parent, two-parent structure, snapshot task metadata/trailers, and expected merge tree; ordinary ai-main pushes and all tag pushes remain strict.",
+    "plan": [
+      "Update pre-push dispatch and regression tests so ai-main promotion can bootstrap hosted checks without the not-yet-created analysis receipt.",
+      "Preserve ai_publish candidate validation and strict ai-main tag checks; add a test proving missing exact-SHA receipt blocks tagging.",
+      "Document promotion push, exact hosted matrix, strict verification, and tag order; run focused and batch checks.",
+      "Validate the two-parent promotion, remote base, snapshot task/trailers, and expected merge tree before granting fast bootstrap; route all other ai-main pushes through strict checks."
+    ],
+    "product_changes": [
+      "S7 ai-main promotion can start the exact-SHA release matrix; the snapshot tag remains protected by strict checks."
+    ],
+    "code_changes": [
+      "Fix release pre-push mode selection, regression coverage, and workflow documentation."
+    ],
+    "baseline_commit": "",
     "commits": [],
     "finalized": true,
     "retrospective": "",

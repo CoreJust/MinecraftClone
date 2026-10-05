@@ -7,6 +7,7 @@
 #include <core/IO/Log.hpp>
 
 #include <algorithm>
+#include <atomic>
 #include <cstddef>
 #include <cstdlib>
 #include <functional>
@@ -243,11 +244,44 @@ namespace server {
 struct GameServer::HeightTileWorkerPool final {
     static constexpr uint32_t MAX_OUTSTANDING_WORK = 128U;
 
+    enum class WorkState : uint8_t {
+        ExecutorQueued,
+        Running,
+        Finished,
+    };
+
+    struct JobTiming final {
+        std::atomic<WorkState> state{WorkState::ExecutorQueued};
+        std::chrono::steady_clock::time_point enqueued_at{};
+        std::chrono::steady_clock::time_point submitted_at{};
+        std::chrono::steady_clock::time_point started_at{};
+        std::chrono::steady_clock::time_point finished_at{};
+    };
+
+    struct AtomicJobMetrics final {
+        std::atomic<uint64_t> enqueued{};
+        std::atomic<uint64_t> submitted{};
+        std::atomic<uint64_t> started{};
+        std::atomic<uint64_t> finished{};
+        std::atomic<uint64_t> collected{};
+        std::atomic<uint64_t> enqueue_to_submit_total_ns{};
+        std::atomic<uint64_t> enqueue_to_submit_max_ns{};
+        std::atomic<uint64_t> enqueue_to_start_total_ns{};
+        std::atomic<uint64_t> enqueue_to_start_max_ns{};
+        std::atomic<uint64_t> executor_queue_total_ns{};
+        std::atomic<uint64_t> executor_queue_max_ns{};
+        std::atomic<uint64_t> execution_total_ns{};
+        std::atomic<uint64_t> execution_max_ns{};
+        std::atomic<uint64_t> completion_to_collection_total_ns{};
+        std::atomic<uint64_t> completion_to_collection_max_ns{};
+    };
+
     struct Work final {
         core::ClientId client_id;
         uint64_t generation;
         shared::GenerationJob job;
         bool world_generation = false;
+        std::shared_ptr<JobTiming> timing;
     };
 
     struct Result final {
@@ -260,6 +294,7 @@ struct GameServer::HeightTileWorkerPool final {
         shared::HeightTile tile{};
         shared::Chunk chunk{};
         std::vector<uint8_t> generation_output;
+        std::shared_ptr<JobTiming> timing;
     };
 
     struct Submitted final {
@@ -269,8 +304,8 @@ struct GameServer::HeightTileWorkerPool final {
     };
 
     struct QueueMetrics final {
-        uint32_t pending = 0U;
-        uint32_t submitted = 0U;
+        GameServer::WorkerMetrics height_tiles;
+        GameServer::WorkerMetrics world_generation;
     };
 
     HeightTileWorkerPool()
@@ -303,10 +338,39 @@ struct GameServer::HeightTileWorkerPool final {
     QueueMetrics queueMetrics() const
     {
         std::lock_guard lock{m_mutex};
-        return {
-            .pending = static_cast<uint32_t>(m_pending.size()),
-            .submitted = static_cast<uint32_t>(m_submitted.size()),
-        };
+        QueueMetrics metrics;
+        for (Work const& work : m_pending) {
+            ++metricsFor(metrics, work.world_generation).pending_jobs;
+        }
+        for (auto const& [id, submitted] : m_submitted) {
+            static_cast<void>(id);
+            GameServer::WorkerMetrics& job_metrics = metricsFor(metrics, submitted.work.world_generation);
+            ++job_metrics.submitted_total;
+            if (submitted.result->timing == nullptr) {
+                ++job_metrics.executor_queued_jobs;
+                continue;
+            }
+            switch (submitted.result->timing->state.load(std::memory_order_acquire)) {
+                case WorkState::ExecutorQueued:
+                    ++job_metrics.executor_queued_jobs;
+                    break;
+                case WorkState::Running:
+                    ++job_metrics.running_jobs;
+                    break;
+                case WorkState::Finished:
+                    ++job_metrics.completed_uncollected_jobs;
+                    break;
+            }
+        }
+        copyAtomicMetrics(m_height_tile_metrics, metrics.height_tiles);
+        copyAtomicMetrics(m_world_generation_metrics, metrics.world_generation);
+        return metrics;
+    }
+
+    void setBenchmarkMetricsEnabled(bool const enabled)
+    {
+        std::lock_guard lock{m_mutex};
+        m_benchmark_metrics_enabled = enabled;
     }
 
     [[nodiscard]]
@@ -315,6 +379,11 @@ struct GameServer::HeightTileWorkerPool final {
         std::lock_guard lock{m_mutex};
         if (outstandingCount() >= MAX_OUTSTANDING_WORK) {
             return false;
+        }
+        if (m_benchmark_metrics_enabled) {
+            work.timing = std::make_shared<JobTiming>();
+            work.timing->enqueued_at = std::chrono::steady_clock::now();
+            atomicMetrics(work.world_generation).enqueued.fetch_add(1U, std::memory_order_relaxed);
         }
         m_pending.push_back(std::move(work));
         submitPending();
@@ -417,6 +486,20 @@ struct GameServer::HeightTileWorkerPool final {
             if (submitted == m_submitted.end()) {
                 continue;
             }
+            std::shared_ptr<JobTiming> const timing = submitted->second.result->timing;
+            if (timing != nullptr) {
+                AtomicJobMetrics& job_metrics = atomicMetrics(submitted->second.work.world_generation);
+                WorkState const state = timing->state.load(std::memory_order_acquire);
+                if (state == WorkState::Finished) {
+                    auto const collection_delay = std::chrono::steady_clock::now() - timing->finished_at;
+                    addDuration(
+                        job_metrics.completion_to_collection_total_ns,
+                        job_metrics.completion_to_collection_max_ns,
+                        collection_delay
+                    );
+                }
+                job_metrics.collected.fetch_add(1U, std::memory_order_relaxed);
+            }
             submitted->second.result->cancelled = completion->status()
                 == core::executor::CompletionStatus::Cancelled;
             submitted->second.result->succeeded = completion->status()
@@ -429,6 +512,127 @@ struct GameServer::HeightTileWorkerPool final {
     }
 
 private:
+    [[nodiscard]]
+    static GameServer::WorkerMetrics& metricsFor(QueueMetrics& metrics, bool const world_generation) noexcept
+    {
+        return world_generation ? metrics.world_generation : metrics.height_tiles;
+    }
+
+    [[nodiscard]]
+    AtomicJobMetrics& atomicMetrics(bool const world_generation) noexcept
+    {
+        return world_generation ? m_world_generation_metrics : m_height_tile_metrics;
+    }
+
+    [[nodiscard]]
+    AtomicJobMetrics const& atomicMetrics(bool const world_generation) const noexcept
+    {
+        return world_generation ? m_world_generation_metrics : m_height_tile_metrics;
+    }
+
+    static void updateMaximum(std::atomic<uint64_t>& maximum, uint64_t const candidate) noexcept
+    {
+        uint64_t observed = maximum.load(std::memory_order_relaxed);
+        while (observed < candidate) {
+            if (maximum.compare_exchange_weak(
+                    observed,
+                    candidate,
+                    std::memory_order_relaxed,
+                    std::memory_order_relaxed
+                )) {
+                return;
+            }
+        }
+    }
+
+    static void addDuration(
+        std::atomic<uint64_t>& total,
+        std::atomic<uint64_t>& maximum,
+        std::chrono::steady_clock::duration const duration
+    ) noexcept
+    {
+        auto const nanoseconds = std::chrono::duration_cast<std::chrono::nanoseconds>(duration);
+        uint64_t const count = static_cast<uint64_t>(std::max<int64_t>(nanoseconds.count(), 0));
+        total.fetch_add(count, std::memory_order_relaxed);
+        updateMaximum(maximum, count);
+    }
+
+    static void copyAtomicMetrics(AtomicJobMetrics const& source, GameServer::WorkerMetrics& destination)
+    {
+        destination.enqueued_total = source.enqueued.load(std::memory_order_relaxed);
+        destination.submitted_total = source.submitted.load(std::memory_order_relaxed);
+        destination.started_total = source.started.load(std::memory_order_relaxed);
+        destination.finished_total = source.finished.load(std::memory_order_relaxed);
+        destination.collected_total = source.collected.load(std::memory_order_relaxed);
+        destination.enqueue_to_submit_total = std::chrono::nanoseconds{
+            source.enqueue_to_submit_total_ns.load(std::memory_order_relaxed),
+        };
+        destination.enqueue_to_submit_max = std::chrono::nanoseconds{
+            source.enqueue_to_submit_max_ns.load(std::memory_order_relaxed),
+        };
+        destination.enqueue_to_start_total = std::chrono::nanoseconds{
+            source.enqueue_to_start_total_ns.load(std::memory_order_relaxed),
+        };
+        destination.enqueue_to_start_max = std::chrono::nanoseconds{
+            source.enqueue_to_start_max_ns.load(std::memory_order_relaxed),
+        };
+        destination.executor_queue_total = std::chrono::nanoseconds{
+            source.executor_queue_total_ns.load(std::memory_order_relaxed),
+        };
+        destination.executor_queue_max = std::chrono::nanoseconds{
+            source.executor_queue_max_ns.load(std::memory_order_relaxed),
+        };
+        destination.execution_total = std::chrono::nanoseconds{
+            source.execution_total_ns.load(std::memory_order_relaxed),
+        };
+        destination.execution_max = std::chrono::nanoseconds{
+            source.execution_max_ns.load(std::memory_order_relaxed),
+        };
+        destination.completion_to_collection_total = std::chrono::nanoseconds{
+            source.completion_to_collection_total_ns.load(std::memory_order_relaxed),
+        };
+        destination.completion_to_collection_max = std::chrono::nanoseconds{
+            source.completion_to_collection_max_ns.load(std::memory_order_relaxed),
+        };
+    }
+
+    void recordStarted(Result const& result, std::chrono::steady_clock::time_point const started_at)
+    {
+        if (result.timing == nullptr) {
+            return;
+        }
+        result.timing->started_at = started_at;
+        result.timing->state.store(WorkState::Running, std::memory_order_release);
+        AtomicJobMetrics& metrics = atomicMetrics(result.world_generation);
+        metrics.started.fetch_add(1U, std::memory_order_relaxed);
+        addDuration(
+            metrics.enqueue_to_start_total_ns,
+            metrics.enqueue_to_start_max_ns,
+            started_at - result.timing->enqueued_at
+        );
+        addDuration(
+            metrics.executor_queue_total_ns,
+            metrics.executor_queue_max_ns,
+            started_at - result.timing->submitted_at
+        );
+    }
+
+    void recordFinished(Result const& result, std::chrono::steady_clock::time_point const finished_at)
+    {
+        if (result.timing == nullptr) {
+            return;
+        }
+        result.timing->finished_at = finished_at;
+        result.timing->state.store(WorkState::Finished, std::memory_order_release);
+        AtomicJobMetrics& metrics = atomicMetrics(result.world_generation);
+        metrics.finished.fetch_add(1U, std::memory_order_relaxed);
+        addDuration(
+            metrics.execution_total_ns,
+            metrics.execution_max_ns,
+            finished_at - result.timing->started_at
+        );
+    }
+
     [[nodiscard]] uint32_t outstandingCount() const noexcept
     {
         return static_cast<uint32_t>(m_pending.size() + m_submitted.size());
@@ -448,6 +652,20 @@ private:
         }
     }
 
+    static void executeJob(Result& result, shared::TerrainGenerator const& generator)
+    {
+        if (result.world_generation) {
+            executeGenerationJob(result, generator);
+            return;
+        }
+
+        shared::HeightTileCoordinate const coordinate{
+            .x = result.job.coordinate.x,
+            .y = result.job.coordinate.y,
+        };
+        result.tile = generator.generateHeightTile(coordinate);
+    }
+
     void submitPending()
     {
         while (!m_pending.empty() && m_submitted.size() < m_submission_window) {
@@ -458,22 +676,31 @@ private:
                 .generation = work.generation,
                 .job = work.job,
                 .world_generation = work.world_generation,
+                .timing = work.timing,
             });
+            if (result->timing != nullptr) {
+                result->timing->submitted_at = std::chrono::steady_clock::now();
+            }
             core::executor::Submission submission = m_executor->trySubmit(
-                [result](core::executor::CancellationToken const token) {
+                [this, result](core::executor::CancellationToken const token) {
                     if (token.isCancellationRequested()) {
                         return;
                     }
-                    thread_local shared::TerrainGenerator terrain_generator;
-                    if (result->world_generation) {
-                        executeGenerationJob(*result, terrain_generator);
-                        return;
+                    if (result->timing != nullptr) {
+                        recordStarted(*result, std::chrono::steady_clock::now());
                     }
-                    shared::HeightTileCoordinate const coordinate{
-                        .x = result->job.coordinate.x,
-                        .y = result->job.coordinate.y,
-                    };
-                    result->tile = terrain_generator.generateHeightTile(coordinate);
+                    thread_local shared::TerrainGenerator terrain_generator;
+                    try {
+                        executeJob(*result, terrain_generator);
+                    } catch (...) {
+                        if (result->timing != nullptr) {
+                            recordFinished(*result, std::chrono::steady_clock::now());
+                        }
+                        throw;
+                    }
+                    if (result->timing != nullptr) {
+                        recordFinished(*result, std::chrono::steady_clock::now());
+                    }
                 }
             );
             if (submission.status != core::executor::SubmissionStatus::Accepted) {
@@ -481,6 +708,15 @@ private:
                 break;
             }
             uint64_t const job_id = submission.handle.id();
+            if (work.timing != nullptr) {
+                AtomicJobMetrics& metrics = atomicMetrics(work.world_generation);
+                metrics.submitted.fetch_add(1U, std::memory_order_relaxed);
+                addDuration(
+                    metrics.enqueue_to_submit_total_ns,
+                    metrics.enqueue_to_submit_max_ns,
+                    work.timing->submitted_at - work.timing->enqueued_at
+                );
+            }
             m_submitted.emplace(job_id, Submitted{
                 .work = std::move(work),
                 .result = std::move(result),
@@ -494,7 +730,10 @@ private:
     std::unique_ptr<core::executor::Executor> m_executor;
     std::vector<Work> m_pending;
     std::unordered_map<uint64_t, Submitted> m_submitted;
+    AtomicJobMetrics m_height_tile_metrics;
+    AtomicJobMetrics m_world_generation_metrics;
     uint32_t m_submission_window = 0U;
+    bool m_benchmark_metrics_enabled = false;
 };
 
 GameServer::GameServer(
@@ -595,21 +834,36 @@ void GameServer::run(
     BenchmarkHooks const* const benchmark_hooks
 )
 {
+    m_benchmark_metrics_enabled = benchmark_hooks != nullptr && static_cast<bool>(benchmark_hooks->on_preview_metrics);
+    m_height_tile_workers->setBenchmarkMetricsEnabled(m_benchmark_metrics_enabled);
     auto next_simulation = std::chrono::steady_clock::now();
+    std::chrono::steady_clock::time_point previous_loop_started_at{};
+    std::chrono::nanoseconds previous_sleep{};
     while (!stop_requested.load(std::memory_order_relaxed)) {
         auto const now = std::chrono::steady_clock::now();
+        auto const loop_started_at = m_benchmark_metrics_enabled
+            ? now : std::chrono::steady_clock::time_point{};
+        auto const loop_interval = m_benchmark_metrics_enabled && previous_loop_started_at.time_since_epoch().count() != 0
+            ? std::chrono::duration_cast<std::chrono::nanoseconds>(loop_started_at - previous_loop_started_at)
+            : std::chrono::nanoseconds::zero();
+        if (m_benchmark_metrics_enabled) {
+            previous_loop_started_at = loop_started_at;
+        }
+        std::chrono::nanoseconds tick_duration{};
         if (now >= next_simulation) {
-            auto const tick_started_at = benchmark_hooks
+            bool const measure_tick = benchmark_hooks != nullptr
+                && (m_benchmark_metrics_enabled || static_cast<bool>(benchmark_hooks->on_tick));
+            auto const tick_started_at = measure_tick
                 ? std::chrono::steady_clock::now()
                 : std::chrono::steady_clock::time_point{};
             uint64_t const events = tick(std::chrono::milliseconds::zero());
-            if (benchmark_hooks && benchmark_hooks->on_tick) {
-                benchmark_hooks->on_tick(
-                    std::chrono::duration_cast<std::chrono::nanoseconds>(
-                        std::chrono::steady_clock::now() - tick_started_at
-                    ),
-                    events
+            if (measure_tick) {
+                tick_duration = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                    std::chrono::steady_clock::now() - tick_started_at
                 );
+                if (benchmark_hooks != nullptr && benchmark_hooks->on_tick) {
+                    benchmark_hooks->on_tick(tick_duration, events);
+                }
             }
             next_simulation += shared::TICK;
         } else {
@@ -627,24 +881,66 @@ void GameServer::run(
         }
         if (benchmark_hooks && benchmark_hooks->on_preview_metrics) {
             HeightTileWorkerPool::QueueMetrics const worker_queue_metrics = m_height_tile_workers->queueMetrics();
+            auto const metrics_at = std::chrono::steady_clock::now();
+            std::chrono::nanoseconds const loop_work = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                metrics_at - loop_started_at
+            );
             for (PreviewStream const& stream : m_preview_streams) {
-                benchmark_hooks->on_preview_metrics(stream.client_id, {
+                PreviewStreamMetrics metrics{
+                    .height_tile_jobs = worker_queue_metrics.height_tiles,
+                    .world_generation_jobs = worker_queue_metrics.world_generation,
                     .queued_tiles = static_cast<uint32_t>(stream.queued_keys.size()),
                     .dispatched_tiles = static_cast<uint32_t>(stream.dispatched_keys.size()),
-                    .pending_worker_jobs = worker_queue_metrics.pending,
-                    .submitted_worker_jobs = worker_queue_metrics.submitted,
+                    .pending_worker_jobs = worker_queue_metrics.height_tiles.pending_jobs
+                        + worker_queue_metrics.world_generation.pending_jobs,
+                    .submitted_worker_jobs = worker_queue_metrics.height_tiles.executor_queued_jobs
+                        + worker_queue_metrics.height_tiles.running_jobs
+                        + worker_queue_metrics.height_tiles.completed_uncollected_jobs
+                        + worker_queue_metrics.world_generation.executor_queued_jobs
+                        + worker_queue_metrics.world_generation.running_jobs
+                        + worker_queue_metrics.world_generation.completed_uncollected_jobs,
                     .ready_tiles = static_cast<uint32_t>(stream.ready_tiles.size()),
                     .inflight_deliveries = static_cast<uint32_t>(stream.inflight_deliveries.size()),
                     .inflight_additions = static_cast<uint32_t>(stream.inflight_addition_keys.size()),
                     .delivery_credits = stream.delivery_credits,
                     .resident_tiles = static_cast<uint32_t>(stream.resident_keys.size()),
-                });
+                    .delivery_credit_samples = stream.delivery_credit_samples,
+                    .delivery_credit_total = stream.delivery_credit_total,
+                    .delivery_credit_max = stream.delivery_credit_max,
+                    .server_loop_interval = loop_interval,
+                    .server_loop_work = loop_work,
+                    .server_tick = tick_duration,
+                    .stream_pump = m_last_stream_pump_duration,
+                    .previous_sleep = previous_sleep,
+                };
+                auto const replication = std::ranges::find(
+                    m_player_replications,
+                    stream.client_id,
+                    &PlayerReplication::id
+                );
+                if (replication != m_player_replications.end()) {
+                    metrics.latest_received_input_sequence = replication->latest_received_sequence;
+                    metrics.acknowledged_input_sequence = replication->acknowledged_input_sequence;
+                    metrics.unacknowledged_input_count = replication->latest_received_sequence
+                        - replication->acknowledged_input_sequence;
+                    metrics.pending_input_count = static_cast<uint32_t>(replication->pending_inputs.size());
+                    metrics.materialization_admission_failures = replication->materialization_admission_failures;
+                }
+                benchmark_hooks->on_preview_metrics(stream.client_id, metrics);
             }
         }
-        std::this_thread::sleep_until(std::min(
+        auto const sleep_deadline = std::min(
             next_simulation,
             std::chrono::steady_clock::now() + std::chrono::milliseconds{5}
-        ));
+        );
+        auto const sleep_started_at = m_benchmark_metrics_enabled
+            ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
+        std::this_thread::sleep_until(sleep_deadline);
+        if (m_benchmark_metrics_enabled) {
+            previous_sleep = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                std::chrono::steady_clock::now() - sleep_started_at
+            );
+        }
     }
 }
 
@@ -1258,6 +1554,14 @@ void GameServer::acknowledgeHeightTileDelivery(
     if (delivery == stream->inflight_deliveries.end()) {
         return;
     }
+    if (delivery->second.admitted_at.time_since_epoch().count() != 0) {
+        auto const elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(
+            std::chrono::steady_clock::now() - delivery->second.admitted_at
+        );
+        ++stream->delivery_credit_samples;
+        stream->delivery_credit_total += elapsed;
+        stream->delivery_credit_max = std::max(stream->delivery_credit_max, elapsed);
+    }
     for (shared::HeightTileKey const key : delivery->second.additions) {
         stream->inflight_addition_keys.erase(key);
         stream->resident_keys.insert(key);
@@ -1380,6 +1684,9 @@ uint32_t GameServer::admitHeightTileDeliveries(
             return admitted_batches;
         }
         uint64_t const delivery_token = batch.delivery_token;
+        if (m_benchmark_metrics_enabled) {
+            delivery.admitted_at = std::chrono::steady_clock::now();
+        }
         stream.inflight_deliveries.emplace(delivery_token, std::move(delivery));
         --stream.delivery_credits;
         sendHeightTileTo(stream.client_id, std::move(batch));
@@ -1516,6 +1823,8 @@ void GameServer::fillHeightTileQueue(PreviewStream& stream)
 
 void GameServer::processHeightTileStreams()
 {
+    auto const started_at = m_benchmark_metrics_enabled
+        ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
     for (PreviewStream& stream : m_preview_streams) {
         auto const player = m_world.player(stream.client_id);
         if (player) {
@@ -1551,6 +1860,11 @@ void GameServer::processHeightTileStreams()
     }
     dispatchWorldMaterialization();
     dispatchHeightTileWork();
+    if (m_benchmark_metrics_enabled) {
+        m_last_stream_pump_duration = std::chrono::duration_cast<std::chrono::nanoseconds>(
+            std::chrono::steady_clock::now() - started_at
+        );
+    }
 }
 
 void GameServer::dispatchWorldMaterialization()

@@ -25,7 +25,31 @@ namespace server {
 
 class GameServer final : public core::Server {
 public:
+    struct WorkerMetrics final {
+        uint32_t pending_jobs = 0U;
+        uint32_t executor_queued_jobs = 0U;
+        uint32_t running_jobs = 0U;
+        uint32_t completed_uncollected_jobs = 0U;
+        uint64_t enqueued_total = 0U;
+        uint64_t submitted_total = 0U;
+        uint64_t started_total = 0U;
+        uint64_t finished_total = 0U;
+        uint64_t collected_total = 0U;
+        std::chrono::nanoseconds enqueue_to_submit_total{};
+        std::chrono::nanoseconds enqueue_to_submit_max{};
+        std::chrono::nanoseconds enqueue_to_start_total{};
+        std::chrono::nanoseconds enqueue_to_start_max{};
+        std::chrono::nanoseconds executor_queue_total{};
+        std::chrono::nanoseconds executor_queue_max{};
+        std::chrono::nanoseconds execution_total{};
+        std::chrono::nanoseconds execution_max{};
+        std::chrono::nanoseconds completion_to_collection_total{};
+        std::chrono::nanoseconds completion_to_collection_max{};
+    };
+
     struct PreviewStreamMetrics final {
+        WorkerMetrics height_tile_jobs;
+        WorkerMetrics world_generation_jobs;
         uint32_t queued_tiles = 0U;
         uint32_t dispatched_tiles = 0U;
         uint32_t pending_worker_jobs = 0U;
@@ -35,6 +59,19 @@ public:
         uint32_t inflight_additions = 0U;
         uint32_t delivery_credits = 0U;
         uint32_t resident_tiles = 0U;
+        uint32_t latest_received_input_sequence = 0U;
+        uint32_t acknowledged_input_sequence = 0U;
+        uint32_t unacknowledged_input_count = 0U;
+        uint32_t pending_input_count = 0U;
+        uint32_t materialization_admission_failures = 0U;
+        uint64_t delivery_credit_samples = 0U;
+        std::chrono::nanoseconds delivery_credit_total{};
+        std::chrono::nanoseconds delivery_credit_max{};
+        std::chrono::nanoseconds server_loop_interval{};
+        std::chrono::nanoseconds server_loop_work{};
+        std::chrono::nanoseconds server_tick{};
+        std::chrono::nanoseconds stream_pump{};
+        std::chrono::nanoseconds previous_sleep{};
     };
     struct BenchmarkHooks final {
         std::function<void(std::chrono::nanoseconds, uint64_t)> on_tick;
@@ -174,6 +211,7 @@ private:
         struct Delivery final {
             std::vector<shared::HeightTileKey> additions;
             std::vector<shared::HeightTileKey> removals;
+            std::chrono::steady_clock::time_point admitted_at{};
         };
 
         explicit PreviewStream(core::ClientId client_id)
@@ -203,6 +241,9 @@ private:
         std::unordered_set<shared::HeightTileKey, HeightTileKeyHash> inflight_removal_keys;
         std::unordered_map<uint64_t, Delivery> inflight_deliveries;
         uint8_t delivery_credits = 0U;
+        uint64_t delivery_credit_samples = 0U;
+        std::chrono::nanoseconds delivery_credit_total{};
+        std::chrono::nanoseconds delivery_credit_max{};
         double background_generation_tokens = 0.0;
         std::chrono::steady_clock::time_point background_budget_updated_at =
             std::chrono::steady_clock::now();
@@ -215,6 +256,8 @@ private:
     std::shared_ptr<shared::HeightTileInterestOrders const> m_height_tile_interest_orders;
     std::unique_ptr<HeightTileWorkerPool> m_height_tile_workers;
     uint64_t m_next_height_tile_token = 1;
+    bool m_benchmark_metrics_enabled = false;
+    std::chrono::nanoseconds m_last_stream_pump_duration{};
 };
 
 } // namespace server

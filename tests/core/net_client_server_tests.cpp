@@ -234,7 +234,7 @@ TEST(NetClientServer, SendReceiveSingleChannelTest) {
     ASSERT_TRUE(client.isConnected());
 
     ASSERT_TRUE(client.send(asNetworkBytes(core::asByteSpan(msg)), 0, core::SendMode{ }));
-    client.pollAndWait();
+    ASSERT_TRUE(client.pollUntil([&] { return client_received == msg; }));
 
     srv.done(1, 0);
 

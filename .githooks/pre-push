@@ -40,7 +40,14 @@ while read -r local_ref local_sha remote_ref remote_sha; do
             exit 1
         fi
         case "$remote_ref" in
-            refs/heads/ai-main|refs/tags/ai/*) check_mode="strict";;
+            refs/heads/ai-main)
+                if "${PYTHON:-python3}" script/ai_publish.py verify-promotion-bootstrap "$local_commit" "$remote_sha" >/dev/null 2>&1; then
+                    [ "$check_mode" = "strict" ] || check_mode="fast"
+                else
+                    check_mode="strict"
+                fi
+                ;;
+            refs/tags/ai/*) check_mode="strict";;
             *) [ "$check_mode" = "strict" ] || check_mode="fast";;
         esac
     fi

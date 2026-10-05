@@ -375,6 +375,86 @@ class AiCheckTests(unittest.TestCase):
             self.assertEqual(failure.returncode, 7, failure.stderr)
             self.assertEqual(log.read_text(encoding="utf-8").strip(), "script/ai_check.py --fast --require-index-match")
 
+    def test_ai_main_promotion_pre_push_uses_fast_gate_to_bootstrap_hosted_matrix(self):
+        self.git("branch", "-M", "ai-main")
+        head = self.git("rev-parse", "HEAD").stdout.strip()
+        with tempfile.TemporaryDirectory() as directory:
+            directory_path = Path(directory)
+            fake_python = directory_path / "python"
+            fake_python.write_text(
+                "#!/bin/sh\n"
+                "case \"$1\" in script/ci/release_guard.py) exit 0;; esac\n"
+                "if [ \"$1\" = script/ai_publish.py ]; then\n"
+                "  printf '%s\\n' \"$*\" > \"$BOOTSTRAP_LOG\"\n"
+                "  exit \"${BOOTSTRAP_EXIT:-0}\"\n"
+                "fi\n"
+                "printf '%s\\n' \"$*\" > \"$HOOK_LOG\"\n",
+                encoding="utf-8",
+                newline="\n",
+            )
+            fake_python.chmod(0o755)
+            log = directory_path / "hook.log"
+            environment = os.environ | {
+                "PYTHON": str(fake_python),
+                "HOOK_LOG": str(log),
+                "BOOTSTRAP_LOG": str(directory_path / "bootstrap.log"),
+            }
+            input_line = f"refs/heads/ai-main {head} refs/heads/ai-main {head}\n"
+            result = subprocess.run(
+                pre_push_command(), cwd=self.root, input=input_line, text=True,
+                capture_output=True, env=environment,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(
+                log.read_text(encoding="utf-8").strip(),
+                "script/ai_check.py --fast --require-index-match",
+            )
+            self.assertEqual(
+                Path(environment["BOOTSTRAP_LOG"]).read_text(encoding="utf-8").strip(),
+                f"script/ai_publish.py verify-promotion-bootstrap {head} {head}",
+            )
+
+    def test_nonpromotion_ai_main_push_falls_back_to_strict_gate(self):
+        self.git("branch", "-M", "ai-dev")
+        head = self.git("rev-parse", "HEAD").stdout.strip()
+        with tempfile.TemporaryDirectory() as directory:
+            directory_path = Path(directory)
+            fake_python = directory_path / "python"
+            fake_python.write_text(
+                "#!/bin/sh\n"
+                "case \"$1\" in script/ci/release_guard.py) exit 0;; esac\n"
+                "if [ \"$1\" = script/ai_publish.py ]; then\n"
+                "  printf '%s\\n' \"$*\" > \"$BOOTSTRAP_LOG\"\n"
+                "  exit 1\n"
+                "fi\n"
+                "printf '%s\\n' \"$*\" > \"$HOOK_LOG\"\n"
+                "case \"$2\" in --strict) exit 7;; --fast) exit 0;; esac\n",
+                encoding="utf-8",
+                newline="\n",
+            )
+            fake_python.chmod(0o755)
+            log = directory_path / "hook.log"
+            bootstrap_log = directory_path / "bootstrap.log"
+            environment = os.environ | {
+                "PYTHON": str(fake_python),
+                "HOOK_LOG": str(log),
+                "BOOTSTRAP_LOG": str(bootstrap_log),
+            }
+            input_line = f"refs/heads/ai-dev {head} refs/heads/ai-main {head}\n"
+            result = subprocess.run(
+                pre_push_command(), cwd=self.root, input=input_line, text=True,
+                capture_output=True, env=environment,
+            )
+            self.assertEqual(result.returncode, 7, result.stderr)
+            self.assertEqual(
+                bootstrap_log.read_text(encoding="utf-8").strip(),
+                f"script/ai_publish.py verify-promotion-bootstrap {head} {head}",
+            )
+            self.assertEqual(
+                log.read_text(encoding="utf-8").strip(),
+                "script/ai_check.py --strict --require-index-match",
+            )
+
     def test_pre_push_command_uses_detected_posix_shell_on_windows(self):
         with mock.patch.object(os, "name", "nt"), mock.patch.object(shutil, "which", return_value="sh.exe") as which:
             self.assertEqual(

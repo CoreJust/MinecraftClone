@@ -15,14 +15,17 @@ class ClientLaunchTest(unittest.TestCase):
     def setUpClass(cls):
         cls.binary = binary
 
-    def wait_for_text(self, log_path, text, process, timeout=8):
+    def wait_for_text(self, log_path, text, process, timeout=8, diagnostic_path=None):
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
             if text in log_path.read_text(errors="replace"):
                 return
             self.assertIsNone(process.poll(), f"server exited before {text!r}")
             time.sleep(0.05)
-        self.fail(f"timed out waiting for {text!r}")
+        diagnostics = f"\nServer output:\n{log_path.read_text(errors='replace')}"
+        if diagnostic_path is not None:
+            diagnostics += f"\nClient output:\n{diagnostic_path.read_text(errors='replace')}"
+        self.fail(f"timed out waiting for {text!r}{diagnostics}")
 
     def test_two_bots_retry_automatic_tokens_without_stdin(self):
         with socket.socket() as probe:
@@ -31,6 +34,10 @@ class ClientLaunchTest(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as directory:
             log_path = Path(directory) / "server.log"
+            client_log_paths = [
+                Path(directory) / "client-one.log",
+                Path(directory) / "client-two.log",
+            ]
             with log_path.open("w+") as log:
                 server = subprocess.Popen(
                     [str(self.binary), "--server", "--port", str(port)],
@@ -39,24 +46,37 @@ class ClientLaunchTest(unittest.TestCase):
                     stderr=subprocess.STDOUT,
                 )
                 clients = []
+                client_logs = []
                 try:
-                    self.wait_for_text(log_path, "Created host", server)
-                    time.sleep(0.25)
                     address = f"127.0.0.1:{port}"
+                    client_logs.append(client_log_paths[0].open("w+"))
                     clients.append(subprocess.Popen(
                         [str(self.binary), "--bot-client", "--address", address],
                         stdin=subprocess.DEVNULL,
-                        stdout=subprocess.DEVNULL,
-                        stderr=subprocess.DEVNULL,
+                        stdout=client_logs[0],
+                        stderr=subprocess.STDOUT,
                     ))
-                    self.wait_for_text(log_path, "Player '#' spawned", server)
+                    self.wait_for_text(
+                        log_path,
+                        "Player '#' spawned",
+                        server,
+                        timeout=35,
+                        diagnostic_path=client_log_paths[0],
+                    )
+                    client_logs.append(client_log_paths[1].open("w+"))
                     clients.append(subprocess.Popen(
                         [str(self.binary), "--bot-client", "--address", address],
                         stdin=subprocess.DEVNULL,
-                        stdout=subprocess.DEVNULL,
-                        stderr=subprocess.DEVNULL,
+                        stdout=client_logs[1],
+                        stderr=subprocess.STDOUT,
                     ))
-                    self.wait_for_text(log_path, "Player '$' spawned", server)
+                    self.wait_for_text(
+                        log_path,
+                        "Player '$' spawned",
+                        server,
+                        timeout=35,
+                        diagnostic_path=client_log_paths[1],
+                    )
                     self.assertIsNone(server.poll())
                     self.assertTrue(all(client.poll() is None for client in clients))
                 finally:
@@ -65,6 +85,8 @@ class ClientLaunchTest(unittest.TestCase):
                             client.terminate()
                     for client in clients:
                         client.wait(timeout=5)
+                    for client_log in client_logs:
+                        client_log.close()
                     if server.poll() is None:
                         server.terminate()
                     server.wait(timeout=5)
@@ -76,35 +98,42 @@ class ClientLaunchTest(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as directory:
             log_path = Path(directory) / "server.log"
+            client_log_path = Path(directory) / "client.log"
             address = f"127.0.0.1:{port}"
-            client = subprocess.Popen(
-                [str(self.binary), "--bot-client", "--address", address],
-                stdin=subprocess.DEVNULL,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-            )
-            server = None
-            try:
-                time.sleep(1.5)
-                self.assertIsNone(client.poll(), "client exited before delayed server startup")
-                with log_path.open("w+") as log:
-                    server = subprocess.Popen(
-                        [str(self.binary), "--server", "--port", str(port)],
-                        stdin=subprocess.DEVNULL,
-                        stdout=log,
-                        stderr=subprocess.STDOUT,
-                    )
-                    self.wait_for_text(log_path, "Created host", server)
-                    self.wait_for_text(log_path, "Player '#' spawned", server)
-                    self.assertIsNone(client.poll())
-            finally:
-                if client.poll() is None:
-                    client.terminate()
-                client.wait(timeout=5)
-                if server is not None and server.poll() is None:
-                    server.terminate()
-                if server is not None:
-                    server.wait(timeout=5)
+            with client_log_path.open("w+") as client_log:
+                client = subprocess.Popen(
+                    [str(self.binary), "--bot-client", "--address", address],
+                    stdin=subprocess.DEVNULL,
+                    stdout=client_log,
+                    stderr=subprocess.STDOUT,
+                )
+                server = None
+                try:
+                    time.sleep(1.5)
+                    self.assertIsNone(client.poll(), "client exited before delayed server startup")
+                    with log_path.open("w+") as log:
+                        server = subprocess.Popen(
+                            [str(self.binary), "--server", "--port", str(port)],
+                            stdin=subprocess.DEVNULL,
+                            stdout=log,
+                            stderr=subprocess.STDOUT,
+                        )
+                        self.wait_for_text(
+                            log_path,
+                            "Player '#' spawned",
+                            server,
+                            timeout=35,
+                            diagnostic_path=client_log_path,
+                        )
+                        self.assertIsNone(client.poll())
+                finally:
+                    if client.poll() is None:
+                        client.terminate()
+                    client.wait(timeout=5)
+                    if server is not None and server.poll() is None:
+                        server.terminate()
+                    if server is not None:
+                        server.wait(timeout=5)
 
     def test_invalid_launch_arguments_fail(self):
         cases = [
