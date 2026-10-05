@@ -41,8 +41,8 @@ class InstallMsanLibcxxTests(unittest.TestCase):
             clang = self.toolchain.resolve_tool("clang-18", "Clang C")
             clangxx = self.toolchain.resolve_tool("clang++-18", "Clang C++")
 
-        self.assertEqual(clang, "/usr/bin/clang-18")
-        self.assertEqual(clangxx, "/usr/bin/clang++-18")
+        self.assertEqual(clang, self.toolchain.os.path.abspath("/usr/bin/clang-18"))
+        self.assertEqual(clangxx, self.toolchain.os.path.abspath("/usr/bin/clang++-18"))
         resolve.assert_not_called()
 
     def test_runtime_build_is_pinned_and_instrumented(self):

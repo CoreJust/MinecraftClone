@@ -11207,5 +11207,41 @@
     "docs_review": "No narrative code guide contract changed. Refreshed docs/code/source_state.json after the dependency lock and acquisition regression changed, then python3 script/ai_docs.py check passed.",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0327",
+    "title": "Make the S7 MSan compiler-alias regression portable across hosts",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P1",
+    "route": "luna",
+    "milestone": "ED-010-S7",
+    "depends_on": [],
+    "acceptance": "On every host, the regression computes expected paths with that host’s os.path.abspath spelling while proving the C and C++ aliases remain distinct and Path.resolve is not called. The focused installer suite and local fast gate pass; the exact hosted Windows fast rerun remains an aggregate MC-AI-0038 gate before promotion.",
+    "evidence": "GitHub ai-dev run 37247763643 isolated the Windows-only failure: the fake /usr/bin/clang-18 path became a D:-rooted Windows path under host normalization, while the test expected POSIX spelling. The updated regression derives expected spellings from the host and checks both aliases remain distinct. Focused installer suite passed 7/7 on macOS; python3 script/ai_check.py --fast passed on the exact candidate after refreshing docs/code/source_state.json. The corrected hosted Windows fast rerun remains an aggregate MC-AI-0038 gate.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0038",
+    "motivation": "The exact ai-dev Windows fast run fails the new compiler-alias test because a mocked POSIX compiler path is normalized to a Windows drive path.",
+    "context": "MC-AI-0322 correctly preserves the Clang driver alias with os.path.abspath. On Windows, the test double returns POSIX /usr/bin paths, and ntpath normalizes them to drive-rooted Windows paths. This is a test fixture portability failure, not a production MSan issue; keep installer behavior unchanged.",
+    "complexity": "low",
+    "created_at": "2026-10-05",
+    "resolved_at": "2026-10-05",
+    "resolution_changes": "Changed the regression to compare compiler aliases using the host’s os.path.abspath spelling while still asserting Path.resolve is never called; the production installer is unchanged.",
+    "plan": [
+      "Use host-native normalized expected paths in the compiler-alias test while retaining the assertion that Path.resolve is never called. Run the focused installer suite, fast gate, exact hosted Windows rerun, and then resume snapshot finalization."
+    ],
+    "product_changes": [],
+    "code_changes": [
+      "Make the MSan compiler-alias regression portable across host path conventions without changing the Linux-only installer."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]
