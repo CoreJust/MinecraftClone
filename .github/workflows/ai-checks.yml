@@ -351,6 +351,23 @@ jobs:
         run: |
           echo "CC=$(command -v clang-18)" >> "$GITHUB_ENV"
           echo "CXX=$(command -v clang++-18)" >> "$GITHUB_ENV"
+      - name: Install LeakSanitizer libc++
+        if: matrix.row == 'linux_lsan'
+        run: sudo apt-get install --no-install-recommends --yes libc++-18-dev libc++abi-18-dev
+      - name: Verify LeakSanitizer C++23 standard library
+        if: matrix.row == 'linux_lsan'
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '%s\n' \
+            '#include <expected>' \
+            '#ifndef __cpp_lib_expected' \
+            '#error "selected C++23 standard library does not provide std::expected"' \
+            '#endif' \
+            'static_assert(__cpp_lib_expected >= 202202L);' \
+            'int main() { std::expected<int, int> value = 1; return value.value(); }' \
+            | "$CXX" -std=c++23 -stdlib=libc++ -x c++ -fsyntax-only -
+          echo 'CXXFLAGS=-stdlib=libc++' >> "$GITHUB_ENV"
       - name: Build and verify MemorySanitizer libc++
         if: matrix.row == 'linux_msan'
         run: >-
@@ -381,9 +398,9 @@ jobs:
           if [[ "${{ matrix.row }}" == linux_lsan ]]; then
             args+=(
               '--cmake-arg=-DCMAKE_C_FLAGS=-fsanitize=leak -fno-omit-frame-pointer'
-              '--cmake-arg=-DCMAKE_CXX_FLAGS=-fsanitize=leak -fno-omit-frame-pointer'
-              '--cmake-arg=-DCMAKE_EXE_LINKER_FLAGS=-fsanitize=leak'
-              '--cmake-arg=-DCMAKE_SHARED_LINKER_FLAGS=-fsanitize=leak'
+              '--cmake-arg=-DCMAKE_CXX_FLAGS=-fsanitize=leak -fno-omit-frame-pointer -stdlib=libc++'
+              '--cmake-arg=-DCMAKE_EXE_LINKER_FLAGS=-fsanitize=leak -stdlib=libc++'
+              '--cmake-arg=-DCMAKE_SHARED_LINKER_FLAGS=-fsanitize=leak -stdlib=libc++'
             )
           else
             args+=(

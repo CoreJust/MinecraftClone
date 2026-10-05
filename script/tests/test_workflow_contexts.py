@@ -368,8 +368,8 @@ class WorkflowContextTests(unittest.TestCase):
 
     def test_server_only_build_timeout_covers_nested_suite(self):
         cmake_lists = (REPOSITORY / "tests/CMakeLists.txt").read_text(encoding="utf-8")
-        self.assertIn("set_tests_properties(MinecraftClone.ServerOnlyBuild PROPERTIES TIMEOUT 300)", cmake_lists)
-        self.assertNotRegex(cmake_lists, r"MinecraftClone\.ServerOnlyBuild PROPERTIES TIMEOUT (120|180)")
+        self.assertIn("if(WIN32)\n        set_tests_properties(MinecraftClone.ServerOnlyBuild PROPERTIES TIMEOUT 900)", cmake_lists)
+        self.assertIn("else()\n        set_tests_properties(MinecraftClone.ServerOnlyBuild PROPERTIES TIMEOUT 300)", cmake_lists)
 
 
 if __name__ == "__main__":

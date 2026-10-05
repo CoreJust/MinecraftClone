@@ -600,6 +600,9 @@ def install_manifest_dependencies(vcpkg_root: Path, platform_name: str, installe
         overlay_triplets = Path(__file__).resolve().parent / "vcpkg-triplets"
         if not (overlay_triplets / "arm64-android-hwasan.cmake").is_file():
             raise CiError(f"Android HWASan vcpkg triplet is missing: {overlay_triplets}")
+        overlay_ports = Path(__file__).resolve().parent / "vcpkg-overlays"
+        if not (overlay_ports / "mpfr" / "portfile.cmake").is_file():
+            raise CiError(f"Android HWASan vcpkg MPFR overlay is missing: {overlay_ports}")
     if platform_name not in triplets:
         raise CiError(f"unsupported manifest dependency platform: {platform_name}")
     executable = vcpkg_root / ("vcpkg.exe" if os.name == "nt" else "vcpkg")
@@ -622,6 +625,7 @@ def install_manifest_dependencies(vcpkg_root: Path, platform_name: str, installe
         command.append(f"--overlay-triplets={overlay_triplets}")
     if platform_name == "android-hwasan":
         command.append(f"--overlay-triplets={Path(__file__).resolve().parent / 'vcpkg-triplets'}")
+        command.append(f"--overlay-ports={Path(__file__).resolve().parent / 'vcpkg-overlays'}")
     run(command)
     if not installed_root.is_dir():
         raise CiError(f"vcpkg did not create its install root: {installed_root}")

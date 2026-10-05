@@ -11284,5 +11284,41 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0329",
+    "title": "Repair S7 hosted release-candidate gates",
+    "kind": "chore",
+    "status": "done",
+    "priority": "P0",
+    "route": "luna",
+    "milestone": "ED-010-S7",
+    "depends_on": [],
+    "acceptance": "Repair the observed local roots without weakening release assertions: keep exact radius-256 tile membership, payload integrity, removal, and backpressure checks; keep the Release four-client 16-input maximum acknowledgement lag, per-client terrain progress, and final catch-up checks; remove test-only bulk terrain-message retention. Replace the MSan negative probe with an instrumented heap-uninitialized read and include subprocess diagnostics. Select a C++23-capable libc++ for the Linux LSan dependency/candidate toolchain. Select the pinned MPFR PIC overlay for Android HWASan during both vcpkg dependency installation and Gradle configuration. Reuse a clean owned Git fixture in source-policy tests and give the Windows nested server-only test a Windows-appropriate timeout. Add focused regressions and pass the local Release/Debug streaming tests plus repository fast checks. The parent snapshot still owns exact hosted CI, sanitizer/analyzer receipt, Android runtime, and platform acceptance.",
+    "evidence": "Mac Release build/test: radius-256 exact stream/removal 1/1 passed in 49.23s and four-client acknowledgement/progress 1/1 passed in 35.77s, retaining the existing 16-input lag bound. Mac Debug build/test: radius-256 exact stream/removal 1/1 passed in 59.38s. `python3 script/ai_check.py --fast` passed, including docs, backlog, plan, whitespace, and all script unit tests. Focused MSan probe tests passed 8/8; MPFR overlay tests passed 3/3; acquire/workflow/overlay tests passed 58/58; Windows source-policy fixture tests passed 11/11; sanitizer/analyzer matrix contract tests passed 37/37. The full batch gate passed: 422 Python tests in 95.74s, Debug build, and 583 CTest entries in 591.78s (582 passed; the Debug-only sustained-flight latency case was intentionally skipped and its optimized Release counterpart passed above). The nested server-only build/test passed in 161.72s. Publisher reported only the expected pre-commit dirty-tree check, which the development gate records as allowed. Actual hosted cross-platform matrix remains pending under MC-AI-0038.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0038",
+    "motivation": "The first exact ai-main promotion failed required release gates across Linux sanitizers, Android HWASAN, Mac radius-256/ack-lag acceptance, Windows finalized-source policy, and the aggregate receipt.",
+    "context": "Promoted ai-main candidate d860f46f71ae3e3a785e2166224bf883ba965996; hosted run 37340528328. The MSan probe overflowed its stack, LSan dependency compilation lacked a C++23-capable standard library, and Android HWASan linked non-PIC MPFR because its overlay was not selected. Radius-256 and four-client tests retained decoded terrain payloads although only keys, integrity checks, counters, and acknowledgements were asserted. Windows Debug also hit the 300-second nested server-only CTest limit; Windows Release source-policy fixtures redundantly created test repositories. Treat findings from that exact run as constraints, not permission to reduce product assertions.",
+    "complexity": "high",
+    "created_at": "2026-10-05",
+    "resolved_at": "2026-10-05",
+    "resolution_changes": "Corrected each reproduced local gate root while preserving the acceptance assertions; added focused regressions and verified Mac Release/Debug behavior, repository fast checks, and the full batch build/CTest gate. Hosted platform evidence remains an aggregate S7 gate.",
+    "plan": [
+      "Repair each proven root cause in its isolated workflow, dependency, test-harness, or terrain-streaming area. Run focused regressions, then promote only the tested exact task range and inspect every required row plus the exact-candidate aggregate."
+    ],
+    "product_changes": [],
+    "code_changes": [
+      "Release workflow and analysis receipts; MSan/LSan dependency setup; Android MPFR PIC overlay wired through both vcpkg install and Gradle; bounded terrain-test memory retention; Windows server-only test timeout; optimized source-policy fixtures; and focused regression tests."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]
