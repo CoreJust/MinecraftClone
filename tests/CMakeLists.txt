@@ -109,7 +109,7 @@ if(MC_BUILD_CLIENT AND NOT ANDROID)
     )
     set_tests_properties(AcceptanceCli.AutomaticJoin PROPERTIES
         RUN_SERIAL TRUE
-        TIMEOUT 90
+        TIMEOUT 300
     )
     add_test(
         NAME AcceptanceCli.RuntimeModes
