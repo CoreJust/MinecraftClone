@@ -11853,5 +11853,41 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0344",
+    "title": "Wait for the preview tile before ending the materialized-landing test",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P0",
+    "route": "luna",
+    "milestone": "ED-010-S7",
+    "depends_on": [],
+    "acceptance": "The bounded test continues polling until both the target height tile arrives and five stable grounded acknowledgements are observed; repeated focused runs pass without changing production behavior.",
+    "evidence": "Rebuilt mc_tests and passed GameServerPreviewTest.MaterializedLandingMatchesTheStreamedMountainHeight 10 consecutive times; CTest total 44.75 seconds. No production code changed.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0038",
+    "motivation": "The exact S7 promotion candidate intermittently failed because the acceptance loop could finish after five grounded acknowledgements before receiving the asynchronous target preview tile.",
+    "context": "Official candidate gate failed GameServerPreviewTest.MaterializedLandingMatchesTheStreamedMountainHeight at ASSERT_TRUE(preview_height.has_value()). The loop is bounded by 15 seconds but currently exits solely on stable_grounded_inputs; five isolated reruns passed, confirming a timing race in test termination.",
+    "complexity": "low",
+    "created_at": "2026-10-06",
+    "resolved_at": "2026-10-06",
+    "resolution_changes": "Changed the bounded landing test to wait for both stable grounded inputs and its target preview tile; capped the grounded count so later acknowledgements cannot invalidate the threshold.",
+    "plan": [
+      "Make the test loop require both the stable-grounded threshold and the requested target preview tile while retaining the existing deadline; keep the stable count capped at its threshold."
+    ],
+    "product_changes": [],
+    "code_changes": [
+      "Corrected the asynchronous preview-test exit predicate and grounded acknowledgement count."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]
