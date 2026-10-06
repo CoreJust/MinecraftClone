@@ -183,10 +183,15 @@ def verify_install(prefix: Path, clangxx: str, build: Path) -> None:
         "#include <cstdlib>\n"
         "int main() {\n"
         "    auto* value = static_cast<int*>(std::malloc(sizeof(int)));\n"
-        "    if (value == nullptr) return 2;\n"
-        "    const int result = *static_cast<volatile int*>(value);\n"
+        "    if (value == nullptr) {\n"
+        "        return 2;\n"
+        "    }\n"
+        "    if (*static_cast<volatile int*>(value) == 0) {\n"
+        "        std::free(value);\n"
+        "        return 0;\n"
+        "    }\n"
         "    std::free(value);\n"
-        "    return result;\n"
+        "    return 1;\n"
         "}\n"
     )
     negative_command = [clangxx, *common_flags, "-x", "c++", "-", "-o", str(negative_probe)]

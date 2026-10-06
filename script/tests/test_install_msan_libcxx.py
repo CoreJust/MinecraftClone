@@ -112,7 +112,11 @@ class InstallMsanLibcxxTests(unittest.TestCase):
             negative_source = run.call_args_list[2].kwargs["input"]
             self.assertIn("std::malloc(sizeof(int))", negative_source)
             self.assertIn("volatile int", negative_source)
-            self.assertNotIn("volatile int value", negative_source)
+            self.assertIn(
+                "if (*static_cast<volatile int*>(value) == 0)",
+                negative_source,
+            )
+            self.assertNotIn("return result;", negative_source)
 
     def test_install_rejects_a_toolchain_that_misses_the_probe(self):
         with tempfile.TemporaryDirectory() as directory:
