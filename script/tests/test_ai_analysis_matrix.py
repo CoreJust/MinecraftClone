@@ -443,6 +443,10 @@ class AnalysisMatrixTests(unittest.TestCase):
         self.assertEqual(rows["linux_msan"]["platform"], "linux")
         self.assertIn("-fsanitize=memory", rows["linux_msan"]["flags"])
         self.assertIn("LLVM_USE_SANITIZER=MemoryWithOrigins", rows["linux_msan"]["flags"])
+        self.assertEqual(
+            rows["linux_msan"]["environment"]["MSAN_OPTIONS"],
+            "halt_on_error=1:print_stats=1:fast_unwind_on_fatal=1",
+        )
         self.assertIn("linux_lsan", self.matrix.REQUIRED_ROW_IDS)
         self.assertIn("linux_msan", self.matrix.REQUIRED_ROW_IDS)
 

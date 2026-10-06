@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import contextlib
 import importlib.util
+import io
 import subprocess
 import sys
 import tempfile
@@ -162,9 +164,57 @@ class InstallMsanLibcxxTests(unittest.TestCase):
             negative_environment = run.call_args_list[6].kwargs["env"]
             self.assertEqual(negative_environment["MSAN_SYMBOLIZER_PATH"], str(symbolizer))
             self.assertIn("symbolize=1", negative_environment["MSAN_OPTIONS"])
+            self.assertIn("fast_unwind_on_fatal=1", negative_environment["MSAN_OPTIONS"])
             self.assertEqual(commands[3], ["clang++", "--version"])
             self.assertEqual(commands[4][0], "ldd")
             self.assertEqual(commands[5], [str(symbolizer), "--version"])
+
+    def test_verified_toolchain_exports_fast_fatal_unwind_for_analysis_processes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            environment_file = root / "github-env"
+
+            def fake_run(command, **_kwargs):
+                if command[-1] == "--version":
+                    return "Ubuntu clang version 18.1.3\n"
+                if command[-2:] == ["rev-parse", "HEAD"]:
+                    return self.toolchain.LLVM_COMMIT
+                return ""
+
+            with (
+                mock.patch.object(self.toolchain, "require_linux"),
+                mock.patch.object(
+                    self.toolchain,
+                    "resolve_tool",
+                    side_effect=["/usr/bin/clang-18", "/usr/bin/clang++-18"],
+                ),
+                mock.patch.object(self.toolchain, "run", side_effect=fake_run),
+                mock.patch.object(self.toolchain, "verify_install"),
+                mock.patch.dict(self.toolchain.os.environ, {"GITHUB_ENV": str(environment_file)}),
+                contextlib.redirect_stdout(io.StringIO()),
+            ):
+                result = self.toolchain.main(
+                    [
+                        "--source-root",
+                        str(root / "llvm" / "source"),
+                        "--build-root",
+                        str(root / "llvm" / "build"),
+                        "--prefix",
+                        str(root / "msan-libcxx"),
+                        "--clang",
+                        "clang-18",
+                        "--clangxx",
+                        "clang++-18",
+                        "--jobs",
+                        "1",
+                    ]
+                )
+
+            self.assertEqual(result, 0)
+            self.assertIn(
+                f"MSAN_OPTIONS={self.toolchain.MSAN_ANALYSIS_OPTIONS}\n",
+                environment_file.read_text(encoding="utf-8"),
+            )
 
     def test_install_accepts_standard_pid_prefix_on_msan_warning(self):
         with tempfile.TemporaryDirectory() as directory:

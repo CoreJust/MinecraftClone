@@ -11699,5 +11699,41 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0340",
+    "title": "Prevent MSan fatal-report unwinding from recursively faulting",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P0",
+    "route": "luna",
+    "milestone": "ED-010-S7",
+    "depends_on": [],
+    "acceptance": "The MSan libc++ negative self-test and hosted linux_msan row both use fast_unwind_on_fatal=1 while retaining MemorySanitizer, origin tracking, and symbolization. The installer exports the runtime option to subsequent analysis commands and the candidate-bound receipt records it. Regression tests verify both propagation paths. The negative self-test remains fail-closed unless exit code 86 and the expected use-of-uninitialized-value warning are both present; exact hosted linux_msan success remains an S7 release gate.",
+    "evidence": "python3 -m unittest script.tests.test_install_msan_libcxx script.tests.test_ai_analysis_matrix passed 53/53; python3 script/ai_check.py --fast passed the full Python, docs, backlog, plan, and diff gates; python3 script/ai_docs.py check and python3 script/ai_tasks.py check passed. The exact hosted linux_msan row remains an S7 release gate.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0038",
+    "motivation": "The exact S7 linux_msan row fails before MSan prints its expected warning: LLVM 18.1.3 unwinds the fatal report through the bundled MSan-instrumented libunwind, then encounters a same-thread stack overflow. The required analysis matrix cannot pass, blocking S7 publication.",
+    "context": "Runs 37404691208, 37416174264, and 37491842803 show the same failure. In LLVM 18.1.3 compiler-rt, PrintWarningWithOrigin unwinds the fatal report before ReportUMR prints WARNING; fast_unwind_on_fatal defaults false, while this installer builds libc++, libc++abi, and libunwind with LLVM_USE_SANITIZER=MemoryWithOrigins. The slow unwinder can therefore recursively enter instrumented MSan before the diagnostic. No acceptance predicate may be weakened.",
+    "complexity": "medium",
+    "created_at": "2026-10-06",
+    "resolved_at": "2026-10-06",
+    "resolution_changes": "Configured MSan fatal reports to use the frame-pointer fast unwinder, retained origin tracking/symbolization and the exact warning-plus-exit-code predicate, and propagated the runtime option into all candidate MSan analysis commands and receipts.",
+    "plan": [
+      "Set fast_unwind_on_fatal=1 for MSan report generation and propagate it from setup into subsequent sanitizer/analyzer commands; retain origin tracking and symbolization. Add regression coverage for option propagation and strict negative-probe acceptance. Run focused tests and the exact hosted linux_msan release row."
+    ],
+    "product_changes": [],
+    "code_changes": [
+      "Update the MSan libc++ installer, Linux analysis environment, and focused installer tests; update task/backlog evidence."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]
