@@ -258,7 +258,7 @@ TEST(GameServerPreviewTest, MaterializedLandingMatchesTheStreamedMountainHeight)
         shared::WorldMode::Flight};
     std::atomic_bool stop_requested{false};
     std::thread server_thread{[&server, &stop_requested] { server.run(stop_requested); }};
-    PreviewClient client{false};
+    PreviewClient client;
     bool const connected = client.connect(core::Address::localhost(server.port()), TIMEOUT);
     bool const joined = connected && client.send(shared::encodeMessage(shared::JoinRequestMessage{
         .ch = '@', .mode = shared::WorldMode::Flight, .wants_previews = true,
@@ -682,7 +682,7 @@ TEST(GameServerPreviewTest, StreamsPlayerCenteredHeightTilesAndRemovesDepartedTi
                 "tile enqueue-submit/executor/run/collect avg/max ms={}/{}/{}/{}/{}/{}/{}/{}, "
                 "world jobs submitted/started/finished/collected={}/{}/{}/{}, "
                 "world enqueue-submit/executor/run/collect avg/max ms={}/{}/{}/{}/{}/{}/{}/{}, "
-                "loop interval/work/tick/pump/sleep ms={}/{}/{}/{}/{}, input received/ack/pending/failures={}/{}/{}/{}, "
+                "loop interval/work/tick/pump/poll ms={}/{}/{}/{}/{}, input received/ack/pending/failures={}/{}/{}/{}, "
                 "credit samples/avg/max ms={}/{}/{}",
                 std::chrono::duration_cast<std::chrono::milliseconds>(now - server_started_at).count(),
                 metrics.queued_tiles,
@@ -734,7 +734,7 @@ TEST(GameServerPreviewTest, StreamsPlayerCenteredHeightTilesAndRemovesDepartedTi
                 metrics.server_loop_work.count() / 1'000'000,
                 metrics.server_tick.count() / 1'000'000,
                 metrics.stream_pump.count() / 1'000'000,
-                metrics.previous_sleep.count() / 1'000'000,
+                metrics.network_poll.count() / 1'000'000,
                 metrics.latest_received_input_sequence,
                 metrics.acknowledged_input_sequence,
                 metrics.pending_input_count,
@@ -1376,7 +1376,7 @@ TEST(GameServerPreviewTest, SustainedFlightKeepsInputAcknowledgementsCurrentWhil
                 "world jobs submitted/started/finished/collected={}/{}/{}/{}, "
                 "enqueue-submit/executor/run/collect avg/max ms={}/{}/{}/{}/{}/{}/{}/{}, "
                 "ready/inflight/credits={}/{}/{}, "
-                "credit samples/avg/max ms={}/{}/{}, loop interval/work/tick/pump/sleep ms={}/{}/{}/{}/{}",
+                "credit samples/avg/max ms={}/{}/{}, loop interval/work/tick/pump/poll ms={}/{}/{}/{}/{}",
                 client_id,
                 std::chrono::duration_cast<std::chrono::milliseconds>(now - server_started).count(),
                 metrics.latest_received_input_sequence,
@@ -1438,7 +1438,7 @@ TEST(GameServerPreviewTest, SustainedFlightKeepsInputAcknowledgementsCurrentWhil
                 metrics.server_loop_work.count() / 1'000'000,
                 metrics.server_tick.count() / 1'000'000,
                 metrics.stream_pump.count() / 1'000'000,
-                metrics.previous_sleep.count() / 1'000'000
+                metrics.network_poll.count() / 1'000'000
             );
         },
     };

@@ -48,6 +48,11 @@ ANDROID_COMMAND_LINE_TOOLS = {
     "sha256": "4e4c464f145a7512b57d088ac6c278c03c9eea610886b35a5e0804e74eedf583",
     "filename": "commandlinetools-linux-15859902_latest.zip",
 }
+ANDROID_MAC_ARM64_COMMAND_LINE_TOOLS = {
+    "url": "https://dl.google.com/android/repository/commandlinetools-mac_arm64-15859902_latest.zip",
+    "sha256": "835b62a26162b229b441d1f6d4680383815a270809eb33522c0d480fa5002c4e",
+    "filename": "commandlinetools-mac_arm64-15859902_latest.zip",
+}
 ANDROID_NDK_VERSION = "27.0.12077973"
 ANDROID_SDK_PACKAGES = (
     "platforms;android-35",
@@ -553,15 +558,27 @@ def install_vulkan(platform_name: str, root: Path) -> Path:
     return sdk_root
 
 
+def android_command_line_tools() -> dict[str, str]:
+    """Select the pinned SDK archive for the CI host, not the Android target."""
+    system = host_platform.system()
+    machine = host_platform.machine().lower()
+    if system == "Linux" and machine in {"x86_64", "aarch64", "arm64"}:
+        return ANDROID_COMMAND_LINE_TOOLS
+    if system == "Darwin" and machine in {"aarch64", "arm64"}:
+        return ANDROID_MAC_ARM64_COMMAND_LINE_TOOLS
+    raise CiError(f"unsupported Android SDK host: {system}/{machine}")
+
+
 def install_android_sdk(root: Path) -> Path:
     """Bootstrap pinned command-line tools before installing exact Android SDK packages."""
+    config = android_command_line_tools()
     root.mkdir(parents=True, exist_ok=True)
     latest = root / "cmdline-tools" / "latest"
     if latest.exists():
         raise CiError(f"Android command-line tools already exist: {latest}")
-    archive = root.parent / ANDROID_COMMAND_LINE_TOOLS["filename"]
-    download(ANDROID_COMMAND_LINE_TOOLS["url"], archive)
-    verify_sha256(archive, ANDROID_COMMAND_LINE_TOOLS["sha256"])
+    archive = root.parent / config["filename"]
+    download(config["url"], archive)
+    verify_sha256(archive, config["sha256"])
     staging = root / "command-line-tools"
     staging.mkdir()
     safe_extract(archive, staging)
@@ -572,9 +589,11 @@ def install_android_sdk(root: Path) -> Path:
     extracted_tools.rename(latest)
     staging.rmdir()
     sdkmanager = latest / "bin" / "sdkmanager"
-    if not sdkmanager.is_file():
-        raise CiError(f"Android command-line tools archive is missing {sdkmanager}")
-    sdkmanager.chmod(sdkmanager.stat().st_mode | stat.S_IXUSR)
+    for name in ("sdkmanager", "avdmanager"):
+        executable = latest / "bin" / name
+        if not executable.is_file():
+            raise CiError(f"Android command-line tools archive is missing {executable}")
+        executable.chmod(executable.stat().st_mode | stat.S_IXUSR)
     command = [str(sdkmanager), f"--sdk_root={root}"]
     run([*command, "--licenses"], input_text="y\n" * 100)
     run([*command, *ANDROID_SDK_PACKAGES])
@@ -760,8 +779,13 @@ def validate_shaders(build_dir: Path) -> None:
         run([validator, "--target-env", "vulkan1.2", str(shader_path(build_dir, shader))])
 
 
-def source_checks(pre_finalization_candidate: bool = False) -> None:
+def source_checks(
+    pre_finalization_candidate: bool = False,
+    source_commit: str | None = None,
+) -> None:
     """Run repository policy/source checks without a duplicate application build."""
+    if pre_finalization_candidate and source_commit is not None:
+        raise CiError("pre-finalization source checks cannot bind a finalized source commit")
     root = Path(__file__).resolve().parents[2]
     run([sys.executable, "script/ai_check.py", "--fast"])
     sys.path.insert(0, str(root))
@@ -771,6 +795,20 @@ def source_checks(pre_finalization_candidate: bool = False) -> None:
     command = [sys.executable, "publish.py", names, version, "--checks-only"]
     if pre_finalization_candidate:
         command.append("--pre-finalization-candidate")
+    elif source_commit is not None:
+        resolver = [
+            sys.executable,
+            "script/ai_publish.py",
+            "--root",
+            str(root),
+            "resolve-date-source",
+            "--expected-head",
+            source_commit,
+        ]
+        snapshot_source = run(resolver)
+        if re.fullmatch(r"(?:[0-9a-f]{40}|[0-9a-f]{64})", snapshot_source) is None:
+            raise CiError("release date resolver did not return one immutable source commit")
+        command.extend(("--snapshot-source-commit", snapshot_source))
     run(command)
 
 
@@ -802,6 +840,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     shader_parser.add_argument("--build-dir", type=Path, required=True)
     source_checks_parser = commands.add_parser("source-checks")
     source_checks_parser.add_argument("--pre-finalization-candidate", action="store_true")
+    source_checks_parser.add_argument("--source-commit")
     fetch_private_parser = commands.add_parser("fetch-private-dependencies")
     fetch_private_parser.add_argument("--lock", type=Path, default=Path("dependencies.lock.json"))
     fetch_private_parser.add_argument("--root", type=Path, required=True)
@@ -847,7 +886,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         elif args.command == "verify-private-dependency-artifact-exclusion":
             verify_private_dependency_artifact_exclusion(args.artifact_root, args.private_dependency_root)
         else:
-            source_checks(args.pre_finalization_candidate)
+            source_checks(args.pre_finalization_candidate, args.source_commit)
     except CiError as error:
         print(f"CI setup failed: {error}", file=sys.stderr)
         return 1

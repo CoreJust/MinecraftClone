@@ -838,7 +838,6 @@ void GameServer::run(
     m_height_tile_workers->setBenchmarkMetricsEnabled(m_benchmark_metrics_enabled);
     auto next_simulation = std::chrono::steady_clock::now();
     std::chrono::steady_clock::time_point previous_loop_started_at{};
-    std::chrono::nanoseconds previous_sleep{};
     while (!stop_requested.load(std::memory_order_relaxed)) {
         auto const now = std::chrono::steady_clock::now();
         auto const loop_started_at = m_benchmark_metrics_enabled
@@ -850,6 +849,7 @@ void GameServer::run(
             previous_loop_started_at = loop_started_at;
         }
         std::chrono::nanoseconds tick_duration{};
+        std::chrono::nanoseconds network_poll_duration{};
         if (now >= next_simulation) {
             bool const measure_tick = benchmark_hooks != nullptr
                 && (m_benchmark_metrics_enabled || static_cast<bool>(benchmark_hooks->on_tick));
@@ -867,7 +867,35 @@ void GameServer::run(
             }
             next_simulation += shared::TICK;
         } else {
-            while (poll(std::chrono::milliseconds::zero()) > 0) {
+            static constexpr std::chrono::milliseconds ACTIVE_STREAM_POLL_INTERVAL{1};
+            static constexpr std::chrono::milliseconds IDLE_POLL_INTERVAL{5};
+            bool const has_active_stream_work = std::ranges::any_of(
+                m_preview_streams,
+                [](PreviewStream const& stream) {
+                    return !stream.queued_keys.empty()
+                        || !stream.dispatched_keys.empty()
+                        || !stream.ready_tiles.empty()
+                        || !stream.pending_removals.empty()
+                        || !stream.inflight_deliveries.empty();
+                }
+            );
+            std::chrono::milliseconds const poll_interval = has_active_stream_work
+                ? ACTIVE_STREAM_POLL_INTERVAL
+                : IDLE_POLL_INTERVAL;
+            std::chrono::milliseconds const until_tick = std::chrono::duration_cast<std::chrono::milliseconds>(
+                next_simulation - std::chrono::steady_clock::now()
+            );
+            std::chrono::milliseconds const poll_timeout = std::max(
+                std::chrono::milliseconds::zero(),
+                std::min(poll_interval, until_tick)
+            );
+            auto const poll_started_at = m_benchmark_metrics_enabled
+                ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
+            static_cast<void>(poll(poll_timeout));
+            if (m_benchmark_metrics_enabled) {
+                network_poll_duration = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                    std::chrono::steady_clock::now() - poll_started_at
+                );
             }
             processHeightTileStreams();
         }
@@ -884,7 +912,7 @@ void GameServer::run(
             auto const metrics_at = std::chrono::steady_clock::now();
             std::chrono::nanoseconds const loop_work = std::chrono::duration_cast<std::chrono::nanoseconds>(
                 metrics_at - loop_started_at
-            );
+            ) - network_poll_duration;
             for (PreviewStream const& stream : m_preview_streams) {
                 PreviewStreamMetrics metrics{
                     .height_tile_jobs = worker_queue_metrics.height_tiles,
@@ -911,7 +939,7 @@ void GameServer::run(
                     .server_loop_work = loop_work,
                     .server_tick = tick_duration,
                     .stream_pump = m_last_stream_pump_duration,
-                    .previous_sleep = previous_sleep,
+                    .network_poll = network_poll_duration,
                 };
                 auto const replication = std::ranges::find(
                     m_player_replications,
@@ -928,18 +956,6 @@ void GameServer::run(
                 }
                 benchmark_hooks->on_preview_metrics(stream.client_id, metrics);
             }
-        }
-        auto const sleep_deadline = std::min(
-            next_simulation,
-            std::chrono::steady_clock::now() + std::chrono::milliseconds{5}
-        );
-        auto const sleep_started_at = m_benchmark_metrics_enabled
-            ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
-        std::this_thread::sleep_until(sleep_deadline);
-        if (m_benchmark_metrics_enabled) {
-            previous_sleep = std::chrono::duration_cast<std::chrono::nanoseconds>(
-                std::chrono::steady_clock::now() - sleep_started_at
-            );
         }
     }
 }

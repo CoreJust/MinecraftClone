@@ -6,11 +6,6 @@ project(MinecraftClone2026
     LANGUAGES C CXX
 )
 
-if(NOT WIN32 AND NOT APPLE AND NOT ANDROID)
-    message(FATAL_ERROR "MinecraftClone currently supports only Windows, macOS, and Android")
-endif()
-
-
 ###  C++ OPTIONS  ###
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -20,6 +15,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 ###  BUILD OPTIONS  ###
 option(BUILD_TESTING "Build tests" ON)
 option(MC_BUILD_CLIENT "Build Client rendering and platform adapters" ON)
+option(MC_ANALYSIS_HOST "Permit server-only analysis builds on otherwise unsupported host platforms" OFF)
 option(MC_ENABLE_WARNINGS "Enable strict warnings" ON)
 option(MC_ENABLE_SANITIZERS "Enable sanitizers where supported" OFF)
 option(MC_ENABLE_HIGH_ASSERT "Enable high assertions" OFF)
@@ -29,6 +25,15 @@ option(
     "Allow a dirty, unknown, or mismatched CoreCpp package for local development"
     OFF
 )
+if(NOT WIN32 AND NOT APPLE AND NOT ANDROID)
+    if(NOT MC_ANALYSIS_HOST OR MC_BUILD_CLIENT)
+        message(FATAL_ERROR
+            "MinecraftClone product builds support only Windows, macOS, and Android; "
+            "unsupported hosts may configure server-only analysis builds with "
+            "MC_ANALYSIS_HOST=ON and MC_BUILD_CLIENT=OFF"
+        )
+    endif()
+endif()
 if(ANDROID)
     # Tests target desktop-only window and process contracts. Android builds are
     # produced by the Gradle application module and never include CTest.

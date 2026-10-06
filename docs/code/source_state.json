@@ -55,7 +55,7 @@
     },
     {
       "guide": "docs/BUILD.md",
-      "guide_sha256": "75193db12183cc1d01baf1b8d64f38f48ca62909c3a65f0f86b6a78ddaf08175",
+      "guide_sha256": "ff040ce8d3a4ad92547b923707d3422731c18aea373354dfc9409eda6faa67c2",
       "id": "build",
       "sources": [
         ".agents/skills/backlog/SKILL.md",
@@ -163,7 +163,7 @@
         "vcpkg-configuration.json",
         "vcpkg.json"
       ],
-      "sources_sha256": "e48983b24834e364266dbf00ee08b88281fa5b0b024957ad751d44e16c379ac2"
+      "sources_sha256": "5902c1a08cecd832fbff5b7089a517122d0bdd9473b3c147ca810e1e7837675a"
     },
     {
       "guide": "docs/code/CORE.md",
@@ -287,7 +287,7 @@
         "tests/core/world_generation_scheduler_tests.cpp",
         "tests/core/world_generation_tests.cpp"
       ],
-      "sources_sha256": "5f835136439f02446f4c4b7ceade48f5d00daa7054d01dd6bdcebfd312991691"
+      "sources_sha256": "b274541ab43d9fb71291bde3126f93f76732e453687e50ed3184164326338a5e"
     },
     {
       "guide": "docs/code/RENDERING.md",

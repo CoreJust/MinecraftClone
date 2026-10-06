@@ -72,7 +72,7 @@ public:
         std::chrono::nanoseconds server_loop_work{};
         std::chrono::nanoseconds server_tick{};
         std::chrono::nanoseconds stream_pump{};
-        std::chrono::nanoseconds previous_sleep{};
+        std::chrono::nanoseconds network_poll{};
     };
     struct BenchmarkHooks final {
         std::function<void(std::chrono::nanoseconds, uint64_t)> on_tick;

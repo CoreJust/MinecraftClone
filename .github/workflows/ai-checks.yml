@@ -50,10 +50,12 @@ jobs:
             runner: windows-2022
             preset: release
     env:
+      SOURCE_COMMIT: ${{ github.sha }}
       VCPKG_DISABLE_METRICS: '1'
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
+          fetch-depth: 0
           persist-credentials: false
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
@@ -204,7 +206,7 @@ jobs:
         run: python script/ci/acquire.py source-checks --pre-finalization-candidate
       - name: Verify finalized source policy checks
         if: github.ref == 'refs/heads/ai-main'
-        run: python script/ci/acquire.py source-checks
+        run: python script/ci/acquire.py source-checks --source-commit "${{ env.SOURCE_COMMIT }}"
       - name: Build, test, and validate shaders (macOS)
         if: matrix.platform == 'macos'
         run: |
@@ -526,7 +528,7 @@ jobs:
   android-hwasan-runtime:
     needs: android-hwasan-build
     if: github.event_name == 'push' && github.ref == 'refs/heads/ai-main'
-    runs-on: ubuntu-24.04-arm
+    runs-on: macos-15
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -537,7 +539,9 @@ jobs:
           python-version: '3.12.10'
       - name: Select Java 21 from the hosted tool cache
         run: |
-          if [[ -n "${JAVA_HOME_21_ARM64:-}" ]]; then
+          if [[ -n "${JAVA_HOME_21_arm64:-}" ]]; then
+            java_home="$JAVA_HOME_21_arm64"
+          elif [[ -n "${JAVA_HOME_21_ARM64:-}" ]]; then
             java_home="$JAVA_HOME_21_ARM64"
           elif [[ -n "${JAVA_HOME_21_X64:-}" ]]; then
             java_home="$JAVA_HOME_21_X64"
@@ -567,15 +571,22 @@ jobs:
           emulator_bin="$ANDROID_SDK_ROOT/emulator/emulator"
           "$sdkmanager" --install emulator 'system-images;android-35;google_apis;arm64-v8a'
           "$avdmanager" create avd --force --name mc-hwasan --package 'system-images;android-35;google_apis;arm64-v8a' --device pixel_2
-          "$emulator_bin" -accel-check
-          "$emulator_bin" -avd mc-hwasan -no-window -no-audio -no-boot-anim -no-snapshot -gpu swiftshader_indirect > "$RUNNER_TEMP/android-emulator.log" 2>&1 &
+          # Hosted Apple Silicon has no nested virtualization; use software emulation.
+          "$emulator_bin" -avd mc-hwasan -accel off -no-window -no-audio -no-boot-anim -no-snapshot -gpu swiftshader_indirect > "$RUNNER_TEMP/android-emulator.log" 2>&1 &
           echo $! > "$RUNNER_TEMP/android-emulator.pid"
-          adb wait-for-device
-          for attempt in $(seq 1 180); do
-            if [[ "$(adb shell getprop sys.boot_completed | tr -d '\r')" == 1 ]]; then
+          for attempt in $(seq 1 600); do
+            if ! kill -0 "$(cat "$RUNNER_TEMP/android-emulator.pid")" 2>/dev/null; then
+              cat "$RUNNER_TEMP/android-emulator.log"
+              echo 'ARM64 Android emulator exited before booting.' >&2
+              exit 1
+            fi
+            if [[ "$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" == 1 ]]; then
               echo 'ANDROID_SERIAL=emulator-5554' >> "$GITHUB_ENV"
               adb shell input keyevent 82
               exit 0
+            fi
+            if (( attempt % 15 == 0 )); then
+              echo "Waiting for ARM64 Android software emulator boot (attempt $attempt/600)."
             fi
             sleep 2
           done

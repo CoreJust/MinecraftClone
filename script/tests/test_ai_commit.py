@@ -332,6 +332,22 @@ class AiCommitTests(unittest.TestCase):
             "--candidate --level snapshot --require-index-match",
         )
 
+        self.git("branch", "ai-main")
+        self.git("checkout", "-b", "snapshot-source")
+        self.git("commit", "--allow-empty", "--no-gpg-sign", "-m", "snapshot source")
+        source = self.git("rev-parse", "HEAD").stdout.strip()
+        self.git("checkout", "ai-main")
+        self.git("merge", "--no-ff", "--no-commit", "snapshot-source")
+        self.stage_task(level="snapshot", finalized=True)
+        promotion = self.candidate()
+        self.assertEqual(promotion["merge_head"], source)
+        self.assertEqual(self.record(promotion).returncode, 0)
+        self.assertEqual(self.run_command("precommit", environment=environment).returncode, 0)
+        self.assertEqual(
+            log.read_text(encoding="utf-8").strip(),
+            f"--candidate --level snapshot --snapshot-source-commit {source} --require-index-match",
+        )
+
 
 class RealAiCommitIntegrationTests(unittest.TestCase):
     def setUp(self) -> None:

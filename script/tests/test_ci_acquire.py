@@ -43,6 +43,8 @@ class CiAcquireTests(unittest.TestCase):
         self.assertEqual(acquire.VULKAN_WINDOWS_RUNTIME["sha256"], "a14672efed15aafc7f5a16572d35cd3a3416eadf670aeee3cdf50ee32d5fbf83")
         self.assertEqual(acquire.ANDROID_COMMAND_LINE_TOOLS["url"], "https://dl.google.com/android/repository/commandlinetools-linux-15859902_latest.zip")
         self.assertEqual(acquire.ANDROID_COMMAND_LINE_TOOLS["sha256"], "4e4c464f145a7512b57d088ac6c278c03c9eea610886b35a5e0804e74eedf583")
+        self.assertEqual(acquire.ANDROID_MAC_ARM64_COMMAND_LINE_TOOLS["url"], "https://dl.google.com/android/repository/commandlinetools-mac_arm64-15859902_latest.zip")
+        self.assertEqual(acquire.ANDROID_MAC_ARM64_COMMAND_LINE_TOOLS["sha256"], "835b62a26162b229b441d1f6d4680383815a270809eb33522c0d480fa5002c4e")
         self.assertEqual(acquire.NINJA_DOWNLOADS["windows"]["sha256"], "26a40fa8595694dec2fad4911e62d29e10525d2133c9a4230b66397774ae25bf")
         self.assertEqual(acquire.NINJA_DOWNLOADS["macos"]["sha256"], "da7797794153629aca5570ef7c813342d0be214ba84632af886856e8f0063dd9")
 
@@ -204,23 +206,51 @@ class CiAcquireTests(unittest.TestCase):
             self.assertEqual(destination.read_bytes(), b"payload")
 
     def test_install_android_sdk_bootstraps_latest_layout_before_sdkmanager(self):
+        self.check_android_sdk_install("Linux", "x86_64", acquire.ANDROID_COMMAND_LINE_TOOLS)
+
+    def test_install_android_sdk_on_apple_silicon_uses_verified_native_archive(self):
+        self.check_android_sdk_install("Darwin", "arm64", acquire.ANDROID_MAC_ARM64_COMMAND_LINE_TOOLS)
+
+    def test_android_sdk_archive_selection_preserves_linux_hosts_and_arm_aliases(self):
+        for system, machine, config in (
+            ("Linux", "x86_64", acquire.ANDROID_COMMAND_LINE_TOOLS),
+            ("Linux", "aarch64", acquire.ANDROID_COMMAND_LINE_TOOLS),
+            ("Linux", "arm64", acquire.ANDROID_COMMAND_LINE_TOOLS),
+            ("Darwin", "arm64", acquire.ANDROID_MAC_ARM64_COMMAND_LINE_TOOLS),
+            ("Darwin", "aarch64", acquire.ANDROID_MAC_ARM64_COMMAND_LINE_TOOLS),
+        ):
+            with self.subTest(system=system, machine=machine), mock.patch.object(acquire.host_platform, "system", return_value=system), mock.patch.object(acquire.host_platform, "machine", return_value=machine):
+                self.assertEqual(acquire.android_command_line_tools(), config)
+
+    def test_android_sdk_rejects_unsupported_host_before_download(self):
+        with tempfile.TemporaryDirectory() as directory, mock.patch.object(acquire.host_platform, "system", return_value="Darwin"), mock.patch.object(acquire.host_platform, "machine", return_value="x86_64"), mock.patch.object(acquire, "download") as download:
+            root = Path(directory) / "android-sdk"
+            with self.assertRaisesRegex(acquire.CiError, "unsupported Android SDK host: Darwin/x86_64"):
+                acquire.install_android_sdk(root)
+            download.assert_not_called()
+            self.assertFalse(root.exists())
+
+    def check_android_sdk_install(self, system: str, machine: str, config: dict[str, str]) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory) / "android-sdk"
-            archive = Path(directory) / acquire.ANDROID_COMMAND_LINE_TOOLS["filename"]
+            archive = Path(directory) / config["filename"]
             with zipfile.ZipFile(archive, "w") as contents:
                 contents.writestr("cmdline-tools/bin/sdkmanager", "#!/bin/sh\n")
+                contents.writestr("cmdline-tools/bin/avdmanager", "#!/bin/sh\n")
                 contents.writestr("cmdline-tools/source.properties", "Pkg.Revision=20.0\n")
-            with mock.patch.object(acquire, "download") as download, mock.patch.object(acquire, "verify_sha256") as verify, mock.patch.object(acquire, "run") as run, mock.patch.object(acquire, "write_github_env") as write_env:
+            with mock.patch.object(acquire.host_platform, "system", return_value=system), mock.patch.object(acquire.host_platform, "machine", return_value=machine), mock.patch.object(acquire, "download") as download, mock.patch.object(acquire, "verify_sha256") as verify, mock.patch.object(acquire, "run") as run, mock.patch.object(acquire, "write_github_env") as write_env:
                 def copy_archive(_url: str, destination: Path) -> None:
                     destination.write_bytes(archive.read_bytes())
 
                 download.side_effect = copy_archive
                 sdkmanager = acquire.install_android_sdk(root)
-            expected_archive = root.parent / acquire.ANDROID_COMMAND_LINE_TOOLS["filename"]
+            expected_archive = root.parent / config["filename"]
             self.assertEqual(sdkmanager, root / "cmdline-tools" / "latest" / "bin" / "sdkmanager")
             self.assertTrue(sdkmanager.is_file())
-            download.assert_called_once_with(acquire.ANDROID_COMMAND_LINE_TOOLS["url"], expected_archive)
-            verify.assert_called_once_with(expected_archive, acquire.ANDROID_COMMAND_LINE_TOOLS["sha256"])
+            self.assertTrue(sdkmanager.stat().st_mode & stat.S_IXUSR)
+            self.assertTrue((sdkmanager.parent / "avdmanager").stat().st_mode & stat.S_IXUSR)
+            download.assert_called_once_with(config["url"], expected_archive)
+            verify.assert_called_once_with(expected_archive, config["sha256"])
             command = [str(sdkmanager), f"--sdk_root={root}"]
             self.assertEqual(run.call_args_list, [
                 mock.call([*command, "--licenses"], input_text="y\n" * 100),

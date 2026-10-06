@@ -4,7 +4,7 @@ This is the initiation version where the project structure is outlined and the m
 
 ## Release status
 
-Dated entries record snapshot version metadata and contents. For the AI line, the date is assigned during local release preparation; it does not by itself establish promotion, tagging, remote publication, or runtime acceptance. The aggregate task ledger records those results separately under [the version convention](../../VERSION_CONVENTION.md). If promotion moves to another day, update the candidate date before committing and tagging it.
+Dated entries record snapshot version metadata and contents. For the AI line, the heading date is bound to the finalized source commit's timestamp interpreted in `Europe/Belgrade` and stays fixed through promotion. The tag date is derived from the promotion commit, while the aggregate task ledger records the actual publication date separately under [the version convention](../../VERSION_CONVENTION.md). These dates do not by themselves establish runtime acceptance.
 
 # Snapshots
 
@@ -78,7 +78,7 @@ Additions:
 6. A reusable colored text renderer with separate GUI and world-text stages; the HUD reports readable coordinates, rotation, frame timing, uptime, and acceleration state.
 7. Automated boundary, seam, scheduling, transport, sustained-flight, GPU capture, and 120 Hz renderer benchmark coverage.
 
-## EarlyDev 0.1.0:7(26.10.06)
+## EarlyDev 0.1.0:7(26.10.07)
 
 S7 adds server-authoritative permissions, movement, player presentation, and long-distance terrain rendering to the S6 world foundation.
 

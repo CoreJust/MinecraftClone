@@ -282,6 +282,9 @@ def precommit(root: Path) -> int:
         check_args.append("--fast")
     else:
         check_args.extend(("--candidate", "--level", candidate["level"]))
+    branch = git(root, "branch", "--show-current").strip()
+    if candidate["merge_head"] and branch == "ai-main":
+        check_args.extend(("--snapshot-source-commit", candidate["merge_head"]))
     check_args.append("--require-index-match")
     completed = subprocess.run(check_args, cwd=root, check=False)
     return completed.returncode

@@ -14,8 +14,10 @@ import json
 import re
 import subprocess
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Sequence
+from zoneinfo import ZoneInfo
 
 import ai_check
 import ai_history
@@ -25,6 +27,7 @@ import ai_tasks
 AI_DEV = "ai-dev"
 AI_MAIN = "ai-main"
 COMMIT_ID = re.compile(r"[0-9a-f]{40}(?:[0-9a-f]{24})?")
+PROJECT_TIME_ZONE = ZoneInfo("Europe/Belgrade")
 
 
 class PublishError(RuntimeError):
@@ -115,8 +118,10 @@ def require_task_trailer(root: Path, commit: str, task_id: str) -> None:
         raise PublishError(f"{commit} must contain exactly one Task-ID: {task_id} trailer")
 
 
-def run_check(root: Path, *arguments: str) -> None:
+def run_check(root: Path, *arguments: str, snapshot_source: str | None = None) -> None:
     command = [sys.executable, str(root / "script" / "ai_check.py"), *arguments]
+    if snapshot_source is not None:
+        command.extend(("--snapshot-source-commit", snapshot_source))
     result = subprocess.run(command, cwd=root, check=False)
     if result.returncode:
         raise PublishError("AI release checks failed")
@@ -209,6 +214,51 @@ def require_expected_promoted_tree(root: Path, baseline: str, source: str, promo
         raise PublishError("promotion tree differs from the expected immutable merge tree")
 
 
+def promotion_source_for_date_check(root: Path) -> str | None:
+    promoted = revision(root, "HEAD")
+    subject = git(root, "show", "-s", "--format=%s", promoted).strip()
+    if not subject.startswith("Promote MC-AI-"):
+        return None
+    match = re.fullmatch(r"Promote (MC-AI-[0-9]+) to ai-main", subject)
+    if match is None:
+        raise PublishError("HEAD has a malformed ai-main promotion subject")
+    parents = git(root, "show", "-s", "--format=%P", promoted).split()
+    if len(parents) != 2:
+        raise PublishError("HEAD promotion must have exactly two parents")
+    promotion_base, source = parents
+    task_id = match.group(1)
+    load_snapshot(root, task_id, source)
+    require_task_trailer(root, promoted, task_id)
+    require_task_trailer(root, source, task_id)
+    require_expected_promoted_tree(root, promotion_base, source, promoted)
+    return source
+
+
+def checkout_source_for_date_check(root: Path, expected_head: str) -> str:
+    require_exact_commit(expected_head)
+    head = revision(root, "HEAD")
+    if head != expected_head:
+        raise PublishError("checked-out release source does not match the requested immutable HEAD")
+    require_clean(root)
+
+    source = promotion_source_for_date_check(root)
+    if source is not None:
+        return source
+
+    message = git(root, "log", "-1", "--format=%B", head)
+    trailers = git(root, "interpret-trailers", "--parse", input_text=message)
+    task_ids = []
+    for line in trailers.splitlines():
+        name, separator, value = line.partition(":")
+        if separator and name.strip().lower() == "task-id":
+            task_ids.append(value.strip())
+    if len(task_ids) != 1 or not re.fullmatch(r"MC-AI-[0-9]+", task_ids[0]):
+        raise PublishError("checked-out release source must be a finalized snapshot aggregate")
+    load_snapshot(root, task_ids[0], head)
+    require_task_trailer(root, head, task_ids[0])
+    return head
+
+
 def verify_promotion_bootstrap(root: Path, promoted_text: str, remote_base_text: str) -> None:
     require_exact_commit(promoted_text)
     require_exact_commit(remote_base_text)
@@ -239,12 +289,12 @@ def expected_tag(root: Path, promoted: str, revision_number: int | None = None) 
     numeric, separator2, snapshot = version.partition(":")
     if not separator or not separator2 or not major_name or not numeric or not snapshot:
         raise PublishError("ProjectInfo version is not a snapshot version")
-    committed = git(root, "show", "-s", "--format=%cs", promoted).strip()
     try:
-        year, month, day = committed.split("-")
-        date = f"{year[2:]}.{month}.{day}"
-    except ValueError as error:
+        timestamp = int(git(root, "show", "-s", "--format=%ct", promoted))
+        committed_at = datetime.fromtimestamp(timestamp, timezone.utc)
+    except (ValueError, OverflowError, OSError) as error:
         raise PublishError(f"{promoted} has no usable promotion date") from error
+    date = committed_at.astimezone(PROJECT_TIME_ZONE).strftime("%y.%m.%d")
     revision_suffix = "" if revision_number is None else f"-r{revision_number}"
     return f"ai/{major_name}/{numeric}/{snapshot}{revision_suffix}_{date}"
 
@@ -289,7 +339,14 @@ def prepare(root: Path, task_id: str, source_text: str) -> None:
     revision(root, task["baseline_commit"])
     promotion_base = revision(root, AI_MAIN)
     require_task_trailer(root, source, task_id)
-    run_check(root, "--candidate", "--level", "snapshot", "--require-index-match")
+    run_check(
+        root,
+        "--candidate",
+        "--level",
+        "snapshot",
+        "--require-index-match",
+        snapshot_source=source,
+    )
     if current_branch(root) != AI_DEV or revision(root, "HEAD") != source:
         raise PublishError("ai-dev changed while release checks were running")
     if revision(root, AI_MAIN) != promotion_base:
@@ -314,7 +371,14 @@ def finish(root: Path, task_id: str, source_text: str) -> None:
     require_pending_merge_clean(root)
     require_expected_pending_tree(root, promotion_base, source)
     check_ai_commit(root)
-    run_check(root, "--candidate", "--level", "snapshot", "--require-index-match")
+    run_check(
+        root,
+        "--candidate",
+        "--level",
+        "snapshot",
+        "--require-index-match",
+        snapshot_source=source,
+    )
     require_pending_merge_clean(root)
     require_expected_pending_tree(root, promotion_base, source)
     check_ai_commit(root)
@@ -355,7 +419,14 @@ def tag(root: Path, task_id: str, revision_number: int | None = None) -> None:
     )
     if existing.returncode == 0:
         raise PublishError(f"tag already exists and will not be rewritten: {name}")
-    run_check(root, "--strict", "--level", "snapshot", "--require-index-match")
+    run_check(
+        root,
+        "--strict",
+        "--level",
+        "snapshot",
+        "--require-index-match",
+        snapshot_source=source,
+    )
     git(root, "tag", "-a", name, promoted, "-m", f"AI snapshot {task_id}")
     if revision(root, name) != promoted:
         raise PublishError("new tag does not resolve to the promoted commit")
@@ -373,6 +444,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     bootstrap_command = commands.add_parser("verify-promotion-bootstrap")
     bootstrap_command.add_argument("promotion_commit")
     bootstrap_command.add_argument("remote_base")
+    resolve_date_source = commands.add_parser("resolve-date-source")
+    resolve_date_source.add_argument("--expected-head")
     tag_command = commands.add_parser("tag")
     tag_command.add_argument("task_id")
     tag_command.add_argument("--revision", type=int, choices=range(1, 1000))
@@ -385,6 +458,14 @@ def main(argv: Sequence[str] | None = None) -> int:
             finish(root, args.task_id, args.source_commit)
         elif args.command == "tag":
             tag(root, args.task_id, args.revision)
+        elif args.command == "resolve-date-source":
+            source = (
+                checkout_source_for_date_check(root, args.expected_head)
+                if args.expected_head is not None
+                else promotion_source_for_date_check(root)
+            )
+            if source is not None:
+                print(source)
         else:
             verify_promotion_bootstrap(root, args.promotion_commit, args.remote_base)
             print(f"Validated exact snapshot promotion {args.promotion_commit}")

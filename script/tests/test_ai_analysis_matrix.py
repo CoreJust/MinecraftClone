@@ -463,6 +463,15 @@ class AnalysisMatrixTests(unittest.TestCase):
         self.assertEqual(linux_base["MC_BUILD_CLIENT"], "OFF")
         self.assertEqual(configure["analysis-linux-lsan"]["cacheVariables"]["MC_SANITIZER"], "leak")
         self.assertEqual(configure["analysis-linux-msan"]["cacheVariables"]["MC_SANITIZER"], "memory")
+        msan_variables = configure["analysis-linux-msan"]["cacheVariables"]
+        for flag in (
+            "-fsanitize=memory",
+            "-fsanitize-memory-track-origins=2",
+            "-fno-omit-frame-pointer",
+        ):
+            self.assertIn(flag, msan_variables["CMAKE_CXX_FLAGS"])
+        self.assertIn("-fsanitize=memory", msan_variables["CMAKE_EXE_LINKER_FLAGS"])
+        self.assertIn("-fsanitize=memory", msan_variables["CMAKE_SHARED_LINKER_FLAGS"])
 
     def test_sanitizer_presets_use_optimized_test_configuration(self):
         presets = json.loads((REPOSITORY / "CMakePresets.json").read_text(encoding="utf-8"))
