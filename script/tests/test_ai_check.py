@@ -90,6 +90,95 @@ class AiCheckTests(unittest.TestCase):
             self.assertIn(f"PASS {phase}", result.stdout)
             self.assertTrue((self.root / "build/ai-checks" / f"{phase}.log").is_file())
 
+    def test_candidate_snapshot_source_must_match_source_head_or_pending_merge(self):
+        checker = load_module()
+        self.git("branch", "-M", "ai-dev")
+        promotion_base = self.git("rev-parse", "HEAD").stdout.strip()
+        self.git("commit", "--allow-empty", "--no-gpg-sign", "-m", "snapshot source")
+        source = self.git("rev-parse", "HEAD").stdout.strip()
+
+        self.assertEqual(
+            checker.snapshot_source_for_check(
+                self.root, source, candidate=True, strict=False
+            ),
+            source,
+        )
+        with self.assertRaisesRegex(ValueError, "does not match"):
+            checker.snapshot_source_for_check(
+                self.root, promotion_base, candidate=True, strict=False
+            )
+
+        self.git("checkout", "-b", "ai-main", promotion_base)
+        self.git("merge", "--no-ff", "--no-commit", source)
+        self.assertEqual(
+            checker.snapshot_source_for_check(
+                self.root, source, candidate=True, strict=False
+            ),
+            source,
+        )
+        with self.assertRaisesRegex(ValueError, "does not match"):
+            checker.snapshot_source_for_check(
+                self.root, promotion_base, candidate=True, strict=False
+            )
+
+    def test_candidate_without_snapshot_source_keeps_today_semantics(self):
+        checker = load_module()
+        self.git("branch", "-M", "ai-dev")
+        (self.root / "unstaged-note.txt").write_text("dirty aggregate candidate\n", encoding="utf-8")
+
+        self.assertIsNone(
+            checker.snapshot_source_for_check(
+                self.root, None, candidate=True, strict=False
+            )
+        )
+
+    def test_candidate_publisher_receives_the_validated_source_binding(self):
+        checker = load_module()
+        self.git("branch", "-M", "ai-dev")
+        source = self.git("rev-parse", "HEAD").stdout.strip()
+        (self.root / "script/ai_checks.json").write_text("[]\n", encoding="utf-8")
+        commands = []
+
+        def run_phase(root, log_dir, name, command, timeout, **kwargs):
+            commands.append((name, command))
+            return checker.PhaseResult(name, command, 0, "")
+
+        with mock.patch.object(checker, "run_phase", side_effect=run_phase), contextlib.redirect_stdout(io.StringIO()):
+            result = checker.main([
+                "--root", str(self.root),
+                "--candidate",
+                "--level", "snapshot",
+                "--snapshot-source-commit", source,
+            ])
+
+        self.assertEqual(result, 0)
+        publisher = next(command for name, command in commands if name == "publisher")
+        self.assertEqual(
+            publisher[-2:],
+            ["--snapshot-source-commit", source],
+        )
+
+    def test_strict_publisher_receives_the_reconstructed_promotion_source(self):
+        checker = load_module()
+        source = self.git("rev-parse", "HEAD").stdout.strip()
+        (self.root / "script/ai_checks.json").write_text("[]\n", encoding="utf-8")
+        commands = []
+
+        def run_phase(root, log_dir, name, command, timeout, **kwargs):
+            commands.append((name, command))
+            return checker.PhaseResult(name, command, 0, "")
+
+        with (
+            mock.patch.object(checker, "run_phase", side_effect=run_phase),
+            mock.patch.object(checker, "snapshot_source_for_check", return_value=source),
+            contextlib.redirect_stdout(io.StringIO()),
+        ):
+            result = checker.main(["--root", str(self.root), "--strict", "--level", "snapshot"])
+
+        self.assertEqual(result, 0)
+        publisher = next(command for name, command in commands if name == "publisher")
+        self.assertEqual(publisher[-2:], ["--snapshot-source-commit", source])
+
     def test_failed_phase_does_not_skip_later_phases(self):
         (self.root / "script/ai_docs.py").write_text("raise SystemExit(7)\n", encoding="utf-8")
         result = self.run_check("--fast")

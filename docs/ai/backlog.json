@@ -1502,7 +1502,7 @@
     ],
     "acceptance": "Deliver immutable, generation-tagged hard/soft entity permissions for all/players/mobs/technical-entities/per-kind and explicit-member/selector groups; namespace custom keys and defer world subjects. Cover movement, flight/collision, blocks, inventory, invincibility, commands, and permission-backed mode presets. Use CoreLang 0.1.3.1 (only documented 0.1.3.3 maintenance), retain interpreter/JIT parity, and prepare kernels off physics ticks. Test latency, loss, jitter, freezes, reordering, and duplication. Replicate a 29/16 × 10/16 × 10/16 player, 16-color palette, and first/rear-third/front-third views. Keep position-driven radius-256 terrain camera-independent and derive face LOD at projected area ≤2 px². Provide four inspected 2560x1440 Mac screenshots with prominent labels centered below the HUD: (1) the flying third-person player offset from the central spike, with the full spike, most of its first ring, and terrain beyond visible from slightly above while emphasizing the central landform's mass; (2) the player in the trench near the first spike; (3) the player climbing the mountain; and (4) first-person at horizontal X/Z (0, 0). Target stable 120 FPS at x200 and the world border as diagnostic only. Pass platform and automated MC-AI-0249 gates; include the accepted CoreCpp scope MC-AI-0056 Runtime executors, MC-AI-0057 Runtime audio, and MC-AI-0240 renderer diagnostics in this snapshot. Release S7, hold the minor open for feedback, and do not start S8.",
     "evidence": "Four inspected 2560x1440 Mac captures retain prominent bottom-center labels without HUD overlap. SHA-256: central 5cc66572943d05af9a21894567b35fe2ffad2bd3a2c87ce96be0097ddeca4161; trench 8608534cd001bf835279ce4ff53969b6453b6906e4a6a3497dbb55b7f2542af6; mountain 9ad8cd09b1a91356e74b5cab2ee373d908d9bb7c5680fc3b9f8129003ef9288a; origin 38c350a3f0772d6445cbde8c372ffb3b385884b7027493a9ceb66a58b81dbfc8. Exact ai-main promotion 4a0551b59a1511256d212a0353b76984816e62a5 failed Actions run 37524950551 (Linux LSan/MSan, Windows Debug landing, macOS Debug/Release streaming, Android emulator host); no S7 tag or release assets exist. Reviewed repairs MC-AI-0345 through MC-AI-0348 are committed as dd012de, 54dd0ff, ee03085, and 7e3db23 and pushed to ai-dev. Full local integration on 7e3db238ec3567d0f664a5c5a78aabbb16660a58 passed 435 Python tests, Debug build, CTest 584 registered tests with one explicit Release-only skip (378.33s), publisher, docs, backlog, plan, and diff checks. The full-radius Debug stream/removal regression passed in 33.8s. Focused Release acceptance passed full-radius delivery/removal in 30.08s and four-client sustained flight in 35.69s with peak acknowledgement lag 1 and final 350/350/350/350. The landing regression passed ten consecutive focused Release runs. These are local results, not substitutes for the required exact-promotion hosted gates. The new aggregate candidate/renderer gate is pending.",
-    "blocker": "The corrected aggregate source still requires its snapshot candidate/renderer gate, reviewed finalization commit, and reviewed ai-main promotion. Then require successful exact-promotion desktop and all 13 sanitizer/static-analysis rows, Android HWASan build and emulator runtime, Mac artifact runtime, strict/tag checks, and checksummed artifact publication. The existing ai-main promotion 4a0551b failed run 37524950551 and remains unqualified. Windows hands-on runtime remains user-owned and unclaimed. Keep S7 active/unpublished and the minor on its feedback hold; do not start S8.",
+    "blocker": "A reproduced midnight date-gate defect must be repaired before promotion: candidate/strict checks currently revalidate immutable snapshot metadata against the moving wall clock. Then finish corrected aggregate source, exact-promotion hosted analysis/runtime gates, strict/tag and checksummed publication; preserve the minor feedback hold and separate Windows hands-on status.",
     "owner": "Codex",
     "level": "snapshot",
     "parent": "MC-AI-0033",
@@ -1532,7 +1532,7 @@
     ],
     "baseline_commit": "0514890690c10d80b7475fd0b76204e800948db3",
     "commits": [],
-    "finalized": true,
+    "finalized": false,
     "retrospective": "The latest failed hosted promotion exposed platform/tooling gaps not established by local acceptance: Linux analysis opt-in and MSan linker flags, a landing test withholding stream acknowledgements, macOS loop cadence dominated by unconditional sleep, and an emulator package unavailable on the Linux ARM host. Repair tasks 0345-0348 batch these observed causes; task reviews bind exact staged trees and the full integration gate runs once at the repair-batch boundary. Hosted release receipts remain mandatory and skipped ai-dev jobs are not treated as passes. No global configuration, hook, or permissions changes were made in this repair batch.",
     "docs_review": "",
     "environment_review": "An authorized additive Launch Services seed/register attempt did not create app bundle records. Renderer smoke passed when run outside the restricted shell; no Launch Services cache deletion or reboot was performed. The restricted-shell history collector could not write the temporary tree required by git merge-tree --write-tree and emitted a misleading missing-tagged-promotion diagnostic. The same exact ai_history.py collect command in host context exited 0 and emitted all 83 child task IDs; ai_tasks.py ready exited 0 with empty output. This reconciliation changed no ref or tag. Exact command/result are recorded at /private/tmp/mc-s7-review.fojOM5/history-reconciliation.txt, SHA-256 03fc882e392c88bb32e4cfd46f43709cadadc64c8a90e0bc53793474e7af205e.",
@@ -12033,6 +12033,44 @@
       "CI acquisition supports the pinned native Mac ARM64 command-line tools alongside existing Linux hosts; the Android HWASan job retains the Android 35 ARM64 image and exact APK/runtime verifier."
     ],
     "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0349",
+    "title": "Bind AI snapshot gates to immutable release dates",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P1",
+    "route": "luna",
+    "milestone": "ED-010-S7",
+    "depends_on": [],
+    "acceptance": "Bind AI snapshot release checks to the canonical Europe/Belgrade preparation date of the exact immutable source commit, consistently through prepare, pending-promotion commit hooks, finish, strict checks and tag pushes. Retain ordinary legacy today semantics, monotonic/index/format validation, immutable source/tag identities and required exact-promotion analysis/runtime evidence. Tag dates remain promotion-derived; actual publication date remains resolved_at. Fail on malformed or mismatched source/date; deterministic tests cover crossing midnight, ordinary today behavior, invalid identity and date mismatch. Align owning date documentation; never fake clocks or commit timestamps.",
+    "evidence": "Core date-gate focused run: 100 tests passed across test_pre_finalization_candidate, test_ai_check, test_ai_publish and test_ai_commit (55.9s). After finalized-CI consumer coverage and shell-neutral Windows argument correction, the affected test_pre_finalization_candidate and test_ai_publish suites passed 40 tests (57.166s); seven affected resolver/acquire/workflow regressions passed after the final cleanliness guard (3.855s). Changed Python syntax, both workflow YAML parses, whitespace, owning docs/source-state and backlog checks passed. These local tooling results do not replace the pending exact-promotion hosted analysis/runtime and publication gates.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0038",
+    "motivation": "Prevent unchanged S7 candidates from being invalidated by midnight between preparation, promotion, hosted analysis and tagging.",
+    "context": "Real check_today_date reproduction: stored S7 26.10.06 passes on Oct6 and fails on Oct7; candidate/strict publication stages invoke that moving-date predicate.",
+    "complexity": "medium",
+    "created_at": "2026-10-06",
+    "resolved_at": "2026-10-07",
+    "resolution_changes": "Bind AI release date checks to validated immutable source commits through prepare, pending-promotion precommit, finish, strict/tag checks and finalized CI/artifact source checks. Resolve checked-out promotions to their validated second parent and finalized aggregate sources to their exact clean HEAD, fetch the required release history, and pass source IDs using shell-neutral workflow syntax. Preserve ordinary fast/pre-finalization and legacy today validation, canonical Belgrade tag dates, and actual publication ledger dates.",
+    "plan": [
+      "Implement source-bound AI release date validation with focused deterministic regression tests."
+    ],
+    "product_changes": [
+      "No gameplay behavior changes."
+    ],
+    "code_changes": [
+      "Keep release date validation stable across midnight without weakening immutable-candidate gates."
+    ],
+    "baseline_commit": "9a0748ebb644703d20cb0018f402b7d0be962f56",
     "commits": [],
     "finalized": true,
     "retrospective": "",

@@ -27,6 +27,7 @@ def parse_args():
 
     checks_only = False
     pre_finalization_candidate = False
+    snapshot_source_commit = None
     args = sys.argv[1:]
     if "--checks-only" in args:
         checks_only = True
@@ -35,9 +36,21 @@ def parse_args():
         pre_finalization_candidate = True
         args.remove("--pre-finalization-candidate")
 
+    if "--snapshot-source-commit" in args:
+        source_index = args.index("--snapshot-source-commit")
+        if source_index + 1 >= len(args):
+            print_fail("--snapshot-source-commit requires a full commit ID")
+            sys.exit(1)
+        snapshot_source_commit = args[source_index + 1]
+        del args[source_index : source_index + 2]
+
     if pre_finalization_candidate and not checks_only:
         print_fail("--pre-finalization-candidate requires --checks-only")
         print_help()
+        sys.exit(1)
+
+    if snapshot_source_commit is not None and not checks_only:
+        print_fail("--snapshot-source-commit requires --checks-only")
         sys.exit(1)
 
     if len(args) != 2:
@@ -72,15 +85,17 @@ def parse_args():
         snapshot_index,
         checks_only,
         pre_finalization_candidate,
+        snapshot_source_commit,
     )
 
 def print_help():
     print(Color.colorize("Usage:", Color.YELLOW))
-    print("  python publish_version.py \"<MajorName>:<MinorName>\" <Epoch>.<Major>.<Minor>:<SnapshotIndex> [--checks-only] [--pre-finalization-candidate]")
+    print("  python publish_version.py \"<MajorName>:<MinorName>\" <Epoch>.<Major>.<Minor>:<SnapshotIndex> [--checks-only] [--pre-finalization-candidate] [--snapshot-source-commit <commit>]")
     print(Color.colorize("Example:", Color.GRAY))
     print("  python publish_version.py \"Crimson:Dawn\" 1.2.3:4")
     print("  --checks-only    Run only the common checks, skip tests and publishing.")
     print("  --pre-finalization-candidate    Permit only a missing current snapshot during checks-only validation.")
+    print("  --snapshot-source-commit        Bind the snapshot date to an immutable AI source commit.")
 
 @register_check("no unstaged or uncommitted changes")
 def check_git_clean(ctx):
@@ -161,7 +176,18 @@ def main():
         snapshot_index,
         checks_only,
         pre_finalization_candidate,
+        snapshot_source_commit,
     ) = parse_args()
+
+    snapshot_source_date = None
+    if snapshot_source_commit is not None:
+        try:
+            snapshot_source_date = script.infrastructure_checks.commit_project_date(
+                Path.cwd(), snapshot_source_commit
+            )
+        except ValueError as error:
+            print_fail(str(error))
+            sys.exit(1)
 
     ctx = {
         'major_name': major_name,
@@ -172,6 +198,7 @@ def main():
         'version_str': version_str,
         'snapshot_index': snapshot_index,
         'pre_finalization_candidate': pre_finalization_candidate,
+        'snapshot_source_date': snapshot_source_date,
     }
 
     print_section("=== Common Checks ===")

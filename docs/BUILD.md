@@ -93,7 +93,7 @@ The publisher is [publish.py](../publish.py). Checks-only takes explicit metadat
 python3 publish.py 'EarlyDev:Initiation' 0.1.0:3 --checks-only
 ```
 
-`--checks-only` does not build or test; the aggregate gate does both. Development exceptions are limited to dirty Git state and incorrect snapshot files and are reported separately. Do not fabricate a release date or alter source to hide a baseline failure. Other failures block completion.
+`--checks-only` skips builds/tests; aggregate gates run both. [AI release policy](ai/RELEASES.md) binds dates to validated source commits in Europe/Belgrade; development and legacy checks use today. Development exceptions: dirty Git state and incorrect snapshot files, reported separately. Other failures block completion. Never fabricate dates or hide baseline failures.
 
 The existing non-check publisher only accepts `dev` and does not switch to `main` before merging. Do not use it for the AI line. Follow [the explicit snapshot procedure](VERSION_CONVENTION.md); a release-tool repair belongs to its own task.
 

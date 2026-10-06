@@ -68,6 +68,82 @@ def command_output(root: Path, command: Sequence[str]) -> str:
     return completed.stdout
 
 
+def git_output(root: Path, *arguments: str) -> str:
+    return command_output(root, ["git", *arguments]).strip()
+
+
+def merge_head(root: Path) -> str | None:
+    location = Path(git_output(root, "rev-parse", "--git-path", "MERGE_HEAD"))
+    target = location if location.is_absolute() else root / location
+    try:
+        heads = [line for line in target.read_text(encoding="utf-8").splitlines() if line]
+    except OSError:
+        return None
+    if len(heads) != 1:
+        raise ValueError("snapshot source binding requires exactly one pending merge parent")
+    return heads[0]
+
+
+def require_snapshot_source_commit(root: Path, source: str) -> str:
+    if not re.fullmatch(r"(?:[0-9a-f]{40}|[0-9a-f]{64})", source):
+        raise ValueError("snapshot source must be a full immutable commit ID")
+    resolved = git_output(root, "rev-parse", "--verify", f"{source}^{{commit}}")
+    if resolved != source:
+        raise ValueError("snapshot source does not resolve to the requested commit")
+    return source
+
+
+def resolve_promotion_source(root: Path) -> str | None:
+    resolver = root / "script" / "ai_publish.py"
+    if not resolver.is_file():
+        subject = git_output(root, "show", "-s", "--format=%s", "HEAD")
+        if subject.startswith("Promote MC-AI-"):
+            raise ValueError("cannot validate the HEAD promotion source without ai_publish.py")
+        return None
+    completed = subprocess.run(
+        [sys.executable, str(resolver), "--root", str(root), "resolve-date-source"],
+        cwd=root,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    if completed.returncode:
+        raise ValueError(completed.stderr.strip() or "cannot validate the HEAD promotion source")
+    source = completed.stdout.strip()
+    return require_snapshot_source_commit(root, source) if source else None
+
+
+def snapshot_source_for_check(
+    root: Path,
+    explicit_source: str | None,
+    *,
+    candidate: bool,
+    strict: bool,
+) -> str | None:
+    if explicit_source is not None:
+        source = require_snapshot_source_commit(root, explicit_source)
+        if candidate:
+            branch = git_output(root, "branch", "--show-current")
+            head = git_output(root, "rev-parse", "HEAD")
+            pending_source = merge_head(root)
+            if branch == "ai-dev" and pending_source is None and head == source:
+                return source
+            if branch == "ai-main" and pending_source == source:
+                return source
+            raise ValueError(
+                "snapshot source does not match the clean source HEAD or pending promotion merge"
+            )
+        if strict:
+            if resolve_promotion_source(root) != source:
+                raise ValueError("snapshot source does not match the validated HEAD promotion")
+        else:
+            raise ValueError("snapshot source binding requires candidate or strict release checks")
+        return source
+    if strict:
+        return resolve_promotion_source(root)
+    return None
+
+
 def repository_root() -> Path:
     return Path(__file__).resolve().parents[1]
 
@@ -524,11 +600,24 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--candidate", action="store_true", help="full release checks before commit; allow only dirty Git state")
     parser.add_argument("--level", choices=("basic", "snapshot", "minor", "major"), default="basic")
     parser.add_argument("--require-index-match", action="store_true", help="reject partially staged governed files")
+    parser.add_argument("--snapshot-source-commit", help="bind the snapshot date to an immutable AI source commit")
     parser.add_argument("--root", type=Path, help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
     if args.fast and (args.candidate or args.strict or args.level != "basic"):
         parser.error("--fast cannot be combined with release checks")
+    if args.fast and args.snapshot_source_commit:
+        parser.error("--fast cannot use a snapshot source binding")
     root = (args.root or repository_root()).resolve()
+    try:
+        snapshot_source = snapshot_source_for_check(
+            root,
+            args.snapshot_source_commit,
+            candidate=args.candidate,
+            strict=args.strict,
+        )
+    except (OSError, RuntimeError, ValueError) as error:
+        print(f"AI check date binding: {error}", file=sys.stderr)
+        return 1
     log_dir = root / LOG_DIR
     log_dir.mkdir(parents=True, exist_ok=True)
     try:
@@ -655,7 +744,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     if not args.fast:
         try:
             names, version = project_version_arguments(root)
-            publisher = run_phase(root, log_dir, "publisher", [sys.executable, "publish.py", names, version, "--checks-only"], 60)
+            publisher_command = [sys.executable, "publish.py", names, version, "--checks-only"]
+            if snapshot_source is not None:
+                publisher_command.extend(("--snapshot-source-commit", snapshot_source))
+            publisher = run_phase(root, log_dir, "publisher", publisher_command, 60)
             publisher.allowed_failure = (
                 publisher.returncode not in {0, 124}
                 and publisher_failure_is_allowed(publisher.output, args.strict, args.candidate)

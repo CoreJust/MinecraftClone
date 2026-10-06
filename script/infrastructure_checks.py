@@ -21,6 +21,34 @@ def project_date(now: datetime | None = None) -> date:
         raise ValueError("project date requires an aware datetime")
     return current.astimezone(PROJECT_TIME_ZONE).date()
 
+
+def commit_project_date(repository_root: Path, commit: str) -> date:
+    if not re.fullmatch(r"(?:[0-9a-f]{40}|[0-9a-f]{64})", commit):
+        raise ValueError("snapshot source must be a full immutable commit ID")
+    resolved = subprocess.run(
+        ["git", "rev-parse", "--verify", f"{commit}^{{commit}}"],
+        cwd=repository_root,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    if resolved.returncode or resolved.stdout.strip() != commit:
+        raise ValueError(f"snapshot source commit does not exist: {commit}")
+    timestamp = subprocess.run(
+        ["git", "show", "-s", "--format=%ct", commit],
+        cwd=repository_root,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    try:
+        committed_at = datetime.fromtimestamp(int(timestamp.stdout.strip()), timezone.utc)
+    except (ValueError, OverflowError, OSError) as error:
+        raise ValueError(f"snapshot source commit has no usable timestamp: {commit}") from error
+    if timestamp.returncode:
+        raise ValueError(f"snapshot source commit has no usable timestamp: {commit}")
+    return project_date(committed_at)
+
 @register_file_check(FILES.VCPKG, "vcpkg.json version-string matches")
 def check_vcpkg(ctx, content):
     data = json.loads(content)
@@ -215,7 +243,10 @@ def check_today_date(ctx):
         if ctx.get('pre_finalization_candidate', False) and latest[0] < ctx['snapshot_index']:
             return True, ""
         return False, f"latest snapshot index {latest[0]} != {ctx['snapshot_index']}"
-    today = project_date().strftime("%y.%m.%d")
-    if latest[1] != today:
-        return False, f"snapshot date is {latest[1]}, but today is {today}"
+    source_date = ctx.get("snapshot_source_date")
+    expected = source_date if source_date is not None else project_date()
+    expected_label = "source commit date" if source_date is not None else "today"
+    expected_text = expected.strftime("%y.%m.%d")
+    if latest[1] != expected_text:
+        return False, f"snapshot date is {latest[1]}, but {expected_label} is {expected_text}"
     return True, ""

@@ -2,13 +2,17 @@ from __future__ import annotations
 
 import json
 import os
-from pathlib import Path
 import shutil
 import subprocess
 import sys
 import tempfile
 import unittest
+from datetime import datetime, timezone
+from pathlib import Path
+from zoneinfo import ZoneInfo
 from unittest import mock
+
+from script import ai_check
 
 
 REPOSITORY = Path(__file__).resolve().parents[2]
@@ -56,6 +60,7 @@ class AiPublishTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temporary = tempfile.TemporaryDirectory()
         self.root = Path(self.temporary.name)
+        self.ai_check_args_log = self.root / ".git" / "ai-check-args.log"
         script_dir = self.root / "script"
         script_dir.mkdir()
         for name in SCRIPT_NAMES:
@@ -68,6 +73,9 @@ class AiPublishTests(unittest.TestCase):
             "def project_version_arguments(root):\n"
             "    return ('EarlyDev:Initiation', '0.1.0:3')\n"
             "if __name__ == '__main__':\n"
+            "    args_log = os.environ.get('MC_TEST_AI_CHECK_ARGS_LOG')\n"
+            "    if args_log:\n"
+            "        Path(args_log).write_text('\\n'.join(sys.argv[1:]) + '\\n', encoding='utf-8')\n"
             "    if '--strict' in sys.argv:\n"
             "        expected = os.environ.get('MC_TEST_HOSTED_MATRIX_COMMIT')\n"
             "        current = subprocess.check_output(\n"
@@ -166,6 +174,7 @@ class AiPublishTests(unittest.TestCase):
         env: dict[str, str] | None = None,
     ) -> subprocess.CompletedProcess[str]:
         environment = os.environ.copy()
+        environment["MC_TEST_AI_CHECK_ARGS_LOG"] = str(self.ai_check_args_log)
         if env is not None:
             environment.update(env)
         return subprocess.run(
@@ -205,16 +214,25 @@ class AiPublishTests(unittest.TestCase):
         result = self.run_publish("prepare", "MC-AI-0032", self.source)
         self.assertEqual(result.returncode, 0, result.stderr)
 
-    def finish(self) -> None:
+    def finish(self, env: dict[str, str] | None = None) -> None:
         self.record_pending_review()
-        result = self.run_publish("finish", "MC-AI-0032", self.source)
+        result = self.run_publish("finish", "MC-AI-0032", self.source, env=env)
         self.assertEqual(result.returncode, 0, result.stderr)
+
+    def expected_tag_date(self, promoted: str) -> str:
+        timestamp = int(self.git_output("show", "-s", "--format=%ct", promoted))
+        date = datetime.fromtimestamp(timestamp, timezone.utc).astimezone(ZoneInfo("Europe/Belgrade"))
+        return f"ai/EarlyDev/0.1.0/3_{date:%y.%m.%d}"
 
     def test_snapshot_flow_requires_candidate_receipt_and_creates_immutable_tag(self) -> None:
         snapshot = json.loads((self.root / "docs" / "ai" / "backlog.json").read_text())[2]
         self.assertEqual(snapshot["status"], "active")
         self.assertEqual(snapshot["resolved_at"], "")
         self.prepare()
+        self.assertIn(
+            f"--snapshot-source-commit\n{self.source}",
+            self.ai_check_args_log.read_text(encoding="utf-8"),
+        )
         (self.root / "untracked.txt").write_text("dirty\n", encoding="utf-8")
         dirty = self.run_publish("finish", "MC-AI-0032", self.source)
         self.assertNotEqual(dirty.returncode, 0)
@@ -224,18 +242,90 @@ class AiPublishTests(unittest.TestCase):
         self.assertNotEqual(missing.returncode, 0)
         self.assertIn("review receipt", missing.stderr)
         self.finish()
+        self.assertIn(
+            f"--snapshot-source-commit\n{self.source}",
+            self.ai_check_args_log.read_text(encoding="utf-8"),
+        )
         promoted = self.git_output("rev-parse", "HEAD")
         self.assertEqual(self.git_output("show", "-s", "--format=%P", promoted).split(), [self.baseline, self.source])
         self.assertEqual((self.root / "src" / "baseline_only.txt").read_text(encoding="utf-8"), "retain\n")
         tagged = self.run_publish("tag", "MC-AI-0032")
         self.assertEqual(tagged.returncode, 0, tagged.stderr)
-        year, month, day = self.git_output("show", "-s", "--format=%cs", promoted).split("-")
-        name = f"ai/EarlyDev/0.1.0/3_{year[2:]}.{month}.{day}"
+        self.assertIn(
+            f"--snapshot-source-commit\n{self.source}",
+            self.ai_check_args_log.read_text(encoding="utf-8"),
+        )
+        name = self.expected_tag_date(promoted)
         self.assertEqual(tagged.stdout.strip(), name)
         self.assertEqual(self.git_output("rev-parse", f"{name}^{{commit}}"), promoted)
         old = self.run_publish("tag", "MC-AI-0032")
         self.assertNotEqual(old.returncode, 0)
         self.assertIn("will not be rewritten", old.stderr)
+
+    def test_strict_date_source_is_reconstructed_from_the_validated_promotion(self) -> None:
+        self.prepare()
+        self.finish()
+
+        resolved = self.run_publish("resolve-date-source")
+        checkout_resolved = self.run_publish(
+            "resolve-date-source",
+            "--expected-head",
+            self.git_output("rev-parse", "HEAD"),
+        )
+        strict_source = ai_check.snapshot_source_for_check(
+            self.root, None, candidate=False, strict=True
+        )
+
+        self.assertEqual(resolved.returncode, 0, resolved.stderr)
+        self.assertEqual(checkout_resolved.returncode, 0, checkout_resolved.stderr)
+        self.assertEqual(resolved.stdout.strip(), self.source)
+        self.assertEqual(checkout_resolved.stdout.strip(), self.source)
+        self.assertEqual(strict_source, self.source)
+
+    def test_release_checkout_resolves_a_clean_finalized_aggregate_source(self) -> None:
+        resolved = self.run_publish(
+            "resolve-date-source", "--expected-head", self.source
+        )
+
+        self.assertEqual(resolved.returncode, 0, resolved.stderr)
+        self.assertEqual(resolved.stdout.strip(), self.source)
+
+    def test_release_checkout_rejects_a_mismatched_expected_head(self) -> None:
+        rejected = self.run_publish(
+            "resolve-date-source", "--expected-head", self.baseline
+        )
+
+        self.assertNotEqual(rejected.returncode, 0)
+        self.assertIn("does not match the requested immutable HEAD", rejected.stderr)
+
+    def test_release_checkout_rejects_dirty_aggregate_identity(self) -> None:
+        (self.root / "untracked-release-input.txt").write_text("unreviewed\n", encoding="utf-8")
+
+        rejected = self.run_publish(
+            "resolve-date-source", "--expected-head", self.source
+        )
+
+        self.assertNotEqual(rejected.returncode, 0)
+        self.assertIn("working tree must be clean", rejected.stderr)
+
+    def test_tag_date_uses_belgrade_date_of_the_immutable_promotion_timestamp(self) -> None:
+        self.prepare()
+        self.record_pending_review()
+        promoted_at = "2026-10-06T22:05:00+00:00"
+        finished = self.run_publish(
+            "finish",
+            "MC-AI-0032",
+            self.source,
+            env={"GIT_AUTHOR_DATE": promoted_at, "GIT_COMMITTER_DATE": promoted_at},
+        )
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        promoted = self.git_output("rev-parse", "HEAD")
+
+        tagged = self.run_publish("tag", "MC-AI-0032")
+
+        self.assertEqual(tagged.returncode, 0, tagged.stderr)
+        self.assertEqual(tagged.stdout.strip(), "ai/EarlyDev/0.1.0/3_26.10.07")
+        self.assertEqual(tagged.stdout.strip(), self.expected_tag_date(promoted))
 
     def test_tag_waits_for_hosted_matrix_for_the_exact_promotion_commit(self) -> None:
         self.prepare()
@@ -329,8 +419,7 @@ class AiPublishTests(unittest.TestCase):
         tagged = self.run_publish("tag", "MC-AI-0032", "--revision", "1")
         self.assertEqual(tagged.returncode, 0, tagged.stderr)
         promoted = self.git_output("rev-parse", "HEAD")
-        year, month, day = self.git_output("show", "-s", "--format=%cs", promoted).split("-")
-        name = f"ai/EarlyDev/0.1.0/3-r1_{year[2:]}.{month}.{day}"
+        name = self.expected_tag_date(promoted).replace("/3_", "/3-r1_")
         self.assertEqual(tagged.stdout.strip(), name)
         self.assertEqual(self.git_output("rev-parse", f"{name}^{{commit}}"), promoted)
 

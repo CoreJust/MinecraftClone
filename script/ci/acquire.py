@@ -779,8 +779,13 @@ def validate_shaders(build_dir: Path) -> None:
         run([validator, "--target-env", "vulkan1.2", str(shader_path(build_dir, shader))])
 
 
-def source_checks(pre_finalization_candidate: bool = False) -> None:
+def source_checks(
+    pre_finalization_candidate: bool = False,
+    source_commit: str | None = None,
+) -> None:
     """Run repository policy/source checks without a duplicate application build."""
+    if pre_finalization_candidate and source_commit is not None:
+        raise CiError("pre-finalization source checks cannot bind a finalized source commit")
     root = Path(__file__).resolve().parents[2]
     run([sys.executable, "script/ai_check.py", "--fast"])
     sys.path.insert(0, str(root))
@@ -790,6 +795,20 @@ def source_checks(pre_finalization_candidate: bool = False) -> None:
     command = [sys.executable, "publish.py", names, version, "--checks-only"]
     if pre_finalization_candidate:
         command.append("--pre-finalization-candidate")
+    elif source_commit is not None:
+        resolver = [
+            sys.executable,
+            "script/ai_publish.py",
+            "--root",
+            str(root),
+            "resolve-date-source",
+            "--expected-head",
+            source_commit,
+        ]
+        snapshot_source = run(resolver)
+        if re.fullmatch(r"(?:[0-9a-f]{40}|[0-9a-f]{64})", snapshot_source) is None:
+            raise CiError("release date resolver did not return one immutable source commit")
+        command.extend(("--snapshot-source-commit", snapshot_source))
     run(command)
 
 
@@ -821,6 +840,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     shader_parser.add_argument("--build-dir", type=Path, required=True)
     source_checks_parser = commands.add_parser("source-checks")
     source_checks_parser.add_argument("--pre-finalization-candidate", action="store_true")
+    source_checks_parser.add_argument("--source-commit")
     fetch_private_parser = commands.add_parser("fetch-private-dependencies")
     fetch_private_parser.add_argument("--lock", type=Path, default=Path("dependencies.lock.json"))
     fetch_private_parser.add_argument("--root", type=Path, required=True)
@@ -866,7 +886,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         elif args.command == "verify-private-dependency-artifact-exclusion":
             verify_private_dependency_artifact_exclusion(args.artifact_root, args.private_dependency_root)
         else:
-            source_checks(args.pre_finalization_candidate)
+            source_checks(args.pre_finalization_candidate, args.source_commit)
     except CiError as error:
         print(f"CI setup failed: {error}", file=sys.stderr)
         return 1
