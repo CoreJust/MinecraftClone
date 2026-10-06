@@ -595,7 +595,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     if not args.fast:
         phase_specs.extend([
             ("build", ["cmake", "--build", "--preset", "debug"], 600),
-            ("ctest", ["ctest", "--preset", "debug", "--output-on-failure", "--no-tests=error", "--timeout", "240"], 900),
+            ("ctest", ["ctest", "--preset", "debug", "--output-on-failure", "--no-tests=error", "--timeout", "240"], 2400),
         ])
     if not args.fast:
         try:

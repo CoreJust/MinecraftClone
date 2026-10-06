@@ -260,10 +260,12 @@ class WorkflowContextTests(unittest.TestCase):
         self.assertNotIn("prepare-windows-server-only.py", workflow)
         self.assertIn("-P build\\release\\tests\\minecraftclone_server_only_test.cmake", windows_build)
 
-    def test_nested_server_only_fixture_excludes_duplicate_preview_in_source(self):
+    def test_nested_server_only_fixture_runs_focused_loopback_contract(self):
         fixture = (REPOSITORY / "tests/cmake/minecraftclone_server_only_test.cmake.in").read_text(encoding="utf-8")
         self.assertIn('-G "@CMAKE_GENERATOR@"', fixture)
-        self.assertIn('-E "^GameServerPreviewTest\\\\."', fixture)
+        self.assertIn('-R "^GameServerTest\\\\.JoinRepliesArePrivateAndNewPlayersReachExistingClients$"', fixture)
+        self.assertIn("--no-tests=error", fixture)
+        self.assertNotIn('-E "^GameServerPreviewTest', fixture)
 
     def test_snapshot_private_dependencies_use_portable_compilers_without_changing_locks(self):
         workflow = WORKFLOWS[1].read_text(encoding="utf-8")
@@ -305,7 +307,7 @@ class WorkflowContextTests(unittest.TestCase):
         self.assertIn(server_test, broad_ctest)
         self.assertNotIn(flight_test, broad_ctest)
         self.assertIn("minecraftclone_server_only_test.cmake", macos_phase)
-        self.assertIn("^GameServerPreviewTest", (
+        self.assertNotIn(flight_test, (
             REPOSITORY / "tests/cmake/minecraftclone_server_only_test.cmake.in"
         ).read_text(encoding="utf-8"))
         self.assertNotIn("source.count(needle)", macos_phase)
@@ -366,7 +368,7 @@ class WorkflowContextTests(unittest.TestCase):
         minecraftclone_template = (REPOSITORY / "tests/cmake/minecraftclone_server_only_test.cmake.in").read_text(encoding="utf-8")
         self.assertIn("list(APPEND test_command -C \"${MC_TEST_CONFIGURATION}\")", minecraftclone_template)
 
-    def test_server_only_build_timeout_covers_nested_suite(self):
+    def test_server_only_build_timeout_covers_nested_server_test(self):
         cmake_lists = (REPOSITORY / "tests/CMakeLists.txt").read_text(encoding="utf-8")
         self.assertIn("if(WIN32)\n        set_tests_properties(MinecraftClone.ServerOnlyBuild PROPERTIES TIMEOUT 900)", cmake_lists)
         self.assertIn("else()\n        set_tests_properties(MinecraftClone.ServerOnlyBuild PROPERTIES TIMEOUT 300)", cmake_lists)

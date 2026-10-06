@@ -865,7 +865,7 @@ class AiCheckTests(unittest.TestCase):
                 self.assertIn("build", calls)
                 self.assertIn("ctest", calls)
 
-    def test_full_ctest_has_budget_for_full_residency_stream_tests(self):
+    def test_full_ctest_outer_budget_covers_nested_server_only_build(self):
         checker = load_module()
         (self.root / "script/ai_checks.json").write_text("[]\n", encoding="utf-8")
         calls = []
@@ -879,7 +879,7 @@ class AiCheckTests(unittest.TestCase):
 
         ctest = next(call for call in calls if call[0] == "ctest")
         self.assertEqual(ctest[1][-2:], ["--timeout", "240"])
-        self.assertGreaterEqual(ctest[2], 900)
+        self.assertEqual(ctest[2], 2400)
 
     def test_full_and_strict_checks_run_full_python_for_focused_scopes(self):
         checker = load_module()

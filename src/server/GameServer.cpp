@@ -311,8 +311,8 @@ struct GameServer::HeightTileWorkerPool final {
     HeightTileWorkerPool()
     {
         uint32_t const worker_count = GameServer::terrainWorkerCount(std::thread::hardware_concurrency());
-        // Keep the executor FIFO shallow so the remaining game-owned work can be reprioritized.
-        m_submission_window = worker_count * 4U;
+        // The admission bound keeps submitted work bounded while sustaining workers between main-loop refills.
+        m_submission_window = MAX_OUTSTANDING_WORK;
         m_executor = std::make_unique<core::executor::Executor>(
             core::executor::ExecutorLimits{
                 .queue_capacity = worker_count,
