@@ -753,14 +753,29 @@ def run_row(
                         check=False,
                         env=command_environment,
                     )
-                except (FileNotFoundError, subprocess.TimeoutExpired) as error:
+                except subprocess.TimeoutExpired as error:
+                    status = "failed"
+                    partial_stdout = error.stdout
+                    if isinstance(partial_stdout, bytes):
+                        partial_stdout = partial_stdout.decode("utf-8", errors="replace")
+                    elif partial_stdout is None:
+                        partial_stdout = ""
+                    partial_stderr = error.stderr
+                    if isinstance(partial_stderr, bytes):
+                        partial_stderr = partial_stderr.decode("utf-8", errors="replace")
+                    elif partial_stderr is None:
+                        partial_stderr = ""
+                    output_parts.append(
+                        f"$ {' '.join(expanded_command)}\n{error}\n{partial_stdout}{partial_stderr}"
+                    )
+                    break
+                except FileNotFoundError as error:
                     status = "failed"
                     output_parts.append(f"$ {' '.join(expanded_command)}\n{error}")
                     break
-                output_parts.append(
-                    f"$ {' '.join(expanded_command)}\n{_bounded_text(completed.stdout + completed.stderr)}"
-                )
                 command_output = completed.stdout + completed.stderr
+                diagnostic_output = command_output if completed.returncode else _bounded_text(command_output)
+                output_parts.append(f"$ {' '.join(expanded_command)}\n{diagnostic_output}")
                 command_outputs.append(command_output)
                 executed_commands.append(
                     {

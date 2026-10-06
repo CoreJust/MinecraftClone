@@ -74,7 +74,7 @@ CI builds Debug/Release on `macos-15` arm64 and `windows-2022` with pinned tools
 
 The renderer requests Vulkan 1.2 and requires dynamic rendering and synchronization2 extensions/features; maintenance4 is not a renderer requirement. Mesh shaders target Vulkan 1.3. Use a Vulkan 1.3-capable validation baseline and exercise the vertex fallback. A lower requested API number does not establish support for every Vulkan 1.2 driver. Vulkan 1.4 remains a project aspiration.
 
-Strict warnings are enabled by presets. `MC_ENABLE_HIGH_ASSERT`, `MC_ENABLE_VULKAN_VALIDATION_LAYERS`, and `MC_ENABLE_SANITIZERS` are CMake options; inspect [cmake helpers](../cmake/Helpers.cmake) and the platform implementation before enabling a configuration. Renderer validation is required in debug builds, with the validation option, or when explicitly requested by renderer options. Ordinary release builds do not require validation layers. Sanitizers and validation are separate evidence from ordinary unit tests.
+Presets enable strict warnings. For `MC_ENABLE_HIGH_ASSERT`, `MC_ENABLE_VULKAN_VALIDATION_LAYERS`, and `MC_ENABLE_SANITIZERS`, check [cmake helpers](../cmake/Helpers.cmake) and platform support. Renderer validation is required for Debug or explicit validation requests; ordinary Release needs no validation layers. Sanitizer receipts retain complete failed-command output, bounded success summaries and hashes. Sanitizers and validation remain separate from ordinary unit tests.
 
 ## Gate levels
 
