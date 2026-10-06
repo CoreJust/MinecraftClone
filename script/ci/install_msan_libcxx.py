@@ -24,6 +24,9 @@ LLVM_REPOSITORY = "https://github.com/llvm/llvm-project.git"
 LLVM_TAG = "llvmorg-18.1.3"
 LLVM_COMMIT = "c13b7485b87909fcf739f62cfa382b55407433c0"
 MSAN_EXIT_CODE = 86
+MSAN_WARNING = re.compile(
+    r"(?m)^(?:==[0-9]+==)?WARNING: MemorySanitizer: use-of-uninitialized-value\r?$"
+)
 MSAN_SYMBOLIZER_CANDIDATES = ("llvm-symbolizer-18", "llvm-symbolizer")
 
 
@@ -399,7 +402,11 @@ def verify_install(prefix: Path, clangxx: str, build: Path) -> None:
             timeout_output(timeout.stderr) + "\nMSan negative probe timed out after 30 seconds",
         )
     diagnostics = negative_run.stdout + negative_run.stderr
-    if negative_run.returncode != MSAN_EXIT_CODE or "use-of-uninitialized-value" not in diagnostics:
+    has_msan_warning = any(
+        MSAN_WARNING.search(output) is not None
+        for output in (negative_run.stdout, negative_run.stderr)
+    )
+    if negative_run.returncode != MSAN_EXIT_CODE or not has_msan_warning:
         symbolized = symbolize_reported_pcs(
             diagnostics, negative_probe, symbolizer, dependencies_by_name
         )

@@ -166,6 +166,25 @@ class InstallMsanLibcxxTests(unittest.TestCase):
             self.assertEqual(commands[4][0], "ldd")
             self.assertEqual(commands[5], [str(symbolizer), "--version"])
 
+    def test_install_accepts_standard_pid_prefix_on_msan_warning(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            prefix, _, build, _, symbolizer = self.prepare_verification_tree(root)
+            negative_run = subprocess.CompletedProcess(
+                [], 86, "", "==12345==WARNING: MemorySanitizer: use-of-uninitialized-value\n"
+            )
+            with (
+                mock.patch.object(
+                    self.toolchain.subprocess,
+                    "run",
+                    side_effect=self.diagnostic_processes(negative_run),
+                ),
+                mock.patch.object(
+                    self.toolchain, "resolve_msan_symbolizer", return_value=str(symbolizer)
+                ),
+            ):
+                self.toolchain.verify_install(prefix, "clang++", build)
+
     def test_install_rejects_a_toolchain_that_misses_the_probe(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -190,6 +209,24 @@ class InstallMsanLibcxxTests(unittest.TestCase):
         )
         self.assertIn("return code: 86", message)
         self.assertIn("MemorySanitizer: stack-overflow", message)
+
+    def test_exit_code_86_with_unrelated_text_containing_error_kind_is_failure(self):
+        message = self.assert_negative_probe_rejected(
+            subprocess.CompletedProcess(
+                [], 86, "", "not an MSan warning: use-of-uninitialized-value"
+            )
+        )
+        self.assertIn("return code: 86", message)
+        self.assertIn("not an MSan warning: use-of-uninitialized-value", message)
+
+    def test_exit_code_86_with_unicode_pid_prefix_is_failure(self):
+        message = self.assert_negative_probe_rejected(
+            subprocess.CompletedProcess(
+                [], 86, "", "==١٢٣==WARNING: MemorySanitizer: use-of-uninitialized-value\n"
+            )
+        )
+        self.assertIn("return code: 86", message)
+        self.assertIn("==١٢٣==WARNING: MemorySanitizer: use-of-uninitialized-value", message)
 
     def test_uninitialized_read_diagnostic_with_wrong_exit_code_is_failure(self):
         message = self.assert_negative_probe_rejected(
