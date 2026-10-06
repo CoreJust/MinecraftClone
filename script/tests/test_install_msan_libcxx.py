@@ -103,9 +103,16 @@ class InstallMsanLibcxxTests(unittest.TestCase):
                 self.toolchain.verify_install(prefix, "clang++", build)
 
             commands = [call.args[0] for call in run.call_args_list]
-            self.assertTrue(all("-fsanitize=memory" in command for command in commands[:1]))
-            self.assertIn(str(include_dir), " ".join(commands[0]))
-            self.assertIn(str(library_dir), " ".join(commands[0]))
+            for command in (commands[0], commands[2]):
+                self.assertIn("-fsanitize=memory", command)
+                self.assertIn("-fsanitize-memory-track-origins=2", command)
+                self.assertIn("-stdlib=libc++", command)
+                self.assertIn(str(include_dir), " ".join(command))
+                self.assertIn(str(library_dir), " ".join(command))
+            negative_source = run.call_args_list[2].kwargs["input"]
+            self.assertIn("std::malloc(sizeof(int))", negative_source)
+            self.assertIn("volatile int", negative_source)
+            self.assertNotIn("volatile int value", negative_source)
 
     def test_install_rejects_a_toolchain_that_misses_the_probe(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -126,6 +133,37 @@ class InstallMsanLibcxxTests(unittest.TestCase):
             with mock.patch.object(self.toolchain.subprocess, "run", side_effect=completed):
                 with self.assertRaisesRegex(self.toolchain.ToolchainError, "did not diagnose"):
                     self.toolchain.verify_install(prefix, "clang++", build)
+
+    def test_negative_probe_failure_reports_child_exit_and_diagnostics(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            prefix = root / "prefix"
+            (prefix / "include/c++/v1").mkdir(parents=True)
+            library_dir = prefix / "lib"
+            library_dir.mkdir()
+            (library_dir / "libc++.so").touch()
+            build = root / "build"
+            build.mkdir()
+            completed = [
+                subprocess.CompletedProcess([], 0, "", ""),
+                subprocess.CompletedProcess([], 0, "", ""),
+                subprocess.CompletedProcess([], 0, "", ""),
+                subprocess.CompletedProcess(
+                    [],
+                    -11,
+                    "probe stdout",
+                    "MemorySanitizer: stack-overflow\nMemorySanitizer:DEADLYSIGNAL",
+                ),
+            ]
+            with mock.patch.object(self.toolchain.subprocess, "run", side_effect=completed):
+                with self.assertRaisesRegex(self.toolchain.ToolchainError, "did not diagnose") as raised:
+                    self.toolchain.verify_install(prefix, "clang++", build)
+
+        message = str(raised.exception)
+        self.assertIn("return code: -11", message)
+        self.assertIn("msan-uninitialized-read", message)
+        self.assertIn("stdout:\nprobe stdout", message)
+        self.assertIn("stderr:\nMemorySanitizer: stack-overflow", message)
 
 
 if __name__ == "__main__":

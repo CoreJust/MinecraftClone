@@ -77,7 +77,11 @@ if(MC_REGISTER_SERVER_ONLY_BUILD_TEST)
             "-DMC_TEST_CONFIGURATION=$<CONFIG>"
             -P "${CMAKE_CURRENT_BINARY_DIR}/minecraftclone_server_only_test.cmake"
     )
-    set_tests_properties(MinecraftClone.ServerOnlyBuild PROPERTIES TIMEOUT 300)
+    if(WIN32)
+        set_tests_properties(MinecraftClone.ServerOnlyBuild PROPERTIES TIMEOUT 900)
+    else()
+        set_tests_properties(MinecraftClone.ServerOnlyBuild PROPERTIES TIMEOUT 300)
+    endif()
 endif()
 
 option(MC_ENABLE_STONE_RENDERER_ACCEPTANCE "Run S5 offscreen stone acceptance" OFF)

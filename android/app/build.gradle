@@ -34,6 +34,7 @@ def sanitizer = providers.gradleProperty('sanitizer').orNull
 def androidApi = sanitizer == 'hwasan' ? 29 : 28
 def vcpkgTargetTriplet = sanitizer == 'hwasan' ? 'arm64-android-hwasan' : 'arm64-android'
 def vcpkgOverlayTriplets = file('../../script/ci/vcpkg-triplets')
+def vcpkgOverlayPorts = file('../../script/ci/vcpkg-overlays')
 
 def fallbackShaderSources = layout.buildDirectory.dir('generated/fallback-shaders')
 def requiredShaderAssets = [
@@ -196,7 +197,8 @@ if (sanitizer != null) {
         '-DMC_ENABLE_SANITIZERS=ON',
         '-DMC_SANITIZER=hwaddress',
         '-DANDROID_SANITIZE=hwaddress',
-        "-DVCPKG_OVERLAY_TRIPLETS=${vcpkgOverlayTriplets.absolutePath}"
+        "-DVCPKG_OVERLAY_TRIPLETS=${vcpkgOverlayTriplets.absolutePath}",
+        "-DVCPKG_OVERLAY_PORTS=${vcpkgOverlayPorts.absolutePath}"
     ])
     android.buildTypes.release.signingConfig android.signingConfigs.debug
     tasks.named('preBuild').configure {

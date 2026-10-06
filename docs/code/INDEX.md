@@ -140,6 +140,7 @@ Files:
 - [`script/tests/test_ci_acquire.py`](../../script/tests/test_ci_acquire.py)
 - [`script/tests/test_gmp_vcpkg_overlay.py`](../../script/tests/test_gmp_vcpkg_overlay.py)
 - [`script/tests/test_install_msan_libcxx.py`](../../script/tests/test_install_msan_libcxx.py)
+- [`script/tests/test_mpfr_vcpkg_overlay.py`](../../script/tests/test_mpfr_vcpkg_overlay.py)
 - [`script/tests/test_package_snapshot.py`](../../script/tests/test_package_snapshot.py)
 - [`script/tests/test_pre_finalization_candidate.py`](../../script/tests/test_pre_finalization_candidate.py)
 - [`script/tests/test_release_guard.py`](../../script/tests/test_release_guard.py)

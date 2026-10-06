@@ -269,6 +269,7 @@ class CiAcquireTests(unittest.TestCase):
                     command.append(f"--overlay-triplets={Path(acquire.__file__).resolve().parent / 'vcpkg-triplets'}")
                 if platform_name == "android-hwasan":
                     command.append(f"--overlay-triplets={Path(acquire.__file__).resolve().parent / 'vcpkg-triplets'}")
+                    command.append(f"--overlay-ports={Path(acquire.__file__).resolve().parent / 'vcpkg-overlays'}")
                 self.assertEqual(result, installed_root)
                 run.assert_called_once_with(command)
                 write_env.assert_called_once_with("VCPKG_INSTALLED_DIR", str(installed_root))

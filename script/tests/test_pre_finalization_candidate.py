@@ -24,48 +24,56 @@ SNAPSHOT_WORKFLOW = REPOSITORY / ".github/workflows/snapshot-artifacts.yml"
 class PreFinalizationCandidateTests(unittest.TestCase):
     """Exercise the publisher against an unfinalized, clean source checkout."""
 
-    def setUp(self) -> None:
-        self.temporary = tempfile.TemporaryDirectory()
-        self.root = Path(self.temporary.name) / "repository"
-        self.root.mkdir()
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.temporary = tempfile.TemporaryDirectory()
+        cls.root = Path(cls.temporary.name) / "repository"
+        cls.root.mkdir()
         subprocess.run(
             [
                 "git",
                 "checkout-index",
                 "--all",
-                f"--prefix={self.root.resolve().as_posix()}/",
+                f"--prefix={cls.root.resolve().as_posix()}/",
             ],
             cwd=REPOSITORY,
             check=True,
             text=True,
             capture_output=True,
         )
-        subprocess.run(["git", "init", "--quiet"], cwd=self.root, check=True)
+        subprocess.run(["git", "init", "--quiet"], cwd=cls.root, check=True)
         # This fixture owns its temporary repository. Keep Git's background
         # maintenance from racing TemporaryDirectory.cleanup after commits.
         for key, value in (("gc.auto", "0"), ("maintenance.auto", "false")):
-            subprocess.run(["git", "config", key, value], cwd=self.root, check=True)
-        subprocess.run(["git", "config", "user.email", "candidate@example.invalid"], cwd=self.root, check=True)
-        subprocess.run(["git", "config", "user.name", "Candidate Validation"], cwd=self.root, check=True)
+            subprocess.run(["git", "config", key, value], cwd=cls.root, check=True)
+        subprocess.run(["git", "config", "user.email", "candidate@example.invalid"], cwd=cls.root, check=True)
+        subprocess.run(["git", "config", "user.name", "Candidate Validation"], cwd=cls.root, check=True)
         for relative in ("publish.py", "script/infrastructure_checks.py"):
             source = REPOSITORY / relative
-            target = self.root / relative
+            target = cls.root / relative
             shutil.copy2(source, target)
-        project_info = self.root / "src/shared/include/shared/ProjectInfo.hpp"
+        project_info = cls.root / "src/shared/include/shared/ProjectInfo.hpp"
         patch_match = re.search(r"\.patch = (\d+),", project_info.read_text(encoding="utf-8"))
-        self.assertIsNotNone(patch_match)
-        self.snapshot_index = int(patch_match.group(1))
-        history = self.root / "docs/version_history/EarlyDev 0.1/EarlyDev 0.1.0 Initiation.md"
+        if patch_match is None:
+            raise AssertionError("ProjectInfo.hpp does not contain a patch version")
+        cls.snapshot_index = int(patch_match.group(1))
+        history_relative = "docs/version_history/EarlyDev 0.1/EarlyDev 0.1.0 Initiation.md"
+        history = cls.root / history_relative
         undated, replacements = re.subn(
-            rf"^## EarlyDev 0\.1\.0:{self.snapshot_index}(?:\(\d{{2}}\.\d{{2}}\.\d{{2}}\))?$",
-            f"## EarlyDev 0.1.0:{self.snapshot_index}",
+            rf"^## EarlyDev 0\.1\.0:{cls.snapshot_index}(?:\(\d{{2}}\.\d{{2}}\.\d{{2}}\))?$",
+            f"## EarlyDev 0.1.0:{cls.snapshot_index}",
             history.read_text(encoding="utf-8"),
             count=1,
             flags=re.MULTILINE,
         )
-        self.assertEqual(replacements, 1)
+        if replacements != 1:
+            raise AssertionError("current snapshot heading was not found exactly once")
         history.write_text(undated, encoding="utf-8")
-        subprocess.run(["git", "add", "--all"], cwd=self.root, check=True)
+        cls.fixture_baselines = {
+            history_relative: history.read_bytes(),
+            "vcpkg.json": (cls.root / "vcpkg.json").read_bytes(),
+        }
+        subprocess.run(["git", "add", "--all"], cwd=cls.root, check=True)
         subprocess.run(
             [
                 "git",
@@ -76,12 +84,58 @@ class PreFinalizationCandidateTests(unittest.TestCase):
                 "-m",
                 "candidate validation fixture",
             ],
-            cwd=self.root,
+            cwd=cls.root,
             check=True,
         )
 
+    @classmethod
+    def tearDownClass(cls) -> None:
+        cls.temporary.cleanup()
+
+    def setUp(self) -> None:
+        status = subprocess.run(
+            ["git", "status", "--porcelain"],
+            cwd=self.root,
+            check=True,
+            text=True,
+            capture_output=True,
+        ).stdout
+        self.assertEqual(status, "", "shared fixture must start clean")
+
     def tearDown(self) -> None:
-        self.temporary.cleanup()
+        changed_files = []
+        for relative, baseline in self.fixture_baselines.items():
+            path = self.root / relative
+            if path.read_bytes() != baseline:
+                path.write_bytes(baseline)
+                changed_files.append(relative)
+
+        if changed_files:
+            subprocess.run(["git", "add", "--", *changed_files], cwd=self.root, check=True)
+            staged = subprocess.run(
+                ["git", "diff", "--cached", "--quiet"],
+                cwd=self.root,
+                check=False,
+                text=True,
+                capture_output=True,
+            )
+            if staged.returncode == 1:
+                subprocess.run(
+                    ["git", "commit", "--quiet", "--no-gpg-sign", "-m", "restore candidate fixture"],
+                    cwd=self.root,
+                    check=True,
+                )
+            else:
+                self.assertEqual(staged.returncode, 0, staged.stderr)
+
+        status = subprocess.run(
+            ["git", "status", "--porcelain"],
+            cwd=self.root,
+            check=True,
+            text=True,
+            capture_output=True,
+        ).stdout
+        self.assertEqual(status, "", "shared fixture must be clean after each test")
 
     def test_owned_temp_repo_disables_background_git_maintenance(self) -> None:
         config = subprocess.run(

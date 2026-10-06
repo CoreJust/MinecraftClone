@@ -20,6 +20,7 @@
 #include <thread>
 #include <tuple>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
 namespace {
@@ -31,17 +32,25 @@ public:
     explicit PreviewClient(
         bool const acknowledges_deliveries = true,
         bool const starts_deliveries = true,
-        char const tracked_character = '@'
+        char const tracked_character = '@',
+        bool const retains_messages = true
     )
         : core::Client{2}
         , m_acknowledges_deliveries{acknowledges_deliveries}
         , m_starts_deliveries{starts_deliveries}
         , m_tracked_character{tracked_character}
+        , m_retains_messages{retains_messages}
     { }
 
     std::vector<shared::Message> messages;
+    std::vector<shared::HeightTileKey> received_height_tile_keys;
     uint32_t received_height_tiles = 0U;
     uint32_t received_delivery_batches = 0U;
+    uint32_t received_height_tile_descriptors = 0U;
+    uint32_t descriptor_max_height_tiles = 0U;
+    uint32_t descriptor_max_height_tile_bytes = 0U;
+    uint32_t received_removals = 0U;
+    uint32_t invalid_height_tiles = 0U;
     uint32_t sent_delivery_credit_messages = 0U;
     uint32_t last_acknowledged_input = 0U;
     int32_t last_player_x = 0;
@@ -73,53 +82,79 @@ public:
 private:
     void onDisconnected(core::DisconnectEvent const) override { }
 
+    void recordHeightTile(shared::ServerHeightTileMessage const& tile)
+    {
+        ++received_height_tiles;
+        if (!m_retains_messages) {
+            received_height_tile_keys.push_back(tile.key);
+        }
+        if (tile.heights.size() != shared::HEIGHT_TILE_SAMPLE_COUNT
+            || tile.token == 0U
+            || tile.revision != 1U) {
+            ++invalid_height_tiles;
+        }
+    }
+
     void onReceived(core::ReceiveEvent event) override
     {
         auto const message = shared::decodeMessage(event.data);
-        if (message) {
+        if (!message) {
+            return;
+        }
+        if (m_retains_messages) {
             messages.push_back(*message);
-            if (std::holds_alternative<shared::ServerHeightTileMessage>(*message)) {
-                ++received_height_tiles;
-            } else if (auto const* const batch = std::get_if<shared::ServerHeightTileBatchMessage>(&*message)) {
-                ++received_delivery_batches;
-                received_height_tiles += static_cast<uint32_t>(batch->tiles.size());
+        }
+        if (auto const* const tile = std::get_if<shared::ServerHeightTileMessage>(&*message)) {
+            recordHeightTile(*tile);
+        } else if (auto const* const batch = std::get_if<shared::ServerHeightTileBatchMessage>(&*message)) {
+            ++received_delivery_batches;
+            received_removals += static_cast<uint32_t>(batch->removals.size());
+            for (shared::ServerHeightTileMessage const& tile : batch->tiles) {
+                recordHeightTile(tile);
             }
-            if (auto const* const descriptor = std::get_if<shared::ServerHeightTileDescriptorMessage>(&*message);
-                descriptor != nullptr && m_starts_deliveries) {
-                if (send(shared::encodeMessage(shared::ClientHeightTileCreditMessage{
-                    .world_revision = descriptor->world_revision,
-                    .delivery_token = 0U,
-                    .credits = shared::HEIGHT_TILE_DELIVERY_WINDOW,
-                }), shared::GAME_CHANNEL, core::SendMode{core::SendMode::Reliable})) {
-                    ++sent_delivery_credit_messages;
-                }
-            } else if (auto const* const batch = std::get_if<shared::ServerHeightTileBatchMessage>(&*message);
-                batch != nullptr && m_acknowledges_deliveries) {
-                if (send(shared::encodeMessage(shared::ClientHeightTileCreditMessage{
-                    .world_revision = 1U,
-                    .delivery_token = batch->delivery_token,
-                    .credits = 1U,
-                }), shared::GAME_CHANNEL, core::SendMode{core::SendMode::Reliable})) {
-                    ++sent_delivery_credit_messages;
-                }
+        } else if (std::holds_alternative<shared::ServerRemoveHeightTileMessage>(*message)) {
+            ++received_removals;
+        } else if (std::holds_alternative<shared::ServerHeightTileDescriptorMessage>(*message)) {
+            ++received_height_tile_descriptors;
+            auto const& descriptor = std::get<shared::ServerHeightTileDescriptorMessage>(*message);
+            descriptor_max_height_tiles = descriptor.max_height_tiles;
+            descriptor_max_height_tile_bytes = descriptor.max_height_tile_bytes;
+        }
+        if (auto const* const descriptor = std::get_if<shared::ServerHeightTileDescriptorMessage>(&*message);
+            descriptor != nullptr && m_starts_deliveries) {
+            if (send(shared::encodeMessage(shared::ClientHeightTileCreditMessage{
+                .world_revision = descriptor->world_revision,
+                .delivery_token = 0U,
+                .credits = shared::HEIGHT_TILE_DELIVERY_WINDOW,
+            }), shared::GAME_CHANNEL, core::SendMode{core::SendMode::Reliable})) {
+                ++sent_delivery_credit_messages;
             }
-            if (auto const* position = std::get_if<shared::ServerPlayerPositionMessage>(&*message);
-                position != nullptr && position->ch == m_tracked_character) {
-                uint32_t const previous_acknowledged_input = last_acknowledged_input;
-                last_acknowledged_input = position->acknowledged_input_sequence;
-                last_player_x = position->x;
-                if (position->acknowledged_input_sequence > previous_acknowledged_input
-                    && position->acknowledged_input_sequence < MAX_TRACKED_INPUTS) {
-                    auto const sent_at = m_input_sent_at[position->acknowledged_input_sequence];
-                    if (sent_at.time_since_epoch().count() != 0) {
-                        auto const latency = std::chrono::duration_cast<std::chrono::nanoseconds>(
-                            std::chrono::steady_clock::now() - sent_at
-                        );
-                        uint64_t const latency_ns = static_cast<uint64_t>(latency.count());
-                        ++acknowledgement_latency_samples;
-                        acknowledgement_latency_total_ns += latency_ns;
-                        acknowledgement_latency_max_ns = std::max(acknowledgement_latency_max_ns, latency_ns);
-                    }
+        } else if (auto const* const batch = std::get_if<shared::ServerHeightTileBatchMessage>(&*message);
+            batch != nullptr && m_acknowledges_deliveries) {
+            if (send(shared::encodeMessage(shared::ClientHeightTileCreditMessage{
+                .world_revision = 1U,
+                .delivery_token = batch->delivery_token,
+                .credits = 1U,
+            }), shared::GAME_CHANNEL, core::SendMode{core::SendMode::Reliable})) {
+                ++sent_delivery_credit_messages;
+            }
+        }
+        if (auto const* position = std::get_if<shared::ServerPlayerPositionMessage>(&*message);
+            position != nullptr && position->ch == m_tracked_character) {
+            uint32_t const previous_acknowledged_input = last_acknowledged_input;
+            last_acknowledged_input = position->acknowledged_input_sequence;
+            last_player_x = position->x;
+            if (position->acknowledged_input_sequence > previous_acknowledged_input
+                && position->acknowledged_input_sequence < MAX_TRACKED_INPUTS) {
+                auto const sent_at = m_input_sent_at[position->acknowledged_input_sequence];
+                if (sent_at.time_since_epoch().count() != 0) {
+                    auto const latency = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                        std::chrono::steady_clock::now() - sent_at
+                    );
+                    uint64_t const latency_ns = static_cast<uint64_t>(latency.count());
+                    ++acknowledgement_latency_samples;
+                    acknowledgement_latency_total_ns += latency_ns;
+                    acknowledgement_latency_max_ns = std::max(acknowledgement_latency_max_ns, latency_ns);
                 }
             }
         }
@@ -128,6 +163,7 @@ private:
     bool m_acknowledges_deliveries;
     bool m_starts_deliveries;
     char m_tracked_character;
+    bool m_retains_messages;
     std::array<std::chrono::steady_clock::time_point, MAX_TRACKED_INPUTS> m_input_sent_at{};
 };
 
@@ -721,7 +757,8 @@ TEST(GameServerPreviewTest, StreamsPlayerCenteredHeightTilesAndRemovesDepartedTi
     std::thread server_thread{[&server, &stop_requested, &hooks] {
         server.run(stop_requested, &hooks);
     }};
-    PreviewClient client;
+    PreviewClient client{true, true, '@', false};
+    client.received_height_tile_keys.reserve(expected_height_tiles);
     if (!client.connect(core::Address::localhost(server.port()), STREAM_TIMEOUT)) {
         stop_requested.store(true, std::memory_order_relaxed);
         server_thread.join();
@@ -763,36 +800,13 @@ TEST(GameServerPreviewTest, StreamsPlayerCenteredHeightTilesAndRemovesDepartedTi
     }
 
     bool const received_all_height_tiles = client.received_height_tiles == expected_height_tiles;
-    std::vector<shared::HeightTileKey> received_keys = heightTileKeys(client.messages);
+    std::vector<shared::HeightTileKey> received_keys = std::move(client.received_height_tile_keys);
     std::vector<shared::HeightTileKey> expected_keys = expected_interest.keys;
     auto const key_order = [](shared::HeightTileKey const first, shared::HeightTileKey const second) {
         return std::tie(first.x, first.y) < std::tie(second.x, second.y);
     };
     std::ranges::sort(received_keys, key_order);
     std::ranges::sort(expected_keys, key_order);
-    auto const validateHeightTile = [](shared::ServerHeightTileMessage const& height_tile) {
-        EXPECT_EQ(height_tile.heights.size(), shared::HEIGHT_TILE_SAMPLE_COUNT);
-        EXPECT_NE(height_tile.token, 0U);
-        EXPECT_EQ(height_tile.revision, 1U);
-    };
-    uint32_t descriptor_count = 0U;
-    for (shared::Message const& message : client.messages) {
-        if (auto const* const descriptor = std::get_if<shared::ServerHeightTileDescriptorMessage>(&message)) {
-            ++descriptor_count;
-            EXPECT_EQ(descriptor->max_height_tiles, shared::HEIGHT_TILE_INTEREST_COUNT);
-            EXPECT_EQ(descriptor->max_height_tile_bytes, shared::HEIGHT_TILE_PAYLOAD_BYTES);
-            continue;
-        }
-        if (auto const* const height_tile = std::get_if<shared::ServerHeightTileMessage>(&message)) {
-            validateHeightTile(*height_tile);
-        } else if (auto const* const batch = std::get_if<shared::ServerHeightTileBatchMessage>(&message)) {
-            for (shared::ServerHeightTileMessage const& tile : batch->tiles) {
-                validateHeightTile(tile);
-            }
-        }
-    }
-    bool const received_one_descriptor = descriptor_count == 1U;
-
     bool sent_all_inputs = true;
     for (uint32_t sequence{1U}; sequence <= MOVEMENT_INPUT_COUNT; ++sequence) {
         sent_all_inputs = client.send(shared::encodeMessage(shared::ClientInputMessage{
@@ -801,11 +815,11 @@ TEST(GameServerPreviewTest, StreamsPlayerCenteredHeightTilesAndRemovesDepartedTi
         }), 0, core::SendMode{core::SendMode::Reliable}) && sent_all_inputs;
     }
     auto const movement_deadline = std::chrono::steady_clock::now() + MOVEMENT_TIMEOUT;
-    while (removalCount(client.messages) == 0U
+    while (client.received_removals == 0U
         && std::chrono::steady_clock::now() < movement_deadline) {
         client.poll(POLL_INTERVAL);
     }
-    bool const received_removal = removalCount(client.messages) > 0U;
+    bool const received_removal = client.received_removals > 0U;
     stop_requested.store(true, std::memory_order_relaxed);
     server_thread.join();
 
@@ -823,8 +837,12 @@ TEST(GameServerPreviewTest, StreamsPlayerCenteredHeightTilesAndRemovesDepartedTi
     );
     EXPECT_TRUE(received_all_height_tiles) << "received " << client.received_height_tiles
         << " of " << expected_height_tiles;
+    EXPECT_TRUE(client.messages.empty());
     EXPECT_EQ(received_keys, expected_keys);
-    EXPECT_TRUE(received_one_descriptor);
+    EXPECT_EQ(client.invalid_height_tiles, 0U);
+    EXPECT_EQ(client.received_height_tile_descriptors, 1U);
+    EXPECT_EQ(client.descriptor_max_height_tiles, shared::HEIGHT_TILE_INTEREST_COUNT);
+    EXPECT_EQ(client.descriptor_max_height_tile_bytes, shared::HEIGHT_TILE_PAYLOAD_BYTES);
     EXPECT_TRUE(sent_all_inputs);
     EXPECT_TRUE(received_removal);
     EXPECT_GT(
@@ -1424,10 +1442,10 @@ TEST(GameServerPreviewTest, SustainedFlightKeepsInputAcknowledgementsCurrentWhil
     std::thread server_thread{[&server, &stop_requested, &hooks] {
         server.run(stop_requested, &hooks);
     }};
-    PreviewClient first_client;
-    PreviewClient second_client{true, true, '#'};
-    PreviewClient third_client{true, true, '$'};
-    PreviewClient fourth_client{true, true, '%'};
+    PreviewClient first_client{true, true, '@', false};
+    PreviewClient second_client{true, true, '#', false};
+    PreviewClient third_client{true, true, '$', false};
+    PreviewClient fourth_client{true, true, '%', false};
     std::array<PreviewClient*, 4> const clients{
         &first_client, &second_client, &third_client, &fourth_client,
     };
@@ -1565,7 +1583,8 @@ TEST(GameServerPreviewTest, SustainedFlightKeepsInputAcknowledgementsCurrentWhil
         EXPECT_LE(sent - client->last_acknowledged_input, 2U);
         EXPECT_GT(client->acknowledgement_latency_samples, 0U)
             << "client " << index << " produced no input acknowledgement latency samples";
-        EXPECT_GT(deliveryBatchCount(client->messages), 0U);
+        EXPECT_TRUE(client->messages.empty());
+        EXPECT_GT(client->received_delivery_batches, 0U);
         EXPECT_GT(client->received_height_tiles, midpoint_tile_counts[index])
             << "client " << index << " made no terrain progress during the second half";
     }

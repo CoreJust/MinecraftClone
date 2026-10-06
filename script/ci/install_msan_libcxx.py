@@ -106,6 +106,19 @@ def build_command(build: Path, jobs: int) -> list[str]:
     ]
 
 
+def format_probe_failure(
+    stage: str, command: Sequence[str], completed: subprocess.CompletedProcess
+) -> str:
+    stdout = completed.stdout.strip() or "<empty>"
+    stderr = completed.stderr.strip() or "<empty>"
+    return (
+        f"{stage} failed (return code: {completed.returncode})\n"
+        f"command: {' '.join(command)}\n"
+        f"stdout:\n{stdout}\n"
+        f"stderr:\n{stderr}"
+    )
+
+
 def verify_install(prefix: Path, clangxx: str, build: Path) -> None:
     include_dir = prefix / "include" / "c++" / "v1"
     if not include_dir.is_dir():
@@ -146,8 +159,9 @@ def verify_install(prefix: Path, clangxx: str, build: Path) -> None:
     )
     if positive_build.returncode:
         raise ToolchainError(
-            "instrumented libc++ positive-probe compilation failed: "
-            + (positive_build.stdout + positive_build.stderr).strip()
+            format_probe_failure(
+                "instrumented libc++ positive-probe compilation", positive_command, positive_build
+            )
         )
     positive_run = subprocess.run(
         [str(positive_probe)],
@@ -160,11 +174,21 @@ def verify_install(prefix: Path, clangxx: str, build: Path) -> None:
     )
     if positive_run.returncode:
         raise ToolchainError(
-            "instrumented libc++ positive smoke test failed: "
-            + (positive_run.stdout + positive_run.stderr).strip()
+            format_probe_failure(
+                "instrumented libc++ positive-probe execution", [str(positive_probe)], positive_run
+            )
         )
 
-    negative_source = "int main() { volatile int value; return value; }\n"
+    negative_source = (
+        "#include <cstdlib>\n"
+        "int main() {\n"
+        "    auto* value = static_cast<int*>(std::malloc(sizeof(int)));\n"
+        "    if (value == nullptr) return 2;\n"
+        "    const int result = *static_cast<volatile int*>(value);\n"
+        "    std::free(value);\n"
+        "    return result;\n"
+        "}\n"
+    )
     negative_command = [clangxx, *common_flags, "-x", "c++", "-", "-o", str(negative_probe)]
     negative_build = subprocess.run(
         negative_command,
@@ -177,8 +201,9 @@ def verify_install(prefix: Path, clangxx: str, build: Path) -> None:
     )
     if negative_build.returncode:
         raise ToolchainError(
-            "MSan negative-probe compilation failed: "
-            + (negative_build.stdout + negative_build.stderr).strip()
+            format_probe_failure(
+                "MSan negative-probe compilation", negative_command, negative_build
+            )
         )
     negative_run = subprocess.run(
         [str(negative_probe)],
@@ -192,8 +217,10 @@ def verify_install(prefix: Path, clangxx: str, build: Path) -> None:
     diagnostics = negative_run.stdout + negative_run.stderr
     if negative_run.returncode != 86 or "use-of-uninitialized-value" not in diagnostics:
         raise ToolchainError(
-            "MSan did not diagnose the deliberate uninitialized read: "
-            + diagnostics.strip()
+            "MSan did not diagnose the deliberate uninitialized read\n"
+            + format_probe_failure(
+                "MSan negative-probe execution", [str(negative_probe)], negative_run
+            )
         )
     print("[msan-libcxx] PASS: libc++ executes and MSan catches an uninitialized read", flush=True)
 
