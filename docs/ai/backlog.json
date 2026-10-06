@@ -12003,5 +12003,41 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0348",
+    "title": "Run the required Android HWASan row on a native emulator host",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P1",
+    "route": "luna",
+    "milestone": "S7",
+    "depends_on": [],
+    "acceptance": "The required Android HWASan runtime workflow selects native ARM64 macOS SDK tools with a pinned verified archive, restores both sdkmanager and avdmanager executability, starts the Android 35 ARM64 emulator in explicit software mode on the hosted runner, and reports bounded boot progress or early failure. Preserve the exact candidate APK, HWASan runtime row, and fail-closed aggregate receipt. Focused acquisition and workflow checks pass; exact-candidate hosted boot and HWASan runtime remain mandatory S7 release evidence.",
+    "evidence": "Native macOS ARM64 command-line archive downloaded from Google and SHA-256 matched 835b62a26162b229b441d1f6d4680383815a270809eb33522c0d480fa5002c4e. Focused acquisition suite passed 33 tests, and the full Python suite passed 435 tests. Workflow YAML and all five runtime shell steps passed syntax checks; git diff --check passed. The worker fast run required source-state refresh; no overall fast-gate or emulator-runtime pass is claimed from that run. Exact-candidate hosted Android boot and HWASan runtime remain required release evidence.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0038",
+    "motivation": "The required HWASan job failed before emulator boot because Linux ARM64 sdkmanager could not resolve the emulator package.",
+    "context": "Promotion 4a0551b Actions run 37524950551 job 112489314416 downloaded the HWASan APK, then failed with Failed to find package emulator. The SDK installer also restored sdkmanager but omitted avdmanager executable permission. Official Android metadata supplies native Mac ARM64 tools; hosted Apple Silicon requires software emulation because nested virtualization is unavailable.",
+    "complexity": "medium",
+    "created_at": "2026-10-06",
+    "resolved_at": "2026-10-06",
+    "resolution_changes": "Moved the mandatory emulator runtime job to macos-15, selected the pinned Mac ARM64 SDK archive by host identity, restored executable permissions for sdkmanager and avdmanager, and replaced fatal acceleration detection and unbounded ADB wait with explicit software emulation plus bounded progress and early-exit checks.",
+    "plan": [
+      "Select the supported native Mac ARM64 tool archive and runner, preserve Linux SDK acquisition, restore both SDK entrypoints, bound emulator boot with progress and process-exit checks, and verify acquisition fixtures plus workflow syntax. Retain the actual required HWASan runtime gate."
+    ],
+    "product_changes": [],
+    "code_changes": [
+      "CI acquisition supports the pinned native Mac ARM64 command-line tools alongside existing Linux hosts; the Android HWASan job retains the Android 35 ARM64 image and exact APK/runtime verifier."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]

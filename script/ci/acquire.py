@@ -48,6 +48,11 @@ ANDROID_COMMAND_LINE_TOOLS = {
     "sha256": "4e4c464f145a7512b57d088ac6c278c03c9eea610886b35a5e0804e74eedf583",
     "filename": "commandlinetools-linux-15859902_latest.zip",
 }
+ANDROID_MAC_ARM64_COMMAND_LINE_TOOLS = {
+    "url": "https://dl.google.com/android/repository/commandlinetools-mac_arm64-15859902_latest.zip",
+    "sha256": "835b62a26162b229b441d1f6d4680383815a270809eb33522c0d480fa5002c4e",
+    "filename": "commandlinetools-mac_arm64-15859902_latest.zip",
+}
 ANDROID_NDK_VERSION = "27.0.12077973"
 ANDROID_SDK_PACKAGES = (
     "platforms;android-35",
@@ -553,15 +558,27 @@ def install_vulkan(platform_name: str, root: Path) -> Path:
     return sdk_root
 
 
+def android_command_line_tools() -> dict[str, str]:
+    """Select the pinned SDK archive for the CI host, not the Android target."""
+    system = host_platform.system()
+    machine = host_platform.machine().lower()
+    if system == "Linux" and machine in {"x86_64", "aarch64", "arm64"}:
+        return ANDROID_COMMAND_LINE_TOOLS
+    if system == "Darwin" and machine in {"aarch64", "arm64"}:
+        return ANDROID_MAC_ARM64_COMMAND_LINE_TOOLS
+    raise CiError(f"unsupported Android SDK host: {system}/{machine}")
+
+
 def install_android_sdk(root: Path) -> Path:
     """Bootstrap pinned command-line tools before installing exact Android SDK packages."""
+    config = android_command_line_tools()
     root.mkdir(parents=True, exist_ok=True)
     latest = root / "cmdline-tools" / "latest"
     if latest.exists():
         raise CiError(f"Android command-line tools already exist: {latest}")
-    archive = root.parent / ANDROID_COMMAND_LINE_TOOLS["filename"]
-    download(ANDROID_COMMAND_LINE_TOOLS["url"], archive)
-    verify_sha256(archive, ANDROID_COMMAND_LINE_TOOLS["sha256"])
+    archive = root.parent / config["filename"]
+    download(config["url"], archive)
+    verify_sha256(archive, config["sha256"])
     staging = root / "command-line-tools"
     staging.mkdir()
     safe_extract(archive, staging)
@@ -572,9 +589,11 @@ def install_android_sdk(root: Path) -> Path:
     extracted_tools.rename(latest)
     staging.rmdir()
     sdkmanager = latest / "bin" / "sdkmanager"
-    if not sdkmanager.is_file():
-        raise CiError(f"Android command-line tools archive is missing {sdkmanager}")
-    sdkmanager.chmod(sdkmanager.stat().st_mode | stat.S_IXUSR)
+    for name in ("sdkmanager", "avdmanager"):
+        executable = latest / "bin" / name
+        if not executable.is_file():
+            raise CiError(f"Android command-line tools archive is missing {executable}")
+        executable.chmod(executable.stat().st_mode | stat.S_IXUSR)
     command = [str(sdkmanager), f"--sdk_root={root}"]
     run([*command, "--licenses"], input_text="y\n" * 100)
     run([*command, *ANDROID_SDK_PACKAGES])
