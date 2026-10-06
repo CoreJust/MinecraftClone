@@ -11772,5 +11772,44 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0342",
+    "title": "Suppress the Android renderer padding advisory without weakening static analysis",
+    "kind": "chore",
+    "status": "done",
+    "priority": "P1",
+    "route": "luna",
+    "milestone": "ED-010-S7",
+    "depends_on": [],
+    "acceptance": "Suppress only clang-analyzer-optin.performance.Padding on VulkanRenderer::Impl with a rationale explaining why declaration order is required for exception-safe Vulkan resource destruction. Keep all Android clang-analyzer checks and warnings-as-errors arguments unchanged; preserve exact-candidate fail-closed Android analysis coverage.",
+    "evidence": "python3 -m unittest script.tests.test_android_clang_tidy script.tests.test_ai_analysis_matrix -v: 46/46 passed. Existing regressions still assert --checks=clang-analyzer-* and --warnings-as-errors=clang-analyzer-* for the required Android row. Added a source-local suppression for only the 88-byte advisory at the Impl declaration; its resource member order remains intact. The exact Android row on the final promotion candidate remains an aggregate MC-AI-0038 gate.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0038",
+    "motivation": "The exact S7 promotion candidate failed only on an 88-byte padding advisory for VulkanRenderer::Impl; blindly reordering its resource-owning members can invalidate their backing Vulkan device during exceptional destruction.",
+    "context": "Exact hosted run 37491842803 job 112366284866, candidate ce08d6a06f757811ea00ce1a09f26245ef82f2b4, reported clang-analyzer-optin.performance.Padding at PresentationRenderer.cpp:1149. The diagnosis is a low-impact layout advisory; keep the analyzer enabled and document the lifetime constraint locally.",
+    "complexity": "low",
+    "created_at": "2026-10-06",
+    "resolved_at": "2026-10-06",
+    "resolution_changes": "Kept resource-owning members in their current destruction-safe order and suppressed only the opt-in padding advisory at VulkanRenderer::Impl. The Android analyzer selection, error promotion, and fail-closed matrix are unchanged.",
+    "plan": [
+      "Clarify acceptance and implementation steps.",
+      "Retain resource declaration order needed for exception-safe destruction.",
+      "Suppress only the advisory on VulkanRenderer::Impl with a precise NOLINT rationale.",
+      "Run focused checks, then require the Android row to pass on the next exact promotion candidate."
+    ],
+    "product_changes": [],
+    "code_changes": [
+      "src/client/render/PresentationRenderer.cpp: source-local clang-tidy suppression for VulkanRenderer::Impl padding advisory."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]
