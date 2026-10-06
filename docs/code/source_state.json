@@ -55,7 +55,7 @@
     },
     {
       "guide": "docs/BUILD.md",
-      "guide_sha256": "6defc65104756901867af02a4b2bc4dd74a3247e5ee71aa7a5481ef7ecd68431",
+      "guide_sha256": "5137acb2963c237576fcb9c34c49b2f5cc839311edffa3e2fd9532394b1b4e6f",
       "id": "build",
       "sources": [
         ".agents/skills/backlog/SKILL.md",
@@ -163,7 +163,7 @@
         "vcpkg-configuration.json",
         "vcpkg.json"
       ],
-      "sources_sha256": "4529d6f4d3d275bbdc8d47ad56a0066afe2f4ab244f2d26eea6283f1882cac4d"
+      "sources_sha256": "7287a2917c849ce1070f3dcfac4694a031c9a1446563538aea537b6769c28328"
     },
     {
       "guide": "docs/code/CORE.md",

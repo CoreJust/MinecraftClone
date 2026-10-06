@@ -54,22 +54,31 @@
       }
     },
     {
-      "name": "analysis-macos-asan",
+      "name": "analysis-macos-base",
+      "hidden": true,
       "inherits": "analysis-base",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "clang",
+        "CMAKE_CXX_COMPILER": "clang++"
+      }
+    },
+    {
+      "name": "analysis-macos-asan",
+      "inherits": "analysis-macos-base",
       "cacheVariables": {
         "MC_SANITIZER": "address"
       }
     },
     {
       "name": "analysis-macos-ubsan",
-      "inherits": "analysis-base",
+      "inherits": "analysis-macos-base",
       "cacheVariables": {
         "MC_SANITIZER": "undefined"
       }
     },
     {
       "name": "analysis-macos-tsan",
-      "inherits": "analysis-base",
+      "inherits": "analysis-macos-base",
       "cacheVariables": {
         "MC_SANITIZER": "thread"
       }

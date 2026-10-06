@@ -12153,5 +12153,43 @@
     "docs_review": "Reviewed the analysis receipt contract in docs/BUILD.md against source; update its failure-diagnostics statement and refresh source state.",
     "environment_review": "",
     "backlog_review": "The same lost-output cause was confirmed in Linux LSan/MSan and macOS ASan receipts; underlying platform errors remain separate repairs."
+  },
+  {
+    "id": "MC-AI-0352",
+    "title": "Select upstream Clang for macOS sanitizer builds",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P1",
+    "route": "luna",
+    "milestone": "ED-010-S7",
+    "depends_on": [],
+    "acceptance": "Explicitly select clang and clang++ from the existing CI PATH for the three macOS sanitizer presets while leaving ordinary application and Windows/Linux configurations unchanged. Preserve integrated ASan detect_leaks=1, native at-exit leaks, UBSan/TSan flags and all thirteen release rows. Test effective preset inheritance and unaffected platform defaults; verify preset parsing and focused tests. Require actual exact-candidate macOS sanitizer rows before release; local AppleClang failure diagnosis is not acceptance.",
+    "evidence": "Five focused preset tests passed, covering inherited upstream compiler selection and unchanged sanitizer/platform defaults. CMake --list-presets parsed the configuration and git diff --check passed. The local AppleClang diagnostic confirms the original runtime abort; actual upstream Mac sanitizer execution remains a required hosted gate.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0038",
+    "motivation": "Preserve mandatory integrated leak detection using the supported compiler runtime already installed by CI.",
+    "context": "Promotion 808311f macOS ASan failed during GoogleTest discovery; a local reproduction on unchanged game source aborts because AppleClang 17 ASan does not support detect_leaks=1. The hosted receipt probes upstream Homebrew Clang 23.1.0, but CMake defaults to /usr/bin/c++. CI already puts upstream LLVM on PATH.",
+    "complexity": "low",
+    "created_at": "2026-10-07",
+    "resolved_at": "2026-10-07",
+    "resolution_changes": "Add a shared hidden macOS analysis base selecting clang and clang++ from the existing tool PATH; inherit it in ASan, UBSan and TSan presets. Do not change ordinary builds, Windows/Linux selection, sanitizer flags, integrated leak detection, native leaks or release rows.",
+    "plan": [
+      "Select the upstream Mac compiler and verify effective preset contracts."
+    ],
+    "product_changes": [
+      "No gameplay or platform support change."
+    ],
+    "code_changes": [
+      "Align macOS sanitizer compiler selection with the upstream LLVM tools recorded by CI."
+    ],
+    "baseline_commit": "4f119a47d25d9b9a4077b1d184150efb47018fda",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "Reviewed docs/BUILD.md and CI PATH/bootstrap against the presets; document upstream compiler selection and refresh source state.",
+    "environment_review": "",
+    "backlog_review": "No gameplay or dependency-pin change; exact hosted acceptance remains required."
   }
 ]
