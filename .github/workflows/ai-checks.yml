@@ -297,7 +297,7 @@ jobs:
           retention-days: 14
 
   linux-analysis:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/ai-main'
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/ai-main') || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/ai-dev')
     name: Linux analysis (${{ matrix.row }})
     runs-on: ubuntu-24.04
     timeout-minutes: 360
@@ -564,6 +564,8 @@ jobs:
           path: build/hwasan
       - name: Start matching ARM64 Android emulator
         shell: bash
+        env:
+          ANDROID_I_WANT_MY_TCG: 'yes'
         run: |
           set -euo pipefail
           sdkmanager="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"

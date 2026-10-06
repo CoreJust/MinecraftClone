@@ -12191,5 +12191,43 @@
     "docs_review": "Reviewed docs/BUILD.md and CI PATH/bootstrap against the presets; document upstream compiler selection and refresh source state.",
     "environment_review": "",
     "backlog_review": "No gameplay or dependency-pin change; exact hosted acceptance remains required."
+  },
+  {
+    "id": "MC-AI-0353",
+    "title": "Repair sanitizer CI software launch and diagnostic paths",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P1",
+    "route": "luna",
+    "milestone": "ED-010-S7",
+    "depends_on": [],
+    "acceptance": "Set the documented TCG opt-in to string yes in the existing Android emulator-start step, preserving the ARM64 image/APK, software flag, boot bound, liveness, runtime verifier and fail-closed gates. Allow Linux sanitizer diagnostics on explicit workflow_dispatch of trusted ai-dev only, retaining existing ai-main push runs; do not enable private-key jobs for pull requests or other refs. Keep the aggregate release matrix tied to exact ai-main push and all thirteen rows. Cover both workflow guards and launch environment in focused tests; validate workflow and shell syntax. Actual software boot/runtime and corrected Linux analysis rows remain required evidence, not inferred from definitions.",
+    "evidence": "The focused workflow-context suite passed 26 tests. Ruby parsed the workflow YAML; extracted emulator Bash syntax and git diff --check passed. Linux diagnostics require explicit dispatch of trusted ai-dev, while Android/release aggregate guards remain ai-main-push only. Actual software boot, HWASan runtime and Linux rows remain unverified.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0038",
+    "motivation": "Use the documented Android software-emulation opt-in and expose remaining Linux build errors before another release promotion.",
+    "context": "Exact promotion 808311f built the HWASan APK but the macOS ARM runtime launch failed with HV_UNSUPPORTED despite -accel off. Current Android CLI docs require ANDROID_I_WANT_MY_TCG=yes. Linux LSan/MSan compiler errors were discarded; MC-AI-0351 now preserves failure output, but the current workflow only executes these rows on ai-main push.",
+    "complexity": "low",
+    "created_at": "2026-10-07",
+    "resolved_at": "2026-10-07",
+    "resolution_changes": "Scope the quoted ANDROID_I_WANT_MY_TCG=yes opt-in to the existing emulator-start step and retain its image, software flag, boot bound, verifier and liveness. Enable both Linux diagnostic rows only for explicit ai-dev workflow dispatch in addition to existing ai-main pushes; keep PR/other-ref exclusion and exact ai-main aggregate release acceptance unchanged.",
+    "plan": [
+      "Repair the documented emulator launch environment and permit bounded pre-promotion Linux diagnostics."
+    ],
+    "product_changes": [
+      "No gameplay or application-platform support change."
+    ],
+    "code_changes": [
+      "Correct sanitizer workflow execution without weakening exact-promotion release acceptance."
+    ],
+    "baseline_commit": "d78f7378226cad0fddb2f2aa865f231d25d8ff97",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "Reviewed docs/BUILD.md and the unchanged analysis/runtime gates; document diagnostic dispatch without claiming Linux application support or release acceptance.",
+    "environment_review": "",
+    "backlog_review": "No new sanitizer families, unsupported product platform, detector relaxation or runtime claim; demonstrated Linux errors still need diagnosis."
   }
 ]
