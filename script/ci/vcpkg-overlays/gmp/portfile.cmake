@@ -5,6 +5,7 @@ endif()
 vcpkg_download_distfile(
     ARCHIVE
     URLS
+        "https://mirrors.kernel.org/gnu/gmp/gmp-${VERSION}.tar.xz"
         "https://ftpmirror.gnu.org/gmp/gmp-${VERSION}.tar.xz"
         "https://ftp.gnu.org/gnu/gmp/gmp-${VERSION}.tar.xz"
         "https://gmplib.org/download/gmp/gmp-${VERSION}.tar.xz"
