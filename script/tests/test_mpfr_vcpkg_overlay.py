@@ -27,14 +27,25 @@ class MpfrVcpkgOverlayTests(unittest.TestCase):
             "2b65c20fc66eda893aa15a15a453c3cf09500b19",
         )
 
-    def test_pic_is_requested_only_for_android_and_uses_the_pinned_portfile(self):
+    def test_pic_is_requested_only_for_android(self):
         portfile = (OVERLAY / "portfile.cmake").read_text(encoding="utf-8")
 
         self.assertIn(
             "if(VCPKG_TARGET_IS_ANDROID)\n"
             "    list(APPEND VCPKG_MAKE_CONFIGURE_OPTIONS --with-pic)\n"
-            "endif()\n\n"
-            'include("${VCPKG_ROOT_DIR}/ports/mpfr/portfile.cmake")',
+            "endif()",
+            portfile,
+        )
+
+    def test_upstream_patch_resolution_uses_and_restores_the_pinned_port_directory(self):
+        portfile = (OVERLAY / "portfile.cmake").read_text(encoding="utf-8")
+
+        self.assertIn(
+            'set(_MC_MPFR_OVERLAY_PORT_DIR "${CURRENT_PORT_DIR}")\n'
+            'set(CURRENT_PORT_DIR "${VCPKG_ROOT_DIR}/ports/mpfr")\n'
+            'include("${VCPKG_ROOT_DIR}/ports/mpfr/portfile.cmake")\n'
+            'set(CURRENT_PORT_DIR "${_MC_MPFR_OVERLAY_PORT_DIR}")\n'
+            "unset(_MC_MPFR_OVERLAY_PORT_DIR)",
             portfile,
         )
 
