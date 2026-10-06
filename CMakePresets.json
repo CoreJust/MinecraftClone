@@ -118,9 +118,9 @@
         "MC_SANITIZER": "memory",
         "VCPKG_TARGET_TRIPLET": "x64-linux-msan",
         "CMAKE_C_FLAGS": "-fsanitize=memory -fsanitize-memory-track-origins=2 -fno-omit-frame-pointer",
-        "CMAKE_CXX_FLAGS": "-stdlib=libc++ -isystem $env{MC_MSAN_LIBCXX_PREFIX}/include/c++/v1",
-        "CMAKE_EXE_LINKER_FLAGS": "-stdlib=libc++ -L$env{MC_MSAN_LIBCXX_PREFIX}/lib -Wl,-rpath,$env{MC_MSAN_LIBCXX_PREFIX}/lib",
-        "CMAKE_SHARED_LINKER_FLAGS": "-stdlib=libc++ -L$env{MC_MSAN_LIBCXX_PREFIX}/lib -Wl,-rpath,$env{MC_MSAN_LIBCXX_PREFIX}/lib"
+        "CMAKE_CXX_FLAGS": "-fsanitize=memory -fsanitize-memory-track-origins=2 -fno-omit-frame-pointer -stdlib=libc++ -isystem $env{MC_MSAN_LIBCXX_PREFIX}/include/c++/v1",
+        "CMAKE_EXE_LINKER_FLAGS": "-fsanitize=memory -stdlib=libc++ -L$env{MC_MSAN_LIBCXX_PREFIX}/lib -Wl,-rpath,$env{MC_MSAN_LIBCXX_PREFIX}/lib",
+        "CMAKE_SHARED_LINKER_FLAGS": "-fsanitize=memory -stdlib=libc++ -L$env{MC_MSAN_LIBCXX_PREFIX}/lib -Wl,-rpath,$env{MC_MSAN_LIBCXX_PREFIX}/lib"
       }
     },
     {

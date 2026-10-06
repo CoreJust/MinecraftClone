@@ -11890,5 +11890,44 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0345",
+    "title": "Repair Linux analysis-only sanitizer configurations for S7",
+    "kind": "chore",
+    "status": "done",
+    "priority": "P2",
+    "route": "luna",
+    "milestone": "Unassigned",
+    "depends_on": [],
+    "acceptance": "On a Linux analysis host, the product platform guard remains fail-closed unless MC_ANALYSIS_HOST=ON and MC_BUILD_CLIENT=OFF; the MSan preset propagates instrumentation through compiler and executable/shared linker probes. Focused checks cover preset flags and the guard is exercised with a Linux-target CMake configure. The exact-candidate hosted Linux LSan/MSan rows remain independent mandatory release gates.",
+    "evidence": "CMake configure with CMAKE_SYSTEM_NAME=Linux and static try-compile reached CoreCpp dependency discovery only with MC_ANALYSIS_HOST=ON and MC_BUILD_CLIENT=OFF; the same Linux-target configure without analysis opt-in failed at the intended platform guard. WROTE analysis-matrix row receipt: /var/folders/pr/3tq7t6tx2zdd3rjcb82vd40w0000gn/T/tmp1bwm0k6m/row.json\nPASS analysis-matrix: /var/folders/pr/3tq7t6tx2zdd3rjcb82vd40w0000gn/T/tmphjz_ikwq/analysis.json passed 37 tests, including MSan compile/link preset assertions. Code documentation integrity check passed., backlog and generated Markdown are valid, and the project fast gate passed (432 Python tests); the fast gate is rerun after this task-record update. Hosted exact-candidate Linux sanitizer rows remain release gates.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0038",
+    "motivation": "Repair Linux analysis-only sanitizer configurations for S7",
+    "context": "Created through the task planning interface.",
+    "complexity": "medium",
+    "created_at": "2026-10-06",
+    "resolved_at": "2026-10-06",
+    "resolution_changes": "Added an explicit server-only analysis-host opt-in for Linux and propagated MSan flags through compiler probes and executable/shared linking; added MSan preset regression assertions.",
+    "plan": [
+      "Add an explicit analysis-host option and narrowly permit server/test-only Linux analysis configuration.",
+      "Pass MemorySanitizer instrumentation through C and C++ compiler probes and executable/shared linker probes while retaining instrumented libc++.",
+      "Add regression coverage for Linux platform opt-in and complete MSan compiler/linker flags; run focused matrix tests and fast checks.",
+      "Review and commit this task with its Task-ID trailer, then rerun exact-candidate Linux LSan and MSan rows."
+    ],
+    "product_changes": [],
+    "code_changes": [
+      "CMakeLists.txt permits Linux configuration only for explicit server-only analysis hosts; CMakePresets.json propagates MSan instrumentation through C/C++ compiler and executable/shared linker probes; analysis-matrix unit coverage asserts the MSan flags."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]
