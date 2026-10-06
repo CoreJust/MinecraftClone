@@ -36,6 +36,11 @@ struct HeightTileInterest final {
     int8_t heading_y = 127;
 };
 
+struct HeightTileInterestDelta final {
+    std::vector<HeightTileKey> additions;
+    std::vector<HeightTileKey> removals;
+};
+
 struct HeightTileInterestOrders final {
     uint32_t radius;
     std::array<HeightTileInterest, 16> orders;
@@ -70,6 +75,16 @@ HeightTileInterest makeHeightTileInterest(
 );
 
 [[nodiscard]] HeightTileHeading canonicalHeightTileHeading(int8_t x, int8_t y) noexcept;
+
+[[nodiscard]]
+HeightTileInterestDelta heightTileInterestDelta(
+    HeightTileKey previous_center,
+    HeightTileKey next_center,
+    uint32_t radius = HEIGHT_TILE_INTEREST_RADIUS
+);
+
+[[nodiscard]]
+bool heightTileWithinInterest(HeightTileKey center, HeightTileKey key, uint32_t radius);
 
 [[nodiscard]] double heightTileInterestPriority(
     HeightTileKey center,

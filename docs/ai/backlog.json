@@ -11811,5 +11811,46 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0343",
+    "title": "Reduce height-tile stream cost and movement latency",
+    "kind": "chore",
+    "status": "done",
+    "priority": "P2",
+    "route": "luna",
+    "milestone": "ED-010-S7",
+    "depends_on": [],
+    "acceptance": "The exact 205,861-tile radius-256 interest is delivered within its existing 90-second test deadline; four-client sustained flight keeps maximum input ack lag <=16 and catches up to <=2 within the existing deadline; interest refresh has no synchronous O(205,861) rebuild/resident scan on ordinary movement; exact membership, wrap, removal/reentry, and backpressure tests pass.",
+    "evidence": "Debug focused geometry, heading, movement, backpressure, and removal/reentry suite: 29/29 passed. Release GameServerPreviewTest.StreamsPlayerCenteredHeightTilesAndRemovesDepartedTiles delivered 205,861/205,861 tiles in 46.8 s under the unchanged 90 s deadline. Release GameServerPreviewTest.SustainedFlightKeepsInputAcknowledgementsCurrentWhileTilesStream ran 35.7 s; maximum ack lag 6 (limit 16), final acknowledgements 350/350/350/350 (allowance 2).",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0038",
+    "motivation": "The exact 256-radius stream misses its existing 90-second delivery gate, while four-client flight exceeds input acknowledgement lag limits. Logs show a capped worker-result collector throttles stationary delivery and player-tile refresh rebuilds/scans the full 205,861-key interest on movement.",
+    "context": "Preserve the exact camera-independent circular radius, current world-wrap semantics, delivery/removal protocol, and existing acceptance limits. Do not relax the 90-second full-radius or four-client acknowledgement assertions.",
+    "complexity": "medium",
+    "created_at": "2026-10-06",
+    "resolved_at": "2026-10-06",
+    "resolution_changes": "Server interest refresh now uses shared exact wrapped membership and incremental boundary deltas; movement no longer rebuilds the full-radius vector/set or scans all residents. Bounded urgent, priority, and persistent background discovery lanes preserve new-frontier priority and complete-disk coverage. Worker-result collection cap increased from 32 to 64 after measured finished-result backlog; acceptance thresholds remain unchanged.",
+    "plan": [
+      "Clarify acceptance and implementation steps.",
+      "Replace full per-move interest materialization and set rebuild with exact incremental membership updates and bounded resumable candidate discovery.",
+      "Bound result collection using the measured finished-uncollected backlog while preserving gameplay scheduling and multi-stream fairness.",
+      "Run focused geometry, stream lifecycle, full-radius, and sustained-flight acceptance without changing thresholds."
+    ],
+    "product_changes": [],
+    "code_changes": [
+      "src/shared/world/HeightTileInterest.cpp and src/shared/include/shared/world/HeightTileInterest.hpp provide exact wrapped membership and circular-disk boundary deltas; client helpers delegate to the shared implementation.",
+      "src/server/GameServer.cpp and src/server/include/server/GameServer.hpp use offset orders, incremental resident removals, bounded service cursors, and a 64-result pump cap.",
+      "tests/core/height_tile_interest_tests.cpp verifies wrapped circular membership; docs/code/GAMEPLAY.md records the stream contract."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]

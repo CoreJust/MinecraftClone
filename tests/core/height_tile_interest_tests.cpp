@@ -1,4 +1,5 @@
 #include <shared/world/HeightTileInterest.hpp>
+#include <shared/world/SparseWorld.hpp>
 
 #include <gtest/gtest.h>
 
@@ -30,6 +31,43 @@ TEST(HeightTileInterestTest, BuildsCameraIndependentCircularResidency)
     EXPECT_TRUE(contains(interest, center.x + 181, center.y + 181));
     EXPECT_FALSE(contains(interest, center.x + 182, center.y + 182));
     EXPECT_FALSE(contains(interest, center.x + 257, center.y));
+}
+
+TEST(HeightTileInterestTest, MembershipUsesTheExactWrappedCircularRadius)
+{
+    static constexpr int32_t TILE_EXTENT = static_cast<int32_t>(
+        shared::WorldExtent::WIDTH / shared::HEIGHT_TILE_SIDE_LENGTH
+    );
+    static constexpr uint32_t RADIUS = 256U;
+    static constexpr std::array CENTERS{
+        shared::HeightTileKey{ .x = 2'000, .y = 2'000 },
+        shared::HeightTileKey{ .x = TILE_EXTENT - 1, .y = TILE_EXTENT - 1 },
+        shared::HeightTileKey{ .x = -1, .y = TILE_EXTENT + 2 },
+    };
+
+    for (shared::HeightTileKey const center : CENTERS) {
+        EXPECT_TRUE(shared::heightTileWithinInterest(center, center, RADIUS));
+        EXPECT_TRUE(shared::heightTileWithinInterest(
+            center,
+            { .x = center.x + static_cast<int32_t>(RADIUS), .y = center.y },
+            RADIUS
+        ));
+        EXPECT_FALSE(shared::heightTileWithinInterest(
+            center,
+            { .x = center.x + static_cast<int32_t>(RADIUS) + 1, .y = center.y },
+            RADIUS
+        ));
+        EXPECT_TRUE(shared::heightTileWithinInterest(
+            center,
+            { .x = center.x + 181, .y = center.y + 181 },
+            RADIUS
+        ));
+        EXPECT_FALSE(shared::heightTileWithinInterest(
+            center,
+            { .x = center.x + 182, .y = center.y + 182 },
+            RADIUS
+        ));
+    }
 }
 
 TEST(HeightTileInterestTest, DistributesFullDiskWrappedAndNegativeKeysAcrossPowerOfTwoBuckets)

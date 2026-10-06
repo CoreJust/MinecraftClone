@@ -32,6 +32,41 @@ int32_t shortestDisplacement(int32_t const from, int32_t const to) noexcept
     return displacement;
 }
 
+int32_t rowHalfWidth(int32_t const offset, int32_t const radius) noexcept
+{
+    if (offset < -radius || offset > radius) {
+        return -1;
+    }
+    return static_cast<int32_t>(std::sqrt(static_cast<double>(radius * radius - offset * offset)));
+}
+
+void appendDifference(
+    std::vector<HeightTileKey>& keys,
+    HeightTileKey const center,
+    int32_t const center_dx,
+    int32_t const center_dy,
+    int32_t const radius
+)
+{
+    for (int32_t y = -radius; y <= radius; ++y) {
+        int32_t const half_width = rowHalfWidth(y, radius);
+        int32_t const other_half_width = rowHalfWidth(y + center_dy, radius);
+        int32_t const first_end = other_half_width < 0
+            ? half_width
+            : std::min(half_width, -center_dx - other_half_width - 1);
+        for (int32_t x = -half_width; x <= first_end; ++x) {
+            keys.push_back(normalizeHeightTileKey({ .x = center.x + x, .y = center.y + y }));
+        }
+        if (other_half_width < 0) {
+            continue;
+        }
+        int32_t const second_begin = std::max(-half_width, -center_dx + other_half_width + 1);
+        for (int32_t x = std::max(second_begin, first_end + 1); x <= half_width; ++x) {
+            keys.push_back(normalizeHeightTileKey({ .x = center.x + x, .y = center.y + y }));
+        }
+    }
+}
+
 struct RankedHeightTileOffset final {
     HeightTileKey offset;
     double priority;
@@ -196,6 +231,43 @@ HeightTileHeading canonicalHeightTileHeading(int8_t heading_x, int8_t heading_y)
         .x = static_cast<int8_t>(std::round(forward_x * 127.0)),
         .y = static_cast<int8_t>(std::round(forward_y * 127.0)),
     };
+}
+
+HeightTileInterestDelta heightTileInterestDelta(
+    HeightTileKey const previous_center,
+    HeightTileKey const next_center,
+    uint32_t const radius
+)
+{
+    ASSERT(isValidHeightTileInterestRadius(radius), "invalid height-tile interest radius");
+    HeightTileInterestDelta result;
+    HeightTileKey const normalized_previous = normalizeHeightTileKey(previous_center);
+    HeightTileKey const normalized_next = normalizeHeightTileKey(next_center);
+    int32_t const dx = shortestDisplacement(normalized_previous.x, normalized_next.x);
+    int32_t const dy = shortestDisplacement(normalized_previous.y, normalized_next.y);
+    if (dx == 0 && dy == 0) {
+        return result;
+    }
+    appendDifference(result.additions, normalized_next, dx, dy, static_cast<int32_t>(radius));
+    appendDifference(result.removals, normalized_previous, -dx, -dy, static_cast<int32_t>(radius));
+    return result;
+}
+
+bool heightTileWithinInterest(
+    HeightTileKey const center,
+    HeightTileKey const key,
+    uint32_t const radius
+)
+{
+    ASSERT(isValidHeightTileInterestRadius(radius), "invalid height-tile interest radius");
+    HeightTileKey const normalized_center = normalizeHeightTileKey(center);
+    HeightTileKey const normalized_key = normalizeHeightTileKey(key);
+    int32_t const dx = shortestDisplacement(normalized_center.x, normalized_key.x);
+    int32_t const dy = shortestDisplacement(normalized_center.y, normalized_key.y);
+    int64_t const distance_squared = static_cast<int64_t>(dx) * dx
+        + static_cast<int64_t>(dy) * dy;
+    int64_t const radius_squared = static_cast<int64_t>(radius) * radius;
+    return distance_squared <= radius_squared;
 }
 
 HeightTileInterest makeHeightTileInterest(

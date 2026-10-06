@@ -1,6 +1,7 @@
 #pragma once
 
 #include <shared/net/Message.hpp>
+#include <shared/world/HeightTileInterest.hpp>
 #include <shared/world/HeightTileSurfaceMesher.hpp>
 
 #include <array>
@@ -11,10 +12,7 @@
 
 namespace client {
 
-struct PlayerPreviewInterestDelta final {
-    std::vector<shared::HeightTileKey> additions;
-    std::vector<shared::HeightTileKey> removals;
-};
+using PlayerPreviewInterestDelta = shared::HeightTileInterestDelta;
 
 [[nodiscard]]
 PlayerPreviewInterestDelta playerPreviewInterestDelta(
