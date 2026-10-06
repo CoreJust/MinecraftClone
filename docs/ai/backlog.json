@@ -11735,5 +11735,42 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0341",
+    "title": "Preserve Linux LSan flags while tolerating pinned dependency aggregates",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P0",
+    "route": "luna",
+    "milestone": "ED-010-S7",
+    "depends_on": [],
+    "acceptance": "The pinned CoreProject2026 configure for linux-analysis merges only -Wno-error=missing-field-initializers into the provided CMAKE_CXX_FLAGS, preserving LeakSanitizer/MSan, frame-pointer, and libc++ flags. CoreCpp and main MinecraftClone warning policy are unchanged. Focused regression proves the exception is limited to CoreProject2026 and no second CXX_FLAGS definition replaces sanitizer flags. Exact hosted linux_lsan and linux_msan rows remain aggregate S7 release gates.",
+    "evidence": "python3 -m unittest script.tests.test_ci_acquire passed 30/30; git diff --check passed. The regression confirms the full LeakSanitizer CXX flag value survives in CoreProject2026, while CoreCpp receives the original sanitizer flags without the warning exception. Hosted linux_lsan/linux_msan rows remain S7 release gates and are not claimed passed.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0038",
+    "motivation": "The exact linux_lsan release row fails while compiling pinned CoreProject2026 because Clang 18 promotes its partial aggregate initializer warnings to errors, before MinecraftClone analysis begins.",
+    "context": "Run 37491842803 job 112366285199 fails in Install instrumented private dependencies. Android already applies the narrow missing-field-initializers exception to CoreProject2026. For linux-analysis, package arguments follow shared sanitizer arguments, so a second CMAKE_CXX_FLAGS definition would erase LeakSanitizer, frame-pointer, and libc++ flags. Keep the exception scoped to CoreProject2026 and preserve all sanitizer flags.",
+    "complexity": "low",
+    "created_at": "2026-10-06",
+    "resolved_at": "2026-10-06",
+    "resolution_changes": "Merged the warning-specific exception into the existing linux-analysis CXX flags only for CoreProject2026 and added regression assertions for sanitizer preservation and scope.",
+    "plan": [
+      "Merge the narrow compatibility flag into CoreProject2026-only Linux analysis CXX flags without replacing sanitizer flags.",
+      "Extend acquire.py tests to assert preserved sanitizer options and prove CoreCpp and unrelated platforms do not inherit the exception."
+    ],
+    "product_changes": [],
+    "code_changes": [
+      "Update script/ci/acquire.py, its focused tests, and task evidence."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]
