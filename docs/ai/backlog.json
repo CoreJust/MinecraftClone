@@ -11320,5 +11320,42 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0330",
+    "title": "Repair missing MPFR overlay patches",
+    "kind": "chore",
+    "status": "done",
+    "priority": "P0",
+    "route": "luna",
+    "milestone": "ED-010-S7",
+    "depends_on": [],
+    "acceptance": "The overlay scopes CURRENT_PORT_DIR to the pinned vcpkg ports/mpfr directory only while including its upstream portfile, so dll.patch and src-only.patch resolve from the exact registry baseline; it restores the overlay directory afterward. MPFR remains 4.2.2 port-version 1 and --with-pic remains Android-only. A focused regression protects assignment/include/restore order. Focused tests and ai_check.py --fast pass.",
+    "evidence": "Exact ai-main run 37404691208 failed all four Windows/macOS desktop vcpkg jobs with Could not find patch dll.patch; upstream portfile also references src-only.patch. The failure is explained by vcpkg_extract_source_archive resolving patches against CURRENT_PORT_DIR. The overlay now temporarily points CURRENT_PORT_DIR at the pinned upstream port while including its recipe and restores the overlay path. python3 -m unittest script.tests.test_mpfr_vcpkg_overlay passed 4/4; python3 script/ai_check.py --fast passed docs, backlog, plan, diff, and the complete Python suite. Cross-platform post-fix validation remains an MC-AI-0038 parent gate.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0038",
+    "motivation": "Exact ai-main candidate run 37404691208 failed all four Windows/macOS desktop build jobs because the MPFR overlay could not resolve the pinned upstream dll.patch and src-only.patch files. This blocks S7 release gates.",
+    "context": "Candidate 27a059e5551b2b9716a4944f1e6efda404862226 uses vcpkg baseline 2b65c20fc66eda893aa15a15a453c3cf09500b19. MC-AI-0329 added an Android PIC MPFR overlay but its tests only checked wiring and did not verify patch assets. Raw Windows and macOS hosted logs point to the same missing overlay files.",
+    "complexity": "medium",
+    "created_at": "2026-10-06",
+    "resolved_at": "2026-10-06",
+    "resolution_changes": "Scoped CURRENT_PORT_DIR to the pinned upstream MPFR port while including its portfile, then restored the overlay path; added regression coverage for the scoped resolution.",
+    "plan": [
+      "Temporarily scope CURRENT_PORT_DIR to the pinned upstream MPFR port while including its portfile, then restore overlay context; preserve Android-only PIC and test the scope.",
+      "Run focused overlay tests and the fast project gate; use the active S7 parent for exact-SHA platform validation."
+    ],
+    "product_changes": [],
+    "code_changes": [
+      "MPFR vcpkg overlay now resolves upstream patch assets from the pinned port directory while preserving the Android-only PIC option; the overlay test protects the scope and restore sequence."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]
