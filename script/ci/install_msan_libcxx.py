@@ -11,7 +11,7 @@ import re
 import shutil
 import subprocess
 import sys
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Sequence
 
 try:
@@ -168,7 +168,7 @@ def collect_probe_context(
     library_dir: Path,
     runtime_environment: dict[str, str],
     symbolizer: str,
-) -> tuple[str, dict[str, Path]]:
+) -> tuple[str, dict[str, PurePosixPath]]:
     compiler = subprocess.run(
         [clangxx, "--version"], text=True, capture_output=True, check=False, timeout=10
     )
@@ -198,11 +198,11 @@ def collect_probe_context(
         if runtime_library.is_file()
     ]
     symbolizer_hash = sha256_file(Path(symbolizer))
-    dependencies_by_name: dict[str, Path] = {}
+    dependencies_by_name: dict[str, PurePosixPath] = {}
     for line in dependencies.stdout.splitlines():
         match = re.search(r"(?:=>\s+)?(/\S+)\s+\(", line)
         if match is not None:
-            dependency = Path(match.group(1))
+            dependency = PurePosixPath(match.group(1))
             dependencies_by_name[dependency.name] = dependency
     lines = [
         f"kernel: {platform.uname()}",
@@ -234,14 +234,14 @@ def symbolize_reported_pcs(
     diagnostics: str,
     probe: Path,
     symbolizer: str,
-    dependencies_by_name: dict[str, Path],
+    dependencies_by_name: dict[str, PurePosixPath],
 ) -> str:
-    relative_addresses: dict[Path, set[str]] = {}
+    relative_addresses: dict[Path | PurePosixPath, set[str]] = {}
     for line in diagnostics.splitlines():
         frame = re.search(r"#\d+\s+0x[0-9a-fA-F]+.*?\(([^()]+)\+0x([0-9a-fA-F]+)\)", line)
         if frame is None:
             continue
-        module = Path(frame.group(1))
+        module = PurePosixPath(frame.group(1))
         if module.name == probe.name:
             object_path = probe
         elif module.is_absolute():

@@ -5,7 +5,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from unittest import mock
 
 
@@ -47,7 +47,9 @@ class InstallMsanLibcxxTests(unittest.TestCase):
             subprocess.CompletedProcess([], 0, "", ""),
             subprocess.CompletedProcess([], 0, "", ""),
             subprocess.CompletedProcess([], 0, "clang version 18.1.3\n", ""),
-            subprocess.CompletedProcess([], 0, "libc++.so => /tmp/prefix/lib/libc++.so\n", ""),
+            subprocess.CompletedProcess(
+                [], 0, "libc++.so => /tmp/prefix/lib/libc++.so (0x1234)\n", ""
+            ),
             subprocess.CompletedProcess([], 0, "llvm-symbolizer\n", ""),
             negative_run,
         ]
@@ -235,7 +237,7 @@ class InstallMsanLibcxxTests(unittest.TestCase):
                     "probe stdout",
                     "MemorySanitizer: stack-overflow\n"
                     "    #0 0x5615fe3a250b in main (/tmp/build/msan-uninitialized-read+0x1250b)\n"
-                    "    #1 0x7f0000001234 in operator new (/tmp/prefix/lib/libc++.so+0x1234)\n"
+                    "    #1 0x7f0000001234 in operator new (libc++.so+0x1234)\n"
                     "MemorySanitizer:DEADLYSIGNAL",
                 ),
                 symbolized=[
@@ -272,6 +274,40 @@ class InstallMsanLibcxxTests(unittest.TestCase):
             "--obj=/tmp/prefix/lib/libc++.so",
             " ".join(run.call_args_list[8].args[0]),
         )
+
+    def test_symbolization_keeps_linux_module_paths_posix_on_windows_hosts(self):
+        diagnostics = (
+            "    #0 0x1 in main (/tmp/build/msan-uninitialized-read+0x1250b)\n"
+            "    #1 0x2 in operator new (/tmp/prefix/lib/libc++.so+0x1234)\n"
+        )
+        symbolized_frames = [
+            subprocess.CompletedProcess([], 0, "main\nprobe.cpp:5:7\n", ""),
+            subprocess.CompletedProcess([], 0, "operator new\nlibc++/new.cpp:9:1\n", ""),
+        ]
+        with (
+            mock.patch.object(self.toolchain, "Path", PureWindowsPath),
+            mock.patch.object(
+                self.toolchain.subprocess, "run", side_effect=symbolized_frames
+            ) as run,
+        ):
+            symbolized = self.toolchain.symbolize_reported_pcs(
+                diagnostics,
+                PureWindowsPath("C:/build/msan-uninitialized-read"),
+                "llvm-symbolizer",
+                {},
+            )
+
+        self.assertEqual(run.call_count, 2)
+        self.assertIn(
+            "--obj=C:\\build\\msan-uninitialized-read",
+            " ".join(run.call_args_list[0].args[0]),
+        )
+        self.assertIn(
+            "--obj=/tmp/prefix/lib/libc++.so",
+            " ".join(run.call_args_list[1].args[0]),
+        )
+        self.assertIn("probe.cpp:5:7", symbolized)
+        self.assertIn("libc++/new.cpp:9:1", symbolized)
 
 
 if __name__ == "__main__":

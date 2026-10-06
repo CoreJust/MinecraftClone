@@ -11543,5 +11543,43 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0336",
+    "title": "Make MSan Linux-path symbolization portable in Windows-hosted tests",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P1",
+    "route": "luna",
+    "milestone": "ED-010-S7",
+    "depends_on": [],
+    "acceptance": "Captured Linux module and dependency paths use POSIX semantics independent of the test host; tests confirm both executable and libc++ frames reach the symbolizer. The MSan success predicate remains unchanged.",
+    "evidence": "python3 -m unittest discover -s script/tests -p test_install_msan_libcxx.py -v: 12/12 passed, including an explicit PureWindowsPath host-semantics regression. ai_docs refresh/check, ai_tasks check, and git diff --check passed. Exact hosted Windows CI remains a parent MC-AI-0038 release gate and is not claimed here.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0038",
+    "motivation": "The Windows fast check for the finalized S7 candidate fails while validating symbolized MSan diagnostics, blocking promotion.",
+    "context": "Exact run 37432806517 for ai-dev commit 38765acc75e324cd8d9874c65e49b186b9e8ef8d failed in test_negative_probe_failure_reports_child_exit_and_diagnostics at the assertion for libc++/new.cpp:9:1. The helper parses paths captured from a Linux MSan process, but host Path semantics on Windows treat POSIX /tmp paths as non-absolute. The ldd mock also omitted its normal address suffix, so dependency-name lookup was not exercised.",
+    "complexity": "medium",
+    "created_at": "2026-10-06",
+    "resolved_at": "2026-10-06",
+    "resolution_changes": "Parsed captured Linux module and dependency paths with PurePosixPath, used a realistic ldd fixture, and added an explicit Windows-host path-semantics regression.",
+    "plan": [
+      "Parse paths originating in Linux MSan output with POSIX path semantics independent of the test host. Make the mocked ldd output realistic, including its address suffix, and retain assertions that both executable and libc++ stack frames are symbolized."
+    ],
+    "product_changes": [
+      "No gameplay behavior changed; scope is sanitizer diagnostic tooling."
+    ],
+    "code_changes": [
+      "Parse Linux MSan module/dependency paths with PurePosixPath and test symbolization of both executable and libc++ frames under simulated Windows Path semantics."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]
