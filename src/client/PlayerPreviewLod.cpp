@@ -15,53 +15,6 @@ constexpr int32_t TILE_EXTENT = static_cast<int32_t>(
     shared::WorldExtent::WIDTH / shared::HEIGHT_TILE_SIDE_LENGTH
 );
 
-[[nodiscard]] int32_t shortestDelta(int32_t const from, int32_t const to) noexcept
-{
-    int32_t const difference = to - from;
-    if (difference > TILE_EXTENT / 2) {
-        return difference - TILE_EXTENT;
-    }
-    if (difference < -TILE_EXTENT / 2) {
-        return difference + TILE_EXTENT;
-    }
-    return difference;
-}
-
-[[nodiscard]] int32_t rowHalfWidth(int32_t const offset, int32_t const radius) noexcept
-{
-    if (offset < -radius || offset > radius) {
-        return -1;
-    }
-    return static_cast<int32_t>(std::sqrt(static_cast<double>(radius * radius - offset * offset)));
-}
-
-void appendDifference(
-    std::vector<shared::HeightTileKey>& keys,
-    shared::HeightTileKey const center,
-    int32_t const center_dx,
-    int32_t const center_dy,
-    int32_t const radius
-)
-{
-    for (int32_t y = -radius; y <= radius; ++y) {
-        int32_t const half_width = rowHalfWidth(y, radius);
-        int32_t const other_half_width = rowHalfWidth(y + center_dy, radius);
-        int32_t const first_end = other_half_width < 0
-            ? half_width
-            : std::min(half_width, -center_dx - other_half_width - 1);
-        for (int32_t x = -half_width; x <= first_end; ++x) {
-            keys.push_back(shared::normalizeHeightTileKey({ .x = center.x + x, .y = center.y + y }));
-        }
-        if (other_half_width < 0) {
-            continue;
-        }
-        int32_t const second_begin = std::max(-half_width, -center_dx + other_half_width + 1);
-        for (int32_t x = std::max(second_begin, first_end + 1); x <= half_width; ++x) {
-            keys.push_back(shared::normalizeHeightTileKey({ .x = center.x + x, .y = center.y + y }));
-        }
-    }
-}
-
 [[nodiscard]] bool contains(
     shared::HeightTileSurfaceBounds const outer,
     shared::HeightTileSurfaceBounds const inner
@@ -135,16 +88,7 @@ PlayerPreviewInterestDelta playerPreviewInterestDelta(
     uint32_t const radius
 )
 {
-    ASSERT(shared::isValidHeightTileInterestRadius(radius), "invalid render distance");
-    PlayerPreviewInterestDelta result;
-    int32_t const dx = shortestDelta(previous_center.x, next_center.x);
-    int32_t const dy = shortestDelta(previous_center.y, next_center.y);
-    if (dx == 0 && dy == 0) {
-        return result;
-    }
-    appendDifference(result.additions, next_center, dx, dy, static_cast<int32_t>(radius));
-    appendDifference(result.removals, previous_center, -dx, -dy, static_cast<int32_t>(radius));
-    return result;
+    return shared::heightTileInterestDelta(previous_center, next_center, radius);
 }
 
 bool playerPreviewTileWithinInterest(
@@ -153,15 +97,7 @@ bool playerPreviewTileWithinInterest(
     uint32_t const radius
 )
 {
-    ASSERT(shared::isValidHeightTileInterestRadius(radius), "invalid render distance");
-    shared::HeightTileKey const normalized_center = shared::normalizeHeightTileKey(center);
-    shared::HeightTileKey const normalized_key = shared::normalizeHeightTileKey(key);
-    int32_t const dx = shortestDelta(normalized_center.x, normalized_key.x);
-    int32_t const dy = shortestDelta(normalized_center.y, normalized_key.y);
-    int64_t const distance_squared = static_cast<int64_t>(dx) * dx
-        + static_cast<int64_t>(dy) * dy;
-    int64_t const radius_squared = static_cast<int64_t>(radius) * radius;
-    return distance_squared <= radius_squared;
+    return shared::heightTileWithinInterest(center, key, radius);
 }
 
 void PlayerPreviewLod::clear() noexcept

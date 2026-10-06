@@ -272,7 +272,8 @@ TEST(GameServerPreviewTest, MaterializedLandingMatchesTheStreamedMountainHeight)
     uint8_t last_cycle_source = 255U;
     bool saw_collision_enabled_flight = false;
     bool sent_all_inputs = true;
-    while (joined && sent_all_inputs && stable_grounded_inputs < STABLE_GROUNDED_INPUTS
+    while (joined && sent_all_inputs
+        && (stable_grounded_inputs < STABLE_GROUNDED_INPUTS || !preview_height.has_value())
         && std::chrono::steady_clock::now() < deadline) {
         client.poll(POLL_INTERVAL);
         while (inspected_messages < client.messages.size()) {
@@ -281,7 +282,9 @@ TEST(GameServerPreviewTest, MaterializedLandingMatchesTheStreamedMountainHeight)
                 position = *update;
                 saw_collision_enabled_flight |= update->movement_capabilities.bits == 1U;
                 if (update->movement_capabilities.bits == 0U && update->vertical_velocity_subcells == 0) {
-                    ++stable_grounded_inputs;
+                    if (stable_grounded_inputs < STABLE_GROUNDED_INPUTS) {
+                        ++stable_grounded_inputs;
+                    }
                 } else {
                     stable_grounded_inputs = 0U;
                 }

@@ -24,6 +24,8 @@ LLVM_REPOSITORY = "https://github.com/llvm/llvm-project.git"
 LLVM_TAG = "llvmorg-18.1.3"
 LLVM_COMMIT = "c13b7485b87909fcf739f62cfa382b55407433c0"
 MSAN_EXIT_CODE = 86
+MSAN_ANALYSIS_OPTIONS = "halt_on_error=1:print_stats=1:fast_unwind_on_fatal=1"
+MSAN_PROBE_OPTIONS = "halt_on_error=1:exit_code=86:print_stats=0:symbolize=1:fast_unwind_on_fatal=1"
 MSAN_WARNING = re.compile(
     r"(?m)^(?:==[0-9]+==)?WARNING: MemorySanitizer: use-of-uninitialized-value\r?$"
 )
@@ -295,7 +297,7 @@ def verify_install(prefix: Path, clangxx: str, build: Path) -> None:
     runtime_environment["LD_LIBRARY_PATH"] = os.pathsep.join(
         item for item in (str(library_dir), existing_library_path) if item
     )
-    runtime_environment["MSAN_OPTIONS"] = "halt_on_error=1:exit_code=86:print_stats=0:symbolize=1"
+    runtime_environment["MSAN_OPTIONS"] = MSAN_PROBE_OPTIONS
     positive_probe = build / "msan-libcxx-positive"
     negative_probe = build / "msan-uninitialized-read"
     common_flags = [
@@ -483,6 +485,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "CXX": clangxx,
                 "MC_LLVM_PROJECT_ROOT": str(args.source_root),
                 "MC_MSAN_LIBCXX_PREFIX": str(args.prefix),
+                "MSAN_OPTIONS": MSAN_ANALYSIS_OPTIONS,
             }
         )
         return 0

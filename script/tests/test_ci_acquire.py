@@ -314,6 +314,11 @@ class CiAcquireTests(unittest.TestCase):
                         corecpp_config.touch()
                     return ""
 
+                cmake_arguments = ["-DVCPKG_MANIFEST_INSTALL=OFF"]
+                if platform_name == "linux-analysis":
+                    cmake_arguments.append(
+                        "-DCMAKE_CXX_FLAGS=-fsanitize=leak -fno-omit-frame-pointer -stdlib=libc++"
+                    )
                 with mock.patch.object(acquire, "run", side_effect=run_command) as run, mock.patch.object(
                     acquire,
                     "write_github_env",
@@ -321,7 +326,7 @@ class CiAcquireTests(unittest.TestCase):
                     acquire.install_private_dependencies(
                         root,
                         platform_name,
-                        ["-DVCPKG_MANIFEST_INSTALL=OFF"],
+                        cmake_arguments,
                     )
                 commands = [call.args[0] for call in run.call_args_list]
                 configure_commands = [command for command in commands if command[0] == "cmake" and "-S" in command]
@@ -347,6 +352,18 @@ class CiAcquireTests(unittest.TestCase):
                 self.assertIn("-DCOREPROJECT2026_BUILD_SCRIPT=OFF", coreproject_command)
                 aggregate_flag = "-DCMAKE_CXX_FLAGS=-Wno-error=missing-field-initializers"
                 self.assertEqual(aggregate_flag in coreproject_command, platform_name in {"android", "android-hwasan"})
+                if platform_name == "linux-analysis":
+                    linux_flags = (
+                        "-DCMAKE_CXX_FLAGS=-fsanitize=leak -fno-omit-frame-pointer -stdlib=libc++"
+                        " -Wno-error=missing-field-initializers"
+                    )
+                    self.assertIn(linux_flags, coreproject_command)
+                    self.assertEqual(
+                        sum(argument.startswith("-DCMAKE_CXX_FLAGS=") for argument in coreproject_command),
+                        1,
+                    )
+                    self.assertIn(linux_flags.removesuffix(" -Wno-error=missing-field-initializers"), corecpp_command)
+                    self.assertNotIn("-Wno-error=missing-field-initializers", corecpp_command)
                 if platform_name == "android-hwasan":
                     self.assertIn("-DVCPKG_TARGET_TRIPLET=arm64-android-hwasan", corecpp_command)
                     self.assertIn("-DANDROID_PLATFORM=android-29", corecpp_command)

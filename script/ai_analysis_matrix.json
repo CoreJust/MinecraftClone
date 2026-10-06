@@ -107,7 +107,7 @@
       "flags": ["-DCMAKE_BUILD_TYPE=Release", "-DMC_ENABLE_HIGH_ASSERT=OFF", "-DMC_ANALYSIS_HOST=ON", "-DMC_BUILD_CLIENT=OFF", "-DMC_ENABLE_SANITIZERS=ON", "-DMC_SANITIZER=memory", "-fsanitize=memory", "-fsanitize-memory-track-origins=2", "-stdlib=libc++", "LLVM_USE_SANITIZER=MemoryWithOrigins"],
       "compile_commands": "build/analysis-linux-msan/compile_commands.json",
       "required_compile_flags": ["-fsanitize=memory", "-fsanitize-memory-track-origins=2", "-stdlib=libc++"],
-      "environment": {"MSAN_OPTIONS": "halt_on_error=1:print_stats=1"},
+      "environment": {"MSAN_OPTIONS": "halt_on_error=1:print_stats=1:fast_unwind_on_fatal=1"},
       "tool_probes": [["clang", "--version"], ["clang++", "--version"], ["cmake", "--version"], ["ninja", "--version"], ["git", "-C", "{env:MC_LLVM_PROJECT_ROOT}", "rev-parse", "HEAD"]],
       "commands": [
         ["cmake", "--preset", "analysis-linux-msan", "-DCMAKE_TOOLCHAIN_FILE={env:VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake", "-DVCPKG_INSTALLED_DIR={env:VCPKG_INSTALLED_DIR}", "-DCMAKE_PREFIX_PATH={env:MC_PRIVATE_DEPENDENCIES_PREFIX}", "-DCoreCpp_DIR={env:MC_PRIVATE_DEPENDENCIES_PREFIX}/lib/cmake/CoreCpp", "-DCoreProject2026_DIR={env:MC_PRIVATE_DEPENDENCIES_PREFIX}/lib/cmake/CoreProject2026"],

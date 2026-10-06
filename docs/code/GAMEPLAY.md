@@ -103,13 +103,14 @@ input call.
 
 ## S6/S7 moving terrain
 
-S7 server/benchmark `--render-distance CHUNKS` selects radius 1–256 (default 256):
-128 has 51,433 tiles; 256 has 205,861. Selected-radius orders have shared ownership.
-Membership depends solely on player position; heading prioritizes radius-3/radius-8
-circles and a directional ellipse to the former S6 band. Background generation
-permits 8,192 tiles/s, with 128-tile bursts after 250 ms settled. CoreLang 0.1.2
-supplies wave parameters; C++ computes heights/stone. Six terrain layers are
-128 blocks apart; spawn uses the first wave. HUD speedups span 2x–500x.
+S7 `--render-distance CHUNKS` selects radius 1–256 (default 256): radius 128 has
+51,433 tiles; radius 256 has 205,861. Orders are shared.
+Position alone determines membership; heading prioritizes radius-3/radius-8 circles
+and a directional ellipse. Server applies wrapped edge deltas, bounds discovery,
+and collects at most 64 results per pump.
+Background generation allows 8,192 tiles/s, with 128-tile bursts after 250 ms
+settled. CoreLang 0.1.2 supplies wave parameters; C++ computes heights and stone.
+Six 128-block layers; spawn uses the first wave. HUD speedups: 2x–500x.
 
 LOD uses wrapped player distance and vertical FOV/framebuffer extent to
 bound replacement LOD-cell faces to 2 px². Terrain/collision remain exact. Boundary

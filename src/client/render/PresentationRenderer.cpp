@@ -1146,6 +1146,8 @@ void recordText(
 
 } // namespace
 
+// Keep resources before dependent wrappers so reverse destruction releases wrappers first.
+// NOLINTNEXTLINE(clang-analyzer-optin.performance.Padding)
 struct VulkanRenderer::Impl final {
     using PresentationContext = core::graphics::vulkan::PresentationContext;
     using ResourceScope = PresentationContext::PresentationResourceScope;

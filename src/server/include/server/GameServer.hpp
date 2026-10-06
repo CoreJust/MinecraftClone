@@ -16,6 +16,7 @@
 #include <expected>
 #include <functional>
 #include <memory>
+#include <span>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -155,7 +156,6 @@ private:
     void publishHeightTileResults();
     void dispatchWorldMaterialization();
     [[nodiscard]] uint32_t admitHeightTileDeliveries(PreviewStream& stream, uint32_t maximum_batches);
-    void queueDepartedResidentTiles(PreviewStream& stream);
     [[nodiscard]] bool processInput(PlayerReplication& replication, shared::ClientInputMessage input);
     [[nodiscard]] std::vector<shared::PolicySubject> permissionSubjects() const;
     [[nodiscard]]
@@ -206,6 +206,9 @@ private:
         static constexpr uint32_t MAX_QUEUED_TILES = 128U;
         static constexpr uint32_t MAX_BUFFERED_TILES = 128U;
         static constexpr uint32_t MAX_INFLIGHT_DELIVERIES = 4U;
+        static constexpr uint32_t MAX_URGENT_CANDIDATES_PER_PUMP = 512U;
+        static constexpr uint32_t MAX_PRIORITY_CANDIDATES_PER_PUMP = 256U;
+        static constexpr uint32_t MAX_BACKGROUND_CANDIDATES_PER_PUMP = 512U;
         static constexpr uint64_t WORLD_REVISION = 1U;
 
         struct Delivery final {
@@ -214,13 +217,20 @@ private:
             std::chrono::steady_clock::time_point admitted_at{};
         };
 
-        explicit PreviewStream(core::ClientId client_id)
+        explicit PreviewStream(core::ClientId client_id, uint32_t const render_distance)
             : client_id(client_id)
             , scheduler(MAX_QUEUED_TILES)
+            , render_distance(render_distance)
         {}
+
+        [[nodiscard]] bool desires(shared::HeightTileKey const key) const
+        {
+            return has_center && shared::heightTileWithinInterest(center, key, render_distance);
+        }
 
         core::ClientId client_id;
         shared::WorldGenerationScheduler scheduler;
+        uint32_t render_distance;
         shared::HeightTileKey center{};
         uint64_t generation = 1U;
         int8_t heading_x = 0;
@@ -228,10 +238,13 @@ private:
         int8_t applied_heading_x = 0;
         int8_t applied_heading_y = 0;
         bool has_center = false;
-        std::vector<shared::HeightTileKey> desired_keys;
+        std::span<shared::HeightTileKey const> priority_offsets;
         uint32_t priority_cursor = 0U;
         uint64_t priority_cursor_generation = 0U;
-        std::unordered_set<shared::HeightTileKey, HeightTileKeyHash> desired_key_set;
+        uint32_t background_cursor = 0U;
+        uint64_t background_cursor_generation = 0U;
+        std::vector<shared::HeightTileKey> urgent_keys;
+        uint32_t urgent_cursor = 0U;
         std::unordered_set<shared::HeightTileKey, HeightTileKeyHash> resident_keys;
         std::unordered_set<shared::HeightTileKey, HeightTileKeyHash> queued_keys;
         std::unordered_set<shared::HeightTileKey, HeightTileKeyHash> dispatched_keys;

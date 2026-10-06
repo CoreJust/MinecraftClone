@@ -292,6 +292,7 @@ def install_private_dependencies(
             raise CiError(f"{name} source is missing its CMakeLists.txt: {source}")
         build = root / f"{name}-build"
         package_arguments: list[str] = []
+        package_cmake_arguments = normalized_cmake_arguments
         if name == "CoreCpp":
             if platform_name == "linux-analysis":
                 package_arguments.extend(CORECPP_ANALYSIS_BUILD_ARGUMENTS)
@@ -307,12 +308,28 @@ def install_private_dependencies(
             package_arguments.append("-DCOREPROJECT2026_BUILD_SCRIPT=OFF")
             if platform_name in {"android", "android-hwasan"}:
                 package_arguments.append("-DCMAKE_CXX_FLAGS=-Wno-error=missing-field-initializers")
+            elif platform_name == "linux-analysis":
+                cxx_flags = [
+                    argument
+                    for argument in normalized_cmake_arguments
+                    if argument.startswith("-DCMAKE_CXX_FLAGS=")
+                ]
+                if len(cxx_flags) != 1:
+                    raise CiError(
+                        "linux-analysis CoreProject2026 requires exactly one CMAKE_CXX_FLAGS argument"
+                    )
+                package_cmake_arguments = tuple(
+                    f"{argument} -Wno-error=missing-field-initializers"
+                    if argument.startswith("-DCMAKE_CXX_FLAGS=")
+                    else argument
+                    for argument in normalized_cmake_arguments
+                )
         configure = [
             "cmake", "-S", str(source), "-B", str(build), "-G", "Ninja",
             f"-DCMAKE_BUILD_TYPE={build_type}", f"-DCMAKE_INSTALL_PREFIX={normalize_cmake_path(prefix)}",
             f"-DCMAKE_PREFIX_PATH={normalize_cmake_path(prefix)}",
             f"-DVCPKG_INSTALLED_DIR={normalize_cmake_path(installed_root)}",
-            *normalized_cmake_arguments,
+            *package_cmake_arguments,
             *[normalize_cmake_argument(argument) for argument in package_arguments],
             "-DBUILD_TESTING=OFF",
         ]
