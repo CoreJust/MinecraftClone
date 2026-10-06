@@ -11929,5 +11929,43 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0346",
+    "title": "Keep streamed mountain landing test live under delivery backpressure",
+    "kind": "chore",
+    "status": "done",
+    "priority": "P2",
+    "route": "luna",
+    "milestone": "Unassigned",
+    "depends_on": [],
+    "acceptance": "The materialized-landing regression client acknowledges each reliable preview batch so delivery credit replenishes until the target tile is received; the 15-second deadline and missing-height assertion remain unchanged. The exact focused test passes locally, while exact-candidate Windows Debug CI remains a mandatory S7 gate.",
+    "evidence": "Configured an isolated Release build from this exact checkout against the candidate's pinned CoreCpp/CoreProject dependencies; cmake --build build/release --target mc_tests --parallel 8 passed. The focused MaterializedLandingMatchesTheStreamedMountainHeight CTest passed once and in 10 consecutive repeats (10/10, 0.94-0.95 seconds each). The test still retains the 15-second deadline and preview_height.has_value assertion. Exact-candidate Windows Debug CI remains a mandatory S7 release gate.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0038",
+    "motivation": "Keep streamed mountain landing test live under delivery backpressure",
+    "context": "Created through the task planning interface.",
+    "complexity": "medium",
+    "created_at": "2026-10-06",
+    "resolved_at": "2026-10-06",
+    "resolution_changes": "Enabled delivery acknowledgements for the landing regression's PreviewClient so the four-batch server window continues to advance until the mountain target tile arrives; retained all acceptance assertions.",
+    "plan": [
+      "Diagnose the Windows Debug timeout as delivery-credit starvation when the target tile falls outside the four unacknowledged batches.",
+      "Enable per-batch acknowledgements only for the materialized-landing regression client; preserve its timeout, movement checks, and target-height assertions.",
+      "Build and repeat the focused test, update the task evidence, review the staged task candidate, and commit with a Task-ID trailer."
+    ],
+    "product_changes": [],
+    "code_changes": [
+      "The materialized-landing regression uses the default PreviewClient configuration, which acknowledges each reliable height-tile batch and replenishes server delivery credit; its deadline and assertions are unchanged."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]

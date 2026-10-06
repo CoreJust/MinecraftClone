@@ -258,7 +258,7 @@ TEST(GameServerPreviewTest, MaterializedLandingMatchesTheStreamedMountainHeight)
         shared::WorldMode::Flight};
     std::atomic_bool stop_requested{false};
     std::thread server_thread{[&server, &stop_requested] { server.run(stop_requested); }};
-    PreviewClient client{false};
+    PreviewClient client;
     bool const connected = client.connect(core::Address::localhost(server.port()), TIMEOUT);
     bool const joined = connected && client.send(shared::encodeMessage(shared::JoinRequestMessage{
         .ch = '@', .mode = shared::WorldMode::Flight, .wants_previews = true,
