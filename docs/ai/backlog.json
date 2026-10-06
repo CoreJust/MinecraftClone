@@ -11657,5 +11657,47 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0339",
+    "title": "Keep server-only CTest validation focused",
+    "kind": "chore",
+    "status": "done",
+    "priority": "P1",
+    "route": "luna",
+    "milestone": "ED-010-S7",
+    "depends_on": [],
+    "acceptance": "The server-only wrapper configures with MC_BUILD_CLIENT=OFF and builds the entire mc_tests target, then runs exactly GameServerTest.JoinRepliesArePrivateAndNewPlayersReachExistingClients from nested CTest with --no-tests=error so a missing match fails. Platform wrapper timeouts remain 300 seconds on macOS and 900 seconds on Windows. The full release CTest phase retains --timeout 240 as its default (explicit per-test TIMEOUT properties override it) and uses a 2,400-second outer budget. Regression contract tests assert the nested selection, fail-closed option, and outer budget; focused workflow-context/ai_check suites pass.",
+    "evidence": "The original contract tests first failed against the old broad nested filter and 1,800-second phase limit. After narrowing nested execution and raising the outer budget, the two full focused suites passed 71/71 in 18.68 seconds; adding --no-tests=error first reproduced the missing fail-closed guard, then its contract test passed. ai_docs refresh/check and ai_tasks check passed.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0038",
+    "motivation": "Prevent redundant server-only CTest execution from exhausting the release gate time budget.",
+    "context": "The previous snapshot candidate spent its full 1,800-second CTest phase in MinecraftClone.ServerOnlyBuild after 572 outer tests had passed. That wrapper configures with MC_BUILD_CLIENT=OFF, builds the full mc_tests target, then redundantly reruns 310 nested tests already present in the outer suite; a measured run confirms that cannot fit its 300-second macOS timeout. Preserve the server-only configure/build, run one representative loopback join test instead of duplicating the suite, and size the outer CTest budget for the complete aggregate gate.",
+    "complexity": "medium",
+    "created_at": "2026-10-06",
+    "resolved_at": "2026-10-06",
+    "resolution_changes": "The nested server-only CTest builds all server-only mc_tests and runs only the loopback join contract with --no-tests=error; the outer CTest phase uses a 2,400-second budget and the 240-second default while retaining explicit TIMEOUT properties. Contract tests and workflow documentation cover these behaviors.",
+    "plan": [
+      "Clarify acceptance and implementation steps.",
+      "Reproduce the observed timeout and verify the server-only nested test inventory and runtimes.",
+      "Change nested CTest from the 310-case duplicate suite to one exact loopback client/server join test while continuing to build all server-only mc_tests.",
+      "Increase the outer CTest phase budget to 2,400 seconds while retaining the per-test timeout and wrapper platform limits.",
+      "Add contract assertions, run focused tests and the full candidate gate, then record evidence."
+    ],
+    "product_changes": [],
+    "code_changes": [
+      "tests/cmake/minecraftclone_server_only_test.cmake.in filters to the exact server/client loopback join test; script/ai_check.py uses a 2,400-second full CTest phase budget; test_workflow_contexts.py and test_ai_check.py protect those contracts; docs/ai/WORKFLOW.md and generated source state describe the resulting release gate.",
+      "Nested CTest now fails if the exact loopback join test is not registered; WORKFLOW.md accurately describes --timeout 240 as the default while preserving explicit test TIMEOUT properties.",
+      "Nested CTest fails when the exact loopback test is not registered; the workflow guide accurately distinguishes CTest default timeout from explicit test TIMEOUT properties."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]

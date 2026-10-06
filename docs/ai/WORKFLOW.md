@@ -49,6 +49,14 @@ up to 8–10 tasks with disjoint ownership. Run one full integration gate and
 required runtime checks per batch, then push. Reuse evidence only for unchanged
 inputs; avoid duplicate precommit checks and broad reviews.
 
+Full local, candidate, and strict CTest phases use a 240-second default test
+timeout within a 2,400-second phase budget; explicit per-test timeouts still
+apply. The nested `MinecraftClone.ServerOnlyBuild` check still configures
+without the client and builds all of `mc_tests`, then runs only
+`GameServerTest.JoinRepliesArePrivateAndNewPlayersReachExistingClients` and
+fails if that test is not registered. The outer suite already runs the
+remaining tests.
+
 After the main gameplay features of a snapshot are usable, launch the normal macOS candidate for the user's hands-on check before platform-CI work. User approval of that candidate may unlock the next snapshot's implementation in a separate task while the current snapshot finishes Windows/Android and artifact evidence; it does not authorize publication or mark the release complete.
 
 ## Snapshots and versions

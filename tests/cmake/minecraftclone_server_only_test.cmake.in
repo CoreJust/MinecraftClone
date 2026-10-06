@@ -65,7 +65,8 @@ set(
     "@MC_CTEST_COMMAND@"
     --test-dir "${test_root}/build"
     --output-on-failure
-    -E "^GameServerPreviewTest\\."
+    --no-tests=error
+    -R "^GameServerTest\\.JoinRepliesArePrivateAndNewPlayersReachExistingClients$"
 )
 if(nested_is_multi_config)
     list(APPEND test_command -C "${MC_TEST_CONFIGURATION}")
