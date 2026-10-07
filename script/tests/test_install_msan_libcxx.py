@@ -66,6 +66,236 @@ class InstallMsanLibcxxTests(unittest.TestCase):
         end = ir.index("\n}", start) + 2
         return ir[start:end]
 
+    def return_address_diagnostic_source(self):
+        patch = self.toolchain.LIBUNWIND_MSAN_PATCH.read_text(encoding="utf-8")
+        dwarf_patch = patch.split("diff --git a/libunwind/src/DwarfInstructions.hpp", 1)[1]
+        additions = "\n".join(
+            line[1:] for line in dwarf_patch.splitlines()
+            if line.startswith("+") and not line.startswith("+++")
+        )
+        guard = re.search(
+            r"#if defined\(__linux__\).*?\n#endif\n#endif", additions, re.DOTALL
+        ).group(0)
+        diagnostic = re.search(
+            r"#if defined\(_LIBUNWIND_MSAN_RA_DIAGNOSTIC\)\n"
+            r"      // Observe.*?\n#endif", additions, re.DOTALL
+        ).group(0)
+        memory_cases = "\n".join(
+            re.search(rf"  case CFI_Parser<A>::{rule}: \{{.*?\n  \}}", additions, re.DOTALL).group(0)
+            for rule in ("kRegisterInCFA", "kRegisterAtExpression")
+        )
+        declarations = (
+            "using uint64_t = __UINT64_TYPE__; using int64_t = __INT64_TYPE__;\n"
+            "using uint32_t = __UINT32_TYPE__; using int32_t = __INT32_TYPE__;\n"
+            "using uint8_t = __UINT8_TYPE__; using intptr_t = __INTPTR_TYPE__;\n"
+            "using uintptr_t = __UINTPTR_TYPE__; using off_t = int64_t;\n"
+            "#define PRIx64 __UINT64_FMTx__\n#define PRIu64 __UINT64_FMTu__\n"
+            "#define PRId64 __INT64_FMTd__\n#define PRIu32 __UINT32_FMTu__\n"
+            "#define PRId32 __INT32_FMTd__\n#define PRIu8 __UINT8_FMTu__\n"
+            "#define INT64_C(value) static_cast<int64_t>(value)\n"
+            "#define UINT32_C(value) static_cast<uint32_t>(value)\n"
+            "#define UINT64_C(value) static_cast<uint64_t>(value)\n"
+            "#define O_RDONLY 0\n#define O_CLOEXEC 1\n"
+            "extern \"C\" void* stderr;\n"
+            "extern \"C\" int fprintf(void*, const char*, ...);\n"
+            "extern \"C\" int32_t open(const char*, int32_t, ...);\n"
+            "extern \"C\" intptr_t pread(int32_t, void*, __SIZE_TYPE__, off_t);\n"
+            "extern \"C\" int32_t close(int32_t);\n"
+            "extern \"C\" intptr_t __msan_test_shadow(const void*, __SIZE_TYPE__);\n"
+            "extern \"C\" uint32_t __msan_get_origin(const void*);\n"
+            "using pint_t = uint64_t;\n"
+            "struct RegisterLocation { uint32_t location; int64_t value; };\n"
+            "struct Registers { pint_t ip; pint_t getIP() const { return ip; } };\n"
+            "static uint64_t saved = 0xabcdef;\n"
+        )
+        observer = (
+            "extern \"C\" uint64_t observe(uint64_t incoming, bool has_source) {\n"
+            "  pint_t pc = 0x1000, fdeStart = 0x2000, cfa = 0x3000;\n"
+            "  struct { pint_t pcStart, pcEnd; } fdeInfo{0x1000, 0x1100};\n"
+            "  struct { uint8_t returnAddressRegister; } cieInfo{16};\n"
+            "  struct { uint32_t cfaRegister; int32_t cfaRegisterOffset;\n"
+            "    int64_t cfaExpression; RegisterLocation savedRegisters[17];\n"
+            "  } prolog{7, 16, 0, {}};\n"
+            "  prolog.savedRegisters[16] = {2, -8};\n"
+            "  pint_t returnAddress = incoming;\n"
+            "  pint_t returnAddressSource = has_source ? reinterpret_cast<pint_t>(&saved) : 0;\n"
+            "  Registers registers{incoming};\n"
+            f"{diagnostic}\n"
+            "  if (returnAddress == 0) return 7;\n"
+            "  return registers.getIP();\n"
+            "}\n"
+        )
+        return guard, declarations, observer, memory_cases
+
+    def test_return_address_diagnostic_requires_linux_x86_64_msan(self):
+        compiler = shutil.which("clang++")
+        if compiler is None:
+            self.skipTest("Clang is required for diagnostic activation controls")
+        guard, _, _, _ = self.return_address_diagnostic_source()
+        guard = re.sub(r"#include <[^>]+>", "MSAN_INTERFACE_INCLUDED", guard)
+        source = guard + (
+            "\n#if defined(_LIBUNWIND_MSAN_RA_DIAGNOSTIC)\nRA_DIAGNOSTIC_ACTIVE\n#endif\n"
+        )
+        for target, flags, active in (
+            ("x86_64-pc-linux-gnu", ["-fsanitize=memory"], True),
+            ("x86_64-pc-linux-gnu", [], False),
+            ("aarch64-pc-linux-gnu", ["-fsanitize=memory"], False),
+            ("x86_64-apple-darwin", [], False),
+        ):
+            with self.subTest(target=target, flags=flags):
+                completed = subprocess.run(
+                    [compiler, "-E", "-P", f"--target={target}", *flags, "-x", "c++", "-"],
+                    input=source, text=True, capture_output=True, check=False,
+                )
+                self.assertEqual(completed.returncode, 0, completed.stderr)
+                self.assertEqual("RA_DIAGNOSTIC_ACTIVE" in completed.stdout, active)
+                self.assertEqual("MSAN_INTERFACE_INCLUDED" in completed.stdout, active)
+
+    def test_return_address_observation_preserves_state_and_captures_each_memory_source_once(self):
+        compiler = shutil.which("clang++")
+        if compiler is None:
+            self.skipTest("Clang is required for compiled diagnostic controls")
+        _, declarations, observer, memory_cases = self.return_address_diagnostic_source()
+        declarations = declarations.replace(
+            'extern "C" void* stderr;\nextern "C" int fprintf(void*, const char*, ...);\n',
+            "#include <stdio.h>\n",
+        )
+        source = "#define _LIBUNWIND_MSAN_RA_DIAGNOSTIC\n" + declarations + (
+            "static int32_t poisoned = 1, shadow_reads = 0, origin_reads = 0;\n"
+            "static int32_t read_mode = 0, kernel_reads = 0;\n"
+            "extern \"C\" intptr_t __msan_test_shadow(const void*, __SIZE_TYPE__ size) {\n"
+            "  ++shadow_reads;\n"
+            "  if (read_mode == 3 && shadow_reads == 1) return -1;\n"
+            "  return size == 8 ? (poisoned ? 3 : -1) : 99;\n"
+            "}\n"
+            "extern \"C\" uint32_t __msan_get_origin(const void*) {\n"
+            "  ++origin_reads; return 1234;\n"
+            "}\n"
+            "extern \"C\" int32_t open(const char*, int32_t, ...) { return read_mode == 2 ? -1 : 99; }\n"
+            "extern \"C\" intptr_t pread(int32_t fd, void* output, __SIZE_TYPE__ size, off_t) {\n"
+            "  ++kernel_reads;\n"
+            "  if (fd != 99 || size != 8) return -1;\n"
+            "  *static_cast<uint64_t*>(output) = 0x5dcafe;\n"
+            "  return read_mode == 1 ? 4 : 8;\n"
+            "}\n"
+            "extern \"C\" int32_t close(int32_t) { return 0; }\n"
+            "template<class A> struct CFI_Parser {\n"
+            "  enum { kRegisterInCFA = 2, kRegisterAtExpression = 6 };\n"
+            "};\n"
+            "struct AddressSpace { uint32_t reads = 0, evaluations = 0; pint_t last = 0;\n"
+            "  pint_t getRegister(pint_t source) { ++reads; last = source; return saved; }\n"
+            "};\n"
+            "pint_t evaluateExpression(pint_t expr, AddressSpace& addressSpace, int32_t, pint_t) {\n"
+            "  ++addressSpace.evaluations; return expr + 0x4000;\n"
+            "}\n"
+            "template<class A> pint_t restore(A& addressSpace, int32_t registers, pint_t cfa,\n"
+            "    RegisterLocation savedReg, pint_t* sourceAddress) {\n"
+            "  switch (savedReg.location) {\n"
+            f"{memory_cases}\n"
+            "    default: return 0;\n"
+            "  }\n"
+            "}\n"
+        ) + observer + (
+            "int main(int argc, char**) {\n"
+            "  poisoned = argc == 2 ? 0 : 1;\n"
+            "  read_mode = argc == 3 ? 1 : (argc == 5 ? 2 : (argc == 6 ? 3 : 0));\n"
+            "  const bool has_source = argc != 4;\n"
+            "  if (observe(saved, has_source) != saved || saved != 0xabcdef) return 1;\n"
+            "  if (shadow_reads != (poisoned ? (has_source ? 4 : 2) : 2)) return 2;\n"
+            "  if (origin_reads != (poisoned ? (has_source ? 4 : 2) : 0)) return 10;\n"
+            "  if (kernel_reads != (poisoned && read_mode != 2 ? 1 : 0)) return 11;\n"
+            "  AddressSpace addressSpace; pint_t sourceAddress = 0;\n"
+            "  if (restore(addressSpace, 0, 0x3000, {2, -8}, &sourceAddress) != saved) return 3;\n"
+            "  if (sourceAddress != 0x2ff8 || addressSpace.last != sourceAddress) return 4;\n"
+            "  if (restore(addressSpace, 0, 0x3000, {6, 32}, &sourceAddress) != saved) return 5;\n"
+            "  if (sourceAddress != 0x4020 || addressSpace.last != sourceAddress) return 6;\n"
+            "  if (addressSpace.reads != 2 || addressSpace.evaluations != 1) return 8;\n"
+            "  if (saved != 0xabcdef || poisoned != (argc == 2 ? 0 : 1)) return 9;\n"
+            "  return 0;\n"
+            "}\n"
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            executable = Path(directory) / "diagnostic-observation"
+            compiled = subprocess.run(
+                [compiler, "-std=c++17", "-Wall", "-Wextra", "-Werror", "-O1",
+                 "-x", "c++", "-", "-o", str(executable)],
+                input=source, text=True, capture_output=True, check=False,
+            )
+            self.assertEqual(compiled.returncode, 0, compiled.stderr)
+            poisoned = subprocess.run([str(executable)], text=True, capture_output=True, check=False)
+            clean = subprocess.run([str(executable), "clean"], text=True, capture_output=True, check=False)
+            short = subprocess.run([str(executable), "short", "read"], text=True, capture_output=True, check=False)
+            no_source = subprocess.run(
+                [str(executable), "no", "source", "slot"], text=True, capture_output=True, check=False,
+            )
+            no_memory = subprocess.run(
+                [str(executable), "cannot", "open", "process", "memory"],
+                text=True, capture_output=True, check=False,
+            )
+            poisoned_copy = subprocess.run(
+                [str(executable), "clean", "local", "poisoned", "copied", "ip"],
+                text=True, capture_output=True, check=False,
+            )
+        self.assertEqual(poisoned.returncode, 0, poisoned.stderr)
+        self.assertEqual(clean.returncode, 0, clean.stderr)
+        self.assertEqual(clean.stdout + clean.stderr, "")
+        self.assertEqual(poisoned.stdout, "")
+        self.assertEqual(len(poisoned.stderr.splitlines()), 1)
+        self.assertLess(len(poisoned.stderr), 1024)
+        for field in ("pc=0x1000", "fde=0x2000", "range=0x1000-0x1100", "cfa=0x3000",
+                      "cfa_reg=7", "cfa_offset=16", "ra_reg=16", "rule=2", "rule_value=-8",
+                      "width=8", "source_shadow=3", "source_origin=1234", "return_shadow=3",
+                      "source_shadow_after=3", "source_origin_after=1234",
+                      "return_origin=1234", "ip_shadow=3", "ip_origin=1234",
+                      "bits_read=8", "diagnostic_bits=0x5dcafe"):
+            self.assertIn(field, poisoned.stderr)
+        self.assertNotIn("abcdef", poisoned.stderr)
+        for failed_read, count in ((short, 4), (no_memory, -1)):
+            self.assertEqual(failed_read.returncode, 0, failed_read.stderr)
+            self.assertIn(f"bits_read={count} diagnostic_bits=0x0", failed_read.stderr)
+            self.assertIn("source_shadow_after=3 source_origin_after=1234", failed_read.stderr)
+            self.assertEqual(len(failed_read.stderr.splitlines()), 1)
+        self.assertEqual(no_source.returncode, 0, no_source.stderr)
+        self.assertIn("source=0x0", no_source.stderr)
+        self.assertIn("source_shadow=-2 source_origin=0", no_source.stderr)
+        self.assertIn("source_shadow_after=-2 source_origin_after=0", no_source.stderr)
+        self.assertIn("bits_read=8 diagnostic_bits=0x5dcafe", no_source.stderr)
+        with self.subTest("clean local return address and poisoned copied IP"):
+            self.assertEqual(poisoned_copy.returncode, 0, poisoned_copy.stderr)
+            self.assertEqual(poisoned_copy.stdout, "")
+            self.assertEqual(len(poisoned_copy.stderr.splitlines()), 1)
+            self.assertLess(len(poisoned_copy.stderr), 1024)
+            self.assertIn("return_shadow=-1", poisoned_copy.stderr)
+            self.assertIn("ip_shadow=3", poisoned_copy.stderr)
+            self.assertIn("source_shadow_after=3 source_origin_after=1234", poisoned_copy.stderr)
+
+    def test_return_address_diagnostic_keeps_msan_shadow_and_branch_checks(self):
+        _, declarations, observer, _ = self.return_address_diagnostic_source()
+        ir = self.compile_msan_ir(
+            "#define _LIBUNWIND_MSAN_RA_DIAGNOSTIC\n" + declarations + observer,
+            "-fno-sanitize-memory-param-retval",
+        )
+        observed = self.function_ir(ir, "observe")
+        self.assertIn("@__msan_test_shadow", observed)
+        self.assertIn("@__msan_get_origin", observed)
+        self.assertIn("@fprintf", observed)
+        self.assertIn("@__msan_warning_with_origin_noreturn", observed)
+        self.assertRegex(observed, r"store i64 %[^,]+, ptr @__msan_retval_tls")
+        self.assertNotRegex(observed, r"@__msan_(?:unpoison|poison|set_origin|set_keep_going)")
+        self.assertIn("sanitize_memory", ir)
+
+    def test_return_address_provenance_does_not_accept_positive_probe_failure(self):
+        diagnostic = (
+            "[libunwind-msan-ra] ra_reg=16 rule=2 source_shadow=3 bits_read=8\n"
+            "==6318==WARNING: MemorySanitizer: use-of-uninitialized-value\n"
+        )
+        message = self.assert_positive_probe_rejected(
+            subprocess.CompletedProcess([], 86, "", diagnostic)
+        )
+        self.assertIn("return code: 86", message)
+        self.assertIn("[libunwind-msan-ra]", message)
+        self.assertIn("emitted a sanitizer diagnostic", message)
+
     def prepare_verification_tree(self, root):
         prefix = root / "prefix"
         include_dir = prefix / "include/c++/v1"
