@@ -2,7 +2,6 @@
 #include <core/macro/Compiler.hpp>
 #include <core/macro/Count.hpp>
 #include <core/macro/LanguageVersion.hpp>
-#include <core/macro/OS.hpp>
 
 #include <gtest/gtest.h>
 

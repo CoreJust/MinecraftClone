@@ -112,7 +112,7 @@ class WorkflowContextTests(unittest.TestCase):
         self.assertIn("fetch-private-dependencies", desktop)
         self.assertIn("install-private-dependencies", desktop)
 
-    def test_sanitizer_jobs_using_private_dependencies_run_only_on_ai_main(self):
+    def test_sanitizer_jobs_keep_exact_event_guards(self):
         workflow = WORKFLOWS[0].read_text(encoding="utf-8")
         job_headers = list(re.finditer(r"(?m)^  ([a-z][a-z0-9-]*):\s*$", workflow))
         jobs = {
@@ -124,7 +124,10 @@ class WorkflowContextTests(unittest.TestCase):
             for index, match in enumerate(job_headers)
         }
         job_conditions = {
-            "linux-analysis": "github.event_name == 'push' && github.ref == 'refs/heads/ai-main'",
+            "linux-analysis": (
+                "(github.event_name == 'push' && github.ref == 'refs/heads/ai-main') "
+                "|| (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/ai-dev')"
+            ),
             "android-hwasan-build": "github.event_name == 'push' && github.ref == 'refs/heads/ai-main'",
             "android-hwasan-runtime": "github.event_name == 'push' && github.ref == 'refs/heads/ai-main'",
             "analysis-matrix": "always() && github.event_name == 'push' && github.ref == 'refs/heads/ai-main'",
@@ -135,6 +138,21 @@ class WorkflowContextTests(unittest.TestCase):
                 condition_match = re.search(r"(?m)^    if: (.+)$", jobs[job_name])
                 self.assertIsNotNone(condition_match, job_name)
                 self.assertEqual(condition_match.group(1), condition)
+
+    def test_android_emulator_enables_documented_software_acceleration_opt_in(self):
+        workflow = WORKFLOWS[0].read_text(encoding="utf-8")
+        runtime_job = workflow.split("\n  android-hwasan-runtime:", maxsplit=1)[1].split(
+            "\n  analysis-matrix:", maxsplit=1
+        )[0]
+        emulator_step = runtime_job.split(
+            "      - name: Start matching ARM64 Android emulator\n", maxsplit=1
+        )[1].split("      - name:", maxsplit=1)[0]
+
+        self.assertRegex(
+            emulator_step,
+            r"(?m)^        env:\n          ANDROID_I_WANT_MY_TCG: 'yes'\n        run:",
+        )
+        self.assertIn('"$emulator_bin" -avd mc-hwasan -accel off', emulator_step)
 
     def test_linux_sanitizer_bootstrap_uses_published_ninja_wheel(self):
         workflow = WORKFLOWS[0].read_text(encoding="utf-8")

@@ -263,6 +263,13 @@ class AnalysisMatrixTests(unittest.TestCase):
             receipt_path = Path(directory) / "row.json"
             row = self.manifest["rows"][0]
             row["platform"] = self.matrix._host_platform()
+
+            successful_output = "x" * 16_385 + "successful output tail"
+
+            def successful_command(argv, **kwargs):
+                output = successful_output if argv[:2] == ["cmake", "--preset"] else "tool output"
+                return self.matrix.subprocess.CompletedProcess(argv, 0, output, "")
+
             with mock.patch.object(self.matrix, "require_clean_checkout"), mock.patch.object(
                 self.matrix,
                 "capture_effective_compile_flags",
@@ -278,7 +285,7 @@ class AnalysisMatrixTests(unittest.TestCase):
             ), mock.patch.object(
                 self.matrix.subprocess,
                 "run",
-                return_value=self.matrix.subprocess.CompletedProcess([], 0, "tool output", ""),
+                side_effect=successful_command,
             ):
                 receipt = self.matrix.run_row(
                     row["id"], receipt_path, MANIFEST_PATH, root=REPOSITORY, expected_candidate=CANDIDATE
@@ -288,8 +295,97 @@ class AnalysisMatrixTests(unittest.TestCase):
             self.assertEqual(result["commands"], row["commands"])
             self.assertEqual(result["environment"], row.get("environment", {}))
             self.assertIn("tool output", result["diagnostics"])
+            self.assertIn("[output truncated by analysis-matrix]", result["diagnostics"])
+            self.assertNotIn("successful output tail", result["diagnostics"])
             self.assertEqual(len(result["executed_commands"]), len(row["commands"]))
             self.assertEqual(result["executed_commands"][0]["return_code"], 0)
+            self.assertEqual(
+                result["executed_commands"][0]["output_bytes"],
+                len(successful_output.encode("utf-8")),
+            )
+            self.assertEqual(
+                result["executed_commands"][0]["output_sha256"],
+                hashlib.sha256(successful_output.encode("utf-8")).hexdigest(),
+            )
+
+    def test_row_runner_retains_complete_failed_command_diagnostics(self):
+        with tempfile.TemporaryDirectory() as directory:
+            receipt_path = Path(directory) / "row.json"
+            row = self.manifest["rows"][0]
+            row["platform"] = self.matrix._host_platform()
+            stdout = "x" * 17_000 + "\nclang: error: trailing sanitizer build failure\n"
+            stderr = "ninja: build stopped: subcommand failed\n"
+            command_output = stdout + stderr
+            probe_results = [
+                self.matrix.subprocess.CompletedProcess(probe, 0, "tool 1.0\n", "")
+                for probe in row["tool_probes"]
+            ]
+            probe_results.append(self.matrix.subprocess.CompletedProcess([], 1, stdout, stderr))
+
+            with mock.patch.object(self.matrix, "require_clean_checkout"), mock.patch.object(
+                self.matrix,
+                "_row_supported_on_host",
+                return_value=True,
+            ), mock.patch.object(
+                self.matrix.subprocess,
+                "run",
+                side_effect=probe_results,
+            ):
+                self.matrix.run_row(
+                    row["id"], receipt_path, MANIFEST_PATH, root=REPOSITORY, expected_candidate=CANDIDATE
+                )
+
+            result = json.loads(receipt_path.read_text(encoding="utf-8"))["rows"][0]
+            self.assertEqual(result["status"], "failed")
+            self.assertIn(command_output, result["diagnostics"])
+            self.assertIn("clang: error: trailing sanitizer build failure", result["diagnostics"])
+            self.assertEqual(len(result["executed_commands"]), 1)
+            execution = result["executed_commands"][0]
+            self.assertEqual(execution["return_code"], 1)
+            self.assertEqual(execution["output_bytes"], len(command_output.encode("utf-8")))
+            self.assertEqual(
+                execution["output_sha256"],
+                hashlib.sha256(command_output.encode("utf-8")).hexdigest(),
+            )
+
+    def test_row_runner_retains_partial_timeout_diagnostics(self):
+        with tempfile.TemporaryDirectory() as directory:
+            receipt_path = Path(directory) / "row.json"
+            row = self.manifest["rows"][0]
+            row["platform"] = self.matrix._host_platform()
+            partial_stdout = b"x" * 17_000 + b"\nclang: error: sanitizer build timed out\n\xff"
+            partial_stderr = "ninja: still waiting for a stopped job\n"
+            timeout_error = self.matrix.subprocess.TimeoutExpired(
+                row["commands"][0], 30, output=partial_stdout, stderr=partial_stderr
+            )
+            probe_results = [
+                self.matrix.subprocess.CompletedProcess(probe, 0, "tool 1.0\n", "")
+                for probe in row["tool_probes"]
+            ]
+            probe_results.append(timeout_error)
+
+            with mock.patch.object(self.matrix, "require_clean_checkout"), mock.patch.object(
+                self.matrix,
+                "_row_supported_on_host",
+                return_value=True,
+            ), mock.patch.object(
+                self.matrix.subprocess,
+                "run",
+                side_effect=probe_results,
+            ):
+                self.matrix.run_row(
+                    row["id"], receipt_path, MANIFEST_PATH, root=REPOSITORY, expected_candidate=CANDIDATE
+                )
+
+            result = json.loads(receipt_path.read_text(encoding="utf-8"))["rows"][0]
+            self.assertEqual(result["status"], "failed")
+            self.assertIn(
+                partial_stdout.decode("utf-8", errors="replace") + partial_stderr,
+                result["diagnostics"],
+            )
+            self.assertIn("clang: error: sanitizer build timed out", result["diagnostics"])
+            self.assertIn("\ufffd", result["diagnostics"])
+            self.assertEqual(result["executed_commands"], [])
 
     def test_hosted_rows_reject_a_candidate_that_differs_from_the_checkout(self):
         with mock.patch.object(self.matrix, "candidate_identity", return_value={"head": "c" * 40, "tree": TREE}):

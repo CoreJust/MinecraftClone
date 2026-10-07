@@ -13,17 +13,22 @@ vcpkg_download_distfile(
     SHA512 e85a0dab5195889948a3462189f0e0598d331d3457612e2d3350799dba2e244316d256f8161df5219538eb003e4b5343f989aaa00f96321559063ed8c8f29fd2
 )
 
+set(GMP_PATCHES
+    asmflags.patch
+    cross-tools.patch
+    subdirs.patch
+    msvc_symbol.patch
+    arm64-coff.patch
+    remove_compiler_info.patch
+    c23.patch
+)
+if(TARGET_TRIPLET STREQUAL "x64-linux-msan")
+    list(APPEND GMP_PATCHES msan-cxx-ldflags.patch)
+endif()
 vcpkg_extract_source_archive(SOURCE_PATH
     ARCHIVE "${ARCHIVE}"
     SOURCE_BASE "v${VERSION}"
-    PATCHES
-        asmflags.patch
-        cross-tools.patch
-        subdirs.patch
-        msvc_symbol.patch
-        arm64-coff.patch
-        remove_compiler_info.patch
-        c23.patch
+    PATCHES ${GMP_PATCHES}
 )
 
 vcpkg_list(SET OPTIONS)
@@ -40,6 +45,10 @@ if(VCPKG_TARGET_IS_WINDOWS AND NOT VCPKG_TARGET_IS_MINGW)
 endif()
 
 set(disable_assembly OFF)
+if(TARGET_TRIPLET STREQUAL "x64-linux-msan")
+    # MSan must instrument GMP's writes to its limb buffers.
+    set(disable_assembly ON)
+endif()
 set(ccas "")
 set(asmflags "-c")
 vcpkg_cmake_get_vars(cmake_vars_file)

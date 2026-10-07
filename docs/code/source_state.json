@@ -31,7 +31,7 @@
         "tests/acceptance/runtime_cli_tests.cmake",
         "tests/acceptance/scenario_runner_tests.cpp"
       ],
-      "sources_sha256": "42075a12ecbe2e062b974cf0506fb29cc716f82434e35f309d7e9804bb62e0ff"
+      "sources_sha256": "9743c581d01a6a5efa52e44e45a1f02deb1fc573445b8da4d7f01dfb41d14060"
     },
     {
       "guide": "docs/code/ANDROID.md",
@@ -55,7 +55,7 @@
     },
     {
       "guide": "docs/BUILD.md",
-      "guide_sha256": "ff040ce8d3a4ad92547b923707d3422731c18aea373354dfc9409eda6faa67c2",
+      "guide_sha256": "23dbbe0b2444fdfa0af4ecbb435d8f9598578765d9eb94258cb9edb9b51e4122",
       "id": "build",
       "sources": [
         ".agents/skills/backlog/SKILL.md",
@@ -147,6 +147,7 @@
         "script/tests/test_pre_finalization_candidate.py",
         "script/tests/test_release_guard.py",
         "script/tests/test_runtime_cli.py",
+        "script/tests/test_vcpkg_clang_toolchain.py",
         "script/tests/test_verify_analysis_gate.py",
         "script/tests/test_verify_android_hwasan.py",
         "script/tests/test_verify_release_assets.py",
@@ -163,7 +164,7 @@
         "vcpkg-configuration.json",
         "vcpkg.json"
       ],
-      "sources_sha256": "5902c1a08cecd832fbff5b7089a517122d0bdd9473b3c147ca810e1e7837675a"
+      "sources_sha256": "88a36d605986bc632e49fc2768795f4b40a04d532ddc271c45f00fb605b5dbee"
     },
     {
       "guide": "docs/code/CORE.md",
@@ -196,7 +197,7 @@
         "tests/core/vector_utils_tests.cpp",
         "tests/core/version_tests.cpp"
       ],
-      "sources_sha256": "1de99c3f10f2b326fe729446b6237d509f4842f89845ad0a04fd9f18a9234c24"
+      "sources_sha256": "3e3354298366e2204486fa41f2c43970ade5cd8e200cfe1679e20194773f29cb"
     },
     {
       "guide": "docs/code/GAMEPLAY.md",

@@ -1,0 +1,405 @@
+diff --git a/libunwind/src/CMakeLists.txt b/libunwind/src/CMakeLists.txt
+--- a/libunwind/src/CMakeLists.txt
++++ b/libunwind/src/CMakeLists.txt
+@@ -25,7 +25,14 @@
+ set(LIBUNWIND_ASM_SOURCES
+     UnwindRegistersRestore.S
+     UnwindRegistersSave.S
+     )
++if (CMAKE_SYSTEM_NAME STREQUAL "Linux"
++    AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64)$"
++    AND LLVM_USE_SANITIZER MATCHES "^Memory(WithOrigins)?$")
++  set_property(SOURCE UnwindRegistersSave.S APPEND PROPERTY COMPILE_DEFINITIONS
++    _LIBUNWIND_MSAN_X86_64
++  )
++endif()
+-
++
+ set(LIBUNWIND_HEADERS
+     AddressSpace.hpp
+@@ -198,5 +205,14 @@
+     CXX_STANDARD_REQUIRED ON
+     COMPILE_FLAGS "${LIBUNWIND_COMPILE_FLAGS}"
+ )
+-
++
++if (CMAKE_SYSTEM_NAME STREQUAL "Linux"
++    AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64)$"
++    AND LLVM_USE_SANITIZER MATCHES "^Memory(WithOrigins)?$")
++  # Preserve shadow/origin transport for opaque values crossing libunwind's C++ ABI.
++  target_compile_options(unwind_shared_objects PRIVATE
++    "$<$<COMPILE_LANGUAGE:CXX>:-fno-sanitize-memory-param-retval>")
++  target_compile_options(unwind_static_objects PRIVATE
++    "$<$<COMPILE_LANGUAGE:CXX>:-fno-sanitize-memory-param-retval>")
++endif()
+ if(LIBUNWIND_HIDE_SYMBOLS)
+diff --git a/libunwind/src/UnwindRegistersSave.S b/libunwind/src/UnwindRegistersSave.S
+--- a/libunwind/src/UnwindRegistersSave.S
++++ b/libunwind/src/UnwindRegistersSave.S
+@@ -126,4 +126,11 @@
+   movdqu %xmm15,416(PTR)
+ #endif
++#if defined(_LIBUNWIND_MSAN_X86_64) && defined(__linux__) && defined(__x86_64__)
++  // The 17 saved qwords stop at RIP; skipped flags and segments stay poisoned.
++  subq  $8, %rsp
++  movq  $136, %rsi
++  call  __msan_unpoison
++  addq  $8, %rsp
++#endif
+   xorl  %eax, %eax    # return UNW_ESUCCESS
+   ret
+
+diff --git a/libunwind/src/AddressSpace.hpp b/libunwind/src/AddressSpace.hpp
+--- a/libunwind/src/AddressSpace.hpp
++++ b/libunwind/src/AddressSpace.hpp
+@@ -603,6 +603,13 @@
+   // support for _dl_find_object on other unwind formats is not implemented,
+   // yet.
+ #if defined(DLFO_STRUCT_HAS_EH_DBASE) & defined(_LIBUNWIND_SUPPORT_DWARF_INDEX)
++// MSan intercepts dl_iterate_phdr, but not glibc's _dl_find_object.
++#if defined(__has_feature)
++#if __has_feature(memory_sanitizer)
++#define _LIBUNWIND_MSAN_USE_DL_ITERATE_PHDR
++#endif
++#endif
++#if !defined(_LIBUNWIND_MSAN_USE_DL_ITERATE_PHDR)
+   // We expect `_dl_find_object` to return PT_GNU_EH_FRAME.
+ #if DLFO_EH_SEGMENT_TYPE != PT_GNU_EH_FRAME
+ #error _dl_find_object retrieves an unexpected section type
+@@ -650,7 +657,9 @@
+     info.dwarf_section_length = SIZE_MAX;
+     return true;
+   }
+ #endif
++#endif
++#undef _LIBUNWIND_MSAN_USE_DL_ITERATE_PHDR
+   dl_iterate_cb_data cb_data = {this, &info, targetAddr};
+   int found = dl_iterate_phdr(findUnwindSectionsByPhdr, &cb_data);
+   return static_cast<bool>(found);
+diff --git a/libunwind/src/DwarfInstructions.hpp b/libunwind/src/DwarfInstructions.hpp
+--- a/libunwind/src/DwarfInstructions.hpp
++++ b/libunwind/src/DwarfInstructions.hpp
+@@ -22,6 +22,31 @@
+ #include "dwarf2.h"
+ #include "libunwind_ext.h"
+
++#if defined(__linux__) && defined(__x86_64__) && defined(__has_feature)
++#if __has_feature(memory_sanitizer)
++#include "AddressSpace.hpp"
++#include <fcntl.h>
++#include <sanitizer/msan_interface.h>
++#include <unistd.h>
++#define _LIBUNWIND_MSAN_RA_DIAGNOSTIC
++#endif
++#endif
+
+ namespace libunwind {
++
++#if defined(_LIBUNWIND_MSAN_RA_DIAGNOSTIC)
++template <typename A>
++inline void msanImportCFISpill(A &, typename A::pint_t &, int32_t, bool) {}
++
++#if __SIZEOF_POINTER__ == 8
++inline void msanImportCFISpill(LocalAddressSpace &, LocalAddressSpace::pint_t &value,
++                               int32_t destination, bool nativeSpillFrame) {
++  if (nativeSpillFrame &&
++      (destination == 3 || destination == 6 || (destination >= 12 && destination <= 16))) {
++    // ABI spill payload is trusted; only this private copy crosses the boundary.
++    __msan_unpoison(&value, 8);
++  }
++}
++#endif
++#endif
+
+@@ -56,7 +81,12 @@
+                                    const R &registers,
+                                    pint_t initialStackValue);
+   static pint_t getSavedRegister(A &addressSpace, const R &registers,
+-                                 pint_t cfa, const RegisterLocation &savedReg);
++                                 pint_t cfa, const RegisterLocation &savedReg
++#if defined(_LIBUNWIND_MSAN_RA_DIAGNOSTIC)
++                                 , pint_t *sourceAddress = nullptr,
++                                 int32_t destinationRegister = -1, bool nativeSpillFrame = false
++#endif
++                                 );
+   static double getSavedFloatRegister(A &addressSpace, const R &registers,
+                                   pint_t cfa, const RegisterLocation &savedReg);
+   static v128 getSavedVectorRegister(A &addressSpace, const R &registers,
+@@ -90,18 +120,40 @@
+ template <typename A, typename R>
+ typename A::pint_t DwarfInstructions<A, R>::getSavedRegister(
+     A &addressSpace, const R &registers, pint_t cfa,
+-    const RegisterLocation &savedReg) {
++    const RegisterLocation &savedReg
++#if defined(_LIBUNWIND_MSAN_RA_DIAGNOSTIC)
++    , pint_t *sourceAddress, int32_t destinationRegister, bool nativeSpillFrame
++#endif
++    ) {
+   switch (savedReg.location) {
+-  case CFI_Parser<A>::kRegisterInCFA:
+-    return (pint_t)addressSpace.getRegister(cfa + (pint_t)savedReg.value);
++  case CFI_Parser<A>::kRegisterInCFA: {
++    const pint_t source = cfa + (pint_t)savedReg.value;
++#if defined(_LIBUNWIND_MSAN_RA_DIAGNOSTIC)
++    if (sourceAddress != nullptr) {
++      *sourceAddress = source;
++    }
++#endif
++    pint_t value = (pint_t)addressSpace.getRegister(source);
++#if defined(_LIBUNWIND_MSAN_RA_DIAGNOSTIC)
++    msanImportCFISpill(addressSpace, value, destinationRegister, nativeSpillFrame);
++#endif
++    return value;
++  }
+
+   case CFI_Parser<A>::kRegisterInCFADecrypt: // sparc64 specific
+     return (pint_t)(addressSpace.getP(cfa + (pint_t)savedReg.value) ^
+            getSparcWCookie(registers, 0));
+
+-  case CFI_Parser<A>::kRegisterAtExpression:
+-    return (pint_t)addressSpace.getRegister(evaluateExpression(
+-        (pint_t)savedReg.value, addressSpace, registers, cfa));
++  case CFI_Parser<A>::kRegisterAtExpression: {
++    const pint_t source = evaluateExpression(
++        (pint_t)savedReg.value, addressSpace, registers, cfa);
++#if defined(_LIBUNWIND_MSAN_RA_DIAGNOSTIC)
++    if (sourceAddress != nullptr) {
++      *sourceAddress = source;
++    }
++#endif
++    return (pint_t)addressSpace.getRegister(source);
++  }
+
+   case CFI_Parser<A>::kRegisterIsExpression:
+     return evaluateExpression((pint_t)savedReg.value, addressSpace,
+@@ -246,6 +298,9 @@
+       newRegisters.setSP(cfa);
+
+       pint_t returnAddress = 0;
++#if defined(_LIBUNWIND_MSAN_RA_DIAGNOSTIC)
++      pint_t returnAddressSource = 0;
++#endif
+       constexpr int lastReg = R::lastDwarfRegNum();
+       static_assert(static_cast<int>(CFI_Parser<A>::kMaxRegisterNumber) >=
+                         lastReg,
+@@ -255,6 +310,128 @@
+       for (int i = 0; i <= lastReg; ++i) {
+         if (prolog.savedRegisters[i].location !=
+             CFI_Parser<A>::kRegisterUnused) {
++#if defined(_LIBUNWIND_MSAN_RA_DIAGNOSTIC)
++          if (R::getArch() == REGISTERS_X86_64) {
++            struct RestoreRecord {
++              bool valid;
++              uint8_t signal, returnReg;
++              uint64_t pc, fde, start, end, cfa, source, value, ruleBits;
++              uint32_t cfaReg, location, origin, originAfter;
++              int32_t cfaOffset;
++              int64_t cfaExpr, cfaRead, sourceRead, valueRead, ruleRead, shadow, shadowAfter;
++            };
++            static thread_local RestoreRecord lastRestore[7] = {};
++            static thread_local bool emittedAddress = false;
++            const auto eligibleIndex = [](uint32_t reg) -> int32_t {
++              return reg == 3 ? 0 : reg == 6 ? 1 : reg >= 12 && reg <= 16 ? reg - 10 : -1;
++            };
++            const RegisterLocation &rule = prolog.savedRegisters[i];
++            const int32_t destinationIndex = eligibleIndex(static_cast<uint32_t>(i));
++            if (rule.location == CFI_Parser<A>::kRegisterInCFA) {
++              const pint_t source = cfa + (pint_t)rule.value;
++              const intptr_t addressShadow = __msan_test_shadow(&source, sizeof(source));
++              const uint32_t addressOrigin = __msan_get_origin(&source);
++              const intptr_t valueShadow = addressShadow == -1 && destinationIndex >= 0
++                  ? __msan_test_shadow(reinterpret_cast<const void *>(source), sizeof(source)) : -2;
++              const bool addressFailure = addressShadow >= 0 && !emittedAddress;
++              if (addressFailure || valueShadow >= 0) {
++                const int32_t memoryFD = open("/proc/self/mem", O_RDONLY | O_CLOEXEC);
++                auto readBits = [memoryFD](const void *storage, uint64_t &bits) -> int64_t {
++                  uint64_t copy = 0;
++                  const int64_t count = memoryFD < 0 ? INT64_C(-1)
++                      : pread(memoryFD, &copy, sizeof(copy),
++                              static_cast<off_t>(reinterpret_cast<uintptr_t>(storage)));
++                  bits = count == static_cast<int64_t>(sizeof(copy)) ? copy : UINT64_C(0);
++                  return count;
++                };
++                const pint_t base = prolog.cfaExpression == 0 ? registers.getRegister(prolog.cfaRegister) : 0;
++                uint64_t cfaBits = 0, baseBits = 0, sourceBits = 0, valueBits = 0, ruleBits = 0;
++                const int64_t cfaRead = readBits(&cfa, cfaBits);
++                const int64_t baseRead = readBits(&base, baseBits);
++                const int64_t sourceRead = readBits(&source, sourceBits);
++                const int64_t ruleRead = readBits(&rule.value, ruleBits);
++                const void *observedSource = sourceRead == static_cast<int64_t>(sizeof(source))
++                    ? reinterpret_cast<const void *>(static_cast<uintptr_t>(sourceBits)) : nullptr;
++                const int64_t dataShadow = observedSource == nullptr ? INT64_C(-2)
++                    : __msan_test_shadow(observedSource, sizeof(valueBits));
++                const uint32_t dataOrigin = observedSource == nullptr ? UINT32_C(0)
++                    : __msan_get_origin(observedSource);
++                const int64_t valueRead = observedSource == nullptr ? INT64_C(-1) : readBits(observedSource, valueBits);
++                const int64_t dataShadowAfter = observedSource == nullptr ? INT64_C(-2)
++                    : __msan_test_shadow(observedSource, sizeof(valueBits));
++                const uint32_t dataOriginAfter = observedSource == nullptr ? UINT32_C(0)
++                    : __msan_get_origin(observedSource);
++                if (memoryFD >= 0) {
++                  close(memoryFD);
++                }
++                if (addressFailure) {
++                  emittedAddress = true;
++                  const int32_t baseIndex = prolog.cfaExpression == 0 ? eligibleIndex(prolog.cfaRegister) : -1;
++                  const RestoreRecord empty = {};
++                  const RestoreRecord &prior = baseIndex >= 0 ? lastRestore[baseIndex] : empty;
++                  const bool baseMatches = prior.valid && prior.valueRead == 8 && baseRead == 8
++                      && prior.value == baseBits;
++                  fprintf(stderr,
++                          "[libunwind-msan-cfa-prior] valid=%" PRIu32 " base_matches=%" PRIu32
++                          " signal=%" PRIu8 " ra_reg=%" PRIu8 " reg=%" PRIu32
++                          " pc=0x%" PRIx64 " fde=0x%" PRIx64 " range=0x%" PRIx64 "-0x%" PRIx64
++                          " cfa_reg=%" PRIu32 " cfa_offset=%" PRId32 " cfa_expr=0x%" PRIx64
++                          " rule=%" PRIu32 " rule_bits=0x%" PRIx64 " rule_read=%" PRId64
++                          " cfa_read=%" PRId64 " cfa_bits=0x%" PRIx64
++                          " source_read=%" PRId64 " source_bits=0x%" PRIx64
++                          " value_shadow=%" PRId64 " value_origin=%" PRIu32
++                          " value_shadow_after=%" PRId64 " value_origin_after=%" PRIu32
++                          " value_read=%" PRId64 " value_bits=0x%" PRIx64 "\n",
++                          static_cast<uint32_t>(prior.valid), static_cast<uint32_t>(baseMatches),
++                          prior.signal, prior.returnReg, prolog.cfaRegister,
++                          prior.pc, prior.fde, prior.start, prior.end, prior.cfaReg, prior.cfaOffset,
++                          static_cast<uint64_t>(prior.cfaExpr), prior.location, prior.ruleBits, prior.ruleRead,
++                          prior.cfaRead, prior.cfa, prior.sourceRead, prior.source,
++                          prior.shadow, prior.origin, prior.shadowAfter, prior.originAfter, prior.valueRead, prior.value);
++                  fprintf(stderr,
++                          "[libunwind-msan-cfa] arch=%" PRId32 " signal=%" PRIu8 " ra_reg=%" PRIu8
++                          " pc=0x%" PRIx64 " fde=0x%" PRIx64 " range=0x%" PRIx64 "-0x%" PRIx64
++                          " reg=%" PRId32 " cfa_reg=%" PRIu32 " cfa_offset=%" PRId32 " cfa_expr=0x%" PRIx64
++                          " rule=%" PRIu32 " rule_bits=0x%" PRIx64 " rule_read=%" PRId64
++                          " cfa_shadow=%" PRId64 " cfa_origin=%" PRIu32
++                          " base_shadow=%" PRId64 " base_origin=%" PRIu32
++                          " address_shadow=%" PRId64 " address_origin=%" PRIu32
++                          " address_shadow_after=%" PRId64 " address_origin_after=%" PRIu32
++                          " cfa_read=%" PRId64 " cfa_bits=0x%" PRIx64
++                          " base_read=%" PRId64 " base_bits=0x%" PRIx64
++                          " source_read=%" PRId64 " source_bits=0x%" PRIx64
++                          " value_shadow=%" PRId64 " value_origin=%" PRIu32
++                          " value_shadow_after=%" PRId64 " value_origin_after=%" PRIu32
++                          " value_read=%" PRId64 " value_bits=0x%" PRIx64 "\n",
++                          static_cast<int32_t>(R::getArch()), static_cast<uint8_t>(cieInfo.isSignalFrame),
++                          cieInfo.returnAddressRegister, static_cast<uint64_t>(pc), static_cast<uint64_t>(fdeStart),
++                          static_cast<uint64_t>(fdeInfo.pcStart), static_cast<uint64_t>(fdeInfo.pcEnd), i,
++                          prolog.cfaRegister, prolog.cfaRegisterOffset, static_cast<uint64_t>(prolog.cfaExpression),
++                          static_cast<uint32_t>(rule.location), ruleBits, ruleRead,
++                          static_cast<int64_t>(__msan_test_shadow(&cfa, sizeof(cfa))), __msan_get_origin(&cfa),
++                          static_cast<int64_t>(__msan_test_shadow(&base, sizeof(base))), __msan_get_origin(&base),
++                          static_cast<int64_t>(addressShadow), addressOrigin,
++                          static_cast<int64_t>(__msan_test_shadow(&source, sizeof(source))), __msan_get_origin(&source),
++                          cfaRead, cfaBits, baseRead, baseBits, sourceRead, sourceBits,
++                          dataShadow, dataOrigin, dataShadowAfter, dataOriginAfter, valueRead, valueBits);
++                } else {
++                  lastRestore[destinationIndex] = {
++                      true, static_cast<uint8_t>(cieInfo.isSignalFrame), cieInfo.returnAddressRegister,
++                      static_cast<uint64_t>(pc), static_cast<uint64_t>(fdeStart),
++                      static_cast<uint64_t>(fdeInfo.pcStart), static_cast<uint64_t>(fdeInfo.pcEnd),
++                      cfaBits, sourceBits, valueBits, ruleBits, prolog.cfaRegister,
++                      static_cast<uint32_t>(rule.location), dataOrigin, dataOriginAfter, prolog.cfaRegisterOffset,
++                      prolog.cfaExpression, cfaRead, sourceRead, valueRead, ruleRead, dataShadow, dataShadowAfter
++                  };
++                }
++              } else if (destinationIndex >= 0) {
++                lastRestore[destinationIndex] = {};
++              }
++            } else if (destinationIndex >= 0) {
++              lastRestore[destinationIndex] = {};
++            }
++          }
++#endif
+           if (registers.validFloatRegister(i))
+             newRegisters.setFloatRegister(
+                 i, getSavedFloatRegister(addressSpace, registers, cfa,
+@@ -263,12 +440,25 @@
+             newRegisters.setVectorRegister(
+                 i, getSavedVectorRegister(addressSpace, registers, cfa,
+                                           prolog.savedRegisters[i]));
+-          else if (i == (int)cieInfo.returnAddressRegister)
++          else if (i == (int)cieInfo.returnAddressRegister) {
+             returnAddress = getSavedRegister(addressSpace, registers, cfa,
+-                                             prolog.savedRegisters[i]);
++                                             prolog.savedRegisters[i]
++#if defined(_LIBUNWIND_MSAN_RA_DIAGNOSTIC)
++                                             , &returnAddressSource, i,
++                                             R::getArch() == REGISTERS_X86_64 && !cieInfo.isSignalFrame
++                                                 && cieInfo.returnAddressRegister == 16 && prolog.cfaExpression == 0
++#endif
++                                             );
++          }
+           else if (registers.validRegister(i))
+             newRegisters.setRegister(
+                 i, getSavedRegister(addressSpace, registers, cfa,
+-                                    prolog.savedRegisters[i]));
++                                    prolog.savedRegisters[i]
++#if defined(_LIBUNWIND_MSAN_RA_DIAGNOSTIC)
++                                    , nullptr, i,
++                                    R::getArch() == REGISTERS_X86_64 && !cieInfo.isSignalFrame
++                                        && cieInfo.returnAddressRegister == 16 && prolog.cfaExpression == 0
++#endif
++                                    ));
+           else
+             return UNW_EBADREG;
+@@ -369,6 +559,55 @@
+
+       // Simulate the step by replacing the register set with the new ones.
+       registers = newRegisters;
++
++#if defined(_LIBUNWIND_MSAN_RA_DIAGNOSTIC)
++      // Observe storage shadow; never consume poisoned control-flow bits here.
++      const intptr_t returnShadow = __msan_test_shadow(&returnAddress, sizeof(returnAddress));
++      pint_t restoredIP = registers.getIP();
++      const intptr_t ipShadow = __msan_test_shadow(&restoredIP, sizeof(restoredIP));
++      if (returnShadow >= 0 || ipShadow >= 0) {
++        const RegisterLocation &rule = prolog.savedRegisters[cieInfo.returnAddressRegister];
++        const void *source = reinterpret_cast<const void *>(returnAddressSource);
++        const int64_t sourceShadow = source == nullptr
++            ? INT64_C(-2) : static_cast<int64_t>(__msan_test_shadow(source, sizeof(returnAddress)));
++        const uint32_t sourceOrigin = source == nullptr ? UINT32_C(0) : __msan_get_origin(source);
++        uint64_t diagnosticBits = 0;
++        int64_t bitsRead = -1;
++        const void *bitsSource = source == nullptr ? &returnAddress : source;
++        const int32_t memoryFD = open("/proc/self/mem", O_RDONLY | O_CLOEXEC);
++        if (memoryFD >= 0) {
++          bitsRead = pread(memoryFD, &diagnosticBits, sizeof(diagnosticBits),
++                           static_cast<off_t>(reinterpret_cast<uintptr_t>(bitsSource)));
++          close(memoryFD);
++        }
++        const int64_t sourceShadowAfter = source == nullptr
++            ? INT64_C(-2) : static_cast<int64_t>(__msan_test_shadow(source, sizeof(returnAddress)));
++        const uint32_t sourceOriginAfter = source == nullptr ? UINT32_C(0) : __msan_get_origin(source);
++        fprintf(stderr,
++                "[libunwind-msan-ra] pc=0x%" PRIx64 " fde=0x%" PRIx64
++                " range=0x%" PRIx64 "-0x%" PRIx64 " cfa=0x%" PRIx64
++                " cfa_reg=%" PRIu32 " cfa_offset=%" PRId32 " cfa_expr=0x%" PRIx64
++                " ra_reg=%" PRIu8 " rule=%" PRIu32 " rule_value=%" PRId64
++                " source=0x%" PRIx64 " width=%" PRIu64
++                " source_shadow=%" PRId64 " source_origin=%" PRIu32
++                " source_shadow_after=%" PRId64 " source_origin_after=%" PRIu32
++                " return_shadow=%" PRId64 " return_origin=%" PRIu32
++                " ip_shadow=%" PRId64 " ip_origin=%" PRIu32
++                " bits_read=%" PRId64 " diagnostic_bits=0x%" PRIx64 "\n",
++                static_cast<uint64_t>(pc), static_cast<uint64_t>(fdeStart),
++                static_cast<uint64_t>(fdeInfo.pcStart), static_cast<uint64_t>(fdeInfo.pcEnd),
++                static_cast<uint64_t>(cfa), prolog.cfaRegister, prolog.cfaRegisterOffset,
++                static_cast<uint64_t>(prolog.cfaExpression), cieInfo.returnAddressRegister,
++                static_cast<uint32_t>(rule.location), rule.value,
++                static_cast<uint64_t>(returnAddressSource), static_cast<uint64_t>(sizeof(returnAddress)),
++                sourceShadow, sourceOrigin,
++                sourceShadowAfter, sourceOriginAfter,
++                static_cast<int64_t>(returnShadow), __msan_get_origin(&returnAddress),
++                static_cast<int64_t>(ipShadow),
++                __msan_get_origin(&restoredIP), bitsRead,
++                bitsRead == static_cast<int64_t>(sizeof(diagnosticBits)) ? diagnosticBits : UINT64_C(0));
++      }
++#endif
+
+       return UNW_STEP_SUCCESS;
+     }
+@@ -921,4 +1160,6 @@
+
+ } // namespace libunwind
+
++#undef _LIBUNWIND_MSAN_RA_DIAGNOSTIC
++
+ #endif // __DWARF_INSTRUCTIONS_HPP__

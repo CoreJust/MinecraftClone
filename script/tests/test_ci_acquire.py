@@ -234,6 +234,8 @@ class CiAcquireTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory) / "android-sdk"
             archive = Path(directory) / config["filename"]
+            chmod_requests: list[tuple[Path, int]] = []
+            real_chmod = os.chmod
             with zipfile.ZipFile(archive, "w") as contents:
                 contents.writestr("cmdline-tools/bin/sdkmanager", "#!/bin/sh\n")
                 contents.writestr("cmdline-tools/bin/avdmanager", "#!/bin/sh\n")
@@ -243,12 +245,32 @@ class CiAcquireTests(unittest.TestCase):
                     destination.write_bytes(archive.read_bytes())
 
                 download.side_effect = copy_archive
-                sdkmanager = acquire.install_android_sdk(root)
+                def record_chmod(
+                    path: str | os.PathLike[str],
+                    mode: int,
+                    *,
+                    follow_symlinks: bool = True,
+                ) -> None:
+                    chmod_requests.append((Path(path), mode))
+                    real_chmod(path, mode, follow_symlinks=follow_symlinks)
+
+                with mock.patch.object(acquire.os, "chmod", side_effect=record_chmod):
+                    sdkmanager = acquire.install_android_sdk(root)
             expected_archive = root.parent / config["filename"]
             self.assertEqual(sdkmanager, root / "cmdline-tools" / "latest" / "bin" / "sdkmanager")
             self.assertTrue(sdkmanager.is_file())
-            self.assertTrue(sdkmanager.stat().st_mode & stat.S_IXUSR)
-            self.assertTrue((sdkmanager.parent / "avdmanager").stat().st_mode & stat.S_IXUSR)
+            executables = [sdkmanager, sdkmanager.parent / "avdmanager"]
+            executable_requests = [
+                (path, mode)
+                for path, mode in chmod_requests
+                if path in executables
+            ]
+            self.assertCountEqual([path for path, _ in executable_requests], executables)
+            for _, mode in executable_requests:
+                self.assertTrue(mode & stat.S_IXUSR)
+            if os.name == "posix":
+                for executable in executables:
+                    self.assertTrue(executable.stat().st_mode & stat.S_IXUSR)
             download.assert_called_once_with(config["url"], expected_archive)
             verify.assert_called_once_with(expected_archive, config["sha256"])
             command = [str(sdkmanager), f"--sdk_root={root}"]

@@ -6,6 +6,16 @@ Version EarlyDev 0.1.0 Initiation.
 
 ## Gameplay
 
+![Snapshot 7 third-person flight beside the central spike, its first ring and surrounding terrain](<docs/version_history/EarlyDev 0.1/images/earlydev-0.1.0-7-central-spike.png>)
+
+![Snapshot 7 player in the trench near the first spike](<docs/version_history/EarlyDev 0.1/images/earlydev-0.1.0-7-trench-first-spike.png>)
+
+![Snapshot 7 player climbing a mountain](<docs/version_history/EarlyDev 0.1/images/earlydev-0.1.0-7-mountain-climb.png>)
+
+![Snapshot 7 first-person view at horizontal X/Z coordinates 0,0](<docs/version_history/EarlyDev 0.1/images/earlydev-0.1.0-7-first-person-origin.png>)
+
+Snapshot 7 adds authoritative entity permissions, movement and collision, a proportioned 16-color player body, and three camera views. Terrain residency follows player position independently of camera direction, with projection-derived mesh detail. These labeled 2560x1440 macOS integration-candidate captures show the four requested scenes. The version history records their capture context; these images do not establish final package/runtime acceptance.
+
 ![Snapshot 6 textured wave ridge with semantic HUD](<docs/version_history/EarlyDev 0.1/images/earlydev-0.1.0-6-wave-ridge.png>)
 
 ![Snapshot 6 streamed terrain horizon after camera rotation](<docs/version_history/EarlyDev 0.1/images/earlydev-0.1.0-6-streamed-horizon.png>)

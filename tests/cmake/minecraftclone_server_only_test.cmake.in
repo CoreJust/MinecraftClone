@@ -16,6 +16,7 @@ execute_process(
         -G "@CMAKE_GENERATOR@"
         "-DCMAKE_PREFIX_PATH=${corecpp_prefix};${dependency_prefix}"
         "-DCoreProject2026_DIR=${coreproject_dir}"
+        -DMC_ANALYSIS_HOST=@MC_ANALYSIS_HOST@
         "-DCoreLangNumerics_GMP_INCLUDE_DIR=@CoreLangNumerics_GMP_INCLUDE_DIR@"
         "-DCoreLangNumerics_GMP_LIBRARY=@CoreLangNumerics_GMP_LIBRARY@"
         "-DCoreLangNumerics_MPFR_INCLUDE_DIR=@CoreLangNumerics_MPFR_INCLUDE_DIR@"

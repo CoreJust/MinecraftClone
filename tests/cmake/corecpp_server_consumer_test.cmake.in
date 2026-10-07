@@ -28,6 +28,8 @@ execute_process(
         -S "@MC_PROJECT_SOURCE_DIR@"
         -B "${test_root}/mismatch-build"
         -DCoreCpp_DIR=${mismatched_corecpp}
+        -DMC_ANALYSIS_HOST=@MC_ANALYSIS_HOST@
+        -DMC_BUILD_CLIENT=OFF
         -DBUILD_TESTING=OFF
         -DVCPKG_MANIFEST_INSTALL=OFF
     RESULT_VARIABLE mismatch_result
@@ -48,6 +50,12 @@ execute_process(
         -S "@MC_PROJECT_SOURCE_DIR@/cmake/fixtures/corecpp_server_consumer"
         -B "${test_root}/build"
         "-DCMAKE_PREFIX_PATH=${corecpp_prefix};${dependency_prefix}"
+        "-DCMAKE_CXX_COMPILER=@CMAKE_CXX_COMPILER@"
+        "-DCMAKE_CXX_FLAGS=@CMAKE_CXX_FLAGS@"
+        "-DCMAKE_EXE_LINKER_FLAGS=@CMAKE_EXE_LINKER_FLAGS@"
+        -DMC_ANALYSIS_HOST=@MC_ANALYSIS_HOST@
+        -DMC_ENABLE_SANITIZERS=@MC_ENABLE_SANITIZERS@
+        -DMC_SANITIZER=@MC_SANITIZER@
         -DVCPKG_MANIFEST_INSTALL=OFF
         "-DCMAKE_BUILD_TYPE=${MC_TEST_CONFIGURATION}"
     RESULT_VARIABLE configure_result

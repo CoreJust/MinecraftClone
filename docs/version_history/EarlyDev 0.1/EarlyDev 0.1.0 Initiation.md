@@ -97,5 +97,5 @@ Additions:
 2. Authoritative movement, collision and flight permissions, a correctly proportioned 16-color player body, and first-, rear-third-, and front-third-person views.
 3. Client/server connection resilience and deterministic acceptance for latency, loss, jitter, freezes, reordering, and duplication.
 4. Camera-independent, position-driven terrain residency with projection-derived mesh detail and validated render distance up to 256 chunks.
-5. CoreLang 0.1.3.1 integration, reusable Runtime execution/audio foundations, and presentation diagnostics.
+5. CoreLang 0.1.3.1-compatible integration with the permitted 0.1.3.3 maintenance package, reusable Runtime execution/audio foundations, and presentation diagnostics.
 6. Full-game performance and capture harnesses plus required automated sanitizer and static-analysis release checks.

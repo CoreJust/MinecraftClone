@@ -37,6 +37,46 @@ class AnalysisPresetTests(unittest.TestCase):
                     expected,
                 )
 
+    def test_macos_sanitizer_presets_inherit_upstream_clang_selection(self):
+        expected_sanitizers = {
+            "analysis-macos-asan": "address",
+            "analysis-macos-ubsan": "undefined",
+            "analysis-macos-tsan": "thread",
+        }
+
+        for preset_name, sanitizer in expected_sanitizers.items():
+            with self.subTest(preset=preset_name):
+                cache_variables = effective_cache_variables(preset_name)
+
+                self.assertEqual(cache_variables.get("CMAKE_C_COMPILER"), "clang")
+                self.assertEqual(cache_variables.get("CMAKE_CXX_COMPILER"), "clang++")
+                self.assertEqual(cache_variables.get("MC_ENABLE_SANITIZERS"), "ON")
+                self.assertEqual(cache_variables.get("MC_SANITIZER"), sanitizer)
+
+    def test_standard_and_windows_presets_keep_their_compiler_defaults(self):
+        preset_names = (
+            "debug",
+            "release",
+            "renderer-smoke",
+            "analysis-windows-asan",
+            "analysis-windows-analyze",
+        )
+
+        for preset_name in preset_names:
+            with self.subTest(preset=preset_name):
+                cache_variables = effective_cache_variables(preset_name)
+
+                self.assertNotIn("CMAKE_C_COMPILER", cache_variables)
+                self.assertNotIn("CMAKE_CXX_COMPILER", cache_variables)
+
+    def test_linux_sanitizer_presets_keep_explicit_clang_selection(self):
+        for preset_name in ("analysis-linux-lsan", "analysis-linux-msan"):
+            with self.subTest(preset=preset_name):
+                cache_variables = effective_cache_variables(preset_name)
+
+                self.assertEqual(cache_variables.get("CMAKE_C_COMPILER"), "clang")
+                self.assertEqual(cache_variables.get("CMAKE_CXX_COMPILER"), "clang++")
+
     def test_windows_analyzer_resolves_pinned_private_package_paths(self):
         cache_variables = effective_cache_variables("analysis-windows-analyze")
 
