@@ -15,7 +15,6 @@ from unittest import mock
 
 
 SCRIPT = Path(__file__).resolve().parents[1] / "ci/install_msan_libcxx.py"
-OWN_RA_GEP = r"getelementptr inbounds(?: nuw)? i8, ptr %[^,]+, i64 8(?![0-9])"
 
 
 def load_module():
@@ -67,127 +66,169 @@ class InstallMsanLibcxxTests(unittest.TestCase):
         end = ir.index("\n}", start) + 2
         return ir[start:end]
 
-    def own_return_address_source(self):
+    def spill_import_source(self):
         patch = self.toolchain.LIBUNWIND_MSAN_PATCH.read_text(encoding="utf-8")
-        entry_patch = patch.split("diff --git a/libunwind/src/UnwindLevel1.c", 1)[1]
-        additions = "\n".join(
-            line[1:] for line in entry_patch.splitlines()
-            if line.startswith("+") and not line.startswith("+++")
-        )
-        guard = re.search(r"#if defined\(__linux__\).*?\n#endif\n#endif", additions, re.DOTALL).group(0)
-        bodies = re.findall(
-            r"#if defined\(_LIBUNWIND_MSAN_SYNC_OWN_RETURN_ADDRESS\).*?\n#endif",
-            additions, re.DOTALL,
-        )
-        self.assertEqual(len(bodies), 2)
-        return guard, bodies
+        dwarf = patch.split("diff --git a/libunwind/src/DwarfInstructions.hpp", 1)[1]
+        additions = "\n".join(line[1:] for line in dwarf.splitlines()
+                              if line.startswith("+") and not line.startswith("+++"))
+        helper = re.search(r"#if defined\(_LIBUNWIND_MSAN_RA_DIAGNOSTIC\)\n"
+                           r"template <typename A>.*?\n#endif\n#endif", additions, re.DOTALL).group(0)
+        self.assertNotIn("UnwindLevel1.c", patch)
+        self.assertIn(", &returnAddressSource, i,", additions)
+        self.assertIn(", nullptr, i,", additions)
+        eligibility_matches = re.findall(r"R::getArch\(\) == REGISTERS_X86_64 && !cieInfo.isSignalFrame\n"
+                                         r"\s*&& cieInfo.returnAddressRegister == 16 && prolog.cfaExpression == 0",
+                                         additions)
+        self.assertEqual(len(eligibility_matches), 2)
+        self.assertEqual(" ".join(eligibility_matches[0].split()), " ".join(eligibility_matches[1].split()))
+        eligibility = eligibility_matches[0]
+        _, _, _, cases = self.return_address_diagnostic_source()
+        return helper, eligibility, cases
 
-    def test_own_return_address_sync_requires_linux_x86_64_msan(self):
-        compiler = shutil.which("clang")
+    def spill_fixture(self):
+        helper, eligibility, cases = self.spill_import_source()
+        source = (
+            "using uint64_t = __UINT64_TYPE__; using int64_t = __INT64_TYPE__;\n"
+            "using int32_t = __INT32_TYPE__; using uint32_t = __UINT32_TYPE__;\n"
+            "using pint_t = uint64_t;\n"
+            "extern \"C\" void __msan_unpoison(const volatile void *, __SIZE_TYPE__);\n"
+            "struct LocalAddressSpace { using pint_t = uint64_t;\n"
+            "  uint32_t reads = 0, evaluations = 0;\n"
+            "  pint_t getRegister(pint_t source) { ++reads; return *reinterpret_cast<volatile pint_t*>(source); } };\n"
+            "struct RemoteAddressSpace { using pint_t = uint64_t;\n"
+            "  uint32_t reads = 0, evaluations = 0;\n"
+            "  pint_t getRegister(pint_t source) { ++reads; return *reinterpret_cast<volatile pint_t*>(source); } };\n"
+            "struct RegisterLocation { uint32_t location; int64_t value; };\n"
+            "template <class> struct CFI_Parser { enum { kRegisterInCFA = 2, kRegisterAtExpression = 6 }; };\n"
+            "static int32_t requested_arch = 1;\n"
+            "struct R { static int32_t getArch() { return requested_arch; } };\n"
+            "static constexpr int32_t REGISTERS_X86_64 = 1;\n"
+            + helper + "\n"
+            "template <class A> pint_t evaluateExpression(pint_t expression, A &a, int32_t, pint_t) {\n"
+            "  ++a.evaluations; return expression; }\n"
+            "template <class A> pint_t restore(A &addressSpace, int32_t destinationRegister,\n"
+            "    pint_t cfa, RegisterLocation savedReg, bool signal, uint32_t ra, int64_t expr) {\n"
+            "  int32_t registers = 0; pint_t *sourceAddress = nullptr;\n"
+            "  struct { bool isSignalFrame; uint32_t returnAddressRegister; } cieInfo{signal, ra};\n"
+            "  struct { int64_t cfaExpression; } prolog{expr};\n"
+            "  const bool nativeSpillFrame = " + eligibility + ";\n"
+            "  switch(savedReg.location) {\n" + cases + "\n"
+            "    default: return *reinterpret_cast<volatile pint_t*>(cfa);\n"
+            "  }\n}\n"
+            "extern \"C\" uint64_t local_import(volatile uint64_t *source, int32_t destination,\n"
+            "    uint32_t rule, int64_t offset, bool signal, uint32_t ra, int64_t expr) {\n"
+            "  LocalAddressSpace a; return restore(a, destination, reinterpret_cast<pint_t>(source),\n"
+            "                                     {rule, offset}, signal, ra, expr);\n}\n"
+            "extern \"C\" uint64_t remote_import(volatile uint64_t *source) {\n"
+            "  RemoteAddressSpace a; return restore(a, 6, reinterpret_cast<pint_t>(source), {2, 0}, false, 16, 0);\n}\n"
+        )
+        return source
+
+    def test_spill_import_is_exact_local_copy_and_preserves_source_origin_and_canaries(self):
+        compiler = shutil.which("clang++")
         if compiler is None:
-            self.skipTest("Clang is required for C99 guard controls")
-        guard, _ = self.own_return_address_source()
-        source = guard.replace("#include <sanitizer/msan_interface.h>", "MSAN_INTERFACE_INCLUDED")
-        source += "\n#ifdef _LIBUNWIND_MSAN_SYNC_OWN_RETURN_ADDRESS\nOWN_RA_SYNC_ACTIVE\n#endif\n"
+            self.skipTest("Clang is required for finite spill import controls")
+        source = "#include <string.h>\n#define _LIBUNWIND_MSAN_RA_DIAGNOSTIC\n" + self.spill_fixture() + (
+            "static uint64_t slots[3] = {0xabc1, 0x123456789abcdef0, 0xabc2};\n"
+            "static unsigned char source_shadow[24]; static uint32_t source_origin = 6;\n"
+            "static int32_t imports = 0, bad_import = 0;\n"
+            "static uint64_t owned[3] = {0xdef1, 0x123456789abcdef0, 0xdef2};\n"
+            "static unsigned char owned_shadow[24];\n"
+            "static const void *expected_local = nullptr;\n"
+            "extern \"C\" void __msan_unpoison(const volatile void *p, __SIZE_TYPE__ n) {\n"
+            "  ++imports; if (n != 8 || p == slots || p == slots+1 || p == slots+2) bad_import = 1;\n"
+            "  if (*static_cast<const volatile uint64_t*>(p) != slots[1]) bad_import = 1;\n}\n"
+        ).replace(
+            "bad_import = 1;\n}\n",
+            "bad_import = 1;\n"
+            "  if (expected_local) { if (p != expected_local) bad_import = 1;\n"
+            "    else memset(owned_shadow+8, 0, n); }\n}\n",
+        ) + (
+            "int main() {\n"
+            "  memset(source_shadow, 0xa5, sizeof(source_shadow));\n"
+            "  for (int32_t reg = 0; reg != 18; ++reg) {\n"
+            "    imports = 0;\n"
+            "    if (local_import(slots+1, reg, 2, 0, false, 16, 0) != slots[1]) return 1;\n"
+            "    const bool eligible = reg == 3 || reg == 6 || (reg >= 12 && reg <= 16);\n"
+            "    if (imports != (eligible ? 1 : 0)) return 2;\n"
+            "  }\n"
+            "  for (int32_t mode = 0; mode != 6; ++mode) {\n"
+            "    imports = 0; requested_arch = mode == 0 ? 0 : 1;\n"
+            "    const uint32_t rule = mode == 1 ? 6 : mode == 2 ? 3 : 2;\n"
+            "    const int64_t offset = mode == 1 ? reinterpret_cast<pint_t>(slots+1) : 0;\n"
+            "    if (local_import(slots+1, 6, rule, offset, mode == 3, mode == 4 ? 8 : 16,\n"
+            "                     mode == 5 ? 1 : 0) != slots[1] || imports) return 3;\n"
+            "  }\n"
+            "  imports = 0; if (remote_import(slots+1) != slots[1] || imports) return 4;\n"
+            "  LocalAddressSpace a; imports = 0;\n"
+            "  if (restore(a, 6, reinterpret_cast<pint_t>(slots+1), {2, 0}, false, 16, 0) != slots[1]\n"
+            "      || a.reads != 1 || a.evaluations || imports != 1) return 5;\n"
+            "  imports = 0;\n"
+            "  if (restore(a, 6, 0, {6, static_cast<int64_t>(reinterpret_cast<pint_t>(slots+1))}, false, 16, 0)\n"
+            "      != slots[1] || a.reads != 2 || a.evaluations != 1 || imports) return 6;\n"
+            "  for (uint32_t i = 0; i != sizeof(source_shadow); ++i) if (source_shadow[i] != 0xa5) return 7;\n"
+            "  memset(owned_shadow, 0xa5, sizeof(owned_shadow)); expected_local = owned+1; imports = 0;\n"
+            "  msanImportCFISpill(a, owned[1], 6, true); if (imports != 1) return 8;\n"
+            "  for (uint32_t i = 0; i != sizeof(owned_shadow); ++i)\n"
+            "    if (owned_shadow[i] != (i >= 8 && i < 16 ? 0 : 0xa5)) return 9;\n"
+            "  if (owned[0] != 0xdef1 || owned[1] != slots[1] || owned[2] != 0xdef2) return 10;\n"
+            "  return bad_import || source_origin != 6 || slots[0] != 0xabc1\n"
+            "      || slots[1] != 0x123456789abcdef0 || slots[2] != 0xabc2;\n}\n"
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            executable = Path(directory) / "spill-import"
+            result = subprocess.run([compiler, "-std=c++17", "-O1", "-Wall", "-Wextra", "-Werror",
+                                     "-x", "c++", "-o", str(executable), "-"],
+                                    input=source, text=True, capture_output=True, check=False)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            result = subprocess.run([str(executable)], text=True, capture_output=True, check=False)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_spill_import_platform_and_word_width_guard(self):
+        compiler = shutil.which("clang++")
+        if compiler is None:
+            self.skipTest("Clang is required for import guard controls")
+        guard, _, _, _ = self.return_address_diagnostic_source()
+        guard = re.sub(r'#include [<"][^>"]+[>"]', "INTERFACE_INCLUDED", guard)
+        helper, _, _ = self.spill_import_source()
         for target, flags, active in (
             ("x86_64-pc-linux-gnu", ["-fsanitize=memory"], True),
             ("x86_64-pc-linux-gnu", [], False),
             ("aarch64-pc-linux-gnu", ["-fsanitize=memory"], False),
-            ("x86_64-apple-darwin", [], False),
             ("x86_64-pc-linux-gnux32", ["-fsanitize=memory"], False),
+            ("x86_64-apple-darwin", [], False),
         ):
             with self.subTest(target=target, flags=flags):
-                result = subprocess.run(
-                    [compiler, f"--target={target}", "-std=c99", *flags, "-E", "-P", "-x", "c", "-"],
-                    input=source, text=True, capture_output=True, check=False,
-                )
+                result = subprocess.run([compiler, f"--target={target}", *flags, "-E", "-P", "-x", "c++", "-"],
+                                        input=guard + "\n" + helper, text=True, capture_output=True, check=False)
                 self.assertEqual(result.returncode, 0, result.stderr)
-                self.assertEqual("OWN_RA_SYNC_ACTIVE" in result.stdout, active)
-                self.assertEqual("MSAN_INTERFACE_INCLUDED" in result.stdout, active)
+                self.assertEqual("__msan_unpoison(&value, 8)" in result.stdout, active)
 
-    def test_own_return_address_sync_keeps_c99_msan_checks_and_forces_own_frame(self):
-        compiler = shutil.which("clang")
-        if compiler is None:
-            self.skipTest("Clang is required for C99 MSan compiler controls")
-        _, bodies = self.own_return_address_source()
-        source = (
-            "void __msan_unpoison(const volatile void *, __SIZE_TYPE__);\n"
-            "void side_effect(void);\n#define _LIBUNWIND_MSAN_SYNC_OWN_RETURN_ADDRESS\n"
+    def test_spill_import_retains_address_metadata_and_unsupported_payload_checks(self):
+        source = "#define _LIBUNWIND_MSAN_RA_DIAGNOSTIC\n" + self.spill_fixture() + (
+            "extern \"C\" bool eligible_branch(volatile uint64_t *p) {\n"
+            "  return local_import(p, 6, 2, 0, false, 16, 0) != 0; }\n"
+            "extern \"C\" bool unsupported_branch(volatile uint64_t *p) {\n"
+            "  return local_import(p, 0, 2, 0, false, 16, 0) != 0; }\n"
+            "extern \"C\" bool remote_branch(volatile uint64_t *p) { return remote_import(p) != 0; }\n"
+            "extern \"C\" bool expression_branch(volatile uint64_t *p) {\n"
+            "  return local_import(p, 6, 6, reinterpret_cast<pint_t>(p), false, 16, 0) != 0; }\n"
+            "extern \"C\" bool signal_branch(volatile uint64_t *p) {\n"
+            "  return local_import(p, 6, 2, 0, true, 16, 0) != 0; }\n"
+            "extern \"C\" bool float_branch(volatile double *p) { return *p != 0; }\n"
+            "extern \"C\" bool vector_branch(volatile uint64_t *p) { return (p[0] | p[1]) != 0; }\n"
         )
-        for name, body in zip(("raise_entry", "resume_entry"), bodies):
-            source += f"int {name}(volatile int *data) {{\n{body}\nside_effect();\nreturn *data != 0;\n}}\n"
-        for emit_ir in (True, False):
-            result = subprocess.run(
-                [compiler, "--target=x86_64-pc-linux-gnu", "-std=c99", "-O2", "-fomit-frame-pointer",
-                 "-fsanitize=memory", "-fsanitize-memory-track-origins=2", "-S",
-                 *(["-emit-llvm"] if emit_ir else []), "-x", "c", "-o", "-", "-"],
-                input=source, text=True, capture_output=True, check=False,
-            )
-            self.assertEqual(result.returncode, 0, result.stderr)
-            if emit_ir:
-                self.assertIn("sanitize_memory", result.stdout)
-                for name in ("raise_entry", "resume_entry"):
-                    body = self.function_ir(result.stdout, name)
-                    self.assertRegex(body, r"@llvm.frameaddress.p0\(i32 0\)")
-                    self.assertRegex(body, OWN_RA_GEP)
-                    self.assertRegex(body, r"@__msan_unpoison\(ptr[^,]*, i64[^)]*8\)")
-                    self.assertLess(body.index("@__msan_unpoison"), body.index("@side_effect"))
-                    self.assertIn("load volatile i32", body)
-                    self.assertIn("@__msan_warning_with_origin_noreturn", body)
-            else:
-                for name in ("raise_entry", "resume_entry"):
-                    body = result.stdout.split(name + ":", 1)[1].split(".Lfunc_end", 1)[0]
-                    self.assertRegex(body, r"pushq\s+%rbp")
-                    self.assertRegex(body, r"movq\s+%rsp, %rbp")
-                    self.assertRegex(body, r"leaq\s+8\(%rbp\), %rdi")
-                    self.assertRegex(body, r"movl\s+\$8, %esi")
-                    self.assertRegex(body, r"callq\s+__msan_unpoison")
-
-    def test_own_return_address_sync_changes_only_eight_shadow_bytes_not_contents(self):
-        compiler = shutil.which("clang")
-        if compiler is None:
-            self.skipTest("Clang is required for exact-byte canary controls")
-        _, bodies = self.own_return_address_source()
-        for entry, body in zip(("Raise", "Resume"), bodies):
-            with self.subTest(entry=entry), tempfile.TemporaryDirectory() as directory:
-                source = (
-                    "#include <string.h>\n#include <stddef.h>\n"
-                    "#define _LIBUNWIND_MSAN_SYNC_OWN_RETURN_ADDRESS\n"
-                    "static unsigned char frame[24], before[24], shadow[24];\n"
-                    "static int calls;\n"
-                    "void __msan_unpoison(const void *address, size_t size) {\n"
-                    "  if (address != frame + 8 || size != 8) calls = -100;\n"
-                    "  else { ++calls; memset(shadow + 8, 0, 8); }\n}\n"
-                    "void entry(void) {\n"
-                    + body.replace("__builtin_frame_address(0)", "frame") + "\n}\n"
-                    "int main(void) {\n"
-                    "  memset(frame, 0x5a, sizeof(frame)); memcpy(before, frame, sizeof(frame));\n"
-                    "  memset(shadow, 0xa5, sizeof(shadow)); entry();\n"
-                    "  if (calls != 1 || memcmp(frame, before, sizeof(frame))) return 1;\n"
-                    "  for (size_t i = 0; i != sizeof(shadow); ++i)\n"
-                    "    if (shadow[i] != (i >= 8 && i < 16 ? 0 : 0xa5)) return 2;\n"
-                    "  shadow[8] = 0xa5;\n"
-                    "  return shadow[8] != 0xa5 || shadow[0] != 0xa5 || shadow[16] != 0xa5;\n}\n"
-                )
-                executable = Path(directory) / "own-ra-canary"
-                result = subprocess.run(
-                    [compiler, "-std=c99", "-O2", "-Wall", "-Wextra", "-Werror",
-                     "-x", "c", "-o", str(executable), "-"],
-                    input=source, text=True, capture_output=True, check=False,
-                )
-                self.assertEqual(result.returncode, 0, result.stderr)
-                result = subprocess.run([str(executable)], capture_output=True, text=True, check=False)
-                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-
-    def test_own_return_address_gep_accepts_only_optional_nuw_and_exact_eight_bytes(self):
-        for syntax in ("getelementptr inbounds i8, ptr %0, i64 8",
-                       "getelementptr inbounds nuw i8, ptr %0, i64 8"):
-            self.assertRegex(syntax, OWN_RA_GEP)
-        for syntax in ("getelementptr inbounds nsw i8, ptr %0, i64 8",
-                       "getelementptr inbounds nuw i32, ptr %0, i64 8",
-                       "getelementptr inbounds nuw i8, ptr %0, i64 16",
-                       "getelementptr inbounds nuw i8, ptr %0, i64 80"):
-            self.assertNotRegex(syntax, OWN_RA_GEP)
+        ir = self.compile_msan_ir(source, "-fno-sanitize-memory-param-retval")
+        local = self.function_ir(ir, "local_import")
+        self.assertIn("@__msan_unpoison", local)
+        self.assertIn("@__msan_warning_with_origin_noreturn", local)
+        self.assertLess(local.index("load volatile i64"), local.index("@__msan_unpoison"))
+        self.assertIn("sanitize_memory", ir)
+        for name in ("unsupported_branch", "remote_branch", "expression_branch", "signal_branch",
+                     "float_branch", "vector_branch"):
+            body = self.function_ir(ir, name)
+            self.assertIn("@__msan_warning_with_origin_noreturn", body)
+            self.assertNotIn("@__msan_unpoison", body)
 
     def cfa_address_diagnostic_source(self):
         patch = self.toolchain.LIBUNWIND_MSAN_PATCH.read_text(encoding="utf-8")
@@ -406,7 +447,7 @@ class InstallMsanLibcxxTests(unittest.TestCase):
         if compiler is None:
             self.skipTest("Clang is required for diagnostic activation controls")
         guard, _, _, _ = self.return_address_diagnostic_source()
-        guard = re.sub(r"#include <[^>]+>", "MSAN_INTERFACE_INCLUDED", guard)
+        guard = re.sub(r'#include [<"][^>"]+[>"]', "MSAN_INTERFACE_INCLUDED", guard)
         source = guard + (
             "\n#if defined(_LIBUNWIND_MSAN_RA_DIAGNOSTIC)\nRA_DIAGNOSTIC_ACTIVE\n#endif\n"
         )
@@ -464,6 +505,8 @@ class InstallMsanLibcxxTests(unittest.TestCase):
             "}\n"
             "template<class A> pint_t restore(A& addressSpace, int32_t registers, pint_t cfa,\n"
             "    RegisterLocation savedReg, pint_t* sourceAddress) {\n"
+            "  int32_t destinationRegister = -1; bool nativeSpillFrame = false;\n"
+            "  auto msanImportCFISpill = [](A&, pint_t&, int32_t, bool) {};\n"
             "  switch (savedReg.location) {\n"
             f"{memory_cases}\n"
             "    default: return 0;\n"

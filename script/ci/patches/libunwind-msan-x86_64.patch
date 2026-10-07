@@ -79,12 +79,13 @@ diff --git a/libunwind/src/AddressSpace.hpp b/libunwind/src/AddressSpace.hpp
 diff --git a/libunwind/src/DwarfInstructions.hpp b/libunwind/src/DwarfInstructions.hpp
 --- a/libunwind/src/DwarfInstructions.hpp
 +++ b/libunwind/src/DwarfInstructions.hpp
-@@ -22,6 +22,14 @@
+@@ -22,6 +22,31 @@
  #include "dwarf2.h"
  #include "libunwind_ext.h"
 
 +#if defined(__linux__) && defined(__x86_64__) && defined(__has_feature)
 +#if __has_feature(memory_sanitizer)
++#include "AddressSpace.hpp"
 +#include <fcntl.h>
 +#include <sanitizer/msan_interface.h>
 +#include <unistd.h>
@@ -93,28 +94,45 @@ diff --git a/libunwind/src/DwarfInstructions.hpp b/libunwind/src/DwarfInstructio
 +#endif
 
  namespace libunwind {
++
++#if defined(_LIBUNWIND_MSAN_RA_DIAGNOSTIC)
++template <typename A>
++inline void msanImportCFISpill(A &, typename A::pint_t &, int32_t, bool) {}
++
++#if __SIZEOF_POINTER__ == 8
++inline void msanImportCFISpill(LocalAddressSpace &, LocalAddressSpace::pint_t &value,
++                               int32_t destination, bool nativeSpillFrame) {
++  if (nativeSpillFrame &&
++      (destination == 3 || destination == 6 || (destination >= 12 && destination <= 16))) {
++    // ABI spill payload is trusted; only this private copy crosses the boundary.
++    __msan_unpoison(&value, 8);
++  }
++}
++#endif
++#endif
 
-@@ -56,7 +64,11 @@
+@@ -56,7 +81,12 @@
                                     const R &registers,
                                     pint_t initialStackValue);
    static pint_t getSavedRegister(A &addressSpace, const R &registers,
 -                                 pint_t cfa, const RegisterLocation &savedReg);
 +                                 pint_t cfa, const RegisterLocation &savedReg
 +#if defined(_LIBUNWIND_MSAN_RA_DIAGNOSTIC)
-+                                 , pint_t *sourceAddress = nullptr
++                                 , pint_t *sourceAddress = nullptr,
++                                 int32_t destinationRegister = -1, bool nativeSpillFrame = false
 +#endif
 +                                 );
    static double getSavedFloatRegister(A &addressSpace, const R &registers,
                                    pint_t cfa, const RegisterLocation &savedReg);
    static v128 getSavedVectorRegister(A &addressSpace, const R &registers,
-@@ -90,18 +102,36 @@
+@@ -90,18 +120,40 @@
  template <typename A, typename R>
  typename A::pint_t DwarfInstructions<A, R>::getSavedRegister(
      A &addressSpace, const R &registers, pint_t cfa,
 -    const RegisterLocation &savedReg) {
 +    const RegisterLocation &savedReg
 +#if defined(_LIBUNWIND_MSAN_RA_DIAGNOSTIC)
-+    , pint_t *sourceAddress
++    , pint_t *sourceAddress, int32_t destinationRegister, bool nativeSpillFrame
 +#endif
 +    ) {
    switch (savedReg.location) {
@@ -127,7 +145,11 @@ diff --git a/libunwind/src/DwarfInstructions.hpp b/libunwind/src/DwarfInstructio
 +      *sourceAddress = source;
 +    }
 +#endif
-+    return (pint_t)addressSpace.getRegister(source);
++    pint_t value = (pint_t)addressSpace.getRegister(source);
++#if defined(_LIBUNWIND_MSAN_RA_DIAGNOSTIC)
++    msanImportCFISpill(addressSpace, value, destinationRegister, nativeSpillFrame);
++#endif
++    return value;
 +  }
 
    case CFI_Parser<A>::kRegisterInCFADecrypt: // sparc64 specific
@@ -150,7 +172,7 @@ diff --git a/libunwind/src/DwarfInstructions.hpp b/libunwind/src/DwarfInstructio
 
    case CFI_Parser<A>::kRegisterIsExpression:
      return evaluateExpression((pint_t)savedReg.value, addressSpace,
-@@ -246,6 +276,9 @@
+@@ -246,6 +298,9 @@
        newRegisters.setSP(cfa);
 
        pint_t returnAddress = 0;
@@ -160,7 +182,7 @@ diff --git a/libunwind/src/DwarfInstructions.hpp b/libunwind/src/DwarfInstructio
        constexpr int lastReg = R::lastDwarfRegNum();
        static_assert(static_cast<int>(CFI_Parser<A>::kMaxRegisterNumber) >=
                          lastReg,
-@@ -255,6 +288,128 @@
+@@ -255,6 +310,128 @@
        for (int i = 0; i <= lastReg; ++i) {
          if (prolog.savedRegisters[i].location !=
              CFI_Parser<A>::kRegisterUnused) {
@@ -289,7 +311,7 @@ diff --git a/libunwind/src/DwarfInstructions.hpp b/libunwind/src/DwarfInstructio
            if (registers.validFloatRegister(i))
              newRegisters.setFloatRegister(
                  i, getSavedFloatRegister(addressSpace, registers, cfa,
-@@ -263,9 +418,14 @@
+@@ -263,12 +440,25 @@
              newRegisters.setVectorRegister(
                  i, getSavedVectorRegister(addressSpace, registers, cfa,
                                            prolog.savedRegisters[i]));
@@ -299,14 +321,26 @@ diff --git a/libunwind/src/DwarfInstructions.hpp b/libunwind/src/DwarfInstructio
 -                                             prolog.savedRegisters[i]);
 +                                             prolog.savedRegisters[i]
 +#if defined(_LIBUNWIND_MSAN_RA_DIAGNOSTIC)
-+                                             , &returnAddressSource
++                                             , &returnAddressSource, i,
++                                             R::getArch() == REGISTERS_X86_64 && !cieInfo.isSignalFrame
++                                                 && cieInfo.returnAddressRegister == 16 && prolog.cfaExpression == 0
 +#endif
 +                                             );
 +          }
            else if (registers.validRegister(i))
              newRegisters.setRegister(
                  i, getSavedRegister(addressSpace, registers, cfa,
-@@ -369,6 +529,55 @@
+-                                    prolog.savedRegisters[i]));
++                                    prolog.savedRegisters[i]
++#if defined(_LIBUNWIND_MSAN_RA_DIAGNOSTIC)
++                                    , nullptr, i,
++                                    R::getArch() == REGISTERS_X86_64 && !cieInfo.isSignalFrame
++                                        && cieInfo.returnAddressRegister == 16 && prolog.cfaExpression == 0
++#endif
++                                    ));
+           else
+             return UNW_EBADREG;
+@@ -369,6 +559,55 @@
 
        // Simulate the step by replacing the register set with the new ones.
        registers = newRegisters;
@@ -362,51 +396,10 @@ diff --git a/libunwind/src/DwarfInstructions.hpp b/libunwind/src/DwarfInstructio
 
        return UNW_STEP_SUCCESS;
      }
-@@ -921,4 +1130,6 @@
+@@ -921,4 +1160,6 @@
 
  } // namespace libunwind
 
 +#undef _LIBUNWIND_MSAN_RA_DIAGNOSTIC
 +
  #endif // __DWARF_INSTRUCTIONS_HPP__
-diff --git a/libunwind/src/UnwindLevel1.c b/libunwind/src/UnwindLevel1.c
---- a/libunwind/src/UnwindLevel1.c
-+++ b/libunwind/src/UnwindLevel1.c
-@@ -32,5 +32,12 @@
- #include "unwind.h"
-
-+#if defined(__linux__) && defined(__x86_64__) && __SIZEOF_POINTER__ == 8 && defined(__has_feature)
-+#if __has_feature(memory_sanitizer)
-+#include <sanitizer/msan_interface.h>
-+#define _LIBUNWIND_MSAN_SYNC_OWN_RETURN_ADDRESS
-+#endif
-+#endif
-+
- #if !defined(_LIBUNWIND_ARM_EHABI) && !defined(__USING_SJLJ_EXCEPTIONS__)
-
- #ifndef _LIBUNWIND_SUPPORT_SEH_UNWIND
-@@ -419,5 +426,10 @@
- _LIBUNWIND_EXPORT _Unwind_Reason_Code
- _Unwind_RaiseException(_Unwind_Exception *exception_object) {
-+#if defined(_LIBUNWIND_MSAN_SYNC_OWN_RETURN_ADDRESS)
-+  // CALL writes this frame's return address without updating MSan shadow.
-+  __msan_unpoison((unsigned char *)__builtin_frame_address(0) + 8, 8);
-+#endif
-+
-   _LIBUNWIND_TRACE_API("_Unwind_RaiseException(ex_obj=%p)",
-                        (void *)exception_object);
-   unw_context_t uc;
-@@ -454,5 +466,9 @@
- _LIBUNWIND_EXPORT void
- _Unwind_Resume(_Unwind_Exception *exception_object) {
-+#if defined(_LIBUNWIND_MSAN_SYNC_OWN_RETURN_ADDRESS)
-+  __msan_unpoison((unsigned char *)__builtin_frame_address(0) + 8, 8);
-+#endif
-+
-   _LIBUNWIND_TRACE_API("_Unwind_Resume(ex_obj=%p)", (void *)exception_object);
-   unw_context_t uc;
-   unw_cursor_t cursor;
-@@ -587,1 +603,3 @@
-+#undef _LIBUNWIND_MSAN_SYNC_OWN_RETURN_ADDRESS
-+
- #endif // !defined(_LIBUNWIND_ARM_EHABI) && !defined(__USING_SJLJ_EXCEPTIONS__)
