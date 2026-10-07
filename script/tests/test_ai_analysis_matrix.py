@@ -4,10 +4,12 @@ import copy
 import hashlib
 import importlib.util
 import json
+import shutil
 import subprocess
 import sys
 import tempfile
 import unittest
+import zipfile
 from pathlib import Path
 from unittest import mock
 
@@ -646,13 +648,90 @@ class AnalysisMatrixTests(unittest.TestCase):
             "halt_on_error=1:print_stacktrace=1",
         )
 
+    def test_android_hwasan_release_has_an_isolated_application_id(self):
+        build_gradle = (REPOSITORY / "android/app/build.gradle").read_text(encoding="utf-8")
+        self.assertIn("applicationId 'com.corejust.minecraftclone'", build_gradle)
+        self.assertIn("namespace 'com.corejust.minecraftclone'", build_gradle)
+        sanitizer_block = build_gradle.split("if (sanitizer != null) {", 1)[1].split(
+            "if (vcpkgInstalledDir != null", 1
+        )[0]
+        self.assertIn("if (sanitizer != 'hwasan')", sanitizer_block)
+        self.assertIn("throw new GradleException", sanitizer_block)
+        suffix = "android.buildTypes.release.applicationIdSuffix = '.hwasan'"
+        self.assertIn(suffix, sanitizer_block)
+        self.assertLess(sanitizer_block.index("throw new GradleException"), sanitizer_block.index(suffix))
+        self.assertEqual(build_gradle.count("applicationIdSuffix"), 1)
+
+    def test_android_hwasan_gradle_rejects_counterfeit_native_libraries(self):
+        groovy_jars = sorted(Path.home().glob(".gradle/wrapper/dists/*/*/*/lib/groovy-[0-9]*.jar"))
+        java = shutil.which("java")
+        if not java or not groovy_jars:
+            self.skipTest("Java and Gradle's bundled Groovy are required")
+        build_gradle = (REPOSITORY / "android/app/build.gradle").read_text(encoding="utf-8")
+        validation = build_gradle.split("tasks.register('verifyHwasanReleaseApk')", 1)[1].split(
+            "ZipFile zip = new ZipFile(apk)", 1
+        )[1].split(
+            "} finally {", 1
+        )[0]
+        header = bytearray(64)
+        header[:6] = b"\x7fELF\x02\x01"
+        header[18:20] = b"\xb7\x00"
+        marker = b"libclang_rt.hwasan-aarch64-android.so"
+        libraries = {"valid": bytes(header) + marker, "non_elf": b"counterfeit" + marker}
+        for name, offset, value in (
+            ("magic", 0, 0),
+            ("class", 4, 1),
+            ("byte_order", 5, 2),
+            ("machine", 18, 62),
+            ("machine_high", 19, 1),
+        ):
+            invalid = bytearray(header)
+            invalid[offset] = value
+            libraries[name] = bytes(invalid) + marker
+        libraries["short"] = bytes(header[:20]) + marker
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            script = root / "validate.groovy"
+            script.write_text(
+                "import java.util.zip.ZipFile\n"
+                "class GradleException extends RuntimeException {\n"
+                "    GradleException(String message) { super(message) }\n}\n"
+                "File apk = new File(args[0])\nZipFile zip = new ZipFile(apk)\n"
+                + validation + "} finally { zip.close() }\n",
+                encoding="utf-8",
+            )
+            for name, library in libraries.items():
+                with self.subTest(library=name):
+                    apk = root / f"{name}.apk"
+                    with zipfile.ZipFile(apk, "w") as archive:
+                        archive.writestr(
+                            "lib/arm64-v8a/wrap.sh", '#!/system/bin/sh\nLD_HWASAN=1 exec "$@"\n'
+                        )
+                        archive.writestr("lib/arm64-v8a/libmc_android.so", library)
+                    result = subprocess.run(
+                        [java, "-cp", str(groovy_jars[0]), "groovy.ui.GroovyMain", str(script), str(apk)],
+                        capture_output=True, text=True, timeout=30,
+                    )
+                    if name == "valid":
+                        self.assertEqual(result.returncode, 0, result.stderr)
+                    else:
+                        self.assertNotEqual(result.returncode, 0)
+                        self.assertIn("not a 64-bit little-endian AArch64 ELF", result.stderr)
+
     def test_android_hwasan_runtime_builds_release_variant(self):
         row = next(row for row in self.manifest["rows"] if row["id"] == "android_arm64_hwasan")
         self.assertIn("-DCMAKE_BUILD_TYPE=Release", row["flags"])
         self.assertIn("-DMC_ENABLE_HIGH_ASSERT=OFF", row["flags"])
         self.assertIn("build/hwasan/app-release.apk", row["commands"][0])
+        self.assertEqual(row["commands"][0][-1], "emulator-5558")
+        self.assertEqual(row["tool_probes"], [["adb", "-s", "emulator-5558", "get-state"]])
 
         workflow = (REPOSITORY / ".github/workflows/ai-checks.yml").read_text(encoding="utf-8")
+        build_gradle = (REPOSITORY / "android/app/build.gradle").read_text(encoding="utf-8")
+        self.assertIn("resources.srcDir(hwasanWrapAssets)", build_gradle)
+        self.assertIn("android.buildTypes.release.debuggable = true", build_gradle)
+        self.assertIn("android.packaging.jniLibs.useLegacyPackaging = true", build_gradle)
+        self.assertIn("verifyHwasanReleaseApk", build_gradle)
         build_job = workflow.split("  android-hwasan-build:", 1)[1].split(
             "  android-hwasan-runtime:", 1
         )[0]
@@ -661,6 +740,47 @@ class AnalysisMatrixTests(unittest.TestCase):
         self.assertNotIn(":app:assembleDebug", build_job)
         self.assertIn("android_clang_tidy.json", build_job)
         self.assertLess(build_job.index(":app:assembleRelease"), build_job.index("android_clang_tidy.json"))
+        self.assertLess(
+            build_job.index("--apk-only"),
+            build_job.index("Upload HWASan APK for arm64 runtime"),
+        )
+
+        runtime_job = workflow.split("  android-hwasan-runtime:", 1)[1].split(
+            "  analysis-matrix:", 1
+        )[0]
+        self.assertLess(
+            runtime_job.index("Download HWASan APK"),
+            runtime_job.index("--apk-only"),
+        )
+        self.assertLess(
+            runtime_job.index("--apk-only"),
+            runtime_job.index("Start matching ARM64 Android emulator"),
+        )
+
+    def test_android_hwasan_runtime_routes_only_to_candidate_specific_macos_runner(self):
+        workflow = (REPOSITORY / ".github/workflows/ai-checks.yml").read_text(encoding="utf-8")
+        runtime_job = workflow.split("  android-hwasan-runtime:", 1)[1].split(
+            "  analysis-matrix:", 1
+        )[0]
+        candidate_label = '"mc-s7-hwasan-${{ github.sha }}-${{ github.run_id }}"'
+
+        self.assertIn(
+            "if: github.event_name == 'push' && github.ref == 'refs/heads/ai-main'",
+            runtime_job,
+        )
+        self.assertIn(
+            f"runs-on: [self-hosted, macOS, ARM64, {candidate_label}]",
+            runtime_job,
+        )
+        self.assertNotIn("macos-15", runtime_job)
+
+        workflow_files = list((REPOSITORY / ".github/workflows").glob("*.yml"))
+        workflow_files.extend((REPOSITORY / ".github/workflows").glob("*.yaml"))
+        label_uses = sum(
+            candidate_label in candidate.read_text(encoding="utf-8")
+            for candidate in workflow_files
+        )
+        self.assertEqual(1, label_uses, "only the guarded HWASan runtime job may request this label")
 
     def test_linux_analysis_workflow_triplets_exist(self):
         workflow = (REPOSITORY / ".github/workflows/ai-checks.yml").read_text(encoding="utf-8")

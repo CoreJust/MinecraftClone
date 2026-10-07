@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Sequence
 
 
-PACKAGE = "com.corejust.minecraftclone"
+PACKAGE = "com.corejust.minecraftclone.hwasan"
 ACTIVITY = "android.app.NativeActivity"
 WRAP_PATH = "lib/arm64-v8a/wrap.sh"
 NATIVE_LIBRARY_PATH = "lib/arm64-v8a/libmc_android.so"
@@ -69,6 +69,8 @@ def verify_apk(apk: Path) -> None:
             native_library = archive.read(NATIVE_LIBRARY_PATH)
     except (OSError, zipfile.BadZipFile, KeyError) as error:
         raise HwasanError(f"HWASan APK is missing required native content: {error}") from error
+    if not native_library.startswith(b"\x7fELF\x02\x01") or native_library[18:20] != b"\xb7\x00":
+        raise HwasanError("HWASan APK native library is not a 64-bit little-endian AArch64 ELF")
     if HWASAN_RUNTIME not in native_library:
         raise HwasanError("HWASan APK native library is not linked with the HWASan runtime")
 
@@ -125,10 +127,19 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--apk", type=Path, default=os.environ.get("MC_HWASAN_APK"))
     parser.add_argument("--serial", default=os.environ.get("ANDROID_SERIAL"))
+    parser.add_argument("--apk-only", action="store_true", help="validate the APK without accessing adb")
     parser.add_argument("--timeout", type=int, default=60)
     args = parser.parse_args(argv)
     if args.apk is None:
         parser.error("--apk or MC_HWASAN_APK is required")
+    if args.apk_only:
+        try:
+            verify_apk(args.apk)
+            print(json.dumps({"apk": str(args.apk), "mode": "preflight", "status": "passed"}, sort_keys=True))
+            return 0
+        except (HwasanError, OSError, subprocess.TimeoutExpired) as error:
+            print(f"FAIL Android HWASan APK preflight: {error}", file=sys.stderr)
+            return 1
     if not args.serial:
         parser.error("--serial or ANDROID_SERIAL is required")
     if args.timeout < 1 or args.timeout > 120:

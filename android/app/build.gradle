@@ -80,7 +80,7 @@ def stageHudLicenses = tasks.register('stageHudLicenses', Sync) {
 def stageHwasanWrap = tasks.register('stageHwasanWrap') {
     outputs.dir(hwasanWrapAssets)
     doLast {
-        File libDirectory = new File(hwasanWrapAssets.get().asFile, 'arm64-v8a')
+        File libDirectory = new File(new File(hwasanWrapAssets.get().asFile, 'lib'), 'arm64-v8a')
         if (!libDirectory.mkdirs() && !libDirectory.isDirectory()) {
             throw new GradleException("Cannot create HWASan wrap directory: ${libDirectory}")
         }
@@ -154,7 +154,7 @@ android {
             shaders.setSrcDirs([fallbackShaderSources])
             assets.setSrcDirs([hudLicenseAssets])
             if (sanitizer == 'hwasan') {
-                jniLibs.srcDir(hwasanWrapAssets)
+                resources.srcDir(hwasanWrapAssets)
             }
         }
     }
@@ -201,6 +201,9 @@ if (sanitizer != null) {
         "-DVCPKG_OVERLAY_PORTS=${vcpkgOverlayPorts.absolutePath}"
     ])
     android.buildTypes.release.signingConfig android.signingConfigs.debug
+    android.buildTypes.release.applicationIdSuffix = '.hwasan'
+    android.buildTypes.release.debuggable = true
+    android.packaging.jniLibs.useLegacyPackaging = true
     tasks.named('preBuild').configure {
         dependsOn(stageHwasanWrap)
     }
@@ -268,5 +271,64 @@ def verifyDebugShaderAssets = tasks.register('verifyDebugShaderAssets') {
 tasks.configureEach {
     if (name == 'assembleDebug') {
         finalizedBy(verifyDebugShaderAssets)
+    }
+}
+
+if (sanitizer == 'hwasan') {
+    def verifyHwasanReleaseApk = tasks.register('verifyHwasanReleaseApk') {
+        doLast {
+            if (!android.buildTypes.release.debuggable) {
+                throw new GradleException('HWASan Release APK must be debuggable for wrap.sh')
+            }
+            if (android.packaging.jniLibs.useLegacyPackaging != true) {
+                throw new GradleException('HWASan Release APK must use legacy JNI packaging')
+            }
+
+            File apk = layout.buildDirectory.file('outputs/apk/release/app-release.apk').get().asFile
+            if (!apk.isFile()) {
+                throw new GradleException("HWASan Release APK is missing: ${apk}")
+            }
+            ZipFile zip = new ZipFile(apk)
+            try {
+                def wrapEntry = zip.getEntry('lib/arm64-v8a/wrap.sh')
+                if (wrapEntry == null) {
+                    throw new GradleException('HWASan Release APK is missing lib/arm64-v8a/wrap.sh')
+                }
+                String wrap = new String(zip.getInputStream(wrapEntry).readAllBytes(), 'UTF-8')
+                if (wrap != '#!/system/bin/sh\nLD_HWASAN=1 exec "$@"\n') {
+                    throw new GradleException('HWASan Release APK has an invalid lib/arm64-v8a/wrap.sh')
+                }
+
+                def nativeEntry = zip.getEntry('lib/arm64-v8a/libmc_android.so')
+                if (nativeEntry == null) {
+                    throw new GradleException('HWASan Release APK is missing lib/arm64-v8a/libmc_android.so')
+                }
+                byte[] nativeBytes = zip.getInputStream(nativeEntry).readAllBytes()
+                if (nativeBytes.length < 64 ||
+                    (nativeBytes[0] & 0xff) != 0x7f ||
+                    (nativeBytes[1] & 0xff) != 0x45 ||
+                    (nativeBytes[2] & 0xff) != 0x4c ||
+                    (nativeBytes[3] & 0xff) != 0x46 ||
+                    (nativeBytes[4] & 0xff) != 2 ||
+                    (nativeBytes[5] & 0xff) != 1 ||
+                    (nativeBytes[18] & 0xff) != 183 ||
+                    (nativeBytes[19] & 0xff) != 0
+                ) {
+                    throw new GradleException('HWASan Release APK native library is not a 64-bit little-endian AArch64 ELF')
+                }
+                String nativeLibrary = new String(nativeBytes, 'ISO-8859-1')
+                if (!nativeLibrary.contains('libclang_rt.hwasan-aarch64-android.so')) {
+                    throw new GradleException('HWASan Release APK native library is not linked with the HWASan runtime')
+                }
+            } finally {
+                zip.close()
+            }
+        }
+    }
+
+    tasks.configureEach {
+        if (name == 'assembleRelease') {
+            finalizedBy(verifyHwasanReleaseApk)
+        }
     }
 }

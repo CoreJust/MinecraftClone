@@ -35,7 +35,7 @@
     },
     {
       "guide": "docs/code/ANDROID.md",
-      "guide_sha256": "80714fef29dd336cb41b0006d57d64ea6d772a25b0485846e7e53e3281374775",
+      "guide_sha256": "4de902c4ec40e40a15f8779e4d373c0ad002fbb70326754a5ccead6cfc4559bf",
       "id": "android",
       "sources": [
         "src/android/AndroidInput.cpp",
@@ -111,6 +111,7 @@
         "script/ci/__init__.py",
         "script/ci/acquire.py",
         "script/ci/android_clang_tidy.py",
+        "script/ci/android_hwasan_emulator.py",
         "script/ci/build_snapshot.py",
         "script/ci/install_msan_libcxx.py",
         "script/ci/release_guard.py",
@@ -134,6 +135,7 @@
         "script/tests/test_ai_tasks.py",
         "script/tests/test_analysis_presets.py",
         "script/tests/test_android_clang_tidy.py",
+        "script/tests/test_android_hwasan_emulator.py",
         "script/tests/test_android_pair_playtest.py",
         "script/tests/test_android_playtest.py",
         "script/tests/test_android_shader_assets.py",
@@ -164,7 +166,7 @@
         "vcpkg-configuration.json",
         "vcpkg.json"
       ],
-      "sources_sha256": "88a36d605986bc632e49fc2768795f4b40a04d532ddc271c45f00fb605b5dbee"
+      "sources_sha256": "5b214c202d1186c45d9c12b2da594de4bde012f40ae3959506ce88e43ac92e24"
     },
     {
       "guide": "docs/code/CORE.md",

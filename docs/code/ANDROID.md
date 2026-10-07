@@ -57,3 +57,31 @@ Gradle source set stages the scene and text shaders, including `text.vert`
 and `text.frag`, so the APK contains their
 compiled `shaders/*.spv` assets; see the Android section of [the build
 guide](../BUILD.md) for packaging and environment requirements.
+
+The S7 Android HWASan analysis variant generates the NDK `wrap.sh` under the
+Android resources source set so the APK contains
+`lib/arm64-v8a/wrap.sh`. Only that variant is debuggable and uses legacy JNI
+packaging, as required by the [NDK wrap-script contract](https://developer.android.com/ndk/guides/wrap-script);
+the HWASan-only Release application ID adds the `.hwasan` suffix so the
+diagnostic APK can coexist with the ordinary game installation. The ordinary
+Release variant keeps the existing `com.corejust.minecraftclone` application
+ID, packaging, and build type.
+Gradle and CI preflight the packaged wrapper and instrumented AArch64 library
+before upload or emulator startup, while device runtime validation remains a
+separate S7 acceptance gate.
+
+The candidate-bound HWASan runtime runs only on the authorized macOS ARM64 host
+with usable Hypervisor.Framework acceleration. It validates Java 21, creates a
+unique AVD and Android user/configuration homes under the job's private
+`RUNNER_TEMP` subtree, installs the pinned Android SDK inside that same
+run-owned subtree, and refuses to reuse the default AVD home. The emulator
+must start with acceleration enabled on console port 5558 (ADB serial
+`emulator-5558`); the job fails closed if that serial or either reserved port is
+already occupied. Device commands always select that serial explicitly. An
+always-run cleanup verifies the recorded emulator PID, executable, AVD name,
+port, and process start identity before stopping it, then removes only the
+run-owned AVD/SDK/user-state subtree. A process already gone at signal time is
+treated as stopped; other signal errors fail closed. It leaves unrelated
+devices and global AVDs untouched. These requirements follow Android's [emulator acceleration and
+port contract](https://developer.android.com/studio/run/emulator-commandline)
+and its [AVD/user-home environment variables](https://developer.android.com/tools/variables).

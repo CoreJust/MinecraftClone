@@ -26,13 +26,19 @@ class VerifyAndroidHwasanTests(unittest.TestCase):
     def setUp(self):
         self.hwasan = load_module()
 
+    def aarch64_library(self, *, runtime: bool = True, machine: bytes = b"\xb7\x00") -> bytes:
+        header = bytearray(64)
+        header[:7] = b"\x7fELF\x02\x01\x01"
+        header[18:20] = machine
+        return bytes(header) + (self.hwasan.HWASAN_RUNTIME if runtime else b"")
+
     def apk(self, root: Path, *, wrap: bytes | None = None, library: bytes | None = None) -> Path:
         apk = root / "game.apk"
         with zipfile.ZipFile(apk, "w") as archive:
             archive.writestr(self.hwasan.WRAP_PATH, wrap or self.hwasan.EXPECTED_WRAP)
             archive.writestr(
                 self.hwasan.NATIVE_LIBRARY_PATH,
-                library or b"native" + self.hwasan.HWASAN_RUNTIME,
+                library or self.aarch64_library(),
             )
         return apk
 
@@ -43,7 +49,33 @@ class VerifyAndroidHwasanTests(unittest.TestCase):
             with self.assertRaisesRegex(self.hwasan.HwasanError, "invalid"):
                 self.hwasan.verify_apk(self.apk(root, wrap=b"#!/system/bin/sh\nexec \"$@\"\n"))
             with self.assertRaisesRegex(self.hwasan.HwasanError, "not linked"):
-                self.hwasan.verify_apk(self.apk(root, library=b"native"))
+                self.hwasan.verify_apk(self.apk(root, library=self.aarch64_library(runtime=False)))
+            with self.assertRaisesRegex(self.hwasan.HwasanError, "AArch64 ELF"):
+                self.hwasan.verify_apk(
+                    self.apk(root, library=self.aarch64_library(machine=b"\x3e\x00"))
+                )
+
+    def test_apk_only_cli_validates_without_a_serial_or_adb(self):
+        with tempfile.TemporaryDirectory() as directory:
+            apk = self.apk(Path(directory))
+            with mock.patch.object(self.hwasan.subprocess, "run") as run_adb:
+                self.assertEqual(self.hwasan.main(["--apk", str(apk), "--apk-only"]), 0)
+            run_adb.assert_not_called()
+
+    def test_apk_only_cli_fails_closed_without_adb_for_invalid_apk(self):
+        with tempfile.TemporaryDirectory() as directory:
+            apk = self.apk(Path(directory), wrap=b"invalid")
+            with mock.patch.object(self.hwasan.subprocess, "run") as run_adb:
+                self.assertEqual(self.hwasan.main(["--apk", str(apk), "--apk-only"]), 1)
+            run_adb.assert_not_called()
+
+    def test_runtime_rejects_invalid_apk_before_any_device_command(self):
+        with tempfile.TemporaryDirectory() as directory:
+            apk = self.apk(Path(directory), wrap=b"invalid")
+            with mock.patch.object(self.hwasan, "run_adb") as run_adb:
+                with self.assertRaisesRegex(self.hwasan.HwasanError, "invalid"):
+                    self.hwasan.verify_runtime("emulator-5554", apk, 10)
+            run_adb.assert_not_called()
 
     def test_runtime_requires_a_live_process_and_clean_logcat(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -52,7 +84,7 @@ class VerifyAndroidHwasanTests(unittest.TestCase):
                 self.hwasan,
                 "run_adb",
                 side_effect=["", "Success", "Starting"] + ["using ns libmc_android.so"] * 6,
-            ), mock.patch.object(self.hwasan, "running_process_id", return_value="123"), mock.patch.object(
+            ) as run_adb, mock.patch.object(self.hwasan, "running_process_id", return_value="123"), mock.patch.object(
                 self.hwasan.time,
                 "monotonic",
                 side_effect=[0, 0, 1, 2, 3, 4, 5],
@@ -60,6 +92,10 @@ class VerifyAndroidHwasanTests(unittest.TestCase):
                 receipt = self.hwasan.verify_runtime("emulator-5554", apk, 10)
             self.assertEqual(receipt["pid"], "123")
             self.assertEqual(receipt["healthy_seconds"], 5)
+            self.assertIn(
+                mock.call("emulator-5554", "shell", "am", "start", "-n", "com.corejust.minecraftclone.hwasan/android.app.NativeActivity"),
+                run_adb.call_args_list,
+            )
 
             with mock.patch.object(
                 self.hwasan,

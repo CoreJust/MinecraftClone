@@ -139,20 +139,36 @@ class WorkflowContextTests(unittest.TestCase):
                 self.assertIsNotNone(condition_match, job_name)
                 self.assertEqual(condition_match.group(1), condition)
 
-    def test_android_emulator_enables_documented_software_acceleration_opt_in(self):
+    def test_android_hwasan_runtime_uses_owned_hvf_emulator_lifecycle(self):
         workflow = WORKFLOWS[0].read_text(encoding="utf-8")
         runtime_job = workflow.split("\n  android-hwasan-runtime:", maxsplit=1)[1].split(
             "\n  analysis-matrix:", maxsplit=1
         )[0]
-        emulator_step = runtime_job.split(
-            "      - name: Start matching ARM64 Android emulator\n", maxsplit=1
-        )[1].split("      - name:", maxsplit=1)[0]
-
-        self.assertRegex(
-            emulator_step,
-            r"(?m)^        env:\n          ANDROID_I_WANT_MY_TCG: 'yes'\n        run:",
+        self.assertLess(
+            runtime_job.index("Select and validate Java 21"),
+            runtime_job.index("Bootstrap pinned Android SDK tools"),
         )
-        self.assertIn('"$emulator_bin" -avd mc-hwasan -accel off', emulator_step)
+        self.assertLess(
+            runtime_job.index("Create isolated Android emulator homes"),
+            runtime_job.index("Bootstrap pinned Android SDK tools"),
+        )
+        self.assertIn('install-android-sdk --root "$ANDROID_SDK_ROOT"', runtime_job)
+        self.assertLess(
+            runtime_job.index("Preflight downloaded HWASan APK before emulator startup"),
+            runtime_job.index("Start matching ARM64 Android emulator with HVF"),
+        )
+        self.assertIn("script/ci/android_hwasan_emulator.py start", runtime_job)
+        self.assertIn("script/ci/android_hwasan_emulator.py wait", runtime_job)
+        self.assertNotIn("ANDROID_I_WANT_MY_TCG", runtime_job)
+        self.assertNotIn("-accel off", runtime_job)
+        self.assertNotIn("avdmanager create avd --force", runtime_job)
+
+        upload = runtime_job.index("Upload Android HWASan emulator log")
+        cleanup = runtime_job.index("Stop owned Android emulator and remove private AVD state")
+        self.assertLess(upload, cleanup)
+        cleanup_step = runtime_job[cleanup:]
+        self.assertIn("if: always()", cleanup_step)
+        self.assertIn("script/ci/android_hwasan_emulator.py cleanup", cleanup_step)
 
     def test_linux_sanitizer_bootstrap_uses_published_ninja_wheel(self):
         workflow = WORKFLOWS[0].read_text(encoding="utf-8")

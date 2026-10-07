@@ -168,6 +168,17 @@ cmake_language(EVAL CODE "${portfile_prefix}")
                 "asmflags": "ASMFLAGS=-c",
                 "host": "--host=aarch64-linux-android",
             },
+            "arm64-android-hwasan": {
+                "VCPKG_TARGET_IS_ANDROID": "ON",
+                "VCPKG_TARGET_ARCHITECTURE": "arm64",
+                "VCPKG_DETECTED_CMAKE_C_COMPILER_ID": "Clang",
+                "VCPKG_DETECTED_CMAKE_C_COMPILER": "/placeholder/clang",
+                "assembly_disabled": False,
+                "ccas": "CCAS=clang",
+                "asmflags": "ASMFLAGS=-c",
+                "host": "--host=aarch64-linux-android",
+                "android_hwasan": True,
+            },
             "arm-windows": {
                 "VCPKG_TARGET_IS_WINDOWS": "ON",
                 "VCPKG_TARGET_ARCHITECTURE": "arm",
@@ -251,8 +262,21 @@ cmake_language(EVAL CODE "${configure_portfile}")
                     ):
                         if key in scenario:
                             command[command.index(f"-D{key}=OFF")] = f"-D{key}={scenario[key]}"
-                    if triplet == "arm64-android":
+                    if triplet in ("arm64-android", "arm64-android-hwasan"):
                         command[command.index("-DVCPKG_CROSSCOMPILING=OFF")] = "-DVCPKG_CROSSCOMPILING=ON"
+                    if scenario.get("android_hwasan"):
+                        toolchain_bin = temporary / "android-toolchain" / "bin"
+                        toolchain_bin.mkdir(parents=True)
+                        for compiler in (
+                            "aarch64-linux-android29-clang",
+                            "aarch64-linux-android29-clang++",
+                        ):
+                            (toolchain_bin / compiler).write_text("", encoding="utf-8")
+                        cmake_compiler_path = (toolchain_bin / "clang").as_posix()
+                        command[
+                            command.index("-DVCPKG_DETECTED_CMAKE_C_COMPILER=/placeholder/clang")
+                        ] = f"-DVCPKG_DETECTED_CMAKE_C_COMPILER={cmake_compiler_path}"
+                        command.insert(command.index("-P"), "-DVCPKG_CMAKE_SYSTEM_VERSION=29")
 
                     result = subprocess.run(
                         command,
@@ -287,6 +311,15 @@ cmake_language(EVAL CODE "${configure_portfile}")
                         self.assertIn(scenario["host"], configure_args)
                     else:
                         self.assertNotIn("--host=aarch64-linux-android", configure_args)
+                    if scenario.get("android_hwasan"):
+                        cc = (toolchain_bin / "aarch64-linux-android29-clang").as_posix()
+                        cxx = (toolchain_bin / "aarch64-linux-android29-clang++").as_posix()
+                        self.assertIn(
+                            f"CC={cc}",
+                            configure_args,
+                        )
+                        self.assertIn(f"CXX={cxx}", configure_args)
+                        self.assertNotIn("ABI=64", configure_args)
 
 
 if __name__ == "__main__":
