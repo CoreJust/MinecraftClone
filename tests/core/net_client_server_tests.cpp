@@ -128,7 +128,7 @@ struct TestServerService final {
     std::atomic_size_t clients_connected{ 0 };
     std::atomic_size_t clients_disconnected{ 0 };
     TestServer server;
-    std::jthread thread;
+    std::thread thread;
 
     explicit TestServerService(
         std::function<void(TestServer&, core::ServerReceiveEvent)> on_received,
