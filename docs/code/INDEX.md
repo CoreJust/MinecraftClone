@@ -145,6 +145,7 @@ Files:
 - [`script/tests/test_pre_finalization_candidate.py`](../../script/tests/test_pre_finalization_candidate.py)
 - [`script/tests/test_release_guard.py`](../../script/tests/test_release_guard.py)
 - [`script/tests/test_runtime_cli.py`](../../script/tests/test_runtime_cli.py)
+- [`script/tests/test_vcpkg_clang_toolchain.py`](../../script/tests/test_vcpkg_clang_toolchain.py)
 - [`script/tests/test_verify_analysis_gate.py`](../../script/tests/test_verify_analysis_gate.py)
 - [`script/tests/test_verify_android_hwasan.py`](../../script/tests/test_verify_android_hwasan.py)
 - [`script/tests/test_verify_release_assets.py`](../../script/tests/test_verify_release_assets.py)

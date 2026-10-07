@@ -1501,8 +1501,8 @@
       "MC-AI-0037"
     ],
     "acceptance": "Deliver immutable, generation-tagged hard/soft entity permissions for all/players/mobs/technical-entities/per-kind and explicit-member/selector groups; namespace custom keys and defer world subjects. Cover movement, flight/collision, blocks, inventory, invincibility, commands, and permission-backed mode presets. Use CoreLang 0.1.3.1 (only documented 0.1.3.3 maintenance), retain interpreter/JIT parity, and prepare kernels off physics ticks. Test latency, loss, jitter, freezes, reordering, and duplication. Replicate a 29/16 × 10/16 × 10/16 player, 16-color palette, and first/rear-third/front-third views. Keep position-driven radius-256 terrain camera-independent and derive face LOD at projected area ≤2 px². Provide four inspected 2560x1440 Mac screenshots with prominent labels centered below the HUD: (1) the flying third-person player offset from the central spike, with the full spike, most of its first ring, and terrain beyond visible from slightly above while emphasizing the central landform's mass; (2) the player in the trench near the first spike; (3) the player climbing the mountain; and (4) first-person at horizontal X/Z (0, 0). Target stable 120 FPS at x200 and the world border as diagnostic only. Pass platform and automated MC-AI-0249 gates; include the accepted CoreCpp scope MC-AI-0056 Runtime executors, MC-AI-0057 Runtime audio, and MC-AI-0240 renderer diagnostics in this snapshot. Release S7, hold the minor open for feedback, and do not start S8.",
-    "evidence": "Four inspected 2560x1440 Mac captures retain prominent bottom-center labels without HUD overlap. SHA-256: central 5cc66572943d05af9a21894567b35fe2ffad2bd3a2c87ce96be0097ddeca4161; trench 8608534cd001bf835279ce4ff53969b6453b6906e4a6a3497dbb55b7f2542af6; mountain 9ad8cd09b1a91356e74b5cab2ee373d908d9bb7c5680fc3b9f8129003ef9288a; origin 38c350a3f0772d6445cbde8c372ffb3b385884b7027493a9ceb66a58b81dbfc8. Prior source 9e70405 and same-tree promotion 808311f passed prescribed local aggregate, prepare and finish gates; hosted run 37545384254 passed Ubuntu fast, macOS Release and Android HWASan build but failed Windows SDK assertions, Linux builds, macOS Apple-Clang leak detection and Android emulator startup. No tag or assets were created. Reviewed repairs MC-AI-0350 through MC-AI-0353 are pushed at b4570f1ebc38a3a54be8e2f54ce1b140fe763ba0: full integration passed 457 Python tests, Debug build and 584 registered CTests with one explicit Release-only skip (372.57s), publisher and source-policy checks. Its manual diagnostic run 37550466407 passed both fast gates; full LSan/MSan output identified unsupported OS-header and libc++18 jthread test compilation failures. Reviewed MC-AI-0354 repairs these without changing shipping code or sanitizer flags; all 21 affected macOS CTests pass (5.25s). Corrected Linux execution and exact-promotion acceptance remain pending. Earlier gameplay, streaming and landing evidence remains in child task entries.",
-    "blocker": "Corrected source 57a2dd6 builds under LSan and reaches 323 tests, but two nested provenance fixtures omit the analysis-host opt-in (MC-AI-0355). Repair those fixtures and validate actual Linux rows, then require exact-promotion analysis/runtime, platform artifacts and strict/tag gates. S7 is active and unpublished; hold the minor and keep Windows hands-on separate.",
+    "evidence": "Four inspected 2560x1440 Mac captures retain prominent bottom-center labels without HUD overlap. SHA-256: central 5cc66572943d05af9a21894567b35fe2ffad2bd3a2c87ce96be0097ddeca4161; trench 8608534cd001bf835279ce4ff53969b6453b6906e4a6a3497dbb55b7f2542af6; mountain 9ad8cd09b1a91356e74b5cab2ee373d908d9bb7c5680fc3b9f8129003ef9288a; origin 38c350a3f0772d6445cbde8c372ffb3b385884b7027493a9ceb66a58b81dbfc8. Prior promotion 808311f passed local aggregate/prepare/finish gates; hosted run 37545384254 passed Ubuntu fast, macOS Release and Android HWASan build but exposed separately recorded Windows, Linux, macOS sanitizer and Android emulator failures. No tag or assets were created. Reviewed repairs MC-AI-0350 through MC-AI-0354 are pushed with exact source 57a2dd6: its aggregate and prepare each passed 457 Python tests, Debug build, 584 registered CTests with one explicit Release-only skip, renderer smoke and publisher/source-policy checks. Manual diagnostic run 37553105042 builds LSan and runs 323 registered tests: 320 pass, two nested-provenance failures, one explicit unsupported-OS skip. MSan configures but final linking exposes spdlog libstdc++ ABI against the instrumented libc++ candidate. Reviewed MC-AI-0355 at 743433f repairs nested context; its three affected native fixtures pass 3/3 in 15.89s. MC-AI-0356 owns the separate vcpkg toolchain initialization repair. Earlier gameplay, streaming, landing and accepted CoreCpp evidence remains in child task entries. Corrected Linux and exact-promotion release acceptance are not yet established.",
+    "blocker": "Reviewed nested-context repair MC-AI-0355 and focused-tested vcpkg initialization repair MC-AI-0356 await corrected Linux execution. Require exact-promotion 13-row analysis/runtime, platform artifacts and strict/tag gates before publication. S7 remains active and unpublished; hold the minor and keep Windows hands-on separate.",
     "owner": "Codex",
     "level": "snapshot",
     "parent": "MC-AI-0033",
@@ -12297,6 +12297,44 @@
     ],
     "code_changes": [
       "Propagate enclosing host and compiler/sanitizer context through nested test configures without bypassing provenance assertions or platform guards."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0356",
+    "title": "Restore vcpkg Linux sanitizer toolchain initialization",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P1",
+    "route": "luna",
+    "milestone": "ED-010-S7",
+    "depends_on": [],
+    "acceptance": "Keep explicit Clang selection and restore pinned vcpkg Linux platform initialization so triplet sanitizer/libc++ compiler and linker flags and try-compile context reach every dependency build. Reuse the pinned upstream Linux toolchain instead of duplicating its logic; fail clearly on a missing exact toolchain root/file. Add focused behavioral regression coverage, preserve unrelated platform/dependency/sanitizer gates, and pass exact-candidate review. Actual corrected LSan/MSan and full promotion acceptance remain required before S7 publication.",
+    "evidence": "The custom Clang chainload validates compiler files, VCPKG_ROOT and its Linux toolchain file, keeps explicit CC/CXX selection and includes the pinned upstream initialization. Seven CMake-evaluated behavioral regression tests pass with no skips against exact vcpkg commit 2b65c20fc66eda893aa15a15a453c3cf09500b19. Actual script-mode readback initializes C/C++ sanitizer flags, libc++ selection, module/shared/executable linker flags and debug/release try-compile propagation. Missing compiler variables/files, directory-valued compilers, root and toolchain file are rejected. The exact-review compiler-directory finding is repaired; diff checks pass. This does not claim a Linux compile or runtime pass; corrected LSan/MSan and full promotion acceptance remain mandatory separately.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0038",
+    "motivation": "Actual MSan linking exposes uninstrumented libstdc++ ABI in vcpkg dependencies because the custom Clang chainload replaces required Linux initialization.",
+    "context": "Run 37553105042 at source 57a2dd6 configures MSan but final tests/mc_tests linking fails on libspdlog.a std::__cxx11 and libstdc++ thread symbols. Pinned vcpkg selects its default Linux chainload only without a custom file; the project custom file sets compilers but never applies VCPKG compiler/link flags or try-compile context.",
+    "complexity": "low",
+    "created_at": "2026-10-07",
+    "resolved_at": "2026-10-07",
+    "resolution_changes": "Restore standard vcpkg Linux initialization after selecting Clang, validate its root/file explicitly, and test real CMake evaluation with both regression fixtures and the pinned upstream file.",
+    "plan": [
+      "Repair the Clang chainload boundary, exercise selected flags and validation behavior, review one immutable candidate, then run the batch and actual Linux/promotion gates."
+    ],
+    "product_changes": [
+      "No product platform or gameplay behavior changed; Linux remains analysis-only."
+    ],
+    "code_changes": [
+      "The Linux Clang dependency chainload delegates platform flag and try-compile initialization to the exact pinned vcpkg checkout; focused CMake behavior tests protect delegation and validation."
     ],
     "baseline_commit": "",
     "commits": [],
