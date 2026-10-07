@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import subprocess
 import tempfile
+import time
 import unittest
 from pathlib import Path
+from unittest import mock
 
 
 REPOSITORY = Path(__file__).resolve().parents[2]
@@ -97,12 +99,35 @@ class WindowsRuntimeStagingTests(unittest.TestCase):
                 f'DEPENDENCIES {dependency} REQUIRED_FILES "{required.as_posix()}")\n'
             )
             (source / "CMakeLists.txt").write_text(cmake_lists, encoding="utf-8")
-            return subprocess.run(
-                ["cmake", "-S", str(source), "-B", str(build), "-G", "Ninja"],
-                text=True,
-                capture_output=True,
-                check=False,
-            )
+            command = ["cmake", "-S", str(source), "-B", str(build), "-G", "Ninja"]
+            timeout_seconds = 60
+            started = time.monotonic()
+            try:
+                return subprocess.run(
+                    command,
+                    text=True,
+                    capture_output=True,
+                    timeout=timeout_seconds,
+                    check=False,
+                )
+            except subprocess.TimeoutExpired as error:
+                elapsed = time.monotonic() - started
+                stdout = error.stdout or ""
+                stderr = error.stderr or ""
+                if isinstance(stdout, bytes):
+                    stdout = stdout.decode(errors="replace")
+                if isinstance(stderr, bytes):
+                    stderr = stderr.decode(errors="replace")
+                diagnostic = (
+                    f"CMake fixture configure timed out after {elapsed:.2f}s "
+                    f"(limit {timeout_seconds}s)"
+                )
+                return subprocess.CompletedProcess(
+                    command,
+                    124,
+                    f"{stdout}\n{diagnostic}\n",
+                    stderr,
+                )
 
     def test_configure_accepts_supported_imported_runtime_target(self):
         result = self._configure_fixture()
@@ -117,6 +142,19 @@ class WindowsRuntimeStagingTests(unittest.TestCase):
         result = self._configure_fixture(required_file=False)
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("runtime staging file is missing", result.stdout + result.stderr)
+
+    def test_configure_timeout_fails_and_preserves_partial_output(self):
+        error = subprocess.TimeoutExpired(
+            ["cmake"], 60, output=b"partial stdout", stderr=b"partial stderr"
+        )
+        with mock.patch("subprocess.run", side_effect=error) as run:
+            result = self._configure_fixture()
+        self.assertEqual(result.returncode, 124)
+        self.assertEqual(run.call_args.kwargs["timeout"], 60)
+        output = result.stdout + result.stderr
+        self.assertIn("partial stdout", output)
+        self.assertIn("partial stderr", output)
+        self.assertRegex(output, r"CMake fixture configure timed out after \d+\.\d+s \(limit 60s\)")
 
     def test_corecpp_server_fixture_configures_with_local_package_stub(self):
         with tempfile.TemporaryDirectory() as directory:

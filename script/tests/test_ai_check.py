@@ -195,11 +195,32 @@ class AiCheckTests(unittest.TestCase):
             calls.append((name, command, timeout))
             return checker.PhaseResult(name, command, 0, "")
 
-        with mock.patch.object(checker, "run_phase", side_effect=run_phase), contextlib.redirect_stdout(io.StringIO()):
+        with (
+            mock.patch.object(checker, "run_phase", side_effect=run_phase),
+            mock.patch.object(checker.platform, "system", return_value="Darwin"),
+            contextlib.redirect_stdout(io.StringIO()),
+        ):
             self.assertEqual(checker.main(["--root", str(self.root), "--fast"]), 0)
         python_tests = next(item for item in calls if item[0] == "python-tests")
         self.assertEqual(python_tests[1][-1], "-v")
         self.assertEqual(python_tests[2], 300)
+
+    def test_python_tests_use_extended_windows_budget(self):
+        checker = load_module()
+        calls = []
+
+        def run_phase(root, log_dir, name, command, timeout, **kwargs):
+            calls.append((name, command, timeout))
+            return checker.PhaseResult(name, command, 0, "")
+
+        with (
+            mock.patch.object(checker, "run_phase", side_effect=run_phase),
+            mock.patch.object(checker.platform, "system", return_value="Windows"),
+            contextlib.redirect_stdout(io.StringIO()),
+        ):
+            self.assertEqual(checker.main(["--root", str(self.root), "--fast"]), 0)
+        python_tests = next(item for item in calls if item[0] == "python-tests")
+        self.assertEqual(python_tests[2], 420)
 
     def test_fast_rejects_partially_staged_governed_file(self):
         target = self.root / "src/changed.cpp"
@@ -245,11 +266,14 @@ class AiCheckTests(unittest.TestCase):
     def test_failed_phase_prints_complete_diagnostics(self):
         ai_check = load_module()
         diagnostics = "traceback-start\n" + ("diagnostic line\n" * 1_500) + "traceback-end"
-        result = ai_check.PhaseResult("python-tests", ["python", "-m", "unittest"], 1, diagnostics)
+        result = ai_check.PhaseResult(
+            "python-tests", ["python", "-m", "unittest"], 1, diagnostics, duration_seconds=2.5
+        )
         with contextlib.redirect_stdout(io.StringIO()) as output:
             ai_check.print_result(result)
         self.assertIn("traceback-start", output.getvalue())
         self.assertIn("traceback-end", output.getvalue())
+        self.assertIn("after 2.50s", output.getvalue())
         self.assertEqual(output.getvalue().count("diagnostic line"), 1_500)
 
     def test_python_test_environment_rejects_failed_or_malformed_git_discovery(self):

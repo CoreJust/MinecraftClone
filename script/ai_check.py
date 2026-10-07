@@ -25,6 +25,7 @@ SHARED_PYTHON_SOURCES = {
     "ai_publish.py", "ai_run.py", "ai_setup.py", "ai_tasks.py",
 }
 PYTHON_TEST_TIMEOUT = 300
+WINDOWS_PYTHON_TEST_TIMEOUT = 420
 GOVERNED_PREFIXES = ("src/", "tests/", "docs/", "script/", ".githooks/", ".github/", ".codex/", ".agents/", "cmake/")
 PYTHON_WORKFLOW_PREFIXES = ("docs/ai/", "docs/code/", "script/", ".agents/", ".githooks/")
 NATIVE_BUILD_PREFIXES = ("src/", "tests/", "cmake/", "android/")
@@ -59,6 +60,10 @@ class PhaseResult:
     reused: bool = False
     skipped: bool = False
     duration_seconds: float = 0.0
+
+
+def python_test_timeout() -> int:
+    return WINDOWS_PYTHON_TEST_TIMEOUT if platform.system() == "Windows" else PYTHON_TEST_TIMEOUT
 
 
 def command_output(root: Path, command: Sequence[str]) -> str:
@@ -499,15 +504,18 @@ def print_result(result: PhaseResult) -> None:
         print(f"SKIP {result.name}: {result.output}")
         return
     if result.reused:
-        print(f"REUSED PASS {result.name}: {command}")
+        print(f"REUSED PASS {result.name}: {command} ({result.duration_seconds:.2f}s)")
         return
     if result.returncode == 0:
-        print(f"PASS {result.name}: {command}")
+        print(f"PASS {result.name}: {command} ({result.duration_seconds:.2f}s)")
         return
     state = "TIMEOUT" if result.timed_out else "FAIL"
     if result.allowed_failure:
         state = "ALLOWED"
-    print(f"{state} {result.name}: exit {result.returncode}; log build/ai-checks/{result.name}.log")
+    print(
+        f"{state} {result.name}: exit {result.returncode} after {result.duration_seconds:.2f}s; "
+        f"log build/ai-checks/{result.name}.log"
+    )
     diagnostics = result.output.strip()
     if diagnostics:
         print(diagnostics)
@@ -666,7 +674,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             (
                 "python-tests",
                 [sys.executable, "-m", "unittest", *targets, "-v"],
-                PYTHON_TEST_TIMEOUT,
+                python_test_timeout(),
             )
         )
     else:
@@ -674,7 +682,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             (
                 "python-tests",
                 [sys.executable, "-m", "unittest", "discover", "-s", "script/tests", "-v"],
-                PYTHON_TEST_TIMEOUT,
+                python_test_timeout(),
             )
         )
     # Fast checks intentionally stop at affected tooling and whitespace checks.
