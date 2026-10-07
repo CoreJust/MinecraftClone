@@ -30,6 +30,16 @@ using testsupport::AdversePacket;
 using testsupport::AdverseTransport;
 using testsupport::AdverseTransportConfig;
 
+class ImmediateAudioOutput final : public client::ClientAudioOutput {
+public:
+    [[nodiscard]] bool start() noexcept override { return true; }
+    void stop() noexcept override {}
+    [[nodiscard]] bool play(std::span<int16_t const> samples) noexcept override
+    {
+        return !samples.empty();
+    }
+};
+
 [[nodiscard]] std::optional<shared::Message> decode(testsupport::AdversePacket const& packet)
 {
     return shared::decodeMessage(packet.bytes);
@@ -38,7 +48,12 @@ using testsupport::AdverseTransportConfig;
 class AdverseGameClient final : public client::GameClient {
 public:
     AdverseGameClient()
-        : GameClient{ shared::WorldMode::Flight, shared::World::canonicalConfiguration(), false }
+        : GameClient{
+            shared::WorldMode::Flight,
+            shared::World::canonicalConfiguration(),
+            false,
+            std::make_unique<ImmediateAudioOutput>(),
+        }
     {
         m_local_character = '@';
     }
@@ -123,10 +138,15 @@ private:
 
 struct ClientNetworkFacts final {
     std::atomic_uint64_t applied_positions{ 0U };
+    std::chrono::steady_clock::time_point pre_ready_started_at{};
+    std::chrono::steady_clock::time_point first_input_ready_at{};
+    std::chrono::steady_clock::time_point run_completed_at{};
 };
 
 struct AdverseRelayReceipt final {
     char character = 0;
+    uint32_t connection_start_tick = 0U;
+    std::optional<uint32_t> impairment_epoch_tick;
     uint64_t seed = 0U;
     std::string transport_json;
     testsupport::AdverseTransportConfig client_to_server_configuration;
@@ -194,6 +214,8 @@ public:
             }
             AdverseRelayReceipt receipt{
                 .character = link->character,
+                .connection_start_tick = link->connection_start_tick,
+                .impairment_epoch_tick = link->impairment_epoch_tick,
                 .seed = link->transport->seed(),
                 .transport_json = link->transport->factsJson(),
                 .client_to_server_configuration = link->transport->configuration(
@@ -262,6 +284,7 @@ private:
 
         core::ClientId id;
         uint32_t connection_start_tick = 0U;
+        std::optional<uint32_t> impairment_epoch_tick;
         char character = 0;
         std::unique_ptr<UpstreamClient> upstream;
         std::unique_ptr<AdverseTransport> transport;
@@ -310,6 +333,7 @@ private:
             if (auto const* const join = std::get_if<shared::JoinRequestMessage>(&*decoded)) {
                 link.character = join->ch;
                 link.connection_start_tick = m_tick;
+                link.impairment_epoch_tick.reset();
                 link.transport = std::make_unique<AdverseTransport>(
                     seedForCharacter(join->ch),
                     CLIENT_TO_SERVER,
@@ -317,9 +341,12 @@ private:
                 );
             } else if (link.transport) {
                 if (auto const* const input = std::get_if<shared::ClientInputMessage>(&*decoded)) {
+                    if (!link.impairment_epoch_tick.has_value()) {
+                        link.impairment_epoch_tick = m_tick;
+                    }
                     static_cast<void>(link.transport->send(
                         AdverseDirection::ClientToServer,
-                        tickSinceJoin(link, m_tick),
+                        impairmentTick(link, m_tick),
                         event.data
                     ));
                     static_cast<void>(input);
@@ -365,9 +392,16 @@ private:
                         )) {
                         ++link.stale_probe.authority_acceptances;
                     }
+                    if (!link.impairment_epoch_tick.has_value()) {
+                        // Setup positions initialize the local player needed to emit the first input.
+                        if (!sendToDownstream(link, event.data, event.channel_id)) {
+                            ++link.relay_send_failures;
+                        }
+                        return;
+                    }
                     static_cast<void>(link.transport->send(
                         AdverseDirection::ServerToClient,
-                        tickSinceJoin(link, m_tick),
+                        impairmentTick(link, m_tick),
                         event.data
                     ));
                     return;
@@ -398,7 +432,7 @@ private:
             if (!link.transport) {
                 continue;
             }
-            uint32_t const link_tick = tickSinceJoin(link, tick);
+            uint32_t const link_tick = impairmentTick(link, tick);
             requestStaleProbe(link, link_tick);
             for (AdversePacket const& packet : link.transport->receive(
                 AdverseDirection::ClientToServer,
@@ -466,9 +500,9 @@ private:
         }
     }
 
-    [[nodiscard]] static uint32_t tickSinceJoin(Link const& link, uint32_t const tick) noexcept
+    [[nodiscard]] static uint32_t impairmentTick(Link const& link, uint32_t const tick) noexcept
     {
-        return tick - link.connection_start_tick;
+        return link.impairment_epoch_tick.has_value() ? tick - *link.impairment_epoch_tick : 0U;
     }
 
     [[nodiscard]] static uint64_t seedForCharacter(char const character) noexcept
@@ -666,6 +700,7 @@ TEST(AdverseNetworkTest, RecoversPacketsAfterFifteenSecondDeliveryFreeze)
 TEST(AdverseNetworkTest, ProductionTwoClientsConvergeAcrossSeededBidirectionalImpairment)
 {
     static constexpr uint32_t INITIAL_RELAY_TICK = 500U;
+    static constexpr std::chrono::seconds PRE_READY_SAFETY_DEADLINE{ 15 };
     static constexpr std::chrono::seconds MOVEMENT_DURATION{ 5 };
     static constexpr std::chrono::seconds RUN_DURATION{ 7 };
     static constexpr shared::Direction MOVEMENT{ .x = 127U, .y = 0U, .view_y = 127 };
@@ -683,16 +718,24 @@ TEST(AdverseNetworkTest, ProductionTwoClientsConvergeAcrossSeededBidirectionalIm
 
     AdverseGameClient first_client;
     AdverseGameClient second_client;
-    auto const scenario_start = std::chrono::steady_clock::now();
-    auto const movement_end = scenario_start + MOVEMENT_DURATION;
-    auto const deadline = scenario_start + RUN_DURATION;
     ClientNetworkFacts first_facts;
     ClientNetworkFacts second_facts;
-    auto const make_hooks = [movement_end, deadline](ClientNetworkFacts& facts) {
-        client::GameClientBenchmarkHooks hooks;
-        hooks.deadline = deadline;
-        hooks.input_override = [movement_end](uint64_t) -> std::optional<shared::Direction> {
-            if (std::chrono::steady_clock::now() < movement_end) {
+    auto configure_hooks = [](
+        AdverseGameClient& game_client,
+        client::GameClientBenchmarkHooks& hooks,
+        ClientNetworkFacts& facts
+    ) {
+        facts.pre_ready_started_at = std::chrono::steady_clock::now();
+        hooks.deadline = facts.pre_ready_started_at + PRE_READY_SAFETY_DEADLINE;
+        hooks.input_override = [&game_client, &hooks, &facts](uint64_t) -> std::optional<shared::Direction> {
+            auto const now = std::chrono::steady_clock::now();
+            if (facts.first_input_ready_at == std::chrono::steady_clock::time_point{}
+                && game_client.authoritativePlayer().has_value()) {
+                facts.first_input_ready_at = now;
+                hooks.deadline = now + RUN_DURATION;
+            }
+            if (facts.first_input_ready_at != std::chrono::steady_clock::time_point{}
+                && now < facts.first_input_ready_at + MOVEMENT_DURATION) {
                 return MOVEMENT;
             }
             return shared::Direction{};
@@ -700,16 +743,19 @@ TEST(AdverseNetworkTest, ProductionTwoClientsConvergeAcrossSeededBidirectionalIm
         hooks.on_authoritative_player = [&facts](shared::Player const&) {
             facts.applied_positions.fetch_add(1U, std::memory_order_relaxed);
         };
-        return hooks;
     };
-    client::GameClientBenchmarkHooks first_hooks = make_hooks(first_facts);
-    client::GameClientBenchmarkHooks second_hooks = make_hooks(second_facts);
+    client::GameClientBenchmarkHooks first_hooks;
+    client::GameClientBenchmarkHooks second_hooks;
+    configure_hooks(first_client, first_hooks, first_facts);
+    configure_hooks(second_client, second_hooks, second_facts);
 
     std::thread first_client_thread{ [&] {
         first_client.run(core::Address::localhost(relay.port()), '@', &first_hooks);
+        first_facts.run_completed_at = std::chrono::steady_clock::now();
     } };
     std::thread second_client_thread{ [&] {
         second_client.run(core::Address::localhost(relay.port()), '#', &second_hooks);
+        second_facts.run_completed_at = std::chrono::steady_clock::now();
     } };
 
     first_client_thread.join();
@@ -728,7 +774,33 @@ TEST(AdverseNetworkTest, ProductionTwoClientsConvergeAcrossSeededBidirectionalIm
     std::optional<AdverseRelayReceipt> const second_receipt = relay.receipt('#');
     ASSERT_TRUE(first_receipt.has_value());
     ASSERT_TRUE(second_receipt.has_value());
+    auto const readiness_trace = [](AdverseRelayReceipt const& receipt, ClientNetworkFacts const& facts) {
+        auto const readiness_delay = std::chrono::duration_cast<std::chrono::milliseconds>(
+            facts.first_input_ready_at - facts.pre_ready_started_at
+        );
+        return "client=" + std::string(1U, receipt.character)
+            + " readiness_delay_ms=" + std::to_string(readiness_delay.count())
+            + " connection_tick=" + std::to_string(receipt.connection_start_tick)
+            + " impairment_epoch_tick="
+            + (receipt.impairment_epoch_tick.has_value()
+                ? std::to_string(*receipt.impairment_epoch_tick)
+                : std::string("unset"))
+            + " transport=" + receipt.transport_json;
+    };
+    SCOPED_TRACE(
+        readiness_trace(*first_receipt, first_facts)
+        + "\n"
+        + readiness_trace(*second_receipt, second_facts)
+    );
+    EXPECT_NE(first_facts.first_input_ready_at, std::chrono::steady_clock::time_point{});
+    EXPECT_NE(second_facts.first_input_ready_at, std::chrono::steady_clock::time_point{});
     EXPECT_EQ(relay.upstreamConnectionFailures(), 0U);
+    if (first_facts.first_input_ready_at != std::chrono::steady_clock::time_point{}) {
+        EXPECT_GE(first_facts.run_completed_at - first_facts.first_input_ready_at, RUN_DURATION);
+    }
+    if (second_facts.first_input_ready_at != std::chrono::steady_clock::time_point{}) {
+        EXPECT_GE(second_facts.run_completed_at - second_facts.first_input_ready_at, RUN_DURATION);
+    }
 
     auto const checkTransport = [](
         AdverseTransportConfig const& configuration,
@@ -991,6 +1063,117 @@ TEST(AdverseNetworkTest, ProductionTwoClientsConvergeAcrossSeededBidirectionalIm
     );
     facts_json += "]}";
     testing::Test::RecordProperty("adverse_network_facts", facts_json);
+}
+
+TEST(AdverseNetworkTest, ProductionDelayedReadinessPreservesBothFreezePhasesAndRecovery)
+{
+    static constexpr uint32_t INITIAL_RELAY_TICK = 500U;
+    static constexpr uint32_t MINIMUM_DELAYED_EPOCH_TICKS = 100U;
+    static constexpr std::chrono::seconds PRE_READY_SAFETY_DEADLINE{ 10 };
+    static constexpr std::chrono::seconds ACTIVE_DURATION{ 3 };
+    static constexpr std::chrono::seconds READINESS_DELAY{ 2 };
+    static constexpr shared::Direction MOVEMENT{ .x = 127U, .y = 0U, .view_y = 127 };
+
+    server::GameServer game_server{ 0U, {}, shared::WorldMode::Flight };
+    AdverseNetworkRelay relay{ game_server.port(), INITIAL_RELAY_TICK };
+    std::atomic_bool stop_server{ false };
+    std::atomic_bool stop_relay{ false };
+    std::thread server_thread{ [&] {
+        game_server.run(stop_server);
+    } };
+    std::thread relay_thread{ [&] {
+        relay.run(stop_relay);
+    } };
+
+    AdverseGameClient game_client;
+    ClientNetworkFacts facts;
+    facts.pre_ready_started_at = std::chrono::steady_clock::now();
+    client::GameClientBenchmarkHooks hooks;
+    hooks.deadline = facts.pre_ready_started_at + PRE_READY_SAFETY_DEADLINE;
+    bool readiness_delay_applied = false;
+    hooks.input_override = [&game_client, &hooks, &facts, &readiness_delay_applied](uint64_t)
+        -> std::optional<shared::Direction> {
+        if (facts.first_input_ready_at == std::chrono::steady_clock::time_point{}
+            && game_client.authoritativePlayer().has_value()) {
+            if (!readiness_delay_applied) {
+                readiness_delay_applied = true;
+                std::this_thread::sleep_for(READINESS_DELAY);
+            }
+            facts.first_input_ready_at = std::chrono::steady_clock::now();
+            hooks.deadline = facts.first_input_ready_at + ACTIVE_DURATION;
+        }
+        if (facts.first_input_ready_at == std::chrono::steady_clock::time_point{}
+            || std::chrono::steady_clock::now() < facts.first_input_ready_at + ACTIVE_DURATION) {
+            return MOVEMENT;
+        }
+        return shared::Direction{};
+    };
+    hooks.on_authoritative_player = [&facts](shared::Player const&) {
+        facts.applied_positions.fetch_add(1U, std::memory_order_relaxed);
+    };
+
+    std::thread client_thread{ [&] {
+        game_client.run(core::Address::localhost(relay.port()), '@', &hooks);
+    } };
+    client_thread.join();
+    stop_relay.store(true, std::memory_order_release);
+    relay_thread.join();
+    stop_server.store(true, std::memory_order_release);
+    server_thread.join();
+
+    std::optional<AdverseRelayReceipt> const receipt = relay.receipt('@');
+    ASSERT_TRUE(receipt.has_value());
+    auto const delayed_readiness = std::chrono::duration_cast<std::chrono::milliseconds>(
+        facts.first_input_ready_at - facts.pre_ready_started_at
+    );
+    SCOPED_TRACE(
+        "readiness_delay_ms=" + std::to_string(delayed_readiness.count())
+        + " connection_tick=" + std::to_string(receipt->connection_start_tick)
+        + " impairment_epoch_tick="
+        + (receipt->impairment_epoch_tick.has_value()
+            ? std::to_string(*receipt->impairment_epoch_tick)
+            : std::string("unset"))
+        + " transport=" + receipt->transport_json
+    );
+    ASSERT_NE(facts.first_input_ready_at, std::chrono::steady_clock::time_point{});
+    EXPECT_GE(delayed_readiness, READINESS_DELAY);
+    ASSERT_TRUE(receipt->impairment_epoch_tick.has_value());
+    ASSERT_GE(*receipt->impairment_epoch_tick, receipt->connection_start_tick);
+    uint32_t const impairment_epoch_offset =
+        *receipt->impairment_epoch_tick - receipt->connection_start_tick;
+    testing::Test::RecordProperty("readiness_delay_ms", std::to_string(delayed_readiness.count()));
+    testing::Test::RecordProperty("impairment_epoch_offset_ticks", std::to_string(impairment_epoch_offset));
+    testing::Test::RecordProperty(
+        "client_to_server_freeze_delayed_packets",
+        std::to_string(receipt->client_to_server_facts.freeze_delayed_packets)
+    );
+    testing::Test::RecordProperty(
+        "server_to_client_freeze_delayed_packets",
+        std::to_string(receipt->server_to_client_facts.freeze_delayed_packets)
+    );
+    EXPECT_GE(
+        impairment_epoch_offset,
+        MINIMUM_DELAYED_EPOCH_TICKS
+    );
+
+    bool saw_client_to_server_freeze = false;
+    for (testsupport::AdverseScheduleEntry const& entry : receipt->client_to_server_facts.schedule) {
+        saw_client_to_server_freeze = saw_client_to_server_freeze || entry.freeze_delayed;
+    }
+    bool saw_server_to_client_freeze = false;
+    for (testsupport::AdverseScheduleEntry const& entry : receipt->server_to_client_facts.schedule) {
+        saw_server_to_client_freeze = saw_server_to_client_freeze || entry.freeze_delayed;
+    }
+    EXPECT_GT(receipt->client_to_server_facts.freeze_delayed_packets, 0U);
+    EXPECT_GT(receipt->server_to_client_facts.freeze_delayed_packets, 0U);
+    EXPECT_GT(receipt->forwarded_inputs, 0U);
+    EXPECT_GT(facts.applied_positions.load(std::memory_order_relaxed), 0U);
+    EXPECT_TRUE(saw_client_to_server_freeze);
+    EXPECT_TRUE(saw_server_to_client_freeze);
+    EXPECT_EQ(receipt->client_to_server_configuration.freeze_begin_tick, 0U);
+    EXPECT_EQ(receipt->client_to_server_configuration.freeze_duration_ticks, 100U);
+    EXPECT_EQ(receipt->server_to_client_configuration.freeze_begin_tick, 150U);
+    EXPECT_EQ(receipt->server_to_client_configuration.freeze_duration_ticks, 100U);
 }
 
 TEST(AdverseNetworkTest, ProductionRunRetriesAfterRemoteServerReplacement)

@@ -1502,7 +1502,7 @@
     ],
     "acceptance": "Deliver immutable, generation-tagged hard/soft entity permissions for all/players/mobs/technical-entities/per-kind and explicit-member/selector groups; namespace custom keys and defer world subjects. Cover movement, flight/collision, blocks, inventory, invincibility, commands, and permission-backed mode presets. Use CoreLang 0.1.3.1 (only documented 0.1.3.3 maintenance), retain interpreter/JIT parity, and prepare kernels off physics ticks. Test latency, loss, jitter, freezes, reordering, and duplication. Replicate a 29/16 × 10/16 × 10/16 player, 16-color palette, and first/rear-third/front-third views. Keep position-driven radius-256 terrain camera-independent and derive face LOD at projected area ≤2 px². Provide four inspected 2560x1440 Mac screenshots with prominent labels centered below the HUD: (1) the flying third-person player offset from the central spike, with the full spike, most of its first ring, and terrain beyond visible from slightly above while emphasizing the central landform's mass; (2) the player in the trench near the first spike; (3) the player climbing the mountain; and (4) first-person at horizontal X/Z (0, 0). Target stable 120 FPS at x200 and the world border as diagnostic only. Pass platform and automated MC-AI-0249 gates; include the accepted CoreCpp scope MC-AI-0056 Runtime executors, MC-AI-0057 Runtime audio, and MC-AI-0240 renderer diagnostics in this snapshot. Release S7, hold the minor open for feedback, and do not start S8.",
     "evidence": "Four accepted 2560x1440 Mac captures retain prominent bottom-center labels without HUD overlap. SHA256: central 5cc66572943d05af9a21894567b35fe2ffad2bd3a2c87ce96be0097ddeca4161; trench 8608534cd001bf835279ce4ff53969b6453b6906e4a6a3497dbb55b7f2542af6; mountain 9ad8cd09b1a91356e74b5cab2ee373d908d9bb7c5680fc3b9f8129003ef9288a; origin 38c350a3f0772d6445cbde8c372ffb3b385884b7027493a9ceb66a58b81dbfc8. Reviewed repairs MC-AI-0350 through0356 and aggregate source a69f296 passed464 Python tests, Debug build,584 registered CTests with one explicit Release-only skip, renderer smoke and publisher/source-policy checks. Exact diagnostic run37556911423 at a69f296 passes Linux LSan configure/build/CTest with323 registered tests and -fsanitize=leak observed; row receipt SHA2565668589802644c238f1d704a20500ff69f19583ccea0153c6072fce8eb4d8830. Its Windows fixture and GMP MSan provisioning failures are repaired by reviewed MC-AI-0357/0358. Native Windows CMake proves path normalization and passes exact-toolchain checks; GMP pinned-source patch, Autoconf regeneration and all three linker probes pass focused nativeMac checks. Source5c4a105 passes465 tooling tests. Earlier gameplay, streaming, landing and accepted CoreCpp evidence remains in child entries. This is not corrected MSan or exact-promotion/runtime/artifact acceptance, and no S7 tag/assets exist.",
-    "blocker": "Reviewed local repairs are complete. The new aggregate gate, corrected Windows/MSan execution and exact-promotion thirteen-row analysis, platform runtime/artifacts and strict/tag gates remain required before publication; no pending user choice or authority is needed.",
+    "blocker": "The serialized MSan patch is repaired by MC-AI-0359; the traffic-readiness fixture repair MC-AI-0360 awaits exact staged review and commit. Corrected aggregate/promotion gates, the exact-promotion thirteen-row analysis, original platform artifacts/runtime and strict/tag/publication gates remain required. No user choice or authority is missing.",
     "owner": "Codex",
     "level": "snapshot",
     "parent": "MC-AI-0033",
@@ -1511,7 +1511,7 @@
     "complexity": "high",
     "created_at": "2026-09-09",
     "resolved_at": "",
-    "resolution_changes": "Reviewed repairs MC-AI-0345 through0358 correct analysis configuration/context and compiler initialization, stream acknowledgements/server polling, Android runtime hosting, release-date binding, Windows portable fixtures, full failed-command diagnostics, macOS upstream sanitizer compiler, Android software-emulation opt-in, and the narrowly scoped GMP MSan source probe. These repairs preserve all required gates. S7 remains active/unpublished.",
+    "resolution_changes": "Reviewed repairs MC-AI-0345 through0359 correct analysis configuration/context, compiler initialization, stream acknowledgements/server polling, Android runtime hosting, release-date binding, portable Windows fixtures, complete failure diagnostics, macOS upstream sanitizer compiler, Android software-emulation opt-in and the delivered GMP MSan patch. MC-AI-0360 restores the full adverse-network scenario after actual input readiness without changing production code or phase values. Exact review, corrected release gates and publication remain required; S7 is active and unpublished.",
     "plan": [
       "Complete authoritative movement, immutable permissions, and cross-client acceptance; keep policy compilation outside physics ticks.",
       "Finish player/views, adverse networking, camera-independent terrain/LOD, diagnostics, platform and analysis gates, captures, and S7 publication; then hold the minor for feedback."
@@ -1532,7 +1532,7 @@
     ],
     "baseline_commit": "0514890690c10d80b7475fd0b76204e800948db3",
     "commits": [],
-    "finalized": true,
+    "finalized": false,
     "retrospective": "Observed hosted failures are recorded as individual repairs, not treated as successful local acceptance. The latest cycle exposed discarded compiler output, Windows POSIX-mode assertions, a sanitizer compiler different from the probed upstream toolchain, and missing Android software-emulation opt-in. Complete failed-command diagnostics and trusted ai-dev Linux dispatch now allow diagnosis before another promotion. Reviews bind exact staged candidates; the full integration gate runs once per repair batch. Aggregate and promotion gates requiring RendererSmokeTest run in host context because restricted-shell XPC startup is not a game failure. No global configuration, permissions or hook changes were made. Exact-promotion analysis and runtime receipts remain mandatory; skipped jobs and diagnostic dispatches are not passes.",
     "docs_review": "",
     "environment_review": "An authorized additive Launch Services seed/register attempt did not create app bundle records. Renderer smoke passed when run outside the restricted shell; no Launch Services cache deletion or reboot was performed. The restricted-shell history collector could not write the temporary tree required by git merge-tree --write-tree and emitted a misleading missing-tagged-promotion diagnostic. The same exact ai_history.py collect command in host context exited 0 and emitted all 83 child task IDs; ai_tasks.py ready exited 0 with empty output. This reconciliation changed no ref or tag. Exact command/result are recorded at /private/tmp/mc-s7-review.fojOM5/history-reconciliation.txt, SHA-256 03fc882e392c88bb32e4cfd46f43709cadadc64c8a90e0bc53793474e7af205e.",
@@ -12450,6 +12450,45 @@
     ],
     "code_changes": [
       "Validate the serialized GMP MSan patch with the same Git patch parser used by vcpkg, rather than validating only its selection or an earlier draft."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0360",
+    "title": "Anchor adverse-network freeze phases to ready traffic",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P1",
+    "route": "luna",
+    "milestone": "ED-010-S7",
+    "depends_on": [],
+    "acceptance": "Keep the production client/server paths and all loss, latency, jitter, duplicate, reorder, freeze, stale-input rejection and convergence assertions. Isolate network tests from native audio startup via the existing output injection boundary. Anchor one shared per-link impairment epoch and the full bounded active scenario to observed first-input readiness, preserving relative freeze/stale-probe phases and setup-message handling. Add deterministic delayed-readiness coverage and expose schedule/tick evidence on failures. Preserve meaningful deadlines, no retries-until-green, no product behavior changes, and obtain exact staged review.",
+    "evidence": "The focused network suite passes7/7 in36.78s, including original two-client loss/jitter/freeze/reorder/duplicate/stale-input/convergence assertions. After only naming and scalar receipt-output cleanup, the latest source rebuilds without warnings and the delayed-first-input case passes in9.787s. Its XML reports2037ms readiness delay,203-tick epoch offset,10 C2S and9 S2C freeze-delayed packets, with forwarded inputs and applied positions. The regression intentionally delays ready input two seconds beyond the old C2S window. Failure traces now include both transport schedules and timing origins. No product/preset behavior or phase values change; exact aggregate and promotion gates remain required.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0038",
+    "motivation": "Release acceptance can finish without exercising either configured network freeze because its wall-clock windows begin before traffic readiness.",
+    "context": "Official prepare at3c96361 fails only the two freeze counters; both are zero. The failed run did not persist its schedule. One bounded diagnostic run passes and captures first-input ticks13/33 and expected freeze counts, so it is not proof that the failed run is fixed. Source inspection confirms JoinResponse synchronously starts real audio before first input, and the fixture phases begin at JoinRequest while its seven-second deadline begins before client threads. No traffic-readiness barrier preserves a full impairment scenario.",
+    "complexity": "medium",
+    "created_at": "2026-10-07",
+    "resolved_at": "2026-10-07",
+    "resolution_changes": "Arm the fixture impairment clock on first actual input, bypass required setup positions, isolate native audio, and give each ready client a bounded full active scenario.",
+    "plan": [
+      "Clarify acceptance and implementation steps.",
+      "Repair the test-owned readiness/timing contract; verify delayed-start transport behavior and the focused native network suite, then run the full release gate."
+    ],
+    "product_changes": [
+      "No shipping-game behavior changed; adverse-network acceptance now preserves its scenario across delayed client startup."
+    ],
+    "code_changes": [
+      "Use immediate injected audio in the network fixture, a shared observed-input epoch with reliable setup positions, client-owned readiness deadlines, and schedule-bearing failure evidence."
     ],
     "baseline_commit": "",
     "commits": [],
