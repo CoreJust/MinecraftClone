@@ -505,6 +505,11 @@ jobs:
           -PcoreCppDir="$MC_PRIVATE_DEPENDENCIES_PREFIX/lib/cmake/CoreCpp"
           -PcoreProjectDir="$MC_PRIVATE_DEPENDENCIES_PREFIX/lib/cmake/CoreProject2026"
           :app:assembleRelease
+      - name: Preflight HWASan APK before upload
+        run: >-
+          python script/ci/verify_android_hwasan.py
+          --apk android/app/build/outputs/apk/release/app-release.apk
+          --apk-only
       - name: Run candidate-bound Android clang-tidy row
         run: >-
           python script/ai_analysis_matrix.py run-row build/ai-analysis/android_clang_tidy.json
@@ -562,6 +567,11 @@ jobs:
         with:
           name: hwasan-apk-${{ github.sha }}
           path: build/hwasan
+      - name: Preflight downloaded HWASan APK before emulator startup
+        run: >-
+          python script/ci/verify_android_hwasan.py
+          --apk build/hwasan/app-release.apk
+          --apk-only
       - name: Start matching ARM64 Android emulator
         shell: bash
         env:

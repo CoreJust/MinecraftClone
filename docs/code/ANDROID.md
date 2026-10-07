@@ -57,3 +57,15 @@ Gradle source set stages the scene and text shaders, including `text.vert`
 and `text.frag`, so the APK contains their
 compiled `shaders/*.spv` assets; see the Android section of [the build
 guide](../BUILD.md) for packaging and environment requirements.
+
+The S7 Android HWASan analysis variant generates the NDK `wrap.sh` under the
+Android resources source set so the APK contains
+`lib/arm64-v8a/wrap.sh`. Only that variant is debuggable and uses legacy JNI
+packaging, as required by the [NDK wrap-script contract](https://developer.android.com/ndk/guides/wrap-script);
+the HWASan-only Release application ID adds the `.hwasan` suffix so the
+diagnostic APK can coexist with the ordinary game installation. The ordinary
+Release variant keeps the existing `com.corejust.minecraftclone` application
+ID, packaging, and build type.
+Gradle and CI preflight the packaged wrapper and instrumented AArch64 library
+before upload or emulator startup, while device runtime validation remains a
+separate S7 acceptance gate.
