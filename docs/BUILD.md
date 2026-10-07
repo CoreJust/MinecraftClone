@@ -74,7 +74,7 @@ CI builds Debug/Release on `macos-15` arm64 and `windows-2022` with pinned tools
 
 The renderer requests Vulkan 1.2 and requires dynamic rendering and synchronization2 extensions/features; maintenance4 is not a renderer requirement. Mesh shaders target Vulkan 1.3. Use a Vulkan 1.3-capable validation baseline and exercise the vertex fallback. A lower requested API number does not establish support for every Vulkan 1.2 driver. Vulkan 1.4 remains a project aspiration.
 
-Presets enable strict warnings; [helpers](../cmake/Helpers.cmake) define `MC_ENABLE_HIGH_ASSERT`, `MC_ENABLE_VULKAN_VALIDATION_LAYERS`, and `MC_ENABLE_SANITIZERS`. Debug/explicit requests require renderer validation; ordinary Release does not. Mac sanitizers use upstream `clang`/`clang++` through CI's LLVM-first PATH, retaining leak detection. Receipts preserve full failures, bounded success summaries and hashes; unit-test evidence remains separate. `x64-linux-msan` alone regenerates GMP C++ probes honoring `LDFLAGS`.
+Presets enable strict warnings; [helpers](../cmake/Helpers.cmake) define `MC_ENABLE_HIGH_ASSERT`, `MC_ENABLE_VULKAN_VALIDATION_LAYERS`, and `MC_ENABLE_SANITIZERS`. Debug/explicit requests require renderer validation; ordinary Release does not. Mac sanitizers use upstream `clang`/`clang++` through CI's LLVM-first PATH, retaining leak detection. Receipts preserve full failures, bounded success summaries and hashes; unit-test evidence remains separate. `x64-linux-msan` uses GMP C and `LDFLAGS`-aware probes.
 
 ## Gate levels
 

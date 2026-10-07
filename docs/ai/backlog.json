@@ -1502,7 +1502,7 @@
     ],
     "acceptance": "Deliver immutable, generation-tagged hard/soft entity permissions for all/players/mobs/technical-entities/per-kind and explicit-member/selector groups; namespace custom keys and defer world subjects. Cover movement, flight/collision, blocks, inventory, invincibility, commands, and permission-backed mode presets. Use CoreLang 0.1.3.1 (only documented 0.1.3.3 maintenance), retain interpreter/JIT parity, and prepare kernels off physics ticks. Test latency, loss, jitter, freezes, reordering, and duplication. Replicate a 29/16 × 10/16 × 10/16 player, 16-color palette, and first/rear-third/front-third views. Keep position-driven radius-256 terrain camera-independent and derive face LOD at projected area ≤2 px². Provide four inspected 2560x1440 Mac screenshots with prominent labels centered below the HUD: (1) the flying third-person player offset from the central spike, with the full spike, most of its first ring, and terrain beyond visible from slightly above while emphasizing the central landform's mass; (2) the player in the trench near the first spike; (3) the player climbing the mountain; and (4) first-person at horizontal X/Z (0, 0). Target stable 120 FPS at x200 and the world border as diagnostic only. Pass platform and automated MC-AI-0249 gates; include the accepted CoreCpp scope MC-AI-0056 Runtime executors, MC-AI-0057 Runtime audio, and MC-AI-0240 renderer diagnostics in this snapshot. Release S7, hold the minor open for feedback, and do not start S8.",
     "evidence": "Four accepted 2560x1440 Mac captures retain prominent bottom-center labels without HUD overlap. SHA256: central 5cc66572943d05af9a21894567b35fe2ffad2bd3a2c87ce96be0097ddeca4161; trench 8608534cd001bf835279ce4ff53969b6453b6906e4a6a3497dbb55b7f2542af6; mountain 9ad8cd09b1a91356e74b5cab2ee373d908d9bb7c5680fc3b9f8129003ef9288a; origin 38c350a3f0772d6445cbde8c372ffb3b385884b7027493a9ceb66a58b81dbfc8. Source 3c96361 passed the earlier aggregate but its official prepare later failed the two unexercised network-freeze counters; that failure was not waived. Diagnostic run 37560874952 at 3c96361 passes Ubuntu and Windows fast checks and LSan configure/build/CTest with 323 registered tests; receipt SHA256 c395362d297276740a9d67115205f342cdaab52ce885e7ceb1010d2b90211889. MSan failed parsing the serialized GMP patch before its row. Reviewed MC-AI-0359 corrects that header; its delivered-byte regression first reproduces the same failure, then all four focused overlay tests and the pinned-source git apply check pass. Reviewed MC-AI-0360 anchors actual-input timing with reliable setup positions, removes native audio from the network fixture and retains all adverse/convergence assertions. Latest independent review passes 7/7 network cases. Controlled delayed-start XML reports 2037 ms, epoch 203 ticks and 10 C2S/9 S2C freeze-delayed packets. Earlier gameplay, streaming, landing and accepted CoreCpp evidence remains in child entries. This is not corrected hosted MSan or exact-promotion/artifact/runtime acceptance; no S7 tag/assets exist.",
-    "blocker": "Reviewed local repairs are committed. The corrected aggregate/promotion gates, exact-promotion thirteen-row analysis, original platform artifacts/runtime and strict/tag/publication gates remain required. No user choice or authority is missing.",
+    "blocker": "Exact source1cffae06 MSan runtime row failed84/323tests in the MPFR numeric-parse path despite successful provisioning. MC-AI-0361 investigates and repairs the cause without a sanitizer waiver. The obsolete pending promotion is aborted; no user choice or authority is missing.",
     "owner": "Codex",
     "level": "snapshot",
     "parent": "MC-AI-0033",
@@ -1532,7 +1532,7 @@
     ],
     "baseline_commit": "0514890690c10d80b7475fd0b76204e800948db3",
     "commits": [],
-    "finalized": true,
+    "finalized": false,
     "retrospective": "Observed hosted failures are recorded as individual repairs, not treated as successful local acceptance. The latest cycle exposed discarded compiler output, Windows POSIX-mode assertions, a sanitizer compiler different from the probed upstream toolchain, and missing Android software-emulation opt-in. Complete failed-command diagnostics and trusted ai-dev Linux dispatch now allow diagnosis before another promotion. Reviews bind exact staged candidates; the full integration gate runs once per repair batch. Aggregate and promotion gates requiring RendererSmokeTest run in host context because restricted-shell XPC startup is not a game failure. No global configuration, permissions or hook changes were made. Exact-promotion analysis and runtime receipts remain mandatory; skipped jobs and diagnostic dispatches are not passes.",
     "docs_review": "",
     "environment_review": "An authorized additive Launch Services seed/register attempt did not create app bundle records. Renderer smoke passed when run outside the restricted shell; no Launch Services cache deletion or reboot was performed. The restricted-shell history collector could not write the temporary tree required by git merge-tree --write-tree and emitted a misleading missing-tagged-promotion diagnostic. The same exact ai_history.py collect command in host context exited 0 and emitted all 83 child task IDs; ai_tasks.py ready exited 0 with empty output. This reconciliation changed no ref or tag. Exact command/result are recorded at /private/tmp/mc-s7-review.fojOM5/history-reconciliation.txt, SHA-256 03fc882e392c88bb32e4cfd46f43709cadadc64c8a90e0bc53793474e7af205e.",
@@ -12491,6 +12491,45 @@
       "Use immediate injected audio in the network fixture, a shared observed-input epoch with reliable setup positions, client-owned readiness deadlines, and schedule-bearing failure evidence."
     ],
     "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0361",
+    "title": "Use instrumentable GMP limb code for the MSan dependency build",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P1",
+    "route": "luna",
+    "milestone": "ED-010-S7",
+    "depends_on": [],
+    "acceptance": "Select the existing generic-C GMP backend only for x64-linux-msan while preserving MSan instrumentation, exact source/toolchain pins, other-triplet assembly behavior and existing platform guards. Execute the actual port configuration in regression fixtures to verify effective vcpkg_configure_make options, not text patterns; retain all existing overlay/patch regressions. Record the saved failing runtime evidence and exact source-chain diagnosis honestly. Successful whole MSan execution remains the separately mandatory MC-AI-0249 aggregate release gate after source publication; focused code/configuration results do not establish a sanitizer-row or release pass.",
+    "evidence": "Configuration correction implemented and tested, not a sanitizer-row pass: the new actual-CMake configure-boundary regression was RED at baseline because x64-linux-msan lacked --enable-assembly=no, then GREEN after selecting the existing generic C backend. Focused overlay suite passes5/5, preserving delivered-patch application and standard triplet behavior; LinuxLSan, Mac, Windowsx64 and Android retain assembly, and unsupported Windows architecture still disables it. Saved source1cff MSan configure/build passed but CTest84/323 failed; receipt SHA256 a5f55b7bb123381471dfc5e0a906d36b850f3e6a12d2c06d12489eada2d1a5a8. Exact GMP6.3.0/MPFR4.2.2 source chain matches untracked native mpn_copyi writes and Clang documented MSan instrumentation requirements. No parser behavior, dependency pins, MSan instrumentation or release gates weakened. Corrected-source hosted MSan and exact-promotion full matrix remain required aggregate evidence.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0038",
+    "motivation": "S7 cannot release while its required MemorySanitizer runtime gate fails.",
+    "context": "Exact diagnostic run37565292652 at source1cffae06/tree3024c540 configured and built successfully, but MSan CTest returned8 with84 failures among323 tests. Source-chain diagnosis: MPFR4.2.2 round_raw_generic.c216 calls external GMP mpn_copyi; GMP6.3.0 x86_64/copyi.asm writes raw memory while configure.ac defaults assembly on and the exact overlay leaves it enabled. MPFR then masks the still-poisoned MSan shadow in the mpfr_init2 allocation before can_round reads it, matching the origin trace. The CoreLang init/set API sequence is valid. Clang MSan requires instrumented memory-writing code; use the GMP generic C backend rather than suppress findings or alter parsing. LSan and both hosted fast jobs passed. The obsolete pending promotion is safely aborted, ai-main unchanged; final full analysis proof is still required.",
+    "complexity": "medium",
+    "created_at": "2026-10-07",
+    "resolved_at": "2026-10-07",
+    "resolution_changes": "Select GMP generic C limb code only for x64-linux-msan, preserving all other platform/compiler assembly decisions. Add a red/green regression executing the real port configuration and capturing effective configure arguments for six platform scenarios. Document instrumented limb-write policy; do not claim hosted MSan or S7 acceptance from focused tests.",
+    "plan": [
+      "Trace the poisoned limb write path and distinguish instrumentation gaps from actual invalid parsing.",
+      "Apply the smallest proven correction, test its isolation and retain exact hosted execution evidence."
+    ],
+    "product_changes": [
+      "No intentional player-facing change; make required memory-safety validation reliable."
+    ],
+    "code_changes": [
+      "Correct only the proven numeric-path defect or its MSan dependency instrumentation and add a focused regression."
+    ],
+    "baseline_commit": "1cffae06ae733ee72c264fb7d770935f040ff30d",
     "commits": [],
     "finalized": true,
     "retrospective": "",
