@@ -15,6 +15,7 @@ from unittest import mock
 
 
 SCRIPT = Path(__file__).resolve().parents[1] / "ci/install_msan_libcxx.py"
+OWN_RA_GEP = r"getelementptr inbounds(?: nuw)? i8, ptr %[^,]+, i64 8(?![0-9])"
 
 
 def load_module():
@@ -128,7 +129,7 @@ class InstallMsanLibcxxTests(unittest.TestCase):
                 for name in ("raise_entry", "resume_entry"):
                     body = self.function_ir(result.stdout, name)
                     self.assertRegex(body, r"@llvm.frameaddress.p0\(i32 0\)")
-                    self.assertRegex(body, r"getelementptr inbounds i8, ptr %[^,]+, i64 8")
+                    self.assertRegex(body, OWN_RA_GEP)
                     self.assertRegex(body, r"@__msan_unpoison\(ptr[^,]*, i64[^)]*8\)")
                     self.assertLess(body.index("@__msan_unpoison"), body.index("@side_effect"))
                     self.assertIn("load volatile i32", body)
@@ -177,6 +178,167 @@ class InstallMsanLibcxxTests(unittest.TestCase):
                 self.assertEqual(result.returncode, 0, result.stderr)
                 result = subprocess.run([str(executable)], capture_output=True, text=True, check=False)
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_own_return_address_gep_accepts_only_optional_nuw_and_exact_eight_bytes(self):
+        for syntax in ("getelementptr inbounds i8, ptr %0, i64 8",
+                       "getelementptr inbounds nuw i8, ptr %0, i64 8"):
+            self.assertRegex(syntax, OWN_RA_GEP)
+        for syntax in ("getelementptr inbounds nsw i8, ptr %0, i64 8",
+                       "getelementptr inbounds nuw i32, ptr %0, i64 8",
+                       "getelementptr inbounds nuw i8, ptr %0, i64 16",
+                       "getelementptr inbounds nuw i8, ptr %0, i64 80"):
+            self.assertNotRegex(syntax, OWN_RA_GEP)
+
+    def cfa_address_diagnostic_source(self):
+        patch = self.toolchain.LIBUNWIND_MSAN_PATCH.read_text(encoding="utf-8")
+        dwarf = patch.split("diff --git a/libunwind/src/DwarfInstructions.hpp", 1)[1].split("diff --git ", 1)[0]
+        additions = "\n".join(line[1:] for line in dwarf.splitlines() if line.startswith("+") and not line.startswith("+++"))
+        diagnostic = re.search(
+            r"#if defined\(_LIBUNWIND_MSAN_RA_DIAGNOSTIC\)\n"
+            r"          if \(R::getArch\(\).*?\n#endif", additions, re.DOTALL,
+        ).group(0)
+        _, declarations, _, _ = self.return_address_diagnostic_source()
+        declarations = declarations.replace(
+            'extern "C" void* stderr;\nextern "C" int fprintf(void*, const char*, ...);\n', "#include <stdio.h>\n",
+        ).replace(
+            "struct Registers { pint_t ip; pint_t getIP() const { return ip; } };",
+            "static int32_t arch = 1; static uint64_t base_value = 0xa001;\n"
+            "struct Registers { static int32_t getArch() { return arch; }\n"
+            "  pint_t getRegister(uint32_t) const { return base_value; } };\n"
+            "static constexpr int32_t REGISTERS_X86_64 = 1;\n"
+            "template <typename> struct CFI_Parser { static constexpr uint32_t kRegisterInCFA = 2; };",
+        )
+        observer = (
+            "extern \"C\" int32_t address_poison, data_poison, restore_calls;\n"
+            "static uint64_t restore() { ++restore_calls; return saved; }\n"
+            "extern \"C\" uint64_t observe_cfa(int32_t i, uint32_t base_reg, uint32_t location, int64_t expr) {\n"
+            "  using R = Registers; using A = int; Registers registers;\n"
+            "  pint_t pc = saved, fdeStart = 0x2000;\n"
+            "  struct { pint_t pcStart, pcEnd; } fdeInfo{0x1000, 0x1100};\n"
+            "  struct { uint8_t returnAddressRegister; bool isSignalFrame; } cieInfo{16, false};\n"
+            "  struct { uint32_t cfaRegister; int32_t cfaRegisterOffset; int64_t cfaExpression;\n"
+            "    RegisterLocation savedRegisters[17]; } prolog{base_reg, 16, expr, {}};\n"
+            "  prolog.savedRegisters[i] = {location, -16};\n"
+            "  pint_t cfa = reinterpret_cast<pint_t>(&saved) + 16;\n"
+            f"{diagnostic}\n"
+            "  if (address_poison) return 86;\n"
+            "  return restore();\n}\n"
+        )
+        return declarations, observer
+
+    def test_cfa_diagnostic_keeps_original_load_address_checks(self):
+        declarations, observer = self.cfa_address_diagnostic_source()
+        declarations = declarations.replace("#include <stdio.h>",
+            'extern "C" void* stderr;\nextern "C" int fprintf(void*, const char*, ...);')
+        observer = observer.replace("if (address_poison) return 86;\n  return restore();",
+                                    "return *reinterpret_cast<volatile uint64_t*>(cfa - 16);")
+        observer = observer.replace("int64_t expr) {", "int64_t expr, pint_t *incoming_cfa) {")
+        observer = observer.replace("pint_t cfa = reinterpret_cast<pint_t>(&saved) + 16;",
+                                    "pint_t cfa = *incoming_cfa;")
+        ir = self.compile_msan_ir("#define _LIBUNWIND_MSAN_RA_DIAGNOSTIC\n" + declarations + observer,
+                                  "-fno-sanitize-memory-param-retval")
+        observed = self.function_ir(ir, "observe_cfa")
+        self.assertIn("@__msan_test_shadow", observed)
+        self.assertIn("@pread", observed)
+        self.assertIn("@__msan_warning_with_origin_noreturn", observed)
+        self.assertIn("load volatile i64", observed)
+        self.assertNotRegex(observed, r"@__msan_(?:unpoison|poison|set_origin|set_keep_going)")
+        self.assertIn("sanitize_memory", ir)
+
+    def test_cfa_diagnostic_matches_latest_eligible_restore_and_preserves_state(self):
+        compiler = shutil.which("clang++")
+        if compiler is None:
+            self.skipTest("Clang is required for compiled CFA provenance controls")
+        declarations, observer = self.cfa_address_diagnostic_source()
+        source = "#define _LIBUNWIND_MSAN_RA_DIAGNOSTIC\n" + declarations + (
+            "#include <string.h>\n"
+            "extern \"C\" { int32_t address_poison = 0, data_poison = 0, restore_calls = 0; }\n"
+            "static int32_t read_calls = 0, short_read = 0, open_fail = 0;\n"
+            "static int32_t sequence = 0, sequence_fail = 0, recording = 0, data_reads = 0;\n"
+            "extern \"C\" intptr_t __msan_test_shadow(const void *p, __SIZE_TYPE__ n) {\n"
+            "  if (recording && p == &saved) {\n"
+            "    if (sequence == 0) sequence = 1; else if (sequence == 3) sequence = 4;\n"
+            "    else sequence_fail = 1; }\n"
+            "  return n != 8 ? 99 : p == &saved ? (data_poison ? 0 : -1) : (address_poison ? 0 : -1);\n}\n"
+            "extern \"C\" uint32_t __msan_get_origin(const void *p) {\n"
+            "  if (recording && p == &saved) {\n"
+            "    if (sequence == 1) sequence = 2; else if (sequence == 4) sequence = 5;\n"
+            "    else sequence_fail = 1; } return p == &saved ? 6 : 1234; }\n"
+            "extern \"C\" int32_t open(const char*, int32_t, ...) {\n"
+            "  sequence = 0; data_reads = 0; recording = !open_fail; return open_fail ? -1 : 99; }\n"
+            "extern \"C\" intptr_t pread(int32_t fd, void *out, __SIZE_TYPE__ n, off_t from) {\n"
+            "  ++read_calls; if (fd != 99 || n != 8) return -1;\n"
+            "  if (static_cast<uintptr_t>(from) == reinterpret_cast<uintptr_t>(&saved)) {\n"
+            "    ++data_reads; if (sequence != 2) sequence_fail = 1; sequence = 3; }\n"
+            "  memcpy(out, reinterpret_cast<const void*>(static_cast<uintptr_t>(from)), n);\n"
+            "  return read_calls == short_read ? 4 : 8;\n}\n"
+            "extern \"C\" int32_t close(int32_t) {\n"
+            "  if (data_reads && sequence != 5) sequence_fail = 1; recording = 0; return 0; }\n"
+        ) + observer + (
+            "int main(int argc, char **argv) {\n"
+            "  const char *mode = argc == 2 ? argv[1] : \"clean\";\n"
+            "  saved = 0xa001;\n"
+            "  if (!strcmp(mode, \"clean\")) return observe_cfa(6, 6, 2, 0) == saved && restore_calls == 1 ? 0 : 1;\n"
+            "  data_poison = 1;\n"
+            "  const int32_t reg = strncmp(mode, \"reg-\", 4) ? 6\n"
+            "      : mode[5] ? (mode[4] - '0') * 10 + mode[5] - '0' : mode[4] - '0';\n"
+            "  if (observe_cfa(reg, reg, 2, 0) != saved || restore_calls != 1) return 2;\n"
+            "  if (!strcmp(mode, \"update\")) { saved = 0xa002; base_value = saved;\n"
+            "    if (observe_cfa(6, 6, 2, 0) != saved || restore_calls != 2) return 3; }\n"
+            "  if (!strcmp(mode, \"clear\")) { data_poison = 0; observe_cfa(6, 6, 2, 0); }\n"
+            "  if (!strcmp(mode, \"unsupported-rule\")) observe_cfa(6, 6, 3, 0);\n"
+            "  if (!strcmp(mode, \"wrong-base\")) base_value = 0xbaad;\n"
+            "  if (!strcmp(mode, \"non-native\")) arch = 0;\n"
+            "  if (!strcmp(mode, \"open-fail\")) open_fail = 1;\n"
+            "  if (!strncmp(mode, \"short-\", 6)) short_read = mode[6] - '0';\n"
+            "  read_calls = 0; address_poison = 1; const int32_t calls_before = restore_calls;\n"
+            "  uint64_t before = saved;\n"
+            "  const int32_t data_before = data_poison;\n"
+            "  const uint32_t base_reg = !strcmp(mode, \"ineligible\") ? 7 : reg;\n"
+            "  const int64_t expr = !strcmp(mode, \"expression\") ? 1 : 0;\n"
+            "  if (observe_cfa(6, base_reg, 2, expr) != 86) return 4;\n"
+            "  if (saved != before || address_poison != 1 || data_poison != data_before\n"
+            "      || restore_calls != calls_before || sequence_fail) return 5;\n"
+            "  if (observe_cfa(6, base_reg, 2, expr) != 86) return 6;\n"
+            "  return saved != before || address_poison != 1 || data_poison != data_before\n"
+            "      || restore_calls != calls_before || sequence_fail;\n}\n"
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            executable = Path(directory) / "cfa-provenance"
+            compiled = subprocess.run(
+                [compiler, "-std=c++17", "-O1", "-Wall", "-Wextra", "-Werror", "-x", "c++",
+                 "-o", str(executable), "-"], input=source, text=True, capture_output=True, check=False,
+            )
+            self.assertEqual(compiled.returncode, 0, compiled.stderr)
+            for mode in ("clean", "match", "update", "clear", "unsupported-rule", "wrong-base",
+                         "ineligible", "expression", "non-native", "open-fail",
+                         "short-1", "short-2", "short-3", "short-4", "short-5",
+                         "reg-3", "reg-12", "reg-13", "reg-14", "reg-15", "reg-16"):
+                with self.subTest(mode=mode):
+                    result = subprocess.run([str(executable), mode], text=True, capture_output=True, check=False)
+                    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                    if mode in ("clean", "non-native"):
+                        self.assertEqual(result.stderr, "")
+                        continue
+                    self.assertEqual(len(result.stderr.splitlines()), 2)
+                    self.assertLess(len(result.stderr), 2048)
+                    self.assertIn("address_shadow=0 address_origin=1234", result.stderr)
+                    self.assertIn("address_shadow_after=0 address_origin_after=1234", result.stderr)
+                    self.assertIn("valid=0" if mode in ("clear", "unsupported-rule", "ineligible", "expression")
+                                  else "valid=1", result.stderr)
+                    self.assertIn("base_matches=1" if mode.startswith("reg-") or mode in ("match", "update", "short-1", "short-3",
+                                                              "short-4", "short-5") else "base_matches=0",
+                                  result.stderr)
+                    if mode == "update":
+                        self.assertIn("pc=0xa002", result.stderr.splitlines()[0])
+                        self.assertIn("value_bits=0xa002", result.stderr.splitlines()[0])
+                    if mode.startswith("short-"):
+                        field = {"1": "cfa", "2": "base", "3": "source", "4": "rule", "5": "value"}[mode[6]]
+                        self.assertIn(f"{field}_read=4", result.stderr.splitlines()[1])
+                        self.assertIn(f"{field}_bits=0x0", result.stderr.splitlines()[1])
+                    if mode == "open-fail":
+                        self.assertIn("source_read=-1 source_bits=0x0", result.stderr)
+                        self.assertIn("value_read=-1 value_bits=0x0", result.stderr)
 
     def return_address_diagnostic_source(self):
         patch = self.toolchain.LIBUNWIND_MSAN_PATCH.read_text(encoding="utf-8")

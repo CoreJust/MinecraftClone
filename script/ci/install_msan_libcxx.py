@@ -24,7 +24,7 @@ LLVM_REPOSITORY = "https://github.com/llvm/llvm-project.git"
 LLVM_TAG = "llvmorg-18.1.3"
 LLVM_COMMIT = "c13b7485b87909fcf739f62cfa382b55407433c0"
 LIBUNWIND_MSAN_PATCH = Path(__file__).resolve().parent / "patches/libunwind-msan-x86_64.patch"
-LIBUNWIND_MSAN_PATCH_SHA256 = "ef6acdebdff1cc7bf491b453e3f62fff9e3268d7da98f37a72abc6ab843d4b14"
+LIBUNWIND_MSAN_PATCH_SHA256 = "becf5cb954f8d27291a46a673e54d62e42b6d49f58524c8bcf9c87db4de2480c"
 MSAN_EXIT_CODE = 86
 MSAN_ANALYSIS_OPTIONS = "halt_on_error=1:print_stats=1:fast_unwind_on_fatal=1"
 MSAN_PROBE_OPTIONS = "halt_on_error=1:exit_code=86:print_stats=0:symbolize=1:fast_unwind_on_fatal=1"
