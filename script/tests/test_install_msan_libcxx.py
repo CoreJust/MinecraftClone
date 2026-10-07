@@ -142,6 +142,70 @@ class InstallMsanLibcxxTests(unittest.TestCase):
         self.assertIn("movq  $136, %rsi", patch)
         self.assertIn("call  __msan_unpoison", patch)
 
+    def test_msan_feature_selects_intercepted_loader_fallback(self):
+        patch = self.toolchain.LIBUNWIND_MSAN_PATCH.read_text(encoding="utf-8")
+        feature_guard_lines = (
+            "#if defined(__has_feature)",
+            "#if __has_feature(memory_sanitizer)",
+            "#define _LIBUNWIND_MSAN_USE_DL_ITERATE_PHDR",
+            "#endif",
+            "#endif",
+        )
+        feature_guard_patch = "\n".join(f"+{line}" for line in feature_guard_lines)
+        feature_guard = "\n".join(feature_guard_lines)
+        self.assertIn(feature_guard_patch, patch)
+        fast_path_guard = "#if !defined(_LIBUNWIND_MSAN_USE_DL_ITERATE_PHDR)"
+        self.assertIn(f"+{fast_path_guard}", patch)
+        feature_guard_cleanup = "#undef _LIBUNWIND_MSAN_USE_DL_ITERATE_PHDR"
+        self.assertIn(f"+{feature_guard_cleanup}", patch)
+        self.assertIn("int found = dl_iterate_phdr(findUnwindSectionsByPhdr, &cb_data);", patch)
+
+        compiler = self.toolchain.shutil.which("clang++")
+        if compiler is None:
+            self.skipTest("clang++ is required to preprocess the libunwind feature guard")
+
+        source = (
+            f"{feature_guard}\n"
+            f"{fast_path_guard}\n"
+            "DL_FIND_OBJECT_FAST_PATH\n"
+            "#else\n"
+            "DL_ITERATE_PHDR_INTERCEPTED_FALLBACK\n"
+            "#endif\n"
+            f"{feature_guard_cleanup}\n"
+        )
+
+        def preprocess(flags, input_source=source):
+            result = subprocess.run(
+                [
+                    compiler,
+                    "-E",
+                    "-P",
+                    "--target=x86_64-pc-linux-gnu",
+                    *flags,
+                    "-x",
+                    "c++",
+                    "-",
+                ],
+                input=input_source,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            return result.stdout
+
+        msan_output = preprocess(["-fsanitize=memory"])
+        ordinary_output = preprocess([])
+        no_feature_output = preprocess(
+            ["-Wno-builtin-macro-redefined"],
+            f"#undef __has_feature\n{source}",
+        )
+        self.assertIn("DL_ITERATE_PHDR_INTERCEPTED_FALLBACK", msan_output)
+        self.assertNotIn("DL_FIND_OBJECT_FAST_PATH", msan_output)
+        for control_output in (ordinary_output, no_feature_output):
+            self.assertIn("DL_FIND_OBJECT_FAST_PATH", control_output)
+            self.assertNotIn("DL_ITERATE_PHDR_INTERCEPTED_FALLBACK", control_output)
+
     def test_libunwind_patch_missing_fails_before_git_apply(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
