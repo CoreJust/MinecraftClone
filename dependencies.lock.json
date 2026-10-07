@@ -3,8 +3,8 @@
   "dependencies": {
     "CoreCpp": {
       "repository": "CoreJust/CoreCpp",
-      "revision": "8e1d633680533632faf59a7ad0a2277deaad1e9d",
-      "fetch_ref": "refs/heads/codex/ai-cc-0040-explicit-submission-handle"
+      "revision": "d5759fa48b7073787434121624b5f5f93cf3fa2c",
+      "fetch_ref": "refs/heads/codex/ai-cc-0042-inputspan-public-header"
     },
     "CoreProject2026": {
       "repository": "CoreJust/CoreProject2026",

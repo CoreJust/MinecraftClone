@@ -596,10 +596,10 @@ class CiAcquireTests(unittest.TestCase):
         lock = Path(__file__).resolve().parents[2] / "dependencies.lock.json"
         parsed = acquire.require_private_dependency_lock(lock)
         self.assertEqual(set(parsed), {"CoreCpp", "CoreProject2026"})
-        self.assertEqual(parsed["CoreCpp"]["revision"], "8e1d633680533632faf59a7ad0a2277deaad1e9d")
+        self.assertEqual(parsed["CoreCpp"]["revision"], "d5759fa48b7073787434121624b5f5f93cf3fa2c")
         self.assertEqual(
             parsed["CoreCpp"]["fetch_ref"],
-            "refs/heads/codex/ai-cc-0040-explicit-submission-handle",
+            "refs/heads/codex/ai-cc-0042-inputspan-public-header",
         )
         self.assertEqual(
             parsed["CoreProject2026"]["revision"],
