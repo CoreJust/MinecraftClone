@@ -17,6 +17,22 @@ diff --git a/libunwind/src/CMakeLists.txt b/libunwind/src/CMakeLists.txt
 +
  set(LIBUNWIND_HEADERS
      AddressSpace.hpp
+@@ -198,5 +205,14 @@
+     CXX_STANDARD_REQUIRED ON
+     COMPILE_FLAGS "${LIBUNWIND_COMPILE_FLAGS}"
+ )
+-
++
++if (CMAKE_SYSTEM_NAME STREQUAL "Linux"
++    AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64)$"
++    AND LLVM_USE_SANITIZER MATCHES "^Memory(WithOrigins)?$")
++  # Preserve shadow/origin transport for opaque values crossing libunwind's C++ ABI.
++  target_compile_options(unwind_shared_objects PRIVATE
++    "$<$<COMPILE_LANGUAGE:CXX>:-fno-sanitize-memory-param-retval>")
++  target_compile_options(unwind_static_objects PRIVATE
++    "$<$<COMPILE_LANGUAGE:CXX>:-fno-sanitize-memory-param-retval>")
++endif()
+ if(LIBUNWIND_HIDE_SYMBOLS)
 diff --git a/libunwind/src/UnwindRegistersSave.S b/libunwind/src/UnwindRegistersSave.S
 --- a/libunwind/src/UnwindRegistersSave.S
 +++ b/libunwind/src/UnwindRegistersSave.S

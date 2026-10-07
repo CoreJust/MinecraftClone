@@ -3,6 +3,9 @@ from __future__ import annotations
 import contextlib
 import importlib.util
 import io
+import json
+import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -26,6 +29,42 @@ def load_module():
 class InstallMsanLibcxxTests(unittest.TestCase):
     def setUp(self):
         self.toolchain = load_module()
+
+    def compile_msan_ir(self, source, *extra_flags):
+        clangxx = shutil.which("clang++")
+        if clangxx is None:
+            self.skipTest("Clang C++ is required for MSan IR controls")
+        completed = subprocess.run(
+            [
+                clangxx,
+                "--target=x86_64-pc-linux-gnu",
+                "-std=c++17",
+                "-O1",
+                "-fsanitize=memory",
+                "-fsanitize-memory-track-origins=2",
+                *extra_flags,
+                "-S",
+                "-emit-llvm",
+                "-x",
+                "c++",
+                "-o",
+                "-",
+                "-",
+            ],
+            input=source,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+        return completed.stdout
+
+    def function_ir(self, ir, name):
+        marker = f"@{name}("
+        self.assertIn(marker, ir)
+        start = ir.rfind("define ", 0, ir.index(marker))
+        end = ir.index("\n}", start) + 2
+        return ir[start:end]
 
     def prepare_verification_tree(self, root):
         prefix = root / "prefix"
@@ -125,6 +164,179 @@ class InstallMsanLibcxxTests(unittest.TestCase):
         self.assertIn("-DLLVM_USE_SANITIZER=MemoryWithOrigins", command)
         self.assertIn("-DLLVM_ENABLE_RUNTIMES=libcxx;libcxxabi;libunwind", command)
         self.assertIn("-DLIBCXX_USE_COMPILER_RT=ON", command)
+        self.assertFalse(any("LIBUNWIND_ADDITIONAL_COMPILE_FLAGS" in arg for arg in command))
+        self.assertFalse(any(argument.startswith("-DCMAKE_CXX_FLAGS=") for argument in command))
+
+    def test_libunwind_compile_database_scopes_private_policy_to_objects_and_consumers(self):
+        cmake = shutil.which("cmake")
+        ninja = shutil.which("ninja")
+        clang = shutil.which("clang")
+        clangxx = shutil.which("clang++")
+        if not all((cmake, ninja, clang, clangxx)):
+            self.skipTest("CMake, Ninja, and Clang are required for compile-command scope coverage")
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "source"
+            build = root / "build"
+            source.mkdir()
+            sources = {
+                "unwind_shared.cpp": "int unwind_shared_cpp() { return 0; }\n",
+                "unwind_shared.c": "int unwind_shared_c(void) { return 0; }\n",
+                "unwind_shared.S": ".text\n.globl unwind_shared_asm\nunwind_shared_asm:\n ret\n",
+                "unwind_static.cpp": "int unwind_static_cpp() { return 0; }\n",
+                "unwind_static.c": "int unwind_static_c(void) { return 0; }\n",
+                "unwind_static.S": ".text\n.globl unwind_static_asm\nunwind_static_asm:\n ret\n",
+                "libcxx.cpp": "int libcxx_runtime() { return 0; }\n",
+                "libcxxabi.cpp": "int libcxxabi_runtime() { return 0; }\n",
+                "application.cpp": "int main() { return 0; }\n",
+                "positive_probe.cpp": "int main() { return 0; }\n",
+                "negative_probe.cpp": "int main() { return 0; }\n",
+            }
+            for name, contents in sources.items():
+                (source / name).write_text(contents, encoding="utf-8")
+            (source / "CMakeLists.txt").write_text(
+                "cmake_minimum_required(VERSION 3.25)\n"
+                "project(msan_flag_scope LANGUAGES C CXX ASM)\n"
+                "set(CMAKE_SYSTEM_NAME \"${TEST_SYSTEM_NAME}\")\n"
+                "set(CMAKE_SYSTEM_PROCESSOR \"${TEST_PROCESSOR}\")\n"
+                "if(LLVM_USE_SANITIZER MATCHES \"^Memory(WithOrigins)?$\")\n"
+                "  add_compile_options(-fsanitize=memory)\n"
+                "endif()\n"
+                "if(LLVM_USE_SANITIZER STREQUAL \"MemoryWithOrigins\")\n"
+                "  add_compile_options(-fsanitize-memory-track-origins=2)\n"
+                "endif()\n"
+                "add_library(unwind_shared_objects OBJECT unwind_shared.cpp unwind_shared.c unwind_shared.S)\n"
+                "target_compile_options(unwind_shared_objects PUBLIC \"${LIBUNWIND_ADDITIONAL_COMPILE_FLAGS}\")\n"
+                "add_library(unwind_static_objects OBJECT unwind_static.cpp unwind_static.c unwind_static.S)\n"
+                "target_compile_options(unwind_static_objects PUBLIC \"${LIBUNWIND_ADDITIONAL_COMPILE_FLAGS}\")\n"
+                "if (CMAKE_SYSTEM_NAME STREQUAL \"Linux\"\n"
+                "    AND CMAKE_SYSTEM_PROCESSOR MATCHES \"^(x86_64|AMD64)$\"\n"
+                "    AND LLVM_USE_SANITIZER MATCHES \"^Memory(WithOrigins)?$\")\n"
+                "  target_compile_options(unwind_shared_objects PRIVATE\n"
+                "    \"$<$<COMPILE_LANGUAGE:CXX>:-fno-sanitize-memory-param-retval>\")\n"
+                "  target_compile_options(unwind_static_objects PRIVATE\n"
+                "    \"$<$<COMPILE_LANGUAGE:CXX>:-fno-sanitize-memory-param-retval>\")\n"
+                "endif()\n"
+                "add_library(unwind_shared SHARED)\n"
+                "target_link_libraries(unwind_shared PUBLIC unwind_shared_objects)\n"
+                "add_library(unwind_static STATIC)\n"
+                "target_link_libraries(unwind_static PUBLIC unwind_static_objects)\n"
+                "add_library(libcxx_runtime OBJECT libcxx.cpp)\n"
+                "target_link_libraries(libcxx_runtime PRIVATE unwind_shared)\n"
+                "add_library(libcxxabi_runtime OBJECT libcxxabi.cpp)\n"
+                "target_link_libraries(libcxxabi_runtime PRIVATE unwind_static)\n"
+                "add_executable(application application.cpp)\n"
+                "target_link_libraries(application PRIVATE libcxx_runtime libcxxabi_runtime)\n"
+                "add_executable(positive_probe positive_probe.cpp)\n"
+                "add_executable(negative_probe negative_probe.cpp)\n",
+                encoding="utf-8",
+            )
+            def configure(build_name, system_name, processor, sanitizer):
+                build = root / build_name
+                completed = subprocess.run(
+                    [
+                        cmake,
+                        "-G",
+                        "Ninja",
+                        "-S",
+                        str(source),
+                        "-B",
+                        str(build),
+                        f"-DCMAKE_C_COMPILER={clang}",
+                        f"-DCMAKE_CXX_COMPILER={clangxx}",
+                        f"-DCMAKE_ASM_COMPILER={clang}",
+                        "-DCMAKE_TRY_COMPILE_TARGET_TYPE=STATIC_LIBRARY",
+                        "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON",
+                        f"-DTEST_SYSTEM_NAME={system_name}",
+                        f"-DTEST_PROCESSOR={processor}",
+                        f"-DLLVM_USE_SANITIZER={sanitizer}",
+                    ],
+                    text=True,
+                    capture_output=True,
+                    check=False,
+                )
+                self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+                return json.loads((build / "compile_commands.json").read_text(encoding="utf-8"))
+
+            compile_commands = configure("build-msan", "Linux", "x86_64", "MemoryWithOrigins")
+            normal_commands = configure("build-no-msan", "Linux", "x86_64", "none")
+            platform_commands = configure("build-non-linux", "Darwin", "x86_64", "MemoryWithOrigins")
+            architecture_commands = configure("build-non-x86", "Linux", "aarch64", "MemoryWithOrigins")
+
+        commands_by_source = {
+            Path(entry["file"]).name: entry.get("command", " ".join(entry.get("arguments", [])))
+            for entry in compile_commands
+        }
+        self.assertEqual(set(sources), set(commands_by_source))
+        for target_name in ("unwind_shared", "unwind_static"):
+            self.assertIn("-fno-sanitize-memory-param-retval", commands_by_source[f"{target_name}.cpp"])
+            for suffix in (".c", ".S"):
+                self.assertNotIn(
+                    "-fno-sanitize-memory-param-retval",
+                    commands_by_source[f"{target_name}{suffix}"],
+                )
+        for source_name, command in commands_by_source.items():
+            self.assertIn("-fsanitize=memory", command, source_name)
+            self.assertIn("-fsanitize-memory-track-origins=2", command, source_name)
+            if not source_name.startswith("unwind_") or not source_name.endswith(".cpp"):
+                self.assertNotIn("-fno-sanitize-memory-param-retval", command, source_name)
+        for commands in (normal_commands, platform_commands, architecture_commands):
+            self.assertFalse(
+                any("-fno-sanitize-memory-param-retval" in entry.get("command", "") for entry in commands)
+            )
+
+    def test_msan_param_retval_opt_out_preserves_shadow_and_use_checks(self):
+        source = (
+            "using word = unsigned long;\n"
+            "extern \"C\" word transport() { volatile word saved; return saved; }\n"
+            "extern \"C\" void side_effect();\n"
+            "extern \"C\" void branch_use() {\n"
+            "  volatile int value;\n"
+            "  if (value) side_effect();\n"
+            "}\n"
+            "extern \"C\" int address_use() {\n"
+            "  volatile word address;\n"
+            "  return *reinterpret_cast<volatile int*>(address);\n"
+            "}\n"
+        )
+        ir = self.compile_msan_ir(source, "-fno-sanitize-memory-param-retval")
+        transport = self.function_ir(ir, "transport")
+        branch_use = self.function_ir(ir, "branch_use")
+        address_use = self.function_ir(ir, "address_use")
+        self.assertIn("@__msan_track_origins = weak_odr constant i32 2", ir)
+        self.assertIn("sanitize_memory", ir)
+        self.assertRegex(transport, r"store i64 %[^,]+, ptr @__msan_retval_tls")
+        self.assertRegex(transport, r"store i32 %[^,]+, ptr @__msan_retval_origin_tls")
+        self.assertNotIn("call void @__msan_warning_with_origin_noreturn", transport)
+        self.assertIn("call void @__msan_warning_with_origin_noreturn", branch_use)
+        self.assertIn("call void @side_effect()", branch_use)
+        self.assertIn("call void @__msan_warning_with_origin_noreturn", address_use)
+        self.assertLess(
+            address_use.index("call void @__msan_warning_with_origin_noreturn"),
+            address_use.index("load volatile i32, ptr"),
+        )
+
+    def test_default_msan_application_keeps_branch_and_return_checks(self):
+        source = (
+            "extern \"C\" void side_effect();\n"
+            "extern \"C\" void application_call() {\n"
+            "  volatile int value;\n"
+            "  if (value) side_effect();\n"
+            "}\n"
+            "extern \"C\" int application_return() {\n"
+            "  volatile int value;\n"
+            "  return value;\n"
+            "}\n"
+        )
+        ir = self.compile_msan_ir(source)
+        application_call = self.function_ir(ir, "application_call")
+        application_return = self.function_ir(ir, "application_return")
+        self.assertIn("sanitize_memory", ir)
+        self.assertIn("call void @__msan_warning_with_origin_noreturn", application_call)
+        self.assertIn("call void @side_effect()", application_call)
+        self.assertIn("load volatile i32, ptr", application_return)
+        self.assertIn("call void @__msan_warning_with_origin_noreturn", application_return)
 
     def test_libunwind_patch_is_pinned_and_limited_to_linux_x86_64_msan(self):
         patch = self.toolchain.LIBUNWIND_MSAN_PATCH.read_text(encoding="utf-8")
@@ -137,6 +349,12 @@ class InstallMsanLibcxxTests(unittest.TestCase):
         self.assertIn('LLVM_USE_SANITIZER MATCHES "^Memory(WithOrigins)?$"', patch)
         self.assertIn(
             "set_property(SOURCE UnwindRegistersSave.S APPEND PROPERTY COMPILE_DEFINITIONS",
+            patch,
+        )
+        self.assertIn("target_compile_options(unwind_shared_objects PRIVATE", patch)
+        self.assertIn("target_compile_options(unwind_static_objects PRIVATE", patch)
+        self.assertIn(
+            '"$<$<COMPILE_LANGUAGE:CXX>:-fno-sanitize-memory-param-retval>"',
             patch,
         )
         self.assertIn("movq  $136, %rsi", patch)
@@ -284,6 +502,7 @@ class InstallMsanLibcxxTests(unittest.TestCase):
             for command in (commands[0], commands[2]):
                 self.assertIn("-fsanitize=memory", command)
                 self.assertIn("-fsanitize-memory-track-origins=2", command)
+                self.assertNotIn("-fno-sanitize-memory-param-retval", command)
                 self.assertIn("-stdlib=libc++", command)
                 self.assertIn(str(include_dir), " ".join(command))
                 self.assertIn(str(library_dir), " ".join(command))
