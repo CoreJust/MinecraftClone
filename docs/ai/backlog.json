@@ -13114,5 +13114,44 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0377",
+    "title": "Make Android HWASan and GMP Windows fast fixtures portable",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P1",
+    "route": "luna",
+    "milestone": "ED-010-S7",
+    "depends_on": [],
+    "acceptance": "Correct only the two test fixtures: make the mocked emulator ps command use POSIX forward-slash path syntax on every test host, and pass the temporary compiler path to generated CMake with forward slashes. Preserve production process-identity validation and GMP port logic. Run both focused Python suites and the full fast Python checks with no skips; record hosted Windows fast result separately in the S7 aggregate evidence.",
+    "evidence": "The exact Windows failure log is /private/tmp/mc-s7-ai-dev-fast-windows-112924014989.log (SHA-256 6077018431c8aba5cfa26ba6e286edfc58c11de2a275fcc803c817eb1d612ea5). GitHub job 112924014989 ran 517 tests and reported one failure, eight errors, and three skips. The mock process command used Windows backslash separators before POSIX shlex parsing, so the test helper rejected its private-SDK path. The generated CMake capture interpreted a Windows toolchain path backslash-U escape as invalid. After fixture-only Path.as_posix normalization, python3 -B -m unittest script.tests.test_android_hwasan_emulator script.tests.test_gmp_vcpkg_overlay -v passed 18/18. No remote Windows rerun is claimed.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0038",
+    "motivation": "The final S7 ai-dev push 7a94d54 passed Ubuntu fast but failed Windows fast: the Android HWASan lifecycle tests supplied Windows backslash paths to POSIX shlex parsing, and the GMP configure fixture embedded a native Windows path in generated CMake code.",
+    "context": "GitHub run 37659776452 job 112924014989 ran 517 tests and reported one failure and eight errors. The lifecycle fixture uses a Windows-native temporary path in a fake macOS ps command, causing shlex.split to remove backslashes before _verify_process; the supported runtime host is macOS. The GMP fixture passes a C:\\Users path into CMake, which rejects the \\U escape. Production PID ownership checks and GMP configure behavior are not implicated and must remain unchanged.",
+    "complexity": "low",
+    "created_at": "2026-10-07",
+    "resolved_at": "2026-10-07",
+    "resolution_changes": "Adjusted only the test fixtures: the Android emulator fixture now serializes mocked macOS ps command paths with forward slashes, and the GMP fixture passes forward-slash compiler paths through its generated CMake script. Production emulator ownership validation and GMP port logic are unchanged. Focused local suites passed 18/18; the exact Windows fast rerun remains an aggregate CI receipt, not a claimed task result.",
+    "plan": [
+      "Reproduce the two Windows failures from the retained job 112924014989 log and trace each to its fixture input.",
+      "Adjust only test-side path serialization to match macOS ps output and CMake path syntax.",
+      "Run the two focused test files, then the normal task hook and record exact evidence."
+    ],
+    "product_changes": [],
+    "code_changes": [
+      "Normalize the mocked Android emulator ps executable path to POSIX separators in its tests.",
+      "Normalize the temporary Android toolchain compiler path before embedding it in the generated GMP CMake capture script."
+    ],
+    "baseline_commit": "7a94d54b02b6e00158d8a8e7a954ab1731261477",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]

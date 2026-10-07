@@ -45,6 +45,14 @@ class AndroidHwasanEmulatorTests(unittest.TestCase):
     def prepare(self) -> Path:
         return self.lifecycle.prepare(self.runner_temp, self.run_id, self.attempt, self.github_env)
 
+    @staticmethod
+    def process_command(emulator: Path, avd_name: str, extra: str = "") -> str:
+        # The runtime reads macOS ps output, even when this fixture runs on Windows.
+        return (
+            f"{emulator.as_posix()} -avd {avd_name} "
+            f"-port 5558 -accel on{extra}"
+        )
+
     def setup_started_emulator(self) -> tuple[Path, Path, mock.Mock, list]:
         root = self.prepare()
         sdk_root = root / "android-sdk"
@@ -57,9 +65,10 @@ class AndroidHwasanEmulatorTests(unittest.TestCase):
         process.pid = 4321
         process.poll.return_value = None
         commands = []
-        command = (
-            f"{emulator} -avd mc-hwasan-{self.run_id}-{self.attempt} "
-            "-port 5558 -accel on -no-window -no-audio -no-boot-anim -no-snapshot"
+        command = self.process_command(
+            emulator,
+            f"mc-hwasan-{self.run_id}-{self.attempt}",
+            " -no-window -no-audio -no-boot-anim -no-snapshot",
         )
 
         def run(command_args, **kwargs):
@@ -230,11 +239,9 @@ class AndroidHwasanEmulatorTests(unittest.TestCase):
                 expected_identity = state["process_start_identity"]
                 emulator = Path(state["emulator_path"])
                 avd_name = state["avd_name"]
-                command = (
-                    f"{emulator} -avd {avd_name} -port 5558 -accel on -no-window"
-                )
+                command = self.process_command(emulator, avd_name, " -no-window")
                 if not reused_pid:
-                    command = f"{sdk_root}/other-emulator -avd {avd_name} -port 5558 -accel on"
+                    command = self.process_command(sdk_root / "other-emulator", avd_name)
                 actual_identity = "Thu Oct  7 10:01:00 2026" if reused_pid else expected_identity
                 with mock.patch.object(
                     self.lifecycle, "_process_snapshot", return_value=(actual_identity, command)
@@ -247,7 +254,8 @@ class AndroidHwasanEmulatorTests(unittest.TestCase):
     def test_cleanup_terminates_only_the_matching_emulator_and_removes_its_private_root(self):
         root, _, _, _ = self.setup_started_emulator()
         state = json.loads((root / self.lifecycle.STATE_FILE).read_text(encoding="utf-8"))
-        process_snapshot = (state["process_start_identity"], f"{state['emulator_path']} -avd {state['avd_name']} -port 5558 -accel on")
+        command = self.process_command(Path(state["emulator_path"]), state["avd_name"])
+        process_snapshot = (state["process_start_identity"], command)
         with mock.patch.object(
             self.lifecycle, "_process_snapshot", side_effect=[process_snapshot, None]
         ), mock.patch.object(self.lifecycle.os, "kill") as kill:
@@ -260,7 +268,7 @@ class AndroidHwasanEmulatorTests(unittest.TestCase):
         state = json.loads((root / self.lifecycle.STATE_FILE).read_text(encoding="utf-8"))
         snapshot = (
             state["process_start_identity"],
-            f"{state['emulator_path']} -avd {state['avd_name']} -port 5558 -accel on",
+            self.process_command(Path(state["emulator_path"]), state["avd_name"]),
         )
         with mock.patch.object(self.lifecycle, "_process_snapshot", return_value=snapshot), mock.patch.object(
             self.lifecycle.os,
@@ -276,7 +284,7 @@ class AndroidHwasanEmulatorTests(unittest.TestCase):
         state = json.loads((root / self.lifecycle.STATE_FILE).read_text(encoding="utf-8"))
         snapshot = (
             state["process_start_identity"],
-            f"{state['emulator_path']} -avd {state['avd_name']} -port 5558 -accel on",
+            self.process_command(Path(state["emulator_path"]), state["avd_name"]),
         )
         with mock.patch.object(
             self.lifecycle,
@@ -306,7 +314,7 @@ class AndroidHwasanEmulatorTests(unittest.TestCase):
         state = json.loads((root / self.lifecycle.STATE_FILE).read_text(encoding="utf-8"))
         snapshot = (
             state["process_start_identity"],
-            f"{state['emulator_path']} -avd {state['avd_name']} -port 5558 -accel on",
+            self.process_command(Path(state["emulator_path"]), state["avd_name"]),
         )
         with mock.patch.object(self.lifecycle, "_process_snapshot", return_value=snapshot), mock.patch.object(
             self.lifecycle.os,
@@ -321,7 +329,7 @@ class AndroidHwasanEmulatorTests(unittest.TestCase):
     def test_wait_targets_only_the_recorded_adb_serial(self):
         root, sdk_root, _, _ = self.setup_started_emulator()
         state = json.loads((root / self.lifecycle.STATE_FILE).read_text(encoding="utf-8"))
-        command = f"{state['emulator_path']} -avd {state['avd_name']} -port 5558 -accel on"
+        command = self.process_command(Path(state["emulator_path"]), state["avd_name"])
         completed = self.lifecycle.subprocess.CompletedProcess([], 0, "device\n", "")
         booted = self.lifecycle.subprocess.CompletedProcess([], 0, "1\n", "")
         with mock.patch.object(
