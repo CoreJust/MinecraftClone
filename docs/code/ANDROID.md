@@ -69,3 +69,19 @@ ID, packaging, and build type.
 Gradle and CI preflight the packaged wrapper and instrumented AArch64 library
 before upload or emulator startup, while device runtime validation remains a
 separate S7 acceptance gate.
+
+The candidate-bound HWASan runtime runs only on the authorized macOS ARM64 host
+with usable Hypervisor.Framework acceleration. It validates Java 21, creates a
+unique AVD and Android user/configuration homes under the job's private
+`RUNNER_TEMP` subtree, installs the pinned Android SDK inside that same
+run-owned subtree, and refuses to reuse the default AVD home. The emulator
+must start with acceleration enabled on console port 5558 (ADB serial
+`emulator-5558`); the job fails closed if that serial or either reserved port is
+already occupied. Device commands always select that serial explicitly. An
+always-run cleanup verifies the recorded emulator PID, executable, AVD name,
+port, and process start identity before stopping it, then removes only the
+run-owned AVD/SDK/user-state subtree. A process already gone at signal time is
+treated as stopped; other signal errors fail closed. It leaves unrelated
+devices and global AVDs untouched. These requirements follow Android's [emulator acceleration and
+port contract](https://developer.android.com/studio/run/emulator-commandline)
+and its [AVD/user-home environment variables](https://developer.android.com/tools/variables).

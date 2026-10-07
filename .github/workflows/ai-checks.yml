@@ -542,22 +542,19 @@ jobs:
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: '3.12.10'
-      - name: Select Java 21 from the hosted tool cache
-        run: |
-          if [[ -n "${JAVA_HOME_21_arm64:-}" ]]; then
-            java_home="$JAVA_HOME_21_arm64"
-          elif [[ -n "${JAVA_HOME_21_ARM64:-}" ]]; then
-            java_home="$JAVA_HOME_21_ARM64"
-          elif [[ -n "${JAVA_HOME_21_X64:-}" ]]; then
-            java_home="$JAVA_HOME_21_X64"
-          else
-            echo 'Java 21 is not present on this ARM64 runner.' >&2
-            exit 1
-          fi
-          echo "JAVA_HOME=$java_home" >> "$GITHUB_ENV"
-          echo "$java_home/bin" >> "$GITHUB_PATH"
+      - name: Select and validate Java 21
+        run: >-
+          python script/ci/android_hwasan_emulator.py select-java
+          --github-env "$GITHUB_ENV" --github-path "$GITHUB_PATH"
+      - name: Create isolated Android emulator homes
+        run: >-
+          python script/ci/android_hwasan_emulator.py prepare
+          --runner-temp "$RUNNER_TEMP"
+          --run-id "$GITHUB_RUN_ID"
+          --run-attempt "$GITHUB_RUN_ATTEMPT"
+          --github-env "$GITHUB_ENV"
       - name: Bootstrap pinned Android SDK tools
-        run: python script/ci/acquire.py install-android-sdk --root "$RUNNER_TEMP/android-sdk"
+        run: python script/ci/acquire.py install-android-sdk --root "$ANDROID_SDK_ROOT"
       - name: Expose Android platform tools and emulator
         run: |
           echo "$ANDROID_SDK_ROOT/platform-tools" >> "$GITHUB_PATH"
@@ -572,39 +569,20 @@ jobs:
           python script/ci/verify_android_hwasan.py
           --apk build/hwasan/app-release.apk
           --apk-only
-      - name: Start matching ARM64 Android emulator
-        shell: bash
-        env:
-          ANDROID_I_WANT_MY_TCG: 'yes'
-        run: |
-          set -euo pipefail
-          sdkmanager="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
-          avdmanager="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/avdmanager"
-          emulator_bin="$ANDROID_SDK_ROOT/emulator/emulator"
-          "$sdkmanager" --install emulator 'system-images;android-35;google_apis;arm64-v8a'
-          "$avdmanager" create avd --force --name mc-hwasan --package 'system-images;android-35;google_apis;arm64-v8a' --device pixel_2
-          # Hosted Apple Silicon has no nested virtualization; use software emulation.
-          "$emulator_bin" -avd mc-hwasan -accel off -no-window -no-audio -no-boot-anim -no-snapshot -gpu swiftshader_indirect > "$RUNNER_TEMP/android-emulator.log" 2>&1 &
-          echo $! > "$RUNNER_TEMP/android-emulator.pid"
-          for attempt in $(seq 1 600); do
-            if ! kill -0 "$(cat "$RUNNER_TEMP/android-emulator.pid")" 2>/dev/null; then
-              cat "$RUNNER_TEMP/android-emulator.log"
-              echo 'ARM64 Android emulator exited before booting.' >&2
-              exit 1
-            fi
-            if [[ "$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" == 1 ]]; then
-              echo 'ANDROID_SERIAL=emulator-5554' >> "$GITHUB_ENV"
-              adb shell input keyevent 82
-              exit 0
-            fi
-            if (( attempt % 15 == 0 )); then
-              echo "Waiting for ARM64 Android software emulator boot (attempt $attempt/600)."
-            fi
-            sleep 2
-          done
-          cat "$RUNNER_TEMP/android-emulator.log"
-          echo 'ARM64 Android emulator did not finish booting.' >&2
-          exit 1
+      - name: Start matching ARM64 Android emulator with HVF
+        run: >-
+          python script/ci/android_hwasan_emulator.py start
+          --runner-temp "$RUNNER_TEMP"
+          --run-id "$GITHUB_RUN_ID"
+          --run-attempt "$GITHUB_RUN_ATTEMPT"
+          --sdk-root "$ANDROID_SDK_ROOT"
+      - name: Wait for the owned Android emulator
+        run: >-
+          python script/ci/android_hwasan_emulator.py wait
+          --runner-temp "$RUNNER_TEMP"
+          --run-id "$GITHUB_RUN_ID"
+          --run-attempt "$GITHUB_RUN_ATTEMPT"
+          --timeout-seconds 1200
       - name: Run candidate-bound Android HWASan runtime row
         run: >-
           python script/ai_analysis_matrix.py run-row build/ai-analysis/android_arm64_hwasan.json
@@ -617,6 +595,21 @@ jobs:
           path: build/ai-analysis/android_arm64_hwasan.json
           if-no-files-found: warn
           retention-days: 14
+      - name: Upload Android HWASan emulator log
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: hwasan-emulator-log-${{ github.sha }}
+          path: ${{ runner.temp }}/mc-hwasan-${{ github.run_id }}-${{ github.run_attempt }}/emulator.log
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Stop owned Android emulator and remove private AVD state
+        if: always()
+        run: >-
+          python script/ci/android_hwasan_emulator.py cleanup
+          --runner-temp "$RUNNER_TEMP"
+          --run-id "$GITHUB_RUN_ID"
+          --run-attempt "$GITHUB_RUN_ATTEMPT"
 
   analysis-matrix:
     name: S7 sanitizer and static-analysis matrix

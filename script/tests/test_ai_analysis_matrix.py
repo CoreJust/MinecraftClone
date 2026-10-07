@@ -723,6 +723,8 @@ class AnalysisMatrixTests(unittest.TestCase):
         self.assertIn("-DCMAKE_BUILD_TYPE=Release", row["flags"])
         self.assertIn("-DMC_ENABLE_HIGH_ASSERT=OFF", row["flags"])
         self.assertIn("build/hwasan/app-release.apk", row["commands"][0])
+        self.assertEqual(row["commands"][0][-1], "emulator-5558")
+        self.assertEqual(row["tool_probes"], [["adb", "-s", "emulator-5558", "get-state"]])
 
         workflow = (REPOSITORY / ".github/workflows/ai-checks.yml").read_text(encoding="utf-8")
         build_gradle = (REPOSITORY / "android/app/build.gradle").read_text(encoding="utf-8")

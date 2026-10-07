@@ -68,8 +68,8 @@
       "platform": "android-arm64",
       "capability": "android-arm64-hwasan-runtime",
       "flags": ["-DCMAKE_BUILD_TYPE=Release", "-DMC_ENABLE_HIGH_ASSERT=OFF", "-DMC_ENABLE_SANITIZERS=ON", "-DMC_SANITIZER=hwaddress", "ANDROID_ABI=arm64-v8a"],
-      "tool_probes": [["adb", "version"]],
-      "commands": [["python3", "script/ci/verify_android_hwasan.py", "--apk", "build/hwasan/app-release.apk", "--serial", "emulator-5554"]],
+      "tool_probes": [["adb", "-s", "emulator-5558", "get-state"]],
+      "commands": [["python3", "script/ci/verify_android_hwasan.py", "--apk", "build/hwasan/app-release.apk", "--serial", "emulator-5558"]],
       "timeout_seconds": 1800
     },
     {
