@@ -75,6 +75,21 @@ class InstallMsanLibcxxTests(unittest.TestCase):
                     self.toolchain.verify_install(prefix, "clang++", build)
         return str(raised.exception)
 
+    def assert_positive_probe_rejected(self, positive_run):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            prefix, _, build, _, _ = self.prepare_verification_tree(root)
+            with mock.patch.object(
+                self.toolchain.subprocess,
+                "run",
+                side_effect=[subprocess.CompletedProcess([], 0, "", ""), positive_run],
+            ) as run:
+                with self.assertRaises(self.toolchain.ToolchainError) as raised:
+                    self.toolchain.verify_install(prefix, "clang++", build)
+
+        self.assertEqual(run.call_count, 2)
+        return str(raised.exception)
+
     def test_resolve_tool_preserves_clang_driver_aliases(self):
         with (
             mock.patch.object(
@@ -110,6 +125,61 @@ class InstallMsanLibcxxTests(unittest.TestCase):
         self.assertIn("-DLLVM_USE_SANITIZER=MemoryWithOrigins", command)
         self.assertIn("-DLLVM_ENABLE_RUNTIMES=libcxx;libcxxabi;libunwind", command)
         self.assertIn("-DLIBCXX_USE_COMPILER_RT=ON", command)
+
+    def test_libunwind_patch_is_pinned_and_limited_to_linux_x86_64_msan(self):
+        patch = self.toolchain.LIBUNWIND_MSAN_PATCH.read_text(encoding="utf-8")
+        self.assertEqual(
+            self.toolchain.sha256_file(self.toolchain.LIBUNWIND_MSAN_PATCH),
+            self.toolchain.LIBUNWIND_MSAN_PATCH_SHA256,
+        )
+        self.assertIn('CMAKE_SYSTEM_NAME STREQUAL "Linux"', patch)
+        self.assertIn('CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64)$"', patch)
+        self.assertIn('LLVM_USE_SANITIZER MATCHES "^Memory(WithOrigins)?$"', patch)
+        self.assertIn(
+            "set_property(SOURCE UnwindRegistersSave.S APPEND PROPERTY COMPILE_DEFINITIONS",
+            patch,
+        )
+        self.assertIn("movq  $136, %rsi", patch)
+        self.assertIn("call  __msan_unpoison", patch)
+
+    def test_libunwind_patch_missing_fails_before_git_apply(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            missing_patch = root / "missing.patch"
+            with (
+                mock.patch.object(self.toolchain, "LIBUNWIND_MSAN_PATCH", missing_patch),
+                mock.patch.object(self.toolchain, "run") as run,
+            ):
+                with self.assertRaisesRegex(self.toolchain.ToolchainError, "missing or unreadable"):
+                    self.toolchain.apply_libunwind_msan_patch(root / "source")
+            run.assert_not_called()
+
+    def test_libunwind_patch_modified_fails_before_git_apply(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            modified_patch = root / "modified.patch"
+            modified_patch.write_text("not the pinned patch\n", encoding="utf-8")
+            with (
+                mock.patch.object(self.toolchain, "LIBUNWIND_MSAN_PATCH", modified_patch),
+                mock.patch.object(self.toolchain, "run") as run,
+            ):
+                with self.assertRaisesRegex(self.toolchain.ToolchainError, "SHA-256 mismatch"):
+                    self.toolchain.apply_libunwind_msan_patch(root / "source")
+            run.assert_not_called()
+
+    def test_libunwind_patch_apply_check_failure_does_not_apply(self):
+        commands = []
+
+        def reject_check(command):
+            commands.append(command)
+            raise self.toolchain.ToolchainError("patch does not apply")
+
+        with mock.patch.object(self.toolchain, "run", side_effect=reject_check):
+            with self.assertRaisesRegex(self.toolchain.ToolchainError, "patch does not apply"):
+                self.toolchain.apply_libunwind_msan_patch(Path("source"))
+
+        self.assertEqual(len(commands), 1)
+        self.assertIn("--check", commands[0])
 
     def test_build_includes_every_runtime_registered_for_install(self):
         command = self.toolchain.build_command(Path("build"), jobs=4)
@@ -153,6 +223,15 @@ class InstallMsanLibcxxTests(unittest.TestCase):
                 self.assertIn("-stdlib=libc++", command)
                 self.assertIn(str(include_dir), " ".join(command))
                 self.assertIn(str(library_dir), " ".join(command))
+            positive_source = run.call_args_list[0].kwargs["input"]
+            self.assertIn("[[gnu::noinline]] void throw_value(int32_t value)", positive_source)
+            self.assertIn("volatile int32_t runtime_seed = 0;", positive_source)
+            self.assertIn("#include <string>", positive_source)
+            self.assertIn("std::to_string(expected)", positive_source)
+            self.assertIn("!marker.empty()", positive_source)
+            self.assertIn("Cleanup cleanup{count};", positive_source)
+            self.assertIn("throw;", positive_source)
+            self.assertIn("cleanup_count != 1", positive_source)
             negative_source = run.call_args_list[2].kwargs["input"]
             self.assertIn("std::malloc(sizeof(int))", negative_source)
             self.assertIn("volatile int", negative_source)
@@ -169,12 +248,64 @@ class InstallMsanLibcxxTests(unittest.TestCase):
             self.assertEqual(commands[4][0], "ldd")
             self.assertEqual(commands[5], [str(symbolizer), "--version"])
 
+    def test_positive_probe_compile_failure_stops_before_execution(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            prefix, _, build, _, _ = self.prepare_verification_tree(root)
+            compile_failure = subprocess.CompletedProcess([], 1, "compiler stdout", "compiler stderr")
+            with mock.patch.object(
+                self.toolchain.subprocess,
+                "run",
+                side_effect=[compile_failure],
+            ) as run:
+                with self.assertRaisesRegex(
+                    self.toolchain.ToolchainError, "positive-probe compilation"
+                ) as raised:
+                    self.toolchain.verify_install(prefix, "clang++", build)
+
+        self.assertEqual(run.call_count, 1)
+        self.assertIn("compiler stdout", str(raised.exception))
+        self.assertIn("compiler stderr", str(raised.exception))
+
+    def test_positive_probe_nonzero_exit_fails_before_negative_control(self):
+        message = self.assert_positive_probe_rejected(
+            subprocess.CompletedProcess([], -11, "positive stdout", "positive stderr")
+        )
+        self.assertIn("return code: -11", message)
+        self.assertIn("positive stdout", message)
+        self.assertIn("positive stderr", message)
+
+    def test_positive_probe_timeout_preserves_partial_output(self):
+        message = self.assert_positive_probe_rejected(
+            subprocess.TimeoutExpired(
+                ["msan-libcxx-positive"],
+                30,
+                output="partial stdout",
+                stderr="partial stderr",
+            )
+        )
+        self.assertIn("return code: 124", message)
+        self.assertIn("partial stdout", message)
+        self.assertIn("partial stderr", message)
+        self.assertIn("timed out after 30 seconds", message)
+
+    def test_positive_probe_sanitizer_diagnostic_fails_even_on_zero_exit(self):
+        message = self.assert_positive_probe_rejected(
+            subprocess.CompletedProcess(
+                [], 0, "", "WARNING: MemorySanitizer: use-of-uninitialized-value\n"
+            )
+        )
+        self.assertIn("emitted a sanitizer diagnostic", message)
+        self.assertIn("use-of-uninitialized-value", message)
+
     def test_verified_toolchain_exports_fast_fatal_unwind_for_analysis_processes(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             environment_file = root / "github-env"
+            commands = []
 
             def fake_run(command, **_kwargs):
+                commands.append(command)
                 if command[-1] == "--version":
                     return "Ubuntu clang version 18.1.3\n"
                 if command[-2:] == ["rev-parse", "HEAD"]:
@@ -215,6 +346,71 @@ class InstallMsanLibcxxTests(unittest.TestCase):
                 f"MSAN_OPTIONS={self.toolchain.MSAN_ANALYSIS_OPTIONS}\n",
                 environment_file.read_text(encoding="utf-8"),
             )
+            identity_index = next(
+                index for index, command in enumerate(commands) if command[-2:] == ["rev-parse", "HEAD"]
+            )
+            patch_check_index = next(
+                index for index, command in enumerate(commands) if "--check" in command and "apply" in command
+            )
+            patch_apply_index = next(
+                index
+                for index, command in enumerate(commands)
+                if "apply" in command and "--check" not in command
+            )
+            configure_index = next(
+                index for index, command in enumerate(commands) if command[:2] == ["cmake", "-G"]
+            )
+            self.assertLess(identity_index, patch_check_index)
+            self.assertLess(patch_check_index, patch_apply_index)
+            self.assertLess(patch_apply_index, configure_index)
+
+    def test_source_pin_mismatch_stops_before_patch_or_configure(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            environment_file = root / "github-env"
+            commands = []
+
+            def fake_run(command, **_kwargs):
+                commands.append(command)
+                if command[-1] == "--version":
+                    return "Ubuntu clang version 18.1.3\n"
+                if command[-2:] == ["rev-parse", "HEAD"]:
+                    return "unexpected-source-commit"
+                return ""
+
+            with (
+                mock.patch.object(self.toolchain, "require_linux"),
+                mock.patch.object(
+                    self.toolchain,
+                    "resolve_tool",
+                    side_effect=["/usr/bin/clang-18", "/usr/bin/clang++-18"],
+                ),
+                mock.patch.object(self.toolchain, "run", side_effect=fake_run),
+                mock.patch.dict(self.toolchain.os.environ, {"GITHUB_ENV": str(environment_file)}),
+                contextlib.redirect_stdout(io.StringIO()),
+                contextlib.redirect_stderr(io.StringIO()),
+            ):
+                result = self.toolchain.main(
+                    [
+                        "--source-root",
+                        str(root / "llvm" / "source"),
+                        "--build-root",
+                        str(root / "llvm" / "build"),
+                        "--prefix",
+                        str(root / "msan-libcxx"),
+                        "--clang",
+                        "clang-18",
+                        "--clangxx",
+                        "clang++-18",
+                        "--jobs",
+                        "1",
+                    ]
+                )
+
+            self.assertEqual(result, 1)
+            self.assertFalse(environment_file.exists())
+            self.assertFalse(any("apply" in command for command in commands))
+            self.assertFalse(any(command[:2] == ["cmake", "-G"] for command in commands))
 
     def test_install_accepts_standard_pid_prefix_on_msan_warning(self):
         with tempfile.TemporaryDirectory() as directory:

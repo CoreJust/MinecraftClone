@@ -1,0 +1,34 @@
+diff --git a/libunwind/src/CMakeLists.txt b/libunwind/src/CMakeLists.txt
+--- a/libunwind/src/CMakeLists.txt
++++ b/libunwind/src/CMakeLists.txt
+@@ -25,7 +25,14 @@
+ set(LIBUNWIND_ASM_SOURCES
+     UnwindRegistersRestore.S
+     UnwindRegistersSave.S
+     )
++if (CMAKE_SYSTEM_NAME STREQUAL "Linux"
++    AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64)$"
++    AND LLVM_USE_SANITIZER MATCHES "^Memory(WithOrigins)?$")
++  set_property(SOURCE UnwindRegistersSave.S APPEND PROPERTY COMPILE_DEFINITIONS
++    _LIBUNWIND_MSAN_X86_64
++  )
++endif()
+-
++
+ set(LIBUNWIND_HEADERS
+     AddressSpace.hpp
+diff --git a/libunwind/src/UnwindRegistersSave.S b/libunwind/src/UnwindRegistersSave.S
+--- a/libunwind/src/UnwindRegistersSave.S
++++ b/libunwind/src/UnwindRegistersSave.S
+@@ -126,4 +126,11 @@
+   movdqu %xmm15,416(PTR)
+ #endif
++#if defined(_LIBUNWIND_MSAN_X86_64) && defined(__linux__) && defined(__x86_64__)
++  // The 17 saved qwords stop at RIP; skipped flags and segments stay poisoned.
++  subq  $8, %rsp
++  movq  $136, %rsi
++  call  __msan_unpoison
++  addq  $8, %rsp
++#endif
+   xorl  %eax, %eax    # return UNW_ESUCCESS
+   ret

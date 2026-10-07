@@ -23,13 +23,68 @@ except ImportError:  # The installer is Linux-only; keeping the module importabl
 LLVM_REPOSITORY = "https://github.com/llvm/llvm-project.git"
 LLVM_TAG = "llvmorg-18.1.3"
 LLVM_COMMIT = "c13b7485b87909fcf739f62cfa382b55407433c0"
+LIBUNWIND_MSAN_PATCH = Path(__file__).resolve().parent / "patches/libunwind-msan-x86_64.patch"
+LIBUNWIND_MSAN_PATCH_SHA256 = "ac0a913d4f0e15fcfa0a2dd2be73267696b5696a4b9c9be4bc81bb4aa5a61de3"
 MSAN_EXIT_CODE = 86
 MSAN_ANALYSIS_OPTIONS = "halt_on_error=1:print_stats=1:fast_unwind_on_fatal=1"
 MSAN_PROBE_OPTIONS = "halt_on_error=1:exit_code=86:print_stats=0:symbolize=1:fast_unwind_on_fatal=1"
 MSAN_WARNING = re.compile(
     r"(?m)^(?:==[0-9]+==)?WARNING: MemorySanitizer: use-of-uninitialized-value\r?$"
 )
+MSAN_DIAGNOSTIC = re.compile(
+    r"(?m)^(?:==[0-9]+==)?(?:(?:WARNING|ERROR|SUMMARY): )?MemorySanitizer:"
+)
 MSAN_SYMBOLIZER_CANDIDATES = ("llvm-symbolizer-18", "llvm-symbolizer")
+MSAN_POSITIVE_PROBE_SOURCE = (
+    "#include <stdint.h>\n"
+    "#include <string>\n"
+    "volatile int32_t runtime_seed = 0;\n"
+    "struct Cleanup {\n"
+    "    int32_t* count;\n"
+    "    ~Cleanup()\n"
+    "    {\n"
+    "        ++*count;\n"
+    "    }\n"
+    "};\n"
+    "[[gnu::noinline]] void throw_value(int32_t value)\n"
+    "{\n"
+    "    throw value;\n"
+    "}\n"
+    "[[gnu::noinline]] void throw_with_cleanup(int32_t value, int32_t* count)\n"
+    "{\n"
+    "    Cleanup cleanup{count};\n"
+    "    throw_value(value);\n"
+    "}\n"
+    "[[gnu::noinline]] void rethrow_value(int32_t value)\n"
+    "{\n"
+    "    try {\n"
+    "        throw_value(value);\n"
+    "    } catch (int32_t) {\n"
+    "        throw;\n"
+    "    }\n"
+    "}\n"
+    "int main(int argc, char**)\n"
+    "{\n"
+    "    const int32_t expected = static_cast<int32_t>(argc) + runtime_seed + 40;\n"
+    "    const std::string marker = std::to_string(expected);\n"
+    "    int32_t cleanup_count = 0;\n"
+    "    int32_t caught = 0;\n"
+    "    try {\n"
+    "        throw_with_cleanup(expected, &cleanup_count);\n"
+    "    } catch (int32_t value) {\n"
+    "        caught = value;\n"
+    "    }\n"
+    "    if (caught != expected || cleanup_count != 1) {\n"
+    "        return 1;\n"
+    "    }\n"
+    "    try {\n"
+    "        rethrow_value(expected + 1);\n"
+    "    } catch (int32_t value) {\n"
+    "        caught = value;\n"
+    "    }\n"
+    "    return caught == expected + 1 && cleanup_count == 1 && !marker.empty() ? 0 : 2;\n"
+    "}\n"
+)
 
 
 class ToolchainError(RuntimeError):
@@ -152,6 +207,40 @@ def sha256_file(file_path: Path) -> str:
         for block in iter(lambda: source.read(1024 * 1024), b""):
             digest.update(block)
     return digest.hexdigest()
+
+
+def apply_libunwind_msan_patch(source: Path) -> None:
+    try:
+        actual_hash = sha256_file(LIBUNWIND_MSAN_PATCH)
+    except OSError as error:
+        raise ToolchainError(f"pinned libunwind MSan patch is missing or unreadable: {error}") from error
+    if actual_hash != LIBUNWIND_MSAN_PATCH_SHA256:
+        raise ToolchainError(
+            "pinned libunwind MSan patch SHA-256 mismatch: "
+            f"expected {LIBUNWIND_MSAN_PATCH_SHA256}, got {actual_hash}"
+        )
+    patch_path = str(LIBUNWIND_MSAN_PATCH)
+    run(
+        [
+            "git",
+            "-C",
+            str(source),
+            "apply",
+            "--check",
+            "--whitespace=error-all",
+            patch_path,
+        ]
+    )
+    run(
+        [
+            "git",
+            "-C",
+            str(source),
+            "apply",
+            "--whitespace=error-all",
+            patch_path,
+        ]
+    )
 
 
 def read_linux_setting(setting_path: str) -> str:
@@ -311,11 +400,10 @@ def verify_install(prefix: Path, clangxx: str, build: Path) -> None:
         f"-L{library_dir}",
         f"-Wl,-rpath,{library_dir}",
     ]
-    positive_source = "#include <string>\nint main() { return std::string(\"msan\").empty(); }\n"
     positive_command = [clangxx, *common_flags, "-x", "c++", "-", "-o", str(positive_probe)]
     positive_build = subprocess.run(
         positive_command,
-        input=positive_source,
+        input=MSAN_POSITIVE_PROBE_SOURCE,
         cwd=build,
         env=runtime_environment,
         text=True,
@@ -328,21 +416,36 @@ def verify_install(prefix: Path, clangxx: str, build: Path) -> None:
                 "instrumented libc++ positive-probe compilation", positive_command, positive_build
             )
         )
-    positive_run = subprocess.run(
-        [str(positive_probe)],
-        cwd=build,
-        env=runtime_environment,
-        text=True,
-        capture_output=True,
-        timeout=30,
-        check=False,
-    )
-    if positive_run.returncode:
+    try:
+        positive_run = subprocess.run(
+            [str(positive_probe)],
+            cwd=build,
+            env=runtime_environment,
+            text=True,
+            capture_output=True,
+            timeout=30,
+            check=False,
+        )
+    except subprocess.TimeoutExpired as timeout:
+        positive_run = subprocess.CompletedProcess(
+            [str(positive_probe)],
+            124,
+            timeout_output(timeout.stdout),
+            timeout_output(timeout.stderr) + "\nMSan exception positive probe timed out after 30 seconds",
+        )
+    positive_diagnostics = positive_run.stdout + positive_run.stderr
+    has_positive_diagnostic = MSAN_DIAGNOSTIC.search(positive_diagnostics) is not None
+    if positive_run.returncode or has_positive_diagnostic:
+        reason = "emitted a sanitizer diagnostic" if has_positive_diagnostic else "failed"
         raise ToolchainError(
-            format_probe_failure(
-                "instrumented libc++ positive-probe execution", [str(positive_probe)], positive_run
+            f"instrumented libc++ exception positive probe {reason}\n"
+            + format_probe_failure(
+                "instrumented libc++ exception positive-probe execution",
+                [str(positive_probe)],
+                positive_run,
             )
         )
+    print("[msan-libcxx] PASS: typed exception, rethrow, and cleanup execute", flush=True)
 
     negative_source = (
         "#include <cstdlib>\n"
@@ -471,6 +574,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         if actual_commit != LLVM_COMMIT:
             raise ToolchainError(f"LLVM source pin mismatch: expected {LLVM_COMMIT}, got {actual_commit}")
 
+        print("[msan-libcxx] Apply pinned Linux x86_64 MSan libunwind patch", flush=True)
+        apply_libunwind_msan_patch(args.source_root)
         print("[msan-libcxx] Phase 2/4: configure instrumented libc++, libc++abi, and libunwind", flush=True)
         run(configure_command(args.source_root, args.build_root, args.prefix, clang, clangxx))
         print(f"[msan-libcxx] Phase 3/4: build and install runtimes using {args.jobs} jobs", flush=True)
