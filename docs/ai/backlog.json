@@ -13028,5 +13028,48 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0375",
+    "title": "Route the S7 Android HWASan runtime check to a candidate-specific macOS ARM64 runner",
+    "kind": "chore",
+    "status": "done",
+    "priority": "P0",
+    "route": "luna",
+    "milestone": "ED-010-S7",
+    "depends_on": [
+      "MC-AI-0373"
+    ],
+    "acceptance": "Change only android-hwasan-runtime to request a self-hosted macOS ARM64 runner with a candidate-specific label containing github.sha and github.run_id, while preserving its push-only ai-main guard and existing artifact-bound preflight/runtime order. Add a regression proving the unique dynamic label is requested only by that guarded job. Do not add runner credentials or registration steps to source. This task verifies workflow routing only; external ephemeral-runner registration and the exact-candidate hardware runtime receipt remain separate S7 aggregate gates.",
+    "evidence": "Run 37617693741 job 112783732579 recorded `HVF error: HV_UNSUPPORTED` after the old hosted runtime job invoked the Android emulator with `-accel off` and TCG opt-in. Official GitHub runner-selection documentation confirms that every `runs-on` array label must match and supports expression strings; ephemeral runner registration remains external and GitHub assigns an ephemeral runner only one job. In this task's worktree, the focused route/label-uniqueness regression passed, the full analysis-matrix suite passed 42/42, and `python3 script/ai_tasks.py check`, `python3 script/ai_docs.py check`, and `git diff --check` passed. The workflow scan found no prior self-hosted routing or candidate label; only android-hwasan-runtime now requests the unique dynamic label, with its push-only ai-main guard and preflight/runtime step order retained. No runner registration, credentials, external workflow dispatch, or exact-candidate hardware pass is claimed; those remain separate S7 aggregate gates.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0038",
+    "motivation": "The required Android HWASan runtime row failed on the hosted macOS runner because its arm64 emulator could not initialize HVF, so the S7 runtime check needs a compatible macOS ARM64 execution target.",
+    "context": "Run 37617693741 job 112783732579 failed with `HVF error: HV_UNSUPPORTED`; the log shows the emulator was invoked with `-accel off` and the supported TCG opt-in but still attempted HVF. Current workflow guards this job to pushes on refs/heads/ai-main. A run-specific SHA/run-id label is routing, not authorization or a hard isolation boundary. The temporary runner registration and actual candidate-bound hardware result require separate external authorization/evidence; this source task must not claim either.",
+    "complexity": "medium",
+    "created_at": "2026-10-07",
+    "resolved_at": "2026-10-07",
+    "resolution_changes": "Restricted android-hwasan-runtime to candidate-specific self-hosted macOS ARM64 routing without broadening its push-only ai-main guard. Added regression coverage for the dynamic SHA/run-id label uniqueness and updated the automation guide to distinguish routing from runner authorization and ephemerality. Focused tests and docs/task checks passed. External runner registration and exact-candidate hardware runtime remain separate S7 aggregate gates.",
+    "plan": [
+      "Preserve the exact hosted HVF failure and confirm current workflow trigger/runner scope.",
+      "Route only android-hwasan-runtime to self-hosted macOS ARM64 with a label derived from the workflow SHA and run ID; preserve the push-only ai-main condition and existing APK preflight/runtime steps.",
+      "Add focused regression coverage that proves the guarded job alone requests the dynamic label and retains the existing runtime step order.",
+      "Run focused tests and task/docs checks; leave runner registration, credentials, external workflow execution, and final S7 aggregate evidence outside this source change."
+    ],
+    "product_changes": [],
+    "code_changes": [
+      "Change the android-hwasan-runtime runner selector without broadening its event/ref guard.",
+      "Add an analysis-matrix regression for the trusted job's unique candidate-specific runner label.",
+      "Document the routing-versus-authorization boundary in the automation guide."
+    ],
+    "baseline_commit": "8e510676aefb10563d20c925823fecc18eade61e",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]

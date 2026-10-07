@@ -50,7 +50,7 @@ immutable. One exact historical compatibility entry recognizes Snapshot 3 commit
 condensed four prose fields. The exception is commit-scoped; later ledgers use
 only the standard publication fields.
 
-[GitHub workflow](../../.github/workflows/ai-checks.yml) runs fast checks on pull requests and desktop plus analysis gates on AI-branch pushes. It has read-only permissions and does not call a model, publish, or run arbitrary scheduled work. GPU/multiplayer acceptance belongs to supported runners and task evidence. Enabling remote rules or workflows requires separate repository administration; this setup does neither.
+[GitHub workflow](../../.github/workflows/ai-checks.yml) runs fast checks on pull requests and desktop plus analysis gates on AI-branch pushes. The Android HWASan runtime job is limited to `ai-main` pushes and requests a macOS ARM64 runner with a candidate-specific SHA/run-id label. Labels route jobs; they do not authorize access or prove that a runner is ephemeral, so runner registration and access controls remain external. See GitHub's [runner-selection](https://docs.github.com/en/actions/how-tos/write-workflows/choose-where-workflows-run/choose-the-runner-for-a-job) and [ephemeral-runner](https://docs.github.com/en/actions/reference/runners/self-hosted-runners) documentation. The workflow has read-only permissions and does not call a model, publish, or run arbitrary scheduled work. GPU/multiplayer acceptance belongs to supported runners and task evidence. Enabling remote rules or workflows requires separate repository administration; this setup does neither.
 
 ## Project skills and future hooks
 
