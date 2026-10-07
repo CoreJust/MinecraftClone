@@ -12419,5 +12419,44 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0359",
+    "title": "Validate the delivered GMP MSan patch syntax",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P1",
+    "route": "luna",
+    "milestone": "ED-010-S7",
+    "depends_on": [],
+    "acceptance": "Correct only the malformed unified-diff header and add a portable regression applying the exact checked-in patch to its source context. Assert the intended LDFLAGS change, preserve MSan-only triplet selection and integrity pins, verify application against pinned upstream source, and obtain exact staged review. Do not claim MSan build/runtime until the actual row passes.",
+    "evidence": "The new regression first fails with the same patch fragment without header error as hosted MSan. After the one-character header correction, all four focused overlay tests pass and git apply --check against the SHA512-pinned GMP6.3.0 source exits0. The regression applies the delivered patch and compares the entire resulting probe context; LF output is explicit for Windows portability. MSan-only triplet selection and integrity pins are unchanged. Actual hosted MSan build/runtime remains required.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0038",
+    "motivation": "The serialized GMP MSan patch fails before dependency compilation, although its intended source change is valid.",
+    "context": "Diagnostic run37560874952 at3c96361 passes Ubuntu fast, Windows fast and LSan, but MSan patch application fails: the checked-in new-file header contains two plus signs instead of three. git apply --check against pinned GMP6.3.0 reproduces the failure. Earlier configure evidence used a valid draft; the delivered-byte boundary lacked coverage.",
+    "complexity": "low",
+    "created_at": "2026-10-07",
+    "resolved_at": "2026-10-07",
+    "resolution_changes": "Correct the delivered unified-diff new-file header and add direct application coverage of the checked-in bytes.",
+    "plan": [
+      "Clarify acceptance and implementation steps.",
+      "Reproduce the delivered-byte parser failure, add the failing patch-application regression, correct the header, run focused checks and exact review, then continue hosted MSan and release gates."
+    ],
+    "product_changes": [
+      "No shipping-platform or gameplay change; Linux remains analysis-only."
+    ],
+    "code_changes": [
+      "Validate the serialized GMP MSan patch with the same Git patch parser used by vcpkg, rather than validating only its selection or an earlier draft."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]

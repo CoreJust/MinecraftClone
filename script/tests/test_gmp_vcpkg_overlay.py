@@ -30,6 +30,35 @@ class GmpVcpkgOverlayTests(unittest.TestCase):
         self.assertIn(android_guard, overlay)
         self.assertIn("    ${build_triplet_options}\n    ADDITIONAL_MSYS_PACKAGES", overlay)
 
+    def test_delivered_msan_patch_applies_and_preserves_the_probe(self):
+        source_context = '''int main (void) { return 0; }
+EOF
+  echo "Test compile: [$2]" >&AC_FD_CC
+  gmp_cxxcompile="$1 conftest.cc >&AC_FD_CC"
+  if AC_TRY_EVAL(gmp_cxxcompile); then
+    if test "$cross_compiling" = no; then
+      if AC_TRY_COMMAND([./a.out || ./b.out || ./a.exe || ./a_out.exe || ./conftest]); then :;
+'''
+        patch = OVERLAY.parent / "msan-cxx-ldflags.patch"
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary = Path(temporary_directory)
+            source = temporary / "acinclude.m4"
+            source.write_text(source_context, encoding="utf-8", newline="\n")
+            result = subprocess.run(
+                ["git", "apply", str(patch)],
+                cwd=temporary,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertEqual(
+                source.read_text(encoding="utf-8"),
+                source_context.replace(
+                    '$1 conftest.cc >&AC_FD_CC', '$1 conftest.cc $LDFLAGS >&AC_FD_CC'
+                ),
+            )
+
     def test_msan_cxx_link_flags_patch_is_selected_only_for_its_triplet(self):
         standard_patches = [
             "asmflags.patch",

@@ -1,5 +1,5 @@
 --- a/acinclude.m4
-++ b/acinclude.m4
++++ b/acinclude.m4
 @@ -1495,7 +1495,7 @@ AC_DEFUN([GMP_PROG_CXX_WORKS_PART],
  int main (void) { return 0; }
  EOF
