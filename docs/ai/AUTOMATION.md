@@ -38,6 +38,13 @@ CTest rows reject empty discovery, UBSan halts on diagnostics, and performance
 is measured in ordinary Release. Local candidate checks defer hosted receipts;
 CI binds them to the immutable tree before promotion and strict/tag checks.
 
+Before waiting for the aggregate, the exact-candidate gate waiter inspects the
+latest push attempt and required jobs: terminal failure, cancellation, or skip
+fails immediately; a missing job remains pending only while its workflow is
+nonterminal and fails if still absent at completion. Success requires the
+successful exact-candidate workflow and complete validated 13-row receipt.
+Desktop diagnostics retain `build/ai-checks/python-tests.log` when present.
+
 ## Git hooks and CI
 
 Install once per clone with `python3 script/ai_setup.py --install-hooks`. `core.hooksPath` is repository-local; installation does not change global settings. Remove this setting with `git config --local --unset core.hooksPath` to restore Git's default hook location. Existing hook installations require deliberate reconciliation, never silent replacement.

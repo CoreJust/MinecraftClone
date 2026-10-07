@@ -290,6 +290,7 @@ jobs:
           name: desktop-ci-${{ matrix.platform }}-${{ matrix.preset }}-${{ github.sha }}
           path: |
             build/ci-metadata.json
+            build/ai-checks/python-tests.log
             build/${{ matrix.preset }}/Testing/**
             build/${{ matrix.preset }}/**/*.log
             build/ai-analysis/*.json
