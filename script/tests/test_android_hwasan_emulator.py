@@ -6,6 +6,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest import mock
 
 
@@ -286,7 +287,18 @@ class AndroidHwasanEmulatorTests(unittest.TestCase):
             state["process_start_identity"],
             self.process_command(Path(state["emulator_path"]), state["avd_name"]),
         )
+        windows_signal = SimpleNamespace(SIGTERM=self.lifecycle.signal.SIGTERM)
+        sigkill = 9
         with mock.patch.object(
+            self.lifecycle,
+            "signal",
+            windows_signal,
+        ), mock.patch.object(
+            self.lifecycle.signal,
+            "SIGKILL",
+            sigkill,
+            create=True,
+        ), mock.patch.object(
             self.lifecycle,
             "_process_snapshot",
             side_effect=[snapshot, snapshot],
@@ -304,9 +316,10 @@ class AndroidHwasanEmulatorTests(unittest.TestCase):
             kill.call_args_list,
             [
                 mock.call(4321, self.lifecycle.signal.SIGTERM),
-                mock.call(4321, self.lifecycle.signal.SIGKILL),
+                mock.call(4321, sigkill),
             ],
         )
+        self.assertFalse(hasattr(windows_signal, "SIGKILL"))
         self.assertFalse(root.exists())
 
     def test_cleanup_preserves_root_when_signal_fails_for_other_reason(self):
