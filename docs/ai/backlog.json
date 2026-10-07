@@ -1502,7 +1502,7 @@
     ],
     "acceptance": "Deliver immutable, generation-tagged hard/soft entity permissions for all/players/mobs/technical-entities/per-kind and explicit-member/selector groups; namespace custom keys and defer world subjects. Cover movement, flight/collision, blocks, inventory, invincibility, commands, and permission-backed mode presets. Use CoreLang 0.1.3.1 (only documented 0.1.3.3 maintenance), retain interpreter/JIT parity, and prepare kernels off physics ticks. Test latency, loss, jitter, freezes, reordering, and duplication. Replicate a 29/16 × 10/16 × 10/16 player, 16-color palette, and first/rear-third/front-third views. Keep position-driven radius-256 terrain camera-independent and derive face LOD at projected area ≤2 px². Provide four inspected 2560x1440 Mac screenshots with prominent labels centered below the HUD: (1) the flying third-person player offset from the central spike, with the full spike, most of its first ring, and terrain beyond visible from slightly above while emphasizing the central landform's mass; (2) the player in the trench near the first spike; (3) the player climbing the mountain; and (4) first-person at horizontal X/Z (0, 0). Target stable 120 FPS at x200 and the world border as diagnostic only. Pass platform and automated MC-AI-0249 gates; include the accepted CoreCpp scope MC-AI-0056 Runtime executors, MC-AI-0057 Runtime audio, and MC-AI-0240 renderer diagnostics in this snapshot. Release S7, hold the minor open for feedback, and do not start S8.",
     "evidence": "Four inspected 2560x1440 Mac captures retain prominent bottom-center labels without HUD overlap. SHA-256: central 5cc66572943d05af9a21894567b35fe2ffad2bd3a2c87ce96be0097ddeca4161; trench 8608534cd001bf835279ce4ff53969b6453b6906e4a6a3497dbb55b7f2542af6; mountain 9ad8cd09b1a91356e74b5cab2ee373d908d9bb7c5680fc3b9f8129003ef9288a; origin 38c350a3f0772d6445cbde8c372ffb3b385884b7027493a9ceb66a58b81dbfc8. Prior promotion 808311f passed local aggregate/prepare/finish gates; hosted run 37545384254 passed Ubuntu fast, macOS Release and Android HWASan build but exposed separately recorded Windows, Linux, macOS sanitizer and Android emulator failures. No tag or assets were created. Reviewed repairs MC-AI-0350 through MC-AI-0354 are pushed with exact source 57a2dd6: its aggregate and prepare each passed 457 Python tests, Debug build, 584 registered CTests with one explicit Release-only skip, renderer smoke and publisher/source-policy checks. Manual diagnostic run 37553105042 builds LSan and runs 323 registered tests: 320 pass, two nested-provenance failures, one explicit unsupported-OS skip. MSan configures but final linking exposes spdlog libstdc++ ABI against the instrumented libc++ candidate. Reviewed MC-AI-0355 at 743433f repairs nested context; its three affected native fixtures pass 3/3 in 15.89s. MC-AI-0356 owns the separate vcpkg toolchain initialization repair. Earlier gameplay, streaming, landing and accepted CoreCpp evidence remains in child task entries. Corrected Linux and exact-promotion release acceptance are not yet established.",
-    "blocker": "Diagnostic source a69f296 passes local aggregate/prepare gates but Windows fast fails the new compiler-path fixture (MC-AI-0357). MSan dependency provisioning also exposes missing libc++ library search flags in the GMP Autoconf probe; collect and repair it in the next batch. Linux jobs continue for complete evidence. S7 remains active/unpublished; exact-promotion analysis, runtime, artifacts and strict/tag gates remain required.",
+    "blocker": "Source a69f296 exact Linux LSan row passes configure/build/CTest (323 registered tests). Windows fast fixture normalization is repaired and reviewed in MC-AI-0357; corrected Windows CI remains required. MC-AI-0358 repairs the confirmed GMP MSan C++ availability probe omission of forwarded LDFLAGS. S7 remains active/unpublished; corrected MSan, exact-promotion analysis, runtime, artifacts and strict/tag gates remain mandatory.",
     "owner": "Codex",
     "level": "snapshot",
     "parent": "MC-AI-0033",
@@ -12373,6 +12373,44 @@
     ],
     "code_changes": [
       "Portable CMake behavioral fixtures compare equivalent normalized paths; production toolchain is unchanged."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0358",
+    "title": "Honor linker flags in GMP MSan compiler probes",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P1",
+    "route": "luna",
+    "milestone": "ED-010-S7",
+    "depends_on": [],
+    "acceptance": "Patch the verified GMP source macro so its C++ availability links honor forwarded LDFLAGS; regenerate configure through existing AUTOCONFIG. Scope the added patch to x64-linux-msan and preserve shipping-platform dependency behavior and all sanitizer gates. Verify the patch applies to pinned source and protects all three concrete C++ availability probes, run focused overlay regression coverage and exact-candidate review. Do not claim corrected MSan runtime until the actual hosted row passes; full promotion analysis remains mandatory.",
+    "evidence": "The SHA512-verified GMP6.3.0 source macro now appends forwarded LDFLAGS after conftest.cc for all three custom C++ availability probes. Dry-run source patch application, autoreconf -fi and configure-only validation pass on an isolated extracted copy; config.log shows controlled library search and rpath flags in each probe. The patch is selected only by port-context TARGET_TRIPLET x64-linux-msan; CMake-evaluated tests preserve the exact pre-existing patch list for LSan, macOS, Windows and Android. Three focused GMP overlay tests pass. The build guide records this analysis-only fix. Native macOS configure proof is not a Linux MSan build or runtime pass; corrected hosted MSan and full promotion gates remain mandatory.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0038",
+    "motivation": "The corrected MSan dependency job reaches GMP but its custom C++ compiler availability probe discards required instrumented libc++ linker search flags.",
+    "context": "Exact diagnostic run 37556911423 at a69f296 fails before its MSan row while provisioning GMP6.3.0. config.log contains LDFLAGS with the instrumented libc++ library path and rpath; GMP_PROG_CXX_WORKS_PART in acinclude.m4 constructs gmp_cxxcompile without LDFLAGS, so the link cannot find -lc++. The official archive SHA512 matches the existing overlay pin.",
+    "complexity": "low",
+    "created_at": "2026-10-07",
+    "resolved_at": "2026-10-07",
+    "resolution_changes": "Add a narrowly scoped GMP source-macro patch honoring LDFLAGS, retain AUTOCONFIG and all existing patches, and verify real triplet selection with CMake.",
+    "plan": [
+      "Repair only the confirmed source probe boundary, validate pinned-source patch application and Autoconf output, record focused evidence, then execute the corrected hosted MSan and promotion gates."
+    ],
+    "product_changes": [
+      "No shipping platform or gameplay behavior changed; Linux remains analysis-only."
+    ],
+    "code_changes": [
+      "The MSan GMP overlay passes already-forwarded linker flags through its shared C++ compiler-availability probe; other triplets are unchanged."
     ],
     "baseline_commit": "",
     "commits": [],
