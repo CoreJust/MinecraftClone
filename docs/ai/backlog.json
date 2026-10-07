@@ -1502,7 +1502,7 @@
     ],
     "acceptance": "Deliver immutable, generation-tagged hard/soft entity permissions for all/players/mobs/technical-entities/per-kind and explicit-member/selector groups; namespace custom keys and defer world subjects. Cover movement, flight/collision, blocks, inventory, invincibility, commands, and permission-backed mode presets. Use CoreLang 0.1.3.1 (only documented 0.1.3.3 maintenance), retain interpreter/JIT parity, and prepare kernels off physics ticks. Test latency, loss, jitter, freezes, reordering, and duplication. Replicate a 29/16 × 10/16 × 10/16 player, 16-color palette, and first/rear-third/front-third views. Keep position-driven radius-256 terrain camera-independent and derive face LOD at projected area ≤2 px². Provide four inspected 2560x1440 Mac screenshots with prominent labels centered below the HUD: (1) the flying third-person player offset from the central spike, with the full spike, most of its first ring, and terrain beyond visible from slightly above while emphasizing the central landform's mass; (2) the player in the trench near the first spike; (3) the player climbing the mountain; and (4) first-person at horizontal X/Z (0, 0). Target stable 120 FPS at x200 and the world border as diagnostic only. Pass platform and automated MC-AI-0249 gates; include the accepted CoreCpp scope MC-AI-0056 Runtime executors, MC-AI-0057 Runtime audio, and MC-AI-0240 renderer diagnostics in this snapshot. Release S7, hold the minor open for feedback, and do not start S8.",
     "evidence": "Four inspected 2560x1440 Mac captures retain prominent bottom-center labels without HUD overlap. SHA-256: central 5cc66572943d05af9a21894567b35fe2ffad2bd3a2c87ce96be0097ddeca4161; trench 8608534cd001bf835279ce4ff53969b6453b6906e4a6a3497dbb55b7f2542af6; mountain 9ad8cd09b1a91356e74b5cab2ee373d908d9bb7c5680fc3b9f8129003ef9288a; origin 38c350a3f0772d6445cbde8c372ffb3b385884b7027493a9ceb66a58b81dbfc8. Prior promotion 808311f passed local aggregate/prepare/finish gates; hosted run 37545384254 passed Ubuntu fast, macOS Release and Android HWASan build but exposed separately recorded Windows, Linux, macOS sanitizer and Android emulator failures. No tag or assets were created. Reviewed repairs MC-AI-0350 through MC-AI-0354 are pushed with exact source 57a2dd6: its aggregate and prepare each passed 457 Python tests, Debug build, 584 registered CTests with one explicit Release-only skip, renderer smoke and publisher/source-policy checks. Manual diagnostic run 37553105042 builds LSan and runs 323 registered tests: 320 pass, two nested-provenance failures, one explicit unsupported-OS skip. MSan configures but final linking exposes spdlog libstdc++ ABI against the instrumented libc++ candidate. Reviewed MC-AI-0355 at 743433f repairs nested context; its three affected native fixtures pass 3/3 in 15.89s. MC-AI-0356 owns the separate vcpkg toolchain initialization repair. Earlier gameplay, streaming, landing and accepted CoreCpp evidence remains in child task entries. Corrected Linux and exact-promotion release acceptance are not yet established.",
-    "blocker": "Both reviewed repairs MC-AI-0355 and MC-AI-0356 are committed with focused and tooling evidence. Require actual corrected Linux execution, then exact-promotion 13-row analysis/runtime, platform artifacts and strict/tag gates before publication. S7 remains active and unpublished; hold the minor and keep Windows hands-on separate.",
+    "blocker": "Diagnostic source a69f296 passes local aggregate/prepare gates but Windows fast fails the new compiler-path fixture (MC-AI-0357). MSan dependency provisioning also exposes missing libc++ library search flags in the GMP Autoconf probe; collect and repair it in the next batch. Linux jobs continue for complete evidence. S7 remains active/unpublished; exact-promotion analysis, runtime, artifacts and strict/tag gates remain required.",
     "owner": "Codex",
     "level": "snapshot",
     "parent": "MC-AI-0033",
@@ -1532,7 +1532,7 @@
     ],
     "baseline_commit": "0514890690c10d80b7475fd0b76204e800948db3",
     "commits": [],
-    "finalized": true,
+    "finalized": false,
     "retrospective": "Observed hosted failures are recorded as individual repairs, not treated as successful local acceptance. The latest cycle exposed discarded compiler output, Windows POSIX-mode assertions, a sanitizer compiler different from the probed upstream toolchain, and missing Android software-emulation opt-in. Complete failed-command diagnostics and trusted ai-dev Linux dispatch now allow diagnosis before another promotion. Reviews bind exact staged candidates; the full integration gate runs once per repair batch. Aggregate and promotion gates requiring RendererSmokeTest run in host context because restricted-shell XPC startup is not a game failure. No global configuration, permissions or hook changes were made. Exact-promotion analysis and runtime receipts remain mandatory; skipped jobs and diagnostic dispatches are not passes.",
     "docs_review": "",
     "environment_review": "An authorized additive Launch Services seed/register attempt did not create app bundle records. Renderer smoke passed when run outside the restricted shell; no Launch Services cache deletion or reboot was performed. The restricted-shell history collector could not write the temporary tree required by git merge-tree --write-tree and emitted a misleading missing-tagged-promotion diagnostic. The same exact ai_history.py collect command in host context exited 0 and emitted all 83 child task IDs; ai_tasks.py ready exited 0 with empty output. This reconciliation changed no ref or tag. Exact command/result are recorded at /private/tmp/mc-s7-review.fojOM5/history-reconciliation.txt, SHA-256 03fc882e392c88bb32e4cfd46f43709cadadc64c8a90e0bc53793474e7af205e.",
@@ -12335,6 +12335,44 @@
     ],
     "code_changes": [
       "The Linux Clang dependency chainload delegates platform flag and try-compile initialization to the exact pinned vcpkg checkout; focused CMake behavior tests protect delegation and validation."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0357",
+    "title": "Normalize portable CMake compiler fixture paths",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P1",
+    "route": "luna",
+    "milestone": "ED-010-S7",
+    "depends_on": [],
+    "acceptance": "Reproduce and explain the native Windows fixture failure. Compare compiler identity using equivalent CMake path forms and preserve independent CC/CXX validation, flag delegation and pinned-upstream coverage. Change only portable test fixture path handling, not production compiler selection or sanitizer gates. Pass focused native Windows and macOS regression checks and exact-candidate review; retain actual Linux/promotion acceptance separately.",
+    "evidence": "Native Windows CMake 4.4.3 reproduces CACHE FILEPATH slash normalization: native CC text differs from cached compiler text but normalized identities match. A native Windows script-mode probe using the exact production helper and pinned upstream Linux toolchain passes both compiler identity and all delegated sanitizer compiler/linker flag checks. The portable fixture alone now compares normalized CMake paths while still supplying native CC/CXX environment text. All seven focused macOS tests pass without skips against vcpkg 2b65c20fc66eda893aa15a15a453c3cf09500b19. No Python installation or full Windows Python suite was performed on the host; actual Windows CI and full promotion gates remain required.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0038",
+    "motivation": "The corrected candidate Windows fast gate fails one new CMake toolchain regression fixture before release.",
+    "context": "Run 37556911423 at a69f296 has one failure in 464 Windows tooling tests: the synthetic Linux provider reports C compiler selection was lost when comparing cached CMAKE_C_COMPILER against native CC text. Native Windows CMake path behavior must be checked; production Linux flag delegation and required gates must remain unchanged.",
+    "complexity": "low",
+    "created_at": "2026-10-07",
+    "resolved_at": "2026-10-07",
+    "resolution_changes": "Normalize expected CC/CXX paths in both generated CMake fixtures and stdout assertions, without changing production selection or flags.",
+    "plan": [
+      "Check native CMake compiler path normalization, repair the portable fixture boundary, validate Windows and macOS and review the immutable delta."
+    ],
+    "product_changes": [
+      "No product platform, gameplay, or sanitizer gate changed."
+    ],
+    "code_changes": [
+      "Portable CMake behavioral fixtures compare equivalent normalized paths; production toolchain is unchanged."
     ],
     "baseline_commit": "",
     "commits": [],

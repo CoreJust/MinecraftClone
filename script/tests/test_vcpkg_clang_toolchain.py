@@ -34,10 +34,12 @@ class VcpkgClangToolchainTests(unittest.TestCase):
         toolchains.mkdir(parents=True)
         linux_toolchain = toolchains / "linux.cmake"
         linux_toolchain.write_text(
-            "if(NOT CMAKE_C_COMPILER STREQUAL \"$ENV{CC}\")\n"
+            "file(TO_CMAKE_PATH \"$ENV{CC}\" expected_c_compiler)\n"
+            "file(TO_CMAKE_PATH \"$ENV{CXX}\" expected_cxx_compiler)\n"
+            "if(NOT CMAKE_C_COMPILER STREQUAL expected_c_compiler)\n"
             "    message(FATAL_ERROR \"C compiler selection was lost\")\n"
             "endif()\n"
-            "if(NOT CMAKE_CXX_COMPILER STREQUAL \"$ENV{CXX}\")\n"
+            "if(NOT CMAKE_CXX_COMPILER STREQUAL expected_cxx_compiler)\n"
             "    message(FATAL_ERROR \"C++ compiler selection was lost\")\n"
             "endif()\n"
             "string(APPEND CMAKE_C_FLAGS_INIT \" ${VCPKG_C_FLAGS}\")\n"
@@ -61,10 +63,12 @@ class VcpkgClangToolchainTests(unittest.TestCase):
             "set(VCPKG_CXX_FLAGS \"-fsanitize=memory -stdlib=libc++\")\n"
             "set(VCPKG_LINKER_FLAGS \"-fsanitize=memory -stdlib=libc++\")\n"
             f'include("{TOOLCHAIN.as_posix()}")\n'
-            "if(NOT CMAKE_C_COMPILER STREQUAL \"$ENV{CC}\")\n"
+            "file(TO_CMAKE_PATH \"$ENV{CC}\" expected_c_compiler)\n"
+            "file(TO_CMAKE_PATH \"$ENV{CXX}\" expected_cxx_compiler)\n"
+            "if(NOT CMAKE_C_COMPILER STREQUAL expected_c_compiler)\n"
             "    message(FATAL_ERROR \"C compiler selection was lost\")\n"
             "endif()\n"
-            "if(NOT CMAKE_CXX_COMPILER STREQUAL \"$ENV{CXX}\")\n"
+            "if(NOT CMAKE_CXX_COMPILER STREQUAL expected_cxx_compiler)\n"
             "    message(FATAL_ERROR \"C++ compiler selection was lost\")\n"
             "endif()\n"
             "string(FIND \"${CMAKE_C_FLAGS_INIT}\" \"-fsanitize=memory\" _c_sanitize_index)\n"
@@ -115,8 +119,8 @@ class VcpkgClangToolchainTests(unittest.TestCase):
         result = self.run_probe()
 
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertIn(f"CMAKE_C_COMPILER={self.cc}", result.stdout)
-        self.assertIn(f"CMAKE_CXX_COMPILER={self.cxx}", result.stdout)
+        self.assertIn(f"CMAKE_C_COMPILER={self.cc.as_posix()}", result.stdout)
+        self.assertIn(f"CMAKE_CXX_COMPILER={self.cxx.as_posix()}", result.stdout)
         self.assertIn("CMAKE_C_FLAGS_INIT= -fsanitize=memory", result.stdout)
         self.assertIn("CMAKE_CXX_FLAGS_INIT= -fsanitize=memory -stdlib=libc++", result.stdout)
         self.assertIn("CMAKE_MODULE_LINKER_FLAGS_INIT= -fsanitize=memory -stdlib=libc++", result.stdout)
