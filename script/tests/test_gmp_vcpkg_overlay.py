@@ -178,7 +178,7 @@ cmake_language(EVAL CODE "${portfile_prefix}")
                 "asmflags": "ASMFLAGS=-c",
             },
         }
-        portfile_script = '''
+        portfile_script = '''cmake_minimum_required(VERSION 3.25)
 function(vcpkg_download_distfile output_var)
     set(${output_var} "${TEST_TEMP}/archive" PARENT_SCOPE)
 endfunction()
