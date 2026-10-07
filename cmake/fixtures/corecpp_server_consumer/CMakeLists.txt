@@ -41,6 +41,7 @@ target_link_libraries(
         CoreCpp::RuntimeExecutors
         CoreCpp::RuntimeNetwork
 )
+mc_enable_sanitizers(mc_corecpp_server_consumer)
 mc_stage_windows_runtime(
     mc_corecpp_server_consumer
     RUNTIME_ROOT "$<TARGET_FILE_DIR:mc_corecpp_server_consumer>"

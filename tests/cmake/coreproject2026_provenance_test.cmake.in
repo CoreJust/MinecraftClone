@@ -19,6 +19,7 @@ function(expect_rejected label revision dirty exact expected)
             "-DCoreProject2026_DIR=${package_root}"
             "-DCoreCpp_DIR=@MC_CORECPP_DIR@"
             "-DCMAKE_PREFIX_PATH=@MC_CMAKE_PREFIX_PATH@"
+            -DMC_ANALYSIS_HOST=@MC_ANALYSIS_HOST@
             -DMC_BUILD_CLIENT=OFF
             -DBUILD_TESTING=OFF
             -DMC_ALLOW_INEXACT_CORECPP=ON

@@ -1502,7 +1502,7 @@
     ],
     "acceptance": "Deliver immutable, generation-tagged hard/soft entity permissions for all/players/mobs/technical-entities/per-kind and explicit-member/selector groups; namespace custom keys and defer world subjects. Cover movement, flight/collision, blocks, inventory, invincibility, commands, and permission-backed mode presets. Use CoreLang 0.1.3.1 (only documented 0.1.3.3 maintenance), retain interpreter/JIT parity, and prepare kernels off physics ticks. Test latency, loss, jitter, freezes, reordering, and duplication. Replicate a 29/16 × 10/16 × 10/16 player, 16-color palette, and first/rear-third/front-third views. Keep position-driven radius-256 terrain camera-independent and derive face LOD at projected area ≤2 px². Provide four inspected 2560x1440 Mac screenshots with prominent labels centered below the HUD: (1) the flying third-person player offset from the central spike, with the full spike, most of its first ring, and terrain beyond visible from slightly above while emphasizing the central landform's mass; (2) the player in the trench near the first spike; (3) the player climbing the mountain; and (4) first-person at horizontal X/Z (0, 0). Target stable 120 FPS at x200 and the world border as diagnostic only. Pass platform and automated MC-AI-0249 gates; include the accepted CoreCpp scope MC-AI-0056 Runtime executors, MC-AI-0057 Runtime audio, and MC-AI-0240 renderer diagnostics in this snapshot. Release S7, hold the minor open for feedback, and do not start S8.",
     "evidence": "Four inspected 2560x1440 Mac captures retain prominent bottom-center labels without HUD overlap. SHA-256: central 5cc66572943d05af9a21894567b35fe2ffad2bd3a2c87ce96be0097ddeca4161; trench 8608534cd001bf835279ce4ff53969b6453b6906e4a6a3497dbb55b7f2542af6; mountain 9ad8cd09b1a91356e74b5cab2ee373d908d9bb7c5680fc3b9f8129003ef9288a; origin 38c350a3f0772d6445cbde8c372ffb3b385884b7027493a9ceb66a58b81dbfc8. Prior source 9e70405 and same-tree promotion 808311f passed prescribed local aggregate, prepare and finish gates; hosted run 37545384254 passed Ubuntu fast, macOS Release and Android HWASan build but failed Windows SDK assertions, Linux builds, macOS Apple-Clang leak detection and Android emulator startup. No tag or assets were created. Reviewed repairs MC-AI-0350 through MC-AI-0353 are pushed at b4570f1ebc38a3a54be8e2f54ce1b140fe763ba0: full integration passed 457 Python tests, Debug build and 584 registered CTests with one explicit Release-only skip (372.57s), publisher and source-policy checks. Its manual diagnostic run 37550466407 passed both fast gates; full LSan/MSan output identified unsupported OS-header and libc++18 jthread test compilation failures. Reviewed MC-AI-0354 repairs these without changing shipping code or sanitizer flags; all 21 affected macOS CTests pass (5.25s). Corrected Linux execution and exact-promotion acceptance remain pending. Earlier gameplay, streaming and landing evidence remains in child task entries.",
-    "blocker": "Test-only Linux compile blockers are repaired in reviewed MC-AI-0354; require actual corrected Linux execution and the full exact-promotion 13-row matrix, Android runtime, platform artifacts and strict/tag gates before publication. S7 remains active and unpublished. Hold the minor; record Windows hands-on separately.",
+    "blocker": "Corrected source 57a2dd6 builds under LSan and reaches 323 tests, but two nested provenance fixtures omit the analysis-host opt-in (MC-AI-0355). Repair those fixtures and validate actual Linux rows, then require exact-promotion analysis/runtime, platform artifacts and strict/tag gates. S7 is active and unpublished; hold the minor and keep Windows hands-on separate.",
     "owner": "Codex",
     "level": "snapshot",
     "parent": "MC-AI-0033",
@@ -1532,7 +1532,7 @@
     ],
     "baseline_commit": "0514890690c10d80b7475fd0b76204e800948db3",
     "commits": [],
-    "finalized": true,
+    "finalized": false,
     "retrospective": "Observed hosted failures are recorded as individual repairs, not treated as successful local acceptance. The latest cycle exposed discarded compiler output, Windows POSIX-mode assertions, a sanitizer compiler different from the probed upstream toolchain, and missing Android software-emulation opt-in. Complete failed-command diagnostics and trusted ai-dev Linux dispatch now allow diagnosis before another promotion. Reviews bind exact staged candidates; the full integration gate runs once per repair batch. Aggregate and promotion gates requiring RendererSmokeTest run in host context because restricted-shell XPC startup is not a game failure. No global configuration, permissions or hook changes were made. Exact-promotion analysis and runtime receipts remain mandatory; skipped jobs and diagnostic dispatches are not passes.",
     "docs_review": "",
     "environment_review": "An authorized additive Launch Services seed/register attempt did not create app bundle records. Renderer smoke passed when run outside the restricted shell; no Launch Services cache deletion or reboot was performed. The restricted-shell history collector could not write the temporary tree required by git merge-tree --write-tree and emitted a misleading missing-tagged-promotion diagnostic. The same exact ai_history.py collect command in host context exited 0 and emitted all 83 child task IDs; ai_tasks.py ready exited 0 with empty output. This reconciliation changed no ref or tag. Exact command/result are recorded at /private/tmp/mc-s7-review.fojOM5/history-reconciliation.txt, SHA-256 03fc882e392c88bb32e4cfd46f43709cadadc64c8a90e0bc53793474e7af205e.",
@@ -12259,6 +12259,44 @@
     ],
     "code_changes": [
       "Portable foundation tests compile without an unused unsupported OS header or experimental libc++18 jthread support; the unsupported OS assertion reports an explicit Linux-only skip."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0355",
+    "title": "Propagate analysis context through nested CMake tests",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P1",
+    "route": "luna",
+    "milestone": "ED-010-S7",
+    "depends_on": [],
+    "acceptance": "Propagate the enclosing analysis-host opt-in to nested MinecraftClone configures, keep them server-only and preserve exact provenance rejection assertions. Check related nested configure paths for the same omission and retain the compiler/standard-library/sanitizer context needed by instrumented dependency consumers. Preserve default supported-platform behavior, product-host guards, generator/config handling and every sanitizer gate; do not skip failing fixtures. Pass focused fixture/source checks and exact-candidate review; require actual corrected Linux and promotion/runtime evidence before publication.",
+    "evidence": "Nested root CMake fixtures now inherit the enclosing analysis-host value rather than opting in unconditionally; the CoreCpp mismatch case remains server-only. The standalone dependency consumer inherits the selected C++ compiler, standard-library compile/link flags and sanitizer selection, and applies the existing sanitizer helper. Native CMake regeneration succeeded; CoreCpp.ServerOnlyPackageConsumer, CoreProject2026.Provenance and MinecraftClone.ServerOnlyBuild passed 3/3 in 15.89s. Generated-script and nested-cache readback preserve the exact host value and compiler context; diff checks pass. Actual corrected Linux execution remains mandatory separately before S7 publication.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0038",
+    "motivation": "Actual LSan runtime reaches 323 tests but nested provenance fixtures stop at the unsupported-host guard instead of their intended checks.",
+    "context": "Run 37553105042 at exact source 57a2dd6 compiles and runs LSan: 320 passes, two nested-fixture failures, one explicit OS skip. The root product guard must remain intact; Linux is analysis-only. Its separate MSan outer-link failure is not evidence for these nested fixtures.",
+    "complexity": "low",
+    "created_at": "2026-10-07",
+    "resolved_at": "2026-10-07",
+    "resolution_changes": "Forward the parent analysis-host value to the three source-root fixtures, keep the CoreCpp mismatch server-only, and forward compiler/stdlib/linker/sanitizer context to the standalone consumer with the existing sanitizer helper.",
+    "plan": [
+      "Repair nested analysis-context propagation, validate affected fixtures and review the exact candidate; retain required actual Linux and promotion gates."
+    ],
+    "product_changes": [
+      "No product platform or gameplay behavior changed; Linux remains analysis-only."
+    ],
+    "code_changes": [
+      "Propagate enclosing host and compiler/sanitizer context through nested test configures without bypassing provenance assertions or platform guards."
     ],
     "baseline_commit": "",
     "commits": [],
