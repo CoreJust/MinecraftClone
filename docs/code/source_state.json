@@ -117,6 +117,7 @@
         "script/ci/release_guard.py",
         "script/ci/verify_analysis_gate.py",
         "script/ci/verify_android_hwasan.py",
+        "script/ci/verify_macos_lsan.py",
         "script/ci/verify_release_assets.py",
         "script/code_checks.py",
         "script/colored_print.py",
@@ -152,6 +153,7 @@
         "script/tests/test_vcpkg_clang_toolchain.py",
         "script/tests/test_verify_analysis_gate.py",
         "script/tests/test_verify_android_hwasan.py",
+        "script/tests/test_verify_macos_lsan.py",
         "script/tests/test_verify_release_assets.py",
         "script/tests/test_windows_runtime_staging.py",
         "script/tests/test_workflow_contexts.py",
@@ -166,7 +168,7 @@
         "vcpkg-configuration.json",
         "vcpkg.json"
       ],
-      "sources_sha256": "d267a2276fa688ddb40cd7aa3cb522390f54a739ea623d72e66376a61d9d4646"
+      "sources_sha256": "d7c430711d82d058a9d37e588b753f195a11fa1c890907036a4fbfca2101fd33"
     },
     {
       "guide": "docs/code/CORE.md",

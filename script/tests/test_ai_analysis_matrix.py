@@ -293,6 +293,11 @@ class AnalysisMatrixTests(unittest.TestCase):
                     row["id"], receipt_path, MANIFEST_PATH, root=REPOSITORY, expected_candidate=CANDIDATE
                 )
             result = receipt["rows"][0]
+            configure_index = next(
+                index
+                for index, command in enumerate(row["commands"])
+                if command[:2] == ["cmake", "--preset"]
+            )
             self.assertEqual(result["status"], "passed")
             self.assertEqual(result["commands"], row["commands"])
             self.assertEqual(result["environment"], row.get("environment", {}))
@@ -300,13 +305,13 @@ class AnalysisMatrixTests(unittest.TestCase):
             self.assertIn("[output truncated by analysis-matrix]", result["diagnostics"])
             self.assertNotIn("successful output tail", result["diagnostics"])
             self.assertEqual(len(result["executed_commands"]), len(row["commands"]))
-            self.assertEqual(result["executed_commands"][0]["return_code"], 0)
+            self.assertEqual(result["executed_commands"][configure_index]["return_code"], 0)
             self.assertEqual(
-                result["executed_commands"][0]["output_bytes"],
+                result["executed_commands"][configure_index]["output_bytes"],
                 len(successful_output.encode("utf-8")),
             )
             self.assertEqual(
-                result["executed_commands"][0]["output_sha256"],
+                result["executed_commands"][configure_index]["output_sha256"],
                 hashlib.sha256(successful_output.encode("utf-8")).hexdigest(),
             )
 
@@ -551,7 +556,34 @@ class AnalysisMatrixTests(unittest.TestCase):
     def test_macos_address_and_leak_sanitizers_cover_the_full_ctest_run(self):
         row = next(row for row in self.manifest["rows"] if row["id"] == "macos_asan")
         self.assertEqual(row["environment"].get("ASAN_OPTIONS"), "detect_leaks=1")
+        self.assertEqual(
+            row["environment"].get("LSAN_OPTIONS"),
+            "suppressions={env:MC_ANALYSIS_ROOT}/script/ci/macos_lsan.supp:print_suppressions=1",
+        )
+        controls_index = next(
+            index
+            for index, command in enumerate(row["commands"])
+            if command[:3] == ["python", "script/ci/verify_macos_lsan.py", "controls"]
+        )
+        configure_index = row["commands"].index(["cmake", "--preset", "analysis-macos-asan"])
+        build_index = row["commands"].index(["cmake", "--build", "--preset", "analysis-macos-asan"])
+        self.assertEqual(controls_index, 0)
+        self.assertLess(controls_index, configure_index)
+        self.assertLess(controls_index, build_index)
         self.assertTrue(any(command[0] == "ctest" for command in row["commands"]))
+        self.assertTrue(
+            any(command[:3] == ["python", "script/ci/verify_macos_lsan.py", "summarize"] for command in row["commands"])
+        )
+        self.assertTrue(any(command[0] == "leaks" for command in row["commands"]))
+
+    def test_matrix_row_environment_resolves_checkout_root_placeholders(self):
+        row = next(row for row in self.manifest["rows"] if row["id"] == "macos_asan")
+        environment = self.matrix.resolve_row_environment(row, Path("/private/tmp/minecraft"), {})
+        self.assertEqual(environment["MC_ANALYSIS_ROOT"], "/private/tmp/minecraft")
+        self.assertEqual(
+            environment["LSAN_OPTIONS"],
+            "suppressions=/private/tmp/minecraft/script/ci/macos_lsan.supp:print_suppressions=1",
+        )
 
     def test_linux_presets_are_tests_only_and_use_distinct_sanitizers(self):
         presets = json.loads((REPOSITORY / "CMakePresets.json").read_text(encoding="utf-8"))

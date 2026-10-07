@@ -13269,5 +13269,44 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0381",
+    "title": "Apply narrow macOS LSan sites with app-leak controls",
+    "kind": "chore",
+    "status": "done",
+    "priority": "P1",
+    "route": "luna",
+    "milestone": "ED-010-S7",
+    "depends_on": [],
+    "acceptance": "Keep the MC-AI-0249 macos_asan row instrumented with ASan and detect_leaks=1. Before game configure/build or production row tests, build and run an automated clean control, an intentional 4096-byte ordinary application leak, and an intentional 4096-byte leak from a real AudioUnit render callback. Add only the three evidenced exact LSan allocation-site suppressions for AMCP::Utility::Dispatch_Queue::install_mig_server, AutoreleasePoolPage::autoreleaseNoPage, and __CFTSDGetTable; retain suppression hit counts and unsuppressed diagnostics. The clean control must return zero without leak reports. The two leak controls must remain failing with a 4096-byte application allocation stack containing createApplicationLeak; the callback allocation block must contain both createApplicationLeak and renderAndLeak. The callback control must prove the real callback was observed and succeeded, and successful AudioComponentInstanceNew, AudioUnitSetProperty, AudioUnitInitialize, AudioOutputUnitStart, AudioOutputUnitStop, AudioUnitUninitialize, and AudioComponentInstanceDispose statuses. Keep the production CTest suite and Apple leaks invocation intact. Document the exact external sites excluded and the remaining platform limits. No broad framework suppressions, sanitizer disabling, fake-audio substitution, skips, or false pass claim.",
+    "evidence": "The new fixture built with the recorded Clang 23.1.0 toolchain. The corrected verifier passed the 50 focused matrix/LSan Python tests. In host context, the already-built fixture passed its clean control (rc=0), ordinary application leak control (rc=1 with a same-block 4096-byte createApplicationLeak+main report), and real AudioUnit callback leak control (rc=1 with callback observed/succeeded, all seven setup/teardown OSStatus values zero, and a same-block 4096-byte createApplicationLeak+renderAndLeak report). The first captured callback log also retained one 64-byte external allocation alongside the app leak; a later execution reported only the expected 4096-byte leak, so this does not establish that local external noise is absent. Existing local Darwin 25.6 production failures and the original hosted 04ba Mac ASan failure remain failures; this task has no new hosted-row pass claim.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0038",
+    "motivation": "Keep the required macOS ASan/LSan row useful when exact third-party macOS allocation sites recur, while proving that the policy still reports leaks allocated by the application and its real CoreAudio callback.",
+    "context": "The exact ai-main candidate 04ba01751349bfd756d562059a5b380b6d3943e1 failed macOS ASan in six separate tests (CTest IDs 414, 415, 419, 420, 452, 453). Hosted reports show three recurring Apple/AudioToolbox allocation-site families: AMCP::Utility::Dispatch_Queue::install_mig_server (256 bytes in each of six processes), AutoreleasePoolPage::autoreleaseNoPage, and __CFTSDGetTable (the latter two in two processes). A native AudioUnit control reproduced those three families. With only those exact-site patterns, a standalone ordinary 4096-byte app leak and a real AudioUnit callback 4096-byte app leak still report createApplicationLeak; the callback was observed and succeeded, and all AudioUnit setup/teardown statuses were successful. A first local Darwin 25.6 callback run also showed one unsuppressed 64-byte external allocation absent from the compared hosted Darwin 24.6 reports; a later control run did not reproduce it. Local production failures remain failures and must not be silenced by broadening this task. Parent batch baseline is 16226c0be43f075d06f3e61f177edba52ccf4162; implementation starts from reviewed task commit a6a7f07759409ae4e08992d4e4e8480dcc9f5a6b.",
+    "complexity": "medium",
+    "created_at": "2026-10-08",
+    "resolved_at": "2026-10-08",
+    "resolution_changes": "Added three exact macOS LSan allocation-site patterns while retaining ASan detect_leaks=1, plus an early standalone clean/app-leak/real-AudioUnit preflight and retained CTest suppression/residual diagnostics. The callback control requires successful observation, callback completion, and all seven successful AudioUnit statuses; its same-block app leak remains visible. Updated the owning guide and focused regression tests. Local Clang 23 controls and 50 focused tests pass; hosted 13-row qualification remains separate.",
+    "plan": [
+      "Add a macOS ASan-only suppression file containing only the three observed allocation-site patterns and keep ASan leak detection enabled.",
+      "Add a bounded AudioUnit-backed fixture and row preflight before game configuration/build that proves a clean run, an ordinary 4096-byte application leak, and an actual render-callback 4096-byte application leak remain distinguishable under those exact rules; check callback and all setup/teardown outcomes.",
+      "Retain machine-readable suppression counts and unsuppressed leak diagnostics from the production row, update the sanitizer workflow guide, and add focused contract tests.",
+      "Run focused source checks and tests, refresh/check the generated documentation and task state, obtain one exact-task Luna/high review, and make one normal local task commit. Keep hosted rerun and S7 aggregate gates separate."
+    ],
+    "product_changes": [],
+    "code_changes": [
+      "The macOS ASan matrix row resolves its suppression path from the checkout root and runs standalone controls before game configuration/build. Added three exact LSan sites, a real AudioUnit callback leak fixture, callback/status and suppression diagnostics verification, focused tests, and the owning guide update."
+    ],
+    "baseline_commit": "a6a7f07759409ae4e08992d4e4e8480dcc9f5a6b",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]

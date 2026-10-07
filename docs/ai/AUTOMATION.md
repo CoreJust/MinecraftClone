@@ -1,21 +1,21 @@
 # Automation and extension points
 
-All deterministic tools are local Python scripts, require no model calls or keys, and run from any working directory. Use Python 3.12+ (`python` on Windows if `python3` is unavailable).
+Deterministic Python tools run locally without model calls or keys. Use Python 3.12+ (`python` on Windows when `python3` is unavailable).
 
 | Tool | Purpose |
 |---|---|
-| `script/ai_plan.py` | Numeric task and current-version lookup, unassigned backlog, planning and implementation preparation; [skills](SKILLS.md) |
-| `script/ai_commit.py` | Candidate identity, local Luna/Terra review receipts, and commit validation; see [protocol](COMMITS.md) |
-| `script/ai_history.py` | Trace commits, collect/finalize aggregate children, refresh local task backlinks |
-| `script/ai_run.py <route>` | Explicit local model/high preset; `--dry-run` prints the command without invoking a model |
-| `script/ai_setup.py` | Read-only prerequisite report; `--install-hooks` installs this repository's Git hooks without replacing existing active hooks |
-| `script/ai_analysis_matrix.py` | Fail-closed MC-AI-0249 sanitizer/static-analysis receipt verifier; see below |
-| `script/ai_docs.py check` | Coverage, links, word limits, index/source-state freshness |
-| `script/ai_docs.py refresh` | Explicitly acknowledge guide review and regenerate mechanical artifacts |
-| `script/ai_tasks.py` | Validate, render, add/update, and list ready backlog items; see `--help` |
-| `script/ai_check.py --fast` | Documentation/planner checks, Python tooling tests, whitespace |
-| `script/ai_check.py` | Fast checks plus debug build, CTest, and publisher checks-only |
-| `script/ai_check.py --strict` | Full checks with no development publisher exceptions |
+| `script/ai_plan.py` | Task/version lookup; [skills](SKILLS.md) |
+| `script/ai_commit.py` | Review/commit validation; [protocol](COMMITS.md) |
+| `script/ai_history.py` | Trace history and aggregate children |
+| `script/ai_run.py <route>` | Local model runner |
+| `script/ai_setup.py` | Prerequisite and hook setup |
+| `script/ai_analysis_matrix.py` | Analysis receipts; see below |
+| `script/ai_docs.py check` | Coverage and freshness |
+| `script/ai_docs.py refresh` | Reviewed-doc refresh |
+| `script/ai_tasks.py` | Task editing/rendering; see `--help` |
+| `script/ai_check.py --fast` | Fast checks |
+| `script/ai_check.py` | Build/test checks |
+| `script/ai_check.py --strict` | Strict checks |
 
 MC-AI-0249's exact-candidate matrix is declared in
 [`script/ai_analysis_matrix.json`](../../script/ai_analysis_matrix.json). Run a
@@ -30,13 +30,25 @@ python3 script/ai_analysis_matrix.py verify build/ai-checks/analysis-matrix.json
   --head <HEAD_SHA> --tree <INDEX_TREE_SHA>
 ```
 
-Receipts bind the candidate, manifest, flags, tools, commands and diagnostics;
-missing, unavailable or stale rows fail closed. macOS runs ASan/leaks, UBSan and
-TSan; Windows runs MSVC ASan and analysis; Android uses Release HWASan; Linux is
-tests-only LSan/MSan with libc++ and instrumented C++ dependencies. Sanitizer
-CTest rows reject empty discovery, UBSan halts on diagnostics, and performance
-is measured in ordinary Release. Local candidate checks defer hosted receipts;
-CI binds them to the immutable tree before promotion and strict/tag checks.
+Receipts bind candidates, manifests, tools, commands and diagnostics; missing,
+unavailable or stale rows fail closed. macOS runs ASan/leaks, UBSan and TSan;
+Windows runs MSVC ASan/analysis; Android uses Release HWASan; Linux uses
+tests-only LSan/MSan with libc++ and instrumented dependencies. CTest rejects
+empty discovery, UBSan halts on diagnostics, and performance uses ordinary
+Release. Local checks defer hosted receipts; CI binds them to immutable trees
+before promotion and strict/tag checks.
+
+The macOS ASan row keeps `detect_leaks=1` and runs clean, ordinary-leak, and real
+AudioUnit callback controls before configuring/building the game. Callback
+evidence requires observed, successful execution; zero OSStatus for setup,
+start, stop, uninitialize, and dispose; and one 4096-byte app-leak block with
+both `createApplicationLeak` and `renderAndLeak`. Ordinary leaks must retain
+their 4096-byte app frame. The three exact LSan sites are
+`AMCP::Utility::Dispatch_Queue::install_mig_server`,
+`AutoreleasePoolPage::autoreleaseNoPage`, and `__CFTSDGetTable`. Row receipts
+retain suppression counts and unsuppressed reports. These exact stack-frame rules can exclude allocations regardless of
+origin; they do not establish harmlessness. Do not broaden them or hide other
+unsuppressed reports.
 
 Before waiting for the aggregate, the exact-candidate gate waiter inspects the
 latest push attempt and required jobs: terminal failure, cancellation, or skip
@@ -61,14 +73,14 @@ only the standard publication fields.
 
 ## Project skills and future hooks
 
-The ten [project skills](SKILLS.md) use a shared deterministic planner for task identity and selection. Prefer a script for a deterministic predicate. Add a skill only when a repeated judgment-heavy workflow is not covered by the [task loop](WORKFLOW.md). Candidate skills: Vulkan validation/capture triage; deterministic worldgen comparison; save-format migration. Implement each when its subsystem exists and a real repeated task justifies it.
+The ten [project skills](SKILLS.md) share a deterministic planner. Prefer scripts for checks; add a skill only for repeated judgment work outside the [task loop](WORKFLOW.md). Candidates: Vulkan capture, worldgen comparison, and save-format migration.
 
-A repository skill lives at `.agents/skills/<name>/SKILL.md`, with `name` and a precise `description` in YAML frontmatter. Keep the body under 500 words; link the owning guide and commands instead of copying them. Verify discovery, one intended trigger, one unrelated non-trigger, and a failed/allowed command case. Retire duplicated or ineffective guidance.
+A repository skill lives at `.agents/skills/<name>/SKILL.md`, with accurate frontmatter and under 500 words. Link owning guidance; test discovery, intended/unrelated triggers, and allowed/failing commands. Retire duplicates.
 
-Provider hooks must call the same tested scripts and must never mutate code, refresh hashes, mark tasks done, or publish on stop. Add no auto-approval or unrestricted shell settings. Maintain one implementation per check. Test any new hook in a temporary repository before local installation.
+Provider hooks reuse tested scripts; never mutate code, hashes, task status, or publication. Avoid auto-approval/unrestricted shell; test hooks in a temporary repository.
 
 ## Runtime choices
 
-[Project config](../../.codex/config.toml) selects Luna/high for new Codex sessions in this trusted project. App/task/CLI overrides may take precedence. It changes no sandbox, permissions, MCP connections, or account configuration. It does not install global config or plugins. The [routing policy](MODELS.md) specifies which model each delegated task uses.
+[Project config](../../.codex/config.toml) selects Luna/high for new sessions, subject to overrides. It changes no sandbox, permissions, connections, or global settings. See the [routing policy](MODELS.md).
 
-Current vendor conventions were checked on 2026-09-09: [AGENTS.md](https://developers.openai.com/codex/guides/agents-md), [skills](https://developers.openai.com/codex/skills), [project config](https://developers.openai.com/codex/config-basic). They support short entrypoints and loading detailed guidance on demand; this repository's tests, task schema, and update policy are project decisions.
+Codex [agent](https://developers.openai.com/codex/guides/agents-md), [skill](https://developers.openai.com/codex/skills), and [config](https://developers.openai.com/codex/config-basic) docs favor short entrypoints; tests and task policy are local decisions.
