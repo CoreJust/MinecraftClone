@@ -35,6 +35,23 @@ MSAN_DIAGNOSTIC = re.compile(
     r"(?m)^(?:==[0-9]+==)?(?:(?:WARNING|ERROR|SUMMARY): )?MemorySanitizer:"
 )
 MSAN_SYMBOLIZER_CANDIDATES = ("llvm-symbolizer-18", "llvm-symbolizer")
+MSAN_NEGATIVE_REPORT_LIMIT = 16384
+MSAN_NEGATIVE_PROBE_SOURCE = (
+    "#include <cstdlib>\n"
+    'extern "C" [[gnu::noinline]] int msanNegativeHeapRead() {\n'
+    "    auto* value = static_cast<int*>(std::malloc(sizeof(int)));\n"
+    "    if (value == nullptr) {\n"
+    "        return 2;\n"
+    "    }\n"
+    "    if (*static_cast<volatile int*>(value) == 0) {\n"
+    "        std::free(value);\n"
+    "        return 0;\n"
+    "    }\n"
+    "    std::free(value);\n"
+    "    return 1;\n"
+    "}\n"
+    "int main() { return msanNegativeHeapRead(); }\n"
+)
 MSAN_POSITIVE_PROBE_SOURCE = (
     "#include <stdint.h>\n"
     "#include <string>\n"
@@ -373,6 +390,44 @@ def timeout_output(value: str | bytes | None) -> str:
     return value or ""
 
 
+def negative_report_evidence(diagnostics: str) -> str | None:
+    # LLVM 18's primary stack precedes origin stacks. Never accept a matching
+    # name from a caller or from another report as the deliberate read site.
+    report = re.sub(r"\x1b\[[0-9;]*m", "", diagnostics).replace("\r\n", "\n")
+    warnings = list(MSAN_WARNING.finditer(report))
+    if len(warnings) != 1:
+        return None
+    if any(line.start() != warnings[0].start() and "SUMMARY:" not in line.group()
+           for line in MSAN_DIAGNOSTIC.finditer(report)):
+        return None
+    body = report[warnings[0].end():]
+    primary = body.split("Uninitialized value", 1)[0]
+    frames = re.findall(r"(?m)^\s*#[0-9]+\s+0x[0-9a-fA-F]+[^\n]*", primary)
+    read_frame = re.compile(
+        r"^\s*#0\s+0x[0-9a-fA-F]+\s+in msanNegativeHeapRead(?:\(\))?(?:\s|$)"
+    )
+    if not frames or read_frame.match(frames[0]) is None:
+        return None
+    heap_marker = "  Uninitialized value was created by a heap allocation"
+    if body.count(heap_marker + "\n") != 1:
+        return None
+    origin = body.split(heap_marker + "\n", 1)[1].split("\n\n", 1)[0].split("SUMMARY:", 1)[0]
+    origin_frame = re.search(
+        r"(?m)^\s*#1\s+0x[0-9a-fA-F]+\s+in msanNegativeHeapRead(?:\(\))?(?:[ \t][^\n]*)?$",
+        origin,
+    )
+    if origin_frame is None:
+        return None
+    accepted_lines = (warnings[0].group(), frames[0], heap_marker, origin_frame.group())
+    # Bound even the retained provenance if symbolized filenames are malformed.
+    if any(len(line) > 1024 for line in accepted_lines):
+        return None
+    retained = report[:MSAN_NEGATIVE_REPORT_LIMIT]
+    if len(report) > MSAN_NEGATIVE_REPORT_LIMIT:
+        retained += "\n[report truncated; accepted provenance follows]\n" + "\n".join(accepted_lines)
+    return retained
+
+
 def verify_install(prefix: Path, clangxx: str, build: Path) -> None:
     include_dir = prefix / "include" / "c++" / "v1"
     if not include_dir.is_dir():
@@ -447,27 +502,12 @@ def verify_install(prefix: Path, clangxx: str, build: Path) -> None:
         )
     print("[msan-libcxx] PASS: typed exception, rethrow, and cleanup execute", flush=True)
 
-    negative_source = (
-        "#include <cstdlib>\n"
-        "int main() {\n"
-        "    auto* value = static_cast<int*>(std::malloc(sizeof(int)));\n"
-        "    if (value == nullptr) {\n"
-        "        return 2;\n"
-        "    }\n"
-        "    if (*static_cast<volatile int*>(value) == 0) {\n"
-        "        std::free(value);\n"
-        "        return 0;\n"
-        "    }\n"
-        "    std::free(value);\n"
-        "    return 1;\n"
-        "}\n"
-    )
     negative_command = [clangxx, *common_flags, "-x", "c++", "-", "-o", str(negative_probe)]
     negative_build = subprocess.run(
         negative_command,
         cwd=build,
         env=runtime_environment,
-        input=negative_source,
+        input=MSAN_NEGATIVE_PROBE_SOURCE,
         text=True,
         capture_output=True,
         check=False,
@@ -506,12 +546,9 @@ def verify_install(prefix: Path, clangxx: str, build: Path) -> None:
             timeout_output(timeout.stdout),
             timeout_output(timeout.stderr) + "\nMSan negative probe timed out after 30 seconds",
         )
-    diagnostics = negative_run.stdout + negative_run.stderr
-    has_msan_warning = any(
-        MSAN_WARNING.search(output) is not None
-        for output in (negative_run.stdout, negative_run.stderr)
-    )
-    if negative_run.returncode != MSAN_EXIT_CODE or not has_msan_warning:
+    diagnostics = negative_run.stdout + "\n" + negative_run.stderr
+    evidence = negative_report_evidence(diagnostics)
+    if negative_run.returncode != MSAN_EXIT_CODE or evidence is None:
         symbolized = symbolize_reported_pcs(
             diagnostics, negative_probe, symbolizer, dependencies_by_name
         )
@@ -523,6 +560,7 @@ def verify_install(prefix: Path, clangxx: str, build: Path) -> None:
             + f"\nnegative-probe environment:\n{context}"
             + f"\nsymbolized module-relative PCs:\n{symbolized}"
         )
+    print(f"[msan-libcxx] Accepted negative-probe report:\n{evidence}", flush=True)
     print("[msan-libcxx] PASS: libc++ executes and MSan catches an uninitialized read", flush=True)
 
 

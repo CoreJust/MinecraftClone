@@ -12866,5 +12866,39 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0371",
+    "title": "Validate and retain the application MSan negative-control report",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P0",
+    "route": "sol",
+    "milestone": "ED-010-S7",
+    "depends_on": [],
+    "acceptance": "Use an ordinary compiler-instrumented named noinline application heap-read site; require exit86, the primary uninitialized-value report at that site and a heap-allocation origin. Reject unrelated startup reports and missing or mismatched provenance. Retain bounded successful report evidence. Do not manually trigger MSan, alter unwind policy or weaken positive/game gates. Focused tests protect valid reports, unrelated warnings and missing origins.",
+    "evidence": "Focused installer suite 47/47 PASS in3.698s, no skips; whitespace PASS. Same-reviewer P2 reproduced caller-only allocation provenance acceptance, then exact root application frame #1 was enforced with parser and installer regression. Log /private/tmp/mc0371-negative-report.ly14PD/installer-tests-review-delta.log SHA-25619547eb23442be04ed0baa50de6e7b49c9940b641647927f07078b2b43875089. Compiled IR proves ordinary volatile load and compiler-generated MSan warning. Predicate requires primary application read and matching heap-root allocation frame, rejects unrelated/multiple/fatal reports and missing or mismatched origins, and retains bounded accepted provenance. Actual strengthened hosted negative and final-source game gates remain mandatory.",
+    "blocker": "",
+    "owner": "",
+    "level": "basic",
+    "parent": "MC-AI-0038",
+    "motivation": "The negative preflight currently accepts any exit-86 MSan warning and discards successful diagnostics, so its marker cannot establish the intended application read.",
+    "context": "Exact e968f087 source has passed libc++ readiness in run37603855691. Inspection of _verify_runtime shows warning-only acceptance without report provenance. Preserve the finite unwind correction and current run.",
+    "complexity": "medium",
+    "created_at": "2026-10-07",
+    "resolved_at": "2026-10-07",
+    "resolution_changes": "Name the ordinary noinline heap allocation/read function, require exact primary and heap-root provenance with exit86, retain bounded successful diagnostics, and cover independent rejection paths. No unwind policy or manual sanitizer trigger changed.",
+    "plan": [
+      "Implement the bounded application-report predicate and evidence, run focused controls, review the exact candidate, and combine full integration with the necessary final aggregate source boundary where permitted."
+    ],
+    "product_changes": [],
+    "code_changes": [],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]

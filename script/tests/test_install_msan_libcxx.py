@@ -645,6 +645,17 @@ class InstallMsanLibcxxTests(unittest.TestCase):
             processes.extend(symbolized if isinstance(symbolized, list) else [symbolized])
         return processes
 
+    def negative_report(self, *, pid="", read_site="msanNegativeHeapRead", allocation_site="msanNegativeHeapRead"):
+        return (
+            f"{pid}WARNING: MemorySanitizer: use-of-uninitialized-value\n"
+            f"    #0 0x1234 in {read_site} /tmp/probe.cpp:8:9\n"
+            "    #1 0x2345 in main /tmp/probe.cpp:17:21\n\n"
+            "  Uninitialized value was created by a heap allocation\n"
+            "    #0 0x3456 in malloc /tmp/msan_interceptors.cpp:123:3\n"
+            f"    #1 0x4567 in {allocation_site} /tmp/probe.cpp:3:37\n\n"
+            "SUMMARY: MemorySanitizer: use-of-uninitialized-value /tmp/probe.cpp:8:9 in msanNegativeHeapRead\n"
+        )
+
     def assert_negative_probe_rejected(self, negative_run):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -1036,13 +1047,18 @@ class InstallMsanLibcxxTests(unittest.TestCase):
             root = Path(directory)
             prefix, library_dir, build, _, symbolizer = self.prepare_verification_tree(root)
             negative_run = subprocess.CompletedProcess(
-                [], 86, "", "WARNING: MemorySanitizer: use-of-uninitialized-value"
+                [], 86, "", self.negative_report()
             )
+            output = io.StringIO()
             with (
                 mock.patch.object(self.toolchain.subprocess, "run", side_effect=self.diagnostic_processes(negative_run)) as run,
                 mock.patch.object(self.toolchain, "resolve_msan_symbolizer", return_value=str(symbolizer)),
+                contextlib.redirect_stdout(output),
             ):
                 self.toolchain.verify_install(prefix, "clang++", build)
+
+            self.assertIn("Accepted negative-probe report:", output.getvalue())
+            self.assertIn(self.negative_report(), output.getvalue())
 
             commands = [call.args[0] for call in run.call_args_list]
             include_dir = prefix / "include/c++/v1"
@@ -1070,6 +1086,8 @@ class InstallMsanLibcxxTests(unittest.TestCase):
                 negative_source,
             )
             self.assertNotIn("return result;", negative_source)
+            self.assertIn('extern "C" [[gnu::noinline]] int msanNegativeHeapRead()', negative_source)
+            self.assertNotIn("__msan_", negative_source)
             negative_environment = run.call_args_list[6].kwargs["env"]
             self.assertEqual(negative_environment["MSAN_SYMBOLIZER_PATH"], str(symbolizer))
             self.assertIn("symbolize=1", negative_environment["MSAN_OPTIONS"])
@@ -1247,7 +1265,7 @@ class InstallMsanLibcxxTests(unittest.TestCase):
             root = Path(directory)
             prefix, _, build, _, symbolizer = self.prepare_verification_tree(root)
             negative_run = subprocess.CompletedProcess(
-                [], 86, "", "==12345==WARNING: MemorySanitizer: use-of-uninitialized-value\n"
+                [], 86, "", self.negative_report(pid="==12345==")
             )
             with (
                 mock.patch.object(
@@ -1260,6 +1278,93 @@ class InstallMsanLibcxxTests(unittest.TestCase):
                 ),
             ):
                 self.toolchain.verify_install(prefix, "clang++", build)
+
+    def test_negative_probe_has_an_ordinary_instrumented_noinline_heap_read(self):
+        source = self.toolchain.MSAN_NEGATIVE_PROBE_SOURCE.replace(
+            "#include <cstdlib>",
+            'extern "C" void* malloc(__SIZE_TYPE__); extern "C" void free(void*);\n'
+            "namespace std { using ::malloc; using ::free; }",
+        )
+        self.assertNotIn("__msan_", source)
+        ir = self.compile_msan_ir(source)
+        body = self.function_ir(ir, "msanNegativeHeapRead")
+        self.assertIn("@malloc(", body)
+        self.assertIn("load volatile i32", body)
+        self.assertIn("@__msan_warning_with_origin_noreturn(", body)
+        attributes = re.search(r"define[^\n]+@msanNegativeHeapRead\([^\n]+#([0-9]+)", ir)
+        self.assertIsNotNone(attributes)
+        self.assertRegex(ir, rf"attributes #{attributes.group(1)} = \{{[^\n]*\bnoinline\b")
+
+    def test_negative_report_accepts_symbolized_format_variants_and_chained_origin(self):
+        report = self.negative_report().replace(
+            "  Uninitialized value was created",
+            "  Uninitialized value was stored to memory at\n"
+            "    #0 0x5678 in otherFunction /tmp/probe.cpp:5:3\n\n"
+            "  Uninitialized value was created",
+        )
+        for variant in (report, report.replace("\n", "\r\n"), "\x1b[1m" + report + "\x1b[0m"):
+            with self.subTest(variant=repr(variant[:30])):
+                self.assertIsNotNone(self.toolchain.negative_report_evidence(variant))
+
+    def test_negative_report_rejects_unrelated_primary_even_with_named_caller(self):
+        report = self.negative_report(read_site="libcStartup").replace("in main", "in msanNegativeHeapRead")
+        self.assertIsNone(self.toolchain.negative_report_evidence(report))
+        self.assert_negative_probe_rejected(subprocess.CompletedProcess([], 86, "", report))
+
+    def test_negative_report_requires_matching_heap_allocation_provenance(self):
+        report = self.negative_report(allocation_site="otherAllocation")
+        self.assertIsNone(self.toolchain.negative_report_evidence(report))
+        self.assert_negative_probe_rejected(subprocess.CompletedProcess([], 86, "", report))
+        for origin in ("a stack frame", "a heap deallocation", "destroyed member fields"):
+            with self.subTest(origin=origin):
+                self.assertIsNone(self.toolchain.negative_report_evidence(
+                    self.negative_report().replace("a heap allocation", origin)))
+
+    def test_negative_report_rejects_missing_origin_and_warning_only(self):
+        report = self.negative_report().split("  Uninitialized value", 1)[0]
+        self.assertIsNone(self.toolchain.negative_report_evidence(report))
+        self.assert_negative_probe_rejected(subprocess.CompletedProcess([], 86, "", report))
+        self.assertIsNone(self.toolchain.negative_report_evidence(
+            "WARNING: MemorySanitizer: use-of-uninitialized-value\n"))
+
+    def test_negative_report_rejects_named_allocation_caller_at_frame_two(self):
+        report = self.negative_report(allocation_site="helperAllocation").replace(
+            "    #1 0x4567 in helperAllocation /tmp/probe.cpp:3:37",
+            "    #1 0x4567 in helperAllocation /tmp/probe.cpp:3:37\n"
+            "    #2 0x5678 in msanNegativeHeapRead /tmp/probe.cpp:4:2",
+        )
+        self.assertIsNone(self.toolchain.negative_report_evidence(report))
+        self.assert_negative_probe_rejected(subprocess.CompletedProcess([], 86, "", report))
+
+    def test_negative_report_cannot_combine_separate_reports_or_text_only_names(self):
+        report = self.negative_report(allocation_site="otherAllocation") + self.negative_report(read_site="libcStartup")
+        self.assertIsNone(self.toolchain.negative_report_evidence(report))
+        report = self.negative_report(allocation_site="otherAllocation") + "msanNegativeHeapRead\n"
+        self.assertIsNone(self.toolchain.negative_report_evidence(report))
+        report = self.negative_report(allocation_site="otherAllocation").replace(
+            "SUMMARY:", "    #0 0x6789 in msanNegativeHeapRead /tmp/unrelated.cpp:1:1\nSUMMARY:")
+        self.assertIsNone(self.toolchain.negative_report_evidence(report))
+
+    def test_negative_report_rejects_an_additional_fatal_diagnostic(self):
+        self.assertIsNone(self.toolchain.negative_report_evidence(
+            self.negative_report() + "MemorySanitizer:DEADLYSIGNAL\n"))
+        self.assertIsNone(self.toolchain.negative_report_evidence(
+            self.negative_report() + "ERROR: MemorySanitizer: unexpected failure\n"))
+        self.assertIsNone(self.toolchain.negative_report_evidence(
+            self.negative_report() + "WARNING: MemorySanitizer: unexpected failure\n"))
+
+    def test_negative_report_retention_is_bounded_and_keeps_accepted_provenance(self):
+        report = self.negative_report().replace(
+            "  Uninitialized value was created", "x" * 20000 + "\n  Uninitialized value was created")
+        evidence = self.toolchain.negative_report_evidence(report)
+        self.assertIsNotNone(evidence)
+        self.assertLess(len(evidence), self.toolchain.MSAN_NEGATIVE_REPORT_LIMIT + 4200)
+        self.assertIn("[report truncated; accepted provenance follows]", evidence)
+        self.assertIn("#0 0x1234 in msanNegativeHeapRead /tmp/probe.cpp:8:9", evidence)
+        self.assertIn("Uninitialized value was created by a heap allocation", evidence)
+        self.assertIn("#1 0x4567 in msanNegativeHeapRead /tmp/probe.cpp:3:37", evidence)
+        self.assertIsNone(self.toolchain.negative_report_evidence(
+            self.negative_report().replace("/tmp/probe.cpp:8:9", "/" + "a" * 2000)))
 
     def test_install_rejects_a_toolchain_that_misses_the_probe(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -1307,7 +1412,7 @@ class InstallMsanLibcxxTests(unittest.TestCase):
     def test_uninitialized_read_diagnostic_with_wrong_exit_code_is_failure(self):
         message = self.assert_negative_probe_rejected(
             subprocess.CompletedProcess(
-                [], 1, "", "WARNING: MemorySanitizer: use-of-uninitialized-value"
+                [], 1, "", self.negative_report()
             )
         )
         self.assertIn("return code: 1", message)
