@@ -12581,13 +12581,13 @@
     "id": "MC-AI-0363",
     "title": "Clarify Android snapshot development signing and test-copy separation",
     "kind": "chore",
-    "status": "active",
+    "status": "done",
     "priority": "P1",
     "route": "luna",
     "milestone": "ED-010-S7",
     "depends_on": [],
     "acceptance": "The Android runbook explicitly distinguishes unsigned Release build output, disposable emulator test copies, and the separately prepared same-source snapshot asset governed by RELEASE_ARTIFACTS. It retains development-not-store disclosure, existing identity only, no key creation/export/CI secret, and exact package/signature/checksum verification before publication. No signing, key, Gradle, product or acceptance-gate behavior changes; docs and fast checks pass.",
-    "evidence": "",
+    "evidence": "Read the complete owning Android acceptance and release-artifact contracts against Gradle normal unsigned Release behavior, schema1 package evidence and CI-only asset rejection. Documentation now distinguishes unsigned output, disposable emulator copy and separately verified final asset; no APK, key, Gradle or acceptance gate is changed. Read-only keytool public certificate inspection confirms the existing Android Debug alias SHA256 b41a19e18164005e5f95a830e5c82c81a798467cfa9eae13a204233966c5a940 matches historical0276; no key generation/export or signing was performed. Required signature/hash/package checks remain pending final APK, and actual sourceae4 fast failures/MSan and full release gate status are not waived.",
     "blocker": "",
     "owner": "Codex",
     "level": "basic",
@@ -12596,16 +12596,20 @@
     "context": "docs/RELEASE_ARTIFACTS.md requires a same-source final APK using the existing stable host development identity, while ANDROID_ACCEPTANCE.md ambiguously forbids signing release artifacts when describing temporary emulator copies. MC-AI-0276 already records verified stable development-certificate evidence. Normal assembleRelease remains unsigned; no key, signer configuration or APK is changed by this documentation task.",
     "complexity": "low",
     "created_at": "2026-10-07",
-    "resolved_at": "",
-    "resolution_changes": "",
+    "resolved_at": "2026-10-07",
+    "resolution_changes": "Clarify that the temporary emulator test copy must not be published and that the separately prepared same-promotion snapshot asset uses the owning exact-byte/development-signature contract; no build or signing policy changed.",
     "plan": [
       "Correct only the conflicting runbook paragraph and link the owning snapshot publication contract; verify docs and scope, then commit with one bounded task review."
     ],
-    "product_changes": [],
-    "code_changes": [],
+    "product_changes": [
+      "No product behavior changed."
+    ],
+    "code_changes": [
+      "Reconcile only the conflicting Android acceptance paragraph with RELEASE_ARTIFACTS.md; retain exact-source, development-not-store, existing-identity and no-key-export/no-CI-secret boundaries."
+    ],
     "baseline_commit": "",
     "commits": [],
-    "finalized": false,
+    "finalized": true,
     "retrospective": "",
     "docs_review": "",
     "environment_review": "",

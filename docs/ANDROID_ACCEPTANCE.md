@@ -91,9 +91,9 @@ Do not start another runner, or run a second `app launch` or `am start`, after
 the paired command succeeds. If it refuses, resolve the reported device state
 rather than retrying launch commands blindly.
 
-Release APKs are unsigned. For emulator-only installation, align and sign a
-temporary copy with the stable local Android debug keystore; do not sign or
-publish a release artifact with it:
+Normal Release builds produce unsigned APKs. For emulator-only installation,
+align and sign a temporary copy with the stable local Android debug keystore;
+do not publish that temporary test copy:
 
 ```sh
 "$zipalign" -f -p 4 android/app/build/outputs/apk/release/app-release-unsigned.apk \
@@ -103,6 +103,13 @@ publish a release artifact with it:
     --out /tmp/minecraftclone-s7-emulator.apk /tmp/minecraftclone-s7-aligned.apk
 "$adb" -s <serial> install -r /tmp/minecraftclone-s7-emulator.apk
 ```
+
+Prepare the final snapshot APK separately under the
+[release artifact contract](RELEASE_ARTIFACTS.md): build the exact promotion
+commit, use the existing stable host development identity, and verify its
+signature, package evidence and checksum. Disclose development signing, not
+a trusted store identity. Do not create or export a key, add a CI secret, or
+publish the CI-only APK. A temporary emulator copy is not final-asset evidence.
 
 Reuse that same local debug keystore for subsequent installs. A newly generated
 one-off key cannot update an existing package and causes
