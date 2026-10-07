@@ -66,9 +66,121 @@ class InstallMsanLibcxxTests(unittest.TestCase):
         end = ir.index("\n}", start) + 2
         return ir[start:end]
 
+    def own_return_address_source(self):
+        patch = self.toolchain.LIBUNWIND_MSAN_PATCH.read_text(encoding="utf-8")
+        entry_patch = patch.split("diff --git a/libunwind/src/UnwindLevel1.c", 1)[1]
+        additions = "\n".join(
+            line[1:] for line in entry_patch.splitlines()
+            if line.startswith("+") and not line.startswith("+++")
+        )
+        guard = re.search(r"#if defined\(__linux__\).*?\n#endif\n#endif", additions, re.DOTALL).group(0)
+        bodies = re.findall(
+            r"#if defined\(_LIBUNWIND_MSAN_SYNC_OWN_RETURN_ADDRESS\).*?\n#endif",
+            additions, re.DOTALL,
+        )
+        self.assertEqual(len(bodies), 2)
+        return guard, bodies
+
+    def test_own_return_address_sync_requires_linux_x86_64_msan(self):
+        compiler = shutil.which("clang")
+        if compiler is None:
+            self.skipTest("Clang is required for C99 guard controls")
+        guard, _ = self.own_return_address_source()
+        source = guard.replace("#include <sanitizer/msan_interface.h>", "MSAN_INTERFACE_INCLUDED")
+        source += "\n#ifdef _LIBUNWIND_MSAN_SYNC_OWN_RETURN_ADDRESS\nOWN_RA_SYNC_ACTIVE\n#endif\n"
+        for target, flags, active in (
+            ("x86_64-pc-linux-gnu", ["-fsanitize=memory"], True),
+            ("x86_64-pc-linux-gnu", [], False),
+            ("aarch64-pc-linux-gnu", ["-fsanitize=memory"], False),
+            ("x86_64-apple-darwin", [], False),
+            ("x86_64-pc-linux-gnux32", ["-fsanitize=memory"], False),
+        ):
+            with self.subTest(target=target, flags=flags):
+                result = subprocess.run(
+                    [compiler, f"--target={target}", "-std=c99", *flags, "-E", "-P", "-x", "c", "-"],
+                    input=source, text=True, capture_output=True, check=False,
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual("OWN_RA_SYNC_ACTIVE" in result.stdout, active)
+                self.assertEqual("MSAN_INTERFACE_INCLUDED" in result.stdout, active)
+
+    def test_own_return_address_sync_keeps_c99_msan_checks_and_forces_own_frame(self):
+        compiler = shutil.which("clang")
+        if compiler is None:
+            self.skipTest("Clang is required for C99 MSan compiler controls")
+        _, bodies = self.own_return_address_source()
+        source = (
+            "void __msan_unpoison(const volatile void *, __SIZE_TYPE__);\n"
+            "void side_effect(void);\n#define _LIBUNWIND_MSAN_SYNC_OWN_RETURN_ADDRESS\n"
+        )
+        for name, body in zip(("raise_entry", "resume_entry"), bodies):
+            source += f"int {name}(volatile int *data) {{\n{body}\nside_effect();\nreturn *data != 0;\n}}\n"
+        for emit_ir in (True, False):
+            result = subprocess.run(
+                [compiler, "--target=x86_64-pc-linux-gnu", "-std=c99", "-O2", "-fomit-frame-pointer",
+                 "-fsanitize=memory", "-fsanitize-memory-track-origins=2", "-S",
+                 *(["-emit-llvm"] if emit_ir else []), "-x", "c", "-o", "-", "-"],
+                input=source, text=True, capture_output=True, check=False,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            if emit_ir:
+                self.assertIn("sanitize_memory", result.stdout)
+                for name in ("raise_entry", "resume_entry"):
+                    body = self.function_ir(result.stdout, name)
+                    self.assertRegex(body, r"@llvm.frameaddress.p0\(i32 0\)")
+                    self.assertRegex(body, r"getelementptr inbounds i8, ptr %[^,]+, i64 8")
+                    self.assertRegex(body, r"@__msan_unpoison\(ptr[^,]*, i64[^)]*8\)")
+                    self.assertLess(body.index("@__msan_unpoison"), body.index("@side_effect"))
+                    self.assertIn("load volatile i32", body)
+                    self.assertIn("@__msan_warning_with_origin_noreturn", body)
+            else:
+                for name in ("raise_entry", "resume_entry"):
+                    body = result.stdout.split(name + ":", 1)[1].split(".Lfunc_end", 1)[0]
+                    self.assertRegex(body, r"pushq\s+%rbp")
+                    self.assertRegex(body, r"movq\s+%rsp, %rbp")
+                    self.assertRegex(body, r"leaq\s+8\(%rbp\), %rdi")
+                    self.assertRegex(body, r"movl\s+\$8, %esi")
+                    self.assertRegex(body, r"callq\s+__msan_unpoison")
+
+    def test_own_return_address_sync_changes_only_eight_shadow_bytes_not_contents(self):
+        compiler = shutil.which("clang")
+        if compiler is None:
+            self.skipTest("Clang is required for exact-byte canary controls")
+        _, bodies = self.own_return_address_source()
+        for entry, body in zip(("Raise", "Resume"), bodies):
+            with self.subTest(entry=entry), tempfile.TemporaryDirectory() as directory:
+                source = (
+                    "#include <string.h>\n#include <stddef.h>\n"
+                    "#define _LIBUNWIND_MSAN_SYNC_OWN_RETURN_ADDRESS\n"
+                    "static unsigned char frame[24], before[24], shadow[24];\n"
+                    "static int calls;\n"
+                    "void __msan_unpoison(const void *address, size_t size) {\n"
+                    "  if (address != frame + 8 || size != 8) calls = -100;\n"
+                    "  else { ++calls; memset(shadow + 8, 0, 8); }\n}\n"
+                    "void entry(void) {\n"
+                    + body.replace("__builtin_frame_address(0)", "frame") + "\n}\n"
+                    "int main(void) {\n"
+                    "  memset(frame, 0x5a, sizeof(frame)); memcpy(before, frame, sizeof(frame));\n"
+                    "  memset(shadow, 0xa5, sizeof(shadow)); entry();\n"
+                    "  if (calls != 1 || memcmp(frame, before, sizeof(frame))) return 1;\n"
+                    "  for (size_t i = 0; i != sizeof(shadow); ++i)\n"
+                    "    if (shadow[i] != (i >= 8 && i < 16 ? 0 : 0xa5)) return 2;\n"
+                    "  shadow[8] = 0xa5;\n"
+                    "  return shadow[8] != 0xa5 || shadow[0] != 0xa5 || shadow[16] != 0xa5;\n}\n"
+                )
+                executable = Path(directory) / "own-ra-canary"
+                result = subprocess.run(
+                    [compiler, "-std=c99", "-O2", "-Wall", "-Wextra", "-Werror",
+                     "-x", "c", "-o", str(executable), "-"],
+                    input=source, text=True, capture_output=True, check=False,
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+                result = subprocess.run([str(executable)], capture_output=True, text=True, check=False)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
     def return_address_diagnostic_source(self):
         patch = self.toolchain.LIBUNWIND_MSAN_PATCH.read_text(encoding="utf-8")
-        dwarf_patch = patch.split("diff --git a/libunwind/src/DwarfInstructions.hpp", 1)[1]
+        dwarf_patch = patch.split("diff --git a/libunwind/src/DwarfInstructions.hpp", 1)[1].split("diff --git ", 1)[0]
         additions = "\n".join(
             line[1:] for line in dwarf_patch.splitlines()
             if line.startswith("+") and not line.startswith("+++")

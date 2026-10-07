@@ -240,3 +240,44 @@ diff --git a/libunwind/src/DwarfInstructions.hpp b/libunwind/src/DwarfInstructio
 +#undef _LIBUNWIND_MSAN_RA_DIAGNOSTIC
 +
  #endif // __DWARF_INSTRUCTIONS_HPP__
+diff --git a/libunwind/src/UnwindLevel1.c b/libunwind/src/UnwindLevel1.c
+--- a/libunwind/src/UnwindLevel1.c
++++ b/libunwind/src/UnwindLevel1.c
+@@ -32,5 +32,12 @@
+ #include "unwind.h"
+
++#if defined(__linux__) && defined(__x86_64__) && __SIZEOF_POINTER__ == 8 && defined(__has_feature)
++#if __has_feature(memory_sanitizer)
++#include <sanitizer/msan_interface.h>
++#define _LIBUNWIND_MSAN_SYNC_OWN_RETURN_ADDRESS
++#endif
++#endif
++
+ #if !defined(_LIBUNWIND_ARM_EHABI) && !defined(__USING_SJLJ_EXCEPTIONS__)
+
+ #ifndef _LIBUNWIND_SUPPORT_SEH_UNWIND
+@@ -419,5 +426,10 @@
+ _LIBUNWIND_EXPORT _Unwind_Reason_Code
+ _Unwind_RaiseException(_Unwind_Exception *exception_object) {
++#if defined(_LIBUNWIND_MSAN_SYNC_OWN_RETURN_ADDRESS)
++  // CALL writes this frame's return address without updating MSan shadow.
++  __msan_unpoison((unsigned char *)__builtin_frame_address(0) + 8, 8);
++#endif
++
+   _LIBUNWIND_TRACE_API("_Unwind_RaiseException(ex_obj=%p)",
+                        (void *)exception_object);
+   unw_context_t uc;
+@@ -454,5 +466,9 @@
+ _LIBUNWIND_EXPORT void
+ _Unwind_Resume(_Unwind_Exception *exception_object) {
++#if defined(_LIBUNWIND_MSAN_SYNC_OWN_RETURN_ADDRESS)
++  __msan_unpoison((unsigned char *)__builtin_frame_address(0) + 8, 8);
++#endif
++
+   _LIBUNWIND_TRACE_API("_Unwind_Resume(ex_obj=%p)", (void *)exception_object);
+   unw_context_t uc;
+   unw_cursor_t cursor;
+@@ -587,1 +603,3 @@
++#undef _LIBUNWIND_MSAN_SYNC_OWN_RETURN_ADDRESS
++
+ #endif // !defined(_LIBUNWIND_ARM_EHABI) && !defined(__USING_SJLJ_EXCEPTIONS__)
