@@ -12941,5 +12941,88 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0373",
+    "title": "Package and preflight the S7 Android HWASan artifact",
+    "kind": "chore",
+    "status": "active",
+    "priority": "P0",
+    "route": "luna",
+    "milestone": "ED-010-S7",
+    "depends_on": [],
+    "acceptance": "For sanitizer=hwasan only, package the exact executable wrap.sh at lib/arm64-v8a/wrap.sh from the resources source set, with a debuggable APK and jniLibs.useLegacyPackaging=true; keep normal Release build properties unchanged. Attach fail-closed Gradle verification to the HWASan Release artifact. Add an APK-only verifier mode that validates the wrapper bytes, AArch64 native library and HWASan runtime without requiring a serial or invoking adb; runtime mode must retain this preflight before any device writes. Run that preflight in the build job before upload and in the runtime job immediately after artifact download and before emulator startup. Add focused tests for exact APK validation, no-device APK-only behavior, runtime fail-closed order, and workflow order. Build and inspect the actual HWASan Release APK; actual device runtime remains an aggregate S7 gate.",
+    "evidence": "",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0038",
+    "motivation": "The hosted S7 HWASan producer emitted an APK without the wrap.sh required to start the instrumented app, and the runtime job starts an emulator before checking the downloaded APK.",
+    "context": "The existing Gradle task stages wrap.sh under jniLibs, but Android Studio packages only .so files from lib/; the NDK requires the script under resources/lib/arm64-v8a, a debuggable APK, and legacy JNI packaging. The existing verifier checks the APK before runtime device commands but its CLI requires a serial, so runtime workflow cannot preflight the artifact before emulator startup. The exact hosted macOS emulator also reported HV_UNSUPPORTED; runner/hardware allocation is outside this packaging task and remains a separate aggregate consideration.",
+    "complexity": "medium",
+    "created_at": "2026-10-07",
+    "resolved_at": "",
+    "resolution_changes": "",
+    "plan": [
+      "Move generated wrap.sh to a generated Android resources/lib/arm64-v8a source directory and configure only the HWASan Release variant as debuggable with legacy JNI packaging.",
+      "Verify the actual HWASan APK contents in Gradle and keep ordinary Release packaging/signing/configuration unchanged.",
+      "Add an APK-only preflight CLI that validates the required wrapper and instrumented native library without calling adb; preserve preflight as the first runtime verifier action.",
+      "Run APK preflight before artifact upload and before emulator startup; add focused verifier and workflow-order tests.",
+      "Build and inspect the exact HWASan Release APK; preserve device runtime as a separate aggregate S7 acceptance gate."
+    ],
+    "product_changes": [],
+    "code_changes": [
+      "Update Gradle HWASan resource staging, build-type settings and APK verification.",
+      "Add APK-only validation to the HWASan verifier and make it the runtime workflow preflight.",
+      "Extend the verifier and CI workflow regression tests; update Android delivery documentation if behavior is clarified."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": false,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0374",
+    "title": "Pin the exact CoreProject2026 maintenance source for S7",
+    "kind": "chore",
+    "status": "done",
+    "priority": "P1",
+    "route": "luna",
+    "milestone": "ED-010-S7",
+    "depends_on": [
+      "MC-AI-0372"
+    ],
+    "acceptance": "Pin CoreProject2026 to reviewed CP-0039 commit a4d3fa8a7b81407d0f6bae3ef10d2632d7b74fb9 and refs/heads/codex/ai-CP-0039-corecpp-0042-pin; add an exact lock regression and verify a fresh fetch resolves that clean SHA. Build and validate the MinecraftClone Android Release consumer against clean exact CoreCpp d5759fa48b7073787434121624b5f5f93cf3fa2c and CoreProject2026 a4d3fa8a7b81407d0f6bae3ef10d2632d7b74fb9 packages with inexact provenance disabled; record installed source metadata. Preserve CoreProject2026 0.1.3.3, CoreLang 0.1.3.1, CoreBC 1.6, public APIs, and do not create a tag or release. Hosted S7 analysis and actual HWASan device runtime remain aggregate gates.",
+    "evidence": "dependencies.lock.json now pins CoreProject2026 a4d3fa8a7b81407d0f6bae3ef10d2632d7b74fb9 and refs/heads/codex/ai-CP-0039-corecpp-0042-pin. git ls-remote returned that exact SHA; fresh shallow clone /private/tmp/mc-s7-coreproject-pin-0374-fetch is clean at the same commit and tree 4f75ce28b54e71e189111505e44294acdadd56f5. python3 -B -m unittest script.tests.test_ci_acquire -v passed 33/33. With exact clean CoreCpp d5759fa and CoreProject a4d3fa8 Android packages, NDK 27 arm64-v8a Release consumer :app:assembleRelease completed BUILD SUCCESSFUL (52/52 tasks, 25s); CMakeCache reports Release, android-28, MC_ALLOW_INEXACT_CORECPP=OFF and the exact package dirs. The unsigned APK SHA-256 is 9d53ac5b7483c421fa83bcf729a1c4cd13d78f3b749490dbf645e6caf88c4882; this pre-0373 consumer artifact is not the final S7 HWASan artifact. CP-0039 clean package provenance and 28/28 native CTest are in /private/tmp/mc-s7-android-input.SsbW7G/coreproject2026-cc0042-postcommit-receipt.md.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0038",
+    "motivation": "S7 advances MinecraftClone's CoreCpp lock to the reviewed d575 InputSpan fix, but the pinned CoreProject2026 0.1.3.3 source still requires CoreCpp 8e, so the exact Android dependency closure rejects the current lock pair.",
+    "context": "CoreProject2026 CP-0039 is the smallest authorized source maintenance change: it pins the exact published CoreCpp d575 commit while preserving package 0.1.3.3, CoreLang 0.1.3.1, CoreBC 1.6, and existing APIs. The clean post-commit CoreProject package and native/Android consumer tests are recorded in the external receipt /private/tmp/mc-s7-android-input.SsbW7G/coreproject2026-cc0042-postcommit-receipt.md. This task updates only MinecraftClone's source lock and regression; no installed-prefix metadata patches or consumer workarounds.",
+    "complexity": "low",
+    "created_at": "2026-10-07",
+    "resolved_at": "2026-10-07",
+    "resolution_changes": "Pinned CoreProject2026 to the published reviewed CP-0039 commit and updated the exact lock regression. Verified the branch readback and clean shallow clone; 33/33 focused acquisition tests passed; exact-source Android Release consumer build succeeded with inexact provenance disabled. No package version, API, tag, or release changed.",
+    "plan": [
+      "Update the CoreProject2026 exact commit/ref pair in dependencies.lock.json and add a regression asserting the exact reviewed pair.",
+      "Verify the published branch is reachable and resolves to the exact clean commit, then exercise dependency acquisition and an exact Release consumer with inexact provenance disabled.",
+      "Record exact installed CoreCpp/CoreProject source metadata; preserve package and public API versions and create no dependency tag or release.",
+      "Keep hosted analysis and HWASan local device runtime in aggregate S7 acceptance."
+    ],
+    "product_changes": [],
+    "code_changes": [
+      "Update the CoreProject2026 lock and source acquisition regression to the reviewed CP-0039 commit and branch."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]

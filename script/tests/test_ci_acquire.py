@@ -603,11 +603,11 @@ class CiAcquireTests(unittest.TestCase):
         )
         self.assertEqual(
             parsed["CoreProject2026"]["revision"],
-            "10200a380a883ffd70806627710c3c0c25971cbb",
+            "a4d3fa8a7b81407d0f6bae3ef10d2632d7b74fb9",
         )
         self.assertEqual(
             parsed["CoreProject2026"]["fetch_ref"],
-            "refs/heads/codex/ai-s7-coreproject-pin-reviewed",
+            "refs/heads/codex/ai-CP-0039-corecpp-0042-pin",
         )
 
     def test_private_dependency_lock_rejects_non_branch_fetch_ref(self):
