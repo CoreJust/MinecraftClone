@@ -148,7 +148,7 @@ class WorkflowContextTests(unittest.TestCase):
                 self.assertIsNotNone(condition_match, job_name)
                 self.assertEqual(condition_match.group(1), condition)
 
-    def test_android_hwasan_runtime_uses_owned_hvf_emulator_lifecycle(self):
+    def test_android_hwasan_runtime_uses_owned_host_accelerated_emulator_lifecycle(self):
         workflow = WORKFLOWS[0].read_text(encoding="utf-8")
         runtime_job = workflow.split("\n  android-hwasan-runtime:", maxsplit=1)[1].split(
             "\n  analysis-matrix:", maxsplit=1
@@ -164,7 +164,7 @@ class WorkflowContextTests(unittest.TestCase):
         self.assertIn('install-android-sdk --root "$ANDROID_SDK_ROOT"', runtime_job)
         self.assertLess(
             runtime_job.index("Preflight downloaded HWASan APK before emulator startup"),
-            runtime_job.index("Start matching ARM64 Android emulator with HVF"),
+            runtime_job.index("Start matching ARM64 Android emulator with host acceleration"),
         )
         self.assertIn("script/ci/android_hwasan_emulator.py start", runtime_job)
         self.assertIn("script/ci/android_hwasan_emulator.py wait", runtime_job)

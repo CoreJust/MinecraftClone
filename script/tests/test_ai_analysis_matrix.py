@@ -808,30 +808,28 @@ class AnalysisMatrixTests(unittest.TestCase):
             runtime_job.index("Start matching ARM64 Android emulator"),
         )
 
-    def test_android_hwasan_runtime_routes_only_to_candidate_specific_macos_runner(self):
+    def test_android_hwasan_runtime_routes_only_to_hosted_arm64_runner(self):
         workflow = (REPOSITORY / ".github/workflows/ai-checks.yml").read_text(encoding="utf-8")
         runtime_job = workflow.split("  android-hwasan-runtime:", 1)[1].split(
             "  analysis-matrix:", 1
         )[0]
-        candidate_label = '"mc-s7-hwasan-${{ github.sha }}-${{ github.run_id }}"'
 
         self.assertIn(
             "if: github.event_name == 'push' && github.ref == 'refs/heads/ai-main'",
             runtime_job,
         )
-        self.assertIn(
-            f"runs-on: [self-hosted, macOS, ARM64, {candidate_label}]",
-            runtime_job,
-        )
-        self.assertNotIn("macos-15", runtime_job)
+        self.assertIn("runs-on: ubuntu-24.04-arm", runtime_job)
+        self.assertNotIn("self-hosted", runtime_job)
+        self.assertIn("Start matching ARM64 Android emulator with host acceleration", runtime_job)
+        self.assertIn("android_arm64_hwasan", runtime_job)
 
         workflow_files = list((REPOSITORY / ".github/workflows").glob("*.yml"))
         workflow_files.extend((REPOSITORY / ".github/workflows").glob("*.yaml"))
-        label_uses = sum(
-            candidate_label in candidate.read_text(encoding="utf-8")
+        runner_uses = sum(
+            "runs-on: ubuntu-24.04-arm" in candidate.read_text(encoding="utf-8")
             for candidate in workflow_files
         )
-        self.assertEqual(1, label_uses, "only the guarded HWASan runtime job may request this label")
+        self.assertEqual(1, runner_uses, "only the guarded Android HWASan runtime job may use this runner")
 
     def test_linux_analysis_workflow_triplets_exist(self):
         workflow = (REPOSITORY / ".github/workflows/ai-checks.yml").read_text(encoding="utf-8")

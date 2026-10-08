@@ -1501,8 +1501,8 @@
       "MC-AI-0037"
     ],
     "acceptance": "Deliver immutable, generation-tagged hard/soft entity permissions for all/players/mobs/technical-entities/per-kind and explicit-member/selector groups; namespace custom keys and defer world subjects. Cover movement, flight/collision, blocks, inventory, invincibility, commands, and permission-backed mode presets. Use CoreLang 0.1.3.1 (only documented 0.1.3.3 maintenance), retain interpreter/JIT parity, and prepare kernels off physics ticks. Test latency, loss, jitter, freezes, reordering, and duplication. Replicate a 29/16 × 10/16 × 10/16 player, 16-color palette, and first/rear-third/front-third views. Keep position-driven radius-256 terrain camera-independent and derive face LOD at projected area ≤2 px². Provide four inspected 2560x1440 Mac screenshots with prominent labels centered below the HUD: (1) the flying third-person player offset from the central spike, with the full spike, most of its first ring, and terrain beyond visible from slightly above while emphasizing the central landform's mass; (2) the player in the trench near the first spike; (3) the player climbing the mountain; and (4) first-person at horizontal X/Z (0, 0). Target stable 120 FPS at x200 and the world border as diagnostic only. Pass platform and automated MC-AI-0249 gates; include the accepted CoreCpp scope MC-AI-0056 Runtime executors, MC-AI-0057 Runtime audio, and MC-AI-0240 renderer diagnostics in this snapshot. Release S7, hold the minor open for feedback, and do not start S8.",
-    "evidence": "At the 2026-10-08 local source checkpoint, tip 7cef244bddf8474cbba0a2b14bf91e2bb61dec5d (tree 7d4c8b6d437976c314b0ab0346f6ad1adf1f1598) collects 138 child commits through MC-AI-0384. 0384 replaces the incompatible macOS Apple leaks scan with ASan-integrated LSan while retaining CTest and leak controls; its exact Luna/high review matched fingerprint 8f4d8a0d4ba4dd901c0d974435ab46e5925164079147793d5da834954ecbd0f2, focused tests passed 43/43, and the normal hook passed 74 Python tests. Run 37726090270 on 5fd failed after CTest and LSan summarization in Apple leak inspection; this remains a failure, not a pass. The 5e cadence and earlier Windows failures remain historical pending exact-source CI. Four retained captures were visually inspected; the 0257 wrapper 3/4 failure remains recorded.",
-    "blocker": "0384 is local source only; the corrected macOS ASan/LSan row still requires a new exact-promotion run. All 13 analysis rows, including candidate-specific Android HWASan runtime, remain mandatory; one-job physical runner registration authorization is still pending, and no token or runner has been used. Strict/tag checks, release assets and sidecars, downloaded-byte verification, published-byte Mac/Android runtime, and separate user Windows hands-on evidence remain open. Keep the minor active for feedback; do not start S8.",
+    "evidence": "Previous evidence remains historical. MC-AI-0386 changes the Android HWASan runtime job from an unavailable per-run self-hosted Mac to GitHub-hosted ubuntu-24.04-arm, retaining the ai-main-only trigger and requiring Linux KVM before emulator startup. Local focused tests and docs checks pass; exact-candidate hosted runtime evidence has not yet been produced.",
+    "blocker": "MC-AI-0386 provides the hosted ARM64/KVM route, but its source change still needs to pass source CI and be included in a fresh exact-candidate ai-main promotion. The candidate-specific Android HWASan runtime row, remaining analysis rows, strict/tag checks, release assets/sidecars, downloaded-byte verification, published-byte Mac/Android runtime, and separate user Windows hands-on evidence remain open. Keep the minor active for feedback; do not start S8.",
     "owner": "Codex",
     "level": "snapshot",
     "parent": "MC-AI-0033",
@@ -1535,7 +1535,8 @@
       "Fail fast on terminal analysis-job failures, retain Python test logs, and report bounded Windows gate timing and fixture diagnostics.",
       "Add narrow macOS LSan allocation-site controls with ordinary application and real audio-callback leak controls.",
       "Correct Windows-native path expectations and CRLF CTest parsing while preserving original log byte counts and hashes.",
-      "Add bounded service-cadence observation to the full pending-connection retry lifecycle test, preserving one-attempt and prompt-stop guarantees while rejecting sparse callbacks and repeated or long stalls."
+      "Add bounded service-cadence observation to the full pending-connection retry lifecycle test, preserving one-attempt and prompt-stop guarantees while rejecting sparse callbacks and repeated or long stalls.",
+      "Route the required Android ARM64 HWASan emulator row through hosted ARM64 Linux/KVM without adding Linux game support; exact-candidate hosted runtime remains required."
     ],
     "baseline_commit": "0514890690c10d80b7475fd0b76204e800948db3",
     "commits": [],
@@ -13464,6 +13465,49 @@
       "The required clang_static_analysis row uses a supported scan-build help probe; its analyzer configure/build commands are unchanged, and the manifest regression locks the supported probe."
     ],
     "baseline_commit": "daaf4a362bf1f8740d164c9719172db52f28fce1",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0386",
+    "title": "Run Android HWASan on a supported hosted ARM64 Linux runner",
+    "kind": "chore",
+    "status": "done",
+    "priority": "P1",
+    "route": "luna",
+    "milestone": "ED-010-S7",
+    "depends_on": [],
+    "acceptance": "Route only android-hwasan-runtime to ubuntu-24.04-arm while preserving its ai-main-only push condition, exact-candidate artifact binding, APK preflight-before-boot order, runtime receipt, artifact uploads, and cleanup. Make the lifecycle require the host-matching accelerator (KVM on Linux; HVF on macOS) and fail closed before launching the emulator if -accel-check does not confirm it; always launch with -accel on and never fall back to TCG. Add regressions proving Linux KVM and macOS HVF are accepted, a missing/wrong accelerator prevents Popen, and only the Android runtime job uses this hosted runner. Update automation/S7 records to explicitly distinguish Linux CI host from supported product platforms; add no Linux game build or artifact. Focused tests, ai_tasks/ai_docs checks, and diff checks pass. The successful exact-candidate hosted HWASan runtime row remains a separate MC-AI-0038 release gate.",
+    "evidence": "Focused command `python3 -B -m unittest script.tests.test_android_hwasan_emulator script.tests.test_ai_analysis_matrix script.tests.test_workflow_contexts -q` passed 88 tests. `python3 -B script/ai_tasks.py check`, `python3 -B script/ai_docs.py refresh`, `python3 -B script/ai_docs.py check`, and `git diff --check` passed. This is local source evidence only; no hosted ARM64 emulator has run on this candidate, and the exact-candidate HWASan row remains an MC-AI-0038 release gate.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0038",
+    "motivation": "The required Android HWASan row is queued indefinitely because its source workflow requests a per-run self-hosted macOS ARM64 runner that is not registered. GitHub-hosted ARM64 Linux supports Android hardware acceleration, and the Android API 35 arm64-v8a system image matches that runner architecture.",
+    "context": "Use ubuntu-24.04-arm only as an isolated CI host for the Android ARM64 HWASan emulator. This does not add Linux as a MinecraftClone product target or produce Linux game artifacts. Preserve the ai-main push guard, exact-candidate APK binding, preflight/runtime order, and fail-closed HWASan requirement. Keep macOS HVF operation available for supported local use.",
+    "complexity": "medium",
+    "created_at": "2026-10-08",
+    "resolved_at": "2026-10-08",
+    "resolution_changes": "Changed only the S7 Android HWASan CI host route and its accelerator validation: the guarded runtime job uses GitHub-hosted ubuntu-24.04-arm; the isolated lifecycle selects KVM on Linux and HVF on macOS, validates the host-matching accelerator before boot, rejects unsupported hosts before emulator-tool installation, and always uses -accel on. Updated automation guidance and S7 records to state that Linux is a CI host only, not a game target. Added positive KVM/HVF, fail-closed mismatch/unusable/unsupported-host, and hosted-runner-scope regressions.",
+    "plan": [
+      "Clarify acceptance and implementation steps.",
+      "Route only the guarded Android HWASan runtime job to ubuntu-24.04-arm and preserve artifact identity, ordering, and cleanup.",
+      "Select the required accelerator by host OS; validate KVM on Linux and retain HVF on macOS, failing before emulator launch on unsupported hosts or failed acceleration checks.",
+      "Add behavioral and workflow regressions for accepted accelerators, fail-closed negatives, runner scope, and retained Android-only product artifacts.",
+      "Update the automation guide, S7 aggregate, and task evidence with the distinction between CI host OS and game support."
+    ],
+    "product_changes": [
+      "No product behavior changed."
+    ],
+    "code_changes": [
+      "Route only the ai-main-guarded Android HWASan runtime workflow to GitHub-hosted ubuntu-24.04-arm and validate KVM/HVF against the host OS before accelerated emulator startup.",
+      "Add host-accelerator, fail-closed, and workflow-runner-scope regressions; document Linux as CI-host-only."
+    ],
+    "baseline_commit": "dfff61cfe8f25258457fac566706b15bcfabd885",
     "commits": [],
     "finalized": true,
     "retrospective": "",
