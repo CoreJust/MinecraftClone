@@ -553,7 +553,7 @@ class AnalysisMatrixTests(unittest.TestCase):
         self.assertIn("linux_lsan", self.matrix.REQUIRED_ROW_IDS)
         self.assertIn("linux_msan", self.matrix.REQUIRED_ROW_IDS)
 
-    def test_macos_address_and_leak_sanitizers_cover_the_full_ctest_run(self):
+    def test_macos_address_row_uses_integrated_lsan_for_the_full_ctest_run(self):
         row = next(row for row in self.manifest["rows"] if row["id"] == "macos_asan")
         self.assertEqual(row["environment"].get("ASAN_OPTIONS"), "detect_leaks=1")
         self.assertEqual(
@@ -570,11 +570,17 @@ class AnalysisMatrixTests(unittest.TestCase):
         self.assertEqual(controls_index, 0)
         self.assertLess(controls_index, configure_index)
         self.assertLess(controls_index, build_index)
-        self.assertTrue(any(command[0] == "ctest" for command in row["commands"]))
-        self.assertTrue(
-            any(command[:3] == ["python", "script/ci/verify_macos_lsan.py", "summarize"] for command in row["commands"])
+        ctest_index = next(index for index, command in enumerate(row["commands"]) if command[0] == "ctest")
+        summary_index = next(
+            index
+            for index, command in enumerate(row["commands"])
+            if command[:3] == ["python", "script/ci/verify_macos_lsan.py", "summarize"]
         )
-        self.assertTrue(any(command[0] == "leaks" for command in row["commands"]))
+        self.assertLess(build_index, ctest_index)
+        self.assertLess(ctest_index, summary_index)
+        self.assertFalse(any(command[0] == "leaks" for command in row["commands"]))
+        self.assertFalse(any(probe[0] == "leaks" for probe in row["tool_probes"]))
+        self.assertFalse(any("leaks" in flag for flag in row["flags"]))
 
     def test_matrix_row_environment_resolves_checkout_root_placeholders(self):
         row = next(row for row in self.manifest["rows"] if row["id"] == "macos_asan")

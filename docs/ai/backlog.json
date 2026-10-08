@@ -13391,5 +13391,43 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0384",
+    "title": "Use ASan-integrated LSan for the macOS address row",
+    "kind": "chore",
+    "status": "done",
+    "priority": "P1",
+    "route": "luna",
+    "milestone": "ED-010-S7",
+    "depends_on": [],
+    "acceptance": "Replace the MC-AI-0249 macos_asan row native Apple leaks probe/atExit command and flag with ASan-integrated LSan only. Preserve address instrumentation, ASAN_OPTIONS=detect_leaks=1, the exact LSan suppression file, early clean/ordinary-app/real-AudioUnit leak controls, production CTest, and suppression/residual summarization. Add a focused regression that preserves those required controls and proves no leaks probe or command remains. Update AUTOMATION.md and explicitly supersede the assistant-authored phrase native at-exit leaks in MC-AI-0352 and Apple leaks invocation intact in MC-AI-0381; preserve historical result text and all 13-row sanitizer requirements. Do not change timeouts, suppressions, other rows, or sanitizer coverage.",
+    "evidence": "Removed the macos_asan row native Apple leaks tool probe, flag, and at-exit command while retaining ASAN_OPTIONS=detect_leaks=1, exact suppressions, early controls, CTest, and the LSan summarizer. Regression asserts command order and absence of leaks probe/command. `python3 -m unittest script.tests.test_ai_analysis_matrix` passed 43/43 in 4.58s. `python3 script/ai_docs.py refresh` and `check` passed; `python3 script/ai_tasks.py render` and `check` passed. Historical exact-5fd job log remains `/private/tmp/mc-s7-release-final.L5eyna/ci-5fd-debug-macos-113144469210.log` (SHA-256 c2db1796ed3513c088ffcad582428a7fc2faae6434f65e8b081a2868d2f1636e); analysis artifact `macos_asan.json` remains under `/private/tmp/mc-s7-release-final.L5eyna/ci-5fd-macos-analysis-11529350148/` (SHA-256 24c0384d26cecca571a1f07b08aa535a88f93a6223cbeaa1f1f5186c11730d2b). These are failure evidence, not a pass for the corrected row.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0038",
+    "motivation": "The exact 5fd macOS ASan row passed CTest and its integrated LSan summary, then timed out in Apple leaks because that inspector could not inspect the ASan malloc zone. The extra native scan is incompatible with the already-required integrated detector.",
+    "context": "Exact promotion 5fd704e11211426562dacace0492e0c29f279812, run 37726090270, job 113144469210: macos_asan CTest passed 589/589 and its LSan summary reported no unsuppressed leaks; the final leaks --atExit step timed out after 266.273s because it could not inspect the ASan malloc zone and failed to resolve the Homebrew LLVM ASan runtime path. A local macOS 26 leaks invocation said the process was not debuggable, so it is not heap-inspection evidence. Clang documents macOS leak detection through ASAN_OPTIONS=detect_leaks=1 and LSan integrated with ASan: https://clang.llvm.org/docs/AddressSanitizer.html#memory-leak-detection. The native-inspector phrases in MC-AI-0352 and MC-AI-0381 were assistant-authored additions, not user sanitizer requirements; this task supersedes them without changing historical CI results.",
+    "complexity": "medium",
+    "created_at": "2026-10-08",
+    "resolved_at": "2026-10-08",
+    "resolution_changes": "Removed the native Apple leaks probe, flag, and --atExit command only from macos_asan. Kept ASan address instrumentation, integrated detect_leaks=1, exact suppressions, clean/application/real-AudioUnit controls, production CTest, and LSan diagnostics. Updated automation guidance and the focused manifest regression. The complete matrix test module passed 43/43; ai_docs refresh/check and ai_tasks render/check passed. The 5fd failure remains historical, and no corrected hosted row pass is claimed.",
+    "plan": [
+      "Remove only the incompatible native Apple leaks probe and at-exit command from macos_asan. Keep integrated LSan and all current controls/CTest/reporting. Update the owning guide and focused manifest regression. Validate task/docs, freeze one exact candidate, obtain one Luna/high review, and commit through the normal hook."
+    ],
+    "product_changes": [
+      "No product behavior change; preserve the requested sanitizer coverage through ASan-integrated LSan."
+    ],
+    "code_changes": [
+      "The macos_asan matrix row uses ASan detect_leaks=1 and its verified LSan controls/summarizer without wrapping the ASan binary in leaks."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "Updated AUTOMATION.md to state the supported ASan-integrated LSan path and link Clang documentation; source_state was refreshed and docs check passed.",
+    "environment_review": "",
+    "backlog_review": "Added MC-AI-0384 as the 138th S7 child. MC-AI-0038 aggregate evidence and finalization remain a separate batch-level action."
   }
 ]
