@@ -19,53 +19,70 @@ supplement these records without becoming separate task state.
 | Change lists | Product changes first, code changes second |
 | Commit relation | Exactly one task commit with one `Task-ID` trailer; derived hashes and GitHub links |
 
-Public task IDs are sequential; files and trailers retain `MC-AI-####`. The
-[project skills](SKILLS.md) resolve them. Hierarchy: **basic → snapshot → minor → major**.
-Parentage groups work; dependencies order it. Future stages remain plans.
-An active aggregate dependency is satisfied only after it is finalized; this
-lets implementation continue while a completed snapshot waits on platform
-gates or feedback. Active unfinalized aggregates and unfinished basic tasks
-remain unresolved dependencies.
+Public IDs are sequential; files and trailers use `MC-AI-####`. See the
+[project skills](SKILLS.md). Hierarchy: **basic → snapshot → minor → major**;
+parentage groups tasks and dependencies order them. Future stages remain plans.
+An aggregate dependency is satisfied only when finalized, so implementation can
+continue while a completed snapshot awaits gates or feedback. Active aggregates
+and unfinished basic tasks remain unresolved dependencies.
 
 ## Basic task loop
 
-1. Choose authorized work with `ai_tasks.py ready`; create missing tasks with `add`. Inspect status/diff, the task, and one relevant code guide.
-2. Set owner and active status. Follow [model routing](MODELS.md); delegate only independent owned paths. The coordinator owns integration checks.
-3. Implement the smallest accepted change with meaningful tests. Record unrelated findings as tasks. Update guides, hashes, and generated task documents.
-   Asynchronous or mutable systems require bounded ownership, backpressure or cancellation, deterministic ordering, and headless contract coverage. Use deterministic clocks, inputs, and mocks for cross-system behavior.
+1. Choose authorized work with `ai_tasks.py ready`; add missing tasks. Inspect status/diff, the task, and one relevant code guide.
+2. Set owner/status and follow [model routing](MODELS.md). Delegate only independent paths; the coordinator owns integration checks.
+3. Implement the smallest accepted change with meaningful tests. Record unrelated findings as tasks; update guides, hashes, and generated task docs. Async or mutable systems need bounded ownership, backpressure or cancellation, deterministic ordering, and headless contract coverage; use deterministic clocks, inputs, and mocks.
 4. Resolve only with actual changes and acceptance evidence. Stage only task changes and required traceability metadata.
-5. Run one bounded **Luna review batch** at the active selected effort, including **max** when selected, for the exact staged task candidate. [Commit gates](COMMITS.md) bind the review to the exact staged tree; reuse that receipt only when inputs are unchanged and do not add a duplicate precommit wrapper. Fix genuine findings before commit; send only a changed delta to the same reviewer, and defer non-blocking cosmetic suggestions.
+5. Run one bounded **Luna review batch** at the selected effort (including **max** when selected) for the exact staged candidate. [Commit gates](COMMITS.md) bind the receipt to that tree; reuse only unchanged inputs and avoid duplicate precommit wrappers. Fix genuine findings through a delta to the same reviewer; defer non-blocking cosmetics.
 6. Commit once with one `Task-ID: MC-AI-####` trailer. Later changes require new tasks.
 
-The commit/push hooks own `ai_check.py --fast`: docs, backlog, plan, index,
-whitespace and receipt checks always run. Exact nonshared Python module/test
-pairs use focused tests. Pure native/build changes with docs metadata run the
-source-policy CLI and skip unrelated Python tests; unknown or shared tooling
-uses the full Python suite. Source violations fail; ordinary dirty/version
-publisher failures are allowed during development.
+Commit/push hooks own `ai_check.py --fast`, which always checks docs, backlog,
+plan, index, whitespace, and receipts. Exact nonshared Python pairs use focused
+tests. Native/build changes with docs metadata run source policy without
+unrelated Python tests; unknown/shared tooling runs the full Python suite.
+Source violations fail; ordinary dirty/version publisher failures are allowed
+during development.
 
-Full, candidate and strict checks always run the complete Python suite. Batch
-up to 8–10 tasks with disjoint ownership. Run one full integration gate and
-required runtime checks per batch, then push. Reuse evidence only for unchanged
-inputs; avoid duplicate precommit checks and broad reviews.
+Full, candidate, and strict checks run the complete Python suite. Batch up to
+8–10 tasks with disjoint ownership; run one full integration gate and required
+runtime checks per batch, then push. Reuse only unchanged evidence; avoid
+duplicate precommit checks and broad reviews.
+
+Python tests have a 300-second budget by default and 420 seconds on Windows;
+phase output and summary show elapsed time. The Windows runtime-staging CMake
+fixture is limited to 60 seconds; timeout remains a failure and reports elapsed
+time and captured partial output.
 
 Full local, candidate, and strict CTest phases use a 240-second default test
-timeout within a 2,400-second phase budget; explicit per-test timeouts still
-apply. The nested `MinecraftClone.ServerOnlyBuild` check still configures
-without the client and builds all of `mc_tests`, then runs only
-`GameServerTest.JoinRepliesArePrivateAndNewPlayersReachExistingClients` and
-fails if that test is not registered. The outer suite already runs the
-remaining tests.
+timeout within a 2,400-second phase budget; explicit per-test timeouts apply.
+The nested `MinecraftClone.ServerOnlyBuild` configures without the client,
+builds all of `mc_tests`, and runs only
+`GameServerTest.JoinRepliesArePrivateAndNewPlayersReachExistingClients`; it
+fails if that test is unregistered. The outer suite runs the remaining tests.
 
-After the main gameplay features of a snapshot are usable, launch the normal macOS candidate for the user's hands-on check before platform-CI work. User approval of that candidate may unlock the next snapshot's implementation in a separate task while the current snapshot finishes Windows/Android and artifact evidence; it does not authorize publication or mark the release complete.
+After a snapshot's main gameplay features are usable, launch the normal macOS
+candidate for the user's hands-on check before platform CI. Approval may unlock
+the next snapshot's implementation in a separate task while the current one
+finishes Windows/Android and artifact evidence; it does not authorize
+publication or complete the release.
 
 ## Snapshots and versions
 
-A snapshot records the preceding `ai-main` commit as `baseline_commit`. At finalization, collect **all basic-task commits since that boundary**, including merged branches, rather than only changes after the latest basic commit. The original branches have related but divergent history; collection uses all reachable commits outside the baseline, including both parents of a pending promotion. Imported pre-policy commits require explicit task mappings. No silent omissions or history rewrites.
+A snapshot records the preceding `ai-main` commit as `baseline_commit`. At
+finalization collect **all basic-task commits since that boundary**, including
+merged branches. Related branches may diverge, so include all reachable commits
+outside the baseline and both parents of a pending promotion. Map imported
+pre-policy commits explicitly; never omit changes or rewrite history.
 
 Fill product changes first, code changes second; reconcile planned and actual children, then `ai_history.py finalize <id>`. It refuses missing/unfinished children and untraceable commits. Plans are retained beside actual results. Acceptance review must also establish that no promised product scope was silently dropped.
 
-Snapshot closure runs the full suite, all enabled code checks, and every enabled additional gate. CI dependency, environment, and provenance checks fail closed before expensive builds; no arbitrary check skip is allowed. The renderer-smoke gate is mandatory for snapshot, minor and major full checks: it runs the windowed noninteractive `RendererSmokeTest`, fails closed on missing registration, device/validation/test failures or timeouts, and records its receipt. It is not a fully headless texture-golden gate; S4 owns those deterministic offscreen comparisons. Then follow [the publishing workflow](../VERSION_CONVENTION.md), including a reviewed promotion commit into `ai-main`.
+Snapshot closure runs the full suite, enabled code checks, and additional gates.
+CI dependency, environment, and provenance checks fail closed; no arbitrary
+check skip is allowed. The required snapshot/minor/major renderer-smoke gate
+runs windowed `RendererSmokeTest`, fails on missing registration, device,
+validation, test, or timeout errors, and records its receipt. It is not a
+headless texture-golden gate; S4 owns offscreen comparisons. Then follow the
+[publishing workflow](../VERSION_CONVENTION.md), including reviewed promotion
+to `ai-main`.
 
 Minor closure groups snapshot tasks; major closure groups minor tasks. Both repeat snapshot closure at their full scope and add Terra/high review, documentation sanity, environment verification, hindsight, and backlog maintenance. Record findings and fixes in the version task; create missing follow-up tasks, adjust priorities/dependencies, and repair justified skills/hooks/environment issues. The [release checklist](RELEASES.md) owns these gates.
 

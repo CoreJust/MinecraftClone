@@ -32,6 +32,15 @@ class WorkflowContextTests(unittest.TestCase):
                 with self.subTest(workflow=workflow_path.name, revision=revision):
                     self.assertEqual(revision, expected_revision)
 
+    def test_desktop_diagnostics_retain_python_test_phase_log_after_failure(self):
+        workflow = WORKFLOWS[0].read_text(encoding="utf-8")
+        diagnostics = workflow.split("      - name: Upload desktop diagnostics", maxsplit=1)[1].split(
+            "      - name:", maxsplit=1
+        )[0]
+
+        self.assertIn("if: always()", diagnostics)
+        self.assertIn("build/ai-checks/python-tests.log", diagnostics)
+
     def test_snapshot_trust_condition_has_valid_bash_then_separator(self):
         workflow = WORKFLOWS[1].read_text(encoding="utf-8")
         self.assertIn("git tag --points-at", workflow)

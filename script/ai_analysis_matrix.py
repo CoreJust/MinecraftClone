@@ -628,6 +628,23 @@ def _expand_environment(command: Sequence[str], environment: Mapping[str, str]) 
     return expanded
 
 
+def resolve_row_environment(
+    manifest_row: Mapping[str, Any],
+    root: Path,
+    inherited: Mapping[str, str],
+) -> dict[str, str]:
+    """Resolve manifest environment values against the checkout root and host environment."""
+
+    environment = dict(inherited)
+    environment["MC_ANALYSIS_ROOT"] = str(root.resolve())
+    declared = _require_environment(
+        manifest_row.get("environment"), f"manifest row {manifest_row['id']}.environment"
+    )
+    for name, value in declared.items():
+        environment[name] = _expand_environment([value], environment)[0]
+    return environment
+
+
 def _bounded_text(value: str, limit: int = 16_384) -> str:
     if len(value) <= limit:
         return value
@@ -732,8 +749,7 @@ def run_row(
             status = "passed"
             executed_commands: list[dict[str, Any]] = []
             command_outputs: list[str] = []
-            command_environment = os.environ.copy()
-            command_environment.update(_require_environment(row.get("environment"), f"manifest row {row_id}.environment"))
+            command_environment = resolve_row_environment(row, root, os.environ)
             for command in row["commands"]:
                 expanded_command = _expand_environment(command, command_environment)
                 if row_id in REQUIRED_ANALYSIS_CONFIGURATION and expanded_command[:2] == ["cmake", "--build"]:

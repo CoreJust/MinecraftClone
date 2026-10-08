@@ -18,6 +18,22 @@ from typing import Any, Sequence
 
 CHECK_NAME = "S7 sanitizer and static-analysis matrix"
 WORKFLOW_PATH = ".github/workflows/ai-checks.yml"
+REQUIRED_PRODUCER_JOBS = frozenset(
+    {
+        "fast (ubuntu-latest)",
+        "fast (windows-2022)",
+        "desktop (macos, debug)",
+        "desktop (macos, release)",
+        "desktop (windows, debug)",
+        "desktop (windows, release)",
+        "Linux analysis (linux_lsan)",
+        "Linux analysis (linux_msan)",
+        "android-hwasan-build",
+        "android-hwasan-runtime",
+    }
+)
+NONTERMINAL_JOB_STATUSES = frozenset({"queued", "in_progress", "waiting", "pending", "requested"})
+NONTERMINAL_WORKFLOW_STATUSES = frozenset({"queued", "in_progress", "waiting", "pending", "requested"})
 SHA_PATTERN = re.compile(r"^[0-9a-f]{40}$")
 GITHUB_REMOTE_PATTERN = re.compile(r"github\.com[:/]([^/]+/[^/]+?)(?:\.git)?$")
 
@@ -107,6 +123,148 @@ def fetch_workflow_run(repository: str, run_id: int) -> dict[str, Any]:
     return _github_json(f"repos/{repository}/actions/runs/{run_id}")
 
 
+def fetch_workflow_runs(repository: str, commit: str) -> list[dict[str, Any]]:
+    command = [
+        "gh",
+        "api",
+        "--method",
+        "GET",
+        "--paginate",
+        "--slurp",
+        f"repos/{repository}/actions/workflows/ai-checks.yml/runs",
+        "-F",
+        f"head_sha={commit}",
+        "-F",
+        "event=push",
+        "-F",
+        "per_page=100",
+    ]
+    completed = subprocess.run(command, text=True, capture_output=True, check=False)
+    if completed.returncode:
+        detail = (completed.stdout + completed.stderr).strip()
+        raise GateError("GitHub workflow-run query failed; authenticate gh and retry: " + detail)
+    try:
+        pages = json.loads(completed.stdout)
+    except json.JSONDecodeError as error:
+        raise GateError(f"GitHub returned invalid workflow-run JSON: {error}") from error
+    if not isinstance(pages, list):
+        raise GateError("GitHub returned malformed workflow-run data")
+    runs: list[dict[str, Any]] = []
+    for page in pages:
+        if not isinstance(page, dict) or not isinstance(page.get("workflow_runs"), list):
+            raise GateError("GitHub returned malformed workflow-run data")
+        total_count = page.get("total_count")
+        if not isinstance(total_count, int) or total_count > len(page["workflow_runs"]):
+            raise GateError("more than 100 workflow runs exist; increase API pagination before verifying")
+        if any(not isinstance(run, dict) for run in page["workflow_runs"]):
+            raise GateError("GitHub returned malformed workflow-run data")
+        runs.extend(page["workflow_runs"])
+    return runs
+
+
+def fetch_workflow_jobs(repository: str, run_id: int, attempt: int) -> list[dict[str, Any]]:
+    page = _github_json(
+        f"repos/{repository}/actions/runs/{run_id}/attempts/{attempt}/jobs?per_page=100"
+    )
+    jobs = page.get("jobs")
+    if (
+        not isinstance(jobs, list)
+        or not isinstance(page.get("total_count"), int)
+        or page["total_count"] != len(jobs)
+        or any(not isinstance(job, dict) for job in jobs)
+    ):
+        raise GateError("workflow job list is missing, malformed, or exceeds one page")
+    return jobs
+
+
+def _is_expected_workflow_path(value: Any) -> bool:
+    if not isinstance(value, str):
+        return False
+    if value == WORKFLOW_PATH:
+        return True
+    ref_suffix = value.removeprefix(WORKFLOW_PATH + "@")
+    return ref_suffix != value and bool(ref_suffix)
+
+
+def latest_exact_workflow_run(repository: str, commit: str) -> dict[str, Any] | None:
+    runs = [
+        run
+        for run in fetch_workflow_runs(repository, commit)
+        if _is_expected_workflow_path(run.get("path"))
+        and run.get("head_sha") == commit
+        and run.get("event") == "push"
+        and isinstance(run.get("id"), int)
+        and isinstance(run.get("run_attempt"), int)
+    ]
+    if not runs:
+        return None
+    return max(
+        runs,
+        key=lambda run: (
+            run.get("created_at", ""),
+            run.get("run_number", 0),
+            run["run_attempt"],
+            run["id"],
+        ),
+    )
+
+
+def _raise_for_failed_producer(
+    jobs: list[dict[str, Any]], commit: str, workflow_status: Any
+) -> None:
+    producers = [job for job in jobs if job.get("name") in REQUIRED_PRODUCER_JOBS]
+    failed = [
+        job
+        for job in producers
+        if job.get("status") == "completed" and job.get("conclusion") != "success"
+    ]
+    if failed:
+        details = ", ".join(
+            f"{job.get('name')}={job.get('conclusion')}" for job in sorted(failed, key=lambda item: item.get("name", ""))
+        )
+        raise GateError(f"required analysis producer failed for {commit}: {details}")
+    unexpected = [
+        job for job in producers
+        if job.get("status") not in NONTERMINAL_JOB_STATUSES | {"completed"}
+    ]
+    if unexpected:
+        details = ", ".join(
+            f"{job.get('name')} status={job.get('status')!r}"
+            for job in sorted(unexpected, key=lambda item: item.get("name", ""))
+        )
+        raise GateError(f"required analysis producer has unexpected status for {commit}: {details}")
+    missing = REQUIRED_PRODUCER_JOBS - {job.get("name") for job in producers}
+    if missing:
+        names = ", ".join(sorted(missing))
+        if workflow_status in NONTERMINAL_WORKFLOW_STATUSES:
+            raise GatePending(
+                f"required analysis producers have not appeared yet for {commit} "
+                f"(workflow status={workflow_status!r}): {names}"
+            )
+        raise GateError(
+            f"required analysis producers are missing for {commit}: {names}"
+        )
+
+
+def _check_latest_producers(repository: str, workflow: dict[str, Any], commit: str) -> list[dict[str, Any]]:
+    run_id = workflow.get("id")
+    attempt = workflow.get("run_attempt")
+    if not isinstance(run_id, int) or not isinstance(attempt, int) or attempt <= 0:
+        raise GateError("exact-candidate ai-checks workflow has no valid run attempt")
+    jobs = fetch_workflow_jobs(repository, run_id, attempt)
+    _raise_for_failed_producer(jobs, commit, workflow.get("status"))
+    return jobs
+
+
+def _belongs_to_workflow_attempt(run: dict[str, Any], repository: str, workflow_id: int) -> bool:
+    details = run.get("details_url")
+    match = re.fullmatch(
+        rf"https://github\.com/{re.escape(repository)}/actions/runs/([1-9][0-9]*)/job/([1-9][0-9]*)",
+        details or "",
+    )
+    return match is not None and int(match.group(1)) == workflow_id and int(match.group(2)) == run.get("id")
+
+
 def fetch_aggregate_receipt(repository: str, run_id: int, commit: str) -> dict[str, Any]:
     page = _github_json(f"repos/{repository}/actions/runs/{run_id}/artifacts?per_page=100")
     artifacts = page.get("artifacts")
@@ -161,7 +319,27 @@ def verify_gate(root: Path, commit: str, repository: str | None = None) -> dict[
         for run in runs
         if run.get("name") == CHECK_NAME and run.get("head_sha") == commit
     ]
+    workflow = latest_exact_workflow_run(repo, commit)
+    if workflow is None:
+        raise GatePending(f"{CHECK_NAME!r} has not reported on {commit}")
+    workflow_id = workflow["id"]
+    jobs = _check_latest_producers(repo, workflow, commit)
+    aggregate_job_ids = {
+        job["id"]
+        for job in jobs
+        if job.get("name") == CHECK_NAME and isinstance(job.get("id"), int)
+    }
+    matching = [
+        run
+        for run in matching
+        if _belongs_to_workflow_attempt(run, repo, workflow_id) and run.get("id") in aggregate_job_ids
+    ]
     if not matching:
+        if workflow.get("status") == "completed" and workflow.get("conclusion") != "success":
+            raise GateError(
+                "exact-candidate ai-checks workflow completed unsuccessfully "
+                f"(conclusion={workflow.get('conclusion')!r})"
+            )
         raise GatePending(f"{CHECK_NAME!r} has not reported on {commit}")
     latest = max(matching, key=lambda run: (run.get("started_at", ""), run.get("id", 0)))
     app = latest.get("app")
@@ -172,15 +350,16 @@ def verify_gate(root: Path, commit: str, repository: str | None = None) -> dict[
     if match is None or int(match.group(2)) != latest.get("id"):
         raise GateError("check run has no matching GitHub Actions workflow job URL")
     run_id = int(match.group(1))
-    workflow = fetch_workflow_run(repo, run_id)
-    if (workflow.get("id") != run_id or workflow.get("path") != WORKFLOW_PATH
-            or workflow.get("head_sha") != commit or workflow.get("event") != "push"):
+    fetched_workflow = fetch_workflow_run(repo, run_id)
+    if (fetched_workflow.get("id") != run_id or not _is_expected_workflow_path(fetched_workflow.get("path"))
+            or fetched_workflow.get("head_sha") != commit or fetched_workflow.get("event") != "push"
+            or fetched_workflow.get("run_attempt") != workflow.get("run_attempt")):
         raise GateError("check run does not belong to the exact-candidate ai-checks workflow")
-    workflow_status = workflow.get("status")
-    workflow_pending = workflow_status in {"queued", "in_progress", "waiting", "pending", "requested"}
+    workflow_status = fetched_workflow.get("status")
+    workflow_pending = workflow_status in NONTERMINAL_WORKFLOW_STATUSES
     if not workflow_pending and workflow_status != "completed":
         raise GateError(f"exact-candidate ai-checks workflow has unexpected status {workflow_status!r}")
-    if workflow_status == "completed" and workflow.get("conclusion") != "success":
+    if workflow_status == "completed" and fetched_workflow.get("conclusion") != "success":
         raise GateError("check run does not belong to a successful exact-candidate ai-checks workflow")
 
     status = latest.get("status")
@@ -201,6 +380,15 @@ def verify_gate(root: Path, commit: str, repository: str | None = None) -> dict[
             f"exact-candidate ai-checks workflow for {commit} is still running "
             f"(status={workflow_status!r})"
         )
+    pending_producers = [
+        job
+        for job in jobs
+        if job.get("name") in REQUIRED_PRODUCER_JOBS
+        and job.get("status") in NONTERMINAL_JOB_STATUSES
+    ]
+    if pending_producers:
+        names = ", ".join(sorted(job["name"] for job in pending_producers))
+        raise GatePending(f"required analysis producers for {commit} are still running: {names}")
     tree = git(root, "rev-parse", "--verify", f"{commit}^{{tree}}")
     _validate_aggregate_receipt(fetch_aggregate_receipt(repo, run_id, commit), root, commit, tree)
     return {
