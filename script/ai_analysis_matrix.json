@@ -4,24 +4,23 @@
   "rows": [
     {
       "id": "macos_asan",
-      "label": "macOS AddressSanitizer with native at-exit leak inspection",
+      "label": "macOS AddressSanitizer with integrated LeakSanitizer",
       "platform": "macos",
       "capability": "clang-address-sanitizer",
-      "flags": ["-DCMAKE_BUILD_TYPE=Release", "-DMC_ENABLE_HIGH_ASSERT=OFF", "-DMC_ENABLE_SANITIZERS=ON", "-DMC_SANITIZER=address", "leaks -atExit"],
+      "flags": ["-DCMAKE_BUILD_TYPE=Release", "-DMC_ENABLE_HIGH_ASSERT=OFF", "-DMC_ENABLE_SANITIZERS=ON", "-DMC_SANITIZER=address"],
       "compile_commands": "build/analysis-macos-asan/compile_commands.json",
       "required_compile_flags": ["-fsanitize=address"],
       "environment": {
         "ASAN_OPTIONS": "detect_leaks=1",
         "LSAN_OPTIONS": "suppressions={env:MC_ANALYSIS_ROOT}/script/ci/macos_lsan.supp:print_suppressions=1"
       },
-      "tool_probes": [["python", "--version"], ["clang", "--version"], ["clang++", "--version"], ["cmake", "--version"], ["leaks", "-h"]],
+      "tool_probes": [["python", "--version"], ["clang", "--version"], ["clang++", "--version"], ["cmake", "--version"]],
       "commands": [
         ["python", "script/ci/verify_macos_lsan.py", "controls", "--build-dir", "build/analysis-macos-asan/lsan-controls"],
         ["cmake", "--preset", "analysis-macos-asan"],
         ["cmake", "--build", "--preset", "analysis-macos-asan"],
         ["ctest", "--test-dir", "build/analysis-macos-asan", "--output-on-failure", "--no-tests=error"],
-        ["python", "script/ci/verify_macos_lsan.py", "summarize", "--last-test-log", "build/analysis-macos-asan/Testing/Temporary/LastTest.log"],
-        ["leaks", "--atExit", "--", "build/analysis-macos-asan/tests/mc_tests", "--gtest_filter=CoreLangPolicyTest.*:FlightWorldTest.*:PlayerPresentationTest.*"]
+        ["python", "script/ci/verify_macos_lsan.py", "summarize", "--last-test-log", "build/analysis-macos-asan/Testing/Temporary/LastTest.log"]
       ],
       "timeout_seconds": 900
     },

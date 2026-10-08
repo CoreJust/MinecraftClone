@@ -31,24 +31,30 @@ python3 script/ai_analysis_matrix.py verify build/ai-checks/analysis-matrix.json
 ```
 
 Receipts bind candidates, manifests, tools, commands and diagnostics; missing,
-unavailable or stale rows fail closed. macOS runs ASan/leaks, UBSan and TSan;
-Windows runs MSVC ASan/analysis; Android uses Release HWASan; Linux uses
-tests-only LSan/MSan with libc++ and instrumented dependencies. CTest rejects
-empty discovery, UBSan halts on diagnostics, and performance uses ordinary
-Release. Local checks defer hosted receipts; CI binds them to immutable trees
-before promotion and strict/tag checks.
+unavailable or stale rows fail closed. macOS runs ASan with integrated LSan,
+UBSan, and TSan; Windows runs MSVC ASan/analysis; Android uses Release HWASan;
+Linux uses tests-only LSan/MSan with libc++ and instrumented dependencies.
+CTest rejects empty discovery, UBSan halts on diagnostics, and performance uses
+ordinary Release. Local checks defer hosted receipts; CI binds them to immutable
+trees before promotion and strict/tag checks.
 
 The macOS ASan row keeps `detect_leaks=1` and runs clean, ordinary-leak, and real
-AudioUnit callback controls before configuring/building the game. Callback
-evidence requires observed, successful execution; zero OSStatus for setup,
-start, stop, uninitialize, and dispose; and one 4096-byte app-leak block with
+AudioUnit callback controls before configuring/building the game. Leak reports
+come from LSan integrated with ASan; Clang documents macOS leak detection via
+`ASAN_OPTIONS=detect_leaks=1` and LSan integration in its
+[AddressSanitizer guide](https://clang.llvm.org/docs/AddressSanitizer.html#memory-leak-detection).
+Do not wrap the ASan-instrumented process with Apple `leaks`: on exact promotion
+5fd704e, that external inspector could not inspect the ASan malloc zone
+(job 113144469210; see [MC-AI-0384](tasks/MC-AI-0384.md)). Callback evidence
+requires observed, successful execution; zero OSStatus for setup, start, stop,
+uninitialize, and dispose; and one 4096-byte app-leak block with
 both `createApplicationLeak` and `renderAndLeak`. Ordinary leaks must retain
 their 4096-byte app frame. The three exact LSan sites are
 `AMCP::Utility::Dispatch_Queue::install_mig_server`,
 `AutoreleasePoolPage::autoreleaseNoPage`, and `__CFTSDGetTable`. Row receipts
-retain suppression counts and unsuppressed reports. These exact stack-frame rules can exclude allocations regardless of
-origin; they do not establish harmlessness. Do not broaden them or hide other
-unsuppressed reports.
+retain suppression counts and unsuppressed reports. These exact stack-frame
+rules can exclude allocations regardless of origin; they do not establish
+harmlessness. Do not broaden them or hide other unsuppressed reports.
 
 Before waiting for the aggregate, the exact-candidate gate waiter inspects the
 latest push attempt and required jobs: terminal failure, cancellation, or skip
