@@ -153,6 +153,12 @@ class WorkflowContextTests(unittest.TestCase):
         runtime_job = workflow.split("\n  android-hwasan-runtime:", maxsplit=1)[1].split(
             "\n  analysis-matrix:", maxsplit=1
         )[0]
+        self.assertIn(
+            '    runs-on: "mc-s7-hwasan-' + '$' + '{{ github.sha }}-' + '$' + '{{ github.run_id }}"',
+            runtime_job,
+        )
+        self.assertNotIn("runs-on: [self-hosted", runtime_job)
+        self.assertNotIn("ubuntu-24.04-arm", runtime_job)
         self.assertLess(
             runtime_job.index("Select and validate Java 21"),
             runtime_job.index("Bootstrap pinned Android SDK tools"),
