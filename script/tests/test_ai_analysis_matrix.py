@@ -108,6 +108,18 @@ class AnalysisMatrixTests(unittest.TestCase):
         self.assertIn("--checks=clang-analyzer-*", row["commands"][0])
         self.assertIn("--warnings-as-errors=clang-analyzer-*", row["commands"][0])
 
+    def test_clang_static_analysis_probes_scan_build_with_supported_help_option(self):
+        row = next(item for item in self.manifest["rows"] if item["id"] == "clang_static_analysis")
+
+        self.assertEqual(row["tool_probes"], [["clang", "--version"], ["scan-build", "--help"]])
+        self.assertEqual(
+            row["commands"],
+            [
+                ["cmake", "--preset", "analysis-clang-static"],
+                ["cmake", "--build", "--preset", "analysis-clang-static"],
+            ],
+        )
+
     def test_android_clang_tidy_receipt_requires_the_exact_analyzer_invocation(self):
         receipt = self.receipt()
         row = next(item for item in receipt["rows"] if item["id"] == "android_clang_tidy")

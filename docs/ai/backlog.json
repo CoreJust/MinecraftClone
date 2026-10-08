@@ -13429,5 +13429,46 @@
     "docs_review": "Updated AUTOMATION.md to state the supported ASan-integrated LSan path and link Clang documentation; source_state was refreshed and docs check passed.",
     "environment_review": "",
     "backlog_review": "Added MC-AI-0384 as the 138th S7 child. MC-AI-0038 aggregate evidence and finalization remain a separate batch-level action."
+  },
+  {
+    "id": "MC-AI-0385",
+    "title": "Use a supported scan-build probe for macOS static analysis",
+    "kind": "chore",
+    "status": "done",
+    "priority": "P0",
+    "route": "luna",
+    "milestone": "ED-010-S7",
+    "depends_on": [],
+    "acceptance": "The required clang_static_analysis row uses the documented, side-effect-free scan-build --help capability probe while retaining clang --version and its existing analyzer configure/build commands. Existing runner logic still fails closed when a required probe is missing or exits unsuccessfully. A focused regression asserts the exact manifest probe and analyzer commands; the full analysis-matrix unit-test module passes.",
+    "evidence": "Added regression test test_clang_static_analysis_probes_scan_build_with_supported_help_option; observed RED against the unsupported --version probe, then GREEN after changing only the scan-build probe to --help. `python3 -m unittest script.tests.test_ai_analysis_matrix -v` passed 44/44 in 4.422s. The existing two scan-build analyzer commands and fail-closed probe handling are unchanged. Exact hosted validation remains part of the parent S7 release gate.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0038",
+    "motivation": "The exact a3d49d2 macOS Debug job ran macos_asan, macos_tsan, and macos_ubsan successfully, and all 589 CTests passed, but the required clang_static_analysis row became unavailable because its scan-build --version probe returned an unsupported-option error. This blocked the matrix and artifact workflow.",
+    "context": "Run 37738321164 job 113182880548, artifact analysis-desktop-macos-a3d49d2511e1c6de13e6a1c758b2710eecf01318: clang_static_analysis diagnostic is \"scan-build: unrecognized option --version\"; the remaining macOS analyzer rows were skipped after fail-fast. LLVM scan-build documents -h/--help as supported invocation options. The receipt is unavailable evidence, not a pass.",
+    "complexity": "low",
+    "created_at": "2026-10-08",
+    "resolved_at": "2026-10-08",
+    "resolution_changes": "Replaced the scan-build --version preflight with LLVM-documented --help; retained clang --version and the static-analysis configure/build commands. Added a focused manifest regression. This changes tool capability detection only; it does not weaken required analyzer execution. Exact-source a3d CI remains a recorded failure; the corrected row requires a new promoted candidate run.",
+    "plan": [
+      "Clarify acceptance and implementation steps.",
+      "Reproduce the exact scan-build probe mismatch from the candidate-bound CI receipt.",
+      "Add a focused manifest regression, then switch only the unsupported probe to a documented capability check.",
+      "Run the focused matrix test module and task/docs checks; commit through the normal one-task gate and require a new exact-candidate hosted matrix."
+    ],
+    "product_changes": [
+      "No product behavior changed."
+    ],
+    "code_changes": [
+      "The required clang_static_analysis row uses a supported scan-build help probe; its analyzer configure/build commands are unchanged, and the manifest regression locks the supported probe."
+    ],
+    "baseline_commit": "daaf4a362bf1f8740d164c9719172db52f28fce1",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]
