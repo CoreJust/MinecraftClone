@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-"""Own the isolated Android HWASan emulator lifecycle on a physical Mac host."""
+"""Own the isolated Android HWASan emulator lifecycle on an accelerated host."""
 
 from __future__ import annotations
 
 import argparse
 import json
 import os
+import platform
 import re
 import shlex
 import shutil
@@ -214,6 +215,15 @@ def _port_available(port: int) -> bool:
     return True
 
 
+def _required_hypervisor(system_name: str | None = None) -> tuple[str, str]:
+    host = system_name or platform.system()
+    if host == "Linux":
+        return "KVM", "kvm"
+    if host == "Darwin":
+        return "Hypervisor.Framework", "hypervisor.framework"
+    raise LifecycleError(f"unsupported Android emulator host platform: {host}")
+
+
 def _inside(path: Path, root: Path) -> bool:
     try:
         path.relative_to(root)
@@ -256,6 +266,7 @@ def start(runner_temp: Path, run_id: str, run_attempt: str, sdk_root: Path) -> i
     env.update(_environment(state))
     env["ANDROID_SDK_ROOT"] = str(sdk_root)
     env.pop("ANDROID_I_WANT_MY_TCG", None)
+    hypervisor_name, hypervisor_marker = _required_hypervisor()
     _assert_device_and_ports_free(sdk_root, env)
 
     sdkmanager = sdk_root / "cmdline-tools" / "latest" / "bin" / "sdkmanager"
@@ -284,8 +295,12 @@ def start(runner_temp: Path, run_id: str, run_attempt: str, sdk_root: Path) -> i
         env=env,
     )
     accel = _run([str(emulator), "-accel-check"], env=env, timeout=30)
-    if "hypervisor.framework" not in accel.lower():
-        raise LifecycleError(f"emulator -accel-check did not confirm Hypervisor.Framework: {accel}")
+    accel_lower = accel.lower()
+    unavailable_markers = ("not installed", "not usable", "cannot be used", "can not be used")
+    if hypervisor_marker not in accel_lower or any(marker in accel_lower for marker in unavailable_markers):
+        raise LifecycleError(
+            f"emulator -accel-check did not confirm usable {hypervisor_name}: {accel}"
+        )
     _assert_device_and_ports_free(sdk_root, env)
 
     emulator = emulator.resolve(strict=True)

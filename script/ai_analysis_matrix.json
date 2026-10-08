@@ -131,7 +131,7 @@
       "platform": "hosted",
       "capability": "clang-analyzer",
       "flags": ["scan-build interposition", "-Xanalyzer", "-analyzer-output=text"],
-      "tool_probes": [["clang", "--version"], ["scan-build", "--version"]],
+      "tool_probes": [["clang", "--version"], ["scan-build", "--help"]],
       "commands": [["cmake", "--preset", "analysis-clang-static"], ["cmake", "--build", "--preset", "analysis-clang-static"]],
       "timeout_seconds": 900
     },

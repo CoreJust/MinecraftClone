@@ -48,13 +48,17 @@ class AndroidHwasanEmulatorTests(unittest.TestCase):
 
     @staticmethod
     def process_command(emulator: Path, avd_name: str, extra: str = "") -> str:
-        # The runtime reads macOS ps output, even when this fixture runs on Windows.
         return (
             f"{emulator.as_posix()} -avd {avd_name} "
             f"-port 5558 -accel on{extra}"
         )
 
-    def setup_started_emulator(self) -> tuple[Path, Path, mock.Mock, list]:
+    def setup_started_emulator(
+        self,
+        *,
+        host_platform: str = "Darwin",
+        accel_output: str = "accel: 0\nHypervisor.Framework OS X Version 26.6\n",
+    ) -> tuple[Path, Path, mock.Mock, list]:
         root = self.prepare()
         sdk_root = root / "android-sdk"
         emulator = sdk_root / "emulator" / "emulator"
@@ -80,7 +84,7 @@ class AndroidHwasanEmulatorTests(unittest.TestCase):
                 )
             if command_args[-1:] == ["-accel-check"]:
                 return self.lifecycle.subprocess.CompletedProcess(
-                    command_args, 0, "accel: 0\nHypervisor.Framework OS X Version 26.6\n", ""
+                    command_args, 0, accel_output, ""
                 )
             return self.lifecycle.subprocess.CompletedProcess(command_args, 0, "", "")
 
@@ -88,7 +92,7 @@ class AndroidHwasanEmulatorTests(unittest.TestCase):
             self.lifecycle.subprocess, "Popen", return_value=process
         ) as popen, mock.patch.object(self.lifecycle, "_port_available", return_value=True), mock.patch.object(
             self.lifecycle, "_process_snapshot", return_value=("Thu Oct  7 10:00:00 2026", command)
-        ):
+        ), mock.patch.object(self.lifecycle.platform, "system", return_value=host_platform):
             self.lifecycle.start(self.runner_temp, self.run_id, self.attempt, sdk_root)
         return root, sdk_root, popen, commands
 
@@ -162,7 +166,21 @@ class AndroidHwasanEmulatorTests(unittest.TestCase):
                 self.lifecycle.start(self.runner_temp, self.run_id, self.attempt, shared_sdk_root)
         check_device.assert_not_called()
 
-    def test_start_creates_isolated_avd_without_force_and_requires_hvf_acceleration(self):
+    def test_start_rejects_unsupported_host_before_installing_emulator_tools(self):
+        root = self.prepare()
+        sdk_root = root / "android-sdk"
+        sdk_root.mkdir()
+        with mock.patch.object(self.lifecycle.platform, "system", return_value="Windows"), mock.patch.object(
+            self.lifecycle, "_assert_device_and_ports_free"
+        ), mock.patch.object(self.lifecycle, "_run_stream") as install_tools, mock.patch.object(
+            self.lifecycle.subprocess, "Popen"
+        ) as popen:
+            with self.assertRaisesRegex(self.lifecycle.LifecycleError, "unsupported Android emulator host"):
+                self.lifecycle.start(self.runner_temp, self.run_id, self.attempt, sdk_root)
+        install_tools.assert_not_called()
+        popen.assert_not_called()
+
+    def test_start_creates_isolated_avd_without_force_and_requires_hvf_on_macos(self):
         root, sdk_root, popen, commands = self.setup_started_emulator()
         state = json.loads((root / self.lifecycle.STATE_FILE).read_text(encoding="utf-8"))
         self.assertEqual(state["avd_name"], f"mc-hwasan-{self.run_id}-{self.attempt}")
@@ -190,6 +208,51 @@ class AndroidHwasanEmulatorTests(unittest.TestCase):
             all(command[1:3] == ["-s", "emulator-5558"] for command, _ in commands if command[-1:] == ["get-state"])
         )
 
+    def test_start_accepts_kvm_and_launches_accelerated_emulator_on_linux(self):
+        root, sdk_root, popen, commands = self.setup_started_emulator(
+            host_platform="Linux",
+            accel_output="accel: 0\nKVM (version 12) is installed and usable.\n",
+        )
+        self.assertTrue(root.is_dir())
+        accel_check = next(command for command, _ in commands if command[-1:] == ["-accel-check"])
+        self.assertEqual(accel_check[0], str((sdk_root / "emulator" / "emulator").resolve()))
+        launch = popen.call_args.args[0]
+        self.assertEqual(launch[launch.index("-accel") + 1], "on")
+
+    def test_start_fails_closed_before_launch_when_expected_acceleration_is_missing(self):
+        root = self.prepare()
+        sdk_root = root / "android-sdk"
+        emulator = sdk_root / "emulator" / "emulator"
+        emulator.parent.mkdir(parents=True)
+        emulator.touch()
+        with mock.patch.object(self.lifecycle, "_assert_device_and_ports_free"), mock.patch.object(
+            self.lifecycle, "_run_stream"
+        ), mock.patch.object(
+            self.lifecycle, "_run", return_value="accel: 0\nHypervisor.Framework OS X Version 26.6\n"
+        ), mock.patch.object(self.lifecycle.platform, "system", return_value="Linux"), mock.patch.object(
+            self.lifecycle.subprocess, "Popen"
+        ) as popen:
+            with self.assertRaisesRegex(self.lifecycle.LifecycleError, "usable KVM"):
+                self.lifecycle.start(self.runner_temp, self.run_id, self.attempt, sdk_root)
+        popen.assert_not_called()
+
+    def test_start_fails_closed_before_launch_when_kvm_is_reported_unusable(self):
+        root = self.prepare()
+        sdk_root = root / "android-sdk"
+        emulator = sdk_root / "emulator" / "emulator"
+        emulator.parent.mkdir(parents=True)
+        emulator.touch()
+        with mock.patch.object(self.lifecycle, "_assert_device_and_ports_free"), mock.patch.object(
+            self.lifecycle, "_run_stream"
+        ), mock.patch.object(
+            self.lifecycle, "_run", return_value="accel: 0\nKVM is not installed and not usable.\n"
+        ), mock.patch.object(self.lifecycle.platform, "system", return_value="Linux"), mock.patch.object(
+            self.lifecycle.subprocess, "Popen"
+        ) as popen:
+            with self.assertRaisesRegex(self.lifecycle.LifecycleError, "usable KVM"):
+                self.lifecycle.start(self.runner_temp, self.run_id, self.attempt, sdk_root)
+        popen.assert_not_called()
+
     def test_start_fails_closed_when_emulator_serial_is_already_registered(self):
         root = self.prepare()
         sdk_root = root / "android-sdk"
@@ -200,8 +263,8 @@ class AndroidHwasanEmulatorTests(unittest.TestCase):
             [str(adb), "-s", "emulator-5558", "get-state"], 0, "device\n", ""
         )
         with mock.patch.object(self.lifecycle.subprocess, "run", return_value=listing), mock.patch.object(
-            self.lifecycle.subprocess, "Popen"
-        ) as popen:
+            self.lifecycle.platform, "system", return_value="Darwin"
+        ), mock.patch.object(self.lifecycle.subprocess, "Popen") as popen:
             with self.assertRaisesRegex(self.lifecycle.LifecycleError, "already registered"):
                 self.lifecycle.start(self.runner_temp, self.run_id, self.attempt, sdk_root)
         popen.assert_not_called()
@@ -221,6 +284,8 @@ class AndroidHwasanEmulatorTests(unittest.TestCase):
         for occupied_port in (5558, 5559):
             with self.subTest(port=occupied_port), mock.patch.object(
                 self.lifecycle.subprocess, "run", return_value=listing
+            ), mock.patch.object(
+                self.lifecycle.platform, "system", return_value="Darwin"
             ), mock.patch.object(
                 self.lifecycle, "_port_available", side_effect=lambda port: port != occupied_port
             ), mock.patch.object(self.lifecycle.subprocess, "Popen") as popen:
