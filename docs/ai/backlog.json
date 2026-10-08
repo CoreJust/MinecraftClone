@@ -13514,5 +13514,41 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0387",
+    "title": "Make Android HWASan emulator lifecycle tests portable on Windows",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P1",
+    "route": "luna",
+    "milestone": "ED-010-S7",
+    "depends_on": [],
+    "acceptance": "Make only the serial-registration and occupied-port lifecycle regression cases mock a supported host so they reach their intended failure conditions on any runner OS. Preserve the separate unsupported-host fail-closed regression.",
+    "evidence": "The exact-candidate Windows CI run 37751770947 exposed three false failures because host detection correctly rejected Windows before the serial/port assertions. After mocking Darwin only in those three subcases, python3 -B -m unittest script.tests.test_android_hwasan_emulator -q passed all 17 tests locally. The new source CI run will be tracked separately as an S7 aggregate release gate.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0038",
+    "motivation": "The required Windows fast CI job fails because three lifecycle tests intended to reach serial/port checks call start() without controlling host detection; on Windows the supported-host guard correctly rejects first.",
+    "context": "Windows is a fast-check host, not a supported Android emulator runtime host. The cases should model a supported Linux or macOS host so they exercise their intended serial/port contract, while the separate unsupported-host regression continues to prove fail-closed behavior.",
+    "complexity": "low",
+    "created_at": "2026-10-08",
+    "resolved_at": "2026-10-08",
+    "resolution_changes": "Added supported-host mocks to the serial-registration test and both occupied-port subcases; the focused 17-test lifecycle suite passes. Production behavior is unchanged, and the distinct unsupported-host fail-closed regression remains intact.",
+    "plan": [
+      "Mock platform.system as Linux or Darwin only in the serial and port preflight tests; retain the unsupported-platform negative test; run the focused lifecycle suite and project fast gate; record exact CI evidence."
+    ],
+    "product_changes": [],
+    "code_changes": [
+      "Mock a supported host only in the serial-registration and port-occupancy lifecycle tests, preserving the unsupported-host fail-closed regression."
+    ],
+    "baseline_commit": "60d8f744d6ad0c100fd865fee0a0f677f0ae217f",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]

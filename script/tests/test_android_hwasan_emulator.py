@@ -263,8 +263,8 @@ class AndroidHwasanEmulatorTests(unittest.TestCase):
             [str(adb), "-s", "emulator-5558", "get-state"], 0, "device\n", ""
         )
         with mock.patch.object(self.lifecycle.subprocess, "run", return_value=listing), mock.patch.object(
-            self.lifecycle.subprocess, "Popen"
-        ) as popen:
+            self.lifecycle.platform, "system", return_value="Darwin"
+        ), mock.patch.object(self.lifecycle.subprocess, "Popen") as popen:
             with self.assertRaisesRegex(self.lifecycle.LifecycleError, "already registered"):
                 self.lifecycle.start(self.runner_temp, self.run_id, self.attempt, sdk_root)
         popen.assert_not_called()
@@ -284,6 +284,8 @@ class AndroidHwasanEmulatorTests(unittest.TestCase):
         for occupied_port in (5558, 5559):
             with self.subTest(port=occupied_port), mock.patch.object(
                 self.lifecycle.subprocess, "run", return_value=listing
+            ), mock.patch.object(
+                self.lifecycle.platform, "system", return_value="Darwin"
             ), mock.patch.object(
                 self.lifecycle, "_port_available", side_effect=lambda port: port != occupied_port
             ), mock.patch.object(self.lifecycle.subprocess, "Popen") as popen:
