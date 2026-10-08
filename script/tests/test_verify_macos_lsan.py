@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import importlib.util
 import sys
 import tempfile
@@ -133,12 +134,15 @@ Direct leak of 64 byte(s) in 1 object(s) allocated from:
 SUMMARY: AddressSanitizer: 64 byte(s) leaked in 1 allocation(s).
 Test Failed.
 """
+        raw = log.replace("\n", "\r\n").encode("utf-8")
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "LastTest.log"
-            path.write_text(log, encoding="utf-8")
+            path.write_bytes(raw)
             report = self.verifier.summarize_last_test_log(path)
         self.assertEqual(report["status"], "failed")
         self.assertEqual(report["tests"], 2)
+        self.assertEqual(report["last_test_log_bytes"], len(raw))
+        self.assertEqual(report["last_test_log_sha256"], hashlib.sha256(raw).hexdigest())
         self.assertEqual(
             report["suppression_hits"]["AMCP::Utility::Dispatch_Queue::install_mig_server"],
             {"count": 2, "bytes": 128},

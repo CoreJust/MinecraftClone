@@ -579,10 +579,11 @@ class AnalysisMatrixTests(unittest.TestCase):
     def test_matrix_row_environment_resolves_checkout_root_placeholders(self):
         row = next(row for row in self.manifest["rows"] if row["id"] == "macos_asan")
         environment = self.matrix.resolve_row_environment(row, Path("/private/tmp/minecraft"), {})
-        self.assertEqual(environment["MC_ANALYSIS_ROOT"], "/private/tmp/minecraft")
+        expected_root = str(Path("/private/tmp/minecraft").resolve())
+        self.assertEqual(environment["MC_ANALYSIS_ROOT"], expected_root)
         self.assertEqual(
             environment["LSAN_OPTIONS"],
-            "suppressions=/private/tmp/minecraft/script/ci/macos_lsan.supp:print_suppressions=1",
+            f"suppressions={expected_root}/script/ci/macos_lsan.supp:print_suppressions=1",
         )
 
     def test_linux_presets_are_tests_only_and_use_distinct_sanitizers(self):

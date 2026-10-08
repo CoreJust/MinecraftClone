@@ -238,7 +238,7 @@ def run_controls(build_dir: Path) -> dict[str, Any]:
 def summarize_last_test_log(path: Path) -> dict[str, Any]:
     try:
         raw = path.read_bytes()
-        text = raw.decode("utf-8", errors="replace")
+        text = raw.decode("utf-8", errors="replace").replace("\r\n", "\n")
     except OSError as error:
         raise VerificationError(f"cannot read CTest LastTest.log at {path}: {error}") from error
     headers = list(TEST_HEADER.finditer(text))

@@ -13308,5 +13308,43 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0382",
+    "title": "Make Windows fast checks path- and line-ending portable",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P1",
+    "route": "luna",
+    "milestone": "ED-010-S7",
+    "depends_on": [],
+    "acceptance": "Preserve native Path.resolve behavior and derive the test expectation from the host-resolved checkout root. Parse Windows CRLF CTest logs without retaining carriage returns in test names, while keeping hashes and byte counts bound to the original raw log. The focused suites pass without skipping either regression; do not alter product path semantics or weaken coverage.",
+    "evidence": "The exact ee7 push-run Windows failure is preserved at /private/tmp/mc-s7-release-final.L5eyna/ci-0379-fast-windows-113080255070.log: run 37705960094/job 113080255070 failed two of 539 tests in 268.655s (not a timeout). The matrix regression now derives its expected path from Path.resolve(); the CTest regression writes explicit CRLF and verifies the raw byte count and SHA-256. `python3 -m unittest script.tests.test_ai_analysis_matrix script.tests.test_verify_macos_lsan -v` passed 50/50 with no skips; `git diff --check` passed. This local result does not claim a hosted Windows pass; that remains part of MC-AI-0038 qualification.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0038",
+    "motivation": "The exact-source Windows fast job failed two Python assertions due host-specific path and CRLF handling, not a test timeout.",
+    "context": "Run 37705960094, job 113080255070, against ee7a7f7f5b9da8acfde443defc7ca50e843ac2bb: test_matrix_row_environment_resolves_checkout_root_placeholders expected a POSIX path but Path.resolve returned D:\\private\\tmp\\minecraft; test_last_test_summary_preserves_suppression_hits_and_unsuppressed_stack reported Noisy.test with a trailing carriage return from CRLF input. The complete job log is /private/tmp/mc-s7-release-final.L5eyna/ci-0379-fast-windows-113080255070.log.",
+    "complexity": "low",
+    "created_at": "2026-10-08",
+    "resolved_at": "2026-10-08",
+    "resolution_changes": "Corrected the Windows-only test expectation to retain native resolved checkout paths, and normalized CRLF before parsing CTest headings while preserving original log hashes and byte counts.",
+    "plan": [
+      "Update the two focused regressions, implement only the parser line-ending correction, and verify both affected suites."
+    ],
+    "product_changes": [
+      "No product behavior changed; this is test and CI diagnostics portability."
+    ],
+    "code_changes": [
+      "Make the checkout-root placeholder test host-native and normalize CRLF when parsing CTest LastTest.log."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]
