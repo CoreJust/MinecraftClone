@@ -131,7 +131,10 @@ def snapshot_source_for_check(
             branch = git_output(root, "branch", "--show-current")
             head = git_output(root, "rev-parse", "HEAD")
             pending_source = merge_head(root)
-            if branch == "ai-dev" and pending_source is None and head == source:
+            supported_source_branch = branch == "ai-dev" or (
+                branch.startswith("codex/ai-") and len(branch) > len("codex/ai-")
+            )
+            if supported_source_branch and pending_source is None and head == source:
                 return source
             if branch == "ai-main" and pending_source == source:
                 return source

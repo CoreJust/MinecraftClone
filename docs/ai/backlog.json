@@ -13659,5 +13659,42 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0391",
+    "title": "Allow Snapshot candidate checks on codex task branches",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P1",
+    "route": "luna",
+    "milestone": "ED-010-S7",
+    "depends_on": [],
+    "acceptance": "In candidate mode, an explicit full immutable source commit is accepted when HEAD equals that source and there is no pending merge on either ai-dev or a codex/ai-* branch. Keep ai-main pending-promotion validation unchanged. Reject short/invalid IDs, mismatched HEAD, pending merges on source branches, and unrelated branch names. Add focused regression tests for each supported and rejected branch/source state; strict promotion/date validation remains unchanged.",
+    "evidence": "python3 -m unittest script.tests.test_ai_check passed 55/55 in 17.128 s. python3 script/ai_check.py --fast passed: docs, backlog, current plan, working/index whitespace, and the full tooling suite passed; full tooling suite took 72.03 s. Regressions cover codex/ai-* source-HEAD acceptance and stale, abbreviated, malformed, unrelated, and pending-merge rejections; existing ai-dev and ai-main promotion behavior remains covered.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0038",
+    "motivation": "Snapshot candidate date binding rejects the permitted codex/ai-* task branch even when its HEAD is the exact immutable source, forcing use of the locally occupied and dirty ai-dev worktree. This blocks the authorized candidate gate and risks unrelated workspace changes.",
+    "context": "Repository policy permits ai-dev or codex/ai-* task branches. Current release work is on codex/ai-MC-AI-0390-capture-udp-ports; the primary ai-dev worktree has pre-existing unrelated changes and must remain untouched.",
+    "complexity": "low",
+    "created_at": "2026-10-09",
+    "resolved_at": "2026-10-09",
+    "resolution_changes": "Snapshot candidate source binding now accepts the project-approved codex/ai-* task branch only when its HEAD matches the full immutable source commit and no merge is pending. Existing ai-dev source and ai-main promotion checks remain unchanged.",
+    "plan": [
+      "Clarify acceptance and implementation steps.",
+      "1. Inspect the current branch/source binding and its tests. 2. Permit the project-approved codex/ai-* task branch form without weakening source identity, merge, or strict-promotion checks. 3. Run focused tests and full ai_check fast/docs gates; record evidence and commit exactly once."
+    ],
+    "product_changes": [],
+    "code_changes": [
+      "Updated script/ai_check.py candidate branch validation and added focused test_ai_check cases for supported codex branches, stale HEAD, unrelated branches, and pending merges."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]
