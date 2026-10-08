@@ -20,8 +20,10 @@
 TEST(PlayerClientCapturePlanTest, FramesTheCentralSpikeAndFirstRingTogether)
 {
     static constexpr int32_t WORLD_CENTER = 32'768;
-    static constexpr int32_t PLAYER_DISTANCE = 243;
-    static constexpr int32_t PLAYER_HEIGHT = 440;
+    static constexpr int32_t PREVIOUS_PLAYER_DISTANCE = 243;
+    static constexpr int32_t PLAYER_DISTANCE = 170;
+    static constexpr int32_t PREVIOUS_PLAYER_HEIGHT = 440;
+    static constexpr int32_t PLAYER_HEIGHT = 420;
     static constexpr int32_t FIRST_RING_RADIUS = 128;
     static constexpr uint32_t FRAME_WIDTH = 2560U;
     static constexpr uint32_t FRAME_HEIGHT = 1440U;
@@ -31,17 +33,26 @@ TEST(PlayerClientCapturePlanTest, FramesTheCentralSpikeAndFirstRingTogether)
     EXPECT_EQ(plan.target.x, WORLD_CENTER - PLAYER_DISTANCE);
     EXPECT_EQ(plan.target.y, WORLD_CENTER);
     EXPECT_EQ(plan.target.z, PLAYER_HEIGHT);
+    EXPECT_NEAR(
+        static_cast<double>(PREVIOUS_PLAYER_DISTANCE - PLAYER_DISTANCE) / PREVIOUS_PLAYER_DISTANCE,
+        0.30,
+        0.01
+    );
+    EXPECT_EQ(PREVIOUS_PLAYER_HEIGHT - PLAYER_HEIGHT, 20);
     EXPECT_EQ(plan.look_angles.yaw_degrees, 110.0);
-    EXPECT_EQ(plan.look_angles.pitch_degrees, 18.0);
-    EXPECT_EQ(plan.vertical_fov_degrees, 90.0);
+    EXPECT_EQ(plan.look_angles.pitch_degrees, 24.0);
+    EXPECT_EQ(plan.vertical_fov_degrees, 100.0);
     EXPECT_EQ(plan.rear_camera_distance, 12.0);
 
     shared::TerrainGenerator const terrain;
     EXPECT_GT(plan.target.z, terrain.heightAt(plan.target.x, plan.target.y));
     EXPECT_LT(plan.target.z, terrain.heightAt(WORLD_CENTER, WORLD_CENTER));
-    int32_t const nearest_ring_x = WORLD_CENTER - FIRST_RING_RADIUS;
-    uint16_t const nearest_ring_height = terrain.heightAt(nearest_ring_x, WORLD_CENTER);
-    EXPECT_EQ(nearest_ring_height, 406U);
+    int32_t const near_ring_x = WORLD_CENTER - FIRST_RING_RADIUS;
+    int32_t const far_ring_x = WORLD_CENTER + FIRST_RING_RADIUS;
+    uint16_t const near_ring_height = terrain.heightAt(near_ring_x, WORLD_CENTER);
+    uint16_t const far_ring_height = terrain.heightAt(far_ring_x, WORLD_CENTER);
+    EXPECT_EQ(near_ring_height, 406U);
+    EXPECT_EQ(far_ring_height, 406U);
 
     client::PlayerPresentationPosition const player_position{
         .x = static_cast<double>(plan.target.x),
@@ -64,14 +75,21 @@ TEST(PlayerClientCapturePlanTest, FramesTheCentralSpikeAndFirstRingTogether)
         static_cast<float>(WORLD_CENTER), static_cast<float>(WORLD_CENTER),
         static_cast<float>(terrain.heightAt(WORLD_CENTER, WORLD_CENTER)), 1.0F,
     });
-    glm::vec3 const ring = projected({
-        static_cast<float>(nearest_ring_x), static_cast<float>(WORLD_CENTER),
-        static_cast<float>(nearest_ring_height), 1.0F,
+    glm::vec3 const near_ring = projected({
+        static_cast<float>(near_ring_x), static_cast<float>(WORLD_CENTER),
+        static_cast<float>(near_ring_height), 1.0F,
     });
-    EXPECT_GT(ring.y, 0.0F);
+    glm::vec3 const far_ring = projected({
+        static_cast<float>(far_ring_x), static_cast<float>(WORLD_CENTER),
+        static_cast<float>(far_ring_height), 1.0F,
+    });
+    EXPECT_GT(near_ring.y, 0.0F);
+    EXPECT_GT(far_ring.y, 0.0F);
     EXPECT_LT(peak.y, 0.0F);
-    EXPECT_LT(std::abs(ring.x), 0.9F);
-    EXPECT_LT(std::abs(ring.y), 0.9F);
+    EXPECT_LT(std::abs(near_ring.x), 0.9F);
+    EXPECT_LT(std::abs(near_ring.y), 0.9F);
+    EXPECT_LT(std::abs(far_ring.x), 0.9F);
+    EXPECT_LT(std::abs(far_ring.y), 0.9F);
     EXPECT_LT(std::abs(peak.x), 0.9F);
     EXPECT_LT(std::abs(peak.y), 0.9F);
 }

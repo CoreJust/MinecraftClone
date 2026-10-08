@@ -808,7 +808,7 @@ class AnalysisMatrixTests(unittest.TestCase):
             runtime_job.index("Start matching ARM64 Android emulator"),
         )
 
-    def test_android_hwasan_runtime_routes_only_to_hosted_arm64_runner(self):
+    def test_android_hwasan_runtime_routes_only_to_candidate_specific_mac_runner(self):
         workflow = (REPOSITORY / ".github/workflows/ai-checks.yml").read_text(encoding="utf-8")
         runtime_job = workflow.split("  android-hwasan-runtime:", 1)[1].split(
             "  analysis-matrix:", 1
@@ -818,18 +818,20 @@ class AnalysisMatrixTests(unittest.TestCase):
             "if: github.event_name == 'push' && github.ref == 'refs/heads/ai-main'",
             runtime_job,
         )
-        self.assertIn("runs-on: ubuntu-24.04-arm", runtime_job)
-        self.assertNotIn("self-hosted", runtime_job)
+        label = '"mc-s7-hwasan-${{ github.sha }}-${{ github.run_id }}"'
+        self.assertIn(f"runs-on: {label}", runtime_job)
+        self.assertNotIn("runs-on: [self-hosted", runtime_job)
+        self.assertNotIn("macOS, ARM64", runtime_job)
         self.assertIn("Start matching ARM64 Android emulator with host acceleration", runtime_job)
         self.assertIn("android_arm64_hwasan", runtime_job)
 
         workflow_files = list((REPOSITORY / ".github/workflows").glob("*.yml"))
         workflow_files.extend((REPOSITORY / ".github/workflows").glob("*.yaml"))
-        runner_uses = sum(
-            "runs-on: ubuntu-24.04-arm" in candidate.read_text(encoding="utf-8")
+        label_uses = sum(
+            label in candidate.read_text(encoding="utf-8")
             for candidate in workflow_files
         )
-        self.assertEqual(1, runner_uses, "only the guarded Android HWASan runtime job may use this runner")
+        self.assertEqual(1, label_uses, "only the guarded Android HWASan job may request this runner label")
 
     def test_linux_analysis_workflow_triplets_exist(self):
         workflow = (REPOSITORY / ".github/workflows/ai-checks.yml").read_text(encoding="utf-8")

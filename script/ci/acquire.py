@@ -562,7 +562,7 @@ def android_command_line_tools() -> dict[str, str]:
     """Select the pinned SDK archive for the CI host, not the Android target."""
     system = host_platform.system()
     machine = host_platform.machine().lower()
-    if system == "Linux" and machine in {"x86_64", "aarch64", "arm64"}:
+    if system == "Linux" and machine == "x86_64":
         return ANDROID_COMMAND_LINE_TOOLS
     if system == "Darwin" and machine in {"aarch64", "arm64"}:
         return ANDROID_MAC_ARM64_COMMAND_LINE_TOOLS

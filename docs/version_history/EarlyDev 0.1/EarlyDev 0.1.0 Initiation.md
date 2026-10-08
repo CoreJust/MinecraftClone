@@ -90,7 +90,14 @@ S7 adds server-authoritative permissions, movement, player presentation, and lon
 
 ![First-person view at horizontal coordinates X/Z 0,0](images/earlydev-0.1.0-7-first-person-origin.png)
 
-These are distinct 2560x1440 macOS gameplay captures from the S7 integration candidate. The central-spike composition uses a 72-chunk server radius; the other three wait for the default 256-chunk terrain radius and mesh coverage before capture. Each image has an in-frame label below the HUD.
+These are distinct 2560x1440 macOS gameplay captures from the Release binary (`dc5d980c00597612728ffcb82b2bb85dc7aa149f68981465500fbf23de2156c5`), built at baseline `e09f77b6d4b567f212922de39d00a881bef9640a` with capture-plan diff SHA-256 `105bdbadb81cfad874410bcd700ebdbcf3a0ba4868a2596b33a95c102ed1136f2`. The central-spike view uses horizontal X/Z `(32598, 32768)`, height 420, yaw 110 degrees, pitch 24 degrees, and 100-degree vertical FOV: 170 blocks from the center, 30% closer and 20 blocks lower than the prior framing. It uses a 72-chunk server radius; the other three use the default 256-chunk terrain radius. The harness waits for full tile/mesh coverage, then sweeps all 16 camera headings before capture. Every image has an in-frame label centered below the HUD.
+
+| Scene | Image | Dimensions | SHA-256 |
+|---|---|---:|---|
+| Central spike, third-person | `earlydev-0.1.0-7-central-spike.png` | 2560×1440 | `65d7e9befbdef32b1bf245dc29b9513f4d7868c393fe147a0a9453c8c563d1ac` |
+| Trench by first spike | `earlydev-0.1.0-7-trench-first-spike.png` | 2560×1440 | `84863a158dc3ac8daa627b5f4f2a6296a1443143f7f3dde948a5eb175bf6438c` |
+| Mountain climb | `earlydev-0.1.0-7-mountain-climb.png` | 2560×1440 | `64efb9c755d8cc3bf409a9b955d4af200d75b7f5c89a7832c6e7f9acec77316e` |
+| Origin, first-person | `earlydev-0.1.0-7-first-person-origin.png` | 2560×1440 | `144b1ce88e1656e4730c82c0802cb7d8173cf17d817ba0690d99490bdca7b481` |
 
 Additions:
 1. General entity permissions with hard restrictions, overridable soft defaults, group resolution, and player mode presets.

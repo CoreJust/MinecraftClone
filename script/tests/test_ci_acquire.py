@@ -211,16 +211,22 @@ class CiAcquireTests(unittest.TestCase):
     def test_install_android_sdk_on_apple_silicon_uses_verified_native_archive(self):
         self.check_android_sdk_install("Darwin", "arm64", acquire.ANDROID_MAC_ARM64_COMMAND_LINE_TOOLS)
 
-    def test_android_sdk_archive_selection_preserves_linux_hosts_and_arm_aliases(self):
+    def test_android_sdk_archive_selection_matches_supported_host_architecture(self):
         for system, machine, config in (
             ("Linux", "x86_64", acquire.ANDROID_COMMAND_LINE_TOOLS),
-            ("Linux", "aarch64", acquire.ANDROID_COMMAND_LINE_TOOLS),
-            ("Linux", "arm64", acquire.ANDROID_COMMAND_LINE_TOOLS),
             ("Darwin", "arm64", acquire.ANDROID_MAC_ARM64_COMMAND_LINE_TOOLS),
             ("Darwin", "aarch64", acquire.ANDROID_MAC_ARM64_COMMAND_LINE_TOOLS),
         ):
             with self.subTest(system=system, machine=machine), mock.patch.object(acquire.host_platform, "system", return_value=system), mock.patch.object(acquire.host_platform, "machine", return_value=machine):
                 self.assertEqual(acquire.android_command_line_tools(), config)
+
+    def test_android_sdk_rejects_linux_arm_hosts_without_matching_tool_archives(self):
+        for machine in ("aarch64", "arm64"):
+            with self.subTest(machine=machine), mock.patch.object(
+                acquire.host_platform, "system", return_value="Linux"
+            ), mock.patch.object(acquire.host_platform, "machine", return_value=machine):
+                with self.assertRaisesRegex(acquire.CiError, f"unsupported Android SDK host: Linux/{machine}"):
+                    acquire.android_command_line_tools()
 
     def test_android_sdk_rejects_unsupported_host_before_download(self):
         with tempfile.TemporaryDirectory() as directory, mock.patch.object(acquire.host_platform, "system", return_value="Darwin"), mock.patch.object(acquire.host_platform, "machine", return_value="x86_64"), mock.patch.object(acquire, "download") as download:
