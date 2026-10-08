@@ -10,6 +10,12 @@ from pathlib import Path
 binary = Path(sys.argv.pop(1)).resolve()
 
 
+def free_udp_port():
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
+        probe.bind(("127.0.0.1", 0))
+        return probe.getsockname()[1]
+
+
 class ClientLaunchTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -28,9 +34,7 @@ class ClientLaunchTest(unittest.TestCase):
         self.fail(f"timed out waiting for {text!r}{diagnostics}")
 
     def test_two_bots_retry_automatic_tokens_without_stdin(self):
-        with socket.socket() as probe:
-            probe.bind(("127.0.0.1", 0))
-            port = probe.getsockname()[1]
+        port = free_udp_port()
 
         with tempfile.TemporaryDirectory() as directory:
             log_path = Path(directory) / "server.log"
@@ -92,9 +96,7 @@ class ClientLaunchTest(unittest.TestCase):
                     server.wait(timeout=5)
 
     def test_bot_remains_alive_until_delayed_server_starts(self):
-        with socket.socket() as probe:
-            probe.bind(("127.0.0.1", 0))
-            port = probe.getsockname()[1]
+        port = free_udp_port()
 
         with tempfile.TemporaryDirectory() as directory:
             log_path = Path(directory) / "server.log"
@@ -177,9 +179,7 @@ class ClientLaunchTest(unittest.TestCase):
                 self.assertIn("invalid game benchmark workload", result.stderr)
 
     def test_normal_server_accepts_selected_render_distance(self):
-        with socket.socket() as probe:
-            probe.bind(("127.0.0.1", 0))
-            port = probe.getsockname()[1]
+        port = free_udp_port()
         with tempfile.TemporaryDirectory() as directory:
             log_path = Path(directory) / "server.log"
             with log_path.open("w+") as log:
