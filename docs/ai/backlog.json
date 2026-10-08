@@ -13621,5 +13621,43 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0390",
+    "title": "Use UDP-aware ephemeral ports for the ENet screenshot capture fixtures",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P1",
+    "route": "luna",
+    "milestone": "ED-010-S7",
+    "depends_on": [],
+    "acceptance": "All four capture fixtures reserve an available IPv4 UDP loopback port matching ENet. The exact macOS Release capture suite passes all four distinct full-load scenes; the captured artifacts and run log are hash-recorded. Windows Release qualification remains a separate parent S7 release gate.",
+    "evidence": "Built Release mc_main SHA-256 e34ae3bde2b7c950ec3fd50cb1eef79677eabad5007964409e4f481f962d9741 from ai-dev source 4a56ef5c1edf32aa4c4301ea1fc055b63b0ee64c with locked CoreCpp d5759fa48b7073787434121624b5f5f93cf3fa2c and CoreProject2026 a4d3fa8a7b81407d0f6bae3ef10d2632d7b74fb9. Focused Release CTest PlayerPlaytestCaptureTest passed 1/1; embedded Python suite passed 4/4 in 265.198s. Raw CTest log docs/ai/evidence/MC-AI-0390-capture-2026-10-09.raw.log SHA-256 1e2f281a64f8d413124c1fe9c77f625bcef4df663db1b390ae9d8fc5d95b5ce5; summary log SHA-256 36193d521f723039681db0a8f4533d085ecfc0d02c7b42c2d3ac71abf032bd45. All four delivered screenshots are 2560x1440 with hashes recorded in version history. This is macOS capture evidence only; Windows Release qualification remains a parent S7 gate.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0038",
+    "motivation": "The four real-network screenshot acceptance tests start an ENet UDP server but select its port by probing TCP, leaving a platform-dependent transport mismatch in the S7 capture fixtures.",
+    "context": "MC-AI-0389 fixed the same TCP-versus-UDP mismatch in three client-launch acceptance tests after the exact Windows Release job failed to create ENet hosts. The four screenshot-capture fixtures still reserve ports using the default SOCK_STREAM transport. The change is test harness and evidence only; product behavior is unchanged.",
+    "complexity": "low",
+    "created_at": "2026-10-08",
+    "resolved_at": "2026-10-09",
+    "resolution_changes": "Replaced the four TCP probes with a shared IPv4 UDP ephemeral-port helper matching ENet. The exact macOS Release PlayerPlaytestCaptureTest passed all four full-load, labeled scenes; no product behavior changed.",
+    "plan": [
+      "Replace the four TCP probes with a shared IPv4 UDP port helper; run the focused Release capture suite; refresh the four screenshot artifacts and exact evidence log; verify the hashes and task checks."
+    ],
+    "product_changes": [
+      "No product behavior changed."
+    ],
+    "code_changes": [
+      "Use UDP-aware ephemeral ports for all four ENet screenshot-capture server fixtures; record a fresh, full-load, labeled four-scene capture result."
+    ],
+    "baseline_commit": "4a56ef5c1edf32aa4c4301ea1fc055b63b0ee64c",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]

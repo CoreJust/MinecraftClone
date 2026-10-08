@@ -1,0 +1,13 @@
+Test project /Users/core-just/.codex/worktrees/s7-release-gates-20261006/MinecraftClone/build/s7-capture-release
+    Start 16: PlayerPlaytestCaptureTest
+1/1 Test #16: PlayerPlaytestCaptureTest ........   Passed  265.31 sec
+
+100% tests passed out of 1
+
+Label Time Summary:
+acceptance    = 265.31 sec*proc (1 test)
+gpu           = 265.31 sec*proc (1 test)
+network       = 265.31 sec*proc (1 test)
+renderer      = 265.31 sec*proc (1 test)
+
+Total Test time (real) = 265.31 sec

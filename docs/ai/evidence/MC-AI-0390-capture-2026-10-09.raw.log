@@ -1,0 +1,86 @@
+Start testing: Oct 09 00:12 CEST
+----------------------------------------------------------
+16/16 Testing: PlayerPlaytestCaptureTest
+16/16 Test: PlayerPlaytestCaptureTest
+Command: "/opt/homebrew/bin/python3.14" "/Users/core-just/.codex/worktrees/s7-release-gates-20261006/MinecraftClone/tests/acceptance/player_playtest_capture_test.py" "/Users/core-just/.codex/worktrees/s7-release-gates-20261006/MinecraftClone/build/s7-capture-release/mc_main"
+Directory: /Users/core-just/.codex/worktrees/s7-release-gates-20261006/MinecraftClone/build/s7-capture-release/tests
+"PlayerPlaytestCaptureTest" start time: Oct 09 00:12 CEST
+Output:
+----------------------------------------------------------
+[00:12:36.531 info at Log.cpp:55 t270760] Log started at 2026-10-08 22:12:36.531231
+[00:12:36.532 info at Host.cpp:102 t270760] Created host at nullopt with 1 max connections and 2 max channels
+[00:12:36.919 info at Host.cpp:246 t270760] Initiated connection to 127.0.0.1:60604 with 2 channels
+[00:12:36.919 info at Client.cpp:51 t270760] Successfully connected to 127.0.0.1:60604
+[00:12:37.275 info at PlayerClient.cpp:1672 t270760] Capture progress: preset=mountain-climb elapsed=0s target=false ready=false heading_applied=false heading_step=0/16 interest=205861 resident=0 visible=0 uploaded=0 required=205861
+[00:12:37.275 info at PlayerClient.cpp:1678 t270760] Capture mesh pipeline: pending=0 jobs=0 dirty=0 results_queued=0 results_drained=0 publish_failures=0 drain_ms=0 reprioritize_ms=0
+[00:12:37.275 info at PlayerClient.cpp:1680 t270760] Capture intake: frames=1 height_changes=0 height_change_backlog=0
+capture client still running after 30s
+[00:13:07.031 info at PlayerClient.cpp:1672 t270760] Capture progress: preset=mountain-climb elapsed=30s target=true ready=false heading_applied=true heading_step=0/16 interest=205861 resident=112737 visible=111388 uploaded=111388 required=205861
+[00:13:07.031 info at PlayerClient.cpp:1678 t270760] Capture mesh pipeline: pending=1370 jobs=32 dirty=0 results_queued=30 results_drained=217143 publish_failures=0 drain_ms=10055 reprioritize_ms=0
+[00:13:07.031 info at PlayerClient.cpp:1680 t270760] Capture intake: frames=3545 height_changes=112737 height_change_backlog=0
+[00:13:34.534 info at PlayerClient.cpp:1734 t270760] Capture sweep started: readiness_elapsed=57s step=1/16 required=205861
+[00:13:34.675 info at PlayerClient.cpp:1750 t270760] Capture sweep heading: step=2/16
+[00:13:34.782 info at PlayerClient.cpp:1750 t270760] Capture sweep heading: step=3/16
+[00:13:34.898 info at PlayerClient.cpp:1750 t270760] Capture sweep heading: step=4/16
+[00:13:35.016 info at PlayerClient.cpp:1750 t270760] Capture sweep heading: step=5/16
+[00:13:35.136 info at PlayerClient.cpp:1750 t270760] Capture sweep heading: step=6/16
+[00:13:35.259 info at PlayerClient.cpp:1750 t270760] Capture sweep heading: step=7/16
+[00:13:35.375 info at PlayerClient.cpp:1750 t270760] Capture sweep heading: step=8/16
+[00:13:35.486 info at PlayerClient.cpp:1750 t270760] Capture sweep heading: step=9/16
+[00:13:35.583 info at PlayerClient.cpp:1750 t270760] Capture sweep heading: step=10/16
+[00:13:35.701 info at PlayerClient.cpp:1750 t270760] Capture sweep heading: step=11/16
+[00:13:35.816 info at PlayerClient.cpp:1750 t270760] Capture sweep heading: step=12/16
+[00:13:35.931 info at PlayerClient.cpp:1750 t270760] Capture sweep heading: step=13/16
+[00:13:36.048 info at PlayerClient.cpp:1750 t270760] Capture sweep heading: step=14/16
+[00:13:36.164 info at PlayerClient.cpp:1750 t270760] Capture sweep heading: step=15/16
+capture client still running after 60s
+.[00:13:37.723 info at Log.cpp:55 t278531] Log started at 2026-10-08 22:13:37.723526
+[00:13:37.724 info at Host.cpp:102 t278531] Created host at nullopt with 1 max connections and 2 max channels
+[00:13:37.902 info at Host.cpp:246 t278531] Initiated connection to 127.0.0.1:61704 with 2 channels
+[00:13:37.903 info at Client.cpp:51 t278531] Successfully connected to 127.0.0.1:61704
+[00:13:38.242 info at PlayerClient.cpp:1672 t278531] Capture progress: preset=first-person-origin elapsed=0s target=true ready=false heading_applied=true heading_step=0/16 interest=205861 resident=0 visible=0 uploaded=0 required=205861
+[00:13:38.242 info at PlayerClient.cpp:1678 t278531] Capture mesh pipeline: pending=0 jobs=0 dirty=0 results_queued=0 results_drained=0 publish_failures=0 drain_ms=0 reprioritize_ms=0
+[00:13:38.242 info at PlayerClient.cpp:1680 t278531] Capture intake: frames=1 height_changes=0 height_change_backlog=0
+capture client still running after 30s
+..[00:14:45.173 info at Log.cpp:55 t284011] Log started at 2026-10-08 22:14:45.173571
+[00:14:45.174 info at Host.cpp:102 t284011] Created host at nullopt with 1 max connections and 2 max channels
+[00:14:45.362 info at Host.cpp:246 t284011] Initiated connection to 127.0.0.1:62483 with 2 channels
+[00:14:45.362 info at Client.cpp:51 t284011] Successfully connected to 127.0.0.1:62483
+[00:14:45.695 info at PlayerClient.cpp:1672 t284011] Capture progress: preset=trench-first-spike elapsed=0s target=false ready=false heading_applied=true heading_step=0/16 interest=205861 resident=0 visible=0 uploaded=0 required=205861
+[00:14:45.695 info at PlayerClient.cpp:1678 t284011] Capture mesh pipeline: pending=0 jobs=0 dirty=0 results_queued=0 results_drained=0 publish_failures=0 drain_ms=0 reprioritize_ms=0
+[00:14:45.695 info at PlayerClient.cpp:1680 t284011] Capture intake: frames=1 height_changes=0 height_change_backlog=0
+capture client still running after 30s
+[00:15:15.467 info at PlayerClient.cpp:1672 t284011] Capture progress: preset=trench-first-spike elapsed=30s target=true ready=false heading_applied=true heading_step=0/16 interest=205861 resident=79095 visible=77785 uploaded=77785 required=205861
+[00:15:15.467 info at PlayerClient.cpp:1678 t284011] Capture mesh pipeline: pending=1322 jobs=32 dirty=0 results_queued=32 results_drained=154937 publish_failures=0 drain_ms=5739 reprioritize_ms=0
+[00:15:15.467 info at PlayerClient.cpp:1680 t284011] Capture intake: frames=2501 height_changes=79095 height_change_backlog=0
+capture client still running after 60s
+[00:15:45.476 info at PlayerClient.cpp:1672 t284011] Capture progress: preset=trench-first-spike elapsed=60s target=true ready=false heading_applied=true heading_step=0/16 interest=205861 resident=124935 visible=123439 uploaded=123439 required=205861
+[00:15:45.476 info at PlayerClient.cpp:1678 t284011] Capture mesh pipeline: pending=1483 jobs=32 dirty=0 results_queued=32 results_drained=87254 publish_failures=0 drain_ms=4199 reprioritize_ms=0
+[00:15:45.476 info at PlayerClient.cpp:1680 t284011] Capture intake: frames=1433 height_changes=45840 height_change_backlog=0
+capture client still running after 90s
+[00:16:15.478 info at PlayerClient.cpp:1672 t284011] Capture progress: preset=trench-first-spike elapsed=90s target=true ready=false heading_applied=true heading_step=0/16 interest=205861 resident=161591 visible=159774 uploaded=159774 required=205861
+[00:16:15.478 info at PlayerClient.cpp:1678 t284011] Capture mesh pipeline: pending=1817 jobs=32 dirty=0 results_queued=32 results_drained=66921 publish_failures=0 drain_ms=4166 reprioritize_ms=0
+[00:16:15.478 info at PlayerClient.cpp:1680 t284011] Capture intake: frames=1145 height_changes=36656 height_change_backlog=0
+capture client still running after 120s
+.
+----------------------------------------------------------------------
+Ran 4 tests in 265.198s
+
+OK
+<end of output>
+Test time = 265.31 sec
+----------------------------------------------------------
+Test Passed.
+"PlayerPlaytestCaptureTest" end time: Oct 09 00:17 CEST
+"PlayerPlaytestCaptureTest" time elapsed: 00:04:25
+----------------------------------------------------------
+
+End testing: Oct 09 00:17 CEST
+
+acceptance = 265.31 sec*proc
+
+gpu = 265.31 sec*proc
+
+network = 265.31 sec*proc
+
+renderer = 265.31 sec*proc

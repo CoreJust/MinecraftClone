@@ -90,14 +90,16 @@ S7 adds server-authoritative permissions, movement, player presentation, and lon
 
 ![First-person view at horizontal coordinates X/Z 0,0](images/earlydev-0.1.0-7-first-person-origin.png)
 
-These are distinct 2560x1440 macOS gameplay captures from the Release binary (`dc5d980c00597612728ffcb82b2bb85dc7aa149f68981465500fbf23de2156c5`), built at baseline `e09f77b6d4b567f212922de39d00a881bef9640a` with capture-plan diff SHA-256 `105bdbadb81cfad874410bcd700ebdbcf3a0ba4868a2596b33a95c102ed1136f2`. The central-spike view uses horizontal X/Z `(32598, 32768)`, height 420, yaw 110 degrees, pitch 24 degrees, and 100-degree vertical FOV: 170 blocks from the center, 30% closer and 20 blocks lower than the prior framing. It uses a 72-chunk server radius; the other three use the default 256-chunk terrain radius. The harness waits for full tile/mesh coverage, then sweeps all 16 camera headings before capture. Every image has an in-frame label centered below the HUD.
+These distinct 2560×1440 macOS captures were produced by Release binary SHA-256 `e34ae3bde2b7c950ec3fd50cb1eef79677eabad5007964409e4f481f962d9741`, built from product source commit `4a56ef5c1edf32aa4c4301ea1fc055b63b0ee64c` with locked CoreCpp `d5759fa48b7073787434121624b5f5f93cf3fa2c` and CoreProject2026 `a4d3fa8a7b81407d0f6bae3ef10d2632d7b74fb9`. The UDP-aware capture-test diff SHA-256 is `e1f90939a01114acc44b17f54b33bb0464c96210f9a814650340995e25852c83`.
+
+The opt-in macOS Release `PlayerPlaytestCaptureTest` passed all four scenes in 265.31 seconds. Its [raw CTest log](../../ai/evidence/MC-AI-0390-capture-2026-10-09.raw.log) has SHA-256 `1e2f281a64f8d413124c1fe9c77f625bcef4df663db1b390ae9d8fc5d95b5ce5`. The central-spike view uses horizontal X/Z `(32598, 32768)`, height 420, yaw 110 degrees, pitch 24 degrees, and 100-degree vertical FOV: 170 blocks from the center, 30% closer and 20 blocks lower than the prior framing. It uses a 72-chunk server radius; the other three use the default 256-chunk terrain radius. The harness waits for full tile/mesh coverage, then sweeps all 16 camera headings before capture. Every image has an in-frame label centered below the HUD.
 
 | Scene | Image | Dimensions | SHA-256 |
 |---|---|---:|---|
-| Central spike, third-person | `earlydev-0.1.0-7-central-spike.png` | 2560×1440 | `65d7e9befbdef32b1bf245dc29b9513f4d7868c393fe147a0a9453c8c563d1ac` |
-| Trench by first spike | `earlydev-0.1.0-7-trench-first-spike.png` | 2560×1440 | `84863a158dc3ac8daa627b5f4f2a6296a1443143f7f3dde948a5eb175bf6438c` |
-| Mountain climb | `earlydev-0.1.0-7-mountain-climb.png` | 2560×1440 | `64efb9c755d8cc3bf409a9b955d4af200d75b7f5c89a7832c6e7f9acec77316e` |
-| Origin, first-person | `earlydev-0.1.0-7-first-person-origin.png` | 2560×1440 | `144b1ce88e1656e4730c82c0802cb7d8173cf17d817ba0690d99490bdca7b481` |
+| Central spike, third-person | `earlydev-0.1.0-7-central-spike.png` | 2560×1440 | `3b1e713bc7acac5e30d37ad2064cfa0d42891342fdacaa67bfafc2703235cea0` |
+| Trench by first spike | `earlydev-0.1.0-7-trench-first-spike.png` | 2560×1440 | `8bd0e4a5285fa1fd9d915d3407434cb802b02b3e6b7f8bd914836e021c1828d6` |
+| Mountain climb | `earlydev-0.1.0-7-mountain-climb.png` | 2560×1440 | `66d60361787962794c0d35a6d21cb808b92ed465748d635d5625f440b996f966` |
+| Origin, first-person | `earlydev-0.1.0-7-first-person-origin.png` | 2560×1440 | `967fdd25d2f4a394d7ec1e1a29fe4f80eff8c5aa9291dd5e5b80f300e0204182` |
 
 Additions:
 1. General entity permissions with hard restrictions, overridable soft defaults, group resolution, and player mode presets.

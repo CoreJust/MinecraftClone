@@ -12,6 +12,12 @@ from pathlib import Path
 binary = Path(sys.argv.pop(1)).resolve()
 
 
+def free_udp_port():
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
+        probe.bind(("127.0.0.1", 0))
+        return probe.getsockname()[1]
+
+
 def run_client(arguments, timeout=1200):
     command = [str(binary), *arguments]
     started = time.monotonic()
@@ -105,9 +111,7 @@ class PlayerPlaytestCaptureTest(unittest.TestCase):
         self.assertGreater(title_pixels, 100)
 
     def test_real_networked_client_renders_terrain_texture_and_hud(self):
-        with socket.socket() as probe:
-            probe.bind(("127.0.0.1", 0))
-            port = probe.getsockname()[1]
+        port = free_udp_port()
         with tempfile.TemporaryDirectory() as directory:
             capture_output = os.environ.get("MC_S7_CENTRAL_CAPTURE_PPM")
             image = (
@@ -146,9 +150,7 @@ class PlayerPlaytestCaptureTest(unittest.TestCase):
                 server.wait(timeout=5)
 
     def test_origin_preset_captures_labeled_first_person_terrain(self):
-        with socket.socket() as probe:
-            probe.bind(("127.0.0.1", 0))
-            port = probe.getsockname()[1]
+        port = free_udp_port()
         with tempfile.TemporaryDirectory() as directory:
             capture_output = os.environ.get("MC_S7_ORIGIN_CAPTURE_PPM")
             image = (
@@ -194,9 +196,7 @@ class PlayerPlaytestCaptureTest(unittest.TestCase):
                 server.wait(timeout=5)
 
     def test_trench_preset_waits_for_full_terrain_before_capture(self):
-        with socket.socket() as probe:
-            probe.bind(("127.0.0.1", 0))
-            port = probe.getsockname()[1]
+        port = free_udp_port()
         with tempfile.TemporaryDirectory() as directory:
             capture_output = os.environ.get("MC_S7_TRENCH_CAPTURE_PPM")
             image = (
@@ -233,9 +233,7 @@ class PlayerPlaytestCaptureTest(unittest.TestCase):
                 server.wait(timeout=5)
 
     def test_mountain_climb_preset_captures_labeled_climb(self):
-        with socket.socket() as probe:
-            probe.bind(("127.0.0.1", 0))
-            port = probe.getsockname()[1]
+        port = free_udp_port()
         with tempfile.TemporaryDirectory() as directory:
             capture_output = os.environ.get("MC_S7_MOUNTAIN_CAPTURE_PPM")
             image = (
