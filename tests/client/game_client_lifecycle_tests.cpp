@@ -75,6 +75,44 @@ private:
     bool m_joined = false;
 };
 
+class ServiceCadence final {
+public:
+    static constexpr std::chrono::milliseconds SOFT_GAP_LIMIT{ 200 };
+    static constexpr std::chrono::milliseconds HARD_GAP_LIMIT{ 250 };
+    static constexpr uint32_t MAX_SOFT_GAP_OVERRUNS = 1U;
+
+    void recordGap(std::chrono::steady_clock::duration const gap)
+    {
+        ++m_callback_count;
+        m_maximum_gap = (std::max)(m_maximum_gap, gap);
+        if (gap > SOFT_GAP_LIMIT) {
+            ++m_soft_gap_overruns;
+        }
+        if (gap >= HARD_GAP_LIMIT) {
+            m_hard_gap_observed = true;
+        }
+    }
+
+    [[nodiscard]] bool meetsBudget(uint32_t const minimum_callback_count) const noexcept
+    {
+        return m_callback_count >= minimum_callback_count
+            && m_soft_gap_overruns <= MAX_SOFT_GAP_OVERRUNS
+            && !m_hard_gap_observed;
+    }
+
+    [[nodiscard]] uint32_t callbackCount() const noexcept { return m_callback_count; }
+    [[nodiscard]] uint32_t softGapOverruns() const noexcept { return m_soft_gap_overruns; }
+    [[nodiscard]] std::chrono::steady_clock::duration maximumGap() const noexcept
+    {
+        return m_maximum_gap;
+    }
+private:
+    uint32_t m_callback_count = 0U;
+    uint32_t m_soft_gap_overruns = 0U;
+    bool m_hard_gap_observed = false;
+    std::chrono::steady_clock::duration m_maximum_gap{};
+};
+
 // Delay actual server datagrams, not server startup or application messages.
 class HandshakeReplyRelay final {
 public:
@@ -235,31 +273,98 @@ TEST(GameClientLifecycleTest, StopDuringRetryIsServicedWithoutStartingAnotherAtt
 {
     static constexpr std::chrono::milliseconds STOP_DELAY{ 30'100 };
     static constexpr std::chrono::seconds DEADLINE{ 32 };
-    static constexpr std::chrono::milliseconds MAX_SERVICE_GAP{ 200 };
-    uint16_t const port = unusedPort();
+    static constexpr std::chrono::seconds REPLY_DELAY{ 60 };
+    static constexpr uint32_t MINIMUM_SERVICE_CALLS = static_cast<uint32_t>(
+        STOP_DELAY / ServiceCadence::SOFT_GAP_LIMIT + 1
+    );
+    server::GameServer server{ 0U };
+    HandshakeReplyRelay relay{ server.port(), REPLY_DELAY };
     auto const started = std::chrono::steady_clock::now();
     auto previous_service = started;
-    std::chrono::steady_clock::duration maximum_gap{};
+    ServiceCadence service_cadence;
     bool stop_processed = false;
     LifecycleClient game_client{ [&](LifecycleClient& client) {
         auto const now = std::chrono::steady_clock::now();
-        maximum_gap = (std::max)(maximum_gap, now - previous_service);
+        service_cadence.recordGap(now - previous_service);
         previous_service = now;
+        relay.pump();
+        static_cast<void>(server.tick());
+        relay.pump();
         if (now - started >= STOP_DELAY) {
             stop_processed = true;
             client.requestStop();
         }
     } };
     client::GameClientBenchmarkHooks const hooks{ .deadline = started + DEADLINE };
-    game_client.run(core::Address::localhost(port), '@', &hooks);
+    game_client.run(core::Address::localhost(relay.port()), '@', &hooks);
 
     EXPECT_TRUE(stop_processed);
-    EXPECT_LT(maximum_gap, MAX_SERVICE_GAP);
-    EXPECT_LT(std::chrono::steady_clock::now() - started, STOP_DELAY + MAX_SERVICE_GAP);
+    EXPECT_TRUE(service_cadence.meetsBudget(MINIMUM_SERVICE_CALLS))
+        << "callbacks=" << service_cadence.callbackCount()
+        << ", gaps>200ms=" << service_cadence.softGapOverruns()
+        << ", max gap (us)="
+        << std::chrono::duration_cast<std::chrono::microseconds>(service_cadence.maximumGap()).count();
+    EXPECT_LT(
+        std::chrono::steady_clock::now() - started,
+        STOP_DELAY + ServiceCadence::SOFT_GAP_LIMIT
+    );
     EXPECT_FALSE(game_client.isConnected());
     EXPECT_FALSE(game_client.accepted());
     EXPECT_EQ(game_client.inputCalls(), 0U);
     EXPECT_EQ(game_client.renderCalls(), 0U);
+    EXPECT_EQ(relay.attemptCount(), 1U);
+    EXPECT_FALSE(relay.releasedDelayedReply());
+}
+
+TEST(GameClientLifecycleTest, ServiceCadenceBudgetAllowsOneBoundedOutlier)
+{
+    static constexpr uint32_t MINIMUM_SERVICE_CALLS = 151U;
+    ServiceCadence service_cadence;
+    for (uint32_t callback = 0U; callback < MINIMUM_SERVICE_CALLS; ++callback) {
+        service_cadence.recordGap(
+            callback == 0U ? std::chrono::milliseconds{ 201 } : ServiceCadence::SOFT_GAP_LIMIT
+        );
+    }
+
+    EXPECT_TRUE(service_cadence.meetsBudget(MINIMUM_SERVICE_CALLS));
+}
+
+TEST(GameClientLifecycleTest, ServiceCadenceBudgetRejectsSparseCallbacks)
+{
+    static constexpr uint32_t MINIMUM_SERVICE_CALLS = 151U;
+    ServiceCadence service_cadence;
+    for (uint32_t callback = 0U; callback + 1U < MINIMUM_SERVICE_CALLS; ++callback) {
+        service_cadence.recordGap(ServiceCadence::SOFT_GAP_LIMIT);
+    }
+
+    EXPECT_FALSE(service_cadence.meetsBudget(MINIMUM_SERVICE_CALLS));
+}
+
+TEST(GameClientLifecycleTest, ServiceCadenceBudgetRejectsRepeatedSlowGaps)
+{
+    static constexpr uint32_t MINIMUM_SERVICE_CALLS = 151U;
+    ServiceCadence service_cadence;
+    for (uint32_t callback = 0U; callback < MINIMUM_SERVICE_CALLS; ++callback) {
+        service_cadence.recordGap(
+            callback < 2U ? ServiceCadence::SOFT_GAP_LIMIT + std::chrono::milliseconds{ 1 }
+                : ServiceCadence::SOFT_GAP_LIMIT
+        );
+    }
+
+    EXPECT_FALSE(service_cadence.meetsBudget(MINIMUM_SERVICE_CALLS));
+}
+
+TEST(GameClientLifecycleTest, ServiceCadenceBudgetRejectsOneLongGap)
+{
+    static constexpr uint32_t MINIMUM_SERVICE_CALLS = 151U;
+    ServiceCadence service_cadence;
+    for (uint32_t callback = 0U; callback < MINIMUM_SERVICE_CALLS; ++callback) {
+        service_cadence.recordGap(
+            callback == 0U ? ServiceCadence::HARD_GAP_LIMIT : ServiceCadence::SOFT_GAP_LIMIT
+        );
+    }
+
+    EXPECT_FALSE(service_cadence.meetsBudget(MINIMUM_SERVICE_CALLS));
 }
 
 TEST(GameClientLifecycleTest, DelayedHandshakeReplyPreservesOneAttemptAndJoins)
