@@ -107,7 +107,6 @@ class AiCheckTests(unittest.TestCase):
             checker.snapshot_source_for_check(
                 self.root, promotion_base, candidate=True, strict=False
             )
-
         self.git("checkout", "-b", "ai-main", promotion_base)
         self.git("merge", "--no-ff", "--no-commit", source)
         self.assertEqual(
@@ -119,6 +118,61 @@ class AiCheckTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "does not match"):
             checker.snapshot_source_for_check(
                 self.root, promotion_base, candidate=True, strict=False
+            )
+
+    def test_candidate_snapshot_source_accepts_codex_task_branch(self):
+        checker = load_module()
+        source_base = self.git("rev-parse", "HEAD").stdout.strip()
+        self.git("switch", "-c", "codex/ai-MC-AI-0391-release-candidate")
+        self.git("commit", "--allow-empty", "--no-gpg-sign", "-m", "candidate source")
+        source = self.git("rev-parse", "HEAD").stdout.strip()
+
+        self.assertEqual(
+            checker.snapshot_source_for_check(
+                self.root, source, candidate=True, strict=False
+            ),
+            source,
+        )
+        with self.assertRaisesRegex(ValueError, "does not match"):
+            checker.snapshot_source_for_check(
+                self.root, source_base, candidate=True, strict=False
+            )
+
+    def test_candidate_snapshot_source_rejects_abbreviated_or_malformed_ids(self):
+        checker = load_module()
+        self.git("switch", "-c", "codex/ai-MC-AI-0391-release-candidate")
+
+        for source in ("abc123", "not-a-commit-id"):
+            with self.subTest(source=source):
+                with self.assertRaisesRegex(ValueError, "full immutable commit ID"):
+                    checker.snapshot_source_for_check(
+                        self.root, source, candidate=True, strict=False
+                    )
+
+    def test_candidate_snapshot_source_rejects_unrelated_branch(self):
+        checker = load_module()
+        self.git("switch", "-c", "feature/unrelated")
+        source = self.git("rev-parse", "HEAD").stdout.strip()
+
+        with self.assertRaisesRegex(ValueError, "does not match"):
+            checker.snapshot_source_for_check(
+                self.root, source, candidate=True, strict=False
+            )
+
+    def test_candidate_snapshot_source_rejects_pending_merge_on_codex_branch(self):
+        checker = load_module()
+        base = self.git("rev-parse", "HEAD").stdout.strip()
+        self.git("switch", "-c", "codex/ai-MC-AI-0391-release-candidate")
+        self.git("commit", "--allow-empty", "--no-gpg-sign", "-m", "candidate source")
+        source = self.git("rev-parse", "HEAD").stdout.strip()
+        self.git("switch", "-c", "candidate-side", base)
+        self.git("commit", "--allow-empty", "--no-gpg-sign", "-m", "side source")
+        self.git("switch", "codex/ai-MC-AI-0391-release-candidate")
+        self.git("merge", "--no-ff", "--no-commit", "candidate-side")
+
+        with self.assertRaisesRegex(ValueError, "does not match"):
+            checker.snapshot_source_for_check(
+                self.root, source, candidate=True, strict=False
             )
 
     def test_candidate_without_snapshot_source_keeps_today_semantics(self):

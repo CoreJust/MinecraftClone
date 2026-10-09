@@ -1501,8 +1501,8 @@
       "MC-AI-0037"
     ],
     "acceptance": "Deliver immutable, generation-tagged hard/soft entity permissions for all/players/mobs/technical-entities/per-kind and explicit-member/selector groups; namespace custom keys and defer world subjects. Cover movement, flight/collision, blocks, inventory, invincibility, commands, and permission-backed mode presets. Use CoreLang 0.1.3.1 (only documented 0.1.3.3 maintenance), retain interpreter/JIT parity, and prepare kernels off physics ticks. Test latency, loss, jitter, freezes, reordering, and duplication. Replicate a 29/16 × 10/16 × 10/16 player, 16-color palette, and first/rear-third/front-third views. Keep position-driven radius-256 terrain camera-independent and derive face LOD at projected area ≤2 px². Provide four inspected 2560x1440 Mac screenshots with prominent labels centered below the HUD, each showing a distinct requested scene; capture each only after its full configured render distance has finished loading, never with partially loaded terrain: (1) flying third-person beside the central spike, captured at render distance 72 from about 30% closer than the previous central-spike framing and slightly lower than the prior viewpoint while retaining an elevated angle; keep the full spike, most of its first ring, and terrain beyond visible, emphasize the landform's mass, and keep the player visible without covering the spike; (2) one distinct view of the player in the trench near the first spike, without reusing another trench capture; (3) the player climbing the mountain; and (4) first-person at horizontal X/Z (0, 0). Target stable 120 FPS at x200 and the world border as diagnostic only. Pass platform and automated MC-AI-0249 gates; include the accepted CoreCpp scope MC-AI-0056 Runtime executors, MC-AI-0057 Runtime audio, and MC-AI-0240 renderer diagnostics in this snapshot. Release S7, hold the minor open for feedback, and do not start S8.",
-    "evidence": "Commit-trailer reconciliation maps the fixed S7 baseline to 142 completed child tasks and 143 child commits (MC-AI-0286 has two); ai_history finalize passes at e09f77b6d4b567f212922de39d00a881bef9640a. MC-AI-0388 focused tests pass 105/105; its commit hook passed index-match, docs, backlog, current-plan, diff, and full Python checks in 93.57 s. Four inspected 2560x1440 macOS Release captures passed full-load coverage and all 16 headings in 295.245 s. The central view is 30% closer and 20 blocks lower; exact binary and image hashes are in version history. MC-AI-0248 records performance measurements without claiming target attainment. Remote refs are ai-dev 6824e52 and ai-main 80ee79b; the latest matrix was cancelled and artifact run failed.",
-    "blocker": "Release remains gated on the exact-source snapshot check, reviewed two-parent promotion, strict/tag checks, and all 13 sanitizer/static-analysis rows. The latest ai-main matrix run 37782081670 was cancelled; artifact run 37782081739 failed; GitHub runner inventory is empty. Hosted Linux ARM selected incompatible SDK tools and hosted macOS lacks HVF, so there is no exact-candidate HWASan pass. Final Mac/Windows/Android packages and sidecars, hash verification, published-byte Mac/Android runtime, and separate Windows hands-on evidence remain. Four screenshots are complete locally but not linked to final artifacts. MC-AI-0248 is diagnostic: measured performance misses are reported, not passed.",
+    "evidence": "The fixed baseline reconciles 145 completed child tasks to 146 child commits (MC-AI-0286 has two; MC-AI-0391 latest); ai_history collect lists 145. MC-AI-0390 Release capture passed 1/1 plus embedded Python 4/4 in 265.198 s; four scenes, 16 headings, hashes, and provenance are recorded. The staged exact-source candidate gate passed: 549 Python tests, Debug build 142/142 actions, CTest 589/589 (one intentional Debug skip for a Release-only test), and renderer smoke 1/1 in authorized host context. The publisher dirty-tree check was allowed for the pre-commit candidate. MC-AI-0391 focused tests passed 55/55 and its fast gate passed. Remote refs at re-entry: ai-dev=4a56ef5c, ai-main=42963be7; S6 remains latest.",
+    "blocker": "Local staged candidate gate and aggregate commit 3c43cb0 are complete. Remaining before S7 release: two-parent ai-main promotion, strict/tag checks, all 13 exact-promotion sanitizer/static-analysis rows, final packages/sidecars/hash verification, published-byte Mac/Android runtime, and separate Windows hands-on acceptance. Prior Windows Release run 37829234074 failed AutomaticJoin; fixtures were fixed in 0389/0390, but a fresh Windows Release result is still required. Artifact run 37829234053 lacked the exact-source receipt; the final artifact run must be regenerated. No exact-promotion HWASan matrix/runtime receipt exists.",
     "owner": "Codex",
     "level": "snapshot",
     "parent": "MC-AI-0033",
@@ -1511,7 +1511,7 @@
     "complexity": "high",
     "created_at": "2026-09-09",
     "resolved_at": "",
-    "resolution_changes": "Reconciled the fixed S7 baseline to 142 unique completed child task IDs and 143 child commits, including MC-AI-0388; MC-AI-0286 has two commits. ai_history finalize passes at e09f77b6d4b567f212922de39d00a881bef9640a. The aggregate stays active and unresolved until exact-candidate promotion, release matrix, artifacts, and runtime evidence pass.",
+    "resolution_changes": "Reconciled the fixed S7 baseline to 145 completed children and 146 child commits, including MC-AI-0391; MC-AI-0286 has two commits. All planned children are done and finalized. Keep this snapshot active and unresolved until every exact-candidate release gate and publication step passes.",
     "plan": [
       "Complete authoritative movement, immutable permissions, and cross-client acceptance; keep policy compilation outside physics ticks.",
       "Finish player/views, adverse networking, camera-independent terrain/LOD, diagnostics, platform and analysis gates, captures, and S7 publication; then hold the minor for feedback."
@@ -1532,10 +1532,10 @@
     "baseline_commit": "0514890690c10d80b7475fd0b76204e800948db3",
     "commits": [],
     "finalized": true,
-    "retrospective": "Repeated repair/finalize/promotion loops caused the ten-day delay. At the pre-correction 9a2 checkpoint, remote history had 41 MC-AI-0038 task commits on ai-dev and 15 first-parent ai-main promotions without a release; these counts do not measure active hours. Candidate/source drift, late setup and platform checks, aggregate waits after terminal failures, structurally repeated gates, review-routing mistakes, and stops after partial results added rework. The evidence-backed causes and improvements are in [S7 delivery hindsight](../S7-HINDSIGHT-2026-10-08.md). This was an execution failure, not a failure of your feedback; available records do not support a two-day counterfactual.",
-    "docs_review": "Expanded screenshot framing and full-load requirements; recaptured four distinct 2560x1440 Release scenes. The central framing is 30% closer and 20 blocks lower. Recorded exact dimensions, binary/image hashes, full-load markers, and the 16-heading sweep in version history. Added the evidence-led hindsight review, including the unsupported s7-exec.zsh claim withdrawal and staged-index preflight waste; regenerated the task page.",
-    "environment_review": "The fresh 0386 worktree lacked a configured Debug build and required vcpkg/Vulkan/CMake variables; one reused package cache mismatched source locks. After checking exact dependency pins and configuring the documented Debug preset with lock-matched packages, the local integration gate passed at 60d8. Restricted execution denied process inspection; a renderer capture then idled at 0% CPU for about six minutes after Launch Services/XPC errors, while the same host-context capture passed in 16.339 seconds. Launch Services repair registered no apps and did not resolve the execution-context boundary. No maintained s7-exec.zsh wrapper exists in the repository or /private/tmp; the prior claim that it was repaired is withdrawn. Windows host assumptions were fixed in tests without changing product support. No persistent global settings or permissions were changed.",
-    "backlog_review": "The source history maps 142 unique completed S7 child tasks to 143 child commits; MC-AI-0286 has two and MC-AI-0388 is the latest child. All planned child tasks are done and finalized; ai_history finalize passes at e09f. MC-AI-0387 records the Windows test-host assumption. No child remains intentionally deferred from accepted S7 scope, but release gates remain open: the physical HWASan runner is not registered and exact-candidate analysis/artifact/runtime receipts are absent."
+    "retrospective": "The first S7 promotion was 10d 10h 33m after activation and did not release; by the 9 October re-entry 18+ calendar days had elapsed, not measured work hours. At checkpoint 9a2, history showed 41 task commits and 15 promotions without a release. Source drift, late dependency/platform checks, real movement defects, repeated playtest-launch mistakes, and serial screenshot reframing created avoidable rework. The primary ai-dev checkout was 372 commits behind and had 117 local dirty paths; the candidate gate also rejected the policy-supported codex task branch, fixed in MC-AI-0391. See the evidence-led hindsight; records do not establish a two-day counterfactual.",
+    "docs_review": "Four distinct inspected 2560x1440 Release scenes meet full-load and centered-label criteria; the central scene uses distance 72 and closer, lower elevated framing. Version history records hashes, provenance, full-load markers, and heading sweep. Hindsight summarizes setup, gate evidence, and remaining external requirements.",
+    "environment_review": "Primary ai-dev checkout 9a02219 (372 behind; 117 dirty paths) was preserved; release work stayed isolated. Reused ignored cache pointed to CoreCpp/CoreProject 8e1d6336/10200a38, not locked d5759fa4/a4d3fa8a; fresh exact clones/config pass. First private install omitted vcpkg toolchain and cached failure; clean generated build fixed it. Renderer cache needed manifest-install OFF/private paths; sandbox denied /bin/ps and Launch Services, while identical host smoke passed 1/1 in 5.19 s. Restricted Git writes needed authorized context. Guard: 9 tests/probes pass, prior dispatch unverified. No global setup changed.",
+    "backlog_review": "The fixed baseline reconciles 145 completed child task IDs to 146 commits; all planned children are done and finalized, and ai_tasks ready has no pending basics. MC-AI-0248 remains diagnostic. Exact promotion, all 13 analysis rows, packages/hashes, published-byte Mac/Android runtime, and Windows hands-on evidence remain open; S6 is still latest as of re-entry. Hold the minor for feedback after S7."
   },
   {
     "id": "MC-AI-0039",
@@ -13583,5 +13583,118 @@
     "docs_review": "Updated automation guidance and generated parent/task pages to distinguish candidate-specific custom-only runner routing from separately authorized ephemeral registration without default labels and the exact HWASan receipt; Linux remains CI-host-only.",
     "environment_review": "No local system configuration or remote runner registration changed. Hosted Linux failed with an SDK executable architecture mismatch and hosted macOS failed HVF initialization. The physical-Mac exact-candidate runtime remains an open parent release gate.",
     "backlog_review": "Added MC-AI-0388 as the distinct corrective task rather than rewriting finalized MC-AI-0386. Parent MC-AI-0038 remains active until the exact candidate passes release acceptance."
+  },
+  {
+    "id": "MC-AI-0389",
+    "title": "Use UDP-aware port selection in client launch acceptance tests",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P1",
+    "route": "luna",
+    "milestone": "ED-010-S7",
+    "depends_on": [],
+    "acceptance": "All server-launch acceptance cases select an available IPv4 UDP port matching ENet transport; the complete focused client launch suite passes. The parent S7 release gate reruns the exact Windows Release workflow before publication.",
+    "evidence": "Exact Windows job log: /private/tmp/mc-s7-capture-proof.rxkmM5/windows-job-113489945901.log. CTest AcceptanceCli.AutomaticJoin failed only the delayed-server, selected-render-distance server-start, and two-bot host cases; its 2 other cases passed. Replaced all three TCP port probes with temporary IPv4 UDP probes. Focused client launch suite against the macOS Release binary: 5/5 passed in 2.395 s; independent review reproduced TCP/UDP port mismatch. Refreshed generated docs/code/source_state.json because this acceptance test is part of the indexed source inventory. Exact Windows requalification remains a required parent S7 release gate and is not claimed by this task.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0038",
+    "motivation": "The exact S7 Windows Release matrix failed all three acceptance cases that start an ENet host with Failed to create ENet host; those tests selected ports by probing TCP, not the UDP transport ENet binds.",
+    "context": "Windows Actions AI checks run 37829234074 job 113489945901 on promotion 42963be7b29c36a09e216712fc15c63889724a67 completed configure and build, then CTest AcceptanceCli.AutomaticJoin failed 3 of its 5 cases; each server-start case reported Failed to create ENet host. The other two cases passed. The CI log shows the test harness selected ports with default SOCK_STREAM probes although ENet binds UDP. macOS and Linux Release rows passed on the same promotion SHA.",
+    "complexity": "low",
+    "created_at": "2026-10-08",
+    "resolved_at": "2026-10-08",
+    "resolution_changes": "Changed all three server-launch tests to choose ports by binding a temporary IPv4 UDP socket, matching the ENet transport; no product behavior changed.",
+    "plan": [
+      "Select server ports by binding an IPv4 UDP socket in every server-launch acceptance case; verify the focused suite and exact Windows release qualification."
+    ],
+    "product_changes": [
+      "No product behavior changed."
+    ],
+    "code_changes": [
+      "Use UDP-aware ephemeral ports in client launch acceptance tests; refresh the generated docs/code/source_state.json hash for the indexed test source. No product behavior or narrative code guide changed."
+    ],
+    "baseline_commit": "f2f7352e5d3e289f6716b08d6cf6b606125488fe",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0390",
+    "title": "Use UDP-aware ephemeral ports for the ENet screenshot capture fixtures",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P1",
+    "route": "luna",
+    "milestone": "ED-010-S7",
+    "depends_on": [],
+    "acceptance": "All four capture fixtures reserve an available IPv4 UDP loopback port matching ENet. The exact macOS Release capture suite passes all four distinct full-load scenes; the captured artifacts and run log are hash-recorded. Windows Release qualification remains a separate parent S7 release gate.",
+    "evidence": "Built Release mc_main SHA-256 e34ae3bde2b7c950ec3fd50cb1eef79677eabad5007964409e4f481f962d9741 from ai-dev source 4a56ef5c1edf32aa4c4301ea1fc055b63b0ee64c with locked CoreCpp d5759fa48b7073787434121624b5f5f93cf3fa2c and CoreProject2026 a4d3fa8a7b81407d0f6bae3ef10d2632d7b74fb9. Focused Release CTest PlayerPlaytestCaptureTest passed 1/1; embedded Python suite passed 4/4 in 265.198s. Raw CTest log docs/ai/evidence/MC-AI-0390-capture-2026-10-09.raw.log SHA-256 1e2f281a64f8d413124c1fe9c77f625bcef4df663db1b390ae9d8fc5d95b5ce5; summary log SHA-256 36193d521f723039681db0a8f4533d085ecfc0d02c7b42c2d3ac71abf032bd45. All four delivered screenshots are 2560x1440 with hashes recorded in version history. This is macOS capture evidence only; Windows Release qualification remains a parent S7 gate.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0038",
+    "motivation": "The four real-network screenshot acceptance tests start an ENet UDP server but select its port by probing TCP, leaving a platform-dependent transport mismatch in the S7 capture fixtures.",
+    "context": "MC-AI-0389 fixed the same TCP-versus-UDP mismatch in three client-launch acceptance tests after the exact Windows Release job failed to create ENet hosts. The four screenshot-capture fixtures still reserve ports using the default SOCK_STREAM transport. The change is test harness and evidence only; product behavior is unchanged.",
+    "complexity": "low",
+    "created_at": "2026-10-08",
+    "resolved_at": "2026-10-09",
+    "resolution_changes": "Replaced the four TCP probes with a shared IPv4 UDP ephemeral-port helper matching ENet. The exact macOS Release PlayerPlaytestCaptureTest passed all four full-load, labeled scenes; no product behavior changed.",
+    "plan": [
+      "Replace the four TCP probes with a shared IPv4 UDP port helper; run the focused Release capture suite; refresh the four screenshot artifacts and exact evidence log; verify the hashes and task checks."
+    ],
+    "product_changes": [
+      "No product behavior changed."
+    ],
+    "code_changes": [
+      "Use UDP-aware ephemeral ports for all four ENet screenshot-capture server fixtures; record a fresh, full-load, labeled four-scene capture result."
+    ],
+    "baseline_commit": "4a56ef5c1edf32aa4c4301ea1fc055b63b0ee64c",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0391",
+    "title": "Allow Snapshot candidate checks on codex task branches",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P1",
+    "route": "luna",
+    "milestone": "ED-010-S7",
+    "depends_on": [],
+    "acceptance": "In candidate mode, an explicit full immutable source commit is accepted when HEAD equals that source and there is no pending merge on either ai-dev or a codex/ai-* branch. Keep ai-main pending-promotion validation unchanged. Reject short/invalid IDs, mismatched HEAD, pending merges on source branches, and unrelated branch names. Add focused regression tests for each supported and rejected branch/source state; strict promotion/date validation remains unchanged.",
+    "evidence": "python3 -m unittest script.tests.test_ai_check passed 55/55 in 17.128 s. python3 script/ai_check.py --fast passed: docs, backlog, current plan, working/index whitespace, and the full tooling suite passed; full tooling suite took 72.03 s. Regressions cover codex/ai-* source-HEAD acceptance and stale, abbreviated, malformed, unrelated, and pending-merge rejections; existing ai-dev and ai-main promotion behavior remains covered.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0038",
+    "motivation": "Snapshot candidate date binding rejects the permitted codex/ai-* task branch even when its HEAD is the exact immutable source, forcing use of the locally occupied and dirty ai-dev worktree. This blocks the authorized candidate gate and risks unrelated workspace changes.",
+    "context": "Repository policy permits ai-dev or codex/ai-* task branches. Current release work is on codex/ai-MC-AI-0390-capture-udp-ports; the primary ai-dev worktree has pre-existing unrelated changes and must remain untouched.",
+    "complexity": "low",
+    "created_at": "2026-10-09",
+    "resolved_at": "2026-10-09",
+    "resolution_changes": "Snapshot candidate source binding now accepts the project-approved codex/ai-* task branch only when its HEAD matches the full immutable source commit and no merge is pending. Existing ai-dev source and ai-main promotion checks remain unchanged.",
+    "plan": [
+      "Clarify acceptance and implementation steps.",
+      "1. Inspect the current branch/source binding and its tests. 2. Permit the project-approved codex/ai-* task branch form without weakening source identity, merge, or strict-promotion checks. 3. Run focused tests and full ai_check fast/docs gates; record evidence and commit exactly once."
+    ],
+    "product_changes": [],
+    "code_changes": [
+      "Updated script/ai_check.py candidate branch validation and added focused test_ai_check cases for supported codex branches, stale HEAD, unrelated branches, and pending merges."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]
