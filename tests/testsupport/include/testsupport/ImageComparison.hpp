@@ -9,7 +9,7 @@
 
 namespace testsupport {
 
-inline constexpr uint64_t MAX_IMAGE_BYTE_COUNT = 64U * 1'024U * 1'024U;
+inline constexpr uint64_t MAX_IMAGE_BYTE_COUNT = uint64_t{64U} * 1'024U * 1'024U;
 
 struct Rgba8Image final {
     uint32_t width = 0U;

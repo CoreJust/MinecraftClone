@@ -16,6 +16,11 @@ namespace shared {
 using PolicyEntityId = uint64_t;
 using PolicyCapabilityKeyId = uint32_t;
 
+struct PolicyCapabilityQuery final {
+    PolicyEntityId subject{0U};
+    PolicyCapabilityKeyId key{0U};
+};
+
 enum class PolicyEntityClass : uint8_t {
     Player,
     Mob,
@@ -98,9 +103,9 @@ public:
 };
 
 struct PolicyLimits final {
-    uint64_t max_source_bytes{64U * 1024U};
+    uint64_t max_source_bytes{uint64_t{64U} * 1024U};
     // Bounds total CoreLang VM steps across module initialization, policy entry, and parity runs.
-    uint64_t max_instructions{16U * 1024U};
+    uint64_t max_instructions{uint64_t{16U} * 1024U};
     uint64_t max_statements{256U};
     uint64_t max_groups{64U};
     uint64_t max_members_per_group{256U};
@@ -246,10 +251,10 @@ public:
     // dense capability index. Unknown subjects and keys deliberately fail
     // closed instead of causing a group/selector traversal on the tick path.
     [[nodiscard]]
-    std::optional<int64_t> value(PolicyEntityId subject, PolicyCapabilityKeyId key) const noexcept;
+    std::optional<int64_t> value(PolicyCapabilityQuery query) const noexcept;
 
     [[nodiscard]]
-    bool allows(PolicyEntityId subject, PolicyCapabilityKeyId key) const noexcept;
+    bool allows(PolicyCapabilityQuery query) const noexcept;
 
 private:
     uint64_t m_generation{0U};
@@ -321,7 +326,7 @@ public:
     // Publication is one atomic snapshot replacement. A failed compilation
     // therefore cannot disturb the last authoritative policy.
     [[nodiscard]]
-    std::expected<uint64_t, PolicyDiagnostic> publish(PolicyCompilation compilation);
+    std::expected<uint64_t, PolicyDiagnostic> publish(PolicyCompilation const& compilation);
 
     // Materialization resolves every selector and assignment before a
     // generation is published. The returned snapshot is immutable and may be

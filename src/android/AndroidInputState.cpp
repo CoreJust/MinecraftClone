@@ -72,9 +72,9 @@ bool AndroidInputState::beginTouch(
 }
 
 bool AndroidInputState::moveTouch(
-    int32_t const pointer_id,
     float const x,
-    float const y
+    float const y,
+    int32_t const pointer_id
 ) noexcept {
     if (pointer_id != m_touch_pointer_id || m_touch_pointer_id < 0) {
         return false;
@@ -132,9 +132,9 @@ bool AndroidInputState::beginLookTouch(
 }
 
 bool AndroidInputState::moveLookTouch(
-    int32_t const pointer_id,
     float const x,
-    float const y
+    float const y,
+    int32_t const pointer_id
 ) noexcept
 {
     if (pointer_id != m_look_pointer_id || m_look_pointer_id < 0) {
@@ -182,8 +182,14 @@ bool AndroidInputState::consumeLookDelta(float& horizontal, float& vertical) noe
 
 shared::Direction AndroidInputState::direction() const noexcept
 {
-    int8_t const hardware_x = static_cast<int8_t>(m_right_pressed) - static_cast<int8_t>(m_left_pressed);
-    int8_t const hardware_y = static_cast<int8_t>(m_down_pressed) - static_cast<int8_t>(m_up_pressed);
+    int8_t hardware_x = 0;
+    if (m_right_pressed != m_left_pressed) {
+        hardware_x = m_right_pressed ? int8_t{1} : int8_t{-1};
+    }
+    int8_t hardware_y = 0;
+    if (m_down_pressed != m_up_pressed) {
+        hardware_y = m_down_pressed ? int8_t{1} : int8_t{-1};
+    }
     return {
         .x = (m_right_pressed || m_left_pressed) ? static_cast<uint8_t>(hardware_x) : m_touch_x,
         .y = (m_down_pressed || m_up_pressed) ? static_cast<uint8_t>(hardware_y) : m_touch_y,

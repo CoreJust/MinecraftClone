@@ -13696,5 +13696,47 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0392",
+    "title": "Fix strict S7 macOS clang-tidy findings",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P0",
+    "route": "luna",
+    "milestone": "S7",
+    "depends_on": [],
+    "acceptance": "Fix all diagnostics from receipt 9feacf9a7c42e1be1577f9f1c1b40c64369af545339342cd02517054ef439297 without suppressions; preserve protocol, input, policy, and test-support behavior. Add focused regression coverage for any corrected externally observable error path. The focused affected tests and ai_check.py --fast must pass. The exact macOS Debug clang-tidy row with the original checks and warnings-as-errors remains a required MC-AI-0038 snapshot-release gate on the exact promotion candidate.",
+    "evidence": "Debug build: cmake --build build/mc-ai-0392-debug --parallel 8 passed 142/142 actions; focused CTest suites passed 60/60; MessageTest rerun after the final noexcept fix passed 13/13; ai_docs.py refresh/check, git diff --check, and ai_check.py --fast --require-index-match pass. No local clang-tidy executable is available; the exact strict row remains pending at the MC-AI-0038 release gate.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0038",
+    "motivation": "The exact promoted S7 candidate failed its required macOS Debug clang-tidy row, blocking release.",
+    "context": "Baseline promotion 80cb54480f30f1276ab149da8b9cfe25f2df4914, tree 74fdb7199556e4db62582f24ed586fa05d43d51e; failed row receipt is preserved under /private/tmp/mc-s7-promotion.FUrm4M/analysis-macos-debug/clang_tidy.json.",
+    "complexity": "medium",
+    "created_at": "2026-10-09",
+    "resolved_at": "2026-10-09",
+    "resolution_changes": "Removed every diagnostic from the preserved macOS Debug clang-tidy receipt without suppressions; fixed malformed-message optional handling and added a regression test. The strict exact-promotion analyzer row remains enforced by the parent snapshot release gate.",
+    "plan": [
+      "Clarify acceptance and implementation steps.",
+      "Reproduce and map all receipt diagnostics to current S7 source contracts.",
+      "Correct the warnings without disabling checks; add behavior-focused tests for safety defects.",
+      "Run focused tests and the fast gate, then commit with exact-task review; the strict clang-tidy row must be verified by the hosted exact-candidate workflow because clang-tidy is unavailable locally.",
+      "Enforce the original strict macOS Debug clang-tidy row on the exact aggregate promotion candidate before closing MC-AI-0038."
+    ],
+    "product_changes": [
+      "No intended gameplay behavior change; malformed/truncated message variants fail closed."
+    ],
+    "code_changes": [
+      "Fix all diagnostics in exact receipt 9feacf9a7c42e1be1577f9f1c1b40c64369af545339342cd02517054ef439297 across input, world, message, policy, and test-support code without suppressions."
+    ],
+    "baseline_commit": "b87cbbb84de38135868101c705d227350cbadeec",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]

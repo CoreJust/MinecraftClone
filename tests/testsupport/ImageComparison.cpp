@@ -14,7 +14,7 @@
 namespace testsupport {
 namespace {
 
-enum class PpmColorSpace {
+enum class PpmColorSpace : uint8_t {
     Linear,
     Srgb,
 };

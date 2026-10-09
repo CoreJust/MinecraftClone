@@ -42,7 +42,7 @@ inline constexpr std::array<uint32_t, 5> REGISTERED_WORLD_GENERATION_EXTENTS{
 };
 
 inline constexpr uint32_t MAX_GENERATION_STAGE_OUTPUT_BYTES = 4U * 1'024U;
-inline constexpr uint64_t MAX_GENERATION_OUTPUT_BUDGET_BYTES = 1U * 1'024U * 1'024U;
+inline constexpr uint64_t MAX_GENERATION_OUTPUT_BUDGET_BYTES = uint64_t{1U} * 1'024U * 1'024U;
 
 enum class GenerationAdmission : uint8_t {
     Accepted,

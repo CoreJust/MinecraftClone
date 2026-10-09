@@ -22,14 +22,14 @@ public:
     [[nodiscard]]
     bool beginTouch(int32_t pointer_id, float x, float y, uint32_t surface_width) noexcept;
     [[nodiscard]]
-    bool moveTouch(int32_t pointer_id, float x, float y) noexcept;
+    bool moveTouch(float x, float y, int32_t pointer_id) noexcept;
     [[nodiscard]]
     bool endTouch(int32_t pointer_id) noexcept;
     bool cancelTouch() noexcept;
     [[nodiscard]]
     bool beginLookTouch(int32_t pointer_id, float x, float y, uint32_t surface_width) noexcept;
     [[nodiscard]]
-    bool moveLookTouch(int32_t pointer_id, float x, float y) noexcept;
+    bool moveLookTouch(float x, float y, int32_t pointer_id) noexcept;
     [[nodiscard]]
     bool endLookTouch(int32_t pointer_id) noexcept;
     bool cancelLookTouch() noexcept;

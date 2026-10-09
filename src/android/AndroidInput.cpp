@@ -194,8 +194,8 @@ int32_t AndroidInput::handleMotion(AInputEvent const* const event) noexcept
             float const x = AMotionEvent_getX(event, index);
             float const y = AMotionEvent_getY(event, index);
             handled = isFlightTouch(pointer_id) || handled;
-            handled = m_state.moveTouch(pointer_id, x, y) || handled;
-            handled = m_state.moveLookTouch(pointer_id, x, y) || handled;
+            handled = m_state.moveTouch(x, y, pointer_id) || handled;
+            handled = m_state.moveLookTouch(x, y, pointer_id) || handled;
         }
         return handled ? 1 : 0;
     }

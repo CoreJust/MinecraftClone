@@ -67,7 +67,8 @@ constexpr bool isValidMovementCapabilities(MovementCapabilities const capabiliti
 {
     constexpr uint8_t VALID_BITS = static_cast<uint8_t>(MovementCapability::Flight)
         | static_cast<uint8_t>(MovementCapability::CollisionBypass);
-    return (capabilities.bits & ~VALID_BITS) == 0U
+    constexpr uint32_t VALID_BITS_WIDE = VALID_BITS;
+    return (static_cast<uint32_t>(capabilities.bits) & ~VALID_BITS_WIDE) == 0U
         && (!capabilities.allows(MovementCapability::CollisionBypass)
             || capabilities.allows(MovementCapability::Flight));
 }
