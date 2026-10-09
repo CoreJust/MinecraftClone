@@ -799,6 +799,16 @@ class AnalysisMatrixTests(unittest.TestCase):
         runtime_job = workflow.split("  android-hwasan-runtime:", 1)[1].split(
             "  analysis-matrix:", 1
         )[0]
+        java_setup = "actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1"
+        self.assertIn(java_setup, runtime_job)
+        self.assertIn("distribution: temurin", runtime_job)
+        self.assertIn("java-version: '21'", runtime_job)
+        self.assertIn("architecture: aarch64", runtime_job)
+        self.assertLess(runtime_job.index(java_setup), runtime_job.index("Select and validate Java 21"))
+        self.assertLess(
+            runtime_job.index("Select and validate Java 21"),
+            runtime_job.index("Create isolated Android emulator homes"),
+        )
         self.assertLess(
             runtime_job.index("Download HWASan APK"),
             runtime_job.index("--apk-only"),
