@@ -891,7 +891,10 @@ void GameServer::run(
             );
             auto const poll_started_at = m_benchmark_metrics_enabled
                 ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
-            static_cast<void>(poll(poll_timeout));
+            uint32_t polled_event_count = poll(poll_timeout);
+            while (polled_event_count > 0U) {
+                polled_event_count = poll(std::chrono::milliseconds::zero());
+            }
             if (m_benchmark_metrics_enabled) {
                 network_poll_duration = std::chrono::duration_cast<std::chrono::nanoseconds>(
                     std::chrono::steady_clock::now() - poll_started_at

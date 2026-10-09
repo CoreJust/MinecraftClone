@@ -53,12 +53,12 @@ mutation. Seeded-world join mismatches fail before gameplay.
 
 ## Server authority
 
-[GameServer.hpp](../../src/server/include/server/GameServer.hpp) creates a
-localhost server on configurable port `20040`.
-[GameServer.cpp](../../src/server/GameServer.cpp) drains events each 100 ms tick
-and consumes at most one queued input per player. Mismatched-world joins,
-duplicate characters and unjoined inputs are rejected. Positions carry
-acknowledged sequences and monotonic revisions; disconnect broadcasts removal.
+[GameServer.hpp](../../src/server/include/server/GameServer.hpp) binds localhost
+on port `20040` by default. [GameServer.cpp](../../src/server/GameServer.cpp)
+drains queued events after bounded polls and ticks, consuming at most one input
+per player per tick. Invalid joins, duplicate characters, and unjoined
+inputs are rejected. Positions carry ACKs and revisions; disconnects
+broadcast removals.
 
 After movement, four 16-operation batches rotate among clients.
 Four outstanding credited batches/peer (34,356 bytes) leave gameplay headroom
