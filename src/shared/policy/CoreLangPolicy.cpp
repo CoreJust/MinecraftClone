@@ -52,7 +52,11 @@ PolicyDiagnostic diagnostic(
 [[nodiscard]]
 core::lang::Type type(core::lang::TypeKind const kind)
 {
-    return {.kind = kind, .elements = {}};
+    return {
+        .kind = kind,
+        .elements = {},
+        .method_owner_name = {},
+    };
 }
 
 [[nodiscard]]
@@ -62,6 +66,7 @@ core::lang::Value unitValue()
         .type = type(core::lang::TypeKind::Unit),
         .bytes = {},
         .elements = {},
+        .literal_lease = {},
     };
 }
 
@@ -1139,6 +1144,7 @@ std::expected<PolicyCompilation, PolicyDiagnostic> PolicyHost::compile(
         .id = "minecraft",
         .version = 1U,
         .restrictions = {},
+        .operations = {},
     };
     ruleset.operations.reserve(specs.size());
     for (HostSpec const& spec : specs) {
@@ -1151,6 +1157,7 @@ std::expected<PolicyCompilation, PolicyDiagnostic> PolicyHost::compile(
             .effect = host_manifest.effect,
             .custom = host_manifest,
             .expand = {},
+            .compile_time_effect = {},
             .borrow = host_manifest.borrow,
         });
     }
