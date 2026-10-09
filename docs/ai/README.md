@@ -21,8 +21,11 @@ The AI line implements the existing [product roadmap](../ROADMAP.md). The owner 
 ```sh
 git status --short --branch
 python3 script/ai_setup.py
+python3 script/ai_setup.py --install-hooks
 python3 script/ai_tasks.py ready
 ```
+
+Run the installer once per clone before AI-line commits. The default setup command is a read-only prerequisite check; only `--install-hooks` activates the repository-local `.githooks`.
 
 The project Codex config selects `gpt-6-luna`; an explicit task/app model override wins. Start a new session to reload project instructions/config. Other agents use the same Markdown entrypoints and Python tools.
 
