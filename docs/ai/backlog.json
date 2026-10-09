@@ -13738,5 +13738,44 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0393",
+    "title": "Require complete policy capability queries and direct variant include",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P0",
+    "route": "luna",
+    "milestone": "S7",
+    "depends_on": [],
+    "acceptance": "Prevent incomplete PolicyCapabilityQuery values from being represented, keeping the dense lookup path unchanged; directly include <variant> in Message.cpp; add compile-time coverage that queries require subject and key. Preserve all existing permission lookup outcomes. Run focused policy and message suites, include/source checks, and ai_check.py --fast. The exact strict macOS Debug clang-tidy row remains an MC-AI-0038 release gate on the exact promotion.",
+    "evidence": "Debug mc_tests build passed (16 actions). Focused CTest passed 42/42: 27 CoreLangPolicyTest, 2 NetClientServer, and 13 MessageTest cases. ai_docs refresh/check and ai_tasks check passed. ai_check.py --fast --require-index-match passed; source checks were ALLOWED only for the expected dirty-working-tree cleanliness sentinel, with all source policy checks passing.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0038",
+    "motivation": "Independent review found that omitted query fields can silently target default IDs, allowing an incomplete permission check to grant a capability; it also found a transitive-only <variant> include.",
+    "context": "Follow-up to MC-AI-0392 review of commit d8bd420645b6707162ceac3fe6e4dc5f6a19c9c8. Contract and adversarial receipts are under /private/tmp/mc-s7-0392-review.HI1VtM; both requested changes before approval. Do not alter S7 scope or claim the strict promotion row passed.",
+    "complexity": "low",
+    "created_at": "2026-10-09",
+    "resolved_at": "2026-10-09",
+    "resolution_changes": "Made PolicyCapabilityQuery require subject and dense-key constructor arguments, eliminating default and partial query states at compile time without adding storage or runtime checks to the physics lookup path. Migrated all callers and added compile-time coverage for valid two-argument construction and rejection of default/one-argument construction. Added the direct <variant> include used for std::bad_variant_access and updated POLICY.md.",
+    "plan": [
+      "Make query construction require both subject and dense key so omitted fields are rejected at compile time with no hot-path optional checks.; Migrate all query call sites and directly include <variant> where std::bad_variant_access is caught.; Add a compile-time regression assertion for non-default-constructibility; run focused suites, include/source checks, and the fast gate.; Send only the delta to the same reviewers and commit once after approval.",
+      "Require both constructor parameters and remove member defaults; migrate all query callers; directly include <variant>; add compile-time tests proving default and partial construction are unavailable; run focused suites, include checks, and the fast gate; send the exact delta to both reviewers."
+    ],
+    "product_changes": [
+      "No gameplay or permission values change; incomplete API requests become unrepresentable."
+    ],
+    "code_changes": [
+      "Require complete permission query construction and directly include the standard header declaring std::bad_variant_access."
+    ],
+    "baseline_commit": "d8bd420645b6707162ceac3fe6e4dc5f6a19c9c8",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]

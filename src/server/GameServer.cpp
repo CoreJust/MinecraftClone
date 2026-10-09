@@ -1225,15 +1225,9 @@ bool GameServer::processInput(PlayerReplication& replication, shared::ClientInpu
                 || !m_collision_bypass_permission.has_value()) {
                 next_bits = 0U;
             } else {
-                uint8_t allowed_bits = effective->allows({
-                    .subject = replication.id,
-                    .key = *m_flight_permission,
-                }) ? 1U : 0U;
+                uint8_t allowed_bits = effective->allows({ replication.id, *m_flight_permission }) ? 1U : 0U;
                 if ((allowed_bits & 1U) != 0U
-                    && effective->allows({
-                        .subject = replication.id,
-                        .key = *m_collision_bypass_permission,
-                    })) {
+                    && effective->allows({ replication.id, *m_collision_bypass_permission })) {
                     allowed_bits |= 2U;
                 }
                 next_bits &= allowed_bits;
@@ -1428,14 +1422,8 @@ bool GameServer::canApplyPublishedPermissions(
         return false;
     }
     for (shared::Player const& player : m_world.players()) {
-        std::optional<int64_t> const flight = capabilities.value({
-            .subject = player.id,
-            .key = *flight_permission,
-        });
-        std::optional<int64_t> const collision_bypass = capabilities.value({
-            .subject = player.id,
-            .key = *collision_bypass_permission,
-        });
+        std::optional<int64_t> const flight = capabilities.value({ player.id, *flight_permission });
+        std::optional<int64_t> const collision_bypass = capabilities.value({ player.id, *collision_bypass_permission });
         if (!flight.has_value() || !collision_bypass.has_value()
             || (*flight != 0 && *flight != 1)
             || (*collision_bypass != 0 && *collision_bypass != 1)) {
@@ -1500,15 +1488,9 @@ void GameServer::applyPublishedPermissions()
         return;
     }
     for (shared::Player const& player : m_world.players()) {
-        std::optional<int64_t> const flight = capabilities->value({
-            .subject = player.id,
-            .key = *m_flight_permission,
-        });
+        std::optional<int64_t> const flight = capabilities->value({ player.id, *m_flight_permission });
         std::optional<int64_t> const collision_bypass = capabilities->value(
-            {
-                .subject = player.id,
-                .key = *m_collision_bypass_permission,
-            }
+            { player.id, *m_collision_bypass_permission }
         );
         if (!flight.has_value() || !collision_bypass.has_value()) {
             continue;

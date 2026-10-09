@@ -17,8 +17,16 @@ using PolicyEntityId = uint64_t;
 using PolicyCapabilityKeyId = uint32_t;
 
 struct PolicyCapabilityQuery final {
-    PolicyEntityId subject{0U};
-    PolicyCapabilityKeyId key{0U};
+    constexpr PolicyCapabilityQuery(
+        PolicyEntityId const subject,
+        PolicyCapabilityKeyId const key
+    ) noexcept
+        : subject(subject)
+        , key(key)
+    {}
+
+    PolicyEntityId subject;
+    PolicyCapabilityKeyId key;
 };
 
 enum class PolicyEntityClass : uint8_t {

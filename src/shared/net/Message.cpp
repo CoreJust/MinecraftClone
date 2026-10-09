@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <type_traits>
 #include <utility>
+#include <variant>
 
 namespace shared {
 
