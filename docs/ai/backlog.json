@@ -13761,8 +13761,7 @@
     "resolved_at": "2026-10-09",
     "resolution_changes": "Made PolicyCapabilityQuery require subject and dense-key constructor arguments, eliminating default and partial query states at compile time without adding storage or runtime checks to the physics lookup path. Migrated all callers and added compile-time coverage for valid two-argument construction and rejection of default/one-argument construction. Added the direct <variant> include used for std::bad_variant_access and updated POLICY.md.",
     "plan": [
-      "Make query construction require both subject and dense key so omitted fields are rejected at compile time with no hot-path optional checks.; Migrate all query call sites and directly include <variant> where std::bad_variant_access is caught.; Add a compile-time regression assertion for non-default-constructibility; run focused suites, include/source checks, and the fast gate.; Send only the delta to the same reviewers and commit once after approval.",
-      "Require both constructor parameters and remove member defaults; migrate all query callers; directly include <variant>; add compile-time tests proving default and partial construction are unavailable; run focused suites, include checks, and the fast gate; send the exact delta to both reviewers."
+      "Require both constructor parameters and remove member defaults; migrate all query callers; directly include <variant>; add compile-time tests proving default and partial construction are unavailable; run focused suites, include/source checks, and the fast gate. Submit the exact staged task to one Luna reviewer; if a correction is requested, send only that delta to the same reviewer; commit once after approval."
     ],
     "product_changes": [
       "No gameplay or permission values change; incomplete API requests become unrepresentable."
@@ -13885,6 +13884,43 @@
     "product_changes": [],
     "code_changes": [
       "AndroidInputState exposes PointerId only on moveTouch/moveLookTouch; AndroidInput constructs it at the NDK boundary; compile-time assertions prove raw int32_t is rejected and typed arguments are accepted."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0397",
+    "title": "Remove conflicting reviewer-count guidance from MC-AI-0393 plan",
+    "kind": "chore",
+    "status": "done",
+    "priority": "P0",
+    "route": "luna",
+    "milestone": "S7",
+    "depends_on": [],
+    "acceptance": "Remove the obsolete duplicate MC-AI-0393 plan bullet so the canonical backlog and generated task document present one unambiguous reviewer-count instruction consistent with the single-reviewer and same-reviewer delta policy. Verify backlog/task generation and documentation checks; commit as one task with the MC-AI-0397 trailer.",
+    "evidence": "ai_tasks.py render and check passed; ai_docs.py check passed; git diff --check passed; ai_check.py --fast exited 0 and reused PASS for docs, backlog, current-plan, working diff, and cached diff. Metadata-only scope correctly skipped Python tests.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0038",
+    "motivation": "The exact committed-range review of S7 promotion afeb19cd10a0d2851e9eae94465c3cadafdb1f9a found contradictory reviewer-count instructions in the generated MC-AI-0393 plan, blocking approval.",
+    "context": "Finding P2 at MC-AI-0393.md:30 in review receipt /private/tmp/mc-s7-0392-review.HI1VtM/committed-range-afeb19-reviewer1/review-receipt.md. The canonical source is docs/ai/backlog.json; generated Markdown must be rerendered. No product or code behavior changes.",
+    "complexity": "low",
+    "created_at": "2026-10-09",
+    "resolved_at": "2026-10-09",
+    "resolution_changes": "Removed the stale duplicate reviewer-count plan item from MC-AI-0393 and retained one precise instruction: one Luna reviewer, with any requested correction returned only as a delta to that same reviewer, followed by one task commit.",
+    "plan": [
+      "Remove only the stale duplicate plan item that says to send the delta to both reviewers; keep the earlier instruction to send only the exact delta to the same reviewer.",
+      "Refresh generated task documents, run ai_tasks check, ai_docs check, diff check and ai_check --fast; obtain exact staged-task approval and commit with this task trailer."
+    ],
+    "product_changes": [],
+    "code_changes": [
+      "Clarified the canonical MC-AI-0393 review plan and regenerated its task document."
     ],
     "baseline_commit": "",
     "commits": [],
