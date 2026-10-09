@@ -1,5 +1,7 @@
 #include <server/GameServer.hpp>
 
+#include <server/detail/NetworkEventBatch.hpp>
+
 #include <shared/world/HeightTileInterest.hpp>
 #include <shared/world/WorldGeneration.hpp>
 
@@ -856,7 +858,7 @@ void GameServer::run(
             auto const tick_started_at = measure_tick
                 ? std::chrono::steady_clock::now()
                 : std::chrono::steady_clock::time_point{};
-            uint64_t const events = tick(std::chrono::milliseconds::zero());
+            uint64_t const events = tickImpl(std::chrono::milliseconds::zero(), &stop_requested);
             if (measure_tick) {
                 tick_duration = std::chrono::duration_cast<std::chrono::nanoseconds>(
                     std::chrono::steady_clock::now() - tick_started_at
@@ -891,10 +893,7 @@ void GameServer::run(
             );
             auto const poll_started_at = m_benchmark_metrics_enabled
                 ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
-            uint32_t polled_event_count = poll(poll_timeout);
-            while (polled_event_count > 0U) {
-                polled_event_count = poll(std::chrono::milliseconds::zero());
-            }
+            static_cast<void>(pollNetworkBatch(poll_timeout, &stop_requested));
             if (m_benchmark_metrics_enabled) {
                 network_poll_duration = std::chrono::duration_cast<std::chrono::nanoseconds>(
                     std::chrono::steady_clock::now() - poll_started_at
@@ -979,17 +978,34 @@ uint32_t GameServer::terrainWorkerCount(uint32_t const hardware_concurrency) noe
 }
 
 uint64_t GameServer::tick(std::chrono::milliseconds const timeout) {
+    return tickImpl(timeout, nullptr);
+}
+
+uint64_t GameServer::pollNetworkBatch(
+    std::chrono::milliseconds const timeout,
+    std::atomic_bool const* const stop_requested
+)
+{
+    return detail::pollNetworkEventBatch(
+        [this](std::chrono::milliseconds const poll_timeout) {
+            return poll(poll_timeout);
+        },
+        timeout,
+        [stop_requested] {
+            return stop_requested != nullptr && stop_requested->load(std::memory_order_relaxed);
+        }
+    );
+}
+
+uint64_t GameServer::tickImpl(
+    std::chrono::milliseconds const timeout,
+    std::atomic_bool const* const stop_requested
+)
+{
     for (PlayerReplication& replication : m_player_replications) {
         replication.action_consumed_this_tick = false;
     }
-    uint64_t events = static_cast<uint64_t>(poll(timeout));
-    while (true) {
-        uint32_t const drained = poll(std::chrono::milliseconds::zero());
-        if (drained == 0U) {
-            break;
-        }
-        events += static_cast<uint64_t>(drained);
-    }
+    uint64_t const events = pollNetworkBatch(timeout, stop_requested);
     for (PlayerReplication& replication : m_player_replications) {
         if (!replication.action_consumed_this_tick && !replication.pending_inputs.empty()) {
             shared::ClientInputMessage const input = replication.pending_inputs.front();

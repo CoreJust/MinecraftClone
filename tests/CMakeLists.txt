@@ -159,6 +159,7 @@ add_executable(mc_tests
     core/sparse_world_tests.cpp
     core/world_generation_scheduler_tests.cpp
     core/game_server_preview_tests.cpp
+    core/network_event_batch_tests.cpp
     core/shared_world_tests.cpp
     core/flight_world_tests.cpp
     core/span_utils_tests.cpp

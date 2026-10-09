@@ -168,7 +168,7 @@
         "vcpkg-configuration.json",
         "vcpkg.json"
       ],
-      "sources_sha256": "b7f73f2a9dcf3571a0d1d0535eafecfccad0febb2592f3b5fd360c4bc9f7a563"
+      "sources_sha256": "8bb44d6083373e186890f0d5f210b7c6e30b51df501adb2fce2ad426d71eb195"
     },
     {
       "guide": "docs/code/CORE.md",
@@ -205,7 +205,7 @@
     },
     {
       "guide": "docs/code/GAMEPLAY.md",
-      "guide_sha256": "3c274b86153a771a6701fa4c8ae1dd459fd82ef55e838249936d7c9cb0f56920",
+      "guide_sha256": "772d82a53b07d90bb7648e58acaf5a6ad56cfd5beb1cedf740124942e42b66ad",
       "id": "gameplay",
       "sources": [
         "src/client/BotClient.cpp",
@@ -238,6 +238,7 @@
         "src/server/GameServer.cpp",
         "src/server/include/server/CMakeLists.txt",
         "src/server/include/server/GameServer.hpp",
+        "src/server/include/server/detail/NetworkEventBatch.hpp",
         "src/shared/CMakeLists.txt",
         "src/shared/include/shared/CMakeLists.txt",
         "src/shared/include/shared/ProjectInfo.hpp",
@@ -284,6 +285,7 @@
         "tests/core/game_server_tests.cpp",
         "tests/core/height_tile_interest_tests.cpp",
         "tests/core/height_tile_surface_mesher_tests.cpp",
+        "tests/core/network_event_batch_tests.cpp",
         "tests/core/scenario_parser_tests.cpp",
         "tests/core/scripted_world_tests.cpp",
         "tests/core/shared_message_tests.cpp",
@@ -292,7 +294,7 @@
         "tests/core/world_generation_scheduler_tests.cpp",
         "tests/core/world_generation_tests.cpp"
       ],
-      "sources_sha256": "294c6f15dfcb000e4d958f9542de53ea6ba40304c30e00103806eb2412bbb907"
+      "sources_sha256": "b83cb9e9f0f90822d57821de9962a181c99558086bd4af7a50b4d5aa03505bb4"
     },
     {
       "guide": "docs/code/RENDERING.md",

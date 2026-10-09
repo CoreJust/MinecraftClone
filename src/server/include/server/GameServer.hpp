@@ -145,6 +145,16 @@ private:
     void sendTo(std::optional<core::ClientId> const client_id, shared::Message message);
     void sendHeightTileTo(std::optional<core::ClientId> const client_id, shared::Message message);
     void startHeightTileStream(core::ClientId client_id);
+    [[nodiscard]]
+    uint64_t pollNetworkBatch(
+        std::chrono::milliseconds timeout,
+        std::atomic_bool const* stop_requested
+    );
+    [[nodiscard]]
+    uint64_t tickImpl(
+        std::chrono::milliseconds timeout,
+        std::atomic_bool const* stop_requested
+    );
     void acknowledgeHeightTileDelivery(
         core::ClientId client_id,
         shared::ClientHeightTileCreditMessage const& credit

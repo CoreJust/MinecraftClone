@@ -4,4 +4,5 @@ target_sources(mc
         BASE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}
         FILES
             GameServer.hpp
+            detail/NetworkEventBatch.hpp
 )
