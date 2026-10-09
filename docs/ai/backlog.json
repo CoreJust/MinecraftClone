@@ -1535,7 +1535,7 @@
     "retrospective": "Activation commit 0473b444 (2026-09-20 20:51:14 CEST) to first ai-main promotion commit 4b9166da (2026-10-01 07:24:32 CEST): 10d 10h 33m 18s; not a release because the exact-source matrix and artifacts were missing. At the 2026-10-09 08:45:08 CEST evidence checkpoint, 18d 11h 53m 54s had elapsed, not measured work hours. At checkpoint 9a2a0b6, records show 141 child IDs/142 commits through d78766e and 15 ai-main promotion commits without a release. Causes and evidence-backed improvements are in the linked hindsight report; records cannot prove a two-day counterfactual.",
     "docs_review": "Four distinct inspected 2560x1440 Release scenes meet full-load and centered-below-label criteria. The central scene was corrected on 2026-10-09 at distance 72; its full 16-heading/16,241-tile readiness, player clearance, geometry, lower-right beyond-ring terrain pixels, and updated hash are recorded in MC-AI-0398 and version history. The other three scene files remain unchanged. Hindsight summarizes setup, gate evidence, and remaining external requirements.",
     "environment_review": "Release work stayed isolated; the primary ai-dev checkout (9a02219; 372 behind, 117 dirty paths) was preserved. Early caches targeted wrong dependency revisions; first vcpkg configure omitted its toolchain, and repository-local hooks were missing. Pinned configs and guarded hooks later passed. The fresh MC-AI-0397 worktree lacked `build/debug`; build/CTest passed in its matching configured checkout. On 2026-10-09, Release renderer smoke and capture passed with host GUI access; the authorized Launch Services repair was not causal. Restricted execution blocked `git merge-tree --write-tree`; host context confirmed the S6 tag. Pre-push repeated 549 Python tests (65.78 s) after CTest (388.58 s). `ai_publish.prepare` requires an aggregate trailer. Detailed causes are in `docs/ai/S7-HINDSIGHT-2026-10-08.md`.",
-    "backlog_review": "All 152 original planned basic IDs are represented and done/finalized. Four additional S7 follow-up children, MC-AI-0399 through MC-AI-0402, are also done/finalized, bringing the snapshot total to 156 children. MC-AI-0399 fixes the only source diagnostic found in promotion run 37956286276; MC-AI-0400 and MC-AI-0401 add bounded event scheduling; MC-AI-0402 provisions Java 21 for the Android HWASan runtime job without a privileged install. The corrected full-source promotion matrix, package, and platform acceptance remain outstanding. MC-AI-0248 is diagnostic-only."
+    "backlog_review": "All 152 original planned basic IDs and six S7 follow-ups (MC-AI-0399 through MC-AI-0404) are done/finalized: 158 children total. MC-AI-0399 fixed the only source diagnostic; MC-AI-0400 and MC-AI-0401 bounded event scheduling; MC-AI-0402 added user-space Java 21; MC-AI-0403 stabilized ingress shutdown; MC-AI-0404 reconciles child accounting. The exact-source matrix, package, and platform acceptance remain outstanding. MC-AI-0248 is diagnostic-only."
   },
   {
     "id": "MC-AI-0039",
@@ -14155,6 +14155,44 @@
     ],
     "code_changes": [
       "Update the loopback regression to verify recent accepted ingress before shutdown and check the 250 ms server-exit bound without requiring a post-stop send."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0404",
+    "title": "Reconcile S7 child accounting",
+    "kind": "chore",
+    "status": "done",
+    "priority": "P2",
+    "route": "luna",
+    "milestone": "ED-010-S7",
+    "depends_on": [],
+    "acceptance": "Update the canonical MC-AI-0038 backlog review to count 152 original planned tasks plus six finalized follow-ups MC-AI-0399 through MC-AI-0404, totaling 158. Identify MC-AI-0403 and this metadata-reconciliation task. Regenerate the task page and pass ai_tasks.py check, ai_docs.py check, and git diff --check. Do not change product behavior or close MC-AI-0038.",
+    "evidence": "The parent now lists 152 original planned IDs plus six finalized follow-ups (MC-AI-0399 through MC-AI-0404), totaling 158. `ai_tasks.py check`, `ai_docs.py check`, and `git diff --check` pass.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0038",
+    "motivation": "The aggregate backlog review omits finalized child MC-AI-0403 and understates the S7 child count.",
+    "context": "origin/ai-dev at cf5b305 includes MC-AI-0403 as finalized, while MC-AI-0038 backlog_review still reports 156 children. This metadata correction must be tracked as its own task and include itself in the resulting count.",
+    "complexity": "low",
+    "created_at": "2026-10-10",
+    "resolved_at": "2026-10-10",
+    "resolution_changes": "Corrected MC-AI-0038 child accounting to include MC-AI-0403 and this task, for 158 total children.",
+    "plan": [
+      "Correct the parent backlog-review count and follow-up list in backlog.json; render generated task documents; validate metadata and documentation; record exact evidence."
+    ],
+    "product_changes": [
+      "No product behavior change; corrects snapshot task accounting."
+    ],
+    "code_changes": [
+      "Update canonical and generated S7 task metadata only."
     ],
     "baseline_commit": "",
     "commits": [],
