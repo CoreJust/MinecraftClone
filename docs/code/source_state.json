@@ -51,7 +51,7 @@
         "tests/android/input_state_tests.cpp",
         "tests/android/input_tests.cpp"
       ],
-      "sources_sha256": "b3c2bd30bfe7e79abcfaca5553c1b82e7045649c8dc77a2dec4b7a8ce6e06cc1"
+      "sources_sha256": "01691c0acbf3dde2c57d728f9ba90ea44ed51d555adbb81bea424c8d00da3e69"
     },
     {
       "guide": "docs/BUILD.md",

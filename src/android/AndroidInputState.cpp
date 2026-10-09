@@ -74,9 +74,9 @@ bool AndroidInputState::beginTouch(
 bool AndroidInputState::moveTouch(
     float const x,
     float const y,
-    int32_t const pointer_id
+    PointerId const pointer_id
 ) noexcept {
-    if (pointer_id != m_touch_pointer_id || m_touch_pointer_id < 0) {
+    if (pointer_id.value != m_touch_pointer_id || m_touch_pointer_id < 0) {
         return false;
     }
     if (!std::isfinite(x) || !std::isfinite(y)) {
@@ -134,10 +134,10 @@ bool AndroidInputState::beginLookTouch(
 bool AndroidInputState::moveLookTouch(
     float const x,
     float const y,
-    int32_t const pointer_id
+    PointerId const pointer_id
 ) noexcept
 {
-    if (pointer_id != m_look_pointer_id || m_look_pointer_id < 0) {
+    if (pointer_id.value != m_look_pointer_id || m_look_pointer_id < 0) {
         return false;
     }
     if (!std::isfinite(x) || !std::isfinite(y)) {
