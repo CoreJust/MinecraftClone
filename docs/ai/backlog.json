@@ -13929,5 +13929,45 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0398",
+    "title": "Show terrain beyond the first ring in the S7 central-spike capture",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P1",
+    "route": "luna",
+    "milestone": "ED-010-S7",
+    "depends_on": [],
+    "acceptance": "The capture plan and regression test prove that the central spike, most of the first ring, and terrain beyond the landform are simultaneously in-frame at the approved 2560x1440 framing, without relying on the screenshot alone. Regenerate and visually inspect only the central-spike capture after the full 72-chunk scene is loaded; preserve the requested flying third-person player visibility, closer/lower elevated composition, and centered-below label. Update the central PNG hash and its provenance/version-history record. Run the focused capture-plan test and actual central capture; do not modify the other three screenshots.",
+    "evidence": "Debug PlayerClientCapturePlanTest.FramesTheCentralSpikeAndFirstRingTogether passed 1/1; its projection regression verifies a radius-256 terrain sample is on-screen, has positive clip-W, lies within perspectiveRH_ZO depth [0,1], and its sightline clears the first ring. Release mc_main SHA-256 b0e8ffa028f46412688ec856677e06b0072ffe44cca71bf81064fa726033c75e. Host-context RendererSmokeTest passed 1/1 in 2.42 s. One-server/one-client macOS Release PlayerPlaytestCaptureTest.test_real_networked_client_renders_terrain_texture_and_hud passed 1/1 in 8.729 s at 2560x1440 and render distance 72, including full 16-heading/16,241-tile readiness; the screenshot regression requires more than 10% dark terrain pixels in the lower-right region beyond the first ring. The visually inspected central PNG SHA-256 is 09f367efe433ee001de7157fe426d0e924690c7f35658bb92835e699d06286af. Only the central image changed; the other three retained screenshots still match their recorded hashes.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0038",
+    "motivation": "The accepted central-spike image shows the spike and ring but only sky beyond them; the current projection test does not detect the missing terrain, so the released evidence does not satisfy the agreed screenshot acceptance.",
+    "context": "This is a correction to an existing S7 screenshot requirement, not additional product scope. Preserve the 2560x1440 Mac capture, render distance 72, requested closer/lower elevated viewpoint, fully loaded terrain, full spike, most of the first ring, visible player not covering the spike, and the centered-below label. Change only the central image and its provenance/version-history hash; do not repeat or alter the trench capture.",
+    "complexity": "medium",
+    "created_at": "2026-10-09",
+    "resolved_at": "2026-10-09",
+    "resolution_changes": "Changed only the central capture framing, added geometric and screenshot-pixel regressions for visible terrain beyond the first ring, recaptured the full-load scene, visually inspected it, and refreshed its version-history provenance/hash.",
+    "plan": [
+      "Clarify acceptance and implementation steps.",
+      "Widen the central view and retain the requested close, lower elevated composition.",
+      "Add projected-geometry and captured-pixel checks for terrain beyond the first ring.",
+      "Recapture and visually verify only the central scene, then update its provenance."
+    ],
+    "product_changes": [],
+    "code_changes": [
+      "Adjusted only the central capture pitch/FOV; added a radius-256 terrain projection regression and a beyond-ring screenshot-pixel assertion.",
+      "Hardened the radius-256 projection regression to assert positive clip-W and Vulkan zero-to-one depth in addition to screen bounds and ring clearance."
+    ],
+    "baseline_commit": "be9bc9e43d64ab3768dda872281c9fe24aadd600",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "Version history records the replacement image hash, Release executable hash, 72-chunk capture settings, and full-load/heading evidence; the three other image hashes are unchanged.",
+    "environment_review": "The restricted executor caused the Cocoa/Launch Services startup hang before networking. The exact Release renderer smoke and networked capture pass when run with normal macOS host GUI permissions; no product or OS cache repair was needed for this capture.",
+    "backlog_review": "MC-AI-0398 is the only new child; prior completed child records remain unchanged."
   }
 ]
