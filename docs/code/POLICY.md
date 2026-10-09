@@ -25,7 +25,10 @@ checks the subject and key catalogs, resolves selectors, and creates immutable
 dense capability rows bound to their exact plan. Publication assigns a
 generation; indexed queries use a two-argument subject/key query and fail closed for
 unknown subjects or keys. Both query values are required at construction, so an
-incomplete query cannot silently default to entity or capability index zero.
+incomplete query cannot silently default to entity or capability index zero. The
+query takes distinct, non-convertible subject-ID and capability-key-ID types, so
+their arguments cannot be accidentally reversed; the snapshot still stores the
+same integer IDs and performs the same dense lookup.
 The server validates movement values and collision geometry before publishing,
 then applies and replicates changed player capabilities. Policy behavior is
 covered by `tests/core/corelang_policy_tests.cpp` and server integration tests.

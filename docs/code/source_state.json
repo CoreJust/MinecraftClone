@@ -292,7 +292,7 @@
         "tests/core/world_generation_scheduler_tests.cpp",
         "tests/core/world_generation_tests.cpp"
       ],
-      "sources_sha256": "8e6e9ff4339fc3427082aaf321cac1accec4434b198be655a140a490ed769c04"
+      "sources_sha256": "897ba86e4d13c9d855f816f6399eb2db22292e14b5c79a9529e3063088fadf65"
     },
     {
       "guide": "docs/code/RENDERING.md",

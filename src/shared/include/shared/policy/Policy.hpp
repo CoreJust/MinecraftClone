@@ -17,12 +17,28 @@ using PolicyEntityId = uint64_t;
 using PolicyCapabilityKeyId = uint32_t;
 
 struct PolicyCapabilityQuery final {
+    struct SubjectId final {
+        explicit constexpr SubjectId(PolicyEntityId const value_) noexcept
+            : value(value_)
+        {}
+
+        PolicyEntityId value;
+    };
+
+    struct CapabilityKeyId final {
+        explicit constexpr CapabilityKeyId(PolicyCapabilityKeyId const value_) noexcept
+            : value(value_)
+        {}
+
+        PolicyCapabilityKeyId value;
+    };
+
     constexpr PolicyCapabilityQuery(
-        PolicyEntityId const subject,
-        PolicyCapabilityKeyId const key
+        SubjectId const subject_id,
+        CapabilityKeyId const capability_key_id
     ) noexcept
-        : subject(subject)
-        , key(key)
+        : subject(subject_id.value)
+        , key(capability_key_id.value)
     {}
 
     PolicyEntityId subject;

@@ -13816,5 +13816,45 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0395",
+    "title": "Prevent swapped policy capability query identifiers",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P0",
+    "route": "luna",
+    "milestone": "S7",
+    "depends_on": [],
+    "acceptance": "Construct PolicyCapabilityQuery only from distinct, non-convertible subject-ID and capability-key-ID types; prove that swapped and raw integer argument pairs do not compile; migrate every call site; preserve the stored integer fields and dense lookup behavior. Do not suppress or weaken clang-tidy. Run focused policy tests, documentation/task checks, and the fast gate. The exact-promotion clang-tidy row remains an MC-AI-0038 release gate.",
+    "evidence": "Debug mc_tests target built successfully. Focused CTest passed CoreLangPolicyTest 27/27 and GameServerTest/GameServerFlightTest 18/18. Compile-time assertions prove typed construction works and reversed, raw-integer, default, and partial query construction are rejected. ai_docs refresh/check and ai_tasks check passed. ai_check.py --fast exited 0; the only allowed diagnostic was the development dirty-worktree cleanliness sentinel. No local clang-tidy executable is installed; the strict exact-promotion clang-tidy row remains an MC-AI-0038 release gate.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0038",
+    "motivation": "The full-range S7 contract review found PolicyCapabilityQuery accepts easily swappable integer aliases, so a caller can silently query the wrong entity or capability. The constructor signature also retains the convertible-parameter pattern covered by bugprone-easily-swappable-parameters.",
+    "context": "Follow-up to the approved review of MC-AI-0392 through MC-AI-0394, range b87cbbb84de38135868101c705d227350cbadeec..789458e36e0c0ebd6c3e0ed37f72cfcd87418e46. Review finding P2: replace the adjacent integer aliases with distinct non-convertible query argument types, migrate callers, and verify the existing strict clang-tidy contract without suppressions. Preserve integer storage and the dense lookup path.",
+    "complexity": "low",
+    "created_at": "2026-10-09",
+    "resolved_at": "2026-10-09",
+    "resolution_changes": "Added explicit nested SubjectId and CapabilityKeyId argument types to PolicyCapabilityQuery, preserving the same stored integer fields and dense lookup. Migrated server and test call sites, added compile-time coverage for reversed, raw-integer, default, and partial construction, and documented the contract. No analyzer suppression or gate change was made.",
+    "plan": [
+      "Use nested explicit SubjectId and CapabilityKeyId wrappers for query construction while retaining the existing numeric fields and dense lookup representation.",
+      "Migrate all callers and add compile-time assertions that valid typed construction works while reversed and raw-integer argument pairs are rejected.",
+      "Update POLICY.md; run the focused policy suite, direct clang-tidy check when available, docs/task checks, and the fast gate; obtain a fresh staged review and commit with this task trailer."
+    ],
+    "product_changes": [
+      "Permission queries cannot accidentally transpose an entity ID and capability key ID at compile time."
+    ],
+    "code_changes": [
+      "Add distinct non-convertible argument wrappers to PolicyCapabilityQuery without changing its stored integer IDs or dense lookup behavior."
+    ],
+    "baseline_commit": "789458e36e0c0ebd6c3e0ed37f72cfcd87418e46",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]
