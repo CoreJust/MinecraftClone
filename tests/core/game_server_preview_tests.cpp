@@ -936,6 +936,7 @@ TEST(GameServerPreviewTest, SustainedNetworkIngressDoesNotStarveTicksTerrainOrSh
     static constexpr auto MINIMUM_INGRESS_DURATION = std::chrono::milliseconds{500};
     static constexpr uint32_t FLOOD_CLIENT_COUNT = 3U;
     static constexpr uint32_t MAX_FLOOD_PACKETS_PER_CLIENT = 500'000U;
+    static constexpr uint32_t PACKETS_PER_FLUSH = 128U;
     server::GameServer server{0, {}, shared::WorldMode::Flight, shared::World::canonicalConfiguration(), 4U};
     std::atomic_bool stop_requested{false};
     std::atomic_bool flood_stopped{false};
@@ -958,11 +959,19 @@ TEST(GameServerPreviewTest, SustainedNetworkIngressDoesNotStarveTicksTerrainOrSh
     PreviewClient observer;
     std::array<PreviewClient, FLOOD_CLIENT_COUNT> flood_clients;
     std::array<std::atomic_uint64_t, FLOOD_CLIENT_COUNT> sent_packets{};
+    std::array<std::atomic_uint64_t, FLOOD_CLIENT_COUNT> flushed_packets{};
     std::array<std::thread, FLOOD_CLIENT_COUNT> flood_threads;
     auto const totalSentPackets = [&sent_packets] {
         uint64_t count = 0U;
         for (std::atomic_uint64_t const& sent : sent_packets) {
             count += sent.load(std::memory_order_relaxed);
+        }
+        return count;
+    };
+    auto const totalFlushedPackets = [&flushed_packets] {
+        uint64_t count = 0U;
+        for (std::atomic_uint64_t const& flushed : flushed_packets) {
+            count += flushed.load(std::memory_order_relaxed);
         }
         return count;
     };
@@ -1004,9 +1013,9 @@ TEST(GameServerPreviewTest, SustainedNetworkIngressDoesNotStarveTicksTerrainOrSh
     });
     auto const flood_client_loop = [&flood_stopped, &flood_packet](
         PreviewClient& client,
-        std::atomic_uint64_t& sent_count
+        std::atomic_uint64_t& sent_count,
+        std::atomic_uint64_t& flushed_count
     ) {
-        static constexpr uint32_t PACKETS_PER_FLUSH = 128U;
         while (!flood_stopped.load(std::memory_order_relaxed)
             && sent_count.load(std::memory_order_relaxed) < MAX_FLOOD_PACKETS_PER_CLIENT) {
             uint32_t batch_count = 0U;
@@ -1017,16 +1026,20 @@ TEST(GameServerPreviewTest, SustainedNetworkIngressDoesNotStarveTicksTerrainOrSh
                         core::SendMode{core::SendMode::Unsequenced})) {
                     sent_count.fetch_add(1U, std::memory_order_relaxed);
                     ++batch_count;
+                } else {
+                    break;
                 }
             }
             client.flush();
+            flushed_count.store(sent_count.load(std::memory_order_relaxed), std::memory_order_relaxed);
             std::this_thread::sleep_for(std::chrono::milliseconds{1});
         }
     };
     for (uint32_t index = 0U; index < FLOOD_CLIENT_COUNT; ++index) {
         flood_threads[index] = std::thread{
-            [client = &flood_clients[index], sent_count = &sent_packets[index], flood_client_loop] {
-                flood_client_loop(*client, *sent_count);
+            [client = &flood_clients[index], sent_count = &sent_packets[index],
+                flushed_count = &flushed_packets[index], flood_client_loop] {
+                flood_client_loop(*client, *sent_count, *flushed_count);
             }
         };
     }
@@ -1063,14 +1076,20 @@ TEST(GameServerPreviewTest, SustainedNetworkIngressDoesNotStarveTicksTerrainOrSh
             break;
         }
     }
-    uint64_t const packets_before_shutdown = totalSentPackets();
+    uint64_t const flushed_packets_before_shutdown = totalFlushedPackets();
+    deadline = std::chrono::steady_clock::now() + PROGRESS_TIMEOUT;
+    while (totalFlushedPackets() == flushed_packets_before_shutdown
+        && std::chrono::steady_clock::now() < deadline) {
+        observer.poll(std::chrono::milliseconds{1});
+    }
+    bool const ingress_active_at_shutdown = totalFlushedPackets() > flushed_packets_before_shutdown;
     stop_requested.store(true, std::memory_order_relaxed);
     deadline = std::chrono::steady_clock::now() + SHUTDOWN_TIMEOUT;
     while (!server_exited.load(std::memory_order_acquire) && std::chrono::steady_clock::now() < deadline) {
         observer.poll(std::chrono::milliseconds{1});
     }
-    bool const stopped_during_ingress = server_exited.load(std::memory_order_acquire)
-        && totalSentPackets() > packets_before_shutdown;
+    bool const stopped_during_ingress = ingress_active_at_shutdown
+        && server_exited.load(std::memory_order_acquire);
     flood_stopped.store(true, std::memory_order_relaxed);
     for (std::thread& flood_thread : flood_threads) {
         if (flood_thread.joinable()) {

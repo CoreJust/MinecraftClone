@@ -14122,5 +14122,46 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0403",
+    "title": "Stabilize sustained-ingress shutdown regression",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P1",
+    "route": "luna",
+    "milestone": "ED-010-S7",
+    "depends_on": [],
+    "acceptance": "A flood sender exits its current batch on an unsuccessful Client::send and flushes any already accepted packets before retrying, so transport backpressure cannot strand a partial batch. Immediately before requesting shutdown, the test observes a flood-client batch with fresh accepted packets complete client.flush() within the existing two-second progress bound, alongside the existing tick, preview-metrics, and terrain-progress checks. Flood senders remain enabled through shutdown observation, and the server exits within the existing 250 ms bound. No further client-side send is required after the stop request. The focused repeated regression passes; the full S7 CTest suite remains a separate aggregate gate.",
+    "evidence": "After the correction, the Debug build linked and the focused sustained-ingress regression passed 10/10 repetitions in 10.16 s. Code documentation integrity passed. The repository fast gate passed all applicable checks; Python tests were correctly skipped for this full-C++ change, and the source-check dirty-worktree predicate was the only allowed development exception. No production networking code changed.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0038",
+    "motivation": "The exact-source Snapshot 7 candidate gate produced one failure in GameServerPreviewTest.SustainedNetworkIngressDoesNotStarveTicksTerrainOrShutdown: the server exited within the test run, but no new client-side send was counted during the test’s 250 ms post-stop window. Ten immediate isolated repetitions passed, indicating the post-stop increment is a scheduling-sensitive proxy rather than a stable shutdown contract.",
+    "context": "The full suite had one failure at the post-stop packet-count assertion; ten isolated repetitions passed. The failure does not identify whether senders were simply unscheduled during the 250 ms shutdown window or stalled by transport backpressure. Source inspection confirms core::Client::send can return false when ENet rejects a packet, while the test flood loop previously retried without flushing until 128 successful sends accumulated. Both cases make post-stop packet growth an unreliable shutdown predicate. The correction flushes accepted partial batches, observes recent completed flushes before shutdown, then evaluates prompt server exit independently.",
+    "complexity": "low",
+    "created_at": "2026-10-10",
+    "resolved_at": "2026-10-10",
+    "resolution_changes": "Hardened the loopback flood producer to break and flush a partial batch when Client::send rejects a packet, observed a newly flushed batch immediately before requesting shutdown, and measured the 250 ms server-exit bound independently of post-stop sender scheduling.",
+    "plan": [
+      "Break the flood batch on a rejected Client::send and flush any partial successful batch before the next retry.",
+      "Observe a newly completed flood-client flush immediately before requesting stop; preserve the existing under-ingress progress checks.",
+      "Assert timely server exit independently of post-stop sender scheduling while leaving flood producers enabled through the shutdown observation.",
+      "Run the focused stress regression repeatedly and record the full Snapshot 7 candidate gate separately."
+    ],
+    "product_changes": [
+      "No product behavior change; stabilize the automated S7 ingress/shutdown acceptance test."
+    ],
+    "code_changes": [
+      "Update the loopback regression to verify recent accepted ingress before shutdown and check the 250 ms server-exit bound without requiring a post-stop send."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]
