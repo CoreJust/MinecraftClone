@@ -79,7 +79,7 @@ class PlayerPlaytestCaptureTest(unittest.TestCase):
         self.assertLessEqual(int(started.group(1)), 900)
         self.assertIn("Capture sweep complete: headings=16", output)
 
-    def assert_labeled_terrain_capture(self, image):
+    def assert_labeled_terrain_capture(self, image, require_background_terrain=False):
         width, height, pixels = read_ppm(image)
         if os.environ.get("MC_S7_REQUIRE_2560X1440") == "1":
             self.assertEqual((width, height), (2560, 1440))
@@ -90,14 +90,21 @@ class PlayerPlaytestCaptureTest(unittest.TestCase):
         terrain_pixels = 0
         white_hud_pixels = 0
         title_pixels = 0
+        beyond_ring_terrain_pixels = 0
         for pixel_index, offset in enumerate(range(0, len(pixels), 3)):
             red, green, blue = pixels[offset:offset + 3]
+            x = pixel_index % width
+            y = pixel_index // width
             if red < 150 and green < 150 and blue < 150:
                 terrain_pixels += 1
                 if len(colors) < 512:
                     colors.add((red, green, blue))
-            x = pixel_index % width
-            y = pixel_index // width
+                if (
+                    require_background_terrain
+                    and x >= 3 * width // 4
+                    and 78 * height // 100 <= y < 94 * height // 100
+                ):
+                    beyond_ring_terrain_pixels += 1
             if x < width // 3 and y < height // 3 and red > 220 and green > 220 and blue > 220:
                 white_hud_pixels += 1
             if red > 200 and green > 150 and blue < 180:
@@ -109,6 +116,11 @@ class PlayerPlaytestCaptureTest(unittest.TestCase):
         self.assertGreater(len(colors), 24)
         self.assertGreater(white_hud_pixels, 100)
         self.assertGreater(title_pixels, 100)
+        if require_background_terrain:
+            background_region_area = (width - 3 * width // 4) * (
+                94 * height // 100 - 78 * height // 100
+            )
+            self.assertGreater(beyond_ring_terrain_pixels, background_region_area // 10)
 
     def test_real_networked_client_renders_terrain_texture_and_hud(self):
         port = free_udp_port()
@@ -143,7 +155,7 @@ class PlayerPlaytestCaptureTest(unittest.TestCase):
                 self.assertEqual(client.returncode, 0, client.stdout + client.stderr)
                 self.assertLess(time.monotonic() - started, 1200.0)
                 self.assert_full_radius_sweep(client, expected_tiles=16241)
-                self.assert_labeled_terrain_capture(image)
+                self.assert_labeled_terrain_capture(image, require_background_terrain=True)
             finally:
                 if server.poll() is None:
                     server.terminate()

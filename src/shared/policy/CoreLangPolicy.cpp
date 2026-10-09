@@ -52,13 +52,17 @@ PolicyDiagnostic diagnostic(
 [[nodiscard]]
 core::lang::Type type(core::lang::TypeKind const kind)
 {
-    return {.kind = kind};
+    return {.kind = kind, .elements = {}};
 }
 
 [[nodiscard]]
 core::lang::Value unitValue()
 {
-    return {.type = type(core::lang::TypeKind::Unit)};
+    return {
+        .type = type(core::lang::TypeKind::Unit),
+        .bytes = {},
+        .elements = {},
+    };
 }
 
 [[nodiscard]]
@@ -204,7 +208,8 @@ std::optional<std::string_view> entityKindTarget(std::string_view const target) 
     if (!target.starts_with(PREFIX)) {
         return std::nullopt;
     }
-    std::string_view const kind = target.substr(PREFIX.size());
+    std::string_view kind = target;
+    kind.remove_prefix(PREFIX.size());
     return validText(kind) ? std::optional<std::string_view>{kind} : std::nullopt;
 }
 
@@ -305,7 +310,10 @@ core::lang::CustomManifest manifest(HostSpec const& spec)
         .effect = core::lang::CustomEffect::Observable,
         .arguments = spec.arguments,
         .result = type(core::lang::TypeKind::Unit),
-        .borrow = {.parameters = std::vector<core::lang::BorrowAccess>(spec.arguments.size())},
+        .borrow = {
+            .parameters = std::vector<core::lang::BorrowAccess>(spec.arguments.size()),
+            .returns = {},
+        },
     };
     result.digest = core::lang::customManifestDigest(result);
     return result;
@@ -600,6 +608,7 @@ std::expected<PolicyPlan, PolicyDiagnostic> executePolicy(
                 }
                 return core::lang::CustomOutcome{core::lang::CustomComplete{.value = unitValue()}};
             },
+            .cancel = {},
         });
     }
 
@@ -1062,23 +1071,21 @@ uint32_t PolicyCapabilitySnapshot::capabilityCount() const noexcept
 }
 
 std::optional<int64_t> PolicyCapabilitySnapshot::value(
-    PolicyEntityId const subject,
-    PolicyCapabilityKeyId const key
+    PolicyCapabilityQuery const query
 ) const noexcept
 {
-    auto const row = m_rows.find(subject);
-    if (row == m_rows.end() || key >= m_capability_count) {
+    auto const row = m_rows.find(query.subject);
+    if (row == m_rows.end() || query.key >= m_capability_count) {
         return std::nullopt;
     }
-    return m_values[static_cast<size_t>(row->second) * m_capability_count + key];
+    return m_values[static_cast<size_t>(row->second) * m_capability_count + query.key];
 }
 
 bool PolicyCapabilitySnapshot::allows(
-    PolicyEntityId const subject,
-    PolicyCapabilityKeyId const key
+    PolicyCapabilityQuery const query
 ) const noexcept
 {
-    auto const result = value(subject, key);
+    auto const result = value(query);
     return result.has_value() && *result > 0;
 }
 
@@ -1128,7 +1135,11 @@ std::expected<PolicyCompilation, PolicyDiagnostic> PolicyHost::compile(
     }
 
     std::vector<HostSpec> const specs = hostSpecs();
-    core::lang::Ruleset ruleset{.id = "minecraft", .version = 1U};
+    core::lang::Ruleset ruleset{
+        .id = "minecraft",
+        .version = 1U,
+        .restrictions = {},
+    };
     ruleset.operations.reserve(specs.size());
     for (HostSpec const& spec : specs) {
         core::lang::CustomManifest const host_manifest = manifest(spec);
@@ -1139,12 +1150,14 @@ std::expected<PolicyCompilation, PolicyDiagnostic> PolicyHost::compile(
             .result = host_manifest.result,
             .effect = host_manifest.effect,
             .custom = host_manifest,
+            .expand = {},
             .borrow = host_manifest.borrow,
         });
     }
     core::lang::CompilerRegistry const registry{
         .rulesets = {std::move(ruleset)},
         .defaults = {"minecraft"},
+        .restrictions = {},
     };
     core::lang::CompileOptions compile_options;
     compile_options.cancelled = [cancellation] {
@@ -1418,12 +1431,12 @@ std::expected<PolicyCapabilitySnapshot, PolicyDiagnostic> PolicyHost::materializ
                 "policy assignment references an unknown preset"
             ));
         }
+        std::optional<PolicyEntityId> const entity_target_id = entityTargetId(assignment.target);
         bool const known_target = entityClassSpecificity(assignment.target, PolicyEntityClass::Player) != 0U
             || assignment.target == "mobs" || assignment.target == "entities"
             || entityKindTarget(assignment.target).has_value()
             || groups.contains(assignment.target)
-            || (entityTargetId(assignment.target).has_value()
-                && subjects_by_id.contains(*entityTargetId(assignment.target)));
+            || (entity_target_id.has_value() && subjects_by_id.contains(*entity_target_id));
         if (isReservedWorldTarget(assignment.target) || !known_target) {
             return std::unexpected(diagnostic(
                 isReservedWorldTarget(assignment.target)
@@ -1482,20 +1495,22 @@ std::expected<PolicyCapabilitySnapshot, PolicyDiagnostic> PolicyHost::materializ
             }
         }
         for (PolicyCapabilityKeyId key = 0U; key < registry.definitions.size(); ++key) {
-            if (!hard_constraints[key].has_value()) {
+            std::optional<int64_t> const hard_constraint = hard_constraints[key];
+            if (!hard_constraint.has_value()) {
                 continue;
             }
+            int64_t const hard_value = hard_constraint.value_or(values[key]);
             PolicyCapabilityDefinition const& definition = registry.definitions[key];
             values[key] = definition.hard_restriction == PolicyRestriction::Maximum
-                ? std::min(values[key], *hard_constraints[key])
-                : std::max(values[key], *hard_constraints[key]);
+                ? std::min(values[key], hard_value)
+                : std::max(values[key], hard_value);
         }
         result.m_values.insert(result.m_values.end(), values.begin(), values.end());
     }
     return result;
 }
 
-std::expected<uint64_t, PolicyDiagnostic> PolicyHost::publish(PolicyCompilation compilation)
+std::expected<uint64_t, PolicyDiagnostic> PolicyHost::publish(PolicyCompilation const& compilation)
 {
     return std::unexpected(diagnostic(
         PolicyDiagnosticCode::MissingMaterialization,

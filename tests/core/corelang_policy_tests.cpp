@@ -5,9 +5,57 @@
 #include <cstdint>
 #include <string>
 #include <string_view>
+#include <type_traits>
 #include <vector>
 
+static_assert(std::is_constructible_v<
+    shared::PolicyCapabilityQuery,
+    shared::PolicyCapabilityQuery::SubjectId,
+    shared::PolicyCapabilityQuery::CapabilityKeyId
+>);
+static_assert(!std::is_constructible_v<
+    shared::PolicyCapabilityQuery,
+    shared::PolicyCapabilityQuery::CapabilityKeyId,
+    shared::PolicyCapabilityQuery::SubjectId
+>);
+static_assert(!std::is_constructible_v<
+    shared::PolicyCapabilityQuery,
+    shared::PolicyEntityId,
+    shared::PolicyCapabilityKeyId
+>);
+static_assert(!std::is_convertible_v<
+    shared::PolicyCapabilityQuery::SubjectId,
+    shared::PolicyCapabilityQuery::CapabilityKeyId
+>);
+static_assert(!std::is_convertible_v<
+    shared::PolicyCapabilityQuery::CapabilityKeyId,
+    shared::PolicyCapabilityQuery::SubjectId
+>);
+static_assert(!std::is_default_constructible_v<shared::PolicyCapabilityQuery::SubjectId>);
+static_assert(!std::is_default_constructible_v<shared::PolicyCapabilityQuery::CapabilityKeyId>);
+static_assert(!std::is_default_constructible_v<shared::PolicyCapabilityQuery>);
+static_assert(!std::is_aggregate_v<shared::PolicyCapabilityQuery>);
+static_assert(!std::is_constructible_v<
+    shared::PolicyCapabilityQuery,
+    shared::PolicyCapabilityQuery::SubjectId
+>);
+static_assert(!std::is_constructible_v<
+    shared::PolicyCapabilityQuery,
+    shared::PolicyCapabilityQuery::CapabilityKeyId
+>);
+
 namespace {
+
+using QuerySubjectId = shared::PolicyCapabilityQuery::SubjectId;
+using QueryCapabilityKeyId = shared::PolicyCapabilityQuery::CapabilityKeyId;
+
+static constexpr shared::PolicyCapabilityQuery policyQuery(
+    QuerySubjectId const subject_id,
+    QueryCapabilityKeyId const capability_key_id
+) noexcept
+{
+    return {subject_id, capability_key_id};
+}
 
 static constexpr std::string_view POLICY_SOURCE = R"core(@version("0.1.3.1")
 @use minecraft
@@ -337,7 +385,7 @@ TEST(CoreLangPolicyTest, DecodesNegativePermissionValuesWithoutOverflow)
     ASSERT_EQ(compiled->plan.presets().size(), 1U);
     ASSERT_EQ(compiled->plan.presets()[0].rules.size(), 1U);
     EXPECT_EQ(compiled->plan.presets()[0].rules[0].value, -9);
-    EXPECT_EQ(materialized->value(42U, 0U), -9);
+    EXPECT_EQ(materialized->value(policyQuery(QuerySubjectId{42U}, QueryCapabilityKeyId{0U})), -9);
 }
 
 TEST(CoreLangPolicyTest, MaterializesGeneralEntityCapabilitiesBeforeAtomicPublication)
@@ -355,13 +403,13 @@ TEST(CoreLangPolicyTest, MaterializesGeneralEntityCapabilitiesBeforeAtomicPublic
     auto materialized = host.materialize(compiled->plan, subjects, capabilityRegistry());
     ASSERT_TRUE(materialized.has_value()) << materialized.error().message;
     EXPECT_EQ(materialized->capabilityCount(), 2U);
-    EXPECT_FALSE(materialized->allows(42U, 0U));
-    EXPECT_TRUE(materialized->allows(7U, 0U));
-    EXPECT_TRUE(materialized->allows(9U, 0U));
-    EXPECT_TRUE(materialized->allows(10U, 0U));
-    EXPECT_FALSE(materialized->allows(999U, 0U));
-    EXPECT_FALSE(materialized->allows(7U, 9U));
-    EXPECT_EQ(materialized->value(7U, 1U), 100);
+    EXPECT_FALSE(materialized->allows(policyQuery(QuerySubjectId{42U}, QueryCapabilityKeyId{0U})));
+    EXPECT_TRUE(materialized->allows(policyQuery(QuerySubjectId{7U}, QueryCapabilityKeyId{0U})));
+    EXPECT_TRUE(materialized->allows(policyQuery(QuerySubjectId{9U}, QueryCapabilityKeyId{0U})));
+    EXPECT_TRUE(materialized->allows(policyQuery(QuerySubjectId{10U}, QueryCapabilityKeyId{0U})));
+    EXPECT_FALSE(materialized->allows(policyQuery(QuerySubjectId{999U}, QueryCapabilityKeyId{0U})));
+    EXPECT_FALSE(materialized->allows(policyQuery(QuerySubjectId{7U}, QueryCapabilityKeyId{9U})));
+    EXPECT_EQ(materialized->value(policyQuery(QuerySubjectId{7U}, QueryCapabilityKeyId{1U})), 100);
 
     shared::PolicyLimits limited_limits = shared::defaultPolicyLimits();
     limited_limits.max_subjects = 1U;
@@ -377,7 +425,7 @@ TEST(CoreLangPolicyTest, MaterializesGeneralEntityCapabilitiesBeforeAtomicPublic
     auto const capabilities = snapshot->capabilities();
     ASSERT_NE(capabilities, nullptr);
     EXPECT_EQ(capabilities->generation(), *generation);
-    EXPECT_TRUE(capabilities->allows(9U, 0U));
+    EXPECT_TRUE(capabilities->allows(policyQuery(QuerySubjectId{9U}, QueryCapabilityKeyId{0U})));
 }
 
 TEST(CoreLangPolicyTest, DenialWinsTiedSoftAssignmentsRegardlessOfDeclarationOrder)
@@ -392,7 +440,7 @@ TEST(CoreLangPolicyTest, DenialWinsTiedSoftAssignmentsRegardlessOfDeclarationOrd
         auto const materialized = host.materialize(compiled->plan, subjects, capabilityRegistry());
 
         ASSERT_TRUE(materialized.has_value()) << materialized.error().message;
-        EXPECT_FALSE(materialized->allows(42U, 0U));
+        EXPECT_FALSE(materialized->allows(policyQuery(QuerySubjectId{42U}, QueryCapabilityKeyId{0U})));
     }
 }
 
@@ -428,7 +476,7 @@ TEST(CoreLangPolicyTest, HardRestrictionsWinTiesRegardlessOfDeclarationOrder)
         auto const materialized = host.materialize(compiled->plan, subjects, capabilityRegistry());
 
         ASSERT_TRUE(materialized.has_value()) << materialized.error().message;
-        EXPECT_FALSE(materialized->allows(42U, 0U));
+        EXPECT_FALSE(materialized->allows(policyQuery(QuerySubjectId{42U}, QueryCapabilityKeyId{0U})));
     }
 }
 
@@ -447,8 +495,8 @@ TEST(CoreLangPolicyTest, IndividualSoftAllowOverridesGroupSoftDenyOnlyForThatEnt
     auto const materialized = host.materialize(compiled->plan, subjects, capabilityRegistry());
 
     ASSERT_TRUE(materialized.has_value()) << materialized.error().message;
-    EXPECT_TRUE(materialized->allows(42U, 0U));
-    EXPECT_FALSE(materialized->allows(7U, 0U));
+    EXPECT_TRUE(materialized->allows(policyQuery(QuerySubjectId{42U}, QueryCapabilityKeyId{0U})));
+    EXPECT_FALSE(materialized->allows(policyQuery(QuerySubjectId{7U}, QueryCapabilityKeyId{0U})));
 }
 
 TEST(CoreLangPolicyTest, ExpiringSubjectRemovesConcreteMembershipAndOverrides)
@@ -463,7 +511,7 @@ TEST(CoreLangPolicyTest, ExpiringSubjectRemovesConcreteMembershipAndOverrides)
     };
     auto const before_expiration = host.materialize(compiled->plan, subjects, capabilityRegistry());
     ASSERT_TRUE(before_expiration.has_value()) << before_expiration.error().message;
-    ASSERT_TRUE(before_expiration->allows(42U, 0U));
+    ASSERT_TRUE(before_expiration->allows(policyQuery(QuerySubjectId{42U}, QueryCapabilityKeyId{0U})));
 
     shared::PolicyPlan const expired = compiled->plan.withoutSubject(42U);
     ASSERT_EQ(compiled->plan.groups()[0].members, std::vector<shared::PolicyEntityId>{42U});
@@ -471,11 +519,11 @@ TEST(CoreLangPolicyTest, ExpiringSubjectRemovesConcreteMembershipAndOverrides)
     ASSERT_EQ(expired.assignments().size(), 1U);
     EXPECT_EQ(expired.assignments()[0].target, "temporary");
     EXPECT_NE(shared::policyPlanId(expired), shared::policyPlanId(compiled->plan));
-    EXPECT_TRUE(before_expiration->allows(42U, 0U));
+    EXPECT_TRUE(before_expiration->allows(policyQuery(QuerySubjectId{42U}, QueryCapabilityKeyId{0U})));
 
     auto const reused_subject = host.materialize(expired, subjects, capabilityRegistry());
     ASSERT_TRUE(reused_subject.has_value()) << reused_subject.error().message;
-    EXPECT_FALSE(reused_subject->allows(42U, 0U));
+    EXPECT_FALSE(reused_subject->allows(policyQuery(QuerySubjectId{42U}, QueryCapabilityKeyId{0U})));
 }
 
 TEST(CoreLangPolicyTest, SelectorRangeMatchesInclusiveIdsOnlyWithinItsEntityKind)
@@ -496,15 +544,15 @@ TEST(CoreLangPolicyTest, SelectorRangeMatchesInclusiveIdsOnlyWithinItsEntityKind
     auto const materialized = host.materialize(compiled->plan, subjects, capabilityRegistry());
 
     ASSERT_TRUE(materialized.has_value()) << materialized.error().message;
-    EXPECT_TRUE(materialized->allows(9U, 0U));
-    EXPECT_TRUE(materialized->allows(12U, 0U));
-    EXPECT_FALSE(materialized->allows(8U, 0U));
-    EXPECT_FALSE(materialized->allows(11U, 0U));
-    EXPECT_FALSE(materialized->allows(13U, 0U));
+    EXPECT_TRUE(materialized->allows(policyQuery(QuerySubjectId{9U}, QueryCapabilityKeyId{0U})));
+    EXPECT_TRUE(materialized->allows(policyQuery(QuerySubjectId{12U}, QueryCapabilityKeyId{0U})));
+    EXPECT_FALSE(materialized->allows(policyQuery(QuerySubjectId{8U}, QueryCapabilityKeyId{0U})));
+    EXPECT_FALSE(materialized->allows(policyQuery(QuerySubjectId{11U}, QueryCapabilityKeyId{0U})));
+    EXPECT_FALSE(materialized->allows(policyQuery(QuerySubjectId{13U}, QueryCapabilityKeyId{0U})));
 
     subjects.clear();
-    EXPECT_TRUE(materialized->allows(9U, 0U));
-    EXPECT_TRUE(materialized->allows(12U, 0U));
+    EXPECT_TRUE(materialized->allows(policyQuery(QuerySubjectId{9U}, QueryCapabilityKeyId{0U})));
+    EXPECT_TRUE(materialized->allows(policyQuery(QuerySubjectId{12U}, QueryCapabilityKeyId{0U})));
 }
 
 TEST(CoreLangPolicyTest, SelectorRejectsReversedIdRanges)
@@ -541,9 +589,9 @@ TEST(CoreLangPolicyTest, BuiltInEntityKindGroupTargetsEverySubjectOfOnlyThatKind
     auto const materialized = host.materialize(compiled->plan, subjects, registry);
 
     ASSERT_TRUE(materialized.has_value()) << materialized.error().message;
-    EXPECT_TRUE(materialized->allows(42U, 0U));
-    EXPECT_FALSE(materialized->allows(9U, 0U));
-    EXPECT_TRUE(materialized->allows(10U, 0U));
+    EXPECT_TRUE(materialized->allows(policyQuery(QuerySubjectId{42U}, QueryCapabilityKeyId{0U})));
+    EXPECT_FALSE(materialized->allows(policyQuery(QuerySubjectId{9U}, QueryCapabilityKeyId{0U})));
+    EXPECT_TRUE(materialized->allows(policyQuery(QuerySubjectId{10U}, QueryCapabilityKeyId{0U})));
 }
 
 TEST(CoreLangPolicyTest, BuiltInMobsGroupTargetsOnlyMobSubjects)
@@ -562,9 +610,9 @@ TEST(CoreLangPolicyTest, BuiltInMobsGroupTargetsOnlyMobSubjects)
     auto const materialized = host.materialize(compiled->plan, subjects, capabilityRegistry());
 
     ASSERT_TRUE(materialized.has_value()) << materialized.error().message;
-    EXPECT_FALSE(materialized->allows(42U, 0U));
-    EXPECT_TRUE(materialized->allows(9U, 0U));
-    EXPECT_FALSE(materialized->allows(10U, 0U));
+    EXPECT_FALSE(materialized->allows(policyQuery(QuerySubjectId{42U}, QueryCapabilityKeyId{0U})));
+    EXPECT_TRUE(materialized->allows(policyQuery(QuerySubjectId{9U}, QueryCapabilityKeyId{0U})));
+    EXPECT_FALSE(materialized->allows(policyQuery(QuerySubjectId{10U}, QueryCapabilityKeyId{0U})));
 }
 
 TEST(CoreLangPolicyTest, CustomGroupCannotUseIndividualEntityTargetNamespace)

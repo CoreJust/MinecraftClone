@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <cctype>
+#include <cstdint>
 #include <exception>
 #include <fstream>
 #include <limits>
@@ -14,7 +15,7 @@
 namespace testsupport {
 namespace {
 
-enum class PpmColorSpace {
+enum class PpmColorSpace : uint8_t {
     Linear,
     Srgb,
 };

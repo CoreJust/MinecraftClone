@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <type_traits>
 #include <utility>
+#include <variant>
 
 namespace shared {
 
@@ -249,7 +250,9 @@ public:
         if (!low || !high) {
             return std::nullopt;
         }
-        return static_cast<uint16_t>(*low) | static_cast<uint16_t>(*high) << 8U;
+        uint32_t const combined = static_cast<uint32_t>(*low)
+            | (static_cast<uint32_t>(*high) << 8U);
+        return static_cast<uint16_t>(combined);
     }
 
     [[nodiscard]]
@@ -361,7 +364,10 @@ bool isValidHeightTile(ServerHeightTileMessage const& message) noexcept
 [[nodiscard]]
 bool isValidMessage(Message const& message) noexcept
 {
-    return std::visit([](auto const& value) {
+    if (message.valueless_by_exception()) {
+        return false;
+    }
+    auto const validator = [](auto const& value) {
         using Value = std::decay_t<decltype(value)>;
         if constexpr (std::is_same_v<Value, JoinRequestMessage>) {
             return isValidCharacter(value.ch) && isValidMode(value.mode)
@@ -413,7 +419,12 @@ bool isValidMessage(Message const& message) noexcept
             return value.key == normalizeHeightTileKey(value.key)
                 && value.revision != 0U && value.token != 0U;
         }
-    }, message);
+    };
+    try {
+        return std::visit(validator, message);
+    } catch (std::bad_variant_access const&) {
+        return false;
+    }
 }
 
 } // namespace
@@ -491,7 +502,7 @@ std::optional<Message> decodeMessage(std::span<uint8_t const> const data)
             auto const world_revision = reader.readUint64();
             auto const delivery_token = reader.readUint64();
             auto const credits = reader.readUint8();
-            if (world_revision && credits) {
+            if (world_revision && delivery_token && credits) {
                 message = ClientHeightTileCreditMessage{
                     .world_revision = *world_revision,
                     .delivery_token = *delivery_token,

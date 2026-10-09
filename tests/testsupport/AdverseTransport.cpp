@@ -49,8 +49,8 @@ AdverseTransport::AdverseTransport(
     AdverseTransportConfig server_to_client
 )
     : m_seed{ seed }
-    , m_client_to_server{ .configuration = client_to_server }
-    , m_server_to_client{ .configuration = server_to_client }
+    , m_client_to_server{ .configuration = client_to_server, .facts = {} }
+    , m_server_to_client{ .configuration = server_to_client, .facts = {} }
 {
     m_client_to_server.queue.reserve(client_to_server.max_queue_packets);
     m_server_to_client.queue.reserve(server_to_client.max_queue_packets);
@@ -342,7 +342,7 @@ void AdverseTransport::appendConfigurationJson(
     appendNumber(output, configuration.max_packet_bytes);
     output += ", \"max_schedule_records\": ";
     appendNumber(output, configuration.max_schedule_records);
-    output += "}";
+    output += '}';
 }
 
 void AdverseTransport::appendFactsJson(std::string& output, AdverseTransportFacts const& facts)
@@ -396,7 +396,7 @@ void AdverseTransport::appendFactsJson(std::string& output, AdverseTransportFact
         appendBoolean(output, entry.freeze_delayed);
         output += ", \"reorder_delayed\": ";
         appendBoolean(output, entry.reorder_delayed);
-        output += "}";
+        output += '}';
     }
     output += "]}";
 }

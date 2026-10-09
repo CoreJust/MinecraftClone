@@ -8,7 +8,7 @@
 
 namespace testsupport {
 
-enum class AdverseDirection {
+enum class AdverseDirection : uint8_t {
     ClientToServer,
     ServerToClient,
 };

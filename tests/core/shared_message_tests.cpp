@@ -178,6 +178,18 @@ TEST(MessageTest, RejectsTruncatedAndUnknownPayloads) {
     EXPECT_FALSE(shared::decodeMessage(unknown).has_value());
 }
 
+TEST(MessageTest, RejectsTruncatedCreditAcknowledgementToken)
+{
+    std::vector<uint8_t> bytes = shared::encodeMessage(shared::ClientHeightTileCreditMessage{
+        .world_revision = 7U,
+        .delivery_token = 0x1234'5678'9ABC'DEF0U,
+        .credits = 1U,
+    });
+    bytes.erase(bytes.end() - 5, bytes.end() - 1);
+
+    EXPECT_FALSE(shared::decodeMessage(bytes).has_value());
+}
+
 TEST(MessageTest, UsesVersionedLittleEndianFixedWidthPayloads) {
     EXPECT_EQ(
         shared::encodeMessage(shared::JoinRequestMessage{ .ch = '@' }),

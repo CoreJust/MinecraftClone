@@ -31,7 +31,7 @@
         "tests/acceptance/runtime_cli_tests.cmake",
         "tests/acceptance/scenario_runner_tests.cpp"
       ],
-      "sources_sha256": "e8af956cefe45fc6fb48a7abceadddad199bea3e9b2ad3f252c6399440e8f4b8"
+      "sources_sha256": "3d44f7db5ed8dff3f13d4fad4df51203663269e53c898c75bca30810df3c09b1"
     },
     {
       "guide": "docs/code/ANDROID.md",
@@ -51,7 +51,7 @@
         "tests/android/input_state_tests.cpp",
         "tests/android/input_tests.cpp"
       ],
-      "sources_sha256": "73da350a73e1e90f0343cc226f6e26716bf08cb1514de39fd755ca894250ddb9"
+      "sources_sha256": "01691c0acbf3dde2c57d728f9ba90ea44ed51d555adbb81bea424c8d00da3e69"
     },
     {
       "guide": "docs/BUILD.md",
@@ -292,7 +292,7 @@
         "tests/core/world_generation_scheduler_tests.cpp",
         "tests/core/world_generation_tests.cpp"
       ],
-      "sources_sha256": "93c9c653aa22118759ac0b25ad114629a69c229fa30afff931c964679993967a"
+      "sources_sha256": "a5c3ad45043a81bd49dc2ab3f1b7628d44225396046a7d672e7b3dc060f32f26"
     },
     {
       "guide": "docs/code/RENDERING.md",
@@ -372,7 +372,7 @@
         "tests/testsupport/include/testsupport/AdverseTransport.hpp",
         "tests/testsupport/include/testsupport/ImageComparison.hpp"
       ],
-      "sources_sha256": "10546a50c1e6c2dac61b10d68b3f5334c7a5fe780d4058307c3c34f373ed3ca5"
+      "sources_sha256": "ff21781579e1bc4121a06bd44e6a99854f219069fc42a2ef341e5efd3eb4d312"
     }
   ],
   "version": 1

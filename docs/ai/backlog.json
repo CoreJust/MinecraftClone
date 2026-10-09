@@ -1501,8 +1501,8 @@
       "MC-AI-0037"
     ],
     "acceptance": "Deliver immutable, generation-tagged hard/soft entity permissions for all/players/mobs/technical-entities/per-kind and explicit-member/selector groups; namespace custom keys and defer world subjects. Cover movement, flight/collision, blocks, inventory, invincibility, commands, and permission-backed mode presets. Use CoreLang 0.1.3.1 (only documented 0.1.3.3 maintenance), retain interpreter/JIT parity, and prepare kernels off physics ticks. Test latency, loss, jitter, freezes, reordering, and duplication. Replicate a 29/16 × 10/16 × 10/16 player, 16-color palette, and first/rear-third/front-third views. Keep position-driven radius-256 terrain camera-independent and derive face LOD at projected area ≤2 px². Provide four inspected 2560x1440 Mac screenshots with prominent labels centered below the HUD, each showing a distinct requested scene; capture each only after its full configured render distance has finished loading, never with partially loaded terrain: (1) flying third-person beside the central spike, captured at render distance 72 from about 30% closer than the previous central-spike framing and slightly lower than the prior viewpoint while retaining an elevated angle; keep the full spike, most of its first ring, and terrain beyond visible, emphasize the landform's mass, and keep the player visible without covering the spike; (2) one distinct view of the player in the trench near the first spike, without reusing another trench capture; (3) the player climbing the mountain; and (4) first-person at horizontal X/Z (0, 0). Target stable 120 FPS at x200 and the world border as diagnostic only. Pass platform and automated MC-AI-0249 gates; include the accepted CoreCpp scope MC-AI-0056 Runtime executors, MC-AI-0057 Runtime audio, and MC-AI-0240 renderer diagnostics in this snapshot. Release S7, hold the minor open for feedback, and do not start S8.",
-    "evidence": "The fixed baseline reconciles 145 completed child tasks to 146 child commits (MC-AI-0286 has two; MC-AI-0391 latest); ai_history collect lists 145. MC-AI-0390 Release capture passed 1/1 plus embedded Python 4/4 in 265.198 s; four scenes, 16 headings, hashes, and provenance are recorded. The staged exact-source candidate gate passed: 549 Python tests, Debug build 142/142 actions, CTest 589/589 (one intentional Debug skip for a Release-only test), and renderer smoke 1/1 in authorized host context. The publisher dirty-tree check was allowed for the pre-commit candidate. MC-AI-0391 focused tests passed 55/55 and its fast gate passed. Remote refs at re-entry: ai-dev=4a56ef5c, ai-main=42963be7; S6 remains latest.",
-    "blocker": "Local staged candidate gate and aggregate commit 3c43cb0 are complete. Remaining before S7 release: two-parent ai-main promotion, strict/tag checks, all 13 exact-promotion sanitizer/static-analysis rows, final packages/sidecars/hash verification, published-byte Mac/Android runtime, and separate Windows hands-on acceptance. Prior Windows Release run 37829234074 failed AutomaticJoin; fixtures were fixed in 0389/0390, but a fresh Windows Release result is still required. Artifact run 37829234053 lacked the exact-source receipt; the final artifact run must be regenerated. No exact-promotion HWASan matrix/runtime receipt exists.",
+    "evidence": "Comparison of the basic-task IDs returned by `python3 script/ai_history.py collect MC-AI-0038` with the 152 planned basic tasks found all 152 represented and marked done/finalized; MC-AI-0286 remains the only two-commit child. MC-AI-0398 changed only the central screenshot (SHA-256 09f367efe433ee001de7157fe426d0e924690c7f35658bb92835e699d06286af); the distance-72/16-heading/16,241-tile capture and projection/pixel regressions passed. Its committed-range review approved fingerprint 8f6ea2cc43588f8899529e978fb36bf93ce21bb0461f42aadbca4d8740ff1421. The local full candidate gate on d9fd658 passed 549 Python tests (one skip), Debug build, CTest 590/590 (one intentional skip), docs/task checks, and renderer smoke 1/1; its publisher check was ALLOWED for the expected dirty-tree result on the staged candidate. GitHub run 37932740369 passed Linux and Windows fast rows; the 13-row release matrix is only enabled for exact ai-main promotion.",
+    "blocker": "S7 is not promoted; ai-main remains 80cb54480f30f1276ab149da8b9cfe25f2df4914 and S6 is latest. Still required: the exact 13-row MC-AI-0249 promotion matrix including Android ARM64/HVF HWASan, final packages/hashes, published-byte Mac/Android runtime, and fresh Windows Release/hands-on acceptance. Previous matrix run 37868668297 used stale source and failed; Windows run 37829234074 failed AutomaticJoin and 37885589631 was fast-only.",
     "owner": "Codex",
     "level": "snapshot",
     "parent": "MC-AI-0033",
@@ -1511,7 +1511,7 @@
     "complexity": "high",
     "created_at": "2026-09-09",
     "resolved_at": "",
-    "resolution_changes": "Reconciled the fixed S7 baseline to 145 completed children and 146 child commits, including MC-AI-0391; MC-AI-0286 has two commits. All planned children are done and finalized. Keep this snapshot active and unresolved until every exact-candidate release gate and publication step passes.",
+    "resolution_changes": "The collector reports basic tasks mapped to committed history; a separate comparison with the 152 planned basic tasks found all 152 represented and marked done/finalized. MC-AI-0286 remains the only child with two commits. Keep MC-AI-0038 active and unresolved until the exact full-source promotion gates, runtime acceptance, artifacts, and publication pass.",
     "plan": [
       "Complete authoritative movement, immutable permissions, and cross-client acceptance; keep policy compilation outside physics ticks.",
       "Finish player/views, adverse networking, camera-independent terrain/LOD, diagnostics, platform and analysis gates, captures, and S7 publication; then hold the minor for feedback."
@@ -1532,10 +1532,10 @@
     "baseline_commit": "0514890690c10d80b7475fd0b76204e800948db3",
     "commits": [],
     "finalized": true,
-    "retrospective": "The first S7 promotion was 10d 10h 33m after activation and did not release; by the 9 October re-entry 18+ calendar days had elapsed, not measured work hours. At checkpoint 9a2, history showed 41 task commits and 15 promotions without a release. Source drift, late dependency/platform checks, real movement defects, repeated playtest-launch mistakes, and serial screenshot reframing created avoidable rework. The primary ai-dev checkout was 372 commits behind and had 117 local dirty paths; the candidate gate also rejected the policy-supported codex task branch, fixed in MC-AI-0391. See the evidence-led hindsight; records do not establish a two-day counterfactual.",
-    "docs_review": "Four distinct inspected 2560x1440 Release scenes meet full-load and centered-label criteria; the central scene uses distance 72 and closer, lower elevated framing. Version history records hashes, provenance, full-load markers, and heading sweep. Hindsight summarizes setup, gate evidence, and remaining external requirements.",
-    "environment_review": "Primary ai-dev checkout 9a02219 (372 behind; 117 dirty paths) was preserved; release work stayed isolated. Reused ignored cache pointed to CoreCpp/CoreProject 8e1d6336/10200a38, not locked d5759fa4/a4d3fa8a; fresh exact clones/config pass. First private install omitted vcpkg toolchain and cached failure; clean generated build fixed it. Renderer cache needed manifest-install OFF/private paths; sandbox denied /bin/ps and Launch Services, while identical host smoke passed 1/1 in 5.19 s. Restricted Git writes needed authorized context. Guard: 9 tests/probes pass, prior dispatch unverified. No global setup changed.",
-    "backlog_review": "The fixed baseline reconciles 145 completed child task IDs to 146 commits; all planned children are done and finalized, and ai_tasks ready has no pending basics. MC-AI-0248 remains diagnostic. Exact promotion, all 13 analysis rows, packages/hashes, published-byte Mac/Android runtime, and Windows hands-on evidence remain open; S6 is still latest as of re-entry. Hold the minor for feedback after S7."
+    "retrospective": "Activation commit 0473b444 (2026-09-20 20:51:14 CEST) to first ai-main promotion commit 4b9166da (2026-10-01 07:24:32 CEST): 10d 10h 33m 18s; not a release because the exact-source matrix and artifacts were missing. At the 2026-10-09 08:45:08 CEST evidence checkpoint, 18d 11h 53m 54s had elapsed, not measured work hours. At checkpoint 9a2a0b6, records show 141 child IDs/142 commits through d78766e and 15 ai-main promotion commits without a release. Causes and evidence-backed improvements are in the linked hindsight report; records cannot prove a two-day counterfactual.",
+    "docs_review": "Four distinct inspected 2560x1440 Release scenes meet full-load and centered-below-label criteria. The central scene was corrected on 2026-10-09 at distance 72; its full 16-heading/16,241-tile readiness, player clearance, geometry, lower-right beyond-ring terrain pixels, and updated hash are recorded in MC-AI-0398 and version history. The other three scene files remain unchanged. Hindsight summarizes setup, gate evidence, and remaining external requirements.",
+    "environment_review": "Release work stayed isolated; the primary ai-dev checkout (9a02219; 372 behind, 117 dirty paths) was preserved. Early caches targeted wrong dependency revisions; first vcpkg configure omitted its toolchain, and repository-local hooks were missing. Pinned configs and guarded hooks later passed. The fresh MC-AI-0397 worktree lacked `build/debug`; build/CTest passed in its matching configured checkout. On 2026-10-09, Release renderer smoke and capture passed with host GUI access; the authorized Launch Services repair was not causal. Restricted execution blocked `git merge-tree --write-tree`; host context confirmed the S6 tag. Pre-push repeated 549 Python tests (65.78 s) after CTest (388.58 s). `ai_publish.prepare` requires an aggregate trailer. Detailed causes are in `docs/ai/S7-HINDSIGHT-2026-10-08.md`.",
+    "backlog_review": "`ai_history collect MC-AI-0038` lists IDs mapped to committed history; a separate comparison found all 152 planned basic IDs present and done/finalized. No basics are ready. MC-AI-0248 remains diagnostic. Implementation ends at 8a3b2df; integration commit 1d87a9c adds aggregate metadata, and later changes are metadata-only. `ai-main` remains partially promoted. Exact promotion, 13 analysis rows, artifacts/hashes, published-byte Mac/Android runtime, and fresh Windows hands-on evidence remain open. Hold the minor for feedback; do not start S8."
   },
   {
     "id": "MC-AI-0039",
@@ -13696,5 +13696,278 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0392",
+    "title": "Fix strict S7 macOS clang-tidy findings",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P0",
+    "route": "luna",
+    "milestone": "S7",
+    "depends_on": [],
+    "acceptance": "Fix all diagnostics from receipt 9feacf9a7c42e1be1577f9f1c1b40c64369af545339342cd02517054ef439297 without suppressions; preserve protocol, input, policy, and test-support behavior. Add focused regression coverage for any corrected externally observable error path. The focused affected tests and ai_check.py --fast must pass. The exact macOS Debug clang-tidy row with the original checks and warnings-as-errors remains a required MC-AI-0038 snapshot-release gate on the exact promotion candidate.",
+    "evidence": "Debug build: cmake --build build/mc-ai-0392-debug --parallel 8 passed 142/142 actions; focused CTest suites passed 60/60; MessageTest rerun after the final noexcept fix passed 13/13; ai_docs.py refresh/check, git diff --check, and ai_check.py --fast --require-index-match pass. No local clang-tidy executable is available; the exact strict row remains pending at the MC-AI-0038 release gate.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0038",
+    "motivation": "The exact promoted S7 candidate failed its required macOS Debug clang-tidy row, blocking release.",
+    "context": "Baseline promotion 80cb54480f30f1276ab149da8b9cfe25f2df4914, tree 74fdb7199556e4db62582f24ed586fa05d43d51e; failed row receipt is preserved under /private/tmp/mc-s7-promotion.FUrm4M/analysis-macos-debug/clang_tidy.json.",
+    "complexity": "medium",
+    "created_at": "2026-10-09",
+    "resolved_at": "2026-10-09",
+    "resolution_changes": "Removed every diagnostic from the preserved macOS Debug clang-tidy receipt without suppressions; fixed malformed-message optional handling and added a regression test. The strict exact-promotion analyzer row remains enforced by the parent snapshot release gate.",
+    "plan": [
+      "Clarify acceptance and implementation steps.",
+      "Reproduce and map all receipt diagnostics to current S7 source contracts.",
+      "Correct the warnings without disabling checks; add behavior-focused tests for safety defects.",
+      "Run focused tests and the fast gate, then commit with exact-task review; the strict clang-tidy row must be verified by the hosted exact-candidate workflow because clang-tidy is unavailable locally.",
+      "Enforce the original strict macOS Debug clang-tidy row on the exact aggregate promotion candidate before closing MC-AI-0038."
+    ],
+    "product_changes": [
+      "No intended gameplay behavior change; malformed/truncated message variants fail closed."
+    ],
+    "code_changes": [
+      "Fix all diagnostics in exact receipt 9feacf9a7c42e1be1577f9f1c1b40c64369af545339342cd02517054ef439297 across input, world, message, policy, and test-support code without suppressions."
+    ],
+    "baseline_commit": "b87cbbb84de38135868101c705d227350cbadeec",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0393",
+    "title": "Require complete policy capability queries and direct variant include",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P0",
+    "route": "luna",
+    "milestone": "S7",
+    "depends_on": [],
+    "acceptance": "Prevent incomplete PolicyCapabilityQuery values from being represented, keeping the dense lookup path unchanged; directly include <variant> in Message.cpp; add compile-time coverage that queries require subject and key. Preserve all existing permission lookup outcomes. Run focused policy and message suites, include/source checks, and ai_check.py --fast. The exact strict macOS Debug clang-tidy row remains an MC-AI-0038 release gate on the exact promotion.",
+    "evidence": "Debug mc_tests build passed (16 actions). Focused CTest passed 42/42: 27 CoreLangPolicyTest, 2 NetClientServer, and 13 MessageTest cases. ai_docs refresh/check and ai_tasks check passed. ai_check.py --fast --require-index-match passed; source checks were ALLOWED only for the expected dirty-working-tree cleanliness sentinel, with all source policy checks passing.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0038",
+    "motivation": "Independent review found that omitted query fields can silently target default IDs, allowing an incomplete permission check to grant a capability; it also found a transitive-only <variant> include.",
+    "context": "Follow-up to MC-AI-0392 review of commit d8bd420645b6707162ceac3fe6e4dc5f6a19c9c8. Contract and adversarial receipts are under /private/tmp/mc-s7-0392-review.HI1VtM; both requested changes before approval. Do not alter S7 scope or claim the strict promotion row passed.",
+    "complexity": "low",
+    "created_at": "2026-10-09",
+    "resolved_at": "2026-10-09",
+    "resolution_changes": "Made PolicyCapabilityQuery require subject and dense-key constructor arguments, eliminating default and partial query states at compile time without adding storage or runtime checks to the physics lookup path. Migrated all callers and added compile-time coverage for valid two-argument construction and rejection of default/one-argument construction. Added the direct <variant> include used for std::bad_variant_access and updated POLICY.md.",
+    "plan": [
+      "Require both constructor parameters and remove member defaults; migrate all query callers; directly include <variant>; add compile-time tests proving default and partial construction are unavailable; run focused suites, include/source checks, and the fast gate. Submit the exact staged task to one Luna reviewer; if a correction is requested, send only that delta to the same reviewer; commit once after approval."
+    ],
+    "product_changes": [
+      "No gameplay or permission values change; incomplete API requests become unrepresentable."
+    ],
+    "code_changes": [
+      "Require complete permission query construction and directly include the standard header declaring std::bad_variant_access."
+    ],
+    "baseline_commit": "d8bd420645b6707162ceac3fe6e4dc5f6a19c9c8",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0394",
+    "title": "Own the standard integer declaration in image comparison support",
+    "kind": "chore",
+    "status": "done",
+    "priority": "P2",
+    "route": "luna",
+    "milestone": "S7",
+    "depends_on": [],
+    "acceptance": "ImageComparison.cpp directly includes <cstdint>; the focused image-comparison support target builds, its registered test suite passes, and the source/include policy check passes without suppressions.",
+    "evidence": "Debug build of mc_tests passed; the focused ImageComparisonTest suite passed 5/5. ai_docs refresh/check and ai_tasks check passed. In ai_check.py --fast, the repository source/include-order check passed; only the expected development dirty-worktree cleanliness sentinel failed and was recorded as ALLOWED. Strict S7 promotion checks remain under MC-AI-0038.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0038",
+    "motivation": "The full-range S7 review found tests/testsupport/ImageComparison.cpp uses uint8_t through a transitive include, violating direct include ownership and risking standalone/IWYU builds.",
+    "context": "Follow-up to the review of MC-AI-0392 and MC-AI-0393. The source directly names uint8_t but did not include <cstdint>. The correction must remain separate because the project requires one commit per task and published history is not rewritten.",
+    "complexity": "low",
+    "created_at": "2026-10-09",
+    "resolved_at": "2026-10-09",
+    "resolution_changes": "Added <cstdint> directly to ImageComparison.cpp so uint8_t is declared by an owned standard include; no behavior changed.",
+    "plan": [
+      "Clarify acceptance and implementation steps.",
+      "Add the direct standard header include; run the focused build, focused test suite, and source/include policy checks; obtain a fresh staged-candidate review; commit with this task trailer."
+    ],
+    "product_changes": [
+      "No product behavior change."
+    ],
+    "code_changes": [
+      "ImageComparison.cpp directly includes <cstdint> for uint8_t."
+    ],
+    "baseline_commit": "5d66ac40ce79f9710df7e8316b821addb6f4423e",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0395",
+    "title": "Prevent swapped policy capability query identifiers",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P0",
+    "route": "luna",
+    "milestone": "S7",
+    "depends_on": [],
+    "acceptance": "Construct PolicyCapabilityQuery only from distinct, non-convertible subject-ID and capability-key-ID types; prove that swapped and raw integer argument pairs do not compile; migrate every call site; preserve the stored integer fields and dense lookup behavior. Do not suppress or weaken clang-tidy. Run focused policy tests, documentation/task checks, and the fast gate. The exact-promotion clang-tidy row remains an MC-AI-0038 release gate.",
+    "evidence": "Debug mc_tests target built successfully. Focused CTest passed CoreLangPolicyTest 27/27 and GameServerTest/GameServerFlightTest 18/18. Compile-time assertions prove typed construction works and reversed, raw-integer, default, and partial query construction are rejected. ai_docs refresh/check and ai_tasks check passed. ai_check.py --fast exited 0; the only allowed diagnostic was the development dirty-worktree cleanliness sentinel. No local clang-tidy executable is installed; the strict exact-promotion clang-tidy row remains an MC-AI-0038 release gate.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0038",
+    "motivation": "The full-range S7 contract review found PolicyCapabilityQuery accepts easily swappable integer aliases, so a caller can silently query the wrong entity or capability. The constructor signature also retains the convertible-parameter pattern covered by bugprone-easily-swappable-parameters.",
+    "context": "Follow-up to the approved review of MC-AI-0392 through MC-AI-0394, range b87cbbb84de38135868101c705d227350cbadeec..789458e36e0c0ebd6c3e0ed37f72cfcd87418e46. Review finding P2: replace the adjacent integer aliases with distinct non-convertible query argument types, migrate callers, and verify the existing strict clang-tidy contract without suppressions. Preserve integer storage and the dense lookup path.",
+    "complexity": "low",
+    "created_at": "2026-10-09",
+    "resolved_at": "2026-10-09",
+    "resolution_changes": "Added explicit nested SubjectId and CapabilityKeyId argument types to PolicyCapabilityQuery, preserving the same stored integer fields and dense lookup. Migrated server and test call sites, added compile-time coverage for reversed, raw-integer, default, and partial construction, and documented the contract. No analyzer suppression or gate change was made.",
+    "plan": [
+      "Use nested explicit SubjectId and CapabilityKeyId wrappers for query construction while retaining the existing numeric fields and dense lookup representation.",
+      "Migrate all callers and add compile-time assertions that valid typed construction works while reversed and raw-integer argument pairs are rejected.",
+      "Update POLICY.md; run the focused policy suite, direct clang-tidy check when available, docs/task checks, and the fast gate; obtain a fresh staged review and commit with this task trailer."
+    ],
+    "product_changes": [
+      "Permission queries cannot accidentally transpose an entity ID and capability key ID at compile time."
+    ],
+    "code_changes": [
+      "Add distinct non-convertible argument wrappers to PolicyCapabilityQuery without changing its stored integer IDs or dense lookup behavior."
+    ],
+    "baseline_commit": "789458e36e0c0ebd6c3e0ed37f72cfcd87418e46",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0396",
+    "title": "Strong-type Android touch pointer IDs to satisfy strict clang-tidy",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P0",
+    "route": "luna",
+    "milestone": "ED-010-S7",
+    "depends_on": [],
+    "acceptance": "Replace the raw Android pointer-ID parameter on moveTouch and moveLookTouch with an explicit non-convertible fixed-width type; keep coordinate pairs adjacent and migrate the NDK and test callsites. Add compile-time regression coverage proving the API accepts the typed pointer ID and rejects an implicit int32_t argument. Preserve touch and look behavior; do not suppress or weaken clang-tidy. Focused Android input tests, Debug build, documentation/task checks, and ai_check.py --fast must pass. The exact strict clang-tidy row remains an MC-AI-0038 release gate and must be reported honestly.",
+    "evidence": "Test-first compile-time checks failed before the API change because both move methods accepted raw int32_t; after the fix, cmake --build --preset debug --target mc_tests --parallel 4 passed and ctest --test-dir build/debug --output-on-failure -R AndroidInputStateTest passed 8/8. Both changed Android translation units compiled directly with NDK 27, API 28, C++23, -Wall -Wextra -Werror. Gradle 8.13 :app:externalNativeBuildDebug built mc_android successfully (3 tasks executed) using task-local vcpkg and exact clean CoreCpp d5759fa/CoreProject2026 a4d3fa8 Android prefixes. ai_docs.py refresh/check, ai_tasks.py check, git diff --check passed. ai_check.py --fast exited 0; its source-check substep reported the allowed dirty-worktree development diagnostic. Exact clang-tidy remains unavailable locally; no analyzer gate pass is claimed, and the exact promotion row remains open under MC-AI-0038.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0038",
+    "motivation": "The exact-candidate contract review found two Android touch-move APIs still pair float coordinates with an implicitly convertible int32_t pointer ID, likely triggering the unchanged bugprone-easily-swappable-parameters warnings-as-errors gate.",
+    "context": "Follow-up to MC-AI-0392 through MC-AI-0395 full-range review at a82e873dc161a54ef4ed80d3a099389f4b23ce24bf846e23ddf0bdfe5d3846be. Contract finding P2 identifies AndroidInputState::moveTouch and moveLookTouch; the exact clang-tidy binary is unavailable locally, so this is a high-confidence gate risk, not a locally reproduced diagnostic.",
+    "complexity": "medium",
+    "created_at": "2026-10-09",
+    "resolved_at": "2026-10-09",
+    "resolution_changes": "Added an explicit non-implicitly-convertible fixed-width PointerId type to both touch-move APIs and migrated NDK/tests. Coordinates stay adjacent; no clang-tidy check or suppression was changed.",
+    "plan": [
+      "Clarify acceptance and implementation steps.",
+      "Define a fixed-width explicit PointerId wrapper and use it only for moveTouch/moveLookTouch. Migrate AndroidInput and input-state tests without changing event semantics. Add compile-time assertions for typed acceptance and raw-ID rejection. Run focused Android input tests, build, docs/tasks checks, and the fast gate; leave strict clang-tidy to the exact promotion matrix if unavailable locally."
+    ],
+    "product_changes": [],
+    "code_changes": [
+      "AndroidInputState exposes PointerId only on moveTouch/moveLookTouch; AndroidInput constructs it at the NDK boundary; compile-time assertions prove raw int32_t is rejected and typed arguments are accepted."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0397",
+    "title": "Remove conflicting reviewer-count guidance from MC-AI-0393 plan",
+    "kind": "chore",
+    "status": "done",
+    "priority": "P0",
+    "route": "luna",
+    "milestone": "S7",
+    "depends_on": [],
+    "acceptance": "Remove the obsolete duplicate MC-AI-0393 plan bullet so the canonical backlog and generated task document present one unambiguous reviewer-count instruction consistent with the single-reviewer and same-reviewer delta policy. Verify backlog/task generation and documentation checks; commit as one task with the MC-AI-0397 trailer.",
+    "evidence": "ai_tasks.py render and check passed; ai_docs.py check passed; git diff --check passed; ai_check.py --fast exited 0 and reused PASS for docs, backlog, current-plan, working diff, and cached diff. Metadata-only scope correctly skipped Python tests.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0038",
+    "motivation": "The exact committed-range review of S7 promotion afeb19cd10a0d2851e9eae94465c3cadafdb1f9a found contradictory reviewer-count instructions in the generated MC-AI-0393 plan, blocking approval.",
+    "context": "Finding P2 at MC-AI-0393.md:30 in review receipt /private/tmp/mc-s7-0392-review.HI1VtM/committed-range-afeb19-reviewer1/review-receipt.md. The canonical source is docs/ai/backlog.json; generated Markdown must be rerendered. No product or code behavior changes.",
+    "complexity": "low",
+    "created_at": "2026-10-09",
+    "resolved_at": "2026-10-09",
+    "resolution_changes": "Removed the stale duplicate reviewer-count plan item from MC-AI-0393 and retained one precise instruction: one Luna reviewer, with any requested correction returned only as a delta to that same reviewer, followed by one task commit.",
+    "plan": [
+      "Remove only the stale duplicate plan item that says to send the delta to both reviewers; keep the earlier instruction to send only the exact delta to the same reviewer.",
+      "Refresh generated task documents, run ai_tasks check, ai_docs check, diff check and ai_check --fast; obtain exact staged-task approval and commit with this task trailer."
+    ],
+    "product_changes": [],
+    "code_changes": [
+      "Clarified the canonical MC-AI-0393 review plan and regenerated its task document."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0398",
+    "title": "Show terrain beyond the first ring in the S7 central-spike capture",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P1",
+    "route": "luna",
+    "milestone": "ED-010-S7",
+    "depends_on": [],
+    "acceptance": "The capture plan and regression test prove that the central spike, most of the first ring, and terrain beyond the landform are simultaneously in-frame at the approved 2560x1440 framing, without relying on the screenshot alone. Regenerate and visually inspect only the central-spike capture after the full 72-chunk scene is loaded; preserve the requested flying third-person player visibility, closer/lower elevated composition, and centered-below label. Update the central PNG hash and its provenance/version-history record. Run the focused capture-plan test and actual central capture; do not modify the other three screenshots.",
+    "evidence": "Debug PlayerClientCapturePlanTest.FramesTheCentralSpikeAndFirstRingTogether passed 1/1; its projection regression verifies a radius-256 terrain sample is on-screen, has positive clip-W, lies within perspectiveRH_ZO depth [0,1], and its sightline clears the first ring. Release mc_main SHA-256 b0e8ffa028f46412688ec856677e06b0072ffe44cca71bf81064fa726033c75e. Host-context RendererSmokeTest passed 1/1 in 2.42 s. One-server/one-client macOS Release PlayerPlaytestCaptureTest.test_real_networked_client_renders_terrain_texture_and_hud passed 1/1 in 8.729 s at 2560x1440 and render distance 72, including full 16-heading/16,241-tile readiness; the screenshot regression requires more than 10% dark terrain pixels in the lower-right region beyond the first ring. The visually inspected central PNG SHA-256 is 09f367efe433ee001de7157fe426d0e924690c7f35658bb92835e699d06286af. Only the central image changed; the other three retained screenshots still match their recorded hashes.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0038",
+    "motivation": "The accepted central-spike image shows the spike and ring but only sky beyond them; the current projection test does not detect the missing terrain, so the released evidence does not satisfy the agreed screenshot acceptance.",
+    "context": "This is a correction to an existing S7 screenshot requirement, not additional product scope. Preserve the 2560x1440 Mac capture, render distance 72, requested closer/lower elevated viewpoint, fully loaded terrain, full spike, most of the first ring, visible player not covering the spike, and the centered-below label. Change only the central image and its provenance/version-history hash; do not repeat or alter the trench capture.",
+    "complexity": "medium",
+    "created_at": "2026-10-09",
+    "resolved_at": "2026-10-09",
+    "resolution_changes": "Changed only the central capture framing, added geometric and screenshot-pixel regressions for visible terrain beyond the first ring, recaptured the full-load scene, visually inspected it, and refreshed its version-history provenance/hash.",
+    "plan": [
+      "Clarify acceptance and implementation steps.",
+      "Widen the central view and retain the requested close, lower elevated composition.",
+      "Add projected-geometry and captured-pixel checks for terrain beyond the first ring.",
+      "Recapture and visually verify only the central scene, then update its provenance."
+    ],
+    "product_changes": [],
+    "code_changes": [
+      "Adjusted only the central capture pitch/FOV; added a radius-256 terrain projection regression and a beyond-ring screenshot-pixel assertion.",
+      "Hardened the radius-256 projection regression to assert positive clip-W and Vulkan zero-to-one depth in addition to screen bounds and ring clearance."
+    ],
+    "baseline_commit": "be9bc9e43d64ab3768dda872281c9fe24aadd600",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "Version history records the replacement image hash, Release executable hash, 72-chunk capture settings, and full-load/heading evidence; the three other image hashes are unchanged.",
+    "environment_review": "The restricted executor caused the Cocoa/Launch Services startup hang before networking. The exact Release renderer smoke and networked capture pass when run with normal macOS host GUI permissions; no product or OS cache repair was needed for this capture.",
+    "backlog_review": "MC-AI-0398 is the only new child; prior completed child records remain unchanged."
   }
 ]
