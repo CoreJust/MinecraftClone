@@ -13777,5 +13777,44 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0394",
+    "title": "Own the standard integer declaration in image comparison support",
+    "kind": "chore",
+    "status": "done",
+    "priority": "P2",
+    "route": "luna",
+    "milestone": "S7",
+    "depends_on": [],
+    "acceptance": "ImageComparison.cpp directly includes <cstdint>; the focused image-comparison support target builds, its registered test suite passes, and the source/include policy check passes without suppressions.",
+    "evidence": "Debug build of mc_tests passed; the focused ImageComparisonTest suite passed 5/5. ai_docs refresh/check and ai_tasks check passed. In ai_check.py --fast, the repository source/include-order check passed; only the expected development dirty-worktree cleanliness sentinel failed and was recorded as ALLOWED. Strict S7 promotion checks remain under MC-AI-0038.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0038",
+    "motivation": "The full-range S7 review found tests/testsupport/ImageComparison.cpp uses uint8_t through a transitive include, violating direct include ownership and risking standalone/IWYU builds.",
+    "context": "Follow-up to the review of MC-AI-0392 and MC-AI-0393. The source directly names uint8_t but did not include <cstdint>. The correction must remain separate because the project requires one commit per task and published history is not rewritten.",
+    "complexity": "low",
+    "created_at": "2026-10-09",
+    "resolved_at": "2026-10-09",
+    "resolution_changes": "Added <cstdint> directly to ImageComparison.cpp so uint8_t is declared by an owned standard include; no behavior changed.",
+    "plan": [
+      "Clarify acceptance and implementation steps.",
+      "Add the direct standard header include; run the focused build, focused test suite, and source/include policy checks; obtain a fresh staged-candidate review; commit with this task trailer."
+    ],
+    "product_changes": [
+      "No product behavior change."
+    ],
+    "code_changes": [
+      "ImageComparison.cpp directly includes <cstdint> for uint8_t."
+    ],
+    "baseline_commit": "5d66ac40ce79f9710df7e8316b821addb6f4423e",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]
