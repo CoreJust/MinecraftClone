@@ -187,6 +187,7 @@ class AndroidHwasanEmulatorTests(unittest.TestCase):
         self.assertEqual(Path(state["avd_home"]), root / "avd")
         self.assertEqual(state["sdk_root"], str(sdk_root.resolve()))
         avd_call = next(command for command, _ in commands if "create" in command and "avd" in command)
+        self.assertEqual(avd_call[1:3], ["create", "avd"])
         self.assertEqual(avd_call[avd_call.index("--name") + 1], state["avd_name"])
         self.assertNotIn("--force", avd_call)
         avd_env = next(
@@ -194,6 +195,8 @@ class AndroidHwasanEmulatorTests(unittest.TestCase):
         )
         self.assertEqual(avd_env["ANDROID_AVD_HOME"], str(root / "avd"))
         self.assertEqual(avd_env["ANDROID_USER_HOME"], str(root / "user"))
+        self.assertEqual(avd_env["ANDROID_HOME"], str(sdk_root.resolve()))
+        self.assertEqual(avd_env["ANDROID_SDK_ROOT"], str(sdk_root.resolve()))
         accel_check = next(command for command, _ in commands if command[-1:] == ["-accel-check"])
         self.assertEqual(accel_check[-1], "-accel-check")
         launch = popen.call_args.args[0]

@@ -282,7 +282,6 @@ def start(runner_temp: Path, run_id: str, run_attempt: str, sdk_root: Path) -> i
     _run_stream(
         [
             str(avdmanager),
-            f"--sdk_root={sdk_root}",
             "create",
             "avd",
             "--name",
