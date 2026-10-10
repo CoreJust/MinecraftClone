@@ -35,7 +35,7 @@
     },
     {
       "guide": "docs/code/ANDROID.md",
-      "guide_sha256": "c1f8c7f9e71c18f6994f404339311c41f2e52d2b3cb9d054b7583c7a27dd6258",
+      "guide_sha256": "8aab15da3f5aa5e9225bb70aad06ee0aa004ccfecb4af9a08218056372757661",
       "id": "android",
       "sources": [
         "src/android/AndroidInput.cpp",
@@ -168,7 +168,7 @@
         "vcpkg-configuration.json",
         "vcpkg.json"
       ],
-      "sources_sha256": "0f01b3dcb44d954937f21d6e6e3b198dabccdcd6ff699960283f33af76154f6a"
+      "sources_sha256": "33dcde1d3f7d7f9efaf86d80df0ce9bebb3f7069505781b0c417b92afaa9d9ff"
     },
     {
       "guide": "docs/code/CORE.md",

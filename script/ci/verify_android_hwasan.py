@@ -35,6 +35,7 @@ def run_adb(
     timeout: float = 30,
     accepted_return_codes: tuple[int, ...] = (0,),
     empty_return_codes: tuple[int, ...] = (),
+    reject_stderr: bool = False,
 ) -> str:
     completed = subprocess.run(
         ["adb", "-s", serial, *arguments],
@@ -48,7 +49,9 @@ def run_adb(
         raise HwasanError(f"adb {' '.join(arguments)} exited {completed.returncode}: {output.strip()}")
     if completed.returncode in empty_return_codes:
         return ""
-    return output.strip()
+    if reject_stderr and completed.stderr.strip():
+        raise HwasanError(f"adb {' '.join(arguments)} wrote to stderr: {completed.stderr.strip()}")
+    return completed.stdout.strip()
 
 
 def running_process_id(serial: str, *, timeout: float = 30) -> str:
@@ -144,6 +147,7 @@ def verify_runtime(serial: str, apk: Path, timeout_seconds: int) -> dict[str, st
                 timeout=maps_timeout,
                 accepted_return_codes=(0, 1),
                 empty_return_codes=(1,),
+                reject_stderr=True,
             )
             last_maps_error = None
         except (HwasanError, subprocess.TimeoutExpired) as error:
