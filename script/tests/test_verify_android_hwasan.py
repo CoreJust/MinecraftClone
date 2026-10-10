@@ -99,6 +99,45 @@ class VerifyAndroidHwasanTests(unittest.TestCase):
             )
         self.assertEqual(output, "")
 
+    def test_runtime_does_not_count_output_from_grep_no_match(self):
+        with tempfile.TemporaryDirectory() as directory:
+            apk = self.apk(Path(directory))
+            state = {"maps_reads": 0}
+
+            def run_adb_command(arguments, **_kwargs):
+                if arguments[3] == "install":
+                    return self.hwasan.subprocess.CompletedProcess(arguments, 0, "Success", "")
+                if arguments[3:5] == ["shell", "am"]:
+                    return self.hwasan.subprocess.CompletedProcess(arguments, 0, "Starting", "")
+                if arguments[3:5] == ["shell", "pidof"]:
+                    return self.hwasan.subprocess.CompletedProcess(arguments, 0, "123", "")
+                if arguments[3:6] == ["shell", "run-as", self.hwasan.PACKAGE]:
+                    state["maps_reads"] += 1
+                    return self.hwasan.subprocess.CompletedProcess(
+                        arguments,
+                        1,
+                        self.process_maps(),
+                        "partial transport text",
+                    )
+                self.fail(f"unexpected adb command: {arguments}")
+
+            with mock.patch.object(
+                self.hwasan.subprocess,
+                "run",
+                side_effect=run_adb_command,
+            ), mock.patch.object(
+                self.hwasan.time,
+                "monotonic",
+                side_effect=[0, 0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6],
+            ), mock.patch.object(self.hwasan.time, "sleep"):
+                with self.assertRaisesRegex(
+                    self.hwasan.HwasanError,
+                    "did not map libmc_android.so",
+                ):
+                    self.hwasan.verify_runtime("emulator-5554", apk, 6)
+
+            self.assertEqual(state["maps_reads"], 6)
+
     def test_run_adb_rejects_transport_errors_even_when_grep_no_match_is_allowed(self):
         completed = self.hwasan.subprocess.CompletedProcess(["adb"], 255, "partial maps", "")
         with mock.patch.object(self.hwasan.subprocess, "run", return_value=completed):
@@ -228,6 +267,7 @@ class VerifyAndroidHwasanTests(unittest.TestCase):
                     "libclang_rt.hwasan-aarch64-android.so",
                     "/proc/123/maps",
                     accepted_return_codes=(0, 1),
+                    empty_return_codes=(1,),
                 ),
                 run_adb.call_args_list,
             )

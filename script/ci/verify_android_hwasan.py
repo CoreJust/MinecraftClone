@@ -34,6 +34,7 @@ def run_adb(
     *arguments: str,
     timeout: int = 30,
     accepted_return_codes: tuple[int, ...] = (0,),
+    empty_return_codes: tuple[int, ...] = (),
 ) -> str:
     completed = subprocess.run(
         ["adb", "-s", serial, *arguments],
@@ -45,6 +46,8 @@ def run_adb(
     output = completed.stdout + completed.stderr
     if completed.returncode not in accepted_return_codes:
         raise HwasanError(f"adb {' '.join(arguments)} exited {completed.returncode}: {output.strip()}")
+    if completed.returncode in empty_return_codes:
+        return ""
     return output.strip()
 
 
@@ -119,6 +122,7 @@ def verify_runtime(serial: str, apk: Path, timeout_seconds: int) -> dict[str, st
                 HWASAN_RUNTIME_NAME,
                 f"/proc/{process_id}/maps",
                 accepted_return_codes=(0, 1),
+                empty_return_codes=(1,),
             )
             last_maps_error = None
         except HwasanError as error:

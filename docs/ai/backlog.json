@@ -1501,7 +1501,7 @@
       "MC-AI-0037"
     ],
     "acceptance": "Deliver immutable, generation-tagged hard/soft entity permissions for all/players/mobs/technical-entities/per-kind and explicit-member/selector groups; namespace custom keys and defer world subjects. Cover movement, flight/collision, blocks, inventory, invincibility, commands, and permission-backed mode presets. Use CoreLang 0.1.3.1 (only documented 0.1.3.3 maintenance), retain interpreter/JIT parity, and prepare kernels off physics ticks. Test latency, loss, jitter, freezes, reordering, and duplication. Replicate a 29/16 × 10/16 × 10/16 player, 16-color palette, and first/rear-third/front-third views. Keep position-driven radius-256 terrain camera-independent and derive face LOD at projected area ≤2 px². Provide four inspected 2560x1440 Mac screenshots with prominent labels centered below the HUD, each showing a distinct requested scene; capture each only after its full configured render distance has finished loading, never with partially loaded terrain: (1) flying third-person beside the central spike, captured at render distance 72 from about 30% closer than the previous central-spike framing and slightly lower than the prior viewpoint while retaining an elevated angle; keep the full spike, most of its first ring, and terrain beyond visible, emphasize the landform's mass, and keep the player visible without covering the spike; (2) one distinct view of the player in the trench near the first spike, without reusing another trench capture; (3) the player climbing the mountain; and (4) first-person at horizontal X/Z (0, 0). Target stable 120 FPS at x200 and the world border as diagnostic only. Pass platform and automated MC-AI-0249 gates; include the accepted CoreCpp scope MC-AI-0056 Runtime executors, MC-AI-0057 Runtime audio, and MC-AI-0240 renderer diagnostics in this snapshot. Release S7, hold the minor open for feedback, and do not start S8.",
-    "evidence": "The finalized source currently includes 168 direct basic children, all done/finalized, including MC-AI-0413 (face0954) and MC-AI-0414 (a8dff24). Local validation passed: full ai_check with 563 Python tests (one intentional skip), Debug build, and CTest 595/595 (one Release-only case intentionally skipped); focused Release streaming stress passed in 35.72 s with 350 inputs, max ack lag 3, and all four clients caught up. MC-AI-0414 focused suites passed 41/41, 18/18, and 27/27; the installed seed packages validated at exact API 35 ARM64 revisions with no symlinks or system-wide installation. The four visually inspected Mac captures are distinct 2560x1440 scenes; the central capture hash is 09f367efe433ee001de7157fe426d0e924690c7f35658bb92835e699d06286af. Prior ai-dev run 38054452546 was on f85b8d0 and is not exact evidence for this source. One corrected exact-promotion ARM64/HVF HWASan retry is authorized but not yet run.",
+    "evidence": "The canonical backlog now contains 170 direct basic children, all done and finalized, including MC-AI-0413 through MC-AI-0416. Local S7 integration passed in invocation 1791659324186612000-87529: documentation, backlog, plan, whitespace, 569 Python tests (one skip), Debug build, and CTest 595/595 (one intentional skip); publisher reported only the allowed dirty-development-worktree exception. MC-AI-0415 bounds process-map transfer, and MC-AI-0416 ensures nonempty grep exit-1 output cannot prove mappings. The exact local API 35 ARM64 HWASan APK runtime and four distinct labeled Mac screenshots remain verified in child records. The exact-promotion matrix, one authorized hosted ARM64/HVF HWASan retry, platform artifacts/runtime acceptance, strict receipt, S7 tag, and publication remain open.",
     "blocker": "Pending: promote the finalized aggregate source; pass every required exact-promotion sanitizer/static-analysis row including the single authorized Android ARM64/HVF HWASan retry; verify platform artifacts and runtime acceptance; pass strict receipt; publish the S7 tag and actual-artifact ledger. Do not mark the snapshot done before those receipts.",
     "owner": "Codex",
     "level": "snapshot",
@@ -1511,7 +1511,7 @@
     "complexity": "high",
     "created_at": "2026-09-09",
     "resolved_at": "",
-    "resolution_changes": "The two remaining direct S7 child tasks are complete: MC-AI-0413 waits for all accepted joins before sequence-1 acknowledgement measurement, and MC-AI-0414 seeds validated Android runtime packages into the private HWASan SDK. Local gates and four requested screenshot assets are verified; remote exact-promotion release gates and publication remain open.",
+    "resolution_changes": "S7 basic child work includes MC-AI-0413 (join barrier), MC-AI-0414 (private Android runtime SDK), MC-AI-0415 (bounded maps transfer), and MC-AI-0416 (discard grep no-match output); these tasks are done and finalized. The corrected local full integration gate passed. This aggregate remains active until exact-promotion hosted gates, platform acceptance, strict receipt, tag, and publication are verified.",
     "plan": [
       "Complete authoritative movement, immutable permissions, and cross-client acceptance; keep policy compilation outside physics ticks.",
       "Finish player/views, adverse networking, camera-independent terrain/LOD, diagnostics, platform and analysis gates, captures, and S7 publication; then hold the minor for feedback."
@@ -1534,8 +1534,8 @@
     "finalized": true,
     "retrospective": "Activation commit 0473b444 (2026-09-20 20:51:14 CEST) to first ai-main promotion commit 4b9166da (2026-10-01 07:24:32 CEST): 10d 10h 33m 18s; not a release because the exact-source matrix and artifacts were missing. At the 2026-10-09 08:45:08 CEST evidence checkpoint, 18d 11h 53m 54s had elapsed, not measured work hours. At checkpoint 9a2a0b6, records show 141 child IDs/142 commits through d78766e and 15 ai-main promotion commits without a release. Causes and evidence-backed improvements are in the linked hindsight report; records cannot prove a two-day counterfactual.",
     "docs_review": "Visually checked the four distinct committed 2560x1440 images. The central-spike scene shows the full landform, most of the first ring, terrain beyond it, and an unobscured player; its larger label is centered below the HUD. The other files are distinct trench/first-spike, mountain-climb, and first-person origin scenes. MC-AI-0398 records central SHA-256 09f367efe433ee001de7157fe426d0e924690c7f35658bb92835e699d06286af and the unchanged hashes of the other three images.",
-    "environment_review": "Task changes and checks are isolated in /private/tmp/mc-s7-hwasan-verifier; the primary MinecraftClone checkout is untouched. The existing user SDK provides exact runtime package identities with zero symlinks. No machine-wide Python or Java installation is required; the one authorized retry uses a temporary user-owned runner/tool cache and independently copied packages under RUNNER_TEMP.",
-    "backlog_review": "At source HEAD a8dff24 there are 168 direct basic children, all done/finalized. MC-AI-0413 and MC-AI-0414 add the accepted-join stress barrier and private Android runtime SDK seed; their hosted exact-promotion checks remain aggregate gates."
+    "environment_review": "No machine-wide Java/Python installation occurred. The prior setup-python action used the runner cache; run 37976059199 failed before Android startup because Java 21 was not configured. The exact S7 workflow now uses job-local setup-java@v6 and cached Python. One run-scoped ephemeral ARM64/HVF runner retry is authorized; no global runtime install is needed.",
+    "backlog_review": "Canonical backlog count: 170 direct basic children of MC-AI-0038, all done/finalized; MC-AI-0413 through MC-AI-0416 include the final join-streaming, private SDK, bounded maps, and exit-1 sample fixes. Exact post-commit ai_history collection will be verified before promotion."
   },
   {
     "id": "MC-AI-0039",
@@ -14643,5 +14643,41 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0416",
+    "title": "Discard nonempty grep no-match samples",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P2",
+    "route": "luna",
+    "milestone": "S7",
+    "depends_on": [],
+    "acceptance": "On exit 1 from the filtered maps grep, verifier must discard stdout/stderr and process the observation as empty; it must not set either library-seen flag or accumulate the five-second proof window. Exit 255 and other errors remain retry gaps with PID/deadline checks. Regression: nonempty exit-1 stdout and stderr falsely listing both libraries for at least five seconds still cannot produce a healthy receipt. Focused tests and project fast gate pass; exact hosted promotion evidence remains a separate release gate.",
+    "evidence": "The new regression failed before the change: verify_runtime returned a healthy receipt after six grep exit-1 responses containing both required library names in stdout and nonempty stderr. After the fix, the focused verifier suite passed 19/19. Full integration invocation 1791659324186612000-87529 passed docs, backlog, plan, whitespace, 569 Python tests (one skip), Debug build, and CTest 595/595 (one intentional skip); no phases were skipped. The publisher reported only the allowed dirty-development-worktree exception and ai_check exited 0. Hosted exact-promotion HWASan evidence remains pending.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0038",
+    "motivation": "The committed HWASan verifier accepted exit code 1 while retaining nonempty stdout/stderr. A committed-range adversarial review reproduced a false healthy receipt when those bytes contained both required library names. Normalize grep no-match as an empty observation so partial text can never prove runtime health.",
+    "context": "Reviewer reproduced verify_runtime returning healthy_seconds=5 from a mocked grep exit 1 carrying both library names in stdout and partial output in stderr. Existing tests covered code 1 only with empty output, so they did not protect the no-match contract under partial responses.",
+    "complexity": "low",
+    "created_at": "2026-10-10",
+    "resolved_at": "2026-10-10",
+    "resolution_changes": "Added an explicit empty-return-code policy for the filtered maps command. grep exit 1 now returns an empty observation even if stdout/stderr contain partial map text; exit 255 remains an error gap and is never counted. Added a runtime regression proving six such exit-1 samples cannot satisfy the five-second health window.",
+    "plan": [
+      "Add a runtime-level failing regression with nonempty exit-1 stdout and stderr spanning the five-second proof window. Make exit 1 explicitly return an empty mapping sample only for the maps command; preserve transport errors and their fail-closed retry behavior. Run focused and project gates, then renew the exact-task review before commit."
+    ],
+    "product_changes": [],
+    "code_changes": [
+      "Ensure nonempty stdout/stderr from a grep exit-1 maps response cannot satisfy the Android HWASan library-survival proof."
+    ],
+    "baseline_commit": "a4661058d8680ecc5dde9d24fbece22c3d68bd3c",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "Generated backlog/task Markdown from canonical JSON; validation recorded in the final commit gate.",
+    "environment_review": "",
+    "backlog_review": "Added as MC-AI-0416, direct child of MC-AI-0038, to address the P2 false-proof finding from the committed-range review of MC-AI-0415."
   }
 ]
