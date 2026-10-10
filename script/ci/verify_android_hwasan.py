@@ -125,10 +125,13 @@ def verify_runtime(serial: str, apk: Path, timeout_seconds: int) -> dict[str, st
                 empty_return_codes=(1,),
             )
             last_maps_error = None
-        except HwasanError as error:
+        except (HwasanError, subprocess.TimeoutExpired) as error:
             # An incomplete ADB response is a missed sample, never mapping evidence.
             mappings = ""
-            last_maps_error = str(error).partition(": ")[0]
+            if isinstance(error, subprocess.TimeoutExpired):
+                last_maps_error = "adb process-map read timed out"
+            else:
+                last_maps_error = str(error).partition(": ")[0]
         post_read_process_id = running_process_id(serial)
         if not post_read_process_id:
             raise HwasanError("HWASan app exited during runtime verification")

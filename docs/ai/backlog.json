@@ -14679,5 +14679,43 @@
     "docs_review": "Generated backlog/task Markdown from canonical JSON; validation recorded in the final commit gate.",
     "environment_review": "",
     "backlog_review": "Added as MC-AI-0416, direct child of MC-AI-0038, to address the P2 false-proof finding from the committed-range review of MC-AI-0415."
+  },
+  {
+    "id": "MC-AI-0417",
+    "title": "Handle Android HWASan map-read timeouts as bounded gaps",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P2",
+    "route": "luna",
+    "milestone": "S7",
+    "depends_on": [],
+    "acceptance": "Treat subprocess timeouts during Android HWASan process-map reads as incomplete samples: discard partial stdout/stderr, recheck process identity and the overall deadline, reset the contiguous healthy interval, and retry only while the overall deadline remains. A timeout reaching the deadline must fail closed. Separate regressions cover recovery after a transient timeout and failure at the overall deadline.",
+    "evidence": "The two regressions each failed before the fix because subprocess.TimeoutExpired escaped from verify_runtime. After catching that timeout only around the process-map read, both pass; partial stdout/stderr is discarded, PID identity and the deadline are still checked, the healthy interval resets, and the deadline case raises HwasanError without retry. The complete verifier suite passed 21/21; backlog render/check passed.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0038",
+    "motivation": "A timed-out adb maps grep currently escapes the verifier's retry-gap handling, so an intermittent transport delay aborts runtime verification instead of being treated as a bounded missing sample.",
+    "context": "The committed-range review of MC-AI-0415 and MC-AI-0416 reproduced subprocess.TimeoutExpired escaping from the process-map read. The verifier must not interpret partial timeout output as evidence, and its existing process identity and overall-deadline checks must remain authoritative.",
+    "complexity": "low",
+    "created_at": "2026-10-10",
+    "resolved_at": "2026-10-10",
+    "resolution_changes": "Treat process-map TimeoutExpired as a missed sample while preserving post-read PID checks and the overall deadline; retry only within the deadline and discard partial output. Added independent transient-recovery and deadline-failure regressions.",
+    "plan": [
+      "Add separate regressions for transient map-read timeout recovery and timeout at the overall deadline.",
+      "Catch subprocess.TimeoutExpired only around the map-read sample, discard partial output, then preserve the post-read PID and deadline checks.",
+      "Run the focused Android HWASan verifier suite and record exact evidence before resolving the task."
+    ],
+    "product_changes": [],
+    "code_changes": [
+      "Catch timed-out Android HWASan process-map reads as bounded gaps and add two runtime regressions."
+    ],
+    "baseline_commit": "bf74a3583522c3a0a05fe480ed895511c46364af",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "Regenerated docs/code/source_state.json for the verifier change; ai_docs.py check, ai_tasks.py check, and generated Markdown validation passed.",
+    "environment_review": "Deterministic unit tests mock ADB, PID polling, and the monotonic clock; full Android HWASan verifier suite passed 21/21.",
+    "backlog_review": "Added MC-AI-0417 as the direct S7 child for the committed-range review P2; parent child count is 171."
   }
 ]
