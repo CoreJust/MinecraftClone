@@ -1501,8 +1501,8 @@
       "MC-AI-0037"
     ],
     "acceptance": "Deliver immutable, generation-tagged hard/soft entity permissions for all/players/mobs/technical-entities/per-kind and explicit-member/selector groups; namespace custom keys and defer world subjects. Cover movement, flight/collision, blocks, inventory, invincibility, commands, and permission-backed mode presets. Use CoreLang 0.1.3.1 (only documented 0.1.3.3 maintenance), retain interpreter/JIT parity, and prepare kernels off physics ticks. Test latency, loss, jitter, freezes, reordering, and duplication. Replicate a 29/16 × 10/16 × 10/16 player, 16-color palette, and first/rear-third/front-third views. Keep position-driven radius-256 terrain camera-independent and derive face LOD at projected area ≤2 px². Provide four inspected 2560x1440 Mac screenshots with prominent labels centered below the HUD, each showing a distinct requested scene; capture each only after its full configured render distance has finished loading, never with partially loaded terrain: (1) flying third-person beside the central spike, captured at render distance 72 from about 30% closer than the previous central-spike framing and slightly lower than the prior viewpoint while retaining an elevated angle; keep the full spike, most of its first ring, and terrain beyond visible, emphasize the landform's mass, and keep the player visible without covering the spike; (2) one distinct view of the player in the trench near the first spike, without reusing another trench capture; (3) the player climbing the mountain; and (4) first-person at horizontal X/Z (0, 0). Target stable 120 FPS at x200 and the world border as diagnostic only. Pass platform and automated MC-AI-0249 gates; include the accepted CoreCpp scope MC-AI-0056 Runtime executors, MC-AI-0057 Runtime audio, and MC-AI-0240 renderer diagnostics in this snapshot. Release S7, hold the minor open for feedback, and do not start S8.",
-    "evidence": "Prior matrix run 37956286276 passed its recorded Mac/Linux/Windows checks and Android HWASan APK build. Snapshot candidate 3f2a06de98af89b00eda74a88d382fcd1743885e passed 549 Python tests (one skipped), Debug build, 595/595 CTests and renderer smoke; MC-AI-0403 focused regression passed 10/10. Exact task source 632e68ed05cd002b56357dfe9798d1461f4cfc88 passed the full local gate: 549 Python tests (one skipped), 143 Debug build steps, 595/595 CTests (384.64 s), and docs/backlog/plan/diff/publisher checks. GitHub run 38020462296 passed Ubuntu and Windows fast jobs; snapshot-only jobs were skipped on ai-dev. Windowed RendererSmokeTest passed in GUI bootstrap 501 outside the process sandbox; the sandboxed run timed out at Launch Services IPC. History/finalization validate all 160 children at 632e68ed05cd002b56357dfe9798d1461f4cfc88.",
-    "blocker": "Run 38013755185 failed Android HWASan before emulator startup because avdmanager rejected --sdk_root; its Mac clang-tidy job found six aggregate initializer sites. MC-AI-0405 and MC-AI-0406 fix those failures. Exact-promotion 13-row matrix, Android HWASan runtime, Mac/Windows artifacts, published-byte Mac/Android acceptance, and fresh Windows Release/hands-on evidence remain outstanding. The single authorized ephemeral ARM64/HVF runner attempt was consumed and deregistered; another registration requires fresh user authorization. Do not tag.",
+    "evidence": "At source a1a1b0d2ce26d020fe00d2aec59252ef1d6c5c53, full local gate invocation 1791611730860534000-63858 passed: 549 Python tests (1 skipped), Debug build, 595/595 CTests (one intentional skip; 383.58 s), and docs/backlog/plan/diff/publisher checks. Exact ai-dev run 38029678505 passed Ubuntu and Windows fast jobs; release-only jobs were skipped. History collection lists 162 done/finalized children (152 original plus ten follow-ups MC-AI-0399 through MC-AI-0408); MC-AI-0286 is the only two-commit child. MC-AI-0407 fixes AVD home aliasing; MC-AI-0408 resolves 20 Mac Debug clang-tidy diagnostics without suppressions. Exact-promotion matrix, Android HWASan runtime, artifacts, platform acceptance, strict receipt, tag, and publication remain open.",
+    "blocker": "Open gates: exact-promotion 13-row sanitizer/analyzer matrix; exact-candidate ARM64/HVF Android HWASan boot and app-health receipt; Mac/Windows Release artifacts; published-byte Mac/Android and Windows Release/hands-on acceptance; exact strict receipt, tag, and publication. Run 38025062825 failed on the SDK/user-home mismatch and 20 Mac clang-tidy diagnostics, fixed in MC-AI-0407/0408. The user authorized one corrected run-scoped ARM64/HVF runner attempt for the exact promotion SHA; no runner is registered. No global Python or Java install is needed. Do not tag until every gate passes.",
     "owner": "Codex",
     "level": "snapshot",
     "parent": "MC-AI-0033",
@@ -1511,7 +1511,7 @@
     "complexity": "high",
     "created_at": "2026-09-09",
     "resolved_at": "",
-    "resolution_changes": "History collection at source 632e68ed05cd002b56357dfe9798d1461f4cfc88 maps all 160 planned basic children (the original 152 plus eight finalized follow-ups, MC-AI-0399 through MC-AI-0406) to committed history; all are done and finalized. MC-AI-0286 remains the only child with two commits. The full local integration gate passes on this source, while GitHub run 38020462296 covers only fast checks and skips snapshot-only jobs. Keep MC-AI-0038 active and unresolved until the exact aggregate promotion candidate passes the 13-row matrix and all required runtime acceptance, artifact, and publication gates.",
+    "resolution_changes": "Reconciled the aggregate record at ai-dev source a1a1b0d2ce26d020fe00d2aec59252ef1d6c5c53: history collection returns 162 planned basic children (152 original plus MC-AI-0399 through MC-AI-0408), all done/finalized. Recorded the exact-source local integration gate, the successful Ubuntu/Windows ai-dev fast run, and the corrective AVD and clang-tidy tasks. MC-AI-0038 remains active and unresolved until the exact promotion matrix, Android runtime, platform artifact acceptance, and publication gates pass.",
     "plan": [
       "Complete authoritative movement, immutable permissions, and cross-client acceptance; keep policy compilation outside physics ticks.",
       "Finish player/views, adverse networking, camera-independent terrain/LOD, diagnostics, platform and analysis gates, captures, and S7 publication; then hold the minor for feedback."
@@ -1535,7 +1535,7 @@
     "retrospective": "Activation commit 0473b444 (2026-09-20 20:51:14 CEST) to first ai-main promotion commit 4b9166da (2026-10-01 07:24:32 CEST): 10d 10h 33m 18s; not a release because the exact-source matrix and artifacts were missing. At the 2026-10-09 08:45:08 CEST evidence checkpoint, 18d 11h 53m 54s had elapsed, not measured work hours. At checkpoint 9a2a0b6, records show 141 child IDs/142 commits through d78766e and 15 ai-main promotion commits without a release. Causes and evidence-backed improvements are in the linked hindsight report; records cannot prove a two-day counterfactual.",
     "docs_review": "Four distinct inspected 2560x1440 Release scenes meet full-load and centered-below-label criteria. The central scene was corrected on 2026-10-09 at distance 72; its full 16-heading/16,241-tile readiness, player clearance, geometry, lower-right beyond-ring terrain pixels, and updated hash are recorded in MC-AI-0398 and version history. The other three scene files remain unchanged. Hindsight summarizes setup, gate evidence, and remaining external requirements.",
     "environment_review": "Release work stayed isolated; the primary ai-dev checkout (9a02219; 372 behind, 117 dirty paths) was preserved. Early caches targeted wrong dependency revisions; first vcpkg configure omitted its toolchain, and repository-local hooks were missing. Pinned configs and guarded hooks later passed. The fresh MC-AI-0397 worktree lacked `build/debug`; build/CTest passed in its matching configured checkout. On 2026-10-09, Release renderer smoke and capture passed with host GUI access; the authorized Launch Services repair was not causal. Restricted execution blocked `git merge-tree --write-tree`; host context confirmed the S6 tag. Pre-push repeated 549 Python tests (65.78 s) after CTest (388.58 s). `ai_publish.prepare` requires an aggregate trailer. Detailed causes are in `docs/ai/S7-HINDSIGHT-2026-10-08.md`.",
-    "backlog_review": "All 152 originally planned basic IDs plus eight finalized follow-ups MC-AI-0399 through MC-AI-0406 total 160 direct children, all done/finalized. MC-AI-0405 removes the unsupported avdmanager flag; MC-AI-0406 explicitly initializes the omitted members at six clang-tidy aggregate initializer sites. MC-AI-0248 remains diagnostic-only. The corrected exact-candidate matrix, package, and platform acceptance remain outstanding."
+    "backlog_review": "The current history collection lists 162 direct basic children: 152 original tasks plus ten finalized follow-ups MC-AI-0399 through MC-AI-0408; all children are done and finalized. MC-AI-0407 aligns Android AVD preference-home aliases; MC-AI-0408 removes 20 Mac Debug clang-tidy diagnostics without suppressions. MC-AI-0248 remains diagnostic-only. The exact promotion matrix, Android runtime, artifacts, and platform acceptance remain parent-snapshot release gates."
   },
   {
     "id": "MC-AI-0039",
@@ -14277,6 +14277,91 @@
       "Make the existing empty/default aggregate values explicit in CoreLangPolicy.cpp and AdverseTransport.cpp."
     ],
     "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0407",
+    "title": "Correct Android HWASan AVD environment-variable semantics",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P1",
+    "route": "luna",
+    "milestone": "EarlyDev 0.1.0:7",
+    "depends_on": [
+      "MC-AI-0405"
+    ],
+    "acceptance": "ANDROID_USER_HOME and the legacy ANDROID_SDK_HOME alias resolve to the same run-private preferences root; ANDROID_HOME and ANDROID_SDK_ROOT remain the separate run-private SDK root. Regression tests protect both the GITHUB_ENV exports and the environment passed to avdmanager. Focused lifecycle tests, project fast checks, task metadata, and documentation integrity checks pass. Do not claim Android runtime acceptance without a successful exact-candidate HWASan emulator boot and app health receipt.",
+    "evidence": "Exact-candidate GitHub Actions run 38025062825/job 114135964510 reached avdmanager but failed before emulator startup because ANDROID_SDK_HOME and ANDROID_USER_HOME pointed at different run-private directories; the captured log ended with the AVD .ini SDK-location error. Mapped the legacy ANDROID_SDK_HOME alias to the same private preferences root as ANDROID_USER_HOME while keeping ANDROID_HOME and ANDROID_SDK_ROOT on the separate private SDK root. python3 -B -m unittest script.tests.test_android_hwasan_emulator -v passed 17/17, including checks for both GITHUB_ENV exports and the avdmanager environment. python3 script/ai_tasks.py check, python3 script/ai_docs.py check, and git diff --check passed. python3 script/ai_check.py returned 0: full Python suite, build, and 595/595 CTests passed; its publisher check was allowed to report a dirty worktree, as expected before commit. This does not establish Android runtime acceptance; the parent snapshot's exact-candidate HWASan gate remains open.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0038",
+    "motivation": "The exact-candidate Android HWASan job 38025062825/job 114135964510 passed Java selection, SDK bootstrap, APK download, and preflight, then failed while creating its AVD. The runner gave ANDROID_SDK_HOME and ANDROID_USER_HOME different per-run directories, which Android tooling rejects when writing AVD metadata.",
+    "context": "The job log ends with avdmanager reporting that it cannot locate the SDK installation directory for the AVD .ini file. The source sets ANDROID_SDK_HOME to the per-run sdk directory while ANDROID_USER_HOME points to a separate user directory. A Google-hosted Chromium/WPT fix documents this exact failure mode when those variables differ: https://chromium.googlesource.com/external/github.com/web-platform-tests/wpt/+/2c53cd1bd03686cef080cdfc46c966e15869e782.",
+    "complexity": "low",
+    "created_at": "2026-10-10",
+    "resolved_at": "2026-10-10",
+    "resolution_changes": "Aligned the legacy ANDROID_SDK_HOME variable with ANDROID_USER_HOME while preserving the isolated SDK root, and added regression assertions for both exported and child-process environments.",
+    "plan": [
+      "Keep SDK, AVD, emulator, and user state isolated under the exact runner-temporary run directory; align the legacy SDK_HOME alias with USER_HOME while preserving the SDK root.",
+      "Add regression assertions for both exported workflow values and avdmanager child-process environment.",
+      "Run the focused lifecycle suite and project fast gate; leave exact-candidate HWASan runtime evidence to parent MC-AI-0038."
+    ],
+    "product_changes": [
+      "No product behavior changed; this repairs Android CI emulator setup."
+    ],
+    "code_changes": [
+      "Align the Android HWASan AVD preference-home variables and add regression coverage."
+    ],
+    "baseline_commit": "4487d5419a84dacc8894b88c463c89d4d688e655",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0408",
+    "title": "Fix remaining S7 Mac Debug clang-tidy failures in scenario parsing and canonical world access",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P1",
+    "route": "luna",
+    "milestone": "EarlyDev 0.1.0:7",
+    "depends_on": [
+      "MC-AI-0406"
+    ],
+    "acceptance": "Fix the 20 source diagnostics reported by Mac Debug clang-tidy in exact S7 candidate run 38025062825/job 114134051354 across Scenario.cpp, CoreLangScenario.cpp, and CanonicalWorld.cpp while preserving scenario parsing, movement direction, and canonical world behavior. Replace easily swappable parameter lists with named inputs. Explicitly initialize diagnosed CoreLang aggregate members to their existing empty/default semantics, remove ineffective moves, and retain noexcept guarantees. Add no analyzer suppressions or exclusions. The focused C++ build/tests, ai_check.py --fast, task/docs checks, and diff check pass. The exact configured Mac clang-tidy result and full matrix remain parent MC-AI-0038 release gates.",
+    "evidence": "Run 38025062825/job 114134051354 reported 20 clang-tidy errors in Scenario.cpp, CoreLangScenario.cpp, and CanonicalWorld.cpp; this task removes those diagnosed patterns without suppressions. `cmake --build build/debug --target mc_tests -j 6` built all 11 requested targets. `ctest --test-dir build/debug --output-on-failure -R 'ScenarioParserTest|CoreLangScenario|ScenarioRunner'` passed 30/30. `python3 script/ai_check.py --fast` passed (full-C++ scope; Python tests skipped by policy and dirty-tree source check reported ALLOWED). `python3 script/ai_docs.py refresh/check`, `python3 script/ai_tasks.py check`, and `git diff --check` passed. clang-tidy is unavailable locally; exact configured Mac clang-tidy and 13-row candidate matrix remain open parent MC-AI-0038 gates and are not claimed as passing here.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0038",
+    "motivation": "The exact S7 Mac Debug matrix row failed the required clang-tidy gate on 20 diagnostics in scenario parsing and canonical world access, so the candidate cannot be promoted.",
+    "context": "GitHub run 38025062825/job 114134051354 completed Mac Debug build and CTests but failed clang-tidy with 20 errors in Scenario.cpp, CoreLangScenario.cpp, and CanonicalWorld.cpp under bugprone-*,performance-* and warnings-as-errors. Diagnostics include easily-swappable scalar parameter groups, potentially-throwing string_view::substr in noexcept identifier checks, narrowing int-to-int8_t conditional expressions, ineffective moves, and omitted CoreLang aggregate members. Preserve the behavior/default values; do not silence the analyzer.",
+    "complexity": "medium",
+    "created_at": "2026-10-10",
+    "resolved_at": "2026-10-10",
+    "resolution_changes": "Replaced the flagged adjacent scalar signatures with named scenario inputs/counts; changed noexcept identifier checks to use guarded remove_prefix; made clamp values int8_t; removed ineffective moves; explicitly initialized the diagnosed CoreLang aggregate members to empty values; and updated call sites, tests, and the gameplay guide. No runtime behavior or analyzer configuration was changed.",
+    "plan": [
+      "Replace the flagged adjacent scalar parameter groups with small named input aggregates and update all existing callers/tests without changing observable behavior.",
+      "Remove potentially throwing substr calls from noexcept identifier checks, make int8_t clamp values explicitly typed, and remove ineffective std::move calls.",
+      "Explicitly initialize only the diagnosed CoreLang fields with their existing empty/default values, after verifying the pinned public declarations.",
+      "Run focused scenario tests/build, ai_check.py --fast, task/docs checks, and the exact configured clang-tidy analysis; leave the exact-candidate matrix and Android runtime to parent MC-AI-0038."
+    ],
+    "product_changes": [
+      "No product behavior change; remove source diagnostics that fail the required macOS analysis gate."
+    ],
+    "code_changes": [
+      "Use named scenario input/count structures, no-throw identifier iteration, explicit CoreLang aggregate defaults, and no-op move cleanup."
+    ],
+    "baseline_commit": "f96d222331e5b33a37b65dcc35621632cdb9fadf",
     "commits": [],
     "finalized": true,
     "retrospective": "",

@@ -192,16 +192,18 @@ struct ScenarioOperation final {
 
 class ScenarioPlan;
 
+struct ScenarioCameraDirectionInput final {
+    int16_t yaw_degrees;
+    int8_t strafe;
+    int8_t forward;
+    int8_t vertical = 0;
+};
+
 // This is the scenario-side form of the client camera controller.  A yaw of
 // zero faces +Y; positive yaw turns toward +X.  It deliberately returns the
 // normalized signed wire Direction so the server remains the sole authority.
 [[nodiscard]]
-Direction scenarioCameraRelativeDirection(
-    int16_t yaw_degrees,
-    int8_t strafe,
-    int8_t forward,
-    int8_t vertical = 0
-) noexcept;
+Direction scenarioCameraRelativeDirection(ScenarioCameraDirectionInput const input) noexcept;
 
 // Stable plan fingerprint recorded with runtime evidence.  It identifies the
 // replay inputs and camera pose without including wall-clock measurements.
@@ -226,14 +228,18 @@ public:
     uint64_t evidenceCount() const noexcept;
 
 private:
+    struct Counts final {
+        uint64_t total_ticks;
+        uint64_t evidence_count;
+    };
+
     ScenarioPlan(
         uint32_t version,
         ScenarioProfile profile,
         uint64_t seed,
         std::vector<ScenarioActor> actors,
         std::vector<ScenarioOperation> operations,
-        uint64_t total_ticks,
-        uint64_t evidence_count
+        Counts counts
     );
 
 private:

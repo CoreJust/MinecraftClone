@@ -135,16 +135,32 @@ end
     ASSERT_NE(alice_input, nullptr);
     EXPECT_EQ(alice_input->strafe, 0);
     EXPECT_EQ(alice_input->forward, 1);
-    shared::Direction const forward = shared::scenarioCameraRelativeDirection(0, 0, 1);
+    shared::Direction const forward = shared::scenarioCameraRelativeDirection({
+        .yaw_degrees = 0,
+        .strafe = 0,
+        .forward = 1,
+    });
     EXPECT_EQ(forward.x, 0U);
     EXPECT_EQ(forward.y, 127U);
-    shared::Direction const right_facing_forward = shared::scenarioCameraRelativeDirection(90, 0, 1);
+    shared::Direction const right_facing_forward = shared::scenarioCameraRelativeDirection({
+        .yaw_degrees = 90,
+        .strafe = 0,
+        .forward = 1,
+    });
     EXPECT_EQ(right_facing_forward.x, 127U);
     EXPECT_EQ(right_facing_forward.y, 0U);
-    shared::Direction const diagonal_heading_forward = shared::scenarioCameraRelativeDirection(135, 0, 1);
+    shared::Direction const diagonal_heading_forward = shared::scenarioCameraRelativeDirection({
+        .yaw_degrees = 135,
+        .strafe = 0,
+        .forward = 1,
+    });
     EXPECT_EQ(diagonal_heading_forward.x, 89U);
     EXPECT_EQ(diagonal_heading_forward.y, static_cast<uint8_t>(-89));
-    shared::Direction const diagonal_tie = shared::scenarioCameraRelativeDirection(0, 1, 1);
+    shared::Direction const diagonal_tie = shared::scenarioCameraRelativeDirection({
+        .yaw_degrees = 0,
+        .strafe = 1,
+        .forward = 1,
+    });
     EXPECT_EQ(diagonal_tie.x, 89U);
     EXPECT_EQ(diagonal_tie.y, 89U);
     EXPECT_EQ(result->operations()[4].boundary, 2U);
@@ -187,7 +203,12 @@ end
     auto const* const camera = std::get_if<shared::ScenarioCameraInputOperation>(&result->operations()[1].data);
     ASSERT_NE(camera, nullptr);
     EXPECT_EQ(camera->vertical, -1);
-    shared::Direction const direction = shared::scenarioCameraRelativeDirection(90, 0, 1, -1);
+    shared::Direction const direction = shared::scenarioCameraRelativeDirection({
+        .yaw_degrees = 90,
+        .strafe = 0,
+        .forward = 1,
+        .vertical = -1,
+    });
     EXPECT_EQ(direction.x, 127U);
     EXPECT_EQ(direction.y, 0U);
     EXPECT_EQ(direction.z, static_cast<uint8_t>(-127));

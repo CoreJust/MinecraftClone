@@ -27,6 +27,16 @@ struct ScenarioLine final {
     ScenarioLocation location;
 };
 
+struct ScenarioPosition final {
+    int32_t x;
+    int32_t y;
+};
+
+struct ScenarioSourceView final {
+    std::string_view filename;
+    std::string_view source;
+};
+
 [[nodiscard]]
 bool isAsciiLetter(char const ch) noexcept {
     return (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z');
@@ -43,11 +53,12 @@ bool isWordCharacter(char const ch) noexcept {
 }
 
 [[nodiscard]]
-bool isIdentifier(std::string_view const text) noexcept {
+bool isIdentifier(std::string_view text) noexcept {
     if (text.empty() || (!isAsciiLetter(text.front()) && text.front() != '_')) {
         return false;
     }
-    for (char const ch : text.substr(1)) {
+    text.remove_prefix(1U);
+    for (char const ch : text) {
         if (!isAsciiLetter(ch) && !isAsciiDigit(ch) && ch != '_' && ch != '-') {
             return false;
         }
@@ -63,11 +74,10 @@ bool isAllowedCharacter(char const character) noexcept {
 [[nodiscard]]
 bool actorPlacementsConflict(
     ScenarioActor const& actor,
-    int32_t const x,
-    int32_t const y
+    ScenarioPosition const position
 ) noexcept {
-    int32_t const delta_x = std::abs(actor.x - x);
-    int32_t const delta_y = std::abs(actor.y - y);
+    int32_t const delta_x = std::abs(actor.x - position.x);
+    int32_t const delta_y = std::abs(actor.y - position.y);
     return delta_x <= 1 && delta_y <= 1;
 }
 
@@ -88,9 +98,10 @@ ScenarioDiagnostic makeDiagnostic(
 
 [[nodiscard]]
 std::expected<std::vector<ScenarioLine>, ScenarioDiagnostic> lexScenario(
-    std::string_view const filename,
-    std::string_view const source
+    ScenarioSourceView const input
 ) {
+    std::string_view const filename = input.filename;
+    std::string_view const source = input.source;
     std::vector<ScenarioLine> lines;
     ScenarioLine line{ .tokens = {}, .location = { .line = 1, .column = 1 }};
     uint32_t current_line = 1;
@@ -289,8 +300,10 @@ public:
             m_seed,
             std::move(m_actors),
             std::move(m_operations),
-            m_total_ticks,
-            m_evidence_count,
+            ScenarioPlan::Counts{
+                .total_ticks = m_total_ticks,
+                .evidence_count = m_evidence_count,
+            },
         };
     }
 
@@ -492,7 +505,10 @@ private:
                         "player character must be unique"
                     ));
                 }
-                if (m_profile != ScenarioProfile::Flight3dV1 && actorPlacementsConflict(actor, *x, *y)) {
+                if (m_profile != ScenarioProfile::Flight3dV1 && actorPlacementsConflict(
+                    actor,
+                    {.x = *x, .y = *y}
+                )) {
                     return std::unexpected(diagnostic(
                         ScenarioDiagnosticCode::InvalidRange,
                         line->location,
@@ -780,7 +796,7 @@ private:
                 "scenario operation limit exceeded"
             ));
         }
-        m_operations.push_back(std::move(operation));
+        m_operations.push_back(operation);
         return {};
     }
 
@@ -1046,15 +1062,10 @@ std::string_view scenarioProfileName(ScenarioProfile const profile) noexcept {
     return "unknown";
 }
 
-Direction scenarioCameraRelativeDirection(
-    int16_t const yaw_degrees,
-    int8_t const strafe,
-    int8_t const forward,
-    int8_t const vertical
-) noexcept {
-    int8_t const clamped_strafe = strafe < 0 ? -1 : strafe > 0 ? 1 : 0;
-    int8_t const clamped_forward = forward < 0 ? -1 : forward > 0 ? 1 : 0;
-    int8_t const clamped_vertical = vertical < 0 ? -1 : vertical > 0 ? 1 : 0;
+Direction scenarioCameraRelativeDirection(ScenarioCameraDirectionInput const input) noexcept {
+    int8_t const clamped_strafe = input.strafe < 0 ? int8_t{-1} : input.strafe > 0 ? int8_t{1} : int8_t{0};
+    int8_t const clamped_forward = input.forward < 0 ? int8_t{-1} : input.forward > 0 ? int8_t{1} : int8_t{0};
+    int8_t const clamped_vertical = input.vertical < 0 ? int8_t{-1} : input.vertical > 0 ? int8_t{1} : int8_t{0};
     if (clamped_strafe == 0 && clamped_forward == 0) {
         return {
             .x = 0,
@@ -1064,7 +1075,7 @@ Direction scenarioCameraRelativeDirection(
     }
 
     constexpr double DEGREES_TO_RADIANS = 0.017'453'292'519'943'295'769'236'907'684'89;
-    int16_t normalized_yaw = static_cast<int16_t>(yaw_degrees % 360);
+    int16_t normalized_yaw = static_cast<int16_t>(input.yaw_degrees % 360);
     if (normalized_yaw < 0) normalized_yaw = static_cast<int16_t>(normalized_yaw + 360);
     double const yaw_radians = static_cast<double>(normalized_yaw) * DEGREES_TO_RADIANS;
     double const world_x = static_cast<double>(clamped_strafe) * std::cos(yaw_radians)
@@ -1188,16 +1199,15 @@ ScenarioPlan::ScenarioPlan(
     uint64_t const seed,
     std::vector<ScenarioActor> actors,
     std::vector<ScenarioOperation> operations,
-    uint64_t const total_ticks,
-    uint64_t const evidence_count
+    Counts const counts
 )
     : m_version(version)
     , m_profile(profile)
     , m_seed(seed)
     , m_actors(std::move(actors))
     , m_operations(std::move(operations))
-    , m_total_ticks(total_ticks)
-    , m_evidence_count(evidence_count) {}
+    , m_total_ticks(counts.total_ticks)
+    , m_evidence_count(counts.evidence_count) {}
 
 uint32_t ScenarioPlan::version() const noexcept {
     return m_version;
@@ -1254,7 +1264,7 @@ std::expected<ScenarioPlan, ScenarioDiagnostic> parseScenario(
             "scenario source exceeds the configured byte limit"
         ));
     }
-    auto const lines = scenario_detail::lexScenario(filename, source);
+    auto const lines = scenario_detail::lexScenario({.filename = filename, .source = source});
     if (!lines) {
         return std::unexpected(lines.error());
     }

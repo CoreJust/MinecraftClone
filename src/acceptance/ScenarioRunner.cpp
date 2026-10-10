@@ -597,7 +597,12 @@ std::expected<RuntimeEvidence, std::string> runScenario(
                 }
                 shared::ScenarioActor const& actor = plan.actors()[*index];
                 active_inputs[*index] = shared::scenarioCameraRelativeDirection(
-                    actor.yaw_degrees, input->strafe, input->forward, input->vertical
+                    {
+                        .yaw_degrees = actor.yaw_degrees,
+                        .strafe = input->strafe,
+                        .forward = input->forward,
+                        .vertical = input->vertical,
+                    }
                 );
                 ++camera_relative_inputs;
                 last_effective_tick = input->effective_boundary;

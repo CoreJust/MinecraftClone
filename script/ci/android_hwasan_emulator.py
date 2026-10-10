@@ -85,7 +85,6 @@ def _read_state(root: Path, run_id: str, run_attempt: str) -> dict[str, object]:
         "avd_home": str(root / "avd"),
         "user_home": str(root / "user"),
         "emulator_home": str(root / "emulator"),
-        "sdk_home": str(root / "sdk"),
         "sdk_root": str(root / "android-sdk"),
         "avd_name": expected_name,
         "run_id": run_id,
@@ -103,7 +102,7 @@ def _environment(state: dict[str, object]) -> dict[str, str]:
         "ANDROID_AVD_HOME": str(state["avd_home"]),
         "ANDROID_USER_HOME": str(state["user_home"]),
         "ANDROID_EMULATOR_HOME": str(state["emulator_home"]),
-        "ANDROID_SDK_HOME": str(state["sdk_home"]),
+        "ANDROID_SDK_HOME": str(state["user_home"]),
         "ANDROID_HOME": str(state["sdk_root"]),
         "ANDROID_SDK_ROOT": str(state["sdk_root"]),
         "ANDROID_SERIAL": SERIAL,
@@ -137,7 +136,6 @@ def prepare(runner_temp: Path, run_id: str, run_attempt: str, github_env: Path) 
         "avd_home": str(root / "avd"),
         "user_home": str(root / "user"),
         "emulator_home": str(root / "emulator"),
-        "sdk_home": str(root / "sdk"),
         "sdk_root": str(root / "android-sdk"),
         "serial": SERIAL,
         "ports": [CONSOLE_PORT, ADB_PORT],
@@ -146,7 +144,7 @@ def prepare(runner_temp: Path, run_id: str, run_attempt: str, github_env: Path) 
         "process_start_identity": None,
     }
     _write_state(root, state)
-    for key in ("avd_home", "user_home", "emulator_home", "sdk_home"):
+    for key in ("avd_home", "user_home", "emulator_home"):
         Path(str(state[key])).mkdir(mode=0o700)
     _append_github_env(github_env, _environment(state))
     return root
