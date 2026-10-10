@@ -20,6 +20,8 @@ WRAP_PATH = "lib/arm64-v8a/wrap.sh"
 NATIVE_LIBRARY_PATH = "lib/arm64-v8a/libmc_android.so"
 EXPECTED_WRAP = b'#!/system/bin/sh\nLD_HWASAN=1 exec "$@"\n'
 HWASAN_RUNTIME = b"libclang_rt.hwasan-aarch64-android.so"
+NATIVE_LIBRARY_NAME = Path(NATIVE_LIBRARY_PATH).name
+HWASAN_RUNTIME_NAME = HWASAN_RUNTIME.decode("ascii")
 POST_LOAD_SURVIVAL_SECONDS = 5
 
 
@@ -75,14 +77,15 @@ def verify_apk(apk: Path) -> None:
         raise HwasanError("HWASan APK native library is not linked with the HWASan runtime")
 
 
-def verify_runtime(serial: str, apk: Path, timeout_seconds: int) -> dict[str, str | int]:
+def verify_runtime(serial: str, apk: Path, timeout_seconds: int) -> dict[str, str | int | list[str]]:
     verify_apk(apk)
-    run_adb(serial, "logcat", "-c")
     install_output = run_adb(serial, "install", "-r", str(apk), timeout=120)
     launch_output = run_adb(serial, "shell", "am", "start", "-n", f"{PACKAGE}/{ACTIVITY}")
     deadline = time.monotonic() + timeout_seconds
     process_id = ""
-    failures = ("FATAL EXCEPTION", "HWAddressSanitizer", "UnsatisfiedLinkError")
+    saw_native_library = False
+    saw_hwasan_runtime = False
+    saw_both_libraries = False
     loaded_at: float | None = None
     while (now := time.monotonic()) < deadline:
         current_process_id = running_process_id(serial)
@@ -96,30 +99,49 @@ def verify_runtime(serial: str, apk: Path, timeout_seconds: int) -> dict[str, st
         elif current_process_id != process_id:
             raise HwasanError("HWASan app restarted during runtime verification")
 
-        logcat = run_adb(serial, "logcat", "-d", "-v", "brief", "-t", "2000")
-        for failure in failures:
-            if failure in logcat:
-                raise HwasanError(f"HWASan runtime log contains {failure}")
-        if "libmc_android.so" in logcat and "using ns" in logcat:
+        mappings = run_adb(
+            serial,
+            "shell",
+            "run-as",
+            PACKAGE,
+            "cat",
+            f"/proc/{process_id}/maps",
+        )
+        observed_at = time.monotonic()
+        native_library_mapped = NATIVE_LIBRARY_NAME in mappings
+        hwasan_runtime_mapped = HWASAN_RUNTIME_NAME in mappings
+        saw_native_library |= native_library_mapped
+        saw_hwasan_runtime |= hwasan_runtime_mapped
+        if native_library_mapped and hwasan_runtime_mapped:
+            saw_both_libraries = True
             if loaded_at is None:
-                loaded_at = now
-            if now - loaded_at >= POST_LOAD_SURVIVAL_SECONDS:
+                loaded_at = observed_at
+            if observed_at - loaded_at >= POST_LOAD_SURVIVAL_SECONDS:
                 return {
                     "apk": str(apk),
                     "serial": serial,
                     "pid": process_id,
                     "install": install_output,
                     "launch": launch_output,
-                    "healthy_seconds": int(now - loaded_at),
+                    "mapped_libraries": [NATIVE_LIBRARY_NAME, HWASAN_RUNTIME_NAME],
+                    "healthy_seconds": int(observed_at - loaded_at),
                 }
+        else:
+            loaded_at = None
         time.sleep(1)
 
     if not process_id:
         raise HwasanError(f"HWASan app did not remain running within {timeout_seconds} seconds")
     if loaded_at is None:
-        raise HwasanError("HWASan runtime log does not prove libmc_android.so loaded")
+        if not saw_native_library:
+            raise HwasanError(f"HWASan app did not map {NATIVE_LIBRARY_NAME}")
+        if not saw_hwasan_runtime:
+            raise HwasanError(f"HWASan app did not map {HWASAN_RUNTIME_NAME}")
+        if not saw_both_libraries:
+            raise HwasanError("HWASan app and runtime libraries were not mapped together")
     raise HwasanError(
-        f"HWASan app did not remain healthy for {POST_LOAD_SURVIVAL_SECONDS} seconds after library load"
+        f"HWASan app did not show both libraries in completed maps samples spanning "
+        f"{POST_LOAD_SURVIVAL_SECONDS} seconds"
     )
 
 
