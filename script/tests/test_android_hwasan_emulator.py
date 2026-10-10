@@ -147,10 +147,10 @@ class AndroidHwasanEmulatorTests(unittest.TestCase):
             ("ANDROID_AVD_HOME", "avd"),
             ("ANDROID_USER_HOME", "user"),
             ("ANDROID_EMULATOR_HOME", "emulator"),
-            ("ANDROID_SDK_HOME", "sdk"),
         ):
             self.assertEqual(Path(values[variable]), root / child)
             self.assertTrue((root / child).is_dir())
+        self.assertEqual(values["ANDROID_SDK_HOME"], values["ANDROID_USER_HOME"])
         self.assertEqual(Path(values["ANDROID_SDK_ROOT"]), root / "android-sdk")
         self.assertEqual(Path(values["ANDROID_HOME"]), root / "android-sdk")
         self.assertEqual(values["ANDROID_SERIAL"], "emulator-5558")
@@ -195,6 +195,7 @@ class AndroidHwasanEmulatorTests(unittest.TestCase):
         )
         self.assertEqual(avd_env["ANDROID_AVD_HOME"], str(root / "avd"))
         self.assertEqual(avd_env["ANDROID_USER_HOME"], str(root / "user"))
+        self.assertEqual(avd_env["ANDROID_SDK_HOME"], str(root / "user"))
         self.assertEqual(avd_env["ANDROID_HOME"], str(sdk_root.resolve()))
         self.assertEqual(avd_env["ANDROID_SDK_ROOT"], str(sdk_root.resolve()))
         accel_check = next(command for command, _ in commands if command[-1:] == ["-accel-check"])

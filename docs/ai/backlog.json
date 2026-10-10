@@ -14283,5 +14283,47 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0407",
+    "title": "Correct Android HWASan AVD environment-variable semantics",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P1",
+    "route": "luna",
+    "milestone": "EarlyDev 0.1.0:7",
+    "depends_on": [
+      "MC-AI-0405"
+    ],
+    "acceptance": "ANDROID_USER_HOME and the legacy ANDROID_SDK_HOME alias resolve to the same run-private preferences root; ANDROID_HOME and ANDROID_SDK_ROOT remain the separate run-private SDK root. Regression tests protect both the GITHUB_ENV exports and the environment passed to avdmanager. Focused lifecycle tests, project fast checks, task metadata, and documentation integrity checks pass. Do not claim Android runtime acceptance without a successful exact-candidate HWASan emulator boot and app health receipt.",
+    "evidence": "Exact-candidate GitHub Actions run 38025062825/job 114135964510 reached avdmanager but failed before emulator startup because ANDROID_SDK_HOME and ANDROID_USER_HOME pointed at different run-private directories; the captured log ended with the AVD .ini SDK-location error. Mapped the legacy ANDROID_SDK_HOME alias to the same private preferences root as ANDROID_USER_HOME while keeping ANDROID_HOME and ANDROID_SDK_ROOT on the separate private SDK root. python3 -B -m unittest script.tests.test_android_hwasan_emulator -v passed 17/17, including checks for both GITHUB_ENV exports and the avdmanager environment. python3 script/ai_tasks.py check, python3 script/ai_docs.py check, and git diff --check passed. python3 script/ai_check.py returned 0: full Python suite, build, and 595/595 CTests passed; its publisher check was allowed to report a dirty worktree, as expected before commit. This does not establish Android runtime acceptance; the parent snapshot's exact-candidate HWASan gate remains open.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0038",
+    "motivation": "The exact-candidate Android HWASan job 38025062825/job 114135964510 passed Java selection, SDK bootstrap, APK download, and preflight, then failed while creating its AVD. The runner gave ANDROID_SDK_HOME and ANDROID_USER_HOME different per-run directories, which Android tooling rejects when writing AVD metadata.",
+    "context": "The job log ends with avdmanager reporting that it cannot locate the SDK installation directory for the AVD .ini file. The source sets ANDROID_SDK_HOME to the per-run sdk directory while ANDROID_USER_HOME points to a separate user directory. A Google-hosted Chromium/WPT fix documents this exact failure mode when those variables differ: https://chromium.googlesource.com/external/github.com/web-platform-tests/wpt/+/2c53cd1bd03686cef080cdfc46c966e15869e782.",
+    "complexity": "low",
+    "created_at": "2026-10-10",
+    "resolved_at": "2026-10-10",
+    "resolution_changes": "Aligned the legacy ANDROID_SDK_HOME variable with ANDROID_USER_HOME while preserving the isolated SDK root, and added regression assertions for both exported and child-process environments.",
+    "plan": [
+      "Keep SDK, AVD, emulator, and user state isolated under the exact runner-temporary run directory; align the legacy SDK_HOME alias with USER_HOME while preserving the SDK root.",
+      "Add regression assertions for both exported workflow values and avdmanager child-process environment.",
+      "Run the focused lifecycle suite and project fast gate; leave exact-candidate HWASan runtime evidence to parent MC-AI-0038."
+    ],
+    "product_changes": [
+      "No product behavior changed; this repairs Android CI emulator setup."
+    ],
+    "code_changes": [
+      "Align the Android HWASan AVD preference-home variables and add regression coverage."
+    ],
+    "baseline_commit": "4487d5419a84dacc8894b88c463c89d4d688e655",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]
