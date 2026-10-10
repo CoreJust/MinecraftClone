@@ -168,7 +168,7 @@
         "vcpkg-configuration.json",
         "vcpkg.json"
       ],
-      "sources_sha256": "a373e64865d188c39fe5ecd79caf4136ba965ff4054208a7a99fede47bb730f7"
+      "sources_sha256": "ba04fc156188c119cb3ca3277219e18e0727614b9d53f887633b47db92214f0e"
     },
     {
       "guide": "docs/code/CORE.md",
@@ -294,7 +294,7 @@
         "tests/core/world_generation_scheduler_tests.cpp",
         "tests/core/world_generation_tests.cpp"
       ],
-      "sources_sha256": "62ee93534075b7bc03a6568114e10de349962083128f48cd3e1d399f718046d6"
+      "sources_sha256": "9947652f2dbd7ee11d8e264f5792c1032be9ea0002bc31c9230ee0592ce91d67"
     },
     {
       "guide": "docs/code/RENDERING.md",

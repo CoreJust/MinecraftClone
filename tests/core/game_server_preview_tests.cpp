@@ -54,6 +54,7 @@ public:
     uint32_t sent_delivery_credit_messages = 0U;
     uint32_t last_acknowledged_input = 0U;
     int32_t last_player_x = 0;
+    std::optional<bool> join_accepted;
     uint64_t acknowledgement_latency_samples = 0U;
     uint64_t acknowledgement_latency_total_ns = 0U;
     uint64_t acknowledgement_latency_max_ns = 0U;
@@ -104,7 +105,9 @@ private:
         if (m_retains_messages) {
             messages.push_back(*message);
         }
-        if (auto const* const tile = std::get_if<shared::ServerHeightTileMessage>(&*message)) {
+        if (auto const* const join_response = std::get_if<shared::JoinResponseMessage>(&*message)) {
+            join_accepted = join_response->accepted;
+        } else if (auto const* const tile = std::get_if<shared::ServerHeightTileMessage>(&*message)) {
             recordHeightTile(*tile);
         } else if (auto const* const batch = std::get_if<shared::ServerHeightTileBatchMessage>(&*message)) {
             ++received_delivery_batches;
@@ -1512,6 +1515,8 @@ TEST(GameServerPreviewTest, SustainedFlightKeepsInputAcknowledgementsCurrentWhil
     static constexpr auto DURATION = std::chrono::seconds{35};
     static constexpr auto INPUT_PERIOD = std::chrono::milliseconds{100};
     static constexpr auto PROGRESS_INTERVAL = std::chrono::seconds{1};
+    static constexpr auto JOIN_TIMEOUT = std::chrono::seconds{10};
+    static constexpr uint32_t MAXIMUM_ACK_LAG = 16U;
     server::GameServer server{0, {}, shared::WorldMode::Flight};
     std::atomic_bool stop_requested{false};
     struct ClientProgress final {
@@ -1646,6 +1651,22 @@ TEST(GameServerPreviewTest, SustainedFlightKeepsInputAcknowledgementsCurrentWhil
         }), 0, core::SendMode{core::SendMode::Reliable}) && joined;
     }
     joined = connected && joined;
+    auto const all_clients_joined = [&clients] {
+        return std::ranges::all_of(clients, [](PreviewClient const* const client) {
+            return client->join_accepted.value_or(false);
+        });
+    };
+    auto const join_deadline = std::chrono::steady_clock::now() + JOIN_TIMEOUT;
+    while (joined && !all_clients_joined() && std::chrono::steady_clock::now() < join_deadline) {
+        for (PreviewClient* const client : clients) {
+            client->poll(std::chrono::milliseconds{1});
+        }
+    }
+    joined = joined && all_clients_joined();
+    for (PreviewClient* const client : clients) {
+        while (client->poll(std::chrono::milliseconds::zero()) > 0) {
+        }
+    }
     uint32_t sent = 0U;
     uint32_t maximum_ack_lag = 0U;
     uint32_t sent_at_maximum_ack_lag = 0U;
@@ -1722,7 +1743,8 @@ TEST(GameServerPreviewTest, SustainedFlightKeepsInputAcknowledgementsCurrentWhil
         }
     }
     CORE_INFO(
-        "Flight summary sent={}, maximum ack lag={} at input={}, final acknowledgements={}/{}/{}/{}, duration={} ms",
+        "Flight summary sent={}, maximum ack lag={} at input={}, "
+        "final acknowledgements={}/{}/{}/{}, duration={} ms",
         sent,
         maximum_ack_lag,
         sent_at_maximum_ack_lag,
@@ -1756,9 +1778,7 @@ TEST(GameServerPreviewTest, SustainedFlightKeepsInputAcknowledgementsCurrentWhil
     EXPECT_TRUE(all_sent);
     ASSERT_TRUE(midpoint_recorded);
     EXPECT_GE(sent, 340U);
-    // Prediction remains continuous while acknowledgements trail. Keep the worst
-    // terrain-loaded lag far below the 64-input safety bound and require catch-up.
-    EXPECT_LE(maximum_ack_lag, 16U)
+    EXPECT_LE(maximum_ack_lag, MAXIMUM_ACK_LAG)
         << "maximum lag occurred after input " << sent_at_maximum_ack_lag
         << ", last acknowledgements " << first_client.last_acknowledged_input << ", "
         << second_client.last_acknowledged_input << ", " << third_client.last_acknowledged_input

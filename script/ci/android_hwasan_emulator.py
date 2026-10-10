@@ -16,6 +16,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Sequence
 
@@ -23,7 +24,16 @@ from typing import Sequence
 SERIAL = "emulator-5558"
 CONSOLE_PORT = 5558
 ADB_PORT = 5559
-SYSTEM_IMAGE = "system-images;android-35;google_apis;arm64-v8a"
+SYSTEM_IMAGE = "system-images;android-35;google_apis_playstore;arm64-v8a"
+RUNTIME_PACKAGE_FILES = {
+    "platform-tools": ("adb",),
+    "emulator": ("emulator",),
+    SYSTEM_IMAGE: ("system.img",),
+}
+RUNTIME_EXECUTABLES = {
+    "platform-tools": ("adb",),
+    "emulator": ("emulator",),
+}
 STATE_FILE = "owner.json"
 EMULATOR_EXECUTABLES = {
     "emulator",
@@ -253,6 +263,62 @@ def _assert_device_and_ports_free(sdk_root: Path, env: dict[str, str]) -> None:
             raise LifecycleError(f"emulator port {port} is occupied")
 
 
+def _sdk_package_is_ready(sdk_root: Path, package_path: str) -> bool:
+    relative = Path(*package_path.split(";"))
+    package_root = sdk_root / relative
+    current = sdk_root
+    for component in relative.parts:
+        current /= component
+        if current.is_symlink():
+            return False
+    properties_path = package_root / "source.properties"
+    manifest_path = package_root / "package.xml"
+    if not package_root.is_dir() or properties_path.is_symlink() or manifest_path.is_symlink():
+        return False
+    if not properties_path.is_file() or not manifest_path.is_file():
+        return False
+
+    properties: dict[str, str] = {}
+    try:
+        property_lines = properties_path.read_text(encoding="utf-8").splitlines()
+    except (OSError, UnicodeError):
+        return False
+    for line in property_lines:
+        key, separator, value = line.partition("=")
+        if separator:
+            properties[key.strip()] = value.strip()
+    if properties.get("Pkg.Revision", "") == "":
+        return False
+    if properties.get("Pkg.Path", package_path) != package_path:
+        return False
+
+    try:
+        manifest = ET.parse(manifest_path).getroot()
+    except (ET.ParseError, OSError):
+        return False
+    package_paths = [
+        element.get("path", "")
+        for element in manifest.iter()
+        if element.tag.rsplit("}", maxsplit=1)[-1] == "localPackage"
+    ]
+    if package_paths != [package_path]:
+        return False
+    if package_path == SYSTEM_IMAGE and properties.get("AndroidVersion.ApiLevel") != "35":
+        return False
+
+    for required_name in RUNTIME_PACKAGE_FILES[package_path]:
+        required = package_root / required_name
+        if required.is_symlink() or not required.is_file():
+            return False
+        if (
+            os.name != "nt"
+            and required_name in RUNTIME_EXECUTABLES.get(package_path, ())
+            and not os.access(required, os.X_OK)
+        ):
+            return False
+    return True
+
+
 def start(runner_temp: Path, run_id: str, run_attempt: str, sdk_root: Path) -> int:
     root = _root(runner_temp, run_id, run_attempt)
     state = _read_state(root, run_id, run_attempt)
@@ -272,11 +338,32 @@ def start(runner_temp: Path, run_id: str, run_attempt: str, sdk_root: Path) -> i
     sdkmanager = sdk_root / "cmdline-tools" / "latest" / "bin" / "sdkmanager"
     avdmanager = sdk_root / "cmdline-tools" / "latest" / "bin" / "avdmanager"
     emulator = sdk_root / "emulator" / "emulator"
-    print(f"Installing Android emulator and API 35 ARM64 system image under {sdk_root}.", flush=True)
-    _run_stream(
-        [str(sdkmanager), f"--sdk_root={sdk_root}", "--install", "emulator", SYSTEM_IMAGE],
-        env=env,
-    )
+    missing_packages = [
+        package_path
+        for package_path in RUNTIME_PACKAGE_FILES
+        if not _sdk_package_is_ready(sdk_root, package_path)
+    ]
+    if missing_packages:
+        print(
+            f"Installing missing Android runtime packages into the private SDK: "
+            f"{', '.join(missing_packages)}.",
+            flush=True,
+        )
+        _run_stream(
+            [str(sdkmanager), f"--sdk_root={sdk_root}", "--install", *missing_packages],
+            env=env,
+        )
+        missing_packages = [
+            package_path
+            for package_path in RUNTIME_PACKAGE_FILES
+            if not _sdk_package_is_ready(sdk_root, package_path)
+        ]
+        if missing_packages:
+            raise LifecycleError(
+                f"Android SDK packages failed post-install validation: {', '.join(missing_packages)}"
+            )
+    else:
+        print("Reusing validated Android runtime packages from the private SDK.", flush=True)
     avd_name = str(state["avd_name"])
     print(f"Creating isolated Android AVD {avd_name}.", flush=True)
     _run_stream(

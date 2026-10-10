@@ -28,6 +28,51 @@ class CiAcquireTests(unittest.TestCase):
             contents.writestr(loader_path or f"{root}/x64/vulkan-1.dll", b"vulkan loader")
             contents.writestr(f"{root}/VulkanRT-License.txt", b"runtime license")
 
+    @staticmethod
+    def write_android_command_line_archive(archive: Path) -> None:
+        with zipfile.ZipFile(archive, "w") as contents:
+            contents.writestr("cmdline-tools/bin/sdkmanager", "#!/bin/sh\n")
+            contents.writestr("cmdline-tools/bin/avdmanager", "#!/bin/sh\n")
+            contents.writestr("cmdline-tools/source.properties", "Pkg.Revision=20.0\n")
+
+    @staticmethod
+    def write_runtime_sdk_package(
+        root: Path,
+        package_path: str,
+        *,
+        revision: str = "1",
+        api_level: str | None = None,
+    ) -> Path:
+        package_root = root.joinpath(*package_path.split(";"))
+        package_root.mkdir(parents=True)
+        properties = [f"Pkg.Path={package_path}", f"Pkg.Revision={revision}"]
+        if api_level is not None:
+            properties.append(f"AndroidVersion.ApiLevel={api_level}")
+        (package_root / "source.properties").write_text("\n".join(properties) + "\n", encoding="utf-8")
+        (package_root / "package.xml").write_text(
+            f'<repository><localPackage path="{package_path}" /></repository>\n',
+            encoding="utf-8",
+        )
+        for required_name in acquire.ANDROID_RUNTIME_PACKAGE_FILES[package_path]:
+            required = package_root / required_name
+            required.write_bytes(b"runtime sdk fixture")
+            if required_name in acquire.ANDROID_RUNTIME_EXECUTABLES.get(package_path, ()):
+                required.chmod(0o755)
+        return package_root
+
+    def make_runtime_sdk_seed(self, root: Path, *, bad_package: str | None = None) -> None:
+        for package_path in acquire.ANDROID_RUNTIME_SDK_PACKAGES:
+            api_level = "34" if package_path == bad_package else "35"
+            needs_api = package_path in {"platforms;android-35", acquire.ANDROID_RUNTIME_SYSTEM_IMAGE}
+            self.write_runtime_sdk_package(
+                root,
+                package_path,
+                revision="2",
+                api_level=api_level if needs_api else None,
+            )
+        (root / "licenses").mkdir()
+        (root / "licenses" / "android-sdk-license").write_text("accepted\n", encoding="utf-8")
+
     def test_pinned_acquisitions_have_expected_immutable_values(self):
         self.assertEqual(acquire.CMAKE_VERSION, "3.31.6")
         self.assertEqual(acquire.NINJA_VERSION, "1.13.1")
@@ -210,6 +255,165 @@ class CiAcquireTests(unittest.TestCase):
 
     def test_install_android_sdk_on_apple_silicon_uses_verified_native_archive(self):
         self.check_android_sdk_install("Darwin", "arm64", acquire.ANDROID_MAC_ARM64_COMMAND_LINE_TOOLS)
+
+    def test_seed_android_runtime_sdk_copies_verified_packages_without_aliases(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            seed = root / "host-sdk"
+            sdk = root / "run-private-sdk"
+            seed.mkdir()
+            sdk.mkdir()
+            self.make_runtime_sdk_seed(seed)
+
+            acquire.seed_android_runtime_sdk(seed, sdk)
+
+            for package_path in acquire.ANDROID_RUNTIME_SDK_PACKAGES:
+                source_package = seed.joinpath(*package_path.split(";"))
+                private_package = sdk.joinpath(*package_path.split(";"))
+                self.assertEqual(acquire.sdk_package_revision(sdk, package_path), "2")
+                source_file = source_package / acquire.ANDROID_RUNTIME_PACKAGE_FILES[package_path][0]
+                private_file = private_package / acquire.ANDROID_RUNTIME_PACKAGE_FILES[package_path][0]
+                self.assertEqual(private_file.read_bytes(), source_file.read_bytes())
+                self.assertFalse(source_file.samefile(private_file))
+            self.assertEqual(
+                (sdk / "licenses" / "android-sdk-license").read_text(encoding="utf-8"),
+                "accepted\n",
+            )
+            self.assertFalse((sdk / "ndk").exists())
+            self.assertFalse((sdk / "cmake").exists())
+
+    def test_seed_android_runtime_sdk_rejects_wrong_api_before_copy(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            seed = root / "host-sdk"
+            sdk = root / "run-private-sdk"
+            seed.mkdir()
+            sdk.mkdir()
+            self.make_runtime_sdk_seed(seed, bad_package=acquire.ANDROID_RUNTIME_SYSTEM_IMAGE)
+
+            with self.assertRaisesRegex(acquire.CiError, "not API 35"):
+                acquire.seed_android_runtime_sdk(seed, sdk)
+
+            self.assertEqual(list(sdk.iterdir()), [])
+
+    def test_seed_android_runtime_sdk_rejects_mismatched_package_identity(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            seed = root / "host-sdk"
+            sdk = root / "run-private-sdk"
+            seed.mkdir()
+            sdk.mkdir()
+            self.make_runtime_sdk_seed(seed)
+            platform_properties = seed / "platforms" / "android-35" / "source.properties"
+            platform_properties.write_text(
+                platform_properties.read_text(encoding="utf-8").replace(
+                    "Pkg.Path=platforms;android-35", "Pkg.Path=platforms;android-34"
+                ),
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(acquire.CiError, "metadata does not match"):
+                acquire.seed_android_runtime_sdk(seed, sdk)
+
+            self.assertEqual(list(sdk.iterdir()), [])
+
+    def test_seed_android_runtime_sdk_rejects_missing_payload_before_copy(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            seed = root / "host-sdk"
+            sdk = root / "run-private-sdk"
+            seed.mkdir()
+            sdk.mkdir()
+            self.make_runtime_sdk_seed(seed)
+            image = seed.joinpath(*acquire.ANDROID_RUNTIME_SYSTEM_IMAGE.split(";"))
+            (image / "system.img").unlink()
+
+            with self.assertRaisesRegex(acquire.CiError, "missing system.img"):
+                acquire.seed_android_runtime_sdk(seed, sdk)
+
+            self.assertEqual(list(sdk.iterdir()), [])
+
+    @unittest.skipIf(os.name == "nt", "creating symlinks requires Windows developer mode")
+    def test_seed_android_runtime_sdk_rejects_symlinked_package_payload(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            seed = root / "host-sdk"
+            sdk = root / "run-private-sdk"
+            seed.mkdir()
+            sdk.mkdir()
+            self.make_runtime_sdk_seed(seed)
+            image = seed.joinpath(*acquire.ANDROID_RUNTIME_SYSTEM_IMAGE.split(";"))
+            payload = image / "system.img"
+            target = image / "real-system.img"
+            payload.replace(target)
+            payload.symlink_to(target.name)
+
+            with self.assertRaisesRegex(acquire.CiError, "missing system.img"):
+                acquire.seed_android_runtime_sdk(seed, sdk)
+
+            self.assertEqual(list(sdk.iterdir()), [])
+
+    def test_install_android_runtime_sdk_uses_seed_and_skips_build_packages(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            seed = root / "host-sdk"
+            sdk = root / "run-private-sdk"
+            seed.mkdir()
+            self.make_runtime_sdk_seed(seed)
+            config = acquire.ANDROID_MAC_ARM64_COMMAND_LINE_TOOLS
+            archive = root / config["filename"]
+            self.write_android_command_line_archive(archive)
+            with mock.patch.object(acquire.host_platform, "system", return_value="Darwin"), mock.patch.object(
+                acquire.host_platform, "machine", return_value="arm64"
+            ), mock.patch.object(acquire, "download") as download, mock.patch.object(
+                acquire, "verify_sha256"
+            ) as verify, mock.patch.object(acquire, "run") as run, mock.patch.object(
+                acquire, "write_github_env"
+            ) as write_env:
+                download.side_effect = lambda _url, destination: destination.write_bytes(archive.read_bytes())
+                sdkmanager = acquire.install_android_runtime_sdk(sdk, seed)
+
+            download.assert_called_once_with(config["url"], archive.resolve())
+            verify.assert_called_once_with(archive.resolve(), config["sha256"])
+            command = [str(sdkmanager), f"--sdk_root={sdk.resolve()}"]
+            run.assert_called_once_with([*command, "--licenses"], input_text="y\n" * 100)
+            self.assertEqual(
+                write_env.call_args_list,
+                [
+                    mock.call("ANDROID_HOME", str(sdk.resolve())),
+                    mock.call("ANDROID_SDK_ROOT", str(sdk.resolve())),
+                ],
+            )
+            self.assertFalse((sdk / "ndk").exists())
+            self.assertFalse((sdk / "cmake").exists())
+
+    def test_install_android_runtime_sdk_fallback_installs_runtime_packages_only(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            sdk = root / "run-private-sdk"
+            config = acquire.ANDROID_MAC_ARM64_COMMAND_LINE_TOOLS
+            archive = root / config["filename"]
+            self.write_android_command_line_archive(archive)
+            with mock.patch.object(acquire.host_platform, "system", return_value="Darwin"), mock.patch.object(
+                acquire.host_platform, "machine", return_value="arm64"
+            ), mock.patch.object(acquire, "download") as download, mock.patch.object(
+                acquire, "verify_sha256"
+            ), mock.patch.object(acquire, "run") as run, mock.patch.object(
+                acquire, "write_github_env"
+            ):
+                download.side_effect = lambda _url, destination: destination.write_bytes(archive.read_bytes())
+                sdkmanager = acquire.install_android_runtime_sdk(sdk)
+
+            command = [str(sdkmanager), f"--sdk_root={sdk.resolve()}"]
+            self.assertEqual(
+                run.call_args_list,
+                [
+                    mock.call([*command, "--licenses"], input_text="y\n" * 100),
+                    mock.call([*command, *acquire.ANDROID_RUNTIME_SDK_PACKAGES]),
+                ],
+            )
+            self.assertNotIn("ndk;27.0.12077973", run.call_args_list[-1].args[0])
+            self.assertNotIn("cmake;3.30.5", run.call_args_list[-1].args[0])
 
     def test_android_sdk_archive_selection_matches_supported_host_architecture(self):
         for system, machine, config in (

@@ -46,6 +46,24 @@ class AndroidHwasanEmulatorTests(unittest.TestCase):
     def prepare(self) -> Path:
         return self.lifecycle.prepare(self.runner_temp, self.run_id, self.attempt, self.github_env)
 
+    def install_runtime_package(self, sdk_root: Path, package_path: str) -> Path:
+        package_root = sdk_root.joinpath(*package_path.split(";"))
+        package_root.mkdir(parents=True, exist_ok=True)
+        properties = [f"Pkg.Path={package_path}", "Pkg.Revision=1"]
+        if package_path == self.lifecycle.SYSTEM_IMAGE:
+            properties.append("AndroidVersion.ApiLevel=35")
+        (package_root / "source.properties").write_text("\n".join(properties) + "\n", encoding="utf-8")
+        (package_root / "package.xml").write_text(
+            f'<repository><localPackage path="{package_path}" /></repository>\n',
+            encoding="utf-8",
+        )
+        required_name = self.lifecycle.RUNTIME_PACKAGE_FILES[package_path][0]
+        required = package_root / required_name
+        required.write_bytes(b"runtime package fixture")
+        if required_name != "system.img":
+            required.chmod(0o755)
+        return package_root
+
     @staticmethod
     def process_command(emulator: Path, avd_name: str, extra: str = "") -> str:
         return (
@@ -58,12 +76,17 @@ class AndroidHwasanEmulatorTests(unittest.TestCase):
         *,
         host_platform: str = "Darwin",
         accel_output: str = "accel: 0\nHypervisor.Framework OS X Version 26.6\n",
+        installed_runtime_packages: bool = False,
     ) -> tuple[Path, Path, mock.Mock, list]:
         root = self.prepare()
         sdk_root = root / "android-sdk"
+        if installed_runtime_packages:
+            for package_path in self.lifecycle.RUNTIME_PACKAGE_FILES:
+                self.install_runtime_package(sdk_root, package_path)
         emulator = sdk_root / "emulator" / "emulator"
         emulator.parent.mkdir(parents=True, exist_ok=True)
-        emulator.touch()
+        if not emulator.exists():
+            emulator.touch()
         (sdk_root / "cmdline-tools" / "latest" / "bin").mkdir(parents=True, exist_ok=True)
         (sdk_root / "platform-tools").mkdir(exist_ok=True)
         process = mock.Mock()
@@ -78,6 +101,10 @@ class AndroidHwasanEmulatorTests(unittest.TestCase):
 
         def run(command_args, **kwargs):
             commands.append((command_args, kwargs))
+            if "--install" in command_args:
+                install_index = command_args.index("--install")
+                for package_path in command_args[install_index + 1 :]:
+                    self.install_runtime_package(sdk_root, package_path)
             if command_args[-2:] == ["emulator-5558", "get-state"]:
                 return self.lifecycle.subprocess.CompletedProcess(
                     command_args, 1, "", "error: device 'emulator-5558' not found\n"
@@ -217,6 +244,17 @@ class AndroidHwasanEmulatorTests(unittest.TestCase):
             all(command[1:3] == ["-s", "emulator-5558"] for command, _ in commands if command[-1:] == ["get-state"])
         )
 
+    def test_start_reuses_valid_private_emulator_packages_without_sdkmanager_update(self):
+        root, sdk_root, _, commands = self.setup_started_emulator(installed_runtime_packages=True)
+
+        self.assertTrue(root.is_dir())
+        self.assertFalse(any("--install" in command for command, _ in commands))
+        avd_call = next(command for command, _ in commands if "create" in command and "avd" in command)
+        self.assertEqual(
+            avd_call[avd_call.index("--package") + 1],
+            "system-images;android-35;google_apis_playstore;arm64-v8a",
+        )
+
     def test_start_accepts_kvm_and_launches_accelerated_emulator_on_linux(self):
         root, sdk_root, popen, commands = self.setup_started_emulator(
             host_platform="Linux",
@@ -231,9 +269,8 @@ class AndroidHwasanEmulatorTests(unittest.TestCase):
     def test_start_fails_closed_before_launch_when_expected_acceleration_is_missing(self):
         root = self.prepare()
         sdk_root = root / "android-sdk"
-        emulator = sdk_root / "emulator" / "emulator"
-        emulator.parent.mkdir(parents=True)
-        emulator.touch()
+        for package_path in self.lifecycle.RUNTIME_PACKAGE_FILES:
+            self.install_runtime_package(sdk_root, package_path)
         with mock.patch.object(self.lifecycle, "_assert_device_and_ports_free"), mock.patch.object(
             self.lifecycle, "_run_stream"
         ), mock.patch.object(
@@ -248,9 +285,8 @@ class AndroidHwasanEmulatorTests(unittest.TestCase):
     def test_start_fails_closed_before_launch_when_kvm_is_reported_unusable(self):
         root = self.prepare()
         sdk_root = root / "android-sdk"
-        emulator = sdk_root / "emulator" / "emulator"
-        emulator.parent.mkdir(parents=True)
-        emulator.touch()
+        for package_path in self.lifecycle.RUNTIME_PACKAGE_FILES:
+            self.install_runtime_package(sdk_root, package_path)
         with mock.patch.object(self.lifecycle, "_assert_device_and_ports_free"), mock.patch.object(
             self.lifecycle, "_run_stream"
         ), mock.patch.object(

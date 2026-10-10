@@ -67,7 +67,7 @@ Desktop diagnostics retain `build/ai-checks/python-tests.log` when present.
 
 Install once per clone with `python3 script/ai_setup.py --install-hooks`. `core.hooksPath` is repository-local; installation does not change global settings. Remove this setting with `git config --local --unset core.hooksPath` to restore Git's default hook location. Existing hook installations require deliberate reconciliation, never silent replacement.
 
-The hooks apply to `ai-dev`, `ai-main`, and `codex/ai-*` work. Pre-commit and pre-merge-commit require the exact Luna review receipt and run the one fast check for basic tasks or candidate release check for aggregates; do not wrap the same precommit predicate a second time. `ai_check.py` removes exactly the variables reported by `git rev-parse --local-env-vars` from the Python-test child environment; candidate and index checks retain the real hook environment. Commit-msg requires exactly one matching Task-ID trailer; post-commit refreshes ignored local task pages. Minor/major candidates also require Terra review. Pre-push checks the actual AI ref against the checked-out commit and requires a clean tree before running changed-scope fast checks for ordinary `ai-dev`/`codex/ai-*` refs; `ai-main` and `ai/*` tags retain the complete strict gate. The full build/CTest gate is reserved for the coordinator's explicit batch boundary or aggregate closure, not repeated by every basic commit. Pushing an AI checkout to the legacy `dev`/`main` refs is blocked. Hooks are guardrails, not remote branch protection, and can be bypassed by Git options.
+Hooks cover `ai-dev`, `ai-main`, and `codex/ai-*`. Pre-commit and pre-merge require the exact Luna receipt plus one fast basic-task check or aggregate candidate check; do not duplicate that predicate. `ai_check.py` strips only `git rev-parse --local-env-vars` from Python-test children; candidate/index checks keep the hook environment. Commit-msg enforces one matching Task-ID; post-commit refreshes ignored task pages. Minor/major candidates need Terra review. Pre-push verifies the checked-out AI ref and clean tree, then runs changed-scope fast checks except on `ai-main` and `ai/*` tags, which require strict checks. Run full build/CTest once at the batch boundary or aggregate closure. Legacy `dev`/`main` pushes are blocked. Hooks are bypassable guardrails, not remote protection.
 
 Publication-ledger validation keeps snapshot planning and finalized change lists
 immutable. One exact historical compatibility entry recognizes Snapshot 3 commit
@@ -75,9 +75,13 @@ immutable. One exact historical compatibility entry recognizes Snapshot 3 commit
 condensed four prose fields. The exception is commit-scoped; later ledgers use
 only the standard publication fields.
 
-[GitHub workflow](../../.github/workflows/ai-checks.yml) runs PR fast checks and AI-branch desktop/analysis gates. Android HWASan runs only on `ai-main` with label `mc-s7-hwasan-<sha>-<run-id>`. Temporary runners need only that label, `--ephemeral`, and `--no-default-labels`; registration requires separate authorization. The job uses macOS SDK tools and requires HVF. Hosted Linux ARM had an SDK mismatch; hosted macOS lacked HVF. Exact-candidate runtime evidence remains required. Linux is CI-only. See [Android acceleration](https://developer.android.com/studio/run/emulator-acceleration). Workflow permissions are read-only.
+[GitHub workflow](../../.github/workflows/ai-checks.yml) runs PR fast checks and AI-branch desktop/analysis gates. Android HWASan runs only on `ai-main` using an exact-SHA/run-labeled ephemeral macOS ARM64 runner with HVF (`--no-default-labels`); registration needs separate authorization. Hosted Linux ARM lacks the SDK match and hosted macOS lacks HVF. Exact-candidate runtime evidence remains required; Linux is CI-only and workflow permissions are read-only. See [Android acceleration](https://developer.android.com/studio/run/emulator-acceleration).
 
-The run-private Android preferences paths intentionally differ by one level: `ANDROID_USER_HOME` is the `.android` directory itself, while legacy `ANDROID_SDK_HOME` is its parent because older tools append `.android`. Both therefore resolve to the same private preferences directory. `ANDROID_HOME` and deprecated `ANDROID_SDK_ROOT` both point to the separate run-private SDK installation.
+`ANDROID_USER_HOME` and legacy `ANDROID_SDK_HOME` resolve to one run-private preferences directory; `ANDROID_HOME` and deprecated `ANDROID_SDK_ROOT` point to the separate run-private SDK.
+
+Optional `MC_ANDROID_SDK_SEED_ROOT` packages are validated and copied into the
+run-private SDK, never shared. Without it, setup acquires only runtime packages;
+NDK and CMake remain build-only. Command-line tools stay hash-pinned.
 
 ## Project skills and future hooks
 

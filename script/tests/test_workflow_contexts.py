@@ -167,7 +167,11 @@ class WorkflowContextTests(unittest.TestCase):
             runtime_job.index("Create isolated Android emulator homes"),
             runtime_job.index("Bootstrap pinned Android SDK tools"),
         )
-        self.assertIn('install-android-sdk --root "$ANDROID_SDK_ROOT"', runtime_job)
+        self.assertIn("install-android-runtime-sdk", runtime_job)
+        self.assertIn('--root "$ANDROID_SDK_ROOT"', runtime_job)
+        self.assertIn('--seed-root "${MC_ANDROID_SDK_SEED_ROOT:-}"', runtime_job)
+        self.assertNotIn("ndk;27.0.12077973", runtime_job)
+        self.assertNotIn("cmake;3.30.5", runtime_job)
         self.assertLess(
             runtime_job.index("Preflight downloaded HWASan APK before emulator startup"),
             runtime_job.index("Start matching ARM64 Android emulator with host acceleration"),
