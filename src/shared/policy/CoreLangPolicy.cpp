@@ -56,6 +56,10 @@ core::lang::Type type(core::lang::TypeKind const kind)
         .kind = kind,
         .elements = {},
         .method_owner_name = {},
+        .callable_precondition = {},
+        .callable_postcondition = {},
+        .struct_definition = {},
+        .recursive_struct_definition = {},
     };
 }
 
@@ -67,6 +71,7 @@ core::lang::Value unitValue()
         .bytes = {},
         .elements = {},
         .literal_lease = {},
+        .runtime_lease = {},
     };
 }
 
@@ -1145,6 +1150,9 @@ std::expected<PolicyCompilation, PolicyDiagnostic> PolicyHost::compile(
         .version = 1U,
         .restrictions = {},
         .operations = {},
+        .triggers = {},
+        .resolve = {},
+        .automaticImports = {},
     };
     ruleset.operations.reserve(specs.size());
     for (HostSpec const& spec : specs) {
@@ -1158,6 +1166,7 @@ std::expected<PolicyCompilation, PolicyDiagnostic> PolicyHost::compile(
             .custom = host_manifest,
             .expand = {},
             .compile_time_effect = {},
+            .compile_time = {},
             .borrow = host_manifest.borrow,
         });
     }

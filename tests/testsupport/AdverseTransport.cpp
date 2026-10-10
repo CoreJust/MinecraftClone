@@ -49,8 +49,8 @@ AdverseTransport::AdverseTransport(
     AdverseTransportConfig server_to_client
 )
     : m_seed{ seed }
-    , m_client_to_server{ .configuration = client_to_server, .facts = {} }
-    , m_server_to_client{ .configuration = server_to_client, .facts = {} }
+    , m_client_to_server{ .configuration = client_to_server, .facts = {}, .queue = {} }
+    , m_server_to_client{ .configuration = server_to_client, .facts = {}, .queue = {} }
 {
     m_client_to_server.queue.reserve(client_to_server.max_queue_packets);
     m_server_to_client.queue.reserve(server_to_client.max_queue_packets);
