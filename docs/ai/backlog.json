@@ -1502,7 +1502,7 @@
     ],
     "acceptance": "Deliver immutable, generation-tagged hard/soft entity permissions for all/players/mobs/technical-entities/per-kind and explicit-member/selector groups; namespace custom keys and defer world subjects. Cover movement, flight/collision, blocks, inventory, invincibility, commands, and permission-backed mode presets. Use CoreLang 0.1.3.1 (only documented 0.1.3.3 maintenance), retain interpreter/JIT parity, and prepare kernels off physics ticks. Test latency, loss, jitter, freezes, reordering, and duplication. Replicate a 29/16 × 10/16 × 10/16 player, 16-color palette, and first/rear-third/front-third views. Keep position-driven radius-256 terrain camera-independent and derive face LOD at projected area ≤2 px². Provide four inspected 2560x1440 Mac screenshots with prominent labels centered below the HUD, each showing a distinct requested scene; capture each only after its full configured render distance has finished loading, never with partially loaded terrain: (1) flying third-person beside the central spike, captured at render distance 72 from about 30% closer than the previous central-spike framing and slightly lower than the prior viewpoint while retaining an elevated angle; keep the full spike, most of its first ring, and terrain beyond visible, emphasize the landform's mass, and keep the player visible without covering the spike; (2) one distinct view of the player in the trench near the first spike, without reusing another trench capture; (3) the player climbing the mountain; and (4) first-person at horizontal X/Z (0, 0). Target stable 120 FPS at x200 and the world border as diagnostic only. Pass platform and automated MC-AI-0249 gates; include the accepted CoreCpp scope MC-AI-0056 Runtime executors, MC-AI-0057 Runtime audio, and MC-AI-0240 renderer diagnostics in this snapshot. Release S7, hold the minor open for feedback, and do not start S8.",
     "evidence": "Run 37956286276 passed macOS Debug/CTest/shader plus ASan/UBSan/TSan/Clang Static Analyzer, Linux LSan/MSan, Windows fast/Debug/Release, and Android HWASan APK build; MC-AI-0399 fixed its four-member Clang-Tidy failure. Batch MC-AI-0400–0402 is pushed to origin/ai-dev at 09263589ae3c150bcf7f9e1a6f6a1e5ff02887b0; its full local gate passed (143 Debug build steps, 595 CTest), and two reviews approved fingerprint 5012e5a33a5c5603f902b7480268595c5ee8d5db5b717efeee268b0b7d66c338. On source commit 3f2a06de98af89b00eda74a88d382fcd1743885e, the Snapshot 7 candidate gate passed 549 Python tests (one skipped), Debug build, 595/595 CTests (397.87 s), and renderer smoke (5.65 s). Publisher's sole allowed candidate-mode exception was the expected clean-tree predicate before the aggregate commit. MC-AI-0403 fixes the prior harness-only shutdown assertion failure; its focused Debug regression separately passed 10/10. The exact 13-row sanitizer/static-analysis matrix remains deferred to the committed promotion candidate. Source c6d89f9e996bc2a47a12614931daf09622717453: history collection and finalization validated all 158 children.",
-    "blocker": "Exact-candidate matrix is incomplete: run 38013755185/job 114102020858 failed before emulator boot after installing the SDK image because avdmanager rejected --sdk_root. MC-AI-0405 removes that flag, but the corrected source still needs a fresh 13-row matrix and Android HWASan receipt. The single authorized runner is deregistered; another needs user authorization. Do not tag. Mac/Windows artifacts, published-byte Mac/Android acceptance, and Windows Release/hands-on evidence remain.",
+    "blocker": "Exact-candidate matrix is incomplete. Run 38013755185 failed Android HWASan job 114102020858 before emulator startup because avdmanager create avd rejected --sdk_root; Mac Debug job 114099395013 passed build and 595/595 CTests but clang-tidy failed on six aggregate initializers. Local fixes MC-AI-0405 and MC-AI-0406 are recorded, but no corrected exact-candidate matrix or Android runtime receipt exists. The single authorized ephemeral ARM64/HVF runner attempt was consumed and deregistered; another registration requires fresh user authorization. Do not tag. Mac/Windows artifacts, published-byte Mac/Android acceptance, and fresh Windows Release/hands-on evidence remain.",
     "owner": "Codex",
     "level": "snapshot",
     "parent": "MC-AI-0033",
@@ -1535,7 +1535,7 @@
     "retrospective": "Activation commit 0473b444 (2026-09-20 20:51:14 CEST) to first ai-main promotion commit 4b9166da (2026-10-01 07:24:32 CEST): 10d 10h 33m 18s; not a release because the exact-source matrix and artifacts were missing. At the 2026-10-09 08:45:08 CEST evidence checkpoint, 18d 11h 53m 54s had elapsed, not measured work hours. At checkpoint 9a2a0b6, records show 141 child IDs/142 commits through d78766e and 15 ai-main promotion commits without a release. Causes and evidence-backed improvements are in the linked hindsight report; records cannot prove a two-day counterfactual.",
     "docs_review": "Four distinct inspected 2560x1440 Release scenes meet full-load and centered-below-label criteria. The central scene was corrected on 2026-10-09 at distance 72; its full 16-heading/16,241-tile readiness, player clearance, geometry, lower-right beyond-ring terrain pixels, and updated hash are recorded in MC-AI-0398 and version history. The other three scene files remain unchanged. Hindsight summarizes setup, gate evidence, and remaining external requirements.",
     "environment_review": "Release work stayed isolated; the primary ai-dev checkout (9a02219; 372 behind, 117 dirty paths) was preserved. Early caches targeted wrong dependency revisions; first vcpkg configure omitted its toolchain, and repository-local hooks were missing. Pinned configs and guarded hooks later passed. The fresh MC-AI-0397 worktree lacked `build/debug`; build/CTest passed in its matching configured checkout. On 2026-10-09, Release renderer smoke and capture passed with host GUI access; the authorized Launch Services repair was not causal. Restricted execution blocked `git merge-tree --write-tree`; host context confirmed the S6 tag. Pre-push repeated 549 Python tests (65.78 s) after CTest (388.58 s). `ai_publish.prepare` requires an aggregate trailer. Detailed causes are in `docs/ai/S7-HINDSIGHT-2026-10-08.md`.",
-    "backlog_review": "All 152 original planned basic IDs and six S7 follow-ups (MC-AI-0399 through MC-AI-0404) are done/finalized: 158 children total. MC-AI-0399 fixed the only source diagnostic; MC-AI-0400 and MC-AI-0401 bounded event scheduling; MC-AI-0402 added user-space Java 21; MC-AI-0403 stabilized ingress shutdown; MC-AI-0404 reconciles child accounting. The exact-source matrix, package, and platform acceptance remain outstanding. MC-AI-0248 is diagnostic-only."
+    "backlog_review": "All 152 originally planned basic IDs plus eight finalized follow-ups MC-AI-0399 through MC-AI-0406 total 160 direct children, all done/finalized. MC-AI-0405 removes the unsupported avdmanager flag; MC-AI-0406 explicitly initializes the omitted members at six clang-tidy aggregate initializer sites. MC-AI-0248 remains diagnostic-only. The corrected exact-candidate matrix, package, and platform acceptance remain outstanding."
   },
   {
     "id": "MC-AI-0039",
@@ -14234,6 +14234,47 @@
     ],
     "code_changes": [
       "Correct avdmanager AVD creation arguments and add regression coverage for the command and run-private SDK environment."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0406",
+    "title": "Resolve S7 Mac clang-tidy aggregate initializer failures",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P1",
+    "route": "luna",
+    "milestone": "EarlyDev 0.1.0:7",
+    "depends_on": [],
+    "acceptance": "Both edited translation units compile with Clang C++23 and missing-field/designated-field initializer warnings treated as errors against CoreLang 0.1.3.1 revision 4a7f486 and CoreCpp revision 1a1d409. All members omitted at the six diagnosed aggregate initializer sites retain their existing empty/default semantics, and no analyzer suppression or exclusion is added. The task metadata and code documentation checks pass. A fresh configured macOS clang-tidy result and the exact-candidate 13-row matrix remain parent MC-AI-0038 release gates.",
+    "evidence": "Run 38013755185 Mac Debug job 114099395013 completed build and 595/595 CTests but failed clang-tidy at six aggregate initializer sites for missing designated members. Both edited translation units pass /usr/bin/clang++ -fsyntax-only -std=c++2b with missing-field and missing-designated-field initializers treated as errors, using exact CoreLang 0.1.3.1 revision 4a7f486 and CoreCpp revision 1a1d409 headers. ai_docs.py refresh/check, ai_tasks.py check, and diff --check pass. ai_check.py --fast passed all required checks with its documented dirty-source-check exception; Python tests were skipped for this full-C++ change. Exact-candidate clang-tidy and the 13-row matrix remain parent gates.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0038",
+    "motivation": "The exact S7 analysis matrix failed Mac Debug clang-tidy because six project aggregate initializers omit newly added members. Since this analyzer is a required release gate, these source diagnostics block S7 acceptance.",
+    "context": "GitHub Actions run 38013755185, Mac Debug job 114099395013, completed build and 595/595 CTests but failed clang-tidy under bugprone-*,performance-* with warnings-as-errors. Two AdverseTransport DirectionState initializers omit queue. CoreLangPolicy initializers omit Type callable pre/postconditions, Value runtime_lease, Ruleset triggers/resolver/automaticImports, and Operation compile_time. The pinned CoreLang 0.1.3.1/CoreCpp declarations give these fields empty/default semantics; no behavior change or analyzer suppression is intended.",
+    "complexity": "low",
+    "created_at": "2026-10-10",
+    "resolved_at": "2026-10-10",
+    "resolution_changes": "Explicitly initialized the omitted aggregate members at the six reported sites across CoreLangPolicy.cpp and AdverseTransport.cpp, preserving empty/default semantics and adding no analyzer suppression.",
+    "plan": [
+      "Reproduce the missing-member diagnostics at the six affected aggregate initializer sites and verify member defaults in their owning declarations.",
+      "Explicitly initialize the diagnosed queue, CoreLang type/value, ruleset, and operation members without changing behavior or suppressing analysis.",
+      "Compile both affected translation units with the pinned public headers and missing-initializer diagnostics as errors; run the project fast gate, task metadata, and code documentation checks.",
+      "Leave the complete exact-candidate matrix and platform runtime acceptance to parent MC-AI-0038."
+    ],
+    "product_changes": [
+      "No gameplay or runtime behavior change; remove source warnings that fail the required macOS analyzer gate."
+    ],
+    "code_changes": [
+      "Make the existing empty/default aggregate values explicit in CoreLangPolicy.cpp and AdverseTransport.cpp."
     ],
     "baseline_commit": "",
     "commits": [],
