@@ -77,6 +77,8 @@ only the standard publication fields.
 
 [GitHub workflow](../../.github/workflows/ai-checks.yml) runs PR fast checks and AI-branch desktop/analysis gates. Android HWASan runs only on `ai-main` with label `mc-s7-hwasan-<sha>-<run-id>`. Temporary runners need only that label, `--ephemeral`, and `--no-default-labels`; registration requires separate authorization. The job uses macOS SDK tools and requires HVF. Hosted Linux ARM had an SDK mismatch; hosted macOS lacked HVF. Exact-candidate runtime evidence remains required. Linux is CI-only. See [Android acceleration](https://developer.android.com/studio/run/emulator-acceleration). Workflow permissions are read-only.
 
+The run-private Android preferences paths intentionally differ by one level: `ANDROID_USER_HOME` is the `.android` directory itself, while legacy `ANDROID_SDK_HOME` is its parent because older tools append `.android`. Both therefore resolve to the same private preferences directory. `ANDROID_HOME` and deprecated `ANDROID_SDK_ROOT` both point to the separate run-private SDK installation.
+
 ## Project skills and future hooks
 
 The ten [project skills](SKILLS.md) share a deterministic planner. Prefer scripts for checks; add a skill only for repeated judgment work outside the [task loop](WORKFLOW.md). Candidates: Vulkan capture, worldgen comparison, and save-format migration.
