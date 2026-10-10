@@ -80,6 +80,109 @@ class VerifyAndroidHwasanTests(unittest.TestCase):
                 self.assertEqual(self.hwasan.main(["--apk", str(apk), "--apk-only"]), 1)
             run_adb.assert_not_called()
 
+    def test_run_adb_accepts_an_explicit_grep_no_match_exit(self):
+        completed = self.hwasan.subprocess.CompletedProcess(["adb"], 1, "", "")
+        with mock.patch.object(self.hwasan.subprocess, "run", return_value=completed):
+            output = self.hwasan.run_adb(
+                "emulator-5554",
+                "shell",
+                "run-as",
+                self.hwasan.PACKAGE,
+                "grep",
+                "-F",
+                "-e",
+                self.hwasan.NATIVE_LIBRARY_NAME,
+                "-e",
+                self.hwasan.HWASAN_RUNTIME_NAME,
+                "/proc/123/maps",
+                accepted_return_codes=(0, 1),
+            )
+        self.assertEqual(output, "")
+
+    def test_run_adb_rejects_transport_errors_even_when_grep_no_match_is_allowed(self):
+        completed = self.hwasan.subprocess.CompletedProcess(["adb"], 255, "partial maps", "")
+        with mock.patch.object(self.hwasan.subprocess, "run", return_value=completed):
+            with self.assertRaisesRegex(self.hwasan.HwasanError, "exited 255: partial maps"):
+                self.hwasan.run_adb(
+                    "emulator-5554",
+                    "shell",
+                    "run-as",
+                    self.hwasan.PACKAGE,
+                    "grep",
+                    "-F",
+                    "-e",
+                    self.hwasan.NATIVE_LIBRARY_NAME,
+                    "-e",
+                    self.hwasan.HWASAN_RUNTIME_NAME,
+                    "/proc/123/maps",
+                    accepted_return_codes=(0, 1),
+                )
+
+    def test_runtime_retries_a_failed_maps_read_after_resetting_health_interval(self):
+        with tempfile.TemporaryDirectory() as directory:
+            apk = self.apk(Path(directory))
+            map_read_error = self.hwasan.HwasanError("adb maps read exited 255: partial output")
+            samples = [self.process_maps(), map_read_error, *[self.process_maps()] * 6]
+            with mock.patch.object(
+                self.hwasan,
+                "run_adb",
+                side_effect=["Success", "Starting", *samples],
+            ), mock.patch.object(self.hwasan, "running_process_id", return_value="123"), mock.patch.object(
+                self.hwasan.time,
+                "monotonic",
+                side_effect=[0, 0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7],
+            ), mock.patch.object(self.hwasan.time, "sleep"):
+                receipt = self.hwasan.verify_runtime("emulator-5554", apk, 10)
+            self.assertEqual(receipt["healthy_seconds"], 5)
+
+    def test_runtime_fails_if_pid_changes_after_a_failed_maps_read(self):
+        with tempfile.TemporaryDirectory() as directory:
+            apk = self.apk(Path(directory))
+            with mock.patch.object(
+                self.hwasan,
+                "run_adb",
+                side_effect=[
+                    "Success",
+                    "Starting",
+                    self.hwasan.HwasanError("adb maps read exited 255: partial output"),
+                ],
+            ), mock.patch.object(
+                self.hwasan,
+                "running_process_id",
+                side_effect=["123", "456"],
+            ), mock.patch.object(self.hwasan.time, "monotonic", side_effect=[0, 0]), mock.patch.object(
+                self.hwasan.time,
+                "sleep",
+            ):
+                with self.assertRaisesRegex(
+                    self.hwasan.HwasanError,
+                    "restarted during runtime verification",
+                ):
+                    self.hwasan.verify_runtime("emulator-5554", apk, 10)
+
+    def test_runtime_fails_closed_after_persistent_maps_read_errors(self):
+        with tempfile.TemporaryDirectory() as directory:
+            apk = self.apk(Path(directory))
+            map_read_error = self.hwasan.HwasanError("adb maps read exited 255: partial output")
+            with mock.patch.object(
+                self.hwasan,
+                "run_adb",
+                side_effect=["Success", "Starting", map_read_error, map_read_error],
+            ) as run_adb, mock.patch.object(
+                self.hwasan,
+                "running_process_id",
+                return_value="123",
+            ), mock.patch.object(self.hwasan.time, "monotonic", side_effect=[0, 0, 0, 1, 1, 2]), mock.patch.object(
+                self.hwasan.time,
+                "sleep",
+            ):
+                with self.assertRaisesRegex(
+                    self.hwasan.HwasanError,
+                    "did not complete a process-map read.*exited 255",
+                ):
+                    self.hwasan.verify_runtime("emulator-5554", apk, 2)
+            self.assertEqual(run_adb.call_count, 4)
+
     def test_runtime_rejects_invalid_apk_before_any_device_command(self):
         with tempfile.TemporaryDirectory() as directory:
             apk = self.apk(Path(directory), wrap=b"invalid")
@@ -117,8 +220,14 @@ class VerifyAndroidHwasanTests(unittest.TestCase):
                     "shell",
                     "run-as",
                     "com.corejust.minecraftclone.hwasan",
-                    "cat",
+                    "grep",
+                    "-F",
+                    "-e",
+                    "libmc_android.so",
+                    "-e",
+                    "libclang_rt.hwasan-aarch64-android.so",
                     "/proc/123/maps",
+                    accepted_return_codes=(0, 1),
                 ),
                 run_adb.call_args_list,
             )

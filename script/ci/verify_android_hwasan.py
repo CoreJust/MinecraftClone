@@ -29,7 +29,12 @@ class HwasanError(RuntimeError):
     """The requested runtime proof could not be collected."""
 
 
-def run_adb(serial: str, *arguments: str, timeout: int = 30) -> str:
+def run_adb(
+    serial: str,
+    *arguments: str,
+    timeout: int = 30,
+    accepted_return_codes: tuple[int, ...] = (0,),
+) -> str:
     completed = subprocess.run(
         ["adb", "-s", serial, *arguments],
         text=True,
@@ -38,7 +43,7 @@ def run_adb(serial: str, *arguments: str, timeout: int = 30) -> str:
         check=False,
     )
     output = completed.stdout + completed.stderr
-    if completed.returncode:
+    if completed.returncode not in accepted_return_codes:
         raise HwasanError(f"adb {' '.join(arguments)} exited {completed.returncode}: {output.strip()}")
     return output.strip()
 
@@ -87,6 +92,7 @@ def verify_runtime(serial: str, apk: Path, timeout_seconds: int) -> dict[str, st
     saw_hwasan_runtime = False
     saw_both_libraries = False
     loaded_at: float | None = None
+    last_maps_error: str | None = None
     while (now := time.monotonic()) < deadline:
         current_process_id = running_process_id(serial)
         if not current_process_id:
@@ -99,14 +105,26 @@ def verify_runtime(serial: str, apk: Path, timeout_seconds: int) -> dict[str, st
         elif current_process_id != process_id:
             raise HwasanError("HWASan app restarted during runtime verification")
 
-        mappings = run_adb(
-            serial,
-            "shell",
-            "run-as",
-            PACKAGE,
-            "cat",
-            f"/proc/{process_id}/maps",
-        )
+        try:
+            mappings = run_adb(
+                serial,
+                "shell",
+                "run-as",
+                PACKAGE,
+                "grep",
+                "-F",
+                "-e",
+                NATIVE_LIBRARY_NAME,
+                "-e",
+                HWASAN_RUNTIME_NAME,
+                f"/proc/{process_id}/maps",
+                accepted_return_codes=(0, 1),
+            )
+            last_maps_error = None
+        except HwasanError as error:
+            # An incomplete ADB response is a missed sample, never mapping evidence.
+            mappings = ""
+            last_maps_error = str(error).partition(": ")[0]
         post_read_process_id = running_process_id(serial)
         if not post_read_process_id:
             raise HwasanError("HWASan app exited during runtime verification")
@@ -118,6 +136,11 @@ def verify_runtime(serial: str, apk: Path, timeout_seconds: int) -> dict[str, st
             raise HwasanError(
                 f"HWASan runtime verification exceeded its {timeout_seconds}-second deadline"
             )
+
+        if last_maps_error is not None:
+            loaded_at = None
+            time.sleep(1)
+            continue
 
         native_library_mapped = NATIVE_LIBRARY_NAME in mappings
         hwasan_runtime_mapped = HWASAN_RUNTIME_NAME in mappings
@@ -143,6 +166,11 @@ def verify_runtime(serial: str, apk: Path, timeout_seconds: int) -> dict[str, st
 
     if not process_id:
         raise HwasanError(f"HWASan app did not remain running within {timeout_seconds} seconds")
+    if last_maps_error is not None:
+        raise HwasanError(
+            f"HWASan app did not complete a process-map read before the {timeout_seconds}-second "
+            f"deadline; last error: {last_maps_error}"
+        )
     if loaded_at is None:
         if not saw_native_library:
             raise HwasanError(f"HWASan app did not map {NATIVE_LIBRARY_NAME}")
