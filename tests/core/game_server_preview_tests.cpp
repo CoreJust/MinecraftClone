@@ -928,6 +928,188 @@ TEST(GameServerPreviewTest, FastFlightGeneratesFrontierTilesWithinDeadline)
     EXPECT_GE(std::ranges::count_if(keys, is_frontier_key), OBSERVED_TILE_COUNT);
 }
 
+TEST(GameServerPreviewTest, SustainedNetworkIngressDoesNotStarveTicksTerrainOrShutdown)
+{
+    static constexpr auto WARMUP_TIMEOUT = std::chrono::seconds{10};
+    static constexpr auto PROGRESS_TIMEOUT = std::chrono::seconds{2};
+    static constexpr auto SHUTDOWN_TIMEOUT = std::chrono::milliseconds{250};
+    static constexpr auto MINIMUM_INGRESS_DURATION = std::chrono::milliseconds{500};
+    static constexpr uint32_t FLOOD_CLIENT_COUNT = 3U;
+    static constexpr uint32_t MAX_FLOOD_PACKETS_PER_CLIENT = 500'000U;
+    static constexpr uint32_t PACKETS_PER_FLUSH = 128U;
+    server::GameServer server{0, {}, shared::WorldMode::Flight, shared::World::canonicalConfiguration(), 4U};
+    std::atomic_bool stop_requested{false};
+    std::atomic_bool flood_stopped{false};
+    std::atomic_bool server_exited{false};
+    std::atomic_uint64_t tick_count{0U};
+    std::atomic_uint64_t metrics_count{0U};
+    std::atomic_uint64_t submitted_tile_jobs{0U};
+    server::GameServer::BenchmarkHooks const hooks{
+        .on_tick = [&tick_count](std::chrono::nanoseconds, uint64_t) {
+            tick_count.fetch_add(1U, std::memory_order_relaxed);
+        },
+        .on_preview_metrics = [&metrics_count, &submitted_tile_jobs](
+            core::ClientId,
+            server::GameServer::PreviewStreamMetrics const metrics
+        ) {
+            metrics_count.fetch_add(1U, std::memory_order_relaxed);
+            submitted_tile_jobs.store(metrics.height_tile_jobs.submitted_total, std::memory_order_relaxed);
+        },
+    };
+    PreviewClient observer;
+    std::array<PreviewClient, FLOOD_CLIENT_COUNT> flood_clients;
+    std::array<std::atomic_uint64_t, FLOOD_CLIENT_COUNT> sent_packets{};
+    std::array<std::atomic_uint64_t, FLOOD_CLIENT_COUNT> flushed_packets{};
+    std::array<std::thread, FLOOD_CLIENT_COUNT> flood_threads;
+    auto const totalSentPackets = [&sent_packets] {
+        uint64_t count = 0U;
+        for (std::atomic_uint64_t const& sent : sent_packets) {
+            count += sent.load(std::memory_order_relaxed);
+        }
+        return count;
+    };
+    auto const totalFlushedPackets = [&flushed_packets] {
+        uint64_t count = 0U;
+        for (std::atomic_uint64_t const& flushed : flushed_packets) {
+            count += flushed.load(std::memory_order_relaxed);
+        }
+        return count;
+    };
+    std::thread server_thread{[&server, &stop_requested, &hooks, &server_exited] {
+        server.run(stop_requested, &hooks);
+        server_exited.store(true, std::memory_order_release);
+    }};
+    defer {
+        flood_stopped.store(true, std::memory_order_relaxed);
+        for (std::thread& flood_thread : flood_threads) {
+            if (flood_thread.joinable()) {
+                flood_thread.join();
+            }
+        }
+        stop_requested.store(true, std::memory_order_relaxed);
+        if (server_thread.joinable()) {
+            server_thread.join();
+        }
+    };
+
+    ASSERT_TRUE(observer.connect(core::Address::localhost(server.port()), WARMUP_TIMEOUT));
+    ASSERT_TRUE(observer.send(shared::encodeMessage(shared::JoinRequestMessage{
+        .ch = '@', .mode = shared::WorldMode::Flight, .wants_previews = true,
+    }), 0, core::SendMode{core::SendMode::Reliable}));
+    auto deadline = std::chrono::steady_clock::now() + WARMUP_TIMEOUT;
+    while (observer.received_height_tiles == 0U && std::chrono::steady_clock::now() < deadline) {
+        observer.poll(std::chrono::milliseconds{1});
+    }
+    ASSERT_GT(observer.received_height_tiles, 0U);
+    ASSERT_GT(metrics_count.load(std::memory_order_relaxed), 0U);
+
+    for (PreviewClient& flood_client : flood_clients) {
+        ASSERT_TRUE(flood_client.connect(core::Address::localhost(server.port()), WARMUP_TIMEOUT));
+    }
+    auto const flood_packet = shared::encodeMessage(shared::ClientHeightTileCreditMessage{
+        .world_revision = 1U,
+        .delivery_token = 0xA'11CEU,
+        .credits = 1U,
+    });
+    auto const flood_client_loop = [&flood_stopped, &flood_packet](
+        PreviewClient& client,
+        std::atomic_uint64_t& sent_count,
+        std::atomic_uint64_t& flushed_count
+    ) {
+        while (!flood_stopped.load(std::memory_order_relaxed)
+            && sent_count.load(std::memory_order_relaxed) < MAX_FLOOD_PACKETS_PER_CLIENT) {
+            uint32_t batch_count = 0U;
+            while (batch_count < PACKETS_PER_FLUSH
+                && !flood_stopped.load(std::memory_order_relaxed)
+                && sent_count.load(std::memory_order_relaxed) < MAX_FLOOD_PACKETS_PER_CLIENT) {
+                if (client.send(flood_packet, shared::GAME_CHANNEL,
+                        core::SendMode{core::SendMode::Unsequenced})) {
+                    sent_count.fetch_add(1U, std::memory_order_relaxed);
+                    ++batch_count;
+                } else {
+                    break;
+                }
+            }
+            client.flush();
+            flushed_count.store(sent_count.load(std::memory_order_relaxed), std::memory_order_relaxed);
+            std::this_thread::sleep_for(std::chrono::milliseconds{1});
+        }
+    };
+    for (uint32_t index = 0U; index < FLOOD_CLIENT_COUNT; ++index) {
+        flood_threads[index] = std::thread{
+            [client = &flood_clients[index], sent_count = &sent_packets[index],
+                flushed_count = &flushed_packets[index], flood_client_loop] {
+                flood_client_loop(*client, *sent_count, *flushed_count);
+            }
+        };
+    }
+
+    deadline = std::chrono::steady_clock::now() + std::chrono::seconds{1};
+    while (totalSentPackets() < 1'000U && std::chrono::steady_clock::now() < deadline) {
+        std::this_thread::sleep_for(std::chrono::milliseconds{1});
+    }
+    uint32_t const baseline_tiles = observer.received_height_tiles;
+    uint64_t const baseline_ticks = tick_count.load(std::memory_order_relaxed);
+    uint64_t const baseline_metrics = metrics_count.load(std::memory_order_relaxed);
+    uint64_t const baseline_jobs = submitted_tile_jobs.load(std::memory_order_relaxed);
+    auto const flood_started_at = std::chrono::steady_clock::now();
+    for (uint32_t sequence = 1U; sequence <= 8U; ++sequence) {
+        ASSERT_TRUE(observer.send(shared::encodeMessage(shared::ClientInputMessage{
+            .direction = {.x = 127U, .accelerated = true, .speedup = 500U},
+            .sequence = sequence,
+        }), shared::GAME_CHANNEL, core::SendMode{core::SendMode::Reliable}));
+    }
+
+    bool made_progress_under_ingress = false;
+    deadline = std::chrono::steady_clock::now() + PROGRESS_TIMEOUT;
+    while (std::chrono::steady_clock::now() < deadline) {
+        observer.poll(std::chrono::milliseconds{1});
+        bool const tick_progress = tick_count.load(std::memory_order_relaxed) >= baseline_ticks + 2U;
+        bool const metrics_progress = metrics_count.load(std::memory_order_relaxed) > baseline_metrics;
+        bool const terrain_progress = observer.received_height_tiles > baseline_tiles
+            || submitted_tile_jobs.load(std::memory_order_relaxed) > baseline_jobs;
+        if (tick_progress && metrics_progress && terrain_progress) {
+            made_progress_under_ingress = true;
+        }
+        if (made_progress_under_ingress
+            && std::chrono::steady_clock::now() - flood_started_at >= MINIMUM_INGRESS_DURATION) {
+            break;
+        }
+    }
+    uint64_t const flushed_packets_before_shutdown = totalFlushedPackets();
+    deadline = std::chrono::steady_clock::now() + PROGRESS_TIMEOUT;
+    while (totalFlushedPackets() == flushed_packets_before_shutdown
+        && std::chrono::steady_clock::now() < deadline) {
+        observer.poll(std::chrono::milliseconds{1});
+    }
+    bool const ingress_active_at_shutdown = totalFlushedPackets() > flushed_packets_before_shutdown;
+    stop_requested.store(true, std::memory_order_relaxed);
+    deadline = std::chrono::steady_clock::now() + SHUTDOWN_TIMEOUT;
+    while (!server_exited.load(std::memory_order_acquire) && std::chrono::steady_clock::now() < deadline) {
+        observer.poll(std::chrono::milliseconds{1});
+    }
+    bool const stopped_during_ingress = ingress_active_at_shutdown
+        && server_exited.load(std::memory_order_acquire);
+    flood_stopped.store(true, std::memory_order_relaxed);
+    for (std::thread& flood_thread : flood_threads) {
+        if (flood_thread.joinable()) {
+            flood_thread.join();
+        }
+    }
+    if (!server_exited.load(std::memory_order_acquire)) {
+        deadline = std::chrono::steady_clock::now() + std::chrono::seconds{5};
+        while (!server_exited.load(std::memory_order_acquire) && std::chrono::steady_clock::now() < deadline) {
+            std::this_thread::sleep_for(std::chrono::milliseconds{1});
+        }
+    }
+    ASSERT_TRUE(server_exited.load(std::memory_order_acquire));
+    server_thread.join();
+
+    EXPECT_GE(totalSentPackets(), 1'000U);
+    EXPECT_TRUE(made_progress_under_ingress);
+    EXPECT_TRUE(stopped_during_ingress);
+}
+
 TEST(GameServerPreviewTest, StalledClientReservesGameplayCapacityAndResumesOneAcknowledgedBatch)
 {
     static constexpr auto DURATION = std::chrono::seconds{2};
