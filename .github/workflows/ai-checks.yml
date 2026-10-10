@@ -560,7 +560,10 @@ jobs:
           --run-attempt "$GITHUB_RUN_ATTEMPT"
           --github-env "$GITHUB_ENV"
       - name: Bootstrap pinned Android SDK tools
-        run: python script/ci/acquire.py install-android-sdk --root "$ANDROID_SDK_ROOT"
+        run: >-
+          python script/ci/acquire.py install-android-runtime-sdk
+          --root "$ANDROID_SDK_ROOT"
+          --seed-root "${MC_ANDROID_SDK_SEED_ROOT:-}"
       - name: Expose Android platform tools and emulator
         run: |
           echo "$ANDROID_SDK_ROOT/platform-tools" >> "$GITHUB_PATH"

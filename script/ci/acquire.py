@@ -15,6 +15,7 @@ import subprocess
 import sys
 import urllib.request
 import zipfile
+import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Sequence
 
@@ -60,6 +61,23 @@ ANDROID_SDK_PACKAGES = (
     "cmake;3.30.5",
     "platform-tools",
 )
+ANDROID_RUNTIME_SYSTEM_IMAGE = "system-images;android-35;google_apis_playstore;arm64-v8a"
+ANDROID_RUNTIME_SDK_PACKAGES = (
+    "platforms;android-35",
+    "platform-tools",
+    "emulator",
+    ANDROID_RUNTIME_SYSTEM_IMAGE,
+)
+ANDROID_RUNTIME_PACKAGE_FILES = {
+    "platforms;android-35": ("android.jar",),
+    "platform-tools": ("adb",),
+    "emulator": ("emulator",),
+    ANDROID_RUNTIME_SYSTEM_IMAGE: ("system.img",),
+}
+ANDROID_RUNTIME_EXECUTABLES = {
+    "platform-tools": ("adb",),
+    "emulator": ("emulator",),
+}
 DOWNLOAD_USER_AGENT = "MinecraftClone CI acquisition"
 NINJA_DOWNLOADS = {
     "windows": {
@@ -431,6 +449,13 @@ def write_android_sdk_environment(root: Path) -> None:
     write_github_env("ANDROID_NDK_ROOT", ndk)
 
 
+def write_android_runtime_sdk_environment(root: Path) -> None:
+    """Export the runtime-only SDK without advertising absent build tools."""
+    value = str(root)
+    write_github_env("ANDROID_HOME", value)
+    write_github_env("ANDROID_SDK_ROOT", value)
+
+
 def safe_extract(archive: Path, destination: Path) -> None:
     """Extract a hash-verified archive without allowing paths outside destination."""
     root = destination.resolve()
@@ -569,8 +594,8 @@ def android_command_line_tools() -> dict[str, str]:
     raise CiError(f"unsupported Android SDK host: {system}/{machine}")
 
 
-def install_android_sdk(root: Path) -> Path:
-    """Bootstrap pinned command-line tools before installing exact Android SDK packages."""
+def install_android_command_line_tools(root: Path) -> Path:
+    """Install the host-specific hash-pinned SDK manager into an SDK root."""
     config = android_command_line_tools()
     root.mkdir(parents=True, exist_ok=True)
     latest = root / "cmdline-tools" / "latest"
@@ -594,10 +619,146 @@ def install_android_sdk(root: Path) -> Path:
         if not executable.is_file():
             raise CiError(f"Android command-line tools archive is missing {executable}")
         executable.chmod(executable.stat().st_mode | stat.S_IXUSR)
+    return sdkmanager
+
+
+def install_android_sdk(root: Path) -> Path:
+    """Bootstrap pinned command-line tools before installing exact Android SDK packages."""
+    sdkmanager = install_android_command_line_tools(root)
     command = [str(sdkmanager), f"--sdk_root={root}"]
     run([*command, "--licenses"], input_text="y\n" * 100)
     run([*command, *ANDROID_SDK_PACKAGES])
     write_android_sdk_environment(root)
+    print(root)
+    return sdkmanager
+
+
+def sdk_package_revision(root: Path, package_path: str) -> str:
+    """Validate a local SDK package's path, revision, API level, and required payload."""
+    relative = Path(*package_path.split(";"))
+    package_root = root / relative
+    current = root
+    for component in relative.parts:
+        current /= component
+        if current.is_symlink():
+            raise CiError(f"Android SDK package path contains a symlink: {current}")
+    if not package_root.is_dir():
+        raise CiError(f"Android SDK package is missing: {package_path}")
+
+    properties_path = package_root / "source.properties"
+    manifest_path = package_root / "package.xml"
+    if properties_path.is_symlink() or not properties_path.is_file():
+        raise CiError(f"Android SDK package is missing source.properties: {package_path}")
+    if manifest_path.is_symlink() or not manifest_path.is_file():
+        raise CiError(f"Android SDK package is missing package.xml: {package_path}")
+
+    properties: dict[str, str] = {}
+    try:
+        property_lines = properties_path.read_text(encoding="utf-8").splitlines()
+    except (OSError, UnicodeError) as error:
+        raise CiError(f"Android SDK package has unreadable source.properties: {package_path}") from error
+    for line in property_lines:
+        key, separator, value = line.partition("=")
+        if separator:
+            properties[key.strip()] = value.strip()
+    if properties.get("Pkg.Path", package_path) != package_path:
+        raise CiError(f"Android SDK package path metadata does not match {package_path}")
+    revision = properties.get("Pkg.Revision", "")
+    if not revision:
+        raise CiError(f"Android SDK package has no revision: {package_path}")
+
+    try:
+        manifest = ET.parse(manifest_path).getroot()
+    except (ET.ParseError, OSError) as error:
+        raise CiError(f"Android SDK package has invalid package.xml: {package_path}: {error}") from error
+    package_paths = [
+        element.get("path", "")
+        for element in manifest.iter()
+        if element.tag.rsplit("}", maxsplit=1)[-1] == "localPackage"
+    ]
+    if package_paths != [package_path]:
+        raise CiError(f"Android SDK package.xml does not identify {package_path}")
+
+    if package_path in {"platforms;android-35", ANDROID_RUNTIME_SYSTEM_IMAGE}:
+        if properties.get("AndroidVersion.ApiLevel") != "35":
+            raise CiError(f"Android SDK package is not API 35: {package_path}")
+    for required_name in ANDROID_RUNTIME_PACKAGE_FILES[package_path]:
+        required = package_root / required_name
+        if required.is_symlink() or not required.is_file():
+            raise CiError(f"Android SDK package is missing {required_name}: {package_path}")
+        if (
+            os.name != "nt"
+            and required_name in ANDROID_RUNTIME_EXECUTABLES.get(package_path, ())
+            and not os.access(required, os.X_OK)
+        ):
+            raise CiError(f"Android SDK package executable is not executable: {required}")
+    return revision
+
+
+def seed_android_runtime_sdk(seed_root: Path, sdk_root: Path) -> None:
+    """Copy validated emulator packages into a run-owned SDK without aliases."""
+    if seed_root.is_symlink():
+        raise CiError(f"Android SDK seed root must not be a symlink: {seed_root}")
+    try:
+        source = seed_root.expanduser().resolve(strict=True)
+    except OSError as error:
+        raise CiError(f"Android SDK seed root is unavailable: {seed_root}: {error}") from error
+    if not source.is_dir():
+        raise CiError(f"Android SDK seed root is not a directory: {source}")
+
+    destination = sdk_root.resolve(strict=True)
+    if source == destination or source in destination.parents or destination in source.parents:
+        raise CiError("Android SDK seed root and run-private SDK root must be separate trees")
+
+    revisions: dict[str, str] = {}
+    for package_path in ANDROID_RUNTIME_SDK_PACKAGES:
+        package_root = source.joinpath(*package_path.split(";"))
+        revision = sdk_package_revision(source, package_path)
+        for candidate in (package_root, *package_root.rglob("*")):
+            if candidate.is_symlink():
+                raise CiError(f"Android SDK package contains a symlink: {candidate}")
+        revisions[package_path] = revision
+
+    source_licenses = source / "licenses"
+    private_licenses = destination / "licenses"
+    if source_licenses.is_symlink():
+        raise CiError(f"Android SDK license directory must not be a symlink: {source_licenses}")
+    if source_licenses.is_dir():
+        for candidate in source_licenses.rglob("*"):
+            if candidate.is_symlink():
+                raise CiError(f"Android SDK license directory contains a symlink: {candidate}")
+
+    for package_path, revision in revisions.items():
+        package_root = source.joinpath(*package_path.split(";"))
+        private_package_root = destination.joinpath(*package_path.split(";"))
+        print(
+            f"Copying Android SDK package {package_path} revision {revision} into the run-private SDK.",
+            flush=True,
+        )
+        private_package_root.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copytree(package_root, private_package_root, copy_function=shutil.copy2)
+        copied_revision = sdk_package_revision(destination, package_path)
+        if copied_revision != revision:
+            raise CiError(f"copied Android SDK package revision changed: {package_path}")
+
+    if source_licenses.is_dir():
+        shutil.copytree(source_licenses, private_licenses, copy_function=shutil.copy2)
+
+
+def install_android_runtime_sdk(root: Path, seed_root: Path | None = None) -> Path:
+    """Install emulator-only tools into the owned SDK, optionally seeding verified packages."""
+    if root.is_symlink():
+        raise CiError(f"run-private Android SDK root must not be a symlink: {root}")
+    root.mkdir(parents=True, exist_ok=True)
+    root = root.resolve(strict=True)
+    if seed_root is not None:
+        seed_android_runtime_sdk(seed_root, root)
+    sdkmanager = install_android_command_line_tools(root)
+    command = [str(sdkmanager), f"--sdk_root={root}"]
+    run([*command, "--licenses"], input_text="y\n" * 100)
+    if seed_root is None:
+        run([*command, *ANDROID_RUNTIME_SDK_PACKAGES])
+    write_android_runtime_sdk_environment(root)
     print(root)
     return sdkmanager
 
@@ -830,6 +991,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     manifest_parser.add_argument("--installed-root", type=Path, required=True)
     install_android_parser = commands.add_parser("install-android-sdk")
     install_android_parser.add_argument("--root", type=Path, required=True)
+    install_android_runtime_parser = commands.add_parser("install-android-runtime-sdk")
+    install_android_runtime_parser.add_argument("--root", type=Path, required=True)
+    install_android_runtime_parser.add_argument("--seed-root", default="")
     verify_parser = commands.add_parser("verify-tools")
     verify_parser.add_argument("--platform", choices=tuple(VULKAN_DOWNLOADS), required=True)
     metadata_parser = commands.add_parser("record-metadata")
@@ -866,6 +1030,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             install_manifest_dependencies(args.vcpkg_root, args.platform, args.installed_root)
         elif args.command == "install-android-sdk":
             install_android_sdk(args.root)
+        elif args.command == "install-android-runtime-sdk":
+            seed_root = Path(args.seed_root) if args.seed_root else None
+            install_android_runtime_sdk(args.root, seed_root)
         elif args.command == "verify-tools":
             verify_tools(args.platform)
         elif args.command == "record-metadata":
