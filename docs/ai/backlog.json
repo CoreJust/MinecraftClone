@@ -14530,5 +14530,82 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": "Focused verifier suite passed 13/13; exact local ARM64/API 35 HWASan runtime evidence passed; and the project fast gate passed with its full Python phase in 64.46 seconds. Hosted exact-candidate validation remains a separate aggregate release gate."
+  },
+  {
+    "id": "MC-AI-0413",
+    "title": "Wait for accepted player joins before measuring acknowledgement latency",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P0",
+    "route": "luna",
+    "milestone": "S7",
+    "depends_on": [],
+    "acceptance": "Keep the 35-second, four-client, 500x Release terrain-stream stress and at least 340 inputs. Wait for every JoinResponseMessage to report accepted before starting gameplay input sequence 1, and drain all immediately available join and initial replication messages. Measure acknowledgement lag from input 1 and retain the 16-input maximum, the final catch-up bound of at most 2 inputs, and all terrain-progress assertions. Do not change production input limits, delivery caps, or acknowledgement thresholds. The focused Release test and project fast gate must pass; the exact-candidate hosted release matrix remains an aggregate MC-AI-0038 gate.",
+    "evidence": "Release stress test passed in 35.72 s; ai_check.py --fast passed with 563 Python tests and one intentional skip; the full integration gate passed with 563 Python tests and one intentional skip plus a successful Debug build and 595-test CTest suite (one Release-only test intentionally skipped).",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0038",
+    "motivation": "Exact S7 macOS Release CI runs exceed the 16-input acknowledgement-lag maximum during initial four-client terrain startup, then quickly catch up and stay within bounds. The test starts gameplay inputs immediately after sending join requests instead of waiting for the server to accept all players and complete initial replication, so its first-input timing includes handshake setup.",
+    "context": "MC-AI-0236 explicitly requires the 16-input maximum from input one across concurrent clients, so its contract must remain unchanged. MC-AI-0400 bounded active-stream server polling and passed locally. Hosted macOS Release runs 37976059199 and 38057657497 peaked at inputs 29 with lag 25 and 23; the server had processed/acknowledged the sequence while client-side observations later caught up, with final lag at most 2. The test sends gameplay input immediately after join requests without observing JoinResponseMessage, although GameServer sends an accepted/rejected join response before initial player replication and terrain streaming.",
+    "complexity": "medium",
+    "created_at": "2026-10-10",
+    "resolved_at": "2026-10-10",
+    "resolution_changes": "The stress test waits for all four accepted joins and drains immediately available initialization before measuring input acknowledgements from sequence 1; production acknowledgement bounds remain unchanged.",
+    "plan": [
+      "Track JoinResponseMessage in PreviewClient and wait for all four accepted responses before starting timed gameplay input.",
+      "Drain immediately ready replication messages before sequence 1, retain the 16-input bound from sequence 1, and preserve the final catch-up and terrain-progress assertions.",
+      "Run the focused optimized Release test and the project fast gate; carry the correction through exact-candidate hosted release CI."
+    ],
+    "product_changes": [],
+    "code_changes": [
+      "Wait for all four accepted join responses and drain initial replication before sequence 1 in GameServerPreviewTest.SustainedFlightKeepsInputAcknowledgementsCurrentWhileTilesStream."
+    ],
+    "baseline_commit": "f85b8d0c774a990f5a22cdb72d4e0176c837a989",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0414",
+    "title": "Seed exact installed Android runtime SDK packages into the private HWASan SDK",
+    "kind": "chore",
+    "status": "active",
+    "priority": "P0",
+    "route": "luna",
+    "milestone": "S7",
+    "depends_on": [],
+    "acceptance": "Keep the HWASan runtime SDK and emulator state inside the unique RUNNER_TEMP subtree. Continue downloading the pinned, SHA-256-verified command-line tools. Add an explicit optional seed root supplied by the run-scoped self-hosted runner; validate the API 35 ARM64 platform, platform-tools, emulator, and Google Play system-image package metadata and required files before copying them as independent files into the private SDK. Reject mismatches and symlinks without mutating the seed. The runtime-only install path must not acquire NDK or CMake. When the emulator and image packages are already valid in the private root, do not run sdkmanager to update them; preserve an sdkmanager fallback that installs only runtime-required packages when no seed root is supplied. Preserve candidate-bound APK preflight, private AVD/preferences, HVF/port/process ownership checks, and cleanup. Add focused acquisition, lifecycle, and workflow regressions; focused suites and the project fast gate must pass. No machine-wide software installation is required. The corrected exact-candidate hosted HWASan row remains an aggregate MC-AI-0038 release gate.",
+    "evidence": "",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0038",
+    "motivation": "The exact S7 HWASan runtime job is stalled while sdkmanager downloads the build-only NDK into its private SDK, even though this host already has the API 35 ARM64 platform, emulator, platform-tools, and Google Play image. The current runtime helper also asks for the different Google APIs image, which is absent and would require another large download.",
+    "context": "MC-AI-0376 requires ANDROID_SDK_ROOT and the emulator executable to remain inside the run-owned RUNNER_TEMP subtree, so the shared SDK cannot be used directly or through a symlink. On this host the exact package identities are platforms;android-35 revision 2, platform-tools revision 35.0.2, emulator revision 36.4.9, and system-images;android-35;google_apis_playstore;arm64-v8a revision 8. Keep acquiring the command-line tools from the existing hash-pinned archive; the installed command-line-tools revision is 16.0 and is not the pinned archive. The runtime row does not compile native code, so NDK and CMake are unnecessary there. The stalled old candidate is run 38057657497; its macOS Release row already failed the preserved 16-input bound. No system-wide software installation is needed.",
+    "complexity": "medium",
+    "created_at": "2026-10-10",
+    "resolved_at": "",
+    "resolution_changes": "",
+    "plan": [
+      "Add an explicit, fail-closed runtime SDK seed operation that validates package identities and contents before making private copies; keep the normal no-seed installation path private and limited to emulator runtime packages.",
+      "Use the API 35 ARM64 Google Play image already installed on the authorized macOS runner and skip mutable sdkmanager package updates when the private copy validates.",
+      "Cover source mismatch, missing files, symlink rejection, independent copies, runtime fallback, and workflow wiring; run focused tests and the project fast gate, then verify the exact corrected hosted runtime candidate."
+    ],
+    "product_changes": [],
+    "code_changes": [
+      "Add a runtime-only, optionally seeded SDK acquisition operation in script/ci/acquire.py and use it only in the android-hwasan-runtime job.",
+      "Validate private emulator/system-image packages before deciding whether android_hwasan_emulator.py needs sdkmanager installation."
+    ],
+    "baseline_commit": "f85b8d0c774a990f5a22cdb72d4e0176c837a989",
+    "commits": [],
+    "finalized": false,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]
