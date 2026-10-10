@@ -1517,6 +1517,7 @@ TEST(GameServerPreviewTest, SustainedFlightKeepsInputAcknowledgementsCurrentWhil
     static constexpr auto PROGRESS_INTERVAL = std::chrono::seconds{1};
     static constexpr auto JOIN_TIMEOUT = std::chrono::seconds{10};
     static constexpr uint32_t MAXIMUM_ACK_LAG = 16U;
+    static constexpr uint32_t MAX_CLIENT_POLL_CALLS_PER_PASS = 32U;
     server::GameServer server{0, {}, shared::WorldMode::Flight};
     std::atomic_bool stop_requested{false};
     struct ClientProgress final {
@@ -1676,6 +1677,15 @@ TEST(GameServerPreviewTest, SustainedFlightKeepsInputAcknowledgementsCurrentWhil
     auto const started = std::chrono::steady_clock::now();
     auto next_client_progress = started + PROGRESS_INTERVAL;
     auto next_input = started;
+    auto const poll_clients_fairly = [&clients] {
+        for (PreviewClient* const client : clients) {
+            for (uint32_t poll_call = 0U; poll_call < MAX_CLIENT_POLL_CALLS_PER_PASS; ++poll_call) {
+                if (client->poll(std::chrono::milliseconds::zero()) == 0U) {
+                    break;
+                }
+            }
+        }
+    };
     while (joined && std::chrono::steady_clock::now() - started < DURATION) {
         auto const now = std::chrono::steady_clock::now();
         if (now >= next_input) {
@@ -1690,10 +1700,7 @@ TEST(GameServerPreviewTest, SustainedFlightKeepsInputAcknowledgementsCurrentWhil
             }
             next_input += INPUT_PERIOD;
         }
-        for (PreviewClient* const client : clients) {
-            while (client->poll(std::chrono::milliseconds::zero()) > 0) {
-            }
-        }
+        poll_clients_fairly();
         if (now >= next_client_progress) {
             for (size_t index = 0U; index < clients.size(); ++index) {
                 PreviewClient const* const client = clients[index];

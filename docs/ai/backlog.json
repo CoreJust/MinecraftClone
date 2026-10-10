@@ -1501,7 +1501,7 @@
       "MC-AI-0037"
     ],
     "acceptance": "Deliver immutable, generation-tagged hard/soft entity permissions for all/players/mobs/technical-entities/per-kind and explicit-member/selector groups; namespace custom keys and defer world subjects. Cover movement, flight/collision, blocks, inventory, invincibility, commands, and permission-backed mode presets. Use CoreLang 0.1.3.1 (only documented 0.1.3.3 maintenance), retain interpreter/JIT parity, and prepare kernels off physics ticks. Test latency, loss, jitter, freezes, reordering, and duplication. Replicate a 29/16 × 10/16 × 10/16 player, 16-color palette, and first/rear-third/front-third views. Keep position-driven radius-256 terrain camera-independent and derive face LOD at projected area ≤2 px². Provide four inspected 2560x1440 Mac screenshots with prominent labels centered below the HUD, each showing a distinct requested scene; capture each only after its full configured render distance has finished loading, never with partially loaded terrain: (1) flying third-person beside the central spike, captured at render distance 72 from about 30% closer than the previous central-spike framing and slightly lower than the prior viewpoint while retaining an elevated angle; keep the full spike, most of its first ring, and terrain beyond visible, emphasize the landform's mass, and keep the player visible without covering the spike; (2) one distinct view of the player in the trench near the first spike, without reusing another trench capture; (3) the player climbing the mountain; and (4) first-person at horizontal X/Z (0, 0). Target stable 120 FPS at x200 and the world border as diagnostic only. Pass platform and automated MC-AI-0249 gates; include the accepted CoreCpp scope MC-AI-0056 Runtime executors, MC-AI-0057 Runtime audio, and MC-AI-0240 renderer diagnostics in this snapshot. Release S7, hold the minor open for feedback, and do not start S8.",
-    "evidence": "The canonical backlog now contains 170 direct basic children, all done and finalized, including MC-AI-0413 through MC-AI-0416. Local S7 integration passed in invocation 1791659324186612000-87529: documentation, backlog, plan, whitespace, 569 Python tests (one skip), Debug build, and CTest 595/595 (one intentional skip); publisher reported only the allowed dirty-development-worktree exception. MC-AI-0415 bounds process-map transfer, and MC-AI-0416 ensures nonempty grep exit-1 output cannot prove mappings. The exact local API 35 ARM64 HWASan APK runtime and four distinct labeled Mac screenshots remain verified in child records. The exact-promotion matrix, one authorized hosted ARM64/HVF HWASan retry, platform artifacts/runtime acceptance, strict receipt, S7 tag, and publication remain open.",
+    "evidence": "The canonical backlog now contains 173 direct basic children, all done and finalized. Local S7 integration passed in invocation 1791659324186612000-87529: documentation, backlog, plan, whitespace, 569 Python tests (one skip), Debug build, and CTest 595/595 (one intentional skip); publisher reported only the allowed dirty-development-worktree exception. MC-AI-0415–0418 harden Android map verification and its deadline. MC-AI-0419 bounds four-peer ACK polling fairly; its focused Release stress passed in 35.86 s with 350 inputs, peak lag 6 at input 8, and all peers at 350/350. Its local AppleClang TSan binary exits 139 before GoogleTest discovery, so this is not a TSan pass. The exact local API 35 ARM64 HWASan APK runtime and four distinct labeled Mac screenshots remain verified in child records. The exact-promotion matrix, one authorized hosted ARM64/HVF HWASan retry, platform artifacts/runtime acceptance, strict receipt, S7 tag, and publication remain open.",
     "blocker": "Pending: promote the finalized aggregate source; pass every required exact-promotion sanitizer/static-analysis row including the single authorized Android ARM64/HVF HWASan retry; verify platform artifacts and runtime acceptance; pass strict receipt; publish the S7 tag and actual-artifact ledger. Do not mark the snapshot done before those receipts.",
     "owner": "Codex",
     "level": "snapshot",
@@ -1511,7 +1511,7 @@
     "complexity": "high",
     "created_at": "2026-09-09",
     "resolved_at": "",
-    "resolution_changes": "S7 basic child work includes MC-AI-0413 (join barrier), MC-AI-0414 (private Android runtime SDK), MC-AI-0415 (bounded maps transfer), and MC-AI-0416 (discard grep no-match output); these tasks are done and finalized. The corrected local full integration gate passed. This aggregate remains active until exact-promotion hosted gates, platform acceptance, strict receipt, tag, and publication are verified.",
+    "resolution_changes": "S7 basic child work includes MC-AI-0413 (join barrier), MC-AI-0414 (private Android runtime SDK), MC-AI-0415 through MC-AI-0418 (bounded, accurate Android HWASan process-map verification), and MC-AI-0419 (fair per-client polling in the four-peer ACK stress); these tasks are done and finalized. The corrected local full integration gate and focused optimized ACK stress passed. This aggregate remains active until exact-promotion hosted gates, platform acceptance, strict receipt, tag, and publication are verified.",
     "plan": [
       "Complete authoritative movement, immutable permissions, and cross-client acceptance; keep policy compilation outside physics ticks.",
       "Finish player/views, adverse networking, camera-independent terrain/LOD, diagnostics, platform and analysis gates, captures, and S7 publication; then hold the minor for feedback."
@@ -1535,7 +1535,7 @@
     "retrospective": "Activation commit 0473b444 (2026-09-20 20:51:14 CEST) to first ai-main promotion commit 4b9166da (2026-10-01 07:24:32 CEST): 10d 10h 33m 18s; not a release because the exact-source matrix and artifacts were missing. At the 2026-10-09 08:45:08 CEST evidence checkpoint, 18d 11h 53m 54s had elapsed, not measured work hours. At checkpoint 9a2a0b6, records show 141 child IDs/142 commits through d78766e and 15 ai-main promotion commits without a release. Causes and evidence-backed improvements are in the linked hindsight report; records cannot prove a two-day counterfactual.",
     "docs_review": "Visually checked the four distinct committed 2560x1440 images. The central-spike scene shows the full landform, most of the first ring, terrain beyond it, and an unobscured player; its larger label is centered below the HUD. The other files are distinct trench/first-spike, mountain-climb, and first-person origin scenes. MC-AI-0398 records central SHA-256 09f367efe433ee001de7157fe426d0e924690c7f35658bb92835e699d06286af and the unchanged hashes of the other three images.",
     "environment_review": "No machine-wide Java/Python installation occurred. The prior setup-python action used the runner cache; run 37976059199 failed before Android startup because Java 21 was not configured. The exact S7 workflow now uses job-local setup-java@v6 and cached Python. One run-scoped ephemeral ARM64/HVF runner retry is authorized; no global runtime install is needed.",
-    "backlog_review": "Canonical backlog count: 170 direct basic children of MC-AI-0038, all done/finalized; MC-AI-0413 through MC-AI-0416 include the final join-streaming, private SDK, bounded maps, and exit-1 sample fixes. Exact post-commit ai_history collection will be verified before promotion."
+    "backlog_review": "Canonical backlog count: 173 direct basic children of MC-AI-0038, all done/finalized. MC-AI-0413–0419 cover join/ACK stress setup, private Android SDK provisioning, bounded HWASan map polling, and fair four-peer ACK observation. Exact post-commit ai_history collection will be verified before promotion."
   },
   {
     "id": "MC-AI-0039",
@@ -14755,5 +14755,43 @@
     "docs_review": "Reviewed the Android HWASan source and guide against the updated deadline behavior; ai_docs refresh and check passed.",
     "environment_review": "The 23-test verifier suite uses a deterministic clock and mocked ADB. It proves deadline accounting but is not Android device runtime evidence.",
     "backlog_review": "Added MC-AI-0418 as the next direct child of the S7 aggregate; generated child count is 172. Existing backlog entries were preserved."
+  },
+  {
+    "id": "MC-AI-0419",
+    "title": "Bound simulated client acknowledgement polling for fairness under streamed terrain",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P1",
+    "route": "luna",
+    "milestone": "ED-010-S7",
+    "depends_on": [],
+    "acceptance": "Keep the four-client, 35-second, 500x optimized acknowledgement/terrain-streaming stress and its existing requirements unchanged: at least 340 inputs, maximum acknowledgement lag 16 from input one, final lag at most 2, and terrain progress. Replace unbounded per-client event draining in the active measurement loop with a bounded round-robin polling quantum so one simulated peer's terrain callbacks cannot starve observation of the others. Do not relax thresholds or change production limits. The focused Release test and project fast gate must pass; exact-candidate macOS TSan is a separate hard gate of aggregate MC-AI-0038.",
+    "evidence": "AppleClang 17 Release build passed; focused CTest passed 1/1 in 35.86s. The stress sent 350 inputs, peaked at lag 6 at input 8 (limit 16), ended at 350/350/350/350, and delivered 8,628–9,789 tiles per simulated client. `python3 script/ai_check.py --fast` passed docs, backlog, plan, diff, and source checks, allowing only the expected dirty-tree exception. A local AppleClang TSan-instrumented binary linked but exits 139 while GoogleTest discovery starts, before any test; no local TSan pass is claimed. Exact-candidate hosted TSan remains a separate aggregate release gate.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0038",
+    "motivation": "The exact-promotion macOS TSan stress test exceeded the existing 16-input bound at input 24 (maximum 20), while server telemetry showed client 0 had already processed and acknowledged input 9 when the test client had observed only input 1. The test services four independent Client hosts serially on one thread and drains one peer's entire event queue before moving to the next.",
+    "context": "In pinned CoreCpp, Client::poll(0) dispatches at most one queued event; draining one simulated client's queue to empty can let a terrain-message burst delay ACK observation on the other three. This is a test-harness diagnosis, not evidence of a production server backlog. The exact run showed all peers caught up to 347/349 by completion.",
+    "complexity": "medium",
+    "created_at": "2026-10-10",
+    "resolved_at": "2026-10-10",
+    "resolution_changes": "Replaced the stress loop's unbounded per-client event drain with round-robin service capped at 32 zero-timeout poll calls per simulated client per pass. Preserved all original load, lag, final catch-up, and terrain-progress requirements; production code and thresholds are unchanged.",
+    "plan": [
+      "Replace the active-loop unbounded nested drain with a fixed per-client poll-call budget, servicing peers in round-robin array order on every loop.",
+      "Preserve the accepted-join barrier, 35-second/four-client/500x load, measurements from input one, lag/catch-up limits, and terrain assertions.",
+      "Run the focused optimized Release test, fast gate, exact task review, and committed-range integration checks before the one authorized hosted retry."
+    ],
+    "product_changes": [],
+    "code_changes": [
+      "Bound active-loop polling of each simulated network client to 32 calls before servicing the next peer."
+    ],
+    "baseline_commit": "ec5f81772e082c5d881019f177ebdb7f5f868c19",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "Reviewed the test-only contract and refreshed docs/code/source_state.json; python3 script/ai_docs.py check passed.",
+    "environment_review": "The AppleClang TSan binary cannot launch GoogleTest discovery on this host and exits 139 before test execution. This is recorded as unavailable local TSan evidence, not a pass; the exact-candidate hosted row remains mandatory.",
+    "backlog_review": "MC-AI-0419 is a direct S7 child; task/backlog render and validation passed. The aggregate remains active pending exact-promotion gates."
   }
 ]
