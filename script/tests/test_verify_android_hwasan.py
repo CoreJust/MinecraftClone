@@ -5,12 +5,24 @@ import sys
 import tempfile
 import unittest
 import zipfile
+from contextlib import contextmanager
 from pathlib import Path
 from unittest import mock
 
 
 REPOSITORY = Path(__file__).resolve().parents[2]
 SCRIPT = REPOSITORY / "script/ci/verify_android_hwasan.py"
+
+
+class FakeClock:
+    def __init__(self):
+        self.now = 0.0
+
+    def monotonic(self) -> float:
+        return self.now
+
+    def sleep(self, seconds: float) -> None:
+        self.now += seconds
 
 
 def load_module():
@@ -25,6 +37,16 @@ def load_module():
 class VerifyAndroidHwasanTests(unittest.TestCase):
     def setUp(self):
         self.hwasan = load_module()
+
+    @contextmanager
+    def patched_clock(self):
+        clock = FakeClock()
+        with mock.patch.object(self.hwasan.time, "monotonic", side_effect=clock.monotonic), mock.patch.object(
+            self.hwasan.time,
+            "sleep",
+            side_effect=clock.sleep,
+        ) as sleep:
+            yield clock, sleep
 
     def aarch64_library(self, *, runtime: bool = True, machine: bytes = b"\xb7\x00") -> bytes:
         header = bytearray(64)
@@ -80,6 +102,291 @@ class VerifyAndroidHwasanTests(unittest.TestCase):
                 self.assertEqual(self.hwasan.main(["--apk", str(apk), "--apk-only"]), 1)
             run_adb.assert_not_called()
 
+    def test_run_adb_accepts_an_explicit_grep_no_match_exit(self):
+        completed = self.hwasan.subprocess.CompletedProcess(["adb"], 1, "", "")
+        with mock.patch.object(self.hwasan.subprocess, "run", return_value=completed):
+            output = self.hwasan.run_adb(
+                "emulator-5554",
+                "shell",
+                "run-as",
+                self.hwasan.PACKAGE,
+                "grep",
+                "-F",
+                "-e",
+                self.hwasan.NATIVE_LIBRARY_NAME,
+                "-e",
+                self.hwasan.HWASAN_RUNTIME_NAME,
+                "/proc/123/maps",
+                accepted_return_codes=(0, 1),
+            )
+        self.assertEqual(output, "")
+
+    def test_run_adb_success_returns_stdout_without_stderr(self):
+        completed = self.hwasan.subprocess.CompletedProcess(
+            ["adb"],
+            0,
+            "native mapping",
+            "diagnostic warning",
+        )
+        with mock.patch.object(self.hwasan.subprocess, "run", return_value=completed):
+            output = self.hwasan.run_adb("emulator-5554", "shell", "example")
+        self.assertEqual(output, "native mapping")
+
+    def test_runtime_rejects_hwasan_name_seen_only_on_stderr(self):
+        with tempfile.TemporaryDirectory() as directory:
+            apk = self.apk(Path(directory))
+            state = {"maps_reads": 0}
+            native_mapping = self.process_maps(hwasan_runtime=False)
+
+            def run_command(arguments, **_kwargs):
+                if arguments[3] == "install":
+                    return self.hwasan.subprocess.CompletedProcess(arguments, 0, "Success", "")
+                if arguments[3:5] == ["shell", "am"]:
+                    return self.hwasan.subprocess.CompletedProcess(arguments, 0, "Starting", "")
+                if arguments[3:5] == ["shell", "pidof"]:
+                    return self.hwasan.subprocess.CompletedProcess(arguments, 0, "123", "")
+                if arguments[3:6] == ["shell", "run-as", self.hwasan.PACKAGE]:
+                    state["maps_reads"] += 1
+                    return self.hwasan.subprocess.CompletedProcess(
+                        arguments,
+                        0,
+                        native_mapping,
+                        self.hwasan.HWASAN_RUNTIME_NAME,
+                    )
+                self.fail(f"unexpected adb command: {arguments}")
+
+            with mock.patch.object(
+                self.hwasan.subprocess,
+                "run",
+                side_effect=run_command,
+            ), self.patched_clock():
+                with self.assertRaisesRegex(
+                    self.hwasan.HwasanError,
+                    "did not complete a process-map read",
+                ):
+                    self.hwasan.verify_runtime("emulator-5554", apk, 6)
+
+            self.assertEqual(state["maps_reads"], 6)
+
+    def test_runtime_starts_five_second_interval_after_maps_stderr_stops(self):
+        with tempfile.TemporaryDirectory() as directory:
+            apk = self.apk(Path(directory))
+            state = {"maps_reads": 0}
+            native_mapping = self.process_maps(hwasan_runtime=False)
+            healthy_mapping = self.process_maps()
+
+            def run_command(arguments, **_kwargs):
+                if arguments[3] == "install":
+                    return self.hwasan.subprocess.CompletedProcess(
+                        arguments,
+                        0,
+                        "Success",
+                        "warning: package already installed",
+                    )
+                if arguments[3:5] == ["shell", "am"]:
+                    return self.hwasan.subprocess.CompletedProcess(arguments, 0, "Starting", "")
+                if arguments[3:5] == ["shell", "pidof"]:
+                    return self.hwasan.subprocess.CompletedProcess(arguments, 0, "123", "")
+                if arguments[3:6] == ["shell", "run-as", self.hwasan.PACKAGE]:
+                    state["maps_reads"] += 1
+                    if state["maps_reads"] == 1:
+                        return self.hwasan.subprocess.CompletedProcess(
+                            arguments,
+                            0,
+                            native_mapping,
+                            self.hwasan.HWASAN_RUNTIME_NAME,
+                        )
+                    return self.hwasan.subprocess.CompletedProcess(arguments, 0, healthy_mapping, "")
+                self.fail(f"unexpected adb command: {arguments}")
+
+            with mock.patch.object(
+                self.hwasan.subprocess,
+                "run",
+                side_effect=run_command,
+            ), self.patched_clock() as (clock, _sleep):
+                receipt = self.hwasan.verify_runtime("emulator-5554", apk, 10)
+
+            self.assertEqual(receipt["healthy_seconds"], 5)
+            self.assertEqual(receipt["install"], "Success")
+            self.assertEqual(state["maps_reads"], 7)
+            self.assertEqual(clock.now, 6)
+
+    def test_runtime_does_not_count_output_from_grep_no_match(self):
+        with tempfile.TemporaryDirectory() as directory:
+            apk = self.apk(Path(directory))
+            state = {"maps_reads": 0}
+
+            def run_adb_command(arguments, **_kwargs):
+                if arguments[3] == "install":
+                    return self.hwasan.subprocess.CompletedProcess(arguments, 0, "Success", "")
+                if arguments[3:5] == ["shell", "am"]:
+                    return self.hwasan.subprocess.CompletedProcess(arguments, 0, "Starting", "")
+                if arguments[3:5] == ["shell", "pidof"]:
+                    return self.hwasan.subprocess.CompletedProcess(arguments, 0, "123", "")
+                if arguments[3:6] == ["shell", "run-as", self.hwasan.PACKAGE]:
+                    state["maps_reads"] += 1
+                    return self.hwasan.subprocess.CompletedProcess(
+                        arguments,
+                        1,
+                        self.process_maps(),
+                        "partial transport text",
+                    )
+                self.fail(f"unexpected adb command: {arguments}")
+
+            with mock.patch.object(
+                self.hwasan.subprocess,
+                "run",
+                side_effect=run_adb_command,
+            ), self.patched_clock():
+                with self.assertRaisesRegex(
+                    self.hwasan.HwasanError,
+                    "did not map libmc_android.so",
+                ):
+                    self.hwasan.verify_runtime("emulator-5554", apk, 6)
+
+            self.assertEqual(state["maps_reads"], 6)
+
+    def test_run_adb_rejects_transport_errors_even_when_grep_no_match_is_allowed(self):
+        completed = self.hwasan.subprocess.CompletedProcess(["adb"], 255, "partial maps", "")
+        with mock.patch.object(self.hwasan.subprocess, "run", return_value=completed):
+            with self.assertRaisesRegex(self.hwasan.HwasanError, "exited 255: partial maps"):
+                self.hwasan.run_adb(
+                    "emulator-5554",
+                    "shell",
+                    "run-as",
+                    self.hwasan.PACKAGE,
+                    "grep",
+                    "-F",
+                    "-e",
+                    self.hwasan.NATIVE_LIBRARY_NAME,
+                    "-e",
+                    self.hwasan.HWASAN_RUNTIME_NAME,
+                    "/proc/123/maps",
+                    accepted_return_codes=(0, 1),
+                )
+
+    def test_runtime_retries_a_failed_maps_read_after_resetting_health_interval(self):
+        with tempfile.TemporaryDirectory() as directory:
+            apk = self.apk(Path(directory))
+            map_read_error = self.hwasan.HwasanError("adb maps read exited 255: partial output")
+            samples = [self.process_maps(), map_read_error, *[self.process_maps()] * 6]
+            with mock.patch.object(
+                self.hwasan,
+                "run_adb",
+                side_effect=["Success", "Starting", *samples],
+            ), mock.patch.object(self.hwasan, "running_process_id", return_value="123"), self.patched_clock():
+                receipt = self.hwasan.verify_runtime("emulator-5554", apk, 10)
+            self.assertEqual(receipt["healthy_seconds"], 5)
+
+    def test_runtime_retries_a_timed_out_maps_read_after_resetting_health_interval(self):
+        with tempfile.TemporaryDirectory() as directory:
+            apk = self.apk(Path(directory))
+            timed_out_read = self.hwasan.subprocess.TimeoutExpired(
+                ["adb", "shell", "run-as", self.hwasan.PACKAGE, "grep"],
+                30,
+                output=self.process_maps().encode(),
+                stderr=b"partial transport output",
+            )
+            maps_samples = [self.process_maps(), timed_out_read, *[self.process_maps()] * 6]
+            with mock.patch.object(
+                self.hwasan,
+                "run_adb",
+                side_effect=["Success", "Starting", *maps_samples],
+            ), mock.patch.object(
+                self.hwasan,
+                "running_process_id",
+                return_value="123",
+            ) as process_id, self.patched_clock():
+                receipt = self.hwasan.verify_runtime("emulator-5554", apk, 20)
+
+            self.assertEqual(receipt["healthy_seconds"], 5)
+            self.assertEqual(process_id.call_count, 16)
+
+    def test_runtime_fails_when_a_maps_timeout_reaches_the_overall_deadline(self):
+        with tempfile.TemporaryDirectory() as directory:
+            apk = self.apk(Path(directory))
+            clock = FakeClock()
+            timed_out_read = self.hwasan.subprocess.TimeoutExpired(
+                ["adb", "shell", "run-as", self.hwasan.PACKAGE, "grep"],
+                30,
+                output=self.process_maps().encode(),
+                stderr=b"partial transport output",
+            )
+
+            def run_adb(*arguments, **_kwargs):
+                if arguments[1:2] == ("install",):
+                    return "Success"
+                if arguments[1:3] == ("shell", "am"):
+                    return "Starting"
+                clock.now = 30
+                raise timed_out_read
+
+            with mock.patch.object(
+                self.hwasan,
+                "run_adb",
+                side_effect=run_adb,
+            ) as run_adb, mock.patch.object(
+                self.hwasan,
+                "running_process_id",
+                return_value="123",
+            ) as process_id, mock.patch.object(
+                self.hwasan.time,
+                "monotonic",
+                side_effect=clock.monotonic,
+            ), mock.patch.object(self.hwasan.time, "sleep") as sleep:
+                with self.assertRaisesRegex(
+                    self.hwasan.HwasanError,
+                    "exceeded its 30-second deadline",
+                ):
+                    self.hwasan.verify_runtime("emulator-5554", apk, 30)
+
+            self.assertEqual(run_adb.call_count, 3)
+            self.assertEqual(process_id.call_count, 1)
+            self.assertEqual(run_adb.call_args_list[-1].kwargs["timeout"], 30)
+            sleep.assert_not_called()
+
+    def test_runtime_fails_if_pid_changes_after_a_failed_maps_read(self):
+        with tempfile.TemporaryDirectory() as directory:
+            apk = self.apk(Path(directory))
+            with mock.patch.object(
+                self.hwasan,
+                "run_adb",
+                side_effect=[
+                    "Success",
+                    "Starting",
+                    self.hwasan.HwasanError("adb maps read exited 255: partial output"),
+                ],
+            ), mock.patch.object(
+                self.hwasan,
+                "running_process_id",
+                side_effect=["123", "456"],
+            ), self.patched_clock():
+                with self.assertRaisesRegex(
+                    self.hwasan.HwasanError,
+                    "restarted during runtime verification",
+                ):
+                    self.hwasan.verify_runtime("emulator-5554", apk, 10)
+
+    def test_runtime_fails_closed_after_persistent_maps_read_errors(self):
+        with tempfile.TemporaryDirectory() as directory:
+            apk = self.apk(Path(directory))
+            map_read_error = self.hwasan.HwasanError("adb maps read exited 255: partial output")
+            with mock.patch.object(
+                self.hwasan,
+                "run_adb",
+                side_effect=["Success", "Starting", map_read_error, map_read_error],
+            ) as run_adb, mock.patch.object(
+                self.hwasan,
+                "running_process_id",
+                return_value="123",
+            ), self.patched_clock():
+                with self.assertRaisesRegex(
+                    self.hwasan.HwasanError,
+                    "did not complete a process-map read.*exited 255",
+                ):
+                    self.hwasan.verify_runtime("emulator-5554", apk, 2)
+            self.assertEqual(run_adb.call_count, 4)
+
     def test_runtime_rejects_invalid_apk_before_any_device_command(self):
         with tempfile.TemporaryDirectory() as directory:
             apk = self.apk(Path(directory), wrap=b"invalid")
@@ -95,11 +402,7 @@ class VerifyAndroidHwasanTests(unittest.TestCase):
                 self.hwasan,
                 "run_adb",
                 side_effect=["Success", "Starting"] + [self.process_maps()] * 6,
-            ) as run_adb, mock.patch.object(self.hwasan, "running_process_id", return_value="123"), mock.patch.object(
-                self.hwasan.time,
-                "monotonic",
-                side_effect=[0, 0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5],
-            ), mock.patch.object(self.hwasan.time, "sleep"):
+            ) as run_adb, mock.patch.object(self.hwasan, "running_process_id", return_value="123"), self.patched_clock():
                 receipt = self.hwasan.verify_runtime("emulator-5554", apk, 10)
             self.assertEqual(receipt["pid"], "123")
             self.assertEqual(receipt["healthy_seconds"], 5)
@@ -117,8 +420,17 @@ class VerifyAndroidHwasanTests(unittest.TestCase):
                     "shell",
                     "run-as",
                     "com.corejust.minecraftclone.hwasan",
-                    "cat",
+                    "grep",
+                    "-F",
+                    "-e",
+                    "libmc_android.so",
+                    "-e",
+                    "libclang_rt.hwasan-aarch64-android.so",
                     "/proc/123/maps",
+                    timeout=10,
+                    accepted_return_codes=(0, 1),
+                    empty_return_codes=(1,),
+                    reject_stderr=True,
                 ),
                 run_adb.call_args_list,
             )
@@ -127,35 +439,54 @@ class VerifyAndroidHwasanTests(unittest.TestCase):
     def test_runtime_measures_survival_from_the_first_completed_maps_observation(self):
         with tempfile.TemporaryDirectory() as directory:
             apk = self.apk(Path(directory))
+            clock = FakeClock()
+            state = {"maps_reads": 0}
+
+            def run_adb(*arguments, **_kwargs):
+                if arguments[1:2] == ("install",):
+                    return "Success"
+                if arguments[1:3] == ("shell", "am"):
+                    return "Starting"
+                state["maps_reads"] += 1
+                if state["maps_reads"] == 1:
+                    clock.now += 10
+                return self.process_maps()
+
             with mock.patch.object(
                 self.hwasan,
                 "run_adb",
-                side_effect=["Success", "Starting"] + [self.process_maps()] * 7,
-            ) as run_adb, mock.patch.object(self.hwasan, "running_process_id", return_value="123"), mock.patch.object(
+                side_effect=run_adb,
+            ), mock.patch.object(self.hwasan, "running_process_id", return_value="123"), mock.patch.object(
                 self.hwasan.time,
                 "monotonic",
-                side_effect=[0, 0, 10, 10.5, 10.5, 11.5, 11.5, 12.5, 12.5, 13.5, 13.5, 14.5, 14.5, 15.5, 15.5],
-            ), mock.patch.object(self.hwasan.time, "sleep"):
+                side_effect=clock.monotonic,
+            ), mock.patch.object(self.hwasan.time, "sleep", side_effect=clock.sleep):
                 receipt = self.hwasan.verify_runtime("emulator-5554", apk, 60)
             self.assertEqual(receipt["healthy_seconds"], 5)
-            maps_reads = [
-                call
-                for call in run_adb.call_args_list
-                if call.args[1:4] == ("shell", "run-as", "com.corejust.minecraftclone.hwasan")
-            ]
-            self.assertEqual(len(maps_reads), 7)
+            self.assertEqual(state["maps_reads"], 6)
+            self.assertEqual(clock.now, 15)
 
     def test_runtime_rejects_a_maps_observation_completed_after_the_deadline(self):
         with tempfile.TemporaryDirectory() as directory:
             apk = self.apk(Path(directory))
+            clock = FakeClock()
+
+            def run_adb(*arguments, **_kwargs):
+                if arguments[1:2] == ("install",):
+                    return "Success"
+                if arguments[1:3] == ("shell", "am"):
+                    return "Starting"
+                clock.now = 6
+                return self.process_maps()
+
             with mock.patch.object(
                 self.hwasan,
                 "run_adb",
-                side_effect=["Success", "Starting", self.process_maps(), self.process_maps()],
+                side_effect=run_adb,
             ), mock.patch.object(self.hwasan, "running_process_id", return_value="123"), mock.patch.object(
                 self.hwasan.time,
                 "monotonic",
-                side_effect=[0, 0, 0, 0.5, 6],
+                side_effect=clock.monotonic,
             ), mock.patch.object(self.hwasan.time, "sleep"):
                 with self.assertRaisesRegex(self.hwasan.HwasanError, "deadline"):
                     self.hwasan.verify_runtime("emulator-5554", apk, 1)
@@ -177,18 +508,14 @@ class VerifyAndroidHwasanTests(unittest.TestCase):
                     state["pid_after_read"] = "456"
                 return self.process_maps()
 
-            def running_process_id(_serial):
+            def running_process_id(_serial, **_kwargs):
                 return state.get("pid_after_read", "123")
 
             with mock.patch.object(self.hwasan, "run_adb", side_effect=run_adb), mock.patch.object(
                 self.hwasan,
                 "running_process_id",
                 side_effect=running_process_id,
-            ), mock.patch.object(
-                self.hwasan.time,
-                "monotonic",
-                side_effect=[0, 0, 0, 5, 5],
-            ), mock.patch.object(self.hwasan.time, "sleep"):
+            ), self.patched_clock():
                 with self.assertRaisesRegex(
                     self.hwasan.HwasanError,
                     "restarted during runtime verification",
@@ -202,9 +529,7 @@ class VerifyAndroidHwasanTests(unittest.TestCase):
                 self.hwasan,
                 "run_adb",
                 side_effect=["Success", "Starting", self.process_maps(native_library=False)],
-            ), mock.patch.object(self.hwasan, "running_process_id", return_value="123"), mock.patch.object(
-                self.hwasan.time, "monotonic", side_effect=[0, 0, 0, 1]
-            ), mock.patch.object(self.hwasan.time, "sleep"):
+            ), mock.patch.object(self.hwasan, "running_process_id", return_value="123"), self.patched_clock():
                 with self.assertRaisesRegex(self.hwasan.HwasanError, "did not map libmc_android.so"):
                     self.hwasan.verify_runtime("emulator-5554", apk, 1)
 
@@ -215,9 +540,7 @@ class VerifyAndroidHwasanTests(unittest.TestCase):
                 self.hwasan,
                 "run_adb",
                 side_effect=["Success", "Starting", self.process_maps(hwasan_runtime=False)],
-            ), mock.patch.object(self.hwasan, "running_process_id", return_value="123"), mock.patch.object(
-                self.hwasan.time, "monotonic", side_effect=[0, 0, 0, 1]
-            ), mock.patch.object(self.hwasan.time, "sleep"):
+            ), mock.patch.object(self.hwasan, "running_process_id", return_value="123"), self.patched_clock():
                 with self.assertRaisesRegex(
                     self.hwasan.HwasanError,
                     "did not map libclang_rt.hwasan-aarch64-android.so",
@@ -236,11 +559,7 @@ class VerifyAndroidHwasanTests(unittest.TestCase):
                 self.hwasan,
                 "run_adb",
                 side_effect=["Success", "Starting"] + mappings,
-            ), mock.patch.object(self.hwasan, "running_process_id", return_value="123"), mock.patch.object(
-                self.hwasan.time,
-                "monotonic",
-                side_effect=[0, 0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7],
-            ), mock.patch.object(self.hwasan.time, "sleep"):
+            ), mock.patch.object(self.hwasan, "running_process_id", return_value="123"), self.patched_clock():
                 receipt = self.hwasan.verify_runtime("emulator-5554", apk, 10)
             self.assertEqual(receipt["healthy_seconds"], 5)
 
@@ -255,11 +574,7 @@ class VerifyAndroidHwasanTests(unittest.TestCase):
                 self.hwasan,
                 "running_process_id",
                 side_effect=["123", ""],
-            ), mock.patch.object(
-                self.hwasan.time,
-                "monotonic",
-                side_effect=[0, 0, 0, 1],
-            ), mock.patch.object(self.hwasan.time, "sleep"):
+            ), self.patched_clock():
                 with self.assertRaisesRegex(self.hwasan.HwasanError, "exited"):
                     self.hwasan.verify_runtime("emulator-5554", apk, 10)
 
@@ -270,6 +585,51 @@ class VerifyAndroidHwasanTests(unittest.TestCase):
             return_value=self.hwasan.subprocess.CompletedProcess([], 1, "", ""),
         ):
             self.assertEqual(self.hwasan.running_process_id("emulator-5554"), "")
+
+    def test_runtime_caps_each_in_loop_adb_timeout_to_remaining_deadline(self):
+        with tempfile.TemporaryDirectory() as directory:
+            apk = self.apk(Path(directory))
+            clock = FakeClock()
+            pid_timeouts = []
+            maps_timeouts = []
+
+            def run_adb(*arguments, timeout=30, **_kwargs):
+                if arguments[1:2] == ("install",):
+                    return "Success"
+                if arguments[1:3] == ("shell", "am"):
+                    return "Starting"
+                maps_timeouts.append(timeout)
+                clock.now = 4
+                return self.process_maps()
+
+            def running_process_id(_serial, *, timeout):
+                pid_timeouts.append(timeout)
+                clock.now = 2 if len(pid_timeouts) == 1 else 10
+                return "123"
+
+            with mock.patch.object(self.hwasan, "run_adb", side_effect=run_adb), mock.patch.object(
+                self.hwasan,
+                "running_process_id",
+                side_effect=running_process_id,
+            ), mock.patch.object(
+                self.hwasan.time,
+                "monotonic",
+                side_effect=clock.monotonic,
+            ), mock.patch.object(self.hwasan.time, "sleep", side_effect=clock.sleep):
+                with self.assertRaisesRegex(self.hwasan.HwasanError, "deadline"):
+                    self.hwasan.verify_runtime("emulator-5554", apk, 10)
+
+            self.assertEqual(pid_timeouts, [10, 6])
+            self.assertEqual(maps_timeouts, [8])
+
+    def test_pid_poll_forwards_its_remaining_deadline_to_adb(self):
+        with mock.patch.object(
+            self.hwasan.subprocess,
+            "run",
+            return_value=self.hwasan.subprocess.CompletedProcess([], 0, "123", ""),
+        ) as run_adb:
+            self.assertEqual(self.hwasan.running_process_id("emulator-5554", timeout=0.25), "123")
+        self.assertEqual(run_adb.call_args.kwargs["timeout"], 0.25)
 
 
 if __name__ == "__main__":

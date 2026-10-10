@@ -78,6 +78,11 @@ run-owned subtree, and refuses to reuse the default AVD home. The emulator
 must start with acceleration enabled on console port 5558 (ADB serial
 `emulator-5558`); the job fails closed if that serial or either reserved port is
 already occupied. Device commands always select that serial explicitly. An
+overall runtime deadline caps every in-loop PID and process-map ADB timeout to
+the remaining budget; the verifier fails closed without issuing another device
+command after that budget expires. Only successful stdout can provide mapping
+evidence; diagnostic-bearing process-map samples are retry gaps and reset the
+five-second healthy window. An
 always-run cleanup verifies the recorded emulator PID, executable, AVD name,
 port, and process start identity before stopping it, then removes only the
 run-owned AVD/SDK/user-state subtree. A process already gone at signal time is

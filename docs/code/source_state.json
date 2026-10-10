@@ -35,7 +35,7 @@
     },
     {
       "guide": "docs/code/ANDROID.md",
-      "guide_sha256": "4de902c4ec40e40a15f8779e4d373c0ad002fbb70326754a5ccead6cfc4559bf",
+      "guide_sha256": "8aab15da3f5aa5e9225bb70aad06ee0aa004ccfecb4af9a08218056372757661",
       "id": "android",
       "sources": [
         "src/android/AndroidInput.cpp",
@@ -168,7 +168,7 @@
         "vcpkg-configuration.json",
         "vcpkg.json"
       ],
-      "sources_sha256": "ba04fc156188c119cb3ca3277219e18e0727614b9d53f887633b47db92214f0e"
+      "sources_sha256": "33dcde1d3f7d7f9efaf86d80df0ce9bebb3f7069505781b0c417b92afaa9d9ff"
     },
     {
       "guide": "docs/code/CORE.md",
@@ -294,7 +294,7 @@
         "tests/core/world_generation_scheduler_tests.cpp",
         "tests/core/world_generation_tests.cpp"
       ],
-      "sources_sha256": "9947652f2dbd7ee11d8e264f5792c1032be9ea0002bc31c9230ee0592ce91d67"
+      "sources_sha256": "eff5f96c4afddbafa6203d9a21f37c6a50cc6bce5304b6c8efea4306cc7ce62f"
     },
     {
       "guide": "docs/code/RENDERING.md",
