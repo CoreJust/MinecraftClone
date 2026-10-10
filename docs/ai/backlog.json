@@ -14717,5 +14717,43 @@
     "docs_review": "Regenerated docs/code/source_state.json for the verifier change; ai_docs.py check, ai_tasks.py check, and generated Markdown validation passed.",
     "environment_review": "Deterministic unit tests mock ADB, PID polling, and the monotonic clock; full Android HWASan verifier suite passed 21/21.",
     "backlog_review": "Added MC-AI-0417 as the direct S7 child for the committed-range review P2; parent child count is 171."
+  },
+  {
+    "id": "MC-AI-0418",
+    "title": "Bound Android HWASan ADB calls by the remaining verification deadline",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P2",
+    "route": "luna",
+    "milestone": "ED-010-S7",
+    "depends_on": [],
+    "acceptance": "Every in-loop Android ADB command (both pidof polls and process-map reads) receives a subprocess timeout freshly capped to the remaining verification deadline. Once that deadline expires, the verifier starts no further ADB command and fails closed; incomplete map samples remain discarded. Tests assert the per-call timeout budgets and that an exhausted maps read does not trigger a post-deadline PID poll.",
+    "evidence": "Focused verifier suite passed 23/23. The budget regression observes 10s, 8s, and 6s for successive PID, maps, and post-read PID calls as simulated time advances. A maps timeout consuming the 30s deadline fails closed without another PID command. The PID helper forwards fractional timeout values to subprocess.run. Documentation refresh and integrity checks passed.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0038",
+    "motivation": "The exact committed-range review of MC-AI-0415 through MC-AI-0417 found that fixed 30-second adb timeouts and pidof polls can outlive the verifier's shorter overall deadline.",
+    "context": "Fix the accepted P2 finding from the S7 pre-push review. Keep process identity and completed-map evidence authoritative; do not install tools globally or change runner provisioning in this task.",
+    "complexity": "medium",
+    "created_at": "2026-10-10",
+    "resolved_at": "2026-10-10",
+    "resolution_changes": "Capped both in-loop PID checks and process-map ADB reads to a freshly recalculated remaining runtime-verification budget, converted timeout exhaustion to a deadline failure, and capped retry sleeps. Added deterministic per-call timeout and exhausted-deadline regressions; documented the Android verifier contract.",
+    "plan": [
+      "Add regressions that inspect the timeout passed to each in-loop ADB command and prove no post-deadline device call occurs.",
+      "Pass a freshly computed positive remaining timeout to process-ID and maps-read commands; convert exhausted-deadline failures to the verifier error and bound retry sleeps.",
+      "Run focused tests and documentation checks, review the exact candidate, and commit once with the task trailer."
+    ],
+    "product_changes": [],
+    "code_changes": [
+      "Bound Android HWASan PID and maps subprocess timeouts by the remaining deadline; add deterministic timeout regressions and document the runtime contract."
+    ],
+    "baseline_commit": "a9d856faef3d9d68c131f48fe4fe99bfc24f5bd0",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "Reviewed the Android HWASan source and guide against the updated deadline behavior; ai_docs refresh and check passed.",
+    "environment_review": "The 23-test verifier suite uses a deterministic clock and mocked ADB. It proves deadline accounting but is not Android device runtime evidence.",
+    "backlog_review": "Added MC-AI-0418 as the next direct child of the S7 aggregate; generated child count is 172. Existing backlog entries were preserved."
   }
 ]
