@@ -14325,5 +14325,48 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0408",
+    "title": "Fix remaining S7 Mac Debug clang-tidy failures in scenario parsing and canonical world access",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P1",
+    "route": "luna",
+    "milestone": "EarlyDev 0.1.0:7",
+    "depends_on": [
+      "MC-AI-0406"
+    ],
+    "acceptance": "Fix the 20 source diagnostics reported by Mac Debug clang-tidy in exact S7 candidate run 38025062825/job 114134051354 across Scenario.cpp, CoreLangScenario.cpp, and CanonicalWorld.cpp while preserving scenario parsing, movement direction, and canonical world behavior. Replace easily swappable parameter lists with named inputs. Explicitly initialize diagnosed CoreLang aggregate members to their existing empty/default semantics, remove ineffective moves, and retain noexcept guarantees. Add no analyzer suppressions or exclusions. The focused C++ build/tests, ai_check.py --fast, task/docs checks, and diff check pass. The exact configured Mac clang-tidy result and full matrix remain parent MC-AI-0038 release gates.",
+    "evidence": "Run 38025062825/job 114134051354 reported 20 clang-tidy errors in Scenario.cpp, CoreLangScenario.cpp, and CanonicalWorld.cpp; this task removes those diagnosed patterns without suppressions. `cmake --build build/debug --target mc_tests -j 6` built all 11 requested targets. `ctest --test-dir build/debug --output-on-failure -R 'ScenarioParserTest|CoreLangScenario|ScenarioRunner'` passed 30/30. `python3 script/ai_check.py --fast` passed (full-C++ scope; Python tests skipped by policy and dirty-tree source check reported ALLOWED). `python3 script/ai_docs.py refresh/check`, `python3 script/ai_tasks.py check`, and `git diff --check` passed. clang-tidy is unavailable locally; exact configured Mac clang-tidy and 13-row candidate matrix remain open parent MC-AI-0038 gates and are not claimed as passing here.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0038",
+    "motivation": "The exact S7 Mac Debug matrix row failed the required clang-tidy gate on 20 diagnostics in scenario parsing and canonical world access, so the candidate cannot be promoted.",
+    "context": "GitHub run 38025062825/job 114134051354 completed Mac Debug build and CTests but failed clang-tidy with 20 errors in Scenario.cpp, CoreLangScenario.cpp, and CanonicalWorld.cpp under bugprone-*,performance-* and warnings-as-errors. Diagnostics include easily-swappable scalar parameter groups, potentially-throwing string_view::substr in noexcept identifier checks, narrowing int-to-int8_t conditional expressions, ineffective moves, and omitted CoreLang aggregate members. Preserve the behavior/default values; do not silence the analyzer.",
+    "complexity": "medium",
+    "created_at": "2026-10-10",
+    "resolved_at": "2026-10-10",
+    "resolution_changes": "Replaced the flagged adjacent scalar signatures with named scenario inputs/counts; changed noexcept identifier checks to use guarded remove_prefix; made clamp values int8_t; removed ineffective moves; explicitly initialized the diagnosed CoreLang aggregate members to empty values; and updated call sites, tests, and the gameplay guide. No runtime behavior or analyzer configuration was changed.",
+    "plan": [
+      "Replace the flagged adjacent scalar parameter groups with small named input aggregates and update all existing callers/tests without changing observable behavior.",
+      "Remove potentially throwing substr calls from noexcept identifier checks, make int8_t clamp values explicitly typed, and remove ineffective std::move calls.",
+      "Explicitly initialize only the diagnosed CoreLang fields with their existing empty/default values, after verifying the pinned public declarations.",
+      "Run focused scenario tests/build, ai_check.py --fast, task/docs checks, and the exact configured clang-tidy analysis; leave the exact-candidate matrix and Android runtime to parent MC-AI-0038."
+    ],
+    "product_changes": [
+      "No product behavior change; remove source diagnostics that fail the required macOS analysis gate."
+    ],
+    "code_changes": [
+      "Use named scenario input/count structures, no-throw identifier iteration, explicit CoreLang aggregate defaults, and no-op move cleanup."
+    ],
+    "baseline_commit": "f96d222331e5b33a37b65dcc35621632cdb9fadf",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]

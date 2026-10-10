@@ -28,8 +28,9 @@ in the [scripting guide](../scripting/README.md).
 
 Legacy `flat3d-v1` records flat positions and yaw/pitch/roll; Z remains zero.
 Camera-relative commands map yaw-zero forward to +Y and positive yaw toward +X
-using the cardinal `Direction` payload. Evidence separates replay IDs, input
-counts, 100 ms ticks, and presentation cadence.
+using normalized `Direction`. Evidence separates replay IDs, input counts,
+100 ms ticks, and presentation cadence. Conversion takes named
+`ScenarioCameraDirectionInput` fields; vertical defaults to zero.
 
 ## Permissions
 

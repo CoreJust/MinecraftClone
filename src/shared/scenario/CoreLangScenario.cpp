@@ -80,13 +80,13 @@ ScenarioLocation sourceLocation(std::string_view const source, uint64_t const of
 [[nodiscard]]
 core::lang::Type type(core::lang::TypeKind const kind)
 {
-    return {.kind = kind};
+    return {.kind = kind, .elements = {}};
 }
 
 [[nodiscard]]
 core::lang::Value unitValue()
 {
-    return {.type = type(core::lang::TypeKind::Unit)};
+    return {.type = type(core::lang::TypeKind::Unit), .bytes = {}, .elements = {}};
 }
 
 [[nodiscard]]
@@ -177,13 +177,14 @@ std::expected<bool, std::string> booleanValue(core::lang::Value const& value)
 }
 
 [[nodiscard]]
-bool isIdentifier(std::string_view const text) noexcept
+bool isIdentifier(std::string_view text) noexcept
 {
     if (text.empty() || !((text.front() >= 'a' && text.front() <= 'z')
         || (text.front() >= 'A' && text.front() <= 'Z') || text.front() == '_')) {
         return false;
     }
-    return std::ranges::all_of(text.substr(1), [](char const character) {
+    text.remove_prefix(1U);
+    return std::ranges::all_of(text, [](char const character) {
         return (character >= 'a' && character <= 'z') || (character >= 'A' && character <= 'Z')
             || (character >= '0' && character <= '9') || character == '_';
     });
@@ -290,8 +291,10 @@ public:
             m_seed,
             std::move(m_actors),
             std::move(m_operations),
-            m_total_ticks,
-            m_evidence_count,
+            ScenarioPlan::Counts{
+                .total_ticks = m_total_ticks,
+                .evidence_count = m_evidence_count,
+            },
         };
     }
 
@@ -350,7 +353,7 @@ private:
         if (!m_seed_set) {
             return std::unexpected("scenario players must follow the seed");
         }
-        auto const name = textValue(arguments[0]);
+        auto name = textValue(arguments[0]);
         auto const character = unsignedValue(arguments[1], core::lang::TypeKind::C8, 1U);
         auto const x = signedValue(arguments[2], core::lang::TypeKind::I32, 4U);
         auto const y = signedValue(arguments[3], core::lang::TypeKind::I32, 4U);
@@ -812,7 +815,10 @@ core::lang::CustomManifest manifest(HostSpec const& spec)
         .effect = core::lang::CustomEffect::Observable,
         .arguments = spec.arguments,
         .result = type(core::lang::TypeKind::Unit),
-        .borrow = {.parameters = std::vector<core::lang::BorrowAccess>(spec.arguments.size())},
+        .borrow = {
+            .parameters = std::vector<core::lang::BorrowAccess>(spec.arguments.size()),
+            .returns = {},
+        },
     };
     result.digest = core::lang::customManifestDigest(result);
     return result;
@@ -831,7 +837,11 @@ public:
     {
         ScenarioPlanCollector collector{filename, limits, cancellation, supports_sparse_world};
         std::vector<HostSpec> const specs = hostSpecs(supports_sparse_world);
-        core::lang::Ruleset ruleset{.id = "minecraft", .version = 1U};
+        core::lang::Ruleset ruleset{
+            .id = "minecraft",
+            .version = 1U,
+            .restrictions = {},
+        };
         std::vector<core::lang::CustomProvider> providers;
         providers.reserve(specs.size());
         for (HostSpec const& spec : specs) {
@@ -844,6 +854,7 @@ public:
                 .result = host_manifest.result,
                 .effect = host_manifest.effect,
                 .custom = host_manifest,
+                .expand = {},
                 .unsafe_callable = host_manifest.unsafe_,
                 .borrow = host_manifest.borrow,
             });
@@ -862,11 +873,13 @@ public:
                     }
                     return core::lang::CustomOutcome{core::lang::CustomComplete{.value = unitValue()}};
                 },
+                .cancel = {},
             });
         }
         core::lang::CompilerRegistry const registry{
             .rulesets = {std::move(ruleset)},
             .defaults = {"minecraft"},
+            .restrictions = {},
         };
         auto const compiled = core::lang::compile(
             core::lang::Source{.id = std::string{filename}, .text = std::string{source}},
@@ -954,7 +967,7 @@ std::string_view firstHeader(std::string_view source) noexcept
             return {};
         }
         source.remove_prefix(first);
-        if (!source.starts_with("#") && !source.starts_with("//")) {
+        if (!source.starts_with('#') && !source.starts_with("//")) {
             return source;
         }
         auto const newline = source.find_first_of("\r\n");

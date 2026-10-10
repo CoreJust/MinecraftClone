@@ -4,7 +4,6 @@
 
 #include <stdexcept>
 #include <string>
-#include <utility>
 
 namespace shared {
 
@@ -17,7 +16,7 @@ ScriptedWorld const& canonicalWorld()
         if (!loaded) {
             throw std::runtime_error("failed to load canonical world script: " + loaded.error().message);
         }
-        return std::move(*loaded);
+        return *loaded;
     }();
     return world;
 }
