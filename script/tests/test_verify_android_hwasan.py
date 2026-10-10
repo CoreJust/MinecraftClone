@@ -145,6 +145,56 @@ class VerifyAndroidHwasanTests(unittest.TestCase):
             ]
             self.assertEqual(len(maps_reads), 7)
 
+    def test_runtime_rejects_a_maps_observation_completed_after_the_deadline(self):
+        with tempfile.TemporaryDirectory() as directory:
+            apk = self.apk(Path(directory))
+            with mock.patch.object(
+                self.hwasan,
+                "run_adb",
+                side_effect=["Success", "Starting", self.process_maps(), self.process_maps()],
+            ), mock.patch.object(self.hwasan, "running_process_id", return_value="123"), mock.patch.object(
+                self.hwasan.time,
+                "monotonic",
+                side_effect=[0, 0, 0, 0.5, 6],
+            ), mock.patch.object(self.hwasan.time, "sleep"):
+                with self.assertRaisesRegex(self.hwasan.HwasanError, "deadline"):
+                    self.hwasan.verify_runtime("emulator-5554", apk, 1)
+
+    def test_runtime_rejects_a_pid_change_during_the_final_maps_read(self):
+        with tempfile.TemporaryDirectory() as directory:
+            apk = self.apk(Path(directory))
+            state = {"maps_reads": 0}
+
+            def run_adb(*_arguments, **_kwargs):
+                if state.get("installed") is None:
+                    state["installed"] = True
+                    return "Success"
+                if state.get("launched") is None:
+                    state["launched"] = True
+                    return "Starting"
+                state["maps_reads"] += 1
+                if state["maps_reads"] == 2:
+                    state["pid_after_read"] = "456"
+                return self.process_maps()
+
+            def running_process_id(_serial):
+                return state.get("pid_after_read", "123")
+
+            with mock.patch.object(self.hwasan, "run_adb", side_effect=run_adb), mock.patch.object(
+                self.hwasan,
+                "running_process_id",
+                side_effect=running_process_id,
+            ), mock.patch.object(
+                self.hwasan.time,
+                "monotonic",
+                side_effect=[0, 0, 0, 5, 5],
+            ), mock.patch.object(self.hwasan.time, "sleep"):
+                with self.assertRaisesRegex(
+                    self.hwasan.HwasanError,
+                    "restarted during runtime verification",
+                ):
+                    self.hwasan.verify_runtime("emulator-5554", apk, 10)
+
     def test_runtime_requires_the_game_library_mapping(self):
         with tempfile.TemporaryDirectory() as directory:
             apk = self.apk(Path(directory))

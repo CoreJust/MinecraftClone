@@ -107,7 +107,18 @@ def verify_runtime(serial: str, apk: Path, timeout_seconds: int) -> dict[str, st
             "cat",
             f"/proc/{process_id}/maps",
         )
+        post_read_process_id = running_process_id(serial)
+        if not post_read_process_id:
+            raise HwasanError("HWASan app exited during runtime verification")
+        if post_read_process_id != process_id:
+            raise HwasanError("HWASan app restarted during runtime verification")
+
         observed_at = time.monotonic()
+        if observed_at >= deadline:
+            raise HwasanError(
+                f"HWASan runtime verification exceeded its {timeout_seconds}-second deadline"
+            )
+
         native_library_mapped = NATIVE_LIBRARY_NAME in mappings
         hwasan_runtime_mapped = HWASAN_RUNTIME_NAME in mappings
         saw_native_library |= native_library_mapped
