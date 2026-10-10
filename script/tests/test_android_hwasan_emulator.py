@@ -143,14 +143,15 @@ class AndroidHwasanEmulatorTests(unittest.TestCase):
             line.split("=", 1) for line in self.github_env.read_text(encoding="utf-8").splitlines()
         )
         self.assertEqual(root.name, f"mc-hwasan-{self.run_id}-{self.attempt}")
-        for variable, child in (
-            ("ANDROID_AVD_HOME", "avd"),
-            ("ANDROID_USER_HOME", "user"),
-            ("ANDROID_EMULATOR_HOME", "emulator"),
+        for variable, expected in (
+            ("ANDROID_AVD_HOME", root / "avd"),
+            ("ANDROID_USER_HOME", root / "user" / ".android"),
+            ("ANDROID_EMULATOR_HOME", root / "emulator"),
         ):
-            self.assertEqual(Path(values[variable]), root / child)
-            self.assertTrue((root / child).is_dir())
-        self.assertEqual(values["ANDROID_SDK_HOME"], values["ANDROID_USER_HOME"])
+            self.assertEqual(Path(values[variable]), expected)
+            self.assertTrue(expected.is_dir())
+        self.assertEqual(Path(values["ANDROID_SDK_HOME"]), root / "user")
+        self.assertEqual(Path(values["ANDROID_SDK_HOME"]) / ".android", Path(values["ANDROID_USER_HOME"]))
         self.assertEqual(Path(values["ANDROID_SDK_ROOT"]), root / "android-sdk")
         self.assertEqual(Path(values["ANDROID_HOME"]), root / "android-sdk")
         self.assertEqual(values["ANDROID_SERIAL"], "emulator-5558")
@@ -194,8 +195,12 @@ class AndroidHwasanEmulatorTests(unittest.TestCase):
             kwargs["env"] for command, kwargs in commands if "create" in command and "avd" in command
         )
         self.assertEqual(avd_env["ANDROID_AVD_HOME"], str(root / "avd"))
-        self.assertEqual(avd_env["ANDROID_USER_HOME"], str(root / "user"))
+        self.assertEqual(avd_env["ANDROID_USER_HOME"], str(root / "user" / ".android"))
         self.assertEqual(avd_env["ANDROID_SDK_HOME"], str(root / "user"))
+        self.assertEqual(
+            Path(avd_env["ANDROID_SDK_HOME"]) / ".android",
+            Path(avd_env["ANDROID_USER_HOME"]),
+        )
         self.assertEqual(avd_env["ANDROID_HOME"], str(sdk_root.resolve()))
         self.assertEqual(avd_env["ANDROID_SDK_ROOT"], str(sdk_root.resolve()))
         accel_check = next(command for command, _ in commands if command[-1:] == ["-accel-check"])

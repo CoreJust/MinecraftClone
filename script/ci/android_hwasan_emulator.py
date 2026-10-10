@@ -98,11 +98,12 @@ def _read_state(root: Path, run_id: str, run_attempt: str) -> dict[str, object]:
 
 
 def _environment(state: dict[str, object]) -> dict[str, str]:
+    user_home = Path(str(state["user_home"]))
     return {
         "ANDROID_AVD_HOME": str(state["avd_home"]),
-        "ANDROID_USER_HOME": str(state["user_home"]),
+        "ANDROID_USER_HOME": str(user_home / ".android"),
         "ANDROID_EMULATOR_HOME": str(state["emulator_home"]),
-        "ANDROID_SDK_HOME": str(state["user_home"]),
+        "ANDROID_SDK_HOME": str(user_home),
         "ANDROID_HOME": str(state["sdk_root"]),
         "ANDROID_SDK_ROOT": str(state["sdk_root"]),
         "ANDROID_SERIAL": SERIAL,
@@ -146,6 +147,7 @@ def prepare(runner_temp: Path, run_id: str, run_attempt: str, github_env: Path) 
     _write_state(root, state)
     for key in ("avd_home", "user_home", "emulator_home"):
         Path(str(state[key])).mkdir(mode=0o700)
+    (Path(str(state["user_home"])) / ".android").mkdir(mode=0o700)
     _append_github_env(github_env, _environment(state))
     return root
 
