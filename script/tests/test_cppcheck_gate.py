@@ -30,32 +30,40 @@ class CppcheckGateTests(unittest.TestCase):
     def report(self, identifier="uninitvar", severity="warning", file="src/a.cpp"):
         return f'<results version="2"><errors><error id="{identifier}" severity="{severity}" msg="message"><location file="{file}" line="4"/></error></errors></results>'.encode()
 
+    def parse_report(self, report):
+        root = Path(__file__).resolve().parents[2]
+        return gate.parse_xml(report, root, root)
+
     def test_owned_correctness_diagnostics_block(self):
         for severity in ("error", "warning", "performance", "portability"):
             with self.subTest(severity=severity):
-                self.assertTrue(gate.parse_xml(self.report(severity=severity), Path("/repo"), Path("/repo"))[0]["blocking"])
+                diagnostic = self.parse_report(self.report(severity=severity))[0]
+                self.assertTrue(diagnostic["primary"])
+                self.assertTrue(diagnostic["blocking"])
 
     def test_explicit_hints_and_external_primary_are_advisory(self):
         for identifier, file in (("uninitMemberVarNoCtor", "src/a.cpp"), ("passedByValue", "src/a.cpp"), ("uninitvar", "/dependency/a.hpp")):
             with self.subTest(identifier=identifier, file=file):
-                self.assertFalse(gate.parse_xml(self.report(identifier=identifier, file=file), Path("/repo"), Path("/repo"))[0]["blocking"])
+                diagnostic = self.parse_report(self.report(identifier=identifier, file=file))[0]
+                self.assertEqual(diagnostic["primary"], file == "src/a.cpp")
+                self.assertFalse(diagnostic["blocking"])
 
     def test_configuration_errors_block_even_information(self):
         for identifier in ("syntaxError", "missingInclude", "missingIncludeSystem", "unknownMacro", "internalError"):
             with self.subTest(identifier=identifier):
-                self.assertTrue(gate.parse_xml(self.report(identifier, "information", "/dep/x"), Path("/repo"), Path("/repo"))[0]["blocking"])
+                self.assertTrue(self.parse_report(self.report(identifier, "information", "/dep/x"))[0]["blocking"])
 
     def test_malformed_and_unknown_reports_fail(self):
         for report in (b"", b"<results/>", self.report(severity="surprise")):
             with self.subTest(report=report):
                 with self.assertRaises((ValueError, gate.ET.ParseError)):
-                    gate.parse_xml(report, Path("/repo"), Path("/repo"))
+                    self.parse_report(report)
 
     def test_only_known_standard_missing_headers_are_advisory(self):
         for header, blocking in (("vector", False), ("core/OS.hpp", True), ("gtest/gtest.h", True)):
             report = self.report("missingIncludeSystem", "information").replace(b'msg="message"', f'msg="Include file: &lt;{header}&gt; not found"'.encode())
             with self.subTest(header=header):
-                self.assertEqual(gate.parse_xml(report, Path("/repo"), Path("/repo"))[0]["blocking"], blocking)
+                self.assertEqual(self.parse_report(report)[0]["blocking"], blocking)
 
     def test_compiler_failure_is_propagated(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -120,9 +128,9 @@ class CppcheckGateTests(unittest.TestCase):
             (root / "sys/stat.h").write_text("/* SDK fixture */")
             report = self.report("missingIncludeSystem", "information").replace(b'msg="message"', b'msg="Include file: &lt;sys/stat.h&gt; not found"')
             with patch.object(gate, "PLATFORM_INCLUDE_ROOTS", [root]):
-                self.assertFalse(gate.parse_xml(report, Path("/repo"), Path("/repo"))[0]["blocking"])
+                self.assertFalse(self.parse_report(report)[0]["blocking"])
             with patch.object(gate, "PLATFORM_INCLUDE_ROOTS", []):
-                self.assertTrue(gate.parse_xml(report, Path("/repo"), Path("/repo"))[0]["blocking"])
+                self.assertTrue(self.parse_report(report)[0]["blocking"])
 
     def test_quoted_sdk_header_advisory_requires_verified_file(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -131,7 +139,7 @@ class CppcheckGateTests(unittest.TestCase):
             for header, blocking in (("TargetConditionals.h", False), ("missing-project.hpp", True)):
                 report = self.report("missingInclude", "information").replace(b'msg="message"', f'msg="Include file: &quot;{header}&quot; not found"'.encode())
                 with self.subTest(header=header), patch.object(gate, "PLATFORM_INCLUDE_ROOTS", [root]):
-                    self.assertEqual(gate.parse_xml(report, Path("/repo"), Path("/repo"))[0]["blocking"], blocking)
+                    self.assertEqual(self.parse_report(report)[0]["blocking"], blocking)
 
 
 if __name__ == "__main__":
