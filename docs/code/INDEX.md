@@ -166,6 +166,7 @@ Files:
 - [`tests/cmake/corecpp_server_consumer_test.cmake.in`](../../tests/cmake/corecpp_server_consumer_test.cmake.in)
 - [`tests/cmake/coreproject2026_provenance_test.cmake.in`](../../tests/cmake/coreproject2026_provenance_test.cmake.in)
 - [`tests/cmake/minecraftclone_server_only_test.cmake.in`](../../tests/cmake/minecraftclone_server_only_test.cmake.in)
+- [`tests/cmake/serial_runtime_tests.cmake`](../../tests/cmake/serial_runtime_tests.cmake)
 - [`tests/main.cpp`](../../tests/main.cpp)
 - [`vcpkg-configuration.json`](../../vcpkg-configuration.json)
 - [`vcpkg.json`](../../vcpkg.json)

@@ -1531,7 +1531,7 @@
     ],
     "baseline_commit": "0514890690c10d80b7475fd0b76204e800948db3",
     "commits": [],
-    "finalized": true,
+    "finalized": false,
     "retrospective": "Activation commit 0473b444 (2026-09-20 20:51:14 CEST) to first ai-main promotion commit 4b9166da (2026-10-01 07:24:32 CEST): 10d 10h 33m 18s; not a release because the exact-source matrix and artifacts were missing. At the 2026-10-09 08:45:08 CEST evidence checkpoint, 18d 11h 53m 54s had elapsed, not measured work hours. At checkpoint 9a2a0b6, records show 141 child IDs/142 commits through d78766e and 15 ai-main promotion commits without a release. Causes and evidence-backed improvements are in the linked hindsight report; records cannot prove a two-day counterfactual.",
     "docs_review": "Visually checked the four distinct committed 2560x1440 images. The central-spike scene shows the full landform, most of the first ring, terrain beyond it, and an unobscured player; its larger label is centered below the HUD. The other files are distinct trench/first-spike, mountain-climb, and first-person origin scenes. MC-AI-0398 records central SHA-256 09f367efe433ee001de7157fe426d0e924690c7f35658bb92835e699d06286af and the unchanged hashes of the other three images.",
     "environment_review": "Existing cached Python 3.12.10 and Java 21 run successfully; no global install occurred. Native MSVC and CMD probes reproduced the Windows gate defects. The earlier one-shot was consumed by run 38071858357; the user now explicitly authorizes one attempt on the corrected successor, not 2ec4aba. Verify/report its exact SHA/run before registration. No new runner has been registered.",
@@ -15013,6 +15013,45 @@
       "Consume the reviewed clean CoreCpp exhaustive FieldRequirement return-path correction, preserving all five comparison modes and requiring native MSVC warning and installed-package evidence.",
       "Emit Windows Release ASan linker debug symbols for attributable diagnostics, with an effective-preset regression; retain optimized code and full sanitizer instrumentation.",
       "Keep disconnect observer delivery within the live polling lifetime and retain prepared interest orders through the full selected-radius oracle, preserving all cases, exact-set assertions and deadlines."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0426",
+    "title": "Isolate timed S7 runtime acceptance from unrelated CTest workloads",
+    "kind": "chore",
+    "status": "done",
+    "priority": "P1",
+    "route": "luna",
+    "milestone": "ED-010-S7",
+    "depends_on": [],
+    "acceptance": "The three affected timed tests run without unrelated concurrent CTest jobs on desktop and server-only registrations. All existing registered tests, timeouts, assertions, sanitizer settings and internal multi-client/network workloads remain unchanged. Automated effective CTest property checks cover full and partial registrations; focused and full checks pass. Exact hosted qualification remains mandatory.",
+    "evidence": "Focused workflow-context suite: 34 passed. Effective Debug CTest JSON retains 596 cases, marks exactly the three timed cases RUN_SERIAL with TIMEOUT 120, and preserves unrelated scheduling. Full integration components: 636 Python tests passed; Debug build passed; CTest passed 595 cases with one existing Debug skip in 389.47 seconds. The initial docs phase failed during editing; refreshed inventory and a subsequent standalone docs check passed. Commit fast gate and aggregate candidate will renew whole-candidate validation; exact successor hosted matrix remains required.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0038",
+    "motivation": "Isolate timed S7 runtime acceptance from unrelated CTest workloads",
+    "context": "Exact promotion 75534ed run 38160218974 failed three wall-clock runtime assertions across two attempts under CTest parallelism 4. Attempt 1 ASan and UBSan passed; TSan failed preview rotation and retry service cadence. Attempt 2 ASan failed four-client sustained-flight acknowledgement lag. All assertions and controlled game/network workloads must remain intact; unrelated CTest workloads are not controlled benchmark input.",
+    "complexity": "low",
+    "created_at": "2026-10-11",
+    "resolved_at": "2026-10-11",
+    "resolution_changes": "Isolated three timed runtime acceptance cases from unrelated CTest jobs without changing gameplay or test predicates, deadlines, registrations, or internal network workloads.",
+    "plan": [
+      "Clarify acceptance and implementation steps.",
+      "Add narrow post-discovery CTest scheduling for the three failed timed tests, with effective-property regression coverage and no gameplay changes."
+    ],
+    "product_changes": [
+      "No product behavior changed."
+    ],
+    "code_changes": [
+      "Post-discovery CTest RUN_SERIAL properties with full and server-only effective-property regression fixtures; documented test scheduling and refreshed module inventory."
     ],
     "baseline_commit": "",
     "commits": [],
