@@ -1980,11 +1980,12 @@ void GameServer::fillHeightTileQueue(PreviewStream& stream)
         && urgent_inspections < PreviewStream::MAX_URGENT_CANDIDATES_PER_PUMP
         && urgent_submissions < urgent_submission_limit
         && stream.scheduler.pendingCount() < PreviewStream::MAX_QUEUED_TILES) {
-        shared::HeightTileKey const key = stream.urgent_keys[stream.urgent_cursor++];
+        shared::HeightTileKey const key = stream.urgent_keys[stream.urgent_cursor];
         ++urgent_inspections;
         if (stream.desires(key) && !enqueue(key, urgent_submissions)) {
             return;
         }
+        ++stream.urgent_cursor;
     }
     if (stream.urgent_cursor >= stream.urgent_keys.size()) {
         stream.urgent_keys.clear();
@@ -2005,7 +2006,7 @@ void GameServer::fillHeightTileQueue(PreviewStream& stream)
         if (stream.priority_cursor >= offset_count) {
             stream.priority_cursor = 0U;
         }
-        shared::HeightTileKey const offset = stream.priority_offsets[stream.priority_cursor++];
+        shared::HeightTileKey const offset = stream.priority_offsets[stream.priority_cursor];
         shared::HeightTileKey const key = shared::normalizeHeightTileKey({
             .x = stream.center.x + offset.x,
             .y = stream.center.y + offset.y,
@@ -2013,6 +2014,7 @@ void GameServer::fillHeightTileQueue(PreviewStream& stream)
         if (!enqueue(key, priority_submissions)) {
             return;
         }
+        ++stream.priority_cursor;
     }
     uint32_t background_submissions = 0U;
     for (uint32_t inspected = 0U;
@@ -2022,7 +2024,7 @@ void GameServer::fillHeightTileQueue(PreviewStream& stream)
         if (stream.background_cursor >= offset_count) {
             stream.background_cursor = 0U;
         }
-        shared::HeightTileKey const offset = stream.priority_offsets[stream.background_cursor++];
+        shared::HeightTileKey const offset = stream.priority_offsets[stream.background_cursor];
         shared::HeightTileKey const key = shared::normalizeHeightTileKey({
             .x = stream.center.x + offset.x,
             .y = stream.center.y + offset.y,
@@ -2030,6 +2032,7 @@ void GameServer::fillHeightTileQueue(PreviewStream& stream)
         if (!enqueue(key, background_submissions)) {
             return;
         }
+        ++stream.background_cursor;
     }
 }
 

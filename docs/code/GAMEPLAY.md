@@ -104,10 +104,11 @@ input call.
 
 ## S6/S7 moving terrain
 
-S7 render distance selects a shared radius 1–256 (default 256): radius 128 has
-51,433 tiles; radius 256 has 205,861. Position alone sets membership; heading
+S7 radius 1–256 (default 256) has 51,433 tiles at 128; 205,861 at 256.
+Position sets membership; heading
 prioritizes radius-3/radius-8 circles and a directional ellipse. Server wraps
 edge deltas, bounds discovery, and collects at most 64 results per pump.
+Full admission preserves refill cursors, including running jobs.
 Generation targets 8,192 tiles/s, with 128-tile bursts after 250 ms settled.
 CoreLang 0.1.2 supplies wave parameters; C++ computes heights and stone. Six
 128-block layers; spawn uses the first wave. HUD speedups: 2x–500x.

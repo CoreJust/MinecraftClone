@@ -64,12 +64,14 @@ TEST(WorldGenerationSchedulerTest, RunningAndUndrainedResultsConsumeTheOutstandi
     );
     auto const running = scheduler.takeNext();
     ASSERT_TRUE(running.has_value());
+    EXPECT_EQ(scheduler.pendingCount(), 0U);
     ASSERT_EQ(
         scheduler.submit(SECOND, 1U, shared::GenerationStage::HeightTile),
         shared::GenerationAdmission::QueueFull
     );
 
     ASSERT_TRUE(scheduler.complete(running->id, true));
+    EXPECT_EQ(scheduler.pendingCount(), 0U);
     ASSERT_EQ(
         scheduler.submit(SECOND, 1U, shared::GenerationStage::HeightTile),
         shared::GenerationAdmission::QueueFull

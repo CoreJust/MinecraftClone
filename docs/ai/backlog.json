@@ -1501,7 +1501,7 @@
       "MC-AI-0037"
     ],
     "acceptance": "Deliver immutable, generation-tagged hard/soft entity permissions for all/players/mobs/technical-entities/per-kind and explicit-member/selector groups; namespace custom keys and defer world subjects. Cover movement, flight/collision, blocks, inventory, invincibility, commands, and permission-backed mode presets. Use CoreLang 0.1.3.1 (only documented 0.1.3.3 maintenance), retain interpreter/JIT parity, and prepare kernels off physics ticks. Test latency, loss, jitter, freezes, reordering, and duplication. Replicate a 29/16 × 10/16 × 10/16 player, 16-color palette, and first/rear-third/front-third views. Keep position-driven radius-256 terrain camera-independent and derive face LOD at projected area ≤2 px². Provide four inspected 2560x1440 Mac screenshots with prominent labels centered below the HUD, each showing a distinct requested scene; capture each only after its full configured render distance has finished loading, never with partially loaded terrain: (1) flying third-person beside the central spike, captured at render distance 72 from about 30% closer than the previous central-spike framing and slightly lower than the prior viewpoint while retaining an elevated angle; keep the full spike, most of its first ring, and terrain beyond visible, emphasize the landform's mass, and keep the player visible without covering the spike; (2) one distinct view of the player in the trench near the first spike, without reusing another trench capture; (3) the player climbing the mountain; and (4) first-person at horizontal X/Z (0, 0). Target stable 120 FPS at x200 and the world border as diagnostic only. Pass platform and automated MC-AI-0249 gates; include the accepted CoreCpp scope MC-AI-0056 Runtime executors, MC-AI-0057 Runtime audio, and MC-AI-0240 renderer diagnostics in this snapshot. Release S7, hold the minor open for feedback, and do not start S8.",
-    "evidence": "History at 8bca2ba collects 181 done/finalized basic children. MC-AI-0427 passed all 34 workflow tests on both CMake/CTest 3.30.5 and 4.4, and verified the real 596-case inventory with unchanged serial properties and timeouts. Its commit passed documentation, backlog, policy and Python checks. Earlier aggregate and platform receipts are historical; corrected aggregate qualification, exact-promotion hosted checks, final artifacts/runtime and publication remain pending. S7 is unreleased.",
+    "evidence": "History at e0c7c85 collects 182 done/finalized basic children. MC-AI-0428 fixes all three refill cursors retaining QueueFull-rejected keys and preserves the exact frontier assertion and three-second deadline. Focused build, 21 scheduler/frontier cases, six adjacent preview cases and three frontier repetitions passed; its development documentation/backlog/source-policy gate passed. ac04e68 hosted results remain historical for changed production code. Full corrected aggregate qualification, exact-promotion hosted checks, final platform artifacts/runtime and publication remain pending; S7 is unreleased.",
     "blocker": "Run corrected aggregate and promotion gates, then all 13 exact-promotion analysis rows. Exactly one scheduling-fix successor ephemeral ARM64/HVF HWASan attempt is authorized and unconsumed, only after its other hosted rows pass; report exact SHA/run before registration, reuse caches, capture prelaunch logcat, make no global installs and clean run-owned files. Verify final platform artifacts/runtime, record Windows hands-on status separately, pass strict checks and publish immutable tag and artifact ledger. Minor remains held for feedback.",
     "owner": "Codex",
     "level": "snapshot",
@@ -1511,7 +1511,7 @@
     "complexity": "high",
     "created_at": "2026-09-09",
     "resolved_at": "",
-    "resolution_changes": "All 181 collected basic children are done/finalized. The reviewed CMake 3/4 scheduling compatibility fix and focused checks passed. Corrected aggregate qualification, exact-promotion hosted matrix, platform artifacts/runtime and immutable publication remain required.",
+    "resolution_changes": "All 182 collected basic children are done/finalized. The proved outstanding-capacity cursor defect is repaired and focused checks passed without weakening the integration oracle or deadline. Full corrected aggregate qualification, exact-promotion hosted matrix, platform artifacts/runtime and immutable publication remain required.",
     "plan": [
       "Complete authoritative movement, immutable permissions, and cross-client acceptance; keep policy compilation outside physics ticks.",
       "Finish player/views, adverse networking, camera-independent terrain/LOD, diagnostics, platform and analysis gates, captures, and S7 publication; then hold the minor for feedback."
@@ -1532,7 +1532,7 @@
     "baseline_commit": "0514890690c10d80b7475fd0b76204e800948db3",
     "commits": [],
     "finalized": true,
-    "retrospective": "Activation commit 0473b444 (2026-09-20 20:51:14 CEST) to first ai-main promotion commit 4b9166da (2026-10-01 07:24:32 CEST): 10d 10h 33m 18s; not a release because the exact-source matrix and artifacts were missing. At the 2026-10-09 08:45:08 CEST evidence checkpoint, 18d 11h 53m 54s had elapsed, not measured work hours. At checkpoint 9a2a0b6, records show 141 child IDs/142 commits through d78766e and 15 ai-main promotion commits without a release. Causes and evidence-backed improvements are in the linked hindsight report; records cannot prove a two-day counterfactual.",
+    "retrospective": "Activation commit 0473b444 (2026-09-20 20:51:14 CEST) to first ai-main promotion commit 4b9166da (2026-10-01 07:24:32 CEST): 10d 10h 33m 18s; not a release because the exact-source matrix and artifacts were missing. At the 2026-10-09 08:45:08 CEST checkpoint, 18d 11h 53m 54s had elapsed, not measured work hours. At checkpoint 9a2a0b6, records show 141 child IDs/142 commits through d78766e and 15 ai-main promotions without a release. Linked hindsight reports retain those causes; records cannot prove a two-day counterfactual. On 11 October, CTest 3.x exposed an unset CMP0057 dependency missed by local CMake 4; existing SDK CMake/CTest 3.30.5 reproduced it and both version suites passed the compatibility repair. The serialized ac04e68 Mac Debug frontier test then failed despite acknowledged rotation, disproving scheduling overlap as a sufficient explanation. Inspection proved that queued-count checks can admit attempts while running/undrained jobs fill capacity; preincremented refill cursors then skip QueueFull-rejected keys. MC-AI-0428 repairs all three lanes without changing the oracle or deadline; exact hosted chosen-tile attribution remains unproven. The coordinator also unnecessarily used duplicate full-gate wrappers despite the documented direct-merge route, and a reviewer initially reported a nonexistent receipt path. Require one gate owner and an existing hashed reviewer artifact; no validation or authorization was bypassed.",
     "docs_review": "Visually checked the four distinct committed 2560x1440 images. The central-spike scene shows the full landform, most of the first ring, terrain beyond it, and an unobscured player; its larger label is centered below the HUD. The other files are distinct trench/first-spike, mountain-climb, and first-person origin scenes. MC-AI-0398 records central SHA-256 09f367efe433ee001de7157fe426d0e924690c7f35658bb92835e699d06286af and the unchanged hashes of the other three images.",
     "environment_review": "Existing cached Python 3.12.10 and Java 21 run successfully; no global install occurred. Native MSVC and CMD probes reproduced the Windows gate defects. The earlier one-shot was consumed by run 38071858357; the user now explicitly authorizes one attempt on the corrected successor, not 2ec4aba. Verify/report its exact SHA/run before registration. No new runner has been registered.",
     "backlog_review": "History at a39407a63f6f5fb3b556dbfd9708bdf3427d9f9b returned 178 completed finalized basic children, including MC-AI-0423 and MC-AI-0424. The immutable baseline and all accepted scope remain covered. Exact corrected-source release gates remain open."
@@ -15091,6 +15091,43 @@
     ],
     "code_changes": [
       "Policy-independent CTest membership lookup and effective registration fixtures under legacy CMP0057 behavior."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0428",
+    "title": "Preserve preview cursors when running generation fills admission capacity",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P1",
+    "route": "luna",
+    "milestone": "ED-010-S7",
+    "depends_on": [],
+    "acceptance": "Preserve urgent, priority and background cursor position when admission returns QueueFull; advance only after a handled key, including undesired urgent keys. Retain workload limits, priority ordering, deduplication, three-second rotation deadline and other production behavior. Add public-contract regression coverage of running-job capacity and retry behavior, run focused preview and scheduler tests, and qualify the corrected exact promotion before release. Do not weaken or skip the frontier test.",
+    "evidence": "Cached Debug mc_tests incremental build passed. Scheduler suite plus rotation frontier passed 21/21; six adjacent priority, frontier, credit-stall and reversal tests passed 6/6; the rotation frontier passed three consecutive runs. Owned whitespace checks passed. The production cursor defect is proved by capacity/admission semantics, but the exact hosted chosen-tile causal attribution remains unproven. Corrected-source hosted qualification is still required.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0038",
+    "motivation": "Prevent terrain frontier keys from being skipped when async running jobs fill the preview scheduler.",
+    "context": "Exact promotion ac04e68 run38174039815 serialized Mac Debug rotation test failed at the frontier predicate with acknowledged input. Inspection proves all three preview cursors advance before QueueFull admission rejects, while pendingCount excludes running jobs. Eight focused local repeats passed; exact causal attribution of the hosted selected tile is unavailable.",
+    "complexity": "high",
+    "created_at": "2026-10-11",
+    "resolved_at": "2026-10-11",
+    "resolution_changes": "Urgent, priority and background preview refill retain the current key on QueueFull, advancing only after handled admission or an undesired urgent key. Existing scheduler running/undrained capacity coverage now explicitly asserts the empty queued count. Selected-frontier integration assertion and three-second deadline remain unchanged.",
+    "plan": [
+      "Move cursor advancement after handled admission in all three preview lanes; validate running-capacity backpressure and existing rotation integration without extending deadlines."
+    ],
+    "product_changes": [],
+    "code_changes": [
+      "Advance urgent, priority and background cursors only after handled admission; preserve the first unhandled key on outstanding-capacity rejection.",
+      "Explicitly assert queued count zero while running and undrained results still fill scheduler admission capacity; retain the existing retry-after-drain and exact frontier integration assertions."
     ],
     "baseline_commit": "",
     "commits": [],
