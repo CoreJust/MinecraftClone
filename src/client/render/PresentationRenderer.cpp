@@ -2033,7 +2033,8 @@ private:
                 rollback_required = false;
                 try {
                     recreate(m_context->info().extent, frame_deadline);
-                    if (requiredValue(m_stone_face_buffer).capacity() != m_stone_face_capacity) {
+                    if (!m_stone_face_buffer.has_value()
+                        || requiredValue(m_stone_face_buffer).capacity() != m_stone_face_capacity) {
                         throw std::runtime_error("stone face arena recreation was deferred");
                     }
                 } catch (...) {
