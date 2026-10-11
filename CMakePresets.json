@@ -87,15 +87,21 @@
       "name": "analysis-windows-asan",
       "inherits": "analysis-base",
       "cacheVariables": {
-        "MC_SANITIZER": "address"
+        "MC_SANITIZER": "address",
+        "CMAKE_C_FLAGS": "/Zi",
+        "CMAKE_CXX_FLAGS": "/EHsc /Zi /bigobj",
+        "CMAKE_EXE_LINKER_FLAGS": "/DEBUG",
+        "CMAKE_SHARED_LINKER_FLAGS": "/DEBUG",
+        "VCPKG_TARGET_TRIPLET": "x64-windows-asan",
+        "VCPKG_OVERLAY_TRIPLETS": "${sourceDir}/script/ci/vcpkg-triplets"
       }
     },
     {
       "name": "analysis-windows-analyze",
       "inherits": "analysis-static-base",
       "cacheVariables": {
-        "CMAKE_C_FLAGS": "/analyze /W4 /WX",
-        "CMAKE_CXX_FLAGS": "/analyze /W4 /WX"
+        "CMAKE_C_FLAGS": "/analyze /W4 /WX /analyze:external-",
+        "CMAKE_CXX_FLAGS": "/analyze /W4 /WX /EHsc /analyze:external-"
       }
     },
     {

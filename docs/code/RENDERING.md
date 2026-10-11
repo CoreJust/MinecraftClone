@@ -67,11 +67,11 @@ and `chunk_draw_count` counts logical ranges.
 covers flat tiles, exposed height differences, neighbor seams, and generated
 column tops.
 
-`ChunkMeshLodBuilder` creates bounded `Fine`/`Coarse` variants by merging
-same-direction/material coplanar faces; both retain content identity and full-chunk
-bounds. `MeshLodSelector` uses caller-supplied squared distance thresholds,
-hysteresis and available-variant fallback; it neither sets distance nor remeshes.
-Invalid directions are rejected before grid indexing.
+`ChunkMeshLodBuilder` creates bounded `Fine`/`Coarse` variants, merging coplanar
+faces of equal direction/material, retaining content identity/full-chunk bounds.
+`MeshLodSelector` applies caller-supplied squared-distance thresholds, hysteresis
+and available-variant fallback; never sets distance or remeshes. Invalid directions
+are rejected before indexing. Per-build heap workspace bounds stacks.
 [`Tests`](../../tests/core/chunk_mesh_lod_tests.cpp) cover these contracts.
 
 ## Text and GUI boundary

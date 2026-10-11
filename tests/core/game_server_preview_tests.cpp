@@ -24,7 +24,9 @@
 #include <cstdlib>
 #include <functional>
 #include <iterator>
+#include <memory>
 #include <optional>
+#include <ratio>
 #include <span>
 #include <string>
 #include <thread>
@@ -118,13 +120,13 @@ private:
         }
         if (auto const* const join_response = std::get_if<shared::JoinResponseMessage>(&*message)) {
             join_accepted = join_response->accepted;
-        } else if (auto const* const tile = std::get_if<shared::ServerHeightTileMessage>(&*message)) {
-            recordHeightTile(*tile);
+        } else if (auto const* const tile_message = std::get_if<shared::ServerHeightTileMessage>(&*message)) {
+            recordHeightTile(*tile_message);
         } else if (auto const* const batch = std::get_if<shared::ServerHeightTileBatchMessage>(&*message)) {
             ++received_delivery_batches;
             received_removals += static_cast<uint32_t>(batch->removals.size());
-            for (shared::ServerHeightTileMessage const& tile : batch->tiles) {
-                recordHeightTile(tile);
+            for (shared::ServerHeightTileMessage const& batch_tile : batch->tiles) {
+                recordHeightTile(batch_tile);
             }
         } else if (std::holds_alternative<shared::ServerRemoveHeightTileMessage>(*message)) {
             ++received_removals;
@@ -311,8 +313,8 @@ TEST(GameServerPreviewTest, MaterializedLandingMatchesTheStreamedMountainHeight)
             if (auto const* const tile = std::get_if<shared::ServerHeightTileMessage>(&message)) {
                 inspect_tile(*tile);
             } else if (auto const* const batch = std::get_if<shared::ServerHeightTileBatchMessage>(&message)) {
-                for (shared::ServerHeightTileMessage const& tile : batch->tiles) {
-                    inspect_tile(tile);
+                for (shared::ServerHeightTileMessage const& batch_tile : batch->tiles) {
+                    inspect_tile(batch_tile);
                 }
             }
         }
@@ -974,7 +976,8 @@ TEST(GameServerPreviewTest, SustainedNetworkIngressDoesNotStarveTicksTerrainOrSh
         },
     };
     PreviewClient observer;
-    std::array<PreviewClient, FLOOD_CLIENT_COUNT> flood_clients;
+    auto const flood_clients_storage = std::make_unique<std::array<PreviewClient, FLOOD_CLIENT_COUNT>>();
+    std::array<PreviewClient, FLOOD_CLIENT_COUNT>& flood_clients = *flood_clients_storage;
     std::array<std::atomic_uint64_t, FLOOD_CLIENT_COUNT> sent_packets{};
     std::array<std::atomic_uint64_t, FLOOD_CLIENT_COUNT> flushed_packets{};
     std::array<std::thread, FLOOD_CLIENT_COUNT> flood_threads;

@@ -607,10 +607,10 @@ TEST(AdverseNetworkTest, SyntheticTransportCoversLossLatencyJitterFreezeReorderi
             EXPECT_TRUE(received.empty());
         }
         for (testsupport::AdversePacket const& packet : received) {
-            std::optional<shared::Message> const received = decode(packet);
-            ASSERT_TRUE(received.has_value());
-            ASSERT_TRUE(std::holds_alternative<shared::ClientInputMessage>(*received));
-            delivered_sequences.push_back(std::get<shared::ClientInputMessage>(*received).sequence);
+            std::optional<shared::Message> const decoded_message = decode(packet);
+            ASSERT_TRUE(decoded_message.has_value());
+            ASSERT_TRUE(std::holds_alternative<shared::ClientInputMessage>(*decoded_message));
+            delivered_sequences.push_back(std::get<shared::ClientInputMessage>(*decoded_message).sequence);
         }
     }
     for (uint32_t tick = INPUT_COUNT; tick <= SETTLE_TICK; ++tick) {

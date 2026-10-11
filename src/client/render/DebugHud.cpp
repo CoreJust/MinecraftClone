@@ -9,6 +9,7 @@
 #include <cstddef>
 #include <string>
 #include <system_error>
+#include <vector>
 
 namespace client {
 

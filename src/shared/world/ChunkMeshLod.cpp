@@ -6,6 +6,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <stdexcept>
 #include <utility>
 
@@ -193,7 +194,8 @@ ChunkMeshLodSet ChunkMeshLodBuilder::build(ChunkMesh const& mesh) const
     }
 
     ChunkMeshLodSet result;
-    FaceGrid grid{};
+    std::unique_ptr<FaceGrid> workspace = std::make_unique<FaceGrid>();
+    FaceGrid& grid = *workspace;
     ChunkMeshVariant fine{
         .detail = MeshDetail::Fine,
         .content_identity = mesh.content_identity,

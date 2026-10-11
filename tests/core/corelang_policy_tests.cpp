@@ -4,6 +4,7 @@
 
 #include <cstdint>
 #include <expected>
+#include <initializer_list>
 #include <memory>
 #include <span>
 #include <string>

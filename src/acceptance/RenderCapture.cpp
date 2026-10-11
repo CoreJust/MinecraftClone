@@ -23,6 +23,7 @@
 #include <cstdint>
 #include <limits>
 #include <optional>
+#include <ratio>
 #include <span>
 #include <vector>
 

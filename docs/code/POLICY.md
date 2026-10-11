@@ -23,7 +23,10 @@ initialization are rejected.
 `PolicyHost` compiles and materializes outside physics ticks. Materialization
 checks the subject and key catalogs, resolves selectors, and creates immutable
 dense capability rows bound to their exact plan. Publication assigns a
-generation; indexed queries use a two-argument subject/key query and fail closed for
+generation. Snapshot replacement uses release publication and acquire reads;
+libraries with atomic shared-pointer support use that specialization, while
+older libc++ retains its supported atomic shared-pointer functions.
+Indexed queries use a two-argument subject/key query and fail closed for
 unknown subjects or keys. Both query values are required at construction, so an
 incomplete query cannot silently default to entity or capability index zero. The
 query takes distinct, non-convertible subject-ID and capability-key-ID types, so

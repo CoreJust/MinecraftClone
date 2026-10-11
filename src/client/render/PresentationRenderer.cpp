@@ -58,6 +58,7 @@
 #include <cstring>
 #include <exception>
 #include <functional>
+#include <initializer_list>
 #include <iterator>
 #include <limits>
 #include <memory>
@@ -350,10 +351,34 @@ private:
 };
 
 [[nodiscard]]
+std::optional<std::string> environmentVariable(char const* const name)
+{
+#if defined(_MSC_VER)
+    char* raw_value = nullptr;
+    size_t value_size = 0U;
+    auto const status = _dupenv_s(&raw_value, &value_size, name);
+    std::unique_ptr<char, decltype(&std::free)> const value{ raw_value, &std::free };
+    if (status != 0) {
+        throw std::runtime_error("failed to read environment variable");
+    }
+    if (value == nullptr) {
+        return std::nullopt;
+    }
+    return std::string{ value.get() };
+#else
+    char const* const value = std::getenv(name);
+    if (value == nullptr) {
+        return std::nullopt;
+    }
+    return std::string{ value };
+#endif
+}
+
+[[nodiscard]]
 bool diagnosticIndexedStoneQuads()
 {
-    char const* const requested = std::getenv("MC_DIAGNOSTIC_INDEXED_STONE_QUADS");
-    return requested == nullptr || std::string_view{ requested } != "0";
+    std::optional<std::string> const requested = environmentVariable("MC_DIAGNOSTIC_INDEXED_STONE_QUADS");
+    return !requested.has_value() || *requested != "0";
 }
 
 enum class StoneDrawBufferKind : uint8_t {
@@ -2389,8 +2414,8 @@ private:
     void initializeDiagnosticTimestamps(VkPhysicalDeviceProperties const& properties)
     {
         m_diagnostic_gpu_timestamp_reason = "not requested or timestamp capability unsupported";
-        char const* const requested = std::getenv("MC_DIAGNOSTIC_GPU_TIMESTAMPS");
-        if (requested == nullptr || std::string_view{ requested } != "1"
+        std::optional<std::string> const requested = environmentVariable("MC_DIAGNOSTIC_GPU_TIMESTAMPS");
+        if (!requested.has_value() || *requested != "1"
             || !std::isfinite(properties.limits.timestampPeriod) || properties.limits.timestampPeriod <= 0.0F) {
             return;
         }
@@ -2496,8 +2521,8 @@ private:
         }
         StoneDrawBufferKind const indirect_kind = m_diagnostic_indexed_stone_quads
             ? StoneDrawBufferKind::IndexedIndirect : StoneDrawBufferKind::Indirect;
-        char const* const direct_requested = std::getenv("MC_DIAGNOSTIC_DIRECT_STONE_DRAWS");
-        bool const force_direct = direct_requested != nullptr && std::string_view{ direct_requested } == "1";
+        std::optional<std::string> const direct_requested = environmentVariable("MC_DIAGNOSTIC_DIRECT_STONE_DRAWS");
+        bool const force_direct = direct_requested.has_value() && *direct_requested == "1";
         m_stone_indirect_draws.emplace(
             MAXIMUM_RENDERED_STONE_FACE_COUNT,
             properties.limits.maxDrawIndirectCount,
@@ -3601,27 +3626,27 @@ private:
                 0U,
                 nullptr
             );
-            VkRenderingAttachmentInfo color{};
-            color.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
-            color.imageView = recording.color_view;
-            color.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-            color.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
-            color.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-            VkRenderingInfo info{};
-            info.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
-            info.renderArea.extent = recording.extent;
-            info.layerCount = 1U;
-            info.colorAttachmentCount = 1U;
-            info.pColorAttachments = &color;
-            resources.beginRendering()(recording.command_buffer, &info);
-            VkViewport viewport{};
-            viewport.width = static_cast<float>(recording.extent.width);
-            viewport.height = static_cast<float>(recording.extent.height);
-            viewport.maxDepth = 1.0F;
-            VkRect2D scissor{};
-            scissor.extent = recording.extent;
-            vkCmdSetViewport(recording.command_buffer, 0U, 1U, &viewport);
-            vkCmdSetScissor(recording.command_buffer, 0U, 1U, &scissor);
+            VkRenderingAttachmentInfo gui_color{};
+            gui_color.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
+            gui_color.imageView = recording.color_view;
+            gui_color.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+            gui_color.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+            gui_color.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+            VkRenderingInfo gui_info{};
+            gui_info.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
+            gui_info.renderArea.extent = recording.extent;
+            gui_info.layerCount = 1U;
+            gui_info.colorAttachmentCount = 1U;
+            gui_info.pColorAttachments = &gui_color;
+            resources.beginRendering()(recording.command_buffer, &gui_info);
+            VkViewport gui_viewport{};
+            gui_viewport.width = static_cast<float>(recording.extent.width);
+            gui_viewport.height = static_cast<float>(recording.extent.height);
+            gui_viewport.maxDepth = 1.0F;
+            VkRect2D gui_scissor{};
+            gui_scissor.extent = recording.extent;
+            vkCmdSetViewport(recording.command_buffer, 0U, 1U, &gui_viewport);
+            vkCmdSetScissor(recording.command_buffer, 0U, 1U, &gui_scissor);
             uint32_t gui_text_draw_count = 0U;
             uint32_t first_instance = 0U;
             for (TextBatch const& text : self.m_gui_renderer.batches()) {

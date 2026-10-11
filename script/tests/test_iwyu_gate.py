@@ -170,6 +170,39 @@ class IwyuGateTests(unittest.TestCase):
                 ['src/sample.cpp: unmapped quoted addition #include "Core.hpp"  // for Core'],
             )
 
+    def test_math_implementation_header_maps_to_existing_cmath(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source, _ = self.create_repository(root)
+            with source.open("a", encoding="utf-8") as stream:
+                stream.write("#include <cmath>\n")
+            output = self.report_with(source, "#include <math>  // for isfinite")
+
+            exit_code, record, _, _ = self.invoke(root, source, output)
+
+            self.assertEqual(exit_code, 0)
+            self.assertEqual(record["status"], "passed")
+            self.assertEqual(record["public_additions"], [])
+            self.assertEqual(
+                record["mapped_facades"],
+                ["src/sample.cpp: #include <math>  // for isfinite -> <cmath> (already included)"],
+            )
+
+    def test_math_implementation_header_still_requires_public_cmath(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source, _ = self.create_repository(root)
+            output = self.report_with(source, "#include <math>  // for isfinite")
+
+            exit_code, record, _, _ = self.invoke(root, source, output)
+
+            self.assertEqual(exit_code, 1)
+            self.assertEqual(record["status"], "blocked")
+            self.assertEqual(
+                record["public_additions"],
+                ["src/sample.cpp: missing facade <cmath> for #include <math>  // for isfinite"],
+            )
+
     def test_unmapped_project_detail_include_is_not_silently_ignored(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

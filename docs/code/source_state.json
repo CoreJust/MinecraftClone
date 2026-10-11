@@ -31,7 +31,7 @@
         "tests/acceptance/runtime_cli_tests.cmake",
         "tests/acceptance/scenario_runner_tests.cpp"
       ],
-      "sources_sha256": "38af6d53d91965ed4d28c6942fe954140c2262766d1bed0ac46bfd9081490e3e"
+      "sources_sha256": "0e19b27e993404c1eb703da8a337a72711bf17a91df6f52697b18fd0027ae729"
     },
     {
       "guide": "docs/code/ANDROID.md",
@@ -55,7 +55,7 @@
     },
     {
       "guide": "docs/BUILD.md",
-      "guide_sha256": "23dbbe0b2444fdfa0af4ecbb435d8f9598578765d9eb94258cb9edb9b51e4122",
+      "guide_sha256": "1d953f8a5704ec22ff46be30654ff9a6704d33f80efd26e0829c7005cca5802d",
       "id": "build",
       "sources": [
         ".agents/skills/backlog/SKILL.md",
@@ -172,7 +172,7 @@
         "vcpkg-configuration.json",
         "vcpkg.json"
       ],
-      "sources_sha256": "dd9a98a6f8d4d678f1104d6b690f4c3c2392665014c4d386bf317854f76f4e89"
+      "sources_sha256": "a1ece4b5945c01ac06d8ed7bc7e811a1adb413b78f1d6b9e84c27bc4f5080e0b"
     },
     {
       "guide": "docs/code/CORE.md",
@@ -205,7 +205,7 @@
         "tests/core/vector_utils_tests.cpp",
         "tests/core/version_tests.cpp"
       ],
-      "sources_sha256": "85e7763232ccc4df85e493d6fe40a4488180f7c0ff56ae17aacc658c628bfe92"
+      "sources_sha256": "e0a0d2993e5e5384b812fd635f33216bb50ebb948a126deddc0dcd7b122b83e3"
     },
     {
       "guide": "docs/code/GAMEPLAY.md",
@@ -298,11 +298,11 @@
         "tests/core/world_generation_scheduler_tests.cpp",
         "tests/core/world_generation_tests.cpp"
       ],
-      "sources_sha256": "9f59f7304c32a7727a60ab1ebf17a342fc966bfbf56213ca7dd6a05490924b67"
+      "sources_sha256": "3825a2fa082a2f7556925d4491f5c3810ab4c6d93b94fe2d3730012225023440"
     },
     {
       "guide": "docs/code/RENDERING.md",
-      "guide_sha256": "fdebb1fc5cb0523329800b2937c916d9379fbfe55180497c91bee412ae852945",
+      "guide_sha256": "a20daee5dc3982694a9c483fe5f067ab9a42eaca0795ea13290c9a282cf5412f",
       "id": "rendering",
       "sources": [
         "src/client/CMakeLists.txt",
@@ -378,7 +378,7 @@
         "tests/testsupport/include/testsupport/AdverseTransport.hpp",
         "tests/testsupport/include/testsupport/ImageComparison.hpp"
       ],
-      "sources_sha256": "7e1de0aba57de031c328ce1a0971e4297de3770903b0fb9220878a9906a0c87c"
+      "sources_sha256": "6224990bef112561b820a516a8d6106f411e65930e2b1c853ebdba033657c2a4"
     }
   ],
   "version": 1

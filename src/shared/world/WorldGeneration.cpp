@@ -412,12 +412,12 @@ std::expected<void, std::string> registerGenerationPlanProviders(
 
 namespace shared {
 
-std::optional<uint16_t> HeightTile::heightAt(BlockCoordinate const coordinate) const noexcept
+std::optional<uint16_t> HeightTile::heightAt(BlockCoordinate const sample_coordinate) const noexcept
 {
-    if (!Chunk::isValid(coordinate)) {
+    if (!Chunk::isValid(sample_coordinate)) {
         return std::nullopt;
     }
-    return heights[sampleIndex(coordinate)];
+    return heights[sampleIndex(sample_coordinate)];
 }
 
 struct TerrainGenerator::ScriptState final {

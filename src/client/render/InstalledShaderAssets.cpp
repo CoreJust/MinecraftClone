@@ -25,7 +25,7 @@ namespace {
 std::filesystem::path executablePath()
 {
 #ifdef WINDOWS
-    std::array<wchar_t, 32'768> buffer{};
+    std::vector<wchar_t> buffer(32'768U);
     DWORD const length = GetModuleFileNameW(nullptr, buffer.data(), static_cast<DWORD>(buffer.size()));
     if (length == 0) {
         throw std::system_error(static_cast<int32_t>(GetLastError()), std::system_category(), "Executable path");

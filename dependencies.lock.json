@@ -3,13 +3,13 @@
   "dependencies": {
     "CoreCpp": {
       "repository": "CoreJust/CoreCpp",
-      "revision": "d5759fa48b7073787434121624b5f5f93cf3fa2c",
-      "fetch_ref": "refs/heads/codex/ai-cc-0042-inputspan-public-header"
+      "revision": "2ad29f7ed590e41c8ad7c9d4027c781650a10391",
+      "fetch_ref": "refs/heads/codex/ai-CC-0043-field-requirement-return"
     },
     "CoreProject2026": {
       "repository": "CoreJust/CoreProject2026",
-      "revision": "a4d3fa8a7b81407d0f6bae3ef10d2632d7b74fb9",
-      "fetch_ref": "refs/heads/codex/ai-CP-0039-corecpp-0042-pin"
+      "revision": "e577c84671357625d0db7008395854018316c3f8",
+      "fetch_ref": "refs/heads/codex/ai-CP-0040-asan-fiber-notifications"
     }
   }
 }

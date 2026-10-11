@@ -6,6 +6,7 @@
 
 #include <cmath>
 #include <cstdint>
+#include <initializer_list>
 #include <optional>
 #include <string>
 

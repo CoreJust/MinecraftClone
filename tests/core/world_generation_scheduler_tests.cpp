@@ -7,6 +7,8 @@
 #include <array>
 #include <compare>
 #include <cstdint>
+#include <functional>
+#include <initializer_list>
 #include <memory>
 #include <optional>
 #include <span>

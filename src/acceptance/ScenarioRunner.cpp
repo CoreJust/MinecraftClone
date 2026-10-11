@@ -24,6 +24,7 @@
 #include <cstdint>
 #include <memory>
 #include <optional>
+#include <ratio>
 #include <span>
 #include <string>
 #include <string_view>
@@ -339,19 +340,19 @@ std::expected<RuntimeEvidence, std::string> runSparseWorldScenario(
         if (operation.boundary != 0U) {
             return std::unexpected(operationFailure(operation, "has an inconsistent sparse-world boundary"));
         }
-        if (auto const* const expected = std::get_if<shared::ScenarioExpectBlockOperation>(&operation.data)) {
+        if (auto const* const expected_block = std::get_if<shared::ScenarioExpectBlockOperation>(&operation.data)) {
             std::optional<shared::Block> const observed = world.blockAt({
-                .x = expected->x,
-                .y = expected->y,
-                .z = expected->z,
+                .x = expected_block->x,
+                .y = expected_block->y,
+                .z = expected_block->z,
             });
-            if (!observed.has_value() || *observed != expected->block) {
+            if (!observed.has_value() || *observed != expected_block->block) {
                 return std::unexpected(operationFailure(operation, "did not observe the expected generated block"));
             }
-        } else if (auto const* const expected = std::get_if<
+        } else if (auto const* const expected_resident_chunks = std::get_if<
                        shared::ScenarioExpectResidentChunksOperation
                    >(&operation.data)) {
-            if (world.residentChunkCount() != expected->count) {
+            if (world.residentChunkCount() != expected_resident_chunks->count) {
                 return std::unexpected(operationFailure(operation, "observed an unexpected resident chunk count"));
             }
         } else {
@@ -599,14 +600,16 @@ std::expected<RuntimeEvidence, std::string> runScenario(
                     .z = static_cast<uint8_t>(input->z * 127),
                 };
                 last_effective_tick = input->effective_boundary;
-            } else if (auto const* const input = std::get_if<shared::ScenarioCameraInputOperation>(&operation.data)) {
+            } else if (auto const* const camera_input = std::get_if<shared::ScenarioCameraInputOperation>(
+                &operation.data
+            )) {
                 if ((plan.profile() != shared::ScenarioProfile::Flat3dV1
                         && plan.profile() != shared::ScenarioProfile::Flight3dV1)
-                    || input->effective_boundary != logical_tick + 1U) {
+                    || camera_input->effective_boundary != logical_tick + 1U) {
                     failure = operationFailure(operation, "has an inconsistent camera input boundary");
                     break;
                 }
-                auto const index = actorIndex(plan, input->actor);
+                auto const index = actorIndex(plan, camera_input->actor);
                 if (!index.has_value()) {
                     failure = operationFailure(operation, "references an unknown actor");
                     break;
@@ -615,13 +618,13 @@ std::expected<RuntimeEvidence, std::string> runScenario(
                 active_inputs[*index] = shared::scenarioCameraRelativeDirection(
                     {
                         .yaw_degrees = actor.yaw_degrees,
-                        .strafe = input->strafe,
-                        .forward = input->forward,
-                        .vertical = input->vertical,
+                        .strafe = camera_input->strafe,
+                        .forward = camera_input->forward,
+                        .vertical = camera_input->vertical,
                     }
                 );
                 ++camera_relative_inputs;
-                last_effective_tick = input->effective_boundary;
+                last_effective_tick = camera_input->effective_boundary;
             } else if (auto const* const permissions = std::get_if<shared::ScenarioMovementPermissionsOperation>(
                 &operation.data
             )) {
@@ -671,10 +674,10 @@ std::expected<RuntimeEvidence, std::string> runScenario(
                 if (failure.has_value()) {
                     break;
                 }
-            } else if (auto const* const expectation = std::get_if<shared::ScenarioExpectPositionOperation>(
+            } else if (auto const* const position_expectation = std::get_if<shared::ScenarioExpectPositionOperation>(
                 &operation.data
             )) {
-                auto const index = actorIndex(plan, expectation->actor);
+                auto const index = actorIndex(plan, position_expectation->actor);
                 if (!index.has_value()) {
                     failure = operationFailure(operation, "references an unknown actor");
                     break;
@@ -685,16 +688,16 @@ std::expected<RuntimeEvidence, std::string> runScenario(
                     return (value % EXTENT + EXTENT) % EXTENT;
                 };
                 int32_t const expected_x = plan.profile() == shared::ScenarioProfile::Flight3dV1
-                    ? wrap(expectation->x) : expectation->x;
+                    ? wrap(position_expectation->x) : position_expectation->x;
                 int32_t const expected_y = plan.profile() == shared::ScenarioProfile::Flight3dV1
-                    ? wrap(expectation->y) : expectation->y;
+                    ? wrap(position_expectation->y) : position_expectation->y;
                 if (!clients[*index]->waitFor(
-                    [&client = clients[*index], character, expectation, expected_x, expected_y] {
+                    [&client = clients[*index], character, position_expectation, expected_x, expected_y] {
                         auto const position = client->latestPosition(character);
                         return position.has_value()
                             && position->x == expected_x
                             && position->y == expected_y
-                            && position->z == expectation->z;
+                            && position->z == position_expectation->z;
                     },
                     deadline,
                     options.network_poll_interval
@@ -703,7 +706,7 @@ std::expected<RuntimeEvidence, std::string> runScenario(
                         clients[*index]->latestPosition(character);
                     std::string reason = "did not observe expected authoritative position ("
                         + std::to_string(expected_x) + ", " + std::to_string(expected_y) + ", "
-                        + std::to_string(expectation->z) + ")";
+                        + std::to_string(position_expectation->z) + ")";
                     if (observed.has_value()) {
                         reason += "; last observed (" + std::to_string(observed->x) + ", "
                             + std::to_string(observed->y) + ", " + std::to_string(observed->z)
@@ -717,18 +720,19 @@ std::expected<RuntimeEvidence, std::string> runScenario(
                     break;
                 }
                 ++expectations_passed;
-            } else if (auto const* const expectation = std::get_if<
+            } else if (auto const* const movement_permissions_expectation = std::get_if<
                            shared::ScenarioExpectMovementPermissionsOperation
                        >(&operation.data)) {
-                auto const index = actorIndex(plan, expectation->actor);
+                auto const index = actorIndex(plan, movement_permissions_expectation->actor);
                 if (!index.has_value()) {
                     failure = operationFailure(operation, "references an unknown actor");
                     break;
                 }
                 char const character = plan.actors()[*index].character;
                 uint8_t const expected_bits = static_cast<uint8_t>(
-                    (expectation->flight ? static_cast<uint8_t>(shared::MovementCapability::Flight) : 0U)
-                    | (expectation->collision_bypass
+                    (movement_permissions_expectation->flight
+                        ? static_cast<uint8_t>(shared::MovementCapability::Flight) : 0U)
+                    | (movement_permissions_expectation->collision_bypass
                         ? static_cast<uint8_t>(shared::MovementCapability::CollisionBypass) : 0U)
                 );
                 if (!clients[*index]->waitFor(
@@ -750,20 +754,20 @@ std::expected<RuntimeEvidence, std::string> runScenario(
                     break;
                 }
                 ++expectations_passed;
-            } else if (auto const* const expectation = std::get_if<
+            } else if (auto const* const vertical_velocity_expectation = std::get_if<
                            shared::ScenarioExpectVerticalVelocityOperation
                        >(&operation.data)) {
-                auto const index = actorIndex(plan, expectation->actor);
+                auto const index = actorIndex(plan, vertical_velocity_expectation->actor);
                 if (!index.has_value()) {
                     failure = operationFailure(operation, "references an unknown actor");
                     break;
                 }
                 char const character = plan.actors()[*index].character;
                 if (!clients[*index]->waitFor(
-                    [&client = clients[*index], character, expectation] {
+                    [&client = clients[*index], character, vertical_velocity_expectation] {
                         auto const position = client->latestPosition(character);
                         return position.has_value()
-                            && position->vertical_velocity_subcells == expectation->velocity_subcells;
+                            && position->vertical_velocity_subcells == vertical_velocity_expectation->velocity_subcells;
                     },
                     deadline,
                     options.network_poll_interval

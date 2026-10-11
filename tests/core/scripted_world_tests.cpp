@@ -9,6 +9,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iterator>
+#include <memory>
 #include <string>
 #include <string_view>
 
@@ -78,7 +79,11 @@ TEST(ScriptedWorldTest, SeedControlsRepeatableScriptedTerrain)
 
 TEST(ScriptedWorldTest, FailuresDoNotPublishCandidateData)
 {
-    auto const published = shared::ScriptedWorld::load(canonicalWorldScript());
+    using ScriptedWorldResult = std::expected<shared::ScriptedWorld, shared::ScriptedWorldError>;
+    auto const published_storage = std::make_unique<ScriptedWorldResult>(
+        shared::ScriptedWorld::load(canonicalWorldScript())
+    );
+    ScriptedWorldResult const& published = *published_storage;
     ASSERT_TRUE(published.has_value()) << published.error().message;
     shared::ChunkContentIdentity const original_identity = published->chunk().contentIdentity();
 

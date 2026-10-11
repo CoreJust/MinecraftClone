@@ -33,11 +33,11 @@ std::string jsonString(std::string_view const value)
             case '\b': result += "\\b"; break;
             case '\f': result += "\\f"; break;
             default: {
-                uint8_t const value = static_cast<uint8_t>(ch);
-                if (value < 0x20) {
+                uint8_t const byte_value = static_cast<uint8_t>(ch);
+                if (byte_value < 0x20) {
                     result += "\\u00";
-                    result += HEX_DIGITS[static_cast<uint32_t>(value) >> 4U];
-                    result += HEX_DIGITS[static_cast<uint32_t>(value) & 0x0fU];
+                    result += HEX_DIGITS[static_cast<uint32_t>(byte_value) >> 4U];
+                    result += HEX_DIGITS[static_cast<uint32_t>(byte_value) & 0x0fU];
                 } else {
                     result += ch;
                 }

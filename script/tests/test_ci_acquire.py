@@ -499,6 +499,7 @@ class CiAcquireTests(unittest.TestCase):
         for platform_name, triplet in (
             ("macos", "arm64-osx"),
             ("windows", "x64-windows"),
+            ("windows-asan", "x64-windows-asan"),
             ("android", "arm64-android"),
             ("android-hwasan", "arm64-android-hwasan"),
             ("linux-analysis", "x64-linux-lsan"),
@@ -527,7 +528,7 @@ class CiAcquireTests(unittest.TestCase):
                     f"--x-manifest-root={repository}",
                     f"--x-install-root={installed_root}",
                 ]
-                if platform_name == "linux-analysis":
+                if platform_name in {"linux-analysis", "windows-asan"}:
                     command.append(f"--overlay-triplets={Path(acquire.__file__).resolve().parent / 'vcpkg-triplets'}")
                 if platform_name == "android-hwasan":
                     command.append(f"--overlay-triplets={Path(acquire.__file__).resolve().parent / 'vcpkg-triplets'}")
@@ -535,6 +536,81 @@ class CiAcquireTests(unittest.TestCase):
                 self.assertEqual(result, installed_root)
                 run.assert_called_once_with(command)
                 write_env.assert_called_once_with("VCPKG_INSTALLED_DIR", str(installed_root))
+
+    def test_windows_asan_triplet_instruments_the_dynamic_crt_manifest_closure(self):
+        triplet = Path(acquire.__file__).resolve().parent / "vcpkg-triplets" / "x64-windows-asan.cmake"
+        contents = triplet.read_text(encoding="utf-8")
+
+        self.assertIn("set(VCPKG_TARGET_ARCHITECTURE x64)", contents)
+        self.assertIn("set(VCPKG_CRT_LINKAGE dynamic)", contents)
+        self.assertIn("set(VCPKG_LIBRARY_LINKAGE dynamic)", contents)
+        self.assertIn('set(VCPKG_C_FLAGS "/fsanitize=address")', contents)
+        self.assertIn('set(VCPKG_CXX_FLAGS "/fsanitize=address")', contents)
+        self.assertNotIn('set(VCPKG_LINKER_FLAGS "/fsanitize=address")', contents)
+        self.assertNotIn("_DISABLE_STRING_ANNOTATION", contents)
+        self.assertNotIn("_DISABLE_VECTOR_ANNOTATION", contents)
+        self.assertNotIn("_ITERATOR_DEBUG_LEVEL", contents)
+
+    def test_windows_asan_private_dependencies_use_separate_release_output_and_instrument_both_packages(self):
+        with tempfile.TemporaryDirectory() as directory, mock.patch.dict(
+            os.environ,
+            {"VCPKG_INSTALLED_DIR": "/tmp/vcpkg-installed-windows-asan"},
+        ):
+            root = Path(directory) / "private-dependency-sources"
+            output_root = Path(directory) / "private-dependencies-windows-asan"
+            for name in acquire.PRIVATE_DEPENDENCIES:
+                source = root / name
+                source.mkdir(parents=True)
+                (source / "CMakeLists.txt").touch()
+            corecpp_config = output_root / "install/lib/cmake/CoreCpp/CoreCppConfig.cmake"
+
+            def run_command(command):
+                if command[:2] == ["cmake", "--install"] and command[2].endswith("CoreCpp-build"):
+                    corecpp_config.parent.mkdir(parents=True)
+                    corecpp_config.touch()
+                return ""
+
+            with mock.patch.object(acquire, "run", side_effect=run_command) as run, mock.patch.object(
+                acquire, "write_github_env"
+            ) as write_env:
+                prefix = acquire.install_private_dependencies(
+                    root,
+                    "windows",
+                    [
+                        "-DVCPKG_MANIFEST_INSTALL=OFF",
+                        "-DVCPKG_TARGET_TRIPLET=x64-windows-asan",
+                        "-DVCPKG_OVERLAY_TRIPLETS=/repo/script/ci/vcpkg-triplets",
+                        "-DCMAKE_C_FLAGS=/fsanitize=address /Zi",
+                        "-DCMAKE_CXX_FLAGS=/fsanitize=address /EHsc /Zi /bigobj",
+                    ],
+                    "release",
+                    output_root=output_root,
+                )
+
+            configure_commands = [
+                call.args[0]
+                for call in run.call_args_list
+                if call.args[0][0] == "cmake" and "-S" in call.args[0]
+            ]
+            self.assertEqual(prefix, output_root / "install")
+            self.assertEqual(len(configure_commands), len(acquire.PRIVATE_DEPENDENCIES))
+            for command, name in zip(configure_commands, acquire.PRIVATE_DEPENDENCIES, strict=True):
+                with self.subTest(package=name):
+                    self.assertIn(f"-S {root / name}", " ".join(command))
+                    self.assertIn(f"-B {output_root / f'{name}-build'}", " ".join(command))
+                    self.assertIn("-DCMAKE_BUILD_TYPE=Release", command)
+                    self.assertIn("-DCMAKE_INSTALL_PREFIX=" + (output_root / "install").as_posix(), command)
+                    self.assertIn("-DVCPKG_INSTALLED_DIR=/tmp/vcpkg-installed-windows-asan", command)
+                    self.assertIn("-DVCPKG_TARGET_TRIPLET=x64-windows-asan", command)
+                    self.assertIn("-DVCPKG_OVERLAY_TRIPLETS=/repo/script/ci/vcpkg-triplets", command)
+                    self.assertIn("-DCMAKE_C_FLAGS=/fsanitize=address /Zi", command)
+                    self.assertIn("-DCMAKE_CXX_FLAGS=/fsanitize=address /EHsc /Zi /bigobj", command)
+            write_env.assert_has_calls(
+                [
+                    mock.call("MC_PRIVATE_DEPENDENCIES_PREFIX", str(prefix)),
+                    mock.call("CMAKE_PREFIX_PATH", str(prefix)),
+                ]
+            )
 
     def test_install_private_dependencies_passes_exact_platform_component_closure(self):
         common_arguments = set(acquire.CORECPP_COMMON_BUILD_ARGUMENTS)
@@ -806,18 +882,18 @@ class CiAcquireTests(unittest.TestCase):
         lock = Path(__file__).resolve().parents[2] / "dependencies.lock.json"
         parsed = acquire.require_private_dependency_lock(lock)
         self.assertEqual(set(parsed), {"CoreCpp", "CoreProject2026"})
-        self.assertEqual(parsed["CoreCpp"]["revision"], "d5759fa48b7073787434121624b5f5f93cf3fa2c")
+        self.assertEqual(parsed["CoreCpp"]["revision"], "2ad29f7ed590e41c8ad7c9d4027c781650a10391")
         self.assertEqual(
             parsed["CoreCpp"]["fetch_ref"],
-            "refs/heads/codex/ai-cc-0042-inputspan-public-header",
+            "refs/heads/codex/ai-CC-0043-field-requirement-return",
         )
         self.assertEqual(
             parsed["CoreProject2026"]["revision"],
-            "a4d3fa8a7b81407d0f6bae3ef10d2632d7b74fb9",
+            "e577c84671357625d0db7008395854018316c3f8",
         )
         self.assertEqual(
             parsed["CoreProject2026"]["fetch_ref"],
-            "refs/heads/codex/ai-CP-0039-corecpp-0042-pin",
+            "refs/heads/codex/ai-CP-0040-asan-fiber-notifications",
         )
 
     def test_private_dependency_lock_rejects_non_branch_fetch_ref(self):
