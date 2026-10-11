@@ -55,7 +55,7 @@
     },
     {
       "guide": "docs/BUILD.md",
-      "guide_sha256": "1d953f8a5704ec22ff46be30654ff9a6704d33f80efd26e0829c7005cca5802d",
+      "guide_sha256": "09167efb3e8fbfde4518d8dd78457c544444fe38de1a837463c04f275e1d2782",
       "id": "build",
       "sources": [
         ".agents/skills/backlog/SKILL.md",
@@ -168,11 +168,12 @@
         "tests/cmake/corecpp_server_consumer_test.cmake.in",
         "tests/cmake/coreproject2026_provenance_test.cmake.in",
         "tests/cmake/minecraftclone_server_only_test.cmake.in",
+        "tests/cmake/serial_runtime_tests.cmake",
         "tests/main.cpp",
         "vcpkg-configuration.json",
         "vcpkg.json"
       ],
-      "sources_sha256": "a1ece4b5945c01ac06d8ed7bc7e811a1adb413b78f1d6b9e84c27bc4f5080e0b"
+      "sources_sha256": "2c3d3997f23ee360ef6e65843581eff9d4c5e2a076e733bd65ec93e18f1f9064"
     },
     {
       "guide": "docs/code/CORE.md",

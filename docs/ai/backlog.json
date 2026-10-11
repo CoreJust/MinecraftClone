@@ -1501,8 +1501,8 @@
       "MC-AI-0037"
     ],
     "acceptance": "Deliver immutable, generation-tagged hard/soft entity permissions for all/players/mobs/technical-entities/per-kind and explicit-member/selector groups; namespace custom keys and defer world subjects. Cover movement, flight/collision, blocks, inventory, invincibility, commands, and permission-backed mode presets. Use CoreLang 0.1.3.1 (only documented 0.1.3.3 maintenance), retain interpreter/JIT parity, and prepare kernels off physics ticks. Test latency, loss, jitter, freezes, reordering, and duplication. Replicate a 29/16 × 10/16 × 10/16 player, 16-color palette, and first/rear-third/front-third views. Keep position-driven radius-256 terrain camera-independent and derive face LOD at projected area ≤2 px². Provide four inspected 2560x1440 Mac screenshots with prominent labels centered below the HUD, each showing a distinct requested scene; capture each only after its full configured render distance has finished loading, never with partially loaded terrain: (1) flying third-person beside the central spike, captured at render distance 72 from about 30% closer than the previous central-spike framing and slightly lower than the prior viewpoint while retaining an elevated angle; keep the full spike, most of its first ring, and terrain beyond visible, emphasize the landform's mass, and keep the player visible without covering the spike; (2) one distinct view of the player in the trench near the first spike, without reusing another trench capture; (3) the player climbing the mountain; and (4) first-person at horizontal X/Z (0, 0). Target stable 120 FPS at x200 and the world border as diagnostic only. Pass platform and automated MC-AI-0249 gates; include the accepted CoreCpp scope MC-AI-0056 Runtime executors, MC-AI-0057 Runtime audio, and MC-AI-0240 renderer diagnostics in this snapshot. Release S7, hold the minor open for feedback, and do not start S8.",
-    "evidence": "History at e1fce62 collects 179 done/finalized basic children, including MC-AI-0425. The reviewed final frozen native source passed Windows ASan 596/596 and MSVC analyzer 595 plus one existing Debug skip, with both real nested consumers. Latest local aggregate phases passed all 636 tooling tests, Debug build, all 596 registered CTest cases with one existing optimized-build-only skip, and source-policy checks. Renderer smoke passed unchanged with desktop access after sandboxed Launch Services startup failed. Clean exact dependency pins are installed on Mac, Windows and Android. Corrected aggregate commit and exact-promotion qualification remain pending; prior hosted receipts remain historical, and S7 is unreleased.",
-    "blocker": "Run corrected aggregate and promotion gates, then all 13 exact-promotion analysis rows. One corrected-successor ephemeral ARM64/HVF runner attempt is authorized and unconsumed after both complete native Windows rows passed; verify and report exact SHA/run before registration. Verify final platform artifacts/runtime, record Windows hands-on status separately, pass strict checks and publish the immutable tag and artifact ledger. Minor remains held for feedback.",
+    "evidence": "History at db3980d collects 180 done/finalized basic children, including the reviewed MC-AI-0426 scheduling correction. The local staged aggregate candidate passed documentation, backlog and source-policy checks, 636 tooling tests plus one environment-specific skip, Debug build, 595 native tests plus the existing Debug skip, and renderer smoke. Only candidate-allowed dirty-state publication checks were deferred. Earlier native Windows and exact 75534ed HWASan qualification remain historical; corrected aggregate commit and exact-promotion hosted qualification, final platform artifacts/runtime, strict gate and publication remain pending. S7 is unreleased.",
+    "blocker": "Run corrected aggregate and promotion gates, then all 13 exact-promotion analysis rows. Exactly one scheduling-fix successor ephemeral ARM64/HVF HWASan attempt is authorized and unconsumed, only after its other hosted rows pass; report exact SHA/run before registration, reuse caches, capture prelaunch logcat, make no global installs and clean run-owned files. Verify final platform artifacts/runtime, record Windows hands-on status separately, pass strict checks and publish immutable tag and artifact ledger. Minor remains held for feedback.",
     "owner": "Codex",
     "level": "snapshot",
     "parent": "MC-AI-0033",
@@ -1511,7 +1511,7 @@
     "complexity": "high",
     "created_at": "2026-09-09",
     "resolved_at": "",
-    "resolution_changes": "All 179 collected basic children are done/finalized. The reviewed analysis closure repair passed both complete native Windows rows and full local basic gates. Corrected aggregate candidate, exact-promotion hosted matrix, platform artifacts/runtime and immutable publication remain required.",
+    "resolution_changes": "All 180 collected basic children are done/finalized. The reviewed scheduling correction and local aggregate candidate checks passed. Corrected aggregate commit, exact-promotion hosted matrix, platform artifacts/runtime and immutable publication remain required.",
     "plan": [
       "Complete authoritative movement, immutable permissions, and cross-client acceptance; keep policy compilation outside physics ticks.",
       "Finish player/views, adverse networking, camera-independent terrain/LOD, diagnostics, platform and analysis gates, captures, and S7 publication; then hold the minor for feedback."
@@ -15013,6 +15013,45 @@
       "Consume the reviewed clean CoreCpp exhaustive FieldRequirement return-path correction, preserving all five comparison modes and requiring native MSVC warning and installed-package evidence.",
       "Emit Windows Release ASan linker debug symbols for attributable diagnostics, with an effective-preset regression; retain optimized code and full sanitizer instrumentation.",
       "Keep disconnect observer delivery within the live polling lifetime and retain prepared interest orders through the full selected-radius oracle, preserving all cases, exact-set assertions and deadlines."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0426",
+    "title": "Isolate timed S7 runtime acceptance from unrelated CTest workloads",
+    "kind": "chore",
+    "status": "done",
+    "priority": "P1",
+    "route": "luna",
+    "milestone": "ED-010-S7",
+    "depends_on": [],
+    "acceptance": "The three affected timed tests run without unrelated concurrent CTest jobs on desktop and server-only registrations. All existing registered tests, timeouts, assertions, sanitizer settings and internal multi-client/network workloads remain unchanged. Automated effective CTest property checks cover full and partial registrations; focused and full checks pass. Exact hosted qualification remains mandatory.",
+    "evidence": "Focused workflow-context suite: 34 passed. Effective Debug CTest JSON retains 596 cases, marks exactly the three timed cases RUN_SERIAL with TIMEOUT 120, and preserves unrelated scheduling. Full integration components: 636 Python tests passed; Debug build passed; CTest passed 595 cases with one existing Debug skip in 389.47 seconds. The initial docs phase failed during editing; refreshed inventory and a subsequent standalone docs check passed. Commit fast gate and aggregate candidate will renew whole-candidate validation; exact successor hosted matrix remains required.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0038",
+    "motivation": "Isolate timed S7 runtime acceptance from unrelated CTest workloads",
+    "context": "Exact promotion 75534ed run 38160218974 failed three wall-clock runtime assertions across two attempts under CTest parallelism 4. Attempt 1 ASan and UBSan passed; TSan failed preview rotation and retry service cadence. Attempt 2 ASan failed four-client sustained-flight acknowledgement lag. All assertions and controlled game/network workloads must remain intact; unrelated CTest workloads are not controlled benchmark input.",
+    "complexity": "low",
+    "created_at": "2026-10-11",
+    "resolved_at": "2026-10-11",
+    "resolution_changes": "Isolated three timed runtime acceptance cases from unrelated CTest jobs without changing gameplay or test predicates, deadlines, registrations, or internal network workloads.",
+    "plan": [
+      "Clarify acceptance and implementation steps.",
+      "Add narrow post-discovery CTest scheduling for the three failed timed tests, with effective-property regression coverage and no gameplay changes."
+    ],
+    "product_changes": [
+      "No product behavior changed."
+    ],
+    "code_changes": [
+      "Post-discovery CTest RUN_SERIAL properties with full and server-only effective-property regression fixtures; documented test scheduling and refreshed module inventory."
     ],
     "baseline_commit": "",
     "commits": [],

@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import json
 import re
+import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -15,6 +18,95 @@ WORKFLOWS = (
 
 
 class WorkflowContextTests(unittest.TestCase):
+    def test_timed_runtime_tests_are_serial_for_full_and_server_only_registrations(self):
+        timed_tests = (
+            "GameServerPreviewTest.ResetsPriorityCursorAfterProgressWhenHeadingChanges",
+            "GameClientLifecycleTest.StopDuringRetryIsServicedWithoutStartingAnotherAttempt",
+            "GameServerPreviewTest.SustainedFlightKeepsInputAcknowledgementsCurrentWhileTilesStream",
+        )
+        unrelated_test = "UnrelatedRuntimeTest.KeepsDefaultScheduling"
+        helper = REPOSITORY / "tests/cmake/serial_runtime_tests.cmake"
+        cmake_lists = (REPOSITORY / "tests/CMakeLists.txt").read_text(encoding="utf-8")
+        discovery_start = cmake_lists.index("gtest_discover_tests(")
+        discovery_end = cmake_lists.index("if(MC_BUILD_CLIENT AND NOT ANDROID)", discovery_start)
+        discovery_setup = cmake_lists[discovery_start:discovery_end]
+        self.assertIn("mc_tests", discovery_setup)
+        self.assertIn("TEST_LIST mc_tests_TESTS", discovery_setup)
+        self.assertLess(
+            discovery_setup.index("gtest_discover_tests"),
+            discovery_setup.index("PROPERTY TEST_INCLUDE_FILES"),
+        )
+        self.assertIn("cmake/serial_runtime_tests.cmake", discovery_setup)
+
+        for registered_timed_tests in (timed_tests, (timed_tests[0], timed_tests[2])):
+            with self.subTest(registered_timed_tests=registered_timed_tests):
+                with tempfile.TemporaryDirectory() as temporary_directory:
+                    temporary_path = Path(temporary_directory)
+                    source_directory = temporary_path / "source"
+                    build_directory = temporary_path / "build"
+                    source_directory.mkdir()
+                    registrations = (*registered_timed_tests, unrelated_test)
+                    discovery_file = source_directory / "discovered_tests.cmake"
+                    discovery_commands = [
+                        f'add_test("{test_name}" cmake -E true)'
+                        for test_name in registrations
+                    ]
+                    discovery_commands.append(
+                        'set(mc_tests_TESTS "' + ";".join(registrations) + '")'
+                    )
+                    discovery_file.write_text(
+                        "\n".join(discovery_commands) + "\n",
+                        encoding="utf-8",
+                    )
+                    cmake_lists = [
+                        "cmake_minimum_required(VERSION 3.25)",
+                        "project(CtestSchedulingFixture NONE)",
+                        "enable_testing()",
+                        "set_property(DIRECTORY APPEND PROPERTY TEST_INCLUDE_FILES",
+                        f'    "{discovery_file.as_posix()}"',
+                        f'    "{helper.as_posix()}")',
+                    ]
+                    (source_directory / "CMakeLists.txt").write_text(
+                        "\n".join(cmake_lists) + "\n",
+                        encoding="utf-8",
+                    )
+
+                    configure = subprocess.run(
+                        ["cmake", "-S", str(source_directory), "-B", str(build_directory)],
+                        check=False,
+                        capture_output=True,
+                        text=True,
+                        timeout=30,
+                    )
+                    self.assertEqual(configure.returncode, 0, configure.stdout + configure.stderr)
+
+                    show_only = subprocess.run(
+                        ["ctest", "--test-dir", str(build_directory), "--show-only=json-v1"],
+                        check=False,
+                        capture_output=True,
+                        text=True,
+                        timeout=30,
+                    )
+                    self.assertEqual(show_only.returncode, 0, show_only.stdout + show_only.stderr)
+                    tests = {
+                        test["name"]: {
+                            prop["name"]: prop["value"] for prop in test.get("properties", [])
+                        }
+                        for test in json.loads(show_only.stdout)["tests"]
+                    }
+
+                    self.assertEqual(set(tests), set(registrations))
+                    serial_tests = {
+                        test_name
+                        for test_name, properties in tests.items()
+                        if properties.get("RUN_SERIAL") is True
+                    }
+                    self.assertEqual(
+                        serial_tests,
+                        set(registered_timed_tests),
+                    )
+                    self.assertNotIn("RUN_SERIAL", tests[unrelated_test])
+
     def test_windows_fast_checks_install_the_pinned_project_timezone_database(self):
         workflow = (REPOSITORY / ".github/workflows/ai-checks.yml").read_text(encoding="utf-8")
         fast_job = workflow.split("\n  desktop:", maxsplit=1)[0]

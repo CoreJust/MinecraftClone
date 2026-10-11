@@ -107,7 +107,9 @@ Additional [release gates](../script/ai_checks.json) require the windowed smoke 
 
 ## Test ownership
 
-`mc_tests` uses GoogleTest discovery into CTest. Networking/server tests use local sockets; shader tests load executable-relative assets from another working directory. `ShaderSpirvTargetTest.*` validates the copied mesh shaders for Vulkan 1.3 and the vertex fallback set for Vulkan 1.2. Input tests drive callbacks without proving interactive controls. Python tooling suites live in `script/tests`.
+`mc_tests` uses GoogleTest discovery into CTest. Networking tests use local sockets; shader tests load executable-relative assets from another directory. `ShaderSpirvTargetTest.*` validates mesh shaders for Vulkan 1.3 and vertex fallbacks for Vulkan 1.2. Input callbacks do not prove interactive controls. Python suites live in `script/tests`.
+
+Timed S7 tests use CTest `RUN_SERIAL`; workloads remain unchanged.
 
 `script/ai_renderer_smoke.py` rejects foreign caches, configures its preset, builds `mc_renderer_smoke`, and runs `RendererSmokeTest` with bounded timeouts. It records `build/ai-checks/renderer-smoke.log` and fails on missing registration, device, validation, runtime, or timeout errors. This test checks pixels, resize, reload, and close across automatic and vertex-fallback pipelines. It does not prove controls, multiplayer, Windows, or headless goldens; hosted CI remains GPU-free.
 

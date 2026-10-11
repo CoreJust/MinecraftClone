@@ -281,7 +281,16 @@ if(MC_BUILD_CLIENT AND NOT ANDROID)
     )
 endif()
 
-gtest_discover_tests(mc_tests PROPERTIES TIMEOUT 120)
+gtest_discover_tests(
+    mc_tests
+    PROPERTIES TIMEOUT 120
+    TEST_LIST mc_tests_TESTS
+)
+set_property(
+    DIRECTORY APPEND
+    PROPERTY TEST_INCLUDE_FILES
+        "${CMAKE_CURRENT_SOURCE_DIR}/cmake/serial_runtime_tests.cmake"
+)
 
 if(MC_BUILD_CLIENT AND NOT ANDROID)
     find_program(MC_SPIRV_VAL_EXECUTABLE

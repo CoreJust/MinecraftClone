@@ -105,6 +105,7 @@
         "android/**",
         "src/CMakeLists.txt",
         "tests/CMakeLists.txt",
+        "tests/cmake/serial_runtime_tests.cmake",
         "tests/cmake/corecpp_server_consumer_test.cmake.in",
         "tests/cmake/corecpp_provenance_*.cmake.in",
         "tests/cmake/minecraftclone_server_only_test.cmake.in",
