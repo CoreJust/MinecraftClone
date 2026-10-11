@@ -1585,14 +1585,22 @@ std::expected<uint64_t, PolicyDiagnostic> PolicyHost::publish(
         compilation.interpreter_parity,
         std::move(materialized)
     ));
+#if defined(__cpp_lib_atomic_shared_ptr) && __cpp_lib_atomic_shared_ptr >= 201'711L
+    m_snapshot.store(std::move(next), std::memory_order_release);
+#else
     std::atomic_store_explicit(&m_snapshot, std::move(next), std::memory_order_release);
+#endif
     m_generation = next_generation;
     return next_generation;
 }
 
 std::shared_ptr<PolicySnapshot const> PolicyHost::snapshot() const noexcept
 {
+#if defined(__cpp_lib_atomic_shared_ptr) && __cpp_lib_atomic_shared_ptr >= 201'711L
+    return m_snapshot.load(std::memory_order_acquire);
+#else
     return std::atomic_load_explicit(&m_snapshot, std::memory_order_acquire);
+#endif
 }
 
 std::string_view policyDiagnosticCodeName(PolicyDiagnosticCode const code) noexcept

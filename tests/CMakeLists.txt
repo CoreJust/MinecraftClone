@@ -3,10 +3,13 @@ include(GoogleTest)
 file(TO_CMAKE_PATH "${CMAKE_CURRENT_BINARY_DIR}" MC_TEST_BINARY_DIR)
 file(TO_CMAKE_PATH "${CMAKE_COMMAND}" MC_CMAKE_COMMAND)
 file(TO_CMAKE_PATH "${CMAKE_CTEST_COMMAND}" MC_CTEST_COMMAND)
+file(TO_CMAKE_PATH "${CMAKE_C_COMPILER}" MC_CMAKE_C_COMPILER)
+file(TO_CMAKE_PATH "${CMAKE_CXX_COMPILER}" MC_CMAKE_CXX_COMPILER)
 file(TO_CMAKE_PATH "${PROJECT_SOURCE_DIR}" MC_PROJECT_SOURCE_DIR)
 file(TO_CMAKE_PATH "${CMAKE_PREFIX_PATH}" MC_CMAKE_PREFIX_PATH)
 file(TO_CMAKE_PATH "${CoreCpp_DIR}" MC_CORECPP_DIR)
 file(TO_CMAKE_PATH "${CoreProject2026_DIR}" MC_COREPROJECT2026_DIR)
+set(MC_CMAKE_GENERATOR "${CMAKE_GENERATOR}")
 
 add_library(mc_test_support STATIC
     testsupport/AdverseTransport.cpp
@@ -30,6 +33,10 @@ add_test(
     COMMAND ${CMAKE_COMMAND}
         "-DMC_TEST_CONFIGURATION=$<CONFIG>"
         -P "${CMAKE_CURRENT_BINARY_DIR}/corecpp_server_consumer_test.cmake"
+)
+set_tests_properties(
+    CoreCpp.ServerOnlyPackageConsumer
+    PROPERTIES RUN_SERIAL TRUE
 )
 
 configure_file(
@@ -82,6 +89,10 @@ if(MC_REGISTER_SERVER_ONLY_BUILD_TEST)
     else()
         set_tests_properties(MinecraftClone.ServerOnlyBuild PROPERTIES TIMEOUT 300)
     endif()
+    set_tests_properties(
+        MinecraftClone.ServerOnlyBuild
+        PROPERTIES RUN_SERIAL TRUE
+    )
 endif()
 
 option(MC_ENABLE_STONE_RENDERER_ACCEPTANCE "Run S5 offscreen stone acceptance" OFF)
@@ -180,6 +191,11 @@ target_link_libraries(mc_tests
         GTest::gtest
 )
 mc_apply_target_defaults(mc_tests)
+
+if(MSVC)
+    # GoogleTest compares observed values with expected constants; MSVC reports these assertion expansions as C6326.
+    target_compile_options(mc_tests PRIVATE /wd6326)
+endif()
 
 if(WIN32)
     set(MC_SERVER_NUMERIC_RUNTIME_FILES)

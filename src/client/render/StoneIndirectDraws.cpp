@@ -1,6 +1,7 @@
 #include <client/render/StoneIndirectDraws.hpp>
 
 #include <algorithm>
+#include <initializer_list>
 #include <new>
 #include <string>
 #include <utility>

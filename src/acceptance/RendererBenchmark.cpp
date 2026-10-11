@@ -32,6 +32,7 @@
 #include <cstdlib>
 #include <limits>
 #include <optional>
+#include <ratio>
 #include <span>
 #include <string_view>
 #include <thread>

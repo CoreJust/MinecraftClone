@@ -23,6 +23,7 @@
 #include <compare>
 #include <cstdint>
 #include <cstdlib>
+#include <filesystem>
 #include <optional>
 #include <span>
 #include <string>

@@ -27,9 +27,11 @@
 #include <cstddef>
 #include <cstdlib>
 #include <functional>
+#include <initializer_list>
 #include <iterator>
 #include <mutex>
 #include <optional>
+#include <ratio>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -1167,14 +1169,14 @@ void GameServer::onReceived(core::ServerReceiveEvent event) {
 
     shared::PlayerId const id = event.client_id;
     shared::Message* msg_ptr = &*maybe_msg;
-    if (auto* msg = std::get_if<shared::JoinRequestMessage>(msg_ptr)) {
-        if (msg->mode != m_world.mode() || msg->configuration != m_world.configuration()) {
+    if (auto* join_request = std::get_if<shared::JoinRequestMessage>(msg_ptr)) {
+        if (join_request->mode != m_world.mode() || join_request->configuration != m_world.configuration()) {
             sendTo(id, shared::JoinResponseMessage{
                 .accepted = false,
             });
             return;
         }
-        char const ch = msg->ch;
+        char const ch = join_request->ch;
         if (m_world.player(id) || m_world.playerExists(ch)) {
             sendTo(id, shared::JoinResponseMessage{
                 .accepted = false,
@@ -1243,34 +1245,34 @@ void GameServer::onReceived(core::ServerReceiveEvent event) {
                 sendTo(id, position);
             }
         }
-        if (msg->wants_previews) {
+        if (join_request->wants_previews) {
             startHeightTileStream(id);
         }
-    } else if (auto* msg = std::get_if<shared::ClientInputMessage>(msg_ptr)) {
+    } else if (auto* client_input = std::get_if<shared::ClientInputMessage>(msg_ptr)) {
         auto const player = m_world.player(id);
         PlayerReplication* const replication = playerReplication(id);
         if (!player || replication == nullptr) {
             return;
         }
         if (replication->has_received_sequence
-            && !shared::isNewerSequence(msg->sequence, replication->latest_received_sequence)) {
+            && !shared::isNewerSequence(client_input->sequence, replication->latest_received_sequence)) {
             return;
         }
         if ((replication->action_consumed_this_tick || !replication->pending_inputs.empty())
             && replication->pending_inputs.size() == PlayerReplication::MAX_PENDING_INPUTS) {
             return;
         }
-        replication->latest_received_sequence = msg->sequence;
+        replication->latest_received_sequence = client_input->sequence;
         replication->has_received_sequence = true;
         if (!replication->action_consumed_this_tick && replication->pending_inputs.empty()) {
-            if (!processInput(*replication, *msg)) {
-                replication->pending_inputs.push_back(*msg);
+            if (!processInput(*replication, *client_input)) {
+                replication->pending_inputs.push_back(*client_input);
             }
         } else {
-            replication->pending_inputs.push_back(*msg);
+            replication->pending_inputs.push_back(*client_input);
         }
-    } else if (auto* msg = std::get_if<shared::ClientHeightTileCreditMessage>(msg_ptr)) {
-        acknowledgeHeightTileDelivery(id, *msg);
+    } else if (auto* height_tile_credit = std::get_if<shared::ClientHeightTileCreditMessage>(msg_ptr)) {
+        acknowledgeHeightTileDelivery(id, *height_tile_credit);
     } else {
         CORE_ERROR("Received a message unsupported by the server {}", msg_ptr->index());
     }

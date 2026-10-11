@@ -69,6 +69,38 @@ class AnalysisPresetTests(unittest.TestCase):
                 self.assertNotIn("CMAKE_C_COMPILER", cache_variables)
                 self.assertNotIn("CMAKE_CXX_COMPILER", cache_variables)
 
+    def test_windows_asan_preset_selects_release_instrumented_dependency_closure(self):
+        cache_variables = effective_cache_variables("analysis-windows-asan")
+
+        self.assertEqual(cache_variables.get("CMAKE_BUILD_TYPE"), "Release")
+        self.assertEqual(cache_variables.get("MC_ENABLE_SANITIZERS"), "ON")
+        self.assertEqual(cache_variables.get("MC_SANITIZER"), "address")
+        self.assertEqual(cache_variables.get("CMAKE_C_FLAGS"), "/Zi")
+        self.assertEqual(cache_variables.get("CMAKE_CXX_FLAGS"), "/EHsc /Zi /bigobj")
+        self.assertEqual(cache_variables.get("CMAKE_EXE_LINKER_FLAGS"), "/DEBUG")
+        self.assertEqual(cache_variables.get("CMAKE_SHARED_LINKER_FLAGS"), "/DEBUG")
+        self.assertEqual(cache_variables.get("VCPKG_TARGET_TRIPLET"), "x64-windows-asan")
+        self.assertEqual(
+            cache_variables.get("VCPKG_OVERLAY_TRIPLETS"),
+            "${sourceDir}/script/ci/vcpkg-triplets",
+        )
+
+    def test_windows_analyze_preset_keeps_required_warning_gate(self):
+        cache_variables = effective_cache_variables("analysis-windows-analyze")
+
+        c_flags = cache_variables.get("CMAKE_C_FLAGS")
+        cxx_flags = cache_variables.get("CMAKE_CXX_FLAGS")
+        self.assertEqual(c_flags, "/analyze /W4 /WX /analyze:external-")
+        self.assertEqual(cxx_flags, "/analyze /W4 /WX /EHsc /analyze:external-")
+        for flags in (c_flags, cxx_flags):
+            self.assertIn("/analyze", flags)
+            self.assertIn("/W4", flags)
+            self.assertIn("/WX", flags)
+            self.assertNotIn("/analyze-", flags)
+            self.assertNotIn("/WX-", flags)
+        self.assertNotEqual(cache_variables.get("VCPKG_TARGET_TRIPLET"), "x64-windows-asan")
+        self.assertNotIn("VCPKG_OVERLAY_TRIPLETS", cache_variables)
+
     def test_linux_sanitizer_presets_keep_explicit_clang_selection(self):
         for preset_name in ("analysis-linux-lsan", "analysis-linux-msan"):
             with self.subTest(preset=preset_name):

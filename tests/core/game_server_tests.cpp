@@ -425,11 +425,14 @@ TEST(GameServerFlightTest, DefersMixedJumpUntilAdjacentHorizontalChunkMaterializ
         0,
         {{.character = '@', .x = 14, .y = 100, .z = 801}},
         shared::WorldMode::Flight,
+        shared::World::canonicalConfiguration(),
+        shared::MIN_HEIGHT_TILE_INTEREST_RADIUS,
     };
     ProtocolClient client;
     ASSERT_TRUE(joinManually(server, client, '@', shared::WorldMode::Flight));
 
     for (uint32_t sequence = 1U; sequence <= 2U; ++sequence) {
+        SCOPED_TRACE(sequence);
         ASSERT_TRUE(client.sendMessage(shared::ClientInputMessage{
             .direction = {
                 .x = static_cast<uint8_t>(sequence == 1U ? 127U : 80U),
@@ -476,6 +479,7 @@ TEST(GameServerFlightTest, CyclesOnlyTheThreeServerValidatedMovementCapabilitySt
     ASSERT_EQ(client.positions('@').back().movement_capabilities.bits, 3U);
 
     for (uint32_t sequence = 1U; sequence <= 3U; ++sequence) {
+        SCOPED_TRACE(sequence);
         ASSERT_TRUE(client.sendMessage(shared::ClientInputMessage{
             .direction = { .x = 0U, .y = 0U, .cycle_movement_capabilities = true },
             .sequence = sequence,
@@ -611,15 +615,16 @@ TEST(GameServerFlightTest, ExpiresExplicitPermissionMembershipAfterDisconnect)
         }
     } };
     bool const disconnected = departing.disconnect(DISCONNECT_TIMEOUT);
-    stop_requested.store(true, std::memory_order_relaxed);
-    server_thread.join();
-    ASSERT_TRUE(disconnected);
-    ASSERT_TRUE(observer.waitFor([&observer] {
+    bool const observer_received_removal = observer.waitFor([&observer] {
         return std::ranges::any_of(observer.messages, [](shared::Message const& message) {
             auto const* removal = std::get_if<shared::ServerRemovePlayerMessage>(&message);
             return removal != nullptr && removal->ch == '@';
         });
-    }));
+    });
+    stop_requested.store(true, std::memory_order_relaxed);
+    server_thread.join();
+    ASSERT_TRUE(disconnected);
+    ASSERT_TRUE(observer_received_removal);
 
     ASSERT_TRUE(joinManually(server, replacement, '#', shared::WorldMode::Flight));
     EXPECT_EQ(replacement.positions('#').back().movement_capabilities.bits, 3U);
@@ -634,10 +639,16 @@ TEST(GameServerFlightTest, HardPermissionsPreserveCollisionAcrossTheWrappedSeam)
         static_cast<int32_t>(terrain.heightAt(WORLD_EDGE_X, Y)),
         static_cast<int32_t>(terrain.heightAt(0U, Y))
     );
-    server::GameServer server{ 0, {
-        { .character = '@', .x = shared::World::FLIGHT_MAX_CELL, .y = static_cast<int32_t>(Y), .z = spawn_z },
-        { .character = '#', .x = 0, .y = static_cast<int32_t>(Y), .z = spawn_z },
-    }, shared::WorldMode::Flight };
+    server::GameServer server{
+        0,
+        {
+            { .character = '@', .x = shared::World::FLIGHT_MAX_CELL, .y = static_cast<int32_t>(Y), .z = spawn_z },
+            { .character = '#', .x = 0, .y = static_cast<int32_t>(Y), .z = spawn_z },
+        },
+        shared::WorldMode::Flight,
+        shared::World::canonicalConfiguration(),
+        shared::MIN_HEIGHT_TILE_INTEREST_RADIUS,
+    };
     ProtocolClient first;
     ProtocolClient second;
     ASSERT_TRUE(joinManually(server, first, '@', shared::WorldMode::Flight));

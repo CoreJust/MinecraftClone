@@ -2,6 +2,12 @@ set(test_root "@MC_TEST_BINARY_DIR@/minecraftclone-server-only")
 set(corecpp_prefix "@MC_CORECPP_DIR@/../../..")
 set(coreproject_dir "@MC_COREPROJECT2026_DIR@")
 set(dependency_prefix "@MC_CMAKE_PREFIX_PATH@")
+set(nested_msvc_runtime_arguments)
+if(NOT "@CMAKE_MSVC_RUNTIME_LIBRARY@" STREQUAL "")
+    list(APPEND nested_msvc_runtime_arguments
+        "-DCMAKE_MSVC_RUNTIME_LIBRARY=@CMAKE_MSVC_RUNTIME_LIBRARY@"
+    )
+endif()
 if(NOT DEFINED MC_TEST_CONFIGURATION)
     set(MC_TEST_CONFIGURATION "@CMAKE_BUILD_TYPE@")
 endif()
@@ -15,8 +21,16 @@ execute_process(
         -B "${test_root}/build"
         -G "@CMAKE_GENERATOR@"
         "-DCMAKE_PREFIX_PATH=${corecpp_prefix};${dependency_prefix}"
+        "-DCMAKE_C_COMPILER=@MC_CMAKE_C_COMPILER@"
+        "-DCMAKE_CXX_COMPILER=@MC_CMAKE_CXX_COMPILER@"
+        "-DCMAKE_C_FLAGS=@CMAKE_C_FLAGS@"
+        "-DCMAKE_CXX_FLAGS=@CMAKE_CXX_FLAGS@"
+        "-DCMAKE_EXE_LINKER_FLAGS=@CMAKE_EXE_LINKER_FLAGS@"
+        "-DCMAKE_SHARED_LINKER_FLAGS=@CMAKE_SHARED_LINKER_FLAGS@"
         "-DCoreProject2026_DIR=${coreproject_dir}"
         -DMC_ANALYSIS_HOST=@MC_ANALYSIS_HOST@
+        -DMC_ENABLE_SANITIZERS=@MC_ENABLE_SANITIZERS@
+        -DMC_SANITIZER=@MC_SANITIZER@
         "-DCoreLangNumerics_GMP_INCLUDE_DIR=@CoreLangNumerics_GMP_INCLUDE_DIR@"
         "-DCoreLangNumerics_GMP_LIBRARY=@CoreLangNumerics_GMP_LIBRARY@"
         "-DCoreLangNumerics_MPFR_INCLUDE_DIR=@CoreLangNumerics_MPFR_INCLUDE_DIR@"
@@ -24,6 +38,7 @@ execute_process(
         -DMC_BUILD_CLIENT=OFF
         -DMC_REGISTER_SERVER_ONLY_BUILD_TEST=OFF
         -DVCPKG_MANIFEST_INSTALL=OFF
+        ${nested_msvc_runtime_arguments}
         "-DCMAKE_BUILD_TYPE=${MC_TEST_CONFIGURATION}"
     RESULT_VARIABLE configure_result
     OUTPUT_VARIABLE configure_output
@@ -46,7 +61,7 @@ if(nested_configuration_types)
     set(nested_is_multi_config TRUE)
 endif()
 
-set(build_command "@MC_CMAKE_COMMAND@" --build "${test_root}/build" --target mc_tests --parallel 8)
+set(build_command "@MC_CMAKE_COMMAND@" --build "${test_root}/build" --target mc_tests --parallel 4)
 if(nested_is_multi_config)
     list(APPEND build_command --config "${MC_TEST_CONFIGURATION}")
 endif()

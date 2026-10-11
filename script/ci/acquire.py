@@ -285,6 +285,8 @@ def install_private_dependencies(
     platform_name: str,
     cmake_arguments: Sequence[str],
     preset: str = "release",
+    *,
+    output_root: Path | None = None,
 ) -> Path:
     """Build/install private CMake packages in dependency order and export their prefix."""
     if platform_name not in {"macos", "windows", "android", "android-hwasan", "linux-analysis"}:
@@ -302,7 +304,8 @@ def install_private_dependencies(
     if preset not in {"debug", "release"}:
         raise CiError(f"unsupported private dependency preset: {preset}")
     build_type = preset.capitalize()
-    prefix = root / "install"
+    output_root = root if output_root is None else output_root
+    prefix = output_root / "install"
     installed_root = os.environ.get("VCPKG_INSTALLED_DIR")
     if not installed_root:
         raise CiError("VCPKG_INSTALLED_DIR is missing")
@@ -313,7 +316,7 @@ def install_private_dependencies(
         source = root / name
         if source.is_symlink() or not (source / "CMakeLists.txt").is_file():
             raise CiError(f"{name} source is missing its CMakeLists.txt: {source}")
-        build = root / f"{name}-build"
+        build = output_root / f"{name}-build"
         package_arguments: list[str] = []
         package_cmake_arguments = normalized_cmake_arguments
         if name == "CoreCpp":
@@ -785,6 +788,7 @@ def install_manifest_dependencies(vcpkg_root: Path, platform_name: str, installe
     triplets = {
         "macos": "arm64-osx",
         "windows": "x64-windows",
+        "windows-asan": "x64-windows-asan",
         "android": "arm64-android",
         "android-hwasan": "arm64-android-hwasan",
     }
@@ -800,6 +804,10 @@ def install_manifest_dependencies(vcpkg_root: Path, platform_name: str, installe
         overlay_ports = Path(__file__).resolve().parent / "vcpkg-overlays"
         if not (overlay_ports / "mpfr" / "portfile.cmake").is_file():
             raise CiError(f"Android HWASan vcpkg MPFR overlay is missing: {overlay_ports}")
+    if platform_name == "windows-asan":
+        overlay_triplets = Path(__file__).resolve().parent / "vcpkg-triplets"
+        if not (overlay_triplets / "x64-windows-asan.cmake").is_file():
+            raise CiError(f"Windows ASan vcpkg triplet is missing: {overlay_triplets}")
     if platform_name not in triplets:
         raise CiError(f"unsupported manifest dependency platform: {platform_name}")
     executable = vcpkg_root / ("vcpkg.exe" if os.name == "nt" else "vcpkg")
@@ -820,6 +828,8 @@ def install_manifest_dependencies(vcpkg_root: Path, platform_name: str, installe
         if not overlay_triplets.is_dir():
             raise CiError(f"Linux analysis vcpkg triplets are missing: {overlay_triplets}")
         command.append(f"--overlay-triplets={overlay_triplets}")
+    if platform_name == "windows-asan":
+        command.append(f"--overlay-triplets={Path(__file__).resolve().parent / 'vcpkg-triplets'}")
     if platform_name == "android-hwasan":
         command.append(f"--overlay-triplets={Path(__file__).resolve().parent / 'vcpkg-triplets'}")
         command.append(f"--overlay-ports={Path(__file__).resolve().parent / 'vcpkg-overlays'}")
@@ -987,7 +997,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     install_vcpkg_parser.add_argument("--root", type=Path, required=True)
     manifest_parser = commands.add_parser("install-manifest-dependencies")
     manifest_parser.add_argument("--vcpkg-root", type=Path, required=True)
-    manifest_parser.add_argument("--platform", choices=("macos", "windows", "android", "android-hwasan", "linux-analysis"), required=True)
+    manifest_parser.add_argument("--platform", choices=("macos", "windows", "windows-asan", "android", "android-hwasan", "linux-analysis"), required=True)
     manifest_parser.add_argument("--installed-root", type=Path, required=True)
     install_android_parser = commands.add_parser("install-android-sdk")
     install_android_parser.add_argument("--root", type=Path, required=True)
@@ -1012,6 +1022,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     fetch_private_parser.add_argument("--coreproject2026-key", type=Path, required=True)
     install_private_parser = commands.add_parser("install-private-dependencies")
     install_private_parser.add_argument("--root", type=Path, required=True)
+    install_private_parser.add_argument("--output-root", type=Path)
     install_private_parser.add_argument("--platform", choices=("macos", "windows", "android", "android-hwasan", "linux-analysis"), required=True)
     install_private_parser.add_argument("--preset", choices=("debug", "release"), default="release")
     install_private_parser.add_argument("--cmake-arg", action="append", default=[])
@@ -1049,7 +1060,13 @@ def main(argv: Sequence[str] | None = None) -> int:
                 },
             )
         elif args.command == "install-private-dependencies":
-            install_private_dependencies(args.root, args.platform, args.cmake_arg, args.preset)
+            install_private_dependencies(
+                args.root,
+                args.platform,
+                args.cmake_arg,
+                args.preset,
+                output_root=args.output_root,
+            )
         elif args.command == "verify-private-dependency-artifact-exclusion":
             verify_private_dependency_artifact_exclusion(args.artifact_root, args.private_dependency_root)
         else:

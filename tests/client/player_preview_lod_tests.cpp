@@ -272,8 +272,12 @@ TEST(PlayerPreviewLodTest, SelectedRadiusMovementDeltasMatchExactDiskSetDifferen
     };
 
     for (uint32_t const radius : RADII) {
+        auto const retained_orders = shared::prepareHeightTileInterestOrders(radius);
+        ASSERT_NE(retained_orders, nullptr);
         for (uint32_t step = 1U; step < CENTERS.size(); ++step) {
-            KeySet const previous = keySet(shared::makeHeightTileInterest(CENTERS[step - 1U], 0, 127, radius).keys);
+            KeySet const previous = keySet(
+                shared::makeHeightTileInterest(CENTERS[step - 1U], 0, 127, radius).keys
+            );
             KeySet const next = keySet(shared::makeHeightTileInterest(CENTERS[step], 127, 0, radius).keys);
             KeySet expected_additions;
             KeySet expected_removals;

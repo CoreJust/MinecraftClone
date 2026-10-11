@@ -19,6 +19,7 @@
 #include <compare>
 #include <iostream>
 #include <optional>
+#include <ratio>
 #include <span>
 #include <string>
 #include <thread>
@@ -216,24 +217,24 @@ void GameClient::onReceived(core::ReceiveEvent event) {
 
     shared::Message* msg_ptr = &*maybe_msg;
     if (event.channel_id == shared::HEIGHT_TILE_CHANNEL) {
-        if (auto* msg = std::get_if<shared::ServerHeightTileDescriptorMessage>(msg_ptr)) {
-            static_cast<void>(applyHeightTileDescriptor(*msg));
+        if (auto* tile_descriptor = std::get_if<shared::ServerHeightTileDescriptorMessage>(msg_ptr)) {
+            static_cast<void>(applyHeightTileDescriptor(*tile_descriptor));
         } else if (!m_render_distance) {
             CORE_ERROR("Received terrain before a valid server render-distance descriptor");
             return;
-        } else if (auto* msg = std::get_if<shared::ServerWorldRevisionMessage>(msg_ptr)) {
-            static_cast<void>(applyWorldRevision(*msg));
-        } else if (auto* msg = std::get_if<shared::ServerHeightTileMessage>(msg_ptr)) {
-            static_cast<void>(applyHeightTile(*msg));
-        } else if (auto* msg = std::get_if<shared::ServerHeightTileBatchMessage>(msg_ptr)) {
-            static_cast<void>(queueHeightTileDelivery(std::move(*msg)));
-        } else if (auto* msg = std::get_if<shared::ServerRemoveHeightTileMessage>(msg_ptr)) {
-            static_cast<void>(applyHeightTileRemoval(*msg));
+        } else if (auto* world_revision = std::get_if<shared::ServerWorldRevisionMessage>(msg_ptr)) {
+            static_cast<void>(applyWorldRevision(*world_revision));
+        } else if (auto* height_tile = std::get_if<shared::ServerHeightTileMessage>(msg_ptr)) {
+            static_cast<void>(applyHeightTile(*height_tile));
+        } else if (auto* height_tile_batch = std::get_if<shared::ServerHeightTileBatchMessage>(msg_ptr)) {
+            static_cast<void>(queueHeightTileDelivery(std::move(*height_tile_batch)));
+        } else if (auto* height_tile_removal = std::get_if<shared::ServerRemoveHeightTileMessage>(msg_ptr)) {
+            static_cast<void>(applyHeightTileRemoval(*height_tile_removal));
         }
     } else if (event.channel_id != shared::GAME_CHANNEL) {
         CORE_ERROR("Received a game message on an unsupported channel {}", event.channel_id);
-    } else if (auto* msg = std::get_if<shared::JoinResponseMessage>(msg_ptr)) {
-        auto const [accepted] = *msg;
+    } else if (auto* join_response = std::get_if<shared::JoinResponseMessage>(msg_ptr)) {
+        auto const [accepted] = *join_response;
         if (accepted) {
             bool const first_accept = !m_accepted;
             m_accepted = true;
@@ -256,15 +257,15 @@ void GameClient::onReceived(core::ReceiveEvent event) {
                 }
             }
         }
-    } else if (auto* msg = std::get_if<shared::ServerPlayerPositionMessage>(msg_ptr)) {
-        if (applyServerPosition(*msg) && m_benchmark_hooks
+    } else if (auto* player_position = std::get_if<shared::ServerPlayerPositionMessage>(msg_ptr)) {
+        if (applyServerPosition(*player_position) && m_benchmark_hooks
             && m_benchmark_hooks->on_authoritative_player) {
-            if (auto const player = m_world.playerByCharacter(msg->ch)) {
+            if (auto const player = m_world.playerByCharacter(player_position->ch)) {
                 m_benchmark_hooks->on_authoritative_player(*player);
             }
         }
-    } else if (auto* msg = std::get_if<shared::ServerRemovePlayerMessage>(msg_ptr)) {
-        applyServerRemoval(msg->ch);
+    } else if (auto* player_removal = std::get_if<shared::ServerRemovePlayerMessage>(msg_ptr)) {
+        applyServerRemoval(player_removal->ch);
     } else {
         CORE_ERROR("Received a message unsupported by the client {}", msg_ptr->index());
     }
@@ -362,12 +363,15 @@ bool GameClient::applyServerPosition(
             .y_subcell = message.y_subcell,
             .z_subcell = message.z_subcell,
         }, message.palette_index);
-        if (auto const player = m_world.playerByCharacter(message.ch)) {
+        if (auto const spawned_player = m_world.playerByCharacter(message.ch)) {
             static_cast<void>(m_world.setPlayerMovementCapabilities(
-                player->id,
+                spawned_player->id,
                 message.movement_capabilities
             ));
-            static_cast<void>(m_world.setPlayerVerticalVelocity(player->id, message.vertical_velocity_subcells));
+            static_cast<void>(m_world.setPlayerVerticalVelocity(
+                spawned_player->id,
+                message.vertical_velocity_subcells
+            ));
         }
     }
     if (message.ch == m_local_character) {

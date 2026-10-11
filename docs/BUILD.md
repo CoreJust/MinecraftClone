@@ -62,7 +62,7 @@ adb shell am start -n com.corejust.minecraftclone/android.app.NativeActivity \
 See the [Android runbook](ANDROID_ACCEPTANCE.md).
 See the [macOS graphical acceptance runbook](MACOS_ACCEPTANCE.md).
 
-ENet uses UDP, while `adb reverse` forwards only TCP. Physical devices therefore need a network-reachable server; this snapshot's desktop server binds to loopback, so local acceptance uses the emulator. [Android architecture](code/ANDROID.md) owns NativeActivity lifecycle, input, asset, and renderer constraints.
+ENet uses UDP, while `adb reverse` forwards only TCP. Physical devices need a network-reachable server; this snapshot's desktop server binds to loopback, so local acceptance uses the emulator. [Android architecture](code/ANDROID.md) owns NativeActivity lifecycle, input, asset, and renderer constraints.
 
 ## SDK and compiler
 
@@ -70,9 +70,15 @@ Set `VULKAN_SDK` to the SDK platform directory if CMake cannot find it. The SDK'
 
 ## Hosted desktop CI
 
-CI builds Debug/Release on `macos-15` arm64 and `windows-2022` with pinned tools. macOS installs autotools for GMP/MPFR. Windows uses the project-configured GMP overlay, VS 2022 x64, and Vulkan runtime ZIP/license. CoreLang disables legacy Script; Ninja collects all independent compiler failures. CI restores binary caches and saves dependencies before downstream builds. Android retains nonfatal aggregate-initializer warnings. Jobs verify builds, tests, shaders, packages, checksums, and exclusions, then upload logs/toolchain metadata. Hosted `MC_ENABLE_RENDERER_SMOKE=OFF` provides no GPU acceptance; artifacts need separate runtime checks. Manual `ai-dev` dispatch enables Linux sanitizer diagnostics, not release acceptance.
+CI uses `macos-15` arm64/`windows-2022`, pinned tools, Debug/Release and cached dependencies. macOS needs GMP/MPFR autotools; Windows: GMP overlay, VS 2022 x64, Vulkan runtime ZIP/license. CoreLang excludes legacy Script; Ninja collects independent failures. Android aggregate-initializer warnings remain nonfatal. Jobs validate builds/tests/shaders/packages/checksums/exclusions and upload diagnostics/toolchain metadata. Hosted `MC_ENABLE_RENDERER_SMOKE=OFF` requires separate GPU/runtime acceptance. Manual `ai-dev` Linux dispatch cannot qualify releases.
 
-The renderer requests Vulkan 1.2 and requires dynamic rendering and synchronization2 extensions/features; maintenance4 is not a renderer requirement. Mesh shaders target Vulkan 1.3. Use a Vulkan 1.3-capable validation baseline and exercise the vertex fallback. A lower requested API number does not establish support for every Vulkan 1.2 driver. Vulkan 1.4 remains a project aspiration.
+ASan requires instrumented Release vcpkg/private dependencies with matching
+runtime/iterator/annotation settings, `/Zi` compiler and `/DEBUG` linker symbols.
+C++ `/analyze /W4 /WX /EHsc` uses Debug dependencies; `/analyze:external-`
+excludes imported/system headers only. Nested builds retain flags and run serially;
+qualify both Windows rows before promotion.
+
+The renderer requests Vulkan 1.2 with dynamic rendering and synchronization2 extensions/features, not maintenance4. Mesh shaders target Vulkan 1.3; validate on Vulkan 1.3 and exercise vertex fallback. Requesting Vulkan 1.2 does not establish support for every such driver. Vulkan 1.4 remains aspirational.
 
 [Helpers](../cmake/Helpers.cmake) enforce strict warnings (`MC_ENABLE_HIGH_ASSERT`, `MC_ENABLE_VULKAN_VALIDATION_LAYERS`, `MC_ENABLE_SANITIZERS`). Debug/explicit builds require validation; Release does not. Mac CI retains LSan. MSan: GMP C, `LDFLAGS` probes, pinned unwind fixes. CFI-trusted ABI-spill copies normalize; source-shadow/address/metadata checks remain. Observations preserve state/shadow. Preflight checks cleanup/rethrow and application heap-read/allocation origin; bounded reports retain provenance.
 

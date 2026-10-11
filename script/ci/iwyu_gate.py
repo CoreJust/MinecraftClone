@@ -314,8 +314,10 @@ def classify_additions(
                 )
                 continue
 
-            facade = _glm_facade(name) or _enet_facade(
-                name, compiler_arguments or [], cwd or Path.cwd()
+            # IWYU 0.26 maps libc++'s private __math headers to nonexistent <math>.
+            facade = "cmath" if delimiter == "angle" and name == "math" else (
+                _glm_facade(name)
+                or _enet_facade(name, compiler_arguments or [], cwd or Path.cwd())
             )
             if name == "fmt/base.h":
                 if _has_fmt_api(owner_text):

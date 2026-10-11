@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <cstdint>
 #include <expected>
 #include <memory>
@@ -374,7 +375,11 @@ public:
 private:
     PolicyLimits m_limits;
     mutable std::mutex m_publish_mutex;
-    std::shared_ptr<PolicySnapshot const> m_snapshot;
+#if defined(__cpp_lib_atomic_shared_ptr) && __cpp_lib_atomic_shared_ptr >= 201'711L
+    std::atomic<std::shared_ptr<PolicySnapshot const>> m_snapshot{};
+#else
+    std::shared_ptr<PolicySnapshot const> m_snapshot{};
+#endif
     uint64_t m_generation{0U};
 };
 

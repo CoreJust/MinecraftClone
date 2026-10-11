@@ -32,6 +32,11 @@ class WorkflowContextTests(unittest.TestCase):
                 with self.subTest(workflow=workflow_path.name, revision=revision):
                     self.assertEqual(revision, expected_revision)
 
+    def test_desktop_ctest_uses_bounded_parallelism(self):
+        workflow = (REPOSITORY / ".github/workflows/ai-checks.yml").read_text(encoding="utf-8")
+        desktop = workflow.split("\n  desktop:", maxsplit=1)[1].split("    steps:", maxsplit=1)[0]
+        self.assertIn("CTEST_PARALLEL_LEVEL: '4'", desktop)
+
     def test_desktop_diagnostics_retain_python_test_phase_log_after_failure(self):
         workflow = WORKFLOWS[0].read_text(encoding="utf-8")
         diagnostics = workflow.split("      - name: Upload desktop diagnostics", maxsplit=1)[1].split(
@@ -40,6 +45,22 @@ class WorkflowContextTests(unittest.TestCase):
 
         self.assertIn("if: always()", diagnostics)
         self.assertIn("build/ai-checks/python-tests.log", diagnostics)
+
+    def test_failed_analyzer_reports_are_retained_separately_from_matrix_receipts(self):
+        workflow = WORKFLOWS[0].read_text(encoding="utf-8")
+        diagnostics = workflow.split("      - name: Upload desktop diagnostics", maxsplit=1)[1].split(
+            "      - name:", maxsplit=1
+        )[0]
+        receipts = workflow.split("      - name: Upload macOS analysis row receipts", maxsplit=1)[1].split(
+            "      - name:", maxsplit=1
+        )[0]
+
+        self.assertIn("if: always()", diagnostics)
+        for report_directory in ("build/analysis-iwyu/gate/**", "build/analysis-cppcheck/gate/**"):
+            with self.subTest(reports=report_directory):
+                self.assertIn(report_directory, diagnostics)
+                self.assertNotIn(report_directory, receipts)
+        self.assertIn("path: build/ai-analysis/*.json", receipts)
 
     def test_snapshot_trust_condition_has_valid_bash_then_separator(self):
         workflow = WORKFLOWS[1].read_text(encoding="utf-8")
@@ -393,32 +414,70 @@ class WorkflowContextTests(unittest.TestCase):
                         continue
                     self.assertEqual(lines[index + 1], "if errorlevel 1 exit /b %errorlevel%", (workflow_path, command))
 
-    def test_windows_analysis_step_exits_nonzero_when_any_command_fails(self):
+    def test_windows_analysis_runs_both_abi_matched_rows_and_fails_if_either_fails(self):
         workflow = (REPOSITORY / ".github/workflows/ai-checks.yml").read_text(encoding="utf-8")
+        asan_manifest_dependencies = workflow.split(
+            "      - name: Install pinned Windows ASan manifest dependencies\n", maxsplit=1
+        )[1].split("      - name:", maxsplit=1)[0]
+        asan_dependencies = workflow.split(
+            "      - name: Install pinned Windows ASan private dependencies\n", maxsplit=1
+        )[1].split("      - name:", maxsplit=1)[0]
         analysis_step = workflow.split(
             "      - name: Run required Windows analysis rows\n", maxsplit=1
         )[1].split("      - name:", maxsplit=1)[0]
-        loop = re.search(
-            r"(?ms)^\s*for %%R in \(windows_msvc_asan windows_msvc_analyze\) do \(\n(?P<body>.*?)^\s*\)",
-            analysis_step,
-        )
-
-        self.assertIsNotNone(loop)
-        self.assertEqual(
-            [line.strip() for line in loop.group("body").splitlines() if line.strip()],
-            [
-                "python script/ai_analysis_matrix.py run-row build\\ai-analysis\\%%R.json --row %%R",
-                "if errorlevel 1 exit /b 1",
-            ],
-        )
         lines = [line.strip() for line in analysis_step.splitlines()]
+        asan_row = "python script/ai_analysis_matrix.py run-row build\\ai-analysis\\windows_msvc_asan.json --row windows_msvc_asan"
+        analyze_row = "python script/ai_analysis_matrix.py run-row build\\ai-analysis\\windows_msvc_analyze.json --row windows_msvc_analyze"
+
         for command in (
             'call "%ProgramFiles%\\Microsoft Visual Studio\\2022\\Enterprise\\Common7\\Tools\\VsDevCmd.bat" -arch=amd64',
             "if not exist build\\ai-analysis mkdir build\\ai-analysis",
         ):
             index = lines.index(command)
             self.assertEqual(lines[index + 1], "if errorlevel 1 exit /b 1", command)
-        self.assertNotIn("%errorlevel%", analysis_step)
+
+        asan_index = lines.index(asan_row)
+        analyze_index = lines.index(analyze_row)
+        self.assertLess(asan_index, analyze_index)
+        self.assertEqual(lines[asan_index + 1], 'set "MC_ASAN_ROW_STATUS=%ERRORLEVEL%"')
+        self.assertEqual(
+            lines[asan_index - 3:asan_index],
+            [
+                'set "MC_PRIVATE_DEPENDENCIES_PREFIX=%RUNNER_TEMP%\\private-dependencies-windows-asan\\install"',
+                'set "CMAKE_PREFIX_PATH=%RUNNER_TEMP%\\private-dependencies-windows-asan\\install"',
+                'set "VCPKG_INSTALLED_DIR=%RUNNER_TEMP%\\vcpkg-installed-windows-asan"',
+            ],
+        )
+        self.assertEqual(
+            lines[analyze_index - 3:analyze_index],
+            [
+                'set "MC_PRIVATE_DEPENDENCIES_PREFIX=%RUNNER_TEMP%\\private-dependencies\\install"',
+                'set "CMAKE_PREFIX_PATH=%RUNNER_TEMP%\\private-dependencies\\install"',
+                'set "VCPKG_INSTALLED_DIR=%RUNNER_TEMP%\\vcpkg-installed"',
+            ],
+        )
+        self.assertEqual(lines[analyze_index + 1], 'set "MC_ANALYZE_ROW_STATUS=%ERRORLEVEL%"')
+        self.assertEqual(
+            lines[-2:],
+            [
+                'if not "%MC_ASAN_ROW_STATUS%"=="0" exit /b %MC_ASAN_ROW_STATUS%',
+                'if not "%MC_ANALYZE_ROW_STATUS%"=="0" exit /b %MC_ANALYZE_ROW_STATUS%',
+            ],
+        )
+
+        self.assertIn("--platform windows-asan", asan_manifest_dependencies)
+        self.assertIn("--platform windows", asan_dependencies)
+        self.assertLess(
+            workflow.index("Install pinned Windows ASan manifest dependencies"),
+            workflow.index("Install pinned Windows ASan private dependencies"),
+        )
+        self.assertIn("--output-root \"%RUNNER_TEMP%\\private-dependencies-windows-asan\"", asan_dependencies)
+        self.assertIn("--preset release", asan_dependencies)
+        self.assertIn("-DVCPKG_TARGET_TRIPLET=x64-windows-asan", asan_dependencies)
+        self.assertIn('"-DCMAKE_C_FLAGS=/fsanitize=address /Zi"', asan_dependencies)
+        self.assertIn('"-DCMAKE_CXX_FLAGS=/fsanitize=address /EHsc /Zi /bigobj"', asan_dependencies)
+        self.assertIn("x64-windows-asan.cmake", workflow)
+        self.assertIn("Restore Windows ASan vcpkg binary cache", workflow)
 
     def test_nested_cmake_scripts_receive_forward_slash_path_substitutions(self):
         cmake_lists = (REPOSITORY / "tests/CMakeLists.txt").read_text(encoding="utf-8")
@@ -426,6 +485,8 @@ class WorkflowContextTests(unittest.TestCase):
             ("CMAKE_CURRENT_BINARY_DIR", "MC_TEST_BINARY_DIR"),
             ("CMAKE_COMMAND", "MC_CMAKE_COMMAND"),
             ("CMAKE_CTEST_COMMAND", "MC_CTEST_COMMAND"),
+            ("CMAKE_C_COMPILER", "MC_CMAKE_C_COMPILER"),
+            ("CMAKE_CXX_COMPILER", "MC_CMAKE_CXX_COMPILER"),
             ("PROJECT_SOURCE_DIR", "MC_PROJECT_SOURCE_DIR"),
             ("CMAKE_PREFIX_PATH", "MC_CMAKE_PREFIX_PATH"),
             ("CoreCpp_DIR", "MC_CORECPP_DIR"),
@@ -434,7 +495,7 @@ class WorkflowContextTests(unittest.TestCase):
             self.assertIn(f'file(TO_CMAKE_PATH "${{{source_name}}}" {normalized_name})', cmake_lists)
         for template in (REPOSITORY / "tests/cmake").glob("*.in"):
             contents = template.read_text(encoding="utf-8")
-            self.assertNotRegex(contents, r"@(CMAKE_CURRENT_BINARY_DIR|CMAKE_COMMAND|CMAKE_CTEST_COMMAND|PROJECT_SOURCE_DIR|CMAKE_PREFIX_PATH|CoreCpp_DIR|CoreProject2026_DIR)@")
+            self.assertNotRegex(contents, r"@(CMAKE_CURRENT_BINARY_DIR|CMAKE_COMMAND|CMAKE_CTEST_COMMAND|CMAKE_CXX_COMPILER|PROJECT_SOURCE_DIR|CMAKE_PREFIX_PATH|CoreCpp_DIR|CoreProject2026_DIR)@")
         for template_name in ("corecpp_server_consumer_test.cmake.in", "minecraftclone_server_only_test.cmake.in"):
             contents = (REPOSITORY / "tests/cmake" / template_name).read_text(encoding="utf-8")
             self.assertIn('set(MC_TEST_CONFIGURATION "@CMAKE_BUILD_TYPE@")', contents)
@@ -444,14 +505,64 @@ class WorkflowContextTests(unittest.TestCase):
             self.assertNotIn("-DCMAKE_BUILD_TYPE=Debug", contents)
         self.assertEqual(cmake_lists.count('"-DMC_TEST_CONFIGURATION=$<CONFIG>"'), 2)
         corecpp_template = (REPOSITORY / "tests/cmake/corecpp_server_consumer_test.cmake.in").read_text(encoding="utf-8")
+        self.assertIn('-G "@MC_CMAKE_GENERATOR@"', corecpp_template)
+        self.assertIn('"-DCMAKE_CXX_COMPILER=@MC_CMAKE_CXX_COMPILER@"', corecpp_template)
         self.assertIn('set(consumer_directory "${consumer_directory}/${MC_TEST_CONFIGURATION}")', corecpp_template)
         minecraftclone_template = (REPOSITORY / "tests/cmake/minecraftclone_server_only_test.cmake.in").read_text(encoding="utf-8")
         self.assertIn("list(APPEND test_command -C \"${MC_TEST_CONFIGURATION}\")", minecraftclone_template)
+
+    def test_nested_server_build_preserves_instrumented_dependency_abi(self):
+        fixture = (REPOSITORY / "tests/cmake/minecraftclone_server_only_test.cmake.in").read_text(encoding="utf-8")
+        for variable, enclosing in (
+            ("CMAKE_C_COMPILER", "MC_CMAKE_C_COMPILER"),
+            ("CMAKE_CXX_COMPILER", "MC_CMAKE_CXX_COMPILER"),
+            ("CMAKE_C_FLAGS", "CMAKE_C_FLAGS"),
+            ("CMAKE_CXX_FLAGS", "CMAKE_CXX_FLAGS"),
+            ("CMAKE_EXE_LINKER_FLAGS", "CMAKE_EXE_LINKER_FLAGS"),
+            ("CMAKE_SHARED_LINKER_FLAGS", "CMAKE_SHARED_LINKER_FLAGS"),
+            ("MC_ENABLE_SANITIZERS", "MC_ENABLE_SANITIZERS"),
+            ("MC_SANITIZER", "MC_SANITIZER"),
+        ):
+            with self.subTest(variable=variable):
+                self.assertIn(f"-D{variable}=@{enclosing}@", fixture)
+        self.assertIn("-DMC_REGISTER_SERVER_ONLY_BUILD_TEST=OFF", fixture)
+        self.assertIn("-DVCPKG_MANIFEST_INSTALL=OFF", fixture)
+        self.assertIn("--target mc_tests --parallel 4", fixture)
+        self.assertIn('if(NOT "@CMAKE_MSVC_RUNTIME_LIBRARY@" STREQUAL "")', fixture)
+        self.assertIn("-DCMAKE_MSVC_RUNTIME_LIBRARY=@CMAKE_MSVC_RUNTIME_LIBRARY@", fixture)
+
+    def test_msvc_c6326_exemption_is_private_to_mc_tests(self):
+        cmake_lists = (REPOSITORY / "tests/CMakeLists.txt").read_text(encoding="utf-8")
+        target_start = cmake_lists.index("add_executable(mc_tests")
+        target_end = cmake_lists.index("if(WIN32)", target_start)
+        test_target = cmake_lists[target_start:target_end]
+        presets = (REPOSITORY / "CMakePresets.json").read_text(encoding="utf-8")
+
+        self.assertRegex(
+            test_target,
+            r"(?s)mc_apply_target_defaults\(mc_tests\).*?"
+            r"if\(MSVC\).*?target_compile_options\(mc_tests PRIVATE /wd6326\).*?endif\(\)",
+        )
+        self.assertEqual(cmake_lists.count("/wd6326"), 1)
+        self.assertNotIn("/wd6326", presets)
+        self.assertIn('"CMAKE_CXX_FLAGS": "/analyze /W4 /WX /EHsc /analyze:external-"', presets)
 
     def test_server_only_build_timeout_covers_nested_server_test(self):
         cmake_lists = (REPOSITORY / "tests/CMakeLists.txt").read_text(encoding="utf-8")
         self.assertIn("if(WIN32)\n        set_tests_properties(MinecraftClone.ServerOnlyBuild PROPERTIES TIMEOUT 900)", cmake_lists)
         self.assertIn("else()\n        set_tests_properties(MinecraftClone.ServerOnlyBuild PROPERTIES TIMEOUT 300)", cmake_lists)
+
+    def test_nested_package_builds_run_serially(self):
+        cmake_lists = (REPOSITORY / "tests/CMakeLists.txt").read_text(encoding="utf-8")
+        for test_name in (
+            "CoreCpp.ServerOnlyPackageConsumer",
+            "MinecraftClone.ServerOnlyBuild",
+        ):
+            with self.subTest(test_name=test_name):
+                self.assertRegex(
+                    cmake_lists,
+                    rf"set_tests_properties\(\s*{re.escape(test_name)}\s+PROPERTIES\s+RUN_SERIAL TRUE\s*\)",
+                )
 
 
 if __name__ == "__main__":

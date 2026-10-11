@@ -7,6 +7,8 @@
 #include <chrono>
 #include <cstdint>
 #include <expected>
+#include <initializer_list>
+#include <ratio>
 #include <string>
 #include <string_view>
 

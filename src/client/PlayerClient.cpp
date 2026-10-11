@@ -30,9 +30,11 @@
 #include <condition_variable>
 #include <cstdlib>
 #include <fstream>
+#include <initializer_list>
 #include <limits>
 #include <mutex>
 #include <optional>
+#include <ratio>
 #include <span>
 #include <string>
 #include <thread>

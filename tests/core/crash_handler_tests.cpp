@@ -17,7 +17,7 @@ static constexpr int32_t SIGNAL_EXIT_CODE_OFFSET = 128;
 static constexpr char SIGNAL_OUTPUT[] = "CoreCpp terminated after receiving a fatal signal";
 #endif
 
-int32_t expectedExitCode(int32_t const signal_code)
+int32_t expectedExitCode([[maybe_unused]] int32_t const signal_code)
 {
 #ifdef _WIN32
     return SIGNAL_EXIT_CODE;

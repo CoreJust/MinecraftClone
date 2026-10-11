@@ -12,7 +12,6 @@
 #include <gtest/gtest.h>
 
 #include <algorithm>
-#include <array>
 #include <atomic>
 #include <chrono>
 #include <compare>
@@ -20,6 +19,7 @@
 #include <cstring>
 #include <functional>
 #include <optional>
+#include <ratio>
 #include <set>
 #include <stdexcept>
 #include <string>
@@ -153,7 +153,7 @@ public:
 
     void pump()
     {
-        std::array<uint8_t, 65'536> bytes{};
+        std::vector<uint8_t> bytes(65'536U);
         ENetAddress source{};
         ENetBuffer buffer{};
         buffer.data = bytes.data();
