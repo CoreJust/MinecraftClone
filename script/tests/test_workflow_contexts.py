@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 import hashlib
 import json
 import re
@@ -19,6 +20,44 @@ WORKFLOWS = (
 
 
 class WorkflowContextTests(unittest.TestCase):
+    def test_flight_diagnostic_dispatch_excludes_normal_jobs_without_changing_defaults(self):
+        workflow = WORKFLOWS[0].read_text(encoding="utf-8")
+        guards = {}
+        for job in ("fast", "linux-analysis", "desktop", "sustained-flight-macos-asan"):
+            match = re.search(rf"^  {job}:\n    if: (.+)$", workflow, re.MULTILINE)
+            self.assertIsNotNone(match, job)
+            expression = match.group(1)
+            for original, replacement in (
+                ("github.event.inputs.diagnostic", "diagnostic"),
+                ("github.event_name", "event"),
+                ("github.ref", "ref"),
+                ("&&", "and"),
+                ("||", "or"),
+            ):
+                expression = expression.replace(original, replacement)
+            syntax = ast.parse(expression, mode="eval")
+            for node in ast.walk(syntax):
+                self.assertIsInstance(node, (
+                    ast.Expression, ast.BoolOp, ast.Compare, ast.Constant,
+                    ast.Name, ast.Load, ast.And, ast.Or, ast.Eq, ast.NotEq,
+                ))
+            guards[job] = compile(syntax, "workflow guard", "eval")
+
+        cases = (
+            ("workflow_dispatch", "refs/heads/ai-dev", "sustained-flight", (False, False, False, True)),
+            ("workflow_dispatch", "refs/heads/ai-dev", "none", (True, True, False, False)),
+            ("push", "refs/heads/ai-dev", "", (True, False, False, False)),
+            ("push", "refs/heads/ai-main", "", (True, True, True, False)),
+            ("workflow_dispatch", "refs/heads/ai-main", "none", (True, False, True, False)),
+            ("workflow_dispatch", "refs/heads/ai-main", "sustained-flight", (False, False, False, False)),
+        )
+        for event, ref, diagnostic, expected in cases:
+            with self.subTest(event=event, ref=ref, diagnostic=diagnostic):
+                actual = tuple(eval(guard, {"__builtins__": {}}, {
+                    "event": event, "ref": ref, "diagnostic": diagnostic,
+                }) for guard in guards.values())
+                self.assertEqual(actual, expected)
+
     def test_flight_diagnostic_is_opt_in_branch_bound_and_not_release_evidence(self):
         workflow = WORKFLOWS[0].read_text(encoding="utf-8")
         diagnostic = workflow.split("\n  sustained-flight-macos-asan:\n", 1)[1].split(
@@ -28,7 +67,7 @@ class WorkflowContextTests(unittest.TestCase):
         self.assertIn(
             "if: github.event_name == 'workflow_dispatch' && "
             "github.event.inputs.diagnostic == 'sustained-flight' && "
-            "github.ref == 'refs/heads/codex/ai-mc-ai-0429'",
+            "github.ref == 'refs/heads/ai-dev'",
             diagnostic,
         )
         self.assertLess(
@@ -286,8 +325,9 @@ class WorkflowContextTests(unittest.TestCase):
         }
         job_conditions = {
             "linux-analysis": (
-                "(github.event_name == 'push' && github.ref == 'refs/heads/ai-main') "
-                "|| (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/ai-dev')"
+                "((github.event_name == 'push' && github.ref == 'refs/heads/ai-main') "
+                "|| (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/ai-dev')) "
+                "&& github.event.inputs.diagnostic != 'sustained-flight'"
             ),
             "android-hwasan-build": "github.event_name == 'push' && github.ref == 'refs/heads/ai-main'",
             "android-hwasan-runtime": "github.event_name == 'push' && github.ref == 'refs/heads/ai-main'",

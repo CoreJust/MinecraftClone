@@ -21,7 +21,7 @@ permissions:
 
 jobs:
   fast:
-    if: github.event_name != 'workflow_dispatch' || github.event.inputs.diagnostic != 'sustained-flight' || github.ref != 'refs/heads/codex/ai-mc-ai-0429'
+    if: github.event_name != 'workflow_dispatch' || github.event.inputs.diagnostic != 'sustained-flight'
     strategy:
       fail-fast: false
       matrix:
@@ -40,7 +40,7 @@ jobs:
       - run: python script/ai_check.py --fast
 
   desktop:
-    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/ai-main'
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/ai-main' && github.event.inputs.diagnostic != 'sustained-flight'
     name: desktop (${{ matrix.platform }}, ${{ matrix.preset }})
     runs-on: ${{ matrix.runner }}
     strategy:
@@ -349,7 +349,7 @@ jobs:
           retention-days: 14
 
   sustained-flight-macos-asan:
-    if: github.event_name == 'workflow_dispatch' && github.event.inputs.diagnostic == 'sustained-flight' && github.ref == 'refs/heads/codex/ai-mc-ai-0429'
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.diagnostic == 'sustained-flight' && github.ref == 'refs/heads/ai-dev'
     name: Sustained-flight Mac ASan diagnostic (not release evidence)
     runs-on: macos-15
     timeout-minutes: 180
@@ -373,7 +373,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "$GITHUB_REF" = 'refs/heads/codex/ai-mc-ai-0429'
+          test "$GITHUB_REF" = 'refs/heads/ai-dev'
           test "$(git -C "$GITHUB_WORKSPACE" rev-parse HEAD)" = "$GITHUB_SHA"
           test "$(git -C "$GITHUB_WORKSPACE/diagnostic-source" rev-parse HEAD)" = '51b4b2199058b159537ad45b8334e1c04ccdc129'
           test -z "$(git -C "$GITHUB_WORKSPACE/diagnostic-source" status --porcelain=v1)"
@@ -539,7 +539,7 @@ jobs:
           retention-days: 14
 
   linux-analysis:
-    if: (github.event_name == 'push' && github.ref == 'refs/heads/ai-main') || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/ai-dev')
+    if: ((github.event_name == 'push' && github.ref == 'refs/heads/ai-main') || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/ai-dev')) && github.event.inputs.diagnostic != 'sustained-flight'
     name: Linux analysis (${{ matrix.row }})
     runs-on: ubuntu-24.04
     timeout-minutes: 360
