@@ -4,7 +4,8 @@ foreach(serial_runtime_test IN ITEMS
     GameClientLifecycleTest.StopDuringRetryIsServicedWithoutStartingAnotherAttempt
     GameServerPreviewTest.SustainedFlightKeepsInputAcknowledgementsCurrentWhileTilesStream
 )
-    if(serial_runtime_test IN_LIST mc_tests_TESTS)
+    list(FIND mc_tests_TESTS "${serial_runtime_test}" serial_runtime_test_index)
+    if(NOT serial_runtime_test_index EQUAL -1)
         set_tests_properties("${serial_runtime_test}" PROPERTIES RUN_SERIAL TRUE)
     endif()
 endforeach()
