@@ -15202,5 +15202,41 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0431",
+    "title": "Propagate the LSan environment to diagnostic controls",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P1",
+    "route": "luna",
+    "milestone": "ED-010-S7",
+    "depends_on": [],
+    "acceptance": "Run the macOS LSan positive and negative controls with ASAN_OPTIONS retaining detect_leaks=1 and LSAN_OPTIONS pointing to the exact suppression file with print_suppressions=1. Keep those same required options on sustained-flight test execution, and add regression assertions covering both workflow steps without weakening either control.",
+    "evidence": "Hosted run 38184261818 failed before fixture configure or CTest because verify_macos_lsan.py controls received no sanitizer environment; it remains a historical diagnostic failure. The focused workflow-context suite passed 38/38, the full Python policy suite selected by ai_check.py --fast passed 640 tests with one documented skip, and task registry/current-plan/source-policy checks passed. The single fast gate exited 1 only because its documentation phase found stale docs/code/source_state.json; its backlog, current-plan, diff, and Python test phases passed. No hosted diagnostic rerun or runtime pass is claimed; S7 remains unreleased.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0038",
+    "motivation": "The opt-in hosted Mac ASan diagnostic failed before configure or test because its LSan controls inherited no sanitizer environment.",
+    "context": "Hosted ai-checks workflow run 38184261818 failed in Configure the hosted Mac ASan preset and inspect active tools when verify_macos_lsan.py controls rejected the missing ASAN_OPTIONS. The following Build and run only the sustained-flight test step already defines ASAN_OPTIONS and LSAN_OPTIONS. The verifier also requires the exact suppression path and print_suppressions=1. This remains a diagnostic-only setup failure; no test or release qualification completed and S7 is unreleased.",
+    "complexity": "low",
+    "created_at": "2026-10-12",
+    "resolved_at": "2026-10-12",
+    "resolution_changes": "Added the required ASAN_OPTIONS and LSAN_OPTIONS to the hosted Mac ASan configure/control step and added exact regression assertions for that step and sustained-flight test execution. No sanitizer control or runtime threshold was relaxed.",
+    "plan": [
+      "Add the existing required sanitizer environment to the step that runs verify_macos_lsan.py controls, and guard both controls and sustained-flight test execution in the owning workflow-context suite."
+    ],
+    "product_changes": [],
+    "code_changes": [
+      "Set ASAN_OPTIONS and LSAN_OPTIONS on the configure/control workflow step and assert both step environments in the focused workflow regression."
+    ],
+    "baseline_commit": "3f209f833db22ffc5b9ec649bd5405ee6af7e0af",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": "Added as MC-AI-0431, a direct basic child of active S7 MC-AI-0038. This resolves only the local workflow setup and regression; hosted diagnostic execution and S7 release gates remain pending."
   }
 ]

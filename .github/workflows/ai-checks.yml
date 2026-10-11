@@ -485,6 +485,9 @@ jobs:
           echo "MC_ANALYSIS_ROOT=$source" >> "$GITHUB_ENV"
       - name: Configure the hosted Mac ASan preset and inspect active tools
         shell: bash
+        env:
+          ASAN_OPTIONS: detect_leaks=1
+          LSAN_OPTIONS: suppressions=${{ github.workspace }}/diagnostic-source/script/ci/macos_lsan.supp:print_suppressions=1
         run: |
           set -euo pipefail
           cd "$GITHUB_WORKSPACE/diagnostic-source"

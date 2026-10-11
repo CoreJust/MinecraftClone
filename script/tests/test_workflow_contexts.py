@@ -82,6 +82,44 @@ class WorkflowContextTests(unittest.TestCase):
         self.assertNotIn("run-row", diagnostic)
         self.assertNotIn("android_hwasan_emulator", diagnostic)
 
+    def test_flight_diagnostic_runs_lsan_controls_and_test_with_required_environment(self):
+        workflow = WORKFLOWS[0].read_text(encoding="utf-8")
+        expected_environment = {
+            "ASAN_OPTIONS": "detect_leaks=1",
+            "LSAN_OPTIONS": (
+                "suppressions=${{ github.workspace }}/diagnostic-source/script/ci/macos_lsan.supp:"
+                "print_suppressions=1"
+            ),
+        }
+        steps = (
+            (
+                "Configure the hosted Mac ASan preset and inspect active tools",
+                "verify_macos_lsan.py controls",
+            ),
+            (
+                "Build and run only the sustained-flight test with unchanged limits",
+                "ctest --test-dir",
+            ),
+        )
+
+        for step_name, command in steps:
+            with self.subTest(step=step_name):
+                step = workflow.split(f"      - name: {step_name}\n", 1)[1].split(
+                    "      - name:", 1
+                )[0]
+                self.assertIn(command, step)
+                environment_match = re.search(
+                    r"(?m)^        env:\n((?:^          [^\n]*\n)+)", step
+                )
+                self.assertIsNotNone(environment_match, step_name)
+                configured_environment = dict(
+                    re.findall(
+                        r"(?m)^          (ASAN_OPTIONS|LSAN_OPTIONS): ([^\n]+)$",
+                        environment_match.group(1),
+                    )
+                )
+                self.assertEqual(configured_environment, expected_environment, step_name)
+
     def test_flight_diagnostic_patch_bytes_match_verified_workflow_inputs(self):
         workflow = WORKFLOWS[0].read_text(encoding="utf-8")
         patch_root = REPOSITORY / "script/ci/diagnostics/sustained-flight"
