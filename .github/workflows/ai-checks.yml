@@ -6,12 +6,22 @@ on:
   pull_request:
     branches: [ai-dev, ai-main, 'codex/ai-*']
   workflow_dispatch:
+    inputs:
+      diagnostic:
+        description: Run the isolated sustained-flight Mac ASan diagnostic
+        type: choice
+        options:
+          - none
+          - sustained-flight
+        default: none
+        required: true
 
 permissions:
   contents: read
 
 jobs:
   fast:
+    if: github.event_name != 'workflow_dispatch' || github.event.inputs.diagnostic != 'sustained-flight' || github.ref != 'refs/heads/codex/ai-mc-ai-0429'
     strategy:
       fail-fast: false
       matrix:
@@ -335,6 +345,196 @@ jobs:
             build/ai-analysis/*.json
             build/analysis-iwyu/gate/**
             build/analysis-cppcheck/gate/**
+          if-no-files-found: warn
+          retention-days: 14
+
+  sustained-flight-macos-asan:
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.diagnostic == 'sustained-flight' && github.ref == 'refs/heads/codex/ai-mc-ai-0429'
+    name: Sustained-flight Mac ASan diagnostic (not release evidence)
+    runs-on: macos-15
+    timeout-minutes: 180
+    env:
+      VCPKG_DISABLE_METRICS: '1'
+      CMAKE_BUILD_PARALLEL_LEVEL: '4'
+      CTEST_PARALLEL_LEVEL: '4'
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: 51b4b2199058b159537ad45b8334e1c04ccdc129
+          path: diagnostic-source
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: '3.12.10'
+      - name: Validate immutable diagnostic inputs before using deploy keys
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = 'refs/heads/codex/ai-mc-ai-0429'
+          test "$(git -C "$GITHUB_WORKSPACE" rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git -C "$GITHUB_WORKSPACE/diagnostic-source" rev-parse HEAD)" = '51b4b2199058b159537ad45b8334e1c04ccdc129'
+          test -z "$(git -C "$GITHUB_WORKSPACE/diagnostic-source" status --porcelain=v1)"
+          printf '%s  %s\n' \
+            '89d76661e86057ad146463ceda38979b2e85d8d20c8d574bc37eff8bd7dedd13' \
+            'script/ci/diagnostics/sustained-flight/corecpp-host-transport.patch' \
+            'c83381b06dea8338d56277a91c66802486e7d4d48929e5e25076497088b875d1' \
+            'script/ci/diagnostics/sustained-flight/minecraft-flight-snapshot.patch' \
+            | shasum -a 256 -c
+          mkdir -p "$RUNNER_TEMP/sustained-flight-diagnostic"
+          {
+            printf 'delivery-workflow-sha=%s\n' "$GITHUB_SHA"
+            printf 'diagnostic-source-sha=%s\n' '51b4b2199058b159537ad45b8334e1c04ccdc129'
+            printf 'corecpp-base-sha=%s\n' '2ad29f7ed590e41c8ad7c9d4027c781650a10391'
+            printf 'coreproject2026-base-sha=%s\n' 'e577c84671357625d0db7008395854018316c3f8'
+            printf 'corecpp-patch-sha256=%s\n' '89d76661e86057ad146463ceda38979b2e85d8d20c8d574bc37eff8bd7dedd13'
+            printf 'minecraft-patch-sha256=%s\n' 'c83381b06dea8338d56277a91c66802486e7d4d48929e5e25076497088b875d1'
+            printf '%s\n' 'purpose=diagnostic-only; not release qualification'
+          } > "$RUNNER_TEMP/sustained-flight-diagnostic/identity.txt"
+      - name: Materialize private dependency deploy keys
+        shell: bash
+        env:
+          MC_CI_CORECPP_DEPLOY_KEY: ${{ secrets.MC_CI_CORECPP_DEPLOY_KEY }}
+          MC_CI_COREPROJECT2026_DEPLOY_KEY: ${{ secrets.MC_CI_COREPROJECT2026_DEPLOY_KEY }}
+        run: |
+          set -euo pipefail
+          key_root="$RUNNER_TEMP/private-dependency-keys"
+          install -d -m 700 "$key_root"
+          umask 077
+          printf '%s\n' "$MC_CI_CORECPP_DEPLOY_KEY" > "$key_root/corecpp"
+          printf '%s\n' "$MC_CI_COREPROJECT2026_DEPLOY_KEY" > "$key_root/coreproject2026"
+          echo "MC_CI_CORECPP_DEPLOY_KEY_FILE=$key_root/corecpp" >> "$GITHUB_ENV"
+          echo "MC_CI_COREPROJECT2026_DEPLOY_KEY_FILE=$key_root/coreproject2026" >> "$GITHUB_ENV"
+      - name: Fetch the locked private dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          python "$GITHUB_WORKSPACE/diagnostic-source/script/ci/acquire.py" fetch-private-dependencies \
+            --lock "$GITHUB_WORKSPACE/diagnostic-source/dependencies.lock.json" \
+            --root "$RUNNER_TEMP/private-dependencies" \
+            --corecpp-key "$MC_CI_CORECPP_DEPLOY_KEY_FILE" \
+            --coreproject2026-key "$MC_CI_COREPROJECT2026_DEPLOY_KEY_FILE"
+      - name: Validate and apply the CoreCpp transport-observation patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          corecpp="$RUNNER_TEMP/private-dependencies/CoreCpp"
+          test "$(git -C "$corecpp" rev-parse HEAD)" = '2ad29f7ed590e41c8ad7c9d4027c781650a10391'
+          git -C "$corecpp" apply --check "$GITHUB_WORKSPACE/script/ci/diagnostics/sustained-flight/corecpp-host-transport.patch"
+          git -C "$corecpp" apply "$GITHUB_WORKSPACE/script/ci/diagnostics/sustained-flight/corecpp-host-transport.patch"
+          test "$(git -C "$corecpp" status --porcelain=v1)" = ' M src/runtime/network/src/Host.cpp'
+      - name: Configure the pinned vcpkg cache
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/vcpkg-binary-cache"
+          echo "VCPKG_DEFAULT_BINARY_CACHE=$RUNNER_TEMP/vcpkg-binary-cache" >> "$GITHUB_ENV"
+      - name: Restore pinned vcpkg binary cache
+        uses: actions/cache/restore@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        with:
+          path: ${{ runner.temp }}/vcpkg-binary-cache
+          key: vcpkg-binary-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('diagnostic-source/vcpkg.json', 'diagnostic-source/vcpkg-configuration.json', 'diagnostic-source/script/ci/acquire.py', 'diagnostic-source/script/ci/vcpkg-overlays/**') }}
+          restore-keys: |
+            vcpkg-binary-${{ runner.os }}-${{ runner.arch }}-
+      - name: Install the pinned build tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check --no-cache-dir cmake==3.31.6 tzdata==2025.2
+          python "$GITHUB_WORKSPACE/diagnostic-source/script/ci/acquire.py" install-ninja --platform macos --root "$RUNNER_TEMP/ninja"
+          python "$GITHUB_WORKSPACE/diagnostic-source/script/ci/acquire.py" install-vcpkg --root "$RUNNER_TEMP/vcpkg"
+      - name: Install vcpkg host tools and manifest dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          brew install autoconf autoconf-archive automake libtool
+          python "$GITHUB_WORKSPACE/diagnostic-source/script/ci/acquire.py" install-manifest-dependencies --vcpkg-root "$RUNNER_TEMP/vcpkg" --platform macos --installed-root "$RUNNER_TEMP/vcpkg-installed"
+      - name: Acquire the pinned Vulkan SDK
+        shell: bash
+        run: |
+          set -euo pipefail
+          python "$GITHUB_WORKSPACE/diagnostic-source/script/ci/acquire.py" install-vulkan --platform macos --root "$RUNNER_TEMP/vulkan-sdk"
+      - name: Install private dependencies with the hosted debug recipe
+        shell: bash
+        run: |
+          set -euo pipefail
+          python "$GITHUB_WORKSPACE/diagnostic-source/script/ci/acquire.py" install-private-dependencies \
+            --root "$RUNNER_TEMP/private-dependencies" --platform macos --preset debug \
+            --cmake-arg=-DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" \
+            --cmake-arg=-DVCPKG_MANIFEST_INSTALL=OFF \
+            --cmake-arg=-DCOREPROJECT2026_ALLOW_INEXACT_CORECPP=ON
+      - name: Select the pinned Xcode toolchain
+        run: sudo xcode-select --switch /Applications/Xcode_26.2.app/Contents/Developer
+      - name: Install the hosted macOS analysis toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          brew install llvm cppcheck include-what-you-use
+          echo "$(brew --prefix llvm)/bin" >> "$GITHUB_PATH"
+      - name: Apply the test-only flight diagnostics
+        shell: bash
+        run: |
+          set -euo pipefail
+          source="$GITHUB_WORKSPACE/diagnostic-source"
+          patch="$GITHUB_WORKSPACE/script/ci/diagnostics/sustained-flight/minecraft-flight-snapshot.patch"
+          git -C "$source" apply --check "$patch"
+          git -C "$source" apply "$patch"
+          test "$(git -C "$source" status --porcelain=v1)" = ' M tests/core/game_server_preview_tests.cpp'
+          echo "MC_ANALYSIS_ROOT=$source" >> "$GITHUB_ENV"
+      - name: Configure the hosted Mac ASan preset and inspect active tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$GITHUB_WORKSPACE/diagnostic-source"
+          python script/ci/acquire.py verify-tools --platform macos
+          compiler_path="$(brew --prefix llvm)/bin"
+          test "$(command -v clang)" = "$compiler_path/clang"
+          test "$(command -v clang++)" = "$compiler_path/clang++"
+          printf 'xcode-select=%s\nclang-path=%s\nclangxx-path=%s\n' \
+            "$(xcode-select -p)" "$(command -v clang)" "$(command -v clang++)" \
+            >> "$RUNNER_TEMP/sustained-flight-diagnostic/identity.txt"
+          clang --version | tee "$RUNNER_TEMP/sustained-flight-diagnostic/toolchain.log"
+          clang++ --version | tee -a "$RUNNER_TEMP/sustained-flight-diagnostic/toolchain.log"
+          cmake --version | tee -a "$RUNNER_TEMP/sustained-flight-diagnostic/toolchain.log"
+          grep -Fq '23.1.0' "$RUNNER_TEMP/sustained-flight-diagnostic/toolchain.log"
+          printf 'effective-clang-version=23.1.0\n' >> "$RUNNER_TEMP/sustained-flight-diagnostic/identity.txt"
+          python script/ci/verify_macos_lsan.py controls --build-dir build/analysis-macos-asan/lsan-controls \
+            2>&1 | tee "$RUNNER_TEMP/sustained-flight-diagnostic/lsan-controls.log"
+          cmake --preset analysis-macos-asan \
+            -DMC_ALLOW_INEXACT_CORECPP=ON \
+            -DCOREPROJECT2026_ALLOW_INEXACT_CORECPP=ON \
+            2>&1 | tee "$RUNNER_TEMP/sustained-flight-diagnostic/configure.log"
+          grep -F -- '-fsanitize=address' build/analysis-macos-asan/compile_commands.json
+      - name: Build and run only the sustained-flight test with unchanged limits
+        shell: bash
+        env:
+          ASAN_OPTIONS: detect_leaks=1
+          LSAN_OPTIONS: suppressions=${{ github.workspace }}/diagnostic-source/script/ci/macos_lsan.supp:print_suppressions=1
+          CORECPP_ENET_DIAGNOSTICS: '1'
+        run: |
+          set -euo pipefail
+          diagnostic_root="$RUNNER_TEMP/sustained-flight-diagnostic"
+          source="$GITHUB_WORKSPACE/diagnostic-source"
+          cd "$source"
+          cmake --build build/analysis-macos-asan --target mc_tests --parallel 4 --verbose \
+            2>&1 | tee "$diagnostic_root/build.log"
+          ctest --test-dir build/analysis-macos-asan --output-on-failure --no-tests=error --timeout 60 -V \
+            -R '^GameServerPreviewTest\.SustainedFlightKeepsInputAcknowledgementsCurrentWhileTilesStream$' \
+            2>&1 | tee "$diagnostic_root/ctest.log"
+          python script/ci/verify_macos_lsan.py summarize \
+            --last-test-log build/analysis-macos-asan/Testing/Temporary/LastTest.log \
+            2>&1 | tee "$diagnostic_root/lsan-summary.log"
+      - name: Upload raw sustained-flight diagnostic evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: sustained-flight-macos-asan-diagnostic-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/sustained-flight-diagnostic/**
+            diagnostic-source/build/analysis-macos-asan/Testing/Temporary/LastTest.log
+            diagnostic-source/build/analysis-macos-asan/compile_commands.json
           if-no-files-found: warn
           retention-days: 14
 

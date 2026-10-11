@@ -376,7 +376,8 @@ class PreFinalizationCandidateTests(unittest.TestCase):
         ai_checks = AI_CHECKS_WORKFLOW.read_text(encoding="utf-8")
         snapshot = SNAPSHOT_WORKFLOW.read_text(encoding="utf-8")
 
-        self.assertEqual(ai_checks.count("tzdata==2025.2"), 2)
+        standard_jobs = ai_checks.split("\n  sustained-flight-macos-asan:", 1)[0]
+        self.assertEqual(standard_jobs.count("tzdata==2025.2"), 2)
         self.assertEqual(snapshot.count("tzdata==2025.2"), 2)
         self.assertIn("if: github.ref != 'refs/heads/ai-main'", ai_checks)
         self.assertIn("if: github.ref == 'refs/heads/ai-main'", ai_checks)

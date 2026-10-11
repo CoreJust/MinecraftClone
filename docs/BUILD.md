@@ -111,7 +111,10 @@ Additional [release gates](../script/ai_checks.json) require the windowed smoke 
 
 Timed S7 tests use CTest `RUN_SERIAL`; workloads remain unchanged.
 
-`script/ai_renderer_smoke.py` rejects foreign caches, configures its preset, builds `mc_renderer_smoke`, and runs `RendererSmokeTest` with bounded timeouts. It records `build/ai-checks/renderer-smoke.log` and fails on missing registration, device, validation, runtime, or timeout errors. This test checks pixels, resize, reload, and close across automatic and vertex-fallback pipelines. It does not prove controls, multiplayer, Windows, or headless goldens; hosted CI remains GPU-free.
+MC-AI-0429: `AI checks`/`codex/ai-mc-ai-0429`, `diagnostic=sustained-flight`:
+checked patches/provenance overrides, unchanged limits, no release qualification.
+
+`script/ai_renderer_smoke.py` rejects foreign caches and builds/runs `RendererSmokeTest` with bounded timeouts, logging to `build/ai-checks/renderer-smoke.log`. Missing registration/device, validation, runtime, and timeout errors fail. Pixels, resize, reload, and close cover automatic/vertex-fallback pipelines—not controls, multiplayer, Windows, or headless goldens. Hosted CI remains GPU-free.
 
 `MC_ENABLE_RENDERER_GOLDEN=ON` enables S4 readback against manual
 non-updating reference. `MC_RENDERER_GOLDEN_UNSUPPORTED_POLICY=fail` approves;

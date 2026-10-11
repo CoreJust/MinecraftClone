@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import subprocess
@@ -18,6 +19,39 @@ WORKFLOWS = (
 
 
 class WorkflowContextTests(unittest.TestCase):
+    def test_flight_diagnostic_is_opt_in_branch_bound_and_not_release_evidence(self):
+        workflow = WORKFLOWS[0].read_text(encoding="utf-8")
+        diagnostic = workflow.split("\n  sustained-flight-macos-asan:\n", 1)[1].split(
+            "\n  linux-analysis:\n", 1
+        )[0]
+        self.assertIn("default: none", workflow)
+        self.assertIn(
+            "if: github.event_name == 'workflow_dispatch' && "
+            "github.event.inputs.diagnostic == 'sustained-flight' && "
+            "github.ref == 'refs/heads/codex/ai-mc-ai-0429'",
+            diagnostic,
+        )
+        self.assertLess(
+            diagnostic.index("Validate immutable diagnostic inputs"),
+            diagnostic.index("secrets.MC_CI_CORECPP_DEPLOY_KEY"),
+        )
+        self.assertIn("--target mc_tests --parallel 4", diagnostic)
+        self.assertIn("--no-tests=error --timeout 60 -V", diagnostic)
+        self.assertIn("SustainedFlightKeepsInputAcknowledgementsCurrentWhileTilesStream$", diagnostic)
+        self.assertIn("ASAN_OPTIONS: detect_leaks=1", diagnostic)
+        self.assertIn("if: always()", diagnostic)
+        self.assertNotIn("run-row", diagnostic)
+        self.assertNotIn("android_hwasan_emulator", diagnostic)
+
+    def test_flight_diagnostic_patch_bytes_match_verified_workflow_inputs(self):
+        workflow = WORKFLOWS[0].read_text(encoding="utf-8")
+        patch_root = REPOSITORY / "script/ci/diagnostics/sustained-flight"
+        for filename in ("corecpp-host-transport.patch", "minecraft-flight-snapshot.patch"):
+            with self.subTest(filename=filename):
+                digest = hashlib.sha256((patch_root / filename).read_bytes()).hexdigest()
+                self.assertIn(digest, workflow)
+                self.assertIn(f"script/ci/diagnostics/sustained-flight/{filename}", workflow)
+
     def test_timed_runtime_tests_are_serial_for_full_and_server_only_registrations(self):
         timed_tests = (
             "GameServerPreviewTest.ResetsPriorityCursorAfterProgressWhenHeadingChanges",

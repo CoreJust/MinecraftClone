@@ -1,0 +1,172 @@
+diff --git a/src/runtime/network/src/Host.cpp b/src/runtime/network/src/Host.cpp
+index 5b2f06f..95ec8a8 100644
+--- a/src/runtime/network/src/Host.cpp
++++ b/src/runtime/network/src/Host.cpp
+@@ -4,11 +4,15 @@
+ #include <core/common/Assert.hpp>
+ 
+ #include <enet/enet.h>
++#include <enet/protocol.h>
+ 
+ #include <algorithm>
+ #include <atomic>
++#include <chrono>
++#include <cstdlib>
+ #include <limits>
+ #include <memory>
++#include <string_view>
+ #include <unordered_map>
+ #include <vector>
+ 
+@@ -17,6 +21,107 @@ namespace {
+ 
+ std::atomic_uint64_t s_next_host_id{ 1 };
+ 
++struct ChannelCommandCounts final {
++    uint64_t channel0 = 0U;
++    uint64_t channel1 = 0U;
++    uint64_t other = 0U;
++};
++
++template<typename NativeCommand>
++[[nodiscard]]
++ChannelCommandCounts countCommands(ENetList& commands) noexcept
++{
++    ChannelCommandCounts counts;
++    for (ENetListNode* node = enet_list_begin(&commands);
++         node != enet_list_end(&commands);
++         node = enet_list_next(node)) {
++        auto const* const command = reinterpret_cast<NativeCommand const*>(node);
++        switch (command->command.header.channelID) {
++            case 0U:
++                ++counts.channel0;
++                break;
++            case 1U:
++                ++counts.channel1;
++                break;
++            default:
++                ++counts.other;
++                break;
++        }
++    }
++    return counts;
++}
++
++[[nodiscard]]
++bool transportDiagnosticsEnabled() noexcept
++{
++    char const* const value = std::getenv("CORECPP_ENET_DIAGNOSTICS");
++    return value != nullptr && std::string_view{value} == "1";
++}
++
++void logTransportSnapshots(ENetHost& host, uint64_t const host_id, int64_t const elapsed_ms)
++{
++    for (uint64_t peer_index = 0U; peer_index < static_cast<uint64_t>(host.peerCount); ++peer_index) {
++        ENetPeer& peer = host.peers[peer_index];
++        if (peer.state != ENET_PEER_STATE_CONNECTED || peer.channels == nullptr) {
++            continue;
++        }
++
++        auto const sent_reliable = countCommands<ENetOutgoingCommand>(peer.sentReliableCommands);
++        auto const queued_reliable = countCommands<ENetOutgoingCommand>(peer.outgoingSendReliableCommands);
++        auto const queued_commands = countCommands<ENetOutgoingCommand>(peer.outgoingCommands);
++        auto const dispatched = countCommands<ENetIncomingCommand>(peer.dispatchedCommands);
++        ChannelCommandCounts ordered_incoming;
++        for (uint64_t channel_index = 0U;
++             channel_index < static_cast<uint64_t>(peer.channelCount);
++             ++channel_index) {
++            auto const channel_commands = countCommands<ENetIncomingCommand>(
++                peer.channels[channel_index].incomingReliableCommands
++            );
++            ordered_incoming.channel0 += channel_commands.channel0;
++            ordered_incoming.channel1 += channel_commands.channel1;
++            ordered_incoming.other += channel_commands.other;
++        }
++
++        CORE_INFO(
++            "ENet transport host={} elapsed={}ms peer={} remote-port={} reliable-window={}/{} "
++            "rtt-ms={}/{}/{} loss={}/{} packets-sent/lost={}/{} throttle={}/{} waiting-data={} "
++            "sent-reliable(channel0/channel1/other)={}/{}/{} queued-reliable={}/{}/{} queued-all={}/{}/{} "
++            "dispatched(channel0/channel1/other)={}/{}/{} ordered-incoming={}/{}/{}",
++            host_id,
++            elapsed_ms,
++            peer_index,
++            peer.address.port,
++            peer.reliableDataInTransit,
++            peer.windowSize,
++            peer.lastRoundTripTime,
++            peer.roundTripTime,
++            peer.roundTripTimeVariance,
++            peer.packetLoss,
++            static_cast<uint32_t>(ENET_PEER_PACKET_LOSS_SCALE),
++            peer.packetsSent,
++            peer.packetsLost,
++            peer.packetThrottle,
++            peer.packetThrottleLimit,
++            peer.totalWaitingData,
++            sent_reliable.channel0,
++            sent_reliable.channel1,
++            sent_reliable.other,
++            queued_reliable.channel0,
++            queued_reliable.channel1,
++            queued_reliable.other,
++            queued_commands.channel0,
++            queued_commands.channel1,
++            queued_commands.other,
++            dispatched.channel0,
++            dispatched.channel1,
++            dispatched.other,
++            ordered_incoming.channel0,
++            ordered_incoming.channel1,
++            ordered_incoming.other
++        );
++    }
++}
++
+ [[nodiscard]]
+ enet_uint32 toNative(SendMode const mode) noexcept {
+     enet_uint32 result = 0;
+@@ -59,6 +164,9 @@ struct Host::Impl final {
+     uint32_t max_channels;
+     uint64_t id;
+     std::unordered_map<ENetPeer*, std::shared_ptr<Peer::Token>> peer_tokens;
++    std::chrono::steady_clock::time_point created_at;
++    std::chrono::steady_clock::time_point last_transport_snapshot;
++    bool transport_diagnostics_enabled;
+ };
+ 
+ Host::Host(
+@@ -88,11 +196,15 @@ Host::Host(
+         return;
+     }
+ 
++    auto const created_at = std::chrono::steady_clock::now();
+     m_impl = std::make_unique<Impl>(Impl{
+         .native_host = native_host,
+         .max_channels = max_channels,
+         .id = s_next_host_id.fetch_add(1, std::memory_order_relaxed),
+         .peer_tokens = {},
++        .created_at = created_at,
++        .last_transport_snapshot = created_at,
++        .transport_diagnostics_enabled = transportDiagnosticsEnabled(),
+     });
+     CORE_INFO(
+         "Created host at {} with {} max connections and {} max channels",
+@@ -124,6 +236,17 @@ std::optional<NetEvent> Host::poll(std::chrono::milliseconds const timeout) {
+     int32_t const service_result = static_cast<int32_t>(
+         enet_host_service(m_impl->native_host, &native_event, native_timeout)
+     );
++    if (m_impl->transport_diagnostics_enabled) {
++        auto const now = std::chrono::steady_clock::now();
++        if (now - m_impl->last_transport_snapshot >= std::chrono::seconds{1}) {
++            m_impl->last_transport_snapshot = now;
++            logTransportSnapshots(
++                *m_impl->native_host,
++                m_impl->id,
++                std::chrono::duration_cast<std::chrono::milliseconds>(now - m_impl->created_at).count()
++            );
++        }
++    }
+     if (service_result < 0) {
+         CORE_WARN("Error occurred during enet_host_service, returned value is {}", service_result);
+         return std::nullopt;
