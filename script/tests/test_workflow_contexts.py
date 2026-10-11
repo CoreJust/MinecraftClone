@@ -48,9 +48,14 @@ class WorkflowContextTests(unittest.TestCase):
                     registrations = (*registered_timed_tests, unrelated_test)
                     discovery_file = source_directory / "discovered_tests.cmake"
                     discovery_commands = [
+                        'if(CMAKE_VERSION VERSION_LESS "4.0")',
+                        '    cmake_policy(SET CMP0057 OLD)',
+                        'endif()',
+                    ]
+                    discovery_commands.extend(
                         f'add_test("{test_name}" cmake -E true)'
                         for test_name in registrations
-                    ]
+                    )
                     discovery_commands.append(
                         'set(mc_tests_TESTS "' + ";".join(registrations) + '")'
                     )
