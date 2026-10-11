@@ -38,6 +38,13 @@ CTest rejects empty discovery, UBSan halts on diagnostics, and performance uses
 ordinary Release. Local checks defer hosted receipts; CI binds them to immutable
 trees before promotion and strict/tag checks.
 
+Windows analysis probes MSVC with `cl.exe /Bv /?`: `/Bv` alone reports the
+version but exits nonzero without a source file. Failed probes remain unavailable,
+not passed. The analysis CMD step returns an explicit nonzero exit on every
+failure, including inside its parenthesized row loop; expanding `%errorlevel%`
+there can return the stale pre-loop value. A green job does not replace the
+required passing, exact-candidate row receipts.
+
 The macOS ASan row keeps `detect_leaks=1` and runs clean, ordinary-leak, and real
 AudioUnit callback controls before configuring/building the game. Leak reports
 come from LSan integrated with ASan; Clang documents macOS leak detection via

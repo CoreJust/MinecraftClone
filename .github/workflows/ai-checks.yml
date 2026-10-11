@@ -259,13 +259,13 @@ jobs:
         run: |
           set "MC_ACQUIRED_VCPKG_ROOT=%VCPKG_ROOT%"
           call "%ProgramFiles%\Microsoft Visual Studio\2022\Enterprise\Common7\Tools\VsDevCmd.bat" -arch=amd64
-          if errorlevel 1 exit /b %errorlevel%
+          if errorlevel 1 exit /b 1
           set "VCPKG_ROOT=%MC_ACQUIRED_VCPKG_ROOT%"
           if not exist build\ai-analysis mkdir build\ai-analysis
-          if errorlevel 1 exit /b %errorlevel%
+          if errorlevel 1 exit /b 1
           for %%R in (windows_msvc_asan windows_msvc_analyze) do (
             python script/ai_analysis_matrix.py run-row build\ai-analysis\%%R.json --row %%R
-            if errorlevel 1 exit /b %errorlevel%
+            if errorlevel 1 exit /b 1
           )
       - name: Upload macOS analysis row receipts
         if: always() && matrix.platform == 'macos' && matrix.preset == 'debug'

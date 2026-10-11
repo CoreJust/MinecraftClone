@@ -120,6 +120,44 @@ class AnalysisMatrixTests(unittest.TestCase):
             ],
         )
 
+    def test_msvc_rows_use_zero_exit_version_probe_and_keep_required_analysis_commands(self):
+        rows = {row["id"]: row for row in self.manifest["rows"]}
+        for row_id, preset, build_directory in (
+            ("windows_msvc_asan", "analysis-windows-asan", "build/analysis-windows-asan"),
+            ("windows_msvc_analyze", "analysis-windows-analyze", "build/analysis-windows-analyze"),
+        ):
+            with self.subTest(row=row_id):
+                row = rows[row_id]
+                self.assertEqual(row["tool_probes"], [["cl.exe", "/Bv", "/?"], ["cmake", "--version"]])
+                self.assertEqual(
+                    row["commands"],
+                    [
+                        ["cmake", "--preset", preset],
+                        ["cmake", "--build", "--preset", preset],
+                        ["ctest", "--test-dir", build_directory, "--output-on-failure", "--no-tests=error"],
+                    ],
+                )
+
+    def test_nonzero_msvc_version_probe_keeps_row_unavailable(self):
+        row = next(item for item in self.manifest["rows"] if item["id"] == "windows_msvc_asan")
+        failed_probe = self.matrix.subprocess.CompletedProcess(
+            row["tool_probes"][0], 2, "", "cl.exe: error D8003: missing source filename"
+        )
+
+        with tempfile.TemporaryDirectory() as directory:
+            receipt_path = Path(directory) / "row.json"
+            with mock.patch.object(self.matrix, "require_clean_checkout"), mock.patch.object(
+                self.matrix, "_row_supported_on_host", return_value=True
+            ), mock.patch.object(self.matrix.subprocess, "run", return_value=failed_probe) as run:
+                receipt = self.matrix.run_row(
+                    row["id"], receipt_path, MANIFEST_PATH, root=REPOSITORY, expected_candidate=CANDIDATE
+                )
+
+        result = receipt["rows"][0]
+        self.assertEqual(result["status"], "unavailable")
+        self.assertIn("exited 2", result["diagnostics"])
+        self.assertEqual(run.call_count, 1)
+
     def test_android_clang_tidy_receipt_requires_the_exact_analyzer_invocation(self):
         receipt = self.receipt()
         row = next(item for item in receipt["rows"] if item["id"] == "android_clang_tidy")

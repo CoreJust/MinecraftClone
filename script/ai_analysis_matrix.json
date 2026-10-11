@@ -57,7 +57,7 @@
       "flags": ["-DCMAKE_BUILD_TYPE=Release", "-DMC_ENABLE_HIGH_ASSERT=OFF", "-DMC_ENABLE_SANITIZERS=ON", "-DMC_SANITIZER=address", "/fsanitize=address"],
       "compile_commands": "build/analysis-windows-asan/compile_commands.json",
       "required_compile_flags": ["/fsanitize=address"],
-      "tool_probes": [["cl.exe", "/Bv"], ["cmake", "--version"]],
+      "tool_probes": [["cl.exe", "/Bv", "/?"], ["cmake", "--version"]],
       "commands": [["cmake", "--preset", "analysis-windows-asan"], ["cmake", "--build", "--preset", "analysis-windows-asan"], ["ctest", "--test-dir", "build/analysis-windows-asan", "--output-on-failure", "--no-tests=error"]],
       "timeout_seconds": 1200
     },
@@ -67,7 +67,7 @@
       "platform": "windows",
       "capability": "msvc-analyze",
       "flags": ["/analyze", "/W4", "/WX"],
-      "tool_probes": [["cl.exe", "/Bv"], ["cmake", "--version"]],
+      "tool_probes": [["cl.exe", "/Bv", "/?"], ["cmake", "--version"]],
       "commands": [["cmake", "--preset", "analysis-windows-analyze"], ["cmake", "--build", "--preset", "analysis-windows-analyze"], ["ctest", "--test-dir", "build/analysis-windows-analyze", "--output-on-failure", "--no-tests=error"]],
       "timeout_seconds": 1200
     },
