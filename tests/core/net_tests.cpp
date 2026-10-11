@@ -1,10 +1,16 @@
 #include <core/net/Address.hpp>
+#include <core/net/Event.hpp>
 #include <core/net/Host.hpp>
 #include <core/net/SendMode.hpp>
+
+#include <fmt/format.h>
 
 #include <gtest/gtest.h>
 
 #include <chrono>
+#include <cstddef>
+#include <optional>
+#include <string>
 
 TEST(Net, CreatesValidAddress) {
     auto const address = core::Address::make("127.0.0.1", 20'040);
@@ -33,7 +39,7 @@ TEST(Net, RepeatedlyPollWithZeroTimeoutReturns) {
     core::Host host{ std::nullopt, 1, 1 };
 
     auto const start = std::chrono::steady_clock::now();
-    size_t const polled = host.repeatedlyPoll([](core::NetEvent) { }, std::chrono::milliseconds{ 0 });
+    size_t const polled = host.repeatedlyPoll([](core::NetEvent const&) { }, std::chrono::milliseconds{ 0 });
     auto const elapsed = std::chrono::steady_clock::now() - start;
 
     EXPECT_EQ(polled, 0u);

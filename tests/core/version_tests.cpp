@@ -3,6 +3,9 @@
 #include <fmt/format.h>
 #include <gtest/gtest.h>
 
+#include <compare>
+#include <string>
+
 TEST(VersionTest, ComparesComponentsInOrder) {
     core::Version const base{ .epoch = 1, .major = 2, .minor = 3, .patch = 4 };
 

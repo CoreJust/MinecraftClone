@@ -39,9 +39,38 @@ class AnalysisMatrixTests(unittest.TestCase):
     def receipt(self):
         rows = []
         for manifest_row in self.manifest["rows"]:
+            row_id = manifest_row["id"]
+            effective_analysis = None
+            if row_id in self.matrix.REQUIRED_ANALYSIS_CONFIGURATION:
+                effective_analysis = {
+                    "configuration_sha256": "e" * 64,
+                    "configuration_key": self.matrix.REQUIRED_ANALYSIS_CONFIGURATION[row_id][1],
+                    "observed_settings": self.matrix.REQUIRED_ANALYSIS_CONFIGURATION[row_id][2],
+                    "invocation_count": 1,
+                    "observed_tools_and_flags": self.matrix.ANALYSIS_TOOL_MARKERS[row_id],
+                    "build_output_sha256": "f" * 64,
+                }
+                if row_id in self.matrix.PER_TRANSLATION_UNIT_ANALYSIS:
+                    unit = {
+                        "source": "src/main.cpp",
+                        "source_sha256": "1" * 64,
+                        "source_argv_sha256": "2" * 64,
+                        "invoked_tool": self.matrix.PER_TRANSLATION_UNIT_ANALYSIS[row_id]["tool"],
+                        "status": "passed",
+                        "record_sha256": "3" * 64,
+                        "report_sha256": "4" * 64,
+                    }
+                    effective_analysis.update(
+                        {
+                            "translation_unit_count": 1,
+                            "translation_unit_inventory_sha256": self.matrix._translation_unit_inventory_sha256([unit]),
+                            "project_input_sha256": "5" * 64,
+                            "translation_units": [unit],
+                        }
+                    )
             rows.append(
                 {
-                    "id": manifest_row["id"],
+                    "id": row_id,
                     "candidate": dict(CANDIDATE),
                     "status": "passed",
                     "flags": list(manifest_row["flags"]),
@@ -68,18 +97,7 @@ class AnalysisMatrixTests(unittest.TestCase):
                         if "required_compile_flags" in manifest_row
                         else None
                     ),
-                    "effective_analysis": (
-                        {
-                            "configuration_sha256": "e" * 64,
-                            "configuration_key": self.matrix.REQUIRED_ANALYSIS_CONFIGURATION[manifest_row["id"]][1],
-                            "observed_settings": self.matrix.REQUIRED_ANALYSIS_CONFIGURATION[manifest_row["id"]][2],
-                            "invocation_count": 1,
-                            "observed_tools_and_flags": self.matrix.ANALYSIS_TOOL_MARKERS[manifest_row["id"]],
-                            "build_output_sha256": "f" * 64,
-                        }
-                        if manifest_row["id"] in self.matrix.REQUIRED_ANALYSIS_CONFIGURATION
-                        else None
-                    ),
+                    "effective_analysis": effective_analysis,
                     "diagnostics": "no diagnostics",
                     "diagnostics_sha256": hashlib.sha256(b"no diagnostics").hexdigest(),
                     "duration_seconds": 1,
@@ -93,6 +111,216 @@ class AnalysisMatrixTests(unittest.TestCase):
             "source": dict(CANDIDATE),
             "rows": rows,
         }
+
+    def create_iwyu_fixture(self, root: Path, *, source_count: int = 1, receipt_count: int | None = None):
+        for relative in (
+            "CMakePresets.json",
+            "script/ai_analysis_matrix.py",
+            "script/ai_analysis_matrix.json",
+            "script/ci/iwyu_gate.py",
+            "script/ci/cppcheck_gate.py",
+        ):
+            path = root / relative
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("analysis fingerprint fixture\n", encoding="utf-8")
+
+        preset, cache_key, settings = self.matrix.REQUIRED_ANALYSIS_CONFIGURATION["iwyu"]
+        build_directory = root / "build" / preset
+        build_directory.mkdir(parents=True, exist_ok=True)
+        (build_directory / "CMakeCache.txt").write_text(
+            f"{cache_key}:STRING={';'.join(settings)}\n", encoding="utf-8"
+        )
+
+        compile_commands = []
+        sources = []
+        for index in range(source_count):
+            source = root / "src" / f"unit_{index}.cpp"
+            source.parent.mkdir(parents=True, exist_ok=True)
+            source.write_text(f"int unit_{index}() {{ return {index}; }}\n", encoding="utf-8")
+            source.with_suffix(".hpp").write_text("struct InitialHeader {};\n", encoding="utf-8")
+            sources.append(source)
+            compile_commands.append(
+                {
+                    "directory": str(root),
+                    "file": str(source),
+                    "arguments": [
+                        "clang++",
+                        "-std=c++23",
+                        "-c",
+                        str(source),
+                        "-o",
+                        str(build_directory / f"unit_{index}.o"),
+                    ],
+                }
+            )
+        (build_directory / "compile_commands.json").write_text(
+            json.dumps(compile_commands), encoding="utf-8"
+        )
+
+        gate_directory = root / self.matrix.PER_TRANSLATION_UNIT_ANALYSIS["iwyu"]["receipt_directory"]
+        gate_directory.mkdir(parents=True, exist_ok=True)
+        input_digest = self.matrix.project_analysis_input_sha256(root)
+        if receipt_count is None:
+            receipt_count = source_count
+        for source in sources[:receipt_count]:
+            source_relative = source.relative_to(root).as_posix()
+            compiler_argv = [
+                "clang++",
+                "-std=c++23",
+                "-c",
+                str(source),
+                "-o",
+                str(build_directory / (source.stem + ".o")),
+            ]
+            output_index = compiler_argv.index("-o")
+            object_path = compiler_argv[output_index + 1]
+            source_argv = [
+                "--driver-mode=g++",
+                *compiler_argv[1:output_index],
+                "-MD",
+                "-MT",
+                object_path,
+                "-MF",
+                object_path + ".d",
+                *compiler_argv[output_index:],
+            ]
+            source_argv_json = json.dumps(source_argv, separators=(",", ":")).encode("utf-8")
+            stem = hashlib.sha256(source_relative.encode("utf-8") + b"\0" + source_argv_json).hexdigest()
+            log_path = gate_directory / f"{stem}.log"
+            record_path = gate_directory / f"{stem}.json"
+            raw_report = b"IWYU complete report\n"
+            log_path.write_bytes(raw_report)
+            record = {
+                "schema_version": 1,
+                "source": source_relative,
+                "source_sha256": hashlib.sha256(source.read_bytes()).hexdigest(),
+                "project_input_sha256": input_digest,
+                "source_argv": source_argv,
+                "adapter_argv": [
+                    "include-what-you-use",
+                    "-Xiwyu",
+                    "--no_fwd_decls",
+                    "-Xiwyu",
+                    "--error",
+                    "--",
+                    *source_argv,
+                ],
+                "invoked_tool": "include-what-you-use",
+                "tool_argv": [
+                    "include-what-you-use",
+                    "-Xiwyu",
+                    "--no_fwd_decls",
+                    *source_argv,
+                ],
+                "tool_exit_code": 0,
+                "report_sha256": hashlib.sha256(raw_report).hexdigest(),
+                "status": "passed",
+                "public_additions": [],
+                "removals": [],
+                "forward_declarations": [],
+                "mapped_facades": [],
+                "unsupported_suggestions": [],
+                "log": log_path.relative_to(root).as_posix(),
+                "record": record_path.relative_to(root).as_posix(),
+            }
+            record_path.write_text(json.dumps(record), encoding="utf-8")
+        return sources
+
+    def create_cppcheck_fixture(self, root: Path, *, source_count: int = 1, receipt_count: int | None = None):
+        sources = self.create_iwyu_fixture(root, source_count=source_count, receipt_count=0)
+        preset, cache_key, settings = self.matrix.REQUIRED_ANALYSIS_CONFIGURATION["cppcheck"]
+        build_directory = root / "build" / preset
+        build_directory.mkdir(parents=True, exist_ok=True)
+        (build_directory / "CMakeCache.txt").write_text(
+            f"{cache_key}:STRING={';'.join(settings)}\n"
+            "CMAKE_C_CPPCHECK:STRING=\n"
+            "CMAKE_CXX_CPPCHECK:STRING=\n",
+            encoding="utf-8",
+        )
+        compile_commands = json.loads(
+            (root / "build" / "analysis-iwyu" / "compile_commands.json").read_text(encoding="utf-8")
+        )
+        for index, entry in enumerate(compile_commands):
+            entry["arguments"][-1] = str(build_directory / f"unit_{index}.o")
+        (build_directory / "compile_commands.json").write_text(json.dumps(compile_commands), encoding="utf-8")
+
+        gate_directory = root / self.matrix.PER_TRANSLATION_UNIT_ANALYSIS["cppcheck"]["receipt_directory"]
+        gate_directory.mkdir(parents=True, exist_ok=True)
+        input_digest = self.matrix.project_analysis_input_sha256(root)
+        if receipt_count is None:
+            receipt_count = source_count
+        severity_counts = {
+            "error": 0,
+            "warning": 0,
+            "performance": 0,
+            "portability": 0,
+            "style": 0,
+            "information": 0,
+            "debug": 0,
+        }
+        for index, source in enumerate(sources[:receipt_count]):
+            source_relative = source.relative_to(root).as_posix()
+            compile_argv = compile_commands[index]["arguments"]
+            output_index = compile_argv.index("-o")
+            object_path = compile_argv[output_index + 1]
+            compiler_argv = [
+                *compile_argv[:output_index],
+                "-MD",
+                "-MT",
+                object_path,
+                "-MF",
+                object_path + ".d",
+                *compile_argv[output_index:],
+            ]
+            cppcheck_argv = ["cppcheck", "--enable=all", "--inline-suppr", "--xml", str(source)]
+            source_sha256 = hashlib.sha256(source.read_bytes()).hexdigest()
+            identity = hashlib.sha256(
+                self.matrix._canonical_json(
+                    {
+                        "source_absolute": str(source.resolve()),
+                        "source_sha256": source_sha256,
+                        "project_input_sha256": input_digest,
+                        "cppcheck_argv": cppcheck_argv,
+                        "compiler_argv": compiler_argv,
+                        "cwd": str(root.resolve()),
+                    }
+                )
+            ).hexdigest()
+            record_path = gate_directory / f"{identity}.json"
+            xml_path = gate_directory / f"{identity}.xml"
+            raw_report = b"<?xml version=\"1.0\"?><results version=\"2\"/>\n"
+            xml_path.write_bytes(raw_report)
+            record = {
+                "schema": 1,
+                "gate": "cppcheck-per-tu",
+                "status": "pass",
+                "failure_stage": None,
+                "cwd": str(root.resolve()),
+                "source": {
+                    "absolute": str(source.resolve()),
+                    "relative": source_relative,
+                    "sha256": source_sha256,
+                },
+                "identity_sha256": identity,
+                "project_input_sha256": input_digest,
+                "raw_report_sha256": hashlib.sha256(raw_report).hexdigest(),
+                "cppcheck": {
+                    "argv": cppcheck_argv,
+                    "version": "2.17",
+                    "returncode": 0,
+                    "elapsed_ms": 1,
+                },
+                "compiler": {"argv": compiler_argv, "returncode": 0, "elapsed_ms": 1},
+                "summary": {"blocking": 0, "advisory": 0, "by_severity": severity_counts},
+                "diagnostics": [],
+                "artifacts": {
+                    "root": str(gate_directory.resolve()),
+                    "xml": str(xml_path.resolve()),
+                    "receipt": str(record_path.resolve()),
+                },
+            }
+            record_path.write_text(json.dumps(record), encoding="utf-8")
+        return sources
 
     def test_manifest_contains_exact_acceptance_rows(self):
         self.assertEqual(
@@ -119,6 +347,44 @@ class AnalysisMatrixTests(unittest.TestCase):
                 ["cmake", "--build", "--preset", "analysis-clang-static"],
             ],
         )
+
+    def test_msvc_rows_use_zero_exit_version_probe_and_keep_required_analysis_commands(self):
+        rows = {row["id"]: row for row in self.manifest["rows"]}
+        for row_id, preset, build_directory in (
+            ("windows_msvc_asan", "analysis-windows-asan", "build/analysis-windows-asan"),
+            ("windows_msvc_analyze", "analysis-windows-analyze", "build/analysis-windows-analyze"),
+        ):
+            with self.subTest(row=row_id):
+                row = rows[row_id]
+                self.assertEqual(row["tool_probes"], [["cl.exe", "/Bv", "/?"], ["cmake", "--version"]])
+                self.assertEqual(
+                    row["commands"],
+                    [
+                        ["cmake", "--preset", preset],
+                        ["cmake", "--build", "--preset", preset],
+                        ["ctest", "--test-dir", build_directory, "--output-on-failure", "--no-tests=error"],
+                    ],
+                )
+
+    def test_nonzero_msvc_version_probe_keeps_row_unavailable(self):
+        row = next(item for item in self.manifest["rows"] if item["id"] == "windows_msvc_asan")
+        failed_probe = self.matrix.subprocess.CompletedProcess(
+            row["tool_probes"][0], 2, "", "cl.exe: error D8003: missing source filename"
+        )
+
+        with tempfile.TemporaryDirectory() as directory:
+            receipt_path = Path(directory) / "row.json"
+            with mock.patch.object(self.matrix, "require_clean_checkout"), mock.patch.object(
+                self.matrix, "_row_supported_on_host", return_value=True
+            ), mock.patch.object(self.matrix.subprocess, "run", return_value=failed_probe) as run:
+                receipt = self.matrix.run_row(
+                    row["id"], receipt_path, MANIFEST_PATH, root=REPOSITORY, expected_candidate=CANDIDATE
+                )
+
+        result = receipt["rows"][0]
+        self.assertEqual(result["status"], "unavailable")
+        self.assertIn("exited 2", result["diagnostics"])
+        self.assertEqual(run.call_count, 1)
 
     def test_android_clang_tidy_receipt_requires_the_exact_analyzer_invocation(self):
         receipt = self.receipt()
@@ -200,6 +466,8 @@ class AnalysisMatrixTests(unittest.TestCase):
 
     def test_effective_analysis_capture_requires_cache_flags_and_verbose_invocation(self):
         for row_id, (preset, cache_key, settings) in self.matrix.REQUIRED_ANALYSIS_CONFIGURATION.items():
+            if row_id in self.matrix.PER_TRANSLATION_UNIT_ANALYSIS:
+                continue
             with self.subTest(row_id=row_id), tempfile.TemporaryDirectory() as directory:
                 root = Path(directory)
                 cache_path = root / "build" / preset / "CMakeCache.txt"
@@ -212,6 +480,206 @@ class AnalysisMatrixTests(unittest.TestCase):
 
                 with self.assertRaisesRegex(self.matrix.MatrixError, "no configured analyzer invocation"):
                     self.matrix.capture_effective_analysis(root, {"id": row_id}, "build completed")
+
+    def test_cmake_dependency_flags_must_match_the_expected_object_and_depfile(self):
+        compile_argv = ["clang++", "-std=c++23", "-o", "build/unit.o", "-c", "src/unit.cpp"]
+        observed = [
+            *compile_argv[:2],
+            "-MD",
+            "-MT",
+            "build/unit.o",
+            "-MF",
+            "build/unit.o.d",
+            *compile_argv[2:],
+        ]
+
+        self.assertTrue(self.matrix._compiler_argv_matches(compile_argv, observed))
+        self.assertTrue(
+            self.matrix._iwyu_argv_matches(
+                compile_argv[1:], ["--driver-mode=g++", *observed[1:]]
+            )
+        )
+        self.assertTrue(
+            self.matrix._iwyu_argv_matches(
+                compile_argv[1:], [*observed[1:], "--driver-mode=g++"]
+            )
+        )
+
+        wrong_object = list(observed)
+        wrong_object[wrong_object.index("-MT") + 1] = "build/other.o"
+        wrong_depfile = list(observed)
+        wrong_depfile[wrong_depfile.index("-MF") + 1] = "build/other.o.d"
+        extra_argument = list(observed)
+        extra_argument.insert(extra_argument.index("-o"), "-fextra")
+        for invalid in (wrong_object, wrong_depfile, extra_argument):
+            with self.subTest(invalid=invalid):
+                self.assertFalse(self.matrix._compiler_argv_matches(compile_argv, invalid))
+
+    def test_iwyu_capture_requires_exact_owned_translation_unit_receipts(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.create_iwyu_fixture(root)
+
+            captured = self.matrix.capture_effective_analysis(root, {"id": "iwyu"}, "incremental build")
+
+        self.assertEqual(captured["translation_unit_count"], 1)
+        self.assertEqual(captured["invocation_count"], 1)
+        self.assertEqual(captured["translation_units"][0]["invoked_tool"], "include-what-you-use")
+        self.assertEqual(captured["translation_units"][0]["status"], "passed")
+        self.assertEqual(len(captured["translation_unit_inventory_sha256"]), 64)
+
+    def test_iwyu_capture_rejects_changed_owned_header_and_missing_translation_unit(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            sources = self.create_iwyu_fixture(root)
+            header = sources[0].with_suffix(".hpp")
+            header.write_text("struct ChangedHeader {};\n", encoding="utf-8")
+
+            with self.assertRaisesRegex(self.matrix.MatrixError, "stale project inputs"):
+                self.matrix.capture_effective_analysis(root, {"id": "iwyu"}, "incremental build")
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.create_iwyu_fixture(root, source_count=2, receipt_count=1)
+
+            with self.assertRaisesRegex(self.matrix.MatrixError, "missing 1 owned translation-unit"):
+                self.matrix.capture_effective_analysis(root, {"id": "iwyu"}, "partial build")
+
+    def test_iwyu_capture_rejects_an_extra_receipt_for_a_duplicate_source(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.create_iwyu_fixture(root)
+            gate_directory = root / self.matrix.PER_TRANSLATION_UNIT_ANALYSIS["iwyu"]["receipt_directory"]
+            original_path = next(gate_directory.glob("*.json"))
+            duplicate = json.loads(original_path.read_text(encoding="utf-8"))
+            duplicate["source_argv"].insert(1, "-DSECOND_PASS=1")
+            source_argv_json = json.dumps(duplicate["source_argv"], separators=(",", ":")).encode("utf-8")
+            stem = hashlib.sha256(duplicate["source"].encode("utf-8") + b"\0" + source_argv_json).hexdigest()
+            duplicate["adapter_argv"] = [
+                "include-what-you-use",
+                "-Xiwyu",
+                "--no_fwd_decls",
+                "-Xiwyu",
+                "--error",
+                "--",
+                *duplicate["source_argv"],
+            ]
+            duplicate["tool_argv"] = [
+                "include-what-you-use",
+                "-Xiwyu",
+                "--no_fwd_decls",
+                *duplicate["source_argv"],
+            ]
+            duplicate_log = gate_directory / f"{stem}.log"
+            duplicate_record = gate_directory / f"{stem}.json"
+            duplicate_log.write_bytes((root / duplicate["log"]).read_bytes())
+            duplicate["log"] = duplicate_log.relative_to(root).as_posix()
+            duplicate["record"] = duplicate_record.relative_to(root).as_posix()
+            duplicate_record.write_text(json.dumps(duplicate), encoding="utf-8")
+
+            with self.assertRaisesRegex(self.matrix.MatrixError, "stale or unexpected translation-unit"):
+                self.matrix.capture_effective_analysis(root, {"id": "iwyu"}, "duplicate invocation")
+
+    def test_iwyu_build_failure_propagates_to_the_analysis_row(self):
+        for row_id in ("iwyu", "cppcheck"):
+            with tempfile.TemporaryDirectory() as directory:
+                receipt_path = Path(directory) / "row.json"
+                row = next(row for row in self.manifest["rows"] if row["id"] == row_id)
+                probe_results = [
+                    self.matrix.subprocess.CompletedProcess(probe, 0, "tool 1.0\n", "")
+                    for probe in row["tool_probes"]
+                ]
+                probe_results.extend(
+                    [
+                        self.matrix.subprocess.CompletedProcess([], 0, "configured\n", ""),
+                        self.matrix.subprocess.CompletedProcess([], 1, "gate failed\n", ""),
+                    ]
+                )
+
+                with mock.patch.object(self.matrix, "require_clean_checkout"), mock.patch.object(
+                    self.matrix, "_row_supported_on_host", return_value=True
+                ), mock.patch.object(self.matrix.subprocess, "run", side_effect=probe_results):
+                    receipt = self.matrix.run_row(
+                        row_id, receipt_path, MANIFEST_PATH, root=REPOSITORY, expected_candidate=CANDIDATE
+                    )
+
+            row_receipt = receipt["rows"][0]
+            self.assertEqual(row_receipt["status"], "failed")
+            self.assertEqual(row_receipt["executed_commands"][-1]["return_code"], 1)
+            self.assertIsNone(row_receipt["effective_analysis"])
+
+    @unittest.skipIf(sys.platform == "win32", "CMake IWYU adapter regression uses a POSIX no-op compiler")
+    def test_cmake_iwyu_error_sentinel_propagates_wrapper_exit_status(self):
+        cmake = shutil.which("cmake")
+        no_op_compiler = shutil.which("true")
+        if cmake is None or no_op_compiler is None:
+            self.skipTest("cmake and POSIX true are required for the CMake adapter regression")
+
+        failing_iwyu = f"{sys.executable};-c;raise SystemExit(7)"
+        base_command = [
+            cmake,
+            "-E",
+            "__run_co_compile",
+            "--source=Chunk.cpp",
+            "--",
+            no_op_compiler,
+            "-c",
+            "Chunk.cpp",
+        ]
+        swallowed = subprocess.run(
+            [*base_command[:3], f"--iwyu={failing_iwyu}", *base_command[3:]],
+            check=False,
+            capture_output=True,
+        )
+        propagated = subprocess.run(
+            [*base_command[:3], f"--iwyu={failing_iwyu};-Xiwyu;--error", *base_command[3:]],
+            check=False,
+            capture_output=True,
+        )
+
+        self.assertEqual(swallowed.returncode, 0, swallowed.stderr.decode(errors="replace"))
+        self.assertEqual(propagated.returncode, 7, propagated.stderr.decode(errors="replace"))
+
+    def test_cppcheck_capture_requires_exact_receipts_and_current_inputs(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            sources = self.create_cppcheck_fixture(root)
+
+            captured = self.matrix.capture_effective_analysis(root, {"id": "cppcheck"}, "incremental build")
+            self.assertEqual(captured["translation_unit_count"], 1)
+            self.assertEqual(captured["translation_units"][0]["invoked_tool"], "cppcheck")
+
+            sources[0].with_suffix(".hpp").write_text("struct ChangedHeader {};\n", encoding="utf-8")
+            with self.assertRaisesRegex(self.matrix.MatrixError, "stale project inputs"):
+                self.matrix.capture_effective_analysis(root, {"id": "cppcheck"}, "incremental build")
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.create_cppcheck_fixture(root, source_count=2, receipt_count=1)
+            with self.assertRaisesRegex(self.matrix.MatrixError, "missing 1 owned translation-unit"):
+                self.matrix.capture_effective_analysis(root, {"id": "cppcheck"}, "partial build")
+
+    def test_cppcheck_capture_rejects_changed_gate_policy_and_compile_commands(self):
+        for changed_input in ("CMakePresets.json", "script/ci/cppcheck_gate.py"):
+            with self.subTest(changed_input=changed_input), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                self.create_cppcheck_fixture(root)
+                policy_path = root / changed_input
+                policy_path.write_text(policy_path.read_text(encoding="utf-8") + "changed\n", encoding="utf-8")
+
+                with self.assertRaisesRegex(self.matrix.MatrixError, "stale project inputs"):
+                    self.matrix.capture_effective_analysis(root, {"id": "cppcheck"}, "incremental build")
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.create_cppcheck_fixture(root)
+            compile_commands_path = root / "build/analysis-cppcheck/compile_commands.json"
+            compile_commands = json.loads(compile_commands_path.read_text(encoding="utf-8"))
+            compile_commands[0]["arguments"].insert(1, "-DCHANGED_COMMAND")
+            compile_commands_path.write_text(json.dumps(compile_commands), encoding="utf-8")
+
+            with self.assertRaisesRegex(self.matrix.MatrixError, "does not match compile_commands.json"):
+                self.matrix.capture_effective_analysis(root, {"id": "cppcheck"}, "incremental build")
 
     def test_effective_compile_flags_are_read_from_generated_commands(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -671,10 +1139,18 @@ class AnalysisMatrixTests(unittest.TestCase):
         command = configure["analysis-iwyu"]["cacheVariables"]["CMAKE_CXX_INCLUDE_WHAT_YOU_USE"]
         row = next(row for row in self.manifest["rows"] if row["id"] == "iwyu")
 
-        self.assertIn("-Xiwyu", command)
-        self.assertIn("--error", command)
-        self.assertNotIn("--error_always", command)
-        self.assertIn("--error", row["flags"])
+        self.assertIn("iwyu_gate.py", command)
+        self.assertIn("--no_fwd_decls", command)
+        self.assertIn(";-Xiwyu;--error;--", command)
+        self.assertTrue(any("CMake -Xiwyu --error suffix propagates wrapper failures" in flag for flag in row["flags"]))
+        self.assertTrue(any("owned public include additions fail" in flag for flag in row["flags"]))
+
+    def test_cppcheck_manifest_records_classified_gate_policy(self):
+        row = next(row for row in self.manifest["rows"] if row["id"] == "cppcheck")
+
+        self.assertTrue(any("CMAKE_CXX_COMPILER_LAUNCHER" in flag for flag in row["flags"]))
+        self.assertTrue(any("error, warning, performance, and portability" in flag for flag in row["flags"]))
+        self.assertNotIn("--error-exitcode=1", ";".join(row["flags"]))
 
     def test_ctest_rows_fail_when_no_tests_are_registered(self):
         rows = {row["id"]: row for row in self.manifest["rows"]}

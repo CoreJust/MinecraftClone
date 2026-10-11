@@ -2,6 +2,9 @@
 
 #include <gtest/gtest.h>
 
+#include <string>
+#include <string_view>
+
 struct TestTag;
 
 TEST(TaggedBoolTest, ProvidesTypedValuesAndConversions) {

@@ -54,7 +54,7 @@ void StoneIndirectDraws::Prepared::record(
 
 StoneIndirectDraws::StoneIndirectDraws(
     uint32_t const maximum_command_count,
-    uint32_t const maximum_draw_count,
+    MaximumDrawCount const maximum_draw_count,
     bool const multi_draw_indirect_enabled,
     bool const draw_indirect_first_instance_enabled,
     Factory factory,
@@ -62,7 +62,7 @@ StoneIndirectDraws::StoneIndirectDraws(
 )
     : m_maximum_command_count(maximum_command_count)
     , m_maximum_draw_count(multi_draw_indirect_enabled && draw_indirect_first_instance_enabled
-        ? maximum_draw_count : 0U)
+        ? maximum_draw_count.value : 0U)
     , m_factory(std::move(factory))
     , m_indexed(indexed)
 {

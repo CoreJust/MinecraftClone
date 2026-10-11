@@ -2,9 +2,16 @@
 #include <client/CameraObstruction.hpp>
 #include <client/PlayerPresentation.hpp>
 
+#include <shared/world/World.hpp>
+
+#include <glm/ext/vector_double3.hpp>
+#include <glm/vec3.hpp>
 #include <gtest/gtest.h>
 
+#include <array>
 #include <chrono>
+#include <optional>
+#include <string>
 
 namespace {
 
@@ -107,9 +114,10 @@ TEST(PlayerPresentationTest, FirstPersonCameraAndInterpolationFollowFlightHeight
     presentation.update(INITIAL, STARTED_AT);
     presentation.update(TARGET, STARTED_AT + std::chrono::milliseconds{ 100 });
 
-    ASSERT_TRUE(presentation.sample('@', STARTED_AT + std::chrono::milliseconds{ 150 }).has_value());
+    auto const sampled = presentation.sample('@', STARTED_AT + std::chrono::milliseconds{ 150 });
+    ASSERT_TRUE(sampled.has_value());
     client::CameraPose const pose = client::localPlayerFirstPersonPose(
-        *presentation.sample('@', STARTED_AT + std::chrono::milliseconds{ 150 }),
+        *sampled,
         { .yaw_degrees = 90.0 }
     );
     EXPECT_DOUBLE_EQ(pose.position.x, 12.3125);
@@ -137,15 +145,24 @@ TEST(PlayerPresentationTest, InitialAuthoritativePositionSnapsAndSubsequentPosit
     client::PlayerPresentation presentation;
 
     presentation.update(INITIAL, started_at);
-    ASSERT_TRUE(presentation.sample('@', started_at).has_value());
-    EXPECT_DOUBLE_EQ(presentation.sample('@', started_at)->x, 0.0);
+    auto const initial_sample = presentation.sample('@', started_at);
+    ASSERT_TRUE(initial_sample.has_value());
+    EXPECT_DOUBLE_EQ(initial_sample->x, 0.0);
 
     presentation.update(TARGET, started_at + std::chrono::milliseconds{ 100 });
     EXPECT_DOUBLE_EQ(shared::playerPositionX(TARGET), 0.4);
-    EXPECT_DOUBLE_EQ(presentation.sample('@', started_at + std::chrono::milliseconds{ 125 })->x, 0.1);
-    EXPECT_DOUBLE_EQ(presentation.sample('@', started_at + std::chrono::milliseconds{ 150 })->x, 0.2);
-    EXPECT_DOUBLE_EQ(presentation.sample('@', started_at + std::chrono::milliseconds{ 175 })->x, 0.3);
-    EXPECT_DOUBLE_EQ(presentation.sample('@', started_at + std::chrono::milliseconds{ 200 })->x, 0.4);
+    auto const sample_125 = presentation.sample('@', started_at + std::chrono::milliseconds{ 125 });
+    auto const sample_150 = presentation.sample('@', started_at + std::chrono::milliseconds{ 150 });
+    auto const sample_175 = presentation.sample('@', started_at + std::chrono::milliseconds{ 175 });
+    auto const sample_200 = presentation.sample('@', started_at + std::chrono::milliseconds{ 200 });
+    ASSERT_TRUE(sample_125.has_value());
+    ASSERT_TRUE(sample_150.has_value());
+    ASSERT_TRUE(sample_175.has_value());
+    ASSERT_TRUE(sample_200.has_value());
+    EXPECT_DOUBLE_EQ(sample_125->x, 0.1);
+    EXPECT_DOUBLE_EQ(sample_150->x, 0.2);
+    EXPECT_DOUBLE_EQ(sample_175->x, 0.3);
+    EXPECT_DOUBLE_EQ(sample_200->x, 0.4);
 }
 
 TEST(PlayerPresentationTest, VerticalInterpolationKeepsVelocityContinuousAcrossTicks)
@@ -180,19 +197,25 @@ TEST(PlayerPresentationTest, VerticalInterpolationKeepsVelocityContinuousAcrossT
     presentation.update(FIRST_TARGET, started_at + std::chrono::milliseconds{ 100 });
     presentation.update(SECOND_TARGET, started_at + std::chrono::milliseconds{ 200 });
 
+    auto const sample_250 = presentation.sample('@', started_at + std::chrono::milliseconds{ 250 });
+    auto const before_retarget_sample = presentation.sample(
+        '@',
+        started_at + std::chrono::milliseconds{ 199 }
+    );
+    auto const after_retarget_sample = presentation.sample(
+        '@',
+        started_at + std::chrono::milliseconds{ 201 }
+    );
+    ASSERT_TRUE(sample_250.has_value());
+    ASSERT_TRUE(before_retarget_sample.has_value());
+    ASSERT_TRUE(after_retarget_sample.has_value());
     EXPECT_NEAR(
-        presentation.sample('@', started_at + std::chrono::milliseconds{ 250 })->z,
+        sample_250->z,
         1.271'875,
         1e-9
     );
-    double const before_retarget = presentation.sample(
-        '@',
-        started_at + std::chrono::milliseconds{ 199 }
-    )->z;
-    double const after_retarget = presentation.sample(
-        '@',
-        started_at + std::chrono::milliseconds{ 201 }
-    )->z;
+    double const before_retarget = before_retarget_sample->z;
+    double const after_retarget = after_retarget_sample->z;
     EXPECT_LT(after_retarget - before_retarget, 0.03);
 }
 
@@ -220,14 +243,17 @@ TEST(PlayerPresentationTest, TakeoffPresentationStartsWithTheAuthoritativeJumpIm
     presentation.update(INITIAL, started_at);
     presentation.update(TAKEOFF, started_at + std::chrono::milliseconds{ 100 });
 
-    ASSERT_TRUE(presentation.sample('@', started_at + std::chrono::milliseconds{ 125 }).has_value());
+    auto const sample_125 = presentation.sample('@', started_at + std::chrono::milliseconds{ 125 });
+    auto const sample_150 = presentation.sample('@', started_at + std::chrono::milliseconds{ 150 });
+    ASSERT_TRUE(sample_125.has_value());
+    ASSERT_TRUE(sample_150.has_value());
     EXPECT_NEAR(
-        presentation.sample('@', started_at + std::chrono::milliseconds{ 125 })->z,
+        sample_125->z,
         0.169'531'25,
         1e-9
     );
     EXPECT_NEAR(
-        presentation.sample('@', started_at + std::chrono::milliseconds{ 150 })->z,
+        sample_150->z,
         0.328'125,
         1e-9
     );
@@ -275,9 +301,10 @@ TEST(PlayerPresentationTest, SamePositionAcknowledgementUpdatesVerticalVelocity)
     presentation.update(STOPPED, started_at + std::chrono::milliseconds{ 220 });
     presentation.update(NEXT_TARGET, started_at + std::chrono::milliseconds{ 300 });
 
-    ASSERT_TRUE(presentation.sample('@', started_at + std::chrono::milliseconds{ 350 }).has_value());
+    auto const sampled = presentation.sample('@', started_at + std::chrono::milliseconds{ 350 });
+    ASSERT_TRUE(sampled.has_value());
     EXPECT_NEAR(
-        presentation.sample('@', started_at + std::chrono::milliseconds{ 350 })->z,
+        sampled->z,
         1.271'875,
         1e-9
     );
@@ -326,12 +353,14 @@ TEST(PlayerPresentationTest, HorizontalInterpolationCrossesWorldSeamInReverse)
     static constexpr shared::Player AFTER_SEAM{
         .id = 1U,
         .x = 0U,
+        .y = 0U,
         .x_subcell = 1'000U,
         .ch = '@',
     };
     static constexpr shared::Player BEFORE_SEAM{
         .id = 1U,
         .x = 65'535U,
+        .y = 0U,
         .x_subcell = 9'000U,
         .ch = '@',
     };
@@ -373,11 +402,16 @@ TEST(PlayerPresentationTest, SamplingDoesNotDependOnPriorRenderFrames)
     static_cast<void>(sampled_each_frame.sample('@', started_at + std::chrono::milliseconds{ 150 }));
     static_cast<void>(sampled_each_frame.sample('@', started_at + std::chrono::milliseconds{ 175 }));
 
-    ASSERT_TRUE(sampled_each_frame.sample('@', started_at + std::chrono::milliseconds{ 175 }).has_value());
-    ASSERT_TRUE(sampled_once.sample('@', started_at + std::chrono::milliseconds{ 175 }).has_value());
+    auto const each_frame_sample = sampled_each_frame.sample(
+        '@',
+        started_at + std::chrono::milliseconds{ 175 }
+    );
+    auto const once_sample = sampled_once.sample('@', started_at + std::chrono::milliseconds{ 175 });
+    ASSERT_TRUE(each_frame_sample.has_value());
+    ASSERT_TRUE(once_sample.has_value());
     EXPECT_DOUBLE_EQ(
-        sampled_each_frame.sample('@', started_at + std::chrono::milliseconds{ 175 })->x,
-        sampled_once.sample('@', started_at + std::chrono::milliseconds{ 175 })->x
+        each_frame_sample->x,
+        once_sample->x
     );
 }
 
@@ -410,9 +444,15 @@ TEST(PlayerPresentationTest, RetargetStartsFromTheCurrentPresentationPosition)
     presentation.update(FIRST_TARGET, started_at + std::chrono::milliseconds{ 100 });
     presentation.update(SECOND_TARGET, started_at + std::chrono::milliseconds{ 150 });
 
-    EXPECT_DOUBLE_EQ(presentation.sample('@', started_at + std::chrono::milliseconds{ 150 })->x, 0.2);
-    EXPECT_DOUBLE_EQ(presentation.sample('@', started_at + std::chrono::milliseconds{ 175 })->x, 0.35);
-    EXPECT_DOUBLE_EQ(presentation.sample('@', started_at + std::chrono::milliseconds{ 250 })->x, 0.8);
+    auto const sample_150 = presentation.sample('@', started_at + std::chrono::milliseconds{ 150 });
+    auto const sample_175 = presentation.sample('@', started_at + std::chrono::milliseconds{ 175 });
+    auto const sample_250 = presentation.sample('@', started_at + std::chrono::milliseconds{ 250 });
+    ASSERT_TRUE(sample_150.has_value());
+    ASSERT_TRUE(sample_175.has_value());
+    ASSERT_TRUE(sample_250.has_value());
+    EXPECT_DOUBLE_EQ(sample_150->x, 0.2);
+    EXPECT_DOUBLE_EQ(sample_175->x, 0.35);
+    EXPECT_DOUBLE_EQ(sample_250->x, 0.8);
 }
 
 TEST(PlayerPresentationTest, PresentationHoldsLastAuthoritativePositionUntilTheNextUpdate)
@@ -436,8 +476,9 @@ TEST(PlayerPresentationTest, PresentationHoldsLastAuthoritativePositionUntilTheN
     presentation.update(INITIAL, started_at);
     presentation.update(TARGET, started_at + std::chrono::milliseconds{ 100 });
 
-    ASSERT_TRUE(presentation.sample('@', started_at + std::chrono::seconds{ 1 }).has_value());
-    EXPECT_DOUBLE_EQ(presentation.sample('@', started_at + std::chrono::seconds{ 1 })->x, 0.4);
+    auto const sampled = presentation.sample('@', started_at + std::chrono::seconds{ 1 });
+    ASSERT_TRUE(sampled.has_value());
+    EXPECT_DOUBLE_EQ(sampled->x, 0.4);
 }
 
 TEST(PlayerPresentationTest, RemovalDropsTheCharacterPresentation)
@@ -493,15 +534,17 @@ TEST(PlayerPresentationTest, SampledPresentationDrivesCameraAndRemotePlayersWhil
     presentation.update(LOCAL_AUTHORITATIVE, started_at + std::chrono::milliseconds{ 100 });
     presentation.update(REMOTE_AUTHORITATIVE, started_at + std::chrono::milliseconds{ 100 });
 
-    ASSERT_TRUE(presentation.sample('@', started_at + std::chrono::milliseconds{ 125 }).has_value());
-    ASSERT_TRUE(presentation.sample('#', started_at + std::chrono::milliseconds{ 125 }).has_value());
+    auto const local_sample = presentation.sample('@', started_at + std::chrono::milliseconds{ 125 });
+    auto const remote_sample = presentation.sample('#', started_at + std::chrono::milliseconds{ 125 });
+    ASSERT_TRUE(local_sample.has_value());
+    ASSERT_TRUE(remote_sample.has_value());
     EXPECT_DOUBLE_EQ(shared::playerPositionX(LOCAL_AUTHORITATIVE), 0.4);
     EXPECT_DOUBLE_EQ(shared::playerPositionX(REMOTE_AUTHORITATIVE), 10.4);
-    EXPECT_DOUBLE_EQ(presentation.sample('@', started_at + std::chrono::milliseconds{ 125 })->x, 0.1);
-    EXPECT_DOUBLE_EQ(presentation.sample('#', started_at + std::chrono::milliseconds{ 125 })->x, 10.1);
+    EXPECT_DOUBLE_EQ(local_sample->x, 0.1);
+    EXPECT_DOUBLE_EQ(remote_sample->x, 10.1);
     EXPECT_DOUBLE_EQ(
         client::localPlayerThirdPersonPose(
-            *presentation.sample('@', started_at + std::chrono::milliseconds{ 125 }),
+            *local_sample,
             { }
         ).position.x,
         0.4125

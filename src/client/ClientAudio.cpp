@@ -1,8 +1,10 @@
 #include <client/ClientAudio.hpp>
 
+#include <core/audio/Audio.hpp>
 #include <core/audio/AudioOutput.hpp>
 
 #include <array>
+#include <cstddef>
 #include <utility>
 
 namespace client {
@@ -15,17 +17,21 @@ static constexpr uint32_t JOIN_CUE_PERIOD_FRAMES = 80U;
 static constexpr int32_t JOIN_CUE_AMPLITUDE = 1'800;
 
 static constexpr auto JOIN_CUE_SAMPLES = [] {
-    std::array<int16_t, JOIN_CUE_FRAME_COUNT * JOIN_CUE_CHANNEL_COUNT> samples{ };
+    std::array<
+        int16_t,
+        static_cast<size_t>(JOIN_CUE_FRAME_COUNT) * JOIN_CUE_CHANNEL_COUNT
+    > samples{ };
     for (uint32_t frame = 0U; frame < JOIN_CUE_FRAME_COUNT; ++frame) {
-        int32_t const envelope = (JOIN_CUE_FRAME_COUNT - frame) * JOIN_CUE_AMPLITUDE
-            / JOIN_CUE_FRAME_COUNT;
+        int32_t const remaining_frames = static_cast<int32_t>(JOIN_CUE_FRAME_COUNT - frame);
+        int32_t const envelope = remaining_frames * JOIN_CUE_AMPLITUDE
+            / static_cast<int32_t>(JOIN_CUE_FRAME_COUNT);
         int16_t const value = static_cast<int16_t>(
             frame % JOIN_CUE_PERIOD_FRAMES < JOIN_CUE_PERIOD_FRAMES / 2U
                 ? envelope
                 : -envelope
         );
-        samples[frame * JOIN_CUE_CHANNEL_COUNT] = value;
-        samples[frame * JOIN_CUE_CHANNEL_COUNT + 1U] = value;
+        samples[static_cast<size_t>(frame) * JOIN_CUE_CHANNEL_COUNT] = value;
+        samples[static_cast<size_t>(frame) * JOIN_CUE_CHANNEL_COUNT + 1U] = value;
     }
     return samples;
 }();

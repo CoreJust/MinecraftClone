@@ -1,16 +1,25 @@
+#include <client/ClientAudio.hpp>
 #include <client/GameClient.hpp>
 
 #include <server/GameServer.hpp>
+
+#include <shared/world/World.hpp>
+
+#include <core/net/Address.hpp>
 
 #include <gtest/gtest.h>
 
 #include <atomic>
 #include <chrono>
 #include <cstdint>
+#include <functional>
 #include <memory>
+#include <optional>
 #include <span>
+#include <string>
 #include <thread>
 #include <utility>
+#include <vector>
 
 namespace {
 
@@ -97,6 +106,11 @@ TEST(GameClientAudioTest, PlaysJoinCueOnceAfterServerAcceptsClient)
     AudioIntegrationClient game_client{ state };
     client::GameClientBenchmarkHooks hooks{
         .deadline = std::chrono::steady_clock::now() + CLIENT_DEADLINE,
+        .should_stop = {},
+        .is_uncapped_phase = {},
+        .input_override = {},
+        .on_loop = {},
+        .on_authoritative_player = {},
     };
     game_client.run(core::Address::localhost(server.port()), '@', &hooks);
     stop_server.store(true, std::memory_order_relaxed);

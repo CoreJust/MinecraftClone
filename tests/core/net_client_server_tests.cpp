@@ -1,16 +1,31 @@
+#include <core/common/SpanUtils.hpp>
+#include <core/net/Address.hpp>
 #include <core/net/Client.hpp>
+#include <core/net/Event.hpp>
+#include <core/net/GenerateEvents.hpp>
+#include <core/net/Peer.hpp>
+#include <core/net/SendMode.hpp>
 #include <core/net/Server.hpp>
+
+#include <fmt/format.h>
 
 #include <gtest/gtest.h>
 
 #include <array>
 #include <atomic>
 #include <chrono>
+#include <compare>
+#include <cstddef>
+#include <cstdint>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <span>
 #include <string>
+#include <string_view>
 #include <thread>
+#include <utility>
+#include <vector>
 
 constexpr std::chrono::milliseconds DEFAULT_TIMEOUT{ 10 };
 static constexpr std::chrono::seconds NORMAL_CONNECTION_TIMEOUT{ 1 };
@@ -89,8 +104,8 @@ public:
         uint16_t const port,
         uint32_t const max_connections,
         uint32_t const max_channels,
-        std::function<void(TestServer&, core::ServerConnectEvent const)> on_connected,
-        std::function<void(TestServer&, core::ServerDisconnectEvent const)> on_disconnected,
+        std::function<void(TestServer&, core::ServerConnectEvent const&)> on_connected,
+        std::function<void(TestServer&, core::ServerDisconnectEvent const&)> on_disconnected,
         std::function<void(TestServer&, core::ServerReceiveEvent)> on_received)
         : core::Server{ core::Address::anyhost(port), max_connections, max_channels }
         , m_on_connected{ std::move(on_connected) }
@@ -118,8 +133,8 @@ private:
         m_on_received(*this, std::move(event));
     }
 private:
-    std::function<void(TestServer&, core::ServerConnectEvent const)> m_on_connected;
-    std::function<void(TestServer&, core::ServerDisconnectEvent const)> m_on_disconnected;
+    std::function<void(TestServer&, core::ServerConnectEvent const&)> m_on_connected;
+    std::function<void(TestServer&, core::ServerDisconnectEvent const&)> m_on_disconnected;
     std::function<void(TestServer&, core::ServerReceiveEvent)> m_on_received;
     std::atomic_bool m_running{ true };
 };
@@ -135,18 +150,18 @@ struct TestServerService final {
         uint16_t const port,
         uint32_t const max_connections = 1,
         uint32_t const max_channels = 1,
-        std::function<void(TestServer&, core::ServerConnectEvent const)> on_connected = nullptr,
-        std::function<void(TestServer&, core::ServerDisconnectEvent const)> on_disconnected = nullptr)
+        std::function<void(TestServer&, core::ServerConnectEvent const&)> on_connected = nullptr,
+        std::function<void(TestServer&, core::ServerDisconnectEvent const&)> on_disconnected = nullptr)
         : server(
             port,
             max_connections,
             max_channels,
             on_connected
                 ? std::move(on_connected)
-                : [this](TestServer&, core::ServerConnectEvent const) { ++clients_connected; },
+                : [this](TestServer&, core::ServerConnectEvent const&) { ++clients_connected; },
             on_disconnected
                 ? std::move(on_disconnected)
-                : [this](TestServer&, core::ServerDisconnectEvent const) { ++clients_disconnected; },
+                : [this](TestServer&, core::ServerDisconnectEvent const&) { ++clients_disconnected; },
             std::move(on_received))
         , thread([this]{ this->server.run(); })
     { }
@@ -341,7 +356,9 @@ TEST(NetClientServer, MessageRelayTest) {
             if (raw.starts_with("to:")) {
                 size_t const colon = raw.find(':', 3);
                 if (colon != std::string::npos) {
-                    uint32_t const target = std::stoul(std::string{ raw.substr(3, colon - 3) });
+                    uint32_t const target = static_cast<uint32_t>(
+                        std::stoul(std::string{ raw.substr(3, colon - 3) })
+                    );
                     std::string const payload = std::string{ raw.substr(colon + 1) };
                     if (std::optional client = self.client(target)) {
                         srv.server.send(client, asNetworkBytes(core::asByteSpan(payload)), 0, core::SendMode{ });

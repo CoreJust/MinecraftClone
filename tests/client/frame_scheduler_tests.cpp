@@ -2,6 +2,9 @@
 
 #include <gtest/gtest.h>
 
+#include <chrono>
+#include <string>
+
 namespace {
 
 TEST(FrameSchedulerTest, RendersCanOccurRepeatedlyBeforeTheNextSimulationBoundary)

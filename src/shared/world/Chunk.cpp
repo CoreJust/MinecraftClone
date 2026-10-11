@@ -1,7 +1,6 @@
 #include <shared/world/Chunk.hpp>
 
 #include <stdexcept>
-#include <utility>
 
 namespace {
 
@@ -49,9 +48,9 @@ Chunk::Chunk(ChunkCoordinate const coordinate) noexcept
 {
 }
 
-Chunk::Chunk(ChunkCoordinate const coordinate, Blocks blocks)
+Chunk::Chunk(ChunkCoordinate const coordinate, Blocks const& blocks)
     : m_coordinate(coordinate)
-    , m_blocks(std::move(blocks))
+    , m_blocks(blocks)
     , m_content_hash(contentHash(m_blocks))
 {
     for (Block const block : m_blocks) {
@@ -63,8 +62,7 @@ Chunk::Chunk(ChunkCoordinate const coordinate, Blocks blocks)
 
 Chunk Chunk::makeStoneFixture(ChunkCoordinate const coordinate, uint64_t const seed) noexcept
 {
-    Blocks blocks;
-    blocks.fill(Block::Air);
+    Chunk chunk{coordinate};
     for (uint8_t z = 0; z < SIDE_LENGTH; ++z) {
         for (uint8_t y = 0; y < SIDE_LENGTH; ++y) {
             for (uint8_t x = 0; x < SIDE_LENGTH; ++x) {
@@ -72,12 +70,13 @@ Chunk Chunk::makeStoneFixture(ChunkCoordinate const coordinate, uint64_t const s
                 int32_t const height = static_cast<int32_t>(z) - 6
                     + sampleFixtureNoise(coordinate, block_coordinate, seed);
                 if (height < 0) {
-                    blocks[blockIndex(block_coordinate)] = Block::Stone;
+                    chunk.m_blocks[blockIndex(block_coordinate)] = Block::Stone;
                 }
             }
         }
     }
-    return Chunk{ coordinate, std::move(blocks) };
+    chunk.m_content_hash = contentHash(chunk.m_blocks);
+    return chunk;
 }
 
 int8_t Chunk::sampleFixtureNoise(

@@ -2,8 +2,11 @@
 #include <client/PlayerClient.hpp>
 #include <server/GameServer.hpp>
 
+#include <shared/net/Message.hpp>
 #include <shared/scenario/Scenario.hpp>
+#include <shared/world/World.hpp>
 
+#include <core/common/AtAppExit.hpp>
 #include <core/common/CrashHandler.hpp>
 #include <core/IO/Log.hpp>
 #include <core/net/Address.hpp>
@@ -15,34 +18,42 @@
 #include <acceptance/RendererBenchmark.hpp>
 #include <acceptance/ScenarioRunner.hpp>
 
+#include <spdlog/common.h>
+
 #include <array>
 #include <charconv>
+#include <chrono>
 #include <condition_variable>
 #include <cstdint>
+#include <cstdio>
 #include <cstdlib>
+#include <exception>
 #include <expected>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <limits>
+#include <memory>
 #include <mutex>
 #include <optional>
+#include <stdexcept>
 #include <string>
 #include <string_view>
+#include <system_error>
 #include <thread>
 #include <utility>
 #include <vector>
 
 namespace {
 
-enum class RuntimeMode {
+enum class RuntimeMode : uint8_t {
     Scenario,
     RendererBenchmark,
     GameBenchmark,
     RendererCapture,
 };
 
-enum class LaunchMode {
+enum class LaunchMode : uint8_t {
     GraphicalPlayer,
     GraphicalPlayerCapture,
     BotClient,
@@ -51,7 +62,7 @@ enum class LaunchMode {
 
 struct LaunchCommand final {
     LaunchMode mode;
-    core::Address address;
+    core::Address address = core::Address::localhost(20'040);
     std::filesystem::path image_path;
     client::PlayerClientCapturePreset capture_preset = client::PlayerClientCapturePreset::CentralSpike;
     std::optional<shared::PlayerPosition> spawn;
@@ -112,7 +123,10 @@ std::expected<core::Address, std::string> parseAddress(std::string_view const va
 std::expected<LaunchCommand, std::string> parseLaunchCommand(int const argc, char** const argv)
 {
     if (argc == 1) {
-        return LaunchCommand{ .mode = LaunchMode::GraphicalPlayer, .address = core::Address::localhost(20'040) };
+        LaunchCommand command{};
+        command.mode = LaunchMode::GraphicalPlayer;
+        command.address = core::Address::localhost(20'040);
+        return command;
     }
 
     LaunchMode mode;
@@ -130,7 +144,9 @@ std::expected<LaunchCommand, std::string> parseLaunchCommand(int const argc, cha
     }
 
     if (mode == LaunchMode::Server) {
-        LaunchCommand command{ .mode = mode, .address = core::Address::localhost(20'040) };
+        LaunchCommand command{};
+        command.mode = mode;
+        command.address = core::Address::localhost(20'040);
         bool port_selected = false;
         bool radius_selected = false;
         for (int index = 2; index < argc; ++index) {
@@ -195,12 +211,18 @@ std::expected<LaunchCommand, std::string> parseLaunchCommand(int const argc, cha
         if (!preset.has_value()) {
             return std::unexpected("capture preset is unknown");
         }
-        return LaunchCommand{
-            .mode = mode, .address = *address, .image_path = argv[7], .capture_preset = *preset,
-        };
+        LaunchCommand command{};
+        command.mode = mode;
+        command.address = *address;
+        command.image_path = argv[7];
+        command.capture_preset = *preset;
+        return command;
     }
     if (argc == 2) {
-        return LaunchCommand{ .mode = mode, .address = core::Address::localhost(20'040) };
+        LaunchCommand command{};
+        command.mode = mode;
+        command.address = core::Address::localhost(20'040);
+        return command;
     }
     if (argc != 4 || std::string_view{ argv[2] } != "--address") {
         return std::unexpected("client launch syntax is '<mode> [--address IP:PORT]'");
@@ -209,7 +231,10 @@ std::expected<LaunchCommand, std::string> parseLaunchCommand(int const argc, cha
     if (!address.has_value()) {
         return std::unexpected(address.error());
     }
-    return LaunchCommand{ .mode = mode, .address = *address };
+    LaunchCommand command{};
+    command.mode = mode;
+    command.address = *address;
+    return command;
 }
 
 class RuntimeDeadlineWatchdog final {
@@ -245,14 +270,19 @@ private:
         if (m_condition.wait_for(lock, m_deadline, [this] { return m_completed; })) {
             return;
         }
-        acceptance::RuntimeEvidence const evidence{
-            .mode = m_mode,
-            .failure = m_mode + " operation exceeded its watchdog deadline",
-            .elapsed = m_deadline,
-            .deadline = m_deadline,
-            .passed = false,
-        };
-        static_cast<void>(acceptance::writeEvidenceJson(m_evidence_path, evidence));
+        acceptance::RuntimeEvidence evidence{};
+        evidence.mode = m_mode;
+        evidence.failure = m_mode + " operation exceeded its watchdog deadline";
+        evidence.elapsed = m_deadline;
+        evidence.deadline = m_deadline;
+        auto const written = acceptance::writeEvidenceJson(m_evidence_path, evidence);
+        if (!written.has_value()) {
+            std::fprintf(
+                stderr,
+                "cannot write watchdog failure evidence: %s\n",
+                written.error().c_str()
+            );
+        }
         std::_Exit(1);
     }
 private:
@@ -271,19 +301,18 @@ std::expected<RuntimeCommand, std::string> parseRuntimeCommand(int const argc, c
     if (argc == 5 && std::string_view{ argv[1] } == "--scenario"
         && std::string_view{ argv[3] } == "--evidence"
     ) {
-        return RuntimeCommand{
-            .mode = RuntimeMode::Scenario,
-            .scenario_path = argv[2],
-            .evidence_path = argv[4],
-        };
+        RuntimeCommand command{};
+        command.mode = RuntimeMode::Scenario;
+        command.scenario_path = argv[2];
+        command.evidence_path = argv[4];
+        return command;
     }
     if (argc >= 4 && argc <= 6 && std::string_view{ argv[1] } == "--benchmark-render"
         && std::string_view{ argv[argc - 2] } == "--evidence"
     ) {
-        RuntimeCommand command{
-            .mode = RuntimeMode::RendererBenchmark,
-            .evidence_path = argv[argc - 1],
-        };
+        RuntimeCommand command{};
+        command.mode = RuntimeMode::RendererBenchmark;
+        command.evidence_path = argv[argc - 1];
         for (int argument_index = 2; argument_index < argc - 2; ++argument_index) {
             std::string_view const argument{ argv[argument_index] };
             if (argument == "--present-immediate" && !command.require_immediate_present_mode) {
@@ -298,10 +327,9 @@ std::expected<RuntimeCommand, std::string> parseRuntimeCommand(int const argc, c
     }
     if (argc >= 4 && argc <= 9 && std::string_view{ argv[1] } == "--benchmark-game"
         && std::string_view{ argv[argc - 2] } == "--evidence") {
-        RuntimeCommand command{
-            .mode = RuntimeMode::GameBenchmark,
-            .evidence_path = argv[argc - 1],
-        };
+        RuntimeCommand command{};
+        command.mode = RuntimeMode::GameBenchmark;
+        command.evidence_path = argv[argc - 1];
         bool workload_selected = false;
         bool radius_selected = false;
         for (int argument_index = 2; argument_index < argc - 2; ++argument_index) {
@@ -339,11 +367,11 @@ std::expected<RuntimeCommand, std::string> parseRuntimeCommand(int const argc, c
         && std::string_view{ argv[2] } == "--image"
         && std::string_view{ argv[4] } == "--evidence"
     ) {
-        return RuntimeCommand{
-            .mode = RuntimeMode::RendererCapture,
-            .image_path = argv[3],
-            .evidence_path = argv[5],
-        };
+        RuntimeCommand command{};
+        command.mode = RuntimeMode::RendererCapture;
+        command.image_path = argv[3];
+        command.evidence_path = argv[5];
+        return command;
     }
     return std::unexpected(
         "expected '--scenario <file> --evidence <file>', "
@@ -391,11 +419,10 @@ std::expected<std::string, std::string> readScenarioSource(
 [[nodiscard]]
 acceptance::RuntimeEvidence failedEvidence(std::string mode, std::string failure)
 {
-    return acceptance::RuntimeEvidence{
-        .mode = std::move(mode),
-        .failure = std::move(failure),
-        .passed = false,
-    };
+    acceptance::RuntimeEvidence evidence{};
+    evidence.mode = std::move(mode);
+    evidence.failure = std::move(failure);
+    return evidence;
 }
 
 [[nodiscard]]
@@ -538,15 +565,39 @@ int runRendererCaptureCommand(RuntimeCommand const& command)
     return writeRuntimeEvidence(command.evidence_path, evidence);
 }
 
+void reportUncaughtException(char const* category, char const* details = nullptr)
+{
+    if (core::Log::acquireLogger()) {
+        try {
+            if (details != nullptr) {
+                CORE_CRITICAL("{}: {}", category, details);
+            } else {
+                CORE_CRITICAL("{}", category);
+            }
+            return;
+        } catch (...) {
+            std::fputs("application logger failed while reporting an uncaught exception\n", stderr);
+        }
+    }
+
+    if (details != nullptr) {
+        std::fprintf(stderr, "%s: %s\n", category, details);
+    } else {
+        std::fprintf(stderr, "%s\n", category);
+    }
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
-    core::Log::ensureInit(core::LogSettings{ .initial_level = spdlog::level::debug });
-    core::setCrashHandler();
-    core::Net::ensureInit();
-
     int exit_code = 0;
     try {
+        core::LogSettings log_settings{};
+        log_settings.initial_level = spdlog::level::debug;
+        core::Log::ensureInit(log_settings);
+        core::setCrashHandler();
+        core::Net::ensureInit();
+
         bool const is_runtime_command = argc > 1
             && (std::string_view{ argv[1] } == "--scenario"
                 || std::string_view{ argv[1] } == "--benchmark-render"
@@ -603,16 +654,24 @@ int main(int argc, char** argv) {
             }
         }
     } catch (std::runtime_error const& e) {
-        CORE_CRITICAL("Received uncaught runtime error: {}", e.what());
+        reportUncaughtException("Received uncaught runtime error", e.what());
         exit_code = 1;
     } catch (std::exception const& e) {
-        CORE_CRITICAL("Received uncaught exception: {}", e.what());
+        reportUncaughtException("Received uncaught exception", e.what());
         exit_code = 1;
     } catch (...) {
-        CORE_CRITICAL("Received unknown uncaught exception");
+        reportUncaughtException("Received unknown uncaught exception");
         exit_code = 1;
     }
 
-    core::AtAppExit::exit();
+    try {
+        core::AtAppExit::exit();
+    } catch (std::exception const& e) {
+        reportUncaughtException("Received uncaught app-exit exception", e.what());
+        exit_code = 1;
+    } catch (...) {
+        reportUncaughtException("Received unknown uncaught app-exit exception");
+        exit_code = 1;
+    }
     return exit_code;
 }

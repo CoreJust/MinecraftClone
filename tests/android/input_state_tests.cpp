@@ -1,10 +1,12 @@
 #include <client/CameraController.hpp>
+#include <shared/world/World.hpp>
 
 #include <AndroidInputState.hpp>
 #include <gtest/gtest.h>
 
 #include <cstdint>
 #include <limits>
+#include <string>
 #include <type_traits>
 
 namespace game_android {

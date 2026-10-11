@@ -1,10 +1,23 @@
 #include <client/PreviewMeshing.hpp>
 
+#include <client/PreviewResidency.hpp>
+
+#include <shared/net/Message.hpp>
+#include <shared/world/HeightTileSurfaceMesher.hpp>
+#include <shared/world/WorldGeneration.hpp>
+
 #include <gtest/gtest.h>
 
 #include <algorithm>
 #include <array>
+#include <cstddef>
+#include <cstdint>
+#include <memory>
 #include <optional>
+#include <span>
+#include <string>
+#include <utility>
+#include <vector>
 
 namespace {
 

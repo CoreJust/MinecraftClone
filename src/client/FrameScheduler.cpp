@@ -1,6 +1,7 @@
 #include <client/FrameScheduler.hpp>
 
 #include <algorithm>
+#include <compare>
 
 namespace client {
 

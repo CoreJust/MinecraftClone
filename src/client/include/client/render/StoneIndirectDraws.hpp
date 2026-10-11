@@ -1,6 +1,6 @@
 #pragma once
 
-#include <vulkan/vulkan.h>
+#include <vulkan/vulkan_core.h>
 
 #include <array>
 #include <cstdint>
@@ -22,6 +22,15 @@ public:
     struct Range final {
         uint32_t first_instance = 0U;
         uint32_t instance_count = 0U;
+    };
+
+    struct MaximumDrawCount final {
+        constexpr MaximumDrawCount(uint32_t const value) noexcept
+            : value(value)
+        {
+        }
+
+        uint32_t value;
     };
 
     class AllocationError final : public std::runtime_error {
@@ -59,7 +68,7 @@ public:
 
     StoneIndirectDraws(
         uint32_t maximum_command_count,
-        uint32_t maximum_draw_count,
+        MaximumDrawCount maximum_draw_count,
         bool multi_draw_indirect_enabled,
         bool draw_indirect_first_instance_enabled,
         Factory factory,

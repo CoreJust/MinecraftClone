@@ -1,5 +1,8 @@
 #include <client/BotClient.hpp>
 
+#include <shared/world/World.hpp>
+
+#include <cstdint>
 #include <random>
 
 namespace client {

@@ -152,9 +152,9 @@ struct RuntimeEvidence final {
     std::chrono::milliseconds elapsed{ 0 };
     std::chrono::milliseconds deadline{ 0 };
     bool passed{ false };
-    std::optional<RendererBenchmarkEvidence> benchmark;
-    std::optional<GameBenchmarkEvidence> game_benchmark;
-    std::optional<RendererCaptureEvidence> capture;
+    std::optional<RendererBenchmarkEvidence> benchmark = std::nullopt;
+    std::optional<GameBenchmarkEvidence> game_benchmark = std::nullopt;
+    std::optional<RendererCaptureEvidence> capture = std::nullopt;
 };
 
 [[nodiscard]]
@@ -170,6 +170,6 @@ std::expected<void, std::string> writeEvidenceJson(
 RuntimeEvidence collectRuntimeEvidence(
     std::string mode,
     std::function<std::expected<RuntimeEvidence, std::string>()> const& operation
-) noexcept;
+);
 
 } // namespace acceptance

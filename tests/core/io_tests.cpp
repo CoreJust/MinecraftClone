@@ -6,9 +6,11 @@
 #include <gtest/gtest.h>
 
 #include <array>
+#include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <optional>
+#include <span>
 #include <string>
 #include <vector>
 

@@ -6,7 +6,10 @@
 
 #include <core/common/Defer.hpp>
 #include <core/IO/Log.hpp>
+#include <core/net/Address.hpp>
 #include <core/net/Client.hpp>
+#include <core/net/Event.hpp>
+#include <core/net/SendMode.hpp>
 
 #include <gtest/gtest.h>
 
@@ -14,13 +17,21 @@
 #include <array>
 #include <atomic>
 #include <chrono>
+#include <cmath>
+#include <compare>
+#include <cstddef>
+#include <cstdint>
 #include <cstdlib>
+#include <functional>
+#include <iterator>
 #include <optional>
 #include <span>
+#include <string>
 #include <thread>
 #include <tuple>
 #include <unordered_set>
 #include <utility>
+#include <variant>
 #include <vector>
 
 namespace {
@@ -314,7 +325,7 @@ TEST(GameServerPreviewTest, MaterializedLandingMatchesTheStreamedMountainHeight)
             last_cycle_source = capability_bits;
         }
         sent_all_inputs = client.send(shared::encodeMessage(shared::ClientInputMessage{
-            .direction = {.cycle_movement_capabilities = cycle}, .sequence = sequence++,
+            .direction = {.x = 0U, .y = 0U, .cycle_movement_capabilities = cycle}, .sequence = sequence++,
         }), shared::GAME_CHANNEL, core::SendMode{core::SendMode::Reliable});
     }
     stop_requested.store(true, std::memory_order_relaxed);
@@ -486,7 +497,7 @@ TEST(GameServerPreviewTest, ResetsPriorityCursorAfterProgressWhenHeadingChanges)
         : shared::HeightTileKey{};
     auto const after_rotation = client.messages.size();
     bool const rotated = joined && client.send(shared::encodeMessage(shared::ClientInputMessage{
-        .direction = {.view_x = 127, .view_y = 0},
+        .direction = {.x = 0U, .y = 0U, .view_x = 127, .view_y = 0},
         .sequence = 1U,
     }), shared::GAME_CHANNEL, core::SendMode{core::SendMode::Reliable});
     auto const rotation_deadline = std::chrono::steady_clock::now() + ROTATION_TIMEOUT;
@@ -548,7 +559,7 @@ TEST(GameServerPreviewTest, CameraRotationKeepsInterestAndMovementAddsFreshFront
     }
     size_t const before_rotation = client.messages.size();
     bool const rotated = client.send(shared::encodeMessage(shared::ClientInputMessage{
-        .direction = {.view_x = 127, .view_y = 0},
+        .direction = {.x = 0U, .y = 0U, .view_x = 127, .view_y = 0},
         .sequence = 1U,
     }), shared::GAME_CHANNEL, core::SendMode{core::SendMode::Reliable});
     auto const rotation_deadline = std::chrono::steady_clock::now() + TIMEOUT;
@@ -564,7 +575,7 @@ TEST(GameServerPreviewTest, CameraRotationKeepsInterestAndMovementAddsFreshFront
     bool sent_all_movement = true;
     for (uint32_t sequence = 2U; sequence <= final_input_sequence; ++sequence) {
         sent_all_movement = client.send(shared::encodeMessage(shared::ClientInputMessage{
-            .direction = {.x = 127, .accelerated = true, .speedup = FLIGHT_SPEEDUP, .view_x = 127},
+            .direction = {.x = 127U, .y = 0U, .accelerated = true, .speedup = FLIGHT_SPEEDUP, .view_x = 127},
             .sequence = sequence,
         }), shared::GAME_CHANNEL, core::SendMode{core::SendMode::Reliable}) && sent_all_movement;
     }
@@ -662,6 +673,8 @@ TEST(GameServerPreviewTest, StreamsPlayerCenteredHeightTilesAndRemovesDepartedTi
     auto const server_started_at = std::chrono::steady_clock::now();
     auto next_server_progress = server_started_at + PROGRESS_INTERVAL;
     server::GameServer::BenchmarkHooks const hooks{
+        .on_tick = {},
+        .on_preview_buffered = {},
         .on_preview_metrics = [server_started_at, &next_server_progress](
             core::ClientId,
             server::GameServer::PreviewStreamMetrics const metrics
@@ -816,7 +829,7 @@ TEST(GameServerPreviewTest, StreamsPlayerCenteredHeightTilesAndRemovesDepartedTi
     bool sent_all_inputs = true;
     for (uint32_t sequence{1U}; sequence <= MOVEMENT_INPUT_COUNT; ++sequence) {
         sent_all_inputs = client.send(shared::encodeMessage(shared::ClientInputMessage{
-            .direction = {.x = 127U},
+            .direction = {.x = 127U, .y = 0U},
             .sequence = sequence,
         }), 0, core::SendMode{core::SendMode::Reliable}) && sent_all_inputs;
     }
@@ -887,7 +900,7 @@ TEST(GameServerPreviewTest, FastFlightGeneratesFrontierTilesWithinDeadline)
     bool sent_all_inputs = true;
     for (uint32_t sequence{1U}; sequence <= INPUT_COUNT; ++sequence) {
         sent_all_inputs = client.send(shared::encodeMessage(shared::ClientInputMessage{
-            .direction = {.x = 127U, .accelerated = true, .speedup = 500U},
+            .direction = {.x = 127U, .y = 0U, .accelerated = true, .speedup = 500U},
             .sequence = sequence,
         }), 0, core::SendMode{core::SendMode::Reliable}) && sent_all_inputs;
     }
@@ -951,6 +964,7 @@ TEST(GameServerPreviewTest, SustainedNetworkIngressDoesNotStarveTicksTerrainOrSh
         .on_tick = [&tick_count](std::chrono::nanoseconds, uint64_t) {
             tick_count.fetch_add(1U, std::memory_order_relaxed);
         },
+        .on_preview_buffered = {},
         .on_preview_metrics = [&metrics_count, &submitted_tile_jobs](
             core::ClientId,
             server::GameServer::PreviewStreamMetrics const metrics
@@ -1058,7 +1072,7 @@ TEST(GameServerPreviewTest, SustainedNetworkIngressDoesNotStarveTicksTerrainOrSh
     auto const flood_started_at = std::chrono::steady_clock::now();
     for (uint32_t sequence = 1U; sequence <= 8U; ++sequence) {
         ASSERT_TRUE(observer.send(shared::encodeMessage(shared::ClientInputMessage{
-            .direction = {.x = 127U, .accelerated = true, .speedup = 500U},
+            .direction = {.x = 127U, .y = 0U, .accelerated = true, .speedup = 500U},
             .sequence = sequence,
         }), shared::GAME_CHANNEL, core::SendMode{core::SendMode::Reliable}));
     }
@@ -1148,7 +1162,7 @@ TEST(GameServerPreviewTest, StalledClientReservesGameplayCapacityAndResumesOneAc
         .credits = 1U,
     }), shared::GAME_CHANNEL, core::SendMode{core::SendMode::Reliable}));
     ASSERT_TRUE(client.send(shared::encodeMessage(shared::ClientInputMessage{
-        .direction = {.x = 127U}, .sequence = 1U,
+        .direction = {.x = 127U, .y = 0U}, .sequence = 1U,
     }), shared::GAME_CHANNEL, core::SendMode{core::SendMode::Reliable}));
     deadline = std::chrono::steady_clock::now() + DURATION;
     while (client.last_acknowledged_input < 1U && std::chrono::steady_clock::now() < deadline) {
@@ -1181,7 +1195,7 @@ TEST(GameServerPreviewTest, StalledClientReservesGameplayCapacityAndResumesOneAc
     maximum_batch.removals.clear();
     EXPECT_EQ(shared::encodeMessage(maximum_batch).size(), MAXIMUM_ENCODED_BATCH_BYTES);
     ASSERT_TRUE(client.send(shared::encodeMessage(shared::ClientInputMessage{
-        .direction = {.x = 127U}, .sequence = 2U,
+        .direction = {.x = 127U, .y = 0U}, .sequence = 2U,
     }), shared::GAME_CHANNEL, core::SendMode{core::SendMode::Reliable}));
     deadline = std::chrono::steady_clock::now() + DURATION;
     while (client.last_acknowledged_input < 2U && std::chrono::steady_clock::now() < deadline) {
@@ -1221,9 +1235,11 @@ TEST(GameServerPreviewTest, StalledCreditsBoundPrefetchAndResumeTerrainProgress)
 
     uint32_t maximum_buffered_tiles = 0U;
     server::GameServer::BenchmarkHooks const hooks{
+        .on_tick = {},
         .on_preview_buffered = [&maximum_buffered_tiles](core::ClientId, uint32_t const buffered_tiles) {
             maximum_buffered_tiles = std::max(maximum_buffered_tiles, buffered_tiles);
         },
+        .on_preview_metrics = {},
     };
     server::GameServer server{0, {}, shared::WorldMode::Flight};
     std::atomic_bool stop_requested{false};
@@ -1316,7 +1332,7 @@ TEST(GameServerPreviewTest, ReversalCancelsQueuedRemovalsForRestoredInterest)
 
     for (uint32_t sequence = 1U; sequence <= MOVEMENT_INPUT_COUNT; ++sequence) {
         ASSERT_TRUE(client.send(shared::encodeMessage(shared::ClientInputMessage{
-            .direction = {.x = 127U, .accelerated = true, .speedup = FLIGHT_SPEEDUP},
+            .direction = {.x = 127U, .y = 0U, .accelerated = true, .speedup = FLIGHT_SPEEDUP},
             .sequence = sequence,
         }), shared::GAME_CHANNEL, core::SendMode{core::SendMode::Reliable}));
     }
@@ -1329,6 +1345,7 @@ TEST(GameServerPreviewTest, ReversalCancelsQueuedRemovalsForRestoredInterest)
         ASSERT_TRUE(client.send(shared::encodeMessage(shared::ClientInputMessage{
             .direction = {
                 .x = static_cast<uint8_t>(-127),
+                .y = 0U,
                 .accelerated = true,
                 .speedup = FLIGHT_SPEEDUP,
             },
@@ -1419,7 +1436,7 @@ TEST(GameServerPreviewTest, SaturatedAdditionsDoNotStarveRemovalsAndInflightRecl
 
     for (uint32_t sequence = 1U; sequence <= MOVEMENT_INPUT_COUNT; ++sequence) {
         ASSERT_TRUE(client.send(shared::encodeMessage(shared::ClientInputMessage{
-            .direction = {.x = 127U, .accelerated = true, .speedup = FLIGHT_SPEEDUP},
+            .direction = {.x = 127U, .y = 0U, .accelerated = true, .speedup = FLIGHT_SPEEDUP},
             .sequence = sequence,
         }), shared::GAME_CHANNEL, core::SendMode{core::SendMode::Reliable}));
     }
@@ -1450,6 +1467,7 @@ TEST(GameServerPreviewTest, SaturatedAdditionsDoNotStarveRemovalsAndInflightRecl
         ASSERT_TRUE(client.send(shared::encodeMessage(shared::ClientInputMessage{
             .direction = {
                 .x = static_cast<uint8_t>(-127),
+                .y = 0U,
                 .accelerated = true,
                 .speedup = FLIGHT_SPEEDUP,
             },

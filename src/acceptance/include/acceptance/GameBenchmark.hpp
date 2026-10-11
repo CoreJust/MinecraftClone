@@ -1,6 +1,7 @@
 #pragma once
 
 #include <shared/net/Message.hpp>
+#include <shared/world/World.hpp>
 
 #include <acceptance/EvidenceJson.hpp>
 

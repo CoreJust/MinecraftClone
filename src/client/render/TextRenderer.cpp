@@ -11,6 +11,10 @@ constexpr uint8_t FIRST_GLYPH = 0x20U;
 constexpr uint8_t LAST_GLYPH = 0x7FU;
 constexpr uint8_t UNSUPPORTED_GLYPH = '?';
 
+struct PackedTextColor final {
+    uint32_t value;
+};
+
 [[nodiscard]] uint8_t colorByte(float const value) noexcept {
     float const bounded = std::clamp(std::isfinite(value) ? value : 0.0F, 0.0F, 1.0F);
     return static_cast<uint8_t>(std::lround(bounded * 255.0F));
@@ -19,7 +23,7 @@ constexpr uint8_t UNSUPPORTED_GLYPH = '?';
 [[nodiscard]] uint32_t colorAt(
     TextDocument const& document,
     size_t const offset,
-    uint32_t const fallback_color
+    PackedTextColor const fallback_color
 ) noexcept {
     for (TextColorSpan const& span : document.spans) {
         if (offset < span.offset) {
@@ -29,7 +33,7 @@ constexpr uint8_t UNSUPPORTED_GLYPH = '?';
             return span.packed_color;
         }
     }
-    return fallback_color;
+    return fallback_color.value;
 }
 
 [[nodiscard]] float finiteNonNegative(float const value, float const fallback) noexcept {
@@ -165,7 +169,7 @@ void packText(
         float const local_y = line * line_advance * scale;
         TextGlyph glyph{
             .character = static_cast<uint32_t>(sanitizeTextByte(character)),
-            .packed_color = colorAt(document, offset, fallback),
+            .packed_color = colorAt(document, offset, { .value = fallback }),
         };
         if (placement.space == TextSpace::Screen) {
             glyph.width = glyph_width * scale;

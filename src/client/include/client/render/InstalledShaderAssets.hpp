@@ -2,6 +2,8 @@
 
 #include <client/render/ShaderAssets.hpp>
 
+#include <string_view>
+
 namespace client {
 
 class InstalledShaderAssets final : public ShaderAssets {

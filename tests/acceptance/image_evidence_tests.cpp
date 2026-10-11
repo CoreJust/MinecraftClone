@@ -5,9 +5,11 @@
 #include <algorithm>
 #include <array>
 #include <cstdint>
+#include <expected>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -51,7 +53,7 @@ std::vector<uint8_t> gameplayCapture(
 )
 {
     static constexpr uint32_t EXTENT{ 32U };
-    std::vector<uint8_t> capture(EXTENT * EXTENT * 4U, 255U);
+    std::vector<uint8_t> capture(static_cast<uint64_t>(EXTENT) * EXTENT * 4U, 255U);
     auto setPixel = [&capture](
         uint32_t const x,
         uint32_t const y,

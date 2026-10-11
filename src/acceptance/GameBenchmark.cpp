@@ -1,12 +1,18 @@
 #include <acceptance/GameBenchmark.hpp>
 
+#include <client/GameClient.hpp>
 #include <client/PlayerClient.hpp>
+#include <client/render/VulkanRenderer.hpp>
 #include <server/GameServer.hpp>
 
 #include <shared/ProjectInfo.hpp>
+#include <shared/net/Message.hpp>
+#include <shared/policy/Policy.hpp>
+#include <shared/world/World.hpp>
 
 #include <core/net/Address.hpp>
 
+#include <acceptance/EvidenceJson.hpp>
 #include <acceptance/RendererBenchmark.hpp>
 
 #if defined(__APPLE__)
@@ -19,9 +25,14 @@
 #include <array>
 #include <atomic>
 #include <chrono>
+#include <compare>
+#include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <iostream>
 #include <optional>
+#include <ratio>
+#include <span>
 #include <string>
 #include <string_view>
 #include <thread>
@@ -296,6 +307,8 @@ std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOption
             );
             ++permission_publish_count;
         },
+        .on_preview_buffered = {},
+        .on_preview_metrics = {},
     };
     ServerRunGuard server_run{ server, server_hooks };
     std::cout << "[benchmark-game] loopback server started\n" << std::flush;
@@ -313,6 +326,8 @@ std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOption
         .workload = std::string{ gameBenchmarkWorkloadName(options.workload) },
         .package_id = std::string{ shared::PROJECT_NAME },
         .hardware = hardwareName(),
+        .gpu = std::nullopt,
+        .present_mode = {},
 #if defined(NDEBUG)
         .build_mode = "release",
 #else
@@ -327,6 +342,14 @@ std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOption
         .uncapped_duration_ms = static_cast<uint64_t>(
             std::chrono::duration_cast<std::chrono::milliseconds>(options.uncapped_duration).count()
         ),
+        .cold_loop_timings = {},
+        .warm_loop_timings = {},
+        .uncapped_loop_timings = {},
+        .server_tick_timings = {},
+        .permission_publish_timings = {},
+        .raw_frames = {},
+        .raw_server_tick_durations_ns = {},
+        .raw_permission_publish_durations_ns = {},
     };
     benchmark.raw_frames.reserve(20'000U);
     std::vector<std::chrono::nanoseconds> cold_durations;
@@ -524,8 +547,10 @@ std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOption
     }
     return RuntimeEvidence{
         .mode = "benchmark-game",
+        .scenario_version = {},
         .profile = "flight",
         .scenario_name = std::string{ gameBenchmarkWorkloadName(options.workload) },
+        .failure = {},
         .seed = shared::WorldConfiguration::SEED,
         .ticks = static_cast<uint64_t>(server_tick_durations.size()),
         .clients_requested = 1U,
@@ -533,6 +558,7 @@ std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOption
         .server_events_processed = server_events_processed,
         .inputs_sent = benchmark.inputs_sent,
         .authoritative_tick_ms = static_cast<uint64_t>(shared::TICK.count()),
+        .replay_id = {},
         .elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now() - started_at),
         .deadline = std::chrono::duration_cast<std::chrono::milliseconds>(options.deadline),
         .passed = true,

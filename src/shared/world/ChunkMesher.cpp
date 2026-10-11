@@ -1,8 +1,11 @@
 #include <shared/world/ChunkMesher.hpp>
 
+#include <shared/world/Chunk.hpp>
+
 #include <array>
 #include <cstdint>
 #include <optional>
+#include <stdexcept>
 
 namespace {
 
@@ -166,7 +169,11 @@ ChunkMesher::InputSnapshot ChunkMesher::snapshot(
         for (uint8_t y = 0; y < Chunk::SIDE_LENGTH; ++y) {
             for (uint8_t x = 0; x < Chunk::SIDE_LENGTH; ++x) {
                 BlockCoordinate const coordinate{ .x = x, .y = y, .z = z };
-                input.blocks[blockIndex(coordinate)] = chunk.blockAt(coordinate).value();
+                std::optional<Block> const block = chunk.blockAt(coordinate);
+                if (!block.has_value()) {
+                    throw std::logic_error{"chunk snapshot contains an invalid block coordinate"};
+                }
+                input.blocks[blockIndex(coordinate)] = block.value();
             }
         }
     }

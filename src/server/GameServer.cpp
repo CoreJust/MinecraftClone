@@ -2,17 +2,32 @@
 
 #include <server/detail/NetworkEventBatch.hpp>
 
+#include <shared/net/Message.hpp>
+#include <shared/policy/Policy.hpp>
+#include <shared/world/Chunk.hpp>
 #include <shared/world/HeightTileInterest.hpp>
+#include <shared/world/SparseWorld.hpp>
+#include <shared/world/World.hpp>
 #include <shared/world/WorldGeneration.hpp>
+#include <shared/world/WorldGenerationScheduler.hpp>
 
+#include <core/common/Assert.hpp>
 #include <core/executor/Executor.hpp>
 #include <core/IO/Log.hpp>
+#include <core/net/Address.hpp>
+#include <core/net/Event.hpp>
+#include <core/net/Peer.hpp>
+#include <core/net/SendMode.hpp>
 
 #include <algorithm>
+#include <array>
 #include <atomic>
+#include <cmath>
+#include <compare>
 #include <cstddef>
 #include <cstdlib>
 #include <functional>
+#include <iterator>
 #include <mutex>
 #include <optional>
 #include <stdexcept>
@@ -20,6 +35,8 @@
 #include <string_view>
 #include <thread>
 #include <tuple>
+#include <utility>
+#include <variant>
 
 namespace {
 
@@ -167,6 +184,7 @@ std::vector<uint8_t> generateRegionOutput(
     static constexpr uint32_t SAMPLE_BYTES = sizeof(uint16_t);
     static constexpr uint32_t REGION_HEADER_BYTES = 3U * sizeof(uint32_t);
     static constexpr uint32_t REGION_OUTPUT_BYTES = REGION_HEADER_BYTES + SAMPLE_COUNT * SAMPLE_BYTES;
+    static constexpr uint64_t SAMPLE_DIAMETER = static_cast<uint64_t>(SAMPLE_SIDE) * 2U;
     if (job.inherited_ancestor_data != nullptr
         && job.inherited_ancestor_data->size() != REGION_OUTPUT_BYTES) {
         throw std::runtime_error{"world refinement ancestor has an invalid sample payload"};
@@ -183,9 +201,9 @@ std::vector<uint8_t> generateRegionOutput(
     for (uint32_t y = 0U; y < SAMPLE_SIDE; ++y) {
         for (uint32_t x = 0U; x < SAMPLE_SIDE; ++x) {
             uint64_t const sample_x = static_cast<uint64_t>(2U * x + 1U)
-                * job.region->extent / (2U * SAMPLE_SIDE);
+                * job.region->extent / SAMPLE_DIAMETER;
             uint64_t const sample_y = static_cast<uint64_t>(2U * y + 1U)
-                * job.region->extent / (2U * SAMPLE_SIDE);
+                * job.region->extent / SAMPLE_DIAMETER;
             uint16_t height = terrain_generator.heightAt(
                 static_cast<int64_t>(job.region->origin_x) + static_cast<int64_t>(sample_x),
                 static_cast<int64_t>(job.region->origin_y) + static_cast<int64_t>(sample_y)
@@ -276,6 +294,11 @@ struct GameServer::HeightTileWorkerPool final {
         std::atomic<uint64_t> execution_max_ns{};
         std::atomic<uint64_t> completion_to_collection_total_ns{};
         std::atomic<uint64_t> completion_to_collection_max_ns{};
+    };
+
+    struct DurationCounters final {
+        std::atomic<uint64_t>& total;
+        std::atomic<uint64_t>& maximum;
     };
 
     struct Work final {
@@ -495,8 +518,10 @@ struct GameServer::HeightTileWorkerPool final {
                 if (state == WorkState::Finished) {
                     auto const collection_delay = std::chrono::steady_clock::now() - timing->finished_at;
                     addDuration(
-                        job_metrics.completion_to_collection_total_ns,
-                        job_metrics.completion_to_collection_max_ns,
+                        {
+                            .total = job_metrics.completion_to_collection_total_ns,
+                            .maximum = job_metrics.completion_to_collection_max_ns,
+                        },
                         collection_delay
                     );
                 }
@@ -548,15 +573,14 @@ private:
     }
 
     static void addDuration(
-        std::atomic<uint64_t>& total,
-        std::atomic<uint64_t>& maximum,
+        DurationCounters const counters,
         std::chrono::steady_clock::duration const duration
     ) noexcept
     {
         auto const nanoseconds = std::chrono::duration_cast<std::chrono::nanoseconds>(duration);
         uint64_t const count = static_cast<uint64_t>(std::max<int64_t>(nanoseconds.count(), 0));
-        total.fetch_add(count, std::memory_order_relaxed);
-        updateMaximum(maximum, count);
+        counters.total.fetch_add(count, std::memory_order_relaxed);
+        updateMaximum(counters.maximum, count);
     }
 
     static void copyAtomicMetrics(AtomicJobMetrics const& source, GameServer::WorkerMetrics& destination)
@@ -608,13 +632,17 @@ private:
         AtomicJobMetrics& metrics = atomicMetrics(result.world_generation);
         metrics.started.fetch_add(1U, std::memory_order_relaxed);
         addDuration(
-            metrics.enqueue_to_start_total_ns,
-            metrics.enqueue_to_start_max_ns,
+            {
+                .total = metrics.enqueue_to_start_total_ns,
+                .maximum = metrics.enqueue_to_start_max_ns,
+            },
             started_at - result.timing->enqueued_at
         );
         addDuration(
-            metrics.executor_queue_total_ns,
-            metrics.executor_queue_max_ns,
+            {
+                .total = metrics.executor_queue_total_ns,
+                .maximum = metrics.executor_queue_max_ns,
+            },
             started_at - result.timing->submitted_at
         );
     }
@@ -629,8 +657,10 @@ private:
         AtomicJobMetrics& metrics = atomicMetrics(result.world_generation);
         metrics.finished.fetch_add(1U, std::memory_order_relaxed);
         addDuration(
-            metrics.execution_total_ns,
-            metrics.execution_max_ns,
+            {
+                .total = metrics.execution_total_ns,
+                .maximum = metrics.execution_max_ns,
+            },
             finished_at - result.timing->started_at
         );
     }
@@ -678,13 +708,14 @@ private:
                 .generation = work.generation,
                 .job = work.job,
                 .world_generation = work.world_generation,
+                .generation_output = {},
                 .timing = work.timing,
             });
             if (result->timing != nullptr) {
                 result->timing->submitted_at = std::chrono::steady_clock::now();
             }
             core::executor::Submission submission = m_executor->trySubmit(
-                [this, result](core::executor::CancellationToken const token) {
+                [this, result](core::executor::CancellationToken const& token) {
                     if (token.isCancellationRequested()) {
                         return;
                     }
@@ -714,8 +745,10 @@ private:
                 AtomicJobMetrics& metrics = atomicMetrics(work.world_generation);
                 metrics.submitted.fetch_add(1U, std::memory_order_relaxed);
                 addDuration(
-                    metrics.enqueue_to_submit_total_ns,
-                    metrics.enqueue_to_submit_max_ns,
+                    {
+                        .total = metrics.enqueue_to_submit_total_ns,
+                        .maximum = metrics.enqueue_to_submit_max_ns,
+                    },
                     work.timing->submitted_at - work.timing->enqueued_at
                 );
             }
@@ -1162,7 +1195,10 @@ void GameServer::onReceived(core::ServerReceiveEvent event) {
                 .z = spawn_point->z,
             }, shared::defaultPlayerPaletteIndex(ch));
         }
-        m_player_replications.push_back(PlayerReplication{ .id = id });
+        m_player_replications.push_back(PlayerReplication{
+            .id = id,
+            .pending_inputs = {},
+        });
         if (m_permissions_published) {
             auto const refreshed = refreshPublishedPermissions();
             if (!refreshed) {
@@ -1178,12 +1214,23 @@ void GameServer::onReceived(core::ServerReceiveEvent event) {
                 return;
             }
         }
+        auto const spawned_player = m_world.player(id);
+        if (!spawned_player.has_value()) {
+            CORE_ERROR("Spawned player {} is missing from the world", id);
+            m_world.despawnPlayer(id);
+            std::erase_if(m_player_replications, [id](PlayerReplication const& replication) {
+                return replication.id == id;
+            });
+            sendTo(id, shared::JoinResponseMessage{
+                .accepted = false,
+            });
+            return;
+        }
         sendTo(id, shared::JoinResponseMessage{
             .accepted = true,
         });
-
-        shared::Player const p = m_world.player(id).value();
-        CORE_INFO("Player '{}' spawned at x {}, y {}, z {}", ch, p.x, p.y, p.z);
+        CORE_INFO("Player '{}' spawned at x {}, y {}, z {}", ch, spawned_player->x, spawned_player->y,
+            spawned_player->z);
         for (shared::Player const& player : m_world.players()) {
             PlayerReplication* const replication = playerReplication(player.id);
             if (replication == nullptr) {
@@ -1231,11 +1278,15 @@ void GameServer::onReceived(core::ServerReceiveEvent event) {
 
 bool GameServer::processInput(PlayerReplication& replication, shared::ClientInputMessage const input)
 {
-    shared::Player const player_before_input = *m_world.player(replication.id);
+    auto const player_before_input = m_world.player(replication.id);
+    if (!player_before_input.has_value()) {
+        CORE_ERROR("Cannot process input for missing player {}", replication.id);
+        return true;
+    }
     bool capabilities_changed = false;
     if (input.direction.cycle_movement_capabilities) {
-        uint8_t next_bits = player_before_input.movement_capabilities.bits == 3U
-            ? 1U : (player_before_input.movement_capabilities.bits == 1U ? 0U : 3U);
+        uint8_t next_bits = player_before_input->movement_capabilities.bits == 3U
+            ? 1U : (player_before_input->movement_capabilities.bits == 1U ? 0U : 3U);
         if (m_permissions_published) {
             std::shared_ptr<shared::PolicySnapshot const> const policy = m_permission_host.snapshot();
             std::shared_ptr<shared::PolicyCapabilitySnapshot const> const effective = policy
@@ -1263,9 +1314,13 @@ bool GameServer::processInput(PlayerReplication& replication, shared::ClientInpu
             { .bits = next_bits }
         );
     }
-    shared::Player const player_before_movement = *m_world.player(replication.id);
+    auto const player_before_movement = m_world.player(replication.id);
+    if (!player_before_movement.has_value()) {
+        CORE_ERROR("Cannot simulate input for missing player {}", replication.id);
+        return true;
+    }
     bool const should_simulate = input.direction.x != 0 || input.direction.y != 0 || input.direction.z != 0
-        || !player_before_movement.movement_capabilities.allows(shared::MovementCapability::Flight);
+        || !player_before_movement->movement_capabilities.allows(shared::MovementCapability::Flight);
     bool moved = false;
     bool generation_failed = false;
     if (should_simulate) {
@@ -1308,7 +1363,7 @@ bool GameServer::processInput(PlayerReplication& replication, shared::ClientInpu
                 shared::GenerationAdmission const admission = m_world_generation.requestPlan(
                     coordinate,
                     m_generation_plan,
-                    generationPriorityScores(player_before_movement, input.direction, coordinate)
+                    generationPriorityScores(*player_before_movement, input.direction, coordinate)
                 );
                 if (admission == shared::GenerationAdmission::InvalidPlan) {
                     generation_failed = true;
@@ -1331,7 +1386,7 @@ bool GameServer::processInput(PlayerReplication& replication, shared::ClientInpu
             if (capabilities_changed) {
                 static_cast<void>(m_world.setPlayerMovementCapabilities(
                     replication.id,
-                    player_before_input.movement_capabilities
+                    player_before_input->movement_capabilities
                 ));
             }
             return false;
@@ -1339,6 +1394,11 @@ bool GameServer::processInput(PlayerReplication& replication, shared::ClientInpu
         if (!generation_failed) {
             moved = m_world.movePlayer(replication.id, input.direction);
         }
+    }
+    auto const player_after_movement = m_world.player(replication.id);
+    if (!player_after_movement.has_value()) {
+        CORE_ERROR("Cannot publish input result for missing player {}", replication.id);
+        return true;
     }
     replication.materialization_admission_failures = 0U;
     replication.action_consumed_this_tick = true;
@@ -1352,7 +1412,7 @@ bool GameServer::processInput(PlayerReplication& replication, shared::ClientInpu
     }
     ++replication.state_revision;
     shared::ServerPlayerPositionMessage const position = playerPositionMessage(
-        *m_world.player(replication.id),
+        *player_after_movement,
         replication
     );
     if (moved || capabilities_changed) {
@@ -1397,7 +1457,7 @@ shared::ServerPlayerPositionMessage GameServer::playerPositionMessage(
     };
 }
 
-void GameServer::send(shared::Message const message) {
+void GameServer::send(shared::Message message) {
     sendTo(std::nullopt, std::move(message));
 }
 
@@ -1511,7 +1571,9 @@ std::expected<uint64_t, shared::PolicyDiagnostic> GameServer::refreshPublishedPe
 void GameServer::applyPublishedPermissions()
 {
     std::shared_ptr<shared::PolicySnapshot const> const active = m_permission_host.snapshot();
-    if (active == nullptr || !m_flight_permission.has_value() || !m_collision_bypass_permission.has_value()) {
+    auto const flight_permission = m_flight_permission;
+    auto const collision_bypass_permission = m_collision_bypass_permission;
+    if (active == nullptr || !flight_permission.has_value() || !collision_bypass_permission.has_value()) {
         return;
     }
     std::shared_ptr<shared::PolicyCapabilitySnapshot const> const capabilities = active->capabilities();
@@ -1521,12 +1583,12 @@ void GameServer::applyPublishedPermissions()
     for (shared::Player const& player : m_world.players()) {
         std::optional<int64_t> const flight = capabilities->value({
             shared::PolicyCapabilityQuery::SubjectId{player.id},
-            shared::PolicyCapabilityQuery::CapabilityKeyId{*m_flight_permission},
+            shared::PolicyCapabilityQuery::CapabilityKeyId{*flight_permission},
         });
         std::optional<int64_t> const collision_bypass = capabilities->value(
             {
                 shared::PolicyCapabilityQuery::SubjectId{player.id},
-                shared::PolicyCapabilityQuery::CapabilityKeyId{*m_collision_bypass_permission},
+                shared::PolicyCapabilityQuery::CapabilityKeyId{*collision_bypass_permission},
             }
         );
         if (!flight.has_value() || !collision_bypass.has_value()) {
@@ -1544,8 +1606,13 @@ void GameServer::applyPublishedPermissions()
         }
         PlayerReplication* const replication = playerReplication(player.id);
         if (replication != nullptr) {
+            auto const updated_player = m_world.player(player.id);
+            if (!updated_player.has_value()) {
+                CORE_ERROR("Updated permission target {} is missing from the world", player.id);
+                continue;
+            }
             ++replication->state_revision;
-            send(playerPositionMessage(*m_world.player(player.id), *replication));
+            send(playerPositionMessage(*updated_player, *replication));
         }
     }
 }
@@ -1703,6 +1770,8 @@ uint32_t GameServer::admitHeightTileDeliveries(
         && admitted_batches < maximum_batches) {
         shared::ServerHeightTileBatchMessage batch{
             .delivery_token = nextHeightTileToken(m_next_height_tile_token),
+            .tiles = {},
+            .removals = {},
         };
         PreviewStream::Delivery delivery;
         batch.tiles.reserve(shared::HEIGHT_TILE_DELIVERY_BATCH_CAPACITY);
@@ -1717,7 +1786,7 @@ uint32_t GameServer::admitHeightTileDeliveries(
             }
             delivery.additions.push_back(key);
             stream.inflight_addition_keys.insert(key);
-            batch.tiles.push_back(std::move(tile->second));
+            batch.tiles.push_back(tile->second);
             stream.ready_tiles.erase(tile);
         }
         while (removal != removal_keys.end()
@@ -1794,7 +1863,9 @@ void GameServer::refreshHeightTileInterest(PreviewStream& stream, shared::Player
         }
         stream.urgent_keys = std::move(delta.additions);
         stream.urgent_cursor = 0U;
-        if (stream.urgent_keys.size() > PreviewStream::MAX_URGENT_CANDIDATES_PER_PUMP * 8U) {
+        if (stream.urgent_keys.size() > static_cast<decltype(stream.urgent_keys.size())>(
+                PreviewStream::MAX_URGENT_CANDIDATES_PER_PUMP
+            ) * 8U) {
             stream.urgent_keys.clear();
             stream.priority_cursor = 0U;
         } else {
@@ -2020,6 +2091,7 @@ void GameServer::dispatchWorldMaterialization()
                 .generation = job->revision,
                 .job = *job,
                 .world_generation = true,
+                .timing = nullptr,
             })) {
             static_cast<void>(m_world_generation.complete(job->id, false));
             static_cast<void>(m_world_generation.takeResult());
@@ -2087,6 +2159,7 @@ void GameServer::dispatchHeightTileWork()
                 .client_id = stream.client_id,
                 .generation = stream.generation,
                 .job = *job,
+                .timing = nullptr,
             })) {
                 static_cast<void>(stream.scheduler.complete(job->id, false, true));
                 stream.priority_cursor = 0U;
@@ -2167,7 +2240,7 @@ void GameServer::publishHeightTileResults()
             }
             if (result.job.stage == shared::GenerationStage::Materialize) {
                 if (m_physics_world.publishMaterializedChunk(
-                        std::move(result.chunk), result.job.revision, result.job.seed
+                        result.chunk, result.job.revision, result.job.seed
                     )) {
                     static_cast<void>(m_world_generation.acceptResult(result.job.id));
                 } else {
@@ -2180,7 +2253,7 @@ void GameServer::publishHeightTileResults()
             if (result.job.stage == shared::GenerationStage::HeightTile) {
                 if (!m_physics_world.publishPreview(
                         result.job.coordinate,
-                        std::move(result.tile),
+                        result.tile,
                         result.job.revision,
                         result.job.seed
                     )) {
@@ -2228,7 +2301,7 @@ void GameServer::publishHeightTileResults()
             .token = nextHeightTileToken(m_next_height_tile_token),
             .heights = result.tile.heights,
         };
-        stream->ready_tiles.insert_or_assign(key, std::move(tile));
+        stream->ready_tiles.insert_or_assign(key, tile);
     }
 }
 

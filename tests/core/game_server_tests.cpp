@@ -1,6 +1,12 @@
 #include <server/GameServer.hpp>
 #include <shared/net/Message.hpp>
+#include <shared/policy/Policy.hpp>
+#include <shared/world/World.hpp>
+#include <shared/world/WorldGeneration.hpp>
+#include <core/net/Address.hpp>
 #include <core/net/Client.hpp>
+#include <core/net/Event.hpp>
+#include <core/net/SendMode.hpp>
 
 #include <gtest/gtest.h>
 
@@ -9,10 +15,18 @@
 #include <atomic>
 #include <barrier>
 #include <chrono>
+#include <compare>
+#include <cstddef>
+#include <cstdint>
+#include <expected>
 #include <functional>
+#include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <thread>
+#include <utility>
+#include <variant>
 #include <vector>
 
 namespace {
@@ -419,6 +433,7 @@ TEST(GameServerFlightTest, DefersMixedJumpUntilAdjacentHorizontalChunkMaterializ
         ASSERT_TRUE(client.sendMessage(shared::ClientInputMessage{
             .direction = {
                 .x = static_cast<uint8_t>(sequence == 1U ? 127U : 80U),
+                .y = 0U,
                 .cycle_movement_capabilities = sequence == 1U,
             },
             .sequence = sequence,
@@ -431,7 +446,7 @@ TEST(GameServerFlightTest, DefersMixedJumpUntilAdjacentHorizontalChunkMaterializ
     ASSERT_EQ(client.positions('@').back().x_subcell, 9'127U);
 
     ASSERT_TRUE(client.sendMessage(shared::ClientInputMessage{
-        .direction = {.cycle_movement_capabilities = true},
+        .direction = {.x = 0U, .y = 0U, .cycle_movement_capabilities = true},
         .sequence = 3U,
     }));
     ASSERT_TRUE(pumpUntil(server, client, [&client] {
@@ -440,7 +455,7 @@ TEST(GameServerFlightTest, DefersMixedJumpUntilAdjacentHorizontalChunkMaterializ
     ASSERT_EQ(client.positions('@').back().movement_capabilities.bits, 0U);
 
     ASSERT_TRUE(client.sendMessage(shared::ClientInputMessage{
-        .direction = {.x = 127U, .z = 127U},
+        .direction = {.x = 127U, .y = 0U, .z = 127U},
         .sequence = 4U,
     }));
     static_cast<void>(server.tick(std::chrono::milliseconds{5}));
@@ -462,7 +477,7 @@ TEST(GameServerFlightTest, CyclesOnlyTheThreeServerValidatedMovementCapabilitySt
 
     for (uint32_t sequence = 1U; sequence <= 3U; ++sequence) {
         ASSERT_TRUE(client.sendMessage(shared::ClientInputMessage{
-            .direction = { .cycle_movement_capabilities = true },
+            .direction = { .x = 0U, .y = 0U, .cycle_movement_capabilities = true },
             .sequence = sequence,
         }));
         ASSERT_TRUE(pumpUntil(server, client, [&client, sequence] {
@@ -496,7 +511,7 @@ TEST(GameServerFlightTest, PublishedHardPermissionsOverrideAndReplicateMovementC
     EXPECT_EQ(client.positions('@').back().movement_capabilities.bits, 0U);
 
     ASSERT_TRUE(client.sendMessage(shared::ClientInputMessage{
-        .direction = { .cycle_movement_capabilities = true },
+        .direction = { .x = 0U, .y = 0U, .cycle_movement_capabilities = true },
         .sequence = 1U,
     }));
     ASSERT_TRUE(pumpUntil(server, client, [&client] {
@@ -645,7 +660,7 @@ TEST(GameServerFlightTest, HardPermissionsPreserveCollisionAcrossTheWrappedSeam)
 
     shared::ServerPlayerPositionMessage const before = first.positions('@').back();
     ASSERT_TRUE(first.sendMessage(shared::ClientInputMessage{
-        .direction = { .x = 127U },
+        .direction = { .x = 127U, .y = 0U },
         .sequence = 1U,
     }));
     ASSERT_TRUE(pumpUntil(server, first, [&] {
@@ -668,7 +683,7 @@ TEST_F(GameServerTest, CapabilityChangesReachStationaryObservers)
     size_t const observer_messages_before = observer.positions('@').size();
 
     ASSERT_TRUE(first.sendMessage(shared::ClientInputMessage{
-        .direction = { .cycle_movement_capabilities = true },
+        .direction = { .x = 0U, .y = 0U, .cycle_movement_capabilities = true },
         .sequence = 1U,
     }));
     ASSERT_TRUE(first.waitFor([&first] {

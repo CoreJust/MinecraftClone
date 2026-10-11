@@ -1,5 +1,6 @@
 #pragma once
 
+#include <glm/ext/vector_double3.hpp>
 #include <glm/mat4x4.hpp>
 #include <glm/vec3.hpp>
 
@@ -44,6 +45,8 @@ public:
     [[nodiscard]]
     CameraPose pose() const noexcept;
     [[nodiscard]]
+    // A projection is a value snapshot, independent of later camera mutation.
+    // cppcheck-suppress returnByReference
     CameraProjection projection() const noexcept;
 
     [[nodiscard]]

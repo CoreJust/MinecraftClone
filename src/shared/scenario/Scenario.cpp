@@ -1,7 +1,10 @@
 #include <shared/scenario/Scenario.hpp>
 
+#include <shared/world/World.hpp>
+
 #include <array>
 #include <cmath>
+#include <cstdlib>
 #include <limits>
 #include <utility>
 
@@ -1149,6 +1152,8 @@ std::string scenarioReplayId(ScenarioPlan const& plan) {
                 append(value.effective_boundary);
             }
             if constexpr (requires { value.ticks; }) append(value.ticks);
+            // The member access is unevaluated: it tests this variant's contract.
+            // cppcheck-suppress constStatement
             if constexpr (requires { value.effective_boundary; } && !requires { value.strafe; }) {
                 append(value.effective_boundary);
             }

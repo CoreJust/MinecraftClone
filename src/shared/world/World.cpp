@@ -3,16 +3,31 @@
 #include <shared/world/Chunk.hpp>
 #include <shared/world/SparseWorld.hpp>
 #include <shared/world/WorldGeneration.hpp>
+#include <shared/world/WorldGenerationScheduler.hpp>
 
 #include <core/common/Assert.hpp>
 
 #include <algorithm>
+#include <cmath>
+#include <compare>
 #include <cstdlib>
 #include <random>
 
 namespace shared {
 
 namespace {
+
+constexpr int32_t DIRECTION_COMPONENT_HALF_RANGE = 128;
+constexpr int32_t DIRECTION_COMPONENT_MODULUS = 256;
+
+[[nodiscard]]
+int32_t signedDirectionComponent(uint8_t const component) noexcept
+{
+    int32_t const value = component;
+    return value < DIRECTION_COMPONENT_HALF_RANGE
+        ? value
+        : value - DIRECTION_COMPONENT_MODULUS;
+}
 
 [[nodiscard]] TerrainGenerator const& collisionTerrain()
 {
@@ -182,7 +197,7 @@ enum class UnknownCollisionPolicy : uint8_t {
 
 [[nodiscard]] bool wrappedIntervalsOverlap(
     int64_t const first,
-    int64_t const second,
+    int64_t const second, // NOLINT(bugprone-easily-swappable-parameters) -- interval starts precede width and period
     int64_t const width,
     int64_t const period
 ) noexcept
@@ -250,8 +265,10 @@ void World::spawnPlayer(
     } else {
         static std::default_random_engine generator{ std::random_device{}() };
         std::vector<std::pair<uint8_t, uint8_t>> spawn_locations;
-        spawn_locations.reserve(static_cast<uint32_t>(MAX_PLAYER_ORIGIN_CELL + 1U)
-            * static_cast<uint32_t>(MAX_PLAYER_ORIGIN_CELL + 1U));
+        spawn_locations.reserve(
+            static_cast<decltype(spawn_locations)::size_type>(MAX_PLAYER_ORIGIN_CELL + 1U)
+                * static_cast<decltype(spawn_locations)::size_type>(MAX_PLAYER_ORIGIN_CELL + 1U)
+        );
         for (uint8_t candidate_x{ 0 }; candidate_x <= MAX_PLAYER_ORIGIN_CELL; ++candidate_x) {
             for (uint8_t candidate_y{ 0 }; candidate_y <= MAX_PLAYER_ORIGIN_CELL; ++candidate_y) {
                 if (canPlayerBeAt(
@@ -353,9 +370,9 @@ bool World::movePlayer(
         return moveFlightPlayer(*player, direction, elapsed);
     }
 
-    int32_t const direction_x = static_cast<int8_t>(direction.x);
-    int32_t const direction_y = static_cast<int8_t>(direction.y);
-    int32_t const direction_z = static_cast<int8_t>(direction.z);
+    int32_t const direction_x = signedDirectionComponent(direction.x);
+    int32_t const direction_y = signedDirectionComponent(direction.y);
+    int32_t const direction_z = signedDirectionComponent(direction.z);
     if (m_mode == WorldMode::Flat && direction_x == 0 && direction_y == 0) {
         return true;
     }
@@ -412,18 +429,17 @@ bool World::movePlayer(
             )
             : linearIntervalsOverlap(first, second, width);
     };
-    auto const supportAt = [this, &horizontalIntervalsOverlap, &surfaceAt](
+    auto const supportAt = [this, &horizontalIntervalsOverlap, &surfaceAt, id](
         int64_t const x,
         int64_t const y,
-        int64_t const upper_z,
-        PlayerId const ignored_id
+        int64_t const upper_z
     ) {
         int64_t support = surfaceAt(x, y, upper_z);
         int64_t const collision_width = m_mode == WorldMode::Flight
             ? PLAYER_WIDTH_SUBCELLS
             : static_cast<int64_t>(PLAYER_FOOTPRINT_CELLS) * SUBCELLS_PER_CELL;
         for (Player const& other : m_players) {
-            if (other.id == ignored_id) {
+            if (other.id == id) {
                 continue;
             }
             int64_t const other_x = static_cast<int64_t>(other.x) * SUBCELLS_PER_CELL + other.x_subcell;
@@ -439,7 +455,7 @@ bool World::movePlayer(
         }
         return support;
     };
-    int64_t const current_surface = supportAt(position_x, position_y, current_z, id);
+    int64_t const current_surface = supportAt(position_x, position_y, current_z);
     bool const grounded = player->vertical_velocity_subcells <= 0 && current_z <= current_surface;
     if (m_mode == WorldMode::Flight && direction_z > 0 && grounded) {
         player->vertical_velocity_subcells = PLAYER_JUMP_IMPULSE_SUBCELLS;
@@ -476,7 +492,7 @@ bool World::movePlayer(
         applied_y = true;
     }
     int64_t falling_z = std::max(
-        supportAt(position_x, position_y, current_z, id),
+        supportAt(position_x, position_y, current_z),
         proposed_z
     );
     bool vertical_blocked = false;
@@ -546,7 +562,7 @@ bool World::movePlayer(
         static_cast<int32_t>(falling_z)
     );
     bool const grounded_after_move = vertical_blocked
-        || (falling_z <= supportAt(position_x, position_y, falling_z, id) && next_vertical_velocity <= 0);
+        || (falling_z <= supportAt(position_x, position_y, falling_z) && next_vertical_velocity <= 0);
     player->vertical_velocity_subcells = grounded_after_move ? 0 : static_cast<int32_t>(next_vertical_velocity);
     bool const moved_vertically = candidate.z != player->z || candidate.z_subcell != player->z_subcell;
     player->x = candidate.x;
@@ -574,9 +590,9 @@ std::vector<ChunkCoordinate> World::flightCollisionChunks(
         return chunks;
     }
 
-    int32_t const direction_x = static_cast<int8_t>(direction.x);
-    int32_t const direction_y = static_cast<int8_t>(direction.y);
-    int32_t const direction_z = static_cast<int8_t>(direction.z);
+    int32_t const direction_x = signedDirectionComponent(direction.x);
+    int32_t const direction_y = signedDirectionComponent(direction.y);
+    int32_t const direction_z = signedDirectionComponent(direction.z);
     bool const flies = player_iterator->movement_capabilities.allows(MovementCapability::Flight);
     uint32_t const squared_direction_length = static_cast<uint32_t>(
         direction_x * direction_x + direction_y * direction_y
@@ -737,7 +753,10 @@ bool World::setPlayerPosition(PlayerId const id, PlayerPosition const position)
     return false;
 }
 
-bool World::setPlayerPaletteIndex(PlayerId const id, PlayerPaletteIndex const palette_index) noexcept
+bool World::setPlayerPaletteIndex(
+    PlayerId const id, // NOLINT(bugprone-easily-swappable-parameters) -- player ID differs from palette index
+    PlayerPaletteIndex const palette_index
+) noexcept
 {
     if (!isValidPlayerPaletteIndex(palette_index)) {
         return false;
@@ -801,7 +820,7 @@ bool World::setPlayerMovementCapabilities(
 }
 
 bool World::setPlayerVerticalVelocity(
-    PlayerId const id,
+    PlayerId const id, // NOLINT(bugprone-easily-swappable-parameters) -- player ID differs from vertical velocity
     int32_t const vertical_velocity_subcells
 ) noexcept
 {
@@ -834,7 +853,12 @@ std::optional<Player> World::playerByCharacter(char const ch) const noexcept
     return std::nullopt;
 }
 
-bool World::canPlayerBeAt(uint32_t const x, uint32_t const y, int64_t const z, PlayerId const id) const
+bool World::canPlayerBeAt(
+    uint32_t const x,
+    uint32_t const y, // NOLINT(bugprone-easily-swappable-parameters) -- XYZ coordinates precede player identity
+    int64_t const z,
+    PlayerId const id
+) const
 {
     uint32_t const maximum_horizontal_subcell = m_mode == WorldMode::Flight
         ? static_cast<uint32_t>(FLIGHT_MAX_CELL + 1) * SUBCELLS_PER_CELL - 1U
@@ -916,21 +940,34 @@ bool World::isFlightPositionInBounds(PlayerPosition const position) noexcept
 
 PlayerPosition World::positionFromSubcells(int32_t const x, int32_t const y, int32_t const z) noexcept
 {
-    auto const split = [](int32_t const fixed_position, int32_t& cell, uint16_t& subcell) {
+    struct PositionParts final {
+        int32_t cell;
+        uint16_t subcell;
+    };
+    auto const split = [](int32_t const fixed_position) {
         int32_t remainder = fixed_position % SUBCELLS_PER_CELL;
-        cell = fixed_position / SUBCELLS_PER_CELL;
+        int32_t cell = fixed_position / SUBCELLS_PER_CELL;
         if (remainder < 0) {
             --cell;
             remainder += SUBCELLS_PER_CELL;
         }
-        subcell = static_cast<uint16_t>(remainder);
+        return PositionParts{
+            .cell = cell,
+            .subcell = static_cast<uint16_t>(remainder),
+        };
     };
 
-    PlayerPosition position{};
-    split(x, position.x, position.x_subcell);
-    split(y, position.y, position.y_subcell);
-    split(z, position.z, position.z_subcell);
-    return position;
+    PositionParts const x_parts = split(x);
+    PositionParts const y_parts = split(y);
+    PositionParts const z_parts = split(z);
+    return {
+        .x = x_parts.cell,
+        .y = y_parts.cell,
+        .z = z_parts.cell,
+        .x_subcell = x_parts.subcell,
+        .y_subcell = y_parts.subcell,
+        .z_subcell = z_parts.subcell,
+    };
 }
 
 bool World::moveFlightPlayer(
@@ -938,9 +975,9 @@ bool World::moveFlightPlayer(
     Direction const direction,
     std::chrono::milliseconds const elapsed
 ) const {
-    int32_t const direction_x = static_cast<int8_t>(direction.x);
-    int32_t const direction_y = static_cast<int8_t>(direction.y);
-    int32_t const direction_z = static_cast<int8_t>(direction.z);
+    int32_t const direction_x = signedDirectionComponent(direction.x);
+    int32_t const direction_y = signedDirectionComponent(direction.y);
+    int32_t const direction_z = signedDirectionComponent(direction.z);
     if (direction_x == 0 && direction_y == 0 && direction_z == 0) {
         return true;
     }
@@ -984,7 +1021,7 @@ bool World::moveFlightPlayer(
     if (!collision_bypass) {
         auto const sweepClear = [&](int64_t const from_x,
             int64_t const from_y,
-            int64_t const from_z,
+            int64_t const from_z, // NOLINT(bugprone-easily-swappable-parameters) -- ordered XYZ sweep tuples
             int64_t const sweep_x,
             int64_t const sweep_y,
             int64_t const sweep_z) {

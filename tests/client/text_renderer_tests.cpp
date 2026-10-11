@@ -4,7 +4,10 @@
 
 #include <array>
 #include <cstdint>
+#include <span>
 #include <string>
+#include <string_view>
+#include <vector>
 
 TEST(TextRendererTest, PacksArbitraryLengthTextWithoutHudLimit) {
     static constexpr uint32_t CHARACTER_COUNT = 512U;

@@ -1,5 +1,6 @@
 #include <client/PreviewResidency.hpp>
 
+#include <shared/net/Message.hpp>
 #include <shared/world/HeightTileInterest.hpp>
 
 #include <algorithm>
@@ -32,14 +33,20 @@ HeightTileReplacementResult PreviewResidency::accept(
 )
 {
     if (revision != m_revision || token == 0U || token <= knownToken(key)) {
-        return { .replacement = HeightTileReplacement::Stale };
+        return {
+            .replacement = HeightTileReplacement::Stale,
+            .handle = nullptr,
+        };
     }
     auto existing = m_residents.find(key);
     if (existing == m_residents.end() && !makeRoom(key)) {
-        return { .replacement = HeightTileReplacement::BudgetExceeded };
+        return {
+            .replacement = HeightTileReplacement::BudgetExceeded,
+            .handle = nullptr,
+        };
     }
 
-    HeightTileHandle const tile{ new HeightTile{ key, revision, token, std::move(heights) } };
+    HeightTileHandle const tile{ new HeightTile{ key, revision, token, heights } };
     uint64_t const touch = m_touch++;
     if (existing == m_residents.end()) {
         m_residents.emplace(key, Resident{ .tile = tile, .touch = touch });

@@ -393,6 +393,33 @@ class WorkflowContextTests(unittest.TestCase):
                         continue
                     self.assertEqual(lines[index + 1], "if errorlevel 1 exit /b %errorlevel%", (workflow_path, command))
 
+    def test_windows_analysis_step_exits_nonzero_when_any_command_fails(self):
+        workflow = (REPOSITORY / ".github/workflows/ai-checks.yml").read_text(encoding="utf-8")
+        analysis_step = workflow.split(
+            "      - name: Run required Windows analysis rows\n", maxsplit=1
+        )[1].split("      - name:", maxsplit=1)[0]
+        loop = re.search(
+            r"(?ms)^\s*for %%R in \(windows_msvc_asan windows_msvc_analyze\) do \(\n(?P<body>.*?)^\s*\)",
+            analysis_step,
+        )
+
+        self.assertIsNotNone(loop)
+        self.assertEqual(
+            [line.strip() for line in loop.group("body").splitlines() if line.strip()],
+            [
+                "python script/ai_analysis_matrix.py run-row build\\ai-analysis\\%%R.json --row %%R",
+                "if errorlevel 1 exit /b 1",
+            ],
+        )
+        lines = [line.strip() for line in analysis_step.splitlines()]
+        for command in (
+            'call "%ProgramFiles%\\Microsoft Visual Studio\\2022\\Enterprise\\Common7\\Tools\\VsDevCmd.bat" -arch=amd64',
+            "if not exist build\\ai-analysis mkdir build\\ai-analysis",
+        ):
+            index = lines.index(command)
+            self.assertEqual(lines[index + 1], "if errorlevel 1 exit /b 1", command)
+        self.assertNotIn("%errorlevel%", analysis_step)
+
     def test_nested_cmake_scripts_receive_forward_slash_path_substitutions(self):
         cmake_lists = (REPOSITORY / "tests/CMakeLists.txt").read_text(encoding="utf-8")
         for source_name, normalized_name in (

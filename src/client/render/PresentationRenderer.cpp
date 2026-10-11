@@ -1,57 +1,99 @@
+#include <client/Camera.hpp>
 #include <client/PlayerPresentation.hpp>
-
+#include <client/render/DebugHud.hpp>
 #include <client/render/DepthFormat.hpp>
 #include <client/render/GuiRenderer.hpp>
 #include <client/render/HeightTileDrawIndex.hpp>
+#include <client/render/ShaderAssets.hpp>
 #include <client/render/StoneFaceCapacity.hpp>
 #include <client/render/StoneIndirectDraws.hpp>
 #include <client/render/StoneTexture.hpp>
+#include <client/render/TextRenderer.hpp>
 #include <client/render/VulkanFrustum.hpp>
 #include <client/render/VulkanRenderer.hpp>
 
 #include <shared/net/Message.hpp>
+#include <shared/world/Chunk.hpp>
 #include <shared/world/ChunkMesher.hpp>
 #include <shared/world/HeightTileInterest.hpp>
 #include <shared/world/HeightTileSurfaceMesher.hpp>
+#include <shared/world/WorldGeneration.hpp>
 
+#include <core/common/Version.hpp>
+#include <core/graphics/Graphics.hpp>
+#include <core/graphics/vulkan/Vulkan.hpp>
 #if defined(__ANDROID__)
 #include <core/graphics/vulkan/android/AndroidSurface.hpp>
 #else
 #include <core/graphics/vulkan/glfw/GlfwSurface.hpp>
 #endif
-
 #include <core/kernel/Program.hpp>
+#include <core/kernel/Spirv.hpp>
 
 #if !defined(__ANDROID__)
 #include <core/platform/glfw/GlfwWindow.hpp>
 #endif
 
 #include <glm/common.hpp>
+#include <glm/ext/matrix_float4x4.hpp>
+#include <glm/ext/vector_double3.hpp>
+#include <glm/ext/vector_float3.hpp>
+#include <glm/ext/vector_float4.hpp>
+#include <glm/geometric.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/mat4x4.hpp>
+#include <glm/vec3.hpp>
 #include <glm/vec4.hpp>
+
+#include <vulkan/vulkan_core.h>
 
 #include <algorithm>
 #include <array>
 #include <chrono>
 #include <cmath>
+#include <compare>
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <exception>
+#include <functional>
+#include <iterator>
 #include <limits>
 #include <memory>
 #include <new>
+#include <optional>
 #include <ranges>
+#include <span>
 #include <stdexcept>
+#include <string>
 #include <string_view>
 #include <unordered_map>
 #include <utility>
+#include <vector>
 
 namespace client {
 namespace {
 
 using StoneDrawRange = StoneIndirectDraws::Range;
+
+template <typename Value>
+[[nodiscard]] Value& requiredValue(std::optional<Value>& value) noexcept
+{
+    if (!value.has_value()) {
+        std::terminate();
+    }
+    return *value;
+}
+
+template <typename Value>
+[[nodiscard]] Value const& requiredValue(std::optional<Value> const& value) noexcept
+{
+    if (!value.has_value()) {
+        std::terminate();
+    }
+    return *value;
+}
 
 #if (!defined(__ANDROID__) && defined(_CORE_DEBUG)) || defined(_MC_VK_VALIDATION_LAYERS)
 constexpr bool REQUIRE_VALIDATION = true;
@@ -264,11 +306,13 @@ private:
     {
         VkPhysicalDeviceMemoryProperties properties{};
         vkGetPhysicalDeviceMemoryProperties(m_physical_device, &properties);
+        VkMemoryPropertyFlags const host_visible_coherent_flags =
+            static_cast<VkMemoryPropertyFlags>(VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT)
+            | static_cast<VkMemoryPropertyFlags>(VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
         for (uint32_t index = 0U; index < properties.memoryTypeCount; ++index) {
             if ((memory_type_bits & (1U << index)) != 0U
-                && (properties.memoryTypes[index].propertyFlags
-                    & (VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT))
-                    == (VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)) {
+                && (properties.memoryTypes[index].propertyFlags & host_visible_coherent_flags)
+                    == host_visible_coherent_flags) {
                 return index;
             }
         }
@@ -312,7 +356,7 @@ bool diagnosticIndexedStoneQuads()
     return requested == nullptr || std::string_view{ requested } != "0";
 }
 
-enum class StoneDrawBufferKind {
+enum class StoneDrawBufferKind : uint8_t {
     Indirect,
     IndexedIndirect,
     QuadIndices,
@@ -351,11 +395,13 @@ public:
             VkPhysicalDeviceMemoryProperties properties{};
             vkGetPhysicalDeviceMemoryProperties(physical_device, &properties);
             std::optional<uint32_t> memory_type;
+            VkMemoryPropertyFlags const host_visible_coherent_flags =
+                static_cast<VkMemoryPropertyFlags>(VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT)
+                | static_cast<VkMemoryPropertyFlags>(VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
             for (uint32_t index = 0U; index < properties.memoryTypeCount; ++index) {
                 if ((requirements.memoryTypeBits & (1U << index)) != 0U
-                    && (properties.memoryTypes[index].propertyFlags
-                        & (VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT))
-                        == (VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)) {
+                    && (properties.memoryTypes[index].propertyFlags & host_visible_coherent_flags)
+                        == host_visible_coherent_flags) {
                     memory_type = index;
                     break;
                 }
@@ -465,7 +511,8 @@ public:
         uint32_t memory_type = properties.memoryTypeCount;
         for (uint32_t index = 0U; index < properties.memoryTypeCount; ++index) {
             VkMemoryPropertyFlags constexpr required =
-                VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+                static_cast<VkMemoryPropertyFlags>(VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT)
+                | static_cast<VkMemoryPropertyFlags>(VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
             if ((requirements.memoryTypeBits & (1U << index)) != 0U
                 && (properties.memoryTypes[index].propertyFlags & required) == required) {
                 memory_type = index;
@@ -686,8 +733,8 @@ public:
             vkCmdUpdateBuffer(
                 command,
                 m_buffer,
-                static_cast<VkDeviceSize>(offset * sizeof(TextGlyph)),
-                static_cast<VkDeviceSize>(count * sizeof(TextGlyph)),
+                static_cast<VkDeviceSize>(offset) * sizeof(TextGlyph),
+                static_cast<VkDeviceSize>(count) * sizeof(TextGlyph),
                 glyphs.data() + offset
             );
         }
@@ -1107,7 +1154,7 @@ void recordText(
     TextBatch const& batch,
     glm::mat4 const& projection_view,
     VkExtent2D const extent,
-    uint32_t const mode,
+    TextShaderMode const mode,
     uint32_t const first_instance,
     uint32_t& draw_count
 )
@@ -1137,7 +1184,7 @@ void recordText(
             static_cast<float>(extent.height),
         },
         .scale = 1.0F,
-        .mode = mode,
+        .mode = static_cast<uint32_t>(mode),
     };
     vkCmdPushConstants(command, layout, VK_SHADER_STAGE_VERTEX_BIT, 0U, sizeof(push), &push);
     vkCmdDraw(command, QUAD_VERTEX_COUNT, static_cast<uint32_t>(count), 0U, first_instance);
@@ -1415,7 +1462,7 @@ struct VulkanRenderer::Impl final {
         m_legacy_draw_range = { .first_instance = 0U, .instance_count = static_cast<uint32_t>(m_stone_faces.size()) };
         m_chunk_scene_enabled = true;
         if (!ensureStoneFaceCapacity(static_cast<uint32_t>(m_stone_faces.size()))) {
-            m_stone_face_buffer->upload(0U, m_stone_faces);
+            requiredValue(m_stone_face_buffer).upload(0U, m_stone_faces);
             ++m_chunk_mesh_upload_count;
         }
     }
@@ -1440,7 +1487,7 @@ struct VulkanRenderer::Impl final {
         m_legacy_draw_range = { .first_instance = 0U, .instance_count = static_cast<uint32_t>(m_stone_faces.size()) };
         m_chunk_scene_enabled = true;
         if (!ensureStoneFaceCapacity(static_cast<uint32_t>(m_stone_faces.size()))) {
-            m_stone_face_buffer->upload(0U, m_stone_faces);
+            requiredValue(m_stone_face_buffer).upload(0U, m_stone_faces);
             ++m_chunk_mesh_upload_count;
         }
     }
@@ -1514,7 +1561,7 @@ struct VulkanRenderer::Impl final {
         m_height_tile_face_count += range.instance_count;
         m_chunk_scene_enabled = true;
         HeightTileSlot const& slot = m_height_tile_slots.at(mesh.coordinate);
-        m_stone_face_buffer->upload(slot.range.first_instance, slot.instances);
+        requiredValue(m_stone_face_buffer).upload(slot.range.first_instance, slot.instances);
         indexHeightTileSlot(mesh.coordinate, slot);
         ++m_chunk_mesh_upload_count;
         return true;
@@ -1650,7 +1697,7 @@ struct VulkanRenderer::Impl final {
             if (!candidate.slot->instances.empty()) {
                 HeightTileSlot& slot = m_height_tile_slots.emplace(candidate.coordinate, std::move(*candidate.slot)).first->second;
                 m_height_tile_face_count += slot.range.instance_count;
-                m_stone_face_buffer->upload(slot.range.first_instance, slot.instances);
+                requiredValue(m_stone_face_buffer).upload(slot.range.first_instance, slot.instances);
                 indexHeightTileSlot(candidate.coordinate, slot);
                 ++m_chunk_mesh_upload_count;
             } else {
@@ -1760,7 +1807,7 @@ struct VulkanRenderer::Impl final {
             .chunk_draw_face_count = m_chunk_draw_face_count,
             .chunk_mesh_upload_count = m_chunk_mesh_upload_count,
             .height_tile_mesh_count = static_cast<uint32_t>(m_height_tile_slots.size()),
-            .stone_face_capacity = m_stone_face_buffer->capacity(),
+            .stone_face_capacity = requiredValue(m_stone_face_buffer).capacity(),
             .diagnostic_render_attempt_id = m_diagnostic_render_attempt_id,
             .diagnostic_frame_recorded = m_diagnostic_frame_recorded,
             .diagnostic_indexed_stone_quads = m_diagnostic_indexed_stone_quads,
@@ -1986,7 +2033,8 @@ private:
                 rollback_required = false;
                 try {
                     recreate(m_context->info().extent, frame_deadline);
-                    if (m_stone_face_buffer->capacity() != m_stone_face_capacity) {
+                    if (!m_stone_face_buffer.has_value()
+                        || requiredValue(m_stone_face_buffer).capacity() != m_stone_face_capacity) {
                         throw std::runtime_error("stone face arena recreation was deferred");
                     }
                 } catch (...) {
@@ -2000,13 +2048,13 @@ private:
     void uploadStoredMeshes()
     {
         if (!m_stone_faces.empty()) {
-            m_stone_face_buffer->upload(0U, m_stone_faces);
+            requiredValue(m_stone_face_buffer).upload(0U, m_stone_faces);
             ++m_chunk_mesh_upload_count;
             return;
         }
         for (auto const& [coordinate, slot] : m_height_tile_slots) {
             static_cast<void>(coordinate);
-            m_stone_face_buffer->upload(slot.range.first_instance, slot.instances);
+            requiredValue(m_stone_face_buffer).upload(slot.range.first_instance, slot.instances);
             ++m_chunk_mesh_upload_count;
         }
     }
@@ -2051,7 +2099,7 @@ private:
             m_text_glyph_upload.insert(m_text_glyph_upload.end(), text.glyphs.begin(), text.glyphs.end());
         }
         if (!m_text_glyph_upload.empty()) {
-            m_text_glyph_buffer->update(command, m_text_glyph_upload);
+            requiredValue(m_text_glyph_buffer).update(command, m_text_glyph_upload);
         }
         uint32_t const gui_text_first_instance = static_cast<uint32_t>(m_world_text_batch.glyphs.size());
         DepthTarget& depth_target = *m_current_depth_target;
@@ -2091,7 +2139,7 @@ private:
         color_attachment.clearValue.color.float32[1] = 0.62F;
         color_attachment.clearValue.color.float32[2] = 0.88F;
         color_attachment.clearValue.color.float32[3] = 1.0F;
-        VkExtent2D const extent = m_resources->extent();
+        VkExtent2D const extent = requiredValue(m_resources).extent();
         VkRenderingAttachmentInfo depth_attachment{};
         depth_attachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
         depth_attachment.imageView = depth_target.view;
@@ -2169,7 +2217,7 @@ private:
                     m_visible_stone_draw_ranges.push_back(*fallback_draw_range);
                 }
             }
-            StoneIndirectDraws::Prepared const prepared = m_stone_indirect_draws->prepareAcquiredSlot(
+            StoneIndirectDraws::Prepared const prepared = requiredValue(m_stone_indirect_draws).prepareAcquiredSlot(
                 m_current_frame_slot, m_visible_stone_draw_ranges, m_visible_solid_stone_draw_ranges
             );
             m_diagnostic_stone_indirect = prepared.buffer != nullptr;
@@ -2187,7 +2235,7 @@ private:
                 m_stone_pipeline,
                 m_stone_solid_pipeline,
                 m_stone_layout,
-                m_stone_descriptors->set(),
+                requiredValue(m_stone_descriptors).set(),
                 m_player_pipeline,
                 m_player_overlay_pipeline,
                 m_player_layout,
@@ -2221,11 +2269,11 @@ private:
                     command,
                     m_world_text_pipeline,
                     m_world_text_layout,
-                    m_text_descriptors->set(),
+                    requiredValue(m_text_descriptors).set(),
                     m_world_text_batch,
                     *projection * m_camera.viewMatrix(),
                     extent,
-                    static_cast<uint32_t>(textShaderMode(m_world_text_batch.space)),
+                    textShaderMode(m_world_text_batch.space),
                     0U,
                     world_text_draw_count
                 );
@@ -2271,11 +2319,11 @@ private:
                     command,
                     m_gui_text_pipeline,
                     m_gui_text_layout,
-                    m_text_descriptors->set(),
+                    requiredValue(m_text_descriptors).set(),
                     text,
                     glm::mat4{ 1.0F },
                     extent,
-                    static_cast<uint32_t>(textShaderMode(text.space)),
+                    textShaderMode(text.space),
                     first_instance,
                     m_debug_hud_draw_count
                 );
@@ -2296,7 +2344,7 @@ private:
         info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
         info.pushConstantRangeCount = 1U;
         info.pPushConstantRanges = &range;
-        checkResult(vkCreatePipelineLayout(m_resources->device(), &info, nullptr, &layout), "vkCreatePipelineLayout");
+        checkResult(vkCreatePipelineLayout(requiredValue(m_resources).device(), &info, nullptr, &layout), "vkCreatePipelineLayout");
         return layout;
     }
 
@@ -2305,7 +2353,7 @@ private:
         VkPushConstantRange range{};
         range.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
         range.size = sizeof(TextPushConstants);
-        VkDescriptorSetLayout const descriptor_layout = m_text_descriptors->layout();
+        VkDescriptorSetLayout const descriptor_layout = requiredValue(m_text_descriptors).layout();
         VkPipelineLayoutCreateInfo info{};
         info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
         info.setLayoutCount = 1U;
@@ -2313,7 +2361,7 @@ private:
         info.pushConstantRangeCount = 1U;
         info.pPushConstantRanges = &range;
         VkPipelineLayout layout = VK_NULL_HANDLE;
-        checkResult(vkCreatePipelineLayout(m_resources->device(), &info, nullptr, &layout),
+        checkResult(vkCreatePipelineLayout(requiredValue(m_resources).device(), &info, nullptr, &layout),
             "vkCreatePipelineLayout text");
         return layout;
     }
@@ -2323,7 +2371,7 @@ private:
         VkPushConstantRange range{};
         range.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
         range.size = sizeof(StonePushConstants);
-        VkDescriptorSetLayout const descriptor_layout = m_stone_descriptors->layout();
+        VkDescriptorSetLayout const descriptor_layout = requiredValue(m_stone_descriptors).layout();
         VkPipelineLayoutCreateInfo info{};
         info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
         info.setLayoutCount = 1U;
@@ -2332,7 +2380,7 @@ private:
         info.pPushConstantRanges = &range;
         VkPipelineLayout layout = VK_NULL_HANDLE;
         checkResult(
-            vkCreatePipelineLayout(m_resources->device(), &info, nullptr, &layout),
+            vkCreatePipelineLayout(requiredValue(m_resources).device(), &info, nullptr, &layout),
             "vkCreatePipelineLayout stone"
         );
         return layout;
@@ -2348,21 +2396,27 @@ private:
         }
         VkPhysicalDeviceDriverProperties driver_properties{
             .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DRIVER_PROPERTIES,
+            .pNext = nullptr,
+            .driverID = VK_DRIVER_ID_AMD_PROPRIETARY,
+            .driverName = {},
+            .driverInfo = {},
+            .conformanceVersion = {},
         };
         VkPhysicalDeviceProperties2 driver_query{
             .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2,
             .pNext = &driver_properties,
+            .properties = {},
         };
-        vkGetPhysicalDeviceProperties2(m_resources->physicalDevice(), &driver_query);
+        vkGetPhysicalDeviceProperties2(requiredValue(m_resources).physicalDevice(), &driver_query);
         if (driver_properties.driverID == VK_DRIVER_ID_MOLTENVK) {
             // Stage-based Metal counters may defer both terrain markers to the end of one render encoder.
             m_diagnostic_gpu_timestamp_reason = "unsupported: MoltenVK may defer in-render-pass timestamps";
             return;
         }
         uint32_t family_count = 0U;
-        vkGetPhysicalDeviceQueueFamilyProperties(m_resources->physicalDevice(), &family_count, nullptr);
+        vkGetPhysicalDeviceQueueFamilyProperties(requiredValue(m_resources).physicalDevice(), &family_count, nullptr);
         std::vector<VkQueueFamilyProperties> families(family_count);
-        vkGetPhysicalDeviceQueueFamilyProperties(m_resources->physicalDevice(), &family_count, families.data());
+        vkGetPhysicalDeviceQueueFamilyProperties(requiredValue(m_resources).physicalDevice(), &family_count, families.data());
         uint32_t common_valid_bits = 64U;
         bool found_graphics = false;
         for (uint32_t index = 0U; index < family_count; ++index) {
@@ -2392,16 +2446,19 @@ private:
         if (slot.pool == VK_NULL_HANDLE) {
             VkQueryPoolCreateInfo const info{
                 .sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO,
+                .pNext = nullptr,
+                .flags = 0U,
                 .queryType = VK_QUERY_TYPE_TIMESTAMP,
                 .queryCount = 2U,
+                .pipelineStatistics = 0U,
             };
-            checkResult(vkCreateQueryPool(m_resources->device(), &info, nullptr, &slot.pool),
+            checkResult(vkCreateQueryPool(requiredValue(m_resources).device(), &info, nullptr, &slot.pool),
                 "vkCreateQueryPool diagnostic terrain timestamps");
         }
         if (slot.submitted) {
             std::array<uint64_t, 2> values{};
             VkResult const result = vkGetQueryPoolResults(
-                m_resources->device(), slot.pool, 0U, 2U, sizeof(values), values.data(), sizeof(uint64_t),
+                requiredValue(m_resources).device(), slot.pool, 0U, 2U, sizeof(values), values.data(), sizeof(uint64_t),
                 VK_QUERY_RESULT_64_BIT
             );
             m_diagnostic_gpu_terrain_duration.reset();
@@ -2430,10 +2487,10 @@ private:
     {
         m_resources.emplace(m_context->resources());
         VkPhysicalDeviceProperties properties{};
-        vkGetPhysicalDeviceProperties(m_resources->physicalDevice(), &properties);
+        vkGetPhysicalDeviceProperties(requiredValue(m_resources).physicalDevice(), &properties);
         initializeDiagnosticTimestamps(properties);
-        VkDevice const indirect_device = m_resources->device();
-        VkPhysicalDevice const indirect_physical_device = m_resources->physicalDevice();
+        VkDevice const indirect_device = requiredValue(m_resources).device();
+        VkPhysicalDevice const indirect_physical_device = requiredValue(m_resources).physicalDevice();
         if (m_diagnostic_indexed_stone_quads) {
             m_stone_quad_indices.emplace(indirect_device, indirect_physical_device, 1U, StoneDrawBufferKind::QuadIndices);
         }
@@ -2453,7 +2510,7 @@ private:
             },
             m_diagnostic_indexed_stone_quads
         );
-        auto const dynamic_rendering = m_resources->dynamicRenderingCommands();
+        auto const dynamic_rendering = requiredValue(m_resources).dynamicRenderingCommands();
         m_begin_rendering = dynamic_rendering.begin;
         m_end_rendering = dynamic_rendering.end;
         if (m_begin_rendering == nullptr || m_end_rendering == nullptr) {
@@ -2461,14 +2518,16 @@ private:
         }
         selectDepthFormat();
         m_stone_face_buffer.emplace(
-            m_resources->device(),
-            m_resources->physicalDevice(),
+            requiredValue(m_resources).device(),
+            requiredValue(m_resources).physicalDevice(),
             m_stone_face_capacity
         );
-        m_stone_texture_buffer.emplace(m_resources->device(), m_resources->physicalDevice());
-        m_stone_descriptors.emplace(m_resources->device(), *m_stone_face_buffer, *m_stone_texture_buffer);
-        m_text_glyph_buffer.emplace(m_resources->device(), m_resources->physicalDevice());
-        m_text_descriptors.emplace(m_resources->device(), *m_text_glyph_buffer);
+        m_stone_texture_buffer.emplace(requiredValue(m_resources).device(), requiredValue(m_resources).physicalDevice());
+        m_stone_descriptors.emplace(
+            requiredValue(m_resources).device(), requiredValue(m_stone_face_buffer), requiredValue(m_stone_texture_buffer)
+        );
+        m_text_glyph_buffer.emplace(requiredValue(m_resources).device(), requiredValue(m_resources).physicalDevice());
+        m_text_descriptors.emplace(requiredValue(m_resources).device(), requiredValue(m_text_glyph_buffer));
         uploadStoredMeshes();
         auto const grid = std::make_shared<core::kernel::SpirvModule const>(
             m_shader_assets.load("grid.vert.spv")
@@ -2570,70 +2629,70 @@ private:
         m_gui_text_layout = createTextLayout();
         m_stone_layout = createStoneLayout();
         m_kernel_cache.emplace(KERNEL_CACHE_CAPACITY);
-        core::graphics::vulkan::VulkanDeviceReference const device = m_resources->deviceReference();
+        core::graphics::vulkan::VulkanDeviceReference const device = requiredValue(m_resources).deviceReference();
         PresentationPipelineDescriptors const descriptors = presentationPipelineDescriptors(
             m_grid_layout,
             m_player_layout,
             m_world_text_layout,
             m_gui_text_layout,
-            m_resources->format(),
+            requiredValue(m_resources).format(),
             m_depth_format
         );
-        m_grid_pipeline = m_kernel_cache->pipelineFor(
+        m_grid_pipeline = requiredValue(m_kernel_cache).pipelineFor(
             device,
             *m_grid_program,
             descriptors.grid
         );
-        m_player_pipeline = m_kernel_cache->pipelineFor(
+        m_player_pipeline = requiredValue(m_kernel_cache).pipelineFor(
             device,
             *m_player_program,
             descriptors.player
         );
-        m_player_overlay_pipeline = m_kernel_cache->pipelineFor(
+        m_player_overlay_pipeline = requiredValue(m_kernel_cache).pipelineFor(
             device,
             *m_player_program,
             descriptors.player_overlay
         );
-        m_world_text_pipeline = m_kernel_cache->pipelineFor(
+        m_world_text_pipeline = requiredValue(m_kernel_cache).pipelineFor(
             device,
             *m_text_program,
             descriptors.world_text
         );
-        m_gui_text_pipeline = m_kernel_cache->pipelineFor(
+        m_gui_text_pipeline = requiredValue(m_kernel_cache).pipelineFor(
             device,
             *m_text_program,
             descriptors.gui_text
         );
-        m_stone_pipeline = m_kernel_cache->pipelineFor(
+        m_stone_pipeline = requiredValue(m_kernel_cache).pipelineFor(
             device,
             *m_stone_program,
             {
                 .layout = m_stone_layout,
-                .color_format = m_resources->format(),
+                .color_format = requiredValue(m_resources).format(),
                 .depth_format = m_depth_format,
                 .depth_test_enabled = true,
                 .depth_write_enabled = true,
                 .depth_compare_op = VK_COMPARE_OP_LESS,
             }
         );
-        m_stone_solid_pipeline = m_kernel_cache->pipelineFor(
+        m_stone_solid_pipeline = requiredValue(m_kernel_cache).pipelineFor(
             device,
             *m_stone_solid_program,
             {
                 .layout = m_stone_layout,
-                .color_format = m_resources->format(),
+                .color_format = requiredValue(m_resources).format(),
                 .depth_format = m_depth_format,
                 .depth_test_enabled = true,
                 .depth_write_enabled = true,
                 .depth_compare_op = VK_COMPARE_OP_LESS,
             }
         );
-        m_sky_pipeline = m_kernel_cache->pipelineFor(
+        m_sky_pipeline = requiredValue(m_kernel_cache).pipelineFor(
             device,
             *m_sky_program,
             {
                 .layout = m_grid_layout,
-                .color_format = m_resources->format(),
+                .color_format = requiredValue(m_resources).format(),
                 .depth_format = m_depth_format,
                 .depth_test_enabled = false,
                 .depth_write_enabled = false,
@@ -2646,10 +2705,10 @@ private:
         if (!m_resources.has_value()) {
             return;
         }
-        VkDevice const device = m_resources->device();
+        VkDevice const device = requiredValue(m_resources).device();
         destroyDepthTargets(device);
         if (m_kernel_cache.has_value()) {
-            m_kernel_cache->invalidate(m_resources->deviceReference().identity());
+            requiredValue(m_kernel_cache).invalidate(requiredValue(m_resources).deviceReference().identity());
             m_kernel_cache.reset();
         }
         if (m_grid_layout != VK_NULL_HANDLE) { vkDestroyPipelineLayout(device, m_grid_layout, nullptr); }
@@ -2713,7 +2772,7 @@ private:
         for (size_t index = 0U; index < DEPTH_FORMAT_CANDIDATES.size(); ++index) {
             VkFormatProperties properties{};
             vkGetPhysicalDeviceFormatProperties(
-                m_resources->physicalDevice(),
+                requiredValue(m_resources).physicalDevice(),
                 DEPTH_FORMAT_CANDIDATES[index],
                 &properties
             );
@@ -2756,24 +2815,34 @@ private:
 
     void createDepthTarget(DepthTarget& target)
     {
-        VkDevice const device = m_resources->device();
+        VkDevice const device = requiredValue(m_resources).device();
         try {
-            VkImageCreateInfo image_info{};
-            image_info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
-            image_info.imageType = VK_IMAGE_TYPE_2D;
-            image_info.format = m_depth_format;
-            image_info.extent = { .width = m_resources->extent().width, .height = m_resources->extent().height, .depth = 1U };
-            image_info.mipLevels = 1U;
-            image_info.arrayLayers = 1U;
-            image_info.samples = VK_SAMPLE_COUNT_1_BIT;
-            image_info.tiling = VK_IMAGE_TILING_OPTIMAL;
-            image_info.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
-            image_info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+            VkImageCreateInfo const image_info{
+                .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+                .pNext = nullptr,
+                .flags = 0U,
+                .imageType = VK_IMAGE_TYPE_2D,
+                .format = m_depth_format,
+                .extent = {
+                    .width = requiredValue(m_resources).extent().width,
+                    .height = requiredValue(m_resources).extent().height,
+                    .depth = 1U,
+                },
+                .mipLevels = 1U,
+                .arrayLayers = 1U,
+                .samples = VK_SAMPLE_COUNT_1_BIT,
+                .tiling = VK_IMAGE_TILING_OPTIMAL,
+                .usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
+                .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+                .queueFamilyIndexCount = 0U,
+                .pQueueFamilyIndices = nullptr,
+                .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+            };
             checkResult(vkCreateImage(device, &image_info, nullptr, &target.image), "vkCreateImage depth");
             VkMemoryRequirements requirements{};
             vkGetImageMemoryRequirements(device, target.image, &requirements);
             VkPhysicalDeviceMemoryProperties memory_properties{};
-            vkGetPhysicalDeviceMemoryProperties(m_resources->physicalDevice(), &memory_properties);
+            vkGetPhysicalDeviceMemoryProperties(requiredValue(m_resources).physicalDevice(), &memory_properties);
             uint32_t memory_type = memory_properties.memoryTypeCount;
             for (uint32_t index = 0U; index < memory_properties.memoryTypeCount; ++index) {
                 if ((requirements.memoryTypeBits & (1U << index)) != 0U
@@ -2958,17 +3027,23 @@ public:
         , m_format(format)
     {
         try {
-            VkImageCreateInfo image_info{};
-            image_info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
-            image_info.imageType = VK_IMAGE_TYPE_2D;
-            image_info.format = m_format;
-            image_info.extent = { .width = extent.width, .height = extent.height, .depth = 1U };
-            image_info.mipLevels = 1U;
-            image_info.arrayLayers = 1U;
-            image_info.samples = VK_SAMPLE_COUNT_1_BIT;
-            image_info.tiling = VK_IMAGE_TILING_OPTIMAL;
-            image_info.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
-            image_info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+            VkImageCreateInfo const image_info{
+                .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+                .pNext = nullptr,
+                .flags = 0U,
+                .imageType = VK_IMAGE_TYPE_2D,
+                .format = m_format,
+                .extent = { .width = extent.width, .height = extent.height, .depth = 1U },
+                .mipLevels = 1U,
+                .arrayLayers = 1U,
+                .samples = VK_SAMPLE_COUNT_1_BIT,
+                .tiling = VK_IMAGE_TILING_OPTIMAL,
+                .usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
+                .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+                .queueFamilyIndexCount = 0U,
+                .pQueueFamilyIndices = nullptr,
+                .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+            };
             checkResult(vkCreateImage(m_device->handle(), &image_info, nullptr, &m_image), "vkCreateImage offscreen depth");
             VkMemoryRequirements requirements{};
             vkGetImageMemoryRequirements(m_device->handle(), m_image, &requirements);
@@ -3162,7 +3237,7 @@ public:
     [[nodiscard]] VkPipelineLayout playerLayout() const noexcept { return m_player_layout; }
     [[nodiscard]] VkPipeline guiTextPipeline() const noexcept { return m_gui_text_pipeline; }
     [[nodiscard]] VkPipelineLayout guiTextLayout() const noexcept { return m_gui_text_layout; }
-    [[nodiscard]] VkDescriptorSet textDescriptorSet() const noexcept { return m_text_descriptors->set(); }
+    [[nodiscard]] VkDescriptorSet textDescriptorSet() const noexcept { return requiredValue(m_text_descriptors).set(); }
     [[nodiscard]] VkPipeline stonePipeline() const noexcept { return m_stone_pipeline; }
     [[nodiscard]] VkBuffer stoneQuadIndices() const noexcept
     {
@@ -3180,7 +3255,7 @@ public:
 
     void uploadTextGlyphs(VkCommandBuffer const command, std::span<TextGlyph const> const glyphs) const
     {
-        m_text_glyph_buffer->update(command, glyphs);
+        requiredValue(m_text_glyph_buffer).update(command, glyphs);
     }
 
 private:
@@ -3279,7 +3354,7 @@ private:
         VkPushConstantRange range{};
         range.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
         range.size = sizeof(TextPushConstants);
-        VkDescriptorSetLayout const descriptor_layout = m_text_descriptors->layout();
+        VkDescriptorSetLayout const descriptor_layout = requiredValue(m_text_descriptors).layout();
         VkPipelineLayoutCreateInfo info{};
         info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
         info.setLayoutCount = 1U;
@@ -3558,7 +3633,7 @@ private:
                     text,
                     glm::mat4{ 1.0F },
                     recording.extent,
-                    static_cast<uint32_t>(textShaderMode(text.space)),
+                    textShaderMode(text.space),
                     first_instance,
                     gui_text_draw_count
                 );

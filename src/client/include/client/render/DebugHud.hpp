@@ -143,6 +143,11 @@ public:
     [[nodiscard]] bool buildBatch(DebugHudText& text, DebugHudBatch& batch) const;
 
 private:
+    struct AppendRange final {
+        size_t offset = 0U;
+        size_t limit = 0U;
+    };
+
     std::array<DebugHudColor, DEBUG_HUD_LINE_COUNT> line_colors_{
         DebugHudColor::White,
         DebugHudColor::White,
@@ -154,15 +159,13 @@ private:
 
     [[nodiscard]] size_t appendText(
         DebugHudText& text,
-        size_t offset,
-        size_t limit,
+        AppendRange range,
         std::string_view value,
         TextColor color
     ) const;
     [[nodiscard]] size_t appendNumber(
         DebugHudText& text,
-        size_t offset,
-        size_t limit,
+        AppendRange range,
         double value,
         int decimals,
         TextColor color

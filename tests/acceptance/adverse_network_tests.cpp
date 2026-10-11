@@ -1,9 +1,14 @@
+#include <client/ClientAudio.hpp>
 #include <client/GameClient.hpp>
 #include <server/GameServer.hpp>
 #include <shared/net/Message.hpp>
 #include <shared/world/World.hpp>
 
+#include <core/net/Address.hpp>
 #include <core/net/Client.hpp>
+#include <core/net/Event.hpp>
+#include <core/net/Peer.hpp>
+#include <core/net/SendMode.hpp>
 #include <core/net/Server.hpp>
 
 #include <gtest/gtest.h>
@@ -12,15 +17,21 @@
 #include <array>
 #include <atomic>
 #include <chrono>
+#include <compare>
 #include <cstdint>
+#include <deque>
+#include <functional>
 #include <map>
 #include <memory>
 #include <optional>
+#include <ratio>
 #include <span>
 #include <string>
 #include <thread>
 #include <tuple>
 #include <unordered_map>
+#include <utility>
+#include <variant>
 #include <vector>
 
 namespace {
@@ -172,10 +183,14 @@ public:
     static constexpr std::chrono::milliseconds LOGICAL_TICK{ 10 };
     static constexpr uint32_t STALE_PROBE_TICK = 350U;
 
-    explicit AdverseNetworkRelay(uint16_t const game_server_port, uint32_t const initial_tick)
+    struct InitialTick final {
+        uint32_t value;
+    };
+
+    explicit AdverseNetworkRelay(uint16_t const game_server_port, InitialTick const initial_tick)
         : core::Server{ core::Address::localhost(0U), 4U, 2U }
         , m_game_server_port{ game_server_port }
-        , m_tick{ initial_tick }
+        , m_tick{ initial_tick.value }
     { }
 
     void run(std::atomic_bool const& stop_requested)
@@ -198,7 +213,7 @@ public:
         }
     }
 
-    [[nodiscard]] uint16_t port() const noexcept { return core::Server::port(); }
+    [[nodiscard]] uint16_t relayPort() const noexcept { return core::Server::port(); }
 
     [[nodiscard]] uint64_t upstreamConnectionFailures() const noexcept
     {
@@ -655,7 +670,7 @@ TEST(AdverseNetworkTest, DeliversPacketsAfterFiveSecondsOfLatency)
         .max_schedule_records = 1U,
     };
     std::vector<uint8_t> const bytes = shared::encodeMessage(shared::ClientInputMessage{
-        .direction = { .x = 127U },
+        .direction = { .x = 127U, .y = 0U },
         .sequence = 1U,
     });
     AdverseTransport latency{ SEED, LATENCY_CONFIG, AdverseTransportConfig{} };
@@ -682,7 +697,7 @@ TEST(AdverseNetworkTest, RecoversPacketsAfterFifteenSecondDeliveryFreeze)
         .max_schedule_records = 1U,
     };
     std::vector<uint8_t> const bytes = shared::encodeMessage(shared::ClientInputMessage{
-        .direction = { .x = 127U },
+        .direction = { .x = 127U, .y = 0U },
         .sequence = 1U,
     });
     AdverseTransport freeze{ SEED, FREEZE_CONFIG, AdverseTransportConfig{} };
@@ -706,7 +721,7 @@ TEST(AdverseNetworkTest, ProductionTwoClientsConvergeAcrossSeededBidirectionalIm
     static constexpr shared::Direction MOVEMENT{ .x = 127U, .y = 0U, .view_y = 127 };
 
     server::GameServer game_server{ 0U, {}, shared::WorldMode::Flight };
-    AdverseNetworkRelay relay{ game_server.port(), INITIAL_RELAY_TICK };
+    AdverseNetworkRelay relay{ game_server.port(), { .value = INITIAL_RELAY_TICK } };
     std::atomic_bool stop_server{ false };
     std::atomic_bool stop_relay{ false };
     std::thread server_thread{ [&] {
@@ -750,11 +765,11 @@ TEST(AdverseNetworkTest, ProductionTwoClientsConvergeAcrossSeededBidirectionalIm
     configure_hooks(second_client, second_hooks, second_facts);
 
     std::thread first_client_thread{ [&] {
-        first_client.run(core::Address::localhost(relay.port()), '@', &first_hooks);
+        first_client.run(core::Address::localhost(relay.relayPort()), '@', &first_hooks);
         first_facts.run_completed_at = std::chrono::steady_clock::now();
     } };
     std::thread second_client_thread{ [&] {
-        second_client.run(core::Address::localhost(relay.port()), '#', &second_hooks);
+        second_client.run(core::Address::localhost(relay.relayPort()), '#', &second_hooks);
         second_facts.run_completed_at = std::chrono::steady_clock::now();
     } };
 
@@ -987,7 +1002,7 @@ TEST(AdverseNetworkTest, ProductionTwoClientsConvergeAcrossSeededBidirectionalIm
         bool first_position = true;
         for (auto const& [character, position] : receipt.latest_server_positions) {
             if (!first_position) {
-                output += ",";
+                output.push_back(',');
             }
             first_position = false;
             output += "{\"character\":\"";
@@ -1002,7 +1017,7 @@ TEST(AdverseNetworkTest, ProductionTwoClientsConvergeAcrossSeededBidirectionalIm
             appendNumber(output, position.state_revision);
             output += ",\"acknowledged_input_sequence\":";
             appendNumber(output, position.acknowledged_input_sequence);
-            output += "}";
+            output.push_back('}');
         }
         output += "],\"stale_input_packets_forwarded\":";
         appendNumber(output, receipt.stale_inputs_forwarded);
@@ -1052,7 +1067,7 @@ TEST(AdverseNetworkTest, ProductionTwoClientsConvergeAcrossSeededBidirectionalIm
         first_stale_snapshot_rejections,
         first_converged
     );
-    facts_json += ",";
+    facts_json.push_back(',');
     appendClientFacts(
         facts_json,
         *second_receipt,
@@ -1075,7 +1090,7 @@ TEST(AdverseNetworkTest, ProductionDelayedReadinessPreservesBothFreezePhasesAndR
     static constexpr shared::Direction MOVEMENT{ .x = 127U, .y = 0U, .view_y = 127 };
 
     server::GameServer game_server{ 0U, {}, shared::WorldMode::Flight };
-    AdverseNetworkRelay relay{ game_server.port(), INITIAL_RELAY_TICK };
+    AdverseNetworkRelay relay{ game_server.port(), { .value = INITIAL_RELAY_TICK } };
     std::atomic_bool stop_server{ false };
     std::atomic_bool stop_relay{ false };
     std::thread server_thread{ [&] {
@@ -1113,7 +1128,7 @@ TEST(AdverseNetworkTest, ProductionDelayedReadinessPreservesBothFreezePhasesAndR
     };
 
     std::thread client_thread{ [&] {
-        game_client.run(core::Address::localhost(relay.port()), '@', &hooks);
+        game_client.run(core::Address::localhost(relay.relayPort()), '@', &hooks);
     } };
     client_thread.join();
     stop_relay.store(true, std::memory_order_release);

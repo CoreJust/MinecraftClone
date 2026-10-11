@@ -1,10 +1,16 @@
 #include <client/render/DebugHud.hpp>
+#include <client/render/TextRenderer.hpp>
 
 #include <gtest/gtest.h>
 
+#include <array>
 #include <cmath>
+#include <cstddef>
+#include <cstdint>
 #include <limits>
+#include <string>
 #include <string_view>
+#include <vector>
 
 namespace {
 
@@ -50,25 +56,31 @@ TEST(DebugHudTest, FormatsBoundedTelemetryViewAndAuthorityLines)
     uint32_t const gold = client::TextColor{ 1.0F, 0.82F, 0.38F, 1.0F }.packed();
     uint32_t const green = client::TextColor{ 0.63F, 1.0F, 0.62F, 1.0F }.packed();
     uint32_t const rose = client::TextColor{ 1.0F, 0.65F, 0.74F, 1.0F }.packed();
-    auto expectSpan = [&](size_t const index, size_t const offset, size_t const length, uint32_t const color) {
-        ASSERT_LT(index, text.spans.size());
-        EXPECT_EQ(text.spans[index].offset, offset);
-        EXPECT_EQ(text.spans[index].length, length);
-        EXPECT_EQ(text.spans[index].packed_color, color);
+    struct ExpectedSpan final {
+        size_t index;
+        size_t offset;
+        size_t length;
+        uint32_t color;
+    };
+    auto expectSpan = [&](ExpectedSpan const expected) {
+        ASSERT_LT(expected.index, text.spans.size());
+        EXPECT_EQ(text.spans[expected.index].offset, expected.offset);
+        EXPECT_EQ(text.spans[expected.index].length, expected.length);
+        EXPECT_EQ(text.spans[expected.index].packed_color, expected.color);
     };
 
-    expectSpan(0U, 0U, 94U, white);
-    expectSpan(1U, 94U, 3U, cyan);
-    expectSpan(2U, 97U, 1U, white);
-    expectSpan(3U, 98U, 3U, gold);
-    expectSpan(4U, 101U, 1U, white);
-    expectSpan(5U, 102U, 4U, green);
-    expectSpan(6U, 106U, 10U, white);
-    expectSpan(7U, 116U, 4U, cyan);
-    expectSpan(8U, 120U, 1U, white);
-    expectSpan(9U, 121U, 5U, gold);
-    expectSpan(10U, 126U, 1U, white);
-    expectSpan(11U, 127U, 3U, rose);
+    expectSpan({ .index = 0U, .offset = 0U, .length = 94U, .color = white });
+    expectSpan({ .index = 1U, .offset = 94U, .length = 3U, .color = cyan });
+    expectSpan({ .index = 2U, .offset = 97U, .length = 1U, .color = white });
+    expectSpan({ .index = 3U, .offset = 98U, .length = 3U, .color = gold });
+    expectSpan({ .index = 4U, .offset = 101U, .length = 1U, .color = white });
+    expectSpan({ .index = 5U, .offset = 102U, .length = 4U, .color = green });
+    expectSpan({ .index = 6U, .offset = 106U, .length = 10U, .color = white });
+    expectSpan({ .index = 7U, .offset = 116U, .length = 4U, .color = cyan });
+    expectSpan({ .index = 8U, .offset = 120U, .length = 1U, .color = white });
+    expectSpan({ .index = 9U, .offset = 121U, .length = 5U, .color = gold });
+    expectSpan({ .index = 10U, .offset = 126U, .length = 1U, .color = white });
+    expectSpan({ .index = 11U, .offset = 127U, .length = 3U, .color = rose });
 }
 
 TEST(DebugHudTest, UsesTouchHelpAndAccelerationState)

@@ -1,12 +1,22 @@
 #include <shared/world/ScriptedWorld.hpp>
 
+#include <shared/world/Chunk.hpp>
+#include <shared/world/World.hpp>
+
+#include <core/lang/Bytecode.hpp>
+#include <core/lang/Compiler.hpp>
 #include <core/lang/CoreLang.hpp>
+#include <core/lang/Diagnostic.hpp>
+#include <core/lang/Registry.hpp>
+#include <core/lang/Runtime.hpp>
+#include <core/lang/Value.hpp>
 
 #include <array>
 #include <cstdint>
 #include <optional>
 #include <span>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -23,34 +33,41 @@ static constexpr uint8_t STONE_BLOCK_ID = static_cast<uint8_t>(shared::Block::St
 [[nodiscard]]
 core003::Type unitType()
 {
-    return {.kind = core003::TypeKind::Unit};
+    core003::Type type{};
+    type.kind = core003::TypeKind::Unit;
+    return type;
 }
 
 [[nodiscard]]
 core003::Type signedIntegerType()
 {
-    return {.kind = core003::TypeKind::I32};
+    core003::Type type{};
+    type.kind = core003::TypeKind::I32;
+    return type;
 }
 
 [[nodiscard]]
 core003::Type unsignedSeedType()
 {
-    return {.kind = core003::TypeKind::U64};
+    core003::Type type{};
+    type.kind = core003::TypeKind::U64;
+    return type;
 }
 
 [[nodiscard]]
 core003::Value unitValue()
 {
-    return {.type = unitType()};
+    core003::Value value{};
+    value.type = unitType();
+    return value;
 }
 
 [[nodiscard]]
 core003::Value signedIntegerValueForHost(int32_t const number)
 {
-    auto value = core003::Value{
-        .type = signedIntegerType(),
-        .bytes = std::vector<uint8_t>(sizeof(uint32_t)),
-    };
+    core003::Value value{};
+    value.type = signedIntegerType();
+    value.bytes.resize(sizeof(uint32_t));
     uint32_t const bits = static_cast<uint32_t>(number);
     for (uint64_t index = 0U; index < value.bytes.size(); ++index) {
         value.bytes[static_cast<std::vector<uint8_t>::size_type>(index)] = static_cast<uint8_t>(
@@ -63,10 +80,9 @@ core003::Value signedIntegerValueForHost(int32_t const number)
 [[nodiscard]]
 core003::Value unsignedSeedValue(uint64_t const seed)
 {
-    auto value = core003::Value{
-        .type = unsignedSeedType(),
-        .bytes = std::vector<uint8_t>(sizeof(uint64_t)),
-    };
+    core003::Value value{};
+    value.type = unsignedSeedType();
+    value.bytes.resize(sizeof(uint64_t));
     for (uint64_t index = 0U; index < value.bytes.size(); ++index) {
         value.bytes[static_cast<std::vector<uint8_t>::size_type>(index)] = static_cast<uint8_t>(
             seed >> (index * 8U)
@@ -102,7 +118,7 @@ std::optional<int32_t> signedIntegerValue(core003::Value const& value)
 
 [[nodiscard]]
 core003::CustomManifest customManifest(
-    std::string provider_key,
+    std::string_view provider_key,
     std::vector<core003::Type> arguments,
     core003::Type result
 )
@@ -111,14 +127,16 @@ core003::CustomManifest customManifest(
         arguments.size(),
         core003::BorrowAccess::None
     );
-    auto manifest = core003::CustomManifest{
-        .provider_key = std::move(provider_key),
-        .abi_major = WORLD_HOST_ABI_VERSION,
-        .effect = core003::CustomEffect::Opaque,
-        .arguments = std::move(arguments),
-        .result = std::move(result),
-        .borrow = {.parameters = parameter_borrows},
-    };
+    core003::BorrowContract borrow{};
+    borrow.parameters = parameter_borrows;
+
+    core003::CustomManifest manifest{};
+    manifest.provider_key = std::string{provider_key};
+    manifest.abi_major = WORLD_HOST_ABI_VERSION;
+    manifest.effect = core003::CustomEffect::Opaque;
+    manifest.arguments = std::move(arguments);
+    manifest.result = std::move(result);
+    manifest.borrow = std::move(borrow);
     manifest.digest = core003::customManifestDigest(manifest);
     return manifest;
 }
@@ -126,55 +144,64 @@ core003::CustomManifest customManifest(
 [[nodiscard]]
 core003::Operation customOperation(
     std::string name,
-    std::string provider_key,
+    std::string_view provider_key,
     std::vector<core003::Type> arguments,
     core003::Type result
 )
 {
     core003::CustomManifest manifest = customManifest(provider_key, arguments, result);
     core003::BorrowContract const borrow = manifest.borrow;
-    return {
-        .name = std::move(name),
-        .arguments = std::move(arguments),
-        .result = std::move(result),
-        .effect = core003::CustomEffect::Opaque,
-        .custom = std::move(manifest),
-        .borrow = borrow,
-    };
+    core003::Operation operation{};
+    operation.name = std::move(name);
+    operation.arguments = std::move(arguments);
+    operation.result = std::move(result);
+    operation.effect = core003::CustomEffect::Opaque;
+    operation.custom = std::move(manifest);
+    operation.borrow = borrow;
+    return operation;
+}
+
+[[nodiscard]]
+core003::CustomProvider customProvider(core003::CustomManifest manifest, core003::CustomInvoke invoke)
+{
+    core003::CustomProvider provider{};
+    provider.manifest = std::move(manifest);
+    provider.invoke = std::move(invoke);
+    return provider;
 }
 
 [[nodiscard]]
 core003::CompilerRegistry worldCompilerRegistry()
 {
-    core003::Ruleset ruleset{
-        .id = "minecraft",
-        .version = WORLD_RULESET_VERSION,
-        .operations = {
-            customOperation(
-                "terrain_random",
-                "minecraft/terrain_random",
-                {unsignedSeedType(), signedIntegerType(), signedIntegerType(), signedIntegerType()},
-                signedIntegerType()
-            ),
-            customOperation(
-                "set_block",
-                "minecraft/set_block",
-                {signedIntegerType(), signedIntegerType(), signedIntegerType(), signedIntegerType()},
-                unitType()
-            ),
-            customOperation("publish", "minecraft/publish", {}, unitType()),
-        },
+    core003::Ruleset ruleset{};
+    ruleset.id = "minecraft";
+    ruleset.version = WORLD_RULESET_VERSION;
+    ruleset.operations = {
+        customOperation(
+            "terrain_random",
+            "minecraft/terrain_random",
+            {unsignedSeedType(), signedIntegerType(), signedIntegerType(), signedIntegerType()},
+            signedIntegerType()
+        ),
+        customOperation(
+            "set_block",
+            "minecraft/set_block",
+            {signedIntegerType(), signedIntegerType(), signedIntegerType(), signedIntegerType()},
+            unitType()
+        ),
+        customOperation("publish", "minecraft/publish", {}, unitType()),
     };
-    return {
-        .rulesets = {std::move(ruleset)},
-        .defaults = {"minecraft"},
-    };
+
+    core003::CompilerRegistry registry{};
+    registry.rulesets = {std::move(ruleset)};
+    registry.defaults = {"minecraft"};
+    return registry;
 }
 
 class CandidateWorld final {
 public:
-    explicit CandidateWorld(shared::ScriptedWorldOptions options)
-        : m_options(std::move(options))
+    explicit CandidateWorld(shared::ScriptedWorldOptions const& options)
+        : m_options(options)
     {
         m_blocks.fill(shared::Block::Air);
     }
@@ -250,7 +277,7 @@ public:
                 .message = "world script completed without publishing its candidate",
             });
         }
-        return shared::Chunk{m_options.chunk_coordinate, std::move(m_blocks)};
+        return shared::Chunk{m_options.chunk_coordinate, m_blocks};
     }
 
     [[nodiscard]] bool exceededHostCallLimit() const noexcept
@@ -319,36 +346,36 @@ std::expected<void, std::string> registerProviders(
         return {};
     };
 
-    if (auto const result = register_provider({
-            .manifest = customManifest(
+    if (auto const result = register_provider(customProvider(
+            customManifest(
                 "minecraft/terrain_random",
                 {unsignedSeedType(), signedIntegerType(), signedIntegerType(), signedIntegerType()},
                 signedIntegerType()
             ),
-            .invoke = [&candidate](core003::CustomContext&, std::span<core003::Value const> arguments) {
+            [&candidate](core003::CustomContext&, std::span<core003::Value const> arguments) {
                 return candidate.terrainRandom(arguments);
-            },
-        }); !result) {
+            }
+        )); !result) {
         return result;
     }
-    if (auto const result = register_provider({
-            .manifest = customManifest(
+    if (auto const result = register_provider(customProvider(
+            customManifest(
                 "minecraft/set_block",
                 {signedIntegerType(), signedIntegerType(), signedIntegerType(), signedIntegerType()},
                 unitType()
             ),
-            .invoke = [&candidate](core003::CustomContext&, std::span<core003::Value const> arguments) {
+            [&candidate](core003::CustomContext&, std::span<core003::Value const> arguments) {
                 return candidate.setBlock(arguments);
-            },
-        }); !result) {
+            }
+        )); !result) {
         return result;
     }
-    return register_provider({
-        .manifest = customManifest("minecraft/publish", {}, unitType()),
-        .invoke = [&candidate](core003::CustomContext&, std::span<core003::Value const> arguments) {
+    return register_provider(customProvider(
+        customManifest("minecraft/publish", {}, unitType()),
+        [&candidate](core003::CustomContext&, std::span<core003::Value const> arguments) {
             return candidate.publish(arguments);
-        },
-    });
+        }
+    ));
 }
 
 [[nodiscard]]
@@ -379,8 +406,8 @@ std::string outcomeMessage(core003::CallOutcome const& outcome)
 
 namespace shared {
 
-ScriptedWorld::ScriptedWorld(Chunk chunk, WorldConfiguration const configuration) noexcept
-    : m_chunk(std::move(chunk))
+ScriptedWorld::ScriptedWorld(Chunk const& chunk, WorldConfiguration const configuration) noexcept
+    : m_chunk(chunk)
     , m_configuration(configuration)
 {
 }
@@ -455,7 +482,7 @@ std::expected<ScriptedWorld, ScriptedWorldError> ScriptedWorld::load(
     }
     uint64_t const digest = chunk->contentIdentity().content_hash;
     return ScriptedWorld{
-        std::move(*chunk),
+        *chunk,
         WorldConfiguration{
             .seed = options.seed,
             .chunk_width = options.chunk_width,

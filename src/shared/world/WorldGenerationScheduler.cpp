@@ -1,9 +1,14 @@
 #include <shared/world/WorldGenerationScheduler.hpp>
 
+#include <shared/world/Chunk.hpp>
+
 #include <algorithm>
 #include <array>
+#include <compare>
+#include <cstddef>
 #include <cstdint>
 #include <limits>
+#include <optional>
 #include <stdexcept>
 #include <tuple>
 #include <utility>
@@ -134,7 +139,7 @@ bool isValidWorldGenerationPlan(WorldGenerationPlan const& plan) noexcept
 }
 
 WorldGenerationScheduler::WorldGenerationScheduler(
-    uint64_t const max_pending_jobs,
+    uint64_t const max_pending_jobs, // NOLINT(bugprone-easily-swappable-parameters) -- job count vs byte limit
     uint64_t const max_output_bytes
 )
     : m_max_pending_jobs(max_pending_jobs)
@@ -179,12 +184,14 @@ WorldGenerationScheduler::AdmissionResult WorldGenerationScheduler::submitJob(
             && !state.cancelled) {
             return {
                 .admission = GenerationAdmission::Duplicate,
+                .job = std::nullopt,
             };
         }
     }
     if (m_jobs.size() >= m_max_pending_jobs) {
         return {
             .admission = GenerationAdmission::QueueFull,
+            .job = std::nullopt,
         };
     }
     GenerationJob const job{
@@ -194,7 +201,7 @@ WorldGenerationScheduler::AdmissionResult WorldGenerationScheduler::submitJob(
         .seed = seed,
         .stage = stage,
         .priority_scores = priority_scores,
-        .region = std::move(region),
+        .region = region,
         .inherited_ancestor_data = std::move(inherited_ancestor_data),
     };
     m_jobs.emplace(job.id, JobState{.job = job});
@@ -284,7 +291,7 @@ bool WorldGenerationScheduler::complete(
     return true;
 }
 
-bool WorldGenerationScheduler::retry(GenerationJobId const id) noexcept
+bool WorldGenerationScheduler::retry(GenerationJobId const id)
 {
     auto const iterator = m_jobs.find(id);
     if (iterator == m_jobs.end()) {
@@ -515,7 +522,7 @@ uint64_t WorldGenerationCoordinator::RefinementOutputHash::operator()(
 }
 
 WorldGenerationCoordinator::WorldGenerationCoordinator(
-    uint64_t const max_pending_jobs,
+    uint64_t const max_pending_jobs, // NOLINT(bugprone-easily-swappable-parameters) -- capacity/revision/seed order
     uint64_t const revision,
     uint64_t const seed
 )
@@ -564,6 +571,7 @@ GenerationAdmission WorldGenerationCoordinator::request(
 )
 {
     WorldGenerationPlan plan{
+        .refinement_extents = {},
         .chunk_stages = std::move(stages),
     };
     return requestPlan(coordinate, std::move(plan));
@@ -630,13 +638,18 @@ GenerationAdmission WorldGenerationCoordinator::requestPlan(
         append_region_stage(extent, GenerationStage::Refinement);
     }
     for (GenerationStage const stage : plan.chunk_stages) {
-        stages.push_back(PlanStage{.stage = stage});
+        stages.push_back(PlanStage{
+            .stage = stage,
+            .region = std::nullopt,
+        });
     }
 
     auto const [pipeline, inserted] = m_pipelines.emplace(identity, Pipeline{
         .stages = std::move(stages),
         .priority_scores = priority_scores,
         .state = GenerationState::Queued,
+        .result_output = nullptr,
+        .final_refinement_output = nullptr,
     });
     if (!inserted) {
         return GenerationAdmission::Duplicate;
@@ -649,7 +662,7 @@ GenerationAdmission WorldGenerationCoordinator::requestPlan(
     return GenerationAdmission::Accepted;
 }
 
-std::optional<GenerationJob> WorldGenerationCoordinator::takeNext() noexcept
+std::optional<GenerationJob> WorldGenerationCoordinator::takeNext()
 {
     for (auto& [identity, pipeline] : m_pipelines) {
         if (pipeline.state == GenerationState::Queued && pipeline.active_job_id == 0U) {
@@ -764,7 +777,7 @@ bool WorldGenerationCoordinator::acceptResult(GenerationJobId const id)
     return true;
 }
 
-bool WorldGenerationCoordinator::retry(GenerationJobId const id) noexcept
+bool WorldGenerationCoordinator::retry(GenerationJobId const id)
 {
     Pipeline* const pipeline = pipelineFor(id);
     if (pipeline == nullptr || pipeline->state != GenerationState::Failed || !pipeline->result_ready
@@ -781,7 +794,7 @@ bool WorldGenerationCoordinator::requestRetry(
     ChunkCoordinate const coordinate,
     uint64_t const revision,
     uint64_t const seed
-) noexcept
+)
 {
     auto const pipeline = m_pipelines.find(GenerationIdentity{
         .coordinate = coordinate,

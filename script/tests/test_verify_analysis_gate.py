@@ -87,6 +87,23 @@ class VerifyAnalysisGateTests(unittest.TestCase):
         spec.loader.exec_module(matrix)
         manifest = matrix.load_manifest()
         candidate = {"head": COMMIT, "tree": "b" * 40}
+        per_unit_evidence = {}
+        for row_id, configuration in matrix.PER_TRANSLATION_UNIT_ANALYSIS.items():
+            unit = {
+                "source": "src/main.cpp",
+                "source_sha256": "1" * 64,
+                "source_argv_sha256": "2" * 64,
+                "invoked_tool": configuration["tool"],
+                "status": "passed",
+                "record_sha256": "3" * 64,
+                "report_sha256": "4" * 64,
+            }
+            per_unit_evidence[row_id] = {
+                "translation_unit_count": 1,
+                "translation_unit_inventory_sha256": matrix._translation_unit_inventory_sha256([unit]),
+                "project_input_sha256": "5" * 64,
+                "translation_units": [unit],
+            }
         return {
             "schema_version": 1,
             "task_id": "MC-AI-0249",
@@ -134,6 +151,7 @@ class VerifyAnalysisGateTests(unittest.TestCase):
                             "invocation_count": 1,
                             "observed_tools_and_flags": matrix.ANALYSIS_TOOL_MARKERS[row["id"]],
                             "build_output_sha256": "f" * 64,
+                            **per_unit_evidence.get(row["id"], {}),
                         }
                         if row["id"] in matrix.REQUIRED_ANALYSIS_CONFIGURATION
                         else None

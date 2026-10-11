@@ -2,6 +2,7 @@
 
 #include <gtest/gtest.h>
 
+#include <string>
 #include <vector>
 
 TEST(DeferTest, RunsAtScopeExit) {

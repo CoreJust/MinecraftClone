@@ -1,5 +1,7 @@
 #include "AndroidInputState.hpp"
 
+#include <shared/world/World.hpp>
+
 #include <cmath>
 
 namespace game_android {

@@ -2,6 +2,8 @@
 
 #include "GameClient.hpp"
 
+#include <shared/world/World.hpp>
+
 namespace client {
 
 class BotClient final : public GameClient {

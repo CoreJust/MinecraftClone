@@ -30,3 +30,5 @@ Restricted shell denied Git's temporary `merge-tree` write, briefly obscuring th
 6. Make continuation executable, not just a Stop-guard warning: keep measurable progress, resume from the last verified state, and stop only on completion or a concrete external blocker. A handoff receipt alone does not prove continued execution.
 
 The central failure was treating implementation and qualification as loosely related attempts instead of one evidence-bound candidate.
+
+Follow-up: [11 October](S7-HINDSIGHT-2026-10-11.md).

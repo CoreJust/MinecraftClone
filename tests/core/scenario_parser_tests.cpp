@@ -1,14 +1,18 @@
 #include <shared/scenario/Scenario.hpp>
+#include <shared/world/World.hpp>
 
 #include <gtest/gtest.h>
 
 #include <array>
+#include <cstdint>
+#include <expected>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
 #include <string>
 #include <string_view>
 #include <variant>
+#include <vector>
 
 namespace {
 
@@ -259,6 +263,7 @@ wait 1
 expect player player_id-1 position 3 4
 end # complete
 )";
+    // NOLINTNEXTLINE(performance-unnecessary-copy-initialization): preserve a snapshot for the mutation assertion.
     std::string const original = source;
     auto const result = shared::parseScenario("sample.scenario", source, scenarioLimits());
     ASSERT_TRUE(result.has_value());

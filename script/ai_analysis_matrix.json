@@ -57,7 +57,7 @@
       "flags": ["-DCMAKE_BUILD_TYPE=Release", "-DMC_ENABLE_HIGH_ASSERT=OFF", "-DMC_ENABLE_SANITIZERS=ON", "-DMC_SANITIZER=address", "/fsanitize=address"],
       "compile_commands": "build/analysis-windows-asan/compile_commands.json",
       "required_compile_flags": ["/fsanitize=address"],
-      "tool_probes": [["cl.exe", "/Bv"], ["cmake", "--version"]],
+      "tool_probes": [["cl.exe", "/Bv", "/?"], ["cmake", "--version"]],
       "commands": [["cmake", "--preset", "analysis-windows-asan"], ["cmake", "--build", "--preset", "analysis-windows-asan"], ["ctest", "--test-dir", "build/analysis-windows-asan", "--output-on-failure", "--no-tests=error"]],
       "timeout_seconds": 1200
     },
@@ -67,7 +67,7 @@
       "platform": "windows",
       "capability": "msvc-analyze",
       "flags": ["/analyze", "/W4", "/WX"],
-      "tool_probes": [["cl.exe", "/Bv"], ["cmake", "--version"]],
+      "tool_probes": [["cl.exe", "/Bv", "/?"], ["cmake", "--version"]],
       "commands": [["cmake", "--preset", "analysis-windows-analyze"], ["cmake", "--build", "--preset", "analysis-windows-analyze"], ["ctest", "--test-dir", "build/analysis-windows-analyze", "--output-on-failure", "--no-tests=error"]],
       "timeout_seconds": 1200
     },
@@ -150,7 +150,11 @@
       "label": "Include What You Use",
       "platform": "hosted",
       "capability": "include-what-you-use",
-      "flags": ["CMAKE_CXX_INCLUDE_WHAT_YOU_USE=include-what-you-use", "-Xiwyu", "--error"],
+      "flags": [
+        "CMAKE_CXX_INCLUDE_WHAT_YOU_USE=python3;${sourceDir}/script/ci/iwyu_gate.py;--;include-what-you-use;-Xiwyu;--no_fwd_decls;-Xiwyu;--error;--",
+        "CMake -Xiwyu --error suffix propagates wrapper failures and is stripped before the actual IWYU subprocess",
+        "owned public include additions fail; removals, private SDK includes, and forward-declaration suggestions are reported"
+      ],
       "tool_probes": [["include-what-you-use", "--version"]],
       "commands": [["cmake", "--preset", "analysis-iwyu"], ["cmake", "--build", "--preset", "analysis-iwyu"]],
       "timeout_seconds": 900
@@ -160,7 +164,11 @@
       "label": "cppcheck",
       "platform": "hosted",
       "capability": "cppcheck",
-      "flags": ["--enable=all", "--error-exitcode=1", "--inline-suppr"],
+      "flags": [
+        "CMAKE_CXX_COMPILER_LAUNCHER=python3;${sourceDir}/script/ci/cppcheck_gate.py;--;cppcheck;--enable=all;--inline-suppr;--xml;--",
+        "CMAKE_C_CPPCHECK=;CMAKE_CXX_CPPCHECK= (disable stale built-in checker cache entries)",
+        "error, warning, performance, and portability diagnostics fail; style, information, and debug diagnostics are reported; uninitMemberVarNoCtor and passedByValue are excluded"
+      ],
       "tool_probes": [["cppcheck", "--version"]],
       "commands": [["cmake", "--preset", "analysis-cppcheck"], ["cmake", "--build", "--preset", "analysis-cppcheck"]],
       "timeout_seconds": 900

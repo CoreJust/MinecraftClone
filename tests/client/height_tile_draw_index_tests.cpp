@@ -1,13 +1,24 @@
 #include <client/Camera.hpp>
 #include <client/render/HeightTileDrawIndex.hpp>
+#include <client/render/StoneIndirectDraws.hpp>
+#include <client/render/VulkanFrustum.hpp>
 
+#include <shared/world/WorldGeneration.hpp>
+
+#include <glm/ext/matrix_float4x4.hpp>
+#include <glm/ext/vector_double3.hpp>
 #include <glm/gtc/matrix_transform.hpp>
+#include <glm/mat4x4.hpp>
+#include <glm/vec3.hpp>
+#include <glm/vec4.hpp>
 #include <gtest/gtest.h>
 
 #include <algorithm>
 #include <array>
 #include <cstdint>
+#include <functional>
 #include <limits>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -253,7 +264,9 @@ TEST(HeightTileDrawIndexTest, ExactOracleCoversMovingRotatingWrappedCamerasAndWi
                     SCOPED_TRACE(heading);
                     client::Camera const camera{ { .position = position, .angles = { .yaw_degrees = heading,
                         .pitch_degrees = -17.0 } }, { .vertical_fov_degrees = fov, .far_plane = 20'000.0 } };
-                    client::VulkanFrustum const frustum{ *camera.projectionMatrix(WIDTH, HEIGHT) * camera.viewMatrix() };
+                    auto const projection = camera.projectionMatrix(WIDTH, HEIGHT);
+                    ASSERT_TRUE(projection.has_value());
+                    client::VulkanFrustum const frustum{ *projection * camera.viewMatrix() };
                     std::vector<Range> actual;
                     static_cast<void>(index.collect(frustum, position, actual));
                     EXPECT_EQ(pack(actual), pack(reference(entries, frustum, position).ranges));
@@ -297,7 +310,9 @@ TEST(HeightTileDrawIndexTest, FullResidencyMatchesOracleWithBoundedUpdateAndRedu
         SCOPED_TRACE(heading);
         client::Camera const camera{ { .position = { 32'768.0, 32'768.0, 200.0 },
             .angles = { .yaw_degrees = heading, .pitch_degrees = -20.0 } }, { .far_plane = 8'192.0 } };
-        client::VulkanFrustum const frustum{ *camera.projectionMatrix(WIDTH, HEIGHT) * camera.viewMatrix() };
+        auto const projection = camera.projectionMatrix(WIDTH, HEIGHT);
+        ASSERT_TRUE(projection.has_value());
+        client::VulkanFrustum const frustum{ *projection * camera.viewMatrix() };
         std::vector<Range> actual;
         Index::Work const work = index.collect(frustum, camera.pose().position, actual);
         Reference const expected = reference(entries, frustum, camera.pose().position);

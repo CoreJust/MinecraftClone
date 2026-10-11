@@ -1,9 +1,13 @@
+#include <shared/world/Chunk.hpp>
 #include <shared/world/SparseWorld.hpp>
+#include <shared/world/WorldGeneration.hpp>
+#include <shared/world/WorldGenerationScheduler.hpp>
 
 #include <gtest/gtest.h>
 
 #include <cstdint>
-#include <utility>
+#include <optional>
+#include <string>
 
 TEST(SparseWorldTest, ExposesTheLogicalBoundsAndPositiveHorizontalWrapping)
 {
@@ -67,7 +71,7 @@ TEST(SparseWorldTest, NonBlockingQuerySeparatesUnknownPreviewAndMaterializedData
 
     shared::HeightTile preview{.coordinate = {.x = COORDINATE.x, .y = COORDINATE.y}};
     preview.heights.fill(12U);
-    ASSERT_TRUE(world.publishPreview(COORDINATE, std::move(preview), WORLD_REVISION, WORLD_SEED));
+    ASSERT_TRUE(world.publishPreview(COORDINATE, preview, WORLD_REVISION, WORLD_SEED));
     shared::SparseBlockQuery const previewed = world.queryBlock(BLOCK_COORDINATE);
     EXPECT_EQ(previewed.state, shared::GenerationState::Preview);
     EXPECT_FALSE(previewed.block.has_value());
@@ -75,7 +79,7 @@ TEST(SparseWorldTest, NonBlockingQuerySeparatesUnknownPreviewAndMaterializedData
 
     shared::Chunk materialized{COORDINATE};
     ASSERT_TRUE(materialized.setBlock({.x = 0U, .y = 0U, .z = 0U}, shared::Block::Stone));
-    ASSERT_TRUE(world.publishMaterializedChunk(std::move(materialized), WORLD_REVISION, WORLD_SEED));
+    ASSERT_TRUE(world.publishMaterializedChunk(materialized, WORLD_REVISION, WORLD_SEED));
     shared::SparseBlockQuery const known = world.queryBlock(BLOCK_COORDINATE);
     EXPECT_EQ(known.state, shared::GenerationState::Materialized);
     EXPECT_EQ(known.block, shared::Block::Stone);
@@ -108,7 +112,7 @@ TEST(SparseWorldTest, PreviewAndMaterializedResidencyShareOneBound)
 {
     shared::SparseWorld world({.max_resident_chunks = 1U});
     shared::HeightTile preview{.coordinate = {.x = 1, .y = 1}};
-    ASSERT_TRUE(world.publishPreview({.x = 1, .y = 1, .z = 0}, std::move(preview), 1U, 42U));
+    ASSERT_TRUE(world.publishPreview({.x = 1, .y = 1, .z = 0}, preview, 1U, 42U));
 
     ASSERT_TRUE(world.publishMaterializedChunk(shared::Chunk{{.x = 2, .y = 2, .z = 0}}, 1U, 42U));
 

@@ -1,10 +1,17 @@
 #include <shared/net/Message.hpp>
+#include <shared/world/World.hpp>
 
 #include <gtest/gtest.h>
 
 #include <array>
+#include <cstdint>
 #include <limits>
+#include <optional>
+#include <span>
+#include <string>
 #include <type_traits>
+#include <variant>
+#include <vector>
 
 namespace {
 
@@ -27,11 +34,15 @@ shared::ServerHeightTileBatchMessage heightTileBatchMessage()
     shared::ServerHeightTileMessage second = heightTileMessage();
     second.key = { .x = 18, .y = 23 };
     second.token = 12U;
-    return { .delivery_token = 19U, .tiles = { first, second } };
+    return {
+        .delivery_token = 19U,
+        .tiles = { first, second },
+        .removals = {},
+    };
 }
 
 template<typename MessageTy>
-void expectRoundTrip(MessageTy const expected) {
+void expectRoundTrip(MessageTy const& expected) {
     shared::Message const message = expected;
     std::vector<uint8_t> const bytes = shared::encodeMessage(message);
     auto const decoded = shared::decodeMessage(std::span<uint8_t const>{ bytes.data(), bytes.size() });

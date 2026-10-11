@@ -3,6 +3,9 @@
 #include <gtest/gtest.h>
 
 #include <array>
+#include <iterator>
+#include <span>
+#include <string>
 #include <vector>
 
 TEST(InputSpanTest, AcceptsArrayAndSpan) {

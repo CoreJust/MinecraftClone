@@ -2,6 +2,10 @@
 
 #include <server/GameServer.hpp>
 
+#include <shared/world/World.hpp>
+
+#include <core/net/Address.hpp>
+#include <core/net/Event.hpp>
 #include <core/net/Server.hpp>
 
 #include <enet/enet.h>
@@ -11,12 +15,14 @@
 #include <array>
 #include <atomic>
 #include <chrono>
+#include <compare>
 #include <cstdint>
 #include <cstring>
 #include <functional>
 #include <optional>
 #include <set>
 #include <stdexcept>
+#include <string>
 #include <thread>
 #include <utility>
 #include <vector>
@@ -232,6 +238,11 @@ TEST(GameClientLifecycleTest, StopBeforeConnectionDoesNotSubmitGameplay)
     } };
     client::GameClientBenchmarkHooks const hooks{
         .deadline = std::chrono::steady_clock::now() + DEADLINE,
+        .should_stop = {},
+        .is_uncapped_phase = {},
+        .input_override = {},
+        .on_loop = {},
+        .on_authoritative_player = {},
     };
     game_client.run(core::Address::localhost(port), '@', &hooks);
 
@@ -258,6 +269,11 @@ TEST(GameClientLifecycleTest, StopDuringPendingConnectionDoesNotSubmitGameplay)
     } };
     client::GameClientBenchmarkHooks const hooks{
         .deadline = std::chrono::steady_clock::now() + DEADLINE,
+        .should_stop = {},
+        .is_uncapped_phase = {},
+        .input_override = {},
+        .on_loop = {},
+        .on_authoritative_player = {},
     };
     game_client.run(core::Address::localhost(port), '@', &hooks);
 
@@ -295,7 +311,14 @@ TEST(GameClientLifecycleTest, StopDuringRetryIsServicedWithoutStartingAnotherAtt
             client.requestStop();
         }
     } };
-    client::GameClientBenchmarkHooks const hooks{ .deadline = started + DEADLINE };
+    client::GameClientBenchmarkHooks const hooks{
+        .deadline = started + DEADLINE,
+        .should_stop = {},
+        .is_uncapped_phase = {},
+        .input_override = {},
+        .on_loop = {},
+        .on_authoritative_player = {},
+    };
     game_client.run(core::Address::localhost(relay.port()), '@', &hooks);
 
     EXPECT_TRUE(stop_processed);
@@ -384,7 +407,14 @@ TEST(GameClientLifecycleTest, DelayedHandshakeReplyPreservesOneAttemptAndJoins)
                 || client.inputCalls() != 0U || client.renderCalls() != 0U;
         }
     } };
-    client::GameClientBenchmarkHooks const hooks{ .deadline = started + DEADLINE };
+    client::GameClientBenchmarkHooks const hooks{
+        .deadline = started + DEADLINE,
+        .should_stop = {},
+        .is_uncapped_phase = {},
+        .input_override = {},
+        .on_loop = {},
+        .on_authoritative_player = {},
+    };
     game_client.run(core::Address::localhost(relay.port()), '@', &hooks);
 
     EXPECT_GE(std::chrono::steady_clock::now() - started, REPLY_DELAY);
@@ -413,6 +443,11 @@ TEST(GameClientLifecycleTest, DelayedServerServicingAfterConnectionStartsStillJo
     } };
     client::GameClientBenchmarkHooks const hooks{
         .deadline = std::chrono::steady_clock::now() + DEADLINE,
+        .should_stop = {},
+        .is_uncapped_phase = {},
+        .input_override = {},
+        .on_loop = {},
+        .on_authoritative_player = {},
     };
     game_client.run(core::Address::localhost(port), '@', &hooks);
     stop_server.store(true, std::memory_order_relaxed);
@@ -446,6 +481,11 @@ TEST(GameClientLifecycleTest, StopWhileAwaitingJoinDoesNotSubmitGameplay)
     } };
     client::GameClientBenchmarkHooks const hooks{
         .deadline = std::chrono::steady_clock::now() + DEADLINE,
+        .should_stop = {},
+        .is_uncapped_phase = {},
+        .input_override = {},
+        .on_loop = {},
+        .on_authoritative_player = {},
     };
     game_client.run(core::Address::localhost(server.port()), '@', &hooks);
     stop_server.store(true, std::memory_order_relaxed);

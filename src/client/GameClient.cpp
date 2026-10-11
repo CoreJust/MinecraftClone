@@ -2,12 +2,28 @@
 
 #include <client/FrameScheduler.hpp>
 
+#include <shared/net/Message.hpp>
+#include <shared/world/World.hpp>
+
+#include <core/common/ControlFlow.hpp>
 #include <core/common/SpanUtils.hpp>
 #include <core/IO/Log.hpp>
+#include <core/net/Address.hpp>
+#include <core/net/Event.hpp>
+#include <core/net/Peer.hpp>
+#include <core/net/SendMode.hpp>
+
+#include <fmt/base.h>
 
 #include <algorithm>
+#include <compare>
 #include <iostream>
 #include <optional>
+#include <span>
+#include <string>
+#include <thread>
+#include <variant>
+#include <vector>
 
 namespace client {
 
@@ -165,7 +181,7 @@ void GameClient::run(
 
 void GameClient::onDisconnected(core::DisconnectEvent const event) {
     CORE_INFO("Server disconnected: {}", event.peer.address());
-    std::cout << "[SERVER DISCONNECTED] address " << fmt::format("{}", event.peer.address()) << std::endl;
+    std::cout << "[SERVER DISCONNECTED] address " << fmt::format("{}", event.peer.address()) << '\n';
     m_accepted = false;
     resetConnectionState();
 }
@@ -279,8 +295,11 @@ std::optional<shared::ClientInputMessage> GameClient::predictInput(
     std::chrono::steady_clock::time_point const predicted_at
 )
 {
-    if (!m_predicted_world.playerByCharacter(m_local_character).has_value()
-        || m_pending_inputs.size() == MAX_PENDING_INPUTS) {
+    if (m_pending_inputs.size() == MAX_PENDING_INPUTS) {
+        return std::nullopt;
+    }
+    auto const player = m_predicted_world.playerByCharacter(m_local_character);
+    if (!player) {
         return std::nullopt;
     }
     shared::ClientInputMessage const input{
@@ -288,8 +307,7 @@ std::optional<shared::ClientInputMessage> GameClient::predictInput(
         .sequence = m_next_input_sequence++,
     };
     m_pending_inputs.push_back(input);
-    shared::Player const player = *m_predicted_world.playerByCharacter(m_local_character);
-    static_cast<void>(m_predicted_world.movePlayer(player.id, direction));
+    static_cast<void>(m_predicted_world.movePlayer(player->id, direction));
     updatePredictedPresentation(predicted_at);
     return input;
 }
@@ -394,14 +412,14 @@ void GameClient::rebuildPrediction()
     }
 }
 
-void GameClient::updatePredictedPresentation(std::chrono::steady_clock::time_point const updated_at) noexcept
+void GameClient::updatePredictedPresentation(std::chrono::steady_clock::time_point const updated_at)
 {
     if (auto const player = m_predicted_world.playerByCharacter(m_local_character)) {
         m_player_presentation.update(*player, updated_at);
     }
 }
 
-bool GameClient::send(shared::Message const message)
+bool GameClient::send(shared::Message const& message)
 {
     std::vector const message_bytes = shared::encodeMessage(message);
     if (!core::Client::send(message_bytes, shared::GAME_CHANNEL, core::SendMode{ core::SendMode::Reliable })) {
@@ -419,8 +437,10 @@ bool GameClient::applyHeightTileDescriptor(shared::ServerHeightTileDescriptorMes
     std::optional<uint32_t> const radius = shared::heightTileInterestRadiusForCount(message.max_height_tiles);
     if (message.configuration != m_world.configuration() || message.world_revision == 0U
         || message.world_revision < m_height_tile_revision.generation || !radius
-        || (m_render_distance && *m_render_distance != *radius)
         || message.max_height_tile_bytes != shared::HEIGHT_TILE_PAYLOAD_BYTES) {
+        return false;
+    }
+    if (m_render_distance && m_render_distance != radius) {
         return false;
     }
     if (!m_render_distance) {
@@ -429,7 +449,7 @@ bool GameClient::applyHeightTileDescriptor(shared::ServerHeightTileDescriptorMes
             .max_resident_tiles = capacity,
             .max_resident_bytes = static_cast<uint64_t>(capacity) * shared::HEIGHT_TILE_PAYLOAD_BYTES,
         }};
-        m_render_distance = *radius;
+        m_render_distance = radius;
     }
     if (message.world_revision != m_height_tile_revision.generation) {
         m_height_tile_revision = {

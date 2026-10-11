@@ -1,8 +1,11 @@
 #include <client/PlayerPreviewLod.hpp>
 
+#include <shared/net/Message.hpp>
 #include <shared/world/HeightTileInterest.hpp>
+#include <shared/world/HeightTileSurfaceMesher.hpp>
 #include <shared/world/SparseWorld.hpp>
 #include <shared/world/World.hpp>
+#include <shared/world/WorldGeneration.hpp>
 
 #include <gtest/gtest.h>
 
@@ -12,7 +15,9 @@
 #include <iterator>
 #include <optional>
 #include <set>
+#include <string>
 #include <tuple>
+#include <utility>
 #include <vector>
 
 namespace {
@@ -139,12 +144,16 @@ TEST(PlayerPreviewLodTest, SeededMovementAndX200StepsMatchFullPolicyAcrossWrap)
     static constexpr shared::HeightTileKey INITIAL_CENTER{ TILE_EXTENT - 4, 2'000 };
     static constexpr shared::HeightTileSurfaceProjection PROJECTION{};
     static constexpr uint32_t STEPS = 24U;
+    static constexpr double HALF_STEPS = static_cast<double>(STEPS) / 2.0;
     static constexpr double X200_STEP = static_cast<double>(shared::MOVEMENT_SUBCELLS_PER_TICK) * 200.0
         / shared::SUBCELLS_PER_CELL;
     client::PlayerPreviewLod lod;
     auto reference = populate(lod, INITIAL_CENTER, viewerBounds(8.0, 8.0, 80.0), PROJECTION);
     for (uint32_t step = 1U; step <= STEPS; ++step) {
-        double const displacement = step <= STEPS / 2U ? step * 0.56 : (step - STEPS / 2U) * X200_STEP;
+        double const step_as_double = static_cast<double>(step);
+        double const displacement = step_as_double <= HALF_STEPS
+            ? step_as_double * 0.56
+            : (step_as_double - HALF_STEPS) * X200_STEP;
         int32_t const tiles_crossed = static_cast<int32_t>(displacement / shared::HEIGHT_TILE_SIDE_LENGTH);
         auto const center = shared::normalizeHeightTileKey({ INITIAL_CENTER.x + tiles_crossed, INITIAL_CENTER.y });
         auto const viewer = viewerBounds(

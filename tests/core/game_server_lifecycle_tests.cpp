@@ -1,9 +1,11 @@
 #include <server/GameServer.hpp>
+#include <shared/world/World.hpp>
 
 #include <gtest/gtest.h>
 
 #include <atomic>
 #include <chrono>
+#include <cstdint>
 #include <expected>
 #include <string>
 #include <thread>

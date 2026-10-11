@@ -1,10 +1,14 @@
 #include <shared/scenario/Scenario.hpp>
+#include <shared/world/Chunk.hpp>
 
 #include <gtest/gtest.h>
 
 #include <cstdint>
+#include <expected>
+#include <string>
 #include <string_view>
 #include <variant>
+#include <vector>
 
 namespace {
 

@@ -2,21 +2,39 @@
 #include <shared/world/SparseWorld.hpp>
 #include <shared/world/World.hpp>
 #include <shared/world/WorldGeneration.hpp>
+#include <shared/world/WorldGenerationScheduler.hpp>
 
 #include <gtest/gtest.h>
 
 #include <algorithm>
 #include <array>
-#include <utility>
+#include <cstdint>
+#include <optional>
+#include <stdexcept>
+#include <string>
+#include <vector>
+
+namespace {
+
+template <typename Value>
+Value const& requiredValue(std::optional<Value> const& optional)
+{
+    if (optional.has_value()) {
+        return *optional;
+    }
+    throw std::runtime_error("Test expected an optional value");
+}
+
+} // namespace
 
 TEST(FlightWorldTest, UsesFirstWaveSpawnAndWrappedCoordinates)
 {
     shared::World world{ shared::WorldMode::Flight };
     world.spawnPlayer(1, '@');
     ASSERT_TRUE(world.player(1).has_value());
-    EXPECT_EQ(world.player(1)->x, shared::World::FLIGHT_SPAWN.x);
-    EXPECT_EQ(world.player(1)->y, shared::World::FLIGHT_SPAWN.y);
-    EXPECT_EQ(world.player(1)->z, shared::World::FLIGHT_SPAWN.z);
+    EXPECT_EQ(requiredValue(world.player(1)).x, shared::World::FLIGHT_SPAWN.x);
+    EXPECT_EQ(requiredValue(world.player(1)).y, shared::World::FLIGHT_SPAWN.y);
+    EXPECT_EQ(requiredValue(world.player(1)).z, shared::World::FLIGHT_SPAWN.z);
 
     ASSERT_TRUE(world.setPlayerPosition(1, {
         .x = 0,
@@ -26,9 +44,9 @@ TEST(FlightWorldTest, UsesFirstWaveSpawnAndWrappedCoordinates)
     }));
     ASSERT_TRUE(world.movePlayer(1, { .x = static_cast<uint8_t>(-127), .y = 0, .z = 0 }));
     ASSERT_TRUE(world.player(1).has_value());
-    EXPECT_EQ(world.player(1)->x, shared::World::FLIGHT_MAX_CELL);
-    EXPECT_EQ(world.player(1)->x_subcell, 6'400U);
-    EXPECT_DOUBLE_EQ(shared::playerPositionX(*world.player(1)), 65'535.64);
+    EXPECT_EQ(requiredValue(world.player(1)).x, shared::World::FLIGHT_MAX_CELL);
+    EXPECT_EQ(requiredValue(world.player(1)).x_subcell, 6'400U);
+    EXPECT_DOUBLE_EQ(shared::playerPositionX(requiredValue(world.player(1))), 65'535.64);
 }
 
 TEST(FlightWorldTest, CollisionMaterializationCandidatesIncludeBothSidesOfHorizontalSeams)
@@ -57,26 +75,26 @@ TEST(FlightWorldTest, MaterializedBlocksAreCollisionAuthority)
     world.spawnPlayer(1U, '@', {.x = 100, .y = 100, .z = 800});
     ASSERT_TRUE(world.setPlayerMovementCapabilities(1U, {.bits = 1U}));
     world.setCollisionWorld(&blocks);
-    EXPECT_FALSE(world.movePlayer(1U, {.x = 127U}));
+    EXPECT_FALSE(world.movePlayer(1U, { .x = 127U, .y = 0U }));
     shared::HeightTile preview{.coordinate = {.x = 6, .y = 6}};
     preview.heights.fill(64U);
     ASSERT_TRUE(blocks.publishPreview(
         {.x = 6, .y = 6, .z = 50},
-        std::move(preview),
+        preview,
         blocks.options().revision,
         blocks.options().seed
     ));
     EXPECT_EQ(blocks.queryBlock({100, 100, 800}).state, shared::GenerationState::Preview);
-    EXPECT_FALSE(world.movePlayer(1U, {.x = 127U}));
+    EXPECT_FALSE(world.movePlayer(1U, { .x = 127U, .y = 0U }));
     shared::Chunk const air{{.x = 6, .y = 6, .z = 50}};
     ASSERT_TRUE(blocks.publishMaterializedChunk(air, blocks.options().revision, blocks.options().seed));
-    EXPECT_TRUE(world.movePlayer(1U, {.x = 127U}));
+    EXPECT_TRUE(world.movePlayer(1U, { .x = 127U, .y = 0U }));
     ASSERT_TRUE(world.setPlayerPosition(1U, {.x = 100, .y = 100, .z = 800}));
     ASSERT_TRUE(blocks.setBlock({.x = 101, .y = 100, .z = 800}, shared::Block::Stone));
-    static_cast<void>(world.movePlayer(1U, {.x = 127U}));
+    static_cast<void>(world.movePlayer(1U, { .x = 127U, .y = 0U }));
     ASSERT_TRUE(world.player(1U).has_value());
-    EXPECT_EQ(world.player(1U)->x, 100);
-    EXPECT_LT(world.player(1U)->x_subcell, 3'750U);
+    EXPECT_EQ(requiredValue(world.player(1U)).x, 100);
+    EXPECT_LT(requiredValue(world.player(1U)).x_subcell, 3'750U);
 }
 
 TEST(FlightWorldTest, OnlyCollisionBypassSkipsMaterializationCandidates)
@@ -92,7 +110,7 @@ TEST(FlightWorldTest, OnlyCollisionBypassSkipsMaterializationCandidates)
 
         std::vector<shared::ChunkCoordinate> const candidates = world.flightCollisionChunks(
             1U,
-            {.x = 127U}
+            { .x = 127U, .y = 0U }
         );
 
         if (capability_bits == 3U) {
@@ -124,7 +142,7 @@ TEST(FlightWorldTest, MaterializedTerrainSupportsLandingAndJumping)
         blocks[block_index] = shared::Block::Stone;
     }
     ASSERT_TRUE(collision_world.publishMaterializedChunk(
-        shared::Chunk{ { .x = 0, .y = 0, .z = 0 }, std::move(blocks) },
+        shared::Chunk{ { .x = 0, .y = 0, .z = 0 }, blocks },
         collision_world.options().revision,
         collision_world.options().seed
     ));
@@ -135,15 +153,15 @@ TEST(FlightWorldTest, MaterializedTerrainSupportsLandingAndJumping)
     world.setCollisionWorld(&collision_world);
 
     for (uint8_t tick = 0U; tick < FALL_TICKS; ++tick) {
-        static_cast<void>(world.movePlayer(1U, {}));
+        static_cast<void>(world.movePlayer(1U, { .x = 0U, .y = 0U }));
     }
 
     ASSERT_TRUE(world.player(1U).has_value());
-    EXPECT_DOUBLE_EQ(shared::playerPositionZ(*world.player(1U)), TERRAIN_HEIGHT);
-    EXPECT_TRUE(world.movePlayer(1U, { .z = 127U }));
+    EXPECT_DOUBLE_EQ(shared::playerPositionZ(requiredValue(world.player(1U))), TERRAIN_HEIGHT);
+    EXPECT_TRUE(world.movePlayer(1U, { .x = 0U, .y = 0U, .z = 127U }));
     ASSERT_TRUE(world.player(1U).has_value());
     EXPECT_DOUBLE_EQ(
-        shared::playerPositionZ(*world.player(1U)),
+        shared::playerPositionZ(requiredValue(world.player(1U))),
         static_cast<double>(TERRAIN_HEIGHT) + 0.6125
     );
 }
@@ -174,7 +192,7 @@ TEST(FlightWorldTest, MaterializedSupportUsesTheHighestColumnUnderThePlayerFootp
         blocks[block_index] = shared::Block::Stone;
     }
     ASSERT_TRUE(collision_world.publishMaterializedChunk(
-        shared::Chunk{ { .x = 0, .y = 0, .z = 0 }, std::move(blocks) },
+        shared::Chunk{ { .x = 0, .y = 0, .z = 0 }, blocks },
         collision_world.options().revision,
         collision_world.options().seed
     ));
@@ -190,11 +208,11 @@ TEST(FlightWorldTest, MaterializedSupportUsesTheHighestColumnUnderThePlayerFootp
     world.setCollisionWorld(&collision_world);
 
     for (uint8_t tick = 0U; tick < FALL_TICKS; ++tick) {
-        static_cast<void>(world.movePlayer(1U, {}));
+        static_cast<void>(world.movePlayer(1U, { .x = 0U, .y = 0U }));
     }
 
     ASSERT_TRUE(world.player(1U).has_value());
-    EXPECT_DOUBLE_EQ(shared::playerPositionZ(*world.player(1U)), 16.0);
+    EXPECT_DOUBLE_EQ(shared::playerPositionZ(requiredValue(world.player(1U))), 16.0);
 }
 
 TEST(FlightWorldTest, MaterializationCandidatesCoverSweptBodyHeight)
@@ -206,7 +224,7 @@ TEST(FlightWorldTest, MaterializationCandidatesCoverSweptBodyHeight)
     world.setCollisionWorld(&blocks);
 
     std::vector<shared::ChunkCoordinate> const chunks = world.flightCollisionChunks(
-        1U, {.z = 127U}
+        1U, { .x = 0U, .y = 0U, .z = 127U }
     );
     EXPECT_TRUE(std::ranges::any_of(chunks, [](shared::ChunkCoordinate const coordinate) {
         return coordinate.x == 6 && coordinate.y == 6 && coordinate.z == 0;
@@ -225,7 +243,7 @@ TEST(FlightWorldTest, AirborneJumpInputIncludesGravityCrossingIntoLowerChunk)
     world.setCollisionWorld(&blocks);
 
     std::vector<shared::ChunkCoordinate> const chunks = world.flightCollisionChunks(
-        1U, {.z = 127U}
+        1U, { .x = 0U, .y = 0U, .z = 127U }
     );
     EXPECT_TRUE(std::ranges::any_of(chunks, [](shared::ChunkCoordinate const coordinate) {
         return coordinate.x == 6 && coordinate.y == 6 && coordinate.z == 0;
@@ -244,7 +262,7 @@ TEST(FlightWorldTest, NonFlightJumpInputIncludesHorizontalBoundaryCrossing)
     world.setCollisionWorld(&blocks);
 
     std::vector<shared::ChunkCoordinate> const chunks = world.flightCollisionChunks(
-        1U, {.x = 127U, .z = 127U}
+        1U, {.x = 127U, .y = 0U, .z = 127U}
     );
     EXPECT_TRUE(std::ranges::any_of(chunks, [](shared::ChunkCoordinate const coordinate) {
         return coordinate.x == 1 && coordinate.y == 6 && coordinate.z == 1;
@@ -260,16 +278,16 @@ TEST(FlightWorldTest, NormalizesThreeAxisMovementWithoutCollisionBypass)
     world.spawnPlayer(2, '#');
     ASSERT_TRUE(world.player(1).has_value());
     ASSERT_TRUE(world.player(2).has_value());
-    EXPECT_NE(world.player(1)->x, world.player(2)->x);
-    EXPECT_EQ(world.player(1)->y, world.player(2)->y);
-    EXPECT_EQ(world.player(1)->z, world.player(2)->z);
+    EXPECT_NE(requiredValue(world.player(1)).x, requiredValue(world.player(2)).x);
+    EXPECT_EQ(requiredValue(world.player(1)).y, requiredValue(world.player(2)).y);
+    EXPECT_EQ(requiredValue(world.player(1)).z, requiredValue(world.player(2)).z);
 
     ASSERT_TRUE(world.setPlayerMovementCapabilities(1U, { .bits = 1U }));
     ASSERT_TRUE(world.movePlayer(1, { .x = 127, .y = 127, .z = 127 }));
     ASSERT_TRUE(world.player(1).has_value());
-    EXPECT_EQ(world.player(1)->x_subcell, THREE_AXIS_STEP);
-    EXPECT_EQ(world.player(1)->y_subcell, THREE_AXIS_STEP);
-    EXPECT_EQ(world.player(1)->z_subcell, THREE_AXIS_STEP);
+    EXPECT_EQ(requiredValue(world.player(1)).x_subcell, THREE_AXIS_STEP);
+    EXPECT_EQ(requiredValue(world.player(1)).y_subcell, THREE_AXIS_STEP);
+    EXPECT_EQ(requiredValue(world.player(1)).z_subcell, THREE_AXIS_STEP);
 }
 
 TEST(FlightWorldTest, FlightCollisionIgnoresPlayersAtNonOverlappingHeights)
@@ -281,7 +299,7 @@ TEST(FlightWorldTest, FlightCollisionIgnoresPlayersAtNonOverlappingHeights)
 
     EXPECT_TRUE(world.movePlayer(1U, { .x = 127U, .y = 0U, .z = 0U }));
     ASSERT_TRUE(world.player(1U).has_value());
-    EXPECT_GT(world.player(1U)->x_subcell, 0U);
+    EXPECT_GT(requiredValue(world.player(1U)).x_subcell, 0U);
 }
 
 TEST(FlightWorldTest, FlightCollisionSlidesAlongAnAdjacentPlayerWall)
@@ -298,8 +316,8 @@ TEST(FlightWorldTest, FlightCollisionSlidesAlongAnAdjacentPlayerWall)
 
     ASSERT_TRUE(world.movePlayer(1U, { .x = 127U, .y = 127U }));
     ASSERT_TRUE(world.player(1U).has_value());
-    EXPECT_EQ(world.player(1U)->x_subcell, 0U);
-    EXPECT_GT(world.player(1U)->y_subcell, 0U);
+    EXPECT_EQ(requiredValue(world.player(1U)).x_subcell, 0U);
+    EXPECT_GT(requiredValue(world.player(1U)).y_subcell, 0U);
 }
 
 TEST(FlightWorldTest, CollisionModeStopsVerticalMovementAtAnotherPlayer)
@@ -311,10 +329,10 @@ TEST(FlightWorldTest, CollisionModeStopsVerticalMovementAtAnotherPlayer)
     world.spawnPlayer(2U, '#', { .x = 100, .y = 100, .z = terrain_height + 2 });
     ASSERT_TRUE(world.setPlayerMovementCapabilities(1U, {}));
 
-    EXPECT_FALSE(world.movePlayer(1U, { .z = 127U }));
+    EXPECT_FALSE(world.movePlayer(1U, { .x = 0U, .y = 0U, .z = 127U }));
     ASSERT_TRUE(world.player(1U).has_value());
-    EXPECT_LT(shared::playerPositionZ(*world.player(1U)), terrain_height + 2.0);
-    EXPECT_EQ(world.player(1U)->vertical_velocity_subcells, 0);
+    EXPECT_LT(shared::playerPositionZ(requiredValue(world.player(1U))), terrain_height + 2.0);
+    EXPECT_EQ(requiredValue(world.player(1U)).vertical_velocity_subcells, 0);
 }
 
 TEST(FlightWorldTest, CollisionModeTreatsPlayerBodiesAcrossTheWrapSeamAsAdjacent)
@@ -335,11 +353,11 @@ TEST(FlightWorldTest, CollisionModeTreatsPlayerBodiesAcrossTheWrapSeamAsAdjacent
     ASSERT_TRUE(world.setPlayerMovementCapabilities(1U, { .bits = 1U }));
 
     ASSERT_TRUE(world.player(1U).has_value());
-    shared::Player const before = *world.player(1U);
-    EXPECT_FALSE(world.movePlayer(1U, { .x = 127U }));
+    shared::Player const before = requiredValue(world.player(1U));
+    EXPECT_FALSE(world.movePlayer(1U, { .x = 127U, .y = 0U }));
     ASSERT_TRUE(world.player(1U).has_value());
-    EXPECT_EQ(world.player(1U)->x, before.x);
-    EXPECT_EQ(world.player(1U)->x_subcell, before.x_subcell);
+    EXPECT_EQ(requiredValue(world.player(1U)).x, before.x);
+    EXPECT_EQ(requiredValue(world.player(1U)).x_subcell, before.x_subcell);
 }
 
 TEST(FlightWorldTest, NonFlightPlayerFalls)
@@ -348,9 +366,9 @@ TEST(FlightWorldTest, NonFlightPlayerFalls)
     world.spawnPlayer(1U, '@', { .x = 100, .y = 100, .z = 500 });
     ASSERT_TRUE(world.setPlayerMovementCapabilities(1U, {}));
 
-    ASSERT_TRUE(world.movePlayer(1U, {}));
+    ASSERT_TRUE(world.movePlayer(1U, { .x = 0U, .y = 0U }));
     ASSERT_TRUE(world.player(1U).has_value());
-    EXPECT_LT(world.player(1U)->z, 500);
+    EXPECT_LT(requiredValue(world.player(1U)).z, 500);
 }
 
 TEST(FlightWorldTest, NonFlightPlayerLandsOnTerrainInsteadOfRemainingSuspended)
@@ -371,15 +389,15 @@ TEST(FlightWorldTest, NonFlightPlayerLandsOnTerrainInsteadOfRemainingSuspended)
 
     bool moved = false;
     for (uint8_t tick = 0U; tick < 64U; ++tick) {
-        if (!world.movePlayer(1U, {})) {
+        if (!world.movePlayer(1U, { .x = 0U, .y = 0U })) {
             break;
         }
         moved = true;
     }
     EXPECT_TRUE(moved);
     ASSERT_TRUE(world.player(1U).has_value());
-    EXPECT_EQ(world.player(1U)->z, terrain_height);
-    EXPECT_EQ(world.player(1U)->z_subcell, 0U);
+    EXPECT_EQ(requiredValue(world.player(1U)).z, terrain_height);
+    EXPECT_EQ(requiredValue(world.player(1U)).z_subcell, 0U);
 }
 
 TEST(FlightWorldTest, FlightWithoutCollisionBypassCannotEnterTerrain)
@@ -400,15 +418,15 @@ TEST(FlightWorldTest, FlightWithoutCollisionBypassCannotEnterTerrain)
 
     bool moved = false;
     for (uint8_t tick = 0U; tick < 64U; ++tick) {
-        if (!world.movePlayer(1U, { .z = static_cast<uint8_t>(-127) })) {
+        if (!world.movePlayer(1U, { .x = 0U, .y = 0U, .z = static_cast<uint8_t>(-127) })) {
             break;
         }
         moved = true;
     }
     EXPECT_TRUE(moved);
-    EXPECT_FALSE(world.movePlayer(1U, { .z = static_cast<uint8_t>(-127) }));
+    EXPECT_FALSE(world.movePlayer(1U, { .x = 0U, .y = 0U, .z = static_cast<uint8_t>(-127) }));
     ASSERT_TRUE(world.player(1U).has_value());
-    EXPECT_GE(world.player(1U)->z, terrain_height);
+    EXPECT_GE(requiredValue(world.player(1U)).z, terrain_height);
 }
 
 TEST(FlightWorldTest, CollisionUsesTheWholePlayerFootprintAcrossAdjacentColumns)
@@ -423,12 +441,12 @@ TEST(FlightWorldTest, CollisionUsesTheWholePlayerFootprintAcrossAdjacentColumns)
     ASSERT_TRUE(world.setPlayerMovementCapabilities(1U, { .bits = 1U }));
 
     ASSERT_TRUE(world.player(1U).has_value());
-    shared::Player const before = *world.player(1U);
-    EXPECT_TRUE(world.movePlayer(1U, { .x = 127U }));
+    shared::Player const before = requiredValue(world.player(1U));
+    EXPECT_TRUE(world.movePlayer(1U, { .x = 127U, .y = 0U }));
     ASSERT_TRUE(world.player(1U).has_value());
-    EXPECT_EQ(world.player(1U)->x, before.x);
-    EXPECT_GT(world.player(1U)->x_subcell, before.x_subcell);
-    EXPECT_LT(world.player(1U)->x_subcell, shared::MOVEMENT_SUBCELLS_PER_TICK);
+    EXPECT_EQ(requiredValue(world.player(1U)).x, before.x);
+    EXPECT_GT(requiredValue(world.player(1U)).x_subcell, before.x_subcell);
+    EXPECT_LT(requiredValue(world.player(1U)).x_subcell, shared::MOVEMENT_SUBCELLS_PER_TICK);
 }
 
 TEST(FlightWorldTest, AcceleratedFlightSweepsTerrainInsteadOfTunnelingThroughRidge)
@@ -442,15 +460,15 @@ TEST(FlightWorldTest, AcceleratedFlightSweepsTerrainInsteadOfTunnelingThroughRid
     ASSERT_TRUE(world.setPlayerMovementCapabilities(1U, { .bits = 1U }));
 
     ASSERT_TRUE(world.player(1U).has_value());
-    shared::Player const before = *world.player(1U);
+    shared::Player const before = requiredValue(world.player(1U));
     EXPECT_TRUE(world.movePlayer(1U, {
-        .x = 127U,
+        .x = 127U, .y = 0U,
         .accelerated = true,
         .speedup = 200U,
     }));
     ASSERT_TRUE(world.player(1U).has_value());
-    EXPECT_GT(world.player(1U)->x, before.x);
-    EXPECT_LT(world.player(1U)->x, before.x + 112);
+    EXPECT_GT(requiredValue(world.player(1U)).x, before.x);
+    EXPECT_LT(requiredValue(world.player(1U)).x, before.x + 112);
 }
 
 TEST(FlightWorldTest, AcceleratedFlightCanClimbAfterAdvancingAcrossTerrainStep)
@@ -471,7 +489,7 @@ TEST(FlightWorldTest, AcceleratedFlightCanClimbAfterAdvancingAcrossTerrainStep)
         .speedup = 200U,
     }));
     ASSERT_TRUE(world.player(1U).has_value());
-    EXPECT_GT(shared::playerPositionZ(*world.player(1U)), static_cast<double>(terrain_height));
+    EXPECT_GT(shared::playerPositionZ(requiredValue(world.player(1U))), static_cast<double>(terrain_height));
 }
 
 TEST(FlightWorldTest, CollisionSweepsDescendingDiagonalFlightThroughAnotherBody)
@@ -482,13 +500,13 @@ TEST(FlightWorldTest, CollisionSweepsDescendingDiagonalFlightThroughAnotherBody)
     ASSERT_TRUE(world.setPlayerMovementCapabilities(1U, { .bits = 1U }));
 
     ASSERT_TRUE(world.movePlayer(1U, {
-        .x = 127U,
+        .x = 127U, .y = 0U,
         .z = static_cast<uint8_t>(-127),
         .accelerated = true,
         .speedup = 200U,
     }));
     ASSERT_TRUE(world.player(1U).has_value());
-    EXPECT_LT(world.player(1U)->x, 200);
+    EXPECT_LT(requiredValue(world.player(1U)).x, 200);
 }
 
 TEST(FlightWorldTest, CollisionSweepsDiagonalFlightAroundCornerInsteadOfBypassingBody)
@@ -499,7 +517,7 @@ TEST(FlightWorldTest, CollisionSweepsDiagonalFlightAroundCornerInsteadOfBypassin
     ASSERT_TRUE(world.setPlayerMovementCapabilities(1U, { .bits = 1U }));
 
     ASSERT_TRUE(world.player(1U).has_value());
-    shared::Player const before = *world.player(1U);
+    shared::Player const before = requiredValue(world.player(1U));
     ASSERT_TRUE(world.movePlayer(1U, {
         .x = 127U,
         .y = 127U,
@@ -509,8 +527,8 @@ TEST(FlightWorldTest, CollisionSweepsDiagonalFlightAroundCornerInsteadOfBypassin
     ASSERT_TRUE(world.player(1U).has_value());
     double const before_x = shared::playerPositionX(before);
     double const before_y = shared::playerPositionY(before);
-    double const after_x = shared::playerPositionX(*world.player(1U));
-    double const after_y = shared::playerPositionY(*world.player(1U));
+    double const after_x = shared::playerPositionX(requiredValue(world.player(1U)));
+    double const after_y = shared::playerPositionY(requiredValue(world.player(1U)));
     EXPECT_TRUE(after_x == before_x || after_y == before_y);
 }
 
@@ -526,13 +544,13 @@ TEST(FlightWorldTest, CollisionSweepsDescendingDiagonalFlightAcrossWrappedSeam)
     ASSERT_TRUE(world.setPlayerMovementCapabilities(1U, { .bits = 1U }));
 
     ASSERT_TRUE(world.movePlayer(1U, {
-        .x = 127U,
+        .x = 127U, .y = 0U,
         .z = static_cast<uint8_t>(-127),
         .accelerated = true,
         .speedup = 200U,
     }));
     ASSERT_TRUE(world.player(1U).has_value());
-    EXPECT_LT(world.player(1U)->x, 10);
+    EXPECT_LT(requiredValue(world.player(1U)).x, 10);
 }
 
 TEST(FlightWorldTest, CollisionSweepsDiagonalFlightAroundCornerAcrossWrappedSeam)
@@ -547,7 +565,7 @@ TEST(FlightWorldTest, CollisionSweepsDiagonalFlightAroundCornerAcrossWrappedSeam
     ASSERT_TRUE(world.setPlayerMovementCapabilities(1U, { .bits = 1U }));
 
     ASSERT_TRUE(world.player(1U).has_value());
-    shared::Player const before = *world.player(1U);
+    shared::Player const before = requiredValue(world.player(1U));
     ASSERT_TRUE(world.movePlayer(1U, {
         .x = 127U,
         .y = 127U,
@@ -557,8 +575,8 @@ TEST(FlightWorldTest, CollisionSweepsDiagonalFlightAroundCornerAcrossWrappedSeam
     ASSERT_TRUE(world.player(1U).has_value());
     double const before_x = shared::playerPositionX(before);
     double const before_y = shared::playerPositionY(before);
-    double const after_x = shared::playerPositionX(*world.player(1U));
-    double const after_y = shared::playerPositionY(*world.player(1U));
+    double const after_x = shared::playerPositionX(requiredValue(world.player(1U)));
+    double const after_y = shared::playerPositionY(requiredValue(world.player(1U)));
     EXPECT_TRUE(after_x == before_x || after_y == before_y);
 }
 
@@ -572,13 +590,13 @@ TEST(FlightWorldTest, NonFlightSpaceJumpsAndClearsAdjacentTerrainStep)
     });
     ASSERT_TRUE(world.setPlayerMovementCapabilities(1U, {}));
 
-    EXPECT_TRUE(world.movePlayer(1U, { .z = 127U }));
+    EXPECT_TRUE(world.movePlayer(1U, { .x = 0U, .y = 0U, .z = 127U }));
     ASSERT_TRUE(world.player(1U).has_value());
-    EXPECT_GT(shared::playerPositionZ(*world.player(1U)), 805.0);
+    EXPECT_GT(shared::playerPositionZ(requiredValue(world.player(1U))), 805.0);
 
-    EXPECT_TRUE(world.movePlayer(1U, { .x = 127U }));
+    EXPECT_TRUE(world.movePlayer(1U, { .x = 127U, .y = 0U }));
     ASSERT_TRUE(world.player(1U).has_value());
-    EXPECT_GT(shared::playerPositionX(*world.player(1U)), 32'767.5);
+    EXPECT_GT(shared::playerPositionX(requiredValue(world.player(1U))), 32'767.5);
 }
 
 TEST(FlightWorldTest, NonFlightJumpUsesAStableAirborneCurve)
@@ -595,21 +613,21 @@ TEST(FlightWorldTest, NonFlightJumpUsesAStableAirborneCurve)
     world.spawnPlayer(1U, '@', { .x = X, .y = Y, .z = terrain_height });
     ASSERT_TRUE(world.setPlayerMovementCapabilities(1U, {}));
 
-    ASSERT_TRUE(world.movePlayer(1U, { .z = 127U }));
+    ASSERT_TRUE(world.movePlayer(1U, { .x = 0U, .y = 0U, .z = 127U }));
     ASSERT_TRUE(world.player(1U).has_value());
-    double const first_height = shared::playerPositionZ(*world.player(1U));
+    double const first_height = shared::playerPositionZ(requiredValue(world.player(1U)));
     EXPECT_DOUBLE_EQ(first_height, static_cast<double>(terrain_height) + FIRST_TICK_HEIGHT_DELTA);
-    EXPECT_EQ(world.player(1U)->vertical_velocity_subcells, FIRST_TICK_VERTICAL_VELOCITY);
+    EXPECT_EQ(requiredValue(world.player(1U)).vertical_velocity_subcells, FIRST_TICK_VERTICAL_VELOCITY);
 
     double maximum_height = first_height;
     for (uint8_t tick = 0U; tick < TICKS_TO_APEX; ++tick) {
-        ASSERT_TRUE(world.movePlayer(1U, {}));
+        ASSERT_TRUE(world.movePlayer(1U, { .x = 0U, .y = 0U }));
         ASSERT_TRUE(world.player(1U).has_value());
-        maximum_height = std::max(maximum_height, shared::playerPositionZ(*world.player(1U)));
+        maximum_height = std::max(maximum_height, shared::playerPositionZ(requiredValue(world.player(1U))));
     }
     EXPECT_NEAR(maximum_height, static_cast<double>(terrain_height) + MAXIMUM_HEIGHT_DELTA, 1e-9);
     ASSERT_TRUE(world.player(1U).has_value());
-    EXPECT_DOUBLE_EQ(shared::playerPositionZ(*world.player(1U)), static_cast<double>(terrain_height));
+    EXPECT_DOUBLE_EQ(shared::playerPositionZ(requiredValue(world.player(1U))), static_cast<double>(terrain_height));
 }
 
 TEST(FlightWorldTest, NonFlightMovementSlidesAlongAAdjacentTerrainWall)
@@ -622,9 +640,9 @@ TEST(FlightWorldTest, NonFlightMovementSlidesAlongAAdjacentTerrainWall)
     });
     ASSERT_TRUE(world.setPlayerMovementCapabilities(1U, {}));
 
-    EXPECT_TRUE(world.movePlayer(1U, { .y = 127U }));
+    EXPECT_TRUE(world.movePlayer(1U, { .x = 0U, .y = 127U }));
     ASSERT_TRUE(world.player(1U).has_value());
-    EXPECT_GT(shared::playerPositionY(*world.player(1U)), 32'768.5);
+    EXPECT_GT(shared::playerPositionY(requiredValue(world.player(1U))), 32'768.5);
 }
 
 TEST(FlightWorldTest, NonFlightMovementUsesFlightWorldCoordinates)
@@ -637,9 +655,9 @@ TEST(FlightWorldTest, NonFlightMovementUsesFlightWorldCoordinates)
     });
     ASSERT_TRUE(world.setPlayerMovementCapabilities(1U, {}));
 
-    EXPECT_TRUE(world.movePlayer(1U, { .x = 127U }));
+    EXPECT_TRUE(world.movePlayer(1U, { .x = 127U, .y = 0U }));
     ASSERT_TRUE(world.player(1U).has_value());
-    EXPECT_GT(shared::playerPositionX(*world.player(1U)), 35'050.5);
+    EXPECT_GT(shared::playerPositionX(requiredValue(world.player(1U))), 35'050.5);
 }
 
 TEST(FlightWorldTest, AcceleratesAllFlightAxesFivefold)
@@ -656,12 +674,12 @@ TEST(FlightWorldTest, AcceleratesAllFlightAxesFivefold)
     }));
 
     ASSERT_TRUE(world.player(1).has_value());
-    EXPECT_EQ(world.player(1)->x, 101);
-    EXPECT_EQ(world.player(1)->y, 101);
-    EXPECT_EQ(world.player(1)->z, 101);
-    EXPECT_EQ(world.player(1)->x_subcell, 6'160U);
-    EXPECT_EQ(world.player(1)->y_subcell, 6'160U);
-    EXPECT_EQ(world.player(1)->z_subcell, 6'160U);
+    EXPECT_EQ(requiredValue(world.player(1)).x, 101);
+    EXPECT_EQ(requiredValue(world.player(1)).y, 101);
+    EXPECT_EQ(requiredValue(world.player(1)).z, 101);
+    EXPECT_EQ(requiredValue(world.player(1)).x_subcell, 6'160U);
+    EXPECT_EQ(requiredValue(world.player(1)).y_subcell, 6'160U);
+    EXPECT_EQ(requiredValue(world.player(1)).z_subcell, 6'160U);
 }
 
 TEST(FlightWorldTest, UsesSelectedAccelerationProfile)
@@ -679,12 +697,12 @@ TEST(FlightWorldTest, UsesSelectedAccelerationProfile)
     }));
 
     ASSERT_TRUE(world.player(1).has_value());
-    EXPECT_EQ(world.player(1)->x, 125);
-    EXPECT_EQ(world.player(1)->y, 125);
-    EXPECT_EQ(world.player(1)->z, 125);
-    EXPECT_EQ(world.player(1)->x_subcell, 8'560U);
-    EXPECT_EQ(world.player(1)->y_subcell, 8'560U);
-    EXPECT_EQ(world.player(1)->z_subcell, 8'560U);
+    EXPECT_EQ(requiredValue(world.player(1)).x, 125);
+    EXPECT_EQ(requiredValue(world.player(1)).y, 125);
+    EXPECT_EQ(requiredValue(world.player(1)).z, 125);
+    EXPECT_EQ(requiredValue(world.player(1)).x_subcell, 8'560U);
+    EXPECT_EQ(requiredValue(world.player(1)).y_subcell, 8'560U);
+    EXPECT_EQ(requiredValue(world.player(1)).z_subcell, 8'560U);
 }
 
 TEST(FlightWorldTest, SupportsExtremeAccelerationProfiles)
@@ -704,7 +722,7 @@ TEST(FlightWorldTest, AuthoritativeCapabilitiesAllowOnlyTheThreeValidCombination
     EXPECT_TRUE(world.setPlayerMovementCapabilities(1U, { .bits = 1U }));
     EXPECT_TRUE(world.setPlayerMovementCapabilities(1U, { .bits = 3U }));
     ASSERT_TRUE(world.player(1U).has_value());
-    EXPECT_EQ(world.player(1U)->movement_capabilities.bits, 3U);
+    EXPECT_EQ(requiredValue(world.player(1U)).movement_capabilities.bits, 3U);
 }
 
 TEST(FlightWorldTest, RejectsRemovingCollisionBypassWhilePlayerIsEmbeddedInTerrain)
@@ -751,14 +769,14 @@ TEST(FlightWorldTest, FlightIsGrantedPerPlayerRatherThanByClientIntent)
     world.spawnPlayer(1U, '@', { .x = 4, .y = 4, .z = terrain_height });
     ASSERT_TRUE(world.setPlayerMovementCapabilities(1U, {}));
 
-    EXPECT_TRUE(world.movePlayer(1U, { .z = 127U }));
+    EXPECT_TRUE(world.movePlayer(1U, { .x = 0U, .y = 0U, .z = 127U }));
     ASSERT_TRUE(world.player(1U).has_value());
-    EXPECT_GT(shared::playerPositionZ(*world.player(1U)), terrain_height);
+    EXPECT_GT(shared::playerPositionZ(requiredValue(world.player(1U))), terrain_height);
 
     ASSERT_TRUE(world.setPlayerMovementCapabilities(1U, { .bits = 1U }));
-    EXPECT_TRUE(world.movePlayer(1U, { .z = 127U }));
+    EXPECT_TRUE(world.movePlayer(1U, { .x = 0U, .y = 0U, .z = 127U }));
     ASSERT_TRUE(world.player(1U).has_value());
-    EXPECT_GT(shared::playerPositionZ(*world.player(1U)), terrain_height);
+    EXPECT_GT(shared::playerPositionZ(requiredValue(world.player(1U))), terrain_height);
 }
 
 TEST(FlightWorldTest, WrapsHorizontalBoundsAndRejectsVerticalBounds)
@@ -772,8 +790,8 @@ TEST(FlightWorldTest, WrapsHorizontalBoundsAndRejectsVerticalBounds)
     }));
     EXPECT_TRUE(world.movePlayer(1, { .x = static_cast<uint8_t>(-127), .y = 0, .z = 0 }));
     ASSERT_TRUE(world.player(1).has_value());
-    EXPECT_EQ(world.player(1)->x, shared::World::FLIGHT_MAX_CELL);
-    EXPECT_EQ(world.player(1)->x_subcell, 4'400U);
+    EXPECT_EQ(requiredValue(world.player(1)).x, shared::World::FLIGHT_MAX_CELL);
+    EXPECT_EQ(requiredValue(world.player(1)).x_subcell, 4'400U);
 
     EXPECT_FALSE(world.setPlayerPosition(1, {
         .x = shared::World::FLIGHT_MIN_CELL,
@@ -781,7 +799,7 @@ TEST(FlightWorldTest, WrapsHorizontalBoundsAndRejectsVerticalBounds)
         .z = shared::World::FLIGHT_MAX_Z + 1,
     }));
     ASSERT_TRUE(world.player(1).has_value());
-    EXPECT_EQ(world.player(1)->x, shared::World::FLIGHT_MAX_CELL);
+    EXPECT_EQ(requiredValue(world.player(1)).x, shared::World::FLIGHT_MAX_CELL);
 }
 
 TEST(FlightWorldTest, CanonicalConfigurationIdentifiesTheSeededChunk)

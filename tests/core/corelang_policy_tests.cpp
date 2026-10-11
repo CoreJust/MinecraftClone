@@ -3,9 +3,13 @@
 #include <gtest/gtest.h>
 
 #include <cstdint>
+#include <expected>
+#include <memory>
+#include <span>
 #include <string>
 #include <string_view>
 #include <type_traits>
+#include <utility>
 #include <vector>
 
 static_assert(std::is_constructible_v<
@@ -835,7 +839,7 @@ TEST(CoreLangPolicyTest, RejectsPublicationWithoutMaterializedCapabilities)
     auto compilation = host.compile("missing-capabilities.core", POLICY_SOURCE, interpretedOptions());
     ASSERT_TRUE(compilation.has_value()) << compilation.error().message;
 
-    auto const publication = host.publish(std::move(*compilation));
+    auto const publication = host.publish(*compilation);
 
     ASSERT_FALSE(publication.has_value());
     EXPECT_EQ(

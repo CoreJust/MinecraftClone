@@ -1,12 +1,32 @@
+#include <shared/world/Chunk.hpp>
 #include <shared/world/WorldGeneration.hpp>
 #include <shared/world/WorldGenerationScheduler.hpp>
 
 #include <gtest/gtest.h>
 
 #include <array>
+#include <compare>
 #include <cstdint>
+#include <memory>
+#include <optional>
+#include <span>
+#include <stdexcept>
+#include <string>
 #include <tuple>
 #include <vector>
+
+namespace {
+
+template <typename Value>
+Value const& requiredValue(std::optional<Value> const& optional)
+{
+    if (optional.has_value()) {
+        return *optional;
+    }
+    throw std::runtime_error("Test expected an optional value");
+}
+
+} // namespace
 
 TEST(WorldGenerationSchedulerTest, AdmissionIsBoundedAndDuplicateAware)
 {
@@ -150,11 +170,11 @@ TEST(WorldGenerationSchedulerTest, CoordinatorAllowsOmittingPreviewAndRejectsMat
     );
     auto const job = coordinator.takeNext();
     ASSERT_TRUE(job.has_value());
-    EXPECT_EQ(job->stage, shared::GenerationStage::Materialize);
-    EXPECT_FALSE(job->inherited_ancestor_data);
-    ASSERT_TRUE(coordinator.complete(job->id, true));
+    EXPECT_EQ(requiredValue(job).stage, shared::GenerationStage::Materialize);
+    EXPECT_FALSE(requiredValue(job).inherited_ancestor_data);
+    ASSERT_TRUE(coordinator.complete(requiredValue(job).id, true));
     ASSERT_TRUE(coordinator.takeResult().has_value());
-    ASSERT_TRUE(coordinator.acceptResult(job->id));
+    ASSERT_TRUE(coordinator.acceptResult(requiredValue(job).id));
     EXPECT_EQ(
         coordinator.state(COORDINATE, WORLD_REVISION, WORLD_SEED),
         shared::GenerationState::Materialized
@@ -296,10 +316,10 @@ TEST(WorldGenerationSchedulerTest, ExplicitRetryIsLimitedToOneAttempt)
     );
     auto const job = scheduler.takeNext();
     ASSERT_TRUE(job.has_value());
-    ASSERT_TRUE(scheduler.complete(job->id, false));
+    ASSERT_TRUE(scheduler.complete(requiredValue(job).id, false));
     ASSERT_EQ(scheduler.resultCount(), 1U);
     ASSERT_TRUE(scheduler.takeResult().has_value());
-    ASSERT_TRUE(scheduler.retry(job->id));
+    ASSERT_TRUE(scheduler.retry(requiredValue(job).id));
     auto const retry_job = scheduler.takeNext();
     ASSERT_TRUE(retry_job.has_value());
     ASSERT_TRUE(scheduler.complete(retry_job->id, false));
@@ -320,8 +340,8 @@ TEST(WorldGenerationSchedulerTest, ReprioritizingQueuedWorkPreservesDispatchedJo
     EXPECT_EQ(scheduler.submit({.x = 2, .y = 0, .z = 0}, 1U, shared::GenerationStage::HeightTile),
               shared::GenerationAdmission::Accepted);
     ASSERT_TRUE(scheduler.complete(dispatched->id, true));
-    EXPECT_EQ(scheduler.takeResult()->job.id, dispatched->id);
-    EXPECT_EQ(scheduler.takeNext()->coordinate.x, 2);
+    EXPECT_EQ(requiredValue(scheduler.takeResult()).job.id, dispatched->id);
+    EXPECT_EQ(requiredValue(scheduler.takeNext()).coordinate.x, 2);
 }
 
 TEST(WorldGenerationSchedulerTest, ReordersRowMajorSubmissionIntoNearestVisibleTiles)
@@ -358,7 +378,7 @@ TEST(WorldGenerationSchedulerTest, ReordersRowMajorSubmissionIntoNearestVisibleT
     for (shared::ChunkCoordinate const coordinate : expected) {
         auto const job = scheduler.takeNext();
         ASSERT_TRUE(job.has_value());
-        EXPECT_EQ(job->coordinate, coordinate);
+        EXPECT_EQ(requiredValue(job).coordinate, coordinate);
     }
 }
 
@@ -391,7 +411,7 @@ TEST(WorldGenerationSchedulerTest, MovingCenterKeepsDispatchedAndOverlappingQueu
         auto const priority = [](shared::GenerationJob const& job) {
             int64_t const distance_squared = static_cast<int64_t>(job.coordinate.x) * job.coordinate.x
                 + static_cast<int64_t>(job.coordinate.y) * job.coordinate.y;
-            return std::tuple{ distance_squared - 2 * job.coordinate.x, distance_squared };
+            return std::tuple{ distance_squared - int64_t{ 2 } * job.coordinate.x, distance_squared };
         };
         return priority(first) < priority(second);
     });
@@ -425,7 +445,7 @@ TEST(WorldGenerationSchedulerTest, DistancePriorityOutranksFarForwardTile)
         auto const priority = [](shared::GenerationJob const& job) {
             int64_t const distance_squared = static_cast<int64_t>(job.coordinate.x) * job.coordinate.x
                 + static_cast<int64_t>(job.coordinate.y) * job.coordinate.y;
-            return std::tuple{ distance_squared - 2 * job.coordinate.x, distance_squared };
+            return std::tuple{ distance_squared - int64_t{ 2 } * job.coordinate.x, distance_squared };
         };
         return priority(first) < priority(second);
     });
@@ -509,6 +529,7 @@ TEST(WorldGenerationSchedulerTest, RegisteredRefinementsNormalizeWrappedAndNegat
 TEST(WorldGenerationSchedulerTest, PlansValidateOptionalStagesExtentsAndPriorityDimensions)
 {
     shared::WorldGenerationPlan preview_only{
+        .refinement_extents = {},
         .chunk_stages = {shared::GenerationStage::HeightTile},
     };
     EXPECT_TRUE(shared::isValidWorldGenerationPlan(preview_only));
@@ -567,63 +588,63 @@ TEST(WorldGenerationSchedulerTest, PlanChainsBoundedRefinementsAndPassesImmutabl
               shared::GenerationAdmission::Accepted);
     auto job = coordinator.takeNext();
     ASSERT_TRUE(job.has_value());
-    ASSERT_EQ(job->stage, shared::GenerationStage::Pregen);
-    ASSERT_TRUE(job->region.has_value());
-    EXPECT_EQ(job->region->extent, 16'384U);
-    EXPECT_FALSE(job->inherited_ancestor_data);
+    ASSERT_EQ(requiredValue(job).stage, shared::GenerationStage::Pregen);
+    ASSERT_TRUE(requiredValue(job).region.has_value());
+    EXPECT_EQ(requiredValue(requiredValue(job).region).extent, 16'384U);
+    EXPECT_FALSE(requiredValue(job).inherited_ancestor_data);
 
-    ASSERT_TRUE(coordinator.complete(job->id, true, false, {0x10U, 0x20U}));
+    ASSERT_TRUE(coordinator.complete(requiredValue(job).id, true, false, {0x10U, 0x20U}));
     auto result = coordinator.takeResult();
     ASSERT_TRUE(result.has_value());
     ASSERT_TRUE(result->succeeded);
-    ASSERT_TRUE(coordinator.acceptResult(job->id));
+    ASSERT_TRUE(coordinator.acceptResult(requiredValue(job).id));
 
     job = coordinator.takeNext();
     ASSERT_TRUE(job.has_value());
-    ASSERT_EQ(job->stage, shared::GenerationStage::Refinement);
-    ASSERT_TRUE(job->region.has_value());
-    EXPECT_EQ(job->region->extent, 4'096U);
-    ASSERT_TRUE(job->inherited_ancestor_data);
-    EXPECT_EQ(*job->inherited_ancestor_data, (std::vector<uint8_t>{0x10U, 0x20U}));
-    ASSERT_TRUE(coordinator.complete(job->id, true, false, {0x30U}));
+    ASSERT_EQ(requiredValue(job).stage, shared::GenerationStage::Refinement);
+    ASSERT_TRUE(requiredValue(job).region.has_value());
+    EXPECT_EQ(requiredValue(requiredValue(job).region).extent, 4'096U);
+    ASSERT_TRUE(requiredValue(job).inherited_ancestor_data);
+    EXPECT_EQ(*requiredValue(job).inherited_ancestor_data, (std::vector<uint8_t>{0x10U, 0x20U}));
+    ASSERT_TRUE(coordinator.complete(requiredValue(job).id, true, false, {0x30U}));
     ASSERT_TRUE(coordinator.takeResult().has_value());
-    ASSERT_TRUE(coordinator.acceptResult(job->id));
+    ASSERT_TRUE(coordinator.acceptResult(requiredValue(job).id));
 
     job = coordinator.takeNext();
     ASSERT_TRUE(job.has_value());
-    EXPECT_EQ(job->region->extent, 1'024U);
-    ASSERT_TRUE(job->inherited_ancestor_data);
-    EXPECT_EQ(*job->inherited_ancestor_data, (std::vector<uint8_t>{0x30U}));
+    EXPECT_EQ(requiredValue(requiredValue(job).region).extent, 1'024U);
+    ASSERT_TRUE(requiredValue(job).inherited_ancestor_data);
+    EXPECT_EQ(*requiredValue(job).inherited_ancestor_data, (std::vector<uint8_t>{0x30U}));
     std::vector<uint8_t> final_output(FINAL_OUTPUT_BYTES);
     final_output[1U] = 0xFCU;
     final_output[9U] = 0x04U;
     for (uint32_t offset = 12U; offset < FINAL_OUTPUT_BYTES; offset += 2U) {
         final_output[offset] = 64U;
     }
-    ASSERT_TRUE(coordinator.complete(job->id, true, false, final_output));
+    ASSERT_TRUE(coordinator.complete(requiredValue(job).id, true, false, final_output));
     ASSERT_TRUE(coordinator.takeResult().has_value());
-    ASSERT_TRUE(coordinator.acceptResult(job->id));
+    ASSERT_TRUE(coordinator.acceptResult(requiredValue(job).id));
 
     job = coordinator.takeNext();
     ASSERT_TRUE(job.has_value());
-    EXPECT_EQ(job->stage, shared::GenerationStage::HeightTile);
-    EXPECT_FALSE(job->region.has_value());
-    ASSERT_TRUE(coordinator.complete(job->id, true));
+    EXPECT_EQ(requiredValue(job).stage, shared::GenerationStage::HeightTile);
+    EXPECT_FALSE(requiredValue(job).region.has_value());
+    ASSERT_TRUE(coordinator.complete(requiredValue(job).id, true));
     ASSERT_TRUE(coordinator.takeResult().has_value());
-    ASSERT_TRUE(coordinator.acceptResult(job->id));
+    ASSERT_TRUE(coordinator.acceptResult(requiredValue(job).id));
 
     job = coordinator.takeNext();
     ASSERT_TRUE(job.has_value());
-    EXPECT_EQ(job->stage, shared::GenerationStage::Materialize);
-    ASSERT_TRUE(job->inherited_ancestor_data);
-    EXPECT_EQ(*job->inherited_ancestor_data, final_output);
+    EXPECT_EQ(requiredValue(job).stage, shared::GenerationStage::Materialize);
+    ASSERT_TRUE(requiredValue(job).inherited_ancestor_data);
+    EXPECT_EQ(*requiredValue(job).inherited_ancestor_data, final_output);
     shared::TerrainGenerator const generator;
     EXPECT_EQ(generator.generateChunk(TARGET).blockAt({.x = 0U, .y = 0U, .z = 0U}), shared::Block::Air);
-    EXPECT_EQ(generator.generateChunk(TARGET, *job->inherited_ancestor_data)
+    EXPECT_EQ(generator.generateChunk(TARGET, *requiredValue(job).inherited_ancestor_data)
         .blockAt({.x = 0U, .y = 0U, .z = 0U}), shared::Block::Stone);
-    ASSERT_TRUE(coordinator.complete(job->id, true));
+    ASSERT_TRUE(coordinator.complete(requiredValue(job).id, true));
     ASSERT_TRUE(coordinator.takeResult().has_value());
-    ASSERT_TRUE(coordinator.acceptResult(job->id));
+    ASSERT_TRUE(coordinator.acceptResult(requiredValue(job).id));
     EXPECT_EQ(coordinator.state(TARGET, REVISION, SEED), shared::GenerationState::Materialized);
 }
 
@@ -685,7 +706,7 @@ TEST(WorldGenerationSchedulerTest, GenerationPriorityDimensionsUseStableLexicogr
         shared::GenerationPriorityDimension::View,
     };
     ASSERT_TRUE(scheduler.reorderQueued(priority_order));
-    EXPECT_EQ(scheduler.takeNext()->coordinate.x, 1);
-    EXPECT_EQ(scheduler.takeNext()->coordinate.x, 2);
-    EXPECT_EQ(scheduler.takeNext()->coordinate.x, 0);
+    EXPECT_EQ(requiredValue(scheduler.takeNext()).coordinate.x, 1);
+    EXPECT_EQ(requiredValue(scheduler.takeNext()).coordinate.x, 2);
+    EXPECT_EQ(requiredValue(scheduler.takeNext()).coordinate.x, 0);
 }

@@ -7,11 +7,15 @@
 #include <gtest/gtest.h>
 
 #include <array>
+#include <cstdint>
 #include <filesystem>
 #include <memory>
+#include <span>
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <utility>
+#include <vector>
 
 namespace {
 

@@ -1,8 +1,17 @@
 #include <shared/scenario/Scenario.hpp>
 
+#include <shared/world/Chunk.hpp>
+
+#include <core/lang/Bytecode.hpp>
+#include <core/lang/Compiler.hpp>
 #include <core/lang/CoreLang.hpp>
+#include <core/lang/Diagnostic.hpp>
+#include <core/lang/Registry.hpp>
+#include <core/lang/Runtime.hpp>
+#include <core/lang/Value.hpp>
 
 #include <algorithm>
+#include <array>
 #include <cstdint>
 #include <expected>
 #include <functional>
@@ -80,13 +89,17 @@ ScenarioLocation sourceLocation(std::string_view const source, uint64_t const of
 [[nodiscard]]
 core::lang::Type type(core::lang::TypeKind const kind)
 {
-    return {.kind = kind, .elements = {}};
+    core::lang::Type result{};
+    result.kind = kind;
+    return result;
 }
 
 [[nodiscard]]
 core::lang::Value unitValue()
 {
-    return {.type = type(core::lang::TypeKind::Unit), .bytes = {}, .elements = {}};
+    core::lang::Value result{};
+    result.type = type(core::lang::TypeKind::Unit);
+    return result;
 }
 
 [[nodiscard]]
@@ -837,27 +850,24 @@ public:
     {
         ScenarioPlanCollector collector{filename, limits, cancellation, supports_sparse_world};
         std::vector<HostSpec> const specs = hostSpecs(supports_sparse_world);
-        core::lang::Ruleset ruleset{
-            .id = "minecraft",
-            .version = 1U,
-            .restrictions = {},
-        };
+        core::lang::Ruleset ruleset{};
+        ruleset.id = "minecraft";
+        ruleset.version = 1U;
         std::vector<core::lang::CustomProvider> providers;
         providers.reserve(specs.size());
         for (HostSpec const& spec : specs) {
             core::lang::CustomManifest const host_manifest = manifest(spec);
-            ruleset.operations.push_back({
-                .name = std::string{spec.name},
-                .kind = core::lang::ExtensionKind::Builtin,
-                .overrideExisting = spec.call == HostCall::Seed,
-                .arguments = host_manifest.arguments,
-                .result = host_manifest.result,
-                .effect = host_manifest.effect,
-                .custom = host_manifest,
-                .expand = {},
-                .unsafe_callable = host_manifest.unsafe_,
-                .borrow = host_manifest.borrow,
-            });
+            core::lang::Operation operation{};
+            operation.name.assign(spec.name);
+            operation.kind = core::lang::ExtensionKind::Builtin;
+            operation.overrideExisting = spec.call == HostCall::Seed;
+            operation.arguments = host_manifest.arguments;
+            operation.result = host_manifest.result;
+            operation.effect = host_manifest.effect;
+            operation.custom = host_manifest;
+            operation.unsafe_callable = host_manifest.unsafe_;
+            operation.borrow = host_manifest.borrow;
+            ruleset.operations.push_back(std::move(operation));
             providers.push_back({
                 .manifest = host_manifest,
                 .invoke = [&collector, host_call = spec.call](
