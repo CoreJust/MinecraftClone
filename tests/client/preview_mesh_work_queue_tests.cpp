@@ -1,8 +1,15 @@
 #include <client/PreviewMeshWorkQueue.hpp>
 
+#include <client/PreviewResidency.hpp>
+
+#include <shared/net/Message.hpp>
+
 #include <gtest/gtest.h>
 
 #include <array>
+#include <cstdint>
+#include <optional>
+#include <string>
 #include <utility>
 
 namespace {
@@ -86,7 +93,7 @@ TEST(PreviewMeshWorkQueueTest, ResidencyChangesWaitUntilPlayerInterestIsKnown)
     client::PreviewResidency residency{ REVISION };
     std::array<uint16_t, shared::HEIGHT_TILE_SAMPLE_COUNT> heights{};
     ASSERT_EQ(
-        residency.accept(KEY, REVISION, 1U, std::move(heights)).replacement,
+        residency.accept(KEY, REVISION, 1U, heights).replacement,
         client::HeightTileReplacement::Published
     );
     client::PreviewMeshWorkQueue queue;

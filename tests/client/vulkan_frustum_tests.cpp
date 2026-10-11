@@ -1,13 +1,17 @@
 #include <client/Camera.hpp>
 #include <client/render/VulkanFrustum.hpp>
 
+#include <glm/mat4x4.hpp>
+#include <glm/vec3.hpp>
 #include <glm/vec4.hpp>
 #include <gtest/gtest.h>
 
 #include <algorithm>
 #include <array>
 #include <cstdint>
+#include <optional>
 #include <random>
+#include <string>
 
 namespace {
 
@@ -70,7 +74,9 @@ TEST(VulkanFrustumTest, PreservesNearPlaneCrossingsCameraInsideAndBehindCameraRe
     static constexpr uint32_t WIDTH = 1'920U;
     static constexpr uint32_t HEIGHT = 1'080U;
     client::Camera const camera{};
-    glm::mat4 const projection_view = *camera.projectionMatrix(WIDTH, HEIGHT) * camera.viewMatrix();
+    auto const projection = camera.projectionMatrix(WIDTH, HEIGHT);
+    ASSERT_TRUE(projection.has_value());
+    glm::mat4 const projection_view = *projection * camera.viewMatrix();
     client::VulkanFrustum const frustum{ projection_view };
     EXPECT_TRUE(frustum.intersects({ -1.0F, -1.0F, -1.0F }, { 1.0F, 1.0F, 1.0F }));
     EXPECT_TRUE(frustum.intersects({ -0.01F, 0.05F, -0.01F }, { 0.01F, 0.15F, 0.01F }));
@@ -121,7 +127,9 @@ TEST(VulkanFrustumTest, WrapsBoundsToTheSameNearestWorldImageAcrossTheSeam)
     );
     EXPECT_EQ(wrapped.minimum, (glm::vec3{ WORLD_PERIOD, WORLD_PERIOD, 0.0 }));
     EXPECT_EQ(wrapped.maximum, (glm::vec3{ WORLD_PERIOD + 16.0, WORLD_PERIOD + 16.0, 32.0 }));
-    glm::mat4 const projection_view = *camera.projectionMatrix(WIDTH, HEIGHT) * camera.viewMatrix();
+    auto const projection = camera.projectionMatrix(WIDTH, HEIGHT);
+    ASSERT_TRUE(projection.has_value());
+    glm::mat4 const projection_view = *projection * camera.viewMatrix();
     EXPECT_EQ(
         client::VulkanFrustum{ projection_view }.intersects(wrapped.minimum, wrapped.maximum),
         cornersIntersect(wrapped.minimum, wrapped.maximum, projection_view)
@@ -144,7 +152,8 @@ TEST(VulkanFrustumTest, MatchesCornerCullingAcrossFovFramebufferAndWideTerrainDi
         std::array<uint32_t, 2>{ 1'920U, 1'080U },
         std::array<uint32_t, 2>{ 480U, 1'920U },
     };
-    std::minstd_rand generator{ SEED };
+    std::seed_seq seed{ SEED };
+    std::minstd_rand generator{ seed };
     std::uniform_real_distribution<float> position{ -1.0F, 1.0F };
     std::uniform_real_distribution<float> size{ 0.1F, 32.0F };
     for (uint32_t const radius : RADII) {
@@ -157,14 +166,15 @@ TEST(VulkanFrustumTest, MatchesCornerCullingAcrossFovFramebufferAndWideTerrainDi
                     },
                     { .vertical_fov_degrees = fov, .far_plane = static_cast<double>(radius) * 32.0 },
                 };
-                glm::mat4 const projection_view = *camera.projectionMatrix(extent[0], extent[1])
-                    * camera.viewMatrix();
+                auto const projection = camera.projectionMatrix(extent[0], extent[1]);
+                ASSERT_TRUE(projection.has_value());
+                glm::mat4 const projection_view = *projection * camera.viewMatrix();
                 client::VulkanFrustum const frustum{ projection_view };
                 uint32_t conservative_extra_count = 0U;
                 for (uint32_t index = 0U; index < BOX_COUNT; ++index) {
                     glm::vec3 const minimum = glm::vec3{ camera.pose().position } + glm::vec3{
-                        position(generator) * radius * 16.0F,
-                        position(generator) * radius * 16.0F,
+                        position(generator) * static_cast<float>(radius) * 16.0F,
+                        position(generator) * static_cast<float>(radius) * 16.0F,
                         position(generator) * 512.0F,
                     };
                     glm::vec3 const maximum = minimum + glm::vec3{ size(generator), size(generator), size(generator) };

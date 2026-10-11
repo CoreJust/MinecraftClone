@@ -1,10 +1,15 @@
 #include <client/render/DepthFormat.hpp>
+#include <core/graphics/vulkan/Vulkan.hpp>
 
 #include <gtest/gtest.h>
+#include <vulkan/vulkan_core.h>
 
 #include <array>
 #include <bit>
 #include <cstdint>
+#include <optional>
+#include <span>
+#include <string>
 
 namespace {
 

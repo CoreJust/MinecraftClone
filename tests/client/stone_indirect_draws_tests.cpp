@@ -3,6 +3,7 @@
 #include <shared/world/ChunkMesher.hpp>
 
 #include <gtest/gtest.h>
+#include <vulkan/vulkan_core.h>
 
 #include <algorithm>
 #include <array>
@@ -11,6 +12,7 @@
 #include <new>
 #include <optional>
 #include <span>
+#include <stdexcept>
 #include <string>
 #include <utility>
 #include <vector>

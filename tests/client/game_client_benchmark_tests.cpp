@@ -1,13 +1,23 @@
 #include <client/GameClient.hpp>
+#include <client/PreviewResidency.hpp>
 
 #include <server/GameServer.hpp>
+
+#include <shared/world/World.hpp>
+
+#include <core/net/Address.hpp>
 
 #include <gtest/gtest.h>
 
 #include <atomic>
 #include <chrono>
+#include <compare>
 #include <cstdint>
+#include <functional>
+#include <optional>
+#include <string>
 #include <thread>
+#include <vector>
 
 namespace {
 
@@ -51,6 +61,7 @@ TEST(GameClientBenchmarkTest, SamplesConnectedProductionLoopsAndStopsAtHookBound
     client::GameClientBenchmarkHooks const hooks{
         .deadline = std::chrono::steady_clock::now() + DEADLINE,
         .should_stop = [&] { return completed_loops >= TARGET_LOOPS; },
+        .is_uncapped_phase = {},
         .input_override = [&](uint64_t) -> std::optional<shared::Direction> {
             ++overridden_inputs;
             return shared::Direction{ .x = 1U, .y = 0U };
@@ -89,6 +100,10 @@ TEST(GameClientBenchmarkTest, ConnectedProductionLoopAdoptsTheServerWideRadius)
     client::GameClientBenchmarkHooks const hooks{
         .deadline = std::chrono::steady_clock::now() + DEADLINE,
         .should_stop = [&] { return game_client.heightTileResidency().stats().resident_tiles > 0U; },
+        .is_uncapped_phase = {},
+        .input_override = {},
+        .on_loop = {},
+        .on_authoritative_player = {},
     };
     game_client.run(core::Address::localhost(server.port()), '@', &hooks);
     stop_server.store(true, std::memory_order_relaxed);

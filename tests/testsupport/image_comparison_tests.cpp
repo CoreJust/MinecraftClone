@@ -2,12 +2,14 @@
 
 #include <testsupport/ImageComparison.hpp>
 
+#include <cstdint>
 #include <expected>
 #include <filesystem>
 #include <fstream>
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <variant>
 #include <vector>
 
 namespace {

@@ -2,6 +2,9 @@
 
 #include <core/graphics/vulkan/Vulkan.hpp>
 
+#include <vulkan/vulkan_core.h>
+
+#include <cstddef>
 #include <optional>
 #include <span>
 #include <vector>
@@ -20,6 +23,15 @@ struct PresentationPipelineDescriptors final {
     core::graphics::vulkan::PipelineDescriptor world_text{};
     core::graphics::vulkan::PipelineDescriptor gui_text{};
     core::graphics::vulkan::PipelineDescriptor debug_hud{};
+};
+
+struct PresentationDepthFormat final {
+    constexpr PresentationDepthFormat(VkFormat const value) noexcept
+        : value(value)
+    {
+    }
+
+    VkFormat value;
 };
 
 [[nodiscard]]
@@ -62,7 +74,7 @@ constexpr PresentationPipelineDescriptors presentationPipelineDescriptors(
     VkPipelineLayout const world_text_layout,
     VkPipelineLayout const gui_text_layout,
     VkFormat const color_format,
-    VkFormat const depth_format
+    PresentationDepthFormat const depth_format
 ) noexcept
 {
     auto descriptor = [color_format](
@@ -84,7 +96,7 @@ constexpr PresentationPipelineDescriptors presentationPipelineDescriptors(
         world_text_layout,
         true,
         false,
-        depth_format
+        depth_format.value
     );
     core::graphics::vulkan::PipelineDescriptor const gui_text = descriptor(
         gui_text_layout,
@@ -93,9 +105,9 @@ constexpr PresentationPipelineDescriptors presentationPipelineDescriptors(
         VK_FORMAT_UNDEFINED
     );
     return {
-        .grid = descriptor(grid_layout, true, true, depth_format),
-        .player = descriptor(player_layout, true, true, depth_format),
-        .player_overlay = descriptor(player_layout, false, false, depth_format),
+        .grid = descriptor(grid_layout, true, true, depth_format.value),
+        .player = descriptor(player_layout, true, true, depth_format.value),
+        .player_overlay = descriptor(player_layout, false, false, depth_format.value),
         .world_text = world_text,
         .gui_text = gui_text,
         .debug_hud = gui_text,

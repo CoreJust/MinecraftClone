@@ -24,6 +24,8 @@ enum class TextSpace : uint8_t {
     World,
 };
 
+// The shader push-constant block stores this mode as a 32-bit value.
+// NOLINTNEXTLINE(performance-enum-size)
 enum class TextShaderMode : uint32_t {
     Screen = 0U,
     World = 1U,

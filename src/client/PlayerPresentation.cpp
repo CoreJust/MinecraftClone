@@ -1,13 +1,20 @@
 #include <client/PlayerPresentation.hpp>
 
 #include <shared/world/SparseWorld.hpp>
+#include <shared/world/World.hpp>
 
 #include <algorithm>
 #include <cmath>
+#include <compare>
 
 namespace client {
 
 namespace {
+
+struct HorizontalInterpolation final {
+    double from;
+    double to;
+};
 
 constexpr double PLAYER_BODY_CENTER_OFFSET = static_cast<double>(shared::World::PLAYER_WIDTH_SUBCELLS)
     / static_cast<double>(shared::SUBCELLS_PER_CELL) / 2.0;
@@ -52,18 +59,17 @@ constexpr std::array<std::array<float, 4>, shared::PLAYER_PALETTE_COUNT> PLAYER_
 }
 
 [[nodiscard]] double interpolateWrappedHorizontal(
-    double const from,
-    double const to,
+    HorizontalInterpolation const positions,
     double const alpha
 ) noexcept
 {
-    double delta = to - from;
+    double delta = positions.to - positions.from;
     if (delta > WORLD_WRAP_PERIOD * 0.5) {
         delta -= WORLD_WRAP_PERIOD;
     } else if (delta < -WORLD_WRAP_PERIOD * 0.5) {
         delta += WORLD_WRAP_PERIOD;
     }
-    double result = std::fmod(from + delta * alpha, WORLD_WRAP_PERIOD);
+    double result = std::fmod(positions.from + delta * alpha, WORLD_WRAP_PERIOD);
     if (result < 0.0) {
         result += WORLD_WRAP_PERIOD;
     }
@@ -85,7 +91,7 @@ constexpr std::array<std::array<float, 4>, shared::PLAYER_PALETTE_COUNT> PLAYER_
 void PlayerPresentation::update(
     shared::Player const& player,
     std::chrono::steady_clock::time_point const received_at
-) noexcept
+)
 {
     PlayerPresentationPosition const target = position(player);
     double const target_vertical_velocity = simulationVerticalVelocity(player);
@@ -196,8 +202,8 @@ PlayerPresentationPosition PlayerPresentation::sample(
     double const h01 = -2.0 * alpha * alpha * alpha + 3.0 * alpha * alpha;
     double const h11 = alpha * alpha * alpha - alpha * alpha;
     return {
-        .x = interpolateWrappedHorizontal(sample.from.x, sample.to.x, alpha),
-        .y = interpolateWrappedHorizontal(sample.from.y, sample.to.y, alpha),
+        .x = interpolateWrappedHorizontal({ .from = sample.from.x, .to = sample.to.x }, alpha),
+        .y = interpolateWrappedHorizontal({ .from = sample.from.y, .to = sample.to.y }, alpha),
         .z = h00 * sample.from.z
             + h10 * sample.from_vertical_velocity * PRESENTATION_TICK_SECONDS
             + h01 * sample.to.z

@@ -2,7 +2,10 @@
 
 #include <gtest/gtest.h>
 
-enum class TestBit {
+#include <cstdint>
+#include <string>
+
+enum class TestBit : uint8_t {
     First,
     Second,
     Third,
@@ -33,7 +36,7 @@ TEST(EnumBitsTest, CombinesBitsWithFactoryAndOperators) {
 }
 
 TEST(EnumBitsTest, SupportsWiderUnderlyingType) {
-    enum class WideBit {
+    enum class WideBit : uint8_t {
         First = 0,
         Last = 63,
         Count = 64,
@@ -44,5 +47,5 @@ TEST(EnumBitsTest, SupportsWiderUnderlyingType) {
 
     EXPECT_TRUE(bits[WideBit::First]);
     EXPECT_TRUE(bits[WideBit::Last]);
-    EXPECT_EQ(bits.value, (uint64_t{ 1 } << 63) | 1u);
+    EXPECT_EQ(bits.value, (uint64_t{ 1 } << uint64_t{ 63 }) | 1u);
 }

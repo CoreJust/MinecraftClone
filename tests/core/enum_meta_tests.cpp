@@ -1,9 +1,16 @@
+#include <core/common/Assert.hpp>
+#include <core/meta/Enum.hpp>
 #include <core/meta/EnumImpl.hpp>
 #include <core/meta/EnumMapping.hpp>
 
 #include <gtest/gtest.h>
 
-enum class TestEnum {
+#include <cstdint>
+#include <optional>
+#include <string>
+#include <string_view>
+
+enum class TestEnum : uint8_t {
     First,
     Second,
     Count,
@@ -12,7 +19,7 @@ enum class TestEnum {
 CORE_ENUM_FUNCTIONS(TestEnum);
 CORE_ENUM_FUNCTIONS_IMPL(TestEnum);
 
-enum class TestMappedEnum {
+enum class TestMappedEnum : uint8_t {
     First,
     Second,
     Third,

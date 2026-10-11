@@ -1,11 +1,13 @@
 #include <shared/scenario/Scenario.hpp>
 
+#include <acceptance/EvidenceJson.hpp>
 #include <acceptance/ScenarioRunner.hpp>
 
 #include <gtest/gtest.h>
 
 #include <chrono>
 #include <cstdint>
+#include <expected>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
@@ -13,6 +15,7 @@
 #include <string>
 #include <string_view>
 #include <variant>
+#include <vector>
 
 namespace {
 

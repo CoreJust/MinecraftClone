@@ -3,6 +3,7 @@
 #include <gtest/gtest.h>
 
 #include <array>
+#include <string>
 #include <vector>
 
 TEST(VectorUtilsTest, AppendsRangeAndReturnsDestination) {

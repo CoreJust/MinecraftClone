@@ -1,3 +1,4 @@
+#include <shared/world/Chunk.hpp>
 #include <shared/world/ChunkMesher.hpp>
 
 #include <gtest/gtest.h>
@@ -6,6 +7,8 @@
 #include <array>
 #include <cstdint>
 #include <optional>
+#include <string>
+#include <vector>
 
 namespace {
 

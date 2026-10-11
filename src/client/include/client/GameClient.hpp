@@ -7,10 +7,12 @@
 #include <shared/net/Message.hpp>
 #include <shared/world/World.hpp>
 
+#include <core/net/Address.hpp>
 #include <core/net/Client.hpp>
 
 #include <array>
 #include <chrono>
+#include <cstdint>
 #include <deque>
 #include <functional>
 #include <memory>
@@ -85,7 +87,7 @@ protected:
     virtual void render() = 0;
     [[nodiscard]] virtual bool presentationSucceeded() const { return false; }
 
-    [[nodiscard]] bool send(shared::Message const message);
+    [[nodiscard]] bool send(shared::Message const& message);
     [[nodiscard]]
     std::optional<shared::ClientInputMessage> predictInput(
         shared::Direction direction,
@@ -149,7 +151,7 @@ private:
     [[nodiscard]] bool grantHeightTileCredit(uint64_t delivery_token, uint8_t credits);
     [[nodiscard]] bool queueHeightTileDelivery(shared::ServerHeightTileBatchMessage message);
     void rebuildPrediction();
-    void updatePredictedPresentation(std::chrono::steady_clock::time_point updated_at) noexcept;
+    void updatePredictedPresentation(std::chrono::steady_clock::time_point updated_at);
 };
 
 } // namespace client

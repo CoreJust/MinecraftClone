@@ -1,21 +1,30 @@
 #include <acceptance/RenderCapture.hpp>
 
+#include <client/Camera.hpp>
 #include <client/render/InstalledShaderAssets.hpp>
 #include <client/render/VulkanRenderer.hpp>
 
 #include <shared/world/CanonicalWorld.hpp>
 #include <shared/world/ChunkMesher.hpp>
+#include <shared/world/ScriptedWorld.hpp>
 
+#include <core/common/Version.hpp>
 #include <core/platform/glfw/GlfwWindow.hpp>
 
+#include <acceptance/EvidenceJson.hpp>
 #include <acceptance/FramebufferExtent.hpp>
 #include <acceptance/ImageEvidence.hpp>
 #include <fmt/format.h>
 
+#include <glm/vec3.hpp>
+
 #include <chrono>
+#include <compare>
 #include <cstdint>
 #include <limits>
+#include <optional>
 #include <span>
+#include <vector>
 
 namespace acceptance {
 
@@ -205,8 +214,13 @@ std::expected<RuntimeEvidence, std::string> captureRendererFrame(
     }
     return RuntimeEvidence{
         .mode = "capture-render",
+        .scenario_version = {},
+        .profile = {},
+        .scenario_name = {},
+        .failure = {},
         .ticks = rendered_frames,
         .expectations_passed = 1U,
+        .replay_id = {},
         .elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::steady_clock::now() - started_at
         ),

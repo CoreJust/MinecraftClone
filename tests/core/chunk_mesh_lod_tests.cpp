@@ -1,3 +1,5 @@
+#include <shared/world/Chunk.hpp>
+#include <shared/world/ChunkMesher.hpp>
 #include <shared/world/ChunkMeshLod.hpp>
 
 #include <gtest/gtest.h>
@@ -5,10 +7,23 @@
 #include <algorithm>
 #include <array>
 #include <cstdint>
+#include <functional>
 #include <numeric>
+#include <optional>
 #include <stdexcept>
+#include <string>
+#include <vector>
 
 namespace {
+
+template <typename Value>
+Value const& requiredValue(std::optional<Value> const& optional)
+{
+    if (optional.has_value()) {
+        return *optional;
+    }
+    throw std::runtime_error("Test expected an optional value");
+}
 
 [[nodiscard]]
 uint32_t coveredArea(shared::ChunkMeshVariant const& variant)
@@ -38,10 +53,16 @@ TEST(ChunkMeshLodTest, BuildsDeterministicVariantsWithStableBoundsAndRevision)
 
     ASSERT_TRUE(first.variant(shared::MeshDetail::Fine).has_value());
     ASSERT_TRUE(first.variant(shared::MeshDetail::Coarse).has_value());
-    EXPECT_EQ(first.variant(shared::MeshDetail::Fine)->get(), second.variant(shared::MeshDetail::Fine)->get());
-    EXPECT_EQ(first.variant(shared::MeshDetail::Coarse)->get(), second.variant(shared::MeshDetail::Coarse)->get());
-    shared::ChunkMeshVariant const& fine = first.variant(shared::MeshDetail::Fine)->get();
-    shared::ChunkMeshVariant const& repeated_fine = second.variant(shared::MeshDetail::Fine)->get();
+    EXPECT_EQ(
+        requiredValue(first.variant(shared::MeshDetail::Fine)).get(),
+        requiredValue(second.variant(shared::MeshDetail::Fine)).get()
+    );
+    EXPECT_EQ(
+        requiredValue(first.variant(shared::MeshDetail::Coarse)).get(),
+        requiredValue(second.variant(shared::MeshDetail::Coarse)).get()
+    );
+    shared::ChunkMeshVariant const& fine = requiredValue(first.variant(shared::MeshDetail::Fine)).get();
+    shared::ChunkMeshVariant const& repeated_fine = requiredValue(second.variant(shared::MeshDetail::Fine)).get();
     EXPECT_EQ(fine.content_identity, mesh.content_identity);
     EXPECT_EQ(fine.bounds, repeated_fine.bounds);
     EXPECT_EQ(fine.bounds.minimum, (std::array<uint8_t, 3>{ 0, 0, 0 }));
@@ -51,14 +72,14 @@ TEST(ChunkMeshLodTest, BuildsDeterministicVariantsWithStableBoundsAndRevision)
         shared::Chunk::SIDE_LENGTH,
     }));
     EXPECT_LE(
-        first.variant(shared::MeshDetail::Fine)->get().quads.size()
-            + first.variant(shared::MeshDetail::Coarse)->get().quads.size(),
+        requiredValue(first.variant(shared::MeshDetail::Fine)).get().quads.size()
+            + requiredValue(first.variant(shared::MeshDetail::Coarse)).get().quads.size(),
         shared::ChunkMeshLodSet::MAXIMUM_TOTAL_QUAD_COUNT
     );
 
     ASSERT_TRUE(chunk.setBlock({ .x = 0U, .y = 0U, .z = 0U }, shared::Block::Air));
     shared::ChunkMeshLodSet const revised = builder.build(mesher.update(chunk));
-    EXPECT_NE(revised.variant(shared::MeshDetail::Fine)->get().content_identity, initial_identity);
+    EXPECT_NE(requiredValue(revised.variant(shared::MeshDetail::Fine)).get().content_identity, initial_identity);
 }
 
 TEST(ChunkMeshLodTest, CoarseVariantPreservesSurfaceCoverageAndHiddenFaces)
@@ -72,8 +93,8 @@ TEST(ChunkMeshLodTest, CoarseVariantPreservesSurfaceCoverageAndHiddenFaces)
     shared::ChunkMeshLodBuilder builder;
 
     shared::ChunkMeshLodSet const set = builder.build(mesher.update(chunk));
-    shared::ChunkMeshVariant const& fine = set.variant(shared::MeshDetail::Fine)->get();
-    shared::ChunkMeshVariant const& coarse = set.variant(shared::MeshDetail::Coarse)->get();
+    shared::ChunkMeshVariant const& fine = requiredValue(set.variant(shared::MeshDetail::Fine)).get();
+    shared::ChunkMeshVariant const& coarse = requiredValue(set.variant(shared::MeshDetail::Coarse)).get();
 
     EXPECT_EQ(coveredArea(fine), 10U);
     EXPECT_EQ(coveredArea(coarse), coveredArea(fine));
@@ -95,7 +116,7 @@ TEST(ChunkMeshLodTest, CoarseVariantRetainsFaceMaterialsAndDirections)
     shared::ChunkMeshLodBuilder builder;
 
     shared::ChunkMeshLodSet const set = builder.build(mesher.update(chunk));
-    shared::ChunkMeshVariant const& coarse = set.variant(shared::MeshDetail::Coarse)->get();
+    shared::ChunkMeshVariant const& coarse = requiredValue(set.variant(shared::MeshDetail::Coarse)).get();
 
     EXPECT_EQ(coveredArea(coarse), 10U);
     EXPECT_TRUE(std::ranges::all_of(coarse.quads, [](shared::MeshQuad const& quad) {
@@ -126,7 +147,7 @@ TEST(ChunkMeshLodTest, CoarseVariantPreservesNeighborChunkSeams)
     shared::ChunkMeshLodBuilder builder;
     shared::ChunkMesh const mesh = shared::ChunkMesher{}.update(chunk, neighbors);
     shared::ChunkMeshLodSet const lod_set = builder.build(mesh);
-    shared::ChunkMeshVariant const& coarse = lod_set.variant(shared::MeshDetail::Coarse)->get();
+    shared::ChunkMeshVariant const& coarse = requiredValue(lod_set.variant(shared::MeshDetail::Coarse)).get();
 
     EXPECT_EQ(coveredArea(coarse), 5U);
     EXPECT_TRUE(std::ranges::none_of(coarse.quads, [](shared::MeshQuad const& quad) {

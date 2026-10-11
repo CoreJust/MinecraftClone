@@ -167,7 +167,7 @@ public:
     );
 
     [[nodiscard]]
-    bool retry(GenerationJobId id) noexcept;
+    bool retry(GenerationJobId id);
 
     [[nodiscard]]
     bool cancel(GenerationJobId id) noexcept;
@@ -251,7 +251,7 @@ public:
     );
 
     [[nodiscard]]
-    std::optional<GenerationJob> takeNext() noexcept;
+    std::optional<GenerationJob> takeNext();
 
     [[nodiscard]]
     std::optional<GenerationJob> peekNext() const noexcept;
@@ -271,10 +271,10 @@ public:
     bool acceptResult(GenerationJobId id);
 
     [[nodiscard]]
-    bool retry(GenerationJobId id) noexcept;
+    bool retry(GenerationJobId id);
 
     [[nodiscard]]
-    bool requestRetry(ChunkCoordinate coordinate, uint64_t revision, uint64_t seed) noexcept;
+    bool requestRetry(ChunkCoordinate coordinate, uint64_t revision, uint64_t seed);
 
     [[nodiscard]]
     bool cancel(ChunkCoordinate coordinate, uint64_t revision, uint64_t seed) noexcept;

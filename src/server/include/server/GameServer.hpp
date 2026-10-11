@@ -7,16 +7,20 @@
 #include <shared/world/World.hpp>
 #include <shared/world/WorldGeneration.hpp>
 #include <shared/world/WorldGenerationScheduler.hpp>
+#include <core/net/Event.hpp>
 #include <core/net/Server.hpp>
 
 #include <atomic>
 #include <chrono>
+#include <cstddef>
 #include <cstdint>
 #include <deque>
 #include <expected>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <span>
+#include <string>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -141,7 +145,7 @@ private:
     void onDisconnected(core::ServerDisconnectEvent const event) override;
     void onReceived(core::ServerReceiveEvent event) override;
 
-    void send(shared::Message const message);
+    void send(shared::Message message);
     void sendTo(std::optional<core::ClientId> const client_id, shared::Message message);
     void sendHeightTileTo(std::optional<core::ClientId> const client_id, shared::Message message);
     void startHeightTileStream(core::ClientId client_id);
@@ -196,6 +200,7 @@ private:
     shared::WorldGenerationCoordinator m_world_generation;
     std::shared_ptr<shared::TerrainGenerator const> m_terrain_generator;
     shared::WorldGenerationPlan m_generation_plan{
+        .refinement_extents = {},
         .chunk_stages = {shared::GenerationStage::Materialize},
     };
     shared::PolicyHost m_permission_host;

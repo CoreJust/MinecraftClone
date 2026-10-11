@@ -2,14 +2,15 @@
 
 #include <gtest/gtest.h>
 
+#include <string>
+
 namespace {
 
 struct Initializable final {
     static inline int init_count = 0;
-    static inline int destroy_count = 0;
 
     static void init() { ++init_count; }
-    static void destroy() { ++destroy_count; }
+    static void destroy() {}
 };
 
 } // namespace

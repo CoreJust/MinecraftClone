@@ -1,6 +1,10 @@
 #include <shared/world/ChunkMeshLod.hpp>
 
+#include <shared/world/Chunk.hpp>
+#include <shared/world/ChunkMesher.hpp>
+
 #include <array>
+#include <cstddef>
 #include <cstdint>
 #include <stdexcept>
 #include <utility>
@@ -21,8 +25,10 @@ struct FaceCell final {
     bool used = false;
 };
 
-using FaceGrid = std::array<FaceCell, 6U * shared::Chunk::SIDE_LENGTH
-    * shared::Chunk::SIDE_LENGTH * shared::Chunk::SIDE_LENGTH>;
+using FaceGrid = std::array<FaceCell, static_cast<size_t>(
+    uint64_t{6U} * shared::Chunk::SIDE_LENGTH
+        * shared::Chunk::SIDE_LENGTH * shared::Chunk::SIDE_LENGTH
+)>;
 
 [[nodiscard]]
 constexpr uint32_t detailIndex(shared::MeshDetail const detail) noexcept
@@ -47,7 +53,7 @@ bool faceRowMatches(
     shared::FaceDirection const direction,
     uint8_t const plane,
     uint8_t const v,
-    uint8_t const u,
+    uint8_t const u, // NOLINT(bugprone-easily-swappable-parameters) -- grid column precedes the requested run width
     uint8_t const width,
     shared::Block const material
 ) noexcept
@@ -162,10 +168,14 @@ std::optional<std::reference_wrapper<ChunkMeshVariant const>> ChunkMeshLodSet::v
 ) const noexcept
 {
     uint32_t const index = detailIndex(detail);
-    if (index >= variants.size() || !variants[index]) {
+    if (index >= variants.size()) {
         return std::nullopt;
     }
-    return std::cref(*variants[index]);
+    std::optional<ChunkMeshVariant> const& selected = variants[index];
+    if (!selected.has_value()) {
+        return std::nullopt;
+    }
+    return std::cref(*selected);
 }
 
 void ChunkMeshLodSet::remove(MeshDetail const detail) noexcept

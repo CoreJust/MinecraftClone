@@ -2,6 +2,8 @@
 
 #include <gtest/gtest.h>
 
+#include <string>
+
 struct FieldObject final {
     int value = 0;
 };

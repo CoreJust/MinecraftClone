@@ -4,6 +4,7 @@
 
 #include <cstdint>
 #include <limits>
+#include <string>
 
 namespace game_android {
 namespace {

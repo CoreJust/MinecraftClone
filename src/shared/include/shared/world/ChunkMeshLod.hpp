@@ -1,5 +1,6 @@
 #pragma once
 
+#include <shared/world/Chunk.hpp>
 #include <shared/world/ChunkMesher.hpp>
 
 #include <array>

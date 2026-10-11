@@ -91,6 +91,24 @@ class AnalysisPresetTests(unittest.TestCase):
             "$env{MC_PRIVATE_DEPENDENCIES_PREFIX}/lib/cmake/CoreProject2026",
         )
 
+    def test_iwyu_preset_uses_fail_closed_public_include_gate(self):
+        cache_variables = effective_cache_variables("analysis-iwyu")
+
+        self.assertEqual(
+            cache_variables["CMAKE_CXX_INCLUDE_WHAT_YOU_USE"],
+            "python3;${sourceDir}/script/ci/iwyu_gate.py;--;include-what-you-use;-Xiwyu;--no_fwd_decls;-Xiwyu;--error;--",
+        )
+
+    def test_cppcheck_preset_uses_fail_closed_per_translation_unit_launcher(self):
+        cache_variables = effective_cache_variables("analysis-cppcheck")
+
+        self.assertEqual(
+            cache_variables["CMAKE_CXX_COMPILER_LAUNCHER"],
+            "python3;${sourceDir}/script/ci/cppcheck_gate.py;--;cppcheck;--enable=all;--inline-suppr;--xml;--",
+        )
+        self.assertEqual(cache_variables["CMAKE_CXX_CPPCHECK"], "")
+        self.assertEqual(cache_variables["CMAKE_C_CPPCHECK"], "")
+
 
 if __name__ == "__main__":
     unittest.main()

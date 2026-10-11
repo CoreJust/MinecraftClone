@@ -40,12 +40,12 @@ private:
         HeightTileKey key,
         HeightTileRevision revision,
         uint64_t token,
-        std::array<uint16_t, shared::HEIGHT_TILE_SAMPLE_COUNT> heights
+        std::array<uint16_t, shared::HEIGHT_TILE_SAMPLE_COUNT> const& heights
     )
         : m_key(key)
         , m_revision(revision)
         , m_token(token)
-        , m_heights(std::move(heights))
+        , m_heights(heights)
     { }
 
     HeightTileKey m_key;

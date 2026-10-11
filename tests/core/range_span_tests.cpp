@@ -5,7 +5,11 @@
 #include <gtest/gtest.h>
 
 #include <array>
+#include <cstdint>
+#include <iterator>
+#include <span>
 #include <string>
+#include <string_view>
 #include <vector>
 
 TEST(RangeSpanTest, InputSpanAcceptsArrayAndSpan) {

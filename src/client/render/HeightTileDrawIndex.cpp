@@ -1,10 +1,18 @@
 #include <client/render/HeightTileDrawIndex.hpp>
 
+#include <client/render/StoneIndirectDraws.hpp>
+#include <client/render/VulkanFrustum.hpp>
+
+#include <shared/world/WorldGeneration.hpp>
+
 #include <glm/common.hpp>
+#include <glm/vec2.hpp>
+#include <glm/vec3.hpp>
 
 #include <cmath>
 #include <limits>
 #include <stdexcept>
+#include <utility>
 
 namespace client {
 

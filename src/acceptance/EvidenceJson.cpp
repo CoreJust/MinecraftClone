@@ -2,6 +2,7 @@
 
 #include <array>
 #include <charconv>
+#include <cstddef>
 #include <cstdint>
 #include <exception>
 #include <fstream>
@@ -35,8 +36,8 @@ std::string jsonString(std::string_view const value)
                 uint8_t const value = static_cast<uint8_t>(ch);
                 if (value < 0x20) {
                     result += "\\u00";
-                    result += HEX_DIGITS[value >> 4];
-                    result += HEX_DIGITS[value & 0x0f];
+                    result += HEX_DIGITS[static_cast<uint32_t>(value) >> 4U];
+                    result += HEX_DIGITS[static_cast<uint32_t>(value) & 0x0fU];
                 } else {
                     result += ch;
                 }
@@ -343,30 +344,44 @@ std::expected<void, std::string> writeEvidenceJson(
 }
 
 RuntimeEvidence collectRuntimeEvidence(
-    std::string mode,
+    // Own the input snapshot: the callback may change the caller's string.
+    std::string mode, // NOLINT(performance-unnecessary-value-param)
     std::function<std::expected<RuntimeEvidence, std::string>()> const& operation
-) noexcept
+)
 {
     try {
         auto result = operation();
         if (result.has_value()) {
             return std::move(*result);
         }
+        // Retain mode if construction of the failure evidence throws.
         return RuntimeEvidence{
-            .mode = std::move(mode),
+            .mode = mode,
+            .scenario_version = {},
+            .profile = {},
+            .scenario_name = {},
             .failure = std::move(result.error()),
+            .replay_id = {},
             .passed = false,
         };
     } catch (std::exception const& error) {
         return RuntimeEvidence{
-            .mode = std::move(mode),
+            .mode = mode,
+            .scenario_version = {},
+            .profile = {},
+            .scenario_name = {},
             .failure = error.what(),
+            .replay_id = {},
             .passed = false,
         };
     } catch (...) {
         return RuntimeEvidence{
-            .mode = std::move(mode),
+            .mode = mode,
+            .scenario_version = {},
+            .profile = {},
+            .scenario_name = {},
             .failure = "unknown renderer exception",
+            .replay_id = {},
             .passed = false,
         };
     }

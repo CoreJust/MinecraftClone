@@ -1,9 +1,12 @@
 #include <shared/world/CanonicalWorld.hpp>
 
 #include <shared/CanonicalWorldScript.hpp>
+#include <shared/world/ScriptedWorld.hpp>
 
+#include <expected>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 
 namespace shared {
 

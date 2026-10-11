@@ -1,9 +1,15 @@
+#include <core/common/Assert.hpp>
+#include <core/meta/Enum.hpp>
 #include <core/meta/EnumImpl.hpp>
 #include <core/meta/TypeName.hpp>
 
 #include <gtest/gtest.h>
 
-enum class TypeNameTestEnum {
+#include <cstdint>
+#include <string>
+#include <string_view>
+
+enum class TypeNameTestEnum : uint8_t {
     First,
     Count,
 };

@@ -1,11 +1,17 @@
+#include <client/render/VulkanRenderer.hpp>
 #include <shared/net/Message.hpp>
+#include <shared/world/WorldGeneration.hpp>
 
+#include <acceptance/EvidenceJson.hpp>
 #include <acceptance/RendererBenchmark.hpp>
 #include <gtest/gtest.h>
 
 #include <algorithm>
 #include <array>
 #include <chrono>
+#include <cstdint>
+#include <span>
+#include <string>
 #include <vector>
 
 namespace {
@@ -150,7 +156,7 @@ TEST(RendererBenchmark, RotatesStreamingAcrossBothAxesAndReturnsToStart)
     };
 
     for (uint64_t update_index = 0U;
-         update_index < 4U * acceptance::S6_RENDERER_BENCHMARK_TILE_WIDTH;
+         update_index < static_cast<uint64_t>(4U) * acceptance::S6_RENDERER_BENCHMARK_TILE_WIDTH;
          ++update_index) {
         acceptance::RendererBenchmarkStreamUpdate const update =
             acceptance::makeRendererBenchmarkStreamUpdate(center, update_index);

@@ -3,7 +3,10 @@
 #include <gtest/gtest.h>
 
 #include <array>
+#include <cstdint>
+#include <span>
 #include <string>
+#include <string_view>
 
 namespace {
 

@@ -1,6 +1,17 @@
+#include <client/Camera.hpp>
 #include <client/GameClient.hpp>
+#include <client/PlayerPresentation.hpp>
+#include <client/PreviewResidency.hpp>
 
 #include <server/GameServer.hpp>
+
+#include <shared/net/Message.hpp>
+#include <shared/world/World.hpp>
+#include <shared/world/WorldGeneration.hpp>
+
+#include <core/net/Address.hpp>
+#include <core/net/Event.hpp>
+#include <core/net/Server.hpp>
 
 #include <gtest/gtest.h>
 
@@ -8,8 +19,15 @@
 #include <array>
 #include <atomic>
 #include <chrono>
+#include <compare>
+#include <cstddef>
+#include <cstdint>
+#include <deque>
 #include <optional>
+#include <string>
 #include <thread>
+#include <unordered_map>
+#include <vector>
 
 namespace {
 
@@ -364,11 +382,13 @@ TEST(GameClientPredictionTest, PredictsImmediatelyWithoutMutatingTheAuthoritativ
     std::optional<shared::ClientInputMessage> const input = client.predictInput(RIGHT);
 
     ASSERT_TRUE(input.has_value());
-    ASSERT_TRUE(client.authoritativePlayer('@').has_value());
-    ASSERT_TRUE(client.predictedLocalPlayer().has_value());
+    auto const authoritative_player = client.authoritativePlayer('@');
+    auto const predicted_player = client.predictedLocalPlayer();
+    ASSERT_TRUE(authoritative_player.has_value());
+    ASSERT_TRUE(predicted_player.has_value());
     EXPECT_EQ(input->sequence, 1U);
-    EXPECT_EQ(client.authoritativePlayer('@')->x_subcell, 0U);
-    EXPECT_EQ(client.predictedLocalPlayer()->x_subcell, shared::MOVEMENT_SUBCELLS_PER_TICK);
+    EXPECT_EQ(authoritative_player->x_subcell, 0U);
+    EXPECT_EQ(predicted_player->x_subcell, shared::MOVEMENT_SUBCELLS_PER_TICK);
 }
 
 TEST(GameClientPredictionTest, ServerPaletteIdentityUpdatesTheReplicatedPlayer)
@@ -386,8 +406,9 @@ TEST(GameClientPredictionTest, ServerPaletteIdentityUpdatesTheReplicatedPlayer)
         .acknowledged_input_sequence = 0U,
         .state_revision = 1U,
     }));
-    ASSERT_TRUE(client.authoritativePlayer('@').has_value());
-    EXPECT_EQ(client.authoritativePlayer('@')->palette_index, 11U);
+    auto const first_authoritative_player = client.authoritativePlayer('@');
+    ASSERT_TRUE(first_authoritative_player.has_value());
+    EXPECT_EQ(first_authoritative_player->palette_index, 11U);
 
     ASSERT_TRUE(client.applyServerPosition({
         .ch = '@',
@@ -399,7 +420,9 @@ TEST(GameClientPredictionTest, ServerPaletteIdentityUpdatesTheReplicatedPlayer)
         .acknowledged_input_sequence = 0U,
         .state_revision = 2U,
     }));
-    EXPECT_EQ(client.authoritativePlayer('@')->palette_index, 4U);
+    auto const second_authoritative_player = client.authoritativePlayer('@');
+    ASSERT_TRUE(second_authoritative_player.has_value());
+    EXPECT_EQ(second_authoritative_player->palette_index, 4U);
 }
 
 TEST(GameClientPredictionTest, ReconnectResetDropsOldPlayersAndTerrainEpoch)
@@ -469,6 +492,7 @@ TEST(GameClientPredictionTest, HeightTileBatchDispatchesEveryTile)
                 .token = 5U,
             },
         },
+        .removals = {},
     });
 
     EXPECT_NE(client.heightTileResidency().resident(FIRST_KEY), nullptr);
@@ -480,7 +504,7 @@ TEST(GameClientPredictionTest, HeightTileResidencyEvictsWithinItsBoundedHysteres
     static constexpr client::HeightTileRevision REVISION{ .generation = 1U, .revision = 1U };
     static constexpr client::PreviewResidencyLimits LIMITS{
         .max_resident_tiles = 2U,
-        .max_resident_bytes = 2U * shared::HEIGHT_TILE_PAYLOAD_BYTES,
+        .max_resident_bytes = static_cast<uint64_t>(2U) * shared::HEIGHT_TILE_PAYLOAD_BYTES,
     };
     static constexpr shared::HeightTileKey FIRST_KEY{ .x = 1, .y = 1 };
     static constexpr shared::HeightTileKey SECOND_KEY{ .x = 2, .y = 1 };
@@ -520,12 +544,14 @@ TEST(GameClientPredictionTest, FlightPredictionAndAcknowledgementReconcileAllThr
     std::optional<shared::ClientInputMessage> const input = client.predictInput(ASCEND, STARTED_AT);
 
     ASSERT_TRUE(input.has_value());
-    ASSERT_TRUE(client.authoritativePlayer('@').has_value());
-    ASSERT_TRUE(client.predictedLocalPlayer().has_value());
-    EXPECT_EQ(client.authoritativePlayer('@')->z, 12);
-    EXPECT_EQ(client.authoritativePlayer('@')->z_subcell, 0U);
-    EXPECT_EQ(client.predictedLocalPlayer()->z, 12);
-    EXPECT_EQ(client.predictedLocalPlayer()->z_subcell, shared::MOVEMENT_SUBCELLS_PER_TICK);
+    auto const authoritative_player = client.authoritativePlayer('@');
+    auto const predicted_player = client.predictedLocalPlayer();
+    ASSERT_TRUE(authoritative_player.has_value());
+    ASSERT_TRUE(predicted_player.has_value());
+    EXPECT_EQ(authoritative_player->z, 12);
+    EXPECT_EQ(authoritative_player->z_subcell, 0U);
+    EXPECT_EQ(predicted_player->z, 12);
+    EXPECT_EQ(predicted_player->z_subcell, shared::MOVEMENT_SUBCELLS_PER_TICK);
 
     ASSERT_TRUE(client.applyServerPosition(
         flightPosition(
@@ -546,9 +572,12 @@ TEST(GameClientPredictionTest, FlightPredictionAndAcknowledgementReconcileAllThr
     EXPECT_EQ(client.predictedLocalPlayer()->y, 8);
     EXPECT_EQ(client.predictedLocalPlayer()->z, 12);
     EXPECT_EQ(client.predictedLocalPlayer()->z_subcell, shared::MOVEMENT_SUBCELLS_PER_TICK);
-    ASSERT_TRUE(client.predictedLocalPresentation(STARTED_AT + std::chrono::milliseconds{ 150 }).has_value());
+    auto const predicted_presentation = client.predictedLocalPresentation(
+        STARTED_AT + std::chrono::milliseconds{ 150 }
+    );
+    ASSERT_TRUE(predicted_presentation.has_value());
     EXPECT_DOUBLE_EQ(
-        client.predictedLocalPresentation(STARTED_AT + std::chrono::milliseconds{ 150 })->z,
+        predicted_presentation->z,
         12.0 + static_cast<double>(shared::MOVEMENT_SUBCELLS_PER_TICK)
             / static_cast<double>(shared::SUBCELLS_PER_CELL)
     );
@@ -558,7 +587,7 @@ TEST(GameClientPredictionTest, DelayedCollisionJumpAcknowledgementDoesNotCreateV
 {
     static constexpr int32_t X = 100;
     static constexpr int32_t Y = 100;
-    static constexpr shared::Direction JUMP{ .z = 127U };
+    static constexpr shared::Direction JUMP{ .x = 0U, .y = 0U, .z = 127U };
     std::chrono::steady_clock::time_point const started_at{};
     shared::TerrainGenerator const terrain;
     uint16_t const surface = terrain.heightAt(X, Y);
@@ -585,14 +614,16 @@ TEST(GameClientPredictionTest, DelayedCollisionJumpAcknowledgementDoesNotCreateV
         ),
         started_at + std::chrono::milliseconds{ 110 }
     ));
-    ASSERT_TRUE(client.authoritativePlayer('@').has_value());
-    EXPECT_EQ(client.authoritativePlayer('@')->vertical_velocity_subcells, 5'250);
+    auto const authoritative_player = client.authoritativePlayer('@');
+    ASSERT_TRUE(authoritative_player.has_value());
+    EXPECT_EQ(authoritative_player->vertical_velocity_subcells, 5'250);
 
-    ASSERT_TRUE(client.predictedLocalPresentation(
+    auto const predicted_presentation = client.predictedLocalPresentation(
         started_at + std::chrono::milliseconds{ 160 }
-    ).has_value());
+    );
+    ASSERT_TRUE(predicted_presentation.has_value());
     EXPECT_LT(
-        client.predictedLocalPresentation(started_at + std::chrono::milliseconds{ 160 })->z,
+        predicted_presentation->z,
         static_cast<double>(surface) + 1.3
     );
 }
@@ -641,44 +672,62 @@ TEST(GameClientPredictionTest, PredictedLocalPresentationInterpolatesFrameSample
     ASSERT_TRUE(sampled_each_frame.predictInput(RIGHT, STARTED_AT).has_value());
     ASSERT_TRUE(sampled_once.predictInput(RIGHT, STARTED_AT).has_value());
 
-    ASSERT_TRUE(sampled_each_frame.predictedLocalPresentation(STARTED_AT + std::chrono::milliseconds{ 25 }).has_value());
-    ASSERT_TRUE(sampled_each_frame.predictedLocalPresentation(STARTED_AT + std::chrono::milliseconds{ 50 }).has_value());
-    ASSERT_TRUE(sampled_each_frame.predictedLocalPresentation(STARTED_AT + std::chrono::milliseconds{ 75 }).has_value());
+    auto const sample_25 = sampled_each_frame.predictedLocalPresentation(
+        STARTED_AT + std::chrono::milliseconds{ 25 }
+    );
+    auto const sample_50 = sampled_each_frame.predictedLocalPresentation(
+        STARTED_AT + std::chrono::milliseconds{ 50 }
+    );
+    auto const sample_75 = sampled_each_frame.predictedLocalPresentation(
+        STARTED_AT + std::chrono::milliseconds{ 75 }
+    );
+    ASSERT_TRUE(sample_25.has_value());
+    ASSERT_TRUE(sample_50.has_value());
+    ASSERT_TRUE(sample_75.has_value());
     EXPECT_DOUBLE_EQ(
-        sampled_each_frame.predictedLocalPresentation(STARTED_AT + std::chrono::milliseconds{ 25 })->x,
+        sample_25->x,
         STEP * 0.25
     );
     EXPECT_DOUBLE_EQ(
-        sampled_each_frame.predictedLocalPresentation(STARTED_AT + std::chrono::milliseconds{ 50 })->x,
+        sample_50->x,
         STEP * 0.5
     );
     EXPECT_DOUBLE_EQ(
-        sampled_each_frame.predictedLocalPresentation(STARTED_AT + std::chrono::milliseconds{ 75 })->x,
+        sample_75->x,
         STEP * 0.75
     );
-    ASSERT_TRUE(sampled_once.predictedLocalPresentation(STARTED_AT + std::chrono::milliseconds{ 75 }).has_value());
+    auto const once_sample = sampled_once.predictedLocalPresentation(
+        STARTED_AT + std::chrono::milliseconds{ 75 }
+    );
+    ASSERT_TRUE(once_sample.has_value());
     EXPECT_DOUBLE_EQ(
-        sampled_each_frame.predictedLocalPresentation(STARTED_AT + std::chrono::milliseconds{ 75 })->x,
-        sampled_once.predictedLocalPresentation(STARTED_AT + std::chrono::milliseconds{ 75 })->x
+        sample_75->x,
+        once_sample->x
     );
 
     ASSERT_TRUE(sampled_each_frame.applyServerPosition(
         position('@', 0U, shared::MOVEMENT_SUBCELLS_PER_TICK, 1U, 2U),
         STARTED_AT + std::chrono::milliseconds{ 50 }
     ));
-    ASSERT_TRUE(sampled_each_frame.predictedLocalPresentation(STARTED_AT + std::chrono::milliseconds{ 75 }).has_value());
+    auto const reconciled_sample_75 = sampled_each_frame.predictedLocalPresentation(
+        STARTED_AT + std::chrono::milliseconds{ 75 }
+    );
+    ASSERT_TRUE(reconciled_sample_75.has_value());
     EXPECT_DOUBLE_EQ(
-        sampled_each_frame.predictedLocalPresentation(STARTED_AT + std::chrono::milliseconds{ 75 })->x,
+        reconciled_sample_75->x,
         STEP * 0.75
     );
-    ASSERT_TRUE(sampled_each_frame.predictedLocalPresentation(STARTED_AT + std::chrono::milliseconds{ 200 }).has_value());
+    auto const sample_200 = sampled_each_frame.predictedLocalPresentation(
+        STARTED_AT + std::chrono::milliseconds{ 200 }
+    );
+    ASSERT_TRUE(sample_200.has_value());
     EXPECT_DOUBLE_EQ(
-        sampled_each_frame.predictedLocalPresentation(STARTED_AT + std::chrono::milliseconds{ 200 })->x,
+        sample_200->x,
         STEP
     );
 
     client::CameraPose const frame_camera = client::localPlayerThirdPersonPose(
-        *sampled_each_frame.predictedLocalPresentation(STARTED_AT + std::chrono::milliseconds{ 75 }),
+        *reconciled_sample_75,
         { }
     );
     EXPECT_DOUBLE_EQ(frame_camera.position.x, 0.3125 + STEP * 0.75);
@@ -736,8 +785,9 @@ TEST(GameClientPredictionTest, RejectsStaleRemoteStatesAndAllowsRevisionWrapAfte
     ASSERT_TRUE(client.applyServerPosition(position('#', 2U, 0U, 0U, 5U)));
     EXPECT_FALSE(client.applyServerPosition(position('#', 10U, 0U, 0U, 5U)));
     EXPECT_FALSE(client.applyServerPosition(position('#', 10U, 0U, 0U, 4U)));
-    ASSERT_TRUE(client.authoritativePlayer('#').has_value());
-    EXPECT_EQ(client.authoritativePlayer('#')->x, 2U);
+    auto const stale_authoritative_player = client.authoritativePlayer('#');
+    ASSERT_TRUE(stale_authoritative_player.has_value());
+    EXPECT_EQ(stale_authoritative_player->x, 2U);
 
     client.applyServerRemoval('#');
     EXPECT_FALSE(client.authoritativePlayer('#').has_value());
@@ -746,8 +796,9 @@ TEST(GameClientPredictionTest, RejectsStaleRemoteStatesAndAllowsRevisionWrapAfte
     EXPECT_TRUE(client.applyServerPosition(position('#', 10U, 0U, 0U, UINT32_MAX - 1U)));
     EXPECT_TRUE(client.applyServerPosition(position('#', 11U, 0U, 0U, UINT32_MAX)));
     EXPECT_TRUE(client.applyServerPosition(position('#', 12U, 0U, 0U, 0U)));
-    ASSERT_TRUE(client.authoritativePlayer('#').has_value());
-    EXPECT_EQ(client.authoritativePlayer('#')->x, 12U);
+    auto const wrapped_authoritative_player = client.authoritativePlayer('#');
+    ASSERT_TRUE(wrapped_authoritative_player.has_value());
+    EXPECT_EQ(wrapped_authoritative_player->x, 12U);
 }
 
 TEST(GameClientPredictionTest, ReconcilesThreeProductionCadenceClientsOverRealTransport)

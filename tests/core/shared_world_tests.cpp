@@ -3,15 +3,36 @@
 #include <gtest/gtest.h>
 
 #include <array>
+#include <chrono>
+#include <cmath>
+#include <cstdint>
 #include <cstdlib>
+#include <optional>
+#include <stdexcept>
+#include <string>
+#include <utility>
+#include <vector>
+
+namespace {
+
+template <typename Value>
+Value const& requiredValue(std::optional<Value> const& optional)
+{
+    if (optional.has_value()) {
+        return *optional;
+    }
+    throw std::runtime_error("Test expected an optional value");
+}
+
+} // namespace
 
 TEST(WorldTest, ExplicitSpawnAndLookup) {
     shared::World world;
     world.spawnPlayer(1, '@', std::pair<uint8_t, uint8_t>{ 3, 4 });
     auto const player = world.player(1);
     ASSERT_TRUE(player.has_value());
-    EXPECT_EQ(player->x, 3u);
-    EXPECT_EQ(player->y, 4u);
+    EXPECT_EQ(requiredValue(player).x, 3u);
+    EXPECT_EQ(requiredValue(player).y, 4u);
     EXPECT_TRUE(world.playerExists('@'));
     EXPECT_TRUE(world.playerByCharacter('@').has_value());
 }
@@ -22,19 +43,19 @@ TEST(WorldTest, MovePlayerRejectsUnknownAndOccupiedPositions) {
     world.spawnPlayer(2, '#', std::pair<uint8_t, uint8_t>{ 7, 5 });
     EXPECT_FALSE(world.movePlayer(99, { 1, 0 }));
     EXPECT_FALSE(world.movePlayer(1, { 127, 0 }));
-    EXPECT_EQ(world.player(1)->x, 5u);
-    EXPECT_EQ(world.player(1)->x_subcell, 0u);
+    EXPECT_EQ(requiredValue(world.player(1)).x, 5u);
+    EXPECT_EQ(requiredValue(world.player(1)).x_subcell, 0u);
 }
 
 TEST(WorldTest, BorderCellsAreValidAndCollisionChecksDoNotUnderflow) {
     shared::World world;
     world.spawnPlayer(1, '@', std::pair<uint8_t, uint8_t>{ 0, 0 });
     EXPECT_TRUE(world.movePlayer(1, { 127, 0 }));
-    EXPECT_EQ(world.player(1)->x, 0u);
-    EXPECT_EQ(world.player(1)->x_subcell, shared::MOVEMENT_SUBCELLS_PER_TICK);
+    EXPECT_EQ(requiredValue(world.player(1)).x, 0u);
+    EXPECT_EQ(requiredValue(world.player(1)).x_subcell, shared::MOVEMENT_SUBCELLS_PER_TICK);
     EXPECT_TRUE(world.movePlayer(1, { static_cast<uint8_t>(-127), 0 }));
-    EXPECT_EQ(world.player(1)->x, 0u);
-    EXPECT_EQ(world.player(1)->x_subcell, 0u);
+    EXPECT_EQ(requiredValue(world.player(1)).x, 0u);
+    EXPECT_EQ(requiredValue(world.player(1)).x_subcell, 0u);
     EXPECT_FALSE(world.movePlayer(1, { static_cast<uint8_t>(-127), 0 }));
 }
 
@@ -49,8 +70,8 @@ TEST(WorldTest, LastFootprintOriginCellIsValid) {
         }
     );
     ASSERT_TRUE(world.player(1).has_value());
-    EXPECT_EQ(world.player(1)->x, shared::World::MAX_PLAYER_ORIGIN_CELL);
-    EXPECT_EQ(world.player(1)->y, shared::World::MAX_PLAYER_ORIGIN_CELL);
+    EXPECT_EQ(requiredValue(world.player(1)).x, shared::World::MAX_PLAYER_ORIGIN_CELL);
+    EXPECT_EQ(requiredValue(world.player(1)).y, shared::World::MAX_PLAYER_ORIGIN_CELL);
 }
 
 TEST(WorldTest, RandomSpawnsStayWithinTheWorld) {
@@ -58,14 +79,14 @@ TEST(WorldTest, RandomSpawnsStayWithinTheWorld) {
     for (shared::PlayerId id = 0; id < 8; ++id) {
         world.spawnPlayer(id, static_cast<char>('@' + id));
         ASSERT_TRUE(world.player(id).has_value());
-        EXPECT_LE(world.player(id)->x, shared::World::MAX_PLAYER_ORIGIN_CELL);
-        EXPECT_LE(world.player(id)->y, shared::World::MAX_PLAYER_ORIGIN_CELL);
+        EXPECT_LE(requiredValue(world.player(id)).x, shared::World::MAX_PLAYER_ORIGIN_CELL);
+        EXPECT_LE(requiredValue(world.player(id)).y, shared::World::MAX_PLAYER_ORIGIN_CELL);
         auto const spawned = world.player(id);
         for (auto const& other : world.players()) {
             if (other.id != id) {
                 EXPECT_TRUE(
-                    std::abs(static_cast<int32_t>(spawned->x) - other.x) > 1
-                    || std::abs(static_cast<int32_t>(spawned->y) - other.y) > 1
+                    std::abs(static_cast<int32_t>(requiredValue(spawned).x) - other.x) > 1
+                    || std::abs(static_cast<int32_t>(requiredValue(spawned).y) - other.y) > 1
                 );
             }
         }
@@ -85,22 +106,22 @@ TEST(WorldTest, FootprintMovementStopsAtTheLastValidOrigin) {
     ASSERT_TRUE(horizontal.setPlayerPosition(1, LAST_INTERIOR_CELL, 4, CARDINAL_START_SUBCELL, 0));
     ASSERT_TRUE(horizontal.movePlayer(1, { POSITIVE_DIRECTION, 0 }));
     ASSERT_TRUE(horizontal.player(1).has_value());
-    EXPECT_EQ(horizontal.player(1)->x, shared::World::MAX_PLAYER_ORIGIN_CELL);
-    EXPECT_EQ(horizontal.player(1)->x_subcell, 0U);
+    EXPECT_EQ(requiredValue(horizontal.player(1)).x, shared::World::MAX_PLAYER_ORIGIN_CELL);
+    EXPECT_EQ(requiredValue(horizontal.player(1)).x_subcell, 0U);
     EXPECT_FALSE(horizontal.movePlayer(1, { POSITIVE_DIRECTION, 0 }));
-    EXPECT_EQ(horizontal.player(1)->x, shared::World::MAX_PLAYER_ORIGIN_CELL);
-    EXPECT_EQ(horizontal.player(1)->x_subcell, 0U);
+    EXPECT_EQ(requiredValue(horizontal.player(1)).x, shared::World::MAX_PLAYER_ORIGIN_CELL);
+    EXPECT_EQ(requiredValue(horizontal.player(1)).x_subcell, 0U);
 
     shared::World vertical;
     vertical.spawnPlayer(1, '@', std::pair<uint8_t, uint8_t>{ 4, LAST_INTERIOR_CELL });
     ASSERT_TRUE(vertical.setPlayerPosition(1, 4, LAST_INTERIOR_CELL, 0, CARDINAL_START_SUBCELL));
     ASSERT_TRUE(vertical.movePlayer(1, { 0, POSITIVE_DIRECTION }));
     ASSERT_TRUE(vertical.player(1).has_value());
-    EXPECT_EQ(vertical.player(1)->y, shared::World::MAX_PLAYER_ORIGIN_CELL);
-    EXPECT_EQ(vertical.player(1)->y_subcell, 0U);
+    EXPECT_EQ(requiredValue(vertical.player(1)).y, shared::World::MAX_PLAYER_ORIGIN_CELL);
+    EXPECT_EQ(requiredValue(vertical.player(1)).y_subcell, 0U);
     EXPECT_FALSE(vertical.movePlayer(1, { 0, POSITIVE_DIRECTION }));
-    EXPECT_EQ(vertical.player(1)->y, shared::World::MAX_PLAYER_ORIGIN_CELL);
-    EXPECT_EQ(vertical.player(1)->y_subcell, 0U);
+    EXPECT_EQ(requiredValue(vertical.player(1)).y, shared::World::MAX_PLAYER_ORIGIN_CELL);
+    EXPECT_EQ(requiredValue(vertical.player(1)).y_subcell, 0U);
 
     shared::World diagonal;
     diagonal.spawnPlayer(1, '@', std::pair<uint8_t, uint8_t>{ LAST_INTERIOR_CELL, LAST_INTERIOR_CELL });
@@ -113,15 +134,15 @@ TEST(WorldTest, FootprintMovementStopsAtTheLastValidOrigin) {
     ));
     ASSERT_TRUE(diagonal.movePlayer(1, { POSITIVE_DIRECTION, POSITIVE_DIRECTION }));
     ASSERT_TRUE(diagonal.player(1).has_value());
-    EXPECT_EQ(diagonal.player(1)->x, shared::World::MAX_PLAYER_ORIGIN_CELL);
-    EXPECT_EQ(diagonal.player(1)->y, shared::World::MAX_PLAYER_ORIGIN_CELL);
-    EXPECT_EQ(diagonal.player(1)->x_subcell, 0U);
-    EXPECT_EQ(diagonal.player(1)->y_subcell, 0U);
+    EXPECT_EQ(requiredValue(diagonal.player(1)).x, shared::World::MAX_PLAYER_ORIGIN_CELL);
+    EXPECT_EQ(requiredValue(diagonal.player(1)).y, shared::World::MAX_PLAYER_ORIGIN_CELL);
+    EXPECT_EQ(requiredValue(diagonal.player(1)).x_subcell, 0U);
+    EXPECT_EQ(requiredValue(diagonal.player(1)).y_subcell, 0U);
     EXPECT_FALSE(diagonal.movePlayer(1, { POSITIVE_DIRECTION, POSITIVE_DIRECTION }));
-    EXPECT_EQ(diagonal.player(1)->x, shared::World::MAX_PLAYER_ORIGIN_CELL);
-    EXPECT_EQ(diagonal.player(1)->y, shared::World::MAX_PLAYER_ORIGIN_CELL);
-    EXPECT_EQ(diagonal.player(1)->x_subcell, 0U);
-    EXPECT_EQ(diagonal.player(1)->y_subcell, 0U);
+    EXPECT_EQ(requiredValue(diagonal.player(1)).x, shared::World::MAX_PLAYER_ORIGIN_CELL);
+    EXPECT_EQ(requiredValue(diagonal.player(1)).y, shared::World::MAX_PLAYER_ORIGIN_CELL);
+    EXPECT_EQ(requiredValue(diagonal.player(1)).x_subcell, 0U);
+    EXPECT_EQ(requiredValue(diagonal.player(1)).y_subcell, 0U);
 }
 
 TEST(WorldTest, CornerPlayersBlockAdjacentAxesAndSlideDiagonalApproach) {
@@ -157,8 +178,8 @@ TEST(WorldTest, CornerPlayersBlockAdjacentAxesAndSlideDiagonalApproach) {
             static_cast<uint8_t>(static_cast<int8_t>(toward_y) * 127),
         }));
         ASSERT_TRUE(world.player(2).has_value());
-        EXPECT_EQ(world.player(2)->y, inside_y);
-        EXPECT_EQ(world.player(2)->y_subcell, 0U);
+        EXPECT_EQ(requiredValue(world.player(2)).y, inside_y);
+        EXPECT_EQ(requiredValue(world.player(2)).y_subcell, 0U);
     }
 }
 
@@ -166,8 +187,8 @@ TEST(WorldTest, ZeroDirectionDoesNotMovePlayer) {
     shared::World world;
     world.spawnPlayer(1, '@', std::pair<uint8_t, uint8_t>{ 5, 5 });
     EXPECT_TRUE(world.movePlayer(1, { 0, 0 }));
-    EXPECT_EQ(world.player(1)->x, 5u);
-    EXPECT_EQ(world.player(1)->y, 5u);
+    EXPECT_EQ(requiredValue(world.player(1)).x, 5u);
+    EXPECT_EQ(requiredValue(world.player(1)).y, 5u);
 }
 
 TEST(WorldTest, SubstepsAccumulateAndDiagonalSpeedIsNormalized) {
@@ -181,11 +202,11 @@ TEST(WorldTest, SubstepsAccumulateAndDiagonalSpeedIsNormalized) {
     ASSERT_TRUE(diagonal.movePlayer(1, { 127, 127 }));
     ASSERT_TRUE(cardinal.player(1).has_value());
     ASSERT_TRUE(diagonal.player(1).has_value());
-    EXPECT_EQ(cardinal.player(1)->x_subcell, shared::MOVEMENT_SUBCELLS_PER_TICK);
-    EXPECT_EQ(cardinal.player(1)->y_subcell, 0u);
-    uint32_t const diagonal_distance_squared = static_cast<uint32_t>(diagonal.player(1)->x_subcell)
-        * diagonal.player(1)->x_subcell + static_cast<uint32_t>(diagonal.player(1)->y_subcell)
-        * diagonal.player(1)->y_subcell;
+    EXPECT_EQ(requiredValue(cardinal.player(1)).x_subcell, shared::MOVEMENT_SUBCELLS_PER_TICK);
+    EXPECT_EQ(requiredValue(cardinal.player(1)).y_subcell, 0u);
+    uint32_t const diagonal_distance_squared = static_cast<uint32_t>(requiredValue(diagonal.player(1)).x_subcell)
+        * requiredValue(diagonal.player(1)).x_subcell + static_cast<uint32_t>(requiredValue(diagonal.player(1)).y_subcell)
+        * requiredValue(diagonal.player(1)).y_subcell;
     EXPECT_LE(diagonal_distance_squared, static_cast<uint32_t>(shared::MOVEMENT_SUBCELLS_PER_TICK)
         * shared::MOVEMENT_SUBCELLS_PER_TICK);
 }
@@ -196,8 +217,8 @@ TEST(WorldTest, FullTickMovesAtTheConfiguredSpeedAndRejectsAnOccupiedEndpoint) {
 
     ASSERT_TRUE(moving_world.movePlayer(1U, { 127U, 0U }));
     ASSERT_TRUE(moving_world.player(1U).has_value());
-    EXPECT_EQ(moving_world.player(1U)->x, 5U);
-    EXPECT_EQ(moving_world.player(1U)->x_subcell, shared::MOVEMENT_SUBCELLS_PER_TICK);
+    EXPECT_EQ(requiredValue(moving_world.player(1U)).x, 5U);
+    EXPECT_EQ(requiredValue(moving_world.player(1U)).x_subcell, shared::MOVEMENT_SUBCELLS_PER_TICK);
 
     shared::World blocked_world;
     blocked_world.spawnPlayer(1U, '@', std::pair<uint8_t, uint8_t>{ 5U, 5U });
@@ -205,8 +226,8 @@ TEST(WorldTest, FullTickMovesAtTheConfiguredSpeedAndRejectsAnOccupiedEndpoint) {
 
     EXPECT_FALSE(blocked_world.movePlayer(1U, { 127U, 0U }));
     ASSERT_TRUE(blocked_world.player(1U).has_value());
-    EXPECT_EQ(blocked_world.player(1U)->x, 5U);
-    EXPECT_EQ(blocked_world.player(1U)->x_subcell, 0U);
+    EXPECT_EQ(requiredValue(blocked_world.player(1U)).x, 5U);
+    EXPECT_EQ(requiredValue(blocked_world.player(1U)).x_subcell, 0U);
 }
 
 TEST(WorldTest, SubcellCollisionRejectsOverlapBeforeEitherPlayerChangesCells) {
@@ -218,8 +239,8 @@ TEST(WorldTest, SubcellCollisionRejectsOverlapBeforeEitherPlayerChangesCells) {
 
     EXPECT_FALSE(world.movePlayer(1, { 127, 0 }));
     ASSERT_TRUE(world.player(1).has_value());
-    EXPECT_EQ(world.player(1)->x, 5U);
-    EXPECT_EQ(world.player(1)->x_subcell, 5'000U);
+    EXPECT_EQ(requiredValue(world.player(1)).x, 5U);
+    EXPECT_EQ(requiredValue(world.player(1)).x_subcell, 5'000U);
 }
 
 TEST(WorldTest, DiagonalCornerResolvesXBeforeY) {
@@ -231,8 +252,8 @@ TEST(WorldTest, DiagonalCornerResolvesXBeforeY) {
 
     EXPECT_TRUE(world.movePlayer(1, { 127, 127 }));
     ASSERT_TRUE(world.player(1).has_value());
-    EXPECT_EQ(world.player(1)->x_subcell, DIAGONAL_STEP);
-    EXPECT_EQ(world.player(1)->y_subcell, 0U);
+    EXPECT_EQ(requiredValue(world.player(1)).x_subcell, DIAGONAL_STEP);
+    EXPECT_EQ(requiredValue(world.player(1)).y_subcell, 0U);
 }
 
 TEST(WorldTest, HorizontalAndVerticalGlancingCollisionsSlideWithoutSpeedGain) {
@@ -244,8 +265,8 @@ TEST(WorldTest, HorizontalAndVerticalGlancingCollisionsSlideWithoutSpeedGain) {
 
     EXPECT_TRUE(horizontal_blocker.movePlayer(1, { 127, 127 }));
     ASSERT_TRUE(horizontal_blocker.player(1).has_value());
-    EXPECT_EQ(horizontal_blocker.player(1)->x_subcell, 0U);
-    EXPECT_EQ(horizontal_blocker.player(1)->y_subcell, DIAGONAL_STEP);
+    EXPECT_EQ(requiredValue(horizontal_blocker.player(1)).x_subcell, 0U);
+    EXPECT_EQ(requiredValue(horizontal_blocker.player(1)).y_subcell, DIAGONAL_STEP);
 
     shared::World vertical_blocker;
     vertical_blocker.spawnPlayer(1, '@', std::pair<uint8_t, uint8_t>{ 5, 5 });
@@ -253,8 +274,8 @@ TEST(WorldTest, HorizontalAndVerticalGlancingCollisionsSlideWithoutSpeedGain) {
 
     EXPECT_TRUE(vertical_blocker.movePlayer(1, { 127, 127 }));
     ASSERT_TRUE(vertical_blocker.player(1).has_value());
-    EXPECT_EQ(vertical_blocker.player(1)->x_subcell, DIAGONAL_STEP);
-    EXPECT_EQ(vertical_blocker.player(1)->y_subcell, 0U);
+    EXPECT_EQ(requiredValue(vertical_blocker.player(1)).x_subcell, DIAGONAL_STEP);
+    EXPECT_EQ(requiredValue(vertical_blocker.player(1)).y_subcell, 0U);
 }
 
 TEST(WorldTest, BlockedStraightMoveCanMoveAway) {
@@ -264,11 +285,11 @@ TEST(WorldTest, BlockedStraightMoveCanMoveAway) {
 
     EXPECT_FALSE(world.movePlayer(1, { 127, 0 }));
     ASSERT_TRUE(world.player(1).has_value());
-    EXPECT_EQ(world.player(1)->x_subcell, 0U);
+    EXPECT_EQ(requiredValue(world.player(1)).x_subcell, 0U);
     EXPECT_TRUE(world.movePlayer(1, { static_cast<uint8_t>(-127), 0 }));
-    EXPECT_EQ(world.player(1)->x, 4U);
+    EXPECT_EQ(requiredValue(world.player(1)).x, 4U);
     EXPECT_EQ(
-        world.player(1)->x_subcell,
+        requiredValue(world.player(1)).x_subcell,
         shared::SUBCELLS_PER_CELL - shared::MOVEMENT_SUBCELLS_PER_TICK
     );
 }
@@ -281,8 +302,8 @@ TEST(WorldTest, DiagonalMoveStopsWhenBothAxesAreBlocked) {
 
     EXPECT_FALSE(world.movePlayer(1, { 127, 127 }));
     ASSERT_TRUE(world.player(1).has_value());
-    EXPECT_EQ(world.player(1)->x_subcell, 0U);
-    EXPECT_EQ(world.player(1)->y_subcell, 0U);
+    EXPECT_EQ(requiredValue(world.player(1)).x_subcell, 0U);
+    EXPECT_EQ(requiredValue(world.player(1)).y_subcell, 0U);
 }
 
 TEST(WorldTest, HighAndLowPlatformEdgesAllowTangentialSlide) {
@@ -296,17 +317,17 @@ TEST(WorldTest, HighAndLowPlatformEdgesAllowTangentialSlide) {
     );
     EXPECT_TRUE(high_edge.movePlayer(1, { 127, 127 }));
     ASSERT_TRUE(high_edge.player(1).has_value());
-    EXPECT_EQ(high_edge.player(1)->x, shared::World::MAX_PLAYER_ORIGIN_CELL);
-    EXPECT_EQ(high_edge.player(1)->x_subcell, 0U);
-    EXPECT_EQ(high_edge.player(1)->y_subcell, DIAGONAL_STEP);
+    EXPECT_EQ(requiredValue(high_edge.player(1)).x, shared::World::MAX_PLAYER_ORIGIN_CELL);
+    EXPECT_EQ(requiredValue(high_edge.player(1)).x_subcell, 0U);
+    EXPECT_EQ(requiredValue(high_edge.player(1)).y_subcell, DIAGONAL_STEP);
 
     shared::World low_edge;
     low_edge.spawnPlayer(1, '@', std::pair<uint8_t, uint8_t>{ 5, 0 });
     EXPECT_TRUE(low_edge.movePlayer(1, { 127, static_cast<uint8_t>(-127) }));
     ASSERT_TRUE(low_edge.player(1).has_value());
-    EXPECT_EQ(low_edge.player(1)->x_subcell, DIAGONAL_STEP);
-    EXPECT_EQ(low_edge.player(1)->y, 0U);
-    EXPECT_EQ(low_edge.player(1)->y_subcell, 0U);
+    EXPECT_EQ(requiredValue(low_edge.player(1)).x_subcell, DIAGONAL_STEP);
+    EXPECT_EQ(requiredValue(low_edge.player(1)).y, 0U);
+    EXPECT_EQ(requiredValue(low_edge.player(1)).y_subcell, 0U);
 }
 
 TEST(WorldTest, MaxCornerStopsDiagonalMovement) {
@@ -322,10 +343,10 @@ TEST(WorldTest, MaxCornerStopsDiagonalMovement) {
 
     EXPECT_FALSE(world.movePlayer(1, { 127, 127 }));
     ASSERT_TRUE(world.player(1).has_value());
-    EXPECT_EQ(world.player(1)->x, shared::World::MAX_PLAYER_ORIGIN_CELL);
-    EXPECT_EQ(world.player(1)->y, shared::World::MAX_PLAYER_ORIGIN_CELL);
-    EXPECT_EQ(world.player(1)->x_subcell, 0U);
-    EXPECT_EQ(world.player(1)->y_subcell, 0U);
+    EXPECT_EQ(requiredValue(world.player(1)).x, shared::World::MAX_PLAYER_ORIGIN_CELL);
+    EXPECT_EQ(requiredValue(world.player(1)).y, shared::World::MAX_PLAYER_ORIGIN_CELL);
+    EXPECT_EQ(requiredValue(world.player(1)).x_subcell, 0U);
+    EXPECT_EQ(requiredValue(world.player(1)).y_subcell, 0U);
 }
 
 TEST(WorldTest, DespawnRemovesOnlyRequestedPlayer) {

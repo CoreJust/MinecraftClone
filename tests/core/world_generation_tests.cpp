@@ -1,12 +1,30 @@
+#include <shared/world/Chunk.hpp>
 #include <shared/world/WorldGeneration.hpp>
+#include <shared/world/WorldGenerationScheduler.hpp>
 
 #include <gtest/gtest.h>
 
 #include <algorithm>
 #include <array>
 #include <cstdint>
+#include <optional>
 #include <stdexcept>
+#include <string>
 #include <string_view>
+#include <vector>
+
+namespace {
+
+template <typename Value>
+Value const& requiredValue(std::optional<Value> const& optional)
+{
+    if (optional.has_value()) {
+        return *optional;
+    }
+    throw std::runtime_error("Test expected an optional value");
+}
+
+} // namespace
 
 static constexpr std::string_view LEGACY_WORLD_SCRIPT = R"corelang(
 @version("0.1.2")
@@ -99,7 +117,7 @@ TEST(WorldGenerationTest, HeightTileIsDeterministicAndUsesCoreLangScript)
     EXPECT_EQ(first.coordinate, TILE);
     EXPECT_EQ(first.heights, repeated.heights);
     ASSERT_TRUE(first.heightAt(SAMPLE).has_value());
-    EXPECT_EQ(*first.heightAt(SAMPLE), generator.heightAt(32'771, 32'775));
+    EXPECT_EQ(requiredValue(first.heightAt(SAMPLE)), generator.heightAt(32'771, 32'775));
 }
 
 TEST(WorldGenerationTest, ChunksContainStoneBelowTheGeneratedHeight)

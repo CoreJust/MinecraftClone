@@ -4,18 +4,32 @@
 
 #include <shared/net/Message.hpp>
 #include <shared/policy/Policy.hpp>
+#include <shared/scenario/Scenario.hpp>
+#include <shared/world/Chunk.hpp>
 #include <shared/world/SparseWorld.hpp>
+#include <shared/world/World.hpp>
 
+#include <core/net/Address.hpp>
 #include <core/net/Client.hpp>
+#include <core/net/Event.hpp>
 #include <core/net/Net.hpp>
+#include <core/net/SendMode.hpp>
+
+#include <acceptance/EvidenceJson.hpp>
 
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <compare>
+#include <cstdint>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
+#include <string_view>
 #include <thread>
+#include <utility>
+#include <variant>
 #include <vector>
 
 namespace acceptance {
@@ -359,6 +373,8 @@ std::expected<RuntimeEvidence, std::string> runSparseWorldScenario(
         .mode = "scenario",
         .scenario_version = std::to_string(plan.version()),
         .profile = std::string{shared::scenarioProfileName(plan.profile())},
+        .scenario_name = {},
+        .failure = {},
         .seed = plan.seed(),
         .ticks = 0U,
         .clients_requested = 0U,
@@ -697,7 +713,7 @@ std::expected<RuntimeEvidence, std::string> runScenario(
                     } else {
                         reason += "; no authoritative position was received";
                     }
-                    failure = operationFailure(operation, std::move(reason));
+                    failure = operationFailure(operation, reason);
                     break;
                 }
                 ++expectations_passed;
@@ -784,6 +800,8 @@ std::expected<RuntimeEvidence, std::string> runScenario(
         .mode = "scenario",
         .scenario_version = std::to_string(plan.version()),
         .profile = std::string{ shared::scenarioProfileName(plan.profile()) },
+        .scenario_name = {},
+        .failure = {},
         .seed = plan.seed(),
         .ticks = logical_tick,
         .clients_requested = static_cast<uint64_t>(plan.actors().size()),

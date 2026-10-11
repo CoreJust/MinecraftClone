@@ -1,5 +1,6 @@
 #include <client/render/InstalledShaderAssets.hpp>
 
+#include <core/kernel/Spirv.hpp>
 #include <core/macro/OS.hpp>
 
 #ifdef WINDOWS

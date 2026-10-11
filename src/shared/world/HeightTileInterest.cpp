@@ -1,5 +1,6 @@
 #include <shared/world/HeightTileInterest.hpp>
 
+#include <shared/net/Message.hpp>
 #include <shared/world/SparseWorld.hpp>
 #include <shared/world/World.hpp>
 
@@ -8,6 +9,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <compare>
 #include <mutex>
 #include <stdexcept>
 #include <tuple>
@@ -78,7 +80,10 @@ HeightTileInterestOrders buildHeightTileOffsetOrders(uint32_t const radius)
 {
     int32_t const residency_radius = static_cast<int32_t>(radius);
     constexpr double PI = 3.141'592'653'589'793'238'46;
-    HeightTileInterestOrders result{.radius = radius};
+    HeightTileInterestOrders result{
+        .radius = radius,
+        .orders = {},
+    };
     for (uint32_t sector = 0U; sector < result.orders.size(); ++sector) {
         double const angle = static_cast<double>(sector) * 2.0 * PI / static_cast<double>(result.orders.size());
         HeightTileHeading const heading{
@@ -93,7 +98,8 @@ HeightTileInterestOrders buildHeightTileOffsetOrders(uint32_t const radius)
         for (int32_t y = -residency_radius; y <= residency_radius; ++y) {
             for (int32_t x = -residency_radius; x <= residency_radius; ++x) {
                 int64_t const distance_squared = static_cast<int64_t>(x) * x + static_cast<int64_t>(y) * y;
-                if (distance_squared > residency_radius * residency_radius) {
+                int64_t const wide_residency_radius = residency_radius;
+                if (distance_squared > wide_residency_radius * wide_residency_radius) {
                     continue;
                 }
                 HeightTileKey const offset{.x = x, .y = y};
@@ -234,6 +240,7 @@ HeightTileHeading canonicalHeightTileHeading(int8_t heading_x, int8_t heading_y)
 }
 
 HeightTileInterestDelta heightTileInterestDelta(
+    // NOLINTNEXTLINE(bugprone-easily-swappable-parameters) -- ordered previous/next centers
     HeightTileKey const previous_center,
     HeightTileKey const next_center,
     uint32_t const radius
@@ -254,7 +261,7 @@ HeightTileInterestDelta heightTileInterestDelta(
 }
 
 bool heightTileWithinInterest(
-    HeightTileKey const center,
+    HeightTileKey const center, // NOLINT(bugprone-easily-swappable-parameters) -- ordered center/key coordinates
     HeightTileKey const key,
     uint32_t const radius
 )
@@ -296,7 +303,11 @@ HeightTileInterest makeHeightTileInterest(
     heading_x = heading.x;
     heading_y = heading.y;
 
-    HeightTileInterest result{.heading_x = heading_x, .heading_y = heading_y};
+    HeightTileInterest result{
+        .keys = {},
+        .heading_x = heading_x,
+        .heading_y = heading_y,
+    };
     auto const order = std::ranges::find_if(orders.orders, [heading](HeightTileInterest const& order) {
         return order.heading_x == heading.x && order.heading_y == heading.y;
     });
@@ -313,6 +324,7 @@ std::vector<HeightTileKey> selectHeightTileRemovalCandidates(
     HeightTileKey const center,
     int8_t const heading_x,
     int8_t const heading_y,
+    // NOLINTNEXTLINE(bugprone-easily-swappable-parameters) -- pending and in-flight sets have distinct roles
     std::span<HeightTileKey const> const pending,
     std::span<HeightTileKey const> const inflight,
     uint32_t const maximum_count

@@ -2,6 +2,10 @@
 
 #include <gtest/gtest.h>
 
+#include <cstddef>
+#include <string>
+#include <string_view>
+
 TEST(HashCombineTest, DefaultHashIsStable) {
     core::HashCombiner first;
     core::HashCombiner second;

@@ -4,8 +4,10 @@
 #include <gtest/gtest.h>
 
 #include <array>
+#include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -49,10 +51,18 @@ TEST(ByteIOTest, RoundTripMultipleValuesInSequence) {
     std::vector<uint8_t> const bytes = writer.build();
 
     core::ByteReader reader{ bytes };
-    EXPECT_EQ(*reader.read<uint8_t>(), 1u);
-    EXPECT_EQ(*reader.read<uint32_t>(), 2u);
-    EXPECT_EQ(*reader.read<int16_t>(), -3);
-    EXPECT_EQ(*reader.read<char>(), 'c');
+    auto const first = reader.read<uint8_t>();
+    ASSERT_TRUE(first.has_value());
+    EXPECT_EQ(*first, 1u);
+    auto const second = reader.read<uint32_t>();
+    ASSERT_TRUE(second.has_value());
+    EXPECT_EQ(*second, 2u);
+    auto const third = reader.read<int16_t>();
+    ASSERT_TRUE(third.has_value());
+    EXPECT_EQ(*third, -3);
+    auto const fourth = reader.read<char>();
+    ASSERT_TRUE(fourth.has_value());
+    EXPECT_EQ(*fourth, 'c');
     EXPECT_FALSE(reader.read<char>().has_value());
     EXPECT_EQ(reader.left(), 0u);
 }
@@ -117,7 +127,7 @@ TEST(ByteIOTest, TruncatedSpanLengthPrefixReturnsNullopt) {
 
 TEST(ByteIOTest, OversizedSpanLengthReturnsNullopt) {
     core::ByteWriter writer;
-    writer.write(uint64_t{ 1ULL << 40 });
+    writer.write(uint64_t{ 1 } << uint64_t{ 40 });
     std::vector<uint8_t> const bytes = writer.build();
 
     core::ByteReader reader{ bytes };
@@ -165,14 +175,18 @@ TEST(ByteIOTest, SpanAndScalarInterleaveRoundTrip) {
     std::vector<uint8_t> const bytes = writer.build();
 
     core::ByteReader reader{ bytes };
-    EXPECT_EQ(*reader.read<uint8_t>(), 7u);
+    auto const marker = reader.read<uint8_t>();
+    ASSERT_TRUE(marker.has_value());
+    EXPECT_EQ(*marker, 7u);
     auto const span = reader.readSpan<int32_t>();
     ASSERT_TRUE(span.has_value());
     ASSERT_EQ(span->size(), span_data.size());
     for (size_t i = 0; i < span_data.size(); ++i) {
         EXPECT_EQ((*span)[i], span_data[i]);
     }
-    EXPECT_EQ(*reader.read<uint16_t>(), 9u);
+    auto const suffix = reader.read<uint16_t>();
+    ASSERT_TRUE(suffix.has_value());
+    EXPECT_EQ(*suffix, 9u);
     EXPECT_EQ(reader.left(), 0u);
 }
 
@@ -187,10 +201,14 @@ TEST(ByteIOTest, MixedValueAndStringRoundTrip) {
     std::vector<uint8_t> const bytes = writer.build();
 
     core::ByteReader reader{ bytes };
-    EXPECT_EQ(*reader.read<uint32_t>(), 42u);
+    auto const prefix = reader.read<uint32_t>();
+    ASSERT_TRUE(prefix.has_value());
+    EXPECT_EQ(*prefix, 42u);
     auto const s = reader.readStr();
     ASSERT_TRUE(s.has_value());
     EXPECT_EQ(*s, name);
-    EXPECT_EQ(*reader.read<uint8_t>(), 3u);
+    auto const suffix = reader.read<uint8_t>();
+    ASSERT_TRUE(suffix.has_value());
+    EXPECT_EQ(*suffix, 3u);
     EXPECT_EQ(reader.left(), 0u);
 }

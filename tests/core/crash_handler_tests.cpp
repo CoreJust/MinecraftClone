@@ -5,6 +5,7 @@
 #include <csignal>
 #include <cstdint>
 #include <cstdlib>
+#include <string>
 
 namespace {
 

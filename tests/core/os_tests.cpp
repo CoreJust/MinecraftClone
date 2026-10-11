@@ -4,6 +4,8 @@
 
 #include <gtest/gtest.h>
 
+#include <string>
+
 TEST(OSTest, IdentifiesTheCurrentPlatform) {
 #if defined(__linux__) && !defined(__ANDROID__)
     GTEST_SKIP() << "Linux is an analysis-only host, not a supported product platform";

@@ -2,6 +2,7 @@
 
 #include <client/render/TextRenderer.hpp>
 
+#include <glm/ext/matrix_float4x4.hpp>
 #include <glm/mat4x4.hpp>
 
 #include <cstdint>

@@ -44,7 +44,7 @@ public:
     using Blocks = std::array<Block, BLOCK_COUNT>;
 
     explicit Chunk(ChunkCoordinate coordinate = {}) noexcept;
-    Chunk(ChunkCoordinate coordinate, Blocks blocks);
+    Chunk(ChunkCoordinate coordinate, Blocks const& blocks);
 
     [[nodiscard]]
     static Chunk makeStoneFixture(

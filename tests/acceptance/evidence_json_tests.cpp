@@ -2,9 +2,14 @@
 
 #include <gtest/gtest.h>
 
+#include <array>
 #include <chrono>
+#include <expected>
+#include <optional>
 #include <stdexcept>
 #include <string>
+#include <string_view>
+#include <vector>
 
 namespace {
 
@@ -15,6 +20,7 @@ TEST(EvidenceJson, IncludesVersionedMetadataTimingAndCounters)
         .scenario_version = "1",
         .profile = "flat2d-v1",
         .scenario_name = "canonical_sample.core",
+        .failure = {},
         .seed = 42,
         .ticks = 6,
         .clients_requested = 1,
@@ -49,7 +55,11 @@ TEST(EvidenceJson, EscapesControlCharactersInStringFields)
 {
     acceptance::RuntimeEvidence const evidence{
         .mode = "scenario\nsmoke",
+        .scenario_version = {},
+        .profile = {},
+        .scenario_name = {},
         .failure = "unexpected \"position\"",
+        .replay_id = {},
     };
     std::string const json = acceptance::evidenceJson(evidence);
 
@@ -61,7 +71,19 @@ TEST(EvidenceJson, LabelsBenchmarkSamplesAsCpuPresentationRequestsAndPhases)
 {
     acceptance::RuntimeEvidence const evidence{
         .mode = "benchmark-render",
+        .scenario_version = {},
+        .profile = {},
+        .scenario_name = {},
+        .failure = {},
+        .replay_id = {},
         .benchmark = acceptance::RendererBenchmarkEvidence{
+            .package_id = {},
+            .platform = {},
+            .hardware = {},
+            .gpu = {},
+            .vulkan_api_version = {},
+            .present_mode = {},
+            .pipeline_path = {},
             .debug_hud_enabled = true,
             .presentation_requests_per_second = 120.0,
             .presentation_request_timings = acceptance::FrameTimingSummary{
@@ -99,33 +121,60 @@ TEST(EvidenceJson, SeparatesFullGameRequestsFromPhysicalDisplayCadence)
 {
     acceptance::RuntimeEvidence const evidence{
         .mode = "benchmark-game",
+        .scenario_version = {},
+        .profile = {},
+        .scenario_name = {},
+        .failure = {},
+        .replay_id = {},
         .game_benchmark = acceptance::GameBenchmarkEvidence{
             .workload = "speed-200-movement-v1",
+            .package_id = {},
+            .hardware = {},
+            .gpu = std::nullopt,
+            .present_mode = {},
+            .build_mode = {},
             .client_message_payload_bytes_sent = 128U,
             .client_message_payload_bytes_received = 256U,
             .excluded_present_requests = 1U,
             .warm_present_requests_per_second = 87.5,
             .uncapped_present_requests_per_second = 150.0,
+            .cold_loop_timings = {},
+            .warm_loop_timings = {},
+            .uncapped_loop_timings = {},
+            .server_tick_timings = {},
+            .permission_publish_timings = {},
             .raw_frames = {
                 acceptance::GameBenchmarkFrameSample{
                     .warm = true,
                     .presentation_succeeded = true,
                     .loop_duration_ns = 12'000U,
                     .network_event_count = 2U,
+                    .diagnostic_frame_slot = std::nullopt,
+                    .diagnostic_gpu_timestamp_reason = {},
+                    .diagnostic_gpu_terrain_duration_ns = std::nullopt,
                     .latest_gpu_frame_duration_ns = 42U,
                 },
                 acceptance::GameBenchmarkFrameSample{
                     .uncapped = true,
                     .presentation_succeeded = false,
                     .loop_duration_ns = 4'000U,
+                    .diagnostic_frame_slot = std::nullopt,
+                    .diagnostic_gpu_timestamp_reason = {},
+                    .diagnostic_gpu_terrain_duration_ns = std::nullopt,
+                    .latest_gpu_frame_duration_ns = std::nullopt,
                 },
                 acceptance::GameBenchmarkFrameSample{
                     .excluded = true,
                     .presentation_succeeded = true,
                     .loop_duration_ns = 5'000U,
+                    .diagnostic_frame_slot = std::nullopt,
+                    .diagnostic_gpu_timestamp_reason = {},
+                    .diagnostic_gpu_terrain_duration_ns = std::nullopt,
+                    .latest_gpu_frame_duration_ns = std::nullopt,
                 },
             },
             .raw_server_tick_durations_ns = { 100U, 200U },
+            .raw_permission_publish_durations_ns = {},
         },
     };
 
@@ -153,7 +202,23 @@ TEST(EvidenceJson, SeparatesFailedRenderAttemptsFromLaggedTerrainGpuSamples)
 {
     acceptance::RuntimeEvidence const evidence{
         .mode = "benchmark-game",
+        .scenario_version = {},
+        .profile = {},
+        .scenario_name = {},
+        .failure = {},
+        .replay_id = {},
         .game_benchmark = acceptance::GameBenchmarkEvidence{
+            .workload = {},
+            .package_id = {},
+            .hardware = {},
+            .gpu = std::nullopt,
+            .present_mode = {},
+            .build_mode = {},
+            .cold_loop_timings = {},
+            .warm_loop_timings = {},
+            .uncapped_loop_timings = {},
+            .server_tick_timings = {},
+            .permission_publish_timings = {},
             .raw_frames = {
                 acceptance::GameBenchmarkFrameSample{
                     .presentation_succeeded = false,
@@ -161,16 +226,21 @@ TEST(EvidenceJson, SeparatesFailedRenderAttemptsFromLaggedTerrainGpuSamples)
                     .diagnostic_render_attempt_id = 42U,
                     .diagnostic_frame_recorded = false,
                     .diagnostic_indexed_stone_quads = true,
+                    .diagnostic_frame_slot = std::nullopt,
                     .diagnostic_camera = { 1.0, 2.0, 3.0, 90.0, -17.0, 0.0, 70.0 },
                     .diagnostic_cpu_acquire_wait_duration_ns = 10'000'000U,
                     .diagnostic_gpu_timestamps_enabled = true,
+                    .diagnostic_gpu_timestamp_reason = {},
                     .diagnostic_gpu_sample_attempt_id = 40U,
                     .diagnostic_gpu_sample_slot = 1U,
                     .diagnostic_gpu_sample_quad_count = 18U,
                     .diagnostic_gpu_sample_draw_count = 3U,
                     .diagnostic_gpu_terrain_duration_ns = 5'000'000U,
+                    .latest_gpu_frame_duration_ns = std::nullopt,
                 },
             },
+            .raw_server_tick_durations_ns = {},
+            .raw_permission_publish_durations_ns = {},
         },
     };
     std::string const json = acceptance::evidenceJson(evidence);
@@ -194,7 +264,10 @@ TEST(EvidenceJson, ReportsUnsupportedTerrainTimestampScopeWithoutInventingGpuDur
     acceptance::RuntimeEvidence evidence;
     evidence.game_benchmark.emplace();
     evidence.game_benchmark->raw_frames.push_back({
+        .diagnostic_frame_slot = std::nullopt,
         .diagnostic_gpu_timestamp_reason = "unsupported: MoltenVK may defer in-render-pass timestamps",
+        .diagnostic_gpu_terrain_duration_ns = std::nullopt,
+        .latest_gpu_frame_duration_ns = std::nullopt,
     });
     std::string const json = acceptance::evidenceJson(evidence);
     EXPECT_NE(json.find("\"diagnostic_gpu_timestamps_enabled\": false"), std::string::npos);
@@ -229,6 +302,23 @@ TEST(EvidenceJson, ConvertsThrownFailureToSerializableEvidence)
 
     EXPECT_EQ(evidence.mode, "benchmark-render");
     EXPECT_EQ(evidence.failure, "device failed");
+    EXPECT_FALSE(evidence.passed);
+}
+
+TEST(EvidenceJson, KeepsOriginalModeWhenFailureCallbackChangesCallerInput)
+{
+    std::string mode{ "capture-render" };
+    acceptance::RuntimeEvidence const evidence = acceptance::collectRuntimeEvidence(
+        mode,
+        [&mode]() -> std::expected<acceptance::RuntimeEvidence, std::string> {
+            mode = "changed";
+            return std::unexpected("capture unavailable");
+        }
+    );
+
+    EXPECT_EQ(mode, "changed");
+    EXPECT_EQ(evidence.mode, "capture-render");
+    EXPECT_EQ(evidence.failure, "capture unavailable");
     EXPECT_FALSE(evidence.passed);
 }
 

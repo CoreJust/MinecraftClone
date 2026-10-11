@@ -4,6 +4,7 @@
 
 #include <chrono>
 #include <cstdint>
+#include <string>
 #include <thread>
 
 TEST(ServerNetworkEventBatchTest, CapsReadyEventsPerSchedulingTurn)

@@ -1,6 +1,13 @@
 #include <client/render/GuiRenderer.hpp>
 
+#include <client/render/TextRenderer.hpp>
+
+#include <glm/mat4x4.hpp>
+#include <glm/vec4.hpp>
+
 #include <algorithm>
+#include <cstddef>
+#include <string>
 #include <utility>
 
 namespace client {
@@ -76,9 +83,11 @@ bool GuiRenderer::submit(
     return submit(text_renderer_, glm::mat4{1.0F}, 0U, 0U);
 }
 
+// Screen batching currently ignores both dimensions, so this warning cannot affect output.
 bool GuiRenderer::submit(
     TextRenderer const& renderer,
     glm::mat4 const& projection_view,
+    // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
     uint32_t const width,
     uint32_t const height
 ) {

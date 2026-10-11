@@ -31,7 +31,7 @@
         "tests/acceptance/runtime_cli_tests.cmake",
         "tests/acceptance/scenario_runner_tests.cpp"
       ],
-      "sources_sha256": "f422444c2db3618edb869d2befa557b0a6fecb8cecf8fc06a829d5b3ff26543e"
+      "sources_sha256": "38af6d53d91965ed4d28c6942fe954140c2262766d1bed0ac46bfd9081490e3e"
     },
     {
       "guide": "docs/code/ANDROID.md",
@@ -51,7 +51,7 @@
         "tests/android/input_state_tests.cpp",
         "tests/android/input_tests.cpp"
       ],
-      "sources_sha256": "01691c0acbf3dde2c57d728f9ba90ea44ed51d555adbb81bea424c8d00da3e69"
+      "sources_sha256": "fee6bbcecb94f114745cca4dfaba3e70090b13152dba03f11a514c1ed3457725"
     },
     {
       "guide": "docs/BUILD.md",
@@ -113,7 +113,9 @@
         "script/ci/android_clang_tidy.py",
         "script/ci/android_hwasan_emulator.py",
         "script/ci/build_snapshot.py",
+        "script/ci/cppcheck_gate.py",
         "script/ci/install_msan_libcxx.py",
+        "script/ci/iwyu_gate.py",
         "script/ci/release_guard.py",
         "script/ci/verify_analysis_gate.py",
         "script/ci/verify_android_hwasan.py",
@@ -143,8 +145,10 @@
         "script/tests/test_build_snapshot.py",
         "script/tests/test_checks_common.py",
         "script/tests/test_ci_acquire.py",
+        "script/tests/test_cppcheck_gate.py",
         "script/tests/test_gmp_vcpkg_overlay.py",
         "script/tests/test_install_msan_libcxx.py",
+        "script/tests/test_iwyu_gate.py",
         "script/tests/test_mpfr_vcpkg_overlay.py",
         "script/tests/test_package_snapshot.py",
         "script/tests/test_pre_finalization_candidate.py",
@@ -168,7 +172,7 @@
         "vcpkg-configuration.json",
         "vcpkg.json"
       ],
-      "sources_sha256": "2c977d0a161a906f376b0d11dee2c2f73b93d8d991d3aede4dbca0eb206f6845"
+      "sources_sha256": "744fa58ecbc4e341653848b6cbcea4dbc1cf71bf4bfaee808f96bcf174631f98"
     },
     {
       "guide": "docs/code/CORE.md",
@@ -201,7 +205,7 @@
         "tests/core/vector_utils_tests.cpp",
         "tests/core/version_tests.cpp"
       ],
-      "sources_sha256": "3e3354298366e2204486fa41f2c43970ade5cd8e200cfe1679e20194773f29cb"
+      "sources_sha256": "85e7763232ccc4df85e493d6fe40a4488180f7c0ff56ae17aacc658c628bfe92"
     },
     {
       "guide": "docs/code/GAMEPLAY.md",
@@ -294,7 +298,7 @@
         "tests/core/world_generation_scheduler_tests.cpp",
         "tests/core/world_generation_tests.cpp"
       ],
-      "sources_sha256": "eff5f96c4afddbafa6203d9a21f37c6a50cc6bce5304b6c8efea4306cc7ce62f"
+      "sources_sha256": "9f59f7304c32a7727a60ab1ebf17a342fc966bfbf56213ca7dd6a05490924b67"
     },
     {
       "guide": "docs/code/RENDERING.md",
@@ -374,7 +378,7 @@
         "tests/testsupport/include/testsupport/AdverseTransport.hpp",
         "tests/testsupport/include/testsupport/ImageComparison.hpp"
       ],
-      "sources_sha256": "79566276a1127fed182c7701ab11d1a9002e406be2c84e55a1457ef7c4435f94"
+      "sources_sha256": "8eb953dd045b3aae4c578c031ba7eda9396a98d73f0405017e25b64712b3662b"
     }
   ],
   "version": 1

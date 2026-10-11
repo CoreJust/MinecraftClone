@@ -1,3 +1,4 @@
+#include <shared/net/Message.hpp>
 #include <shared/world/HeightTileInterest.hpp>
 #include <shared/world/SparseWorld.hpp>
 
@@ -6,9 +7,14 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstddef>
+#include <cstdint>
+#include <functional>
 #include <memory>
 #include <span>
+#include <string>
 #include <utility>
+#include <vector>
 
 namespace {
 
@@ -266,7 +272,9 @@ TEST(HeightTileInterestTest, SelectsEligibleRemovalsBeyondInflightPriorityPrefix
     shared::HeightTileKey constexpr center{.x = 2'000, .y = 2'000};
     shared::HeightTileInterest const interest = shared::makeHeightTileInterest(center, 127, 0);
     std::vector<shared::HeightTileKey> pending{
-        interest.keys.rbegin(), interest.keys.rbegin() + 2U * DELIVERY_CAPACITY
+        interest.keys.rbegin(),
+        interest.keys.rbegin()
+            + static_cast<std::vector<shared::HeightTileKey>::difference_type>(2U) * DELIVERY_CAPACITY
     };
     std::vector<shared::HeightTileKey> const inflight{
         pending.begin(), pending.begin() + DELIVERY_CAPACITY

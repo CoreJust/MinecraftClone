@@ -62,7 +62,7 @@ public:
     WorldConfiguration const& configuration() const noexcept;
 
 private:
-    ScriptedWorld(Chunk chunk, WorldConfiguration configuration) noexcept;
+    ScriptedWorld(Chunk const& chunk, WorldConfiguration configuration) noexcept;
 
 private:
     Chunk m_chunk;

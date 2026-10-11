@@ -50,12 +50,12 @@ struct VulkanRendererOptions final {
     bool require_immediate_present_mode = false;
 };
 
-enum class RendererPipelinePath {
+enum class RendererPipelinePath : uint8_t {
     Vertex,
     Mesh,
 };
 
-enum class RendererPresentMode {
+enum class RendererPresentMode : uint8_t {
     Immediate,
     Mailbox,
     FIFO,
@@ -63,7 +63,7 @@ enum class RendererPresentMode {
     Unknown,
 };
 
-enum class FrameCaptureState {
+enum class FrameCaptureState : uint8_t {
     Disabled,
     Ready,
     Completed,

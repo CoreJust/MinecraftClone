@@ -1,10 +1,18 @@
 #include <client/render/GuiRenderer.hpp>
+#include <client/render/TextRenderer.hpp>
 
+#include <glm/ext/matrix_float4x4.hpp>
 #include <glm/mat4x4.hpp>
+#include <glm/vec4.hpp>
 
 #include <gtest/gtest.h>
 
+#include <array>
+#include <cstdint>
+#include <span>
 #include <string>
+#include <string_view>
+#include <vector>
 
 TEST(GuiRendererTest, PacksArbitraryLengthTextAsScreenGlyphs)
 {

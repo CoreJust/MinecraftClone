@@ -1,29 +1,39 @@
 #include <client/PlayerClient.hpp>
 
+#include <client/Camera.hpp>
 #include <client/CameraController.hpp>
 #include <client/CameraObstruction.hpp>
 #include <client/PlayerPresentation.hpp>
 #include <client/PreviewMeshing.hpp>
+#include <client/render/TextRenderer.hpp>
+#include <client/render/VulkanRenderer.hpp>
 
+#include <shared/ProjectInfo.hpp>
+#include <shared/net/Message.hpp>
 #include <shared/world/HeightTileInterest.hpp>
+#include <shared/world/HeightTileSurfaceMesher.hpp>
 #include <shared/world/SparseWorld.hpp>
 #include <shared/world/World.hpp>
+#include <shared/world/WorldGeneration.hpp>
 
 #include <core/common/Assert.hpp>
 #include <core/IO/Log.hpp>
 
 #define GLFW_INCLUDE_NONE
 #include <GLFW/glfw3.h>
+#include <glm/vec3.hpp>
 
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <compare>
 #include <condition_variable>
 #include <cstdlib>
 #include <fstream>
 #include <limits>
 #include <mutex>
 #include <optional>
+#include <span>
 #include <string>
 #include <thread>
 #include <tuple>
@@ -143,18 +153,6 @@ constexpr double CAMERA_OBSTRUCTION_MARGIN = 0.03;
 [[nodiscard]] int64_t absoluteValue(int64_t const value) noexcept
 {
     return value < 0 ? -value : value;
-}
-
-[[nodiscard]] int8_t captureAxisComponent(int64_t const delta, uint16_t const speedup) noexcept
-{
-    if (delta == 0) {
-        return 0;
-    }
-    uint16_t const effective_speedup = speedup == CAPTURE_NEAR_SPEEDUP ? 1U : speedup;
-    int64_t const maximum_step = static_cast<int64_t>(shared::MOVEMENT_SUBCELLS_PER_TICK)
-        * effective_speedup;
-    int64_t const magnitude = std::clamp(absoluteValue(delta) * 127 / maximum_step, int64_t{1}, int64_t{127});
-    return static_cast<int8_t>(delta < 0 ? -magnitude : magnitude);
 }
 
 [[nodiscard]] bool functionKeyPressed(GLFWwindow* window, int const function_key, int const fallback_key) noexcept
@@ -426,7 +424,7 @@ PlayerClient::PlayerClient(
 )
     : GameClient{ mode }
     , m_capture(std::move(capture))
-    , m_benchmark(std::move(benchmark))
+    , m_benchmark(benchmark)
     , m_window(core::platform::glfw::WindowDescriptor{
         .width = 1280U,
         .height = 720U,
@@ -513,7 +511,7 @@ void PlayerPreviewMeshCoverage::interestAdded(bool const already_visible) noexce
     }
 }
 
-void PlayerPreviewMeshCoverage::interestRemoved(bool const visible) noexcept
+void PlayerPreviewMeshCoverage::interestRemoved(bool const visible)
 {
     if (visible) {
         ASSERT(m_visible_count > 0U, "Visible interest count cannot underflow");
@@ -1035,9 +1033,10 @@ shared::HeightTileSurfaceDetail PlayerClient::previewMeshDetail(
             } else {
                 includeHeight(0U);
             }
-            if (neighbor_mesh_ranges[index]) {
-                includeHeight(neighbor_mesh_ranges[index]->minimum);
-                includeHeight(neighbor_mesh_ranges[index]->maximum);
+            auto const& neighbor_mesh_range = neighbor_mesh_ranges[index];
+            if (neighbor_mesh_range.has_value()) {
+                includeHeight(neighbor_mesh_range.value().minimum);
+                includeHeight(neighbor_mesh_range.value().maximum);
             }
         }
         elevation = m_preview_tile_elevations.insert_or_assign(key, PreviewTileElevation{
@@ -1274,6 +1273,9 @@ shared::Direction PlayerClient::captureInput() noexcept
         m_capture_last_capability_cycle_source = player->movement_capabilities.bits;
         glm::dvec3 const view = m_look_camera.forward();
         return {
+            .x = 0U,
+            .y = 0U,
+            .z = 0U,
             .cycle_movement_capabilities = true,
             .view_x = CameraController::quantize(view.x),
             .view_y = CameraController::quantize(view.y),
@@ -1309,9 +1311,23 @@ shared::Direction PlayerClient::captureInput() noexcept
         absoluteValue(requested_z),
     });
     uint16_t const speedup = playerClientCaptureSpeedup(largest_delta);
-    int8_t const x = captureAxisComponent(requested_x, speedup);
-    int8_t const y = captureAxisComponent(requested_y, speedup);
-    int8_t const z = captureAxisComponent(requested_z, speedup);
+    auto const capture_axis_component = [speedup](int64_t const delta) noexcept {
+        if (delta == 0) {
+            return int8_t{0};
+        }
+        uint16_t const effective_speedup = speedup == CAPTURE_NEAR_SPEEDUP ? 1U : speedup;
+        int64_t const maximum_step = static_cast<int64_t>(shared::MOVEMENT_SUBCELLS_PER_TICK)
+            * effective_speedup;
+        int64_t const magnitude = std::clamp(
+            absoluteValue(delta) * 127 / maximum_step,
+            int64_t{1},
+            int64_t{127}
+        );
+        return static_cast<int8_t>(delta < 0 ? -magnitude : magnitude);
+    };
+    int8_t const x = capture_axis_component(requested_x);
+    int8_t const y = capture_axis_component(requested_y);
+    int8_t const z = capture_axis_component(requested_z);
     return {
         .x = static_cast<uint8_t>(x),
         .y = static_cast<uint8_t>(y),
@@ -1384,12 +1400,13 @@ bool PlayerClient::captureSceneReady() const
     return hasExactCurrentRendererMeshCoverage();
 }
 
-void PlayerClient::failCapture(std::string_view const reason) noexcept
+void PlayerClient::failCapture(std::string_view const reason)
 {
     if (!m_capture_failed) {
-        PlayerClientCapturePlan const plan = playerClientCapturePlan(
-            m_capture.value_or(PlayerClientCaptureOptions{}).preset
-        );
+        PlayerClientCapturePreset const preset = m_capture
+            ? m_capture->preset
+            : PlayerClientCapturePreset::CentralSpike;
+        PlayerClientCapturePlan const plan = playerClientCapturePlan(preset);
         CORE_ERROR("Player capture '{}' failed: {}", plan.name, reason);
     }
     m_capture_failed = true;

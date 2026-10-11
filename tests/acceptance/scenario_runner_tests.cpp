@@ -1,5 +1,6 @@
 #include <shared/scenario/Scenario.hpp>
 
+#include <acceptance/EvidenceJson.hpp>
 #include <acceptance/ScenarioRunner.hpp>
 
 #include <gtest/gtest.h>

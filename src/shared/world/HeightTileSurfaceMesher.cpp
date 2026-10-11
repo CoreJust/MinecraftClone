@@ -1,14 +1,18 @@
 #include <shared/world/HeightTileSurfaceMesher.hpp>
 
 #include <shared/world/SparseWorld.hpp>
+#include <shared/world/WorldGeneration.hpp>
 
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <map>
 #include <stdexcept>
 #include <tuple>
+#include <utility>
 
 namespace {
 
@@ -426,8 +430,12 @@ HeightTileSurfaceDetail HeightTileSurfaceLodPolicy::detailFor(
         return HeightTileSurfaceDetail::Fine;
     }
 
-    auto const axisSeparation = [](double const first_min, double const first_max,
-        double const second_min, double const second_max) noexcept {
+    auto const axisSeparation = [](
+        double const first_min, // NOLINT(bugprone-easily-swappable-parameters) -- first interval bounds are ordered
+        double const first_max,
+        double const second_min, // NOLINT(bugprone-easily-swappable-parameters) -- second interval bounds are ordered
+        double const second_max
+    ) noexcept {
         if (first_max < second_min) {
             return second_min - first_max;
         }

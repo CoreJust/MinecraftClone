@@ -5,6 +5,9 @@
 #include <gtest/gtest.h>
 
 #include <cmath>
+#include <cstdint>
+#include <optional>
+#include <string>
 
 TEST(CameraControllerTest, YawZeroMapsWASDToWorldAxes) {
     EXPECT_EQ(
@@ -121,20 +124,27 @@ TEST(CameraControllerTest, FlightControlsMoveVerticalAndHorizontalAxesAtTheSameS
         .x = static_cast<uint8_t>(horizontal.x),
         .y = static_cast<uint8_t>(horizontal.y),
     }));
-    ASSERT_TRUE(world.movePlayer(2, { .z = static_cast<uint8_t>(vertical) }));
+    ASSERT_TRUE(world.movePlayer(2, {
+        .x = 0U,
+        .y = 0U,
+        .z = static_cast<uint8_t>(vertical),
+    }));
     ASSERT_TRUE(world.movePlayer(3, {
         .x = static_cast<uint8_t>(horizontal.x),
         .y = static_cast<uint8_t>(horizontal.y),
         .z = static_cast<uint8_t>(vertical),
     }));
-    ASSERT_TRUE(world.player(1).has_value());
-    ASSERT_TRUE(world.player(2).has_value());
-    ASSERT_TRUE(world.player(3).has_value());
+    auto const horizontal_player = world.player(1);
+    auto const vertical_player = world.player(2);
+    auto const diagonal_player = world.player(3);
+    ASSERT_TRUE(horizontal_player.has_value());
+    ASSERT_TRUE(vertical_player.has_value());
+    ASSERT_TRUE(diagonal_player.has_value());
 
-    EXPECT_EQ(world.player(1)->y_subcell, AXIS_STEP);
-    EXPECT_EQ(world.player(2)->z_subcell, AXIS_STEP);
-    EXPECT_EQ(world.player(3)->y_subcell, DIAGONAL_STEP);
-    EXPECT_EQ(world.player(3)->z_subcell, DIAGONAL_STEP);
+    EXPECT_EQ(horizontal_player->y_subcell, AXIS_STEP);
+    EXPECT_EQ(vertical_player->z_subcell, AXIS_STEP);
+    EXPECT_EQ(diagonal_player->y_subcell, DIAGONAL_STEP);
+    EXPECT_EQ(diagonal_player->z_subcell, DIAGONAL_STEP);
     EXPECT_LE(
         2U * DIAGONAL_STEP * DIAGONAL_STEP,
         AXIS_STEP * AXIS_STEP

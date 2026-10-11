@@ -5,6 +5,9 @@
 
 #include <gtest/gtest.h>
 
+#include <cstddef>
+#include <string>
+
 namespace {
 
 constexpr size_t COUNT = CORE_PP_COUNT(1, 2, 3);

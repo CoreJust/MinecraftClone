@@ -1,8 +1,15 @@
 #include <shared/policy/Policy.hpp>
 
+#include <core/lang/Bytecode.hpp>
+#include <core/lang/Compiler.hpp>
 #include <core/lang/CoreLang.hpp>
+#include <core/lang/Diagnostic.hpp>
+#include <core/lang/Registry.hpp>
+#include <core/lang/Runtime.hpp>
+#include <core/lang/Value.hpp>
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <bit>
 #include <charconv>
@@ -13,11 +20,13 @@
 #include <iterator>
 #include <limits>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <ranges>
 #include <span>
 #include <string>
 #include <string_view>
+#include <system_error>
 #include <unordered_map>
 #include <utility>
 #include <variant>

@@ -178,7 +178,9 @@ inline PreviewMeshSeamPublicationPlan planPreviewMeshSeamPublication(
 )
 {
     PreviewMeshSeamPublicationPlan plan{
+        .center_mesh = {},
         .center_bridges = center_bridges,
+        .neighbor_bridges = {},
     };
     for (uint32_t edge = 0U; edge < neighbors.size(); ++edge) {
         PreviewMeshSeamNeighborSnapshot const& neighbor = neighbors[edge];

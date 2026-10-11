@@ -2,8 +2,12 @@
 
 #include <gtest/gtest.h>
 
+#include <spdlog/common.h>
+#include <spdlog/formatter.h>
+#include <spdlog/logger.h>
 #include <spdlog/sinks/base_sink.h>
 
+#include <memory>
 #include <mutex>
 #include <string>
 #include <vector>

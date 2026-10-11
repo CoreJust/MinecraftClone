@@ -1,10 +1,16 @@
 #include <shared/world/SparseWorld.hpp>
 
+#include <shared/world/Chunk.hpp>
+#include <shared/world/WorldGeneration.hpp>
+#include <shared/world/WorldGenerationScheduler.hpp>
+
 #include <algorithm>
 #include <cstdint>
 #include <functional>
 #include <limits>
+#include <optional>
 #include <stdexcept>
+#include <utility>
 
 namespace shared {
 
@@ -157,6 +163,7 @@ SparseBlockQuery SparseWorld::queryBlock(WorldCoordinate const coordinate) const
         && preview->second.seed == m_options.seed) {
         return {
             .state = GenerationState::Preview,
+            .block = std::nullopt,
         };
     }
     return {};
@@ -180,7 +187,7 @@ bool SparseWorld::publishPreview(
     ChunkCoordinate const preview_coordinate{.x = coordinate.x, .y = coordinate.y, .z = 0};
     if (m_previews.contains(preview_coordinate)) {
         m_previews.insert_or_assign(preview_coordinate, Preview{
-            .tile = std::move(tile),
+            .tile = tile,
             .revision = revision,
             .seed = seed,
         });
@@ -193,7 +200,7 @@ bool SparseWorld::publishPreview(
         return false;
     }
     m_previews.emplace(preview_coordinate, Preview{
-        .tile = std::move(tile),
+        .tile = tile,
         .revision = revision,
         .seed = seed,
     });
@@ -214,14 +221,14 @@ bool SparseWorld::publishMaterializedChunk(
     }
     m_previews.erase({.x = coordinate.x, .y = coordinate.y, .z = 0});
     if (auto const existing = m_resident.find(coordinate); existing != m_resident.end()) {
-        existing->second.chunk = std::move(chunk);
+        existing->second.chunk = chunk;
         touch(existing->second);
         return true;
     }
     evictIfFull();
     auto [iterator, inserted] = m_resident.emplace(
         coordinate,
-        ResidentChunk{.chunk = std::move(chunk)}
+        ResidentChunk{.chunk = chunk}
     );
     if (!inserted) {
         return false;

@@ -1,5 +1,6 @@
 #include <acceptance/RendererBenchmark.hpp>
 
+#include <client/Camera.hpp>
 #include <client/render/InstalledShaderAssets.hpp>
 #include <client/render/VulkanRenderer.hpp>
 
@@ -9,10 +10,14 @@
 #include <shared/world/World.hpp>
 #include <shared/world/WorldGeneration.hpp>
 
+#include <core/common/Version.hpp>
 #include <core/platform/glfw/GlfwWindow.hpp>
 
+#include <acceptance/EvidenceJson.hpp>
 #include <acceptance/FramebufferExtent.hpp>
 #include <fmt/format.h>
+
+#include <glm/vec3.hpp>
 
 #if defined(__APPLE__)
 #include <sys/sysctl.h>
@@ -22,8 +27,13 @@
 
 #include <algorithm>
 #include <array>
+#include <compare>
+#include <cstddef>
+#include <cstdlib>
 #include <limits>
 #include <optional>
+#include <span>
+#include <string_view>
 #include <thread>
 #include <utility>
 #include <vector>
@@ -242,7 +252,7 @@ std::vector<PendingMeshUpdate> windowEdgeMeshUpdates(RendererBenchmarkStreamUpda
             < std::abs(static_cast<int32_t>(second * 2U) - center);
     });
     std::vector<PendingMeshUpdate> updates;
-    updates.reserve(side * 3U);
+    updates.reserve(static_cast<std::vector<PendingMeshUpdate>::size_type>(side) * 3U);
     for (uint32_t const index : order) {
         switch (update.direction) {
             case RendererBenchmarkStreamDirection::PositiveX:
@@ -283,7 +293,12 @@ RendererBenchmarkStreamUpdate makeRendererBenchmarkStreamUpdate(
     RendererBenchmarkStreamDirection const direction = static_cast<RendererBenchmarkStreamDirection>(
         (completed_updates / side) % 4U
     );
-    RendererBenchmarkStreamUpdate update{ .center = center, .direction = direction };
+    RendererBenchmarkStreamUpdate update{
+        .center = center,
+        .direction = direction,
+        .removals = {},
+        .additions = {},
+    };
     update.removals.reserve(S6_RENDERER_BENCHMARK_TILE_WIDTH);
     update.additions.reserve(S6_RENDERER_BENCHMARK_TILE_WIDTH);
     for (int32_t offset = negative_radius; offset <= positive_radius; ++offset) {
@@ -615,6 +630,9 @@ std::expected<RuntimeEvidence, std::string> runRendererBenchmark(
 
     return RuntimeEvidence{
         .mode = "benchmark-render",
+        .scenario_version = {},
+        .profile = {},
+        .scenario_name = {},
         .failure = frame_target_met ? "" : fmt::format(
             "120 FPS frame target missed: {:.2f} presentation requests/s, p99 {:.3f} ms",
             presentation_requests_per_second,
@@ -622,6 +640,7 @@ std::expected<RuntimeEvidence, std::string> runRendererBenchmark(
         ),
         .ticks = frame_count,
         .expectations_passed = frame_target_met ? 1U : 0U,
+        .replay_id = {},
         .elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(elapsed),
         .deadline = std::chrono::duration_cast<std::chrono::milliseconds>(options.deadline),
         .passed = frame_target_met,

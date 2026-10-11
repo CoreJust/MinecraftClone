@@ -1,9 +1,16 @@
 #include <shared/world/WorldGeneration.hpp>
 
 #include <shared/HeightTileScript.hpp>
+#include <shared/world/Chunk.hpp>
 #include <shared/world/SparseWorld.hpp>
+#include <shared/world/WorldGenerationScheduler.hpp>
 
+#include <core/lang/Bytecode.hpp>
+#include <core/lang/Compiler.hpp>
 #include <core/lang/CoreLang.hpp>
+#include <core/lang/Registry.hpp>
+#include <core/lang/Runtime.hpp>
+#include <core/lang/Value.hpp>
 
 #include <algorithm>
 #include <array>
@@ -29,7 +36,7 @@ constexpr uint16_t MAXIMUM_HEIGHT = static_cast<uint16_t>(shared::WorldExtent::D
 
 [[nodiscard]]
 uint16_t kernelHeightAt(
-    int64_t const x,
+    int64_t const x, // NOLINT(bugprone-easily-swappable-parameters) -- sample coordinates precede named wave parameters
     int64_t const y,
     double const base,
     double const spacing,
@@ -67,13 +74,27 @@ struct GenerationPlanHostSpec final {
 [[nodiscard]]
 core::lang::Type coreType(core::lang::TypeKind const kind)
 {
-    return {.kind = kind};
+    return {
+        .kind = kind,
+        .elements = {},
+        .method_owner_name = {},
+        .callable_precondition = {},
+        .callable_postcondition = {},
+        .struct_definition = nullptr,
+        .recursive_struct_definition = {},
+    };
 }
 
 [[nodiscard]]
 core::lang::Value unitValue()
 {
-    return {.type = coreType(core::lang::TypeKind::Unit)};
+    return {
+        .type = coreType(core::lang::TypeKind::Unit),
+        .bytes = {},
+        .elements = {},
+        .literal_lease = nullptr,
+        .runtime_lease = nullptr,
+    };
 }
 
 [[nodiscard]]
@@ -119,7 +140,7 @@ core::lang::CustomManifest generationPlanManifest(GenerationPlanHostSpec const& 
         .borrow = {.parameters = std::vector<core::lang::BorrowAccess>(
             spec.arguments.size(),
             core::lang::BorrowAccess::None
-        )},
+        ), .returns = {}},
     };
     manifest.digest = core::lang::customManifestDigest(manifest);
     return manifest;
@@ -128,7 +149,15 @@ core::lang::CustomManifest generationPlanManifest(GenerationPlanHostSpec const& 
 [[nodiscard]]
 core::lang::CompilerRegistry generationPlanCompilerRegistry()
 {
-    core::lang::Ruleset ruleset{.id = "minecraft", .version = 1U};
+    core::lang::Ruleset ruleset{
+        .id = "minecraft",
+        .version = 1U,
+        .restrictions = {},
+        .operations = {},
+        .triggers = {},
+        .resolve = {},
+        .automaticImports = {},
+    };
     std::vector<GenerationPlanHostSpec> const specs = generationPlanHostSpecs();
     ruleset.operations.reserve(specs.size());
     for (GenerationPlanHostSpec const& spec : specs) {
@@ -140,12 +169,16 @@ core::lang::CompilerRegistry generationPlanCompilerRegistry()
             .result = manifest.result,
             .effect = manifest.effect,
             .custom = manifest,
+            .expand = {},
+            .compile_time_effect = std::nullopt,
+            .compile_time = {},
             .borrow = manifest.borrow,
         });
     }
     return {
         .rulesets = {std::move(ruleset)},
         .defaults = {"minecraft"},
+        .restrictions = {},
     };
 }
 
@@ -304,7 +337,12 @@ private:
     }
 
 private:
-    shared::WorldGenerationPlan m_plan{.priority_order = {}};
+    shared::WorldGenerationPlan m_plan{
+        .pre_generate = false,
+        .refinement_extents = {},
+        .chunk_stages = {},
+        .priority_order = {},
+    };
     uint64_t m_call_count{0U};
     uint8_t m_version{0U};
     bool m_version_seen{false};
@@ -361,6 +399,7 @@ std::expected<void, std::string> registerGenerationPlanProviders(
                 }
                 return core::lang::CustomComplete{.value = unitValue()};
             },
+            .cancel = {},
         });
         if (!registered) {
             return std::unexpected(registered.error().message);
@@ -386,6 +425,8 @@ struct TerrainGenerator::ScriptState final {
     core::lang::Runtime runtime;
     std::optional<core::lang::Program> program;
     WorldGenerationPlan generation_plan{
+        .pre_generate = false,
+        .refinement_extents = {},
         .chunk_stages = {GenerationStage::Materialize},
     };
     double base{0.0};
@@ -395,6 +436,9 @@ struct TerrainGenerator::ScriptState final {
     [[nodiscard]]
     double parameter(std::string_view const name)
     {
+        if (!program.has_value()) {
+            throw std::runtime_error{"CoreLang terrain program is unavailable"};
+        }
         auto const outcome = runtime.execute(*program, "s6_height_tile", name, {}, {});
         if (!outcome || !std::holds_alternative<core::lang::Completed>(*outcome)) {
             throw std::runtime_error{"CoreLang terrain parameter failed"};
@@ -577,7 +621,7 @@ Chunk TerrainGenerator::chunkFromHeightTile(
             }
         }
     }
-    return Chunk{coordinate, std::move(blocks)};
+    return Chunk{coordinate, blocks};
 }
 
 bool TerrainGenerator::usingCoreLang() const noexcept

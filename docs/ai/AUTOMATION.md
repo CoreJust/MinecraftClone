@@ -38,12 +38,18 @@ CTest rejects empty discovery, UBSan halts on diagnostics, and performance uses
 ordinary Release. Local checks defer hosted receipts; CI binds them to immutable
 trees before promotion and strict/tag checks.
 
-Windows analysis probes MSVC with `cl.exe /Bv /?`: `/Bv` alone reports the
-version but exits nonzero without a source file. Failed probes remain unavailable,
-not passed. The analysis CMD step returns an explicit nonzero exit on every
-failure, including inside its parenthesized row loop; expanding `%errorlevel%`
-there can return the stale pre-loop value. A green job does not replace the
-required passing, exact-candidate row receipts.
+Windows probes use `cl.exe /Bv /?`; `/Bv` alone exits nonzero. Failed probes remain
+unavailable. CMD row loops use explicit failure exits, avoiding stale
+`%errorlevel%` expansion. Green jobs never replace passing exact-candidate receipts.
+
+IWYU/cppcheck wrappers require complete `src/`/`tests/` candidate-bound reports;
+compiler, parser, configuration and coverage failures block. IWYU blocks missing
+public includes; removals, forward declarations and unsupported private headers
+remain advice. CMake's outer `-Xiwyu --error` propagates wrapper failures; the
+wrapper removes it before running IWYU. Cppcheck retains compiler context. Owned
+errors/warnings/performance/portability block, except reviewed design hints
+`uninitMemberVarNoCtor`/`passedByValue`; uninitialized reads remain fatal.
+Style/information/external-primary findings remain reported. Sanitizer gates are unchanged.
 
 The macOS ASan row keeps `detect_leaks=1` and runs clean, ordinary-leak, and real
 AudioUnit callback controls before configuring/building the game. Leak reports
@@ -92,14 +98,14 @@ NDK and CMake remain build-only. Command-line tools stay hash-pinned.
 
 ## Project skills and future hooks
 
-The ten [project skills](SKILLS.md) share a deterministic planner. Prefer scripts for checks; add a skill only for repeated judgment work outside the [task loop](WORKFLOW.md). Candidates: Vulkan capture, worldgen comparison, and save-format migration.
+The ten [project skills](SKILLS.md) share a deterministic planner. Prefer scripts;
+add skills only for repeated judgment outside the [task loop](WORKFLOW.md).
 
-A repository skill lives at `.agents/skills/<name>/SKILL.md`, with accurate frontmatter and under 500 words. Link owning guidance; test discovery, intended/unrelated triggers, and allowed/failing commands. Retire duplicates.
+A repository skill uses `.agents/skills/<name>/SKILL.md`, accurate frontmatter,
+under 500 words and linked guidance. Test discovery, triggers and commands; retire duplicates.
 
 Provider hooks reuse tested scripts; never mutate code, hashes, task status, or publication. Avoid auto-approval/unrestricted shell; test hooks in a temporary repository.
 
 ## Runtime choices
 
 [Project config](../../.codex/config.toml) selects Luna/high for new sessions, subject to overrides. It changes no sandbox, permissions, connections, or global settings. See the [routing policy](MODELS.md).
-
-Codex [agent](https://developers.openai.com/codex/guides/agents-md), [skill](https://developers.openai.com/codex/skills), and [config](https://developers.openai.com/codex/config-basic) docs favor short entrypoints; tests and task policy are local decisions.

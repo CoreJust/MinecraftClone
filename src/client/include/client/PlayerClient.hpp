@@ -2,17 +2,27 @@
 
 #include "Camera.hpp"
 #include "GameClient.hpp"
+#include "PlayerPresentation.hpp"
 #include "PlayerPreviewLod.hpp"
 #include "PreviewMeshing.hpp"
+#include "PreviewResidency.hpp"
+#include "render/DebugHud.hpp"
 #include "render/InstalledShaderAssets.hpp"
 #include "render/VulkanRenderer.hpp"
 
 #include <shared/ProjectInfo.hpp>
+#include <shared/net/Message.hpp>
 #include <shared/world/HeightTileSurfaceMesher.hpp>
+#include <shared/world/World.hpp>
 
 #include <core/platform/glfw/GlfwWindow.hpp>
 
+#include <glm/vec3.hpp>
+
 #include <array>
+#include <chrono>
+#include <cstddef>
+#include <cstdint>
 #include <deque>
 #include <filesystem>
 #include <memory>
@@ -79,7 +89,7 @@ class PlayerPreviewMeshCoverage final {
 public:
     void clear() noexcept { m_visible_count = 0U; }
     void interestAdded(bool already_visible) noexcept;
-    void interestRemoved(bool visible) noexcept;
+    void interestRemoved(bool visible);
     void meshPublished(bool newly_visible, bool interested) noexcept;
     [[nodiscard]] uint32_t visibleCount() const noexcept { return m_visible_count; }
     [[nodiscard]] bool complete(uint32_t interest_count) const noexcept
@@ -208,7 +218,7 @@ private:
     [[nodiscard]] shared::Direction captureInput() noexcept;
     [[nodiscard]] bool captureAtTarget(shared::Player const& player) const noexcept;
     [[nodiscard]] bool captureSceneReady() const;
-    void failCapture(std::string_view reason) noexcept;
+    void failCapture(std::string_view reason);
     Camera m_camera{
         { .position = { 9.0, 9.0, 13.0 } },
     };

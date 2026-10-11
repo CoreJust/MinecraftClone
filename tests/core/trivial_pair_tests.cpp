@@ -2,6 +2,7 @@
 
 #include <gtest/gtest.h>
 
+#include <string>
 #include <type_traits>
 
 TEST(TrivialPairTest, StoresBothValuesAsAggregate) {

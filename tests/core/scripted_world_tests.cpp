@@ -1,8 +1,11 @@
+#include <shared/world/Chunk.hpp>
 #include <shared/world/ScriptedWorld.hpp>
+#include <shared/world/World.hpp>
 
 #include <gtest/gtest.h>
 
 #include <cstdint>
+#include <expected>
 #include <filesystem>
 #include <fstream>
 #include <iterator>

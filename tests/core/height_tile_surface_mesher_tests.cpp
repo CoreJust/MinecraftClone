@@ -1,4 +1,5 @@
 #include <shared/world/HeightTileSurfaceMesher.hpp>
+#include <shared/world/WorldGeneration.hpp>
 
 #include <gtest/gtest.h>
 
@@ -8,8 +9,20 @@
 #include <cstdint>
 #include <optional>
 #include <ranges>
+#include <stdexcept>
+#include <string>
+#include <vector>
 
 namespace {
+
+template <typename Value>
+Value const& requiredValue(std::optional<Value> const& optional)
+{
+    if (optional.has_value()) {
+        return *optional;
+    }
+    throw std::runtime_error("Test expected an optional value");
+}
 
 [[nodiscard]]
 bool hasQuad(
@@ -164,8 +177,8 @@ TEST(HeightTileSurfaceMesherTest, CoarseDetailPreservesMacroReliefWhileReducingM
     };
     for (uint32_t band = 0U; band < MACRO_HEIGHTS.size(); ++band) {
         ASSERT_TRUE(macro_top_heights[band].has_value());
-        EXPECT_GE(*macro_top_heights[band], MACRO_HEIGHTS[band]);
-        EXPECT_LE(*macro_top_heights[band], MACRO_HEIGHTS[band] + 2U);
+        EXPECT_GE(requiredValue(macro_top_heights[band]), MACRO_HEIGHTS[band]);
+        EXPECT_LE(requiredValue(macro_top_heights[band]), MACRO_HEIGHTS[band] + 2U);
     }
     EXPECT_TRUE(hasQuad(
         coarse, 39, 48, 5, shared::HeightTileSurfaceDirection::PositiveX, 16U, 16U
@@ -698,7 +711,7 @@ TEST(HeightTileSurfaceMesherTest, SurfaceBoundsEncloseReducedNeighborInteriorAtT
     tile.heights.fill(HEIGHT);
     shared::HeightTile::Heights neighbor{};
     for (uint32_t offset = 0U; offset < SIDE; ++offset) {
-        neighbor[offset * SIDE] = HEIGHT;
+        neighbor[static_cast<shared::HeightTile::Heights::size_type>(offset) * SIDE] = HEIGHT;
     }
     shared::HeightTileSurfaceNeighbors const neighbors{
         .negative_x = tile.heights,
@@ -829,7 +842,10 @@ TEST(HeightTileSurfaceMesherTest, MixedDetailNeighborsPreserveTheSharedStepWall)
     shared::HeightTileSurfaceMesh const west_mesh = shared::HeightTileSurfaceMesher{}.build(
         west,
         {
+            .negative_x = {},
             .positive_x = east.heights,
+            .negative_y = {},
+            .positive_y = {},
             .positive_x_detail = shared::HeightTileSurfaceDetail::Fine,
         },
         shared::HeightTileSurfaceDetail::Coarse2
@@ -838,6 +854,9 @@ TEST(HeightTileSurfaceMesherTest, MixedDetailNeighborsPreserveTheSharedStepWall)
         east,
         {
             .negative_x = west.heights,
+            .positive_x = {},
+            .negative_y = {},
+            .positive_y = {},
             .negative_x_detail = shared::HeightTileSurfaceDetail::Coarse2,
         },
         shared::HeightTileSurfaceDetail::Fine

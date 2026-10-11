@@ -1,11 +1,17 @@
 #include <client/PlayerPreviewLod.hpp>
 
+#include <shared/net/Message.hpp>
+#include <shared/world/HeightTileInterest.hpp>
+#include <shared/world/HeightTileSurfaceMesher.hpp>
 #include <shared/world/SparseWorld.hpp>
+#include <shared/world/WorldGeneration.hpp>
 
 #include <core/common/Assert.hpp>
 
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
+#include <utility>
 
 namespace client {
 
@@ -25,16 +31,18 @@ constexpr int32_t TILE_EXTENT = static_cast<int32_t>(
         && outer.min_z_blocks <= inner.min_z_blocks && outer.max_z_blocks >= inner.max_z_blocks;
 }
 
-[[nodiscard]] double farthestPoint(
-    double const viewer_min,
-    double const viewer_max,
-    double const surface_min,
-    double const surface_max
-) noexcept
+struct AxisDistanceBounds final {
+    double viewer_min;
+    double viewer_max;
+    double surface_min;
+    double surface_max;
+};
+
+[[nodiscard]] double farthestPoint(AxisDistanceBounds const bounds) noexcept
 {
-    double const below = std::max(0.0, viewer_min - surface_min);
-    double const above = std::max(0.0, surface_max - viewer_max);
-    return below > above ? surface_min : surface_max;
+    double const below = std::max(0.0, bounds.viewer_min - bounds.surface_min);
+    double const above = std::max(0.0, bounds.surface_max - bounds.viewer_max);
+    return below > above ? bounds.surface_min : bounds.surface_max;
 }
 
 [[nodiscard]] shared::HeightTileSurfaceBounds farthestViewer(
@@ -60,15 +68,24 @@ constexpr int32_t TILE_EXTENT = static_cast<int32_t>(
     double const minimum_height
 ) noexcept
 {
-    double const x = farthestPoint(
-        viewer.min_x_blocks, viewer.max_x_blocks, surface.min_x_blocks, surface.max_x_blocks
-    );
-    double const y = farthestPoint(
-        viewer.min_y_blocks, viewer.max_y_blocks, surface.min_y_blocks, surface.max_y_blocks
-    );
-    double const z = farthestPoint(
-        viewer.min_z_blocks, viewer.max_z_blocks, surface.min_z_blocks, surface.max_z_blocks
-    );
+    double const x = farthestPoint({
+        .viewer_min = viewer.min_x_blocks,
+        .viewer_max = viewer.max_x_blocks,
+        .surface_min = surface.min_x_blocks,
+        .surface_max = surface.max_x_blocks,
+    });
+    double const y = farthestPoint({
+        .viewer_min = viewer.min_y_blocks,
+        .viewer_max = viewer.max_y_blocks,
+        .surface_min = surface.min_y_blocks,
+        .surface_max = surface.max_y_blocks,
+    });
+    double const z = farthestPoint({
+        .viewer_min = viewer.min_z_blocks,
+        .viewer_max = viewer.max_z_blocks,
+        .surface_min = surface.min_z_blocks,
+        .surface_max = surface.max_z_blocks,
+    });
     bool const below = z < viewer.min_z_blocks;
     return {
         .min_x_blocks = x,

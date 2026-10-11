@@ -1,9 +1,18 @@
+#include <client/Camera.hpp>
 #include <client/PlayerClient.hpp>
+#include <client/PlayerPresentation.hpp>
+#include <client/PreviewResidency.hpp>
 
 #include <shared/net/Message.hpp>
 #include <shared/world/HeightTileInterest.hpp>
+#include <shared/world/World.hpp>
 #include <shared/world/WorldGeneration.hpp>
 
+#include <glm/ext/vector_double3.hpp>
+#include <glm/ext/vector_float3.hpp>
+#include <glm/ext/vector_float4.hpp>
+#include <glm/mat4x4.hpp>
+#include <glm/vec3.hpp>
 #include <glm/vec4.hpp>
 #include <gtest/gtest.h>
 
@@ -11,9 +20,15 @@
 #include <array>
 #include <chrono>
 #include <cmath>
+#include <compare>
 #include <cstdint>
+#include <cstdlib>
+#include <optional>
+#include <span>
+#include <string>
 #include <tuple>
 #include <unordered_set>
+#include <utility>
 #include <variant>
 #include <vector>
 
@@ -222,7 +237,7 @@ TEST(PlayerClientCapturePlanTest, NearTargetNavigationUsesAProtocolValidSpeedup)
     EXPECT_EQ(speedup, 2U);
 
     shared::ClientInputMessage const input{
-        .direction = { .x = 1U, .accelerated = false, .speedup = speedup },
+        .direction = { .x = 1U, .y = 0U, .accelerated = false, .speedup = speedup },
         .sequence = 1U,
     };
     auto const decoded = shared::decodeMessage(shared::encodeMessage(input));
@@ -418,6 +433,8 @@ TEST(PlayerClientCapturePlanTest, MaintainedCoverageMatchesVisibleInterestThroug
                 visible.clear();
             }
             break;
+        default:
+            FAIL() << "LCG event is outside the expected six cases";
         }
         uint32_t expected_visible = 0U;
         for (uint32_t const interested : interest) {

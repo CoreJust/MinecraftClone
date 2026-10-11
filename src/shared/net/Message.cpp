@@ -1,6 +1,7 @@
 #include <shared/net/Message.hpp>
 
 #include <shared/world/SparseWorld.hpp>
+#include <shared/world/World.hpp>
 
 #include <algorithm>
 #include <type_traits>

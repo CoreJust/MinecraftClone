@@ -4,10 +4,12 @@
 
 #include <shared/world/World.hpp>
 
+#include <glm/ext/vector_double3.hpp>
 #include <glm/vec3.hpp>
 
 #include <array>
 #include <chrono>
+#include <cstdint>
 #include <optional>
 #include <vector>
 
@@ -42,7 +44,7 @@ inline constexpr double PLAYER_EYE_HEIGHT = 1.625;
 
 class PlayerPresentation final {
 public:
-    void update(shared::Player const& player, std::chrono::steady_clock::time_point received_at) noexcept;
+    void update(shared::Player const& player, std::chrono::steady_clock::time_point received_at);
     void remove(char character) noexcept;
 
     [[nodiscard]]
