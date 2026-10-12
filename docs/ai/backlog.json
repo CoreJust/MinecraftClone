@@ -15498,5 +15498,40 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0439",
+    "title": "Automate complete analyzer inventories and single snapshot artifact trigger",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P1",
+    "route": "luna",
+    "milestone": "ED-010-S7",
+    "depends_on": [],
+    "acceptance": "IWYU and cppcheck build presets clean generated objects automatically; other nine row inputs unchanged; canonical tag triggers one artifact build with manual dispatch retained; owning artifact documentation reflects build-only evidence.",
+    "evidence": "Focused analysis preset and workflow contract suites passed; CMake accepts clean-first presets; nine unrelated row identities preserved. Two affected analyzer runtime receipts require renewal before snapshot completion.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0038",
+    "motivation": "Remove repeated artifact builds and prevent stale objects from bypassing required analyzer inventory",
+    "context": "Both Mac per-TU analyzer rows needed targeted Ninja clean because fresh configuration preserved objects. Branch plus tag triggers duplicated snapshot packages.",
+    "complexity": "low",
+    "created_at": "2026-10-12",
+    "resolved_at": "2026-10-12",
+    "resolution_changes": "Automated complete per-TU inventories with clean-first IWYU/cppcheck presets; removed duplicate ai-main artifact trigger, retained manual trust and canonical tags, corrected artifact and process guides.",
+    "plan": [
+      "Clarify acceptance and implementation steps.",
+      "Add two clean-first build preset contracts, remove ai-main branch artifact trigger, verify focused regressions and exact review."
+    ],
+    "product_changes": [],
+    "code_changes": [],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]

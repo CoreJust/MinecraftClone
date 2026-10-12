@@ -39,6 +39,17 @@ class WorkflowContextTests(unittest.TestCase):
         self.assertIn("platform: windows", self.jobs["desktop"])
         self.assertNotIn("platform: android", self.jobs["desktop"])
 
+    def test_only_canonical_tag_pushes_start_automatic_artifact_builds(self):
+        triggers = self.workflow.split("\npermissions:\n", 1)[0]
+        push = triggers.split("  push:\n", 1)[1].split("  workflow_dispatch:\n", 1)[0]
+        self.assertEqual(push, "    tags:\n      - 'ai/*/*/*'\n")
+        manual = triggers.split("  workflow_dispatch:\n", 1)[1]
+        for field in ("source_ref", "version"):
+            field_block = re.split(r"(?m)^      \w+:", manual.split(f"      {field}:\n", 1)[1], maxsplit=1)[0]
+            self.assertIn("required: true", field_block)
+        manual_trust = self.jobs["source"].split("workflow_dispatch)", 1)[1].split(";;", 1)[0]
+        self.assertIn('git merge-base --is-ancestor "$source_commit" refs/remotes/origin/ai-main', manual_trust)
+
     def test_artifact_workflow_contains_no_automated_test_or_analysis_gates(self):
         forbidden = re.compile(
             r"(?i)\b(?:ctest|pytest|unittest|ai_check|ai_analysis_matrix|"

@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import copy
 import json
 import os
 import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+
+from script import ai_analysis_matrix
 
 
 REPOSITORY = Path(__file__).resolve().parents[2]
@@ -30,6 +33,47 @@ def effective_cache_variables(preset_name: str) -> dict[str, object]:
 
 
 class AnalysisPresetTests(unittest.TestCase):
+    def test_only_iwyu_and_cppcheck_clean_first_inputs_change_their_matrix_hashes(self):
+        presets = json.loads(PRESETS_PATH.read_text(encoding="utf-8"))
+        selected_presets = {"analysis-iwyu", "analysis-cppcheck"}
+        for preset in presets["buildPresets"]:
+            if preset["name"] in selected_presets:
+                self.assertIs(preset.get("cleanFirst"), True, preset["name"])
+
+        previous_presets = copy.deepcopy(presets)
+        for preset in previous_presets["buildPresets"]:
+            if preset["name"] in selected_presets:
+                preset.pop("cleanFirst", None)
+
+        manifest = ai_analysis_matrix.load_manifest(REPOSITORY / "script/ai_analysis_matrix.json")
+        with tempfile.TemporaryDirectory() as directory:
+            previous_root = Path(directory) / "previous"
+            current_root = Path(directory) / "current"
+            previous_root.mkdir()
+            current_root.mkdir()
+            (previous_root / "CMakePresets.json").write_text(
+                json.dumps(previous_presets), encoding="utf-8"
+            )
+            (current_root / "CMakePresets.json").write_text(
+                json.dumps(presets), encoding="utf-8"
+            )
+
+            previous_hashes = {
+                row["id"]: ai_analysis_matrix.row_source_input_sha256(previous_root, row)
+                for row in manifest["rows"]
+            }
+            current_hashes = {
+                row["id"]: ai_analysis_matrix.row_source_input_sha256(current_root, row)
+                for row in manifest["rows"]
+            }
+
+        changed_rows = {
+            row_id
+            for row_id, previous_hash in previous_hashes.items()
+            if current_hashes[row_id] != previous_hash
+        }
+        self.assertEqual(changed_rows, {"iwyu", "cppcheck"})
+
     def test_lsan_triplets_require_and_consume_the_selected_libcxx_prefix(self):
         with tempfile.TemporaryDirectory() as directory:
             prefix = Path(directory) / "libcxx"

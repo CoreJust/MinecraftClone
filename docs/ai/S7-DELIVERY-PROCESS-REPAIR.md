@@ -1,6 +1,6 @@
 # S7 delivery process repair
 
-S7 remains unreleased. MC-AI-0434 repairs its repeatedly failing workflow;
+S7 remains unreleased. MC-AI-0434 repairs its workflow;
 this document does not claim qualification is complete.
 
 ## What was structurally wrong
@@ -20,9 +20,6 @@ this document does not claim qualification is complete.
   repeatedly mistaken for readiness to finish the release.
 - Phase logs were buffered until subprocess completion. A completed phase or
   a heartbeat did not establish the current candidate's qualification status.
-
-The gate call graph, validators and retained evidence support these causes.
-Removing hosted checks alone cannot fix identity or repeated-execution defects.
 
 ## Replacement contract
 
@@ -48,8 +45,8 @@ to CoreLang: its Android support remains equal to Windows/macOS.
 Regression tests must demonstrate metadata reuse, relevant-input invalidation,
 failure/missing-proof rejection, exact release authenticity and artifact-only
 CI. Real local qualification and platform runtime evidence remain separate
-delivery gates. Review and the final delivery report must cite observed results,
-not estimates or historical passes silently rebound to a new candidate.
+delivery gates. Reports must cite observed results, not estimates or rebound
+historical passes.
 
 ## Local runtime setup findings
 
@@ -109,4 +106,10 @@ The Android launcher rejected the instructed shared default emulator because
 it still required a historical S7-specific AVD. Basic runtime evidence was
 obtained on the default device with exact serial, API, ABI and installed-APK
 checks, but that evidence does not establish correctness of the old launcher.
-The guard requires a narrow repair, retaining duplicate-client protection.
+The repaired guard retains duplicate-client protection.
+
+Fresh CMake configuration preserves object files. IWYU/cppcheck must clean
+generated objects before building or their launchers skip current translation
+units; clean-first presets automate this without deleting raw reports. Live
+CTest output uses randomly suffixed `LastTest.log.tmp*` files, not one fixed
+name. Canonical-tag-only artifact triggers avoid duplicate promotion builds.

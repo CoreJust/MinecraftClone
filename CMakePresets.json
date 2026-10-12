@@ -237,11 +237,13 @@
     },
     {
       "name": "analysis-iwyu",
-      "configurePreset": "analysis-iwyu"
+      "configurePreset": "analysis-iwyu",
+      "cleanFirst": true
     },
     {
       "name": "analysis-cppcheck",
-      "configurePreset": "analysis-cppcheck"
+      "configurePreset": "analysis-cppcheck",
+      "cleanFirst": true
     }
   ],
   "testPresets": [

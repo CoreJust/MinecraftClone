@@ -2,8 +2,6 @@ name: Snapshot artifacts
 
 on:
   push:
-    branches:
-      - ai-main
     tags:
       - 'ai/*/*/*'
   workflow_dispatch:
