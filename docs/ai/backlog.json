@@ -15238,5 +15238,43 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": "Added as MC-AI-0431, a direct basic child of active S7 MC-AI-0038. This resolves only the local workflow setup and regression; hosted diagnostic execution and S7 release gates remain pending."
+  },
+  {
+    "id": "MC-AI-0432",
+    "title": "Add a full-context macOS ASan suite diagnostic mode",
+    "kind": "chore",
+    "status": "done",
+    "priority": "P1",
+    "route": "luna",
+    "milestone": "ED-010-S7",
+    "depends_on": [],
+    "acceptance": "Add a manually dispatched ai-dev full-context-suite diagnostic that reuses the pinned Mac ASan setup, LSan controls and suppressions, checked observation patches, full analysis-macos-asan preset build, and original full macos_asan CTest command and environment. Preserve the existing sustained-flight single-test invocation and 60-second CTest timeout. Keep all ordinary jobs out of either diagnostic mode, preserve default dispatch and push behavior, and upload raw CTest output and LastTest.log on failure. The full build/test step retains the 900-second budget with the original per-test timeout semantics. The workflow regression, focused checks, docs/source inventory refresh, and task checks must pass. Do not issue release qualification from observational source.",
+    "evidence": "Workflow-context suite passed 38/38; its truth table covers every job for both diagnostics and ordinary push/default dispatch, and its command checks match the macos_asan manifest row. Ruby parsed the workflow YAML and all diagnostic Bash blocks; docs refresh/check, task ledger check, and git diff --check passed. No hosted dispatch or qualification receipt was produced; full-context hosted outcome remains pending under MC-AI-0038.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0038",
+    "motivation": "Reproduce the hosted sustained-flight failure in the original full macOS ASan CTest execution context.",
+    "context": "The original exact-source macOS ASan row failed the sustained-flight acknowledgement limit at lag 22 versus 16. An isolated diagnostic on the same gameplay source with checked observation patches passed at lag 3 without capacity hits or transport-window saturation. A manual full-context rerun is needed to distinguish suite-contention effects while keeping its observational source diagnostic-only.",
+    "complexity": "medium",
+    "created_at": "2026-10-12",
+    "resolved_at": "2026-10-12",
+    "resolution_changes": "Added a full-context-suite choice to the existing manual ai-dev diagnostic job. It shares pinned controls/configuration with the existing sustained-flight mode, builds the full analysis preset, runs the original full CTest command with its existing per-test limits, applies a 900-second build/test-step budget, and always uploads raw CTest and LastTest logs. Preserved the existing single-test build/CTest commands and kept both modes excluded from normal jobs.",
+    "plan": [
+      "Add the opt-in mode and fail-closed full-suite command branch to the existing diagnostic job; retain all original single-test commands and guards.",
+      "Extend workflow regressions across both modes, every job guard, and both build/test branches; document the diagnostic boundary and refresh generated inventory.",
+      "Run focused tests and deterministic documentation, task, and source checks; record the diagnostic as local workflow support only."
+    ],
+    "product_changes": [],
+    "code_changes": [
+      "Added the full-context workflow branch, complete job-guard truth-table regression coverage, and a concise diagnostic-only build-guide entry."
+    ],
+    "baseline_commit": "4039a96806d92e12800c22aad1952f5678d84b9b",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "Read the Mac ASan matrix row and preset against the shared configure step and new full-suite command; refreshed and checked docs/code/source_state.json. The guide states the diagnostic boundary and 900-second full-suite budget.",
+    "environment_review": "Hosted macOS dispatch was not run in this implementation task. The checked observational source is explicitly not release qualification; full-context result remains pending under MC-AI-0038.",
+    "backlog_review": "Added MC-AI-0432 as a direct basic child of active S7 MC-AI-0038. This closes only the bounded diagnostic route implementation; exact-source release gates and hosted full-context result remain open."
   }
 ]

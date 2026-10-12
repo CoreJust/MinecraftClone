@@ -8,11 +8,12 @@ on:
   workflow_dispatch:
     inputs:
       diagnostic:
-        description: Run the isolated sustained-flight Mac ASan diagnostic
+        description: Run an isolated Mac ASan diagnostic
         type: choice
         options:
           - none
           - sustained-flight
+          - full-context-suite
         default: none
         required: true
 
@@ -21,7 +22,7 @@ permissions:
 
 jobs:
   fast:
-    if: github.event_name != 'workflow_dispatch' || github.event.inputs.diagnostic != 'sustained-flight'
+    if: github.event_name != 'workflow_dispatch' || (github.event.inputs.diagnostic != 'sustained-flight' && github.event.inputs.diagnostic != 'full-context-suite')
     strategy:
       fail-fast: false
       matrix:
@@ -40,7 +41,7 @@ jobs:
       - run: python script/ai_check.py --fast
 
   desktop:
-    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/ai-main' && github.event.inputs.diagnostic != 'sustained-flight'
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/ai-main' && github.event.inputs.diagnostic != 'sustained-flight' && github.event.inputs.diagnostic != 'full-context-suite'
     name: desktop (${{ matrix.platform }}, ${{ matrix.preset }})
     runs-on: ${{ matrix.runner }}
     strategy:
@@ -349,8 +350,8 @@ jobs:
           retention-days: 14
 
   sustained-flight-macos-asan:
-    if: github.event_name == 'workflow_dispatch' && github.event.inputs.diagnostic == 'sustained-flight' && github.ref == 'refs/heads/ai-dev'
-    name: Sustained-flight Mac ASan diagnostic (not release evidence)
+    if: github.event_name == 'workflow_dispatch' && (github.event.inputs.diagnostic == 'sustained-flight' || github.event.inputs.diagnostic == 'full-context-suite') && github.ref == 'refs/heads/ai-dev'
+    name: ${{ github.event.inputs.diagnostic }} Mac ASan diagnostic (not release evidence)
     runs-on: macos-15
     timeout-minutes: 180
     env:
@@ -511,6 +512,7 @@ jobs:
             2>&1 | tee "$RUNNER_TEMP/sustained-flight-diagnostic/configure.log"
           grep -F -- '-fsanitize=address' build/analysis-macos-asan/compile_commands.json
       - name: Build and run only the sustained-flight test with unchanged limits
+        if: github.event.inputs.diagnostic == 'sustained-flight'
         shell: bash
         env:
           ASAN_OPTIONS: detect_leaks=1
@@ -529,11 +531,31 @@ jobs:
           python script/ci/verify_macos_lsan.py summarize \
             --last-test-log build/analysis-macos-asan/Testing/Temporary/LastTest.log \
             2>&1 | tee "$diagnostic_root/lsan-summary.log"
-      - name: Upload raw sustained-flight diagnostic evidence
+      - name: Build and run the full hosted Mac ASan context
+        if: github.event.inputs.diagnostic == 'full-context-suite'
+        timeout-minutes: 15
+        shell: bash
+        env:
+          ASAN_OPTIONS: detect_leaks=1
+          LSAN_OPTIONS: suppressions=${{ github.workspace }}/diagnostic-source/script/ci/macos_lsan.supp:print_suppressions=1
+          CORECPP_ENET_DIAGNOSTICS: '1'
+        run: |
+          set -euo pipefail
+          diagnostic_root="$RUNNER_TEMP/sustained-flight-diagnostic"
+          source="$GITHUB_WORKSPACE/diagnostic-source"
+          cd "$source"
+          cmake --build --preset analysis-macos-asan \
+            2>&1 | tee "$diagnostic_root/build.log"
+          ctest --test-dir build/analysis-macos-asan --output-on-failure --no-tests=error \
+            2>&1 | tee "$diagnostic_root/ctest.log"
+          python script/ci/verify_macos_lsan.py summarize \
+            --last-test-log build/analysis-macos-asan/Testing/Temporary/LastTest.log \
+            2>&1 | tee "$diagnostic_root/lsan-summary.log"
+      - name: Upload raw Mac ASan diagnostic evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: sustained-flight-macos-asan-diagnostic-${{ github.sha }}
+          name: ${{ github.event.inputs.diagnostic }}-macos-asan-diagnostic-${{ github.sha }}
           path: |
             ${{ runner.temp }}/sustained-flight-diagnostic/**
             diagnostic-source/build/analysis-macos-asan/Testing/Temporary/LastTest.log
@@ -542,7 +564,7 @@ jobs:
           retention-days: 14
 
   linux-analysis:
-    if: ((github.event_name == 'push' && github.ref == 'refs/heads/ai-main') || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/ai-dev')) && github.event.inputs.diagnostic != 'sustained-flight'
+    if: ((github.event_name == 'push' && github.ref == 'refs/heads/ai-main') || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/ai-dev')) && github.event.inputs.diagnostic != 'sustained-flight' && github.event.inputs.diagnostic != 'full-context-suite'
     name: Linux analysis (${{ matrix.row }})
     runs-on: ubuntu-24.04
     timeout-minutes: 360

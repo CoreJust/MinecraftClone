@@ -20,17 +20,36 @@ WORKFLOWS = (
 
 
 class WorkflowContextTests(unittest.TestCase):
-    def test_flight_diagnostic_dispatch_excludes_normal_jobs_without_changing_defaults(self):
+    def test_diagnostic_dispatches_exclude_other_jobs_without_changing_defaults(self):
         workflow = WORKFLOWS[0].read_text(encoding="utf-8")
+        jobs = (
+            "fast",
+            "desktop",
+            "sustained-flight-macos-asan",
+            "linux-analysis",
+            "android-hwasan-build",
+            "android-hwasan-runtime",
+            "analysis-matrix",
+        )
+        job_headers = list(re.finditer(r"(?m)^  ([a-z][a-z0-9-]*):\s*$", workflow))
+        job_blocks = {
+            match.group(1): workflow[
+                match.end() : job_headers[index + 1].start()
+                if index + 1 < len(job_headers)
+                else len(workflow)
+            ]
+            for index, match in enumerate(job_headers)
+        }
         guards = {}
-        for job in ("fast", "linux-analysis", "desktop", "sustained-flight-macos-asan"):
-            match = re.search(rf"^  {job}:\n    if: (.+)$", workflow, re.MULTILINE)
+        for job in jobs:
+            match = re.search(r"(?m)^    if: (.+)$", job_blocks[job])
             self.assertIsNotNone(match, job)
             expression = match.group(1)
             for original, replacement in (
                 ("github.event.inputs.diagnostic", "diagnostic"),
                 ("github.event_name", "event"),
                 ("github.ref", "ref"),
+                ("always()", "always"),
                 ("&&", "and"),
                 ("||", "or"),
             ):
@@ -44,29 +63,36 @@ class WorkflowContextTests(unittest.TestCase):
             guards[job] = compile(syntax, "workflow guard", "eval")
 
         cases = (
-            ("workflow_dispatch", "refs/heads/ai-dev", "sustained-flight", (False, False, False, True)),
-            ("workflow_dispatch", "refs/heads/ai-dev", "none", (True, True, False, False)),
-            ("push", "refs/heads/ai-dev", "", (True, False, False, False)),
-            ("push", "refs/heads/ai-main", "", (True, True, True, False)),
-            ("workflow_dispatch", "refs/heads/ai-main", "none", (True, False, True, False)),
-            ("workflow_dispatch", "refs/heads/ai-main", "sustained-flight", (False, False, False, False)),
+            ("workflow_dispatch", "refs/heads/ai-dev", "sustained-flight", (False, False, True, False, False, False, False)),
+            ("workflow_dispatch", "refs/heads/ai-dev", "full-context-suite", (False, False, True, False, False, False, False)),
+            ("workflow_dispatch", "refs/heads/ai-dev", "none", (True, False, False, True, False, False, False)),
+            ("push", "refs/heads/ai-dev", "", (True, False, False, False, False, False, False)),
+            ("push", "refs/heads/ai-main", "", (True, True, False, True, True, True, True)),
+            ("workflow_dispatch", "refs/heads/ai-main", "none", (True, True, False, False, False, False, False)),
+            ("workflow_dispatch", "refs/heads/ai-main", "sustained-flight", (False, False, False, False, False, False, False)),
+            ("workflow_dispatch", "refs/heads/ai-main", "full-context-suite", (False, False, False, False, False, False, False)),
         )
         for event, ref, diagnostic, expected in cases:
             with self.subTest(event=event, ref=ref, diagnostic=diagnostic):
                 actual = tuple(eval(guard, {"__builtins__": {}}, {
-                    "event": event, "ref": ref, "diagnostic": diagnostic,
+                    "event": event,
+                    "ref": ref,
+                    "diagnostic": diagnostic,
+                    "always": True,
                 }) for guard in guards.values())
                 self.assertEqual(actual, expected)
 
-    def test_flight_diagnostic_is_opt_in_branch_bound_and_not_release_evidence(self):
+    def test_full_context_diagnostic_uses_original_suite_commands_and_budget(self):
         workflow = WORKFLOWS[0].read_text(encoding="utf-8")
         diagnostic = workflow.split("\n  sustained-flight-macos-asan:\n", 1)[1].split(
             "\n  linux-analysis:\n", 1
         )[0]
         self.assertIn("default: none", workflow)
+        self.assertIn("          - full-context-suite\n", workflow)
         self.assertIn(
             "if: github.event_name == 'workflow_dispatch' && "
-            "github.event.inputs.diagnostic == 'sustained-flight' && "
+            "(github.event.inputs.diagnostic == 'sustained-flight' || "
+            "github.event.inputs.diagnostic == 'full-context-suite') && "
             "github.ref == 'refs/heads/ai-dev'",
             diagnostic,
         )
@@ -74,13 +100,51 @@ class WorkflowContextTests(unittest.TestCase):
             diagnostic.index("Validate immutable diagnostic inputs"),
             diagnostic.index("secrets.MC_CI_CORECPP_DEPLOY_KEY"),
         )
-        self.assertIn("--target mc_tests --parallel 4", diagnostic)
-        self.assertIn("--no-tests=error --timeout 60 -V", diagnostic)
-        self.assertIn("SustainedFlightKeepsInputAcknowledgementsCurrentWhileTilesStream$", diagnostic)
+        configuration = diagnostic.split(
+            "      - name: Configure the hosted Mac ASan preset and inspect active tools\n", 1
+        )[1].split("      - name:", 1)[0]
+        self.assertNotIn("\n        if:", configuration)
+        self.assertIn("verify_macos_lsan.py controls", configuration)
+        self.assertIn("cmake --preset analysis-macos-asan", configuration)
+        single_test = diagnostic.split(
+            "      - name: Build and run only the sustained-flight test with unchanged limits\n", 1
+        )[1].split("      - name:", 1)[0]
+        self.assertIn("if: github.event.inputs.diagnostic == 'sustained-flight'", single_test)
+        self.assertIn("--target mc_tests --parallel 4", single_test)
+        self.assertIn("--no-tests=error --timeout 60 -V", single_test)
+        self.assertIn("SustainedFlightKeepsInputAcknowledgementsCurrentWhileTilesStream$", single_test)
+
+        full_suite = diagnostic.split(
+            "      - name: Build and run the full hosted Mac ASan context\n", 1
+        )[1].split("      - name:", 1)[0]
+        self.assertIn("if: github.event.inputs.diagnostic == 'full-context-suite'", full_suite)
+        self.assertIn("timeout-minutes: 15", full_suite)
+        self.assertIn("cmake --build --preset analysis-macos-asan", full_suite)
+        self.assertIn(
+            "ctest --test-dir build/analysis-macos-asan --output-on-failure --no-tests=error",
+            full_suite,
+        )
+        self.assertNotIn("--timeout", full_suite)
+        self.assertIn("verify_macos_lsan.py summarize", full_suite)
+        self.assertNotIn("verify_macos_lsan.py controls", full_suite)
+        self.assertNotIn("cmake --preset analysis-macos-asan", full_suite)
+        self.assertIn("set -euo pipefail", full_suite)
+        self.assertIn('tee "$diagnostic_root/ctest.log"', full_suite)
+        self.assertIn("LastTest.log", full_suite)
+        self.assertIn("if: always()", diagnostic)
+        self.assertIn("ctest.log", diagnostic)
+        self.assertIn("LastTest.log", diagnostic)
         self.assertIn("ASAN_OPTIONS: detect_leaks=1", diagnostic)
         self.assertIn("if: always()", diagnostic)
         self.assertNotIn("run-row", diagnostic)
         self.assertNotIn("android_hwasan_emulator", diagnostic)
+
+        matrix = json.loads((REPOSITORY / "script/ai_analysis_matrix.json").read_text(encoding="utf-8"))
+        row = next(row for row in matrix["rows"] if row["id"] == "macos_asan")
+        expected_build = " ".join(row["commands"][2])
+        expected_ctest = " ".join(row["commands"][3])
+        self.assertIn(expected_build, full_suite)
+        self.assertIn(expected_ctest, full_suite)
 
     def test_flight_diagnostic_runs_lsan_controls_and_test_with_required_environment(self):
         workflow = WORKFLOWS[0].read_text(encoding="utf-8")
@@ -98,6 +162,10 @@ class WorkflowContextTests(unittest.TestCase):
             ),
             (
                 "Build and run only the sustained-flight test with unchanged limits",
+                "ctest --test-dir",
+            ),
+            (
+                "Build and run the full hosted Mac ASan context",
                 "ctest --test-dir",
             ),
         )
@@ -365,7 +433,8 @@ class WorkflowContextTests(unittest.TestCase):
             "linux-analysis": (
                 "((github.event_name == 'push' && github.ref == 'refs/heads/ai-main') "
                 "|| (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/ai-dev')) "
-                "&& github.event.inputs.diagnostic != 'sustained-flight'"
+                "&& github.event.inputs.diagnostic != 'sustained-flight' "
+                "&& github.event.inputs.diagnostic != 'full-context-suite'"
             ),
             "android-hwasan-build": "github.event_name == 'push' && github.ref == 'refs/heads/ai-main'",
             "android-hwasan-runtime": "github.event_name == 'push' && github.ref == 'refs/heads/ai-main'",
