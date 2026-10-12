@@ -15393,5 +15393,42 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0436",
+    "title": "Correct ARM64 sanitizer GMP probes and scoped qualification inputs",
+    "kind": "chore",
+    "status": "done",
+    "priority": "P1",
+    "route": "luna",
+    "milestone": "Unassigned",
+    "depends_on": [],
+    "acceptance": "Existing linker-probe patch is selected for both x64 and ARM64 Linux LSan/MSan; assembly is disabled for both MSan architectures only; unaffected platform behavior remains unchanged; LSan receipt input identity rejects modified GMP overlays; focused CMake execution and proof-regression tests pass.",
+    "evidence": "Focused GMP overlay and matrix tests passed 74/74; Python compilation and scoped whitespace checks passed. CMake-P fixtures exercise all four sanitizer triplets and unchanged non-sanitizer branches; patch-application test preserves the actual compiler probe. Guest host iostream and GMP prerequisite builds pass; full target sanitizer closure and aggregate qualification remain pending.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0038",
+    "motivation": "Repair demonstrated ARM64 sanitizer dependency configure failures without relaxing instrumentation",
+    "context": "Existing GMP linker-probe patch and MSan assembly-disable guards match only x64-linux-msan; ARM64 LSan configure cannot find libc++ because its probe drops LDFLAGS, and ARM64 MSan would retain uninstrumented assembly writes. LSan input scope also omits the consumed GMP overlay.",
+    "complexity": "low",
+    "created_at": "2026-10-12",
+    "resolved_at": "2026-10-12",
+    "resolution_changes": "Generalized the existing strict GMP linker probe patch to x64/ARM64 Linux LSan and MSan; disabled assembly for both MSan architectures only; bound the consumed GMP overlay in LSan inputs and extended executable CMake/proof regressions.",
+    "plan": [
+      "Clarify acceptance and implementation steps.",
+      "Correct only demonstrated overlay guards and missing LSan input scope, extend existing contract tests, then review and commit once."
+    ],
+    "product_changes": [],
+    "code_changes": [
+      "Architecture-complete Linux sanitizer GMP configuration and consumed overlay input identity."
+    ],
+    "baseline_commit": "e2878d64be51a4f6ada383b509ba6fff7f4a0b7f",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]

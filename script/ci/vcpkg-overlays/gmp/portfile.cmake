@@ -22,7 +22,7 @@ set(GMP_PATCHES
     remove_compiler_info.patch
     c23.patch
 )
-if(TARGET_TRIPLET STREQUAL "x64-linux-msan")
+if(TARGET_TRIPLET MATCHES "^(x64|arm64)-linux-(lsan|msan)$")
     list(APPEND GMP_PATCHES msan-cxx-ldflags.patch)
 endif()
 vcpkg_extract_source_archive(SOURCE_PATH
@@ -45,7 +45,7 @@ if(VCPKG_TARGET_IS_WINDOWS AND NOT VCPKG_TARGET_IS_MINGW)
 endif()
 
 set(disable_assembly OFF)
-if(TARGET_TRIPLET STREQUAL "x64-linux-msan")
+if(TARGET_TRIPLET MATCHES "^(x64|arm64)-linux-msan$")
     # MSan must instrument GMP's writes to its limb buffers.
     set(disable_assembly ON)
 endif()

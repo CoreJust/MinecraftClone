@@ -424,6 +424,7 @@ class AnalysisMatrixTests(unittest.TestCase):
             "script/ci/vcpkg-triplets/x64-linux-msan.cmake",
             "script/ci/vcpkg-clang-toolchain.cmake",
             "script/ci/install_msan_libcxx.py",
+            "script/ci/vcpkg-overlays/gmp/portfile.cmake",
             "script/ci/vcpkg-overlays/gmp/vcpkg.json",
             "script/ci/iwyu_gate.py",
             "script/ci/cppcheck_gate.py",
@@ -484,16 +485,16 @@ class AnalysisMatrixTests(unittest.TestCase):
             for row_id in ("macos_asan", "windows_msvc_asan", "linux_msan"):
                 self.assertEqual(before[row_id], after_lsan[row_id], row_id)
 
-            overlay = root / "script/ci/vcpkg-overlays/gmp/vcpkg.json"
+            overlay = root / "script/ci/vcpkg-overlays/gmp/portfile.cmake"
             overlay.write_text("changed GMP overlay\n", encoding="utf-8")
             after_overlay = {
                 row_id: self.matrix.row_source_input_sha256(root, rows[row_id])
                 for row_id in tracked_ids
             }
             self.assertNotEqual(after_lsan["windows_msvc_asan"], after_overlay["windows_msvc_asan"])
+            self.assertNotEqual(after_lsan["linux_lsan"], after_overlay["linux_lsan"])
             self.assertNotEqual(after_lsan["linux_msan"], after_overlay["linux_msan"])
             self.assertEqual(after_lsan["macos_asan"], after_overlay["macos_asan"])
-            self.assertEqual(after_lsan["linux_lsan"], after_overlay["linux_lsan"])
 
     def create_iwyu_fixture(self, root: Path, *, source_count: int = 1, receipt_count: int | None = None):
         for relative in (

@@ -86,6 +86,7 @@ INPUT_SCOPES = {
         "script/ci/vcpkg-triplets/x64-linux-lsan.cmake",
         "script/ci/vcpkg-triplets/arm64-linux-lsan.cmake",
         "script/ci/vcpkg-clang-toolchain.cmake",
+        "script/ci/vcpkg-overlays/gmp/**",
     ),
     "linux_msan": (
         "script/ci/vcpkg-triplets/x64-linux-msan.cmake",
