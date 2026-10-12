@@ -174,7 +174,7 @@
         "vcpkg-configuration.json",
         "vcpkg.json"
       ],
-      "sources_sha256": "6211615aa27661d09ab9c5f4abf2572e4c79fa2f23a229f1e4e922ccd73e6e81"
+      "sources_sha256": "e74248892521085f9bedf5ca6487308c9dafc25dc570d174b635e078e846a9fe"
     },
     {
       "guide": "docs/code/CORE.md",
@@ -380,7 +380,7 @@
         "tests/testsupport/include/testsupport/AdverseTransport.hpp",
         "tests/testsupport/include/testsupport/ImageComparison.hpp"
       ],
-      "sources_sha256": "6224990bef112561b820a516a8d6106f411e65930e2b1c853ebdba033657c2a4"
+      "sources_sha256": "74216e31433ada87bce42512a4ed97898c634361c785c78d3cc5d760de5eab91"
     }
   ],
   "version": 1

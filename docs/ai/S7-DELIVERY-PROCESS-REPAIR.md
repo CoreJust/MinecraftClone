@@ -1,8 +1,7 @@
 # S7 delivery process repair
 
-The owner changed the release workflow after repeated failed delivery attempts.
-S7 remains unreleased. MC-AI-0434 repairs the process; this document does not
-claim that its implementation or qualification is already complete.
+S7 remains unreleased. MC-AI-0434 repairs its repeatedly failing workflow;
+this document does not claim qualification is complete.
 
 ## What was structurally wrong
 
@@ -22,9 +21,8 @@ claim that its implementation or qualification is already complete.
 - Phase logs were buffered until subprocess completion. A completed phase or
   a heartbeat did not establish the current candidate's qualification status.
 
-These causes are supported by the gate call graph, receipt validators and
-retained task evidence. They do not justify the delay, and removing a hosted
-gate alone does not fix the underlying identity or repeated-execution defects.
+The gate call graph, validators and retained evidence support these causes.
+Removing hosted checks alone cannot fix identity or repeated-execution defects.
 
 ## Replacement contract
 
@@ -77,3 +75,38 @@ and Mac builds use vcpkg headers alongside separately installed tools/loaders.
 The Windows compiler probe failure was a compound-CMD `%PATH%` expansion error;
 the toolchain initialized correctly with separate command lines. No machine
 repair was needed for that failure.
+
+## Native-service and receipt-boundary findings
+
+The same Mac exposed different Launch Services state inside and outside the
+execution sandbox. The sandbox view contained zero registered bundles; the
+native view contained 635 and an initialized system cache. The identical ASan
+AudioUnit control could not obtain the output component inside the sandbox,
+but outside it observed a real callback and successful stop, uninitialize and
+dispose. Its intentional application leak remained detectable. This evidence
+does not justify resetting the healthy system cache or disabling sandboxing
+globally: native-service acceptance needs the scoped, reviewed execution
+boundary. It also does not prove the cause of every historical launch failure.
+
+The first full native ASan run passed its test bodies but failed six processes
+on exit-time Apple audio-framework leak reports. Runtime teardown is present;
+an isolated pinned-CoreCpp runtime-output reproduction then reported the same
+376 bytes in eight Apple-framework allocations after successful start/play/stop.
+Adding an owned 37-byte allocation produced a separate, symbolized application
+leak report. Transport tests can use their existing audio injection boundary
+without changing production audio or suppressions; native callback controls and
+the reproduced framework limitation remain explicit. The original failed rows
+are retained, not rewritten as successful qualification.
+
+Real receipts exposed gaps that synthetic fixtures had missed: the Mac verifier
+resolved a recorded Linux prefix through its own filesystem, and cppcheck's
+capture loop overwrote the required configuration key. Analyzer retries also
+encountered stale invocation records from an earlier compiler-argument set.
+Capture-to-validator round trips and foreign-path fixtures must cover these
+boundaries; a successful analyzer command alone is not a valid receipt.
+
+The Android launcher rejected the instructed shared default emulator because
+it still required a historical S7-specific AVD. Basic runtime evidence was
+obtained on the default device with exact serial, API, ABI and installed-APK
+checks, but that evidence does not establish correctness of the old launcher.
+The guard requires a narrow repair, retaining duplicate-client protection.

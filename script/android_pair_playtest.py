@@ -20,6 +20,7 @@ import android_playtest
 HOST = "127.0.0.1"
 PORT = 20_040
 RENDER_DISTANCE = 72
+DEFAULT_AVD = android_playtest.DEFAULT_AVD
 DEFAULT_SERVER = Path(__file__).resolve().parents[1] / "build" / "release" / (
     "mc_main.exe" if os.name == "nt" else "mc_main"
 )
@@ -91,6 +92,7 @@ def run_playtest(
     server_binary: Path,
     server_timeout: float = 20,
     client_timeout: int = 60,
+    expected_avd: str = DEFAULT_AVD,
 ) -> dict[str, str]:
     server_path = _require_release_server(server_binary)
     _require_port_free()
@@ -107,7 +109,11 @@ def run_playtest(
     try:
         _wait_for_server(server, server_timeout)
         print(f"Host is listening on {HOST}:{PORT}; checking the selected Android client.", flush=True)
-        receipt = android_playtest.launch_or_reuse(serial, timeout_seconds=client_timeout)
+        receipt = android_playtest.launch_or_reuse(
+            serial,
+            timeout_seconds=client_timeout,
+            expected_avd=expected_avd,
+        )
         print(f"Android client ready: {json.dumps(receipt, sort_keys=True)}", flush=True)
         print("Playtest is live. Leave this command running; press Ctrl-C to stop only this host server.", flush=True)
         return_code = server.wait()
@@ -118,7 +124,13 @@ def run_playtest(
 
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--serial", required=True, help="explicit ADB serial for the S7 ReleaseClean AVD")
+    parser.add_argument("--serial", required=True, help="explicit ADB serial for the selected AVD")
+    parser.add_argument(
+        "--avd",
+        choices=android_playtest.SUPPORTED_AVDS,
+        default=DEFAULT_AVD,
+        help=f"expected AVD name (default: {DEFAULT_AVD})",
+    )
     parser.add_argument("--server-timeout", type=float, default=20, help="seconds to wait for UDP 20040 to bind")
     parser.add_argument("--client-timeout", type=int, default=60, help="seconds allowed for guarded Android launch")
     args = parser.parse_args(argv)
@@ -127,7 +139,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     if not 1 <= args.client_timeout <= 120:
         parser.error("--client-timeout must be between 1 and 120 seconds")
     try:
-        run_playtest(args.serial, DEFAULT_SERVER, args.server_timeout, args.client_timeout)
+        run_playtest(
+            args.serial,
+            DEFAULT_SERVER,
+            args.server_timeout,
+            args.client_timeout,
+            expected_avd=args.avd,
+        )
         return 0
     except KeyboardInterrupt:
         print("Stopping the supervised Android host server.", file=sys.stderr, flush=True)

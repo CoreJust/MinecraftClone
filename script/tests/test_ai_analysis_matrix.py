@@ -626,6 +626,50 @@ class AnalysisMatrixTests(unittest.TestCase):
             record_path.write_text(json.dumps(record), encoding="utf-8")
         return sources
 
+    def add_iwyu_history_record(
+        self,
+        root: Path,
+        template_record_path: Path,
+        *,
+        status: str,
+        source: str | None = None,
+        malformed_identity: bool = False,
+    ) -> tuple[Path, Path]:
+        record = json.loads(template_record_path.read_text(encoding="utf-8"))
+        record["source"] = source or record["source"]
+        record["source_argv"] = [*record["source_argv"]]
+        record["source_argv"].insert(1, "-DSTALE_IWYU_INVOCATION=1")
+        record["adapter_argv"] = [
+            "include-what-you-use",
+            "-Xiwyu",
+            "--no_fwd_decls",
+            "-Xiwyu",
+            "--error",
+            "--",
+            *record["source_argv"],
+        ]
+        record["tool_argv"] = [
+            "include-what-you-use",
+            "-Xiwyu",
+            "--no_fwd_decls",
+            *record["source_argv"],
+        ]
+        record["status"] = status
+        record["tool_exit_code"] = 2 if status == "error" else 0
+        record["diagnostic"] = "historical invocation result" if status == "error" else None
+        raw_report = f"{status} historical IWYU output\n".encode("utf-8")
+        record["report_sha256"] = hashlib.sha256(raw_report).hexdigest()
+        source_argv_json = json.dumps(record["source_argv"], separators=(",", ":")).encode("utf-8")
+        stem = hashlib.sha256(record["source"].encode("utf-8") + b"\0" + source_argv_json).hexdigest()
+        gate_directory = root / self.matrix.PER_TRANSLATION_UNIT_ANALYSIS["iwyu"]["receipt_directory"]
+        record_path = gate_directory / f"{'malformed-history' if malformed_identity else stem}.json"
+        log_path = gate_directory / f"{record_path.stem}.log"
+        record["log"] = log_path.relative_to(root).as_posix()
+        record["record"] = record_path.relative_to(root).as_posix()
+        log_path.write_bytes(raw_report)
+        record_path.write_text(json.dumps(record), encoding="utf-8")
+        return record_path, log_path
+
     def create_cppcheck_fixture(self, root: Path, *, source_count: int = 1, receipt_count: int | None = None):
         sources = self.create_iwyu_fixture(root, source_count=source_count, receipt_count=0)
         preset, cache_key, settings = self.matrix.REQUIRED_ANALYSIS_CONFIGURATION["cppcheck"]
@@ -1198,40 +1242,78 @@ class AnalysisMatrixTests(unittest.TestCase):
             with self.assertRaisesRegex(self.matrix.MatrixError, "missing 1 owned translation-unit"):
                 self.matrix.capture_effective_analysis(root, {"id": "iwyu"}, "partial build")
 
-    def test_iwyu_capture_rejects_an_extra_receipt_for_a_duplicate_source(self):
+    def test_iwyu_capture_retains_old_failure_beside_current_pass(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             self.create_iwyu_fixture(root)
             gate_directory = root / self.matrix.PER_TRANSLATION_UNIT_ANALYSIS["iwyu"]["receipt_directory"]
-            original_path = next(gate_directory.glob("*.json"))
-            duplicate = json.loads(original_path.read_text(encoding="utf-8"))
-            duplicate["source_argv"].insert(1, "-DSECOND_PASS=1")
-            source_argv_json = json.dumps(duplicate["source_argv"], separators=(",", ":")).encode("utf-8")
-            stem = hashlib.sha256(duplicate["source"].encode("utf-8") + b"\0" + source_argv_json).hexdigest()
-            duplicate["adapter_argv"] = [
-                "include-what-you-use",
-                "-Xiwyu",
-                "--no_fwd_decls",
-                "-Xiwyu",
-                "--error",
-                "--",
-                *duplicate["source_argv"],
-            ]
-            duplicate["tool_argv"] = [
-                "include-what-you-use",
-                "-Xiwyu",
-                "--no_fwd_decls",
-                *duplicate["source_argv"],
-            ]
-            duplicate_log = gate_directory / f"{stem}.log"
-            duplicate_record = gate_directory / f"{stem}.json"
-            duplicate_log.write_bytes((root / duplicate["log"]).read_bytes())
-            duplicate["log"] = duplicate_log.relative_to(root).as_posix()
-            duplicate["record"] = duplicate_record.relative_to(root).as_posix()
-            duplicate_record.write_text(json.dumps(duplicate), encoding="utf-8")
+            current_path = next(gate_directory.glob("*.json"))
+            historical_path, historical_log = self.add_iwyu_history_record(
+                root, current_path, status="error"
+            )
 
-            with self.assertRaisesRegex(self.matrix.MatrixError, "stale or unexpected translation-unit"):
-                self.matrix.capture_effective_analysis(root, {"id": "iwyu"}, "duplicate invocation")
+            captured = self.matrix.capture_effective_analysis(root, {"id": "iwyu"}, "retry after argv change")
+
+            self.assertEqual(captured["translation_unit_count"], 1)
+            self.assertEqual(captured["translation_units"][0]["status"], "passed")
+            self.assertTrue(historical_path.is_file())
+            self.assertEqual(historical_log.read_bytes(), b"error historical IWYU output\n")
+
+    def test_iwyu_historical_pass_cannot_cover_a_missing_current_invocation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.create_iwyu_fixture(root)
+            gate_directory = root / self.matrix.PER_TRANSLATION_UNIT_ANALYSIS["iwyu"]["receipt_directory"]
+            current_path = next(gate_directory.glob("*.json"))
+            current = json.loads(current_path.read_text(encoding="utf-8"))
+            historical_path, _ = self.add_iwyu_history_record(root, current_path, status="passed")
+            current_path.unlink()
+            (root / current["log"]).unlink()
+
+            with self.assertRaisesRegex(self.matrix.MatrixError, "missing 1 owned translation-unit"):
+                self.matrix.capture_effective_analysis(root, {"id": "iwyu"}, "missing current invocation")
+            self.assertTrue(historical_path.is_file())
+
+    def test_iwyu_current_failure_remains_a_hard_error(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.create_iwyu_fixture(root)
+            gate_directory = root / self.matrix.PER_TRANSLATION_UNIT_ANALYSIS["iwyu"]["receipt_directory"]
+            current_path = next(gate_directory.glob("*.json"))
+            current = json.loads(current_path.read_text(encoding="utf-8"))
+            current["status"] = "error"
+            current["diagnostic"] = "current invocation failed"
+            current_path.write_text(json.dumps(current), encoding="utf-8")
+
+            with self.assertRaisesRegex(self.matrix.MatrixError, "is not passed"):
+                self.matrix.capture_effective_analysis(root, {"id": "iwyu"}, "current invocation failure")
+
+    def test_iwyu_malformed_historical_identity_is_rejected(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.create_iwyu_fixture(root)
+            gate_directory = root / self.matrix.PER_TRANSLATION_UNIT_ANALYSIS["iwyu"]["receipt_directory"]
+            current_path = next(gate_directory.glob("*.json"))
+            historical_path, _ = self.add_iwyu_history_record(
+                root, current_path, status="error", malformed_identity=True
+            )
+
+            with self.assertRaisesRegex(self.matrix.MatrixError, "invalid source identity"):
+                self.matrix.capture_effective_analysis(root, {"id": "iwyu"}, "malformed historical record")
+            self.assertTrue(historical_path.is_file())
+
+    def test_iwyu_historical_record_for_unknown_source_is_rejected(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.create_iwyu_fixture(root)
+            gate_directory = root / self.matrix.PER_TRANSLATION_UNIT_ANALYSIS["iwyu"]["receipt_directory"]
+            current_path = next(gate_directory.glob("*.json"))
+            self.add_iwyu_history_record(
+                root, current_path, status="error", source="src/not-in-compile-commands.cpp"
+            )
+
+            with self.assertRaisesRegex(self.matrix.MatrixError, "outside the current compile inventory"):
+                self.matrix.capture_effective_analysis(root, {"id": "iwyu"}, "unknown historical source")
 
     def test_iwyu_build_failure_propagates_to_the_analysis_row(self):
         for row_id in ("iwyu", "cppcheck"):
@@ -1305,6 +1387,22 @@ class AnalysisMatrixTests(unittest.TestCase):
             self.create_cppcheck_fixture(root, source_count=2, receipt_count=1)
             with self.assertRaisesRegex(self.matrix.MatrixError, "missing 1 owned translation-unit"):
                 self.matrix.capture_effective_analysis(root, {"id": "cppcheck"}, "partial build")
+
+    def test_cppcheck_effective_analysis_capture_round_trips_through_receipt_validation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.create_cppcheck_fixture(root)
+            captured = self.matrix.capture_effective_analysis(root, {"id": "cppcheck"}, "incremental build")
+            receipt = self.receipt()
+            row = next(item for item in receipt["rows"] if item["id"] == "cppcheck")
+            row["effective_analysis"] = captured
+
+            self.matrix.validate_receipt(receipt, self.manifest, CANDIDATE)
+
+        self.assertEqual(
+            captured["configuration_key"],
+            self.matrix.REQUIRED_ANALYSIS_CONFIGURATION["cppcheck"][1],
+        )
 
     def test_cppcheck_capture_rejects_changed_gate_policy_and_compile_commands(self):
         for changed_input in ("CMakePresets.json", "script/ci/cppcheck_gate.py"):
@@ -1852,6 +1950,44 @@ class AnalysisMatrixTests(unittest.TestCase):
         )
         self.rehash_input_identity(row)
         with self.assertRaisesRegex(self.matrix.MatrixError, "system libgcc_s unwinder"):
+            self.matrix.validate_receipt(receipt, self.manifest, CANDIDATE)
+
+    def test_offline_linux_msan_paths_are_not_resolved_by_the_verifier_host(self):
+        receipt = self.receipt()
+        row = next(row for row in receipt["rows"] if row["id"] == "linux_msan")
+        identity = row["input_identity"]
+        prefix = "/home/guest/msan-prefix"
+        identity["environment"]["MC_MSAN_LIBCXX_PREFIX"] = prefix
+        identity["external_dependencies"]["MC_MSAN_LIBCXX_PREFIX"]["path"] = prefix
+        identity["runtime_resources"]["system_unwinder"]["probe_path"] = (
+            f"{prefix}/lib/libc++abi.so.1"
+        )
+        self.rehash_input_identity(row)
+        original_resolve = Path.resolve
+        foreign_paths: list[str] = []
+
+        def resolve_on_verifier_host(path: Path, *args, **kwargs):
+            value = str(path)
+            if value.startswith("/home/guest/"):
+                foreign_paths.append(value)
+                return Path("/System/Volumes/Data") / value.lstrip("/")
+            return original_resolve(path, *args, **kwargs)
+
+        with mock.patch.object(Path, "resolve", resolve_on_verifier_host):
+            self.matrix.validate_receipt(receipt, self.manifest, CANDIDATE)
+
+        self.assertEqual(foreign_paths, [])
+
+    def test_offline_linux_msan_probe_rejects_parent_path_escape(self):
+        receipt = self.receipt()
+        row = next(row for row in receipt["rows"] if row["id"] == "linux_msan")
+        prefix = row["input_identity"]["environment"]["MC_MSAN_LIBCXX_PREFIX"]
+        row["input_identity"]["runtime_resources"]["system_unwinder"]["probe_path"] = (
+            f"{prefix}/lib/../../outside/libc++abi.so.1"
+        )
+        self.rehash_input_identity(row)
+
+        with self.assertRaisesRegex(self.matrix.MatrixError, r"escapes the instrumented libc\+\+ prefix"):
             self.matrix.validate_receipt(receipt, self.manifest, CANDIDATE)
 
     def test_macos_address_row_uses_integrated_lsan_for_the_full_ctest_run(self):

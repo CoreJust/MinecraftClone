@@ -1,4 +1,5 @@
 #include <client/Camera.hpp>
+#include <client/ClientAudio.hpp>
 #include <client/GameClient.hpp>
 #include <client/PlayerPresentation.hpp>
 #include <client/PreviewResidency.hpp>
@@ -23,13 +24,25 @@
 #include <cstddef>
 #include <cstdint>
 #include <deque>
+#include <memory>
 #include <optional>
+#include <span>
 #include <string>
 #include <thread>
 #include <unordered_map>
 #include <vector>
 
 namespace {
+
+class ImmediateAudioOutput final : public client::ClientAudioOutput {
+public:
+    [[nodiscard]] bool start() noexcept override { return true; }
+    void stop() noexcept override {}
+    [[nodiscard]] bool play(std::span<int16_t const> samples) noexcept override
+    {
+        return !samples.empty();
+    }
+};
 
 class PredictionClient final : public client::GameClient {
 public:
@@ -87,7 +100,13 @@ public:
         shared::Direction const direction,
         std::chrono::steady_clock::time_point const deadline
     )
-        : m_direction(direction)
+        : GameClient{
+            shared::WorldMode::Flat,
+            shared::World::canonicalConfiguration(),
+            true,
+            std::make_unique<ImmediateAudioOutput>(),
+        }
+        , m_direction(direction)
         , m_deadline(deadline)
     { }
 
@@ -181,7 +200,13 @@ private:
 class DelayedServerClient final : public client::GameClient {
 public:
     explicit DelayedServerClient(std::chrono::steady_clock::time_point const deadline)
-        : m_deadline(deadline)
+        : GameClient{
+            shared::WorldMode::Flat,
+            shared::World::canonicalConfiguration(),
+            true,
+            std::make_unique<ImmediateAudioOutput>(),
+        }
+        , m_deadline(deadline)
     { }
 
     [[nodiscard]] bool joined() const noexcept

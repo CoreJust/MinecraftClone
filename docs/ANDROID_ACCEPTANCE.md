@@ -1,7 +1,9 @@
 # Android runtime acceptance
 
-Use the project AVD `MinecraftClone_S7_ReleaseClean_API_35` for S7 local
-acceptance. Resolve the Android SDK once and use its emulator, ADB, and signing
+Use the existing shared `Medium_Phone_API_35` AVD by default. The existing
+`MinecraftClone_S7_ReleaseClean_API_35` qualification device remains selectable
+with `--avd`; do not create another device or image without authorization.
+Resolve the Android SDK once and use its emulator, ADB, and signing
 tools together; this also works when `ANDROID_SDK_ROOT` is not already set:
 
 ```sh
@@ -21,6 +23,8 @@ launch does not depend on an interactive shell startup file adding Android
 tools to `PATH`; the `emulator`, `zipalign`, and `apksigner` commands above
 still use the explicit SDK paths.
 
+The following historical ReleaseClean setup applies only when explicitly
+selecting that existing qualification device, not to the shared default AVD.
 The verified macOS profile is a cold boot with no snapshot restore or save,
 four virtual cores, 4 GiB RAM, and the host GPU.
 Start the emulator in an authorized host execution context. Before starting,
@@ -61,10 +65,13 @@ repository root:
 ```sh
 cmake --preset release
 cmake --build --preset release
-serial=emulator-5556 # replace with the verified serial for the S7 AVD
+serial=emulator-5554 # replace with the verified serial for Medium_Phone_API_35
 adb-agent doctor -d "$serial" --json
 python3 script/android_pair_playtest.py --serial "$serial"
 ```
+
+For the existing ReleaseClean device, pass its verified serial and
+`--avd MinecraftClone_S7_ReleaseClean_API_35` to the same paired runner.
 
 The paired runner uses only `build/release/mc_main` (or `mc_main.exe` on
 Windows), refuses a missing Release executable or occupied host UDP port, and
@@ -75,7 +82,8 @@ playing; Ctrl-C stops only the server process that command started. If startup
 fails, it reports the reason and cleans up only that same child process. Never
 kill an unknown process that already owns port 20040.
 
-The client guard takes a per-user, per-AVD operating-system lock across the
+The client guard takes one per-user operating-system lock across both supported
+AVDs and the
 whole check-and-start sequence. Concurrent invocations wait for the lock, then
 repeat device, framework, process and activity checks before deciding what to
 do; the second invocation therefore reuses the activity started by the first
@@ -114,10 +122,9 @@ publish the CI-only APK. A temporary emulator copy is not final-asset evidence.
 Reuse that same local debug keystore for subsequent installs. A newly generated
 one-off key cannot update an existing package and causes
 `INSTALL_FAILED_UPDATE_INCOMPATIBLE`. If an older one-off key is already
-installed, first verify the exact serial still identifies this read-only
-ReleaseClean AVD, then uninstall only `com.corejust.minecraftclone` from that
-serial before reinstalling. This resets app data only in the disposable test
-instance; never do it on an unrelated emulator or physical device.
+installed, do not reset the shared device. An uninstall resets app data and
+requires explicit authorization for the exact package and device; never apply
+the historical disposable-device procedure to an unrelated emulator or phone.
 
 S7 Android runtime acceptance covers NativeActivity lifecycle, network
 connectivity, and streamed terrain rendering. After the client joins, wait for

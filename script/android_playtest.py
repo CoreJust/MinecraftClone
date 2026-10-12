@@ -21,7 +21,9 @@ from typing import Iterator, Sequence
 PACKAGE = "com.corejust.minecraftclone"
 ACTIVITY = "android.app.NativeActivity"
 COMPONENT = f"{PACKAGE}/{ACTIVITY}"
+DEFAULT_AVD = "Medium_Phone_API_35"
 S7_AVD = "MinecraftClone_S7_ReleaseClean_API_35"
+SUPPORTED_AVDS = (DEFAULT_AVD, S7_AVD)
 
 
 class AndroidPlaytestError(RuntimeError):
@@ -229,19 +231,28 @@ def require_framework_ready(serial: str) -> None:
         raise AndroidPlaytestError(f"Android activity/package services are unavailable on {serial}")
 
 
-def launch_or_reuse(serial: str, timeout_seconds: int = 60) -> dict[str, str]:
+def launch_or_reuse(
+    serial: str,
+    timeout_seconds: int = 60,
+    *,
+    expected_avd: str = DEFAULT_AVD,
+) -> dict[str, str]:
+    if expected_avd not in SUPPORTED_AVDS:
+        raise AndroidPlaytestError(
+            f"unsupported Android playtest AVD {expected_avd!r}; choose one of {', '.join(SUPPORTED_AVDS)}"
+        )
     with _launch_lock(timeout_seconds):
-        return _launch_or_reuse_locked(serial, timeout_seconds)
+        return _launch_or_reuse_locked(serial, timeout_seconds, expected_avd)
 
 
-def _launch_or_reuse_locked(serial: str, timeout_seconds: int) -> dict[str, str]:
+def _launch_or_reuse_locked(serial: str, timeout_seconds: int, expected_avd: str) -> dict[str, str]:
     devices = connected_devices()
     if serial not in devices:
         raise AndroidPlaytestError(f"selected serial {serial} is not ready; available devices: {', '.join(devices) or 'none'}")
 
     avd_name = run_adb(serial, "shell", "getprop", "ro.boot.qemu.avd_name")
-    if avd_name != S7_AVD:
-        raise AndroidPlaytestError(f"{serial} is AVD {avd_name!r}; S7 acceptance requires {S7_AVD!r}")
+    if avd_name != expected_avd:
+        raise AndroidPlaytestError(f"{serial} is AVD {avd_name!r}; this launch requires {expected_avd!r}")
 
     require_framework_ready(serial)
     instances = {device: running_process_id(device) for device in devices}
@@ -294,13 +305,24 @@ def _launch_or_reuse_locked(serial: str, timeout_seconds: int) -> dict[str, str]
 
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--serial", required=True, help="explicit ADB serial for the S7 AVD")
+    parser.add_argument("--serial", required=True, help="explicit ADB serial for the selected AVD")
+    parser.add_argument(
+        "--avd",
+        choices=SUPPORTED_AVDS,
+        default=DEFAULT_AVD,
+        help=f"expected AVD name (default: {DEFAULT_AVD})",
+    )
     parser.add_argument("--timeout", type=int, default=60)
     args = parser.parse_args(argv)
     if args.timeout < 1 or args.timeout > 120:
         parser.error("--timeout must be between 1 and 120 seconds")
     try:
-        print(json.dumps(launch_or_reuse(args.serial, args.timeout), sort_keys=True))
+        print(
+            json.dumps(
+                launch_or_reuse(args.serial, args.timeout, expected_avd=args.avd),
+                sort_keys=True,
+            )
+        )
         return 0
     except (AndroidPlaytestError, OSError, subprocess.TimeoutExpired) as error:
         print(f"FAIL Android playtest launch: {error}", file=sys.stderr)

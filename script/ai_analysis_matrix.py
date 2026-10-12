@@ -876,6 +876,7 @@ def _read_translation_unit_records(
         raise MatrixError(f"{row_id} produced no per-translation-unit receipts")
 
     expected = {(item["source"], tuple(item["source_argv"])): item for item in inventory}
+    expected_sources = {source for source, _ in expected}
     observed: dict[tuple[str, tuple[str, ...]], tuple[dict[str, Any], Path, bytes]] = {}
     stale_project_records = 0
     for record_path in record_paths:
@@ -897,6 +898,18 @@ def _read_translation_unit_records(
                 raise MatrixError(f"{row_id} receipt {record_path.name} has an unsupported schema")
             source = _require_string(record.get("source"), f"{row_id} receipt source")
             source_argv = _require_string_list(record.get("source_argv"), f"{row_id} receipt source_argv")
+            source_argv_json = json.dumps(source_argv, separators=(",", ":")).encode("utf-8")
+            expected_stem = hashlib.sha256(source.encode("utf-8") + b"\0" + source_argv_json).hexdigest()
+            if record_path.stem != expected_stem:
+                raise MatrixError(f"{row_id} receipt {record_path.name} has an invalid source identity")
+            if source not in expected_sources:
+                raise MatrixError(f"{row_id} receipt {record_path.name} names a source outside the current compile inventory")
+            if not any(
+                expected_source == source and _iwyu_argv_matches(expected_argv, source_argv)
+                for expected_source, expected_argv in expected
+            ):
+                # Preserve prior invocations without allowing them to count for the current command inventory.
+                continue
             tool = record.get("invoked_tool")
             tool_argv = _require_string_list(record.get("tool_argv"), f"{row_id} receipt tool_argv")
             expected_tool_argv = ["-Xiwyu", "--no_fwd_decls"]
@@ -929,10 +942,6 @@ def _read_translation_unit_records(
             raw_report_sha256 = record.get("report_sha256")
             report_path_value = record.get("log")
             receipt_path_value = record.get("record")
-            source_argv_json = json.dumps(source_argv, separators=(",", ":")).encode("utf-8")
-            expected_stem = hashlib.sha256(source.encode("utf-8") + b"\0" + source_argv_json).hexdigest()
-            if record_path.stem != expected_stem:
-                raise MatrixError(f"{row_id} receipt {record_path.name} has an invalid source identity")
         else:
             if record.get("schema") != 1 or isinstance(record.get("schema"), bool) or record.get("gate") != "cppcheck-per-tu":
                 raise MatrixError(f"{row_id} receipt {record_path.name} has an unsupported schema or gate")
@@ -1128,9 +1137,9 @@ def capture_effective_analysis(
             for line in cache_text.splitlines()
             if ":" in line and "=" in line
         }
-        for cache_key in ("CMAKE_C_CPPCHECK", "CMAKE_CXX_CPPCHECK"):
-            if cache_key not in cache_values or cache_values[cache_key]:
-                raise MatrixError(f"{row_id} effective analysis configuration must clear {cache_key}")
+        for disabled_cache_key in ("CMAKE_C_CPPCHECK", "CMAKE_CXX_CPPCHECK"):
+            if disabled_cache_key not in cache_values or cache_values[disabled_cache_key]:
+                raise MatrixError(f"{row_id} effective analysis configuration must clear {disabled_cache_key}")
 
     markers = ANALYSIS_TOOL_MARKERS[row_id]
     if row_id in PER_TRANSLATION_UNIT_ANALYSIS:
@@ -1530,11 +1539,18 @@ def _validate_input_identity(row: Mapping[str, Any], manifest_row: Mapping[str, 
             if not isinstance(unwinder.get(key), str) or not re.fullmatch(r"[0-9a-f]{64}", unwinder[key]):
                 raise MatrixError(f"receipt row {row_id} system unwinder {key} is invalid")
         probe_path = _require_string(unwinder.get("probe_path"), f"receipt row {row_id}.system_unwinder.probe_path")
-        prefix = Path(environment["MC_MSAN_LIBCXX_PREFIX"]).resolve()
-        if not Path(probe_path).is_absolute() or Path(probe_path).name != "libc++abi.so.1" and not Path(probe_path).name.startswith("libc++abi.so.1."):
+        prefix = _host_path(environment["MC_MSAN_LIBCXX_PREFIX"], platform_name)
+        probe = _host_path(probe_path, platform_name)
+        if (
+            not prefix.is_absolute()
+            or not probe.is_absolute()
+            or (probe.name != "libc++abi.so.1" and not probe.name.startswith("libc++abi.so.1."))
+        ):
             raise MatrixError(f"receipt row {row_id} unwinder probe is not libc++abi")
+        if ".." in prefix.parts or ".." in probe.parts:
+            raise MatrixError(f"receipt row {row_id} unwinder probe escapes the instrumented libc++ prefix")
         try:
-            Path(probe_path).relative_to(prefix / "lib")
+            probe.relative_to(prefix / "lib")
         except ValueError as error:
             raise MatrixError(f"receipt row {row_id} unwinder probe escapes the instrumented libc++ prefix") from error
     elif ignorelist is not None or unwinder is not None:
