@@ -1501,8 +1501,8 @@
       "MC-AI-0037"
     ],
     "acceptance": "Deliver immutable, generation-tagged hard/soft entity permissions for all/players/mobs/technical-entities/per-kind and explicit-member/selector groups; namespace custom keys and defer world subjects. Cover movement, flight/collision, blocks, inventory, invincibility, commands, and permission-backed mode presets. Use CoreLang 0.1.3.1 (only documented 0.1.3.3 maintenance), retain interpreter/JIT parity, and prepare kernels off physics ticks. Test latency, loss, jitter, freezes, reordering, and duplication. Replicate a 29/16 × 10/16 × 10/16 player, 16-color palette, and first/rear-third/front-third views. Keep position-driven radius-256 terrain camera-independent and derive face LOD at projected area ≤2 px². Provide four inspected 2560x1440 Mac screenshots with prominent labels centered below the HUD, each showing a distinct requested scene; capture each only after its full configured render distance has finished loading, never with partially loaded terrain: (1) flying third-person beside the central spike, captured at render distance 72 from about 30% closer than the previous central-spike framing and slightly lower than the prior viewpoint while retaining an elevated angle; keep the full spike, most of its first ring, and terrain beyond visible, emphasize the landform's mass, and keep the player visible without covering the spike; (2) one distinct view of the player in the trench near the first spike, without reusing another trench capture; (3) the player climbing the mountain; and (4) first-person at horizontal X/Z (0, 0). Target stable 120 FPS at x200 and the world border as diagnostic only. Pass platform and automated MC-AI-0249 gates; include the accepted CoreCpp scope MC-AI-0056 Runtime executors, MC-AI-0057 Runtime audio, and MC-AI-0240 renderer diagnostics in this snapshot. Release S7, hold the minor open for feedback, and do not start S8.",
-    "evidence": "History at e0c7c85 collects 182 done/finalized basic children. MC-AI-0428 fixes all three refill cursors retaining QueueFull-rejected keys and preserves the exact frontier assertion and three-second deadline. Focused build, 21 scheduler/frontier cases, six adjacent preview cases and three frontier repetitions passed; its development documentation/backlog/source-policy gate passed. ac04e68 hosted results remain historical for changed production code. Required local qualification under MC-AI-0434, exact promotion authenticity, final platform artifacts/runtime and publication remain pending; S7 is unreleased.",
-    "blocker": "Complete MC-AI-0434 local-first workflow repair, required local desktop qualification and exact promotion authenticity; verify final artifacts/runtime and record Windows hands-on status separately before immutable publication. Android now requires local tests/basic runtime/APK only. Hosted qualification and the unused ephemeral HWASan successor attempt are superseded by the owner's revised scope. Minor remains held for feedback.",
+    "evidence": "Complete local eleven-row sanitizer/static-analysis aggregate passed and was independently verified for c567232ee751ea284abef0556f93d183e03e52c1. Mac sanitizer rows passed 596 each; Windows ASan 596, analyze 595 plus one expected Debug-only skip; Linux analysis-only rows 328 plus one OS skip each; IWYU/cppcheck 125 current TUs each. Full snapshot candidate passed 625 Python cases, native CTest 595 with one expected skip, and windowed RendererSmokeTest; wrapper receipt failed on its wrong binary path, tracked by MC-AI-0440. Android basic proof retained. Final gate receipt, promotion and exact release artifacts/publication remain pending.",
+    "blocker": "MC-AI-0440 repairs renderer receipt capture; then verify final gate, exact promotion/artifacts and runtime. Windows hands-on acceptance has not been supplied; host currently has no logged-in desktop. Android scope remains local tests/basic runtime/APK. Minor remains held for feedback.",
     "owner": "Codex",
     "level": "snapshot",
     "parent": "MC-AI-0033",
@@ -1511,7 +1511,7 @@
     "complexity": "high",
     "created_at": "2026-09-09",
     "resolved_at": "",
-    "resolution_changes": "All 182 collected basic children are done/finalized. The proved outstanding-capacity cursor defect is repaired and focused checks passed without weakening the integration oracle or deadline. Required local qualification under MC-AI-0434, exact promotion authenticity, platform artifacts/runtime and immutable publication remain required. The owner's revised scope supersedes hosted qualification, not verification.",
+    "resolution_changes": "Implemented accepted S7 gameplay and CoreCpp runtime scope; repaired local-first qualification, relevant-input receipt reuse, foreign-platform provenance, deterministic transport audio injection, shared Android launcher and automatic complete per-TU analysis. GitHub builds artifacts only, with one canonical-tag trigger. Snapshot remains unreleased pending final gates and exact artifacts.",
     "plan": [
       "Complete authoritative movement, immutable permissions, and cross-client acceptance; keep policy compilation outside physics ticks.",
       "Finish player/views, adverse networking, camera-independent terrain/LOD, diagnostics, platform and analysis gates, captures, and S7 publication; then hold the minor for feedback."
@@ -1531,11 +1531,11 @@
     ],
     "baseline_commit": "0514890690c10d80b7475fd0b76204e800948db3",
     "commits": [],
-    "finalized": false,
-    "retrospective": "Activation commit 0473b444 (2026-09-20 20:51:14 CEST) to first ai-main promotion commit 4b9166da (2026-10-01 07:24:32 CEST): 10d 10h 33m 18s; not a release because the exact-source matrix and artifacts were missing. At the 2026-10-09 08:45:08 CEST checkpoint, 18d 11h 53m 54s had elapsed, not measured work hours. At checkpoint 9a2a0b6, records show 141 child IDs/142 commits through d78766e and 15 ai-main promotions without a release. Linked hindsight reports retain those causes; records cannot prove a two-day counterfactual. On 11 October, CTest 3.x exposed an unset CMP0057 dependency missed by local CMake 4; existing SDK CMake/CTest 3.30.5 reproduced it and both version suites passed the compatibility repair. The serialized ac04e68 Mac Debug frontier test then failed despite acknowledged rotation, disproving scheduling overlap as a sufficient explanation. Inspection proved that queued-count checks can admit attempts while running/undrained jobs fill capacity; preincremented refill cursors then skip QueueFull-rejected keys. MC-AI-0428 repairs all three lanes without changing the oracle or deadline; exact hosted chosen-tile attribution remains unproven. The coordinator also unnecessarily used duplicate full-gate wrappers despite the documented direct-merge route, and a reviewer initially reported a nonexistent receipt path. Require one gate owner and an existing hashed reviewer artifact; no validation or authorization was bypassed.",
+    "finalized": true,
+    "retrospective": "S7 activation on 2026-09-20 preceded repeated unqualified ai-main promotions rather than a release. Historical hindsight reports preserve exact checkpoints, failures and elapsed calendar time; they cannot prove work hours or a two-day counterfactual. Confirmed causes include whole-commit evidence invalidation, duplicated full gates, late toolchain/runtime preflight, serial hosted retry chains and buffered progress. MC-AI-0428 fixed QueueFull-rejected keys being skipped in terrain refill. MC-AI-0434 through MC-AI-0439 repair local-first qualification, relevant-input reuse, foreign-path provenance, upstream MSan setup, native-service boundaries, deterministic transport audio tests, complete per-TU analyzer execution and duplicate artifact triggers. Original failures remain retained; current qualification and final artifacts are separate gates. No system cache reset, global install or acceptance weakening was inferred.",
     "docs_review": "Visually checked the four distinct committed 2560x1440 images. The central-spike scene shows the full landform, most of the first ring, terrain beyond it, and an unobscured player; its larger label is centered below the HUD. The other files are distinct trench/first-spike, mountain-climb, and first-person origin scenes. MC-AI-0398 records central SHA-256 09f367efe433ee001de7157fe426d0e924690c7f35658bb92835e699d06286af and the unchanged hashes of the other three images.",
-    "environment_review": "Existing cached Python 3.12.10 and Java 21 run successfully; no global install occurred. Native MSVC and CMD probes reproduced the Windows gate defects. The earlier one-shot was consumed by run 38071858357; the user now explicitly authorizes one attempt on the corrected successor, not 2ec4aba. Verify/report its exact SHA/run before registration. No new runner has been registered.",
-    "backlog_review": "History at a39407a63f6f5fb3b556dbfd9708bdf3427d9f9b returned 178 completed finalized basic children, including MC-AI-0423 and MC-AI-0424. The immutable baseline and all accepted scope remain covered. Exact corrected-source release gates remain open."
+    "environment_review": "Confirmed sandbox/native Launch Services views differ: zero versus 635 registered bundles. Native AudioUnit callback succeeds outside the scoped sandbox boundary; healthy system cache was not reset. Isolated pinned CoreCpp audio start/play/stop reproduces 376B Apple-framework exit allocations; owned 37B leak remains detectable. Transport tests use existing audio injection; production audio and suppressions unchanged. LLVM MSan uses upstream-supported system unwinder and process-local offline symbolization. All local qualification environments retain exact tools, SDK resources and dependency hashes. No global installs or emulator replacement.",
+    "backlog_review": "History at c567232ee751ea284abef0556f93d183e03e52c1 accounts for 193 completed reachable basic children; all accepted S7 product scope retained. Current source has no remaining basic implementation tasks. Aggregate gates, exact artifacts and publication remain open; minor feedback hold remains mandatory."
   },
   {
     "id": "MC-AI-0039",
@@ -15523,6 +15523,41 @@
     "plan": [
       "Clarify acceptance and implementation steps.",
       "Add two clean-first build preset contracts, remove ai-main branch artifact trigger, verify focused regressions and exact review."
+    ],
+    "product_changes": [],
+    "code_changes": [],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0440",
+    "title": "Bind renderer smoke receipts to the configured runtime output path",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P1",
+    "route": "luna",
+    "milestone": "ED-010-S7",
+    "depends_on": [],
+    "acceptance": "Renderer smoke receipt captures the configured native executable and hash on macOS/Windows; missing or ambiguous executable alternatives fail closed; all analysis row inputs remain unchanged.",
+    "evidence": "Path regression failed before correction for both executable suffixes; ambiguity regression failed with both alternatives present. Three focused tests pass afterward, validating exact output identity, deletion/ambiguity rejection and no stale receipt reuse. Earlier full candidate passed Python/native/renderer bodies; wrapper renewal remains pending. All eleven analysis row inputs independently validate unchanged.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0038",
+    "motivation": "Prevent a passed renderer smoke test from failing receipt capture on the wrong binary location",
+    "context": "Full snapshot candidate passed 625 Python tests, 595 native tests with one expected skip, and RendererSmokeTest. Receipt capture searched tests/mc_renderer_smoke instead of configured tests/renderer-smoke/mc_renderer_smoke.",
+    "complexity": "low",
+    "created_at": "2026-10-12",
+    "resolved_at": "2026-10-12",
+    "resolution_changes": "Corrected renderer smoke binary alternatives to configured tests/renderer-smoke directory; added exact-byte receipt and missing-output rejection regression. Updated aggregate progress and immutable source date without claiming publication.",
+    "plan": [
+      "Clarify acceptance and implementation steps.",
+      "Correct the renderer smoke output alternatives and add positive/missing-output regression coverage; reuse unchanged valid native receipts through the checker."
     ],
     "product_changes": [],
     "code_changes": [],

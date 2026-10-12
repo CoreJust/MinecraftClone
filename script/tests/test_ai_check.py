@@ -1,5 +1,6 @@
 import importlib.util
 import contextlib
+import hashlib
 import io
 import json
 import os
@@ -75,8 +76,8 @@ class AiCheckTests(unittest.TestCase):
     def git(self, *args):
         return subprocess.run(["git", *args], cwd=self.root, text=True, capture_output=True, check=True)
 
-    def configure_native_build_fixture(self):
-        build_root = self.root / "build/debug"
+    def configure_native_build_fixture(self, preset="debug"):
+        build_root = self.root / "build" / preset
         dependency_prefix = self.root / "build/test-dependencies"
         (build_root / "tests").mkdir(parents=True, exist_ok=True)
         (dependency_prefix / "lib").mkdir(parents=True, exist_ok=True)
@@ -1018,6 +1019,99 @@ class AiCheckTests(unittest.TestCase):
         rejected = checker.run_phase(self.root, log_dir, "ctest", command, 60, reuse=True)
         self.assertNotEqual(rejected.returncode, 0)
         self.assertFalse(rejected.reused)
+
+    def test_renderer_smoke_receipt_captures_actual_target_and_rejects_missing_target(self):
+        checker = load_module()
+        log_dir = self.root / "build/ai-checks"
+        log_dir.mkdir(parents=True)
+        build_root, _ = self.configure_native_build_fixture(preset="renderer-smoke")
+        target_dir = build_root / "tests/renderer-smoke"
+        target_dir.mkdir(parents=True, exist_ok=True)
+        command = [sys.executable, "-c", "print('renderer smoke fixture passed')"]
+
+        for executable_name in ("mc_renderer_smoke", "mc_renderer_smoke.exe"):
+            with self.subTest(executable=executable_name):
+                artifact = target_dir / executable_name
+                artifact_contents = b"renderer smoke executable"
+                artifact.write_bytes(artifact_contents)
+                relative_artifact = f"tests/renderer-smoke/{executable_name}"
+
+                passed = checker.run_phase(
+                    self.root, log_dir, "extra-renderer-smoke", command, 60
+                )
+                self.assertEqual(passed.returncode, 0, passed.output)
+                receipt = json.loads(
+                    checker.receipt_path(log_dir, "extra-renderer-smoke").read_text(
+                        encoding="utf-8"
+                    )
+                )
+                native_state = receipt["relevant_inputs"]["native_build_state"]
+                self.assertEqual(
+                    native_state["artifacts"][relative_artifact],
+                    {
+                        "size": len(artifact_contents),
+                        "mode": artifact.stat().st_mode & 0o7777,
+                        "sha256": hashlib.sha256(artifact_contents).hexdigest(),
+                    },
+                )
+                self.assertEqual(
+                    checker.validate_phase_receipt(
+                        self.root, log_dir, "extra-renderer-smoke", command
+                    ),
+                    passed.output,
+                )
+
+                artifact.unlink()
+                self.assertIsNone(
+                    checker.validate_phase_receipt(
+                        self.root, log_dir, "extra-renderer-smoke", command
+                    )
+                )
+                rejected = checker.run_phase(
+                    self.root, log_dir, "extra-renderer-smoke", command, 60, reuse=True
+                )
+                self.assertNotEqual(rejected.returncode, 0)
+                self.assertIn("missing output targets", rejected.output)
+                self.assertIn(relative_artifact, rejected.output)
+
+    def test_renderer_smoke_receipt_rejects_ambiguous_target_and_reuse(self):
+        checker = load_module()
+        log_dir = self.root / "build/ai-checks"
+        log_dir.mkdir(parents=True)
+        build_root, _ = self.configure_native_build_fixture(preset="renderer-smoke")
+        target_dir = build_root / "tests/renderer-smoke"
+        target_dir.mkdir(parents=True, exist_ok=True)
+        command = [sys.executable, "-c", "print('renderer smoke fixture passed')"]
+        executable = target_dir / "mc_renderer_smoke"
+        windows_executable = target_dir / "mc_renderer_smoke.exe"
+        executable.write_bytes(b"renderer smoke executable")
+
+        passed = checker.run_phase(self.root, log_dir, "extra-renderer-smoke", command, 60)
+        self.assertEqual(passed.returncode, 0, passed.output)
+        self.assertEqual(
+            checker.validate_phase_receipt(
+                self.root, log_dir, "extra-renderer-smoke", command
+            ),
+            passed.output,
+        )
+
+        windows_executable.write_bytes(b"Windows renderer smoke executable")
+        ambiguous_state = checker.native_build_state(self.root, "extra-renderer-smoke")
+        self.assertFalse(ambiguous_state["available"])
+        self.assertEqual(ambiguous_state["artifacts"], {})
+        self.assertIn("ambiguous output targets", ambiguous_state["reason"])
+        self.assertIsNone(
+            checker.validate_phase_receipt(
+                self.root, log_dir, "extra-renderer-smoke", command
+            )
+        )
+
+        rejected = checker.run_phase(
+            self.root, log_dir, "extra-renderer-smoke", command, 60, reuse=True
+        )
+        self.assertNotEqual(rejected.returncode, 0)
+        self.assertFalse(rejected.reused)
+        self.assertIn("ambiguous output targets", rejected.output)
 
     def test_native_receipt_rejects_changed_ignored_cmake_cache(self):
         checker = load_module()

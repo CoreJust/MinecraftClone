@@ -361,17 +361,28 @@ def native_build_state(root: Path, name: str) -> dict[str, object]:
             generated_build_files[relative] = sha256_file(included)
 
     expected_targets = (
-        (("tests/mc_renderer_smoke", "tests/mc_renderer_smoke.exe"),)
+        (
+            (
+                "tests/renderer-smoke/mc_renderer_smoke",
+                "tests/renderer-smoke/mc_renderer_smoke.exe",
+            ),
+        )
         if name == "extra-renderer-smoke"
         else (("mc_main", "mc_main.exe"), ("tests/mc_tests", "tests/mc_tests.exe"))
     )
     artifacts = {}
     missing_artifacts = []
+    ambiguous_artifacts = []
     for alternatives in expected_targets:
-        target = next(
-            (build_root / relative for relative in alternatives if (build_root / relative).is_file()),
-            None,
-        )
+        matching_targets = [
+            build_root / relative
+            for relative in alternatives
+            if (build_root / relative).is_file()
+        ]
+        if name == "extra-renderer-smoke" and len(matching_targets) > 1:
+            ambiguous_artifacts.append(" or ".join(alternatives))
+            continue
+        target = matching_targets[0] if matching_targets else None
         if target is None:
             missing_artifacts.append(" or ".join(alternatives))
             continue
@@ -446,13 +457,19 @@ def native_build_state(root: Path, name: str) -> dict[str, object]:
         "tools": tool_identities,
         "dependency_prefixes": dependency_digests,
         "available": not (
-            wrong_root or missing_artifacts or missing_tools or missing_generated_build_files
+            wrong_root
+            or missing_artifacts
+            or ambiguous_artifacts
+            or missing_tools
+            or missing_generated_build_files
         ),
         "reason": (
             "wrong or missing CMake checkout/generator identity"
             if wrong_root
             else "missing generated build files: " + ", ".join(missing_generated_build_files)
             if missing_generated_build_files
+            else "ambiguous output targets: " + ", ".join(ambiguous_artifacts)
+            if ambiguous_artifacts
             else "missing output targets: " + ", ".join(missing_artifacts)
             if missing_artifacts
             else "missing compiler/tool/dependency identity: " + ", ".join(missing_tools)
