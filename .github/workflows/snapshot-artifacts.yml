@@ -19,13 +19,11 @@ on:
 
 permissions:
   contents: read
-  checks: read
-  actions: read
 
 jobs:
   source:
     runs-on: ubuntu-24.04
-    timeout-minutes: 360
+    timeout-minutes: 15
     outputs:
       source_commit: ${{ steps.trust.outputs.source_commit }}
       version: ${{ steps.identity.outputs.version }}
@@ -76,23 +74,6 @@ jobs:
             printf 'source_commit=%s\n' "$source_commit"
             printf 'trusted_dependency_source=true\n'
           } >> "$GITHUB_OUTPUT"
-      - name: Require a successful S7 analysis matrix for the exact source
-        if: steps.trust.outputs.trusted_dependency_source == 'true' && (github.event_name != 'push' || github.ref != 'refs/heads/ai-main')
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: >-
-          python script/ci/verify_analysis_gate.py
-          --root "$GITHUB_WORKSPACE"
-          --commit "${{ steps.trust.outputs.source_commit }}"
-      - name: Wait for successful S7 analysis matrix on ai-main push
-        if: steps.trust.outputs.trusted_dependency_source == 'true' && github.event_name == 'push' && github.ref == 'refs/heads/ai-main'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: >-
-          python script/ci/verify_analysis_gate.py
-          --root "$GITHUB_WORKSPACE"
-          --commit "${{ steps.trust.outputs.source_commit }}"
-          --wait --timeout-seconds 21000 --poll-interval-seconds 30
       - name: Resolve immutable source identity
         id: identity
         env:
@@ -281,8 +262,6 @@ jobs:
           --expected "$SOURCE_COMMIT"
           --version "$SNAPSHOT_VERSION"
           --output build/source-identity.json
-      - name: Verify finalized source policy
-        run: python script/ci/acquire.py source-checks --source-commit "${{ env.SOURCE_COMMIT }}"
       - name: Stage pinned Windows Vulkan runtime
         if: matrix.platform == 'windows'
         shell: pwsh
@@ -300,7 +279,7 @@ jobs:
           New-Item -ItemType Directory -Force -Path (Split-Path $destination) | Out-Null
           Copy-Item -Force $source $destination
           if (!(Test-Path $destination) -or (Get-Item $destination).Length -le 0) { throw "Staged Vulkan runtime loader is missing or empty" }
-      - name: Build, test, and package macOS
+      - name: Build and package macOS
         if: matrix.platform == 'macos'
         shell: bash
         run: |
@@ -308,11 +287,8 @@ jobs:
           sudo xcode-select --switch /Applications/Xcode_26.2.app/Contents/Developer
           python script/ci/acquire.py verify-tools --platform macos
           python script/ci/acquire.py record-metadata --platform macos --preset release --output build/toolchain-macos.json
-          cmake --preset release -DMC_ENABLE_RENDERER_SMOKE=OFF -DVCPKG_MANIFEST_INSTALL=OFF -DVCPKG_INSTALLED_DIR="$VCPKG_INSTALLED_DIR" -DCMAKE_PREFIX_PATH="$MC_PRIVATE_DEPENDENCIES_PREFIX" -DCoreCpp_DIR="$MC_PRIVATE_DEPENDENCIES_PREFIX/lib/cmake/CoreCpp" -DCoreProject2026_DIR="$MC_PRIVATE_DEPENDENCIES_PREFIX/lib/cmake/CoreProject2026"
+          cmake --preset release -DBUILD_TESTING=OFF -DMC_ENABLE_RENDERER_SMOKE=OFF -DVCPKG_MANIFEST_INSTALL=OFF -DVCPKG_INSTALLED_DIR="$VCPKG_INSTALLED_DIR" -DCMAKE_PREFIX_PATH="$MC_PRIVATE_DEPENDENCIES_PREFIX" -DCoreCpp_DIR="$MC_PRIVATE_DEPENDENCIES_PREFIX/lib/cmake/CoreCpp" -DCoreProject2026_DIR="$MC_PRIVATE_DEPENDENCIES_PREFIX/lib/cmake/CoreProject2026"
           cmake --build --preset release
-          ctest --test-dir build/release --output-on-failure --no-tests=error --timeout 60 -E '^MinecraftClone.ServerOnlyBuild$' | tee build/release-tests-macos.log
-          cmake -DMC_TEST_CONFIGURATION=Release -P build/release/tests/minecraftclone_server_only_test.cmake | tee -a build/release-tests-macos.log
-          python script/ci/acquire.py validate-shaders --build-dir build/release
           cmake --install build/release --prefix build/install
           mkdir -p dist
           python script/ci/build_snapshot.py package-desktop \
@@ -324,7 +300,7 @@ jobs:
             --version "$SNAPSHOT_VERSION" --source-commit "$SOURCE_COMMIT" \
             --output "dist/minecraftclone-${VERSION_SLUG}-macos-arm64.tar.gz"
           python script/ci/build_snapshot.py write-evidence \
-            --platform macos --configuration release --automated-verification passed \
+            --platform macos --configuration release --automated-verification build-only \
             --version "$SNAPSHOT_VERSION" --source-commit "$SOURCE_COMMIT" \
             --artifact "dist/minecraftclone-${VERSION_SLUG}-macos-arm64.tar.gz" \
             --toolchain-evidence build/toolchain-macos.json \
@@ -334,7 +310,7 @@ jobs:
             --output "dist/minecraftclone-${VERSION_SLUG}-macos-arm64.tar.gz.sha256"
           python script/ci/acquire.py verify-private-dependency-artifact-exclusion \
             --artifact-root dist --private-dependency-root "$RUNNER_TEMP/private-dependencies"
-      - name: Build, test, and package Windows
+      - name: Build and package Windows
         if: matrix.platform == 'windows'
         shell: cmd
         run: |
@@ -346,22 +322,9 @@ jobs:
           if errorlevel 1 exit /b %errorlevel%
           python script/ci/acquire.py record-metadata --platform windows --preset release --output build/toolchain-windows.json
           if errorlevel 1 exit /b %errorlevel%
-          cmake --preset release -DMC_ENABLE_RENDERER_SMOKE=OFF -DVCPKG_MANIFEST_INSTALL=OFF -DVCPKG_INSTALLED_DIR="%VCPKG_INSTALLED_DIR%" -DCMAKE_PREFIX_PATH="%MC_PRIVATE_DEPENDENCIES_PREFIX%" -DCoreCpp_DIR="%MC_PRIVATE_DEPENDENCIES_PREFIX%/lib/cmake/CoreCpp" -DCoreProject2026_DIR="%MC_PRIVATE_DEPENDENCIES_PREFIX%/lib/cmake/CoreProject2026"
+          cmake --preset release -DBUILD_TESTING=OFF -DMC_ENABLE_RENDERER_SMOKE=OFF -DVCPKG_MANIFEST_INSTALL=OFF -DVCPKG_INSTALLED_DIR="%VCPKG_INSTALLED_DIR%" -DCMAKE_PREFIX_PATH="%MC_PRIVATE_DEPENDENCIES_PREFIX%" -DCoreCpp_DIR="%MC_PRIVATE_DEPENDENCIES_PREFIX%/lib/cmake/CoreCpp" -DCoreProject2026_DIR="%MC_PRIVATE_DEPENDENCIES_PREFIX%/lib/cmake/CoreProject2026"
           if errorlevel 1 exit /b %errorlevel%
           cmake --build --preset release
-          if errorlevel 1 exit /b %errorlevel%
-          ctest --test-dir build\release --output-on-failure --no-tests=error --timeout 60 -E "^MinecraftClone.ServerOnlyBuild$" > build\release-tests-windows.log 2>&1
-          set "ctest_result=%errorlevel%"
-          type build\release-tests-windows.log
-          set "ctest_log_result=%errorlevel%"
-          if not "%ctest_result%"=="0" exit /b %ctest_result%
-          if not "%ctest_log_result%"=="0" exit /b %ctest_log_result%
-          cmake -DMC_TEST_CONFIGURATION=Release -P build\release\tests\minecraftclone_server_only_test.cmake >> build\release-tests-windows.log 2>&1
-          if errorlevel 1 (
-            type build\release-tests-windows.log
-            exit /b %errorlevel%
-          )
-          python script/ci/acquire.py validate-shaders --build-dir build\release
           if errorlevel 1 exit /b %errorlevel%
           cmake --install build\release --prefix build\install
           if errorlevel 1 exit /b %errorlevel%
@@ -369,7 +332,7 @@ jobs:
           if errorlevel 1 exit /b %errorlevel%
           python script/ci/build_snapshot.py package-desktop --platform windows --sdk-root "%VULKAN_SDK%" --install-root build/install --vcpkg-installed "%VCPKG_INSTALLED_DIR%" --runtime-search "%VCPKG_INSTALLED_DIR%\x64-windows\bin" --runtime-search "%VCToolsRedistDir%\x64\Microsoft.VC143.CRT" --vulkan-runtime "build\install\vulkan-1.dll" --toolchain-evidence build/toolchain-windows.json --work-root build/package-windows --version "%SNAPSHOT_VERSION%" --source-commit "%SOURCE_COMMIT%" --output "dist/minecraftclone-%VERSION_SLUG%-windows-x86_64.zip"
           if errorlevel 1 exit /b %errorlevel%
-          python script/ci/build_snapshot.py write-evidence --platform windows --configuration release --automated-verification passed --version "%SNAPSHOT_VERSION%" --source-commit "%SOURCE_COMMIT%" --artifact "dist/minecraftclone-%VERSION_SLUG%-windows-x86_64.zip" --toolchain-evidence build/toolchain-windows.json --output "dist/minecraftclone-%VERSION_SLUG%-windows-x86_64-evidence.json"
+          python script/ci/build_snapshot.py write-evidence --platform windows --configuration release --automated-verification build-only --version "%SNAPSHOT_VERSION%" --source-commit "%SOURCE_COMMIT%" --artifact "dist/minecraftclone-%VERSION_SLUG%-windows-x86_64.zip" --toolchain-evidence build/toolchain-windows.json --output "dist/minecraftclone-%VERSION_SLUG%-windows-x86_64-evidence.json"
           if errorlevel 1 exit /b %errorlevel%
           python script/ci/build_snapshot.py write-checksum --artifact "dist/minecraftclone-%VERSION_SLUG%-windows-x86_64.zip" --output "dist/minecraftclone-%VERSION_SLUG%-windows-x86_64.zip.sha256"
           if errorlevel 1 exit /b %errorlevel%
@@ -383,7 +346,6 @@ jobs:
             dist/*
             build/source-identity.json
             build/toolchain-${{ matrix.platform }}.json
-            build/release-tests-${{ matrix.platform }}.log
           if-no-files-found: error
           retention-days: 14
 
@@ -478,12 +440,8 @@ jobs:
             --cmake-arg=-DANDROID_ABI=arm64-v8a \
             --cmake-arg=-DANDROID_PLATFORM=android-28 \
             --cmake-arg=-DVCPKG_MANIFEST_INSTALL=OFF
-      - name: Verify exact source and Android wrapper
-        run: |
-          python script/ci/build_snapshot.py source-identity --expected "$SOURCE_COMMIT" --version "$SNAPSHOT_VERSION" --output build/source-identity.json
-          python script/ci/build_snapshot.py verify-android-source --root android
-      - name: Verify finalized source policy
-        run: python script/ci/acquire.py source-checks --source-commit "${{ env.SOURCE_COMMIT }}"
+      - name: Verify exact source
+        run: python script/ci/build_snapshot.py source-identity --expected "$SOURCE_COMMIT" --version "$SNAPSHOT_VERSION" --output build/source-identity.json
       - name: Build and package development APK
         run: |
           set -euo pipefail

@@ -101,7 +101,7 @@ python3 publish.py 'EarlyDev:Initiation' 0.1.0:3 --checks-only
 
 `--checks-only` skips builds/tests; aggregate gates run both. [AI release policy](ai/RELEASES.md) binds dates to validated source commits in Europe/Belgrade; development and legacy checks use today. Development exceptions: dirty Git state and incorrect snapshot files, reported separately. Other failures block completion. Never fabricate dates or hide baseline failures.
 
-The existing non-check publisher only accepts `dev` and does not switch to `main` before merging. Do not use it for the AI line. Follow [the explicit snapshot procedure](VERSION_CONVENTION.md); a release-tool repair belongs to its own task.
+Do not use the legacy non-check publisher for the AI line; follow [snapshot publication](VERSION_CONVENTION.md).
 
 Additional [release gates](../script/ai_checks.json) require the windowed smoke below at snapshot, minor, and major levels; S4 task MC-AI-0052 owns offscreen texture goldens. Minor/major gates also record environment, documentation, hindsight, and backlog reviews. Every commit uses [task and review receipts](ai/COMMITS.md).
 
@@ -111,9 +111,8 @@ Additional [release gates](../script/ai_checks.json) require the windowed smoke 
 
 Timed S7 tests use CTest `RUN_SERIAL`; workloads remain unchanged.
 
-`ai-dev` diagnostics; no release qualification. `sustained-flight` is
-single-test; `full-context-suite` mirrors `macos_asan` within `900 seconds`.
-`targeted-tsan`: [diagnostic-only observations](ai/tasks/MC-AI-0433.md).
+Local diagnostics are not release qualification; retained
+[observation patches](ai/tasks/MC-AI-0433.md) must not enter production builds.
 
 `script/ai_renderer_smoke.py` rejects foreign caches and builds/runs `RendererSmokeTest` with bounded timeouts, logging to `build/ai-checks/renderer-smoke.log`. Missing registration/device, validation, runtime, and timeout errors fail. Pixels, resize, reload, and close cover automatic/vertex-fallback pipelines—not controls, multiplayer, Windows, or headless goldens. Hosted CI remains GPU-free.
 

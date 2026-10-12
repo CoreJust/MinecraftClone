@@ -76,15 +76,19 @@ class AiPublishTests(unittest.TestCase):
             "    args_log = os.environ.get('MC_TEST_AI_CHECK_ARGS_LOG')\n"
             "    if args_log:\n"
             "        Path(args_log).write_text('\\n'.join(sys.argv[1:]) + '\\n', encoding='utf-8')\n"
-            "    if '--strict' in sys.argv:\n"
-            "        expected = os.environ.get('MC_TEST_HOSTED_MATRIX_COMMIT')\n"
+            "    if '--proof-only' in sys.argv:\n"
+            "        expected = os.environ.get('MC_TEST_ANALYSIS_RECEIPT_COMMIT')\n"
             "        current = subprocess.check_output(\n"
             "            ['git', 'rev-parse', 'HEAD'], text=True\n"
             "        ).strip()\n"
+            "        if '--candidate' in sys.argv and '--snapshot-source-commit' in sys.argv:\n"
+            "            source_index = sys.argv.index('--snapshot-source-commit') + 1\n"
+            "            current = sys.argv[source_index]\n"
             "        if expected is not None and expected != current:\n"
-            "            print('missing exact ai-main hosted matrix receipt')\n"
+            "            print('local analysis aggregate does not match the validated candidate')\n"
             "            raise SystemExit(3)\n"
-            "    if '--candidate' in sys.argv and os.environ.get('MC_TEST_FAIL_CANDIDATE'):\n"
+            "    if ('--candidate' in sys.argv and '--proof-only' not in sys.argv\n"
+            "            and os.environ.get('MC_TEST_FAIL_CANDIDATE')):\n"
             "        print('candidate release gate failed')\n"
             "        raise SystemExit(4)\n"
             "    mutation_root = os.environ.get('MC_TEST_PUBLISH_STAGE_DURING_CHECK')\n"
@@ -233,6 +237,7 @@ class AiPublishTests(unittest.TestCase):
             f"--snapshot-source-commit\n{self.source}",
             self.ai_check_args_log.read_text(encoding="utf-8"),
         )
+        self.assertIn("--proof-only", self.ai_check_args_log.read_text(encoding="utf-8"))
         (self.root / "untracked.txt").write_text("dirty\n", encoding="utf-8")
         dirty = self.run_publish("finish", "MC-AI-0032", self.source)
         self.assertNotEqual(dirty.returncode, 0)
@@ -241,20 +246,29 @@ class AiPublishTests(unittest.TestCase):
         missing = self.run_publish("finish", "MC-AI-0032", self.source)
         self.assertNotEqual(missing.returncode, 0)
         self.assertIn("review receipt", missing.stderr)
-        self.finish()
+        self.finish(env={
+            "MC_TEST_ANALYSIS_RECEIPT_COMMIT": self.source,
+            "MC_TEST_FAIL_CANDIDATE": "1",
+        })
         self.assertIn(
             f"--snapshot-source-commit\n{self.source}",
             self.ai_check_args_log.read_text(encoding="utf-8"),
         )
+        self.assertIn("--proof-only", self.ai_check_args_log.read_text(encoding="utf-8"))
         promoted = self.git_output("rev-parse", "HEAD")
         self.assertEqual(self.git_output("show", "-s", "--format=%P", promoted).split(), [self.baseline, self.source])
         self.assertEqual((self.root / "src" / "baseline_only.txt").read_text(encoding="utf-8"), "retain\n")
-        tagged = self.run_publish("tag", "MC-AI-0032")
+        tagged = self.run_publish(
+            "tag", "MC-AI-0032",
+            env={"MC_TEST_ANALYSIS_RECEIPT_COMMIT": promoted},
+        )
         self.assertEqual(tagged.returncode, 0, tagged.stderr)
         self.assertIn(
             f"--snapshot-source-commit\n{self.source}",
             self.ai_check_args_log.read_text(encoding="utf-8"),
         )
+        self.assertIn("--proof-only", self.ai_check_args_log.read_text(encoding="utf-8"))
+        self.assertIn("--strict", self.ai_check_args_log.read_text(encoding="utf-8"))
         name = self.expected_tag_date(promoted)
         self.assertEqual(tagged.stdout.strip(), name)
         self.assertEqual(self.git_output("rev-parse", f"{name}^{{commit}}"), promoted)
@@ -327,14 +341,14 @@ class AiPublishTests(unittest.TestCase):
         self.assertEqual(tagged.stdout.strip(), "ai/EarlyDev/0.1.0/3_26.10.07")
         self.assertEqual(tagged.stdout.strip(), self.expected_tag_date(promoted))
 
-    def test_tag_waits_for_hosted_matrix_for_the_exact_promotion_commit(self) -> None:
+    def test_tag_requires_local_analysis_proof_for_the_exact_promotion_commit(self) -> None:
         self.prepare()
         self.record_pending_review()
         finish = self.run_publish(
             "finish",
             "MC-AI-0032",
             self.source,
-            env={"MC_TEST_HOSTED_MATRIX_COMMIT": "not-yet-published"},
+            env={"MC_TEST_ANALYSIS_RECEIPT_COMMIT": self.source},
         )
         self.assertEqual(finish.returncode, 0, finish.stderr)
         promoted = self.git_output("rev-parse", "HEAD")
@@ -342,15 +356,15 @@ class AiPublishTests(unittest.TestCase):
         blocked_tag = self.run_publish(
             "tag",
             "MC-AI-0032",
-            env={"MC_TEST_HOSTED_MATRIX_COMMIT": "not-yet-published"},
+            env={"MC_TEST_ANALYSIS_RECEIPT_COMMIT": self.source},
         )
         self.assertNotEqual(blocked_tag.returncode, 0)
-        self.assertIn("missing exact ai-main hosted matrix receipt", blocked_tag.stdout)
+        self.assertIn("local analysis aggregate does not match", blocked_tag.stdout)
 
         tagged = self.run_publish(
             "tag",
             "MC-AI-0032",
-            env={"MC_TEST_HOSTED_MATRIX_COMMIT": promoted},
+            env={"MC_TEST_ANALYSIS_RECEIPT_COMMIT": promoted},
         )
         self.assertEqual(tagged.returncode, 0, tagged.stderr)
 
@@ -379,21 +393,26 @@ class AiPublishTests(unittest.TestCase):
         self.assertNotEqual(rejected.returncode, 0)
         self.assertIn("does not extend the destination ai-main", rejected.stderr)
 
-    def test_prepare_defers_hosted_matrix_but_requires_candidate_gate(self) -> None:
+    def test_prepare_requires_matching_local_proof_without_running_full_gate(self) -> None:
         blocked = self.run_publish(
             "prepare", "MC-AI-0032", self.source,
-            env={"MC_TEST_FAIL_CANDIDATE": "1"},
+            env={"MC_TEST_ANALYSIS_RECEIPT_COMMIT": "not-the-source"},
         )
         self.assertNotEqual(blocked.returncode, 0)
-        self.assertIn("candidate release gate failed", blocked.stdout)
+        self.assertIn("local analysis aggregate does not match", blocked.stdout)
         self.assertEqual(self.git_output("branch", "--show-current"), "ai-dev")
 
         prepared = self.run_publish(
             "prepare", "MC-AI-0032", self.source,
-            env={"MC_TEST_HOSTED_MATRIX_COMMIT": "not-yet-published"},
+            env={
+                "MC_TEST_ANALYSIS_RECEIPT_COMMIT": self.source,
+                "MC_TEST_FAIL_CANDIDATE": "1",
+            },
         )
         self.assertEqual(prepared.returncode, 0, prepared.stderr)
         self.assertEqual(self.git_output("branch", "--show-current"), "ai-main")
+        self.assertIn("--proof-only", self.ai_check_args_log.read_text(encoding="utf-8"))
+        self.assertNotIn("hosted", prepared.stdout.lower())
 
     def test_snapshot_revision_tag_rejects_the_canonical_promotion(self) -> None:
         self.prepare()
@@ -447,18 +466,36 @@ class AiPublishTests(unittest.TestCase):
         self.assertIn("expected immutable merge tree", rejected.stderr)
         self.assertEqual(self.git_output("rev-parse", "HEAD"), original_head)
 
-    def test_finish_rechecks_index_after_candidate_checks(self) -> None:
+    def test_finish_rechecks_index_after_local_proof_validation(self) -> None:
         self.prepare()
         self.record_pending_review()
         original_head = self.git_output("rev-parse", "HEAD")
         with mock.patch.dict(
             os.environ,
-            {"MC_TEST_PUBLISH_STAGE_DURING_CHECK": str(self.root)},
+            {
+                "MC_TEST_PUBLISH_STAGE_DURING_CHECK": str(self.root),
+                "MC_TEST_ANALYSIS_RECEIPT_COMMIT": self.source,
+            },
         ):
             rejected = self.run_publish("finish", "MC-AI-0032", self.source)
         self.assertNotEqual(rejected.returncode, 0)
         self.assertIn("expected immutable merge tree", rejected.stderr)
         self.assertEqual(self.git_output("rev-parse", "HEAD"), original_head)
+
+    def test_finish_rejects_a_changed_or_missing_local_proof(self) -> None:
+        self.prepare()
+        self.record_pending_review()
+        original_head = self.git_output("rev-parse", "HEAD")
+
+        rejected = self.run_publish(
+            "finish", "MC-AI-0032", self.source,
+            env={"MC_TEST_ANALYSIS_RECEIPT_COMMIT": "stale-proof"},
+        )
+
+        self.assertNotEqual(rejected.returncode, 0)
+        self.assertIn("local analysis aggregate does not match", rejected.stdout)
+        self.assertEqual(self.git_output("rev-parse", "HEAD"), original_head)
+        self.assertEqual(self.git_output("rev-parse", "MERGE_HEAD"), self.source)
 
     def test_prepare_rejects_dirty_and_symbolic_source(self) -> None:
         (self.root / "untracked.txt").write_text("dirty\n", encoding="utf-8")

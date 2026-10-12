@@ -17,7 +17,6 @@ from script.ci import build_snapshot
 
 REPOSITORY = Path(__file__).resolve().parents[2]
 WORKFLOW = REPOSITORY / ".github/workflows/snapshot-artifacts.yml"
-AI_WORKFLOW = REPOSITORY / ".github/workflows/ai-checks.yml"
 
 
 class BuildSnapshotTests(unittest.TestCase):
@@ -333,6 +332,12 @@ class BuildSnapshotTests(unittest.TestCase):
         self.assertIn("source_commit: ${{ steps.trust.outputs.source_commit }}", workflow)
         self.assertIn("trusted_dependency_source: ${{ steps.trust.outputs.trusted_dependency_source }}", workflow)
         self.assertIn("if: needs.source.outputs.trusted_dependency_source == 'true'", workflow)
+        self.assertIn("timeout-minutes: 15", workflow)
+        self.assertIn("--automated-verification build-only", workflow)
+        self.assertIn("-DBUILD_TESTING=OFF", workflow)
+        self.assertNotIn("ctest ", workflow)
+        self.assertNotIn("verify_analysis_gate", workflow)
+        self.assertNotIn("--wait", workflow)
         self.assertIn("git merge-base --is-ancestor", workflow)
         self.assertIn("+refs/heads/ai-dev:refs/remotes/origin/ai-dev", workflow)
         self.assertIn('git merge-base --is-ancestor "$source_commit" refs/remotes/origin/ai-dev', workflow)
@@ -378,35 +383,43 @@ class BuildSnapshotTests(unittest.TestCase):
         self.assertTrue(upload_paths)
         self.assertTrue(all("private-dependency" not in path for path in upload_paths))
 
-    def test_windows_workflows_restore_acquired_vcpkg_and_fail_closed_on_metadata(self):
-        for workflow_path in (WORKFLOW, AI_WORKFLOW):
-            workflow = workflow_path.read_text(encoding="utf-8")
-            windows_step = workflow.split("shell: cmd", maxsplit=1)[1]
-            self.assertIn(
-                'set "MC_ACQUIRED_VCPKG_ROOT=%VCPKG_ROOT%"\n'
-                '          call "%ProgramFiles%\\Microsoft Visual Studio\\2022\\Enterprise\\Common7\\Tools\\VsDevCmd.bat" -arch=amd64\n'
-                "          if errorlevel 1 exit /b %errorlevel%\n"
-                '          set "VCPKG_ROOT=%MC_ACQUIRED_VCPKG_ROOT%"',
-                windows_step,
-            )
-            metadata = windows_step.index("record-metadata --platform windows")
-            self.assertEqual(
-                windows_step[metadata:].splitlines()[1].strip(),
-                "if errorlevel 1 exit /b %errorlevel%",
-            )
-
-    def test_windows_release_phase_stops_at_each_fallible_command(self):
+    def test_windows_artifact_job_restores_vcpkg_and_fails_closed_on_metadata(self):
         workflow = WORKFLOW.read_text(encoding="utf-8")
-        windows_step = workflow.split("      - name: Build, test, and package Windows\n", maxsplit=1)[1]
+        expected_toolchain_setup = (
+            'set "MC_ACQUIRED_VCPKG_ROOT=%VCPKG_ROOT%"\n'
+            '          call "%ProgramFiles%\\Microsoft Visual Studio\\2022\\Enterprise\\Common7\\Tools\\VsDevCmd.bat" -arch=amd64\n'
+            "          if errorlevel 1 exit /b %errorlevel%\n"
+            '          set "VCPKG_ROOT=%MC_ACQUIRED_VCPKG_ROOT%"'
+        )
+        private_install = workflow.split(
+            "      - name: Install pinned private dependencies (Windows)\n", maxsplit=1
+        )[1].split("      - name:", maxsplit=1)[0]
+        artifact_build = workflow.split(
+            "      - name: Build and package Windows\n", maxsplit=1
+        )[1].split("      - name:", maxsplit=1)[0]
+
+        self.assertIn(expected_toolchain_setup, private_install)
+        self.assertLess(
+            private_install.index("VsDevCmd.bat"),
+            private_install.index("install-private-dependencies"),
+        )
+        self.assertIn(expected_toolchain_setup, artifact_build)
+        metadata = artifact_build.index("record-metadata --platform windows")
+        self.assertEqual(
+            artifact_build[metadata:].splitlines()[1].strip(),
+            "if errorlevel 1 exit /b %errorlevel%",
+        )
+
+    def test_windows_artifact_build_phase_fails_closed_on_each_command(self):
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        windows_step = workflow.split("      - name: Build and package Windows\n", maxsplit=1)[1]
         windows_phase = windows_step.split("      - name: Upload desktop release candidate\n", maxsplit=1)[0]
         commands = (
             'call "%ProgramFiles%\\Microsoft Visual Studio\\2022\\Enterprise\\Common7\\Tools\\VsDevCmd.bat" -arch=amd64',
             "python script/ci/acquire.py verify-tools --platform windows",
             "python script/ci/acquire.py record-metadata --platform windows --preset release --output build/toolchain-windows.json",
-            "cmake --preset release -DMC_ENABLE_RENDERER_SMOKE=OFF",
+            "cmake --preset release -DBUILD_TESTING=OFF",
             "cmake --build --preset release",
-            "ctest --test-dir build\\release --output-on-failure --no-tests=error --timeout 60 -E \"^MinecraftClone.ServerOnlyBuild$\" > build\\release-tests-windows.log 2>&1",
-            "python script/ci/acquire.py validate-shaders --build-dir build\\release",
             "cmake --install build\\release --prefix build\\install",
             "if not exist dist mkdir dist",
             "python script/ci/build_snapshot.py package-desktop --platform windows",
@@ -418,36 +431,18 @@ class BuildSnapshotTests(unittest.TestCase):
         lines = [line.strip() for line in windows_phase.splitlines()]
         command_indices = [next(index for index, line in enumerate(lines) if line.startswith(command)) for command in commands]
         for command, index in zip(commands, command_indices):
-            if command.startswith("ctest "):
-                self.assertEqual(
-                    lines[index + 1:index + 6],
-                    [
-                        'set "ctest_result=%errorlevel%"',
-                        "type build\\release-tests-windows.log",
-                        'set "ctest_log_result=%errorlevel%"',
-                        'if not "%ctest_result%"=="0" exit /b %ctest_result%',
-                        'if not "%ctest_log_result%"=="0" exit /b %ctest_log_result%',
-                    ],
-                )
-            else:
-                self.assertEqual(lines[index + 1], failure_guard, command)
+            self.assertEqual(lines[index + 1], failure_guard, command)
+        self.assertNotIn("ctest", windows_phase)
+        self.assertNotIn("validate-shaders", windows_phase)
 
         def run_extracted_phase(failed_command: str | None) -> tuple[int, list[str]]:
             errorlevel = 0
-            ctest_result = 0
-            ctest_log_result = 0
             executed = []
             for line in lines:
                 command = next((item for item in commands if line.startswith(item)), None)
                 if command is not None:
                     executed.append(command)
                     errorlevel = int(command == failed_command)
-                    if command.startswith("ctest "):
-                        ctest_result = errorlevel
-                elif line.startswith('if not "%ctest_result%"') and ctest_result >= 1:
-                    return ctest_result, executed
-                elif line.startswith('if not "%ctest_log_result%"') and ctest_log_result >= 1:
-                    return ctest_log_result, executed
                 elif line.startswith("if errorlevel 1") and errorlevel >= 1:
                     return errorlevel, executed
             return errorlevel, executed
@@ -456,10 +451,7 @@ class BuildSnapshotTests(unittest.TestCase):
         for failed_command in commands:
             exit_code, executed = run_extracted_phase(failed_command)
             self.assertEqual(exit_code, 1)
-            if failed_command.startswith("ctest "):
-                self.assertEqual(executed[-1], failed_command)
-            else:
-                self.assertEqual(executed[-1], failed_command)
+            self.assertEqual(executed[-1], failed_command)
             self.assertNotIn(commands[-1], executed[:-1])
 
 

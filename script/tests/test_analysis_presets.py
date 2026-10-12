@@ -108,6 +108,21 @@ class AnalysisPresetTests(unittest.TestCase):
 
                 self.assertEqual(cache_variables.get("CMAKE_C_COMPILER"), "clang")
                 self.assertEqual(cache_variables.get("CMAKE_CXX_COMPILER"), "clang++")
+                self.assertEqual(
+                    cache_variables.get("VCPKG_OVERLAY_TRIPLETS"),
+                    "${sourceDir}/script/ci/vcpkg-triplets",
+                )
+
+    def test_linux_arm64_triplets_keep_native_architecture_and_sanitizer_runtime(self):
+        lsan = (REPOSITORY / "script/ci/vcpkg-triplets/arm64-linux-lsan.cmake").read_text(encoding="utf-8")
+        msan = (REPOSITORY / "script/ci/vcpkg-triplets/arm64-linux-msan.cmake").read_text(encoding="utf-8")
+
+        self.assertIn("set(VCPKG_TARGET_ARCHITECTURE arm64)", lsan)
+        self.assertIn('"-fsanitize=leak', lsan)
+        self.assertIn("set(VCPKG_TARGET_ARCHITECTURE arm64)", msan)
+        self.assertIn('"-fsanitize=memory -fsanitize-memory-track-origins=2', msan)
+        self.assertIn("MC_MSAN_LIBCXX_PREFIX", msan)
+        self.assertNotIn("set(VCPKG_TARGET_ARCHITECTURE x64)", lsan + msan)
 
     def test_windows_analyzer_resolves_pinned_private_package_paths(self):
         cache_variables = effective_cache_variables("analysis-windows-analyze")

@@ -35,7 +35,7 @@
     },
     {
       "guide": "docs/code/ANDROID.md",
-      "guide_sha256": "8aab15da3f5aa5e9225bb70aad06ee0aa004ccfecb4af9a08218056372757661",
+      "guide_sha256": "e318bf392ae7dc06308889d14d4762f1feafcc05ef21085d985219ef4237683d",
       "id": "android",
       "sources": [
         "src/android/AndroidInput.cpp",
@@ -55,7 +55,7 @@
     },
     {
       "guide": "docs/BUILD.md",
-      "guide_sha256": "334e793a1e0189c92f3aa4630929444be023ac5b26a2747a460f023bcc68609c",
+      "guide_sha256": "bd152f90eff18ec3bacf99bf2e53b2a52b94b7ca44c488f79770150274fd5c3b",
       "id": "build",
       "sources": [
         ".agents/skills/backlog/SKILL.md",
@@ -75,7 +75,6 @@
         ".githooks/pre-commit",
         ".githooks/pre-merge-commit",
         ".githooks/pre-push",
-        ".github/workflows/ai-checks.yml",
         ".github/workflows/snapshot-artifacts.yml",
         ".gitignore",
         "AGENTS.md",
@@ -175,7 +174,7 @@
         "vcpkg-configuration.json",
         "vcpkg.json"
       ],
-      "sources_sha256": "2813c59764cae3e4925983d895796418661f302ba444f8b769d7697f14ec396a"
+      "sources_sha256": "fc5176713bcbfef1c75b77399ba1c97e5e5694b3b029ee9495ea70fefe9d7637"
     },
     {
       "guide": "docs/code/CORE.md",

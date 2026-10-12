@@ -3,10 +3,21 @@
     "name": "sanitizer-static-analysis",
     "enabled": true,
     "levels": ["basic", "snapshot", "minor", "major"],
-    "command": ["{python}", "script/ci/verify_analysis_gate.py", "--commit", "HEAD"],
+    "command": [
+      "{python}",
+      "script/ci/verify_analysis_gate.py",
+      "--root",
+      "{root}",
+      "--receipt",
+      "{root}/build/ai-checks/analysis-aggregate.json",
+      "--candidate-commit",
+      "{proof-candidate-commit}"
+    ],
     "timeout": 60,
-    "reason": "Strict release pushes must have a successful hosted matrix check on the exact immutable candidate.",
-    "when": "strict"
+    "reason": "Validates the complete local analyzer aggregate against the release candidate and current row inputs.",
+    "when": "release",
+    "proof": true,
+    "reuse": false
   },
   {
     "name": "renderer-smoke",
@@ -14,7 +25,8 @@
     "levels": ["snapshot", "minor", "major"],
     "command": ["{python}", "script/ai_renderer_smoke.py"],
     "timeout": 900,
-    "reason": "Runs the windowed noninteractive RendererSmokeTest with validation; it is not a fully headless texture-golden gate."
+    "reason": "Runs the windowed noninteractive RendererSmokeTest with validation; it is not a fully headless texture-golden gate.",
+    "receipt": true
   },
   {
     "name": "environment",

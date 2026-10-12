@@ -1,25 +1,25 @@
 from __future__ import annotations
 
-import hashlib
+import contextlib
 import importlib.util
 import io
 import json
-import sys
+import tempfile
 import unittest
-from contextlib import redirect_stdout
 from pathlib import Path
 from unittest import mock
 
 
-SCRIPT = Path(__file__).resolve().parents[1] / "ci/verify_analysis_gate.py"
-COMMIT = "a" * 40
+REPOSITORY = Path(__file__).resolve().parents[2]
+GATE = REPOSITORY / "script/ci/verify_analysis_gate.py"
+MANIFEST = REPOSITORY / "script/ai_analysis_matrix.json"
+CANDIDATE = {"head": "a" * 40, "tree": "b" * 40}
 
 
 def load_module():
-    spec = importlib.util.spec_from_file_location("verify_analysis_gate", SCRIPT)
+    spec = importlib.util.spec_from_file_location("verify_analysis_gate", GATE)
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
-    sys.modules[spec.name] = module
     spec.loader.exec_module(module)
     return module
 
@@ -27,523 +27,101 @@ def load_module():
 class VerifyAnalysisGateTests(unittest.TestCase):
     def setUp(self):
         self.gate = load_module()
-        self.workflow_runs_patch = mock.patch.object(
-            self.gate, "fetch_workflow_runs", return_value=[self.workflow_run()]
-        )
-        self.workflow_runs_patch.start()
-        self.addCleanup(self.workflow_runs_patch.stop)
-        self.workflow_jobs_patch = mock.patch.object(
-            self.gate,
-            "fetch_workflow_jobs",
-            return_value=self.producer_jobs(),
-        )
-        self.workflow_jobs_patch.start()
-        self.addCleanup(self.workflow_jobs_patch.stop)
 
-    def check_run(self, *, commit: str = COMMIT, status: str = "completed", conclusion: str = "success"):
-        return {
-            "id": 123,
-            "name": self.gate.CHECK_NAME,
-            "head_sha": commit,
-            "status": status,
-            "conclusion": conclusion,
-            "started_at": "2026-09-22T10:00:00Z",
-            "completed_at": "2026-09-22T10:10:00Z",
-            "app": {"slug": "github-actions"},
-            "details_url": "https://github.com/CoreJust/MinecraftClone/actions/runs/456/job/123",
-        }
+    def _paths(self, root: Path) -> tuple[Path, Path]:
+        receipt = root / "aggregate.json"
+        receipt.write_text("{}\n", encoding="utf-8")
+        return root, receipt
 
-    def workflow_run(self, *, path: str = ".github/workflows/ai-checks.yml", **overrides):
-        return {
-            "id": 456,
-            "path": path,
-            "head_sha": COMMIT,
-            "event": "push",
-            "run_attempt": 1,
-            "status": "completed",
-            "conclusion": "success",
-            **overrides,
-        }
-
-    def producer_jobs(self, overrides: dict[str, dict[str, object]] | None = None):
-        jobs = [
-            {
-                "id": 123 if name == self.gate.CHECK_NAME else 500 + index,
-                "name": name,
-                "status": "completed",
-                "conclusion": "success",
+    def test_verifier_passes_absolute_offline_aggregate_for_exact_candidate(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root, receipt = self._paths(Path(directory))
+            verified = {
+                "candidate": CANDIDATE,
+                "rows": [{"id": f"row-{index}"} for index in range(11)],
             }
-            for index, name in enumerate(sorted(self.gate.REQUIRED_PRODUCER_JOBS | {self.gate.CHECK_NAME}))
-        ]
-        for job in jobs:
-            job.update((overrides or {}).get(job["name"], {}))
-        return jobs
+            with mock.patch.object(self.gate._MATRIX, "candidate_identity", return_value=CANDIDATE), mock.patch.object(
+                self.gate._MATRIX, "verify_receipt", return_value=verified
+            ) as verify_receipt, mock.patch.object(
+                self.gate._MATRIX.subprocess, "run", side_effect=AssertionError("unexpected subprocess")
+            ) as process:
+                output = io.StringIO()
+                with contextlib.redirect_stdout(output):
+                    result = self.gate.main(
+                        ["--root", str(root), "--receipt", str(receipt), "--manifest", str(MANIFEST)]
+                    )
 
-    def receipt(self):
-        matrix_script = SCRIPT.parents[1] / "ai_analysis_matrix.py"
-        spec = importlib.util.spec_from_file_location("ai_analysis_matrix", matrix_script)
-        matrix = importlib.util.module_from_spec(spec)
-        assert spec.loader is not None
-        spec.loader.exec_module(matrix)
-        manifest = matrix.load_manifest()
-        candidate = {"head": COMMIT, "tree": "b" * 40}
-        per_unit_evidence = {}
-        for row_id, configuration in matrix.PER_TRANSLATION_UNIT_ANALYSIS.items():
-            unit = {
-                "source": "src/main.cpp",
-                "source_sha256": "1" * 64,
-                "source_argv_sha256": "2" * 64,
-                "invoked_tool": configuration["tool"],
-                "status": "passed",
-                "record_sha256": "3" * 64,
-                "report_sha256": "4" * 64,
-            }
-            per_unit_evidence[row_id] = {
-                "translation_unit_count": 1,
-                "translation_unit_inventory_sha256": matrix._translation_unit_inventory_sha256([unit]),
-                "project_input_sha256": "5" * 64,
-                "translation_units": [unit],
-            }
-        return {
-            "schema_version": 1,
-            "task_id": "MC-AI-0249",
-            "manifest_sha256": matrix.manifest_sha256(manifest),
-            "candidate": candidate,
-            "source": candidate.copy(),
-            "rows": [
-                {
-                    "id": row["id"],
-                    "candidate": candidate.copy(),
-                    "status": "passed",
-                    "flags": row["flags"],
-                    "environment": row.get("environment", {}),
-                    "tool_versions": {"tool": "tool 1.0"},
-                    "commands": row["commands"],
-                    "executed_commands": [
-                        {
-                            "declared_command": command,
-                            "argv": command + (
-                                ["--verbose"]
-                                if row["id"] in matrix.REQUIRED_ANALYSIS_CONFIGURATION
-                                and command[:2] == ["cmake", "--build"]
-                                else []
-                            ),
-                            "return_code": 0,
-                            "output_sha256": "d" * 64,
-                            "output_bytes": 12,
-                        }
-                        for command in row["commands"]
-                    ],
-                    "effective_compile_flags": (
-                        {
-                            "compile_commands_sha256": "c" * 64,
-                            "command_count": 1,
-                            "observed_flags": row["required_compile_flags"],
-                        }
-                        if "required_compile_flags" in row
-                        else None
-                    ),
-                    "effective_analysis": (
-                        {
-                            "configuration_sha256": "e" * 64,
-                            "configuration_key": matrix.REQUIRED_ANALYSIS_CONFIGURATION[row["id"]][1],
-                            "observed_settings": matrix.REQUIRED_ANALYSIS_CONFIGURATION[row["id"]][2],
-                            "invocation_count": 1,
-                            "observed_tools_and_flags": matrix.ANALYSIS_TOOL_MARKERS[row["id"]],
-                            "build_output_sha256": "f" * 64,
-                            **per_unit_evidence.get(row["id"], {}),
-                        }
-                        if row["id"] in matrix.REQUIRED_ANALYSIS_CONFIGURATION
-                        else None
-                    ),
-                    "diagnostics": "no diagnostics",
-                    "diagnostics_sha256": hashlib.sha256(b"no diagnostics").hexdigest(),
-                    "duration_seconds": 1,
-                }
-                for row in manifest["rows"]
-            ],
-        }
+            self.assertEqual(result, 0)
+            self.assertEqual(json.loads(output.getvalue())["rows"], [f"row-{index}" for index in range(11)])
+            verify_receipt.assert_called_once_with(
+                receipt.resolve(), MANIFEST.resolve(), root=root.resolve(), expected_candidate=CANDIDATE
+            )
+            process.assert_not_called()
+            self.assertFalse(hasattr(self.gate, "fetch_check_runs"))
 
-    def test_gate_rejects_same_named_check_from_other_workflow(self):
-        with mock.patch.object(self.gate, "git", side_effect=[COMMIT, "b" * 40]), mock.patch.object(
-            self.gate, "github_repository", return_value="CoreJust/MinecraftClone"
-        ), mock.patch.object(self.gate, "fetch_check_runs", return_value=[self.check_run()]), mock.patch.object(
-            self.gate, "fetch_workflow_run", return_value=self.workflow_run(path=".github/workflows/other.yml"), create=True
-        ), mock.patch.object(self.gate, "fetch_aggregate_receipt", return_value=self.receipt(), create=True):
-            with self.assertRaisesRegex(self.gate.GateError, "workflow"):
-                self.gate.verify_gate(Path("."), COMMIT)
+    def test_candidate_commit_is_authenticated_separately_from_source_inputs(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root, receipt = self._paths(Path(directory))
+            with mock.patch.object(self.gate._MATRIX, "candidate_identity", side_effect=AssertionError("HEAD must not substitute")), mock.patch.object(
+                self.gate._MATRIX, "commit_identity", return_value=CANDIDATE
+            ) as commit_identity, mock.patch.object(
+                self.gate._MATRIX, "verify_receipt", return_value={"candidate": CANDIDATE, "rows": []}
+            ) as verify_receipt:
+                result = self.gate.main(
+                    [
+                        "--root",
+                        str(root),
+                        "--receipt",
+                        str(receipt),
+                        "--manifest",
+                        str(MANIFEST),
+                        "--candidate-commit",
+                        CANDIDATE["head"],
+                    ]
+                )
 
-    def test_gate_rejects_pending_check_from_other_workflow_immediately(self):
-        workflow = self.workflow_run(path=".github/workflows/other.yml")
-        with mock.patch.object(self.gate, "git", side_effect=[COMMIT, "b" * 40]), mock.patch.object(
-            self.gate, "github_repository", return_value="CoreJust/MinecraftClone"
-        ), mock.patch.object(
-            self.gate, "fetch_check_runs", return_value=[self.check_run(status="queued", conclusion="")]
-        ), mock.patch.object(self.gate, "fetch_workflow_run", return_value=workflow) as fetch_workflow:
-            with self.assertRaises(self.gate.GateError) as error:
-                self.gate.verify_gate(Path("."), COMMIT)
-
-        self.assertIs(type(error.exception), self.gate.GateError)
-        self.assertIn("workflow", str(error.exception))
-        fetch_workflow.assert_called_once_with("CoreJust/MinecraftClone", 456)
-
-    def test_gate_rejects_missing_or_invalid_aggregate_receipt(self):
-        for receipt in (None, {"candidate": {"head": COMMIT, "tree": "b" * 40}, "rows": []}):
-            with self.subTest(receipt=receipt), mock.patch.object(self.gate, "git", side_effect=[COMMIT, "b" * 40]), mock.patch.object(
-                self.gate, "github_repository", return_value="CoreJust/MinecraftClone"
-            ), mock.patch.object(self.gate, "fetch_check_runs", return_value=[self.check_run()]), mock.patch.object(
-                self.gate, "fetch_workflow_run", return_value=self.workflow_run(), create=True
-            ), mock.patch.object(self.gate, "fetch_aggregate_receipt", return_value=receipt, create=True):
-                with self.assertRaisesRegex(self.gate.GateError, "receipt"):
-                    self.gate.verify_gate(Path("."), COMMIT)
-
-    def test_remote_parser_supports_ssh_and_https_github_urls(self):
-        for remote in (
-            "git@github.com:CoreJust/MinecraftClone.git",
-            "https://github.com/CoreJust/MinecraftClone.git",
-        ):
-            with mock.patch.object(self.gate, "git", return_value=remote):
-                self.assertEqual(self.gate.github_repository(Path(".")), "CoreJust/MinecraftClone")
-
-    def test_check_run_query_uses_get_with_pagination_fields(self):
-        with mock.patch.object(
-            self.gate.subprocess,
-            "run",
-            return_value=self.gate.subprocess.CompletedProcess([], 0, '{"check_runs":[]}', ""),
-        ) as run:
-            self.gate.fetch_check_runs("CoreJust/MinecraftClone", COMMIT)
-
-        command = run.call_args.args[0]
-        self.assertIn("--method", command)
-        self.assertEqual(command[command.index("--method") + 1], "GET")
-        self.assertIn("-F", command)
-
-    def test_gate_requires_success_for_the_exact_candidate_commit(self):
-        page = {"total_count": 1, "check_runs": [self.check_run()]}
-        with mock.patch.object(self.gate, "git", side_effect=[COMMIT, "b" * 40]), mock.patch.object(
-            self.gate,
-            "github_repository",
-            return_value="CoreJust/MinecraftClone",
-        ), mock.patch.object(self.gate, "fetch_check_runs", return_value=[self.check_run()]), mock.patch.object(
-            self.gate, "fetch_workflow_run", return_value=self.workflow_run()
-        ), mock.patch.object(self.gate, "fetch_aggregate_receipt", return_value=self.receipt()):
-            result = self.gate.verify_gate(Path("."), COMMIT)
-        self.assertEqual(result["commit"], COMMIT)
-        self.assertEqual(result["conclusion"], "success")
-        self.assertEqual(self.gate._check_runs([page]), [page["check_runs"][0]])
-
-    def test_gate_rejects_a_different_commit_or_failed_check(self):
-        with mock.patch.object(self.gate, "git", return_value=COMMIT), mock.patch.object(
-            self.gate,
-            "github_repository",
-            return_value="CoreJust/MinecraftClone",
-        ), mock.patch.object(self.gate, "fetch_check_runs", return_value=[self.check_run(commit="b" * 40)]):
-            with self.assertRaisesRegex(self.gate.GateError, "has not reported"):
-                self.gate.verify_gate(Path("."), COMMIT)
-
-        with mock.patch.object(self.gate, "git", return_value=COMMIT), mock.patch.object(
-            self.gate,
-            "github_repository",
-            return_value="CoreJust/MinecraftClone",
-        ), mock.patch.object(
-            self.gate,
-            "fetch_check_runs",
-            return_value=[self.check_run(conclusion="failure")],
-        ), mock.patch.object(self.gate, "fetch_workflow_run", return_value=self.workflow_run()):
-            with self.assertRaisesRegex(self.gate.GateError, "not successful"):
-                self.gate.verify_gate(Path("."), COMMIT)
-
-    def test_latest_run_wins_even_when_an_older_run_passed(self):
-        older = self.check_run()
-        newer = self.check_run(status="in_progress", conclusion="")
-        newer["started_at"] = "2026-09-22T11:00:00Z"
-        with mock.patch.object(self.gate, "git", return_value=COMMIT), mock.patch.object(
-            self.gate,
-            "github_repository",
-            return_value="CoreJust/MinecraftClone",
-        ), mock.patch.object(self.gate, "fetch_check_runs", return_value=[older, newer]), mock.patch.object(
-            self.gate, "fetch_workflow_run", return_value=self.workflow_run()
-        ):
-            with self.assertRaisesRegex(self.gate.GatePending, "still running"):
-                self.gate.verify_gate(Path("."), COMMIT)
-
-    def test_missing_aggregate_fails_immediately_for_a_failed_required_producer(self):
-        workflow = self.workflow_run(status="in_progress", conclusion=None)
-        jobs = self.producer_jobs(
-            {
-                "desktop (macos, debug)": {"status": "completed", "conclusion": "failure"},
-                "android-hwasan-runtime": {"status": "queued", "conclusion": None},
-            }
-        )
-        with mock.patch.object(self.gate, "git", return_value=COMMIT), mock.patch.object(
-            self.gate, "github_repository", return_value="CoreJust/MinecraftClone"
-        ), mock.patch.object(self.gate, "fetch_check_runs", return_value=[]), mock.patch.object(
-            self.gate, "fetch_workflow_runs", return_value=[workflow]
-        ), mock.patch.object(self.gate, "fetch_workflow_jobs", return_value=jobs), mock.patch.object(
-            self.gate.time, "sleep"
-        ) as sleep:
-            with self.assertRaisesRegex(self.gate.GateError, r"desktop \(macos, debug\)=failure"):
-                self.gate.wait_for_gate(Path("."), COMMIT, "CoreJust/MinecraftClone")
-
-        sleep.assert_not_called()
-
-    def test_pending_aggregate_fails_immediately_for_a_failed_required_producer(self):
-        workflow = self.workflow_run(status="in_progress", conclusion=None)
-        check_run = self.check_run(status="in_progress", conclusion="")
-        jobs = self.producer_jobs(
-            {
-                self.gate.CHECK_NAME: {"status": "in_progress", "conclusion": None},
-                "desktop (windows, debug)": {"status": "completed", "conclusion": "cancelled"},
-            }
-        )
-        with mock.patch.object(self.gate, "git", return_value=COMMIT), mock.patch.object(
-            self.gate, "github_repository", return_value="CoreJust/MinecraftClone"
-        ), mock.patch.object(self.gate, "fetch_check_runs", return_value=[check_run]), mock.patch.object(
-            self.gate, "fetch_workflow_runs", return_value=[workflow]
-        ), mock.patch.object(self.gate, "fetch_workflow_jobs", return_value=jobs), mock.patch.object(
-            self.gate.time, "sleep"
-        ) as sleep:
-            with self.assertRaisesRegex(self.gate.GateError, r"desktop \(windows, debug\)=cancelled"):
-                self.gate.wait_for_gate(Path("."), COMMIT, "CoreJust/MinecraftClone")
-
-        sleep.assert_not_called()
-
-    def test_windows_release_failure_fails_while_hwasan_remains_queued(self):
-        workflow = self.workflow_run(status="in_progress", conclusion=None)
-        jobs = self.producer_jobs(
-            {
-                "desktop (windows, release)": {"status": "completed", "conclusion": "failure"},
-                "android-hwasan-runtime": {"status": "queued", "conclusion": None},
-            }
-        )
-        with mock.patch.object(self.gate, "git", return_value=COMMIT), mock.patch.object(
-            self.gate, "github_repository", return_value="CoreJust/MinecraftClone"
-        ), mock.patch.object(self.gate, "fetch_check_runs", return_value=[]), mock.patch.object(
-            self.gate, "fetch_workflow_runs", return_value=[workflow]
-        ), mock.patch.object(self.gate, "fetch_workflow_jobs", return_value=jobs):
-            with self.assertRaisesRegex(self.gate.GateError, r"desktop \(windows, release\)=failure"):
-                self.gate.verify_gate(Path("."), COMMIT)
-
-    def test_skipped_required_producer_fails_instead_of_waiting(self):
-        workflow = self.workflow_run(status="in_progress", conclusion=None)
-        jobs = self.producer_jobs(
-            {"fast (windows-2022)": {"status": "completed", "conclusion": "skipped"}}
-        )
-        with mock.patch.object(self.gate, "git", return_value=COMMIT), mock.patch.object(
-            self.gate, "github_repository", return_value="CoreJust/MinecraftClone"
-        ), mock.patch.object(self.gate, "fetch_check_runs", return_value=[]), mock.patch.object(
-            self.gate, "fetch_workflow_runs", return_value=[workflow]
-        ), mock.patch.object(self.gate, "fetch_workflow_jobs", return_value=jobs):
-            with self.assertRaisesRegex(self.gate.GateError, r"fast \(windows-2022\)=skipped"):
-                self.gate.verify_gate(Path("."), COMMIT)
-
-    def test_old_attempt_failure_does_not_poison_latest_healthy_attempt(self):
-        old = self.workflow_run(id=455, run_attempt=1, created_at="2026-09-22T10:00:00Z")
-        latest = self.workflow_run(
-            id=457,
-            run_attempt=2,
-            created_at="2026-09-22T11:00:00Z",
-            status="in_progress",
-            conclusion=None,
-        )
-        jobs = self.producer_jobs({"android-hwasan-runtime": {"status": "queued", "conclusion": None}})
-        with mock.patch.object(self.gate, "git", return_value=COMMIT), mock.patch.object(
-            self.gate, "github_repository", return_value="CoreJust/MinecraftClone"
-        ), mock.patch.object(self.gate, "fetch_check_runs", return_value=[]), mock.patch.object(
-            self.gate, "fetch_workflow_runs", return_value=[old, latest]
-        ), mock.patch.object(self.gate, "fetch_workflow_jobs", return_value=jobs) as fetch_jobs:
-            with self.assertRaises(self.gate.GatePending):
-                self.gate.verify_gate(Path("."), COMMIT)
-
-        fetch_jobs.assert_called_once_with("CoreJust/MinecraftClone", 457, 2)
-
-    def test_superseded_aggregate_failure_does_not_decide_latest_attempt(self):
-        old = self.check_run(conclusion="failure")
-        latest = self.workflow_run(
-            id=457,
-            run_attempt=1,
-            created_at="2026-09-22T11:00:00Z",
-            status="in_progress",
-            conclusion=None,
-        )
-        jobs = self.producer_jobs({"android-hwasan-runtime": {"status": "queued", "conclusion": None}})
-        with mock.patch.object(self.gate, "git", return_value=COMMIT), mock.patch.object(
-            self.gate, "github_repository", return_value="CoreJust/MinecraftClone"
-        ), mock.patch.object(self.gate, "fetch_check_runs", return_value=[old]), mock.patch.object(
-            self.gate, "fetch_workflow_runs", return_value=[latest]
-        ), mock.patch.object(self.gate, "fetch_workflow_jobs", return_value=jobs) as fetch_jobs:
-            with self.assertRaises(self.gate.GatePending):
-                self.gate.verify_gate(Path("."), COMMIT)
-
-        fetch_jobs.assert_called_once_with("CoreJust/MinecraftClone", 457, 1)
-
-    def test_workflow_discovery_ignores_wrong_sha_event_and_path(self):
-        wrong = [
-            self.workflow_run(id=451, head_sha="b" * 40),
-            self.workflow_run(id=452, event="workflow_dispatch"),
-            self.workflow_run(id=453, path=".github/workflows/other.yml"),
-        ]
-        with mock.patch.object(self.gate, "git", return_value=COMMIT), mock.patch.object(
-            self.gate, "github_repository", return_value="CoreJust/MinecraftClone"
-        ), mock.patch.object(self.gate, "fetch_check_runs", return_value=[]), mock.patch.object(
-            self.gate, "fetch_workflow_runs", return_value=wrong
-        ), mock.patch.object(self.gate, "fetch_workflow_jobs") as fetch_jobs:
-            with self.assertRaises(self.gate.GatePending):
-                self.gate.verify_gate(Path("."), COMMIT)
-
-        fetch_jobs.assert_not_called()
-
-    def test_missing_aggregate_stays_pending_while_required_producers_are_queued(self):
-        workflow = self.workflow_run(status="in_progress", conclusion=None)
-        jobs = self.producer_jobs({"android-hwasan-runtime": {"status": "queued", "conclusion": None}})
-        with mock.patch.object(self.gate, "git", return_value=COMMIT), mock.patch.object(
-            self.gate, "github_repository", return_value="CoreJust/MinecraftClone"
-        ), mock.patch.object(self.gate, "fetch_check_runs", return_value=[]), mock.patch.object(
-            self.gate, "fetch_workflow_runs", return_value=[workflow]
-        ), mock.patch.object(self.gate, "fetch_workflow_jobs", return_value=jobs):
-            with self.assertRaisesRegex(self.gate.GatePending, "has not reported"):
-                self.gate.verify_gate(Path("."), COMMIT)
-
-    def test_missing_dependent_producer_stays_pending_until_workflow_completes(self):
-        for status in ("queued", "in_progress"):
-            workflow = self.workflow_run(status=status, conclusion=None)
-            jobs = [
-                job for job in self.producer_jobs()
-                if job["name"] != "android-hwasan-runtime"
-            ]
-            with self.subTest(status=status), mock.patch.object(
-                self.gate, "git", return_value=COMMIT
-            ), mock.patch.object(
-                self.gate, "github_repository", return_value="CoreJust/MinecraftClone"
-            ), mock.patch.object(
-                self.gate, "fetch_check_runs", return_value=[]
-            ), mock.patch.object(
-                self.gate, "fetch_workflow_runs", return_value=[workflow]
-            ), mock.patch.object(
-                self.gate, "fetch_workflow_jobs", return_value=jobs
-            ):
-                with self.assertRaisesRegex(
-                    self.gate.GatePending, "android-hwasan-runtime"
-                ):
-                    self.gate.verify_gate(Path("."), COMMIT)
-
-    def test_completed_workflow_missing_dependent_producer_is_a_failure(self):
-        workflow = self.workflow_run(status="completed", conclusion="success")
-        jobs = [
-            job for job in self.producer_jobs()
-            if job["name"] != "android-hwasan-runtime"
-        ]
-        with mock.patch.object(self.gate, "git", return_value=COMMIT), mock.patch.object(
-            self.gate, "github_repository", return_value="CoreJust/MinecraftClone"
-        ), mock.patch.object(self.gate, "fetch_check_runs", return_value=[]), mock.patch.object(
-            self.gate, "fetch_workflow_runs", return_value=[workflow]
-        ), mock.patch.object(self.gate, "fetch_workflow_jobs", return_value=jobs):
-            with self.assertRaisesRegex(
-                self.gate.GateError, "required analysis producers are missing.*android-hwasan-runtime"
-            ):
-                self.gate.verify_gate(Path("."), COMMIT)
-
-    def test_successful_aggregate_does_not_override_a_queued_required_producer(self):
-        jobs = self.producer_jobs({"android-hwasan-runtime": {"status": "queued", "conclusion": None}})
-        workflow = self.workflow_run(path=f"{self.gate.WORKFLOW_PATH}@main")
-        with mock.patch.object(self.gate, "git", side_effect=[COMMIT, "b" * 40]), mock.patch.object(
-            self.gate, "github_repository", return_value="CoreJust/MinecraftClone"
-        ), mock.patch.object(self.gate, "fetch_check_runs", return_value=[self.check_run()]), mock.patch.object(
-            self.gate, "fetch_workflow_runs", return_value=[workflow]
-        ), mock.patch.object(
-            self.gate, "fetch_workflow_jobs", return_value=jobs
-        ), mock.patch.object(self.gate, "fetch_workflow_run", return_value=workflow), mock.patch.object(
-            self.gate, "fetch_aggregate_receipt"
-        ) as fetch_receipt:
-            with self.assertRaisesRegex(self.gate.GatePending, "android-hwasan-runtime"):
-                self.gate.verify_gate(Path("."), COMMIT)
-
-        fetch_receipt.assert_not_called()
-
-    def test_wait_for_gate_retries_a_pending_exact_candidate_until_success(self):
-        expected = {"commit": COMMIT, "conclusion": "success"}
-        output = io.StringIO()
-        with mock.patch.object(
-            self.gate,
-            "verify_gate",
-            side_effect=[self.gate.GatePending("matrix has not reported"), expected],
-        ) as verify, mock.patch.object(self.gate.time, "monotonic", side_effect=[0.0, 0.0]), mock.patch.object(
-            self.gate.time,
-            "sleep",
-        ) as sleep, redirect_stdout(output):
-            result = self.gate.wait_for_gate(
-                Path("."),
-                COMMIT,
-                "CoreJust/MinecraftClone",
-                timeout_seconds=10,
-                poll_interval_seconds=3,
+            self.assertEqual(result, 0)
+            commit_identity.assert_called_once_with(root.resolve(), CANDIDATE["head"])
+            verify_receipt.assert_called_once_with(
+                receipt.resolve(), MANIFEST.resolve(), root=root.resolve(), expected_candidate=CANDIDATE
             )
 
-        self.assertEqual(result, expected)
-        self.assertEqual(verify.call_count, 2)
-        sleep.assert_called_once_with(3)
-        self.assertIn(COMMIT, output.getvalue())
+    def test_relative_manifest_is_rejected_and_malformed_absolute_manifest_fails_closed(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root, receipt = self._paths(Path(directory))
+            with mock.patch.object(self.gate._MATRIX, "verify_receipt") as verify_receipt:
+                output = io.StringIO()
+                with contextlib.redirect_stderr(output):
+                    result = self.gate.main(
+                        ["--root", str(root), "--receipt", str(receipt), "--manifest", "relative.json"]
+                    )
+            self.assertEqual(result, 1)
+            self.assertIn("--manifest must be an absolute path", output.getvalue())
+            verify_receipt.assert_not_called()
 
-    def test_wait_for_gate_fails_immediately_when_matrix_completed_unsuccessfully(self):
-        with mock.patch.object(
-            self.gate,
-            "verify_gate",
-            side_effect=self.gate.GateError("matrix completed with conclusion='failure'"),
-        ), mock.patch.object(self.gate.time, "sleep") as sleep:
-            with self.assertRaisesRegex(self.gate.GateError, "failure"):
-                self.gate.wait_for_gate(
-                    Path("."),
-                    COMMIT,
-                    "CoreJust/MinecraftClone",
-                    timeout_seconds=10,
-                    poll_interval_seconds=3,
-                )
+            malformed = root / "malformed.json"
+            malformed.write_text('{"schema_version": 1, "rows": []}\n', encoding="utf-8")
+            with mock.patch.object(self.gate._MATRIX, "candidate_identity", return_value=CANDIDATE):
+                output = io.StringIO()
+                with contextlib.redirect_stderr(output):
+                    result = self.gate.main(
+                        ["--root", str(root), "--receipt", str(receipt), "--manifest", str(malformed)]
+                    )
+            self.assertEqual(result, 1)
+            self.assertIn("schema_version must be 2", output.getvalue())
 
-        sleep.assert_not_called()
-
-    def test_wait_for_gate_does_not_retry_an_api_or_receipt_error(self):
-        with mock.patch.object(
-            self.gate,
-            "verify_gate",
-            side_effect=self.gate.GateError("GitHub receipt query failed"),
-        ), mock.patch.object(self.gate.time, "sleep") as sleep:
-            with self.assertRaisesRegex(self.gate.GateError, "receipt query failed"):
-                self.gate.wait_for_gate(
-                    Path("."),
-                    COMMIT,
-                    "CoreJust/MinecraftClone",
-                    timeout_seconds=10,
-                    poll_interval_seconds=3,
-                )
-
-        sleep.assert_not_called()
-
-    def test_wait_for_gate_times_out_while_exact_matrix_remains_pending(self):
-        output = io.StringIO()
-        with mock.patch.object(
-            self.gate,
-            "verify_gate",
-            side_effect=self.gate.GatePending("matrix has not reported"),
-        ) as verify, mock.patch.object(self.gate.time, "monotonic", side_effect=[0.0, 0.0, 10.0]), mock.patch.object(
-            self.gate.time,
-            "sleep",
-        ) as sleep, redirect_stdout(output):
-            with self.assertRaisesRegex(self.gate.GateError, "timed out"):
-                self.gate.wait_for_gate(
-                    Path("."),
-                    COMMIT,
-                    "CoreJust/MinecraftClone",
-                    timeout_seconds=10,
-                    poll_interval_seconds=6,
-                )
-
-        self.assertEqual(verify.call_count, 2)
-        sleep.assert_called_once_with(6)
-        self.assertIn("retrying in 6s", output.getvalue())
-
-    def test_check_run_pages_fail_closed_when_api_data_is_malformed(self):
-        with self.assertRaisesRegex(self.gate.GateError, "malformed"):
-            self.gate._check_runs(json.loads(json.dumps({"unexpected": []})))
+    def test_missing_receipt_fails_without_polling_or_external_calls(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            with mock.patch.object(self.gate._MATRIX, "verify_receipt") as verify_receipt:
+                output = io.StringIO()
+                with contextlib.redirect_stderr(output):
+                    result = self.gate.main(
+                        ["--root", str(root), "--receipt", str(root / "missing.json")]
+                    )
+            self.assertEqual(result, 1)
+            self.assertIn("missing.json", output.getvalue())
+            verify_receipt.assert_not_called()
 
 
 if __name__ == "__main__":

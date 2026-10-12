@@ -503,6 +503,9 @@ class CiAcquireTests(unittest.TestCase):
             ("android", "arm64-android"),
             ("android-hwasan", "arm64-android-hwasan"),
             ("linux-analysis", "x64-linux-lsan"),
+            ("linux-analysis", "x64-linux-msan"),
+            ("linux-analysis", "arm64-linux-lsan"),
+            ("linux-analysis", "arm64-linux-msan"),
         ):
             with tempfile.TemporaryDirectory() as directory:
                 root = Path(directory)
@@ -536,6 +539,20 @@ class CiAcquireTests(unittest.TestCase):
                 self.assertEqual(result, installed_root)
                 run.assert_called_once_with(command)
                 write_env.assert_called_once_with("VCPKG_INSTALLED_DIR", str(installed_root))
+
+    def test_linux_analysis_requires_an_explicit_sanitizer_triplet(self):
+        with mock.patch.dict(os.environ, {}, clear=True), mock.patch.object(acquire, "run") as run:
+            with self.assertRaisesRegex(acquire.CiError, "must select the pinned"):
+                acquire.install_manifest_dependencies(Path("unused"), "linux-analysis", Path("unused-install"))
+        run.assert_not_called()
+
+    def test_linux_analysis_rejects_an_unsupported_architecture_triplet(self):
+        with mock.patch.dict(os.environ, {"MC_VCPKG_ANALYSIS_TRIPLET": "arm-linux-msan"}), mock.patch.object(
+            acquire, "run"
+        ) as run:
+            with self.assertRaisesRegex(acquire.CiError, "must select the pinned"):
+                acquire.install_manifest_dependencies(Path("unused"), "linux-analysis", Path("unused-install"))
+        run.assert_not_called()
 
     def test_windows_asan_triplet_instruments_the_dynamic_crt_manifest_closure(self):
         triplet = Path(acquire.__file__).resolve().parent / "vcpkg-triplets" / "x64-windows-asan.cmake"

@@ -73,7 +73,6 @@ Files:
 - [`.githooks/pre-commit`](../../.githooks/pre-commit)
 - [`.githooks/pre-merge-commit`](../../.githooks/pre-merge-commit)
 - [`.githooks/pre-push`](../../.githooks/pre-push)
-- [`.github/workflows/ai-checks.yml`](../../.github/workflows/ai-checks.yml)
 - [`.github/workflows/snapshot-artifacts.yml`](../../.github/workflows/snapshot-artifacts.yml)
 - [`.gitignore`](../../.gitignore)
 - [`AGENTS.md`](../../AGENTS.md)
