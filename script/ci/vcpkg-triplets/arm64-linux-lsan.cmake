@@ -1,3 +1,12 @@
+if(NOT DEFINED ENV{MC_LSAN_LIBCXX_PREFIX} OR "$ENV{MC_LSAN_LIBCXX_PREFIX}" STREQUAL "")
+    message(FATAL_ERROR "MC_LSAN_LIBCXX_PREFIX must select the LeakSanitizer libc++ installation")
+endif()
+if(NOT IS_DIRECTORY "$ENV{MC_LSAN_LIBCXX_PREFIX}/include/c++/v1"
+        OR NOT EXISTS "$ENV{MC_LSAN_LIBCXX_PREFIX}/lib/libc++.so"
+        OR NOT EXISTS "$ENV{MC_LSAN_LIBCXX_PREFIX}/lib/libc++abi.so.1")
+    message(FATAL_ERROR "LeakSanitizer libc++ headers and shared libraries are missing")
+endif()
+
 set(VCPKG_TARGET_ARCHITECTURE arm64)
 set(VCPKG_CRT_LINKAGE dynamic)
 set(VCPKG_LIBRARY_LINKAGE static)
@@ -7,5 +16,5 @@ if(NOT DEFINED ENV{MC_VCPKG_CHAINLOAD_TOOLCHAIN_FILE})
 endif()
 set(VCPKG_CHAINLOAD_TOOLCHAIN_FILE "$ENV{MC_VCPKG_CHAINLOAD_TOOLCHAIN_FILE}")
 set(VCPKG_C_FLAGS "-fsanitize=leak -fno-omit-frame-pointer")
-set(VCPKG_CXX_FLAGS "-fsanitize=leak -fno-omit-frame-pointer -stdlib=libc++")
-set(VCPKG_LINKER_FLAGS "-fsanitize=leak -stdlib=libc++")
+set(VCPKG_CXX_FLAGS "-fsanitize=leak -fno-omit-frame-pointer -stdlib=libc++ -isystem $ENV{MC_LSAN_LIBCXX_PREFIX}/include/c++/v1")
+set(VCPKG_LINKER_FLAGS "-fsanitize=leak -stdlib=libc++ -L$ENV{MC_LSAN_LIBCXX_PREFIX}/lib -Wl,-rpath,$ENV{MC_LSAN_LIBCXX_PREFIX}/lib")

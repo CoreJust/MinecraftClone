@@ -8,6 +8,7 @@ import hashlib
 import os
 import platform
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -23,8 +24,9 @@ except ImportError:  # The installer is Linux-only; keeping the module importabl
 LLVM_REPOSITORY = "https://github.com/llvm/llvm-project.git"
 LLVM_TAG = "llvmorg-18.1.3"
 LLVM_COMMIT = "c13b7485b87909fcf739f62cfa382b55407433c0"
-LIBUNWIND_MSAN_PATCH = Path(__file__).resolve().parent / "patches/libunwind-msan-x86_64.patch"
-LIBUNWIND_MSAN_PATCH_SHA256 = "e04e5a4ee61690c99f28ddae29ca566347ac313a7f3b889898f13943445047d2"
+MSAN_RUNTIME_TARGETS = ("cxx", "cxx_experimental", "cxxabi")
+SYSTEM_UNWINDER = "libgcc_s.so.1"
+DEBUGINFOD_URLS = ""
 MSAN_EXIT_CODE = 86
 MSAN_ANALYSIS_OPTIONS = "halt_on_error=1:print_stats=1:fast_unwind_on_fatal=1"
 MSAN_PROBE_OPTIONS = "halt_on_error=1:exit_code=86:print_stats=0:symbolize=1:fast_unwind_on_fatal=1"
@@ -167,11 +169,11 @@ def configure_command(source: Path, build: Path, prefix: Path, clang: str, clang
         f"-DCMAKE_CXX_COMPILER={clangxx}",
         f"-DCMAKE_INSTALL_PREFIX={prefix}",
         "-DCMAKE_BUILD_TYPE=Release",
-        "-DLLVM_ENABLE_RUNTIMES=libcxx;libcxxabi;libunwind",
+        "-DLLVM_ENABLE_RUNTIMES=libcxx;libcxxabi",
         "-DLLVM_USE_SANITIZER=MemoryWithOrigins",
         "-DLIBCXX_USE_COMPILER_RT=ON",
         "-DLIBCXXABI_USE_COMPILER_RT=ON",
-        "-DLIBUNWIND_USE_COMPILER_RT=ON",
+        "-DLIBCXXABI_USE_LLVM_UNWINDER=OFF",
         "-DLIBCXX_INCLUDE_TESTS=OFF",
     ]
 
@@ -182,10 +184,7 @@ def build_command(build: Path, jobs: int) -> list[str]:
         "--build",
         str(build),
         "--target",
-        "cxx",
-        "cxx_experimental",
-        "cxxabi",
-        "unwind",
+        *MSAN_RUNTIME_TARGETS,
         "--parallel",
         str(jobs),
     ]
@@ -226,40 +225,6 @@ def sha256_file(file_path: Path) -> str:
     return digest.hexdigest()
 
 
-def apply_libunwind_msan_patch(source: Path) -> None:
-    try:
-        actual_hash = sha256_file(LIBUNWIND_MSAN_PATCH)
-    except OSError as error:
-        raise ToolchainError(f"pinned libunwind MSan patch is missing or unreadable: {error}") from error
-    if actual_hash != LIBUNWIND_MSAN_PATCH_SHA256:
-        raise ToolchainError(
-            "pinned libunwind MSan patch SHA-256 mismatch: "
-            f"expected {LIBUNWIND_MSAN_PATCH_SHA256}, got {actual_hash}"
-        )
-    patch_path = str(LIBUNWIND_MSAN_PATCH)
-    run(
-        [
-            "git",
-            "-C",
-            str(source),
-            "apply",
-            "--check",
-            "--whitespace=error-all",
-            patch_path,
-        ]
-    )
-    run(
-        [
-            "git",
-            "-C",
-            str(source),
-            "apply",
-            "--whitespace=error-all",
-            patch_path,
-        ]
-    )
-
-
 def read_linux_setting(setting_path: str) -> str:
     try:
         return Path(setting_path).read_text(encoding="utf-8").strip()
@@ -273,6 +238,55 @@ def format_limit(limit: int) -> str:
     return "unlimited" if limit == resource.RLIM_INFINITY else str(limit)
 
 
+def require_system_unwinder(
+    dependencies_output: str, returncode: int, prefix: Path
+) -> dict[str, PurePosixPath]:
+    if returncode != 0:
+        raise ToolchainError(f"ldd failed while checking the MSan control runtime (return code {returncode})")
+
+    dependencies: dict[str, PurePosixPath] = {}
+    for line in dependencies_output.splitlines():
+        match = re.search(r"(?:=>\s+)?(/\S+)\s+\(", line)
+        if match is not None:
+            dependency = PurePosixPath(match.group(1))
+            soname = line.split("=>", 1)[0].strip() if "=>" in line else dependency.name
+            dependencies[soname] = dependency
+
+    prefix_path = prefix.resolve()
+
+    def is_in_prefix(dependency: PurePosixPath) -> bool:
+        resolved = Path(str(dependency)).resolve()
+        return resolved == prefix_path or prefix_path in resolved.parents
+
+    for soname in ("libc++.so.1", "libc++abi.so.1"):
+        dependency = dependencies.get(soname)
+        if dependency is None:
+            raise ToolchainError(f"MSan control runtime is missing required dependency {soname}")
+        if not is_in_prefix(dependency):
+            raise ToolchainError(
+                f"MSan control runtime resolved {soname} outside the instrumented prefix: {dependency}"
+            )
+
+    unwinder = dependencies.get(SYSTEM_UNWINDER)
+    if unwinder is None:
+        raise ToolchainError(f"MSan control runtime is missing system unwinder {SYSTEM_UNWINDER}")
+    if is_in_prefix(unwinder):
+        raise ToolchainError(
+            f"MSan control runtime resolved {SYSTEM_UNWINDER} inside the instrumented prefix"
+        )
+
+    bundled_unwinders = sorted(
+        line.split("=>", 1)[0].strip()
+        for line in dependencies_output.splitlines()
+        if "libunwind" in line.lower()
+    )
+    if bundled_unwinders:
+        raise ToolchainError(
+            "MSan control runtime unexpectedly references libunwind: " + ", ".join(bundled_unwinders)
+        )
+    return dependencies
+
+
 def collect_probe_context(
     clangxx: str,
     probe: Path,
@@ -281,7 +295,8 @@ def collect_probe_context(
     symbolizer: str,
 ) -> tuple[str, dict[str, PurePosixPath]]:
     compiler = subprocess.run(
-        [clangxx, "--version"], text=True, capture_output=True, check=False, timeout=10
+        [clangxx, "--version"], env=runtime_environment, text=True, capture_output=True,
+        check=False, timeout=10
     )
     dependencies = subprocess.run(
         ["ldd", str(probe)],
@@ -292,7 +307,8 @@ def collect_probe_context(
         timeout=10,
     )
     symbolizer_version = subprocess.run(
-        [symbolizer, "--version"], text=True, capture_output=True, check=False, timeout=10
+        [symbolizer, "--version"], env=runtime_environment, text=True, capture_output=True,
+        check=False, timeout=10
     )
     if resource is None:
         stack_limit = "soft=<unavailable> hard=<unavailable>"
@@ -309,12 +325,15 @@ def collect_probe_context(
         if runtime_library.is_file()
     ]
     symbolizer_hash = sha256_file(Path(symbolizer))
-    dependencies_by_name: dict[str, PurePosixPath] = {}
-    for line in dependencies.stdout.splitlines():
-        match = re.search(r"(?:=>\s+)?(/\S+)\s+\(", line)
-        if match is not None:
-            dependency = PurePosixPath(match.group(1))
-            dependencies_by_name[dependency.name] = dependency
+    try:
+        dependencies_by_name = require_system_unwinder(
+            dependencies.stdout, dependencies.returncode, library_dir.parent
+        )
+    except ToolchainError as error:
+        raise ToolchainError(
+            f"{error}\nldd return_code={dependencies.returncode}:\n"
+            f"{dependencies.stdout}{dependencies.stderr}".rstrip()
+        ) from error
     lines = [
         f"kernel: {platform.uname()}",
         "ASLR settings: "
@@ -337,6 +356,7 @@ def collect_probe_context(
         f"symbolizer return_code={symbolizer_version.returncode}:\n"
         f"{symbolizer_version.stdout}{symbolizer_version.stderr}".rstrip(),
         f"MSAN_OPTIONS={runtime_environment['MSAN_OPTIONS']}",
+        f"DEBUGINFOD_URLS={runtime_environment['DEBUGINFOD_URLS']}",
     ]
     return "\n".join(lines), dependencies_by_name
 
@@ -346,6 +366,7 @@ def symbolize_reported_pcs(
     probe: Path,
     symbolizer: str,
     dependencies_by_name: dict[str, PurePosixPath],
+    runtime_environment: dict[str, str],
 ) -> str:
     relative_addresses: dict[Path | PurePosixPath, set[str]] = {}
     for line in diagnostics.splitlines():
@@ -373,7 +394,12 @@ def symbolize_reported_pcs(
                 *sorted(addresses),
             ]
             completed = subprocess.run(
-                command, text=True, capture_output=True, check=False, timeout=10
+                command,
+                env=runtime_environment,
+                text=True,
+                capture_output=True,
+                check=False,
+                timeout=10,
             )
             symbolized.append(
                 f"$ {' '.join(command)} (return code {completed.returncode})\n"
@@ -442,6 +468,7 @@ def verify_install(prefix: Path, clangxx: str, build: Path) -> None:
         item for item in (str(library_dir), existing_library_path) if item
     )
     runtime_environment["MSAN_OPTIONS"] = MSAN_PROBE_OPTIONS
+    runtime_environment["DEBUGINFOD_URLS"] = DEBUGINFOD_URLS
     positive_probe = build / "msan-libcxx-positive"
     negative_probe = build / "msan-uninitialized-read"
     common_flags = [
@@ -550,7 +577,7 @@ def verify_install(prefix: Path, clangxx: str, build: Path) -> None:
     evidence = negative_report_evidence(diagnostics)
     if negative_run.returncode != MSAN_EXIT_CODE or evidence is None:
         symbolized = symbolize_reported_pcs(
-            diagnostics, negative_probe, symbolizer, dependencies_by_name
+            diagnostics, negative_probe, symbolizer, dependencies_by_name, runtime_environment
         )
         raise ToolchainError(
             "MSan did not diagnose the deliberate uninitialized read\n"
@@ -565,14 +592,19 @@ def verify_install(prefix: Path, clangxx: str, build: Path) -> None:
 
 
 def write_github_environment(values: dict[str, str]) -> None:
+    for name, value in values.items():
+        if "\n" in value or "\r" in value:
+            raise ToolchainError(f"refusing a multiline environment value for {name}")
     destination = os.environ.get("GITHUB_ENV")
-    if not destination:
-        raise ToolchainError("GITHUB_ENV is required to export the verified MSan toolchain")
-    with Path(destination).open("a", encoding="utf-8") as environment_file:
-        for name, value in values.items():
-            if "\n" in value or "\r" in value:
-                raise ToolchainError(f"refusing a multiline GitHub environment value for {name}")
-            environment_file.write(f"{name}={value}\n")
+    if destination:
+        with Path(destination).open("a", encoding="utf-8") as environment_file:
+            for name, value in values.items():
+                environment_file.write(f"{name}={value}\n")
+        return
+
+    print("[msan-libcxx] Add these verified exports to the shell running analysis:", flush=True)
+    for name, value in values.items():
+        print(f"export {name}={shlex.quote(value)}", flush=True)
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -612,9 +644,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         if actual_commit != LLVM_COMMIT:
             raise ToolchainError(f"LLVM source pin mismatch: expected {LLVM_COMMIT}, got {actual_commit}")
 
-        print("[msan-libcxx] Apply pinned Linux x86_64 MSan libunwind patch", flush=True)
-        apply_libunwind_msan_patch(args.source_root)
-        print("[msan-libcxx] Phase 2/4: configure instrumented libc++, libc++abi, and libunwind", flush=True)
+        print("[msan-libcxx] Phase 2/4: configure instrumented libc++ and libc++abi with system libgcc_s", flush=True)
         run(configure_command(args.source_root, args.build_root, args.prefix, clang, clangxx))
         print(f"[msan-libcxx] Phase 3/4: build and install runtimes using {args.jobs} jobs", flush=True)
         run(build_command(args.build_root, args.jobs))
@@ -629,6 +659,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "MC_LLVM_PROJECT_ROOT": str(args.source_root),
                 "MC_MSAN_LIBCXX_PREFIX": str(args.prefix),
                 "MSAN_OPTIONS": MSAN_ANALYSIS_OPTIONS,
+                "DEBUGINFOD_URLS": DEBUGINFOD_URLS,
             }
         )
         return 0

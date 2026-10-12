@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import json
+import os
+import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -27,6 +30,48 @@ def effective_cache_variables(preset_name: str) -> dict[str, object]:
 
 
 class AnalysisPresetTests(unittest.TestCase):
+    def test_lsan_triplets_require_and_consume_the_selected_libcxx_prefix(self):
+        with tempfile.TemporaryDirectory() as directory:
+            prefix = Path(directory) / "libcxx"
+            (prefix / "include/c++/v1").mkdir(parents=True)
+            (prefix / "lib").mkdir()
+            for name in ("libc++.so", "libc++abi.so.1"):
+                (prefix / "lib" / name).touch()
+            for architecture in ("arm64", "x64"):
+                with self.subTest(architecture=architecture):
+                    triplet = REPOSITORY / f"script/ci/vcpkg-triplets/{architecture}-linux-lsan.cmake"
+                    script = Path(directory) / "probe.cmake"
+                    script.write_text(
+                        f'include("{triplet}")\n'
+                        'message("CXX=${VCPKG_CXX_FLAGS}")\n'
+                        'message("LINK=${VCPKG_LINKER_FLAGS}")\n',
+                        encoding="utf-8",
+                    )
+                    environment = {
+                        **os.environ,
+                        "MC_VCPKG_CHAINLOAD_TOOLCHAIN_FILE": str(Path(directory) / "clang.cmake"),
+                        "MC_LSAN_LIBCXX_PREFIX": str(prefix),
+                    }
+                    valid = subprocess.run(["cmake", "-P", str(script)], env=environment,
+                                           text=True, capture_output=True, check=False)
+                    self.assertEqual(valid.returncode, 0, valid.stderr)
+                    self.assertIn(f"-isystem {prefix}/include/c++/v1", valid.stderr)
+                    self.assertIn(f"-L{prefix}/lib", valid.stderr)
+                    self.assertIn(f"-Wl,-rpath,{prefix}/lib", valid.stderr)
+                    self.assertIn("-fsanitize=leak", valid.stderr)
+
+    def test_lsan_triplets_reject_unset_or_incomplete_libcxx_prefixes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            for architecture in ("arm64", "x64"):
+                for value in ("", directory):
+                    with self.subTest(architecture=architecture, prefix=value):
+                        environment = {**os.environ, "MC_LSAN_LIBCXX_PREFIX": value}
+                        triplet = REPOSITORY / f"script/ci/vcpkg-triplets/{architecture}-linux-lsan.cmake"
+                        result = subprocess.run(["cmake", "-P", str(triplet)], env=environment,
+                                                text=True, capture_output=True, check=False)
+                        self.assertNotEqual(result.returncode, 0)
+                        self.assertIn("LeakSanitizer libc++", result.stderr)
+
     def test_standard_presets_install_vcpkg_packages_inside_their_build_tree(self):
         expected = "${sourceDir}/build/${presetName}/vcpkg_installed"
 

@@ -68,9 +68,9 @@ ENet uses UDP, while `adb reverse` forwards only TCP. Physical devices need a ne
 
 Set `VULKAN_SDK` to the SDK platform directory if CMake cannot find it. The SDK's `spirv-val` is required by the shader-target CTest checks. On macOS, Vulkan runs through MoltenVK; when the SDK is not registered system-wide, set `VK_DRIVER_FILES` to its `share/vulkan/icd.d/MoltenVK_icd.json` for the launched process. Do not commit machine-specific SDK paths.
 
-## Hosted desktop CI
+## Artifact-only hosted builds
 
-CI uses `macos-15` arm64/`windows-2022`, pinned tools, Debug/Release and cached dependencies. macOS needs GMP/MPFR autotools; Windows: GMP overlay, VS 2022 x64, Vulkan runtime ZIP/license. CoreLang excludes legacy Script; Ninja collects independent failures. Android aggregate-initializer warnings remain nonfatal. Jobs validate builds/tests/shaders/packages/checksums/exclusions and upload diagnostics/toolchain metadata. Hosted `MC_ENABLE_RENDERER_SMOKE=OFF` requires separate GPU/runtime acceptance. Manual `ai-dev` Linux dispatch cannot qualify releases.
+Artifact CI uses `macos-15` arm64/`windows-2022`, pinned tools and cached dependencies. Jobs build/package artifacts and verify provenance/checksums/exclusions; qualification tests, analyzers and runtime acceptance run locally. macOS needs GMP/MPFR autotools; Windows needs the GMP overlay, VS 2022 x64 and Vulkan runtime ZIP/license. CoreLang excludes legacy Script. Android initializer warnings remain nonfatal. Linux is analysis-only.
 
 ASan requires instrumented Release vcpkg/private dependencies with matching
 runtime/iterator/annotation settings, `/Zi` compiler and `/DEBUG` linker symbols.
@@ -80,7 +80,7 @@ qualify both Windows rows before promotion.
 
 The renderer requests Vulkan 1.2 with dynamic rendering and synchronization2 extensions/features, not maintenance4. Mesh shaders target Vulkan 1.3; validate on Vulkan 1.3 and exercise vertex fallback. Requesting Vulkan 1.2 does not establish support for every such driver. Vulkan 1.4 remains aspirational.
 
-[Helpers](../cmake/Helpers.cmake) enforce strict warnings (`MC_ENABLE_HIGH_ASSERT`, `MC_ENABLE_VULKAN_VALIDATION_LAYERS`, `MC_ENABLE_SANITIZERS`). Debug/explicit builds require validation; Release does not. Mac CI retains LSan. MSan: GMP C, `LDFLAGS` probes, pinned unwind fixes. CFI-trusted ABI-spill copies normalize; source-shadow/address/metadata checks remain. Observations preserve state/shadow. Preflight checks cleanup/rethrow and application heap-read/allocation origin; bounded reports retain provenance.
+[Helpers](../cmake/Helpers.cmake) enforce strict warnings and sanitizer/validation options. Debug/explicit builds require validation; Release does not. Local Mac ASan retains LSan. Linux LSan selects `MC_LSAN_LIBCXX_PREFIX`. MSan uses pinned instrumented libc++/libc++abi with system `libgcc_s`, not patched libunwind. Runtime/stock-ignorelist bytes are captured; no suppression is added. Process-local `DEBUGINFOD_URLS=` keeps symbolization offline. Exception/rethrow/cleanup and symbolized heap-read/origin controls precede game tests. Receipts bind selected Vulkan/shader-tool bytes and Windows ASan DLLs. See [setup findings](ai/S7-DELIVERY-PROCESS-REPAIR.md).
 
 ## Gate levels
 

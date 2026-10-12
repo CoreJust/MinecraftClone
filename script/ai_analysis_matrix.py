@@ -16,7 +16,7 @@ import subprocess
 import sys
 import tempfile
 import time
-from pathlib import Path, PureWindowsPath
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any, Mapping, Sequence
 
 
@@ -93,7 +93,6 @@ INPUT_SCOPES = {
         "script/ci/vcpkg-clang-toolchain.cmake",
         "script/ci/install_msan_libcxx.py",
         "script/ci/vcpkg-overlays/gmp/**",
-        "script/ci/patches/libunwind-msan-x86_64.patch",
     ),
     "clang_static": (),
     "clang_tidy": (),
@@ -117,14 +116,15 @@ REQUIRED_ROW_ENVIRONMENT = {
     "macos_asan": ("VCPKG_ROOT", "VCPKG_INSTALLED_DIR", "MC_PRIVATE_DEPENDENCIES_PREFIX"),
     "macos_ubsan": ("VCPKG_ROOT", "VCPKG_INSTALLED_DIR", "MC_PRIVATE_DEPENDENCIES_PREFIX"),
     "macos_tsan": ("VCPKG_ROOT", "VCPKG_INSTALLED_DIR", "MC_PRIVATE_DEPENDENCIES_PREFIX"),
-    "windows_msvc_asan": ("VCPKG_ROOT", "VCPKG_INSTALLED_DIR", "MC_PRIVATE_DEPENDENCIES_PREFIX"),
-    "windows_msvc_analyze": ("VCPKG_ROOT", "VCPKG_INSTALLED_DIR", "MC_PRIVATE_DEPENDENCIES_PREFIX"),
+    "windows_msvc_asan": ("VCPKG_ROOT", "VCPKG_INSTALLED_DIR", "MC_PRIVATE_DEPENDENCIES_PREFIX", "VULKAN_SDK"),
+    "windows_msvc_analyze": ("VCPKG_ROOT", "VCPKG_INSTALLED_DIR", "MC_PRIVATE_DEPENDENCIES_PREFIX", "VULKAN_SDK"),
     "linux_lsan": (
         "VCPKG_ROOT",
         "VCPKG_INSTALLED_DIR",
         "MC_PRIVATE_DEPENDENCIES_PREFIX",
         "MC_VCPKG_CHAINLOAD_TOOLCHAIN_FILE",
         "MC_ANALYSIS_LINUX_LSAN_TRIPLET",
+        "MC_LSAN_LIBCXX_PREFIX",
     ),
     "linux_msan": (
         "VCPKG_ROOT",
@@ -135,6 +135,7 @@ REQUIRED_ROW_ENVIRONMENT = {
         "MC_VCPKG_CHAINLOAD_TOOLCHAIN_FILE",
         "MC_ANALYSIS_LINUX_MSAN_TRIPLET",
         "LD_LIBRARY_PATH",
+        "DEBUGINFOD_URLS",
     ),
     "clang_static_analysis": ("VCPKG_ROOT", "VCPKG_INSTALLED_DIR", "MC_PRIVATE_DEPENDENCIES_PREFIX"),
     "clang_tidy": ("VCPKG_ROOT", "VCPKG_INSTALLED_DIR", "MC_PRIVATE_DEPENDENCIES_PREFIX"),
@@ -152,6 +153,7 @@ DEPENDENCY_ENVIRONMENT = {
         "VCPKG_INSTALLED_DIR",
         "MC_PRIVATE_DEPENDENCIES_PREFIX",
         "MC_VCPKG_CHAINLOAD_TOOLCHAIN_FILE",
+        "MC_LSAN_LIBCXX_PREFIX",
     ),
     "linux_msan": (
         "VCPKG_ROOT",
@@ -191,10 +193,13 @@ IDENTITY_ENVIRONMENT = (
     "MC_VCPKG_CHAINLOAD_TOOLCHAIN_FILE",
     "MC_ANALYSIS_LINUX_LSAN_TRIPLET",
     "MC_ANALYSIS_LINUX_MSAN_TRIPLET",
+    "MC_LSAN_LIBCXX_PREFIX",
+    "DEBUGINFOD_URLS",
     "INCLUDE",
     "LIB",
     "WindowsSdkDir",
     "VCINSTALLDIR",
+    "VULKAN_SDK",
     "VisualStudioVersion",
     "WindowsSDKVersion",
 )
@@ -207,9 +212,7 @@ RUNTIME_FAMILIES = {
 }
 _PLACEHOLDER_VERSIONS = {"", "unknown", "unavailable", "not-run", "stub"}
 MSAN_LLVM_BASE_REVISION = "c13b7485b87909fcf739f62cfa382b55407433c0"
-MSAN_HELPER_SHA256 = "9d86e36c0dad41bc6b0983944012ad36abf8d54db46ea1817e58342d7ad85292"
-MSAN_PATCH_SHA256 = "e04e5a4ee61690c99f28ddae29ca566347ac313a7f3b889898f13943445047d2"
-MSAN_PATCH_RESULT_SHA256 = "4da2896ce313f9dc096ee6b8b9f61128ad4caaabf51d83f1008e12fbd7c37290"
+MSAN_HELPER_SHA256 = "92358b009a5f1effd1beb718a77ae3f9839d00595076d7bdfad4d7e19ceb994d"
 REQUIRED_EFFECTIVE_COMPILE_FLAGS = {
     "macos_asan": ["-fsanitize=address"],
     "macos_ubsan": ["-fsanitize=undefined"],
@@ -319,6 +322,46 @@ def _require_string(value: Any, field: str, *, nonempty: bool = True) -> str:
     return value
 
 
+def _host_path(value: str, platform_name: str) -> PureWindowsPath | PurePosixPath:
+    return PureWindowsPath(value) if platform_name == "windows" else PurePosixPath(value)
+
+
+def _same_host_path(left: str, right: str, platform_name: str) -> bool:
+    return _host_path(left, platform_name) == _host_path(right, platform_name)
+
+
+def _host_path_within(value: str, root: str, platform_name: str) -> bool:
+    try:
+        _host_path(value, platform_name).relative_to(_host_path(root, platform_name))
+    except ValueError:
+        return False
+    return True
+
+
+def _validate_selected_file(
+    value: Any,
+    field: str,
+    platform_name: str,
+    expected_path: str,
+) -> dict[str, Any]:
+    if not isinstance(value, dict) or set(value) != {"name", "path", "size", "sha256"}:
+        raise MatrixError(f"{field} is malformed")
+    name = _require_string(value.get("name"), f"{field}.name")
+    path = _require_string(value.get("path"), f"{field}.path")
+    parsed_path = _host_path(path, platform_name)
+    if not parsed_path.is_absolute() or parsed_path.name != name:
+        raise MatrixError(f"{field}.path is not an absolute path for its selected file")
+    if not _same_host_path(path, expected_path, platform_name):
+        raise MatrixError(f"{field}.path does not match its selected CMake/environment path")
+    size = value.get("size")
+    digest = value.get("sha256")
+    if not isinstance(size, int) or isinstance(size, bool) or size < 1:
+        raise MatrixError(f"{field}.size is invalid")
+    if not isinstance(digest, str) or not re.fullmatch(r"[0-9a-f]{64}", digest):
+        raise MatrixError(f"{field}.sha256 is invalid")
+    return value
+
+
 def _require_string_list(value: Any, field: str) -> list[str]:
     if not isinstance(value, list) or not value or any(not isinstance(item, str) or not item.strip() for item in value):
         raise MatrixError(f"{field} must be a non-empty list of strings")
@@ -336,7 +379,10 @@ def _require_environment(value: Any, field: str) -> dict[str, str]:
     for name, setting in value.items():
         if not isinstance(name, str) or not re.fullmatch(r"[A-Z][A-Z0-9_]*", name):
             raise MatrixError(f"{field} has an invalid environment variable name")
-        environment[name] = _require_string(setting, f"{field}[{name}]")
+        if name == "DEBUGINFOD_URLS" and setting == "":
+            environment[name] = setting
+        else:
+            environment[name] = _require_string(setting, f"{field}[{name}]")
     return environment
 
 
@@ -383,7 +429,11 @@ def validate_manifest(manifest: Any) -> dict[str, Any]:
             _require_string(compile_commands, f"manifest row {row_id}.compile_commands")
         elif effective_flags is not None or compile_commands is not None:
             raise MatrixError(f"manifest row {row_id} has unexpected effective compiler flag requirements")
-        _require_environment(row.get("environment"), f"manifest row {row_id}.environment")
+        row_environment = _require_environment(row.get("environment"), f"manifest row {row_id}.environment")
+        if row_id == "linux_msan" and row_environment.get("DEBUGINFOD_URLS") != "":
+            raise MatrixError("manifest row linux_msan must disable remote debuginfod lookup")
+        if row_id != "linux_msan" and "DEBUGINFOD_URLS" in row_environment:
+            raise MatrixError(f"manifest row {row_id} has unexpected DEBUGINFOD_URLS")
         commands = row.get("commands")
         if not isinstance(commands, list) or not commands:
             raise MatrixError(f"manifest row {row_id}.commands must be a non-empty list")
@@ -1132,9 +1182,10 @@ def _validate_input_identity(row: Mapping[str, Any], manifest_row: Mapping[str, 
         "external_dependencies",
         "effective_cmake_cache",
         "runtime_resources",
+        "toolchain_resources",
         "input_sha256",
     }
-    if set(identity) != expected_fields or identity.get("identity_schema_version") != 2:
+    if set(identity) != expected_fields or identity.get("identity_schema_version") != 4:
         raise MatrixError(f"receipt row {row_id}.input_identity has an unsupported schema")
     for key in ("source_input_sha256", "row_configuration_sha256", "input_sha256"):
         if not isinstance(identity.get(key), str) or not re.fullmatch(r"[0-9a-f]{64}", identity[key]):
@@ -1169,8 +1220,16 @@ def _validate_input_identity(row: Mapping[str, Any], manifest_row: Mapping[str, 
     )
     if not isinstance(row_environment, dict) or set(row_environment) != set(declared_environment):
         raise MatrixError(f"receipt row {row_id}.input_identity.row_environment is incomplete")
-    if any(not isinstance(value, str) or not value for value in row_environment.values()):
+    if any(
+        not isinstance(value, str)
+        or (not value and not (row_id == "linux_msan" and name == "DEBUGINFOD_URLS"))
+        for name, value in row_environment.items()
+    ):
         raise MatrixError(f"receipt row {row_id}.input_identity.row_environment has invalid values")
+    if row_id == "linux_msan" and row_environment.get("DEBUGINFOD_URLS") != "":
+        raise MatrixError("receipt row linux_msan does not disable remote debuginfod lookup")
+    if row_id == "linux_msan" and environment.get("DEBUGINFOD_URLS") != "":
+        raise MatrixError("receipt row linux_msan input identity includes remote debuginfod lookup")
     tools = identity.get("tool_identities")
     if not isinstance(tools, list) or len(tools) != len(manifest_row["tool_probes"]):
         raise MatrixError(f"receipt row {row_id}.input_identity.tool_identities is incomplete")
@@ -1228,24 +1287,14 @@ def _validate_input_identity(row: Mapping[str, Any], manifest_row: Mapping[str, 
         if name in {"VCPKG_ROOT", "MC_LLVM_PROJECT_ROOT"}:
             _validate_sha(dependency.get("revision"), f"{field}.revision")
             if name == "MC_LLVM_PROJECT_ROOT":
-                approved = dependency.get("approved_patch")
-                expected_patch_files = [
-                    "libunwind/src/AddressSpace.hpp",
-                    "libunwind/src/CMakeLists.txt",
-                    "libunwind/src/DwarfInstructions.hpp",
-                    "libunwind/src/UnwindRegistersSave.S",
-                ]
                 if (
                     row_id != "linux_msan"
-                    or not isinstance(approved, dict)
-                    or set(approved) != {"helper_sha256", "patch_sha256", "result_sha256", "files"}
                     or dependency["revision"] != MSAN_LLVM_BASE_REVISION
-                    or approved.get("helper_sha256") != MSAN_HELPER_SHA256
-                    or approved.get("patch_sha256") != MSAN_PATCH_SHA256
-                    or approved.get("result_sha256") != MSAN_PATCH_RESULT_SHA256
-                    or approved.get("files") != expected_patch_files
+                    or set(dependency) != {"path", "revision", "status", "helper_sha256"}
+                    or dependency.get("status") != "clean"
+                    or dependency.get("helper_sha256") != MSAN_HELPER_SHA256
                 ):
-                    raise MatrixError(f"{field}.approved_patch does not match the pinned libunwind patch")
+                    raise MatrixError(f"{field} does not match the clean pinned upstream MSan runtime recipe")
         elif name == "MC_VCPKG_CHAINLOAD_TOOLCHAIN_FILE":
             digest = dependency.get("sha256")
             if not isinstance(digest, str) or not re.fullmatch(r"[0-9a-f]{64}", digest):
@@ -1254,6 +1303,7 @@ def _validate_input_identity(row: Mapping[str, Any], manifest_row: Mapping[str, 
             hash_names = {
                 "MC_PRIVATE_DEPENDENCIES_PREFIX": "consumed_files_sha256",
                 "VCPKG_INSTALLED_DIR": "consumed_files_sha256",
+                "MC_LSAN_LIBCXX_PREFIX": "files_sha256",
                 "MC_MSAN_LIBCXX_PREFIX": "files_sha256",
             }
             hash_name = hash_names[name]
@@ -1269,15 +1319,138 @@ def _validate_input_identity(row: Mapping[str, Any], manifest_row: Mapping[str, 
     cache = identity.get("effective_cmake_cache")
     if not isinstance(cache, dict) or cache.get("status") != "present" or not isinstance(cache.get("values"), dict):
         raise MatrixError(f"receipt row {row_id}.input_identity.effective_cmake_cache is missing")
+    cache_values = cache["values"]
     if row_id in {"linux_lsan", "linux_msan"}:
         triplet_variable = (
             "MC_ANALYSIS_LINUX_LSAN_TRIPLET" if row_id == "linux_lsan" else "MC_ANALYSIS_LINUX_MSAN_TRIPLET"
         )
         triplet = environment.get(triplet_variable)
-        if not triplet or cache["values"].get("VCPKG_TARGET_TRIPLET") != triplet:
+        if not triplet or cache_values.get("VCPKG_TARGET_TRIPLET") != triplet:
             raise MatrixError(f"receipt row {row_id} CMake cache does not use its explicit native triplet")
+    toolchain_resources = identity.get("toolchain_resources")
+    if not isinstance(toolchain_resources, dict) or set(toolchain_resources) != {"vulkan", "msvc_asan_runtime"}:
+        raise MatrixError(f"receipt row {row_id}.input_identity.toolchain_resources is malformed")
+    platform_name = manifest_row["platform"]
+    if platform_name in {"macos", "windows"} and cache_values.get("MC_BUILD_CLIENT") != "ON":
+        raise MatrixError(f"receipt row {row_id} CMake cache does not enable the client Vulkan dependencies")
+    uses_vulkan = platform_name in {"macos", "windows"}
+    vulkan = toolchain_resources.get("vulkan")
+    if uses_vulkan:
+        expected_vulkan_fields = {
+            "sdk_root",
+            "include_directory",
+            "headers_sha256",
+            "header_file_count",
+            "library",
+            "glslc",
+            "spirv_val",
+            "runtime_loader",
+        }
+        if not isinstance(vulkan, dict) or set(vulkan) != expected_vulkan_fields:
+            raise MatrixError(f"receipt row {row_id} is missing selected Vulkan dependency provenance")
+        sdk_root = vulkan.get("sdk_root")
+        if not isinstance(sdk_root, str) or sdk_root != environment.get("VULKAN_SDK", "<unset>"):
+            raise MatrixError(f"receipt row {row_id} Vulkan SDK identity differs from captured VULKAN_SDK")
+        if sdk_root and sdk_root != "<unset>" and not _host_path(sdk_root, platform_name).is_absolute():
+            raise MatrixError(f"receipt row {row_id} captured VULKAN_SDK is not an absolute path")
+        selected_include = _require_string(
+            vulkan.get("include_directory"), f"receipt row {row_id}.toolchain_resources.vulkan.include_directory"
+        )
+        include_path = _host_path(selected_include, platform_name)
+        if not include_path.is_absolute() or not _same_host_path(
+            selected_include, cache_values.get("Vulkan_INCLUDE_DIR", ""), platform_name
+        ):
+            raise MatrixError(f"receipt row {row_id} Vulkan headers do not match Vulkan_INCLUDE_DIR")
+        header_count = vulkan.get("header_file_count")
+        if not isinstance(header_count, int) or isinstance(header_count, bool) or header_count < 1:
+            raise MatrixError(f"receipt row {row_id} Vulkan header file count is invalid")
+        if not isinstance(vulkan.get("headers_sha256"), str) or not re.fullmatch(
+            r"[0-9a-f]{64}", vulkan["headers_sha256"]
+        ):
+            raise MatrixError(f"receipt row {row_id} Vulkan headers hash is invalid")
+        for field, cache_key in (
+            ("library", "Vulkan_LIBRARY"),
+            ("glslc", "Vulkan_GLSLC_EXECUTABLE"),
+            ("spirv_val", "MC_SPIRV_VAL_EXECUTABLE"),
+        ):
+            selected_path = cache_values.get(cache_key)
+            if not isinstance(selected_path, str) or not selected_path:
+                raise MatrixError(f"receipt row {row_id} CMake cache lacks {cache_key}")
+            _validate_selected_file(
+                vulkan.get(field),
+                f"receipt row {row_id}.toolchain_resources.vulkan.{field}",
+                platform_name,
+                selected_path,
+            )
+        runtime_loader = vulkan.get("runtime_loader")
+        if platform_name == "windows":
+            if not sdk_root or sdk_root == "<unset>" or not _host_path(sdk_root, platform_name).is_absolute():
+                raise MatrixError(f"receipt row {row_id} requires an absolute VULKAN_SDK path")
+            for cache_key in ("Vulkan_LIBRARY", "Vulkan_GLSLC_EXECUTABLE", "MC_SPIRV_VAL_EXECUTABLE"):
+                if not _host_path_within(cache_values[cache_key], sdk_root, platform_name):
+                    raise MatrixError(f"receipt row {row_id} selected {cache_key} escapes VULKAN_SDK")
+            loader_path = str(_host_path(sdk_root, platform_name) / "Bin" / "vulkan-1.dll")
+            _validate_selected_file(
+                runtime_loader,
+                f"receipt row {row_id}.toolchain_resources.vulkan.runtime_loader",
+                platform_name,
+                loader_path,
+            )
+        elif runtime_loader is not None:
+            raise MatrixError(f"receipt row {row_id} has an unexpected Vulkan runtime loader")
+    elif vulkan is not None:
+        raise MatrixError(f"receipt row {row_id} has unexpected Vulkan dependency provenance")
+
+    msvc_asan = toolchain_resources.get("msvc_asan_runtime")
+    if row_id == "windows_msvc_asan":
+        if cache_values.get("MC_SANITIZER") != "address":
+            raise MatrixError("Windows MSVC ASan row cache does not select the address sanitizer")
+        expected_msvc_fields = {"compiler", "linker", "vc_install_directory", "files"}
+        if not isinstance(msvc_asan, dict) or set(msvc_asan) != expected_msvc_fields:
+            raise MatrixError("Windows MSVC ASan row is missing its selected runtime DLL provenance")
+        compiler = _require_string(msvc_asan.get("compiler"), "Windows MSVC ASan compiler")
+        linker = _require_string(msvc_asan.get("linker"), "Windows MSVC ASan linker")
+        vc_install = _require_string(msvc_asan.get("vc_install_directory"), "Windows VCINSTALLDIR")
+        compiler_path = _host_path(compiler, "windows")
+        linker_path = _host_path(linker, "windows")
+        vc_path = _host_path(vc_install, "windows")
+        if (
+            compiler != cache_values.get("CMAKE_CXX_COMPILER")
+            or linker != cache_values.get("CMAKE_LINKER")
+            or vc_install != environment.get("VCINSTALLDIR")
+            or not compiler_path.is_absolute()
+            or compiler_path.name.lower() != "cl.exe"
+            or not linker_path.is_absolute()
+            or linker_path.name.lower() != "link.exe"
+            or not vc_path.is_absolute()
+            or not _host_path_within(compiler, vc_install, "windows")
+            or not _host_path_within(linker, vc_install, "windows")
+        ):
+            raise MatrixError("Windows MSVC ASan runtime is not bound to its selected compiler/linker prefix")
+        runtime_files = msvc_asan.get("files")
+        if not isinstance(runtime_files, list) or len(runtime_files) != 1:
+            raise MatrixError("Windows MSVC ASan row must identify exactly its selected dynamic runtime DLL")
+        runtime_file = runtime_files[0]
+        if not isinstance(runtime_file, dict) or set(runtime_file) != {
+            "role", "name", "path", "size", "sha256"
+        } or runtime_file.get("role") != "dynamic_runtime":
+            raise MatrixError("Windows MSVC ASan runtime DLL identity is malformed")
+        expected_runtime_path = str(linker_path.parent / "clang_rt.asan_dynamic-x86_64.dll")
+        _validate_selected_file(
+            {key: value for key, value in runtime_file.items() if key != "role"},
+            "Windows MSVC ASan runtime DLL",
+            "windows",
+            expected_runtime_path,
+        )
+    elif msvc_asan is not None:
+        raise MatrixError(f"receipt row {row_id} has unexpected MSVC ASan runtime provenance")
     runtime_identity = identity.get("runtime_resources")
-    if not isinstance(runtime_identity, dict) or set(runtime_identity) != {"resource_directory", "files"}:
+    if not isinstance(runtime_identity, dict) or set(runtime_identity) != {
+        "resource_directory",
+        "files",
+        "msan_ignorelist",
+        "system_unwinder",
+    }:
         raise MatrixError(f"receipt row {row_id}.input_identity.runtime_resources is malformed")
     family = RUNTIME_FAMILIES.get(row_id)
     resource_directory = runtime_identity.get("resource_directory")
@@ -1317,6 +1490,54 @@ def _validate_input_identity(row: Mapping[str, Any], manifest_row: Mapping[str, 
             observed_families.append(match.group(1))
         if sorted(observed_families) != sorted(expected_families):
             raise MatrixError(f"receipt row {row_id} has incomplete or unexpected compiler runtime files")
+    ignorelist = runtime_identity.get("msan_ignorelist")
+    unwinder = runtime_identity.get("system_unwinder")
+    if row_id == "linux_msan":
+        if not isinstance(ignorelist, dict) or set(ignorelist) != {"name", "path", "size", "sha256"}:
+            raise MatrixError(f"receipt row {row_id} is missing stock MSan ignorelist provenance")
+        if ignorelist.get("name") != "msan_ignorelist.txt":
+            raise MatrixError(f"receipt row {row_id} has an unexpected MSan ignorelist")
+        ignorelist_path = _require_string(ignorelist.get("path"), f"receipt row {row_id}.msan_ignorelist.path")
+        expected_ignorelist = str(Path(str(resource_directory)) / "share" / "msan_ignorelist.txt")
+        if ignorelist_path != expected_ignorelist:
+            raise MatrixError(f"receipt row {row_id} MSan ignorelist is not the selected compiler resource")
+        if not Path(ignorelist_path).is_absolute():
+            raise MatrixError(f"receipt row {row_id} MSan ignorelist path is not absolute")
+        if not isinstance(ignorelist.get("size"), int) or isinstance(ignorelist.get("size"), bool) or ignorelist["size"] < 1:
+            raise MatrixError(f"receipt row {row_id} MSan ignorelist size is invalid")
+        if not isinstance(ignorelist.get("sha256"), str) or not re.fullmatch(r"[0-9a-f]{64}", ignorelist["sha256"]):
+            raise MatrixError(f"receipt row {row_id} MSan ignorelist hash is invalid")
+        expected_unwinder_fields = {
+            "selected_by",
+            "probe_path",
+            "probe_sha256",
+            "name",
+            "path",
+            "size",
+            "sha256",
+        }
+        if not isinstance(unwinder, dict) or set(unwinder) != expected_unwinder_fields:
+            raise MatrixError(f"receipt row {row_id} is missing selected system unwinder provenance")
+        if unwinder.get("selected_by") != "ldd" or unwinder.get("name") != "libgcc_s.so.1":
+            raise MatrixError(f"receipt row {row_id} did not select the system libgcc_s unwinder")
+        unwinder_path = _require_string(unwinder.get("path"), f"receipt row {row_id}.system_unwinder.path")
+        if not Path(unwinder_path).is_absolute() or Path(unwinder_path).name != "libgcc_s.so.1":
+            raise MatrixError(f"receipt row {row_id} system unwinder path is invalid")
+        if not isinstance(unwinder.get("size"), int) or isinstance(unwinder.get("size"), bool) or unwinder["size"] < 1:
+            raise MatrixError(f"receipt row {row_id} system unwinder size is invalid")
+        for key in ("sha256", "probe_sha256"):
+            if not isinstance(unwinder.get(key), str) or not re.fullmatch(r"[0-9a-f]{64}", unwinder[key]):
+                raise MatrixError(f"receipt row {row_id} system unwinder {key} is invalid")
+        probe_path = _require_string(unwinder.get("probe_path"), f"receipt row {row_id}.system_unwinder.probe_path")
+        prefix = Path(environment["MC_MSAN_LIBCXX_PREFIX"]).resolve()
+        if not Path(probe_path).is_absolute() or Path(probe_path).name != "libc++abi.so.1" and not Path(probe_path).name.startswith("libc++abi.so.1."):
+            raise MatrixError(f"receipt row {row_id} unwinder probe is not libc++abi")
+        try:
+            Path(probe_path).relative_to(prefix / "lib")
+        except ValueError as error:
+            raise MatrixError(f"receipt row {row_id} unwinder probe escapes the instrumented libc++ prefix") from error
+    elif ignorelist is not None or unwinder is not None:
+        raise MatrixError(f"receipt row {row_id} has unexpected MSan runtime provenance")
     preimage = dict(identity)
     digest = preimage.pop("input_sha256")
     if hashlib.sha256(_canonical_json(preimage)).hexdigest() != digest:
@@ -1736,71 +1957,18 @@ def _git_dependency_identity(path_value: str, name: str) -> dict[str, str]:
 
 
 def _msan_llvm_dependency_identity(root: Path, path_value: str) -> dict[str, Any]:
-    path = Path(path_value).resolve()
-    if not path.is_dir():
-        raise MatrixError(f"dependency root MC_LLVM_PROJECT_ROOT is missing: {path}")
-    revision = _git(path, "rev-parse", "--verify", "HEAD^{commit}")
+    identity = _git_dependency_identity(path_value, "MC_LLVM_PROJECT_ROOT")
+    revision = identity["revision"]
     if revision != MSAN_LLVM_BASE_REVISION:
-        raise MatrixError("MemorySanitizer LLVM project root is not at the pinned llvmorg-18.1.3 revision")
+        raise MatrixError("MemorySanitizer LLVM project root is not at the clean pinned llvmorg-18.1.3 revision")
     helper = root / "script" / "ci" / "install_msan_libcxx.py"
-    patch = root / "script" / "ci" / "patches" / "libunwind-msan-x86_64.patch"
     if not helper.is_file() or hashlib.sha256(helper.read_bytes()).hexdigest() != MSAN_HELPER_SHA256:
         raise MatrixError("MemorySanitizer libc++ helper does not match its approved content hash")
-    if not patch.is_file() or hashlib.sha256(patch.read_bytes()).hexdigest() != MSAN_PATCH_SHA256:
-        raise MatrixError("MemorySanitizer libunwind patch does not match its approved content hash")
-    status = subprocess.run(
-        ["git", "status", "--porcelain=v1", "--untracked-files=all"],
-        cwd=path,
-        text=True,
-        capture_output=True,
-        check=False,
-    )
-    if status.returncode:
-        raise MatrixError(status.stderr.strip() or "cannot inspect MemorySanitizer LLVM project root")
-    allowed_files = {
-        "libunwind/src/CMakeLists.txt",
-        "libunwind/src/UnwindRegistersSave.S",
-        "libunwind/src/AddressSpace.hpp",
-        "libunwind/src/DwarfInstructions.hpp",
-    }
-    changed_files = set(_git(path, "diff", "--name-only", "HEAD").splitlines())
-    status_files = {
-        line[3:].strip().strip('"')
-        for line in status.stdout.splitlines()
-        if len(line) >= 4
-    }
-    if changed_files != allowed_files or status_files != allowed_files:
-        raise MatrixError("MemorySanitizer LLVM project root has changes beyond the four approved libunwind patch files")
-    reverse_check = subprocess.run(
-        ["git", "apply", "--reverse", "--check", str(patch)],
-        cwd=path,
-        text=True,
-        capture_output=True,
-        check=False,
-    )
-    if reverse_check.returncode:
-        raise MatrixError("MemorySanitizer LLVM project root does not contain the approved libunwind patch")
-    diff = subprocess.run(
-        ["git", "diff", "--binary", "HEAD"],
-        cwd=path,
-        text=False,
-        capture_output=True,
-        check=False,
-    )
-    if diff.returncode:
-        raise MatrixError(diff.stderr.decode("utf-8", errors="replace").strip() or "cannot hash LLVM patch result")
-    diff_sha256 = hashlib.sha256(diff.stdout).hexdigest()
-    if MSAN_PATCH_RESULT_SHA256 is None or diff_sha256 != MSAN_PATCH_RESULT_SHA256:
-        raise MatrixError("MemorySanitizer LLVM libunwind patch result is not the exact approved patch content")
     return {
         "path": path_value,
         "revision": revision,
-        "approved_patch": {
-            "helper_sha256": MSAN_HELPER_SHA256,
-            "patch_sha256": MSAN_PATCH_SHA256,
-            "result_sha256": diff_sha256,
-            "files": sorted(allowed_files),
-        },
+        "status": "clean",
+        "helper_sha256": MSAN_HELPER_SHA256,
     }
 
 
@@ -1849,9 +2017,146 @@ def _cmake_cache_identity(root: Path, manifest_row: Mapping[str, Any]) -> dict[s
                 "CMAKE_CXX_COMPILER_LAUNCHER",
                 "CMAKE_CXX_CPPCHECK",
             }
+            or key in {
+                "Vulkan_INCLUDE_DIR",
+                "Vulkan_LIBRARY",
+                "Vulkan_GLSLC_EXECUTABLE",
+            }
+            or (manifest_row["id"] == "windows_msvc_asan" and key == "CMAKE_LINKER")
         ):
             selected[key] = value
     return {"status": "present", "values": selected}
+
+
+def _selected_file_identity(path_value: str, field: str) -> dict[str, Any]:
+    path = Path(path_value)
+    if not path.is_absolute():
+        raise MatrixError(f"selected {field} path is not absolute: {path_value}")
+    try:
+        resolved = path.resolve(strict=True)
+        contents = resolved.read_bytes()
+    except OSError as error:
+        raise MatrixError(f"selected {field} is missing or unreadable: {path_value}: {error}") from error
+    if not resolved.is_file():
+        raise MatrixError(f"selected {field} is not a file: {path_value}")
+    return {
+        "name": path.name,
+        "path": path_value,
+        "size": len(contents),
+        "sha256": hashlib.sha256(contents).hexdigest(),
+    }
+
+
+def _selected_toolchain_resources(
+    manifest_row: Mapping[str, Any],
+    environment: Mapping[str, str],
+    cache_identity: Mapping[str, Any],
+    *,
+    require_selected: bool,
+) -> dict[str, Any]:
+    resources: dict[str, Any] = {"vulkan": None, "msvc_asan_runtime": None}
+    if cache_identity.get("status") != "present":
+        if require_selected and manifest_row["platform"] in {"macos", "windows"}:
+            raise MatrixError(f"{manifest_row['id']} passed without a configured CMake cache")
+        return resources
+    cache_values = cache_identity.get("values", {})
+    row_id = manifest_row["id"]
+    platform_name = manifest_row["platform"]
+    if platform_name in {"macos", "windows"}:
+        if cache_values.get("MC_BUILD_CLIENT") != "ON":
+            if require_selected:
+                raise MatrixError(f"{row_id} CMake cache does not enable the client Vulkan dependencies")
+            return resources
+        include_directory = cache_values.get("Vulkan_INCLUDE_DIR")
+        library = cache_values.get("Vulkan_LIBRARY")
+        glslc = cache_values.get("Vulkan_GLSLC_EXECUTABLE")
+        spirv_val = cache_values.get("MC_SPIRV_VAL_EXECUTABLE")
+        selected = {
+            "Vulkan_INCLUDE_DIR": include_directory,
+            "Vulkan_LIBRARY": library,
+            "Vulkan_GLSLC_EXECUTABLE": glslc,
+            "MC_SPIRV_VAL_EXECUTABLE": spirv_val,
+        }
+        for key, value in selected.items():
+            if not isinstance(value, str) or not value:
+                if not require_selected:
+                    return resources
+                raise MatrixError(f"{row_id} CMake cache lacks selected Vulkan input {key}")
+            if not Path(value).is_absolute():
+                raise MatrixError(f"{row_id} selected Vulkan input {key} is not an absolute path")
+        include_root = Path(include_directory)
+        header_files = _input_file_paths(
+            include_root,
+            ("vulkan/*.h", "vulkan/**/*.h", "vk_video/*.h", "vk_video/**/*.h"),
+        )
+        if not header_files:
+            raise MatrixError(f"{row_id} selected Vulkan include directory has no Vulkan headers: {include_root}")
+        sdk_root = environment.get("VULKAN_SDK", "<unset>")
+        if sdk_root and sdk_root != "<unset>" and not _host_path(sdk_root, platform_name).is_absolute():
+            raise MatrixError(f"{row_id} captured VULKAN_SDK is not an absolute path")
+        runtime_loader = None
+        if platform_name == "windows":
+            if not sdk_root or sdk_root == "<unset>" or not PureWindowsPath(sdk_root).is_absolute():
+                raise MatrixError(f"{row_id} requires the selected VULKAN_SDK root")
+            sdk_path = PureWindowsPath(sdk_root)
+            for key in ("Vulkan_LIBRARY", "Vulkan_GLSLC_EXECUTABLE", "MC_SPIRV_VAL_EXECUTABLE"):
+                try:
+                    PureWindowsPath(selected[key]).relative_to(sdk_path)
+                except ValueError as error:
+                    raise MatrixError(f"{row_id} selected {key} escapes VULKAN_SDK") from error
+            runtime_loader = _selected_file_identity(
+                str(Path(sdk_root) / "Bin" / "vulkan-1.dll"), "Windows Vulkan runtime loader"
+            )
+        resources["vulkan"] = {
+            "sdk_root": sdk_root,
+            "include_directory": include_directory,
+            "headers_sha256": _paths_sha256(header_files),
+            "header_file_count": len(header_files),
+            "library": _selected_file_identity(library, "Vulkan loader library"),
+            "glslc": _selected_file_identity(glslc, "Vulkan glslc compiler"),
+            "spirv_val": _selected_file_identity(spirv_val, "SPIR-V validator"),
+            "runtime_loader": runtime_loader,
+        }
+    if row_id == "windows_msvc_asan":
+        if cache_values.get("MC_SANITIZER") != "address":
+            if not require_selected:
+                return resources
+            raise MatrixError("Windows MSVC ASan cache does not select the address sanitizer")
+        compiler = cache_values.get("CMAKE_CXX_COMPILER")
+        linker = cache_values.get("CMAKE_LINKER")
+        vc_install = environment.get("VCINSTALLDIR", "<unset>")
+        if not compiler or not linker or vc_install == "<unset>":
+            if not require_selected:
+                return resources
+            raise MatrixError("Windows MSVC ASan cache lacks its selected compiler, linker, or VC prefix")
+        compiler_path = PureWindowsPath(compiler)
+        linker_path = PureWindowsPath(linker)
+        vc_path = PureWindowsPath(vc_install)
+        if (
+            not compiler_path.is_absolute()
+            or not linker_path.is_absolute()
+            or not vc_path.is_absolute()
+            or compiler_path.name.lower() != "cl.exe"
+            or linker_path.name.lower() != "link.exe"
+        ):
+            raise MatrixError("Windows MSVC ASan compiler/linker paths are invalid")
+        for selected_tool in (compiler_path, linker_path):
+            try:
+                selected_tool.relative_to(vc_path)
+            except ValueError as error:
+                raise MatrixError("Windows MSVC ASan compiler/linker escapes VCINSTALLDIR") from error
+        runtime_directory = Path(linker).parent
+        runtime = _selected_file_identity(
+            str(runtime_directory / "clang_rt.asan_dynamic-x86_64.dll"),
+            "MSVC dynamic ASan runtime",
+        )
+        resources["msvc_asan_runtime"] = {
+            "compiler": compiler,
+            "linker": linker,
+            "vc_install_directory": vc_install,
+            "files": [{"role": "dynamic_runtime", **runtime}],
+        }
+    return resources
 
 
 def _dependency_path_selected(relative_path: str) -> bool:
@@ -1988,7 +2293,12 @@ def _sanitizer_runtime_identity(
     row_id = manifest_row["id"]
     family = RUNTIME_FAMILIES.get(row_id)
     if family is None:
-        return {"resource_directory": "not-applicable", "files": []}
+        return {
+            "resource_directory": "not-applicable",
+            "files": [],
+            "msan_ignorelist": None,
+            "system_unwinder": None,
+        }
     compiler = next(
         (
             str(tool["executable"])
@@ -2053,7 +2363,96 @@ def _sanitizer_runtime_identity(
                 "sha256": hashlib.sha256(contents).hexdigest(),
             }
         )
-    return {"resource_directory": str(resource_dir.resolve()), "files": files}
+    ignorelist_identity = None
+    unwinder_identity = None
+    if row_id == "linux_msan":
+        ignorelist = resource_dir / "share" / "msan_ignorelist.txt"
+        try:
+            ignorelist_contents = ignorelist.read_bytes()
+        except OSError as error:
+            raise MatrixError(f"selected Clang resource directory lacks stock MSan ignorelist: {ignorelist}: {error}") from error
+        ignorelist_identity = {
+            "name": ignorelist.name,
+            "path": str(ignorelist),
+            "size": len(ignorelist_contents),
+            "sha256": hashlib.sha256(ignorelist_contents).hexdigest(),
+        }
+        unwinder_identity = _msan_system_unwinder_identity(root, environment, tool_identities)
+    return {
+        "resource_directory": str(resource_dir.resolve()),
+        "files": files,
+        "msan_ignorelist": ignorelist_identity,
+        "system_unwinder": unwinder_identity,
+    }
+
+
+def _msan_system_unwinder_identity(
+    root: Path,
+    environment: Mapping[str, str],
+    tool_identities: Sequence[Mapping[str, Any]],
+) -> dict[str, Any]:
+    prefix = Path(environment["MC_MSAN_LIBCXX_PREFIX"]).resolve()
+    probe = prefix / "lib" / "libc++abi.so.1"
+    try:
+        probe = probe.resolve(strict=True)
+        probe_contents = probe.read_bytes()
+    except OSError as error:
+        raise MatrixError(f"instrumented libc++abi unwinder probe is missing or unreadable: {error}") from error
+    if not probe.is_file():
+        raise MatrixError(f"instrumented libc++abi unwinder probe is not a file: {probe}")
+    try:
+        probe.relative_to(prefix / "lib")
+    except ValueError as error:
+        raise MatrixError(f"instrumented libc++abi unwinder probe escapes its prefix: {probe}") from error
+    ldd = next(
+        (
+            str(tool["executable"])
+            for tool in tool_identities
+            if Path(str(tool.get("probe_argv", [""])[0])).name == "ldd"
+        ),
+        None,
+    )
+    if ldd is None:
+        raise MatrixError("MemorySanitizer row has no captured ldd tool identity")
+    try:
+        completed = subprocess.run(
+            [ldd, str(probe)],
+            cwd=root,
+            text=True,
+            capture_output=True,
+            timeout=30,
+            check=False,
+            env=environment,
+        )
+    except (OSError, subprocess.TimeoutExpired) as error:
+        raise MatrixError(f"cannot inspect selected libc++abi unwinder binding: {error}") from error
+    output = completed.stdout + completed.stderr
+    if completed.returncode:
+        raise MatrixError("ldd failed for instrumented libc++abi: " + _bounded_text(output))
+    if re.search(r"\blibunwind[^\s]*\.so(?:\.[0-9]+)*\b", output):
+        raise MatrixError("instrumented libc++abi selected libunwind instead of the system unwinder")
+    matches = re.findall(
+        r"(?m)^\s*libgcc_s\.so\.1\s+=>\s+(/[^\s]+)(?:\s+\(0x[0-9a-fA-F]+\))?\s*$",
+        output,
+    )
+    if len(matches) != 1:
+        raise MatrixError("ldd did not resolve exactly one system libgcc_s.so.1 unwinder")
+    unwinder = Path(matches[0]).resolve()
+    try:
+        contents = unwinder.read_bytes()
+    except OSError as error:
+        raise MatrixError(f"selected system libgcc_s unwinder is missing or unreadable: {error}") from error
+    if not unwinder.is_file():
+        raise MatrixError(f"selected system libgcc_s unwinder is not a file: {unwinder}")
+    return {
+        "selected_by": "ldd",
+        "probe_path": str(probe),
+        "probe_sha256": hashlib.sha256(probe_contents).hexdigest(),
+        "name": "libgcc_s.so.1",
+        "path": str(unwinder),
+        "size": len(contents),
+        "sha256": hashlib.sha256(contents).hexdigest(),
+    }
 
 
 def _external_dependency_identity(
@@ -2063,7 +2462,7 @@ def _external_dependency_identity(
 ) -> dict[str, Any]:
     result: dict[str, Any] = {}
     for name in REQUIRED_ROW_ENVIRONMENT[manifest_row["id"]]:
-        if not environment.get(name):
+        if name not in environment or (not environment[name] and name != "DEBUGINFOD_URLS"):
             raise MatrixError(f"analysis row {manifest_row['id']} requires environment variable {name}")
     for name in ("VCPKG_ROOT", "MC_LLVM_PROJECT_ROOT"):
         value = environment.get(name)
@@ -2098,20 +2497,24 @@ def _external_dependency_identity(
             "consumed_files_sha256": _paths_sha256(consumed_files),
             "consumed_file_count": len(consumed_files),
         }
-    msan_prefix = environment.get("MC_MSAN_LIBCXX_PREFIX")
-    if msan_prefix:
-        prefix = Path(msan_prefix).resolve()
+    for name, label in (
+        ("MC_LSAN_LIBCXX_PREFIX", "LSan"),
+        ("MC_MSAN_LIBCXX_PREFIX", "MSan"),
+    ):
+        prefix_value = environment.get(name)
+        if not prefix_value:
+            continue
+        prefix = Path(prefix_value).resolve()
         patterns = (
             "include/c++/v1/**",
             "lib/libc++*",
             "lib/libc++abi*",
-            "lib/libunwind*",
         )
         libcxx_files = _input_file_paths(prefix, patterns)
         if not libcxx_files:
-            raise MatrixError(f"instrumented MSan libc++ prefix has no headers or runtime libraries: {prefix}")
-        result["MC_MSAN_LIBCXX_PREFIX"] = {
-            "path": msan_prefix,
+            raise MatrixError(f"instrumented {label} libc++ prefix has no headers or runtime libraries: {prefix}")
+        result[name] = {
+            "path": prefix_value,
             "files_sha256": _paths_sha256(libcxx_files),
             "file_count": len(libcxx_files),
         }
@@ -2136,6 +2539,8 @@ def _row_input_identity(
     manifest_row: Mapping[str, Any],
     environment: Mapping[str, str],
     tool_identities: Sequence[Mapping[str, Any]],
+    *,
+    require_toolchain_resources: bool = False,
 ) -> dict[str, Any]:
     effective_environment = {
         name: environment.get(name, "<unset>")
@@ -2150,7 +2555,7 @@ def _row_input_identity(
         for name, value in row_environment.items()
     }
     identity = {
-        "identity_schema_version": 2,
+        "identity_schema_version": 4,
         "source_input_sha256": row_source_input_sha256(root, manifest_row),
         "row_configuration_sha256": _row_configuration_sha256(manifest_row),
         "platform": {
@@ -2166,6 +2571,23 @@ def _row_input_identity(
         "external_dependencies": _external_dependency_identity(root, manifest_row, environment),
         "effective_cmake_cache": _cmake_cache_identity(root, manifest_row),
     }
+    if require_toolchain_resources:
+        identity["toolchain_resources"] = _selected_toolchain_resources(
+            manifest_row,
+            environment,
+            identity["effective_cmake_cache"],
+            require_selected=True,
+        )
+    else:
+        try:
+            identity["toolchain_resources"] = _selected_toolchain_resources(
+                manifest_row,
+                environment,
+                identity["effective_cmake_cache"],
+                require_selected=False,
+            )
+        except MatrixError:
+            identity["toolchain_resources"] = {"vulkan": None, "msvc_asan_runtime": None}
     identity["runtime_resources"] = _sanitizer_runtime_identity(
         root,
         manifest_row,
@@ -2372,7 +2794,9 @@ def run_row(
     else:
         command_environment = resolve_row_environment(row, root, os.environ)
         missing_environment = sorted(
-            name for name in REQUIRED_ROW_ENVIRONMENT[row_id] if not command_environment.get(name)
+            name
+            for name in REQUIRED_ROW_ENVIRONMENT[row_id]
+            if name not in command_environment or (not command_environment[name] and name != "DEBUGINFOD_URLS")
         )
         versions, tool_identities, unavailable = ({}, [], None)
         if missing_environment:
@@ -2498,7 +2922,11 @@ def run_row(
                         output_parts.append(str(error))
                 try:
                     input_identity = _row_input_identity(
-                        root, row, command_environment, tool_identities
+                        root,
+                        row,
+                        command_environment,
+                        tool_identities,
+                        require_toolchain_resources=status == "passed",
                     )
                 except (MatrixError, OSError) as error:
                     status = "failed"

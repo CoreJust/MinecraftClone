@@ -41,11 +41,19 @@ class AnalysisMatrixTests(unittest.TestCase):
         rows = []
         for manifest_row in self.manifest["rows"]:
             row_id = manifest_row["id"]
+            host_path_type = self.matrix.PureWindowsPath if manifest_row["platform"] == "windows" else Path
             environment = {
                 name: f"/captured/{name.lower()}"
                 for name in self.matrix.IDENTITY_ENVIRONMENT
             }
             environment.update({"PATH": "/captured/bin", "MC_ANALYSIS_ROOT": "/captured/root"})
+            if manifest_row["platform"] == "windows":
+                environment["VULKAN_SDK"] = "C:\\captured\\vulkan-sdk"
+                environment["VCINSTALLDIR"] = "C:\\captured\\VC"
+            elif manifest_row["platform"] == "macos":
+                environment["VULKAN_SDK"] = "<unset>"
+            if row_id == "linux_msan":
+                environment["DEBUGINFOD_URLS"] = ""
             declared_environment = self.matrix.resolve_row_environment(
                 manifest_row, Path("/captured/root"), environment
             )
@@ -77,17 +85,8 @@ class AnalysisMatrixTests(unittest.TestCase):
                     dependency = {"path": captured_path, "revision": "1" * 40}
                     if name == "MC_LLVM_PROJECT_ROOT":
                         dependency["revision"] = self.matrix.MSAN_LLVM_BASE_REVISION
-                        dependency["approved_patch"] = {
-                            "helper_sha256": self.matrix.MSAN_HELPER_SHA256,
-                            "patch_sha256": self.matrix.MSAN_PATCH_SHA256,
-                            "result_sha256": self.matrix.MSAN_PATCH_RESULT_SHA256,
-                            "files": [
-                                "libunwind/src/AddressSpace.hpp",
-                                "libunwind/src/CMakeLists.txt",
-                                "libunwind/src/DwarfInstructions.hpp",
-                                "libunwind/src/UnwindRegistersSave.S",
-                            ],
-                        }
+                        dependency["status"] = "clean"
+                        dependency["helper_sha256"] = self.matrix.MSAN_HELPER_SHA256
                 elif name == "MC_VCPKG_CHAINLOAD_TOOLCHAIN_FILE":
                     dependency = {"path": captured_path, "sha256": "c" * 64}
                 elif name == "VCPKG_INSTALLED_DIR":
@@ -97,7 +96,7 @@ class AnalysisMatrixTests(unittest.TestCase):
                         "consumed_files_sha256": "e" * 64,
                         "consumed_file_count": 2,
                     }
-                elif name == "MC_MSAN_LIBCXX_PREFIX":
+                elif name in {"MC_MSAN_LIBCXX_PREFIX", "MC_LSAN_LIBCXX_PREFIX"}:
                     dependency = {"path": captured_path, "files_sha256": "f" * 64, "file_count": 2}
                 else:
                     dependency = {
@@ -108,7 +107,12 @@ class AnalysisMatrixTests(unittest.TestCase):
                 dependencies[name] = dependency
             family = self.matrix.RUNTIME_FAMILIES.get(row_id)
             if family is None:
-                runtime_resources = {"resource_directory": "not-applicable", "files": []}
+                runtime_resources = {
+                    "resource_directory": "not-applicable",
+                    "files": [],
+                    "msan_ignorelist": None,
+                    "system_unwinder": None,
+                }
             else:
                 resource_directory = "/captured/resource"
                 suffix = ".dylib" if manifest_row["platform"] == "macos" else ".a"
@@ -128,14 +132,112 @@ class AnalysisMatrixTests(unittest.TestCase):
                         }
                         for name in names
                     ],
+                    "msan_ignorelist": None,
+                    "system_unwinder": None,
                 }
+                if row_id == "linux_msan":
+                    runtime_resources["msan_ignorelist"] = {
+                        "name": "msan_ignorelist.txt",
+                        "path": f"{resource_directory}/share/msan_ignorelist.txt",
+                        "size": 10,
+                        "sha256": "7" * 64,
+                    }
+                    runtime_resources["system_unwinder"] = {
+                        "selected_by": "ldd",
+                        "probe_path": f"{environment['MC_MSAN_LIBCXX_PREFIX']}/lib/libc++abi.so.1",
+                        "probe_sha256": "6" * 64,
+                        "name": "libgcc_s.so.1",
+                        "path": "/usr/lib/libgcc_s.so.1",
+                        "size": 10,
+                        "sha256": "5" * 64,
+                    }
             cache_values = {}
+            toolchain_resources = {"vulkan": None, "msvc_asan_runtime": None}
+            if manifest_row["platform"] in {"macos", "windows"}:
+                cache_values["MC_BUILD_CLIENT"] = "ON"
+                if manifest_row["platform"] == "windows":
+                    sdk_root = environment["VULKAN_SDK"]
+                    include_directory = r"C:\captured\vcpkg\installed\x64-windows\include"
+                    cache_values.update(
+                        {
+                            "Vulkan_INCLUDE_DIR": include_directory,
+                            "Vulkan_LIBRARY": str(host_path_type(sdk_root) / "Lib" / "vulkan-1.lib"),
+                            "Vulkan_GLSLC_EXECUTABLE": str(host_path_type(sdk_root) / "Bin" / "glslc.exe"),
+                            "MC_SPIRV_VAL_EXECUTABLE": str(host_path_type(sdk_root) / "Bin" / "spirv-val.exe"),
+                            "CMAKE_CXX_COMPILER": r"C:\captured\VC\Tools\MSVC\14.44.35207\bin\Hostx64\x64\cl.exe",
+                            "CMAKE_LINKER": r"C:\captured\VC\Tools\MSVC\14.44.35207\bin\Hostx64\x64\link.exe",
+                        }
+                    )
+                    if row_id == "windows_msvc_asan":
+                        cache_values["MC_SANITIZER"] = "address"
+                    runtime_loader_path = str(host_path_type(sdk_root) / "Bin" / "vulkan-1.dll")
+                else:
+                    include_directory = "/captured/vcpkg/arm64-osx/include"
+                    cache_values.update(
+                        {
+                            "Vulkan_INCLUDE_DIR": include_directory,
+                            "Vulkan_LIBRARY": "/usr/local/lib/libvulkan.dylib",
+                            "Vulkan_GLSLC_EXECUTABLE": "/opt/homebrew/bin/glslc",
+                            "MC_SPIRV_VAL_EXECUTABLE": "/usr/local/bin/spirv-val",
+                        }
+                    )
+                    runtime_loader_path = None
+                toolchain_resources["vulkan"] = {
+                    "sdk_root": environment["VULKAN_SDK"],
+                    "include_directory": include_directory,
+                    "headers_sha256": "1" * 64,
+                    "header_file_count": 2,
+                    "library": {
+                        "name": host_path_type(cache_values["Vulkan_LIBRARY"]).name,
+                        "path": cache_values["Vulkan_LIBRARY"],
+                        "size": 10,
+                        "sha256": "2" * 64,
+                    },
+                    "glslc": {
+                        "name": host_path_type(cache_values["Vulkan_GLSLC_EXECUTABLE"]).name,
+                        "path": cache_values["Vulkan_GLSLC_EXECUTABLE"],
+                        "size": 10,
+                        "sha256": "3" * 64,
+                    },
+                    "spirv_val": {
+                        "name": host_path_type(cache_values["MC_SPIRV_VAL_EXECUTABLE"]).name,
+                        "path": cache_values["MC_SPIRV_VAL_EXECUTABLE"],
+                        "size": 10,
+                        "sha256": "4" * 64,
+                    },
+                    "runtime_loader": (
+                        {
+                            "name": "vulkan-1.dll",
+                            "path": runtime_loader_path,
+                            "size": 10,
+                            "sha256": "5" * 64,
+                        }
+                        if runtime_loader_path
+                        else None
+                    ),
+                }
+                if row_id == "windows_msvc_asan":
+                    linker_parent = str(host_path_type(cache_values["CMAKE_LINKER"]).parent)
+                    toolchain_resources["msvc_asan_runtime"] = {
+                        "compiler": cache_values["CMAKE_CXX_COMPILER"],
+                        "linker": cache_values["CMAKE_LINKER"],
+                        "vc_install_directory": environment["VCINSTALLDIR"],
+                        "files": [
+                            {
+                                "role": "dynamic_runtime",
+                                "name": "clang_rt.asan_dynamic-x86_64.dll",
+                                "path": str(host_path_type(linker_parent) / "clang_rt.asan_dynamic-x86_64.dll"),
+                                "size": 10,
+                                "sha256": "6" * 64,
+                            }
+                        ],
+                    }
             if row_id == "linux_lsan":
                 cache_values["VCPKG_TARGET_TRIPLET"] = environment["MC_ANALYSIS_LINUX_LSAN_TRIPLET"]
             elif row_id == "linux_msan":
                 cache_values["VCPKG_TARGET_TRIPLET"] = environment["MC_ANALYSIS_LINUX_MSAN_TRIPLET"]
             input_identity = {
-                "identity_schema_version": 2,
+                "identity_schema_version": 4,
                 "source_input_sha256": "6" * 64,
                 "row_configuration_sha256": self.matrix._row_configuration_sha256(manifest_row),
                 "platform": {
@@ -154,6 +256,7 @@ class AnalysisMatrixTests(unittest.TestCase):
                 "external_dependencies": dependencies,
                 "effective_cmake_cache": {"status": "present", "values": cache_values},
                 "runtime_resources": runtime_resources,
+                "toolchain_resources": toolchain_resources,
             }
             input_identity["input_sha256"] = hashlib.sha256(
                 self.matrix._canonical_json(input_identity)
@@ -321,7 +424,6 @@ class AnalysisMatrixTests(unittest.TestCase):
             "script/ci/vcpkg-triplets/x64-linux-msan.cmake",
             "script/ci/vcpkg-clang-toolchain.cmake",
             "script/ci/install_msan_libcxx.py",
-            "script/ci/patches/libunwind-msan-x86_64.patch",
             "script/ci/vcpkg-overlays/gmp/vcpkg.json",
             "script/ci/iwyu_gate.py",
             "script/ci/cppcheck_gate.py",
@@ -730,6 +832,140 @@ class AnalysisMatrixTests(unittest.TestCase):
         row = receipt["rows"][0]
         row["row_configuration_sha256"] = "0" * 64
         with self.assertRaisesRegex(self.matrix.MatrixError, "configuration differs"):
+            self.matrix.validate_receipt(receipt, self.manifest, CANDIDATE)
+
+    def test_selected_vulkan_resources_hash_cache_bound_headers_library_and_tools(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            include = root / "include"
+            header = include / "vulkan/vulkan.h"
+            video_header = include / "vk_video/vulkan_video_codecs_common.h"
+            library = root / "lib/libvulkan.dylib"
+            glslc = root / "bin/glslc"
+            spirv_val = root / "bin/spirv-val"
+            for path, contents in (
+                (header, b"vulkan header"),
+                (video_header, b"video header"),
+                (library, b"vulkan loader library"),
+                (glslc, b"glslc tool"),
+                (spirv_val, b"spirv validator"),
+            ):
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(contents)
+            row = next(row for row in self.manifest["rows"] if row["id"] == "macos_asan")
+            cache = {
+                "status": "present",
+                "values": {
+                    "MC_BUILD_CLIENT": "ON",
+                    "Vulkan_INCLUDE_DIR": str(include),
+                    "Vulkan_LIBRARY": str(library),
+                    "Vulkan_GLSLC_EXECUTABLE": str(glslc),
+                    "MC_SPIRV_VAL_EXECUTABLE": str(spirv_val),
+                },
+            }
+            first = self.matrix._selected_toolchain_resources(
+                row, {"VULKAN_SDK": "<unset>"}, cache, require_selected=True
+            )
+            self.assertEqual(first["vulkan"]["header_file_count"], 2)
+            self.assertEqual(first["vulkan"]["library"]["sha256"], hashlib.sha256(library.read_bytes()).hexdigest())
+
+            header.write_bytes(b"changed Vulkan header")
+            library.write_bytes(b"changed Vulkan loader library")
+            glslc.write_bytes(b"changed glslc tool")
+            spirv_val.write_bytes(b"changed spirv validator")
+            second = self.matrix._selected_toolchain_resources(
+                row, {"VULKAN_SDK": "<unset>"}, cache, require_selected=True
+            )
+            self.assertNotEqual(first["vulkan"]["headers_sha256"], second["vulkan"]["headers_sha256"])
+            self.assertNotEqual(first["vulkan"]["library"]["sha256"], second["vulkan"]["library"]["sha256"])
+            self.assertNotEqual(first["vulkan"]["glslc"]["sha256"], second["vulkan"]["glslc"]["sha256"])
+            self.assertNotEqual(first["vulkan"]["spirv_val"]["sha256"], second["vulkan"]["spirv_val"]["sha256"])
+
+            library.unlink()
+            with self.assertRaisesRegex(self.matrix.MatrixError, "Vulkan loader library.*missing or unreadable"):
+                self.matrix._selected_toolchain_resources(
+                    row, {"VULKAN_SDK": "<unset>"}, cache, require_selected=True
+                )
+
+    def test_unconfigured_vulkan_cache_is_allowed_before_configure_but_required_afterward(self):
+        row = next(row for row in self.manifest["rows"] if row["id"] == "macos_asan")
+        missing_cache = {"status": "missing"}
+        self.assertEqual(
+            self.matrix._selected_toolchain_resources(
+                row, {"VULKAN_SDK": "<unset>"}, missing_cache, require_selected=False
+            ),
+            {"vulkan": None, "msvc_asan_runtime": None},
+        )
+        with self.assertRaisesRegex(self.matrix.MatrixError, "passed without a configured CMake cache"):
+            self.matrix._selected_toolchain_resources(
+                row, {"VULKAN_SDK": "<unset>"}, missing_cache, require_selected=True
+            )
+
+    def test_cmake_cache_identity_retains_selected_vulkan_and_linker_paths(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            cache_path = root / "build/analysis-windows-asan/CMakeCache.txt"
+            cache_path.parent.mkdir(parents=True)
+            cache_path.write_text(
+                "\n".join(
+                    (
+                        r"MC_BUILD_CLIENT:BOOL=ON",
+                        r"MC_SPIRV_VAL_EXECUTABLE:FILEPATH=C:/sdk/Bin/spirv-val.exe",
+                        r"Vulkan_INCLUDE_DIR:PATH=C:/vcpkg/include",
+                        r"Vulkan_LIBRARY:FILEPATH=C:/sdk/Lib/vulkan-1.lib",
+                        r"Vulkan_GLSLC_EXECUTABLE:FILEPATH=C:/sdk/Bin/glslc.exe",
+                        r"CMAKE_CXX_COMPILER:FILEPATH=C:/VS/bin/cl.exe",
+                        r"CMAKE_LINKER:FILEPATH=C:/VS/bin/link.exe",
+                    )
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            row = next(row for row in self.manifest["rows"] if row["id"] == "windows_msvc_asan")
+            identity = self.matrix._cmake_cache_identity(root, row)
+            for name in (
+                "MC_BUILD_CLIENT",
+                "MC_SPIRV_VAL_EXECUTABLE",
+                "Vulkan_INCLUDE_DIR",
+                "Vulkan_LIBRARY",
+                "Vulkan_GLSLC_EXECUTABLE",
+                "CMAKE_CXX_COMPILER",
+                "CMAKE_LINKER",
+            ):
+                self.assertIn(name, identity["values"])
+
+    def test_offline_windows_vulkan_identity_requires_cache_bound_files_and_sdk_root(self):
+        receipt = self.receipt()
+        row = next(row for row in receipt["rows"] if row["id"] == "windows_msvc_analyze")
+        row["input_identity"]["toolchain_resources"]["vulkan"]["library"]["path"] = (
+            r"C:\captured\other-sdk\Lib\vulkan-1.lib"
+        )
+        self.rehash_input_identity(row)
+        with self.assertRaisesRegex(self.matrix.MatrixError, "does not match its selected CMake/environment path"):
+            self.matrix.validate_receipt(receipt, self.manifest, CANDIDATE)
+
+        receipt = self.receipt()
+        row = next(row for row in receipt["rows"] if row["id"] == "windows_msvc_analyze")
+        row["input_identity"]["environment"]["VULKAN_SDK"] = r"D:\captured\vulkan-sdk"
+        self.rehash_input_identity(row)
+        with self.assertRaisesRegex(self.matrix.MatrixError, "differs from captured VULKAN_SDK"):
+            self.matrix.validate_receipt(receipt, self.manifest, CANDIDATE)
+
+    def test_offline_windows_msvc_asan_runtime_must_match_cached_linker_directory(self):
+        receipt = self.receipt()
+        row = next(row for row in receipt["rows"] if row["id"] == "windows_msvc_asan")
+        row["input_identity"]["toolchain_resources"]["msvc_asan_runtime"]["files"][0]["path"] = (
+            r"C:\captured\elsewhere\clang_rt.asan_dynamic-x86_64.dll"
+        )
+        self.rehash_input_identity(row)
+        with self.assertRaisesRegex(self.matrix.MatrixError, "does not match its selected CMake/environment path"):
+            self.matrix.validate_receipt(receipt, self.manifest, CANDIDATE)
+
+        receipt = self.receipt()
+        row = next(row for row in receipt["rows"] if row["id"] == "windows_msvc_asan")
+        row["input_identity"]["toolchain_resources"]["msvc_asan_runtime"]["files"] = []
+        self.rehash_input_identity(row)
+        with self.assertRaisesRegex(self.matrix.MatrixError, "exactly its selected dynamic runtime DLL"):
             self.matrix.validate_receipt(receipt, self.manifest, CANDIDATE)
 
     def test_dependency_path_must_match_captured_environment_after_receipt_rehash(self):
@@ -1434,8 +1670,188 @@ class AnalysisMatrixTests(unittest.TestCase):
             rows["linux_msan"]["environment"]["MSAN_OPTIONS"],
             "halt_on_error=1:print_stats=1:fast_unwind_on_fatal=1",
         )
+        self.assertEqual(rows["linux_msan"]["environment"]["DEBUGINFOD_URLS"], "")
+        self.assertIn(["ldd", "--version"], rows["linux_msan"]["tool_probes"])
         self.assertIn("linux_lsan", self.matrix.REQUIRED_ROW_IDS)
         self.assertIn("linux_msan", self.matrix.REQUIRED_ROW_IDS)
+        self.assertIn("MC_LSAN_LIBCXX_PREFIX", self.matrix.REQUIRED_ROW_ENVIRONMENT["linux_lsan"])
+
+    def test_msan_environment_disables_inherited_remote_debuginfod(self):
+        row = next(row for row in self.manifest["rows"] if row["id"] == "linux_msan")
+        resolved = self.matrix.resolve_row_environment(
+            row,
+            REPOSITORY,
+            {"DEBUGINFOD_URLS": "https://debuginfod.example.invalid"},
+        )
+        self.assertEqual(resolved["DEBUGINFOD_URLS"], "")
+
+        manifest = copy.deepcopy(self.manifest)
+        manifest_row = next(row for row in manifest["rows"] if row["id"] == "linux_msan")
+        manifest_row["environment"]["DEBUGINFOD_URLS"] = "https://debuginfod.example.invalid"
+        with self.assertRaisesRegex(self.matrix.MatrixError, "remote debuginfod"):
+            self.matrix.validate_manifest(manifest)
+
+    def test_clean_pinned_msan_llvm_checkout_records_recipe_identity_and_rejects_dirty_checkout(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            llvm = root / "llvm-project"
+            llvm.mkdir()
+            subprocess.run(["git", "init", "-q", str(llvm)], check=True, capture_output=True, text=True)
+            subprocess.run(["git", "-C", str(llvm), "config", "user.name", "Matrix Test"], check=True)
+            subprocess.run(
+                ["git", "-C", str(llvm), "config", "user.email", "matrix@example.invalid"],
+                check=True,
+            )
+            (llvm / "README").write_text("pinned upstream tree\n", encoding="utf-8")
+            subprocess.run(["git", "-C", str(llvm), "add", "README"], check=True)
+            subprocess.run(["git", "-C", str(llvm), "commit", "-q", "-m", "fixture"], check=True)
+            revision = subprocess.run(
+                ["git", "-C", str(llvm), "rev-parse", "HEAD"],
+                check=True,
+                capture_output=True,
+                text=True,
+            ).stdout.strip()
+            helper_root = root / "candidate"
+            helper = helper_root / "script/ci/install_msan_libcxx.py"
+            helper.parent.mkdir(parents=True)
+            shutil.copyfile(REPOSITORY / "script/ci/install_msan_libcxx.py", helper)
+
+            with mock.patch.object(self.matrix, "MSAN_LLVM_BASE_REVISION", revision):
+                identity = self.matrix._msan_llvm_dependency_identity(helper_root, str(llvm))
+                self.assertEqual(identity["status"], "clean")
+                self.assertEqual(identity["revision"], revision)
+                self.assertEqual(identity["helper_sha256"], self.matrix.MSAN_HELPER_SHA256)
+
+                (llvm / "README").write_text("modified tree\n", encoding="utf-8")
+                with self.assertRaisesRegex(self.matrix.MatrixError, "dirty"):
+                    self.matrix._msan_llvm_dependency_identity(helper_root, str(llvm))
+
+    def test_msan_ignorelist_is_required_and_its_bytes_are_captured(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            row = next(row for row in self.manifest["rows"] if row["id"] == "linux_msan")
+            resource_dir = root / "clang-resource"
+            runtime_dir = resource_dir / "lib/linux"
+            runtime_dir.mkdir(parents=True)
+            (runtime_dir / "libclang_rt.msan-aarch64.a").write_bytes(b"msan")
+            (runtime_dir / "libclang_rt.msan_cxx-aarch64.a").write_bytes(b"msan-cxx")
+            ignorelist = resource_dir / "share/msan_ignorelist.txt"
+            ignorelist.parent.mkdir()
+            ignorelist.write_bytes(b"stock ignorelist\n")
+            prefix = root / "msan-libcxx"
+            library = prefix / "lib/libc++abi.so.1"
+            library.parent.mkdir(parents=True)
+            library.write_bytes(b"instrumented libc++abi")
+            system_unwinder = root / "system/libgcc_s.so.1"
+            system_unwinder.parent.mkdir()
+            system_unwinder.write_bytes(b"system libgcc_s")
+            environment = {
+                "MC_ANALYSIS_ROOT": str(root),
+                "MC_MSAN_LIBCXX_PREFIX": str(prefix),
+                "CFLAGS": f"-resource-dir {resource_dir}",
+                "DEBUGINFOD_URLS": "",
+                "PATH": "/captured/bin",
+            }
+            tools = [
+                {"probe_argv": ["clang", "--version"], "executable": "/captured/bin/clang"},
+                {"probe_argv": ["ldd", "--version"], "executable": "/captured/bin/ldd"},
+            ]
+            ldd_result = subprocess.CompletedProcess(
+                ["ldd", str(library.resolve())],
+                0,
+                stdout=f"libgcc_s.so.1 => {system_unwinder.resolve()} (0x1234)\n",
+                stderr="",
+            )
+            with mock.patch.object(self.matrix.subprocess, "run", return_value=ldd_result) as run:
+                first = self.matrix._sanitizer_runtime_identity(
+                    root,
+                    row,
+                    environment,
+                    tools,
+                    {"status": "present", "values": {}},
+                    [],
+                )
+                self.assertEqual(first["msan_ignorelist"]["sha256"], hashlib.sha256(b"stock ignorelist\n").hexdigest())
+                self.assertEqual(first["system_unwinder"]["path"], str(system_unwinder.resolve()))
+                self.assertEqual(run.call_args.kwargs["env"]["DEBUGINFOD_URLS"], "")
+
+                ignorelist.write_bytes(b"changed ignorelist\n")
+                second = self.matrix._sanitizer_runtime_identity(
+                    root,
+                    row,
+                    environment,
+                    tools,
+                    {"status": "present", "values": {}},
+                    [],
+                )
+                self.assertNotEqual(first["msan_ignorelist"]["sha256"], second["msan_ignorelist"]["sha256"])
+                ignorelist.unlink()
+                with self.assertRaisesRegex(self.matrix.MatrixError, "stock MSan ignorelist"):
+                    self.matrix._sanitizer_runtime_identity(
+                        root,
+                        row,
+                        environment,
+                        tools,
+                        {"status": "present", "values": {}},
+                        [],
+                    )
+
+    def test_msan_system_unwinder_probe_rejects_libunwind(self):
+        with tempfile.TemporaryDirectory() as directory:
+            prefix = Path(directory) / "msan-libcxx"
+            library = prefix / "lib/libc++abi.so.1"
+            library.parent.mkdir(parents=True)
+            library.write_bytes(b"instrumented libc++abi")
+            environment = {"MC_MSAN_LIBCXX_PREFIX": str(prefix), "DEBUGINFOD_URLS": ""}
+            tools = [{"probe_argv": ["ldd", "--version"], "executable": "/captured/bin/ldd"}]
+            result = subprocess.CompletedProcess(
+                ["ldd", str(library.resolve())],
+                0,
+                stdout="libunwind.so.1 => /lib/libunwind.so.1 (0x1234)\n",
+                stderr="",
+            )
+            with mock.patch.object(self.matrix.subprocess, "run", return_value=result):
+                with self.assertRaisesRegex(self.matrix.MatrixError, "libunwind"):
+                    self.matrix._msan_system_unwinder_identity(Path(directory), environment, tools)
+
+    def test_lsan_libcxx_prefix_identity_hashes_consumed_runtime_files(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            prefix = root / "llvm-18"
+            header = prefix / "include/c++/v1/__config"
+            libcxx = prefix / "lib/libc++.so.1"
+            libcxxabi = prefix / "lib/libc++abi.so.1"
+            header.parent.mkdir(parents=True)
+            libcxx.parent.mkdir(parents=True)
+            header.write_bytes(b"libc++ headers")
+            libcxx.write_bytes(b"system libc++")
+            libcxxabi.write_bytes(b"system libc++abi")
+            row = next(row for row in self.manifest["rows"] if row["id"] == "linux_lsan")
+            environment = {"MC_LSAN_LIBCXX_PREFIX": str(prefix)}
+            with mock.patch.dict(
+                self.matrix.REQUIRED_ROW_ENVIRONMENT,
+                {"linux_lsan": ("MC_LSAN_LIBCXX_PREFIX",)},
+            ):
+                first = self.matrix._external_dependency_identity(root, row, environment)
+                self.assertEqual(first["MC_LSAN_LIBCXX_PREFIX"]["path"], str(prefix))
+                self.assertEqual(first["MC_LSAN_LIBCXX_PREFIX"]["file_count"], 3)
+
+                libcxx.write_bytes(b"changed system libc++")
+                second = self.matrix._external_dependency_identity(root, row, environment)
+                self.assertNotEqual(
+                    first["MC_LSAN_LIBCXX_PREFIX"]["files_sha256"],
+                    second["MC_LSAN_LIBCXX_PREFIX"]["files_sha256"],
+                )
+
+    def test_offline_receipt_validation_rejects_a_changed_system_unwinder_identity(self):
+        receipt = self.receipt()
+        row = next(row for row in receipt["rows"] if row["id"] == "linux_msan")
+        row["input_identity"]["runtime_resources"]["system_unwinder"].update(
+            {"name": "libunwind.so.1", "path": "/usr/lib/libunwind.so.1"}
+        )
+        self.rehash_input_identity(row)
+        with self.assertRaisesRegex(self.matrix.MatrixError, "system libgcc_s unwinder"):
+            self.matrix.validate_receipt(receipt, self.manifest, CANDIDATE)
 
     def test_macos_address_row_uses_integrated_lsan_for_the_full_ctest_run(self):
         row = next(row for row in self.manifest["rows"] if row["id"] == "macos_asan")

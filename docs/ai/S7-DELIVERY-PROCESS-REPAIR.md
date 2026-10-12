@@ -52,3 +52,28 @@ failure/missing-proof rejection, exact release authenticity and artifact-only
 CI. Real local qualification and platform runtime evidence remain separate
 delivery gates. Review and the final delivery report must cite observed results,
 not estimates or historical passes silently rebound to a new candidate.
+
+## Local runtime setup findings
+
+MC-AI-0435 corrects two reproduced MSan setup defects. Instrumented libunwind
+failed the exception control on the local ARM64 analysis host. LLVM's own
+sanitized-library recipe instead builds instrumented libc++/libc++abi against
+the system unwinder; the unchanged exception and heap-read controls passed with
+that configuration. This is not evidence that every earlier unwind failure had
+the same cause.
+
+The negative control then stalled because LLVM's symbolizer inherited Ubuntu's
+remote debuginfod URL. A traced HTTPS lookup and a bounded offline control
+identified the cause. Clearing `DEBUGINFOD_URLS` only for the verification
+process preserved symbolized source/allocation diagnostics and completed both
+controls. Machine-wide settings and sanitizer acceptance predicates were not
+changed. The full game MSan row remains a separate qualification requirement.
+
+Windows preflight also found that the first local receipt implementation omitted
+the selected Vulkan SDK resources and MSVC ASan DLL. The corrected identity
+captures cache-selected headers, loader and shader tools, plus the imported
+ASan DLL. It does not assume all resources come from one SDK: the actual Windows
+and Mac builds use vcpkg headers alongside separately installed tools/loaders.
+The Windows compiler probe failure was a compound-CMD `%PATH%` expansion error;
+the toolchain initialized correctly with separate command lines. No machine
+repair was needed for that failure.
