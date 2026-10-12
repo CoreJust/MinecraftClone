@@ -230,6 +230,16 @@ TEST(PlayerClientCapturePlanTest, RequestsPhysicalHighResolutionAtOneAndTwoTimes
     EXPECT_EQ(client::playerClientCaptureLogicalSize(720U, 1440U, 1440U), 720U);
 }
 
+TEST(PlayerClientCapturePlanTest, EnforcesThePortableCaptureExtentFloor)
+{
+    static constexpr uint32_t MINIMUM_WIDTH = 1'000U;
+    static constexpr uint32_t MINIMUM_HEIGHT = 600U;
+    EXPECT_TRUE(client::playerClientCaptureExtentMeetsMinimum(MINIMUM_WIDTH, MINIMUM_HEIGHT));
+    EXPECT_TRUE(client::playerClientCaptureExtentMeetsMinimum(2560U, 1440U));
+    EXPECT_FALSE(client::playerClientCaptureExtentMeetsMinimum(MINIMUM_WIDTH - 1U, MINIMUM_HEIGHT));
+    EXPECT_FALSE(client::playerClientCaptureExtentMeetsMinimum(MINIMUM_WIDTH, MINIMUM_HEIGHT - 1U));
+}
+
 TEST(PlayerClientCapturePlanTest, NearTargetNavigationUsesAProtocolValidSpeedup)
 {
     static constexpr int64_t NEAR_DISTANCE_SUBCELLS = 40'000;

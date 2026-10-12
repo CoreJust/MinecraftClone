@@ -128,6 +128,13 @@ uint32_t playerClientCaptureLogicalSize(
     )));
 }
 
+bool playerClientCaptureExtentMeetsMinimum(uint32_t const width, uint32_t const height) noexcept
+{
+    static constexpr uint32_t MINIMUM_WIDTH = 1'000U;
+    static constexpr uint32_t MINIMUM_HEIGHT = 600U;
+    return width >= MINIMUM_WIDTH && height >= MINIMUM_HEIGHT;
+}
+
 namespace {
 
 static constexpr uint32_t CAPTURE_ROTATION_SECTORS = 16U;
@@ -1496,16 +1503,24 @@ void PlayerClient::render() {
     uint32_t width = 0U;
     uint32_t height = 0U;
     m_window.framebufferSize(width, height);
-    if (m_capture.has_value() && !m_capture_label_initialized && width == 2560U && height == 1440U) {
+    if (m_capture.has_value() && !m_capture_label_initialized
+        && m_capture_rotation_started
+        && playerClientCaptureExtentMeetsMinimum(width, height)) {
         PlayerClientCapturePlan const plan = playerClientCapturePlan(m_capture->preset);
-        static constexpr float LABEL_SCALE = 1.5F;
+        static constexpr float MAX_LABEL_SCALE = 1.5F;
         static constexpr float LABEL_MARGIN = 24.0F;
-        float const label_width = static_cast<float>(plan.title.size()) * 16.0F * LABEL_SCALE;
+        float const maximum_label_width = static_cast<float>(plan.title.size()) * 16.0F;
+        float const available_label_width = static_cast<float>(width) - 2.0F * LABEL_MARGIN;
+        float const label_scale = std::min(MAX_LABEL_SCALE, available_label_width / maximum_label_width);
+        float const label_width = maximum_label_width * label_scale;
         float const label_x = std::max(LABEL_MARGIN, (static_cast<float>(width) - label_width) * 0.5F);
-        float const label_y = std::max(LABEL_MARGIN, static_cast<float>(height) - 32.0F * LABEL_SCALE - LABEL_MARGIN);
+        float const label_y = std::max(
+            LABEL_MARGIN,
+            static_cast<float>(height) - 32.0F * label_scale - LABEL_MARGIN
+        );
         m_renderer.addGuiText(plan.title, {
             .position = { label_x, label_y, 0.0F },
-            .scale = LABEL_SCALE,
+            .scale = label_scale,
         }, {
             .red = 1.0F, .green = 0.82F, .blue = 0.38F, .alpha = 1.0F,
         });
@@ -1771,8 +1786,10 @@ void PlayerClient::render() {
             }
         }
         if (std::optional<RendererFrameCapture> capture = m_renderer.takeFrameCapture(); capture.has_value()) {
-            if (capture->width != 2560U || capture->height != 1440U) {
-                failCapture("framebuffer capture is not 2560x1440");
+            if (!playerClientCaptureExtentMeetsMinimum(capture->width, capture->height)) {
+                std::string const reason = "framebuffer capture is below 1000x600 (actual "
+                    + std::to_string(capture->width) + "x" + std::to_string(capture->height) + ")";
+                failCapture(reason);
                 return;
             }
             std::ofstream output{m_capture->image_path, std::ios::binary | std::ios::trunc};

@@ -67,6 +67,8 @@ struct PlayerClientCapturePlan final {
     uint32_t framebuffer_size,
     uint32_t target_framebuffer_size
 ) noexcept;
+[[nodiscard]]
+bool playerClientCaptureExtentMeetsMinimum(uint32_t width, uint32_t height) noexcept;
 
 struct PlayerClientCaptureOptions final {
     std::filesystem::path image_path;
