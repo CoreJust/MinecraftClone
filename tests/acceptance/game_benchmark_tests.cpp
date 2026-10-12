@@ -1,5 +1,7 @@
+#include <shared/net/Message.hpp>
 #include <shared/world/World.hpp>
 
+#include <acceptance/EvidenceJson.hpp>
 #include <acceptance/GameBenchmark.hpp>
 #include <gtest/gtest.h>
 
@@ -7,9 +9,7 @@
 #include <chrono>
 #include <cstdint>
 #include <expected>
-#include <initializer_list>
 #include <optional>
-#include <ratio>
 #include <string>
 #include <string_view>
 
@@ -17,33 +17,35 @@ using namespace std::chrono_literals;
 
 namespace {
 
-acceptance::GameBenchmarkTerrainObservation oneNearTile(
-    shared::HeightTileKey const center,
-    shared::HeightTileKey const key,
-    bool const resident,
-    bool const current_mesh_visible,
-    uint64_t const accepted_near_admissions,
-    uint64_t const accepted_far_admissions = 0U,
-    uint64_t const far_admissions_while_near_pending = 0U
-)
+struct OneNearTileFixture final {
+    shared::HeightTileKey center{};
+    shared::HeightTileKey key{};
+    bool resident = false;
+    bool current_mesh_visible = false;
+    uint64_t accepted_near_admissions = 0U;
+    uint64_t accepted_far_admissions = 0U;
+    uint64_t far_admissions_while_near_pending = 0U;
+};
+
+acceptance::GameBenchmarkTerrainObservation oneNearTile(OneNearTileFixture const fixture)
 {
     acceptance::GameBenchmarkTerrainObservation observation{};
-    observation.center = center;
+    observation.center = fixture.center;
     observation.near_tiles[112U] = acceptance::GameBenchmarkTerrainTileObservation{
-        .key = key,
+        .key = fixture.key,
         .desired = true,
-        .resident = resident,
-        .current_mesh_visible = current_mesh_visible,
-        .pending = resident && !current_mesh_visible,
+        .resident = fixture.resident,
+        .current_mesh_visible = fixture.current_mesh_visible,
+        .pending = fixture.resident && !fixture.current_mesh_visible,
     };
     observation.desired_count = 1U;
-    observation.resident_count = resident ? 1U : 0U;
-    observation.nonresident_count = resident ? 0U : 1U;
-    observation.current_mesh_visible_count = current_mesh_visible ? 1U : 0U;
-    observation.pending_count = resident && !current_mesh_visible ? 1U : 0U;
-    observation.accepted_near_admissions = accepted_near_admissions;
-    observation.accepted_far_admissions = accepted_far_admissions;
-    observation.far_admissions_while_near_pending = far_admissions_while_near_pending;
+    observation.resident_count = fixture.resident ? 1U : 0U;
+    observation.nonresident_count = fixture.resident ? 0U : 1U;
+    observation.current_mesh_visible_count = fixture.current_mesh_visible ? 1U : 0U;
+    observation.pending_count = fixture.resident && !fixture.current_mesh_visible ? 1U : 0U;
+    observation.accepted_near_admissions = fixture.accepted_near_admissions;
+    observation.accepted_far_admissions = fixture.accepted_far_admissions;
+    observation.far_admissions_while_near_pending = fixture.far_admissions_while_near_pending;
     return observation;
 }
 
@@ -168,11 +170,35 @@ TEST(GameBenchmark, CompletesResidentToVisibleReadinessAcrossMovingCenters)
 
     acceptance::GameBenchmarkTerrainReadinessTracker tracker;
     Clock::time_point const start{};
-    tracker.observe(oneNearTile({ 0, 0 }, { 0, 0 }, false, false, 0U), start);
+    tracker.observe(oneNearTile({
+        .center = { 0, 0 },
+        .key = { 0, 0 },
+        .resident = false,
+        .current_mesh_visible = false,
+        .accepted_near_admissions = 0U,
+    }), start);
     EXPECT_EQ(tracker.evidence().eligible_mesh_episode_count, 0U);
-    tracker.observe(oneNearTile({ 1, 0 }, { 0, 0 }, true, false, 1U), start + 1s);
-    tracker.observe(oneNearTile({ 2, 0 }, { 0, 0 }, true, true, 1U), start + 4s);
-    tracker.observe(oneNearTile({ 2, 0 }, { 0, 0 }, true, true, 1U), start + 4s + 100ms);
+    tracker.observe(oneNearTile({
+        .center = { 1, 0 },
+        .key = { 0, 0 },
+        .resident = true,
+        .current_mesh_visible = false,
+        .accepted_near_admissions = 1U,
+    }), start + 1s);
+    tracker.observe(oneNearTile({
+        .center = { 2, 0 },
+        .key = { 0, 0 },
+        .resident = true,
+        .current_mesh_visible = true,
+        .accepted_near_admissions = 1U,
+    }), start + 4s);
+    tracker.observe(oneNearTile({
+        .center = { 2, 0 },
+        .key = { 0, 0 },
+        .resident = true,
+        .current_mesh_visible = true,
+        .accepted_near_admissions = 1U,
+    }), start + 4s + 100ms);
 
     acceptance::GameBenchmarkTerrainReadinessEvidence const evidence = tracker.evidence();
     EXPECT_EQ(evidence.center_change_count, 2U);
@@ -193,15 +219,33 @@ TEST(GameBenchmark, RejectsFarAdmissionWhileCurrentNearWorkIsPending)
 
     acceptance::GameBenchmarkTerrainReadinessTracker tracker;
     Clock::time_point const start{};
-    tracker.observe(oneNearTile(
-        { 0, 0 }, { 0, 0 }, true, false, 1U, 1U, 1U
-    ), start);
-    tracker.observe(oneNearTile(
-        { 1, 0 }, { 0, 0 }, true, true, 1U, 1U, 1U
-    ), start + 1s);
-    tracker.observe(oneNearTile(
-        { 2, 0 }, { 0, 0 }, true, true, 1U, 1U, 1U
-    ), start + 1100ms);
+    tracker.observe(oneNearTile({
+        .center = { 0, 0 },
+        .key = { 0, 0 },
+        .resident = true,
+        .current_mesh_visible = false,
+        .accepted_near_admissions = 1U,
+        .accepted_far_admissions = 1U,
+        .far_admissions_while_near_pending = 1U,
+    }), start);
+    tracker.observe(oneNearTile({
+        .center = { 1, 0 },
+        .key = { 0, 0 },
+        .resident = true,
+        .current_mesh_visible = true,
+        .accepted_near_admissions = 1U,
+        .accepted_far_admissions = 1U,
+        .far_admissions_while_near_pending = 1U,
+    }), start + 1s);
+    tracker.observe(oneNearTile({
+        .center = { 2, 0 },
+        .key = { 0, 0 },
+        .resident = true,
+        .current_mesh_visible = true,
+        .accepted_near_admissions = 1U,
+        .accepted_far_admissions = 1U,
+        .far_admissions_while_near_pending = 1U,
+    }), start + 1100ms);
 
     acceptance::GameBenchmarkTerrainReadinessEvidence const evidence = tracker.evidence();
     EXPECT_EQ(evidence.center_change_count, 2U);
@@ -220,9 +264,27 @@ TEST(GameBenchmark, RecordsDeadlineMissEvenWhenMeshBecomesVisibleLater)
 
     acceptance::GameBenchmarkTerrainReadinessTracker tracker;
     Clock::time_point const start{};
-    tracker.observe(oneNearTile({ 0, 0 }, { 0, 0 }, true, false, 1U), start);
-    tracker.observe(oneNearTile({ 1, 0 }, { 0, 0 }, true, false, 1U), start + 4s + 1ms);
-    tracker.observe(oneNearTile({ 2, 0 }, { 0, 0 }, true, true, 1U), start + 5s);
+    tracker.observe(oneNearTile({
+        .center = { 0, 0 },
+        .key = { 0, 0 },
+        .resident = true,
+        .current_mesh_visible = false,
+        .accepted_near_admissions = 1U,
+    }), start);
+    tracker.observe(oneNearTile({
+        .center = { 1, 0 },
+        .key = { 0, 0 },
+        .resident = true,
+        .current_mesh_visible = false,
+        .accepted_near_admissions = 1U,
+    }), start + 4s + 1ms);
+    tracker.observe(oneNearTile({
+        .center = { 2, 0 },
+        .key = { 0, 0 },
+        .resident = true,
+        .current_mesh_visible = true,
+        .accepted_near_admissions = 1U,
+    }), start + 5s);
 
     acceptance::GameBenchmarkTerrainReadinessEvidence const evidence = tracker.evidence();
     EXPECT_EQ(evidence.ready_mesh_episode_count, 1U);
@@ -237,8 +299,20 @@ TEST(GameBenchmark, DoesNotCompleteWhenCurrentNearIncludesNonresidentTiles)
 
     acceptance::GameBenchmarkTerrainReadinessTracker tracker;
     Clock::time_point const start{};
-    tracker.observe(oneNearTile({ 0, 0 }, { 0, 0 }, true, false, 1U), start);
-    tracker.observe(oneNearTile({ 1, 0 }, { 0, 0 }, true, true, 1U), start + 1s);
+    tracker.observe(oneNearTile({
+        .center = { 0, 0 },
+        .key = { 0, 0 },
+        .resident = true,
+        .current_mesh_visible = false,
+        .accepted_near_admissions = 1U,
+    }), start);
+    tracker.observe(oneNearTile({
+        .center = { 1, 0 },
+        .key = { 0, 0 },
+        .resident = true,
+        .current_mesh_visible = true,
+        .accepted_near_admissions = 1U,
+    }), start + 1s);
 
     acceptance::GameBenchmarkTerrainObservation final_sample{};
     final_sample.center = shared::HeightTileKey{ 2, 0 };
@@ -274,14 +348,22 @@ TEST(GameBenchmark, CensorsDepartedKeyAndKeepsCurrentMissingEpisodeOpen)
 
     acceptance::GameBenchmarkTerrainReadinessTracker tracker;
     Clock::time_point const start{};
-    acceptance::GameBenchmarkTerrainObservation first = oneNearTile(
-        { 0, 0 }, { 0, 0 }, true, false, 1U
-    );
+    acceptance::GameBenchmarkTerrainObservation first = oneNearTile({
+        .center = { 0, 0 },
+        .key = { 0, 0 },
+        .resident = true,
+        .current_mesh_visible = false,
+        .accepted_near_admissions = 1U,
+    });
     tracker.observe(first, start);
 
-    acceptance::GameBenchmarkTerrainObservation second = oneNearTile(
-        { 1, 0 }, { 0, 0 }, true, false, 2U
-    );
+    acceptance::GameBenchmarkTerrainObservation second = oneNearTile({
+        .center = { 1, 0 },
+        .key = { 0, 0 },
+        .resident = true,
+        .current_mesh_visible = false,
+        .accepted_near_admissions = 2U,
+    });
     second.near_tiles[113U] = acceptance::GameBenchmarkTerrainTileObservation{
         .key = { 1, 0 },
         .desired = true,

@@ -194,6 +194,7 @@ TEST(EvidenceJson, SeparatesFullGameRequestsFromPhysicalDisplayCadence)
                     .uncapped = true,
                     .presentation_succeeded = false,
                     .loop_duration_ns = 4'000U,
+                    .terrain_near = std::nullopt,
                     .diagnostic_frame_slot = std::nullopt,
                     .diagnostic_gpu_timestamp_reason = {},
                     .diagnostic_gpu_terrain_duration_ns = std::nullopt,
@@ -203,6 +204,7 @@ TEST(EvidenceJson, SeparatesFullGameRequestsFromPhysicalDisplayCadence)
                     .excluded = true,
                     .presentation_succeeded = true,
                     .loop_duration_ns = 5'000U,
+                    .terrain_near = std::nullopt,
                     .diagnostic_frame_slot = std::nullopt,
                     .diagnostic_gpu_timestamp_reason = {},
                     .diagnostic_gpu_terrain_duration_ns = std::nullopt,
@@ -265,10 +267,12 @@ TEST(EvidenceJson, SeparatesFailedRenderAttemptsFromLaggedTerrainGpuSamples)
             .uncapped_loop_timings = {},
             .server_tick_timings = {},
             .permission_publish_timings = {},
+            .terrain_readiness = std::nullopt,
             .raw_frames = {
                 acceptance::GameBenchmarkFrameSample{
                     .presentation_succeeded = false,
                     .visible_surface_face_count = 1'000U,
+                    .terrain_near = std::nullopt,
                     .diagnostic_render_attempt_id = 42U,
                     .diagnostic_frame_recorded = false,
                     .diagnostic_indexed_stone_quads = true,
@@ -311,6 +315,7 @@ TEST(EvidenceJson, ReportsUnsupportedTerrainTimestampScopeWithoutInventingGpuDur
     acceptance::RuntimeEvidence evidence;
     evidence.game_benchmark.emplace();
     evidence.game_benchmark->raw_frames.push_back({
+        .terrain_near = std::nullopt,
         .diagnostic_frame_slot = std::nullopt,
         .diagnostic_gpu_timestamp_reason = "unsupported: MoltenVK may defer in-render-pass timestamps",
         .diagnostic_gpu_terrain_duration_ns = std::nullopt,

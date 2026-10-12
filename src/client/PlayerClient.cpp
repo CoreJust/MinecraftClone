@@ -178,10 +178,15 @@ constexpr int32_t HEIGHT_TILE_WORLD_EXTENT = static_cast<int32_t>(
     return delta;
 }
 
-[[nodiscard]] bool withinCurrentNearProbe(HeightTileKey const center, HeightTileKey const key) noexcept
+struct CurrentNearProbe final {
+    HeightTileKey center;
+    HeightTileKey key;
+};
+
+[[nodiscard]] bool withinCurrentNearProbe(CurrentNearProbe const probe) noexcept
 {
-    HeightTileKey const normalized_center = shared::normalizeHeightTileKey(center);
-    HeightTileKey const normalized_key = shared::normalizeHeightTileKey(key);
+    HeightTileKey const normalized_center = shared::normalizeHeightTileKey(probe.center);
+    HeightTileKey const normalized_key = shared::normalizeHeightTileKey(probe.key);
     int32_t const dx = shortestHeightTileDelta(normalized_center.x, normalized_key.x);
     int32_t const dy = shortestHeightTileDelta(normalized_center.y, normalized_key.y);
     return dx >= -PLAYER_CLIENT_BENCHMARK_TERRAIN_NEAR_RADIUS
@@ -532,6 +537,7 @@ RendererRuntimeInfo PlayerClient::benchmarkRuntimeInfo() const
 PlayerClientBenchmarkTerrainInfo PlayerClient::benchmarkTerrainStreamingInfo() const
 {
     PlayerClientBenchmarkTerrainInfo info{
+        .center = std::nullopt,
         .accepted_near_admissions = m_benchmark_accepted_near_admissions,
         .accepted_far_admissions = m_benchmark_accepted_far_admissions,
         .far_admissions_while_near_pending = m_benchmark_far_admissions_while_near_pending,
@@ -727,7 +733,7 @@ std::optional<HeightTileKey> PlayerPreviewMeshQueue::nearestPending(
             continue;
         }
         Entry const candidate = entryFor(key, ticket->second);
-        if (!nearest.has_value() || lowerPriority(nearest.value(), candidate)) {
+        if (!nearest.has_value() || lowerPriority(*nearest, candidate)) {
             nearest = candidate;
         }
     }
@@ -1410,7 +1416,10 @@ void PlayerClient::processPendingPreviewMeshes(
             .stage = stage,
             .epoch = m_preview_mesh_epoch,
         };
-        bool const current_near_key = withinCurrentNearProbe(*m_height_tile_center, key);
+        bool const current_near_key = withinCurrentNearProbe({
+            .center = *m_height_tile_center,
+            .key = key,
+        });
         bool near_pending_before_enqueue = false;
         if (m_benchmark.has_value() && !current_near_key) {
             near_pending_before_enqueue = std::any_of(

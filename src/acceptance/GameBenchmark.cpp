@@ -546,6 +546,7 @@ std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOption
         .uncapped_loop_timings = {},
         .server_tick_timings = {},
         .permission_publish_timings = {},
+        .terrain_readiness = std::nullopt,
         .raw_frames = {},
         .raw_server_tick_durations_ns = {},
         .raw_permission_publish_durations_ns = {},

@@ -15635,5 +15635,39 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0443",
+    "title": "Satisfy required analyzers for near-terrain evidence changes",
+    "kind": "chore",
+    "status": "done",
+    "priority": "P1",
+    "route": "luna",
+    "milestone": "ED-010-S7",
+    "depends_on": [],
+    "acceptance": "Fix added missing designated initializers, unsafe optional access in noexcept selection, and swappable helper parameters without suppressing checks or changing observable near admission/readiness. Required clang-tidy and IWYU affected/full rows pass, focused tests and normal full-strength x200 runtime remain passing.",
+    "evidence": "Pinned clang-tidy and IWYU builds pass; owning IWYU receipts for all affected translation units pass. Exact task/warm source hashes match. Normal Release rebuild passes40/40 focused tests; /private/tmp/mc-s7-0443-fullspeed200-radius256.json passes full-axis x200:58centerchanges577/577 episodesready, zero censored/source-lost/deadline/open/order/unclassified errors,225/225finalcurrentnearvisible, worst25.19ms. Documentation refresh/check and diff checks pass. Corrective exact-candidate review pending before commit; aggregate S7 platform/runtime/publication gates remain open.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0038",
+    "motivation": "Required local clang-tidy and IWYU qualification found diagnostics in MC-AI-0442 additions.",
+    "context": "Preserve corrected near-first streaming and x200 readiness; no new product behavior or suppression.",
+    "complexity": "low",
+    "created_at": "2026-10-12",
+    "resolved_at": "2026-10-12",
+    "resolution_changes": "Fix required analyzer diagnostics with named helper inputs, guarded optional dereference, explicit optional evidence initialization, declaration-order correctness, and direct public test includes; no check suppression or product behavior change.",
+    "plan": [
+      "Apply narrow analyzer corrections, run affected analyzers before staging and exact-task review; qualify final native candidate once."
+    ],
+    "product_changes": [],
+    "code_changes": [],
+    "baseline_commit": "8968c3fc3b265e3739616125af2122bb6ebb3d79",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]

@@ -15,12 +15,6 @@
 #include <string_view>
 #include <utility>
 
-namespace shared {
-
-struct Direction;
-
-} // namespace shared
-
 namespace acceptance {
 
 inline constexpr int32_t GAME_BENCHMARK_TERRAIN_NEAR_RADIUS = 7;
