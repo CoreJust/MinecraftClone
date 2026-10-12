@@ -65,6 +65,8 @@ the next snapshot's implementation in a separate task while the current one
 finishes Windows/Android and artifact evidence; it does not authorize
 publication or complete the release.
 
+Follow the [qualification preflight and recovery rules](QUALIFICATION.md) before expensive gates or resuming failed phases.
+
 ## Snapshots and versions
 
 A snapshot records the preceding `ai-main` commit as `baseline_commit`. At

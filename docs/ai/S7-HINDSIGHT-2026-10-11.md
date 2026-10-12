@@ -2,6 +2,8 @@
 
 This supplements the [9 October checkpoint](S7-HINDSIGHT-2026-10-08.md). S7 is still unreleased; passing implementation checks is not publication.
 
+The [12 October follow-up](S7-HINDSIGHT-2026-10-12.md) records moving-terrain test gaps and renewed Windows setup failures.
+
 ## Additional proven failures
 
 - **A green job concealed an unavailable Windows gate.** Promotion `2ec4aba`, run `38096415002`, reported Windows Debug success, but its artifact contained only `windows_msvc_asan.json`, marked unavailable. `cl.exe /Bv` printed a version and exited 2 because no source was supplied. Native MSVC 19.44.35229 reproduced this; `/Bv /?` returned 0 with the same version. The CMD loop expanded `%errorlevel%` before executing its failing command: a native inner exit 7 became exit 0. Explicit exit 1 propagated failure. MC-AI-0421 (`e2bae0b`) fixes both roots, preserves actual analysis commands and unavailable handling, and adds regressions. Its 74 focused tests and 579-test development gate passed, with one intentional development-suite skip. Corrected-source hosted analysis is still required.
