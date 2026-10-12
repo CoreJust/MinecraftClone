@@ -99,9 +99,9 @@ uint32_t playerClientHeightTileChangeBudget(bool const capture_enabled) noexcept
     return capture_enabled ? 128U : 16U;
 }
 
-uint32_t playerClientPreviewMeshJobBudget(bool const capture_enabled) noexcept
+uint32_t playerClientPreviewMeshJobBudget(bool const) noexcept
 {
-    return capture_enabled ? 32U : 16U;
+    return 16U;
 }
 
 bool playerClientShouldQueuePreviewRemoval(bool const capture_enabled, bool const mesh_visible) noexcept
@@ -146,6 +146,9 @@ static_assert(shared::isFlightSpeedupProfile(CAPTURE_NEAR_SPEEDUP));
 constexpr uint32_t CAMERA_OBSTRUCTION_SAMPLE_COUNT = 24U;
 constexpr uint32_t CAMERA_OBSTRUCTION_BINARY_STEPS = 8U;
 constexpr double CAMERA_OBSTRUCTION_MARGIN = 0.03;
+constexpr int32_t HEIGHT_TILE_WORLD_EXTENT = static_cast<int32_t>(
+    shared::WorldExtent::WIDTH / shared::HEIGHT_TILE_SIDE_LENGTH
+);
 
 [[nodiscard]] int64_t shortestFlightDelta(int64_t const current, int64_t const target) noexcept
 {
@@ -162,6 +165,29 @@ constexpr double CAMERA_OBSTRUCTION_MARGIN = 0.03;
 [[nodiscard]] int64_t absoluteValue(int64_t const value) noexcept
 {
     return value < 0 ? -value : value;
+}
+
+[[nodiscard]] int32_t shortestHeightTileDelta(int32_t const current, int32_t const target) noexcept
+{
+    int32_t delta = target - current;
+    if (delta > HEIGHT_TILE_WORLD_EXTENT / 2) {
+        delta -= HEIGHT_TILE_WORLD_EXTENT;
+    } else if (delta < -HEIGHT_TILE_WORLD_EXTENT / 2) {
+        delta += HEIGHT_TILE_WORLD_EXTENT;
+    }
+    return delta;
+}
+
+[[nodiscard]] bool withinCurrentNearProbe(HeightTileKey const center, HeightTileKey const key) noexcept
+{
+    HeightTileKey const normalized_center = shared::normalizeHeightTileKey(center);
+    HeightTileKey const normalized_key = shared::normalizeHeightTileKey(key);
+    int32_t const dx = shortestHeightTileDelta(normalized_center.x, normalized_key.x);
+    int32_t const dy = shortestHeightTileDelta(normalized_center.y, normalized_key.y);
+    return dx >= -PLAYER_CLIENT_BENCHMARK_TERRAIN_NEAR_RADIUS
+        && dx <= PLAYER_CLIENT_BENCHMARK_TERRAIN_NEAR_RADIUS
+        && dy >= -PLAYER_CLIENT_BENCHMARK_TERRAIN_NEAR_RADIUS
+        && dy <= PLAYER_CLIENT_BENCHMARK_TERRAIN_NEAR_RADIUS;
 }
 
 [[nodiscard]] bool functionKeyPressed(GLFWwindow* window, int const function_key, int const fallback_key) noexcept
@@ -503,6 +529,61 @@ RendererRuntimeInfo PlayerClient::benchmarkRuntimeInfo() const
     return m_renderer.runtimeInfo();
 }
 
+PlayerClientBenchmarkTerrainInfo PlayerClient::benchmarkTerrainStreamingInfo() const
+{
+    PlayerClientBenchmarkTerrainInfo info{
+        .accepted_near_admissions = m_benchmark_accepted_near_admissions,
+        .accepted_far_admissions = m_benchmark_accepted_far_admissions,
+        .far_admissions_while_near_pending = m_benchmark_far_admissions_while_near_pending,
+    };
+    if (!m_benchmark.has_value() || !m_height_tile_center.has_value()) {
+        return info;
+    }
+
+    info.center = m_height_tile_center;
+    uint32_t index = 0U;
+    for (int32_t y = -PLAYER_CLIENT_BENCHMARK_TERRAIN_NEAR_RADIUS;
+         y <= PLAYER_CLIENT_BENCHMARK_TERRAIN_NEAR_RADIUS;
+         ++y) {
+        for (int32_t x = -PLAYER_CLIENT_BENCHMARK_TERRAIN_NEAR_RADIUS;
+             x <= PLAYER_CLIENT_BENCHMARK_TERRAIN_NEAR_RADIUS;
+             ++x) {
+            PlayerClientBenchmarkTerrainTileState& state = info.near_tiles[index++];
+            state.key = offsetHeightTileKey(*m_height_tile_center, x, y);
+            state.desired = m_height_tile_interest.contains(state.key);
+            if (!state.desired) {
+                continue;
+            }
+            ++info.desired_count;
+            HeightTileHandle const resident = heightTileResidency().resident(state.key);
+            state.resident = static_cast<bool>(resident);
+            if (!state.resident) {
+                ++info.nonresident_count;
+                continue;
+            }
+            ++info.resident_count;
+            auto const visible = m_visible_preview_mesh_tiles.find(state.key);
+            state.current_mesh_visible = visible != m_visible_preview_mesh_tiles.end()
+                && visible->second == resident;
+            state.pending = m_pending_preview_meshes.contains(state.key);
+            state.active = m_preview_mesh_jobs.contains(state.key);
+            if (state.current_mesh_visible) {
+                ++info.current_mesh_visible_count;
+            }
+            if (state.pending) {
+                ++info.pending_count;
+            }
+            if (state.active) {
+                ++info.active_count;
+            }
+            if (!state.current_mesh_visible && !state.pending && !state.active) {
+                ++info.unclassified_missing_count;
+            }
+        }
+    }
+    return info;
+}
+
 bool PlayerClient::presentationSucceeded() const
 {
     return m_last_presentation_succeeded;
@@ -539,15 +620,17 @@ void PlayerPreviewMeshQueue::clear() noexcept
 {
     m_heap.clear();
     m_unranked.clear();
-    m_keys.clear();
+    m_tickets.clear();
 }
 
 bool PlayerPreviewMeshQueue::push(HeightTileKey const key)
 {
-    if (!m_keys.insert(key).second) {
+    if (m_tickets.contains(key)) {
         return false;
     }
-    m_heap.push_back(entryFor(key));
+    uint64_t const ticket = m_next_ticket++;
+    m_tickets.emplace(key, ticket);
+    m_heap.push_back(entryFor(key, ticket));
     std::push_heap(m_heap.begin(), m_heap.end(), lowerPriority);
     return true;
 }
@@ -567,14 +650,19 @@ void PlayerPreviewMeshQueue::resetPriority(
     m_heading_x = heading_x;
     m_heading_y = heading_y;
     std::erase_if(m_heap, [this, &interest](Entry const& entry) {
+        if (!isCurrent(entry)) {
+            return true;
+        }
         if (interest.contains(entry.key)) {
             return false;
         }
-        m_keys.erase(entry.key);
+        m_tickets.erase(entry.key);
         return true;
     });
     for (Entry& entry : m_heap) {
-        entry.priority = entryFor(entry.key).priority;
+        entry.priority = shared::heightTileInterestPriority(
+            m_center, m_heading_x, m_heading_y, entry.key
+        );
     }
     std::make_heap(m_heap.begin(), m_heap.end(), lowerPriority);
 }
@@ -603,55 +691,114 @@ uint32_t PlayerPreviewMeshQueue::refreshPriority(
     while (refreshed < maximum_entries && !m_unranked.empty()) {
         std::vector<Entry>& heap = m_unranked.front();
         std::pop_heap(heap.begin(), heap.end(), lowerPriority);
-        HeightTileKey const key = heap.back().key;
+        Entry entry = heap.back();
         heap.pop_back();
         if (heap.empty()) {
             m_unranked.pop_front();
         }
         ++refreshed;
-        if (!interest.contains(key)) {
-            m_keys.erase(key);
+        if (!isCurrent(entry)) {
             continue;
         }
-        m_heap.push_back(entryFor(key));
+        if (!interest.contains(entry.key)) {
+            m_tickets.erase(entry.key);
+            continue;
+        }
+        entry = entryFor(entry.key, entry.ticket);
+        m_heap.push_back(entry);
         std::push_heap(m_heap.begin(), m_heap.end(), lowerPriority);
     }
     return refreshed;
 }
 
-bool PlayerPreviewMeshQueue::empty() const noexcept
+bool PlayerPreviewMeshQueue::contains(HeightTileKey const key) const noexcept
 {
-    return m_keys.empty();
+    return m_tickets.contains(key);
 }
 
-bool PlayerPreviewMeshQueue::hasReady() const noexcept
+std::optional<HeightTileKey> PlayerPreviewMeshQueue::nearestPending(
+    std::span<HeightTileKey const> const candidates
+) const noexcept
 {
+    std::optional<Entry> nearest;
+    for (HeightTileKey const key : candidates) {
+        auto const ticket = m_tickets.find(key);
+        if (ticket == m_tickets.end()) {
+            continue;
+        }
+        Entry const candidate = entryFor(key, ticket->second);
+        if (!nearest.has_value() || lowerPriority(nearest.value(), candidate)) {
+            nearest = candidate;
+        }
+    }
+    if (!nearest.has_value()) {
+        return std::nullopt;
+    }
+    return nearest->key;
+}
+
+bool PlayerPreviewMeshQueue::empty() const noexcept
+{
+    return m_tickets.empty();
+}
+
+bool PlayerPreviewMeshQueue::hasReady() noexcept
+{
+    pruneReadyHeap();
     return !m_heap.empty();
 }
 
 size_t PlayerPreviewMeshQueue::size() const noexcept
 {
-    return m_keys.size();
+    return m_tickets.size();
 }
 
-HeightTileKey PlayerPreviewMeshQueue::top() const noexcept
+HeightTileKey PlayerPreviewMeshQueue::top() noexcept
 {
+    pruneReadyHeap();
     return m_heap.front().key;
+}
+
+bool PlayerPreviewMeshQueue::erase(HeightTileKey const key) noexcept
+{
+    return m_tickets.erase(key) != 0U;
 }
 
 void PlayerPreviewMeshQueue::pop()
 {
+    pruneReadyHeap();
+    Entry const entry = m_heap.front();
     std::pop_heap(m_heap.begin(), m_heap.end(), lowerPriority);
-    m_keys.erase(m_heap.back().key);
     m_heap.pop_back();
+    if (isCurrent(entry)) {
+        m_tickets.erase(entry.key);
+    }
 }
 
-PlayerPreviewMeshQueue::Entry PlayerPreviewMeshQueue::entryFor(HeightTileKey const key) const noexcept
+PlayerPreviewMeshQueue::Entry PlayerPreviewMeshQueue::entryFor(
+    HeightTileKey const key,
+    uint64_t const ticket
+) const noexcept
 {
     return {
         .priority = shared::heightTileInterestPriority(m_center, m_heading_x, m_heading_y, key),
         .key = key,
+        .ticket = ticket,
     };
+}
+
+bool PlayerPreviewMeshQueue::isCurrent(Entry const& entry) const noexcept
+{
+    auto const ticket = m_tickets.find(entry.key);
+    return ticket != m_tickets.end() && ticket->second == entry.ticket;
+}
+
+void PlayerPreviewMeshQueue::pruneReadyHeap() noexcept
+{
+    while (!m_heap.empty() && !isCurrent(m_heap.front())) {
+        std::pop_heap(m_heap.begin(), m_heap.end(), lowerPriority);
+        m_heap.pop_back();
+    }
 }
 
 bool PlayerPreviewMeshQueue::lowerPriority(Entry const& first, Entry const& second) noexcept
@@ -754,11 +901,7 @@ void PlayerClient::refreshHeightTileInterest(
     m_preview_mesh_projection = projection;
     if (center_changed || heading_changed) {
         auto const priority_started = std::chrono::steady_clock::now();
-        if (m_capture) {
-            m_pending_preview_meshes.resetPriority(center, heading.x, heading.y, m_height_tile_interest);
-        } else {
-            m_pending_preview_meshes.beginPriorityRefresh(center, heading.x, heading.y);
-        }
+        m_pending_preview_meshes.beginPriorityRefresh(center, heading.x, heading.y);
         if (m_capture.has_value()) {
             m_capture_mesh_reprioritize_micros += static_cast<uint64_t>(
                 std::chrono::duration_cast<std::chrono::microseconds>(
@@ -1194,18 +1337,54 @@ void PlayerClient::processPendingPreviewMeshes(
             ).count()
         );
     }
+    std::array<HeightTileKey, PLAYER_CLIENT_BENCHMARK_TERRAIN_NEAR_TILE_COUNT> nearby_candidates{};
+    uint32_t nearby_candidate_count = 0U;
+    for (int32_t y = -PLAYER_CLIENT_BENCHMARK_TERRAIN_NEAR_RADIUS;
+         y <= PLAYER_CLIENT_BENCHMARK_TERRAIN_NEAR_RADIUS;
+         ++y) {
+        for (int32_t x = -PLAYER_CLIENT_BENCHMARK_TERRAIN_NEAR_RADIUS;
+             x <= PLAYER_CLIENT_BENCHMARK_TERRAIN_NEAR_RADIUS;
+             ++x) {
+            HeightTileKey const key = offsetHeightTileKey(*m_height_tile_center, x, y);
+            if (!m_height_tile_interest.contains(key) || m_preview_mesh_jobs.contains(key)) {
+                continue;
+            }
+            HeightTileHandle const tile = heightTileResidency().resident(key);
+            if (!tile) {
+                continue;
+            }
+            auto const visible = m_visible_preview_mesh_tiles.find(key);
+            bool const current_mesh_visible = visible != m_visible_preview_mesh_tiles.end()
+                && visible->second == tile;
+            if (!current_mesh_visible) {
+                queuePreviewMesh(key);
+                nearby_candidates[nearby_candidate_count++] = key;
+            }
+        }
+    }
+    std::span<HeightTileKey const> const nearby_candidate_span{
+        nearby_candidates.data(), nearby_candidate_count
+    };
     if (!m_preview_mesh_workers->canAccept()) {
         return;
     }
-    while (m_pending_preview_meshes.hasReady()) {
-        HeightTileKey const key = m_pending_preview_meshes.top();
+    while (true) {
+        std::optional<HeightTileKey> const nearby_key = m_pending_preview_meshes.nearestPending(
+            nearby_candidate_span
+        );
+        if (!nearby_key.has_value() && !m_pending_preview_meshes.hasReady()) {
+            break;
+        }
+        HeightTileKey const key = nearby_key.has_value()
+            ? nearby_key.value()
+            : m_pending_preview_meshes.top();
         HeightTileHandle const tile = heightTileResidency().resident(key);
         if (!m_height_tile_interest.contains(key) || !tile) {
-            m_pending_preview_meshes.pop();
+            static_cast<void>(m_pending_preview_meshes.erase(key));
             continue;
         }
         if (m_preview_mesh_jobs.contains(key)) {
-            m_pending_preview_meshes.pop();
+            static_cast<void>(m_pending_preview_meshes.erase(key));
             continue;
         }
         std::array<HeightTileHandle, 4> const neighbors = previewMeshNeighbors(key);
@@ -1231,11 +1410,31 @@ void PlayerClient::processPendingPreviewMeshes(
             .stage = stage,
             .epoch = m_preview_mesh_epoch,
         };
+        bool const current_near_key = withinCurrentNearProbe(*m_height_tile_center, key);
+        bool near_pending_before_enqueue = false;
+        if (m_benchmark.has_value() && !current_near_key) {
+            near_pending_before_enqueue = std::any_of(
+                nearby_candidate_span.begin(), nearby_candidate_span.end(),
+                [this](HeightTileKey const candidate) {
+                    return m_pending_preview_meshes.contains(candidate);
+                }
+            );
+        }
         if (!m_preview_mesh_workers->enqueue(std::move(job))) {
             break;
         }
+        if (m_benchmark.has_value()) {
+            if (current_near_key) {
+                ++m_benchmark_accepted_near_admissions;
+            } else {
+                ++m_benchmark_accepted_far_admissions;
+                if (near_pending_before_enqueue) {
+                    ++m_benchmark_far_admissions_while_near_pending;
+                }
+            }
+        }
         m_preview_mesh_jobs.insert(key);
-        m_pending_preview_meshes.pop();
+        static_cast<void>(m_pending_preview_meshes.erase(key));
     }
 }
 

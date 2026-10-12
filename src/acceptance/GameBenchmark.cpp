@@ -22,6 +22,7 @@
 #include <windows.h>
 #endif
 
+#include <algorithm>
 #include <array>
 #include <atomic>
 #include <chrono>
@@ -32,6 +33,7 @@
 #include <iostream>
 #include <optional>
 #include <ratio>
+#include <set>
 #include <span>
 #include <string>
 #include <string_view>
@@ -49,6 +51,70 @@ using Clock = std::chrono::steady_clock;
 uint64_t positiveNanoseconds(std::chrono::nanoseconds const duration) noexcept
 {
     return duration.count() > 0 ? static_cast<uint64_t>(duration.count()) : 0U;
+}
+
+[[nodiscard]]
+GameBenchmarkTerrainObservation gameBenchmarkTerrainObservation(
+    client::PlayerClientBenchmarkTerrainInfo const& info
+)
+{
+    GameBenchmarkTerrainObservation observation{
+        .center = info.center,
+        .desired_count = info.desired_count,
+        .resident_count = info.resident_count,
+        .nonresident_count = info.nonresident_count,
+        .current_mesh_visible_count = info.current_mesh_visible_count,
+        .pending_count = info.pending_count,
+        .active_count = info.active_count,
+        .unclassified_missing_count = info.unclassified_missing_count,
+        .accepted_near_admissions = info.accepted_near_admissions,
+        .accepted_far_admissions = info.accepted_far_admissions,
+        .far_admissions_while_near_pending = info.far_admissions_while_near_pending,
+    };
+    static_assert(
+        client::PLAYER_CLIENT_BENCHMARK_TERRAIN_NEAR_TILE_COUNT
+        == GAME_BENCHMARK_TERRAIN_NEAR_TILE_COUNT
+    );
+    for (uint32_t index = 0U; index < client::PLAYER_CLIENT_BENCHMARK_TERRAIN_NEAR_TILE_COUNT; ++index) {
+        client::PlayerClientBenchmarkTerrainTileState const& source = info.near_tiles[index];
+        observation.near_tiles[index] = GameBenchmarkTerrainTileObservation{
+            .key = source.key,
+            .desired = source.desired,
+            .resident = source.resident,
+            .current_mesh_visible = source.current_mesh_visible,
+            .pending = source.pending,
+            .active = source.active,
+        };
+    }
+    return observation;
+}
+
+[[nodiscard]]
+GameBenchmarkFrameSample::TerrainNearSample gameBenchmarkTerrainFrameSample(
+    client::PlayerClientBenchmarkTerrainInfo const& info,
+    uint64_t const accepted_near_admission_delta,
+    uint64_t const accepted_far_admission_delta,
+    uint64_t const far_admission_while_near_pending_delta
+)
+{
+    GameBenchmarkFrameSample::TerrainNearSample sample{
+        .center_valid = info.center.has_value(),
+        .desired_tile_count = info.desired_count,
+        .resident_tile_count = info.resident_count,
+        .nonresident_tile_count = info.nonresident_count,
+        .current_mesh_visible_count = info.current_mesh_visible_count,
+        .pending_mesh_count = info.pending_count,
+        .active_mesh_job_count = info.active_count,
+        .unclassified_missing_count = info.unclassified_missing_count,
+        .accepted_near_admission_delta = accepted_near_admission_delta,
+        .accepted_far_admission_delta = accepted_far_admission_delta,
+        .far_admission_while_near_pending_delta = far_admission_while_near_pending_delta,
+    };
+    if (info.center) {
+        sample.center_x = info.center->x;
+        sample.center_y = info.center->y;
+    }
+    return sample;
 }
 
 [[nodiscard]]
@@ -184,6 +250,137 @@ pub fn policy() {
 
 } // namespace
 
+void GameBenchmarkTerrainReadinessTracker::observe(
+    GameBenchmarkTerrainObservation const& observation,
+    std::chrono::steady_clock::time_point const sampled_at
+)
+{
+    if (!observation.center.has_value()) {
+        m_evidence.final_center_valid = false;
+        m_evidence.final_desired_tile_count = 0U;
+        m_evidence.final_resident_tile_count = 0U;
+        m_evidence.final_nonresident_tile_count = 0U;
+        m_evidence.final_current_mesh_visible_count = 0U;
+        m_evidence.final_pending_mesh_count = 0U;
+        m_evidence.final_active_mesh_job_count = 0U;
+        m_evidence.final_unclassified_missing_count = 0U;
+        return;
+    }
+
+    shared::HeightTileKey const center = observation.center.value();
+    ++m_evidence.center_sample_count;
+    if (m_last_center && m_last_center.value() != center) {
+        ++m_evidence.center_change_count;
+    }
+    m_last_center = center;
+    m_evidence.accepted_near_admissions = observation.accepted_near_admissions;
+    m_evidence.accepted_far_admissions = observation.accepted_far_admissions;
+    m_evidence.far_admissions_while_near_pending = observation.far_admissions_while_near_pending;
+    m_evidence.unclassified_missing_observation_count += observation.unclassified_missing_count;
+    m_evidence.final_desired_tile_count = observation.desired_count;
+    m_evidence.final_resident_tile_count = observation.resident_count;
+    m_evidence.final_nonresident_tile_count = observation.nonresident_count;
+    m_evidence.final_current_mesh_visible_count = observation.current_mesh_visible_count;
+    m_evidence.final_pending_mesh_count = observation.pending_count;
+    m_evidence.final_active_mesh_job_count = observation.active_count;
+    m_evidence.final_unclassified_missing_count = observation.unclassified_missing_count;
+    m_evidence.final_center_valid = true;
+
+    std::set<std::pair<int32_t, int32_t>> desired_keys;
+    for (GameBenchmarkTerrainTileObservation const& tile : observation.near_tiles) {
+        if (!tile.desired) {
+            continue;
+        }
+        std::pair<int32_t, int32_t> const key = coordinates(tile.key);
+        desired_keys.insert(key);
+        auto episode = m_open_episodes.find(key);
+        if (tile.current_mesh_visible) {
+            if (episode != m_open_episodes.end()) {
+                uint64_t const latency_ns = static_cast<uint64_t>(std::max<int64_t>(
+                    0,
+                    std::chrono::duration_cast<std::chrono::nanoseconds>(
+                        sampled_at - episode->second.started_at
+                    ).count()
+                ));
+                if (latency_ns > static_cast<uint64_t>(
+                        std::chrono::duration_cast<std::chrono::nanoseconds>(
+                            GAME_BENCHMARK_TERRAIN_READINESS_DEADLINE
+                        ).count()
+                    ) && !episode->second.deadline_missed) {
+                    ++m_evidence.deadline_miss_count;
+                }
+                ++m_evidence.ready_mesh_episode_count;
+                if (!m_evidence.has_max_ready_latency || latency_ns > m_evidence.max_ready_latency_ns) {
+                    m_evidence.has_max_ready_latency = true;
+                    m_evidence.max_ready_latency_ns = latency_ns;
+                    m_evidence.max_ready_key_x = tile.key.x;
+                    m_evidence.max_ready_key_y = tile.key.y;
+                    m_evidence.max_ready_start_center_x = episode->second.start_center.x;
+                    m_evidence.max_ready_start_center_y = episode->second.start_center.y;
+                }
+                m_open_episodes.erase(episode);
+            }
+            continue;
+        }
+        if (!tile.resident) {
+            if (episode != m_open_episodes.end()) {
+                ++m_evidence.source_lost_before_ready_episode_count;
+                m_open_episodes.erase(episode);
+            }
+            continue;
+        }
+        if (episode == m_open_episodes.end()) {
+            m_open_episodes.emplace(key, Episode{ .started_at = sampled_at, .start_center = center });
+            ++m_evidence.eligible_mesh_episode_count;
+            continue;
+        }
+        std::chrono::nanoseconds const age = std::chrono::duration_cast<std::chrono::nanoseconds>(
+            sampled_at - episode->second.started_at
+        );
+        if (age > GAME_BENCHMARK_TERRAIN_READINESS_DEADLINE && !episode->second.deadline_missed) {
+            episode->second.deadline_missed = true;
+            ++m_evidence.deadline_miss_count;
+        }
+    }
+
+    for (auto episode = m_open_episodes.begin(); episode != m_open_episodes.end();) {
+        if (desired_keys.contains(episode->first)) {
+            ++episode;
+        } else {
+            ++m_evidence.left_near_unready_episode_count;
+            episode = m_open_episodes.erase(episode);
+        }
+    }
+}
+
+GameBenchmarkTerrainReadinessEvidence GameBenchmarkTerrainReadinessTracker::evidence() const noexcept
+{
+    GameBenchmarkTerrainReadinessEvidence result = m_evidence;
+    result.open_mesh_episode_count = static_cast<uint64_t>(m_open_episodes.size());
+    result.complete = result.center_change_count >= 2U
+        && result.eligible_mesh_episode_count > 0U
+        && result.ready_mesh_episode_count > 0U
+        && result.deadline_miss_count == 0U
+        && result.open_mesh_episode_count == 0U
+        && result.accepted_near_admissions > 0U
+        && result.far_admissions_while_near_pending == 0U
+        && result.unclassified_missing_observation_count == 0U
+        && result.final_center_valid
+        && result.final_desired_tile_count == result.final_current_mesh_visible_count
+        && result.final_nonresident_tile_count == 0U
+        && result.final_pending_mesh_count == 0U
+        && result.final_active_mesh_job_count == 0U
+        && result.final_unclassified_missing_count == 0U;
+    return result;
+}
+
+std::pair<int32_t, int32_t> GameBenchmarkTerrainReadinessTracker::coordinates(
+    shared::HeightTileKey const key
+) noexcept
+{
+    return { key.x, key.y };
+}
+
 shared::Direction gameBenchmarkDirection(
     GameBenchmarkWorkload const workload,
     uint64_t const ordinal
@@ -192,15 +389,15 @@ shared::Direction gameBenchmarkDirection(
     if (workload == GameBenchmarkWorkload::DiagnosticStationary) {
         return {};
     }
-    uint8_t const x = workload == GameBenchmarkWorkload::WrappedBorder
-        ? 127U : (ordinal % 40U < 20U ? 1U : static_cast<uint8_t>(-1));
-    uint16_t const speedup = workload == GameBenchmarkWorkload::Speed200Movement
-        || workload == GameBenchmarkWorkload::WrappedBorder ? 200U : 5U;
+    bool const accelerated_full_axis = workload == GameBenchmarkWorkload::Speed200Movement
+        || workload == GameBenchmarkWorkload::WrappedBorder;
+    uint8_t const x = accelerated_full_axis ? 127U
+        : (ordinal % 40U < 20U ? 1U : static_cast<uint8_t>(-1));
+    uint16_t const speedup = accelerated_full_axis ? 200U : 5U;
     return shared::Direction{
         .x = x,
         .y = 0U,
-        .accelerated = workload == GameBenchmarkWorkload::Speed200Movement
-            || workload == GameBenchmarkWorkload::WrappedBorder,
+        .accelerated = accelerated_full_axis,
         .speedup = speedup,
         .cycle_movement_capabilities = false,
     };
@@ -210,7 +407,7 @@ std::string_view gameBenchmarkWorkloadName(GameBenchmarkWorkload const workload)
 {
     switch (workload) {
         case GameBenchmarkWorkload::OrdinaryMovement: return "ordinary-movement-v1";
-        case GameBenchmarkWorkload::Speed200Movement: return "speed-200-movement-v1";
+        case GameBenchmarkWorkload::Speed200Movement: return "speed-200-movement-v2";
         case GameBenchmarkWorkload::WrappedBorder: return "wrapped-border-v1";
         case GameBenchmarkWorkload::PermissionCollisionChurn: return "permission-collision-churn-v1";
         case GameBenchmarkWorkload::DiagnosticStationary: return "diagnostic-stationary-v1";
@@ -245,7 +442,9 @@ std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOption
     if (options.cold_duration <= std::chrono::seconds::zero()
         || options.warm_duration <= std::chrono::seconds::zero()
         || options.uncapped_duration <= std::chrono::seconds::zero()
-        || options.deadline <= options.cold_duration + options.warm_duration + options.uncapped_duration) {
+        || options.deadline <= options.cold_duration + options.warm_duration + options.uncapped_duration
+            + (options.workload == GameBenchmarkWorkload::Speed200Movement
+                ? GAME_BENCHMARK_TERRAIN_READINESS_DEADLINE : std::chrono::milliseconds::zero())) {
         return std::unexpected("game benchmark has invalid duration limits");
     }
     if (gameBenchmarkWorkloadName(options.workload) == "unknown") {
@@ -355,6 +554,10 @@ std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOption
     std::vector<std::chrono::nanoseconds> cold_durations;
     std::vector<std::chrono::nanoseconds> warm_durations;
     std::vector<std::chrono::nanoseconds> uncapped_durations;
+    GameBenchmarkTerrainReadinessTracker terrain_readiness_tracker;
+    uint64_t last_accepted_near_admissions = 0U;
+    uint64_t last_accepted_far_admissions = 0U;
+    uint64_t last_far_admissions_while_near_pending = 0U;
     auto const started_at = Clock::now();
     std::optional<Clock::time_point> first_loop_at;
     uint8_t reported_phase = 0U;
@@ -364,15 +567,33 @@ std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOption
     client::GameClientBenchmarkHooks const client_hooks{
         .deadline = started_at + options.deadline,
         .should_stop = [&] {
-            return first_loop_at
-                && Clock::now() >= *first_loop_at + options.cold_duration
-                    + options.warm_duration + options.uncapped_duration;
+            if (!first_loop_at) {
+                return false;
+            }
+            Clock::time_point const measurement_end = *first_loop_at + options.cold_duration
+                + options.warm_duration + options.uncapped_duration;
+            Clock::time_point const stop_at = measurement_end
+                + (options.workload == GameBenchmarkWorkload::Speed200Movement
+                    ? GAME_BENCHMARK_TERRAIN_READINESS_DEADLINE
+                    : std::chrono::steady_clock::duration::zero());
+            return Clock::now() >= stop_at;
         },
         .is_uncapped_phase = [&] {
-            return first_loop_at
-                && Clock::now() >= *first_loop_at + options.cold_duration + options.warm_duration;
+            if (!first_loop_at) {
+                return false;
+            }
+            Clock::time_point const uncapped_start = *first_loop_at
+                + options.cold_duration + options.warm_duration;
+            Clock::time_point const measurement_end = uncapped_start + options.uncapped_duration;
+            return Clock::now() >= uncapped_start && Clock::now() < measurement_end;
         },
-        .input_override = [&options](uint64_t const ordinal) -> std::optional<shared::Direction> {
+        .input_override = [&options, &first_loop_at](uint64_t const ordinal)
+            -> std::optional<shared::Direction> {
+            if (options.workload == GameBenchmarkWorkload::Speed200Movement && first_loop_at
+                && Clock::now() >= *first_loop_at + options.cold_duration
+                    + options.warm_duration + options.uncapped_duration) {
+                return shared::Direction{};
+            }
             return gameBenchmarkDirection(options.workload, ordinal);
         },
         .on_loop = [&](client::GameClientLoopSample const& sample) {
@@ -421,6 +642,29 @@ std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOption
             }
             benchmark.inputs_sent += sample.input_sent ? 1U : 0U;
             client::RendererRuntimeInfo const runtime = player.benchmarkRuntimeInfo();
+            std::optional<GameBenchmarkFrameSample::TerrainNearSample> terrain_near_sample;
+            if (options.workload == GameBenchmarkWorkload::Speed200Movement) {
+                client::PlayerClientBenchmarkTerrainInfo const terrain_info =
+                    player.benchmarkTerrainStreamingInfo();
+                GameBenchmarkTerrainObservation const observation =
+                    gameBenchmarkTerrainObservation(terrain_info);
+                terrain_readiness_tracker.observe(observation, sample.completed_at);
+                terrain_near_sample = gameBenchmarkTerrainFrameSample(
+                    terrain_info,
+                    terrain_info.accepted_near_admissions >= last_accepted_near_admissions
+                        ? terrain_info.accepted_near_admissions - last_accepted_near_admissions
+                        : terrain_info.accepted_near_admissions,
+                    terrain_info.accepted_far_admissions >= last_accepted_far_admissions
+                        ? terrain_info.accepted_far_admissions - last_accepted_far_admissions
+                        : terrain_info.accepted_far_admissions,
+                    terrain_info.far_admissions_while_near_pending >= last_far_admissions_while_near_pending
+                        ? terrain_info.far_admissions_while_near_pending - last_far_admissions_while_near_pending
+                        : terrain_info.far_admissions_while_near_pending
+                );
+                last_accepted_near_admissions = terrain_info.accepted_near_admissions;
+                last_accepted_far_admissions = terrain_info.accepted_far_admissions;
+                last_far_admissions_while_near_pending = terrain_info.far_admissions_while_near_pending;
+            }
             benchmark.raw_frames.push_back(GameBenchmarkFrameSample{
                 .warm = phase == GameBenchmarkPhase::Warm,
                 .uncapped = phase == GameBenchmarkPhase::Uncapped,
@@ -438,6 +682,7 @@ std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOption
                 .client_message_payload_bytes_received = sample.client_message_payload_bytes_received,
                 .resident_terrain_tile_count = runtime.height_tile_mesh_count,
                 .visible_surface_face_count = runtime.chunk_face_count,
+                .terrain_near = terrain_near_sample,
                 .diagnostic_render_attempt_id = runtime.diagnostic_render_attempt_id,
                 .diagnostic_frame_recorded = runtime.diagnostic_frame_recorded,
                 .diagnostic_indexed_stone_quads = runtime.diagnostic_indexed_stone_quads,
@@ -523,6 +768,9 @@ std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOption
     benchmark.server_tick_timings = summarizeFrameTimings(server_tick_durations);
     benchmark.permission_publish_timings = summarizeFrameTimings(raw_permission_publish_durations);
     benchmark.permission_publishes = permission_publish_count;
+    if (options.workload == GameBenchmarkWorkload::Speed200Movement) {
+        benchmark.terrain_readiness = terrain_readiness_tracker.evidence();
+    }
     benchmark.raw_server_tick_durations_ns.reserve(server_tick_durations.size());
     for (std::chrono::nanoseconds const duration : server_tick_durations) {
         benchmark.raw_server_tick_durations_ns.push_back(positiveNanoseconds(duration));
@@ -531,21 +779,21 @@ std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOption
     for (std::chrono::nanoseconds const duration : raw_permission_publish_durations) {
         benchmark.raw_permission_publish_durations_ns.push_back(positiveNanoseconds(duration));
     }
-    if (benchmark.cold_loop_timings.sample_count == 0U
-        || benchmark.warm_loop_timings.sample_count == 0U
-        || benchmark.uncapped_loop_timings.sample_count == 0U
-        || benchmark.server_tick_timings.sample_count == 0U
-        || benchmark.inputs_sent == 0U
-        || benchmark.authoritative_player_updates == 0U
-        || server_events_processed == 0U
-        || (options.workload == GameBenchmarkWorkload::WrappedBorder
-            && benchmark.observed_wrap_crossings == 0U)
-        || (options.workload == GameBenchmarkWorkload::PermissionCollisionChurn
-            && (benchmark.observed_capability_transitions == 0U
-                || benchmark.permission_publishes < 2U))) {
-        return std::unexpected("game benchmark did not complete the scripted full-game workload");
-    }
-    return RuntimeEvidence{
+    const bool workload_complete = benchmark.cold_loop_timings.sample_count != 0U
+        && benchmark.warm_loop_timings.sample_count != 0U
+        && benchmark.uncapped_loop_timings.sample_count != 0U
+        && benchmark.server_tick_timings.sample_count != 0U
+        && benchmark.inputs_sent != 0U
+        && benchmark.authoritative_player_updates != 0U
+        && server_events_processed != 0U
+        && (options.workload != GameBenchmarkWorkload::WrappedBorder
+            || benchmark.observed_wrap_crossings != 0U)
+        && (options.workload != GameBenchmarkWorkload::PermissionCollisionChurn
+            || (benchmark.observed_capability_transitions != 0U
+                && benchmark.permission_publishes >= 2U));
+    const bool readiness_complete = options.workload != GameBenchmarkWorkload::Speed200Movement
+        || (benchmark.terrain_readiness && benchmark.terrain_readiness->complete);
+    RuntimeEvidence result{
         .mode = "benchmark-game",
         .scenario_version = {},
         .profile = "flight",
@@ -561,9 +809,15 @@ std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOption
         .replay_id = {},
         .elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now() - started_at),
         .deadline = std::chrono::duration_cast<std::chrono::milliseconds>(options.deadline),
-        .passed = true,
+        .passed = workload_complete && readiness_complete,
         .game_benchmark = std::move(benchmark),
     };
+    if (!workload_complete) {
+        result.failure = "game benchmark did not complete the scripted full-game workload";
+    } else if (!readiness_complete) {
+        result.failure = "speed-200 current-near terrain readiness did not satisfy its evidence contract";
+    }
+    return result;
 }
 
 } // namespace acceptance

@@ -451,6 +451,7 @@ TEST(GameServerPreviewTest, ResetsPriorityCursorAfterProgressWhenHeadingChanges)
     static constexpr std::chrono::milliseconds POLL_INTERVAL{1};
     static constexpr uint32_t INITIAL_TILE_COUNT = 256U;
     static constexpr uint32_t CURSOR_LOOKAHEAD = 512U;
+    static constexpr uint32_t CURRENT_NEAR_TILE_COUNT = 197U;
     server::GameServer server{0, {}, shared::WorldMode::Flight};
     std::atomic_bool stop_requested{false};
     std::thread server_thread{[&server, &stop_requested] { server.run(stop_requested); }};
@@ -482,6 +483,14 @@ TEST(GameServerPreviewTest, ResetsPriorityCursorAfterProgressWhenHeadingChanges)
         0
     );
     std::vector<shared::HeightTileKey> const initial_keys = heightTileKeys(client.messages);
+    auto const is_current_near_key = [](shared::HeightTileKey const key) {
+        return shared::heightTileGenerationBand({.x = center_x, .y = center_y}, 0, 127, key)
+            <= shared::HeightTileGenerationBand::Near;
+    };
+    uint32_t const initial_near_tile_count = static_cast<uint32_t>(std::ranges::count_if(
+        initial_keys,
+        is_current_near_key
+    ));
     auto const east_priority_prefix = std::span{east_interest.keys}.first(INITIAL_TILE_COUNT);
     auto const north_priority_prefix = std::span{north_interest.keys}.first(
         INITIAL_TILE_COUNT + CURSOR_LOOKAHEAD
@@ -497,6 +506,8 @@ TEST(GameServerPreviewTest, ResetsPriorityCursorAfterProgressWhenHeadingChanges)
     shared::HeightTileKey const east_frontier = has_east_frontier_candidate
         ? *east_frontier_candidate
         : shared::HeightTileKey{};
+    bool const east_frontier_is_outside_near = has_east_frontier_candidate
+        && !is_current_near_key(east_frontier);
     auto const after_rotation = client.messages.size();
     bool const rotated = joined && client.send(shared::encodeMessage(shared::ClientInputMessage{
         .direction = {.x = 0U, .y = 0U, .view_x = 127, .view_y = 0},
@@ -531,7 +542,9 @@ TEST(GameServerPreviewTest, ResetsPriorityCursorAfterProgressWhenHeadingChanges)
     ASSERT_TRUE(connected);
     ASSERT_TRUE(joined);
     ASSERT_GE(initial_keys.size(), INITIAL_TILE_COUNT);
+    EXPECT_EQ(initial_near_tile_count, CURRENT_NEAR_TILE_COUNT);
     EXPECT_TRUE(has_east_frontier_candidate);
+    EXPECT_TRUE(east_frontier_is_outside_near);
     EXPECT_TRUE(rotated);
     EXPECT_GE(client.last_acknowledged_input, 1U);
     EXPECT_TRUE(received_east_frontier());
@@ -946,6 +959,169 @@ TEST(GameServerPreviewTest, FastFlightGeneratesFrontierTilesWithinDeadline)
     EXPECT_GE(std::ranges::count_if(keys, is_frontier_key), OBSERVED_TILE_COUNT);
 }
 
+TEST(GameServerPreviewTest, RepeatedCenterTravelRestoresNearTerrainAheadOfQueuedBacklog)
+{
+    static constexpr std::chrono::seconds TIMEOUT{10};
+    static constexpr std::chrono::seconds NEAR_PROGRESS_TIMEOUT{4};
+    static constexpr std::chrono::milliseconds POLL_INTERVAL{1};
+    static constexpr uint32_t MAXIMUM_BUFFERED_TILES = 128U;
+    static constexpr uint32_t MAXIMUM_OUTSTANDING_BATCHES = 4U;
+    static constexpr uint32_t MAXIMUM_BACKLOG_TILES_BEFORE_NEAR_PROGRESS =
+        MAXIMUM_BUFFERED_TILES + shared::HEIGHT_TILE_DELIVERY_BATCH_CAPACITY;
+    static constexpr uint16_t FLIGHT_SPEEDUP = 500U;
+    static constexpr uint32_t MOVEMENT_INPUT_COUNT = (
+        (shared::HEIGHT_TILE_INTEREST_RADIUS + 64U)
+        * shared::HEIGHT_TILE_SIDE_LENGTH
+        * shared::SUBCELLS_PER_CELL
+    ) / (shared::MOVEMENT_SUBCELLS_PER_TICK * FLIGHT_SPEEDUP) + 1U;
+
+    std::atomic_uint32_t buffered_tiles{0U};
+    std::atomic_uint32_t queued_tiles{0U};
+    server::GameServer::BenchmarkHooks const hooks{
+        .on_tick = {},
+        .on_preview_buffered = [&buffered_tiles](core::ClientId, uint32_t const count) {
+            buffered_tiles.store(count, std::memory_order_relaxed);
+        },
+        .on_preview_metrics = [&queued_tiles](
+            core::ClientId,
+            server::GameServer::PreviewStreamMetrics const metrics
+        ) {
+            queued_tiles.store(metrics.queued_tiles, std::memory_order_relaxed);
+        },
+    };
+    server::GameServer server{0, {}, shared::WorldMode::Flight};
+    std::atomic_bool stop_requested{false};
+    std::thread server_thread{[&server, &stop_requested, &hooks] {
+        server.run(stop_requested, &hooks);
+    }};
+    defer {
+        stop_requested.store(true, std::memory_order_relaxed);
+        if (server_thread.joinable()) {
+            server_thread.join();
+        }
+    };
+    PreviewClient client{false, false};
+    ASSERT_TRUE(client.connect(core::Address::localhost(server.port()), TIMEOUT));
+    ASSERT_TRUE(client.send(shared::encodeMessage(shared::JoinRequestMessage{
+        .ch = '@', .mode = shared::WorldMode::Flight, .wants_previews = true,
+    }), shared::GAME_CHANNEL, core::SendMode{core::SendMode::Reliable}));
+
+    auto deadline = std::chrono::steady_clock::now() + TIMEOUT;
+    while (client.received_height_tile_descriptors == 0U
+        && std::chrono::steady_clock::now() < deadline) {
+        client.poll(POLL_INTERVAL);
+    }
+    ASSERT_EQ(client.received_height_tile_descriptors, 1U);
+    ASSERT_TRUE(client.send(shared::encodeMessage(shared::ClientHeightTileCreditMessage{
+        .world_revision = 1U,
+        .delivery_token = 0U,
+        .credits = shared::HEIGHT_TILE_DELIVERY_WINDOW,
+    }), shared::GAME_CHANNEL, core::SendMode{core::SendMode::Reliable}));
+
+    deadline = std::chrono::steady_clock::now() + TIMEOUT;
+    while ((client.received_delivery_batches < MAXIMUM_OUTSTANDING_BATCHES
+            || buffered_tiles.load(std::memory_order_relaxed) < MAXIMUM_BUFFERED_TILES
+            || queued_tiles.load(std::memory_order_relaxed) == 0U)
+        && std::chrono::steady_clock::now() < deadline) {
+        client.poll(POLL_INTERVAL);
+    }
+    ASSERT_EQ(client.received_delivery_batches, MAXIMUM_OUTSTANDING_BATCHES);
+    ASSERT_GT(client.received_height_tiles, 0U);
+    ASSERT_EQ(buffered_tiles.load(std::memory_order_relaxed), MAXIMUM_BUFFERED_TILES);
+    ASSERT_GT(queued_tiles.load(std::memory_order_relaxed), 0U);
+
+    bool sent_all_inputs = true;
+    for (uint32_t sequence = 1U; sequence <= MOVEMENT_INPUT_COUNT; ++sequence) {
+        sent_all_inputs = client.send(shared::encodeMessage(shared::ClientInputMessage{
+            .direction = {
+                .x = 127U,
+                .y = 0U,
+                .accelerated = true,
+                .speedup = FLIGHT_SPEEDUP,
+            },
+            .sequence = sequence,
+        }), shared::GAME_CHANNEL, core::SendMode{core::SendMode::Reliable}) && sent_all_inputs;
+    }
+    deadline = std::chrono::steady_clock::now() + TIMEOUT;
+    while (sent_all_inputs && client.last_acknowledged_input < MOVEMENT_INPUT_COUNT
+        && std::chrono::steady_clock::now() < deadline) {
+        client.poll(POLL_INTERVAL);
+    }
+    ASSERT_TRUE(sent_all_inputs);
+    ASSERT_EQ(client.last_acknowledged_input, MOVEMENT_INPUT_COUNT);
+
+    shared::HeightTileKey const center{
+        .x = client.last_player_x / static_cast<int32_t>(shared::HEIGHT_TILE_SIDE_LENGTH),
+        .y = shared::World::FLIGHT_SPAWN.y / static_cast<int32_t>(shared::HEIGHT_TILE_SIDE_LENGTH),
+    };
+    uint32_t const first_post_travel_message = static_cast<uint32_t>(client.messages.size());
+    std::vector<shared::ServerHeightTileBatchMessage> const stalled_batches = deliveryBatchesFrom(
+        client.messages,
+        0U
+    );
+    ASSERT_EQ(stalled_batches.size(), MAXIMUM_OUTSTANDING_BATCHES);
+
+    client.setAcknowledgesDeliveries(true);
+    bool acknowledged_all = true;
+    for (shared::ServerHeightTileBatchMessage const& batch : stalled_batches) {
+        acknowledged_all = client.acknowledgeDelivery(batch.delivery_token) && acknowledged_all;
+    }
+    deadline = std::chrono::steady_clock::now() + NEAR_PROGRESS_TIMEOUT;
+    std::vector<shared::HeightTileKey> streamed_after_travel;
+    auto const is_near_current_key = [center](shared::HeightTileKey const key) {
+        return shared::heightTileGenerationBand(center, 127, 0, key)
+            <= shared::HeightTileGenerationBand::Near;
+    };
+    auto const near_progress_prefix_length = [&streamed_after_travel, &is_near_current_key] {
+        uint32_t near_tiles = 0U;
+        uint32_t const streamed_tile_count = static_cast<uint32_t>(streamed_after_travel.size());
+        for (uint32_t index = 0U; index < streamed_tile_count; ++index) {
+            if (is_near_current_key(streamed_after_travel[index]) && ++near_tiles == 16U) {
+                return index + 1U;
+            }
+        }
+        return uint32_t{0U};
+    };
+    auto const streamed_after_travel_count = [&streamed_after_travel] {
+        return static_cast<uint32_t>(streamed_after_travel.size());
+    };
+    uint32_t near_progress_prefix = near_progress_prefix_length();
+    while (acknowledged_all && near_progress_prefix == 0U
+        && streamed_after_travel_count() < MAXIMUM_BACKLOG_TILES_BEFORE_NEAR_PROGRESS
+        && std::chrono::steady_clock::now() < deadline) {
+        client.poll(POLL_INTERVAL);
+        streamed_after_travel = heightTileKeysFrom(client.messages, first_post_travel_message);
+        near_progress_prefix = near_progress_prefix_length();
+    }
+    if (streamed_after_travel.empty()) {
+        streamed_after_travel = heightTileKeysFrom(client.messages, first_post_travel_message);
+        near_progress_prefix = near_progress_prefix_length();
+    }
+
+    std::string streamed_band_trace;
+    std::string streamed_near_keys;
+    for (uint32_t index = 0U; index < streamed_after_travel_count(); ++index) {
+        shared::HeightTileKey const key = streamed_after_travel[index];
+        bool const is_near = is_near_current_key(key);
+        streamed_band_trace += is_near ? 'N' : '.';
+        if (is_near) {
+            streamed_near_keys += std::to_string(index);
+            streamed_near_keys += ":(";
+            streamed_near_keys += std::to_string(key.x);
+            streamed_near_keys += ',';
+            streamed_near_keys += std::to_string(key.y);
+            streamed_near_keys += ") ";
+        }
+    }
+    SCOPED_TRACE(::testing::Message()
+        << "center=(" << center.x << ',' << center.y << ") streamed=" << streamed_after_travel_count()
+        << " near_prefix=" << near_progress_prefix << " bands=" << streamed_band_trace
+        << " near_keys=" << streamed_near_keys);
+    EXPECT_TRUE(acknowledged_all);
+    EXPECT_GT(near_progress_prefix, 0U);
+    EXPECT_LE(near_progress_prefix, MAXIMUM_BACKLOG_TILES_BEFORE_NEAR_PROGRESS);
+}
+
 TEST(GameServerPreviewTest, SustainedNetworkIngressDoesNotStarveTicksTerrainOrShutdown)
 {
     static constexpr auto WARMUP_TIMEOUT = std::chrono::seconds{10};
@@ -960,11 +1136,13 @@ TEST(GameServerPreviewTest, SustainedNetworkIngressDoesNotStarveTicksTerrainOrSh
     std::atomic_bool flood_stopped{false};
     std::atomic_bool server_exited{false};
     std::atomic_uint64_t tick_count{0U};
+    std::atomic_uint64_t network_events_count{0U};
     std::atomic_uint64_t metrics_count{0U};
     std::atomic_uint64_t submitted_tile_jobs{0U};
     server::GameServer::BenchmarkHooks const hooks{
-        .on_tick = [&tick_count](std::chrono::nanoseconds, uint64_t) {
+        .on_tick = [&tick_count, &network_events_count](std::chrono::nanoseconds, uint64_t events) {
             tick_count.fetch_add(1U, std::memory_order_relaxed);
+            network_events_count.fetch_add(events, std::memory_order_relaxed);
         },
         .on_preview_buffered = {},
         .on_preview_metrics = [&metrics_count, &submitted_tile_jobs](
@@ -1126,6 +1304,7 @@ TEST(GameServerPreviewTest, SustainedNetworkIngressDoesNotStarveTicksTerrainOrSh
     server_thread.join();
 
     EXPECT_GE(totalSentPackets(), 1'000U);
+    EXPECT_GT(network_events_count.load(std::memory_order_relaxed), 0U);
     EXPECT_TRUE(made_progress_under_ingress);
     EXPECT_TRUE(stopped_during_ingress);
 }

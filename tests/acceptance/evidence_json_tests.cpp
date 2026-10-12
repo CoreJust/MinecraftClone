@@ -128,7 +128,7 @@ TEST(EvidenceJson, SeparatesFullGameRequestsFromPhysicalDisplayCadence)
         .failure = {},
         .replay_id = {},
         .game_benchmark = acceptance::GameBenchmarkEvidence{
-            .workload = "speed-200-movement-v1",
+            .workload = "speed-200-movement-v2",
             .package_id = {},
             .hardware = {},
             .gpu = std::nullopt,
@@ -144,12 +144,47 @@ TEST(EvidenceJson, SeparatesFullGameRequestsFromPhysicalDisplayCadence)
             .uncapped_loop_timings = {},
             .server_tick_timings = {},
             .permission_publish_timings = {},
+            .terrain_readiness = acceptance::GameBenchmarkTerrainReadinessEvidence{
+                .center_sample_count = 380U,
+                .center_change_count = 4U,
+                .eligible_mesh_episode_count = 11U,
+                .ready_mesh_episode_count = 9U,
+                .left_near_unready_episode_count = 2U,
+                .deadline_miss_count = 0U,
+                .max_ready_latency_ns = 3'200'000'000U,
+                .has_max_ready_latency = true,
+                .max_ready_key_x = 98,
+                .max_ready_key_y = -12,
+                .max_ready_start_center_x = 94,
+                .max_ready_start_center_y = -12,
+                .accepted_near_admissions = 11U,
+                .accepted_far_admissions = 6U,
+                .far_admissions_while_near_pending = 0U,
+                .final_desired_tile_count = 225U,
+                .final_resident_tile_count = 225U,
+                .final_current_mesh_visible_count = 225U,
+                .final_center_valid = true,
+                .complete = true,
+            },
             .raw_frames = {
                 acceptance::GameBenchmarkFrameSample{
                     .warm = true,
                     .presentation_succeeded = true,
                     .loop_duration_ns = 12'000U,
                     .network_event_count = 2U,
+                    .terrain_near = acceptance::GameBenchmarkFrameSample::TerrainNearSample{
+                        .center_valid = true,
+                        .center_x = 12,
+                        .center_y = -3,
+                        .desired_tile_count = 225U,
+                        .resident_tile_count = 220U,
+                        .nonresident_tile_count = 5U,
+                        .current_mesh_visible_count = 210U,
+                        .pending_mesh_count = 10U,
+                        .active_mesh_job_count = 5U,
+                        .accepted_near_admission_delta = 2U,
+                        .accepted_far_admission_delta = 1U,
+                    },
                     .diagnostic_frame_slot = std::nullopt,
                     .diagnostic_gpu_timestamp_reason = {},
                     .diagnostic_gpu_terrain_duration_ns = std::nullopt,
@@ -182,7 +217,7 @@ TEST(EvidenceJson, SeparatesFullGameRequestsFromPhysicalDisplayCadence)
     std::string const json = acceptance::evidenceJson(evidence);
 
     EXPECT_NE(json.find("\"measurement_kind\": \"full-game-render-submit-present-request\""), std::string::npos);
-    EXPECT_NE(json.find("\"workload\": \"speed-200-movement-v1\""), std::string::npos);
+    EXPECT_NE(json.find("\"workload\": \"speed-200-movement-v2\""), std::string::npos);
     EXPECT_NE(json.find("\"p99_8\": 0"), std::string::npos);
     EXPECT_NE(json.find("\"displayed_cadence_hz\": null"), std::string::npos);
     EXPECT_NE(json.find("\"gpu\": null"), std::string::npos);
@@ -196,6 +231,16 @@ TEST(EvidenceJson, SeparatesFullGameRequestsFromPhysicalDisplayCadence)
     EXPECT_NE(json.find("\"phase\": \"warm\", \"presentation_succeeded\": true"), std::string::npos);
     EXPECT_NE(json.find("\"phase\": \"uncapped\", \"presentation_succeeded\": false"), std::string::npos);
     EXPECT_NE(json.find("\"phase\": \"excluded\", \"presentation_succeeded\": true"), std::string::npos);
+    EXPECT_NE(json.find("\"terrain_near\": { \"center\": { \"x\": 12, \"y\": -3 }"),
+        std::string::npos);
+    EXPECT_NE(json.find("\"nonresident\": 5, \"current_mesh_visible\": 210"), std::string::npos);
+    EXPECT_NE(json.find("\"terrain_readiness\": { \"contract\": \"mc.current-near-terrain-readiness.v1\""),
+        std::string::npos);
+    EXPECT_NE(json.find("\"readiness_deadline_kind\": \"diagnostic-progress-bound-not-performance-claim\""),
+        std::string::npos);
+    EXPECT_NE(json.find("\"worst_ready_latency_ns\": 3200000000"), std::string::npos);
+    EXPECT_NE(json.find("\"far_mesh_admissions_while_near_pending\": 0"), std::string::npos);
+    EXPECT_NE(json.find("\"complete\": true"), std::string::npos);
     EXPECT_NE(json.find("\"raw_server_tick_durations_ns\": [100, 200]"), std::string::npos);
 }
 
@@ -258,6 +303,7 @@ TEST(EvidenceJson, SeparatesFailedRenderAttemptsFromLaggedTerrainGpuSamples)
     EXPECT_NE(json.find("\"diagnostic_gpu_sample_quad_count\": 18"), std::string::npos);
     EXPECT_NE(json.find("\"diagnostic_gpu_terrain_duration_ns\": 5000000"), std::string::npos);
     EXPECT_NE(json.find("\"latest_gpu_frame_duration_ns\": null"), std::string::npos);
+    EXPECT_NE(json.find("\"terrain_readiness\": null"), std::string::npos);
 }
 
 TEST(EvidenceJson, ReportsUnsupportedTerrainTimestampScopeWithoutInventingGpuDuration)

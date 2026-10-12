@@ -27,6 +27,7 @@
 #include <filesystem>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string_view>
 #include <unordered_map>
 #include <unordered_set>
@@ -83,6 +84,35 @@ struct PlayerClientBenchmarkOptions final {
     bool freeze_camera = false;
 };
 
+inline constexpr int32_t PLAYER_CLIENT_BENCHMARK_TERRAIN_NEAR_RADIUS = 7;
+inline constexpr uint32_t PLAYER_CLIENT_BENCHMARK_TERRAIN_NEAR_TILE_COUNT = 225U;
+
+// Current-center sample; a visible mesh counts only when it uses the current resident tile handle.
+struct PlayerClientBenchmarkTerrainTileState final {
+    shared::HeightTileKey key{};
+    bool desired = false;
+    bool resident = false;
+    bool current_mesh_visible = false;
+    bool pending = false;
+    bool active = false;
+};
+
+struct PlayerClientBenchmarkTerrainInfo final {
+    std::optional<shared::HeightTileKey> center;
+    std::array<PlayerClientBenchmarkTerrainTileState, PLAYER_CLIENT_BENCHMARK_TERRAIN_NEAR_TILE_COUNT>
+        near_tiles{};
+    uint32_t desired_count = 0U;
+    uint32_t resident_count = 0U;
+    uint32_t nonresident_count = 0U;
+    uint32_t current_mesh_visible_count = 0U;
+    uint32_t pending_count = 0U;
+    uint32_t active_count = 0U;
+    uint32_t unclassified_missing_count = 0U;
+    uint64_t accepted_near_admissions = 0U;
+    uint64_t accepted_far_admissions = 0U;
+    uint64_t far_admissions_while_near_pending = 0U;
+};
+
 struct PlayerHeightTileKeyHash final {
     [[nodiscard]] size_t operator()(shared::HeightTileKey key) const noexcept;
 };
@@ -127,23 +157,34 @@ public:
         uint32_t maximum_entries,
         std::unordered_set<shared::HeightTileKey, PlayerHeightTileKeyHash> const& interest
     );
+    [[nodiscard]] bool contains(shared::HeightTileKey key) const noexcept;
+    [[nodiscard]]
+    std::optional<shared::HeightTileKey> nearestPending(
+        std::span<shared::HeightTileKey const> candidates
+    ) const noexcept;
     [[nodiscard]] bool empty() const noexcept;
-    [[nodiscard]] bool hasReady() const noexcept;
+    [[nodiscard]] bool hasReady() noexcept;
     [[nodiscard]] size_t size() const noexcept;
-    [[nodiscard]] shared::HeightTileKey top() const noexcept;
+    [[nodiscard]] shared::HeightTileKey top() noexcept;
+    [[nodiscard]]
+    bool erase(shared::HeightTileKey key) noexcept;
     void pop();
 
 private:
     struct Entry final {
         double priority;
         shared::HeightTileKey key;
+        uint64_t ticket;
     };
-    [[nodiscard]] Entry entryFor(shared::HeightTileKey key) const noexcept;
+    [[nodiscard]] Entry entryFor(shared::HeightTileKey key, uint64_t ticket) const noexcept;
+    [[nodiscard]] bool isCurrent(Entry const& entry) const noexcept;
+    void pruneReadyHeap() noexcept;
     [[nodiscard]] static bool lowerPriority(Entry const& first, Entry const& second) noexcept;
 
     std::vector<Entry> m_heap;
     std::deque<std::vector<Entry>> m_unranked;
-    std::unordered_set<shared::HeightTileKey, PlayerHeightTileKeyHash> m_keys;
+    std::unordered_map<shared::HeightTileKey, uint64_t, PlayerHeightTileKeyHash> m_tickets;
+    uint64_t m_next_ticket = 1U;
     shared::HeightTileKey m_center{};
     int8_t m_heading_x = 0;
     int8_t m_heading_y = 127;
@@ -158,6 +199,8 @@ public:
     );
     ~PlayerClient();
     [[nodiscard]] RendererRuntimeInfo benchmarkRuntimeInfo() const;
+    // On-demand so ordinary render frames do not pay for the bounded terrain-state probe.
+    [[nodiscard]] PlayerClientBenchmarkTerrainInfo benchmarkTerrainStreamingInfo() const;
     [[nodiscard]] bool captureSucceeded() const noexcept { return m_capture_succeeded; }
 private:
     friend struct PlayerClientTestAccess;
@@ -277,6 +320,9 @@ private:
         m_preview_tile_elevations;
     shared::HeightTileSurfaceProjection m_preview_mesh_projection{};
     std::unique_ptr<PreviewMeshWorkerPool> m_preview_mesh_workers;
+    uint64_t m_benchmark_accepted_near_admissions = 0U;
+    uint64_t m_benchmark_accepted_far_admissions = 0U;
+    uint64_t m_benchmark_far_admissions_while_near_pending = 0U;
     uint64_t m_preview_mesh_epoch = 1U;
     bool m_capture_requested = false;
     bool m_capture_label_initialized = false;

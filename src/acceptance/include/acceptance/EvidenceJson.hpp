@@ -75,6 +75,22 @@ struct GameBenchmarkFrameSample final {
     uint64_t client_message_payload_bytes_received = 0U;
     uint32_t resident_terrain_tile_count = 0U;
     uint32_t visible_surface_face_count = 0U;
+    struct TerrainNearSample final {
+        bool center_valid = false;
+        int32_t center_x = 0;
+        int32_t center_y = 0;
+        uint32_t desired_tile_count = 0U;
+        uint32_t resident_tile_count = 0U;
+        uint32_t nonresident_tile_count = 0U;
+        uint32_t current_mesh_visible_count = 0U;
+        uint32_t pending_mesh_count = 0U;
+        uint32_t active_mesh_job_count = 0U;
+        uint32_t unclassified_missing_count = 0U;
+        uint64_t accepted_near_admission_delta = 0U;
+        uint64_t accepted_far_admission_delta = 0U;
+        uint64_t far_admission_while_near_pending_delta = 0U;
+    };
+    std::optional<TerrainNearSample> terrain_near;
     uint64_t diagnostic_render_attempt_id = 0U;
     bool diagnostic_frame_recorded = false;
     bool diagnostic_indexed_stone_quads = false;
@@ -94,6 +110,39 @@ struct GameBenchmarkFrameSample final {
     uint32_t diagnostic_gpu_sample_draw_count = 0U;
     std::optional<uint64_t> diagnostic_gpu_terrain_duration_ns;
     std::optional<uint64_t> latest_gpu_frame_duration_ns;
+};
+
+struct GameBenchmarkTerrainReadinessEvidence final {
+    uint32_t near_radius_tiles = 7U;
+    uint64_t readiness_deadline_ms = 4'000U;
+    uint64_t readiness_drain_ms = 4'000U;
+    uint64_t center_sample_count = 0U;
+    uint64_t center_change_count = 0U;
+    uint64_t eligible_mesh_episode_count = 0U;
+    uint64_t ready_mesh_episode_count = 0U;
+    uint64_t left_near_unready_episode_count = 0U;
+    uint64_t source_lost_before_ready_episode_count = 0U;
+    uint64_t deadline_miss_count = 0U;
+    uint64_t open_mesh_episode_count = 0U;
+    uint64_t max_ready_latency_ns = 0U;
+    bool has_max_ready_latency = false;
+    int32_t max_ready_key_x = 0;
+    int32_t max_ready_key_y = 0;
+    int32_t max_ready_start_center_x = 0;
+    int32_t max_ready_start_center_y = 0;
+    uint64_t accepted_near_admissions = 0U;
+    uint64_t accepted_far_admissions = 0U;
+    uint64_t far_admissions_while_near_pending = 0U;
+    uint64_t unclassified_missing_observation_count = 0U;
+    uint32_t final_desired_tile_count = 0U;
+    uint32_t final_resident_tile_count = 0U;
+    uint32_t final_nonresident_tile_count = 0U;
+    uint32_t final_current_mesh_visible_count = 0U;
+    uint32_t final_pending_mesh_count = 0U;
+    uint32_t final_active_mesh_job_count = 0U;
+    uint32_t final_unclassified_missing_count = 0U;
+    bool final_center_valid = false;
+    bool complete = false;
 };
 
 struct GameBenchmarkEvidence final {
@@ -126,6 +175,7 @@ struct GameBenchmarkEvidence final {
     FrameTimingSummary uncapped_loop_timings;
     FrameTimingSummary server_tick_timings;
     FrameTimingSummary permission_publish_timings;
+    std::optional<GameBenchmarkTerrainReadinessEvidence> terrain_readiness;
     std::vector<GameBenchmarkFrameSample> raw_frames;
     std::vector<uint64_t> raw_server_tick_durations_ns;
     std::vector<uint64_t> raw_permission_publish_durations_ns;

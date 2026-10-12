@@ -153,6 +153,81 @@ std::string diagnosticCameraJson(std::array<double, 7> const& camera)
     return result + "]";
 }
 
+std::string terrainNearSampleJson(GameBenchmarkFrameSample::TerrainNearSample const& sample)
+{
+    return "{ \"center\": "
+        + (sample.center_valid
+            ? "{ \"x\": " + std::to_string(sample.center_x) + ", \"y\": "
+                + std::to_string(sample.center_y) + " }"
+            : "null")
+        + ", \"desired\": " + std::to_string(sample.desired_tile_count)
+        + ", \"resident\": " + std::to_string(sample.resident_tile_count)
+        + ", \"nonresident\": " + std::to_string(sample.nonresident_tile_count)
+        + ", \"current_mesh_visible\": " + std::to_string(sample.current_mesh_visible_count)
+        + ", \"pending\": " + std::to_string(sample.pending_mesh_count)
+        + ", \"active\": " + std::to_string(sample.active_mesh_job_count)
+        + ", \"unclassified_missing\": " + std::to_string(sample.unclassified_missing_count)
+        + ", \"accepted_near_admission_delta\": "
+            + std::to_string(sample.accepted_near_admission_delta)
+        + ", \"accepted_far_admission_delta\": "
+            + std::to_string(sample.accepted_far_admission_delta)
+        + ", \"far_admission_while_near_pending_delta\": "
+            + std::to_string(sample.far_admission_while_near_pending_delta)
+        + " }";
+}
+
+std::string terrainReadinessJson(GameBenchmarkTerrainReadinessEvidence const& evidence)
+{
+    return "{ \"contract\": \"mc.current-near-terrain-readiness.v1\", "
+        "\"measurement_scope\": \"current-center-radius-7\", "
+        "\"near_radius_tiles\": " + std::to_string(evidence.near_radius_tiles)
+        + ", \"readiness_deadline_ms\": " + std::to_string(evidence.readiness_deadline_ms)
+        + ", \"readiness_deadline_kind\": \"diagnostic-progress-bound-not-performance-claim\""
+        + ", \"drain_ms\": " + std::to_string(evidence.readiness_drain_ms)
+        + ", \"center_sample_count\": " + std::to_string(evidence.center_sample_count)
+        + ", \"center_change_count\": " + std::to_string(evidence.center_change_count)
+        + ", \"eligible_resident_missing_mesh_episodes\": "
+            + std::to_string(evidence.eligible_mesh_episode_count)
+        + ", \"ready_mesh_episodes\": " + std::to_string(evidence.ready_mesh_episode_count)
+        + ", \"left_near_unready_episodes\": "
+            + std::to_string(evidence.left_near_unready_episode_count)
+        + ", \"source_lost_before_ready_episodes\": "
+            + std::to_string(evidence.source_lost_before_ready_episode_count)
+        + ", \"deadline_miss_count\": " + std::to_string(evidence.deadline_miss_count)
+        + ", \"open_mesh_episode_count\": " + std::to_string(evidence.open_mesh_episode_count)
+        + ", \"worst_ready_latency_ns\": "
+            + (evidence.has_max_ready_latency ? std::to_string(evidence.max_ready_latency_ns) : "null")
+        + ", \"worst_ready_key\": "
+            + (evidence.has_max_ready_latency
+                ? "{ \"x\": " + std::to_string(evidence.max_ready_key_x) + ", \"y\": "
+                    + std::to_string(evidence.max_ready_key_y) + " }"
+                : "null")
+        + ", \"worst_ready_start_center\": "
+            + (evidence.has_max_ready_latency
+                ? "{ \"x\": " + std::to_string(evidence.max_ready_start_center_x) + ", \"y\": "
+                    + std::to_string(evidence.max_ready_start_center_y) + " }"
+                : "null")
+        + ", \"accepted_near_mesh_admissions\": "
+            + std::to_string(evidence.accepted_near_admissions)
+        + ", \"accepted_far_mesh_admissions\": "
+            + std::to_string(evidence.accepted_far_admissions)
+        + ", \"far_mesh_admissions_while_near_pending\": "
+            + std::to_string(evidence.far_admissions_while_near_pending)
+        + ", \"unclassified_current_near_missing_observations\": "
+            + std::to_string(evidence.unclassified_missing_observation_count)
+        + ", \"final_center_valid\": " + std::string(evidence.final_center_valid ? "true" : "false")
+        + ", \"final_desired\": " + std::to_string(evidence.final_desired_tile_count)
+        + ", \"final_resident\": " + std::to_string(evidence.final_resident_tile_count)
+        + ", \"final_nonresident\": " + std::to_string(evidence.final_nonresident_tile_count)
+        + ", \"final_current_mesh_visible\": "
+            + std::to_string(evidence.final_current_mesh_visible_count)
+        + ", \"final_pending\": " + std::to_string(evidence.final_pending_mesh_count)
+        + ", \"final_active\": " + std::to_string(evidence.final_active_mesh_job_count)
+        + ", \"final_unclassified_missing\": "
+            + std::to_string(evidence.final_unclassified_missing_count)
+        + ", \"complete\": " + std::string(evidence.complete ? "true" : "false") + " }";
+}
+
 std::string gameBenchmarkJson(GameBenchmarkEvidence const& benchmark)
 {
     std::string result = "{\n"
@@ -203,6 +278,9 @@ std::string gameBenchmarkJson(GameBenchmarkEvidence const& benchmark)
         "    \"server_tick_timings_ns\": " + frameTimingSummaryJson(benchmark.server_tick_timings) + ",\n"
         "    \"permission_publish_timings_ns\": "
             + frameTimingSummaryJson(benchmark.permission_publish_timings) + ",\n"
+        "    \"terrain_readiness\": "
+            + (benchmark.terrain_readiness
+                ? terrainReadinessJson(*benchmark.terrain_readiness) : "null") + ",\n"
         "    \"raw_server_tick_durations_ns\": [";
     for (uint64_t index = 0U; index < benchmark.raw_server_tick_durations_ns.size(); ++index) {
         if (index != 0U) {
@@ -243,6 +321,8 @@ std::string gameBenchmarkJson(GameBenchmarkEvidence const& benchmark)
                 + std::to_string(sample.resident_terrain_tile_count)
             + ", \"visible_surface_face_count\": "
                 + std::to_string(sample.visible_surface_face_count)
+            + ", \"terrain_near\": "
+                + (sample.terrain_near ? terrainNearSampleJson(*sample.terrain_near) : "null")
             + ", \"diagnostic_render_attempt_id\": " + std::to_string(sample.diagnostic_render_attempt_id)
             + ", \"diagnostic_frame_recorded\": " + (sample.diagnostic_frame_recorded ? "true" : "false")
             + ", \"diagnostic_indexed_stone_quads\": " + (sample.diagnostic_indexed_stone_quads ? "true" : "false")

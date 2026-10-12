@@ -205,9 +205,9 @@ TEST(PlayerClientCapturePlanTest, DrainsFullReceiveWindowDuringCapturePreload)
     EXPECT_EQ(client::playerClientHeightTileChangeBudget(false), 16U);
 }
 
-TEST(PlayerClientCapturePlanTest, AllowsCapturePreloadToQueueAndDrainMoreMeshesPerFrame)
+TEST(PlayerClientCapturePlanTest, UsesTheSamePreviewMeshJobBudgetDuringCaptureAndPlay)
 {
-    EXPECT_EQ(client::playerClientPreviewMeshJobBudget(true), 32U);
+    EXPECT_EQ(client::playerClientPreviewMeshJobBudget(true), 16U);
     EXPECT_EQ(client::playerClientPreviewMeshJobBudget(false), 16U);
 }
 
@@ -399,6 +399,101 @@ TEST(PlayerClientCapturePlanTest, BoundedPriorityRefreshPrunesDeparturesAndKeeps
     EXPECT_EQ(queue.top(), ARRIVED);
     queue.pop();
     EXPECT_TRUE(queue.empty());
+}
+
+TEST(PlayerClientCapturePlanTest, MovingCenterAdmitsNearbyPendingMeshesAheadOfOldPriorityBacklog)
+{
+    static constexpr shared::HeightTileKey INITIAL_CENTER{ 2'048, 2'048 };
+    static constexpr uint32_t REFRESH_BUDGET = 256U;
+    static constexpr int32_t NEAR_RADIUS = 7;
+    static constexpr std::array<shared::HeightTileKey, 8> MOVED_CENTERS{{
+        { 1'848, 2'048 }, { 2'248, 2'048 }, { 1'868, 2'048 }, { 2'228, 2'048 },
+        { 1'888, 2'048 }, { 2'208, 2'048 }, { 1'908, 2'048 }, { 2'188, 2'048 },
+    }};
+    shared::HeightTileInterest const initial_interest = shared::makeHeightTileInterest(
+        INITIAL_CENTER, 127, 0, shared::HEIGHT_TILE_INTEREST_RADIUS
+    );
+    std::unordered_set<shared::HeightTileKey, client::PlayerHeightTileKeyHash> const interest{
+        initial_interest.keys.begin(), initial_interest.keys.end()
+    };
+    client::PlayerPreviewMeshQueue queue;
+    queue.resetPriority(INITIAL_CENTER, 127, 0, interest);
+    for (shared::HeightTileKey const key : initial_interest.keys) {
+        ASSERT_TRUE(queue.push(key));
+    }
+
+    for (uint32_t step = 0U; step < static_cast<uint32_t>(MOVED_CENTERS.size()); ++step) {
+        shared::HeightTileKey const center = MOVED_CENTERS[step];
+        ASSERT_TRUE(interest.contains(center)) << "motion step " << step;
+        int8_t const heading_x = step % 2U == 0U ? -127 : 127;
+        queue.beginPriorityRefresh(center, heading_x, 0);
+        ASSERT_EQ(queue.refreshPriority(REFRESH_BUDGET, interest), REFRESH_BUDGET);
+        std::array<shared::HeightTileKey, 225U> nearby_candidates{};
+        uint32_t candidate_count = 0U;
+        for (int32_t y = -NEAR_RADIUS; y <= NEAR_RADIUS; ++y) {
+            for (int32_t x = -NEAR_RADIUS; x <= NEAR_RADIUS; ++x) {
+                nearby_candidates[candidate_count++] = { center.x + x, center.y + y };
+            }
+        }
+        std::span<shared::HeightTileKey const> const candidates{ nearby_candidates };
+        EXPECT_TRUE(queue.contains(center)) << "motion step " << step;
+        EXPECT_EQ(queue.nearestPending(candidates), center) << "motion step " << step;
+        EXPECT_EQ(queue.nearestPending(candidates), center) << "unaccepted enqueue consumed pending key";
+        EXPECT_TRUE(queue.erase(center)) << "motion step " << step;
+        EXPECT_FALSE(queue.contains(center)) << "accepted enqueue should consume pending key";
+    }
+}
+
+TEST(PlayerClientCapturePlanTest, RequeuedKeyDoesNotResurfaceFromItsStaleHeapEntry)
+{
+    static constexpr shared::HeightTileKey CENTER{ 2'048, 2'048 };
+    static constexpr shared::HeightTileKey KEY{ 2'049, 2'048 };
+    static constexpr uint32_t REFRESH_BUDGET = 1U;
+    std::unordered_set<shared::HeightTileKey, client::PlayerHeightTileKeyHash> const interest{ KEY };
+    client::PlayerPreviewMeshQueue queue;
+    ASSERT_TRUE(queue.push(KEY));
+    queue.beginPriorityRefresh(CENTER, 127, 0);
+    ASSERT_TRUE(queue.erase(KEY));
+    ASSERT_TRUE(queue.push(KEY));
+    ASSERT_TRUE(queue.contains(KEY));
+    ASSERT_TRUE(queue.hasReady());
+    EXPECT_EQ(queue.top(), KEY);
+    queue.pop();
+    EXPECT_FALSE(queue.contains(KEY));
+    ASSERT_TRUE(queue.empty());
+
+    EXPECT_EQ(queue.refreshPriority(REFRESH_BUDGET, interest), REFRESH_BUDGET);
+    EXPECT_TRUE(queue.empty());
+    EXPECT_FALSE(queue.hasReady());
+}
+
+TEST(PlayerClientCapturePlanTest, NearbyPendingProbeWrapsAcrossTheWorldEdge)
+{
+    static constexpr shared::HeightTileKey CENTER{ 4'093, 2'048 };
+    static constexpr shared::HeightTileKey WRAPPED_EAST{ 0, 2'048 };
+    static constexpr int32_t NEAR_RADIUS = 7;
+    std::array<shared::HeightTileKey, 225U> candidates{};
+    std::unordered_set<shared::HeightTileKey, client::PlayerHeightTileKeyHash> interest;
+    uint32_t candidate_count = 0U;
+    for (int32_t y = -NEAR_RADIUS; y <= NEAR_RADIUS; ++y) {
+        for (int32_t x = -NEAR_RADIUS; x <= NEAR_RADIUS; ++x) {
+            shared::HeightTileKey const key = shared::normalizeHeightTileKey({
+                .x = CENTER.x + x,
+                .y = CENTER.y + y,
+            });
+            candidates[candidate_count++] = key;
+            interest.insert(key);
+        }
+    }
+    client::PlayerPreviewMeshQueue queue;
+    queue.resetPriority(CENTER, 127, 0, interest);
+    for (shared::HeightTileKey const key : candidates) {
+        ASSERT_TRUE(queue.push(key));
+    }
+    std::span<shared::HeightTileKey const> const candidate_span{ candidates };
+
+    EXPECT_TRUE(interest.contains(WRAPPED_EAST));
+    EXPECT_EQ(queue.nearestPending(candidate_span), CENTER);
 }
 
 TEST(PlayerClientCapturePlanTest, MaintainedCoverageMatchesVisibleInterestThroughPublicationAndReset)
