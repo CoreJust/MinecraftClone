@@ -18,7 +18,6 @@ from script.ci import acquire
 
 
 REPOSITORY = Path(__file__).resolve().parents[2]
-AI_CHECKS_WORKFLOW = REPOSITORY / ".github/workflows/ai-checks.yml"
 SNAPSHOT_WORKFLOW = REPOSITORY / ".github/workflows/snapshot-artifacts.yml"
 
 
@@ -372,26 +371,39 @@ class PreFinalizationCandidateTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "does not exist"):
             infrastructure_checks.commit_project_date(self.root, "f" * 40)
 
-    def test_snapshot_artifact_workflow_reserves_private_dependencies_for_finalized_sources(self) -> None:
-        ai_checks = AI_CHECKS_WORKFLOW.read_text(encoding="utf-8")
+    def test_snapshot_artifact_workflow_uses_trusted_exact_source_and_build_only_evidence(self) -> None:
         snapshot = SNAPSHOT_WORKFLOW.read_text(encoding="utf-8")
-
-        self.assertEqual(ai_checks.count("tzdata==2025.2"), 2)
         self.assertEqual(snapshot.count("tzdata==2025.2"), 2)
-        self.assertIn("if: github.ref != 'refs/heads/ai-main'", ai_checks)
-        self.assertIn("if: github.ref == 'refs/heads/ai-main'", ai_checks)
-        self.assertIn("source-checks --pre-finalization-candidate", ai_checks)
-        self.assertIn("SOURCE_COMMIT: ${{ github.sha }}", ai_checks)
-        cross_platform_source_arg = 'source-checks --source-commit "${{ env.SOURCE_COMMIT }}"'
-        self.assertIn(cross_platform_source_arg, ai_checks)
-        fast_job = ai_checks.split("  desktop:", 1)[0]
-        self.assertNotIn("fetch-depth: 0", fast_job)
-        desktop_job = ai_checks.split("  desktop:", 1)[1].split("\n  linux-analysis:", 1)[0]
-        self.assertIn("fetch-depth: 0", desktop_job)
         self.assertNotIn("codex/ai-release-", snapshot)
         self.assertNotIn("source-checks --pre-finalization-candidate", snapshot)
         self.assertEqual(snapshot.count("fetch-depth: 0"), 3)
-        self.assertEqual(snapshot.count(cross_platform_source_arg), 2)
+        source_job = snapshot.split("\n  desktop:", 1)[0]
+        desktop_job = snapshot.split("\n  desktop:", 1)[1].split("\n  android:", 1)[0]
+        android_job = snapshot.split("\n  android:", 1)[1]
+
+        self.assertIn("timeout-minutes: 15", source_job)
+        self.assertIn("Authorize private dependency source", source_job)
+        self.assertIn("git merge-base --is-ancestor", source_job)
+        self.assertIn("source_commit: ${{ steps.trust.outputs.source_commit }}", source_job)
+        self.assertIn("python script/ci/build_snapshot.py source-identity", source_job)
+        self.assertIn('--expected "${{ steps.trust.outputs.source_commit }}"', source_job)
+        self.assertLess(
+            source_job.index("Authorize private dependency source"),
+            source_job.index("Resolve immutable source identity"),
+        )
+        self.assertNotIn("secrets.", source_job)
+        self.assertNotIn("verify_analysis_gate", source_job)
+        self.assertNotIn("source-checks", snapshot)
+        self.assertEqual(snapshot.count('ref: ${{ needs.source.outputs.source_commit }}'), 2)
+        self.assertIn("if: needs.source.outputs.trusted_dependency_source == 'true'", desktop_job)
+        self.assertIn("if: needs.source.outputs.trusted_dependency_source == 'true'", android_job)
+        self.assertEqual(snapshot.count('--expected "$SOURCE_COMMIT"'), 2)
+        self.assertEqual(snapshot.count("actions/cache/restore@"), 2)
+        self.assertEqual(snapshot.count("actions/cache/save@"), 2)
+        self.assertIn("VCPKG_DEFAULT_BINARY_CACHE", snapshot)
+        self.assertIn("--automated-verification build-only", desktop_job)
+        self.assertIn("--automated-verification build-only", android_job)
+        self.assertNotIn("--automated-verification passed", snapshot)
 
 
 if __name__ == "__main__":

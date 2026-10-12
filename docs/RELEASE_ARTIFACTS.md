@@ -1,9 +1,9 @@
 # Snapshot release artifacts
 
 Run the `Snapshot artifacts` workflow manually with the source branch, tag, or
-commit and its exact `EPOCH.MAJOR.MINOR:SNAPSHOT` version. A push to `ai-main`,
-an `ai/*/*/*` tag, or a purpose-specific `codex/ai-release-*` branch also starts
-it without requiring registration on the legacy default branch. The workflow
+commit and its exact `EPOCH.MAJOR.MINOR:SNAPSHOT` version. A push of an
+`ai/*/*/*` tag also starts it. Branch pushes do not start duplicate builds when
+the promotion and its tag are published together. The workflow
 resolves a manual ref once (or uses the push commit), checks out that
 40-character commit in every build job, and rejects a supplied version that
 does not match `PROJECT_VERSION`. It does not create a tag or a GitHub Release.
@@ -11,7 +11,8 @@ does not match `PROJECT_VERSION`. It does not create a tag or a GitHub Release.
 Successful jobs retain separate macOS arm64, Windows x86-64, and Android
 arm64-v8a candidate artifacts for 14 days. Desktop candidates contain the
 relocatable package, package manifest, SHA-256 sidecar, toolchain record, source
-identity, CTest log, and hosted-build evidence. The Android candidate contains
+identity and hosted build-only evidence. Qualification runs locally; these
+jobs do not run CTest. The Android candidate contains
 the unchanged CI development-signed APK, APK/package evidence, a deterministic
 dependency-and-HUD-license archive, SHA-256 sidecars, toolchain record, and
 source identity. The APK itself contains the HUD attribution and Tamsyn font

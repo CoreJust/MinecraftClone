@@ -342,6 +342,7 @@ def prepare(root: Path, task_id: str, source_text: str) -> None:
     run_check(
         root,
         "--candidate",
+        "--proof-only",
         "--level",
         "snapshot",
         "--require-index-match",
@@ -374,6 +375,7 @@ def finish(root: Path, task_id: str, source_text: str) -> None:
     run_check(
         root,
         "--candidate",
+        "--proof-only",
         "--level",
         "snapshot",
         "--require-index-match",
@@ -393,7 +395,7 @@ def finish(root: Path, task_id: str, source_text: str) -> None:
     require_clean(root)
     print(
         f"Promotion commit created: {promoted}\n"
-        "Push this exact ai-main commit and wait for its hosted analysis gate before running tag."
+        f"Run `python3 script/ai_publish.py tag {task_id}` to validate the local release proof and create its tag."
     )
 
 
@@ -422,6 +424,7 @@ def tag(root: Path, task_id: str, revision_number: int | None = None) -> None:
     run_check(
         root,
         "--strict",
+        "--proof-only",
         "--level",
         "snapshot",
         "--require-index-match",

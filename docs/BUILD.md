@@ -68,9 +68,9 @@ ENet uses UDP, while `adb reverse` forwards only TCP. Physical devices need a ne
 
 Set `VULKAN_SDK` to the SDK platform directory if CMake cannot find it. The SDK's `spirv-val` is required by the shader-target CTest checks. On macOS, Vulkan runs through MoltenVK; when the SDK is not registered system-wide, set `VK_DRIVER_FILES` to its `share/vulkan/icd.d/MoltenVK_icd.json` for the launched process. Do not commit machine-specific SDK paths.
 
-## Hosted desktop CI
+## Artifact-only hosted builds
 
-CI uses `macos-15` arm64/`windows-2022`, pinned tools, Debug/Release and cached dependencies. macOS needs GMP/MPFR autotools; Windows: GMP overlay, VS 2022 x64, Vulkan runtime ZIP/license. CoreLang excludes legacy Script; Ninja collects independent failures. Android aggregate-initializer warnings remain nonfatal. Jobs validate builds/tests/shaders/packages/checksums/exclusions and upload diagnostics/toolchain metadata. Hosted `MC_ENABLE_RENDERER_SMOKE=OFF` requires separate GPU/runtime acceptance. Manual `ai-dev` Linux dispatch cannot qualify releases.
+Artifact CI uses `macos-15` arm64/`windows-2022`, pinned tools and cached dependencies. Jobs build/package artifacts and verify provenance/checksums/exclusions; qualification tests, analyzers and runtime acceptance run locally. macOS needs GMP/MPFR autotools; Windows needs the GMP overlay, VS 2022 x64 and Vulkan runtime ZIP/license. CoreLang excludes legacy Script. Android initializer warnings remain nonfatal. Linux is analysis-only.
 
 ASan requires instrumented Release vcpkg/private dependencies with matching
 runtime/iterator/annotation settings, `/Zi` compiler and `/DEBUG` linker symbols.
@@ -80,7 +80,7 @@ qualify both Windows rows before promotion.
 
 The renderer requests Vulkan 1.2 with dynamic rendering and synchronization2 extensions/features, not maintenance4. Mesh shaders target Vulkan 1.3; validate on Vulkan 1.3 and exercise vertex fallback. Requesting Vulkan 1.2 does not establish support for every such driver. Vulkan 1.4 remains aspirational.
 
-[Helpers](../cmake/Helpers.cmake) enforce strict warnings (`MC_ENABLE_HIGH_ASSERT`, `MC_ENABLE_VULKAN_VALIDATION_LAYERS`, `MC_ENABLE_SANITIZERS`). Debug/explicit builds require validation; Release does not. Mac CI retains LSan. MSan: GMP C, `LDFLAGS` probes, pinned unwind fixes. CFI-trusted ABI-spill copies normalize; source-shadow/address/metadata checks remain. Observations preserve state/shadow. Preflight checks cleanup/rethrow and application heap-read/allocation origin; bounded reports retain provenance.
+[Helpers](../cmake/Helpers.cmake) enforce strict warnings and sanitizer/validation options. Debug/explicit builds require validation; Release does not. Local Mac ASan retains LSan. Linux LSan selects `MC_LSAN_LIBCXX_PREFIX`. MSan uses pinned instrumented libc++/libc++abi with system `libgcc_s`, not patched libunwind. Runtime/stock-ignorelist bytes are captured; no suppression is added. Process-local `DEBUGINFOD_URLS=` keeps symbolization offline. Exception/rethrow/cleanup and symbolized heap-read/origin controls precede game tests. Receipts bind selected Vulkan/shader-tool bytes and Windows ASan DLLs. See [setup findings](ai/S7-DELIVERY-PROCESS-REPAIR.md).
 
 ## Gate levels
 
@@ -101,7 +101,7 @@ python3 publish.py 'EarlyDev:Initiation' 0.1.0:3 --checks-only
 
 `--checks-only` skips builds/tests; aggregate gates run both. [AI release policy](ai/RELEASES.md) binds dates to validated source commits in Europe/Belgrade; development and legacy checks use today. Development exceptions: dirty Git state and incorrect snapshot files, reported separately. Other failures block completion. Never fabricate dates or hide baseline failures.
 
-The existing non-check publisher only accepts `dev` and does not switch to `main` before merging. Do not use it for the AI line. Follow [the explicit snapshot procedure](VERSION_CONVENTION.md); a release-tool repair belongs to its own task.
+Do not use the legacy non-check publisher for the AI line; follow [snapshot publication](VERSION_CONVENTION.md).
 
 Additional [release gates](../script/ai_checks.json) require the windowed smoke below at snapshot, minor, and major levels; S4 task MC-AI-0052 owns offscreen texture goldens. Minor/major gates also record environment, documentation, hindsight, and backlog reviews. Every commit uses [task and review receipts](ai/COMMITS.md).
 
@@ -111,7 +111,10 @@ Additional [release gates](../script/ai_checks.json) require the windowed smoke 
 
 Timed S7 tests use CTest `RUN_SERIAL`; workloads remain unchanged.
 
-`script/ai_renderer_smoke.py` rejects foreign caches, configures its preset, builds `mc_renderer_smoke`, and runs `RendererSmokeTest` with bounded timeouts. It records `build/ai-checks/renderer-smoke.log` and fails on missing registration, device, validation, runtime, or timeout errors. This test checks pixels, resize, reload, and close across automatic and vertex-fallback pipelines. It does not prove controls, multiplayer, Windows, or headless goldens; hosted CI remains GPU-free.
+Local diagnostics are not release qualification; retained
+[observation patches](ai/tasks/MC-AI-0433.md) must not enter production builds.
+
+`script/ai_renderer_smoke.py` rejects foreign caches and builds/runs `RendererSmokeTest` with bounded timeouts, logging to `build/ai-checks/renderer-smoke.log`. Missing registration/device, validation, runtime, and timeout errors fail. Pixels, resize, reload, and close cover automatic/vertex-fallback pipelines—not controls, multiplayer, Windows, or headless goldens. Hosted CI remains GPU-free.
 
 `MC_ENABLE_RENDERER_GOLDEN=ON` enables S4 readback against manual
 non-updating reference. `MC_RENDERER_GOLDEN_UNSUPPORTED_POLICY=fail` approves;

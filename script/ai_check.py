@@ -32,6 +32,23 @@ NATIVE_BUILD_PREFIXES = ("src/", "tests/", "cmake/", "android/")
 NATIVE_BUILD_FILES = {
     "CMakeLists.txt", "CMakePresets.json", "vcpkg.json", "vcpkg-configuration.json",
 }
+BUILD_INPUT_PREFIXES = (
+    "android/", "assets/", "cmake/", "scenarios/", "src/", "tests/",
+    "script/ci/vcpkg-overlays/", "script/ci/vcpkg-triplets/",
+)
+BUILD_INPUT_FILES = NATIVE_BUILD_FILES | {
+    "dependencies.lock.json",
+    "script/ci/cppcheck_gate.py",
+    "script/ci/iwyu_gate.py",
+}
+BUILD_PHASE_COMMANDS = {
+    "build": ["cmake", "--build", "--preset", "debug"],
+    "ctest": [
+        "ctest", "--preset", "debug", "--output-on-failure", "--no-tests=error",
+        "--timeout", "240",
+    ],
+}
+NATIVE_RECEIPT_PHASES = {"build", "ctest", "extra-renderer-smoke"}
 GOVERNED_FILES = {
     ".gitattributes", ".gitignore", "AGENTS.md", "CLAUDE.md", "CMakeLists.txt", "CMakePresets.json", "README.md",
     "publish.py", "vcpkg.json", "vcpkg-configuration.json",
@@ -206,11 +223,32 @@ def repository_paths(root: Path) -> list[str]:
 
 def phase_relevant_paths(root: Path, name: str) -> list[str]:
     paths = repository_paths(root)
+    if name in {"build", "ctest"}:
+        relevant = [
+            path for path in paths
+            if path.startswith(BUILD_INPUT_PREFIXES)
+            or path in BUILD_INPUT_FILES
+            or path.endswith("/CMakeLists.txt")
+            or path.endswith(".cmake")
+        ]
+        if (root / "CMakeUserPresets.json").is_file():
+            relevant.append("CMakeUserPresets.json")
+        return sorted(set(relevant))
+    if name == "extra-renderer-smoke":
+        relevant = {
+            path for path in paths
+            if path.startswith(BUILD_INPUT_PREFIXES)
+            or path in BUILD_INPUT_FILES
+            or path.endswith("/CMakeLists.txt")
+            or path.endswith(".cmake")
+            or path in {"script/ai_checks.json", "script/ai_renderer_smoke.py"}
+        }
+        if (root / "CMakeUserPresets.json").is_file():
+            relevant.add("CMakeUserPresets.json")
+        return sorted(relevant)
     if name == "python-tests":
-        # The full unittest suite is a repository-policy harness, not a unit
-        # test of only the Python modules. Tests may inspect source, docs,
-        # workflow, and project files, so use the conservative repository
-        # closure rather than guessing by extension.
+        # The suite is a repository-policy harness: tests may inspect any
+        # tracked or discovered repository content, including release docs.
         tests_root = root / "script/tests"
         if tests_root.is_dir():
             paths.extend(
@@ -230,6 +268,218 @@ def phase_relevant_paths(root: Path, name: str) -> list[str]:
     return paths
 
 
+def sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def sha256_tree(path: Path) -> tuple[str, int]:
+    digest = hashlib.sha256()
+    count = 0
+    last_progress = time.monotonic()
+    visited_directories: set[Path] = set()
+    for directory, child_directories, filenames in os.walk(path, followlinks=True):
+        child_directories.sort()
+        resolved_directory = Path(directory).resolve()
+        if resolved_directory in visited_directories:
+            child_directories.clear()
+            continue
+        visited_directories.add(resolved_directory)
+        for child_directory in child_directories:
+            target = Path(directory) / child_directory
+            if target.is_symlink():
+                relative = target.relative_to(path).as_posix()
+                digest.update(relative.encode("utf-8", errors="surrogateescape"))
+                digest.update(os.readlink(target).encode("utf-8", errors="surrogateescape"))
+        for filename in sorted(filenames):
+            target = Path(directory) / filename
+            if not target.is_file():
+                continue
+            relative = target.relative_to(path).as_posix()
+            digest.update(str(target.stat().st_mode & 0o7777).encode("ascii"))
+            digest.update(relative.encode("utf-8", errors="surrogateescape"))
+            digest.update(bytes.fromhex(sha256_file(target)))
+            count += 1
+            elapsed = time.monotonic() - last_progress
+            if elapsed >= 30:
+                print(
+                    f"FINGERPRINT {path}: {count} dependency files hashed; "
+                    f"{elapsed:.0f}s since the last progress signal",
+                    flush=True,
+                )
+                last_progress = time.monotonic()
+    return digest.hexdigest(), count
+
+
+def parse_cmake_cache(path: Path) -> dict[str, str]:
+    values = {}
+    for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+        if not line or line.startswith(("#", "//")) or "=" not in line:
+            continue
+        name, value = line.split("=", 1)
+        key, separator, _kind = name.partition(":")
+        if separator:
+            values[key] = value
+    return values
+
+
+def native_build_state(root: Path, name: str) -> dict[str, object]:
+    preset = "renderer-smoke" if name == "extra-renderer-smoke" else "debug"
+    build_root = root / "build" / preset
+    cache_path = build_root / "CMakeCache.txt"
+    state: dict[str, object] = {
+        "preset": preset,
+        "available": False,
+        "reason": "CMakeCache.txt is missing",
+    }
+    if not cache_path.is_file():
+        state["cache"] = "<missing>"
+        return state
+
+    values = parse_cmake_cache(cache_path)
+    cache_digest = sha256_file(cache_path)
+    generator_file = build_root / "build.ninja"
+    if not generator_file.is_file():
+        state["cache"] = cache_digest
+        state["reason"] = "Ninja build graph is missing"
+        return state
+
+    generated_build_files = {"build.ninja": sha256_file(generator_file)}
+    missing_generated_build_files = []
+    for line in generator_file.read_text(encoding="utf-8", errors="replace").splitlines():
+        match = re.fullmatch(r"(?:include|subninja)\s+(.+)", line)
+        if match is None:
+            continue
+        relative = match.group(1)
+        included = build_root / relative
+        if not included.is_file():
+            missing_generated_build_files.append(relative)
+        else:
+            generated_build_files[relative] = sha256_file(included)
+
+    expected_targets = (
+        (
+            (
+                "tests/renderer-smoke/mc_renderer_smoke",
+                "tests/renderer-smoke/mc_renderer_smoke.exe",
+            ),
+        )
+        if name == "extra-renderer-smoke"
+        else (("mc_main", "mc_main.exe"), ("tests/mc_tests", "tests/mc_tests.exe"))
+    )
+    artifacts = {}
+    missing_artifacts = []
+    ambiguous_artifacts = []
+    for alternatives in expected_targets:
+        matching_targets = [
+            build_root / relative
+            for relative in alternatives
+            if (build_root / relative).is_file()
+        ]
+        if name == "extra-renderer-smoke" and len(matching_targets) > 1:
+            ambiguous_artifacts.append(" or ".join(alternatives))
+            continue
+        target = matching_targets[0] if matching_targets else None
+        if target is None:
+            missing_artifacts.append(" or ".join(alternatives))
+            continue
+        relative = target.relative_to(build_root).as_posix()
+        artifacts[relative] = {
+            "size": target.stat().st_size,
+            "mode": target.stat().st_mode & 0o7777,
+            "sha256": sha256_file(target),
+        }
+
+    tool_identities = {}
+    missing_tools = []
+    for key in ("CMAKE_C_COMPILER", "CMAKE_CXX_COMPILER", "CMAKE_MAKE_PROGRAM", "CMAKE_TOOLCHAIN_FILE"):
+        value = values.get(key, "")
+        target = Path(value).expanduser() if value else None
+        if target is None or not target.is_file():
+            missing_tools.append(key)
+            tool_identities[key] = value or "<missing>"
+            continue
+        tool_identities[key] = {
+            "path": str(target.resolve()),
+            "size": target.stat().st_size,
+            "mode": target.stat().st_mode & 0o7777,
+            "sha256": sha256_file(target),
+        }
+
+    dependency_roots: list[Path] = []
+    for key in ("CMAKE_PREFIX_PATH", "VCPKG_INSTALLED_DIR"):
+        for raw_path in values.get(key, "").split(";"):
+            if raw_path:
+                dependency_roots.append(Path(raw_path).expanduser())
+    for key, raw_path in values.items():
+        if (
+            key in {"VCPKG_MANIFEST_DIR", "_VCPKG_MANIFEST_DIR"}
+            or key.endswith(("_BINARY_DIR", "_SOURCE_DIR"))
+        ):
+            continue
+        if key.startswith("CMAKE_") or not (key.endswith("_DIR") or key.endswith("_INCLUDE_DIR")):
+            continue
+        if raw_path:
+            dependency_roots.append(Path(raw_path).expanduser())
+
+    unique_roots: list[Path] = []
+    for path in dependency_roots:
+        resolved = path.resolve()
+        if not resolved.is_dir():
+            missing_tools.append(f"dependency directory {path}")
+            continue
+        if any(resolved == parent or parent in resolved.parents for parent in unique_roots):
+            continue
+        unique_roots = [parent for parent in unique_roots if parent not in resolved.parents]
+        unique_roots.append(resolved)
+
+    dependency_digests = {}
+    for path in sorted(unique_roots):
+        digest, file_count = sha256_tree(path)
+        dependency_digests[str(path)] = {"sha256": digest, "files": file_count}
+
+    home = values.get("CMAKE_HOME_DIRECTORY", "")
+    wrong_root = not home or Path(home).resolve() != root.resolve()
+    if values.get("CMAKE_GENERATOR") != "Ninja":
+        wrong_root = True
+    if not dependency_digests:
+        missing_tools.append("configured dependency prefixes")
+
+    state.update({
+        "cache_sha256": cache_digest,
+        "generated_build_files": generated_build_files,
+        "missing_generated_build_files": missing_generated_build_files,
+        "artifacts": artifacts,
+        "missing_artifacts": missing_artifacts,
+        "tools": tool_identities,
+        "dependency_prefixes": dependency_digests,
+        "available": not (
+            wrong_root
+            or missing_artifacts
+            or ambiguous_artifacts
+            or missing_tools
+            or missing_generated_build_files
+        ),
+        "reason": (
+            "wrong or missing CMake checkout/generator identity"
+            if wrong_root
+            else "missing generated build files: " + ", ".join(missing_generated_build_files)
+            if missing_generated_build_files
+            else "ambiguous output targets: " + ", ".join(ambiguous_artifacts)
+            if ambiguous_artifacts
+            else "missing output targets: " + ", ".join(missing_artifacts)
+            if missing_artifacts
+            else "missing compiler/tool/dependency identity: " + ", ".join(missing_tools)
+            if missing_tools
+            else "complete"
+        ),
+    })
+    return state
+
+
 def relevant_inputs(root: Path, name: str) -> dict[str, object]:
     paths = phase_relevant_paths(root, name)
     files = []
@@ -244,13 +494,17 @@ def relevant_inputs(root: Path, name: str) -> dict[str, object]:
         "paths": paths,
         "files": files,
     }
+    if name in NATIVE_RECEIPT_PHASES:
+        payload["native_build_state"] = native_build_state(root, name)
     serialized = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
     payload["fingerprint"] = hashlib.sha256(serialized).hexdigest()
     return payload
 
 
 def phase_environment(root: Path, name: str) -> dict[str, str]:
-    return python_test_environment(root) if name == "python-tests" else os.environ.copy()
+    if name in {"python-tests", "build", "ctest", "extra-renderer-smoke"}:
+        return python_test_environment(root)
+    return os.environ.copy()
 
 
 def environment_fingerprint(environment: dict[str, str]) -> str:
@@ -304,6 +558,10 @@ def read_matching_receipt(
     environment: dict[str, str],
     inputs: dict[str, object],
 ) -> str | None:
+    if name in NATIVE_RECEIPT_PHASES:
+        native_state = inputs.get("native_build_state")
+        if not isinstance(native_state, dict) or native_state.get("available") is not True:
+            return None
     target = receipt_path(log_dir, name)
     log = log_dir / f"{name}.log"
     try:
@@ -331,6 +589,17 @@ def read_matching_receipt(
     if receipt != expected:
         return None
     return output
+
+
+def validate_phase_receipt(
+    root: Path,
+    log_dir: Path,
+    name: str,
+    command: Sequence[str],
+) -> str | None:
+    environment = phase_environment(root, name)
+    inputs = relevant_inputs(root, name)
+    return read_matching_receipt(root, log_dir, name, command, environment, inputs)
 
 
 def evidence_fingerprint(output: str) -> str:
@@ -463,40 +732,130 @@ def run_phase(
         result.duration_seconds = time.monotonic() - started
         (log_dir / f"{name}.log").write_text(result.output, encoding="utf-8")
         return result
-    # Build and CTest outputs have dependency closures too broad for this
-    # lightweight receipt. Tooling checks, including the full Python suite,
-    # are reusable when their exact command, environment, evidence, and
-    # content-based repository inputs still match.
-    if reuse and name not in {"build", "ctest"}:
+    if reuse:
         output = read_matching_receipt(root, log_dir, name, command, environment, inputs)
         if output is not None:
             return PhaseResult(
                 name, command, 0, output, reused=True, duration_seconds=time.monotonic() - started
             )
-    try:
-        completed = subprocess.run(
+    initial_native_state = inputs.get("native_build_state")
+    if name == "ctest" and (
+        not isinstance(initial_native_state, dict)
+        or initial_native_state.get("available") is not True
+    ):
+        result = PhaseResult(
+            name,
             command,
-            cwd=root,
-            text=True,
-            capture_output=True,
-            timeout=timeout,
-            check=False,
-            env=environment,
+            1,
+            "CTest requires a complete matching debug build receipt state: "
+            + str(initial_native_state.get("reason", "native build state is unavailable"))
+            if isinstance(initial_native_state, dict)
+            else "CTest requires a complete matching debug build receipt state",
         )
-        output = completed.stdout + completed.stderr
-        result = PhaseResult(name, command, completed.returncode, output)
-    except subprocess.TimeoutExpired as error:
-        stdout = error.stdout or ""
-        stderr = error.stderr or ""
-        if isinstance(stdout, bytes):
-            stdout = stdout.decode(errors="replace")
-        if isinstance(stderr, bytes):
-            stderr = stderr.decode(errors="replace")
-        result = PhaseResult(name, command, 124, stdout + stderr, timed_out=True)
+        result.duration_seconds = time.monotonic() - started
+        write_receipt(log_dir, name, command, environment, inputs, result)
+        return result
+    log_path = log_dir / f"{name}.log"
+    relative_log = log_path.relative_to(root)
+    print(
+        f"RUN {name}: {' '.join(command)} (timeout {timeout}s; log {relative_log})",
+        flush=True,
+    )
+    try:
+        with log_path.open("wb") as log_stream:
+            process = subprocess.Popen(
+                command,
+                cwd=root,
+                stdout=log_stream,
+                stderr=subprocess.STDOUT,
+                env=environment,
+            )
+            cursor = 0
+            timed_out = False
+            while True:
+                elapsed = time.monotonic() - started
+                remaining = timeout - elapsed
+                if remaining <= 0:
+                    process.kill()
+                    process.wait()
+                    timed_out = True
+                    break
+                try:
+                    returncode = process.wait(timeout=min(30.0, remaining))
+                    break
+                except subprocess.TimeoutExpired:
+                    log_stream.flush()
+                    with log_path.open("rb") as reader:
+                        reader.seek(cursor)
+                        chunk = reader.read()
+                    if chunk:
+                        sys.stdout.write(chunk.decode(errors="replace"))
+                        sys.stdout.flush()
+                        cursor += len(chunk)
+                    elapsed = time.monotonic() - started
+                    if elapsed >= timeout:
+                        process.kill()
+                        process.wait()
+                        timed_out = True
+                        break
+                    last_evidence = "output received" if chunk else "no output received yet"
+                    print(
+                        f"RUNNING {name}: {elapsed:.0f}s elapsed; {last_evidence}; "
+                        f"timeout {timeout}s; log {relative_log}",
+                        flush=True,
+                    )
+            log_stream.flush()
+            with log_path.open("rb") as reader:
+                reader.seek(cursor)
+                final_chunk = reader.read()
+            if final_chunk:
+                sys.stdout.write(final_chunk.decode(errors="replace"))
+                sys.stdout.flush()
+            output = log_path.read_text(encoding="utf-8", errors="replace")
+            result = PhaseResult(
+                name,
+                command,
+                124 if timed_out else returncode,
+                output,
+                timed_out=timed_out,
+            )
     except (OSError, RuntimeError) as error:
         result = PhaseResult(name, command, 127, str(error))
-    (log_dir / f"{name}.log").write_text(result.output, encoding="utf-8")
+        log_path.write_text(result.output, encoding="utf-8")
     result.duration_seconds = time.monotonic() - started
+    if result.returncode == 0 and name in NATIVE_RECEIPT_PHASES:
+        try:
+            final_inputs = relevant_inputs(root, name)
+            final_native_state = final_inputs.get("native_build_state")
+            same_repository_inputs = (
+                inputs.get("paths") == final_inputs.get("paths")
+                and inputs.get("files") == final_inputs.get("files")
+            )
+            if not same_repository_inputs:
+                result.returncode = 1
+                result.output += "\nNative source/configuration inputs changed while the phase was running."
+            elif (
+                not isinstance(final_native_state, dict)
+                or final_native_state.get("available") is not True
+            ):
+                reason = (
+                    final_native_state.get("reason", "native build state is unavailable")
+                    if isinstance(final_native_state, dict)
+                    else "native build state is unavailable"
+                )
+                result.returncode = 1
+                result.output += f"\nNative output/configuration evidence is incomplete: {reason}."
+            elif name == "ctest" and initial_native_state != final_native_state:
+                result.returncode = 1
+                result.output += "\nNative build inputs or outputs changed while CTest was running."
+            else:
+                inputs = final_inputs
+        except (OSError, RuntimeError) as error:
+            result.returncode = 1
+            result.output += f"\nCannot revalidate native build evidence: {error}."
+    elif result.returncode == 0 and name == "ctest":
+        result.returncode = 1
+        result.output += "\nCTest completed without a complete pre-run native build identity."
     write_receipt(log_dir, name, command, environment, inputs, result)
     return result
 
@@ -609,6 +968,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--fast", action="store_true", help="skip build, CTest, and publisher checks")
     parser.add_argument("--strict", action="store_true", help="do not allow development publisher failures")
     parser.add_argument("--candidate", action="store_true", help="full release checks before commit; allow only dirty Git state")
+    parser.add_argument(
+        "--proof-only",
+        action="store_true",
+        help=argparse.SUPPRESS,
+    )
     parser.add_argument("--level", choices=("basic", "snapshot", "minor", "major"), default="basic")
     parser.add_argument("--require-index-match", action="store_true", help="reject partially staged governed files")
     parser.add_argument("--snapshot-source-commit", help="bind the snapshot date to an immutable AI source commit")
@@ -618,6 +982,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         parser.error("--fast cannot be combined with release checks")
     if args.fast and args.snapshot_source_commit:
         parser.error("--fast cannot use a snapshot source binding")
+    if args.proof_only and (args.fast or args.candidate == args.strict):
+        parser.error("--proof-only requires exactly one of --candidate or --strict")
+    if args.proof_only and args.snapshot_source_commit is None and args.candidate:
+        parser.error("candidate proof validation requires an immutable snapshot source commit")
     root = (args.root or repository_root()).resolve()
     try:
         snapshot_source = snapshot_source_for_check(
@@ -628,6 +996,15 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
     except (OSError, RuntimeError, ValueError) as error:
         print(f"AI check date binding: {error}", file=sys.stderr)
+        return 1
+    try:
+        proof_candidate_commit = (
+            snapshot_source
+            if args.candidate and snapshot_source is not None
+            else git_output(root, "rev-parse", "HEAD")
+        )
+    except (OSError, RuntimeError) as error:
+        print(f"AI check proof binding: {error}", file=sys.stderr)
         return 1
     log_dir = root / LOG_DIR
     log_dir.mkdir(parents=True, exist_ok=True)
@@ -650,14 +1027,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         except (OSError, RuntimeError) as error:
             results.append(PhaseResult("index-match", (), 1, str(error)))
 
-    phase_specs: list[tuple[str, Sequence[str], int]] = [
-        ("docs", [sys.executable, "script/ai_docs.py", "check"], 60),
-        ("backlog", [sys.executable, "script/ai_tasks.py", "check"], 60),
-        ("current-plan", [sys.executable, "script/ai_plan.py", "check"], 60),
-        ("diff-working", ["git", "diff", "--check"], 30),
-        ("diff-cached", ["git", "diff", "--cached", "--check"], 30),
+    phase_specs: list[tuple[str, Sequence[str], int, bool]] = [
+        ("docs", [sys.executable, "script/ai_docs.py", "check"], 60, True),
+        ("backlog", [sys.executable, "script/ai_tasks.py", "check"], 60, True),
+        ("current-plan", [sys.executable, "script/ai_plan.py", "check"], 60, True),
+        ("diff-working", ["git", "diff", "--check"], 30, False),
+        ("diff-cached", ["git", "diff", "--cached", "--check"], 30, False),
     ]
-    if args.fast and scope == "full-cpp":
+    if not args.proof_only and args.fast and scope == "full-cpp":
         try:
             names, version = project_version_arguments(root)
             phase_specs.append(
@@ -665,11 +1042,14 @@ def main(argv: Sequence[str] | None = None) -> int:
                     "source-checks",
                     [sys.executable, "publish.py", names, version, "--checks-only"],
                     60,
+                    True,
                 )
             )
         except (OSError, ValueError) as error:
             results.append(PhaseResult("source-checks", (), 1, str(error)))
-    if args.fast and scope in {"metadata-only", "full-cpp"}:
+    if args.proof_only:
+        pass
+    elif args.fast and scope in {"metadata-only", "full-cpp"}:
         results.append(PhaseResult("python-tests", (), 0, f"{scope} changes", skipped=True))
     elif args.fast and scope.startswith("targeted-python:"):
         targets = scope.split(":")[1:]
@@ -678,6 +1058,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "python-tests",
                 [sys.executable, "-m", "unittest", *targets, "-v"],
                 python_test_timeout(),
+                True,
             )
         )
     else:
@@ -686,26 +1067,39 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "python-tests",
                 [sys.executable, "-m", "unittest", "discover", "-s", "script/tests", "-v"],
                 python_test_timeout(),
+                True,
             )
         )
     # Fast checks intentionally stop at affected tooling and whitespace checks.
     # The coordinator owns the one complete build/CTest integration gate at a
     # batch boundary; running it here would repeat the batch-wide work for
     # every basic gameplay commit.
-    if not args.fast:
+    if not args.fast and not args.proof_only:
         phase_specs.extend([
-            ("build", ["cmake", "--build", "--preset", "debug"], 600),
-            ("ctest", ["ctest", "--preset", "debug", "--output-on-failure", "--no-tests=error", "--timeout", "240"], 2400),
+            ("build", BUILD_PHASE_COMMANDS["build"], 600, True),
+            ("ctest", BUILD_PHASE_COMMANDS["ctest"], 2400, True),
+        ])
+    required_receipts: list[tuple[str, Sequence[str]]] = []
+    if args.proof_only:
+        required_receipts.extend([
+            (
+                "python-tests",
+                [sys.executable, "-m", "unittest", "discover", "-s", "script/tests", "-v"],
+            ),
+            ("build", BUILD_PHASE_COMMANDS["build"]),
+            ("ctest", BUILD_PHASE_COMMANDS["ctest"]),
         ])
     if not args.fast:
         try:
             config = json.loads((root / "script/ai_checks.json").read_text(encoding="utf-8"))
             seen = set()
+            proof_count = 0
             if not isinstance(config, list):
                 raise ValueError("additional checks must be an array")
             for item in config:
                 required_fields = {"name", "enabled", "levels", "command", "timeout", "reason"}
-                if not isinstance(item, dict) or set(item) - required_fields - {"when"} or not required_fields <= set(item):
+                optional_fields = {"when", "reuse", "proof", "receipt"}
+                if not isinstance(item, dict) or set(item) - required_fields - optional_fields or not required_fields <= set(item):
                     raise ValueError("invalid additional check fields")
                 name = item["name"]
                 if not isinstance(name, str) or not re.fullmatch(r"[a-z][a-z0-9-]*", name) or name in seen:
@@ -718,8 +1112,17 @@ def main(argv: Sequence[str] | None = None) -> int:
                 if type(item["timeout"]) is not int or item["timeout"] <= 0 or not isinstance(item["reason"], str):
                     raise ValueError("invalid additional check timeout/reason")
                 when = item.get("when", "always")
-                if when not in {"always", "candidate", "strict"}:
+                if when not in {"always", "candidate", "strict", "release"}:
                     raise ValueError("invalid additional check when")
+                reuse = item.get("reuse", False)
+                if type(reuse) is not bool:
+                    raise ValueError("invalid additional check reuse flag")
+                proof = item.get("proof", False)
+                if type(proof) is not bool:
+                    raise ValueError("invalid additional check proof flag")
+                receipt = item.get("receipt", False)
+                if type(receipt) is not bool or (proof and receipt):
+                    raise ValueError("invalid additional check receipt flag")
                 if item["enabled"] and not item["command"]:
                     raise ValueError("enabled check must have a command")
                 if not item["enabled"] and not item["reason"].strip():
@@ -727,32 +1130,97 @@ def main(argv: Sequence[str] | None = None) -> int:
                 if args.level not in item["levels"]:
                     continue
                 if when == "strict" and not args.strict:
-                    print(f"DEFERRED {name}: runs after the committed candidate has hosted analysis receipts")
+                    print(f"DEFERRED {name}: runs in the local strict release phase")
                     continue
                 if when == "candidate" and not args.candidate:
-                    print(f"DEFERRED {name}: candidate-only check")
+                    print(f"DEFERRED {name}: runs in the local candidate release phase")
+                    continue
+                if when == "release" and not (args.candidate or args.strict):
+                    print(f"DEFERRED {name}: runs in candidate and strict release checks")
+                    continue
+                if args.proof_only and not (proof or receipt):
                     continue
                 if item["enabled"]:
-                    command = [sys.executable if arg == "{python}" else arg for arg in item["command"]]
-                    phase_specs.append(("extra-" + name, command, item["timeout"]))
+                    substitutions = {
+                        "{python}": sys.executable,
+                        "{root}": str(root),
+                        "{proof-candidate-commit}": proof_candidate_commit,
+                    }
+                    command = [
+                        substitutions.get(arg, arg).replace("{root}", str(root))
+                        for arg in item["command"]
+                    ]
+                    if args.proof_only and proof:
+                        phase_specs.append(("extra-" + name, command, item["timeout"], reuse))
+                        proof_count += 1
+                    elif not args.proof_only:
+                        phase_specs.append(("extra-" + name, command, item["timeout"], reuse))
+                    if args.proof_only and receipt:
+                        required_receipts.append(("extra-" + name, command))
                 else:
                     print(f"NOT ENABLED {name}: {item['reason']}")
+            if args.proof_only and proof_count == 0:
+                results.append(
+                    PhaseResult(
+                        "analysis-proof",
+                        (),
+                        1,
+                        "no enabled local proof check applies to this release level",
+                    )
+                )
         except (OSError, ValueError, TypeError, KeyError) as error:
             results.append(PhaseResult("check-registry", (), 1, str(error)))
-    for name, command, timeout in phase_specs:
-        # Only fast development checks may reuse a receipt. Candidate and
-        # strict release checks always execute every phase.
-        if args.fast:
-            result = run_phase(root, log_dir, name, command, timeout, reuse=True)
-        else:
-            result = run_phase(root, log_dir, name, command, timeout)
+    for name, command, timeout, cacheable in phase_specs:
+        result = run_phase(
+            root,
+            log_dir,
+            name,
+            command,
+            timeout,
+            reuse=cacheable,
+        )
         if name == "source-checks":
             result.allowed_failure = (
                 result.returncode not in {0, 124}
                 and publisher_failure_is_allowed(result.output, strict=False)
             )
         results.append(result)
-    if not args.fast:
+    if args.proof_only:
+        for name, command in required_receipts:
+            try:
+                output = validate_phase_receipt(root, log_dir, name, command)
+                if output is None:
+                    results.append(
+                        PhaseResult(
+                            "receipt-" + name,
+                            command,
+                            1,
+                            "no matching successful qualification receipt; run the owned full "
+                            "candidate gate with `python3 script/ai_check.py --candidate "
+                            f"--level {args.level}`",
+                        )
+                    )
+                else:
+                    results.append(
+                        PhaseResult(
+                            "receipt-" + name,
+                            command,
+                            0,
+                            output,
+                            reused=True,
+                        )
+                    )
+            except (OSError, RuntimeError) as error:
+                results.append(
+                    PhaseResult(
+                        "receipt-" + name,
+                        command,
+                        127,
+                        f"cannot validate qualification receipt: {error}; run the owned full "
+                        f"candidate gate with `python3 script/ai_check.py --candidate --level {args.level}`",
+                    )
+                )
+    if not args.fast and not args.proof_only:
         try:
             names, version = project_version_arguments(root)
             publisher_command = [sys.executable, "publish.py", names, version, "--checks-only"]

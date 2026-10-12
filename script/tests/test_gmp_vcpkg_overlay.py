@@ -30,7 +30,7 @@ class GmpVcpkgOverlayTests(unittest.TestCase):
         self.assertIn(android_guard, overlay)
         self.assertIn("    ${build_triplet_options}\n    ADDITIONAL_MSYS_PACKAGES", overlay)
 
-    def test_delivered_msan_patch_applies_and_preserves_the_probe(self):
+    def test_linux_sanitizer_cxx_link_flags_patch_applies_and_preserves_the_probe(self):
         source_context = '''int main (void) { return 0; }
 EOF
   echo "Test compile: [$2]" >&AC_FD_CC
@@ -59,7 +59,7 @@ EOF
                 ),
             )
 
-    def test_msan_cxx_link_flags_patch_is_selected_only_for_its_triplet(self):
+    def test_linux_sanitizer_cxx_link_flags_patch_is_selected_for_native_triplets(self):
         standard_patches = [
             "asmflags.patch",
             "cross-tools.patch",
@@ -70,8 +70,10 @@ EOF
             "c23.patch",
         ]
         expected_patches = {
+            "x64-linux-lsan": standard_patches + ["msan-cxx-ldflags.patch"],
             "x64-linux-msan": standard_patches + ["msan-cxx-ldflags.patch"],
-            "x64-linux-lsan": standard_patches,
+            "arm64-linux-lsan": standard_patches + ["msan-cxx-ldflags.patch"],
+            "arm64-linux-msan": standard_patches + ["msan-cxx-ldflags.patch"],
             "arm64-osx": standard_patches,
             "x64-windows": standard_patches,
             "arm64-android": standard_patches,
@@ -132,9 +134,27 @@ cmake_language(EVAL CODE "${portfile_prefix}")
                 "ccas": "CCAS=",
                 "asmflags": "ASMFLAGS=-c",
             },
+            "arm64-linux-msan": {
+                "VCPKG_TARGET_IS_LINUX": "ON",
+                "VCPKG_TARGET_ARCHITECTURE": "arm64",
+                "VCPKG_DETECTED_CMAKE_C_COMPILER_ID": "Clang",
+                "VCPKG_DETECTED_CMAKE_C_COMPILER": "/toolchain/bin/clang",
+                "assembly_disabled": True,
+                "ccas": "CCAS=",
+                "asmflags": "ASMFLAGS=-c",
+            },
             "x64-linux-lsan": {
                 "VCPKG_TARGET_IS_LINUX": "ON",
                 "VCPKG_TARGET_ARCHITECTURE": "x64",
+                "VCPKG_DETECTED_CMAKE_C_COMPILER_ID": "Clang",
+                "VCPKG_DETECTED_CMAKE_C_COMPILER": "/toolchain/bin/clang",
+                "assembly_disabled": False,
+                "ccas": "CCAS=clang",
+                "asmflags": "ASMFLAGS=-c",
+            },
+            "arm64-linux-lsan": {
+                "VCPKG_TARGET_IS_LINUX": "ON",
+                "VCPKG_TARGET_ARCHITECTURE": "arm64",
                 "VCPKG_DETECTED_CMAKE_C_COMPILER_ID": "Clang",
                 "VCPKG_DETECTED_CMAKE_C_COMPILER": "/toolchain/bin/clang",
                 "assembly_disabled": False,

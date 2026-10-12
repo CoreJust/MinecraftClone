@@ -1,0 +1,291 @@
+diff --git a/tests/core/game_server_preview_tests.cpp b/tests/core/game_server_preview_tests.cpp
+index 06ee836..42f50fc 100644
+--- a/tests/core/game_server_preview_tests.cpp
++++ b/tests/core/game_server_preview_tests.cpp
+@@ -38,6 +38,20 @@
+ 
+ namespace {
+ 
++struct FlightClientDiagnostics final {
++    uint64_t zero_timeout_poll_calls = 0U;
++    uint64_t network_events_returned = 0U;
++    uint64_t poll_service_passes = 0U;
++    std::chrono::nanoseconds poll_service_total{};
++    std::chrono::nanoseconds poll_service_max{};
++    uint64_t poll_pass_limit_hits = 0U;
++    uint64_t poll_pass_limit_hits_all_nonzero = 0U;
++    uint64_t position_callbacks = 0U;
++    std::chrono::nanoseconds position_callback_total{};
++    uint64_t height_tile_callbacks = 0U;
++    std::chrono::nanoseconds height_tile_callback_total{};
++};
++
+ class PreviewClient final : public core::Client {
+ public:
+     static constexpr uint32_t MAX_TRACKED_INPUTS = 512U;
+@@ -46,13 +60,15 @@ public:
+         bool const acknowledges_deliveries = true,
+         bool const starts_deliveries = true,
+         char const tracked_character = '@',
+-        bool const retains_messages = true
++        bool const retains_messages = true,
++        FlightClientDiagnostics* const flight_diagnostics = nullptr
+     )
+         : core::Client{2}
+         , m_acknowledges_deliveries{acknowledges_deliveries}
+         , m_starts_deliveries{starts_deliveries}
+         , m_tracked_character{tracked_character}
+         , m_retains_messages{retains_messages}
++        , m_flight_diagnostics{flight_diagnostics}
+     { }
+ 
+     std::vector<shared::Message> messages;
+@@ -84,6 +100,11 @@ public:
+         m_acknowledges_deliveries = acknowledges_deliveries;
+     }
+ 
++    void setFlightDiagnostics(FlightClientDiagnostics* const flight_diagnostics) noexcept
++    {
++        m_flight_diagnostics = flight_diagnostics;
++    }
++
+     bool acknowledgeDelivery(uint64_t const delivery_token)
+     {
+         return send(shared::encodeMessage(shared::ClientHeightTileCreditMessage{
+@@ -111,6 +132,9 @@ private:
+ 
+     void onReceived(core::ReceiveEvent event) override
+     {
++        auto const callback_started = m_flight_diagnostics != nullptr
++            ? std::chrono::steady_clock::now()
++            : std::chrono::steady_clock::time_point{};
+         auto const message = shared::decodeMessage(event.data);
+         if (!message) {
+             return;
+@@ -174,12 +198,26 @@ private:
+                 }
+             }
+         }
++        if (m_flight_diagnostics != nullptr) {
++            auto const callback_elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(
++                std::chrono::steady_clock::now() - callback_started
++            );
++            if (std::holds_alternative<shared::ServerPlayerPositionMessage>(*message)) {
++                ++m_flight_diagnostics->position_callbacks;
++                m_flight_diagnostics->position_callback_total += callback_elapsed;
++            } else if (std::holds_alternative<shared::ServerHeightTileMessage>(*message)
++                || std::holds_alternative<shared::ServerHeightTileBatchMessage>(*message)) {
++                ++m_flight_diagnostics->height_tile_callbacks;
++                m_flight_diagnostics->height_tile_callback_total += callback_elapsed;
++            }
++        }
+     }
+ 
+     bool m_acknowledges_deliveries;
+     bool m_starts_deliveries;
+     char m_tracked_character;
+     bool m_retains_messages;
++    FlightClientDiagnostics* m_flight_diagnostics;
+     std::array<std::chrono::steady_clock::time_point, MAX_TRACKED_INPUTS> m_input_sent_at{};
+ };
+ 
+@@ -1547,6 +1585,7 @@ TEST(GameServerPreviewTest, SustainedFlightKeepsInputAcknowledgementsCurrentWhil
+         bool active = false;
+     };
+     std::array<ClientProgress, 4> server_progress{};
++    std::array<FlightClientDiagnostics, 4> poll_diagnostics{};
+     auto const server_started = std::chrono::steady_clock::now();
+     server::GameServer::BenchmarkHooks const hooks{
+         .on_preview_metrics = [server_started, &server_progress](
+@@ -1654,10 +1693,10 @@ TEST(GameServerPreviewTest, SustainedFlightKeepsInputAcknowledgementsCurrentWhil
+     std::thread server_thread{[&server, &stop_requested, &hooks] {
+         server.run(stop_requested, &hooks);
+     }};
+-    PreviewClient first_client{true, true, '@', false};
+-    PreviewClient second_client{true, true, '#', false};
+-    PreviewClient third_client{true, true, '$', false};
+-    PreviewClient fourth_client{true, true, '%', false};
++    PreviewClient first_client{true, true, '@', false, &poll_diagnostics[0]};
++    PreviewClient second_client{true, true, '#', false, &poll_diagnostics[1]};
++    PreviewClient third_client{true, true, '$', false, &poll_diagnostics[2]};
++    PreviewClient fourth_client{true, true, '%', false, &poll_diagnostics[3]};
+     std::array<PreviewClient*, 4> const clients{
+         &first_client, &second_client, &third_client, &fourth_client,
+     };
+@@ -1689,24 +1728,80 @@ TEST(GameServerPreviewTest, SustainedFlightKeepsInputAcknowledgementsCurrentWhil
+         while (client->poll(std::chrono::milliseconds::zero()) > 0) {
+         }
+     }
++    poll_diagnostics = {};
+     uint32_t sent = 0U;
+     uint32_t maximum_ack_lag = 0U;
+     uint32_t sent_at_maximum_ack_lag = 0U;
++    bool has_maximum_ack_lag_sample = false;
++    std::chrono::milliseconds maximum_ack_lag_elapsed{};
++    std::array<uint32_t, 4> acknowledgements_at_maximum_lag{};
++    std::array<FlightClientDiagnostics, 4> diagnostics_at_maximum_lag{};
+     std::array<size_t, 4> midpoint_tile_counts{};
+     bool midpoint_recorded = false;
+     bool all_sent = true;
+     auto const started = std::chrono::steady_clock::now();
+     auto next_client_progress = started + PROGRESS_INTERVAL;
+     auto next_input = started;
+-    auto const poll_clients_fairly = [&clients] {
+-        for (PreviewClient* const client : clients) {
++    auto const poll_clients_fairly = [&clients, &poll_diagnostics] {
++        for (uint32_t index = 0U; index < clients.size(); ++index) {
++            PreviewClient* const client = clients[index];
++            FlightClientDiagnostics& diagnostics = poll_diagnostics[index];
++            auto const service_started = std::chrono::steady_clock::now();
++            uint32_t poll_calls_this_pass = 0U;
++            bool all_poll_calls_returned_events = true;
+             for (uint32_t poll_call = 0U; poll_call < MAX_CLIENT_POLL_CALLS_PER_PASS; ++poll_call) {
+-                if (client->poll(std::chrono::milliseconds::zero()) == 0U) {
++                uint32_t const events = client->poll(std::chrono::milliseconds::zero());
++                ++diagnostics.zero_timeout_poll_calls;
++                diagnostics.network_events_returned += events;
++                ++poll_calls_this_pass;
++                if (events == 0U) {
++                    all_poll_calls_returned_events = false;
+                     break;
+                 }
+             }
++            auto const service_elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(
++                std::chrono::steady_clock::now() - service_started
++            );
++            ++diagnostics.poll_service_passes;
++            diagnostics.poll_service_total += service_elapsed;
++            diagnostics.poll_service_max = std::max(diagnostics.poll_service_max, service_elapsed);
++            if (poll_calls_this_pass == MAX_CLIENT_POLL_CALLS_PER_PASS) {
++                ++diagnostics.poll_pass_limit_hits;
++                if (all_poll_calls_returned_events) {
++                    ++diagnostics.poll_pass_limit_hits_all_nonzero;
++                }
++            }
+         }
+     };
++    auto const log_poll_diagnostics = [](
++        char const* const phase,
++        uint32_t const index,
++        FlightClientDiagnostics const& diagnostics
++    ) {
++        int64_t const average_service_us = diagnostics.poll_service_passes == 0U
++            ? int64_t{0}
++            : diagnostics.poll_service_total.count()
++                / static_cast<int64_t>(diagnostics.poll_service_passes) / 1'000;
++        CORE_INFO(
++            "Flight {} client {} zero-timeout polls/events/service-passes/avg-max-total-us/cap-hits(all-nonzero)="
++            "{}/{}/{}/{}/{}/{}/{}/{}, "
++            "position callbacks/total-us and height-tile callbacks/total-us={}/{}/{}/{}",
++            phase,
++            index,
++            diagnostics.zero_timeout_poll_calls,
++            diagnostics.network_events_returned,
++            diagnostics.poll_service_passes,
++            average_service_us,
++            diagnostics.poll_service_max.count() / 1'000,
++            diagnostics.poll_service_total.count() / 1'000,
++            diagnostics.poll_pass_limit_hits,
++            diagnostics.poll_pass_limit_hits_all_nonzero,
++            diagnostics.position_callbacks,
++            diagnostics.position_callback_total.count() / 1'000,
++            diagnostics.height_tile_callbacks,
++            diagnostics.height_tile_callback_total.count() / 1'000
++        );
++    };
+     while (joined && std::chrono::steady_clock::now() - started < DURATION) {
+         auto const now = std::chrono::steady_clock::now();
+         if (now >= next_input) {
+@@ -1723,13 +1818,15 @@ TEST(GameServerPreviewTest, SustainedFlightKeepsInputAcknowledgementsCurrentWhil
+         }
+         poll_clients_fairly();
+         if (now >= next_client_progress) {
+-            for (size_t index = 0U; index < clients.size(); ++index) {
++            for (uint32_t index = 0U; index < clients.size(); ++index) {
+                 PreviewClient const* const client = clients[index];
+                 uint64_t const latency_samples = client->acknowledgement_latency_samples;
+                 CORE_INFO(
+-                    "Flight client {} sent/ack/lag={}/{}/{}, ack latency samples/avg/max ms={}/{}/{}, "
++                    "Flight client {} at {} ms sent/ack/lag={}/{}/{}, "
++                    "ack latency samples/avg/max ms={}/{}/{}, "
+                     "received tiles={}",
+                     index,
++                    std::chrono::duration_cast<std::chrono::milliseconds>(now - server_started).count(),
+                     sent,
+                     client->last_acknowledged_input,
+                     sent - client->last_acknowledged_input,
+@@ -1740,6 +1837,7 @@ TEST(GameServerPreviewTest, SustainedFlightKeepsInputAcknowledgementsCurrentWhil
+                     client->acknowledgement_latency_max_ns / 1'000'000U,
+                     client->received_height_tiles
+                 );
++                log_poll_diagnostics("periodic", index, poll_diagnostics[index]);
+             }
+             next_client_progress = now + PROGRESS_INTERVAL;
+         }
+@@ -1750,15 +1848,26 @@ TEST(GameServerPreviewTest, SustainedFlightKeepsInputAcknowledgementsCurrentWhil
+             midpoint_recorded = true;
+         }
+         uint32_t lag = 0U;
+-        for (PreviewClient const* const client : clients) {
+-            lag = std::max(lag, sent - client->last_acknowledged_input);
++        std::array<uint32_t, 4> acknowledgements{};
++        for (uint32_t index = 0U; index < clients.size(); ++index) {
++            acknowledgements[index] = clients[index]->last_acknowledged_input;
++            lag = std::max(lag, sent - acknowledgements[index]);
+         }
+-        if (lag > maximum_ack_lag) {
++        if (!has_maximum_ack_lag_sample || lag > maximum_ack_lag) {
+             maximum_ack_lag = lag;
+             sent_at_maximum_ack_lag = sent;
++            has_maximum_ack_lag_sample = true;
++            maximum_ack_lag_elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
++                std::chrono::steady_clock::now() - server_started
++            );
++            acknowledgements_at_maximum_lag = acknowledgements;
++            diagnostics_at_maximum_lag = poll_diagnostics;
+         }
+         std::this_thread::sleep_for(std::chrono::milliseconds{16});
+     }
++    for (PreviewClient* const client : clients) {
++        client->setFlightDiagnostics(nullptr);
++    }
+     auto const catch_up_deadline = std::chrono::steady_clock::now() + std::chrono::seconds{1};
+     auto const all_caught_up = [&clients, sent] {
+         return std::ranges::all_of(clients, [sent](PreviewClient const* const client) {
+@@ -1771,11 +1880,16 @@ TEST(GameServerPreviewTest, SustainedFlightKeepsInputAcknowledgementsCurrentWhil
+         }
+     }
+     CORE_INFO(
+-        "Flight summary sent={}, maximum ack lag={} at input={}, "
+-        "final acknowledgements={}/{}/{}/{}, duration={} ms",
++        "Flight summary sent={}, maximum ack lag={} at input={} and {} ms, "
++        "acks at maximum lag={}/{}/{}/{}, final acknowledgements={}/{}/{}/{}, duration={} ms",
+         sent,
+         maximum_ack_lag,
+         sent_at_maximum_ack_lag,
++        maximum_ack_lag_elapsed.count(),
++        acknowledgements_at_maximum_lag[0],
++        acknowledgements_at_maximum_lag[1],
++        acknowledgements_at_maximum_lag[2],
++        acknowledgements_at_maximum_lag[3],
+         first_client.last_acknowledged_input,
+         second_client.last_acknowledged_input,
+         third_client.last_acknowledged_input,
+@@ -1784,7 +1898,7 @@ TEST(GameServerPreviewTest, SustainedFlightKeepsInputAcknowledgementsCurrentWhil
+             std::chrono::steady_clock::now() - started
+         ).count()
+     );
+-    for (size_t index = 0U; index < clients.size(); ++index) {
++    for (uint32_t index = 0U; index < clients.size(); ++index) {
+         PreviewClient const* const client = clients[index];
+         uint64_t const latency_samples = client->acknowledgement_latency_samples;
+         CORE_INFO(
+@@ -1797,6 +1911,8 @@ TEST(GameServerPreviewTest, SustainedFlightKeepsInputAcknowledgementsCurrentWhil
+             client->acknowledgement_latency_max_ns / 1'000'000U,
+             client->received_height_tiles
+         );
++        log_poll_diagnostics("final", index, poll_diagnostics[index]);
++        log_poll_diagnostics("max-lag", index, diagnostics_at_maximum_lag[index]);
+     }
+     stop_requested.store(true, std::memory_order_relaxed);
+     server_thread.join();

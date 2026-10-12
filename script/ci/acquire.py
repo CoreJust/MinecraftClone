@@ -794,7 +794,7 @@ def install_manifest_dependencies(vcpkg_root: Path, platform_name: str, installe
     }
     if platform_name == "linux-analysis":
         triplet = os.environ.get("MC_VCPKG_ANALYSIS_TRIPLET", "")
-        if triplet not in {"x64-linux-lsan", "x64-linux-msan"}:
+        if triplet not in {"x64-linux-lsan", "x64-linux-msan", "arm64-linux-lsan", "arm64-linux-msan"}:
             raise CiError("MC_VCPKG_ANALYSIS_TRIPLET must select the pinned LSan or MSan analysis triplet")
         triplets[platform_name] = triplet
     if platform_name == "android-hwasan":

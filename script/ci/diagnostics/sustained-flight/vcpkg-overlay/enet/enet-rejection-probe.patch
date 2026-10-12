@@ -1,0 +1,119 @@
+diff --git a/include/enet/enet.h b/include/enet/enet.h
+index 2e7a2d8..b41b445 100644
+--- a/include/enet/enet.h
++++ b/include/enet/enet.h
+@@ -251,6 +251,34 @@ typedef struct _ENetChannel
+    ENetList     incomingUnreliableCommands;
+ } ENetChannel;
+ 
++typedef struct _ENetProtocolRejectionSnapshot
++{
++   enet_uint8  channelID;
++   enet_uint8  command;
++   enet_uint16 reliableSequenceNumber;
++   enet_uint16 sendAttempts;
++   enet_uint32 fragmentNumber;
++   enet_uint32 fragmentOffset;
++   enet_uint32 fragmentLength;
++   enet_uint32 reliableDataInTransit;
++   enet_uint32 peerWindowSize;
++   enet_uint32 throttledWindowSize;
++   enet_uint32 effectiveWindowSize;
++   enet_uint32 packetThrottle;
++   enet_uint32 mtu;
++   enet_uint16 reliableWindow;
++   enet_uint32 previousReliableWindowCount;
++   enet_uint32 usedReliableWindows;
++} ENetProtocolRejectionSnapshot;
++
++typedef struct _ENetProtocolRejectionProbe
++{
++   enet_uint32 count;
++   enet_uint32 channel0Count;
++   ENetProtocolRejectionSnapshot first;
++   ENetProtocolRejectionSnapshot last;
++} ENetProtocolRejectionProbe;
++
+ typedef enum _ENetPeerFlag
+ {
+    ENET_PEER_FLAG_NEEDS_DISPATCH   = (1 << 0),
+@@ -325,5 +353,7 @@ typedef struct _ENetPeer
+    enet_uint32   eventData;
+    size_t        totalWaitingData;
++   ENetProtocolRejectionProbe sequenceWindowRejections;
++   ENetProtocolRejectionProbe byteWindowRejections;
+ } ENetPeer;
+ 
+ /** An ENet packet compressor for compressing UDP packets before socket sends or receives.
+diff --git a/protocol.c b/protocol.c
+index 1342cee..e635fc1 100644
+--- a/protocol.c
++++ b/protocol.c
+@@ -26,6 +26,42 @@ static const size_t commandSizes [ENET_PROTOCOL_COMMAND_COUNT] =
+     sizeof (ENetProtocolSendFragment)
+ };
+ 
++static void
++enet_protocol_record_rejection (ENetProtocolRejectionProbe * probe, ENetPeer * peer,
++                                 ENetOutgoingCommand * outgoingCommand,
++                                 enet_uint32 throttledWindowSize, enet_uint16 reliableWindow,
++                                 enet_uint32 previousReliableWindowCount,
++                                 enet_uint32 usedReliableWindows)
++{
++   ENetProtocolRejectionSnapshot snapshot;
++
++   snapshot.channelID = outgoingCommand -> command.header.channelID;
++   snapshot.command = outgoingCommand -> command.header.command & ENET_PROTOCOL_COMMAND_MASK;
++   snapshot.reliableSequenceNumber = outgoingCommand -> reliableSequenceNumber;
++   snapshot.sendAttempts = outgoingCommand -> sendAttempts;
++   snapshot.fragmentNumber = snapshot.command == ENET_PROTOCOL_COMMAND_SEND_FRAGMENT ?
++                             ENET_NET_TO_HOST_32 (outgoingCommand -> command.sendFragment.fragmentNumber) : 0;
++   snapshot.fragmentOffset = outgoingCommand -> fragmentOffset;
++   snapshot.fragmentLength = outgoingCommand -> fragmentLength;
++   snapshot.reliableDataInTransit = peer -> reliableDataInTransit;
++   snapshot.peerWindowSize = peer -> windowSize;
++   snapshot.throttledWindowSize = throttledWindowSize;
++   snapshot.effectiveWindowSize = ENET_MAX (throttledWindowSize, peer -> mtu);
++   snapshot.packetThrottle = peer -> packetThrottle;
++   snapshot.mtu = peer -> mtu;
++   snapshot.reliableWindow = reliableWindow;
++   snapshot.previousReliableWindowCount = previousReliableWindowCount;
++   snapshot.usedReliableWindows = usedReliableWindows;
++
++   if (snapshot.channelID == 0 && probe -> channel0Count != 0xFFFFFFFF)
++     ++ probe -> channel0Count;
++   if (probe -> count == 0)
++     probe -> first = snapshot;
++   probe -> last = snapshot;
++   if (probe -> count != 0xFFFFFFFF)
++     ++ probe -> count;
++}
++
+ size_t
+ enet_protocol_command_size (enet_uint8 commandNumber)
+ {
+@@ -1455,9 +1491,14 @@ enet_protocol_check_outgoing_commands (ENetHost * host, ENetPeer * peer, ENetLis
+              if (outgoingCommand -> sendAttempts < 1 &&
+                   ! (outgoingCommand -> reliableSequenceNumber % ENET_PEER_RELIABLE_WINDOW_SIZE) &&
+                   (channel -> reliableWindows [(reliableWindow + ENET_PEER_RELIABLE_WINDOWS - 1) % ENET_PEER_RELIABLE_WINDOWS] >= ENET_PEER_RELIABLE_WINDOW_SIZE ||
+                     channel -> usedReliableWindows & ((((1 << (ENET_PEER_FREE_RELIABLE_WINDOWS + 2)) - 1) << reliableWindow) |
+                       (((1 << (ENET_PEER_FREE_RELIABLE_WINDOWS + 2)) - 1) >> (ENET_PEER_RELIABLE_WINDOWS - reliableWindow)))))
+              {
++                enet_protocol_record_rejection (& peer -> sequenceWindowRejections, peer, outgoingCommand,
++                                                (peer -> packetThrottle * peer -> windowSize) / ENET_PEER_PACKET_THROTTLE_SCALE,
++                                                reliableWindow,
++                                                channel -> reliableWindows [(reliableWindow + ENET_PEER_RELIABLE_WINDOWS - 1) % ENET_PEER_RELIABLE_WINDOWS],
++                                                channel -> usedReliableWindows);
+                 windowWrap = 1;
+                 currentSendReliableCommand = enet_list_end (& peer -> outgoingSendReliableCommands);
+ 
+@@ -1470,7 +1511,9 @@ enet_protocol_check_outgoing_commands (ENetHost * host, ENetPeer * peer, ENetLis
+              enet_uint32 windowSize = (peer -> packetThrottle * peer -> windowSize) / ENET_PEER_PACKET_THROTTLE_SCALE;
+ 
+              if (peer -> reliableDataInTransit + outgoingCommand -> fragmentLength > ENET_MAX (windowSize, peer -> mtu))
+              {
++                enet_protocol_record_rejection (& peer -> byteWindowRejections, peer, outgoingCommand,
++                                                windowSize, reliableWindow, 0, 0);
+                 currentSendReliableCommand = enet_list_end (& peer -> outgoingSendReliableCommands);
+ 
+                 continue;

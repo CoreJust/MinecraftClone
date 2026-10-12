@@ -17,26 +17,34 @@ Deterministic Python tools run locally without model calls or keys. Use Python 3
 | `script/ai_check.py` | Build/test checks |
 | `script/ai_check.py --strict` | Strict checks |
 
-MC-AI-0249's exact-candidate matrix is declared in
+The local qualification matrix, revised by MC-AI-0434, is declared in
 [`script/ai_analysis_matrix.json`](../../script/ai_analysis_matrix.json). Run a
-row, merge one passing receipt per row, then verify the merged candidate:
+host lane, merge passing local receipts, then verify offline. Repeatable `--row`
+selects individual rows when their toolchain or dependency environments differ:
 
 ```sh
-python3 script/ai_analysis_matrix.py run-row build/ai-checks/macos-asan.json \
-  --row macos_asan --head <HEAD_SHA> --tree <INDEX_TREE_SHA>
-python3 script/ai_analysis_matrix.py merge build/ai-checks/analysis-matrix.json \
-  --row-receipt build/ai-checks/macos-asan.json --head <HEAD_SHA> --tree <INDEX_TREE_SHA>
-python3 script/ai_analysis_matrix.py verify build/ai-checks/analysis-matrix.json \
-  --head <HEAD_SHA> --tree <INDEX_TREE_SHA>
+python3 script/ai_analysis_matrix.py run-local --root . \
+  --receipt build/ai-checks/analysis-local.json
+python3 script/ai_analysis_matrix.py merge --root . \
+  --receipt build/ai-checks/analysis-aggregate.json --row-receipt <host-receipt> ...
+python3 script/ci/verify_analysis_gate.py --root . \
+  --receipt build/ai-checks/analysis-aggregate.json
 ```
 
-Receipts bind candidates, manifests, tools, commands and diagnostics; missing,
+Use a distinct receipt path per row and merge all required rows. Linux must set
+`MC_ANALYSIS_LINUX_LSAN_TRIPLET` and `MC_ANALYSIS_LINUX_MSAN_TRIPLET` explicitly
+to the matching x64 or arm64 analysis triplet; an absent selector fails before
+configuration. Changing architecture requires matching instrumented dependencies
+and libc++ runtime controls, not merely overriding the preset name.
+
+Receipts bind relevant source/dependency/configuration inputs, tools, commands and diagnostics; missing,
 unavailable or stale rows fail closed. macOS runs ASan with integrated LSan,
-UBSan, and TSan; Windows runs MSVC ASan/analysis; Android uses Release HWASan;
+UBSan, and TSan; Windows runs MSVC ASan/analysis;
 Linux uses tests-only LSan/MSan with libc++ and instrumented dependencies.
 CTest rejects empty discovery, UBSan halts on diagnostics, and performance uses
-ordinary Release. Local checks defer hosted receipts; CI binds them to immutable
-trees before promotion and strict/tag checks.
+ordinary Release. Release commit/tag authenticity is checked independently.
+Android requires local tests, basic runtime evidence and its ordinary APK;
+hosted HWASan qualification is suspended for this game, not for CoreLang.
 
 Windows probes use `cl.exe /Bv /?`; `/Bv` alone exits nonzero. Failed probes remain
 unavailable. CMD row loops use explicit failure exits, avoiding stale
@@ -69,11 +77,8 @@ retain suppression counts and unsuppressed reports. These exact stack-frame
 rules can exclude allocations regardless of origin; they do not establish
 harmlessness. Do not broaden them or hide other unsuppressed reports.
 
-Before waiting for the aggregate, the exact-candidate gate waiter inspects the
-latest push attempt and required jobs: terminal failure, cancellation, or skip
-fails immediately; a missing job remains pending only while its workflow is
-nonterminal and fails if still absent at completion. Success requires the
-successful exact-candidate workflow and complete validated 13-row receipt.
+Qualification has no GitHub waiter. Complete required local evidence is validated
+offline; unavailable tools and missing/failed rows remain failures.
 Desktop diagnostics retain `build/ai-checks/python-tests.log` when present.
 
 ## Git hooks and CI
@@ -88,7 +93,7 @@ immutable. One exact historical compatibility entry recognizes Snapshot 3 commit
 condensed four prose fields. The exception is commit-scoped; later ledgers use
 only the standard publication fields.
 
-[GitHub workflow](../../.github/workflows/ai-checks.yml) runs PR fast checks and AI-branch desktop/analysis gates. Android HWASan runs only on `ai-main` using an exact-SHA/run-labeled ephemeral macOS ARM64 runner with HVF (`--no-default-labels`); registration needs separate authorization. Hosted Linux ARM lacks the SDK match and hosted macOS lacks HVF. Exact-candidate runtime evidence remains required; Linux is CI-only and workflow permissions are read-only. See [Android acceleration](https://developer.android.com/studio/run/emulator-acceleration).
+[Artifact workflow](../../.github/workflows/snapshot-artifacts.yml) builds and packages exact trusted sources for Windows, macOS and Android. It preserves pinned dependencies, provenance and checksums but does not run qualification tests, analysis or emulators. Linux is analysis-only and has no game artifact. Runtime evidence remains a local release gate.
 
 `ANDROID_USER_HOME` and legacy `ANDROID_SDK_HOME` resolve to one run-private preferences directory; `ANDROID_HOME` and deprecated `ANDROID_SDK_ROOT` point to the separate run-private SDK.
 

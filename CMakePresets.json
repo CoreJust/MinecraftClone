@@ -113,7 +113,8 @@
         "MC_BUILD_CLIENT": "OFF",
         "MC_REGISTER_SERVER_ONLY_BUILD_TEST": "OFF",
         "CMAKE_C_COMPILER": "clang",
-        "CMAKE_CXX_COMPILER": "clang++"
+        "CMAKE_CXX_COMPILER": "clang++",
+        "VCPKG_OVERLAY_TRIPLETS": "${sourceDir}/script/ci/vcpkg-triplets"
       }
     },
     {
@@ -236,11 +237,13 @@
     },
     {
       "name": "analysis-iwyu",
-      "configurePreset": "analysis-iwyu"
+      "configurePreset": "analysis-iwyu",
+      "cleanFirst": true
     },
     {
       "name": "analysis-cppcheck",
-      "configurePreset": "analysis-cppcheck"
+      "configurePreset": "analysis-cppcheck",
+      "cleanFirst": true
     }
   ],
   "testPresets": [

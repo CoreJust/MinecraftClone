@@ -2,3 +2,6 @@
 
 # Preserve whitespace that is part of the vendored GMP patch payloads.
 script/ci/vcpkg-overlays/gmp/*.patch whitespace=-blank-at-eol,-space-before-tab
+# Unified-diff blank context lines require a leading space.
+script/ci/diagnostics/sustained-flight/*.patch whitespace=-blank-at-eol
+script/ci/diagnostics/sustained-flight/vcpkg-overlay/enet/*.patch whitespace=-blank-at-eol

@@ -76,8 +76,9 @@ pre-policy commits explicitly; never omit changes or rewrite history.
 Fill product changes first, code changes second; reconcile planned and actual children, then `ai_history.py finalize <id>`. It refuses missing/unfinished children and untraceable commits. Plans are retained beside actual results. Acceptance review must also establish that no promised product scope was silently dropped.
 
 Snapshot closure runs the full suite, enabled code checks, and additional gates.
-CI dependency, environment, and provenance checks fail closed; no arbitrary
-check skip is allowed. The required snapshot/minor/major renderer-smoke gate
+Local dependency, environment, qualification and provenance checks fail closed;
+GitHub only builds artifacts. Required proof reuse must match the check's relevant
+inputs, not merely a previous successful run. The required snapshot/minor/major renderer-smoke gate
 runs windowed `RendererSmokeTest`, fails on missing registration, device,
 validation, test, or timeout errors, and records its receipt. It is not a
 headless texture-golden gate; S4 owns offscreen comparisons. Then follow the

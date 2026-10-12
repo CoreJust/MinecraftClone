@@ -98,9 +98,59 @@ class AndroidPairPlaytestTest(unittest.TestCase):
             ]
         )
         wait_ready.assert_called_once_with(server, 20)
-        launch_client.assert_called_once_with("emulator-5556", timeout_seconds=60)
+        launch_client.assert_called_once_with(
+            "emulator-5556",
+            timeout_seconds=60,
+            expected_avd=self.pair.DEFAULT_AVD,
+        )
         self.assertTrue(server.terminated)
         self.assertFalse(server.killed)
+
+    def test_runner_forwards_explicit_qualification_avd(self) -> None:
+        server = FakeServer()
+        server_path = self.release_server_path()
+        with mock.patch.object(self.pair, "_require_release_server", return_value=server_path), mock.patch.object(
+            self.pair, "_require_port_free"
+        ), mock.patch.object(self.pair, "_wait_for_server"), mock.patch.object(
+            self.pair.subprocess, "Popen", return_value=server
+        ), mock.patch.object(
+            self.pair.android_playtest, "launch_or_reuse", return_value={"action": "reused"}
+        ) as launch_client:
+            with self.assertRaises(KeyboardInterrupt):
+                self.pair.run_playtest(
+                    "emulator-5556",
+                    server_path,
+                    expected_avd=self.pair.android_playtest.S7_AVD,
+                )
+
+        launch_client.assert_called_once_with(
+            "emulator-5556",
+            timeout_seconds=60,
+            expected_avd=self.pair.android_playtest.S7_AVD,
+        )
+        self.assertTrue(server.terminated)
+
+    def test_cli_defaults_to_medium_phone_avd_and_accepts_explicit_s7(self) -> None:
+        with mock.patch.object(self.pair, "run_playtest") as run_playtest:
+            self.assertEqual(self.pair.main(["--serial", "emulator-5554"]), 0)
+
+        self.assertEqual(
+            run_playtest.call_args.kwargs["expected_avd"],
+            self.pair.DEFAULT_AVD,
+        )
+
+        with mock.patch.object(self.pair, "run_playtest") as run_playtest:
+            self.assertEqual(
+                self.pair.main(
+                    ["--serial", "emulator-5556", "--avd", self.pair.android_playtest.S7_AVD]
+                ),
+                0,
+            )
+
+        self.assertEqual(
+            run_playtest.call_args.kwargs["expected_avd"],
+            self.pair.android_playtest.S7_AVD,
+        )
 
     def test_port_conflict_does_not_start_server_or_client(self) -> None:
         server_path = self.release_server_path()

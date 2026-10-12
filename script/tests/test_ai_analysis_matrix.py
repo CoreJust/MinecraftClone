@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+from contextlib import ExitStack
 import hashlib
 import importlib.util
 import json
@@ -40,6 +41,226 @@ class AnalysisMatrixTests(unittest.TestCase):
         rows = []
         for manifest_row in self.manifest["rows"]:
             row_id = manifest_row["id"]
+            host_path_type = self.matrix.PureWindowsPath if manifest_row["platform"] == "windows" else Path
+            environment = {
+                name: f"/captured/{name.lower()}"
+                for name in self.matrix.IDENTITY_ENVIRONMENT
+            }
+            environment.update({"PATH": "/captured/bin", "MC_ANALYSIS_ROOT": "/captured/root"})
+            if manifest_row["platform"] == "windows":
+                environment["VULKAN_SDK"] = "C:\\captured\\vulkan-sdk"
+                environment["VCINSTALLDIR"] = "C:\\captured\\VC"
+            elif manifest_row["platform"] == "macos":
+                environment["VULKAN_SDK"] = "<unset>"
+            if row_id == "linux_msan":
+                environment["DEBUGINFOD_URLS"] = ""
+            declared_environment = self.matrix.resolve_row_environment(
+                manifest_row, Path("/captured/root"), environment
+            )
+            row_environment = {
+                name: declared_environment[name]
+                for name in manifest_row.get("environment", {})
+            }
+            probe_environment = {**environment, **row_environment}
+            effective_commands = self.matrix._effective_command_argv(manifest_row, probe_environment)
+            tools = [
+                {
+                    "probe_argv": self.matrix._expand_environment(probe, probe_environment),
+                    "executable": (
+                        f"C:\\captured\\bin\\{Path(probe[0]).name}"
+                        if manifest_row["platform"] == "windows"
+                        else f"/captured/bin/{Path(probe[0]).name}"
+                    ),
+                    "executable_size": 10,
+                    "executable_mtime_ns": 1,
+                    "executable_sha256": "a" * 64,
+                    "version_sha256": "b" * 64,
+                }
+                for probe in manifest_row["tool_probes"]
+            ]
+            dependencies = {}
+            for name in self.matrix.DEPENDENCY_ENVIRONMENT[row_id]:
+                captured_path = environment[name]
+                if name in {"VCPKG_ROOT", "MC_LLVM_PROJECT_ROOT"}:
+                    dependency = {"path": captured_path, "revision": "1" * 40}
+                    if name == "MC_LLVM_PROJECT_ROOT":
+                        dependency["revision"] = self.matrix.MSAN_LLVM_BASE_REVISION
+                        dependency["status"] = "clean"
+                        dependency["helper_sha256"] = self.matrix.MSAN_HELPER_SHA256
+                elif name == "MC_VCPKG_CHAINLOAD_TOOLCHAIN_FILE":
+                    dependency = {"path": captured_path, "sha256": "c" * 64}
+                elif name == "VCPKG_INSTALLED_DIR":
+                    dependency = {
+                        "path": captured_path,
+                        "package_lists_sha256": "d" * 64,
+                        "consumed_files_sha256": "e" * 64,
+                        "consumed_file_count": 2,
+                    }
+                elif name in {"MC_MSAN_LIBCXX_PREFIX", "MC_LSAN_LIBCXX_PREFIX"}:
+                    dependency = {"path": captured_path, "files_sha256": "f" * 64, "file_count": 2}
+                else:
+                    dependency = {
+                        "path": captured_path,
+                        "consumed_files_sha256": "9" * 64,
+                        "consumed_file_count": 2,
+                    }
+                dependencies[name] = dependency
+            family = self.matrix.RUNTIME_FAMILIES.get(row_id)
+            if family is None:
+                runtime_resources = {
+                    "resource_directory": "not-applicable",
+                    "files": [],
+                    "msan_ignorelist": None,
+                    "system_unwinder": None,
+                }
+            else:
+                resource_directory = "/captured/resource"
+                suffix = ".dylib" if manifest_row["platform"] == "macos" else ".a"
+                names = [f"libclang_rt.{family[0]}{suffix}"]
+                if row_id == "linux_lsan":
+                    names = ["libclang_rt.lsan-aarch64.a"]
+                if row_id == "linux_msan":
+                    names = ["libclang_rt.msan-aarch64.a", "libclang_rt.msan_cxx-aarch64.a"]
+                runtime_resources = {
+                    "resource_directory": resource_directory,
+                    "files": [
+                        {
+                            "name": name,
+                            "path": f"{resource_directory}/lib/{'darwin' if manifest_row['platform'] == 'macos' else 'linux'}/{name}",
+                            "size": 10,
+                            "sha256": "8" * 64,
+                        }
+                        for name in names
+                    ],
+                    "msan_ignorelist": None,
+                    "system_unwinder": None,
+                }
+                if row_id == "linux_msan":
+                    runtime_resources["msan_ignorelist"] = {
+                        "name": "msan_ignorelist.txt",
+                        "path": f"{resource_directory}/share/msan_ignorelist.txt",
+                        "size": 10,
+                        "sha256": "7" * 64,
+                    }
+                    runtime_resources["system_unwinder"] = {
+                        "selected_by": "ldd",
+                        "probe_path": f"{environment['MC_MSAN_LIBCXX_PREFIX']}/lib/libc++abi.so.1",
+                        "probe_sha256": "6" * 64,
+                        "name": "libgcc_s.so.1",
+                        "path": "/usr/lib/libgcc_s.so.1",
+                        "size": 10,
+                        "sha256": "5" * 64,
+                    }
+            cache_values = {}
+            toolchain_resources = {"vulkan": None, "msvc_asan_runtime": None}
+            if manifest_row["platform"] in {"macos", "windows"}:
+                cache_values["MC_BUILD_CLIENT"] = "ON"
+                if manifest_row["platform"] == "windows":
+                    sdk_root = environment["VULKAN_SDK"]
+                    include_directory = r"C:\captured\vcpkg\installed\x64-windows\include"
+                    cache_values.update(
+                        {
+                            "Vulkan_INCLUDE_DIR": include_directory,
+                            "Vulkan_LIBRARY": str(host_path_type(sdk_root) / "Lib" / "vulkan-1.lib"),
+                            "Vulkan_GLSLC_EXECUTABLE": str(host_path_type(sdk_root) / "Bin" / "glslc.exe"),
+                            "MC_SPIRV_VAL_EXECUTABLE": str(host_path_type(sdk_root) / "Bin" / "spirv-val.exe"),
+                            "CMAKE_CXX_COMPILER": r"C:\captured\VC\Tools\MSVC\14.44.35207\bin\Hostx64\x64\cl.exe",
+                            "CMAKE_LINKER": r"C:\captured\VC\Tools\MSVC\14.44.35207\bin\Hostx64\x64\link.exe",
+                        }
+                    )
+                    if row_id == "windows_msvc_asan":
+                        cache_values["MC_SANITIZER"] = "address"
+                    runtime_loader_path = str(host_path_type(sdk_root) / "Bin" / "vulkan-1.dll")
+                else:
+                    include_directory = "/captured/vcpkg/arm64-osx/include"
+                    cache_values.update(
+                        {
+                            "Vulkan_INCLUDE_DIR": include_directory,
+                            "Vulkan_LIBRARY": "/usr/local/lib/libvulkan.dylib",
+                            "Vulkan_GLSLC_EXECUTABLE": "/opt/homebrew/bin/glslc",
+                            "MC_SPIRV_VAL_EXECUTABLE": "/usr/local/bin/spirv-val",
+                        }
+                    )
+                    runtime_loader_path = None
+                toolchain_resources["vulkan"] = {
+                    "sdk_root": environment["VULKAN_SDK"],
+                    "include_directory": include_directory,
+                    "headers_sha256": "1" * 64,
+                    "header_file_count": 2,
+                    "library": {
+                        "name": host_path_type(cache_values["Vulkan_LIBRARY"]).name,
+                        "path": cache_values["Vulkan_LIBRARY"],
+                        "size": 10,
+                        "sha256": "2" * 64,
+                    },
+                    "glslc": {
+                        "name": host_path_type(cache_values["Vulkan_GLSLC_EXECUTABLE"]).name,
+                        "path": cache_values["Vulkan_GLSLC_EXECUTABLE"],
+                        "size": 10,
+                        "sha256": "3" * 64,
+                    },
+                    "spirv_val": {
+                        "name": host_path_type(cache_values["MC_SPIRV_VAL_EXECUTABLE"]).name,
+                        "path": cache_values["MC_SPIRV_VAL_EXECUTABLE"],
+                        "size": 10,
+                        "sha256": "4" * 64,
+                    },
+                    "runtime_loader": (
+                        {
+                            "name": "vulkan-1.dll",
+                            "path": runtime_loader_path,
+                            "size": 10,
+                            "sha256": "5" * 64,
+                        }
+                        if runtime_loader_path
+                        else None
+                    ),
+                }
+                if row_id == "windows_msvc_asan":
+                    linker_parent = str(host_path_type(cache_values["CMAKE_LINKER"]).parent)
+                    toolchain_resources["msvc_asan_runtime"] = {
+                        "compiler": cache_values["CMAKE_CXX_COMPILER"],
+                        "linker": cache_values["CMAKE_LINKER"],
+                        "vc_install_directory": environment["VCINSTALLDIR"],
+                        "files": [
+                            {
+                                "role": "dynamic_runtime",
+                                "name": "clang_rt.asan_dynamic-x86_64.dll",
+                                "path": str(host_path_type(linker_parent) / "clang_rt.asan_dynamic-x86_64.dll"),
+                                "size": 10,
+                                "sha256": "6" * 64,
+                            }
+                        ],
+                    }
+            if row_id == "linux_lsan":
+                cache_values["VCPKG_TARGET_TRIPLET"] = environment["MC_ANALYSIS_LINUX_LSAN_TRIPLET"]
+            elif row_id == "linux_msan":
+                cache_values["VCPKG_TARGET_TRIPLET"] = environment["MC_ANALYSIS_LINUX_MSAN_TRIPLET"]
+            input_identity = {
+                "identity_schema_version": 4,
+                "source_input_sha256": "6" * 64,
+                "row_configuration_sha256": self.matrix._row_configuration_sha256(manifest_row),
+                "platform": {
+                    "name": manifest_row["platform"],
+                    "system": f"{manifest_row['platform']} test host",
+                    "machine": "test-machine",
+                    "python": "3.test",
+                },
+                "environment": {
+                    **{name: environment.get(name, "<unset>") for name in self.matrix.IDENTITY_ENVIRONMENT},
+                    "MC_ANALYSIS_ROOT": environment["MC_ANALYSIS_ROOT"],
+                },
+                "row_environment": row_environment,
+                "tool_identities": tools,
+                "effective_commands": effective_commands,
+                "external_dependencies": dependencies,
+                "effective_cmake_cache": {"status": "present", "values": cache_values},
+                "runtime_resources": runtime_resources,
+                "toolchain_resources": toolchain_resources,
+            }
+            input_identity["input_sha256"] = hashlib.sha256(
+                self.matrix._canonical_json(input_identity)
+            ).hexdigest()
             effective_analysis = None
             if row_id in self.matrix.REQUIRED_ANALYSIS_CONFIGURATION:
                 effective_analysis = {
@@ -71,22 +292,24 @@ class AnalysisMatrixTests(unittest.TestCase):
             rows.append(
                 {
                     "id": row_id,
-                    "candidate": dict(CANDIDATE),
+                    "proof_candidate": dict(CANDIDATE),
+                    "proof_origin": "local",
+                    "row_configuration_sha256": self.matrix._row_configuration_sha256(manifest_row),
+                    "input_identity": input_identity,
                     "status": "passed",
                     "flags": list(manifest_row["flags"]),
                     "environment": dict(manifest_row.get("environment", {})),
-                    "tool_versions": {"tool": "tool 1.0"},
+                    "tool_versions": {f"tool_{index}": "tool 1.0" for index, _ in enumerate(tools)},
                     "commands": [list(command) for command in manifest_row["commands"]],
                     "executed_commands": [
                         {
                             "declared_command": list(command),
-                            "argv": list(command)
-                            + (["--verbose"] if manifest_row["id"] in self.matrix.REQUIRED_ANALYSIS_CONFIGURATION and command[:2] == ["cmake", "--build"] else []),
+                            "argv": list(effective_commands[index]),
                             "return_code": 0,
                             "output_sha256": "d" * 64,
                             "output_bytes": 12,
                         }
-                        for command in manifest_row["commands"]
+                        for index, command in enumerate(manifest_row["commands"])
                     ],
                     "effective_compile_flags": (
                         {
@@ -104,17 +327,177 @@ class AnalysisMatrixTests(unittest.TestCase):
                 }
             )
         return {
-            "schema_version": 1,
+            "schema_version": 2,
             "task_id": "MC-AI-0249",
             "manifest_sha256": self.matrix.manifest_sha256(self.manifest),
             "candidate": dict(CANDIDATE),
             "source": dict(CANDIDATE),
+            "runner": {"name": "analysis-matrix-merge", "rows": len(rows)},
             "rows": rows,
         }
 
+    def rehash_input_identity(self, row):
+        identity = row["input_identity"]
+        preimage = dict(identity)
+        preimage.pop("input_sha256")
+        identity["input_sha256"] = hashlib.sha256(
+            self.matrix._canonical_json(preimage)
+        ).hexdigest()
+
+    def patch_row_execution(self, row, command_side_effect):
+        row["platform"] = self.matrix._host_platform()
+        environment = self.matrix.resolve_row_environment(row, REPOSITORY, {})
+        tool_identities = [
+            {"probe_argv": self.matrix._expand_environment(probe, environment)}
+            for probe in row["tool_probes"]
+        ]
+        versions = {probe[0]: "tool 1.0\n" for probe in row["tool_probes"]}
+        input_identity = {
+            "effective_commands": self.matrix._effective_command_argv(row, environment)
+        }
+        stack = ExitStack()
+        stack.enter_context(mock.patch.dict(self.matrix.REQUIRED_ROW_ENVIRONMENT, {row["id"]: ()}))
+        stack.enter_context(mock.patch.object(self.matrix, "_row_supported_on_host", return_value=True))
+        stack.enter_context(
+            mock.patch.object(
+                self.matrix,
+                "_capture_tool_probes",
+                return_value=(versions, tool_identities, None),
+            )
+        )
+        stack.enter_context(
+            mock.patch.object(self.matrix, "_row_input_identity", return_value=input_identity)
+        )
+        stack.enter_context(
+            mock.patch.object(self.matrix, "_run_with_liveness", side_effect=command_side_effect)
+        )
+        return stack
+
+    def create_input_scope_fixture(self, root: Path) -> None:
+        preset_names = set()
+        configure_names = set()
+        build_names = set()
+        for row in self.manifest["rows"]:
+            for command in row["commands"]:
+                for index, value in enumerate(command[:-1]):
+                    if value == "--preset":
+                        (build_names if "--build" in command[:index] else configure_names).add(command[index + 1])
+        configure_names.update(build_names)
+        preset_names.update(configure_names)
+        for name in sorted(preset_names):
+            configure = root / f"preset-config-{name}"
+            configure.write_text("fixture\n", encoding="utf-8")
+        (root / "CMakePresets.json").write_text(
+            json.dumps(
+                {
+                    "version": 6,
+                    "configurePresets": [{"name": name} for name in sorted(configure_names)],
+                    "buildPresets": [
+                        {"name": name, "configurePreset": name} for name in sorted(build_names)
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+        files = (
+            "CMakeLists.txt",
+            "cmake/build.cmake",
+            "src/owned.cpp",
+            "src/shared/include/shared/public.hpp",
+            "tests/owned_test.cpp",
+            "testdata/fixture.json",
+            "assets/asset.txt",
+            "scenarios/scenario.json",
+            "dependencies.lock.json",
+            "vcpkg.json",
+            "vcpkg-configuration.json",
+            "script/ai_analysis_matrix.py",
+            "script/ci/acquire.py",
+            "script/ci/build_snapshot.py",
+            "script/ci/verify_macos_lsan.py",
+            "script/ci/macos_lsan.supp",
+            "script/ci/macos_lsan_control.cpp",
+            "script/ci/vcpkg-triplets/x64-windows-asan.cmake",
+            "script/ci/vcpkg-triplets/arm64-linux-lsan.cmake",
+            "script/ci/vcpkg-triplets/x64-linux-lsan.cmake",
+            "script/ci/vcpkg-triplets/arm64-linux-msan.cmake",
+            "script/ci/vcpkg-triplets/x64-linux-msan.cmake",
+            "script/ci/vcpkg-clang-toolchain.cmake",
+            "script/ci/install_msan_libcxx.py",
+            "script/ci/vcpkg-overlays/gmp/portfile.cmake",
+            "script/ci/vcpkg-overlays/gmp/vcpkg.json",
+            "script/ci/iwyu_gate.py",
+            "script/ci/cppcheck_gate.py",
+        )
+        for relative in files:
+            target = root / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(f"fixture {relative}\n", encoding="utf-8")
+
+    def test_documentation_does_not_stale_row_proof_but_owned_code_tests_headers_and_lock_do(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.create_input_scope_fixture(root)
+            rows = {row["id"]: row for row in self.manifest["rows"]}
+            before = {
+                row_id: self.matrix.row_source_input_sha256(root, row)
+                for row_id, row in rows.items()
+            }
+            docs = root / "docs/notes.md"
+            docs.parent.mkdir(parents=True)
+            docs.write_text("documentation-only edit\n", encoding="utf-8")
+            self.assertEqual(
+                before["macos_asan"],
+                self.matrix.row_source_input_sha256(root, rows["macos_asan"]),
+            )
+            for relative in (
+                "src/owned.cpp",
+                "tests/owned_test.cpp",
+                "src/shared/include/shared/public.hpp",
+                "dependencies.lock.json",
+            ):
+                target = root / relative
+                target.write_text(target.read_text(encoding="utf-8") + "changed\n", encoding="utf-8")
+                for row_id, row in rows.items():
+                    with self.subTest(input=relative, row=row_id):
+                        self.assertNotEqual(
+                            before[row_id],
+                            self.matrix.row_source_input_sha256(root, row),
+                        )
+
+    def test_platform_specific_triplet_and_overlay_changes_leave_other_rows_reusable(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.create_input_scope_fixture(root)
+            rows = {row["id"]: row for row in self.manifest["rows"]}
+            tracked_ids = ("macos_asan", "windows_msvc_asan", "linux_lsan", "linux_msan")
+            before = {
+                row_id: self.matrix.row_source_input_sha256(root, rows[row_id])
+                for row_id in tracked_ids
+            }
+            lsan_triplet = root / "script/ci/vcpkg-triplets/arm64-linux-lsan.cmake"
+            lsan_triplet.write_text("changed native LSan triplet\n", encoding="utf-8")
+            after_lsan = {
+                row_id: self.matrix.row_source_input_sha256(root, rows[row_id])
+                for row_id in tracked_ids
+            }
+            self.assertNotEqual(before["linux_lsan"], after_lsan["linux_lsan"])
+            for row_id in ("macos_asan", "windows_msvc_asan", "linux_msan"):
+                self.assertEqual(before[row_id], after_lsan[row_id], row_id)
+
+            overlay = root / "script/ci/vcpkg-overlays/gmp/portfile.cmake"
+            overlay.write_text("changed GMP overlay\n", encoding="utf-8")
+            after_overlay = {
+                row_id: self.matrix.row_source_input_sha256(root, rows[row_id])
+                for row_id in tracked_ids
+            }
+            self.assertNotEqual(after_lsan["windows_msvc_asan"], after_overlay["windows_msvc_asan"])
+            self.assertNotEqual(after_lsan["linux_lsan"], after_overlay["linux_lsan"])
+            self.assertNotEqual(after_lsan["linux_msan"], after_overlay["linux_msan"])
+            self.assertEqual(after_lsan["macos_asan"], after_overlay["macos_asan"])
+
     def create_iwyu_fixture(self, root: Path, *, source_count: int = 1, receipt_count: int | None = None):
         for relative in (
-            "CMakePresets.json",
             "script/ai_analysis_matrix.py",
             "script/ai_analysis_matrix.json",
             "script/ci/iwyu_gate.py",
@@ -123,6 +506,23 @@ class AnalysisMatrixTests(unittest.TestCase):
             path = root / relative
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text("analysis fingerprint fixture\n", encoding="utf-8")
+
+        (root / "CMakePresets.json").write_text(
+            json.dumps(
+                {
+                    "version": 6,
+                    "configurePresets": [
+                        {"name": "analysis-iwyu"},
+                        {"name": "analysis-cppcheck"},
+                    ],
+                    "buildPresets": [
+                        {"name": "analysis-iwyu", "configurePreset": "analysis-iwyu"},
+                        {"name": "analysis-cppcheck", "configurePreset": "analysis-cppcheck"},
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
 
         preset, cache_key, settings = self.matrix.REQUIRED_ANALYSIS_CONFIGURATION["iwyu"]
         build_directory = root / "build" / preset
@@ -226,6 +626,50 @@ class AnalysisMatrixTests(unittest.TestCase):
             record_path.write_text(json.dumps(record), encoding="utf-8")
         return sources
 
+    def add_iwyu_history_record(
+        self,
+        root: Path,
+        template_record_path: Path,
+        *,
+        status: str,
+        source: str | None = None,
+        malformed_identity: bool = False,
+    ) -> tuple[Path, Path]:
+        record = json.loads(template_record_path.read_text(encoding="utf-8"))
+        record["source"] = source or record["source"]
+        record["source_argv"] = [*record["source_argv"]]
+        record["source_argv"].insert(1, "-DSTALE_IWYU_INVOCATION=1")
+        record["adapter_argv"] = [
+            "include-what-you-use",
+            "-Xiwyu",
+            "--no_fwd_decls",
+            "-Xiwyu",
+            "--error",
+            "--",
+            *record["source_argv"],
+        ]
+        record["tool_argv"] = [
+            "include-what-you-use",
+            "-Xiwyu",
+            "--no_fwd_decls",
+            *record["source_argv"],
+        ]
+        record["status"] = status
+        record["tool_exit_code"] = 2 if status == "error" else 0
+        record["diagnostic"] = "historical invocation result" if status == "error" else None
+        raw_report = f"{status} historical IWYU output\n".encode("utf-8")
+        record["report_sha256"] = hashlib.sha256(raw_report).hexdigest()
+        source_argv_json = json.dumps(record["source_argv"], separators=(",", ":")).encode("utf-8")
+        stem = hashlib.sha256(record["source"].encode("utf-8") + b"\0" + source_argv_json).hexdigest()
+        gate_directory = root / self.matrix.PER_TRANSLATION_UNIT_ANALYSIS["iwyu"]["receipt_directory"]
+        record_path = gate_directory / f"{'malformed-history' if malformed_identity else stem}.json"
+        log_path = gate_directory / f"{record_path.stem}.log"
+        record["log"] = log_path.relative_to(root).as_posix()
+        record["record"] = record_path.relative_to(root).as_posix()
+        log_path.write_bytes(raw_report)
+        record_path.write_text(json.dumps(record), encoding="utf-8")
+        return record_path, log_path
+
     def create_cppcheck_fixture(self, root: Path, *, source_count: int = 1, receipt_count: int | None = None):
         sources = self.create_iwyu_fixture(root, source_count=source_count, receipt_count=0)
         preset, cache_key, settings = self.matrix.REQUIRED_ANALYSIS_CONFIGURATION["cppcheck"]
@@ -328,14 +772,6 @@ class AnalysisMatrixTests(unittest.TestCase):
             self.matrix.REQUIRED_ROW_IDS,
         )
 
-    def test_android_clang_tidy_is_a_required_matrix_row(self):
-        self.assertIn("android_clang_tidy", self.matrix.REQUIRED_ROW_IDS)
-        row = next(item for item in self.manifest["rows"] if item["id"] == "android_clang_tidy")
-        self.assertEqual(row["platform"], "android-arm64")
-        self.assertIn("clang-tidy", row["tool_probes"][0])
-        self.assertIn("--checks=clang-analyzer-*", row["commands"][0])
-        self.assertIn("--warnings-as-errors=clang-analyzer-*", row["commands"][0])
-
     def test_clang_static_analysis_probes_scan_build_with_supported_help_option(self):
         row = next(item for item in self.manifest["rows"] if item["id"] == "clang_static_analysis")
 
@@ -374,9 +810,11 @@ class AnalysisMatrixTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as directory:
             receipt_path = Path(directory) / "row.json"
-            with mock.patch.object(self.matrix, "require_clean_checkout"), mock.patch.object(
-                self.matrix, "_row_supported_on_host", return_value=True
-            ), mock.patch.object(self.matrix.subprocess, "run", return_value=failed_probe) as run:
+            with mock.patch.object(self.matrix, "require_clean_checkout"), mock.patch.dict(
+                self.matrix.REQUIRED_ROW_ENVIRONMENT, {row["id"]: ()}
+            ), mock.patch.object(self.matrix, "_row_supported_on_host", return_value=True), mock.patch.object(
+                self.matrix.subprocess, "run", return_value=failed_probe
+            ) as run:
                 receipt = self.matrix.run_row(
                     row["id"], receipt_path, MANIFEST_PATH, root=REPOSITORY, expected_candidate=CANDIDATE
                 )
@@ -385,13 +823,6 @@ class AnalysisMatrixTests(unittest.TestCase):
         self.assertEqual(result["status"], "unavailable")
         self.assertIn("exited 2", result["diagnostics"])
         self.assertEqual(run.call_count, 1)
-
-    def test_android_clang_tidy_receipt_requires_the_exact_analyzer_invocation(self):
-        receipt = self.receipt()
-        row = next(item for item in receipt["rows"] if item["id"] == "android_clang_tidy")
-        row["executed_commands"][0]["argv"].remove("--warnings-as-errors=clang-analyzer-*")
-        with self.assertRaisesRegex(self.matrix.MatrixError, "exact required analyzer command"):
-            self.matrix.validate_receipt(receipt, self.manifest, CANDIDATE)
 
     def test_complete_candidate_bound_receipt_passes(self):
         self.assertIsNotNone(self.matrix.validate_receipt(self.receipt(), self.manifest, CANDIDATE))
@@ -415,9 +846,275 @@ class AnalysisMatrixTests(unittest.TestCase):
             self.matrix.validate_receipt(receipt, self.manifest, CANDIDATE)
 
         receipt = self.receipt()
-        receipt["manifest_sha256"] = "0" * 64
+        receipt["manifest_sha256"] = "x" * 64
         with self.assertRaisesRegex(self.matrix.MatrixError, "manifest_sha256"):
             self.matrix.validate_receipt(receipt, self.manifest, CANDIDATE)
+
+        receipt = self.receipt()
+        receipt["manifest_sha256"] = "0" * 64
+        self.matrix.validate_receipt(receipt, self.manifest, CANDIDATE)
+
+    def test_legacy_hosted_receipt_schema_fails_closed(self):
+        receipt = self.receipt()
+        receipt["schema_version"] = 1
+        with self.assertRaisesRegex(self.matrix.MatrixError, "schema_version must be 2"):
+            self.matrix.validate_receipt(receipt, self.manifest, CANDIDATE)
+
+    def test_missing_or_tampered_tool_and_input_configuration_evidence_fails_closed(self):
+        receipt = self.receipt()
+        row = receipt["rows"][0]
+        row["input_identity"]["tool_identities"].pop()
+        with self.assertRaisesRegex(self.matrix.MatrixError, "tool_identities is incomplete"):
+            self.matrix.validate_receipt(receipt, self.manifest, CANDIDATE)
+
+        receipt = self.receipt()
+        row = receipt["rows"][0]
+        row["input_identity"]["tool_identities"][0]["executable_sha256"] = "0" * 64
+        with self.assertRaisesRegex(self.matrix.MatrixError, "input_identity hash does not match"):
+            self.matrix.validate_receipt(receipt, self.manifest, CANDIDATE)
+
+        receipt = self.receipt()
+        row = receipt["rows"][0]
+        row["row_configuration_sha256"] = "0" * 64
+        with self.assertRaisesRegex(self.matrix.MatrixError, "configuration differs"):
+            self.matrix.validate_receipt(receipt, self.manifest, CANDIDATE)
+
+    def test_selected_vulkan_resources_hash_cache_bound_headers_library_and_tools(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            include = root / "include"
+            header = include / "vulkan/vulkan.h"
+            video_header = include / "vk_video/vulkan_video_codecs_common.h"
+            library = root / "lib/libvulkan.dylib"
+            glslc = root / "bin/glslc"
+            spirv_val = root / "bin/spirv-val"
+            for path, contents in (
+                (header, b"vulkan header"),
+                (video_header, b"video header"),
+                (library, b"vulkan loader library"),
+                (glslc, b"glslc tool"),
+                (spirv_val, b"spirv validator"),
+            ):
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(contents)
+            row = next(row for row in self.manifest["rows"] if row["id"] == "macos_asan")
+            cache = {
+                "status": "present",
+                "values": {
+                    "MC_BUILD_CLIENT": "ON",
+                    "Vulkan_INCLUDE_DIR": str(include),
+                    "Vulkan_LIBRARY": str(library),
+                    "Vulkan_GLSLC_EXECUTABLE": str(glslc),
+                    "MC_SPIRV_VAL_EXECUTABLE": str(spirv_val),
+                },
+            }
+            first = self.matrix._selected_toolchain_resources(
+                row, {"VULKAN_SDK": "<unset>"}, cache, require_selected=True
+            )
+            self.assertEqual(first["vulkan"]["header_file_count"], 2)
+            self.assertEqual(first["vulkan"]["library"]["sha256"], hashlib.sha256(library.read_bytes()).hexdigest())
+
+            header.write_bytes(b"changed Vulkan header")
+            library.write_bytes(b"changed Vulkan loader library")
+            glslc.write_bytes(b"changed glslc tool")
+            spirv_val.write_bytes(b"changed spirv validator")
+            second = self.matrix._selected_toolchain_resources(
+                row, {"VULKAN_SDK": "<unset>"}, cache, require_selected=True
+            )
+            self.assertNotEqual(first["vulkan"]["headers_sha256"], second["vulkan"]["headers_sha256"])
+            self.assertNotEqual(first["vulkan"]["library"]["sha256"], second["vulkan"]["library"]["sha256"])
+            self.assertNotEqual(first["vulkan"]["glslc"]["sha256"], second["vulkan"]["glslc"]["sha256"])
+            self.assertNotEqual(first["vulkan"]["spirv_val"]["sha256"], second["vulkan"]["spirv_val"]["sha256"])
+
+            library.unlink()
+            with self.assertRaisesRegex(self.matrix.MatrixError, "Vulkan loader library.*missing or unreadable"):
+                self.matrix._selected_toolchain_resources(
+                    row, {"VULKAN_SDK": "<unset>"}, cache, require_selected=True
+                )
+
+    def test_unconfigured_vulkan_cache_is_allowed_before_configure_but_required_afterward(self):
+        row = next(row for row in self.manifest["rows"] if row["id"] == "macos_asan")
+        missing_cache = {"status": "missing"}
+        self.assertEqual(
+            self.matrix._selected_toolchain_resources(
+                row, {"VULKAN_SDK": "<unset>"}, missing_cache, require_selected=False
+            ),
+            {"vulkan": None, "msvc_asan_runtime": None},
+        )
+        with self.assertRaisesRegex(self.matrix.MatrixError, "passed without a configured CMake cache"):
+            self.matrix._selected_toolchain_resources(
+                row, {"VULKAN_SDK": "<unset>"}, missing_cache, require_selected=True
+            )
+
+    def test_cmake_cache_identity_retains_selected_vulkan_and_linker_paths(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            cache_path = root / "build/analysis-windows-asan/CMakeCache.txt"
+            cache_path.parent.mkdir(parents=True)
+            cache_path.write_text(
+                "\n".join(
+                    (
+                        r"MC_BUILD_CLIENT:BOOL=ON",
+                        r"MC_SPIRV_VAL_EXECUTABLE:FILEPATH=C:/sdk/Bin/spirv-val.exe",
+                        r"Vulkan_INCLUDE_DIR:PATH=C:/vcpkg/include",
+                        r"Vulkan_LIBRARY:FILEPATH=C:/sdk/Lib/vulkan-1.lib",
+                        r"Vulkan_GLSLC_EXECUTABLE:FILEPATH=C:/sdk/Bin/glslc.exe",
+                        r"CMAKE_CXX_COMPILER:FILEPATH=C:/VS/bin/cl.exe",
+                        r"CMAKE_LINKER:FILEPATH=C:/VS/bin/link.exe",
+                    )
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            row = next(row for row in self.manifest["rows"] if row["id"] == "windows_msvc_asan")
+            identity = self.matrix._cmake_cache_identity(root, row)
+            for name in (
+                "MC_BUILD_CLIENT",
+                "MC_SPIRV_VAL_EXECUTABLE",
+                "Vulkan_INCLUDE_DIR",
+                "Vulkan_LIBRARY",
+                "Vulkan_GLSLC_EXECUTABLE",
+                "CMAKE_CXX_COMPILER",
+                "CMAKE_LINKER",
+            ):
+                self.assertIn(name, identity["values"])
+
+    def test_offline_windows_vulkan_identity_requires_cache_bound_files_and_sdk_root(self):
+        receipt = self.receipt()
+        row = next(row for row in receipt["rows"] if row["id"] == "windows_msvc_analyze")
+        row["input_identity"]["toolchain_resources"]["vulkan"]["library"]["path"] = (
+            r"C:\captured\other-sdk\Lib\vulkan-1.lib"
+        )
+        self.rehash_input_identity(row)
+        with self.assertRaisesRegex(self.matrix.MatrixError, "does not match its selected CMake/environment path"):
+            self.matrix.validate_receipt(receipt, self.manifest, CANDIDATE)
+
+        receipt = self.receipt()
+        row = next(row for row in receipt["rows"] if row["id"] == "windows_msvc_analyze")
+        row["input_identity"]["environment"]["VULKAN_SDK"] = r"D:\captured\vulkan-sdk"
+        self.rehash_input_identity(row)
+        with self.assertRaisesRegex(self.matrix.MatrixError, "differs from captured VULKAN_SDK"):
+            self.matrix.validate_receipt(receipt, self.manifest, CANDIDATE)
+
+    def test_offline_windows_msvc_asan_runtime_must_match_cached_linker_directory(self):
+        receipt = self.receipt()
+        row = next(row for row in receipt["rows"] if row["id"] == "windows_msvc_asan")
+        row["input_identity"]["toolchain_resources"]["msvc_asan_runtime"]["files"][0]["path"] = (
+            r"C:\captured\elsewhere\clang_rt.asan_dynamic-x86_64.dll"
+        )
+        self.rehash_input_identity(row)
+        with self.assertRaisesRegex(self.matrix.MatrixError, "does not match its selected CMake/environment path"):
+            self.matrix.validate_receipt(receipt, self.manifest, CANDIDATE)
+
+        receipt = self.receipt()
+        row = next(row for row in receipt["rows"] if row["id"] == "windows_msvc_asan")
+        row["input_identity"]["toolchain_resources"]["msvc_asan_runtime"]["files"] = []
+        self.rehash_input_identity(row)
+        with self.assertRaisesRegex(self.matrix.MatrixError, "exactly its selected dynamic runtime DLL"):
+            self.matrix.validate_receipt(receipt, self.manifest, CANDIDATE)
+
+    def test_dependency_path_must_match_captured_environment_after_receipt_rehash(self):
+        receipt = self.receipt()
+        row = receipt["rows"][0]
+        row["input_identity"]["external_dependencies"]["VCPKG_INSTALLED_DIR"]["path"] = (
+            "/captured/unobserved/vcpkg_installed"
+        )
+        self.rehash_input_identity(row)
+
+        with mock.patch.object(self.matrix, "row_source_input_sha256", return_value="6" * 64):
+            with self.assertRaisesRegex(self.matrix.MatrixError, "path does not match its captured environment"):
+                self.matrix.validate_receipt(
+                    receipt, self.manifest, CANDIDATE, root=REPOSITORY
+                )
+
+    def test_platform_system_must_match_captured_platform_name_after_receipt_rehash(self):
+        receipt = self.receipt()
+        row = receipt["rows"][0]
+        row["input_identity"]["platform"]["system"] = "Linux-6.0-test-host"
+        self.rehash_input_identity(row)
+
+        with mock.patch.object(self.matrix, "row_source_input_sha256", return_value="6" * 64):
+            with self.assertRaisesRegex(self.matrix.MatrixError, "platform.system does not match its name"):
+                self.matrix.validate_receipt(
+                    receipt, self.manifest, CANDIDATE, root=REPOSITORY
+                )
+
+    def test_missing_external_dependency_inventory_fails_closed(self):
+        row = next(row for row in self.manifest["rows"] if row["id"] == "macos_asan")
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            env = {
+                "VCPKG_ROOT": str(root / "vcpkg"),
+                "VCPKG_INSTALLED_DIR": str(root / "installed"),
+                "MC_PRIVATE_DEPENDENCIES_PREFIX": str(root / "private"),
+            }
+            for name, value in env.items():
+                Path(value).mkdir(parents=True, exist_ok=True)
+            private_header = root / "private/include/private.hpp"
+            private_header.parent.mkdir(parents=True)
+            private_header.write_text("struct PrivateDependency {}\n", encoding="utf-8")
+            with mock.patch.object(self.matrix, "_git_dependency_identity", return_value={"path": "x", "revision": "1" * 40}):
+                with self.assertRaisesRegex(self.matrix.MatrixError, "vcpkg installed-file inventory is missing"):
+                    self.matrix._external_dependency_identity(root, row, env)
+
+    def test_vcpkg_triplet_inventory_hashes_dependency_files_and_skips_directories(self):
+        with tempfile.TemporaryDirectory() as directory:
+            installed = Path(directory)
+            entries = (
+                "arm64-osx/",
+                "arm64-osx/debug/",
+                "arm64-osx/debug/lib/",
+                "arm64-osx/debug/lib/libfmtd.a",
+                "arm64-osx/include/",
+                "arm64-osx/include/fmt/args.h",
+                "arm64-osx/lib/libfmt.a",
+                "arm64-osx/share/fmt/cmake/fmt-config.cmake",
+            )
+            inventory = installed / "vcpkg/info/fmt_12.1.0_arm64-osx.list"
+            inventory.parent.mkdir(parents=True)
+            inventory.write_text("\n".join(entries) + "\n", encoding="utf-8")
+            for relative in entries:
+                if relative.endswith("/"):
+                    (installed / relative).mkdir(parents=True, exist_ok=True)
+                else:
+                    dependency = installed / relative
+                    dependency.parent.mkdir(parents=True, exist_ok=True)
+                    dependency.write_bytes(relative.encode("utf-8"))
+
+            files = self.matrix._installed_dependency_files(installed, [inventory])
+
+        self.assertEqual(
+            set(files),
+            {
+                "arm64-osx/debug/lib/libfmtd.a",
+                "arm64-osx/include/fmt/args.h",
+                "arm64-osx/lib/libfmt.a",
+                "arm64-osx/share/fmt/cmake/fmt-config.cmake",
+            },
+        )
+
+    def test_macos_ubsan_runtime_identity_uses_official_llvm_filename(self):
+        row = next(row for row in self.manifest["rows"] if row["id"] == "macos_ubsan")
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            resource_dir = root / "llvm" / "lib" / "clang" / "22"
+            runtime = resource_dir / "lib/darwin/libclang_rt.ubsan_osx_dynamic.dylib"
+            runtime.parent.mkdir(parents=True)
+            runtime.write_bytes(b"official LLVM22 UBSan runtime fixture")
+            identity = self.matrix._sanitizer_runtime_identity(
+                root,
+                row,
+                {"MC_ANALYSIS_ROOT": str(root), "CFLAGS": f"-resource-dir {resource_dir}"},
+                [{"probe_argv": ["clang", "--version"], "executable": "/usr/bin/clang"}],
+                {"status": "present", "values": {}},
+                [],
+            )
+
+        self.assertEqual(identity["resource_directory"], str(resource_dir.resolve()))
+        self.assertEqual(
+            [runtime_info["name"] for runtime_info in identity["files"]],
+            ["libclang_rt.ubsan_osx_dynamic.dylib"],
+        )
 
     def test_receipt_requires_tool_commands_flags_and_diagnostics(self):
         for field in ("tool_versions", "commands", "flags", "diagnostics"):
@@ -545,60 +1242,92 @@ class AnalysisMatrixTests(unittest.TestCase):
             with self.assertRaisesRegex(self.matrix.MatrixError, "missing 1 owned translation-unit"):
                 self.matrix.capture_effective_analysis(root, {"id": "iwyu"}, "partial build")
 
-    def test_iwyu_capture_rejects_an_extra_receipt_for_a_duplicate_source(self):
+    def test_iwyu_capture_retains_old_failure_beside_current_pass(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             self.create_iwyu_fixture(root)
             gate_directory = root / self.matrix.PER_TRANSLATION_UNIT_ANALYSIS["iwyu"]["receipt_directory"]
-            original_path = next(gate_directory.glob("*.json"))
-            duplicate = json.loads(original_path.read_text(encoding="utf-8"))
-            duplicate["source_argv"].insert(1, "-DSECOND_PASS=1")
-            source_argv_json = json.dumps(duplicate["source_argv"], separators=(",", ":")).encode("utf-8")
-            stem = hashlib.sha256(duplicate["source"].encode("utf-8") + b"\0" + source_argv_json).hexdigest()
-            duplicate["adapter_argv"] = [
-                "include-what-you-use",
-                "-Xiwyu",
-                "--no_fwd_decls",
-                "-Xiwyu",
-                "--error",
-                "--",
-                *duplicate["source_argv"],
-            ]
-            duplicate["tool_argv"] = [
-                "include-what-you-use",
-                "-Xiwyu",
-                "--no_fwd_decls",
-                *duplicate["source_argv"],
-            ]
-            duplicate_log = gate_directory / f"{stem}.log"
-            duplicate_record = gate_directory / f"{stem}.json"
-            duplicate_log.write_bytes((root / duplicate["log"]).read_bytes())
-            duplicate["log"] = duplicate_log.relative_to(root).as_posix()
-            duplicate["record"] = duplicate_record.relative_to(root).as_posix()
-            duplicate_record.write_text(json.dumps(duplicate), encoding="utf-8")
+            current_path = next(gate_directory.glob("*.json"))
+            historical_path, historical_log = self.add_iwyu_history_record(
+                root, current_path, status="error"
+            )
 
-            with self.assertRaisesRegex(self.matrix.MatrixError, "stale or unexpected translation-unit"):
-                self.matrix.capture_effective_analysis(root, {"id": "iwyu"}, "duplicate invocation")
+            captured = self.matrix.capture_effective_analysis(root, {"id": "iwyu"}, "retry after argv change")
+
+            self.assertEqual(captured["translation_unit_count"], 1)
+            self.assertEqual(captured["translation_units"][0]["status"], "passed")
+            self.assertTrue(historical_path.is_file())
+            self.assertEqual(historical_log.read_bytes(), b"error historical IWYU output\n")
+
+    def test_iwyu_historical_pass_cannot_cover_a_missing_current_invocation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.create_iwyu_fixture(root)
+            gate_directory = root / self.matrix.PER_TRANSLATION_UNIT_ANALYSIS["iwyu"]["receipt_directory"]
+            current_path = next(gate_directory.glob("*.json"))
+            current = json.loads(current_path.read_text(encoding="utf-8"))
+            historical_path, _ = self.add_iwyu_history_record(root, current_path, status="passed")
+            current_path.unlink()
+            (root / current["log"]).unlink()
+
+            with self.assertRaisesRegex(self.matrix.MatrixError, "missing 1 owned translation-unit"):
+                self.matrix.capture_effective_analysis(root, {"id": "iwyu"}, "missing current invocation")
+            self.assertTrue(historical_path.is_file())
+
+    def test_iwyu_current_failure_remains_a_hard_error(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.create_iwyu_fixture(root)
+            gate_directory = root / self.matrix.PER_TRANSLATION_UNIT_ANALYSIS["iwyu"]["receipt_directory"]
+            current_path = next(gate_directory.glob("*.json"))
+            current = json.loads(current_path.read_text(encoding="utf-8"))
+            current["status"] = "error"
+            current["diagnostic"] = "current invocation failed"
+            current_path.write_text(json.dumps(current), encoding="utf-8")
+
+            with self.assertRaisesRegex(self.matrix.MatrixError, "is not passed"):
+                self.matrix.capture_effective_analysis(root, {"id": "iwyu"}, "current invocation failure")
+
+    def test_iwyu_malformed_historical_identity_is_rejected(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.create_iwyu_fixture(root)
+            gate_directory = root / self.matrix.PER_TRANSLATION_UNIT_ANALYSIS["iwyu"]["receipt_directory"]
+            current_path = next(gate_directory.glob("*.json"))
+            historical_path, _ = self.add_iwyu_history_record(
+                root, current_path, status="error", malformed_identity=True
+            )
+
+            with self.assertRaisesRegex(self.matrix.MatrixError, "invalid source identity"):
+                self.matrix.capture_effective_analysis(root, {"id": "iwyu"}, "malformed historical record")
+            self.assertTrue(historical_path.is_file())
+
+    def test_iwyu_historical_record_for_unknown_source_is_rejected(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.create_iwyu_fixture(root)
+            gate_directory = root / self.matrix.PER_TRANSLATION_UNIT_ANALYSIS["iwyu"]["receipt_directory"]
+            current_path = next(gate_directory.glob("*.json"))
+            self.add_iwyu_history_record(
+                root, current_path, status="error", source="src/not-in-compile-commands.cpp"
+            )
+
+            with self.assertRaisesRegex(self.matrix.MatrixError, "outside the current compile inventory"):
+                self.matrix.capture_effective_analysis(root, {"id": "iwyu"}, "unknown historical source")
 
     def test_iwyu_build_failure_propagates_to_the_analysis_row(self):
         for row_id in ("iwyu", "cppcheck"):
             with tempfile.TemporaryDirectory() as directory:
                 receipt_path = Path(directory) / "row.json"
                 row = next(row for row in self.manifest["rows"] if row["id"] == row_id)
-                probe_results = [
-                    self.matrix.subprocess.CompletedProcess(probe, 0, "tool 1.0\n", "")
-                    for probe in row["tool_probes"]
+                command_results = [
+                    self.matrix.subprocess.CompletedProcess([], 0, "configured\n", ""),
+                    self.matrix.subprocess.CompletedProcess([], 1, "gate failed\n", ""),
                 ]
-                probe_results.extend(
-                    [
-                        self.matrix.subprocess.CompletedProcess([], 0, "configured\n", ""),
-                        self.matrix.subprocess.CompletedProcess([], 1, "gate failed\n", ""),
-                    ]
-                )
 
-                with mock.patch.object(self.matrix, "require_clean_checkout"), mock.patch.object(
-                    self.matrix, "_row_supported_on_host", return_value=True
-                ), mock.patch.object(self.matrix.subprocess, "run", side_effect=probe_results):
+                with mock.patch.object(self.matrix, "require_clean_checkout"), self.patch_row_execution(
+                    row, command_results
+                ):
                     receipt = self.matrix.run_row(
                         row_id, receipt_path, MANIFEST_PATH, root=REPOSITORY, expected_candidate=CANDIDATE
                     )
@@ -659,13 +1388,36 @@ class AnalysisMatrixTests(unittest.TestCase):
             with self.assertRaisesRegex(self.matrix.MatrixError, "missing 1 owned translation-unit"):
                 self.matrix.capture_effective_analysis(root, {"id": "cppcheck"}, "partial build")
 
+    def test_cppcheck_effective_analysis_capture_round_trips_through_receipt_validation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.create_cppcheck_fixture(root)
+            captured = self.matrix.capture_effective_analysis(root, {"id": "cppcheck"}, "incremental build")
+            receipt = self.receipt()
+            row = next(item for item in receipt["rows"] if item["id"] == "cppcheck")
+            row["effective_analysis"] = captured
+
+            self.matrix.validate_receipt(receipt, self.manifest, CANDIDATE)
+
+        self.assertEqual(
+            captured["configuration_key"],
+            self.matrix.REQUIRED_ANALYSIS_CONFIGURATION["cppcheck"][1],
+        )
+
     def test_cppcheck_capture_rejects_changed_gate_policy_and_compile_commands(self):
         for changed_input in ("CMakePresets.json", "script/ci/cppcheck_gate.py"):
             with self.subTest(changed_input=changed_input), tempfile.TemporaryDirectory() as directory:
                 root = Path(directory)
                 self.create_cppcheck_fixture(root)
                 policy_path = root / changed_input
-                policy_path.write_text(policy_path.read_text(encoding="utf-8") + "changed\n", encoding="utf-8")
+                if changed_input == "CMakePresets.json":
+                    presets = json.loads(policy_path.read_text(encoding="utf-8"))
+                    presets["configurePresets"][0]["description"] = "changed policy"
+                    policy_path.write_text(json.dumps(presets), encoding="utf-8")
+                else:
+                    policy_path.write_text(
+                        policy_path.read_text(encoding="utf-8") + "changed\n", encoding="utf-8"
+                    )
 
                 with self.assertRaisesRegex(self.matrix.MatrixError, "stale project inputs"):
                     self.matrix.capture_effective_analysis(root, {"id": "cppcheck"}, "incremental build")
@@ -744,15 +1496,16 @@ class AnalysisMatrixTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             receipt_path = Path(directory) / "row.json"
             row = self.manifest["rows"][0]
-            row["platform"] = self.matrix._host_platform()
 
             successful_output = "x" * 16_385 + "successful output tail"
 
             def successful_command(argv, **kwargs):
-                output = successful_output if argv[:2] == ["cmake", "--preset"] else "tool output"
+                output = successful_output if argv[:2] == ["cmake", "--preset"] else "command output"
                 return self.matrix.subprocess.CompletedProcess(argv, 0, output, "")
 
-            with mock.patch.object(self.matrix, "require_clean_checkout"), mock.patch.object(
+            with mock.patch.object(self.matrix, "require_clean_checkout"), self.patch_row_execution(
+                row, successful_command
+            ), mock.patch.object(
                 self.matrix,
                 "capture_effective_compile_flags",
                 return_value={
@@ -760,14 +1513,6 @@ class AnalysisMatrixTests(unittest.TestCase):
                     "command_count": 1,
                     "observed_flags": list(row["required_compile_flags"]),
                 },
-            ), mock.patch.object(
-                self.matrix,
-                "_row_supported_on_host",
-                return_value=True,
-            ), mock.patch.object(
-                self.matrix.subprocess,
-                "run",
-                side_effect=successful_command,
             ):
                 receipt = self.matrix.run_row(
                     row["id"], receipt_path, MANIFEST_PATH, root=REPOSITORY, expected_candidate=CANDIDATE
@@ -781,7 +1526,7 @@ class AnalysisMatrixTests(unittest.TestCase):
             self.assertEqual(result["status"], "passed")
             self.assertEqual(result["commands"], row["commands"])
             self.assertEqual(result["environment"], row.get("environment", {}))
-            self.assertIn("tool output", result["diagnostics"])
+            self.assertIn("command output", result["diagnostics"])
             self.assertIn("[output truncated by analysis-matrix]", result["diagnostics"])
             self.assertNotIn("successful output tail", result["diagnostics"])
             self.assertEqual(len(result["executed_commands"]), len(row["commands"]))
@@ -799,24 +1544,14 @@ class AnalysisMatrixTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             receipt_path = Path(directory) / "row.json"
             row = self.manifest["rows"][0]
-            row["platform"] = self.matrix._host_platform()
             stdout = "x" * 17_000 + "\nclang: error: trailing sanitizer build failure\n"
             stderr = "ninja: build stopped: subcommand failed\n"
             command_output = stdout + stderr
-            probe_results = [
-                self.matrix.subprocess.CompletedProcess(probe, 0, "tool 1.0\n", "")
-                for probe in row["tool_probes"]
-            ]
-            probe_results.append(self.matrix.subprocess.CompletedProcess([], 1, stdout, stderr))
+            def failed_command(argv, **kwargs):
+                return self.matrix.subprocess.CompletedProcess(argv, 1, stdout, stderr)
 
-            with mock.patch.object(self.matrix, "require_clean_checkout"), mock.patch.object(
-                self.matrix,
-                "_row_supported_on_host",
-                return_value=True,
-            ), mock.patch.object(
-                self.matrix.subprocess,
-                "run",
-                side_effect=probe_results,
+            with mock.patch.object(self.matrix, "require_clean_checkout"), self.patch_row_execution(
+                row, failed_command
             ):
                 self.matrix.run_row(
                     row["id"], receipt_path, MANIFEST_PATH, root=REPOSITORY, expected_candidate=CANDIDATE
@@ -839,26 +1574,15 @@ class AnalysisMatrixTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             receipt_path = Path(directory) / "row.json"
             row = self.manifest["rows"][0]
-            row["platform"] = self.matrix._host_platform()
             partial_stdout = b"x" * 17_000 + b"\nclang: error: sanitizer build timed out\n\xff"
             partial_stderr = "ninja: still waiting for a stopped job\n"
-            timeout_error = self.matrix.subprocess.TimeoutExpired(
-                row["commands"][0], 30, output=partial_stdout, stderr=partial_stderr
-            )
-            probe_results = [
-                self.matrix.subprocess.CompletedProcess(probe, 0, "tool 1.0\n", "")
-                for probe in row["tool_probes"]
-            ]
-            probe_results.append(timeout_error)
+            def timeout_command(argv, **kwargs):
+                raise self.matrix.subprocess.TimeoutExpired(
+                    argv, 30, output=partial_stdout, stderr=partial_stderr
+                )
 
-            with mock.patch.object(self.matrix, "require_clean_checkout"), mock.patch.object(
-                self.matrix,
-                "_row_supported_on_host",
-                return_value=True,
-            ), mock.patch.object(
-                self.matrix.subprocess,
-                "run",
-                side_effect=probe_results,
+            with mock.patch.object(self.matrix, "require_clean_checkout"), self.patch_row_execution(
+                row, timeout_command
             ):
                 self.matrix.run_row(
                     row["id"], receipt_path, MANIFEST_PATH, root=REPOSITORY, expected_candidate=CANDIDATE
@@ -874,22 +1598,9 @@ class AnalysisMatrixTests(unittest.TestCase):
             self.assertIn("\ufffd", result["diagnostics"])
             self.assertEqual(result["executed_commands"], [])
 
-    def test_hosted_rows_reject_a_candidate_that_differs_from_the_checkout(self):
+    def test_candidate_commit_authentication_is_independent_of_working_inputs(self):
         with mock.patch.object(self.matrix, "candidate_identity", return_value={"head": "c" * 40, "tree": TREE}):
             with self.assertRaisesRegex(self.matrix.MatrixError, "does not match the checkout"):
-                self.matrix.require_clean_checkout(REPOSITORY, CANDIDATE)
-
-    def test_hosted_rows_reject_a_dirty_working_tree(self):
-        with mock.patch.object(self.matrix, "candidate_identity", return_value=dict(CANDIDATE)), mock.patch.object(
-            self.matrix,
-            "_git",
-            return_value=TREE,
-        ), mock.patch.object(
-            self.matrix.subprocess,
-            "run",
-            return_value=self.matrix.subprocess.CompletedProcess([], 0, " M source.cpp\n", ""),
-        ):
-            with self.assertRaisesRegex(self.matrix.MatrixError, "clean committed checkout"):
                 self.matrix.require_clean_checkout(REPOSITORY, CANDIDATE)
 
     def test_row_runner_records_unsupported_host_as_unavailable(self):
@@ -908,21 +1619,30 @@ class AnalysisMatrixTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             directory_path = Path(directory)
             complete = self.receipt()
-            row_paths = []
-            for index, row in enumerate(complete["rows"]):
-                row_path = directory_path / f"row-{index}.json"
-                row_receipt = dict(complete)
-                row_receipt["rows"] = [row]
-                row_path.write_text(json.dumps(row_receipt), encoding="utf-8")
-                row_paths.append(row_path)
             output_path = directory_path / "complete.json"
-            merged = self.matrix.merge_row_receipts(
-                row_paths, output_path, MANIFEST_PATH, root=REPOSITORY, expected_candidate=CANDIDATE
-            )
+            platform_receipts = []
+            for host, row_ids in self.matrix.HOST_ROW_IDS.items():
+                host_receipt = {
+                    **complete,
+                    "runner": {
+                        "name": "analysis-matrix-local",
+                        "host_platform": host,
+                        "rows": len(row_ids),
+                        "selected_rows": list(row_ids),
+                    },
+                    "rows": [row for row in complete["rows"] if row["id"] in row_ids],
+                }
+                host_path = directory_path / f"{host}.json"
+                host_path.write_text(json.dumps(host_receipt), encoding="utf-8")
+                platform_receipts.append(host_path)
+            with mock.patch.object(self.matrix, "row_source_input_sha256", return_value="6" * 64):
+                merged = self.matrix.merge_row_receipts(
+                    platform_receipts, output_path, MANIFEST_PATH, root=REPOSITORY, expected_candidate=CANDIDATE
+                )
             self.assertEqual(len(merged["rows"]), len(self.matrix.REQUIRED_ROW_IDS))
             self.assertIsNotNone(self.matrix.validate_receipt(merged, self.manifest, CANDIDATE))
 
-    def test_candidate_identity_hashes_the_staged_tree_without_writing_git_state(self):
+    def test_candidate_identity_keeps_commit_tree_separate_from_staged_inputs(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / "nested").mkdir()
@@ -939,9 +1659,13 @@ class AnalysisMatrixTests(unittest.TestCase):
             (root / "nested/file.txt").write_text("changed\n", encoding="utf-8")
             subprocess.run(["git", "add", "nested/file.txt"], cwd=root, check=True, capture_output=True)
             expected = subprocess.run(
-                ["git", "write-tree"], cwd=root, check=True, capture_output=True, text=True
+                ["git", "rev-parse", "HEAD^{tree}"], cwd=root, check=True, capture_output=True, text=True
             ).stdout.strip()
-            self.assertEqual(self.matrix.candidate_identity(root)["tree"], expected)
+            identity = self.matrix.candidate_identity(root)
+            self.assertEqual(identity["tree"], expected)
+            self.assertNotEqual(identity["tree"], subprocess.run(
+                ["git", "write-tree"], cwd=root, check=True, capture_output=True, text=True
+            ).stdout.strip())
 
     def test_duplicate_and_extra_rows_fail_closed(self):
         receipt = self.receipt()
@@ -954,39 +1678,54 @@ class AnalysisMatrixTests(unittest.TestCase):
         with self.assertRaisesRegex(self.matrix.MatrixError, "unexpected"):
             self.matrix.validate_receipt(receipt, self.manifest, CANDIDATE)
 
-    def test_local_stub_is_explicitly_unavailable_and_verifier_rejects_it(self):
+    def test_run_local_selects_only_unique_host_owned_rows_and_records_partial_scope(self):
+        host = self.matrix._host_platform()
+        row_id = self.matrix.HOST_ROW_IDS[host][0]
+        fake_row = {"id": row_id, "status": "passed"}
         with tempfile.TemporaryDirectory() as directory:
             receipt_path = Path(directory) / "analysis.json"
-            self.matrix.run_local_stub(
-                receipt_path,
-                MANIFEST_PATH,
-                root=REPOSITORY,
-                expected_candidate=CANDIDATE,
-            )
-            generated = json.loads(receipt_path.read_text(encoding="utf-8"))
-            self.assertTrue(all(row["status"] == "unavailable" for row in generated["rows"]))
-            with self.assertRaisesRegex(self.matrix.MatrixError, "not passed"):
-                self.matrix.validate_receipt(generated, self.manifest, CANDIDATE)
+            with mock.patch.object(self.matrix, "_host_platform", return_value=host), mock.patch.object(
+                self.matrix, "run_row", return_value={"rows": [fake_row]}
+            ) as run_row:
+                receipt = self.matrix.run_local(
+                    receipt_path,
+                    MANIFEST_PATH,
+                    root=REPOSITORY,
+                    expected_candidate=CANDIDATE,
+                    row_ids=[row_id],
+                )
+            self.assertEqual(receipt["runner"]["selected_rows"], [row_id])
+            self.assertEqual([row["id"] for row in receipt["rows"]], [row_id])
+            run_row.assert_called_once()
+            with self.assertRaisesRegex(self.matrix.MatrixError, "unique rows owned"):
+                self.matrix.run_local(
+                    receipt_path,
+                    MANIFEST_PATH,
+                    root=REPOSITORY,
+                    expected_candidate=CANDIDATE,
+                    row_ids=[row_id, row_id],
+                )
 
     def test_cli_verifies_a_complete_receipt(self):
         with tempfile.TemporaryDirectory() as directory:
             receipt_path = Path(directory) / "analysis.json"
             receipt_path.write_text(json.dumps(self.receipt()), encoding="utf-8")
-            self.assertEqual(
-                self.matrix.main(
-                    [
-                        "verify",
-                        str(receipt_path),
-                        "--manifest",
-                        str(MANIFEST_PATH),
-                        "--head",
-                        HEAD,
-                        "--tree",
-                        TREE,
-                    ]
-                ),
-                0,
-            )
+            with mock.patch.object(self.matrix, "row_source_input_sha256", return_value="6" * 64):
+                self.assertEqual(
+                    self.matrix.main(
+                        [
+                            "verify",
+                            str(receipt_path),
+                            "--manifest",
+                            str(MANIFEST_PATH),
+                            "--head",
+                            HEAD,
+                            "--tree",
+                            TREE,
+                        ]
+                    ),
+                    0,
+                )
 
     def test_cli_fails_after_writing_a_nonpassing_row_receipt(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -1002,7 +1741,7 @@ class AnalysisMatrixTests(unittest.TestCase):
                     1,
                 )
 
-    def test_hosted_row_commands_expand_only_declared_environment_placeholders(self):
+    def test_local_row_commands_expand_only_declared_environment_placeholders(self):
         self.assertEqual(
             self.matrix._expand_environment(
                 ["cmake", "-DROOT={env:VCPKG_ROOT}", "literal"],
@@ -1013,11 +1752,11 @@ class AnalysisMatrixTests(unittest.TestCase):
         with self.assertRaisesRegex(self.matrix.MatrixError, "VCPKG_ROOT"):
             self.matrix._expand_environment(["{env:VCPKG_ROOT}"], {})
 
-    def test_host_support_includes_linux_analysis_and_android_emulator_rows(self):
+    def test_host_support_is_limited_to_native_desktop_analysis_rows(self):
         with mock.patch.object(self.matrix, "_host_platform", return_value="linux"):
             self.assertTrue(self.matrix._row_supported_on_host({"platform": "linux"}))
-            self.assertTrue(self.matrix._row_supported_on_host({"platform": "android-arm64"}))
-            self.assertTrue(self.matrix._row_supported_on_host({"platform": "hosted"}))
+            self.assertFalse(self.matrix._row_supported_on_host({"platform": "android-arm64"}))
+            self.assertFalse(self.matrix._row_supported_on_host({"platform": "hosted"}))
 
     def test_manifest_requires_standalone_lsan_and_full_msan_rows(self):
         rows = {row["id"]: row for row in self.manifest["rows"]}
@@ -1030,8 +1769,226 @@ class AnalysisMatrixTests(unittest.TestCase):
             rows["linux_msan"]["environment"]["MSAN_OPTIONS"],
             "halt_on_error=1:print_stats=1:fast_unwind_on_fatal=1",
         )
+        self.assertEqual(rows["linux_msan"]["environment"]["DEBUGINFOD_URLS"], "")
+        self.assertIn(["ldd", "--version"], rows["linux_msan"]["tool_probes"])
         self.assertIn("linux_lsan", self.matrix.REQUIRED_ROW_IDS)
         self.assertIn("linux_msan", self.matrix.REQUIRED_ROW_IDS)
+        self.assertIn("MC_LSAN_LIBCXX_PREFIX", self.matrix.REQUIRED_ROW_ENVIRONMENT["linux_lsan"])
+
+    def test_msan_environment_disables_inherited_remote_debuginfod(self):
+        row = next(row for row in self.manifest["rows"] if row["id"] == "linux_msan")
+        resolved = self.matrix.resolve_row_environment(
+            row,
+            REPOSITORY,
+            {"DEBUGINFOD_URLS": "https://debuginfod.example.invalid"},
+        )
+        self.assertEqual(resolved["DEBUGINFOD_URLS"], "")
+
+        manifest = copy.deepcopy(self.manifest)
+        manifest_row = next(row for row in manifest["rows"] if row["id"] == "linux_msan")
+        manifest_row["environment"]["DEBUGINFOD_URLS"] = "https://debuginfod.example.invalid"
+        with self.assertRaisesRegex(self.matrix.MatrixError, "remote debuginfod"):
+            self.matrix.validate_manifest(manifest)
+
+    def test_clean_pinned_msan_llvm_checkout_records_recipe_identity_and_rejects_dirty_checkout(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            llvm = root / "llvm-project"
+            llvm.mkdir()
+            subprocess.run(["git", "init", "-q", str(llvm)], check=True, capture_output=True, text=True)
+            subprocess.run(["git", "-C", str(llvm), "config", "user.name", "Matrix Test"], check=True)
+            subprocess.run(
+                ["git", "-C", str(llvm), "config", "user.email", "matrix@example.invalid"],
+                check=True,
+            )
+            (llvm / "README").write_text("pinned upstream tree\n", encoding="utf-8")
+            subprocess.run(["git", "-C", str(llvm), "add", "README"], check=True)
+            subprocess.run(["git", "-C", str(llvm), "commit", "-q", "-m", "fixture"], check=True)
+            revision = subprocess.run(
+                ["git", "-C", str(llvm), "rev-parse", "HEAD"],
+                check=True,
+                capture_output=True,
+                text=True,
+            ).stdout.strip()
+            helper_root = root / "candidate"
+            helper = helper_root / "script/ci/install_msan_libcxx.py"
+            helper.parent.mkdir(parents=True)
+            shutil.copyfile(REPOSITORY / "script/ci/install_msan_libcxx.py", helper)
+
+            with mock.patch.object(self.matrix, "MSAN_LLVM_BASE_REVISION", revision):
+                identity = self.matrix._msan_llvm_dependency_identity(helper_root, str(llvm))
+                self.assertEqual(identity["status"], "clean")
+                self.assertEqual(identity["revision"], revision)
+                self.assertEqual(identity["helper_sha256"], self.matrix.MSAN_HELPER_SHA256)
+
+                (llvm / "README").write_text("modified tree\n", encoding="utf-8")
+                with self.assertRaisesRegex(self.matrix.MatrixError, "dirty"):
+                    self.matrix._msan_llvm_dependency_identity(helper_root, str(llvm))
+
+    def test_msan_ignorelist_is_required_and_its_bytes_are_captured(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            row = next(row for row in self.manifest["rows"] if row["id"] == "linux_msan")
+            resource_dir = root / "clang-resource"
+            runtime_dir = resource_dir / "lib/linux"
+            runtime_dir.mkdir(parents=True)
+            (runtime_dir / "libclang_rt.msan-aarch64.a").write_bytes(b"msan")
+            (runtime_dir / "libclang_rt.msan_cxx-aarch64.a").write_bytes(b"msan-cxx")
+            ignorelist = resource_dir / "share/msan_ignorelist.txt"
+            ignorelist.parent.mkdir()
+            ignorelist.write_bytes(b"stock ignorelist\n")
+            prefix = root / "msan-libcxx"
+            library = prefix / "lib/libc++abi.so.1"
+            library.parent.mkdir(parents=True)
+            library.write_bytes(b"instrumented libc++abi")
+            system_unwinder = root / "system/libgcc_s.so.1"
+            system_unwinder.parent.mkdir()
+            system_unwinder.write_bytes(b"system libgcc_s")
+            environment = {
+                "MC_ANALYSIS_ROOT": str(root),
+                "MC_MSAN_LIBCXX_PREFIX": str(prefix),
+                "CFLAGS": f"-resource-dir {resource_dir}",
+                "DEBUGINFOD_URLS": "",
+                "PATH": "/captured/bin",
+            }
+            tools = [
+                {"probe_argv": ["clang", "--version"], "executable": "/captured/bin/clang"},
+                {"probe_argv": ["ldd", "--version"], "executable": "/captured/bin/ldd"},
+            ]
+            ldd_result = subprocess.CompletedProcess(
+                ["ldd", str(library.resolve())],
+                0,
+                stdout=f"libgcc_s.so.1 => {system_unwinder.resolve()} (0x1234)\n",
+                stderr="",
+            )
+            with mock.patch.object(self.matrix.subprocess, "run", return_value=ldd_result) as run:
+                first = self.matrix._sanitizer_runtime_identity(
+                    root,
+                    row,
+                    environment,
+                    tools,
+                    {"status": "present", "values": {}},
+                    [],
+                )
+                self.assertEqual(first["msan_ignorelist"]["sha256"], hashlib.sha256(b"stock ignorelist\n").hexdigest())
+                self.assertEqual(first["system_unwinder"]["path"], str(system_unwinder.resolve()))
+                self.assertEqual(run.call_args.kwargs["env"]["DEBUGINFOD_URLS"], "")
+
+                ignorelist.write_bytes(b"changed ignorelist\n")
+                second = self.matrix._sanitizer_runtime_identity(
+                    root,
+                    row,
+                    environment,
+                    tools,
+                    {"status": "present", "values": {}},
+                    [],
+                )
+                self.assertNotEqual(first["msan_ignorelist"]["sha256"], second["msan_ignorelist"]["sha256"])
+                ignorelist.unlink()
+                with self.assertRaisesRegex(self.matrix.MatrixError, "stock MSan ignorelist"):
+                    self.matrix._sanitizer_runtime_identity(
+                        root,
+                        row,
+                        environment,
+                        tools,
+                        {"status": "present", "values": {}},
+                        [],
+                    )
+
+    def test_msan_system_unwinder_probe_rejects_libunwind(self):
+        with tempfile.TemporaryDirectory() as directory:
+            prefix = Path(directory) / "msan-libcxx"
+            library = prefix / "lib/libc++abi.so.1"
+            library.parent.mkdir(parents=True)
+            library.write_bytes(b"instrumented libc++abi")
+            environment = {"MC_MSAN_LIBCXX_PREFIX": str(prefix), "DEBUGINFOD_URLS": ""}
+            tools = [{"probe_argv": ["ldd", "--version"], "executable": "/captured/bin/ldd"}]
+            result = subprocess.CompletedProcess(
+                ["ldd", str(library.resolve())],
+                0,
+                stdout="libunwind.so.1 => /lib/libunwind.so.1 (0x1234)\n",
+                stderr="",
+            )
+            with mock.patch.object(self.matrix.subprocess, "run", return_value=result):
+                with self.assertRaisesRegex(self.matrix.MatrixError, "libunwind"):
+                    self.matrix._msan_system_unwinder_identity(Path(directory), environment, tools)
+
+    def test_lsan_libcxx_prefix_identity_hashes_consumed_runtime_files(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            prefix = root / "llvm-18"
+            header = prefix / "include/c++/v1/__config"
+            libcxx = prefix / "lib/libc++.so.1"
+            libcxxabi = prefix / "lib/libc++abi.so.1"
+            header.parent.mkdir(parents=True)
+            libcxx.parent.mkdir(parents=True)
+            header.write_bytes(b"libc++ headers")
+            libcxx.write_bytes(b"system libc++")
+            libcxxabi.write_bytes(b"system libc++abi")
+            row = next(row for row in self.manifest["rows"] if row["id"] == "linux_lsan")
+            environment = {"MC_LSAN_LIBCXX_PREFIX": str(prefix)}
+            with mock.patch.dict(
+                self.matrix.REQUIRED_ROW_ENVIRONMENT,
+                {"linux_lsan": ("MC_LSAN_LIBCXX_PREFIX",)},
+            ):
+                first = self.matrix._external_dependency_identity(root, row, environment)
+                self.assertEqual(first["MC_LSAN_LIBCXX_PREFIX"]["path"], str(prefix))
+                self.assertEqual(first["MC_LSAN_LIBCXX_PREFIX"]["file_count"], 3)
+
+                libcxx.write_bytes(b"changed system libc++")
+                second = self.matrix._external_dependency_identity(root, row, environment)
+                self.assertNotEqual(
+                    first["MC_LSAN_LIBCXX_PREFIX"]["files_sha256"],
+                    second["MC_LSAN_LIBCXX_PREFIX"]["files_sha256"],
+                )
+
+    def test_offline_receipt_validation_rejects_a_changed_system_unwinder_identity(self):
+        receipt = self.receipt()
+        row = next(row for row in receipt["rows"] if row["id"] == "linux_msan")
+        row["input_identity"]["runtime_resources"]["system_unwinder"].update(
+            {"name": "libunwind.so.1", "path": "/usr/lib/libunwind.so.1"}
+        )
+        self.rehash_input_identity(row)
+        with self.assertRaisesRegex(self.matrix.MatrixError, "system libgcc_s unwinder"):
+            self.matrix.validate_receipt(receipt, self.manifest, CANDIDATE)
+
+    def test_offline_linux_msan_paths_are_not_resolved_by_the_verifier_host(self):
+        receipt = self.receipt()
+        row = next(row for row in receipt["rows"] if row["id"] == "linux_msan")
+        identity = row["input_identity"]
+        prefix = "/home/guest/msan-prefix"
+        identity["environment"]["MC_MSAN_LIBCXX_PREFIX"] = prefix
+        identity["external_dependencies"]["MC_MSAN_LIBCXX_PREFIX"]["path"] = prefix
+        identity["runtime_resources"]["system_unwinder"]["probe_path"] = (
+            f"{prefix}/lib/libc++abi.so.1"
+        )
+        self.rehash_input_identity(row)
+        original_resolve = Path.resolve
+        foreign_paths: list[str] = []
+
+        def resolve_on_verifier_host(path: Path, *args, **kwargs):
+            value = str(path)
+            if value.startswith("/home/guest/"):
+                foreign_paths.append(value)
+                return Path("/System/Volumes/Data") / value.lstrip("/")
+            return original_resolve(path, *args, **kwargs)
+
+        with mock.patch.object(Path, "resolve", resolve_on_verifier_host):
+            self.matrix.validate_receipt(receipt, self.manifest, CANDIDATE)
+
+        self.assertEqual(foreign_paths, [])
+
+    def test_offline_linux_msan_probe_rejects_parent_path_escape(self):
+        receipt = self.receipt()
+        row = next(row for row in receipt["rows"] if row["id"] == "linux_msan")
+        prefix = row["input_identity"]["environment"]["MC_MSAN_LIBCXX_PREFIX"]
+        row["input_identity"]["runtime_resources"]["system_unwinder"]["probe_path"] = (
+            f"{prefix}/lib/../../outside/libc++abi.so.1"
+        )
+        self.rehash_input_identity(row)
+
+        with self.assertRaisesRegex(self.matrix.MatrixError, r"escapes the instrumented libc\+\+ prefix"):
+            self.matrix.validate_receipt(receipt, self.manifest, CANDIDATE)
 
     def test_macos_address_row_uses_integrated_lsan_for_the_full_ctest_run(self):
         row = next(row for row in self.manifest["rows"] if row["id"] == "macos_asan")
@@ -1244,99 +2201,6 @@ class AnalysisMatrixTests(unittest.TestCase):
                     else:
                         self.assertNotEqual(result.returncode, 0)
                         self.assertIn("not a 64-bit little-endian AArch64 ELF", result.stderr)
-
-    def test_android_hwasan_runtime_builds_release_variant(self):
-        row = next(row for row in self.manifest["rows"] if row["id"] == "android_arm64_hwasan")
-        self.assertIn("-DCMAKE_BUILD_TYPE=Release", row["flags"])
-        self.assertIn("-DMC_ENABLE_HIGH_ASSERT=OFF", row["flags"])
-        self.assertIn("build/hwasan/app-release.apk", row["commands"][0])
-        self.assertEqual(row["commands"][0][-1], "emulator-5558")
-        self.assertEqual(row["tool_probes"], [["adb", "-s", "emulator-5558", "get-state"]])
-
-        workflow = (REPOSITORY / ".github/workflows/ai-checks.yml").read_text(encoding="utf-8")
-        build_gradle = (REPOSITORY / "android/app/build.gradle").read_text(encoding="utf-8")
-        self.assertIn("resources.srcDir(hwasanWrapAssets)", build_gradle)
-        self.assertIn("android.buildTypes.release.debuggable = true", build_gradle)
-        self.assertIn("android.packaging.jniLibs.useLegacyPackaging = true", build_gradle)
-        self.assertIn("verifyHwasanReleaseApk", build_gradle)
-        build_job = workflow.split("  android-hwasan-build:", 1)[1].split(
-            "  android-hwasan-runtime:", 1
-        )[0]
-        self.assertIn(":app:assembleRelease", build_job)
-        self.assertIn("outputs/apk/release/app-release.apk", build_job)
-        self.assertNotIn(":app:assembleDebug", build_job)
-        self.assertIn("android_clang_tidy.json", build_job)
-        self.assertLess(build_job.index(":app:assembleRelease"), build_job.index("android_clang_tidy.json"))
-        self.assertLess(
-            build_job.index("--apk-only"),
-            build_job.index("Upload HWASan APK for arm64 runtime"),
-        )
-
-        runtime_job = workflow.split("  android-hwasan-runtime:", 1)[1].split(
-            "  analysis-matrix:", 1
-        )[0]
-        java_setup = "actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1"
-        self.assertIn(java_setup, runtime_job)
-        self.assertIn("distribution: temurin", runtime_job)
-        self.assertIn("java-version: '21'", runtime_job)
-        self.assertIn("architecture: aarch64", runtime_job)
-        self.assertLess(runtime_job.index(java_setup), runtime_job.index("Select and validate Java 21"))
-        self.assertLess(
-            runtime_job.index("Select and validate Java 21"),
-            runtime_job.index("Create isolated Android emulator homes"),
-        )
-        self.assertLess(
-            runtime_job.index("Download HWASan APK"),
-            runtime_job.index("--apk-only"),
-        )
-        self.assertLess(
-            runtime_job.index("--apk-only"),
-            runtime_job.index("Start matching ARM64 Android emulator"),
-        )
-
-    def test_android_hwasan_runtime_routes_only_to_candidate_specific_mac_runner(self):
-        workflow = (REPOSITORY / ".github/workflows/ai-checks.yml").read_text(encoding="utf-8")
-        runtime_job = workflow.split("  android-hwasan-runtime:", 1)[1].split(
-            "  analysis-matrix:", 1
-        )[0]
-
-        self.assertIn(
-            "if: github.event_name == 'push' && github.ref == 'refs/heads/ai-main'",
-            runtime_job,
-        )
-        label = '"mc-s7-hwasan-${{ github.sha }}-${{ github.run_id }}"'
-        self.assertIn(f"runs-on: {label}", runtime_job)
-        self.assertNotIn("runs-on: [self-hosted", runtime_job)
-        self.assertNotIn("macOS, ARM64", runtime_job)
-        self.assertIn("Start matching ARM64 Android emulator with host acceleration", runtime_job)
-        self.assertIn("android_arm64_hwasan", runtime_job)
-
-        workflow_files = list((REPOSITORY / ".github/workflows").glob("*.yml"))
-        workflow_files.extend((REPOSITORY / ".github/workflows").glob("*.yaml"))
-        label_uses = sum(
-            label in candidate.read_text(encoding="utf-8")
-            for candidate in workflow_files
-        )
-        self.assertEqual(1, label_uses, "only the guarded Android HWASan job may request this runner label")
-
-    def test_linux_analysis_workflow_triplets_exist(self):
-        workflow = (REPOSITORY / ".github/workflows/ai-checks.yml").read_text(encoding="utf-8")
-        linux_job = workflow.split("  linux-analysis:", 1)[1].split(
-            "  android-hwasan-build:", 1
-        )[0]
-        triplets = [
-            line.split("triplet:", 1)[1].strip()
-            for line in linux_job.splitlines()
-            if "triplet:" in line
-        ]
-
-        self.assertEqual(triplets, ["x64-linux-lsan", "x64-linux-msan"])
-        for triplet in triplets:
-            with self.subTest(triplet=triplet):
-                self.assertTrue(
-                    (REPOSITORY / "script/ci/vcpkg-triplets" / f"{triplet}.cmake").is_file(),
-                    f"Linux analysis references missing vcpkg triplet {triplet}",
-                )
 
 if __name__ == "__main__":
     unittest.main()

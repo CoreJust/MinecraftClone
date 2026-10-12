@@ -1,5 +1,6 @@
 import importlib.util
 import contextlib
+import hashlib
 import io
 import json
 import os
@@ -74,6 +75,39 @@ class AiCheckTests(unittest.TestCase):
 
     def git(self, *args):
         return subprocess.run(["git", *args], cwd=self.root, text=True, capture_output=True, check=True)
+
+    def configure_native_build_fixture(self, preset="debug"):
+        build_root = self.root / "build" / preset
+        dependency_prefix = self.root / "build/test-dependencies"
+        (build_root / "tests").mkdir(parents=True, exist_ok=True)
+        (dependency_prefix / "lib").mkdir(parents=True, exist_ok=True)
+        (build_root / "CMakeCache.txt").write_text(
+            "\n".join([
+                f"CMAKE_C_COMPILER:FILEPATH={sys.executable}",
+                f"CMAKE_CXX_COMPILER:FILEPATH={sys.executable}",
+                f"CMAKE_MAKE_PROGRAM:FILEPATH={sys.executable}",
+                f"CMAKE_TOOLCHAIN_FILE:FILEPATH={sys.executable}",
+                f"CMAKE_PREFIX_PATH:PATH={dependency_prefix}",
+                f"VCPKG_INSTALLED_DIR:PATH={dependency_prefix}",
+                f"VCPKG_MANIFEST_DIR:PATH={self.root}",
+                f"MinecraftClone2026_BINARY_DIR:STATIC={build_root}",
+                f"CMAKE_HOME_DIRECTORY:INTERNAL={self.root}",
+                "CMAKE_GENERATOR:INTERNAL=Ninja",
+                "Fixture_DIR:PATH=" + str(dependency_prefix / "lib"),
+                "",
+            ]),
+            encoding="utf-8",
+        )
+        (build_root / "CMakeFiles").mkdir()
+        (build_root / "CMakeFiles/rules.ninja").write_text("rule compile\n", encoding="utf-8")
+        (build_root / "build.ninja").write_text(
+            "include CMakeFiles/rules.ninja\nbuild mc_main: phony\n", encoding="utf-8"
+        )
+        (build_root / "mc_main").write_bytes(b"debug game executable")
+        (build_root / "tests/mc_tests").write_bytes(b"debug test executable")
+        dependency = dependency_prefix / "lib/libfixture.a"
+        dependency.write_bytes(b"installed dependency")
+        return build_root, dependency
 
     def run_check(self, *args, environment=None):
         return subprocess.run(
@@ -542,7 +576,7 @@ class AiCheckTests(unittest.TestCase):
             self.assertEqual(failure.returncode, 7, failure.stderr)
             self.assertEqual(log.read_text(encoding="utf-8").strip(), "script/ai_check.py --fast --require-index-match")
 
-    def test_ai_main_promotion_pre_push_uses_fast_gate_to_bootstrap_hosted_matrix(self):
+    def test_ai_main_promotion_pre_push_uses_fast_gate_to_bootstrap_local_proof(self):
         self.git("branch", "-M", "ai-main")
         head = self.git("rev-parse", "HEAD").stdout.strip()
         with tempfile.TemporaryDirectory() as directory:
@@ -660,43 +694,125 @@ class AiCheckTests(unittest.TestCase):
         reuse_flags = []
         def run_phase(root, log_dir, name, command, timeout, **kwargs):
             commands.append((name, command, timeout))
-            reuse_flags.append(kwargs.get("reuse", False))
+            reuse_flags.append((name, kwargs.get("reuse", False)))
             return checker.PhaseResult(name, command, 0, "")
         with mock.patch.object(checker, "run_phase", side_effect=run_phase), contextlib.redirect_stdout(io.StringIO()):
             self.assertEqual(checker.main(["--root", str(self.root), "--candidate", "--level", "snapshot"]), 0)
         self.assertIn(("extra-sample", [sys.executable, "check.py"], 7), commands)
-        self.assertFalse(any(reuse_flags))
+        self.assertIn(("extra-sample", False), reuse_flags)
         config[0]["command"] = []
         config_path.write_text(json.dumps(config))
         with mock.patch.object(checker, "run_phase", side_effect=run_phase), contextlib.redirect_stdout(io.StringIO()):
             self.assertEqual(checker.main(["--root", str(self.root), "--candidate", "--level", "snapshot"]), 1)
 
-    def test_strict_only_release_check_waits_for_committed_hosted_receipts(self):
+    def test_release_proof_registry_runs_for_candidate_and_strict(self):
         checker = load_module()
         config_path = self.root / "script/ai_checks.json"
         config = [{"name": "matrix", "enabled": True, "levels": ["snapshot"],
-                   "command": ["{python}", "verify.py"], "timeout": 7,
-                   "reason": "", "when": "strict"}]
+                   "command": ["{python}", "verify.py", "--root", "{root}",
+                               "--candidate-commit", "{proof-candidate-commit}"],
+                   "timeout": 7, "reason": "", "when": "release",
+                   "proof": True, "reuse": False}]
         config_path.write_text(json.dumps(config))
         commands = []
 
         def run_phase(root, log_dir, name, command, timeout, **kwargs):
-            commands.append((name, command, timeout))
+            commands.append((name, command, timeout, kwargs.get("reuse", False)))
             return checker.PhaseResult(name, command, 0, "")
 
-        with mock.patch.object(checker, "run_phase", side_effect=run_phase), contextlib.redirect_stdout(io.StringIO()):
-            self.assertEqual(checker.main(["--root", str(self.root), "--candidate", "--level", "snapshot"]), 0)
-        self.assertNotIn(("extra-matrix", [sys.executable, "verify.py"], 7), commands)
+        self.git("branch", "-M", "ai-dev")
+        source = self.git("rev-parse", "HEAD").stdout.strip()
+        with (
+            mock.patch.object(checker, "run_phase", side_effect=run_phase),
+            mock.patch.object(checker, "validate_phase_receipt", return_value="matching receipt"),
+            contextlib.redirect_stdout(io.StringIO()),
+        ):
+            self.assertEqual(checker.main([
+                "--root", str(self.root), "--candidate", "--proof-only",
+                "--snapshot-source-commit", source, "--level", "snapshot",
+            ]), 0)
+        expected_candidate = [
+            sys.executable, "verify.py", "--root", str(self.root.resolve()),
+            "--candidate-commit", source,
+        ]
+        self.assertIn(("extra-matrix", expected_candidate, 7, False), commands)
+        self.assertEqual(
+            [name for name, *_ in commands],
+            ["docs", "backlog", "current-plan", "diff-working", "diff-cached", "extra-matrix"],
+        )
 
         commands.clear()
-        with mock.patch.object(checker, "run_phase", side_effect=run_phase), contextlib.redirect_stdout(io.StringIO()):
-            self.assertEqual(checker.main(["--root", str(self.root), "--strict", "--level", "snapshot"]), 0)
-        self.assertIn(("extra-matrix", [sys.executable, "verify.py"], 7), commands)
+        with (
+            mock.patch.object(checker, "run_phase", side_effect=run_phase),
+            mock.patch.object(checker, "validate_phase_receipt", return_value="matching receipt"),
+            contextlib.redirect_stdout(io.StringIO()),
+        ):
+            self.assertEqual(checker.main([
+                "--root", str(self.root), "--strict", "--proof-only", "--level", "snapshot",
+            ]), 0)
+        head = self.git("rev-parse", "HEAD").stdout.strip()
+        expected_strict = [
+            sys.executable, "verify.py", "--root", str(self.root.resolve()),
+            "--candidate-commit", head,
+        ]
+        self.assertIn(("extra-matrix", expected_strict, 7, False), commands)
+        self.assertEqual(
+            [name for name, *_ in commands],
+            ["docs", "backlog", "current-plan", "diff-working", "diff-cached", "extra-matrix"],
+        )
 
         config[0]["when"] = "later"
         config_path.write_text(json.dumps(config))
         with mock.patch.object(checker, "run_phase", side_effect=run_phase), contextlib.redirect_stdout(io.StringIO()):
             self.assertEqual(checker.main(["--root", str(self.root), "--strict", "--level", "snapshot"]), 1)
+
+    def test_proof_only_fails_closed_without_an_enabled_release_proof(self):
+        self.git("branch", "-M", "ai-dev")
+        source = self.git("rev-parse", "HEAD").stdout.strip()
+        (self.root / "script/ai_checks.json").write_text("[]\n", encoding="utf-8")
+        with contextlib.redirect_stdout(io.StringIO()):
+            result = load_module().main([
+                "--root", str(self.root), "--candidate", "--proof-only",
+                "--snapshot-source-commit", source, "--level", "snapshot",
+            ])
+        self.assertEqual(result, 1)
+
+    def test_proof_only_rejects_missing_integration_receipts_without_running_them(self):
+        checker = load_module()
+        self.git("branch", "-M", "ai-dev")
+        source = self.git("rev-parse", "HEAD").stdout.strip()
+        (self.root / "script/ai_checks.json").write_text(json.dumps([{
+            "name": "local-proof",
+            "enabled": True,
+            "levels": ["snapshot"],
+            "command": ["{python}", "verify.py"],
+            "timeout": 7,
+            "reason": "",
+            "when": "release",
+            "proof": True,
+        }]), encoding="utf-8")
+        ran = []
+
+        def run_phase(root, log_dir, name, command, timeout, **kwargs):
+            ran.append(name)
+            return checker.PhaseResult(name, command, 0, "passed")
+
+        with (
+            mock.patch.object(checker, "run_phase", side_effect=run_phase),
+            mock.patch.object(checker, "validate_phase_receipt", return_value=None),
+            contextlib.redirect_stdout(io.StringIO()) as output,
+        ):
+            result = checker.main([
+                "--root", str(self.root), "--candidate", "--proof-only",
+                "--snapshot-source-commit", source, "--level", "snapshot",
+            ])
+
+        self.assertEqual(result, 1)
+        self.assertEqual(ran, ["docs", "backlog", "current-plan", "diff-working", "diff-cached", "extra-local-proof"])
+        self.assertIn("receipt-python-tests", output.getvalue())
+        self.assertIn("receipt-build", output.getvalue())
+        self.assertIn("receipt-ctest", output.getvalue())
+        self.assertIn("run the owned full candidate gate", output.getvalue())
 
     def test_metadata_only_scope_skips_python_tests_and_writes_summary(self):
         metadata = self.root / "docs/ai/notes.md"
@@ -850,10 +966,17 @@ class AiCheckTests(unittest.TestCase):
                 self.assertEqual(second.returncode, 127)
                 self.assertFalse(receipt.exists())
 
-    def test_build_and_ctest_receipts_are_never_reused(self):
+    def test_build_and_ctest_receipts_reuse_only_matching_native_inputs(self):
         checker = load_module()
         log_dir = self.root / "build/ai-checks"
         log_dir.mkdir(parents=True)
+        self.configure_native_build_fixture()
+        metadata = self.root / "docs/ai/metadata.md"
+        metadata.parent.mkdir(parents=True)
+        metadata.write_text("metadata v1\n", encoding="utf-8")
+        self.git("add", "docs/ai/metadata.md")
+        self.git("commit", "--no-gpg-sign", "-m", "metadata baseline")
+        source = self.root / "src/shared/include/shared/ProjectInfo.hpp"
         for name in ("build", "ctest"):
             with self.subTest(name=name):
                 command = ["true"]
@@ -861,7 +984,223 @@ class AiCheckTests(unittest.TestCase):
                 self.assertEqual(first.returncode, 0)
                 second = checker.run_phase(self.root, log_dir, name, command, 60, reuse=True)
                 self.assertEqual(second.returncode, 0)
-                self.assertFalse(second.reused)
+                self.assertTrue(second.reused)
+
+                metadata.write_text(f"metadata {name} v2\n", encoding="utf-8")
+                self.git("add", "docs/ai/metadata.md")
+                self.git("commit", "--no-gpg-sign", "-m", f"metadata {name}")
+                after_metadata = checker.run_phase(
+                    self.root, log_dir, name, command, 60, reuse=True
+                )
+                self.assertTrue(after_metadata.reused)
+
+                source.write_text(
+                    source.read_text(encoding="utf-8") + "// changed native input\n",
+                    encoding="utf-8",
+                )
+                stale = checker.run_phase(self.root, log_dir, name, command, 60, reuse=True)
+                self.assertEqual(stale.returncode, 0)
+                self.assertFalse(stale.reused)
+
+    def test_native_receipt_rejects_deleted_build_output(self):
+        checker = load_module()
+        log_dir = self.root / "build/ai-checks"
+        log_dir.mkdir(parents=True)
+        build_root, _ = self.configure_native_build_fixture()
+        command = ["true"]
+        passed = checker.run_phase(self.root, log_dir, "ctest", command, 60)
+        self.assertEqual(passed.returncode, 0)
+        self.assertTrue(checker.receipt_path(log_dir, "ctest").is_file())
+
+        (build_root / "tests/mc_tests").unlink()
+        self.assertIsNone(
+            checker.validate_phase_receipt(self.root, log_dir, "ctest", command)
+        )
+        rejected = checker.run_phase(self.root, log_dir, "ctest", command, 60, reuse=True)
+        self.assertNotEqual(rejected.returncode, 0)
+        self.assertFalse(rejected.reused)
+
+    def test_renderer_smoke_receipt_captures_actual_target_and_rejects_missing_target(self):
+        checker = load_module()
+        log_dir = self.root / "build/ai-checks"
+        log_dir.mkdir(parents=True)
+        build_root, _ = self.configure_native_build_fixture(preset="renderer-smoke")
+        target_dir = build_root / "tests/renderer-smoke"
+        target_dir.mkdir(parents=True, exist_ok=True)
+        command = [sys.executable, "-c", "print('renderer smoke fixture passed')"]
+
+        for executable_name in ("mc_renderer_smoke", "mc_renderer_smoke.exe"):
+            with self.subTest(executable=executable_name):
+                artifact = target_dir / executable_name
+                artifact_contents = b"renderer smoke executable"
+                artifact.write_bytes(artifact_contents)
+                relative_artifact = f"tests/renderer-smoke/{executable_name}"
+
+                passed = checker.run_phase(
+                    self.root, log_dir, "extra-renderer-smoke", command, 60
+                )
+                self.assertEqual(passed.returncode, 0, passed.output)
+                receipt = json.loads(
+                    checker.receipt_path(log_dir, "extra-renderer-smoke").read_text(
+                        encoding="utf-8"
+                    )
+                )
+                native_state = receipt["relevant_inputs"]["native_build_state"]
+                self.assertEqual(
+                    native_state["artifacts"][relative_artifact],
+                    {
+                        "size": len(artifact_contents),
+                        "mode": artifact.stat().st_mode & 0o7777,
+                        "sha256": hashlib.sha256(artifact_contents).hexdigest(),
+                    },
+                )
+                self.assertEqual(
+                    checker.validate_phase_receipt(
+                        self.root, log_dir, "extra-renderer-smoke", command
+                    ),
+                    passed.output,
+                )
+
+                artifact.unlink()
+                self.assertIsNone(
+                    checker.validate_phase_receipt(
+                        self.root, log_dir, "extra-renderer-smoke", command
+                    )
+                )
+                rejected = checker.run_phase(
+                    self.root, log_dir, "extra-renderer-smoke", command, 60, reuse=True
+                )
+                self.assertNotEqual(rejected.returncode, 0)
+                self.assertIn("missing output targets", rejected.output)
+                self.assertIn(relative_artifact, rejected.output)
+
+    def test_renderer_smoke_receipt_rejects_ambiguous_target_and_reuse(self):
+        checker = load_module()
+        log_dir = self.root / "build/ai-checks"
+        log_dir.mkdir(parents=True)
+        build_root, _ = self.configure_native_build_fixture(preset="renderer-smoke")
+        target_dir = build_root / "tests/renderer-smoke"
+        target_dir.mkdir(parents=True, exist_ok=True)
+        command = [sys.executable, "-c", "print('renderer smoke fixture passed')"]
+        executable = target_dir / "mc_renderer_smoke"
+        windows_executable = target_dir / "mc_renderer_smoke.exe"
+        executable.write_bytes(b"renderer smoke executable")
+
+        passed = checker.run_phase(self.root, log_dir, "extra-renderer-smoke", command, 60)
+        self.assertEqual(passed.returncode, 0, passed.output)
+        self.assertEqual(
+            checker.validate_phase_receipt(
+                self.root, log_dir, "extra-renderer-smoke", command
+            ),
+            passed.output,
+        )
+
+        windows_executable.write_bytes(b"Windows renderer smoke executable")
+        ambiguous_state = checker.native_build_state(self.root, "extra-renderer-smoke")
+        self.assertFalse(ambiguous_state["available"])
+        self.assertEqual(ambiguous_state["artifacts"], {})
+        self.assertIn("ambiguous output targets", ambiguous_state["reason"])
+        self.assertIsNone(
+            checker.validate_phase_receipt(
+                self.root, log_dir, "extra-renderer-smoke", command
+            )
+        )
+
+        rejected = checker.run_phase(
+            self.root, log_dir, "extra-renderer-smoke", command, 60, reuse=True
+        )
+        self.assertNotEqual(rejected.returncode, 0)
+        self.assertFalse(rejected.reused)
+        self.assertIn("ambiguous output targets", rejected.output)
+
+    def test_native_receipt_rejects_changed_ignored_cmake_cache(self):
+        checker = load_module()
+        log_dir = self.root / "build/ai-checks"
+        log_dir.mkdir(parents=True)
+        build_root, _ = self.configure_native_build_fixture()
+        command = ["true"]
+        passed = checker.run_phase(self.root, log_dir, "build", command, 60)
+        self.assertEqual(passed.returncode, 0)
+        self.assertEqual(
+            checker.validate_phase_receipt(self.root, log_dir, "build", command),
+            passed.output,
+        )
+
+        cache = build_root / "CMakeCache.txt"
+        cache.write_text(
+            cache.read_text(encoding="utf-8") + "CMAKE_CXX_FLAGS:STRING=-DCHANGED\n",
+            encoding="utf-8",
+        )
+        self.assertIsNone(
+            checker.validate_phase_receipt(self.root, log_dir, "build", command)
+        )
+
+    def test_native_receipt_rejects_changed_installed_dependency(self):
+        checker = load_module()
+        log_dir = self.root / "build/ai-checks"
+        log_dir.mkdir(parents=True)
+        _, dependency = self.configure_native_build_fixture()
+        command = ["true"]
+        passed = checker.run_phase(self.root, log_dir, "build", command, 60)
+        self.assertEqual(passed.returncode, 0)
+        self.assertEqual(
+            checker.validate_phase_receipt(self.root, log_dir, "build", command),
+            passed.output,
+        )
+
+        dependency.write_bytes(b"replacement installed dependency")
+        self.assertIsNone(
+            checker.validate_phase_receipt(self.root, log_dir, "build", command)
+        )
+
+    def test_build_does_not_write_pass_without_required_output_artifacts(self):
+        checker = load_module()
+        log_dir = self.root / "build/ai-checks"
+        log_dir.mkdir(parents=True)
+        build_root, _ = self.configure_native_build_fixture()
+        (build_root / "mc_main").unlink()
+
+        result = checker.run_phase(self.root, log_dir, "build", ["true"], 60)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("missing output targets", result.output)
+        self.assertFalse(checker.receipt_path(log_dir, "build").exists())
+
+    def test_full_python_receipt_reuses_equivalent_promotion_but_not_content_changes(self):
+        checker = load_module()
+        log_dir = self.root / "build/ai-checks"
+        log_dir.mkdir(parents=True)
+        metadata = self.root / "docs/ai/metadata.md"
+        metadata.parent.mkdir(parents=True)
+        metadata.write_text("promotion metadata\n", encoding="utf-8")
+        self.git("add", "docs/ai/metadata.md")
+        self.git("commit", "--no-gpg-sign", "-m", "metadata baseline")
+        command = [sys.executable, "-m", "unittest", "discover", "-s", "script/tests", "-v"]
+        environment = checker.phase_environment(self.root, "python-tests")
+        inputs = checker.relevant_inputs(self.root, "python-tests")
+        output = "complete Python suite passed\n"
+        (log_dir / "python-tests.log").write_text(output, encoding="utf-8")
+        checker.write_receipt(
+            log_dir,
+            "python-tests",
+            command,
+            environment,
+            inputs,
+            checker.PhaseResult("python-tests", command, 0, output),
+        )
+        self.assertEqual(
+            checker.validate_phase_receipt(self.root, log_dir, "python-tests", command), output
+        )
+
+        self.git("commit", "--allow-empty", "--no-gpg-sign", "-m", "content-equivalent promotion")
+        self.assertEqual(
+            checker.validate_phase_receipt(self.root, log_dir, "python-tests", command), output
+        )
+
+        metadata.write_text("changed release documentation\n", encoding="utf-8")
+        self.assertIsNone(
+            checker.validate_phase_receipt(self.root, log_dir, "python-tests", command)
+        )
 
     def test_fast_cpp_changes_skip_unrelated_python_tests(self):
         source = self.root / "src/source_policy.cpp"

@@ -1,3 +1,4 @@
+#include <client/ClientAudio.hpp>
 #include <client/GameClient.hpp>
 
 #include <server/GameServer.hpp>
@@ -18,9 +19,11 @@
 #include <cstdint>
 #include <cstring>
 #include <functional>
+#include <memory>
 #include <optional>
 #include <ratio>
 #include <set>
+#include <span>
 #include <stdexcept>
 #include <string>
 #include <thread>
@@ -28,6 +31,16 @@
 #include <vector>
 
 namespace {
+
+class ImmediateAudioOutput final : public client::ClientAudioOutput {
+public:
+    [[nodiscard]] bool start() noexcept override { return true; }
+    void stop() noexcept override {}
+    [[nodiscard]] bool play(std::span<int16_t const> samples) noexcept override
+    {
+        return !samples.empty();
+    }
+};
 
 class UnjoinedServer final : public core::Server {
 public:
@@ -43,7 +56,13 @@ private:
 class LifecycleClient final : public client::GameClient {
 public:
     explicit LifecycleClient(std::function<void(LifecycleClient&)> service)
-        : m_service{ std::move(service) }
+        : GameClient{
+            shared::WorldMode::Flat,
+            shared::World::canonicalConfiguration(),
+            true,
+            std::make_unique<ImmediateAudioOutput>(),
+        }
+        , m_service{ std::move(service) }
     { }
 
     void requestStop() noexcept { m_running = false; }

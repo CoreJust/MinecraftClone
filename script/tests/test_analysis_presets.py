@@ -1,8 +1,14 @@
 from __future__ import annotations
 
+import copy
 import json
+import os
+import subprocess
+import tempfile
 import unittest
 from pathlib import Path
+
+from script import ai_analysis_matrix
 
 
 REPOSITORY = Path(__file__).resolve().parents[2]
@@ -27,6 +33,89 @@ def effective_cache_variables(preset_name: str) -> dict[str, object]:
 
 
 class AnalysisPresetTests(unittest.TestCase):
+    def test_only_iwyu_and_cppcheck_clean_first_inputs_change_their_matrix_hashes(self):
+        presets = json.loads(PRESETS_PATH.read_text(encoding="utf-8"))
+        selected_presets = {"analysis-iwyu", "analysis-cppcheck"}
+        for preset in presets["buildPresets"]:
+            if preset["name"] in selected_presets:
+                self.assertIs(preset.get("cleanFirst"), True, preset["name"])
+
+        previous_presets = copy.deepcopy(presets)
+        for preset in previous_presets["buildPresets"]:
+            if preset["name"] in selected_presets:
+                preset.pop("cleanFirst", None)
+
+        manifest = ai_analysis_matrix.load_manifest(REPOSITORY / "script/ai_analysis_matrix.json")
+        with tempfile.TemporaryDirectory() as directory:
+            previous_root = Path(directory) / "previous"
+            current_root = Path(directory) / "current"
+            previous_root.mkdir()
+            current_root.mkdir()
+            (previous_root / "CMakePresets.json").write_text(
+                json.dumps(previous_presets), encoding="utf-8"
+            )
+            (current_root / "CMakePresets.json").write_text(
+                json.dumps(presets), encoding="utf-8"
+            )
+
+            previous_hashes = {
+                row["id"]: ai_analysis_matrix.row_source_input_sha256(previous_root, row)
+                for row in manifest["rows"]
+            }
+            current_hashes = {
+                row["id"]: ai_analysis_matrix.row_source_input_sha256(current_root, row)
+                for row in manifest["rows"]
+            }
+
+        changed_rows = {
+            row_id
+            for row_id, previous_hash in previous_hashes.items()
+            if current_hashes[row_id] != previous_hash
+        }
+        self.assertEqual(changed_rows, {"iwyu", "cppcheck"})
+
+    def test_lsan_triplets_require_and_consume_the_selected_libcxx_prefix(self):
+        with tempfile.TemporaryDirectory() as directory:
+            prefix = Path(directory) / "libcxx"
+            (prefix / "include/c++/v1").mkdir(parents=True)
+            (prefix / "lib").mkdir()
+            for name in ("libc++.so", "libc++abi.so.1"):
+                (prefix / "lib" / name).touch()
+            for architecture in ("arm64", "x64"):
+                with self.subTest(architecture=architecture):
+                    triplet = REPOSITORY / f"script/ci/vcpkg-triplets/{architecture}-linux-lsan.cmake"
+                    script = Path(directory) / "probe.cmake"
+                    script.write_text(
+                        f'include("{triplet}")\n'
+                        'message("CXX=${VCPKG_CXX_FLAGS}")\n'
+                        'message("LINK=${VCPKG_LINKER_FLAGS}")\n',
+                        encoding="utf-8",
+                    )
+                    environment = {
+                        **os.environ,
+                        "MC_VCPKG_CHAINLOAD_TOOLCHAIN_FILE": str(Path(directory) / "clang.cmake"),
+                        "MC_LSAN_LIBCXX_PREFIX": str(prefix),
+                    }
+                    valid = subprocess.run(["cmake", "-P", str(script)], env=environment,
+                                           text=True, capture_output=True, check=False)
+                    self.assertEqual(valid.returncode, 0, valid.stderr)
+                    self.assertIn(f"-isystem {prefix}/include/c++/v1", valid.stderr)
+                    self.assertIn(f"-L{prefix}/lib", valid.stderr)
+                    self.assertIn(f"-Wl,-rpath,{prefix}/lib", valid.stderr)
+                    self.assertIn("-fsanitize=leak", valid.stderr)
+
+    def test_lsan_triplets_reject_unset_or_incomplete_libcxx_prefixes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            for architecture in ("arm64", "x64"):
+                for value in ("", directory):
+                    with self.subTest(architecture=architecture, prefix=value):
+                        environment = {**os.environ, "MC_LSAN_LIBCXX_PREFIX": value}
+                        triplet = REPOSITORY / f"script/ci/vcpkg-triplets/{architecture}-linux-lsan.cmake"
+                        result = subprocess.run(["cmake", "-P", str(triplet)], env=environment,
+                                                text=True, capture_output=True, check=False)
+                        self.assertNotEqual(result.returncode, 0)
+                        self.assertIn("LeakSanitizer libc++", result.stderr)
+
     def test_standard_presets_install_vcpkg_packages_inside_their_build_tree(self):
         expected = "${sourceDir}/build/${presetName}/vcpkg_installed"
 
@@ -108,6 +197,21 @@ class AnalysisPresetTests(unittest.TestCase):
 
                 self.assertEqual(cache_variables.get("CMAKE_C_COMPILER"), "clang")
                 self.assertEqual(cache_variables.get("CMAKE_CXX_COMPILER"), "clang++")
+                self.assertEqual(
+                    cache_variables.get("VCPKG_OVERLAY_TRIPLETS"),
+                    "${sourceDir}/script/ci/vcpkg-triplets",
+                )
+
+    def test_linux_arm64_triplets_keep_native_architecture_and_sanitizer_runtime(self):
+        lsan = (REPOSITORY / "script/ci/vcpkg-triplets/arm64-linux-lsan.cmake").read_text(encoding="utf-8")
+        msan = (REPOSITORY / "script/ci/vcpkg-triplets/arm64-linux-msan.cmake").read_text(encoding="utf-8")
+
+        self.assertIn("set(VCPKG_TARGET_ARCHITECTURE arm64)", lsan)
+        self.assertIn('"-fsanitize=leak', lsan)
+        self.assertIn("set(VCPKG_TARGET_ARCHITECTURE arm64)", msan)
+        self.assertIn('"-fsanitize=memory -fsanitize-memory-track-origins=2', msan)
+        self.assertIn("MC_MSAN_LIBCXX_PREFIX", msan)
+        self.assertNotIn("set(VCPKG_TARGET_ARCHITECTURE x64)", lsan + msan)
 
     def test_windows_analyzer_resolves_pinned_private_package_paths(self):
         cache_variables = effective_cache_variables("analysis-windows-analyze")
