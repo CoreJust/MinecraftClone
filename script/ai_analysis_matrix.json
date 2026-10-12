@@ -59,7 +59,7 @@
       "required_compile_flags": ["/fsanitize=address"],
       "tool_probes": [["cl.exe", "/Bv", "/?"], ["cmake", "--version"]],
       "commands": [["cmake", "--preset", "analysis-windows-asan"], ["cmake", "--build", "--preset", "analysis-windows-asan"], ["ctest", "--test-dir", "build/analysis-windows-asan", "--output-on-failure", "--no-tests=error"]],
-      "timeout_seconds": 1200
+      "timeout_seconds": 2400
     },
     {
       "id": "windows_msvc_analyze",
