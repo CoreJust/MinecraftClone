@@ -1,0 +1,78 @@
+diff --git a/tests/core/game_server_preview_tests.cpp b/tests/core/game_server_preview_tests.cpp
+index 42f50fc..0b386dd 100644
+--- a/tests/core/game_server_preview_tests.cpp
++++ b/tests/core/game_server_preview_tests.cpp
+@@ -1587,8 +1587,32 @@ TEST(GameServerPreviewTest, SustainedFlightKeepsInputAcknowledgementsCurrentWhil
+     std::array<ClientProgress, 4> server_progress{};
+     std::array<FlightClientDiagnostics, 4> poll_diagnostics{};
+     auto const server_started = std::chrono::steady_clock::now();
++    struct ServerHighWater final {
++        std::chrono::nanoseconds loop_interval{};
++        std::chrono::milliseconds loop_interval_at{};
++        std::chrono::nanoseconds loop_work{};
++        std::chrono::milliseconds loop_work_at{};
++        std::chrono::nanoseconds tick{};
++        std::chrono::milliseconds tick_at{};
++        uint64_t tick_events = 0U;
++        std::chrono::nanoseconds stream_pump{};
++        std::chrono::milliseconds stream_pump_at{};
++    };
++    ServerHighWater server_high_water{};
+     server::GameServer::BenchmarkHooks const hooks{
+-        .on_preview_metrics = [server_started, &server_progress](
++        .on_tick = [&server_high_water, server_started](
++            std::chrono::nanoseconds const duration,
++            uint64_t const events
++        ) {
++            if (duration > server_high_water.tick) {
++                server_high_water.tick = duration;
++                server_high_water.tick_at = std::chrono::duration_cast<std::chrono::milliseconds>(
++                    std::chrono::steady_clock::now() - server_started
++                );
++                server_high_water.tick_events = events;
++            }
++        },
++        .on_preview_metrics = [server_started, &server_progress, &server_high_water](
+             core::ClientId const client_id,
+             server::GameServer::PreviewStreamMetrics const metrics
+         ) {
+@@ -1604,6 +1628,19 @@ TEST(GameServerPreviewTest, SustainedFlightKeepsInputAcknowledgementsCurrentWhil
+                 slot->client_id = client_id;
+             }
+             auto const now = std::chrono::steady_clock::now();
++            auto const elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - server_started);
++            if (metrics.server_loop_interval > server_high_water.loop_interval) {
++                server_high_water.loop_interval = metrics.server_loop_interval;
++                server_high_water.loop_interval_at = elapsed;
++            }
++            if (metrics.server_loop_work > server_high_water.loop_work) {
++                server_high_water.loop_work = metrics.server_loop_work;
++                server_high_water.loop_work_at = elapsed;
++            }
++            if (metrics.stream_pump > server_high_water.stream_pump) {
++                server_high_water.stream_pump = metrics.stream_pump;
++                server_high_water.stream_pump_at = elapsed;
++            }
+             if (now < slot->next_log) {
+                 return;
+             }
+@@ -1916,6 +1953,19 @@ TEST(GameServerPreviewTest, SustainedFlightKeepsInputAcknowledgementsCurrentWhil
+     }
+     stop_requested.store(true, std::memory_order_relaxed);
+     server_thread.join();
++    CORE_INFO(
++        "Flight server high-water loop interval/work/tick/pump max-ms at elapsed-ms={}/{}, {}/{}, "
++        "{}/{}, {}/{}, tick events at max={}",
++        server_high_water.loop_interval.count() / 1'000'000,
++        server_high_water.loop_interval_at.count(),
++        server_high_water.loop_work.count() / 1'000'000,
++        server_high_water.loop_work_at.count(),
++        server_high_water.tick.count() / 1'000'000,
++        server_high_water.tick_at.count(),
++        server_high_water.stream_pump.count() / 1'000'000,
++        server_high_water.stream_pump_at.count(),
++        server_high_water.tick_events
++    );
+ 
+     ASSERT_TRUE(connected);
+     ASSERT_TRUE(joined);

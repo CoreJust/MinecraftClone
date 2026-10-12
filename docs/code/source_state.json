@@ -31,7 +31,7 @@
         "tests/acceptance/runtime_cli_tests.cmake",
         "tests/acceptance/scenario_runner_tests.cpp"
       ],
-      "sources_sha256": "0e19b27e993404c1eb703da8a337a72711bf17a91df6f52697b18fd0027ae729"
+      "sources_sha256": "d6aadcbd5207a697dafe1e0fcd22903f107f2130568e39d3d6b79024ebb0babe"
     },
     {
       "guide": "docs/code/ANDROID.md",
@@ -55,7 +55,7 @@
     },
     {
       "guide": "docs/BUILD.md",
-      "guide_sha256": "3b4581dc623f77c82e73ecd81cf422f3a81cefe5cae21583dbb28cd94db5f7eb",
+      "guide_sha256": "334e793a1e0189c92f3aa4630929444be023ac5b26a2747a460f023bcc68609c",
       "id": "build",
       "sources": [
         ".agents/skills/backlog/SKILL.md",
@@ -114,6 +114,7 @@
         "script/ci/android_hwasan_emulator.py",
         "script/ci/build_snapshot.py",
         "script/ci/cppcheck_gate.py",
+        "script/ci/diagnostics/targeted_tsan_client.py",
         "script/ci/install_msan_libcxx.py",
         "script/ci/iwyu_gate.py",
         "script/ci/release_guard.py",
@@ -154,6 +155,7 @@
         "script/tests/test_pre_finalization_candidate.py",
         "script/tests/test_release_guard.py",
         "script/tests/test_runtime_cli.py",
+        "script/tests/test_targeted_tsan_client.py",
         "script/tests/test_vcpkg_clang_toolchain.py",
         "script/tests/test_verify_analysis_gate.py",
         "script/tests/test_verify_android_hwasan.py",
@@ -173,7 +175,7 @@
         "vcpkg-configuration.json",
         "vcpkg.json"
       ],
-      "sources_sha256": "56fea75f9947f735d26bde971895c94472a8cd575a1900de6a1147e29300fa94"
+      "sources_sha256": "2813c59764cae3e4925983d895796418661f302ba444f8b769d7697f14ec396a"
     },
     {
       "guide": "docs/code/CORE.md",

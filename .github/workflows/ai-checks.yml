@@ -8,12 +8,13 @@ on:
   workflow_dispatch:
     inputs:
       diagnostic:
-        description: Run an isolated Mac ASan diagnostic
+        description: Run an isolated Mac sanitizer diagnostic
         type: choice
         options:
           - none
           - sustained-flight
           - full-context-suite
+          - targeted-tsan
         default: none
         required: true
 
@@ -22,7 +23,7 @@ permissions:
 
 jobs:
   fast:
-    if: github.event_name != 'workflow_dispatch' || (github.event.inputs.diagnostic != 'sustained-flight' && github.event.inputs.diagnostic != 'full-context-suite')
+    if: github.event_name != 'workflow_dispatch' || (github.event.inputs.diagnostic != 'sustained-flight' && github.event.inputs.diagnostic != 'full-context-suite' && github.event.inputs.diagnostic != 'targeted-tsan')
     strategy:
       fail-fast: false
       matrix:
@@ -41,7 +42,7 @@ jobs:
       - run: python script/ai_check.py --fast
 
   desktop:
-    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/ai-main' && github.event.inputs.diagnostic != 'sustained-flight' && github.event.inputs.diagnostic != 'full-context-suite'
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/ai-main' && github.event.inputs.diagnostic != 'sustained-flight' && github.event.inputs.diagnostic != 'full-context-suite' && github.event.inputs.diagnostic != 'targeted-tsan'
     name: desktop (${{ matrix.platform }}, ${{ matrix.preset }})
     runs-on: ${{ matrix.runner }}
     strategy:
@@ -563,8 +564,262 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
+  targeted-tsan-macos:
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.diagnostic == 'targeted-tsan' && github.ref == 'refs/heads/ai-dev'
+    name: targeted Mac TSan diagnostic (not release evidence)
+    runs-on: macos-15
+    timeout-minutes: 180
+    env:
+      VCPKG_DISABLE_METRICS: '1'
+      VCPKG_BINARY_SOURCES: clear
+      CMAKE_BUILD_PARALLEL_LEVEL: '4'
+      CTEST_PARALLEL_LEVEL: '4'
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: 51b4b2199058b159537ad45b8334e1c04ccdc129
+          path: diagnostic-source
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: '3.12.10'
+      - name: Validate immutable diagnostic inputs before using deploy keys
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = 'refs/heads/ai-dev'
+          test "$(git -C "$GITHUB_WORKSPACE" rev-parse HEAD)" = "$GITHUB_SHA"
+          source="$GITHUB_WORKSPACE/diagnostic-source"
+          test "$(git -C "$source" rev-parse HEAD)" = '51b4b2199058b159537ad45b8334e1c04ccdc129'
+          test -z "$(git -C "$source" status --porcelain=v1)"
+          (
+            cd "$source"
+            printf '%s  %s\n' \
+              'fc42595f414ba0c43e20562522b02b47cc246fef0900303dc15eb7fd5f896f7a' \
+              'tests/acceptance/client_launch_test.py' \
+              'd9e2d8db43569cb5f79310d0382541ea71012f0b59556051edbc718d3234e5bf' \
+              'tests/core/game_server_preview_tests.cpp' \
+              | shasum -a 256 -c
+          )
+          cd "$GITHUB_WORKSPACE"
+          printf '%s  %s\n' \
+            '89d76661e86057ad146463ceda38979b2e85d8d20c8d574bc37eff8bd7dedd13' \
+            'script/ci/diagnostics/sustained-flight/corecpp-host-transport.patch' \
+            '362bd687350dbc38348c1189bfc558781ef5f44e76b4d081f3fde157e1786daa' \
+            'script/ci/diagnostics/sustained-flight/corecpp-host-enet-rejection.patch' \
+            'c83381b06dea8338d56277a91c66802486e7d4d48929e5e25076497088b875d1' \
+            'script/ci/diagnostics/sustained-flight/minecraft-flight-snapshot.patch' \
+            'f09a4160bcbc5227804d5559e874d379f263cb58d2303d467a554722e846cc77' \
+            'script/ci/diagnostics/sustained-flight/minecraft-server-high-water.patch' \
+            'd8b1fc97f9fe2d73b46826ac4c69e2676c9718b32ec39d4a91cf3cf7626a50ce' \
+            'script/ci/diagnostics/sustained-flight/vcpkg-overlay/enet/portfile.cmake' \
+            'c1580858a1a8d8c239d9616dd795124bc40b5a331b4d21508abf311fc2c3017b' \
+            'script/ci/diagnostics/sustained-flight/vcpkg-overlay/enet/vcpkg.json' \
+            'ee684206d098276ca0dda9a16894b9f7f7ed3af5e397512dfba6c2f95a7b0e5a' \
+            'script/ci/diagnostics/sustained-flight/vcpkg-overlay/enet/fix-export.patch' \
+            '48a7db20f5365c834fb2a4aef3f5b0b3d3c1794480535e96505d2bb98c82c6d2' \
+            'script/ci/diagnostics/sustained-flight/vcpkg-overlay/enet/enet-rejection-probe.patch' \
+            '94ce2931a7fa2bfc11aae0c36bf40dc4e8f3860da969c499485284b2cbb502a6' \
+            'script/ci/diagnostics/targeted_tsan_client.py' \
+            | shasum -a 256 -c
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          manifest = json.loads(Path("diagnostic-source/script/ai_analysis_matrix.json").read_text())
+          row = next(row for row in manifest["rows"] if row["id"] == "macos_tsan")
+          assert row["flags"] == [
+              "-DCMAKE_BUILD_TYPE=Release",
+              "-DMC_ENABLE_HIGH_ASSERT=OFF",
+              "-DMC_ENABLE_SANITIZERS=ON",
+              "-DMC_SANITIZER=thread",
+          ]
+          assert row["required_compile_flags"] == ["-fsanitize=thread"]
+          assert row.get("environment", {}) == {}
+          assert row["commands"] == [
+              ["cmake", "--preset", "analysis-macos-tsan"],
+              ["cmake", "--build", "--preset", "analysis-macos-tsan"],
+              ["ctest", "--test-dir", "build/analysis-macos-tsan", "--output-on-failure", "--no-tests=error"],
+          ]
+          assert row["timeout_seconds"] == 900
+          PY
+          mkdir -p "$RUNNER_TEMP/targeted-tsan-diagnostic"
+          {
+            printf 'delivery-workflow-sha=%s\n' "$GITHUB_SHA"
+            printf 'diagnostic-source-sha=%s\n' '51b4b2199058b159537ad45b8334e1c04ccdc129'
+            printf 'corecpp-base-sha=%s\n' '2ad29f7ed590e41c8ad7c9d4027c781650a10391'
+            printf 'coreproject2026-base-sha=%s\n' 'e577c84671357625d0db7008395854018316c3f8'
+            printf '%s\n' 'preset=analysis-macos-tsan' 'purpose=targeted-diagnostic-only; not release qualification'
+            printf '%s\n' 'test=GameServerPreviewTest.SustainedFlightKeepsInputAcknowledgementsCurrentWhileTilesStream'
+            printf '%s\n' 'client-test=ClientLaunchTest.test_bot_remains_alive_until_delayed_server_starts'
+            printf '%s\n' 'compiler=Homebrew LLVM clang 23.1.0' 'xcode=Xcode 26.2' 'timeout-seconds=900'
+            printf '%s\n' 'provenance-override=allow-inexact-corecpp; exact-base plus hash-checked observation patches only; diagnostic-only'
+          } > "$RUNNER_TEMP/targeted-tsan-diagnostic/identity.txt"
+      - name: Materialize private dependency deploy keys
+        shell: bash
+        env:
+          MC_CI_CORECPP_DEPLOY_KEY: ${{ secrets.MC_CI_CORECPP_DEPLOY_KEY }}
+          MC_CI_COREPROJECT2026_DEPLOY_KEY: ${{ secrets.MC_CI_COREPROJECT2026_DEPLOY_KEY }}
+        run: |
+          set -euo pipefail
+          key_root="$RUNNER_TEMP/private-dependency-keys"
+          install -d -m 700 "$key_root"
+          umask 077
+          printf '%s\n' "$MC_CI_CORECPP_DEPLOY_KEY" > "$key_root/corecpp"
+          printf '%s\n' "$MC_CI_COREPROJECT2026_DEPLOY_KEY" > "$key_root/coreproject2026"
+          echo "MC_CI_CORECPP_DEPLOY_KEY_FILE=$key_root/corecpp" >> "$GITHUB_ENV"
+          echo "MC_CI_COREPROJECT2026_DEPLOY_KEY_FILE=$key_root/coreproject2026" >> "$GITHUB_ENV"
+      - name: Fetch the locked private dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          python "$GITHUB_WORKSPACE/diagnostic-source/script/ci/acquire.py" fetch-private-dependencies \
+            --lock "$GITHUB_WORKSPACE/diagnostic-source/dependencies.lock.json" \
+            --root "$RUNNER_TEMP/private-dependencies" \
+            --corecpp-key "$MC_CI_CORECPP_DEPLOY_KEY_FILE" \
+            --coreproject2026-key "$MC_CI_COREPROJECT2026_DEPLOY_KEY_FILE"
+      - name: Validate and apply the ordered CoreCpp observation patches
+        shell: bash
+        run: |
+          set -euo pipefail
+          corecpp="$RUNNER_TEMP/private-dependencies/CoreCpp"
+          coreproject="$RUNNER_TEMP/private-dependencies/CoreProject2026"
+          test "$(git -C "$corecpp" rev-parse HEAD)" = '2ad29f7ed590e41c8ad7c9d4027c781650a10391'
+          test "$(git -C "$coreproject" rev-parse HEAD)" = 'e577c84671357625d0db7008395854018316c3f8'
+          transport="$GITHUB_WORKSPACE/script/ci/diagnostics/sustained-flight/corecpp-host-transport.patch"
+          rejection="$GITHUB_WORKSPACE/script/ci/diagnostics/sustained-flight/corecpp-host-enet-rejection.patch"
+          git -C "$corecpp" apply --check "$transport"
+          git -C "$corecpp" apply "$transport"
+          git -C "$corecpp" apply --check "$rejection"
+          git -C "$corecpp" apply "$rejection"
+          test "$(git -C "$corecpp" status --porcelain=v1)" = ' M src/runtime/network/src/Host.cpp'
+      - name: Install the pinned build tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check --no-cache-dir cmake==3.31.6 tzdata==2025.2
+          python "$GITHUB_WORKSPACE/diagnostic-source/script/ci/acquire.py" install-ninja --platform macos --root "$RUNNER_TEMP/ninja"
+          python "$GITHUB_WORKSPACE/diagnostic-source/script/ci/acquire.py" install-vcpkg --root "$RUNNER_TEMP/vcpkg"
+      - name: Build baseline Debug dependencies with the diagnostic ENet overlay
+        shell: bash
+        run: |
+          set -euo pipefail
+          brew install autoconf autoconf-archive automake libtool
+          diagnostic_root="$RUNNER_TEMP/targeted-tsan-diagnostic"
+          mkdir -p "$diagnostic_root"
+          installed_root="$RUNNER_TEMP/vcpkg-installed-targeted-tsan"
+          overlay="$GITHUB_WORKSPACE/script/ci/diagnostics/sustained-flight/vcpkg-overlay"
+          vcpkg="$RUNNER_TEMP/vcpkg/vcpkg"
+          export VCPKG_INSTALLED_DIR="$installed_root"
+          "$vcpkg" install \
+            --triplet=arm64-osx \
+            --x-manifest-root="$GITHUB_WORKSPACE/diagnostic-source" \
+            --x-install-root="$installed_root" \
+            --overlay-ports="$overlay" \
+            2>&1 | tee "$diagnostic_root/vcpkg.log"
+          test -d "$installed_root/arm64-osx/include/enet"
+          grep -Fq 'ENetProtocolRejectionProbe' "$installed_root/arm64-osx/include/enet/enet.h"
+          echo "VCPKG_INSTALLED_DIR=$installed_root" >> "$GITHUB_ENV"
+          python "$GITHUB_WORKSPACE/diagnostic-source/script/ci/acquire.py" install-vulkan --platform macos --root "$RUNNER_TEMP/vulkan-sdk"
+          python "$GITHUB_WORKSPACE/diagnostic-source/script/ci/acquire.py" install-private-dependencies \
+            --root "$RUNNER_TEMP/private-dependencies" --platform macos --preset debug \
+            --cmake-arg=-DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" \
+            --cmake-arg=-DVCPKG_MANIFEST_INSTALL=OFF \
+            --cmake-arg=-DCOREPROJECT2026_ALLOW_INEXACT_CORECPP=ON
+          git -C "$RUNNER_TEMP/private-dependencies/CoreCpp" status --porcelain=v1
+          {
+            printf 'vcpkg-root=%s\n' "$VCPKG_ROOT"
+            printf 'vcpkg-installed-root=%s\n' "$installed_root"
+            printf 'vcpkg-overlay=%s\n' "$overlay"
+            printf 'private-dependency-preset=debug; sanitizer=off\n'
+            printf 'patched-enet-header=%s\n' "$installed_root/arm64-osx/include/enet/enet.h"
+            printf 'workload=35s; input-period=100ms; peers=4; max-ack-lag=16\n'
+          } >> "$diagnostic_root/identity.txt"
+      - name: Select the pinned Xcode toolchain
+        run: sudo xcode-select --switch /Applications/Xcode_26.2.app/Contents/Developer
+      - name: Install the hosted TSan compiler
+        shell: bash
+        run: |
+          set -euo pipefail
+          brew install llvm
+          echo "$(brew --prefix llvm)/bin" >> "$GITHUB_PATH"
+      - name: Apply the test-only flight observation patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          source="$GITHUB_WORKSPACE/diagnostic-source"
+          patch="$GITHUB_WORKSPACE/script/ci/diagnostics/sustained-flight/minecraft-flight-snapshot.patch"
+          high_water_patch="$GITHUB_WORKSPACE/script/ci/diagnostics/sustained-flight/minecraft-server-high-water.patch"
+          git -C "$source" apply --check "$patch"
+          git -C "$source" apply "$patch"
+          git -C "$source" apply --check "$high_water_patch"
+          git -C "$source" apply "$high_water_patch"
+          test "$(git -C "$source" status --porcelain=v1)" = ' M tests/core/game_server_preview_tests.cpp'
+          test "$(shasum -a 256 "$source/tests/acceptance/client_launch_test.py" | cut -d ' ' -f 1)" = \
+            'fc42595f414ba0c43e20562522b02b47cc246fef0900303dc15eb7fd5f896f7a'
+      - name: Configure and run the bounded targeted Mac TSan cases
+        id: targeted-tsan
+        timeout-minutes: 15
+        shell: bash
+        env:
+          CORECPP_ENET_DIAGNOSTICS: '1'
+        run: |
+          set -euo pipefail
+          diagnostic_root="$RUNNER_TEMP/targeted-tsan-diagnostic"
+          source="$GITHUB_WORKSPACE/diagnostic-source"
+          cd "$source"
+          python script/ci/acquire.py verify-tools --platform macos
+          compiler_path="$(brew --prefix llvm)/bin"
+          test "$(command -v clang)" = "$compiler_path/clang"
+          test "$(command -v clang++)" = "$compiler_path/clang++"
+          test -z "${TSAN_OPTIONS:-}"
+          printf 'xcode-select=%s\nclang-path=%s\nclangxx-path=%s\n' \
+            "$(xcode-select -p)" "$(command -v clang)" "$(command -v clang++)" \
+            >> "$diagnostic_root/identity.txt"
+          clang --version | tee "$diagnostic_root/toolchain.log"
+          clang++ --version | tee -a "$diagnostic_root/toolchain.log"
+          grep -Fq '23.1.0' "$diagnostic_root/toolchain.log"
+          printf 'effective-clang-version=23.1.0\n' >> "$diagnostic_root/identity.txt"
+          cmake --preset analysis-macos-tsan \
+            -DMC_ALLOW_INEXACT_CORECPP=ON \
+            -DCOREPROJECT2026_ALLOW_INEXACT_CORECPP=ON \
+            2>&1 | tee "$diagnostic_root/configure.log"
+          grep -F -- '-fsanitize=thread' build/analysis-macos-tsan/compile_commands.json
+          cmake --build build/analysis-macos-tsan --target mc_tests mc_main --parallel 4 --verbose \
+            2>&1 | tee "$diagnostic_root/build.log"
+          set +e
+          ctest --test-dir build/analysis-macos-tsan --output-on-failure --no-tests=error -V \
+            -R '^GameServerPreviewTest\.SustainedFlightKeepsInputAcknowledgementsCurrentWhileTilesStream$' \
+            2>&1 | tee "$diagnostic_root/flight-ctest.log"
+          flight_pipeline_status=("${PIPESTATUS[@]}")
+          python "$GITHUB_WORKSPACE/script/ci/diagnostics/targeted_tsan_client.py" \
+            --fixture "$source/tests/acceptance/client_launch_test.py" \
+            --binary "$source/build/analysis-macos-tsan/mc_main" \
+            --evidence-dir "$diagnostic_root/client-exit-evidence" \
+            2>&1 | tee "$diagnostic_root/client-test.log"
+          client_pipeline_status=("${PIPESTATUS[@]}")
+          set -e
+          if [[ "${flight_pipeline_status[0]}" -ne 0 || "${flight_pipeline_status[1]}" -ne 0 || \
+                "${client_pipeline_status[0]}" -ne 0 || "${client_pipeline_status[1]}" -ne 0 ]]; then
+            exit 1
+          fi
+      - name: Upload raw targeted Mac TSan diagnostic evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: targeted-macos-tsan-diagnostic-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/targeted-tsan-diagnostic/**
+            diagnostic-source/build/analysis-macos-tsan/Testing/Temporary/LastTest.log
+            diagnostic-source/build/analysis-macos-tsan/compile_commands.json
+          if-no-files-found: warn
+          retention-days: 14
+
   linux-analysis:
-    if: ((github.event_name == 'push' && github.ref == 'refs/heads/ai-main') || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/ai-dev')) && github.event.inputs.diagnostic != 'sustained-flight' && github.event.inputs.diagnostic != 'full-context-suite'
+    if: ((github.event_name == 'push' && github.ref == 'refs/heads/ai-main') || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/ai-dev')) && github.event.inputs.diagnostic != 'sustained-flight' && github.event.inputs.diagnostic != 'full-context-suite' && github.event.inputs.diagnostic != 'targeted-tsan'
     name: Linux analysis (${{ matrix.row }})
     runs-on: ubuntu-24.04
     timeout-minutes: 360

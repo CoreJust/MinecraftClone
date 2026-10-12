@@ -26,6 +26,7 @@ class WorkflowContextTests(unittest.TestCase):
             "fast",
             "desktop",
             "sustained-flight-macos-asan",
+            "targeted-tsan-macos",
             "linux-analysis",
             "android-hwasan-build",
             "android-hwasan-runtime",
@@ -63,14 +64,16 @@ class WorkflowContextTests(unittest.TestCase):
             guards[job] = compile(syntax, "workflow guard", "eval")
 
         cases = (
-            ("workflow_dispatch", "refs/heads/ai-dev", "sustained-flight", (False, False, True, False, False, False, False)),
-            ("workflow_dispatch", "refs/heads/ai-dev", "full-context-suite", (False, False, True, False, False, False, False)),
-            ("workflow_dispatch", "refs/heads/ai-dev", "none", (True, False, False, True, False, False, False)),
-            ("push", "refs/heads/ai-dev", "", (True, False, False, False, False, False, False)),
-            ("push", "refs/heads/ai-main", "", (True, True, False, True, True, True, True)),
-            ("workflow_dispatch", "refs/heads/ai-main", "none", (True, True, False, False, False, False, False)),
-            ("workflow_dispatch", "refs/heads/ai-main", "sustained-flight", (False, False, False, False, False, False, False)),
-            ("workflow_dispatch", "refs/heads/ai-main", "full-context-suite", (False, False, False, False, False, False, False)),
+            ("workflow_dispatch", "refs/heads/ai-dev", "sustained-flight", (False, False, True, False, False, False, False, False)),
+            ("workflow_dispatch", "refs/heads/ai-dev", "full-context-suite", (False, False, True, False, False, False, False, False)),
+            ("workflow_dispatch", "refs/heads/ai-dev", "targeted-tsan", (False, False, False, True, False, False, False, False)),
+            ("workflow_dispatch", "refs/heads/ai-dev", "none", (True, False, False, False, True, False, False, False)),
+            ("push", "refs/heads/ai-dev", "", (True, False, False, False, False, False, False, False)),
+            ("push", "refs/heads/ai-main", "", (True, True, False, False, True, True, True, True)),
+            ("workflow_dispatch", "refs/heads/ai-main", "none", (True, True, False, False, False, False, False, False)),
+            ("workflow_dispatch", "refs/heads/ai-main", "sustained-flight", (False, False, False, False, False, False, False, False)),
+            ("workflow_dispatch", "refs/heads/ai-main", "full-context-suite", (False, False, False, False, False, False, False, False)),
+            ("workflow_dispatch", "refs/heads/ai-main", "targeted-tsan", (False, False, False, False, False, False, False, False)),
         )
         for event, ref, diagnostic, expected in cases:
             with self.subTest(event=event, ref=ref, diagnostic=diagnostic):
@@ -196,6 +199,108 @@ class WorkflowContextTests(unittest.TestCase):
                 digest = hashlib.sha256((patch_root / filename).read_bytes()).hexdigest()
                 self.assertIn(digest, workflow)
                 self.assertIn(f"script/ci/diagnostics/sustained-flight/{filename}", workflow)
+
+    def test_targeted_tsan_is_bounded_diagnostic_with_checked_inputs(self):
+        workflow = WORKFLOWS[0].read_text(encoding="utf-8")
+        diagnostic = workflow.split("\n  targeted-tsan-macos:\n", 1)[1].split(
+            "\n  linux-analysis:\n", 1
+        )[0]
+        self.assertIn(
+            "if: github.event_name == 'workflow_dispatch' && "
+            "github.event.inputs.diagnostic == 'targeted-tsan' && "
+            "github.ref == 'refs/heads/ai-dev'",
+            diagnostic,
+        )
+        self.assertIn("name: targeted Mac TSan diagnostic (not release evidence)", diagnostic)
+        self.assertLess(
+            diagnostic.index("Validate immutable diagnostic inputs before using deploy keys"),
+            diagnostic.index("secrets.MC_CI_CORECPP_DEPLOY_KEY"),
+        )
+        self.assertLess(
+            diagnostic.index("corecpp-host-transport.patch\""),
+            diagnostic.index("corecpp-host-enet-rejection.patch\""),
+        )
+        self.assertIn("--overlay-ports=\"$overlay\"", diagnostic)
+        self.assertIn("--x-install-root=\"$installed_root\"", diagnostic)
+        self.assertIn("VCPKG_INSTALLED_DIR=$installed_root", diagnostic)
+        self.assertIn("private-dependency-preset=debug; sanitizer=off", diagnostic)
+        self.assertIn("cmake --preset analysis-macos-tsan", diagnostic)
+        self.assertIn("MC_SANITIZER", diagnostic)
+        self.assertIn("grep -F -- '-fsanitize=thread'", diagnostic)
+        self.assertIn("timeout-minutes: 15", diagnostic)
+        self.assertIn("timeout-seconds=900", diagnostic)
+        self.assertNotRegex(diagnostic, r"(?m)^\s+TSAN_OPTIONS:")
+        self.assertIn("-DMC_ALLOW_INEXACT_CORECPP=ON", diagnostic)
+        self.assertIn("-DCOREPROJECT2026_ALLOW_INEXACT_CORECPP=ON", diagnostic)
+        self.assertIn(
+            "provenance-override=allow-inexact-corecpp; exact-base plus hash-checked observation patches only; diagnostic-only",
+            diagnostic,
+        )
+        self.assertNotIn("run-row", diagnostic)
+        self.assertNotIn("analysis_matrix.py", diagnostic)
+        self.assertIn("SustainedFlightKeepsInputAcknowledgementsCurrentWhileTilesStream$", diagnostic)
+        self.assertIn("test_bot_remains_alive_until_delayed_server_starts", diagnostic)
+        self.assertIn("script/ci/diagnostics/targeted_tsan_client.py", diagnostic)
+        self.assertIn("client-exit-evidence", diagnostic)
+        self.assertIn('flight_pipeline_status=("${PIPESTATUS[@]}")', diagnostic)
+        self.assertIn('client_pipeline_status=("${PIPESTATUS[@]}")', diagnostic)
+        self.assertIn("purpose=targeted-diagnostic-only; not release qualification", diagnostic)
+        self.assertLess(
+            diagnostic.index("minecraft-flight-snapshot.patch\""),
+            diagnostic.index("minecraft-server-high-water.patch\""),
+        )
+
+        patch_root = REPOSITORY / "script/ci/diagnostics/sustained-flight"
+        immutable_files = (
+            "corecpp-host-transport.patch",
+            "corecpp-host-enet-rejection.patch",
+            "minecraft-flight-snapshot.patch",
+            "minecraft-server-high-water.patch",
+            "vcpkg-overlay/enet/portfile.cmake",
+            "vcpkg-overlay/enet/vcpkg.json",
+            "vcpkg-overlay/enet/fix-export.patch",
+            "vcpkg-overlay/enet/enet-rejection-probe.patch",
+        )
+        for relative_path in immutable_files:
+            with self.subTest(path=relative_path):
+                digest = hashlib.sha256((patch_root / relative_path).read_bytes()).hexdigest()
+                self.assertIn(digest, diagnostic)
+
+        helper = REPOSITORY / "script/ci/diagnostics/targeted_tsan_client.py"
+        self.assertIn(hashlib.sha256(helper.read_bytes()).hexdigest(), diagnostic)
+        self.assertIn("fc42595f414ba0c43e20562522b02b47cc246fef0900303dc15eb7fd5f896f7a", diagnostic)
+        self.assertIn("d9e2d8db43569cb5f79310d0382541ea71012f0b59556051edbc718d3234e5bf", diagnostic)
+        self.assertIn("51b4b2199058b159537ad45b8334e1c04ccdc129", diagnostic)
+
+        manifest = json.loads((REPOSITORY / "script/ai_analysis_matrix.json").read_text(encoding="utf-8"))
+        row = next(row for row in manifest["rows"] if row["id"] == "macos_tsan")
+        self.assertEqual(
+            row["flags"],
+            [
+                "-DCMAKE_BUILD_TYPE=Release",
+                "-DMC_ENABLE_HIGH_ASSERT=OFF",
+                "-DMC_ENABLE_SANITIZERS=ON",
+                "-DMC_SANITIZER=thread",
+            ],
+        )
+        self.assertEqual(row["required_compile_flags"], ["-fsanitize=thread"])
+        self.assertEqual(row.get("environment", {}), {})
+        self.assertEqual(row["timeout_seconds"], 900)
+        self.assertEqual(
+            row["commands"],
+            [
+                ["cmake", "--preset", "analysis-macos-tsan"],
+                ["cmake", "--build", "--preset", "analysis-macos-tsan"],
+                [
+                    "ctest",
+                    "--test-dir",
+                    "build/analysis-macos-tsan",
+                    "--output-on-failure",
+                    "--no-tests=error",
+                ],
+            ],
+        )
+        self.assertIn("workload=35s; input-period=100ms; peers=4; max-ack-lag=16", diagnostic)
 
     def test_timed_runtime_tests_are_serial_for_full_and_server_only_registrations(self):
         timed_tests = (
@@ -434,7 +539,13 @@ class WorkflowContextTests(unittest.TestCase):
                 "((github.event_name == 'push' && github.ref == 'refs/heads/ai-main') "
                 "|| (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/ai-dev')) "
                 "&& github.event.inputs.diagnostic != 'sustained-flight' "
-                "&& github.event.inputs.diagnostic != 'full-context-suite'"
+                "&& github.event.inputs.diagnostic != 'full-context-suite' "
+                "&& github.event.inputs.diagnostic != 'targeted-tsan'"
+            ),
+            "targeted-tsan-macos": (
+                "github.event_name == 'workflow_dispatch' && "
+                "github.event.inputs.diagnostic == 'targeted-tsan' && "
+                "github.ref == 'refs/heads/ai-dev'"
             ),
             "android-hwasan-build": "github.event_name == 'push' && github.ref == 'refs/heads/ai-main'",
             "android-hwasan-runtime": "github.event_name == 'push' && github.ref == 'refs/heads/ai-main'",

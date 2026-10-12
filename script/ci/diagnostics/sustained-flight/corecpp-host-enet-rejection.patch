@@ -1,0 +1,106 @@
+diff --git a/src/runtime/network/src/Host.cpp b/src/runtime/network/src/Host.cpp
+index 95ec8a8..98f0742 100644
+--- a/src/runtime/network/src/Host.cpp
++++ b/src/runtime/network/src/Host.cpp
+@@ -122,5 +122,84 @@ void logTransportSnapshots(ENetHost& host, uint64_t const host_id, int64_t const
+     }
+ }
+ 
++void logRejectionSnapshot(
++    uint64_t const host_id,
++    uint64_t const peer_index,
++    char const* const predicate,
++    char const* const sample,
++    ENetProtocolRejectionSnapshot const& snapshot
++)
++{
++    CORE_INFO(
++        "ENet rejection operands host={} peer={} predicate={} sample={} channel={} command={} "
++        "sequence={} attempts={} fragment={}/{}/{} transit={} peer-window={} packet-throttle={} throttle-window={} "
++        "effective-window={} mtu={} reliable-window={} prior-window-count={} used-window-mask={}",
++        host_id,
++        peer_index,
++        predicate,
++        sample,
++        snapshot.channelID,
++        snapshot.command,
++        snapshot.reliableSequenceNumber,
++        snapshot.sendAttempts,
++        snapshot.fragmentNumber,
++        snapshot.fragmentOffset,
++        snapshot.fragmentLength,
++        snapshot.reliableDataInTransit,
++        snapshot.peerWindowSize,
++        snapshot.packetThrottle,
++        snapshot.throttledWindowSize,
++        snapshot.effectiveWindowSize,
++        snapshot.mtu,
++        snapshot.reliableWindow,
++        snapshot.previousReliableWindowCount,
++        snapshot.usedReliableWindows
++    );
++}
++
++void drainProtocolRejections(ENetHost& host, uint64_t const host_id)
++{
++    for (uint64_t peer_index = 0U; peer_index < static_cast<uint64_t>(host.peerCount); ++peer_index) {
++        ENetPeer& peer = host.peers[peer_index];
++        auto& sequence = peer.sequenceWindowRejections;
++        auto& byte_window = peer.byteWindowRejections;
++        if (sequence.count == 0U && byte_window.count == 0U) {
++            continue;
++        }
++
++        auto const queued_channel0 =
++            countCommands<ENetOutgoingCommand>(peer.outgoingSendReliableCommands).channel0
++            + countCommands<ENetOutgoingCommand>(peer.outgoingCommands).channel0;
++        if (sequence.count != 0U) {
++            CORE_WARN(
++                "ENet rejection host={} peer={} predicate=sequence-window count={} channel0-rejections={} queued-channel0-at-drain={}",
++                host_id,
++                peer_index,
++                sequence.count,
++                sequence.channel0Count,
++                queued_channel0
++            );
++            logRejectionSnapshot(host_id, peer_index, "sequence-window", "first", sequence.first);
++            logRejectionSnapshot(host_id, peer_index, "sequence-window", "last", sequence.last);
++            sequence.count = 0U;
++            sequence.channel0Count = 0U;
++        }
++        if (byte_window.count != 0U) {
++            CORE_WARN(
++                "ENet rejection host={} peer={} predicate=byte-window count={} channel0-rejections={} queued-channel0-at-drain={}",
++                host_id,
++                peer_index,
++                byte_window.count,
++                byte_window.channel0Count,
++                queued_channel0
++            );
++            logRejectionSnapshot(host_id, peer_index, "byte-window", "first", byte_window.first);
++            logRejectionSnapshot(host_id, peer_index, "byte-window", "last", byte_window.last);
++            byte_window.count = 0U;
++            byte_window.channel0Count = 0U;
++        }
++    }
++}
++
+ [[nodiscard]]
+ enet_uint32 toNative(SendMode const mode) noexcept {
+@@ -217,7 +295,10 @@ Host::~Host() {
+ Host::~Host() {
+     if (m_impl) {
++        if (m_impl->transport_diagnostics_enabled) {
++            drainProtocolRejections(*m_impl->native_host, m_impl->id);
++        }
+         enet_host_destroy(m_impl->native_host);
+         m_impl.reset();
+         CORE_INFO("Destroyed host");
+     }
+ }
+@@ -246,4 +327,5 @@ std::optional<NetEvent> Host::poll(std::chrono::milliseconds const timeout) {
+                 std::chrono::duration_cast<std::chrono::milliseconds>(now - m_impl->created_at).count()
+             );
++            drainProtocolRejections(*m_impl->native_host, m_impl->id);
+         }
+     }

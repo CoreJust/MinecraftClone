@@ -113,6 +113,7 @@ Timed S7 tests use CTest `RUN_SERIAL`; workloads remain unchanged.
 
 `ai-dev` diagnostics; no release qualification. `sustained-flight` is
 single-test; `full-context-suite` mirrors `macos_asan` within `900 seconds`.
+`targeted-tsan`: [diagnostic-only observations](ai/tasks/MC-AI-0433.md).
 
 `script/ai_renderer_smoke.py` rejects foreign caches and builds/runs `RendererSmokeTest` with bounded timeouts, logging to `build/ai-checks/renderer-smoke.log`. Missing registration/device, validation, runtime, and timeout errors fail. Pixels, resize, reload, and close cover automatic/vertex-fallback pipelines—not controls, multiplayer, Windows, or headless goldens. Hosted CI remains GPU-free.
 

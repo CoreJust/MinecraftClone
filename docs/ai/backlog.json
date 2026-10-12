@@ -15276,5 +15276,46 @@
     "docs_review": "Read the Mac ASan matrix row and preset against the shared configure step and new full-suite command; refreshed and checked docs/code/source_state.json. The guide states the diagnostic boundary and 900-second full-suite budget.",
     "environment_review": "Hosted macOS dispatch was not run in this implementation task. The checked observational source is explicitly not release qualification; full-context result remains pending under MC-AI-0038.",
     "backlog_review": "Added MC-AI-0432 as a direct basic child of active S7 MC-AI-0038. This closes only the bounded diagnostic route implementation; exact-source release gates and hosted full-context result remain open."
+  },
+  {
+    "id": "MC-AI-0433",
+    "title": "Capture targeted TSan transport and process-lifecycle failures without masking them",
+    "kind": "chore",
+    "status": "done",
+    "priority": "P1",
+    "route": "luna",
+    "milestone": "ED-010-S7",
+    "depends_on": [],
+    "acceptance": "Provide an opt-in ai-dev targeted Mac TSan diagnostic using pinned source and an isolated event-triggered ENet overlay rebuilt consistently across all consumers, with the original instrumentation split and an end-of-run server tick/loop high-water summary using existing hooks. Preserve normal jobs, existing ASan diagnostic modes, the flight workload and lag limit. Independently reap acceptance-test children on failure, preserve the five-second termination failure and bounded process output. Validate immutable diagnostic inputs before deploy-key use, record raw logs, and make no release or root-cause claim from observational source. Focused regressions, syntax, docs and task checks must pass.",
+    "evidence": "Focused workflow and diagnostic-wrapper suites passed 41 tests; YAML and all ten targeted Bash blocks parsed, helper py_compile and git diff --check passed. Cleanup mock and two normal Release launch cases passed 3 tests in 2.574 seconds; launcher argument and radius validation passed 2 tests in 0.190 seconds. ENet built under AppleClang 17 and Host syntax checked against its patched header. Ordered patch checks passed; high-water test patch compiled in the retained matched LLVM22 ASan build. No hosted diagnostic or release qualification is claimed.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0038",
+    "motivation": "Identify the remaining S7 macOS TSan acknowledgement and shutdown failures with bounded diagnostics, and stop failed acceptance fixtures leaking child processes.",
+    "context": "Exact promotion 51b4b219 passed ASan and UBSan on clean rerun but TSan reported acknowledgement lag 23 versus 16 and a delayed-server client that did not exit within five seconds. Existing post-service ENet snapshots cannot prove whether reliable-command send rejection occurred. Fixture cleanup stops at the first timeout and leaves both child processes unreaped.",
+    "complexity": "medium",
+    "created_at": "2026-10-12",
+    "resolved_at": "2026-10-12",
+    "resolution_changes": "Added an opt-in targeted-tsan ai-dev job with immutable pre-secret checks, an isolated ENet predicate overlay, bounded control-channel rejection counters and owner-thread drains, end-of-run server timing high-water data, and an original-fixture process evidence wrapper. Preserved normal jobs and both ASan diagnostic paths. Repaired client-launch child cleanup so timeouts still fail while all children are independently reaped and bounded logs survive.",
+    "plan": [
+      "Clarify acceptance and implementation steps.",
+      "Instrument the exact ENet rejection predicates with bounded diagnostic-only snapshots and aggregate owner-thread emission.",
+      "Add one targeted TSan dispatch and focused workflow coverage while preserving normal and ASan paths.",
+      "Repair independent child cleanup without masking timeouts; preserve logs for the unresolved signal failure."
+    ],
+    "product_changes": [
+      "None; production gameplay and release acceptance limits are unchanged."
+    ],
+    "code_changes": [
+      "Added diagnostic-only transport and server timing patches, an isolated port and targeted TSan workflow, process-capture helper and focused regressions; repaired acceptance fixture cleanup."
+    ],
+    "baseline_commit": "17fb06411fae6b901bd95dc39da1f08b5bb10b9a",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "Read the pinned TSan row, existing ASan routes, ordered patches and workflow consumers; shortened the BUILD diagnostic note to preserve its word limit and refreshed code inventory.",
+    "environment_review": "Focused native checks used retained local dependency prefixes and diagnostic roots; no global installation, hosted dispatch or HWASan runner registration occurred. The unused successor authorization remains conditional on other rows passing.",
+    "backlog_review": "MC-AI-0433 closes local diagnostic support and a proven fixture cleanup defect only; S7 MC-AI-0038 remains active and unreleased with exact-source TSan and remaining static/runtime gates open."
   }
 ]
