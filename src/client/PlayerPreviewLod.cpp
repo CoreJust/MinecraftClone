@@ -64,8 +64,7 @@ struct AxisDistanceBounds final {
 
 [[nodiscard]] shared::HeightTileSurfaceBounds farthestSurface(
     shared::HeightTileSurfaceBounds const viewer,
-    shared::HeightTileSurfaceBounds const surface,
-    double const minimum_height
+    shared::HeightTileSurfaceBounds const surface
 ) noexcept
 {
     double const x = farthestPoint({
@@ -86,14 +85,13 @@ struct AxisDistanceBounds final {
         .surface_min = surface.min_z_blocks,
         .surface_max = surface.max_z_blocks,
     });
-    bool const below = z < viewer.min_z_blocks;
     return {
         .min_x_blocks = x,
         .max_x_blocks = x,
         .min_y_blocks = y,
         .max_y_blocks = y,
-        .min_z_blocks = below ? z - minimum_height : z,
-        .max_z_blocks = below ? z : z + minimum_height,
+        .min_z_blocks = z,
+        .max_z_blocks = z,
     };
 }
 
@@ -177,6 +175,22 @@ shared::HeightTileSurfaceDetail PlayerPreviewLod::selectDetail(
     uint16_t const maximum
 )
 {
+    shared::HeightTileSurfaceFaceAreas face_areas;
+    for (uint32_t level = 0U; level < face_areas.maximum.size(); ++level) {
+        double const cell_size = shared::HeightTileSurfaceFaceAreas::CELL_SIZES[level];
+        face_areas.maximum[level] = std::max(cell_size * cell_size,
+            cell_size * static_cast<double>(maximum - minimum));
+    }
+    return selectDetail(key, minimum, maximum, face_areas);
+}
+
+shared::HeightTileSurfaceDetail PlayerPreviewLod::selectDetail(
+    shared::HeightTileKey const key,
+    uint16_t const minimum,
+    uint16_t const maximum,
+    shared::HeightTileSurfaceFaceAreas const& face_areas
+)
+{
     ASSERT(key.x >= 0 && key.x < TILE_EXTENT && key.y >= 0 && key.y < TILE_EXTENT,
         "LOD tile keys must be normalized");
     ASSERT(minimum <= maximum, "LOD elevation bounds must be ordered");
@@ -186,15 +200,17 @@ shared::HeightTileSurfaceDetail PlayerPreviewLod::selectDetail(
         .key = key,
         .minimum = minimum,
         .maximum = maximum,
+        .face_areas = face_areas,
         .detail = shared::HeightTileSurfaceDetail::Fine,
     };
     std::optional<shared::HeightTileSurfaceDetail> const current = previous
         ? std::optional{previous->detail}
         : std::nullopt;
     next.detail = m_initialized
-        ? m_policy.detailFor(m_viewer_bounds, surfaceBounds(next), current)
+        ? m_policy.detailFor(m_viewer_bounds, surfaceBounds(next), face_areas, current)
         : shared::HeightTileSurfaceDetail::Fine;
-    if (!previous || previous->minimum != minimum || previous->maximum != maximum || previous->detail != next.detail) {
+    if (!previous || previous->minimum != minimum || previous->maximum != maximum
+        || previous->face_areas != face_areas || previous->detail != next.detail) {
         bucket.dirty = true;
     }
     previous = next;
@@ -216,10 +232,10 @@ void PlayerPreviewLod::rebuildGroups(Bucket& bucket) const noexcept
             y, y + shared::HEIGHT_TILE_SIDE_LENGTH,
             static_cast<double>(tile->minimum), static_cast<double>(tile->maximum),
         };
-        double const height = bounds.max_z_blocks - bounds.min_z_blocks;
         if (!group.present) {
             group.bounds = bounds;
-            group.minimum_height = height;
+            group.minimum_areas = tile->face_areas;
+            group.maximum_areas = tile->face_areas;
             group.present = true;
         } else {
             group.bounds.min_x_blocks = std::min(group.bounds.min_x_blocks, bounds.min_x_blocks);
@@ -228,7 +244,12 @@ void PlayerPreviewLod::rebuildGroups(Bucket& bucket) const noexcept
             group.bounds.max_y_blocks = std::max(group.bounds.max_y_blocks, bounds.max_y_blocks);
             group.bounds.min_z_blocks = std::min(group.bounds.min_z_blocks, bounds.min_z_blocks);
             group.bounds.max_z_blocks = std::max(group.bounds.max_z_blocks, bounds.max_z_blocks);
-            group.minimum_height = std::min(group.minimum_height, height);
+            for (uint32_t level = 0U; level < tile->face_areas.maximum.size(); ++level) {
+                group.minimum_areas.maximum[level] = std::min(group.minimum_areas.maximum[level],
+                    tile->face_areas.maximum[level]);
+                group.maximum_areas.maximum[level] = std::max(group.maximum_areas.maximum[level],
+                    tile->face_areas.maximum[level]);
+            }
         }
     }
     bucket.dirty = false;
@@ -296,13 +317,10 @@ PlayerPreviewLodRefresh PlayerPreviewLod::refresh(
                 bounds.max_y_blocks += y_shift;
                 auto const current = static_cast<shared::HeightTileSurfaceDetail>(index);
                 shared::HeightTileSurfaceBounds const farthest_viewer = farthestViewer(viewer_region, bounds);
-                shared::HeightTileSurfaceBounds const farthest = farthestSurface(
-                    farthest_viewer, bounds, group.minimum_height
-                );
-                // The union bounds give a lower distance; the far corner and minimum
-                // face height give an upper distance and lower reduction threshold.
-                if (m_policy.detailFor(viewer_region, bounds, current) != current
-                    || m_policy.detailFor(farthest_viewer, farthest, current) != current) {
+                shared::HeightTileSurfaceBounds const farthest = farthestSurface(farthest_viewer, bounds);
+                // Distance and area extrema enclose every tile's candidate selection.
+                if (m_policy.detailFor(viewer_region, bounds, group.maximum_areas, current) != current
+                    || m_policy.detailFor(farthest_viewer, farthest, group.minimum_areas, current) != current) {
                     bucket.candidate_details |= static_cast<uint8_t>(1U << index);
                 }
             }
@@ -316,7 +334,8 @@ PlayerPreviewLodRefresh PlayerPreviewLod::refresh(
                 continue;
             }
             ++result.evaluated_tiles;
-            auto const selected = m_policy.detailFor(viewer_bounds, surfaceBounds(*tile), tile->detail);
+            auto const selected = m_policy.detailFor(viewer_bounds, surfaceBounds(*tile),
+                tile->face_areas, tile->detail);
             if (selected != tile->detail) {
                 tile->detail = selected;
                 result.changed_keys.push_back(tile->key);

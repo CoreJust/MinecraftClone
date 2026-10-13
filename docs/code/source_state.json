@@ -213,7 +213,7 @@
     },
     {
       "guide": "docs/code/GAMEPLAY.md",
-      "guide_sha256": "6c2b53dfa9785d3a06dd29a36217164f0a6acdb7c7714e8c0188972a975dc927",
+      "guide_sha256": "e3da0c4af6f0557f52394b7df4f26a1024923abadd9dd82f86741f46519e6e4f",
       "id": "gameplay",
       "sources": [
         "src/client/BotClient.cpp",
@@ -302,11 +302,11 @@
         "tests/core/world_generation_scheduler_tests.cpp",
         "tests/core/world_generation_tests.cpp"
       ],
-      "sources_sha256": "022341e4379f4268be19d6d7ea368687b6a6d7bc6512fdbd471836f5d6d5c4fe"
+      "sources_sha256": "bc6ea84acf5e2173dbe8e2c235c405b89d116e19bea97a1a0fdace683435a8c5"
     },
     {
       "guide": "docs/code/RENDERING.md",
-      "guide_sha256": "681db5e49e42d29d0551e6eb1b643d496d2aca525ead175153f3fab1069788b2",
+      "guide_sha256": "3a741ec5fa1f8a628238f358790b53f03528a2b11e1a29d3d66b9dcc80c03c22",
       "id": "rendering",
       "sources": [
         "src/client/CMakeLists.txt",
@@ -382,7 +382,7 @@
         "tests/testsupport/include/testsupport/AdverseTransport.hpp",
         "tests/testsupport/include/testsupport/ImageComparison.hpp"
       ],
-      "sources_sha256": "f7aaf9c13566db84c95a2bad13bf89b7d88d8dda204283fc1814daa654e2aa36"
+      "sources_sha256": "403f25bb2ddc8f5270658acb0619399573dbb12cf49c23fbcd879380c04820b7"
     }
   ],
   "version": 1

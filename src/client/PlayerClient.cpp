@@ -460,7 +460,8 @@ void PlayerClient::onConnectionStateReset()
     m_preview_mesh_coverage.clear();
     m_visible_preview_mesh_tiles.clear();
     m_visible_preview_mesh_bases.clear();
-    m_visible_preview_mesh_elevation_ranges.clear();
+    m_visible_preview_mesh_edge_profiles.clear();
+    m_preview_edge_profile_token = 0U;
     m_visible_preview_mesh_seam_bridges.clear();
     m_preview_lod.clear();
     m_preview_tile_elevations.clear();
@@ -1137,7 +1138,7 @@ std::array<HeightTileHandle, 4> PlayerClient::previewMeshNeighbors(HeightTileKey
 
 std::array<shared::HeightTileSurfaceDetail, 4> PlayerClient::previewMeshNeighborDetails(
     HeightTileKey const key
-)
+) const
 {
     std::array<HeightTileKey, 4> const neighbor_keys{
         offsetHeightTileKey(key, -1, 0),
@@ -1154,10 +1155,29 @@ std::array<shared::HeightTileSurfaceDetail, 4> PlayerClient::previewMeshNeighbor
     };
     for (size_t index = 0U; index < neighbors.size(); ++index) {
         if (neighbors[index]) {
-            details[index] = previewMeshDetail(neighbor_keys[index], neighbors[index]);
+            details[index] = m_preview_lod.detail(neighbor_keys[index])
+                .value_or(shared::HeightTileSurfaceDetail::Fine);
         }
     }
     return details;
+}
+
+std::array<uint64_t, 4> PlayerClient::previewMeshNeighborProfileTokens(HeightTileKey const key) const
+{
+    std::array<HeightTileKey, 4> const neighbor_keys{
+        offsetHeightTileKey(key, -1, 0),
+        offsetHeightTileKey(key, 1, 0),
+        offsetHeightTileKey(key, 0, -1),
+        offsetHeightTileKey(key, 0, 1),
+    };
+    std::array<uint64_t, 4> tokens{};
+    for (uint32_t edge = 0U; edge < neighbor_keys.size(); ++edge) {
+        auto const installed = m_visible_preview_mesh_edge_profiles.find(neighbor_keys[edge]);
+        if (installed != m_visible_preview_mesh_edge_profiles.end()) {
+            tokens[edge] = installed->second.tokens[PreviewMeshSeamBridgeSet::OPPOSITE_EDGES[edge]];
+        }
+    }
+    return tokens;
 }
 
 void PlayerClient::refreshPreviewMeshNeighborElevations(HeightTileKey const key)
@@ -1258,9 +1278,9 @@ void PlayerClient::publishPreviewMesh(
         neighbors
     );
     PreviewMeshSeamPublicationBatch const batch = buildPreviewMeshSeamPublicationBatch(plan, neighbors);
-    std::array<shared::HeightTileSurfaceElevationRange, 4> elevation_ranges;
-    for (uint32_t edge = 0U; edge < elevation_ranges.size(); ++edge) {
-        elevation_ranges[edge] = shared::heightTileSurfaceEdgeElevationRange(
+    std::array<shared::HeightTileSurfaceEdgeProfile, 4> edge_profiles;
+    for (uint32_t edge = 0U; edge < edge_profiles.size(); ++edge) {
+        edge_profiles[edge] = shared::heightTileSurfaceEdgeProfile(
             mesh, PreviewMeshSeamBridgeSet::EDGES[edge]
         );
     }
@@ -1270,12 +1290,20 @@ void PlayerClient::publishPreviewMesh(
         [this, deadline](std::span<shared::HeightTileSurfaceMesh const> candidates) {
             return m_renderer.upsertHeightTileMeshes(candidates, deadline);
         },
-        [this, key, &mesh, &tile, &adjacent_keys, &elevation_ranges](
+        [this, key, &mesh, &tile, &adjacent_keys, &edge_profiles](
             PreviewMeshSeamPublicationPlan& accepted_plan
         ) {
             markPreviewMeshVisible(key);
             m_visible_preview_mesh_bases.insert_or_assign(key, std::move(mesh));
-            m_visible_preview_mesh_elevation_ranges.insert_or_assign(key, elevation_ranges);
+            auto const previous = m_visible_preview_mesh_edge_profiles.find(key);
+            PreviewMeshEdgeProfiles profiles{ .edges = edge_profiles };
+            for (uint32_t edge = 0U; edge < edge_profiles.size(); ++edge) {
+                profiles.tokens[edge] = previous != m_visible_preview_mesh_edge_profiles.end()
+                        && previous->second.edges[edge].top == edge_profiles[edge].top
+                    ? previous->second.tokens[edge]
+                    : ++m_preview_edge_profile_token;
+            }
+            m_visible_preview_mesh_edge_profiles.insert_or_assign(key, std::move(profiles));
             m_visible_preview_mesh_seam_bridges.insert_or_assign(key, std::move(accepted_plan.center_bridges));
             m_visible_preview_mesh_tiles.insert_or_assign(key, tile);
             for (uint32_t index = 0U; index < accepted_plan.changed_neighbors.size(); ++index) {
@@ -1307,7 +1335,7 @@ void PlayerClient::removePreviewMesh(
     m_visible_preview_meshes.erase(key);
     m_visible_preview_mesh_tiles.erase(key);
     m_visible_preview_mesh_bases.erase(key);
-    m_visible_preview_mesh_elevation_ranges.erase(key);
+    m_visible_preview_mesh_edge_profiles.erase(key);
     m_visible_preview_mesh_seam_bridges.erase(key);
     refreshPreviewMeshNeighborElevations(key);
     uint32_t edge = 0U;
@@ -1344,14 +1372,20 @@ shared::HeightTileSurfaceDetail PlayerClient::previewMeshDetail(
         offsetHeightTileKey(key, 0, 1),
     };
     std::array<uint64_t, 4> neighbor_tokens{};
+    std::array<shared::HeightTileSurfaceDetail, 4> const neighbor_details = previewMeshNeighborDetails(key);
+    std::array<uint64_t, 4> const neighbor_profile_tokens = previewMeshNeighborProfileTokens(key);
+    std::array<std::optional<shared::HeightTileSurfaceEdgeProfile>, 4> installed_neighbor_profiles{};
     std::array<std::optional<shared::HeightTileSurfaceElevationRange>, 4> neighbor_mesh_ranges{};
     for (size_t index = 0U; index < neighbors.size(); ++index) {
         if (neighbors[index]) {
             neighbor_tokens[index] = neighbors[index]->token();
         }
-        auto const installed = m_visible_preview_mesh_elevation_ranges.find(neighbor_keys[index]);
-        if (installed != m_visible_preview_mesh_elevation_ranges.end()) {
-            neighbor_mesh_ranges[index] = installed->second[PreviewMeshSeamBridgeSet::OPPOSITE_EDGES[index]];
+        auto const installed = m_visible_preview_mesh_edge_profiles.find(neighbor_keys[index]);
+        if (installed != m_visible_preview_mesh_edge_profiles.end()) {
+            installed_neighbor_profiles[index] = installed->second.edges[
+                PreviewMeshSeamBridgeSet::OPPOSITE_EDGES[index]
+            ];
+            neighbor_mesh_ranges[index] = installed_neighbor_profiles[index]->elevation;
         }
     }
     auto elevation = m_preview_tile_elevations.find(key);
@@ -1359,6 +1393,8 @@ shared::HeightTileSurfaceDetail PlayerClient::previewMeshDetail(
         || elevation->second.tile_revision != tile->revision()
         || elevation->second.tile_token != tile->token()
         || elevation->second.neighbor_tokens != neighbor_tokens
+        || elevation->second.neighbor_details != neighbor_details
+        || elevation->second.neighbor_profile_tokens != neighbor_profile_tokens
         || elevation->second.neighbor_mesh_ranges != neighbor_mesh_ranges) {
         uint16_t minimum = std::numeric_limits<uint16_t>::max();
         uint16_t maximum = 0U;
@@ -1383,16 +1419,44 @@ shared::HeightTileSurfaceDetail PlayerClient::previewMeshDetail(
                 includeHeight(neighbor_mesh_range.value().maximum);
             }
         }
+        auto const heights = [](HeightTileHandle const& neighbor) -> std::optional<shared::HeightTile::Heights> {
+            return neighbor ? std::optional{neighbor->heights()} : std::nullopt;
+        };
+        shared::HeightTileSurfaceNeighbors const surface_neighbors{
+            .negative_x = heights(neighbors[0]),
+            .positive_x = heights(neighbors[1]),
+            .negative_y = heights(neighbors[2]),
+            .positive_y = heights(neighbors[3]),
+            .negative_x_detail = neighbor_details[0],
+            .positive_x_detail = neighbor_details[1],
+            .negative_y_detail = neighbor_details[2],
+            .positive_y_detail = neighbor_details[3],
+        };
+        shared::HeightTileSurfaceFaceAreas const face_areas = shared::heightTileSurfaceFaceAreas({
+            .coordinate = { .x = key.x, .y = key.y },
+            .heights = tile->heights(),
+        }, surface_neighbors, installed_neighbor_profiles);
         elevation = m_preview_tile_elevations.insert_or_assign(key, PreviewTileElevation{
             .tile_revision = tile->revision(),
             .tile_token = tile->token(),
             .neighbor_tokens = neighbor_tokens,
+            .neighbor_details = neighbor_details,
+            .neighbor_profile_tokens = neighbor_profile_tokens,
             .neighbor_mesh_ranges = neighbor_mesh_ranges,
             .minimum = minimum,
             .maximum = maximum,
+            .face_areas = face_areas,
         }).first;
     }
-    return m_preview_lod.selectDetail(key, elevation->second.minimum, elevation->second.maximum);
+    std::optional<shared::HeightTileSurfaceDetail> const previous = m_preview_lod.detail(key);
+    shared::HeightTileSurfaceDetail const selected = m_preview_lod.selectDetail(key,
+        elevation->second.minimum, elevation->second.maximum, elevation->second.face_areas);
+    if (previous.value_or(shared::HeightTileSurfaceDetail::Fine) != selected) {
+        for (HeightTileKey const adjacent : neighbor_keys) {
+            queuePreviewMesh(adjacent);
+        }
+    }
+    return selected;
 }
 
 void PlayerClient::queuePreviewMesh(HeightTileKey const key)
@@ -1479,13 +1543,14 @@ void PlayerClient::processPendingPreviewMeshes(
         bool source_current = false;
         bool detail_current = false;
         if (m_height_tile_interest.contains(result->key) && current) {
-            source_current = current == result->source.tile
-                && previewMeshNeighbors(result->key) == result->source.neighbors
-                && previewMeshNeighborDetails(result->key) == result->source.neighbor_details;
+            source_current = result->source.matchesGeometry(current, previewMeshNeighbors(result->key),
+                previewMeshNeighborDetails(result->key));
             shared::HeightTileSurfaceDetail const expected_mesh_detail = result->stage
                     == PreviewMeshStage::Coarse
                 ? previewMeshCoarseDetail(result->target_detail)
                 : result->target_detail;
+            // Installed profiles affect certification, not base geometry. Revalidate
+            // their current content before rebuilding seams from the installed meshes.
             detail_current = previewMeshDetail(result->key, current) == result->target_detail
                 && result->mesh.detail == expected_mesh_detail;
         }

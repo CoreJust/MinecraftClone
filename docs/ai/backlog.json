@@ -15926,13 +15926,13 @@
     "id": "MC-AI-0451",
     "title": "Certify LOD against actual replacement-cell faces",
     "kind": "bug",
-    "status": "active",
+    "status": "done",
     "priority": "P0",
     "route": "sol",
     "milestone": "ED-010-S7",
     "depends_on": [],
     "acceptance": "Derive each LOD certificate from actual rounded candidate-cell faces and all relevant neighbor/seam profile inputs while preserving guaranteed projected area<=2px². Keep complete raw-height distance bounds, position-selected residency and exact collision. Handle nonmonotone per-detail areas, full installed profiles, successful-publication invalidation, failed-publication retention and stale worker results without recursion. Add per-generated-face oracle, seam/profile/revision/movement/FOV boundary regressions; measure geometry and cadence separately without claiming unmeasured improvement.",
-    "evidence": "",
+    "evidence": "Frozen native tree92bd50febb244c98de2e6aa416ac2d4ef2efe05f: Release and renderer-smoke builds passed;85 focused tests passed. Source-bound /private/tmp/mc-s7-0451-repair-macos-proof.json: innerexit0, exact205861 current meshes and emptyqueues at initial137.974s/recovery169.068s,67814Coarse2 tiles,7435677 submitted quads,55Hz baseline/78.492Hz recovered; cadence qualification failed. ExecutableSHA18a27cc53ab6ca9c195aa448bbb2c903c5500613876379bb034bfed2a7eb1643; before/after provenance unchanged. Combined998af full635MacCTest passed. Windows capacity-growth failure remains separately tracked by0453/parent0038; no release or120/500FPS claim.",
     "blocker": "",
     "owner": "Codex",
     "level": "basic",
@@ -15941,16 +15941,20 @@
     "context": "Full default-radius Mac diagnostics install205861Fine meshes and41922484quads; directional culling alone gives48.2successfulrequests/s. User requires replacement-face projected area at most2px² with actual FOV/framebuffer and unchanged position-driven residency. Read-only design identified per-detail rounded cell wall differences and requested/installed neighbor seam profiles as the relevant conservative face bounds; projected-distance enclosure remains conservative.",
     "complexity": "high",
     "created_at": "2026-10-13",
-    "resolved_at": "",
-    "resolution_changes": "",
+    "resolved_at": "2026-10-13",
+    "resolution_changes": "Certified actual rounded replacement-cell tops, walls and installed-neighbor seam profiles independently per detail; retained raw-height distance bounds and safe reuse of completed geometry after profile-only changes.",
     "plan": [
       "Implement bounded candidate-area certificates and explicit dependency tokens; independently test each detail with conservative projection math; run focused source and renderer regressions then one full-radius diagnostic."
     ],
-    "product_changes": [],
-    "code_changes": [],
+    "product_changes": [
+      "Preserve the projected-area LOD guarantee while allowing safely certified distant replacement faces."
+    ],
+    "code_changes": [
+      "Add per-detail face bounds, semantic profile dependency tokens, publication recertification and generated-face/stale-result regressions."
+    ],
     "baseline_commit": "1dad7b176280f266b224880360db50124137a7ff",
     "commits": [],
-    "finalized": false,
+    "finalized": true,
     "retrospective": "",
     "docs_review": "",
     "environment_review": "",

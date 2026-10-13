@@ -226,6 +226,84 @@ TEST(PlayerPreviewLodTest, ProjectionTighteningRejectsCapturedCoarseJobDetail)
     EXPECT_NE(lod.selectDetail(DISTANT, HEIGHT, HEIGHT), captured_job_detail);
 }
 
+TEST(PlayerPreviewLodTest, CandidateAreaExtremaMatchExhaustiveSelectionAcrossMovementAndUpdates)
+{
+    static constexpr shared::HeightTileKey INITIAL_CENTER{ 4'095, 0 };
+    static constexpr uint32_t TILE_COUNT = 64U;
+    static constexpr uint32_t STEPS = 12U;
+    static constexpr uint16_t MINIMUM = 4U;
+    static constexpr uint16_t MAXIMUM = 1'024U;
+    static constexpr std::array<shared::HeightTileSurfaceProjection, 3> PROJECTIONS{
+        shared::HeightTileSurfaceProjection{ 100.0, 640U, 360U },
+        shared::HeightTileSurfaceProjection{ 70.0, 2'560U, 1'440U },
+        shared::HeightTileSurfaceProjection{ 40.0, 3'840U, 2'160U },
+    };
+    struct Tile final {
+        shared::HeightTileKey key;
+        shared::HeightTileSurfaceFaceAreas areas;
+        shared::HeightTileSurfaceDetail detail;
+    };
+    client::PlayerPreviewLod lod;
+    auto const initial_viewer = viewerBounds(8.0, 8.0, 80.0);
+    static_cast<void>(lod.refresh(INITIAL_CENTER, initial_viewer, PROJECTIONS.front()));
+    std::vector<Tile> tiles;
+    for (uint32_t index = 0U; index < TILE_COUNT; ++index) {
+        auto const key = shared::normalizeHeightTileKey({
+            .x = INITIAL_CENTER.x + 150 + static_cast<int32_t>(index % 8U),
+            .y = 140 + static_cast<int32_t>(index / 8U),
+        });
+        shared::HeightTileSurfaceFaceAreas const areas{
+            .maximum = { index % 3U == 0U ? 2'048.0 : 4.0, 16.0,
+                index % 5U == 0U ? 8'192.0 : 64.0, 256.0 },
+        };
+        tiles.push_back({ key, areas, lod.selectDetail(key, MINIMUM, MAXIMUM, areas) });
+    }
+    for (uint32_t step = 0U; step < STEPS; ++step) {
+        auto const center = shared::normalizeHeightTileKey({
+            INITIAL_CENTER.x + static_cast<int32_t>(step / 3U), static_cast<int32_t>(step / 4U),
+        });
+        auto const viewer = viewerBounds(8.0 + (step % 3U) * 0.25, 8.0, 80.0 + step * 2.0);
+        auto const projection = PROJECTIONS[step % static_cast<uint32_t>(PROJECTIONS.size())];
+        shared::HeightTileSurfaceLodPolicy const policy{ projection };
+        auto const refreshed = lod.refresh(center, viewer, projection);
+        KeySet expected_changes;
+        for (Tile& tile : tiles) {
+            auto const bounds = shared::HeightTileSurfaceMesher::boundsForTile(
+                { center.x, center.y }, { tile.key.x, tile.key.y }, MINIMUM, MAXIMUM
+            );
+            auto const selected = policy.detailFor(viewer, bounds, tile.areas, tile.detail);
+            if (selected != tile.detail) {
+                expected_changes.emplace(tile.key.x, tile.key.y);
+            }
+            tile.detail = selected;
+            ASSERT_EQ(lod.detail(tile.key), std::optional{selected});
+        }
+        EXPECT_EQ(keySet(refreshed.changed_keys), expected_changes);
+        Tile& changed = tiles[step];
+        changed.areas.maximum[0] = changed.areas.maximum[0] == 4.0 ? 2'048.0 : 4.0;
+        auto const changed_bounds = shared::HeightTileSurfaceMesher::boundsForTile(
+            { center.x, center.y }, { changed.key.x, changed.key.y }, MINIMUM, MAXIMUM
+        );
+        changed.detail = policy.detailFor(viewer, changed_bounds, changed.areas, changed.detail);
+        EXPECT_EQ(lod.selectDetail(changed.key, MINIMUM, MAXIMUM, changed.areas), changed.detail);
+    }
+}
+
+TEST(PlayerPreviewLodTest, ChangedCandidateAreaRefinesWithIdenticalElevationBounds)
+{
+    static constexpr shared::HeightTileKey CENTER{};
+    static constexpr shared::HeightTileKey DISTANT{ 240, 0 };
+    static constexpr shared::HeightTileSurfaceProjection PROJECTION{ 70.0, 2'560U, 1'440U };
+    static constexpr uint16_t MINIMUM = 4U;
+    static constexpr uint16_t MAXIMUM = 100U;
+    static constexpr shared::HeightTileSurfaceFaceAreas SAFE{};
+    static constexpr shared::HeightTileSurfaceFaceAreas CLIFF{ .maximum = { 192.0, 384.0, 768.0, 1'536.0 } };
+    client::PlayerPreviewLod lod;
+    static_cast<void>(lod.refresh(CENTER, viewerBounds(8.0, 8.0, 80.0), PROJECTION));
+    EXPECT_EQ(lod.selectDetail(DISTANT, MINIMUM, MAXIMUM, SAFE), shared::HeightTileSurfaceDetail::Coarse2);
+    EXPECT_EQ(lod.selectDetail(DISTANT, MINIMUM, MAXIMUM, CLIFF), shared::HeightTileSurfaceDetail::Fine);
+}
+
 TEST(PlayerPreviewLodTest, BoundaryStripsMatchTheExactDiskForCrossingJumpsAndWrap)
 {
     static constexpr int32_t TILE_EXTENT = shared::WorldExtent::WIDTH / shared::HEIGHT_TILE_SIDE_LENGTH;

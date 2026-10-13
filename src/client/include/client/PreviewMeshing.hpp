@@ -257,6 +257,15 @@ struct PreviewMeshSource final {
         shared::HeightTileSurfaceDetail::Fine,
         shared::HeightTileSurfaceDetail::Fine,
     };
+    [[nodiscard]] bool matchesGeometry(
+        HeightTileHandle const& current_tile,
+        std::array<HeightTileHandle, 4> const& current_neighbors,
+        std::array<shared::HeightTileSurfaceDetail, 4> const& current_neighbor_details
+    ) const noexcept
+    {
+        return tile == current_tile && neighbors == current_neighbors
+            && neighbor_details == current_neighbor_details;
+    }
 };
 
 [[nodiscard]] inline shared::HeightTileSurfaceMesh buildPreviewMesh(PreviewMeshSource const& source)

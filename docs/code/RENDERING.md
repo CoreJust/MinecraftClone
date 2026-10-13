@@ -47,12 +47,12 @@ only provably backfacing batches drop. Coplanar/wrap ambiguities remain;
 direct/indirect paths agree.
 [`Tests`](../../tests/client/height_tile_draw_index_tests.cpp) cover moving cameras,
 mutation/failure, seams and radii 256/1,024.
-LOD uses wrapped player distance and actual vertical FOV/framebuffer extent,
-hysteresis, and replacement cell faces bounded to 2 px². Bounds enclose complete
-raw neighbors and installed edge profiles, including retained revisions/detail.
-First publication uses certified detail directly without duplicate coarse/final
-work. Jobs recheck revisions, neighbors, detail and epoch. Failed uploads retain
-installed geometry/certificate inputs; displayed meshes refine asynchronously
+LOD uses wrapped player distance, actual vertical FOV/framebuffer extent and
+hysteresis, bounding replacement cell faces to 2 px². Per-detail areas cover
+candidate tops/walls and installed neighbor TOP profiles; raw bounds enclose
+distance. First publication uses certified detail directly. Jobs recheck raw
+revisions, neighbors and current detail safety; profile-only changes need not
+discard valid completed geometry. Failed uploads retain installed state; meshes refine
 after movement/FOV/profile changes. Seam batches atomically publish the center and
 changed neighbors; failure retains renderer/client state. Cached seam spans handle
 out-of-order uploads. LOD preserves terrain/collision; far plane/fog scale with

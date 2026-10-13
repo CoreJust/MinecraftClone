@@ -55,7 +55,8 @@ struct PlayerClientTestAccess final {
     static void publishLodTile(
         PlayerClient& client,
         HeightTileHandle const& tile,
-        std::chrono::steady_clock::time_point const deadline
+        std::chrono::steady_clock::time_point const deadline,
+        shared::HeightTileSurfaceDetail const detail = shared::HeightTileSurfaceDetail::Fine
     )
     {
         shared::HeightTile const surface{
@@ -67,13 +68,133 @@ struct PlayerClientTestAccess final {
             .positive_x = surface.heights,
             .negative_y = surface.heights,
             .positive_y = surface.heights,
-        });
+        }, detail);
         client.publishPreviewMesh(tile->key(), std::move(mesh), tile, deadline);
     }
 
     static shared::HeightTileSurfaceDetail lodDetail(PlayerClient& client, shared::HeightTileKey const key)
     {
         return client.previewMeshDetail(key, client.m_height_tile_residency.resident(key));
+    }
+
+    static HeightTileHandle replaceLodHeights(
+        PlayerClient& client,
+        shared::HeightTileKey const key,
+        shared::HeightTile::Heights const& heights
+    )
+    {
+        EXPECT_EQ(client.m_height_tile_residency.accept(key, client.m_height_tile_residency.currentRevision(),
+            2U, heights).replacement, HeightTileReplacement::Published);
+        return client.m_height_tile_residency.resident(key);
+    }
+
+    static std::array<uint64_t, 4> neighborProfileTokens(
+        PlayerClient const& client,
+        shared::HeightTileKey const key
+    )
+    {
+        return client.previewMeshNeighborProfileTokens(key);
+    }
+
+    static std::array<uint64_t, 4> cachedNeighborProfileTokens(
+        PlayerClient const& client,
+        shared::HeightTileKey const key
+    )
+    {
+        return client.m_preview_tile_elevations.at(key).neighbor_profile_tokens;
+    }
+
+    static std::array<shared::HeightTileSurfaceDetail, 4> neighborDetails(
+        PlayerClient const& client,
+        shared::HeightTileKey const key
+    )
+    {
+        return client.previewMeshNeighborDetails(key);
+    }
+
+    static shared::HeightTileSurfaceEdgeProfile installedProfile(
+        PlayerClient const& client,
+        shared::HeightTileKey const key,
+        uint32_t const edge
+    )
+    {
+        return client.m_visible_preview_mesh_edge_profiles.at(key).edges[edge];
+    }
+
+    static bool drainLodNeighborhood(PlayerClient& client, shared::HeightTileKey const key)
+    {
+        for (shared::HeightTileKey const tile_key : {
+                 key,
+                 shared::normalizeHeightTileKey({ key.x - 1, key.y }),
+                 shared::normalizeHeightTileKey({ key.x + 1, key.y }),
+                 shared::normalizeHeightTileKey({ key.x, key.y - 1 }),
+                 shared::normalizeHeightTileKey({ key.x, key.y + 1 }),
+             }) {
+            client.queuePreviewMesh(tile_key);
+        }
+        auto const deadline = std::chrono::steady_clock::now() + std::chrono::seconds{ 2 };
+        while (std::chrono::steady_clock::now() < deadline) {
+            client.processPendingPreviewMeshes(16U, deadline);
+            if (client.m_pending_preview_meshes.empty() && client.m_preview_mesh_jobs.empty()
+                && client.m_preview_mesh_dirty_jobs.empty()) {
+                return true;
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds{ 1 });
+        }
+        return false;
+    }
+
+    static bool prepareCompletedLodJob(PlayerClient& client, shared::HeightTileKey const key)
+    {
+        for (shared::HeightTileKey const tile_key : {
+                 key,
+                 shared::normalizeHeightTileKey({ key.x - 1, key.y }),
+                 shared::normalizeHeightTileKey({ key.x + 1, key.y }),
+                 shared::normalizeHeightTileKey({ key.x, key.y - 1 }),
+                 shared::normalizeHeightTileKey({ key.x, key.y + 1 }),
+             }) {
+            static_cast<void>(lodDetail(client, tile_key));
+        }
+        client.m_pending_preview_meshes.clear();
+        client.m_capture.emplace();
+        client.m_benchmark.emplace();
+        client.queuePreviewMesh(key);
+        auto const deadline = std::chrono::steady_clock::now() + std::chrono::seconds{ 2 };
+        client.processPendingPreviewMeshes(0U, deadline);
+        while (std::chrono::steady_clock::now() < deadline) {
+            if (client.benchmarkFullTerrainStreamingInfo().worker_result_count == 1U) {
+                return true;
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds{ 1 });
+        }
+        return false;
+    }
+
+    static void processOneLodResult(PlayerClient& client)
+    {
+        client.processPendingPreviewMeshes(1U, std::chrono::steady_clock::now() + std::chrono::seconds{ 2 });
+    }
+
+    static uint64_t meshAdmissionCount(PlayerClient const& client)
+    {
+        return client.m_benchmark_accepted_near_admissions + client.m_benchmark_accepted_far_admissions;
+    }
+
+    static uint64_t meshResultCount(PlayerClient const& client)
+    {
+        return client.m_capture_mesh_results;
+    }
+
+    static bool currentMeshVisible(PlayerClient const& client, shared::HeightTileKey const key)
+    {
+        auto const visible = client.m_visible_preview_mesh_tiles.find(key);
+        return visible != client.m_visible_preview_mesh_tiles.end()
+            && visible->second == client.m_height_tile_residency.resident(key);
+    }
+
+    static shared::HeightTileSurfaceDetail installedDetail(PlayerClient const& client, shared::HeightTileKey const key)
+    {
+        return client.m_visible_preview_mesh_bases.at(key).detail;
     }
 
     static std::optional<shared::HeightTileSurfaceDetail> selectedLodDetail(
@@ -202,7 +323,7 @@ struct PlayerClientTestAccess final {
             && client.m_preview_mesh_jobs.empty()
             && client.m_preview_mesh_dirty_jobs.empty()
             && client.m_visible_preview_mesh_tiles.empty()
-            && client.m_visible_preview_mesh_elevation_ranges.empty()
+            && client.m_visible_preview_mesh_edge_profiles.empty()
             && client.m_visible_preview_meshes.empty();
     }
 
@@ -320,4 +441,138 @@ TEST(PlayerClientResetTest, InstalledNeighborRemovalInvalidatesRetainedProfileBo
     );
     EXPECT_EQ(client::PlayerClientTestAccess::lodDetail(player_client, KEY), shared::HeightTileSurfaceDetail::Coarse2);
     EXPECT_EQ(client::PlayerClientTestAccess::rendererMeshCount(player_client), 0U);
+}
+
+TEST(PlayerClientResetTest, NeighborDetailSnapshotDoesNotSelectOrMutateUnknownNeighbors)
+{
+    static constexpr shared::HeightTileKey KEY{ 200, 0 };
+    static constexpr shared::HeightTileKey EAST{ 201, 0 };
+    static constexpr client::HeightTileRevision REVISION{ 1U, 1U };
+    static constexpr uint16_t HEIGHT = 1'024U;
+    static constexpr std::array<shared::HeightTileSurfaceDetail, 4> FINE_DETAILS{
+        shared::HeightTileSurfaceDetail::Fine, shared::HeightTileSurfaceDetail::Fine,
+        shared::HeightTileSurfaceDetail::Fine, shared::HeightTileSurfaceDetail::Fine,
+    };
+    client::PlayerClient player_client{ shared::WorldMode::Flight };
+    static_cast<void>(client::PlayerClientTestAccess::seedLodNeighborhood(player_client, KEY, REVISION, HEIGHT));
+    EXPECT_EQ(client::PlayerClientTestAccess::selectedLodDetail(player_client, EAST), std::nullopt);
+    EXPECT_EQ(client::PlayerClientTestAccess::neighborDetails(player_client, KEY), FINE_DETAILS);
+    EXPECT_EQ(client::PlayerClientTestAccess::selectedLodDetail(player_client, EAST), std::nullopt);
+}
+
+TEST(PlayerClientResetTest, InstalledTopIdentityIsStableUntilAChangedProfileSuccessfullyPublishes)
+{
+    static constexpr shared::HeightTileKey KEY{ 200, 0 };
+    static constexpr shared::HeightTileKey EAST{ 201, 0 };
+    static constexpr client::HeightTileRevision REVISION{ 1U, 1U };
+    static constexpr uint16_t HEIGHT = 8U;
+    static constexpr uint32_t SIDE = shared::HeightTile::SIDE_LENGTH;
+    client::PlayerClient player_client{ shared::WorldMode::Flight };
+    static_cast<void>(client::PlayerClientTestAccess::seedLodNeighborhood(player_client, KEY, REVISION, HEIGHT));
+    shared::HeightTile::Heights heights;
+    for (uint32_t y = 0U; y < SIDE; ++y) {
+        uint16_t const height = y < 3U ? 2U : y == 3U ? 6U : y < 14U ? 10U : 16U;
+        for (uint32_t x = 0U; x < SIDE; ++x) {
+            heights[y * SIDE + x] = height;
+        }
+    }
+    auto const east = client::PlayerClientTestAccess::replaceLodHeights(player_client, EAST, heights);
+    auto const deadline = std::chrono::steady_clock::now() + std::chrono::seconds{ 2 };
+    client::PlayerClientTestAccess::publishLodTile(player_client, east, deadline);
+    auto const fine_profile = client::PlayerClientTestAccess::installedProfile(player_client, EAST, 0U);
+    auto const first_tokens = client::PlayerClientTestAccess::neighborProfileTokens(player_client, KEY);
+    ASSERT_NE(first_tokens[1U], 0U);
+    client::PlayerClientTestAccess::publishLodTile(player_client, east, deadline);
+    EXPECT_EQ(client::PlayerClientTestAccess::neighborProfileTokens(player_client, KEY), first_tokens);
+    client::PlayerClientTestAccess::publishLodTile(player_client, east,
+        std::chrono::steady_clock::now() - std::chrono::seconds{ 1 }, shared::HeightTileSurfaceDetail::Coarse2);
+    EXPECT_EQ(client::PlayerClientTestAccess::neighborProfileTokens(player_client, KEY), first_tokens);
+    EXPECT_EQ(client::PlayerClientTestAccess::installedProfile(player_client, EAST, 0U), fine_profile);
+    client::PlayerClientTestAccess::publishLodTile(player_client, east, deadline,
+        shared::HeightTileSurfaceDetail::Coarse2);
+    auto const coarse_profile = client::PlayerClientTestAccess::installedProfile(player_client, EAST, 0U);
+    auto const changed_tokens = client::PlayerClientTestAccess::neighborProfileTokens(player_client, KEY);
+    EXPECT_EQ(coarse_profile.elevation, fine_profile.elevation);
+    EXPECT_NE(coarse_profile.top, fine_profile.top);
+    EXPECT_NE(changed_tokens[1U], first_tokens[1U]);
+    EXPECT_EQ(client::PlayerClientTestAccess::cachedNeighborProfileTokens(player_client, KEY), changed_tokens);
+    client::PlayerClientTestAccess::publishLodTile(player_client, east, deadline,
+        shared::HeightTileSurfaceDetail::Coarse2);
+    EXPECT_EQ(client::PlayerClientTestAccess::neighborProfileTokens(player_client, KEY), changed_tokens);
+    client::PlayerClientTestAccess::removeLodTile(player_client, EAST);
+    EXPECT_EQ(client::PlayerClientTestAccess::neighborProfileTokens(player_client, KEY)[1U], 0U);
+}
+
+TEST(PlayerClientResetTest, StationaryNeighborhoodQueuesDrainAfterStableTopRepublishing)
+{
+    static constexpr shared::HeightTileKey KEY{ 200, 0 };
+    static constexpr client::HeightTileRevision REVISION{ 1U, 1U };
+    static constexpr uint16_t HEIGHT = 1'024U;
+    static constexpr uint32_t TILES = 5U;
+    client::PlayerClient player_client{ shared::WorldMode::Flight };
+    static_cast<void>(client::PlayerClientTestAccess::seedLodNeighborhood(player_client, KEY, REVISION, HEIGHT));
+    ASSERT_EQ(client::PlayerClientTestAccess::lodDetail(player_client, KEY), shared::HeightTileSurfaceDetail::Coarse2);
+    ASSERT_TRUE(client::PlayerClientTestAccess::drainLodNeighborhood(player_client, KEY));
+    EXPECT_EQ(client::PlayerClientTestAccess::rendererMeshCount(player_client), TILES);
+    auto const tokens = client::PlayerClientTestAccess::neighborProfileTokens(player_client, KEY);
+    ASSERT_TRUE(client::PlayerClientTestAccess::drainLodNeighborhood(player_client, KEY));
+    EXPECT_EQ(client::PlayerClientTestAccess::neighborProfileTokens(player_client, KEY), tokens);
+    EXPECT_EQ(client::PlayerClientTestAccess::rendererMeshCount(player_client), TILES);
+}
+
+TEST(PlayerClientResetTest, ProfileOnlyPublicationReusesCurrentCompletedGeometry)
+{
+    static constexpr shared::HeightTileKey KEY{ 200, 0 };
+    static constexpr client::HeightTileRevision REVISION{ 1U, 1U };
+    static constexpr uint16_t HEIGHT = 1'024U;
+    client::PlayerClient player_client{ shared::WorldMode::Flight };
+    auto const east = client::PlayerClientTestAccess::seedLodNeighborhood(player_client, KEY, REVISION, HEIGHT);
+    ASSERT_TRUE(client::PlayerClientTestAccess::prepareCompletedLodJob(player_client, KEY));
+    ASSERT_EQ(client::PlayerClientTestAccess::meshAdmissionCount(player_client), 1U);
+    ASSERT_EQ(client::PlayerClientTestAccess::selectedLodDetail(player_client, KEY),
+        shared::HeightTileSurfaceDetail::Coarse2);
+    auto const previous_tokens = client::PlayerClientTestAccess::neighborProfileTokens(player_client, KEY);
+
+    client::PlayerClientTestAccess::publishLodTile(
+        player_client, east, std::chrono::steady_clock::now() + std::chrono::seconds{ 2 }
+    );
+    EXPECT_NE(client::PlayerClientTestAccess::neighborProfileTokens(player_client, KEY), previous_tokens);
+    ASSERT_EQ(client::PlayerClientTestAccess::selectedLodDetail(player_client, KEY),
+        shared::HeightTileSurfaceDetail::Coarse2);
+    client::PlayerClientTestAccess::processOneLodResult(player_client);
+
+    EXPECT_EQ(client::PlayerClientTestAccess::meshResultCount(player_client), 1U);
+    ASSERT_TRUE(client::PlayerClientTestAccess::currentMeshVisible(player_client, KEY));
+    EXPECT_EQ(client::PlayerClientTestAccess::installedDetail(player_client, KEY),
+        shared::HeightTileSurfaceDetail::Coarse2);
+    EXPECT_EQ(client::PlayerClientTestAccess::meshAdmissionCount(player_client), 1U);
+    EXPECT_EQ(player_client.benchmarkFullTerrainStreamingInfo().worker_outstanding_count, 0U);
+}
+
+TEST(PlayerClientResetTest, ChangedInstalledProfileRejectsUnsafeCompletedCoarseGeometry)
+{
+    static constexpr shared::HeightTileKey KEY{ 200, 0 };
+    static constexpr client::HeightTileRevision FIRST{ 1U, 1U };
+    static constexpr client::HeightTileRevision NEXT{ 2U, 2U };
+    client::PlayerClient player_client{ shared::WorldMode::Flight };
+    auto const old_east = client::PlayerClientTestAccess::seedLodNeighborhood(player_client, KEY, FIRST, 512U);
+    static_cast<void>(client::PlayerClientTestAccess::seedLodNeighborhood(player_client, KEY, NEXT, 1'024U));
+    ASSERT_TRUE(client::PlayerClientTestAccess::prepareCompletedLodJob(player_client, KEY));
+    ASSERT_EQ(client::PlayerClientTestAccess::meshAdmissionCount(player_client), 1U);
+    ASSERT_EQ(client::PlayerClientTestAccess::selectedLodDetail(player_client, KEY),
+        shared::HeightTileSurfaceDetail::Coarse2);
+
+    client::PlayerClientTestAccess::publishLodTile(
+        player_client, old_east, std::chrono::steady_clock::now() + std::chrono::seconds{ 2 }
+    );
+    ASSERT_EQ(client::PlayerClientTestAccess::selectedLodDetail(player_client, KEY),
+        shared::HeightTileSurfaceDetail::Fine);
+    client::PlayerClientTestAccess::processOneLodResult(player_client);
+
+    EXPECT_EQ(client::PlayerClientTestAccess::meshResultCount(player_client), 1U);
+    EXPECT_FALSE(client::PlayerClientTestAccess::currentMeshVisible(player_client, KEY));
+    EXPECT_GT(client::PlayerClientTestAccess::meshAdmissionCount(player_client), 1U);
+    ASSERT_TRUE(client::PlayerClientTestAccess::waitForVisibleMesh(player_client, KEY));
+    EXPECT_EQ(client::PlayerClientTestAccess::installedDetail(player_client, KEY),
+        shared::HeightTileSurfaceDetail::Fine);
 }

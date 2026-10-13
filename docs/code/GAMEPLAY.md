@@ -109,13 +109,13 @@ CoreLang 0.1.2 supplies wave parameters; C++ computes heights and stone. Six
 128-block layers; spawn uses the first wave. HUD speedups: 2x–500x.
 
 LOD uses wrapped player distance, vertical FOV, and framebuffer extent to bound
-replacement faces to 2 px²; terrain/collision stay exact. Boundary strips preserve
-membership; 4×4 buckets certify detail. Bounds enclose complete raw neighbors and
-installed edge profiles, retaining revisions/detail. Accepted base changes
-recertify neighbors; failed uploads retain inputs. Revision/projection changes
-invalidate certificates. Jobs recheck revisions and target detail before
-publication. Meshes refine asynchronously after movement/projection/profile
-changes. Play/capture share 256 reranks and 16 jobs per call. A 225-key near
+replacement faces to 2 px²; terrain/collision stay exact. Per-detail certificates
+bound candidate tops/walls and installed neighbor TOP profiles; raw-height
+bounds enclose distance. Four-by-four buckets select nonmonotone per-detail areas.
+Changes recertify neighbors; failed uploads retain inputs. Jobs recheck raw
+revisions, neighbor detail and certification. Profile-only changes reuse completed
+geometry only while safe. Meshes refine after movement/projection/profile changes. Play/capture share
+256 reranks and 16 jobs per call. A 225-key near
 probe tickets missing resident meshes before distant work; erased/requeued
 tickets cannot revive stale entries. Intake admits 128 changes per call;
 bounded per-key obsolete removal never waits for global coverage.

@@ -275,9 +275,16 @@ private:
         HeightTileRevision tile_revision{};
         uint64_t tile_token = 0U;
         std::array<uint64_t, 4> neighbor_tokens{};
+        std::array<shared::HeightTileSurfaceDetail, 4> neighbor_details{};
+        std::array<uint64_t, 4> neighbor_profile_tokens{};
         std::array<std::optional<shared::HeightTileSurfaceElevationRange>, 4> neighbor_mesh_ranges{};
         uint16_t minimum = 0U;
         uint16_t maximum = 0U;
+        shared::HeightTileSurfaceFaceAreas face_areas;
+    };
+    struct PreviewMeshEdgeProfiles final {
+        std::array<shared::HeightTileSurfaceEdgeProfile, 4> edges{};
+        std::array<uint64_t, 4> tokens{};
     };
     shared::Direction input() override;
     void servicePlatformEvents() override;
@@ -299,7 +306,8 @@ private:
     void refreshPreviewMeshNeighborElevations(shared::HeightTileKey key);
     [[nodiscard]] std::array<shared::HeightTileSurfaceDetail, 4> previewMeshNeighborDetails(
         shared::HeightTileKey key
-    );
+    ) const;
+    [[nodiscard]] std::array<uint64_t, 4> previewMeshNeighborProfileTokens(shared::HeightTileKey key) const;
     [[nodiscard]]
     double maximumUnobstructedCameraDistance(
         PlayerPresentationPosition const& local_position
@@ -376,9 +384,9 @@ private:
         m_visible_preview_mesh_bases;
     std::unordered_map<
         shared::HeightTileKey,
-        std::array<shared::HeightTileSurfaceElevationRange, 4>,
+        PreviewMeshEdgeProfiles,
         PlayerHeightTileKeyHash
-    > m_visible_preview_mesh_elevation_ranges;
+    > m_visible_preview_mesh_edge_profiles;
     std::unordered_map<shared::HeightTileKey, PreviewMeshSeamBridgeSet, PlayerHeightTileKeyHash>
         m_visible_preview_mesh_seam_bridges;
     PlayerPreviewLod m_preview_lod;
@@ -390,6 +398,7 @@ private:
     uint64_t m_benchmark_accepted_far_admissions = 0U;
     uint64_t m_benchmark_far_admissions_while_near_pending = 0U;
     uint64_t m_preview_mesh_epoch = 1U;
+    uint64_t m_preview_edge_profile_token = 0U;
     bool m_capture_requested = false;
     bool m_capture_label_initialized = false;
     std::optional<std::chrono::steady_clock::time_point> m_capture_started_at;
