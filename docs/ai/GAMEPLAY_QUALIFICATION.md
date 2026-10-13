@@ -14,14 +14,23 @@ Radial bands retain the complete disk counts. Raw
 stationary frames include every loop attempt and failed presentation request;
 warmup frames are sampled once per second and stay outside the cadence sample.
 
-Snapshot, minor and major promotion require the `full-radius-gameplay` local
-proof in [the check registry](../../script/ai_checks.json), including proof-only
-publisher checks. Both Mac and Windows must complete the Release workload.
+Snapshot, minor and major promotion require one full-radius gameplay local
+proof check at each level in [the check registry](../../script/ai_checks.json),
+including proof-only publisher checks. Both Mac and Windows must complete the Release workload.
 The verifier recomputes loop and server timing summaries, stationary attempt
 totals, actual-duration request rates, and intervals between consecutive
 successful request completions from the raw JSON. Altered bytes, missing or
 stale source/build/dependency identity, reduced radius, missing barriers,
 pending queues, timeout, fatal benchmark errors or inconsistent summaries block release.
+
+`--cadence-policy snapshot` preserves the [S7 acceptance boundary](tasks/MC-AI-0038.md):
+Mac 120 Hz cadence is diagnostic. `--cadence-policy strict` requires Mac cadence
+for minor and major qualification, and is the default when the option is omitted.
+Windows cadence remains required under both policies. Policy belongs to the
+verifier invocation; capture and aggregate receipts cannot choose or preserve a
+weaker policy. Capture, merge and offline verification accept the same option.
+Every invocation still requires complete raw phases and at least two successful
+completions per measured phase so its finite, positive intervals can be computed.
 
 Coverage completion and the request-cadence proxy are separate predicates.
 Mac uses normal FIFO and a nearest-refresh-slot proxy for its 120 Hz target:
@@ -45,7 +54,10 @@ Every successful-completion interval is half-open,
 `[previous_successful_completion, current_successful_completion)`. Attempts
 retain the native report's attribution to the phase in which the loop starts,
 including its closing transition attempt; reported offsets show these bounds.
-Each window must contain at least 500 intervals. Intervals across skipped
+Each window has a cadence target of at least 500 intervals. This sample-count
+rule implies about 83.5 Hz over a six-second movement window, so it is also a
+diagnostic for Mac snapshots and a requirement under strict policy and for
+Windows. Intervals across skipped
 attempts stay in the calculation; initial phase work and closing unsuccessful
 attempts remain in the actual-phase rate denominator. Long freezes cannot be
 discarded as percentile outliers.
@@ -58,16 +70,21 @@ must include all raw events, while warmup raw sampling prevents full aggregate
 recomputation. The native benchmark's failure result still blocks fatal
 renderer, validation or device errors.
 
-The cadence thresholds reflect the owner's gameplay targets through request
-completions. Physical display cadence remains unavailable; neither `passed: true`
-nor this proxy
-claims measured scanout, replaces frame inspection, or replaces the user's
+The verifier returns `request_cadence_status`, `request_cadence_required`,
+`request_cadence_reasons` and the measured proxy for each platform. A snapshot
+gate can pass with Mac `request_cadence_status: "failed"`; that failed diagnostic
+is not a passing performance result. Strict verification recomputes the same raw
+evidence and rejects it when a target is missed.
+
+The cadence thresholds represent gameplay targets through request completions.
+Physical display cadence remains unavailable; neither a passing gate nor this
+proxy claims measured scanout, replaces frame inspection, or replaces the user's
 separate Windows runtime acceptance. Analyzer qualification remains independent.
 
 Capture fresh evidence after an up-to-date production Release build:
 
 ```sh
-python3 script/ci/verify_gameplay_gate.py --root . --record macos \
+python3 script/ci/verify_gameplay_gate.py --root . --record macos --cadence-policy snapshot \
   --executable build/release/mc_main --receipt /absolute/path/macos-gameplay.json
 # On Windows, use --record windows and build/release/mc_main.exe.
 ```
@@ -82,13 +99,15 @@ report until promotion consumes them. To move Windows evidence to the verifying
 host, copy its receipt, raw report and exact `mc_main.exe` bytes together.
 
 ```sh
-python3 script/ci/verify_gameplay_gate.py --root . \
+python3 script/ci/verify_gameplay_gate.py --root . --cadence-policy snapshot \
   --merge /absolute/path/macos-gameplay.json /absolute/path/windows-gameplay.json \
   --receipt build/ai-checks/gameplay-aggregate.json
-python3 script/ci/verify_gameplay_gate.py --root . \
+python3 script/ci/verify_gameplay_gate.py --root . --cadence-policy snapshot \
   --receipt build/ai-checks/gameplay-aggregate.json --candidate-commit <full-source-SHA>
 ```
 
+These commands use the S7 snapshot policy; omit the policy option or use
+`--cadence-policy strict` for minor and major qualification.
 Merge checks the preserved file hashes before resolving transported paths.
 Release checks always execute the offline verifier (`proof: true`, `reuse: false`);
 an earlier analysis or renderer-smoke pass cannot supply gameplay evidence.

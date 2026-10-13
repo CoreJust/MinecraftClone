@@ -28,6 +28,7 @@ SOURCE_INPUTS = ("src/**", "assets/**", "cmake/**", "CMakeLists.txt", "CMakePres
 PHASES = ("initial-full-radius-warmup", "baseline-stationary", "speed-200-movement",
           "full-radius-recovery-warmup", "recovered-stationary")
 TARGET_HZ = {"macos": 120, "windows": 500}
+CADENCE_POLICIES = ("snapshot", "strict")
 QUEUE_FIELDS = ("pending_delivery_batches", "pending_residency_changes", "pending_mesh_queue",
                 "active_mesh_jobs", "dirty_mesh_jobs", "worker_results", "worker_outstanding", "pending_removals")
 
@@ -110,7 +111,9 @@ def verify_barrier(barrier: dict[str, Any], phase: str, elapsed: int) -> None:
                 and band["nonresident"] == 0 and band["stale_or_missing_mesh"] == 0, f"{phase}: radial coverage mismatch")
 
 
-def verify_report(report: dict[str, Any], platform: str) -> dict[str, Any]:
+def verify_report(report: dict[str, Any], platform: str, cadence_policy: str = "strict") -> dict[str, Any]:
+    require(cadence_policy in CADENCE_POLICIES, "invalid cadence policy")
+    cadence_required = platform == "windows" or cadence_policy == "strict"
     require(report["schema_version"] == "mc.runtime-evidence.v1" and report["mode"] == "benchmark-game"
             and report["passed"] is True and report["failure"] == "", "runtime workload did not pass")
     timing = report["timing"]
@@ -189,31 +192,38 @@ def verify_report(report: dict[str, Any], platform: str) -> dict[str, Any]:
                 and 0 <= selected[0]["started_offset_ns"] - preceding_ms * 1000000 < elapsed * 1000000
                 and span <= (elapsed + 1) * 1000000 and sum(durations) <= (elapsed + 1) * 1000000,
                 f"{prefix}: incomplete stationary raw duration")
-    proxy = {}
+    proxy, cadence_failures = {}, []
+
+    def check_cadence(condition: bool, message: str) -> None:
+        if not condition:
+            cadence_failures.append(message)
+
     for phase, elapsed_key in ((PHASES[1], "baseline_stationary_elapsed_ms"), (PHASES[2], "movement_elapsed_ms"),
                                (PHASES[4], "recovered_stationary_elapsed_ms")):
         selected = [frame for frame in frames if frame["phase"] == phase]
         completions = [frame["started_offset_ns"] + frame["loop_duration_ns"] for frame in selected if frame["presentation_succeeded"]]
         intervals = [right - left for left, right in zip(completions, completions[1:])]
+        require(intervals and all(interval > 0 for interval in intervals), f"{phase}: request cadence is not computable from raw completions")
         rate = len(completions) * 1000 / full[elapsed_key]
+        require(math.isfinite(rate), f"{phase}: request cadence rate is not finite")
         minimum_rate = TARGET_HZ[platform] * (0.998 if platform == "macos" else 1)
-        require(rate >= minimum_rate, f"{phase}: successful-request rate {rate:.6f}Hz is below {minimum_rate:g}Hz")
-        require(len(intervals) >= 500, f"{phase}: insufficient cadence samples")
+        check_cadence(rate >= minimum_rate, f"{phase}: successful-request rate {rate:.6f}Hz is below {minimum_rate:g}Hz")
+        check_cadence(len(intervals) >= 500, f"{phase}: insufficient cadence samples ({len(intervals)} intervals, requires 500)")
         summary, limit = timing_summary(intervals), math.ceil(1000000000 / TARGET_HZ[platform])
         interval_ns = sum(intervals)
         if platform == "macos":
             slots = [max(1, round(interval * 120 / 1000000000)) for interval in intervals]
             lost, total = sum(slot - 1 for slot in slots), sum(slots)
-            require(lost * 1000 <= total * 2, f"{phase}: lost FIFO refresh-slot share exceeds 0.2% ({lost}/{total})")
-            require(max(1, round(summary["p50"] * 120 / 1000000000)) == 1
+            check_cadence(lost * 1000 <= total * 2, f"{phase}: lost FIFO refresh-slot share exceeds 0.2% ({lost}/{total})")
+            check_cadence(max(1, round(summary["p50"] * 120 / 1000000000)) == 1
                     and interval_ns * 120 * 998 <= len(intervals) * 1000000000 * 1000,
                     f"{phase}: FIFO median/mean cadence is below the 99.8% rate floor")
             cadence = {"contract": "fifo-nearest-120hz-request-slots", "lost_slots": lost, "total_slots": total,
                        "lost_slot_share": lost / total}
         else:
-            require(summary["p99_8"] <= limit, f"{phase}: request-cadence proxy fails 500Hz at 99.8% (p99.8={summary['p99_8']}ns, limit={limit}ns)")
+            check_cadence(summary["p99_8"] <= limit, f"{phase}: request-cadence proxy fails 500Hz at 99.8% (p99.8={summary['p99_8']}ns, limit={limit}ns)")
             excess_ns = sum(max(0, interval - limit) for interval in intervals)
-            require(excess_ns * 1000 <= interval_ns * 2, f"{phase}: excess-time share exceeds 0.2% ({excess_ns}/{interval_ns}ns)")
+            check_cadence(excess_ns * 1000 <= interval_ns * 2, f"{phase}: excess-time share exceeds 0.2% ({excess_ns}/{interval_ns}ns)")
             cadence = {"contract": "immediate-raw-request-completions", "excess_time_share": excess_ns / interval_ns}
         proxy[phase] = {"target_hz": TARGET_HZ[platform], "minimum_rate_hz": minimum_rate, "cadence": cadence,
                         "intervals_ns": summary, "attempts": len(selected),
@@ -224,11 +234,14 @@ def verify_report(report: dict[str, Any], platform: str) -> dict[str, Any]:
                         "interval_scope": "half-open [previous_successful_completion, current_successful_completion)"}
     ticks = [integer(value, "server tick", 1) for value in game["raw_server_tick_durations_ns"]]
     require(ticks and game["server_tick_timings_ns"] == timing_summary(ticks), "raw server timing summary mismatch")
-    return {"coverage": "passed", "request_cadence_proxy": proxy, "total_unsuccessful_attempts": game["failed_present_requests"],
+    require(not cadence_required or not cadence_failures, "; ".join(cadence_failures))
+    return {"coverage": "passed", "request_cadence_status": "failed" if cadence_failures else "passed",
+            "request_cadence_required": cadence_required, "request_cadence_reasons": cadence_failures,
+            "request_cadence_proxy": proxy, "total_unsuccessful_attempts": game["failed_present_requests"],
             "raw_unsuccessful_attempts": raw_unsuccessful, "physical_display_cadence": "unavailable"}
 
 
-def verify_receipt(root: Path, receipt: Path) -> dict[str, Any]:
+def verify_receipt(root: Path, receipt: Path, cadence_policy: str = "strict") -> dict[str, Any]:
     aggregate = read_json(receipt)
     require(aggregate["schema_version"] == SCHEMA and isinstance(aggregate["rows"], list), "invalid gameplay proof schema")
     rows = aggregate["rows"]
@@ -251,7 +264,7 @@ def verify_receipt(root: Path, receipt: Path) -> dict[str, Any]:
         require(integer(row["exit_code"], "exit_code") == 0 and row["timed_out"] is False and row["environment"] == {}, "failed or diagnostic gameplay invocation")
         require(executable.name == ("mc_main.exe" if row["platform"] == "windows" else "mc_main"), "wrong gameplay executable")
         raw = read_json(report)
-        results[row["platform"]] = verify_report(raw, row["platform"])
+        results[row["platform"]] = verify_report(raw, row["platform"], cadence_policy)
         require(raw["game_benchmark"]["full_radius_terrain"]["warmup_timeout_ms"] == row["warmup_seconds"] * 1000,
                 "capture command warmup disagrees with raw report")
     return results
@@ -286,7 +299,7 @@ def build_identity(root: Path, build_root: Path, executable: Path) -> dict[str, 
             "dependency_sha256": hashlib.sha256(_MATRIX._canonical_json(dependencies)).hexdigest()}
 
 
-def record(root: Path, receipt: Path, platform: str, executable: Path, warmup: int) -> None:
+def record(root: Path, receipt: Path, platform: str, executable: Path, warmup: int, cadence_policy: str = "strict") -> None:
     require(warmup == 180, "qualification capture requires --warmup-seconds 180; other bounds are diagnostic only")
     require(platform == ("windows" if sys.platform == "win32" else "macos" if sys.platform == "darwin" else "unsupported"), "capture must run on the named local host")
     diagnostics = {key: value for key, value in os.environ.items() if key.startswith("MC_DIAGNOSTIC_")}
@@ -320,10 +333,10 @@ def record(root: Path, receipt: Path, platform: str, executable: Path, warmup: i
     receipt.write_text(json.dumps({"schema_version": SCHEMA, "rows": [row]}, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     require(process.returncode == 0 and not timed_out and not capture_error,
             "gameplay capture failed; retained failure receipt" + (": " + capture_error if capture_error else ""))
-    print(json.dumps(verify_report(read_json(report), platform), sort_keys=True))
+    print(json.dumps(verify_report(read_json(report), platform, cadence_policy), sort_keys=True))
 
 
-def merge_receipts(root: Path, inputs: list[Path], output: Path) -> None:
+def merge_receipts(root: Path, inputs: list[Path], output: Path, cadence_policy: str = "strict") -> dict[str, Any]:
     require(not output.exists(), "aggregate receipt already exists; select a fresh output path")
     rows = []
     for target in inputs:
@@ -338,7 +351,7 @@ def merge_receipts(root: Path, inputs: list[Path], output: Path) -> None:
             descriptor["path"] = str(checked_file(descriptor, target.parent).resolve())
         rows.append(row)
     output.write_text(json.dumps({"schema_version": SCHEMA, "rows": rows}, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    verify_receipt(root, output)
+    return verify_receipt(root, output, cadence_policy)
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -350,6 +363,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--merge", nargs=2, type=Path, metavar=("MACOS_RECEIPT", "WINDOWS_RECEIPT"))
     parser.add_argument("--executable", type=Path)
     parser.add_argument("--warmup-seconds", type=int, default=180)
+    parser.add_argument("--cadence-policy", choices=CADENCE_POLICIES, default="strict",
+                        help="snapshot records Mac cadence diagnostically; strict requires both platform targets (default)")
     args = parser.parse_args(argv)
     try:
         root = args.root.resolve(strict=True)
@@ -363,11 +378,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         require(not (args.record and args.merge), "--record and --merge are mutually exclusive")
         if args.record:
             require(args.executable is not None, "--record requires --executable")
-            record(root, args.receipt.resolve(), args.record, args.executable.resolve(strict=True), args.warmup_seconds)
-        elif args.merge:
-            merge_receipts(root, [target.resolve(strict=True) for target in args.merge], args.receipt.resolve())
+            record(root, args.receipt.resolve(), args.record, args.executable.resolve(strict=True), args.warmup_seconds, args.cadence_policy)
         else:
-            print(json.dumps({"status": "passed", "platforms": verify_receipt(root, args.receipt.resolve(strict=True))}, sort_keys=True))
+            results = (merge_receipts(root, [target.resolve(strict=True) for target in args.merge], args.receipt.resolve(), args.cadence_policy)
+                       if args.merge else verify_receipt(root, args.receipt.resolve(strict=True), args.cadence_policy))
+            print(json.dumps({"status": "passed", "cadence_policy": args.cadence_policy,
+                              "platforms": results}, sort_keys=True))
         return 0
     except (OSError, ValueError, KeyError, TypeError, IndexError, subprocess.SubprocessError, _MATRIX.MatrixError) as error:
         print(f"FAIL gameplay gate: {error}", file=sys.stderr)

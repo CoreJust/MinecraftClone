@@ -83,7 +83,7 @@ class VerifyGameplayGateTests(unittest.TestCase):
                     "full_radius_terrain": full, "raw_frames": frames, "raw_server_tick_durations_ns": [1000000, 2000000],
                     "server_tick_timings_ns": self.gate.timing_summary([1000000, 2000000])}}
 
-    def aggregate(self, root):
+    def aggregate(self, root, mac_interval_ns=None):
         for name in ("CMakeLists.txt", "CMakePresets.json", "dependencies.lock.json"):
             (root / name).write_text("fixture\n", encoding="utf-8")
         (root / "src").mkdir()
@@ -95,7 +95,7 @@ class VerifyGameplayGateTests(unittest.TestCase):
             executable = directory / ("mc_main.exe" if platform == "windows" else "mc_main")
             executable.write_bytes(b"fixture executable")
             report = directory / "report.json"
-            report.write_text(json.dumps(self.report(platform)), encoding="utf-8")
+            report.write_text(json.dumps(self.report(platform, mac_interval_ns if platform == "macos" else None)), encoding="utf-8")
             executable_identity = self.gate.file_identity(executable)
             rows.append({"platform": platform, "proof_origin": "local", "source_candidate": CANDIDATE,
                          "source_input_sha256": digest, "build": {"configuration": "Release", "source_input_sha256": digest,
@@ -141,6 +141,66 @@ class VerifyGameplayGateTests(unittest.TestCase):
             verified = self.gate.verify_receipt(root, receipt)
             self.assertEqual(set(verified), {"macos", "windows"})
             self.assertEqual(verified["macos"]["physical_display_cadence"], "unavailable")
+            for platform in verified:
+                self.assertEqual(verified[platform]["request_cadence_status"], "passed")
+                self.assertTrue(verified[platform]["request_cadence_required"])
+                self.assertEqual(verified[platform]["request_cadence_reasons"], [])
+
+    def test_slow_mac_snapshot_retains_failed_cadence_and_strict_rejects_it(self):
+        report = self.report(interval_ns=10000000)
+        verified = self.gate.verify_report(report, "macos", "snapshot")
+        self.assertEqual(verified["coverage"], "passed")
+        self.assertEqual(verified["request_cadence_status"], "failed")
+        self.assertFalse(verified["request_cadence_required"])
+        self.assertEqual(verified["physical_display_cadence"], "unavailable")
+        for phase in (self.gate.PHASES[1], self.gate.PHASES[2], self.gate.PHASES[4]):
+            self.assertEqual(verified["request_cadence_proxy"][phase]["present_requests_per_second"], 100)
+            self.assertTrue(any(reason.startswith(phase + ": successful-request rate") for reason in verified["request_cadence_reasons"]))
+        with self.assertRaisesRegex(self.gate.GameplayError, "successful-request rate.*below"):
+            self.gate.verify_report(report, "macos", "strict")
+
+    def test_slow_windows_cadence_is_required_under_both_policies(self):
+        for policy in self.gate.CADENCE_POLICIES:
+            with self.subTest(policy=policy), self.assertRaisesRegex(self.gate.GameplayError, "successful-request rate.*below"):
+                self.gate.verify_report(self.report("windows", interval_ns=2500000), "windows", policy)
+            verified = self.gate.verify_report(self.report("windows"), "windows", policy)
+            self.assertTrue(verified["request_cadence_required"])
+
+    def test_short_mac_movement_cadence_sample_is_diagnostic_only_at_snapshot(self):
+        report = self.report(movement_interval_ns=15000000)
+        verified = self.gate.verify_report(report, "macos", "snapshot")
+        self.assertEqual(verified["request_cadence_status"], "failed")
+        self.assertEqual(verified["request_cadence_proxy"][self.gate.PHASES[2]]["intervals_ns"]["sample_count"], 399)
+        self.assertIn("speed-200-movement: insufficient cadence samples (399 intervals, requires 500)",
+                      verified["request_cadence_reasons"])
+        with self.assertRaisesRegex(self.gate.GameplayError, "insufficient cadence samples"):
+            self.gate.verify_report(report, "macos", "strict")
+
+    def test_raw_cadence_must_be_computable_under_both_policies(self):
+        for policy in self.gate.CADENCE_POLICIES:
+            for phase in (self.gate.PHASES[1], self.gate.PHASES[2], self.gate.PHASES[4]):
+                for successes in (0, 1):
+                    with self.subTest(policy=policy, phase=phase, successes=successes):
+                        report = self.report()
+                        selected = [frame for frame in report["game_benchmark"]["raw_frames"] if frame["phase"] == phase]
+                        for index, frame in enumerate(selected):
+                            frame["presentation_succeeded"] = index < successes
+                        self.reconcile_raw_totals(report)
+                        with self.assertRaisesRegex(self.gate.GameplayError, "not computable from raw completions"):
+                            self.gate.verify_report(report, "macos", policy)
+
+    def test_nonfinite_or_incomplete_raw_timing_fails_both_policies(self):
+        for policy in self.gate.CADENCE_POLICIES:
+            for name in ("nonfinite", "missing phase"):
+                with self.subTest(policy=policy, mutation=name):
+                    report = self.report()
+                    frames = report["game_benchmark"]["raw_frames"]
+                    if name == "nonfinite":
+                        frames[1]["loop_duration_ns"] = float("inf")
+                    else:
+                        frames[:] = [frame for frame in frames if frame["phase"] != self.gate.PHASES[2]]
+                    with self.assertRaises(self.gate.GameplayError):
+                        self.gate.verify_report(report, "macos", policy)
 
     def test_coverage_completion_does_not_bypass_request_cadence_target(self):
         for platform, interval in (("macos", 10000000), ("windows", 2500000)):
@@ -275,23 +335,26 @@ class VerifyGameplayGateTests(unittest.TestCase):
         mutations = (("near-only", lambda report: report["game_benchmark"].update(workload="speed-200-movement-v2")),
                      ("radius72", lambda report: report["game_benchmark"]["full_radius_terrain"].update(render_distance=72)),
                      ("failed", lambda report: report.update(passed=False)),
+                     ("fatal", lambda report: report.update(failure="fatal renderer failure")),
                      ("debug", lambda report: report["game_benchmark"].update(build_mode="debug")))
-        for name, mutate in mutations:
-            with self.subTest(name=name):
-                report = self.report()
-                mutate(report)
-                with self.assertRaises(self.gate.GameplayError):
-                    self.gate.verify_report(report, "macos")
+        for policy in self.gate.CADENCE_POLICIES:
+            for name, mutate in mutations:
+                with self.subTest(name=name, policy=policy):
+                    report = self.report()
+                    mutate(report)
+                    with self.assertRaises(self.gate.GameplayError):
+                        self.gate.verify_report(report, "macos", policy)
 
     def test_each_full_radius_barrier_requires_exact_handles_and_drained_queues(self):
         for barrier_name in ("initial_barrier", "recovery_barrier"):
             for key, value in (("current_handle_mesh_visible", 205860), ("scan_performed", False), ("worker_outstanding", 1),
                                ("pending_delivery_batches", 1), ("unclassified_current_visible_mesh_detail", 1)):
-                with self.subTest(barrier=barrier_name, field=key):
-                    report = self.report()
-                    report["game_benchmark"]["full_radius_terrain"][barrier_name][key] = value
-                    with self.assertRaises(self.gate.GameplayError):
-                        self.gate.verify_report(report, "macos")
+                for policy in self.gate.CADENCE_POLICIES:
+                    with self.subTest(barrier=barrier_name, field=key, policy=policy):
+                        report = self.report()
+                        report["game_benchmark"]["full_radius_terrain"][barrier_name][key] = value
+                        with self.assertRaises(self.gate.GameplayError):
+                            self.gate.verify_report(report, "macos", policy)
 
     def test_barrier_centers_require_signed_integer_coordinates(self):
         for prefix in ("initial", "recovery"):
@@ -349,12 +412,13 @@ class VerifyGameplayGateTests(unittest.TestCase):
                      ("rate", lambda full: full.update(recovered_present_requests_per_second=1)),
                      ("duration", lambda full: full.update(baseline_stationary_elapsed_ms=9999)),
                      ("timeout", lambda full: full.update(recovery_warmup_elapsed_ms=180001)))
-        for name, mutate in mutations:
-            with self.subTest(name=name):
-                report = self.report()
-                mutate(report["game_benchmark"]["full_radius_terrain"])
-                with self.assertRaises(self.gate.GameplayError):
-                    self.gate.verify_report(report, "macos")
+        for policy in self.gate.CADENCE_POLICIES:
+            for name, mutate in mutations:
+                with self.subTest(name=name, policy=policy):
+                    report = self.report()
+                    mutate(report["game_benchmark"]["full_radius_terrain"])
+                    with self.assertRaises(self.gate.GameplayError):
+                        self.gate.verify_report(report, "macos", policy)
 
     def test_incorrect_unsuccessful_attempt_totals_are_rejected(self):
         report = self.report()
@@ -376,13 +440,16 @@ class VerifyGameplayGateTests(unittest.TestCase):
             receipt = root / "aggregate.json"
             receipt.write_text(json.dumps(self.aggregate(root)), encoding="utf-8")
             (root / "notes.md").write_text("new documentation", encoding="utf-8")
-            self.gate.verify_receipt(root, receipt)
+            for policy in self.gate.CADENCE_POLICIES:
+                self.gate.verify_receipt(root, receipt, policy)
             (root / "src/game.cpp").write_text("changed source", encoding="utf-8")
-            with self.assertRaisesRegex(self.gate.GameplayError, "stale.*source"):
-                self.gate.verify_receipt(root, receipt)
+            for policy in self.gate.CADENCE_POLICIES:
+                with self.subTest(policy=policy), self.assertRaisesRegex(self.gate.GameplayError, "stale.*source"):
+                    self.gate.verify_receipt(root, receipt, policy)
 
     def test_missing_platform_changed_raw_bytes_executable_and_build_binding_fail_closed(self):
-        for name in ("missing-platform", "raw-bytes", "executable", "build", "command-executable", "command-report"):
+        for name in ("missing-platform", "raw-bytes", "executable", "build", "command-executable", "command-report",
+                     "diagnostic-environment", "nonlocal-origin", "candidate", "dependency"):
             with self.subTest(name=name), tempfile.TemporaryDirectory() as directory:
                 root = Path(directory)
                 aggregate = self.aggregate(root)
@@ -396,12 +463,21 @@ class VerifyGameplayGateTests(unittest.TestCase):
                     aggregate["rows"][0]["command"][0] = "/different/executable"
                 elif name == "command-report":
                     aggregate["rows"][0]["command"][-1] = "/different/other-report.json"
+                elif name == "diagnostic-environment":
+                    aggregate["rows"][0]["environment"] = {"MC_DIAGNOSTIC_DISABLE_STONE": "1"}
+                elif name == "nonlocal-origin":
+                    aggregate["rows"][0]["proof_origin"] = "hosted"
+                elif name == "candidate":
+                    aggregate["rows"][0]["source_candidate"] = {"head": "invalid", "tree": "b" * 40}
+                elif name == "dependency":
+                    aggregate["rows"][0]["build"]["dependency_sha256"] = "invalid"
                 else:
                     aggregate["rows"][0]["build"]["executable_sha256"] = "0" * 64
                 receipt = root / "aggregate.json"
                 receipt.write_text(json.dumps(aggregate), encoding="utf-8")
-                with self.assertRaises(self.gate.GameplayError):
-                    self.gate.verify_receipt(root, receipt)
+                for policy in self.gate.CADENCE_POLICIES:
+                    with self.subTest(policy=policy), self.assertRaises((self.gate.GameplayError, self.gate._MATRIX.MatrixError)):
+                        self.gate.verify_receipt(root, receipt, policy)
 
     def test_absent_or_corrupt_receipt_returns_failure_without_native_run(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -415,12 +491,40 @@ class VerifyGameplayGateTests(unittest.TestCase):
 
     def test_release_registry_executes_gameplay_proof_without_receipt_reuse(self):
         checks = json.loads((REPOSITORY / "script/ai_checks.json").read_text(encoding="utf-8"))
-        check = next(item for item in checks if item["name"] == "full-radius-gameplay")
-        self.assertTrue(check["proof"])
-        self.assertFalse(check["reuse"])
-        self.assertEqual(check["when"], "release")
-        self.assertEqual(check["levels"], ["snapshot", "minor", "major"])
-        self.assertIn("script/ci/verify_gameplay_gate.py", check["command"])
+        gameplay_checks = [item for item in checks if "script/ci/verify_gameplay_gate.py" in item["command"]]
+        self.assertEqual(len(gameplay_checks), 2)
+        for level in ("snapshot", "minor", "major"):
+            with self.subTest(level=level):
+                selected = [item for item in gameplay_checks if item["enabled"] and level in item["levels"]]
+                self.assertEqual(len(selected), 1)
+                check = selected[0]
+                self.assertTrue(check["proof"])
+                self.assertFalse(check["reuse"])
+                self.assertEqual(check["when"], "release")
+                self.assertEqual(check["command"][-2:], ["--candidate-commit", "{proof-candidate-commit}"])
+                if level == "snapshot":
+                    index = check["command"].index("--cadence-policy")
+                    self.assertEqual(check["command"][index + 1], "snapshot")
+                else:
+                    self.assertNotIn("--cadence-policy", check["command"])
+
+    def test_snapshot_receipt_cannot_select_policy_or_bypass_strict_verification(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            aggregate = self.aggregate(root, mac_interval_ns=10000000)
+            aggregate["cadence_policy"] = "snapshot"
+            aggregate["rows"][0]["request_cadence_status"] = "passed"
+            aggregate["rows"][0]["request_cadence_required"] = False
+            receipt = root / "aggregate.json"
+            receipt.write_text(json.dumps(aggregate), encoding="utf-8")
+            with contextlib.redirect_stdout(io.StringIO()) as output:
+                self.assertEqual(self.gate.main(["--root", str(root), "--receipt", str(receipt), "--cadence-policy", "snapshot"]), 0)
+            verified = json.loads(output.getvalue())
+            self.assertEqual(verified["status"], "passed")
+            self.assertEqual(verified["platforms"]["macos"]["request_cadence_status"], "failed")
+            for policy_arguments in ([], ["--cadence-policy", "strict"]):
+                with self.subTest(arguments=policy_arguments), contextlib.redirect_stderr(io.StringIO()):
+                    self.assertEqual(self.gate.main(["--root", str(root), "--receipt", str(receipt), *policy_arguments]), 1)
 
     def test_candidate_commit_checks_relevant_tracked_and_untracked_source_without_native_run(self):
         for name, diff_result, untracked in (("same inputs", 0, ""), ("tracked change", 1, ""),
@@ -460,6 +564,46 @@ class VerifyGameplayGateTests(unittest.TestCase):
             self.assertEqual(identity.call_count, 2)
             self.assertEqual(captured["build"], row["build"])
             self.assertEqual(captured["report"], self.gate.file_identity(receipt.with_suffix(".raw.json")))
+
+    def test_capture_merge_and_verify_apply_the_same_invocation_policy(self):
+        for policy in self.gate.CADENCE_POLICIES:
+            with self.subTest(policy=policy), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory).resolve()
+                aggregate = self.aggregate(root)
+                mac_row, windows_row = aggregate["rows"]
+                mac_receipt, windows_receipt, merged = root / "macos.json", root / "windows.json", root / "merged.json"
+                windows_receipt.write_text(json.dumps({"schema_version": self.gate.SCHEMA, "rows": [windows_row]}), encoding="utf-8")
+
+                def launch(command, cwd):
+                    Path(command[-1]).write_text(json.dumps(self.report(interval_ns=10000000)), encoding="utf-8")
+                    process = mock.Mock(returncode=0)
+                    process.poll.return_value = 0
+                    return process
+
+                expected = 0 if policy == "snapshot" else 1
+                common = ["--root", str(root), "--cadence-policy", policy]
+                with mock.patch.object(self.gate.sys, "platform", "darwin"), mock.patch.object(self.gate.os, "environ", {}), \
+                        mock.patch.object(self.gate, "build_identity", return_value=mac_row["build"]), \
+                        mock.patch.object(self.gate._MATRIX, "candidate_identity", return_value=CANDIDATE), \
+                        mock.patch.object(self.gate.subprocess, "Popen", side_effect=launch), \
+                        contextlib.redirect_stdout(io.StringIO()) as capture_output, contextlib.redirect_stderr(io.StringIO()):
+                    self.assertEqual(self.gate.main([*common, "--record", "macos", "--receipt", str(mac_receipt),
+                                                     "--executable", mac_row["executable"]["path"]]), expected)
+                if policy == "snapshot":
+                    self.assertEqual(json.loads(capture_output.getvalue().splitlines()[-1])["request_cadence_status"], "failed")
+                captured = json.loads(mac_receipt.read_text(encoding="utf-8"))
+                self.assertNotIn("cadence_policy", captured)
+                self.assertNotIn("cadence_policy", captured["rows"][0])
+                self.assertEqual(captured["rows"][0]["command"][1:], self.gate.benchmark_arguments("macos", 180, str(mac_receipt.with_suffix(".raw.json"))))
+                for operation in (["--merge", str(mac_receipt), str(windows_receipt)], []):
+                    with contextlib.redirect_stdout(io.StringIO()) as output, contextlib.redirect_stderr(io.StringIO()):
+                        self.assertEqual(self.gate.main([*common, *operation, "--receipt", str(merged)]), expected)
+                    if policy == "snapshot":
+                        result = json.loads(output.getvalue())
+                        self.assertEqual(result["platforms"]["macos"]["request_cadence_status"], "failed")
+                        self.assertFalse(result["platforms"]["macos"]["request_cadence_required"])
+                        self.assertTrue(result["platforms"]["macos"]["request_cadence_reasons"])
+                self.assertNotIn("cadence_policy", json.loads(merged.read_text(encoding="utf-8")))
 
     def test_capture_rejects_mutation_and_preserves_failed_report(self):
         with tempfile.TemporaryDirectory() as directory:

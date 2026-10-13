@@ -20,9 +20,31 @@
     "reuse": false
   },
   {
+    "name": "full-radius-gameplay-snapshot",
+    "enabled": true,
+    "levels": ["snapshot"],
+    "command": [
+      "{python}",
+      "script/ci/verify_gameplay_gate.py",
+      "--root",
+      "{root}",
+      "--cadence-policy",
+      "snapshot",
+      "--receipt",
+      "{root}/build/ai-checks/gameplay-aggregate.json",
+      "--candidate-commit",
+      "{proof-candidate-commit}"
+    ],
+    "timeout": 60,
+    "reason": "Requires both source-bound local Release radius256 workloads and Windows cadence; Mac cadence remains an explicit S7 diagnostic, with physical scanout unavailable.",
+    "when": "release",
+    "proof": true,
+    "reuse": false
+  },
+  {
     "name": "full-radius-gameplay",
     "enabled": true,
-    "levels": ["snapshot", "minor", "major"],
+    "levels": ["minor", "major"],
     "command": [
       "{python}",
       "script/ci/verify_gameplay_gate.py",
@@ -34,7 +56,7 @@
       "{proof-candidate-commit}"
     ],
     "timeout": 60,
-    "reason": "Requires source-bound local Mac and Windows Release radius256 coverage and raw request-cadence proxy qualification; physical scanout remains unavailable.",
+    "reason": "Requires source-bound local Mac and Windows Release radius256 coverage and strict raw request-cadence targets; physical scanout remains unavailable.",
     "when": "release",
     "proof": true,
     "reuse": false
