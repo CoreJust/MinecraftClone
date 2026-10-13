@@ -12,6 +12,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <vector>
 
 using namespace std::chrono_literals;
 
@@ -95,6 +96,210 @@ TEST(GameBenchmark, KeepsDiagnosticStationaryInputsMotionlessAcrossScriptBoundar
     }
     EXPECT_EQ(acceptance::gameBenchmarkWorkloadName(GameBenchmarkWorkload::DiagnosticStationary),
         "diagnostic-stationary-v1");
+}
+
+TEST(GameBenchmark, BoundsFullRadiusWarmupTimeoutAndWatchdogBudget)
+{
+    EXPECT_EQ(*acceptance::gameBenchmarkFullRadiusWarmupTimeout(1), 1s);
+    EXPECT_EQ(*acceptance::gameBenchmarkFullRadiusWarmupTimeout(180), 180s);
+    EXPECT_EQ(*acceptance::gameBenchmarkFullRadiusWarmupTimeout(1'800), 1'800s);
+    for (int64_t const seconds : { -1, 0, 1'801 }) {
+        EXPECT_FALSE(acceptance::gameBenchmarkFullRadiusWarmupTimeout(seconds));
+    }
+
+    acceptance::GameBenchmarkOptions options{
+        .workload = acceptance::GameBenchmarkWorkload::Speed200FullRadiusRecovery,
+    };
+    EXPECT_EQ(acceptance::gameBenchmarkDeadline(options), 416s);
+    options.workload = acceptance::GameBenchmarkWorkload::Speed200Movement;
+    EXPECT_EQ(acceptance::gameBenchmarkDeadline(options), options.deadline);
+}
+
+TEST(GameBenchmark, SuccessfulRequestIntervalsIncludeFailedAttemptsAndStayWithinTheirStationaryPhase)
+{
+    static constexpr uint64_t MILLISECOND_NS = 1'000'000U;
+    std::array<acceptance::GameBenchmarkFrameSample, 6U> const frames{
+        acceptance::GameBenchmarkFrameSample{
+            .presentation_succeeded = true,
+            .started_offset_ns = 0U,
+            .loop_duration_ns = 2U * MILLISECOND_NS,
+            .terrain_phase = "baseline-stationary",
+        },
+        acceptance::GameBenchmarkFrameSample{
+            .presentation_succeeded = false,
+            .started_offset_ns = 2U * MILLISECOND_NS,
+            .loop_duration_ns = 8U * MILLISECOND_NS,
+            .terrain_phase = "baseline-stationary",
+        },
+        acceptance::GameBenchmarkFrameSample{
+            .presentation_succeeded = true,
+            .started_offset_ns = 10U * MILLISECOND_NS,
+            .loop_duration_ns = 2U * MILLISECOND_NS,
+            .terrain_phase = "baseline-stationary",
+        },
+        acceptance::GameBenchmarkFrameSample{
+            .presentation_succeeded = true,
+            .started_offset_ns = 100U * MILLISECOND_NS,
+            .loop_duration_ns = 2U * MILLISECOND_NS,
+            .terrain_phase = "speed-200-movement",
+        },
+        acceptance::GameBenchmarkFrameSample{
+            .presentation_succeeded = true,
+            .started_offset_ns = 1'000U * MILLISECOND_NS,
+            .loop_duration_ns = 2U * MILLISECOND_NS,
+            .terrain_phase = "recovered-stationary",
+        },
+        acceptance::GameBenchmarkFrameSample{
+            .presentation_succeeded = true,
+            .started_offset_ns = 1'020U * MILLISECOND_NS,
+            .loop_duration_ns = 2U * MILLISECOND_NS,
+            .terrain_phase = "recovered-stationary",
+        },
+    };
+
+    auto const baseline = acceptance::gameBenchmarkSuccessfulPresentIntervals(frames, "baseline-stationary");
+    ASSERT_EQ(baseline.size(), 1U);
+    EXPECT_EQ(baseline.front(), 10ms);
+    auto const recovered = acceptance::gameBenchmarkSuccessfulPresentIntervals(frames, "recovered-stationary");
+    ASSERT_EQ(recovered.size(), 1U);
+    EXPECT_EQ(recovered.front(), 20ms);
+    EXPECT_TRUE(acceptance::gameBenchmarkSuccessfulPresentIntervals(frames, "speed-200-movement").empty());
+}
+
+TEST(GameBenchmark, RejectsFullRadiusWorkloadWithoutFullInterestBeforeRuntimeStarts)
+{
+    acceptance::GameBenchmarkOptions const options{
+        .workload = acceptance::GameBenchmarkWorkload::Speed200FullRadiusRecovery,
+        .render_distance = 255U,
+    };
+    auto const result = acceptance::runGameBenchmark(options);
+    ASSERT_FALSE(result);
+    EXPECT_EQ(result.error(), "speed-200 full-radius recovery requires render distance 256");
+}
+
+TEST(GameBenchmark, FullRadiusSequenceRequiresBothExactBarriersAndStationarySamples)
+{
+    using Clock = std::chrono::steady_clock;
+    using acceptance::GameBenchmarkFullRadiusPhase;
+    using acceptance::GameBenchmarkFullRadiusSequence;
+
+    Clock::time_point const start{};
+    GameBenchmarkFullRadiusSequence sequence{ 30s };
+    sequence.start(start);
+    EXPECT_EQ(sequence.phase(), GameBenchmarkFullRadiusPhase::InitialWarmup);
+    sequence.observe(start + 10s, std::nullopt);
+    EXPECT_EQ(sequence.phase(), GameBenchmarkFullRadiusPhase::InitialWarmup);
+    sequence.observe(start + 12s, false);
+    EXPECT_EQ(sequence.phase(), GameBenchmarkFullRadiusPhase::InitialWarmup);
+    sequence.observe(start + 15s, true);
+    EXPECT_EQ(sequence.phase(), GameBenchmarkFullRadiusPhase::BaselineStationary);
+    sequence.observe(start + 25s - 1ns, std::nullopt);
+    EXPECT_EQ(sequence.phase(), GameBenchmarkFullRadiusPhase::BaselineStationary);
+    sequence.observe(start + 25s, std::nullopt);
+    EXPECT_EQ(sequence.phase(), GameBenchmarkFullRadiusPhase::Movement);
+    sequence.observe(start + 31s - 1ns, std::nullopt);
+    EXPECT_EQ(sequence.phase(), GameBenchmarkFullRadiusPhase::Movement);
+    sequence.observe(start + 31s, std::nullopt);
+    EXPECT_EQ(sequence.phase(), GameBenchmarkFullRadiusPhase::RecoveryWarmup);
+    sequence.observe(start + 60s, false);
+    EXPECT_EQ(sequence.phase(), GameBenchmarkFullRadiusPhase::RecoveryWarmup);
+    sequence.observe(start + 61s, true);
+    EXPECT_EQ(sequence.phase(), GameBenchmarkFullRadiusPhase::RecoveredStationary);
+    sequence.observe(start + 71s - 1ns, std::nullopt);
+    EXPECT_EQ(sequence.phase(), GameBenchmarkFullRadiusPhase::RecoveredStationary);
+    sequence.observe(start + 71s, std::nullopt);
+    EXPECT_EQ(sequence.phase(), GameBenchmarkFullRadiusPhase::Complete);
+}
+
+TEST(GameBenchmark, FullRadiusWarmupTimeoutsAreIndependentAndFailureIsTerminal)
+{
+    using Clock = std::chrono::steady_clock;
+    using acceptance::GameBenchmarkFullRadiusPhase;
+    using acceptance::GameBenchmarkFullRadiusSequence;
+
+    Clock::time_point const start{};
+    GameBenchmarkFullRadiusSequence initial_timeout{ 2s };
+    initial_timeout.start(start);
+    initial_timeout.observe(start + 2s, std::nullopt);
+    EXPECT_EQ(initial_timeout.phase(), GameBenchmarkFullRadiusPhase::Failed);
+    initial_timeout.observe(start + 3s, true);
+    EXPECT_EQ(initial_timeout.phase(), GameBenchmarkFullRadiusPhase::Failed);
+
+    GameBenchmarkFullRadiusSequence recovery_timeout{ 2s };
+    recovery_timeout.start(start);
+    recovery_timeout.observe(start, true);
+    recovery_timeout.observe(start + 10s, std::nullopt);
+    recovery_timeout.observe(start + 16s, std::nullopt);
+    ASSERT_EQ(recovery_timeout.phase(), GameBenchmarkFullRadiusPhase::RecoveryWarmup);
+    recovery_timeout.observe(start + 18s, std::nullopt);
+    EXPECT_EQ(recovery_timeout.phase(), GameBenchmarkFullRadiusPhase::Failed);
+}
+
+TEST(GameBenchmark, FullRadiusStationaryEpochsStartAfterDelayedBarrierScans)
+{
+    using Clock = std::chrono::steady_clock;
+    using acceptance::GameBenchmarkFullRadiusPhase;
+    static constexpr Clock::time_point START{};
+    static constexpr std::chrono::seconds WARMUP_TIMEOUT{30};
+    static constexpr std::chrono::seconds INITIAL_FRAME_FINISHED{4};
+    static constexpr std::chrono::seconds SCAN_DELAY{1};
+
+    acceptance::GameBenchmarkFullRadiusSequence sequence{WARMUP_TIMEOUT};
+    sequence.start(START);
+    Clock::time_point const initial_scan_finished = START + INITIAL_FRAME_FINISHED + SCAN_DELAY;
+    sequence.observe(initial_scan_finished, true);
+    ASSERT_EQ(sequence.phase(), GameBenchmarkFullRadiusPhase::BaselineStationary);
+    EXPECT_EQ(sequence.phaseElapsed(initial_scan_finished), Clock::duration::zero());
+    Clock::time_point const movement_started = initial_scan_finished
+        + acceptance::GAME_BENCHMARK_FULL_RADIUS_STATIONARY_SAMPLE;
+    sequence.observe(movement_started - SCAN_DELAY, std::nullopt);
+    EXPECT_EQ(sequence.phase(), GameBenchmarkFullRadiusPhase::BaselineStationary);
+    sequence.observe(movement_started, std::nullopt);
+    ASSERT_EQ(sequence.phase(), GameBenchmarkFullRadiusPhase::Movement);
+    Clock::time_point const recovery_started = movement_started + acceptance::GAME_BENCHMARK_FULL_RADIUS_MOVEMENT;
+    sequence.observe(recovery_started, std::nullopt);
+    ASSERT_EQ(sequence.phase(), GameBenchmarkFullRadiusPhase::RecoveryWarmup);
+    Clock::time_point const recovery_scan_finished = recovery_started + SCAN_DELAY;
+    sequence.observe(recovery_scan_finished, true);
+    ASSERT_EQ(sequence.phase(), GameBenchmarkFullRadiusPhase::RecoveredStationary);
+    EXPECT_EQ(sequence.phaseElapsed(recovery_scan_finished), Clock::duration::zero());
+    Clock::time_point const stationary_finished = recovery_scan_finished
+        + acceptance::GAME_BENCHMARK_FULL_RADIUS_STATIONARY_SAMPLE;
+    sequence.observe(stationary_finished - SCAN_DELAY, std::nullopt);
+    EXPECT_EQ(sequence.phase(), GameBenchmarkFullRadiusPhase::RecoveredStationary);
+    sequence.observe(stationary_finished, std::nullopt);
+    EXPECT_EQ(sequence.phase(), GameBenchmarkFullRadiusPhase::Complete);
+}
+
+TEST(GameBenchmark, FullRadiusInitialExactBarrierFinishingAfterDeadlineFails)
+{
+    using Clock = std::chrono::steady_clock;
+    static constexpr Clock::time_point START{};
+    static constexpr std::chrono::seconds WARMUP_TIMEOUT{30};
+
+    acceptance::GameBenchmarkFullRadiusSequence sequence{WARMUP_TIMEOUT};
+    sequence.start(START);
+    sequence.observe(START + WARMUP_TIMEOUT + 1ns, true);
+    EXPECT_EQ(sequence.phase(), acceptance::GameBenchmarkFullRadiusPhase::Failed);
+}
+
+TEST(GameBenchmark, FullRadiusRecoveryExactBarrierFinishingAfterDeadlineFails)
+{
+    using Clock = std::chrono::steady_clock;
+    using acceptance::GameBenchmarkFullRadiusPhase;
+    static constexpr Clock::time_point START{};
+    static constexpr std::chrono::seconds WARMUP_TIMEOUT{30};
+
+    acceptance::GameBenchmarkFullRadiusSequence sequence{WARMUP_TIMEOUT};
+    sequence.start(START);
+    sequence.observe(START, true);
+    Clock::time_point const movement_started = START + acceptance::GAME_BENCHMARK_FULL_RADIUS_STATIONARY_SAMPLE;
+    sequence.observe(movement_started, std::nullopt);
+    Clock::time_point const recovery_started = movement_started + acceptance::GAME_BENCHMARK_FULL_RADIUS_MOVEMENT;
+    sequence.observe(recovery_started, std::nullopt);
+    ASSERT_EQ(sequence.phase(), GameBenchmarkFullRadiusPhase::RecoveryWarmup);
+    sequence.observe(recovery_started + WARMUP_TIMEOUT + 1ns, true);
+    EXPECT_EQ(sequence.phase(), GameBenchmarkFullRadiusPhase::Failed);
 }
 
 TEST(GameBenchmark, ScriptsDistinctMovementAndCapabilityWorkloads)

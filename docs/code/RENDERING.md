@@ -118,14 +118,14 @@ The fixed-scene `--benchmark-render` excludes server/network/gameplay;
 `--benchmark-game` counts completed player-client present requests with all three.
 Neither observes physical scanout; unavailable immediate mode fails. Evidence
 includes resolution, GPU, HUD, rate, p50/p95/p99/max, CPU phases and submitted work.
+Full-radius gameplay waits for exact meshes/empty queues before and after x200;
+it records every stationary attempt and collection/acquire/record/complete costs.
 `DiagnosticStationary` freezes movement/look for diagnostic A/B, not gameplay
 acceptance. Opt-in terrain timestamps are not whole-frame time; MoltenVK reports
 unsupported/null because in-render-pass markers may be deferred to encoder end.
 Release disables validation; `--hud` supports paired runs.
-S6 renderer stress uses 90-by-90 maximum capacity and bounded edge streaming; S6 gameplay uses
-the smaller directional ellipse in [GAMEPLAY.md](GAMEPLAY.md). Its renderer-only
-gate requires nominal 120 Hz within one percent and p99 at most 10 ms,
-including display wait and scheduler jitter.
+Legacy S6 stress uses 90-by-90 capacity and edge streaming. Its renderer-only
+gate requires 120 Hz within one percent and p99 at most 10 ms, including waits.
 
 Benchmark and renderer capture preserve requested framebuffer pixels through
 bounded GLFW resizing. Capture checks readback, sky, and stone; benchmark checks

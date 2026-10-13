@@ -1,8 +1,8 @@
 # Gameplay and networking
 
-Run [src/main.cpp](../../src/main.cpp) with `--server [--port PORT] [--render-distance CHUNKS]`,
+Run [main](../../src/main.cpp) with `--server [--port PORT] [--render-distance CHUNKS]`,
 `--player-client`, or `--bot-client`; clients use `--address IP:PORT`. No
-arguments launch a graphical localhost player. Flight joins select free tokens.
+arguments launch a localhost player. Flight joins select free tokens.
 
 ## Shared simulation
 
@@ -24,16 +24,15 @@ bounded CoreLang `@version("0.1.2")` plans. The host validates source and limits
 before publishing; rejected plans neither start a runner nor mutate the world.
 See the [scripting guide](../scripting/README.md) for grammar.
 
-Legacy `flat3d-v1` records flat positions and yaw/pitch/roll; Z remains zero.
-Camera-relative commands map yaw-zero forward to +Y and positive yaw toward +X
-using normalized `Direction`. Evidence separates replay IDs, input counts,
-100 ms ticks, and presentation cadence. Conversion takes named
-`ScenarioCameraDirectionInput` fields; vertical defaults to zero.
+Legacy `flat3d-v1` records positions and yaw/pitch/roll with Z zero.
+Normalized camera-relative `Direction` maps yaw-zero forward to +Y and positive
+yaw toward +X. Evidence separates replay/input counts, ticks and presentation.
+`ScenarioCameraDirectionInput` vertical defaults to zero.
 
 ## Permissions
 
-Generation-tagged movement permissions are scenario-tested for replication and
-velocity; collision bypass requires flight (see [POLICY.md](POLICY.md)).
+Generation-tagged permissions replicate velocity; collision bypass requires flight
+(see [POLICY.md](POLICY.md)).
 
 ## Wire protocol
 
@@ -61,7 +60,8 @@ disconnects broadcast removals.
 After movement, four 16-operation batches rotate among clients. Four credited
 batches/peer (34,356 bytes) fit ENet's shared 65,536-byte window; negotiation/
 throttling may shrink it. Ready/dispatched tiles cap at 128 (`BenchmarkHooks::on_preview_buffered`).
-ACKs reconcile keys/refill after restored-interest removals.
+ACKs reconcile keys/refill. Obsolete retirement budgets tile operations, not
+packets; a cached priority heap rechecks current interest before removal.
 Center/heading changes restart near-first admission, reclaiming unstarted distant
 jobs only when near coverage is missing. Refills reorder pending queues;
 running/completed jobs remain intact.
@@ -79,8 +79,8 @@ with stop cancellation. `FrameScheduler` sends input every 100 ms with at most
 1 ms sleep. Positions update world; presentation snaps, then interpolates one
 `TICK`, holding across gaps. Disconnect resets and retries.
 
-Benchmark hooks time client loops/scripted input and server ticks; only
-`--benchmark-game` skips client idle delay.
+Hooks time client loops/input and server ticks. Legacy
+benchmarks skip idle delay; full-radius qualification retains normal scheduling.
 
 [PlayerClient.hpp](../../src/client/include/client/PlayerClient.hpp) and
 [PlayerClient.cpp](../../src/client/PlayerClient.cpp) provide the GLFW/Vulkan
@@ -117,18 +117,18 @@ invalidate certificates. Jobs recheck revisions and target detail before
 publication. Meshes refine asynchronously after movement/projection/profile
 changes. Play/capture share 256 reranks and 16 jobs per call. A 225-key near
 probe tickets missing resident meshes before distant work; erased/requeued
-tickets cannot revive stale entries. Coverage controls removal.
+tickets cannot revive stale entries. Intake admits 128 changes per call;
+bounded per-key obsolete removal never waits for global coverage.
 
 ## S5 chunk data
 
-`Chunk` stores checked Air/Stone IDs and identity; staged CoreLang terrain feeds
-bounded `SparseWorld` residency.
+`Chunk` stores checked Air/Stone IDs; CoreLang terrain feeds bounded `SparseWorld`.
 
 ## S7 staged generation
 
-`WorldGenerationCoordinator` runs bounded seeded server stages. Refinements
-inherit ancestor samples; final materialization uses exact height-tile terrain
-for current-revision collision. Failed stages require explicit bounded retry.
+`WorldGenerationCoordinator` runs bounded seeded stages. Refinements inherit
+ancestor samples; materialization uses exact terrain for current-revision
+collision. Failed stages require bounded retry.
 
 ## S5 exposed-face mesh
 

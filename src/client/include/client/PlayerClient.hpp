@@ -61,8 +61,11 @@ struct PlayerClientCapturePlan final {
 [[nodiscard]] std::chrono::milliseconds playerClientRendererFrameBudget(bool capture_enabled) noexcept;
 [[nodiscard]] uint32_t playerClientHeightTileChangeBudget(bool capture_enabled) noexcept;
 [[nodiscard]] uint32_t playerClientPreviewMeshJobBudget(bool capture_enabled) noexcept;
+[[nodiscard]] uint32_t playerClientPreviewMeshBacklogCapacity(bool capture_enabled) noexcept;
+[[nodiscard]] uint32_t playerClientPreviewMeshAdmissionBudget(bool capture_enabled) noexcept;
 [[nodiscard]] bool playerClientShouldQueuePreviewRemoval(bool capture_enabled, bool mesh_visible) noexcept;
-[[nodiscard]] uint32_t playerClientPreviewRemovalBudget(bool capture_enabled, bool current_coverage) noexcept;
+[[nodiscard]] uint32_t playerClientPreviewRemovalBudget() noexcept;
+[[nodiscard]] bool playerClientShouldRemovePreviewMesh(bool currently_interested) noexcept;
 [[nodiscard]] uint32_t playerClientCaptureLogicalSize(
     uint32_t logical_size,
     uint32_t framebuffer_size,
@@ -82,10 +85,14 @@ struct PlayerClientCaptureOptions final {
 struct PlayerClientBenchmarkOptions final {
     bool require_immediate_present_mode = false;
     bool freeze_camera = false;
+    bool show_debug_hud = false;
 };
 
 inline constexpr int32_t PLAYER_CLIENT_BENCHMARK_TERRAIN_NEAR_RADIUS = 7;
 inline constexpr uint32_t PLAYER_CLIENT_BENCHMARK_TERRAIN_NEAR_TILE_COUNT = 225U;
+inline constexpr uint32_t PLAYER_CLIENT_BENCHMARK_FULL_TERRAIN_RADIAL_BAND_WIDTH = 16U;
+inline constexpr size_t PLAYER_CLIENT_BENCHMARK_FULL_TERRAIN_RADIAL_BAND_COUNT = 16U;
+inline constexpr uint32_t PLAYER_CLIENT_BENCHMARK_FULL_TERRAIN_DETAIL_COUNT = 5U;
 
 // Current-center sample; a visible mesh counts only when it uses the current resident tile handle.
 struct PlayerClientBenchmarkTerrainTileState final {
@@ -113,6 +120,45 @@ struct PlayerClientBenchmarkTerrainInfo final {
     uint64_t far_admissions_while_near_pending = 0U;
 };
 
+struct PlayerClientBenchmarkFullTerrainInfo final {
+    std::optional<shared::HeightTileKey> center;
+    bool scan_performed = false;
+    bool potentially_ready = false;
+    std::optional<bool> exact_current_coverage;
+    uint32_t desired_count = 0U;
+    uint32_t resident_total_count = 0U;
+    uint32_t visible_mesh_count = 0U;
+    uint32_t renderer_mesh_count = 0U;
+    uint32_t renderer_face_count = 0U;
+    uint32_t renderer_draw_face_count = 0U;
+    uint32_t renderer_stone_face_capacity = 0U;
+    uint32_t pending_delivery_batch_count = 0U;
+    uint32_t pending_residency_change_count = 0U;
+    uint32_t pending_mesh_count = 0U;
+    uint32_t active_mesh_job_count = 0U;
+    uint32_t dirty_mesh_job_count = 0U;
+    uint32_t worker_result_count = 0U;
+    uint32_t worker_outstanding_count = 0U;
+    uint32_t pending_removal_count = 0U;
+    std::optional<uint32_t> resident_desired_count;
+    std::optional<uint32_t> nonresident_desired_count;
+    std::optional<uint32_t> current_handle_mesh_visible_count;
+    std::optional<uint32_t> stale_or_missing_mesh_count;
+    std::optional<uint32_t> unclassified_resident_missing_count;
+    std::optional<uint32_t> visible_outside_interest_count;
+    std::optional<std::array<uint32_t, PLAYER_CLIENT_BENCHMARK_FULL_TERRAIN_DETAIL_COUNT>>
+        current_visible_mesh_detail_counts;
+    std::optional<uint32_t> unclassified_current_visible_mesh_detail_count;
+    struct RadialBand final {
+        uint32_t desired_count = 0U;
+        uint32_t resident_count = 0U;
+        uint32_t nonresident_count = 0U;
+        uint32_t current_mesh_visible_count = 0U;
+        uint32_t stale_or_missing_mesh_count = 0U;
+    };
+    std::array<RadialBand, PLAYER_CLIENT_BENCHMARK_FULL_TERRAIN_RADIAL_BAND_COUNT> radial_bands{};
+};
+
 struct PlayerHeightTileKeyHash final {
     [[nodiscard]] size_t operator()(shared::HeightTileKey key) const noexcept;
 };
@@ -131,6 +177,22 @@ public:
 
 private:
     uint32_t m_visible_count = 0U;
+};
+
+class PlayerPreviewMeshAdmissionWindow final {
+public:
+    explicit PlayerPreviewMeshAdmissionWindow(uint32_t capacity) noexcept
+        : m_capacity(capacity)
+    {}
+
+    [[nodiscard]] bool canAccept() const noexcept { return m_outstanding < m_capacity; }
+    [[nodiscard]] bool tryAdmit() noexcept;
+    [[nodiscard]] bool releaseOne() noexcept;
+    [[nodiscard]] uint32_t outstandingCount() const noexcept { return m_outstanding; }
+
+private:
+    uint32_t const m_capacity;
+    uint32_t m_outstanding = 0U;
 };
 
 [[nodiscard]] bool playerClientCaptureCoverageComplete(
@@ -201,6 +263,10 @@ public:
     [[nodiscard]] RendererRuntimeInfo benchmarkRuntimeInfo() const;
     // On-demand so ordinary render frames do not pay for the bounded terrain-state probe.
     [[nodiscard]] PlayerClientBenchmarkTerrainInfo benchmarkTerrainStreamingInfo() const;
+    // The exact key scan is opt-in; readiness polling reads only aggregate state.
+    [[nodiscard]] PlayerClientBenchmarkFullTerrainInfo benchmarkFullTerrainStreamingInfo(
+        bool scan_exact_coverage = false
+    ) const;
     [[nodiscard]] bool captureSucceeded() const noexcept { return m_capture_succeeded; }
 private:
     friend struct PlayerClientTestAccess;

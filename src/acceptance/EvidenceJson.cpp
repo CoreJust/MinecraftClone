@@ -228,6 +228,135 @@ std::string terrainReadinessJson(GameBenchmarkTerrainReadinessEvidence const& ev
         + ", \"complete\": " + std::string(evidence.complete ? "true" : "false") + " }";
 }
 
+std::string optionalCountJson(std::optional<uint32_t> const count)
+{
+    return count ? std::to_string(*count) : "null";
+}
+
+std::string optionalBoolJson(std::optional<bool> const value)
+{
+    return value ? (*value ? "true" : "false") : "null";
+}
+
+std::string fullTerrainSnapshotJson(GameBenchmarkFullTerrainSnapshot const& snapshot)
+{
+    std::string detail_counts = "null";
+    if (snapshot.current_visible_mesh_detail_counts) {
+        std::array<uint32_t, 5U> const& counts = *snapshot.current_visible_mesh_detail_counts;
+        detail_counts = "{ \"coarse\": " + std::to_string(counts[0U])
+            + ", \"coarse2\": " + std::to_string(counts[1U])
+            + ", \"coarse4\": " + std::to_string(counts[2U])
+            + ", \"fine\": " + std::to_string(counts[3U])
+            + ", \"distant\": " + std::to_string(counts[4U]) + " }";
+    }
+    std::string result = "{ \"phase\": " + jsonString(snapshot.phase)
+        + ", \"phase_elapsed_ms\": " + std::to_string(snapshot.phase_elapsed_ms)
+        + ", \"scan_performed\": " + (snapshot.scan_performed ? "true" : "false")
+        + ", \"potentially_ready\": " + (snapshot.potentially_ready ? "true" : "false")
+        + ", \"exact_current_coverage\": " + optionalBoolJson(snapshot.exact_current_coverage)
+        + ", \"center\": "
+            + (snapshot.center_valid
+                ? "{ \"x\": " + std::to_string(snapshot.center_x) + ", \"y\": "
+                    + std::to_string(snapshot.center_y) + " }"
+                : "null")
+        + ", \"desired\": " + std::to_string(snapshot.desired_count)
+        + ", \"resident_total\": " + std::to_string(snapshot.resident_total_count)
+        + ", \"resident_desired\": " + optionalCountJson(snapshot.resident_desired_count)
+        + ", \"nonresident_desired\": " + optionalCountJson(snapshot.nonresident_desired_count)
+        + ", \"visible_meshes\": " + std::to_string(snapshot.visible_mesh_count)
+        + ", \"current_handle_mesh_visible\": "
+            + optionalCountJson(snapshot.current_handle_mesh_visible_count)
+        + ", \"stale_or_missing_mesh\": " + optionalCountJson(snapshot.stale_or_missing_mesh_count)
+        + ", \"unclassified_resident_missing\": "
+            + optionalCountJson(snapshot.unclassified_resident_missing_count)
+        + ", \"visible_outside_interest\": " + optionalCountJson(snapshot.visible_outside_interest_count)
+        + ", \"current_visible_mesh_detail_counts\": " + detail_counts
+        + ", \"unclassified_current_visible_mesh_detail\": "
+            + optionalCountJson(snapshot.unclassified_current_visible_mesh_detail_count)
+        + ", \"renderer_mesh_slots\": " + std::to_string(snapshot.renderer_mesh_count)
+        + ", \"renderer_face_count\": " + std::to_string(snapshot.renderer_face_count)
+        + ", \"renderer_draw_face_count\": " + std::to_string(snapshot.renderer_draw_face_count)
+        + ", \"renderer_stone_face_capacity\": "
+            + std::to_string(snapshot.renderer_stone_face_capacity)
+        + ", \"pending_delivery_batches\": " + std::to_string(snapshot.pending_delivery_batch_count)
+        + ", \"pending_residency_changes\": " + std::to_string(snapshot.pending_residency_change_count)
+        + ", \"pending_mesh_queue\": " + std::to_string(snapshot.pending_mesh_count)
+        + ", \"active_mesh_jobs\": " + std::to_string(snapshot.active_mesh_job_count)
+        + ", \"dirty_mesh_jobs\": " + std::to_string(snapshot.dirty_mesh_job_count)
+        + ", \"worker_results\": " + std::to_string(snapshot.worker_result_count)
+        + ", \"worker_outstanding\": " + std::to_string(snapshot.worker_outstanding_count)
+        + ", \"pending_removals\": " + std::to_string(snapshot.pending_removal_count)
+        + ", \"radial_band_tile_width\": 16, \"radial_bands\": "
+        + (snapshot.scan_performed ? "[" : "null");
+    if (snapshot.scan_performed) {
+        for (size_t index = 0U; index < snapshot.radial_bands.size(); ++index) {
+            if (index != 0U) {
+                result += ", ";
+            }
+            GameBenchmarkFullTerrainSnapshot::RadialBand const& band = snapshot.radial_bands[index];
+            result += "{ \"desired\": " + std::to_string(band.desired_count)
+                + ", \"resident\": " + std::to_string(band.resident_count)
+                + ", \"nonresident\": " + std::to_string(band.nonresident_count)
+                + ", \"current_mesh_visible\": " + std::to_string(band.current_mesh_visible_count)
+                + ", \"stale_or_missing_mesh\": " + std::to_string(band.stale_or_missing_mesh_count) + " }";
+        }
+        result += "]";
+    }
+    result += " }";
+    return result;
+}
+
+std::string fullRadiusTerrainJson(GameBenchmarkFullRadiusEvidence const& evidence)
+{
+    return "{ \"contract\": \"mc.full-radius-terrain-barriers.v1\", "
+        "\"render_distance\": " + std::to_string(evidence.render_distance)
+        + ", \"expected_tile_count\": " + std::to_string(evidence.expected_tile_count)
+        + ", \"warmup_timeout_ms\": " + std::to_string(evidence.warmup_timeout_ms)
+        + ", \"warmup_timeout_kind\": \"diagnostic-bound-not-performance-claim\""
+        + ", \"initial_warmup_elapsed_ms\": " + std::to_string(evidence.initial_warmup_elapsed_ms)
+        + ", \"initial_barrier_reached\": " + (evidence.initial_barrier_reached ? "true" : "false")
+        + ", \"initial_barrier\": " + fullTerrainSnapshotJson(evidence.initial_barrier)
+        + ", \"baseline_stationary_elapsed_ms\": "
+            + std::to_string(evidence.baseline_stationary_elapsed_ms)
+        + ", \"loop_timing_scope\": \"all-stationary-loop-attempts\""
+        + ", \"successful_present_request_interval_scope\": "
+            "\"consecutive-successful-request-completions-not-physical-display-cadence\""
+        + ", \"baseline_loop_attempts\": " + std::to_string(evidence.baseline_loop_attempts)
+        + ", \"baseline_failed_present_requests\": "
+            + std::to_string(evidence.baseline_failed_present_requests)
+        + ", \"baseline_present_requests\": " + std::to_string(evidence.baseline_present_requests)
+        + ", \"baseline_present_requests_per_second\": "
+            + std::to_string(evidence.baseline_present_requests_per_second)
+        + ", \"baseline_loop_timings_ns\": " + frameTimingSummaryJson(evidence.baseline_loop_timings)
+        + ", \"baseline_successful_present_request_intervals_ns\": "
+            + frameTimingSummaryJson(evidence.baseline_successful_present_request_intervals)
+        + ", \"movement_elapsed_ms\": " + std::to_string(evidence.movement_elapsed_ms)
+        + ", \"movement_center_change_count\": " + std::to_string(evidence.movement_center_change_count)
+        + ", \"movement_start_center\": "
+            + (evidence.movement_start_center_valid
+                ? "{ \"x\": " + std::to_string(evidence.movement_start_center_x) + ", \"y\": "
+                    + std::to_string(evidence.movement_start_center_y) + " }" : "null")
+        + ", \"movement_end_center\": "
+            + (evidence.movement_end_center_valid
+                ? "{ \"x\": " + std::to_string(evidence.movement_end_center_x) + ", \"y\": "
+                    + std::to_string(evidence.movement_end_center_y) + " }" : "null")
+        + ", \"recovery_warmup_elapsed_ms\": " + std::to_string(evidence.recovery_warmup_elapsed_ms)
+        + ", \"recovery_barrier_reached\": " + (evidence.recovery_barrier_reached ? "true" : "false")
+        + ", \"recovery_barrier\": " + fullTerrainSnapshotJson(evidence.recovery_barrier)
+        + ", \"recovered_stationary_elapsed_ms\": "
+            + std::to_string(evidence.recovered_stationary_elapsed_ms)
+        + ", \"recovered_loop_attempts\": " + std::to_string(evidence.recovered_loop_attempts)
+        + ", \"recovered_failed_present_requests\": "
+            + std::to_string(evidence.recovered_failed_present_requests)
+        + ", \"recovered_present_requests\": " + std::to_string(evidence.recovered_present_requests)
+        + ", \"recovered_present_requests_per_second\": "
+            + std::to_string(evidence.recovered_present_requests_per_second)
+        + ", \"recovered_loop_timings_ns\": " + frameTimingSummaryJson(evidence.recovered_loop_timings)
+        + ", \"recovered_successful_present_request_intervals_ns\": "
+            + frameTimingSummaryJson(evidence.recovered_successful_present_request_intervals)
+        + ", \"complete\": " + (evidence.complete ? "true" : "false") + " }";
+}
+
 std::string gameBenchmarkJson(GameBenchmarkEvidence const& benchmark)
 {
     std::string result = "{\n"
@@ -281,6 +410,9 @@ std::string gameBenchmarkJson(GameBenchmarkEvidence const& benchmark)
         "    \"terrain_readiness\": "
             + (benchmark.terrain_readiness
                 ? terrainReadinessJson(*benchmark.terrain_readiness) : "null") + ",\n"
+        "    \"full_radius_terrain\": "
+            + (benchmark.full_radius_terrain
+                ? fullRadiusTerrainJson(*benchmark.full_radius_terrain) : "null") + ",\n"
         "    \"raw_server_tick_durations_ns\": [";
     for (uint64_t index = 0U; index < benchmark.raw_server_tick_durations_ns.size(); ++index) {
         if (index != 0U) {
@@ -302,10 +434,16 @@ std::string gameBenchmarkJson(GameBenchmarkEvidence const& benchmark)
             result += ",\n";
         }
         result += "      { \"phase\": "
-            + jsonString(sample.excluded ? "excluded" : sample.uncapped ? "uncapped"
+            + jsonString(!sample.terrain_phase.empty() ? sample.terrain_phase
+                : sample.excluded ? "excluded" : sample.uncapped ? "uncapped"
                 : sample.warm ? "warm" : "cold")
             + ", \"presentation_succeeded\": "
             + std::string(sample.presentation_succeeded ? "true" : "false")
+            + ", \"terrain_center\": "
+            + (sample.terrain_center_valid
+                ? "{ \"x\": " + std::to_string(sample.terrain_center_x) + ", \"y\": "
+                    + std::to_string(sample.terrain_center_y) + " }"
+                : "null")
             + ", \"started_offset_ns\": " + std::to_string(sample.started_offset_ns)
             + ", \"loop_duration_ns\": " + std::to_string(sample.loop_duration_ns)
             + ", \"render_duration_ns\": " + std::to_string(sample.render_duration_ns)
@@ -337,6 +475,14 @@ std::string gameBenchmarkJson(GameBenchmarkEvidence const& benchmark)
                 + std::to_string(sample.diagnostic_cpu_acquire_wait_duration_ns)
             + ", \"diagnostic_cpu_command_record_duration_ns\": "
                 + std::to_string(sample.diagnostic_cpu_command_record_duration_ns)
+            + ", \"diagnostic_cpu_visible_range_collection_duration_ns\": "
+                + std::to_string(sample.diagnostic_cpu_visible_range_collection_duration_ns)
+            + ", \"diagnostic_cpu_indirect_prepare_duration_ns\": "
+                + std::to_string(sample.diagnostic_cpu_indirect_prepare_duration_ns)
+            + ", \"diagnostic_cpu_stone_scene_record_duration_ns\": "
+                + std::to_string(sample.diagnostic_cpu_stone_scene_record_duration_ns)
+            + ", \"diagnostic_cpu_command_record_residual_duration_ns\": "
+                + std::to_string(sample.diagnostic_cpu_command_record_residual_duration_ns)
             + ", \"diagnostic_cpu_complete_present_wait_duration_ns\": "
                 + std::to_string(sample.diagnostic_cpu_complete_present_wait_duration_ns)
             + ", \"diagnostic_gpu_timestamps_enabled\": " + (sample.diagnostic_gpu_timestamps_enabled ? "true" : "false")

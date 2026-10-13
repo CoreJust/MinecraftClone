@@ -4,6 +4,7 @@
 
 #include <array>
 #include <chrono>
+#include <cstdint>
 #include <expected>
 #include <functional>
 #include <optional>
@@ -303,11 +304,37 @@ TEST(EvidenceJson, SeparatesFailedRenderAttemptsFromLaggedTerrainGpuSamples)
     EXPECT_NE(json.find("\"diagnostic_camera\": [1, 2, 3, 90, -17, 0, 70]"), std::string::npos);
     EXPECT_NE(json.find("\"diagnostic_cpu_acquire_wait_duration_ns\": 10000000"), std::string::npos);
     EXPECT_NE(json.find("\"diagnostic_cpu_command_record_duration_ns\": 0"), std::string::npos);
+    EXPECT_NE(json.find("\"diagnostic_cpu_visible_range_collection_duration_ns\": 0,"), std::string::npos);
+    EXPECT_NE(json.find("\"diagnostic_cpu_indirect_prepare_duration_ns\": 0,"), std::string::npos);
+    EXPECT_NE(json.find("\"diagnostic_cpu_stone_scene_record_duration_ns\": 0,"), std::string::npos);
+    EXPECT_NE(json.find("\"diagnostic_cpu_command_record_residual_duration_ns\": 0,"), std::string::npos);
     EXPECT_NE(json.find("\"diagnostic_gpu_sample_attempt_id\": 40"), std::string::npos);
     EXPECT_NE(json.find("\"diagnostic_gpu_sample_quad_count\": 18"), std::string::npos);
     EXPECT_NE(json.find("\"diagnostic_gpu_terrain_duration_ns\": 5000000"), std::string::npos);
     EXPECT_NE(json.find("\"latest_gpu_frame_duration_ns\": null"), std::string::npos);
     EXPECT_NE(json.find("\"terrain_readiness\": null"), std::string::npos);
+}
+
+TEST(EvidenceJson, SerializesSeparateCpuRecordingPhasesInNanoseconds)
+{
+    static constexpr uint64_t COLLECTION_NS = 1'234U;
+    static constexpr uint64_t PREPARE_NS = 5'678U;
+    static constexpr uint64_t STONE_SCENE_NS = 9'012U;
+    static constexpr uint64_t RESIDUAL_NS = 3'456U;
+    acceptance::GameBenchmarkFrameSample sample;
+    sample.diagnostic_cpu_visible_range_collection_duration_ns = COLLECTION_NS;
+    sample.diagnostic_cpu_indirect_prepare_duration_ns = PREPARE_NS;
+    sample.diagnostic_cpu_stone_scene_record_duration_ns = STONE_SCENE_NS;
+    sample.diagnostic_cpu_command_record_residual_duration_ns = RESIDUAL_NS;
+    acceptance::RuntimeEvidence evidence;
+    evidence.game_benchmark.emplace();
+    evidence.game_benchmark->raw_frames.push_back(sample);
+
+    std::string const json = acceptance::evidenceJson(evidence);
+    EXPECT_NE(json.find("\"diagnostic_cpu_visible_range_collection_duration_ns\": 1234,"), std::string::npos);
+    EXPECT_NE(json.find("\"diagnostic_cpu_indirect_prepare_duration_ns\": 5678,"), std::string::npos);
+    EXPECT_NE(json.find("\"diagnostic_cpu_stone_scene_record_duration_ns\": 9012,"), std::string::npos);
+    EXPECT_NE(json.find("\"diagnostic_cpu_command_record_residual_duration_ns\": 3456,"), std::string::npos);
 }
 
 TEST(EvidenceJson, ReportsUnsupportedTerrainTimestampScopeWithoutInventingGpuDuration)
@@ -326,6 +353,89 @@ TEST(EvidenceJson, ReportsUnsupportedTerrainTimestampScopeWithoutInventingGpuDur
     EXPECT_NE(json.find("\"diagnostic_gpu_timestamp_reason\": \"unsupported: MoltenVK"), std::string::npos);
     EXPECT_NE(json.find("\"diagnostic_gpu_terrain_duration_ns\": null"), std::string::npos);
     EXPECT_NE(json.find("\"latest_gpu_frame_duration_ns\": null"), std::string::npos);
+}
+
+TEST(EvidenceJson, KeepsUnscannedFullRadiusCountsUnknownAndSerializesScannedRadialBands)
+{
+    acceptance::GameBenchmarkEvidence benchmark{};
+    benchmark.workload = "speed-200-full-radius-recovery-v1";
+    benchmark.full_radius_terrain.emplace();
+    benchmark.full_radius_terrain->initial_barrier.phase = "initial-full-radius-warmup";
+    benchmark.full_radius_terrain->initial_barrier.scan_performed = false;
+    benchmark.full_radius_terrain->initial_barrier.exact_current_coverage = std::nullopt;
+    benchmark.full_radius_terrain->recovery_barrier.phase = "full-radius-recovery-warmup";
+    benchmark.full_radius_terrain->recovery_barrier.scan_performed = true;
+    benchmark.full_radius_terrain->recovery_barrier.exact_current_coverage = false;
+    benchmark.full_radius_terrain->recovery_barrier.resident_desired_count = 204'800U;
+    benchmark.full_radius_terrain->recovery_barrier.radial_bands[15U].desired_count = 12'345U;
+    benchmark.full_radius_terrain->recovery_barrier.radial_bands[15U].resident_count = 12'344U;
+    benchmark.full_radius_terrain->recovery_barrier.radial_bands[15U].nonresident_count = 1U;
+    benchmark.full_radius_terrain->recovery_barrier.radial_bands[15U].current_mesh_visible_count = 12'340U;
+    benchmark.full_radius_terrain->recovery_barrier.radial_bands[15U].stale_or_missing_mesh_count = 4U;
+    benchmark.full_radius_terrain->recovery_barrier.current_visible_mesh_detail_counts =
+        std::array<uint32_t, 5U>{ 1U, 2U, 3U, 4U, 5U };
+    benchmark.full_radius_terrain->recovery_barrier.unclassified_current_visible_mesh_detail_count = 6U;
+    benchmark.raw_frames.push_back({
+        .terrain_phase = "speed-200-movement",
+        .terrain_center_valid = true,
+        .terrain_center_x = 128,
+        .terrain_center_y = 256,
+    });
+    acceptance::RuntimeEvidence evidence{};
+    evidence.game_benchmark = std::move(benchmark);
+
+    std::string const json = acceptance::evidenceJson(evidence);
+
+    EXPECT_NE(json.find("\"exact_current_coverage\": null"), std::string::npos);
+    EXPECT_NE(json.find("\"resident_desired\": null"), std::string::npos);
+    EXPECT_NE(json.find("\"radial_bands\": null"), std::string::npos);
+    EXPECT_NE(json.find("\"current_visible_mesh_detail_counts\": null"), std::string::npos);
+    EXPECT_NE(json.find("\"exact_current_coverage\": false"), std::string::npos);
+    EXPECT_NE(json.find("\"radial_band_tile_width\": 16"), std::string::npos);
+    EXPECT_NE(json.find("\"desired\": 12345, \"resident\": 12344, \"nonresident\": 1"),
+        std::string::npos);
+    EXPECT_NE(json.find("\"stale_or_missing_mesh\": 4"), std::string::npos);
+    EXPECT_NE(json.find(
+        "\"current_visible_mesh_detail_counts\": "
+        "{ \"coarse\": 1, \"coarse2\": 2, \"coarse4\": 3, \"fine\": 4, \"distant\": 5 }"
+    ), std::string::npos);
+    EXPECT_NE(json.find("\"unclassified_current_visible_mesh_detail\": 6"), std::string::npos);
+    EXPECT_NE(json.find("\"phase\": \"speed-200-movement\", \"presentation_succeeded\""),
+        std::string::npos);
+    EXPECT_NE(json.find("\"terrain_center\": { \"x\": 128, \"y\": 256 }"), std::string::npos);
+}
+
+TEST(EvidenceJson, SeparatesStationaryLoopAttemptsFromSuccessfulRequestIntervals)
+{
+    acceptance::RuntimeEvidence evidence{};
+    evidence.game_benchmark.emplace();
+    auto& full_radius = evidence.game_benchmark->full_radius_terrain.emplace();
+    full_radius.baseline_loop_attempts = 4U;
+    full_radius.baseline_failed_present_requests = 1U;
+    full_radius.baseline_present_requests = 3U;
+    full_radius.baseline_loop_timings.sample_count = 4U;
+    full_radius.baseline_successful_present_request_intervals.sample_count = 2U;
+    full_radius.recovered_loop_attempts = 6U;
+    full_radius.recovered_failed_present_requests = 2U;
+    full_radius.recovered_present_requests = 4U;
+    full_radius.recovered_loop_timings.sample_count = 6U;
+    full_radius.recovered_successful_present_request_intervals.sample_count = 3U;
+
+    std::string const json = acceptance::evidenceJson(evidence);
+
+    EXPECT_NE(json.find("\"loop_timing_scope\": \"all-stationary-loop-attempts\""), std::string::npos);
+    EXPECT_NE(json.find("consecutive-successful-request-completions-not-physical-display-cadence"),
+        std::string::npos);
+    EXPECT_NE(json.find("\"baseline_loop_attempts\": 4"), std::string::npos);
+    EXPECT_NE(json.find("\"baseline_failed_present_requests\": 1"), std::string::npos);
+    EXPECT_NE(json.find("\"baseline_loop_timings_ns\": {\n      \"sample_count\": 4"), std::string::npos);
+    EXPECT_NE(json.find("\"baseline_successful_present_request_intervals_ns\": {\n      \"sample_count\": 2"),
+        std::string::npos);
+    EXPECT_NE(json.find("\"recovered_loop_attempts\": 6"), std::string::npos);
+    EXPECT_NE(json.find("\"recovered_failed_present_requests\": 2"), std::string::npos);
+    EXPECT_NE(json.find("\"recovered_loop_timings_ns\": {\n      \"sample_count\": 6"), std::string::npos);
+    EXPECT_NE(json.find("\"recovered_successful_present_request_intervals_ns\": {\n      \"sample_count\": 3"),
+        std::string::npos);
 }
 
 TEST(EvidenceJson, ConvertsExpectedFailureToSerializableEvidence)

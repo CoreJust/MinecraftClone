@@ -1329,6 +1329,10 @@ struct VulkanRenderer::Impl final {
         m_current_diagnostic_query_pool = VK_NULL_HANDLE;
         m_cpu_acquire_wait_duration = std::chrono::nanoseconds::zero();
         m_cpu_command_record_duration = std::chrono::nanoseconds::zero();
+        m_cpu_visible_range_collection_duration = std::chrono::nanoseconds::zero();
+        m_cpu_indirect_prepare_duration = std::chrono::nanoseconds::zero();
+        m_cpu_stone_scene_record_duration = std::chrono::nanoseconds::zero();
+        m_cpu_command_record_residual_duration = std::chrono::nanoseconds::zero();
         m_cpu_complete_present_wait_duration = std::chrono::nanoseconds::zero();
         m_cpu_frame_duration = std::chrono::nanoseconds::zero();
         debug_hud_input.presented = m_last_presented;
@@ -1394,6 +1398,11 @@ struct VulkanRenderer::Impl final {
         m_diagnostic_frame_recorded = true;
         m_cpu_command_record_duration = std::chrono::duration_cast<std::chrono::nanoseconds>(
             std::chrono::steady_clock::now() - command_record_started_at
+        );
+        m_cpu_command_record_residual_duration = std::max(
+            std::chrono::nanoseconds::zero(),
+            m_cpu_command_record_duration - m_cpu_visible_range_collection_duration
+                - m_cpu_indirect_prepare_duration - m_cpu_stone_scene_record_duration
         );
         std::chrono::steady_clock::time_point const complete_present_started_at =
             std::chrono::steady_clock::now();
@@ -1842,6 +1851,10 @@ struct VulkanRenderer::Impl final {
             .pipeline_path = RendererPipelinePath::Vertex,
             .cpu_acquire_wait_duration = m_cpu_acquire_wait_duration,
             .cpu_command_record_duration = m_cpu_command_record_duration,
+            .cpu_visible_range_collection_duration = m_cpu_visible_range_collection_duration,
+            .cpu_indirect_prepare_duration = m_cpu_indirect_prepare_duration,
+            .cpu_stone_scene_record_duration = m_cpu_stone_scene_record_duration,
+            .cpu_command_record_residual_duration = m_cpu_command_record_residual_duration,
             .cpu_complete_present_wait_duration = m_cpu_complete_present_wait_duration,
             .cpu_frame_duration = m_cpu_frame_duration,
             .gpu_frame_duration = std::nullopt,
@@ -2224,6 +2237,8 @@ private:
 
         m_chunk_draw_face_count = 0U;
         if (m_chunk_scene_enabled) {
+            std::chrono::steady_clock::time_point const range_collection_started_at =
+                std::chrono::steady_clock::now();
             if (m_height_tile_slots.empty()) {
                 m_visible_solid_stone_draw_ranges.clear();
                 m_visible_stone_draw_ranges.assign(
@@ -2270,8 +2285,16 @@ private:
                     m_visible_stone_draw_ranges.push_back(*fallback_draw_range);
                 }
             }
+            m_cpu_visible_range_collection_duration = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                std::chrono::steady_clock::now() - range_collection_started_at
+            );
+            std::chrono::steady_clock::time_point const indirect_prepare_started_at =
+                std::chrono::steady_clock::now();
             StoneIndirectDraws::Prepared const prepared = requiredValue(m_stone_indirect_draws).prepareAcquiredSlot(
                 m_current_frame_slot, m_visible_stone_draw_ranges, m_visible_solid_stone_draw_ranges
+            );
+            m_cpu_indirect_prepare_duration = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                std::chrono::steady_clock::now() - indirect_prepare_started_at
             );
             m_diagnostic_stone_indirect = prepared.buffer != nullptr;
             for (std::span<StoneDrawRange const> const ranges : {
@@ -2283,6 +2306,8 @@ private:
                 }
             }
             m_diagnostic_submitted_stone_quad_count = m_chunk_draw_face_count;
+            std::chrono::steady_clock::time_point const stone_scene_record_started_at =
+                std::chrono::steady_clock::now();
             m_chunk_draw_count = recordStoneScene(
                 command,
                 m_stone_pipeline,
@@ -2300,6 +2325,9 @@ private:
                 prepared,
                 m_stone_quad_indices ? m_stone_quad_indices->handle() : VK_NULL_HANDLE,
                 m_current_diagnostic_query_pool
+            );
+            m_cpu_stone_scene_record_duration = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                std::chrono::steady_clock::now() - stone_scene_record_started_at
             );
         } else {
             recordFlat3dScene(
@@ -3032,6 +3060,10 @@ private:
     std::optional<RendererFrameCapture> m_last_capture;
     std::chrono::nanoseconds m_cpu_acquire_wait_duration{ 0 };
     std::chrono::nanoseconds m_cpu_command_record_duration{ 0 };
+    std::chrono::nanoseconds m_cpu_visible_range_collection_duration{ 0 };
+    std::chrono::nanoseconds m_cpu_indirect_prepare_duration{ 0 };
+    std::chrono::nanoseconds m_cpu_stone_scene_record_duration{ 0 };
+    std::chrono::nanoseconds m_cpu_command_record_residual_duration{ 0 };
     std::chrono::nanoseconds m_cpu_complete_present_wait_duration{ 0 };
     std::chrono::nanoseconds m_cpu_frame_duration{ 0 };
     uint64_t m_submitted_frame_count = 0U;

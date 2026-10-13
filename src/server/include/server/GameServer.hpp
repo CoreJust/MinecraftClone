@@ -232,6 +232,11 @@ private:
             std::chrono::steady_clock::time_point admitted_at{};
         };
 
+        struct RemovalCandidate final {
+            shared::HeightTileKey key;
+            double priority;
+        };
+
         explicit PreviewStream(core::ClientId client_id, uint32_t const render_distance)
             : client_id(client_id)
             , scheduler(MAX_QUEUED_TILES)
@@ -265,6 +270,7 @@ private:
         std::unordered_set<shared::HeightTileKey, HeightTileKeyHash> dispatched_keys;
         std::unordered_map<shared::HeightTileKey, shared::ServerHeightTileMessage, HeightTileKeyHash> ready_tiles;
         std::unordered_set<shared::HeightTileKey, HeightTileKeyHash> pending_removals;
+        std::vector<RemovalCandidate> removal_candidates;
         std::unordered_set<shared::HeightTileKey, HeightTileKeyHash> inflight_addition_keys;
         std::unordered_set<shared::HeightTileKey, HeightTileKeyHash> inflight_removal_keys;
         std::unordered_map<uint64_t, Delivery> inflight_deliveries;
