@@ -39,10 +39,10 @@ no source-tree fallback.
 
 S7 streams server-selected camera-independent disks (default 256: 205,861 tiles;
 128: 51,433); frustum only culls drawing.
-`HeightTileDrawIndex` orders live arena ranges and refreshes 16²-tile groups.
+`HeightTileDrawIndex` packs live entries into 16²-tile groups.
 Frustum classification skips resolved planes, preserving exact wrapped-AABB
-visibility; ambiguous wrap cuts use individual images. Ranges merge without
-sorting or freed spans. Installed quads, including seams, form direction buckets:
+visibility; ambiguous wrap cuts use individual images. Stable radix ordering
+merges ranges without freed spans. Installed quads, including seams, form direction buckets:
 only provably backfacing batches drop. Coplanar/wrap ambiguities remain;
 direct/indirect paths agree.
 [`Tests`](../../tests/client/height_tile_draw_index_tests.cpp) cover moving cameras,

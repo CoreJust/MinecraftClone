@@ -12,9 +12,9 @@
 
 #include <array>
 #include <cstdint>
-#include <map>
 #include <span>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 namespace shared {
@@ -82,16 +82,9 @@ private:
     static constexpr int32_t GROUP_SIDE = 16;
     static constexpr uint32_t GROUP_CAPACITY = 256U;
 
-    struct Group;
-
-    struct Record final {
-        Entry entry;
-        Group* group;
-    };
-
     struct Group final {
-        std::array<Record const*, GROUP_CAPACITY> records{};
-        uint32_t record_count = 0U;
+        std::array<uint16_t, GROUP_CAPACITY> member_indices{};
+        std::vector<Entry> entries;
         glm::vec3 minimum{};
         glm::vec3 maximum{};
         glm::vec2 minimum_center{};
@@ -99,6 +92,11 @@ private:
         glm::vec3 shift{};
         VulkanFrustum::Classification classification;
         bool same_wrap_image = false;
+    };
+
+    struct PendingRange final {
+        uint64_t order_key;
+        StoneIndirectDraws::Range range;
     };
 
     struct Address final {
@@ -109,9 +107,12 @@ private:
     [[nodiscard]]
     static Address address(shared::HeightTileCoordinate coordinate) noexcept;
     void refresh(Group& group) noexcept;
+    void orderPendingRanges();
 
-    std::map<uint32_t, Record> m_records;
     std::unordered_map<uint64_t, Group> m_groups;
+    std::unordered_set<uint32_t> m_range_starts;
+    std::vector<PendingRange> m_pending_ranges;
+    std::vector<PendingRange> m_sort_workspace;
     uint32_t m_fallback_record_count = 0U;
     uint32_t m_last_update_slots_inspected = 0U;
 };

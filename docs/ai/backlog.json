@@ -15955,5 +15955,41 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0452",
+    "title": "Reduce full-radius draw collection cost without changing draw selection",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P0",
+    "route": "sol",
+    "milestone": "ED-010-S7",
+    "depends_on": [],
+    "acceptance": "Improve measured normal full-radius draw collection using a bounded locality-preserving representation. Preserve exact direction envelopes, wrapped/frustum selection, ordered spans, no freed ranges, failure behavior and all residency/visual-quality contracts. Differential tests must cover insertion/removal/replacement/churn/wrap and allocation gaps. Benchmark fragmented realistic workload and retain only a demonstrated improvement; renew production runtime without claiming120Hz from microbenchmarks. No broad renderer rewrite or reduced distance.",
+    "evidence": "Frozen native tree998afc8b752537f7e945b73f751bb0b89c76ec5b, patch9585d6c62c84f4f2bf1147f34063b66f6c191d2cedfb60a47660d665b74e702d. Differential paired24-repetition probes preserve exact ordered ranges/counters; fragmented collection9.895/9.709ms becomes2.868/2.898ms, ordered3.471ms becomes2.882ms. Fault injection preserves rollback at14 allocation positions; all allocation probes release storage. Combined99 native checks pass. Source-bound normalFIFO fullradius initial130.065s/recovery145.979s exact205861 currentmeshes/queueszero; unchanged7435677/2443462 submittedquads. Recovered collection6.572->2.271ms and cadence78.49->114.47Hz; densebaseline55.26Hz stillfails. Immediate samebinary contrast55.19/114.72Hz does not materially improve rate; notGPUtime evidence. Fullplatformqualification remains pending. Windows 998af runtime failed initial warmup at180.048s; no release acceptance. Investigation identifies a physical arena growth boundary separate from this exact-output locality transformation.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0038",
+    "motivation": "Production full-radius collection alone consumes4.5–6.6ms per frame and prevents requested stable cadence",
+    "context": "Source-bound native tree92bd50febb244c98de2e6aa416ac2d4ef2efe05f reaches exact205861 initial/recovered meshes but baseline55Hz/recovered78.492Hz. Recovered draw collection6.572ms,58419 ranges. Fragmented node traversal is independently measured; compact AABB metadata saved8–10percent traversal but inflated selected geometry19.56percent and was rejected.",
+    "complexity": "high",
+    "created_at": "2026-10-13",
+    "resolved_at": "2026-10-13",
+    "resolution_changes": "Pack group-owned draw entries and use stable radix ordering; retain exact selection, range coalescing, rollback and high-address ordering.",
+    "plan": [
+      "Choose the smallest measured paged or equivalent ordered layout; compare exact output to existing oracle under mutation and benchmark before full runtime."
+    ],
+    "product_changes": [],
+    "code_changes": [
+      "Use group-owned packed draw entries with exact direction envelopes and stable radix ordered output; preserve failure rollback and freed-range exclusion."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]
