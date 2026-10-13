@@ -26,13 +26,11 @@ World players -> PlayerClient / AndroidPlayerClient -> PlayerRenderData span
   -> VulkanRenderer -> PresentationContext::Frame callback -> present/readback
 ```
 
-The platform/grid/player scene is legacy flat-world Snapshot 4 coverage. Normal
-Flight clears sky blue and draws server-streamed height-tile terrain with the
-original 16² stone texture. Local cameras sample player position separately
-from input look. First person hides the
-local body; third-person modes draw it. Four-bit replicated palette identities
-map to 16 opaque colors; mesh uploads follow content identity. The HUD reports
-authoritative Flight XYZ and camera angles. Camera: right-handed Z-up,
+S4 covers platform/grid/player. Flight draws sky blue and server-streamed terrain
+with the original 16² stone texture. Camera sampling is independent of input
+look. First person hides the local body; third person draws it. Replicated
+four-bit palettes select 16 opaque colors; uploads follow content identity.
+HUD reports authoritative XYZ/camera angles. Camera: right-handed Z-up,
 zero-to-one depth, depth testing.
 
 Desktop `InstalledShaderAssets` reads installed `shaders/`; Android
@@ -41,10 +39,12 @@ no source-tree fallback.
 
 S7 streams server-selected camera-independent disks (default 256: 205,861 tiles;
 128: 51,433); frustum only culls drawing.
-`HeightTileDrawIndex` incrementally orders live arena ranges and
-refreshes affected 16²-tile groups. Per-frame `VulkanFrustum` classification skips
-resolved planes with exact individual wrapped-AABB visibility; ambiguous wrap
-cuts use individual images. Visible ranges merge without sorting or freed spans.
+`HeightTileDrawIndex` orders live arena ranges and refreshes 16²-tile groups.
+Frustum classification skips resolved planes, preserving exact wrapped-AABB
+visibility; ambiguous wrap cuts use individual images. Ranges merge without
+sorting or freed spans. Installed quads, including seams, form direction buckets:
+only provably backfacing batches drop. Coplanar/wrap ambiguities remain;
+direct/indirect paths agree.
 [`Tests`](../../tests/client/height_tile_draw_index_tests.cpp) cover moving cameras,
 mutation/failure, seams and radii 256/1,024.
 LOD uses wrapped player distance and actual vertical FOV/framebuffer extent,
@@ -81,9 +81,8 @@ are rejected before indexing. Per-build heap workspace bounds stacks.
 fallback glyph per unsupported UTF-8 code point. Presentation accepts 16,384
 world/GUI glyphs before frame acquisition fails.
 
-World text is depth tested; `GuiRenderer` records screen text after the world
-scene without depth. `DebugHudState` formats five lines, presenting gameplay Z
-as user-facing height. `VulkanRenderer` supports independent GUI/world labels.
+World text uses depth; `GuiRenderer` records screen text afterward without it.
+`DebugHudState` presents gameplay Z as height. GUI/world labels are independent.
 
 The renderer counts only frames whose `PresentationContext::complete` succeeds.
 `VulkanRenderer::validationErrorCount()` forwards presentation validation errors;

@@ -212,20 +212,31 @@ std::vector<StoneFaceInstance> stoneFaceInstances(shared::HeightTileSurfaceMesh 
         throw std::invalid_argument("height tile mesh exceeds its quad limit");
     }
     std::vector<StoneFaceInstance> instances;
-    instances.reserve(mesh.quads.size());
+    std::array<uint32_t, 6> next_instance{};
     for (shared::HeightTileSurfaceQuad const& quad : mesh.quads) {
         uint32_t const direction = static_cast<uint32_t>(quad.direction);
         if (direction >= 6U || quad.u_extent == 0U || quad.v_extent == 0U) {
             throw std::invalid_argument("height tile mesh contains an invalid surface quad");
         }
-        instances.push_back({
+        ++next_instance[direction];
+    }
+    uint32_t first_instance = 0U;
+    for (uint32_t& next : next_instance) {
+        uint32_t const count = next;
+        next = first_instance;
+        first_instance += count;
+    }
+    instances.resize(mesh.quads.size());
+    for (shared::HeightTileSurfaceQuad const& quad : mesh.quads) {
+        uint32_t const direction = static_cast<uint32_t>(quad.direction);
+        instances[next_instance[direction]++] = {
             .x = quad.x,
             .y = quad.y,
             .z = quad.z,
             .direction = direction,
             .u_extent = quad.u_extent,
             .v_extent = quad.v_extent,
-        });
+        };
     }
     return instances;
 }
@@ -378,6 +389,13 @@ std::optional<std::string> environmentVariable(char const* const name)
 bool diagnosticIndexedStoneQuads()
 {
     std::optional<std::string> const requested = environmentVariable("MC_DIAGNOSTIC_INDEXED_STONE_QUADS");
+    return !requested.has_value() || *requested != "0";
+}
+
+[[nodiscard]]
+bool diagnosticDirectionalStoneCulling()
+{
+    std::optional<std::string> const requested = environmentVariable("MC_DIAGNOSTIC_DIRECTIONAL_STONE_CULLING");
     return !requested.has_value() || *requested != "0";
 }
 
@@ -1236,6 +1254,7 @@ struct VulkanRenderer::Impl final {
         std::vector<StoneFaceInstance> instances;
         glm::vec3 minimum;
         glm::vec3 maximum;
+        HeightTileDrawIndex::DirectionalSpans directional_spans{};
     };
 
     struct RetiredStoneRange final {
@@ -1582,6 +1601,7 @@ struct VulkanRenderer::Impl final {
             .instances = std::move(instances),
             .minimum = minimum,
             .maximum = maximum,
+            .directional_spans = HeightTileDrawIndex::directionalSpans(mesh.quads),
         });
         m_height_tile_face_count += range.instance_count;
         m_chunk_scene_enabled = true;
@@ -1698,6 +1718,7 @@ struct VulkanRenderer::Impl final {
                     .instances = std::move(instances),
                     .minimum = minimum,
                     .maximum = maximum,
+                    .directional_spans = HeightTileDrawIndex::directionalSpans(mesh.quads),
                 },
             });
         }
@@ -1901,7 +1922,12 @@ private:
             if (coordinate.x < 0 || coordinate.y < 0) {
                 fallback = slot.range;
             } else {
-                m_visible_stone_draw_ranges.push_back(slot.range);
+                HeightTileDrawIndex::appendVisibleRanges(
+                    slot.range,
+                    m_directional_stone_culling ? slot.directional_spans : HeightTileDrawIndex::DirectionalSpans{},
+                    camera_position,
+                    m_visible_stone_draw_ranges
+                );
             }
         }
         return fallback;
@@ -1918,6 +1944,8 @@ private:
                 .range = slot.range,
                 .minimum = slot.minimum,
                 .maximum = slot.maximum,
+                .directional_spans = m_directional_stone_culling ? slot.directional_spans
+                    : HeightTileDrawIndex::DirectionalSpans{},
             });
         } catch (std::bad_alloc const&) {
             // Optional CPU indexing must not prevent already-published geometry from drawing.
@@ -2967,6 +2995,7 @@ private:
     std::optional<StoneIndirectDraws> m_stone_indirect_draws;
     std::optional<VulkanStoneDrawBuffer> m_stone_quad_indices;
     bool m_diagnostic_indexed_stone_quads = diagnosticIndexedStoneQuads();
+    bool m_directional_stone_culling = diagnosticDirectionalStoneCulling();
     uint64_t m_diagnostic_render_attempt_id = 0U;
     bool m_diagnostic_frame_recorded = false;
     bool m_diagnostic_stone_indirect = false;

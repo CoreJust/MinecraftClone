@@ -13,18 +13,32 @@
 #include <array>
 #include <cstdint>
 #include <map>
+#include <span>
 #include <unordered_map>
 #include <vector>
+
+namespace shared {
+struct HeightTileSurfaceQuad;
+} // namespace shared
 
 namespace client {
 
 class HeightTileDrawIndex final {
 public:
+    struct DirectionalSpan final {
+        uint32_t instance_count = 0U;
+        int32_t minimum_origin = 0;
+        int32_t maximum_origin = 0;
+    };
+
+    using DirectionalSpans = std::array<DirectionalSpan, 6>;
+
     struct Entry final {
         shared::HeightTileCoordinate coordinate{};
         StoneIndirectDraws::Range range;
         glm::vec3 minimum{};
         glm::vec3 maximum{};
+        DirectionalSpans directional_spans{};
     };
 
     struct Work final {
@@ -38,6 +52,15 @@ public:
     HeightTileDrawIndex() = default;
     HeightTileDrawIndex(HeightTileDrawIndex const&) = delete;
     HeightTileDrawIndex& operator=(HeightTileDrawIndex const&) = delete;
+
+    [[nodiscard]]
+    static DirectionalSpans directionalSpans(std::span<shared::HeightTileSurfaceQuad const> quads);
+    static void appendVisibleRanges(
+        StoneIndirectDraws::Range range,
+        DirectionalSpans const& spans,
+        glm::dvec3 camera_position,
+        std::vector<StoneIndirectDraws::Range>& visible_ranges
+    );
 
     void upsert(Entry entry);
     void remove(shared::HeightTileCoordinate coordinate) noexcept;

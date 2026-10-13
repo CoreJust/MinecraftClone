@@ -3,22 +3,76 @@
 #include <client/render/StoneIndirectDraws.hpp>
 #include <client/render/VulkanFrustum.hpp>
 
+#include <shared/world/HeightTileSurfaceMesher.hpp>
 #include <shared/world/WorldGeneration.hpp>
 
 #include <glm/common.hpp>
+#include <glm/ext/vector_double3.hpp>
 #include <glm/vec2.hpp>
 #include <glm/vec3.hpp>
 
+#include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <limits>
+#include <span>
 #include <stdexcept>
 #include <utility>
+#include <vector>
 
 namespace client {
 
 namespace {
 
 constexpr double WORLD_WRAP_PERIOD = 65'536.0;
+constexpr double FACING_ROUNDING_TOLERANCE = 8.0 * std::numeric_limits<float>::epsilon();
+
+[[nodiscard]]
+bool backFacing(
+    HeightTileDrawIndex::DirectionalSpan const span,
+    uint32_t const direction,
+    glm::dvec3 const camera_position
+) noexcept {
+    int32_t const axis = static_cast<int32_t>(direction / 2U);
+    double const eye = camera_position[axis];
+    double const origin = std::floor(eye);
+    double minimum = static_cast<double>(span.minimum_origin) - origin;
+    double maximum = static_cast<double>(span.maximum_origin) - origin;
+    if (axis < 2) {
+        auto const shift = [](double const relative) {
+            return relative > WORLD_WRAP_PERIOD * 0.5 ? -WORLD_WRAP_PERIOD
+                : relative < -WORLD_WRAP_PERIOD * 0.5 ? WORLD_WRAP_PERIOD : 0.0;
+        };
+        double const minimum_shift = shift(minimum);
+        double const maximum_shift = shift(maximum);
+        // The shader wraps each quad origin, so a bucket crossing its cut has no single facing envelope.
+        if (minimum_shift != maximum_shift) {
+            return false;
+        }
+        minimum += minimum_shift;
+        maximum += maximum_shift;
+    }
+    double const positive_plane = static_cast<double>(direction & 1U);
+    minimum += positive_plane;
+    maximum += positive_plane;
+    double const relative_eye = eye - origin;
+    double const tolerance = FACING_ROUNDING_TOLERANCE
+        * std::max({ std::abs(minimum), std::abs(maximum), 1.0 });
+    return (direction & 1U) != 0U ? relative_eye < minimum - tolerance : relative_eye > maximum + tolerance;
+}
+
+void appendRange(
+    StoneIndirectDraws::Range const range,
+    std::vector<StoneIndirectDraws::Range>& visible_ranges
+)
+{
+    if (!visible_ranges.empty()
+        && visible_ranges.back().first_instance + visible_ranges.back().instance_count == range.first_instance) {
+        visible_ranges.back().instance_count += range.instance_count;
+    } else {
+        visible_ranges.push_back(range);
+    }
+}
 
 [[nodiscard]]
 float wrapShift(double const camera, float const center) noexcept
@@ -34,6 +88,50 @@ bool isFallback(shared::HeightTileCoordinate const coordinate) noexcept
 }
 
 } // namespace
+
+HeightTileDrawIndex::DirectionalSpans HeightTileDrawIndex::directionalSpans(
+    std::span<shared::HeightTileSurfaceQuad const> const quads
+)
+{
+    DirectionalSpans spans{};
+    for (shared::HeightTileSurfaceQuad const& quad : quads) {
+        uint32_t const direction = static_cast<uint32_t>(quad.direction);
+        if (direction >= spans.size()) {
+            throw std::invalid_argument("height tile direction span contains an invalid direction");
+        }
+        int32_t const plane_origin = direction <= 1U ? quad.x : direction <= 3U ? quad.y : quad.z;
+        DirectionalSpan& span = spans[direction];
+        if (span.instance_count == 0U) {
+            span.minimum_origin = plane_origin;
+            span.maximum_origin = plane_origin;
+        } else {
+            span.minimum_origin = std::min(span.minimum_origin, plane_origin);
+            span.maximum_origin = std::max(span.maximum_origin, plane_origin);
+        }
+        ++span.instance_count;
+    }
+    return spans;
+}
+
+void HeightTileDrawIndex::appendVisibleRanges(
+    StoneIndirectDraws::Range const range,
+    DirectionalSpans const& spans,
+    glm::dvec3 const camera_position,
+    std::vector<StoneIndirectDraws::Range>& visible_ranges
+)
+{
+    uint32_t first_instance = range.first_instance;
+    for (uint32_t direction = 0U; direction < spans.size(); ++direction) {
+        DirectionalSpan const span = spans[direction];
+        if (span.instance_count != 0U && !backFacing(span, direction, camera_position)) {
+            appendRange({ first_instance, span.instance_count }, visible_ranges);
+        }
+        first_instance += span.instance_count;
+    }
+    if (first_instance == range.first_instance) {
+        appendRange(range, visible_ranges);
+    }
+}
 
 HeightTileDrawIndex::Address HeightTileDrawIndex::address(shared::HeightTileCoordinate const coordinate) noexcept
 {
@@ -79,6 +177,16 @@ void HeightTileDrawIndex::upsert(Entry const entry)
     if (entry.range.instance_count == 0U
         || entry.range.first_instance > std::numeric_limits<uint32_t>::max() - entry.range.instance_count) {
         throw std::invalid_argument("height tile draw index range is invalid");
+    }
+    uint64_t directional_count = 0U;
+    for (DirectionalSpan const span : entry.directional_spans) {
+        directional_count += span.instance_count;
+        if (span.instance_count != 0U && span.minimum_origin > span.maximum_origin) {
+            throw std::invalid_argument("height tile draw index direction span is invalid");
+        }
+    }
+    if (directional_count != 0U && directional_count != entry.range.instance_count) {
+        throw std::invalid_argument("height tile draw index direction count does not match its range");
     }
     Address const location = address(entry.coordinate);
     auto [group_iterator, group_inserted] = m_groups.try_emplace(location.key);
@@ -189,13 +297,7 @@ HeightTileDrawIndex::Work HeightTileDrawIndex::collect(
                 continue;
             }
         }
-        StoneIndirectDraws::Range const range = entry.range;
-        if (!visible_ranges.empty()
-            && visible_ranges.back().first_instance + visible_ranges.back().instance_count == range.first_instance) {
-            visible_ranges.back().instance_count += range.instance_count;
-        } else {
-            visible_ranges.push_back(range);
-        }
+        appendVisibleRanges(entry.range, entry.directional_spans, camera_position, visible_ranges);
     }
     return work;
 }

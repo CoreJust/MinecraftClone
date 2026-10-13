@@ -3,6 +3,7 @@
 #include <client/render/StoneIndirectDraws.hpp>
 #include <client/render/VulkanFrustum.hpp>
 
+#include <shared/world/HeightTileSurfaceMesher.hpp>
 #include <shared/world/WorldGeneration.hpp>
 
 #include <glm/ext/matrix_float4x4.hpp>
@@ -15,6 +16,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstdint>
 #include <functional>
 #include <limits>
@@ -92,6 +94,150 @@ Index::Entry insideEntry(shared::HeightTileCoordinate const coordinate, Range co
         .maximum = { 0.5F, 0.5F, 0.9F } };
 }
 
+[[nodiscard]]
+double facingOracle(shared::HeightTileSurfaceQuad const quad, glm::dvec3 const eye)
+{
+    static constexpr std::array<glm::dvec3, 6> NORMALS{
+        glm::dvec3{ -1.0, 0.0, 0.0 }, glm::dvec3{ 1.0, 0.0, 0.0 },
+        glm::dvec3{ 0.0, -1.0, 0.0 }, glm::dvec3{ 0.0, 1.0, 0.0 },
+        glm::dvec3{ 0.0, 0.0, -1.0 }, glm::dvec3{ 0.0, 0.0, 1.0 },
+    };
+    uint32_t const direction = static_cast<uint32_t>(quad.direction);
+    glm::dvec3 relative{ static_cast<double>(quad.x), static_cast<double>(quad.y), static_cast<double>(quad.z) };
+    glm::dvec3 local_eye{};
+    for (int32_t axis = 0; axis < 3; ++axis) {
+        double const origin = std::floor(eye[axis]);
+        relative[axis] -= origin;
+        local_eye[axis] = eye[axis] - origin;
+        if (axis < 2) {
+            if (relative[axis] > 32'768.0) {
+                relative[axis] -= 65'536.0;
+            }
+            if (relative[axis] < -32'768.0) {
+                relative[axis] += 65'536.0;
+            }
+        }
+    }
+    if ((direction & 1U) != 0U) {
+        relative[static_cast<int32_t>(direction / 2U)] += 1.0;
+    }
+    glm::dvec3 const difference = local_eye - relative;
+    glm::dvec3 const normal = NORMALS[direction];
+    return difference.x * normal.x + difference.y * normal.y + difference.z * normal.z;
+}
+
+void expectEveryRejectedQuadBackFacing(
+    std::vector<shared::HeightTileSurfaceQuad> quads,
+    glm::dvec3 const eye
+)
+{
+    Index::DirectionalSpans const spans = Index::directionalSpans(quads);
+    std::ranges::stable_sort(quads, {}, &shared::HeightTileSurfaceQuad::direction);
+    std::vector<Range> ranges;
+    Index::appendVisibleRanges({ 0U, static_cast<uint32_t>(quads.size()) }, spans, eye, ranges);
+    for (uint32_t ordinal = 0U; ordinal < quads.size(); ++ordinal) {
+        bool const submitted = std::ranges::any_of(ranges, [ordinal](Range const range) {
+            return ordinal >= range.first_instance && ordinal - range.first_instance < range.instance_count;
+        });
+        double const facing = facingOracle(quads[ordinal], eye);
+        EXPECT_TRUE(submitted || facing < 0.0)
+            << "rejected front/coplanar quad " << ordinal << " at eye " << eye.x << "," << eye.y << "," << eye.z;
+    }
+}
+
+TEST(HeightTileDrawIndexTest, DirectionalSpansRejectOnlyExhaustivelyProvenBackFacingQuads)
+{
+    static constexpr std::array<int32_t, 9> ORIGINS{ -65'536, -1, 0, 1, 16, 32'768, 32'769, 65'535, 65'536 };
+    static constexpr std::array<double, 16> EYE_COORDINATES{
+        -65'536.5, -32'769.0, -1.5, -1.0, -0.5, 0.0, 0.000'000'01, 0.5,
+        1.0, 1.5, 16.0, 32'768.0, 32'768.5, 65'535.5, 65'536.0, 65'550.5,
+    };
+    for (uint32_t direction = 0U; direction < 6U; ++direction) {
+        for (int32_t const origin : ORIGINS) {
+            std::vector<shared::HeightTileSurfaceQuad> const quads{
+                { .x = origin, .y = origin, .z = origin,
+                    .direction = static_cast<shared::HeightTileSurfaceDirection>(direction),
+                    .u_extent = 16U, .v_extent = 65U },
+                { .x = origin + 1, .y = origin + 1, .z = origin + 1,
+                    .direction = static_cast<shared::HeightTileSurfaceDirection>(direction) },
+            };
+            for (double const coordinate : EYE_COORDINATES) {
+                expectEveryRejectedQuadBackFacing(quads, { coordinate, coordinate, coordinate });
+            }
+        }
+    }
+    std::vector<shared::HeightTileSurfaceQuad> mixed;
+    for (int32_t const origin : ORIGINS) {
+        for (uint32_t direction = 0U; direction < 6U; ++direction) {
+            mixed.push_back({ .x = origin, .y = origin, .z = origin,
+                .direction = static_cast<shared::HeightTileSurfaceDirection>(direction) });
+        }
+    }
+    for (double const x : EYE_COORDINATES) {
+        for (double const y : EYE_COORDINATES) {
+            for (double const z : EYE_COORDINATES) {
+                expectEveryRejectedQuadBackFacing(mixed, { x, y, z });
+            }
+        }
+    }
+}
+
+TEST(HeightTileDrawIndexTest, DirectionalSpansIncludeAppendedSeamBridgesAndRetainWrapCutAmbiguity)
+{
+    shared::HeightTile first{ .coordinate = { .x = 4'095, .y = 0 } };
+    shared::HeightTile second{ .coordinate = { .x = 0, .y = 0 } };
+    first.heights.fill(8U);
+    second.heights.fill(3U);
+    shared::HeightTileSurfaceMesher const mesher;
+    shared::HeightTileSurfaceMesh mesh = mesher.build(
+        first, { .positive_x = first.heights }, shared::HeightTileSurfaceDetail::Coarse
+    );
+    shared::HeightTileSurfaceMesh const neighbor = mesher.build(second);
+    shared::HeightTileSurfaceSeamBridge const bridge = shared::heightTileSurfaceSeamBridge(
+        mesh, neighbor, shared::HeightTileSurfaceDirection::PositiveX
+    );
+    ASSERT_FALSE(bridge.first.empty());
+    mesh.quads.insert(mesh.quads.end(), bridge.first.begin(), bridge.first.end());
+    for (double const x : { -8.5, 0.0, 65'520.0, 65'535.5, 65'536.0, 98'288.5 }) {
+        for (double const z : { 2.0, 3.0, 7.0, 8.0, 12.0 }) {
+            expectEveryRejectedQuadBackFacing(mesh.quads, { x, 8.0, z });
+        }
+    }
+    Index::DirectionalSpans spans{};
+    spans[1] = { .instance_count = 2U, .minimum_origin = 0, .maximum_origin = 16 };
+    std::vector<Range> ranges;
+    Index::appendVisibleRanges({ 10U, 2U }, spans, { 32'776.5, 0.0, 0.0 }, ranges);
+    EXPECT_EQ(pack(ranges), (PackedRanges{ { 10U, 2U } }));
+}
+
+TEST(HeightTileDrawIndexTest, DirectionSelectionKeepsCoplanarAndMixedPlanesAndMergesLiveRanges)
+{
+    Index::Entry entry = insideEntry({ .x = 0, .y = 0 }, { 10U, 5U });
+    entry.directional_spans[0] = { .instance_count = 1U, .minimum_origin = -2, .maximum_origin = -2 };
+    entry.directional_spans[1] = { .instance_count = 2U, .minimum_origin = -1, .maximum_origin = 1 };
+    entry.directional_spans[4] = { .instance_count = 1U, .minimum_origin = 1, .maximum_origin = 1 };
+    entry.directional_spans[5] = { .instance_count = 1U, .minimum_origin = -1, .maximum_origin = -1 };
+    Index index;
+    index.upsert(entry);
+    std::vector<Range> ranges;
+    static_cast<void>(index.collect(client::VulkanFrustum{ glm::mat4{ 1.0F } }, {}, ranges));
+    EXPECT_EQ(pack(ranges), (PackedRanges{ { 11U, 4U } }));
+    std::vector<Range> disabled;
+    Index::appendVisibleRanges(entry.range, {}, {}, disabled);
+    EXPECT_EQ(pack(disabled), (PackedRanges{ { 10U, 5U } }));
+    Index::Entry invalid = entry;
+    invalid.directional_spans[0].instance_count = 2U;
+    EXPECT_THROW(index.upsert(invalid), std::invalid_argument);
+    invalid = entry;
+    invalid.directional_spans[0].minimum_origin = 3;
+    EXPECT_THROW(index.upsert(invalid), std::invalid_argument);
+    static_cast<void>(index.collect(client::VulkanFrustum{ glm::mat4{ 1.0F } }, {}, ranges));
+    EXPECT_EQ(pack(ranges), (PackedRanges{ { 11U, 4U } }));
+    index.remove(entry.coordinate);
+    static_cast<void>(index.collect(client::VulkanFrustum{ glm::mat4{ 1.0F } }, {}, ranges));
+    EXPECT_TRUE(ranges.empty());
+}
+
 TEST(HeightTileDrawIndexTest, IncrementalReplacementRemovalResetAndArenaReuseMatchSortedLiveRanges)
 {
     static constexpr uint32_t MAXIMUM_UPDATE_SLOTS = 256U;
@@ -108,7 +254,7 @@ TEST(HeightTileDrawIndexTest, IncrementalReplacementRemovalResetAndArenaReuseMat
         EXPECT_EQ(pack(actual), pack(reference(entries, frustum, {}).ranges));
         EXPECT_LE(index.lastUpdateSlotsInspected(), MAXIMUM_UPDATE_SLOTS);
     };
-    for (Index::Entry const entry : entries) {
+    for (Index::Entry const& entry : entries) {
         index.upsert(entry);
     }
     verify();
@@ -144,7 +290,7 @@ TEST(HeightTileDrawIndexTest, RejectedOccupiedRangeKeepsBothPublishedEntriesUnch
         insideEntry({ .x = 2, .y = 1 }, { 20U, 5U }),
     };
     Index index;
-    for (Index::Entry const entry : entries) {
+    for (Index::Entry const& entry : entries) {
         index.upsert(entry);
     }
     try {
@@ -210,7 +356,7 @@ TEST(HeightTileDrawIndexTest, AmbiguousNearestWrapCutUsesExactIndividualImages)
             .minimum = { 16.0F, 0.0F, 0.1F }, .maximum = { 32.0F, 16.0F, 0.9F } },
     };
     Index index;
-    for (Index::Entry const entry : entries) {
+    for (Index::Entry const& entry : entries) {
         index.upsert(entry);
     }
     client::VulkanFrustum const frustum{ glm::scale(glm::mat4{ 1.0F }, { 1.0F / WORLD_PERIOD,
