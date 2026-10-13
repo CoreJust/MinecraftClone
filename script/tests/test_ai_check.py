@@ -15,6 +15,8 @@ from pathlib import Path
 
 REPOSITORY = Path(__file__).resolve().parents[2]
 SCRIPT = REPOSITORY / "script/ai_check.py"
+PRE_COMMIT = REPOSITORY / ".githooks/pre-commit"
+PRE_MERGE = REPOSITORY / ".githooks/pre-merge-commit"
 PRE_PUSH = REPOSITORY / ".githooks/pre-push"
 
 
@@ -483,6 +485,9 @@ class AiCheckTests(unittest.TestCase):
             "PYTHON": str(fake_python),
             "HOOK_LOG": str(log),
             "FAKE_GIT_LOG": fake_git_log.name,
+            "GIT_EXEC_PATH": subprocess.run(
+                ["git", "--exec-path"], text=True, capture_output=True, check=True
+            ).stdout.strip(),
         }
         shell = shutil.which("sh")
         self.assertIsNotNone(shell)
@@ -1248,6 +1253,38 @@ class AiCheckTests(unittest.TestCase):
         self.assertEqual(marker.read_text(encoding="utf-8"), "1")
         self.assertIn("REUSED PASS docs", second.stdout)
 
+    def test_tool_identity_mismatch_rejects_receipt(self):
+        checker = load_module()
+        log_dir = self.root / "build/ai-checks"
+        log_dir.mkdir(parents=True)
+        command = [sys.executable, "-c", "pass"]
+        environment = checker.phase_environment(self.root, "docs")
+        inputs = {"fixture": "unchanged"}
+        output = "documentation check passed\n"
+        (log_dir / "docs.log").write_text(output, encoding="utf-8")
+        checker.write_receipt(
+            log_dir,
+            "docs",
+            command,
+            environment,
+            inputs,
+            checker.PhaseResult("docs", command, 0, output),
+        )
+
+        self.assertEqual(
+            checker.read_matching_receipt(
+                self.root, log_dir, "docs", command, environment, inputs
+            ),
+            output,
+        )
+        changed_identity = {**checker.tool_identity(command), "resolved": "changed-tool"}
+        with mock.patch.object(checker, "tool_identity", return_value=changed_identity):
+            self.assertIsNone(
+                checker.read_matching_receipt(
+                    self.root, log_dir, "docs", command, environment, inputs
+                )
+            )
+
     def test_receipt_environment_mismatch_forces_execution(self):
         first_environment = os.environ | {"AI_CHECK_RECEIPT_ENV": "one"}
         second_environment = os.environ | {"AI_CHECK_RECEIPT_ENV": "two"}
@@ -1257,29 +1294,139 @@ class AiCheckTests(unittest.TestCase):
         self.assertEqual(second.returncode, 0, second.stdout + second.stderr)
         self.assertNotIn("REUSED PASS docs", second.stdout)
 
-    def test_hook_only_git_environment_does_not_invalidate_manual_receipt(self):
-        first_environment = os.environ.copy()
-        for name in ("GIT_DIR", "GIT_COMMON_DIR", "GIT_INDEX_FILE", "GIT_PREFIX", "GIT_WORK_TREE"):
-            first_environment.pop(name, None)
-        second_environment = first_environment | {
-            "GIT_DIR": str(self.root / ".git"),
-            "GIT_COMMON_DIR": str(self.root / ".git"),
-            "GIT_INDEX_FILE": str(self.root / ".git/index"),
-            "GIT_PREFIX": "",
-            "GIT_WORK_TREE": str(self.root),
-            "GIT_EXEC_PATH": subprocess.run(
-                ["git", "--exec-path"], text=True, capture_output=True, check=True
-            ).stdout.strip(),
-            "GIT_AUTHOR_DATE": "@0 +0000",
-            "GIT_AUTHOR_EMAIL": "hook@example.invalid",
-            "GIT_AUTHOR_NAME": "Hook",
-            "GIT_EDITOR": ":",
-        }
+    def test_changed_path_invalidates_receipt(self):
+        original_path = os.environ["PATH"]
+        first_environment = os.environ | {"PATH": f"/first-tool-path{os.pathsep}{original_path}"}
+        second_environment = os.environ | {"PATH": f"/second-tool-path{os.pathsep}{original_path}"}
         first = self.run_check("--fast", environment=first_environment)
         self.assertEqual(first.returncode, 0, first.stdout + first.stderr)
         second = self.run_check("--fast", environment=second_environment)
         self.assertEqual(second.returncode, 0, second.stdout + second.stderr)
-        self.assertIn("REUSED PASS docs", second.stdout)
+        self.assertNotIn("REUSED PASS docs", second.stdout)
+
+    def test_real_precommit_hook_reuses_manual_receipt(self):
+        marker = self.root / "build/ai-checks/docs-command-count"
+        (self.root / "script/ai_docs.py").write_text(
+            "import os\n"
+            "from pathlib import Path\n"
+            "marker = Path(os.environ['AI_CHECK_MARKER'])\n"
+            "value = int(marker.read_text()) if marker.exists() else 0\n"
+            "marker.parent.mkdir(parents=True, exist_ok=True)\n"
+            "marker.write_text(str(value + 1))\n",
+            encoding="utf-8",
+        )
+        checker = self.root / "script/ai_commit.py"
+        checker.write_text(
+            "import subprocess\n"
+            "import sys\n"
+            f"raise SystemExit(subprocess.run([{sys.executable!r}, 'script/ai_check.py', "
+            "'--root', '.', '--fast'], check=False).returncode)\n",
+            encoding="utf-8",
+        )
+        shutil.copy2(SCRIPT, self.root / "script/ai_check.py")
+        hook_dir = self.root / ".githooks"
+        hook_dir.mkdir()
+        shutil.copy2(PRE_COMMIT, hook_dir / "pre-commit")
+        self.git("config", "core.hooksPath", str(hook_dir))
+        self.git("branch", "-M", "codex/ai-hook-path-reuse")
+        environment = os.environ | {"PYTHON": sys.executable, "AI_CHECK_MARKER": str(marker)}
+        first = self.run_check("--fast", environment=environment)
+        self.assertEqual(first.returncode, 0, first.stdout + first.stderr)
+        self.assertEqual(marker.read_text(encoding="utf-8"), "1")
+        hook_result = subprocess.run(
+            ["git", "commit", "--allow-empty", "--no-gpg-sign", "-m", "hook receipt reuse"],
+            cwd=self.root,
+            env=environment,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        self.assertEqual(
+            hook_result.returncode,
+            0,
+            hook_result.stdout + hook_result.stderr,
+        )
+        self.assertEqual(marker.read_text(encoding="utf-8"), "1")
+
+    def test_real_pre_merge_hook_restores_manual_path(self):
+        hook_path_log = self.root / "hook-path.log"
+        checker = self.root / "script/ai_commit.py"
+        checker.write_text(
+            "import os\n"
+            "from pathlib import Path\n"
+            "Path(os.environ['AI_CHECK_PATH_LOG']).write_text(os.environ['PATH'], encoding='utf-8')\n",
+            encoding="utf-8",
+        )
+        hook_dir = self.root / ".githooks"
+        hook_dir.mkdir()
+        shutil.copy2(PRE_COMMIT, hook_dir / "pre-commit")
+        shutil.copy2(PRE_MERGE, hook_dir / "pre-merge-commit")
+        self.git("add", ".githooks", "script")
+        self.git("commit", "--no-gpg-sign", "-m", "pre-merge receipt fixture")
+        branch = "codex/ai-merge-hook-path-reuse"
+        self.git("branch", "-M", branch)
+        self.git("switch", "-c", "merge-side")
+        self.git("commit", "--allow-empty", "--no-gpg-sign", "-m", "empty merge side")
+        self.git("switch", branch)
+        self.git("config", "core.hooksPath", str(hook_dir))
+        environment = os.environ | {
+            "PYTHON": sys.executable,
+            "AI_CHECK_PATH_LOG": str(hook_path_log),
+        }
+        merge = subprocess.run(
+            ["git", "merge", "--no-ff", "--no-edit", "merge-side"],
+            cwd=self.root,
+            env=environment,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        self.assertEqual(merge.returncode, 0, merge.stdout + merge.stderr)
+        self.assertEqual(hook_path_log.read_text(encoding="utf-8"), environment["PATH"])
+
+    def test_real_pre_push_hook_reuses_manual_receipt(self):
+        marker = self.root / "build/ai-checks/docs-command-count"
+        (self.root / "script/ai_docs.py").write_text(
+            "import os\n"
+            "from pathlib import Path\n"
+            "marker = Path(os.environ['AI_CHECK_MARKER'])\n"
+            "value = int(marker.read_text()) if marker.exists() else 0\n"
+            "marker.parent.mkdir(parents=True, exist_ok=True)\n"
+            "marker.write_text(str(value + 1))\n",
+            encoding="utf-8",
+        )
+        (self.root / ".gitignore").write_text(
+            "build/\n__pycache__/\n**/__pycache__/\n*.pyc\n", encoding="utf-8"
+        )
+        hook_dir = self.root / ".githooks"
+        hook_dir.mkdir()
+        shutil.copy2(PRE_PUSH, hook_dir / "pre-push")
+        shutil.copy2(SCRIPT, self.root / "script/ai_check.py")
+        release_guard = self.root / "script/ci/release_guard.py"
+        release_guard.parent.mkdir(parents=True)
+        release_guard.write_text("raise SystemExit(0)\n", encoding="utf-8")
+        self.git("branch", "-M", "ai-dev")
+        self.git("add", ".gitignore", ".githooks", "script")
+        self.git("commit", "--no-gpg-sign", "-m", "pre-push receipt fixture")
+        self.git("config", "core.hooksPath", str(hook_dir))
+        environment = os.environ | {"PYTHON": sys.executable, "AI_CHECK_MARKER": str(marker)}
+        first = self.run_check("--fast", environment=environment)
+        self.assertEqual(first.returncode, 0, first.stdout + first.stderr)
+        self.assertEqual(marker.read_text(encoding="utf-8"), "1")
+        self.assertEqual(self.git("status", "--porcelain").stdout, "")
+        with tempfile.TemporaryDirectory() as directory:
+            remote = Path(directory) / "remote.git"
+            subprocess.run(["git", "init", "--bare", "-q", str(remote)], check=True)
+            push = subprocess.run(
+                ["git", "push", str(remote), "ai-dev:ai-dev"],
+                cwd=self.root,
+                env=environment,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+        self.assertEqual(push.returncode, 0, push.stdout + push.stderr)
+        self.assertEqual(marker.read_text(encoding="utf-8"), "1")
 
     def test_explicit_git_exec_path_mismatch_invalidates_receipt(self):
         first = self.run_check("--fast")

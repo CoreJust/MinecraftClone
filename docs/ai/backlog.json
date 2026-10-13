@@ -1502,7 +1502,7 @@
     ],
     "acceptance": "Deliver immutable, generation-tagged hard/soft entity permissions for all/players/mobs/technical-entities/per-kind and explicit-member/selector groups; namespace custom keys and defer world subjects. Cover movement, flight/collision, blocks, inventory, invincibility, commands, and permission-backed mode presets. Use CoreLang 0.1.3.1 (only documented 0.1.3.3 maintenance), retain interpreter/JIT parity, and prepare kernels off physics ticks. Test latency, loss, jitter, freezes, reordering, and duplication. Replicate a 29/16 × 10/16 × 10/16 player, 16-color palette, and first/rear-third/front-third views. Keep position-driven radius-256 terrain camera-independent and derive face LOD at projected area ≤2 px². Provide four inspected 2560x1440 Mac screenshots with prominent labels centered below the HUD, each showing a distinct requested scene; capture each only after its full configured render distance has finished loading, never with partially loaded terrain: (1) flying third-person beside the central spike, captured at render distance 72 from about 30% closer than the previous central-spike framing and slightly lower than the prior viewpoint while retaining an elevated angle; keep the full spike, most of its first ring, and terrain beyond visible, emphasize the landform's mass, and keep the player visible without covering the spike; (2) one distinct view of the player in the trench near the first spike, without reusing another trench capture; (3) the player climbing the mountain; and (4) first-person at horizontal X/Z (0, 0). Target stable 120 FPS at x200 and the world border as diagnostic only. Pass platform and automated MC-AI-0249 gates; include the accepted CoreCpp scope MC-AI-0056 Runtime executors, MC-AI-0057 Runtime audio, and MC-AI-0240 renderer diagnostics in this snapshot. Release S7, hold the minor open for feedback, and do not start S8.",
     "evidence": "Native gameplay candidate55f90cdd passed fresh Mac integration and separate Release-only four-peer acceptance. Mac ASan/UBSan/TSan each607/607; four Mac analyzers pass. Linux analysis-only LSan/MSan329passes and one OS-identification skip each. Android local tests/basic emulator runtime pass. Windows normal Release607/607 and portable radius72/16heading player capture pass; shadowed manifest-head defect is preserved with separate source-identity join. Source10a5898e changes only ASan budget/generated metadata; complete11-row local matrix validates. Windows ASan607/607; MSVC analyzer606passes plus one expected Release-only skip, separately passed in Release; all row commands exit0. Both Windows supervisor closure failures remain preserved with exact owned Job zero after containment. Fresh snapshot candidate gate passes627 Python cases,606 native passes/one Release-only skip, full analysis and renderer smoke; only dirty-state publisher exception is allowed before commit. One corrected Windows client and paired server run in Session1. User hands-on acceptance, promotion, exact packages/runtime and publication remain open; no release claimed.",
-    "blocker": "Local snapshot qualification passes, with original Windows supervisor closure failures retained separately and owned Jobs empty. Corrected normal Windows playtest is running in Session1 through the operational relay; user hands-on acceptance remains missing. Exact source/promotion review, aggregate promotion, final packages/runtime and publication remain open. Android scope is local tests/basic runtime/APK; minor held for feedback.",
+    "blocker": "Corrected Windows playtest remains running in Session1; user hands-on acceptance is missing. MC-AI-0445 repairs an observed Git hook PATH receipt-reuse defect with real-hook regressions; renewed aggregate proof, promotion, exact packages/runtime and publication remain open. Native platform evidence remains retained; no release claimed.",
     "owner": "Codex",
     "level": "snapshot",
     "parent": "MC-AI-0033",
@@ -1535,7 +1535,7 @@
     "retrospective": "Historical hindsight reports preserve exact failures and elapsed calendar time, not invented work hours or a two-day counterfactual. Confirmed delays include whole-commit evidence invalidation, duplicated gates, late setup preflight, hosted retry chains, buffered progress and repeated local invocation defects. The12October follow-up records moving-near coverage and reduced-input x200 gaps, runaway read-only queries, omitted dependency/Python/tool pins, incorrect receipt/build-root binding, and obsolete ASan row deadline. Qualification rules now require complete preflight, bounded owned processes, retained raw diagnostics, distinct source/dependency identities and checker-validated scoped evidence reuse. MC-AI-0442 fixes streaming and workload coverage;0443 fixes analyzers;0444 repairs only ASan budget. Original failures remain preserved; no partial suite or capture substitutes for release acceptance.",
     "docs_review": "Visually checked the four distinct committed 2560x1440 images. The central-spike scene shows the full landform, most of the first ring, terrain beyond it, and an unobscured player; its larger label is centered below the HUD. The other files are distinct trench/first-spike, mountain-climb, and first-person origin scenes. MC-AI-0398 records central SHA-256 09f367efe433ee001de7157fe426d0e924690c7f35658bb92835e699d06286af and the unchanged hashes of the other three images.",
     "environment_review": "Confirmed sandbox/native Launch Services views differ: zero versus 635 registered bundles. Native AudioUnit callback succeeds outside the scoped sandbox boundary; healthy system cache was not reset. Isolated pinned CoreCpp audio start/play/stop reproduces 376B Apple-framework exit allocations; owned 37B leak remains detectable. Transport tests use existing audio injection; production audio and suppressions unchanged. LLVM MSan uses upstream-supported system unwinder and process-local offline symbolization. All local qualification environments retain exact tools, SDK resources and dependency hashes. No global installs or emulator replacement.",
-    "backlog_review": "History at10a5898e8359639c7c0b4a8e886b851d3ee3a4cc accounts for198 unique reachable basic children, all completed. Accepted product scope is retained; no remaining basic implementation task is omitted. Aggregate local/runtime/package/publication gates remain open; minor feedback hold and noS8 remain mandatory."
+    "backlog_review": "History at bdfed253 accounts for198 completed reachable basic children. The additional MC-AI-0445 fixes the measured Git hook execution-environment reuse boundary, with focused tests passed and a separate task commit pending; no accepted product scope is dropped. Aggregate proof, runtime/package/publication gates remain open; minor feedback hold and noS8 remain mandatory."
   },
   {
     "id": "MC-AI-0039",
@@ -15695,6 +15695,43 @@
     "product_changes": [],
     "code_changes": [],
     "baseline_commit": "55f90cdd35bc4dc9d28949a8839dd39430fcff07",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0445",
+    "title": "Normalize Git-injected hook PATH for qualification receipt reuse",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P0",
+    "route": "luna",
+    "milestone": "Unassigned",
+    "depends_on": [],
+    "acceptance": "Actual Git hook and direct checks reuse identical qualified tool environments; genuinely changed PATH, tool identities, environment values, source inputs, or evidence still invalidate receipts. Reproduce the failure before the narrow fix and pass focused regressions.",
+    "evidence": "Real checked-in pre-commit and pre-push regressions each failed before repair: manual marker1 became2 after the hook. After guarded execution-side PATH restoration each remains1. Real no-ff pre-merge dispatch restores the caller PATH without asserting whole merge-environment equivalence. Focused test_ai_check66/66 passed before the additional merge case; final five hook/PATH/tool tests pass4.064s. Hook syntax and whitespace checks pass. Adding only Git exec-prefix to coordinator PATH reproduces exact stored cb6178d5 hook digest from direct4abf7d14. Full candidate/proof and publication checks remain aggregate gates. Original failed proof, passing hook phase receipts and logs archived at /private/tmp/mc-s7-0445-pre-repair-evidence.kKrOBs.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0038",
+    "motivation": "Normalize Git-injected hook PATH for qualification receipt reuse",
+    "context": "Full candidate gates passed in the actual Git commit hook, but postcommit proof-only rejected all four phase receipts. A real temporary-repository hook reproduction isolated Git-injected PATH as the environment difference; historical per-key values were not retained.",
+    "complexity": "low",
+    "created_at": "2026-10-13",
+    "resolved_at": "2026-10-13",
+    "resolution_changes": "Restore only the Git-injected leading execution-directory PATH entry in pre-commit and pre-push before checks launch; delegate pre-merge-commit through pre-commit. Retain existing environment fingerprints and tool identity checks. Replace simulated hook-only reuse coverage with actual checked-in hook regressions and retain genuine PATH/exec-path invalidation tests.",
+    "plan": [
+      "Clarify acceptance and implementation steps.",
+      "Normalize only the mechanically injected hook PATH prefix without weakening environment identity; cover an actual Git hook and genuine environment drift; preserve previous receipt and gate evidence."
+    ],
+    "product_changes": [],
+    "code_changes": [
+      "Normalize actual hook execution PATH rather than weakening receipt fingerprints; test real commit and local-bare-repository push boundaries."
+    ],
+    "baseline_commit": "",
     "commits": [],
     "finalized": true,
     "retrospective": "",

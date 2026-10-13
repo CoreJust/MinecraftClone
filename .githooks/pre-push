@@ -1,6 +1,19 @@
 #!/bin/sh
 set -eu
 
+git_exec_path="${GIT_EXEC_PATH:-}"
+if [ -n "$git_exec_path" ]; then
+    case "${PATH-}" in
+        "$git_exec_path":*)
+            if [ "$(git --exec-path)" = "$git_exec_path" ]; then
+                # Git prepends its exec directory for hooks; keep phase execution and receipt PATHs aligned.
+                PATH="${PATH#"$git_exec_path":}"
+                export PATH
+            fi
+            ;;
+    esac
+fi
+
 branch="$(git branch --show-current)"
 head_sha="$(git rev-parse HEAD)"
 

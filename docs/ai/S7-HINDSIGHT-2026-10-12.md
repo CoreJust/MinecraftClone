@@ -74,3 +74,13 @@ separate candidate/dependency identities, bounded queries and input-verified
 phase recovery. This is a documented repair supported by direct evidence, not
 a guarantee that all setup defects are eliminated. S7 publication and exact
 package acceptance remain open.
+
+The 13 October source commit passed its full hook gate, but the subsequent
+proof-only gate rejected all four phase receipts. A real Git-hook regression
+reproduced the duplicate execution. In the coordinator's normal-host context,
+adding only Git's execution-directory prefix to `PATH` reproduced the exact
+stored hook fingerprint; direct checks had a different fingerprint. Existing
+tests simulated hook variables but omitted this real hook behavior. MC-AI-0445
+addresses that execution boundary without ignoring genuine environment drift.
+Its acceptance requires a real-hook reuse regression and negative environment
+checks; the original failed proof and passing native evidence remain retained.

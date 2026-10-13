@@ -21,6 +21,13 @@ and resume only missing work when exact inputs still match. Never rewrite old
 failure receipts into successes. Derived receipts must disclose their source
 records and corrected bookkeeping, with the normal exact-candidate review.
 
+Qualification reuse must also be tested across the actual Git hook boundary,
+not only with manually constructed environment dictionaries. Git prepends its
+execution directory to hook `PATH`; restore only that injected prefix before
+launching checks, while retaining ordinary environment and tool-identity checks.
+Never ignore arbitrary `PATH` changes or replace a failed proof with a claimed
+pass.
+
 Runtime tests must exercise the claimed workload, not only its settings. Speed
 modifier tests also verify full input through production physics. Terrain tests
 cover current-near admission and readiness during sustained travel and credit
