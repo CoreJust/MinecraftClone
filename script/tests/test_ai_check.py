@@ -3,6 +3,7 @@ import contextlib
 import hashlib
 import io
 import json
+import ntpath
 import os
 import shutil
 import subprocess
@@ -77,6 +78,22 @@ class AiCheckTests(unittest.TestCase):
 
     def git(self, *args):
         return subprocess.run(["git", *args], cwd=self.root, text=True, capture_output=True, check=True)
+
+    def assert_hook_path_retains_caller(self, hook_path, caller_path):
+        if os.name == "nt":
+            # MSYS removes empty entries and normalizes native directory spelling.
+            caller_components = [
+                ntpath.normcase(ntpath.normpath(component))
+                for component in caller_path.split(os.pathsep) if component
+            ]
+            hook_components = [
+                ntpath.normcase(ntpath.normpath(component))
+                for component in hook_path.split(os.pathsep) if component
+            ]
+            self.assertGreater(len(hook_components), len(caller_components))
+            self.assertEqual(hook_components[-len(caller_components):], caller_components)
+        else:
+            self.assertEqual(hook_path, caller_path)
 
     def configure_native_build_fixture(self, preset="debug"):
         build_root = self.root / "build" / preset
@@ -461,6 +478,7 @@ class AiCheckTests(unittest.TestCase):
             "printf 'git:%s:%s\\n' \"$1\" \"$2\" >> \"$FAKE_GIT_LOG\"\n"
             "case \"$1 $2\" in\n"
             "  'branch --show-current') echo master ;;\n"
+            "  '--exec-path ') echo \"$GIT_EXEC_PATH\" ;;\n"
             "  'rev-parse HEAD') echo checked-commit ;;\n"
             "  'rev-parse tag-object^{commit}') echo checked-commit ;;\n"
             "  'status --porcelain') ;;\n"
@@ -471,7 +489,21 @@ class AiCheckTests(unittest.TestCase):
         )
         fake_python = fake_bin / "python"
         fake_python.write_text(
-            "#!/bin/sh\nprintf '%s\\n' \"$*\" > \"$HOOK_LOG\"\n",
+            "#!/bin/sh\n"
+            "mkdir -p \"$(dirname \"$HOOK_PATH_LOG\")\"\n"
+            "printf '%s\\n' \"$*\" > \"$HOOK_LOG\"\n"
+            "case \"$PATH\" in\n"
+            "  \"$HOOK_PATH_PREFIX\":*) echo restored > \"$HOOK_PATH_LOG\" ;;\n"
+            "  *) echo retained > \"$HOOK_PATH_LOG\" ;;\n"
+            "esac\n",
+            encoding="utf-8",
+            newline="\n",
+        )
+        fake_cygpath = fake_bin / "cygpath"
+        fake_cygpath.write_text(
+            "#!/bin/sh\n"
+            "[ \"$1\" = -u ] || exit 2\n"
+            "printf '%s\\n' \"$POSIX_GIT_EXEC_PATH\"\n",
             encoding="utf-8",
             newline="\n",
         )
@@ -479,19 +511,29 @@ class AiCheckTests(unittest.TestCase):
         self.assertNotIn(b"\r", fake_python.read_bytes())
         fake_git.chmod(0o755)
         fake_python.chmod(0o755)
+        fake_cygpath.chmod(0o755)
         log = self.root / "hook.log"
+        hook_path_log = self.root / "build/ai-checks/hook-path.log"
         fake_git_log = self.root / "fake-git.log"
         environment = os.environ | {
             "PYTHON": str(fake_python),
             "HOOK_LOG": str(log),
+            "HOOK_PATH_LOG": str(hook_path_log),
             "FAKE_GIT_LOG": fake_git_log.name,
-            "GIT_EXEC_PATH": subprocess.run(
-                ["git", "--exec-path"], text=True, capture_output=True, check=True
-            ).stdout.strip(),
+            "GIT_EXEC_PATH": "C:/fixture/git-core",
+            "POSIX_GIT_EXEC_PATH": "/__fixture_git_exec_path__",
         }
         shell = shutil.which("sh")
         self.assertIsNotNone(shell)
         shell_path = 'PATH="$PWD/fake-bin:$PATH"; export PATH;'
+        unprefixed_hook_path = (
+            'PATH="$PWD/fake-bin:$PATH"; export PATH; '
+            'HOOK_PATH_PREFIX="$PWD/fake-bin"; export HOOK_PATH_PREFIX;'
+        )
+        hook_path = (
+            'PATH="$POSIX_GIT_EXEC_PATH:$PWD/fake-bin:$PATH"; export PATH; '
+            'HOOK_PATH_PREFIX="$PWD/fake-bin"; export HOOK_PATH_PREFIX;'
+        )
         shell_version = subprocess.run(
             [shell, "--version"],
             cwd=self.root,
@@ -508,8 +550,19 @@ class AiCheckTests(unittest.TestCase):
             check=False,
             env=environment,
         )
+        unprefixed_result = subprocess.run(
+            [shell, "-c", f'{unprefixed_hook_path} exec "$1"', "pre-push-fixture", PRE_PUSH],
+            cwd=self.root,
+            input="refs/tags/ai/EarlyDev/0.1 tag-object refs/tags/ai/EarlyDev/0.1 0000000000000000000000000000000000000000\n",
+            text=True,
+            capture_output=True,
+            env=environment,
+        )
+        self.assertEqual(unprefixed_result.returncode, 0, unprefixed_result.stderr)
+        self.assertNotIn("git:--exec-path:", fake_git_log.read_text(encoding="utf-8"))
+        fake_git_log.write_text("", encoding="utf-8")
         result = subprocess.run(
-            [shell, "-c", f'{shell_path} exec "$1"', "pre-push-fixture", PRE_PUSH],
+            [shell, "-c", f'{hook_path} exec "$1"', "pre-push-fixture", PRE_PUSH],
             cwd=self.root,
             input="refs/tags/ai/EarlyDev/0.1 tag-object refs/tags/ai/EarlyDev/0.1 0000000000000000000000000000000000000000\n",
             text=True,
@@ -537,14 +590,18 @@ class AiCheckTests(unittest.TestCase):
         self.assertEqual(
             fake_git_log_contents.splitlines(),
             [
-                "git:--version:",
+                "git:--exec-path:",
                 "git:branch:--show-current",
                 "git:rev-parse:HEAD",
                 "git:rev-parse:tag-object^{commit}",
                 "git:status:--porcelain",
             ],
         )
-        self.assertEqual(log.read_text(encoding="utf-8").strip(), "script/ai_check.py --strict --require-index-match")
+        self.assertEqual(
+            log.read_text(encoding="utf-8").strip(),
+            "script/ai_check.py --strict --require-index-match",
+        )
+        self.assertEqual(hook_path_log.read_text(encoding="utf-8").strip(), "restored")
 
     def test_ai_dev_pre_push_entrypoint_runs_fast_gate_and_propagates_failure(self):
         self.git("branch", "-M", "ai-dev")
@@ -1317,8 +1374,12 @@ class AiCheckTests(unittest.TestCase):
         )
         checker = self.root / "script/ai_commit.py"
         checker.write_text(
+            "import os\n"
             "import subprocess\n"
             "import sys\n"
+            "from pathlib import Path\n"
+            "Path(os.environ['AI_CHECK_PATH_LOG']).parent.mkdir(parents=True, exist_ok=True)\n"
+            "Path(os.environ['AI_CHECK_PATH_LOG']).write_text(os.environ['PATH'], encoding='utf-8')\n"
             f"raise SystemExit(subprocess.run([{sys.executable!r}, 'script/ai_check.py', "
             "'--root', '.', '--fast'], check=False).returncode)\n",
             encoding="utf-8",
@@ -1329,7 +1390,12 @@ class AiCheckTests(unittest.TestCase):
         shutil.copy2(PRE_COMMIT, hook_dir / "pre-commit")
         self.git("config", "core.hooksPath", str(hook_dir))
         self.git("branch", "-M", "codex/ai-hook-path-reuse")
-        environment = os.environ | {"PYTHON": sys.executable, "AI_CHECK_MARKER": str(marker)}
+        hook_path_log = self.root / "build/ai-checks/hook-path.log"
+        environment = os.environ | {
+            "PYTHON": sys.executable,
+            "AI_CHECK_MARKER": str(marker),
+            "AI_CHECK_PATH_LOG": str(hook_path_log),
+        }
         first = self.run_check("--fast", environment=environment)
         self.assertEqual(first.returncode, 0, first.stdout + first.stderr)
         self.assertEqual(marker.read_text(encoding="utf-8"), "1")
@@ -1346,17 +1412,37 @@ class AiCheckTests(unittest.TestCase):
             0,
             hook_result.stdout + hook_result.stderr,
         )
-        self.assertEqual(marker.read_text(encoding="utf-8"), "1")
+        expected_runs = "2" if os.name == "nt" else "1"
+        self.assertEqual(marker.read_text(encoding="utf-8"), expected_runs)
+        self.assert_hook_path_retains_caller(
+            hook_path_log.read_text(encoding="utf-8"), environment["PATH"]
+        )
 
     def test_real_pre_merge_hook_restores_manual_path(self):
-        hook_path_log = self.root / "hook-path.log"
+        marker = self.root / "build/ai-checks/docs-command-count"
+        (self.root / "script/ai_docs.py").write_text(
+            "import os\n"
+            "from pathlib import Path\n"
+            "marker = Path(os.environ['AI_CHECK_MARKER'])\n"
+            "value = int(marker.read_text()) if marker.exists() else 0\n"
+            "marker.parent.mkdir(parents=True, exist_ok=True)\n"
+            "marker.write_text(str(value + 1))\n",
+            encoding="utf-8",
+        )
+        hook_path_log = self.root / "build/ai-checks/hook-path.log"
         checker = self.root / "script/ai_commit.py"
         checker.write_text(
             "import os\n"
+            "import subprocess\n"
+            "import sys\n"
             "from pathlib import Path\n"
-            "Path(os.environ['AI_CHECK_PATH_LOG']).write_text(os.environ['PATH'], encoding='utf-8')\n",
+            "Path(os.environ['AI_CHECK_PATH_LOG']).parent.mkdir(parents=True, exist_ok=True)\n"
+            "Path(os.environ['AI_CHECK_PATH_LOG']).write_text(os.environ['PATH'], encoding='utf-8')\n"
+            f"raise SystemExit(subprocess.run([{sys.executable!r}, 'script/ai_check.py', "
+            "'--root', '.', '--fast'], check=False).returncode)\n",
             encoding="utf-8",
         )
+        shutil.copy2(SCRIPT, self.root / "script/ai_check.py")
         hook_dir = self.root / ".githooks"
         hook_dir.mkdir()
         shutil.copy2(PRE_COMMIT, hook_dir / "pre-commit")
@@ -1369,10 +1455,17 @@ class AiCheckTests(unittest.TestCase):
         self.git("commit", "--allow-empty", "--no-gpg-sign", "-m", "empty merge side")
         self.git("switch", branch)
         self.git("config", "core.hooksPath", str(hook_dir))
+        merge_head = self.git("rev-parse", "merge-side").stdout.strip()
         environment = os.environ | {
             "PYTHON": sys.executable,
+            "AI_CHECK_MARKER": str(marker),
             "AI_CHECK_PATH_LOG": str(hook_path_log),
+            "GIT_REFLOG_ACTION": "merge merge-side",
+            f"GITHEAD_{merge_head}": "merge-side",
         }
+        first = self.run_check("--fast", environment=environment)
+        self.assertEqual(first.returncode, 0, first.stdout + first.stderr)
+        self.assertEqual(marker.read_text(encoding="utf-8"), "1")
         merge = subprocess.run(
             ["git", "merge", "--no-ff", "--no-edit", "merge-side"],
             cwd=self.root,
@@ -1382,7 +1475,11 @@ class AiCheckTests(unittest.TestCase):
             check=False,
         )
         self.assertEqual(merge.returncode, 0, merge.stdout + merge.stderr)
-        self.assertEqual(hook_path_log.read_text(encoding="utf-8"), environment["PATH"])
+        expected_runs = "2" if os.name == "nt" else "1"
+        self.assertEqual(marker.read_text(encoding="utf-8"), expected_runs)
+        self.assert_hook_path_retains_caller(
+            hook_path_log.read_text(encoding="utf-8"), environment["PATH"]
+        )
 
     def test_real_pre_push_hook_reuses_manual_receipt(self):
         marker = self.root / "build/ai-checks/docs-command-count"
@@ -1404,12 +1501,23 @@ class AiCheckTests(unittest.TestCase):
         shutil.copy2(SCRIPT, self.root / "script/ai_check.py")
         release_guard = self.root / "script/ci/release_guard.py"
         release_guard.parent.mkdir(parents=True)
-        release_guard.write_text("raise SystemExit(0)\n", encoding="utf-8")
+        release_guard.write_text(
+            "import os\n"
+            "from pathlib import Path\n"
+            "Path(os.environ['AI_CHECK_PATH_LOG']).parent.mkdir(parents=True, exist_ok=True)\n"
+            "Path(os.environ['AI_CHECK_PATH_LOG']).write_text(os.environ['PATH'], encoding='utf-8')\n",
+            encoding="utf-8",
+        )
         self.git("branch", "-M", "ai-dev")
         self.git("add", ".gitignore", ".githooks", "script")
         self.git("commit", "--no-gpg-sign", "-m", "pre-push receipt fixture")
         self.git("config", "core.hooksPath", str(hook_dir))
-        environment = os.environ | {"PYTHON": sys.executable, "AI_CHECK_MARKER": str(marker)}
+        hook_path_log = self.root / "build/ai-checks/hook-path.log"
+        environment = os.environ | {
+            "PYTHON": sys.executable,
+            "AI_CHECK_MARKER": str(marker),
+            "AI_CHECK_PATH_LOG": str(hook_path_log),
+        }
         first = self.run_check("--fast", environment=environment)
         self.assertEqual(first.returncode, 0, first.stdout + first.stderr)
         self.assertEqual(marker.read_text(encoding="utf-8"), "1")
@@ -1426,7 +1534,11 @@ class AiCheckTests(unittest.TestCase):
                 check=False,
             )
         self.assertEqual(push.returncode, 0, push.stdout + push.stderr)
-        self.assertEqual(marker.read_text(encoding="utf-8"), "1")
+        expected_runs = "2" if os.name == "nt" else "1"
+        self.assertEqual(marker.read_text(encoding="utf-8"), expected_runs)
+        self.assert_hook_path_retains_caller(
+            hook_path_log.read_text(encoding="utf-8"), environment["PATH"]
+        )
 
     def test_explicit_git_exec_path_mismatch_invalidates_receipt(self):
         first = self.run_check("--fast")

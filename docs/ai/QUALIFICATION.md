@@ -26,7 +26,11 @@ not only with manually constructed environment dictionaries. Git prepends its
 execution directory to hook `PATH`; restore only that injected prefix before
 launching checks, while retaining ordinary environment and tool-identity checks.
 Never ignore arbitrary `PATH` changes or replace a failed proof with a claimed
-pass.
+pass. Git for Windows translates its execution prefix through MSYS; verify that
+prefix before removing it. Other shell-added directories remain genuine
+environment changes and require checks to rerun. Tests preserve the ordered
+nonempty caller directories, including duplicates, rather than assuming POSIX
+path spelling or empty-component preservation.
 
 Runtime tests must exercise the claimed workload, not only its settings. Speed
 modifier tests also verify full input through production physics. Terrain tests
