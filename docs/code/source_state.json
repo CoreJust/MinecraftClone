@@ -2,7 +2,7 @@
   "modules": [
     {
       "guide": "docs/ACCEPTANCE.md",
-      "guide_sha256": "cd4e7b19a930e278b52c884f3ea4c57d33b6cbf260687de57bbd2107d60ee847",
+      "guide_sha256": "1874b4572f7fa764f1ced322433c31d5399f8f3485ad3063c5d3636d5bb2ef2a",
       "id": "acceptance",
       "sources": [
         "src/acceptance/CMakeLists.txt",
@@ -119,6 +119,7 @@
         "script/ci/release_guard.py",
         "script/ci/verify_analysis_gate.py",
         "script/ci/verify_android_hwasan.py",
+        "script/ci/verify_gameplay_gate.py",
         "script/ci/verify_macos_lsan.py",
         "script/ci/verify_release_assets.py",
         "script/code_checks.py",
@@ -158,6 +159,7 @@
         "script/tests/test_vcpkg_clang_toolchain.py",
         "script/tests/test_verify_analysis_gate.py",
         "script/tests/test_verify_android_hwasan.py",
+        "script/tests/test_verify_gameplay_gate.py",
         "script/tests/test_verify_macos_lsan.py",
         "script/tests/test_verify_release_assets.py",
         "script/tests/test_windows_runtime_staging.py",
@@ -174,7 +176,7 @@
         "vcpkg-configuration.json",
         "vcpkg.json"
       ],
-      "sources_sha256": "2245a3201721d94ced6662268be554f4943f187271a73472ca85df75f39539f9"
+      "sources_sha256": "6be20b8bc1e55fef526db5af501a4e8730cb7259287a9ceaf47ceb06f245f3e0"
     },
     {
       "guide": "docs/code/CORE.md",

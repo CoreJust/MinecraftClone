@@ -20,6 +20,26 @@
     "reuse": false
   },
   {
+    "name": "full-radius-gameplay",
+    "enabled": true,
+    "levels": ["snapshot", "minor", "major"],
+    "command": [
+      "{python}",
+      "script/ci/verify_gameplay_gate.py",
+      "--root",
+      "{root}",
+      "--receipt",
+      "{root}/build/ai-checks/gameplay-aggregate.json",
+      "--candidate-commit",
+      "{proof-candidate-commit}"
+    ],
+    "timeout": 60,
+    "reason": "Requires source-bound local Mac and Windows Release radius256 coverage and raw request-cadence proxy qualification; physical scanout remains unavailable.",
+    "when": "release",
+    "proof": true,
+    "reuse": false
+  },
+  {
     "name": "renderer-smoke",
     "enabled": true,
     "levels": ["snapshot", "minor", "major"],
