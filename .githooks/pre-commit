@@ -6,15 +6,31 @@ case "$branch" in
     ai-dev|ai-main|codex/ai-*)
         git_exec_path="${GIT_EXEC_PATH:-}"
         if [ -n "$git_exec_path" ]; then
+            path_exec_prefix=""
             case "${PATH-}" in
-                "$git_exec_path":*)
-                    if [ "$(git --exec-path)" = "$git_exec_path" ]; then
-                        # Git prepends its exec directory for hooks; keep phase execution and receipt PATHs aligned.
-                        PATH="${PATH#"$git_exec_path":}"
-                        export PATH
-                    fi
+                "$git_exec_path":*) path_exec_prefix="$git_exec_path" ;;
+                *)
+                    case "$git_exec_path" in
+                        [A-Za-z]:/*)
+                            if command -v cygpath >/dev/null 2>&1; then
+                                posix_git_exec_path="$(cygpath -u "$git_exec_path" 2>/dev/null || true)"
+                                if [ -n "$posix_git_exec_path" ]; then
+                                    case "${PATH-}" in
+                                        "$posix_git_exec_path":*)
+                                            path_exec_prefix="$posix_git_exec_path"
+                                            ;;
+                                    esac
+                                fi
+                            fi
+                            ;;
+                    esac
                     ;;
             esac
+            if [ -n "$path_exec_prefix" ] && [ "$(git --exec-path)" = "$git_exec_path" ]; then
+                # Git for Windows exports native GIT_EXEC_PATH but MSYS converts PATH entries.
+                PATH="${PATH#"$path_exec_prefix":}"
+                export PATH
+            fi
         fi
         exec "${PYTHON:-python3}" script/ai_commit.py precommit
         ;;

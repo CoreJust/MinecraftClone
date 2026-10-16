@@ -80,6 +80,8 @@ struct RuntimeCommand final {
     acceptance::GameBenchmarkWorkload game_benchmark_workload =
         acceptance::GameBenchmarkWorkload::OrdinaryMovement;
     uint32_t render_distance = shared::HEIGHT_TILE_INTEREST_RADIUS;
+    std::chrono::seconds full_radius_warmup_timeout =
+        acceptance::GAME_BENCHMARK_FULL_RADIUS_DEFAULT_WARMUP_TIMEOUT;
 };
 
 [[nodiscard]]
@@ -326,13 +328,14 @@ std::expected<RuntimeCommand, std::string> parseRuntimeCommand(int const argc, c
         }
         return command;
     }
-    if (argc >= 4 && argc <= 9 && std::string_view{ argv[1] } == "--benchmark-game"
+    if (argc >= 4 && argc <= 11 && std::string_view{ argv[1] } == "--benchmark-game"
         && std::string_view{ argv[argc - 2] } == "--evidence") {
         RuntimeCommand command{};
         command.mode = RuntimeMode::GameBenchmark;
         command.evidence_path = argv[argc - 1];
         bool workload_selected = false;
         bool radius_selected = false;
+        bool full_radius_timeout_selected = false;
         for (int argument_index = 2; argument_index < argc - 2; ++argument_index) {
             std::string_view const argument{ argv[argument_index] };
             if (argument == "--present-immediate" && !command.require_immediate_present_mode) {
@@ -354,13 +357,34 @@ std::expected<RuntimeCommand, std::string> parseRuntimeCommand(int const argc, c
                     command.game_benchmark_workload = acceptance::GameBenchmarkWorkload::WrappedBorder;
                 } else if (name == "permission-collision") {
                     command.game_benchmark_workload = acceptance::GameBenchmarkWorkload::PermissionCollisionChurn;
+                } else if (name == "speed-200-full-radius") {
+                    command.game_benchmark_workload =
+                        acceptance::GameBenchmarkWorkload::Speed200FullRadiusRecovery;
                 } else {
                     return std::unexpected("invalid game benchmark workload: " + std::string{ name });
                 }
                 workload_selected = true;
+            } else if (argument == "--full-radius-warmup-seconds"
+                && !full_radius_timeout_selected && argument_index + 1 < argc - 2) {
+                int64_t seconds = 0;
+                std::string_view const value{ argv[++argument_index] };
+                auto const [end, error] = std::from_chars(value.data(), value.data() + value.size(), seconds);
+                if (error != std::errc{} || end != value.data() + value.size()) {
+                    return std::unexpected("full-radius warmup timeout must be an integer from 1 to 1800 seconds");
+                }
+                auto const timeout = acceptance::gameBenchmarkFullRadiusWarmupTimeout(seconds);
+                if (!timeout) {
+                    return std::unexpected(timeout.error());
+                }
+                command.full_radius_warmup_timeout = *timeout;
+                full_radius_timeout_selected = true;
             } else {
                 return std::unexpected("invalid game benchmark option: " + std::string{ argument });
             }
+        }
+        if (full_radius_timeout_selected
+            && command.game_benchmark_workload != acceptance::GameBenchmarkWorkload::Speed200FullRadiusRecovery) {
+            return std::unexpected("--full-radius-warmup-seconds requires --workload speed-200-full-radius");
         }
         return command;
     }
@@ -378,8 +402,8 @@ std::expected<RuntimeCommand, std::string> parseRuntimeCommand(int const argc, c
         "expected '--scenario <file> --evidence <file>', "
         "'--benchmark-render [--present-immediate] [--hud] --evidence <file>', "
         "'--benchmark-game [--present-immediate] "
-        "[--workload ordinary|speed-200|wrapped-border|permission-collision] "
-        "[--render-distance CHUNKS] --evidence <file>', "
+        "[--workload ordinary|speed-200|speed-200-full-radius|wrapped-border|permission-collision] "
+        "[--render-distance CHUNKS] [--full-radius-warmup-seconds 1..1800] --evidence <file>', "
         "or '--capture-render --image <ppm> --evidence <file>'"
     );
 }
@@ -531,11 +555,13 @@ int runRendererBenchmarkCommand(RuntimeCommand const& command)
 [[nodiscard]]
 int runGameBenchmarkCommand(RuntimeCommand const& command)
 {
-    acceptance::GameBenchmarkOptions const options{
+    acceptance::GameBenchmarkOptions options{
         .require_immediate_present_mode = command.require_immediate_present_mode,
         .workload = command.game_benchmark_workload,
         .render_distance = command.render_distance,
+        .full_radius_warmup_timeout = command.full_radius_warmup_timeout,
     };
+    options.deadline = acceptance::gameBenchmarkDeadline(options);
     RuntimeDeadlineWatchdog watchdog{ command.evidence_path, "benchmark-game", options.deadline };
     acceptance::RuntimeEvidence evidence = acceptance::collectRuntimeEvidence(
         "benchmark-game",

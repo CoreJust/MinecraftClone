@@ -280,6 +280,37 @@ class ClientLaunchTest(unittest.TestCase):
                 )
                 self.assertIn("invalid game benchmark workload", result.stderr)
 
+    def test_full_radius_warmup_timeout_is_bounded_and_workload_specific(self):
+        for value in ("-1", "0", "1801", "1x"):
+            with self.subTest(timeout=value):
+                result = subprocess.run(
+                    [str(self.binary), "--benchmark-game", "--workload", "speed-200-full-radius",
+                     "--full-radius-warmup-seconds", value, "--evidence", "unused-full-radius.json"],
+                    capture_output=True, text=True, timeout=5,
+                )
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("full-radius warmup timeout must be", result.stderr)
+
+        result = subprocess.run(
+            [str(self.binary), "--benchmark-game", "--workload", "speed-200",
+             "--full-radius-warmup-seconds", "1", "--evidence", "unused-full-radius.json"],
+            capture_output=True, text=True, timeout=5,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("requires --workload speed-200-full-radius", result.stderr)
+
+        with tempfile.TemporaryDirectory() as directory:
+            evidence_path = Path(directory) / "full-radius.json"
+            result = subprocess.run(
+                [str(self.binary), "--benchmark-game", "--workload", "speed-200-full-radius",
+                 "--full-radius-warmup-seconds", "1", "--render-distance", "255",
+                 "--evidence", str(evidence_path)],
+                capture_output=True, text=True, timeout=5,
+            )
+            self.assertNotEqual(result.returncode, 0)
+            self.assertTrue(evidence_path.exists())
+            self.assertIn("requires render distance 256", evidence_path.read_text())
+
     def test_normal_server_accepts_selected_render_distance(self):
         port = free_udp_port()
         with tempfile.TemporaryDirectory() as directory:

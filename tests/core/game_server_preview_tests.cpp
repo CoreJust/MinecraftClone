@@ -1634,16 +1634,83 @@ TEST(GameServerPreviewTest, SaturatedAdditionsDoNotStarveRemovalsAndInflightRecl
         && std::chrono::steady_clock::now() < deadline) {
         client.poll(std::chrono::milliseconds{1});
     }
-    std::vector<shared::ServerHeightTileBatchMessage> const outward_batches = deliveryBatchesFrom(
+    std::vector<shared::ServerHeightTileBatchMessage> outward_batches = deliveryBatchesFrom(
         client.messages,
         outward_message
     );
     ASSERT_EQ(outward_batches.size(), 1U);
+    ASSERT_TRUE(client.acknowledgeDelivery(outward_batches.front().delivery_token));
+    deadline = std::chrono::steady_clock::now() + TIMEOUT;
+    while (deliveryBatchesFrom(client.messages, outward_message).size() < 2U
+        && std::chrono::steady_clock::now() < deadline) {
+        client.poll(std::chrono::milliseconds{1});
+    }
+    outward_batches = deliveryBatchesFrom(client.messages, outward_message);
+    ASSERT_EQ(outward_batches.size(), 2U);
+
+    shared::HeightTileKey const outward_center{
+        .x = client.last_player_x / static_cast<int32_t>(shared::HEIGHT_TILE_SIDE_LENGTH),
+        .y = shared::World::FLIGHT_SPAWN.y / static_cast<int32_t>(shared::HEIGHT_TILE_SIDE_LENGTH),
+    };
+    std::vector<shared::HeightTileKey> expected_removals = heightTileKeys(client.messages);
+    std::erase_if(expected_removals, [&stalled_batches, outward_center](shared::HeightTileKey const key) {
+        return shared::heightTileWithinInterest(outward_center, key, shared::HEIGHT_TILE_INTEREST_RADIUS)
+            || std::any_of(std::next(stalled_batches.begin()), stalled_batches.end(), [key](
+                   shared::ServerHeightTileBatchMessage const& batch
+               ) {
+                   return std::ranges::any_of(batch.tiles, [key](shared::ServerHeightTileMessage const& tile) {
+                       return tile.key == key;
+                   });
+               });
+    });
+    auto const outward_removal_order = [outward_center](
+        shared::HeightTileKey const first,
+        shared::HeightTileKey const second
+    ) {
+        return std::tuple{
+            shared::heightTileInterestPriority(outward_center, 127, 0, first), first.y, first.x,
+        } > std::tuple{
+            shared::heightTileInterestPriority(outward_center, 127, 0, second), second.y, second.x,
+        };
+    };
+    std::ranges::sort(expected_removals, outward_removal_order);
+    ASSERT_GE(expected_removals.size(), 2U * shared::HEIGHT_TILE_DELIVERY_BATCH_CAPACITY);
     uint32_t outward_removals = 0U;
     for (shared::ServerHeightTileBatchMessage const& batch : outward_batches) {
-        outward_removals += static_cast<uint32_t>(batch.removals.size());
+        EXPECT_TRUE(batch.tiles.empty());
+        ASSERT_EQ(batch.removals.size(), shared::HEIGHT_TILE_DELIVERY_BATCH_CAPACITY);
+        for (shared::ServerRemoveHeightTileMessage const& removal : batch.removals) {
+            EXPECT_EQ(removal.key, expected_removals[outward_removals++]);
+        }
     }
-    ASSERT_GT(outward_removals, 0U);
+    ASSERT_EQ(outward_removals, 2U * shared::HEIGHT_TILE_DELIVERY_BATCH_CAPACITY);
+
+    expected_removals.erase(expected_removals.begin(), expected_removals.begin() + outward_removals);
+    for (shared::ServerHeightTileMessage const& tile : stalled_batches[1U].tiles) {
+        if (!shared::heightTileWithinInterest(outward_center, tile.key, shared::HEIGHT_TILE_INTEREST_RADIUS)) {
+            expected_removals.push_back(tile.key);
+        }
+    }
+    std::ranges::sort(expected_removals, outward_removal_order);
+    ASSERT_GE(expected_removals.size(), shared::HEIGHT_TILE_DELIVERY_BATCH_CAPACITY);
+    uint32_t const late_ack_message = static_cast<uint32_t>(client.messages.size());
+    ASSERT_TRUE(client.acknowledgeDelivery(stalled_batches[1U].delivery_token));
+    deadline = std::chrono::steady_clock::now() + TIMEOUT;
+    while (deliveryBatchesFrom(client.messages, late_ack_message).empty()
+        && std::chrono::steady_clock::now() < deadline) {
+        client.poll(std::chrono::milliseconds{1});
+    }
+    std::vector<shared::ServerHeightTileBatchMessage> const late_ack_batches = deliveryBatchesFrom(
+        client.messages,
+        late_ack_message
+    );
+    ASSERT_EQ(late_ack_batches.size(), 1U);
+    EXPECT_TRUE(late_ack_batches.front().tiles.empty());
+    ASSERT_EQ(late_ack_batches.front().removals.size(), shared::HEIGHT_TILE_DELIVERY_BATCH_CAPACITY);
+    for (uint32_t index = 0U; index < shared::HEIGHT_TILE_DELIVERY_BATCH_CAPACITY; ++index) {
+        EXPECT_EQ(late_ack_batches.front().removals[index].key, expected_removals[index]);
+    }
+    outward_batches.push_back(late_ack_batches.front());
 
     for (uint32_t sequence = MOVEMENT_INPUT_COUNT + 1U; sequence <= FINAL_INPUT_SEQUENCE; ++sequence) {
         ASSERT_TRUE(client.send(shared::encodeMessage(shared::ClientInputMessage{
@@ -1682,11 +1749,11 @@ TEST(GameServerPreviewTest, SaturatedAdditionsDoNotStarveRemovalsAndInflightRecl
     }
     size_t const recovery_message = client.messages.size();
     client.setAcknowledgesDeliveries(true);
-    for (auto batch = std::next(stalled_batches.begin()); batch != stalled_batches.end(); ++batch) {
+    for (auto batch = std::next(stalled_batches.begin(), 2U); batch != stalled_batches.end(); ++batch) {
         ASSERT_TRUE(client.acknowledgeDelivery(batch->delivery_token));
     }
-    for (shared::ServerHeightTileBatchMessage const& batch : outward_batches) {
-        ASSERT_TRUE(client.acknowledgeDelivery(batch.delivery_token));
+    for (auto batch = std::next(outward_batches.begin()); batch != outward_batches.end(); ++batch) {
+        ASSERT_TRUE(client.acknowledgeDelivery(batch->delivery_token));
     }
     deadline = std::chrono::steady_clock::now() + TIMEOUT;
     std::vector<shared::HeightTileKey> recovered;

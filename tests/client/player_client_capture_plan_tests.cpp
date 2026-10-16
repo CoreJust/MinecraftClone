@@ -23,6 +23,7 @@
 #include <compare>
 #include <cstdint>
 #include <cstdlib>
+#include <deque>
 #include <filesystem>
 #include <optional>
 #include <span>
@@ -202,7 +203,7 @@ TEST(PlayerClientCapturePlanTest, GivesArenaGrowthTimeThroughoutCapturePreload)
 TEST(PlayerClientCapturePlanTest, DrainsFullReceiveWindowDuringCapturePreload)
 {
     EXPECT_EQ(client::playerClientHeightTileChangeBudget(true), 128U);
-    EXPECT_EQ(client::playerClientHeightTileChangeBudget(false), 16U);
+    EXPECT_EQ(client::playerClientHeightTileChangeBudget(false), 128U);
 }
 
 TEST(PlayerClientCapturePlanTest, UsesTheSamePreviewMeshJobBudgetDuringCaptureAndPlay)
@@ -211,15 +212,95 @@ TEST(PlayerClientCapturePlanTest, UsesTheSamePreviewMeshJobBudgetDuringCaptureAn
     EXPECT_EQ(client::playerClientPreviewMeshJobBudget(false), 16U);
 }
 
-TEST(PlayerClientCapturePlanTest, CaptureRemovesOnlyDepartedRenderedMeshesBeforeFullCoverage)
+TEST(PlayerClientCapturePlanTest, DrainsOneBoundedProtocolWindowOfResidencyChangesPerFrame)
+{
+    static constexpr uint32_t PROTOCOL_WINDOW = 128U;
+    static constexpr uint32_t CHANGE_COUNT = PROTOCOL_WINDOW + 1U;
+    static constexpr client::HeightTileRevision REVISION{ .generation = 1U, .revision = 1U };
+    std::array<uint16_t, shared::HEIGHT_TILE_SAMPLE_COUNT> heights{};
+    client::PreviewResidency residency{ REVISION };
+
+    for (uint32_t index = 0U; index < CHANGE_COUNT; ++index) {
+        shared::HeightTileKey const key{ static_cast<int32_t>(index), 1 };
+        ASSERT_EQ(
+            residency.accept(key, REVISION, static_cast<uint64_t>(index) + 1U, heights).replacement,
+            client::HeightTileReplacement::Published
+        );
+    }
+
+    std::vector<client::HeightTileChange> const first_window = residency.takeChanges(
+        client::playerClientHeightTileChangeBudget(false)
+    );
+    ASSERT_EQ(first_window.size(), PROTOCOL_WINDOW);
+    EXPECT_EQ(residency.pendingChangeCount(), 1U);
+    EXPECT_EQ(first_window.front().key.x, 0);
+    EXPECT_EQ(first_window.back().key.x, static_cast<int32_t>(PROTOCOL_WINDOW - 1U));
+
+    std::vector<client::HeightTileChange> const second_window = residency.takeChanges(
+        client::playerClientHeightTileChangeBudget(false)
+    );
+    ASSERT_EQ(second_window.size(), 1U);
+    EXPECT_EQ(second_window.front().key.x, static_cast<int32_t>(PROTOCOL_WINDOW));
+    EXPECT_EQ(residency.pendingChangeCount(), 0U);
+}
+
+TEST(PlayerClientCapturePlanTest, WorkerAdmissionWindowBoundsOutstandingJobsAndReopensOnConsumption)
+{
+    static constexpr uint32_t PLAY_CAPACITY = 128U;
+    static constexpr uint32_t CAPTURE_CAPACITY = 16U;
+    EXPECT_EQ(client::playerClientPreviewMeshAdmissionBudget(false), PLAY_CAPACITY);
+    EXPECT_EQ(client::playerClientPreviewMeshAdmissionBudget(true), CAPTURE_CAPACITY);
+    client::PlayerPreviewMeshAdmissionWindow play_window{
+        client::playerClientPreviewMeshBacklogCapacity(false)
+    };
+    client::PlayerPreviewMeshAdmissionWindow capture_window{
+        client::playerClientPreviewMeshBacklogCapacity(true)
+    };
+
+    for (uint32_t index = 0U; index < PLAY_CAPACITY; ++index) {
+        ASSERT_TRUE(play_window.tryAdmit()) << index;
+    }
+    EXPECT_FALSE(play_window.canAccept());
+    EXPECT_FALSE(play_window.tryAdmit());
+    ASSERT_TRUE(play_window.releaseOne());
+    ASSERT_TRUE(play_window.tryAdmit());
+    EXPECT_EQ(play_window.outstandingCount(), PLAY_CAPACITY);
+    for (uint32_t index = 0U; index < PLAY_CAPACITY; ++index) {
+        ASSERT_TRUE(play_window.releaseOne()) << index;
+    }
+    EXPECT_FALSE(play_window.releaseOne());
+    EXPECT_EQ(play_window.outstandingCount(), 0U);
+
+    for (uint32_t index = 0U; index < CAPTURE_CAPACITY; ++index) {
+        ASSERT_TRUE(capture_window.tryAdmit()) << index;
+    }
+    EXPECT_FALSE(capture_window.canAccept());
+    EXPECT_FALSE(capture_window.tryAdmit());
+    EXPECT_EQ(capture_window.outstandingCount(), CAPTURE_CAPACITY);
+}
+
+TEST(PlayerClientCapturePlanTest, DepartedPreviewRemovalsProgressBeforeCoverageAndKeepRestoredKeys)
 {
     EXPECT_FALSE(client::playerClientShouldQueuePreviewRemoval(true, false));
     EXPECT_TRUE(client::playerClientShouldQueuePreviewRemoval(true, true));
-    EXPECT_EQ(client::playerClientPreviewRemovalBudget(true, false), 128U);
-    EXPECT_EQ(client::playerClientPreviewRemovalBudget(true, true), 128U);
+    EXPECT_EQ(client::playerClientPreviewRemovalBudget(), 128U);
     EXPECT_TRUE(client::playerClientShouldQueuePreviewRemoval(false, false));
-    EXPECT_EQ(client::playerClientPreviewRemovalBudget(false, false), 0U);
-    EXPECT_EQ(client::playerClientPreviewRemovalBudget(false, true), 16U);
+
+    std::deque<uint32_t> pending{ 10U, 20U, 30U };
+    std::unordered_set<uint32_t> current_interest{ 20U };
+    std::vector<uint32_t> removed;
+    uint32_t const budget = client::playerClientPreviewRemovalBudget();
+    for (uint32_t processed = 0U; processed < budget && !pending.empty(); ++processed) {
+        uint32_t const key = pending.front();
+        pending.pop_front();
+        if (client::playerClientShouldRemovePreviewMesh(current_interest.contains(key))) {
+            removed.push_back(key);
+        }
+    }
+
+    EXPECT_TRUE(pending.empty());
+    EXPECT_EQ(removed, (std::vector<uint32_t>{ 10U, 30U }));
+    EXPECT_FALSE(client::playerClientShouldRemovePreviewMesh(current_interest.contains(20U)));
 }
 
 TEST(PlayerClientCapturePlanTest, RequestsPhysicalHighResolutionAtOneAndTwoTimesScale)

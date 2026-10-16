@@ -82,6 +82,11 @@ struct RendererRuntimeInfo final {
     RendererPipelinePath pipeline_path = RendererPipelinePath::Vertex;
     std::chrono::nanoseconds cpu_acquire_wait_duration{ 0 };
     std::chrono::nanoseconds cpu_command_record_duration{ 0 };
+    std::chrono::nanoseconds cpu_visible_range_collection_duration{ 0 };
+    std::chrono::nanoseconds cpu_indirect_prepare_duration{ 0 };
+    std::chrono::nanoseconds cpu_stone_scene_record_duration{ 0 };
+    // Recording outside the three terrain phases includes scene and presentation work.
+    std::chrono::nanoseconds cpu_command_record_residual_duration{ 0 };
     std::chrono::nanoseconds cpu_complete_present_wait_duration{ 0 };
     std::chrono::nanoseconds cpu_frame_duration{ 0 };
     std::optional<std::chrono::nanoseconds> gpu_frame_duration;

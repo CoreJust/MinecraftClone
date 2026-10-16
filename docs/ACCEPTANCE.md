@@ -5,7 +5,7 @@ The desktop executable provides bounded, noninteractive modes for snapshot evide
 ```sh
 mc_main --scenario <file> --evidence <json>
 mc_main --benchmark-render [--present-immediate] [--hud] --evidence <json>
-mc_main --benchmark-game [--present-immediate] [--workload ordinary|speed-200|wrapped-border|permission-collision] --evidence <json>
+mc_main --benchmark-game [--present-immediate] [--workload ordinary|speed-200|speed-200-full-radius|wrapped-border|permission-collision] --evidence <json>
 mc_main --capture-render --image <ppm> --evidence <json>
 ```
 
@@ -45,6 +45,17 @@ are censored. Completion requires two center changes, near admissions, no far
 admissions while near work is pending, no ordering/classification errors or
 deadline misses, and full current-near visibility after a four-second neutral-input
 drain excluded from timing/rates.
+
+`speed-200-full-radius-recovery-v1` verifies the complete radius-256 disk before
+and after six seconds of x200 travel, with normal HUD/scheduling and two
+10-second stationary windows. Exact current meshes and drained queues are
+required; near-only or reduced-radius coverage cannot pass. Each warmup is
+bounded to 180 seconds for qualification.
+
+Snapshot promotion separately requires source-bound local Mac/Windows Release
+[gameplay proof](ai/GAMEPLAY_QUALIFICATION.md). Its verifier recomputes raw
+coverage, rates and request-cadence proxies; physical scanout remains unmeasured.
+Failed captures remain failed and do not replace analyzer or user acceptance.
 
 `--present-immediate` requires immediate negotiation and fails rather than reporting
 FIFO. Release validation defaults off. Compare a fixed-scene 1920x1080 pair with and

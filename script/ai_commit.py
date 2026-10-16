@@ -20,9 +20,15 @@ from typing import Any, Sequence
 
 
 LEVELS = frozenset({"basic", "snapshot", "minor", "major"})
-MODELS = frozenset({"gpt-6-luna", "gpt-6-sol"})
+MODEL_EFFORTS = {
+    "gpt-6-luna": frozenset({"low", "medium", "high", "xhigh", "max"}),
+    "gpt-6-sol": frozenset({"low", "medium", "high", "xhigh", "max", "ultra"}),
+    "gpt-6.1-sol": frozenset({"low", "medium", "high", "xhigh", "max", "ultra"}),
+    "gpt-6-astra": frozenset({"low", "medium", "high", "xhigh", "max", "ultra"}),
+}
 LUNA_MODEL = "gpt-6-luna"
 SOL_MODEL = "gpt-6-sol"
+LEGACY_REVIEW_MODELS = {"task": LUNA_MODEL, "aggregate": SOL_MODEL}
 
 
 class CommitGateError(ValueError):
@@ -162,10 +168,10 @@ def reviews_directory(root: Path) -> Path:
     return location if location.is_absolute() else root / location
 
 
-def receipt_path(root: Path, candidate: dict[str, str], model: str) -> Path:
-    if model not in MODELS:
-        raise CommitGateError(f"unsupported review model: {model}")
-    key = "-".join((candidate["head"], candidate["tree"], candidate["baseline_commit"], candidate["merge_head"], model))
+def receipt_path(root: Path, candidate: dict[str, str], identity: str) -> Path:
+    if identity not in LEGACY_REVIEW_MODELS and identity not in {LUNA_MODEL, SOL_MODEL}:
+        raise CommitGateError(f"unsupported review receipt identity: {identity}")
+    key = "-".join((candidate["head"], candidate["tree"], candidate["baseline_commit"], candidate["merge_head"], identity))
     return reviews_directory(root) / candidate["task_id"] / f"{key}.json"
 
 
@@ -176,15 +182,21 @@ def validate_report(report: Any, candidate: dict[str, str]) -> dict[str, Any]:
         if report.get(field) != value:
             raise CommitGateError(f"review report {field} does not match the staged candidate")
     model = report.get("model")
-    if model not in MODELS:
-        raise CommitGateError("review report model must be gpt-6-luna or gpt-6-sol")
-    if report.get("effort") not in {"medium", "high", "xhigh", "max"}:
-        raise CommitGateError("review report effort must be medium, high, xhigh, or max")
+    if not isinstance(model, str) or model not in MODEL_EFFORTS:
+        raise CommitGateError(f"review report model must be one of: {', '.join(MODEL_EFFORTS)}")
+    role = report.get("review_role")
+    if "review_role" not in report:
+        role = {LUNA_MODEL: "task", SOL_MODEL: "aggregate"}.get(model)
+    if not isinstance(role, str) or role not in LEGACY_REVIEW_MODELS:
+        raise CommitGateError("review report review_role must be task or aggregate; new models require an explicit role")
+    effort = report.get("effort")
+    if not isinstance(effort, str) or effort not in MODEL_EFFORTS[model]:
+        raise CommitGateError(f"review report effort for {model} must be one of: {', '.join(sorted(MODEL_EFFORTS[model]))}")
     if report.get("verdict") != "approved":
         raise CommitGateError("review report verdict must be approved")
     if not isinstance(report.get("evidence"), str) or not report["evidence"].strip():
         raise CommitGateError("review report evidence must be non-empty")
-    return report
+    return report | {"review_role": role}
 
 
 def selected_task_id(root: Path) -> str:
@@ -195,7 +207,7 @@ def selected_task_id(root: Path) -> str:
     try:
         payload = json.loads(current.read_text(encoding="utf-8"))
     except OSError as error:
-        raise CommitGateError("AI_TASK is not set and no Luna review has selected a task") from error
+        raise CommitGateError("AI_TASK is not set and no task review has selected a task") from error
     except json.JSONDecodeError as error:
         raise CommitGateError(f"invalid local review selector {current}: {error}") from error
     task_id = payload.get("task_id") if isinstance(payload, dict) else None
@@ -216,10 +228,10 @@ def record_review(root: Path, report_path: Path) -> dict[str, Any]:
         raise CommitGateError("review report task_id must be a string")
     candidate = task_candidate(root, task_id)
     validated = validate_report(report, candidate)
-    destination = receipt_path(root, candidate, validated["model"])
+    destination = receipt_path(root, candidate, validated["review_role"])
     destination.parent.mkdir(parents=True, exist_ok=True)
     destination.write_text(json.dumps(validated, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    if validated["model"] == LUNA_MODEL:
+    if validated["review_role"] == "task":
         selector = {"task_id": task_id}
         (reviews_directory(root) / "current.json").write_text(
             json.dumps(selector, indent=2, sort_keys=True) + "\n", encoding="utf-8"
@@ -227,16 +239,22 @@ def record_review(root: Path, report_path: Path) -> dict[str, Any]:
     return candidate
 
 
-def read_receipt(root: Path, candidate: dict[str, str], model: str) -> None:
-    target = receipt_path(root, candidate, model)
+def read_receipt(root: Path, candidate: dict[str, str], role: str) -> None:
+    target = receipt_path(root, candidate, role)
+    legacy_model = LEGACY_REVIEW_MODELS[role]
+    legacy = not target.exists()
+    if legacy:
+        target = receipt_path(root, candidate, legacy_model)
     try:
         report = json.loads(target.read_text(encoding="utf-8"))
     except OSError as error:
-        raise CommitGateError(f"missing {model} review receipt for current staged candidate") from error
+        raise CommitGateError(f"missing {role} review receipt for current staged candidate") from error
     except json.JSONDecodeError as error:
         raise CommitGateError(f"invalid local receipt {target}: {error}") from error
     validated = validate_report(report, candidate)
-    if validated["model"] != model:
+    if validated["review_role"] != role:
+        raise CommitGateError(f"local receipt {target} has the wrong review_role")
+    if legacy and validated["model"] != legacy_model:
         raise CommitGateError(f"local receipt {target} has the wrong model")
 
 
@@ -267,9 +285,9 @@ def check_message(root: Path, message_path: Path, task_id: str) -> None:
 def check(root: Path, message_path: Path | None = None) -> dict[str, str]:
     task_id = selected_task_id(root)
     candidate = task_candidate(root, task_id)
-    read_receipt(root, candidate, LUNA_MODEL)
+    read_receipt(root, candidate, "task")
     if candidate["level"] in {"minor", "major"}:
-        read_receipt(root, candidate, SOL_MODEL)
+        read_receipt(root, candidate, "aggregate")
     if message_path is not None:
         check_message(root, message_path, task_id)
     return candidate

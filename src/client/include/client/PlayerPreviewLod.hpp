@@ -41,6 +41,13 @@ public:
     [[nodiscard]]
     shared::HeightTileSurfaceDetail selectDetail(shared::HeightTileKey key, uint16_t minimum, uint16_t maximum);
     [[nodiscard]]
+    shared::HeightTileSurfaceDetail selectDetail(
+        shared::HeightTileKey key,
+        uint16_t minimum,
+        uint16_t maximum,
+        shared::HeightTileSurfaceFaceAreas const& face_areas
+    );
+    [[nodiscard]]
     std::optional<shared::HeightTileSurfaceDetail> detail(shared::HeightTileKey key) const noexcept;
     [[nodiscard]]
     PlayerPreviewLodRefresh refresh(
@@ -58,11 +65,13 @@ private:
         shared::HeightTileKey key;
         uint16_t minimum;
         uint16_t maximum;
+        shared::HeightTileSurfaceFaceAreas face_areas;
         shared::HeightTileSurfaceDetail detail;
     };
     struct Group final {
         shared::HeightTileSurfaceBounds bounds;
-        double minimum_height = 0.0;
+        shared::HeightTileSurfaceFaceAreas minimum_areas;
+        shared::HeightTileSurfaceFaceAreas maximum_areas;
         bool present = false;
     };
     struct Bucket final {

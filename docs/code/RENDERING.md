@@ -26,13 +26,11 @@ World players -> PlayerClient / AndroidPlayerClient -> PlayerRenderData span
   -> VulkanRenderer -> PresentationContext::Frame callback -> present/readback
 ```
 
-The platform/grid/player scene is legacy flat-world Snapshot 4 coverage. Normal
-Flight clears sky blue and draws server-streamed height-tile terrain with the
-original 16² stone texture. Local cameras sample player position separately
-from input look. First person hides the
-local body; third-person modes draw it. Four-bit replicated palette identities
-map to 16 opaque colors; mesh uploads follow content identity. The HUD reports
-authoritative Flight XYZ and camera angles. Camera: right-handed Z-up,
+S4 covers platform/grid/player. Flight draws sky blue and server-streamed terrain
+with the original 16² stone texture. Camera sampling is independent of input
+look. First person hides the local body; third person draws it. Replicated
+four-bit palettes select 16 opaque colors; uploads follow content identity.
+HUD reports authoritative XYZ/camera angles. Camera: right-handed Z-up,
 zero-to-one depth, depth testing.
 
 Desktop `InstalledShaderAssets` reads installed `shaders/`; Android
@@ -41,18 +39,20 @@ no source-tree fallback.
 
 S7 streams server-selected camera-independent disks (default 256: 205,861 tiles;
 128: 51,433); frustum only culls drawing.
-`HeightTileDrawIndex` incrementally orders live arena ranges and
-refreshes affected 16²-tile groups. Per-frame `VulkanFrustum` classification skips
-resolved planes with exact individual wrapped-AABB visibility; ambiguous wrap
-cuts use individual images. Visible ranges merge without sorting or freed spans.
+`HeightTileDrawIndex` packs live entries into 16²-tile groups.
+Frustum classification skips resolved planes, preserving exact wrapped-AABB
+visibility; ambiguous wrap cuts use individual images. Stable radix ordering
+merges ranges without freed spans. Installed quads, including seams, form direction buckets:
+only provably backfacing batches drop. Coplanar/wrap ambiguities remain;
+direct/indirect paths agree.
 [`Tests`](../../tests/client/height_tile_draw_index_tests.cpp) cover moving cameras,
 mutation/failure, seams and radii 256/1,024.
-LOD uses wrapped player distance and actual vertical FOV/framebuffer extent,
-hysteresis, and replacement cell faces bounded to 2 px². Bounds enclose complete
-raw neighbors and installed edge profiles, including retained revisions/detail.
-First publication uses certified detail directly without duplicate coarse/final
-work. Jobs recheck revisions, neighbors, detail and epoch. Failed uploads retain
-installed geometry/certificate inputs; displayed meshes refine asynchronously
+LOD uses wrapped player distance, actual vertical FOV/framebuffer extent and
+hysteresis, bounding replacement cell faces to 2 px². Per-detail areas cover
+candidate tops/walls and installed neighbor TOP profiles; raw bounds enclose
+distance. First publication uses certified detail directly. Jobs recheck raw
+revisions, neighbors and current detail safety; profile-only changes need not
+discard valid completed geometry. Failed uploads retain installed state; meshes refine
 after movement/FOV/profile changes. Seam batches atomically publish the center and
 changed neighbors; failure retains renderer/client state. Cached seam spans handle
 out-of-order uploads. LOD preserves terrain/collision; far plane/fog scale with
@@ -81,9 +81,8 @@ are rejected before indexing. Per-build heap workspace bounds stacks.
 fallback glyph per unsupported UTF-8 code point. Presentation accepts 16,384
 world/GUI glyphs before frame acquisition fails.
 
-World text is depth tested; `GuiRenderer` records screen text after the world
-scene without depth. `DebugHudState` formats five lines, presenting gameplay Z
-as user-facing height. `VulkanRenderer` supports independent GUI/world labels.
+World text uses depth; `GuiRenderer` records screen text afterward without it.
+`DebugHudState` presents gameplay Z as height. GUI/world labels are independent.
 
 The renderer counts only frames whose `PresentationContext::complete` succeeds.
 `VulkanRenderer::validationErrorCount()` forwards presentation validation errors;
@@ -119,14 +118,14 @@ The fixed-scene `--benchmark-render` excludes server/network/gameplay;
 `--benchmark-game` counts completed player-client present requests with all three.
 Neither observes physical scanout; unavailable immediate mode fails. Evidence
 includes resolution, GPU, HUD, rate, p50/p95/p99/max, CPU phases and submitted work.
+Full-radius gameplay waits for exact meshes/empty queues before and after x200;
+it records every stationary attempt and collection/acquire/record/complete costs.
 `DiagnosticStationary` freezes movement/look for diagnostic A/B, not gameplay
 acceptance. Opt-in terrain timestamps are not whole-frame time; MoltenVK reports
 unsupported/null because in-render-pass markers may be deferred to encoder end.
 Release disables validation; `--hud` supports paired runs.
-S6 renderer stress uses 90-by-90 maximum capacity and bounded edge streaming; S6 gameplay uses
-the smaller directional ellipse in [GAMEPLAY.md](GAMEPLAY.md). Its renderer-only
-gate requires nominal 120 Hz within one percent and p99 at most 10 ms,
-including display wait and scheduler jitter.
+Legacy S6 stress uses 90-by-90 capacity and edge streaming. Its renderer-only
+gate requires 120 Hz within one percent and p99 at most 10 ms, including waits.
 
 Benchmark and renderer capture preserve requested framebuffer pixels through
 bounded GLFW resizing. Capture checks readback, sky, and stone; benchmark checks

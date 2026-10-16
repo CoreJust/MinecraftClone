@@ -75,6 +75,10 @@ struct GameBenchmarkFrameSample final {
     uint64_t client_message_payload_bytes_received = 0U;
     uint32_t resident_terrain_tile_count = 0U;
     uint32_t visible_surface_face_count = 0U;
+    std::string terrain_phase;
+    bool terrain_center_valid = false;
+    int32_t terrain_center_x = 0;
+    int32_t terrain_center_y = 0;
     struct TerrainNearSample final {
         bool center_valid = false;
         int32_t center_x = 0;
@@ -101,6 +105,10 @@ struct GameBenchmarkFrameSample final {
     std::array<double, 7> diagnostic_camera{};
     uint64_t diagnostic_cpu_acquire_wait_duration_ns = 0U;
     uint64_t diagnostic_cpu_command_record_duration_ns = 0U;
+    uint64_t diagnostic_cpu_visible_range_collection_duration_ns = 0U;
+    uint64_t diagnostic_cpu_indirect_prepare_duration_ns = 0U;
+    uint64_t diagnostic_cpu_stone_scene_record_duration_ns = 0U;
+    uint64_t diagnostic_cpu_command_record_residual_duration_ns = 0U;
     uint64_t diagnostic_cpu_complete_present_wait_duration_ns = 0U;
     bool diagnostic_gpu_timestamps_enabled = false;
     std::string_view diagnostic_gpu_timestamp_reason;
@@ -145,6 +153,83 @@ struct GameBenchmarkTerrainReadinessEvidence final {
     bool complete = false;
 };
 
+struct GameBenchmarkFullTerrainSnapshot final {
+    struct RadialBand final {
+        uint32_t desired_count = 0U;
+        uint32_t resident_count = 0U;
+        uint32_t nonresident_count = 0U;
+        uint32_t current_mesh_visible_count = 0U;
+        uint32_t stale_or_missing_mesh_count = 0U;
+    };
+    std::string phase;
+    uint64_t phase_elapsed_ms = 0U;
+    bool scan_performed = false;
+    bool potentially_ready = false;
+    std::optional<bool> exact_current_coverage;
+    bool center_valid = false;
+    int32_t center_x = 0;
+    int32_t center_y = 0;
+    uint32_t desired_count = 0U;
+    uint32_t resident_total_count = 0U;
+    uint32_t visible_mesh_count = 0U;
+    uint32_t renderer_mesh_count = 0U;
+    uint32_t renderer_face_count = 0U;
+    uint32_t renderer_draw_face_count = 0U;
+    uint32_t renderer_stone_face_capacity = 0U;
+    uint32_t pending_delivery_batch_count = 0U;
+    uint32_t pending_residency_change_count = 0U;
+    uint32_t pending_mesh_count = 0U;
+    uint32_t active_mesh_job_count = 0U;
+    uint32_t dirty_mesh_job_count = 0U;
+    uint32_t worker_result_count = 0U;
+    uint32_t worker_outstanding_count = 0U;
+    uint32_t pending_removal_count = 0U;
+    std::optional<uint32_t> resident_desired_count;
+    std::optional<uint32_t> nonresident_desired_count;
+    std::optional<uint32_t> current_handle_mesh_visible_count;
+    std::optional<uint32_t> stale_or_missing_mesh_count;
+    std::optional<uint32_t> unclassified_resident_missing_count;
+    std::optional<uint32_t> visible_outside_interest_count;
+    std::optional<std::array<uint32_t, 5U>> current_visible_mesh_detail_counts;
+    std::optional<uint32_t> unclassified_current_visible_mesh_detail_count;
+    std::array<RadialBand, 16U> radial_bands{};
+};
+
+struct GameBenchmarkFullRadiusEvidence final {
+    uint32_t render_distance = 256U;
+    uint32_t expected_tile_count = 205'861U;
+    uint64_t warmup_timeout_ms = 180'000U;
+    uint64_t initial_warmup_elapsed_ms = 0U;
+    uint64_t baseline_stationary_elapsed_ms = 0U;
+    uint64_t movement_elapsed_ms = 0U;
+    uint64_t recovery_warmup_elapsed_ms = 0U;
+    uint64_t recovered_stationary_elapsed_ms = 0U;
+    bool initial_barrier_reached = false;
+    bool recovery_barrier_reached = false;
+    GameBenchmarkFullTerrainSnapshot initial_barrier;
+    GameBenchmarkFullTerrainSnapshot recovery_barrier;
+    uint64_t baseline_loop_attempts = 0U;
+    uint64_t recovered_loop_attempts = 0U;
+    uint64_t baseline_failed_present_requests = 0U;
+    uint64_t recovered_failed_present_requests = 0U;
+    uint64_t baseline_present_requests = 0U;
+    uint64_t recovered_present_requests = 0U;
+    double baseline_present_requests_per_second = 0.0;
+    double recovered_present_requests_per_second = 0.0;
+    FrameTimingSummary baseline_loop_timings;
+    FrameTimingSummary recovered_loop_timings;
+    FrameTimingSummary baseline_successful_present_request_intervals;
+    FrameTimingSummary recovered_successful_present_request_intervals;
+    uint64_t movement_center_change_count = 0U;
+    bool movement_start_center_valid = false;
+    int32_t movement_start_center_x = 0;
+    int32_t movement_start_center_y = 0;
+    bool movement_end_center_valid = false;
+    int32_t movement_end_center_x = 0;
+    int32_t movement_end_center_y = 0;
+    bool complete = false;
+};
+
 struct GameBenchmarkEvidence final {
     std::string workload;
     std::string package_id;
@@ -176,6 +261,7 @@ struct GameBenchmarkEvidence final {
     FrameTimingSummary server_tick_timings;
     FrameTimingSummary permission_publish_timings;
     std::optional<GameBenchmarkTerrainReadinessEvidence> terrain_readiness;
+    std::optional<GameBenchmarkFullRadiusEvidence> full_radius_terrain;
     std::vector<GameBenchmarkFrameSample> raw_frames;
     std::vector<uint64_t> raw_server_tick_durations_ns;
     std::vector<uint64_t> raw_permission_publish_durations_ns;

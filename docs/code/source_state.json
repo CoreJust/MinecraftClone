@@ -2,7 +2,7 @@
   "modules": [
     {
       "guide": "docs/ACCEPTANCE.md",
-      "guide_sha256": "cd4e7b19a930e278b52c884f3ea4c57d33b6cbf260687de57bbd2107d60ee847",
+      "guide_sha256": "1874b4572f7fa764f1ced322433c31d5399f8f3485ad3063c5d3636d5bb2ef2a",
       "id": "acceptance",
       "sources": [
         "src/acceptance/CMakeLists.txt",
@@ -31,7 +31,7 @@
         "tests/acceptance/runtime_cli_tests.cmake",
         "tests/acceptance/scenario_runner_tests.cpp"
       ],
-      "sources_sha256": "446636c81580250e2e3443551c08eb1b80ccbd7c83b1271b971ee4626f56dafd"
+      "sources_sha256": "5f5d6515fbde001b74c9afc02ddb1579db4e078f84ccf0d70260209639177971"
     },
     {
       "guide": "docs/code/ANDROID.md",
@@ -120,6 +120,7 @@
         "script/ci/release_guard.py",
         "script/ci/verify_analysis_gate.py",
         "script/ci/verify_android_hwasan.py",
+        "script/ci/verify_gameplay_gate.py",
         "script/ci/verify_macos_lsan.py",
         "script/ci/verify_release_assets.py",
         "script/code_checks.py",
@@ -160,6 +161,7 @@
         "script/tests/test_vcpkg_clang_toolchain.py",
         "script/tests/test_verify_analysis_gate.py",
         "script/tests/test_verify_android_hwasan.py",
+        "script/tests/test_verify_gameplay_gate.py",
         "script/tests/test_verify_macos_lsan.py",
         "script/tests/test_verify_release_assets.py",
         "script/tests/test_windows_runtime_staging.py",
@@ -176,7 +178,7 @@
         "vcpkg-configuration.json",
         "vcpkg.json"
       ],
-      "sources_sha256": "4ca745d96581f5fcc71f67c7faa64804239d86a6fd7cdb0be6bd1ea79adde651"
+      "sources_sha256": "2174f382bbd9f22fdfd0969ba0e10d14938197435509493fb4610ebe7cdb733c"
     },
     {
       "guide": "docs/code/CORE.md",
@@ -213,7 +215,7 @@
     },
     {
       "guide": "docs/code/GAMEPLAY.md",
-      "guide_sha256": "e148f552defb072589a4ca69c1698fdd3de9f0ec07e28d33bd6ee44b5c40f183",
+      "guide_sha256": "e3da0c4af6f0557f52394b7df4f26a1024923abadd9dd82f86741f46519e6e4f",
       "id": "gameplay",
       "sources": [
         "src/client/BotClient.cpp",
@@ -302,11 +304,11 @@
         "tests/core/world_generation_scheduler_tests.cpp",
         "tests/core/world_generation_tests.cpp"
       ],
-      "sources_sha256": "95a9f33e57734e9d33bf21d383ea3ae857cbfffa39f0f491ca42dfff6877561c"
+      "sources_sha256": "bc6ea84acf5e2173dbe8e2c235c405b89d116e19bea97a1a0fdace683435a8c5"
     },
     {
       "guide": "docs/code/RENDERING.md",
-      "guide_sha256": "a20daee5dc3982694a9c483fe5f067ab9a42eaca0795ea13290c9a282cf5412f",
+      "guide_sha256": "3a741ec5fa1f8a628238f358790b53f03528a2b11e1a29d3d66b9dcc80c03c22",
       "id": "rendering",
       "sources": [
         "src/client/CMakeLists.txt",
@@ -382,7 +384,7 @@
         "tests/testsupport/include/testsupport/AdverseTransport.hpp",
         "tests/testsupport/include/testsupport/ImageComparison.hpp"
       ],
-      "sources_sha256": "a5e3701fc10234cbc64c400e5a4b9ddf99f2af10d8addda072e102d41aaf9ec5"
+      "sources_sha256": "403f25bb2ddc8f5270658acb0619399573dbb12cf49c23fbcd879380c04820b7"
     }
   ],
   "version": 1

@@ -410,11 +410,14 @@ TEST(RendererSmokeTest, HeightTileBatchKeepsBothOldMeshesWhenDeadlinePreventsAre
             .title = "MinecraftClone height tile batch smoke",
         },
     };
+    glfwHideWindow(window.nativeHandle());
     client::InstalledShaderAssets const shader_assets;
     client::VulkanRenderer renderer{
-        client::VulkanRenderer::createPresentationContext(window, { .require_validation = true }),
+        client::VulkanRenderer::createPresentationContext(
+            window, { .require_validation = true, .enable_frame_capture = true }
+        ),
         shader_assets,
-        { .require_validation = true },
+        { .require_validation = true, .enable_frame_capture = true },
     };
     std::chrono::steady_clock::time_point const setup_deadline = std::chrono::steady_clock::now() + TIMEOUT;
     for (uint32_t index = 0U; index < FILLER_TILE_COUNT; ++index) {
@@ -440,11 +443,34 @@ TEST(RendererSmokeTest, HeightTileBatchKeepsBothOldMeshesWhenDeadlinePreventsAre
     ASSERT_EQ(renderer.runtimeInfo().stone_face_capacity, INITIAL_CAPACITY);
     ASSERT_EQ(renderer.runtimeInfo().height_tile_mesh_count, FILLER_TILE_COUNT + BATCH_TILE_COUNT);
     ASSERT_EQ(renderer.runtimeInfo().chunk_face_count, original_face_count);
+    renderer.setDebugHudEnabled(false);
+    renderer.setCamera({ .position = { 1'024.0, -20.0, 18.0 }, .angles = { .pitch_degrees = -25.0 } });
+    auto const capture_installed = [&] {
+        renderer.requestFrameCapture();
+        auto const deadline = std::chrono::steady_clock::now() + TIMEOUT;
+        for (uint32_t frame = 0U; frame < 32U && std::chrono::steady_clock::now() < deadline; ++frame) {
+            if (!window.nextFrame()) {
+                break;
+            }
+            static_cast<void>(renderer.render({}, deadline));
+            if (renderer.captureState() == client::FrameCaptureState::Completed) {
+                break;
+            }
+        }
+        return renderer.takeFrameCapture();
+    };
+    auto const original_capture = capture_installed();
+    ASSERT_TRUE(original_capture.has_value());
+    uint64_t const original_draw_faces = renderer.runtimeInfo().chunk_draw_face_count;
 
     EXPECT_FALSE(renderer.upsertHeightTileMeshes(replacements, std::chrono::steady_clock::now()));
     EXPECT_EQ(renderer.runtimeInfo().stone_face_capacity, INITIAL_CAPACITY);
     EXPECT_EQ(renderer.runtimeInfo().height_tile_mesh_count, FILLER_TILE_COUNT + BATCH_TILE_COUNT);
     EXPECT_EQ(renderer.runtimeInfo().chunk_face_count, original_face_count);
+    auto const retained_capture = capture_installed();
+    ASSERT_TRUE(retained_capture.has_value());
+    EXPECT_EQ(retained_capture->rgba8, original_capture->rgba8);
+    EXPECT_EQ(renderer.runtimeInfo().chunk_draw_face_count, original_draw_faces);
 
     ASSERT_TRUE(renderer.upsertHeightTileMeshes(replacements, std::chrono::steady_clock::now() + TIMEOUT));
     EXPECT_GT(renderer.runtimeInfo().stone_face_capacity, INITIAL_CAPACITY);

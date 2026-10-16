@@ -149,7 +149,7 @@ class AiCommitTests(unittest.TestCase):
     def test_missing_receipt_and_selector_are_rejected(self) -> None:
         result = self.run_command("check")
         self.assertEqual(result.returncode, 1)
-        self.assertIn("no Luna review", result.stderr)
+        self.assertIn("no task review", result.stderr)
 
     def test_current_selector_cannot_replace_a_receipt(self) -> None:
         candidate = self.candidate()
@@ -158,7 +158,7 @@ class AiCommitTests(unittest.TestCase):
         selector.write_text(json.dumps(candidate), encoding="utf-8")
         result = self.run_command("check")
         self.assertEqual(result.returncode, 1)
-        self.assertIn("missing gpt-6-luna review receipt", result.stderr)
+        self.assertIn("missing task review receipt", result.stderr)
 
     def test_staging_change_invalidates_recorded_luna_review(self) -> None:
         candidate = self.candidate()
@@ -168,7 +168,7 @@ class AiCommitTests(unittest.TestCase):
         self.git("add", "src/fixture.cpp")
         result = self.run_command("check")
         self.assertEqual(result.returncode, 1)
-        self.assertIn("missing gpt-6-luna review receipt", result.stderr)
+        self.assertIn("missing task review receipt", result.stderr)
 
     def test_report_rejects_wrong_model_task_and_head(self) -> None:
         candidate = self.candidate()
@@ -176,7 +176,12 @@ class AiCommitTests(unittest.TestCase):
             ("model", {"model": "gpt-5.6-luna"}),
             ("task", {"task_id": "MC-AI-9999"}),
             ("head", {"head": "0" * 40}),
-            ("effort", {"effort": "low"}),
+            ("tree", {"tree": "0" * 40}),
+            ("baseline", {"baseline_commit": "0" * 40}),
+            ("merge", {"merge_head": "0" * 40}),
+            ("effort", {"effort": "minimal"}),
+            ("verdict", {"verdict": "rejected"}),
+            ("evidence", {"evidence": " "}),
         ):
             with self.subTest(name=name):
                 result = self.record(candidate, **changes)
@@ -188,6 +193,101 @@ class AiCommitTests(unittest.TestCase):
             with self.subTest(effort=effort):
                 result = self.record(candidate, effort=effort)
                 self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_profile_task_receipts_preserve_actual_model_and_effort(self) -> None:
+        candidate = self.candidate()
+        for model, effort in (
+            ("gpt-6.1-sol", "high"),
+            ("gpt-6-astra", "ultra"),
+            ("gpt-6-luna", "low"),
+            ("gpt-6-sol", "low"),
+        ):
+            with self.subTest(model=model, effort=effort):
+                result = self.record(candidate, model, effort=effort, review_role="task")
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(self.run_command("check").returncode, 0)
+                receipts = list((self.root / ".git/ai-reviews/MC-AI-0001").glob("*.json"))
+                self.assertEqual(len(receipts), 1)
+                receipt = json.loads(receipts[0].read_text(encoding="utf-8"))
+                self.assertEqual((receipt["model"], receipt["effort"], receipt["review_role"]), (model, effort, "task"))
+
+    def test_new_models_require_explicit_review_role(self) -> None:
+        candidate = self.candidate()
+        for model in ("gpt-6.1-sol", "gpt-6-astra"):
+            with self.subTest(model=model):
+                result = self.record(candidate, model)
+                self.assertEqual(result.returncode, 1)
+                self.assertIn("explicit role", result.stderr)
+
+    def test_unknown_and_null_review_roles_are_rejected(self) -> None:
+        candidate = self.candidate()
+        for role in ("primary", "", None, ["task"]):
+            with self.subTest(role=role):
+                result = self.record(candidate, review_role=role)
+                self.assertEqual(result.returncode, 1)
+                self.assertIn("review_role", result.stderr)
+
+    def test_model_effort_must_be_supported(self) -> None:
+        candidate = self.candidate()
+        for model, effort in (("gpt-6-luna", "ultra"), ("gpt-6.1-sol", "none"), ("gpt-6-astra", ["high"])):
+            with self.subTest(model=model, effort=effort):
+                result = self.record(candidate, model, effort=effort, review_role="task")
+                self.assertEqual(result.returncode, 1)
+                self.assertIn("effort", result.stderr)
+
+    def test_aggregate_review_does_not_select_or_satisfy_task_review(self) -> None:
+        candidate = self.candidate()
+        self.assertEqual(self.record(candidate, "gpt-6.1-sol", review_role="aggregate").returncode, 0)
+        unselected = self.run_command("check")
+        self.assertEqual(unselected.returncode, 1)
+        self.assertIn("no task review", unselected.stderr)
+        selected = self.run_command("check", environment=os.environ | {"AI_TASK": "MC-AI-0001"})
+        self.assertEqual(selected.returncode, 1)
+        self.assertIn("missing task review receipt", selected.stderr)
+
+    def test_task_review_does_not_satisfy_aggregate_review(self) -> None:
+        self.stage_task(level="minor", finalized=True)
+        candidate = self.candidate()
+        self.assertEqual(self.record(candidate, "gpt-6.1-sol", review_role="task").returncode, 0)
+        missing = self.run_command("check")
+        self.assertEqual(missing.returncode, 1)
+        self.assertIn("missing aggregate review receipt", missing.stderr)
+        self.assertEqual(self.record(candidate, "gpt-6.1-sol", review_role="aggregate").returncode, 0)
+        self.assertEqual(self.run_command("check").returncode, 0)
+        receipts = list((self.root / ".git/ai-reviews/MC-AI-0001").glob("*.json"))
+        self.assertEqual(len(receipts), 2)
+
+    def test_receipt_with_mismatched_role_is_rejected(self) -> None:
+        candidate = self.candidate()
+        self.assertEqual(self.record(candidate, "gpt-6.1-sol", review_role="task").returncode, 0)
+        receipt_path = next((self.root / ".git/ai-reviews/MC-AI-0001").glob("*.json"))
+        receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+        receipt["review_role"] = "aggregate"
+        receipt_path.write_text(json.dumps(receipt), encoding="utf-8")
+        result = self.run_command("check")
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("wrong review_role", result.stderr)
+
+    def test_legacy_model_paths_and_selector_still_work(self) -> None:
+        self.stage_task(level="minor", finalized=True)
+        candidate = self.candidate()
+        directory = self.root / ".git/ai-reviews/MC-AI-0001"
+        directory.mkdir(parents=True)
+        for model in ("gpt-6-luna", "gpt-6-sol"):
+            report = self.write_report(candidate, model)
+            key = "-".join(str(candidate[field]) for field in ("head", "tree", "baseline_commit", "merge_head"))
+            (directory / f"{key}-{model}.json").write_text(report.read_text(encoding="utf-8"), encoding="utf-8")
+        (directory.parent / "current.json").write_text(json.dumps({"task_id": "MC-AI-0001"}), encoding="utf-8")
+        self.assertEqual(self.run_command("check").returncode, 0)
+
+    def test_legacy_path_must_match_its_model(self) -> None:
+        candidate = self.candidate()
+        self.assertEqual(self.record(candidate, "gpt-6-astra", review_role="task").returncode, 0)
+        receipt = next((self.root / ".git/ai-reviews/MC-AI-0001").glob("*-task.json"))
+        receipt.rename(receipt.with_name(receipt.name.removesuffix("task.json") + "gpt-6-luna.json"))
+        result = self.run_command("check")
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("wrong model", result.stderr)
 
     def test_commit_message_requires_one_matching_trailer(self) -> None:
         candidate = self.candidate()
@@ -236,7 +336,7 @@ class AiCommitTests(unittest.TestCase):
         self.assertEqual(self.record(candidate).returncode, 0)
         missing_terra = self.run_command("check")
         self.assertEqual(missing_terra.returncode, 1)
-        self.assertIn("gpt-6-sol", missing_terra.stderr)
+        self.assertIn("missing aggregate review receipt", missing_terra.stderr)
         self.assertEqual(self.record(candidate, "gpt-6-sol").returncode, 0)
         self.assertEqual(self.run_command("check").returncode, 0)
 
@@ -271,7 +371,7 @@ class AiCommitTests(unittest.TestCase):
         self.assertNotEqual(second["merge_head"], first["merge_head"])
         stale = self.run_command("check")
         self.assertEqual(stale.returncode, 1)
-        self.assertIn("missing gpt-6-luna review receipt", stale.stderr)
+        self.assertIn("missing task review receipt", stale.stderr)
 
     def test_divergent_promotion_is_accepted_and_validates_the_union(self) -> None:
         self.git("checkout", "-b", "promotion", self.baseline)

@@ -1,4 +1,6 @@
+#include <client/render/HeightTileDrawIndex.hpp>
 #include <client/render/InstalledShaderAssets.hpp>
+#include <client/render/StoneIndirectDraws.hpp>
 #include <client/render/VulkanRenderer.hpp>
 
 #include <shared/world/ChunkMesher.hpp>
@@ -7,10 +9,13 @@
 #include <core/graphics/vulkan/Vulkan.hpp>
 #include <core/platform/glfw/GlfwWindow.hpp>
 
+#define GLFW_INCLUDE_NONE
+#include <GLFW/glfw3.h>
 #include <gtest/gtest.h>
 
 #include <testsupport/ImageComparison.hpp>
 
+#include <algorithm>
 #include <array>
 #include <chrono>
 #include <cstdint>
@@ -22,6 +27,7 @@
 #include <span>
 #include <stdexcept>
 #include <string>
+#include <utility>
 #include <variant>
 #include <vector>
 
@@ -242,6 +248,136 @@ TEST_F(StoneRendererAcceptanceTest, IndexedAndSixVertexQuadsHaveByteIdenticalOff
     for (size_t view = 0U; view < indexed.size(); ++view) {
         EXPECT_GT(stonePixelCount(indexed[view]), 0U) << view;
         EXPECT_EQ(indexed[view].rgba8, six_vertex[view].rgba8) << view;
+    }
+}
+
+TEST_F(StoneRendererAcceptanceTest, DirectionSelectionPreservesOffscreenPixelsAndTerrainPlayerDepthOrdering)
+{
+    static constexpr std::array<client::CameraPose, 8> CAMERAS{
+        ABOVE_CAMERA, BELOW_CAMERA,
+        client::CameraPose{ .position = { -12.0, 8.0, 8.0 }, .angles = { .yaw_degrees = 90.0 } },
+        client::CameraPose{ .position = { 28.0, 8.0, 8.0 }, .angles = { .yaw_degrees = -90.0 } },
+        client::CameraPose{ .position = { 8.0, 28.0, 8.0 }, .angles = { .yaw_degrees = 180.0 } },
+        client::CameraPose{ .position = { 65'530.0, 8.0, 8.0 }, .angles = { .yaw_degrees = 90.0 } },
+        client::CameraPose{ .position = { 8.0, -20.0, 5.0 }, .angles = {} },
+        client::CameraPose{ .position = { 8.0, -20.0, 4.0 }, .angles = {} },
+    };
+    static constexpr std::array PLAYERS{
+        client::PlayerRenderData{ .x = 8.0F, .y = 8.0F, .color = { 1.0F, 0.0F, 0.0F, 1.0F }, .z = 4.0F },
+    };
+    shared::ChunkMesh mesh = singleStoneMesh();
+    std::ranges::stable_sort(mesh.faces, {}, &shared::MeshFace::direction);
+    std::vector<shared::HeightTileSurfaceQuad> quads;
+    for (shared::MeshFace const face : mesh.faces) {
+        quads.push_back({ .x = face.local_origin.x, .y = face.local_origin.y, .z = face.local_origin.z,
+            .direction = static_cast<shared::HeightTileSurfaceDirection>(face.direction) });
+    }
+    auto const spans = client::HeightTileDrawIndex::directionalSpans(quads);
+    for (client::CameraPose const camera : CAMERAS) {
+        m_renderer->setCamera(camera);
+        m_renderer->setChunkMesh(mesh);
+        auto const baseline = m_renderer->render(PLAYERS, std::chrono::steady_clock::now() + RENDER_TIMEOUT);
+        std::vector<client::StoneIndirectDraws::Range> ranges;
+        client::HeightTileDrawIndex::appendVisibleRanges(
+            { 0U, static_cast<uint32_t>(quads.size()) }, spans, camera.position, ranges
+        );
+        shared::ChunkMesh selected = mesh;
+        selected.faces.clear();
+        for (auto const range : ranges) {
+            for (uint32_t instance = 0U; instance < range.instance_count; ++instance) {
+                selected.faces.push_back(mesh.faces[range.first_instance + instance]);
+            }
+        }
+        m_renderer->setChunkMesh(selected);
+        auto const culled = m_renderer->render(PLAYERS, std::chrono::steady_clock::now() + RENDER_TIMEOUT);
+        EXPECT_EQ(culled.rgba8, baseline.rgba8);
+    }
+    EXPECT_EQ(m_renderer->validationErrorCount(), 0U);
+}
+
+TEST_F(StoneRendererAcceptanceTest, InstalledSeamBucketsMatchWholeTilePixelsAcrossSubmissionModesAndWrap)
+{
+    static constexpr std::array<client::CameraPose, 4> CAMERAS{
+        client::CameraPose{ .position = { 24.0, -40.0, 25.0 }, .angles = { .pitch_degrees = -25.0 } },
+        client::CameraPose{ .position = { -24.0, 8.0, 15.0 },
+            .angles = { .yaw_degrees = 90.0, .pitch_degrees = -10.0 } },
+        client::CameraPose{ .position = { 24.0, 40.0, 8.0 }, .angles = { .yaw_degrees = 180.0 } },
+        client::CameraPose{ .position = { 65'512.0, 8.0, 15.0 },
+            .angles = { .yaw_degrees = 90.0, .pitch_degrees = -10.0 } },
+    };
+    shared::HeightTile first{ .coordinate = { .x = 0, .y = 0 } };
+    shared::HeightTile second{ .coordinate = { .x = 1, .y = 0 } };
+    first.heights.fill(8U);
+    second.heights.fill(3U);
+    shared::HeightTileSurfaceMesher const mesher;
+    std::array meshes{
+        mesher.build(first, { .positive_x = first.heights }, shared::HeightTileSurfaceDetail::Coarse),
+        mesher.build(second),
+    };
+    auto const bridge = shared::heightTileSurfaceSeamBridge(
+        meshes[0], meshes[1], shared::HeightTileSurfaceDirection::PositiveX
+    );
+    ASSERT_FALSE(bridge.first.empty());
+    meshes[0].quads.insert(meshes[0].quads.end(), bridge.first.begin(), bridge.first.end());
+    uint64_t const resident_faces = meshes[0].quads.size() + meshes[1].quads.size();
+    core::platform::glfw::GlfwWindow window{
+        { .width = WIDTH, .height = HEIGHT, .title = "MinecraftClone directional terrain parity" },
+    };
+    glfwHideWindow(window.nativeHandle());
+    auto const context = client::VulkanRenderer::createPresentationContext(
+        window, { .require_validation = true, .enable_frame_capture = true }
+    );
+    auto const capture_mode = [&](char const* const culling, char const* const quads, char const* const direct) {
+        ScopedStoneSetting const selected_culling{ "MC_DIAGNOSTIC_DIRECTIONAL_STONE_CULLING", culling };
+        ScopedStoneSetting const selected_quads{ "MC_DIAGNOSTIC_INDEXED_STONE_QUADS", quads };
+        ScopedStoneSetting const selected_direct{ "MC_DIAGNOSTIC_DIRECT_STONE_DRAWS", direct };
+        client::VulkanRenderer renderer{
+            context, m_shader_assets, { .require_validation = true, .enable_frame_capture = true }
+        };
+        renderer.setDebugHudEnabled(false);
+        EXPECT_TRUE(renderer.upsertHeightTileMeshes(meshes, std::chrono::steady_clock::now() + RENDER_TIMEOUT));
+        std::vector<client::RendererFrameCapture> captures;
+        for (client::CameraPose const camera : CAMERAS) {
+            renderer.setCamera(camera);
+            renderer.requestFrameCapture();
+            auto const deadline = std::chrono::steady_clock::now() + RENDER_TIMEOUT;
+            for (uint32_t frame = 0U; frame < 32U && std::chrono::steady_clock::now() < deadline; ++frame) {
+                if (!window.nextFrame()) {
+                    break;
+                }
+                static_cast<void>(renderer.render({}, deadline));
+                if (renderer.captureState() == client::FrameCaptureState::Completed) {
+                    break;
+                }
+            }
+            auto capture = renderer.takeFrameCapture();
+            EXPECT_TRUE(capture.has_value());
+            if (!capture.has_value()) {
+                break;
+            }
+            auto const info = renderer.runtimeInfo();
+            EXPECT_EQ(info.height_tile_mesh_count, 2U);
+            EXPECT_EQ(info.chunk_face_count, resident_faces);
+            if (culling[0] == '0') {
+                EXPECT_EQ(info.chunk_draw_face_count, resident_faces);
+            } else {
+                EXPECT_LT(info.chunk_draw_face_count, resident_faces);
+            }
+            captures.push_back(std::move(*capture));
+        }
+        EXPECT_EQ(renderer.validationErrorCount(), 0U);
+        return captures;
+    };
+    auto const baseline = capture_mode("0", "1", "1");
+    ASSERT_EQ(baseline.size(), CAMERAS.size());
+    for (char const* const quads : { "0", "1" }) {
+        for (char const* const direct : { "0", "1" }) {
+            auto const culled = capture_mode("1", quads, direct);
+            ASSERT_EQ(culled.size(), baseline.size());
+            for (uint32_t view = 0U; view < baseline.size(); ++view) {
+                EXPECT_EQ(culled[view].rgba8, baseline[view].rgba8) << view;
+            }
+        }
     }
 }
 

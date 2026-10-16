@@ -59,7 +59,326 @@ std::optional<int32_t> topHeightAt(
     return top->z + 1;
 }
 
+[[nodiscard]]
+std::vector<shared::HeightTileSurfaceQuad> cellPatches(
+    std::vector<shared::HeightTileSurfaceQuad> const& quads,
+    uint32_t const cell_size
+)
+{
+    std::vector<shared::HeightTileSurfaceQuad> patches;
+    auto const remainingCellSpan = [cell_size](int32_t const coordinate) {
+        int32_t const size = static_cast<int32_t>(cell_size);
+        return cell_size - static_cast<uint32_t>((coordinate % size + size) % size);
+    };
+    for (shared::HeightTileSurfaceQuad const& quad : quads) {
+        bool const top = quad.direction == shared::HeightTileSurfaceDirection::PositiveZ;
+        bool const x_wall = quad.direction == shared::HeightTileSurfaceDirection::NegativeX
+            || quad.direction == shared::HeightTileSurfaceDirection::PositiveX;
+        int32_t const along = x_wall ? quad.y : quad.x;
+        for (uint32_t u = 0U; u < quad.u_extent;) {
+            uint32_t const width = std::min(static_cast<uint32_t>(quad.u_extent) - u,
+                remainingCellSpan(along + static_cast<int32_t>(u)));
+            for (uint32_t v = 0U; v < quad.v_extent;) {
+                uint32_t const depth = top
+                    ? std::min(static_cast<uint32_t>(quad.v_extent) - v,
+                        remainingCellSpan(quad.y + static_cast<int32_t>(v)))
+                    : static_cast<uint32_t>(quad.v_extent);
+                shared::HeightTileSurfaceQuad patch = quad;
+                patch.x += top || !x_wall ? static_cast<int32_t>(u) : 0;
+                patch.y += top ? static_cast<int32_t>(v) : x_wall ? static_cast<int32_t>(u) : 0;
+                patch.u_extent = static_cast<uint16_t>(width);
+                patch.v_extent = static_cast<uint16_t>(depth);
+                patches.push_back(patch);
+                v += depth;
+            }
+            u += width;
+        }
+    }
+    return patches;
+}
+
+void expectPatchAreas(
+    std::vector<shared::HeightTileSurfaceQuad> const& quads,
+    uint32_t const cell_size,
+    double const maximum_area
+)
+{
+    for (shared::HeightTileSurfaceQuad const& patch : cellPatches(quads, cell_size)) {
+        EXPECT_LE(static_cast<uint32_t>(patch.u_extent) * patch.v_extent, maximum_area);
+    }
+}
+
+[[nodiscard]]
+double projectedPatchArea(
+    shared::HeightTileSurfaceQuad const& patch,
+    std::array<double, 3> const eye,
+    shared::HeightTileSurfaceProjection const projection
+)
+{
+    static constexpr double DEGREES_TO_RADIANS = 0.017'453'292'519'943'295'769;
+    std::array<double, 3> forward{ 8.0 - eye[0], 8.0 - eye[1], 8.0 - eye[2] };
+    double const length = std::hypot(forward[0], forward[1], forward[2]);
+    for (double& component : forward) {
+        component /= length;
+    }
+    double const horizontal_length = std::hypot(forward[0], forward[1]);
+    std::array<double, 3> const right{ -forward[1] / horizontal_length,
+        forward[0] / horizontal_length, 0.0 };
+    std::array<double, 3> const up{
+        -forward[2] * right[1], forward[2] * right[0], horizontal_length,
+    };
+    double const focal = static_cast<double>(projection.viewport_height_pixels)
+        / (2.0 * std::tan(projection.vertical_fov_degrees * DEGREES_TO_RADIANS / 2.0));
+    bool const top = patch.direction == shared::HeightTileSurfaceDirection::PositiveZ;
+    bool const x_wall = patch.direction == shared::HeightTileSurfaceDirection::NegativeX
+        || patch.direction == shared::HeightTileSurfaceDirection::PositiveX;
+    std::array<std::array<double, 2>, 4> pixels{};
+    static constexpr std::array<std::array<uint32_t, 2>, 4> CORNERS{
+        std::array<uint32_t, 2>{ 0U, 0U },
+        std::array<uint32_t, 2>{ 1U, 0U },
+        std::array<uint32_t, 2>{ 1U, 1U },
+        std::array<uint32_t, 2>{ 0U, 1U },
+    };
+    for (uint32_t corner = 0U; corner < CORNERS.size(); ++corner) {
+        double const u = CORNERS[corner][0] * patch.u_extent;
+        double const v = CORNERS[corner][1] * patch.v_extent;
+        std::array<double, 3> point{ static_cast<double>(patch.x), static_cast<double>(patch.y),
+            static_cast<double>(patch.z) };
+        if (top) {
+            point[0] += u;
+            point[1] += v;
+            point[2] += 1.0;
+        } else if (x_wall) {
+            point[0] += patch.direction == shared::HeightTileSurfaceDirection::PositiveX ? 1.0 : 0.0;
+            point[1] += u;
+            point[2] += v;
+        } else {
+            point[0] += u;
+            point[1] += patch.direction == shared::HeightTileSurfaceDirection::PositiveY ? 1.0 : 0.0;
+            point[2] += v;
+        }
+        double depth = 0.0;
+        double horizontal = 0.0;
+        double vertical = 0.0;
+        for (uint32_t axis = 0U; axis < point.size(); ++axis) {
+            double const relative = point[axis] - eye[axis];
+            depth += relative * forward[axis];
+            horizontal += relative * right[axis];
+            vertical += relative * up[axis];
+        }
+        EXPECT_GT(depth, 0.0);
+        pixels[corner] = { focal * horizontal / depth, focal * vertical / depth };
+        EXPECT_LE(std::abs(pixels[corner][0]), projection.viewport_width_pixels / 2.0);
+        EXPECT_LE(std::abs(pixels[corner][1]), projection.viewport_height_pixels / 2.0);
+    }
+    double twice_area = 0.0;
+    for (uint32_t corner = 0U; corner < pixels.size(); ++corner) {
+        auto const& next = pixels[(corner + 1U) % static_cast<uint32_t>(pixels.size())];
+        twice_area += pixels[corner][0] * next[1] - next[0] * pixels[corner][1];
+    }
+    return std::abs(twice_area) / 2.0;
+}
+
 } // namespace
+
+TEST(HeightTileSurfaceMesherTest, ReplacementCellCertificateUsesLocalWallsInsteadOfWholeHeightSpan)
+{
+    static constexpr uint32_t SIDE = shared::HeightTile::SIDE_LENGTH;
+    static constexpr shared::HeightTileSurfaceProjection PROJECTION{ 70.0, 2'560U, 1'440U };
+    static constexpr shared::HeightTileSurfaceBounds VIEWER{};
+    shared::HeightTile tile{ .coordinate = { .x = 240, .y = 0 } };
+    for (uint32_t y = 0U; y < SIDE; ++y) {
+        for (uint32_t x = 0U; x < SIDE; ++x) {
+            tile.heights[y * SIDE + x] = static_cast<uint16_t>(8U + x / 2U);
+        }
+    }
+    shared::HeightTile::Heights low;
+    shared::HeightTile::Heights high;
+    low.fill(8U);
+    high.fill(15U);
+    shared::HeightTileSurfaceNeighbors const neighbors{
+        .negative_x = low,
+        .positive_x = high,
+        .negative_y = tile.heights,
+        .positive_y = tile.heights,
+    };
+    auto const areas = shared::heightTileSurfaceFaceAreas(tile, neighbors);
+    auto const bounds = shared::HeightTileSurfaceMesher::boundsForTile({}, tile, neighbors);
+    shared::HeightTileSurfaceLodPolicy const policy{ PROJECTION };
+    EXPECT_EQ(areas.maximum[0], 4.0);
+    EXPECT_EQ(policy.detailFor(VIEWER, bounds), shared::HeightTileSurfaceDetail::Fine);
+    EXPECT_EQ(policy.detailFor(VIEWER, bounds, areas), shared::HeightTileSurfaceDetail::Coarse2);
+}
+
+TEST(HeightTileSurfaceMesherTest, CertificateBoundsPublicMeshAndBothInstalledSeamOwners)
+{
+    static constexpr uint32_t CASES = 8U;
+    static constexpr int32_t WORLD_TILES = 4'096;
+    static constexpr std::array<shared::HeightTileSurfaceDirection, 4> EDGES{
+        shared::HeightTileSurfaceDirection::NegativeX,
+        shared::HeightTileSurfaceDirection::PositiveX,
+        shared::HeightTileSurfaceDirection::NegativeY,
+        shared::HeightTileSurfaceDirection::PositiveY,
+    };
+    static constexpr std::array<shared::HeightTileCoordinate, 4> NEIGHBOR_COORDINATES{
+        shared::HeightTileCoordinate{ -1, 0 },
+        shared::HeightTileCoordinate{ 1, 0 },
+        shared::HeightTileCoordinate{ 0, -1 },
+        shared::HeightTileCoordinate{ 0, 1 },
+    };
+    static constexpr std::array<uint32_t, 4> OPPOSITE{ 1U, 0U, 3U, 2U };
+    shared::HeightTileSurfaceMesher const mesher;
+    uint32_t seed = 42U;
+    bool saw_first_bridge = false;
+    bool saw_second_bridge = false;
+    for (uint32_t case_index = 0U; case_index < CASES; ++case_index) {
+        shared::HeightTile tile{
+            .coordinate = case_index == 1U ? shared::HeightTileCoordinate{ WORLD_TILES - 1, WORLD_TILES - 1 }
+                : shared::HeightTileCoordinate{},
+        };
+        std::array<shared::HeightTile, 4> raw_neighbors;
+        std::array<shared::HeightTileSurfaceMesh, 4> installed;
+        std::array<std::optional<shared::HeightTileSurfaceEdgeProfile>, 4> profiles;
+        auto const fill = [&seed, case_index](shared::HeightTile& target) {
+            for (uint16_t& height : target.heights) {
+                seed = seed * 1'664'525U + 1'013'904'223U;
+                height = static_cast<uint16_t>(case_index < 4U ? seed % 25U : seed % 1'025U);
+            }
+        };
+        fill(tile);
+        for (uint32_t edge = 0U; edge < EDGES.size(); ++edge) {
+            raw_neighbors[edge].coordinate = {
+                (tile.coordinate.x + NEIGHBOR_COORDINATES[edge].x + WORLD_TILES) % WORLD_TILES,
+                (tile.coordinate.y + NEIGHBOR_COORDINATES[edge].y + WORLD_TILES) % WORLD_TILES,
+            };
+            fill(raw_neighbors[edge]);
+            shared::HeightTile retained = raw_neighbors[edge];
+            fill(retained);
+            shared::HeightTile::Heights taller;
+            taller.fill(1'024U);
+            installed[edge] = mesher.build(retained, {
+                .negative_x = taller, .positive_x = taller,
+                .negative_y = taller, .positive_y = taller,
+            },
+                shared::HeightTileSurfaceFaceAreas::DETAILS[(case_index + edge) % 4U]);
+            profiles[edge] = shared::heightTileSurfaceEdgeProfile(installed[edge], EDGES[OPPOSITE[edge]]);
+        }
+        shared::HeightTileSurfaceNeighbors const neighbors{
+            .negative_x = raw_neighbors[0].heights,
+            .positive_x = raw_neighbors[1].heights,
+            .negative_y = case_index == 0U ? std::nullopt : std::optional{raw_neighbors[2].heights},
+            .positive_y = raw_neighbors[3].heights,
+            .negative_x_detail = shared::HeightTileSurfaceDetail::Fine,
+            .positive_x_detail = shared::HeightTileSurfaceDetail::Coarse2,
+            .negative_y_detail = shared::HeightTileSurfaceDetail::Coarse,
+            .positive_y_detail = shared::HeightTileSurfaceDetail::Distant,
+        };
+        auto const areas = shared::heightTileSurfaceFaceAreas(tile, neighbors, profiles);
+        for (uint32_t level = 0U; level < areas.maximum.size(); ++level) {
+            auto const mesh = mesher.build(tile, neighbors, shared::HeightTileSurfaceFaceAreas::DETAILS[level]);
+            uint32_t const cell_size = shared::HeightTileSurfaceFaceAreas::CELL_SIZES[level];
+            expectPatchAreas(mesh.quads, cell_size, areas.maximum[level]);
+            for (uint32_t edge = 0U; edge < EDGES.size(); ++edge) {
+                auto const bridge = shared::heightTileSurfaceSeamBridge(mesh, installed[edge], EDGES[edge]);
+                saw_first_bridge = saw_first_bridge || !bridge.first.empty();
+                saw_second_bridge = saw_second_bridge || !bridge.second.empty();
+                expectPatchAreas(bridge.first, cell_size, areas.maximum[level]);
+                expectPatchAreas(bridge.second, cell_size, areas.maximum[level]);
+            }
+        }
+    }
+    EXPECT_TRUE(saw_first_bridge);
+    EXPECT_TRUE(saw_second_bridge);
+}
+
+TEST(HeightTileSurfaceMesherTest, InstalledEdgeTopShapeMattersWhenElevationRangesMatch)
+{
+    static constexpr uint32_t SIDE = shared::HeightTile::SIDE_LENGTH;
+    shared::HeightTile tile;
+    for (uint32_t y = 0U; y < SIDE; ++y) {
+        for (uint32_t x = 0U; x < SIDE; ++x) {
+            tile.heights[y * SIDE + x] = static_cast<uint16_t>(y + 1U);
+        }
+    }
+    shared::HeightTile::Heights low;
+    shared::HeightTile::Heights high;
+    low.fill(1U);
+    high.fill(SIDE);
+    shared::HeightTileSurfaceNeighbors const neighbors{
+        .negative_x = tile.heights,
+        .positive_x = tile.heights,
+        .negative_y = low,
+        .positive_y = high,
+        .negative_x_detail = shared::HeightTileSurfaceDetail::Coarse2,
+        .positive_x_detail = shared::HeightTileSurfaceDetail::Coarse2,
+    };
+    auto const mesh = shared::HeightTileSurfaceMesher{}.build(tile, neighbors,
+        shared::HeightTileSurfaceDetail::Coarse2);
+    std::array<std::optional<shared::HeightTileSurfaceEdgeProfile>, 4> profiles;
+    profiles[0] = shared::heightTileSurfaceEdgeProfile(mesh, shared::HeightTileSurfaceDirection::NegativeX);
+    auto const aligned = shared::heightTileSurfaceFaceAreas(tile, neighbors, profiles);
+    std::ranges::reverse(profiles[0]->top);
+    auto const reversed = shared::heightTileSurfaceFaceAreas(tile, neighbors, profiles);
+    EXPECT_EQ(aligned.maximum[0], 4.0);
+    EXPECT_EQ(reversed.maximum[0], 28.0);
+    EXPECT_EQ(profiles[0]->elevation,
+        shared::heightTileSurfaceEdgeProfile(mesh, shared::HeightTileSurfaceDirection::NegativeX).elevation);
+}
+
+TEST(HeightTileSurfaceMesherTest, NonmonotoneCandidateAreasSelectTheCoarsestSafeDetail)
+{
+    static constexpr shared::HeightTileSurfaceProjection PROJECTION{ 90.0, 100U, 100U };
+    static constexpr shared::HeightTileSurfaceBounds VIEWER{};
+    static constexpr shared::HeightTileSurfaceBounds SURFACE{ .min_x_blocks = 400.0, .max_x_blocks = 400.0 };
+    static constexpr shared::HeightTileSurfaceFaceAreas AREAS{ .maximum = { 2'048.0, 16.0, 8'192.0, 16'384.0 } };
+    shared::HeightTileSurfaceLodPolicy const policy{ PROJECTION };
+    EXPECT_EQ(policy.detailFor(VIEWER, SURFACE, AREAS), shared::HeightTileSurfaceDetail::Coarse4);
+    EXPECT_EQ(policy.detailFor(VIEWER, SURFACE, AREAS, shared::HeightTileSurfaceDetail::Fine),
+        shared::HeightTileSurfaceDetail::Coarse4);
+    EXPECT_EQ(policy.detailFor(VIEWER, SURFACE, AREAS, shared::HeightTileSurfaceDetail::Coarse),
+        shared::HeightTileSurfaceDetail::Coarse4);
+}
+
+TEST(HeightTileSurfaceMesherTest, CertifiedPublicCellPatchesProjectBelowTwoPixelsAtObliqueViews)
+{
+    static constexpr uint32_t SIDE = shared::HeightTile::SIDE_LENGTH;
+    static constexpr std::array<shared::HeightTileSurfaceProjection, 2> PROJECTIONS{
+        shared::HeightTileSurfaceProjection{ 70.0, 2'560U, 1'440U },
+        shared::HeightTileSurfaceProjection{ 45.0, 3'840U, 2'160U },
+    };
+    static constexpr std::array<std::array<double, 3>, 3> EYES{
+        std::array<double, 3>{ -40'000.0, 10'000.0, 10'000.0 },
+        std::array<double, 3>{ 40'000.0, -10'000.0, 20'000.0 },
+        std::array<double, 3>{ -20'000.0, -40'000.0, -10'000.0 },
+    };
+    shared::HeightTile tile;
+    for (uint32_t y = 0U; y < SIDE; ++y) {
+        for (uint32_t x = 0U; x < SIDE; ++x) {
+            tile.heights[y * SIDE + x] = static_cast<uint16_t>(8U + ((x * 7U + y * 11U) % 5U));
+        }
+    }
+    shared::HeightTileSurfaceNeighbors const neighbors{
+        .negative_x = tile.heights, .positive_x = tile.heights,
+        .negative_y = tile.heights, .positive_y = tile.heights,
+    };
+    auto const areas = shared::heightTileSurfaceFaceAreas(tile, neighbors);
+    auto const bounds = shared::HeightTileSurfaceMesher::boundsForTile({}, tile, neighbors);
+    for (auto const projection : PROJECTIONS) {
+        shared::HeightTileSurfaceLodPolicy const policy{ projection };
+        for (auto const eye : EYES) {
+            shared::HeightTileSurfaceBounds const viewer{ eye[0], eye[0], eye[1], eye[1], eye[2], eye[2] };
+            auto const detail = policy.detailFor(viewer, bounds, areas);
+            ASSERT_NE(detail, shared::HeightTileSurfaceDetail::Fine);
+            auto const found = std::ranges::find(shared::HeightTileSurfaceFaceAreas::DETAILS, detail);
+            ASSERT_NE(found, shared::HeightTileSurfaceFaceAreas::DETAILS.end());
+            uint32_t const level = static_cast<uint32_t>(found - shared::HeightTileSurfaceFaceAreas::DETAILS.begin());
+            auto const mesh = shared::HeightTileSurfaceMesher{}.build(tile, neighbors, detail);
+            for (auto const patch : cellPatches(mesh.quads, shared::HeightTileSurfaceFaceAreas::CELL_SIZES[level])) {
+                EXPECT_LE(projectedPatchArea(patch, eye, projection), 2.0);
+            }
+        }
+    }
+}
 
 TEST(HeightTileSurfaceMesherTest, FlatTileCollapsesToOneTopAndFourBoundaryQuads)
 {
