@@ -47,8 +47,15 @@ class AiPlanTest(unittest.TestCase):
         self.backlog = self.root / "backlog.json"
         self.markdown = self.root / "docs" / "BACKLOG.md"
         self.current = self.root / "docs" / "current.json"
+        self.repo = self.root / "repo"
         self.current.parent.mkdir(parents=True)
         self.current.write_text(json.dumps({"snapshot": "MC-AI-0003", "minor": "MC-AI-0002", "major": "MC-AI-0001"}), encoding="utf-8")
+        subprocess.run(["git", "init", str(self.repo)], check=True, capture_output=True, text=True)
+        subprocess.run(["git", "-C", str(self.repo), "config", "user.name", "Plan test"], check=True)
+        subprocess.run(["git", "-C", str(self.repo), "config", "user.email", "plan-test@example.invalid"], check=True)
+        (self.repo / "base.txt").write_text("base", encoding="utf-8")
+        subprocess.run(["git", "-C", str(self.repo), "add", "base.txt"], check=True)
+        subprocess.run(["git", "-C", str(self.repo), "commit", "-m", "Base"], check=True, capture_output=True, text=True)
 
     def tearDown(self) -> None:
         self.temporary.cleanup()
@@ -60,7 +67,7 @@ class AiPlanTest(unittest.TestCase):
         self.assertEqual(ai_plan.new_basic([], "Measure a bounded workflow")["route"], "luna")
 
     def run_cli(self, *arguments: str) -> subprocess.CompletedProcess[str]:
-        return subprocess.run([sys.executable, str(SCRIPT_DIR / "ai_plan.py"), "--backlog", str(self.backlog), "--markdown", str(self.markdown), "--current", str(self.current), *arguments], text=True, capture_output=True)
+        return subprocess.run([sys.executable, str(SCRIPT_DIR / "ai_plan.py"), "--repo", str(self.repo), "--backlog", str(self.backlog), "--markdown", str(self.markdown), "--current", str(self.current), *arguments], text=True, capture_output=True)
 
     def test_numeric_task_and_version_selection_hide_storage_ids(self) -> None:
         self.write(hierarchy(task(4)))
@@ -136,6 +143,49 @@ class AiPlanTest(unittest.TestCase):
         prepared_task = next(record for record in records if record["id"] == "MC-AI-0006")
         self.assertEqual(prepared_task["parent"], "MC-AI-0003")
         self.assertEqual(prepared_task["status"], "active")
+
+    def test_implement_snapshot_surfaces_done_tasks_without_a_task_commit(self) -> None:
+        committed = task(4, parent="MC-AI-0003", status="done")
+        uncommitted = task(5, parent="MC-AI-0003", status="done")
+        self.write(hierarchy(committed, uncommitted))
+        (self.repo / "task.txt").write_text("committed task", encoding="utf-8")
+        subprocess.run(["git", "-C", str(self.repo), "add", "task.txt"], check=True)
+        subprocess.run(
+            ["git", "-C", str(self.repo), "commit", "-m", "Complete task 4", "-m", "Task-ID: MC-AI-0004"],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+
+        pending = self.run_cli("implement-snapshot")
+
+        self.assertEqual(pending.returncode, 0, pending.stderr)
+        self.assertNotIn("4\tbasic", pending.stdout)
+        self.assertIn("5\tbasic\tdone-uncommitted", pending.stdout)
+
+    def test_implement_snapshot_ignores_done_commit_only_on_an_unrelated_branch(self) -> None:
+        self.write(hierarchy(task(4, parent="MC-AI-0003", status="done")))
+        base_branch = subprocess.run(
+            ["git", "-C", str(self.repo), "branch", "--show-current"],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+        subprocess.run(["git", "-C", str(self.repo), "switch", "-c", "unrelated"], check=True, capture_output=True, text=True)
+        (self.repo / "unrelated.txt").write_text("not in candidate", encoding="utf-8")
+        subprocess.run(["git", "-C", str(self.repo), "add", "unrelated.txt"], check=True)
+        subprocess.run(
+            ["git", "-C", str(self.repo), "commit", "-m", "Complete task 4 elsewhere", "-m", "Task-ID: MC-AI-0004"],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        subprocess.run(["git", "-C", str(self.repo), "switch", base_branch], check=True, capture_output=True, text=True)
+
+        pending = self.run_cli("implement-snapshot")
+
+        self.assertEqual(pending.returncode, 0, pending.stderr)
+        self.assertIn("4\tbasic\tdone-uncommitted", pending.stdout)
 
     def test_explicit_snapshot_selection_allows_parallel_active_snapshots(self) -> None:
         self.write(hierarchy(task(4)))

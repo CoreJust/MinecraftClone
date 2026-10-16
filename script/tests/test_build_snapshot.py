@@ -333,6 +333,10 @@ class BuildSnapshotTests(unittest.TestCase):
         self.assertIn("trusted_dependency_source: ${{ steps.trust.outputs.trusted_dependency_source }}", workflow)
         self.assertIn("if: needs.source.outputs.trusted_dependency_source == 'true'", workflow)
         self.assertIn("timeout-minutes: 15", workflow)
+        desktop_job = workflow.split("\n  desktop:\n", maxsplit=1)[1].split("\n  android:\n", maxsplit=1)[0]
+        android_job = workflow.split("\n  android:\n", maxsplit=1)[1]
+        self.assertIn("\n    timeout-minutes: 30\n", desktop_job)
+        self.assertIn("\n    timeout-minutes: 30\n", android_job)
         self.assertIn("--automated-verification build-only", workflow)
         self.assertIn("-DBUILD_TESTING=OFF", workflow)
         self.assertNotIn("ctest ", workflow)

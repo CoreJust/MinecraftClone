@@ -8,6 +8,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from unittest import mock
 from pathlib import Path
@@ -969,7 +970,8 @@ class AiCheckTests(unittest.TestCase):
                         self.root, log_dir, "docs", command, 60, reuse=True
                     )
                 self.assertEqual(second.returncode, 127)
-                self.assertFalse(receipt.exists())
+                failure_receipt = json.loads(receipt.read_text(encoding="utf-8"))
+                self.assertEqual(failure_receipt["status"], "FAIL")
 
     def test_build_and_ctest_receipts_reuse_only_matching_native_inputs(self):
         checker = load_module()
@@ -1169,7 +1171,8 @@ class AiCheckTests(unittest.TestCase):
 
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("missing output targets", result.output)
-        self.assertFalse(checker.receipt_path(log_dir, "build").exists())
+        receipt = json.loads(checker.receipt_path(log_dir, "build").read_text(encoding="utf-8"))
+        self.assertEqual(receipt["status"], "FAIL")
 
     def test_full_python_receipt_reuses_equivalent_promotion_but_not_content_changes(self):
         checker = load_module()
@@ -1324,6 +1327,7 @@ class AiCheckTests(unittest.TestCase):
             encoding="utf-8",
         )
         shutil.copy2(SCRIPT, self.root / "script/ai_check.py")
+        shutil.copy2(SCRIPT.with_name("ai_windows_job.py"), self.root / "script/ai_windows_job.py")
         hook_dir = self.root / ".githooks"
         hook_dir.mkdir()
         shutil.copy2(PRE_COMMIT, hook_dir / "pre-commit")
@@ -1402,6 +1406,7 @@ class AiCheckTests(unittest.TestCase):
         hook_dir.mkdir()
         shutil.copy2(PRE_PUSH, hook_dir / "pre-push")
         shutil.copy2(SCRIPT, self.root / "script/ai_check.py")
+        shutil.copy2(SCRIPT.with_name("ai_windows_job.py"), self.root / "script/ai_windows_job.py")
         release_guard = self.root / "script/ci/release_guard.py"
         release_guard.parent.mkdir(parents=True)
         release_guard.write_text("raise SystemExit(0)\n", encoding="utf-8")
@@ -1532,7 +1537,106 @@ class AiCheckTests(unittest.TestCase):
 
         ctest = next(call for call in calls if call[0] == "ctest")
         self.assertEqual(ctest[1][-2:], ["--timeout", "240"])
-        self.assertEqual(ctest[2], 2400)
+        self.assertEqual(ctest[2], checker.BUILD_PHASE_TIMEOUT)
+        self.assertTrue(all(timeout <= 600 for _, _, timeout in calls))
+
+    def test_all_configured_automated_stages_fit_ten_minutes(self):
+        checker = load_module()
+        self.assertEqual(checker.MAX_PHASE_TIMEOUT, 600)
+        self.assertEqual(checker.TOTAL_TIMEOUT, 1500)
+        self.assertEqual(checker.BUILD_PHASE_TIMEOUT, 600)
+        self.assertLessEqual(checker.PYTHON_TEST_TIMEOUT, checker.MAX_PHASE_TIMEOUT)
+        self.assertLessEqual(checker.WINDOWS_PYTHON_TEST_TIMEOUT, checker.MAX_PHASE_TIMEOUT)
+        self.assertEqual(int(checker.BUILD_PHASE_COMMANDS["ctest"][-1]), 240)
+        registry = json.loads((REPOSITORY / "script/ai_checks.json").read_text(encoding="utf-8"))
+        self.assertTrue(registry)
+        self.assertTrue(all(item["timeout"] <= checker.MAX_PHASE_TIMEOUT for item in registry))
+
+    def test_aggregate_deadline_marks_remaining_phases_unrun_and_failing(self):
+        checker = load_module()
+        (self.root / "script/ai_checks.json").write_text("[]\n", encoding="utf-8")
+        clock = [0.0]
+        calls = []
+
+        def monotonic():
+            return clock[0]
+
+        def run_phase(root, log_dir, name, command, timeout, **kwargs):
+            calls.append((name, timeout))
+            clock[0] += checker.TOTAL_TIMEOUT
+            (log_dir / f"{name}.log").write_text("partial stage output\n", encoding="utf-8")
+            return checker.PhaseResult(name, command, 124, "partial stage output\n", timed_out=True)
+
+        with (
+            mock.patch.object(checker, "time") as mocked_time,
+            mock.patch.object(checker, "run_phase", side_effect=run_phase),
+            contextlib.redirect_stdout(io.StringIO()) as output,
+        ):
+            mocked_time.monotonic.side_effect = monotonic
+            mocked_time.time_ns.return_value = 1
+            self.assertEqual(checker.main(["--root", str(self.root)]), 1)
+
+        self.assertEqual([name for name, _ in calls], ["docs"])
+        self.assertEqual(calls[0][1], min(60, checker.MAX_PHASE_TIMEOUT))
+        self.assertIn("UNRUN backlog", output.getvalue())
+        self.assertIn("UNRUN ctest", output.getvalue())
+        summary = json.loads((self.root / "build/ai-checks/summary.json").read_text(encoding="utf-8"))
+        self.assertIn("docs", summary["timed_out_phases"])
+        self.assertIn("backlog", summary["unrun_phases"])
+        self.assertIn("ctest", summary["unrun_phases"])
+        self.assertIn("partial stage output", (self.root / "build/ai-checks/docs.log").read_text(encoding="utf-8"))
+        self.assertIn("deadline", (self.root / "build/ai-checks/backlog.log").read_text(encoding="utf-8").lower())
+        unrun_receipt = json.loads(checker.receipt_path(self.root / "build/ai-checks", "backlog").read_text(encoding="utf-8"))
+        self.assertEqual(unrun_receipt["status"], "UNRUN")
+
+    def test_phase_timeout_terminates_descendant_processes(self):
+        checker = load_module()
+        log_dir = self.root / "build/ai-checks"
+        log_dir.mkdir(parents=True)
+        marker = self.root / "descendant-finished"
+        child = (
+            "import pathlib,time; time.sleep(1.5); "
+            f"pathlib.Path({str(marker)!r}).write_text('alive')"
+        )
+        parent = (
+            "import subprocess,sys,time; "
+            f"subprocess.Popen([sys.executable, '-c', {child!r}]); "
+            "print('parent started', flush=True); time.sleep(30)"
+        )
+        result = checker.run_phase(
+            self.root, log_dir, "tree-timeout", [sys.executable, "-c", parent], 1
+        )
+        self.assertEqual(result.returncode, 124)
+        self.assertTrue(result.timed_out)
+        self.assertIn("parent started", result.output)
+        timeout_receipt = json.loads(checker.receipt_path(log_dir, "tree-timeout").read_text(encoding="utf-8"))
+        self.assertEqual(timeout_receipt["status"], "TIMEOUT")
+        self.assertTrue(timeout_receipt["timed_out"])
+        time.sleep(1.7)
+        self.assertFalse(marker.exists(), "descendant survived its timed-out phase")
+
+    @unittest.skipUnless(os.name == "nt", "Windows owned-job cleanup contract")
+    def test_phase_exit_cleans_descendants_after_command_leader_exits(self):
+        checker = load_module()
+        log_dir = self.root / "build/ai-checks"
+        log_dir.mkdir(parents=True)
+        marker = self.root / "descendant-finished"
+        child = (
+            "import pathlib,time; time.sleep(2); "
+            f"pathlib.Path({str(marker)!r}).write_text('alive')"
+        )
+        parent = (
+            "import subprocess,sys; "
+            f"subprocess.Popen([sys.executable, '-c', {child!r}]); "
+            "print('leader finished', flush=True)"
+        )
+        result = checker.run_phase(
+            self.root, log_dir, "exited-leader", [sys.executable, "-c", parent], 10
+        )
+        self.assertEqual(result.returncode, 0, result.output)
+        self.assertIn("leader finished", result.output)
+        time.sleep(2.2)
+        self.assertFalse(marker.exists())
 
     def test_full_and_strict_checks_run_full_python_for_focused_scopes(self):
         checker = load_module()

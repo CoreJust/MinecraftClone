@@ -337,7 +337,15 @@ def require_valid_prior_snapshot_ledgers(
             raise HistoryError(f"publication ledger {sha} omits {task_id}")
         ledger_baseline = revision(repo, str(previous["baseline_commit"]))
         if not has_tagged_promotion(repo, ledger_baseline, parents[0]):
-            raise HistoryError(f"publication ledger {sha} has no tagged immutable promotion")
+            tag_refs = git(repo, "for-each-ref", "--format=%(refname)", "refs/tags/ai/").splitlines()
+            tag_status = "no local AI release tags were found" if not tag_refs else "the required AI promotion tag is missing locally"
+            fetch_hint = (
+                f"; {tag_status}. If this checkout suppresses tag fetching, run "
+                "git fetch --no-tags origin 'refs/tags/ai/*:refs/tags/ai/*' and retry"
+            )
+            raise HistoryError(
+                f"publication ledger {sha} has no tagged immutable promotion{fetch_hint}"
+            )
         changed_fields = {key for key in previous if previous[key] != published[key]}
         if not changed_fields <= publication_ledger_mutable_fields(sha):
             raise HistoryError(f"publication ledger {sha} changes immutable {task_id} fields")

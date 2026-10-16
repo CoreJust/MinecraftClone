@@ -24,7 +24,7 @@
     "enabled": true,
     "levels": ["snapshot", "minor", "major"],
     "command": ["{python}", "script/ai_renderer_smoke.py"],
-    "timeout": 900,
+    "timeout": 600,
     "reason": "Runs the windowed noninteractive RendererSmokeTest with validation; it is not a fully headless texture-golden gate.",
     "receipt": true
   },

@@ -5,10 +5,12 @@ from contextlib import ExitStack
 import hashlib
 import importlib.util
 import json
+import os
 import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 import zipfile
 from pathlib import Path
@@ -36,6 +38,109 @@ class AnalysisMatrixTests(unittest.TestCase):
     def setUp(self):
         self.matrix = load_module()
         self.manifest = self.matrix.load_manifest(MANIFEST_PATH)
+
+    def test_timeout_kills_descendant_holding_pipe_after_command_exits(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            marker = root / "survived"
+            child = (
+                "import pathlib,signal,time; "
+                "signal.signal(signal.SIGTERM, signal.SIG_IGN); "
+                "print('descendant ready', flush=True); time.sleep(2); "
+                f"pathlib.Path({str(marker)!r}).write_text('alive')"
+            )
+            command = [sys.executable, "-c", (
+                "import subprocess,sys; "
+                f"subprocess.Popen([sys.executable, '-c', {child!r}])"
+            )]
+            started = time.monotonic()
+            try:
+                # Windows closes the owned job when the command exits; POSIX
+                # keeps waiting on the inherited pipe until the row deadline.
+                result = self.matrix._run_with_liveness(
+                    command, cwd=root, environment=os.environ.copy(),
+                    timeout_seconds=0.4, row_id="exited-leader",
+                )
+                self.assertEqual(os.name, "nt")
+                self.assertEqual(result.returncode, 0)
+            except subprocess.TimeoutExpired:
+                pass
+            self.assertLess(time.monotonic() - started, 3)
+            time.sleep(2)
+            self.assertFalse(marker.exists())
+
+    def test_probe_timeout_preserves_output_and_marks_row_failed(self):
+        row = self.manifest["rows"][0]
+        row["platform"] = self.matrix._host_platform()
+        with tempfile.TemporaryDirectory() as directory, \
+            mock.patch.object(self.matrix, "require_clean_checkout"), \
+            mock.patch.object(self.matrix, "_row_supported_on_host", return_value=True), \
+            mock.patch.dict(self.matrix.REQUIRED_ROW_ENVIRONMENT, {row["id"]: ()}), \
+            mock.patch.object(self.matrix, "_run_with_liveness", side_effect=subprocess.TimeoutExpired(
+                ["tool"], 1, output=b"partial probe\xff", stderr=" stderr retained"
+            )):
+            receipt = Path(directory) / "row.json"
+            self.matrix.run_row(row["id"], receipt, MANIFEST_PATH, root=REPOSITORY, expected_candidate=CANDIDATE)
+            result = json.loads(receipt.read_text())["rows"][0]
+            self.assertEqual(result["status"], "failed")
+            self.assertIn("partial probe", result["diagnostics"])
+            self.assertIn("\ufffd", result["diagnostics"])
+            self.assertIn("stderr retained", result["diagnostics"])
+
+    def test_missing_probe_remains_unavailable(self):
+        with mock.patch.object(self.matrix, "_run_with_liveness", side_effect=FileNotFoundError("missing")):
+            _, _, error = self.matrix._capture_tool_probes(
+                REPOSITORY, self.manifest["rows"][0], os.environ.copy()
+            )
+        self.assertIn("unavailable", error)
+
+    @unittest.skipIf(os.name == "nt", "POSIX process-group contract")
+    def test_timeout_kills_term_ignoring_child_after_group_leader_exits(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            marker = root / "child-finished"
+            child = (
+                "import pathlib,signal,time; "
+                "signal.signal(signal.SIGTERM, signal.SIG_IGN); "
+                "print('child ready', flush=True); time.sleep(2); "
+                f"pathlib.Path({str(marker)!r}).write_text('alive')"
+            )
+            parent = (
+                "import subprocess,sys,time; "
+                f"subprocess.Popen([sys.executable, '-c', {child!r}]); "
+                "time.sleep(20)"
+            )
+            with self.assertRaises(subprocess.TimeoutExpired):
+                self.matrix._run_with_liveness(
+                    [sys.executable, "-c", parent], cwd=root,
+                    environment=os.environ.copy(), timeout_seconds=0.3, row_id="tree-test",
+                )
+            time.sleep(2)
+            self.assertFalse(marker.exists(), "TERM-ignoring descendant survived timeout")
+
+    def test_recursive_input_inventory_includes_nested_files_on_windows_glob_semantics(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            nested_source = root / "src" / "deep" / "game.cpp"
+            nested_source.parent.mkdir(parents=True)
+            nested_source.write_text("version one\n", encoding="utf-8")
+
+            native_glob = Path.glob
+
+            def windows_glob(path, pattern):
+                matches = native_glob(path, pattern)
+                if pattern.endswith("/**"):
+                    return (match for match in matches if match.is_dir())
+                return matches
+
+            with mock.patch.object(Path, "glob", windows_glob):
+                first_paths = self.matrix._input_file_paths(root, ("src/**",))
+                first_digest = self.matrix._input_files_sha256(root, ("src/**",))
+                nested_source.write_text("version two\n", encoding="utf-8")
+                second_digest = self.matrix._input_files_sha256(root, ("src/**",))
+
+            self.assertEqual(set(first_paths), {"src/deep/game.cpp"})
+            self.assertNotEqual(first_digest, second_digest)
 
     def receipt(self):
         rows = []
@@ -771,6 +876,34 @@ class AnalysisMatrixTests(unittest.TestCase):
             tuple(row["id"] for row in self.manifest["rows"]),
             self.matrix.REQUIRED_ROW_IDS,
         )
+        self.assertTrue(
+            all(row["timeout_seconds"] <= self.matrix.MAX_ROW_TIMEOUT_SECONDS for row in self.manifest["rows"])
+        )
+
+    def test_manifest_rejects_a_row_over_the_ten_minute_stage_limit(self):
+        manifest = copy.deepcopy(self.manifest)
+        manifest["rows"][0]["timeout_seconds"] = self.matrix.MAX_ROW_TIMEOUT_SECONDS + 1
+        with self.assertRaisesRegex(self.matrix.MatrixError, "between 1 and 600"):
+            self.matrix.validate_manifest(manifest)
+
+    def test_tool_probes_use_tree_terminating_runner_with_remaining_row_budget(self):
+        row = {
+            "id": "probe-budget-test",
+            "tool_probes": [[sys.executable, "--version"]],
+        }
+        completed = subprocess.CompletedProcess([sys.executable, "--version"], 0, "tool 1.0\n", "")
+        with mock.patch.object(self.matrix, "_run_with_liveness", return_value=completed) as run:
+            versions, identities, error = self.matrix._capture_tool_probes(
+                REPOSITORY, row, {}, timeout_seconds=42
+            )
+
+        self.assertIsNone(error)
+        self.assertEqual(versions[sys.executable], "tool 1.0")
+        self.assertEqual(len(identities), 1)
+        run.assert_called_once()
+        self.assertGreater(run.call_args.kwargs["timeout_seconds"], 0)
+        self.assertLessEqual(run.call_args.kwargs["timeout_seconds"], 30)
+        self.assertEqual(run.call_args.kwargs["row_id"], "probe-budget-test")
 
     def test_clang_static_analysis_probes_scan_build_with_supported_help_option(self):
         row = next(item for item in self.manifest["rows"] if item["id"] == "clang_static_analysis")
@@ -813,7 +946,7 @@ class AnalysisMatrixTests(unittest.TestCase):
             with mock.patch.object(self.matrix, "require_clean_checkout"), mock.patch.dict(
                 self.matrix.REQUIRED_ROW_ENVIRONMENT, {row["id"]: ()}
             ), mock.patch.object(self.matrix, "_row_supported_on_host", return_value=True), mock.patch.object(
-                self.matrix.subprocess, "run", return_value=failed_probe
+                self.matrix, "_run_with_liveness", return_value=failed_probe
             ) as run:
                 receipt = self.matrix.run_row(
                     row["id"], receipt_path, MANIFEST_PATH, root=REPOSITORY, expected_candidate=CANDIDATE
@@ -1705,6 +1838,41 @@ class AnalysisMatrixTests(unittest.TestCase):
                     expected_candidate=CANDIDATE,
                     row_ids=[row_id, row_id],
                 )
+
+    def test_run_local_marks_rows_unrun_at_the_aggregate_deadline(self):
+        host = self.matrix._host_platform()
+        selected = self.matrix.HOST_ROW_IDS[host][:2]
+        clock = [0.0]
+
+        def monotonic():
+            return clock[0]
+
+        def run_row(row_id, *args, **kwargs):
+            self.assertEqual(
+                kwargs["overall_timeout_seconds"],
+                min(self.matrix.MAX_ROW_TIMEOUT_SECONDS, self.matrix.MAX_LOCAL_TIMEOUT_SECONDS),
+            )
+            clock[0] = self.matrix.MAX_LOCAL_TIMEOUT_SECONDS
+            return {"rows": [{"id": row_id, "status": "passed"}]}
+
+        with tempfile.TemporaryDirectory() as directory:
+            receipt_path = Path(directory) / "analysis.json"
+            with mock.patch.object(self.matrix, "_host_platform", return_value=host), mock.patch.object(
+                self.matrix.time, "monotonic", side_effect=monotonic
+            ), mock.patch.object(self.matrix, "run_row", side_effect=run_row) as run:
+                receipt = self.matrix.run_local(
+                    receipt_path,
+                    MANIFEST_PATH,
+                    root=REPOSITORY,
+                    expected_candidate=CANDIDATE,
+                    row_ids=selected,
+                )
+
+        self.assertEqual(run.call_count, 1)
+        self.assertEqual([row["id"] for row in receipt["rows"]], list(selected))
+        self.assertEqual(receipt["rows"][1]["status"], "failed")
+        self.assertIn("UNRUN", receipt["rows"][1]["diagnostics"])
+        self.assertEqual(receipt["rows"][1]["duration_seconds"], 0)
 
     def test_cli_verifies_a_complete_receipt(self):
         with tempfile.TemporaryDirectory() as directory:

@@ -11,7 +11,7 @@ Planning tasks are not releases; see the [task hierarchy](tasks/MC-AI-0034.md).
 
 ## Finalize the plan
 
-1. Keep `baseline_commit` immutable. Inspect `python3 script/ai_history.py collect <id>` and the canonical roadmap; the history graph must account for every commit and all promised product scope.
+1. Keep `baseline_commit` immutable. If prior AI tags are absent, fetch them without force using `git fetch --no-tags origin 'refs/tags/ai/*:refs/tags/ai/*'`; then run `ai_history.py collect <id>` and confirm the graph accounts for every commit and promised scope.
 2. Complete basic children before their snapshot; complete snapshots before the minor and minors before the major. Add newly discovered tasks; do not remove unfinished planned work to make closure pass.
 3. Fill `product_changes`, then `code_changes`. Use a truthful “No product behavior changed” for tooling-only work. An active snapshot records local gate evidence and `resolution_changes` without a release date; only the post-publication `done` ledger records the actual `resolved_at` date and external artifact evidence.
 4. Minor/major tasks fill `docs_review`, `environment_review`, `retrospective`, and `backlog_review`: observed issues, repairs and follow-up IDs. Reconcile README, contracts, task state and history; verify justified repairs.

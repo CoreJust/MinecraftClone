@@ -103,6 +103,7 @@
         "script/ai_run.py",
         "script/ai_setup.py",
         "script/ai_tasks.py",
+        "script/ai_windows_job.py",
         "script/android_pair_playtest.py",
         "script/android_playtest.py",
         "script/check_options.py",
@@ -136,6 +137,7 @@
         "script/tests/test_ai_run.py",
         "script/tests/test_ai_setup.py",
         "script/tests/test_ai_tasks.py",
+        "script/tests/test_ai_windows_job.py",
         "script/tests/test_analysis_presets.py",
         "script/tests/test_android_clang_tidy.py",
         "script/tests/test_android_hwasan_emulator.py",
@@ -174,7 +176,7 @@
         "vcpkg-configuration.json",
         "vcpkg.json"
       ],
-      "sources_sha256": "f9eb4da241871baf3edb9bf74d6050d4cd8a8c2af8600538032d810e233c3807"
+      "sources_sha256": "4ca745d96581f5fcc71f67c7faa64804239d86a6fd7cdb0be6bd1ea79adde651"
     },
     {
       "guide": "docs/code/CORE.md",

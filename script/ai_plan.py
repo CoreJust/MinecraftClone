@@ -108,8 +108,8 @@ def aggregate_for_identifier(tasks: Sequence[dict[str, Any]], level: str, identi
     return candidates[0]
 
 
-def format_task(task: dict[str, Any]) -> str:
-    return f"{task_number(task)}\t{task['level']}\t{task['status']}\t{task['priority']}\t{task['title']}"
+def format_task(task: dict[str, Any], status: str | None = None) -> str:
+    return f"{task_number(task)}\t{task['level']}\t{status or task['status']}\t{task['priority']}\t{task['title']}"
 
 
 def render_lookup(task: dict[str, Any], tasks: Sequence[dict[str, Any]]) -> str:
@@ -131,8 +131,17 @@ def descendants(tasks: Sequence[dict[str, Any]], root_id: str) -> list[dict[str,
     return found
 
 
-def ordered_pending_basics(tasks: Sequence[dict[str, Any]], aggregate: dict[str, Any]) -> list[dict[str, Any]]:
-    pending = [task for task in descendants(tasks, aggregate["id"]) if task["level"] == "basic" and task["status"] != "done"]
+def ordered_pending_basics(
+    tasks: Sequence[dict[str, Any]],
+    aggregate: dict[str, Any],
+    committed_task_ids: set[str] | None = None,
+) -> list[dict[str, Any]]:
+    pending = [
+        task
+        for task in descendants(tasks, aggregate["id"])
+        if task["level"] == "basic"
+        and (task["status"] != "done" or (committed_task_ids is not None and task["id"] not in committed_task_ids))
+    ]
     pending_by_id = {task["id"]: task for task in pending}
     unresolved = {task["id"]: {dependency for dependency in task["depends_on"] if dependency in pending_by_id} for task in pending}
     ordered: list[dict[str, Any]] = []
@@ -148,12 +157,37 @@ def ordered_pending_basics(tasks: Sequence[dict[str, Any]], aggregate: dict[str,
     return ordered
 
 
-def format_pending(tasks: Sequence[dict[str, Any]], aggregate: dict[str, Any]) -> str:
+def format_pending(
+    tasks: Sequence[dict[str, Any]],
+    aggregate: dict[str, Any],
+    committed_task_ids: set[str] | None = None,
+) -> str:
     rows = [format_task(aggregate)]
-    for task in ordered_pending_basics(tasks, aggregate):
+    for task in ordered_pending_basics(tasks, aggregate, committed_task_ids):
         dependencies = ",".join(str(int(item[len(ai_tasks.ID_PREFIX):])) for item in task["depends_on"]) or "-"
-        rows.append(f"{format_task(task)}\tdeps={dependencies}")
+        status = "done-uncommitted" if task["status"] == "done" and committed_task_ids is not None and task["id"] not in committed_task_ids else None
+        rows.append(f"{format_task(task, status)}\tdeps={dependencies}")
     return "\n".join(rows)
+
+
+def committed_task_ids(
+    repo: Path,
+    tasks: Sequence[dict[str, Any]],
+    candidate_task_ids: set[str],
+) -> set[str]:
+    """Return candidate task IDs proven by HEAD history or explicit imports."""
+    import ai_history
+
+    try:
+        reachable = ai_history.git(repo, "rev-list", "HEAD").splitlines()
+        history_tasks = [
+            {**task, "commits": task["commits"] if task["id"] in candidate_task_ids else []}
+            for task in tasks
+        ]
+        commits = ai_history.trailer_commits(repo, history_tasks, exact_commits=reachable)
+    except ai_history.HistoryError as error:
+        raise PlanError(f"cannot reconcile task commits: {error}") from error
+    return candidate_task_ids & set(commits)
 
 
 def new_basic(tasks: Sequence[dict[str, Any]], description: str, parent: str = "") -> dict[str, Any]:
@@ -259,6 +293,7 @@ def clear_current(tasks: Sequence[dict[str, Any]], level: str, current_path: Pat
 
 def make_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--repo", type=Path, default=ai_tasks.ROOT)
     parser.add_argument("--backlog", type=Path, default=ai_tasks.DEFAULT_BACKLOG_PATH)
     parser.add_argument("--markdown", type=Path, default=ai_tasks.DEFAULT_MARKDOWN_PATH)
     parser.add_argument("--current", type=Path, default=DEFAULT_CURRENT_PATH)
@@ -303,7 +338,15 @@ def main(argv: Sequence[str] | None = None) -> int:
             return 0
         if args.command.startswith("implement-"):
             level = args.command.removeprefix("implement-")
-            print(format_pending(tasks, current_tasks(tasks, args.current, level)[level]))
+            aggregate = current_tasks(tasks, args.current, level)[level]
+            basic_children = [
+                task
+                for task in descendants(tasks, aggregate["id"])
+                if task["level"] == "basic"
+            ]
+            done_child_ids = {task["id"] for task in basic_children if task["status"] == "done"}
+            committed = committed_task_ids(args.repo, tasks, done_child_ids) if done_child_ids else None
+            print(format_pending(tasks, aggregate, committed))
             return 0
         if args.command == "backlog":
             for task in sorted((item for item in tasks if item["level"] == "basic" and not item["parent"] and item["status"] != "done"), key=lambda item: int(item["id"][len(ai_tasks.ID_PREFIX):])):

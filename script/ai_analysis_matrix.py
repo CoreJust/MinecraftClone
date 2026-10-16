@@ -24,6 +24,8 @@ TASK_ID = "MC-AI-0249"
 SCHEMA_VERSION = 2
 DEFAULT_MANIFEST = Path(__file__).with_name("ai_analysis_matrix.json")
 DEFAULT_RECEIPT = Path("build/ai-checks/analysis-matrix.json")
+MAX_ROW_TIMEOUT_SECONDS = 600
+MAX_LOCAL_TIMEOUT_SECONDS = 1500
 SHA_PATTERN = re.compile(r"^[0-9a-f]{40}$")
 
 # Keep this list synchronized with the acceptance rows in MC-AI-0249.  The
@@ -70,6 +72,7 @@ COMMON_INPUT_GLOBS = (
     "script/ci/acquire.py",
     "script/ci/build_snapshot.py",
     "script/ai_analysis_matrix.py",
+    "script/ai_windows_job.py",
 )
 INPUT_SCOPES = {
     "common": COMMON_INPUT_GLOBS,
@@ -446,8 +449,10 @@ def validate_manifest(manifest: Any) -> dict[str, Any]:
         for probe_index, probe in enumerate(probes):
             _require_string_list(probe, f"manifest row {row_id}.tool_probes[{probe_index}]")
         timeout = row.get("timeout_seconds")
-        if not isinstance(timeout, int) or isinstance(timeout, bool) or timeout <= 0 or timeout > 3600:
-            raise MatrixError(f"manifest row {row_id}.timeout_seconds must be between 1 and 3600")
+        if not isinstance(timeout, int) or isinstance(timeout, bool) or timeout <= 0 or timeout > MAX_ROW_TIMEOUT_SECONDS:
+            raise MatrixError(
+                f"manifest row {row_id}.timeout_seconds must be between 1 and {MAX_ROW_TIMEOUT_SECONDS}"
+            )
     missing = sorted(expected - seen)
     extra = sorted(seen - expected)
     if missing or extra:
@@ -586,6 +591,11 @@ def _input_file_paths(root: Path, patterns: Sequence[str]) -> dict[str, Path]:
     root = root.resolve()
     paths: dict[str, Path] = {}
     for pattern in patterns:
+        # pathlib's terminal `/**` glob includes files on macOS/Linux but, on
+        # Windows Python, can return directories only. Add a child wildcard so
+        # the same recursive file inventory is selected on every platform.
+        if pattern.endswith("/**"):
+            pattern = f"{pattern}/*"
         for file_path in root.glob(pattern):
             if not file_path.is_file():
                 continue
@@ -1893,22 +1903,31 @@ def _capture_tool_probes(
     root: Path,
     manifest_row: Mapping[str, Any],
     environment: Mapping[str, str],
+    timeout_seconds: float = 30,
 ) -> tuple[dict[str, str], list[dict[str, Any]], str | None]:
     versions: dict[str, str] = {}
     identities: list[dict[str, Any]] = []
+    deadline = time.monotonic() + timeout_seconds
     for probe in manifest_row["tool_probes"]:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return versions, identities, "analysis row deadline elapsed during tool probes"
         expanded_probe = _expand_environment(probe, environment)
         try:
-            completed = subprocess.run(
+            completed = _run_with_liveness(
                 expanded_probe,
                 cwd=root,
-                text=True,
-                capture_output=True,
-                timeout=30,
-                check=False,
-                env=environment,
+                environment=environment,
+                timeout_seconds=min(30, remaining),
+                row_id=str(manifest_row["id"]),
             )
-        except (FileNotFoundError, subprocess.TimeoutExpired) as error:
+        except subprocess.TimeoutExpired as error:
+            partial = "".join(
+                part.decode("utf-8", errors="replace") if isinstance(part, bytes) else part or ""
+                for part in (error.output, error.stderr)
+            )
+            return versions, identities, f"tool probe {' '.join(expanded_probe)} timed out: {error}\n{partial}"
+        except FileNotFoundError as error:
             return versions, identities, f"tool probe {' '.join(expanded_probe)} unavailable: {error}"
         output = completed.stdout + completed.stderr
         if completed.returncode:
@@ -2663,19 +2682,10 @@ def _bounded_text(value: str, limit: int = 16_384) -> str:
 
 
 def _terminate_process_tree(process: subprocess.Popen[str]) -> None:
-    if process.poll() is not None:
-        return
     if os.name == "nt":
-        taskkill = shutil.which("taskkill")
-        if taskkill is not None:
-            subprocess.run(
-                [taskkill, "/PID", str(process.pid), "/T", "/F"],
-                text=True,
-                capture_output=True,
-                timeout=10,
-                check=False,
-            )
-        else:
+        # This is the owned job wrapper; closing its process handles in the
+        # kernel kills all members, without depending on a live command leader.
+        if process.poll() is None:
             process.kill()
     else:
         try:
@@ -2685,10 +2695,12 @@ def _terminate_process_tree(process: subprocess.Popen[str]) -> None:
         try:
             process.wait(timeout=5)
         except subprocess.TimeoutExpired:
-            try:
-                os.killpg(process.pid, signal.SIGKILL)
-            except ProcessLookupError:
-                pass
+            pass
+        # The group can outlive its leader, including children ignoring TERM.
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
     try:
         process.wait(timeout=5)
     except subprocess.TimeoutExpired:
@@ -2707,8 +2719,13 @@ def _run_with_liveness(
     """Run one proof command with bounded waits and useful output heartbeats."""
 
     started = time.monotonic()
+    launch_command = list(command)
+    if os.name == "nt":
+        if shutil.which(command[0], path=environment.get("PATH")) is None and not (cwd / command[0]).is_file():
+            raise FileNotFoundError(f"command executable was not found: {command[0]}")
+        launch_command = [sys.executable, str(Path(__file__).with_name("ai_windows_job.py")), *launch_command]
     process = subprocess.Popen(
-        list(command),
+        launch_command,
         cwd=cwd,
         text=True,
         stdout=subprocess.PIPE,
@@ -2720,7 +2737,7 @@ def _run_with_liveness(
         remaining = timeout_seconds - (time.monotonic() - started)
         if remaining <= 0:
             _terminate_process_tree(process)
-            output, _ = process.communicate()
+            output, _ = process.communicate(timeout=5)
             raise subprocess.TimeoutExpired(command, timeout_seconds, output=output)
         try:
             output, _ = process.communicate(timeout=min(30.0, remaining))
@@ -2738,7 +2755,7 @@ def _run_with_liveness(
             )
             if time.monotonic() - started >= timeout_seconds:
                 _terminate_process_tree(process)
-                output, _ = process.communicate()
+                output, _ = process.communicate(timeout=5)
                 raise subprocess.TimeoutExpired(command, timeout_seconds, output=output)
 
 
@@ -2782,6 +2799,7 @@ def run_row(
     root: Path | None = None,
     expected_candidate: Mapping[str, str] | None = None,
     reuse_row: Mapping[str, Any] | None = None,
+    overall_timeout_seconds: float | None = None,
 ) -> dict[str, Any]:
     """Execute one bounded local row, reusing only exact matching local proof."""
 
@@ -2797,6 +2815,12 @@ def run_row(
         raise MatrixError(f"unknown analysis matrix row: {row_id}")
     row = rows[row_id]
     started = time.monotonic()
+    row_timeout_seconds = min(
+        row["timeout_seconds"],
+        overall_timeout_seconds if overall_timeout_seconds is not None else row["timeout_seconds"],
+    )
+    if row_timeout_seconds <= 0:
+        raise MatrixError(f"analysis row {row_id} has no remaining time budget")
     host = _host_platform()
     input_identity: dict[str, Any] | None = None
     if not _row_supported_on_host(row):
@@ -2819,9 +2843,13 @@ def run_row(
         if missing_environment:
             unavailable = "required analysis environment is unavailable: " + ", ".join(missing_environment)
         else:
-            versions, tool_identities, unavailable = _capture_tool_probes(
-                root, row, command_environment
-            )
+            probe_remaining = row_timeout_seconds - (time.monotonic() - started)
+            if probe_remaining <= 0:
+                unavailable = "analysis row deadline elapsed before tool probes"
+            else:
+                versions, tool_identities, unavailable = _capture_tool_probes(
+                    root, row, command_environment, timeout_seconds=probe_remaining
+                )
         probe_output = [
             f"$ {' '.join(identity['probe_argv'])}\n"
             f"{versions.get(identity['probe_argv'][0], 'tool version output recorded')}"
@@ -2831,7 +2859,7 @@ def run_row(
             result = _row_receipt(
                 row,
                 candidate,
-                "unavailable",
+                "failed" if "timed out" in unavailable or "deadline elapsed" in unavailable else "unavailable",
                 versions or {"runner": f"host={host}"},
                 unavailable,
                 time.monotonic() - started,
@@ -2869,7 +2897,7 @@ def run_row(
                 command_outputs: list[str] = []
                 for expanded_command in current_identity["effective_commands"]:
                     command = row["commands"][len(executed_commands)]
-                    remaining = row["timeout_seconds"] - (time.monotonic() - started)
+                    remaining = row_timeout_seconds - (time.monotonic() - started)
                     if remaining <= 0:
                         status = "failed"
                         output_parts.append("analysis row timeout elapsed before command execution")
@@ -3046,6 +3074,7 @@ def run_local(
 ) -> dict[str, Any]:
     """Execute the rows owned by this host and write their local proof receipt."""
 
+    started = time.monotonic()
     manifest = load_manifest(manifest_path)
     if root is None:
         root = manifest_path.resolve().parents[1]
@@ -3074,8 +3103,22 @@ def run_local(
             reusable_rows = {}
     receipt_path.parent.mkdir(parents=True, exist_ok=True)
     rows: list[dict[str, Any]] = []
+    manifest_rows = {row["id"]: row for row in manifest["rows"]}
     with tempfile.TemporaryDirectory(prefix=".analysis-matrix-", dir=receipt_path.parent) as temporary_directory:
         for row_id in selected_rows:
+            remaining = MAX_LOCAL_TIMEOUT_SECONDS - (time.monotonic() - started)
+            if remaining <= 0:
+                row = _row_receipt(
+                    manifest_rows[row_id],
+                    candidate,
+                    "failed",
+                    {},
+                    "UNRUN: aggregate local analysis deadline elapsed before this row",
+                    0,
+                )
+                rows.append(row)
+                print(f"UNRUN analysis row {row_id}: aggregate local analysis deadline elapsed", flush=True)
+                continue
             print(f"RUN analysis row {row_id} on {host}", flush=True)
             temporary_receipt = Path(temporary_directory) / f"{row_id}.json"
             result = run_row(
@@ -3085,6 +3128,7 @@ def run_local(
                 root=root,
                 expected_candidate=candidate,
                 reuse_row=reusable_rows.get(row_id),
+                overall_timeout_seconds=min(MAX_ROW_TIMEOUT_SECONDS, remaining),
             )
             row = result["rows"][0]
             rows.append(row)

@@ -35,6 +35,10 @@ and unfinished basic tasks remain unresolved dependencies.
 5. Run one bounded **Luna review batch** at the selected effort (including **max** when selected) for the exact staged candidate. [Commit gates](COMMITS.md) bind the receipt to that tree; reuse only unchanged inputs and avoid duplicate precommit wrappers. Fix genuine findings through a delta to the same reviewer; defer non-blocking cosmetics.
 6. Commit once with one `Task-ID: MC-AI-####` trailer. Later changes require new tasks.
 
+On resume, `ai_plan.py implement-snapshot` marks `done` tasks lacking a
+reachable or imported `Task-ID` commit as `done-uncommitted`; recover and commit
+them before continuing.
+
 Commit/push hooks own `ai_check.py --fast`, which always checks docs, backlog,
 plan, index, whitespace, and receipts. Exact nonshared Python pairs use focused
 tests. Native/build changes with docs metadata run source policy without
@@ -47,13 +51,16 @@ Full, candidate, and strict checks run the complete Python suite. Batch up to
 runtime checks per batch, then push. Reuse only unchanged evidence; avoid
 duplicate precommit checks and broad reviews.
 
-Python tests have a 300-second budget by default and 420 seconds on Windows;
-phase output and summary show elapsed time. The Windows runtime-staging CMake
-fixture is limited to 60 seconds; timeout remains a failure and reports elapsed
-time and captured partial output.
+Cap automated stages at 600 seconds, local analyzer matrices and `ai_check.py`
+invocations at 1,500, and each GitHub artifact job at 30 minutes. Python tests
+get 300 seconds (420 on Windows), renderer smoke 600, CTest 600 per phase
+(240 per test), Android emulator stages and analyzer rows 600. Timeouts retain
+partial logs/failing receipts and mark remaining checks unrun; split work to
+resume rather than extending a gate.
 
-Full local, candidate, and strict CTest phases use a 240-second default test
-timeout within a 2,400-second phase budget; explicit per-test timeouts apply.
+The Windows runtime-staging CMake fixture is limited to 60 seconds; timeout
+remains a failure and reports elapsed time and captured partial output.
+
 The nested `MinecraftClone.ServerOnlyBuild` configures without the client,
 builds all of `mc_tests`, and runs only
 `GameServerTest.JoinRepliesArePrivateAndNewPlayersReachExistingClients`; it
