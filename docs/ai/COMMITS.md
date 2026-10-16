@@ -8,7 +8,7 @@ Describe the change
 Task-ID: MC-AI-0031
 ```
 
-The task must exist in the staged backlog. Stage only that task's work and required parent/traceability updates. Preserve other staged or untracked work; the gate rejects a working tree that differs from staged governed files. Use an isolated task checkout when another task prevents an exact check.
+The task must exist in the staged backlog. Stage only that task's work and required parent/traceability updates. Preserve other staged or untracked work. For basic tasks, the gate checks an exact temporary export of the reviewed index; unrelated working-tree changes do not enter that check. Aggregate candidate/build checks still require an exact source checkout.
 
 ## Review once, bind it to the candidate
 

@@ -39,12 +39,12 @@ On resume, `ai_plan.py implement-snapshot` marks `done` tasks lacking a
 reachable or imported `Task-ID` commit as `done-uncommitted`; recover and commit
 them before continuing.
 
-Commit/push hooks own `ai_check.py --fast`, which always checks docs, backlog,
-plan, index, whitespace, and receipts. Exact nonshared Python pairs use focused
-tests. Native/build changes with docs metadata run source policy without
-unrelated Python tests; unknown/shared tooling runs the full Python suite.
-Source violations fail; ordinary dirty/version publisher failures are allowed
-during development.
+Basic commit hooks check the reviewed index export, preserve working files and
+retain failed logs. Push hooks run `ai_check.py --fast`. Checks cover docs, tasks,
+plans, index and whitespace. Exact Python pairs use focused tests; shared
+tooling uses the full suite. Native/build changes with metadata use source
+policy. Source violations fail; development permits only dirty/version
+publisher exceptions.
 
 Full, candidate, and strict checks run the complete Python suite. Batch up to
 8–10 tasks with disjoint ownership; run one full integration gate and required
