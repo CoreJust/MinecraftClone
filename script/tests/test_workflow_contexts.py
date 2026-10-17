@@ -39,10 +39,12 @@ class WorkflowContextTests(unittest.TestCase):
         self.assertIn("platform: windows", self.jobs["desktop"])
         self.assertNotIn("platform: android", self.jobs["desktop"])
 
-    def test_only_canonical_tag_pushes_start_automatic_artifact_builds(self):
+    def test_artifact_builds_require_explicit_manual_dispatch(self):
         triggers = self.workflow.split("\npermissions:\n", 1)[0]
-        push = triggers.split("  push:\n", 1)[1].split("  workflow_dispatch:\n", 1)[0]
-        self.assertEqual(push, "    tags:\n      - 'ai/*/*/*'\n")
+        self.assertNotIn("  push:", triggers)
+        self.assertNotIn("  pull_request:", triggers)
+        self.assertNotIn("  schedule:", triggers)
+        self.assertEqual(re.findall(r"(?m)^  ([a-z_]+):", triggers), ["workflow_dispatch"])
         manual = triggers.split("  workflow_dispatch:\n", 1)[1]
         for field in ("source_ref", "version"):
             field_block = re.split(r"(?m)^      \w+:", manual.split(f"      {field}:\n", 1)[1], maxsplit=1)[0]

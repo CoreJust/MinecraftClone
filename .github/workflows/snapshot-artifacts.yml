@@ -1,9 +1,6 @@
 name: Snapshot artifacts
 
 on:
-  push:
-    tags:
-      - 'ai/*/*/*'
   workflow_dispatch:
     inputs:
       source_ref:

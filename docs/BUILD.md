@@ -10,15 +10,15 @@ ctest --preset debug --output-on-failure --no-tests=error
 python3 script/ai_check.py
 ```
 
-Run CMake presets from the repository root; use `release` for an optimized
-build. Configure packages exposing `CoreCpp::Core`, `CoreCpp::Runtime`, and
-`CoreProject2026::CoreLang`; CMake checks their exact SHAs against
-[`dependencies.lock.json`](../dependencies.lock.json). Schema 2 uses `fetch_ref`
-locators for validated branches; CI fetches their history but builds only locked commits.
-CoreProject2026 rejects dirty, unknown, or mismatched packages.
-`-DMC_ALLOW_INEXACT_CORECPP=ON` is development-only.
-Standard presets keep vcpkg installs under `build/<preset>/vcpkg_installed`.
-`mc_main` is under `build/<preset>/`; `cmake --install` installs it with shaders.
+Run presets from the repository root; use `release` for optimization. Packages
+must expose `CoreCpp::Core`, `CoreCpp::Runtime`, and
+`CoreProject2026::CoreLang`; CMake verifies their exact SHAs against
+[`dependencies.lock.json`](../dependencies.lock.json). CoreCpp's fetched
+`ai-main` history must resolve its pinned SHA from a `refs/tags/` locator;
+only `ai-dev`/`ai-main` are allowed, and `MC_ALLOW_INEXACT_CORECPP` cannot
+bypass tags. CoreProject2026 provenance checks remain. Presets install vcpkg
+under `build/<preset>/vcpkg_installed`; `mc_main` is under `build/<preset>/`,
+and `cmake --install` includes shaders.
 
 After building exact release inputs, use the deterministic [package tooling](PACKAGING.md) to create desktop archives or record Android APK evidence.
 See [runtime acceptance](ACCEPTANCE.md) for scenario, benchmark, and capture commands.
@@ -67,10 +67,18 @@ ENet uses UDP, while `adb reverse` forwards only TCP. Physical devices need a ne
 ## SDK and compiler
 
 Set `VULKAN_SDK` to the SDK platform directory if CMake cannot find it. The SDK's `spirv-val` is required by the shader-target CTest checks. On macOS, Vulkan runs through MoltenVK; when the SDK is not registered system-wide, set `VK_DRIVER_FILES` to its `share/vulkan/icd.d/MoltenVK_icd.json` for the launched process. Do not commit machine-specific SDK paths.
+If Windows SDK lacks `Bin/vulkan-1.dll`, use
+`-DMC_VULKAN_RUNTIME_DLL=C:/Windows/System32/vulkan-1.dll` or the acquired x64
+loader. Staging and receipts bind that file; no SDK copy is required.
+[SDK requirements](https://vulkan.lunarg.com/doc/view/1.4.341.1/windows/getting_started.html)
 
-## Artifact-only hosted builds
+## Local packages; optional hosted builds
 
-Artifact CI uses `macos-15` arm64/`windows-2022`, pinned tools and cached dependencies. Jobs build/package artifacts and verify provenance/checksums/exclusions; qualification tests, analyzers and runtime acceptance run locally. macOS needs GMP/MPFR autotools; Windows needs the GMP overlay, VS 2022 x64 and Vulkan runtime ZIP/license. CoreLang excludes legacy Script. Android initializer warnings remain nonfatal. Linux is analysis-only.
+Build packages locally for GitHub upload. The manual-only [artifact
+workflow](../.github/workflows/snapshot-artifacts.yml) is optional; pushes never
+trigger it. Qualification remains local. Windows requires the GMP overlay,
+VS2022 x64 and Vulkan runtime/license; macOS needs GMP/MPFR autotools. Linux is
+analysis-only.
 
 ASan requires instrumented Release vcpkg/private dependencies with matching
 runtime/iterator/annotation settings, `/Zi` compiler and `/DEBUG` linker symbols.

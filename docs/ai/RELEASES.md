@@ -35,8 +35,9 @@ Qualification evidence binds the relevant source, dependency, configuration,
 tool and command inputs. Documentation or task-ledger changes alone do not
 invalidate native evidence. Release authenticity independently binds the exact
 source commit, promotion parents/tree, immutable tag and artifact hashes.
-GitHub builds and packages artifacts only; it does not qualify the release or
-wait for a hosted analysis matrix. Never relabel old hosted evidence as a local
+Build packages locally and upload them; GitHub does not qualify the release or
+run automatic jobs. Manual artifact builds are an optional fallback, not a gate.
+Never relabel old hosted evidence as a local
 pass or treat an unavailable tool as a successful check.
 
 ## Publish

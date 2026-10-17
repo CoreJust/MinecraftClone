@@ -84,6 +84,7 @@ Files:
 - [`cmake/Helpers.cmake`](../../cmake/Helpers.cmake)
 - [`cmake/Sanitizers.cmake`](../../cmake/Sanitizers.cmake)
 - [`cmake/Warnings.cmake`](../../cmake/Warnings.cmake)
+- [`cmake/WindowsVulkanRuntime.cmake`](../../cmake/WindowsVulkanRuntime.cmake)
 - [`cmake/fixtures/corecpp_server_consumer/CMakeLists.txt`](../../cmake/fixtures/corecpp_server_consumer/CMakeLists.txt)
 - [`cmake/fixtures/corecpp_server_consumer/main.cpp`](../../cmake/fixtures/corecpp_server_consumer/main.cpp)
 - [`dependencies.lock.json`](../../dependencies.lock.json)

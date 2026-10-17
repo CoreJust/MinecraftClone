@@ -55,7 +55,7 @@
     },
     {
       "guide": "docs/BUILD.md",
-      "guide_sha256": "90d932a1af5ad0baaff44ddd285281cabb4d843be473204f3fdaae9a3c769905",
+      "guide_sha256": "5c0770458b301081ebfca50ebb7c1bb0a3e99cd70c434a0ac3af38261e209157",
       "id": "build",
       "sources": [
         ".agents/skills/backlog/SKILL.md",
@@ -86,6 +86,7 @@
         "cmake/Helpers.cmake",
         "cmake/Sanitizers.cmake",
         "cmake/Warnings.cmake",
+        "cmake/WindowsVulkanRuntime.cmake",
         "cmake/fixtures/corecpp_server_consumer/CMakeLists.txt",
         "cmake/fixtures/corecpp_server_consumer/main.cpp",
         "dependencies.lock.json",
@@ -178,11 +179,11 @@
         "vcpkg-configuration.json",
         "vcpkg.json"
       ],
-      "sources_sha256": "46f67d4d207605c80f477fe48495109cd81dbdcab8862ef7c9b7958729d4aba2"
+      "sources_sha256": "b9fd674392b504da2664fcba7d945053cbd62c31ac3e6d7298f2e1ae65ae614f"
     },
     {
       "guide": "docs/code/CORE.md",
-      "guide_sha256": "a99a22855f2f464ec5b1f2a937891b690c6c3df68f6067432e52a74433a2d0c0",
+      "guide_sha256": "f5178e23a0b41fdacb97f1fb9ecb2998328710d23d1510bee791aecf195f6b1e",
       "id": "core",
       "sources": [
         "tests/core/algorithm_tests.cpp",

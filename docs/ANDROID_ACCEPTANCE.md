@@ -73,8 +73,11 @@ python3 script/android_pair_playtest.py --serial "$serial"
 For the existing ReleaseClean device, pass its verified serial and
 `--avd MinecraftClone_S7_ReleaseClean_API_35` to the same paired runner.
 
-The paired runner uses only `build/release/mc_main` (or `mc_main.exe` on
-Windows), refuses a missing Release executable or occupied host UDP port, and
+The paired runner defaults to `build/release/mc_main` (or `mc_main.exe` on
+Windows). For an already-verified custom Release build, pass
+`--server-binary /absolute/build/directory/mc_main`; do not create a symlink or
+launch a second server to accommodate the default path. It refuses a missing
+executable or occupied host UDP port, and
 starts one loopback server at render distance 72. It waits for the port to bind
 before calling the client guard exactly once, then stays attached to the host
 server for the duration of the playtest. Leave the command running while

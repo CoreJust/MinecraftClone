@@ -7,6 +7,8 @@ file(COPY_FILE
 )
 file(READ "${fixture_root}/dependencies.lock.json" lock_json)
 string(JSON locked_revision GET "${lock_json}" dependencies CoreCpp revision)
+string(JSON lock_json SET "${lock_json}" dependencies CoreCpp fetch_ref "\"refs/tags/fixture-release\"")
+file(WRITE "${fixture_root}/dependencies.lock.json" "${lock_json}")
 
 execute_process(
     COMMAND "@MC_CMAKE_COMMAND@"
@@ -41,3 +43,37 @@ string(FIND "${mismatch_stdout}${mismatch_stderr}" "CoreCpp revision mismatch" m
 if(mismatch_index EQUAL -1)
     message(FATAL_ERROR "Mismatched revision failed for an unexpected reason:\n${mismatch_stdout}${mismatch_stderr}")
 endif()
+
+execute_process(
+    COMMAND "@MC_CMAKE_COMMAND@"
+        -S "${fixture_root}"
+        -B "${test_root}/mismatch-inexact"
+        "-DCoreCpp_REVISION=${mismatch_revision}"
+        -DMC_ALLOW_INEXACT_CORECPP=ON
+    RESULT_VARIABLE inexact_result
+    OUTPUT_VARIABLE inexact_stdout
+    ERROR_VARIABLE inexact_stderr
+)
+if(inexact_result EQUAL 0)
+    message(FATAL_ERROR "The legacy inexact flag bypassed the locked CoreCpp revision")
+endif()
+string(FIND "${inexact_stdout}${inexact_stderr}" "CoreCpp revision mismatch" inexact_index)
+if(inexact_index EQUAL -1)
+    message(FATAL_ERROR "Inexact override failed for an unexpected reason:\n${inexact_stdout}${inexact_stderr}")
+endif()
+
+foreach(invalid_ref IN ITEMS "refs/heads/ai-main" "refs/tags/a..b" "refs/tags/a.lock" "refs/tags/a/" "refs/tags/a//b" "refs/tags/a/.b")
+    string(JSON invalid_lock SET "${lock_json}" dependencies CoreCpp fetch_ref "\"${invalid_ref}\"")
+    file(WRITE "${fixture_root}/dependencies.lock.json" "${invalid_lock}")
+    foreach(allow_inexact IN ITEMS OFF ON)
+        execute_process(
+            COMMAND "@MC_CMAKE_COMMAND@" -S "${fixture_root}" -B "${test_root}/invalid"
+                "-DCoreCpp_REVISION=${locked_revision}" "-DMC_ALLOW_INEXACT_CORECPP=${allow_inexact}"
+            RESULT_VARIABLE invalid_result OUTPUT_VARIABLE invalid_stdout ERROR_VARIABLE invalid_stderr
+        )
+        if(invalid_result EQUAL 0 OR NOT "${invalid_stdout}${invalid_stderr}" MATCHES "safe full refs/tags/")
+            message(FATAL_ERROR "Unsafe CoreCpp ref ${invalid_ref} was not rejected: ${invalid_stdout}${invalid_stderr}")
+        endif()
+    endforeach()
+endforeach()
+file(WRITE "${fixture_root}/dependencies.lock.json" "${lock_json}")

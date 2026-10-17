@@ -231,6 +231,7 @@ if(WIN32)
 endif()
 
 if(MC_BUILD_CLIENT AND NOT ANDROID)
+    target_link_libraries(mc_tests PRIVATE unofficial::enet::enet)
     target_sources(mc_tests
         PRIVATE
             android/input_state_tests.cpp

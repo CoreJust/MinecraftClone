@@ -108,6 +108,7 @@ CORECPP_COMMON_BUILD_ARGUMENTS = (
     "-DCORECPP_BUILD_CORE=ON",
     "-DCORECPP_BUILD_RUNTIME=ON",
     "-DCORECPP_BUILD_RUNTIME_NETWORK=ON",
+    "-DCORECPP_BUILD_RUNTIME_EXECUTORS=ON",
     "-DCORECPP_BUILD_RUNTIME_KERNEL=ON",
     "-DCORECPP_BUILD_RUNTIME_GRAPHICS=ON",
     "-DCORECPP_BUILD_RUNTIME_GRAPHICS_VULKAN=ON",
@@ -168,7 +169,7 @@ def normalize_cmake_argument(argument: str) -> str:
 
 
 def require_private_dependency_lock(lock_file: Path) -> dict[str, dict[str, str]]:
-    """Read immutable pins and their validated branch retrieval refs."""
+    """Read immutable pins and their validated retrieval refs."""
     if lock_file.is_symlink() or not lock_file.is_file():
         raise CiError(f"private dependency lock must be a regular file: {lock_file}")
     try:
@@ -194,15 +195,15 @@ def require_private_dependency_lock(lock_file: Path) -> dict[str, dict[str, str]
             raise CiError(f"{name} repository must be {expected['repository']}")
         if not isinstance(revision, str) or GIT_REVISION_RE.fullmatch(revision) is None:
             raise CiError(f"{name} revision must be a 40-character lowercase hexadecimal commit")
-        if not isinstance(fetch_ref, str) or not is_safe_private_dependency_ref(fetch_ref):
-            raise CiError(f"{name} fetch_ref must be a safe full refs/heads branch name")
+        prefix = "refs/tags/" if name == "CoreCpp" else "refs/heads/"
+        if not isinstance(fetch_ref, str) or not is_safe_private_dependency_ref(fetch_ref, prefix):
+            raise CiError(f"{name} fetch_ref must be a safe full {prefix} name")
         result[name] = {"repository": repository, "revision": revision, "fetch_ref": fetch_ref}
     return result
 
 
-def is_safe_private_dependency_ref(fetch_ref: str) -> bool:
-    """Accept only ordinary branch refs with no Git revision/path metacharacters."""
-    prefix = "refs/heads/"
+def is_safe_private_dependency_ref(fetch_ref: str, prefix: str = "refs/heads/") -> bool:
+    """Accept ordinary full refs with no Git revision/path metacharacters."""
     if not fetch_ref.startswith(prefix):
         return False
     branch = fetch_ref[len(prefix):]
@@ -247,6 +248,20 @@ def git_with_key(key_file: Path, known_hosts_file: Path, command: Sequence[str])
     return ["git", "-c", f"core.sshCommand={ssh_command}", *command]
 
 
+def verify_corecpp_git_provenance(source: Path, revision: str, fetch_ref: str) -> None:
+    """Require the fetched tag identity and fetched ai-main ancestry before checkout."""
+    if GIT_REVISION_RE.fullmatch(revision) is None or not is_safe_private_dependency_ref(fetch_ref, "refs/tags/"):
+        raise CiError("CoreCpp provenance requires a full commit and safe refs/tags/ name")
+    try:
+        tagged_revision = run(["git", "-C", str(source), "rev-parse", "--verify", f"{fetch_ref}^{{commit}}"])
+        if tagged_revision != revision:
+            raise CiError(f"CoreCpp tag mismatch: {fetch_ref} resolves to {tagged_revision}, expected {revision}")
+        run(["git", "-C", str(source), "rev-parse", "--verify", "refs/remotes/origin/ai-main^{commit}"])
+        run(["git", "-C", str(source), "merge-base", "--is-ancestor", revision, "refs/remotes/origin/ai-main"])
+    except CiError as error:
+        raise CiError(f"CoreCpp tagged ai-main provenance failed: {error}") from error
+
+
 def fetch_private_dependencies(lock_file: Path, root: Path, key_files: dict[str, Path]) -> dict[str, Path]:
     """Fetch branch history, then detach and verify only each immutable revision."""
     dependencies = require_private_dependency_lock(lock_file)
@@ -262,14 +277,20 @@ def fetch_private_dependencies(lock_file: Path, root: Path, key_files: dict[str,
         source = root / name
         run(["git", "init", str(source)])
         run(["git", "-C", str(source), "remote", "add", "origin", f"git@github.com:{dependency['repository']}.git"])
-        run(git_with_key(key_file, known_hosts_file, ["-C", str(source), "fetch", "--no-tags", "origin", dependency["fetch_ref"]]))
-        try:
-            run(["git", "-C", str(source), "cat-file", "-e", f"{dependency['revision']}^{{commit}}"])
-        except CiError as error:
-            raise CiError(
-                f"{name} locked revision {dependency['revision']} is not reachable from "
-                f"{dependency['fetch_ref']}: {error}"
-            ) from error
+        fetch_refs = [dependency["fetch_ref"]]
+        if name == "CoreCpp":
+            fetch_refs = [f"+{dependency['fetch_ref']}:{dependency['fetch_ref']}", "+refs/heads/ai-main:refs/remotes/origin/ai-main"]
+        run(git_with_key(key_file, known_hosts_file, ["-C", str(source), "fetch", "--no-tags", "origin", *fetch_refs]))
+        if name == "CoreCpp":
+            verify_corecpp_git_provenance(source, dependency["revision"], dependency["fetch_ref"])
+        else:
+            try:
+                run(["git", "-C", str(source), "cat-file", "-e", f"{dependency['revision']}^{{commit}}"])
+            except CiError as error:
+                raise CiError(
+                    f"{name} locked revision {dependency['revision']} is not reachable from "
+                    f"{dependency['fetch_ref']}: {error}"
+                ) from error
         run(["git", "-C", str(source), "checkout", "--detach", dependency["revision"]])
         actual_revision = run(["git", "-C", str(source), "rev-parse", "HEAD"])
         if actual_revision != dependency["revision"]:
