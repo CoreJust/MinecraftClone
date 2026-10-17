@@ -110,6 +110,11 @@ struct GameBenchmarkFrameSample final {
     uint64_t diagnostic_cpu_stone_scene_record_duration_ns = 0U;
     uint64_t diagnostic_cpu_command_record_residual_duration_ns = 0U;
     uint64_t diagnostic_cpu_complete_present_wait_duration_ns = 0U;
+    uint64_t diagnostic_client_height_tile_interest_duration_ns = 0U;
+    uint64_t diagnostic_client_preview_lod_refresh_duration_ns = 0U;
+    uint32_t diagnostic_client_preview_lod_classified_bucket_count = 0U;
+    uint32_t diagnostic_client_preview_lod_evaluated_tile_count = 0U;
+    uint32_t diagnostic_client_preview_lod_changed_tile_count = 0U;
     bool diagnostic_gpu_timestamps_enabled = false;
     std::string_view diagnostic_gpu_timestamp_reason;
     uint64_t diagnostic_gpu_sample_attempt_id = 0U;

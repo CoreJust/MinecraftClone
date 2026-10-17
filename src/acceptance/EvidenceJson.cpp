@@ -485,6 +485,16 @@ std::string gameBenchmarkJson(GameBenchmarkEvidence const& benchmark)
                 + std::to_string(sample.diagnostic_cpu_command_record_residual_duration_ns)
             + ", \"diagnostic_cpu_complete_present_wait_duration_ns\": "
                 + std::to_string(sample.diagnostic_cpu_complete_present_wait_duration_ns)
+            + ", \"diagnostic_client_height_tile_interest_duration_ns\": "
+                + std::to_string(sample.diagnostic_client_height_tile_interest_duration_ns)
+            + ", \"diagnostic_client_preview_lod_refresh_duration_ns\": "
+                + std::to_string(sample.diagnostic_client_preview_lod_refresh_duration_ns)
+            + ", \"diagnostic_client_preview_lod_classified_bucket_count\": "
+                + std::to_string(sample.diagnostic_client_preview_lod_classified_bucket_count)
+            + ", \"diagnostic_client_preview_lod_evaluated_tile_count\": "
+                + std::to_string(sample.diagnostic_client_preview_lod_evaluated_tile_count)
+            + ", \"diagnostic_client_preview_lod_changed_tile_count\": "
+                + std::to_string(sample.diagnostic_client_preview_lod_changed_tile_count)
             + ", \"diagnostic_gpu_timestamps_enabled\": " + (sample.diagnostic_gpu_timestamps_enabled ? "true" : "false")
             + ", \"diagnostic_gpu_timestamp_reason\": " + jsonString(sample.diagnostic_gpu_timestamp_reason)
             + ", \"diagnostic_gpu_sample_attempt_id\": " + std::to_string(sample.diagnostic_gpu_sample_attempt_id)

@@ -446,32 +446,98 @@ TEST(GameServerPreviewTest, ProgressiveStreamFormsAForwardBiasedArea)
 
 TEST(GameServerPreviewTest, ResetsPriorityCursorAfterProgressWhenHeadingChanges)
 {
-    static constexpr std::chrono::seconds TIMEOUT{10};
-    static constexpr std::chrono::seconds ROTATION_TIMEOUT{3};
-    static constexpr std::chrono::milliseconds POLL_INTERVAL{1};
-    static constexpr uint32_t INITIAL_TILE_COUNT = 256U;
-    static constexpr uint32_t CURSOR_LOOKAHEAD = 512U;
-    static constexpr uint32_t CURRENT_NEAR_TILE_COUNT = 197U;
+    static constexpr auto TIMEOUT = std::chrono::seconds{10};
+    static constexpr auto POLL_INTERVAL = std::chrono::milliseconds{1};
+    static constexpr uint32_t NORTH_SETUP_SEQUENCE = 1U;
+    static constexpr uint32_t EAST_HEADING_SEQUENCE = 2U;
+    static constexpr uint32_t PRIORITY_SCAN_PROGRESS_THRESHOLD = 512U;
+    static constexpr uint32_t PRIORITY_SCAN_RESET_ADVANCE_LIMIT = 512U;
+    static constexpr uint32_t PRIORITY_SCAN_WRAP_GUARD = 512U;
+    static constexpr uint32_t PRIORITY_PREFIX_TILE_COUNT = 256U;
+
+    std::atomic_bool north_setup_metrics_captured{false};
+    std::atomic_bool north_cursor_captured{false};
+    std::atomic_bool priority_prefixes_ready{false};
+    std::atomic_uint32_t priority_cursor_before_rotation{0U};
+    std::atomic_int32_t center_x_before_rotation{0};
+    std::atomic_int32_t center_y_before_rotation{0};
+    std::atomic_bool east_heading_metrics_captured{false};
+    std::atomic_uint32_t priority_cursor_after_rotation{0U};
+    std::atomic_int32_t center_x_after_rotation{0};
+    std::atomic_int32_t center_y_after_rotation{0};
+    server::GameServer::BenchmarkHooks const hooks{
+        .on_tick = {},
+        .on_preview_buffered = {},
+        .on_preview_metrics = [
+            &north_setup_metrics_captured,
+            &north_cursor_captured,
+            &priority_prefixes_ready,
+            &priority_cursor_before_rotation,
+            &center_x_before_rotation,
+            &center_y_before_rotation,
+            &east_heading_metrics_captured,
+            &priority_cursor_after_rotation,
+            &center_x_after_rotation,
+            &center_y_after_rotation
+        ](core::ClientId, server::GameServer::PreviewStreamMetrics const metrics) {
+            if (!metrics.terrain_center_valid) {
+                return;
+            }
+            if (metrics.acknowledged_input_sequence == NORTH_SETUP_SEQUENCE
+                && !north_setup_metrics_captured.load(std::memory_order_relaxed)) {
+                center_x_before_rotation.store(metrics.terrain_center_x, std::memory_order_relaxed);
+                center_y_before_rotation.store(metrics.terrain_center_y, std::memory_order_relaxed);
+                north_setup_metrics_captured.store(true, std::memory_order_release);
+            }
+            if (metrics.acknowledged_input_sequence == NORTH_SETUP_SEQUENCE
+                && priority_prefixes_ready.load(std::memory_order_acquire)
+                && metrics.priority_scan_cursor > PRIORITY_SCAN_PROGRESS_THRESHOLD
+                && metrics.priority_scan_cursor
+                    < shared::HEIGHT_TILE_INTEREST_COUNT - PRIORITY_SCAN_WRAP_GUARD
+                && !north_cursor_captured.load(std::memory_order_relaxed)) {
+                priority_cursor_before_rotation.store(metrics.priority_scan_cursor, std::memory_order_relaxed);
+                north_cursor_captured.store(true, std::memory_order_release);
+            }
+            if (metrics.acknowledged_input_sequence == EAST_HEADING_SEQUENCE
+                && !east_heading_metrics_captured.load(std::memory_order_relaxed)) {
+                priority_cursor_after_rotation.store(metrics.priority_scan_cursor, std::memory_order_relaxed);
+                center_x_after_rotation.store(metrics.terrain_center_x, std::memory_order_relaxed);
+                center_y_after_rotation.store(metrics.terrain_center_y, std::memory_order_relaxed);
+                east_heading_metrics_captured.store(true, std::memory_order_release);
+            }
+        },
+    };
     server::GameServer server{0, {}, shared::WorldMode::Flight};
     std::atomic_bool stop_requested{false};
-    std::thread server_thread{[&server, &stop_requested] { server.run(stop_requested); }};
+    std::thread server_thread{[&server, &stop_requested, &hooks] { server.run(stop_requested, &hooks); }};
+    defer {
+        stop_requested.store(true, std::memory_order_relaxed);
+        if (server_thread.joinable()) {
+            server_thread.join();
+        }
+    };
     PreviewClient client;
-    bool const connected = client.connect(core::Address::localhost(server.port()), TIMEOUT);
-    bool const joined = connected && client.send(shared::encodeMessage(shared::JoinRequestMessage{
+    ASSERT_TRUE(client.connect(core::Address::localhost(server.port()), TIMEOUT));
+    ASSERT_TRUE(client.send(shared::encodeMessage(shared::JoinRequestMessage{
         .ch = '@',
         .mode = shared::WorldMode::Flight,
         .wants_previews = true,
-    }), 0, core::SendMode{core::SendMode::Reliable});
-    auto const initial_deadline = std::chrono::steady_clock::now() + TIMEOUT;
-    while (joined && client.received_height_tiles < INITIAL_TILE_COUNT
-        && std::chrono::steady_clock::now() < initial_deadline) {
+    }), 0, core::SendMode{core::SendMode::Reliable}));
+    ASSERT_TRUE(client.send(shared::encodeMessage(shared::ClientInputMessage{
+        .direction = {.x = 0U, .y = 0U, .z = 0U, .view_x = 0, .view_y = 127},
+        .sequence = NORTH_SETUP_SEQUENCE,
+    }), shared::GAME_CHANNEL, core::SendMode{core::SendMode::Reliable}));
+    auto const north_progress_deadline = std::chrono::steady_clock::now() + TIMEOUT;
+    while ((!north_setup_metrics_captured.load(std::memory_order_acquire)
+            || client.last_acknowledged_input < NORTH_SETUP_SEQUENCE)
+        && std::chrono::steady_clock::now() < north_progress_deadline) {
         client.poll(POLL_INTERVAL);
     }
+    ASSERT_TRUE(north_setup_metrics_captured.load(std::memory_order_acquire));
+    ASSERT_EQ(client.last_acknowledged_input, NORTH_SETUP_SEQUENCE);
 
-    int32_t const center_x = shared::World::FLIGHT_SPAWN.x
-        / static_cast<int32_t>(shared::HEIGHT_TILE_SIDE_LENGTH);
-    int32_t const center_y = shared::World::FLIGHT_SPAWN.y
-        / static_cast<int32_t>(shared::HEIGHT_TILE_SIDE_LENGTH);
+    int32_t const center_x = center_x_before_rotation.load(std::memory_order_relaxed);
+    int32_t const center_y = center_y_before_rotation.load(std::memory_order_relaxed);
     shared::HeightTileInterest const north_interest = shared::makeHeightTileInterest(
         {.x = center_x, .y = center_y},
         0,
@@ -482,72 +548,55 @@ TEST(GameServerPreviewTest, ResetsPriorityCursorAfterProgressWhenHeadingChanges)
         127,
         0
     );
-    std::vector<shared::HeightTileKey> const initial_keys = heightTileKeys(client.messages);
-    auto const is_current_near_key = [](shared::HeightTileKey const key) {
+    auto const is_current_near_key = [center_x, center_y](shared::HeightTileKey const key) {
         return shared::heightTileGenerationBand({.x = center_x, .y = center_y}, 0, 127, key)
             <= shared::HeightTileGenerationBand::Near;
     };
-    uint32_t const initial_near_tile_count = static_cast<uint32_t>(std::ranges::count_if(
-        initial_keys,
-        is_current_near_key
-    ));
-    auto const east_priority_prefix = std::span{east_interest.keys}.first(INITIAL_TILE_COUNT);
-    auto const north_priority_prefix = std::span{north_interest.keys}.first(
-        INITIAL_TILE_COUNT + CURSOR_LOOKAHEAD
-    );
+    auto const east_priority_prefix = std::span{east_interest.keys}.first(PRIORITY_PREFIX_TILE_COUNT);
+    auto const north_priority_prefix = std::span{north_interest.keys}.first(PRIORITY_PREFIX_TILE_COUNT);
     auto const east_frontier_candidate = std::ranges::find_if(
         east_priority_prefix,
-        [&north_priority_prefix, &initial_keys](shared::HeightTileKey const key) {
-            return std::ranges::find(north_priority_prefix, key) == north_priority_prefix.end()
-                && std::ranges::find(initial_keys, key) == initial_keys.end();
+        [&north_priority_prefix](shared::HeightTileKey const key) {
+            return std::ranges::find(north_priority_prefix, key) == north_priority_prefix.end();
         }
     );
     bool const has_east_frontier_candidate = east_frontier_candidate != east_priority_prefix.end();
-    shared::HeightTileKey const east_frontier = has_east_frontier_candidate
-        ? *east_frontier_candidate
-        : shared::HeightTileKey{};
     bool const east_frontier_is_outside_near = has_east_frontier_candidate
-        && !is_current_near_key(east_frontier);
-    auto const after_rotation = client.messages.size();
-    bool const rotated = joined && client.send(shared::encodeMessage(shared::ClientInputMessage{
-        .direction = {.x = 0U, .y = 0U, .view_x = 127, .view_y = 0},
-        .sequence = 1U,
-    }), shared::GAME_CHANNEL, core::SendMode{core::SendMode::Reliable});
-    auto const rotation_deadline = std::chrono::steady_clock::now() + ROTATION_TIMEOUT;
-    auto const received_east_frontier = [&client, after_rotation, east_frontier] {
-        return std::ranges::any_of(
-            std::span{client.messages}.subspan(after_rotation),
-            [east_frontier](shared::Message const& message) {
-                if (auto const* const tile = std::get_if<shared::ServerHeightTileMessage>(&message)) {
-                    return tile->key == east_frontier;
-                }
-                auto const* const batch = std::get_if<shared::ServerHeightTileBatchMessage>(&message);
-                return batch != nullptr && std::ranges::any_of(
-                    batch->tiles,
-                    [east_frontier](shared::ServerHeightTileMessage const& tile) {
-                        return tile.key == east_frontier;
-                    }
-                );
-            }
-        );
-    };
-    while (rotated && has_east_frontier_candidate
-        && (client.last_acknowledged_input < 1U || !received_east_frontier())
-        && std::chrono::steady_clock::now() < rotation_deadline) {
+        && !is_current_near_key(*east_frontier_candidate);
+    ASSERT_TRUE(has_east_frontier_candidate);
+    EXPECT_TRUE(east_frontier_is_outside_near);
+    priority_prefixes_ready.store(true, std::memory_order_release);
+
+    while (!north_cursor_captured.load(std::memory_order_acquire)
+        && std::chrono::steady_clock::now() < north_progress_deadline) {
         client.poll(POLL_INTERVAL);
     }
-    stop_requested.store(true, std::memory_order_relaxed);
-    server_thread.join();
+    ASSERT_TRUE(north_cursor_captured.load(std::memory_order_acquire));
+    uint32_t const cursor_before_rotation = priority_cursor_before_rotation.load(std::memory_order_relaxed);
+    ASSERT_GT(cursor_before_rotation, PRIORITY_SCAN_PROGRESS_THRESHOLD);
+    ASSERT_LT(
+        cursor_before_rotation,
+        shared::HEIGHT_TILE_INTEREST_COUNT - PRIORITY_SCAN_WRAP_GUARD
+    );
 
-    ASSERT_TRUE(connected);
-    ASSERT_TRUE(joined);
-    ASSERT_GE(initial_keys.size(), INITIAL_TILE_COUNT);
-    EXPECT_EQ(initial_near_tile_count, CURRENT_NEAR_TILE_COUNT);
-    EXPECT_TRUE(has_east_frontier_candidate);
-    EXPECT_TRUE(east_frontier_is_outside_near);
-    EXPECT_TRUE(rotated);
-    EXPECT_GE(client.last_acknowledged_input, 1U);
-    EXPECT_TRUE(received_east_frontier());
+    ASSERT_TRUE(client.send(shared::encodeMessage(shared::ClientInputMessage{
+        .direction = {.x = 0U, .y = 0U, .z = 0U, .view_x = 127, .view_y = 0},
+        .sequence = EAST_HEADING_SEQUENCE,
+    }), shared::GAME_CHANNEL, core::SendMode{core::SendMode::Reliable}));
+    auto const east_heading_deadline = std::chrono::steady_clock::now() + TIMEOUT;
+    while ((!east_heading_metrics_captured.load(std::memory_order_acquire)
+            || client.last_acknowledged_input < EAST_HEADING_SEQUENCE)
+        && std::chrono::steady_clock::now() < east_heading_deadline) {
+        client.poll(POLL_INTERVAL);
+    }
+    ASSERT_TRUE(east_heading_metrics_captured.load(std::memory_order_acquire));
+    EXPECT_EQ(client.last_acknowledged_input, EAST_HEADING_SEQUENCE);
+    EXPECT_EQ(center_x_after_rotation.load(std::memory_order_relaxed), center_x);
+    EXPECT_EQ(center_y_after_rotation.load(std::memory_order_relaxed), center_y);
+    uint32_t const cursor_after_rotation = priority_cursor_after_rotation.load(std::memory_order_relaxed);
+    // Interest refresh and the enclosing stream pump each inspect at most 256 priority candidates.
+    EXPECT_LE(cursor_after_rotation, PRIORITY_SCAN_RESET_ADVANCE_LIMIT);
+    EXPECT_LT(cursor_after_rotation, cursor_before_rotation);
 }
 
 TEST(GameServerPreviewTest, CameraRotationKeepsInterestAndMovementAddsFreshFrontier)
@@ -968,6 +1017,7 @@ TEST(GameServerPreviewTest, RepeatedCenterTravelRestoresNearTerrainAheadOfQueued
     static constexpr uint32_t MAXIMUM_OUTSTANDING_BATCHES = 4U;
     static constexpr uint32_t MAXIMUM_BACKLOG_TILES_BEFORE_NEAR_PROGRESS =
         MAXIMUM_BUFFERED_TILES + shared::HEIGHT_TILE_DELIVERY_BATCH_CAPACITY;
+    static constexpr uint32_t BACKGROUND_SCAN_RESTART_THRESHOLD = 256U;
     static constexpr uint16_t FLIGHT_SPEEDUP = 500U;
     static constexpr uint32_t MOVEMENT_INPUT_COUNT = (
         (shared::HEIGHT_TILE_INTEREST_RADIUS + 64U)
@@ -977,16 +1027,47 @@ TEST(GameServerPreviewTest, RepeatedCenterTravelRestoresNearTerrainAheadOfQueued
 
     std::atomic_uint32_t buffered_tiles{0U};
     std::atomic_uint32_t queued_tiles{0U};
+    std::atomic_uint32_t background_scan_cursor{0U};
+    std::atomic_bool final_background_scan_cursor_captured{false};
+    std::atomic_uint32_t final_background_scan_cursor{0U};
+    std::atomic_bool initial_background_center_captured{false};
+    std::atomic_int32_t initial_background_center_x{0};
+    std::atomic_bool first_travel_center_captured{false};
+    std::atomic_uint32_t cursor_at_first_travel_center{0U};
     server::GameServer::BenchmarkHooks const hooks{
         .on_tick = {},
         .on_preview_buffered = [&buffered_tiles](core::ClientId, uint32_t const count) {
             buffered_tiles.store(count, std::memory_order_relaxed);
         },
-        .on_preview_metrics = [&queued_tiles](
+        .on_preview_metrics = [
+            &queued_tiles,
+            &background_scan_cursor,
+            &final_background_scan_cursor_captured,
+            &final_background_scan_cursor,
+            &initial_background_center_captured,
+            &initial_background_center_x,
+            &first_travel_center_captured,
+            &cursor_at_first_travel_center
+        ](
             core::ClientId,
             server::GameServer::PreviewStreamMetrics const metrics
         ) {
             queued_tiles.store(metrics.queued_tiles, std::memory_order_relaxed);
+            background_scan_cursor.store(metrics.background_scan_cursor, std::memory_order_relaxed);
+            if (metrics.terrain_center_valid) {
+                if (!initial_background_center_captured.exchange(true, std::memory_order_relaxed)) {
+                    initial_background_center_x.store(metrics.terrain_center_x, std::memory_order_relaxed);
+                } else if (metrics.terrain_center_x != initial_background_center_x.load(std::memory_order_relaxed)
+                    && !first_travel_center_captured.exchange(true, std::memory_order_relaxed)) {
+                    cursor_at_first_travel_center.store(metrics.background_scan_cursor, std::memory_order_relaxed);
+                }
+            }
+            if (metrics.acknowledged_input_sequence == MOVEMENT_INPUT_COUNT) {
+                if (!final_background_scan_cursor_captured.load(std::memory_order_relaxed)) {
+                    final_background_scan_cursor.store(metrics.background_scan_cursor, std::memory_order_relaxed);
+                    final_background_scan_cursor_captured.store(true, std::memory_order_release);
+                }
+            }
         },
     };
     server::GameServer server{0, {}, shared::WorldMode::Flight};
@@ -1030,6 +1111,14 @@ TEST(GameServerPreviewTest, RepeatedCenterTravelRestoresNearTerrainAheadOfQueued
     ASSERT_EQ(buffered_tiles.load(std::memory_order_relaxed), MAXIMUM_BUFFERED_TILES);
     ASSERT_GT(queued_tiles.load(std::memory_order_relaxed), 0U);
 
+    deadline = std::chrono::steady_clock::now() + TIMEOUT;
+    while (background_scan_cursor.load(std::memory_order_relaxed) <= BACKGROUND_SCAN_RESTART_THRESHOLD
+        && std::chrono::steady_clock::now() < deadline) {
+        client.poll(POLL_INTERVAL);
+    }
+    uint32_t const background_scan_cursor_before_movement = background_scan_cursor.load(std::memory_order_relaxed);
+    ASSERT_GT(background_scan_cursor_before_movement, BACKGROUND_SCAN_RESTART_THRESHOLD);
+
     bool sent_all_inputs = true;
     for (uint32_t sequence = 1U; sequence <= MOVEMENT_INPUT_COUNT; ++sequence) {
         sent_all_inputs = client.send(shared::encodeMessage(shared::ClientInputMessage{
@@ -1049,6 +1138,19 @@ TEST(GameServerPreviewTest, RepeatedCenterTravelRestoresNearTerrainAheadOfQueued
     }
     ASSERT_TRUE(sent_all_inputs);
     ASSERT_EQ(client.last_acknowledged_input, MOVEMENT_INPUT_COUNT);
+
+    deadline = std::chrono::steady_clock::now() + TIMEOUT;
+    while (!final_background_scan_cursor_captured.load(std::memory_order_acquire)
+        && std::chrono::steady_clock::now() < deadline) {
+        client.poll(POLL_INTERVAL);
+    }
+    ASSERT_TRUE(final_background_scan_cursor_captured.load(std::memory_order_acquire));
+    SCOPED_TRACE(::testing::Message()
+        << "background cursor before travel=" << background_scan_cursor_before_movement
+        << " at new center=" << cursor_at_first_travel_center.load(std::memory_order_relaxed)
+        << " after travel=" << final_background_scan_cursor.load(std::memory_order_relaxed));
+    ASSERT_TRUE(first_travel_center_captured.load(std::memory_order_acquire));
+    EXPECT_LE(cursor_at_first_travel_center.load(std::memory_order_relaxed), BACKGROUND_SCAN_RESTART_THRESHOLD);
 
     shared::HeightTileKey const center{
         .x = client.last_player_x / static_cast<int32_t>(shared::HEIGHT_TILE_SIDE_LENGTH),

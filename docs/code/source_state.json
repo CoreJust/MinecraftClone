@@ -31,7 +31,7 @@
         "tests/acceptance/runtime_cli_tests.cmake",
         "tests/acceptance/scenario_runner_tests.cpp"
       ],
-      "sources_sha256": "5f5d6515fbde001b74c9afc02ddb1579db4e078f84ccf0d70260209639177971"
+      "sources_sha256": "16969a8cb70b342c48f71272ea03eba51d38bf51d660e827492c9b817e3a369f"
     },
     {
       "guide": "docs/code/ANDROID.md",
@@ -216,7 +216,7 @@
     },
     {
       "guide": "docs/code/GAMEPLAY.md",
-      "guide_sha256": "e3da0c4af6f0557f52394b7df4f26a1024923abadd9dd82f86741f46519e6e4f",
+      "guide_sha256": "588d42a25742f0a1a70f02165d2ce3ab786a63e0f063e464c2f8de0f9e53d825",
       "id": "gameplay",
       "sources": [
         "src/client/BotClient.cpp",
@@ -305,7 +305,7 @@
         "tests/core/world_generation_scheduler_tests.cpp",
         "tests/core/world_generation_tests.cpp"
       ],
-      "sources_sha256": "bc6ea84acf5e2173dbe8e2c235c405b89d116e19bea97a1a0fdace683435a8c5"
+      "sources_sha256": "e60c5d42251b17cfaefa475a8b59083d4cf79a52e76089d38747e2c9b39657d1"
     },
     {
       "guide": "docs/code/RENDERING.md",
@@ -386,7 +386,7 @@
         "tests/testsupport/include/testsupport/AdverseTransport.hpp",
         "tests/testsupport/include/testsupport/ImageComparison.hpp"
       ],
-      "sources_sha256": "d2649c1095885986d3c6a74105098ce79df38bf8a97d58618b66f2536a361833"
+      "sources_sha256": "bc14a5990a8a4df5617a77be82383b6f595988d2e81713eb4c08e06b4f84213e"
     }
   ],
   "version": 1

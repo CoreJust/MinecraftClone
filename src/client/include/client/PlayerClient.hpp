@@ -14,6 +14,7 @@
 #include <shared/net/Message.hpp>
 #include <shared/world/HeightTileSurfaceMesher.hpp>
 #include <shared/world/World.hpp>
+#include <shared/world/WorldGeneration.hpp>
 
 #include <core/platform/glfw/GlfwWindow.hpp>
 
@@ -59,6 +60,9 @@ struct PlayerClientCapturePlan final {
 [[nodiscard]] std::array<PlayerClientCapturePreset, 4> playerClientCapturePresets() noexcept;
 [[nodiscard]] uint16_t playerClientCaptureSpeedup(int64_t distance_subcells) noexcept;
 [[nodiscard]] std::chrono::milliseconds playerClientRendererFrameBudget(bool capture_enabled) noexcept;
+[[nodiscard]] std::chrono::steady_clock::time_point playerClientPreviewMeshAdmissionDeadline(
+    std::chrono::steady_clock::time_point renderer_deadline,
+    std::chrono::steady_clock::time_point near_admission_started_at) noexcept;
 [[nodiscard]] uint32_t playerClientHeightTileChangeBudget(bool capture_enabled) noexcept;
 [[nodiscard]] uint32_t playerClientPreviewMeshJobBudget(bool capture_enabled) noexcept;
 [[nodiscard]] uint32_t playerClientPreviewMeshBacklogCapacity(bool capture_enabled) noexcept;
@@ -88,8 +92,96 @@ struct PlayerClientBenchmarkOptions final {
     bool show_debug_hud = false;
 };
 
+struct PlayerClientRenderDiagnostics final {
+    std::chrono::nanoseconds height_tile_interest_duration{ 0 };
+    std::chrono::nanoseconds preview_lod_refresh_duration{ 0 };
+    uint32_t preview_lod_classified_bucket_count = 0U;
+    uint32_t preview_lod_evaluated_tile_count = 0U;
+    uint32_t preview_lod_changed_tile_count = 0U;
+};
+
 inline constexpr int32_t PLAYER_CLIENT_BENCHMARK_TERRAIN_NEAR_RADIUS = 7;
 inline constexpr uint32_t PLAYER_CLIENT_BENCHMARK_TERRAIN_NEAR_TILE_COUNT = 225U;
+struct PlayerClientPreviewMeshProbeOffset final {
+    int32_t x = 0;
+    int32_t y = 0;
+};
+
+inline constexpr auto PLAYER_CLIENT_PREVIEW_MESH_PROBE_OFFSETS = [] {
+    std::array<PlayerClientPreviewMeshProbeOffset, PLAYER_CLIENT_BENCHMARK_TERRAIN_NEAR_TILE_COUNT> offsets{};
+    uint32_t index = 0U;
+    offsets[index++] = {};
+    for (int32_t radius = 1; radius <= PLAYER_CLIENT_BENCHMARK_TERRAIN_NEAR_RADIUS; ++radius) {
+        for (int32_t x = -radius; x < radius; ++x) {
+            offsets[index++] = { x, -radius };
+        }
+        for (int32_t y = -radius; y < radius; ++y) {
+            offsets[index++] = { radius, y };
+        }
+        for (int32_t x = radius; x > -radius; --x) {
+            offsets[index++] = { x, radius };
+        }
+        for (int32_t y = radius; y > -radius; --y) {
+            offsets[index++] = { -radius, y };
+        }
+    }
+    return offsets;
+}();
+// Covers the next x200 movement tick, including tile-flooring error and the
+// farthest corner of the protected near square.
+inline constexpr uint32_t PLAYER_CLIENT_PREVIEW_MESH_PREWARM_SPEEDUP = 200U;
+inline constexpr int32_t PLAYER_CLIENT_PREVIEW_MESH_PREWARM_RADIUS = [] {
+    uint32_t const tile_subcells = shared::SUBCELLS_PER_CELL * shared::HEIGHT_TILE_SIDE_LENGTH;
+    uint32_t const maximum_movement_tiles =
+        (static_cast<uint32_t>(shared::MOVEMENT_SUBCELLS_PER_TICK) * PLAYER_CLIENT_PREVIEW_MESH_PREWARM_SPEEDUP +
+            tile_subcells - 1U) /
+        tile_subcells;
+    constexpr uint32_t TILE_CENTER_ROUNDING_BOUND_TILES = 2U;
+    uint32_t const near_corner_distance_squared =
+        2U * PLAYER_CLIENT_BENCHMARK_TERRAIN_NEAR_RADIUS * PLAYER_CLIENT_BENCHMARK_TERRAIN_NEAR_RADIUS;
+    uint32_t near_corner_radius = 0U;
+    while (near_corner_radius * near_corner_radius < near_corner_distance_squared) {
+        ++near_corner_radius;
+    }
+    return static_cast<int32_t>(maximum_movement_tiles + TILE_CENTER_ROUNDING_BOUND_TILES + near_corner_radius);
+}();
+inline constexpr uint32_t PLAYER_CLIENT_PREVIEW_MESH_PREWARM_OFFSET_COUNT = [] {
+    uint32_t count = 0U;
+    int64_t const maximum_distance_squared =
+        static_cast<int64_t>(PLAYER_CLIENT_PREVIEW_MESH_PREWARM_RADIUS) * PLAYER_CLIENT_PREVIEW_MESH_PREWARM_RADIUS;
+    for (int32_t y = -PLAYER_CLIENT_PREVIEW_MESH_PREWARM_RADIUS; y <= PLAYER_CLIENT_PREVIEW_MESH_PREWARM_RADIUS; ++y) {
+        for (int32_t x = -PLAYER_CLIENT_PREVIEW_MESH_PREWARM_RADIUS; x <= PLAYER_CLIENT_PREVIEW_MESH_PREWARM_RADIUS;
+            ++x) {
+            int64_t const distance_squared = static_cast<int64_t>(x) * x + static_cast<int64_t>(y) * y;
+            bool const outside_near_square = x < -PLAYER_CLIENT_BENCHMARK_TERRAIN_NEAR_RADIUS ||
+                x > PLAYER_CLIENT_BENCHMARK_TERRAIN_NEAR_RADIUS || y < -PLAYER_CLIENT_BENCHMARK_TERRAIN_NEAR_RADIUS ||
+                y > PLAYER_CLIENT_BENCHMARK_TERRAIN_NEAR_RADIUS;
+            if (distance_squared <= maximum_distance_squared && outside_near_square) {
+                ++count;
+            }
+        }
+    }
+    return count;
+}();
+inline constexpr auto PLAYER_CLIENT_PREVIEW_MESH_PREWARM_OFFSETS = [] {
+    std::array<PlayerClientPreviewMeshProbeOffset, PLAYER_CLIENT_PREVIEW_MESH_PREWARM_OFFSET_COUNT> offsets{};
+    uint32_t index = 0U;
+    int64_t const maximum_distance_squared =
+        static_cast<int64_t>(PLAYER_CLIENT_PREVIEW_MESH_PREWARM_RADIUS) * PLAYER_CLIENT_PREVIEW_MESH_PREWARM_RADIUS;
+    for (int32_t y = -PLAYER_CLIENT_PREVIEW_MESH_PREWARM_RADIUS; y <= PLAYER_CLIENT_PREVIEW_MESH_PREWARM_RADIUS; ++y) {
+        for (int32_t x = -PLAYER_CLIENT_PREVIEW_MESH_PREWARM_RADIUS; x <= PLAYER_CLIENT_PREVIEW_MESH_PREWARM_RADIUS;
+            ++x) {
+            int64_t const distance_squared = static_cast<int64_t>(x) * x + static_cast<int64_t>(y) * y;
+            bool const outside_near_square = x < -PLAYER_CLIENT_BENCHMARK_TERRAIN_NEAR_RADIUS ||
+                x > PLAYER_CLIENT_BENCHMARK_TERRAIN_NEAR_RADIUS || y < -PLAYER_CLIENT_BENCHMARK_TERRAIN_NEAR_RADIUS ||
+                y > PLAYER_CLIENT_BENCHMARK_TERRAIN_NEAR_RADIUS;
+            if (distance_squared <= maximum_distance_squared && outside_near_square) {
+                offsets[index++] = { x, y };
+            }
+        }
+    }
+    return offsets;
+}();
 inline constexpr uint32_t PLAYER_CLIENT_BENCHMARK_FULL_TERRAIN_RADIAL_BAND_WIDTH = 16U;
 inline constexpr size_t PLAYER_CLIENT_BENCHMARK_FULL_TERRAIN_RADIAL_BAND_COUNT = 16U;
 inline constexpr uint32_t PLAYER_CLIENT_BENCHMARK_FULL_TERRAIN_DETAIL_COUNT = 5U;
@@ -225,9 +317,10 @@ public:
         std::span<shared::HeightTileKey const> candidates
     ) const noexcept;
     [[nodiscard]] bool empty() const noexcept;
-    [[nodiscard]] bool hasReady() noexcept;
+    [[nodiscard]] bool hasReady() const noexcept;
+    [[nodiscard]] bool prepareReady(uint32_t& maintenance_budget) noexcept;
     [[nodiscard]] size_t size() const noexcept;
-    [[nodiscard]] shared::HeightTileKey top() noexcept;
+    [[nodiscard]] shared::HeightTileKey top() const noexcept;
     [[nodiscard]]
     bool erase(shared::HeightTileKey key) noexcept;
     void pop();
@@ -240,7 +333,7 @@ private:
     };
     [[nodiscard]] Entry entryFor(shared::HeightTileKey key, uint64_t ticket) const noexcept;
     [[nodiscard]] bool isCurrent(Entry const& entry) const noexcept;
-    void pruneReadyHeap() noexcept;
+    [[nodiscard]] uint32_t pruneReadyHeap(uint32_t maximum_entries) noexcept;
     [[nodiscard]] static bool lowerPriority(Entry const& first, Entry const& second) noexcept;
 
     std::vector<Entry> m_heap;
@@ -252,6 +345,29 @@ private:
     int8_t m_heading_y = 127;
 };
 
+struct PlayerPreviewMeshAdmissionCandidate final {
+    shared::HeightTileKey key{};
+    bool current_near = false;
+    bool forecast_near = false;
+};
+
+[[nodiscard]] uint8_t playerClientPreviewMeshPriorityTier(
+    shared::HeightTileKey center,
+    std::optional<shared::HeightTileKey> forecast_center,
+    shared::HeightTileKey key
+) noexcept;
+
+[[nodiscard]]
+std::optional<PlayerPreviewMeshAdmissionCandidate> nextPlayerPreviewMeshAdmissionCandidate(
+    PlayerPreviewMeshQueue &pending,
+    uint32_t& maintenance_budget,
+    std::span<shared::HeightTileKey const> nearby_candidates,
+    bool nearby_probe_complete,
+    std::span<shared::HeightTileKey const> prewarm_candidates,
+    bool prewarm_probe_complete,
+    std::span<shared::HeightTileKey const> forecast_candidates = {},
+    bool forecast_probe_complete = true);
+
 class PlayerClient final : public GameClient {
 public:
     explicit PlayerClient(
@@ -261,6 +377,10 @@ public:
     );
     ~PlayerClient();
     [[nodiscard]] RendererRuntimeInfo benchmarkRuntimeInfo() const;
+    [[nodiscard]] PlayerClientRenderDiagnostics benchmarkRenderDiagnostics() const noexcept
+    {
+        return m_render_diagnostics;
+    }
     // On-demand so ordinary render frames do not pay for the bounded terrain-state probe.
     [[nodiscard]] PlayerClientBenchmarkTerrainInfo benchmarkTerrainStreamingInfo() const;
     // The exact key scan is opt-in; readiness polling reads only aggregate state.
@@ -296,8 +416,8 @@ private:
     void updateFlightControlToggles();
     void refreshHeightTileInterest(
         shared::Player const& player,
-        shared::HeightTileSurfaceProjection projection = {}
-    );
+        shared::HeightTileSurfaceProjection projection = {},
+        bool capture_diagnostics = false);
     [[nodiscard]] shared::HeightTileSurfaceDetail previewMeshDetail(
         shared::HeightTileKey key,
         HeightTileHandle const& tile
@@ -308,6 +428,13 @@ private:
         shared::HeightTileKey key
     ) const;
     [[nodiscard]] std::array<uint64_t, 4> previewMeshNeighborProfileTokens(shared::HeightTileKey key) const;
+    [[nodiscard]] bool enqueuePreviewMeshJob(
+        shared::HeightTileKey key,
+        HeightTileHandle const& tile,
+        shared::HeightTileKey center,
+        std::span<shared::HeightTileKey const> nearby_candidates,
+        std::chrono::steady_clock::time_point near_admission_deadline
+    );
     [[nodiscard]]
     double maximumUnobstructedCameraDistance(
         PlayerPresentationPosition const& local_position
@@ -329,8 +456,8 @@ private:
     );
     void processPendingPreviewMeshes(
         uint32_t maximum_meshes,
-        std::chrono::steady_clock::time_point deadline
-    );
+        std::chrono::steady_clock::time_point renderer_deadline,
+        std::chrono::steady_clock::time_point near_admission_deadline);
     [[nodiscard]] bool hasCurrentPreviewMeshCoverage() const noexcept;
     [[nodiscard]] bool hasExactCurrentPreviewMeshCoverage() const noexcept;
     [[nodiscard]] bool hasExactCurrentRendererMeshCoverage() const;
@@ -346,6 +473,7 @@ private:
     };
     std::optional<PlayerClientCaptureOptions> m_capture;
     std::optional<PlayerClientBenchmarkOptions> m_benchmark;
+    PlayerClientRenderDiagnostics m_render_diagnostics{};
     bool m_last_presentation_succeeded = false;
     core::platform::glfw::GlfwWindow m_window;
     InstalledShaderAssets m_shader_assets;
@@ -370,6 +498,7 @@ private:
     int8_t m_applied_interest_heading_x = 0;
     int8_t m_applied_interest_heading_y = 0;
     std::optional<shared::HeightTileKey> m_height_tile_center;
+    std::optional<shared::HeightTileKey> m_preview_forecast_center;
     std::unordered_set<shared::HeightTileKey, PlayerHeightTileKeyHash> m_height_tile_interest;
     std::deque<shared::HeightTileKey> m_pending_preview_removals;
     std::unordered_set<shared::HeightTileKey, PlayerHeightTileKeyHash> m_pending_preview_removal_set;

@@ -903,6 +903,7 @@ std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOption
             }
             benchmark.inputs_sent += sample.input_sent ? 1U : 0U;
             client::RendererRuntimeInfo const runtime = player.benchmarkRuntimeInfo();
+            client::PlayerClientRenderDiagnostics const client_render = player.benchmarkRenderDiagnostics();
             client::PlayerClientBenchmarkFullTerrainInfo full_terrain_info;
             std::optional<GameBenchmarkFullTerrainSnapshot> full_radius_snapshot;
             if (full_radius_workload) {
@@ -1099,6 +1100,18 @@ std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOption
                 .diagnostic_cpu_complete_present_wait_duration_ns = positiveNanoseconds(
                     runtime.cpu_complete_present_wait_duration
                 ),
+                .diagnostic_client_height_tile_interest_duration_ns = positiveNanoseconds(
+                    client_render.height_tile_interest_duration
+                ),
+                .diagnostic_client_preview_lod_refresh_duration_ns = positiveNanoseconds(
+                    client_render.preview_lod_refresh_duration
+                ),
+                .diagnostic_client_preview_lod_classified_bucket_count =
+                    client_render.preview_lod_classified_bucket_count,
+                .diagnostic_client_preview_lod_evaluated_tile_count =
+                    client_render.preview_lod_evaluated_tile_count,
+                .diagnostic_client_preview_lod_changed_tile_count =
+                    client_render.preview_lod_changed_tile_count,
                 .diagnostic_gpu_timestamps_enabled = runtime.diagnostic_gpu_timestamps_enabled,
                 .diagnostic_gpu_timestamp_reason = runtime.diagnostic_gpu_timestamp_reason,
                 .diagnostic_gpu_sample_attempt_id = runtime.diagnostic_gpu_sample_attempt_id,

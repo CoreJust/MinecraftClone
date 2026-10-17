@@ -4,13 +4,95 @@
 
 #include <shared/world/HeightTileInterest.hpp>
 
+#include <algorithm>
 #include <array>
 #include <cstdint>
 #include <deque>
 #include <optional>
+#include <tuple>
 #include <unordered_set>
 
 namespace client {
+
+template<typename WorkRange, typename PriorityTier>
+[[nodiscard]] std::optional<shared::HeightTileKey> deferLowerPriorityPreviewMesh(
+    WorkRange& work,
+    PriorityTier priority_tier,
+    uint8_t const admitted_tier
+)
+{
+    auto candidate = work.end();
+    uint8_t deferred_tier = admitted_tier;
+    for (auto item = work.begin(); item != work.end(); ++item) {
+        uint8_t const tier = priority_tier(item->key);
+        if (tier > deferred_tier) {
+            candidate = item;
+            deferred_tier = tier;
+        }
+    }
+    if (candidate == work.end()) {
+        return std::nullopt;
+    }
+    shared::HeightTileKey const key = candidate->key;
+    work.erase(candidate);
+    return key;
+}
+
+template<typename PriorityTier>
+[[nodiscard]] auto previewMeshWorkPriority(
+    shared::HeightTileKey const center,
+    int8_t const heading_x,
+    int8_t const heading_y,
+    shared::HeightTileKey const key,
+    PriorityTier priority_tier
+)
+{
+    return std::tuple{
+        priority_tier(key),
+        shared::heightTileInterestPriority(center, heading_x, heading_y, key),
+        key.y,
+        key.x,
+    };
+}
+
+template<typename ResultRange, typename PriorityTier>
+[[nodiscard]] std::optional<uint32_t> preferredPreviewMeshResultIndex(
+    ResultRange const& results,
+    shared::HeightTileKey const center,
+    int8_t const heading_x,
+    int8_t const heading_y,
+    PriorityTier priority_tier
+)
+{
+    std::optional<uint32_t> preferred;
+    decltype(previewMeshWorkPriority(center, heading_x, heading_y, shared::HeightTileKey{}, priority_tier))
+        preferred_priority{};
+    uint32_t index = 0U;
+    for (auto const& result : results) {
+        auto const priority = previewMeshWorkPriority(
+            center, heading_x, heading_y, result.key, priority_tier
+        );
+        if (!preferred.has_value() || priority < preferred_priority) {
+            preferred = index;
+            preferred_priority = priority;
+        }
+        ++index;
+    }
+    return preferred;
+}
+
+template<typename ResultRange>
+[[nodiscard]] std::optional<uint32_t> preferredPreviewMeshResultIndex(
+    ResultRange const& results,
+    shared::HeightTileKey const center,
+    int8_t const heading_x,
+    int8_t const heading_y
+)
+{
+    return preferredPreviewMeshResultIndex(
+        results, center, heading_x, heading_y, [](shared::HeightTileKey) { return uint8_t{0U}; }
+    );
+}
 
 template<typename HandleChange>
 void drainPreviewTileChanges(

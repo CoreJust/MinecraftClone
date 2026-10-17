@@ -59,6 +59,7 @@ public:
     using GameClient::discardPredictedInput;
     using GameClient::predictInput;
     using GameClient::predictedLocalPlayer;
+    using GameClient::forecastedLocalPlayerPosition;
     using GameClient::predictedLocalPresentation;
     using GameClient::resetConnectionState;
 
@@ -930,3 +931,65 @@ TEST(GameClientPredictionTest, RetriesUntilAnInitiallyUnavailableServerStarts)
 }
 
 } // namespace
+
+
+TEST(GameClientPredictionTest, ContinuationForecastRetainsFullInputAndReconcilesWithoutMovingAgain)
+{
+    static constexpr shared::Direction DIRECTION{
+        .x = 90U, .y = 90U, .z = 40U, .accelerated = true, .speedup = 200U,
+        .cycle_movement_capabilities = true,
+    };
+    PredictionClient client{ shared::WorldMode::Flight };
+    client.setLocalCharacter('@');
+    EXPECT_FALSE(client.forecastedLocalPlayerPosition());
+    ASSERT_TRUE(client.applyServerPosition(
+        flightPosition('@', 65'530, 65'534, 900, 9'000U, 2'000U, 0U, 0U, 1U)));
+    auto const input = client.predictInput(DIRECTION);
+    ASSERT_TRUE(input);
+    auto const before_forecast = client.predictedLocalPlayer();
+    ASSERT_TRUE(before_forecast);
+    auto const forecast = client.forecastedLocalPlayerPosition();
+    ASSERT_TRUE(forecast);
+    EXPECT_EQ(client.predictedLocalPlayer()->x, before_forecast->x);
+    EXPECT_EQ(client.predictedLocalPlayer()->x_subcell, before_forecast->x_subcell);
+    shared::Direction continuation = DIRECTION;
+    continuation.cycle_movement_capabilities = false;
+    auto const next_input = client.predictInput(continuation);
+    ASSERT_TRUE(next_input);
+    auto const next = client.predictedLocalPlayer();
+    ASSERT_TRUE(next);
+    EXPECT_EQ(next->x, forecast->x);
+    EXPECT_EQ(next->y, forecast->y);
+    EXPECT_EQ(next->z, forecast->z);
+    EXPECT_EQ(next->x_subcell, forecast->x_subcell);
+    EXPECT_EQ(next->y_subcell, forecast->y_subcell);
+    EXPECT_EQ(next->z_subcell, forecast->z_subcell);
+
+    ASSERT_TRUE(client.applyServerPosition(
+        flightPosition('@', 100, 120, 900, 7'000U, 8'000U, 0U, next_input->sequence, 2U)));
+    auto const reconciled_forecast = client.forecastedLocalPlayerPosition();
+    ASSERT_TRUE(reconciled_forecast);
+    ASSERT_TRUE(client.predictInput(continuation));
+    auto const reconciled_next = client.predictedLocalPlayer();
+    ASSERT_TRUE(reconciled_next);
+    EXPECT_EQ(reconciled_next->x, reconciled_forecast->x);
+    EXPECT_EQ(reconciled_next->y, reconciled_forecast->y);
+    EXPECT_EQ(reconciled_next->x_subcell, reconciled_forecast->x_subcell);
+    EXPECT_EQ(reconciled_next->y_subcell, reconciled_forecast->y_subcell);
+    client.resetConnectionState();
+    EXPECT_FALSE(client.forecastedLocalPlayerPosition());
+}
+
+
+TEST(GameClientPredictionTest, DiscardingTheOnlyInputClearsItsContinuationForecast)
+{
+    static constexpr shared::Direction DIRECTION{ .x = 127U, .y = 0U, .accelerated = true, .speedup = 200U };
+    PredictionClient client{ shared::WorldMode::Flight };
+    client.setLocalCharacter('@');
+    ASSERT_TRUE(client.applyServerPosition(flightPosition('@', 32'880, 32'768, 900, 0U, 0U, 0U, 0U, 1U)));
+    auto const input = client.predictInput(DIRECTION);
+    ASSERT_TRUE(input);
+    ASSERT_TRUE(client.forecastedLocalPlayerPosition());
+    client.discardPredictedInput(input->sequence);
+    EXPECT_FALSE(client.forecastedLocalPlayerPosition());
+}

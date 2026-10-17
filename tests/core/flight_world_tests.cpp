@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cstdint>
 #include <optional>
 #include <stdexcept>
@@ -47,6 +48,93 @@ TEST(FlightWorldTest, UsesFirstWaveSpawnAndWrappedCoordinates)
     EXPECT_EQ(requiredValue(world.player(1)).x, shared::World::FLIGHT_MAX_CELL);
     EXPECT_EQ(requiredValue(world.player(1)).x_subcell, 6'400U);
     EXPECT_DOUBLE_EQ(shared::playerPositionX(requiredValue(world.player(1))), 65'535.64);
+}
+
+TEST(FlightWorldTest, ForecastMatchesFlightMovementWithoutChangingSourcePlayer)
+{
+    static constexpr std::array<shared::Direction, 6U> DIRECTIONS{
+        shared::Direction{ .x = 127U, .y = 0U, .accelerated = true, .speedup = 200U },
+        shared::Direction{ .x = 127U, .y = 127U, .accelerated = true, .speedup = 200U },
+        shared::Direction{ .x = 0U, .y = 0U, .z = 127U, .accelerated = true, .speedup = 200U },
+        shared::Direction{ .x = 127U, .y = 127U, .z = 127U, .accelerated = true, .speedup = 200U },
+        shared::Direction{ .x = 127U, .y = 127U, .z = 127U, .accelerated = false, .speedup = 200U },
+        shared::Direction{ .x = static_cast<uint8_t>(-127), .y = 0U, .accelerated = true, .speedup = 200U },
+    };
+    static constexpr std::array<shared::PlayerPosition, 4U> POSITIONS{
+        shared::PlayerPosition{ .x = 100, .y = 100, .z = 800 },
+        shared::PlayerPosition{ .x = 15, .y = 31, .z = 800, .x_subcell = 9'999U, .y_subcell = 9'999U },
+        shared::PlayerPosition{ .x = shared::World::FLIGHT_MAX_CELL, .y = 0, .z = 800, .x_subcell = 9'999U },
+        shared::PlayerPosition{ .x = 0, .y = 0, .z = 800, .x_subcell = 2U },
+    };
+    static constexpr std::array<std::chrono::milliseconds, 3U> DURATIONS{
+        shared::TICK, std::chrono::milliseconds{ 37 }, std::chrono::milliseconds{ 0 },
+    };
+    for (shared::PlayerPosition const& position : POSITIONS) {
+        for (shared::Direction const direction : DIRECTIONS) {
+            for (std::chrono::milliseconds const elapsed : DURATIONS) {
+                shared::World world{ shared::WorldMode::Flight };
+                world.spawnPlayer(1U, '@', position);
+                shared::Player const before = requiredValue(world.player(1U));
+                shared::World const& read_only = world;
+                auto const forecast = read_only.forecastFlightPlayerPosition(1U, direction, elapsed);
+                ASSERT_TRUE(forecast.has_value());
+                shared::Player const unchanged = requiredValue(world.player(1U));
+                EXPECT_EQ(unchanged.x, before.x);
+                EXPECT_EQ(unchanged.y, before.y);
+                EXPECT_EQ(unchanged.z, before.z);
+                EXPECT_EQ(unchanged.x_subcell, before.x_subcell);
+                EXPECT_EQ(unchanged.y_subcell, before.y_subcell);
+                EXPECT_EQ(unchanged.z_subcell, before.z_subcell);
+                EXPECT_EQ(unchanged.id, before.id);
+                EXPECT_EQ(unchanged.ch, before.ch);
+                EXPECT_EQ(unchanged.palette_index, before.palette_index);
+                EXPECT_EQ(unchanged.movement_capabilities, before.movement_capabilities);
+                EXPECT_EQ(unchanged.vertical_velocity_subcells, before.vertical_velocity_subcells);
+                static_cast<void>(world.movePlayer(1U, direction, elapsed));
+                shared::Player const actual = requiredValue(world.player(1U));
+                EXPECT_EQ(forecast->x, actual.x);
+                EXPECT_EQ(forecast->y, actual.y);
+                EXPECT_EQ(forecast->z, actual.z);
+                EXPECT_EQ(forecast->x_subcell, actual.x_subcell);
+                EXPECT_EQ(forecast->y_subcell, actual.y_subcell);
+                EXPECT_EQ(forecast->z_subcell, actual.z_subcell);
+            }
+        }
+    }
+}
+
+TEST(FlightWorldTest, ForecastRejectsInvalidElapsedAndUnknownPlayer)
+{
+    shared::World world{ shared::WorldMode::Flight };
+    world.spawnPlayer(1U, '@');
+    EXPECT_FALSE(world.forecastFlightPlayerPosition(2U, { .x = 127U, .y = 0U }));
+    EXPECT_FALSE(world.forecastFlightPlayerPosition(1U, {}, std::chrono::milliseconds{ -1 }));
+    EXPECT_FALSE(world.forecastFlightPlayerPosition(1U, {}, shared::TICK + std::chrono::milliseconds{ 1 }));
+}
+
+TEST(FlightWorldTest, ForecastRejectsNonFlightWorldAndTracksCurrentCapabilities)
+{
+    shared::World flat;
+    flat.spawnPlayer(1U, '@');
+    EXPECT_FALSE(flat.forecastFlightPlayerPosition(1U, { .x = 127U, .y = 0U }));
+    shared::World flight{ shared::WorldMode::Flight };
+    flight.spawnPlayer(1U, '@', { .x = 100, .y = 100, .z = 800 });
+    EXPECT_TRUE(flight.forecastFlightPlayerPosition(1U, { .x = 127U, .y = 0U }));
+    ASSERT_TRUE(flight.setPlayerMovementCapabilities(1U, {}));
+    EXPECT_FALSE(flight.forecastFlightPlayerPosition(1U, { .x = 127U, .y = 0U }));
+    ASSERT_TRUE(flight.setPlayerMovementCapabilities(1U, { .bits = 1U }));
+    EXPECT_TRUE(flight.forecastFlightPlayerPosition(1U, { .x = 127U, .y = 0U }));
+}
+
+TEST(FlightWorldTest, ForecastRejectsOneShotCapabilityCycle)
+{
+    shared::World world{ shared::WorldMode::Flight };
+    world.spawnPlayer(1U, '@');
+    shared::MovementCapabilities const before = requiredValue(world.player(1U)).movement_capabilities;
+    EXPECT_FALSE(world.forecastFlightPlayerPosition(1U, {
+        .x = 127U, .y = 0U, .cycle_movement_capabilities = true,
+    }));
+    EXPECT_EQ(requiredValue(world.player(1U)).movement_capabilities, before);
 }
 
 TEST(FlightWorldTest, CollisionMaterializationCandidatesIncludeBothSidesOfHorizontalSeams)

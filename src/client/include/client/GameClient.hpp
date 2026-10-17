@@ -104,6 +104,7 @@ protected:
     );
     void applyServerRemoval(char character);
     [[nodiscard]] std::optional<shared::Player> predictedLocalPlayer() const noexcept;
+    [[nodiscard]] std::optional<shared::PlayerPosition> forecastedLocalPlayerPosition() const noexcept;
     [[nodiscard]]
     std::optional<PlayerPresentationPosition> predictedLocalPresentation(
         std::chrono::steady_clock::time_point now
@@ -135,6 +136,8 @@ protected:
     std::unordered_set<uint64_t> m_pending_height_tile_delivery_tokens;
     uint64_t m_height_tile_credit_revision = 0U;
     std::deque<shared::ClientInputMessage> m_pending_inputs;
+    std::optional<shared::Direction> m_last_predicted_direction;
+    std::optional<shared::PlayerPosition> m_forecast_player_position;
     std::unordered_map<char, uint32_t> m_state_revisions;
     shared::PlayerId m_next_id = 0;
     uint32_t m_next_input_sequence = 1;
@@ -151,6 +154,7 @@ private:
     [[nodiscard]] bool grantHeightTileCredit(uint64_t delivery_token, uint8_t credits);
     [[nodiscard]] bool queueHeightTileDelivery(shared::ServerHeightTileBatchMessage message);
     void rebuildPrediction();
+    void refreshMovementForecast();
     void updatePredictedPresentation(std::chrono::steady_clock::time_point updated_at);
 };
 

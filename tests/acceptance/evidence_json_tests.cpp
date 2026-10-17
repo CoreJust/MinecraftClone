@@ -485,3 +485,27 @@ TEST(EvidenceJson, KeepsOriginalModeWhenFailureCallbackChangesCallerInput)
 }
 
 } // namespace
+
+TEST(EvidenceJson, PreservesPlayerRenderStageTimingsPerFrame)
+{
+    acceptance::RuntimeEvidence evidence{};
+    evidence.game_benchmark.emplace();
+    auto& frame = evidence.game_benchmark->raw_frames.emplace_back();
+    frame.diagnostic_client_height_tile_interest_duration_ns = 600'002U;
+    frame.diagnostic_client_preview_lod_refresh_duration_ns = 610'002U;
+    frame.diagnostic_client_preview_lod_classified_bucket_count = 11U;
+    frame.diagnostic_client_preview_lod_evaluated_tile_count = 12U;
+    frame.diagnostic_client_preview_lod_changed_tile_count = 13U;
+
+    std::string const json = acceptance::evidenceJson(evidence);
+
+    EXPECT_NE(json.find("\"diagnostic_client_height_tile_interest_duration_ns\": 600002"), std::string::npos);
+    EXPECT_NE(json.find("\"diagnostic_client_preview_lod_refresh_duration_ns\": 610002"),
+              std::string::npos);
+    EXPECT_NE(json.find("\"diagnostic_client_preview_lod_classified_bucket_count\": 11"),
+              std::string::npos);
+    EXPECT_NE(json.find("\"diagnostic_client_preview_lod_evaluated_tile_count\": 12"),
+              std::string::npos);
+    EXPECT_NE(json.find("\"diagnostic_client_preview_lod_changed_tile_count\": 13"),
+              std::string::npos);
+}

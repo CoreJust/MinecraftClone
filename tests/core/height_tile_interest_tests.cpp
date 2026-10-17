@@ -12,6 +12,7 @@
 #include <functional>
 #include <initializer_list>
 #include <memory>
+#include <set>
 #include <span>
 #include <string>
 #include <utility>
@@ -119,24 +120,18 @@ TEST(HeightTileInterestTest, RotationChangesPriorityWithoutChangingResidency)
     EXPECT_EQ(east.keys.size(), 205'861U);
 }
 
-TEST(HeightTileInterestTest, ProgressivePriorityUsesNearCirclesThenDirectionalEllipse)
+TEST(HeightTileInterestTest, ProgressivePriorityOrdersByDistanceBeforeHeading)
 {
     shared::HeightTileKey constexpr center{.x = 2'000, .y = 2'000};
     shared::HeightTileInterest const interest = shared::makeHeightTileInterest(center, 127, 0);
 
-    for (size_t const prefix_size : {500U, 1'500U, 3'000U}) {
-        ASSERT_LT(prefix_size, interest.keys.size());
-        int32_t forward_extent = 0;
-        int32_t rear_extent = 0;
-        int32_t side_extent = 0;
-        for (shared::HeightTileKey const key : std::span{interest.keys}.first(prefix_size)) {
-            forward_extent = std::max(forward_extent, key.x - center.x);
-            rear_extent = std::max(rear_extent, center.x - key.x);
-            side_extent = std::max(side_extent, std::abs(key.y - center.y));
-        }
-        EXPECT_GT(forward_extent, side_extent);
-        EXPECT_GT(forward_extent, rear_extent);
-        EXPECT_LE(forward_extent, 45);
+    int64_t previous_distance_squared = -1;
+    for (shared::HeightTileKey const key : interest.keys) {
+        int64_t const x = key.x - center.x;
+        int64_t const y = key.y - center.y;
+        int64_t const distance_squared = x * x + y * y;
+        EXPECT_GE(distance_squared, previous_distance_squared);
+        previous_distance_squared = distance_squared;
     }
     for (shared::HeightTileKey const key : std::span{interest.keys}.first(29U)) {
         int32_t const x = key.x - center.x;
@@ -252,6 +247,13 @@ TEST(HeightTileInterestTest, SelectedRadiusOrdersPreserveExactDiskAcrossHeadings
     EXPECT_EQ(retained_orders->radius, RADIUS_128);
     for (auto const& order : retained_orders->orders) {
         EXPECT_EQ(order.keys.size(), COUNT_128);
+        int64_t previous_distance_squared = -1;
+        for (shared::HeightTileKey const offset : order.keys) {
+            int64_t const distance_squared = static_cast<int64_t>(offset.x) * offset.x
+                + static_cast<int64_t>(offset.y) * offset.y;
+            EXPECT_GE(distance_squared, previous_distance_squared);
+            previous_distance_squared = distance_squared;
+        }
     }
 }
 
@@ -263,8 +265,25 @@ TEST(HeightTileInterestTest, ClassifiesFixedNearBandsDirectionalMiddleAndBackgro
     EXPECT_EQ(shared::heightTileGenerationBand(center, 127, 0, {.x = 2'003, .y = 2'000}), Immediate);
     EXPECT_EQ(shared::heightTileGenerationBand(center, 127, 0, {.x = 2'008, .y = 2'000}), Near);
     EXPECT_EQ(shared::heightTileGenerationBand(center, 127, 0, {.x = 2'040, .y = 2'000}), Directional);
+    EXPECT_EQ(shared::heightTileGenerationBand(center, 127, 0, {.x = 2'070, .y = 2'000}), Directional);
+    EXPECT_EQ(shared::heightTileGenerationBand(center, 127, 0, {.x = 2'080, .y = 2'000}), Directional);
+    EXPECT_EQ(shared::heightTileGenerationBand(center, 127, 0, {.x = 2'081, .y = 2'000}), Background);
     EXPECT_EQ(shared::heightTileGenerationBand(center, 127, 0, {.x = 1'960, .y = 2'000}), Background);
     EXPECT_EQ(shared::heightTileGenerationBand(center, 0, 127, {.x = 2'000, .y = 2'040}), Directional);
+    EXPECT_EQ(shared::heightTileGenerationBand(center, 127, 0, {.x = 2'000, .y = 2'030}), Background);
+}
+
+TEST(HeightTileInterestTest, NearestDistanceDominatesHeadingAndHeadingBreaksRingTies)
+{
+    shared::HeightTileKey constexpr center{.x = 2'000, .y = 2'000};
+    EXPECT_LT(
+        shared::heightTileInterestPriority(center, 127, 0, {.x = 2'010, .y = 2'000}),
+        shared::heightTileInterestPriority(center, 127, 0, {.x = 2'000, .y = 2'010})
+    );
+    EXPECT_LT(
+        shared::heightTileInterestPriority(center, 127, 0, {.x = 2'000, .y = 2'010}),
+        shared::heightTileInterestPriority(center, 127, 0, {.x = 2'070, .y = 2'000})
+    );
 }
 
 TEST(HeightTileInterestTest, SelectsEligibleRemovalsBeyondInflightPriorityPrefix)

@@ -18,6 +18,7 @@
 #include <algorithm>
 #include <compare>
 #include <iostream>
+#include <iterator>
 #include <optional>
 #include <ratio>
 #include <span>
@@ -195,6 +196,8 @@ void GameClient::resetConnectionState()
     m_next_id = 0U;
     m_state_revisions.clear();
     m_pending_inputs.clear();
+    m_last_predicted_direction.reset();
+    m_forecast_player_position.reset();
     m_next_input_sequence = 1U;
     m_height_tile_residency = PreviewResidency{ { .generation = 0U, .revision = 0U } };
     m_height_tile_revision = { .generation = 0U, .revision = 0U };
@@ -308,7 +311,10 @@ std::optional<shared::ClientInputMessage> GameClient::predictInput(
         .sequence = m_next_input_sequence++,
     };
     m_pending_inputs.push_back(input);
+    m_last_predicted_direction = direction;
+    m_last_predicted_direction->cycle_movement_capabilities = false;
     static_cast<void>(m_predicted_world.movePlayer(player->id, direction));
+    refreshMovementForecast();
     updatePredictedPresentation(predicted_at);
     return input;
 }
@@ -324,6 +330,13 @@ void GameClient::discardPredictedInput(
         return input.sequence == sequence;
     });
     if (found != m_pending_inputs.end()) {
+        if (std::next(found) == m_pending_inputs.end()) {
+            m_last_predicted_direction.reset();
+            if (found != m_pending_inputs.begin()) {
+                m_last_predicted_direction = std::prev(found)->direction;
+                m_last_predicted_direction->cycle_movement_capabilities = false;
+            }
+        }
         m_pending_inputs.erase(found);
         rebuildPrediction();
         updatePredictedPresentation(discarded_at);
@@ -399,6 +412,22 @@ std::optional<shared::Player> GameClient::predictedLocalPlayer() const noexcept
     return m_predicted_world.playerByCharacter(m_local_character);
 }
 
+std::optional<shared::PlayerPosition> GameClient::forecastedLocalPlayerPosition() const noexcept
+{
+    return m_forecast_player_position;
+}
+
+void GameClient::refreshMovementForecast()
+{
+    auto const player = predictedLocalPlayer();
+    m_forecast_player_position.reset();
+    if (!player || !m_last_predicted_direction) {
+        return;
+    }
+    m_forecast_player_position = m_predicted_world.forecastFlightPlayerPosition(
+        player->id, *m_last_predicted_direction);
+}
+
 std::optional<PlayerPresentationPosition> GameClient::predictedLocalPresentation(
     std::chrono::steady_clock::time_point const now
 ) const noexcept
@@ -414,6 +443,7 @@ void GameClient::rebuildPrediction()
             static_cast<void>(m_predicted_world.movePlayer(player->id, input.direction));
         }
     }
+    refreshMovementForecast();
 }
 
 void GameClient::updatePredictedPresentation(std::chrono::steady_clock::time_point const updated_at)

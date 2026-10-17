@@ -99,26 +99,26 @@ input call.
 
 ## S6/S7 moving terrain
 
-S7 radius 1–256 (default 256) has 51,433 tiles at 128; 205,861 at 256.
-Position sets membership; heading
-prioritizes radius-3/radius-8 circles and a directional ellipse. Server wraps
-edge deltas, bounds discovery, and collects at most 64 results per pump.
-Full admission preserves refill cursors, including running jobs.
-Generation targets 8,192 tiles/s, with 128-tile bursts after 250 ms settled.
-CoreLang 0.1.2 supplies wave parameters; C++ computes heights and stone. Six
-128-block layers; spawn uses the first wave. HUD speedups: 2x–500x.
+Radius 1–256 covers 51,433 tiles at 128 and 205,861 at 256; position sets
+membership. Admission order: current 15×15, next actual-input World-tick forecast
+15×15 within the unchanged desired disk, then bounded prewarm/background;
+background order is wrapped distance; heading breaks ties. Server wraps deltas
+and caps discovery at 64 results/pump; center/heading changes restart scans.
+Refill cursors survive running jobs. Generation targets 8,192 tiles/s
+(128 bursts after 250 ms settled). CoreLang 0.1.2 supplies wave parameters; C++
+builds six 128-block layers. First-wave spawn; HUD speed 2x–500x.
 
-LOD uses wrapped player distance, vertical FOV, and framebuffer extent to bound
-replacement faces to 2 px²; terrain/collision stay exact. Per-detail certificates
-bound candidate tops/walls and installed neighbor TOP profiles; raw-height
-bounds enclose distance. Four-by-four buckets select nonmonotone per-detail areas.
-Changes recertify neighbors; failed uploads retain inputs. Jobs recheck raw
-revisions, neighbor detail and certification. Profile-only changes reuse completed
-geometry only while safe. Meshes refine after movement/projection/profile changes. Play/capture share
-256 reranks and 16 jobs per call. A 225-key near
-probe tickets missing resident meshes before distant work; erased/requeued
-tickets cannot revive stale entries. Intake admits 128 changes per call;
-bounded per-key obsolete removal never waits for global coverage.
+LOD bounds replacement faces to 2 px² using wrapped distance, FOV and framebuffer
+extent; terrain/collision stay exact. Per-detail certificates bound surfaces,
+neighbor profiles and raw-height distance; four-by-four buckets select
+nonmonotone areas. Changes recertify neighbors; failed uploads retain inputs;
+jobs recheck revisions/detail/certification before safe profile-only reuse.
+Meshes refine on movement/projection/profile changes. Play/capture share 256
+reranks/16 jobs; a 225-key near probe queues missing residents before distant
+work and discards stale tickets. After interest refresh exhausts the 8 ms
+deadline, near discovery/admission gets ≤1 ms; result publication retains
+deadline. Intake 128 changes/call; obsolete removal stays bounded, without a
+global coverage wait.
 
 ## S5 chunk data
 

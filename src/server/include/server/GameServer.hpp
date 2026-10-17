@@ -55,7 +55,13 @@ public:
     struct PreviewStreamMetrics final {
         WorkerMetrics height_tile_jobs;
         WorkerMetrics world_generation_jobs;
+        bool terrain_center_valid = false;
+        int32_t terrain_center_x = 0;
+        int32_t terrain_center_y = 0;
         uint32_t queued_tiles = 0U;
+        uint32_t priority_scan_cursor = 0U;
+        uint32_t background_scan_cursor = 0U;
+        bool background_generation_eligible = false;
         uint32_t dispatched_tiles = 0U;
         uint32_t pending_worker_jobs = 0U;
         uint32_t submitted_worker_jobs = 0U;
@@ -257,6 +263,8 @@ private:
         int8_t heading_y = 127;
         int8_t applied_heading_x = 0;
         int8_t applied_heading_y = 0;
+        std::optional<shared::Direction> last_actual_direction;
+        std::optional<shared::HeightTileKey> forecast_center;
         bool has_center = false;
         std::span<shared::HeightTileKey const> priority_offsets;
         uint32_t priority_cursor = 0U;

@@ -134,7 +134,7 @@ struct PlayerClientTestAccess final {
         }
         auto const deadline = std::chrono::steady_clock::now() + std::chrono::seconds{ 2 };
         while (std::chrono::steady_clock::now() < deadline) {
-            client.processPendingPreviewMeshes(16U, deadline);
+            client.processPendingPreviewMeshes(16U, deadline, deadline);
             if (client.m_pending_preview_meshes.empty() && client.m_preview_mesh_jobs.empty()
                 && client.m_preview_mesh_dirty_jobs.empty()) {
                 return true;
@@ -160,7 +160,7 @@ struct PlayerClientTestAccess final {
         client.m_benchmark.emplace();
         client.queuePreviewMesh(key);
         auto const deadline = std::chrono::steady_clock::now() + std::chrono::seconds{ 2 };
-        client.processPendingPreviewMeshes(0U, deadline);
+        client.processPendingPreviewMeshes(0U, deadline, deadline);
         while (std::chrono::steady_clock::now() < deadline) {
             if (client.benchmarkFullTerrainStreamingInfo().worker_result_count == 1U) {
                 return true;
@@ -172,7 +172,8 @@ struct PlayerClientTestAccess final {
 
     static void processOneLodResult(PlayerClient& client)
     {
-        client.processPendingPreviewMeshes(1U, std::chrono::steady_clock::now() + std::chrono::seconds{ 2 });
+        auto const mesh_pump_deadline = std::chrono::steady_clock::now() + std::chrono::seconds{ 2 };
+        client.processPendingPreviewMeshes(1U, mesh_pump_deadline, mesh_pump_deadline);
     }
 
     static uint64_t meshAdmissionCount(PlayerClient const& client)
@@ -254,7 +255,8 @@ struct PlayerClientTestAccess final {
             HeightTileReplacement::Published
         );
         client.refreshHeightTileInterest(*client.m_world.playerByCharacter('@'));
-        client.processPendingPreviewMeshes(1U, std::chrono::steady_clock::now() + std::chrono::seconds{ 2 });
+        auto const mesh_pump_deadline = std::chrono::steady_clock::now() + std::chrono::seconds{ 2 };
+        client.processPendingPreviewMeshes(1U, mesh_pump_deadline, mesh_pump_deadline);
         return key;
     }
 
@@ -272,7 +274,7 @@ struct PlayerClientTestAccess final {
     {
         auto const deadline = std::chrono::steady_clock::now() + std::chrono::seconds{ 2 };
         while (std::chrono::steady_clock::now() < deadline) {
-            client.processPendingPreviewMeshes(16U, deadline);
+            client.processPendingPreviewMeshes(16U, deadline, deadline);
             if (client.m_visible_preview_meshes.contains(key)) {
                 return true;
             }
@@ -284,7 +286,8 @@ struct PlayerClientTestAccess final {
     static void queueSecondMesh(PlayerClient& client, shared::HeightTileKey const key)
     {
         client.queuePreviewMesh(key);
-        client.processPendingPreviewMeshes(1U, std::chrono::steady_clock::now() + std::chrono::seconds{ 2 });
+        auto const mesh_pump_deadline = std::chrono::steady_clock::now() + std::chrono::seconds{ 2 };
+        client.processPendingPreviewMeshes(1U, mesh_pump_deadline, mesh_pump_deadline);
     }
 
     static void resetConnectionState(PlayerClient& client)
@@ -296,7 +299,7 @@ struct PlayerClientTestAccess final {
     {
         auto const deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds{ 250 };
         while (std::chrono::steady_clock::now() < deadline) {
-            client.processPendingPreviewMeshes(16U, deadline);
+            client.processPendingPreviewMeshes(16U, deadline, deadline);
             std::this_thread::sleep_for(std::chrono::milliseconds{ 1 });
         }
     }

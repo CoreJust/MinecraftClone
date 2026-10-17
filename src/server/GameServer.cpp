@@ -81,23 +81,94 @@ int32_t floorDivideByHeightTileSide(int32_t const value) noexcept
 }
 
 [[nodiscard]]
-shared::HeightTileKey heightTileKeyForPlayer(shared::Player const& player) noexcept
+shared::HeightTileKey heightTileKeyForCoordinates(int32_t const x, int32_t const y) noexcept
 {
     return shared::normalizeHeightTileKey({
-        .x = floorDivideByHeightTileSide(player.x),
-        .y = floorDivideByHeightTileSide(player.y),
+        .x = floorDivideByHeightTileSide(x),
+        .y = floorDivideByHeightTileSide(y),
     });
 }
 
 [[nodiscard]]
-std::tuple<double, int32_t, int32_t> heightTilePriority(
+shared::HeightTileKey heightTileKeyForPlayer(shared::Player const& player) noexcept
+{
+    return heightTileKeyForCoordinates(player.x, player.y);
+}
+
+constexpr int32_t HEIGHT_TILE_COUNT = static_cast<int32_t>(
+    shared::WorldExtent::WIDTH / shared::HEIGHT_TILE_SIDE_LENGTH
+);
+constexpr int32_t CURRENT_NEAR_WINDOW_RADIUS = 7;
+
+[[nodiscard]]
+int32_t shortestWrappedHeightTileDelta(int32_t const target, int32_t const center) noexcept
+{
+    int32_t delta = target - center;
+    if (delta > HEIGHT_TILE_COUNT / 2) {
+        delta -= HEIGHT_TILE_COUNT;
+    } else if (delta < -HEIGHT_TILE_COUNT / 2) {
+        delta += HEIGHT_TILE_COUNT;
+    }
+    return delta;
+}
+
+[[nodiscard]]
+bool isCurrentNearHeightTile(
     shared::HeightTileKey const center,
+    shared::HeightTileKey const key
+) noexcept
+{
+    int32_t const delta_x = shortestWrappedHeightTileDelta(key.x, center.x);
+    int32_t const delta_y = shortestWrappedHeightTileDelta(key.y, center.y);
+    return delta_x >= -CURRENT_NEAR_WINDOW_RADIUS && delta_x <= CURRENT_NEAR_WINDOW_RADIUS
+        && delta_y >= -CURRENT_NEAR_WINDOW_RADIUS && delta_y <= CURRENT_NEAR_WINDOW_RADIUS;
+}
+
+template <typename IsDesired, typename IsAvailable>
+[[nodiscard]]
+bool nearWindowHasUntrackedTiles(
+    shared::HeightTileKey const center,
+    IsDesired const& is_desired,
+    IsAvailable const& is_available
+)
+{
+    for (int32_t y = -CURRENT_NEAR_WINDOW_RADIUS; y <= CURRENT_NEAR_WINDOW_RADIUS; ++y) {
+        for (int32_t x = -CURRENT_NEAR_WINDOW_RADIUS; x <= CURRENT_NEAR_WINDOW_RADIUS; ++x) {
+            shared::HeightTileKey const key = shared::normalizeHeightTileKey({
+                .x = center.x + x,
+                .y = center.y + y,
+            });
+            if (is_desired(key) && !is_available(key)) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+[[nodiscard]]
+bool isForecastNearHeightTile(
+    std::optional<shared::HeightTileKey> const forecast_center,
+    shared::HeightTileKey const key
+) noexcept
+{
+    return forecast_center.has_value() && isCurrentNearHeightTile(*forecast_center, key);
+}
+
+[[nodiscard]]
+std::tuple<uint8_t, double, int32_t, int32_t> heightTilePriority(
+    shared::HeightTileKey const center,
+    std::optional<shared::HeightTileKey> const forecast_center,
     int32_t const movement_x,
     int32_t const movement_y,
     shared::HeightTileKey const key
 ) noexcept
 {
+    uint8_t const tier = isCurrentNearHeightTile(center, key)
+        ? 0U
+        : (isForecastNearHeightTile(forecast_center, key) ? 1U : 2U);
     return {
+        tier,
         shared::heightTileInterestPriority(
             center,
             static_cast<int8_t>(movement_x),
@@ -961,7 +1032,13 @@ void GameServer::run(
                 PreviewStreamMetrics metrics{
                     .height_tile_jobs = worker_queue_metrics.height_tiles,
                     .world_generation_jobs = worker_queue_metrics.world_generation,
+                    .terrain_center_valid = stream.has_center,
+                    .terrain_center_x = stream.has_center ? stream.center.x : 0,
+                    .terrain_center_y = stream.has_center ? stream.center.y : 0,
                     .queued_tiles = static_cast<uint32_t>(stream.queued_keys.size()),
+                    .priority_scan_cursor = stream.priority_cursor,
+                    .background_scan_cursor = stream.background_cursor,
+                    .background_generation_eligible = std::chrono::steady_clock::now() >= stream.background_generation_eligible_at,
                     .dispatched_tiles = static_cast<uint32_t>(stream.dispatched_keys.size()),
                     .pending_worker_jobs = worker_queue_metrics.height_tiles.pending_jobs
                         + worker_queue_metrics.world_generation.pending_jobs,
@@ -1414,6 +1491,8 @@ bool GameServer::processInput(PlayerReplication& replication, shared::ClientInpu
     replication.acknowledged_input_sequence = input.sequence;
     auto const stream = std::ranges::find(m_preview_streams, replication.id, &PreviewStream::client_id);
     if (stream != m_preview_streams.end()) {
+        stream->last_actual_direction = input.direction;
+        stream->last_actual_direction->cycle_movement_capabilities = false;
         int8_t const movement_x = static_cast<int8_t>(input.direction.x);
         int8_t const movement_y = static_cast<int8_t>(input.direction.y);
         stream->heading_x = movement_x != 0 || movement_y != 0 ? movement_x : input.direction.view_x;
@@ -1774,8 +1853,8 @@ uint32_t GameServer::admitHeightTileDeliveries(
         }
     }
     auto const ready_order = [&stream](shared::HeightTileKey const first, shared::HeightTileKey const second) {
-        return heightTilePriority(stream.center, stream.heading_x, stream.heading_y, first)
-            < heightTilePriority(stream.center, stream.heading_x, stream.heading_y, second);
+        return heightTilePriority(stream.center, stream.forecast_center, stream.heading_x, stream.heading_y, first)
+            < heightTilePriority(stream.center, stream.forecast_center, stream.heading_x, stream.heading_y, second);
     };
     if (ready_keys.size() > maximum_additions) {
         std::ranges::partial_sort(
@@ -1845,12 +1924,34 @@ uint32_t GameServer::admitHeightTileDeliveries(
 void GameServer::refreshHeightTileInterest(PreviewStream& stream, shared::Player const& player)
 {
     shared::HeightTileKey const next_center = heightTileKeyForPlayer(player);
+    std::optional<shared::Direction> forecast_direction;
+    if (PlayerReplication* const replication = playerReplication(stream.client_id);
+        replication != nullptr && !replication->pending_inputs.empty()) {
+        forecast_direction = replication->pending_inputs.front().direction;
+    } else {
+        forecast_direction = stream.last_actual_direction;
+    }
+    std::optional<shared::HeightTileKey> next_forecast_center;
+    if (forecast_direction.has_value()) {
+        std::optional<shared::PlayerPosition> const forecast_position = m_world.forecastFlightPlayerPosition(
+            stream.client_id,
+            *forecast_direction
+        );
+        if (forecast_position.has_value()) {
+            next_forecast_center = heightTileKeyForCoordinates(
+                forecast_position->x,
+                forecast_position->y
+            );
+        }
+    }
     shared::HeightTileHeading const heading = shared::canonicalHeightTileHeading(
         stream.heading_x, stream.heading_y
     );
+    bool const forecast_changed = stream.forecast_center != next_forecast_center;
     if (stream.has_center && stream.center == next_center
         && stream.applied_heading_x == heading.x
-        && stream.applied_heading_y == heading.y) {
+        && stream.applied_heading_y == heading.y
+        && !forecast_changed) {
         return;
     }
     auto const priority_order = std::ranges::find_if(
@@ -1870,14 +1971,18 @@ void GameServer::refreshHeightTileInterest(PreviewStream& stream, shared::Player
         delta = shared::heightTileInterestDelta(stream.center, next_center, stream.render_distance);
     }
     stream.center = next_center;
+    stream.forecast_center = next_forecast_center;
     stream.has_center = true;
     stream.applied_heading_x = heading.x;
     stream.applied_heading_y = heading.y;
     stream.priority_offsets = priority_order->keys;
     stream.priority_cursor_generation = stream.generation;
-    if (center_changed || heading_changed) {
+    if (center_changed || heading_changed || forecast_changed) {
         stream.priority_cursor = 0U;
         stream.removal_candidates.clear();
+    }
+    if (center_changed || heading_changed || forecast_changed) {
+        stream.background_cursor = 0U;
     }
     if (center_changed) {
         for (shared::HeightTileKey const key : delta.additions) {
@@ -1895,59 +2000,65 @@ void GameServer::refreshHeightTileInterest(PreviewStream& stream, shared::Player
             ) * 8U) {
             stream.urgent_keys.clear();
             stream.priority_cursor = 0U;
-        } else {
-            std::ranges::sort(stream.urgent_keys, [&stream](
-                shared::HeightTileKey const first,
-                shared::HeightTileKey const second
-            ) {
-                return heightTilePriority(
-                    stream.center, stream.heading_x, stream.heading_y, first
-                ) < heightTilePriority(
-                    stream.center, stream.heading_x, stream.heading_y, second
-                );
-            });
         }
-        auto const now = std::chrono::steady_clock::now();
-        stream.background_generation_tokens = 0.0;
-        stream.background_budget_updated_at = now;
-        stream.background_generation_eligible_at = now + std::chrono::milliseconds{250};
+        if (!had_center) {
+            auto const now = std::chrono::steady_clock::now();
+            stream.background_generation_tokens = 0.0;
+            stream.background_budget_updated_at = now;
+            stream.background_generation_eligible_at = now + std::chrono::milliseconds{250};
+        }
+    }
+    if (center_changed || heading_changed || forecast_changed) {
+        std::ranges::sort(stream.urgent_keys, [&stream](
+            shared::HeightTileKey const first,
+            shared::HeightTileKey const second
+        ) {
+            return heightTilePriority(
+                stream.center,
+                stream.forecast_center,
+                stream.heading_x,
+                stream.heading_y,
+                first
+            ) < heightTilePriority(
+                stream.center,
+                stream.forecast_center,
+                stream.heading_x,
+                stream.heading_y,
+                second
+            );
+        });
     }
 
-    auto const is_near_tile = [&stream](shared::HeightTileKey const key) {
-        return shared::heightTileGenerationBand(
-            stream.center,
-            stream.heading_x,
-            stream.heading_y,
-            key
-        ) <= shared::HeightTileGenerationBand::Near;
+    auto const is_tracked = [&stream](shared::HeightTileKey const key) {
+        return (stream.resident_keys.contains(key) && !stream.inflight_removal_keys.contains(key))
+            || stream.queued_keys.contains(key)
+            || stream.dispatched_keys.contains(key)
+            || stream.ready_tiles.contains(key)
+            || stream.inflight_addition_keys.contains(key);
     };
-    static constexpr int32_t NEAR_RADIUS = 8;
-    static constexpr int32_t NEAR_RADIUS_SQUARED = NEAR_RADIUS * NEAR_RADIUS;
-    auto const near_missing = [&stream] {
-        for (int32_t y = -NEAR_RADIUS; y <= NEAR_RADIUS; ++y) {
-            for (int32_t x = -NEAR_RADIUS; x <= NEAR_RADIUS; ++x) {
-                if (x * x + y * y > NEAR_RADIUS_SQUARED) {
-                    continue;
-                }
-                shared::HeightTileKey const key = shared::normalizeHeightTileKey({
-                    .x = stream.center.x + x,
-                    .y = stream.center.y + y,
-                });
-                if (stream.desires(key) && !stream.resident_keys.contains(key)
-                    && !stream.queued_keys.contains(key)
-                    && !stream.dispatched_keys.contains(key)
-                    && !stream.ready_tiles.contains(key)
-                    && !stream.inflight_addition_keys.contains(key)) {
-                    return true;
-                }
-            }
-        }
-        return false;
-    }();
-    auto const should_cancel_key = [&stream, &is_near_tile, near_missing](
+    bool const near_untracked = nearWindowHasUntrackedTiles(
+        stream.center,
+        [&stream](shared::HeightTileKey const key) { return stream.desires(key); },
+        is_tracked
+    );
+    bool const forecast_untracked = stream.forecast_center.has_value()
+        && nearWindowHasUntrackedTiles(
+            *stream.forecast_center,
+            [&stream](shared::HeightTileKey const key) { return stream.desires(key); },
+            is_tracked
+        );
+    auto const should_cancel_key = [&stream, near_untracked, forecast_untracked](
         shared::HeightTileKey const key
     ) {
-        return !stream.desires(key) || (near_missing && !is_near_tile(key));
+        if (!stream.desires(key)) {
+            return true;
+        }
+        if (near_untracked) {
+            return !isCurrentNearHeightTile(stream.center, key);
+        }
+        return forecast_untracked
+            && !isCurrentNearHeightTile(stream.center, key)
+            && !isForecastNearHeightTile(stream.forecast_center, key);
     };
     std::erase_if(stream.queued_keys, should_cancel_key);
     stream.scheduler.cancelQueuedIf([&should_cancel_key](shared::GenerationJob const& job) {
@@ -1968,11 +2079,13 @@ void GameServer::refreshHeightTileInterest(PreviewStream& stream, shared::Player
     auto const order_jobs = [&stream](shared::GenerationJob const& first, shared::GenerationJob const& second) {
         return heightTilePriority(
             stream.center,
+            stream.forecast_center,
             stream.heading_x,
             stream.heading_y,
             {.x = first.coordinate.x, .y = first.coordinate.y}
         ) < heightTilePriority(
             stream.center,
+            stream.forecast_center,
             stream.heading_x,
             stream.heading_y,
             {.x = second.coordinate.x, .y = second.coordinate.y}
@@ -1986,8 +2099,16 @@ void GameServer::refreshHeightTileInterest(PreviewStream& stream, shared::Player
         return order_jobs(first.job, second.job);
     });
 
-    std::erase_if(stream.ready_tiles, [&stream](auto const& entry) {
-        return !stream.desires(entry.first);
+    std::erase_if(stream.ready_tiles, [&stream, near_untracked, forecast_untracked](auto const& entry) {
+        if (!stream.desires(entry.first)) {
+            return true;
+        }
+        if (near_untracked) {
+            return !isCurrentNearHeightTile(stream.center, entry.first);
+        }
+        return forecast_untracked
+            && !isCurrentNearHeightTile(stream.center, entry.first)
+            && !isForecastNearHeightTile(stream.forecast_center, entry.first);
     });
     fillHeightTileQueue(stream);
 }
@@ -2007,11 +2128,13 @@ void GameServer::fillHeightTileQueue(PreviewStream& stream)
         auto const order_jobs = [&stream](shared::GenerationJob const& first, shared::GenerationJob const& second) {
             return heightTilePriority(
                 stream.center,
+                stream.forecast_center,
                 stream.heading_x,
                 stream.heading_y,
                 {.x = first.coordinate.x, .y = first.coordinate.y}
             ) < heightTilePriority(
                 stream.center,
+                stream.forecast_center,
                 stream.heading_x,
                 stream.heading_y,
                 {.x = second.coordinate.x, .y = second.coordinate.y}
@@ -2030,10 +2153,6 @@ void GameServer::fillHeightTileQueue(PreviewStream& stream)
             reorder_queued();
         }
     };
-    if (stream.scheduler.pendingCount() >= PreviewStream::MAX_QUEUED_TILES
-        || stream.priority_offsets.empty()) {
-        return;
-    }
     auto const enqueue = [&stream, &queued_submissions](
         shared::HeightTileKey const key,
         uint32_t& submissions
@@ -2062,50 +2181,97 @@ void GameServer::fillHeightTileQueue(PreviewStream& stream)
     };
     uint32_t const initial_slots = PreviewStream::MAX_QUEUED_TILES
         - static_cast<uint32_t>(stream.scheduler.pendingCount());
+    auto const is_tracked = [&stream](shared::HeightTileKey const key) {
+        return (stream.resident_keys.contains(key) && !stream.inflight_removal_keys.contains(key))
+            || stream.queued_keys.contains(key)
+            || stream.dispatched_keys.contains(key)
+            || stream.ready_tiles.contains(key)
+            || stream.inflight_addition_keys.contains(key);
+    };
+    bool const near_untracked = nearWindowHasUntrackedTiles(
+        stream.center,
+        [&stream](shared::HeightTileKey const key) { return stream.desires(key); },
+        is_tracked
+    );
+    bool const forecast_untracked = stream.forecast_center.has_value()
+        && nearWindowHasUntrackedTiles(
+            *stream.forecast_center,
+            [&stream](shared::HeightTileKey const key) { return stream.desires(key); },
+            is_tracked
+        );
+    if (near_untracked) {
+        std::erase_if(stream.ready_tiles, [&stream](auto const& entry) {
+            return !stream.desires(entry.first)
+                || !isCurrentNearHeightTile(stream.center, entry.first);
+        });
+    } else if (forecast_untracked) {
+        std::erase_if(stream.ready_tiles, [&stream](auto const& entry) {
+            return !stream.desires(entry.first)
+                || (!isCurrentNearHeightTile(stream.center, entry.first)
+                    && !isForecastNearHeightTile(stream.forecast_center, entry.first));
+        });
+    }
+    if (stream.scheduler.pendingCount() >= PreviewStream::MAX_QUEUED_TILES
+        || stream.priority_offsets.empty()) {
+        return;
+    }
+    if (near_untracked) {
+        uint32_t near_submissions = 0U;
+        for (int32_t y = -CURRENT_NEAR_WINDOW_RADIUS; y <= CURRENT_NEAR_WINDOW_RADIUS; ++y) {
+            for (int32_t x = -CURRENT_NEAR_WINDOW_RADIUS; x <= CURRENT_NEAR_WINDOW_RADIUS; ++x) {
+                shared::HeightTileKey const key = shared::normalizeHeightTileKey({
+                    .x = stream.center.x + x,
+                    .y = stream.center.y + y,
+                });
+                if (stream.desires(key) && !enqueue(key, near_submissions)) {
+                    reorder_if_submitted();
+                    return;
+                }
+                if (near_submissions >= initial_slots) {
+                    reorder_if_submitted();
+                    return;
+                }
+            }
+        }
+        reorder_if_submitted();
+        return;
+    }
+    if (stream.forecast_center.has_value() && forecast_untracked) {
+        uint32_t forecast_submissions = 0U;
+        for (int32_t y = -CURRENT_NEAR_WINDOW_RADIUS; y <= CURRENT_NEAR_WINDOW_RADIUS; ++y) {
+            for (int32_t x = -CURRENT_NEAR_WINDOW_RADIUS; x <= CURRENT_NEAR_WINDOW_RADIUS; ++x) {
+                shared::HeightTileKey const key = shared::normalizeHeightTileKey({
+                    .x = stream.forecast_center->x + x,
+                    .y = stream.forecast_center->y + y,
+                });
+                if (stream.desires(key) && !enqueue(key, forecast_submissions)) {
+                    reorder_if_submitted();
+                    return;
+                }
+            }
+        }
+        bool const forecast_still_untracked = nearWindowHasUntrackedTiles(
+            *stream.forecast_center,
+            [&stream](shared::HeightTileKey const key) { return stream.desires(key); },
+            is_tracked
+        );
+        if (forecast_still_untracked) {
+            reorder_if_submitted();
+            return;
+        }
+    }
     uint32_t const urgent_submission_limit = stream.urgent_cursor < stream.urgent_keys.size()
         ? std::min<uint32_t>(64U, std::max<uint32_t>(1U, initial_slots / 2U))
         : 0U;
     uint32_t urgent_submissions = 0U;
     uint32_t urgent_inspections = 0U;
-    auto const is_near_tile = [&stream](shared::HeightTileKey const key) {
-        return shared::heightTileGenerationBand(
-            stream.center,
-            stream.heading_x,
-            stream.heading_y,
-            key
-        ) <= shared::HeightTileGenerationBand::Near;
-    };
-    static constexpr int32_t NEAR_RADIUS = 8;
-    static constexpr int32_t NEAR_RADIUS_SQUARED = NEAR_RADIUS * NEAR_RADIUS;
-    auto const near_missing = [&stream] {
-        for (int32_t y = -NEAR_RADIUS; y <= NEAR_RADIUS; ++y) {
-            for (int32_t x = -NEAR_RADIUS; x <= NEAR_RADIUS; ++x) {
-                if (x * x + y * y > NEAR_RADIUS_SQUARED) {
-                    continue;
-                }
-                shared::HeightTileKey const key = shared::normalizeHeightTileKey({
-                    .x = stream.center.x + x,
-                    .y = stream.center.y + y,
-                });
-                if (stream.desires(key) && !stream.resident_keys.contains(key)
-                    && !stream.queued_keys.contains(key)
-                    && !stream.dispatched_keys.contains(key)
-                    && !stream.ready_tiles.contains(key)
-                    && !stream.inflight_addition_keys.contains(key)) {
-                    return true;
-                }
-            }
-        }
-        return false;
-    }();
     while (stream.urgent_cursor < stream.urgent_keys.size()
         && urgent_inspections < PreviewStream::MAX_URGENT_CANDIDATES_PER_PUMP
         && urgent_submissions < urgent_submission_limit
         && stream.scheduler.pendingCount() < PreviewStream::MAX_QUEUED_TILES) {
         shared::HeightTileKey const key = stream.urgent_keys[stream.urgent_cursor];
         ++urgent_inspections;
-        if (stream.desires(key) && (!near_missing || is_near_tile(key))
-            && !enqueue(key, urgent_submissions)) {
+        if (stream.desires(key) && !enqueue(key, urgent_submissions)) {
             reorder_if_submitted();
             return;
         }
@@ -2277,7 +2443,11 @@ void GameServer::dispatchHeightTileWork()
                 stream.heading_x,
                 stream.heading_y,
                 {.x = next->coordinate.x, .y = next->coordinate.y}
-            ) == shared::HeightTileGenerationBand::Background;
+            ) == shared::HeightTileGenerationBand::Background
+                && !isForecastNearHeightTile(
+                    stream.forecast_center,
+                    {.x = next->coordinate.x, .y = next->coordinate.y}
+                );
             if (background && stream.background_generation_tokens < 1.0) {
                 continue;
             }
@@ -2344,6 +2514,7 @@ void GameServer::publishHeightTileResults()
         auto const priority = [&stream](shared::GenerationJob const& job) {
             return heightTilePriority(
                 stream->center,
+                stream->forecast_center,
                 stream->heading_x,
                 stream->heading_y,
                 {.x = job.coordinate.x, .y = job.coordinate.y}
