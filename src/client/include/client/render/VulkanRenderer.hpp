@@ -3,6 +3,7 @@
 #include <client/Camera.hpp>
 #include <client/render/DebugHud.hpp>
 #include <client/render/ShaderAssets.hpp>
+#include <client/render/StoneFaceCapacity.hpp>
 #include <client/render/TextRenderer.hpp>
 
 #include <core/common/NonCopyable.hpp>
@@ -81,6 +82,9 @@ struct RendererRuntimeInfo final {
     RendererPresentMode present_mode = RendererPresentMode::Unknown;
     RendererPipelinePath pipeline_path = RendererPipelinePath::Vertex;
     std::chrono::nanoseconds cpu_acquire_wait_duration{ 0 };
+    std::chrono::nanoseconds cpu_presentation_recreation_duration{ 0 };
+    bool presentation_recreation_attempted = false;
+    bool presentation_recreation_deferred = false;
     std::chrono::nanoseconds cpu_command_record_duration{ 0 };
     std::chrono::nanoseconds cpu_visible_range_collection_duration{ 0 };
     std::chrono::nanoseconds cpu_indirect_prepare_duration{ 0 };
@@ -98,6 +102,7 @@ struct RendererRuntimeInfo final {
     uint64_t chunk_mesh_upload_count{ 0 };
     uint32_t height_tile_mesh_count{ 0 };
     uint32_t stone_face_capacity{ 0 };
+    StoneFaceGrowthDiagnostics stone_face_growth;
     uint64_t diagnostic_render_attempt_id{ 0 };
     bool diagnostic_frame_recorded = false;
     bool diagnostic_indexed_stone_quads = false;

@@ -179,7 +179,7 @@
         "vcpkg-configuration.json",
         "vcpkg.json"
       ],
-      "sources_sha256": "b9fd674392b504da2664fcba7d945053cbd62c31ac3e6d7298f2e1ae65ae614f"
+      "sources_sha256": "9645fc985462b229ed78700c85c9299369a5c18766dbeed1183e507844ee208c"
     },
     {
       "guide": "docs/code/CORE.md",
@@ -309,7 +309,7 @@
     },
     {
       "guide": "docs/code/RENDERING.md",
-      "guide_sha256": "3a741ec5fa1f8a628238f358790b53f03528a2b11e1a29d3d66b9dcc80c03c22",
+      "guide_sha256": "0a2c58602ce4083b9b2b4c9b605872c8f7d59d9a9045f29002b1a47a624357c1",
       "id": "rendering",
       "sources": [
         "src/client/CMakeLists.txt",
@@ -375,6 +375,7 @@
         "tests/client/renderer_golden_tests.cpp",
         "tests/client/renderer_smoke_tests.cpp",
         "tests/client/shader_assets_tests.cpp",
+        "tests/client/stone_face_capacity_tests.cpp",
         "tests/client/stone_indirect_draws_tests.cpp",
         "tests/client/stone_renderer_tests.cpp",
         "tests/client/text_renderer_tests.cpp",
@@ -385,7 +386,7 @@
         "tests/testsupport/include/testsupport/AdverseTransport.hpp",
         "tests/testsupport/include/testsupport/ImageComparison.hpp"
       ],
-      "sources_sha256": "403f25bb2ddc8f5270658acb0619399573dbb12cf49c23fbcd879380c04820b7"
+      "sources_sha256": "d2649c1095885986d3c6a74105098ce79df38bf8a97d58618b66f2536a361833"
     }
   ],
   "version": 1

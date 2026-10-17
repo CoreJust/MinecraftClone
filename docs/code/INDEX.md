@@ -367,6 +367,7 @@ Files:
 - [`tests/client/renderer_golden_tests.cpp`](../../tests/client/renderer_golden_tests.cpp)
 - [`tests/client/renderer_smoke_tests.cpp`](../../tests/client/renderer_smoke_tests.cpp)
 - [`tests/client/shader_assets_tests.cpp`](../../tests/client/shader_assets_tests.cpp)
+- [`tests/client/stone_face_capacity_tests.cpp`](../../tests/client/stone_face_capacity_tests.cpp)
 - [`tests/client/stone_indirect_draws_tests.cpp`](../../tests/client/stone_indirect_draws_tests.cpp)
 - [`tests/client/stone_renderer_tests.cpp`](../../tests/client/stone_renderer_tests.cpp)
 - [`tests/client/text_renderer_tests.cpp`](../../tests/client/text_renderer_tests.cpp)

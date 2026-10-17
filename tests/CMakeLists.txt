@@ -259,6 +259,7 @@ if(MC_BUILD_CLIENT AND NOT ANDROID)
             client/player_preview_lod_tests.cpp
             client/preview_mesh_work_queue_tests.cpp
             client/preview_meshing_tests.cpp
+            client/stone_face_capacity_tests.cpp
             android/input_tests.cpp
             client/renderer_geometry_tests.cpp
             client/shader_assets_tests.cpp

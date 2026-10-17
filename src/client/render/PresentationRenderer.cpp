@@ -1328,6 +1328,9 @@ struct VulkanRenderer::Impl final {
         m_diagnostic_submitted_stone_quad_count = 0U;
         m_current_diagnostic_query_pool = VK_NULL_HANDLE;
         m_cpu_acquire_wait_duration = std::chrono::nanoseconds::zero();
+        m_cpu_presentation_recreation_duration = std::chrono::nanoseconds::zero();
+        m_presentation_recreation_attempted = false;
+        m_presentation_recreation_deferred = false;
         m_cpu_command_record_duration = std::chrono::nanoseconds::zero();
         m_cpu_visible_range_collection_duration = std::chrono::nanoseconds::zero();
         m_cpu_indirect_prepare_duration = std::chrono::nanoseconds::zero();
@@ -1335,6 +1338,31 @@ struct VulkanRenderer::Impl final {
         m_cpu_command_record_residual_duration = std::chrono::nanoseconds::zero();
         m_cpu_complete_present_wait_duration = std::chrono::nanoseconds::zero();
         m_cpu_frame_duration = std::chrono::nanoseconds::zero();
+        bool const presented = m_pending_stone_face_growth.render(
+            requiredValue(m_stone_face_buffer).capacity(),
+            deadline,
+            [this](uint32_t const target_capacity, std::chrono::steady_clock::time_point const frame_deadline) {
+                static_cast<void>(growStoneFaceCapacity(target_capacity, frame_deadline));
+                return requiredValue(m_stone_face_buffer).capacity();
+            },
+            std::chrono::steady_clock::now(),
+            [this, players, debug_hud_input, debug_hud_dpi_scale, deadline] {
+                return renderWithReadyStoneFaceCapacity(players, debug_hud_input, debug_hud_dpi_scale, deadline);
+            }
+        );
+        if (!presented) {
+            m_last_presented = false;
+        }
+        return presented;
+    }
+
+    [[nodiscard]] bool renderWithReadyStoneFaceCapacity(
+        std::span<PlayerRenderData const> const players,
+        DebugHudInput debug_hud_input,
+        float const debug_hud_dpi_scale,
+        std::chrono::steady_clock::time_point const deadline
+    )
+    {
         debug_hud_input.presented = m_last_presented;
         m_debug_hud_state.setDpiScale(debug_hud_dpi_scale);
         m_debug_hud_state.update(debug_hud_input);
@@ -1379,7 +1407,29 @@ struct VulkanRenderer::Impl final {
         );
         if (acquired == core::graphics::vulkan::PresentationAcquireResult::NeedsRecreation) {
             m_last_presented = false;
-            recreate(m_context->info().extent, std::chrono::steady_clock::time_point::max());
+            static constexpr auto MAXIMUM_RECREATION_WAIT = std::chrono::milliseconds{ 8 };
+            std::chrono::steady_clock::time_point const recreation_started_at = std::chrono::steady_clock::now();
+            std::chrono::steady_clock::time_point const recreation_deadline = std::min(
+                deadline,
+                recreation_started_at + MAXIMUM_RECREATION_WAIT
+            );
+            m_presentation_recreation_attempted = true;
+            try {
+                m_presentation_recreation_deferred = !detail::tryRecreatePresentationWithinDeadline(
+                    recreation_deadline,
+                    [this](std::chrono::steady_clock::time_point const bounded_deadline) {
+                        recreate(m_context->info().extent, bounded_deadline);
+                    }
+                );
+            } catch (...) {
+                m_cpu_presentation_recreation_duration = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                    std::chrono::steady_clock::now() - recreation_started_at
+                );
+                throw;
+            }
+            m_cpu_presentation_recreation_duration = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                std::chrono::steady_clock::now() - recreation_started_at
+            );
             return false;
         }
         if (acquired != core::graphics::vulkan::PresentationAcquireResult::Ready || !frame.has_value()) {
@@ -1732,8 +1782,24 @@ struct VulkanRenderer::Impl final {
             });
         }
 
-        if (std::chrono::steady_clock::now() >= deadline || !tryEnsureStoneFaceCapacity(required_capacity, deadline)
-            || std::chrono::steady_clock::now() >= deadline) {
+        bool const growth_required = required_capacity > m_stone_face_growth.actual_capacity;
+        recordStoneFaceCapacityRequest(required_capacity);
+        if (std::chrono::steady_clock::now() >= deadline) {
+            if (growth_required) {
+                m_pending_stone_face_growth.coalesce(required_capacity);
+                ++m_stone_face_growth.pre_growth_deadline_rejection_count;
+                ++m_stone_face_growth.publication_retry_count;
+            }
+            return false;
+        }
+        if (!tryEnsureStoneFaceCapacity(required_capacity, deadline)) {
+            return false;
+        }
+        if (std::chrono::steady_clock::now() >= deadline) {
+            if (growth_required) {
+                ++m_stone_face_growth.post_growth_deadline_rejection_count;
+                ++m_stone_face_growth.publication_retry_count;
+            }
             return false;
         }
         m_free_stone_ranges = std::move(free_ranges);
@@ -1850,6 +1916,9 @@ struct VulkanRenderer::Impl final {
             .present_mode = rendererPresentMode(info.present_mode),
             .pipeline_path = RendererPipelinePath::Vertex,
             .cpu_acquire_wait_duration = m_cpu_acquire_wait_duration,
+            .cpu_presentation_recreation_duration = m_cpu_presentation_recreation_duration,
+            .presentation_recreation_attempted = m_presentation_recreation_attempted,
+            .presentation_recreation_deferred = m_presentation_recreation_deferred,
             .cpu_command_record_duration = m_cpu_command_record_duration,
             .cpu_visible_range_collection_duration = m_cpu_visible_range_collection_duration,
             .cpu_indirect_prepare_duration = m_cpu_indirect_prepare_duration,
@@ -1867,6 +1936,7 @@ struct VulkanRenderer::Impl final {
             .chunk_mesh_upload_count = m_chunk_mesh_upload_count,
             .height_tile_mesh_count = static_cast<uint32_t>(m_height_tile_slots.size()),
             .stone_face_capacity = requiredValue(m_stone_face_buffer).capacity(),
+            .stone_face_growth = m_stone_face_growth,
             .diagnostic_render_attempt_id = m_diagnostic_render_attempt_id,
             .diagnostic_frame_recorded = m_diagnostic_frame_recorded,
             .diagnostic_indexed_stone_quads = m_diagnostic_indexed_stone_quads,
@@ -2047,6 +2117,7 @@ private:
 
     void clearHeightTileMeshes()
     {
+        m_pending_stone_face_growth.clear();
         m_height_tile_slots.clear();
         m_height_tile_draw_index.clear();
         m_height_tile_draw_index_valid = true;
@@ -2077,38 +2148,91 @@ private:
         return true;
     }
 
+    void recordStoneFaceCapacityRequest(uint32_t const required_capacity) noexcept
+    {
+        if (m_pending_stone_face_growth.targetCapacity() != 0U) {
+            m_pending_stone_face_growth.coalesce(required_capacity);
+        }
+        m_stone_face_growth.last_required_capacity = required_capacity;
+        m_stone_face_growth.required_capacity_high_water = std::max(
+            m_stone_face_growth.required_capacity_high_water, required_capacity
+        );
+    }
+
     [[nodiscard]] bool tryEnsureStoneFaceCapacity(
+        uint32_t const required_capacity,
+        std::chrono::steady_clock::time_point const deadline
+    )
+    {
+        if (m_pending_stone_face_growth.targetCapacity() != 0U) {
+            m_pending_stone_face_growth.coalesce(required_capacity);
+            ++m_stone_face_growth.publication_retry_count;
+            return false;
+        }
+        return growStoneFaceCapacity(required_capacity, deadline);
+    }
+
+    [[nodiscard]] bool recordStoneFaceRecreationFailure(std::exception_ptr const& failure)
+    {
+        return m_pending_stone_face_growth.recordFailure(
+            failure,
+            m_stone_face_capacity,
+            m_recreation_resources_destroyed,
+            std::chrono::steady_clock::now()
+        ) == detail::StoneFaceRecreationFailure::Failed;
+    }
+
+    [[nodiscard]] bool growStoneFaceCapacity(
         uint32_t const required_capacity,
         std::chrono::steady_clock::time_point const deadline
     )
     {
         bool first_attempt = true;
         bool rollback_required = false;
-        return detail::tryGrowStoneFaceCapacity(
+        std::exception_ptr failure;
+        bool const capacity_ready = detail::tryGrowStoneFaceCapacity(
             m_stone_face_capacity,
             required_capacity,
             MAXIMUM_RENDERED_STONE_FACE_COUNT,
             deadline,
-            [this, &first_attempt, &rollback_required](
+            [this, &first_attempt, &rollback_required, &failure](
                 std::chrono::steady_clock::time_point const frame_deadline
             ) {
                 if (!first_attempt && !rollback_required) {
                     return;
                 }
+                bool const target_attempt = first_attempt;
                 first_attempt = false;
                 rollback_required = false;
+                m_stone_face_growth_in_progress = true;
                 try {
                     recreate(m_context->info().extent, frame_deadline);
+                    m_stone_face_growth_in_progress = false;
                     if (!m_stone_face_buffer.has_value()
                         || requiredValue(m_stone_face_buffer).capacity() != m_stone_face_capacity) {
-                        throw std::runtime_error("stone face arena recreation was deferred");
+                        throw detail::StoneFaceRecreationDeferred{};
                     }
                 } catch (...) {
+                    m_stone_face_growth_in_progress = false;
                     rollback_required = m_recreation_resources_destroyed;
+                    if (target_attempt) {
+                        std::exception_ptr const recreation_failure = std::current_exception();
+                        if (recordStoneFaceRecreationFailure(recreation_failure)) {
+                            failure = recreation_failure;
+                        }
+                    }
                     throw;
                 }
-            }
+            },
+            &m_stone_face_growth
         );
+        if (failure) {
+            std::rethrow_exception(failure);
+        }
+        if (!capacity_ready) {
+            ++m_stone_face_growth.publication_retry_count;
+        }
+        return capacity_ready;
     }
 
     void uploadStoredMeshes()
@@ -2128,6 +2252,9 @@ private:
     static void beforeRecreate(void* const user_data)
     {
         Impl& self = *static_cast<Impl*>(user_data);
+        if (self.m_stone_face_growth_in_progress) {
+            ++self.m_stone_face_growth.before_recreate_count;
+        }
         self.m_recreation_resources_destroyed = true;
         self.destroyResources();
     }
@@ -2603,6 +2730,10 @@ private:
             requiredValue(m_resources).physicalDevice(),
             m_stone_face_capacity
         );
+        m_stone_face_growth.actual_capacity = requiredValue(m_stone_face_buffer).capacity();
+        m_stone_face_growth.actual_capacity_high_water = std::max(
+            m_stone_face_growth.actual_capacity_high_water, m_stone_face_growth.actual_capacity
+        );
         m_stone_texture_buffer.emplace(requiredValue(m_resources).device(), requiredValue(m_resources).physicalDevice());
         m_stone_descriptors.emplace(
             requiredValue(m_resources).device(), requiredValue(m_stone_face_buffer), requiredValue(m_stone_texture_buffer)
@@ -3059,6 +3190,9 @@ private:
     FrameCaptureState m_capture_state = FrameCaptureState::Disabled;
     std::optional<RendererFrameCapture> m_last_capture;
     std::chrono::nanoseconds m_cpu_acquire_wait_duration{ 0 };
+    std::chrono::nanoseconds m_cpu_presentation_recreation_duration{ 0 };
+    bool m_presentation_recreation_attempted = false;
+    bool m_presentation_recreation_deferred = false;
     std::chrono::nanoseconds m_cpu_command_record_duration{ 0 };
     std::chrono::nanoseconds m_cpu_visible_range_collection_duration{ 0 };
     std::chrono::nanoseconds m_cpu_indirect_prepare_duration{ 0 };
@@ -3081,6 +3215,9 @@ private:
     uint32_t m_debug_hud_draw_count = 0U;
     std::vector<StoneFaceInstance> m_stone_faces;
     uint32_t m_stone_face_capacity = INITIAL_RENDERED_STONE_FACE_CAPACITY;
+    StoneFaceGrowthDiagnostics m_stone_face_growth;
+    bool m_stone_face_growth_in_progress = false;
+    detail::PendingStoneFaceGrowth m_pending_stone_face_growth;
     StoneDrawRange m_legacy_draw_range;
     std::unordered_map<shared::HeightTileCoordinate, HeightTileSlot, HeightTileCoordinateHash> m_height_tile_slots;
     uint32_t m_height_tile_face_count = 0U;

@@ -20,11 +20,13 @@
 #include <chrono>
 #include <cstdint>
 #include <cstdlib>
+#include <exception>
 #include <filesystem>
 #include <memory>
 #include <span>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -32,6 +34,12 @@ namespace {
 
 class InertPresentationBackend final : public core::graphics::vulkan::PresentationBackend {
 public:
+    core::graphics::vulkan::FenceWaitResult recreation_wait_result = core::graphics::vulkan::FenceWaitResult::Completed;
+    bool ready = false;
+    uint32_t acquire_count = 0U;
+    uint32_t submit_count = 0U;
+    std::vector<std::chrono::nanoseconds> recreation_wait_budgets;
+
     [[nodiscard]] core::graphics::vulkan::FenceWaitResult waitForSlot(
         uint32_t,
         std::chrono::nanoseconds
@@ -41,10 +49,11 @@ public:
     }
 
     [[nodiscard]] core::graphics::vulkan::FenceWaitResult waitForRecreation(
-        std::chrono::nanoseconds
+        std::chrono::nanoseconds const deadline
     ) override
     {
-        return core::graphics::vulkan::FenceWaitResult::Completed;
+        recreation_wait_budgets.push_back(deadline);
+        return recreation_wait_result;
     }
 
     [[nodiscard]] core::graphics::vulkan::PresentationAcquireResult acquire(
@@ -53,19 +62,22 @@ public:
         uint32_t& image
     ) override
     {
+        ++acquire_count;
         image = 0U;
-        return core::graphics::vulkan::PresentationAcquireResult::NotReady;
+        return ready ? core::graphics::vulkan::PresentationAcquireResult::Ready
+            : core::graphics::vulkan::PresentationAcquireResult::NotReady;
     }
 
     void record(VkCommandBuffer, void (*)(VkCommandBuffer, void*), void*) override {}
-    void submit(uint32_t, VkCommandBuffer) override {}
+    void submit(uint32_t, VkCommandBuffer) override { ++submit_count; }
 
     [[nodiscard]] core::graphics::vulkan::PresentationAcquireResult present(
         uint32_t,
         uint32_t
     ) override
     {
-        return core::graphics::vulkan::PresentationAcquireResult::NotReady;
+        return ready ? core::graphics::vulkan::PresentationAcquireResult::Ready
+            : core::graphics::vulkan::PresentationAcquireResult::NotReady;
     }
 
     void abandon(uint32_t, uint32_t) noexcept override {}
@@ -74,6 +86,33 @@ public:
     [[nodiscard]] std::span<uint8_t const> completedReadback(uint32_t) const noexcept override
     {
         return {};
+    }
+};
+
+struct PendingGrowthPresentationFixture final {
+    InertPresentationBackend* backend = nullptr;
+    std::shared_ptr<core::graphics::vulkan::PresentationContext> context;
+
+    PendingGrowthPresentationFixture()
+    {
+        auto owned_backend = std::make_unique<InertPresentationBackend>();
+        backend = owned_backend.get();
+        backend->ready = true;
+        context = core::graphics::vulkan::PresentationContext::createForTesting(
+            { .extent = { .width = 64U, .height = 64U } }, std::move(owned_backend)
+        );
+    }
+
+    [[nodiscard]] bool present()
+    {
+        std::optional<core::graphics::vulkan::PresentationContext::Frame> frame;
+        if (context->acquire(std::chrono::milliseconds{ 8 }, frame)
+                != core::graphics::vulkan::PresentationAcquireResult::Ready || !frame) {
+            return false;
+        }
+        frame->record([](VkCommandBuffer, void*) {}, nullptr);
+        context->complete(*frame);
+        return true;
     }
 };
 
@@ -443,6 +482,10 @@ TEST(RendererSmokeTest, HeightTileBatchKeepsBothOldMeshesWhenDeadlinePreventsAre
     ASSERT_EQ(renderer.runtimeInfo().stone_face_capacity, INITIAL_CAPACITY);
     ASSERT_EQ(renderer.runtimeInfo().height_tile_mesh_count, FILLER_TILE_COUNT + BATCH_TILE_COUNT);
     ASSERT_EQ(renderer.runtimeInfo().chunk_face_count, original_face_count);
+    EXPECT_EQ(renderer.runtimeInfo().stone_face_growth.growth_attempt_count, 0U);
+    EXPECT_EQ(renderer.runtimeInfo().stone_face_growth.before_recreate_count, 0U);
+    EXPECT_EQ(renderer.runtimeInfo().stone_face_growth.actual_capacity, INITIAL_CAPACITY);
+    EXPECT_EQ(renderer.runtimeInfo().stone_face_growth.actual_capacity_high_water, INITIAL_CAPACITY);
     renderer.setDebugHudEnabled(false);
     renderer.setCamera({ .position = { 1'024.0, -20.0, 18.0 }, .angles = { .pitch_degrees = -25.0 } });
     auto const capture_installed = [&] {
@@ -467,6 +510,10 @@ TEST(RendererSmokeTest, HeightTileBatchKeepsBothOldMeshesWhenDeadlinePreventsAre
     EXPECT_EQ(renderer.runtimeInfo().stone_face_capacity, INITIAL_CAPACITY);
     EXPECT_EQ(renderer.runtimeInfo().height_tile_mesh_count, FILLER_TILE_COUNT + BATCH_TILE_COUNT);
     EXPECT_EQ(renderer.runtimeInfo().chunk_face_count, original_face_count);
+    EXPECT_EQ(renderer.runtimeInfo().stone_face_growth.pre_growth_deadline_rejection_count, 1U);
+    EXPECT_EQ(renderer.runtimeInfo().stone_face_growth.growth_attempt_count, 0U);
+    EXPECT_EQ(renderer.runtimeInfo().stone_face_growth.publication_retry_count, 1U);
+    EXPECT_GT(renderer.runtimeInfo().stone_face_growth.last_required_capacity, INITIAL_CAPACITY);
     auto const retained_capture = capture_installed();
     ASSERT_TRUE(retained_capture.has_value());
     EXPECT_EQ(retained_capture->rgba8, original_capture->rgba8);
@@ -474,6 +521,19 @@ TEST(RendererSmokeTest, HeightTileBatchKeepsBothOldMeshesWhenDeadlinePreventsAre
 
     ASSERT_TRUE(renderer.upsertHeightTileMeshes(replacements, std::chrono::steady_clock::now() + TIMEOUT));
     EXPECT_GT(renderer.runtimeInfo().stone_face_capacity, INITIAL_CAPACITY);
+    auto const growth = renderer.runtimeInfo().stone_face_growth;
+    EXPECT_EQ(growth.pre_growth_deadline_rejection_count, 1U);
+    EXPECT_EQ(growth.growth_attempt_count, 1U);
+    EXPECT_EQ(growth.before_recreate_count, 1U);
+    EXPECT_EQ(growth.growth_success_count, 1U);
+    EXPECT_EQ(growth.deferred_recreation_count, 0U);
+    EXPECT_EQ(growth.recreation_exception_count, 0U);
+    EXPECT_EQ(growth.rollback_count, 0U);
+    EXPECT_EQ(growth.publication_retry_count, 1U);
+    EXPECT_EQ(growth.last_target_capacity, renderer.runtimeInfo().stone_face_capacity);
+    EXPECT_EQ(growth.actual_capacity, renderer.runtimeInfo().stone_face_capacity);
+    EXPECT_EQ(growth.actual_capacity_high_water, renderer.runtimeInfo().stone_face_capacity);
+    EXPECT_GE(growth.growth_work_duration, std::chrono::nanoseconds::zero());
     EXPECT_EQ(renderer.runtimeInfo().height_tile_mesh_count, FILLER_TILE_COUNT + BATCH_TILE_COUNT);
     EXPECT_EQ(
         renderer.runtimeInfo().chunk_face_count,
@@ -615,6 +675,553 @@ TEST(RendererSmokeTest, FailedStoneFaceArenaGrowthRetriesWithOriginalDeadlineAnd
         recreation_deadlines,
         (std::vector<std::chrono::steady_clock::time_point>{ FRAME_DEADLINE, FRAME_DEADLINE })
     );
+}
+
+TEST(RendererSmokeTest, DeferredArenaRecreationHasSeparateAttributionAndKeepsRollbackDeadline)
+{
+    static constexpr uint32_t INITIAL_CAPACITY = 8U;
+    static constexpr uint32_t REQUIRED_CAPACITY = 9U;
+    static constexpr uint32_t MAXIMUM_CAPACITY = 16U;
+    static constexpr auto FRAME_DEADLINE = std::chrono::steady_clock::time_point{
+        std::chrono::steady_clock::duration{ 123'456 }
+    };
+
+    uint32_t capacity = INITIAL_CAPACITY;
+    client::StoneFaceGrowthDiagnostics diagnostics;
+    std::vector<uint32_t> recreated_capacities;
+    auto const recreate = [&](std::chrono::steady_clock::time_point const deadline) {
+        EXPECT_EQ(deadline, FRAME_DEADLINE);
+        recreated_capacities.push_back(capacity);
+        if (capacity != INITIAL_CAPACITY) {
+            throw client::detail::StoneFaceRecreationDeferred{};
+        }
+    };
+    EXPECT_FALSE(client::detail::tryGrowStoneFaceCapacity(
+        capacity, REQUIRED_CAPACITY, MAXIMUM_CAPACITY, FRAME_DEADLINE, recreate, &diagnostics
+    ));
+
+    EXPECT_EQ(capacity, INITIAL_CAPACITY);
+    EXPECT_EQ(recreated_capacities, (std::vector<uint32_t>{ MAXIMUM_CAPACITY, INITIAL_CAPACITY }));
+    EXPECT_EQ(diagnostics.growth_attempt_count, 1U);
+    EXPECT_EQ(diagnostics.before_recreate_count, 0U);
+    EXPECT_EQ(diagnostics.deferred_recreation_count, 1U);
+    EXPECT_EQ(diagnostics.recreation_exception_count, 0U);
+    EXPECT_EQ(diagnostics.recreation_unknown_exception_count, 0U);
+    EXPECT_EQ(std::string_view{ diagnostics.first_recreation_exception_reason.data() }, "");
+    EXPECT_EQ(std::string_view{ diagnostics.last_recreation_exception_reason.data() }, "");
+    EXPECT_EQ(diagnostics.recreation_exception_before_hook_count, 0U);
+    EXPECT_EQ(diagnostics.growth_success_count, 0U);
+    EXPECT_EQ(diagnostics.rollback_count, 1U);
+    EXPECT_EQ(diagnostics.last_required_capacity, REQUIRED_CAPACITY);
+    EXPECT_EQ(diagnostics.last_target_capacity, MAXIMUM_CAPACITY);
+    EXPECT_GE(diagnostics.growth_work_duration, std::chrono::nanoseconds::zero());
+}
+
+TEST(RendererSmokeTest, ArenaRecreationExceptionBeforeHookDoesNotMasqueradeAsDeferralAndCanRetry)
+{
+    static constexpr uint32_t INITIAL_CAPACITY = 8U;
+    static constexpr uint32_t REQUIRED_CAPACITY = 9U;
+    static constexpr uint32_t MAXIMUM_CAPACITY = 16U;
+    static constexpr auto FRAME_DEADLINE = std::chrono::steady_clock::time_point{
+        std::chrono::steady_clock::duration{ 123'456 }
+    };
+
+    uint32_t capacity = INITIAL_CAPACITY;
+    client::StoneFaceGrowthDiagnostics diagnostics;
+    bool fail_growth = true;
+    auto const recreate = [&](std::chrono::steady_clock::time_point const deadline) {
+        EXPECT_EQ(deadline, FRAME_DEADLINE);
+        if (fail_growth && capacity != INITIAL_CAPACITY) {
+            throw std::runtime_error("simulated native drain failure");
+        }
+    };
+    EXPECT_FALSE(client::detail::tryGrowStoneFaceCapacity(
+        capacity, REQUIRED_CAPACITY, MAXIMUM_CAPACITY, FRAME_DEADLINE, recreate, &diagnostics
+    ));
+    EXPECT_EQ(capacity, INITIAL_CAPACITY);
+    EXPECT_EQ(diagnostics.deferred_recreation_count, 0U);
+    EXPECT_EQ(diagnostics.recreation_exception_count, 1U);
+    EXPECT_EQ(diagnostics.recreation_exception_before_hook_count, 1U);
+    EXPECT_EQ(diagnostics.rollback_count, 1U);
+
+    fail_growth = false;
+    EXPECT_TRUE(client::detail::tryGrowStoneFaceCapacity(
+        capacity, REQUIRED_CAPACITY, MAXIMUM_CAPACITY, FRAME_DEADLINE, recreate, &diagnostics
+    ));
+    EXPECT_EQ(capacity, MAXIMUM_CAPACITY);
+    EXPECT_EQ(diagnostics.growth_attempt_count, 2U);
+    EXPECT_EQ(diagnostics.growth_success_count, 1U);
+    EXPECT_EQ(diagnostics.rollback_count, 1U);
+    EXPECT_EQ(diagnostics.required_capacity_high_water, REQUIRED_CAPACITY);
+}
+
+TEST(RendererSmokeTest, ArenaRecreationExceptionAfterHookKeepsItsStageAndRollbackFailurePropagates)
+{
+    static constexpr uint32_t INITIAL_CAPACITY = 8U;
+    static constexpr uint32_t REQUIRED_CAPACITY = 9U;
+    static constexpr uint32_t MAXIMUM_CAPACITY = 16U;
+    static constexpr auto FRAME_DEADLINE = std::chrono::steady_clock::time_point{
+        std::chrono::steady_clock::duration{ 123'456 }
+    };
+
+    uint32_t capacity = INITIAL_CAPACITY;
+    client::StoneFaceGrowthDiagnostics diagnostics;
+    auto const recreate = [&](std::chrono::steady_clock::time_point const deadline) {
+        EXPECT_EQ(deadline, FRAME_DEADLINE);
+        if (capacity != INITIAL_CAPACITY) {
+            ++diagnostics.before_recreate_count;
+            throw std::runtime_error("simulated native creation failure");
+        }
+        throw std::invalid_argument("simulated rollback failure");
+    };
+    try {
+        static_cast<void>(client::detail::tryGrowStoneFaceCapacity(
+            capacity, REQUIRED_CAPACITY, MAXIMUM_CAPACITY, FRAME_DEADLINE, recreate, &diagnostics
+        ));
+        FAIL() << "rollback failure must propagate";
+    } catch (std::invalid_argument const& error) {
+        EXPECT_EQ(std::string{ error.what() }, "simulated rollback failure");
+    }
+    EXPECT_EQ(capacity, INITIAL_CAPACITY);
+    EXPECT_EQ(diagnostics.growth_attempt_count, 1U);
+    EXPECT_EQ(diagnostics.before_recreate_count, 1U);
+    EXPECT_EQ(diagnostics.recreation_exception_count, 1U);
+    EXPECT_EQ(diagnostics.recreation_exception_before_hook_count, 0U);
+    EXPECT_EQ(diagnostics.deferred_recreation_count, 0U);
+    EXPECT_EQ(diagnostics.growth_success_count, 0U);
+    EXPECT_EQ(diagnostics.rollback_count, 1U);
+    EXPECT_EQ(diagnostics.rollback_exception_count, 1U);
+    EXPECT_GE(diagnostics.growth_work_duration, std::chrono::nanoseconds::zero());
+}
+
+TEST(RendererSmokeTest, FreshArenaDiagnosticsDoNotCountCapacitySatisfiedWithoutRecreationAsGrowth)
+{
+    static constexpr uint32_t INITIAL_CAPACITY = 8U;
+    static constexpr uint32_t REQUIRED_CAPACITY = 4U;
+    static constexpr uint32_t MAXIMUM_CAPACITY = 16U;
+
+    uint32_t capacity = INITIAL_CAPACITY;
+    client::StoneFaceGrowthDiagnostics diagnostics;
+    auto const recreate = [](std::chrono::steady_clock::time_point) {
+        FAIL() << "an already sufficient arena must not be recreated";
+    };
+    EXPECT_TRUE(client::detail::tryGrowStoneFaceCapacity(
+        capacity, REQUIRED_CAPACITY, MAXIMUM_CAPACITY, {}, recreate, &diagnostics
+    ));
+    EXPECT_EQ(capacity, INITIAL_CAPACITY);
+    EXPECT_EQ(diagnostics.growth_attempt_count, 0U);
+    EXPECT_EQ(diagnostics.growth_success_count, 0U);
+    EXPECT_EQ(diagnostics.rollback_count, 0U);
+    EXPECT_EQ(diagnostics.last_required_capacity, REQUIRED_CAPACITY);
+    EXPECT_EQ(diagnostics.required_capacity_high_water, REQUIRED_CAPACITY);
+    EXPECT_EQ(diagnostics.last_target_capacity, 0U);
+    EXPECT_EQ(diagnostics.growth_work_duration, std::chrono::nanoseconds::zero());
+}
+
+TEST(RendererSmokeTest, ArenaNativeExceptionReasonsRetainFirstAndFollowOnlyChangedLastReason)
+{
+    static constexpr uint32_t INITIAL_CAPACITY = 8U;
+    static constexpr uint32_t REQUIRED_CAPACITY = 9U;
+    static constexpr uint32_t MAXIMUM_CAPACITY = 16U;
+    static constexpr std::array<std::string_view, 3U> REASONS{ "submitted fence", "submitted fence", "acquire fence" };
+
+    uint32_t capacity = INITIAL_CAPACITY;
+    client::StoneFaceGrowthDiagnostics diagnostics;
+    for (std::string_view const reason : REASONS) {
+        auto const recreate = [&](std::chrono::steady_clock::time_point) {
+            if (capacity != INITIAL_CAPACITY) {
+                throw std::runtime_error(std::string{ reason });
+            }
+        };
+        EXPECT_FALSE(client::detail::tryGrowStoneFaceCapacity(
+            capacity, REQUIRED_CAPACITY, MAXIMUM_CAPACITY, {}, recreate, &diagnostics
+        ));
+        EXPECT_EQ(capacity, INITIAL_CAPACITY);
+        EXPECT_EQ(std::string_view{ diagnostics.first_recreation_exception_reason.data() }, REASONS.front());
+        EXPECT_EQ(std::string_view{ diagnostics.last_recreation_exception_reason.data() }, reason);
+    }
+    EXPECT_EQ(diagnostics.recreation_exception_count, REASONS.size());
+    EXPECT_EQ(diagnostics.recreation_unknown_exception_count, 0U);
+    EXPECT_EQ(diagnostics.deferred_recreation_count, 0U);
+    EXPECT_EQ(diagnostics.rollback_count, REASONS.size());
+}
+
+TEST(RendererSmokeTest, ArenaNativeExceptionReasonsTruncateAndTerminateAfterShorterReplacements)
+{
+    static constexpr uint32_t INITIAL_CAPACITY = 8U;
+    static constexpr uint32_t REQUIRED_CAPACITY = 9U;
+    static constexpr uint32_t MAXIMUM_CAPACITY = 16U;
+    static constexpr uint32_t MAXIMUM_REASON_BYTES = 256U;
+
+    uint32_t capacity = INITIAL_CAPACITY;
+    client::StoneFaceGrowthDiagnostics diagnostics;
+    std::string reason(MAXIMUM_REASON_BYTES + 64U, 'x');
+    auto const recreate = [&](std::chrono::steady_clock::time_point) {
+        if (capacity != INITIAL_CAPACITY) {
+            throw std::runtime_error(reason);
+        }
+    };
+    EXPECT_FALSE(client::detail::tryGrowStoneFaceCapacity(
+        capacity, REQUIRED_CAPACITY, MAXIMUM_CAPACITY, {}, recreate, &diagnostics
+    ));
+    EXPECT_EQ(capacity, INITIAL_CAPACITY);
+    EXPECT_EQ(
+        std::string_view{ diagnostics.first_recreation_exception_reason.data() },
+        reason.substr(0U, MAXIMUM_REASON_BYTES)
+    );
+    EXPECT_EQ(
+        std::string_view{ diagnostics.last_recreation_exception_reason.data() },
+        reason.substr(0U, MAXIMUM_REASON_BYTES)
+    );
+    EXPECT_EQ(diagnostics.first_recreation_exception_reason.back(), '\0');
+    EXPECT_EQ(diagnostics.last_recreation_exception_reason.back(), '\0');
+    EXPECT_EQ(diagnostics.recreation_exception_count, 1U);
+
+    reason = "x";
+    EXPECT_FALSE(client::detail::tryGrowStoneFaceCapacity(
+        capacity, REQUIRED_CAPACITY, MAXIMUM_CAPACITY, {}, recreate, &diagnostics
+    ));
+    EXPECT_EQ(std::string_view{ diagnostics.last_recreation_exception_reason.data() }, reason);
+    EXPECT_EQ(diagnostics.last_recreation_exception_reason[1U], '\0');
+
+    reason.clear();
+    EXPECT_FALSE(client::detail::tryGrowStoneFaceCapacity(
+        capacity, REQUIRED_CAPACITY, MAXIMUM_CAPACITY, {}, recreate, &diagnostics
+    ));
+    EXPECT_EQ(std::string_view{ diagnostics.last_recreation_exception_reason.data() }, reason);
+    EXPECT_EQ(diagnostics.last_recreation_exception_reason.front(), '\0');
+    EXPECT_EQ(std::string_view{ diagnostics.first_recreation_exception_reason.data() },
+        std::string(MAXIMUM_REASON_BYTES, 'x'));
+    EXPECT_EQ(diagnostics.recreation_exception_count, 3U);
+}
+
+TEST(RendererSmokeTest, UnknownArenaExceptionsStayCountedAndDoNotReplaceKnownEmptyFirstReason)
+{
+    static constexpr uint32_t INITIAL_CAPACITY = 8U;
+    static constexpr uint32_t REQUIRED_CAPACITY = 9U;
+    static constexpr uint32_t MAXIMUM_CAPACITY = 16U;
+    static constexpr std::array<std::string_view, 2U> KNOWN_REASONS{ "", "later fence" };
+
+    uint32_t capacity = INITIAL_CAPACITY;
+    client::StoneFaceGrowthDiagnostics diagnostics;
+    auto const unknown_recreate = [&](std::chrono::steady_clock::time_point) {
+        if (capacity != INITIAL_CAPACITY) {
+            throw uint32_t{ 1U };
+        }
+    };
+    EXPECT_FALSE(client::detail::tryGrowStoneFaceCapacity(
+        capacity, REQUIRED_CAPACITY, MAXIMUM_CAPACITY, {}, unknown_recreate, &diagnostics
+    ));
+    EXPECT_EQ(diagnostics.recreation_exception_count, 1U);
+    EXPECT_EQ(diagnostics.recreation_unknown_exception_count, 1U);
+    for (std::string_view const reason : KNOWN_REASONS) {
+        auto const recreate = [&](std::chrono::steady_clock::time_point) {
+            if (capacity != INITIAL_CAPACITY) {
+                throw std::runtime_error(std::string{ reason });
+            }
+        };
+        EXPECT_FALSE(client::detail::tryGrowStoneFaceCapacity(
+            capacity, REQUIRED_CAPACITY, MAXIMUM_CAPACITY, {}, recreate, &diagnostics
+        ));
+    }
+    EXPECT_FALSE(client::detail::tryGrowStoneFaceCapacity(
+        capacity, REQUIRED_CAPACITY, MAXIMUM_CAPACITY, {}, unknown_recreate, &diagnostics
+    ));
+    EXPECT_EQ(capacity, INITIAL_CAPACITY);
+    EXPECT_EQ(diagnostics.recreation_exception_count, 4U);
+    EXPECT_EQ(diagnostics.recreation_unknown_exception_count, 2U);
+    EXPECT_EQ(diagnostics.recreation_exception_before_hook_count, 4U);
+    EXPECT_EQ(std::string_view{ diagnostics.first_recreation_exception_reason.data() }, "");
+    EXPECT_EQ(std::string_view{ diagnostics.last_recreation_exception_reason.data() }, KNOWN_REASONS.back());
+    EXPECT_EQ(diagnostics.rollback_count, 4U);
+}
+
+TEST(RendererSmokeTest, PendingArenaDrainGuardsAcquireAndSubmitUntilNativeRecreationCompletesWithoutNewUploads)
+{
+    static constexpr uint32_t INITIAL_CAPACITY = 8U;
+    static constexpr uint32_t TARGET_CAPACITY = 16U;
+    static constexpr uint32_t LARGER_TARGET_CAPACITY = 32U;
+    static constexpr auto FRAME_BUDGET = std::chrono::milliseconds{ 8 };
+    static constexpr auto STARTED_AT = std::chrono::steady_clock::time_point{};
+    static constexpr auto FRAME_DEADLINE = STARTED_AT + FRAME_BUDGET;
+
+    PendingGrowthPresentationFixture fixture;
+    client::detail::PendingStoneFaceGrowth pending;
+    uint32_t actual_capacity = INITIAL_CAPACITY;
+    fixture.backend->recreation_wait_result = core::graphics::vulkan::FenceWaitResult::TimedOut;
+    auto const grow = [&](uint32_t const target, std::chrono::steady_clock::time_point const deadline) {
+        EXPECT_EQ(deadline, FRAME_DEADLINE);
+        try {
+            fixture.context->recreate(fixture.context->info().extent, {}, FRAME_BUDGET);
+            actual_capacity = target;
+        } catch (...) {
+            EXPECT_EQ(pending.recordFailure(std::current_exception(), target, false, STARTED_AT),
+                client::detail::StoneFaceRecreationFailure::DrainPending);
+        }
+        return actual_capacity;
+    };
+    EXPECT_EQ(grow(TARGET_CAPACITY, FRAME_DEADLINE), INITIAL_CAPACITY);
+    pending.coalesce(LARGER_TARGET_CAPACITY);
+    pending.coalesce(TARGET_CAPACITY);
+    EXPECT_EQ(pending.targetCapacity(), LARGER_TARGET_CAPACITY);
+
+    EXPECT_FALSE(pending.render(actual_capacity, FRAME_DEADLINE, grow, STARTED_AT, [&] { return fixture.present(); }));
+    EXPECT_EQ(fixture.backend->acquire_count, 0U);
+    EXPECT_EQ(fixture.backend->submit_count, 0U);
+    EXPECT_EQ(actual_capacity, INITIAL_CAPACITY);
+
+    fixture.backend->recreation_wait_result = core::graphics::vulkan::FenceWaitResult::Completed;
+    EXPECT_TRUE(pending.render(actual_capacity, FRAME_DEADLINE, grow, STARTED_AT, [&] { return fixture.present(); }));
+    EXPECT_EQ(actual_capacity, LARGER_TARGET_CAPACITY);
+    EXPECT_EQ(pending.targetCapacity(), 0U);
+    EXPECT_EQ(fixture.backend->acquire_count, 1U);
+    EXPECT_EQ(fixture.backend->submit_count, 1U);
+    EXPECT_EQ(fixture.backend->recreation_wait_budgets, (std::vector<std::chrono::nanoseconds>(3U, FRAME_BUDGET)));
+}
+
+TEST(RendererSmokeTest, PendingArenaDrainRequiresExactCoreFenceErrorAndOldResourcesBeforeTheHook)
+{
+    static constexpr uint32_t INITIAL_CAPACITY = 8U;
+    static constexpr uint32_t TARGET_CAPACITY = 16U;
+    static constexpr auto STARTED_AT = std::chrono::steady_clock::time_point{};
+    static constexpr std::string_view RECREATION_TIMEOUT_REASON = "Vulkan presentation recreation fence wait timed out";
+    static constexpr std::string_view PRESENT_TIMEOUT_REASON = "Vulkan presentation present fence wait timed out";
+
+    std::array<std::exception_ptr, 2U> const timeouts{
+        std::make_exception_ptr(core::graphics::vulkan::VulkanError{ std::string{ RECREATION_TIMEOUT_REASON } }),
+        std::make_exception_ptr(core::graphics::vulkan::VulkanError{ std::string{ PRESENT_TIMEOUT_REASON } }),
+    };
+    std::array<std::exception_ptr, 4U> const nonmatching_failures{
+        std::make_exception_ptr(std::runtime_error{ std::string{ PRESENT_TIMEOUT_REASON } }),
+        std::make_exception_ptr(core::graphics::vulkan::VulkanError{
+            "Vulkan presentation acquire fence wait timed out"
+        }),
+        std::make_exception_ptr(core::graphics::vulkan::VulkanError{
+            "Vulkan presentation present fence wait timed out with extra detail"
+        }),
+        std::make_exception_ptr(uint32_t{ 1U }),
+    };
+    for (std::exception_ptr const& timeout : timeouts) {
+        client::detail::PendingStoneFaceGrowth pending;
+        EXPECT_EQ(pending.recordFailure(timeout, TARGET_CAPACITY, false, STARTED_AT),
+            client::detail::StoneFaceRecreationFailure::DrainPending);
+        EXPECT_EQ(pending.recordFailure(timeout, TARGET_CAPACITY, true, STARTED_AT),
+            client::detail::StoneFaceRecreationFailure::Failed);
+        EXPECT_EQ(pending.targetCapacity(), 0U);
+    }
+    for (std::exception_ptr const& failure : nonmatching_failures) {
+        PendingGrowthPresentationFixture fixture;
+        client::detail::PendingStoneFaceGrowth pending;
+        EXPECT_EQ(pending.recordFailure(timeouts.front(), TARGET_CAPACITY, false, STARTED_AT),
+            client::detail::StoneFaceRecreationFailure::DrainPending);
+        EXPECT_EQ(pending.recordFailure(failure, TARGET_CAPACITY, false, STARTED_AT),
+            client::detail::StoneFaceRecreationFailure::Failed);
+        EXPECT_TRUE(pending.render(INITIAL_CAPACITY, STARTED_AT,
+            [](uint32_t, std::chrono::steady_clock::time_point) {
+                ADD_FAILURE() << "failure must clear latch";
+                return 0U;
+            },
+            STARTED_AT, [&] { return fixture.present(); }));
+        EXPECT_EQ(fixture.backend->acquire_count, 1U);
+        EXPECT_EQ(fixture.backend->submit_count, 1U);
+    }
+}
+
+TEST(RendererSmokeTest, FrameBoundedPresentationRecreationDefersOnlyDrainTimeouts)
+{
+    static constexpr auto FRAME_DEADLINE = std::chrono::steady_clock::time_point{
+        std::chrono::steady_clock::duration{ 123'456 }
+    };
+    static constexpr std::array<std::string_view, 2U> RETRYABLE_REASONS{
+        "Vulkan presentation recreation fence wait timed out",
+        "Vulkan presentation present fence wait timed out",
+    };
+
+    for (std::string_view const reason : RETRYABLE_REASONS) {
+        std::chrono::steady_clock::time_point observed_deadline{};
+        auto const recreate = [&](std::chrono::steady_clock::time_point const deadline) {
+            observed_deadline = deadline;
+            throw core::graphics::vulkan::VulkanError{ std::string{ reason } };
+        };
+        EXPECT_FALSE(client::detail::tryRecreatePresentationWithinDeadline(FRAME_DEADLINE, recreate));
+        EXPECT_EQ(observed_deadline, FRAME_DEADLINE);
+    }
+
+    auto const failed_recreation = [](std::chrono::steady_clock::time_point const) {
+        throw core::graphics::vulkan::VulkanError{ "Vulkan presentation recreation lost the device" };
+    };
+    EXPECT_THROW(
+        static_cast<void>(client::detail::tryRecreatePresentationWithinDeadline(FRAME_DEADLINE, failed_recreation)),
+        core::graphics::vulkan::VulkanError
+    );
+}
+
+TEST(RendererSmokeTest, NormalArenaDeferralRetainsTargetUntilTheNextFrame)
+{
+    static constexpr uint32_t INITIAL_CAPACITY = 8U;
+    static constexpr uint32_t TARGET_CAPACITY = 16U;
+    static constexpr auto STARTED_AT = std::chrono::steady_clock::time_point{};
+
+    PendingGrowthPresentationFixture fixture;
+    client::detail::PendingStoneFaceGrowth pending;
+    EXPECT_EQ(pending.recordFailure(std::make_exception_ptr(core::graphics::vulkan::VulkanError{
+        "Vulkan presentation present fence wait timed out" }), TARGET_CAPACITY, false, STARTED_AT),
+        client::detail::StoneFaceRecreationFailure::DrainPending);
+    EXPECT_FALSE(pending.render(INITIAL_CAPACITY, STARTED_AT,
+        [&](uint32_t, std::chrono::steady_clock::time_point) {
+            EXPECT_EQ(pending.recordFailure(std::make_exception_ptr(client::detail::StoneFaceRecreationDeferred{}),
+                TARGET_CAPACITY, false, STARTED_AT), client::detail::StoneFaceRecreationFailure::Deferred);
+            return INITIAL_CAPACITY;
+        }, STARTED_AT, [&] { return fixture.present(); }));
+    EXPECT_EQ(pending.targetCapacity(), TARGET_CAPACITY);
+    EXPECT_EQ(fixture.backend->acquire_count, 0U);
+    EXPECT_EQ(fixture.backend->submit_count, 0U);
+    EXPECT_TRUE(pending.render(INITIAL_CAPACITY, STARTED_AT + std::chrono::milliseconds{ 8 },
+        [](uint32_t const target, std::chrono::steady_clock::time_point const deadline) {
+            EXPECT_EQ(target, TARGET_CAPACITY);
+            EXPECT_EQ(deadline, STARTED_AT + std::chrono::milliseconds{ 8 });
+            return target;
+        }, STARTED_AT, [&] { return fixture.present(); }));
+    EXPECT_EQ(pending.targetCapacity(), 0U);
+}
+
+TEST(RendererSmokeTest, ExhaustedUploadDeadlineRetainsGrowthForAFreshFrameBudget)
+{
+    static constexpr uint32_t INITIAL_CAPACITY = 8U;
+    static constexpr uint32_t TARGET_CAPACITY = 16U;
+    static constexpr auto FRAME_BUDGET = std::chrono::milliseconds{ 8 };
+    static constexpr auto STARTED_AT = std::chrono::steady_clock::time_point{};
+
+    PendingGrowthPresentationFixture fixture;
+    client::detail::PendingStoneFaceGrowth pending;
+    pending.coalesce(TARGET_CAPACITY, STARTED_AT);
+    EXPECT_EQ(pending.targetCapacity(), TARGET_CAPACITY);
+    auto const next_frame = STARTED_AT + FRAME_BUDGET;
+    bool grew = false;
+    EXPECT_TRUE(pending.render(INITIAL_CAPACITY, next_frame + FRAME_BUDGET,
+        [&](uint32_t const target, std::chrono::steady_clock::time_point const deadline) {
+            EXPECT_EQ(target, TARGET_CAPACITY);
+            EXPECT_EQ(deadline, next_frame + FRAME_BUDGET);
+            grew = true;
+            return target;
+        }, next_frame, [&] { return fixture.present(); }));
+    EXPECT_TRUE(grew);
+    EXPECT_EQ(pending.targetCapacity(), 0U);
+}
+
+TEST(RendererSmokeTest, PendingArenaRollbackFailurePropagatesBeforeAnyNativeAcquire)
+{
+    static constexpr uint32_t INITIAL_CAPACITY = 8U;
+    static constexpr uint32_t TARGET_CAPACITY = 16U;
+    static constexpr auto STARTED_AT = std::chrono::steady_clock::time_point{};
+
+    PendingGrowthPresentationFixture fixture;
+    client::detail::PendingStoneFaceGrowth pending;
+    EXPECT_EQ(pending.recordFailure(std::make_exception_ptr(core::graphics::vulkan::VulkanError{
+        "Vulkan presentation recreation fence wait timed out" }), TARGET_CAPACITY, false, STARTED_AT),
+        client::detail::StoneFaceRecreationFailure::DrainPending);
+    try {
+        static_cast<void>(pending.render(INITIAL_CAPACITY, STARTED_AT,
+            [](uint32_t, std::chrono::steady_clock::time_point) -> uint32_t {
+                throw std::invalid_argument("rollback failed");
+            }, STARTED_AT, [&] { return fixture.present(); }));
+        FAIL() << "rollback failure must propagate";
+    } catch (std::invalid_argument const& error) {
+        EXPECT_EQ(std::string_view{ error.what() }, "rollback failed");
+    }
+    EXPECT_EQ(fixture.backend->acquire_count, 0U);
+    EXPECT_EQ(fixture.backend->submit_count, 0U);
+}
+
+TEST(RendererSmokeTest, PendingArenaAgeIsFiniteAndNotRenewedByCoalescingOrTimeoutRetries)
+{
+    static constexpr uint32_t INITIAL_CAPACITY = 8U;
+    static constexpr uint32_t TARGET_CAPACITY = 16U;
+    static constexpr uint32_t LARGER_TARGET_CAPACITY = 32U;
+    static constexpr auto STARTED_AT = std::chrono::steady_clock::time_point{};
+    static constexpr auto FRAME_DEADLINE = STARTED_AT + std::chrono::milliseconds{ 8 };
+    static constexpr auto EXPIRES_AT = STARTED_AT + std::chrono::seconds{ 5 };
+
+    PendingGrowthPresentationFixture fixture;
+    client::detail::PendingStoneFaceGrowth pending;
+    std::exception_ptr const recreation_timeout = std::make_exception_ptr(core::graphics::vulkan::VulkanError{
+        "Vulkan presentation recreation fence wait timed out" });
+    std::exception_ptr const present_timeout = std::make_exception_ptr(core::graphics::vulkan::VulkanError{
+        "Vulkan presentation present fence wait timed out" });
+    EXPECT_EQ(pending.recordFailure(recreation_timeout, TARGET_CAPACITY, false, STARTED_AT),
+        client::detail::StoneFaceRecreationFailure::DrainPending);
+    pending.coalesce(LARGER_TARGET_CAPACITY);
+    EXPECT_FALSE(pending.render(INITIAL_CAPACITY, FRAME_DEADLINE,
+        [&](uint32_t const target, std::chrono::steady_clock::time_point const deadline) {
+            EXPECT_EQ(deadline, FRAME_DEADLINE);
+            EXPECT_EQ(pending.recordFailure(present_timeout, target, false, EXPIRES_AT - std::chrono::nanoseconds{ 1 }),
+                client::detail::StoneFaceRecreationFailure::DrainPending);
+            return INITIAL_CAPACITY;
+        }, EXPIRES_AT - std::chrono::nanoseconds{ 1 }, [&] { return fixture.present(); }));
+    try {
+        static_cast<void>(pending.render(INITIAL_CAPACITY, FRAME_DEADLINE,
+            [](uint32_t, std::chrono::steady_clock::time_point) {
+                ADD_FAILURE() << "expired drain must not retry";
+                return 0U;
+            },
+            EXPIRES_AT, [&] { return fixture.present(); }));
+        FAIL() << "pending drain must surface its finite horizon";
+    } catch (std::runtime_error const& error) {
+        EXPECT_EQ(std::string_view{ error.what() },
+            "stone face arena growth exceeded its pending drain horizon: actual=8, target=32, "
+            "reason=Vulkan presentation present fence wait timed out");
+    }
+    EXPECT_EQ(fixture.backend->acquire_count, 0U);
+    EXPECT_EQ(fixture.backend->submit_count, 0U);
+}
+
+TEST(RendererSmokeTest, ResetOrAlreadyInstalledActualCapacityCancelsPendingArenaGrowth)
+{
+    static constexpr uint32_t INITIAL_CAPACITY = 8U;
+    static constexpr uint32_t TARGET_CAPACITY = 16U;
+    static constexpr auto STARTED_AT = std::chrono::steady_clock::time_point{};
+
+    PendingGrowthPresentationFixture fixture;
+    client::detail::PendingStoneFaceGrowth pending;
+    std::exception_ptr const timeout = std::make_exception_ptr(core::graphics::vulkan::VulkanError{
+        "Vulkan presentation recreation fence wait timed out" });
+    auto const unexpected_growth = [](uint32_t, std::chrono::steady_clock::time_point) {
+        ADD_FAILURE() << "cancelled or installed growth must not retry";
+        return 0U;
+    };
+    EXPECT_EQ(pending.recordFailure(timeout, TARGET_CAPACITY, false, STARTED_AT),
+        client::detail::StoneFaceRecreationFailure::DrainPending);
+    pending.clear();
+    EXPECT_TRUE(pending.render(INITIAL_CAPACITY, STARTED_AT, unexpected_growth, STARTED_AT,
+        [&] { return fixture.present(); }));
+    EXPECT_EQ(pending.recordFailure(timeout, TARGET_CAPACITY, false, STARTED_AT),
+        client::detail::StoneFaceRecreationFailure::DrainPending);
+    EXPECT_TRUE(pending.render(TARGET_CAPACITY, STARTED_AT, unexpected_growth, STARTED_AT,
+        [&] { return fixture.present(); }));
+    EXPECT_EQ(pending.targetCapacity(), 0U);
+    EXPECT_EQ(fixture.backend->acquire_count, 2U);
+    EXPECT_EQ(fixture.backend->submit_count, 2U);
+}
+
+TEST(RendererSmokeTest, SmallerExternalArenaCapacityDoesNotClearTheLargerPendingTarget)
+{
+    static constexpr uint32_t SMALLER_CAPACITY = 16U;
+    static constexpr uint32_t TARGET_CAPACITY = 32U;
+    static constexpr auto STARTED_AT = std::chrono::steady_clock::time_point{};
+
+    PendingGrowthPresentationFixture fixture;
+    client::detail::PendingStoneFaceGrowth pending;
+    EXPECT_EQ(pending.recordFailure(std::make_exception_ptr(core::graphics::vulkan::VulkanError{
+        "Vulkan presentation recreation fence wait timed out" }), TARGET_CAPACITY, false, STARTED_AT),
+        client::detail::StoneFaceRecreationFailure::DrainPending);
+    EXPECT_FALSE(pending.render(SMALLER_CAPACITY, STARTED_AT,
+        [](uint32_t const target, std::chrono::steady_clock::time_point) {
+            EXPECT_EQ(target, TARGET_CAPACITY);
+            return SMALLER_CAPACITY;
+        }, STARTED_AT, [&] { return fixture.present(); }));
+    EXPECT_EQ(pending.targetCapacity(), TARGET_CAPACITY);
+    EXPECT_EQ(fixture.backend->acquire_count, 0U);
+    EXPECT_EQ(fixture.backend->submit_count, 0U);
 }
 
 TEST(RendererSmokeTest, RejectsASelectedTransformThatRequiresClientCompensation)

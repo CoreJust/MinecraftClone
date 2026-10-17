@@ -59,10 +59,10 @@ out-of-order uploads. LOD preserves terrain/collision; far plane/fog scale with
 the accepted radius,
 and workers mesh outside presentation.
 
-The arena grows with streamed residency; restoration shares the frame deadline.
-Gameplay bounds uploads and rendering to 8 ms, deferring overdue tiles.
-Runtime face counts track residency; `chunk_draw_face_count` sums recorded quads
-and `chunk_draw_count` counts logical ranges.
+Uploads/restoration share an 8 ms gameplay budget; overdue tiles defer. Only
+exact recreation/present-fence timeouts before destruction defer growth (5 s);
+other Vulkan errors are fatal. Diagnostics report the latest timeout.
+`chunk_draw_face_count` counts quads; `chunk_draw_count` counts ranges.
 [`height_tile_surface_mesher_tests.cpp`](../../tests/core/height_tile_surface_mesher_tests.cpp)
 covers flat tiles, exposed height differences, neighbor seams, and generated
 column tops.
