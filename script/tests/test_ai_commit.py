@@ -178,6 +178,48 @@ class AiCommitTests(unittest.TestCase):
         self.assertEqual(result.returncode, 1)
         self.assertIn("no task review", result.stderr)
 
+    def test_git_bytes_handles_large_batch_and_binary_output(self) -> None:
+        module = load_ai_commit_module()
+        payload = bytes(range(256)) * 512
+        blob = subprocess.run(
+            ["git", "hash-object", "-w", "--stdin"], cwd=self.root,
+            input=payload, capture_output=True, check=True, timeout=5,
+        ).stdout.strip()
+        batch = (blob + b"\n") * 4096
+        expected = (blob + b" blob " + str(len(payload)).encode() + b"\n") * 4096
+        real_run = subprocess.run
+
+        def file_backed_run(*args, **kwargs):
+            # Fail before invoking Git if a regression reintroduces blocking pipes.
+            self.assertNotIn("input", kwargs)
+            self.assertNotIn("capture_output", kwargs)
+            for name in ("stdin", "stdout", "stderr"):
+                stream = kwargs[name]
+                if stream is not None:
+                    self.assertTrue(stat.S_ISREG(os.fstat(stream.fileno()).st_mode))
+            return real_run(*args, **kwargs)
+
+        with mock.patch.object(module.subprocess, "run", side_effect=file_backed_run):
+            self.assertEqual(
+                module.git_bytes(self.root, "cat-file", "--batch-check", input_bytes=batch, timeout=5),
+                expected,
+            )
+            self.assertEqual(
+                module.git_bytes(self.root, "cat-file", "blob", blob.decode(), timeout=5), payload,
+            )
+
+    def test_git_bytes_propagates_git_stderr(self) -> None:
+        module = load_ai_commit_module()
+        with self.assertRaisesRegex(module.CommitGateError, "not a git command"):
+            module.git_bytes(self.root, "not-a-real-git-command", timeout=5)
+
+    def test_git_bytes_translates_timeout(self) -> None:
+        module = load_ai_commit_module()
+        with mock.patch.object(module.subprocess, "run", side_effect=subprocess.TimeoutExpired("git", 0.25)):
+            with self.assertRaisesRegex(module.CommitGateError, "timed out after 0.25s") as caught:
+                module.git_bytes(self.root, "cat-file", "--batch-check", input_bytes=b"", timeout=0.25)
+        self.assertIsInstance(caught.exception.__cause__, subprocess.TimeoutExpired)
+
     def test_current_selector_cannot_replace_a_receipt(self) -> None:
         candidate = self.candidate()
         selector = self.root / ".git/ai-reviews/current.json"

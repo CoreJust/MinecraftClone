@@ -83,20 +83,30 @@ def git_bytes(
     timeout: float,
 ) -> bytes:
     try:
-        completed = subprocess.run(
-            ["git", *args],
-            cwd=root,
-            input=input_bytes,
-            capture_output=True,
-            check=False,
-            timeout=timeout,
-        )
+        # Batch commands can fill stdout while Python is still writing stdin.
+        with tempfile.TemporaryFile() as source, tempfile.TemporaryFile() as output, tempfile.TemporaryFile() as errors:
+            if input_bytes is not None:
+                source.write(input_bytes)
+                source.seek(0)
+            completed = subprocess.run(
+                ["git", *args],
+                cwd=root,
+                stdin=source if input_bytes is not None else None,
+                stdout=output,
+                stderr=errors,
+                check=False,
+                timeout=timeout,
+            )
+            output.seek(0)
+            stdout = output.read()
+            errors.seek(0)
+            stderr = errors.read()
     except subprocess.TimeoutExpired as error:
         raise CommitGateError(f"git {' '.join(args)} timed out after {timeout:g}s") from error
     if completed.returncode:
-        detail = completed.stderr.decode(errors="replace").strip()
+        detail = stderr.decode(errors="replace").strip()
         raise CommitGateError(detail or " ".join(("git", *args)))
-    return completed.stdout
+    return stdout
 
 
 def remaining_export_time(deadline: float) -> float:

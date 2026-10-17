@@ -16216,5 +16216,42 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0466",
+    "title": "Avoid bidirectional Git batch pipe deadlock during exact staged-source export",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P0",
+    "route": "luna",
+    "milestone": "ED-010-S7",
+    "depends_on": [],
+    "acceptance": "Export the exact staged tree without bidirectional Git pipe deadlock on real repository-sized batches. Preserve binary bytes, existing size/path/symlink checks, nonzero Git stderr and CommitGateError timeout translation. Keep subprocess deadlines effective without increasing them or changing global Python, Git or OS settings. Add large-batch and binary-output regression coverage plus separate stderr/timeout cases; verify the actual formerly blocked tree exports and all focused commit-helper tests pass. Preserve unrelated index/source state and all failed diagnostic evidence. This tooling task does not close S7 native or publication acceptance.",
+    "evidence": "Independent controlled reproduction on Python3.14.6 and3.13.14:875 OIDs/35875inputbytes deadlocked pipe-backed Git beyond its5s timeout; separate8s supervisors killed only owned groups and verified absence. Identical file-backed operations passed21–47ms with875lines/44656outputbytes and identical SHA2566453eb6279ca6dd878ae014791c763153e08f7a5e665c6c969e2d64c4092086a. After the minimal git_bytes fix, all39 AiCommitTests passed18.054s, including4096-OID batch,131072-byte binary output, nonzero stderr and timeout cause. Actual formerly blocked tree0f2ac6b7183fa0bc27da5fa31ae205926d67779b exported875files in0.224s. The saved0463 index patch remains SHA256b093003ef8f6f85869cc07974fb20e2d34afe6e16e5ed87928d4cdba5b9ba485; unrelated working bytes preserved. Current native gameplay input remainsf074e1836fc3a500d90e031346d67cdb7d63a7d3811f8d4ef5e64e491886150c. No Windows, global config or OS repair. Diagnostic evidence /private/tmp/mc-s7-git-pipe-c and /private/tmp/mc-s7-0463-review.0fxQvv.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0038",
+    "motivation": "The exact staged export blocked Git commit preparation despite its configured timeout.",
+    "context": "Host and sandbox stack samples show Python blocked writing Git stdin while Git blocks writing stdout. Independent eight-second supervisors reproduce the875-OID/35875-byte batch hang on Python3.14.6 and3.13.14; one OID passes. Identical file-backed input/output/error completes in21–47ms with identical875-line output. Failed samples and supervised probe receipts remain under /private/tmp/mc-s7-git-pipe-c and /private/tmp/mc-s7-0463-review.0fxQvv. No Windows or OS repair is involved.",
+    "complexity": "medium",
+    "created_at": "2026-10-17",
+    "resolved_at": "2026-10-17",
+    "resolution_changes": "Replace bidirectional pipes with per-call file-backed binary Git transport, retaining exact export safeguards, stderr and deadline behavior. Add large-batch/binary and separate failure-path regressions. Real previously blocked tree now exports in0.224s; saved0463 staging and all native acceptance remain separate.",
+    "plan": [
+      "Replace only git_bytes pipe transport with per-call binary temporary files; retain its error/deadline API and exact export validations. Verify the reproduced batch, binary bytes, timeout and stderr, then commit the focused fix before restoring the saved0463 staging."
+    ],
+    "product_changes": [],
+    "code_changes": [
+      "Use file-backed stdin/stdout/stderr for bounded binary Git operations so process waiting, rather than a blocking pipe write, enforces the existing deadline.",
+      "Add regular-file transport guard and actual large Git batch/binary-output coverage, with separate stderr and timeout exception cases."
+    ],
+    "baseline_commit": "3d7a4d96215ac9a398f9225d4f9f16b39098df0f",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]
