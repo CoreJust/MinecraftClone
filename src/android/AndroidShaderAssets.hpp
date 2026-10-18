@@ -8,7 +8,7 @@ namespace game_android {
 
 class AndroidShaderAssets final : public client::ShaderAssets {
 public:
-    explicit AndroidShaderAssets(AAssetManager* asset_manager) noexcept;
+    explicit AndroidShaderAssets(AAssetManager* asset_manager);
 
     [[nodiscard]]
     core::kernel::SpirvModule load(std::string_view name) const override;

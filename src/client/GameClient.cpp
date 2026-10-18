@@ -18,6 +18,7 @@
 #include <algorithm>
 #include <compare>
 #include <iostream>
+#include <iterator>
 #include <optional>
 #include <ratio>
 #include <span>
@@ -105,8 +106,9 @@ void GameClient::run(
         if (!isConnected()) {
             continue;
         }
+        auto const iteration_started_at = std::chrono::steady_clock::now();
         auto const loop_started_at = benchmark_hooks
-            ? std::chrono::steady_clock::now()
+            ? iteration_started_at
             : std::chrono::steady_clock::time_point{};
         auto const network_poll_started_at = loop_started_at;
         uint64_t network_event_count = 0U;
@@ -152,6 +154,7 @@ void GameClient::run(
         if (!m_running || !isConnected()) {
             continue;
         }
+        bool const presentation_succeeded = presentationSucceeded();
         if (benchmark_hooks && benchmark_hooks->on_loop) {
             benchmark_hooks->on_loop(GameClientLoopSample{
                 .started_at = loop_started_at,
@@ -169,11 +172,16 @@ void GameClient::run(
                 .client_message_payload_bytes_sent = m_benchmark_bytes_sent,
                 .client_message_payload_bytes_received = m_benchmark_bytes_received,
                 .input_sent = input_sent,
-                .presentation_succeeded = presentationSucceeded(),
+                .presentation_succeeded = presentation_succeeded,
             });
         }
         if (!benchmark_hooks || !benchmark_hooks->is_uncapped_phase || !benchmark_hooks->is_uncapped_phase()) {
-            std::this_thread::sleep_for(scheduler.idleDelay(now));
+            auto const iteration_completed_at = std::chrono::steady_clock::now();
+            std::this_thread::sleep_for(scheduler.idleDelay(
+                iteration_started_at,
+                iteration_completed_at,
+                presentation_succeeded
+            ));
         }
     }
     m_client_audio.stop();
@@ -195,6 +203,8 @@ void GameClient::resetConnectionState()
     m_next_id = 0U;
     m_state_revisions.clear();
     m_pending_inputs.clear();
+    m_last_predicted_direction.reset();
+    m_forecast_player_position.reset();
     m_next_input_sequence = 1U;
     m_height_tile_residency = PreviewResidency{ { .generation = 0U, .revision = 0U } };
     m_height_tile_revision = { .generation = 0U, .revision = 0U };
@@ -308,7 +318,10 @@ std::optional<shared::ClientInputMessage> GameClient::predictInput(
         .sequence = m_next_input_sequence++,
     };
     m_pending_inputs.push_back(input);
+    m_last_predicted_direction = direction;
+    m_last_predicted_direction->cycle_movement_capabilities = false;
     static_cast<void>(m_predicted_world.movePlayer(player->id, direction));
+    refreshMovementForecast();
     updatePredictedPresentation(predicted_at);
     return input;
 }
@@ -324,6 +337,13 @@ void GameClient::discardPredictedInput(
         return input.sequence == sequence;
     });
     if (found != m_pending_inputs.end()) {
+        if (std::next(found) == m_pending_inputs.end()) {
+            m_last_predicted_direction.reset();
+            if (found != m_pending_inputs.begin()) {
+                m_last_predicted_direction = std::prev(found)->direction;
+                m_last_predicted_direction->cycle_movement_capabilities = false;
+            }
+        }
         m_pending_inputs.erase(found);
         rebuildPrediction();
         updatePredictedPresentation(discarded_at);
@@ -399,6 +419,22 @@ std::optional<shared::Player> GameClient::predictedLocalPlayer() const noexcept
     return m_predicted_world.playerByCharacter(m_local_character);
 }
 
+std::optional<shared::PlayerPosition> GameClient::forecastedLocalPlayerPosition() const noexcept
+{
+    return m_forecast_player_position;
+}
+
+void GameClient::refreshMovementForecast()
+{
+    auto const player = predictedLocalPlayer();
+    m_forecast_player_position.reset();
+    if (!player || !m_last_predicted_direction) {
+        return;
+    }
+    m_forecast_player_position = m_predicted_world.forecastFlightPlayerPosition(
+        player->id, *m_last_predicted_direction);
+}
+
 std::optional<PlayerPresentationPosition> GameClient::predictedLocalPresentation(
     std::chrono::steady_clock::time_point const now
 ) const noexcept
@@ -414,6 +450,7 @@ void GameClient::rebuildPrediction()
             static_cast<void>(m_predicted_world.movePlayer(player->id, input.direction));
         }
     }
+    refreshMovementForecast();
 }
 
 void GameClient::updatePredictedPresentation(std::chrono::steady_clock::time_point const updated_at)
@@ -492,12 +529,17 @@ bool GameClient::applyWorldRevision(shared::ServerWorldRevisionMessage const& me
     return grantHeightTileCredit(0U, shared::HEIGHT_TILE_DELIVERY_WINDOW);
 }
 
-bool GameClient::grantHeightTileCredit(uint64_t const delivery_token, uint8_t const credits)
+bool GameClient::grantHeightTileCredit(
+    uint64_t const delivery_token,
+    uint8_t const credits,
+    std::vector<shared::HeightTileKey> not_resident_keys
+)
 {
     return send(shared::ClientHeightTileCreditMessage{
         .world_revision = m_height_tile_revision.generation,
         .delivery_token = delivery_token,
         .credits = credits,
+        .not_resident_keys = std::move(not_resident_keys),
     });
 }
 
@@ -524,24 +566,30 @@ void GameClient::processPendingHeightTileDeliveries()
         if (m_height_tile_residency.pendingChangeCount() + operation_count > MAX_PENDING_HANDOFF_CHANGES) {
             return;
         }
-        for (shared::ServerHeightTileMessage const& tile : delivery.tiles) {
-            static_cast<void>(applyHeightTile(tile));
-        }
-        for (shared::ServerRemoveHeightTileMessage const& removal : delivery.removals) {
-            static_cast<void>(applyHeightTileRemoval(removal));
-        }
+        std::vector<shared::HeightTileKey> not_resident_keys = applyHeightTileBatch(delivery);
         uint64_t const delivery_token = delivery.delivery_token;
         m_pending_height_tile_delivery_tokens.erase(delivery_token);
         m_pending_height_tile_deliveries.pop_front();
-        if (!grantHeightTileCredit(delivery_token, 1U)) {
+        if (!grantHeightTileCredit(delivery_token, 1U, std::move(not_resident_keys))) {
             m_running = false;
             return;
         }
+        flush();
     }
 }
 
 bool GameClient::applyHeightTile(shared::ServerHeightTileMessage const& message)
 {
+    std::optional<shared::HeightTileKey> evicted_key;
+    return applyHeightTileAndTrackEviction(message, evicted_key);
+}
+
+bool GameClient::applyHeightTileAndTrackEviction(
+    shared::ServerHeightTileMessage const& message,
+    std::optional<shared::HeightTileKey>& evicted_key
+)
+{
+    evicted_key.reset();
     if (message.key != shared::normalizeHeightTileKey(message.key) || message.revision == 0U
         || message.token == 0U || m_height_tile_revision.generation == 0U) {
         return false;
@@ -552,14 +600,53 @@ bool GameClient::applyHeightTile(shared::ServerHeightTileMessage const& message)
         message.token,
         message.heights
     );
+    evicted_key = result.evicted_key;
     return result.replacement == HeightTileReplacement::Published;
 }
 
-void GameClient::applyHeightTileBatch(shared::ServerHeightTileBatchMessage const& message)
+std::vector<shared::HeightTileKey> GameClient::applyHeightTileBatch(
+    shared::ServerHeightTileBatchMessage const& message
+)
 {
-    for (shared::ServerHeightTileMessage const& tile : message.tiles) {
-        static_cast<void>(applyHeightTile(tile));
+    for (shared::ServerRemoveHeightTileMessage const& removal : message.removals) {
+        static_cast<void>(applyHeightTileRemoval(removal));
     }
+
+    std::vector<shared::HeightTileKey> evicted_keys;
+    evicted_keys.reserve(message.tiles.size());
+    for (shared::ServerHeightTileMessage const& tile : message.tiles) {
+        std::optional<shared::HeightTileKey> evicted_key;
+        static_cast<void>(applyHeightTileAndTrackEviction(tile, evicted_key));
+        if (evicted_key) {
+            evicted_keys.push_back(*evicted_key);
+        }
+    }
+
+    std::vector<shared::HeightTileKey> not_resident_keys;
+    not_resident_keys.reserve(message.tiles.size() + evicted_keys.size());
+    auto const append_if_missing = [this, &not_resident_keys](shared::HeightTileKey const key) {
+        if (!m_height_tile_residency.resident(key)
+            && std::ranges::find(not_resident_keys, key) == not_resident_keys.end()) {
+            not_resident_keys.push_back(key);
+        }
+    };
+    for (shared::HeightTileKey const key : evicted_keys) {
+        append_if_missing(key);
+    }
+    for (shared::ServerHeightTileMessage const& tile : message.tiles) {
+        if (tile.key == shared::normalizeHeightTileKey(tile.key)
+            && tile.revision != 0U && tile.token != 0U
+            && m_height_tile_revision.generation != 0U) {
+            append_if_missing(tile.key);
+        }
+    }
+    std::ranges::sort(not_resident_keys, [](
+        shared::HeightTileKey const first,
+        shared::HeightTileKey const second
+    ) {
+        return first.x < second.x || (first.x == second.x && first.y < second.y);
+    });
+    return not_resident_keys;
 }
 
 bool GameClient::applyHeightTileRemoval(shared::ServerRemoveHeightTileMessage const& message)

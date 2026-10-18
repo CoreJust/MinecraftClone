@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import io
 import runpy
 import subprocess
 import sys
@@ -205,13 +206,16 @@ def run_client_launch_case(fixture: Path, binary: Path, evidence_dir: Path) -> i
     records: list[OwnedProcess] = []
     original_popen = subprocess.Popen
     suite_result: unittest.TestResult | None = None
+    suite_output = io.StringIO()
     cleanup_success = True
     try:
         fixture_globals = runpy.run_path(str(fixture), run_name="_pinned_client_launch_test")
         test_case = fixture_globals["ClientLaunchTest"](TEST_NAME)
         subprocess.Popen = _instrumented_popen_factory(evidence_dir, records, original_popen)  # type: ignore[assignment]
         print(f"Running original pinned case: ClientLaunchTest.{TEST_NAME}")
-        suite_result = unittest.TextTestRunner(verbosity=2).run(unittest.TestSuite([test_case]))
+        suite_result = unittest.TextTestRunner(stream=suite_output, verbosity=2).run(
+            unittest.TestSuite([test_case])
+        )
     finally:
         try:
             cleanup_success = _cleanup_owned_processes(records, evidence_dir)
@@ -220,6 +224,16 @@ def run_client_launch_case(fixture: Path, binary: Path, evidence_dir: Path) -> i
             sys.argv = previous_argv
 
     if suite_result is None or not suite_result.wasSuccessful() or not cleanup_success:
+        result_path = evidence_dir / "fixture-result.txt"
+        result_bytes = suite_output.getvalue().encode("utf-8", errors="replace")
+        if len(result_bytes) > MAX_LOG_BYTES:
+            marker = b"<truncated; showing last 4096 bytes>\n"
+            result_bytes = marker + result_bytes[-(MAX_LOG_BYTES - len(marker)):]
+        try:
+            result_path.write_bytes(result_bytes)
+        except OSError as error:
+            print(f"failed to retain pinned fixture result: {error}", file=sys.stderr)
+        print(f"pinned client case or cleanup failed; details: {result_path}", file=sys.stderr)
         return 1
     return 0
 

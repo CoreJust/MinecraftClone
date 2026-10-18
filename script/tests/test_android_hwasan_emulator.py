@@ -115,8 +115,19 @@ class AndroidHwasanEmulatorTests(unittest.TestCase):
                 )
             return self.lifecycle.subprocess.CompletedProcess(command_args, 0, "", "")
 
+        def popen(command_args, **kwargs):
+            if command_args[0] == str(emulator) and "-avd" in command_args:
+                commands.append((command_args, kwargs))
+                return process
+            completed = run(command_args, **kwargs)
+            runner = mock.Mock()
+            runner.communicate.return_value = (completed.stdout, completed.stderr)
+            runner.returncode = completed.returncode
+            runner.wait.return_value = completed.returncode
+            return runner
+
         with mock.patch.object(self.lifecycle.subprocess, "run", side_effect=run), mock.patch.object(
-            self.lifecycle.subprocess, "Popen", return_value=process
+            self.lifecycle.subprocess, "Popen", side_effect=popen
         ) as popen, mock.patch.object(self.lifecycle, "_port_available", return_value=True), mock.patch.object(
             self.lifecycle, "_process_snapshot", return_value=("Thu Oct  7 10:00:00 2026", command)
         ), mock.patch.object(self.lifecycle.platform, "system", return_value=host_platform):
@@ -458,17 +469,47 @@ class AndroidHwasanEmulatorTests(unittest.TestCase):
         with mock.patch.object(
             self.lifecycle.subprocess,
             "run",
-            side_effect=[completed, booted, completed],
+            side_effect=[completed, booted],
         ) as adb, mock.patch.object(
             self.lifecycle, "_process_snapshot", return_value=(state["process_start_identity"], command)
-        ), mock.patch("builtins.print"):
+        ), mock.patch.object(self.lifecycle, "_run") as keyevent, mock.patch("builtins.print"):
             self.lifecycle.wait_for_boot(self.runner_temp, self.run_id, self.attempt, 2)
         commands = [call.args[0] for call in adb.call_args_list]
-        self.assertEqual(len(commands), 3)
+        self.assertEqual(len(commands), 2)
         self.assertTrue(all(command[1:3] == ["-s", "emulator-5558"] for command in commands))
         self.assertTrue(
             all(command[0] == str((sdk_root / "platform-tools" / "adb").resolve()) for command in commands)
         )
+        self.assertEqual(keyevent.call_args.args[0][1:3], ["-s", "emulator-5558"])
+
+    def test_android_emulator_stages_are_capped_at_ten_minutes(self):
+        self.assertEqual(self.lifecycle.MAX_STAGE_SECONDS, 600)
+        with self.assertRaisesRegex(self.lifecycle.LifecycleError, "between 1 and 600"):
+            self.lifecycle.wait_for_boot(self.runner_temp, self.run_id, self.attempt, 601)
+
+        with mock.patch.object(sys, "argv", [
+            "android_hwasan_emulator.py", "wait",
+            "--runner-temp", str(self.runner_temp),
+            "--run-id", self.run_id,
+            "--run-attempt", self.attempt,
+        ]), mock.patch.object(self.lifecycle, "wait_for_boot") as wait:
+            self.assertEqual(self.lifecycle._cli(), 0)
+        wait.assert_called_once_with(self.runner_temp, self.run_id, self.attempt, 600)
+
+    def test_stream_timeout_terminates_the_owned_process_group(self):
+        process = mock.Mock()
+        process.pid = 4123
+        process.wait.side_effect = [self.lifecycle.subprocess.TimeoutExpired(["tool"], 1), 0]
+        process.poll.return_value = 0
+        with mock.patch.object(self.lifecycle.subprocess, "Popen", return_value=process), mock.patch.object(
+            self.lifecycle.os, "killpg"
+        ) as killpg:
+            with self.assertRaisesRegex(self.lifecycle.LifecycleError, "timed out after 1s"):
+                self.lifecycle._run_stream(["tool"], env={}, timeout=1)
+
+        self.assertEqual(killpg.call_count, 2)
+        self.assertEqual(killpg.call_args_list[0].args, (4123, self.lifecycle.signal.SIGTERM))
+        self.assertEqual(killpg.call_args_list[1].args, (4123, self.lifecycle.signal.SIGKILL))
 
 
 if __name__ == "__main__":

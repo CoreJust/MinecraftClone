@@ -126,6 +126,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--serial", required=True, help="explicit ADB serial for the selected AVD")
     parser.add_argument(
+        "--server-binary", type=Path, default=DEFAULT_SERVER,
+        help="exact Release host executable (default: build/release/mc_main)",
+    )
+    parser.add_argument(
         "--avd",
         choices=android_playtest.SUPPORTED_AVDS,
         default=DEFAULT_AVD,
@@ -141,7 +145,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         run_playtest(
             args.serial,
-            DEFAULT_SERVER,
+            args.server_binary,
             args.server_timeout,
             args.client_timeout,
             expected_avd=args.avd,

@@ -214,6 +214,13 @@ public:
     );
 
     [[nodiscard]]
+    std::optional<PlayerPosition> forecastFlightPlayerPosition(
+        PlayerId id,
+        Direction direction,
+        std::chrono::milliseconds elapsed = TICK
+    ) const;
+
+    [[nodiscard]]
     std::vector<ChunkCoordinate> flightCollisionChunks(
         PlayerId id,
         Direction direction,

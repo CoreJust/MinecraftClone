@@ -3,11 +3,13 @@ import contextlib
 import hashlib
 import io
 import json
+import ntpath
 import os
 import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from unittest import mock
 from pathlib import Path
@@ -15,6 +17,8 @@ from pathlib import Path
 
 REPOSITORY = Path(__file__).resolve().parents[2]
 SCRIPT = REPOSITORY / "script/ai_check.py"
+PRE_COMMIT = REPOSITORY / ".githooks/pre-commit"
+PRE_MERGE = REPOSITORY / ".githooks/pre-merge-commit"
 PRE_PUSH = REPOSITORY / ".githooks/pre-push"
 
 
@@ -37,6 +41,30 @@ def load_module():
 
 
 class AiCheckTests(unittest.TestCase):
+    def test_s7_selector_requires_actual_version_owners(self):
+        check = load_module()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            project = root / "src/shared/include/shared/ProjectInfo.hpp"
+            project.parent.mkdir(parents=True)
+            content = (SCRIPT.parent.parent / "src/shared/include/shared/ProjectInfo.hpp").read_text()
+            project.write_text(content)
+            (root / "vcpkg.json").write_text('{"version-string":"0.1.0"}')
+            self.assertIsNone(check.require_s7_candidate(root))
+            for wrong in (content.replace(".patch = 7", ".patch = 8"),
+                          content.replace(".minor = 0", ".minor = 1"),
+                          content.replace('"EarlyDev"', '"Released"'), "malformed"):
+                project.write_text(wrong)
+                with self.assertRaisesRegex(ValueError, "actual candidate version"):
+                    check.require_s7_candidate(root)
+            project.write_text(content)
+            (root / "vcpkg.json").write_text('{"version-string":"0.2.0"}')
+            with self.assertRaisesRegex(ValueError, "actual candidate version"):
+                check.require_s7_candidate(root)
+            project.unlink()
+            with self.assertRaisesRegex(ValueError, "actual candidate version"):
+                check.require_s7_candidate(root)
+
     def setUp(self):
         self.temp_dir = tempfile.TemporaryDirectory()
         self.root = Path(self.temp_dir.name)
@@ -44,6 +72,7 @@ class AiCheckTests(unittest.TestCase):
             "script/ai_docs.py": "raise SystemExit(0)\n",
             "script/ai_tasks.py": "raise SystemExit(0)\n",
             "script/ai_plan.py": "raise SystemExit(0)\n",
+            "script/ai_release_reports.py": "raise SystemExit(0)\n",
             "publish.py": (
                 "import os\n"
                 "if os.environ.get('AI_CHECK_SOURCE_FAILURE'):\n"
@@ -73,8 +102,37 @@ class AiCheckTests(unittest.TestCase):
     def tearDown(self):
         self.temp_dir.cleanup()
 
+    def test_fast_gate_rejects_invalid_release_report_state(self):
+        (self.root / "script/ai_release_reports.py").write_text(
+            "print('retained report hash mismatch')\nraise SystemExit(1)\n",
+            encoding="utf-8",
+        )
+        result = subprocess.run(
+            [sys.executable, str(SCRIPT), "--root", str(self.root), "--fast"],
+            text=True, capture_output=True,
+        )
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("FAIL release-reports", result.stdout)
+        self.assertIn("retained report hash mismatch", result.stdout)
+
     def git(self, *args):
         return subprocess.run(["git", *args], cwd=self.root, text=True, capture_output=True, check=True)
+
+    def assert_hook_path_retains_caller(self, hook_path, caller_path):
+        if os.name == "nt":
+            # MSYS removes empty entries and normalizes native directory spelling.
+            caller_components = [
+                ntpath.normcase(ntpath.normpath(component))
+                for component in caller_path.split(os.pathsep) if component
+            ]
+            hook_components = [
+                ntpath.normcase(ntpath.normpath(component))
+                for component in hook_path.split(os.pathsep) if component
+            ]
+            self.assertGreater(len(hook_components), len(caller_components))
+            self.assertEqual(hook_components[-len(caller_components):], caller_components)
+        else:
+            self.assertEqual(hook_path, caller_path)
 
     def configure_native_build_fixture(self, preset="debug"):
         build_root = self.root / "build" / preset
@@ -120,7 +178,7 @@ class AiCheckTests(unittest.TestCase):
     def test_fast_runs_each_required_phase(self):
         result = self.run_check("--fast")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        for phase in ("docs", "backlog", "current-plan", "python-tests", "diff-working", "diff-cached"):
+        for phase in ("docs", "backlog", "current-plan", "release-reports", "python-tests", "diff-working", "diff-cached"):
             self.assertIn(f"PASS {phase}", result.stdout)
             self.assertTrue((self.root / "build/ai-checks" / f"{phase}.log").is_file())
 
@@ -459,6 +517,7 @@ class AiCheckTests(unittest.TestCase):
             "printf 'git:%s:%s\\n' \"$1\" \"$2\" >> \"$FAKE_GIT_LOG\"\n"
             "case \"$1 $2\" in\n"
             "  'branch --show-current') echo master ;;\n"
+            "  '--exec-path ') echo \"$GIT_EXEC_PATH\" ;;\n"
             "  'rev-parse HEAD') echo checked-commit ;;\n"
             "  'rev-parse tag-object^{commit}') echo checked-commit ;;\n"
             "  'status --porcelain') ;;\n"
@@ -469,7 +528,21 @@ class AiCheckTests(unittest.TestCase):
         )
         fake_python = fake_bin / "python"
         fake_python.write_text(
-            "#!/bin/sh\nprintf '%s\\n' \"$*\" > \"$HOOK_LOG\"\n",
+            "#!/bin/sh\n"
+            "mkdir -p \"$(dirname \"$HOOK_PATH_LOG\")\"\n"
+            "printf '%s\\n' \"$*\" > \"$HOOK_LOG\"\n"
+            "case \"$PATH\" in\n"
+            "  \"$HOOK_PATH_PREFIX\":*) echo restored > \"$HOOK_PATH_LOG\" ;;\n"
+            "  *) echo retained > \"$HOOK_PATH_LOG\" ;;\n"
+            "esac\n",
+            encoding="utf-8",
+            newline="\n",
+        )
+        fake_cygpath = fake_bin / "cygpath"
+        fake_cygpath.write_text(
+            "#!/bin/sh\n"
+            "[ \"$1\" = -u ] || exit 2\n"
+            "printf '%s\\n' \"$POSIX_GIT_EXEC_PATH\"\n",
             encoding="utf-8",
             newline="\n",
         )
@@ -477,16 +550,29 @@ class AiCheckTests(unittest.TestCase):
         self.assertNotIn(b"\r", fake_python.read_bytes())
         fake_git.chmod(0o755)
         fake_python.chmod(0o755)
+        fake_cygpath.chmod(0o755)
         log = self.root / "hook.log"
+        hook_path_log = self.root / "build/ai-checks/hook-path.log"
         fake_git_log = self.root / "fake-git.log"
         environment = os.environ | {
             "PYTHON": str(fake_python),
             "HOOK_LOG": str(log),
+            "HOOK_PATH_LOG": str(hook_path_log),
             "FAKE_GIT_LOG": fake_git_log.name,
+            "GIT_EXEC_PATH": "C:/fixture/git-core",
+            "POSIX_GIT_EXEC_PATH": "/__fixture_git_exec_path__",
         }
         shell = shutil.which("sh")
         self.assertIsNotNone(shell)
         shell_path = 'PATH="$PWD/fake-bin:$PATH"; export PATH;'
+        unprefixed_hook_path = (
+            'PATH="$PWD/fake-bin:$PATH"; export PATH; '
+            'HOOK_PATH_PREFIX="$PWD/fake-bin"; export HOOK_PATH_PREFIX;'
+        )
+        hook_path = (
+            'PATH="$POSIX_GIT_EXEC_PATH:$PWD/fake-bin:$PATH"; export PATH; '
+            'HOOK_PATH_PREFIX="$PWD/fake-bin"; export HOOK_PATH_PREFIX;'
+        )
         shell_version = subprocess.run(
             [shell, "--version"],
             cwd=self.root,
@@ -503,8 +589,19 @@ class AiCheckTests(unittest.TestCase):
             check=False,
             env=environment,
         )
+        unprefixed_result = subprocess.run(
+            [shell, "-c", f'{unprefixed_hook_path} exec "$1"', "pre-push-fixture", PRE_PUSH],
+            cwd=self.root,
+            input="refs/tags/ai/EarlyDev/0.1 tag-object refs/tags/ai/EarlyDev/0.1 0000000000000000000000000000000000000000\n",
+            text=True,
+            capture_output=True,
+            env=environment,
+        )
+        self.assertEqual(unprefixed_result.returncode, 0, unprefixed_result.stderr)
+        self.assertNotIn("git:--exec-path:", fake_git_log.read_text(encoding="utf-8"))
+        fake_git_log.write_text("", encoding="utf-8")
         result = subprocess.run(
-            [shell, "-c", f'{shell_path} exec "$1"', "pre-push-fixture", PRE_PUSH],
+            [shell, "-c", f'{hook_path} exec "$1"', "pre-push-fixture", PRE_PUSH],
             cwd=self.root,
             input="refs/tags/ai/EarlyDev/0.1 tag-object refs/tags/ai/EarlyDev/0.1 0000000000000000000000000000000000000000\n",
             text=True,
@@ -532,14 +629,18 @@ class AiCheckTests(unittest.TestCase):
         self.assertEqual(
             fake_git_log_contents.splitlines(),
             [
-                "git:--version:",
+                "git:--exec-path:",
                 "git:branch:--show-current",
                 "git:rev-parse:HEAD",
                 "git:rev-parse:tag-object^{commit}",
                 "git:status:--porcelain",
             ],
         )
-        self.assertEqual(log.read_text(encoding="utf-8").strip(), "script/ai_check.py --strict --require-index-match")
+        self.assertEqual(
+            log.read_text(encoding="utf-8").strip(),
+            "script/ai_check.py --strict --require-index-match",
+        )
+        self.assertEqual(hook_path_log.read_text(encoding="utf-8").strip(), "restored")
 
     def test_ai_dev_pre_push_entrypoint_runs_fast_gate_and_propagates_failure(self):
         self.git("branch", "-M", "ai-dev")
@@ -738,7 +839,7 @@ class AiCheckTests(unittest.TestCase):
         self.assertIn(("extra-matrix", expected_candidate, 7, False), commands)
         self.assertEqual(
             [name for name, *_ in commands],
-            ["docs", "backlog", "current-plan", "diff-working", "diff-cached", "extra-matrix"],
+            ["docs", "backlog", "current-plan", "release-reports", "diff-working", "diff-cached", "extra-matrix"],
         )
 
         commands.clear()
@@ -758,7 +859,7 @@ class AiCheckTests(unittest.TestCase):
         self.assertIn(("extra-matrix", expected_strict, 7, False), commands)
         self.assertEqual(
             [name for name, *_ in commands],
-            ["docs", "backlog", "current-plan", "diff-working", "diff-cached", "extra-matrix"],
+            ["docs", "backlog", "current-plan", "release-reports", "diff-working", "diff-cached", "extra-matrix"],
         )
 
         config[0]["when"] = "later"
@@ -808,7 +909,7 @@ class AiCheckTests(unittest.TestCase):
             ])
 
         self.assertEqual(result, 1)
-        self.assertEqual(ran, ["docs", "backlog", "current-plan", "diff-working", "diff-cached", "extra-local-proof"])
+        self.assertEqual(ran, ["docs", "backlog", "current-plan", "release-reports", "diff-working", "diff-cached", "extra-local-proof"])
         self.assertIn("receipt-python-tests", output.getvalue())
         self.assertIn("receipt-build", output.getvalue())
         self.assertIn("receipt-ctest", output.getvalue())
@@ -947,6 +1048,50 @@ class AiCheckTests(unittest.TestCase):
         self.assertEqual(second.returncode, 0)
         self.assertFalse(second.reused)
 
+    def test_receipt_reuse_ignores_tool_call_id_but_rejects_environment_changes(self):
+        checker = load_module()
+        log_dir = self.root / "build/ai-checks"
+        log_dir.mkdir(parents=True)
+        command = [
+            sys.executable,
+            "-c",
+            "import os; print(os.environ['CODEX_TOOL_CALL_ID'])",
+        ]
+        environment = checker.phase_environment(self.root, "python-tests")
+        environment["CODEX_TOOL_CALL_ID"] = "call-1"
+        environment["ASAN_OPTIONS"] = "detect_leaks=0"
+
+        with mock.patch.object(checker, "phase_environment", return_value=environment):
+            first = checker.run_phase(
+                self.root, log_dir, "python-tests", command, 60
+            )
+        self.assertEqual(first.returncode, 0, first.output)
+        self.assertEqual(first.output, "call-1\n")
+
+        next_call_environment = dict(environment)
+        next_call_environment["CODEX_TOOL_CALL_ID"] = "call-2"
+        with mock.patch.object(
+            checker, "phase_environment", return_value=next_call_environment
+        ):
+            reused = checker.run_phase(
+                self.root, log_dir, "python-tests", command, 60, reuse=True
+            )
+        self.assertEqual(reused.returncode, 0, reused.output)
+        self.assertTrue(reused.reused)
+        self.assertEqual(reused.output, "call-1\n")
+
+        changed_environment = dict(environment)
+        changed_environment["ASAN_OPTIONS"] = "detect_leaks=1"
+        with mock.patch.object(
+            checker, "phase_environment", return_value=changed_environment
+        ):
+            rerun = checker.run_phase(
+                self.root, log_dir, "python-tests", command, 60, reuse=True
+            )
+        self.assertEqual(rerun.returncode, 0, rerun.output)
+        self.assertFalse(rerun.reused)
+        self.assertEqual(rerun.output, "call-1\n")
+
     def test_fingerprint_failure_invalidates_stale_receipt(self):
         checker = load_module()
         log_dir = self.root / "build/ai-checks"
@@ -964,7 +1109,8 @@ class AiCheckTests(unittest.TestCase):
                         self.root, log_dir, "docs", command, 60, reuse=True
                     )
                 self.assertEqual(second.returncode, 127)
-                self.assertFalse(receipt.exists())
+                failure_receipt = json.loads(receipt.read_text(encoding="utf-8"))
+                self.assertEqual(failure_receipt["status"], "FAIL")
 
     def test_build_and_ctest_receipts_reuse_only_matching_native_inputs(self):
         checker = load_module()
@@ -1164,7 +1310,8 @@ class AiCheckTests(unittest.TestCase):
 
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("missing output targets", result.output)
-        self.assertFalse(checker.receipt_path(log_dir, "build").exists())
+        receipt = json.loads(checker.receipt_path(log_dir, "build").read_text(encoding="utf-8"))
+        self.assertEqual(receipt["status"], "FAIL")
 
     def test_full_python_receipt_reuses_equivalent_promotion_but_not_content_changes(self):
         checker = load_module()
@@ -1248,6 +1395,38 @@ class AiCheckTests(unittest.TestCase):
         self.assertEqual(marker.read_text(encoding="utf-8"), "1")
         self.assertIn("REUSED PASS docs", second.stdout)
 
+    def test_tool_identity_mismatch_rejects_receipt(self):
+        checker = load_module()
+        log_dir = self.root / "build/ai-checks"
+        log_dir.mkdir(parents=True)
+        command = [sys.executable, "-c", "pass"]
+        environment = checker.phase_environment(self.root, "docs")
+        inputs = {"fixture": "unchanged"}
+        output = "documentation check passed\n"
+        (log_dir / "docs.log").write_text(output, encoding="utf-8")
+        checker.write_receipt(
+            log_dir,
+            "docs",
+            command,
+            environment,
+            inputs,
+            checker.PhaseResult("docs", command, 0, output),
+        )
+
+        self.assertEqual(
+            checker.read_matching_receipt(
+                self.root, log_dir, "docs", command, environment, inputs
+            ),
+            output,
+        )
+        changed_identity = {**checker.tool_identity(command), "resolved": "changed-tool"}
+        with mock.patch.object(checker, "tool_identity", return_value=changed_identity):
+            self.assertIsNone(
+                checker.read_matching_receipt(
+                    self.root, log_dir, "docs", command, environment, inputs
+                )
+            )
+
     def test_receipt_environment_mismatch_forces_execution(self):
         first_environment = os.environ | {"AI_CHECK_RECEIPT_ENV": "one"}
         second_environment = os.environ | {"AI_CHECK_RECEIPT_ENV": "two"}
@@ -1257,29 +1436,197 @@ class AiCheckTests(unittest.TestCase):
         self.assertEqual(second.returncode, 0, second.stdout + second.stderr)
         self.assertNotIn("REUSED PASS docs", second.stdout)
 
-    def test_hook_only_git_environment_does_not_invalidate_manual_receipt(self):
-        first_environment = os.environ.copy()
-        for name in ("GIT_DIR", "GIT_COMMON_DIR", "GIT_INDEX_FILE", "GIT_PREFIX", "GIT_WORK_TREE"):
-            first_environment.pop(name, None)
-        second_environment = first_environment | {
-            "GIT_DIR": str(self.root / ".git"),
-            "GIT_COMMON_DIR": str(self.root / ".git"),
-            "GIT_INDEX_FILE": str(self.root / ".git/index"),
-            "GIT_PREFIX": "",
-            "GIT_WORK_TREE": str(self.root),
-            "GIT_EXEC_PATH": subprocess.run(
-                ["git", "--exec-path"], text=True, capture_output=True, check=True
-            ).stdout.strip(),
-            "GIT_AUTHOR_DATE": "@0 +0000",
-            "GIT_AUTHOR_EMAIL": "hook@example.invalid",
-            "GIT_AUTHOR_NAME": "Hook",
-            "GIT_EDITOR": ":",
-        }
+    def test_changed_path_invalidates_receipt(self):
+        original_path = os.environ["PATH"]
+        first_environment = os.environ | {"PATH": f"/first-tool-path{os.pathsep}{original_path}"}
+        second_environment = os.environ | {"PATH": f"/second-tool-path{os.pathsep}{original_path}"}
         first = self.run_check("--fast", environment=first_environment)
         self.assertEqual(first.returncode, 0, first.stdout + first.stderr)
         second = self.run_check("--fast", environment=second_environment)
         self.assertEqual(second.returncode, 0, second.stdout + second.stderr)
-        self.assertIn("REUSED PASS docs", second.stdout)
+        self.assertNotIn("REUSED PASS docs", second.stdout)
+
+    def test_real_precommit_hook_reuses_manual_receipt(self):
+        marker = self.root / "build/ai-checks/docs-command-count"
+        (self.root / "script/ai_docs.py").write_text(
+            "import os\n"
+            "from pathlib import Path\n"
+            "marker = Path(os.environ['AI_CHECK_MARKER'])\n"
+            "value = int(marker.read_text()) if marker.exists() else 0\n"
+            "marker.parent.mkdir(parents=True, exist_ok=True)\n"
+            "marker.write_text(str(value + 1))\n",
+            encoding="utf-8",
+        )
+        checker = self.root / "script/ai_commit.py"
+        checker.write_text(
+            "import os\n"
+            "import subprocess\n"
+            "import sys\n"
+            "from pathlib import Path\n"
+            "Path(os.environ['AI_CHECK_PATH_LOG']).parent.mkdir(parents=True, exist_ok=True)\n"
+            "Path(os.environ['AI_CHECK_PATH_LOG']).write_text(os.environ['PATH'], encoding='utf-8')\n"
+            f"raise SystemExit(subprocess.run([{sys.executable!r}, 'script/ai_check.py', "
+            "'--root', '.', '--fast'], check=False).returncode)\n",
+            encoding="utf-8",
+        )
+        shutil.copy2(SCRIPT, self.root / "script/ai_check.py")
+        shutil.copy2(SCRIPT.with_name("ai_windows_job.py"), self.root / "script/ai_windows_job.py")
+        hook_dir = self.root / ".githooks"
+        hook_dir.mkdir()
+        shutil.copy2(PRE_COMMIT, hook_dir / "pre-commit")
+        self.git("config", "core.hooksPath", str(hook_dir))
+        self.git("branch", "-M", "codex/ai-hook-path-reuse")
+        hook_path_log = self.root / "build/ai-checks/hook-path.log"
+        environment = os.environ | {
+            "PYTHON": sys.executable,
+            "AI_CHECK_MARKER": str(marker),
+            "AI_CHECK_PATH_LOG": str(hook_path_log),
+        }
+        first = self.run_check("--fast", environment=environment)
+        self.assertEqual(first.returncode, 0, first.stdout + first.stderr)
+        self.assertEqual(marker.read_text(encoding="utf-8"), "1")
+        hook_result = subprocess.run(
+            ["git", "commit", "--allow-empty", "--no-gpg-sign", "-m", "hook receipt reuse"],
+            cwd=self.root,
+            env=environment,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        self.assertEqual(
+            hook_result.returncode,
+            0,
+            hook_result.stdout + hook_result.stderr,
+        )
+        expected_runs = "2" if os.name == "nt" else "1"
+        self.assertEqual(marker.read_text(encoding="utf-8"), expected_runs)
+        self.assert_hook_path_retains_caller(
+            hook_path_log.read_text(encoding="utf-8"), environment["PATH"]
+        )
+
+    def test_real_pre_merge_hook_restores_manual_path(self):
+        marker = self.root / "build/ai-checks/docs-command-count"
+        (self.root / "script/ai_docs.py").write_text(
+            "import os\n"
+            "from pathlib import Path\n"
+            "marker = Path(os.environ['AI_CHECK_MARKER'])\n"
+            "value = int(marker.read_text()) if marker.exists() else 0\n"
+            "marker.parent.mkdir(parents=True, exist_ok=True)\n"
+            "marker.write_text(str(value + 1))\n",
+            encoding="utf-8",
+        )
+        hook_path_log = self.root / "build/ai-checks/hook-path.log"
+        checker = self.root / "script/ai_commit.py"
+        checker.write_text(
+            "import os\n"
+            "import subprocess\n"
+            "import sys\n"
+            "from pathlib import Path\n"
+            "Path(os.environ['AI_CHECK_PATH_LOG']).parent.mkdir(parents=True, exist_ok=True)\n"
+            "Path(os.environ['AI_CHECK_PATH_LOG']).write_text(os.environ['PATH'], encoding='utf-8')\n"
+            f"raise SystemExit(subprocess.run([{sys.executable!r}, 'script/ai_check.py', "
+            "'--root', '.', '--fast'], check=False).returncode)\n",
+            encoding="utf-8",
+        )
+        shutil.copy2(SCRIPT, self.root / "script/ai_check.py")
+        shutil.copy2(SCRIPT.with_name("ai_windows_job.py"), self.root / "script/ai_windows_job.py")
+        hook_dir = self.root / ".githooks"
+        hook_dir.mkdir()
+        shutil.copy2(PRE_COMMIT, hook_dir / "pre-commit")
+        shutil.copy2(PRE_MERGE, hook_dir / "pre-merge-commit")
+        self.git("add", ".githooks", "script")
+        self.git("commit", "--no-gpg-sign", "-m", "pre-merge receipt fixture")
+        branch = "codex/ai-merge-hook-path-reuse"
+        self.git("branch", "-M", branch)
+        self.git("switch", "-c", "merge-side")
+        self.git("commit", "--allow-empty", "--no-gpg-sign", "-m", "empty merge side")
+        self.git("switch", branch)
+        self.git("config", "core.hooksPath", str(hook_dir))
+        merge_head = self.git("rev-parse", "merge-side").stdout.strip()
+        environment = os.environ | {
+            "PYTHON": sys.executable,
+            "AI_CHECK_MARKER": str(marker),
+            "AI_CHECK_PATH_LOG": str(hook_path_log),
+            "GIT_REFLOG_ACTION": "merge merge-side",
+            f"GITHEAD_{merge_head}": "merge-side",
+        }
+        first = self.run_check("--fast", environment=environment)
+        self.assertEqual(first.returncode, 0, first.stdout + first.stderr)
+        self.assertEqual(marker.read_text(encoding="utf-8"), "1")
+        merge = subprocess.run(
+            ["git", "merge", "--no-ff", "--no-edit", "merge-side"],
+            cwd=self.root,
+            env=environment,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        self.assertEqual(merge.returncode, 0, merge.stdout + merge.stderr)
+        expected_runs = "2" if os.name == "nt" else "1"
+        self.assertEqual(marker.read_text(encoding="utf-8"), expected_runs)
+        self.assert_hook_path_retains_caller(
+            hook_path_log.read_text(encoding="utf-8"), environment["PATH"]
+        )
+
+    def test_real_pre_push_hook_reuses_manual_receipt(self):
+        marker = self.root / "build/ai-checks/docs-command-count"
+        (self.root / "script/ai_docs.py").write_text(
+            "import os\n"
+            "from pathlib import Path\n"
+            "marker = Path(os.environ['AI_CHECK_MARKER'])\n"
+            "value = int(marker.read_text()) if marker.exists() else 0\n"
+            "marker.parent.mkdir(parents=True, exist_ok=True)\n"
+            "marker.write_text(str(value + 1))\n",
+            encoding="utf-8",
+        )
+        (self.root / ".gitignore").write_text(
+            "build/\n__pycache__/\n**/__pycache__/\n*.pyc\n", encoding="utf-8"
+        )
+        hook_dir = self.root / ".githooks"
+        hook_dir.mkdir()
+        shutil.copy2(PRE_PUSH, hook_dir / "pre-push")
+        shutil.copy2(SCRIPT, self.root / "script/ai_check.py")
+        shutil.copy2(SCRIPT.with_name("ai_windows_job.py"), self.root / "script/ai_windows_job.py")
+        release_guard = self.root / "script/ci/release_guard.py"
+        release_guard.parent.mkdir(parents=True)
+        release_guard.write_text(
+            "import os\n"
+            "from pathlib import Path\n"
+            "Path(os.environ['AI_CHECK_PATH_LOG']).parent.mkdir(parents=True, exist_ok=True)\n"
+            "Path(os.environ['AI_CHECK_PATH_LOG']).write_text(os.environ['PATH'], encoding='utf-8')\n",
+            encoding="utf-8",
+        )
+        self.git("branch", "-M", "ai-dev")
+        self.git("add", ".gitignore", ".githooks", "script")
+        self.git("commit", "--no-gpg-sign", "-m", "pre-push receipt fixture")
+        self.git("config", "core.hooksPath", str(hook_dir))
+        hook_path_log = self.root / "build/ai-checks/hook-path.log"
+        environment = os.environ | {
+            "PYTHON": sys.executable,
+            "AI_CHECK_MARKER": str(marker),
+            "AI_CHECK_PATH_LOG": str(hook_path_log),
+        }
+        first = self.run_check("--fast", environment=environment)
+        self.assertEqual(first.returncode, 0, first.stdout + first.stderr)
+        self.assertEqual(marker.read_text(encoding="utf-8"), "1")
+        self.assertEqual(self.git("status", "--porcelain").stdout, "")
+        with tempfile.TemporaryDirectory() as directory:
+            remote = Path(directory) / "remote.git"
+            subprocess.run(["git", "init", "--bare", "-q", str(remote)], check=True)
+            push = subprocess.run(
+                ["git", "push", str(remote), "ai-dev:ai-dev"],
+                cwd=self.root,
+                env=environment,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+        self.assertEqual(push.returncode, 0, push.stdout + push.stderr)
+        expected_runs = "2" if os.name == "nt" else "1"
+        self.assertEqual(marker.read_text(encoding="utf-8"), expected_runs)
+        self.assert_hook_path_retains_caller(
+            hook_path_log.read_text(encoding="utf-8"), environment["PATH"]
+        )
 
     def test_explicit_git_exec_path_mismatch_invalidates_receipt(self):
         first = self.run_check("--fast")
@@ -1318,7 +1665,7 @@ class AiCheckTests(unittest.TestCase):
         self.assertNotIn("build", calls)
         self.assertNotIn("ctest", calls)
 
-    def test_unknown_tooling_mixed_with_native_changes_keeps_full_python_scope(self):
+    def test_unknown_tooling_mixed_with_native_changes_keeps_python_and_source_checks(self):
         checker = load_module()
         changed = {"src/fixture.cpp", "publish.py"}
         calls = []
@@ -1331,7 +1678,19 @@ class AiCheckTests(unittest.TestCase):
             self.assertEqual(checker.main(["--root", str(self.root), "--fast"]), 0)
         self.assertIn("full-python", output.getvalue())
         self.assertIn("python-tests", calls)
-        self.assertNotIn("source-checks", calls)
+        self.assertIn("source-checks", calls)
+
+    def test_mixed_native_and_tooling_changes_propagate_source_policy_failure(self):
+        checker = load_module()
+
+        def run_phase(root, log_dir, name, command, timeout, **kwargs):
+            return checker.PhaseResult(name, command, 1 if name == "source-checks" else 0, "source policy failed")
+
+        with mock.patch.object(checker, "changed_scope", return_value=("full-python", ["src/fixture.cpp", "publish.py"])), \
+                mock.patch.object(checker, "run_phase", side_effect=run_phase), \
+                contextlib.redirect_stdout(io.StringIO()) as output:
+            self.assertEqual(checker.main(["--root", str(self.root), "--fast"]), 1)
+        self.assertIn("FAIL source-checks", output.getvalue())
 
     def test_fast_cpp_source_policy_failure_propagates_without_python_suite(self):
         (self.root / "CMakePresets.json").write_text("{}\n", encoding="utf-8")
@@ -1385,7 +1744,106 @@ class AiCheckTests(unittest.TestCase):
 
         ctest = next(call for call in calls if call[0] == "ctest")
         self.assertEqual(ctest[1][-2:], ["--timeout", "240"])
-        self.assertEqual(ctest[2], 2400)
+        self.assertEqual(ctest[2], checker.BUILD_PHASE_TIMEOUT)
+        self.assertTrue(all(timeout <= 600 for _, _, timeout in calls))
+
+    def test_all_configured_automated_stages_fit_ten_minutes(self):
+        checker = load_module()
+        self.assertEqual(checker.MAX_PHASE_TIMEOUT, 600)
+        self.assertEqual(checker.TOTAL_TIMEOUT, 1500)
+        self.assertEqual(checker.BUILD_PHASE_TIMEOUT, 600)
+        self.assertLessEqual(checker.PYTHON_TEST_TIMEOUT, checker.MAX_PHASE_TIMEOUT)
+        self.assertLessEqual(checker.WINDOWS_PYTHON_TEST_TIMEOUT, checker.MAX_PHASE_TIMEOUT)
+        self.assertEqual(int(checker.BUILD_PHASE_COMMANDS["ctest"][-1]), 240)
+        registry = json.loads((REPOSITORY / "script/ai_checks.json").read_text(encoding="utf-8"))
+        self.assertTrue(registry)
+        self.assertTrue(all(item["timeout"] <= checker.MAX_PHASE_TIMEOUT for item in registry))
+
+    def test_aggregate_deadline_marks_remaining_phases_unrun_and_failing(self):
+        checker = load_module()
+        (self.root / "script/ai_checks.json").write_text("[]\n", encoding="utf-8")
+        clock = [0.0]
+        calls = []
+
+        def monotonic():
+            return clock[0]
+
+        def run_phase(root, log_dir, name, command, timeout, **kwargs):
+            calls.append((name, timeout))
+            clock[0] += checker.TOTAL_TIMEOUT
+            (log_dir / f"{name}.log").write_text("partial stage output\n", encoding="utf-8")
+            return checker.PhaseResult(name, command, 124, "partial stage output\n", timed_out=True)
+
+        with (
+            mock.patch.object(checker, "time") as mocked_time,
+            mock.patch.object(checker, "run_phase", side_effect=run_phase),
+            contextlib.redirect_stdout(io.StringIO()) as output,
+        ):
+            mocked_time.monotonic.side_effect = monotonic
+            mocked_time.time_ns.return_value = 1
+            self.assertEqual(checker.main(["--root", str(self.root)]), 1)
+
+        self.assertEqual([name for name, _ in calls], ["docs"])
+        self.assertEqual(calls[0][1], min(60, checker.MAX_PHASE_TIMEOUT))
+        self.assertIn("UNRUN backlog", output.getvalue())
+        self.assertIn("UNRUN ctest", output.getvalue())
+        summary = json.loads((self.root / "build/ai-checks/summary.json").read_text(encoding="utf-8"))
+        self.assertIn("docs", summary["timed_out_phases"])
+        self.assertIn("backlog", summary["unrun_phases"])
+        self.assertIn("ctest", summary["unrun_phases"])
+        self.assertIn("partial stage output", (self.root / "build/ai-checks/docs.log").read_text(encoding="utf-8"))
+        self.assertIn("deadline", (self.root / "build/ai-checks/backlog.log").read_text(encoding="utf-8").lower())
+        unrun_receipt = json.loads(checker.receipt_path(self.root / "build/ai-checks", "backlog").read_text(encoding="utf-8"))
+        self.assertEqual(unrun_receipt["status"], "UNRUN")
+
+    def test_phase_timeout_terminates_descendant_processes(self):
+        checker = load_module()
+        log_dir = self.root / "build/ai-checks"
+        log_dir.mkdir(parents=True)
+        marker = self.root / "descendant-finished"
+        child = (
+            "import pathlib,time; time.sleep(1.5); "
+            f"pathlib.Path({str(marker)!r}).write_text('alive')"
+        )
+        parent = (
+            "import subprocess,sys,time; "
+            f"subprocess.Popen([sys.executable, '-c', {child!r}]); "
+            "print('parent started', flush=True); time.sleep(30)"
+        )
+        result = checker.run_phase(
+            self.root, log_dir, "tree-timeout", [sys.executable, "-c", parent], 1
+        )
+        self.assertEqual(result.returncode, 124)
+        self.assertTrue(result.timed_out)
+        self.assertIn("parent started", result.output)
+        timeout_receipt = json.loads(checker.receipt_path(log_dir, "tree-timeout").read_text(encoding="utf-8"))
+        self.assertEqual(timeout_receipt["status"], "TIMEOUT")
+        self.assertTrue(timeout_receipt["timed_out"])
+        time.sleep(1.7)
+        self.assertFalse(marker.exists(), "descendant survived its timed-out phase")
+
+    @unittest.skipUnless(os.name == "nt", "Windows owned-job cleanup contract")
+    def test_phase_exit_cleans_descendants_after_command_leader_exits(self):
+        checker = load_module()
+        log_dir = self.root / "build/ai-checks"
+        log_dir.mkdir(parents=True)
+        marker = self.root / "descendant-finished"
+        child = (
+            "import pathlib,time; time.sleep(2); "
+            f"pathlib.Path({str(marker)!r}).write_text('alive')"
+        )
+        parent = (
+            "import subprocess,sys; "
+            f"subprocess.Popen([sys.executable, '-c', {child!r}]); "
+            "print('leader finished', flush=True)"
+        )
+        result = checker.run_phase(
+            self.root, log_dir, "exited-leader", [sys.executable, "-c", parent], 10
+        )
+        self.assertEqual(result.returncode, 0, result.output)
+        self.assertIn("leader finished", result.output)
+        time.sleep(2.2)
+        self.assertFalse(marker.exists())
 
     def test_full_and_strict_checks_run_full_python_for_focused_scopes(self):
         checker = load_module()

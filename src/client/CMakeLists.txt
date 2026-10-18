@@ -2,6 +2,7 @@ target_sources(mc
     PRIVATE
         BotClient.cpp
         ClientAudio.cpp
+        HeightTileInterestRegion.cpp
         PreviewResidency.cpp
     Camera.cpp
     CameraController.cpp
@@ -33,6 +34,7 @@ if(NOT ANDROID)
         render/shaders/grid.vert
         render/shaders/player.vert
         render/shaders/stone.vert
+        render/shaders/stone_indexed_block.vert
         render/shaders/stone.frag
         render/shaders/stone_solid.frag
         render/shaders/sky.vert
@@ -42,6 +44,14 @@ if(NOT ANDROID)
         render/shaders/text.frag
     )
 
+    add_custom_command(
+        OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/stone_indexed_block.vert.spv" APPEND
+        DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/render/shaders/stone_geometry.glsl"
+    )
+    add_custom_command(
+        OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/stone.vert.spv" APPEND
+        DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/render/shaders/stone_geometry.glsl"
+    )
     mc_copy_target_shaders(mc_main mc)
 endif()
 

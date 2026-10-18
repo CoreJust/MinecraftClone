@@ -23,8 +23,9 @@ consumers remain free of every graphics, platform, Vulkan, GLFW, and audio
 target.
 
 The root CMake configure checks the installed package's clean exact revision
-against the lock file. `MC_ALLOW_INEXACT_CORECPP=ON` is reserved for local
-development and is not release evidence. The focused
+against the lock file, including local development builds.
+`MC_ALLOW_INEXACT_CORECPP` remains a legacy cache flag but cannot bypass those
+checks. The focused
 `CoreCpp.ServerOnlyPackageConsumer` test links `CoreCpp::RuntimeNetwork` and
 rejects graphics, platform, and audio components.
 `MC_BUILD_CLIENT=OFF` is the MinecraftClone headless configuration: it omits

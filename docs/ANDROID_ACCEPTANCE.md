@@ -73,8 +73,11 @@ python3 script/android_pair_playtest.py --serial "$serial"
 For the existing ReleaseClean device, pass its verified serial and
 `--avd MinecraftClone_S7_ReleaseClean_API_35` to the same paired runner.
 
-The paired runner uses only `build/release/mc_main` (or `mc_main.exe` on
-Windows), refuses a missing Release executable or occupied host UDP port, and
+The paired runner defaults to `build/release/mc_main` (or `mc_main.exe` on
+Windows). For an already-verified custom Release build, pass
+`--server-binary /absolute/build/directory/mc_main`; do not create a symlink or
+launch a second server to accommodate the default path. It refuses a missing
+executable or occupied host UDP port, and
 starts one loopback server at render distance 72. It waits for the port to bind
 before calling the client guard exactly once, then stays attached to the host
 server for the duration of the playtest. Leave the command running while
@@ -126,8 +129,9 @@ installed, do not reset the shared device. An uninstall resets app data and
 requires explicit authorization for the exact package and device; never apply
 the historical disposable-device procedure to an unrelated emulator or phone.
 
-S7 Android runtime acceptance covers NativeActivity lifecycle, network
-connectivity, and streamed terrain rendering. After the client joins, wait for
+S7's partial Android scope requires local tests, the development APK, and basic
+install/join/render evidence. Background/resume and reconnect cycles are not
+additional S7 release gates. After the client joins, wait for
 height tiles to arrive and verify a non-sky terrain view in the emulator. The
 Android client uses the same projected-area LOD and seam-aware tile mesher as
 desktop, keeps the renderer's tile interest tied to player position, and

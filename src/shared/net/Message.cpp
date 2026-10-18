@@ -4,6 +4,7 @@
 #include <shared/world/World.hpp>
 
 #include <algorithm>
+#include <limits>
 #include <type_traits>
 #include <utility>
 #include <variant>
@@ -69,14 +70,55 @@ void appendInt32(std::vector<uint8_t>& bytes, int32_t const value)
     appendUint32(bytes, static_cast<uint32_t>(value));
 }
 
+[[nodiscard]]
+uint16_t heightTileBase(ServerHeightTileMessage const& message) noexcept
+{
+    return *std::ranges::min_element(message.heights);
+}
+
+[[nodiscard]]
+uint8_t heightTileDeltaBitWidth(ServerHeightTileMessage const& message) noexcept
+{
+    uint32_t const height_range = static_cast<uint32_t>(*std::ranges::max_element(message.heights))
+        - static_cast<uint32_t>(heightTileBase(message));
+    uint8_t bit_width = 0U;
+    for (uint32_t range = height_range; range != 0U; range >>= 1U) {
+        ++bit_width;
+    }
+    return bit_width;
+}
+
+[[nodiscard]]
+uint32_t heightTileEncodedSize(ServerHeightTileMessage const& message) noexcept
+{
+    uint32_t const packed_bits = HEIGHT_TILE_SAMPLE_COUNT
+        * static_cast<uint32_t>(heightTileDeltaBitWidth(message));
+    return 27U + (packed_bits + 7U) / 8U;
+}
+
 void appendHeightTile(std::vector<uint8_t>& bytes, ServerHeightTileMessage const& message)
 {
     appendInt32(bytes, message.key.x);
     appendInt32(bytes, message.key.y);
     appendUint64(bytes, message.revision);
     appendUint64(bytes, message.token);
+
+    uint16_t const base = heightTileBase(message);
+    uint8_t const bit_width = heightTileDeltaBitWidth(message);
+    bytes.push_back(bit_width);
+    appendUint16(bytes, base);
+
+    uint64_t bit_buffer = 0U;
+    uint32_t buffered_bits = 0U;
     for (uint16_t const height : message.heights) {
-        appendUint16(bytes, height);
+        uint32_t const delta = static_cast<uint32_t>(height) - static_cast<uint32_t>(base);
+        bit_buffer |= static_cast<uint64_t>(delta) << buffered_bits;
+        buffered_bits += bit_width;
+        while (buffered_bits >= 8U) {
+            bytes.push_back(static_cast<uint8_t>(bit_buffer));
+            bit_buffer >>= 8U;
+            buffered_bits -= 8U;
+        }
     }
 }
 
@@ -138,10 +180,16 @@ struct MessageEncoder final {
 
     std::vector<uint8_t> operator()(ClientHeightTileCreditMessage const& message)
     {
-        begin(MessageType::ClientHeightTileCredit, 17U);
+        begin(MessageType::ClientHeightTileCredit,
+            18U + message.not_resident_keys.size() * 2U * sizeof(int32_t));
         appendUint64(bytes, message.world_revision);
         appendUint64(bytes, message.delivery_token);
         bytes.push_back(message.credits);
+        bytes.push_back(static_cast<uint8_t>(message.not_resident_keys.size()));
+        for (HeightTileKey const key : message.not_resident_keys) {
+            appendInt32(bytes, key.x);
+            appendInt32(bytes, key.y);
+        }
         return std::move(bytes);
     }
 
@@ -194,19 +242,18 @@ struct MessageEncoder final {
 
     std::vector<uint8_t> operator()(ServerHeightTileMessage const& message)
     {
-        begin(MessageType::ServerHeightTile, 24U + HEIGHT_TILE_PAYLOAD_BYTES);
+        begin(MessageType::ServerHeightTile, heightTileEncodedSize(message));
         appendHeightTile(bytes, message);
         return std::move(bytes);
     }
 
     std::vector<uint8_t> operator()(ServerHeightTileBatchMessage const& message)
     {
-        uint64_t const tile_bytes = 24U + HEIGHT_TILE_PAYLOAD_BYTES;
-        uint64_t constexpr removal_bytes = 24U;
-        begin(
-            MessageType::ServerHeightTileBatch,
-            10U + tile_bytes * message.tiles.size() + removal_bytes * message.removals.size()
-        );
+        uint64_t payload_size = 10U + 24U * message.removals.size();
+        for (ServerHeightTileMessage const& tile : message.tiles) {
+            payload_size += heightTileEncodedSize(tile);
+        }
+        begin(MessageType::ServerHeightTileBatch, payload_size);
         appendUint64(bytes, message.delivery_token);
         bytes.push_back(static_cast<uint8_t>(message.tiles.size()));
         bytes.push_back(static_cast<uint8_t>(message.removals.size()));
@@ -314,13 +361,38 @@ std::optional<ServerHeightTileMessage> readHeightTile(MessageReader& reader) noe
     if (!x || !y || !revision || !token) {
         return std::nullopt;
     }
+    auto const bit_width = reader.readUint8();
+    auto const base = reader.readUint16();
+    if (!bit_width || !base || *bit_width > 16U) {
+        return std::nullopt;
+    }
+
+    uint64_t bit_buffer = 0U;
+    uint32_t buffered_bits = 0U;
+    uint64_t const delta_mask = *bit_width == 0U
+        ? 0U
+        : (uint64_t{ 1U } << *bit_width) - 1U;
     std::array<uint16_t, HEIGHT_TILE_SAMPLE_COUNT> heights{};
     for (uint32_t index{ 0U }; index < HEIGHT_TILE_SAMPLE_COUNT; ++index) {
-        auto const height = reader.readUint16();
-        if (!height) {
+        uint32_t delta = 0U;
+        while (buffered_bits < *bit_width) {
+            auto const byte = reader.readUint8();
+            if (!byte) {
+                return std::nullopt;
+            }
+            bit_buffer |= static_cast<uint64_t>(*byte) << buffered_bits;
+            buffered_bits += 8U;
+        }
+        delta = static_cast<uint32_t>(bit_buffer & delta_mask);
+        if (*bit_width > 0U) {
+            bit_buffer >>= *bit_width;
+            buffered_bits -= *bit_width;
+        }
+        uint32_t const height = static_cast<uint32_t>(*base) + delta;
+        if (height > std::numeric_limits<uint16_t>::max()) {
             return std::nullopt;
         }
-        heights[index] = *height;
+        heights[index] = static_cast<uint16_t>(height);
     }
     return ServerHeightTileMessage{
         .key = { .x = *x, .y = *y },
@@ -381,8 +453,22 @@ bool isValidMessage(Message const& message) noexcept
                 && isValidDirection(static_cast<uint8_t>(value.direction.view_x))
                 && isValidDirection(static_cast<uint8_t>(value.direction.view_y));
         } else if constexpr (std::is_same_v<Value, ClientHeightTileCreditMessage>) {
-            return value.world_revision != 0U && value.credits > 0U
-                && value.credits <= HEIGHT_TILE_DELIVERY_WINDOW;
+            if (value.world_revision == 0U || value.credits == 0U
+                || value.credits > HEIGHT_TILE_DELIVERY_WINDOW
+                || value.not_resident_keys.size() > HEIGHT_TILE_RESIDENCY_RECEIPT_KEY_CAPACITY
+                || (value.delivery_token == 0U && !value.not_resident_keys.empty())) {
+                return false;
+            }
+            for (auto current = value.not_resident_keys.cbegin();
+                 current != value.not_resident_keys.cend();
+                 ++current) {
+                if (*current != normalizeHeightTileKey(*current)
+                    || std::ranges::find(value.not_resident_keys.cbegin(), current, *current)
+                        != current) {
+                    return false;
+                }
+            }
+            return true;
         } else if constexpr (std::is_same_v<Value, ServerPlayerPositionMessage>) {
             return isValidCharacter(value.ch) && isValidPlayerPaletteIndex(value.palette_index)
                 && isValidMovementCapabilities(value.movement_capabilities)
@@ -429,6 +515,11 @@ bool isValidMessage(Message const& message) noexcept
 }
 
 } // namespace
+
+uint32_t encodedHeightTileSize(ServerHeightTileMessage const& message) noexcept
+{
+    return heightTileEncodedSize(message);
+}
 
 std::vector<uint8_t> encodeMessage(Message message)
 {
@@ -503,12 +594,29 @@ std::optional<Message> decodeMessage(std::span<uint8_t const> const data)
             auto const world_revision = reader.readUint64();
             auto const delivery_token = reader.readUint64();
             auto const credits = reader.readUint8();
-            if (world_revision && delivery_token && credits) {
-                message = ClientHeightTileCreditMessage{
-                    .world_revision = *world_revision,
-                    .delivery_token = *delivery_token,
-                    .credits = *credits,
-                };
+            auto const not_resident_count = reader.readUint8();
+            if (world_revision && delivery_token && credits && not_resident_count
+                && *not_resident_count <= HEIGHT_TILE_RESIDENCY_RECEIPT_KEY_CAPACITY) {
+                std::vector<HeightTileKey> not_resident_keys;
+                not_resident_keys.reserve(*not_resident_count);
+                bool complete = true;
+                for (uint8_t index = 0U; index < *not_resident_count; ++index) {
+                    auto const x = reader.readInt32();
+                    auto const y = reader.readInt32();
+                    if (!x || !y) {
+                        complete = false;
+                        break;
+                    }
+                    not_resident_keys.push_back({ .x = *x, .y = *y });
+                }
+                if (complete) {
+                    message = ClientHeightTileCreditMessage{
+                        .world_revision = *world_revision,
+                        .delivery_token = *delivery_token,
+                        .credits = *credits,
+                        .not_resident_keys = std::move(not_resident_keys),
+                    };
+                }
             }
             break;
         }

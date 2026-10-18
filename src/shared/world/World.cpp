@@ -351,6 +351,30 @@ void World::despawnPlayer(PlayerId const id)
     }
 }
 
+std::optional<PlayerPosition> World::forecastFlightPlayerPosition(
+    PlayerId const id,
+    Direction const direction,
+    std::chrono::milliseconds const elapsed
+) const {
+    if (m_mode != WorldMode::Flight || direction.cycle_movement_capabilities
+        || elapsed < std::chrono::milliseconds::zero() || elapsed > TICK) {
+        return std::nullopt;
+    }
+    std::optional<Player> forecast = player(id);
+    if (!forecast || !forecast->movement_capabilities.allows(MovementCapability::Flight)) {
+        return std::nullopt;
+    }
+    static_cast<void>(moveFlightPlayer(*forecast, direction, elapsed));
+    return PlayerPosition{
+        .x = forecast->x,
+        .y = forecast->y,
+        .z = forecast->z,
+        .x_subcell = forecast->x_subcell,
+        .y_subcell = forecast->y_subcell,
+        .z_subcell = forecast->z_subcell,
+    };
+}
+
 bool World::movePlayer(
     PlayerId const id,
     Direction const direction,

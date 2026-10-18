@@ -84,9 +84,12 @@ def analyzer_arguments(options, compiler, source, cwd):
     index = 1
     while index < len(compiler):
         argument = compiler[index]
-        if argument in {"-target", "--target", "-isysroot", "--sysroot", "-arch", "-D", "-U"}:
+        if argument in {
+            "-target", "--target", "-isysroot", "--sysroot", "-arch", "-D", "-U",
+            "-I", "-isystem", "-iquote", "-idirafter", "-F", "-iframework", "-resource-dir",
+        }:
             macro_args.extend(compiler[index:index + 2]); index += 2; continue
-        if argument.startswith(("--target=", "--sysroot=", "-std=", "-D", "-U")):
+        if argument in {"-nostdinc", "-nostdinc++"} or argument.startswith(("--target=", "--sysroot=", "-std=", "-stdlib=", "-D", "-U", "-I", "-F")):
             macro_args.append(argument)
         index += 1
     result = subprocess.run(macro_args + ["-dM", "-E", "-v", "-x", "c++", "-"], input=b"", capture_output=True)
@@ -94,10 +97,57 @@ def analyzer_arguments(options, compiler, source, cwd):
         raise ValueError("compiler target macro query failed")
     macros = result.stdout.decode().splitlines()
     PLATFORM_INCLUDE_ROOTS.clear()
+    compiler_search_paths = []
+    in_search_paths = False
     for line in result.stderr.decode().splitlines():
-        candidate = Path(line.strip())
-        if candidate.is_dir() and (".sdk/" in str(candidate) or "/lib/clang/" in str(candidate)):
+        if line.strip() == "#include <...> search starts here:":
+            in_search_paths = True
+            continue
+        if in_search_paths and line.strip() == "End of search list.":
+            break
+        if not in_search_paths:
+            continue
+        candidate = Path(line.strip().removesuffix(" (framework directory)"))
+        if not candidate.is_dir():
+            continue
+        candidate = candidate.resolve()
+        compiler_search_paths.append(candidate)
+        if ".sdk/" in str(candidate) or "/lib/clang/" in str(candidate):
             PLATFORM_INCLUDE_ROOTS.append(candidate)
+    # Cppcheck's built-in model is preferred to analyzing libc++'s implementation
+    # headers. Remove only roots confirmed in Clang's search order by libc++'s
+    # version marker; leave project, dependency, and compiler arguments intact.
+    libcxx_roots = set()
+    for include_root in compiler_search_paths:
+        config = include_root / "__config"
+        try:
+            content = config.read_bytes()
+        except OSError:
+            continue
+        if re.search(rb"^\s*#\s*define\s+_LIBCPP_VERSION\b", content, re.MULTILINE):
+            libcxx_roots.add(include_root)
+    if libcxx_roots:
+        filtered = []
+        index = 0
+        while index < len(args):
+            argument = args[index]
+            if argument == "-I" and index + 1 < len(args):
+                include_root = Path(args[index + 1])
+                if not include_root.is_absolute():
+                    include_root = cwd / include_root
+                if include_root.resolve() in libcxx_roots:
+                    index += 2
+                    continue
+            elif argument.startswith("-I") and argument != "-I":
+                include_root = Path(argument[2:])
+                if not include_root.is_absolute():
+                    include_root = cwd / include_root
+                if include_root.resolve() in libcxx_roots:
+                    index += 1
+                    continue
+            filtered.append(argument)
+            index += 1
+        args = filtered
     if any(line.startswith("#define __APPLE__ ") for line in macros):
         result = subprocess.run(macro_args + ["-dM", "-E", "-x", "c++", "-include", "TargetConditionals.h", "-"], input=b"", capture_output=True)
         if result.returncode:

@@ -2,7 +2,7 @@
   "modules": [
     {
       "guide": "docs/ACCEPTANCE.md",
-      "guide_sha256": "ecf18f208a46eb3107dbcbe0eba996d179b9ef69ed13c61a1dad6659c79781ff",
+      "guide_sha256": "49a313efa177c3ee5585bed8c708af990e29cdd8d49f8b327efa5a3e498ee39d",
       "id": "acceptance",
       "sources": [
         "src/acceptance/CMakeLists.txt",
@@ -31,7 +31,7 @@
         "tests/acceptance/runtime_cli_tests.cmake",
         "tests/acceptance/scenario_runner_tests.cpp"
       ],
-      "sources_sha256": "d6aadcbd5207a697dafe1e0fcd22903f107f2130568e39d3d6b79024ebb0babe"
+      "sources_sha256": "cb0c596d600d745b922eb26c19091079a650343ae27638db823d46d6c200eae0"
     },
     {
       "guide": "docs/code/ANDROID.md",
@@ -51,11 +51,11 @@
         "tests/android/input_state_tests.cpp",
         "tests/android/input_tests.cpp"
       ],
-      "sources_sha256": "fee6bbcecb94f114745cca4dfaba3e70090b13152dba03f11a514c1ed3457725"
+      "sources_sha256": "303ccfd2d68092ee990ae0652ff92777aee655447ee0672c40c6e28b0b0faede"
     },
     {
       "guide": "docs/BUILD.md",
-      "guide_sha256": "90d932a1af5ad0baaff44ddd285281cabb4d843be473204f3fdaae9a3c769905",
+      "guide_sha256": "3c19c66d3e67bd931868fb30dc05f4606b9cd45278e182df029053af239c1989",
       "id": "build",
       "sources": [
         ".agents/skills/backlog/SKILL.md",
@@ -86,6 +86,7 @@
         "cmake/Helpers.cmake",
         "cmake/Sanitizers.cmake",
         "cmake/Warnings.cmake",
+        "cmake/WindowsVulkanRuntime.cmake",
         "cmake/fixtures/corecpp_server_consumer/CMakeLists.txt",
         "cmake/fixtures/corecpp_server_consumer/main.cpp",
         "dependencies.lock.json",
@@ -99,10 +100,12 @@
         "script/ai_history.py",
         "script/ai_plan.py",
         "script/ai_publish.py",
+        "script/ai_release_reports.py",
         "script/ai_renderer_smoke.py",
         "script/ai_run.py",
         "script/ai_setup.py",
         "script/ai_tasks.py",
+        "script/ai_windows_job.py",
         "script/android_pair_playtest.py",
         "script/android_playtest.py",
         "script/check_options.py",
@@ -112,6 +115,7 @@
         "script/ci/android_clang_tidy.py",
         "script/ci/android_hwasan_emulator.py",
         "script/ci/build_snapshot.py",
+        "script/ci/clang_static_gate.py",
         "script/ci/cppcheck_gate.py",
         "script/ci/diagnostics/targeted_tsan_client.py",
         "script/ci/install_msan_libcxx.py",
@@ -119,6 +123,7 @@
         "script/ci/release_guard.py",
         "script/ci/verify_analysis_gate.py",
         "script/ci/verify_android_hwasan.py",
+        "script/ci/verify_gameplay_gate.py",
         "script/ci/verify_macos_lsan.py",
         "script/ci/verify_release_assets.py",
         "script/code_checks.py",
@@ -132,10 +137,12 @@
         "script/tests/test_ai_history.py",
         "script/tests/test_ai_plan.py",
         "script/tests/test_ai_publish.py",
+        "script/tests/test_ai_release_reports.py",
         "script/tests/test_ai_renderer_smoke.py",
         "script/tests/test_ai_run.py",
         "script/tests/test_ai_setup.py",
         "script/tests/test_ai_tasks.py",
+        "script/tests/test_ai_windows_job.py",
         "script/tests/test_analysis_presets.py",
         "script/tests/test_android_clang_tidy.py",
         "script/tests/test_android_hwasan_emulator.py",
@@ -145,6 +152,7 @@
         "script/tests/test_build_snapshot.py",
         "script/tests/test_checks_common.py",
         "script/tests/test_ci_acquire.py",
+        "script/tests/test_clang_static_gate.py",
         "script/tests/test_cppcheck_gate.py",
         "script/tests/test_gmp_vcpkg_overlay.py",
         "script/tests/test_install_msan_libcxx.py",
@@ -158,6 +166,7 @@
         "script/tests/test_vcpkg_clang_toolchain.py",
         "script/tests/test_verify_analysis_gate.py",
         "script/tests/test_verify_android_hwasan.py",
+        "script/tests/test_verify_gameplay_gate.py",
         "script/tests/test_verify_macos_lsan.py",
         "script/tests/test_verify_release_assets.py",
         "script/tests/test_windows_runtime_staging.py",
@@ -174,11 +183,11 @@
         "vcpkg-configuration.json",
         "vcpkg.json"
       ],
-      "sources_sha256": "b06968e369102c5780e90ffa38c8bd07d5d2b1cd1dd7aa91eb16a85a64d51909"
+      "sources_sha256": "03ae78722bc38eb705d32d236733a84d4d9ae801ec1bf60299548c46825b0f8c"
     },
     {
       "guide": "docs/code/CORE.md",
-      "guide_sha256": "a99a22855f2f464ec5b1f2a937891b690c6c3df68f6067432e52a74433a2d0c0",
+      "guide_sha256": "f5178e23a0b41fdacb97f1fb9ecb2998328710d23d1510bee791aecf195f6b1e",
       "id": "core",
       "sources": [
         "tests/core/algorithm_tests.cpp",
@@ -211,7 +220,7 @@
     },
     {
       "guide": "docs/code/GAMEPLAY.md",
-      "guide_sha256": "e7a5c1542b22bc016a6b532f90b3e409cf8b990a169efaa8d21847c39700b015",
+      "guide_sha256": "99d5f017d417ee49d2c793f6dfaee19d28eea88d7246cbd32936c76c4b5dbd81",
       "id": "gameplay",
       "sources": [
         "src/client/BotClient.cpp",
@@ -221,6 +230,7 @@
         "src/client/DepthFormat.cpp",
         "src/client/FrameScheduler.cpp",
         "src/client/GameClient.cpp",
+        "src/client/HeightTileInterestRegion.cpp",
         "src/client/PlayerClient.cpp",
         "src/client/PlayerPresentation.cpp",
         "src/client/PlayerPreviewLod.cpp",
@@ -233,6 +243,7 @@
         "src/client/include/client/ClientAudio.hpp",
         "src/client/include/client/FrameScheduler.hpp",
         "src/client/include/client/GameClient.hpp",
+        "src/client/include/client/HeightTileInterestRegion.hpp",
         "src/client/include/client/PlayerClient.hpp",
         "src/client/include/client/PlayerPresentation.hpp",
         "src/client/include/client/PlayerPreviewLod.hpp",
@@ -300,11 +311,11 @@
         "tests/core/world_generation_scheduler_tests.cpp",
         "tests/core/world_generation_tests.cpp"
       ],
-      "sources_sha256": "1a646b6f05f5338c88e142cc62907258da20cf57913be2b1ad7a6f89b199dca1"
+      "sources_sha256": "f2cf771d7f1ca22a7cadaba7042ba3ceb009b62439285852283e5f60928b95de"
     },
     {
       "guide": "docs/code/RENDERING.md",
-      "guide_sha256": "a20daee5dc3982694a9c483fe5f067ab9a42eaca0795ea13290c9a282cf5412f",
+      "guide_sha256": "82faf2d315b774729187e1a9c830e333e7d087fe744055a5f3921b71e7dbef5b",
       "id": "rendering",
       "sources": [
         "src/client/CMakeLists.txt",
@@ -312,6 +323,7 @@
         "src/client/include/client/render/DepthFormat.hpp",
         "src/client/include/client/render/GuiRenderer.hpp",
         "src/client/include/client/render/HeightTileDrawIndex.hpp",
+        "src/client/include/client/render/HeightTileInstanceReaper.hpp",
         "src/client/include/client/render/InstalledShaderAssets.hpp",
         "src/client/include/client/render/ShaderAssets.hpp",
         "src/client/include/client/render/StoneFaceCapacity.hpp",
@@ -339,6 +351,8 @@
         "src/client/render/shaders/sky.vert",
         "src/client/render/shaders/stone.frag",
         "src/client/render/shaders/stone.vert",
+        "src/client/render/shaders/stone_geometry.glsl",
+        "src/client/render/shaders/stone_indexed_block.vert",
         "src/client/render/shaders/stone_solid.frag",
         "src/client/render/shaders/text.frag",
         "src/client/render/shaders/text.vert",
@@ -360,6 +374,8 @@
         "tests/client/goldens/s4_scene_v1.ppm",
         "tests/client/gui_renderer_tests.cpp",
         "tests/client/height_tile_draw_index_tests.cpp",
+        "tests/client/height_tile_instance_reaper_tests.cpp",
+        "tests/client/height_tile_interest_region_tests.cpp",
         "tests/client/player_client_capture_plan_tests.cpp",
         "tests/client/player_client_reset_tests.cpp",
         "tests/client/player_presentation_tests.cpp",
@@ -370,6 +386,7 @@
         "tests/client/renderer_golden_tests.cpp",
         "tests/client/renderer_smoke_tests.cpp",
         "tests/client/shader_assets_tests.cpp",
+        "tests/client/stone_face_capacity_tests.cpp",
         "tests/client/stone_indirect_draws_tests.cpp",
         "tests/client/stone_renderer_tests.cpp",
         "tests/client/text_renderer_tests.cpp",
@@ -380,7 +397,7 @@
         "tests/testsupport/include/testsupport/AdverseTransport.hpp",
         "tests/testsupport/include/testsupport/ImageComparison.hpp"
       ],
-      "sources_sha256": "74216e31433ada87bce42512a4ed97898c634361c785c78d3cc5d760de5eab91"
+      "sources_sha256": "c0d2450a3432697e9e46b6b2d7cb76e758cf9580f68d04469276c2c3956a012a"
     }
   ],
   "version": 1

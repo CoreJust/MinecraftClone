@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
 import tempfile
 import time
@@ -15,6 +16,52 @@ HELPERS = REPOSITORY / "cmake/Helpers.cmake"
 
 
 class WindowsRuntimeStagingTests(unittest.TestCase):
+    def _configure_vulkan_loader(self, selected="driver", sdk=True):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            sdk_root = root / "sdk"
+            sdk_loader = sdk_root / "Bin/vulkan-1.dll"
+            sdk_loader.parent.mkdir(parents=True)
+            sdk_loader.write_bytes(b"sdk loader")
+            driver = root / "driver/vulkan-1.dll"
+            driver.parent.mkdir()
+            driver.write_bytes(b"driver loader")
+            choices = {
+                "driver": driver,
+                "missing": root / "missing/vulkan-1.dll",
+                "directory": root / "directory/vulkan-1.dll",
+                "wrong_name": root / "driver/other.dll",
+                "relative": Path("driver/vulkan-1.dll"),
+            }
+            choices["directory"].mkdir(parents=True)
+            choices["wrong_name"].write_bytes(b"not the loader")
+            command = ["cmake"]
+            if selected is not None:
+                command.append(f"-DMC_VULKAN_RUNTIME_DLL:STRING={choices[selected].as_posix()}")
+            command += ["-P", str(REPOSITORY / "cmake/WindowsVulkanRuntime.cmake")]
+            environment = dict(os.environ)
+            environment.pop("VULKAN_SDK", None)
+            if sdk:
+                environment["VULKAN_SDK"] = str(sdk_root)
+            return subprocess.run(
+                command, cwd=root, env=environment, capture_output=True, text=True, timeout=10,
+            )
+
+    def test_configure_accepts_driver_loader_without_sdk_runtime(self):
+        result = self._configure_vulkan_loader(sdk=False)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_configure_retains_acquired_sdk_runtime_default(self):
+        result = self._configure_vulkan_loader(selected=None)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_configure_rejects_invalid_selected_loader(self):
+        for selected in ("missing", "directory", "wrong_name", "relative"):
+            with self.subTest(selected=selected):
+                result = self._configure_vulkan_loader(selected=selected)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("Missing or invalid Vulkan runtime loader", result.stdout + result.stderr)
+
     def test_helper_gates_target_types_and_required_files(self):
         helpers = HELPERS.read_text(encoding="utf-8")
         self.assertIn("function(mc_stage_windows_runtime TARGET)", helpers)

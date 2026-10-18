@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Sequence
 
 
+MAX_STAGE_SECONDS = 600
 SERIAL = "emulator-5558"
 CONSOLE_PORT = 5558
 ADB_PORT = 5559
@@ -190,19 +191,50 @@ def select_java_cli(github_env: Path, github_path: Path) -> None:
 
 
 def _run(command: Sequence[str], *, env: dict[str, str], timeout: int = 600) -> str:
-    completed = subprocess.run(
-        list(command), text=True, capture_output=True, timeout=timeout, check=False, env=env
+    process = subprocess.Popen(
+        list(command), text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env, start_new_session=True
     )
+    try:
+        stdout, stderr = process.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired as error:
+        _terminate_process_group(process)
+        stdout, stderr = process.communicate()
+        raise LifecycleError(
+            f"{' '.join(command)} timed out after {timeout}s: {(stdout + stderr).strip()}"
+        ) from error
+    completed = subprocess.CompletedProcess(list(command), process.returncode, stdout, stderr)
     output = completed.stdout + completed.stderr
     if completed.returncode:
         raise LifecycleError(f"{' '.join(command)} exited {completed.returncode}: {output.strip()}")
     return output.strip()
 
 
-def _run_stream(command: Sequence[str], *, env: dict[str, str], timeout: int = 1800) -> None:
-    completed = subprocess.run(list(command), timeout=timeout, check=False, env=env)
-    if completed.returncode:
-        raise LifecycleError(f"{' '.join(command)} exited {completed.returncode}")
+def _run_stream(command: Sequence[str], *, env: dict[str, str], timeout: int = MAX_STAGE_SECONDS) -> None:
+    process = subprocess.Popen(list(command), env=env, start_new_session=True)
+    try:
+        returncode = process.wait(timeout=timeout)
+    except subprocess.TimeoutExpired as error:
+        _terminate_process_group(process)
+        raise LifecycleError(f"{' '.join(command)} timed out after {timeout}s") from error
+    if returncode:
+        raise LifecycleError(f"{' '.join(command)} exited {returncode}")
+
+
+def _terminate_process_group(process: subprocess.Popen[object]) -> None:
+    try:
+        os.killpg(process.pid, signal.SIGTERM)
+    except ProcessLookupError:
+        return
+    try:
+        process.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        pass
+    try:
+        os.killpg(process.pid, signal.SIGKILL)
+    except ProcessLookupError:
+        pass
+    if process.poll() is None:
+        process.wait()
 
 
 def _port_available(port: int) -> bool:
@@ -488,6 +520,8 @@ def _signal_process_if_running(pid: int, signal_number: int) -> bool:
 
 
 def wait_for_boot(runner_temp: Path, run_id: str, run_attempt: str, timeout_seconds: int) -> None:
+    if not 1 <= timeout_seconds <= MAX_STAGE_SECONDS:
+        raise LifecycleError(f"emulator boot timeout must be between 1 and {MAX_STAGE_SECONDS} seconds")
     root = _root(runner_temp, run_id, run_attempt)
     state = _read_state(root, run_id, run_attempt)
     if not isinstance(state.get("pid"), int) or not state.get("process_start_identity"):
@@ -607,7 +641,7 @@ def _cli() -> int:
         if name == "start":
             command.add_argument("--sdk-root", type=Path, required=True)
         if name == "wait":
-            command.add_argument("--timeout-seconds", type=int, default=1200)
+            command.add_argument("--timeout-seconds", type=int, default=MAX_STAGE_SECONDS)
     args = parser.parse_args()
     try:
         if args.command == "select-java":

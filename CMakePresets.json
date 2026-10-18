@@ -157,8 +157,8 @@
       "cacheVariables": {
         "CMAKE_C_FLAGS": "-Xanalyzer -analyzer-output=text",
         "CMAKE_CXX_FLAGS": "-Xanalyzer -analyzer-output=text",
-        "CMAKE_C_COMPILER_LAUNCHER": "scan-build;--status-bugs;-v",
-        "CMAKE_CXX_COMPILER_LAUNCHER": "scan-build;--status-bugs;-v"
+        "CMAKE_C_COMPILER_LAUNCHER": "python3;${sourceDir}/script/ci/clang_static_gate.py;--;scan-build;--status-bugs;-v;--",
+        "CMAKE_CXX_COMPILER_LAUNCHER": "python3;${sourceDir}/script/ci/clang_static_gate.py;--;scan-build;--status-bugs;-v;--"
       }
     },
     {

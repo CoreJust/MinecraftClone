@@ -327,12 +327,18 @@ class BuildSnapshotTests(unittest.TestCase):
 
     def test_workflow_builds_resolved_commit_without_publishing(self):
         workflow = WORKFLOW.read_text(encoding="utf-8")
-        self.assertIn("workflow_dispatch:", workflow)
-        self.assertIn("'ai/*/*/*'", workflow)
+        triggers = workflow.split("\npermissions:", maxsplit=1)[0]
+        self.assertIn("workflow_dispatch:", triggers)
+        self.assertNotIn("\n  push:", triggers)
+        self.assertNotIn("\n  pull_request:", triggers)
         self.assertIn("source_commit: ${{ steps.trust.outputs.source_commit }}", workflow)
         self.assertIn("trusted_dependency_source: ${{ steps.trust.outputs.trusted_dependency_source }}", workflow)
         self.assertIn("if: needs.source.outputs.trusted_dependency_source == 'true'", workflow)
         self.assertIn("timeout-minutes: 15", workflow)
+        desktop_job = workflow.split("\n  desktop:\n", maxsplit=1)[1].split("\n  android:\n", maxsplit=1)[0]
+        android_job = workflow.split("\n  android:\n", maxsplit=1)[1]
+        self.assertIn("\n    timeout-minutes: 30\n", desktop_job)
+        self.assertIn("\n    timeout-minutes: 30\n", android_job)
         self.assertIn("--automated-verification build-only", workflow)
         self.assertIn("-DBUILD_TESTING=OFF", workflow)
         self.assertNotIn("ctest ", workflow)

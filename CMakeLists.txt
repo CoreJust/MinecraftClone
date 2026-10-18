@@ -22,7 +22,7 @@ option(MC_ENABLE_HIGH_ASSERT "Enable high assertions" OFF)
 option(MC_ENABLE_VULKAN_VALIDATION_LAYERS "Enable Vulkan validation layers" OFF)
 option(
     MC_ALLOW_INEXACT_CORECPP
-    "Allow a dirty, unknown, or mismatched CoreCpp package for local development"
+    "Deprecated compatibility flag; exact CoreCpp provenance is always required"
     OFF
 )
 if(NOT WIN32 AND NOT APPLE AND NOT ANDROID)
@@ -98,14 +98,7 @@ if(MC_BUILD_CLIENT)
 endif()
 
 if(WIN32 AND MC_BUILD_CLIENT AND NOT ANDROID)
-    file(TO_CMAKE_PATH "$ENV{VULKAN_SDK}" MC_VULKAN_SDK_ROOT)
-    if(NOT MC_VULKAN_SDK_ROOT)
-        message(FATAL_ERROR "VULKAN_SDK is required for desktop Windows runtime staging")
-    endif()
-    set(MC_VULKAN_RUNTIME_DLL "${MC_VULKAN_SDK_ROOT}/Bin/vulkan-1.dll")
-    if(NOT EXISTS "${MC_VULKAN_RUNTIME_DLL}")
-        message(FATAL_ERROR "Missing required Vulkan runtime loader: ${MC_VULKAN_RUNTIME_DLL}")
-    endif()
+    include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/WindowsVulkanRuntime.cmake")
 endif()
 
 

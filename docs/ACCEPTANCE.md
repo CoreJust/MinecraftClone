@@ -5,87 +5,101 @@ The desktop executable provides bounded, noninteractive modes for snapshot evide
 ```sh
 mc_main --scenario <file> --evidence <json>
 mc_main --benchmark-render [--present-immediate] [--hud] --evidence <json>
-mc_main --benchmark-game [--present-immediate] [--workload ordinary|speed-200|wrapped-border|permission-collision] --evidence <json>
+mc_main --benchmark-game [--present-immediate] [--workload ordinary|speed-200|speed-200-full-radius|wrapped-border|permission-collision] [--diagnostic-full-radius-capture] [--diagnostic-presentation-stages] [--diagnostic-indexed-stone-quads 0|1|2] --evidence <json>
 mc_main --capture-render --image <ppm> --evidence <json>
 ```
 
-Scenario mode parses the versioned scripting format, starts a bounded local server, drives clients through authoritative ticks, evaluates assertions, and records structured success or failure. The renderer modes still require a supported Vulkan device and window system. Benchmark mode warms up before sampling; capture mode writes a binary PPM image. Every mode has a watchdog deadline and attempts to persist failure evidence before exiting.
+Scenario mode parses the versioned scripting format, starts a bounded local server, drives clients through authoritative ticks, evaluates assertions, and records structured success or failure. Renderer modes require a supported Vulkan device and window system. Benchmarks warm up before sampling; capture writes a binary PPM image. Each mode has a watchdog deadline and tries to persist failure evidence.
 
-Benchmark evidence records requested and actual framebuffer size, device and driver
-identity, the actual negotiated present mode, validation and HUD state, warmup and
-sample durations, frame count, and CPU timing percentiles. The historical total
-`cpu_presentation_request_timings_ns` covers command recording plus the
-complete/submit/present call; acquire is separately reported. Preserve these fields
-with each result; do not treat a hardware-specific request rate as a portable FPS or
-GPU-performance threshold.
+Evidence records requested/actual framebuffer size, device/driver, present mode,
+validation/HUD state, durations, frame count and CPU percentiles. Historical
+`cpu_presentation_request_timings_ns` covers command recording plus
+complete/submit/present; acquire is separate. Keep fields; request rate is neither
+portable FPS nor a GPU threshold.
 
-`--benchmark-game` runs the production loopback server, networked Flight client,
-authoritative simulation, and Vulkan player renderer. The benchmark API selects
-ordinary alternating movement, accelerated movement with the actual x200 speed
-modifier, a border spawn followed by wrapped traversal, or alternating server
-permission policies that change collision bypass. `--workload` selects one
-script; the default is `ordinary`. Run each script to compare separate receipts.
-Wrapped traversal and permission publication require observed authoritative state
-changes to count as complete. Policy compilation and publication times are
-recorded separately from measured server tick times. Deterministic impaired transport, including loss, jitter, freezes,
-reordering and duplication, is covered separately by the MC-AI-0247
-`AdverseNetwork` acceptance tests; the loopback renderer benchmark does not
-claim to measure frame timing under that impairment.
+`--benchmark-game` exercises the production loopback server, Flight client,
+simulation and Vulkan renderer. `--workload` selects ordinary, x200,
+wrapped-border or permission/collision churn; compare separate receipts. Rates
+require observed authoritative state changes. MC-AI-0247 `AdverseNetwork` tests
+cover impairment, but this loopback benchmark does not measure frame timing under
+it.
 
-The benchmark records the first two seconds of connected loops as cold,
-the next three as warm, and the final second without the client idle delay as
-uncapped. The JSON keeps every loop and server tick duration, successful and
-failed present requests, traffic event counts, and per-loop resident terrain
-tiles, visible faces, and client application-message payload bytes (excluding
-transport overhead). Available GPU durations are recorded as the latest
-renderer sample and may lag the corresponding request. Its request rates count completed render/submit/present
-requests completed inside each half-open measurement interval; a request
-completed after the final interval is recorded as excluded, not counted in its
-rate. `displayed_cadence_hz` is null because the client does not observe
-physical scanout. Timing summaries include p50/p95/p99/p99.8/max; raw samples
-remain in the JSON. Resident mesh bytes and power mode are
-unavailable in this mode and are marked accordingly. GPU identity is also null
-when the renderer reports only its generic presentation context. The benchmark succeeds
-when every phase includes a completed request and the workload sends inputs
-and processes server events; it does not gate on a device-specific FPS target.
+The JSON separates 2 s cold, 3 s warm, and 1 s uncapped loops, retaining every
+loop/tick duration, present success/failure, traffic counts, resident tiles,
+visible faces, and client payload bytes (not transport overhead). GPU duration is
+the latest renderer sample and may lag. Diagnostics split height-tile culling
+into traversal, ordering, and range merging. Rates count completed requests per
+half-open interval. Physical cadence, resident mesh bytes and power mode are
+unavailable; generic contexts may lack GPU identity. Raw samples and
+p50/p95/p99/p99.8/max remain recorded. S7 `--gameplay-proof terrain-coverage`
+fixes radius256; cadence is diagnostic. `performance` fixes radius128 with
+30-second baseline, x200 movement and recovery windows; reject legacy short
+samples. Preregister one capture per candidate, retain failures, and never
+retry to cherry-pick. Report original10/6/10-second prefixes diagnostically
+from the full raw capture. Both desktops retain120Hz/99.8% cadence targets;
+Windows immediate mode also requires99.8% of measured loop time within
+8,333,334ns. Mac loop timing includes FIFO waits and is diagnostic, not a
+replacement for its cadence checks.500FPS remains later; these proxies do not
+measure physical scanout.
 
-`--present-immediate` requires immediate negotiation and fails instead of reporting
-FIFO as an immediate result. The Release default leaves validation disabled. For a
-controlled fixed-scene 1920-by-1080 pair, use the same command once without `--hud`
-and once with it; the evidence records the selected HUD state. CoreGraphics may not
-expose a physical display identifier or refresh mode, so those properties are not
-inferred from this benchmark.
+`speed-200-movement-v2` uses full-axis `x=127`; historical v1 used `x=1`, not
+full-speed evidence. Production readiness samples 225 current-near tiles,
+separating nonresident, pending, active and current-visible meshes. Resident-to-visible
+episodes have a four-second diagnostic bound, not an FPS target; departed keys
+are censored. Completion requires two center changes, near admissions, no far
+admissions while near work is pending, no ordering/classification errors or
+deadline misses, and full current-near visibility after a four-second neutral-input
+drain excluded from timing/rates.
 
-The benchmark and visible capture requests express their extents in framebuffer
-pixels. Before either creates a presentation context, the shared acceptance
-helper polls and adjusts GLFW logical window dimensions until the requested
-pixel extent is observed. This is bounded by `max_resize_polls`; zero,
-unrepresentable, no-progress, or two-step oscillating dimensions fail with
-explicit evidence rather than silently comparing logical and framebuffer units.
+`speed-200-full-radius-recovery-v1` uses normal HUD/scheduling with30-second
+baseline, x200 travel and recovered windows. Require exact current meshes and
+drained queues before/after movement, with each qualification warmup bounded
+to180seconds. Diagnostic radii span1–256; release proves terrain at256 and
+performance at128 separately.
 
-Scenario source and evidence paths must be distinct, as must image and evidence paths. A zero exit status means the requested operation completed and its assertions passed; it does not replace manual review of the captured frame or prove a different platform, driver, or package.
+For full-radius diagnosis, `--diagnostic-indexed-stone-quads 0|1|2` selects the
+existing six-vertex, indexed-instanced, or indexed-block renderer path through a
+process-local override. `--diagnostic-presentation-stages` records only the
+submitted-frame, acquire, present, and swapchain wait stages actually attempted,
+without changing synchronization. These diagnostic overrides are recorded and
+cannot qualify gameplay cadence.
 
-The S7 adverse-network acceptance runs two production `GameClient` instances
-through a test-only ENet relay into a production `GameServer`. Each client has
-independent seeded client-to-server and server-to-client schedules for latency,
-jitter, loss, duplication, reordering, bounded queues, freezes, and recovery
-bursts. The impairment window ends at a recorded logical tick; normal delivery
-then gives delayed authoritative state a bounded recovery period. The GoogleTest
-XML property records the seed, per-direction traffic and schedule, server
-authority, relay-delivered stale-input rejection, direct stale-revision snapshot
-probes on both clients, queue bounds, and final convergence. Separate checks
-cover a 15-second delivery freeze and reconnecting after server replacement.
-The production reconnect test supplies the client's existing stop/deadline hooks,
-so timeout cleanup can stop and join while disconnected or awaiting `JoinResponse`;
-a short regression checks cancellation while disconnected. Each discovered
-`mc_tests` case also has a 120-second CTest timeout. The relay is test-only and
-does not alter shipping physics or rendering timing.
+Snapshot promotion separately requires source-bound local Mac/Windows Release
+[gameplay proof](ai/GAMEPLAY_QUALIFICATION.md). Its verifier recomputes raw
+coverage, rates and request-cadence proxies; physical scanout remains unmeasured.
+Failed captures remain failed and do not replace analyzer or user acceptance.
 
-Capture tests use `--player-client-capture` and four named presets. They wait
-for the full server-selected disk and CPU/renderer mesh coverage, compare keys
-across 16 headings, then write PPMs. Default radius is 256 (205,861 tiles);
-origin spawns at X/Y (0,0). Portable size is at least 1000x600; set
-`MC_S7_REQUIRE_2560X1440=1` for exact Mac assets. Visually inspect every frame.
+`--present-immediate` requires immediate negotiation and fails rather than reporting
+FIFO. Release validation defaults off. Compare a fixed-scene 1920x1080 pair with and
+without `--hud`; evidence records HUD state. CoreGraphics may hide display identity
+or refresh mode, which this benchmark does not infer.
+
+Benchmark and visible-capture extents are framebuffer pixels. Before presentation
+setup, the shared helper adjusts GLFW logical dimensions until that extent is
+observed, bounded by `max_resize_polls`; zero, unrepresentable, stalled, or
+two-step-oscillating dimensions fail with evidence.
+
+Scenario source/evidence paths and image/evidence paths must differ. Zero exit means
+assertions passed, not frame review or proof for another platform, driver, or package.
+
+S7 adverse-network acceptance runs two production `GameClient`s through a test-only
+ENet relay to a production `GameServer`. Independent seeded schedules in both
+directions cover latency, jitter, loss, duplication, reordering, bounded queues,
+freezes, and recovery bursts. After the impairment window ends at a recorded tick,
+normal delivery has bounded time to converge. GoogleTest XML records seed,
+per-direction traffic/schedule, server authority, relay stale-input rejection,
+direct stale-revision probes on both clients, queue bounds, and convergence.
+Separate checks cover a 15-second freeze and reconnect after server replacement.
+Production stop/deadline hooks must stop/join during disconnect or pending
+`JoinResponse`; cancellation while disconnected has a regression. Every discovered
+`mc_tests` case has a 120-second timeout. The relay changes no shipping physics or
+render timing.
+
+Capture tests use `--player-client-capture` and four named presets. They await the
+full server-selected disk and CPU/renderer mesh coverage, compare keys across 16
+headings, then write PPMs. Default radius 256 contains 205,861 tiles; origin spawns
+at X/Y (0,0). Portable size is at least 1000x600; set
+`MC_S7_REQUIRE_2560X1440=1` for exact Mac assets. Inspect every frame.
 
 The four Mac images must be distinct: (1) third-person flying by the central
 spike at server distance 72 (16,241 tiles), showing the whole spike, most of

@@ -55,6 +55,20 @@ struct HeightTileSurfaceBounds final {
     constexpr bool operator==(HeightTileSurfaceBounds const&) const noexcept = default;
 };
 
+struct HeightTileSurfaceFaceAreas final {
+    static constexpr std::array<HeightTileSurfaceDetail, 4> DETAILS{
+        HeightTileSurfaceDetail::Coarse2,
+        HeightTileSurfaceDetail::Coarse4,
+        HeightTileSurfaceDetail::Coarse,
+        HeightTileSurfaceDetail::Distant,
+    };
+    static constexpr std::array<uint32_t, 4> CELL_SIZES{ 2U, 4U, 8U, 16U };
+
+    std::array<double, 4> maximum{ 4.0, 16.0, 64.0, 256.0 };
+
+    constexpr bool operator==(HeightTileSurfaceFaceAreas const&) const noexcept = default;
+};
+
 class HeightTileSurfaceLodPolicy final {
 public:
     explicit HeightTileSurfaceLodPolicy(HeightTileSurfaceProjection projection = {}) noexcept;
@@ -63,6 +77,14 @@ public:
     HeightTileSurfaceDetail detailFor(
         HeightTileSurfaceBounds viewer_bounds,
         HeightTileSurfaceBounds surface_bounds,
+        std::optional<HeightTileSurfaceDetail> current_detail = std::nullopt
+    ) const noexcept;
+
+    [[nodiscard]]
+    HeightTileSurfaceDetail detailFor(
+        HeightTileSurfaceBounds viewer_bounds,
+        HeightTileSurfaceBounds surface_bounds,
+        HeightTileSurfaceFaceAreas const& face_areas,
         std::optional<HeightTileSurfaceDetail> current_detail = std::nullopt
     ) const noexcept;
 
@@ -90,6 +112,18 @@ struct HeightTileSurfaceElevationRange final {
     constexpr bool operator==(HeightTileSurfaceElevationRange const&) const noexcept = default;
 };
 
+struct HeightTileSurfaceEdgeProfile final {
+    std::array<uint16_t, HeightTile::SIDE_LENGTH> top{};
+    HeightTileSurfaceElevationRange elevation{};
+
+    constexpr bool operator==(HeightTileSurfaceEdgeProfile const&) const noexcept = default;
+};
+
+[[nodiscard]] HeightTileSurfaceEdgeProfile heightTileSurfaceEdgeProfile(
+    HeightTileSurfaceMesh const& mesh,
+    HeightTileSurfaceDirection edge
+);
+
 [[nodiscard]] HeightTileSurfaceElevationRange heightTileSurfaceEdgeElevationRange(
     HeightTileSurfaceMesh const& mesh,
     HeightTileSurfaceDirection edge
@@ -111,6 +145,12 @@ struct HeightTileSurfaceNeighbors final {
     HeightTileSurfaceDetail negative_y_detail = HeightTileSurfaceDetail::Fine;
     HeightTileSurfaceDetail positive_y_detail = HeightTileSurfaceDetail::Fine;
 };
+
+[[nodiscard]] HeightTileSurfaceFaceAreas heightTileSurfaceFaceAreas(
+    HeightTile const& tile,
+    HeightTileSurfaceNeighbors const& neighbors,
+    std::array<std::optional<HeightTileSurfaceEdgeProfile>, 4> const& installed_neighbor_profiles = {}
+);
 
 class HeightTileSurfaceMesher final {
 public:

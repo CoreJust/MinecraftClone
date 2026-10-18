@@ -315,7 +315,16 @@ class AiHistoryTest(unittest.TestCase):
                 evidence="passed", resolved_at="2026-09-09", resolution_changes="finished", finalized=True,
             ),
         ])
-        with self.assertRaisesRegex(ai_history.HistoryError, "no tagged immutable promotion"):
+        with self.assertRaisesRegex(
+            ai_history.HistoryError,
+            "no tagged immutable promotion.*no local AI release tags.*git fetch.*refs/tags/ai/",
+        ):
+            ai_history.finalize(self.repo, tasks, "MC-AI-0102", "HEAD")
+        self.git_run("git", "tag", "ai/unrelated", source)
+        with self.assertRaisesRegex(
+            ai_history.HistoryError,
+            "no tagged immutable promotion.*required AI promotion tag.*git fetch --no-tags origin",
+        ):
             ai_history.finalize(self.repo, tasks, "MC-AI-0102", "HEAD")
         self.git_run(
             "git", "tag", "-a", "ai/Test/0.1.0/1_26.09.09", promoted,

@@ -10,6 +10,7 @@ target_sources(mc
             ClientAudio.hpp
             FrameScheduler.hpp
             GameClient.hpp
+            HeightTileInterestRegion.hpp
             PlayerClient.hpp
             PlayerPreviewLod.hpp
             PlayerPresentation.hpp
@@ -20,6 +21,7 @@ target_sources(mc
             render/DepthFormat.hpp
             render/GuiRenderer.hpp
             render/HeightTileDrawIndex.hpp
+            render/HeightTileInstanceReaper.hpp
             render/InstalledShaderAssets.hpp
             render/ShaderAssets.hpp
             render/StoneFaceCapacity.hpp

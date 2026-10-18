@@ -28,15 +28,24 @@ function(mc_check_corecpp_provenance)
         message(FATAL_ERROR "dependencies.lock.json must pin a full CoreCpp Git revision")
     endif()
 
+    string(JSON fetch_ref ERROR_VARIABLE lock_error GET "${lock_json}" dependencies CoreCpp fetch_ref)
+    if(lock_error OR NOT fetch_ref MATCHES "^refs/tags/[A-Za-z0-9][A-Za-z0-9._/-]*$")
+        message(FATAL_ERROR "CoreCpp fetch_ref must be a safe full refs/tags/ name")
+    endif()
+    string(REPLACE "/" ";" ref_components "${fetch_ref}")
+    foreach(component IN LISTS ref_components)
+        if(NOT component MATCHES "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+           OR component MATCHES "\\.\\."
+           OR component MATCHES "\\.$"
+           OR component MATCHES "\\.lock$")
+            message(FATAL_ERROR "CoreCpp fetch_ref must be a safe full refs/tags/ name")
+        endif()
+    endforeach()
+
     set(MC_REQUIRED_CORECPP_REVISION "${required_revision}" PARENT_SCOPE)
     set(MC_CORECPP_REVISION "${CoreCpp_REVISION}" PARENT_SCOPE)
     set(MC_CORECPP_DIRTY "${CoreCpp_DIRTY}" PARENT_SCOPE)
     set(MC_CORECPP_REVISION_EXACT "${CoreCpp_REVISION_EXACT}" PARENT_SCOPE)
-
-    if(MC_ALLOW_INEXACT_CORECPP)
-        message(STATUS "MinecraftClone: inexact CoreCpp provenance allowed for local development")
-        return()
-    endif()
 
     if(NOT CoreCpp_REVISION_EXACT OR CoreCpp_DIRTY OR CoreCpp_REVISION STREQUAL "unavailable")
         message(FATAL_ERROR "Exact MinecraftClone builds require a clean, known CoreCpp revision")

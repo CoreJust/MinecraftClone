@@ -172,7 +172,7 @@ int32_t AndroidInput::handleMotion(AInputEvent const* const event) noexcept
         float const x = AMotionEvent_getX(event, action_index);
         float const y = AMotionEvent_getY(event, action_index);
         int32_t const pointer_id = AMotionEvent_getPointerId(event, action_index);
-        if (beginFlightTouch(pointer_id, x, y)) {
+        if (beginFlightTouch(AndroidInputState::PointerId{ pointer_id }, x, y)) {
             return 1;
         }
         if (m_state.beginLookTouch(pointer_id, x, y, m_surface_width)) {
@@ -214,12 +214,12 @@ int32_t AndroidInput::handleMotion(AInputEvent const* const event) noexcept
 }
 
 bool AndroidInput::beginFlightTouch(
-    int32_t const pointer_id,
+    AndroidInputState::PointerId const pointer_id,
     float const x,
     float const y
 ) noexcept
 {
-    if (pointer_id < 0) {
+    if (pointer_id.value < 0) {
         return false;
     }
     std::optional<int8_t> const direction = AndroidFlightTouchControls::direction(
@@ -237,7 +237,7 @@ bool AndroidInput::beginFlightTouch(
     if (active_pointer_id >= 0) {
         return false;
     }
-    active_pointer_id = pointer_id;
+    active_pointer_id = pointer_id.value;
     if (*direction > 0) {
         m_ascending_touch_input.setPressed(true);
     }

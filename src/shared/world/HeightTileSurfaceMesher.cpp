@@ -344,31 +344,35 @@ EdgeSurfaceProfile edgeSurfaceProfile(
             || edge == shared::HeightTileSurfaceDirection::NegativeY
         ? 0U
         : static_cast<uint32_t>(shared::HeightTile::SIDE_LENGTH - 1U);
+    int64_t const origin_x = static_cast<int64_t>(mesh.coordinate.x) * SIDE_LENGTH;
+    int64_t const origin_y = static_cast<int64_t>(mesh.coordinate.y) * SIDE_LENGTH;
+    int64_t const boundary = (x_edge ? origin_x : origin_y) + edge_offset;
+    int64_t const along_origin = x_edge ? origin_y : origin_x;
     EdgeSurfaceProfile profile;
     for (shared::HeightTileSurfaceQuad const& quad : mesh.quads) {
-        if (quad.direction == shared::HeightTileSurfaceDirection::PositiveZ) {
-            for (uint32_t along = 0U; along < shared::HeightTile::SIDE_LENGTH; ++along) {
-                uint32_t const local_x = x_edge ? edge_offset : along;
-                uint32_t const local_y = x_edge ? along : edge_offset;
-                int32_t const x = worldCoordinate(mesh.coordinate.x, local_x);
-                int32_t const y = worldCoordinate(mesh.coordinate.y, local_y);
-                if (quad.x <= x && x < quad.x + quad.u_extent
-                    && quad.y <= y && y < quad.y + quad.v_extent) {
-                    profile.top[along] = quad.z + 1;
-                }
+        bool const top = quad.direction == shared::HeightTileSurfaceDirection::PositiveZ;
+        if (!top && quad.direction != edge) {
+            continue;
+        }
+        int64_t const perpendicular = x_edge ? quad.x : quad.y;
+        if (top) {
+            int64_t const perpendicular_extent = x_edge ? quad.u_extent : quad.v_extent;
+            if (boundary < perpendicular || boundary >= perpendicular + perpendicular_extent) {
+                continue;
             }
-        } else if (quad.direction == edge) {
-            for (uint32_t along = 0U; along < shared::HeightTile::SIDE_LENGTH; ++along) {
-                uint32_t const local_x = x_edge ? edge_offset : along;
-                uint32_t const local_y = x_edge ? along : edge_offset;
-                int32_t const x = worldCoordinate(mesh.coordinate.x, local_x);
-                int32_t const y = worldCoordinate(mesh.coordinate.y, local_y);
-                bool const covers_sample = x_edge
-                    ? quad.x == x && quad.y <= y && y < quad.y + quad.u_extent
-                    : quad.y == y && quad.x <= x && x < quad.x + quad.u_extent;
-                if (covers_sample) {
-                    profile.walls[along].push_back({ quad.z, quad.z + quad.v_extent });
-                }
+        } else if (perpendicular != boundary) {
+            continue;
+        }
+        int64_t const along_start = static_cast<int64_t>(x_edge ? quad.y : quad.x) - along_origin;
+        int64_t const along_extent = top && x_edge ? quad.v_extent : quad.u_extent;
+        int64_t const clipped_start = std::max<int64_t>(0, along_start);
+        int64_t const clipped_end = std::min<int64_t>(SIDE_LENGTH, along_start + along_extent);
+        for (int64_t along = clipped_start; along < clipped_end; ++along) {
+            uint32_t const sample = static_cast<uint32_t>(along);
+            if (top) {
+                profile.top[sample] = quad.z + 1;
+            } else {
+                profile.walls[sample].push_back({ quad.z, quad.z + quad.v_extent });
             }
         }
     }
@@ -417,6 +421,22 @@ HeightTileSurfaceDetail HeightTileSurfaceLodPolicy::detailFor(
     std::optional<HeightTileSurfaceDetail> const current_detail
 ) const noexcept
 {
+    HeightTileSurfaceFaceAreas face_areas;
+    double const surface_height = surface_bounds.max_z_blocks - surface_bounds.min_z_blocks;
+    for (uint32_t level = 0U; level < face_areas.maximum.size(); ++level) {
+        double const cell_size = HeightTileSurfaceFaceAreas::CELL_SIZES[level];
+        face_areas.maximum[level] = std::max(cell_size * cell_size, cell_size * surface_height);
+    }
+    return detailFor(viewer_bounds, surface_bounds, face_areas, current_detail);
+}
+
+HeightTileSurfaceDetail HeightTileSurfaceLodPolicy::detailFor(
+    HeightTileSurfaceBounds const viewer_bounds,
+    HeightTileSurfaceBounds const surface_bounds,
+    HeightTileSurfaceFaceAreas const& face_areas,
+    std::optional<HeightTileSurfaceDetail> const current_detail
+) const noexcept
+{
     auto const validBounds = [](HeightTileSurfaceBounds const bounds) noexcept {
         return std::isfinite(bounds.min_x_blocks) && std::isfinite(bounds.max_x_blocks)
             && std::isfinite(bounds.min_y_blocks) && std::isfinite(bounds.max_y_blocks)
@@ -428,6 +448,13 @@ HeightTileSurfaceDetail HeightTileSurfaceLodPolicy::detailFor(
     if (!validBounds(viewer_bounds) || !validBounds(surface_bounds)
         || m_first_reduction_distance <= 0.0) {
         return HeightTileSurfaceDetail::Fine;
+    }
+    for (uint32_t level = 0U; level < face_areas.maximum.size(); ++level) {
+        double const cell_size = HeightTileSurfaceFaceAreas::CELL_SIZES[level];
+        if (!std::isfinite(face_areas.maximum[level])
+            || face_areas.maximum[level] < cell_size * cell_size) {
+            return HeightTileSurfaceDetail::Fine;
+        }
     }
 
     auto const axisSeparation = [](
@@ -466,51 +493,26 @@ HeightTileSurfaceDetail HeightTileSurfaceLodPolicy::detailFor(
     if (!std::isfinite(distance)) {
         return HeightTileSurfaceDetail::Fine;
     }
-    double const surface_height = surface_bounds.max_z_blocks - surface_bounds.min_z_blocks;
-    auto const cutoffDistance = [this, surface_height](double const cell_size) noexcept {
-        double const face_area = std::max(
-            cell_size * cell_size,
-            cell_size * surface_height
-        );
-        return m_first_reduction_distance * std::sqrt(face_area);
-    };
-    HeightTileSurfaceDetail const selected_detail = distance < cutoffDistance(COARSE2_CELL_SIZE)
-        ? HeightTileSurfaceDetail::Fine
-        : distance < cutoffDistance(COARSE4_CELL_SIZE)
-            ? HeightTileSurfaceDetail::Coarse2
-            : distance < cutoffDistance(COARSE_CELL_SIZE)
-                ? HeightTileSurfaceDetail::Coarse4
-                : distance < cutoffDistance(DISTANT_CELL_SIZE)
-                    ? HeightTileSurfaceDetail::Coarse
-                    : HeightTileSurfaceDetail::Distant;
-    if (!current_detail.has_value()) {
-        return selected_detail;
-    }
-    auto const cellSize = [](HeightTileSurfaceDetail const detail) noexcept {
-        switch (detail) {
-        case HeightTileSurfaceDetail::Coarse:
-            return COARSE_CELL_SIZE;
-        case HeightTileSurfaceDetail::Coarse2:
-            return COARSE2_CELL_SIZE;
-        case HeightTileSurfaceDetail::Coarse4:
-            return COARSE4_CELL_SIZE;
-        case HeightTileSurfaceDetail::Fine:
-            return 1U;
-        case HeightTileSurfaceDetail::Distant:
-            return DISTANT_CELL_SIZE;
+    uint32_t current_cell_size = 1U;
+    if (current_detail.has_value()) {
+        auto const current = std::ranges::find(HeightTileSurfaceFaceAreas::DETAILS, *current_detail);
+        if (current != HeightTileSurfaceFaceAreas::DETAILS.end()) {
+            current_cell_size = HeightTileSurfaceFaceAreas::CELL_SIZES[
+                static_cast<uint32_t>(current - HeightTileSurfaceFaceAreas::DETAILS.begin())
+            ];
         }
-        return 1U;
-    };
-    uint32_t const current_cell_size = cellSize(*current_detail);
-    if (cellSize(selected_detail) <= current_cell_size) {
-        return selected_detail;
     }
-    uint32_t const next_cell_size = current_cell_size * 2U;
-    if (distance < cutoffDistance(static_cast<double>(next_cell_size))
-            * COARSENING_HYSTERESIS_RATIO) {
-        return *current_detail;
+    HeightTileSurfaceDetail selected = HeightTileSurfaceDetail::Fine;
+    for (uint32_t level = 0U; level < face_areas.maximum.size(); ++level) {
+        double const cutoff = m_first_reduction_distance * std::sqrt(face_areas.maximum[level]);
+        bool const coarsening = current_detail.has_value()
+            && HeightTileSurfaceFaceAreas::CELL_SIZES[level] > current_cell_size;
+        double const required_distance = coarsening ? cutoff * COARSENING_HYSTERESIS_RATIO : cutoff;
+        if (distance >= required_distance) {
+            selected = HeightTileSurfaceFaceAreas::DETAILS[level];
+        }
     }
-    return selected_detail;
+    return selected;
 }
 
 HeightTileSurfaceDetail HeightTileSurfaceMesher::detailFor(
@@ -578,7 +580,7 @@ HeightTileSurfaceBounds HeightTileSurfaceMesher::boundsForTile(
     );
 }
 
-HeightTileSurfaceElevationRange heightTileSurfaceEdgeElevationRange(
+HeightTileSurfaceEdgeProfile heightTileSurfaceEdgeProfile(
     HeightTileSurfaceMesh const& mesh,
     HeightTileSurfaceDirection const edge
 )
@@ -593,10 +595,107 @@ HeightTileSurfaceElevationRange heightTileSurfaceEdgeElevationRange(
             maximum = std::max(maximum, wall.upper);
         }
     }
-    return {
-        .minimum = static_cast<uint16_t>(minimum),
-        .maximum = static_cast<uint16_t>(maximum),
+    HeightTileSurfaceEdgeProfile result{
+        .elevation = {
+            .minimum = static_cast<uint16_t>(minimum),
+            .maximum = static_cast<uint16_t>(maximum),
+        },
     };
+    std::ranges::transform(profile.top, result.top.begin(), [](int32_t const height) {
+        return static_cast<uint16_t>(height);
+    });
+    return result;
+}
+
+HeightTileSurfaceElevationRange heightTileSurfaceEdgeElevationRange(
+    HeightTileSurfaceMesh const& mesh,
+    HeightTileSurfaceDirection const edge
+)
+{
+    return heightTileSurfaceEdgeProfile(mesh, edge).elevation;
+}
+
+HeightTileSurfaceFaceAreas heightTileSurfaceFaceAreas(
+    HeightTile const& tile,
+    HeightTileSurfaceNeighbors const& neighbors,
+    std::array<std::optional<HeightTileSurfaceEdgeProfile>, 4> const& installed_neighbor_profiles
+)
+{
+    HeightTileSurfaceNeighbors const compatible_neighbors = neighborsAtSelectedDetail(neighbors);
+    HeightTileSurfaceFaceAreas areas;
+    static constexpr std::array<HeightTileSurfaceDirection, 4> EDGES{
+        HeightTileSurfaceDirection::NegativeX,
+        HeightTileSurfaceDirection::PositiveX,
+        HeightTileSurfaceDirection::NegativeY,
+        HeightTileSurfaceDirection::PositiveY,
+    };
+    for (uint32_t level = 0U; level < areas.maximum.size(); ++level) {
+        uint32_t const cell_size = HeightTileSurfaceFaceAreas::CELL_SIZES[level];
+        HeightTile const reduced = reduceTile(tile, cell_size);
+        auto const cellMaximumArea = [&](uint32_t const cell_x, uint32_t const cell_y) {
+            uint32_t maximum_area = cell_size * cell_size;
+            uint16_t const height = reduced.heights[index(cell_x, cell_y)];
+            for (uint32_t edge = 0U; edge < EDGES.size(); ++edge) {
+                bool const x_edge = edge < 2U;
+                bool const negative_edge = edge == 0U || edge == 2U;
+                int32_t const perpendicular = static_cast<int32_t>(x_edge ? cell_x : cell_y);
+                int32_t const adjacent = negative_edge ? perpendicular - 1
+                    : perpendicular + static_cast<int32_t>(cell_size);
+                bool const boundary = adjacent < 0 || adjacent >= static_cast<int32_t>(SIDE_LENGTH);
+                uint32_t const along_start = x_edge ? cell_y : cell_x;
+                auto const adjacentHeight = [&](uint32_t const offset) {
+                    return heightAt(
+                        reduced,
+                        compatible_neighbors,
+                        x_edge ? adjacent : static_cast<int32_t>(offset),
+                        x_edge ? static_cast<int32_t>(offset) : adjacent
+                    );
+                };
+                // reduceTile fills each aligned interior cell with one height across its full edge.
+                if (boundary) {
+                    uint32_t along = along_start;
+                    while (along < along_start + cell_size) {
+                        uint16_t const adjacent_height = adjacentHeight(along);
+                        uint32_t span = 1U;
+                        while (along + span < along_start + cell_size
+                            && adjacentHeight(along + span) == adjacent_height) {
+                            ++span;
+                        }
+                        if (height > adjacent_height) {
+                            uint32_t const wall_area = span * static_cast<uint32_t>(height - adjacent_height);
+                            maximum_area = std::max(maximum_area, wall_area);
+                        }
+                        along += span;
+                    }
+                } else {
+                    uint16_t const adjacent_height = adjacentHeight(along_start);
+                    if (height > adjacent_height) {
+                        maximum_area = std::max(
+                            maximum_area,
+                            cell_size * static_cast<uint32_t>(height - adjacent_height)
+                        );
+                    }
+                }
+                if (boundary && installed_neighbor_profiles[edge].has_value()) {
+                    auto const& top = installed_neighbor_profiles[edge].value().top;
+                    for (uint32_t offset = along_start; offset < along_start + cell_size; ++offset) {
+                        uint32_t const gap = height > top[offset] ? height - top[offset] : top[offset] - height;
+                        // Seam gaps are contained between the two installed top profiles.
+                        maximum_area = std::max(maximum_area, cell_size * gap);
+                    }
+                }
+            }
+            return maximum_area;
+        };
+        uint32_t maximum_area = cell_size * cell_size;
+        for (uint32_t cell_y = 0U; cell_y < SIDE_LENGTH; cell_y += cell_size) {
+            for (uint32_t cell_x = 0U; cell_x < SIDE_LENGTH; cell_x += cell_size) {
+                maximum_area = std::max(maximum_area, cellMaximumArea(cell_x, cell_y));
+            }
+        }
+        areas.maximum[level] = maximum_area;
+    }
+    return areas;
 }
 
 HeightTileSurfaceMesh HeightTileSurfaceMesher::build(

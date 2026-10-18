@@ -231,6 +231,7 @@ if(WIN32)
 endif()
 
 if(MC_BUILD_CLIENT AND NOT ANDROID)
+    target_link_libraries(mc_tests PRIVATE unofficial::enet::enet)
     target_sources(mc_tests
         PRIVATE
             android/input_state_tests.cpp
@@ -250,7 +251,9 @@ if(MC_BUILD_CLIENT AND NOT ANDROID)
             client/game_client_benchmark_tests.cpp
             client/game_client_lifecycle_tests.cpp
             client/gui_renderer_tests.cpp
+            client/height_tile_interest_region_tests.cpp
             client/height_tile_draw_index_tests.cpp
+            client/height_tile_instance_reaper_tests.cpp
             client/client_audio_tests.cpp
             client/game_client_prediction_tests.cpp
             client/player_presentation_tests.cpp
@@ -258,6 +261,7 @@ if(MC_BUILD_CLIENT AND NOT ANDROID)
             client/player_preview_lod_tests.cpp
             client/preview_mesh_work_queue_tests.cpp
             client/preview_meshing_tests.cpp
+            client/stone_face_capacity_tests.cpp
             android/input_tests.cpp
             client/renderer_geometry_tests.cpp
             client/shader_assets_tests.cpp

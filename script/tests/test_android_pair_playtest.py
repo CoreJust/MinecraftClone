@@ -152,6 +152,18 @@ class AndroidPairPlaytestTest(unittest.TestCase):
             self.pair.android_playtest.S7_AVD,
         )
 
+    def test_cli_forwards_explicit_release_binary_without_changing_defaults(self) -> None:
+        server_binary = Path("/project/custom Release build/mc_main")
+        with mock.patch.object(self.pair, "run_playtest") as run_playtest:
+            self.assertEqual(self.pair.main([
+                "--serial", "emulator-5554", "--server-binary", str(server_binary),
+            ]), 0)
+        self.assertEqual(run_playtest.call_args.args[1], server_binary)
+
+        with mock.patch.object(self.pair, "run_playtest") as run_playtest:
+            self.assertEqual(self.pair.main(["--serial", "emulator-5554"]), 0)
+        self.assertEqual(run_playtest.call_args.args[1], self.pair.DEFAULT_SERVER)
+
     def test_port_conflict_does_not_start_server_or_client(self) -> None:
         server_path = self.release_server_path()
         with mock.patch.object(self.pair, "_require_release_server", return_value=server_path), mock.patch.object(

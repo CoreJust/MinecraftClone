@@ -43,6 +43,7 @@ def requiredShaderAssets = [
     'grid.vert.spv',
     'player.vert.spv',
     'stone.vert.spv',
+    'stone_indexed_block.vert.spv',
     'stone.frag.spv',
     'stone_solid.frag.spv',
     'sky.vert.spv',
@@ -60,6 +61,8 @@ def stageFallbackShaders = tasks.register('stageFallbackShaders', Sync) {
         include 'grid.vert'
         include 'player.vert'
         include 'stone.vert'
+        include 'stone_indexed_block.vert'
+        include 'stone_geometry.glsl'
         include 'stone.frag'
         include 'trivial.frag'
         include 'text.vert'

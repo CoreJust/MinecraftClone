@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <array>
 #include <cstdint>
+#include <limits>
 #include <memory>
 #include <new>
 #include <optional>
@@ -106,7 +107,8 @@ struct FactoryProbe final {
     uint32_t const maximum_command_count,
     uint32_t const maximum_draw_count = 4U,
     bool const multi_draw_indirect_enabled = true,
-    bool const draw_indirect_first_instance_enabled = true
+    bool const draw_indirect_first_instance_enabled = true,
+    Draws::QuadMode const quad_mode = Draws::QuadMode::SixVertex
 ) {
     return {
         maximum_command_count,
@@ -114,6 +116,7 @@ struct FactoryProbe final {
         multi_draw_indirect_enabled,
         draw_indirect_first_instance_enabled,
         [&probe](uint32_t const capacity) { return probe.create(capacity); },
+        quad_mode,
     };
 }
 
@@ -201,6 +204,165 @@ TEST(StoneIndirectDrawsTest, QuadIndicesPreserveBothTriangleVerticesAndWindingFo
     }
 }
 
+TEST(StoneIndirectDrawsTest, GeneratesACompleteSixteenBitQuadIndexBlock)
+{
+    static constexpr uint32_t QUAD_COUNT = Draws::QUADS_PER_INDEX_BLOCK;
+    static constexpr uint32_t INDICES_PER_QUAD = 6U;
+    static constexpr uint32_t VERTICES_PER_QUAD = 4U;
+    auto const& indices = Draws::quadIndexBlock();
+    ASSERT_EQ(indices.size(), Draws::INDEX_COUNT_PER_BLOCK);
+    for (uint32_t quad_index = 0U; quad_index < QUAD_COUNT; ++quad_index) {
+        uint32_t const index_offset = quad_index * INDICES_PER_QUAD;
+        uint16_t const vertex_offset = static_cast<uint16_t>(quad_index * VERTICES_PER_QUAD);
+        EXPECT_EQ(indices[index_offset], vertex_offset);
+        EXPECT_EQ(indices[index_offset + 1U], static_cast<uint16_t>(vertex_offset + 1U));
+        EXPECT_EQ(indices[index_offset + 2U], static_cast<uint16_t>(vertex_offset + 2U));
+        EXPECT_EQ(indices[index_offset + 3U], vertex_offset);
+        EXPECT_EQ(indices[index_offset + 4U], static_cast<uint16_t>(vertex_offset + 2U));
+        EXPECT_EQ(indices[index_offset + 5U], static_cast<uint16_t>(vertex_offset + 3U));
+    }
+    EXPECT_EQ(indices.back(), 16'383U);
+}
+
+TEST(StoneIndirectDrawsTest, IndexedBlockCommandsBoundQuadCountsAndSignedVertexOffsets)
+{
+    static constexpr uint32_t MAXIMUM_FIRST_QUAD = static_cast<uint32_t>(std::numeric_limits<int32_t>::max()) / 4U;
+    static constexpr uint32_t LAST_SIGNED_BLOCK_FIRST_QUAD =
+        MAXIMUM_FIRST_QUAD - Draws::QUADS_PER_INDEX_BLOCK + 1U;
+    static constexpr Draws::Range ZERO_RANGE{ 17U, 0U };
+    static constexpr Draws::Range SINGLE_RANGE{ 5U, 1U };
+    static constexpr Draws::Range FULL_RANGE{ 100U, Draws::QUADS_PER_INDEX_BLOCK };
+    static constexpr Draws::Range LAST_SIGNED_RANGE{ MAXIMUM_FIRST_QUAD, 1U };
+    static constexpr Draws::Range LAST_SIGNED_BLOCK_RANGE{
+        LAST_SIGNED_BLOCK_FIRST_QUAD,
+        Draws::QUADS_PER_INDEX_BLOCK,
+    };
+    static constexpr Draws::Range TOO_MANY_QUADS{ 0U, Draws::QUADS_PER_INDEX_BLOCK + 1U };
+    static constexpr Draws::Range OVERFLOWING_RANGE{ std::numeric_limits<uint32_t>::max(), 1U };
+    static constexpr Draws::Range UNSIGNED_OVERFLOW_RANGE{
+        std::numeric_limits<uint32_t>::max() - 1U,
+        2U,
+    };
+    static constexpr Draws::Range SIGNED_OVERFLOW_RANGE{ MAXIMUM_FIRST_QUAD + 1U, 1U };
+    static constexpr Draws::Range SIGNED_VERTEX_OVERFLOW_RANGE{ MAXIMUM_FIRST_QUAD, 2U };
+
+    VkDrawIndexedIndirectCommand const zero = Draws::indexedBlockCommand(ZERO_RANGE);
+    EXPECT_EQ(zero.indexCount, 0U);
+    EXPECT_EQ(zero.instanceCount, 1U);
+    EXPECT_EQ(zero.vertexOffset, 68);
+    EXPECT_EQ(zero.firstInstance, 0U);
+
+    VkDrawIndexedIndirectCommand const single = Draws::indexedBlockCommand(SINGLE_RANGE);
+    EXPECT_EQ(single.indexCount, 6U);
+    EXPECT_EQ(single.instanceCount, 1U);
+    EXPECT_EQ(single.vertexOffset, 20);
+
+    VkDrawIndexedIndirectCommand const full = Draws::indexedBlockCommand(FULL_RANGE);
+    EXPECT_EQ(full.indexCount, Draws::INDEX_COUNT_PER_BLOCK);
+    EXPECT_EQ(full.vertexOffset, 400);
+
+    VkDrawIndexedIndirectCommand const last_signed = Draws::indexedBlockCommand(LAST_SIGNED_RANGE);
+    EXPECT_EQ(last_signed.vertexOffset, std::numeric_limits<int32_t>::max() - 3);
+    VkDrawIndexedIndirectCommand const last_signed_block = Draws::indexedBlockCommand(LAST_SIGNED_BLOCK_RANGE);
+    EXPECT_EQ(last_signed_block.indexCount, Draws::INDEX_COUNT_PER_BLOCK);
+    EXPECT_EQ(last_signed_block.vertexOffset, static_cast<int32_t>(LAST_SIGNED_BLOCK_FIRST_QUAD * 4U));
+    EXPECT_THROW(static_cast<void>(Draws::indexedBlockCommand(TOO_MANY_QUADS)), std::invalid_argument);
+    EXPECT_THROW(static_cast<void>(Draws::indexedBlockCommand(OVERFLOWING_RANGE)), std::invalid_argument);
+    EXPECT_THROW(static_cast<void>(Draws::indexedBlockCommand(UNSIGNED_OVERFLOW_RANGE)), std::invalid_argument);
+    EXPECT_THROW(static_cast<void>(Draws::indexedBlockCommand(SIGNED_OVERFLOW_RANGE)), std::invalid_argument);
+    EXPECT_THROW(static_cast<void>(Draws::indexedBlockCommand(SIGNED_VERTEX_OVERFLOW_RANGE)), std::invalid_argument);
+}
+
+TEST(StoneIndirectDrawsTest, IndexedBlockPackingSplitsTexturedAndSolidRangesAndBatchesCommands)
+{
+    static constexpr uint32_t MAXIMUM_COMMAND_COUNT = 8U;
+    static constexpr uint32_t MAXIMUM_DRAW_COUNT = 1U;
+    static constexpr std::array<Draws::Range, 2> TEXTURED_RANGES{
+        Draws::Range{ 0U, Draws::QUADS_PER_INDEX_BLOCK + 1U },
+        Draws::Range{ 100U, 0U },
+    };
+    static constexpr std::array<Draws::Range, 1> SOLID_RANGES{
+        Draws::Range{ 8192U, Draws::QUADS_PER_INDEX_BLOCK },
+    };
+    FactoryProbe probe;
+    probe.indexed = true;
+    Draws draws = makeDraws(
+        probe,
+        MAXIMUM_COMMAND_COUNT,
+        MAXIMUM_DRAW_COUNT,
+        true,
+        true,
+        Draws::QuadMode::IndexedBlock
+    );
+
+    Draws::Prepared const prepared = draws.prepareAcquiredSlot(91U, TEXTURED_RANGES, SOLID_RANGES);
+    ASSERT_NE(prepared.buffer, nullptr);
+    EXPECT_TRUE(prepared.indexed);
+    EXPECT_EQ(prepared.textured_command_count, 3U);
+    EXPECT_EQ(prepared.logical_draw_count, 4U);
+    auto const& commands = probe.created[0]->indexed_commands;
+    ASSERT_EQ(commands.size(), 4U);
+    EXPECT_EQ(commands[0].indexCount, Draws::INDEX_COUNT_PER_BLOCK);
+    EXPECT_EQ(commands[0].instanceCount, 1U);
+    EXPECT_EQ(commands[0].firstIndex, 0U);
+    EXPECT_EQ(commands[0].vertexOffset, 0);
+    EXPECT_EQ(commands[0].firstInstance, 0U);
+    EXPECT_EQ(commands[1].indexCount, 6U);
+    EXPECT_EQ(commands[1].vertexOffset, static_cast<int32_t>(Draws::QUADS_PER_INDEX_BLOCK * 4U));
+    EXPECT_EQ(commands[2].indexCount, 0U);
+    EXPECT_EQ(commands[2].vertexOffset, 400);
+    EXPECT_EQ(commands[3].indexCount, Draws::INDEX_COUNT_PER_BLOCK);
+    EXPECT_EQ(commands[3].vertexOffset, 32'768);
+
+    prepared.record(VK_NULL_HANDLE, 0U, prepared.logical_draw_count);
+    auto const& batches = probe.created[0]->batches;
+    ASSERT_EQ(batches.size(), prepared.logical_draw_count);
+    for (uint32_t command_index = 0U; command_index < prepared.logical_draw_count; ++command_index) {
+        EXPECT_EQ(batches[command_index].offset, command_index * sizeof(VkDrawIndexedIndirectCommand));
+        EXPECT_EQ(batches[command_index].draw_count, 1U);
+    }
+}
+
+TEST(StoneIndirectDrawsTest, IndexedBlockFallbackAndCommandLimitsCountPackedCommands)
+{
+    static constexpr uint32_t MAXIMUM_COMMAND_COUNT = 2U;
+    static constexpr std::array<Draws::Range, 1> TEXTURED_RANGES{
+        Draws::Range{ 0U, Draws::QUADS_PER_INDEX_BLOCK + 1U },
+    };
+    static constexpr std::array<Draws::Range, 1> SOLID_RANGES{
+        Draws::Range{ 40U, 1U },
+    };
+    FactoryProbe probe;
+    Draws unavailable = makeDraws(
+        probe,
+        MAXIMUM_COMMAND_COUNT,
+        4U,
+        false,
+        true,
+        Draws::QuadMode::IndexedBlock
+    );
+    Draws::Prepared const fallback = unavailable.prepareAcquiredSlot(7U, TEXTURED_RANGES, {});
+    EXPECT_EQ(fallback.buffer, nullptr);
+    EXPECT_TRUE(fallback.indexed);
+    EXPECT_EQ(fallback.textured_command_count, 2U);
+    EXPECT_EQ(fallback.logical_draw_count, 2U);
+    EXPECT_EQ(probe.attempts, 0U);
+
+    Draws enabled = makeDraws(
+        probe,
+        MAXIMUM_COMMAND_COUNT,
+        4U,
+        true,
+        true,
+        Draws::QuadMode::IndexedBlock
+    );
+    EXPECT_THROW(
+        static_cast<void>(enabled.prepareAcquiredSlot(7U, TEXTURED_RANGES, SOLID_RANGES)),
+        std::invalid_argument
+    );
+    EXPECT_EQ(probe.attempts, 0U);
+}
+
 TEST(StoneIndirectDrawsTest, IndexedQuadsPreserveInstancesAndUseIndexedCommandStride)
 {
     static constexpr uint32_t MAXIMUM_COMMAND_COUNT = 16U;
@@ -216,7 +378,7 @@ TEST(StoneIndirectDrawsTest, IndexedQuadsPreserveInstancesAndUseIndexedCommandSt
         true,
         true,
         [&probe](uint32_t const capacity) { return probe.create(capacity); },
-        true,
+        Draws::QuadMode::IndexedInstanced,
     };
     Draws::Prepared const prepared = draws.prepareAcquiredSlot(91U, textured, solid);
     ASSERT_NE(prepared.buffer, nullptr);
@@ -255,7 +417,7 @@ TEST(StoneIndirectDrawsTest, IndexedFeatureFallbackRetainsLogicalDrawsWithoutAll
         false,
         true,
         [&probe](uint32_t const capacity) { return probe.create(capacity); },
-        true,
+        Draws::QuadMode::IndexedInstanced,
     };
     Draws::Prepared const prepared = draws.prepareAcquiredSlot(7U, ranges, {});
     EXPECT_TRUE(prepared.indexed);

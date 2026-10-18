@@ -59,6 +59,7 @@ public:
     using GameClient::discardPredictedInput;
     using GameClient::predictInput;
     using GameClient::predictedLocalPlayer;
+    using GameClient::forecastedLocalPlayerPosition;
     using GameClient::predictedLocalPresentation;
     using GameClient::resetConnectionState;
 
@@ -80,6 +81,13 @@ public:
     [[nodiscard]] uint64_t heightTileCreditRevision() const noexcept
     {
         return m_height_tile_credit_revision;
+    }
+
+    void setHeightTileResidencyLimits(client::PreviewResidencyLimits const limits)
+    {
+        m_height_tile_residency = client::PreviewResidency{
+            { .generation = 1U, .revision = 1U }, limits
+        };
     }
 
 private:
@@ -504,7 +512,8 @@ TEST(GameClientPredictionTest, HeightTileBatchDispatchesEveryTile)
     static constexpr shared::HeightTileKey FIRST_KEY{ .x = 41, .y = 23 };
     static constexpr shared::HeightTileKey SECOND_KEY{ .x = 42, .y = 23 };
     PredictionClient client;
-    client.applyHeightTileBatch({
+    static_cast<void>(client.applyHeightTileBatch({
+        .delivery_token = 1U,
         .tiles = {
             {
                 .key = FIRST_KEY,
@@ -518,10 +527,82 @@ TEST(GameClientPredictionTest, HeightTileBatchDispatchesEveryTile)
             },
         },
         .removals = {},
-    });
+    }));
 
     EXPECT_NE(client.heightTileResidency().resident(FIRST_KEY), nullptr);
     EXPECT_NE(client.heightTileResidency().resident(SECOND_KEY), nullptr);
+}
+
+TEST(GameClientPredictionTest, AppliesRemovalsBeforeAdditionsToPreserveNeededResidents)
+{
+    static constexpr client::PreviewResidencyLimits LIMITS{
+        .max_resident_tiles = 2U,
+        .max_resident_bytes = static_cast<uint64_t>(2U) * shared::HEIGHT_TILE_PAYLOAD_BYTES,
+    };
+    static constexpr shared::HeightTileKey NEEDED_KEY{ .x = 1, .y = 1 };
+    static constexpr shared::HeightTileKey REMOVED_KEY{ .x = 2, .y = 1 };
+    static constexpr shared::HeightTileKey ADDED_KEY{ .x = 3, .y = 1 };
+    PredictionClient client;
+    client.setHeightTileResidencyLimits(LIMITS);
+    ASSERT_TRUE(client.applyHeightTile({ .key = NEEDED_KEY, .revision = 1U, .token = 1U }));
+    ASSERT_TRUE(client.applyHeightTile({ .key = REMOVED_KEY, .revision = 1U, .token = 2U }));
+
+    std::vector<shared::HeightTileKey> const not_resident_keys = client.applyHeightTileBatch({
+        .delivery_token = 3U,
+        .tiles = {{ .key = ADDED_KEY, .revision = 1U, .token = 3U }},
+        .removals = {{ .key = REMOVED_KEY, .revision = 1U, .token = 4U }},
+    });
+
+    EXPECT_TRUE(not_resident_keys.empty());
+    EXPECT_NE(client.heightTileResidency().resident(NEEDED_KEY), nullptr);
+    EXPECT_EQ(client.heightTileResidency().resident(REMOVED_KEY), nullptr);
+    EXPECT_NE(client.heightTileResidency().resident(ADDED_KEY), nullptr);
+}
+
+TEST(GameClientPredictionTest, ReportsImplicitEvictionsInDeliveryReceipt)
+{
+    static constexpr client::PreviewResidencyLimits LIMITS{
+        .max_resident_tiles = 2U,
+        .max_resident_bytes = static_cast<uint64_t>(2U) * shared::HEIGHT_TILE_PAYLOAD_BYTES,
+    };
+    static constexpr shared::HeightTileKey EVICTED_KEY{ .x = 1, .y = 1 };
+    static constexpr shared::HeightTileKey RETAINED_KEY{ .x = 2, .y = 1 };
+    static constexpr shared::HeightTileKey ADDED_KEY{ .x = 3, .y = 1 };
+    PredictionClient client;
+    client.setHeightTileResidencyLimits(LIMITS);
+    ASSERT_TRUE(client.applyHeightTile({ .key = EVICTED_KEY, .revision = 1U, .token = 1U }));
+    ASSERT_TRUE(client.applyHeightTile({ .key = RETAINED_KEY, .revision = 1U, .token = 2U }));
+
+    std::vector<shared::HeightTileKey> const not_resident_keys = client.applyHeightTileBatch({
+        .delivery_token = 3U,
+        .tiles = {{ .key = ADDED_KEY, .revision = 1U, .token = 3U }},
+        .removals = {},
+    });
+
+    EXPECT_EQ(not_resident_keys, (std::vector<shared::HeightTileKey>{ EVICTED_KEY }));
+    EXPECT_EQ(client.heightTileResidency().resident(EVICTED_KEY), nullptr);
+    EXPECT_NE(client.heightTileResidency().resident(RETAINED_KEY), nullptr);
+    EXPECT_NE(client.heightTileResidency().resident(ADDED_KEY), nullptr);
+}
+
+TEST(GameClientPredictionTest, ReportsBudgetRejectedDeliveryTiles)
+{
+    static constexpr client::PreviewResidencyLimits LIMITS{
+        .max_resident_tiles = 2U,
+        .max_resident_bytes = 0U,
+    };
+    static constexpr shared::HeightTileKey REJECTED_KEY{ .x = 1, .y = 1 };
+    PredictionClient client;
+    client.setHeightTileResidencyLimits(LIMITS);
+
+    std::vector<shared::HeightTileKey> const not_resident_keys = client.applyHeightTileBatch({
+        .delivery_token = 1U,
+        .tiles = {{ .key = REJECTED_KEY, .revision = 1U, .token = 1U }},
+        .removals = {},
+    });
+
+    EXPECT_EQ(not_resident_keys, (std::vector<shared::HeightTileKey>{ REJECTED_KEY }));
+    EXPECT_EQ(client.heightTileResidency().resident(REJECTED_KEY), nullptr);
 }
 
 TEST(GameClientPredictionTest, HeightTileResidencyEvictsWithinItsBoundedHysteresisBudget)
@@ -544,10 +625,10 @@ TEST(GameClientPredictionTest, HeightTileResidencyEvictsWithinItsBoundedHysteres
         residency.accept(SECOND_KEY, REVISION, 2U, {}).replacement,
         client::HeightTileReplacement::Published
     );
-    ASSERT_EQ(
-        residency.accept(THIRD_KEY, REVISION, 3U, {}).replacement,
-        client::HeightTileReplacement::Published
-    );
+    auto const third = residency.accept(THIRD_KEY, REVISION, 3U, {});
+    ASSERT_EQ(third.replacement, client::HeightTileReplacement::Published);
+    ASSERT_TRUE(third.evicted_key.has_value());
+    EXPECT_EQ(*third.evicted_key, FIRST_KEY);
 
     EXPECT_EQ(residency.stats().resident_tiles, LIMITS.max_resident_tiles);
     EXPECT_EQ(residency.resident(FIRST_KEY), nullptr);
@@ -606,6 +687,66 @@ TEST(GameClientPredictionTest, FlightPredictionAndAcknowledgementReconcileAllThr
         12.0 + static_cast<double>(shared::MOVEMENT_SUBCELLS_PER_TICK)
             / static_cast<double>(shared::SUBCELLS_PER_CELL)
     );
+}
+
+TEST(GameClientPredictionTest, ContinuationForecastRetainsFullInputAndReconcilesWithoutMovingAgain)
+{
+    static constexpr shared::Direction DIRECTION{
+        .x = 90U, .y = 90U, .z = 40U, .accelerated = true, .speedup = 200U,
+        .cycle_movement_capabilities = true,
+    };
+    PredictionClient client{ shared::WorldMode::Flight };
+    client.setLocalCharacter('@');
+    EXPECT_FALSE(client.forecastedLocalPlayerPosition());
+    ASSERT_TRUE(client.applyServerPosition(
+        flightPosition('@', 65'530, 65'534, 900, 9'000U, 2'000U, 0U, 0U, 1U)));
+    auto const input = client.predictInput(DIRECTION);
+    ASSERT_TRUE(input);
+    auto const before_forecast = client.predictedLocalPlayer();
+    ASSERT_TRUE(before_forecast);
+    auto const forecast = client.forecastedLocalPlayerPosition();
+    ASSERT_TRUE(forecast);
+    EXPECT_EQ(client.predictedLocalPlayer()->x, before_forecast->x);
+    EXPECT_EQ(client.predictedLocalPlayer()->x_subcell, before_forecast->x_subcell);
+    shared::Direction continuation = DIRECTION;
+    continuation.cycle_movement_capabilities = false;
+    auto const next_input = client.predictInput(continuation);
+    ASSERT_TRUE(next_input);
+    auto const next = client.predictedLocalPlayer();
+    ASSERT_TRUE(next);
+    EXPECT_EQ(next->x, forecast->x);
+    EXPECT_EQ(next->y, forecast->y);
+    EXPECT_EQ(next->z, forecast->z);
+    EXPECT_EQ(next->x_subcell, forecast->x_subcell);
+    EXPECT_EQ(next->y_subcell, forecast->y_subcell);
+    EXPECT_EQ(next->z_subcell, forecast->z_subcell);
+
+    ASSERT_TRUE(client.applyServerPosition(
+        flightPosition('@', 100, 120, 900, 7'000U, 8'000U, 0U, next_input->sequence, 2U)));
+    auto const reconciled_forecast = client.forecastedLocalPlayerPosition();
+    ASSERT_TRUE(reconciled_forecast);
+    ASSERT_TRUE(client.predictInput(continuation));
+    auto const reconciled_next = client.predictedLocalPlayer();
+    ASSERT_TRUE(reconciled_next);
+    EXPECT_EQ(reconciled_next->x, reconciled_forecast->x);
+    EXPECT_EQ(reconciled_next->y, reconciled_forecast->y);
+    EXPECT_EQ(reconciled_next->x_subcell, reconciled_forecast->x_subcell);
+    EXPECT_EQ(reconciled_next->y_subcell, reconciled_forecast->y_subcell);
+    client.resetConnectionState();
+    EXPECT_FALSE(client.forecastedLocalPlayerPosition());
+}
+
+TEST(GameClientPredictionTest, DiscardingTheOnlyInputClearsItsContinuationForecast)
+{
+    static constexpr shared::Direction DIRECTION{ .x = 127U, .y = 0U, .accelerated = true, .speedup = 200U };
+    PredictionClient client{ shared::WorldMode::Flight };
+    client.setLocalCharacter('@');
+    ASSERT_TRUE(client.applyServerPosition(flightPosition('@', 32'880, 32'768, 900, 0U, 0U, 0U, 0U, 1U)));
+    auto const input = client.predictInput(DIRECTION);
+    ASSERT_TRUE(input);
+    ASSERT_TRUE(client.forecastedLocalPlayerPosition());
+    client.discardPredictedInput(input->sequence);
+    EXPECT_FALSE(client.forecastedLocalPlayerPosition());
 }
 
 TEST(GameClientPredictionTest, DelayedCollisionJumpAcknowledgementDoesNotCreateVerticalOvershoot)

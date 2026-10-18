@@ -12,7 +12,7 @@
 namespace shared {
 
 constexpr uint8_t PROTOCOL_MAGIC = 0x4DU;
-constexpr uint8_t PROTOCOL_VERSION = 12U;
+constexpr uint8_t PROTOCOL_VERSION = 14U;
 constexpr uint8_t GAME_CHANNEL = 0U;
 constexpr uint8_t HEIGHT_TILE_CHANNEL = 1U;
 constexpr uint32_t HEIGHT_TILE_SIDE_LENGTH = 16U;
@@ -74,9 +74,10 @@ constexpr std::optional<uint32_t> heightTileInterestRadiusForCount(uint32_t cons
     }
     return std::nullopt;
 }
-constexpr uint8_t HEIGHT_TILE_BATCH_CAPACITY = 16U;
+constexpr uint8_t HEIGHT_TILE_BATCH_CAPACITY = 64U;
 constexpr uint8_t HEIGHT_TILE_DELIVERY_WINDOW = 8U;
 constexpr uint8_t HEIGHT_TILE_DELIVERY_BATCH_CAPACITY = HEIGHT_TILE_BATCH_CAPACITY;
+constexpr uint8_t HEIGHT_TILE_RESIDENCY_RECEIPT_KEY_CAPACITY = 2U * HEIGHT_TILE_BATCH_CAPACITY;
 
 struct HeightTileKey final {
     int32_t x;
@@ -108,6 +109,7 @@ struct ClientHeightTileCreditMessage final {
     uint64_t world_revision = 0U;
     uint64_t delivery_token = 0U;
     uint8_t credits = 0U;
+    std::vector<HeightTileKey> not_resident_keys;
 };
 
 struct ServerPlayerPositionMessage final {
@@ -146,6 +148,9 @@ struct ServerHeightTileMessage final {
     uint64_t token = 0;
     std::array<uint16_t, HEIGHT_TILE_SAMPLE_COUNT> heights{};
 };
+
+[[nodiscard]]
+uint32_t encodedHeightTileSize(ServerHeightTileMessage const& message) noexcept;
 
 struct ServerRemoveHeightTileMessage final {
     HeightTileKey key{};

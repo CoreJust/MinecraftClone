@@ -61,6 +61,21 @@ VulkanFrustum::VulkanFrustum(glm::mat4 const& projection_view) noexcept
     };
 }
 
+bool VulkanFrustum::hasSamePlanes(VulkanFrustum const& other) const noexcept
+{
+    for (uint32_t plane_index = 0U; plane_index < m_planes.size(); ++plane_index) {
+        for (int32_t component = 0; component < 4; ++component) {
+            if (m_planes[plane_index].coefficients[component]
+                    != other.m_planes[plane_index].coefficients[component]
+                || m_planes[plane_index].error_coefficients[component]
+                    != other.m_planes[plane_index].error_coefficients[component]) {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
 bool VulkanFrustum::intersects(glm::vec3 const minimum, glm::vec3 const maximum) const noexcept
 {
     uint32_t plane_tests = 0U;

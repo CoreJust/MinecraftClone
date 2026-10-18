@@ -3,6 +3,7 @@
 #include <client/Camera.hpp>
 #include <client/render/DebugHud.hpp>
 #include <client/render/ShaderAssets.hpp>
+#include <client/render/StoneFaceCapacity.hpp>
 #include <client/render/TextRenderer.hpp>
 
 #include <core/common/NonCopyable.hpp>
@@ -48,7 +49,24 @@ struct VulkanRendererOptions final {
     bool prefer_mesh_shaders = true;
     bool enable_frame_capture = false;
     bool require_immediate_present_mode = false;
+    bool enable_presentation_history = false;
 };
+
+namespace detail {
+
+[[nodiscard]]
+inline bool diagnosticTerrainRangeVisible(
+    bool const enabled,
+    bool const identity_matches,
+    VkResult const result,
+    uint64_t const passing_samples,
+    uint64_t const available
+) noexcept
+{
+    return !enabled || !identity_matches || result != VK_SUCCESS || available == 0U || passing_samples != 0U;
+}
+
+} // namespace detail
 
 enum class RendererPipelinePath : uint8_t {
     Vertex,
@@ -72,6 +90,15 @@ enum class FrameCaptureState : uint8_t {
     Failed,
 };
 
+struct RendererHeightTileRemovalDiagnostics final {
+    std::chrono::nanoseconds prefilter_duration{ 0 };
+    std::chrono::nanoseconds slot_retirement_duration{ 0 };
+    std::chrono::nanoseconds draw_index_remove_duration{ 0 };
+    uint64_t input_coordinate_count = 0U;
+    uint64_t matching_slot_count = 0U;
+    uint64_t removed_slot_count = 0U;
+};
+
 struct RendererRuntimeInfo final {
     uint32_t width = 0;
     uint32_t height = 0;
@@ -80,8 +107,24 @@ struct RendererRuntimeInfo final {
     bool validation_enabled = false;
     RendererPresentMode present_mode = RendererPresentMode::Unknown;
     RendererPipelinePath pipeline_path = RendererPipelinePath::Vertex;
+    bool presentation_history_enabled = false;
+    uint64_t current_swapchain_generation = 0U;
+    std::optional<uint32_t> successful_presentation_id;
+    uint64_t successful_presentation_swapchain_generation = 0U;
     std::chrono::nanoseconds cpu_acquire_wait_duration{ 0 };
+    core::graphics::vulkan::PresentationAcquireDiagnostics diagnostic_presentation_acquire;
+    std::chrono::nanoseconds cpu_presentation_recreation_duration{ 0 };
+    bool presentation_recreation_attempted = false;
+    bool presentation_recreation_deferred = false;
     std::chrono::nanoseconds cpu_command_record_duration{ 0 };
+    std::chrono::nanoseconds cpu_visible_range_collection_duration{ 0 };
+    std::chrono::nanoseconds cpu_height_tile_group_and_tile_traversal_duration{ 0 };
+    std::chrono::nanoseconds cpu_height_tile_pending_range_order_duration{ 0 };
+    std::chrono::nanoseconds cpu_height_tile_visible_range_merge_duration{ 0 };
+    std::chrono::nanoseconds cpu_indirect_prepare_duration{ 0 };
+    std::chrono::nanoseconds cpu_stone_scene_record_duration{ 0 };
+    // Recording outside the three terrain phases includes scene and presentation work.
+    std::chrono::nanoseconds cpu_command_record_residual_duration{ 0 };
     std::chrono::nanoseconds cpu_complete_present_wait_duration{ 0 };
     std::chrono::nanoseconds cpu_frame_duration{ 0 };
     std::optional<std::chrono::nanoseconds> gpu_frame_duration;
@@ -92,7 +135,9 @@ struct RendererRuntimeInfo final {
     uint32_t chunk_draw_face_count{ 0 };
     uint64_t chunk_mesh_upload_count{ 0 };
     uint32_t height_tile_mesh_count{ 0 };
+    RendererHeightTileRemovalDiagnostics diagnostic_height_tile_removal;
     uint32_t stone_face_capacity{ 0 };
+    StoneFaceGrowthDiagnostics stone_face_growth;
     uint64_t diagnostic_render_attempt_id{ 0 };
     bool diagnostic_frame_recorded = false;
     bool diagnostic_indexed_stone_quads = false;
@@ -108,6 +153,19 @@ struct RendererRuntimeInfo final {
     uint64_t diagnostic_gpu_sample_quad_count = 0U;
     uint32_t diagnostic_gpu_sample_draw_count = 0U;
     std::optional<std::chrono::nanoseconds> diagnostic_gpu_terrain_duration;
+    bool diagnostic_terrain_occlusion_enabled = false;
+    bool diagnostic_terrain_occlusion_oracle_frame = false;
+    bool diagnostic_terrain_occlusion_filtered_frame = false;
+    uint64_t diagnostic_terrain_occlusion_removed_quad_count = 0U;
+    uint32_t diagnostic_terrain_occlusion_removed_range_count = 0U;
+    uint32_t diagnostic_terrain_occlusion_removed_command_count = 0U;
+};
+
+struct RendererHeightTileUpsertDiagnostics final {
+    std::chrono::nanoseconds free_range_prepare_duration{ 0 };
+    std::chrono::nanoseconds mesh_prepare_duration{ 0 };
+    std::chrono::nanoseconds capacity_prepare_duration{ 0 };
+    std::chrono::nanoseconds commit_upload_duration{ 0 };
 };
 
 struct RendererFrameCapture final {
@@ -170,9 +228,15 @@ public:
     [[nodiscard]]
     bool upsertHeightTileMeshes(
         std::span<shared::HeightTileSurfaceMesh const> meshes,
-        std::chrono::steady_clock::time_point deadline
+        std::chrono::steady_clock::time_point deadline,
+        RendererHeightTileUpsertDiagnostics* diagnostics = nullptr
     );
     [[nodiscard]] bool removeHeightTileMesh(shared::HeightTileCoordinate coordinate);
+    [[nodiscard]]
+    uint32_t removeHeightTileMeshes(
+        std::span<shared::HeightTileCoordinate const> coordinates,
+        bool capture_diagnostics = false
+    );
     void hotReload();
     void recreate(uint32_t width, uint32_t height);
     [[nodiscard]]
@@ -184,6 +248,9 @@ public:
     [[nodiscard]] FrameCaptureState captureState() const;
     [[nodiscard]] std::optional<RendererFrameCapture> takeFrameCapture();
     [[nodiscard]] RendererRuntimeInfo runtimeInfo() const;
+    [[nodiscard]] core::graphics::vulkan::PresentationHistoryResult queryPresentationHistory(
+        std::span<core::graphics::vulkan::PresentationTiming> records
+    );
     [[nodiscard]] uint32_t validationErrorCount() const noexcept;
 private:
     struct Impl;

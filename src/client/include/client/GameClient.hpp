@@ -20,6 +20,7 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
+#include <vector>
 
 namespace client {
 
@@ -104,12 +105,15 @@ protected:
     );
     void applyServerRemoval(char character);
     [[nodiscard]] std::optional<shared::Player> predictedLocalPlayer() const noexcept;
+    [[nodiscard]] std::optional<shared::PlayerPosition> forecastedLocalPlayerPosition() const noexcept;
     [[nodiscard]]
     std::optional<PlayerPresentationPosition> predictedLocalPresentation(
         std::chrono::steady_clock::time_point now
     ) const noexcept;
     [[nodiscard]] bool applyHeightTile(shared::ServerHeightTileMessage const& message);
-    void applyHeightTileBatch(shared::ServerHeightTileBatchMessage const& message);
+    std::vector<shared::HeightTileKey> applyHeightTileBatch(
+        shared::ServerHeightTileBatchMessage const& message
+    );
     [[nodiscard]] bool applyHeightTileRemoval(shared::ServerRemoveHeightTileMessage const& message);
     void processPendingHeightTileDeliveries();
     [[nodiscard]] bool applyHeightTileDescriptor(shared::ServerHeightTileDescriptorMessage const& message);
@@ -135,6 +139,8 @@ protected:
     std::unordered_set<uint64_t> m_pending_height_tile_delivery_tokens;
     uint64_t m_height_tile_credit_revision = 0U;
     std::deque<shared::ClientInputMessage> m_pending_inputs;
+    std::optional<shared::Direction> m_last_predicted_direction;
+    std::optional<shared::PlayerPosition> m_forecast_player_position;
     std::unordered_map<char, uint32_t> m_state_revisions;
     shared::PlayerId m_next_id = 0;
     uint32_t m_next_input_sequence = 1;
@@ -148,10 +154,19 @@ protected:
 private:
     [[nodiscard]] bool sendJoinRequest();
     [[nodiscard]] bool applyWorldRevision(shared::ServerWorldRevisionMessage const& message);
-    [[nodiscard]] bool grantHeightTileCredit(uint64_t delivery_token, uint8_t credits);
+    [[nodiscard]] bool grantHeightTileCredit(
+        uint64_t delivery_token,
+        uint8_t credits,
+        std::vector<shared::HeightTileKey> not_resident_keys = {}
+    );
     [[nodiscard]] bool queueHeightTileDelivery(shared::ServerHeightTileBatchMessage message);
     void rebuildPrediction();
+    void refreshMovementForecast();
     void updatePredictedPresentation(std::chrono::steady_clock::time_point updated_at);
+    [[nodiscard]] bool applyHeightTileAndTrackEviction(
+        shared::ServerHeightTileMessage const& message,
+        std::optional<shared::HeightTileKey>& evicted_key
+    );
 };
 
 } // namespace client

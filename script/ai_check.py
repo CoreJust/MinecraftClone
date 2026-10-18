@@ -9,6 +9,7 @@ import json
 import os
 import platform
 import re
+import signal
 import shutil
 import subprocess
 import sys
@@ -22,10 +23,14 @@ LOG_DIR = Path("build/ai-checks")
 RECEIPT_SCHEMA_VERSION = 2
 SHARED_PYTHON_SOURCES = {
     "ai_check.py", "ai_commit.py", "ai_docs.py", "ai_history.py", "ai_plan.py",
-    "ai_publish.py", "ai_run.py", "ai_setup.py", "ai_tasks.py",
+    "ai_publish.py", "ai_run.py", "ai_setup.py", "ai_tasks.py", "ai_windows_job.py",
 }
 PYTHON_TEST_TIMEOUT = 300
 WINDOWS_PYTHON_TEST_TIMEOUT = 420
+MAX_PHASE_TIMEOUT = 600
+TOTAL_TIMEOUT = 1500
+BUILD_PHASE_TIMEOUT = 600
+TERMINATION_GRACE_SECONDS = 10
 GOVERNED_PREFIXES = ("src/", "tests/", "docs/", "script/", ".githooks/", ".github/", ".codex/", ".agents/", "cmake/")
 PYTHON_WORKFLOW_PREFIXES = ("docs/ai/", "docs/code/", "script/", ".agents/", ".githooks/")
 NATIVE_BUILD_PREFIXES = ("src/", "tests/", "cmake/", "android/")
@@ -482,6 +487,7 @@ def native_build_state(root: Path, name: str) -> dict[str, object]:
 
 def relevant_inputs(root: Path, name: str) -> dict[str, object]:
     paths = phase_relevant_paths(root, name)
+    paths = sorted(set(paths) | {"script/ai_windows_job.py"})
     files = []
     for relative in paths:
         target = root / relative
@@ -516,6 +522,7 @@ def environment_fingerprint(environment: dict[str, str]) -> str:
         "PWD", "OLDPWD", "SHLVL", "_", "GIT_DIR", "GIT_COMMON_DIR",
         "GIT_INDEX_FILE", "GIT_PREFIX", "GIT_WORK_TREE",
         "GIT_AUTHOR_DATE", "GIT_AUTHOR_EMAIL", "GIT_AUTHOR_NAME", "GIT_EDITOR",
+        "CODEX_TOOL_CALL_ID",
     }
     values = {key: value for key, value in environment.items() if key not in ignored}
     if "GIT_EXEC_PATH" not in values:
@@ -615,12 +622,21 @@ def write_receipt(
     result: PhaseResult,
 ) -> None:
     if result.returncode != 0 or result.timed_out:
-        # A previous pass must not survive a failed rerun with otherwise
-        # equivalent inputs; the next invocation must execute again.
-        try:
-            receipt_path(log_dir, name).unlink(missing_ok=True)
-        except OSError:
-            pass
+        receipt = {
+            "schema_version": RECEIPT_SCHEMA_VERSION,
+            "phase": name,
+            "status": "TIMEOUT" if result.timed_out else "FAIL",
+            "command": list(command),
+            "environment_fingerprint": environment_fingerprint(environment),
+            "tool_identity": tool_identity(command),
+            "relevant_inputs": inputs,
+            "returncode": result.returncode,
+            "timed_out": result.timed_out,
+            "evidence_sha256": evidence_fingerprint(result.output),
+        }
+        receipt_path(log_dir, name).write_text(
+            json.dumps(receipt, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        )
         return
     receipt = {
         "schema_version": RECEIPT_SCHEMA_VERSION,
@@ -667,6 +683,18 @@ def project_version_arguments(root: Path) -> tuple[str, str]:
     )
 
 
+def require_s7_candidate(root: Path) -> None:
+    try:
+        version = project_version_arguments(root)
+        manifest = json.loads((root / "vcpkg.json").read_text(encoding="utf-8"))
+        valid = version == ("EarlyDev:Initiation", "0.1.0:7") and isinstance(manifest, dict) \
+            and manifest.get("version-string") == "0.1.0"
+    except (OSError, ValueError) as error:
+        raise ValueError(f"S7 selector cannot read actual candidate version: {error}") from error
+    if not valid:
+        raise ValueError("S7 selector does not match the actual candidate version")
+
+
 def publisher_failure_names(output: str) -> set[str]:
     clean = re.sub(r"\x1b\[[0-9;]*m", "", output)
     names = set()
@@ -707,6 +735,33 @@ def python_test_environment(root: Path) -> dict[str, str]:
     return environment
 
 
+def terminate_process_tree(process: subprocess.Popen) -> None:
+    """Stop a timed-out phase and every subprocess it started."""
+    if os.name == "nt":
+        if process.poll() is None:
+            process.kill()
+        try:
+            process.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait()
+        return
+
+    try:
+        os.killpg(process.pid, signal.SIGTERM)
+    except ProcessLookupError:
+        pass
+    try:
+        process.wait(timeout=2)
+    except subprocess.TimeoutExpired:
+        pass
+    try:
+        os.killpg(process.pid, signal.SIGKILL)
+    except ProcessLookupError:
+        pass
+    process.wait()
+
+
 def run_phase(
     root: Path,
     log_dir: Path,
@@ -717,6 +772,7 @@ def run_phase(
     reuse: bool = False,
 ) -> PhaseResult:
     started = time.monotonic()
+    timeout = min(timeout, MAX_PHASE_TIMEOUT)
     try:
         environment = phase_environment(root, name)
         inputs = relevant_inputs(root, name)
@@ -731,6 +787,18 @@ def run_phase(
         result = PhaseResult(name, command, 127, str(error))
         result.duration_seconds = time.monotonic() - started
         (log_dir / f"{name}.log").write_text(result.output, encoding="utf-8")
+        receipt_path(log_dir, name).write_text(
+            json.dumps({
+                "schema_version": RECEIPT_SCHEMA_VERSION,
+                "phase": name,
+                "status": "FAIL",
+                "command": list(command),
+                "returncode": result.returncode,
+                "timed_out": False,
+                "error": result.output,
+            }, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
         return result
     if reuse:
         output = read_matching_receipt(root, log_dir, name, command, environment, inputs)
@@ -761,27 +829,34 @@ def run_phase(
         f"RUN {name}: {' '.join(command)} (timeout {timeout}s; log {relative_log})",
         flush=True,
     )
+    termination_grace = min(TERMINATION_GRACE_SECONDS, max(0.1, timeout * 0.1))
     try:
         with log_path.open("wb") as log_stream:
+            launch_command = list(command)
+            if os.name == "nt":
+                launch_command = [sys.executable, str(Path(__file__).with_name("ai_windows_job.py")), *launch_command]
             process = subprocess.Popen(
-                command,
+                launch_command,
                 cwd=root,
                 stdout=log_stream,
                 stderr=subprocess.STDOUT,
                 env=environment,
+                start_new_session=os.name != "nt",
+                creationflags=(subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0),
             )
             cursor = 0
             timed_out = False
             while True:
                 elapsed = time.monotonic() - started
                 remaining = timeout - elapsed
-                if remaining <= 0:
-                    process.kill()
-                    process.wait()
+                if remaining <= termination_grace:
+                    terminate_process_tree(process)
                     timed_out = True
                     break
                 try:
-                    returncode = process.wait(timeout=min(30.0, remaining))
+                    returncode = process.wait(
+                        timeout=min(30.0, remaining - termination_grace)
+                    )
                     break
                 except subprocess.TimeoutExpired:
                     log_stream.flush()
@@ -793,9 +868,8 @@ def run_phase(
                         sys.stdout.flush()
                         cursor += len(chunk)
                     elapsed = time.monotonic() - started
-                    if elapsed >= timeout:
-                        process.kill()
-                        process.wait()
+                    if timeout - elapsed <= termination_grace:
+                        terminate_process_tree(process)
                         timed_out = True
                         break
                     last_evidence = "output received" if chunk else "no output received yet"
@@ -863,7 +937,8 @@ def run_phase(
 def print_result(result: PhaseResult) -> None:
     command = " ".join(result.command)
     if result.skipped:
-        print(f"SKIP {result.name}: {result.output}")
+        label = "UNRUN" if result.returncode != 0 else "SKIP"
+        print(f"{label} {result.name}: {result.output}")
         return
     if result.reused:
         print(f"REUSED PASS {result.name}: {command} ({result.duration_seconds:.2f}s)")
@@ -952,6 +1027,10 @@ def write_summary(root: Path, scope: str, changed: Sequence[str], results: Seque
         "reused_phases": [result.name for result in results if result.reused],
         "executed_phases": [result.name for result in results if not result.reused and not result.skipped],
         "skipped_phases": [result.name for result in results if result.skipped],
+        "timed_out_phases": [result.name for result in results if result.timed_out],
+        "unrun_phases": [
+            result.name for result in results if result.skipped and result.returncode != 0
+        ],
         "durations_seconds": {
             result.name: round(result.duration_seconds, 6) for result in results
         },
@@ -964,6 +1043,8 @@ def write_summary(root: Path, scope: str, changed: Sequence[str], results: Seque
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    invocation_started = time.monotonic()
+    invocation_deadline = invocation_started + TOTAL_TIMEOUT
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--fast", action="store_true", help="skip build, CTest, and publisher checks")
     parser.add_argument("--strict", action="store_true", help="do not allow development publisher failures")
@@ -1031,10 +1112,15 @@ def main(argv: Sequence[str] | None = None) -> int:
         ("docs", [sys.executable, "script/ai_docs.py", "check"], 60, True),
         ("backlog", [sys.executable, "script/ai_tasks.py", "check"], 60, True),
         ("current-plan", [sys.executable, "script/ai_plan.py", "check"], 60, True),
+        ("release-reports", [sys.executable, "script/ai_release_reports.py", "check-state"], 30, False),
         ("diff-working", ["git", "diff", "--check"], 30, False),
         ("diff-cached", ["git", "diff", "--cached", "--check"], 30, False),
     ]
-    if not args.proof_only and args.fast and scope == "full-cpp":
+    native_changes = scope == "full-cpp" or any(
+        name in NATIVE_BUILD_FILES or name.startswith(NATIVE_BUILD_PREFIXES)
+        for name in changed
+    )
+    if not args.proof_only and args.fast and native_changes:
         try:
             names, version = project_version_arguments(root)
             phase_specs.append(
@@ -1077,7 +1163,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     if not args.fast and not args.proof_only:
         phase_specs.extend([
             ("build", BUILD_PHASE_COMMANDS["build"], 600, True),
-            ("ctest", BUILD_PHASE_COMMANDS["ctest"], 2400, True),
+            ("ctest", BUILD_PHASE_COMMANDS["ctest"], BUILD_PHASE_TIMEOUT, True),
         ])
     required_receipts: list[tuple[str, Sequence[str]]] = []
     if args.proof_only:
@@ -1109,7 +1195,11 @@ def main(argv: Sequence[str] | None = None) -> int:
                     raise ValueError("invalid additional check enabled/levels")
                 if not isinstance(item["command"], list) or any(not isinstance(arg, str) or not arg for arg in item["command"]):
                     raise ValueError("invalid additional check command")
-                if type(item["timeout"]) is not int or item["timeout"] <= 0 or not isinstance(item["reason"], str):
+                if (
+                    type(item["timeout"]) is not int
+                    or not 0 < item["timeout"] <= MAX_PHASE_TIMEOUT
+                    or not isinstance(item["reason"], str)
+                ):
                     raise ValueError("invalid additional check timeout/reason")
                 when = item.get("when", "always")
                 if when not in {"always", "candidate", "strict", "release"}:
@@ -1170,21 +1260,100 @@ def main(argv: Sequence[str] | None = None) -> int:
                 )
         except (OSError, ValueError, TypeError, KeyError) as error:
             results.append(PhaseResult("check-registry", (), 1, str(error)))
-    for name, command, timeout, cacheable in phase_specs:
+    if not args.fast and not args.proof_only:
+        try:
+            names, version = project_version_arguments(root)
+            publisher_command = [sys.executable, "publish.py", names, version, "--checks-only"]
+            if snapshot_source is not None:
+                publisher_command.extend(("--snapshot-source-commit", snapshot_source))
+            phase_specs.append(("publisher", publisher_command, 60, False))
+        except (OSError, ValueError) as error:
+            results.append(PhaseResult("publisher", (), 1, str(error)))
+
+    for index, (name, command, timeout, cacheable) in enumerate(phase_specs):
+        remaining = int(invocation_deadline - time.monotonic())
+        if remaining <= TERMINATION_GRACE_SECONDS:
+            reason = (
+                f"aggregate ai_check deadline of {TOTAL_TIMEOUT}s reached; this phase and "
+                "remaining phases were not run; resume by rerunning the same ai_check command"
+            )
+            for unrun_name, unrun_command, _, _ in phase_specs[index:]:
+                (log_dir / f"{unrun_name}.log").write_text(reason + "\n", encoding="utf-8")
+                receipt_path(log_dir, unrun_name).write_text(
+                    json.dumps({
+                        "schema_version": RECEIPT_SCHEMA_VERSION,
+                        "phase": unrun_name,
+                        "status": "UNRUN",
+                        "command": list(unrun_command),
+                        "returncode": 125,
+                        "timed_out": False,
+                        "reason": reason,
+                    }, indent=2, sort_keys=True) + "\n",
+                    encoding="utf-8",
+                )
+                results.append(
+                    PhaseResult(unrun_name, unrun_command, 125, reason, skipped=True)
+                )
+            break
+        effective_timeout = min(timeout, MAX_PHASE_TIMEOUT, remaining)
         result = run_phase(
             root,
             log_dir,
             name,
             command,
-            timeout,
+            effective_timeout,
             reuse=cacheable,
         )
+        if result.timed_out and effective_timeout < min(timeout, MAX_PHASE_TIMEOUT):
+            result.output += (
+                f"\nAggregate ai_check deadline of {TOTAL_TIMEOUT}s reached during this phase; "
+                "the partial log and failure receipt were retained."
+            )
+            (log_dir / f"{name}.log").write_text(result.output, encoding="utf-8")
+            phase_receipt_path = receipt_path(log_dir, name)
+            try:
+                phase_receipt = json.loads(phase_receipt_path.read_text(encoding="utf-8"))
+                phase_receipt["evidence_sha256"] = evidence_fingerprint(result.output)
+                phase_receipt_path.write_text(
+                    json.dumps(phase_receipt, indent=2, sort_keys=True) + "\n",
+                    encoding="utf-8",
+                )
+            except (OSError, json.JSONDecodeError):
+                pass
         if name == "source-checks":
             result.allowed_failure = (
                 result.returncode not in {0, 124}
                 and publisher_failure_is_allowed(result.output, strict=False)
             )
+        elif name == "publisher":
+            result.allowed_failure = (
+                result.returncode not in {0, 124}
+                and publisher_failure_is_allowed(result.output, args.strict, args.candidate)
+            )
         results.append(result)
+        if result.timed_out and time.monotonic() >= invocation_deadline:
+            reason = (
+                f"aggregate ai_check deadline of {TOTAL_TIMEOUT}s reached; remaining phases "
+                "were not run; resume by rerunning the same ai_check command"
+            )
+            for unrun_name, unrun_command, _, _ in phase_specs[index + 1:]:
+                (log_dir / f"{unrun_name}.log").write_text(reason + "\n", encoding="utf-8")
+                receipt_path(log_dir, unrun_name).write_text(
+                    json.dumps({
+                        "schema_version": RECEIPT_SCHEMA_VERSION,
+                        "phase": unrun_name,
+                        "status": "UNRUN",
+                        "command": list(unrun_command),
+                        "returncode": 125,
+                        "timed_out": False,
+                        "reason": reason,
+                    }, indent=2, sort_keys=True) + "\n",
+                    encoding="utf-8",
+                )
+                results.append(
+                    PhaseResult(unrun_name, unrun_command, 125, reason, skipped=True)
+                )
+            break
     if args.proof_only:
         for name, command in required_receipts:
             try:
@@ -1220,21 +1389,6 @@ def main(argv: Sequence[str] | None = None) -> int:
                         f"candidate gate with `python3 script/ai_check.py --candidate --level {args.level}`",
                     )
                 )
-    if not args.fast and not args.proof_only:
-        try:
-            names, version = project_version_arguments(root)
-            publisher_command = [sys.executable, "publish.py", names, version, "--checks-only"]
-            if snapshot_source is not None:
-                publisher_command.extend(("--snapshot-source-commit", snapshot_source))
-            publisher = run_phase(root, log_dir, "publisher", publisher_command, 60)
-            publisher.allowed_failure = (
-                publisher.returncode not in {0, 124}
-                and publisher_failure_is_allowed(publisher.output, args.strict, args.candidate)
-            )
-            results.append(publisher)
-        except (OSError, ValueError) as error:
-            results.append(PhaseResult("publisher", (), 1, str(error)))
-
     for result in results:
         print_result(result)
     write_summary(root, scope, changed, results)

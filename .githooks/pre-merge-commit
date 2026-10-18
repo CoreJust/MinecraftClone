@@ -1,9 +1,10 @@
 #!/bin/sh
 set -eu
 
-branch="$(git branch --show-current)"
-case "$branch" in
-    ai-dev|ai-main|codex/ai-*)
-        exec "${PYTHON:-python3}" script/ai_commit.py precommit
-        ;;
+case "$0" in
+    */*) hook_directory="${0%/*}" ;;
+    *) hook_directory="." ;;
 esac
+
+# Share the branch gate and Git-injected PATH handling with pre-commit.
+exec "$hook_directory/pre-commit"

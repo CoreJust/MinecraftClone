@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import importlib.util
+import io
 import subprocess
 import sys
 import tempfile
 import textwrap
 import unittest
+from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 
 
@@ -91,19 +93,30 @@ class TargetedTsanClientTests(unittest.TestCase):
 
             previous_argv = sys.argv.copy()
             subprocess.Popen = record_process
+            run_output = io.StringIO()
             try:
-                result = targeted_tsan_client.run_client_launch_case(
-                    fixture,
-                    binary,
-                    evidence_dir,
-                )
+                with redirect_stdout(run_output), redirect_stderr(run_output):
+                    result = targeted_tsan_client.run_client_launch_case(
+                        fixture,
+                        binary,
+                        evidence_dir,
+                    )
             finally:
                 subprocess.Popen = real_popen
 
             self.assertEqual(result, 1)
             self.assertEqual(sys.argv, previous_argv)
+            self.assertIn("pinned client case or cleanup failed", run_output.getvalue())
+            self.assertNotIn("FAILED (failures=1)", run_output.getvalue())
             self.assertTrue(child_processes)
             self.assertTrue(all(process.poll() is not None for process in child_processes))
+
+            fixture_result = evidence_dir / "fixture-result.txt"
+            self.assertTrue(fixture_result.is_file())
+            fixture_result_text = fixture_result.read_text(encoding="utf-8")
+            self.assertIn("original delayed-server assertion failed", fixture_result_text)
+            self.assertIn("FAILED (failures=1)", fixture_result_text)
+            self.assertLessEqual(fixture_result.stat().st_size, 4096)
 
             observation = evidence_dir / "client-before-sigterm.txt"
             self.assertTrue(

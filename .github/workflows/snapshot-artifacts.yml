@@ -1,9 +1,6 @@
 name: Snapshot artifacts
 
 on:
-  push:
-    tags:
-      - 'ai/*/*/*'
   workflow_dispatch:
     inputs:
       source_ref:
@@ -90,6 +87,7 @@ jobs:
     if: needs.source.outputs.trusted_dependency_source == 'true'
     name: release (${{ matrix.platform }})
     runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -351,6 +349,7 @@ jobs:
     needs: source
     if: needs.source.outputs.trusted_dependency_source == 'true'
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
     env:
       SOURCE_COMMIT: ${{ needs.source.outputs.source_commit }}
       SNAPSHOT_VERSION: ${{ needs.source.outputs.version }}

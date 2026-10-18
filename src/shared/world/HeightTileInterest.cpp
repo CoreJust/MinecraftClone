@@ -19,6 +19,10 @@ namespace shared {
 
 namespace {
 
+constexpr double DIRECTIONAL_AHEAD_TILES = 80.0;
+constexpr double DIRECTIONAL_REAR_TILES = 24.0;
+constexpr double DIRECTIONAL_HALF_WIDTH_TILES = 24.0;
+
 constexpr int32_t HEIGHT_TILE_EXTENT = static_cast<int32_t>(
     WorldExtent::WIDTH / HEIGHT_TILE_SIDE_LENGTH
 );
@@ -71,7 +75,6 @@ void appendDifference(
 
 struct RankedHeightTileOffset final {
     HeightTileKey offset;
-    double priority;
     int64_t distance_squared;
     double negative_ahead;
 };
@@ -105,7 +108,6 @@ HeightTileInterestOrders buildHeightTileOffsetOrders(uint32_t const radius)
                 HeightTileKey const offset{.x = x, .y = y};
                 ranked.push_back({
                     .offset = offset,
-                    .priority = heightTileInterestPriority({.x = 0, .y = 0}, heading.x, heading.y, offset),
                     .distance_squared = distance_squared,
                     .negative_ahead = -(x * forward_x + y * forward_y),
                 });
@@ -113,13 +115,11 @@ HeightTileInterestOrders buildHeightTileOffsetOrders(uint32_t const radius)
         }
         std::ranges::sort(ranked, [](RankedHeightTileOffset const& first, RankedHeightTileOffset const& second) {
             return std::tie(
-                first.priority,
                 first.distance_squared,
                 first.negative_ahead,
                 first.offset.y,
                 first.offset.x
             ) < std::tie(
-                second.priority,
                 second.distance_squared,
                 second.negative_ahead,
                 second.offset.y,
@@ -181,9 +181,10 @@ HeightTileGenerationBand heightTileGenerationBand(
     if (distance_squared <= 64.0) {
         return HeightTileGenerationBand::Near;
     }
-    double const longitudinal_radius = parallel >= 0.0 ? 45.0 : 24.0;
+    double const longitudinal_radius = parallel >= 0.0
+        ? DIRECTIONAL_AHEAD_TILES : DIRECTIONAL_REAR_TILES;
     double const longitudinal = parallel / longitudinal_radius;
-    double const lateral = perpendicular / 24.0;
+    double const lateral = perpendicular / DIRECTIONAL_HALF_WIDTH_TILES;
     double const ellipse_distance = longitudinal * longitudinal + lateral * lateral;
     if (ellipse_distance <= 1.0) {
         return HeightTileGenerationBand::Directional;
@@ -198,25 +199,16 @@ double heightTileInterestPriority(
     HeightTileKey const key
 ) noexcept
 {
-    HeightTileGenerationBand const band = heightTileGenerationBand(
-        center, heading_x, heading_y, key
-    );
-    double const x = shortestDisplacement(center.x, key.x);
-    double const y = shortestDisplacement(center.y, key.y);
-    double const distance_squared = x * x + y * y;
+    int32_t const x = shortestDisplacement(center.x, key.x);
+    int32_t const y = shortestDisplacement(center.y, key.y);
+    int64_t const distance_squared = static_cast<int64_t>(x) * x + static_cast<int64_t>(y) * y;
     HeightTileHeading const heading = canonicalHeightTileHeading(heading_x, heading_y);
     double const heading_length = std::hypot(heading.x, heading.y);
     double const forward_x = static_cast<double>(heading.x) / heading_length;
     double const forward_y = static_cast<double>(heading.y) / heading_length;
     double const parallel = x * forward_x + y * forward_y;
-    double const perpendicular = -x * forward_y + y * forward_x;
-    double within_band = distance_squared / (45.0 * 45.0);
-    if (band == HeightTileGenerationBand::Directional) {
-        double const longitudinal_radius = parallel >= 0.0 ? 45.0 : 24.0;
-        within_band = (parallel / longitudinal_radius) * (parallel / longitudinal_radius)
-            + (perpendicular / 24.0) * (perpendicular / 24.0);
-    }
-    return static_cast<double>(band) + within_band - parallel / 100'000.0;
+    // Keep heading preference smaller than the one-unit gap between squared-distance rings.
+    return static_cast<double>(distance_squared) - parallel / 1'000'000.0;
 }
 
 HeightTileHeading canonicalHeightTileHeading(int8_t heading_x, int8_t heading_y) noexcept
@@ -246,18 +238,31 @@ HeightTileInterestDelta heightTileInterestDelta(
     uint32_t const radius
 )
 {
-    ASSERT(isValidHeightTileInterestRadius(radius), "invalid height-tile interest radius");
     HeightTileInterestDelta result;
+    heightTileInterestDelta(previous_center, next_center, radius, result);
+    return result;
+}
+
+void heightTileInterestDelta(
+    // NOLINTNEXTLINE(bugprone-easily-swappable-parameters) -- ordered previous/next centers
+    HeightTileKey const previous_center,
+    HeightTileKey const next_center,
+    uint32_t const radius,
+    HeightTileInterestDelta& output
+)
+{
+    ASSERT(isValidHeightTileInterestRadius(radius), "invalid height-tile interest radius");
+    output.additions.clear();
+    output.removals.clear();
     HeightTileKey const normalized_previous = normalizeHeightTileKey(previous_center);
     HeightTileKey const normalized_next = normalizeHeightTileKey(next_center);
     int32_t const dx = shortestDisplacement(normalized_previous.x, normalized_next.x);
     int32_t const dy = shortestDisplacement(normalized_previous.y, normalized_next.y);
     if (dx == 0 && dy == 0) {
-        return result;
+        return;
     }
-    appendDifference(result.additions, normalized_next, dx, dy, static_cast<int32_t>(radius));
-    appendDifference(result.removals, normalized_previous, -dx, -dy, static_cast<int32_t>(radius));
-    return result;
+    appendDifference(output.additions, normalized_next, dx, dy, static_cast<int32_t>(radius));
+    appendDifference(output.removals, normalized_previous, -dx, -dy, static_cast<int32_t>(radius));
 }
 
 bool heightTileWithinInterest(

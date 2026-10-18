@@ -14,17 +14,17 @@ target_link_libraries(mc
         CoreProject2026::CoreLang
         fmt::fmt
         spdlog::spdlog
+        glm::glm
     PRIVATE
         CoreCpp::RuntimeExecutors
-        glm::glm
 )
 if(MC_BUILD_CLIENT)
+    target_link_libraries(mc PUBLIC CoreCpp::RuntimeGraphicsVulkan)
     target_link_libraries(mc PRIVATE CoreCpp::RuntimeAudioOutput)
     if(NOT ANDROID)
         target_link_libraries(mc
             PRIVATE
                 CoreCpp::RuntimeGraphics
-                CoreCpp::RuntimeGraphicsVulkan
                 CoreCpp::RuntimeGraphicsVulkanGlfw
                 CoreCpp::RuntimeKernel
                 CoreCpp::RuntimePlatformGlfw
@@ -33,7 +33,6 @@ if(MC_BUILD_CLIENT)
         target_link_libraries(mc
             PRIVATE
                 CoreCpp::RuntimeGraphics
-                CoreCpp::RuntimeGraphicsVulkan
                 CoreCpp::RuntimeGraphicsVulkanAndroid
                 CoreCpp::RuntimeKernel
         )

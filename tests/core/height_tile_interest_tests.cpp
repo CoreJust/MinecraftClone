@@ -12,6 +12,7 @@
 #include <functional>
 #include <initializer_list>
 #include <memory>
+#include <set>
 #include <span>
 #include <string>
 #include <utility>
@@ -119,24 +120,18 @@ TEST(HeightTileInterestTest, RotationChangesPriorityWithoutChangingResidency)
     EXPECT_EQ(east.keys.size(), 205'861U);
 }
 
-TEST(HeightTileInterestTest, ProgressivePriorityUsesNearCirclesThenDirectionalEllipse)
+TEST(HeightTileInterestTest, ProgressivePriorityOrdersByDistanceBeforeHeading)
 {
     shared::HeightTileKey constexpr center{.x = 2'000, .y = 2'000};
     shared::HeightTileInterest const interest = shared::makeHeightTileInterest(center, 127, 0);
 
-    for (size_t const prefix_size : {500U, 1'500U, 3'000U}) {
-        ASSERT_LT(prefix_size, interest.keys.size());
-        int32_t forward_extent = 0;
-        int32_t rear_extent = 0;
-        int32_t side_extent = 0;
-        for (shared::HeightTileKey const key : std::span{interest.keys}.first(prefix_size)) {
-            forward_extent = std::max(forward_extent, key.x - center.x);
-            rear_extent = std::max(rear_extent, center.x - key.x);
-            side_extent = std::max(side_extent, std::abs(key.y - center.y));
-        }
-        EXPECT_GT(forward_extent, side_extent);
-        EXPECT_GT(forward_extent, rear_extent);
-        EXPECT_LE(forward_extent, 45);
+    int64_t previous_distance_squared = -1;
+    for (shared::HeightTileKey const key : interest.keys) {
+        int64_t const x = key.x - center.x;
+        int64_t const y = key.y - center.y;
+        int64_t const distance_squared = x * x + y * y;
+        EXPECT_GE(distance_squared, previous_distance_squared);
+        previous_distance_squared = distance_squared;
     }
     for (shared::HeightTileKey const key : std::span{interest.keys}.first(29U)) {
         int32_t const x = key.x - center.x;
@@ -252,6 +247,13 @@ TEST(HeightTileInterestTest, SelectedRadiusOrdersPreserveExactDiskAcrossHeadings
     EXPECT_EQ(retained_orders->radius, RADIUS_128);
     for (auto const& order : retained_orders->orders) {
         EXPECT_EQ(order.keys.size(), COUNT_128);
+        int64_t previous_distance_squared = -1;
+        for (shared::HeightTileKey const offset : order.keys) {
+            int64_t const distance_squared = static_cast<int64_t>(offset.x) * offset.x
+                + static_cast<int64_t>(offset.y) * offset.y;
+            EXPECT_GE(distance_squared, previous_distance_squared);
+            previous_distance_squared = distance_squared;
+        }
     }
 }
 
@@ -263,8 +265,25 @@ TEST(HeightTileInterestTest, ClassifiesFixedNearBandsDirectionalMiddleAndBackgro
     EXPECT_EQ(shared::heightTileGenerationBand(center, 127, 0, {.x = 2'003, .y = 2'000}), Immediate);
     EXPECT_EQ(shared::heightTileGenerationBand(center, 127, 0, {.x = 2'008, .y = 2'000}), Near);
     EXPECT_EQ(shared::heightTileGenerationBand(center, 127, 0, {.x = 2'040, .y = 2'000}), Directional);
+    EXPECT_EQ(shared::heightTileGenerationBand(center, 127, 0, {.x = 2'070, .y = 2'000}), Directional);
+    EXPECT_EQ(shared::heightTileGenerationBand(center, 127, 0, {.x = 2'080, .y = 2'000}), Directional);
+    EXPECT_EQ(shared::heightTileGenerationBand(center, 127, 0, {.x = 2'081, .y = 2'000}), Background);
     EXPECT_EQ(shared::heightTileGenerationBand(center, 127, 0, {.x = 1'960, .y = 2'000}), Background);
     EXPECT_EQ(shared::heightTileGenerationBand(center, 0, 127, {.x = 2'000, .y = 2'040}), Directional);
+    EXPECT_EQ(shared::heightTileGenerationBand(center, 127, 0, {.x = 2'000, .y = 2'030}), Background);
+}
+
+TEST(HeightTileInterestTest, NearestDistanceDominatesHeadingAndHeadingBreaksRingTies)
+{
+    shared::HeightTileKey constexpr center{.x = 2'000, .y = 2'000};
+    EXPECT_LT(
+        shared::heightTileInterestPriority(center, 127, 0, {.x = 2'010, .y = 2'000}),
+        shared::heightTileInterestPriority(center, 127, 0, {.x = 2'000, .y = 2'010})
+    );
+    EXPECT_LT(
+        shared::heightTileInterestPriority(center, 127, 0, {.x = 2'000, .y = 2'010}),
+        shared::heightTileInterestPriority(center, 127, 0, {.x = 2'070, .y = 2'000})
+    );
 }
 
 TEST(HeightTileInterestTest, SelectsEligibleRemovalsBeyondInflightPriorityPrefix)
@@ -324,6 +343,79 @@ TEST(HeightTileInterestTest, RemovalSelectionBreaksEqualPriorityTiesDeterministi
     ASSERT_EQ(first.size(), 1U);
     EXPECT_EQ(first, second);
     EXPECT_EQ(first.front(), positive);
+}
+
+TEST(HeightTileInterestTest, DeltaOutputReusesStorageAcrossMovementWrapAndNoChange)
+{
+    static constexpr uint32_t TRANSITION_COUNT = 8U;
+    static constexpr uint32_t OUTPUT_CAPACITY = 256U;
+    static constexpr std::array<shared::HeightTileKey, TRANSITION_COUNT + 1U> CENTERS{
+        shared::HeightTileKey{ .x = 100, .y = 200 },
+        shared::HeightTileKey{ .x = 101, .y = 200 },
+        shared::HeightTileKey{ .x = 101, .y = 201 },
+        shared::HeightTileKey{ .x = 102, .y = 201 },
+        shared::HeightTileKey{ .x = 4'095, .y = 300 },
+        shared::HeightTileKey{ .x = 0, .y = 300 },
+        shared::HeightTileKey{ .x = 4'095, .y = 300 },
+        shared::HeightTileKey{ .x = 4'095, .y = 300 },
+        shared::HeightTileKey{ .x = 100, .y = 200 },
+    };
+    static constexpr std::array<uint32_t, TRANSITION_COUNT> RADII{
+        8U, 8U, 8U, 8U, 8U, 8U, 8U, 4U,
+    };
+    auto const keySet = [](std::vector<shared::HeightTileKey> const& keys) {
+        std::set<std::pair<int32_t, int32_t>> result;
+        for (shared::HeightTileKey const key : keys) {
+            result.emplace(key.x, key.y);
+        }
+        return result;
+    };
+    shared::HeightTileInterestDelta reused;
+    reused.additions.reserve(OUTPUT_CAPACITY);
+    reused.removals.reserve(OUTPUT_CAPACITY);
+    shared::HeightTileKey const* const additions_storage = reused.additions.data();
+    shared::HeightTileKey const* const removals_storage = reused.removals.data();
+    uint32_t const additions_capacity = static_cast<uint32_t>(reused.additions.capacity());
+    uint32_t const removals_capacity = static_cast<uint32_t>(reused.removals.capacity());
+
+    for (uint32_t index = 0U; index < TRANSITION_COUNT; ++index) {
+        shared::HeightTileKey const previous_center = CENTERS[index];
+        shared::HeightTileKey const next_center = CENTERS[index + 1U];
+        uint32_t const radius = RADII[index];
+        shared::heightTileInterestDelta(previous_center, next_center, radius, reused);
+        shared::HeightTileInterestDelta const returned = shared::heightTileInterestDelta(
+            previous_center, next_center, radius
+        );
+        EXPECT_EQ(reused.additions, returned.additions);
+        EXPECT_EQ(reused.removals, returned.removals);
+
+        std::vector<shared::HeightTileKey> const previous_keys = shared::makeHeightTileInterest(
+            previous_center, 0, 127, radius
+        ).keys;
+        std::vector<shared::HeightTileKey> const next_keys = shared::makeHeightTileInterest(
+            next_center, 0, 127, radius
+        ).keys;
+        std::set<std::pair<int32_t, int32_t>> const previous_set = keySet(previous_keys);
+        std::set<std::pair<int32_t, int32_t>> const next_set = keySet(next_keys);
+        std::set<std::pair<int32_t, int32_t>> expected_additions;
+        std::set<std::pair<int32_t, int32_t>> expected_removals;
+        for (shared::HeightTileKey const key : next_keys) {
+            if (!previous_set.contains({ key.x, key.y })) {
+                expected_additions.emplace(key.x, key.y);
+            }
+        }
+        for (shared::HeightTileKey const key : previous_keys) {
+            if (!next_set.contains({ key.x, key.y })) {
+                expected_removals.emplace(key.x, key.y);
+            }
+        }
+        EXPECT_EQ(keySet(reused.additions), expected_additions);
+        EXPECT_EQ(keySet(reused.removals), expected_removals);
+        EXPECT_EQ(reused.additions.data(), additions_storage);
+        EXPECT_EQ(reused.removals.data(), removals_storage);
+        EXPECT_EQ(reused.additions.capacity(), additions_capacity);
+        EXPECT_EQ(reused.removals.capacity(), removals_capacity);
+    }
 }
 
 } // namespace
