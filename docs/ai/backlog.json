@@ -1500,9 +1500,9 @@
     "depends_on": [
       "MC-AI-0037"
     ],
-    "acceptance": "Deliver immutable generation-tagged hard/soft permissions for all, players, mobs, technical entities, per-kind, explicit-member and selector groups; namespace mod/command permission keys, defer world subjects, and cover movement, flight/collision, blocks, inventory, invincibility, commands, and mode presets. Use CoreLang 0.1.3.1 (documented 0.1.3.3 maintenance only), verify interpreter/JIT parity, and prepare kernels outside physics ticks. Test latency, loss, jitter, freezes, reordering and duplication. Provide a 29/16 × 10/16 × 10/16 player, 16-color palette, and first/rear-third/front-third views. Keep radius-256 terrain position-driven and camera-independent; derive LOD from projected face area ≤2 px². Supply four distinct, fully loaded, inspected 2560×1440 Mac screenshots with prominent labels centered below HUD: (1) third-person central spike at radius72, about30% closer and slightly lower but elevated, with full spike, most first ring, terrain beyond and unobscured player; (2) one trench view near first spike; (3) mountain climb; (4) first-person at X/Z0. Follow the explicit16October release boundary: prove complete radius256 terrain separately from stable120FPS at100+chunks on the primary Mac target for this S7 release, using a radius128 performance proof with99.8percent stability accounting. Keep500FPS as a later target, not a claimed S7 result. Pass required Mac runtime and platform/MC-AI-0249 gates; include CoreCpp MC-AI-0056, 0057 and 0240. Android needs local tests, basic runtime, and a GitHub build artifact only; Linux is analysis-only, not a supported game target. Release S7, hold the minor for feedback, and do not start S8. Final current-source platform qualification and separate Mac R256/R128 proofs belong here under0465, not as repeated basic-commit gates. For S7 only, the user temporarily defers Windows matrix/build/artifact/proofs; these are not passed. All Mac/Android requirements remain. Basic implementation closure is not release qualification.",
-    "evidence": "Preserved v26 qualification: seven Mac and two analysis-only Linux rows plus reduced Android local/basic runtime passed for native input c913634d. Later valid normal Mac captures prove R256 complete205861tiles, raw0fcd07d45e8bd33d057f70af4ebe8225e77e70d78752600c21e14f8ba6f5909a; R128performance FAIL baseline115.667150Hz130/3601lost, movement119.266339Hz22/3602lost, recovery119.832646Hz5/3601lost. Mac unlocked; earlier idle-screen-saver lock cause verified and active runs use bounded keep-awake. Approved shared guard repair installed/tested; M3 maintenance tagged9840659 under canonical ai-dev/ai-main with Git and GitHub API readback. New current-source changes0469 address user-observed broad-radius travel gaps; diagnostic shows four delivery slots full99.97percent, only2264.83newtiles/s, workers idle. ACKflush regression RED thenGREEN,37GameClient tests pass; losslessv14codec16tests pass; new byte-reserve regression passes, six legacy fixed-four fixture assumptions are being renewed. These changes invalidate affected v26 native receipts until renewed; no S7release or current performance PASS. Task0470 adds user-required3h/12hPDFreporting. Windows remains untouched/deferred, minor hold and noS8.",
-    "blocker": "No missing user authorization currently blocks local progress. Open product defects: broad requested-radius terrain coverage during x200 travel and unchanged R128120Hz99.8percent performance. Current-source qualification, exact review, promotion and release artifacts remain unfinished. Mac is unlocked; M3 publication and shared repair are complete, not blockers.",
+    "acceptance": "Deliver immutable generation-tagged hard/soft permissions for all, players, mobs, technical entities, per-kind, explicit-member and selector groups; namespace mod/command permission keys, defer world subjects, and cover movement, flight/collision, blocks, inventory, invincibility, commands, and mode presets. Use CoreLang 0.1.3.1 (documented 0.1.3.3 maintenance only), verify interpreter/JIT parity, and prepare kernels outside physics ticks. Test latency, loss, jitter, freezes, reordering and duplication. Provide a 29/16 × 10/16 × 10/16 player, 16-color palette, and first/rear-third/front-third views. Keep radius-256 terrain position-driven and camera-independent; derive LOD from projected face area ≤2 px². Supply four distinct, fully loaded, inspected 2560×1440 Mac screenshots with prominent labels centered below HUD: (1) third-person central spike at radius72, about30% closer and slightly lower but elevated, with full spike, most first ring, terrain beyond and unobscured player; (2) one trench view near first spike; (3) mountain climb; (4) first-person at X/Z0. Follow the explicit16October release boundary: prove complete radius256 terrain separately from stable120FPS at100+chunks on the primary Mac target for this S7 release, using a radius128 performance proof with99.8percent stability accounting. Keep500FPS as a later target, not a claimed S7 result. Pass required Mac runtime and platform/MC-AI-0249 gates; include CoreCpp MC-AI-0056, 0057 and 0240. Android needs local tests, basic runtime, and a GitHub build artifact only; Linux is analysis-only, not a supported game target. Release S7, hold the minor for feedback, and do not start S8. Final current-source platform qualification and separate Mac R256/R128 proofs belong here under0465, not as repeated basic-commit gates. For S7 only, the user temporarily defers Windows matrix/build/artifact/proofs; these are not passed. All Mac/Android requirements remain. Basic implementation closure is not release qualification. On18October2026 the user explicitly authorizes a documented S7-only Mac cadence exception; preserve the strict99.8percent target and actual failed timing metrics, bind approval in S7-CADENCE-EXCEPTION-2026-10-18.json, record accepted_exception rather than performancePASS, and retain follow-upMC-AI-0472. This waives no other product, sanitizer, provenance, runtime or publication requirement.",
+    "evidence": "Source a48bcce (0471), native input06bb1234:874Python cases/4skips;785CTest/0failures/1Release-onlyskip. Nine current-source Mac/Linux analysis rows pass. Normal Mac R256 covers205861tiles:21.077s initial,9.993s recovery. R128 strict timing fails:119.865963/119.466070/119.699361Hz and4/16/9lostslots per3601; the user-approved S7-only exception preserves rawfailures and0472follow-up. Aggregates: build/ai-checks/{analysis,gameplay}-aggregate-v31.json. Android APK4f838ef9 has verified exact input closure to a48bcce; local36tests pass, current runtime pending the directly approved temporary same-AVD restart. Four accepted images unchanged. Full evidence index: /Users/core-just/.codex/task-evidence/s7-engine-provisional-20261016/DELIVERY-CHECKLIST.md. Final gate exposed smoke-only obsolete API fixture0473; its correction passes45GPUtests/1opt-in skip, and affected qualification will renew. Review, runtime, promotion and actual artifacts/readback remain open; no release or performancePASS.",
+    "blocker": "No missing user authority: temporary same-AVD restart directly approved.0473 corrects smoke-only fixtures; affected native evidence needs renewal. Android current runtime, final review, promotion and artifact readback remain open. No Windows access or S8.",
     "owner": "Codex",
     "level": "snapshot",
     "parent": "MC-AI-0033",
@@ -1535,7 +1535,7 @@
     "retrospective": "Historical reports preserve exact failures and calendar time, not invented work hours or a two-day counterfactual. Confirmed delays include whole-commit invalidation, duplicated gates, late preflight, hosted retries, buffered progress and invocation defects. The12October follow-up also records moving-near/x200 gaps, runaway queries, missing pins, receipt/build-root mismatches and obsolete ASan deadlines. Repairs require bounded processes, retained raw diagnostics, distinct identities and checker-validated scoped reuse. MC-AI-0442 covers streaming/workloads;0443 analyzers;0444 ASan budget. Partial checks never substitute for release acceptance.",
     "docs_review": "Visually checked the four distinct committed 2560x1440 images. The central-spike scene shows the full landform, most of the first ring, terrain beyond it, and an unobscured player; its larger label is centered below the HUD. The other files are distinct trench/first-spike, mountain-climb, and first-person origin scenes. MC-AI-0398 records central SHA-256 09f367efe433ee001de7157fe426d0e924690c7f35658bb92835e699d06286af and the unchanged hashes of the other three images.",
     "environment_review": "Confirmed sandbox/native Launch Services views differ: zero versus 635 registered bundles. Native AudioUnit callback succeeds outside the scoped sandbox boundary; healthy system cache was not reset. Isolated pinned CoreCpp audio start/play/stop reproduces 376B Apple-framework exit allocations; owned 37B leak remains detectable. Transport tests use existing audio injection; production audio and suppressions unchanged. LLVM MSan uses upstream-supported system unwinder and process-local offline symbolization. All local qualification environments retain exact tools, SDK resources and dependency hashes. No global installs or emulator replacement.",
-    "backlog_review": "All222 planned basic children are finalized and mapped to actual Task-ID commits by ai_history finalize. No accepted product scope is dropped.0038 retains current-source qualification, gameplay, review and publication; the temporary Windows-secondary exception does not waive Mac/Android gates or alter CoreLang support. Minor feedback hold and noS8 remain mandatory."
+    "backlog_review": "225 basic children through0471 are committed;0473 is the new smoke-fixture correction. Parent0038 owns renewed qualification, runtime and publication.0472 tracks the accepted cadence shortfall outside S7 children. Windows deferred, not passed; Mac/Android requirements and minor feedback hold remain."
   },
   {
     "id": "MC-AI-0039",
@@ -16773,6 +16773,45 @@
     "baseline_commit": "e773dbb15e071043528d76b92bebc6492d358b59",
     "commits": [],
     "finalized": false,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0473",
+    "title": "Repair the smoke-only player reset fixture for the current mesh API",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P0",
+    "route": "luna",
+    "milestone": "ED-010-S7",
+    "depends_on": [],
+    "acceptance": "Update only the seven stale smoke-fixture calls to the current two-argument API, preserving deadline semantics, bounded admission and all reset/result cleanup assertions. Do not add a production compatibility shim or weaken tests. Pass the actual bounded renderer-smoke GPU target and focused checks, exact task review and normal hook; renew only checker-invalidated parent qualification. S7 stays active until Android runtime, all aggregate gates, promotion and actual publication/readback complete.",
+    "evidence": "Original renderer-smoke compile failed seven obsolete three-argument calls against the canonical two-argument API. Test-only correction and isolated pending/dirty fixture setup pass actual macOS GPU smoke:46tests,45passed,1existing opt-in skip,0failed; CMAKE_BUILD_PARALLEL_LEVEL=2 python3 script/ai_renderer_smoke.py --preset renderer-smoke --timeout600. Receipt /Users/core-just/.codex/task-evidence/s7-renderer-smoke-reset-repair-e-20261018/result.md preserves original compile failure and intermediate runtime failures. No production API or behavior changed. Exact task review and normal hook bind the source commit; parent owns renewed qualification and release.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0038",
+    "motivation": "The final snapshot gate compiles smoke-only reset tests excluded from ordinary mc_tests and exposed seven obsolete three-argument calls.",
+    "context": "Current committed source a48bcce passes ordinary tests and nine native analysis rows; renderer-smoke target fails compile against the correct tracked two-argument API. No stale generated header or configuration was found. Preserve source candidate, raw failures, Android restart approval, cadence exception, four screenshots and Windows deferral.",
+    "complexity": "low",
+    "created_at": "2026-10-18",
+    "resolved_at": "2026-10-18",
+    "resolution_changes": "Update seven stale call sites to the current single-deadline API and isolate completed-result test fixtures from unrelated pending/dirty work while retaining admission counts, geometry and lifetime assertions.",
+    "plan": [
+      "Reproduce compile failure, inspect current deadline contract, repair only the fixture and run actual renderer-smoke.",
+      "Review/commit this basic test correction; parent coordinates current-source evidence and release separately."
+    ],
+    "product_changes": [
+      "No product behavior changed; restore smoke-only regression coverage."
+    ],
+    "code_changes": [
+      "Only tests/client/player_client_reset_tests.cpp changed; production untouched."
+    ],
+    "baseline_commit": "a48bcce4a55fd20dbacb2aaf141fc96a2e0a2425",
+    "commits": [],
+    "finalized": true,
     "retrospective": "",
     "docs_review": "",
     "environment_review": "",
