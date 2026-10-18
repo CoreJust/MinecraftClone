@@ -71,6 +71,16 @@ std::vector<std::chrono::nanoseconds> gameBenchmarkSuccessfulPresentIntervals(
     std::string_view stationary_phase
 );
 
+[[nodiscard]] GameBenchmarkFrameBudgetEvidence gameBenchmarkFrameBudget(
+    std::span<GameBenchmarkFrameSample const> frames,
+    uint64_t target_frame_duration_ns,
+    uint32_t required_in_budget_time_permille = 998U
+) noexcept;
+
+[[nodiscard]] bool gameBenchmarkPresentationTimingComplete(
+    GameBenchmarkPresentationTimingEvidence const& evidence
+);
+
 [[nodiscard]]
 bool gameBenchmarkRecoveryIsCloserToMovementEnd(
     shared::HeightTileKey movement_start,
@@ -139,6 +149,7 @@ struct GameBenchmarkOptions final {
     bool require_immediate_present_mode = false;
     GameBenchmarkWorkload workload = GameBenchmarkWorkload::OrdinaryMovement;
     uint32_t render_distance = shared::HEIGHT_TILE_INTEREST_RADIUS;
+    std::string qualification_proof;
     std::chrono::seconds full_radius_warmup_timeout = GAME_BENCHMARK_FULL_RADIUS_DEFAULT_WARMUP_TIMEOUT;
     bool diagnostic_full_radius_capture = false;
 };

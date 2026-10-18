@@ -18,6 +18,7 @@
 #include <shared/world/World.hpp>
 #include <shared/world/WorldGeneration.hpp>
 
+#include <core/graphics/vulkan/Vulkan.hpp>
 #include <core/platform/glfw/GlfwWindow.hpp>
 
 #include <glm/vec3.hpp>
@@ -93,6 +94,7 @@ struct PlayerClientBenchmarkOptions final {
     bool freeze_camera = false;
     bool show_debug_hud = false;
     bool enable_mesh_stage_diagnostics = false;
+    bool enable_presentation_history = false;
 };
 
 struct PlayerClientMeshResultDrainDiagnostics final {
@@ -456,7 +458,9 @@ public:
     );
     ~PlayerClient();
     [[nodiscard]] RendererRuntimeInfo benchmarkRuntimeInfo() const;
-
+    [[nodiscard]] core::graphics::vulkan::PresentationHistoryResult benchmarkQueryPresentationHistory(
+        std::span<core::graphics::vulkan::PresentationTiming> records
+    );
     [[nodiscard]] PlayerClientRenderDiagnostics benchmarkRenderDiagnostics() const noexcept
     {
         return m_render_diagnostics;

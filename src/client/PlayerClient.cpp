@@ -1127,6 +1127,8 @@ PlayerClient::PlayerClient(
                 .enable_frame_capture = m_capture.has_value(),
                 .require_immediate_present_mode = m_benchmark
                     && m_benchmark->require_immediate_present_mode,
+                .enable_presentation_history = m_benchmark
+                    && m_benchmark->enable_presentation_history,
             }
         ),
         m_shader_assets,
@@ -1134,6 +1136,8 @@ PlayerClient::PlayerClient(
             .enable_frame_capture = m_capture.has_value(),
             .require_immediate_present_mode = m_benchmark
                 && m_benchmark->require_immediate_present_mode,
+            .enable_presentation_history = m_benchmark
+                && m_benchmark->enable_presentation_history,
         }
     )
     , m_preview_cache_retirement_reaper(std::make_unique<PreviewCacheRetirementReaper>())
@@ -1183,6 +1187,13 @@ PlayerClient::PlayerClient(
 RendererRuntimeInfo PlayerClient::benchmarkRuntimeInfo() const
 {
     return m_renderer.runtimeInfo();
+}
+
+core::graphics::vulkan::PresentationHistoryResult PlayerClient::benchmarkQueryPresentationHistory(
+    std::span<core::graphics::vulkan::PresentationTiming> const records
+)
+{
+    return m_renderer.queryPresentationHistory(records);
 }
 
 void PlayerClient::recordPendingNearMeshAge(shared::HeightTileKey const key,

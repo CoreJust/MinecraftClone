@@ -4,6 +4,21 @@ endif()
 
 file(MAKE_DIRECTORY "${OUTPUT_DIRECTORY}")
 
+foreach(proof IN ITEMS terrain-coverage performance)
+    execute_process(
+        COMMAND "${MC_MAIN}" --benchmark-game --workload speed-200-full-radius
+            --gameplay-proof "${proof}" --render-distance 7
+            --evidence "${OUTPUT_DIRECTORY}/invalid-proof.json"
+        RESULT_VARIABLE invalid_proof_result
+        OUTPUT_VARIABLE invalid_proof_stdout
+        ERROR_VARIABLE invalid_proof_stderr
+        TIMEOUT 10
+    )
+    if(invalid_proof_result EQUAL 0 OR NOT "${invalid_proof_stdout}${invalid_proof_stderr}" MATCHES "conflicts with render distance")
+        message(FATAL_ERROR "Game benchmark accepted an incorrect ${proof} radius: ${invalid_proof_stdout}${invalid_proof_stderr}")
+    endif()
+endforeach()
+
 set(valid_scenario "${OUTPUT_DIRECTORY}/valid.core")
 set(valid_evidence "${OUTPUT_DIRECTORY}/valid.json")
 file(WRITE "${valid_scenario}" [=[@version("0.1.2")

@@ -14,6 +14,7 @@
 
 #include <core/graphics/vulkan/Vulkan.hpp>
 #include <core/net/Address.hpp>
+#include <core/net/Event.hpp>
 
 #include <acceptance/EvidenceJson.hpp>
 #include <acceptance/RendererBenchmark.hpp>
@@ -39,6 +40,8 @@
 #include <cstdlib>
 #include <functional>
 #include <iostream>
+#include <limits>
+#include <memory>
 #include <optional>
 #include <ratio>
 #include <set>
@@ -47,14 +50,14 @@
 #include <string>
 #include <string_view>
 #include <thread>
+#include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
 namespace acceptance {
 
 namespace {
-
-using Clock = std::chrono::steady_clock;
 
 [[nodiscard]]
 bool environmentVariableMatches(
@@ -75,6 +78,34 @@ bool environmentVariableMatches(
     return value != nullptr
         && (!expected_value || std::string_view{ value } == *expected_value);
 #endif
+}
+
+using Clock = std::chrono::steady_clock;
+
+struct PresentationRequestKey final {
+    uint64_t swapchain_generation = 0U;
+    uint32_t application_present_id = 0U;
+
+    bool operator==(PresentationRequestKey const&) const noexcept = default;
+};
+
+struct PresentationRequestKeyHash final {
+    size_t operator()(PresentationRequestKey const& key) const noexcept
+    {
+        size_t const generation_hash = std::hash<uint64_t>{}(key.swapchain_generation);
+        size_t const present_id_hash = std::hash<uint32_t>{}(key.application_present_id);
+        return generation_hash ^ (present_id_hash + static_cast<size_t>(0x9e37'79b9U)
+            + (generation_hash << 6U) + (generation_hash >> 2U));
+    }
+};
+
+[[nodiscard]]
+PresentationRequestKey presentationRequestKey(GameBenchmarkPresentationRequestId const& request) noexcept
+{
+    return {
+        .swapchain_generation = request.swapchain_generation,
+        .application_present_id = request.application_present_id,
+    };
 }
 
 [[nodiscard]]
@@ -137,6 +168,7 @@ GameBenchmarkPresentationAcquireStage gameBenchmarkPresentationAcquireStage(
     throw std::runtime_error("unknown Vulkan presentation acquisition stage");
 }
 
+[[nodiscard]]
 GameBenchmarkPresentationAcquireSample gameBenchmarkPresentationAcquireSample(
     core::graphics::vulkan::PresentationAcquireDiagnostics const& diagnostics
 )
@@ -161,6 +193,7 @@ GameBenchmarkPresentationAcquireSample gameBenchmarkPresentationAcquireSample(
     return sample;
 }
 
+[[nodiscard]]
 GameBenchmarkFrameSample::TerrainNearSample gameBenchmarkTerrainFrameSample(
     client::PlayerClientBenchmarkTerrainInfo const& info,
     uint64_t const accepted_near_admission_delta,
@@ -448,6 +481,18 @@ GameBenchmarkFullTerrainSnapshot fullTerrainSnapshot(
     return snapshot;
 }
 
+std::optional<uint64_t> platformFrameDurationTarget(bool const qualification_proof) noexcept
+{
+#if defined(_WIN32)
+    return qualification_proof ? 8'333'334U : 2'000'000U;
+#elif defined(__APPLE__)
+    return qualification_proof ? 8'333'334U : 8'333'333U;
+#else
+    static_cast<void>(qualification_proof);
+    return std::nullopt;
+#endif
+}
+
 } // namespace
 
 GameBenchmarkFullRadiusSequence::GameBenchmarkFullRadiusSequence(
@@ -615,6 +660,182 @@ std::vector<std::chrono::nanoseconds> gameBenchmarkSuccessfulPresentIntervals(
     return intervals;
 }
 
+GameBenchmarkFrameBudgetEvidence gameBenchmarkFrameBudget(
+    std::span<GameBenchmarkFrameSample const> const frames,
+    uint64_t const target_frame_duration_ns,
+    uint32_t const required_in_budget_time_permille
+) noexcept
+{
+    GameBenchmarkFrameBudgetEvidence evidence{
+        .target_frame_duration_ns = target_frame_duration_ns,
+        .required_in_budget_time_permille = required_in_budget_time_permille,
+    };
+    if (target_frame_duration_ns == 0U || required_in_budget_time_permille > 1'000U) {
+        return evidence;
+    }
+
+    for (GameBenchmarkFrameSample const& sample : frames) {
+        if (sample.excluded) {
+            continue;
+        }
+        if (sample.loop_duration_ns > std::numeric_limits<uint64_t>::max() - evidence.measured_time_ns) {
+            return evidence;
+        }
+        evidence.measured_time_ns += sample.loop_duration_ns;
+        ++evidence.sample_count;
+        if (sample.loop_duration_ns <= target_frame_duration_ns) {
+            evidence.in_budget_time_ns += sample.loop_duration_ns;
+        }
+    }
+
+    if (evidence.measured_time_ns == 0U || evidence.sample_count == 0U) {
+        return evidence;
+    }
+
+    uint32_t const over_budget_permille = 1'000U - required_in_budget_time_permille;
+    uint64_t const allowed_over_budget_time = (evidence.measured_time_ns / 1'000U) * over_budget_permille
+        + ((evidence.measured_time_ns % 1'000U) * over_budget_permille) / 1'000U;
+    uint64_t const measured_over_budget_time = evidence.measured_time_ns - evidence.in_budget_time_ns;
+    evidence.passed = measured_over_budget_time <= allowed_over_budget_time;
+    return evidence;
+}
+
+bool gameBenchmarkPresentationTimingComplete(GameBenchmarkPresentationTimingEvidence const& evidence)
+{
+    if (!evidence.capability_supported || !evidence.capture_endpoint || !evidence.drain_complete
+        || evidence.successful_requests.empty() || evidence.polls.empty()) {
+        return false;
+    }
+
+    std::unordered_set<PresentationRequestKey, PresentationRequestKeyHash> expected_requests;
+    expected_requests.reserve(evidence.successful_requests.size());
+    std::unordered_map<uint64_t, uint32_t> last_present_id_by_generation;
+    last_present_id_by_generation.reserve(evidence.successful_requests.size());
+    std::optional<uint64_t> previous_generation;
+    std::optional<uint64_t> measurement_generation;
+    uint64_t previous_loop_ordinal = 0U;
+    for (GameBenchmarkSuccessfulPresentationRequest const& request : evidence.successful_requests) {
+        uint64_t const generation = request.request.swapchain_generation;
+        uint32_t const present_id = request.request.application_present_id;
+        if (present_id == 0U || request.loop_ordinal <= previous_loop_ordinal
+            || (previous_generation && generation < *previous_generation)
+            || (request.phase != "initial-full-radius-warmup"
+                && request.phase != "baseline-stationary"
+                && request.phase != "speed-200-movement"
+                && request.phase != "full-radius-recovery-warmup"
+                && request.phase != "recovered-stationary")) {
+            return false;
+        }
+
+        if (!measurement_generation) {
+            if (request.phase == "baseline-stationary") {
+                if (previous_generation && generation != *previous_generation) {
+                    return false;
+                }
+                measurement_generation = generation;
+            } else if (request.phase != "initial-full-radius-warmup") {
+                return false;
+            }
+        } else if (generation != *measurement_generation
+            || request.phase == "initial-full-radius-warmup") {
+            return false;
+        }
+
+        auto const last_id = last_present_id_by_generation.try_emplace(generation, 0U).first;
+        if (present_id <= last_id->second) {
+            return false;
+        }
+        last_id->second = present_id;
+
+        if (!expected_requests.insert(presentationRequestKey(request.request)).second) {
+            return false;
+        }
+        previous_generation = generation;
+        previous_loop_ordinal = request.loop_ordinal;
+    }
+    if (!measurement_generation) {
+        return false;
+    }
+
+    GameBenchmarkSuccessfulPresentationRequest const& last_request = evidence.successful_requests.back();
+    if (evidence.capture_endpoint->request.swapchain_generation != *measurement_generation
+        || evidence.capture_endpoint->request.application_present_id != last_request.request.application_present_id
+        || last_request.request.swapchain_generation != *measurement_generation
+        || evidence.capture_endpoint->loop_ordinal != last_request.loop_ordinal) {
+        return false;
+    }
+
+    std::unordered_set<PresentationRequestKey, PresentationRequestKeyHash> drain_requests;
+    drain_requests.reserve(evidence.drain_request_ids.size());
+    auto last_measurement_id = last_present_id_by_generation.find(*measurement_generation);
+    if (last_measurement_id == last_present_id_by_generation.end()) {
+        return false;
+    }
+    for (GameBenchmarkPresentationRequestId const& request : evidence.drain_request_ids) {
+        PresentationRequestKey const key = presentationRequestKey(request);
+        if (request.swapchain_generation != *measurement_generation
+            || request.application_present_id == 0U
+            || request.application_present_id <= last_measurement_id->second
+            || expected_requests.contains(key)
+            || !drain_requests.insert(key).second) {
+            return false;
+        }
+        last_measurement_id->second = request.application_present_id;
+    }
+
+    uint64_t returned_count = 0U;
+    bool drain_polls_started = false;
+    for (GameBenchmarkPresentationPoll const& poll : evidence.polls) {
+        if (poll.scope == GameBenchmarkPresentationPollScope::Drain) {
+            drain_polls_started = true;
+        } else if (poll.scope != GameBenchmarkPresentationPollScope::Loop || drain_polls_started) {
+            return false;
+        }
+        if (poll.status == GameBenchmarkPresentationPollStatus::Unavailable
+            || poll.status == GameBenchmarkPresentationPollStatus::Error) {
+            return false;
+        }
+        if ((poll.status == GameBenchmarkPresentationPollStatus::Empty
+                && (poll.vk_result != static_cast<int32_t>(VK_SUCCESS) || poll.returned_count != 0U))
+            || (poll.status == GameBenchmarkPresentationPollStatus::Records
+                && (poll.vk_result != static_cast<int32_t>(VK_SUCCESS) || poll.returned_count == 0U))
+            || (poll.status == GameBenchmarkPresentationPollStatus::Incomplete
+                && poll.vk_result != static_cast<int32_t>(VK_SUCCESS)
+                && poll.vk_result != static_cast<int32_t>(VK_INCOMPLETE))) {
+            return false;
+        }
+        returned_count += poll.returned_count;
+    }
+    if (returned_count != evidence.records.size()) {
+        return false;
+    }
+
+    std::unordered_map<PresentationRequestKey, uint64_t, PresentationRequestKeyHash> times_by_request;
+    times_by_request.reserve(evidence.records.size());
+    for (GameBenchmarkPresentationTimingRecord const& record : evidence.records) {
+        PresentationRequestKey const key = presentationRequestKey(record.request);
+        if (record.request.application_present_id == 0U || record.actual_present_time_ns == 0U
+            || (!expected_requests.contains(key) && !drain_requests.contains(key))
+            || !times_by_request.emplace(key, record.actual_present_time_ns).second) {
+            return false;
+        }
+    }
+
+    std::optional<uint64_t> previous_present_time_ns;
+    for (GameBenchmarkSuccessfulPresentationRequest const& request : evidence.successful_requests) {
+        if (request.request.swapchain_generation != *measurement_generation) {
+            continue;
+        }
+        auto const found = times_by_request.find(presentationRequestKey(request.request));
+        if (found == times_by_request.end()
+            || (previous_present_time_ns && found->second <= *previous_present_time_ns)) {
+            return false;
+        }
+        previous_present_time_ns = found->second;
+    }
+    return true;
+}
+
 void GameBenchmarkTerrainReadinessTracker::observe(
     GameBenchmarkTerrainObservation const& observation,
     std::chrono::steady_clock::time_point const sampled_at
@@ -780,6 +1001,7 @@ bool gameBenchmarkDiagnosticOverridesPresent(bool const explicit_diagnostic_capt
         || environmentVariableMatches("MC_DIAGNOSTIC_TERRAIN_OCCLUSION", std::nullopt);
 }
 
+[[nodiscard]]
 shared::Direction gameBenchmarkDirection(
     GameBenchmarkWorkload const workload,
     uint64_t const ordinal
@@ -841,6 +1063,19 @@ GameBenchmarkPhase gameBenchmarkPhaseAt(
 std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOptions const& options)
 {
     bool const full_radius_workload = options.workload == GameBenchmarkWorkload::Speed200FullRadiusRecovery;
+    bool capture_presentation_history = options.qualification_proof == "performance";
+#if !defined(__APPLE__)
+    capture_presentation_history = false;
+#endif
+    if (!options.qualification_proof.empty()) {
+        uint32_t const required_radius = options.qualification_proof == "terrain-coverage" ? 256U : 128U;
+        if ((options.qualification_proof != "terrain-coverage" && options.qualification_proof != "performance")
+            || !full_radius_workload || options.render_distance != required_radius
+            || options.full_radius_warmup_timeout != GAME_BENCHMARK_FULL_RADIUS_DEFAULT_WARMUP_TIMEOUT
+            || gameBenchmarkDiagnosticOverridesPresent(options.diagnostic_full_radius_capture)) {
+            return std::unexpected("gameplay proof requires its fixed radius, production settings and 180-second warmup");
+        }
+    }
     std::chrono::seconds const effective_deadline = gameBenchmarkDeadline(options);
     if (options.cold_duration <= std::chrono::seconds::zero()
         || options.warm_duration <= std::chrono::seconds::zero()
@@ -860,10 +1095,6 @@ std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOption
     if (!shared::isValidHeightTileInterestRadius(options.render_distance)) {
         return std::unexpected("render distance must be an integer chunk radius from 1 to 256");
     }
-    if (full_radius_workload && options.render_distance != shared::HEIGHT_TILE_INTEREST_RADIUS) {
-        return std::unexpected("speed-200 full-radius recovery requires render distance 256");
-    }
-
     std::vector<server::GameServer::SpawnPoint> const spawn_points =
         options.workload == GameBenchmarkWorkload::WrappedBorder
             ? std::vector<server::GameServer::SpawnPoint>{
@@ -979,6 +1210,7 @@ std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOption
                 || full_radius_workload,
             .show_debug_hud = full_radius_workload,
             .enable_mesh_stage_diagnostics = options.diagnostic_full_radius_capture,
+            .enable_presentation_history = capture_presentation_history,
         }
     );
     client::PlayerClient& player = *player_storage;
@@ -986,6 +1218,7 @@ std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOption
 
     GameBenchmarkEvidence benchmark{
         .workload = std::string{ gameBenchmarkWorkloadName(options.workload) },
+        .qualification_proof = options.qualification_proof,
         .package_id = std::string{ shared::PROJECT_NAME },
         .hardware = hardwareName(),
         .gpu = std::nullopt,
@@ -1012,6 +1245,7 @@ std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOption
         .uncapped_loop_timings = {},
         .server_tick_timings = {},
         .permission_publish_timings = {},
+        .frame_budget = std::nullopt,
         .terrain_readiness = std::nullopt,
         .full_radius_terrain = full_radius_workload
             ? std::optional<GameBenchmarkFullRadiusEvidence>{GameBenchmarkFullRadiusEvidence{
@@ -1022,7 +1256,16 @@ std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOption
                         options.full_radius_warmup_timeout
                     ).count()
                 ),
+                .initial_barrier = {},
+                .recovery_barrier = {},
+                .baseline_loop_timings = {},
+                .recovered_loop_timings = {},
+                .baseline_successful_present_request_intervals = {},
+                .recovered_successful_present_request_intervals = {},
             }}
+            : std::nullopt,
+        .presentation_timing = capture_presentation_history
+            ? std::optional<GameBenchmarkPresentationTimingEvidence>{GameBenchmarkPresentationTimingEvidence{}}
             : std::nullopt,
         .raw_frames = {},
         .raw_server_stream_samples = {},
@@ -1030,9 +1273,16 @@ std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOption
         .raw_permission_publish_durations_ns = {},
     };
     benchmark.raw_frames.reserve(20'000U);
+    if (benchmark.presentation_timing) {
+        benchmark.presentation_timing->successful_requests.reserve(50'000U);
+        benchmark.presentation_timing->records.reserve(50'000U);
+        benchmark.presentation_timing->polls.reserve(50'000U);
+        benchmark.presentation_timing->drain_request_ids.reserve(120U);
+    }
     std::vector<std::chrono::nanoseconds> cold_durations;
     std::vector<std::chrono::nanoseconds> warm_durations;
     std::vector<std::chrono::nanoseconds> uncapped_durations;
+    uint64_t loop_ordinal = 0U;
     std::vector<std::chrono::nanoseconds> baseline_full_radius_durations;
     std::vector<std::chrono::nanoseconds> recovered_full_radius_durations;
     GameBenchmarkTerrainReadinessTracker terrain_readiness_tracker;
@@ -1055,6 +1305,214 @@ std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOption
     uint64_t warm_successful_present_requests = 0U;
     uint64_t uncapped_successful_present_requests = 0U;
     std::optional<shared::Player> previous_authoritative_player;
+    std::optional<Clock::time_point> full_radius_measurement_end_at;
+    std::optional<Clock::time_point> presentation_drain_started_at;
+    uint32_t presentation_drain_attempts = 0U;
+    bool presentation_capture_identity_complete = true;
+    bool presentation_capture_poll_failed = false;
+    bool presentation_capture_generation_changed = false;
+    bool presentation_capture_capability_observed = false;
+    bool presentation_capture_capability_supported = false;
+    bool presentation_capture_generation_observed = false;
+    bool presentation_capture_generation_locked = false;
+    uint64_t presentation_capture_generation = 0U;
+    uint64_t unresolved_expected_presentations = 0U;
+    std::unordered_set<PresentationRequestKey, PresentationRequestKeyHash> expected_presentation_requests;
+    std::unordered_set<PresentationRequestKey, PresentationRequestKeyHash> recorded_presentation_requests;
+    std::unordered_set<PresentationRequestKey, PresentationRequestKeyHash> drain_presentation_requests;
+    std::unordered_map<uint64_t, uint32_t> last_present_id_by_generation;
+    expected_presentation_requests.reserve(50'000U);
+    recorded_presentation_requests.reserve(50'120U);
+    drain_presentation_requests.reserve(120U);
+    last_present_id_by_generation.reserve(16U);
+    auto const observePresentationGeneration = [&](
+        client::RendererRuntimeInfo const& runtime,
+        bool const measurement_phase_started
+    ) {
+        GameBenchmarkPresentationTimingEvidence& evidence = *benchmark.presentation_timing;
+        if (!presentation_capture_capability_observed) {
+            presentation_capture_capability_observed = true;
+            presentation_capture_capability_supported = runtime.presentation_history_enabled;
+            evidence.capability_supported = runtime.presentation_history_enabled;
+        } else if (runtime.presentation_history_enabled != presentation_capture_capability_supported) {
+            presentation_capture_poll_failed = true;
+        }
+
+        if (!presentation_capture_generation_observed) {
+            presentation_capture_generation_observed = true;
+            presentation_capture_generation = runtime.current_swapchain_generation;
+        } else if (presentation_capture_generation_locked) {
+            if (runtime.current_swapchain_generation != presentation_capture_generation) {
+                presentation_capture_generation_changed = true;
+            }
+        } else {
+            if (runtime.current_swapchain_generation < presentation_capture_generation
+                || (measurement_phase_started
+                    && runtime.current_swapchain_generation != presentation_capture_generation)) {
+                presentation_capture_generation_changed = true;
+            }
+            if (runtime.current_swapchain_generation >= presentation_capture_generation) {
+                presentation_capture_generation = runtime.current_swapchain_generation;
+            }
+        }
+
+        if (measurement_phase_started && !presentation_capture_generation_locked) {
+            presentation_capture_generation = runtime.current_swapchain_generation;
+            presentation_capture_generation_locked = true;
+            unresolved_expected_presentations = 0U;
+            for (GameBenchmarkSuccessfulPresentationRequest const& request : evidence.successful_requests) {
+                PresentationRequestKey const key = presentationRequestKey(request.request);
+                if (request.request.swapchain_generation == presentation_capture_generation
+                    && !recorded_presentation_requests.contains(key)) {
+                    ++unresolved_expected_presentations;
+                }
+            }
+        }
+    };
+    auto const captureSuccessfulRequest = [&](
+        client::GameClientLoopSample const& sample,
+        client::RendererRuntimeInfo const& runtime,
+        std::string_view const phase,
+        uint64_t const ordinal,
+        bool const draining
+    ) -> std::optional<GameBenchmarkPresentationRequestId> {
+        if (!sample.presentation_succeeded) {
+            return std::nullopt;
+        }
+        if (!runtime.successful_presentation_id.has_value()
+            || (!presentation_capture_generation_locked
+                && phase != "initial-full-radius-warmup"
+                && runtime.successful_presentation_swapchain_generation != runtime.current_swapchain_generation)) {
+            presentation_capture_identity_complete = false;
+            return std::nullopt;
+        }
+        GameBenchmarkPresentationRequestId const request{
+            .swapchain_generation = runtime.successful_presentation_swapchain_generation,
+            .application_present_id = *runtime.successful_presentation_id,
+        };
+        if (request.application_present_id == 0U) {
+            presentation_capture_identity_complete = false;
+        }
+        if (request.swapchain_generation > runtime.current_swapchain_generation
+            || (phase != "initial-full-radius-warmup"
+                && request.swapchain_generation != presentation_capture_generation)) {
+            presentation_capture_generation_changed = true;
+        }
+        auto const last_id = last_present_id_by_generation.try_emplace(
+            request.swapchain_generation,
+            0U
+        ).first;
+        if (request.application_present_id <= last_id->second) {
+            presentation_capture_identity_complete = false;
+        } else {
+            last_id->second = request.application_present_id;
+        }
+        PresentationRequestKey const key = presentationRequestKey(request);
+        if (draining) {
+            if (!drain_presentation_requests.insert(key).second) {
+                presentation_capture_identity_complete = false;
+            }
+            benchmark.presentation_timing->drain_request_ids.push_back(request);
+        } else {
+            bool const inserted_request = expected_presentation_requests.insert(key).second;
+            if (!inserted_request) {
+                presentation_capture_identity_complete = false;
+            }
+            benchmark.presentation_timing->successful_requests.push_back({
+                .request = request,
+                .loop_ordinal = ordinal,
+                .phase = std::string{ phase },
+            });
+            if (inserted_request && presentation_capture_generation_locked
+                && request.swapchain_generation == presentation_capture_generation) {
+                ++unresolved_expected_presentations;
+            }
+        }
+        return request;
+    };
+    auto const pollPresentationHistory = [&](GameBenchmarkPresentationPollScope const scope) {
+        std::array<core::graphics::vulkan::PresentationTiming, 256U> records{};
+        core::graphics::vulkan::PresentationHistoryResult const query =
+            player.benchmarkQueryPresentationHistory(records);
+        GameBenchmarkPresentationPollStatus status = GameBenchmarkPresentationPollStatus::Error;
+        switch (query.status) {
+        case core::graphics::vulkan::PresentationHistoryStatus::Unavailable:
+            status = GameBenchmarkPresentationPollStatus::Unavailable;
+            break;
+        case core::graphics::vulkan::PresentationHistoryStatus::Empty:
+            status = GameBenchmarkPresentationPollStatus::Empty;
+            break;
+        case core::graphics::vulkan::PresentationHistoryStatus::Records:
+            status = GameBenchmarkPresentationPollStatus::Records;
+            break;
+        case core::graphics::vulkan::PresentationHistoryStatus::Incomplete:
+            status = GameBenchmarkPresentationPollStatus::Incomplete;
+            break;
+        case core::graphics::vulkan::PresentationHistoryStatus::Error:
+            status = GameBenchmarkPresentationPollStatus::Error;
+            break;
+        }
+        uint32_t const safe_record_count = std::min(
+            query.record_count,
+            static_cast<uint32_t>(records.size())
+        );
+        if (query.record_count > records.size()) {
+            presentation_capture_poll_failed = true;
+        }
+        benchmark.presentation_timing->polls.push_back({
+            .scope = scope,
+            .status = status,
+            .vk_result = static_cast<int32_t>(query.result),
+            .returned_count = safe_record_count,
+        });
+        if (status == GameBenchmarkPresentationPollStatus::Unavailable
+            || status == GameBenchmarkPresentationPollStatus::Error) {
+            presentation_capture_poll_failed = true;
+        }
+        for (uint32_t index = 0U; index < safe_record_count; ++index) {
+            core::graphics::vulkan::PresentationTiming const& source = records[index];
+            GameBenchmarkPresentationRequestId const request{
+                .swapchain_generation = source.swapchain_generation,
+                .application_present_id = source.present_id,
+            };
+            uint64_t const actual_present_time_ns = source.actual_present_time.count();
+            benchmark.presentation_timing->records.push_back({
+                .request = request,
+                .actual_present_time_ns = actual_present_time_ns,
+            });
+            PresentationRequestKey const key = presentationRequestKey(request);
+            bool const expected_request = expected_presentation_requests.contains(key);
+            if (request.application_present_id == 0U
+                || (!expected_request && !drain_presentation_requests.contains(key))) {
+                presentation_capture_poll_failed = true;
+                continue;
+            }
+            if (!recorded_presentation_requests.insert(key).second) {
+                presentation_capture_poll_failed = true;
+                continue;
+            }
+            if (expected_request && presentation_capture_generation_locked
+                && request.swapchain_generation == presentation_capture_generation
+                && unresolved_expected_presentations != 0U) {
+                --unresolved_expected_presentations;
+            }
+        }
+    };
+    auto const updatePresentationDrainCompletion = [&] {
+        if (!benchmark.presentation_timing || !benchmark.presentation_timing->capture_endpoint) {
+            return;
+        }
+        benchmark.presentation_timing->drain_complete = presentation_capture_capability_supported
+            && presentation_capture_identity_complete
+            && !presentation_capture_poll_failed
+            && !presentation_capture_generation_changed
+            && unresolved_expected_presentations == 0U;
+        if (benchmark.presentation_timing->drain_complete) {
+            benchmark.presentation_timing->drain_complete = gameBenchmarkPresentationTimingComplete(
+                *benchmark.presentation_timing
+            );
+        }
+    };
     client::GameClientBenchmarkHooks const client_hooks{
         .deadline = started_at + effective_deadline,
         .should_stop = [&] {
@@ -1062,8 +1520,19 @@ std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOption
                 return false;
             }
             if (full_radius_workload) {
-                return full_radius_sequence.phase() == GameBenchmarkFullRadiusPhase::Complete
-                    || full_radius_sequence.phase() == GameBenchmarkFullRadiusPhase::Failed;
+                GameBenchmarkFullRadiusPhase const phase = full_radius_sequence.phase();
+                if (phase == GameBenchmarkFullRadiusPhase::Failed) {
+                    return true;
+                }
+                if (phase != GameBenchmarkFullRadiusPhase::Complete
+                    || !benchmark.presentation_timing) {
+                    return phase == GameBenchmarkFullRadiusPhase::Complete;
+                }
+                return !benchmark.presentation_timing->capture_endpoint
+                    || benchmark.presentation_timing->drain_complete
+                    || presentation_drain_attempts >= 120U
+                    || (presentation_drain_started_at
+                        && Clock::now() - *presentation_drain_started_at >= std::chrono::seconds{ 1 });
             }
             Clock::time_point const measurement_end = *first_loop_at + options.cold_duration
                 + options.warm_duration + options.uncapped_duration;
@@ -1099,6 +1568,22 @@ std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOption
             return gameBenchmarkDirection(options.workload, ordinal);
         },
         .on_loop = [&](client::GameClientLoopSample const& sample) {
+            uint64_t const current_loop_ordinal = ++loop_ordinal;
+            if (benchmark.presentation_timing && benchmark.presentation_timing->capture_endpoint) {
+                ++presentation_drain_attempts;
+                client::RendererRuntimeInfo const runtime = player.benchmarkRuntimeInfo();
+                observePresentationGeneration(runtime, true);
+                static_cast<void>(captureSuccessfulRequest(
+                    sample,
+                    runtime,
+                    "recovered-stationary",
+                    current_loop_ordinal,
+                    true
+                ));
+                pollPresentationHistory(GameBenchmarkPresentationPollScope::Drain);
+                updatePresentationDrainCompletion();
+                return;
+            }
             if (!first_loop_at) {
                 first_loop_at = sample.started_at;
                 first_loop_started_at_ns.store(
@@ -1161,6 +1646,21 @@ std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOption
             }
             benchmark.inputs_sent += sample.input_sent ? 1U : 0U;
             client::RendererRuntimeInfo const runtime = player.benchmarkRuntimeInfo();
+            std::optional<GameBenchmarkPresentationRequestId> presentation_request;
+            if (benchmark.presentation_timing) {
+                observePresentationGeneration(
+                    runtime,
+                    full_radius_workload && full_phase != GameBenchmarkFullRadiusPhase::InitialWarmup
+                );
+                presentation_request = captureSuccessfulRequest(
+                    sample,
+                    runtime,
+                    fullRadiusPhaseName(full_phase),
+                    current_loop_ordinal,
+                    false
+                );
+                pollPresentationHistory(GameBenchmarkPresentationPollScope::Loop);
+            }
             client::PlayerClientRenderDiagnostics const client_render = player.benchmarkRenderDiagnostics();
             client::PlayerClientBenchmarkFullTerrainInfo full_terrain_info;
             std::optional<GameBenchmarkFullTerrainSnapshot> full_radius_snapshot;
@@ -1290,6 +1790,22 @@ std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOption
                         fullTerrainSnapshot(full_terrain_info, runtime.stone_face_growth, previous_full_phase, elapsed)
                     );
                 }
+                if (next_full_phase == GameBenchmarkFullRadiusPhase::Complete
+                    || next_full_phase == GameBenchmarkFullRadiusPhase::Failed) {
+                    full_radius_measurement_end_at = sample.completed_at;
+                    if (next_full_phase == GameBenchmarkFullRadiusPhase::Complete
+                        && benchmark.presentation_timing
+                        && !benchmark.presentation_timing->successful_requests.empty()) {
+                        GameBenchmarkSuccessfulPresentationRequest const& endpoint_request =
+                            benchmark.presentation_timing->successful_requests.back();
+                        benchmark.presentation_timing->capture_endpoint = GameBenchmarkPresentationCaptureEndpoint{
+                            .request = endpoint_request.request,
+                            .loop_ordinal = endpoint_request.loop_ordinal,
+                        };
+                        presentation_drain_started_at = sample.completed_at;
+                        updatePresentationDrainCompletion();
+                    }
+                }
                 if (next_full_phase != previous_full_phase) {
                     std::cout << "[benchmark-game] full-radius phase="
                         << fullRadiusPhaseName(next_full_phase)
@@ -1315,7 +1831,9 @@ std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOption
                         << " pending_mesh=" << full_terrain_info.pending_mesh_count
                         << " active_mesh_jobs=" << full_terrain_info.active_mesh_job_count
                         << " worker_outstanding=" << full_terrain_info.worker_outstanding_count
-                        << " pending_removals=" << full_terrain_info.pending_removal_count << '\n' << std::flush;
+                        << " pending_removals=" << full_terrain_info.pending_removal_count
+                        << " stone_face_growth=" << stoneFaceGrowthDiagnosticsJson(runtime.stone_face_growth)
+                        << '\n' << std::flush;
                 }
             }
             std::optional<GameBenchmarkFrameSample::TerrainNearSample> terrain_near_sample;
@@ -1346,7 +1864,8 @@ std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOption
             bool record_raw_frame = true;
             if (full_radius_workload
                 && (full_phase == GameBenchmarkFullRadiusPhase::InitialWarmup
-                    || full_phase == GameBenchmarkFullRadiusPhase::RecoveryWarmup)) {
+                    || (full_phase == GameBenchmarkFullRadiusPhase::RecoveryWarmup
+                        && options.qualification_proof.empty()))) {
                 record_raw_frame = !last_full_warmup_raw_at
                     || sample.completed_at - *last_full_warmup_raw_at >= std::chrono::seconds{ 1 };
                 if (record_raw_frame) {
@@ -1354,10 +1873,19 @@ std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOption
                 }
             }
             GameBenchmarkFrameSample frame_sample{
+                .loop_ordinal = current_loop_ordinal,
                 .warm = !full_radius_workload && phase == GameBenchmarkPhase::Warm,
                 .uncapped = !full_radius_workload && phase == GameBenchmarkPhase::Uncapped,
-                .excluded = !full_radius_workload && phase == GameBenchmarkPhase::Outside,
+                .excluded = full_radius_workload
+                    ? !options.qualification_proof.empty()
+                        && (full_phase == GameBenchmarkFullRadiusPhase::InitialWarmup
+                            || full_phase == GameBenchmarkFullRadiusPhase::RecoveryWarmup)
+                    : phase == GameBenchmarkPhase::Outside,
                 .presentation_succeeded = sample.presentation_succeeded,
+                .swapchain_generation = presentation_request
+                    ? std::optional<uint64_t>{ presentation_request->swapchain_generation } : std::nullopt,
+                .application_present_id = presentation_request
+                    ? std::optional<uint32_t>{ presentation_request->application_present_id } : std::nullopt,
                 .started_offset_ns = positiveNanoseconds(
                     std::chrono::duration_cast<std::chrono::nanoseconds>(sample.started_at - *first_loop_at)
                 ),
@@ -1385,9 +1913,6 @@ std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOption
                         || full_phase == GameBenchmarkFullRadiusPhase::RecoveryWarmup)
                     ? std::optional{ runtime.stone_face_growth } : std::nullopt,
                 .diagnostic_render_attempt_id = runtime.diagnostic_render_attempt_id,
-                .diagnostic_presentation_acquire = gameBenchmarkPresentationAcquireSample(
-                    runtime.diagnostic_presentation_acquire
-                ),
                 .diagnostic_frame_recorded = runtime.diagnostic_frame_recorded,
                 .diagnostic_indexed_stone_quads = runtime.diagnostic_indexed_stone_quads,
                 .diagnostic_stone_indirect = runtime.diagnostic_stone_indirect,
@@ -1396,9 +1921,26 @@ std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOption
                 .diagnostic_stone_draw_count = runtime.diagnostic_stone_draw_count,
                 .diagnostic_camera = runtime.diagnostic_camera,
                 .diagnostic_cpu_acquire_wait_duration_ns = positiveNanoseconds(runtime.cpu_acquire_wait_duration),
+                .diagnostic_presentation_acquire = gameBenchmarkPresentationAcquireSample(
+                    runtime.diagnostic_presentation_acquire
+                ),
+                .diagnostic_cpu_presentation_recreation_duration_ns = positiveNanoseconds(
+                    runtime.cpu_presentation_recreation_duration
+                ),
+                .diagnostic_presentation_recreation_attempted = runtime.presentation_recreation_attempted,
+                .diagnostic_presentation_recreation_deferred = runtime.presentation_recreation_deferred,
                 .diagnostic_cpu_command_record_duration_ns = positiveNanoseconds(runtime.cpu_command_record_duration),
                 .diagnostic_cpu_visible_range_collection_duration_ns = positiveNanoseconds(
                     runtime.cpu_visible_range_collection_duration
+                ),
+                .diagnostic_cpu_height_tile_group_and_tile_traversal_duration_ns = positiveNanoseconds(
+                    runtime.cpu_height_tile_group_and_tile_traversal_duration
+                ),
+                .diagnostic_cpu_height_tile_pending_range_order_duration_ns = positiveNanoseconds(
+                    runtime.cpu_height_tile_pending_range_order_duration
+                ),
+                .diagnostic_cpu_height_tile_visible_range_merge_duration_ns = positiveNanoseconds(
+                    runtime.cpu_height_tile_visible_range_merge_duration
                 ),
                 .diagnostic_cpu_indirect_prepare_duration_ns = positiveNanoseconds(runtime.cpu_indirect_prepare_duration),
                 .diagnostic_cpu_stone_scene_record_duration_ns = positiveNanoseconds(
@@ -1409,6 +1951,9 @@ std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOption
                 ),
                 .diagnostic_cpu_complete_present_wait_duration_ns = positiveNanoseconds(
                     runtime.cpu_complete_present_wait_duration
+                ),
+                .diagnostic_client_window_input_duration_ns = positiveNanoseconds(
+                    client_render.window_input_duration
                 ),
                 .diagnostic_client_height_tile_interest_duration_ns = positiveNanoseconds(
                     client_render.height_tile_interest_duration
@@ -1422,6 +1967,57 @@ std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOption
                     client_render.preview_lod_evaluated_tile_count,
                 .diagnostic_client_preview_lod_changed_tile_count =
                     client_render.preview_lod_changed_tile_count,
+                .diagnostic_client_preview_mesh_pump_before_changes_duration_ns = positiveNanoseconds(
+                    client_render.preview_mesh_pump_before_changes_duration
+                ),
+                .diagnostic_client_height_tile_change_and_removal_duration_ns = positiveNanoseconds(
+                    client_render.height_tile_change_and_removal_duration
+                ),
+                .diagnostic_client_height_tile_change_queue_duration_ns = positiveNanoseconds(
+                    client_render.height_tile_change_queue_duration
+                ),
+                .diagnostic_client_preview_mesh_remove_duration_ns = positiveNanoseconds(
+                    client_render.preview_mesh_remove_duration
+                ),
+                .diagnostic_client_preview_mesh_remove_renderer_duration_ns = positiveNanoseconds(
+                    client_render.preview_mesh_remove_renderer_duration
+                ),
+                .diagnostic_client_preview_mesh_remove_neighbor_enqueue_duration_ns = positiveNanoseconds(
+                    client_render.preview_mesh_remove_neighbor_enqueue_duration
+                ),
+                .diagnostic_client_preview_mesh_remove_count = client_render.preview_mesh_remove_count,
+                .diagnostic_renderer_height_tile_remove_prefilter_duration_ns = positiveNanoseconds(
+                    runtime.diagnostic_height_tile_removal.prefilter_duration
+                ),
+                .diagnostic_renderer_height_tile_remove_slot_retirement_duration_ns = positiveNanoseconds(
+                    runtime.diagnostic_height_tile_removal.slot_retirement_duration
+                ),
+                .diagnostic_renderer_height_tile_remove_draw_index_duration_ns = positiveNanoseconds(
+                    runtime.diagnostic_height_tile_removal.draw_index_remove_duration
+                ),
+                .diagnostic_renderer_height_tile_remove_input_count =
+                    runtime.diagnostic_height_tile_removal.input_coordinate_count,
+                .diagnostic_renderer_height_tile_remove_matching_slot_count =
+                    runtime.diagnostic_height_tile_removal.matching_slot_count,
+                .diagnostic_renderer_height_tile_remove_actual_slot_count =
+                    runtime.diagnostic_height_tile_removal.removed_slot_count,
+                .diagnostic_client_preview_mesh_pump_after_changes_duration_ns = positiveNanoseconds(
+                    client_render.preview_mesh_pump_after_changes_duration
+                ),
+                .diagnostic_client_camera_resolution_duration_ns = positiveNanoseconds(
+                    client_render.camera_resolution_duration
+                ),
+                .diagnostic_client_render_before_resize_duration_ns = positiveNanoseconds(
+                    client_render.before_resize_duration
+                ),
+                .diagnostic_renderer_resize_duration_ns = positiveNanoseconds(client_render.resize_duration),
+                .diagnostic_client_render_after_resize_duration_ns = positiveNanoseconds(
+                    client_render.after_resize_duration
+                ),
+                .diagnostic_renderer_call_duration_ns = positiveNanoseconds(client_render.renderer_call_duration),
+                .diagnostic_client_render_after_renderer_duration_ns = positiveNanoseconds(
+                    client_render.after_renderer_duration
+                ),
                 .diagnostic_gpu_timestamps_enabled = runtime.diagnostic_gpu_timestamps_enabled,
                 .diagnostic_gpu_timestamp_reason = runtime.diagnostic_gpu_timestamp_reason,
                 .diagnostic_gpu_sample_attempt_id = runtime.diagnostic_gpu_sample_attempt_id,
@@ -1434,12 +2030,24 @@ std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOption
                 .latest_gpu_frame_duration_ns = runtime.gpu_frame_duration
                     ? std::optional<uint64_t>{ positiveNanoseconds(*runtime.gpu_frame_duration) }
                     : std::nullopt,
+                .diagnostic_terrain_occlusion_enabled = runtime.diagnostic_terrain_occlusion_enabled,
+                .diagnostic_terrain_occlusion_oracle_frame = runtime.diagnostic_terrain_occlusion_oracle_frame,
+                .diagnostic_terrain_occlusion_filtered_frame = runtime.diagnostic_terrain_occlusion_filtered_frame,
+                .diagnostic_terrain_occlusion_removed_quad_count =
+                    runtime.diagnostic_terrain_occlusion_removed_quad_count,
+                .diagnostic_terrain_occlusion_removed_range_count =
+                    runtime.diagnostic_terrain_occlusion_removed_range_count,
+                .diagnostic_terrain_occlusion_removed_command_count =
+                    runtime.diagnostic_terrain_occlusion_removed_command_count,
             };
             if (record_raw_frame) {
                 benchmark.raw_frames.push_back(std::move(frame_sample));
             }
         },
         .on_authoritative_player = [&](shared::Player const& player) {
+            if (full_radius_measurement_end_at && Clock::now() >= *full_radius_measurement_end_at) {
+                return;
+            }
             ++benchmark.authoritative_player_updates;
             if (previous_authoritative_player) {
                 if (previous_authoritative_player->x > shared::World::FLIGHT_MAX_CELL - 256
@@ -1456,7 +2064,7 @@ std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOption
     };
     player.run(core::Address::localhost(server.port()), '@', &client_hooks);
     std::optional<Clock::time_point> const full_radius_stopped_at = full_radius_workload
-        ? std::optional<Clock::time_point>{ Clock::now() }
+        ? std::optional<Clock::time_point>{ full_radius_measurement_end_at.value_or(Clock::now()) }
         : std::nullopt;
     GameBenchmarkFullRadiusPhase const stopped_phase = full_radius_sequence.phase();
     bool const missing_initial_snapshot = full_radius_workload
@@ -1596,6 +2204,11 @@ std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOption
         benchmark.raw_permission_publish_durations_ns.push_back(positiveNanoseconds(duration));
     }
     benchmark.raw_server_stream_samples = std::move(raw_server_stream_samples);
+    if (std::optional<uint64_t> const target_frame_duration = platformFrameDurationTarget(
+        !options.qualification_proof.empty()
+    )) {
+        benchmark.frame_budget = gameBenchmarkFrameBudget(benchmark.raw_frames, *target_frame_duration);
+    }
     const bool full_radius_workload_complete = !full_radius_workload
         || (benchmark.full_radius_terrain && benchmark.full_radius_terrain->complete
             && benchmark.server_tick_timings.sample_count != 0U
@@ -1619,6 +2232,30 @@ std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOption
         ? benchmark.terrain_readiness && benchmark.terrain_readiness->current_near_coverage_complete
         : options.workload != GameBenchmarkWorkload::Speed200Movement
             || (benchmark.terrain_readiness && benchmark.terrain_readiness->complete);
+#if defined(_WIN32)
+    bool const frame_budget_required = options.qualification_proof != "terrain-coverage";
+#else
+    bool const frame_budget_required = false;
+#endif
+    if (benchmark.frame_budget) {
+        benchmark.frame_budget->required_for_benchmark_pass = frame_budget_required;
+    }
+    const bool frame_budget_complete = !frame_budget_required
+        || (benchmark.frame_budget && benchmark.frame_budget->passed);
+    uint64_t const loop_poll_count = benchmark.presentation_timing
+        ? static_cast<uint64_t>(std::ranges::count_if(
+            benchmark.presentation_timing->polls,
+            [](GameBenchmarkPresentationPoll const& poll) {
+                return poll.scope == GameBenchmarkPresentationPollScope::Loop;
+            }
+        ))
+        : 0U;
+    uint64_t const captured_attempt_count = benchmark.successful_present_requests
+        + benchmark.failed_present_requests;
+    const bool presentation_timing_complete = !capture_presentation_history
+        || (benchmark.presentation_timing
+            && loop_poll_count == captured_attempt_count
+            && gameBenchmarkPresentationTimingComplete(*benchmark.presentation_timing));
     const bool near_terrain_incomplete = full_radius_workload && benchmark.terrain_readiness
         && !benchmark.terrain_readiness->current_near_coverage_complete;
     RuntimeEvidence result{
@@ -1637,7 +2274,8 @@ std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOption
         .replay_id = {},
         .elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now() - started_at),
         .deadline = std::chrono::duration_cast<std::chrono::milliseconds>(effective_deadline),
-        .passed = workload_complete && readiness_complete,
+        .passed = workload_complete && readiness_complete && frame_budget_complete
+            && presentation_timing_complete,
         .game_benchmark = std::move(benchmark),
     };
     if (near_terrain_incomplete) {
@@ -1648,6 +2286,10 @@ std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOption
         result.failure = "full-radius warmup or post-movement terrain coverage did not satisfy its evidence contract";
     } else if (!readiness_complete) {
         result.failure = "speed-200 current-near terrain readiness did not satisfy its evidence contract";
+    } else if (!frame_budget_complete) {
+        result.failure = "game benchmark exceeded the platform frame-time budget for more than 0.2% of measured time";
+    } else if (!presentation_timing_complete) {
+        result.failure = "Mac performance proof requires complete driver-reported actual presentation timing";
     }
     return result;
 }

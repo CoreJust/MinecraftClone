@@ -80,6 +80,7 @@ struct RuntimeCommand final {
     acceptance::GameBenchmarkWorkload game_benchmark_workload =
         acceptance::GameBenchmarkWorkload::OrdinaryMovement;
     uint32_t render_distance = shared::HEIGHT_TILE_INTEREST_RADIUS;
+    std::string qualification_proof;
     std::chrono::seconds full_radius_warmup_timeout =
         acceptance::GAME_BENCHMARK_FULL_RADIUS_DEFAULT_WARMUP_TIMEOUT;
     bool diagnostic_full_radius_capture = false;
@@ -331,7 +332,7 @@ std::expected<RuntimeCommand, std::string> parseRuntimeCommand(int const argc, c
         }
         return command;
     }
-    if (argc >= 4 && argc <= 15 && std::string_view{ argv[1] } == "--benchmark-game"
+    if (argc >= 4 && argc <= 17 && std::string_view{ argv[1] } == "--benchmark-game"
         && std::string_view{ argv[argc - 2] } == "--evidence") {
         RuntimeCommand command{};
         command.mode = RuntimeMode::GameBenchmark;
@@ -346,6 +347,12 @@ std::expected<RuntimeCommand, std::string> parseRuntimeCommand(int const argc, c
             std::string_view const argument{ argv[argument_index] };
             if (argument == "--present-immediate" && !command.require_immediate_present_mode) {
                 command.require_immediate_present_mode = true;
+            } else if (argument == "--gameplay-proof" && command.qualification_proof.empty()
+                && argument_index + 1 < argc - 2) {
+                command.qualification_proof = argv[++argument_index];
+                if (command.qualification_proof != "terrain-coverage" && command.qualification_proof != "performance") {
+                    return std::unexpected("gameplay proof must be terrain-coverage or performance");
+                }
             } else if (argument == "--render-distance" && !radius_selected && argument_index + 1 < argc - 2) {
                 auto const radius = parseRenderDistance(argv[++argument_index]);
                 if (!radius) {
@@ -406,7 +413,13 @@ std::expected<RuntimeCommand, std::string> parseRuntimeCommand(int const argc, c
                 return std::unexpected("invalid game benchmark option: " + std::string{ argument });
             }
         }
-
+        if (!command.qualification_proof.empty()) {
+            uint32_t const proof_radius = command.qualification_proof == "terrain-coverage" ? 256U : 128U;
+            if (radius_selected && command.render_distance != proof_radius) {
+                return std::unexpected("gameplay proof conflicts with render distance");
+            }
+            command.render_distance = proof_radius;
+        }
         if (full_radius_timeout_selected
             && command.game_benchmark_workload != acceptance::GameBenchmarkWorkload::Speed200FullRadiusRecovery) {
             return std::unexpected("--full-radius-warmup-seconds requires --workload speed-200-full-radius");
@@ -440,6 +453,7 @@ std::expected<RuntimeCommand, std::string> parseRuntimeCommand(int const argc, c
         "'--benchmark-render [--present-immediate] [--hud] --evidence <file>', "
         "'--benchmark-game [--present-immediate] "
         "[--workload ordinary|speed-200|speed-200-full-radius|wrapped-border|permission-collision] "
+        "[--gameplay-proof terrain-coverage|performance] "
         "[--render-distance CHUNKS] [--full-radius-warmup-seconds 1..1800] "
         "[--diagnostic-full-radius-capture] [--diagnostic-presentation-stages] "
         "[--diagnostic-indexed-stone-quads 0|1|2] --evidence <file>', "
@@ -638,6 +652,7 @@ int runGameBenchmarkCommand(RuntimeCommand const& command)
         .require_immediate_present_mode = command.require_immediate_present_mode,
         .workload = command.game_benchmark_workload,
         .render_distance = command.render_distance,
+        .qualification_proof = command.qualification_proof,
         .full_radius_warmup_timeout = command.full_radius_warmup_timeout,
         .diagnostic_full_radius_capture = command.diagnostic_full_radius_capture,
     };

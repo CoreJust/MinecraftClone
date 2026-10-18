@@ -1,113 +1,115 @@
 # Full-radius gameplay qualification
 
-`speed-200-full-radius-recovery-v1` adds the release workload: radius 256,
-205,861 desired tiles, exact current-handle CPU/renderer coverage and drained
-delivery, residency, meshing, worker and removal queues. It waits for this
-initial barrier, measures 10 seconds stationary with the normal HUD and frame
-scheduler, drives full-axis `x=127` at x200 speed for 6 seconds, waits for the
-same exact barrier at the new center, then measures 10 seconds stationary.
-Each terrain warmup has a configurable 1–1,800 second diagnostic deadline
-(`--full-radius-warmup-seconds`, default 180); qualification requires exactly
-180 seconds. Exact coverage at the deadline may succeed; completion strictly
-after it fails. Neither outcome is a performance result.
-Radial bands retain the complete disk counts. Raw
-stationary frames include every loop attempt and failed presentation request;
-warmup frames are sampled once per second and stay outside the cadence sample.
+`speed-200-full-radius-recovery-v1` checks exact CPU/renderer terrain coverage
+and empty delivery, residency, mesh, worker and removal queues. The
+`terrain-coverage` proof requires radius 256 (205,861 tiles); `performance`
+requires radius 128. Each uses complete-terrain barriers, 10 s stationary, 6 s
+of full-axis `x=127` travel at x200, recovery closer to the movement end than
+start by wrapped Chebyshev distance, then 10 s stationary. Returning to the
+origin fails. Release warmups are exactly 180 s; 1–1,800 s overrides are
+diagnostic only. Movement and recovery require all 225 current radius-7 meshes
+and complete raw radial bands. Desired band counts must match the verified
+radius, not merely agree with underreported resident/visible counters.
 
-Snapshot, minor and major promotion require one full-radius gameplay local
-proof check at each level in [the check registry](../../script/ai_checks.json),
-including proof-only publisher checks. Both Mac and Windows must complete the Release workload.
-The verifier recomputes loop and server timing summaries, stationary attempt
-totals, actual-duration request rates, and intervals between consecutive
-successful request completions from the raw JSON. Altered bytes, missing or
-stale source/build/dependency identity, reduced radius, missing barriers,
-pending queues, timeout, fatal benchmark errors or inconsistent summaries block release.
+The shared verifier requires both local Mac and Windows Release proofs. Capture
+one proof per invocation: native `--gameplay-proof` fixes the radius and records
+`qualification_proof`; schema `mc.gameplay-proof.v2` binds rows. Merge all four
+receipts from one candidate with identical per-platform build/dependency
+identities. Missing rows cannot become passes. Parent snapshot policy owns
+authorized platform deferrals and final execution, not this implementation
+contract. Legacy, stale, altered, incomplete, timed-out or inconsistent evidence
+fails. Verification recomputes raw loops, server and stationary summaries, rates
+and intervals; each proof needs complete measured phases and at least two
+successful completions per phase with finite positive intervals.
 
-`--cadence-policy snapshot` preserves the [S7 acceptance boundary](tasks/MC-AI-0038.md):
-Mac 120 Hz cadence is diagnostic. `--cadence-policy strict` requires Mac cadence
-for minor and major qualification, and is the default when the option is omitted.
-Windows cadence remains required under both policies. Policy belongs to the
-verifier invocation; capture and aggregate receipts cannot choose or preserve a
-weaker policy. Capture, merge and offline verification accept the same option.
-Every invocation still requires complete raw phases and at least two successful
-completions per measured phase so its finite, positive intervals can be computed.
+Coverage cadence is diagnostic; 500 FPS remains later work. Mac performance
+uses normal FIFO and driver-reported `VK_GOOGLE_display_timing`, not CPU
+completion spacing. Require 120 Hz with ≥99.8% stability in each window:
+missed-slot ratio ≤0.002, median one refresh slot and mean rate ≥119.76 Hz.
+Actual-timing evidence binds request IDs, loop/phase, timestamps, ordered poll
+results and a bounded drain through a frozen endpoint. Lock the presentation
+generation at baseline; never bridge generations or invent timestamps.
 
-Coverage completion and the request-cadence proxy are separate predicates.
-Mac uses normal FIFO and a nearest-refresh-slot proxy for its 120 Hz target:
-`slots = max(1, round(interval_ns * 120 / 1e9))`. In each stationary window and
-the x200 movement window, `sum(slots - 1) / sum(slots)` must be at most 0.002.
-The median interval must quantize to one slot and the mean interval must be no
-slower than the same derived 99.8% rate floor. Successful request count divided
-by actual phase elapsed time must reach `120 * 0.998 = 119.76 Hz`.
-These assistant-derived proxy rules distinguish small CPU completion jitter
-from a missed refresh slot; they do not measure physical refresh or prove an
-exact 120 Hz scanout target.
+Requests and raw polls survive initial warmup generations and are keyed by
+generation/present ID. Older warmup generations may have incomplete histories;
+every successful request in the measurement generation through the frozen
+endpoint, including its warmup predecessors, needs exactly one positive,
+strictly increasing driver timestamp. Post-endpoint drain IDs are declared;
+returned timestamps are order-checked, but need not all arrive. Measured IDs
+stay dense. Late generation changes, unavailable timing, query errors and
+unresolved endpoint timestamps fail in every phase. Evidence does
+not prove physical scanout. Require ≥500 measured intervals per performance
+phase, attributed to the first subsequent raw attempt, including skipped,
+startup and closing attempts. Monotonic loop ordinals expose missing attempts.
 
-Windows requests immediate presentation and must actually negotiate it.
-At least 99.8% of its successful-request intervals must be at most 2,000,000 ns,
-and its actual-phase request rate must reach 500 Hz in all three windows.
-To guard against a few long freezes hidden by a count percentile, the total
-interval time exceeding 2,000,000 ns divided by total interval time must be at
-most 0.002: `sum(max(0, interval_ns - 2000000)) / sum(interval_ns)`.
+Windows performance must negotiate immediate presentation. Each window needs
+120 Hz and ≥99.8% of successful intervals ≤8,333,334 ns, with interval-time
+overage share ≤0.002. Its performance proof also needs ≥99.8% of measured
+baseline/movement/recovered loop time within that budget. Mac loop budget and
+CPU rates remain diagnostic. Acquire deferral under the production 8 ms budget
+counts as an unsuccessful attempt, not a fatal error; raw attempt/success/failure
+totals must reconcile. Renderer, validation and device errors fail. Neither
+proof replaces frame inspection, analyzer qualification or separate runtime
+acceptance.
 
-Every successful-completion interval is half-open,
-`[previous_successful_completion, current_successful_completion)`. Attempts
-retain the native report's attribution to the phase in which the loop starts,
-including its closing transition attempt; reported offsets show these bounds.
-Each window has a cadence target of at least 500 intervals. This sample-count
-rule implies about 83.5 Hz over a six-second movement window, so it is also a
-diagnostic for Mac snapshots and a requirement under strict policy and for
-Windows. Intervals across skipped
-attempts stay in the calculation; initial phase work and closing unsuccessful
-attempts remain in the actual-phase rate denominator. Long freezes cannot be
-discarded as percentile outliers.
-
-A false presentation outcome can be a normal acquire deferral before frame
-recording under the production 8 ms budget. It is an unsuccessful attempt,
-not evidence of a fatal renderer error. Stationary raw attempts, successful
-requests and unsuccessful totals must reconcile exactly; aggregate counters
-must include all raw events, while warmup raw sampling prevents full aggregate
-recomputation. The native benchmark's failure result still blocks fatal
-renderer, validation or device errors.
-
-The verifier returns `request_cadence_status`, `request_cadence_required`,
-`request_cadence_reasons` and the measured proxy for each platform. A snapshot
-gate can pass with Mac `request_cadence_status: "failed"`; that failed diagnostic
-is not a passing performance result. Strict verification recomputes the same raw
-evidence and rejects it when a target is missed.
-
-The cadence thresholds represent gameplay targets through request completions.
-Physical display cadence remains unavailable; neither a passing gate nor this
-proxy claims measured scanout, replaces frame inspection, or replaces the user's
-separate Windows runtime acceptance. Analyzer qualification remains independent.
-
-Capture fresh evidence after an up-to-date production Release build:
+Production Release capture:
 
 ```sh
-python3 script/ci/verify_gameplay_gate.py --root . --record macos --cadence-policy snapshot \
-  --executable build/release/mc_main --receipt /absolute/path/macos-gameplay.json
-# On Windows, use --record windows and build/release/mc_main.exe.
+python3 script/ci/verify_gameplay_gate.py --root . --record macos --proof terrain-coverage \
+  --executable build/release/mc_main --receipt /absolute/path/macos-terrain.json \
+  --macos-package /absolute/path/normal-package \
+  --macos-package-manifest /absolute/path/normal-package/manifest.json
+# Repeat with --proof performance and a fresh receipt, then capture both Windows proofs.
 ```
 
-The capture command checks the Release Ninja graph before and after the bounded
-run, and binds unchanged relevant source, executable, build configuration,
-configured dependency inventory and raw report bytes. It retains the raw report
-and a one-platform receipt even when the workload or cadence fails. It does not
-retroactively qualify a bare report. Documentation and backlog edits do not
-invalidate the native source fingerprint. Keep the recorded executable and raw
-report until promotion consumes them. To move Windows evidence to the verifying
-host, copy its receipt, raw report and exact `mc_main.exe` bytes together.
+Use `script/package_snapshot.py`; verify manifest/inventory, source Release
+executable, `MinecraftClone.command` bytes, relative ICD and Mach-O closure.
+Reject inherited `DYLD_*`/`VK_*`; bind receipts to loader/MoltenVK hashes and
+invocation. Retain `.macos` beside the receipt and in transit; launch its normal
+command and recheck closures. Bare source captures fail. Package hashes do not
+prove library mapping; PID maps are unobserved.
+
+With separate Windows build/desktop accounts, send only the runtime package:
+
+```powershell
+python script/ci/verify_gameplay_gate.py --root C:\task\source --record windows `
+  --executable C:\task\build\mc_main.exe --receipt C:\task\proof\windows-terrain.json `
+  --desktop-package C:\task\runtime --desktop-package-manifest C:\task\runtime-manifest.json `
+  --desktop-task-id mc-s7-0465-terrain --proof terrain-coverage
+```
+
+The UTF-8/BOM manifest lists relative paths, sizes and SHA-256 for executable,
+DLLs, SPIR-V and assets; reject unlisted, duplicate, escaping or reparse inputs.
+Keep source/dependencies private. Each submission adds a fresh bounded UUID
+correlation to the caller label in the existing TaskId. Broker checks bind that
+invocation, arguments, hashes, timeout and process identity; recheck runtime
+inputs around polling. Keep build/launch paths separate and reports
+helper-relative. Reject build-account `MC_DIAGNOSTIC_*`; require the native
+selector and false `diagnostic_overrides_present` marker. Recognized overrides
+invalidate proof even at `0`; registry values are not evidence.
+
+Native timeout is 450 s including 60 s startup. Poll uncertainty never
+resubmits; exceptions cancel/wait only the owned UUID up to 30 s. A lost response
+recovers only one exactly correlated request. The helper owns the direct
+process; this benchmark uses threads. Retain failed receipts, `.raw.json` and
+sibling `.desktop` runtime/manifest/helper evidence. Cleanup failure, stale
+reports or nonzero exit fail; bare reports lack provenance.
+
+Hash production/tests/embedded `scenarios/**`, Release graph, executable,
+configuration, dependencies and raw bytes before/after with stable globs.
+Retain failures, raw files and sidecars/relocation. Docs/backlog do not change
+native source identity; keep executable/report through promotion.
 
 ```sh
-python3 script/ci/verify_gameplay_gate.py --root . --cadence-policy snapshot \
-  --merge /absolute/path/macos-gameplay.json /absolute/path/windows-gameplay.json \
+python3 script/ci/verify_gameplay_gate.py --root . \
+  --merge /absolute/path/macos-terrain.json /absolute/path/macos-performance.json \
+          /absolute/path/windows-terrain.json /absolute/path/windows-performance.json \
   --receipt build/ai-checks/gameplay-aggregate.json
-python3 script/ci/verify_gameplay_gate.py --root . --cadence-policy snapshot \
+python3 script/ci/verify_gameplay_gate.py --root . \
   --receipt build/ai-checks/gameplay-aggregate.json --candidate-commit <full-source-SHA>
 ```
 
-These commands use the S7 snapshot policy; omit the policy option or use
-`--cadence-policy strict` for minor and major qualification.
-Merge checks the preserved file hashes before resolving transported paths.
-Release checks always execute the offline verifier (`proof: true`, `reuse: false`);
-an earlier analysis or renderer-smoke pass cannot supply gameplay evidence.
+Merge hashes before path resolution; release verifies offline
+(`proof: true`, `reuse: false`). Analysis or renderer smoke cannot replace
+gameplay evidence. Diagnostic options: [runtime acceptance](../ACCEPTANCE.md)
+and [rendering guide](../code/RENDERING.md). Diagnostic captures cannot qualify.

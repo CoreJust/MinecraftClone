@@ -28,15 +28,13 @@
       "script/ci/verify_gameplay_gate.py",
       "--root",
       "{root}",
-      "--cadence-policy",
-      "snapshot",
       "--receipt",
       "{root}/build/ai-checks/gameplay-aggregate.json",
       "--candidate-commit",
       "{proof-candidate-commit}"
     ],
     "timeout": 60,
-    "reason": "Requires both source-bound local Release radius256 workloads and Windows cadence; Mac cadence remains an explicit S7 diagnostic, with physical scanout unavailable.",
+    "reason": "Requires four source-bound local Release proofs: radius256 terrain coverage and radius128 stable120Hz performance on both Mac and Windows; physical scanout remains unavailable and500FPS is a later target.",
     "when": "release",
     "proof": true,
     "reuse": false
@@ -56,7 +54,7 @@
       "{proof-candidate-commit}"
     ],
     "timeout": 60,
-    "reason": "Requires source-bound local Mac and Windows Release radius256 coverage and strict raw request-cadence targets; physical scanout remains unavailable.",
+    "reason": "Requires separate source-bound Mac and Windows radius256 terrain and radius128 stable120Hz performance proofs; physical scanout remains unavailable.",
     "when": "release",
     "proof": true,
     "reuse": false

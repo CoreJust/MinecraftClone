@@ -1493,6 +1493,8 @@ struct VulkanRenderer::Impl final {
         std::chrono::steady_clock::time_point const deadline
     )
     {
+        m_successful_presentation_id.reset();
+        m_successful_presentation_swapchain_generation = 0U;
         ++m_diagnostic_render_attempt_id;
         m_diagnostic_frame_recorded = false;
         m_diagnostic_stone_indirect = false;
@@ -1637,6 +1639,8 @@ struct VulkanRenderer::Impl final {
         std::chrono::steady_clock::time_point const complete_present_started_at =
             std::chrono::steady_clock::now();
         m_context->complete(*frame);
+        m_successful_presentation_id = frame->presentationId();
+        m_successful_presentation_swapchain_generation = frame->swapchainGeneration();
         if (m_occlusion_oracle_frame) {
             m_occlusion_query_slots.at(m_current_frame_slot).submitted = true;
         }
@@ -2201,7 +2205,10 @@ struct VulkanRenderer::Impl final {
             .validation_enabled = info.validation_enabled,
             .present_mode = rendererPresentMode(info.present_mode),
             .pipeline_path = RendererPipelinePath::Vertex,
+            .presentation_history_enabled = info.presentation_history_enabled,
             .current_swapchain_generation = m_context->swapchainGeneration(),
+            .successful_presentation_id = m_successful_presentation_id,
+            .successful_presentation_swapchain_generation = m_successful_presentation_swapchain_generation,
             .cpu_acquire_wait_duration = m_cpu_acquire_wait_duration,
             .diagnostic_presentation_acquire = m_diagnostic_presentation_acquire,
             .cpu_presentation_recreation_duration = m_cpu_presentation_recreation_duration,
@@ -2260,6 +2267,13 @@ struct VulkanRenderer::Impl final {
             .diagnostic_terrain_occlusion_removed_range_count = m_occlusion_removed_ranges,
             .diagnostic_terrain_occlusion_removed_command_count = m_occlusion_removed_commands,
         };
+    }
+
+    [[nodiscard]] core::graphics::vulkan::PresentationHistoryResult queryPresentationHistory(
+        std::span<core::graphics::vulkan::PresentationTiming> const records
+    )
+    {
+        return m_context->queryPresentationHistory(records);
     }
 
     void recreate(VkExtent2D const extent, std::chrono::steady_clock::time_point const deadline)
@@ -3774,6 +3788,8 @@ private:
     std::optional<TextGlyphBuffer> m_text_glyph_buffer;
     std::optional<TextDescriptorSet> m_text_descriptors;
     bool m_last_presented = false;
+    std::optional<uint32_t> m_successful_presentation_id = std::nullopt;
+    uint64_t m_successful_presentation_swapchain_generation = 0U;
     uint32_t m_debug_hud_draw_count = 0U;
     std::vector<StoneFaceInstance> m_stone_faces;
     uint32_t m_stone_face_capacity = INITIAL_RENDERED_STONE_FACE_CAPACITY;
@@ -4479,6 +4495,7 @@ std::shared_ptr<core::graphics::vulkan::PresentationContext> VulkanRenderer::cre
             .require_transfer_source = options.enable_frame_capture,
             .prefer_immediate_present = options.require_immediate_present_mode,
             .require_immediate_present = options.require_immediate_present_mode,
+            .enable_presentation_history = options.enable_presentation_history,
         },
         { .width = width, .height = height }
     );
@@ -4507,6 +4524,7 @@ std::shared_ptr<core::graphics::vulkan::PresentationContext> VulkanRenderer::cre
             .require_transfer_source = options.enable_frame_capture,
             .prefer_immediate_present = options.require_immediate_present_mode,
             .require_immediate_present = options.require_immediate_present_mode,
+            .enable_presentation_history = options.enable_presentation_history,
         },
         { .width = width, .height = height }
     );
@@ -4661,6 +4679,13 @@ std::optional<RendererFrameCapture> VulkanRenderer::takeFrameCapture()
 RendererRuntimeInfo VulkanRenderer::runtimeInfo() const
 {
     return m_impl->runtimeInfo();
+}
+
+core::graphics::vulkan::PresentationHistoryResult VulkanRenderer::queryPresentationHistory(
+    std::span<core::graphics::vulkan::PresentationTiming> const records
+)
+{
+    return m_impl->queryPresentationHistory(records);
 }
 
 uint32_t VulkanRenderer::validationErrorCount() const noexcept

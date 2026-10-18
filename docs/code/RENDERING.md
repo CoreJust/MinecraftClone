@@ -11,6 +11,10 @@ Client device children use `PresentationResourceScope` during acquired
 frames. Recreation releases cache, programs, layouts and scope before rebuilding.
 `waitForSubmittedFrames()` drains slots without steady-state `vkDeviceWaitIdle`.
 
+Keep generation/ID-keyed warmup/drain requests and polls. Missing timestamps or
+later measurement generations fail; timing is not scanout
+([qualification](../ai/GAMEPLAY_QUALIFICATION.md)).
+
 Acquired slots own indirect buffers after fence completion; recreation
 releases them. `multiDrawIndirect` + `drawIndirectFirstInstance` enable
 `maxDrawIndirectCount`-bounded batches; direct fallback preserves logical counts.
@@ -114,18 +118,16 @@ change only after bounded native-size review. Offscreen GUI/HUD checks top-left 
 S5 offscreen acceptance verifies textured stone, sky, deterministic frames,
 mesh replacement, validation, and remote-player altitude.
 
-The fixed-scene `--benchmark-render` excludes server/network/gameplay;
-`--benchmark-game` counts completed player-client present requests with all three.
-Neither observes physical scanout; unavailable immediate mode fails. Evidence
-includes resolution, GPU, HUD, rate, p50/p95/p99/max, CPU phases and submitted work.
-Full-radius gameplay waits for exact meshes/empty queues before and after x200;
-it records every stationary attempt and collection/acquire/record/complete costs.
-`DiagnosticStationary` freezes movement/look for diagnostic A/B, not gameplay
-acceptance. Opt-in terrain timestamps are not whole-frame time; MoltenVK reports
-unsupported/null because in-render-pass markers may be deferred to encoder end.
-Release disables validation; `--hud` supports paired runs.
-Legacy S6 stress uses 90-by-90 capacity and edge streaming. Its renderer-only
-gate requires 120 Hz within one percent and p99 at most 10 ms, including waits.
+`--benchmark-render` excludes server/network/gameplay; `--benchmark-game` counts
+completed player-client requests with all three. Neither measures scanout;
+missing immediate mode fails. Evidence includes resolution/GPU/HUD/rate,
+p50/p95/p99/max, CPU phases and submitted work. Full-radius barriers require
+exact meshes/empty queues around x200; retain stationary attempts and phase
+costs. `DiagnosticStationary` freezes movement/look for diagnostics only.
+Opt-in terrain timestamps are not whole-frame; MoltenVK reports unsupported/null
+when render-pass markers defer to encoder end. Release disables validation;
+`--hud` permits paired runs. Legacy S6 uses 90-by-90 capacity/edge streaming;
+its renderer gate requires 120 Hz within 1%, p99 ≤10 ms including waits.
 
 Benchmark and renderer capture preserve requested framebuffer pixels through
 bounded GLFW resizing. Capture checks readback, sky, and stone; benchmark checks

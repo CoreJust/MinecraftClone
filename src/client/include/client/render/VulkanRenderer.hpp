@@ -49,6 +49,7 @@ struct VulkanRendererOptions final {
     bool prefer_mesh_shaders = true;
     bool enable_frame_capture = false;
     bool require_immediate_present_mode = false;
+    bool enable_presentation_history = false;
 };
 
 namespace detail {
@@ -106,7 +107,10 @@ struct RendererRuntimeInfo final {
     bool validation_enabled = false;
     RendererPresentMode present_mode = RendererPresentMode::Unknown;
     RendererPipelinePath pipeline_path = RendererPipelinePath::Vertex;
+    bool presentation_history_enabled = false;
     uint64_t current_swapchain_generation = 0U;
+    std::optional<uint32_t> successful_presentation_id;
+    uint64_t successful_presentation_swapchain_generation = 0U;
     std::chrono::nanoseconds cpu_acquire_wait_duration{ 0 };
     core::graphics::vulkan::PresentationAcquireDiagnostics diagnostic_presentation_acquire;
     std::chrono::nanoseconds cpu_presentation_recreation_duration{ 0 };
@@ -244,7 +248,9 @@ public:
     [[nodiscard]] FrameCaptureState captureState() const;
     [[nodiscard]] std::optional<RendererFrameCapture> takeFrameCapture();
     [[nodiscard]] RendererRuntimeInfo runtimeInfo() const;
-
+    [[nodiscard]] core::graphics::vulkan::PresentationHistoryResult queryPresentationHistory(
+        std::span<core::graphics::vulkan::PresentationTiming> records
+    );
     [[nodiscard]] uint32_t validationErrorCount() const noexcept;
 private:
     struct Impl;

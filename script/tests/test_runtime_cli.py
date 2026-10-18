@@ -35,12 +35,22 @@ class RuntimeCliTests(unittest.TestCase):
             launcher = root / ("failing-main.cmd" if os.name == "nt" else "failing-main.sh")
             if os.name == "nt":
                 launcher.write_text(
-                    "@echo off\r\necho child stdout\r\necho child stderr 1>&2\r\nexit /b 37\r\n",
+                    "@echo off\r\n"
+                    'if "%~1"=="--benchmark-game" (\r\n'
+                    "echo conflicts with render distance 1>&2\r\n"
+                    "exit /b 1\r\n"
+                    ")\r\n"
+                    "echo child stdout\r\necho child stderr 1>&2\r\nexit /b 37\r\n",
                     encoding="utf-8",
                 )
             else:
                 launcher.write_text(
-                    "#!/bin/sh\nprintf '%s\\n' 'child stdout'\nprintf '%s\\n' 'child stderr' >&2\nexit 37\n",
+                    "#!/bin/sh\n"
+                    'if [ "$1" = "--benchmark-game" ]; then\n'
+                    "printf '%s\\n' 'conflicts with render distance' >&2\n"
+                    "exit 1\n"
+                    "fi\n"
+                    "printf '%s\\n' 'child stdout'\nprintf '%s\\n' 'child stderr' >&2\nexit 37\n",
                     encoding="utf-8",
                 )
                 launcher.chmod(0o755)

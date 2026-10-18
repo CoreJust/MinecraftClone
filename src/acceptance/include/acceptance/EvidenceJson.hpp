@@ -25,6 +25,88 @@ struct FrameTimingSummary final {
     std::chrono::nanoseconds mean{ 0 };
 };
 
+struct GameBenchmarkFrameBudgetEvidence final {
+    uint64_t target_frame_duration_ns = 0U;
+    uint32_t required_in_budget_time_permille = 998U;
+    uint64_t measured_time_ns = 0U;
+    uint64_t in_budget_time_ns = 0U;
+    uint64_t sample_count = 0U;
+    bool passed = false;
+    bool required_for_benchmark_pass = false;
+};
+
+enum class GameBenchmarkPresentationAcquireStage : uint8_t {
+    SubmittedFrameFence,
+    AcquireFence,
+    PresentFence,
+    SwapchainImage,
+};
+
+struct GameBenchmarkPresentationAcquireStageSample final {
+    GameBenchmarkPresentationAcquireStage stage = GameBenchmarkPresentationAcquireStage::SubmittedFrameFence;
+    uint64_t duration_ns = 0U;
+    int32_t result = 0;
+};
+
+struct GameBenchmarkPresentationAcquireSample final {
+    bool captured = false;
+    uint32_t frame_slot = 0U;
+    uint32_t stage_count = 0U;
+    std::array<GameBenchmarkPresentationAcquireStageSample, 4U> stages{};
+    std::optional<uint32_t> image_index;
+};
+
+struct GameBenchmarkPresentationRequestId final {
+    uint64_t swapchain_generation = 0U;
+    uint32_t application_present_id = 0U;
+};
+
+struct GameBenchmarkSuccessfulPresentationRequest final {
+    GameBenchmarkPresentationRequestId request;
+    uint64_t loop_ordinal = 0U;
+    std::string phase;
+};
+
+struct GameBenchmarkPresentationTimingRecord final {
+    GameBenchmarkPresentationRequestId request;
+    uint64_t actual_present_time_ns = 0U;
+};
+
+enum class GameBenchmarkPresentationPollScope : uint8_t {
+    Loop,
+    Drain,
+};
+
+enum class GameBenchmarkPresentationPollStatus : uint8_t {
+    Unavailable,
+    Empty,
+    Records,
+    Incomplete,
+    Error,
+};
+
+struct GameBenchmarkPresentationPoll final {
+    GameBenchmarkPresentationPollScope scope = GameBenchmarkPresentationPollScope::Loop;
+    GameBenchmarkPresentationPollStatus status = GameBenchmarkPresentationPollStatus::Unavailable;
+    int32_t vk_result = 0;
+    uint32_t returned_count = 0U;
+};
+
+struct GameBenchmarkPresentationCaptureEndpoint final {
+    GameBenchmarkPresentationRequestId request;
+    uint64_t loop_ordinal = 0U;
+};
+
+struct GameBenchmarkPresentationTimingEvidence final {
+    bool capability_supported = false;
+    std::vector<GameBenchmarkSuccessfulPresentationRequest> successful_requests;
+    std::vector<GameBenchmarkPresentationTimingRecord> records;
+    std::vector<GameBenchmarkPresentationPoll> polls;
+    std::optional<GameBenchmarkPresentationCaptureEndpoint> capture_endpoint;
+    bool drain_complete = false;
+    std::vector<GameBenchmarkPresentationRequestId> drain_request_ids;
+};
+
 struct GameBenchmarkMeshStageSummary final {
     uint32_t client_pending_admission_count = 0U;
     uint32_t worker_queued_count = 0U;
@@ -91,32 +173,14 @@ struct RendererCaptureEvidence final {
     bool content_verified{ false };
 };
 
-enum class GameBenchmarkPresentationAcquireStage : uint8_t {
-    SubmittedFrameFence,
-    AcquireFence,
-    PresentFence,
-    SwapchainImage,
-};
-
-struct GameBenchmarkPresentationAcquireStageSample final {
-    GameBenchmarkPresentationAcquireStage stage = GameBenchmarkPresentationAcquireStage::SubmittedFrameFence;
-    uint64_t duration_ns = 0U;
-    int32_t result = 0;
-};
-
-struct GameBenchmarkPresentationAcquireSample final {
-    bool captured = false;
-    uint32_t frame_slot = 0U;
-    uint32_t stage_count = 0U;
-    std::array<GameBenchmarkPresentationAcquireStageSample, 4U> stages{};
-    std::optional<uint32_t> image_index;
-};
-
 struct GameBenchmarkFrameSample final {
+    uint64_t loop_ordinal = 0U;
     bool warm = false;
     bool uncapped = false;
     bool excluded = false;
     bool presentation_succeeded = false;
+    std::optional<uint64_t> swapchain_generation = std::nullopt;
+    std::optional<uint32_t> application_present_id = std::nullopt;
     uint64_t started_offset_ns = 0U;
     uint64_t loop_duration_ns = 0U;
     uint64_t render_duration_ns = 0U;
@@ -127,7 +191,7 @@ struct GameBenchmarkFrameSample final {
     uint64_t client_message_payload_bytes_received = 0U;
     uint32_t resident_terrain_tile_count = 0U;
     uint32_t visible_surface_face_count = 0U;
-    std::string terrain_phase;
+    std::string terrain_phase = {};
     bool terrain_center_valid = false;
     int32_t terrain_center_x = 0;
     int32_t terrain_center_y = 0;
@@ -148,7 +212,7 @@ struct GameBenchmarkFrameSample final {
         GameBenchmarkMeshStageSummary mesh_work_stages;
         GameBenchmarkMeshResultDrainSummary mesh_result_drain;
     };
-    std::optional<TerrainNearSample> terrain_near;
+    std::optional<TerrainNearSample> terrain_near = std::nullopt;
     struct TerrainRadialBand final {
         uint32_t desired_count = 0U;
         uint32_t resident_count = 0U;
@@ -156,38 +220,71 @@ struct GameBenchmarkFrameSample final {
         uint32_t current_mesh_visible_count = 0U;
         uint32_t stale_or_missing_mesh_count = 0U;
     };
-    std::optional<std::array<TerrainRadialBand, 16U>> diagnostic_terrain_radial_bands;
+    std::optional<std::array<TerrainRadialBand, 16U>> diagnostic_terrain_radial_bands = std::nullopt;
     uint64_t diagnostic_terrain_spatial_scan_duration_ns = 0U;
     std::optional<client::StoneFaceGrowthDiagnostics> renderer_stone_face_growth = std::nullopt;
     uint64_t diagnostic_render_attempt_id = 0U;
-    GameBenchmarkPresentationAcquireSample diagnostic_presentation_acquire = {};
     bool diagnostic_frame_recorded = false;
     bool diagnostic_indexed_stone_quads = false;
     bool diagnostic_stone_indirect = false;
-    std::optional<uint32_t> diagnostic_frame_slot;
+    std::optional<uint32_t> diagnostic_frame_slot = std::nullopt;
     uint64_t diagnostic_submitted_stone_quad_count = 0U;
     uint32_t diagnostic_stone_draw_count = 0U;
     std::array<double, 7> diagnostic_camera{};
     uint64_t diagnostic_cpu_acquire_wait_duration_ns = 0U;
+    GameBenchmarkPresentationAcquireSample diagnostic_presentation_acquire = {};
+    uint64_t diagnostic_cpu_presentation_recreation_duration_ns = 0U;
+    bool diagnostic_presentation_recreation_attempted = false;
+    bool diagnostic_presentation_recreation_deferred = false;
     uint64_t diagnostic_cpu_command_record_duration_ns = 0U;
     uint64_t diagnostic_cpu_visible_range_collection_duration_ns = 0U;
+    uint64_t diagnostic_cpu_height_tile_group_and_tile_traversal_duration_ns = 0U;
+    uint64_t diagnostic_cpu_height_tile_pending_range_order_duration_ns = 0U;
+    uint64_t diagnostic_cpu_height_tile_visible_range_merge_duration_ns = 0U;
     uint64_t diagnostic_cpu_indirect_prepare_duration_ns = 0U;
     uint64_t diagnostic_cpu_stone_scene_record_duration_ns = 0U;
     uint64_t diagnostic_cpu_command_record_residual_duration_ns = 0U;
     uint64_t diagnostic_cpu_complete_present_wait_duration_ns = 0U;
+    uint64_t diagnostic_client_window_input_duration_ns = 0U;
     uint64_t diagnostic_client_height_tile_interest_duration_ns = 0U;
     uint64_t diagnostic_client_preview_lod_refresh_duration_ns = 0U;
     uint32_t diagnostic_client_preview_lod_classified_bucket_count = 0U;
     uint32_t diagnostic_client_preview_lod_evaluated_tile_count = 0U;
     uint32_t diagnostic_client_preview_lod_changed_tile_count = 0U;
+    uint64_t diagnostic_client_preview_mesh_pump_before_changes_duration_ns = 0U;
+    uint64_t diagnostic_client_height_tile_change_and_removal_duration_ns = 0U;
+    uint64_t diagnostic_client_height_tile_change_queue_duration_ns = 0U;
+    uint64_t diagnostic_client_preview_mesh_remove_duration_ns = 0U;
+    uint64_t diagnostic_client_preview_mesh_remove_renderer_duration_ns = 0U;
+    uint64_t diagnostic_client_preview_mesh_remove_neighbor_enqueue_duration_ns = 0U;
+    uint32_t diagnostic_client_preview_mesh_remove_count = 0U;
+    uint64_t diagnostic_renderer_height_tile_remove_prefilter_duration_ns = 0U;
+    uint64_t diagnostic_renderer_height_tile_remove_slot_retirement_duration_ns = 0U;
+    uint64_t diagnostic_renderer_height_tile_remove_draw_index_duration_ns = 0U;
+    uint64_t diagnostic_renderer_height_tile_remove_input_count = 0U;
+    uint64_t diagnostic_renderer_height_tile_remove_matching_slot_count = 0U;
+    uint64_t diagnostic_renderer_height_tile_remove_actual_slot_count = 0U;
+    uint64_t diagnostic_client_preview_mesh_pump_after_changes_duration_ns = 0U;
+    uint64_t diagnostic_client_camera_resolution_duration_ns = 0U;
+    uint64_t diagnostic_client_render_before_resize_duration_ns = 0U;
+    uint64_t diagnostic_renderer_resize_duration_ns = 0U;
+    uint64_t diagnostic_client_render_after_resize_duration_ns = 0U;
+    uint64_t diagnostic_renderer_call_duration_ns = 0U;
+    uint64_t diagnostic_client_render_after_renderer_duration_ns = 0U;
     bool diagnostic_gpu_timestamps_enabled = false;
-    std::string_view diagnostic_gpu_timestamp_reason;
+    std::string_view diagnostic_gpu_timestamp_reason = {};
     uint64_t diagnostic_gpu_sample_attempt_id = 0U;
     uint32_t diagnostic_gpu_sample_slot = 0U;
     uint64_t diagnostic_gpu_sample_quad_count = 0U;
     uint32_t diagnostic_gpu_sample_draw_count = 0U;
-    std::optional<uint64_t> diagnostic_gpu_terrain_duration_ns;
-    std::optional<uint64_t> latest_gpu_frame_duration_ns;
+    std::optional<uint64_t> diagnostic_gpu_terrain_duration_ns = std::nullopt;
+    std::optional<uint64_t> latest_gpu_frame_duration_ns = std::nullopt;
+    bool diagnostic_terrain_occlusion_enabled = false;
+    bool diagnostic_terrain_occlusion_oracle_frame = false;
+    bool diagnostic_terrain_occlusion_filtered_frame = false;
+    uint64_t diagnostic_terrain_occlusion_removed_quad_count = 0U;
+    uint32_t diagnostic_terrain_occlusion_removed_range_count = 0U;
+    uint32_t diagnostic_terrain_occlusion_removed_command_count = 0U;
 };
 
 struct GameBenchmarkTerrainReadinessEvidence final {
@@ -336,6 +433,7 @@ struct GameBenchmarkServerStreamSample final {
 
 struct GameBenchmarkEvidence final {
     std::string workload;
+    std::string qualification_proof;
     std::string package_id;
     std::string hardware;
     std::optional<std::string> gpu;
@@ -365,8 +463,10 @@ struct GameBenchmarkEvidence final {
     FrameTimingSummary uncapped_loop_timings;
     FrameTimingSummary server_tick_timings;
     FrameTimingSummary permission_publish_timings;
-    std::optional<GameBenchmarkTerrainReadinessEvidence> terrain_readiness;
-    std::optional<GameBenchmarkFullRadiusEvidence> full_radius_terrain;
+    std::optional<GameBenchmarkFrameBudgetEvidence> frame_budget = std::nullopt;
+    std::optional<GameBenchmarkTerrainReadinessEvidence> terrain_readiness = std::nullopt;
+    std::optional<GameBenchmarkFullRadiusEvidence> full_radius_terrain = std::nullopt;
+    std::optional<GameBenchmarkPresentationTimingEvidence> presentation_timing = std::nullopt;
     std::vector<GameBenchmarkFrameSample> raw_frames;
     std::vector<GameBenchmarkServerStreamSample> raw_server_stream_samples;
     std::vector<uint64_t> raw_server_tick_durations_ns;
@@ -400,9 +500,7 @@ struct RuntimeEvidence final {
 };
 
 [[nodiscard]]
-std::string stoneFaceGrowthDiagnosticsJson(
-    client::StoneFaceGrowthDiagnostics const& diagnostics
-);
+std::string stoneFaceGrowthDiagnosticsJson(client::StoneFaceGrowthDiagnostics const& diagnostics);
 
 [[nodiscard]]
 std::string evidenceJson(RuntimeEvidence const& evidence);

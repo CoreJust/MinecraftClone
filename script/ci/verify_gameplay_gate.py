@@ -34,7 +34,7 @@ assert _PACKAGE_SPEC is not None and _PACKAGE_SPEC.loader is not None
 _PACKAGE = importlib.util.module_from_spec(_PACKAGE_SPEC)
 sys.modules[_PACKAGE_SPEC.name] = _PACKAGE
 _PACKAGE_SPEC.loader.exec_module(_PACKAGE)
-SCHEMA = "mc.gameplay-proof.v1"
+SCHEMA = "mc.gameplay-proof.v2"
 WORKLOAD = "speed-200-full-radius-recovery-v1"
 SOURCE_INPUTS = ("src/**", "assets/**", "cmake/**", "scenarios/**", "CMakeLists.txt", "CMakePresets.json",
                  "dependencies.lock.json", "tests/**", "vcpkg.json", "vcpkg-configuration*.json")
@@ -47,8 +47,11 @@ REQUIRED_SOURCE_INPUTS = (
 )
 PHASES = ("initial-full-radius-warmup", "baseline-stationary", "speed-200-movement",
           "full-radius-recovery-warmup", "recovered-stationary")
-TARGET_HZ = {"macos": 120, "windows": 500}
-CADENCE_POLICIES = ("snapshot", "strict")
+ACTUAL_PRESENTATION_CONTRACT = "mc.actual-presentation-timing.v1"
+ACTUAL_PRESENTATION_PROVIDER = "VK_GOOGLE_display_timing"
+ACTUAL_PRESENTATION_CLOCK_DOMAIN = "vulkan-display-timing-monotonic-nanoseconds-unspecified-origin"
+TARGET_HZ = {"macos": 120, "windows": 120}
+PROOFS = {"terrain-coverage": 256, "performance": 128}
 WORLD_TILE_COUNT = 4_096
 QUEUE_FIELDS = ("pending_delivery_batches", "pending_residency_changes", "pending_mesh_queue",
                 "active_mesh_jobs", "dirty_mesh_jobs", "worker_results", "worker_outstanding", "pending_removals")
@@ -423,7 +426,7 @@ def verify_desktop_transport(row: dict[str, Any], base: Path) -> None:
     require(PureWindowsPath(original["path"]) != PureWindowsPath(transport["application_directory"]) / "mc_main.exe",
             "original build executable must be distinguished from the native helper copy")
     require(row["command"] == [str(PureWindowsPath(transport["application_directory"]) / "mc_main.exe"),
-                               *benchmark_arguments("windows", row["warmup_seconds"], transport["report_name"])],
+                               *benchmark_arguments("windows", row["warmup_seconds"], transport["report_name"], row["proof"])],
             "native desktop command identity mismatch")
     report_name = relative_runtime_path(transport["report_name"])
     require("/" not in report_name and report_name == PureWindowsPath(row["report"]["path"]).name,
@@ -514,21 +517,261 @@ def timing_summary(samples: list[int]) -> dict[str, int]:
             "mean": sum(ordered) // count if count else 0}
 
 
-def verify_barrier(barrier: dict[str, Any], phase: str, elapsed: int) -> None:
+def verify_actual_presentation_timing(value: Any, game: dict[str, Any], frames: list[dict[str, Any]],
+                                      full: dict[str, Any]) -> dict[str, Any]:
+    fields = {"contract", "provider", "source", "capability", "clock_domain", "successful_requests", "records",
+              "polls", "capture_endpoint", "drain"}
+    require(isinstance(value, dict) and set(value) == fields,
+            "driver-reported presentation timing schema is absent or malformed")
+    require(value["contract"] == ACTUAL_PRESENTATION_CONTRACT
+            and value["provider"] == ACTUAL_PRESENTATION_PROVIDER
+            and value["source"] == "driver-reported"
+            and value["clock_domain"] == ACTUAL_PRESENTATION_CLOCK_DOMAIN,
+            "driver-reported presentation timing identity is incorrect")
+    require(value["capability"] == "supported", "VK_GOOGLE_display_timing is unavailable")
+
+    requests = value["successful_requests"]
+    require(isinstance(requests, list) and requests, "successful presentation request map is empty")
+    request_fields = {"swapchain_generation", "application_present_id", "loop_ordinal", "phase"}
+    keys: list[tuple[int, int]] = []
+    request_by_key: dict[tuple[int, int], dict[str, Any]] = {}
+    request_by_ordinal: dict[int, dict[str, Any]] = {}
+    measurement_generation: int | None = None
+    previous_generation: int | None = None
+    previous_ordinal = 0
+    previous_phase = -1
+    last_id_by_generation: dict[int, int] = {}
+    phase_index = {phase: index for index, phase in enumerate(PHASES)}
+    for request in requests:
+        require(isinstance(request, dict) and set(request) == request_fields,
+                "successful presentation request map entry is malformed")
+        request_generation = integer(request["swapchain_generation"], "presentation swapchain generation")
+        present_id = integer(request["application_present_id"], "application present ID", 1)
+        ordinal = integer(request["loop_ordinal"], "presentation loop ordinal", 1)
+        phase = request["phase"]
+        require(request_generation <= (1 << 64) - 1 and present_id <= (1 << 32) - 1,
+                "presentation request key is outside its Vulkan integer range")
+        require(isinstance(phase, str) and phase in phase_index,
+                "successful presentation request has an unknown phase")
+        key = (request_generation, present_id)
+        require(key not in request_by_key and ordinal not in request_by_ordinal,
+                "duplicate successful presentation request key or loop ordinal")
+        require(ordinal > previous_ordinal and phase_index[phase] >= previous_phase,
+                "successful presentation request map is not ordered")
+        require(previous_generation is None or request_generation >= previous_generation,
+                "successful presentation request generations are not nondecreasing")
+        if previous_generation is not None and request_generation != previous_generation:
+            require(phase == PHASES[0] and measurement_generation is None,
+                    "swapchain recreation is only valid during initial warmup")
+        if phase == PHASES[1] and measurement_generation is None:
+            measurement_generation = request_generation
+        elif measurement_generation is not None:
+            require(request_generation == measurement_generation,
+                    "swapchain recreation after the first baseline request makes presentation timing inconclusive")
+        require(present_id > last_id_by_generation.get(request_generation, 0),
+                "application present IDs are not strictly increasing within a swapchain generation")
+        last_id_by_generation[request_generation] = present_id
+        request_by_key[key] = request
+        request_by_ordinal[ordinal] = request
+        keys.append(key)
+        previous_generation, previous_ordinal, previous_phase = request_generation, ordinal, phase_index[phase]
+    require(measurement_generation is not None,
+            "presentation request map has no successful baseline request to lock the measurement generation")
+    measurement_keys = [key for key in keys if key[0] == measurement_generation]
+    require(measurement_keys, "measurement swapchain generation has no successful requests")
+
+    endpoint_fields = {"swapchain_generation", "application_present_id", "loop_ordinal"}
+    endpoint = value["capture_endpoint"]
+    last_request = requests[-1]
+    require(isinstance(endpoint, dict) and set(endpoint) == endpoint_fields
+            and endpoint == {field: last_request[field] for field in endpoint_fields}
+            and last_request["phase"] == PHASES[4]
+            and last_request["swapchain_generation"] == measurement_generation,
+            "presentation capture endpoint is not the final recovered-stationary success")
+
+    drain = value["drain"]
+    require(isinstance(drain, dict) and set(drain) == {"complete", "request_ids"}
+            and type(drain["complete"]) is bool and drain["complete"] is True
+            and isinstance(drain["request_ids"], list),
+            "bounded presentation timing drain is incomplete")
+    drain_fields = {"swapchain_generation", "application_present_id"}
+    drain_keys: list[tuple[int, int]] = []
+    previous_drain_id = last_request["application_present_id"]
+    for request_id in drain["request_ids"]:
+        require(isinstance(request_id, dict) and set(request_id) == drain_fields,
+                "presentation drain request ID is malformed")
+        request_generation = integer(request_id["swapchain_generation"], "drain swapchain generation")
+        present_id = integer(request_id["application_present_id"], "drain application present ID", 1)
+        require(request_generation == measurement_generation and request_generation <= (1 << 64) - 1
+                and present_id <= (1 << 32) - 1 and present_id > previous_drain_id,
+                "presentation drain IDs are duplicate, unordered, or cross a swapchain generation")
+        drain_keys.append((request_generation, present_id))
+        previous_drain_id = present_id
+
+    polls = value["polls"]
+    require(isinstance(polls, list) and polls, "presentation timing poll history is empty")
+    poll_fields = {"scope", "status", "vk_result", "returned_count"}
+    record_count_from_polls, draining, loop_polls = 0, False, 0
+    for poll in polls:
+        require(isinstance(poll, dict) and set(poll) == poll_fields,
+                "presentation timing poll entry is malformed")
+        scope, status = poll["scope"], poll["status"]
+        vk_result = poll["vk_result"]
+        returned_count = integer(poll["returned_count"], "presentation poll returned count")
+        require(scope in ("loop", "drain") and status in ("unavailable", "empty", "records", "incomplete", "error")
+                and type(vk_result) is int, "presentation timing poll result is malformed")
+        require(not draining or scope == "drain", "loop-scope poll follows presentation shutdown drain")
+        if scope == "drain":
+            draining = True
+        else:
+            loop_polls += 1
+        record_count_from_polls += returned_count
+        if status == "unavailable":
+            require(False, "presentation timing provider became unavailable while polling")
+        if status == "error":
+            require(False, f"presentation timing poll failed with VkResult {vk_result}")
+        if status == "empty":
+            require(vk_result == 0 and returned_count == 0, "empty presentation poll has an inconsistent VkResult/count")
+        elif status == "records":
+            require(vk_result == 0 and returned_count > 0, "records presentation poll has an inconsistent VkResult/count")
+        elif status == "incomplete":
+            require(vk_result in (0, 5), "incomplete presentation poll has an unexpected VkResult")
+    records = value["records"]
+    require(isinstance(records, list), "flat driver presentation record history is malformed")
+    expected_attempts = (integer(game["successful_present_requests"], "successful present requests")
+                         + integer(game["failed_present_requests"], "failed present requests"))
+    require(loop_polls == expected_attempts,
+            "presentation poll history must contain exactly one poll per benchmark loop attempt")
+    require(record_count_from_polls == len(records),
+            "presentation poll counts do not reconcile with the flat record history")
+
+    record_fields = {"swapchain_generation", "application_present_id", "actual_present_time_ns"}
+    record_by_key: dict[tuple[int, int], int] = {}
+    expected_keys = set(measurement_keys)
+    all_request_keys = set(keys)
+    drain_key_set = set(drain_keys)
+    for record in records:
+        require(isinstance(record, dict) and set(record) == record_fields,
+                "driver presentation timing record is malformed")
+        record_generation = integer(record["swapchain_generation"], "record swapchain generation")
+        present_id = integer(record["application_present_id"], "record application present ID", 1)
+        present_time = integer(record["actual_present_time_ns"], "actual presentation time", 1)
+        require(present_time <= (1 << 64) - 1, "actual presentation time exceeds its Vulkan integer range")
+        key = (record_generation, present_id)
+        require(key not in record_by_key, "duplicate driver presentation timing record")
+        require(key in all_request_keys or key in drain_key_set,
+                "driver returned a presentation record outside the captured endpoint and drain IDs")
+        record_by_key[key] = present_time
+    missing = expected_keys - record_by_key.keys()
+    require(not missing, "driver presentation history lost expected measurement-generation request IDs")
+    ordered_record_keys = measurement_keys + [key for key in drain_keys if key in record_by_key]
+    ordered_times = [record_by_key[key] for key in ordered_record_keys]
+    require(all(right > left for left, right in zip(ordered_times, ordered_times[1:])),
+            "driver presentation times are not strictly increasing within a swapchain generation")
+
+    raw_by_ordinal: dict[int, dict[str, Any]] = {}
+    for frame in frames:
+        ordinal = integer(frame["loop_ordinal"], "raw frame loop ordinal", 1)
+        require(ordinal not in raw_by_ordinal, "raw frame loop ordinal is duplicated")
+        raw_by_ordinal[ordinal] = frame
+        key_in_map = request_by_ordinal.get(ordinal)
+        if frame["presentation_succeeded"]:
+            require(key_in_map is not None
+                    and key_in_map["phase"] == frame["phase"]
+                    and key_in_map["swapchain_generation"] == integer(
+                        frame.get("swapchain_generation"), "raw frame swapchain generation")
+                    and key_in_map["application_present_id"] == integer(
+                        frame.get("application_present_id"), "raw frame application present ID", 1),
+                    "successful raw frame does not join its exact presentation request ID")
+        else:
+            require(key_in_map is None and frame.get("swapchain_generation") is None
+                    and frame.get("application_present_id") is None,
+                    "unsuccessful raw frame unexpectedly has a presentation request ID")
+    for request in requests:
+        if request["loop_ordinal"] not in raw_by_ordinal:
+            require(request["phase"] in (PHASES[0], PHASES[3]),
+                    "successful measured-phase request is missing from dense raw frame evidence")
+    require(integer(game["successful_present_requests"], "successful present requests") == len(requests),
+            "presentation request map does not cover all successful benchmark requests")
+    for phase, count_field in ((PHASES[1], "baseline_present_requests"),
+                               (PHASES[4], "recovered_present_requests")):
+        require(sum(request["phase"] == phase for request in requests)
+                == integer(full[count_field], count_field),
+                f"{phase}: presentation request map does not match benchmark totals")
+    for phase in (PHASES[1], PHASES[2], PHASES[4]):
+        raw_successes = sum(frame["phase"] == phase and frame["presentation_succeeded"] for frame in frames)
+        mapped_successes = sum(request["phase"] == phase for request in requests)
+        require(mapped_successes == raw_successes,
+                f"{phase}: driver request map does not reconcile with measured raw frames")
+
+    interval_values: dict[str, list[int]] = {phase: [] for phase in (PHASES[1], PHASES[2], PHASES[4])}
+    measurement_requests = [request for request in requests
+                            if request["swapchain_generation"] == measurement_generation]
+    for previous_request, current_request in zip(measurement_requests, measurement_requests[1:]):
+        previous_key = (measurement_generation, previous_request["application_present_id"])
+        current_key = (measurement_generation, current_request["application_present_id"])
+        first_attempt = raw_by_ordinal.get(previous_request["loop_ordinal"] + 1)
+        if first_attempt is None:
+            continue
+        phase = first_attempt["phase"]
+        if phase in interval_values:
+            interval_values[phase].append(record_by_key[current_key] - record_by_key[previous_key])
+
+    metrics, failures = {}, []
+    for phase, elapsed_field in ((PHASES[1], "baseline_stationary_elapsed_ms"),
+                                 (PHASES[2], "movement_elapsed_ms"),
+                                 (PHASES[4], "recovered_stationary_elapsed_ms")):
+        intervals = interval_values[phase]
+        summary = timing_summary(intervals)
+        if len(intervals) < 500:
+            failures.append(f"{phase}: insufficient driver presentation intervals ({len(intervals)}, requires 500)")
+        if not intervals or any(interval <= 0 for interval in intervals):
+            failures.append(f"{phase}: driver presentation cadence is not computable")
+            metrics[phase] = {"target_hz": 120, "minimum_rate_hz": 119.76, "intervals_ns": summary,
+                              "phase_elapsed_ms": integer(full[elapsed_field], elapsed_field, 1),
+                              "successful_requests": sum(request["phase"] == phase for request in requests),
+                              "interval_rate_hz": None, "cadence": None}
+            continue
+        interval_ns = sum(intervals)
+        rate = len(intervals) * 1_000_000_000 / interval_ns
+        slots = [max(1, round(interval * 120 / 1_000_000_000)) for interval in intervals]
+        lost, total = sum(slot - 1 for slot in slots), sum(slots)
+        if interval_ns * 120 * 998 > len(intervals) * 1_000_000_000 * 1000:
+            failures.append(f"{phase}: driver presentation rate {rate:.6f}Hz is below 119.76Hz")
+        if max(1, round(summary["p50"] * 120 / 1_000_000_000)) != 1:
+            failures.append(f"{phase}: driver presentation median exceeds one 120Hz refresh slot")
+        if lost * 1000 > total * 2:
+            failures.append(f"{phase}: driver presentation lost FIFO refresh-slot share exceeds 0.2% ({lost}/{total})")
+        metrics[phase] = {"target_hz": 120, "minimum_rate_hz": 119.76, "intervals_ns": summary,
+                          "phase_elapsed_ms": integer(full[elapsed_field], elapsed_field, 1),
+                          "successful_requests": sum(request["phase"] == phase for request in requests),
+                          "interval_rate_hz": rate,
+                          "cadence": {"contract": "fifo-nearest-120hz-driver-presentation-slots",
+                                      "lost_slots": lost, "total_slots": total,
+                                      "lost_slot_share": lost / total}}
+    require(not failures, "; ".join(failures))
+    return {"status": "passed", "source": "driver-reported", "provider": ACTUAL_PRESENTATION_PROVIDER,
+            "clock_domain": ACTUAL_PRESENTATION_CLOCK_DOMAIN, "expected_record_count": len(measurement_keys),
+            "drain_record_count": sum(key in record_by_key for key in drain_keys), "poll_count": len(polls),
+            "incomplete_poll_count": sum(poll["status"] == "incomplete" for poll in polls), "phases": metrics}
+
+
+def verify_barrier(barrier: dict[str, Any], phase: str, elapsed: int, radius: int) -> None:
+    tile_count = sum(2 * math.isqrt(radius * radius - x * x) + 1 for x in range(-radius, radius + 1))
     require(barrier["phase"] == phase and all(barrier[key] is True for key in
             ("scan_performed", "potentially_ready", "exact_current_coverage")), f"{phase}: missing exact coverage scan")
     tile_center(barrier["center"], phase)
     require(integer(barrier["phase_elapsed_ms"], f"{phase}: barrier elapsed") == elapsed, f"{phase}: barrier elapsed disagrees with warmup")
     for key in ("desired", "resident_desired", "current_handle_mesh_visible", "visible_meshes", "renderer_mesh_slots"):
-        require(integer(barrier[key], key) == 205861, f"{phase}: {key} must be 205861")
-    require(integer(barrier["resident_total"], "resident_total") >= 205861, f"{phase}: incomplete residency")
+        require(integer(barrier[key], key) == tile_count, f"{phase}: {key} must be {tile_count}")
+    require(integer(barrier["resident_total"], "resident_total") >= tile_count, f"{phase}: incomplete residency")
     for key in (*QUEUE_FIELDS, "nonresident_desired", "stale_or_missing_mesh", "unclassified_resident_missing",
                 "visible_outside_interest", "unclassified_current_visible_mesh_detail"):
         require(integer(barrier[key], key) == 0, f"{phase}: {key} is not drained")
     details = barrier["current_visible_mesh_detail_counts"]
     require(isinstance(details, dict) and set(details) == {"coarse", "coarse2", "coarse4", "fine", "distant"}
-            and sum(integer(value, "mesh detail") for value in details.values()) == 205861, f"{phase}: mesh details mismatch")
-    expected = radial_band_counts(256)
+            and sum(integer(value, "mesh detail") for value in details.values()) == tile_count, f"{phase}: mesh details mismatch")
+    expected = radial_band_counts(radius)
     bands = barrier["radial_bands"]
     require(barrier["radial_band_tile_width"] == 16 and len(bands) == 16, f"{phase}: incomplete radial bands")
     for band, count in zip(bands, expected):
@@ -536,14 +779,19 @@ def verify_barrier(barrier: dict[str, Any], phase: str, elapsed: int) -> None:
                 and band["nonresident"] == 0 and band["stale_or_missing_mesh"] == 0, f"{phase}: radial coverage mismatch")
 
 
-def verify_report(report: dict[str, Any], platform: str, cadence_policy: str = "strict") -> dict[str, Any]:
-    require(cadence_policy in CADENCE_POLICIES, "invalid cadence policy")
-    cadence_required = platform == "windows" or cadence_policy == "strict"
+def verify_report(report: dict[str, Any], platform: str, proof: str | None = None) -> dict[str, Any]:
     require(report["schema_version"] == "mc.runtime-evidence.v1" and report["mode"] == "benchmark-game"
             and report["passed"] is True and report["failure"] == "", "runtime workload did not pass")
     timing = report["timing"]
     require(integer(timing["elapsed_ms"], "elapsed_ms", 1) <= integer(timing["deadline_ms"], "deadline_ms", 1), "runtime timeout")
     game = report["game_benchmark"]
+    actual_proof = game.get("qualification_proof")
+    require(actual_proof in PROOFS and (proof is None or proof == actual_proof), "missing or mismatched gameplay proof selector")
+    radius = PROOFS[actual_proof]
+    cadence_required = actual_proof == "performance"
+    request_cadence_required = cadence_required and platform == "windows"
+    presentation_timing_required = cadence_required and platform == "macos"
+    frame_budget_required = request_cadence_required
     require(game.get("diagnostic_overrides_present") is False, "diagnostic gameplay report is not qualification proof")
     require(game["workload"] == WORKLOAD and game["build_mode"] == "release", "requires Release full-radius workload")
     require(game["displayed_cadence_hz"] is None, "physical display cadence is unavailable in this contract")
@@ -551,8 +799,9 @@ def verify_report(report: dict[str, Any], platform: str, cadence_policy: str = "
     for key in ("server_events_processed", "inputs_sent", "authoritative_player_updates"):
         integer(game[key], key, 1)
     full = game["full_radius_terrain"]
-    require(full["contract"] == "mc.full-radius-terrain-barriers.v1" and full["render_distance"] == 256
-            and full["expected_tile_count"] == 205861 and full["complete"] is True, "incomplete radius256 terrain contract")
+    expected_count = sum(2 * math.isqrt(radius * radius - x * x) + 1 for x in range(-radius, radius + 1))
+    require(full["contract"] == "mc.full-radius-terrain-barriers.v1" and full["render_distance"] == radius
+            and full["expected_tile_count"] == expected_count and full["complete"] is True, "incomplete proof radius terrain contract")
     require(full["loop_timing_scope"] == "all-stationary-loop-attempts" and full["successful_present_request_interval_scope"]
             == "consecutive-successful-request-completions-not-physical-display-cadence", "incorrect timing scope")
     timeout = integer(full["warmup_timeout_ms"], "warmup_timeout_ms", 1000)
@@ -560,7 +809,7 @@ def verify_report(report: dict[str, Any], platform: str, cadence_policy: str = "
     for prefix, phase in (("initial", PHASES[0]), ("recovery", PHASES[3])):
         elapsed = integer(full[prefix + "_warmup_elapsed_ms"], prefix + " warmup elapsed")
         require(full[prefix + "_barrier_reached"] is True and elapsed <= timeout, f"{prefix}: warmup failed")
-        verify_barrier(full[prefix + "_barrier"], phase, elapsed)
+        verify_barrier(full[prefix + "_barrier"], phase, elapsed, radius)
     movement_start_center = tile_center(full["movement_start_center"], "movement start")
     movement_end_center = tile_center(full["movement_end_center"], "movement end")
     recovery_center = tile_center(full["recovery_barrier"]["center"], "recovery")
@@ -606,6 +855,19 @@ def verify_report(report: dict[str, Any], platform: str, cadence_policy: str = "
         start = integer(frame["started_offset_ns"], "started_offset_ns")
         duration = integer(frame["loop_duration_ns"], "loop_duration_ns", 1)
         require(start >= previous_completion and type(frame["presentation_succeeded"]) is bool, "unordered or malformed raw frames")
+        recreation_attempted = frame["diagnostic_presentation_recreation_attempted"]
+        recreation_deferred = frame["diagnostic_presentation_recreation_deferred"]
+        recreation_duration = integer(
+            frame["diagnostic_cpu_presentation_recreation_duration_ns"],
+            "presentation recreation duration",
+        )
+        require(type(recreation_attempted) is bool and type(recreation_deferred) is bool,
+                "presentation recreation diagnostics must be boolean")
+        require(recreation_attempted or (not recreation_deferred and recreation_duration == 0),
+                "presentation recreation timing exists without an attempt")
+        require(not recreation_deferred or (recreation_attempted and not frame["presentation_succeeded"]
+                and frame["diagnostic_frame_recorded"] is False),
+                "deferred presentation recreation recorded or presented a frame")
         radial_bands = frame["diagnostic_terrain_radial_bands"]
         if radial_bands is None:
             require(integer(frame["diagnostic_terrain_spatial_scan_duration_ns"],
@@ -614,7 +876,7 @@ def verify_report(report: dict[str, Any], platform: str, cadence_policy: str = "
         else:
             verify_terrain_radial_scan(radial_bands, frame["diagnostic_terrain_spatial_scan_duration_ns"])
             require(all(band["desired"] == count
-                        for band, count in zip(radial_bands, radial_band_counts(full["render_distance"]))),
+                        for band, count in zip(radial_bands, radial_band_counts(radius))),
                     "terrain radial desired counts disagree with render radius")
             require(all(integer(band["desired"], "radial desired")
                         == integer(band["current_mesh_visible"], "radial current visible")
@@ -624,6 +886,11 @@ def verify_report(report: dict[str, Any], platform: str, cadence_policy: str = "
                     "full-radius diagnostic scan found missing terrain inside the render radius")
         previous_completion = start + duration
     require(tuple(observed_phases) == PHASES, "raw phase sequence is incomplete")
+    for left, right in zip(frames, frames[1:]):
+        if left["phase"] in (PHASES[1], PHASES[2], PHASES[3], PHASES[4]):
+            require(integer(right.get("loop_ordinal"), "loop ordinal", 1)
+                    == integer(left.get("loop_ordinal"), "loop ordinal", 1) + 1,
+                    "missing loop in measured or recovery raw timeline")
     require(frames[0]["started_offset_ns"] == 0 and previous_completion // 1000000 <= timing["elapsed_ms"],
             "raw timeline exceeds overall runtime elapsed or has an incorrect origin")
     for prefix, warmup, stationary in (("initial", PHASES[0], PHASES[1]), ("recovery", PHASES[3], PHASES[4])):
@@ -665,18 +932,40 @@ def verify_report(report: dict[str, Any], platform: str, cadence_policy: str = "
                 and 0 <= selected[0]["started_offset_ns"] - preceding_ms * 1000000 < elapsed * 1000000
                 and span <= (elapsed + 1) * 1000000 and sum(durations) <= (elapsed + 1) * 1000000,
                 f"{prefix}: incomplete stationary raw duration")
+    presentation_metrics = {"status": "not-required"}
+    if presentation_timing_required:
+        presentation_metrics = verify_actual_presentation_timing(game.get("presentation_timing"), game, frames, full)
+
     proxy, cadence_failures = {}, []
 
     def check_cadence(condition: bool, message: str) -> None:
         if not condition:
             cadence_failures.append(message)
 
+    cadence_phases = (PHASES[1], PHASES[2], PHASES[4])
+    intervals_by_phase: dict[str, list[int]] = {phase: [] for phase in cadence_phases}
+    successful_positions = [index for index, frame in enumerate(frames) if frame["presentation_succeeded"]]
+    # The first attempt after a completion starts the next half-open interval.
+    for previous_index, current_index in zip(successful_positions, successful_positions[1:]):
+        attempt_chain = frames[previous_index:current_index + 1]
+        ordinals = [integer(frame["loop_ordinal"], "loop ordinal", 1) for frame in attempt_chain]
+        if any(right != left + 1 for left, right in zip(ordinals, ordinals[1:])):
+            continue
+        phase = frames[previous_index + 1]["phase"]
+        if phase in intervals_by_phase:
+            previous = frames[previous_index]
+            current = frames[current_index]
+            previous_completion = previous["started_offset_ns"] + previous["loop_duration_ns"]
+            current_completion = current["started_offset_ns"] + current["loop_duration_ns"]
+            intervals_by_phase[phase].append(current_completion - previous_completion)
+
     for phase, elapsed_key in ((PHASES[1], "baseline_stationary_elapsed_ms"), (PHASES[2], "movement_elapsed_ms"),
                                (PHASES[4], "recovered_stationary_elapsed_ms")):
         selected = [frame for frame in frames if frame["phase"] == phase]
         completions = [frame["started_offset_ns"] + frame["loop_duration_ns"] for frame in selected if frame["presentation_succeeded"]]
-        intervals = [right - left for left, right in zip(completions, completions[1:])]
-        require(intervals and all(interval > 0 for interval in intervals), f"{phase}: request cadence is not computable from raw completions")
+        intervals = intervals_by_phase[phase]
+        computable = len(completions) >= 2 and bool(intervals) and all(interval > 0 for interval in intervals)
+        check_cadence(computable, f"{phase}: request cadence is not computable from raw completions")
         rate = len(completions) * 1000 / full[elapsed_key]
         require(math.isfinite(rate), f"{phase}: request cadence rate is not finite")
         minimum_rate = TARGET_HZ[platform] * (0.998 if platform == "macos" else 1)
@@ -687,17 +976,21 @@ def verify_report(report: dict[str, Any], platform: str, cadence_policy: str = "
         if platform == "macos":
             slots = [max(1, round(interval * 120 / 1000000000)) for interval in intervals]
             lost, total = sum(slot - 1 for slot in slots), sum(slots)
-            check_cadence(lost * 1000 <= total * 2, f"{phase}: lost FIFO refresh-slot share exceeds 0.2% ({lost}/{total})")
+            check_cadence(bool(intervals) and lost * 1000 <= total * 2,
+                          f"{phase}: lost FIFO refresh-slot share exceeds 0.2% ({lost}/{total})")
             check_cadence(max(1, round(summary["p50"] * 120 / 1000000000)) == 1
                     and interval_ns * 120 * 998 <= len(intervals) * 1000000000 * 1000,
                     f"{phase}: FIFO median/mean cadence is below the 99.8% rate floor")
             cadence = {"contract": "fifo-nearest-120hz-request-slots", "lost_slots": lost, "total_slots": total,
-                       "lost_slot_share": lost / total}
+                       "lost_slot_share": lost / total if total else 0.0}
         else:
-            check_cadence(summary["p99_8"] <= limit, f"{phase}: request-cadence proxy fails 500Hz at 99.8% (p99.8={summary['p99_8']}ns, limit={limit}ns)")
+            check_cadence(bool(intervals) and summary["p99_8"] <= limit,
+                          f"{phase}: request-cadence proxy fails 120Hz at 99.8% (p99.8={summary['p99_8']}ns, limit={limit}ns)")
             excess_ns = sum(max(0, interval - limit) for interval in intervals)
-            check_cadence(excess_ns * 1000 <= interval_ns * 2, f"{phase}: excess-time share exceeds 0.2% ({excess_ns}/{interval_ns}ns)")
-            cadence = {"contract": "immediate-raw-request-completions", "excess_time_share": excess_ns / interval_ns}
+            check_cadence(bool(intervals) and excess_ns * 1000 <= interval_ns * 2,
+                          f"{phase}: excess-time share exceeds 0.2% ({excess_ns}/{interval_ns}ns)")
+            cadence = {"contract": "immediate-raw-request-completions",
+                       "excess_time_share": excess_ns / interval_ns if interval_ns else 0.0}
         proxy[phase] = {"target_hz": TARGET_HZ[platform], "minimum_rate_hz": minimum_rate, "cadence": cadence,
                         "intervals_ns": summary, "attempts": len(selected),
                         "successful_requests": len(completions), "failed_requests": len(selected) - len(completions),
@@ -707,19 +1000,33 @@ def verify_report(report: dict[str, Any], platform: str, cadence_policy: str = "
                         "interval_scope": "half-open [previous_successful_completion, current_successful_completion)"}
     ticks = [integer(value, "server tick", 1) for value in game["raw_server_tick_durations_ns"]]
     require(ticks and game["server_tick_timings_ns"] == timing_summary(ticks), "raw server timing summary mismatch")
-    require(not cadence_required or not cadence_failures, "; ".join(cadence_failures))
-    return {"coverage": "passed", "request_cadence_status": "failed" if cadence_failures else "passed",
-            "request_cadence_required": cadence_required, "request_cadence_reasons": cadence_failures,
+    measured = [frame["loop_duration_ns"] for frame in frames if frame["phase"] in (PHASES[1], PHASES[2], PHASES[4])]
+    measured_ns, in_budget_ns = sum(measured), sum(value for value in measured if value <= 8333334)
+    budget_passed = measured_ns > 0 and measured_ns - in_budget_ns <= measured_ns * 2 // 1000
+    require(game.get("frame_budget") == {"target_frame_duration_ns": 8333334,
+            "required_in_budget_time_permille": 998, "measured_time_ns": measured_ns,
+            "in_budget_time_ns": in_budget_ns, "sample_count": len(measured), "passed": budget_passed,
+            "required_for_benchmark_pass": frame_budget_required}, "raw game-loop frame budget mismatch")
+    require(not request_cadence_required or not cadence_failures, "; ".join(cadence_failures))
+    require(not frame_budget_required or budget_passed, "120Hz game-loop time budget exceeds 0.2%")
+    return {"proof": actual_proof, "render_distance": radius, "coverage": "passed", "request_cadence_status": "failed" if cadence_failures else "passed",
+            "request_cadence_required": request_cadence_required, "request_cadence_reasons": cadence_failures,
             "request_cadence_proxy": proxy, "total_unsuccessful_attempts": game["failed_present_requests"],
-            "raw_unsuccessful_attempts": raw_unsuccessful, "physical_display_cadence": "unavailable"}
+            "raw_unsuccessful_attempts": raw_unsuccessful, "presentation_timing_required": presentation_timing_required,
+            "presentation_timing_status": presentation_metrics["status"],
+            "presentation_timing_metrics": presentation_metrics,
+            "physical_display_cadence": "unavailable"}
 
 
-def verify_receipt(root: Path, receipt: Path, cadence_policy: str = "strict") -> dict[str, Any]:
+def verify_receipt(root: Path, receipt: Path) -> dict[str, Any]:
     aggregate = read_json(receipt)
     require(aggregate["schema_version"] == SCHEMA and isinstance(aggregate["rows"], list), "invalid gameplay proof schema")
     rows = aggregate["rows"]
-    require(len(rows) == 2 and {row["platform"] for row in rows} == set(TARGET_HZ), "both macos and windows gameplay proof are required")
+    required = {(platform, proof) for platform in TARGET_HZ for proof in PROOFS}
+    require(len(rows) == 4 and {(row["platform"], row.get("proof")) for row in rows} == required,
+            "both terrain-coverage and performance proof are required on macos and windows")
     expected_source = source_digest(root)
+    require(all(row["source_candidate"] == rows[0]["source_candidate"] for row in rows), "mixed gameplay source candidates")
     results = {}
     for row in rows:
         require(row["proof_origin"] == "local" and row["source_input_sha256"] == expected_source, "stale or nonlocal gameplay source")
@@ -729,9 +1036,11 @@ def verify_receipt(root: Path, receipt: Path, cadence_policy: str = "strict") ->
                 and build["executable_sha256"] == row["executable"]["sha256"], "stale gameplay build identity")
         for key in ("configuration_sha256", "dependency_sha256"):
             require(isinstance(build[key], str) and len(build[key]) == 64 and all(char in "0123456789abcdef" for char in build[key]), "missing build/dependency identity")
+        same_platform = next(other for other in rows if other["platform"] == row["platform"])
+        require(build == same_platform["build"], "mixed gameplay builds or dependencies across proof types")
         executable = checked_file(row["executable"], receipt.parent)
         report = checked_file(row["report"], receipt.parent)
-        require(row["command"][1:] == benchmark_arguments(row["platform"], row["warmup_seconds"], row["command"][-1]), "nonproduction gameplay command")
+        require(row["command"][1:] == benchmark_arguments(row["platform"], row["warmup_seconds"], row["command"][-1], row["proof"]), "nonproduction gameplay command")
         require(PureWindowsPath(row["command"][0]).name == executable.name and PureWindowsPath(row["command"][-1]).name == report.name,
                 "capture command disagrees with executable or report identity")
         if row["platform"] == "macos":
@@ -748,15 +1057,16 @@ def verify_receipt(root: Path, receipt: Path, cadence_policy: str = "strict") ->
         if "transport" in row:
             verify_desktop_transport(row, receipt.parent)
         raw = read_json(report)
-        results[row["platform"]] = verify_report(raw, row["platform"], cadence_policy)
+        results.setdefault(row["platform"], {})[row["proof"]] = verify_report(raw, row["platform"], row["proof"])
         require(raw["game_benchmark"]["full_radius_terrain"]["warmup_timeout_ms"] == row["warmup_seconds"] * 1000,
                 "capture command warmup disagrees with raw report")
     return results
 
 
-def benchmark_arguments(platform: str, warmup: int, report: str) -> list[str]:
+def benchmark_arguments(platform: str, warmup: int, report: str, proof: str = "performance") -> list[str]:
     require(type(warmup) is int and 1 <= warmup <= 1800, "invalid warmup bound")
-    return ["--benchmark-game", "--workload", "speed-200-full-radius", "--render-distance", "256",
+    require(proof in PROOFS, "invalid gameplay proof selector")
+    return ["--benchmark-game", "--workload", "speed-200-full-radius", "--gameplay-proof", proof, "--render-distance", str(PROOFS[proof]),
             "--full-radius-warmup-seconds", str(warmup), *( ["--present-immediate"] if platform == "windows" else []), "--evidence", report]
 
 
@@ -826,7 +1136,7 @@ def cancel_desktop_job(job_id: str, task_id: str, digest: str, timeout: int,
 
 
 def record_desktop(root: Path, receipt: Path, executable: Path, warmup: int,
-                   before: dict[str, Any], package: Path, manifest: Path, task_id: str, cadence_policy: str = "strict") -> None:
+                   before: dict[str, Any], package: Path, manifest: Path, task_id: str, proof: str = "performance") -> None:
     require(re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}", task_id) is not None, "invalid desktop task ID")
     task_id = f"{task_id[:31]}-{uuid.uuid4().hex}"
     report = receipt.with_suffix(".raw.json")
@@ -835,7 +1145,7 @@ def record_desktop(root: Path, receipt: Path, executable: Path, warmup: int,
     retained = receipt.with_suffix(".desktop")
     require(not path_entry_exists(report), "raw capture path already exists")
     require(not path_entry_exists(retained), "desktop transport output already exists; select a fresh receipt")
-    timeout, arguments = warmup * 2 + 90, benchmark_arguments("windows", warmup, report_name)
+    timeout, arguments = warmup * 2 + 90, benchmark_arguments("windows", warmup, report_name, proof)
     package_before = desktop_package_identity(root, executable, package, manifest)
     helpers_before = desktop_helper_identity()
     candidate = _MATRIX.candidate_identity(root)
@@ -969,7 +1279,7 @@ def record_desktop(root: Path, receipt: Path, executable: Path, warmup: int,
     except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError, _MATRIX.MatrixError) as error:
         errors.append(str(error))
     transport["finished_at_utc"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
-    row = {"platform": "windows", "proof_origin": "local", "source_candidate": candidate,
+    row = {"platform": "windows", "proof": proof, "proof_origin": "local", "source_candidate": candidate,
            "source_input_sha256": before["source_input_sha256"], "build": before, "executable": captured_executable,
            "report": captured_report, "command": command, "warmup_seconds": warmup, "environment": {}, "exit_code": exit_code,
            "timed_out": timed_out, "capture_error": "", "transport": transport}
@@ -982,12 +1292,13 @@ def record_desktop(root: Path, receipt: Path, executable: Path, warmup: int,
     with receipt.open("x", encoding="utf-8") as output:
         output.write(json.dumps({"schema_version": SCHEMA, "rows": [row]}, indent=2, sort_keys=True) + "\n")
     require(exit_code == 0 and not timed_out and not errors, "gameplay capture failed; retained failure receipt: " + row["capture_error"])
-    print(json.dumps(verify_report(read_json(report), "windows", cadence_policy), sort_keys=True))
+    print(json.dumps(verify_report(read_json(report), "windows", proof), sort_keys=True))
 
 
 def record(root: Path, receipt: Path, platform: str, executable: Path, warmup: int,
            desktop_package: Path | None = None, desktop_manifest: Path | None = None, desktop_task_id: str | None = None,
-           cadence_policy: str = "strict", macos_package: Path | None = None, macos_manifest: Path | None = None) -> None:
+           proof: str = "performance", macos_package: Path | None = None, macos_manifest: Path | None = None) -> None:
+    require(proof in PROOFS, "invalid gameplay proof selector")
     require(warmup == 180, "qualification capture requires --warmup-seconds 180; other bounds are diagnostic only")
     require(platform == ("windows" if sys.platform == "win32" else "macos" if sys.platform == "darwin" else "unsupported"), "capture must run on the named local host")
     diagnostics = {key: value for key, value in os.environ.items() if key.startswith("MC_DIAGNOSTIC_")}
@@ -1000,7 +1311,7 @@ def record(root: Path, receipt: Path, platform: str, executable: Path, warmup: i
     if desktop_package is not None:
         require(platform == "windows" and desktop_manifest is not None and desktop_task_id is not None,
                 "desktop capture requires Windows, a runtime manifest and task ID")
-        record_desktop(root, receipt, executable, warmup, before, desktop_package, desktop_manifest, desktop_task_id, cadence_policy)
+        record_desktop(root, receipt, executable, warmup, before, desktop_package, desktop_manifest, desktop_task_id, proof)
         return
     macos_runtime = None
     if platform == "macos":
@@ -1024,7 +1335,7 @@ def record(root: Path, receipt: Path, platform: str, executable: Path, warmup: i
                          "vulkan_loader": file_identity(retained_package / "lib/libvulkan.1.dylib"),
                          "moltenvk": file_identity(retained_package / "lib/libMoltenVK.dylib"),
                          "loaded_libraries": "not-observed; closure and normal launcher verified, PID mappings unavailable"}
-    command = [str(executable), *benchmark_arguments(platform, warmup, str(report))]
+    command = [str(executable), *benchmark_arguments(platform, warmup, str(report), proof)]
     started = time.monotonic()
     print(f"CAPTURE {platform}: bounded full-radius gameplay, timeout={warmup * 2 + 90}s", flush=True)
     captured_report = None
@@ -1081,7 +1392,7 @@ def record(root: Path, receipt: Path, platform: str, executable: Path, warmup: i
                     "macOS runtime inputs changed during capture")
         except (OSError, ValueError, KeyError, TypeError) as error:
             capture_error = "; ".join(filter(None, (capture_error, str(error))))
-    row = {"platform": platform, "proof_origin": "local", "source_candidate": _MATRIX.candidate_identity(root),
+    row = {"platform": platform, "proof": proof, "proof_origin": "local", "source_candidate": _MATRIX.candidate_identity(root),
            "source_input_sha256": before["source_input_sha256"], "build": before,
            "executable": (next(entry["file"] for entry in retained_runtime if entry["relative"] == "mc_main")
                           if macos_runtime else file_identity(executable)),
@@ -1096,10 +1407,10 @@ def record(root: Path, receipt: Path, platform: str, executable: Path, warmup: i
         output.write(json.dumps({"schema_version": SCHEMA, "rows": [row]}, indent=2, sort_keys=True) + "\n")
     require(process.returncode == 0 and not timed_out and not capture_error,
             "gameplay capture failed; retained failure receipt" + (": " + capture_error if capture_error else ""))
-    print(json.dumps(verify_report(read_json(report), platform, cadence_policy), sort_keys=True))
+    print(json.dumps(verify_report(read_json(report), platform, proof), sort_keys=True))
 
 
-def merge_receipts(root: Path, inputs: list[Path], output: Path, cadence_policy: str = "strict") -> dict[str, Any]:
+def merge_receipts(root: Path, inputs: list[Path], output: Path) -> dict[str, Any]:
     require(not path_entry_exists(output), "aggregate receipt already exists; select a fresh output path")
     rows = []
     for target in inputs:
@@ -1135,7 +1446,7 @@ def merge_receipts(root: Path, inputs: list[Path], output: Path, cadence_policy:
         rows.append(row)
     with output.open("x", encoding="utf-8") as receipt_file:
         receipt_file.write(json.dumps({"schema_version": SCHEMA, "rows": rows}, indent=2, sort_keys=True) + "\n")
-    return verify_receipt(root, output, cadence_policy)
+    return verify_receipt(root, output)
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -1144,8 +1455,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--receipt", type=Path, required=True)
     parser.add_argument("--candidate-commit")
     parser.add_argument("--record", choices=tuple(TARGET_HZ))
-    parser.add_argument("--merge", nargs=2, type=Path, metavar="PROOF_RECEIPT")
-    parser.add_argument("--cadence-policy", choices=CADENCE_POLICIES, default="strict")
+    parser.add_argument("--merge", nargs=4, type=Path, metavar="PROOF_RECEIPT")
+    parser.add_argument("--proof", choices=tuple(PROOFS), help="one explicitly selected capture proof")
     parser.add_argument("--executable", type=Path)
     parser.add_argument("--desktop-package", type=Path, help="Windows only: approved native runtime package for the installed desktop helper")
     parser.add_argument("--desktop-package-manifest", type=Path, help="exact relative/size/SHA256 inventory of the approved package")
@@ -1174,14 +1485,15 @@ def main(argv: Sequence[str] | None = None) -> int:
             require(not path_entry_exists(args.receipt), "output receipt already exists; select a fresh output path")
         if args.record:
             require(args.executable is not None, "--record requires --executable")
+            require(args.proof is not None, "--record requires --proof")
             record(root, args.receipt.absolute(), args.record, args.executable.resolve(strict=True), args.warmup_seconds,
                    args.desktop_package.absolute() if args.desktop_package else None,
-                   args.desktop_package_manifest.absolute() if args.desktop_package_manifest else None, args.desktop_task_id, args.cadence_policy,
+                   args.desktop_package_manifest.absolute() if args.desktop_package_manifest else None, args.desktop_task_id, args.proof,
                    args.macos_package.absolute() if args.macos_package else None,
                    args.macos_package_manifest.absolute() if args.macos_package_manifest else None)
         else:
-            results = (merge_receipts(root, [target.resolve(strict=True) for target in args.merge], args.receipt.absolute(), args.cadence_policy)
-                       if args.merge else verify_receipt(root, args.receipt.resolve(strict=True), args.cadence_policy))
+            results = (merge_receipts(root, [target.resolve(strict=True) for target in args.merge], args.receipt.absolute())
+                       if args.merge else verify_receipt(root, args.receipt.resolve(strict=True)))
             print(json.dumps({"status": "passed",
                               "platforms": results}, sort_keys=True))
         return 0

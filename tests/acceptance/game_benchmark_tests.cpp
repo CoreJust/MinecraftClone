@@ -1,17 +1,23 @@
+#include <client/render/StoneFaceCapacity.hpp>
 #include <shared/net/Message.hpp>
 #include <shared/world/World.hpp>
 
 #include <acceptance/EvidenceJson.hpp>
 #include <acceptance/GameBenchmark.hpp>
 #include <gtest/gtest.h>
+#include <vulkan/vulkan_core.h>
 
 #include <array>
 #include <chrono>
+#include <cstddef>
 #include <cstdint>
 #include <cstdlib>
+#include <exception>
 #include <expected>
 #include <memory>
 #include <optional>
+#include <ratio>
+#include <span>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -20,6 +26,360 @@
 using namespace std::chrono_literals;
 
 namespace {
+
+acceptance::GameBenchmarkPresentationTimingEvidence completePresentationTimingEvidence()
+{
+    static constexpr uint64_t SWAPCHAIN_GENERATION = 0U;
+    static constexpr uint32_t FIRST_PRESENT_ID = 1U;
+    static constexpr uint32_t ENDPOINT_PRESENT_ID = 2U;
+    static constexpr uint32_t DRAIN_PRESENT_ID = 3U;
+    return acceptance::GameBenchmarkPresentationTimingEvidence{
+        .capability_supported = true,
+        .successful_requests = {
+            {
+                .request = {
+                    .swapchain_generation = SWAPCHAIN_GENERATION,
+                    .application_present_id = FIRST_PRESENT_ID,
+                },
+                .loop_ordinal = 1U,
+                .phase = "initial-full-radius-warmup",
+            },
+            {
+                .request = {
+                    .swapchain_generation = SWAPCHAIN_GENERATION,
+                    .application_present_id = ENDPOINT_PRESENT_ID,
+                },
+                .loop_ordinal = 2U,
+                .phase = "baseline-stationary",
+            },
+        },
+        .records = {
+            {
+                .request = {
+                    .swapchain_generation = SWAPCHAIN_GENERATION,
+                    .application_present_id = ENDPOINT_PRESENT_ID,
+                },
+                .actual_present_time_ns = 2'000U,
+            },
+            {
+                .request = {
+                    .swapchain_generation = SWAPCHAIN_GENERATION,
+                    .application_present_id = FIRST_PRESENT_ID,
+                },
+                .actual_present_time_ns = 1'000U,
+            },
+            {
+                .request = {
+                    .swapchain_generation = SWAPCHAIN_GENERATION,
+                    .application_present_id = DRAIN_PRESENT_ID,
+                },
+                .actual_present_time_ns = 3'000U,
+            },
+        },
+        .polls = {
+            {
+                .scope = acceptance::GameBenchmarkPresentationPollScope::Loop,
+                .status = acceptance::GameBenchmarkPresentationPollStatus::Incomplete,
+                .vk_result = static_cast<int32_t>(VK_INCOMPLETE),
+                .returned_count = 2U,
+            },
+            {
+                .scope = acceptance::GameBenchmarkPresentationPollScope::Drain,
+                .status = acceptance::GameBenchmarkPresentationPollStatus::Records,
+                .vk_result = static_cast<int32_t>(VK_SUCCESS),
+                .returned_count = 1U,
+            },
+        },
+        .capture_endpoint = acceptance::GameBenchmarkPresentationCaptureEndpoint{
+            .request = {
+                .swapchain_generation = SWAPCHAIN_GENERATION,
+                .application_present_id = ENDPOINT_PRESENT_ID,
+            },
+            .loop_ordinal = 2U,
+        },
+        .drain_complete = true,
+        .drain_request_ids = {
+            {
+                .swapchain_generation = SWAPCHAIN_GENERATION,
+                .application_present_id = DRAIN_PRESENT_ID,
+            },
+        },
+    };
+}
+
+acceptance::GameBenchmarkPresentationTimingEvidence warmupGenerationPresentationTimingEvidence()
+{
+    static constexpr uint64_t OLD_GENERATION = 8U;
+    static constexpr uint64_t MEASUREMENT_GENERATION = 9U;
+    return acceptance::GameBenchmarkPresentationTimingEvidence{
+        .capability_supported = true,
+        .successful_requests = {
+            {
+                .request = { .swapchain_generation = OLD_GENERATION, .application_present_id = 1U },
+                .loop_ordinal = 1U,
+                .phase = "initial-full-radius-warmup",
+            },
+            {
+                .request = { .swapchain_generation = MEASUREMENT_GENERATION, .application_present_id = 1U },
+                .loop_ordinal = 2U,
+                .phase = "initial-full-radius-warmup",
+            },
+            {
+                .request = { .swapchain_generation = MEASUREMENT_GENERATION, .application_present_id = 2U },
+                .loop_ordinal = 3U,
+                .phase = "baseline-stationary",
+            },
+            {
+                .request = { .swapchain_generation = MEASUREMENT_GENERATION, .application_present_id = 3U },
+                .loop_ordinal = 4U,
+                .phase = "speed-200-movement",
+            },
+            {
+                .request = { .swapchain_generation = MEASUREMENT_GENERATION, .application_present_id = 4U },
+                .loop_ordinal = 5U,
+                .phase = "full-radius-recovery-warmup",
+            },
+            {
+                .request = { .swapchain_generation = MEASUREMENT_GENERATION, .application_present_id = 5U },
+                .loop_ordinal = 6U,
+                .phase = "recovered-stationary",
+            },
+        },
+        .records = {
+            {
+                .request = { .swapchain_generation = MEASUREMENT_GENERATION, .application_present_id = 1U },
+                .actual_present_time_ns = 2'000U,
+            },
+            {
+                .request = { .swapchain_generation = MEASUREMENT_GENERATION, .application_present_id = 2U },
+                .actual_present_time_ns = 3'000U,
+            },
+            {
+                .request = { .swapchain_generation = MEASUREMENT_GENERATION, .application_present_id = 3U },
+                .actual_present_time_ns = 4'000U,
+            },
+            {
+                .request = { .swapchain_generation = MEASUREMENT_GENERATION, .application_present_id = 4U },
+                .actual_present_time_ns = 5'000U,
+            },
+            {
+                .request = { .swapchain_generation = MEASUREMENT_GENERATION, .application_present_id = 5U },
+                .actual_present_time_ns = 6'000U,
+            },
+        },
+        .polls = {
+            {
+                .scope = acceptance::GameBenchmarkPresentationPollScope::Loop,
+                .status = acceptance::GameBenchmarkPresentationPollStatus::Incomplete,
+                .vk_result = static_cast<int32_t>(VK_INCOMPLETE),
+                .returned_count = 5U,
+            },
+            {
+                .scope = acceptance::GameBenchmarkPresentationPollScope::Drain,
+                .status = acceptance::GameBenchmarkPresentationPollStatus::Empty,
+                .vk_result = static_cast<int32_t>(VK_SUCCESS),
+                .returned_count = 0U,
+            },
+        },
+        .capture_endpoint = acceptance::GameBenchmarkPresentationCaptureEndpoint{
+            .request = { .swapchain_generation = MEASUREMENT_GENERATION, .application_present_id = 5U },
+            .loop_ordinal = 6U,
+        },
+        .drain_complete = true,
+        .drain_request_ids = {
+            { .swapchain_generation = MEASUREMENT_GENERATION, .application_present_id = 6U },
+        },
+    };
+}
+
+void changeMeasuredRequestGeneration(
+    acceptance::GameBenchmarkPresentationTimingEvidence& evidence,
+    uint64_t const generation
+)
+{
+    static constexpr uint64_t OLD_GENERATION = 8U;
+    if (!evidence.capture_endpoint.has_value()) {
+        ADD_FAILURE() << "benchmark fixture must include a capture endpoint";
+        return;
+    }
+    for (acceptance::GameBenchmarkSuccessfulPresentationRequest& request : evidence.successful_requests) {
+        if (request.phase != "initial-full-radius-warmup") {
+            request.request.swapchain_generation = generation;
+        }
+    }
+    for (acceptance::GameBenchmarkPresentationTimingRecord& record : evidence.records) {
+        if (record.request.swapchain_generation != OLD_GENERATION) {
+            record.request.swapchain_generation = generation;
+        }
+    }
+    evidence.capture_endpoint->request.swapchain_generation = generation;
+    for (acceptance::GameBenchmarkPresentationRequestId& request : evidence.drain_request_ids) {
+        request.swapchain_generation = generation;
+    }
+}
+
+TEST(GameBenchmark, AcceptsCompleteDriverHistoryWithUnorderedRecords)
+{
+    acceptance::GameBenchmarkPresentationTimingEvidence const evidence = completePresentationTimingEvidence();
+    EXPECT_TRUE(acceptance::gameBenchmarkPresentationTimingComplete(evidence));
+}
+
+TEST(GameBenchmark, AcceptsExpectedHistoryWithoutLastDrainTimestamp)
+{
+    acceptance::GameBenchmarkPresentationTimingEvidence evidence = completePresentationTimingEvidence();
+    evidence.records.pop_back();
+    evidence.polls.back().status = acceptance::GameBenchmarkPresentationPollStatus::Empty;
+    evidence.polls.back().returned_count = 0U;
+    EXPECT_TRUE(acceptance::gameBenchmarkPresentationTimingComplete(evidence));
+}
+
+TEST(GameBenchmark, RejectsZeroActualPresentationTime)
+{
+    acceptance::GameBenchmarkPresentationTimingEvidence evidence = completePresentationTimingEvidence();
+    evidence.records.front().actual_present_time_ns = 0U;
+    EXPECT_FALSE(acceptance::gameBenchmarkPresentationTimingComplete(evidence));
+}
+
+TEST(GameBenchmark, AcceptsBoundedIncompletePollWhenFinalHistoryReconciles)
+{
+    acceptance::GameBenchmarkPresentationTimingEvidence evidence = completePresentationTimingEvidence();
+    evidence.polls.front().vk_result = static_cast<int32_t>(VK_SUCCESS);
+    EXPECT_TRUE(acceptance::gameBenchmarkPresentationTimingComplete(evidence));
+}
+
+TEST(GameBenchmark, RejectsMissingExpectedDriverHistoryRecord)
+{
+    acceptance::GameBenchmarkPresentationTimingEvidence evidence = completePresentationTimingEvidence();
+    evidence.records.erase(evidence.records.begin() + 1);
+    evidence.polls.front().returned_count = 1U;
+    evidence.polls.front().vk_result = static_cast<int32_t>(VK_SUCCESS);
+    EXPECT_FALSE(acceptance::gameBenchmarkPresentationTimingComplete(evidence));
+}
+
+TEST(GameBenchmark, RejectsUnexpectedDriverHistoryRecord)
+{
+    acceptance::GameBenchmarkPresentationTimingEvidence evidence = completePresentationTimingEvidence();
+    evidence.records.push_back({
+        .request = {
+            .swapchain_generation = 0U,
+            .application_present_id = 4U,
+        },
+        .actual_present_time_ns = 4'000U,
+    });
+    ++evidence.polls.back().returned_count;
+    EXPECT_FALSE(acceptance::gameBenchmarkPresentationTimingComplete(evidence));
+}
+
+TEST(GameBenchmark, RejectsHistoryError)
+{
+    acceptance::GameBenchmarkPresentationTimingEvidence evidence = completePresentationTimingEvidence();
+    evidence.polls.front().status = acceptance::GameBenchmarkPresentationPollStatus::Error;
+    EXPECT_FALSE(acceptance::gameBenchmarkPresentationTimingComplete(evidence));
+}
+
+TEST(GameBenchmark, RejectsHistoryFromAnotherSwapchainGeneration)
+{
+    acceptance::GameBenchmarkPresentationTimingEvidence evidence = completePresentationTimingEvidence();
+    evidence.records.front().request.swapchain_generation = 8U;
+    EXPECT_FALSE(acceptance::gameBenchmarkPresentationTimingComplete(evidence));
+}
+
+TEST(GameBenchmark, AcceptsReusedPresentIdsAcrossInitialWarmupGenerations)
+{
+    static constexpr uint64_t OLD_GENERATION = 8U;
+    static constexpr uint32_t REUSED_PRESENT_ID = 1U;
+    static constexpr uint64_t OLD_GENERATION_PRESENT_TIME_NS = 1'000U;
+    acceptance::GameBenchmarkPresentationTimingEvidence evidence = warmupGenerationPresentationTimingEvidence();
+    evidence.records.insert(
+        evidence.records.begin(),
+        acceptance::GameBenchmarkPresentationTimingRecord{
+            .request = { .swapchain_generation = OLD_GENERATION, .application_present_id = REUSED_PRESENT_ID },
+            .actual_present_time_ns = OLD_GENERATION_PRESENT_TIME_NS,
+        }
+    );
+    evidence.polls.front().returned_count = 6U;
+    EXPECT_TRUE(acceptance::gameBenchmarkPresentationTimingComplete(evidence));
+}
+
+TEST(GameBenchmark, AllowsMissingHistoryOnlyForOldInitialWarmupGeneration)
+{
+    acceptance::GameBenchmarkPresentationTimingEvidence const evidence =
+        warmupGenerationPresentationTimingEvidence();
+    EXPECT_TRUE(acceptance::gameBenchmarkPresentationTimingComplete(evidence));
+}
+
+TEST(GameBenchmark, RejectsDecreasingInitialWarmupGenerations)
+{
+    static constexpr uint64_t NEWER_GENERATION = 10U;
+    acceptance::GameBenchmarkPresentationTimingEvidence evidence = warmupGenerationPresentationTimingEvidence();
+    evidence.successful_requests.front().request.swapchain_generation = NEWER_GENERATION;
+    EXPECT_FALSE(acceptance::gameBenchmarkPresentationTimingComplete(evidence));
+}
+
+TEST(GameBenchmark, RejectsMissingMeasurementGenerationWarmupHistory)
+{
+    acceptance::GameBenchmarkPresentationTimingEvidence evidence = warmupGenerationPresentationTimingEvidence();
+    evidence.records.erase(evidence.records.begin());
+    evidence.polls.front().returned_count = 4U;
+    EXPECT_FALSE(acceptance::gameBenchmarkPresentationTimingComplete(evidence));
+}
+
+TEST(GameBenchmark, RejectsMissingMeasuredGenerationHistory)
+{
+    acceptance::GameBenchmarkPresentationTimingEvidence evidence = warmupGenerationPresentationTimingEvidence();
+    evidence.records.erase(evidence.records.begin() + 1);
+    evidence.polls.front().returned_count = 4U;
+    EXPECT_FALSE(acceptance::gameBenchmarkPresentationTimingComplete(evidence));
+}
+
+TEST(GameBenchmark, RejectsGenerationChangeAtBaseline)
+{
+    static constexpr uint64_t CHANGED_GENERATION = 10U;
+    acceptance::GameBenchmarkPresentationTimingEvidence evidence = warmupGenerationPresentationTimingEvidence();
+    changeMeasuredRequestGeneration(evidence, CHANGED_GENERATION);
+    EXPECT_FALSE(acceptance::gameBenchmarkPresentationTimingComplete(evidence));
+}
+
+TEST(GameBenchmark, RejectsGenerationChangeDuringRecoveryWarmup)
+{
+    static constexpr uint64_t CHANGED_GENERATION = 10U;
+    acceptance::GameBenchmarkPresentationTimingEvidence evidence = warmupGenerationPresentationTimingEvidence();
+    if (!evidence.capture_endpoint.has_value()) {
+        ADD_FAILURE() << "recovery warmup fixture must include a capture endpoint";
+        return;
+    }
+    evidence.successful_requests[4U].request.swapchain_generation = CHANGED_GENERATION;
+    evidence.successful_requests[5U].request.swapchain_generation = CHANGED_GENERATION;
+    evidence.records[3U].request.swapchain_generation = CHANGED_GENERATION;
+    evidence.records[4U].request.swapchain_generation = CHANGED_GENERATION;
+    evidence.capture_endpoint->request.swapchain_generation = CHANGED_GENERATION;
+    evidence.drain_request_ids.front().swapchain_generation = CHANGED_GENERATION;
+    EXPECT_FALSE(acceptance::gameBenchmarkPresentationTimingComplete(evidence));
+}
+
+TEST(GameBenchmark, RejectsZeroAndDuplicatePresentIdsWithinGeneration)
+{
+    acceptance::GameBenchmarkPresentationTimingEvidence zero_id = warmupGenerationPresentationTimingEvidence();
+    zero_id.successful_requests[1U].request.application_present_id = 0U;
+    EXPECT_FALSE(acceptance::gameBenchmarkPresentationTimingComplete(zero_id));
+
+    acceptance::GameBenchmarkPresentationTimingEvidence duplicate_id = warmupGenerationPresentationTimingEvidence();
+    duplicate_id.successful_requests[2U].request.application_present_id = 1U;
+    EXPECT_FALSE(acceptance::gameBenchmarkPresentationTimingComplete(duplicate_id));
+}
+
+TEST(GameBenchmark, RejectsQualificationWithWrongRadiusBeforeStartingRuntime)
+{
+    for (std::string_view const proof : std::array{ "terrain-coverage", "performance" }) {
+        acceptance::GameBenchmarkOptions options{};
+        options.workload = acceptance::GameBenchmarkWorkload::Speed200FullRadiusRecovery;
+        options.qualification_proof = proof;
+        options.render_distance = 7U;
+        auto const result = acceptance::runGameBenchmark(options);
+        ASSERT_FALSE(result.has_value());
+        EXPECT_NE(result.error().find("fixed radius"), std::string::npos);
+    }
+}
 
 static constexpr std::array<char const*, 8U> DIAGNOSTIC_VARIABLES{
     "MC_DIAGNOSTIC_DIRECTIONAL_STONE_CULLING",
@@ -240,7 +600,10 @@ TEST(GameBenchmark, DefaultsTo256AndRejectsUnsupportedRenderDistancesBeforeLaunc
     static constexpr std::array<uint32_t, 3> INVALID_RADII{0U, 257U, 1'024U};
     EXPECT_EQ(acceptance::GameBenchmarkOptions{}.render_distance, 256U);
     for (uint32_t const radius : INVALID_RADII) {
-        auto const result = acceptance::runGameBenchmark({.render_distance = radius});
+        auto const result = acceptance::runGameBenchmark({
+            .render_distance = radius,
+            .qualification_proof = {},
+        });
         ASSERT_FALSE(result);
         EXPECT_EQ(result.error(), "render distance must be an integer chunk radius from 1 to 256");
     }
@@ -292,6 +655,7 @@ TEST(GameBenchmark, BoundsFullRadiusWarmupTimeoutAndWatchdogBudget)
 
     acceptance::GameBenchmarkOptions options{
         .workload = acceptance::GameBenchmarkWorkload::Speed200FullRadiusRecovery,
+        .qualification_proof = {},
     };
     EXPECT_EQ(acceptance::gameBenchmarkDeadline(options), 416s);
     options.workload = acceptance::GameBenchmarkWorkload::Speed200Movement;
@@ -307,36 +671,72 @@ TEST(GameBenchmark, SuccessfulRequestIntervalsIncludeFailedAttemptsAndStayWithin
             .started_offset_ns = 0U,
             .loop_duration_ns = 2U * MILLISECOND_NS,
             .terrain_phase = "baseline-stationary",
+            .terrain_near = std::nullopt,
+            .renderer_stone_face_growth = std::nullopt,
+            .diagnostic_frame_slot = std::nullopt,
+            .diagnostic_gpu_timestamp_reason = {},
+            .diagnostic_gpu_terrain_duration_ns = std::nullopt,
+            .latest_gpu_frame_duration_ns = std::nullopt,
         },
         acceptance::GameBenchmarkFrameSample{
             .presentation_succeeded = false,
             .started_offset_ns = 2U * MILLISECOND_NS,
             .loop_duration_ns = 8U * MILLISECOND_NS,
             .terrain_phase = "baseline-stationary",
+            .terrain_near = std::nullopt,
+            .renderer_stone_face_growth = std::nullopt,
+            .diagnostic_frame_slot = std::nullopt,
+            .diagnostic_gpu_timestamp_reason = {},
+            .diagnostic_gpu_terrain_duration_ns = std::nullopt,
+            .latest_gpu_frame_duration_ns = std::nullopt,
         },
         acceptance::GameBenchmarkFrameSample{
             .presentation_succeeded = true,
             .started_offset_ns = 10U * MILLISECOND_NS,
             .loop_duration_ns = 2U * MILLISECOND_NS,
             .terrain_phase = "baseline-stationary",
+            .terrain_near = std::nullopt,
+            .renderer_stone_face_growth = std::nullopt,
+            .diagnostic_frame_slot = std::nullopt,
+            .diagnostic_gpu_timestamp_reason = {},
+            .diagnostic_gpu_terrain_duration_ns = std::nullopt,
+            .latest_gpu_frame_duration_ns = std::nullopt,
         },
         acceptance::GameBenchmarkFrameSample{
             .presentation_succeeded = true,
             .started_offset_ns = 100U * MILLISECOND_NS,
             .loop_duration_ns = 2U * MILLISECOND_NS,
             .terrain_phase = "speed-200-movement",
+            .terrain_near = std::nullopt,
+            .renderer_stone_face_growth = std::nullopt,
+            .diagnostic_frame_slot = std::nullopt,
+            .diagnostic_gpu_timestamp_reason = {},
+            .diagnostic_gpu_terrain_duration_ns = std::nullopt,
+            .latest_gpu_frame_duration_ns = std::nullopt,
         },
         acceptance::GameBenchmarkFrameSample{
             .presentation_succeeded = true,
             .started_offset_ns = 1'000U * MILLISECOND_NS,
             .loop_duration_ns = 2U * MILLISECOND_NS,
             .terrain_phase = "recovered-stationary",
+            .terrain_near = std::nullopt,
+            .renderer_stone_face_growth = std::nullopt,
+            .diagnostic_frame_slot = std::nullopt,
+            .diagnostic_gpu_timestamp_reason = {},
+            .diagnostic_gpu_terrain_duration_ns = std::nullopt,
+            .latest_gpu_frame_duration_ns = std::nullopt,
         },
         acceptance::GameBenchmarkFrameSample{
             .presentation_succeeded = true,
             .started_offset_ns = 1'020U * MILLISECOND_NS,
             .loop_duration_ns = 2U * MILLISECOND_NS,
             .terrain_phase = "recovered-stationary",
+            .terrain_near = std::nullopt,
+            .renderer_stone_face_growth = std::nullopt,
+            .diagnostic_frame_slot = std::nullopt,
+            .diagnostic_gpu_timestamp_reason = {},
+            .diagnostic_gpu_terrain_duration_ns = std::nullopt,
+            .latest_gpu_frame_duration_ns = std::nullopt,
         },
     };
 
@@ -349,15 +749,41 @@ TEST(GameBenchmark, SuccessfulRequestIntervalsIncludeFailedAttemptsAndStayWithin
     EXPECT_TRUE(acceptance::gameBenchmarkSuccessfulPresentIntervals(frames, "speed-200-movement").empty());
 }
 
-TEST(GameBenchmark, RejectsFullRadiusWorkloadWithoutFullInterestBeforeRuntimeStarts)
+TEST(GameBenchmark, FrameBudgetLimitsOverBudgetTimeInsteadOfOverBudgetFrameCount)
+{
+    std::vector<acceptance::GameBenchmarkFrameSample> frames;
+    frames.reserve(1'001U);
+    for (uint32_t index = 0U; index < 999U; ++index) {
+        frames.push_back({ .loop_duration_ns = 1'000'000U });
+    }
+    frames.push_back({ .loop_duration_ns = 2'000'000U });
+    frames.push_back({ .excluded = true, .loop_duration_ns = 60'000'000'000U });
+
+    acceptance::GameBenchmarkFrameBudgetEvidence const passing = acceptance::gameBenchmarkFrameBudget(
+        frames, 1'000'000U
+    );
+    EXPECT_TRUE(passing.passed);
+    EXPECT_EQ(passing.sample_count, 1'000U);
+    EXPECT_EQ(passing.measured_time_ns, 1'001'000'000U);
+    EXPECT_EQ(passing.in_budget_time_ns, 999'000'000U);
+
+    frames[999U].loop_duration_ns = 3'000'000U;
+    acceptance::GameBenchmarkFrameBudgetEvidence const failing = acceptance::gameBenchmarkFrameBudget(
+        frames, 1'000'000U
+    );
+    EXPECT_FALSE(failing.passed);
+}
+
+TEST(GameBenchmark, RejectsInvalidRenderDistanceBeforeRuntimeStarts)
 {
     acceptance::GameBenchmarkOptions const options{
         .workload = acceptance::GameBenchmarkWorkload::Speed200FullRadiusRecovery,
-        .render_distance = 255U,
+        .render_distance = 257U,
+        .qualification_proof = {},
     };
     auto const result = acceptance::runGameBenchmark(options);
     ASSERT_FALSE(result);
-    EXPECT_EQ(result.error(), "speed-200 full-radius recovery requires render distance 256");
+    EXPECT_EQ(result.error(), "render distance must be an integer chunk radius from 1 to 256");
 }
 
 TEST(GameBenchmark, FullRadiusSequenceRequiresBothExactBarriersAndStationarySamples)
@@ -485,6 +911,30 @@ TEST(GameBenchmark, FullRadiusRecoveryExactBarrierFinishingAfterDeadlineFails)
     EXPECT_EQ(sequence.phase(), GameBenchmarkFullRadiusPhase::Failed);
 }
 
+TEST(GameBenchmark, RecoveryBarrierMustRemainCloserToTravelEndThanTravelStart)
+{
+    static constexpr shared::HeightTileKey MOVEMENT_START{ .x = 2'056, .y = 2'048 };
+    static constexpr shared::HeightTileKey MOVEMENT_END{ .x = 2'441, .y = 2'048 };
+    static constexpr shared::HeightTileKey RECOVERED_AT_DESTINATION{ .x = 2'440, .y = 2'048 };
+    static constexpr shared::HeightTileKey RECOVERED_AT_ORIGIN{ .x = 2'056, .y = 2'048 };
+    static constexpr shared::HeightTileKey WRAPPED_START{ .x = 4'095, .y = 0 };
+    static constexpr shared::HeightTileKey WRAPPED_END{ .x = 1, .y = 0 };
+    static constexpr shared::HeightTileKey WRAPPED_DESTINATION{ .x = 1, .y = 0 };
+
+    EXPECT_TRUE(acceptance::gameBenchmarkRecoveryIsCloserToMovementEnd(
+        MOVEMENT_START, MOVEMENT_END, RECOVERED_AT_DESTINATION
+    ));
+    EXPECT_FALSE(acceptance::gameBenchmarkRecoveryIsCloserToMovementEnd(
+        MOVEMENT_START, MOVEMENT_END, RECOVERED_AT_ORIGIN
+    ));
+    EXPECT_TRUE(acceptance::gameBenchmarkRecoveryIsCloserToMovementEnd(
+        WRAPPED_START, WRAPPED_END, WRAPPED_DESTINATION
+    ));
+    EXPECT_FALSE(acceptance::gameBenchmarkRecoveryIsCloserToMovementEnd(
+        MOVEMENT_START, MOVEMENT_START, MOVEMENT_START
+    ));
+}
+
 TEST(GameBenchmark, ScriptsDistinctMovementAndCapabilityWorkloads)
 {
     using acceptance::GameBenchmarkWorkload;
@@ -599,6 +1049,23 @@ TEST(GameBenchmark, CompletesResidentToVisibleReadinessAcrossMovingCenters)
     EXPECT_EQ(evidence.final_desired_tile_count, 1U);
     EXPECT_EQ(evidence.final_current_mesh_visible_count, 1U);
     EXPECT_TRUE(evidence.complete);
+}
+
+TEST(GameBenchmark, RetainsCurrentNearCoverageLossAfterLaterRecovery)
+{
+    using Clock = std::chrono::steady_clock;
+
+    acceptance::GameBenchmarkTerrainReadinessTracker tracker;
+    Clock::time_point const start{};
+    tracker.observe(fullNearWindow({ 0, 0 }, acceptance::GAME_BENCHMARK_TERRAIN_NEAR_TILE_COUNT), start);
+    tracker.observe(fullNearWindow({ 1, 0 }, 37U), start + 1s);
+    tracker.observe(fullNearWindow({ 2, 0 }, acceptance::GAME_BENCHMARK_TERRAIN_NEAR_TILE_COUNT), start + 2s);
+
+    acceptance::GameBenchmarkTerrainReadinessEvidence const evidence = tracker.evidence();
+    EXPECT_EQ(evidence.current_near_sample_count, 3U);
+    EXPECT_EQ(evidence.incomplete_current_near_sample_count, 1U);
+    EXPECT_EQ(evidence.max_missing_current_mesh_count, 188U);
+    EXPECT_FALSE(evidence.current_near_coverage_complete);
 }
 
 TEST(GameBenchmark, RejectsFarAdmissionWhileCurrentNearWorkIsPending)
@@ -784,47 +1251,4 @@ TEST(GameBenchmark, CensorsDepartedKeyAndKeepsCurrentMissingEpisodeOpen)
     EXPECT_EQ(evidence.open_mesh_episode_count, 1U);
     EXPECT_EQ(evidence.deadline_miss_count, 0U);
     EXPECT_FALSE(evidence.complete);
-}
-
-
-TEST(GameBenchmark, RecoveryBarrierMustRemainCloserToTravelEndThanTravelStart)
-{
-    static constexpr shared::HeightTileKey MOVEMENT_START{ .x = 2'056, .y = 2'048 };
-    static constexpr shared::HeightTileKey MOVEMENT_END{ .x = 2'441, .y = 2'048 };
-    static constexpr shared::HeightTileKey RECOVERED_AT_DESTINATION{ .x = 2'440, .y = 2'048 };
-    static constexpr shared::HeightTileKey RECOVERED_AT_ORIGIN{ .x = 2'056, .y = 2'048 };
-    static constexpr shared::HeightTileKey WRAPPED_START{ .x = 4'095, .y = 0 };
-    static constexpr shared::HeightTileKey WRAPPED_END{ .x = 1, .y = 0 };
-    static constexpr shared::HeightTileKey WRAPPED_DESTINATION{ .x = 1, .y = 0 };
-
-    EXPECT_TRUE(acceptance::gameBenchmarkRecoveryIsCloserToMovementEnd(
-        MOVEMENT_START, MOVEMENT_END, RECOVERED_AT_DESTINATION
-    ));
-    EXPECT_FALSE(acceptance::gameBenchmarkRecoveryIsCloserToMovementEnd(
-        MOVEMENT_START, MOVEMENT_END, RECOVERED_AT_ORIGIN
-    ));
-    EXPECT_TRUE(acceptance::gameBenchmarkRecoveryIsCloserToMovementEnd(
-        WRAPPED_START, WRAPPED_END, WRAPPED_DESTINATION
-    ));
-    EXPECT_FALSE(acceptance::gameBenchmarkRecoveryIsCloserToMovementEnd(
-        MOVEMENT_START, MOVEMENT_START, MOVEMENT_START
-    ));
-}
-
-
-TEST(GameBenchmark, RetainsCurrentNearCoverageLossAfterLaterRecovery)
-{
-    using Clock = std::chrono::steady_clock;
-
-    acceptance::GameBenchmarkTerrainReadinessTracker tracker;
-    Clock::time_point const start{};
-    tracker.observe(fullNearWindow({ 0, 0 }, acceptance::GAME_BENCHMARK_TERRAIN_NEAR_TILE_COUNT), start);
-    tracker.observe(fullNearWindow({ 1, 0 }, 37U), start + 1s);
-    tracker.observe(fullNearWindow({ 2, 0 }, acceptance::GAME_BENCHMARK_TERRAIN_NEAR_TILE_COUNT), start + 2s);
-
-    acceptance::GameBenchmarkTerrainReadinessEvidence const evidence = tracker.evidence();
-    EXPECT_EQ(evidence.current_near_sample_count, 3U);
-    EXPECT_EQ(evidence.incomplete_current_near_sample_count, 1U);
-    EXPECT_EQ(evidence.max_missing_current_mesh_count, 188U);
-    EXPECT_FALSE(evidence.current_near_coverage_complete);
 }
