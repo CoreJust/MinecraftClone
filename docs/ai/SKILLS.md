@@ -22,6 +22,12 @@ shared `$windows-build-host` skill and `windows-build` SSH alias by default.
 Keep an independent exact-revision checkout and logs. Hosted CI remains the
 release artifact gate.
 
+At aggregate start, initialize the [release report lifecycle](RELEASE_REPORTS.md)
+with the accepted ordered feature list and delivery gates. Maintain visible
+three-hour PDFs, consolidate every four periods, and remove only the managed
+folder after evidence-verified full delivery. This applies to future snapshots
+and versions.
+
 ## Aggregate execution
 
 1. Resolve the explicitly selected aggregate and inspect its plan, children and dependencies. A snapshot implementation requires an in-development snapshot. Block on unresolved product decisions; implement all already-authorized independent work first.

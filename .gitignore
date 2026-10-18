@@ -61,3 +61,6 @@ collect.py
 
 # The build-artifact pattern also matches this maintained guide on macOS.
 !docs/BUILD.md
+
+# Ephemeral release progress PDFs and their managed lifecycle state.
+docs/ai/reports/

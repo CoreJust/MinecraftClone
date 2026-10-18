@@ -10,11 +10,11 @@ Read [docs/ai/README.md](docs/ai/README.md), then only the guide and backlog ite
 
 ## Review and verification policy
 
-Until the final pre-publication gate after the requested feedback hold, use one bounded, exact-task Luna/high review batch per immutable staged candidate. Review genuine correctness findings; for corrections, send only the delta to the same reviewer and renew the receipt. Defer non-blocking cosmetic suggestions. Do not add independent-range, dual-reviewer, or higher-model reviews without a request. At final pre-minor publication after the hold, add the accumulated-change review required by [the release policy](docs/ai/RELEASES.md), and no other boundary.
+Until the final pre-publication gate after the feedback hold, use one bounded exact-task Luna/high review per immutable staged candidate. Fix correctness findings through a delta to that reviewer and renew the receipt; defer cosmetics. Add no independent-range, dual-reviewer, or higher-model reviews unless requested. At final pre-minor publication, follow [release policy](docs/ai/RELEASES.md)'s accumulated-change review.
 
-Keep one `Task-ID` trailer per commit, staged identity, automated evidence, Mac/Android acceptance, and separate user Windows runtime status; publication remains separately authorized. Honor review opt-out; deterministic/release gates still apply. After Snapshot 7, hold the minor for feedback; no automatic minor publication or another snapshot.
+Each commit has one `Task-ID` trailer. Keep Mac/Android acceptance separate from Windows runtime status; publication requires separate authority. Honor review opt-out but retain deterministic gates. After S7, hold minor feedback; no automatic minor publication or next snapshot.
 
-Maximize deterministic public-contract coverage: unit, subsystem integration, fixed-seed/replay, offscreen screenshot, and code checks. Run focused tests, formatters, and source-policy checks before final staging. Reuse receipts only when the checker confirms unchanged inputs; never skip checks or auto-bless goldens.
+Cover public contracts with unit, integration, replay, offscreen screenshot, and code checks. Run focused tests, formatters, and policy checks before staging; reuse only checker-validated receipts. Never skip checks or auto-bless goldens.
 
 ## Small context, fast execution
 
@@ -26,6 +26,8 @@ Maximize deterministic public-contract coverage: unit, subsystem integration, fi
 
 ## Delivery gates
 
+- At release start, initialize the managed report folder and ordered feature manifest. Follow [release reporting](docs/ai/RELEASE_REPORTS.md) for three-hour PDFs, fourth-period twelve-hour consolidation, and evidence-checked cleanup only after verified full delivery.
+
 - While iterating: run the affected module's focused build/tests and `python3 script/ai_check.py --fast`; the fast gate does not run the batch-wide build or CTest suite. The commit hook owns this development gate, so callers do not run a duplicate precommit wrapper.
 - Batch boundaries require one full integration gate plus batch checks before push; do not rerun per task.
 - Before reporting a snapshot or release complete, use the aggregate candidate/strict gates below and report missing platform or runtime evidence rather than substituting unit tests.
@@ -36,6 +38,4 @@ Maximize deterministic public-contract coverage: unit, subsystem integration, fi
 
 ## Code and tests
 
-Follow [code conventions](docs/CODE_CONVENTIONS.md) and surrounding style: constants `SNAKE_CASE`, types and enum values `CamelCase`, functions `camelCase`, variables/files/namespaces `snake_case`. Do not rename files just to normalize style.
-Comments explain a non-obvious contract, constraint, or algorithm, not visible syntax. Wrap either the whole expression on one line, the whole interior on one indented line, or one item per indented line; keep closing delimiters separate for multiline forms.
-One test file corresponds to one suite and one source file or tightly related unit. Test observable contracts, common usage, and relevant edge cases; avoid implementation-mirroring assertions. `using namespace` is allowed in tests. Read an available `tests` skill before changing tests.
+Follow [code conventions](docs/CODE_CONVENTIONS.md): constants `SNAKE_CASE`, types/enum values `CamelCase`, functions `camelCase`, variables/files/namespaces `snake_case`; avoid style-only renames. Comments explain non-obvious contracts, constraints, or algorithms; follow documented multiline style. Keep one test suite per file for one source or tightly related unit. Test public contracts, common usage, and relevant edge cases, not implementation details; `using namespace` is test-only. Read the `tests` skill before editing tests.

@@ -11,12 +11,18 @@ Planning tasks are not releases; see the [task hierarchy](tasks/MC-AI-0034.md).
 
 ## Finalize the plan
 
-1. Keep `baseline_commit` immutable. If prior AI tags are absent, fetch them without force using `git fetch --no-tags origin 'refs/tags/ai/*:refs/tags/ai/*'`; then run `ai_history.py collect <id>` and confirm the graph accounts for every commit and promised scope.
-2. Complete basic children before their snapshot; complete snapshots before the minor and minors before the major. Add newly discovered tasks; do not remove unfinished planned work to make closure pass.
-3. Fill `product_changes`, then `code_changes`. Use a truthful “No product behavior changed” for tooling-only work. An active snapshot records local gate evidence and `resolution_changes` without a release date; only the post-publication `done` ledger records the actual `resolved_at` date and external artifact evidence.
-4. Minor/major tasks fill `docs_review`, `environment_review`, `retrospective`, and `backlog_review`: observed issues, repairs and follow-up IDs. Reconcile README, contracts, task state and history; verify justified repairs.
-5. Run `ai_history.py finalize <id>` to reconcile actual children/history and validate metadata. Finalized means ready for local release gates, not published. Snapshot promotion accepts an active finalized snapshot; mark it done only after authorized external publication establishes its actual artifact evidence.
-6. Stage the task finalization and obtain [the required review receipts](COMMITS.md), following the [review and verification policy](../../AGENTS.md#review-and-verification-policy). Before committing, run `ai_check.py --candidate --level snapshot` (or `minor`/`major`). Candidate checks allow only dirty Git state because the reviewed change is staged; snapshot metadata and every other enabled check must pass.
+At release start, initialize the managed report folder and ordered feature
+manifest. Follow [release reporting](RELEASE_REPORTS.md) for user-visible
+three-hour PDFs, fourth-period twelve-hour consolidation, and evidence-checked
+cleanup only after verified full delivery. This applies to future snapshots
+and versions.
+
+1. Keep `baseline_commit` immutable. If AI tags are absent, fetch without force using `git fetch --no-tags origin 'refs/tags/ai/*:refs/tags/ai/*'`; run `ai_history.py collect <id>` and verify every commit and promised scope.
+2. Complete basic tasks before snapshots, snapshots before minors, and minors before majors. Add discoveries; never remove unfinished work to pass closure.
+3. Record `product_changes`, then `code_changes` (use “No product behavior changed” for tooling-only work). Active snapshots record local gates and `resolution_changes`, not a release date; only a post-publication `done` ledger records actual `resolved_at` and artifact evidence.
+4. Minor/major tasks record `docs_review`, `environment_review`, `retrospective`, and `backlog_review` with observed issues, repairs and follow-up IDs. Reconcile and verify justified README, contract, task and history repairs.
+5. Run `ai_history.py finalize <id>` to reconcile children/history. Finalized means ready for gates, not published. Mark a snapshot done only after authorized publication supplies artifact evidence.
+6. Stage finalization and obtain [required review receipts](COMMITS.md) under the [review policy](../../AGENTS.md#review-and-verification-policy). Before committing, run `ai_check.py --candidate --level snapshot` (or `minor`/`major`). Only staged Git dirt is allowed; metadata and all other enabled checks must pass.
 
 ## Enabled checks
 
@@ -42,14 +48,14 @@ pass or treat an unavailable tool as a successful check.
 
 ## Publish
 
-Use [the version/branch procedure](../VERSION_CONVENTION.md). Finalization and `ai-main` promotion commits use the aggregate task and need Luna review. Validate the merge candidate before committing and require local qualification plus exact promotion authenticity before tagging. Failed validation blocks promotion; never fabricate receipts or release dates.
+Use the [version/branch procedure](../VERSION_CONVENTION.md). Finalization and `ai-main` promotion commits use the aggregate task and Luna review. Validate the merge candidate, local qualification and promotion authenticity before tagging; failures block promotion.
 
-Local commits/tags and remote publication are distinct. A request to create planning tasks does not authorize either release execution or remote mutation. A later release request authorizes its scoped local workflow; push/releases need the requested external authority. After actual publication, make an `ai-dev` metadata ledger commit with the aggregate `Task-ID`, real published refs/artifacts, `resolved_at`, and `done` status. The snapshot heading date is bound to the finalized source commit's timestamp in `Europe/Belgrade` and stays fixed through promotion. The tag date is derived from the immutable promotion commit's timestamp in that timezone; `resolved_at` records the actual publication date. This record follows the immutable tag and is excluded from the next snapshot's basic-task collection. Snapshot 7 uses the same ledger record; its minor remains active and unfinalized until requested feedback, without creating another snapshot.
+Planning tasks do not authorize release execution or remote mutation. A later release request authorizes only its scoped local workflow; push or release needs requested external authority. Commits/tags do not authorize remote publication. After authorized publication, make an `ai-dev` ledger commit with aggregate `Task-ID`, actual refs/artifacts, `resolved_at` and `done`. The snapshot date is fixed from the finalized source commit; the tag date uses the promotion commit, both in `Europe/Belgrade`. Keep the ledger after the immutable tag, outside the next snapshot's task set. Snapshot 7's minor remains active until requested feedback; do not create S8.
 
 Run focused checks per task and one full integration gate per batch. Launch the normal macOS candidate for hands-on acceptance before final qualification. Approval does not authorize publication, replace evidence or close the release. S7's minor remains held; do not start S8.
 
 Agents publish only `ai-dev` and `ai-main`; `dev` and `main` remain untouched. Canonical tags are single-use and never CI transport. Exact `ai-dev` commits may be dispatched.
 
-Late assets may be attached with exact source, provenance and hashes. An authorized incomplete prerelease lists every pending platform, asset or check and remains active. Never silently replace accepted macOS bytes, move an immutable tag, or misstate source identity. If an immutable tag locks source that cannot satisfy the release contract, promote the corrected source and create the next unused `-rN` revision tag for that same snapshot; retain the original release as a superseded prerelease. Each revision tag is immutable and may be published only once. Shared/gameplay changes invalidate affected acceptance. `done` waits for all required artifacts and runtime evidence; missing evidence is never inferred.
+Attach late assets only with exact source, provenance and hashes. An authorized incomplete prerelease lists every pending platform/asset/check and stays active. Never replace accepted Mac bytes, move an immutable tag or misstate source identity. If tagged source cannot satisfy the contract, promote a correction under the next unused immutable `-rN` tag and retain the original as superseded. Shared/gameplay changes invalidate affected acceptance; `done` requires every artifact and runtime receipt.
 
-After each authorized snapshot publication, verify the exact tag/signing and asset checksums against the accepted candidate. Replay the macOS artifact only when the published bytes differ, diagnosis requires it, or the user asks; the pre-publication hands-on check remains the normal play checkpoint. Do not auto-publish a minor or invent another snapshot during the post-Snapshot-7 feedback hold.
+After publication, verify exact tag/signing and asset hashes. Replay Mac only for changed bytes, diagnosis or user request; the normal play checkpoint is pre-publication. Do not auto-publish the minor or create another snapshot during the S7 feedback hold.

@@ -1099,6 +1099,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         ("docs", [sys.executable, "script/ai_docs.py", "check"], 60, True),
         ("backlog", [sys.executable, "script/ai_tasks.py", "check"], 60, True),
         ("current-plan", [sys.executable, "script/ai_plan.py", "check"], 60, True),
+        ("release-reports", [sys.executable, "script/ai_release_reports.py", "check-state"], 30, False),
         ("diff-working", ["git", "diff", "--check"], 30, False),
         ("diff-cached", ["git", "diff", "--cached", "--check"], 30, False),
     ]

@@ -48,6 +48,7 @@ class AiCheckTests(unittest.TestCase):
             "script/ai_docs.py": "raise SystemExit(0)\n",
             "script/ai_tasks.py": "raise SystemExit(0)\n",
             "script/ai_plan.py": "raise SystemExit(0)\n",
+            "script/ai_release_reports.py": "raise SystemExit(0)\n",
             "publish.py": (
                 "import os\n"
                 "if os.environ.get('AI_CHECK_SOURCE_FAILURE'):\n"
@@ -76,6 +77,19 @@ class AiCheckTests(unittest.TestCase):
 
     def tearDown(self):
         self.temp_dir.cleanup()
+
+    def test_fast_gate_rejects_invalid_release_report_state(self):
+        (self.root / "script/ai_release_reports.py").write_text(
+            "print('retained report hash mismatch')\nraise SystemExit(1)\n",
+            encoding="utf-8",
+        )
+        result = subprocess.run(
+            [sys.executable, str(SCRIPT), "--root", str(self.root), "--fast"],
+            text=True, capture_output=True,
+        )
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("FAIL release-reports", result.stdout)
+        self.assertIn("retained report hash mismatch", result.stdout)
 
     def git(self, *args):
         return subprocess.run(["git", *args], cwd=self.root, text=True, capture_output=True, check=True)
@@ -140,7 +154,7 @@ class AiCheckTests(unittest.TestCase):
     def test_fast_runs_each_required_phase(self):
         result = self.run_check("--fast")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        for phase in ("docs", "backlog", "current-plan", "python-tests", "diff-working", "diff-cached"):
+        for phase in ("docs", "backlog", "current-plan", "release-reports", "python-tests", "diff-working", "diff-cached"):
             self.assertIn(f"PASS {phase}", result.stdout)
             self.assertTrue((self.root / "build/ai-checks" / f"{phase}.log").is_file())
 
@@ -801,7 +815,7 @@ class AiCheckTests(unittest.TestCase):
         self.assertIn(("extra-matrix", expected_candidate, 7, False), commands)
         self.assertEqual(
             [name for name, *_ in commands],
-            ["docs", "backlog", "current-plan", "diff-working", "diff-cached", "extra-matrix"],
+            ["docs", "backlog", "current-plan", "release-reports", "diff-working", "diff-cached", "extra-matrix"],
         )
 
         commands.clear()
@@ -821,7 +835,7 @@ class AiCheckTests(unittest.TestCase):
         self.assertIn(("extra-matrix", expected_strict, 7, False), commands)
         self.assertEqual(
             [name for name, *_ in commands],
-            ["docs", "backlog", "current-plan", "diff-working", "diff-cached", "extra-matrix"],
+            ["docs", "backlog", "current-plan", "release-reports", "diff-working", "diff-cached", "extra-matrix"],
         )
 
         config[0]["when"] = "later"
@@ -871,7 +885,7 @@ class AiCheckTests(unittest.TestCase):
             ])
 
         self.assertEqual(result, 1)
-        self.assertEqual(ran, ["docs", "backlog", "current-plan", "diff-working", "diff-cached", "extra-local-proof"])
+        self.assertEqual(ran, ["docs", "backlog", "current-plan", "release-reports", "diff-working", "diff-cached", "extra-local-proof"])
         self.assertIn("receipt-python-tests", output.getvalue())
         self.assertIn("receipt-build", output.getvalue())
         self.assertIn("receipt-ctest", output.getvalue())
