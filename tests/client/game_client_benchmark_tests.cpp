@@ -7,6 +7,7 @@
 #include <shared/world/World.hpp>
 
 #include <core/net/Address.hpp>
+#include <core/net/Event.hpp>
 
 #include <gtest/gtest.h>
 

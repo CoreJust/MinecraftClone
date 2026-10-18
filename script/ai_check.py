@@ -522,6 +522,7 @@ def environment_fingerprint(environment: dict[str, str]) -> str:
         "PWD", "OLDPWD", "SHLVL", "_", "GIT_DIR", "GIT_COMMON_DIR",
         "GIT_INDEX_FILE", "GIT_PREFIX", "GIT_WORK_TREE",
         "GIT_AUTHOR_DATE", "GIT_AUTHOR_EMAIL", "GIT_AUTHOR_NAME", "GIT_EDITOR",
+        "CODEX_TOOL_CALL_ID",
     }
     values = {key: value for key, value in environment.items() if key not in ignored}
     if "GIT_EXEC_PATH" not in values:
@@ -680,6 +681,18 @@ def project_version_arguments(root: Path) -> tuple[str, str]:
         f"{value('MAJOR_VERSION_NAME')}:{value('MINOR_VERSION_NAME')}",
         f"{fields['epoch']}.{fields['major']}.{fields['minor']}:{fields['patch']}",
     )
+
+
+def require_s7_candidate(root: Path) -> None:
+    try:
+        version = project_version_arguments(root)
+        manifest = json.loads((root / "vcpkg.json").read_text(encoding="utf-8"))
+        valid = version == ("EarlyDev:Initiation", "0.1.0:7") and isinstance(manifest, dict) \
+            and manifest.get("version-string") == "0.1.0"
+    except (OSError, ValueError) as error:
+        raise ValueError(f"S7 selector cannot read actual candidate version: {error}") from error
+    if not valid:
+        raise ValueError("S7 selector does not match the actual candidate version")
 
 
 def publisher_failure_names(output: str) -> set[str]:

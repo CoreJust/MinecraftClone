@@ -1,8 +1,29 @@
 [
   {
+    "name": "sanitizer-static-analysis-s7",
+    "enabled": true,
+    "levels": ["snapshot"],
+    "command": [
+      "{python}",
+      "script/ci/verify_analysis_gate.py",
+      "--root",
+      "{root}",
+      "--receipt",
+      "{root}/build/ai-checks/analysis-aggregate.json",
+      "--s7-windows-secondary",
+      "--candidate-commit",
+      "{proof-candidate-commit}"
+    ],
+    "timeout": 60,
+    "reason": "For Snapshot 7 only, requires every Mac and Linux analysis row against the release candidate and current row inputs; Windows MSVC ASan and /analyze remain explicitly deferred.",
+    "when": "release",
+    "proof": true,
+    "reuse": false
+  },
+  {
     "name": "sanitizer-static-analysis",
     "enabled": true,
-    "levels": ["basic", "snapshot", "minor", "major"],
+    "levels": ["minor", "major"],
     "command": [
       "{python}",
       "script/ci/verify_analysis_gate.py",
@@ -14,7 +35,7 @@
       "{proof-candidate-commit}"
     ],
     "timeout": 60,
-    "reason": "Validates the complete local analyzer aggregate against the release candidate and current row inputs.",
+    "reason": "Validates the complete local analyzer aggregate, including Windows MSVC ASan and /analyze, against the release candidate and current row inputs.",
     "when": "release",
     "proof": true,
     "reuse": false
@@ -30,11 +51,14 @@
       "{root}",
       "--receipt",
       "{root}/build/ai-checks/gameplay-aggregate.json",
+      "--s7-windows-secondary",
+      "--s7-cadence-exception",
+      "EarlyDev0.1.0-snapshot7",
       "--candidate-commit",
       "{proof-candidate-commit}"
     ],
     "timeout": 60,
-    "reason": "Requires four source-bound local Release proofs: radius256 terrain coverage and radius128 stable120Hz performance on both Mac and Windows; physical scanout remains unavailable and500FPS is a later target.",
+    "reason": "Snapshot 7 only: requires source-bound Mac Release proofs for radius256 coverage and radius128 cadence; the documented user-approved Mac cadence exception retains failed metrics, Windows is deferred, and minor/major checks remain strict.",
     "when": "release",
     "proof": true,
     "reuse": false

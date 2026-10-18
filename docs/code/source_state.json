@@ -2,7 +2,7 @@
   "modules": [
     {
       "guide": "docs/ACCEPTANCE.md",
-      "guide_sha256": "2e82fdee33541d1713f666548cf3ebbd3946c46ec5a9ff8c771a515ba010bf5d",
+      "guide_sha256": "49a313efa177c3ee5585bed8c708af990e29cdd8d49f8b327efa5a3e498ee39d",
       "id": "acceptance",
       "sources": [
         "src/acceptance/CMakeLists.txt",
@@ -51,11 +51,11 @@
         "tests/android/input_state_tests.cpp",
         "tests/android/input_tests.cpp"
       ],
-      "sources_sha256": "6bcf2b70766eccc36facfd23fa70e9584d6ba6533a59db986764d0a533f4a08d"
+      "sources_sha256": "303ccfd2d68092ee990ae0652ff92777aee655447ee0672c40c6e28b0b0faede"
     },
     {
       "guide": "docs/BUILD.md",
-      "guide_sha256": "5c0770458b301081ebfca50ebb7c1bb0a3e99cd70c434a0ac3af38261e209157",
+      "guide_sha256": "3c19c66d3e67bd931868fb30dc05f4606b9cd45278e182df029053af239c1989",
       "id": "build",
       "sources": [
         ".agents/skills/backlog/SKILL.md",
@@ -183,7 +183,7 @@
         "vcpkg-configuration.json",
         "vcpkg.json"
       ],
-      "sources_sha256": "2a785801d823b4117c809c97ee956180803ecdc3d3960988e80d61410be08b68"
+      "sources_sha256": "03ae78722bc38eb705d32d236733a84d4d9ae801ec1bf60299548c46825b0f8c"
     },
     {
       "guide": "docs/code/CORE.md",
@@ -220,7 +220,7 @@
     },
     {
       "guide": "docs/code/GAMEPLAY.md",
-      "guide_sha256": "70e0c39643e5e2a0d3128e863d230bb3f51666a4b0209feab7cd0eeb888475ea",
+      "guide_sha256": "99d5f017d417ee49d2c793f6dfaee19d28eea88d7246cbd32936c76c4b5dbd81",
       "id": "gameplay",
       "sources": [
         "src/client/BotClient.cpp",
@@ -311,11 +311,11 @@
         "tests/core/world_generation_scheduler_tests.cpp",
         "tests/core/world_generation_tests.cpp"
       ],
-      "sources_sha256": "9dce1390bfad8661d2e5c946c38a5d8f72ddf5f0cc61be1fefa1b631d04547e3"
+      "sources_sha256": "f2cf771d7f1ca22a7cadaba7042ba3ceb009b62439285852283e5f60928b95de"
     },
     {
       "guide": "docs/code/RENDERING.md",
-      "guide_sha256": "c1ad4e3b52020d8af21bb7b559f3074edc67c83297ab3c9d50404b8d60125fb9",
+      "guide_sha256": "82faf2d315b774729187e1a9c830e333e7d087fe744055a5f3921b71e7dbef5b",
       "id": "rendering",
       "sources": [
         "src/client/CMakeLists.txt",
@@ -397,7 +397,7 @@
         "tests/testsupport/include/testsupport/AdverseTransport.hpp",
         "tests/testsupport/include/testsupport/ImageComparison.hpp"
       ],
-      "sources_sha256": "6d14856316a89530d2d19ee6d0c321c20925febe816bacf47cb05182c1f91a84"
+      "sources_sha256": "b2ab30dd635c4fe6d9120dffb995b949fff5ad22165204d9bbb1276660ae209e"
     }
   ],
   "version": 1

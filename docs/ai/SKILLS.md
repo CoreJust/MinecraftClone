@@ -20,15 +20,17 @@ Lookup commands are read-only. `ai_plan.py implement ... --prepare` only prepare
 For native Windows builds, tests, inspection, and authorized playtests, use the
 shared `$windows-build-host` skill and `windows-build` SSH alias by default.
 Keep an independent exact-revision checkout and logs. Hosted CI remains the
-release artifact gate.
-
-At aggregate start, initialize the [release report lifecycle](RELEASE_REPORTS.md)
-with the accepted ordered feature list and delivery gates. Maintain visible
-three-hour PDFs, consolidate every four periods, and remove only the managed
-folder after evidence-verified full delivery. This applies to future snapshots
-and versions.
+optional artifact-build fallback only; build packages locally and upload them.
+The [release policy](RELEASES.md) requires local qualification, not hosted CI.
 
 ## Aggregate execution
+
+At aggregate start, initialize the [release report lifecycle](RELEASE_REPORTS.md)
+with its accepted, ordered feature list and delivery gates. Maintain the
+three-hour PDF cadence throughout execution, consolidate every four periods,
+and include a short user-facing report at each checkpoint. At genuine full
+delivery, verify the evidence receipt and remove only that managed report
+folder. This applies to future snapshots and versions, not only S7.
 
 1. Resolve the explicitly selected aggregate and inspect its plan, children and dependencies. A snapshot implementation requires an in-development snapshot. Block on unresolved product decisions; implement all already-authorized independent work first.
 2. Expand uncovered product scope into basic tasks before implementing it. Assign work to the snapshot that will deliver it. Complete dependency-ready tasks through the `implement` skill. Follow [model routing](MODELS.md); use one coordinator, short worker packets and focused checks during iteration.

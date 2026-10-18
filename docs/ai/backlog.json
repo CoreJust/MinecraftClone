@@ -1501,8 +1501,8 @@
       "MC-AI-0037"
     ],
     "acceptance": "Deliver immutable generation-tagged hard/soft permissions for all, players, mobs, technical entities, per-kind, explicit-member and selector groups; namespace mod/command permission keys, defer world subjects, and cover movement, flight/collision, blocks, inventory, invincibility, commands, and mode presets. Use CoreLang 0.1.3.1 (documented 0.1.3.3 maintenance only), verify interpreter/JIT parity, and prepare kernels outside physics ticks. Test latency, loss, jitter, freezes, reordering and duplication. Provide a 29/16 × 10/16 × 10/16 player, 16-color palette, and first/rear-third/front-third views. Keep radius-256 terrain position-driven and camera-independent; derive LOD from projected face area ≤2 px². Supply four distinct, fully loaded, inspected 2560×1440 Mac screenshots with prominent labels centered below HUD: (1) third-person central spike at radius72, about30% closer and slightly lower but elevated, with full spike, most first ring, terrain beyond and unobscured player; (2) one trench view near first spike; (3) mountain climb; (4) first-person at X/Z0. Follow the explicit16October release boundary: prove complete radius256 terrain separately from stable120FPS at100+chunks on the primary Mac target for this S7 release, using a radius128 performance proof with99.8percent stability accounting. Keep500FPS as a later target, not a claimed S7 result. Pass required Mac runtime and platform/MC-AI-0249 gates; include CoreCpp MC-AI-0056, 0057 and 0240. Android needs local tests, basic runtime, and a GitHub build artifact only; Linux is analysis-only, not a supported game target. Release S7, hold the minor for feedback, and do not start S8. Final current-source platform qualification and separate Mac R256/R128 proofs belong here under0465, not as repeated basic-commit gates. For S7 only, the user temporarily defers Windows matrix/build/artifact/proofs; these are not passed. All Mac/Android requirements remain. Basic implementation closure is not release qualification.",
-    "evidence": "v23 source input4993e9be08a3c9f67aacc2a7075062f592500375a4596134b056d44070fe240b: Mac R256 PASS230.040313s. R128 capture-v3 was observer-invalidated; the later normal v4 run had valid observation but strictly failed movement cadence:2/721 lost slots,119.666347Hz below119.76Hz,76.688s. No strict Mac FPS pass is claimed. Root reports Mac ASan/LSan PASS429.279s, UBSan PASS228.445s, TSan PASS409.287s; Linux analysis-only LSan/MSan each350PASS/1skip. Windows is user-deferred for S7, not passed. Required Mac/Android and aggregate release gates remain open. Full inherited context remains in /Users/core-just/.codex/task-evidence/s7-source-commit-ready-e-20261018/0458-metadata-v2/context/canonical-0038.json; no release is claimed.",
-    "blocker": "Mac R128 normal v4 strict cadence failed:2/721 movement slots lost and119.666347Hz below119.76Hz. Required Mac/Android qualification and final aggregate gates/artifacts remain open. Windows is temporarily secondary and deferred by explicit user instruction for S7. No release, minor publication or S8 claim.",
+    "evidence": "Preserved v26 qualification: seven Mac and two analysis-only Linux rows plus reduced Android local/basic runtime passed for native input c913634d. Later valid normal Mac captures prove R256 complete205861tiles, raw0fcd07d45e8bd33d057f70af4ebe8225e77e70d78752600c21e14f8ba6f5909a; R128performance FAIL baseline115.667150Hz130/3601lost, movement119.266339Hz22/3602lost, recovery119.832646Hz5/3601lost. Mac unlocked; earlier idle-screen-saver lock cause verified and active runs use bounded keep-awake. Approved shared guard repair installed/tested; M3 maintenance tagged9840659 under canonical ai-dev/ai-main with Git and GitHub API readback. New current-source changes0469 address user-observed broad-radius travel gaps; diagnostic shows four delivery slots full99.97percent, only2264.83newtiles/s, workers idle. ACKflush regression RED thenGREEN,37GameClient tests pass; losslessv14codec16tests pass; new byte-reserve regression passes, six legacy fixed-four fixture assumptions are being renewed. These changes invalidate affected v26 native receipts until renewed; no S7release or current performance PASS. Task0470 adds user-required3h/12hPDFreporting. Windows remains untouched/deferred, minor hold and noS8.",
+    "blocker": "No missing user authorization currently blocks local progress. Open product defects: broad requested-radius terrain coverage during x200 travel and unchanged R128120Hz99.8percent performance. Current-source qualification, exact review, promotion and release artifacts remain unfinished. Mac is unlocked; M3 publication and shared repair are complete, not blockers.",
     "owner": "Codex",
     "level": "snapshot",
     "parent": "MC-AI-0033",
@@ -1511,7 +1511,7 @@
     "complexity": "high",
     "created_at": "2026-09-09",
     "resolved_at": "",
-    "resolution_changes": "Implemented accepted S7 gameplay and CoreCpp runtime scope; repaired local-first qualification, relevant-input receipt reuse, foreign-platform provenance, deterministic transport audio injection, shared Android launcher and automatic complete per-TU analysis. GitHub builds artifacts only, with one canonical-tag trigger. Snapshot remains unreleased pending final gates and exact artifacts.",
+    "resolution_changes": "Implemented S7 gameplay/runtime scope and local qualification tooling. Tests, analyzers, runtime checks and preferred package builds are local; upload release files to GitHub. No automatic Actions triggers; manual artifact-only fallback is optional, never a gate. Snapshot remains unreleased pending exact-source gameplay, qualification and artifacts.",
     "plan": [
       "Complete authoritative movement, immutable permissions, and cross-client acceptance; keep policy compilation outside physics ticks.",
       "Finish player/views, adverse networking, camera-independent terrain/LOD, diagnostics, platform and analysis gates, captures, and S7 publication; then hold the minor for feedback."
@@ -1525,17 +1525,17 @@
       "Use CoreLang 0.1.3.1 with the permitted maintenance package; integrate the CoreCpp client, server, renderer, accepted runtime subsystems, and contract tests.",
       "Implement permission-backed modes, authoritative movement/collision, three player views, camera-independent radius-256 terrain, projected-area LOD, and adverse-network recovery.",
       "Harden macOS and Android launch/package flows, Windows fixtures, dependency pins, cache invalidation, and exact-device emulator guards; keep package identities isolated.",
-      "Require local desktop sanitizer/static-analysis qualification with relevant-input evidence reuse and exact release authenticity; GitHub only builds artifacts. Android requires local tests/basic runtime/APK, with no hosted HWASan gate. Linux remains analysis-only, not a game target. MC-AI-0434 records the owner's superseding workflow scope.",
+      "Require local desktop sanitizer/static-analysis qualification with relevant-input evidence reuse and exact release authenticity. Build packages locally and upload them; no GitHub qualification or automatic Actions jobs. Android requires local tests/basic runtime/APK, with no hosted HWASan gate. Linux remains analysis-only, not a game target. MC-AI-0434 and MC-AI-0463 record the owner's superseding workflow scope.",
       "Add focused regressions for renderer/streaming cadence, runtime executors/audio, diagnostics, and user-inspected labeled Mac captures; retain exact failure evidence.",
       "Document one-client launch behavior, explicit screenshot framing, the release evidence boundary, and the evidence-backed ten-day hindsight review."
     ],
     "baseline_commit": "0514890690c10d80b7475fd0b76204e800948db3",
     "commits": [],
     "finalized": false,
-    "retrospective": "Historical hindsight reports preserve exact failures and elapsed calendar time, not invented work hours or a two-day counterfactual. Confirmed delays include whole-commit evidence invalidation, duplicated gates, late setup preflight, hosted retry chains, buffered progress and repeated local invocation defects. The12October follow-up records moving-near coverage and reduced-input x200 gaps, runaway read-only queries, omitted dependency/Python/tool pins, incorrect receipt/build-root binding, and obsolete ASan row deadline. Qualification rules now require complete preflight, bounded owned processes, retained raw diagnostics, distinct source/dependency identities and checker-validated scoped evidence reuse. MC-AI-0442 fixes streaming and workload coverage;0443 fixes analyzers;0444 repairs only ASan budget. Original failures remain preserved; no partial suite or capture substitutes for release acceptance.",
+    "retrospective": "Historical reports preserve exact failures and calendar time, not invented work hours or a two-day counterfactual. Confirmed delays include whole-commit invalidation, duplicated gates, late preflight, hosted retries, buffered progress and invocation defects. The12October follow-up also records moving-near/x200 gaps, runaway queries, missing pins, receipt/build-root mismatches and obsolete ASan deadlines. Repairs require bounded processes, retained raw diagnostics, distinct identities and checker-validated scoped reuse. MC-AI-0442 covers streaming/workloads;0443 analyzers;0444 ASan budget. Partial checks never substitute for release acceptance.",
     "docs_review": "Visually checked the four distinct committed 2560x1440 images. The central-spike scene shows the full landform, most of the first ring, terrain beyond it, and an unobscured player; its larger label is centered below the HUD. The other files are distinct trench/first-spike, mountain-climb, and first-person origin scenes. MC-AI-0398 records central SHA-256 09f367efe433ee001de7157fe426d0e924690c7f35658bb92835e699d06286af and the unchanged hashes of the other three images.",
     "environment_review": "Confirmed sandbox/native Launch Services views differ: zero versus 635 registered bundles. Native AudioUnit callback succeeds outside the scoped sandbox boundary; healthy system cache was not reset. Isolated pinned CoreCpp audio start/play/stop reproduces 376B Apple-framework exit allocations; owned 37B leak remains detectable. Transport tests use existing audio injection; production audio and suppressions unchanged. LLVM MSan uses upstream-supported system unwinder and process-local offline symbolization. All local qualification environments retain exact tools, SDK resources and dependency hashes. No global installs or emulator replacement.",
-    "backlog_review": "History at bdfed253 accounts for198 completed reachable basic children. The additional MC-AI-0445 fixes the measured Git hook execution-environment reuse boundary, with focused tests passed and a separate task commit pending; no accepted product scope is dropped. Aggregate proof, runtime/package/publication gates remain open; minor feedback hold and noS8 remain mandatory."
+    "backlog_review": "All222 planned basic children are finalized and mapped to actual Task-ID commits by ai_history finalize. No accepted product scope is dropped.0038 retains current-source qualification, gameplay, review and publication; the temporary Windows-secondary exception does not waive Mac/Android gates or alter CoreLang support. Minor feedback hold and noS8 remain mandatory."
   },
   {
     "id": "MC-AI-0039",
@@ -15749,7 +15749,7 @@
     "milestone": "ED-010-S7",
     "depends_on": [],
     "acceptance": "Reproduce the rejected normal full-radius workload and distinguish source residency, current meshes, committed renderer coverage, backlog and frame cost. Repair confirmed causes of persistent full-radius gaps and pathological frame cost without lowering distance, weakening visual LOD, or bypassing position-driven coverage. Add production full-radius stationary/repeated-x200-movement regression with truthful completion and timing evidence; retain current-near checks separately. Renew affected platform/runtime gates before publication.",
-    "evidence": "Native patch replay matches immutable tree772daa8d8d5532115bc1562dc0b46867b3fe9438. Focused production regressions and combined99-test native suite passed (0452combined receipt). Exact205861 current meshes and empty queues before/after x200 passed repeated Mac runs; latest998af specimen initial130.065s/recovery145.979s. Performance remains55.26/114.47Hz and is not accepted. Affected full platform qualification and Windows hands-on remain0038 publication gates; retained failed runs unchanged.",
+    "evidence": "Committed d698fb5ba9d4ec0f56db3fb0f8d04e7c531597d8 with exact-task staged and committed review. Focused53 regressions pass oncombined998af; full Mac635 native suite passes. Repeated exact205861 initial/recovered coverage passes onMac. Windows998af failed180.048s initialwarmup atphysicalarena boundary; newMC-AI-0453 ownsconfirmedoldrenderer growth attribution/repair. Parent0038 runtime/performance/platform qualification remainsopen; no releaseclaim.",
     "blocker": "",
     "owner": "Codex",
     "level": "basic",
@@ -15759,7 +15759,7 @@
     "complexity": "medium",
     "created_at": "2026-10-13",
     "resolved_at": "2026-10-13",
-    "resolution_changes": "Bound normal intake and per-key retirement; count server packet operations and cache obsolete ordering; add exact full-radius barriers, production x200 input, phase timing and failed-attempt evidence.",
+    "resolution_changes": "Bound intake, per-key retirement and packet-operation budgets; cache obsolete ordering and record exact fullradius barriers, all stationary attempts and attributable phase costs.",
     "plan": [
       "Clarify acceptance and implementation steps.",
       "Collect full-interest coverage and timing attribution at representative normal-play state; establish failing production regressions before narrow pipeline/renderer repairs; verify full-radius warmup and fast-travel recovery rather than early partial-loading samples."
@@ -15788,7 +15788,7 @@
     "milestone": "ED-010-S7",
     "depends_on": [],
     "acceptance": "Restore only verified hook-injected Git executable-path prefixes, accounting for MSYS path translation without removing unrelated PATH entries. Actual Mac commit/merge/push hooks reuse unchanged caller receipts. On Windows, legitimate remaining shell PATH changes must invalidate receipts and run checks rather than force reuse; actual native Git hook tests must pass with this fail-closed contract. Preserve tool and caller-PATH drift invalidation and do not rerun native matrices solely for hook scripts.",
-    "evidence": "Frozen candidate3 archive accae4459599a2cfe74dfa903de85366d4b4dd72fdc0cc8112215868a96d646a passed local real-hook3/3 and module68/68. Windows Git2.55.0/Python3.13.7 seven native cases pass191.053s/exit0; log SHA256cc3e7561d5fcbeea44d6ad075c6d4748f11dd2e6c22dae7da8dc3cc17fa44bdb. All nonempty caller PATH directories retain order and duplicates; shell syntax/diff checks pass. Earlier failures retained.",
+    "evidence": "Committed 9ee4d075641941b6451e2bf65ebcaf00b37bdb26 in the batch assembly worktree. Independent staged and committed review approved unchanged tree d15f293ee839312bc1a0e7f50956fa6f792c72b9; full hook gate 640 Python tests passed in81.391s with1skip. Frozen candidate3 accae4459599a2cfe74dfa903de85366d4b4dd72fdc0cc8112215868a96d646a passed local3/3 real-hooks and68/68 module; Windows seven native cases passed191.053s exit0, log SHA256cc3e7561d5fcbeea44d6ad075c6d4748f11dd2e6c22dae7da8dc3cc17fa44bdb. Earlier failures retained.",
     "blocker": "",
     "owner": "Codex",
     "level": "basic",
@@ -15824,7 +15824,7 @@
     "milestone": "ED-010-S7",
     "depends_on": [],
     "acceptance": "Preserve all position-selected resident keys, installed geometry, textures and quality. Build directional spans/envelopes from final installed opaque quads including seams and reject only batches provably back-facing for the current wrapped camera image; retain ambiguous and plane-touching cases. Keep direct and indirect rendering consistent, validate against an exhaustive per-quad facing oracle and offscreen image/depth equivalence, and measure submitted-face reduction plus CPU/presentation cost. No unsupported120FPS claim.",
-    "evidence": "Six-file immutable patch881944e32ce76259de1fba36396d3e01fcb5a66471063191949429cf36339f8f reproduced tree3ec778bea3cdc680b4ee205d2ee5a52694cc9958 native paths. Exact per-quad draw-index oracle10/10, offscreen texture/player-depth equivalence3/3, publication/arena smoke5/5 passed; final combined source85/85 focused tests and Release build passed. Diagnostic directional-on reduced submittedquads12504422 to8415971 with resident41922484 unchanged; baseline improved roughly32 to48 requests/s. No120Hz or releaseclaim; phase/LOD changes are separate tasks.",
+    "evidence": "Committed eb28dffd1ee0cfde74afaef295c138fa99dbbcf9 in task assembly; exact staged and committed independent approvals retained /private/tmp/mc-s7-0448-review.K4u9Py/adversarial. Original oracle10/render parity3/upload-arena5 checks passed. Additional reviewer sanitizer runtime incomplete and excluded; process termination verified. Development docs/source gates pass. Later combined99 native checks pass; final platform/performance qualification remains separate.",
     "blocker": "",
     "owner": "Codex",
     "level": "basic",
@@ -15834,15 +15834,13 @@
     "complexity": "medium",
     "created_at": "2026-10-13",
     "resolved_at": "2026-10-13",
-    "resolution_changes": "Build conservative direction spans from final installed quads including seams and select them with shader-consistent wrapped camera facing, shared by direct and indirect submission.",
+    "resolution_changes": "Conservative uploaded-face direction buckets with wrapped/coplanar safety and direct/indirect equivalence.",
     "plan": [
       "Implement conservative per-direction draw spans at upload with current-camera selection and exact false-positive tests; validate immutable candidate before measurement."
     ],
     "product_changes": [],
-    "code_changes": [
-      "Upload final quads into stable direction buckets with exact plane envelopes; conservatively retain coplanar and wrap-cut ambiguities."
-    ],
-    "baseline_commit": "469dee28777ce28c27674007d28070606899f259",
+    "code_changes": [],
+    "baseline_commit": "1dad7b176280f266b224880360db50124137a7ff",
     "commits": [],
     "finalized": true,
     "retrospective": "",
@@ -15860,7 +15858,7 @@
     "milestone": "ED-010-S7",
     "depends_on": [],
     "acceptance": "Require bounded source-bound Release full-radius radius256 production gameplay evidence on Mac and Windows before S7 promotion, with exact initial and post-x200 recovery barriers, drained queues and recomputed raw timing totals. Reject absent, stale, altered, failed, near-only and reduced-radius reports. Keep coverage completion separate from the user performance target; never label completion-only evidence as performance acceptance. Preserve analyzer and manual Windows acceptance as distinct gates. Add negative and passing verifier fixtures and registry integration coverage.",
-    "evidence": "Focused verifier suite27/27 passed in2.680s, including changed bytes/source, partial terrain, timing inconsistency, normal skipped acquire attempts, FIFO timestamp jitter, long gaps and exact-deadline boundaries. Production Release preflight succeeded against the native build before a bounded Mac runtime. Qualification remains distinct and failing in earlier diagnostics; no performance or release completion claimed.",
+    "evidence": "Committed469dee28777ce28c27674007d28070606899f259 in batch assembly after exact staged review. Three reproduced P2 defects fixed and independently verified;33 focused tests pass and complete673-test Python gate passes82.872s/1skip. Actual retained native report still rejects solely55Hz performance. Capture preflight uses actual Release source/build/dependency identity; missing native reports retain failed invocation receipts. Physicalscanout and separate Windows acceptance remain unproved.",
     "blocker": "",
     "owner": "Codex",
     "level": "basic",
@@ -15896,7 +15894,7 @@
     "milestone": "ED-010-S7",
     "depends_on": [],
     "acceptance": "Allow accurate supported GPT6 model and effort identity with explicit task versus aggregate review role, preserving legacy receipts and exact staged candidate, verdict, evidence and one-Task-ID safeguards. Task reviews must not satisfy aggregate role accidentally. Reject unsupported models, invalid efforts/roles, mismatched identity and missing required reviews. Keep one bounded task review, no added reviewer count.",
-    "evidence": "Focused python3 -m unittest script.tests.test_ai_commit passed24tests in10.630s; owned diff whitespace clean. Explicit task/aggregate roles preserve accurate GPT6 model/effort and legacy receipts; no review gate bypass.",
+    "evidence": "Committed32ea227c971549c5ca625a35fdcbc52e8bf9a6a0 in isolated assembly. Exact staged/committed independent review approved;24focusedtests+75boundary assertions; mandatoryhook640Python tests162.111s/1skip, docs/backlog/plan/index/diff pass. Committed fingerprint9db879279a9b11e4a1b48e9331efaf8b9ef261afa7a427708d0a261c7b5e826c. No native/release claim.",
     "blocker": "",
     "owner": "Codex",
     "level": "basic",
@@ -15932,7 +15930,7 @@
     "milestone": "ED-010-S7",
     "depends_on": [],
     "acceptance": "Derive each LOD certificate from actual rounded candidate-cell faces and all relevant neighbor/seam profile inputs while preserving guaranteed projected area<=2px². Keep complete raw-height distance bounds, position-selected residency and exact collision. Handle nonmonotone per-detail areas, full installed profiles, successful-publication invalidation, failed-publication retention and stale worker results without recursion. Add per-generated-face oracle, seam/profile/revision/movement/FOV boundary regressions; measure geometry and cadence separately without claiming unmeasured improvement.",
-    "evidence": "Frozen native tree92bd50febb244c98de2e6aa416ac2d4ef2efe05f: Release and renderer-smoke builds passed;85 focused tests passed. Source-bound /private/tmp/mc-s7-0451-repair-macos-proof.json: innerexit0, exact205861 current meshes and emptyqueues at initial137.974s/recovery169.068s,67814Coarse2 tiles,7435677 submitted quads,55Hz baseline/78.492Hz recovered; cadence qualification failed. ExecutableSHA18a27cc53ab6ca9c195aa448bbb2c903c5500613876379bb034bfed2a7eb1643; before/after provenance unchanged. Combined998af full635MacCTest passed. Windows capacity-growth failure remains separately tracked by0453/parent0038; no release or120/500FPS claim.",
+    "evidence": "Frozen native tree92bd50febb244c98de2e6aa416ac2d4ef2efe05f: Release and renderer-smoke builds passed,85 focused tests passed including profile-only reuse and unsafe-target rejection. Source-bound /private/tmp/mc-s7-0451-repair-macos-proof.json retained native innerexit0 and failed cadence qualification. Exact205861 current meshes/emptyqueues initial137.974s/recovery169.068s; initial67814Coarse2 tiles reduce submitted quads to7435677; baseline55Hz, recovered78.492Hz. No physicalscanout or120Hz claim. Before/after provenance unchanged; executableSHA18a27cc53ab6ca9c195aa448bbb2c903c5500613876379bb034bfed2a7eb1643.",
     "blocker": "",
     "owner": "Codex",
     "level": "basic",
@@ -15942,7 +15940,7 @@
     "complexity": "high",
     "created_at": "2026-10-13",
     "resolved_at": "2026-10-13",
-    "resolution_changes": "Certified actual rounded replacement-cell tops, walls and installed-neighbor seam profiles independently per detail; retained raw-height distance bounds and safe reuse of completed geometry after profile-only changes.",
+    "resolution_changes": "Certified actual rounded replacement-cell tops, walls and installed-neighbor seam profiles independently per detail; retained raw-height distance bounds and safe reuse of completed geometry after profile-only changes. Task commit591f31791f604da08162b94b7d46e439ef20c692 in assembly; focused independent review approved.",
     "plan": [
       "Implement bounded candidate-area certificates and explicit dependency tokens; independently test each detail with conservative projection math; run focused source and renderer regressions then one full-radius diagnostic."
     ],
@@ -15970,7 +15968,7 @@
     "milestone": "ED-010-S7",
     "depends_on": [],
     "acceptance": "Improve measured normal full-radius draw collection using a bounded locality-preserving representation. Preserve exact direction envelopes, wrapped/frustum selection, ordered spans, no freed ranges, failure behavior and all residency/visual-quality contracts. Differential tests must cover insertion/removal/replacement/churn/wrap and allocation gaps. Benchmark fragmented realistic workload and retain only a demonstrated improvement; renew production runtime without claiming120Hz from microbenchmarks. No broad renderer rewrite or reduced distance.",
-    "evidence": "Frozen native tree998afc8b752537f7e945b73f751bb0b89c76ec5b, patch9585d6c62c84f4f2bf1147f34063b66f6c191d2cedfb60a47660d665b74e702d. Differential paired24-repetition probes preserve exact ordered ranges/counters; fragmented collection9.895/9.709ms becomes2.868/2.898ms, ordered3.471ms becomes2.882ms. Fault injection preserves rollback at14 allocation positions; all allocation probes release storage. Combined99 native checks pass. Source-bound normalFIFO fullradius initial130.065s/recovery145.979s exact205861 currentmeshes/queueszero; unchanged7435677/2443462 submittedquads. Recovered collection6.572->2.271ms and cadence78.49->114.47Hz; densebaseline55.26Hz stillfails. Immediate samebinary contrast55.19/114.72Hz does not materially improve rate; notGPUtime evidence. Fullplatformqualification remains pending. Windows 998af runtime failed initial warmup at180.048s; no release acceptance. Investigation identifies a physical arena growth boundary separate from this exact-output locality transformation.",
+    "evidence": "Committed daaec3d180ff000226c0a9a7d9b7bb3b638f7af9 in assembly; committed review fingerprint1009b8a5c9c2e2db045c04beff9ebf9f07811102f5525180803da7db97dd40fe. Fourteen focused tests passed after deterministic PRNG repair;14 allocation-failure positions passed. Combined998af full635MacCTest passed. Mac /private/tmp/mc-s7-0452-locality-macos-proof.json: exact205861 meshes/emptyqueues initial130.065s/recovery145.979s; baseline55.261Hz/recovered114.466Hz; quads unchanged; recovered collection6.572ms to2.271ms. Performance qualification still fails. Windows180s growth failure remains0453; no release claim.",
     "blocker": "",
     "owner": "Codex",
     "level": "basic",
@@ -15980,13 +15978,16 @@
     "complexity": "high",
     "created_at": "2026-10-13",
     "resolved_at": "2026-10-13",
-    "resolution_changes": "Pack group-owned draw entries and use stable radix ordering; retain exact selection, range coalescing, rollback and high-address ordering.",
+    "resolution_changes": "Keep draw-group entries packed and sort visible groups using five bounded radix passes, preserving exact ordered draw output and transactional allocation rollback.",
     "plan": [
       "Choose the smallest measured paged or equivalent ordered layout; compare exact output to existing oracle under mutation and benchmark before full runtime."
     ],
-    "product_changes": [],
+    "product_changes": [
+      "Reduce CPU draw-list assembly cost without changing visible terrain or residency."
+    ],
     "code_changes": [
-      "Use group-owned packed draw entries with exact direction envelopes and stable radix ordered output; preserve failure rollback and freed-range exclusion."
+      "Use group-owned packed draw entries with exact direction envelopes and stable radix ordered output; preserve failure rollback and freed-range exclusion.",
+      "Replace span-node traversal and comparison sorting with packed group ownership and a bounded radix key; add exact-output and allocation-failure regressions."
     ],
     "baseline_commit": "",
     "commits": [],
@@ -16079,7 +16080,7 @@
     "milestone": "ED-010-S7",
     "depends_on": [],
     "acceptance": "Explicit snapshot versus strict policy defaults strict; snapshot still requires bothplatform fullradius normalworkload coverage, complete computable raw timing, provenance, and no fatal failure. Mac snapshot target or sample-count failure is retained as failed diagnostic, never performancepassed. Macminor/major and Windowsalllevels retain all existing cadence thresholds. Registry runs exactlyone appropriate proof check perlevel. Regressions reject missing/malformed/stale/altered/fatal evidence under both policies and prevent snapshotproof reuse from bypassingstrict. No radius/quality/default/timing threshold change.",
-    "evidence": "Four-file frozen delta b3f6f6488ffd6201e828582363fbf4285ba073fc99b75615d22c8be8a36a739c;40 focused verifier tests passed5.985s, syntax/JSON/whitespace passed. Receipt /private/tmp/mc-s7-0455.An0nh0/check-receipt.json SHA450c74675919c938314aecac7f33b90e66d41dcb49003801c5628c2d0d676bf4. No native runtime or performance pass claimed; source/build/dependency proof and Windows user acceptance remain separate.",
+    "evidence": "40 focused tests and4 independent adversarial checks passed; exact staged review approved. Full development hook680Python tests passed81.317s with one expected skip; logSHA507aa75e49ced4d01f4e9176b7b3288c2e7980dce3952075c390fb37342288a7. No native performance or release pass claimed; Windows cadence, complete coverage, source/build/dependency proof and user acceptance remain required.",
     "blocker": "",
     "owner": "Codex",
     "level": "basic",
@@ -16089,7 +16090,7 @@
     "complexity": "high",
     "created_at": "2026-10-13",
     "resolved_at": "2026-10-13",
-    "resolution_changes": "Separate hard evidence validation from cadence policy; restore Mac S7 diagnostic status while keeping strict defaults and Windows thresholds.",
+    "resolution_changes": "Separate hard evidence validation from cadence policy; restore Mac S7 diagnostic status while retaining strict defaults and Windows thresholds. Committed f7af513b8029a6c1abd2193fa73a762a9d9231ce in assembly.",
     "plan": [
       "Separate cadence outcome from evidence validity, thread invocation-owned policy across record/merge/verify, split disjoint registrylevels, and document exactpolicy with focused regressions."
     ],
@@ -16434,7 +16435,7 @@
     "milestone": "ED-010-S7",
     "depends_on": [],
     "acceptance": "Basic-task precommit validates the reviewed index tree rather than unrelated dirty working-tree bytes. Materialize an exact, bounded temporary staged source, run its fast checker with isolated Git worktree/index state, and preserve the original index, refs and working files. Keep existing review identity and index-match checks. Regress staged versus unstaged content, unrelated governed changes, failure cleanup and source modes; fail closed for unsupported tree entries. Aggregate candidate/build validation remains unchanged.",
-    "evidence": "The exact staged-source checker now has private discoverable Git metadata and reconstructs its private index from the reviewed immutable tree, including split-index source repositories. Mac full ai_commit tests plus the unchanged pre-finalization maintenance fixture pass 38/38 in 16.349s. Windows passed the prior private-metadata suite 36/36 in 34.218s and unchanged maintenance fixture 1/1 in 2.485s; the final split-index fix and nonsplit control pass 2/2 in 2.394s on exact final hashes. Windows fixtures use task-local Belgrade TZif data only, with no host/Python/timezone changes. Original full hook failure (691 cases/one fixture setup error), earlier transient timeout control and empty attempted log remain preserved. Final source SHA256 1f915304fb1e0a7288458043129a7bbeddeb2f96bfe181e7cc3759ce840cbad0; tests 614e536f3fb9adf635e1160b6f6e49c7a915811ea98a51b24403fc1ea7143a73. Final review renewal and actual full commit hook remain pending; S7 is open.",
+    "evidence": "The exact staged-source checker now has private discoverable Git metadata and reconstructs its private index from the reviewed immutable tree, including split-index source repositories. Mac full ai_commit tests plus the unchanged pre-finalization maintenance fixture pass38/38 in16.349s. Windows passed the prior private-metadata suite36/36 in34.218s and unchanged maintenance fixture1/1 in2.485s; final split-index/nonsplit controls pass2/2 in2.394s on final hashes. Windows uses task-local Belgrade TZif data only. Original failure evidence remains preserved. Source SHA2561f915304fb1e0a7288458043129a7bbeddeb2f96bfe181e7cc3759ce840cbad0; tests614e536f3fb9adf635e1160b6f6e49c7a915811ea98a51b24403fc1ea7143a73. Same-task v5 review approved exact tree2add1c129f648d5dcb34efb0a36ff0622b218034, independently matched fingerprintff396a319e429672620ccda035ba97a946926dcb35bce91369811d267bb7d06e. Actual commit hook passed711 Python tests in100.909s, with4 documented skips; commit3d7a4d96215ac9a398f9225d4f9f16b39098df0f completed. S7 remains open.",
     "blocker": "",
     "owner": "Codex",
     "level": "basic",
@@ -16625,43 +16626,6 @@
     "backlog_review": ""
   },
   {
-    "id": "MC-AI-0470",
-    "title": "Enforce recurring release reports and twelve-hour consolidation",
-    "kind": "chore",
-    "status": "done",
-    "priority": "P0",
-    "route": "luna",
-    "milestone": "ED-010-S7",
-    "depends_on": [],
-    "acceptance": "Provide deterministic PDF report creation/validation, contiguous3h periods and fourth-report12h consolidation. Enforce fixed ordered user-requested feature identities/status syntax except explicitly authorized append-only additions, versioned manifest history, exact filenames and retention. Ten sections: Period; State; Expected progress(max16lines); Feature progress(1-2lines/changedfeature); Other progress(max10); Time spent(short labeled diagram with measured/estimated/unaccounted time and no parallel double-count); Issues(max30); Investigated conclusions(max30); Next goals(maxfeaturecount+16lines,3h/12h); Crucial summary(max10lines). Reject malformed reports, invalid/missing/reordered features, gaps/overlaps and unsafe deletion. Create per-release folder on start, retain all12hPDFs and at most3standalone3hPDFs inside it, validate/writeaggregate before pruning sources, delete only exactmanagedfolder after verified full delivery. Integrate project rules/scheduled visible reports, validate PDF rendering, then notify current CoreLang owner to apply the same procedure without changing its Android support or active work.",
-    "evidence": "Focused report suite9/9 and py_compile pass, including an injected failure after the first prune unlink, tamper refusal, and successful retry. Fresh bundled PDF smoke f5e7a186ceca9a948b71a7fd5af528a468fe3fca29b1d439e01a7157eb754f21 passed pypdf readback and standard-library check-state; it verifies exact feature lines, ASCII-hyphen chart labels, share/basis, and page numbering. RELEASES.md received neutral compression from 974 to 820 words for its existing 900-word documentation contract; release gates, publication authority, and the S7 feedback hold remain intact. Root-created S7 report lifecycle and three-hour heartbeat remain active; CoreLang owner notification/readback completed. Reviewer findings are fixed; renewed review and commit remain pending. No release completion claimed.",
-    "blocker": "",
-    "owner": "Codex",
-    "level": "basic",
-    "parent": "MC-AI-0038",
-    "motivation": "The user requires visible evidence-backed three-hour reports with fixed feature lists, twelve-hour consolidation and explicit time accounting to prevent activity-only progress claims.",
-    "context": "User specifies ten sections after adding Time spent immediately after Other progress and a final crucial summary; fixed version feature order except explicit additions, exact line limits, at most3 standalone3h reports, retain12h reports, create at release start and remove managed folder only after actual full delivery. Apply to future Minecraft snapshots and CoreLang without stopping engine work. Existing two-hour heartbeat has been updated in place to three hours.",
-    "complexity": "medium",
-    "created_at": "2026-10-18",
-    "resolved_at": "2026-10-18",
-    "resolution_changes": "Implemented and documented the project-local PDF report renderer, fixed ordered feature manifests, three-hour cadence, twelve-hour consolidation with hash-bound retryable pruning, fast/full state checks, and exact-folder evidence-checked cleanup. Added focused validation and recovery tests. No gameplay behavior changed; no S7 completion claim.",
-    "plan": [
-      "Implement small project-local report renderer/validator/lifecycle tool and focused negative/positive tests; document the exact user format including time accounting.",
-      "Initialize S7 feature manifest/report folder, wire project start/check/finish paths, update cadence/read back, and share exact CoreLang contract with current owner."
-    ],
-    "product_changes": [],
-    "code_changes": [
-      "Add the release-report renderer, lifecycle validation/recovery, check-state integration, documentation, and focused tests."
-    ],
-    "baseline_commit": "ccabebada7f44e7fb2150af79e63897e0f93ae73",
-    "commits": [],
-    "finalized": true,
-    "retrospective": "",
-    "docs_review": "",
-    "environment_review": "",
-    "backlog_review": ""
-  },
-  {
     "id": "MC-AI-0469",
     "title": "Prevent broad-radius terrain starvation during sustained fast travel",
     "kind": "bug",
@@ -16703,5 +16667,115 @@
     "docs_review": "GAMEPLAY.md and RENDERING.md describe the bounded delivery and six-tier first-publication contracts; the local ai_docs check passes. Word counts are under the 900-word guide limit (GAMEPLAY 889; RENDERING 897).",
     "environment_review": "Latest normal macOS v29 candidate source input is 9a497e025d9740befd1ea46a42f6e8701a05b0d5e51fb269d95d662f9113f786 and executable SHA256 is a2809771c44414e8e72f49eba9848397cdecf085ba03138417664171035cb9b2. R256 terrain coverage passed in 22.944 seconds; R128 normal performance failed 8/9/10 slots. Private five-frame readback perturbed timing and does not qualify normal visual continuity. No Windows change or S7 release claim.",
     "backlog_review": "MC-AI-0469 closes only the measured streaming component. MC-AI-0038 remains open for normal continuous visual quality and unchanged R128 performance; no overall S7 qualification is claimed."
+  },
+  {
+    "id": "MC-AI-0470",
+    "title": "Enforce recurring release reports and twelve-hour consolidation",
+    "kind": "chore",
+    "status": "done",
+    "priority": "P0",
+    "route": "luna",
+    "milestone": "ED-010-S7",
+    "depends_on": [],
+    "acceptance": "Provide deterministic PDF report creation/validation, contiguous3h periods and fourth-report12h consolidation. Enforce fixed ordered user-requested feature identities/status syntax except explicitly authorized append-only additions, versioned manifest history, exact filenames and retention. Ten sections: Period; State; Expected progress(max16lines); Feature progress(1-2lines/changedfeature); Other progress(max10); Time spent(short labeled diagram with measured/estimated/unaccounted time and no parallel double-count); Issues(max30); Investigated conclusions(max30); Next goals(maxfeaturecount+16lines,3h/12h); Crucial summary(max10lines). Reject malformed reports, invalid/missing/reordered features, gaps/overlaps and unsafe deletion. Create per-release folder on start, retain all12hPDFs and at most3standalone3hPDFs inside it, validate/writeaggregate before pruning sources, delete only exactmanagedfolder after verified full delivery. Integrate project rules/scheduled visible reports, validate PDF rendering, then notify current CoreLang owner to apply the same procedure without changing its Android support or active work.",
+    "evidence": "Committed as0642fc30be43e6284b5d14ba8aa86a9f356b1f3b after exact staged review23094cf5233469890779336bce4fcf68d5ed02e958913ad5eeaf7050903de7af and normal hook852tests PASS with4skips. Reporting suite9/9, malformed-state fast-gate RED/GREEN, interrupted-pruning recovery/tamper checks pass. First13:00-16:00Belgrade PDF ca22856f6c42183fb902960add41034c3bcbf1e7d8cc7b0ca10b0ac1c4962aa8 rendered and all3pages visually inspected and delivered. Existing heartbeat updated in place to3h boundaries; next16:00-19:00. Current CoreLang owner01a14aaf-5a14-7613-a776-b20baa6ae600 notified through supported messaging with success readback; explicitly retains full Android support. Reporting folder remains active until genuineS7delivery. Initial hook failure was reproduced as sandbox denial of ps; unchanged candidate passed in host context, without skipping or weakening tests.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0038",
+    "motivation": "The user requires visible evidence-backed three-hour reports with fixed feature lists, twelve-hour consolidation and explicit time accounting to prevent activity-only progress claims.",
+    "context": "User specifies ten sections after adding Time spent immediately after Other progress and a final crucial summary; fixed version feature order except explicit additions, exact line limits, at most3 standalone3h reports, retain12h reports, create at release start and remove managed folder only after actual full delivery. Apply to future Minecraft snapshots and CoreLang without stopping engine work. Existing two-hour heartbeat has been updated in place to three hours.",
+    "complexity": "medium",
+    "created_at": "2026-10-18",
+    "resolved_at": "2026-10-18",
+    "resolution_changes": "Added validated PDF renderer, fixed-feature manifest revisions,3h/12h consolidation, recoverable hash-bound source pruning and evidence-checked exact-folder cleanup; integrated read-only state check with existing fast/full/precommit path and adopted project start/finish instructions. No global hook/config change, no Windows access, no S7completion claim.",
+    "plan": [
+      "Implement small project-local report renderer/validator/lifecycle tool and focused negative/positive tests; document the exact user format including time accounting.",
+      "Initialize S7 feature manifest/report folder, wire project start/check/finish paths, update cadence/read back, and share exact CoreLang contract with current owner."
+    ],
+    "product_changes": [],
+    "code_changes": [],
+    "baseline_commit": "ccabebada7f44e7fb2150af79e63897e0f93ae73",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0471",
+    "title": "Seal the S7 source candidate and record its authorized cadence exception",
+    "kind": "chore",
+    "status": "done",
+    "priority": "P0",
+    "route": "luna",
+    "milestone": "ED-010-S7",
+    "depends_on": [],
+    "acceptance": "Commit exactly the retained S7 implementation/local qualification/Android source inputs plus the narrow analyzer repairs and an explicit opt-in EarlyDev0.1.0 snapshot7 macOS cadence exception. Keep default strict cadence checks unchanged; preserve actual failed metrics and accepted-exception status, bind the recorded user authorization and follow-up, and reject use for other versions/platforms or structural/coverage/provenance failures. Verify focused negative/positive tests, code checks, exact review and normal commit hook. Establish a clean gameplay-input source candidate while parent0038 remains active until all other release gates, actual artifacts and publication pass. No new features, global settings, Windows access or reclassification of the shortfall as a performance PASS.",
+    "evidence": "Focused waiver suite138PASS, approval negative/positive regressions4PASS; native analyzer repair89PASS; reclaim ACK fixture exact proposed/canonical SHA b9612d81c1e6fa2033d91b25720156b27e06f32cbf4077aaeea8839d7546dc96 passes10/10 bounded Linux LSan repetitions with original uninstrumented server. Receipts: /Users/core-just/.codex/task-evidence/s7-0471-native-repairs-e-20261018/check-receipt.md and /Users/core-just/.codex/task-evidence/s7-0471-reclaim-fallback-e-20261018/terminal-receipt.md. Reviewed source-candidate commit uses normal hook; parent0038 remains active. Full current-source integration/platform/runtime/publication gates are tracked separately, not asserted by this basic task.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0038",
+    "motivation": "Remove the uncommitted-source provenance prerequisite and apply the user-approved S7-only Mac cadence exception without weakening other release checks.",
+    "context": "User explicitly allows a documented S7-only exception for normal Mac cadence 119.67-119.73Hz and 99.72-99.78percent display slots versus99.8percent. Streaming task0469 is committed; eight gameplay inputs and existing local-release/Android integration remain in parent0038 working changes. Current v29 analyzer failures identify missing explicit aggregate defaults, optional invariant checking and two direct includes. Windows stays untouched/deferred; no hosted CI; Android reduced local tests/basic runtime/APK. Existing proofs and failures are immutable.",
+    "complexity": "high",
+    "created_at": "2026-10-18",
+    "resolved_at": "2026-10-18",
+    "resolution_changes": "Seal retained S7 Android/native inputs and local-first qualification contracts; record explicit opt-in S7-only Mac cadence exception with raw failures preserved and0472 follow-up; make aggregate defaults/optional invariant/direct includes explicit; acknowledge all outstanding fixture deliveries across movement window without relaxing deadlines/assertions.",
+    "plan": [
+      "Repair only the concrete native analyzer findings and add a tested fail-closed S7-only exception path preserving raw failures.",
+      "Review and commit the retained candidate inputs and local release contracts as one basic source task; renew only checker-invalidated evidence and finish parent release separately."
+    ],
+    "product_changes": [
+      "Documented S7-only Mac cadence acceptance exception; strict target remains unmet and future releases retain99.8percent requirement."
+    ],
+    "code_changes": [
+      "Fail-closed approval-bound cadence exception and negative/positive tests; retained Android/local qualification integration; bounded native analyzer corrections and complete ACK fixture recovery."
+    ],
+    "baseline_commit": "e773dbb15e071043528d76b92bebc6492d358b59",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0472",
+    "title": "Resolve the deferred Mac drawable/display cadence shortfall",
+    "kind": "bug",
+    "status": "backlog",
+    "priority": "P1",
+    "route": "luna",
+    "milestone": "ED-010-S7",
+    "depends_on": [
+      "MC-AI-0038"
+    ],
+    "acceptance": "Correct the evidenced drawable/display pacing mechanism and prove the unchanged120Hz99.8percent normal source-bound contract, or retain this issue open. No globalsettings change or future-release waiver is authorized.",
+    "evidence": "",
+    "blocker": "",
+    "owner": "",
+    "level": "basic",
+    "parent": "",
+    "motivation": "Track the user-approved S7-only cadence exception without making its follow-up a circular S7 prerequisite.",
+    "context": "Explicit user authorization permits only the documented S7 shortfall119.67-119.73Hz/99.72-99.78percent slots. This unparented deferred follow-up depends on deliveredS7, not vice versa; no newS8 or minor work is authorized. Minor qualification must retain the original99.8percent requirement.",
+    "complexity": "high",
+    "created_at": "2026-10-18",
+    "resolved_at": "",
+    "resolution_changes": "",
+    "plan": [
+      "Use retained traces and failed comparisons before a bounded corrective experiment after explicit resumption."
+    ],
+    "product_changes": [],
+    "code_changes": [],
+    "baseline_commit": "e773dbb15e071043528d76b92bebc6492d358b59",
+    "commits": [],
+    "finalized": false,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]

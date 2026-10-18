@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import shutil
 import tempfile
 import unittest
 from pathlib import Path
@@ -12,7 +13,7 @@ from script.ci import verify_release_assets
 
 
 COMMIT = "a" * 40
-TAG = "ai/EarlyDev/0.1.0/3_26.09.09"
+TAG = "ai/EarlyDev/0.1.0/7_26.10.18"
 REPOSITORY = "CoreJust/MinecraftClone"
 
 
@@ -41,6 +42,11 @@ class VerifyReleaseAssetsTests(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
         self.root = Path(self.temporary.name)
+        source = Path(__file__).resolve().parents[2]
+        project = self.root / "src/shared/include/shared/ProjectInfo.hpp"
+        project.parent.mkdir(parents=True)
+        shutil.copyfile(source / project.relative_to(self.root), project)
+        shutil.copyfile(source / "vcpkg.json", self.root / "vcpkg.json")
         self.payloads = {
             "macos": b"macos archive",
             "windows": b"windows archive",
@@ -65,7 +71,7 @@ class VerifyReleaseAssetsTests(unittest.TestCase):
         value = {
             "schema": 1,
             "platform": platform,
-            "version": "0.1.0:3",
+            "version": "0.1.0:7",
             "source_commit": COMMIT,
         }
         if android:
@@ -85,7 +91,7 @@ class VerifyReleaseAssetsTests(unittest.TestCase):
         tag_object = "b" * 40
         ref_type = "tag" if annotated else "commit"
         ref_sha = tag_object if annotated else COMMIT
-        ref_endpoint = ("api", f"repos/{REPOSITORY}/git/ref/tags/ai%2FEarlyDev%2F0.1.0%2F3_26.09.09")
+        ref_endpoint = ("api", f"repos/{REPOSITORY}/git/ref/tags/ai%2FEarlyDev%2F0.1.0%2F7_26.10.18")
         responses: dict[tuple[str, ...], object] = {
             ref_endpoint: {
                 "ref": f"refs/tags/{TAG}",
@@ -132,6 +138,7 @@ class VerifyReleaseAssetsTests(unittest.TestCase):
         return FakeGitHub(responses, downloads)
 
     def test_annotated_tag_and_exact_downloaded_bytes_produce_bound_record(self):
+        (self.root / "src/shared/include/shared/ProjectInfo.hpp").unlink()
         github = self.github(annotated=True)
         output = self.root / "verification.json"
         result = verify_release_assets.verify_release(
@@ -141,6 +148,7 @@ class VerifyReleaseAssetsTests(unittest.TestCase):
             self.evidence,
             output,
             github,
+            root=self.root,
         )
         self.assertEqual(result, json.loads(output.read_text()))
         self.assertEqual(result["tag"]["object_type"], "tag")
@@ -203,6 +211,87 @@ class VerifyReleaseAssetsTests(unittest.TestCase):
                 github,
             )
         self.assertEqual(github.json_calls, [])
+
+    def test_s7_windows_secondary_verifies_mac_and_android_and_marks_windows_deferred(self):
+        github = self.github()
+        release_key = next(key for key in github.responses if key[:2] == ("release", "view"))
+        github.responses[release_key]["assets"] = [
+            item for item in github.responses[release_key]["assets"]
+            if not verify_release_assets.is_windows_label(item["name"])
+        ]
+        github.downloads = {
+            name: payload for name, payload in github.downloads.items()
+            if not verify_release_assets.is_windows_label(name)
+        }
+        output = self.root / "s7-verification.json"
+
+        result = verify_release_assets.verify_release(
+            REPOSITORY,
+            TAG,
+            COMMIT,
+            [self.evidence[0], self.evidence[2]],
+            output,
+            github,
+            s7_windows_secondary=True,
+            root=self.root,
+        )
+
+        self.assertEqual([item["platform"] for item in result["assets"]], ["macos", "android"])
+        self.assertEqual(result["deferred_platforms"][0]["platform"], "windows")
+        self.assertEqual(result["deferred_platforms"][0]["status"], "deferred")
+        self.assertEqual(len(github.download_calls), 4)
+
+    def test_s7_windows_secondary_rejects_windows_assets_and_relabelled_evidence(self):
+        github = self.github()
+        with self.assertRaisesRegex(verify_release_assets.ReleaseVerificationError, "Windows-labelled release assets"):
+            verify_release_assets.verify_release(
+                REPOSITORY,
+                TAG,
+                COMMIT,
+                [self.evidence[0], self.evidence[2]],
+                self.root / "with-windows-asset.json",
+                github,
+                s7_windows_secondary=True,
+                root=self.root,
+            )
+
+        relabelled = self.write_evidence("macos", "minecraftclone-0.1.0-3-windows-x86_64.zip")
+        with self.assertRaisesRegex(verify_release_assets.ReleaseVerificationError, "cannot be relabelled"):
+            verify_release_assets.load_expected_assets(
+                [relabelled, self.evidence[2]],
+                COMMIT,
+                s7_windows_secondary=True,
+            )
+        self.assertEqual(github.download_calls, [])
+
+    def test_s7_secondary_rejects_actual_other_version_missing_owner_and_other_asset_version(self):
+        project = self.root / "src/shared/include/shared/ProjectInfo.hpp"
+        original = project.read_text()
+        for content in (original.replace(".patch = 7", ".patch = 8"),
+                        original.replace(".minor = 0", ".minor = 1"), None):
+            if content is None:
+                project.unlink()
+            else:
+                project.write_text(content)
+            github = self.github()
+            with self.assertRaisesRegex(verify_release_assets.ReleaseVerificationError, "actual candidate version"):
+                verify_release_assets.verify_release(REPOSITORY, TAG, COMMIT, [self.evidence[0], self.evidence[2]],
+                                                     self.root / "refused.json", github,
+                                                     s7_windows_secondary=True, root=self.root)
+            self.assertEqual(github.json_calls, [])
+        project.write_text(original)
+        with self.assertRaisesRegex(verify_release_assets.ReleaseVerificationError, "release tag"):
+            verify_release_assets.verify_release(REPOSITORY, "ai/EarlyDev/0.1.0/8_26.10.18", COMMIT,
+                                                 [self.evidence[0], self.evidence[2]], self.root / "refused.json",
+                                                 self.github(), s7_windows_secondary=True, root=self.root)
+        for evidence in (self.evidence[0], self.evidence[2]):
+            value = json.loads(evidence.read_text())
+            value["version"] = "0.1.0:8"
+            evidence.write_text(json.dumps(value))
+        with self.assertRaisesRegex(verify_release_assets.ReleaseVerificationError, "actual candidate version"):
+            verify_release_assets.load_expected_assets([self.evidence[0], self.evidence[2]], COMMIT,
+                                                       s7_windows_secondary=True)
+
 
     def test_ci_only_android_evidence_is_not_accepted_for_a_published_release(self):
         android = json.loads(self.evidence[2].read_text())

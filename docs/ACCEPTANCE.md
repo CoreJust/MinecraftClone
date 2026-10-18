@@ -5,37 +5,42 @@ The desktop executable provides bounded, noninteractive modes for snapshot evide
 ```sh
 mc_main --scenario <file> --evidence <json>
 mc_main --benchmark-render [--present-immediate] [--hud] --evidence <json>
-mc_main --benchmark-game [--present-immediate] [--workload ordinary|speed-200|speed-200-full-radius|wrapped-border|permission-collision] --evidence <json>
+mc_main --benchmark-game [--present-immediate] [--workload ordinary|speed-200|speed-200-full-radius|wrapped-border|permission-collision] [--diagnostic-full-radius-capture] [--diagnostic-presentation-stages] [--diagnostic-indexed-stone-quads 0|1|2] --evidence <json>
 mc_main --capture-render --image <ppm> --evidence <json>
 ```
 
-Scenario mode parses the versioned scripting format, starts a bounded local server, drives clients through authoritative ticks, evaluates assertions, and records structured success or failure. The renderer modes still require a supported Vulkan device and window system. Benchmark mode warms up before sampling; capture mode writes a binary PPM image. Every mode has a watchdog deadline and attempts to persist failure evidence before exiting.
+Scenario mode parses the versioned scripting format, starts a bounded local server, drives clients through authoritative ticks, evaluates assertions, and records structured success or failure. Renderer modes require a supported Vulkan device and window system. Benchmarks warm up before sampling; capture writes a binary PPM image. Each mode has a watchdog deadline and tries to persist failure evidence.
 
-Benchmark evidence records requested/actual framebuffer size, device and driver,
-negotiated present mode, validation/HUD state, durations, frame count, and CPU
-percentiles. Historical `cpu_presentation_request_timings_ns` covers command
-recording plus complete/submit/present; acquire is separate. Preserve these fields,
-but do not treat device request rate as portable FPS or a GPU threshold.
+Evidence records requested/actual framebuffer size, device/driver, present mode,
+validation/HUD state, durations, frame count and CPU percentiles. Historical
+`cpu_presentation_request_timings_ns` covers command recording plus
+complete/submit/present; acquire is separate. Keep fields; request rate is neither
+portable FPS nor a GPU threshold.
 
-`--benchmark-game` runs the production loopback server, networked Flight client,
-authoritative simulation, and Vulkan player renderer. The benchmark API selects
-ordinary alternating movement, sustained x200 travel, wrapped-border traversal,
-or alternating collision-bypass policies. `--workload` selects one script (default
-`ordinary`); compare separate receipts. Wrapped traversal and policy publication
-count only observed authoritative state changes; compile/publication timing is
-separate from server ticks. MC-AI-0247 `AdverseNetwork` tests cover loss, jitter,
-freezes, reordering, and duplication; the loopback benchmark does not measure frame
-timing under impairment.
+`--benchmark-game` exercises the production loopback server, Flight client,
+simulation and Vulkan renderer. `--workload` selects ordinary, x200,
+wrapped-border or permission/collision churn; compare separate receipts. Rates
+require observed authoritative state changes. MC-AI-0247 `AdverseNetwork` tests
+cover impairment, but this loopback benchmark does not measure frame timing under
+it.
 
 The JSON separates 2 s cold, 3 s warm, and 1 s uncapped loops, retaining every
 loop/tick duration, present success/failure, traffic counts, resident tiles,
 visible faces, and client payload bytes (not transport overhead). GPU duration is
-the latest renderer sample and may lag. Rates count render/submit/present requests
-completed within each half-open interval; a post-final completion is excluded.
-Physical `displayed_cadence_hz`, resident mesh bytes, and power mode are unavailable;
-GPU identity may also be null for a generic presentation context. Raw samples and
-p50/p95/p99/p99.8/max remain recorded. Success requires a completed request in each
-phase, sent inputs, and processed server events—not a device-specific FPS target.
+the latest renderer sample and may lag. Diagnostics split height-tile culling
+into traversal, ordering, and range merging. Rates count completed requests per
+half-open interval. Physical cadence, resident mesh bytes and power mode are
+unavailable; generic contexts may lack GPU identity. Raw samples and
+p50/p95/p99/p99.8/max remain recorded. S7 `--gameplay-proof terrain-coverage`
+fixes radius256; cadence is diagnostic. `performance` fixes radius128 with
+30-second baseline, x200 movement and recovery windows; reject legacy short
+samples. Preregister one capture per candidate, retain failures, and never
+retry to cherry-pick. Report original10/6/10-second prefixes diagnostically
+from the full raw capture. Both desktops retain120Hz/99.8% cadence targets;
+Windows immediate mode also requires99.8% of measured loop time within
+8,333,334ns. Mac loop timing includes FIFO waits and is diagnostic, not a
+replacement for its cadence checks.500FPS remains later; these proxies do not
+measure physical scanout.
 
 `speed-200-movement-v2` uses full-axis `x=127`; historical v1 used `x=1`, not
 full-speed evidence. Production readiness samples 225 current-near tiles,
@@ -46,17 +51,18 @@ admissions while near work is pending, no ordering/classification errors or
 deadline misses, and full current-near visibility after a four-second neutral-input
 drain excluded from timing/rates.
 
-`speed-200-full-radius-recovery-v1` separates radius256 terrain coverage from
-radius128 performance. Both use30 s baseline,30 s x200 travel and30 s recovery
-stationary, with normal HUD/scheduling, exact meshes and drained queues.
-Warmups stay bounded to180 s. Preregister one performance capture per candidate;
-retain failures without pass-seeking retries or cherry-picking. Reject legacy
-short performance samples; radius, quality and120Hz/99.8% thresholds stay fixed.
-Longer exposure/granularity is not an engine fix or representativeness guarantee.
-The v25 short-window recovery failure remains3/1,201 slots,119.699493Hz. Derive
-diagnostic10/6/10 s prefixes from complete raw capture under the
-[preregistered attribution](ai/GAMEPLAY_QUALIFICATION.md); they cannot replace
-full-window qualification.
+`speed-200-full-radius-recovery-v1` uses normal HUD/scheduling with30-second
+baseline, x200 travel and recovered windows. Require exact current meshes and
+drained queues before/after movement, with each qualification warmup bounded
+to180seconds. Diagnostic radii span1–256; release proves terrain at256 and
+performance at128 separately.
+
+For full-radius diagnosis, `--diagnostic-indexed-stone-quads 0|1|2` selects the
+existing six-vertex, indexed-instanced, or indexed-block renderer path through a
+process-local override. `--diagnostic-presentation-stages` records only the
+submitted-frame, acquire, present, and swapchain wait stages actually attempted,
+without changing synchronization. These diagnostic overrides are recorded and
+cannot qualify gameplay cadence.
 
 Snapshot promotion separately requires source-bound local Mac/Windows Release
 [gameplay proof](ai/GAMEPLAY_QUALIFICATION.md). Its verifier recomputes raw
@@ -74,8 +80,7 @@ observed, bounded by `max_resize_polls`; zero, unrepresentable, stalled, or
 two-step-oscillating dimensions fail with evidence.
 
 Scenario source/evidence paths and image/evidence paths must differ. Zero exit means
-the operation and assertions passed; it does not replace frame review or prove a
-different platform, driver, or package.
+assertions passed, not frame review or proof for another platform, driver, or package.
 
 S7 adverse-network acceptance runs two production `GameClient`s through a test-only
 ENet relay to a production `GameServer`. Independent seeded schedules in both

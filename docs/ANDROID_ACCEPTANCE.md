@@ -129,8 +129,9 @@ installed, do not reset the shared device. An uninstall resets app data and
 requires explicit authorization for the exact package and device; never apply
 the historical disposable-device procedure to an unrelated emulator or phone.
 
-S7 Android runtime acceptance covers NativeActivity lifecycle, network
-connectivity, and streamed terrain rendering. After the client joins, wait for
+S7's partial Android scope requires local tests, the development APK, and basic
+install/join/render evidence. Background/resume and reconnect cycles are not
+additional S7 release gates. After the client joins, wait for
 height tiles to arrive and verify a non-sky terrain view in the emulator. The
 Android client uses the same projected-area LOD and seam-aware tile mesher as
 desktop, keeps the renderer's tile interest tied to player position, and

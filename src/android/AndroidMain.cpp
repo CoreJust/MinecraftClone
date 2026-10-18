@@ -18,8 +18,18 @@
 
 namespace {
 
+[[nodiscard]]
+core::Address defaultServerAddress()
+{
+    std::optional<core::Address> const server = core::Address::make("10.0.2.2", 20'040);
+    if (!server.has_value()) {
+        throw std::logic_error("Android emulator server address is invalid");
+    }
+    return *server;
+}
+
 struct LaunchOptions final {
-    core::Address server = *core::Address::make("10.0.2.2", 20'040);
+    core::Address server = defaultServerAddress();
     char character = '@';
 };
 

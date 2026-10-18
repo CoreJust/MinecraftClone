@@ -1,6 +1,7 @@
 # Snapshot and version closure
 
 Planning tasks are not releases; see the [task hierarchy](tasks/MC-AI-0034.md).
+Planning alone authorizes neither local implementation nor remote publication.
 
 | Task level | Children | Completion gates |
 |---|---|---|
@@ -11,11 +12,13 @@ Planning tasks are not releases; see the [task hierarchy](tasks/MC-AI-0034.md).
 
 ## Finalize the plan
 
-At release start, initialize the managed report folder and ordered feature
-manifest. Follow [release reporting](RELEASE_REPORTS.md) for user-visible
-three-hour PDFs, fourth-period twelve-hour consolidation, and evidence-checked
-cleanup only after verified full delivery. This applies to future snapshots
-and versions.
+Follow [release reporting](RELEASE_REPORTS.md) from aggregate start through
+verified full delivery: fixed ordered features, a user-visible PDF every three
+hours, and one twelve-hour consolidation per four periods. The local fast and
+full checks validate managed report state without generating PDFs. Initialize
+the folder at release start; after publication and all required acceptance
+evidence pass, run its evidence-checked cleanup. A failed gate, elapsed deadline
+or partial publication never authorizes cleanup or resets the reporting period.
 
 1. Keep `baseline_commit` immutable. If AI tags are absent, fetch without force using `git fetch --no-tags origin 'refs/tags/ai/*:refs/tags/ai/*'`; run `ai_history.py collect <id>` and verify every commit and promised scope.
 2. Complete basic tasks before snapshots, snapshots before minors, and minors before majors. Add discoveries; never remove unfinished work to pass closure.
@@ -30,27 +33,28 @@ and versions.
 
 Screenshot tests stay disabled with an explicit reason until implemented. Platform diagnostics supplement, but never replace, actual platform evidence and recorded limitations.
 
-Snapshot 7 qualification is local-first under MC-AI-0434. Windows and macOS
-remain the primary targets. Required tests, sanitizers, static analysis and
-runtime checks run locally; missing, failed or stale evidence blocks release.
-Linux is analysis-only, not a supported game target. Android requires local
-tests, basic runtime evidence and the development APK; its hosted HWASan and
-analyzer gates are suspended by the owner's revised scope.
+Snapshot 7 qualification is local-first under MC-AI-0434. Its registry
+explicitly selects the temporary Windows-secondary profile: the full Mac
+gameplay gates and Mac+Linux analysis rows remain required, while Windows
+gameplay, MSVC ASan, `/analyze`, build/runtime qualification and release assets
+are reported as deferred, not passed. This selection is Snapshot 7 only; the
+default verifiers and later minor/major gates retain full Windows qualification.
+Linux remains analysis-only, not a supported game target. Android still
+requires local tests, basic runtime evidence and the development APK; its
+hosted HWASan and analyzer gates remain suspended by the owner's revised scope.
 
-Qualification evidence binds the relevant source, dependency, configuration,
-tool and command inputs. Documentation or task-ledger changes alone do not
-invalidate native evidence. Release authenticity independently binds the exact
-source commit, promotion parents/tree, immutable tag and artifact hashes.
-Build packages locally and upload them; GitHub does not qualify the release or
-run automatic jobs. Manual artifact builds are an optional fallback, not a gate.
-Never relabel old hosted evidence as a local
-pass or treat an unavailable tool as a successful check.
+Evidence binds relevant source, dependencies, configuration, tools and commands;
+docs or task-ledger edits alone do not invalidate native evidence. Release
+authenticity separately binds source commit, promotion parents/tree, immutable
+tag and artifact hashes. Build packages locally; GitHub does not qualify them
+or run automatic jobs. Manual artifact builds are optional. Never relabel hosted
+evidence as local or treat an unavailable tool as a pass.
 
 ## Publish
 
 Use the [version/branch procedure](../VERSION_CONVENTION.md). Finalization and `ai-main` promotion commits use the aggregate task and Luna review. Validate the merge candidate, local qualification and promotion authenticity before tagging; failures block promotion.
 
-Planning tasks do not authorize release execution or remote mutation. A later release request authorizes only its scoped local workflow; push or release needs requested external authority. Commits/tags do not authorize remote publication. After authorized publication, make an `ai-dev` ledger commit with aggregate `Task-ID`, actual refs/artifacts, `resolved_at` and `done`. The snapshot date is fixed from the finalized source commit; the tag date uses the promotion commit, both in `Europe/Belgrade`. Keep the ledger after the immutable tag, outside the next snapshot's task set. Snapshot 7's minor remains active until requested feedback; do not create S8.
+Commits/tags do not authorize remote publication. After authorized publication, make an `ai-dev` ledger commit with aggregate `Task-ID`, actual refs/artifacts, `resolved_at` and `done`. The snapshot date is fixed from the finalized source commit; the tag date uses the promotion commit, both in `Europe/Belgrade`. Keep the ledger after the immutable tag, outside the next snapshot's task set. Snapshot 7's minor remains active until requested feedback; do not create S8.
 
 Run focused checks per task and one full integration gate per batch. Launch the normal macOS candidate for hands-on acceptance before final qualification. Approval does not authorize publication, replace evidence or close the release. S7's minor remains held; do not start S8.
 

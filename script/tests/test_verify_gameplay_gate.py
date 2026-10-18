@@ -277,6 +277,208 @@ class VerifyGameplayGateTests(unittest.TestCase):
                 with self.assertRaises(self.gate.GameplayError):
                     self.gate.verify_receipt(root, receipt)
 
+    def test_s7_windows_secondary_requires_both_macos_proofs_and_defers_windows(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            aggregate = self.aggregate(root)
+            aggregate["rows"] = [row for row in aggregate["rows"] if row["platform"] == "macos"]
+            receipt = root / "receipt.json"
+            receipt.write_text(json.dumps(aggregate), encoding="utf-8")
+
+            verified = self.gate.verify_receipt(root, receipt, s7_windows_secondary=True)
+
+            self.assertEqual(set(verified), {"macos", "windows"})
+            self.assertEqual(set(verified["macos"]), set(self.gate.PROOFS))
+            self.assertEqual(verified["windows"]["status"], "deferred")
+
+            inputs = []
+            for index, row in enumerate(aggregate["rows"]):
+                partial = root / f"mac-proof-{index}.json"
+                partial.write_text(json.dumps({"schema_version": self.gate.SCHEMA, "rows": [row]}), encoding="utf-8")
+                inputs.append(partial)
+            merged = self.gate.merge_receipts(
+                root,
+                inputs,
+                root / "selected-aggregate.json",
+                s7_windows_secondary=True,
+            )
+            self.assertEqual(merged["windows"]["status"], "deferred")
+
+            with self.assertRaisesRegex(self.gate.GameplayError, "both terrain-coverage and performance"):
+                self.gate.verify_receipt(root, receipt)
+
+            aggregate["rows"] = [row for row in aggregate["rows"] if row["proof"] != "performance"]
+            receipt.write_text(json.dumps(aggregate), encoding="utf-8")
+            with self.assertRaisesRegex(self.gate.GameplayError, "Mac terrain-coverage and performance"):
+                self.gate.verify_receipt(root, receipt, s7_windows_secondary=True)
+
+    def test_s7_windows_secondary_does_not_weaken_macos_120hz_stability_gate(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            aggregate = self.aggregate(root)
+            aggregate["rows"] = [row for row in aggregate["rows"] if row["platform"] == "macos"]
+            performance = next(row for row in aggregate["rows"] if row["proof"] == "performance")
+            report_path = Path(performance["report"]["path"])
+            report = self.gate.read_json(report_path)
+            self.set_actual_phase_intervals(report, self.gate.PHASES[1], 8500000)
+            report_path.write_text(json.dumps(report), encoding="utf-8")
+            performance["report"] = self.gate.file_identity(report_path)
+            receipt = root / "receipt.json"
+            receipt.write_text(json.dumps(aggregate), encoding="utf-8")
+
+            with self.assertRaisesRegex(self.gate.GameplayError, "driver presentation rate.*below 119.76Hz"):
+                self.gate.verify_receipt(root, receipt, s7_windows_secondary=True)
+
+    def cadence_exception_receipt(self, root):
+        aggregate = self.aggregate(root)
+        aggregate["rows"] = [row for row in aggregate["rows"] if row["platform"] == "macos"]
+        performance = next(row for row in aggregate["rows"] if row["proof"] == "performance")
+        report_path = Path(performance["report"]["path"])
+        report = self.gate.read_json(report_path)
+        self.set_actual_phase_intervals(report, self.gate.PHASES[1], 8500000)
+        report_path.write_text(json.dumps(report), encoding="utf-8")
+        performance["report"] = self.gate.file_identity(report_path)
+        receipt = root / "receipt.json"
+        receipt.write_text(json.dumps(aggregate), encoding="utf-8")
+        approval = root / "docs/ai/S7-CADENCE-EXCEPTION-2026-10-18.json"
+        approval.parent.mkdir(parents=True)
+        source = REPOSITORY / "docs/ai/S7-CADENCE-EXCEPTION-2026-10-18.json"
+        shutil.copyfile(source, approval)
+        return receipt, aggregate, performance, report_path, report, approval
+
+    def test_s7_cadence_exception_retains_failed_metrics_and_is_explicit(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            receipt, aggregate, _, _, _, _ = self.cadence_exception_receipt(root)
+            with self.assertRaisesRegex(self.gate.GameplayError, "driver presentation rate"):
+                self.gate.verify_receipt(root, receipt, s7_windows_secondary=True)
+            result = self.gate.verify_receipt(root, receipt, s7_windows_secondary=True,
+                                              s7_cadence_exception="EarlyDev0.1.0-snapshot7")
+            performance = result["macos"]["performance"]
+            self.assertEqual(performance["status"], "accepted_exception")
+            self.assertEqual(performance["presentation_timing_status"], "failed")
+            self.assertTrue(performance["presentation_timing_metrics"]["failure_reasons"])
+            baseline = performance["presentation_timing_metrics"]["phases"][self.gate.PHASES[1]]
+            self.assertAlmostEqual(baseline["interval_rate_hz"], 1e9 / 8500000)
+            self.assertEqual(performance["accepted_exception"]["approval"]["sha256"],
+                             self.gate.file_identity(root / "docs/ai/S7-CADENCE-EXCEPTION-2026-10-18.json")["sha256"])
+            inputs = []
+            for index, row in enumerate(aggregate["rows"]):
+                partial = root / f"proof-{index}.json"
+                partial.write_text(json.dumps({"schema_version": self.gate.SCHEMA, "rows": [row]}), encoding="utf-8")
+                inputs.append(partial)
+            merged = self.gate.merge_receipts(root, inputs, root / "merged.json", s7_windows_secondary=True,
+                                              s7_cadence_exception="EarlyDev0.1.0-snapshot7")
+            self.assertEqual(merged["macos"]["performance"]["status"], "accepted_exception")
+
+    def test_s7_cadence_exception_rejects_wrong_scope_or_changed_approval(self):
+        for mutation in ("snapshot", "approval", "missing-approval"):
+            with self.subTest(mutation=mutation), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                receipt, _, _, _, _, approval = self.cadence_exception_receipt(root)
+                if mutation == "approval":
+                    approval.write_text('{}', encoding="utf-8")
+                elif mutation == "missing-approval":
+                    approval.unlink()
+                with self.assertRaises((self.gate.GameplayError, OSError)):
+                    self.gate.verify_receipt(root, receipt, s7_windows_secondary=True,
+                                            s7_cadence_exception="EarlyDev0.1.0-snapshot8" if mutation == "snapshot"
+                                            else "EarlyDev0.1.0-snapshot7")
+
+    def test_s7_selectors_reject_actual_other_version_and_missing_owner(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            receipt, _, _, _, _, _ = self.cadence_exception_receipt(root)
+            project = root / "src/shared/include/shared/ProjectInfo.hpp"
+            original = project.read_text()
+            for content in (original.replace(".patch = 7", ".patch = 8"),
+                            original.replace(".minor = 0", ".minor = 1"), None):
+                if content is None:
+                    project.unlink()
+                else:
+                    project.write_text(content)
+                with self.assertRaisesRegex(ValueError, "actual candidate version"):
+                    self.gate.cadence_exception_approval(root, "EarlyDev0.1.0-snapshot7")
+                with self.assertRaisesRegex(ValueError, "actual candidate version"):
+                    self.gate.verify_receipt(root, receipt, s7_windows_secondary=True)
+                with self.assertRaisesRegex(ValueError, "actual candidate version"):
+                    self.gate.merge_receipts(root, [], root / "output", s7_windows_secondary=True)
+
+    def test_s7_cadence_exception_does_not_waive_structural_or_provenance_failure(self):
+        for mutation in ("driver", "radius", "coverage", "raw", "source", "invocation", "frame-budget"):
+            with self.subTest(mutation=mutation), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                receipt, aggregate, row, report_path, report, _ = self.cadence_exception_receipt(root)
+                if mutation == "driver":
+                    report["game_benchmark"]["presentation_timing"]["records"].pop()
+                elif mutation == "radius":
+                    report["game_benchmark"]["full_radius_terrain"]["render_distance"] = 64
+                elif mutation == "coverage":
+                    report["game_benchmark"]["full_radius_terrain"]["initial_barrier"]["nonresident_desired"] = 1
+                elif mutation == "raw":
+                    report["game_benchmark"]["raw_frames"][0]["loop_duration_ns"] = -1
+                elif mutation == "source":
+                    row["source_input_sha256"] = "0" * 64
+                elif mutation == "invocation":
+                    row["environment"] = {"MC_DIAGNOSTIC_ANYTHING": "1"}
+                else:
+                    report["game_benchmark"]["frame_budget"]["sample_count"] += 1
+                report_path.write_text(json.dumps(report), encoding="utf-8")
+                row["report"] = self.gate.file_identity(report_path)
+                receipt.write_text(json.dumps(aggregate), encoding="utf-8")
+                with self.assertRaises(self.gate.GameplayError):
+                    self.gate.verify_receipt(root, receipt, s7_windows_secondary=True,
+                                            s7_cadence_exception="EarlyDev0.1.0-snapshot7")
+
+    def test_s7_cadence_exception_cli_marks_aggregate_without_claiming_pass(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            receipt, _, _, _, _, _ = self.cadence_exception_receipt(root)
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output):
+                result = self.gate.main(["--root", str(root), "--receipt", str(receipt),
+                                         "--s7-windows-secondary", "--s7-cadence-exception", "EarlyDev0.1.0-snapshot7"])
+            self.assertEqual(result, 0)
+            verified = json.loads(output.getvalue())
+            self.assertEqual(verified["status"], "accepted_exception")
+            self.assertEqual(verified["platforms"]["macos"]["performance"]["presentation_timing_status"], "failed")
+
+    def test_s7_cadence_exception_keeps_full_platform_windows_requirement_independent(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            aggregate = self.aggregate(root)
+            approval = root / "docs/ai/S7-CADENCE-EXCEPTION-2026-10-18.json"
+            approval.parent.mkdir(parents=True)
+            shutil.copyfile(REPOSITORY / "docs/ai/S7-CADENCE-EXCEPTION-2026-10-18.json", approval)
+            receipt = root / "receipt.json"
+            receipt.write_text(json.dumps(aggregate), encoding="utf-8")
+            result = self.gate.verify_receipt(root, receipt, s7_cadence_exception="EarlyDev0.1.0-snapshot7")
+            self.assertEqual(result["windows"]["performance"]["status"], "passed")
+            row = next(row for row in aggregate["rows"] if row["platform"] == "windows" and row["proof"] == "performance")
+            report_path = Path(row["report"]["path"])
+            report_path.write_text(json.dumps(self.report("windows", interval_ns=10000000)), encoding="utf-8")
+            row["report"] = self.gate.file_identity(report_path)
+            receipt.write_text(json.dumps(aggregate), encoding="utf-8")
+            with self.assertRaisesRegex(self.gate.GameplayError, "successful-request rate"):
+                self.gate.verify_receipt(root, receipt, s7_cadence_exception="EarlyDev0.1.0-snapshot7")
+
+    def test_s7_cadence_exception_does_not_waive_missing_samples_or_windows(self):
+        report = self.report()
+        frames = report["game_benchmark"]["raw_frames"]
+        baseline = [frame for frame in frames if frame["phase"] == self.gate.PHASES[1]]
+        for frame in baseline[:-499]:
+            frame["presentation_succeeded"] = False
+        self.reconcile_raw_totals(report)
+        with self.assertRaisesRegex(self.gate.GameplayError, "insufficient driver presentation intervals"):
+            self.gate.verify_report(report, "macos", cadence_exception={"release": "EarlyDev0.1.0-snapshot7"})
+        with self.assertRaisesRegex(self.gate.GameplayError, "another platform or proof"):
+            self.gate.verify_report(self.report("windows"), "windows",
+                                    cadence_exception={"release": "EarlyDev0.1.0-snapshot7"})
+        report = self.report()
+        self.set_actual_phase_intervals(report, self.gate.PHASES[1], 32000000)
+        with self.assertRaisesRegex(self.gate.GameplayError, "median exceeds one"):
+            self.gate.verify_report(report, "macos", cadence_exception={"release": "EarlyDev0.1.0-snapshot7"})
+
     def test_source_digest_rejects_missing_embedded_scenario_script(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -438,6 +640,10 @@ class VerifyGameplayGateTests(unittest.TestCase):
         for name in ("CMakeLists.txt", "CMakePresets.json", "dependencies.lock.json"):
             (root / name).write_text("fixture\n", encoding="utf-8")
         (root / "src").mkdir()
+        project = root / "src/shared/include/shared/ProjectInfo.hpp"
+        project.parent.mkdir(parents=True)
+        shutil.copyfile(REPOSITORY / project.relative_to(root), project)
+        shutil.copyfile(REPOSITORY / "vcpkg.json", root / "vcpkg.json")
         (root / "src/game.cpp").write_text("source\n", encoding="utf-8")
         scenario_directory = root / "scenarios/world"
         scenario_directory.mkdir(parents=True)
@@ -1306,6 +1512,50 @@ class VerifyGameplayGateTests(unittest.TestCase):
         with self.assertRaisesRegex(self.gate.GameplayError, "center disagrees"):
             self.gate.verify_report(report, "macos")
 
+    def test_current_near_visible_tiles_cannot_contradict_residency(self):
+        for proof in ("performance", "terrain-coverage"):
+            with self.subTest(proof=proof):
+                report = self.report(proof=proof)
+                frame = next(frame for frame in report["game_benchmark"]["raw_frames"]
+                             if frame["phase"] == self.gate.PHASES[2])
+                frame["terrain_near"]["resident"] = 0
+                with self.assertRaisesRegex(self.gate.GameplayError, "missing meshes in the current near terrain window"):
+                    self.gate.verify_report(report, "macos")
+
+    def test_all_zero_radial_diagnostics_cannot_claim_complete_coverage(self):
+        for proof in ("performance", "terrain-coverage"):
+            with self.subTest(proof=proof):
+                report = self.report(proof=proof)
+                frame = report["game_benchmark"]["raw_frames"][0]
+                frame["diagnostic_terrain_radial_bands"] = [
+                    {"desired": 0, "resident": 0, "nonresident": 0,
+                     "current_mesh_visible": 0, "stale_or_missing_mesh": 0} for _ in range(16)]
+                frame["diagnostic_terrain_spatial_scan_duration_ns"] = 2_345_000
+                with self.assertRaisesRegex(self.gate.GameplayError, "radial desired counts disagree with render radius"):
+                    self.gate.verify_report(report, "macos")
+
+    def test_consistent_underreported_radial_diagnostics_are_rejected(self):
+        for proof in ("performance", "terrain-coverage"):
+            with self.subTest(proof=proof):
+                report = self.report(proof=proof)
+                frame = report["game_benchmark"]["raw_frames"][0]
+                bands = copy.deepcopy(report["game_benchmark"]["full_radius_terrain"]["initial_barrier"]["radial_bands"])
+                for key in ("desired", "resident", "current_mesh_visible"):
+                    bands[4][key] -= 1
+                frame["diagnostic_terrain_radial_bands"] = bands
+                frame["diagnostic_terrain_spatial_scan_duration_ns"] = 2_345_000
+                with self.assertRaisesRegex(self.gate.GameplayError, "radial desired counts disagree with render radius"):
+                    self.gate.verify_report(report, "macos")
+
+    def test_radial_cardinalities_follow_the_verified_radius(self):
+        for radius, total, last_occupied_band in ((128, 51433, 8), (256, 205861, 15)):
+            with self.subTest(radius=radius):
+                counts = self.gate.radial_band_counts(radius)
+                self.assertEqual(sum(counts), total)
+                self.assertEqual(counts[0], 961)
+                self.assertGreater(counts[last_occupied_band], 0)
+                self.assertEqual(sum(counts[last_occupied_band + 1:]), 0)
+
     def test_included_radial_diagnostics_must_show_complete_render_radius(self):
         report = self.report()
         frame = next(frame for frame in report["game_benchmark"]["raw_frames"]
@@ -1558,50 +1808,6 @@ class VerifyGameplayGateTests(unittest.TestCase):
                                                        *captured["command"][1:-1], captured["native_report_path"]])
             self.assertNotEqual(captured["native_report_path"], captured["command"][-1])
             self.assertFalse(Path(captured["native_report_path"]).parent.exists())
-
-    def test_current_near_visible_tiles_cannot_contradict_residency(self):
-        for proof in ("performance", "terrain-coverage"):
-            with self.subTest(proof=proof):
-                report = self.report(proof=proof)
-                frame = next(frame for frame in report["game_benchmark"]["raw_frames"]
-                             if frame["phase"] == self.gate.PHASES[2])
-                frame["terrain_near"]["resident"] = 0
-                with self.assertRaisesRegex(self.gate.GameplayError, "missing meshes in the current near terrain window"):
-                    self.gate.verify_report(report, "macos")
-
-    def test_all_zero_radial_diagnostics_cannot_claim_complete_coverage(self):
-        for proof in ("performance", "terrain-coverage"):
-            with self.subTest(proof=proof):
-                report = self.report(proof=proof)
-                frame = report["game_benchmark"]["raw_frames"][0]
-                frame["diagnostic_terrain_radial_bands"] = [
-                    {"desired": 0, "resident": 0, "nonresident": 0,
-                     "current_mesh_visible": 0, "stale_or_missing_mesh": 0} for _ in range(16)]
-                frame["diagnostic_terrain_spatial_scan_duration_ns"] = 2_345_000
-                with self.assertRaisesRegex(self.gate.GameplayError, "radial desired counts disagree with render radius"):
-                    self.gate.verify_report(report, "macos")
-
-    def test_consistent_underreported_radial_diagnostics_are_rejected(self):
-        for proof in ("performance", "terrain-coverage"):
-            with self.subTest(proof=proof):
-                report = self.report(proof=proof)
-                frame = report["game_benchmark"]["raw_frames"][0]
-                bands = copy.deepcopy(report["game_benchmark"]["full_radius_terrain"]["initial_barrier"]["radial_bands"])
-                for key in ("desired", "resident", "current_mesh_visible"):
-                    bands[4][key] -= 1
-                frame["diagnostic_terrain_radial_bands"] = bands
-                frame["diagnostic_terrain_spatial_scan_duration_ns"] = 2_345_000
-                with self.assertRaisesRegex(self.gate.GameplayError, "radial desired counts disagree with render radius"):
-                    self.gate.verify_report(report, "macos")
-
-    def test_radial_cardinalities_follow_the_verified_radius(self):
-        for radius, total, last_occupied_band in ((128, 51433, 8), (256, 205861, 15)):
-            with self.subTest(radius=radius):
-                counts = self.gate.radial_band_counts(radius)
-                self.assertEqual(sum(counts), total)
-                self.assertEqual(counts[0], 961)
-                self.assertGreater(counts[last_occupied_band], 0)
-                self.assertEqual(sum(counts[last_occupied_band + 1:]), 0)
 
     def test_capture_merge_and_verify_require_the_same_proof_contract(self):
         with self.subTest(proof_contract="required"), tempfile.TemporaryDirectory() as directory:
@@ -2130,7 +2336,7 @@ class VerifyGameplayGateTests(unittest.TestCase):
             with self.subTest(invocation=invocation), tempfile.TemporaryDirectory() as directory:
                 root = Path(directory).resolve()
                 aggregate = self.aggregate(root)
-                inputs = [root / f"{row['platform']}.json" for row in aggregate["rows"]]
+                inputs = [root / f"row-{index}.json" for index in range(len(aggregate["rows"]))]
                 for receipt, row in zip(inputs, aggregate["rows"]):
                     receipt.write_text(json.dumps({"schema_version": self.gate.SCHEMA, "rows": [row]}), encoding="utf-8")
                 output, target = root / "merged.json", root / "unapproved.json"
@@ -2279,7 +2485,6 @@ class VerifyGameplayGateTests(unittest.TestCase):
             self.assertEqual(row["transport"]["job_id"], DESKTOP_JOB_ID)
             self.assertTrue(row["transport"]["cleanup"]["terminal_observed"])
             self.assertEqual([operation for operation, _ in capture["state"]["calls"]], ["Submit", "Cancel", "Status"])
-
 
     def test_desktop_lost_response_does_not_claim_concurrent_same_caller_job(self):
         foreign_job = "87654321-4321-4321-4321-abcdef123456"

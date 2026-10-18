@@ -651,18 +651,30 @@ HeightTileSurfaceFaceAreas heightTileSurfaceFaceAreas(
                         x_edge ? static_cast<int32_t>(offset) : adjacent
                     );
                 };
-                uint32_t along = along_start;
-                while (along < along_start + cell_size) {
-                    uint16_t const adjacent_height = adjacentHeight(along);
-                    uint32_t span = 1U;
-                    while (along + span < along_start + cell_size
-                        && adjacentHeight(along + span) == adjacent_height) {
-                        ++span;
+                // reduceTile fills each aligned interior cell with one height across its full edge.
+                if (boundary) {
+                    uint32_t along = along_start;
+                    while (along < along_start + cell_size) {
+                        uint16_t const adjacent_height = adjacentHeight(along);
+                        uint32_t span = 1U;
+                        while (along + span < along_start + cell_size
+                            && adjacentHeight(along + span) == adjacent_height) {
+                            ++span;
+                        }
+                        if (height > adjacent_height) {
+                            uint32_t const wall_area = span * static_cast<uint32_t>(height - adjacent_height);
+                            maximum_area = std::max(maximum_area, wall_area);
+                        }
+                        along += span;
                     }
+                } else {
+                    uint16_t const adjacent_height = adjacentHeight(along_start);
                     if (height > adjacent_height) {
-                        maximum_area = std::max(maximum_area, span * static_cast<uint32_t>(height - adjacent_height));
+                        maximum_area = std::max(
+                            maximum_area,
+                            cell_size * static_cast<uint32_t>(height - adjacent_height)
+                        );
                     }
-                    along += span;
                 }
                 if (boundary && installed_neighbor_profiles[edge].has_value()) {
                     auto const& top = installed_neighbor_profiles[edge].value().top;

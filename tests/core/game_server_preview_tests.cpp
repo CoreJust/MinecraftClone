@@ -2803,11 +2803,11 @@ TEST(GameServerPreviewTest, SaturatedAdditionsDoNotStarveRemovalsAndInflightRecl
     }
     size_t const recovery_message = client.messages.size();
     client.setAcknowledgesDeliveries(true);
-    for (auto batch = std::next(stalled_batches.begin(), 2U); batch != stalled_batches.end(); ++batch) {
-        ASSERT_TRUE(client.acknowledgeDelivery(batch->delivery_token));
-    }
-    for (auto batch = std::next(outward_batches.begin()); batch != outward_batches.end(); ++batch) {
-        ASSERT_TRUE(client.acknowledgeDelivery(batch->delivery_token));
+    // Movement can admit removal-only batches between the captured stalled and outward windows.
+    for (shared::ServerHeightTileBatchMessage const& batch : deliveryBatchesFrom(client.messages, stalled_message)) {
+        if (std::ranges::find(acknowledged_tokens, batch.delivery_token) == acknowledged_tokens.end()) {
+            ASSERT_TRUE(client.acknowledgeDelivery(batch.delivery_token));
+        }
     }
     deadline = std::chrono::steady_clock::now() + TIMEOUT;
     std::vector<shared::HeightTileKey> recovered;

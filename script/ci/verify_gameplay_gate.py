@@ -25,6 +25,11 @@ from typing import Any, Sequence
 
 
 SCRIPT_ROOT = Path(__file__).resolve().parents[1]
+_CHECK_SPEC = importlib.util.spec_from_file_location("gameplay_ai_check", SCRIPT_ROOT / "ai_check.py")
+assert _CHECK_SPEC is not None and _CHECK_SPEC.loader is not None
+_CHECK = importlib.util.module_from_spec(_CHECK_SPEC)
+sys.modules[_CHECK_SPEC.name] = _CHECK
+_CHECK_SPEC.loader.exec_module(_CHECK)
 _SPEC = importlib.util.spec_from_file_location("ai_analysis_matrix", SCRIPT_ROOT / "ai_analysis_matrix.py")
 assert _SPEC is not None and _SPEC.loader is not None
 _MATRIX = importlib.util.module_from_spec(_SPEC)
@@ -54,6 +59,9 @@ TARGET_HZ = {"macos": 120, "windows": 120}
 PROOFS = {"terrain-coverage": 256, "performance": 128}
 PERFORMANCE_SAMPLE_MS = 30_000
 PERFORMANCE_SAMPLE_OVERRUN_MS = 1_000
+S7_CADENCE_EXCEPTION = "EarlyDev0.1.0-snapshot7"
+S7_CADENCE_APPROVAL = "docs/ai/S7-CADENCE-EXCEPTION-2026-10-18.json"
+S7_CADENCE_APPROVAL_SHA256 = "27be307193623673eb73fcf82f657fe474ef31fb03726f03db3f739bdce98d4e"
 WORLD_TILE_COUNT = 4_096
 QUEUE_FIELDS = ("pending_delivery_batches", "pending_residency_changes", "pending_mesh_queue",
                 "active_mesh_jobs", "dirty_mesh_jobs", "worker_results", "worker_outstanding", "pending_removals")
@@ -130,6 +138,23 @@ def file_identity(target: Path) -> dict[str, Any]:
     require(target.is_file() and not target.is_symlink(), f"missing regular evidence file: {target}")
     data = target.read_bytes()
     return {"path": str(target.resolve()), "size": len(data), "sha256": hashlib.sha256(data).hexdigest()}
+
+
+def cadence_exception_approval(root: Path, selection: str | None) -> dict[str, Any] | None:
+    if selection is None:
+        return None
+    require(selection == S7_CADENCE_EXCEPTION,
+            "cadence exception is only authorized for EarlyDev0.1.0 snapshot7 macOS performance")
+    _CHECK.require_s7_candidate(root)
+    target = root / S7_CADENCE_APPROVAL
+    identity = file_identity(target)
+    require(identity["sha256"] == S7_CADENCE_APPROVAL_SHA256,
+            "S7 cadence approval record is missing or altered")
+    approval = read_json(target)
+    require(approval["release"] == S7_CADENCE_EXCEPTION and approval["platform"] == "macos"
+            and approval["proof"] == "performance" and approval["follow_up"] == "MC-AI-0472",
+            "S7 cadence approval scope disagrees with the selected exception")
+    return {"release": selection, "approval": identity, "follow_up": approval["follow_up"]}
 
 
 def checked_file(descriptor: Any, base: Path) -> Path:
@@ -520,7 +545,7 @@ def timing_summary(samples: list[int]) -> dict[str, int]:
 
 
 def verify_actual_presentation_timing(value: Any, game: dict[str, Any], frames: list[dict[str, Any]],
-                                      full: dict[str, Any]) -> dict[str, Any]:
+                                      full: dict[str, Any], *, accept_cadence_exception: bool = False) -> dict[str, Any]:
     fields = {"contract", "provider", "source", "capability", "clock_domain", "successful_requests", "records",
               "polls", "capture_endpoint", "drain"}
     require(isinstance(value, dict) and set(value) == fields,
@@ -725,23 +750,18 @@ def verify_actual_presentation_timing(value: Any, game: dict[str, Any], frames: 
                                  (PHASES[4], "recovered_stationary_elapsed_ms")):
         intervals = interval_values[phase]
         summary = timing_summary(intervals)
-        if len(intervals) < 500:
-            failures.append(f"{phase}: insufficient driver presentation intervals ({len(intervals)}, requires 500)")
-        if not intervals or any(interval <= 0 for interval in intervals):
-            failures.append(f"{phase}: driver presentation cadence is not computable")
-            metrics[phase] = {"target_hz": 120, "minimum_rate_hz": 119.76, "intervals_ns": summary,
-                              "phase_elapsed_ms": integer(full[elapsed_field], elapsed_field, 1),
-                              "successful_requests": sum(request["phase"] == phase for request in requests),
-                              "interval_rate_hz": None, "cadence": None}
-            continue
+        require(len(intervals) >= 500,
+                f"{phase}: insufficient driver presentation intervals ({len(intervals)}, requires 500)")
+        require(bool(intervals) and all(interval > 0 for interval in intervals),
+                f"{phase}: driver presentation cadence is not computable")
         interval_ns = sum(intervals)
         rate = len(intervals) * 1_000_000_000 / interval_ns
         slots = [max(1, round(interval * 120 / 1_000_000_000)) for interval in intervals]
         lost, total = sum(slot - 1 for slot in slots), sum(slots)
         if interval_ns * 120 * 998 > len(intervals) * 1_000_000_000 * 1000:
             failures.append(f"{phase}: driver presentation rate {rate:.6f}Hz is below 119.76Hz")
-        if max(1, round(summary["p50"] * 120 / 1_000_000_000)) != 1:
-            failures.append(f"{phase}: driver presentation median exceeds one 120Hz refresh slot")
+        require(max(1, round(summary["p50"] * 120 / 1_000_000_000)) == 1,
+                "; ".join([*failures, f"{phase}: driver presentation median exceeds one 120Hz refresh slot"]))
         if lost * 1000 > total * 2:
             failures.append(f"{phase}: driver presentation lost FIFO refresh-slot share exceeds 0.2% ({lost}/{total})")
         metrics[phase] = {"target_hz": 120, "minimum_rate_hz": 119.76, "intervals_ns": summary,
@@ -751,8 +771,9 @@ def verify_actual_presentation_timing(value: Any, game: dict[str, Any], frames: 
                           "cadence": {"contract": "fifo-nearest-120hz-driver-presentation-slots",
                                       "lost_slots": lost, "total_slots": total,
                                       "lost_slot_share": lost / total}}
-    require(not failures, "; ".join(failures))
-    return {"status": "passed", "source": "driver-reported", "provider": ACTUAL_PRESENTATION_PROVIDER,
+    require(not failures or accept_cadence_exception, "; ".join(failures))
+    return {"status": "failed" if failures else "passed", "failure_reasons": failures,
+            "source": "driver-reported", "provider": ACTUAL_PRESENTATION_PROVIDER,
             "clock_domain": ACTUAL_PRESENTATION_CLOCK_DOMAIN, "expected_record_count": len(measurement_keys),
             "drain_record_count": sum(key in record_by_key for key in drain_keys), "poll_count": len(polls),
             "incomplete_poll_count": sum(poll["status"] == "incomplete" for poll in polls), "phases": metrics}
@@ -781,7 +802,8 @@ def verify_barrier(barrier: dict[str, Any], phase: str, elapsed: int, radius: in
                 and band["nonresident"] == 0 and band["stale_or_missing_mesh"] == 0, f"{phase}: radial coverage mismatch")
 
 
-def verify_report(report: dict[str, Any], platform: str, proof: str | None = None) -> dict[str, Any]:
+def verify_report(report: dict[str, Any], platform: str, proof: str | None = None,
+                  *, cadence_exception: dict[str, Any] | None = None) -> dict[str, Any]:
     require(report["schema_version"] == "mc.runtime-evidence.v1" and report["mode"] == "benchmark-game"
             and report["passed"] is True and report["failure"] == "", "runtime workload did not pass")
     timing = report["timing"]
@@ -789,6 +811,8 @@ def verify_report(report: dict[str, Any], platform: str, proof: str | None = Non
     game = report["game_benchmark"]
     actual_proof = game.get("qualification_proof")
     require(actual_proof in PROOFS and (proof is None or proof == actual_proof), "missing or mismatched gameplay proof selector")
+    require(cadence_exception is None or platform == "macos" and actual_proof == "performance",
+            "cadence exception cannot apply to another platform or proof")
     radius = PROOFS[actual_proof]
     cadence_required = actual_proof == "performance"
     request_cadence_required = cadence_required and platform == "windows"
@@ -949,7 +973,9 @@ def verify_report(report: dict[str, Any], platform: str, proof: str | None = Non
                 f"{prefix}: incomplete stationary raw duration")
     presentation_metrics = {"status": "not-required"}
     if presentation_timing_required:
-        presentation_metrics = verify_actual_presentation_timing(game.get("presentation_timing"), game, frames, full)
+        presentation_metrics = verify_actual_presentation_timing(
+            game.get("presentation_timing"), game, frames, full,
+            accept_cadence_exception=cadence_exception is not None)
 
     proxy, cadence_failures = {}, []
 
@@ -1024,7 +1050,9 @@ def verify_report(report: dict[str, Any], platform: str, proof: str | None = Non
             "required_for_benchmark_pass": frame_budget_required}, "raw game-loop frame budget mismatch")
     require(not request_cadence_required or not cadence_failures, "; ".join(cadence_failures))
     require(not frame_budget_required or budget_passed, "120Hz game-loop time budget exceeds 0.2%")
-    return {"proof": actual_proof, "render_distance": radius, "coverage": "passed", "request_cadence_status": "failed" if cadence_failures else "passed",
+    accepted = cadence_exception if presentation_metrics["status"] == "failed" else None
+    return {"status": "accepted_exception" if accepted else "passed", "accepted_exception": accepted,
+            "proof": actual_proof, "render_distance": radius, "coverage": "passed", "request_cadence_status": "failed" if cadence_failures else "passed",
             "request_cadence_required": request_cadence_required, "request_cadence_reasons": cadence_failures,
             "request_cadence_proxy": proxy, "total_unsuccessful_attempts": game["failed_present_requests"],
             "raw_unsuccessful_attempts": raw_unsuccessful, "presentation_timing_required": presentation_timing_required,
@@ -1033,13 +1061,23 @@ def verify_report(report: dict[str, Any], platform: str, proof: str | None = Non
             "physical_display_cadence": "unavailable"}
 
 
-def verify_receipt(root: Path, receipt: Path) -> dict[str, Any]:
+def verify_receipt(root: Path, receipt: Path, *, s7_windows_secondary: bool = False,
+                   s7_cadence_exception: str | None = None) -> dict[str, Any]:
+    if s7_windows_secondary:
+        _CHECK.require_s7_candidate(root)
+    approval = cadence_exception_approval(root, s7_cadence_exception)
     aggregate = read_json(receipt)
     require(aggregate["schema_version"] == SCHEMA and isinstance(aggregate["rows"], list), "invalid gameplay proof schema")
     rows = aggregate["rows"]
-    required = {(platform, proof) for platform in TARGET_HZ for proof in PROOFS}
-    require(len(rows) == 4 and {(row["platform"], row.get("proof")) for row in rows} == required,
-            "both terrain-coverage and performance proof are required on macos and windows")
+    required_platforms = ("macos",) if s7_windows_secondary else tuple(TARGET_HZ)
+    required = {(platform, proof) for platform in required_platforms for proof in PROOFS}
+    requirement = (
+        "S7 Windows-secondary profile requires Mac terrain-coverage and performance proofs only"
+        if s7_windows_secondary else
+        "both terrain-coverage and performance proof are required on macos and windows"
+    )
+    require(len(rows) == len(required) and {(row["platform"], row.get("proof")) for row in rows} == required,
+            requirement)
     expected_source = source_digest(root)
     require(all(row["source_candidate"] == rows[0]["source_candidate"] for row in rows), "mixed gameplay source candidates")
     results = {}
@@ -1072,9 +1110,16 @@ def verify_receipt(root: Path, receipt: Path) -> dict[str, Any]:
         if "transport" in row:
             verify_desktop_transport(row, receipt.parent)
         raw = read_json(report)
-        results.setdefault(row["platform"], {})[row["proof"]] = verify_report(raw, row["platform"], row["proof"])
+        results.setdefault(row["platform"], {})[row["proof"]] = verify_report(
+            raw, row["platform"], row["proof"],
+            cadence_exception=approval if row["platform"] == "macos" and row["proof"] == "performance" else None)
         require(raw["game_benchmark"]["full_radius_terrain"]["warmup_timeout_ms"] == row["warmup_seconds"] * 1000,
                 "capture command warmup disagrees with raw report")
+    if s7_windows_secondary:
+        results["windows"] = {
+            "status": "deferred",
+            "reason": "Windows gameplay qualification was not selected for this S7 snapshot.",
+        }
     return results
 
 
@@ -1425,8 +1470,20 @@ def record(root: Path, receipt: Path, platform: str, executable: Path, warmup: i
     print(json.dumps(verify_report(read_json(report), platform, proof), sort_keys=True))
 
 
-def merge_receipts(root: Path, inputs: list[Path], output: Path) -> dict[str, Any]:
+def merge_receipts(
+    root: Path,
+    inputs: list[Path],
+    output: Path,
+    *,
+    s7_windows_secondary: bool = False,
+    s7_cadence_exception: str | None = None,
+) -> dict[str, Any]:
     require(not path_entry_exists(output), "aggregate receipt already exists; select a fresh output path")
+    if s7_windows_secondary or s7_cadence_exception is not None:
+        _CHECK.require_s7_candidate(root)
+    selected_platforms = ("macos",) if s7_windows_secondary else tuple(TARGET_HZ)
+    required = {(platform, proof) for platform in selected_platforms for proof in PROOFS}
+    require(len(inputs) == len(required), "merge requires exactly one input receipt for every selected gameplay proof")
     rows = []
     for target in inputs:
         partial = read_json(target)
@@ -1459,9 +1516,15 @@ def merge_receipts(root: Path, inputs: list[Path], output: Path) -> dict[str, An
             for key, relative in (("manifest", "manifest.json"), ("vulkan_loader", "lib/libvulkan.1.dylib"), ("moltenvk", "lib/libMoltenVK.dylib")):
                 runtime[key] = dict(files[relative])
         rows.append(row)
+    require(
+        len(rows) == len(required)
+        and {(row["platform"], row.get("proof")) for row in rows} == required,
+        "merge inputs do not match the selected gameplay proof policy",
+    )
     with output.open("x", encoding="utf-8") as receipt_file:
         receipt_file.write(json.dumps({"schema_version": SCHEMA, "rows": rows}, indent=2, sort_keys=True) + "\n")
-    return verify_receipt(root, output)
+    return verify_receipt(root, output, s7_windows_secondary=s7_windows_secondary,
+                          s7_cadence_exception=s7_cadence_exception)
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -1470,8 +1533,15 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--receipt", type=Path, required=True)
     parser.add_argument("--candidate-commit")
     parser.add_argument("--record", choices=tuple(TARGET_HZ))
-    parser.add_argument("--merge", nargs=4, type=Path, metavar="PROOF_RECEIPT")
+    parser.add_argument("--merge", nargs="+", type=Path, metavar="PROOF_RECEIPT")
+    parser.add_argument(
+        "--s7-windows-secondary",
+        action="store_true",
+        help="for the selected S7 snapshot only, require Mac proofs and report Windows as deferred",
+    )
     parser.add_argument("--proof", choices=tuple(PROOFS), help="one explicitly selected capture proof")
+    parser.add_argument("--s7-cadence-exception", choices=(S7_CADENCE_EXCEPTION,),
+                        help="explicitly accept only the documented S7 Mac cadence threshold exception, never a performance PASS")
     parser.add_argument("--executable", type=Path)
     parser.add_argument("--desktop-package", type=Path, help="Windows only: approved native runtime package for the installed desktop helper")
     parser.add_argument("--desktop-package-manifest", type=Path, help="exact relative/size/SHA256 inventory of the approved package")
@@ -1490,6 +1560,9 @@ def main(argv: Sequence[str] | None = None) -> int:
                                       capture_output=True, text=True, timeout=30)
             require(untracked.returncode == 0 and not untracked.stdout.strip(), "candidate has uncommitted gameplay source files")
         require(not (args.record and args.merge), "--record and --merge are mutually exclusive")
+        require(not (args.s7_windows_secondary and args.record), "S7 Windows-secondary applies only to aggregate verification")
+        require(not args.s7_cadence_exception or not args.record,
+                "S7 cadence exception applies only to aggregate verification, not capture")
         desktop_options = (args.desktop_package, args.desktop_package_manifest, args.desktop_task_id)
         require(not any(desktop_options) or args.record == "windows" and all(desktop_options),
                 "desktop options require --record windows, --desktop-package, --desktop-package-manifest and --desktop-task-id")
@@ -1507,9 +1580,24 @@ def main(argv: Sequence[str] | None = None) -> int:
                    args.macos_package.absolute() if args.macos_package else None,
                    args.macos_package_manifest.absolute() if args.macos_package_manifest else None)
         else:
-            results = (merge_receipts(root, [target.resolve(strict=True) for target in args.merge], args.receipt.absolute())
-                       if args.merge else verify_receipt(root, args.receipt.resolve(strict=True)))
-            print(json.dumps({"status": "passed",
+            results = (
+                merge_receipts(
+                    root,
+                    [target.resolve(strict=True) for target in args.merge],
+                    args.receipt.absolute(),
+                    s7_windows_secondary=args.s7_windows_secondary,
+                    s7_cadence_exception=args.s7_cadence_exception,
+                )
+                if args.merge else verify_receipt(
+                    root,
+                    args.receipt.resolve(strict=True),
+                    s7_windows_secondary=args.s7_windows_secondary,
+                    s7_cadence_exception=args.s7_cadence_exception,
+                )
+            )
+            accepted = any(proof.get("status") == "accepted_exception"
+                           for platform in results.values() for proof in platform.values() if isinstance(proof, dict))
+            print(json.dumps({"status": "accepted_exception" if accepted else "passed",
                               "platforms": results}, sort_keys=True))
         return 0
     except (OSError, ValueError, KeyError, TypeError, IndexError, subprocess.SubprocessError, _MATRIX.MatrixError) as error:

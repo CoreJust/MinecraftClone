@@ -1,0 +1,24 @@
+{
+  "schema": "mc.s7-cadence-exception.v1",
+  "release": "EarlyDev0.1.0-snapshot7",
+  "platform": "macos",
+  "proof": "performance",
+  "decision_date": "2026-10-18",
+  "root_chat_id": "01a0ba16-ca38-7043-972a-858a4396880e",
+  "question": "The normal Mac run now sustains 119.67–119.73 Hz at radius 128, but delivers 99.72–99.78% of display slots versus your 99.8% target. Radius-256 completeness passes in 22.944 seconds. The trace isolates a drawable/display delay, but no application fix is yet proven. Keep 99.8% as a hard S7 publication blocker, or allow an explicitly documented S7-only exception with a tracked follow-up? I’ll continue the other required release checks either way.",
+  "answer": "Allow a documented S7-only exception",
+  "task": "MC-AI-0471",
+  "follow_up": "MC-AI-0472",
+  "follow_up_depends_on": ["MC-AI-0038"],
+  "waived_failures": ["driver mean presentation rate below 119.76Hz", "driver lost refresh-slot share above 0.2%"],
+  "unchanged_requirements": "All other checks remain strict, including median one-refresh-slot mode, driver-history integrity and sample count, coverage, provenance, runtime structure, and required platform policies. This is accepted_exception, never performance PASS; no replacement numeric floor is authorized.",
+  "reference_evidence": {
+    "kind": "preserved-normal-v29-not-a-source-pin",
+    "performance_raw_sha256": "b2d36a98f848f9706e2be73f066a7cbbf3587f3d75709db6d2ae1b5a7589ed7a",
+    "terrain_coverage_raw_sha256": "5778d226b98c2f5804b2db4ed09d6cdbc63ee6e4dc8be198719286dec591fae1",
+    "baseline": {"driver_rate_hz": 119.73265544049094, "lost_slots": 8, "total_slots": 3601},
+    "movement": {"driver_rate_hz": 119.69931478807057, "lost_slots": 9, "total_slots": 3601},
+    "recovery": {"driver_rate_hz": 119.66609544734513, "lost_slots": 10, "total_slots": 3602},
+    "radius256_completeness_seconds": 22.944
+  }
+}

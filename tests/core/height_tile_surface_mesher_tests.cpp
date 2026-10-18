@@ -7,6 +7,7 @@
 #include <array>
 #include <cmath>
 #include <cstdint>
+#include <cstdlib>
 #include <optional>
 #include <ranges>
 #include <stdexcept>
@@ -97,15 +98,35 @@ std::vector<shared::HeightTileSurfaceQuad> cellPatches(
     return patches;
 }
 
+struct PatchAreaLimits final {
+    uint32_t cell_size;
+    double maximum_area;
+};
+
 void expectPatchAreas(
     std::vector<shared::HeightTileSurfaceQuad> const& quads,
-    uint32_t const cell_size,
-    double const maximum_area
+    PatchAreaLimits const limits
 )
 {
-    for (shared::HeightTileSurfaceQuad const& patch : cellPatches(quads, cell_size)) {
-        EXPECT_LE(static_cast<uint32_t>(patch.u_extent) * patch.v_extent, maximum_area);
+    for (shared::HeightTileSurfaceQuad const& patch : cellPatches(quads, limits.cell_size)) {
+        EXPECT_LE(static_cast<uint32_t>(patch.u_extent) * patch.v_extent, limits.maximum_area);
     }
+}
+
+[[nodiscard]]
+uint32_t maximumCellPatchArea(
+    std::vector<shared::HeightTileSurfaceQuad> const& quads,
+    uint32_t const cell_size
+)
+{
+    uint32_t maximum_area = cell_size * cell_size;
+    for (shared::HeightTileSurfaceQuad const& patch : cellPatches(quads, cell_size)) {
+        maximum_area = std::max(
+            maximum_area,
+            static_cast<uint32_t>(patch.u_extent) * patch.v_extent
+        );
+    }
+    return maximum_area;
 }
 
 [[nodiscard]]
@@ -202,7 +223,7 @@ TEST(HeightTileSurfaceMesherTest, EdgeProfilesPreserveClippedSpansOverwriteOrder
             int32_t const boundary = edge == EDGES[0U] || edge == EDGES[2U] ? 0 : 15;
             int32_t const origin_x = coordinate.x * 16;
             int32_t const origin_y = coordinate.y * 16;
-            shared::HeightTileSurfaceMesh mesh{ .coordinate = coordinate };
+            shared::HeightTileSurfaceMesh mesh{ .coordinate = coordinate, .quads = {} };
             auto const top = [&](
                 int32_t const perpendicular, int32_t const along,
                 uint16_t const perpendicular_span, uint16_t const along_span,
@@ -248,7 +269,7 @@ TEST(HeightTileSurfaceMesherTest, EdgeProfilesPreserveClippedSpansOverwriteOrder
             EXPECT_EQ(profile.top, EXPECTED_TOP);
             EXPECT_EQ(profile.elevation.minimum, 3U);
             EXPECT_EQ(profile.elevation.maximum, 33U);
-            shared::HeightTileSurfaceMesh point_only{ .coordinate = coordinate };
+            shared::HeightTileSurfaceMesh point_only{ .coordinate = coordinate, .quads = {} };
             point_only.quads.push_back(mesh.quads.back());
             auto const point_profile = shared::heightTileSurfaceEdgeProfile(point_only, edge);
             EXPECT_EQ(point_profile.top, (std::array<uint16_t, 16U>{}));
@@ -272,11 +293,11 @@ TEST(HeightTileSurfaceMesherTest, ClippedWallCoverageLeavesExactGapsWithBothSeam
         auto const opposite = EDGES[OPPOSITE[edge_index]];
         bool const x_edge = edge_index < 2U;
         bool const negative = edge_index == 0U || edge_index == 2U;
-        shared::HeightTileSurfaceMesh first{ .coordinate = { 4094, 4094 } };
+        shared::HeightTileSurfaceMesh first{ .coordinate = { 4094, 4094 }, .quads = {} };
         shared::HeightTileSurfaceMesh second{ .coordinate = {
             first.coordinate.x + (x_edge ? (negative ? -1 : 1) : 0),
             first.coordinate.y + (x_edge ? 0 : (negative ? -1 : 1)),
-        } };
+        }, .quads = {} };
         first.quads.push_back({ .x = first.coordinate.x * 16, .y = first.coordinate.y * 16,
             .z = 9, .direction = shared::HeightTileSurfaceDirection::PositiveZ,
             .u_extent = 16U, .v_extent = 16U });
@@ -415,13 +436,22 @@ TEST(HeightTileSurfaceMesherTest, CertificateBoundsPublicMeshAndBothInstalledSea
         for (uint32_t level = 0U; level < areas.maximum.size(); ++level) {
             auto const mesh = mesher.build(tile, neighbors, shared::HeightTileSurfaceFaceAreas::DETAILS[level]);
             uint32_t const cell_size = shared::HeightTileSurfaceFaceAreas::CELL_SIZES[level];
-            expectPatchAreas(mesh.quads, cell_size, areas.maximum[level]);
+            expectPatchAreas(mesh.quads, {
+                .cell_size = cell_size,
+                .maximum_area = areas.maximum[level],
+            });
             for (uint32_t edge = 0U; edge < EDGES.size(); ++edge) {
                 auto const bridge = shared::heightTileSurfaceSeamBridge(mesh, installed[edge], EDGES[edge]);
                 saw_first_bridge = saw_first_bridge || !bridge.first.empty();
                 saw_second_bridge = saw_second_bridge || !bridge.second.empty();
-                expectPatchAreas(bridge.first, cell_size, areas.maximum[level]);
-                expectPatchAreas(bridge.second, cell_size, areas.maximum[level]);
+                expectPatchAreas(bridge.first, {
+                    .cell_size = cell_size,
+                    .maximum_area = areas.maximum[level],
+                });
+                expectPatchAreas(bridge.second, {
+                    .cell_size = cell_size,
+                    .maximum_area = areas.maximum[level],
+                });
             }
         }
     }
@@ -455,12 +485,119 @@ TEST(HeightTileSurfaceMesherTest, InstalledEdgeTopShapeMattersWhenElevationRange
     std::array<std::optional<shared::HeightTileSurfaceEdgeProfile>, 4> profiles;
     profiles[0] = shared::heightTileSurfaceEdgeProfile(mesh, shared::HeightTileSurfaceDirection::NegativeX);
     auto const aligned = shared::heightTileSurfaceFaceAreas(tile, neighbors, profiles);
-    std::ranges::reverse(profiles[0]->top);
+    auto& profile = profiles[0];
+    if (!profile.has_value()) {
+        FAIL() << "expected an edge profile for the negative X edge";
+        return;
+    }
+    std::ranges::reverse(profile->top);
     auto const reversed = shared::heightTileSurfaceFaceAreas(tile, neighbors, profiles);
     EXPECT_EQ(aligned.maximum[0], 4.0);
     EXPECT_EQ(reversed.maximum[0], 28.0);
-    EXPECT_EQ(profiles[0]->elevation,
+    EXPECT_EQ(profile->elevation,
         shared::heightTileSurfaceEdgeProfile(mesh, shared::HeightTileSurfaceDirection::NegativeX).elevation);
+}
+
+TEST(HeightTileSurfaceMesherTest, FaceAreaLevelsMatchPublicMeshesForFixedSeedEdgeCases)
+{
+    static constexpr uint32_t SIDE = shared::HeightTile::SIDE_LENGTH;
+    static constexpr uint32_t CASES = 3U;
+    static constexpr std::array<shared::HeightTileSurfaceDetail, 5> NEIGHBOR_DETAILS{
+        shared::HeightTileSurfaceDetail::Fine,
+        shared::HeightTileSurfaceDetail::Coarse2,
+        shared::HeightTileSurfaceDetail::Coarse4,
+        shared::HeightTileSurfaceDetail::Coarse,
+        shared::HeightTileSurfaceDetail::Distant,
+    };
+    shared::HeightTileSurfaceMesher const mesher;
+    uint32_t seed = 42U;
+    for (uint32_t case_index = 0U; case_index < CASES; ++case_index) {
+        shared::HeightTile tile;
+        std::array<shared::HeightTile::Heights, 4> neighbor_heights{};
+        for (uint32_t y = 0U; y < SIDE; ++y) {
+            for (uint32_t x = 0U; x < SIDE; ++x) {
+                if (case_index == 0U) {
+                    tile.heights[y * SIDE + x] = 24U;
+                } else if (case_index == 1U) {
+                    tile.heights[y * SIDE + x] = (x / 8U) % 2U == 0U ? 3U : 1'023U;
+                } else {
+                    seed = seed * 1'664'525U + 1'013'904'223U;
+                    tile.heights[y * SIDE + x] = static_cast<uint16_t>(seed % 1'025U);
+                }
+                for (uint32_t edge = 0U; edge < neighbor_heights.size(); ++edge) {
+                    if (case_index == 0U) {
+                        neighbor_heights[edge][y * SIDE + x] = 24U;
+                    } else if (case_index == 1U) {
+                        neighbor_heights[edge][y * SIDE + x] =
+                            (x / 8U + y / 8U + edge) % 2U == 0U ? 4U : 1'000U;
+                    } else {
+                        seed = seed * 1'664'525U + 1'013'904'223U;
+                        neighbor_heights[edge][y * SIDE + x] = static_cast<uint16_t>(seed % 1'025U);
+                    }
+                }
+            }
+        }
+        shared::HeightTileSurfaceNeighbors const neighbors{
+            .negative_x = neighbor_heights[0],
+            .positive_x = neighbor_heights[1],
+            .negative_y = case_index == 1U
+                ? std::nullopt
+                : std::optional<shared::HeightTile::Heights>{ neighbor_heights[2] },
+            .positive_y = neighbor_heights[3],
+            .negative_x_detail = NEIGHBOR_DETAILS[case_index % NEIGHBOR_DETAILS.size()],
+            .positive_x_detail = NEIGHBOR_DETAILS[(case_index + 1U) % NEIGHBOR_DETAILS.size()],
+            .negative_y_detail = NEIGHBOR_DETAILS[(case_index + 2U) % NEIGHBOR_DETAILS.size()],
+            .positive_y_detail = NEIGHBOR_DETAILS[(case_index + 3U) % NEIGHBOR_DETAILS.size()],
+        };
+        shared::HeightTileSurfaceFaceAreas const areas = shared::heightTileSurfaceFaceAreas(tile, neighbors);
+        for (uint32_t level = 0U; level < areas.maximum.size(); ++level) {
+            uint32_t const cell_size = shared::HeightTileSurfaceFaceAreas::CELL_SIZES[level];
+            shared::HeightTileSurfaceMesh const mesh = mesher.build(
+                tile, neighbors, shared::HeightTileSurfaceFaceAreas::DETAILS[level]);
+            EXPECT_EQ(areas.maximum[level], static_cast<double>(maximumCellPatchArea(mesh.quads, cell_size)))
+                << "case " << case_index << ", detail level " << level;
+        }
+    }
+}
+
+TEST(HeightTileSurfaceMesherTest, InstalledProfileShapesPreserveExactFaceAreaLevels)
+{
+    static constexpr uint32_t SIDE = shared::HeightTile::SIDE_LENGTH;
+    static constexpr std::array<double, 4> EXPECTED_MAXIMUM_AREAS{ 16.0, 32.0, 64.0, 256.0 };
+    shared::HeightTile tile;
+    tile.heights.fill(10U);
+    shared::HeightTile::Heights same_height;
+    same_height.fill(10U);
+    shared::HeightTileSurfaceNeighbors const neighbors{
+        .negative_x = same_height,
+        .positive_x = same_height,
+        .negative_y = same_height,
+        .positive_y = same_height,
+    };
+    shared::HeightTile installed_neighbor;
+    for (uint32_t y = 0U; y < SIDE; ++y) {
+        uint16_t const height = y < SIDE / 2U ? 2U : 10U;
+        for (uint32_t x = 0U; x < SIDE; ++x) {
+            installed_neighbor.heights[y * SIDE + x] = height;
+        }
+    }
+    shared::HeightTileSurfaceMesh const installed_mesh =
+        shared::HeightTileSurfaceMesher{}.build(installed_neighbor);
+    std::array<std::optional<shared::HeightTileSurfaceEdgeProfile>, 4> profiles;
+    profiles[0] = shared::heightTileSurfaceEdgeProfile(
+        installed_mesh, shared::HeightTileSurfaceDirection::NegativeX);
+    auto& installed_profile = profiles[0];
+    ASSERT_TRUE(installed_profile.has_value());
+    shared::HeightTileSurfaceFaceAreas const first_shape =
+        shared::heightTileSurfaceFaceAreas(tile, neighbors, profiles);
+    EXPECT_EQ(first_shape.maximum, EXPECTED_MAXIMUM_AREAS);
+
+    if (installed_profile.has_value()) {
+        std::ranges::reverse(installed_profile->top);
+    }
+    shared::HeightTileSurfaceFaceAreas const reversed_shape =
+        shared::heightTileSurfaceFaceAreas(tile, neighbors, profiles);
+    EXPECT_EQ(reversed_shape.maximum, EXPECTED_MAXIMUM_AREAS);
 }
 
 TEST(HeightTileSurfaceMesherTest, NonmonotoneCandidateAreasSelectTheCoarsestSafeDetail)

@@ -18,6 +18,7 @@
 #include <array>
 #include <chrono>
 #include <cmath>
+#include <exception>
 #include <limits>
 #include <optional>
 #include <span>
@@ -268,7 +269,21 @@ void AndroidPlayerClient::handleAppCommand(android_app* const app, int32_t const
 {
     auto* const self = static_cast<AndroidPlayerClient*>(app->userData);
     if (self != nullptr) {
-        self->onAppCommand(command);
+        try {
+            self->onAppCommand(command);
+        } catch (std::exception const& error) {
+            try {
+                CORE_ERROR("Android app command failed: {}", error.what());
+            } catch (...) {
+            }
+            self->stop();
+        } catch (...) {
+            try {
+                CORE_ERROR("Android app command failed with an unknown exception");
+            } catch (...) {
+            }
+            self->stop();
+        }
     }
 }
 
@@ -390,7 +405,7 @@ void AndroidPlayerClient::refreshPreviewTerrain(
     if (center_changed || radius_changed) {
         std::optional<shared::HeightTileKey> const previous_center = m_preview_interest_center;
         m_preview_interest_center = center;
-        m_preview_interest_radius = *radius;
+        m_preview_interest_radius = radius;
         if (previous_center && !radius_changed) {
             client::PlayerPreviewInterestDelta const delta = client::playerPreviewInterestDelta(
                 *previous_center, center, *radius
@@ -646,7 +661,7 @@ void AndroidPlayerClient::createWindowResources()
     );
 }
 
-void AndroidPlayerClient::destroyWindowResources() noexcept
+void AndroidPlayerClient::destroyWindowResources()
 {
     if (m_renderer != nullptr) {
         CORE_INFO("Destroying Android renderer before releasing its native window");
@@ -699,7 +714,18 @@ void AndroidPlayerClient::stop() noexcept
     m_has_focus = false;
     m_ascend_input.clear();
     m_descend_pressed = false;
-    destroyWindowResources();
+    try {
+        destroyWindowResources();
+    } catch (...) {
+        m_preview_mesh_work.clear();
+        m_preview_lod.clear();
+        m_preview_interest_center.reset();
+        m_preview_interest_radius.reset();
+        m_visible_preview_mesh_bases.clear();
+        m_visible_preview_mesh_seam_bridges.clear();
+        m_renderer.reset();
+        m_input.clear();
+    }
 }
 
 bool AndroidPlayerClient::canRender() const noexcept

@@ -27,6 +27,7 @@
 #include <deque>
 #include <filesystem>
 #include <optional>
+#include <ratio>
 #include <span>
 #include <string>
 #include <tuple>
@@ -35,170 +36,179 @@
 #include <variant>
 #include <vector>
 
-TEST(PlayerClientCapturePlanTest, FramesTheCentralSpikeAndFirstRingTogether)
-{
-    static constexpr int32_t WORLD_CENTER = 32'768;
-    static constexpr int32_t PREVIOUS_PLAYER_DISTANCE = 243;
-    static constexpr int32_t PLAYER_DISTANCE = 170;
-    static constexpr int32_t PREVIOUS_PLAYER_HEIGHT = 440;
-    static constexpr int32_t PLAYER_HEIGHT = 420;
-    static constexpr int32_t FIRST_RING_RADIUS = 128;
-    static constexpr uint32_t FRAME_WIDTH = 2560U;
-    static constexpr uint32_t FRAME_HEIGHT = 1440U;
-    client::PlayerClientCapturePlan const plan = client::playerClientCapturePlan(
-        client::PlayerClientCapturePreset::CentralSpike
-    );
-    EXPECT_EQ(plan.target.x, WORLD_CENTER - PLAYER_DISTANCE);
-    EXPECT_EQ(plan.target.y, WORLD_CENTER);
-    EXPECT_EQ(plan.target.z, PLAYER_HEIGHT);
-    EXPECT_NEAR(
-        static_cast<double>(PREVIOUS_PLAYER_DISTANCE - PLAYER_DISTANCE) / PREVIOUS_PLAYER_DISTANCE,
-        0.30,
-        0.01
-    );
-    EXPECT_EQ(PREVIOUS_PLAYER_HEIGHT - PLAYER_HEIGHT, 20);
-    EXPECT_EQ(plan.look_angles.yaw_degrees, 110.0);
-    EXPECT_EQ(plan.look_angles.pitch_degrees, 18.0);
-    EXPECT_EQ(plan.vertical_fov_degrees, 105.0);
-    EXPECT_EQ(plan.rear_camera_distance, 12.0);
+TEST(PlayerClientCapturePlanTest, FramesTheCentralSpikeAndFirstRingTogether) {
+  static constexpr int32_t WORLD_CENTER = 32'768;
+  static constexpr int32_t PREVIOUS_PLAYER_DISTANCE = 243;
+  static constexpr int32_t PLAYER_DISTANCE = 170;
+  static constexpr int32_t PREVIOUS_PLAYER_HEIGHT = 440;
+  static constexpr int32_t PLAYER_HEIGHT = 420;
+  static constexpr int32_t FIRST_RING_RADIUS = 128;
+  static constexpr uint32_t FRAME_WIDTH = 2560U;
+  static constexpr uint32_t FRAME_HEIGHT = 1440U;
+  client::PlayerClientCapturePlan const plan = client::playerClientCapturePlan(
+      client::PlayerClientCapturePreset::CentralSpike);
+  EXPECT_EQ(plan.target.x, WORLD_CENTER - PLAYER_DISTANCE);
+  EXPECT_EQ(plan.target.y, WORLD_CENTER);
+  EXPECT_EQ(plan.target.z, PLAYER_HEIGHT);
+  EXPECT_NEAR(static_cast<double>(PREVIOUS_PLAYER_DISTANCE - PLAYER_DISTANCE) /
+                  PREVIOUS_PLAYER_DISTANCE,
+              0.30, 0.01);
+  EXPECT_EQ(PREVIOUS_PLAYER_HEIGHT - PLAYER_HEIGHT, 20);
+  EXPECT_EQ(plan.look_angles.yaw_degrees, 110.0);
+  EXPECT_EQ(plan.look_angles.pitch_degrees, 18.0);
+  EXPECT_EQ(plan.vertical_fov_degrees, 105.0);
+  EXPECT_EQ(plan.rear_camera_distance, 12.0);
 
-    shared::TerrainGenerator const terrain;
-    EXPECT_GT(plan.target.z, terrain.heightAt(plan.target.x, plan.target.y));
-    EXPECT_LT(plan.target.z, terrain.heightAt(WORLD_CENTER, WORLD_CENTER));
-    int32_t const near_ring_x = WORLD_CENTER - FIRST_RING_RADIUS;
-    int32_t const far_ring_x = WORLD_CENTER + FIRST_RING_RADIUS;
-    uint16_t const near_ring_height = terrain.heightAt(near_ring_x, WORLD_CENTER);
-    uint16_t const far_ring_height = terrain.heightAt(far_ring_x, WORLD_CENTER);
-    EXPECT_EQ(near_ring_height, 406U);
-    EXPECT_EQ(far_ring_height, 406U);
+  shared::TerrainGenerator const terrain;
+  EXPECT_GT(plan.target.z, terrain.heightAt(plan.target.x, plan.target.y));
+  EXPECT_LT(plan.target.z, terrain.heightAt(WORLD_CENTER, WORLD_CENTER));
+  int32_t const near_ring_x = WORLD_CENTER - FIRST_RING_RADIUS;
+  int32_t const far_ring_x = WORLD_CENTER + FIRST_RING_RADIUS;
+  uint16_t const near_ring_height = terrain.heightAt(near_ring_x, WORLD_CENTER);
+  uint16_t const far_ring_height = terrain.heightAt(far_ring_x, WORLD_CENTER);
+  EXPECT_EQ(near_ring_height, 406U);
+  EXPECT_EQ(far_ring_height, 406U);
 
-    client::PlayerPresentationPosition const player_position{
-        .x = static_cast<double>(plan.target.x),
-        .y = static_cast<double>(plan.target.y),
-        .z = static_cast<double>(plan.target.z),
-    };
-    glm::dvec3 const eye = client::localPlayerEyePosition(player_position);
-    client::Camera const look_camera{{ .position = eye, .angles = plan.look_angles }};
-    client::Camera const camera{
-        { .position = eye - look_camera.forward() * plan.rear_camera_distance, .angles = plan.look_angles },
-        { .vertical_fov_degrees = plan.vertical_fov_degrees },
-    };
-    auto const projection = camera.projectionMatrix(FRAME_WIDTH, FRAME_HEIGHT);
-    ASSERT_TRUE(projection.has_value());
-    auto const clip_coordinates = [&](glm::vec4 const world_point) {
-        return *projection * camera.viewMatrix() * world_point;
-    };
-    auto const projected = [&](glm::vec4 const world_point) {
-        glm::vec4 const clip = clip_coordinates(world_point);
-        return glm::vec3(clip) / clip.w;
-    };
-    glm::vec3 const peak = projected({
-        static_cast<float>(WORLD_CENTER), static_cast<float>(WORLD_CENTER),
-        static_cast<float>(terrain.heightAt(WORLD_CENTER, WORLD_CENTER)), 1.0F,
-    });
-    glm::vec3 const near_ring = projected({
-        static_cast<float>(near_ring_x), static_cast<float>(WORLD_CENTER),
-        static_cast<float>(near_ring_height), 1.0F,
-    });
-    glm::vec3 const far_ring = projected({
-        static_cast<float>(far_ring_x), static_cast<float>(WORLD_CENTER),
-        static_cast<float>(far_ring_height), 1.0F,
-    });
-    static constexpr int32_t BACKGROUND_RADIUS = FIRST_RING_RADIUS * 2;
-    glm::vec4 const background_clip = clip_coordinates({
-        static_cast<float>(WORLD_CENTER), static_cast<float>(WORLD_CENTER - BACKGROUND_RADIUS),
-        static_cast<float>(terrain.heightAt(WORLD_CENTER, WORLD_CENTER - BACKGROUND_RADIUS)), 1.0F,
-    });
-    glm::vec3 const background = glm::vec3(background_clip) / background_clip.w;
-    glm::dvec3 const camera_position = camera.pose().position;
-    double const segment_x = static_cast<double>(WORLD_CENTER) - camera_position.x;
-    double const segment_y = static_cast<double>(WORLD_CENTER - BACKGROUND_RADIUS) - camera_position.y;
-    double const camera_radius_x = camera_position.x - WORLD_CENTER;
-    double const camera_radius_y = camera_position.y - WORLD_CENTER;
-    double const nearest_segment_parameter = std::clamp(
-        -(camera_radius_x * segment_x + camera_radius_y * segment_y)
-            / (segment_x * segment_x + segment_y * segment_y),
-        0.0,
-        1.0
-    );
-    double const nearest_background_sightline_radius = std::hypot(
-        camera_radius_x + nearest_segment_parameter * segment_x,
-        camera_radius_y + nearest_segment_parameter * segment_y
-    );
-    EXPECT_GT(near_ring.y, 0.0F);
-    EXPECT_GT(far_ring.y, 0.0F);
-    EXPECT_LT(peak.y, 0.0F);
-    EXPECT_LT(std::abs(near_ring.x), 0.9F);
-    EXPECT_LT(std::abs(near_ring.y), 0.9F);
-    EXPECT_LT(std::abs(far_ring.x), 0.9F);
-    EXPECT_LT(std::abs(far_ring.y), 0.9F);
-    EXPECT_LT(std::abs(peak.x), 0.9F);
-    EXPECT_LT(std::abs(peak.y), 0.9F);
-    EXPECT_GT(background_clip.w, 0.0F);
-    EXPECT_GE(background.z, 0.0F);
-    EXPECT_LE(background.z, 1.0F);
-    EXPECT_GT(terrain.heightAt(WORLD_CENTER, WORLD_CENTER - BACKGROUND_RADIUS), 0U);
-    EXPECT_GT(nearest_background_sightline_radius, FIRST_RING_RADIUS);
-    EXPECT_GT(background.x, 0.25F);
-    EXPECT_LT(background.x, 0.8F);
-    EXPECT_GT(background.y, 0.55F);
-    EXPECT_LT(background.y, 0.85F);
+  client::PlayerPresentationPosition const player_position{
+      .x = static_cast<double>(plan.target.x),
+      .y = static_cast<double>(plan.target.y),
+      .z = static_cast<double>(plan.target.z),
+  };
+  glm::dvec3 const eye = client::localPlayerEyePosition(player_position);
+  client::Camera const look_camera{
+      {.position = eye, .angles = plan.look_angles}};
+  client::Camera const camera{
+      {.position = eye - look_camera.forward() * plan.rear_camera_distance,
+       .angles = plan.look_angles},
+      {.vertical_fov_degrees = plan.vertical_fov_degrees},
+  };
+  auto const projection = camera.projectionMatrix(FRAME_WIDTH, FRAME_HEIGHT);
+  ASSERT_TRUE(projection.has_value());
+  auto const clip_coordinates = [&](glm::vec4 const world_point) {
+    return *projection * camera.viewMatrix() * world_point;
+  };
+  auto const projected = [&](glm::vec4 const world_point) {
+    glm::vec4 const clip = clip_coordinates(world_point);
+    return glm::vec3(clip) / clip.w;
+  };
+  glm::vec3 const peak = projected({
+      static_cast<float>(WORLD_CENTER),
+      static_cast<float>(WORLD_CENTER),
+      static_cast<float>(terrain.heightAt(WORLD_CENTER, WORLD_CENTER)),
+      1.0F,
+  });
+  glm::vec3 const near_ring = projected({
+      static_cast<float>(near_ring_x),
+      static_cast<float>(WORLD_CENTER),
+      static_cast<float>(near_ring_height),
+      1.0F,
+  });
+  glm::vec3 const far_ring = projected({
+      static_cast<float>(far_ring_x),
+      static_cast<float>(WORLD_CENTER),
+      static_cast<float>(far_ring_height),
+      1.0F,
+  });
+  static constexpr int32_t BACKGROUND_RADIUS = FIRST_RING_RADIUS * 2;
+  glm::vec4 const background_clip = clip_coordinates({
+      static_cast<float>(WORLD_CENTER),
+      static_cast<float>(WORLD_CENTER - BACKGROUND_RADIUS),
+      static_cast<float>(
+          terrain.heightAt(WORLD_CENTER, WORLD_CENTER - BACKGROUND_RADIUS)),
+      1.0F,
+  });
+  glm::vec3 const background = glm::vec3(background_clip) / background_clip.w;
+  glm::dvec3 const camera_position = camera.pose().position;
+  double const segment_x =
+      static_cast<double>(WORLD_CENTER) - camera_position.x;
+  double const segment_y =
+      static_cast<double>(WORLD_CENTER - BACKGROUND_RADIUS) - camera_position.y;
+  double const camera_radius_x = camera_position.x - WORLD_CENTER;
+  double const camera_radius_y = camera_position.y - WORLD_CENTER;
+  double const nearest_segment_parameter =
+      std::clamp(-(camera_radius_x * segment_x + camera_radius_y * segment_y) /
+                     (segment_x * segment_x + segment_y * segment_y),
+                 0.0, 1.0);
+  double const nearest_background_sightline_radius =
+      std::hypot(camera_radius_x + nearest_segment_parameter * segment_x,
+                 camera_radius_y + nearest_segment_parameter * segment_y);
+  EXPECT_GT(near_ring.y, 0.0F);
+  EXPECT_GT(far_ring.y, 0.0F);
+  EXPECT_LT(peak.y, 0.0F);
+  EXPECT_LT(std::abs(near_ring.x), 0.9F);
+  EXPECT_LT(std::abs(near_ring.y), 0.9F);
+  EXPECT_LT(std::abs(far_ring.x), 0.9F);
+  EXPECT_LT(std::abs(far_ring.y), 0.9F);
+  EXPECT_LT(std::abs(peak.x), 0.9F);
+  EXPECT_LT(std::abs(peak.y), 0.9F);
+  EXPECT_GT(background_clip.w, 0.0F);
+  EXPECT_GE(background.z, 0.0F);
+  EXPECT_LE(background.z, 1.0F);
+  EXPECT_GT(terrain.heightAt(WORLD_CENTER, WORLD_CENTER - BACKGROUND_RADIUS),
+            0U);
+  EXPECT_GT(nearest_background_sightline_radius, FIRST_RING_RADIUS);
+  EXPECT_GT(background.x, 0.25F);
+  EXPECT_LT(background.x, 0.8F);
+  EXPECT_GT(background.y, 0.55F);
+  EXPECT_LT(background.y, 0.85F);
 }
 
-TEST(PlayerClientCapturePlanTest, FramesTheUpperFirstRingAsAnAscendingSlope)
-{
-    static constexpr int32_t WORLD_CENTER = 32'768;
-    static constexpr int32_t FIRST_RING_ASCENT_RADIUS = 112;
-    static constexpr int32_t ASCENT_SAMPLE_DISTANCE = 16;
-    static constexpr uint16_t MINIMUM_ASCENT = 50U;
-    static constexpr double MINIMUM_CLIMBING_PITCH = 45.0;
-    static constexpr double MAXIMUM_CLIMBING_PITCH = 65.0;
-    static constexpr double MINIMUM_ASCENT_YAW_OFFSET = 5.0;
-    static constexpr double MAXIMUM_ASCENT_YAW_OFFSET = 20.0;
-    client::PlayerClientCapturePlan const plan = client::playerClientCapturePlan(
-        client::PlayerClientCapturePreset::MountainClimb
-    );
-    shared::TerrainGenerator const terrain;
-    uint16_t const target_height = terrain.heightAt(plan.target.x, plan.target.y);
+TEST(PlayerClientCapturePlanTest, FramesTheUpperFirstRingAsAnAscendingSlope) {
+  static constexpr int32_t WORLD_CENTER = 32'768;
+  static constexpr int32_t FIRST_RING_ASCENT_RADIUS = 112;
+  static constexpr int32_t ASCENT_SAMPLE_DISTANCE = 16;
+  static constexpr uint16_t MINIMUM_ASCENT = 50U;
+  static constexpr double MINIMUM_CLIMBING_PITCH = 45.0;
+  static constexpr double MAXIMUM_CLIMBING_PITCH = 65.0;
+  static constexpr double MINIMUM_ASCENT_YAW_OFFSET = 5.0;
+  static constexpr double MAXIMUM_ASCENT_YAW_OFFSET = 20.0;
+  client::PlayerClientCapturePlan const plan = client::playerClientCapturePlan(
+      client::PlayerClientCapturePreset::MountainClimb);
+  shared::TerrainGenerator const terrain;
+  uint16_t const target_height = terrain.heightAt(plan.target.x, plan.target.y);
 
-    EXPECT_EQ(plan.target.x, WORLD_CENTER + FIRST_RING_ASCENT_RADIUS);
-    EXPECT_EQ(plan.target.y, WORLD_CENTER);
-    EXPECT_EQ(plan.target.z, target_height);
-    EXPECT_LT(terrain.heightAt(plan.target.x - ASCENT_SAMPLE_DISTANCE, plan.target.y), target_height);
-    EXPECT_GE(
-        terrain.heightAt(plan.target.x + ASCENT_SAMPLE_DISTANCE, plan.target.y) - target_height,
-        MINIMUM_ASCENT
-    );
-    double const ascent_yaw_offset = std::abs(plan.look_angles.yaw_degrees - 90.0);
-    EXPECT_GE(ascent_yaw_offset, MINIMUM_ASCENT_YAW_OFFSET);
-    EXPECT_LE(ascent_yaw_offset, MAXIMUM_ASCENT_YAW_OFFSET);
-    EXPECT_GE(plan.look_angles.pitch_degrees, MINIMUM_CLIMBING_PITCH);
-    EXPECT_LE(plan.look_angles.pitch_degrees, MAXIMUM_CLIMBING_PITCH);
+  EXPECT_EQ(plan.target.x, WORLD_CENTER + FIRST_RING_ASCENT_RADIUS);
+  EXPECT_EQ(plan.target.y, WORLD_CENTER);
+  EXPECT_EQ(plan.target.z, target_height);
+  EXPECT_LT(
+      terrain.heightAt(plan.target.x - ASCENT_SAMPLE_DISTANCE, plan.target.y),
+      target_height);
+  EXPECT_GE(
+      terrain.heightAt(plan.target.x + ASCENT_SAMPLE_DISTANCE, plan.target.y) -
+          target_height,
+      MINIMUM_ASCENT);
+  double const ascent_yaw_offset =
+      std::abs(plan.look_angles.yaw_degrees - 90.0);
+  EXPECT_GE(ascent_yaw_offset, MINIMUM_ASCENT_YAW_OFFSET);
+  EXPECT_LE(ascent_yaw_offset, MAXIMUM_ASCENT_YAW_OFFSET);
+  EXPECT_GE(plan.look_angles.pitch_degrees, MINIMUM_CLIMBING_PITCH);
+  EXPECT_LE(plan.look_angles.pitch_degrees, MAXIMUM_CLIMBING_PITCH);
 }
 
-TEST(PlayerClientCapturePlanTest, RequiresMountainCaptureWithBothMovementCapabilitiesOff)
-{
-    client::PlayerClientCapturePlan const plan = client::playerClientCapturePlan(
-        client::PlayerClientCapturePreset::MountainClimb
-    );
+TEST(PlayerClientCapturePlanTest,
+     RequiresMountainCaptureWithBothMovementCapabilitiesOff) {
+  client::PlayerClientCapturePlan const plan = client::playerClientCapturePlan(
+      client::PlayerClientCapturePreset::MountainClimb);
 
-    ASSERT_TRUE(plan.final_movement_capabilities.has_value());
-    EXPECT_EQ(plan.final_movement_capabilities->bits, 0U);
+  ASSERT_TRUE(plan.final_movement_capabilities.has_value());
+  EXPECT_EQ(plan.final_movement_capabilities->bits, 0U);
 }
 
-TEST(PlayerClientCapturePlanTest, BoundsFullTerrainCaptureReadinessToFifteenMinutes)
-{
-    client::PlayerClientCaptureOptions const options{};
+TEST(PlayerClientCapturePlanTest,
+     BoundsFullTerrainCaptureReadinessToFifteenMinutes) {
+  client::PlayerClientCaptureOptions const options{};
 
-    EXPECT_EQ(options.readiness_deadline, std::chrono::minutes{15});
-    EXPECT_EQ(options.sweep_deadline, std::chrono::minutes{5});
-    EXPECT_EQ(options.minimum_height_tile_meshes, 0U);
+  EXPECT_EQ(options.readiness_deadline, std::chrono::minutes{15});
+  EXPECT_EQ(options.sweep_deadline, std::chrono::minutes{5});
+  EXPECT_EQ(options.minimum_height_tile_meshes, 0U);
 }
 
-TEST(PlayerClientCapturePlanTest, GivesArenaGrowthTimeThroughoutCapturePreload)
-{
-    EXPECT_EQ(client::playerClientRendererFrameBudget(true), std::chrono::seconds{1});
-    EXPECT_EQ(client::playerClientRendererFrameBudget(false), std::chrono::milliseconds{8});
+TEST(PlayerClientCapturePlanTest,
+     GivesArenaGrowthTimeThroughoutCapturePreload) {
+  EXPECT_EQ(client::playerClientRendererFrameBudget(true),
+            std::chrono::seconds{1});
+  EXPECT_EQ(client::playerClientRendererFrameBudget(false),
+            std::chrono::milliseconds{8});
 }
 
 TEST(PlayerClientCapturePlanTest, PresentationDeadlineUsesTheWhole120HzPeriodWithoutRestartingAfterSetup)
@@ -281,16 +291,15 @@ TEST(PlayerClientCapturePlanTest, ProbesNearMeshesFromTheCenterOut) {
             client::PLAYER_CLIENT_BENCHMARK_TERRAIN_NEAR_RADIUS);
 }
 
-TEST(PlayerClientCapturePlanTest, DrainsFullReceiveWindowDuringCapturePreload)
-{
+TEST(PlayerClientCapturePlanTest, DrainsFullReceiveWindowDuringCapturePreload) {
   EXPECT_EQ(client::playerClientHeightTileChangeBudget(true),
-      client::playerClientHeightTileChangeBudget(false));
+            client::playerClientHeightTileChangeBudget(false));
 }
 
-TEST(PlayerClientCapturePlanTest, UsesTheSamePreviewMeshJobBudgetDuringCaptureAndPlay)
-{
+TEST(PlayerClientCapturePlanTest,
+     UsesTheSamePreviewMeshJobBudgetDuringCaptureAndPlay) {
   EXPECT_EQ(client::playerClientPreviewMeshJobBudget(true),
-      client::playerClientPreviewMeshJobBudget(false));
+            client::playerClientPreviewMeshJobBudget(false));
 }
 
 TEST(PlayerClientCapturePlanTest,
@@ -445,37 +454,43 @@ TEST(PlayerClientCapturePlanTest,
 
 TEST(PlayerClientCapturePlanTest,
      RequestsPhysicalHighResolutionAtOneAndTwoTimesScale) {
-    EXPECT_EQ(client::playerClientCaptureLogicalSize(1280U, 1280U, 2560U), 2560U);
-    EXPECT_EQ(client::playerClientCaptureLogicalSize(720U, 720U, 1440U), 1440U);
-    EXPECT_EQ(client::playerClientCaptureLogicalSize(1280U, 2560U, 2560U), 1280U);
-    EXPECT_EQ(client::playerClientCaptureLogicalSize(720U, 1440U, 1440U), 720U);
+  EXPECT_EQ(client::playerClientCaptureLogicalSize(1280U, 1280U, 2560U), 2560U);
+  EXPECT_EQ(client::playerClientCaptureLogicalSize(720U, 720U, 1440U), 1440U);
+  EXPECT_EQ(client::playerClientCaptureLogicalSize(1280U, 2560U, 2560U), 1280U);
+  EXPECT_EQ(client::playerClientCaptureLogicalSize(720U, 1440U, 1440U), 720U);
 }
 
-TEST(PlayerClientCapturePlanTest, EnforcesThePortableCaptureExtentFloor)
-{
-    static constexpr uint32_t MINIMUM_WIDTH = 1'000U;
-    static constexpr uint32_t MINIMUM_HEIGHT = 600U;
-    EXPECT_TRUE(client::playerClientCaptureExtentMeetsMinimum(MINIMUM_WIDTH, MINIMUM_HEIGHT));
-    EXPECT_TRUE(client::playerClientCaptureExtentMeetsMinimum(2560U, 1440U));
-    EXPECT_FALSE(client::playerClientCaptureExtentMeetsMinimum(MINIMUM_WIDTH - 1U, MINIMUM_HEIGHT));
-    EXPECT_FALSE(client::playerClientCaptureExtentMeetsMinimum(MINIMUM_WIDTH, MINIMUM_HEIGHT - 1U));
+TEST(PlayerClientCapturePlanTest, EnforcesThePortableCaptureExtentFloor) {
+  static constexpr uint32_t MINIMUM_WIDTH = 1'000U;
+  static constexpr uint32_t MINIMUM_HEIGHT = 600U;
+  EXPECT_TRUE(client::playerClientCaptureExtentMeetsMinimum(
+      MINIMUM_WIDTH,
+      MINIMUM_HEIGHT));
+  EXPECT_TRUE(client::playerClientCaptureExtentMeetsMinimum(2560U, 1440U));
+  EXPECT_FALSE(client::playerClientCaptureExtentMeetsMinimum(
+      MINIMUM_WIDTH - 1U,
+      MINIMUM_HEIGHT));
+  EXPECT_FALSE(client::playerClientCaptureExtentMeetsMinimum(
+      MINIMUM_WIDTH, MINIMUM_HEIGHT - 1U));
 }
 
-TEST(PlayerClientCapturePlanTest, NearTargetNavigationUsesAProtocolValidSpeedup)
-{
-    static constexpr int64_t NEAR_DISTANCE_SUBCELLS = 40'000;
-    uint16_t const speedup = client::playerClientCaptureSpeedup(NEAR_DISTANCE_SUBCELLS);
-    ASSERT_TRUE(shared::isFlightSpeedupProfile(speedup));
-    EXPECT_EQ(speedup, 2U);
+TEST(PlayerClientCapturePlanTest,
+     NearTargetNavigationUsesAProtocolValidSpeedup) {
+  static constexpr int64_t NEAR_DISTANCE_SUBCELLS = 40'000;
+  uint16_t const speedup =
+      client::playerClientCaptureSpeedup(NEAR_DISTANCE_SUBCELLS);
+  ASSERT_TRUE(shared::isFlightSpeedupProfile(speedup));
+  EXPECT_EQ(speedup, 2U);
 
-    shared::ClientInputMessage const input{
-        .direction = { .x = 1U, .y = 0U, .accelerated = false, .speedup = speedup },
-        .sequence = 1U,
-    };
-    auto const decoded = shared::decodeMessage(shared::encodeMessage(input));
-    ASSERT_TRUE(decoded.has_value());
-    ASSERT_TRUE(std::holds_alternative<shared::ClientInputMessage>(*decoded));
-    EXPECT_EQ(std::get<shared::ClientInputMessage>(*decoded).direction.speedup, speedup);
+  shared::ClientInputMessage const input{
+      .direction = {.x = 1U, .y = 0U, .accelerated = false, .speedup = speedup},
+      .sequence = 1U,
+  };
+  auto const decoded = shared::decodeMessage(shared::encodeMessage(input));
+  ASSERT_TRUE(decoded.has_value());
+  ASSERT_TRUE(std::holds_alternative<shared::ClientInputMessage>(*decoded));
+  EXPECT_EQ(std::get<shared::ClientInputMessage>(*decoded).direction.speedup,
+            speedup);
 }
 
 TEST(PlayerClientCapturePlanTest,

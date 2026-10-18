@@ -107,7 +107,7 @@ private:
     [[nodiscard]]
     int32_t handleMotion(AInputEvent const* event) noexcept;
     [[nodiscard]]
-    bool beginFlightTouch(int32_t pointer_id, float x, float y) noexcept;
+    bool beginFlightTouch(AndroidInputState::PointerId pointer_id, float x, float y) noexcept;
     [[nodiscard]]
     bool isFlightTouch(int32_t pointer_id) const noexcept;
     [[nodiscard]]

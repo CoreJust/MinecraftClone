@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import importlib.util
 import json
 import re
 import subprocess
@@ -16,7 +17,15 @@ from pathlib import Path
 from typing import Any, Protocol, Sequence
 
 
+_CHECK_SPEC = importlib.util.spec_from_file_location("release_ai_check", Path(__file__).resolve().parents[1] / "ai_check.py")
+assert _CHECK_SPEC is not None and _CHECK_SPEC.loader is not None
+_CHECK = importlib.util.module_from_spec(_CHECK_SPEC)
+sys.modules[_CHECK_SPEC.name] = _CHECK
+_CHECK_SPEC.loader.exec_module(_CHECK)
+
+
 PLATFORMS = ("macos", "windows", "android")
+S7_WINDOWS_SECONDARY_PLATFORMS = ("macos", "android")
 REVISION_RE = re.compile(r"[0-9a-f]{40}")
 SHA256_RE = re.compile(r"[0-9a-f]{64}")
 VERSION_RE = re.compile(r"\d+\.\d+\.\d+:\d+")
@@ -133,6 +142,10 @@ def require_asset_name(value: Any) -> str:
     return value
 
 
+def is_windows_label(name: str) -> bool:
+    return re.search(r"(?:^|[-_.])windows?(?:[-_.]|$)", name, re.IGNORECASE) is not None
+
+
 def require_regular_file(source: Path, label: str) -> Path:
     if source.is_symlink() or not source.is_file():
         raise ReleaseVerificationError(f"{label} must be an existing regular file: {source}")
@@ -192,14 +205,27 @@ def load_expected_asset(evidence_path: Path) -> ExpectedAsset:
     )
 
 
-def load_expected_assets(evidence_paths: Sequence[Path], expected_commit: str) -> dict[str, ExpectedAsset]:
-    if len(evidence_paths) != len(PLATFORMS):
-        raise ReleaseVerificationError("exactly one macOS, Windows, and Android evidence file is required")
+def load_expected_assets(
+    evidence_paths: Sequence[Path],
+    expected_commit: str,
+    *,
+    s7_windows_secondary: bool = False,
+) -> dict[str, ExpectedAsset]:
+    selected_platforms = S7_WINDOWS_SECONDARY_PLATFORMS if s7_windows_secondary else PLATFORMS
+    if len(evidence_paths) != len(selected_platforms):
+        required = "macOS and Android" if s7_windows_secondary else "macOS, Windows, and Android"
+        raise ReleaseVerificationError(f"exactly one {required} evidence file is required")
     result: dict[str, ExpectedAsset] = {}
     versions: set[str] = set()
     names: set[str] = set()
     for evidence_path in evidence_paths:
         asset = load_expected_asset(evidence_path)
+        if asset.platform not in selected_platforms:
+            raise ReleaseVerificationError(
+                f"{asset.platform} evidence is not selected under the S7 Windows-secondary policy"
+            )
+        if s7_windows_secondary and is_windows_label(asset.name):
+            raise ReleaseVerificationError("Windows-labelled bytes cannot be relabelled as a selected S7 asset")
         if asset.platform in result:
             raise ReleaseVerificationError(f"duplicate release evidence for {asset.platform}")
         if asset.source_commit != expected_commit:
@@ -211,11 +237,13 @@ def load_expected_assets(evidence_paths: Sequence[Path], expected_commit: str) -
         names.update((asset.name, f"{asset.name}.sha256"))
         versions.add(asset.version)
         result[asset.platform] = asset
-    if set(result) != set(PLATFORMS):
-        missing = sorted(set(PLATFORMS) - set(result))
+    if set(result) != set(selected_platforms):
+        missing = sorted(set(selected_platforms) - set(result))
         raise ReleaseVerificationError("missing release evidence for: " + ", ".join(missing))
     if len(versions) != 1:
         raise ReleaseVerificationError("release evidence does not describe one exact version")
+    if s7_windows_secondary and versions != {"0.1.0:7"}:
+        raise ReleaseVerificationError("S7 selector does not match the actual candidate version in release evidence")
     return result
 
 
@@ -345,13 +373,28 @@ def verify_release(
     evidence_paths: Sequence[Path],
     output: Path,
     github: GitHubClient,
+    *,
+    s7_windows_secondary: bool = False,
+    root: Path | None = None,
 ) -> dict[str, Any]:
     repository = require_repository(repository)
     tag = require_tag(tag)
     expected_commit = require_revision(expected_commit)
+    if s7_windows_secondary:
+        try:
+            _CHECK.require_s7_candidate(root if root is not None else Path(__file__).resolve().parents[2])
+        except ValueError as error:
+            raise ReleaseVerificationError(str(error)) from error
+        if not tag.startswith(("ai/EarlyDev/0.1.0/7_", "ai/EarlyDev/0.1.0/7-r")):
+            raise ReleaseVerificationError("S7 selector does not match the actual candidate version in release tag")
     if output.exists() or output.is_symlink() or not output.parent.is_dir():
         raise ReleaseVerificationError("output must be a new file in an existing directory")
-    expected_assets = load_expected_assets(evidence_paths, expected_commit)
+    selected_platforms = S7_WINDOWS_SECONDARY_PLATFORMS if s7_windows_secondary else PLATFORMS
+    expected_assets = load_expected_assets(
+        evidence_paths,
+        expected_commit,
+        s7_windows_secondary=s7_windows_secondary,
+    )
     tag_identity = resolve_tag(repository, tag, github)
     if tag_identity["commit"] != expected_commit:
         raise ReleaseVerificationError("GitHub tag does not resolve to the expected source commit")
@@ -365,12 +408,14 @@ def verify_release(
         "tagName,isDraft,isPrerelease,body,databaseId,id,url,assets",
     ])
     published_assets, release_identity = release_assets(release, tag)
+    if s7_windows_secondary and any(is_windows_label(name) for name in published_assets):
+        raise ReleaseVerificationError("Windows-labelled release assets are not allowed under the S7 Windows-secondary policy")
 
     checks: list[dict[str, Any]] = []
     expected_downloads: set[str] = set()
     with tempfile.TemporaryDirectory(prefix="minecraftclone-release-verify-") as temporary:
         download_root = Path(temporary)
-        for platform in PLATFORMS:
+        for platform in selected_platforms:
             expected = expected_assets[platform]
             checksum_name = f"{expected.name}.sha256"
             checksum_bytes = f"{expected.sha256}  {expected.name}\n".encode("utf-8")
@@ -424,6 +469,12 @@ def verify_release(
             "scope": "exact published asset bytes; downloaded files were not executed or extracted",
         },
     }
+    if s7_windows_secondary:
+        result["deferred_platforms"] = [{
+            "platform": "windows",
+            "status": "deferred",
+            "reason": "Windows build, runtime qualification, and release asset were not selected for this S7 snapshot.",
+        }]
     with output.open("x", encoding="utf-8") as stream:
         stream.write(canonical_json(result))
     return result
@@ -439,7 +490,12 @@ def parser() -> argparse.ArgumentParser:
         type=Path,
         action="append",
         required=True,
-        help="schema-1 release evidence; pass once for macOS, Windows, and Android",
+        help="schema-1 release evidence for all required platforms (macOS and Android under the explicit S7 profile)",
+    )
+    result.add_argument(
+        "--s7-windows-secondary",
+        action="store_true",
+        help="for Snapshot 7 only, verify macOS and Android assets and report Windows as deferred",
     )
     result.add_argument("--output", type=Path, required=True)
     return result
@@ -455,6 +511,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             args.evidence,
             args.output,
             GhClient(),
+            s7_windows_secondary=args.s7_windows_secondary,
         )
     except (OSError, ReleaseVerificationError) as error:
         print(f"release verification failed: {error}", file=sys.stderr)
@@ -465,6 +522,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "source_commit": result["source_commit"],
         "status": result["verification"]["status"],
         "tag": result["tag"]["ref"],
+        "deferred_platforms": result.get("deferred_platforms", []),
     }, sort_keys=True))
     return 0
 

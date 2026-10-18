@@ -50,7 +50,7 @@ private:
     bool isPreviewTileInInterest(shared::HeightTileKey key) const;
     void clearPreviewTerrain(bool remove_renderer_meshes) noexcept;
     void createWindowResources();
-    void destroyWindowResources() noexcept;
+    void destroyWindowResources();
     void pollOneEvent(int32_t timeout_millis);
     void drainEvents();
     void stop() noexcept;

@@ -72,7 +72,8 @@ the next snapshot's implementation in a separate task while the current one
 finishes Windows/Android and artifact evidence; it does not authorize
 publication or complete the release.
 
-Follow the [qualification preflight and recovery rules](QUALIFICATION.md) before expensive gates or resuming failed phases.
+Before expensive qualification, follow the [preflight and recovery rules](QUALIFICATION.md)
+including its [early gameplay diagnostic gate](QUALIFICATION.md#early-gameplay-diagnostic-ordering).
 
 ## Snapshots and versions
 

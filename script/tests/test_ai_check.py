@@ -41,6 +41,30 @@ def load_module():
 
 
 class AiCheckTests(unittest.TestCase):
+    def test_s7_selector_requires_actual_version_owners(self):
+        check = load_module()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            project = root / "src/shared/include/shared/ProjectInfo.hpp"
+            project.parent.mkdir(parents=True)
+            content = (SCRIPT.parent.parent / "src/shared/include/shared/ProjectInfo.hpp").read_text()
+            project.write_text(content)
+            (root / "vcpkg.json").write_text('{"version-string":"0.1.0"}')
+            self.assertIsNone(check.require_s7_candidate(root))
+            for wrong in (content.replace(".patch = 7", ".patch = 8"),
+                          content.replace(".minor = 0", ".minor = 1"),
+                          content.replace('"EarlyDev"', '"Released"'), "malformed"):
+                project.write_text(wrong)
+                with self.assertRaisesRegex(ValueError, "actual candidate version"):
+                    check.require_s7_candidate(root)
+            project.write_text(content)
+            (root / "vcpkg.json").write_text('{"version-string":"0.2.0"}')
+            with self.assertRaisesRegex(ValueError, "actual candidate version"):
+                check.require_s7_candidate(root)
+            project.unlink()
+            with self.assertRaisesRegex(ValueError, "actual candidate version"):
+                check.require_s7_candidate(root)
+
     def setUp(self):
         self.temp_dir = tempfile.TemporaryDirectory()
         self.root = Path(self.temp_dir.name)
@@ -1023,6 +1047,50 @@ class AiCheckTests(unittest.TestCase):
         second = checker.run_phase(self.root, log_dir, "docs", changed_command, 60, reuse=True)
         self.assertEqual(second.returncode, 0)
         self.assertFalse(second.reused)
+
+    def test_receipt_reuse_ignores_tool_call_id_but_rejects_environment_changes(self):
+        checker = load_module()
+        log_dir = self.root / "build/ai-checks"
+        log_dir.mkdir(parents=True)
+        command = [
+            sys.executable,
+            "-c",
+            "import os; print(os.environ['CODEX_TOOL_CALL_ID'])",
+        ]
+        environment = checker.phase_environment(self.root, "python-tests")
+        environment["CODEX_TOOL_CALL_ID"] = "call-1"
+        environment["ASAN_OPTIONS"] = "detect_leaks=0"
+
+        with mock.patch.object(checker, "phase_environment", return_value=environment):
+            first = checker.run_phase(
+                self.root, log_dir, "python-tests", command, 60
+            )
+        self.assertEqual(first.returncode, 0, first.output)
+        self.assertEqual(first.output, "call-1\n")
+
+        next_call_environment = dict(environment)
+        next_call_environment["CODEX_TOOL_CALL_ID"] = "call-2"
+        with mock.patch.object(
+            checker, "phase_environment", return_value=next_call_environment
+        ):
+            reused = checker.run_phase(
+                self.root, log_dir, "python-tests", command, 60, reuse=True
+            )
+        self.assertEqual(reused.returncode, 0, reused.output)
+        self.assertTrue(reused.reused)
+        self.assertEqual(reused.output, "call-1\n")
+
+        changed_environment = dict(environment)
+        changed_environment["ASAN_OPTIONS"] = "detect_leaks=1"
+        with mock.patch.object(
+            checker, "phase_environment", return_value=changed_environment
+        ):
+            rerun = checker.run_phase(
+                self.root, log_dir, "python-tests", command, 60, reuse=True
+            )
+        self.assertEqual(rerun.returncode, 0, rerun.output)
+        self.assertFalse(rerun.reused)
+        self.assertEqual(rerun.output, "call-1\n")
 
     def test_fingerprint_failure_invalidates_stale_receipt(self):
         checker = load_module()

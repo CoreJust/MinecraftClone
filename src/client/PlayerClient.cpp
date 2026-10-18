@@ -38,6 +38,7 @@
 #include <optional>
 #include <ratio>
 #include <span>
+#include <stdexcept>
 #include <string>
 #include <thread>
 #include <tuple>
@@ -951,6 +952,9 @@ private:
                     [this](HeightTileKey const key) {
                         return playerClientPreviewMeshPriorityTier(m_priority_center, m_priority_forecast_center, key);
                     });
+                if (!index.has_value()) {
+                    throw std::logic_error("preview mesh worker woke without queued work");
+                }
                 auto const next = m_work.begin() + static_cast<std::deque<Job>::difference_type>(*index);
                 job = std::move(*next);
                 m_work.erase(next);
@@ -1338,6 +1342,7 @@ PlayerClientBenchmarkFullTerrainInfo PlayerClient::benchmarkFullTerrainStreaming
         .visible_outside_interest_count = std::nullopt,
         .current_visible_mesh_detail_counts = std::nullopt,
         .unclassified_current_visible_mesh_detail_count = std::nullopt,
+        .mesh_episodes = std::nullopt,
     };
     uint32_t const expected_count = requiredHeightTileCount();
     info.potentially_ready = !m_height_tile_interest.empty()
@@ -1511,7 +1516,7 @@ size_t meshEpisodeBucket(uint64_t const age)
 
 void PlayerMeshEpisodes::enter(shared::HeightTileKey const key, Clock::time_point const now)
 {
-    if (m_current.try_emplace(key, Episode{ .entered_at = now }).second) {
+    if (m_current.try_emplace(key, Episode{ .entered_at = now, .resident_at = std::nullopt }).second) {
         ++m_totals.entered_count;
     }
 }
