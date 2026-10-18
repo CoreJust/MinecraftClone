@@ -289,10 +289,18 @@ class VerifyGameplayGateTests(unittest.TestCase):
             with self.assertRaisesRegex(self.gate.GameplayError, "source input inventory is incomplete"):
                 self.gate.source_digest(root)
 
-    def report(self, platform="macos", interval_ns=None, movement_interval_ns=None, proof="performance"):
+    def report(self, platform="macos", interval_ns=None, movement_interval_ns=None, proof="performance",
+               stationary_duration_ns=None, movement_duration_ns=None, recovery_duration_ns=None):
         interval = interval_ns or (8000000 if platform == "macos" else 2000000)
         moving_interval = movement_interval_ns or interval
         radius = self.gate.PROOFS[proof]
+        stationary_duration = stationary_duration_ns or (
+            30000000000 if proof == "performance" else 10000000000
+        )
+        movement_duration = movement_duration_ns or (
+            30000000000 if proof == "performance" else 6000000000
+        )
+        recovery_duration = recovery_duration_ns or stationary_duration
         bands = [0] * 16
         for x in range(-radius, radius + 1):
             limit = math.isqrt(radius * radius - x * x)
@@ -312,13 +320,14 @@ class VerifyGameplayGateTests(unittest.TestCase):
         full = {"contract": "mc.full-radius-terrain-barriers.v1", "render_distance": radius, "expected_tile_count": tile_count,
                 "complete": True, "warmup_timeout_ms": 180000, "initial_warmup_elapsed_ms": 1, "recovery_warmup_elapsed_ms": 1,
                 "initial_barrier_reached": True, "recovery_barrier_reached": True,
-                "movement_elapsed_ms": math.ceil(6000000000 / moving_interval) * moving_interval // 1000000,
+                "movement_elapsed_ms": math.ceil(movement_duration / moving_interval) * moving_interval // 1000000,
                 "movement_center_change_count": 2, "movement_start_center": {"x": 0, "y": 0}, "movement_end_center": {"x": 2, "y": 0},
                 "loop_timing_scope": "all-stationary-loop-attempts", "successful_present_request_interval_scope":
                 "consecutive-successful-request-completions-not-physical-display-cadence"}
         for index, phase in enumerate(self.gate.PHASES):
-            durations = ([1000000] if index in (0, 3) else [moving_interval] * math.ceil(6000000000 / moving_interval) if index == 2 else
-                         [interval] * math.ceil(10000000000 / interval))
+            durations = ([1000000] if index in (0, 3) else
+                         [moving_interval] * math.ceil(movement_duration / moving_interval) if index == 2 else
+                         [interval] * math.ceil((recovery_duration if index == 4 else stationary_duration) / interval))
             for number, duration in enumerate(durations):
                 terrain_center = {"x": min(number // 4, 2) if index == 2 else 2 if index > 2 else 0, "y": 0}
                 terrain_near = {"center": dict(terrain_center), "desired": 225, "resident": 225,
@@ -355,7 +364,7 @@ class VerifyGameplayGateTests(unittest.TestCase):
                      "max_missing_current_mesh_count": 0,
                      "current_near_coverage_complete": True}
         report = {"schema_version": "mc.runtime-evidence.v1", "mode": "benchmark-game", "passed": True, "failure": "",
-                "timing": {"elapsed_ms": offset // 1000000, "deadline_ms": 450000}, "game_benchmark": {
+                "timing": {"elapsed_ms": offset // 1000000, "deadline_ms": 480000}, "game_benchmark": {
                     "workload": self.gate.WORKLOAD, "qualification_proof": proof,
                     "diagnostic_overrides_present": False, "build_mode": "release", "displayed_cadence_hz": None,
                     "frame_budget": self.frame_budget(frames, proof, platform),
@@ -509,7 +518,7 @@ class VerifyGameplayGateTests(unittest.TestCase):
                     shutil.copytree(package, app)
                     submitted = now()
                     request = {"schema": 1, "job_id": DESKTOP_JOB_ID, "task_id": state["task_id"], "executable": "mc_main.exe",
-                               "executable_sha256": build["executable_sha256"], "arguments": parameters["arguments"], "timeout_seconds": 450}
+                               "executable_sha256": build["executable_sha256"], "arguments": parameters["arguments"], "timeout_seconds": 480}
                     request.update(state["request_mutation"])
                     (job / "request.json").write_text(json.dumps(request), encoding="utf-8")
                     scheduler = {"schema": 1, "job_id": DESKTOP_JOB_ID, "task_id": state["task_id"], "state": "submitted",
@@ -517,7 +526,7 @@ class VerifyGameplayGateTests(unittest.TestCase):
                     (job / "scheduler.json").write_text(json.dumps(scheduler), encoding="utf-8")
                     native = {"schema": 1, "job_id": DESKTOP_JOB_ID, "task_id": state["task_id"], "state": state["state"],
                               "started_at_utc": now(), "pid": 4242, "session_id": 1, "executable": "mc_main.exe",
-                              "executable_sha256": build["executable_sha256"], "timeout_seconds": 450,
+                              "executable_sha256": build["executable_sha256"], "timeout_seconds": 480,
                               "exit_code": state["exit_code"] if state["state"] != "running" else None, "error": None}
                     if state["report"] is not None and state["state"] != "running":
                         (app / parameters["arguments"][-1]).write_text(json.dumps(state["report"]), encoding="utf-8")
@@ -626,6 +635,25 @@ class VerifyGameplayGateTests(unittest.TestCase):
                     self.assertEqual(verified[platform][proof]["presentation_timing_required"],
                                      proof == "performance" and platform == "macos")
                     self.assertEqual(verified[platform][proof]["request_cadence_reasons"], [])
+
+    def test_performance_proof_rejects_legacy_short_sampling_windows(self):
+        report = self.report(
+            stationary_duration_ns=10000000000,
+            movement_duration_ns=6000000000,
+        )
+
+        with self.assertRaisesRegex(self.gate.GameplayError, "fixed 30-second performance sample"):
+            self.gate.verify_report(report, "macos")
+
+    def test_performance_proof_rejects_short_recovery_sampling_window(self):
+        report = self.report(recovery_duration_ns=10000000000)
+        full = report["game_benchmark"]["full_radius_terrain"]
+        self.assertEqual(full["baseline_stationary_elapsed_ms"], 30000)
+        self.assertEqual(full["movement_elapsed_ms"], 30000)
+        self.assertEqual(full["recovered_stationary_elapsed_ms"], 10000)
+
+        with self.assertRaisesRegex(self.gate.GameplayError, "fixed 30-second performance sample"):
+            self.gate.verify_report(report, "macos")
 
     def test_slow_mac_submission_proxy_is_diagnostic_for_coverage_and_performance(self):
         report = self.report(interval_ns=10000000, proof="terrain-coverage")
@@ -865,9 +893,9 @@ class VerifyGameplayGateTests(unittest.TestCase):
         report = self.report()
         self.set_actual_phase_intervals(report, self.gate.PHASES[2], 16666667, [0])
         metrics = self.gate.verify_report(report, "macos")["presentation_timing_metrics"]["phases"]
-        self.assertEqual(metrics[self.gate.PHASES[1]]["intervals_ns"]["sample_count"], 1250)
+        self.assertEqual(metrics[self.gate.PHASES[1]]["intervals_ns"]["sample_count"], 3750)
         self.assertEqual(metrics[self.gate.PHASES[1]]["cadence"]["lost_slots"], 0)
-        self.assertEqual(metrics[self.gate.PHASES[2]]["intervals_ns"]["sample_count"], 750)
+        self.assertEqual(metrics[self.gate.PHASES[2]]["intervals_ns"]["sample_count"], 3750)
         self.assertEqual(metrics[self.gate.PHASES[2]]["cadence"]["lost_slots"], 1)
 
     def test_actual_timing_drain_records_are_outside_the_frozen_qualification_endpoint(self):
@@ -958,7 +986,7 @@ class VerifyGameplayGateTests(unittest.TestCase):
         report = self.report()
         frames = report["game_benchmark"]["raw_frames"]
         baseline = [frame for frame in frames if frame["phase"] == self.gate.PHASES[1]]
-        for frame in baseline[:751]:
+        for frame in baseline[:-499]:
             frame["presentation_succeeded"] = False
         self.reconcile_raw_totals(report)
         with self.assertRaisesRegex(self.gate.GameplayError, "baseline-stationary: insufficient driver presentation intervals"):
@@ -1130,7 +1158,7 @@ class VerifyGameplayGateTests(unittest.TestCase):
             self.gate.verify_report(report, "macos")
 
     def test_mac_fifo_refresh_slot_loss_and_long_freezes_are_bounded(self):
-        for durations, accepted in (([16666667], True), ([16666667] * 3, False), ([108000000], False)):
+        for durations, accepted in (([16666667], True), ([16666667] * 8, False), ([108000000], False)):
             with self.subTest(durations=durations):
                 report = self.report()
                 self.set_actual_phase_intervals(report, self.gate.PHASES[1], durations[0],
@@ -1183,8 +1211,8 @@ class VerifyGameplayGateTests(unittest.TestCase):
             self.gate.verify_report(report, "windows")
 
     def test_phase_rate_includes_initial_work_and_a_closing_skipped_attempt(self):
-        report = self.report()
-        game, gap = report["game_benchmark"], 60000000
+        report = self.report(interval_ns=8333333)
+        game, gap = report["game_benchmark"], 70000000
         first = next(index for index, frame in enumerate(game["raw_frames"]) if frame["phase"] == self.gate.PHASES[1])
         for frame in game["raw_frames"][first:]:
             frame["started_offset_ns"] += gap
@@ -1867,7 +1895,7 @@ class VerifyGameplayGateTests(unittest.TestCase):
                     mock.patch.object(self.gate, "build_identity", return_value=row["build"]), \
                     mock.patch.object(self.gate._MATRIX, "candidate_identity", return_value=CANDIDATE), \
                     mock.patch.object(self.gate.subprocess, "Popen", return_value=process), \
-                    mock.patch.object(self.gate.time, "monotonic", side_effect=[0, 451, 451]), contextlib.redirect_stdout(io.StringIO()):
+                    mock.patch.object(self.gate.time, "monotonic", side_effect=[0, 481, 481]), contextlib.redirect_stdout(io.StringIO()):
                 with self.assertRaisesRegex(self.gate.GameplayError, "retained failure receipt.*report is absent"):
                     self.record_macos(root, receipt, Path(row["executable"]["path"]))
             captured = json.loads(receipt.read_text(encoding="utf-8"))["rows"][0]
@@ -2222,7 +2250,7 @@ class VerifyGameplayGateTests(unittest.TestCase):
 
     def test_desktop_capture_timeout_cancels_and_waits_exact_owned_native_job(self):
         with self.desktop_capture(state="running", report=None) as capture:
-            clock = itertools.chain([0, 0, 0, 0, 0, 0], itertools.repeat(511))
+            clock = itertools.chain([0, 0, 0, 0, 0, 0], itertools.repeat(541))
             with mock.patch.object(self.gate.time, "monotonic", side_effect=lambda: next(clock)), \
                     mock.patch.object(self.gate.time, "sleep"):
                 with self.assertRaisesRegex(self.gate.GameplayError, "retained failure receipt.*deadline exceeded"):

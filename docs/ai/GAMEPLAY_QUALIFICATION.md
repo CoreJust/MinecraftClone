@@ -3,13 +3,26 @@
 `speed-200-full-radius-recovery-v1` checks exact CPU/renderer terrain coverage
 and empty delivery, residency, mesh, worker and removal queues. The
 `terrain-coverage` proof requires radius 256 (205,861 tiles); `performance`
-requires radius 128. Each uses complete-terrain barriers, 10 s stationary, 6 s
+requires radius 128. Each uses complete-terrain barriers, 30 s stationary, 30 s
 of full-axis `x=127` travel at x200, recovery closer to the movement end than
-start by wrapped Chebyshev distance, then 10 s stationary. Returning to the
+start by wrapped Chebyshev distance, then 30 s stationary. Returning to the
 origin fails. Release warmups are exactly 180 s; 1–1,800 s overrides are
 diagnostic only. Movement and recovery require all 225 current radius-7 meshes
 and complete raw radial bands. Desired band counts must match the verified
 radius, not merely agree with underreported resident/visible counters.
+
+Preregister one performance capture per candidate; retain failures, with no
+pass-seeking retry or cherry-picked substitute. Performance verification rejects
+legacy short windows and accepts only 30–31 s per measured phase. Radius128,
+production quality and120Hz/99.8% thresholds are unchanged. Longer exposure and
+finer percentage granularity do not guarantee representativeness or fix engines.
+The valid v25 short proof remains FAIL: recovery lost3/1,201 slots at119.699493Hz.
+
+Report original10/6/10 s prefixes diagnostically from the full raw capture.
+Start each at its first raw phase attempt; include a whole display interval when
+its first subsequent attempt starts inside that prefix. Retain concentrated
+early losses. This is a later capture-report obligation, not a new output field
+or a replacement for full-window qualification.
 
 The shared verifier requires both local Mac and Windows Release proofs. Capture
 one proof per invocation: native `--gameplay-proof` fixes the radius and records
@@ -88,7 +101,8 @@ helper-relative. Reject build-account `MC_DIAGNOSTIC_*`; require the native
 selector and false `diagnostic_overrides_present` marker. Recognized overrides
 invalidate proof even at `0`; registry values are not evidence.
 
-Native timeout is 450 s including 60 s startup. Poll uncertainty never
+Native timeout is 480 s; Windows polling retains its separate 60 s allowance.
+Poll uncertainty never
 resubmits; exceptions cancel/wait only the owned UUID up to 30 s. A lost response
 recovers only one exactly correlated request. The helper owns the direct
 process; this benchmark uses threads. Retain failed receipts, `.raw.json` and

@@ -2,7 +2,7 @@
   "modules": [
     {
       "guide": "docs/ACCEPTANCE.md",
-      "guide_sha256": "1874b4572f7fa764f1ced322433c31d5399f8f3485ad3063c5d3636d5bb2ef2a",
+      "guide_sha256": "2e82fdee33541d1713f666548cf3ebbd3946c46ec5a9ff8c771a515ba010bf5d",
       "id": "acceptance",
       "sources": [
         "src/acceptance/CMakeLists.txt",
@@ -31,7 +31,7 @@
         "tests/acceptance/runtime_cli_tests.cmake",
         "tests/acceptance/scenario_runner_tests.cpp"
       ],
-      "sources_sha256": "43f3da47d744729cf996530f9002ecea395b25e08c79cc0852fd36a74bceb64f"
+      "sources_sha256": "7dbc4386af0c1886fa21a1efec2d39316a9e8957f3a48144db397428fd094eb3"
     },
     {
       "guide": "docs/code/ANDROID.md",
@@ -181,7 +181,7 @@
         "vcpkg-configuration.json",
         "vcpkg.json"
       ],
-      "sources_sha256": "4ed7eeb5b94ee44ad418a5c2951b69e8d55cc6722771b34c1e2f7a110ab85126"
+      "sources_sha256": "8c5c0ccb74c399f452561e65568c5951490f79d3ff6d016999f4752b63073f31"
     },
     {
       "guide": "docs/code/CORE.md",

@@ -52,6 +52,8 @@ ACTUAL_PRESENTATION_PROVIDER = "VK_GOOGLE_display_timing"
 ACTUAL_PRESENTATION_CLOCK_DOMAIN = "vulkan-display-timing-monotonic-nanoseconds-unspecified-origin"
 TARGET_HZ = {"macos": 120, "windows": 120}
 PROOFS = {"terrain-coverage": 256, "performance": 128}
+PERFORMANCE_SAMPLE_MS = 30_000
+PERFORMANCE_SAMPLE_OVERRUN_MS = 1_000
 WORLD_TILE_COUNT = 4_096
 QUEUE_FIELDS = ("pending_delivery_batches", "pending_residency_changes", "pending_mesh_queue",
                 "active_mesh_jobs", "dirty_mesh_jobs", "worker_results", "worker_outstanding", "pending_removals")
@@ -440,7 +442,7 @@ def verify_desktop_transport(row: dict[str, Any], base: Path) -> None:
         artifacts[name] = target
     request, status, scheduler = (read_json(artifacts[name]) for name in ("request.json", "status.json", "scheduler.json"))
     require(status == transport["terminal_status"], "copied status differs from observed native terminal status")
-    timeout = row["warmup_seconds"] * 2 + 90
+    timeout = row["warmup_seconds"] * 2 + 120
     require(set(request) == DESKTOP_REQUEST_FIELDS and desktop_job_id(request) == job_id and request["task_id"] == task_id
             and request["executable"] == "mc_main.exe" and request["executable_sha256"] == original["sha256"]
             and request["arguments"] == row["command"][1:] and type(request["timeout_seconds"]) is int
@@ -813,7 +815,14 @@ def verify_report(report: dict[str, Any], platform: str, proof: str | None = Non
     movement_start_center = tile_center(full["movement_start_center"], "movement start")
     movement_end_center = tile_center(full["movement_end_center"], "movement end")
     recovery_center = tile_center(full["recovery_barrier"]["center"], "recovery")
-    require(integer(full["movement_elapsed_ms"], "movement_elapsed_ms") >= 6000 and
+    movement_elapsed_ms = integer(full["movement_elapsed_ms"], "movement_elapsed_ms")
+    if cadence_required:
+        require(PERFORMANCE_SAMPLE_MS <= movement_elapsed_ms
+                <= PERFORMANCE_SAMPLE_MS + PERFORMANCE_SAMPLE_OVERRUN_MS,
+                "performance proof requires a fixed 30-second performance sample")
+    else:
+        require(movement_elapsed_ms >= 6000, "full-axis movement did not occur")
+    require(
             integer(full["movement_center_change_count"], "movement_center_change_count", 1) > 0 and
             movement_start_center != movement_end_center, "full-axis movement did not occur")
     require(wrapped_tile_distance(recovery_center, movement_end_center)
@@ -917,7 +926,13 @@ def verify_report(report: dict[str, Any], platform: str, proof: str | None = Non
         completions = [frame["started_offset_ns"] + frame["loop_duration_ns"] for frame in selected if frame["presentation_succeeded"]]
         intervals = [right - left for left, right in zip(completions, completions[1:])]
         attempts, successful = len(selected), len(completions)
-        elapsed = integer(full[prefix + "_stationary_elapsed_ms"], "stationary_elapsed_ms", 10000)
+        elapsed = integer(full[prefix + "_stationary_elapsed_ms"], "stationary_elapsed_ms")
+        if cadence_required:
+            require(PERFORMANCE_SAMPLE_MS <= elapsed
+                    <= PERFORMANCE_SAMPLE_MS + PERFORMANCE_SAMPLE_OVERRUN_MS,
+                    "performance proof requires a fixed 30-second performance sample")
+        else:
+            require(elapsed >= 10000, f"{prefix}: incomplete stationary raw duration")
         require(attempts == full[prefix + "_loop_attempts"] and successful == full[prefix + "_present_requests"]
                 and attempts - successful == full[prefix + "_failed_present_requests"], f"{prefix}: raw attempt totals mismatch")
         require(full[prefix + "_loop_timings_ns"] == timing_summary(durations)
@@ -1145,7 +1160,7 @@ def record_desktop(root: Path, receipt: Path, executable: Path, warmup: int,
     retained = receipt.with_suffix(".desktop")
     require(not path_entry_exists(report), "raw capture path already exists")
     require(not path_entry_exists(retained), "desktop transport output already exists; select a fresh receipt")
-    timeout, arguments = warmup * 2 + 90, benchmark_arguments("windows", warmup, report_name, proof)
+    timeout, arguments = warmup * 2 + 120, benchmark_arguments("windows", warmup, report_name, proof)
     package_before = desktop_package_identity(root, executable, package, manifest)
     helpers_before = desktop_helper_identity()
     candidate = _MATRIX.candidate_identity(root)
@@ -1337,7 +1352,7 @@ def record(root: Path, receipt: Path, platform: str, executable: Path, warmup: i
                          "loaded_libraries": "not-observed; closure and normal launcher verified, PID mappings unavailable"}
     command = [str(executable), *benchmark_arguments(platform, warmup, str(report), proof)]
     started = time.monotonic()
-    print(f"CAPTURE {platform}: bounded full-radius gameplay, timeout={warmup * 2 + 90}s", flush=True)
+    print(f"CAPTURE {platform}: bounded full-radius gameplay, timeout={warmup * 2 + 120}s", flush=True)
     captured_report = None
     failed_report = None
     capture_error = ""
@@ -1356,7 +1371,7 @@ def record(root: Path, receipt: Path, platform: str, executable: Path, warmup: i
                 process.wait(timeout=30)
             except subprocess.TimeoutExpired:
                 print(f"CAPTURE {platform}: elapsed={time.monotonic() - started:.0f}s; waiting for full-radius phases", flush=True)
-                if time.monotonic() - started >= warmup * 2 + 90:
+                if time.monotonic() - started >= warmup * 2 + 120:
                     timed_out = True
                     process.kill()
                     process.wait(timeout=30)

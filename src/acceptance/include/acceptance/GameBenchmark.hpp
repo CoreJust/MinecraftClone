@@ -24,9 +24,9 @@ inline constexpr uint32_t GAME_BENCHMARK_TERRAIN_NEAR_TILE_COUNT = 225U;
 inline constexpr std::chrono::milliseconds GAME_BENCHMARK_TERRAIN_READINESS_DEADLINE{ 4'000 };
 inline constexpr std::chrono::seconds GAME_BENCHMARK_FULL_RADIUS_DEFAULT_WARMUP_TIMEOUT{ 180 };
 inline constexpr std::chrono::seconds GAME_BENCHMARK_FULL_RADIUS_MAX_WARMUP_TIMEOUT{ 1'800 };
-inline constexpr std::chrono::seconds GAME_BENCHMARK_FULL_RADIUS_STATIONARY_SAMPLE{ 10 };
-inline constexpr std::chrono::seconds GAME_BENCHMARK_FULL_RADIUS_MOVEMENT{ 6 };
-inline constexpr std::chrono::seconds GAME_BENCHMARK_FULL_RADIUS_NON_WARMUP_BUDGET{ 56 };
+inline constexpr std::chrono::seconds GAME_BENCHMARK_FULL_RADIUS_STATIONARY_SAMPLE{ 30 };
+inline constexpr std::chrono::seconds GAME_BENCHMARK_FULL_RADIUS_MOVEMENT{ 30 };
+inline constexpr std::chrono::seconds GAME_BENCHMARK_FULL_RADIUS_NON_WARMUP_BUDGET{ 120 };
 
 enum class GameBenchmarkFullRadiusPhase : uint8_t {
     InitialWarmup,

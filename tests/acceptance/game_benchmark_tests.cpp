@@ -646,6 +646,9 @@ TEST(GameBenchmark, KeepsDiagnosticStationaryInputsMotionlessAcrossScriptBoundar
 
 TEST(GameBenchmark, BoundsFullRadiusWarmupTimeoutAndWatchdogBudget)
 {
+    EXPECT_EQ(acceptance::GAME_BENCHMARK_FULL_RADIUS_STATIONARY_SAMPLE, 30s);
+    EXPECT_EQ(acceptance::GAME_BENCHMARK_FULL_RADIUS_MOVEMENT, 30s);
+    EXPECT_EQ(acceptance::GAME_BENCHMARK_FULL_RADIUS_NON_WARMUP_BUDGET, 120s);
     EXPECT_EQ(*acceptance::gameBenchmarkFullRadiusWarmupTimeout(1), 1s);
     EXPECT_EQ(*acceptance::gameBenchmarkFullRadiusWarmupTimeout(180), 180s);
     EXPECT_EQ(*acceptance::gameBenchmarkFullRadiusWarmupTimeout(1'800), 1'800s);
@@ -657,7 +660,7 @@ TEST(GameBenchmark, BoundsFullRadiusWarmupTimeoutAndWatchdogBudget)
         .workload = acceptance::GameBenchmarkWorkload::Speed200FullRadiusRecovery,
         .qualification_proof = {},
     };
-    EXPECT_EQ(acceptance::gameBenchmarkDeadline(options), 416s);
+    EXPECT_EQ(acceptance::gameBenchmarkDeadline(options), 480s);
     options.workload = acceptance::GameBenchmarkWorkload::Speed200Movement;
     EXPECT_EQ(acceptance::gameBenchmarkDeadline(options), options.deadline);
 }
@@ -802,21 +805,21 @@ TEST(GameBenchmark, FullRadiusSequenceRequiresBothExactBarriersAndStationarySamp
     EXPECT_EQ(sequence.phase(), GameBenchmarkFullRadiusPhase::InitialWarmup);
     sequence.observe(start + 15s, true);
     EXPECT_EQ(sequence.phase(), GameBenchmarkFullRadiusPhase::BaselineStationary);
-    sequence.observe(start + 25s - 1ns, std::nullopt);
+    sequence.observe(start + 45s - 1ns, std::nullopt);
     EXPECT_EQ(sequence.phase(), GameBenchmarkFullRadiusPhase::BaselineStationary);
-    sequence.observe(start + 25s, std::nullopt);
+    sequence.observe(start + 45s, std::nullopt);
     EXPECT_EQ(sequence.phase(), GameBenchmarkFullRadiusPhase::Movement);
-    sequence.observe(start + 31s - 1ns, std::nullopt);
+    sequence.observe(start + 75s - 1ns, std::nullopt);
     EXPECT_EQ(sequence.phase(), GameBenchmarkFullRadiusPhase::Movement);
-    sequence.observe(start + 31s, std::nullopt);
+    sequence.observe(start + 75s, std::nullopt);
     EXPECT_EQ(sequence.phase(), GameBenchmarkFullRadiusPhase::RecoveryWarmup);
-    sequence.observe(start + 60s, false);
+    sequence.observe(start + 104s, false);
     EXPECT_EQ(sequence.phase(), GameBenchmarkFullRadiusPhase::RecoveryWarmup);
-    sequence.observe(start + 61s, true);
+    sequence.observe(start + 105s, true);
     EXPECT_EQ(sequence.phase(), GameBenchmarkFullRadiusPhase::RecoveredStationary);
-    sequence.observe(start + 71s - 1ns, std::nullopt);
+    sequence.observe(start + 135s - 1ns, std::nullopt);
     EXPECT_EQ(sequence.phase(), GameBenchmarkFullRadiusPhase::RecoveredStationary);
-    sequence.observe(start + 71s, std::nullopt);
+    sequence.observe(start + 135s, std::nullopt);
     EXPECT_EQ(sequence.phase(), GameBenchmarkFullRadiusPhase::Complete);
 }
 
@@ -837,10 +840,13 @@ TEST(GameBenchmark, FullRadiusWarmupTimeoutsAreIndependentAndFailureIsTerminal)
     GameBenchmarkFullRadiusSequence recovery_timeout{ 2s };
     recovery_timeout.start(start);
     recovery_timeout.observe(start, true);
-    recovery_timeout.observe(start + 10s, std::nullopt);
-    recovery_timeout.observe(start + 16s, std::nullopt);
+    Clock::time_point const recovery_started = start
+        + acceptance::GAME_BENCHMARK_FULL_RADIUS_STATIONARY_SAMPLE
+        + acceptance::GAME_BENCHMARK_FULL_RADIUS_MOVEMENT;
+    recovery_timeout.observe(start + acceptance::GAME_BENCHMARK_FULL_RADIUS_STATIONARY_SAMPLE, std::nullopt);
+    recovery_timeout.observe(recovery_started, std::nullopt);
     ASSERT_EQ(recovery_timeout.phase(), GameBenchmarkFullRadiusPhase::RecoveryWarmup);
-    recovery_timeout.observe(start + 18s, std::nullopt);
+    recovery_timeout.observe(recovery_started + 2s, std::nullopt);
     EXPECT_EQ(recovery_timeout.phase(), GameBenchmarkFullRadiusPhase::Failed);
 }
 

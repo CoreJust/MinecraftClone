@@ -16580,5 +16580,48 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0468",
+    "title": "Use a fixed longer S7 performance stability sample",
+    "kind": "chore",
+    "status": "done",
+    "priority": "P1",
+    "route": "luna",
+    "milestone": "ED-010-S7",
+    "depends_on": [
+      "MC-AI-0465"
+    ],
+    "acceptance": "Preregister one30second baseline,30second x200 movement and30second recovery performance capture at unchanged radius128, normal production renderer/quality and120Hz/99.8percent per-phase thresholds. Preserve initial/recovery terrain barriers, current-near continuity, raw attempts, generation/ID history, timeouts and diagnostic rejection. Reject legacy shorter measurements for the revised protocol, retain prior short-window failures, and report the original-length prefixes diagnostically. No radius reduction, pass-seeking retries or engine-fix claim. Parent0038 retains exact-current-source qualification and release gates; Windows remains untouched and deferred.",
+    "evidence": "The fixed prospective30/30/30 protocol is preregistered before execution, SHA256c14e01cb085e075cda2a951f13dd356ca33ec9b12f5773be50c1262f8c856cd9. Worker combined Release build and3 focused GameBenchmark cases pass; native header/test blobs match the worker source. The preservedv1 private prefix passes11 named protocol/history/timeout/ownership cases in2.933s, including corrected duration expectations and timeout clocks; separate20s-bounded probes also pass. Exact hashes and provenance limits are bound in /Users/core-just/.codex/task-evidence/s7-source-commit-ready-e-20261018/0468/evidence-bound.json. The interrupted broad run remains incomplete/notPASS; normal-hook validation is still required. No current native runtime success or engine-fix claim is made. Priorv25 short-window failure remains3/1201 recovery slots at119.699493Hz. Prefix diagnostics are a later full-capture report obligation, not new output/schema. Parent0038 retains current-source matrix/runtime/release gates; Windows is user-deferred and untouched, notPASS. Review delta: the fixture independently varies recovery duration and the new recovery-only short-window regression proves rejection with baseline/movement still30s. Three focused latest-prefix cases pass; exact delta evidence is bound in /Users/core-just/.codex/task-evidence/s7-source-commit-ready-e-20261018/0468-review-v2/evidence-bound.json. No production/native change or broad rerun.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0038",
+    "motivation": "The user specifies stable120FPS at100+chunks and99.8percent time, not assistant-chosen six/ten-second windows. Use a larger fixed sample without relaxing the requested thresholds.",
+    "context": "Normalv25 passed baseline0/1201 and movement1/721 but failed recovery3/1201 at119.699493Hz. Whole-window aggregation does not override that failure. The private GPU query probe materially perturbs cadence and cannot justify a production graphics change.",
+    "complexity": "medium",
+    "created_at": "2026-10-18",
+    "resolved_at": "2026-10-18",
+    "resolution_changes": "Use fixed30-second baseline/movement/recovery samples and reject legacy short performance proofs without reducing radius or120Hz/99.8% thresholds. Extend bounded native capture budget to480s and align timeout fixtures; preserve terrain barriers/raw history and retain prior failures. No engine correction or pass-seeking retry claim.",
+    "plan": [
+      "Preregister one prospective fixed sample, implement native/offline duration and timeout contracts, correct deterministic fixtures and align guides.",
+      "Bind focused evidence and exact-task review/normal commit; leave actual current-source capture, diagnostic prefix reporting and release qualification under0038."
+    ],
+    "product_changes": [
+      "Use one longer fixed R128 stability sample at unchanged quality/thresholds; do not reinterpret prior failures as success."
+    ],
+    "code_changes": [
+      "Set native stationary/movement samples to30seconds and non-warmup watchdog budget to120seconds; preserve production renderer/workload semantics.",
+      "Require each performance phase to last30–31seconds, keep terrain coverage predicates, extend matching capture/helper deadlines, and correct fixtures for the longer sample.",
+      "Document one prospective capture/no pass-seeking retries, retainedv25 failure and diagnostic10/6/10 prefixes derived later from full raw evidence; no schema or prefix-output API."
+    ],
+    "baseline_commit": "f684145d13adc67c183e7a57fefa584d3ffad995",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]

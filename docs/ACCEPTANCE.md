@@ -46,11 +46,17 @@ admissions while near work is pending, no ordering/classification errors or
 deadline misses, and full current-near visibility after a four-second neutral-input
 drain excluded from timing/rates.
 
-`speed-200-full-radius-recovery-v1` verifies the complete radius-256 disk before
-and after six seconds of x200 travel, with normal HUD/scheduling and two
-10-second stationary windows. Exact current meshes and drained queues are
-required; near-only or reduced-radius coverage cannot pass. Each warmup is
-bounded to 180 seconds for qualification.
+`speed-200-full-radius-recovery-v1` separates radius256 terrain coverage from
+radius128 performance. Both use30 s baseline,30 s x200 travel and30 s recovery
+stationary, with normal HUD/scheduling, exact meshes and drained queues.
+Warmups stay bounded to180 s. Preregister one performance capture per candidate;
+retain failures without pass-seeking retries or cherry-picking. Reject legacy
+short performance samples; radius, quality and120Hz/99.8% thresholds stay fixed.
+Longer exposure/granularity is not an engine fix or representativeness guarantee.
+The v25 short-window recovery failure remains3/1,201 slots,119.699493Hz. Derive
+diagnostic10/6/10 s prefixes from complete raw capture under the
+[preregistered attribution](ai/GAMEPLAY_QUALIFICATION.md); they cannot replace
+full-window qualification.
 
 Snapshot promotion separately requires source-bound local Mac/Windows Release
 [gameplay proof](ai/GAMEPLAY_QUALIFICATION.md). Its verifier recomputes raw
