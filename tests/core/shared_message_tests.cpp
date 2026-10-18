@@ -73,6 +73,7 @@ void expectRoundTrip(MessageTy const& expected) {
         EXPECT_EQ(actual.world_revision, expected.world_revision);
         EXPECT_EQ(actual.delivery_token, expected.delivery_token);
         EXPECT_EQ(actual.credits, expected.credits);
+        EXPECT_EQ(actual.not_resident_keys, expected.not_resident_keys);
     } else if constexpr (std::is_same_v<MessageTy, shared::ServerPlayerPositionMessage>) {
         EXPECT_EQ(actual.ch, expected.ch);
         EXPECT_EQ(actual.palette_index, expected.palette_index);
@@ -132,7 +133,10 @@ TEST(MessageTest, RoundTripsEveryMessageKind) {
         .sequence = 0x7856'3412U,
     });
     expectRoundTrip(shared::ClientHeightTileCreditMessage{
-        .world_revision = 7U, .delivery_token = 11U, .credits = 1U,
+        .world_revision = 7U,
+        .delivery_token = 11U,
+        .credits = 1U,
+        .not_resident_keys = {{ .x = 17, .y = 23 }, { .x = 19, .y = 29 }},
     });
     expectRoundTrip(shared::ServerPlayerPositionMessage{
         .ch = '#', .palette_index = 7U, .movement_capabilities = { .bits = 3U },
@@ -163,7 +167,12 @@ TEST(MessageTest, RejectsTruncatedAndUnknownPayloads) {
         shared::JoinRequestMessage{ .ch = '@' },
         shared::JoinResponseMessage{ .accepted = true },
         shared::ClientInputMessage{ .direction = { 129, 127, 1 }, .sequence = 0x7856'3412U },
-        shared::ClientHeightTileCreditMessage{ .world_revision = 7U, .delivery_token = 11U, .credits = 1U },
+        shared::ClientHeightTileCreditMessage{
+            .world_revision = 7U,
+            .delivery_token = 11U,
+            .credits = 1U,
+            .not_resident_keys = {},
+        },
         shared::ServerPlayerPositionMessage{
             .ch = '#', .palette_index = 7U, .x = 30, .y = 2, .z = 12, .x_subcell = 9'999, .y_subcell = 500, .z_subcell = 1,
             .acknowledged_input_sequence = 0x7856'3412U, .state_revision = 0x1234'5678U,
@@ -195,17 +204,66 @@ TEST(MessageTest, RejectsTruncatedCreditAcknowledgementToken)
         .world_revision = 7U,
         .delivery_token = 0x1234'5678'9ABC'DEF0U,
         .credits = 1U,
+        .not_resident_keys = {},
     });
     bytes.erase(bytes.end() - 5, bytes.end() - 1);
 
     EXPECT_FALSE(shared::decodeMessage(bytes).has_value());
 }
 
+TEST(MessageTest, BoundsAndValidatesTileResidencyReceipts)
+{
+    static constexpr uint8_t RECEIPT_CAPACITY = shared::HEIGHT_TILE_RESIDENCY_RECEIPT_KEY_CAPACITY;
+    std::vector<shared::HeightTileKey> keys;
+    keys.reserve(RECEIPT_CAPACITY);
+    for (uint8_t index = 0U; index < RECEIPT_CAPACITY; ++index) {
+        keys.push_back({ .x = index, .y = 0 });
+    }
+    shared::ClientHeightTileCreditMessage const maximum_receipt{
+        .world_revision = 1U,
+        .delivery_token = 1U,
+        .credits = 1U,
+        .not_resident_keys = keys,
+    };
+    std::vector<uint8_t> const maximum_bytes = shared::encodeMessage(maximum_receipt);
+    EXPECT_EQ(maximum_bytes.size(), 3U + 18U + 8U * RECEIPT_CAPACITY);
+    EXPECT_TRUE(shared::decodeMessage(maximum_bytes).has_value());
+
+    keys.push_back({ .x = 100, .y = 0 });
+    EXPECT_FALSE(shared::decodeMessage(shared::encodeMessage(shared::ClientHeightTileCreditMessage{
+        .world_revision = 1U,
+        .delivery_token = 1U,
+        .credits = 1U,
+        .not_resident_keys = keys,
+    })).has_value());
+
+    EXPECT_FALSE(shared::decodeMessage(shared::encodeMessage(shared::ClientHeightTileCreditMessage{
+        .world_revision = 1U,
+        .delivery_token = 1U,
+        .credits = 1U,
+        .not_resident_keys = {{ .x = 1, .y = 2 }, { .x = 1, .y = 2 }},
+    })).has_value());
+    EXPECT_FALSE(shared::decodeMessage(shared::encodeMessage(shared::ClientHeightTileCreditMessage{
+        .world_revision = 1U,
+        .delivery_token = 1U,
+        .credits = 1U,
+        .not_resident_keys = {{ .x = 4'096, .y = 0 }},
+    })).has_value());
+    std::vector<uint8_t> truncated_receipt = shared::encodeMessage(shared::ClientHeightTileCreditMessage{
+        .world_revision = 1U,
+        .delivery_token = 1U,
+        .credits = 1U,
+        .not_resident_keys = {{ .x = 1, .y = 2 }},
+    });
+    truncated_receipt.pop_back();
+    EXPECT_FALSE(shared::decodeMessage(truncated_receipt).has_value());
+}
+
 TEST(MessageTest, UsesVersionedLittleEndianFixedWidthPayloads) {
     EXPECT_EQ(
         shared::encodeMessage(shared::JoinRequestMessage{ .ch = '@' }),
         (std::vector<uint8_t>{
-            0x4D, 12, 0, '@', 0,
+            0x4D, 13, 0, '@', 0,
             1, 0, 0, 0,
             42, 0, 0, 0, 0, 0, 0, 0,
             16, 16, 16,
@@ -214,15 +272,15 @@ TEST(MessageTest, UsesVersionedLittleEndianFixedWidthPayloads) {
     );
     EXPECT_EQ(
         shared::encodeMessage(shared::JoinResponseMessage{ .accepted = true }),
-        (std::vector<uint8_t>{ 0x4D, 12, 1, 1 })
+        (std::vector<uint8_t>{ 0x4D, 13, 1, 1 })
     );
     EXPECT_EQ(
         shared::encodeMessage(shared::JoinResponseMessage{ .accepted = false }),
-        (std::vector<uint8_t>{ 0x4D, 12, 1, 0 })
+        (std::vector<uint8_t>{ 0x4D, 13, 1, 0 })
     );
     EXPECT_EQ(
         shared::encodeMessage(shared::ClientInputMessage{ .direction = { 129, 127, 1 }, .sequence = 0x7856'3412U }),
-        (std::vector<uint8_t>{ 0x4D, 12, 2, 129, 127, 1, 0, 5, 0, 0, 0, 127, 18, 52, 86, 120 })
+        (std::vector<uint8_t>{ 0x4D, 13, 2, 129, 127, 1, 0, 5, 0, 0, 0, 127, 18, 52, 86, 120 })
     );
     EXPECT_EQ(
         shared::encodeMessage(shared::ServerPlayerPositionMessage{
@@ -231,7 +289,7 @@ TEST(MessageTest, UsesVersionedLittleEndianFixedWidthPayloads) {
             .acknowledged_input_sequence = 0x7856'3412U, .state_revision = 0x1234'5678U,
         }),
         (std::vector<uint8_t>{
-            0x4D, 12, 4, '#', 7, 0,
+            0x4D, 13, 4, '#', 7, 0,
             30, 0, 0, 0,
             2, 0, 0, 0,
             12, 0, 0, 0,
@@ -242,7 +300,7 @@ TEST(MessageTest, UsesVersionedLittleEndianFixedWidthPayloads) {
     );
     EXPECT_EQ(
         shared::encodeMessage(shared::ServerRemovePlayerMessage{ .ch = '$' }),
-        (std::vector<uint8_t>{ 0x4D, 12, 5, '$' })
+        (std::vector<uint8_t>{ 0x4D, 13, 5, '$' })
     );
     auto const height_tile = shared::encodeMessage(heightTileMessage());
     EXPECT_EQ(height_tile.size(), 3U + 24U + shared::HEIGHT_TILE_PAYLOAD_BYTES);
@@ -357,7 +415,7 @@ TEST(MessageTest, MapsExactDiskCardinalitiesToEverySupportedRadius)
         shared::heightTileInterestCount(257U),
     };
 
-    EXPECT_EQ(shared::PROTOCOL_VERSION, 12U);
+    EXPECT_EQ(shared::PROTOCOL_VERSION, 13U);
     EXPECT_FALSE(shared::isValidHeightTileInterestRadius(0U));
     EXPECT_FALSE(shared::isValidHeightTileInterestRadius(257U));
     for (uint32_t radius = MINIMUM_RADIUS; radius <= MAXIMUM_RADIUS; ++radius) {

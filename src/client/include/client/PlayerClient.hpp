@@ -2,6 +2,7 @@
 
 #include "Camera.hpp"
 #include "GameClient.hpp"
+#include "HeightTileInterestRegion.hpp"
 #include "PlayerPresentation.hpp"
 #include "PlayerPreviewLod.hpp"
 #include "PreviewMeshing.hpp"
@@ -134,6 +135,7 @@ struct PlayerClientRenderDiagnostics final {
 
 inline constexpr int32_t PLAYER_CLIENT_BENCHMARK_TERRAIN_NEAR_RADIUS = 7;
 inline constexpr uint32_t PLAYER_CLIENT_BENCHMARK_TERRAIN_NEAR_TILE_COUNT = 225U;
+
 struct PlayerClientPreviewMeshProbeOffset final {
     int32_t x = 0;
     int32_t y = 0;
@@ -215,10 +217,11 @@ inline constexpr auto PLAYER_CLIENT_PREVIEW_MESH_PREWARM_OFFSETS = [] {
     return offsets;
 }();
 inline constexpr uint32_t PLAYER_CLIENT_BENCHMARK_FULL_TERRAIN_RADIAL_BAND_WIDTH = 16U;
-inline constexpr size_t PLAYER_CLIENT_BENCHMARK_FULL_TERRAIN_RADIAL_BAND_COUNT = 16U;
+inline constexpr uint32_t PLAYER_CLIENT_BENCHMARK_FULL_TERRAIN_RADIAL_BAND_COUNT = 16U;
 inline constexpr uint32_t PLAYER_CLIENT_BENCHMARK_FULL_TERRAIN_DETAIL_COUNT = 5U;
 
-// Current-center sample; a visible mesh counts only when it uses the current resident tile handle.
+// Current-center sample; a visible mesh counts only when it uses the current
+// resident tile handle.
 struct PlayerClientBenchmarkTerrainTileState final {
     shared::HeightTileKey key{};
     bool desired = false;
@@ -242,6 +245,15 @@ struct PlayerClientBenchmarkTerrainInfo final {
     uint64_t accepted_near_admissions = 0U;
     uint64_t accepted_far_admissions = 0U;
     uint64_t far_admissions_while_near_pending = 0U;
+    uint32_t client_pending_admission_count = 0U;
+    uint32_t worker_queued_count = 0U;
+    uint32_t worker_building_count = 0U;
+    uint32_t completed_result_waiting_count = 0U;
+    std::chrono::nanoseconds oldest_client_pending_near_observed_age{ 0 };
+    std::chrono::nanoseconds oldest_worker_queued_age{ 0 };
+    std::chrono::nanoseconds oldest_worker_building_age{ 0 };
+    std::chrono::nanoseconds oldest_completed_result_waiting_age{ 0 };
+    PlayerClientMeshResultDrainDiagnostics mesh_result_drain;
 };
 
 struct PlayerClientBenchmarkFullTerrainInfo final {
@@ -264,6 +276,14 @@ struct PlayerClientBenchmarkFullTerrainInfo final {
     uint32_t worker_result_count = 0U;
     uint32_t worker_outstanding_count = 0U;
     uint32_t pending_removal_count = 0U;
+    uint32_t client_pending_admission_count = 0U;
+    uint32_t worker_queued_count = 0U;
+    uint32_t worker_building_count = 0U;
+    uint32_t completed_result_waiting_count = 0U;
+    std::chrono::nanoseconds oldest_client_pending_near_observed_age{ 0 };
+    std::chrono::nanoseconds oldest_worker_queued_age{ 0 };
+    std::chrono::nanoseconds oldest_worker_building_age{ 0 };
+    std::chrono::nanoseconds oldest_completed_result_waiting_age{ 0 };
     std::optional<uint32_t> resident_desired_count;
     std::optional<uint32_t> nonresident_desired_count;
     std::optional<uint32_t> current_handle_mesh_visible_count;
@@ -327,6 +347,14 @@ private:
     size_t pending_preview_removals
 ) noexcept;
 
+[[nodiscard]] bool playerClientCaptureCoverageComplete(
+    HeightTileInterestRegion const& interest,
+    std::unordered_set<shared::HeightTileKey, PlayerHeightTileKeyHash> const& visible_meshes,
+    PreviewResidency const& residency,
+    uint32_t expected_tile_count,
+    size_t pending_preview_removals
+);
+
 class PlayerPreviewMeshQueue final {
 public:
     struct StorageStats final {
@@ -356,6 +384,8 @@ public:
         uint32_t maximum_entries,
         std::unordered_set<shared::HeightTileKey, PlayerHeightTileKeyHash> const& interest
     );
+    [[nodiscard]]
+    uint32_t refreshPriority(uint32_t maximum_entries, HeightTileInterestRegion const& interest);
     [[nodiscard]] bool contains(shared::HeightTileKey key) const noexcept;
     [[nodiscard]]
     std::optional<shared::HeightTileKey> nearestPending(
@@ -426,11 +456,13 @@ public:
     );
     ~PlayerClient();
     [[nodiscard]] RendererRuntimeInfo benchmarkRuntimeInfo() const;
+
     [[nodiscard]] PlayerClientRenderDiagnostics benchmarkRenderDiagnostics() const noexcept
     {
         return m_render_diagnostics;
     }
-    // On-demand so ordinary render frames do not pay for the bounded terrain-state probe.
+    // On-demand so ordinary render frames do not pay for the bounded
+    // terrain-state probe.
     [[nodiscard]] PlayerClientBenchmarkTerrainInfo benchmarkTerrainStreamingInfo() const;
     // The exact key scan is opt-in; readiness polling reads only aggregate state.
     [[nodiscard]] PlayerClientBenchmarkFullTerrainInfo benchmarkFullTerrainStreamingInfo(
@@ -441,6 +473,11 @@ private:
     friend struct PlayerClientTestAccess;
     class PreviewMeshWorkerPool;
     class PreviewCacheRetirementReaper;
+    struct PreviewMeshPendingAge final {
+        shared::HeightTileKey key{};
+        std::chrono::steady_clock::time_point started_at{};
+        bool active = false;
+    };
     struct PreviewTileElevation final {
         HeightTileRevision tile_revision{};
         uint64_t tile_token = 0U;
@@ -461,7 +498,11 @@ private:
     void render() override;
     [[nodiscard]] bool presentationSucceeded() const override;
     void onConnectionStateReset() override;
-private:
+    void recordPendingNearMeshAge(shared::HeightTileKey key,
+        std::chrono::steady_clock::time_point sampled_at,
+        PlayerClientBenchmarkTerrainInfo &info) const;
+
+  private:
     void beginContinuousLook() noexcept;
     void updateFlightControlToggles();
     void refreshHeightTileInterest(
@@ -499,7 +540,7 @@ private:
         HeightTileHandle const& tile,
         std::chrono::steady_clock::time_point deadline
     );
-    void removePreviewMesh(shared::HeightTileKey key, std::chrono::steady_clock::time_point deadline);
+    void removePreviewMesh(shared::HeightTileKey key, std::vector<shared::HeightTileCoordinate> &renderer_removal_batch);
     [[nodiscard]] bool refreshVisiblePreviewMesh(
         shared::HeightTileKey key,
         std::chrono::steady_clock::time_point deadline,
@@ -553,24 +594,26 @@ private:
     int8_t m_interest_heading_y = 127;
     int8_t m_applied_interest_heading_x = 0;
     int8_t m_applied_interest_heading_y = 0;
-    std::optional<shared::HeightTileKey> m_height_tile_center;
+    std::optional<shared::HeightTileKey> m_preview_forecast_center;
+    HeightTileInterestRegion m_height_tile_interest;
     shared::HeightTileInterestDelta m_interest_delta_scratch;
     std::vector<shared::HeightTileKey> m_remesh_closure_scratch;
     std::vector<shared::HeightTileKey> m_pending_keys_scratch;
     uint32_t m_interest_storage_radius = 0U;
-    std::optional<shared::HeightTileKey> m_preview_forecast_center;
-    std::unordered_set<shared::HeightTileKey, PlayerHeightTileKeyHash> m_height_tile_interest;
     std::deque<shared::HeightTileKey> m_pending_preview_removals;
     std::unordered_set<shared::HeightTileKey, PlayerHeightTileKeyHash> m_pending_preview_removal_set;
     PlayerPreviewMeshQueue m_pending_preview_meshes;
     std::unordered_set<shared::HeightTileKey, PlayerHeightTileKeyHash> m_preview_mesh_jobs;
     std::unordered_set<shared::HeightTileKey, PlayerHeightTileKeyHash> m_preview_mesh_dirty_jobs;
     std::optional<std::chrono::steady_clock::time_point> m_deferred_preview_mesh_result_deadline;
-    PlayerClientMeshResultDrainDiagnostics m_mesh_result_drain_diagnostics{};
     std::unordered_set<shared::HeightTileKey, PlayerHeightTileKeyHash> m_visible_preview_meshes;
+    std::vector<shared::HeightTileCoordinate> m_preview_mesh_removal_batch;
     PlayerPreviewMeshCoverage m_preview_mesh_coverage;
     std::unordered_map<shared::HeightTileKey, HeightTileHandle, PlayerHeightTileKeyHash>
         m_visible_preview_mesh_tiles;
+    mutable std::array<PreviewMeshPendingAge, PLAYER_CLIENT_BENCHMARK_TERRAIN_NEAR_TILE_COUNT>
+        m_preview_mesh_pending_ages{};
+    PlayerClientMeshResultDrainDiagnostics m_mesh_result_drain_diagnostics{};
     std::unordered_map<shared::HeightTileKey, shared::HeightTileSurfaceMesh, PlayerHeightTileKeyHash>
         m_visible_preview_mesh_bases;
     std::unordered_map<
@@ -603,7 +646,7 @@ private:
     uint64_t m_capture_mesh_drain_micros = 0U;
     uint64_t m_capture_mesh_reprioritize_micros = 0U;
     std::optional<uint8_t> m_capture_last_capability_cycle_source;
-    std::unordered_set<shared::HeightTileKey, PlayerHeightTileKeyHash> m_capture_interest_baseline;
+    HeightTileInterestRegion m_capture_interest_baseline;
     std::unordered_set<shared::HeightTileKey, PlayerHeightTileKeyHash> m_capture_mesh_baseline;
     uint32_t m_capture_rotation_step = 0U;
     bool m_capture_rotation_started = false;

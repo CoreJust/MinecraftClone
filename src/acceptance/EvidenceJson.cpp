@@ -153,6 +153,66 @@ std::string diagnosticCameraJson(std::array<double, 7> const& camera)
     return result + "]";
 }
 
+std::string meshWorkStagesJson(GameBenchmarkMeshStageSummary const& stages)
+{
+    return "{ \"client_pending_admission_count\": "
+        + std::to_string(stages.client_pending_admission_count)
+        + ", \"worker_queued_count\": " + std::to_string(stages.worker_queued_count)
+        + ", \"worker_building_count\": " + std::to_string(stages.worker_building_count)
+        + ", \"completed_result_waiting_count\": "
+        + std::to_string(stages.completed_result_waiting_count)
+        + ", \"oldest_client_pending_near_observed_age_ns\": "
+        + std::to_string(stages.oldest_client_pending_near_observed_age_ns)
+        + ", \"oldest_worker_queued_age_ns\": " + std::to_string(stages.oldest_worker_queued_age_ns)
+        + ", \"oldest_worker_building_age_ns\": " + std::to_string(stages.oldest_worker_building_age_ns)
+        + ", \"oldest_completed_result_waiting_age_ns\": "
+        + std::to_string(stages.oldest_completed_result_waiting_age_ns) + " }";
+}
+
+std::string meshResultDrainJson(GameBenchmarkMeshResultDrainSummary const& drain)
+{
+    return "{ \"drained_result_count\": " + std::to_string(drain.drained_result_count)
+        + ", \"stale_epoch_discard_count\": " + std::to_string(drain.stale_epoch_discard_count)
+        + ", \"no_longer_interested_or_resident_discard_count\": "
+            + std::to_string(drain.no_longer_interested_or_resident_discard_count)
+        + ", \"source_mismatch_requeue_count\": " + std::to_string(drain.source_mismatch_requeue_count)
+        + ", \"target_detail_mismatch_requeue_count\": "
+            + std::to_string(drain.target_detail_mismatch_requeue_count)
+        + ", \"cannot_publish_requeue_count\": " + std::to_string(drain.cannot_publish_requeue_count)
+        + ", \"publish_attempt_count\": " + std::to_string(drain.publish_attempt_count)
+        + ", \"publish_success_count\": " + std::to_string(drain.publish_success_count)
+        + ", \"publish_failure_count\": " + std::to_string(drain.publish_failure_count)
+        + ", \"seam_planning_duration_ns\": " + std::to_string(drain.seam_planning_duration_ns)
+        + ", \"renderer_batch_upsert_duration_ns\": "
+            + std::to_string(drain.renderer_batch_upsert_duration_ns)
+        + ", \"renderer_free_range_prepare_duration_ns\": "
+            + std::to_string(drain.renderer_free_range_prepare_duration_ns)
+        + ", \"renderer_mesh_prepare_duration_ns\": "
+            + std::to_string(drain.renderer_mesh_prepare_duration_ns)
+        + ", \"renderer_capacity_prepare_duration_ns\": "
+            + std::to_string(drain.renderer_capacity_prepare_duration_ns)
+        + ", \"renderer_commit_upload_duration_ns\": "
+            + std::to_string(drain.renderer_commit_upload_duration_ns) + " }";
+}
+
+std::string terrainRadialBandsJson(std::array<GameBenchmarkFrameSample::TerrainRadialBand, 16U> const& bands)
+{
+    std::string result = "[";
+    for (size_t index = 0U; index < bands.size(); ++index) {
+        if (index != 0U) {
+            result += ", ";
+        }
+        auto const& band = bands[index];
+        result += "{ \"desired\": " + std::to_string(band.desired_count)
+            + ", \"resident\": " + std::to_string(band.resident_count)
+            + ", \"nonresident\": " + std::to_string(band.nonresident_count)
+            + ", \"current_mesh_visible\": " + std::to_string(band.current_mesh_visible_count)
+            + ", \"stale_or_missing_mesh\": " + std::to_string(band.stale_or_missing_mesh_count) + " }";
+    }
+    result.push_back(']');
+    return result;
+}
+
 std::string terrainNearSampleJson(GameBenchmarkFrameSample::TerrainNearSample const& sample)
 {
     return "{ \"center\": "
@@ -173,6 +233,8 @@ std::string terrainNearSampleJson(GameBenchmarkFrameSample::TerrainNearSample co
             + std::to_string(sample.accepted_far_admission_delta)
         + ", \"far_admission_while_near_pending_delta\": "
             + std::to_string(sample.far_admission_while_near_pending_delta)
+        + ", \"mesh_work_stages\": " + meshWorkStagesJson(sample.mesh_work_stages)
+        + ", \"mesh_result_drain\": " + meshResultDrainJson(sample.mesh_result_drain)
         + " }";
 }
 
@@ -186,6 +248,13 @@ std::string terrainReadinessJson(GameBenchmarkTerrainReadinessEvidence const& ev
         + ", \"drain_ms\": " + std::to_string(evidence.readiness_drain_ms)
         + ", \"center_sample_count\": " + std::to_string(evidence.center_sample_count)
         + ", \"center_change_count\": " + std::to_string(evidence.center_change_count)
+        + ", \"current_near_sample_count\": " + std::to_string(evidence.current_near_sample_count)
+        + ", \"incomplete_current_near_sample_count\": "
+            + std::to_string(evidence.incomplete_current_near_sample_count)
+        + ", \"max_missing_current_mesh_count\": "
+            + std::to_string(evidence.max_missing_current_mesh_count)
+        + ", \"current_near_coverage_complete\": "
+            + std::string(evidence.current_near_coverage_complete ? "true" : "false")
         + ", \"eligible_resident_missing_mesh_episodes\": "
             + std::to_string(evidence.eligible_mesh_episode_count)
         + ", \"ready_mesh_episodes\": " + std::to_string(evidence.ready_mesh_episode_count)
@@ -278,6 +347,8 @@ std::string fullTerrainSnapshotJson(GameBenchmarkFullTerrainSnapshot const& snap
         + ", \"renderer_draw_face_count\": " + std::to_string(snapshot.renderer_draw_face_count)
         + ", \"renderer_stone_face_capacity\": "
             + std::to_string(snapshot.renderer_stone_face_capacity)
+        + ", \"renderer_stone_face_growth\": "
+            + stoneFaceGrowthDiagnosticsJson(snapshot.renderer_stone_face_growth)
         + ", \"pending_delivery_batches\": " + std::to_string(snapshot.pending_delivery_batch_count)
         + ", \"pending_residency_changes\": " + std::to_string(snapshot.pending_residency_change_count)
         + ", \"pending_mesh_queue\": " + std::to_string(snapshot.pending_mesh_count)
@@ -286,6 +357,8 @@ std::string fullTerrainSnapshotJson(GameBenchmarkFullTerrainSnapshot const& snap
         + ", \"worker_results\": " + std::to_string(snapshot.worker_result_count)
         + ", \"worker_outstanding\": " + std::to_string(snapshot.worker_outstanding_count)
         + ", \"pending_removals\": " + std::to_string(snapshot.pending_removal_count)
+        + ", \"current_near_mesh_work_stages\": "
+            + meshWorkStagesJson(snapshot.current_near_mesh_work_stages)
         + ", \"radial_band_tile_width\": 16, \"radial_bands\": "
         + (snapshot.scan_performed ? "[" : "null");
     if (snapshot.scan_performed) {
@@ -300,7 +373,7 @@ std::string fullTerrainSnapshotJson(GameBenchmarkFullTerrainSnapshot const& snap
                 + ", \"current_mesh_visible\": " + std::to_string(band.current_mesh_visible_count)
                 + ", \"stale_or_missing_mesh\": " + std::to_string(band.stale_or_missing_mesh_count) + " }";
         }
-        result += "]";
+        result += ']';
     }
     result += " }";
     return result;
@@ -452,7 +525,41 @@ std::string gameBenchmarkJson(GameBenchmarkEvidence const& benchmark)
         "    \"full_radius_terrain\": "
             + (benchmark.full_radius_terrain
                 ? fullRadiusTerrainJson(*benchmark.full_radius_terrain) : "null") + ",\n"
-        "    \"raw_server_tick_durations_ns\": [";
+        "    \"raw_server_stream_samples\": [";
+    for (uint64_t index = 0U; index < benchmark.raw_server_stream_samples.size(); ++index) {
+        GameBenchmarkServerStreamSample const& sample = benchmark.raw_server_stream_samples[index];
+        if (index != 0U) {
+            result += ',';
+        }
+        result += "\n      { \"started_offset_ns\": " + std::to_string(sample.started_offset_ns)
+            + ", \"center\": { \"x\": " + std::to_string(sample.center_x)
+            + ", \"y\": " + std::to_string(sample.center_y) + " }"
+            + ", \"near_window\": { \"desired\": " + std::to_string(sample.near_desired_count)
+            + ", \"resident\": " + std::to_string(sample.near_resident_count)
+            + ", \"queued\": " + std::to_string(sample.near_queued_count)
+            + ", \"dispatched\": " + std::to_string(sample.near_dispatched_count)
+            + ", \"ready\": " + std::to_string(sample.near_ready_count)
+            + ", \"inflight_additions\": " + std::to_string(sample.near_inflight_count)
+            + ", \"inflight_removals\": " + std::to_string(sample.near_inflight_removals_count)
+            + ", \"untracked\": " + std::to_string(sample.near_untracked_count) + " }"
+            + ", \"server_queued\": " + std::to_string(sample.server_queued_count)
+            + ", \"server_dispatched\": " + std::to_string(sample.server_dispatched_count)
+            + ", \"server_ready\": " + std::to_string(sample.server_ready_count)
+            + ", \"server_inflight_additions\": " + std::to_string(sample.server_inflight_addition_count)
+            + ", \"server_inflight_removals\": " + std::to_string(sample.server_inflight_removal_count)
+            + ", \"server_inflight_deliveries\": " + std::to_string(sample.server_inflight_delivery_count)
+            + ", \"server_pending_removals\": " + std::to_string(sample.server_pending_removal_count)
+            + ", \"server_resident\": " + std::to_string(sample.server_resident_count)
+            + ", \"server_admitted_additions\": " + std::to_string(sample.server_admitted_addition_count)
+            + ", \"server_rejected_delivery_acks\": "
+            + std::to_string(sample.server_rejected_delivery_ack_count)
+            + ", \"server_delivery_credits\": " + std::to_string(sample.server_delivery_credit_count)
+            + ", \"worker_queued\": " + std::to_string(sample.worker_queued_count)
+            + ", \"worker_running\": " + std::to_string(sample.worker_running_count)
+            + ", \"worker_completed_uncollected\": "
+                + std::to_string(sample.worker_completed_uncollected_count) + " }";
+    }
+    result += "\n    ],\n    \"raw_server_tick_durations_ns\": [";
     for (uint64_t index = 0U; index < benchmark.raw_server_tick_durations_ns.size(); ++index) {
         if (index != 0U) {
             result += ", ";
@@ -500,6 +607,14 @@ std::string gameBenchmarkJson(GameBenchmarkEvidence const& benchmark)
                 + std::to_string(sample.visible_surface_face_count)
             + ", \"terrain_near\": "
                 + (sample.terrain_near ? terrainNearSampleJson(*sample.terrain_near) : "null")
+            + ", \"renderer_stone_face_growth\": "
+                + (sample.renderer_stone_face_growth
+                    ? stoneFaceGrowthDiagnosticsJson(*sample.renderer_stone_face_growth) : "null")
+            + ", \"diagnostic_terrain_radial_bands\": "
+                + (sample.diagnostic_terrain_radial_bands
+                    ? terrainRadialBandsJson(*sample.diagnostic_terrain_radial_bands) : "null")
+            + ", \"diagnostic_terrain_spatial_scan_duration_ns\": "
+                + std::to_string(sample.diagnostic_terrain_spatial_scan_duration_ns)
             + ", \"diagnostic_render_attempt_id\": " + std::to_string(sample.diagnostic_render_attempt_id)
             + ", \"diagnostic_presentation_acquire\": "
                 + presentationAcquireDiagnosticsJson(sample.diagnostic_presentation_acquire)
@@ -555,6 +670,39 @@ std::string gameBenchmarkJson(GameBenchmarkEvidence const& benchmark)
 }
 
 } // namespace
+
+std::string stoneFaceGrowthDiagnosticsJson(client::StoneFaceGrowthDiagnostics const& diagnostics)
+{
+    bool const has_known_exception = diagnostics.recreation_exception_count
+        > diagnostics.recreation_unknown_exception_count;
+    return "{ \"pre_growth_deadline_rejection_count\": "
+            + std::to_string(diagnostics.pre_growth_deadline_rejection_count)
+        + ", \"growth_attempt_count\": " + std::to_string(diagnostics.growth_attempt_count)
+        + ", \"before_recreate_count\": " + std::to_string(diagnostics.before_recreate_count)
+        + ", \"deferred_recreation_count\": " + std::to_string(diagnostics.deferred_recreation_count)
+        + ", \"recreation_exception_count\": " + std::to_string(diagnostics.recreation_exception_count)
+        + ", \"recreation_unknown_exception_count\": "
+            + std::to_string(diagnostics.recreation_unknown_exception_count)
+        + ", \"recreation_exception_before_hook_count\": "
+            + std::to_string(diagnostics.recreation_exception_before_hook_count)
+        + ", \"growth_success_count\": " + std::to_string(diagnostics.growth_success_count)
+        + ", \"rollback_count\": " + std::to_string(diagnostics.rollback_count)
+        + ", \"rollback_exception_count\": " + std::to_string(diagnostics.rollback_exception_count)
+        + ", \"post_growth_deadline_rejection_count\": "
+            + std::to_string(diagnostics.post_growth_deadline_rejection_count)
+        + ", \"publication_retry_count\": " + std::to_string(diagnostics.publication_retry_count)
+        + ", \"last_required_capacity\": " + std::to_string(diagnostics.last_required_capacity)
+        + ", \"last_target_capacity\": " + std::to_string(diagnostics.last_target_capacity)
+        + ", \"required_capacity_high_water\": " + std::to_string(diagnostics.required_capacity_high_water)
+        + ", \"actual_capacity\": " + std::to_string(diagnostics.actual_capacity)
+        + ", \"actual_capacity_high_water\": " + std::to_string(diagnostics.actual_capacity_high_water)
+        + ", \"growth_work_duration_ns\": " + std::to_string(nanosecondsCount(diagnostics.growth_work_duration))
+        + ", \"first_recreation_exception_reason\": "
+            + (has_known_exception ? jsonString(diagnostics.first_recreation_exception_reason.data()) : "null")
+        + ", \"last_recreation_exception_reason\": "
+            + (has_known_exception ? jsonString(diagnostics.last_recreation_exception_reason.data()) : "null")
+        + " }";
+}
 
 std::string evidenceJson(RuntimeEvidence const& evidence)
 {

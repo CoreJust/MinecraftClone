@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import functools
 import hashlib
 import importlib.util
 import json
@@ -23,12 +24,20 @@ _MATRIX = importlib.util.module_from_spec(_SPEC)
 _SPEC.loader.exec_module(_MATRIX)
 SCHEMA = "mc.gameplay-proof.v1"
 WORKLOAD = "speed-200-full-radius-recovery-v1"
-SOURCE_INPUTS = ("src/**", "assets/**", "cmake/**", "CMakeLists.txt", "CMakePresets.json",
-                 "dependencies.lock.json", "vcpkg.json", "vcpkg-configuration*.json")
+SOURCE_INPUTS = ("src/**", "assets/**", "cmake/**", "scenarios/**", "CMakeLists.txt", "CMakePresets.json",
+                 "dependencies.lock.json", "tests/**", "vcpkg.json", "vcpkg-configuration*.json")
+REQUIRED_SOURCE_INPUTS = (
+    "CMakeLists.txt",
+    "CMakePresets.json",
+    "dependencies.lock.json",
+    "scenarios/world/canonical_world.core",
+    "scenarios/world/height_tile.core",
+)
 PHASES = ("initial-full-radius-warmup", "baseline-stationary", "speed-200-movement",
           "full-radius-recovery-warmup", "recovered-stationary")
 TARGET_HZ = {"macos": 120, "windows": 500}
 CADENCE_POLICIES = ("snapshot", "strict")
+WORLD_TILE_COUNT = 4_096
 QUEUE_FIELDS = ("pending_delivery_batches", "pending_residency_changes", "pending_mesh_queue",
                 "active_mesh_jobs", "dirty_mesh_jobs", "worker_results", "worker_outstanding", "pending_removals")
 
@@ -53,6 +62,41 @@ def tile_center(value: Any, field: str) -> dict[str, int]:
     return value
 
 
+def wrapped_tile_distance(first: dict[str, int], second: dict[str, int]) -> int:
+    axis_distances = []
+    for axis in ("x", "y"):
+        difference = abs(first[axis] - second[axis]) % WORLD_TILE_COUNT
+        axis_distances.append(min(difference, WORLD_TILE_COUNT - difference))
+    return max(axis_distances)
+
+
+@functools.lru_cache(maxsize=256)
+def radial_band_counts(radius: int) -> tuple[int, ...]:
+    integer(radius, "render radius", 1)
+    require(radius <= 256, "render radius exceeds 256")
+    counts = [0] * 16
+    for x in range(-radius, radius + 1):
+        limit = math.isqrt(radius * radius - x * x)
+        for y in range(-limit, limit + 1):
+            counts[min(max(abs(x), abs(y)) // 16, 15)] += 1
+    return tuple(counts)
+
+
+def verify_terrain_radial_scan(bands: Any, duration_ns: Any) -> None:
+    duration = integer(duration_ns, "terrain spatial scan duration")
+    require(isinstance(bands, list) and len(bands) == 16 and duration > 0,
+            "terrain spatial scan must contain 16 timed radial bands")
+    for band in bands:
+        require(isinstance(band, dict), "terrain spatial radial band must be an object")
+        desired = integer(band.get("desired"), "radial desired count")
+        resident = integer(band.get("resident"), "radial resident count")
+        nonresident = integer(band.get("nonresident"), "radial nonresident count")
+        visible = integer(band.get("current_mesh_visible"), "radial current visible count")
+        stale = integer(band.get("stale_or_missing_mesh"), "radial stale/missing count")
+        require(desired == resident + nonresident and resident == visible + stale,
+                "terrain spatial radial counts do not reconcile")
+
+
 def read_json(target: Path) -> Any:
     return json.loads(target.read_text(encoding="utf-8"), parse_constant=lambda value: (_ for _ in ()).throw(
         GameplayError(f"non-finite JSON value: {value}")))
@@ -73,7 +117,7 @@ def checked_file(descriptor: Any, base: Path) -> Path:
 
 
 def source_digest(root: Path) -> str:
-    require(all((root / name).is_file() for name in ("CMakeLists.txt", "CMakePresets.json", "dependencies.lock.json")),
+    require(all((root / name).is_file() for name in REQUIRED_SOURCE_INPUTS),
             "source input inventory is incomplete")
     return _MATRIX._input_files_sha256(root, SOURCE_INPUTS)
 
@@ -100,10 +144,7 @@ def verify_barrier(barrier: dict[str, Any], phase: str, elapsed: int) -> None:
     details = barrier["current_visible_mesh_detail_counts"]
     require(isinstance(details, dict) and set(details) == {"coarse", "coarse2", "coarse4", "fine", "distant"}
             and sum(integer(value, "mesh detail") for value in details.values()) == 205861, f"{phase}: mesh details mismatch")
-    expected = [0] * 16
-    for x in range(-256, 257):
-        for y in range(-math.isqrt(256 * 256 - x * x), math.isqrt(256 * 256 - x * x) + 1):
-            expected[min(max(abs(x), abs(y)) // 16, 15)] += 1
+    expected = radial_band_counts(256)
     bands = barrier["radial_bands"]
     require(barrier["radial_band_tile_width"] == 16 and len(bands) == 16, f"{phase}: incomplete radial bands")
     for band, count in zip(bands, expected):
@@ -135,12 +176,43 @@ def verify_report(report: dict[str, Any], platform: str, cadence_policy: str = "
         elapsed = integer(full[prefix + "_warmup_elapsed_ms"], prefix + " warmup elapsed")
         require(full[prefix + "_barrier_reached"] is True and elapsed <= timeout, f"{prefix}: warmup failed")
         verify_barrier(full[prefix + "_barrier"], phase, elapsed)
+    movement_start_center = tile_center(full["movement_start_center"], "movement start")
+    movement_end_center = tile_center(full["movement_end_center"], "movement end")
+    recovery_center = tile_center(full["recovery_barrier"]["center"], "recovery")
     require(integer(full["movement_elapsed_ms"], "movement_elapsed_ms") >= 6000 and
             integer(full["movement_center_change_count"], "movement_center_change_count", 1) > 0 and
-            isinstance(full["movement_start_center"], dict) and isinstance(full["movement_end_center"], dict) and
-            full["movement_start_center"] != full["movement_end_center"], "full-axis movement did not occur")
+            movement_start_center != movement_end_center, "full-axis movement did not occur")
+    require(wrapped_tile_distance(recovery_center, movement_end_center)
+            < wrapped_tile_distance(recovery_center, movement_start_center),
+            "recovery barrier is not on the travel destination side of the origin")
     frames = game["raw_frames"]
     require(isinstance(frames, list) and frames, "raw frame evidence is absent")
+    readiness = game.get("terrain_readiness")
+    require(isinstance(readiness, dict)
+            and readiness.get("contract") == "mc.current-near-terrain-readiness.v1"
+            and readiness.get("measurement_scope") == "current-center-radius-7",
+            "full-radius current-near terrain readiness evidence is absent")
+    near_frames = [frame for frame in frames if frame.get("phase") in (PHASES[2], PHASES[3])]
+    require(near_frames, "full-radius travel has no current-near samples")
+    movement_frames = [frame for frame in frames if frame.get("phase") == PHASES[2]]
+    require(movement_frames, "full-radius movement has no raw frames")
+    for frame in near_frames:
+        near = frame.get("terrain_near")
+        require(isinstance(near, dict), "full-radius travel frame lacks current-near terrain evidence")
+        frame_center = tile_center(frame.get("terrain_center"), "travel frame")
+        near_center = tile_center(near.get("center"), "current-near sample")
+        require(near_center == frame_center, "current-near terrain center disagrees with its travel frame")
+        require(integer(near.get("desired"), "current-near desired") == 225
+                and integer(near.get("resident"), "current-near resident") == 225
+                and integer(near.get("current_mesh_visible"), "current-near visible") == 225
+                and integer(near.get("nonresident"), "current-near nonresident") == 0,
+                "full-radius travel left missing meshes in the current near terrain window")
+    require(integer(readiness.get("current_near_sample_count"), "current-near sample count") >= len(movement_frames)
+            and integer(readiness.get("incomplete_current_near_sample_count"),
+                        "incomplete current-near sample count") == 0
+            and integer(readiness.get("max_missing_current_mesh_count"), "maximum current-near mesh gap") == 0
+            and readiness.get("current_near_coverage_complete") is True,
+            "full-radius current-near terrain coverage is incomplete")
     observed_phases, previous_completion = [], -1
     for frame in frames:
         require(frame["phase"] in PHASES, "unexpected raw frame phase")
@@ -149,6 +221,22 @@ def verify_report(report: dict[str, Any], platform: str, cadence_policy: str = "
         start = integer(frame["started_offset_ns"], "started_offset_ns")
         duration = integer(frame["loop_duration_ns"], "loop_duration_ns", 1)
         require(start >= previous_completion and type(frame["presentation_succeeded"]) is bool, "unordered or malformed raw frames")
+        radial_bands = frame.get("diagnostic_terrain_radial_bands")
+        if radial_bands is None:
+            require(integer(frame.get("diagnostic_terrain_spatial_scan_duration_ns", 0),
+                            "terrain spatial scan duration") == 0,
+                    "terrain spatial scan duration exists without radial bands")
+        else:
+            verify_terrain_radial_scan(radial_bands, frame.get("diagnostic_terrain_spatial_scan_duration_ns", 0))
+            require(all(band["desired"] == count
+                        for band, count in zip(radial_bands, radial_band_counts(full["render_distance"]))),
+                    "terrain radial desired counts disagree with render radius")
+            require(all(integer(band["desired"], "radial desired")
+                        == integer(band["current_mesh_visible"], "radial current visible")
+                        and integer(band["nonresident"], "radial nonresident") == 0
+                        and integer(band["stale_or_missing_mesh"], "radial stale/missing") == 0
+                        for band in radial_bands),
+                    "full-radius diagnostic scan found missing terrain inside the render radius")
         previous_completion = start + duration
     require(tuple(observed_phases) == PHASES, "raw phase sequence is incomplete")
     require(frames[0]["started_offset_ns"] == 0 and previous_completion // 1000000 <= timing["elapsed_ms"],

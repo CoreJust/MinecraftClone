@@ -36,13 +36,16 @@ HeightTileReplacementResult PreviewResidency::accept(
         return {
             .replacement = HeightTileReplacement::Stale,
             .handle = nullptr,
+            .evicted_key = std::nullopt,
         };
     }
     auto existing = m_residents.find(key);
-    if (existing == m_residents.end() && !makeRoom(key)) {
+    std::optional<HeightTileKey> evicted_key;
+    if (existing == m_residents.end() && !makeRoom(key, evicted_key)) {
         return {
             .replacement = HeightTileReplacement::BudgetExceeded,
             .handle = nullptr,
+            .evicted_key = evicted_key,
         };
     }
 
@@ -57,7 +60,11 @@ HeightTileReplacementResult PreviewResidency::accept(
     m_resident_order.emplace_back(key, touch);
     recordToken(key, token);
     markChanged(key, HeightTileChangeKind::Upsert);
-    return { .replacement = HeightTileReplacement::Published, .handle = tile };
+    return {
+        .replacement = HeightTileReplacement::Published,
+        .handle = tile,
+        .evicted_key = evicted_key,
+    };
 }
 
 bool PreviewResidency::evict(
@@ -161,9 +168,13 @@ void PreviewResidency::markChanged(HeightTileKey const key, HeightTileChangeKind
     }
 }
 
-bool PreviewResidency::makeRoom(HeightTileKey const protected_key)
+bool PreviewResidency::makeRoom(
+    HeightTileKey const protected_key,
+    std::optional<HeightTileKey>& evicted_key
+)
 {
-    if (HeightTile::byteSize() > m_limits.max_resident_bytes) {
+    if (m_limits.max_resident_tiles == 0U
+        || HeightTile::byteSize() > m_limits.max_resident_bytes) {
         return false;
     }
     while (m_residents.size() >= m_limits.max_resident_tiles
@@ -187,6 +198,7 @@ bool PreviewResidency::makeRoom(HeightTileKey const protected_key)
         m_residents.erase(victim);
         m_resident_bytes -= HeightTile::byteSize();
         ++m_eviction_count;
+        evicted_key = key;
         markChanged(key, HeightTileChangeKind::Remove);
     }
     return true;

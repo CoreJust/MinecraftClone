@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <deque>
 #include <memory>
+#include <optional>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -76,6 +77,7 @@ enum class HeightTileReplacement : uint8_t {
 struct HeightTileReplacementResult final {
     HeightTileReplacement replacement;
     HeightTileHandle handle;
+    std::optional<HeightTileKey> evicted_key;
 };
 
 enum class HeightTileChangeKind : uint8_t {
@@ -129,7 +131,10 @@ private:
     [[nodiscard]] uint64_t knownToken(HeightTileKey key) const noexcept;
     void recordToken(HeightTileKey key, uint64_t token);
     void markChanged(HeightTileKey key, HeightTileChangeKind kind);
-    [[nodiscard]] bool makeRoom(HeightTileKey protected_key);
+    [[nodiscard]] bool makeRoom(
+        HeightTileKey protected_key,
+        std::optional<HeightTileKey>& evicted_key
+    );
 
     HeightTileRevision m_revision;
     PreviewResidencyLimits m_limits;

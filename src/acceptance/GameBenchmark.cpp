@@ -2,12 +2,14 @@
 
 #include <client/GameClient.hpp>
 #include <client/PlayerClient.hpp>
+#include <client/render/StoneFaceCapacity.hpp>
 #include <client/render/VulkanRenderer.hpp>
 #include <server/GameServer.hpp>
 
 #include <shared/ProjectInfo.hpp>
 #include <shared/net/Message.hpp>
 #include <shared/policy/Policy.hpp>
+#include <shared/world/Chunk.hpp>
 #include <shared/world/World.hpp>
 
 #include <core/graphics/vulkan/Vulkan.hpp>
@@ -30,6 +32,7 @@
 #include <compare>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <functional>
 #include <iostream>
 #include <optional>
@@ -48,6 +51,27 @@ namespace acceptance {
 namespace {
 
 using Clock = std::chrono::steady_clock;
+
+[[nodiscard]]
+bool environmentVariableMatches(
+    char const* const name,
+    std::optional<std::string_view> const expected_value
+) noexcept
+{
+#if defined(_MSC_VER)
+    char* value = nullptr;
+    size_t value_size = 0U;
+    auto const status = ::_dupenv_s(&value, &value_size, name);
+    bool const matches = status != 0 || (value != nullptr
+        && (!expected_value || std::string_view{ value } == *expected_value));
+    std::free(value);
+    return matches;
+#else
+    char const* const value = std::getenv(name);
+    return value != nullptr
+        && (!expected_value || std::string_view{ value } == *expected_value);
+#endif
+}
 
 [[nodiscard]]
 uint64_t positiveNanoseconds(std::chrono::nanoseconds const duration) noexcept
@@ -152,6 +176,48 @@ GameBenchmarkFrameSample::TerrainNearSample gameBenchmarkTerrainFrameSample(
         .accepted_near_admission_delta = accepted_near_admission_delta,
         .accepted_far_admission_delta = accepted_far_admission_delta,
         .far_admission_while_near_pending_delta = far_admission_while_near_pending_delta,
+        .mesh_work_stages = GameBenchmarkMeshStageSummary{
+            .client_pending_admission_count = info.client_pending_admission_count,
+            .worker_queued_count = info.worker_queued_count,
+            .worker_building_count = info.worker_building_count,
+            .completed_result_waiting_count = info.completed_result_waiting_count,
+            .oldest_client_pending_near_observed_age_ns = positiveNanoseconds(
+                info.oldest_client_pending_near_observed_age
+            ),
+            .oldest_worker_queued_age_ns = positiveNanoseconds(info.oldest_worker_queued_age),
+            .oldest_worker_building_age_ns = positiveNanoseconds(info.oldest_worker_building_age),
+            .oldest_completed_result_waiting_age_ns = positiveNanoseconds(
+                info.oldest_completed_result_waiting_age
+            ),
+        },
+        .mesh_result_drain = GameBenchmarkMeshResultDrainSummary{
+            .drained_result_count = info.mesh_result_drain.drained_result_count,
+            .stale_epoch_discard_count = info.mesh_result_drain.stale_epoch_discard_count,
+            .no_longer_interested_or_resident_discard_count =
+                info.mesh_result_drain.no_longer_interested_or_resident_discard_count,
+            .source_mismatch_requeue_count = info.mesh_result_drain.source_mismatch_requeue_count,
+            .target_detail_mismatch_requeue_count = info.mesh_result_drain.target_detail_mismatch_requeue_count,
+            .cannot_publish_requeue_count = info.mesh_result_drain.cannot_publish_requeue_count,
+            .publish_attempt_count = info.mesh_result_drain.publish_attempt_count,
+            .publish_success_count = info.mesh_result_drain.publish_success_count,
+            .publish_failure_count = info.mesh_result_drain.publish_failure_count,
+            .seam_planning_duration_ns = positiveNanoseconds(info.mesh_result_drain.seam_planning_duration),
+            .renderer_batch_upsert_duration_ns = positiveNanoseconds(
+                info.mesh_result_drain.renderer_batch_upsert_duration
+            ),
+            .renderer_free_range_prepare_duration_ns = positiveNanoseconds(
+                info.mesh_result_drain.renderer_upsert_stages.free_range_prepare_duration
+            ),
+            .renderer_mesh_prepare_duration_ns = positiveNanoseconds(
+                info.mesh_result_drain.renderer_upsert_stages.mesh_prepare_duration
+            ),
+            .renderer_capacity_prepare_duration_ns = positiveNanoseconds(
+                info.mesh_result_drain.renderer_upsert_stages.capacity_prepare_duration
+            ),
+            .renderer_commit_upload_duration_ns = positiveNanoseconds(
+                info.mesh_result_drain.renderer_upsert_stages.commit_upload_duration
+            ),
+        },
     };
     if (info.center) {
         sample.center_x = info.center->x;
@@ -307,6 +373,7 @@ std::string_view fullRadiusPhaseName(GameBenchmarkFullRadiusPhase const phase) n
 
 GameBenchmarkFullTerrainSnapshot fullTerrainSnapshot(
     client::PlayerClientBenchmarkFullTerrainInfo const& info,
+    client::StoneFaceGrowthDiagnostics const& growth,
     GameBenchmarkFullRadiusPhase const phase,
     Clock::duration const elapsed
 )
@@ -327,6 +394,7 @@ GameBenchmarkFullTerrainSnapshot fullTerrainSnapshot(
         .renderer_face_count = info.renderer_face_count,
         .renderer_draw_face_count = info.renderer_draw_face_count,
         .renderer_stone_face_capacity = info.renderer_stone_face_capacity,
+        .renderer_stone_face_growth = growth,
         .pending_delivery_batch_count = info.pending_delivery_batch_count,
         .pending_residency_change_count = info.pending_residency_change_count,
         .pending_mesh_count = info.pending_mesh_count,
@@ -343,9 +411,23 @@ GameBenchmarkFullTerrainSnapshot fullTerrainSnapshot(
         .visible_outside_interest_count = info.visible_outside_interest_count,
         .current_visible_mesh_detail_counts = info.current_visible_mesh_detail_counts,
         .unclassified_current_visible_mesh_detail_count = info.unclassified_current_visible_mesh_detail_count,
+        .current_near_mesh_work_stages = GameBenchmarkMeshStageSummary{
+            .client_pending_admission_count = info.client_pending_admission_count,
+            .worker_queued_count = info.worker_queued_count,
+            .worker_building_count = info.worker_building_count,
+            .completed_result_waiting_count = info.completed_result_waiting_count,
+            .oldest_client_pending_near_observed_age_ns = positiveNanoseconds(
+                info.oldest_client_pending_near_observed_age
+            ),
+            .oldest_worker_queued_age_ns = positiveNanoseconds(info.oldest_worker_queued_age),
+            .oldest_worker_building_age_ns = positiveNanoseconds(info.oldest_worker_building_age),
+            .oldest_completed_result_waiting_age_ns = positiveNanoseconds(
+                info.oldest_completed_result_waiting_age
+            ),
+        },
     };
     static_assert(client::PLAYER_CLIENT_BENCHMARK_FULL_TERRAIN_RADIAL_BAND_COUNT == 16U);
-    for (size_t index = 0U; index < snapshot.radial_bands.size(); ++index) {
+    for (uint32_t index = 0U; index < client::PLAYER_CLIENT_BENCHMARK_FULL_TERRAIN_RADIAL_BAND_COUNT; ++index) {
         auto const& source = info.radial_bands[index];
         snapshot.radial_bands[index] = GameBenchmarkFullTerrainSnapshot::RadialBand{
             .desired_count = source.desired_count,
@@ -449,6 +531,34 @@ std::chrono::steady_clock::duration GameBenchmarkFullRadiusSequence::phaseElapse
     return sampled_at > m_phase_started_at ? sampled_at - m_phase_started_at : Clock::duration::zero();
 }
 
+bool gameBenchmarkRecoveryIsCloserToMovementEnd(
+    shared::HeightTileKey const movement_start,
+    shared::HeightTileKey const movement_end,
+    shared::HeightTileKey const recovery_center
+) noexcept
+{
+    static constexpr int32_t WORLD_TILE_COUNT = static_cast<int32_t>(
+        shared::World::FLIGHT_MAX_CELL / shared::Chunk::SIDE_LENGTH
+    );
+    auto const wrapped_axis_distance = [](int32_t const first, int32_t const second) {
+        int32_t normalized_first = first % WORLD_TILE_COUNT;
+        int32_t normalized_second = second % WORLD_TILE_COUNT;
+        normalized_first = normalized_first < 0 ? normalized_first + WORLD_TILE_COUNT : normalized_first;
+        normalized_second = normalized_second < 0 ? normalized_second + WORLD_TILE_COUNT : normalized_second;
+        int32_t const difference = normalized_first >= normalized_second
+            ? normalized_first - normalized_second : normalized_second - normalized_first;
+        return std::min(difference, WORLD_TILE_COUNT - difference);
+    };
+    auto const wrapped_tile_distance = [&](shared::HeightTileKey const first, shared::HeightTileKey const second) {
+        return std::max(
+            wrapped_axis_distance(first.x, second.x),
+            wrapped_axis_distance(first.y, second.y)
+        );
+    };
+    return wrapped_tile_distance(recovery_center, movement_end)
+        < wrapped_tile_distance(recovery_center, movement_start);
+}
+
 void GameBenchmarkFullRadiusSequence::transition(
     GameBenchmarkFullRadiusPhase const phase,
     Clock::time_point const started_at
@@ -506,7 +616,13 @@ void GameBenchmarkTerrainReadinessTracker::observe(
     std::chrono::steady_clock::time_point const sampled_at
 )
 {
+    ++m_evidence.current_near_sample_count;
     if (!observation.center.has_value()) {
+        ++m_evidence.incomplete_current_near_sample_count;
+        m_evidence.max_missing_current_mesh_count = std::max(
+            m_evidence.max_missing_current_mesh_count,
+            GAME_BENCHMARK_TERRAIN_NEAR_TILE_COUNT
+        );
         m_evidence.final_center_valid = false;
         m_evidence.final_desired_tile_count = 0U;
         m_evidence.final_resident_tile_count = 0U;
@@ -519,6 +635,19 @@ void GameBenchmarkTerrainReadinessTracker::observe(
     }
 
     shared::HeightTileKey const center = observation.center.value();
+    bool const current_near_coverage_complete = observation.desired_count
+            == GAME_BENCHMARK_TERRAIN_NEAR_TILE_COUNT
+        && observation.current_mesh_visible_count == GAME_BENCHMARK_TERRAIN_NEAR_TILE_COUNT
+        && observation.nonresident_count == 0U;
+    if (!current_near_coverage_complete) {
+        ++m_evidence.incomplete_current_near_sample_count;
+        m_evidence.max_missing_current_mesh_count = std::max(
+            m_evidence.max_missing_current_mesh_count,
+            observation.current_mesh_visible_count < GAME_BENCHMARK_TERRAIN_NEAR_TILE_COUNT
+                ? GAME_BENCHMARK_TERRAIN_NEAR_TILE_COUNT - observation.current_mesh_visible_count
+                : 0U
+        );
+    }
     ++m_evidence.center_sample_count;
     if (m_last_center && m_last_center.value() != center) {
         ++m_evidence.center_change_count;
@@ -608,6 +737,8 @@ GameBenchmarkTerrainReadinessEvidence GameBenchmarkTerrainReadinessTracker::evid
 {
     GameBenchmarkTerrainReadinessEvidence result = m_evidence;
     result.open_mesh_episode_count = static_cast<uint64_t>(m_open_episodes.size());
+    result.current_near_coverage_complete = result.current_near_sample_count != 0U
+        && result.incomplete_current_near_sample_count == 0U;
     result.complete = result.center_change_count >= 2U
         && result.eligible_mesh_episode_count > 0U
         && result.ready_mesh_episode_count > 0U
@@ -729,9 +860,14 @@ std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOption
     };
     std::vector<ServerTickSample> raw_server_ticks;
     raw_server_ticks.reserve(512U);
+    std::vector<GameBenchmarkServerStreamSample> raw_server_stream_samples;
+    if (options.diagnostic_full_radius_capture) {
+        raw_server_stream_samples.reserve(16'000U);
+    }
     std::vector<std::chrono::nanoseconds> raw_permission_publish_durations;
     std::optional<std::string> permission_error;
     std::atomic<int64_t> measurement_end_ns{ 0 };
+    std::atomic<int64_t> first_loop_started_at_ns{ 0 };
     uint64_t measured_tick_count = 0U;
     uint64_t permission_publish_count = 0U;
     server::GameServer::BenchmarkHooks const server_hooks{
@@ -769,7 +905,51 @@ std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOption
             ++permission_publish_count;
         },
         .on_preview_buffered = {},
-        .on_preview_metrics = {},
+        .on_preview_metrics = options.diagnostic_full_radius_capture
+            ? std::function<void(core::ClientId, server::GameServer::PreviewStreamMetrics const&)>{
+                [&](core::ClientId, server::GameServer::PreviewStreamMetrics const& metrics) {
+                    int64_t const first_loop_ns = first_loop_started_at_ns.load(std::memory_order_acquire);
+                    if (first_loop_ns == 0 || !metrics.terrain_center_valid) {
+                        return;
+                    }
+                    int64_t const sample_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                        Clock::now().time_since_epoch()
+                    ).count();
+                    if (sample_ns < first_loop_ns) {
+                        return;
+                    }
+                    raw_server_stream_samples.push_back({
+                        .started_offset_ns = static_cast<uint64_t>(sample_ns - first_loop_ns),
+                        .center_x = metrics.terrain_center_x,
+                        .center_y = metrics.terrain_center_y,
+                        .near_desired_count = metrics.near_window_desired_tiles,
+                        .near_resident_count = metrics.near_window_resident_tiles,
+                        .near_queued_count = metrics.near_window_queued_tiles,
+                        .near_dispatched_count = metrics.near_window_dispatched_tiles,
+                        .near_ready_count = metrics.near_window_ready_tiles,
+                        .near_inflight_count = metrics.near_window_inflight_additions,
+                        .near_inflight_removals_count = metrics.near_window_inflight_removals,
+                        .near_untracked_count = metrics.near_window_untracked_tiles,
+                        .server_queued_count = metrics.queued_tiles,
+                        .server_dispatched_count = metrics.dispatched_tiles,
+                        .server_ready_count = metrics.ready_tiles,
+                        .server_inflight_addition_count = metrics.inflight_additions,
+                        .server_inflight_removal_count = metrics.inflight_removals,
+                        .server_inflight_delivery_count = metrics.inflight_deliveries,
+                        .server_pending_removal_count = metrics.pending_removals,
+                        .server_resident_count = metrics.resident_tiles,
+                        .server_admitted_addition_count = metrics.admitted_additions,
+                        .server_rejected_delivery_ack_count = metrics.rejected_delivery_acknowledgements,
+                        .server_delivery_credit_count = metrics.delivery_credits,
+                        .worker_queued_count = metrics.height_tile_jobs.executor_queued_jobs,
+                        .worker_running_count = metrics.height_tile_jobs.running_jobs,
+                        .worker_completed_uncollected_count =
+                            metrics.height_tile_jobs.completed_uncollected_jobs,
+                    });
+                },
+            }
+            : std::function<void(core::ClientId, server::GameServer::PreviewStreamMetrics const&)>{},
+        .before_height_tile_completion = {},
     };
     ServerRunGuard server_run{ server, server_hooks };
     std::cout << "[benchmark-game] loopback server started\n" << std::flush;
@@ -781,6 +961,7 @@ std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOption
             .freeze_camera = options.workload == GameBenchmarkWorkload::DiagnosticStationary
                 || full_radius_workload,
             .show_debug_hud = full_radius_workload,
+            .enable_mesh_stage_diagnostics = options.diagnostic_full_radius_capture,
         },
     };
     std::cout << "[benchmark-game] player renderer ready; connecting\n" << std::flush;
@@ -823,6 +1004,7 @@ std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOption
             }}
             : std::nullopt,
         .raw_frames = {},
+        .raw_server_stream_samples = {},
         .raw_server_tick_durations_ns = {},
         .raw_permission_publish_durations_ns = {},
     };
@@ -841,9 +1023,13 @@ std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOption
     std::optional<Clock::time_point> first_loop_at;
     std::optional<Clock::time_point> last_full_progress_at;
     std::optional<Clock::time_point> last_full_warmup_raw_at;
+    std::optional<Clock::time_point> last_full_spatial_scan_at;
+    std::optional<GameBenchmarkFullRadiusPhase> last_full_spatial_scan_phase;
     std::optional<shared::HeightTileKey> last_movement_center;
     bool full_initial_candidate_scanned = false;
     bool full_recovery_candidate_scanned = false;
+    bool const full_radius_spatial_scan_enabled = options.diagnostic_full_radius_capture
+        || environmentVariableMatches("MC_DIAGNOSTIC_TERRAIN_SPATIAL_SCAN", "1");
     uint8_t reported_phase = 0U;
     uint64_t warm_successful_present_requests = 0U;
     uint64_t uncapped_successful_present_requests = 0U;
@@ -894,6 +1080,12 @@ std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOption
         .on_loop = [&](client::GameClientLoopSample const& sample) {
             if (!first_loop_at) {
                 first_loop_at = sample.started_at;
+                first_loop_started_at_ns.store(
+                    std::chrono::duration_cast<std::chrono::nanoseconds>(
+                        sample.started_at.time_since_epoch()
+                    ).count(),
+                    std::memory_order_release
+                );
                 if (full_radius_workload) {
                     full_radius_sequence.start(sample.started_at);
                     last_full_progress_at = sample.started_at;
@@ -920,6 +1112,8 @@ std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOption
                 std::cout << "[benchmark-game] uncapped interval started\n" << std::flush;
             }
             GameBenchmarkFullRadiusPhase const full_phase = full_radius_sequence.phase();
+            std::optional<std::array<GameBenchmarkFrameSample::TerrainRadialBand, 16U>> terrain_radial_bands;
+            uint64_t terrain_spatial_scan_duration_ns = 0U;
             std::chrono::nanoseconds const duration = std::chrono::duration_cast<std::chrono::nanoseconds>(
                 sample.completed_at - sample.started_at
             );
@@ -998,7 +1192,46 @@ std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOption
                 if (is_warmup && !full_terrain_info.potentially_ready) {
                     *candidate_scanned = false;
                 }
+                bool const spatial_phase = full_phase == GameBenchmarkFullRadiusPhase::Movement
+                    || full_phase == GameBenchmarkFullRadiusPhase::RecoveryWarmup;
+                bool const spatial_interval_elapsed = !last_full_spatial_scan_at
+                    || sample.completed_at - *last_full_spatial_scan_at >= std::chrono::seconds{ 5 }
+                    || last_full_spatial_scan_phase != full_phase;
+                if (full_radius_spatial_scan_enabled && spatial_phase && spatial_interval_elapsed) {
+                    std::chrono::steady_clock::time_point const spatial_scan_started_at = Clock::now();
+                    full_terrain_info = player.benchmarkFullTerrainStreamingInfo(true);
+                    terrain_spatial_scan_duration_ns = positiveNanoseconds(
+                        std::chrono::duration_cast<std::chrono::nanoseconds>(Clock::now() - spatial_scan_started_at)
+                    );
+                    std::array<GameBenchmarkFrameSample::TerrainRadialBand, 16U> bands{};
+                    for (uint32_t index = 0U;
+                        index < client::PLAYER_CLIENT_BENCHMARK_FULL_TERRAIN_RADIAL_BAND_COUNT; ++index) {
+                        auto const& source = full_terrain_info.radial_bands[index];
+                        bands[index] = {
+                            .desired_count = source.desired_count,
+                            .resident_count = source.resident_count,
+                            .nonresident_count = source.nonresident_count,
+                            .current_mesh_visible_count = source.current_mesh_visible_count,
+                            .stale_or_missing_mesh_count = source.stale_or_missing_mesh_count,
+                        };
+                    }
+                    terrain_radial_bands = bands;
+                    last_full_spatial_scan_at = sample.completed_at;
+                    last_full_spatial_scan_phase = full_phase;
+                    observation_at = Clock::now();
+                    elapsed = full_radius_sequence.phaseElapsed(observation_at);
+                    elapsed_ms = positiveNanoseconds(
+                        std::chrono::duration_cast<std::chrono::nanoseconds>(elapsed)
+                    ) / 1'000'000U;
+                }
                 if (is_warmup
+                    && full_terrain_info.scan_performed) {
+                    exact_coverage = full_terrain_info.exact_current_coverage;
+                    full_radius_snapshot = fullTerrainSnapshot(
+                        full_terrain_info, runtime.stone_face_growth, full_phase, elapsed
+                    );
+                    *candidate_scanned = full_terrain_info.potentially_ready;
+                } else if (is_warmup
                     && ((full_terrain_info.potentially_ready && !*candidate_scanned) || timeout_reached)) {
                     full_terrain_info = player.benchmarkFullTerrainStreamingInfo(true);
                     observation_at = Clock::now();
@@ -1007,7 +1240,9 @@ std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOption
                         std::chrono::duration_cast<std::chrono::nanoseconds>(elapsed)
                     ) / 1'000'000U;
                     exact_coverage = full_terrain_info.exact_current_coverage;
-                    full_radius_snapshot = fullTerrainSnapshot(full_terrain_info, full_phase, elapsed);
+                    full_radius_snapshot = fullTerrainSnapshot(
+                        full_terrain_info, runtime.stone_face_growth, full_phase, elapsed
+                    );
                     *candidate_scanned = full_terrain_info.potentially_ready;
                 }
                 if (full_phase == GameBenchmarkFullRadiusPhase::InitialWarmup) {
@@ -1024,14 +1259,14 @@ std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOption
                     full_evidence.initial_barrier_reached = next_full_phase
                         == GameBenchmarkFullRadiusPhase::BaselineStationary;
                     full_evidence.initial_barrier = full_radius_snapshot.value_or(
-                        fullTerrainSnapshot(full_terrain_info, previous_full_phase, elapsed)
+                        fullTerrainSnapshot(full_terrain_info, runtime.stone_face_growth, previous_full_phase, elapsed)
                     );
                 } else if (previous_full_phase == GameBenchmarkFullRadiusPhase::RecoveryWarmup
                     && next_full_phase != previous_full_phase) {
                     full_evidence.recovery_barrier_reached = next_full_phase
                         == GameBenchmarkFullRadiusPhase::RecoveredStationary;
                     full_evidence.recovery_barrier = full_radius_snapshot.value_or(
-                        fullTerrainSnapshot(full_terrain_info, previous_full_phase, elapsed)
+                        fullTerrainSnapshot(full_terrain_info, runtime.stone_face_growth, previous_full_phase, elapsed)
                     );
                 }
                 if (next_full_phase != previous_full_phase) {
@@ -1063,7 +1298,9 @@ std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOption
                 }
             }
             std::optional<GameBenchmarkFrameSample::TerrainNearSample> terrain_near_sample;
-            if (options.workload == GameBenchmarkWorkload::Speed200Movement) {
+            if (options.workload == GameBenchmarkWorkload::Speed200Movement
+                || (full_radius_workload && (full_phase == GameBenchmarkFullRadiusPhase::Movement
+                    || full_phase == GameBenchmarkFullRadiusPhase::RecoveryWarmup))) {
                 client::PlayerClientBenchmarkTerrainInfo const terrain_info =
                     player.benchmarkTerrainStreamingInfo();
                 GameBenchmarkTerrainObservation const observation =
@@ -1120,6 +1357,12 @@ std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOption
                 .terrain_center_y = full_radius_workload && full_terrain_info.center
                     ? full_terrain_info.center->y : 0,
                 .terrain_near = terrain_near_sample,
+                .diagnostic_terrain_radial_bands = terrain_radial_bands,
+                .diagnostic_terrain_spatial_scan_duration_ns = terrain_spatial_scan_duration_ns,
+                .renderer_stone_face_growth = full_radius_workload && record_raw_frame
+                    && (full_phase == GameBenchmarkFullRadiusPhase::InitialWarmup
+                        || full_phase == GameBenchmarkFullRadiusPhase::RecoveryWarmup)
+                    ? std::optional{ runtime.stone_face_growth } : std::nullopt,
                 .diagnostic_render_attempt_id = runtime.diagnostic_render_attempt_id,
                 .diagnostic_presentation_acquire = gameBenchmarkPresentationAcquireSample(
                     runtime.diagnostic_presentation_acquire
@@ -1210,7 +1453,7 @@ std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOption
             player.benchmarkFullTerrainStreamingInfo(true);
         std::chrono::steady_clock::duration const elapsed = full_radius_sequence.phaseElapsed(Clock::now());
         GameBenchmarkFullTerrainSnapshot const final_snapshot = fullTerrainSnapshot(
-            final_info, stopped_phase, elapsed
+            final_info, player.benchmarkRuntimeInfo().stone_face_growth, stopped_phase, elapsed
         );
         if (missing_initial_snapshot) {
             full_evidence.initial_barrier = final_snapshot;
@@ -1264,7 +1507,7 @@ std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOption
     benchmark.server_tick_timings = summarizeFrameTimings(server_tick_durations);
     benchmark.permission_publish_timings = summarizeFrameTimings(raw_permission_publish_durations);
     benchmark.permission_publishes = permission_publish_count;
-    if (options.workload == GameBenchmarkWorkload::Speed200Movement) {
+    if (options.workload == GameBenchmarkWorkload::Speed200Movement || full_radius_workload) {
         benchmark.terrain_readiness = terrain_readiness_tracker.evidence();
     }
     if (full_radius_workload && benchmark.full_radius_terrain) {
@@ -1298,7 +1541,26 @@ std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOption
             && full_evidence.recovery_barrier_reached
             && full_evidence.initial_barrier.exact_current_coverage.value_or(false)
             && full_evidence.recovery_barrier.exact_current_coverage.value_or(false)
+            && benchmark.terrain_readiness
+            && benchmark.terrain_readiness->current_near_coverage_complete
             && full_evidence.movement_center_change_count != 0U
+            && full_evidence.movement_start_center_valid
+            && full_evidence.movement_end_center_valid
+            && full_evidence.recovery_barrier.center_valid
+            && gameBenchmarkRecoveryIsCloserToMovementEnd(
+                shared::HeightTileKey{
+                    .x = full_evidence.movement_start_center_x,
+                    .y = full_evidence.movement_start_center_y,
+                },
+                shared::HeightTileKey{
+                    .x = full_evidence.movement_end_center_x,
+                    .y = full_evidence.movement_end_center_y,
+                },
+                shared::HeightTileKey{
+                    .x = full_evidence.recovery_barrier.center_x,
+                    .y = full_evidence.recovery_barrier.center_y,
+                }
+            )
             && full_evidence.baseline_present_requests != 0U
             && full_evidence.recovered_present_requests != 0U
             && full_evidence.baseline_loop_timings.sample_count != 0U
@@ -1312,6 +1574,7 @@ std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOption
     for (std::chrono::nanoseconds const duration : raw_permission_publish_durations) {
         benchmark.raw_permission_publish_durations_ns.push_back(positiveNanoseconds(duration));
     }
+    benchmark.raw_server_stream_samples = std::move(raw_server_stream_samples);
     const bool full_radius_workload_complete = !full_radius_workload
         || (benchmark.full_radius_terrain && benchmark.full_radius_terrain->complete
             && benchmark.server_tick_timings.sample_count != 0U
@@ -1331,8 +1594,12 @@ std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOption
         && (options.workload != GameBenchmarkWorkload::PermissionCollisionChurn
             || (benchmark.observed_capability_transitions != 0U
                 && benchmark.permission_publishes >= 2U))));
-    const bool readiness_complete = options.workload != GameBenchmarkWorkload::Speed200Movement
-        || (benchmark.terrain_readiness && benchmark.terrain_readiness->complete);
+    const bool readiness_complete = options.workload == GameBenchmarkWorkload::Speed200FullRadiusRecovery
+        ? benchmark.terrain_readiness && benchmark.terrain_readiness->current_near_coverage_complete
+        : options.workload != GameBenchmarkWorkload::Speed200Movement
+            || (benchmark.terrain_readiness && benchmark.terrain_readiness->complete);
+    const bool near_terrain_incomplete = full_radius_workload && benchmark.terrain_readiness
+        && !benchmark.terrain_readiness->current_near_coverage_complete;
     RuntimeEvidence result{
         .mode = "benchmark-game",
         .scenario_version = {},
@@ -1352,7 +1619,9 @@ std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOption
         .passed = workload_complete && readiness_complete,
         .game_benchmark = std::move(benchmark),
     };
-    if (!workload_complete) {
+    if (near_terrain_incomplete) {
+        result.failure = "full-radius travel left missing meshes in the current near terrain window";
+    } else if (!workload_complete) {
         result.failure = "game benchmark did not complete the scripted full-game workload";
     } else if (!readiness_complete && full_radius_workload) {
         result.failure = "full-radius warmup or post-movement terrain coverage did not satisfy its evidence contract";

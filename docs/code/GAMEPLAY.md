@@ -43,9 +43,9 @@ and a sequence; positions carry authoritative coordinates, subcell remainders,
 palette identity, and acknowledgement. Palette color is a stable hash of
 character identity.
 
-Protocol 12 preserves the descriptor layout. `max_height_tiles` matches a
-radius 1–256 disk cardinality; clients derive residency budgets. Invalid counts,
-payloads, radii, versions, or seeded-world joins fail before mutation.
+Protocol 13 bounded receipts report absent/evicted tiles after removal-first
+application; servers refill. `max_height_tiles` maps radius 1–256 to disk counts;
+invalid inputs fail before mutation.
 
 ## Server authority
 

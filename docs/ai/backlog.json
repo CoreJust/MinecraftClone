@@ -16190,6 +16190,46 @@
     "backlog_review": ""
   },
   {
+    "id": "MC-AI-0460",
+    "title": "Reconcile client tile residency with server delivery acknowledgements",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P0",
+    "route": "luna",
+    "milestone": "ED-010-S7",
+    "depends_on": [],
+    "acceptance": "Use a bounded, versioned delivery receipt that reports additions not resident after processing and all implicitly evicted keys; server residency must match the reported client state and regenerate missing keys still in current interest. Apply explicit removals before additions. Validate bounds, normalized keys, duplicates, stale tokens and idempotent acknowledgements. Removal erases departed meshes and queues adjacent seam rebuilds without synchronous replacement composition on the render thread. Under concurrent backlog, mix ready additions and removals with bounded progress, constrain additions by free plus released residency, and never remove current-interest tiles. Prove client capacity ordering, server reconciliation/retry, removal-backlog fairness, message round-trip/truncation, credits, payload limits and protocol mismatch rejection with deterministic regressions. Implement one sample per movement/recovery frame, raw-center binding and rejection of incomplete current-near or spatial radial coverage, including a hole followed by a fully loaded endpoint regression. The complete unchanged desktop cadence/terrain predicates and exact-source rapid-travel product qualification are owned by MC-AI-0038 using the MC-AI-0465 contract and gameplay guide. This implementation resolution does not claim that persistent terrain holes are absent or that either desktop proof pair has passed. Final current-source runtime/platform qualification remains under MC-AI-0038, not a duplicate prerequisite for this basic implementation commit. The user temporarily makes Windows secondary for S7: current Windows matrix/build/artifact/proofs are deferred, not passed, and Windows remains untouched. Mac and Android requirements and Linux analysis requirements remain. At the frozenv23 boundary Mac R256 passes but normal R128v4 strictly fails2/721 movement slots; no S7 performance or release pass is claimed. New native0467 work and its evidence renewal are separate and are not imported into this legacy implementation prefix.",
+    "evidence": "Bounded versioned delivery receipts, removal-first residency application, bounded mixed addition/removal progress, server reconciliation and queued seam rebuilding are implemented with deterministic coverage. The receipt/near-coverage implementation does not establish absence of all persistent terrain holes under current release workloads. Full inherited evidence and failures are preserved in /Users/core-just/.codex/task-evidence/s7-source-commit-ready-e-20261018/followon-metadata-drafts/0460/record-before.json. Receipt identities and exact suite names are in /Users/core-just/.codex/task-evidence/s7-source-commit-ready-e-20261018/followon-metadata-drafts/0460/evidence.json. Combined or historical results are not standalone-prefix runs. Final current-source runtime/platform qualification remains under MC-AI-0038, not a duplicate prerequisite for this basic implementation commit. The user temporarily makes Windows secondary for S7: current Windows matrix/build/artifact/proofs are deferred, not passed, and Windows remains untouched. Mac and Android requirements and Linux analysis requirements remain. At the frozenv23 boundary Mac R256 passes but normal R128v4 strictly fails2/721 movement slots; no S7 performance or release pass is claimed. New native0467 work and its evidence renewal are separate and are not imported into this legacy implementation prefix. Frozenv23 Mac analyzer/sanitizer and R256 passes are combined-candidate context only, not standalone0460 runtime; the exact seven row receipts are preserved in /Users/core-just/.codex/task-evidence/s7-source-commit-ready-e-20261018/followon-metadata-drafts/0457/evidence.json. The retained combinedv21 CTest PASS log contains23 unique GameClientPredictionTest and21 GameServerPreviewTest cases,44 total, including removal-first, implicit eviction receipts, desired-tile regeneration and mixed-backlog progress. Exact case names and hash binding are in /Users/core-just/.codex/task-evidence/s7-source-commit-ready-e-20261018/0460/evidence-bound.json; this is not a standalone-prefix runtime run.",
+    "blocker": "",
+    "owner": "Codex",
+    "level": "basic",
+    "parent": "MC-AI-0038",
+    "motivation": "Prevent permanent terrain holes when bounded client residency evicts tiles but the server continues to believe they are resident.",
+    "context": "Client delivery acknowledgements ignored bounded-cache evictions, so server residency diverged and suppressed needed regeneration. Addition-first processing worsened this; a deterministic two-tile cache reproduced it. Windows removal of128 meshes also spent88.071 seconds synchronously refreshing neighbor seams; that work now enters the prioritized queue. Later x200 recovery exposed starvation behind57,947 obsolete removals. Mixed bounded batches preserve removal progress and safe near additions. Exact rapid-travel desktop evidence is still required before claiming holes fixed.",
+    "complexity": "medium",
+    "created_at": "2026-10-13",
+    "resolved_at": "2026-10-18",
+    "resolution_changes": "Bounded versioned delivery receipts, removal-first residency application, bounded mixed addition/removal progress, server reconciliation and queued seam rebuilding are implemented with deterministic coverage. The receipt/near-coverage implementation does not establish absence of all persistent terrain holes under current release workloads. This is an implementation resolution only; exact candidate review and normal commit gates remain required.",
+    "plan": [
+      "Bind the owned implementation and actual scoped receipts, render only its task/parent traceability, and obtain one exact-task review at the root-selected profile; leave final qualification under0038."
+    ],
+    "product_changes": [
+      "Client and server reconcile rejected or evicted terrain deliveries with removal-first residency application and bounded progress for concurrent additions/removals; global terrain-continuity qualification remains separate."
+    ],
+    "code_changes": [
+      "Implement bounded versioned delivery receipts, explicit removal-first application, reconciliation/retry and fair mixed progress under simultaneous add/remove backlog.",
+      "Queue adjacent seam refresh after eviction without synchronous replacement composition; represent camera-independent interest as a player-centered region.",
+      "Expose per-frame current-near/spatial diagnostics and offline rejection of incomplete in-motion terrain even when both endpoint barriers recover."
+    ],
+    "baseline_commit": "1dad7b176280f266b224880360db50124137a7ff",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
+  },
+  {
     "id": "MC-AI-0461",
     "title": "Enforce bounded validation and release gates",
     "kind": "chore",

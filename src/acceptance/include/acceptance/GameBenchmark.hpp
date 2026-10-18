@@ -71,6 +71,13 @@ std::vector<std::chrono::nanoseconds> gameBenchmarkSuccessfulPresentIntervals(
     std::string_view stationary_phase
 );
 
+[[nodiscard]]
+bool gameBenchmarkRecoveryIsCloserToMovementEnd(
+    shared::HeightTileKey movement_start,
+    shared::HeightTileKey movement_end,
+    shared::HeightTileKey recovery_center
+) noexcept;
+
 struct GameBenchmarkTerrainTileObservation final {
     shared::HeightTileKey key{};
     bool desired = false;
@@ -133,6 +140,7 @@ struct GameBenchmarkOptions final {
     GameBenchmarkWorkload workload = GameBenchmarkWorkload::OrdinaryMovement;
     uint32_t render_distance = shared::HEIGHT_TILE_INTEREST_RADIUS;
     std::chrono::seconds full_radius_warmup_timeout = GAME_BENCHMARK_FULL_RADIUS_DEFAULT_WARMUP_TIMEOUT;
+    bool diagnostic_full_radius_capture = false;
 };
 
 [[nodiscard]] std::chrono::seconds gameBenchmarkDeadline(GameBenchmarkOptions const& options) noexcept;

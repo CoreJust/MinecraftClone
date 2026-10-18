@@ -523,12 +523,17 @@ bool GameClient::applyWorldRevision(shared::ServerWorldRevisionMessage const& me
     return grantHeightTileCredit(0U, shared::HEIGHT_TILE_DELIVERY_WINDOW);
 }
 
-bool GameClient::grantHeightTileCredit(uint64_t const delivery_token, uint8_t const credits)
+bool GameClient::grantHeightTileCredit(
+    uint64_t const delivery_token,
+    uint8_t const credits,
+    std::vector<shared::HeightTileKey> not_resident_keys
+)
 {
     return send(shared::ClientHeightTileCreditMessage{
         .world_revision = m_height_tile_revision.generation,
         .delivery_token = delivery_token,
         .credits = credits,
+        .not_resident_keys = std::move(not_resident_keys),
     });
 }
 
@@ -555,16 +560,11 @@ void GameClient::processPendingHeightTileDeliveries()
         if (m_height_tile_residency.pendingChangeCount() + operation_count > MAX_PENDING_HANDOFF_CHANGES) {
             return;
         }
-        for (shared::ServerHeightTileMessage const& tile : delivery.tiles) {
-            static_cast<void>(applyHeightTile(tile));
-        }
-        for (shared::ServerRemoveHeightTileMessage const& removal : delivery.removals) {
-            static_cast<void>(applyHeightTileRemoval(removal));
-        }
+        std::vector<shared::HeightTileKey> not_resident_keys = applyHeightTileBatch(delivery);
         uint64_t const delivery_token = delivery.delivery_token;
         m_pending_height_tile_delivery_tokens.erase(delivery_token);
         m_pending_height_tile_deliveries.pop_front();
-        if (!grantHeightTileCredit(delivery_token, 1U)) {
+        if (!grantHeightTileCredit(delivery_token, 1U, std::move(not_resident_keys))) {
             m_running = false;
             return;
         }
@@ -573,6 +573,16 @@ void GameClient::processPendingHeightTileDeliveries()
 
 bool GameClient::applyHeightTile(shared::ServerHeightTileMessage const& message)
 {
+    std::optional<shared::HeightTileKey> evicted_key;
+    return applyHeightTileAndTrackEviction(message, evicted_key);
+}
+
+bool GameClient::applyHeightTileAndTrackEviction(
+    shared::ServerHeightTileMessage const& message,
+    std::optional<shared::HeightTileKey>& evicted_key
+)
+{
+    evicted_key.reset();
     if (message.key != shared::normalizeHeightTileKey(message.key) || message.revision == 0U
         || message.token == 0U || m_height_tile_revision.generation == 0U) {
         return false;
@@ -583,14 +593,53 @@ bool GameClient::applyHeightTile(shared::ServerHeightTileMessage const& message)
         message.token,
         message.heights
     );
+    evicted_key = result.evicted_key;
     return result.replacement == HeightTileReplacement::Published;
 }
 
-void GameClient::applyHeightTileBatch(shared::ServerHeightTileBatchMessage const& message)
+std::vector<shared::HeightTileKey> GameClient::applyHeightTileBatch(
+    shared::ServerHeightTileBatchMessage const& message
+)
 {
-    for (shared::ServerHeightTileMessage const& tile : message.tiles) {
-        static_cast<void>(applyHeightTile(tile));
+    for (shared::ServerRemoveHeightTileMessage const& removal : message.removals) {
+        static_cast<void>(applyHeightTileRemoval(removal));
     }
+
+    std::vector<shared::HeightTileKey> evicted_keys;
+    evicted_keys.reserve(message.tiles.size());
+    for (shared::ServerHeightTileMessage const& tile : message.tiles) {
+        std::optional<shared::HeightTileKey> evicted_key;
+        static_cast<void>(applyHeightTileAndTrackEviction(tile, evicted_key));
+        if (evicted_key) {
+            evicted_keys.push_back(*evicted_key);
+        }
+    }
+
+    std::vector<shared::HeightTileKey> not_resident_keys;
+    not_resident_keys.reserve(message.tiles.size() + evicted_keys.size());
+    auto const append_if_missing = [this, &not_resident_keys](shared::HeightTileKey const key) {
+        if (!m_height_tile_residency.resident(key)
+            && std::ranges::find(not_resident_keys, key) == not_resident_keys.end()) {
+            not_resident_keys.push_back(key);
+        }
+    };
+    for (shared::HeightTileKey const key : evicted_keys) {
+        append_if_missing(key);
+    }
+    for (shared::ServerHeightTileMessage const& tile : message.tiles) {
+        if (tile.key == shared::normalizeHeightTileKey(tile.key)
+            && tile.revision != 0U && tile.token != 0U
+            && m_height_tile_revision.generation != 0U) {
+            append_if_missing(tile.key);
+        }
+    }
+    std::ranges::sort(not_resident_keys, [](
+        shared::HeightTileKey const first,
+        shared::HeightTileKey const second
+    ) {
+        return first.x < second.x || (first.x == second.x && first.y < second.y);
+    });
+    return not_resident_keys;
 }
 
 bool GameClient::applyHeightTileRemoval(shared::ServerRemoveHeightTileMessage const& message)

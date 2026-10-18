@@ -138,10 +138,16 @@ struct MessageEncoder final {
 
     std::vector<uint8_t> operator()(ClientHeightTileCreditMessage const& message)
     {
-        begin(MessageType::ClientHeightTileCredit, 17U);
+        begin(MessageType::ClientHeightTileCredit,
+            18U + message.not_resident_keys.size() * 2U * sizeof(int32_t));
         appendUint64(bytes, message.world_revision);
         appendUint64(bytes, message.delivery_token);
         bytes.push_back(message.credits);
+        bytes.push_back(static_cast<uint8_t>(message.not_resident_keys.size()));
+        for (HeightTileKey const key : message.not_resident_keys) {
+            appendInt32(bytes, key.x);
+            appendInt32(bytes, key.y);
+        }
         return std::move(bytes);
     }
 
@@ -381,8 +387,22 @@ bool isValidMessage(Message const& message) noexcept
                 && isValidDirection(static_cast<uint8_t>(value.direction.view_x))
                 && isValidDirection(static_cast<uint8_t>(value.direction.view_y));
         } else if constexpr (std::is_same_v<Value, ClientHeightTileCreditMessage>) {
-            return value.world_revision != 0U && value.credits > 0U
-                && value.credits <= HEIGHT_TILE_DELIVERY_WINDOW;
+            if (value.world_revision == 0U || value.credits == 0U
+                || value.credits > HEIGHT_TILE_DELIVERY_WINDOW
+                || value.not_resident_keys.size() > HEIGHT_TILE_RESIDENCY_RECEIPT_KEY_CAPACITY
+                || (value.delivery_token == 0U && !value.not_resident_keys.empty())) {
+                return false;
+            }
+            for (auto current = value.not_resident_keys.cbegin();
+                 current != value.not_resident_keys.cend();
+                 ++current) {
+                if (*current != normalizeHeightTileKey(*current)
+                    || std::ranges::find(value.not_resident_keys.cbegin(), current, *current)
+                        != current) {
+                    return false;
+                }
+            }
+            return true;
         } else if constexpr (std::is_same_v<Value, ServerPlayerPositionMessage>) {
             return isValidCharacter(value.ch) && isValidPlayerPaletteIndex(value.palette_index)
                 && isValidMovementCapabilities(value.movement_capabilities)
@@ -503,12 +523,29 @@ std::optional<Message> decodeMessage(std::span<uint8_t const> const data)
             auto const world_revision = reader.readUint64();
             auto const delivery_token = reader.readUint64();
             auto const credits = reader.readUint8();
-            if (world_revision && delivery_token && credits) {
-                message = ClientHeightTileCreditMessage{
-                    .world_revision = *world_revision,
-                    .delivery_token = *delivery_token,
-                    .credits = *credits,
-                };
+            auto const not_resident_count = reader.readUint8();
+            if (world_revision && delivery_token && credits && not_resident_count
+                && *not_resident_count <= HEIGHT_TILE_RESIDENCY_RECEIPT_KEY_CAPACITY) {
+                std::vector<HeightTileKey> not_resident_keys;
+                not_resident_keys.reserve(*not_resident_count);
+                bool complete = true;
+                for (uint8_t index = 0U; index < *not_resident_count; ++index) {
+                    auto const x = reader.readInt32();
+                    auto const y = reader.readInt32();
+                    if (!x || !y) {
+                        complete = false;
+                        break;
+                    }
+                    not_resident_keys.push_back({ .x = *x, .y = *y });
+                }
+                if (complete) {
+                    message = ClientHeightTileCreditMessage{
+                        .world_revision = *world_revision,
+                        .delivery_token = *delivery_token,
+                        .credits = *credits,
+                        .not_resident_keys = std::move(not_resident_keys),
+                    };
+                }
             }
             break;
         }

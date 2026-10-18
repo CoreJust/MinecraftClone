@@ -58,6 +58,14 @@ public:
         bool terrain_center_valid = false;
         int32_t terrain_center_x = 0;
         int32_t terrain_center_y = 0;
+        uint32_t near_window_desired_tiles = 0U;
+        uint32_t near_window_resident_tiles = 0U;
+        uint32_t near_window_queued_tiles = 0U;
+        uint32_t near_window_dispatched_tiles = 0U;
+        uint32_t near_window_ready_tiles = 0U;
+        uint32_t near_window_inflight_additions = 0U;
+        uint32_t near_window_inflight_removals = 0U;
+        uint32_t near_window_untracked_tiles = 0U;
         uint32_t queued_tiles = 0U;
         uint32_t priority_scan_cursor = 0U;
         uint32_t background_scan_cursor = 0U;
@@ -68,8 +76,12 @@ public:
         uint32_t ready_tiles = 0U;
         uint32_t inflight_deliveries = 0U;
         uint32_t inflight_additions = 0U;
+        uint32_t inflight_removals = 0U;
+        uint32_t pending_removals = 0U;
         uint32_t delivery_credits = 0U;
         uint32_t resident_tiles = 0U;
+        uint32_t admitted_additions = 0U;
+        uint64_t rejected_delivery_acknowledgements = 0U;
         uint32_t latest_received_input_sequence = 0U;
         uint32_t acknowledged_input_sequence = 0U;
         uint32_t unacknowledged_input_count = 0U;
@@ -88,6 +100,7 @@ public:
         std::function<void(std::chrono::nanoseconds, uint64_t)> on_tick;
         std::function<void(core::ClientId, uint32_t)> on_preview_buffered;
         std::function<void(core::ClientId, PreviewStreamMetrics)> on_preview_metrics;
+        std::function<void(core::ClientId, shared::HeightTileKey)> before_height_tile_completion;
     };
     struct SpawnPoint final {
         char character;
@@ -132,6 +145,7 @@ public:
 private:
     struct HeightTileWorkerPool;
     struct PreviewStream;
+    void populateNearWindowMetrics(PreviewStream const& stream, PreviewStreamMetrics& metrics) const;
 
     struct PlayerReplication final {
         static constexpr uint32_t MAX_PENDING_INPUTS = 64;
@@ -286,6 +300,8 @@ private:
         uint64_t delivery_credit_samples = 0U;
         std::chrono::nanoseconds delivery_credit_total{};
         std::chrono::nanoseconds delivery_credit_max{};
+        uint32_t admitted_additions_since_metrics = 0U;
+        uint64_t rejected_delivery_acknowledgements = 0U;
         double background_generation_tokens = 0.0;
         std::chrono::steady_clock::time_point background_budget_updated_at =
             std::chrono::steady_clock::now();

@@ -642,7 +642,7 @@ public:
     }
 
     [[nodiscard]] std::vector<HeightTileKey> cancelQueuedOutsideInterest(
-        std::unordered_set<HeightTileKey, PlayerHeightTileKeyHash> const& interest
+        HeightTileInterestRegion const& interest
     )
     {
         std::vector<HeightTileKey> cancelled;
@@ -1015,7 +1015,6 @@ void PlayerClient::onConnectionStateReset()
     m_preview_lod.clear();
     m_preview_tile_elevations.clear();
     m_preview_forecast_center.reset();
-    m_height_tile_center.reset();
     m_height_tile_interest.clear();
     m_interest_delta_scratch = {};
     std::vector<HeightTileKey>{}.swap(m_remesh_closure_scratch);
@@ -1024,6 +1023,7 @@ void PlayerClient::onConnectionStateReset()
     m_pending_preview_removals.clear();
     m_pending_preview_removal_set.clear();
     m_pending_preview_meshes.clear();
+    m_preview_mesh_pending_ages = {};
     m_preview_mesh_dirty_jobs.clear();
     m_deferred_preview_mesh_result_deadline.reset();
     for (HeightTileKey const key : m_preview_mesh_workers->cancelQueuedOutsideInterest(m_height_tile_interest)) {
@@ -1115,8 +1115,7 @@ PlayerClient::PlayerClient(
     , m_preview_cache_retirement_reaper(std::make_unique<PreviewCacheRetirementReaper>())
     , m_preview_mesh_workers(std::make_unique<PreviewMeshWorkerPool>(
         playerClientPreviewMeshBacklogCapacity(m_capture.has_value()),
-        m_benchmark.has_value() && m_benchmark->enable_mesh_stage_diagnostics
-    ))
+              m_benchmark.has_value() && m_benchmark->enable_mesh_stage_diagnostics))
 {
     beginContinuousLook();
     static_cast<void>(m_camera.setProjection({
@@ -1162,6 +1161,28 @@ RendererRuntimeInfo PlayerClient::benchmarkRuntimeInfo() const
     return m_renderer.runtimeInfo();
 }
 
+void PlayerClient::recordPendingNearMeshAge(shared::HeightTileKey const key,
+    std::chrono::steady_clock::time_point const sampled_at,
+    PlayerClientBenchmarkTerrainInfo &info) const
+{
+    auto age = std::ranges::find_if(
+        m_preview_mesh_pending_ages, [key](auto const &candidate) { return candidate.active && candidate.key == key; });
+    if (age == m_preview_mesh_pending_ages.end()) {
+        age =
+            std::ranges::find_if(m_preview_mesh_pending_ages, [](auto const &candidate) { return !candidate.active; });
+        if (age == m_preview_mesh_pending_ages.end()) {
+            return;
+        }
+        *age = PreviewMeshPendingAge{
+            .key = key,
+            .started_at = sampled_at,
+            .active = true,
+        };
+    }
+    info.oldest_client_pending_near_observed_age = std::max(info.oldest_client_pending_near_observed_age,
+        std::chrono::duration_cast<std::chrono::nanoseconds>(sampled_at - age->started_at));
+}
+
 PlayerClientBenchmarkTerrainInfo PlayerClient::benchmarkTerrainStreamingInfo() const
 {
     PlayerClientBenchmarkTerrainInfo info{
@@ -1169,12 +1190,32 @@ PlayerClientBenchmarkTerrainInfo PlayerClient::benchmarkTerrainStreamingInfo() c
         .accepted_near_admissions = m_benchmark_accepted_near_admissions,
         .accepted_far_admissions = m_benchmark_accepted_far_admissions,
         .far_admissions_while_near_pending = m_benchmark_far_admissions_while_near_pending,
+        .mesh_result_drain = {},
     };
-    if (!m_benchmark.has_value() || !m_height_tile_center.has_value()) {
+    std::optional<HeightTileKey> const center = m_height_tile_interest.center();
+    if (!m_benchmark.has_value() || !center.has_value()) {
         return info;
     }
 
-    info.center = m_height_tile_center;
+    info.center = center;
+    std::array<HeightTileKey, PLAYER_CLIENT_BENCHMARK_TERRAIN_NEAR_TILE_COUNT> worker_stage_keys{};
+    uint32_t worker_stage_key_count = 0U;
+    bool const track_mesh_stages = m_benchmark->enable_mesh_stage_diagnostics;
+    std::chrono::steady_clock::time_point sampled_at{};
+    if (track_mesh_stages) {
+        sampled_at = std::chrono::steady_clock::now();
+        for (PreviewMeshPendingAge &age : m_preview_mesh_pending_ages) {
+            if (age.active) {
+                HeightTileHandle const resident = heightTileResidency().resident(age.key);
+                auto const visible = m_visible_preview_mesh_tiles.find(age.key);
+                bool const mesh_visible = visible != m_visible_preview_mesh_tiles.end() && visible->second == resident;
+                if (!withinCurrentNearProbe({ .center = *center, .key = age.key }) ||
+                    !m_pending_preview_meshes.contains(age.key) || !resident || mesh_visible) {
+                    age.active = false;
+                }
+            }
+        }
+    }
     uint32_t index = 0U;
     for (int32_t y = -PLAYER_CLIENT_BENCHMARK_TERRAIN_NEAR_RADIUS;
          y <= PLAYER_CLIENT_BENCHMARK_TERRAIN_NEAR_RADIUS;
@@ -1183,7 +1224,7 @@ PlayerClientBenchmarkTerrainInfo PlayerClient::benchmarkTerrainStreamingInfo() c
              x <= PLAYER_CLIENT_BENCHMARK_TERRAIN_NEAR_RADIUS;
              ++x) {
             PlayerClientBenchmarkTerrainTileState& state = info.near_tiles[index++];
-            state.key = offsetHeightTileKey(*m_height_tile_center, x, y);
+            state.key = offsetHeightTileKey(*center, x, y);
             state.desired = m_height_tile_interest.contains(state.key);
             if (!state.desired) {
                 continue;
@@ -1206,6 +1247,12 @@ PlayerClientBenchmarkTerrainInfo PlayerClient::benchmarkTerrainStreamingInfo() c
             }
             if (state.pending) {
                 ++info.pending_count;
+                if (!state.current_mesh_visible) {
+                    ++info.client_pending_admission_count;
+                    if (track_mesh_stages) {
+                        recordPendingNearMeshAge(state.key, sampled_at, info);
+                    }
+                }
             }
             if (state.active) {
                 ++info.active_count;
@@ -1213,7 +1260,23 @@ PlayerClientBenchmarkTerrainInfo PlayerClient::benchmarkTerrainStreamingInfo() c
             if (!state.current_mesh_visible && !state.pending && !state.active) {
                 ++info.unclassified_missing_count;
             }
+            if (track_mesh_stages && !state.current_mesh_visible && !state.pending && state.resident) {
+                worker_stage_keys[worker_stage_key_count++] = state.key;
+            }
         }
+    }
+    PreviewMeshWorkerPool::StageSummary const worker_stages = track_mesh_stages
+        ? m_preview_mesh_workers->currentStages(
+              std::span<HeightTileKey const>{ worker_stage_keys.data(), worker_stage_key_count }, sampled_at)
+        : PreviewMeshWorkerPool::StageSummary{};
+    info.worker_queued_count = worker_stages.worker_queued_count;
+    info.worker_building_count = worker_stages.worker_building_count;
+    info.completed_result_waiting_count = worker_stages.completed_result_waiting_count;
+    info.oldest_worker_queued_age = worker_stages.oldest_worker_queued_age;
+    info.oldest_worker_building_age = worker_stages.oldest_worker_building_age;
+    info.oldest_completed_result_waiting_age = worker_stages.oldest_completed_result_waiting_age;
+    if (track_mesh_stages) {
+        info.mesh_result_drain = m_mesh_result_drain_diagnostics;
     }
     return info;
 }
@@ -1224,8 +1287,9 @@ PlayerClientBenchmarkFullTerrainInfo PlayerClient::benchmarkFullTerrainStreaming
 {
     RendererRuntimeInfo const runtime = m_renderer.runtimeInfo();
     PlayerClientBenchmarkFullTerrainInfo info{
-        .center = m_height_tile_center,
-        .desired_count = static_cast<uint32_t>(m_height_tile_interest.size()),
+        .center = m_height_tile_interest.center(),
+        .exact_current_coverage = std::nullopt,
+        .desired_count = m_height_tile_interest.size(),
         .resident_total_count = heightTileResidency().stats().resident_tiles,
         .visible_mesh_count = static_cast<uint32_t>(m_visible_preview_meshes.size()),
         .renderer_mesh_count = runtime.height_tile_mesh_count,
@@ -1240,9 +1304,17 @@ PlayerClientBenchmarkFullTerrainInfo PlayerClient::benchmarkFullTerrainStreaming
         .worker_result_count = static_cast<uint32_t>(m_preview_mesh_workers->resultCount()),
         .worker_outstanding_count = static_cast<uint32_t>(m_preview_mesh_workers->outstandingCount()),
         .pending_removal_count = static_cast<uint32_t>(m_pending_preview_removal_set.size()),
+        .resident_desired_count = std::nullopt,
+        .nonresident_desired_count = std::nullopt,
+        .current_handle_mesh_visible_count = std::nullopt,
+        .stale_or_missing_mesh_count = std::nullopt,
+        .unclassified_resident_missing_count = std::nullopt,
+        .visible_outside_interest_count = std::nullopt,
+        .current_visible_mesh_detail_counts = std::nullopt,
+        .unclassified_current_visible_mesh_detail_count = std::nullopt,
     };
     uint32_t const expected_count = requiredHeightTileCount();
-    info.potentially_ready = m_height_tile_center.has_value()
+    info.potentially_ready = !m_height_tile_interest.empty()
         && expected_count != 0U
         && info.desired_count == expected_count
         && m_visible_preview_meshes.size() == expected_count
@@ -1261,6 +1333,16 @@ PlayerClientBenchmarkFullTerrainInfo PlayerClient::benchmarkFullTerrainStreaming
         return info;
     }
 
+    PlayerClientBenchmarkTerrainInfo const near_info = benchmarkTerrainStreamingInfo();
+    info.client_pending_admission_count = near_info.client_pending_admission_count;
+    info.worker_queued_count = near_info.worker_queued_count;
+    info.worker_building_count = near_info.worker_building_count;
+    info.completed_result_waiting_count = near_info.completed_result_waiting_count;
+    info.oldest_client_pending_near_observed_age = near_info.oldest_client_pending_near_observed_age;
+    info.oldest_worker_queued_age = near_info.oldest_worker_queued_age;
+    info.oldest_worker_building_age = near_info.oldest_worker_building_age;
+    info.oldest_completed_result_waiting_age = near_info.oldest_completed_result_waiting_age;
+
     info.scan_performed = true;
     uint32_t resident_desired_count = 0U;
     uint32_t current_mesh_visible_count = 0U;
@@ -1270,67 +1352,74 @@ PlayerClientBenchmarkFullTerrainInfo PlayerClient::benchmarkFullTerrainStreaming
     std::array<uint32_t, PLAYER_CLIENT_BENCHMARK_FULL_TERRAIN_DETAIL_COUNT> current_visible_mesh_detail_counts{};
     uint32_t unclassified_current_visible_mesh_detail_count = 0U;
     static constexpr int32_t WORLD_TILE_COUNT = 4'096;
-    HeightTileKey const center = m_height_tile_center.value_or(HeightTileKey{});
+    HeightTileKey const center = m_height_tile_interest.center().value_or(HeightTileKey{});
     auto const wrapped_distance = [](int32_t const first, int32_t const second) {
         int32_t const direct = std::abs(first - second);
         return std::min(direct, WORLD_TILE_COUNT - direct);
     };
-    for (HeightTileKey const key : m_height_tile_interest) {
-        int32_t const distance = std::max(
-            wrapped_distance(key.x, center.x),
-            wrapped_distance(key.y, center.y)
-        );
-        size_t const band_index = std::min<size_t>(
-            static_cast<size_t>(distance)
-                / static_cast<size_t>(PLAYER_CLIENT_BENCHMARK_FULL_TERRAIN_RADIAL_BAND_WIDTH),
-            PLAYER_CLIENT_BENCHMARK_FULL_TERRAIN_RADIAL_BAND_COUNT - 1U
-        );
-        PlayerClientBenchmarkFullTerrainInfo::RadialBand& band = info.radial_bands[band_index];
-        ++band.desired_count;
-        HeightTileHandle const resident = heightTileResidency().resident(key);
-        if (!resident) {
-            ++band.nonresident_count;
-            continue;
-        }
-        ++band.resident_count;
-        ++resident_desired_count;
-        auto const visible = m_visible_preview_mesh_tiles.find(key);
-        bool const current_mesh_visible = m_visible_preview_meshes.contains(key)
-            && visible != m_visible_preview_mesh_tiles.end()
-            && visible->second == resident;
-        if (current_mesh_visible) {
-            ++band.current_mesh_visible_count;
-            ++current_mesh_visible_count;
-            auto const visible_base = m_visible_preview_mesh_bases.find(key);
-            if (visible_base == m_visible_preview_mesh_bases.end()) {
-                ++unclassified_current_visible_mesh_detail_count;
-            } else {
-                switch (visible_base->second.detail) {
-                case shared::HeightTileSurfaceDetail::Coarse:
-                    ++current_visible_mesh_detail_counts[0U];
-                    break;
-                case shared::HeightTileSurfaceDetail::Coarse2:
-                    ++current_visible_mesh_detail_counts[1U];
-                    break;
-                case shared::HeightTileSurfaceDetail::Coarse4:
-                    ++current_visible_mesh_detail_counts[2U];
-                    break;
-                case shared::HeightTileSurfaceDetail::Fine:
-                    ++current_visible_mesh_detail_counts[3U];
-                    break;
-                case shared::HeightTileSurfaceDetail::Distant:
-                    ++current_visible_mesh_detail_counts[4U];
-                    break;
-                }
+    int32_t const radius = static_cast<int32_t>(m_height_tile_interest.radius());
+    for (int32_t y = -radius; y <= radius; ++y) {
+        for (int32_t x = -radius; x <= radius; ++x) {
+            HeightTileKey const key = offsetHeightTileKey(center, x, y);
+            if (!m_height_tile_interest.contains(key)) {
+                continue;
             }
-            continue;
-        }
-        ++band.stale_or_missing_mesh_count;
-        ++stale_or_missing_mesh_count;
-        if (!m_pending_preview_meshes.contains(key)
-            && !m_preview_mesh_jobs.contains(key)
-            && !m_preview_mesh_dirty_jobs.contains(key)) {
-            ++unclassified_resident_missing_count;
+            int32_t const distance = std::max(
+                wrapped_distance(key.x, center.x),
+                wrapped_distance(key.y, center.y)
+            );
+            size_t const band_index = std::min<size_t>(
+                static_cast<size_t>(distance)
+                    / static_cast<size_t>(PLAYER_CLIENT_BENCHMARK_FULL_TERRAIN_RADIAL_BAND_WIDTH),
+                PLAYER_CLIENT_BENCHMARK_FULL_TERRAIN_RADIAL_BAND_COUNT - 1U
+            );
+            PlayerClientBenchmarkFullTerrainInfo::RadialBand& band = info.radial_bands[band_index];
+            ++band.desired_count;
+            HeightTileHandle const resident = heightTileResidency().resident(key);
+            if (!resident) {
+                ++band.nonresident_count;
+                continue;
+            }
+            ++band.resident_count;
+            ++resident_desired_count;
+            auto const visible = m_visible_preview_mesh_tiles.find(key);
+            bool const current_mesh_visible = m_visible_preview_meshes.contains(key)
+                && visible != m_visible_preview_mesh_tiles.end()
+                && visible->second == resident;
+            if (current_mesh_visible) {
+                ++band.current_mesh_visible_count;
+                ++current_mesh_visible_count;
+                auto const visible_base = m_visible_preview_mesh_bases.find(key);
+                if (visible_base == m_visible_preview_mesh_bases.end()) {
+                    ++unclassified_current_visible_mesh_detail_count;
+                } else {
+                    switch (visible_base->second.detail) {
+                    case shared::HeightTileSurfaceDetail::Coarse:
+                        ++current_visible_mesh_detail_counts[0U];
+                        break;
+                    case shared::HeightTileSurfaceDetail::Coarse2:
+                        ++current_visible_mesh_detail_counts[1U];
+                        break;
+                    case shared::HeightTileSurfaceDetail::Coarse4:
+                        ++current_visible_mesh_detail_counts[2U];
+                        break;
+                    case shared::HeightTileSurfaceDetail::Fine:
+                        ++current_visible_mesh_detail_counts[3U];
+                        break;
+                    case shared::HeightTileSurfaceDetail::Distant:
+                        ++current_visible_mesh_detail_counts[4U];
+                        break;
+                    }
+                }
+                continue;
+            }
+            ++band.stale_or_missing_mesh_count;
+            ++stale_or_missing_mesh_count;
+            if (!m_pending_preview_meshes.contains(key)
+                && !m_preview_mesh_jobs.contains(key)
+                && !m_preview_mesh_dirty_jobs.contains(key)) {
+                ++unclassified_resident_missing_count;
+            }
         }
     }
     for (HeightTileKey const key : m_visible_preview_meshes) {
@@ -1792,6 +1881,47 @@ uint32_t PlayerPreviewMeshQueue::refreshPriority(
     return refreshed;
 }
 
+uint32_t PlayerPreviewMeshQueue::refreshPriority(
+    uint32_t const maximum_entries,
+    HeightTileInterestRegion const& interest
+)
+{
+    if (maximum_entries == 0U) {
+        m_retirement->submit();
+        return 0U;
+    }
+    uint64_t const maximum_additions = std::min(
+        static_cast<uint64_t>(maximum_entries), static_cast<uint64_t>(m_tickets.size())
+    );
+    if (!m_unranked.empty()) {
+        ensureHeapCapacity(static_cast<uint64_t>(m_heap.size()) + maximum_additions);
+    }
+    uint32_t refreshed = 0U;
+    while (refreshed < maximum_entries && !m_unranked.empty()) {
+        std::vector<Entry>& heap = m_unranked.front();
+        Entry entry = heap.back();
+        heap.pop_back();
+        if (heap.empty()) {
+            m_retirement->retireBuffer(heap);
+            m_unranked.pop_front();
+        }
+        ++refreshed;
+        if (!isCurrent(entry)) {
+            continue;
+        }
+        if (!interest.contains(entry.key)) {
+            static_cast<void>(m_retirement->eraseTicket(m_tickets, entry.key));
+            continue;
+        }
+        entry = entryFor(entry.key, entry.ticket);
+        m_heap.push_back(entry);
+        std::push_heap(m_heap.begin(), m_heap.end(), lowerPriority);
+    }
+    refreshed += pruneReadyHeap(maximum_entries - refreshed);
+    m_retirement->submit();
+    return refreshed;
+}
+
 bool PlayerPreviewMeshQueue::contains(HeightTileKey const key) const noexcept
 {
     return m_tickets.contains(key);
@@ -1978,6 +2108,45 @@ bool playerClientCaptureCoverageComplete(
     return true;
 }
 
+bool playerClientCaptureCoverageComplete(
+    HeightTileInterestRegion const& interest,
+    std::unordered_set<HeightTileKey, PlayerHeightTileKeyHash> const& visible_meshes,
+    PreviewResidency const& residency,
+    uint32_t const expected_tile_count,
+    size_t const pending_preview_removals
+)
+{
+    if (pending_preview_removals != 0U
+        || interest.size() != expected_tile_count
+        || visible_meshes.size() != interest.size()
+        || residency.stats().resident_tiles < expected_tile_count
+        || residency.pendingChangeCount() != 0U) {
+        return false;
+    }
+    if (interest.empty()) {
+        return expected_tile_count == 0U;
+    }
+    std::optional<HeightTileKey> const center = interest.center();
+    if (!center.has_value()) {
+        return false;
+    }
+    int32_t const radius = static_cast<int32_t>(interest.radius());
+    uint32_t covered_count = 0U;
+    for (int32_t y = -radius; y <= radius; ++y) {
+        for (int32_t x = -radius; x <= radius; ++x) {
+            HeightTileKey const key = offsetHeightTileKey(*center, x, y);
+            if (!interest.contains(key)) {
+                continue;
+            }
+            ++covered_count;
+            if (!residency.resident(key) || !visible_meshes.contains(key)) {
+                return false;
+            }
+        }
+    }
+    return covered_count == interest.size();
+}
+
 void PlayerClient::refreshHeightTileInterest(
     shared::Player const& player,
     shared::HeightTileSurfaceProjection const projection, bool const capture_diagnostics)
@@ -2035,7 +2204,8 @@ void PlayerClient::refreshHeightTileInterest(
         .min_z_blocks = player_z,
         .max_z_blocks = player_z + PLAYER_HEIGHT,
     };
-    bool const center_changed = !m_height_tile_center.has_value() || *m_height_tile_center != center;
+    std::optional<HeightTileKey> const previous_center = m_height_tile_interest.center();
+    bool const center_changed = !previous_center.has_value() || *previous_center != center;
     bool const heading_changed = m_applied_interest_heading_x != heading.x
         || m_applied_interest_heading_y != heading.y;
     if (center_changed || heading_changed) {
@@ -2043,29 +2213,26 @@ void PlayerClient::refreshHeightTileInterest(
     }
     if (center_changed) {
         shared::HeightTileInterestDelta& delta = m_interest_delta_scratch;
-        if (m_height_tile_center) {
-            shared::heightTileInterestDelta(*m_height_tile_center, center, *radius, delta);
+        if (previous_center.has_value()) {
+            shared::heightTileInterestDelta(*previous_center, center, *radius, delta);
         } else {
             auto const initial = shared::makeHeightTileInterest(center, heading.x, heading.y, *radius);
             delta.additions.assign(initial.keys.begin(), initial.keys.end());
             delta.removals.clear();
-            m_height_tile_interest.reserve(delta.additions.size());
         }
         for (HeightTileKey const key : delta.removals) {
             m_preview_mesh_coverage.interestRemoved(m_visible_preview_meshes.contains(key));
-            m_height_tile_interest.erase(key);
+            static_cast<void>(m_pending_preview_meshes.erase(key));
             m_preview_tile_elevations.erase(key);
             queuePreviewRemoval(key);
         }
         m_preview_lod.eraseBatch(delta.removals);
         for (HeightTileKey const key : delta.additions) {
-            if (m_height_tile_interest.insert(key).second) {
-                m_preview_mesh_coverage.interestAdded(m_visible_preview_meshes.contains(key));
-            }
+            m_preview_mesh_coverage.interestAdded(m_visible_preview_meshes.contains(key));
         }
+        m_height_tile_interest.set(center, *radius);
         queuePreviewMeshes(delta.additions);
     }
-    m_height_tile_center = center;
     m_applied_interest_heading_x = heading.x;
     m_applied_interest_heading_y = heading.y;
     m_preview_mesh_projection = projection;
@@ -2349,10 +2516,10 @@ bool PlayerClient::publishPreviewMesh(
 
 void PlayerClient::removePreviewMesh(
     HeightTileKey const key,
-    std::chrono::steady_clock::time_point const)
+    std::vector<shared::HeightTileCoordinate> &renderer_removal_batch)
 {
     bool const capture_render_diagnostics = m_benchmark.has_value();
-    static_cast<void>(m_renderer.removeHeightTileMesh({ .x = key.x, .y = key.y }));
+    renderer_removal_batch.push_back({ .x = key.x, .y = key.y });
     m_preview_cache_retirement_reaper->extractRemoved(*this, key);
     std::chrono::steady_clock::time_point const neighbor_enqueue_started_at =
         capture_render_diagnostics ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
@@ -2624,7 +2791,7 @@ void PlayerClient::processPendingPreviewMeshes(
     }
     m_deferred_preview_mesh_result_deadline.reset();
     bool const capture_mesh_diagnostics = m_benchmark.has_value() && m_benchmark->enable_mesh_stage_diagnostics;
-    std::optional<HeightTileKey> const center = m_height_tile_center;
+    std::optional<HeightTileKey> const center = m_height_tile_interest.center();
     if (!center.has_value()) {
         while (std::optional<PreviewMeshWorkerPool::Result> result = m_preview_mesh_workers->takeResult()) {
             if (capture_mesh_diagnostics) {
@@ -3117,6 +3284,16 @@ void PlayerClient::servicePlatformEvents() {
 }
 
 void PlayerClient::render() {
+    bool const capture_render_diagnostics = m_benchmark.has_value();
+    bool const capture_mesh_diagnostics = m_benchmark.has_value() && m_benchmark->enable_mesh_stage_diagnostics;
+    std::chrono::steady_clock::time_point const render_started_at =
+        capture_render_diagnostics ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
+    if (capture_render_diagnostics) {
+        m_render_diagnostics = {};
+    }
+    if (capture_mesh_diagnostics) {
+        m_mesh_result_drain_diagnostics = {};
+    }
     if (!m_window.nextFrame()) {
         m_running = false;
         return;
@@ -3181,6 +3358,10 @@ void PlayerClient::render() {
         static_cast<void>(m_look_camera.setAngles(angles));
     }
     std::chrono::steady_clock::time_point const now = std::chrono::steady_clock::now();
+    if (capture_render_diagnostics) {
+        m_render_diagnostics.window_input_duration =
+            std::chrono::duration_cast<std::chrono::nanoseconds>(now - render_started_at);
+    }
     if (m_capture.has_value()) {
         ++m_capture_frames;
     }
@@ -3191,19 +3372,33 @@ void PlayerClient::render() {
         .viewport_width_pixels = width > 0U ? width : m_preview_mesh_projection.viewport_width_pixels,
         .viewport_height_pixels = height > 0U ? height : m_preview_mesh_projection.viewport_height_pixels,
     };
-    std::chrono::steady_clock::time_point const interest_started_at = std::chrono::steady_clock::now();
+    std::chrono::steady_clock::time_point const interest_started_at =
+        capture_render_diagnostics ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
     if (auto const player = m_world.playerByCharacter(m_local_character)) {
-        refreshHeightTileInterest(*player, mesh_projection, m_benchmark.has_value());
+        refreshHeightTileInterest(*player, mesh_projection, capture_render_diagnostics);
     }
-    m_render_diagnostics.height_tile_interest_duration = std::chrono::duration_cast<std::chrono::nanoseconds>(
-        std::chrono::steady_clock::now() - interest_started_at);
+    std::chrono::steady_clock::time_point const interest_completed_at = std::chrono::steady_clock::now();
     std::chrono::steady_clock::time_point const mesh_work_deadline =
-        playerClientPreviewMeshWorkDeadline(renderer_deadline, std::chrono::steady_clock::now());
+        playerClientPreviewMeshWorkDeadline(renderer_deadline, interest_completed_at);
+    if (capture_render_diagnostics) {
+        m_render_diagnostics.height_tile_interest_duration =
+            std::chrono::duration_cast<std::chrono::nanoseconds>(interest_completed_at - interest_started_at);
+    }
+    std::chrono::steady_clock::time_point const first_mesh_pump_started_at =
+        capture_render_diagnostics ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
     processPendingPreviewMeshes(
         playerClientPreviewMeshJobBudget(m_capture.has_value()),
         mesh_work_deadline
     );
-    submitPreviewCacheRetirements();
+    std::chrono::steady_clock::time_point const first_mesh_pump_completed_at =
+        capture_render_diagnostics ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
+    if (capture_render_diagnostics) {
+        m_render_diagnostics.preview_mesh_pump_before_changes_duration =
+            std::chrono::duration_cast<std::chrono::nanoseconds>(
+                first_mesh_pump_completed_at - first_mesh_pump_started_at);
+    }
+    std::chrono::steady_clock::time_point const tile_changes_started_at =
+        capture_render_diagnostics ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
     for (HeightTileChange const change : heightTileResidency().takeChanges(
              playerClientHeightTileChangeBudget(m_capture.has_value()))) {
         if (m_capture.has_value()) {
@@ -3219,9 +3414,21 @@ void PlayerClient::render() {
         queuePreviewMesh(offsetHeightTileKey(change.key, 0, -1));
         queuePreviewMesh(offsetHeightTileKey(change.key, 0, 1));
     }
+    std::chrono::steady_clock::time_point const tile_changes_queued_at =
+        capture_render_diagnostics ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
+    if (capture_render_diagnostics) {
+        m_render_diagnostics.height_tile_change_queue_duration =
+            std::chrono::duration_cast<std::chrono::nanoseconds>(tile_changes_queued_at - tile_changes_started_at);
+    }
     uint32_t const removal_budget = m_pending_preview_removals.empty()
         ? 0U
         : playerClientPreviewRemovalBudget();
+    m_preview_mesh_removal_batch.clear();
+    if (m_preview_mesh_removal_batch.capacity() < removal_budget) {
+        m_preview_mesh_removal_batch.reserve(removal_budget);
+    }
+    std::chrono::steady_clock::time_point const removal_started_at =
+        capture_render_diagnostics ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
     for (uint32_t removed = 0U;
          removed < removal_budget
          && !m_pending_preview_removals.empty();
@@ -3230,14 +3437,49 @@ void PlayerClient::render() {
         m_pending_preview_removals.pop_front();
         m_pending_preview_removal_set.erase(key);
         if (playerClientShouldRemovePreviewMesh(m_height_tile_interest.contains(key))) {
-            removePreviewMesh(key, renderer_deadline);
+            removePreviewMesh(key, m_preview_mesh_removal_batch);
         }
     }
+    std::chrono::steady_clock::time_point const renderer_remove_started_at =
+        capture_render_diagnostics ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
+    // Empty diagnostic batches reset the renderer's per-frame removal sample.
+    if (!m_preview_mesh_removal_batch.empty() || capture_render_diagnostics) {
+        static_cast<void>(m_renderer.removeHeightTileMeshes(
+            m_preview_mesh_removal_batch,
+            capture_render_diagnostics
+        ));
+    }
+    submitPreviewCacheRetirements();
+    std::chrono::steady_clock::time_point const removal_completed_at =
+        capture_render_diagnostics ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
+    if (capture_render_diagnostics) {
+        m_render_diagnostics.preview_mesh_remove_duration +=
+            std::chrono::duration_cast<std::chrono::nanoseconds>(removal_completed_at - removal_started_at);
+        m_render_diagnostics.preview_mesh_remove_renderer_duration +=
+            std::chrono::duration_cast<std::chrono::nanoseconds>(removal_completed_at - renderer_remove_started_at);
+        m_render_diagnostics.preview_mesh_remove_count += static_cast<uint32_t>(m_preview_mesh_removal_batch.size());
+    }
+    std::chrono::steady_clock::time_point const tile_changes_completed_at =
+        capture_render_diagnostics ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
+    if (capture_render_diagnostics) {
+        m_render_diagnostics.height_tile_change_and_removal_duration =
+            std::chrono::duration_cast<std::chrono::nanoseconds>(tile_changes_completed_at - tile_changes_started_at);
+    }
+    std::chrono::steady_clock::time_point const second_mesh_pump_started_at =
+        capture_render_diagnostics ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
     processPendingPreviewMeshes(
         playerClientPreviewMeshJobBudget(m_capture.has_value()),
         mesh_work_deadline
     );
-    submitPreviewCacheRetirements();
+    std::chrono::steady_clock::time_point const second_mesh_pump_completed_at =
+        capture_render_diagnostics ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
+    if (capture_render_diagnostics) {
+        m_render_diagnostics.preview_mesh_pump_after_changes_duration =
+            std::chrono::duration_cast<std::chrono::nanoseconds>(
+                second_mesh_pump_completed_at - second_mesh_pump_started_at);
+    }
+    std::chrono::steady_clock::time_point const camera_started_at =
+        capture_render_diagnostics ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
     std::optional<PlayerPresentationPosition> const local_position = predictedLocalPresentation(now);
     double camera_distance = MAX_LOCAL_PLAYER_CAMERA_DISTANCE;
     if (local_position.has_value()) {
@@ -3255,7 +3497,25 @@ void PlayerClient::render() {
         static_cast<void>(m_camera.setPosition(camera_view.pose.position));
         static_cast<void>(m_camera.setAngles(camera_view.pose.angles));
     }
+    std::chrono::steady_clock::time_point const camera_completed_at =
+        capture_render_diagnostics ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
+    if (capture_render_diagnostics) {
+        m_render_diagnostics.camera_resolution_duration =
+            std::chrono::duration_cast<std::chrono::nanoseconds>(camera_completed_at - camera_started_at);
+    }
+    std::chrono::steady_clock::time_point const resize_started_at =
+        capture_render_diagnostics ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
+    if (capture_render_diagnostics) {
+        m_render_diagnostics.before_resize_duration =
+            std::chrono::duration_cast<std::chrono::nanoseconds>(resize_started_at - render_started_at);
+    }
     m_renderer.recreate(width, height);
+    std::chrono::steady_clock::time_point const resize_completed_at =
+        capture_render_diagnostics ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
+    if (capture_render_diagnostics) {
+        m_render_diagnostics.resize_duration =
+            std::chrono::duration_cast<std::chrono::nanoseconds>(resize_completed_at - resize_started_at);
+    }
     m_render_data.clear();
     m_render_data.reserve(m_world.players().size());
     for (shared::Player const& p : m_world.players()) {
@@ -3307,12 +3567,24 @@ void PlayerClient::render() {
         m_renderer.toggleDebugHud();
     }
     m_renderer.setCamera(m_camera.pose(), m_camera.projection());
+    std::chrono::steady_clock::time_point const renderer_started_at =
+        capture_render_diagnostics ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
+    if (capture_render_diagnostics) {
+        m_render_diagnostics.after_resize_duration =
+            std::chrono::duration_cast<std::chrono::nanoseconds>(renderer_started_at - resize_completed_at);
+    }
     m_last_presentation_succeeded = m_renderer.render(
         m_render_data,
         debug_hud_input,
         std::max(content_scale_x, content_scale_y),
         renderer_deadline
     );
+    std::chrono::steady_clock::time_point const renderer_completed_at =
+        capture_render_diagnostics ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
+    if (capture_render_diagnostics) {
+        m_render_diagnostics.renderer_call_duration =
+            std::chrono::duration_cast<std::chrono::nanoseconds>(renderer_completed_at - renderer_started_at);
+    }
 
     if (m_capture.has_value()) {
         if (!m_capture_started_at.has_value()) {
@@ -3336,36 +3608,46 @@ void PlayerClient::render() {
                 && m_applied_interest_heading_y == expected_heading.y;
             if (!m_capture_last_progress_at.has_value()
                 || now - *m_capture_last_progress_at >= std::chrono::seconds{30}) {
-                CORE_INFO(
-                    "Capture progress: preset={} elapsed={}s target={} ready={} heading_applied={} "
-                    "heading_step={}/{} interest={} resident={} visible={} uploaded={} required={}",
+                CORE_INFO("Capture progress: preset={} elapsed={}s target={} ready={} "
+                          "heading_applied={} "
+                          "heading_step={}/{} interest={} resident={} visible={} "
+                          "uploaded={} required={}",
                     playerClientCapturePlan(m_capture->preset).name,
                     std::chrono::duration_cast<std::chrono::seconds>(now - *m_capture_started_at).count(),
                     at_target, ready, heading_applied, m_capture_rotation_step, CAPTURE_ROTATION_SECTORS,
                     m_height_tile_interest.size(), heightTileResidency().stats().resident_tiles,
                     m_visible_preview_meshes.size(), m_renderer.runtimeInfo().height_tile_mesh_count,
                     requiredHeightTileCount());
-                CORE_INFO(
-                    "Capture mesh pipeline: pending={} jobs={} dirty={} results_queued={} "
-                    "results_drained={} publish_failures={} drain_ms={} reprioritize_ms={}",
+                CORE_INFO("Capture mesh pipeline: pending={} jobs={} dirty={} "
+                          "results_queued={} "
+                          "results_drained={} publish_failures={} drain_ms={} "
+                          "reprioritize_ms={}",
                     m_pending_preview_meshes.size(), m_preview_mesh_jobs.size(), m_preview_mesh_dirty_jobs.size(),
                     m_preview_mesh_workers->resultCount(), m_capture_mesh_results, m_capture_mesh_publish_failures,
                     m_capture_mesh_drain_micros / 1000U, m_capture_mesh_reprioritize_micros / 1000U);
-                CORE_INFO("Capture intake: frames={} height_changes={} height_change_backlog={}",
+                CORE_INFO("Capture intake: frames={} height_changes={} "
+                          "height_change_backlog={}",
                     m_capture_frames, m_capture_height_changes, heightTileResidency().pendingChangeCount());
                 if (!ready && m_height_tile_interest.size() == requiredHeightTileCount()
                     && heightTileResidency().stats().resident_tiles == requiredHeightTileCount()
                     && m_visible_preview_meshes.size() == requiredHeightTileCount()
-                    && m_renderer.runtimeInfo().height_tile_mesh_count == requiredHeightTileCount()) {
+                    && m_renderer.runtimeInfo().height_tile_mesh_count == requiredHeightTileCount()
+                    && m_height_tile_interest.center().has_value()) {
                     size_t missing_visible = 0U;
                     size_t missing_resident = 0U;
-                    for (HeightTileKey const key : m_height_tile_interest) {
-                        missing_visible += !m_visible_preview_meshes.contains(key);
-                        missing_resident += !heightTileResidency().resident(key);
+                    HeightTileKey const center = *m_height_tile_interest.center();
+                    int32_t const radius = static_cast<int32_t>(m_height_tile_interest.radius());
+                    for (int32_t y = -radius; y <= radius; ++y) {
+                        for (int32_t x = -radius; x <= radius; ++x) {
+                            HeightTileKey const key = offsetHeightTileKey(center, x, y);
+                            bool const desired = m_height_tile_interest.contains(key);
+                            missing_visible += desired && !m_visible_preview_meshes.contains(key);
+                            missing_resident += desired && !heightTileResidency().resident(key);
+                        }
                     }
-                    CORE_INFO(
-                        "Capture exact-coverage diagnosis: pending_removals={} dirty_jobs={} "
-                        "missing_visible={} missing_resident={} pending_changes={}",
+                    CORE_INFO("Capture exact-coverage diagnosis: pending_removals={} "
+                              "dirty_jobs={} "
+                              "missing_visible={} missing_resident={} pending_changes={}",
                         m_pending_preview_removals.size(), m_preview_mesh_dirty_jobs.size(), missing_visible,
                         missing_resident, heightTileResidency().pendingChangeCount());
                 }
@@ -3379,10 +3661,11 @@ void PlayerClient::render() {
             }
             if (!m_capture_rotation_started
                 && now - *m_capture_started_at > m_capture->readiness_deadline) {
-                CORE_ERROR(
-                    "Capture readiness: target={} ready={} interest={} resident={} visible={} "
-                    "uploaded={} required={} pending_changes={} pending_meshes={} jobs={} "
-                    "pending_removals={} dirty_jobs={}",
+                CORE_ERROR("Capture readiness: target={} ready={} interest={} "
+                           "resident={} visible={} "
+                           "uploaded={} required={} pending_changes={} "
+                           "pending_meshes={} jobs={} "
+                           "pending_removals={} dirty_jobs={}",
                     at_target, ready, m_height_tile_interest.size(), heightTileResidency().stats().resident_tiles,
                     m_visible_preview_meshes.size(), m_renderer.runtimeInfo().height_tile_mesh_count,
                     requiredHeightTileCount(), heightTileResidency().pendingChangeCount(),
@@ -3402,7 +3685,8 @@ void PlayerClient::render() {
                     m_capture_rotation_started = true;
                     m_capture_rotation_started_at = now;
                     m_capture_rotation_step = 1U;
-                    CORE_INFO("Capture sweep started: readiness_elapsed={}s step={}/{} required={}",
+                    CORE_INFO("Capture sweep started: readiness_elapsed={}s step={}/{} "
+                              "required={}",
                         std::chrono::duration_cast<std::chrono::seconds>(
                             now - *m_capture_started_at
                         ).count(), m_capture_rotation_step, CAPTURE_ROTATION_SECTORS,
@@ -3412,7 +3696,8 @@ void PlayerClient::render() {
                     failCapture("camera heading changed resident or uploaded mesh keys");
                     return;
                 } else if (m_capture_rotation_step >= CAPTURE_ROTATION_SECTORS) {
-                    CORE_INFO("Capture sweep complete: headings={} elapsed={}s; requesting framebuffer readback",
+                    CORE_INFO("Capture sweep complete: headings={} elapsed={}s; "
+                              "requesting framebuffer readback",
                         CAPTURE_ROTATION_SECTORS,
                         std::chrono::duration_cast<std::chrono::seconds>(
                             now - *m_capture_rotation_started_at
@@ -3452,6 +3737,10 @@ void PlayerClient::render() {
         m_renderer.hotReload();
     }
     m_was_reload_pressed = reload_pressed;
+    if (capture_render_diagnostics) {
+        m_render_diagnostics.after_renderer_duration = std::chrono::duration_cast<std::chrono::nanoseconds>(
+            std::chrono::steady_clock::now() - renderer_completed_at);
+    }
 }
 
 double PlayerClient::maximumUnobstructedCameraDistance(

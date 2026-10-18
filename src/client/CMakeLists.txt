@@ -2,6 +2,7 @@ target_sources(mc
     PRIVATE
         BotClient.cpp
         ClientAudio.cpp
+        HeightTileInterestRegion.cpp
         PreviewResidency.cpp
     Camera.cpp
     CameraController.cpp

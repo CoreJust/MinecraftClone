@@ -58,8 +58,13 @@ class VerifyGameplayGateTests(unittest.TestCase):
             durations = ([1000000] if index in (0, 3) else [moving_interval] * math.ceil(6000000000 / moving_interval) if index == 2 else
                          [interval] * math.ceil(10000000000 / interval))
             for number, duration in enumerate(durations):
+                terrain_center = {"x": min(number // 4, 2) if index == 2 else 2 if index > 2 else 0, "y": 0}
+                terrain_near = {"center": dict(terrain_center), "desired": 225, "resident": 225,
+                                "nonresident": 0, "current_mesh_visible": 225}
                 frames.append({"phase": phase, "presentation_succeeded": True, "started_offset_ns": offset,
-                               "loop_duration_ns": duration, "terrain_center": {"x": min(number // 4, 2) if index == 2 else 2 if index > 2 else 0, "y": 0}})
+                               "loop_duration_ns": duration, "terrain_center": terrain_center,
+                               "terrain_near": terrain_near, "diagnostic_terrain_radial_bands": None,
+                               "diagnostic_terrain_spatial_scan_duration_ns": 0})
                 offset += duration
             if index in (0, 3):
                 prefix = "initial" if index == 0 else "recovery"
@@ -74,17 +79,25 @@ class VerifyGameplayGateTests(unittest.TestCase):
                              prefix + "_present_requests_per_second": len(durations) * 1000 / elapsed,
                              prefix + "_loop_timings_ns": self.gate.timing_summary(durations),
                              prefix + "_successful_present_request_intervals_ns": self.gate.timing_summary(durations[1:])})
+        near_sample_count = sum(frame["phase"] in (self.gate.PHASES[2], self.gate.PHASES[3]) for frame in frames)
+        readiness = {"contract": "mc.current-near-terrain-readiness.v1",
+                     "measurement_scope": "current-center-radius-7",
+                     "current_near_sample_count": near_sample_count,
+                     "incomplete_current_near_sample_count": 0,
+                     "max_missing_current_mesh_count": 0,
+                     "current_near_coverage_complete": True}
         return {"schema_version": "mc.runtime-evidence.v1", "mode": "benchmark-game", "passed": True, "failure": "",
                 "timing": {"elapsed_ms": offset // 1000000, "deadline_ms": 450000}, "game_benchmark": {
                     "workload": self.gate.WORKLOAD, "build_mode": "release", "displayed_cadence_hz": None,
                     "present_mode": "immediate" if platform == "windows" else "fifo", "failed_present_requests": 0,
                     "successful_present_requests": len(frames),
                     "server_events_processed": 10, "inputs_sent": 10, "authoritative_player_updates": 10,
-                    "full_radius_terrain": full, "raw_frames": frames, "raw_server_tick_durations_ns": [1000000, 2000000],
+                    "terrain_readiness": readiness, "full_radius_terrain": full, "raw_frames": frames, "raw_server_tick_durations_ns": [1000000, 2000000],
                     "server_tick_timings_ns": self.gate.timing_summary([1000000, 2000000])}}
 
     def aggregate(self, root, mac_interval_ns=None):
-        for name in ("CMakeLists.txt", "CMakePresets.json", "dependencies.lock.json"):
+        for name in self.gate.REQUIRED_SOURCE_INPUTS:
+            (root / name).parent.mkdir(parents=True, exist_ok=True)
             (root / name).write_text("fixture\n", encoding="utf-8")
         (root / "src").mkdir()
         (root / "src/game.cpp").write_text("source\n", encoding="utf-8")
@@ -367,6 +380,8 @@ class VerifyGameplayGateTests(unittest.TestCase):
         report = self.report()
         full = report["game_benchmark"]["full_radius_terrain"]
         centers = [frame["terrain_center"] for frame in report["game_benchmark"]["raw_frames"]]
+        centers += [frame["terrain_near"]["center"] for frame in report["game_benchmark"]["raw_frames"]
+                    if frame.get("terrain_near") is not None]
         centers += [full[key] for key in ("movement_start_center", "movement_end_center")]
         centers += [full[prefix + "_barrier"]["center"] for prefix in ("initial", "recovery")]
         for center in centers:
@@ -739,6 +754,140 @@ class VerifyGameplayGateTests(unittest.TestCase):
             self.assertEqual(merged["rows"][1]["command"], aggregate["rows"][1]["command"])
             self.assertEqual(Path(merged["rows"][1]["executable"]["path"]), (root / "windows/mc_main.exe").resolve())
 
+
+    def test_source_digest_tracks_test_and_build_time_scenario_inputs(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for name in ("CMakeLists.txt", "CMakePresets.json", "dependencies.lock.json"):
+                (root / name).write_text("fixture\n", encoding="utf-8")
+            source = root / "src"
+            tests = root / "tests"
+            scenarios = root / "scenarios/world"
+            source.mkdir()
+            tests.mkdir()
+            scenarios.mkdir(parents=True)
+            (source / "game.cpp").write_text("production\n", encoding="utf-8")
+            test_source = tests / "game_tests.cpp"
+            test_source.write_text("test version one\n", encoding="utf-8")
+            scenario_script = scenarios / "canonical_world.core"
+            scenario_script.write_text("world version one\n", encoding="utf-8")
+            (scenarios / "height_tile.core").write_text("height version one\n", encoding="utf-8")
+
+            first_digest = self.gate.source_digest(root)
+            test_source.write_text("test version two\n", encoding="utf-8")
+            after_test_change = self.gate.source_digest(root)
+            scenario_script.write_text("world version two\n", encoding="utf-8")
+
+            self.assertNotEqual(after_test_change, first_digest)
+            self.assertNotEqual(self.gate.source_digest(root), after_test_change)
+
+    def test_source_digest_rejects_missing_embedded_scenario_script(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for name in ("CMakeLists.txt", "CMakePresets.json", "dependencies.lock.json"):
+                (root / name).write_text("fixture\n", encoding="utf-8")
+            scenario_directory = root / "scenarios/world"
+            scenario_directory.mkdir(parents=True)
+            (scenario_directory / "canonical_world.core").write_text("world\n", encoding="utf-8")
+
+            with self.assertRaisesRegex(self.gate.GameplayError, "source input inventory is incomplete"):
+                self.gate.source_digest(root)
+
+    def test_endpoint_full_radius_does_not_hide_missing_meshes_during_travel(self):
+        report = self.report()
+        game = report["game_benchmark"]
+        movement_frame = next(frame for frame in game["raw_frames"] if frame["phase"] == self.gate.PHASES[2])
+        movement_frame["terrain_near"].update(resident=37, nonresident=188, current_mesh_visible=37)
+        game["terrain_readiness"].update(incomplete_current_near_sample_count=1,
+                                         max_missing_current_mesh_count=188, current_near_coverage_complete=False)
+
+        with self.assertRaisesRegex(self.gate.GameplayError, "missing meshes in the current near terrain window"):
+            self.gate.verify_report(report, "macos")
+
+    def test_current_near_samples_must_match_the_movement_frame(self):
+        report = self.report()
+        movement_frame = next(frame for frame in report["game_benchmark"]["raw_frames"]
+                              if frame["phase"] == self.gate.PHASES[2])
+        movement_frame["terrain_near"]["center"]["x"] += 1
+
+        with self.assertRaisesRegex(self.gate.GameplayError, "center disagrees"):
+            self.gate.verify_report(report, "macos")
+
+    def test_current_near_visible_tiles_cannot_contradict_residency(self):
+        report = self.report()
+        frame = next(frame for frame in report["game_benchmark"]["raw_frames"]
+                     if frame["phase"] == self.gate.PHASES[2])
+        frame["terrain_near"]["resident"] = 0
+
+        with self.assertRaisesRegex(self.gate.GameplayError, "missing meshes in the current near terrain window"):
+            self.gate.verify_report(report, "macos")
+
+    def test_all_zero_radial_diagnostics_cannot_claim_complete_coverage(self):
+        report = self.report()
+        frame = report["game_benchmark"]["raw_frames"][0]
+        frame["diagnostic_terrain_radial_bands"] = [
+            {"desired": 0, "resident": 0, "nonresident": 0,
+             "current_mesh_visible": 0, "stale_or_missing_mesh": 0} for _ in range(16)]
+        frame["diagnostic_terrain_spatial_scan_duration_ns"] = 2_345_000
+
+        with self.assertRaisesRegex(self.gate.GameplayError, "radial desired counts disagree with render radius"):
+            self.gate.verify_report(report, "macos")
+
+    def test_consistent_underreported_radial_diagnostics_are_rejected(self):
+        report = self.report()
+        frame = report["game_benchmark"]["raw_frames"][0]
+        bands = copy.deepcopy(report["game_benchmark"]["full_radius_terrain"]["initial_barrier"]["radial_bands"])
+        for key in ("desired", "resident", "current_mesh_visible"):
+            bands[4][key] -= 1
+        frame["diagnostic_terrain_radial_bands"] = bands
+        frame["diagnostic_terrain_spatial_scan_duration_ns"] = 2_345_000
+
+        with self.assertRaisesRegex(self.gate.GameplayError, "radial desired counts disagree with render radius"):
+            self.gate.verify_report(report, "macos")
+
+    def test_radial_cardinalities_follow_the_verified_radius(self):
+        for radius, total, last_occupied_band in ((128, 51433, 8), (256, 205861, 15)):
+            with self.subTest(radius=radius):
+                counts = self.gate.radial_band_counts(radius)
+                self.assertEqual(sum(counts), total)
+                self.assertEqual(counts[0], 961)
+                self.assertGreater(counts[last_occupied_band], 0)
+                self.assertEqual(sum(counts[last_occupied_band + 1:]), 0)
+
+    def test_included_radial_diagnostics_must_show_complete_render_radius(self):
+        report = self.report()
+        frame = next(frame for frame in report["game_benchmark"]["raw_frames"]
+                     if frame["phase"] == self.gate.PHASES[2])
+        bands = copy.deepcopy(report["game_benchmark"]["full_radius_terrain"]["initial_barrier"]["radial_bands"])
+        bands[4].update(resident=3, nonresident=bands[4]["desired"] - 3,
+                        current_mesh_visible=3, stale_or_missing_mesh=0)
+        frame["diagnostic_terrain_radial_bands"] = bands
+        frame["diagnostic_terrain_spatial_scan_duration_ns"] = 2_345_000
+
+        with self.assertRaisesRegex(self.gate.GameplayError, "found missing terrain inside the render radius"):
+            self.gate.verify_report(report, "macos")
+
+    def test_recovery_barrier_must_be_on_the_travel_destination_side_of_the_origin(self):
+        report = self.report()
+        full = report["game_benchmark"]["full_radius_terrain"]
+        full["recovery_barrier"]["center"] = {"x": 0, "y": 0}
+        for frame in report["game_benchmark"]["raw_frames"]:
+            if frame["phase"] in (self.gate.PHASES[3], self.gate.PHASES[4]):
+                frame["terrain_center"] = {"x": 0, "y": 0}
+
+        with self.assertRaisesRegex(self.gate.GameplayError, "recovery.*destination"):
+            self.gate.verify_report(report, "macos")
+
+    def test_terrain_spatial_radial_scan_retains_missing_ring_counts(self):
+        bands = [{"desired": 1, "resident": 1, "nonresident": 0,
+                  "current_mesh_visible": 1, "stale_or_missing_mesh": 0} for _ in range(16)]
+        bands[4] = {"desired": 20, "resident": 3, "nonresident": 17,
+                    "current_mesh_visible": 3, "stale_or_missing_mesh": 0}
+        self.gate.verify_terrain_radial_scan(bands, 2_345_000)
+
+        bands[4]["resident"] = 4
+        with self.assertRaisesRegex(self.gate.GameplayError, "do not reconcile"):
+            self.gate.verify_terrain_radial_scan(bands, 2_345_000)
 
 if __name__ == "__main__":
     unittest.main()

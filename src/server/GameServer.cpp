@@ -471,6 +471,14 @@ struct GameServer::HeightTileWorkerPool final {
         m_benchmark_metrics_enabled = enabled;
     }
 
+    void setBeforeHeightTileCompletionHook(
+        std::function<void(core::ClientId, shared::HeightTileKey)> hook
+    )
+    {
+        std::lock_guard lock{m_mutex};
+        m_before_height_tile_completion = std::move(hook);
+    }
+
     [[nodiscard]]
     bool enqueue(Work work)
     {
@@ -776,6 +784,8 @@ private:
         while (!m_pending.empty() && m_submitted.size() < m_submission_window) {
             Work work = std::move(m_pending.front());
             m_pending.erase(m_pending.begin());
+            std::function<void(core::ClientId, shared::HeightTileKey)> const completion_hook =
+                m_before_height_tile_completion;
             auto result = std::make_shared<Result>(Result{
                 .client_id = work.client_id,
                 .generation = work.generation,
@@ -788,7 +798,7 @@ private:
                 result->timing->submitted_at = std::chrono::steady_clock::now();
             }
             core::executor::Submission submission = m_executor->trySubmit(
-                [this, result](core::executor::CancellationToken const& token) {
+                [this, result, completion_hook](core::executor::CancellationToken const& token) {
                     if (token.isCancellationRequested()) {
                         return;
                     }
@@ -798,6 +808,9 @@ private:
                     thread_local shared::TerrainGenerator terrain_generator;
                     try {
                         executeJob(*result, terrain_generator);
+                        if (completion_hook && !result->world_generation) {
+                            completion_hook(result->client_id, { result->job.coordinate.x, result->job.coordinate.y });
+                        }
                     } catch (...) {
                         if (result->timing != nullptr) {
                             recordFinished(*result, std::chrono::steady_clock::now());
@@ -842,6 +855,7 @@ private:
     AtomicJobMetrics m_world_generation_metrics;
     uint32_t m_submission_window = 0U;
     bool m_benchmark_metrics_enabled = false;
+    std::function<void(core::ClientId, shared::HeightTileKey)> m_before_height_tile_completion;
 };
 
 GameServer::GameServer(
@@ -868,6 +882,48 @@ GameServer::GameServer(
 }
 
 GameServer::~GameServer() = default;
+
+void GameServer::populateNearWindowMetrics(
+    PreviewStream const& stream,
+    PreviewStreamMetrics& metrics
+) const
+{
+    metrics.terrain_center_valid = stream.has_center;
+    if (!stream.has_center) {
+        return;
+    }
+    static constexpr int32_t NEAR_WINDOW_RADIUS = 7;
+    metrics.terrain_center_x = stream.center.x;
+    metrics.terrain_center_y = stream.center.y;
+    for (int32_t y = -NEAR_WINDOW_RADIUS; y <= NEAR_WINDOW_RADIUS; ++y) {
+        for (int32_t x = -NEAR_WINDOW_RADIUS; x <= NEAR_WINDOW_RADIUS; ++x) {
+            shared::HeightTileKey const key = shared::normalizeHeightTileKey({
+                .x = stream.center.x + x,
+                .y = stream.center.y + y,
+            });
+            if (!stream.desires(key)) {
+                continue;
+            }
+            ++metrics.near_window_desired_tiles;
+            if (stream.resident_keys.contains(key)) {
+                ++metrics.near_window_resident_tiles;
+            } else if (stream.queued_keys.contains(key)) {
+                ++metrics.near_window_queued_tiles;
+            } else if (stream.dispatched_keys.contains(key)) {
+                ++metrics.near_window_dispatched_tiles;
+            } else if (stream.ready_tiles.contains(key)) {
+                ++metrics.near_window_ready_tiles;
+            } else if (stream.inflight_addition_keys.contains(key)) {
+                ++metrics.near_window_inflight_additions;
+            } else {
+                ++metrics.near_window_untracked_tiles;
+            }
+            if (stream.inflight_removal_keys.contains(key)) {
+                ++metrics.near_window_inflight_removals;
+            }
+        }
+    }
+}
 
 std::expected<uint64_t, shared::PolicyDiagnostic> GameServer::publishPermissions(
     shared::PolicyCompilation compilation,
@@ -944,6 +1000,10 @@ void GameServer::run(
 {
     m_benchmark_metrics_enabled = benchmark_hooks != nullptr && static_cast<bool>(benchmark_hooks->on_preview_metrics);
     m_height_tile_workers->setBenchmarkMetricsEnabled(m_benchmark_metrics_enabled);
+    m_height_tile_workers->setBeforeHeightTileCompletionHook(
+        benchmark_hooks == nullptr ? std::function<void(core::ClientId, shared::HeightTileKey)>{}
+            : benchmark_hooks->before_height_tile_completion
+    );
     bool const measure_network_events = benchmark_hooks != nullptr
         && static_cast<bool>(benchmark_hooks->on_tick);
     uint64_t network_events_since_tick = 0U;
@@ -1015,7 +1075,7 @@ void GameServer::run(
             processHeightTileStreams();
         }
         if (benchmark_hooks && benchmark_hooks->on_preview_buffered) {
-            for (PreviewStream const& stream : m_preview_streams) {
+            for (PreviewStream& stream : m_preview_streams) {
                 benchmark_hooks->on_preview_buffered(
                     stream.client_id,
                     static_cast<uint32_t>(stream.ready_tiles.size() + stream.dispatched_keys.size())
@@ -1028,17 +1088,14 @@ void GameServer::run(
             std::chrono::nanoseconds const loop_work = std::chrono::duration_cast<std::chrono::nanoseconds>(
                 metrics_at - loop_started_at
             ) - network_poll_duration;
-            for (PreviewStream const& stream : m_preview_streams) {
+            for (PreviewStream& stream : m_preview_streams) {
                 PreviewStreamMetrics metrics{
                     .height_tile_jobs = worker_queue_metrics.height_tiles,
                     .world_generation_jobs = worker_queue_metrics.world_generation,
-                    .terrain_center_valid = stream.has_center,
-                    .terrain_center_x = stream.has_center ? stream.center.x : 0,
-                    .terrain_center_y = stream.has_center ? stream.center.y : 0,
                     .queued_tiles = static_cast<uint32_t>(stream.queued_keys.size()),
                     .priority_scan_cursor = stream.priority_cursor,
                     .background_scan_cursor = stream.background_cursor,
-                    .background_generation_eligible = std::chrono::steady_clock::now() >= stream.background_generation_eligible_at,
+                    .background_generation_eligible = metrics_at >= stream.background_generation_eligible_at,
                     .dispatched_tiles = static_cast<uint32_t>(stream.dispatched_keys.size()),
                     .pending_worker_jobs = worker_queue_metrics.height_tiles.pending_jobs
                         + worker_queue_metrics.world_generation.pending_jobs,
@@ -1051,8 +1108,12 @@ void GameServer::run(
                     .ready_tiles = static_cast<uint32_t>(stream.ready_tiles.size()),
                     .inflight_deliveries = static_cast<uint32_t>(stream.inflight_deliveries.size()),
                     .inflight_additions = static_cast<uint32_t>(stream.inflight_addition_keys.size()),
+                    .inflight_removals = static_cast<uint32_t>(stream.inflight_removal_keys.size()),
+                    .pending_removals = static_cast<uint32_t>(stream.pending_removals.size()),
                     .delivery_credits = stream.delivery_credits,
                     .resident_tiles = static_cast<uint32_t>(stream.resident_keys.size()),
+                    .admitted_additions = stream.admitted_additions_since_metrics,
+                    .rejected_delivery_acknowledgements = stream.rejected_delivery_acknowledgements,
                     .delivery_credit_samples = stream.delivery_credit_samples,
                     .delivery_credit_total = stream.delivery_credit_total,
                     .delivery_credit_max = stream.delivery_credit_max,
@@ -1062,6 +1123,7 @@ void GameServer::run(
                     .stream_pump = m_last_stream_pump_duration,
                     .network_poll = network_poll_duration,
                 };
+                populateNearWindowMetrics(stream, metrics);
                 auto const replication = std::ranges::find(
                     m_player_replications,
                     stream.client_id,
@@ -1076,6 +1138,7 @@ void GameServer::run(
                     metrics.materialization_admission_failures = replication->materialization_admission_failures;
                 }
                 benchmark_hooks->on_preview_metrics(stream.client_id, metrics);
+                stream.admitted_additions_since_metrics = 0U;
             }
         }
     }
@@ -1746,20 +1809,35 @@ void GameServer::acknowledgeHeightTileDelivery(
     if (stream == m_preview_streams.end()) {
         return;
     }
+    auto const reject_acknowledgement = [&stream] {
+        ++stream->rejected_delivery_acknowledgements;
+    };
     if (credit.delivery_token == 0U) {
         if (credit.credits != shared::HEIGHT_TILE_DELIVERY_WINDOW
+            || !credit.not_resident_keys.empty()
             || stream->delivery_credits != 0U || !stream->inflight_deliveries.empty()) {
+            reject_acknowledgement();
             return;
         }
         stream->delivery_credits = credit.credits;
         return;
     }
     if (credit.credits != 1U) {
+        reject_acknowledgement();
         return;
     }
     auto const delivery = stream->inflight_deliveries.find(credit.delivery_token);
     if (delivery == stream->inflight_deliveries.end()) {
+        reject_acknowledgement();
         return;
+    }
+    for (shared::HeightTileKey const key : credit.not_resident_keys) {
+        bool const belongs_to_delivery = std::ranges::find(delivery->second.additions, key)
+            != delivery->second.additions.end();
+        if (!belongs_to_delivery && !stream->resident_keys.contains(key)) {
+            reject_acknowledgement();
+            return;
+        }
     }
     if (delivery->second.admitted_at.time_since_epoch().count() != 0) {
         auto const elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(
@@ -1769,10 +1847,22 @@ void GameServer::acknowledgeHeightTileDelivery(
         stream->delivery_credit_total += elapsed;
         stream->delivery_credit_max = std::max(stream->delivery_credit_max, elapsed);
     }
+    for (shared::HeightTileKey const key : credit.not_resident_keys) {
+        stream->resident_keys.erase(key);
+        if (stream->desires(key)) {
+            stream->priority_cursor = 0U;
+        }
+    }
     for (shared::HeightTileKey const key : delivery->second.additions) {
         stream->inflight_addition_keys.erase(key);
-        stream->resident_keys.insert(key);
-        if (!stream->desires(key) && !stream->inflight_removal_keys.contains(key)) {
+        bool const client_has_tile = std::ranges::find(credit.not_resident_keys, key)
+            == credit.not_resident_keys.end();
+        if (client_has_tile) {
+            stream->resident_keys.insert(key);
+        } else {
+            stream->resident_keys.erase(key);
+        }
+        if (client_has_tile && !stream->desires(key) && !stream->inflight_removal_keys.contains(key)) {
             if (stream->pending_removals.insert(key).second) {
                 stream->removal_candidates.clear();
             }
@@ -1843,26 +1933,63 @@ uint32_t GameServer::admitHeightTileDeliveries(
         }
     }
 
-    uint32_t const maximum_additions = maximum_operations - static_cast<uint32_t>(removal_keys.size());
+    auto const is_available_for_far_addition = [&stream](shared::HeightTileKey const key) {
+        return (stream.resident_keys.contains(key) && !stream.inflight_removal_keys.contains(key))
+            || stream.inflight_addition_keys.contains(key);
+    };
+    bool const current_near_has_pending_additions = nearWindowHasUntrackedTiles(
+        stream.center,
+        [&stream](shared::HeightTileKey const key) { return stream.desires(key); },
+        is_available_for_far_addition
+    );
+    // Keep radial additions behind the forecast footprint until its deliveries are acknowledged resident.
+    bool const forecast_near_has_unresident_tiles = stream.forecast_center.has_value()
+        && nearWindowHasUntrackedTiles(
+            *stream.forecast_center,
+            [&stream](shared::HeightTileKey const key) { return stream.desires(key); },
+            [&stream](shared::HeightTileKey const key) {
+                return stream.resident_keys.contains(key) && !stream.inflight_removal_keys.contains(key);
+            }
+        );
+
     std::vector<shared::HeightTileKey> ready_keys;
     ready_keys.reserve(stream.ready_tiles.size());
     for (auto const& [key, tile] : stream.ready_tiles) {
         static_cast<void>(tile);
-        if (stream.desires(key) && !stream.inflight_addition_keys.contains(key)) {
+        bool const current_near = isCurrentNearHeightTile(stream.center, key);
+        bool const forecast_near = isForecastNearHeightTile(stream.forecast_center, key);
+        if (stream.desires(key)
+            && !stream.inflight_addition_keys.contains(key)
+            && (!current_near_has_pending_additions || current_near)
+            && (current_near_has_pending_additions
+                || !forecast_near_has_unresident_tiles
+                || current_near
+                || forecast_near)) {
             ready_keys.push_back(key);
         }
     }
     auto const ready_order = [&stream](shared::HeightTileKey const first, shared::HeightTileKey const second) {
-        return heightTilePriority(stream.center, stream.forecast_center, stream.heading_x, stream.heading_y, first)
-            < heightTilePriority(stream.center, stream.forecast_center, stream.heading_x, stream.heading_y, second);
+        return heightTilePriority(
+            stream.center,
+            stream.forecast_center,
+            stream.heading_x,
+            stream.heading_y,
+            first
+        ) < heightTilePriority(
+            stream.center,
+            stream.forecast_center,
+            stream.heading_x,
+            stream.heading_y,
+            second
+        );
     };
-    if (ready_keys.size() > maximum_additions) {
+    if (ready_keys.size() > maximum_operations) {
         std::ranges::partial_sort(
             ready_keys,
-            ready_keys.begin() + maximum_additions,
+            ready_keys.begin() + maximum_operations,
             ready_order
         );
-        ready_keys.resize(maximum_additions);
+        ready_keys.resize(maximum_operations);
     } else {
         std::ranges::sort(ready_keys, ready_order);
     }
@@ -1870,21 +1997,70 @@ uint32_t GameServer::admitHeightTileDeliveries(
     auto ready = ready_keys.begin();
     auto removal = removal_keys.begin();
     uint32_t admitted_batches = 0U;
-    while (stream.delivery_credits > 0U
+    uint32_t remaining_ready_count = static_cast<uint32_t>(ready_keys.size());
+    uint32_t remaining_removal_count = static_cast<uint32_t>(removal_keys.size());
+    uint32_t const maximum_resident_tiles = shared::heightTileInterestCount(stream.render_distance);
+    uint32_t const batch_capacity = shared::HEIGHT_TILE_DELIVERY_BATCH_CAPACITY;
+    while (admitted_batches < available_batches
+        && stream.delivery_credits > 0U
         && stream.inflight_deliveries.size() < PreviewStream::MAX_INFLIGHT_DELIVERIES
-        && admitted_batches < maximum_batches) {
+        ) {
+        uint64_t projected_resident_count = static_cast<uint64_t>(stream.resident_keys.size())
+            + static_cast<uint64_t>(stream.inflight_addition_keys.size());
+        uint64_t const inflight_removal_count = static_cast<uint64_t>(stream.inflight_removal_keys.size());
+        projected_resident_count = projected_resident_count > inflight_removal_count
+            ? projected_resident_count - inflight_removal_count
+            : 0U;
+        uint32_t const free_resident_capacity = projected_resident_count < maximum_resident_tiles
+            ? maximum_resident_tiles - static_cast<uint32_t>(projected_resident_count)
+            : 0U;
+        uint32_t batch_removal_count = 0U;
+        uint32_t batch_addition_count = 0U;
+        if (remaining_ready_count > 0U && remaining_removal_count > 0U) {
+            uint32_t const removal_progress_budget = (batch_capacity + 1U) / 2U;
+            batch_removal_count = std::min(remaining_removal_count, removal_progress_budget);
+            uint32_t const available_addition_slots = std::min(
+                batch_capacity - batch_removal_count,
+                free_resident_capacity + batch_removal_count
+            );
+            batch_addition_count = std::min(remaining_ready_count, available_addition_slots);
+        } else if (remaining_ready_count > 0U) {
+            batch_addition_count = std::min({
+                remaining_ready_count,
+                batch_capacity,
+                free_resident_capacity,
+            });
+        } else {
+            batch_removal_count = std::min(remaining_removal_count, batch_capacity);
+        }
+        if (batch_addition_count == 0U && batch_removal_count == 0U) {
+            break;
+        }
+
         shared::ServerHeightTileBatchMessage batch{
             .delivery_token = nextHeightTileToken(m_next_height_tile_token),
             .tiles = {},
             .removals = {},
         };
         PreviewStream::Delivery delivery;
-        batch.tiles.reserve(shared::HEIGHT_TILE_DELIVERY_BATCH_CAPACITY);
-        batch.removals.reserve(shared::HEIGHT_TILE_DELIVERY_BATCH_CAPACITY);
-        while (ready != ready_keys.end()
-            && batch.tiles.size() + batch.removals.size() < shared::HEIGHT_TILE_DELIVERY_BATCH_CAPACITY) {
+        batch.tiles.reserve(batch_addition_count);
+        batch.removals.reserve(batch_removal_count);
+        for (uint32_t index = 0U; index < batch_removal_count; ++index) {
+            shared::HeightTileKey const key = *removal;
+            ++removal;
+            --remaining_removal_count;
+            delivery.removals.push_back(key);
+            stream.inflight_removal_keys.insert(key);
+            batch.removals.push_back({
+                .key = key,
+                .revision = PreviewStream::WORLD_REVISION,
+                .token = nextHeightTileToken(m_next_height_tile_token),
+            });
+        }
+        for (uint32_t index = 0U; index < batch_addition_count; ++index) {
             shared::HeightTileKey const key = *ready;
             ++ready;
+            --remaining_ready_count;
             auto const tile = stream.ready_tiles.find(key);
             if (tile == stream.ready_tiles.end()) {
                 continue;
@@ -1894,28 +2070,18 @@ uint32_t GameServer::admitHeightTileDeliveries(
             batch.tiles.push_back(tile->second);
             stream.ready_tiles.erase(tile);
         }
-        while (removal != removal_keys.end()
-            && batch.tiles.size() + batch.removals.size() < shared::HEIGHT_TILE_DELIVERY_BATCH_CAPACITY) {
-            shared::HeightTileKey const key = *removal;
-            ++removal;
-            delivery.removals.push_back(key);
-            stream.inflight_removal_keys.insert(key);
-            batch.removals.push_back({
-                .key = key,
-                .revision = PreviewStream::WORLD_REVISION,
-                .token = nextHeightTileToken(m_next_height_tile_token),
-            });
-        }
         if (delivery.additions.empty() && delivery.removals.empty()) {
             return admitted_batches;
         }
         uint64_t const delivery_token = batch.delivery_token;
+        uint32_t const admitted_addition_count = static_cast<uint32_t>(delivery.additions.size());
         if (m_benchmark_metrics_enabled) {
             delivery.admitted_at = std::chrono::steady_clock::now();
         }
         stream.inflight_deliveries.emplace(delivery_token, std::move(delivery));
         --stream.delivery_credits;
         sendHeightTileTo(stream.client_id, std::move(batch));
+        stream.admitted_additions_since_metrics += admitted_addition_count;
         ++admitted_batches;
     }
     return admitted_batches;

@@ -50,6 +50,34 @@ acceptance::GameBenchmarkTerrainObservation oneNearTile(OneNearTileFixture const
     return observation;
 }
 
+acceptance::GameBenchmarkTerrainObservation fullNearWindow(
+    shared::HeightTileKey const center,
+    uint32_t const current_mesh_visible_count
+)
+{
+    acceptance::GameBenchmarkTerrainObservation observation{};
+    observation.center = center;
+    observation.desired_count = acceptance::GAME_BENCHMARK_TERRAIN_NEAR_TILE_COUNT;
+    observation.current_mesh_visible_count = current_mesh_visible_count;
+    observation.resident_count = current_mesh_visible_count;
+    observation.nonresident_count = acceptance::GAME_BENCHMARK_TERRAIN_NEAR_TILE_COUNT
+        - current_mesh_visible_count;
+    uint32_t index = 0U;
+    for (int32_t y = -7; y <= 7; ++y) {
+        for (int32_t x = -7; x <= 7; ++x) {
+            bool const visible = index < current_mesh_visible_count;
+            observation.near_tiles[index] = acceptance::GameBenchmarkTerrainTileObservation{
+                .key = { center.x + x, center.y + y },
+                .desired = true,
+                .resident = visible,
+                .current_mesh_visible = visible,
+            };
+            ++index;
+        }
+    }
+    return observation;
+}
+
 } // namespace
 
 TEST(GameBenchmark, DefaultsTo256AndRejectsUnsupportedRenderDistancesBeforeLaunch)
@@ -601,4 +629,47 @@ TEST(GameBenchmark, CensorsDepartedKeyAndKeepsCurrentMissingEpisodeOpen)
     EXPECT_EQ(evidence.open_mesh_episode_count, 1U);
     EXPECT_EQ(evidence.deadline_miss_count, 0U);
     EXPECT_FALSE(evidence.complete);
+}
+
+
+TEST(GameBenchmark, RecoveryBarrierMustRemainCloserToTravelEndThanTravelStart)
+{
+    static constexpr shared::HeightTileKey MOVEMENT_START{ .x = 2'056, .y = 2'048 };
+    static constexpr shared::HeightTileKey MOVEMENT_END{ .x = 2'441, .y = 2'048 };
+    static constexpr shared::HeightTileKey RECOVERED_AT_DESTINATION{ .x = 2'440, .y = 2'048 };
+    static constexpr shared::HeightTileKey RECOVERED_AT_ORIGIN{ .x = 2'056, .y = 2'048 };
+    static constexpr shared::HeightTileKey WRAPPED_START{ .x = 4'095, .y = 0 };
+    static constexpr shared::HeightTileKey WRAPPED_END{ .x = 1, .y = 0 };
+    static constexpr shared::HeightTileKey WRAPPED_DESTINATION{ .x = 1, .y = 0 };
+
+    EXPECT_TRUE(acceptance::gameBenchmarkRecoveryIsCloserToMovementEnd(
+        MOVEMENT_START, MOVEMENT_END, RECOVERED_AT_DESTINATION
+    ));
+    EXPECT_FALSE(acceptance::gameBenchmarkRecoveryIsCloserToMovementEnd(
+        MOVEMENT_START, MOVEMENT_END, RECOVERED_AT_ORIGIN
+    ));
+    EXPECT_TRUE(acceptance::gameBenchmarkRecoveryIsCloserToMovementEnd(
+        WRAPPED_START, WRAPPED_END, WRAPPED_DESTINATION
+    ));
+    EXPECT_FALSE(acceptance::gameBenchmarkRecoveryIsCloserToMovementEnd(
+        MOVEMENT_START, MOVEMENT_START, MOVEMENT_START
+    ));
+}
+
+
+TEST(GameBenchmark, RetainsCurrentNearCoverageLossAfterLaterRecovery)
+{
+    using Clock = std::chrono::steady_clock;
+
+    acceptance::GameBenchmarkTerrainReadinessTracker tracker;
+    Clock::time_point const start{};
+    tracker.observe(fullNearWindow({ 0, 0 }, acceptance::GAME_BENCHMARK_TERRAIN_NEAR_TILE_COUNT), start);
+    tracker.observe(fullNearWindow({ 1, 0 }, 37U), start + 1s);
+    tracker.observe(fullNearWindow({ 2, 0 }, acceptance::GAME_BENCHMARK_TERRAIN_NEAR_TILE_COUNT), start + 2s);
+
+    acceptance::GameBenchmarkTerrainReadinessEvidence const evidence = tracker.evidence();
+    EXPECT_EQ(evidence.current_near_sample_count, 3U);
+    EXPECT_EQ(evidence.incomplete_current_near_sample_count, 1U);
+    EXPECT_EQ(evidence.max_missing_current_mesh_count, 188U);
+    EXPECT_FALSE(evidence.current_near_coverage_complete);
 }

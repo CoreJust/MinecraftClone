@@ -31,7 +31,7 @@
         "tests/acceptance/runtime_cli_tests.cmake",
         "tests/acceptance/scenario_runner_tests.cpp"
       ],
-      "sources_sha256": "2790ed4e1ac206e0f270305fe93fafa9e01a52881c9c4fb571a1fb7ff5d86a7f"
+      "sources_sha256": "6945a6bc3e067ce91ea92c8cb8b0e9d84d0911bf206c656f80e9fd764bb597d3"
     },
     {
       "guide": "docs/code/ANDROID.md",
@@ -179,7 +179,7 @@
         "vcpkg-configuration.json",
         "vcpkg.json"
       ],
-      "sources_sha256": "618264fcb1c38088be710d15ffd5ba973c4ddfab5b41437efa2360ccbdfb18ff"
+      "sources_sha256": "44b4437754aaa0610a7cd79f0773e03ec5e2fbdfc548649d6e63069284bcf08b"
     },
     {
       "guide": "docs/code/CORE.md",
@@ -216,7 +216,7 @@
     },
     {
       "guide": "docs/code/GAMEPLAY.md",
-      "guide_sha256": "588d42a25742f0a1a70f02165d2ce3ab786a63e0f063e464c2f8de0f9e53d825",
+      "guide_sha256": "6e9f143c82e30e51d6e5a8ef543faa55bfe264b1a51262b28d5e8beafbd3e06b",
       "id": "gameplay",
       "sources": [
         "src/client/BotClient.cpp",
@@ -226,6 +226,7 @@
         "src/client/DepthFormat.cpp",
         "src/client/FrameScheduler.cpp",
         "src/client/GameClient.cpp",
+        "src/client/HeightTileInterestRegion.cpp",
         "src/client/PlayerClient.cpp",
         "src/client/PlayerPresentation.cpp",
         "src/client/PlayerPreviewLod.cpp",
@@ -238,6 +239,7 @@
         "src/client/include/client/ClientAudio.hpp",
         "src/client/include/client/FrameScheduler.hpp",
         "src/client/include/client/GameClient.hpp",
+        "src/client/include/client/HeightTileInterestRegion.hpp",
         "src/client/include/client/PlayerClient.hpp",
         "src/client/include/client/PlayerPresentation.hpp",
         "src/client/include/client/PlayerPreviewLod.hpp",
@@ -305,7 +307,7 @@
         "tests/core/world_generation_scheduler_tests.cpp",
         "tests/core/world_generation_tests.cpp"
       ],
-      "sources_sha256": "0d55178ffcab08e3aa5db760573e0bd45ab5deeb4bf542976aa50dcfd9efa467"
+      "sources_sha256": "fd15c485c3f4731d9c0fea9a924d7ea1baf9c6cad2a34b6368426473298e82fb"
     },
     {
       "guide": "docs/code/RENDERING.md",
@@ -369,6 +371,7 @@
         "tests/client/gui_renderer_tests.cpp",
         "tests/client/height_tile_draw_index_tests.cpp",
         "tests/client/height_tile_instance_reaper_tests.cpp",
+        "tests/client/height_tile_interest_region_tests.cpp",
         "tests/client/player_client_capture_plan_tests.cpp",
         "tests/client/player_client_reset_tests.cpp",
         "tests/client/player_presentation_tests.cpp",
@@ -390,7 +393,7 @@
         "tests/testsupport/include/testsupport/AdverseTransport.hpp",
         "tests/testsupport/include/testsupport/ImageComparison.hpp"
       ],
-      "sources_sha256": "008135b45edd1f579b3fa6c02ebe4c5ba80d87982dd93aaef031a49ba20175b7"
+      "sources_sha256": "c56e869f88aeb7d0523de8a111dca2abd5049928b80088bc17080053605fffe4"
     }
   ],
   "version": 1

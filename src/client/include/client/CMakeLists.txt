@@ -10,6 +10,7 @@ target_sources(mc
             ClientAudio.hpp
             FrameScheduler.hpp
             GameClient.hpp
+            HeightTileInterestRegion.hpp
             PlayerClient.hpp
             PlayerPreviewLod.hpp
             PlayerPresentation.hpp

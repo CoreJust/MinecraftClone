@@ -1,3 +1,5 @@
+#include <client/render/StoneFaceCapacity.hpp>
+
 #include <acceptance/EvidenceJson.hpp>
 
 #include <gtest/gtest.h>
@@ -148,6 +150,10 @@ TEST(EvidenceJson, SeparatesFullGameRequestsFromPhysicalDisplayCadence)
             .terrain_readiness = acceptance::GameBenchmarkTerrainReadinessEvidence{
                 .center_sample_count = 380U,
                 .center_change_count = 4U,
+                .current_near_sample_count = 380U,
+                .incomplete_current_near_sample_count = 2U,
+                .max_missing_current_mesh_count = 15U,
+                .current_near_coverage_complete = false,
                 .eligible_mesh_episode_count = 11U,
                 .ready_mesh_episode_count = 9U,
                 .left_near_unready_episode_count = 2U,
@@ -241,6 +247,10 @@ TEST(EvidenceJson, SeparatesFullGameRequestsFromPhysicalDisplayCadence)
         std::string::npos);
     EXPECT_NE(json.find("\"readiness_deadline_kind\": \"diagnostic-progress-bound-not-performance-claim\""),
         std::string::npos);
+    EXPECT_NE(json.find("\"current_near_sample_count\": 380"), std::string::npos);
+    EXPECT_NE(json.find("\"incomplete_current_near_sample_count\": 2"), std::string::npos);
+    EXPECT_NE(json.find("\"max_missing_current_mesh_count\": 15"), std::string::npos);
+    EXPECT_NE(json.find("\"current_near_coverage_complete\": false"), std::string::npos);
     EXPECT_NE(json.find("\"worst_ready_latency_ns\": 3200000000"), std::string::npos);
     EXPECT_NE(json.find("\"far_mesh_admissions_while_near_pending\": 0"), std::string::npos);
     EXPECT_NE(json.find("\"complete\": true"), std::string::npos);
@@ -542,4 +552,116 @@ TEST(EvidenceJson, SerializesPresentationAcquisitionStagesAndResults)
     EXPECT_NE(json.find("\"stage\": \"SubmittedFrameFence\", \"duration_ns\": 7000000"), std::string::npos);
     EXPECT_NE(json.find("\"vk_result\": 0"), std::string::npos);
     EXPECT_NE(json.find("\"stage\": \"SwapchainImage\", \"duration_ns\": 100000"), std::string::npos);
+}
+
+TEST(EvidenceJson, SerializesServerNearWindowStagesOnTheBenchmarkFrameTimeline)
+{
+    acceptance::RuntimeEvidence evidence{};
+    evidence.mode = "benchmark-game";
+    acceptance::GameBenchmarkEvidence benchmark{};
+    benchmark.workload = "speed-200-full-radius-recovery-v1";
+    benchmark.raw_server_stream_samples.push_back({
+        .started_offset_ns = 12'500U,
+        .center_x = 144,
+        .center_y = -7,
+        .near_desired_count = 225U,
+        .near_resident_count = 188U,
+        .near_queued_count = 5U,
+        .near_dispatched_count = 21U,
+        .near_ready_count = 4U,
+        .near_inflight_count = 3U,
+        .near_inflight_removals_count = 2U,
+        .near_untracked_count = 4U,
+        .server_queued_count = 19U,
+        .server_dispatched_count = 42U,
+        .server_ready_count = 8U,
+        .server_inflight_addition_count = 6U,
+        .server_inflight_removal_count = 7U,
+        .server_inflight_delivery_count = 4U,
+        .server_pending_removal_count = 9U,
+        .server_resident_count = 205'861U,
+        .server_admitted_addition_count = 11U,
+        .server_rejected_delivery_ack_count = 1U,
+        .server_delivery_credit_count = 2U,
+        .worker_queued_count = 12U,
+        .worker_running_count = 8U,
+        .worker_completed_uncollected_count = 5U,
+    });
+    evidence.game_benchmark = std::move(benchmark);
+
+    std::string const json = acceptance::evidenceJson(evidence);
+
+    EXPECT_NE(json.find("\"raw_server_stream_samples\": ["), std::string::npos);
+    EXPECT_NE(json.find("\"started_offset_ns\": 12500, \"center\": { \"x\": 144, \"y\": -7 }"),
+        std::string::npos);
+    EXPECT_NE(json.find("\"near_window\": { \"desired\": 225, \"resident\": 188"),
+        std::string::npos);
+    EXPECT_NE(json.find("\"inflight_removals\": 2, \"untracked\": 4 }, \"server_queued\": 19"),
+        std::string::npos);
+    EXPECT_NE(json.find("\"server_inflight_additions\": 6, \"server_inflight_removals\": 7"),
+        std::string::npos);
+    EXPECT_NE(json.find("\"server_inflight_deliveries\": 4, \"server_pending_removals\": 9"),
+        std::string::npos);
+    EXPECT_NE(json.find("\"server_resident\": 205861, \"server_admitted_additions\": 11"),
+        std::string::npos);
+    EXPECT_NE(json.find("\"server_rejected_delivery_acks\": 1, \"server_delivery_credits\": 2"),
+        std::string::npos);
+    EXPECT_NE(json.find("\"worker_queued\": 12, \"worker_running\": 8, \"worker_completed_uncollected\": 5"),
+        std::string::npos);
+}
+
+TEST(EvidenceJson, PreservesTimedTerrainRadialBands)
+{
+    acceptance::RuntimeEvidence evidence{};
+    evidence.game_benchmark.emplace();
+    auto& frame = evidence.game_benchmark->raw_frames.emplace_back();
+    frame.diagnostic_terrain_radial_bands.emplace();
+    (*frame.diagnostic_terrain_radial_bands)[0U] = {
+        .desired_count = 5U,
+        .resident_count = 3U,
+        .nonresident_count = 2U,
+        .current_mesh_visible_count = 1U,
+        .stale_or_missing_mesh_count = 2U,
+    };
+    frame.diagnostic_terrain_spatial_scan_duration_ns = 12'345U;
+
+    std::string const json = acceptance::evidenceJson(evidence);
+
+    EXPECT_NE(json.find("\"diagnostic_terrain_spatial_scan_duration_ns\": 12345"), std::string::npos);
+    EXPECT_NE(json.find("\"desired\": 5, \"resident\": 3, \"nonresident\": 2, "
+        "\"current_mesh_visible\": 1, \"stale_or_missing_mesh\": 2"), std::string::npos);
+}
+
+TEST(EvidenceJson, SerializesDefaultStoneFaceGrowthAndAbsentFrameDiagnostics)
+{
+    std::string const expected =
+        "{ \"pre_growth_deadline_rejection_count\": 0"
+        ", \"growth_attempt_count\": 0"
+        ", \"before_recreate_count\": 0"
+        ", \"deferred_recreation_count\": 0"
+        ", \"recreation_exception_count\": 0"
+        ", \"recreation_unknown_exception_count\": 0"
+        ", \"recreation_exception_before_hook_count\": 0"
+        ", \"growth_success_count\": 0"
+        ", \"rollback_count\": 0"
+        ", \"rollback_exception_count\": 0"
+        ", \"post_growth_deadline_rejection_count\": 0"
+        ", \"publication_retry_count\": 0"
+        ", \"last_required_capacity\": 0"
+        ", \"last_target_capacity\": 0"
+        ", \"required_capacity_high_water\": 0"
+        ", \"actual_capacity\": 0"
+        ", \"actual_capacity_high_water\": 0"
+        ", \"growth_work_duration_ns\": 0"
+        ", \"first_recreation_exception_reason\": null"
+        ", \"last_recreation_exception_reason\": null }";
+    acceptance::RuntimeEvidence evidence{};
+    evidence.game_benchmark.emplace();
+    evidence.game_benchmark->full_radius_terrain.emplace();
+    evidence.game_benchmark->raw_frames.emplace_back();
+
+    EXPECT_EQ(acceptance::stoneFaceGrowthDiagnosticsJson({}), expected);
+    std::string const json = acceptance::evidenceJson(evidence);
+    EXPECT_NE(json.find("\"renderer_stone_face_growth\": " + expected), std::string::npos);
+    EXPECT_NE(json.find("\"renderer_stone_face_growth\": null"), std::string::npos);
 }

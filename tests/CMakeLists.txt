@@ -251,6 +251,7 @@ if(MC_BUILD_CLIENT AND NOT ANDROID)
             client/game_client_benchmark_tests.cpp
             client/game_client_lifecycle_tests.cpp
             client/gui_renderer_tests.cpp
+            client/height_tile_interest_region_tests.cpp
             client/height_tile_draw_index_tests.cpp
             client/height_tile_instance_reaper_tests.cpp
             client/client_audio_tests.cpp
