@@ -4,16 +4,23 @@
 from __future__ import annotations
 
 import argparse
+import base64
+import datetime
 import functools
 import hashlib
 import importlib.util
 import json
 import math
 import os
+import re
+import shutil
+import stat
 import subprocess
 import sys
+import tempfile
 import time
-from pathlib import Path, PureWindowsPath
+import uuid
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any, Sequence
 
 
@@ -22,6 +29,11 @@ _SPEC = importlib.util.spec_from_file_location("ai_analysis_matrix", SCRIPT_ROOT
 assert _SPEC is not None and _SPEC.loader is not None
 _MATRIX = importlib.util.module_from_spec(_SPEC)
 _SPEC.loader.exec_module(_MATRIX)
+_PACKAGE_SPEC = importlib.util.spec_from_file_location("gameplay_package_snapshot", SCRIPT_ROOT / "package_snapshot.py")
+assert _PACKAGE_SPEC is not None and _PACKAGE_SPEC.loader is not None
+_PACKAGE = importlib.util.module_from_spec(_PACKAGE_SPEC)
+sys.modules[_PACKAGE_SPEC.name] = _PACKAGE
+_PACKAGE_SPEC.loader.exec_module(_PACKAGE)
 SCHEMA = "mc.gameplay-proof.v1"
 WORKLOAD = "speed-200-full-radius-recovery-v1"
 SOURCE_INPUTS = ("src/**", "assets/**", "cmake/**", "scenarios/**", "CMakeLists.txt", "CMakePresets.json",
@@ -40,6 +52,13 @@ CADENCE_POLICIES = ("snapshot", "strict")
 WORLD_TILE_COUNT = 4_096
 QUEUE_FIELDS = ("pending_delivery_batches", "pending_residency_changes", "pending_mesh_queue",
                 "active_mesh_jobs", "dirty_mesh_jobs", "worker_results", "worker_outstanding", "pending_removals")
+DESKTOP_ROOT = Path(r"C:\ProgramData\CodexWindowsDesktop")
+DESKTOP_HELPERS = {
+    "windows-interactive-client.ps1": "51e02ae830f3cc984dd6331dca51a85b9713a0dd8545740201c0381819dd31a6",
+    "windows-interactive-launch.ps1": "546fe65240c14a80f4aeed4f804b54bf90bb44473f7e2a9183ef1ec3120302c1",
+}
+DESKTOP_TERMINAL_STATES = ("succeeded", "failed", "timed_out", "cancelled")
+DESKTOP_REQUEST_FIELDS = {"schema", "job_id", "task_id", "executable", "executable_sha256", "arguments", "timeout_seconds"}
 
 
 class GameplayError(ValueError):
@@ -98,7 +117,7 @@ def verify_terrain_radial_scan(bands: Any, duration_ns: Any) -> None:
 
 
 def read_json(target: Path) -> Any:
-    return json.loads(target.read_text(encoding="utf-8"), parse_constant=lambda value: (_ for _ in ()).throw(
+    return json.loads(target.read_text(encoding="utf-8-sig"), parse_constant=lambda value: (_ for _ in ()).throw(
         GameplayError(f"non-finite JSON value: {value}")))
 
 
@@ -114,6 +133,371 @@ def checked_file(descriptor: Any, base: Path) -> Path:
     identity = file_identity(target)
     require(all(identity[key] == descriptor.get(key) for key in ("size", "sha256")), f"altered evidence: {target}")
     return target
+
+
+def regular_path(target: Path) -> None:
+    for component in (target, *target.parents):
+        metadata = component.lstat()
+        require(not stat.S_ISLNK(metadata.st_mode) and not getattr(metadata, "st_file_attributes", 0)
+                & stat.FILE_ATTRIBUTE_REPARSE_POINT, f"reparse point in gameplay transport path: {component}")
+
+
+def path_entry_exists(target: Path) -> bool:
+    try:
+        target.lstat()
+    except FileNotFoundError:
+        return False
+    return True
+
+
+def relative_runtime_path(value: Any) -> str:
+    require(isinstance(value, str) and value and not re.search(r"[:*?\x00]", value), "invalid relative runtime path")
+    parts = value.replace("\\", "/").split("/")
+    require(all(part not in ("", ".", "..") for part in parts), "runtime path contains traversal or empty segments")
+    return "/".join(parts)
+
+
+def desktop_package_identity(root: Path, executable: Path, package: Path, manifest: Path) -> list[dict[str, Any]]:
+    regular_path(package)
+    regular_path(manifest)
+    entries = read_json(manifest)
+    require(isinstance(entries, list) and entries, "desktop package manifest must list its runtime inputs")
+    expected, identities = set(), []
+    for entry in entries:
+        require(isinstance(entry, dict) and set(entry) == {"relative", "size", "sha256"}, "invalid desktop package manifest entry")
+        integer(entry["size"], "runtime input size")
+        require(isinstance(entry["sha256"], str) and re.fullmatch(r"[0-9a-f]{64}", entry["sha256"]) is not None,
+                "runtime input SHA256 must be lowercase hexadecimal")
+        relative = relative_runtime_path(entry["relative"])
+        require(relative.casefold() not in expected, "duplicate desktop package input")
+        expected.add(relative.casefold())
+        parts = relative.split("/")
+        require(relative == "mc_main.exe" or len(parts) == 1 and relative.endswith(".dll") or
+                len(parts) == 2 and parts[0] == "shaders" and relative.endswith(".spv") or
+                len(parts) > 1 and parts[0] == "assets", "desktop package contains a non-runtime input")
+        original = root / relative if parts[0] == "assets" else executable.parent / relative
+        regular_path(original)
+        regular_path(package / relative)
+        original_identity, package_identity = file_identity(original), file_identity(package / relative)
+        require(all(original_identity[key] == package_identity[key] == entry[key] for key in ("size", "sha256")),
+                f"desktop package input disagrees with original build/source runtime: {relative}")
+        identities.append({"relative": relative, "original": original_identity, "package": package_identity})
+    require("mc_main.exe" in expected, "desktop package is missing mc_main.exe")
+    directories = {str(parent).replace("\\", "/").casefold() for entry in identities
+                   for parent in Path(entry["relative"]).parents if str(parent) != "."}
+    actual = set()
+    for target in package.rglob("*"):
+        regular_path(target)
+        if target.is_file():
+            actual.add(target.relative_to(package).as_posix().casefold())
+        else:
+            require(target.is_dir() and target.relative_to(package).as_posix().casefold() in directories,
+                    "desktop package contains a non-runtime directory")
+    require(actual == expected, "desktop package inventory differs from its manifest")
+    return sorted(identities, key=lambda identity: identity["relative"])
+
+
+def desktop_helper_identity() -> dict[str, Any]:
+    identities = {}
+    for name, digest in DESKTOP_HELPERS.items():
+        target = DESKTOP_ROOT / "bin" / name
+        regular_path(target)
+        identities[name] = file_identity(target)
+        require(identities[name]["sha256"] == digest, "installed Windows desktop helper differs from inspected contract")
+    return identities
+
+
+def macos_package_identity(package: Path, manifest: Path, executable: Path | None = None,
+                           inspect_binaries: bool = False) -> list[dict[str, Any]]:
+    regular_path(package)
+    regular_path(manifest)
+    value = _PACKAGE.strict_json(manifest.read_bytes(), "macOS package manifest")
+    require(isinstance(value, dict) and value.get("schema") == 1 and value.get("platform") == "macos", "invalid macOS package manifest")
+    require(value.get("runtime") == {"launcher": "MinecraftClone.command", "vulkan_loader": "lib/libvulkan.1.dylib",
+            "moltenvk": "lib/libMoltenVK.dylib", "icd": "vulkan/icd.d/MoltenVK_icd.json"}, "incorrect macOS runtime manifest")
+    entries = value.get("files")
+    require(isinstance(entries, list) and entries, "missing macOS package inventory")
+    identities, expected = [], set()
+    for entry in entries:
+        require(isinstance(entry, dict) and set(entry) == {"path", "bytes", "sha256"}, "invalid macOS inventory entry")
+        relative = relative_runtime_path(entry["path"])
+        require(relative == entry["path"] and relative not in expected and relative != "manifest.json", "duplicate or invalid macOS package path")
+        expected.add(relative)
+        target = package / relative
+        regular_path(target)
+        identity = file_identity(target)
+        require(identity["size"] == integer(entry["bytes"], "macOS runtime bytes")
+                and identity["sha256"] == entry["sha256"], f"macOS package input changed: {relative}")
+        identities.append({"relative": relative, "file": identity})
+    required = {"mc_main", "MinecraftClone.command", "lib/libvulkan.1.dylib", "lib/libMoltenVK.dylib", "vulkan/icd.d/MoltenVK_icd.json"}
+    require(required <= expected, "macOS package is missing its normal runtime")
+    regular_path(package / "manifest.json")
+    require((package / "manifest.json").read_bytes() == manifest.read_bytes(), "macOS package manifest differs from supplied manifest")
+    expected.add("manifest.json")
+    directories = {str(parent) for relative in expected for parent in PurePosixPath(relative).parents if str(parent) != "."}
+    actual = set()
+    for target in package.rglob("*"):
+        regular_path(target)
+        relative = target.relative_to(package).as_posix()
+        if target.is_file():
+            actual.add(relative)
+        else:
+            require(target.is_dir() and relative in directories, "unlisted macOS package directory")
+    require(actual == expected, "unlisted or missing macOS package input")
+    launcher = package / "MinecraftClone.command"
+    require(launcher.read_bytes() == _PACKAGE.macos_launcher() and os.access(launcher, os.X_OK), "macOS launcher differs from normal production launcher")
+    icd = package / "vulkan/icd.d/MoltenVK_icd.json"
+    require(icd.read_bytes() == _PACKAGE.sanitized_icd(icd), "macOS ICD must reference exactly the bundled MoltenVK")
+    if executable is not None:
+        require(all(file_identity(package / "mc_main")[key] == file_identity(executable)[key] for key in ("sha256", "size")),
+                "macOS package executable differs from the source Release executable")
+    if inspect_binaries:
+        binaries = [(package / "mc_main", PurePosixPath("mc_main"))]
+        binaries.extend((package / relative, PurePosixPath(relative)) for relative in sorted(expected) if relative.startswith("lib/") and relative.endswith(".dylib"))
+        _PACKAGE.validate_macos_package(binaries)
+    identities.append({"relative": "manifest.json", "file": file_identity(package / "manifest.json")})
+    return sorted(identities, key=lambda entry: entry["relative"])
+
+
+def verify_macos_runtime(row: dict[str, Any], base: Path) -> None:
+    runtime = row.get("macos_runtime")
+    require(isinstance(runtime, dict) and runtime.get("kind") == "normal-macos-package-v1", "Mac gameplay proof requires its normal packaged runtime")
+    require(isinstance(row.get("native_report_path"), str) and Path(row["native_report_path"]).is_absolute(), "actual capture command requires an absolute Mac native report path")
+    require(runtime["original_before"] == runtime["original_after"] and runtime["retained_before"] == runtime["retained_after"],
+            "macOS runtime inputs changed during capture")
+    require(runtime["loaded_libraries"] == "not-observed; closure and normal launcher verified, PID mappings unavailable",
+            "unsupported macOS loaded-library evidence claim")
+    retained = runtime["retained_before"]
+    require(isinstance(retained, list) and retained, "missing retained macOS runtime")
+    package = checked_file(next(entry["file"] for entry in retained if entry["relative"] == "mc_main"), base).parent
+    manifest = checked_file(runtime["manifest"], base)
+    current = macos_package_identity(package, manifest)
+    require(current == retained, "retained macOS runtime identity mismatch")
+    original = {entry["relative"]: entry["file"] for entry in runtime["original_before"]}
+    require(set(original) == {entry["relative"] for entry in current} and all(
+        all(original[entry["relative"]][key] == entry["file"][key] for key in ("size", "sha256")) for entry in current),
+        "macOS retained closure differs from original runtime")
+    require(all(file_identity(package / "mc_main")[key] == row["executable"][key] for key in ("size", "sha256")), "macOS runtime executable identity mismatch")
+    require(runtime["vulkan_loader"] == file_identity(package / "lib/libvulkan.1.dylib")
+            and runtime["moltenvk"] == file_identity(package / "lib/libMoltenVK.dylib"), "macOS Vulkan library identities disagree")
+    require(Path(runtime["capture_package"]).is_absolute() and row.get("actual_command") == [str(Path(runtime["capture_package"]) / "MinecraftClone.command"), *row["command"][1:-1], row["native_report_path"]],
+            "actual capture command did not use the normal packaged Mac launcher")
+
+
+def desktop_copy_identity(app: Path, inputs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    copied = []
+    for entry in inputs:
+        target = app / entry["relative"]
+        regular_path(target)
+        copied.append({"relative": entry["relative"], "file": file_identity(target)})
+    return copied
+
+
+def desktop_client(operation: str, client_timeout: float = 30, **parameters: Any) -> dict[str, Any]:
+    require(operation in ("Submit", "Status", "Cancel"), "invalid desktop operation")
+    payload = base64.b64encode(json.dumps(parameters, ensure_ascii=False).encode("utf-8")).decode("ascii")
+    command = ("$ErrorActionPreference='Stop'; $ProgressPreference='SilentlyContinue'; "
+               "[Console]::OutputEncoding=[Text.UTF8Encoding]::new($false); "
+               f"$p=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('{payload}')) | ConvertFrom-Json; "
+               f"& '{str(DESKTOP_ROOT / 'bin/windows-interactive-client.ps1').replace(chr(39), chr(39) * 2)}' -Operation {operation} ")
+    command += ("-PackageDirectory $p.package -Executable mc_main.exe -Arguments ([string[]]@($p.arguments)) "
+                "-TimeoutSeconds $p.timeout_seconds -TaskId $p.task_id" if operation == "Submit" else "-JobId $p.job_id")
+    encoded = base64.b64encode(command.encode("utf-16-le")).decode("ascii")
+    powershell = Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32/WindowsPowerShell/v1.0/powershell.exe"
+    result = subprocess.run([str(powershell), "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-EncodedCommand", encoded],
+                            capture_output=True, text=True, encoding="utf-8", timeout=client_timeout)
+    require(result.returncode == 0 or operation == "Submit", f"desktop {operation} failed: {result.stderr.strip()}")
+    response = json.loads(result.stdout)
+    require(isinstance(response, dict), f"desktop {operation} returned a non-object status")
+    return response
+
+
+def desktop_job_id(response: Any) -> str:
+    require(isinstance(response, dict) and type(response.get("schema")) is int and response["schema"] == 1,
+            "invalid desktop helper schema")
+    job_id = response.get("job_id")
+    require(isinstance(job_id, str) and re.fullmatch(r"[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}", job_id) is not None,
+            "desktop helper requires a canonical job UUID")
+    return job_id
+
+
+def desktop_utc_timestamp(value: Any, field: str) -> datetime.datetime:
+    require(isinstance(value, str), f"native desktop {field} must be an ISO timestamp")
+    try:
+        parsed = datetime.datetime.fromisoformat(value)
+    except ValueError as error:
+        raise GameplayError(f"native desktop {field} must be an ISO timestamp") from error
+    require(parsed.utcoffset() == datetime.timedelta(0), f"native desktop {field} must be UTC")
+    return parsed
+
+
+def desktop_status(response: Any, job_id: str, task_id: str, digest: str, timeout: int) -> bool:
+    require(desktop_job_id(response) == job_id and response.get("task_id") == task_id, "desktop status job/task identity mismatch")
+    state = response.get("state")
+    require(state in ("submitted", "running", *DESKTOP_TERMINAL_STATES), "unknown desktop status state")
+    if state == "submitted":
+        require(set(response) == {"schema", "job_id", "task_id", "state"}, "malformed submitted desktop status")
+        return False
+    fields = {"schema", "job_id", "task_id", "state", "started_at_utc", "pid", "session_id", "executable",
+              "executable_sha256", "timeout_seconds", "exit_code", "error"}
+    require(set(response) == fields | ({"finished_at_utc"} if state in DESKTOP_TERMINAL_STATES else set()),
+            "malformed native desktop status")
+    require(response.get("executable") == "mc_main.exe" and response.get("executable_sha256") == digest
+            and type(response.get("timeout_seconds")) is int and response["timeout_seconds"] == timeout,
+            "desktop status executable/hash/timeout mismatch")
+    started = desktop_utc_timestamp(response.get("started_at_utc"), "start time")
+    if state != "running" or response.get("pid") is not None or response.get("session_id") is not None:
+        integer(response.get("pid"), "native desktop PID", 1)
+        integer(response.get("session_id"), "native desktop session", 1)
+    else:
+        require(response.get("pid") is None and response.get("session_id") is None,
+                "malformed running desktop process identity")
+    require(response.get("error") is None or isinstance(response.get("error"), str), "malformed native desktop error")
+    if state in DESKTOP_TERMINAL_STATES:
+        finished = desktop_utc_timestamp(response.get("finished_at_utc"), "finish time")
+        require(started <= finished, "native desktop finish time precedes start time")
+        require(type(response.get("exit_code")) is int, "malformed native desktop exit code")
+        require(state != "succeeded" or response["exit_code"] == 0 and response.get("error") is None,
+                "desktop success disagrees with native exit/error")
+    else:
+        require(response.get("exit_code") is None and response.get("error") is None,
+                "running desktop status contains terminal result fields")
+    return state in DESKTOP_TERMINAL_STATES
+
+
+def desktop_startup_failure(response: Any, job_id: str, task_id: str) -> bool:
+    fields = {"schema", "job_id", "task_id", "state", "submitted_utc", "finished_utc", "pid", "session_id", "exit_code", "error"}
+    if not isinstance(response, dict) or set(response) != fields or response.get("state") != "failed":
+        return False
+    require(desktop_job_id(response) == job_id and response.get("task_id") == task_id,
+            "desktop startup failure job/task identity mismatch")
+    require(response["pid"] is None and response["session_id"] is None and response["exit_code"] is None
+            and isinstance(response["error"], str) and bool(response["error"].strip()),
+            "malformed desktop startup failure")
+    submitted = desktop_utc_timestamp(response["submitted_utc"], "submission time")
+    finished = desktop_utc_timestamp(response["finished_utc"], "finish time")
+    require(submitted <= finished, "desktop startup failure finish time precedes submission")
+    return True
+
+
+def transport_file(target: Path, base: Path) -> dict[str, Any]:
+    identity = file_identity(target)
+    identity["path"] = target.relative_to(base).as_posix()
+    return identity
+
+
+def copy_transport_file(source: Path, target: Path, base: Path) -> dict[str, Any]:
+    regular_path(source)
+    before = file_identity(source)
+    require(not path_entry_exists(target), "transport artifact already exists")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    regular_path(target.parent)
+    try:
+        with source.open("rb") as source_stream, target.open("xb") as target_stream:
+            shutil.copyfileobj(source_stream, target_stream)
+    except FileExistsError as error:
+        raise GameplayError("transport artifact already exists") from error
+    regular_path(source)
+    regular_path(target)
+    require(file_identity(source) == before and all(file_identity(target)[key] == before[key] for key in ("size", "sha256")),
+            "transport artifact changed while copying")
+    return transport_file(target, base)
+
+
+def verify_desktop_transport(row: dict[str, Any], base: Path) -> None:
+    transport = row["transport"]
+    require(row["platform"] == "windows" and transport["kind"] == "windows-desktop-helper-v1", "invalid desktop gameplay transport")
+    require(transport["containment"] == "direct-native-process-only", "incorrect desktop native process ownership contract")
+    job_id, task_id = transport["job_id"], transport["task_id"]
+    require(re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}", task_id) is not None, "invalid desktop task ID")
+    require(transport["build_after"] == row["build"] and transport["package_before"] == transport["package_after"],
+            "source/build/dependency/runtime inputs changed during desktop capture")
+    require(transport["helpers_before"] == transport["helpers_after"] and all(
+        transport["helpers_before"][name]["sha256"] == digest for name, digest in DESKTOP_HELPERS.items()), "desktop helper identity drift")
+    original = transport["original_executable"]
+    require(original["sha256"] == row["build"]["executable_sha256"] == row["executable"]["sha256"]
+            and original["size"] == row["executable"]["size"], "original build and native copied executable differ")
+    require(transport["application_directory"] == str(PureWindowsPath(transport["job_directory"]) / "app")
+            and PureWindowsPath(transport["job_directory"]) == PureWindowsPath(str(DESKTOP_ROOT)) / "jobs" / job_id,
+            "desktop job/application path mismatch")
+    require(PureWindowsPath(original["path"]) != PureWindowsPath(transport["application_directory"]) / "mc_main.exe",
+            "original build executable must be distinguished from the native helper copy")
+    require(row["command"] == [str(PureWindowsPath(transport["application_directory"]) / "mc_main.exe"),
+                               *benchmark_arguments("windows", row["warmup_seconds"], transport["report_name"])],
+            "native desktop command identity mismatch")
+    report_name = relative_runtime_path(transport["report_name"])
+    require("/" not in report_name and report_name == PureWindowsPath(row["report"]["path"]).name,
+            "native report must be a relative filename in the fresh helper app")
+    artifacts = {}
+    require(set(transport["artifacts"]) == {"request.json", "status.json", "scheduler.json", "broker.log", "stdout.log", "stderr.log"},
+            "missing native desktop request/status/process artifacts")
+    for name, descriptor in transport["artifacts"].items():
+        target = checked_file(descriptor, base)
+        regular_path(target)
+        artifacts[name] = target
+    request, status, scheduler = (read_json(artifacts[name]) for name in ("request.json", "status.json", "scheduler.json"))
+    require(status == transport["terminal_status"], "copied status differs from observed native terminal status")
+    timeout = row["warmup_seconds"] * 2 + 90
+    require(set(request) == DESKTOP_REQUEST_FIELDS and desktop_job_id(request) == job_id and request["task_id"] == task_id
+            and request["executable"] == "mc_main.exe" and request["executable_sha256"] == original["sha256"]
+            and request["arguments"] == row["command"][1:] and type(request["timeout_seconds"]) is int
+            and request["timeout_seconds"] == timeout, "desktop request differs from native gameplay command")
+    require(desktop_status(status, job_id, task_id, original["sha256"], timeout) and status["state"] == "succeeded"
+            and status["exit_code"] == row["exit_code"], "native desktop terminal result failed")
+    require(desktop_job_id(scheduler) == job_id and scheduler["task_id"] == task_id and scheduler["state"] == "submitted"
+            and re.fullmatch(r"[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}", scheduler["instance_guid"]) is not None,
+            "desktop scheduler instance identity mismatch")
+    times = [datetime.datetime.fromisoformat(value) for value in (transport["started_at_utc"], scheduler["submitted_utc"],
+             status["started_at_utc"], status["finished_at_utc"], transport["finished_at_utc"])]
+    require(all(value.utcoffset() == datetime.timedelta(0) for value in times) and times == sorted(times), "stale desktop capture timestamps")
+    lines = artifacts["broker.log"].read_text(encoding="utf-8-sig").splitlines()
+    for suffix in (f"validated job={job_id} task={task_id} sha256={original['sha256']}",
+                   f"started job={job_id} pid={status['pid']} session_id={status['session_id']}",
+                   f"finished job={job_id} state=succeeded pid={status['pid']} session_id={status['session_id']} exit_code=0 error="):
+        require(sum(line.endswith(" " + suffix) for line in lines) == 1, "broker log disagrees with native job/result identity")
+    inputs, copied = transport["package_before"], transport["copied_inputs"]
+    require(isinstance(inputs, list) and inputs and len(inputs) == len(copied), "missing copied runtime closure")
+    require(transport["copied_before"] == transport["copied_after"] and len(transport["copied_before"]) == len(inputs),
+            "native helper runtime closure changed during capture")
+    require(transport["manifest_before"] == transport["manifest_after"], "desktop package manifest changed during capture")
+    manifest = checked_file(transport["manifest"], base)
+    regular_path(manifest)
+    require(all(transport["manifest"][key] == transport["manifest_before"][key] for key in ("size", "sha256")),
+            "copied runtime manifest identity mismatch")
+    manifest_inputs = read_json(manifest)
+    require(isinstance(manifest_inputs, list) and len(manifest_inputs) == len(inputs) and
+            sorted((relative_runtime_path(entry["relative"]), entry["size"], entry["sha256"]) for entry in manifest_inputs) ==
+            sorted((entry["relative"], entry["package"]["size"], entry["package"]["sha256"]) for entry in inputs),
+            "runtime closure disagrees with its prelisted manifest")
+    app = artifacts["request.json"].parent / "app"
+    require(all(target.name == name and target.parent == app.parent for name, target in artifacts.items()),
+            "retained helper artifact paths disagree")
+    seen = set()
+    for entry, staged, launched in zip(inputs, copied, transport["copied_before"]):
+        relative = relative_runtime_path(entry["relative"])
+        require(relative not in seen and staged["relative"] == launched["relative"] == relative,
+                "copied runtime closure inventory mismatch")
+        seen.add(relative)
+        origin = (PureWindowsPath(transport["source_directory"]) / relative if relative.startswith("assets/") else
+                  PureWindowsPath(original["path"]).parent / relative)
+        require(PureWindowsPath(entry["original"]["path"]) == origin and
+                PureWindowsPath(entry["package"]["path"]) == PureWindowsPath(transport["package_directory"]) / relative and
+                PureWindowsPath(launched["file"]["path"]) == PureWindowsPath(transport["application_directory"]) / relative,
+                "runtime closure original/package path mismatch")
+        target = checked_file(staged["file"], base)
+        regular_path(target)
+        require(target == app / relative, "retained runtime input path disagrees with helper app closure")
+        require(all(entry["original"][key] == entry["package"][key] == staged["file"][key] == launched["file"][key] for key in ("size", "sha256")),
+                "copied runtime closure disagrees with original source/build inputs")
+        if relative == "mc_main.exe":
+            require(entry["original"] == original and staged["file"]["size"] == row["executable"]["size"] and
+                    staged["file"]["sha256"] == row["executable"]["sha256"], "runtime executable identity mismatch")
+    require("mc_main.exe" in seen, "copied runtime closure is missing the native executable")
+    require({target.relative_to(app).as_posix() for target in app.rglob("*") if target.is_file()} == seen,
+            "retained runtime closure contains unlisted inputs")
+    raw = read_json(checked_file(row["report"], base))
+    require(raw["game_benchmark"].get("diagnostic_overrides_present") is False,
+            "desktop native diagnostic environment proof is missing or contains overrides")
 
 
 def source_digest(root: Path) -> str:
@@ -350,8 +734,19 @@ def verify_receipt(root: Path, receipt: Path, cadence_policy: str = "strict") ->
         require(row["command"][1:] == benchmark_arguments(row["platform"], row["warmup_seconds"], row["command"][-1]), "nonproduction gameplay command")
         require(PureWindowsPath(row["command"][0]).name == executable.name and PureWindowsPath(row["command"][-1]).name == report.name,
                 "capture command disagrees with executable or report identity")
+        if row["platform"] == "macos":
+            verify_macos_runtime(row, receipt.parent)
+        elif "actual_command" in row or "native_report_path" in row:
+            native_report_path = row.get("native_report_path")
+            native_path_type = PureWindowsPath if row["platform"] == "windows" else Path
+            require(isinstance(native_report_path, str) and native_path_type(native_report_path).is_absolute()
+                    and row.get("actual_command") == [*row["command"][:-1], native_report_path],
+                    "actual capture command differs beyond native report relocation")
         require(integer(row["exit_code"], "exit_code") == 0 and row["timed_out"] is False and row["environment"] == {}, "failed or diagnostic gameplay invocation")
+        require(not row.get("capture_error"), "gameplay recorder retained a capture failure")
         require(executable.name == ("mc_main.exe" if row["platform"] == "windows" else "mc_main"), "wrong gameplay executable")
+        if "transport" in row:
+            verify_desktop_transport(row, receipt.parent)
         raw = read_json(report)
         results[row["platform"]] = verify_report(raw, row["platform"], cadence_policy)
         require(raw["game_benchmark"]["full_radius_terrain"]["warmup_timeout_ms"] == row["warmup_seconds"] * 1000,
@@ -379,54 +774,333 @@ def build_identity(root: Path, build_root: Path, executable: Path) -> dict[str, 
     actions = [line for line in probe.stdout.splitlines() if line.startswith("[")]
     require(probe.returncode == 0 and all(" -E copy_if_different " in line and " -E make_directory " in line for line in actions),
             "Release build is stale; build it before capturing gameplay evidence")
-    environment = {"VCPKG_ROOT": cache["Z_VCPKG_ROOT_DIR"], "VCPKG_INSTALLED_DIR": cache["VCPKG_INSTALLED_DIR"],
-                   "MC_PRIVATE_DEPENDENCIES_PREFIX": cache["CMAKE_PREFIX_PATH"]}
-    dependencies = _MATRIX._external_dependency_identity(root, {"id": "macos_ubsan"}, environment)
+    private_prefixes = cache.get("CMAKE_PREFIX_PATH", "").split(";")
+    require(private_prefixes and all(private_prefixes), "Release CMake prefix path is missing or contains an empty entry")
+    environment = {"VCPKG_ROOT": cache["Z_VCPKG_ROOT_DIR"], "VCPKG_INSTALLED_DIR": cache["VCPKG_INSTALLED_DIR"]}
+    dependency_row = {"id": "macos_ubsan"}
+    shared_dependencies = None
+    prefix_identities = []
+    for prefix in private_prefixes:
+        identity = _MATRIX._external_dependency_identity(
+            root, dependency_row, {**environment, "MC_PRIVATE_DEPENDENCIES_PREFIX": prefix}
+        )
+        prefix_identity = identity.pop("MC_PRIVATE_DEPENDENCIES_PREFIX", None)
+        require(prefix_identity is not None, "dependency identity omitted a CMake prefix")
+        if shared_dependencies is None:
+            shared_dependencies = identity
+        else:
+            require(identity == shared_dependencies, "shared dependency identity changed while capturing CMake prefixes")
+        prefix_identities.append(prefix_identity)
+    dependencies = shared_dependencies or {}
+    dependencies["CMAKE_PREFIX_PATH"] = prefix_identities
     return {"configuration": "Release", "source_input_sha256": source_digest(root),
             "executable_sha256": file_identity(executable)["sha256"],
             "configuration_sha256": _MATRIX._input_files_sha256(build_root, ("CMakeCache.txt", "build.ninja", "CMakeFiles/rules.ninja", "compile_commands.json", "shaders/**")),
             "dependency_sha256": hashlib.sha256(_MATRIX._canonical_json(dependencies)).hexdigest()}
 
 
-def record(root: Path, receipt: Path, platform: str, executable: Path, warmup: int, cadence_policy: str = "strict") -> None:
+def cancel_desktop_job(job_id: str, task_id: str, digest: str, timeout: int,
+                       request_identity_verified: bool) -> dict[str, Any]:
+    cleanup: dict[str, Any] = {"job_id": job_id, "terminal_observed": False}
+    try:
+        cancelled = desktop_client("Cancel", job_id=job_id)
+        require(desktop_job_id(cancelled) == job_id and cancelled.get("state") in ("cancel-requested", "already-terminal"),
+                "desktop cancellation identity mismatch")
+        cleanup["cancel_response"] = cancelled
+        deadline = time.monotonic() + 30
+        while time.monotonic() < deadline:
+            status = desktop_client("Status", job_id=job_id, client_timeout=max(0.1, min(30, deadline - time.monotonic())))
+            if desktop_startup_failure(status, job_id, task_id):
+                require(request_identity_verified, "desktop cleanup cannot prove startup failure without a verified request")
+                terminal = True
+            else:
+                terminal = desktop_status(status, job_id, task_id, digest, timeout)
+            if terminal:
+                cleanup.update(terminal_observed=True, terminal_status=status)
+                break
+            time.sleep(min(1, max(0, deadline - time.monotonic())))
+        require(cleanup["terminal_observed"], "desktop cancellation did not reach terminal status within 30 seconds")
+    except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError, KeyboardInterrupt) as error:
+        cleanup["error"] = str(error) or type(error).__name__
+    return cleanup
+
+
+def record_desktop(root: Path, receipt: Path, executable: Path, warmup: int,
+                   before: dict[str, Any], package: Path, manifest: Path, task_id: str, cadence_policy: str = "strict") -> None:
+    require(re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}", task_id) is not None, "invalid desktop task ID")
+    task_id = f"{task_id[:31]}-{uuid.uuid4().hex}"
+    report = receipt.with_suffix(".raw.json")
+    report_name = relative_runtime_path(report.name)
+    require("/" not in report_name, "native report must be a relative filename")
+    retained = receipt.with_suffix(".desktop")
+    require(not path_entry_exists(report), "raw capture path already exists")
+    require(not path_entry_exists(retained), "desktop transport output already exists; select a fresh receipt")
+    timeout, arguments = warmup * 2 + 90, benchmark_arguments("windows", warmup, report_name)
+    package_before = desktop_package_identity(root, executable, package, manifest)
+    helpers_before = desktop_helper_identity()
+    candidate = _MATRIX.candidate_identity(root)
+    jobs = DESKTOP_ROOT / "jobs"
+    regular_path(jobs)
+    preexisting_jobs = {target.name for target in jobs.iterdir()}
+    transport: dict[str, Any] = {
+        "kind": "windows-desktop-helper-v1", "containment": "direct-native-process-only", "original_executable": file_identity(executable),
+        "source_directory": str(root), "package_directory": str(package),
+        "task_id": task_id, "report_name": report_name, "helpers_before": helpers_before, "helpers_after": None,
+        "manifest_before": file_identity(manifest), "manifest_after": None,
+        "package_before": package_before, "package_after": None, "build_after": None, "artifacts": {}, "copied_inputs": [],
+        "copied_before": None, "copied_after": None,
+        "started_at_utc": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+    }
+    job_id, terminal, exit_code, timed_out = None, False, None, False
+    request_identity_verified = False
+    command, captured_report, captured_executable = [str(executable), *arguments], None, file_identity(executable)
+    errors = []
+    started, heartbeat = time.monotonic(), time.monotonic()
+    print(f"CAPTURE windows: submit direct native desktop workload once; native timeout={timeout}s, startup allowance=60s", flush=True)
+    try:
+        submission = desktop_client("Submit", package=str(package), arguments=arguments, timeout_seconds=timeout, task_id=task_id)
+        returned_id = desktop_job_id(submission)
+        require(returned_id not in preexisting_jobs, "desktop helper returned a pre-existing job")
+        regular_path(jobs / returned_id / "request.json")
+        request = read_json(jobs / returned_id / "request.json")
+        require(desktop_job_id(request) == returned_id and request.get("task_id") == task_id,
+                "desktop submission does not identify the newly owned request")
+        job_id = returned_id
+        transport["job_id"] = job_id
+        require(submission.get("task_id") == task_id and submission.get("state") == "submitted", "desktop submission failed or has stale task identity")
+        require(set(request) == DESKTOP_REQUEST_FIELDS and request["arguments"] == arguments and
+                request["executable"] == "mc_main.exe" and request["executable_sha256"] == before["executable_sha256"] and
+                type(request["timeout_seconds"]) is int and request["timeout_seconds"] == timeout,
+                "desktop request differs from native gameplay command")
+        request_identity_verified = True
+        transport["copied_before"] = desktop_copy_identity(jobs / job_id / "app", package_before)
+        require(all(all(copied["file"][key] == original["package"][key] for key in ("size", "sha256"))
+                    for copied, original in zip(transport["copied_before"], package_before)),
+                "initial copied runtime closure differs from approved package")
+        deadline = started + timeout + 60
+        while True:
+            require(time.monotonic() < deadline, "desktop capture polling deadline exceeded")
+            status = desktop_client("Status", job_id=job_id, client_timeout=max(0.1, min(30, deadline - time.monotonic())))
+            terminal = desktop_status(status, job_id, task_id, before["executable_sha256"], timeout)
+            if terminal:
+                transport["terminal_status"] = status
+                exit_code, timed_out = status["exit_code"], status["state"] == "timed_out"
+                break
+            if time.monotonic() - heartbeat >= 30:
+                print(f"CAPTURE windows: elapsed={time.monotonic() - started:.0f}s; job={job_id}, state={status['state']}", flush=True)
+                heartbeat = time.monotonic()
+            time.sleep(min(2, max(0, deadline - time.monotonic())))
+    except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError, KeyboardInterrupt) as error:
+        errors.append(str(error) or type(error).__name__)
+        timed_out = isinstance(error, subprocess.TimeoutExpired) or "deadline exceeded" in str(error)
+        if job_id in preexisting_jobs:
+            job_id = None
+        if job_id is None:
+            owned = []
+            for target in jobs.iterdir():
+                if target.name in preexisting_jobs:
+                    continue
+                try:
+                    regular_path(target / "request.json")
+                    request = read_json(target / "request.json")
+                    if (desktop_job_id(request) == target.name and set(request) == DESKTOP_REQUEST_FIELDS and
+                        request["task_id"] == task_id and request["arguments"] == arguments and request["executable"] == "mc_main.exe" and
+                        request["executable_sha256"] == before["executable_sha256"] and request["timeout_seconds"] == timeout):
+                        owned.append(target.name)
+                except (OSError, ValueError, KeyError, TypeError):
+                    continue
+            if len(owned) == 1:
+                job_id = owned[0]
+                transport["job_id"] = job_id
+                request_identity_verified = True
+        if job_id is not None:
+            transport["cleanup"] = cancel_desktop_job(job_id, task_id, before["executable_sha256"], timeout,
+                                                       request_identity_verified)
+            if transport["cleanup"].get("error"):
+                errors.append(transport["cleanup"]["error"])
+            cleanup_status = transport["cleanup"].get("terminal_status", {})
+            exit_code = cleanup_status.get("exit_code")
+        else:
+            errors.append("submission did not establish one exact owned helper UUID; no retry or unrelated cancellation")
+    if job_id is not None:
+        job, app = jobs / job_id, jobs / job_id / "app"
+        transport.update(job_directory=str(PureWindowsPath(str(job))), application_directory=str(PureWindowsPath(str(app))))
+        command = [str(PureWindowsPath(str(app)) / "mc_main.exe"), *arguments]
+        try:
+            regular_path(job)
+            for target in job.rglob("*"):
+                regular_path(target)
+            for name in ("request.json", "status.json", "scheduler.json", "broker.log", "stdout.log", "stderr.log"):
+                if (job / name).exists():
+                    transport["artifacts"][name] = copy_transport_file(job / name, retained / name, receipt.parent)
+            if (app / report_name).is_file():
+                regular_path(app / report_name)
+                capture_started = datetime.datetime.fromisoformat(transport["started_at_utc"]).timestamp()
+                require((app / report_name).stat().st_mtime >= capture_started, "native report predates fresh desktop capture")
+                captured_report = copy_transport_file(app / report_name, report, receipt.parent)
+            else:
+                errors.append("native report is absent")
+            transport["copied_after"] = desktop_copy_identity(app, package_before)
+            require(transport["copied_before"] == transport["copied_after"], "native helper runtime closure changed during capture")
+            for entry in package_before:
+                relative = entry["relative"]
+                descriptor = copy_transport_file(app / relative, retained / "app" / relative, receipt.parent)
+                require(all(descriptor[key] == entry["original"][key] for key in ("size", "sha256")), "copied runtime input drift")
+                transport["copied_inputs"].append({"relative": relative, "file": descriptor})
+                if relative == "mc_main.exe":
+                    captured_executable = descriptor
+            actual = {target.relative_to(app).as_posix() for target in app.rglob("*") if target.is_file()}
+            expected = {entry["relative"] for entry in package_before}
+            require(actual in (expected, expected | {report_name}), "helper app contains unexpected runtime inputs")
+        except (OSError, ValueError, KeyError, TypeError) as error:
+            errors.append(str(error))
+    try:
+        transport["manifest"] = copy_transport_file(manifest, retained / "package-manifest.json", receipt.parent)
+        transport["manifest_after"] = file_identity(manifest)
+    except (OSError, ValueError, KeyError, TypeError) as error:
+        errors.append(str(error))
+    try:
+        transport["build_after"] = build_identity(root, executable.parent, executable)
+        transport["package_after"] = desktop_package_identity(root, executable, package, manifest)
+        transport["helpers_after"] = desktop_helper_identity()
+        require(before == transport["build_after"] and candidate == _MATRIX.candidate_identity(root),
+                "source, executable, build, or dependency inputs changed during capture")
+        require(package_before == transport["package_after"], "original package/runtime closure changed during capture")
+    except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError, _MATRIX.MatrixError) as error:
+        errors.append(str(error))
+    transport["finished_at_utc"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    row = {"platform": "windows", "proof_origin": "local", "source_candidate": candidate,
+           "source_input_sha256": before["source_input_sha256"], "build": before, "executable": captured_executable,
+           "report": captured_report, "command": command, "warmup_seconds": warmup, "environment": {}, "exit_code": exit_code,
+           "timed_out": timed_out, "capture_error": "", "transport": transport}
+    if not errors:
+        try:
+            verify_desktop_transport(row, receipt.parent)
+        except (OSError, ValueError, KeyError, TypeError, IndexError) as error:
+            errors.append(str(error))
+    row["capture_error"] = "; ".join(errors)
+    with receipt.open("x", encoding="utf-8") as output:
+        output.write(json.dumps({"schema_version": SCHEMA, "rows": [row]}, indent=2, sort_keys=True) + "\n")
+    require(exit_code == 0 and not timed_out and not errors, "gameplay capture failed; retained failure receipt: " + row["capture_error"])
+    print(json.dumps(verify_report(read_json(report), "windows", cadence_policy), sort_keys=True))
+
+
+def record(root: Path, receipt: Path, platform: str, executable: Path, warmup: int,
+           desktop_package: Path | None = None, desktop_manifest: Path | None = None, desktop_task_id: str | None = None,
+           cadence_policy: str = "strict", macos_package: Path | None = None, macos_manifest: Path | None = None) -> None:
     require(warmup == 180, "qualification capture requires --warmup-seconds 180; other bounds are diagnostic only")
     require(platform == ("windows" if sys.platform == "win32" else "macos" if sys.platform == "darwin" else "unsupported"), "capture must run on the named local host")
     diagnostics = {key: value for key, value in os.environ.items() if key.startswith("MC_DIAGNOSTIC_")}
     require(not diagnostics, "remove diagnostic renderer overrides before qualification")
-    require(not receipt.exists(), "capture receipt already exists; select a fresh output path")
+    require(not path_entry_exists(receipt), "capture receipt already exists; select a fresh output path")
     report = receipt.with_suffix(".raw.json")
-    require(not report.exists(), "raw capture path already exists")
+    require(not path_entry_exists(report), "raw capture path already exists")
     print(f"CAPTURE {platform}: fingerprinting relevant source, Release build and consumed dependencies", flush=True)
     before = build_identity(root, executable.parent, executable)
+    if desktop_package is not None:
+        require(platform == "windows" and desktop_manifest is not None and desktop_task_id is not None,
+                "desktop capture requires Windows, a runtime manifest and task ID")
+        record_desktop(root, receipt, executable, warmup, before, desktop_package, desktop_manifest, desktop_task_id, cadence_policy)
+        return
+    macos_runtime = None
+    if platform == "macos":
+        require(macos_package is not None and macos_manifest is not None,
+                "Mac capture requires --macos-package and --macos-package-manifest")
+        require(not any(name.startswith(("DYLD_", "VK_")) for name in os.environ), "remove inherited macOS loader/driver overrides")
+        original_runtime = macos_package_identity(macos_package, macos_manifest, executable, inspect_binaries=True)
+        retained_package = receipt.parent.resolve() / receipt.with_suffix(".macos").name
+        require(not path_entry_exists(retained_package), "retained macOS runtime already exists")
+        for entry in original_runtime:
+            source = macos_package / entry["relative"]
+            target = retained_package / entry["relative"]
+            copy_transport_file(source, target, receipt.parent.resolve())
+            target.chmod(source.stat().st_mode & 0o777)
+        retained_manifest = retained_package / "manifest.json"
+        retained_runtime = macos_package_identity(retained_package, retained_manifest, executable)
+        macos_runtime = {"kind": "normal-macos-package-v1", "capture_package": str(retained_package),
+                         "original_before": original_runtime, "original_after": None,
+                         "retained_before": retained_runtime, "retained_after": None,
+                         "manifest": file_identity(retained_manifest),
+                         "vulkan_loader": file_identity(retained_package / "lib/libvulkan.1.dylib"),
+                         "moltenvk": file_identity(retained_package / "lib/libMoltenVK.dylib"),
+                         "loaded_libraries": "not-observed; closure and normal launcher verified, PID mappings unavailable"}
     command = [str(executable), *benchmark_arguments(platform, warmup, str(report))]
     started = time.monotonic()
     print(f"CAPTURE {platform}: bounded full-radius gameplay, timeout={warmup * 2 + 90}s", flush=True)
-    process = subprocess.Popen(command, cwd=root)
-    timed_out = False
-    while process.poll() is None:
-        try:
-            process.wait(timeout=30)
-        except subprocess.TimeoutExpired:
-            print(f"CAPTURE {platform}: elapsed={time.monotonic() - started:.0f}s; waiting for full-radius phases", flush=True)
-            if time.monotonic() - started >= warmup * 2 + 90:
-                timed_out = True
+    captured_report = None
+    failed_report = None
+    capture_error = ""
+    capture_directory = Path(tempfile.mkdtemp(prefix="mc-gameplay-capture-", dir=receipt.parent.resolve()))
+    preserve_capture = False
+    process = None
+    process_finished = False
+    try:
+        native_report = capture_directory / "native.raw.json"
+        launched_executable = str(retained_package / "MinecraftClone.command") if macos_runtime else command[0]
+        actual_command = [launched_executable, *command[1:-1], str(native_report)]
+        process = subprocess.Popen(actual_command, cwd=root)
+        timed_out = False
+        while process.poll() is None:
+            try:
+                process.wait(timeout=30)
+            except subprocess.TimeoutExpired:
+                print(f"CAPTURE {platform}: elapsed={time.monotonic() - started:.0f}s; waiting for full-radius phases", flush=True)
+                if time.monotonic() - started >= warmup * 2 + 90:
+                    timed_out = True
+                    process.kill()
+                    process.wait(timeout=30)
+        process_finished = True
+        if native_report.is_file():
+            try:
+                retained_report = report.parent.resolve() / report.name
+                copy_transport_file(native_report, retained_report, retained_report.parent)
+                captured_report = file_identity(report)
+            except (OSError, ValueError) as error:
+                capture_error = str(error)
+                preserve_capture = True
+                failed_report = file_identity(native_report)
+        else:
+            capture_error = "native report is absent"
+    finally:
+        if process is not None and not process_finished:
+            preserve_capture = True
+            if process.poll() is None:
                 process.kill()
                 process.wait(timeout=30)
+        if native_report.is_file() and captured_report is None:
+            preserve_capture = True
+        if not preserve_capture:
+            shutil.rmtree(capture_directory)
     after = build_identity(root, executable.parent, executable)
     require(before == after, "source, executable, build, or dependency inputs changed during capture")
-    capture_error = "" if report.is_file() else "native report is absent"
+    if macos_runtime:
+        try:
+            macos_runtime["original_after"] = macos_package_identity(macos_package, macos_manifest, executable)
+            macos_runtime["retained_after"] = macos_package_identity(retained_package, retained_manifest, executable)
+            require(original_runtime == macos_runtime["original_after"] and retained_runtime == macos_runtime["retained_after"],
+                    "macOS runtime inputs changed during capture")
+        except (OSError, ValueError, KeyError, TypeError) as error:
+            capture_error = "; ".join(filter(None, (capture_error, str(error))))
     row = {"platform": platform, "proof_origin": "local", "source_candidate": _MATRIX.candidate_identity(root),
-           "source_input_sha256": before["source_input_sha256"], "build": before, "executable": file_identity(executable),
-           "report": None if capture_error else file_identity(report), "command": command, "warmup_seconds": warmup, "environment": diagnostics,
+           "source_input_sha256": before["source_input_sha256"], "build": before,
+           "executable": (next(entry["file"] for entry in retained_runtime if entry["relative"] == "mc_main")
+                          if macos_runtime else file_identity(executable)),
+           "report": captured_report, "command": command, "actual_command": actual_command,
+           "native_report_path": str(native_report), "warmup_seconds": warmup, "environment": diagnostics,
            "exit_code": process.returncode, "timed_out": timed_out, "capture_error": capture_error}
-    receipt.write_text(json.dumps({"schema_version": SCHEMA, "rows": [row]}, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    if macos_runtime:
+        row["macos_runtime"] = macos_runtime
+    if failed_report is not None:
+        row["failed_report"] = failed_report
+    with receipt.open("x", encoding="utf-8") as output:
+        output.write(json.dumps({"schema_version": SCHEMA, "rows": [row]}, indent=2, sort_keys=True) + "\n")
     require(process.returncode == 0 and not timed_out and not capture_error,
             "gameplay capture failed; retained failure receipt" + (": " + capture_error if capture_error else ""))
     print(json.dumps(verify_report(read_json(report), platform, cadence_policy), sort_keys=True))
 
 
 def merge_receipts(root: Path, inputs: list[Path], output: Path, cadence_policy: str = "strict") -> dict[str, Any]:
-    require(not output.exists(), "aggregate receipt already exists; select a fresh output path")
+    require(not path_entry_exists(output), "aggregate receipt already exists; select a fresh output path")
     rows = []
     for target in inputs:
         partial = read_json(target)
@@ -436,10 +1110,31 @@ def merge_receipts(root: Path, inputs: list[Path], output: Path, cadence_policy:
             descriptor = row[key]
             if not (target.parent / descriptor["path"]).is_file():
                 basename = PureWindowsPath(descriptor["path"]).name if row["platform"] == "windows" else Path(descriptor["path"]).name
-                descriptor["path"] = str(target.parent / basename)
+                location = target.parent / basename
+                if key == "executable" and "macos_runtime" in row:
+                    location = target.parent / Path(row["macos_runtime"]["capture_package"]).name / "mc_main"
+                descriptor["path"] = str(location)
             descriptor["path"] = str(checked_file(descriptor, target.parent).resolve())
+        if "transport" in row:
+            descriptors = [*row["transport"]["artifacts"].values(),
+                           row["transport"]["manifest"],
+                           *(entry["file"] for entry in row["transport"]["copied_inputs"])]
+            for descriptor in descriptors:
+                descriptor["path"] = str(checked_file(descriptor, target.parent).resolve())
+        if "macos_runtime" in row:
+            runtime = row["macos_runtime"]
+            for phase in ("retained_before", "retained_after"):
+                for entry in runtime[phase]:
+                    descriptor = entry["file"]
+                    if not (target.parent / descriptor["path"]).is_file():
+                        descriptor["path"] = str(target.parent / Path(runtime["capture_package"]).name / entry["relative"])
+                    descriptor["path"] = str(checked_file(descriptor, target.parent).resolve())
+            files = {entry["relative"]: entry["file"] for entry in runtime["retained_before"]}
+            for key, relative in (("manifest", "manifest.json"), ("vulkan_loader", "lib/libvulkan.1.dylib"), ("moltenvk", "lib/libMoltenVK.dylib")):
+                runtime[key] = dict(files[relative])
         rows.append(row)
-    output.write_text(json.dumps({"schema_version": SCHEMA, "rows": rows}, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    with output.open("x", encoding="utf-8") as receipt_file:
+        receipt_file.write(json.dumps({"schema_version": SCHEMA, "rows": rows}, indent=2, sort_keys=True) + "\n")
     return verify_receipt(root, output, cadence_policy)
 
 
@@ -449,11 +1144,15 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--receipt", type=Path, required=True)
     parser.add_argument("--candidate-commit")
     parser.add_argument("--record", choices=tuple(TARGET_HZ))
-    parser.add_argument("--merge", nargs=2, type=Path, metavar=("MACOS_RECEIPT", "WINDOWS_RECEIPT"))
+    parser.add_argument("--merge", nargs=2, type=Path, metavar="PROOF_RECEIPT")
+    parser.add_argument("--cadence-policy", choices=CADENCE_POLICIES, default="strict")
     parser.add_argument("--executable", type=Path)
+    parser.add_argument("--desktop-package", type=Path, help="Windows only: approved native runtime package for the installed desktop helper")
+    parser.add_argument("--desktop-package-manifest", type=Path, help="exact relative/size/SHA256 inventory of the approved package")
+    parser.add_argument("--desktop-task-id", help="safe task identity for this one native desktop helper submission")
+    parser.add_argument("--macos-package", type=Path, help="normal extracted macOS package root")
+    parser.add_argument("--macos-package-manifest", type=Path, help="generated macOS package manifest")
     parser.add_argument("--warmup-seconds", type=int, default=180)
-    parser.add_argument("--cadence-policy", choices=CADENCE_POLICIES, default="strict",
-                        help="snapshot records Mac cadence diagnostically; strict requires both platform targets (default)")
     args = parser.parse_args(argv)
     try:
         root = args.root.resolve(strict=True)
@@ -465,13 +1164,25 @@ def main(argv: Sequence[str] | None = None) -> int:
                                       capture_output=True, text=True, timeout=30)
             require(untracked.returncode == 0 and not untracked.stdout.strip(), "candidate has uncommitted gameplay source files")
         require(not (args.record and args.merge), "--record and --merge are mutually exclusive")
+        desktop_options = (args.desktop_package, args.desktop_package_manifest, args.desktop_task_id)
+        require(not any(desktop_options) or args.record == "windows" and all(desktop_options),
+                "desktop options require --record windows, --desktop-package, --desktop-package-manifest and --desktop-task-id")
+        require(not (args.macos_package or args.macos_package_manifest) or args.record == "macos"
+                and args.macos_package is not None and args.macos_package_manifest is not None,
+                "macOS package options require --record macos and both package paths")
+        if args.record or args.merge:
+            require(not path_entry_exists(args.receipt), "output receipt already exists; select a fresh output path")
         if args.record:
             require(args.executable is not None, "--record requires --executable")
-            record(root, args.receipt.resolve(), args.record, args.executable.resolve(strict=True), args.warmup_seconds, args.cadence_policy)
+            record(root, args.receipt.absolute(), args.record, args.executable.resolve(strict=True), args.warmup_seconds,
+                   args.desktop_package.absolute() if args.desktop_package else None,
+                   args.desktop_package_manifest.absolute() if args.desktop_package_manifest else None, args.desktop_task_id, args.cadence_policy,
+                   args.macos_package.absolute() if args.macos_package else None,
+                   args.macos_package_manifest.absolute() if args.macos_package_manifest else None)
         else:
-            results = (merge_receipts(root, [target.resolve(strict=True) for target in args.merge], args.receipt.resolve(), args.cadence_policy)
+            results = (merge_receipts(root, [target.resolve(strict=True) for target in args.merge], args.receipt.absolute(), args.cadence_policy)
                        if args.merge else verify_receipt(root, args.receipt.resolve(strict=True), args.cadence_policy))
-            print(json.dumps({"status": "passed", "cadence_policy": args.cadence_policy,
+            print(json.dumps({"status": "passed",
                               "platforms": results}, sort_keys=True))
         return 0
     except (OSError, ValueError, KeyError, TypeError, IndexError, subprocess.SubprocessError, _MATRIX.MatrixError) as error:

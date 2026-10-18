@@ -1,6 +1,10 @@
 from __future__ import annotations
 
 import contextlib
+import shutil
+import itertools
+import datetime
+import base64
 import copy
 import importlib.util
 import io
@@ -16,6 +20,9 @@ REPOSITORY = Path(__file__).resolve().parents[2]
 GATE = REPOSITORY / "script/ci/verify_gameplay_gate.py"
 CANDIDATE = {"head": "a" * 40, "tree": "b" * 40}
 
+DESKTOP_JOB_ID = "12345678-1234-1234-1234-123456789abc"
+DESKTOP_TASK_ID = "mc-s7-0456-runtime"
+
 
 def load_module():
     spec = importlib.util.spec_from_file_location("verify_gameplay_gate", GATE)
@@ -28,6 +35,153 @@ def load_module():
 class VerifyGameplayGateTests(unittest.TestCase):
     def setUp(self):
         self.gate = load_module()
+        inspector = mock.patch.object(self.gate._PACKAGE, "validate_macos_package", return_value=[])
+        inspector.start()
+        self.addCleanup(inspector.stop)
+
+    def macos_package(self, root, executable):
+        package = root.resolve() / (executable.parent.name + "-package")
+        if not package.exists():
+            files = {"mc_main": executable.read_bytes(), "MinecraftClone.command": self.gate._PACKAGE.macos_launcher(),
+                     "lib/libvulkan.1.dylib": b"bundled Vulkan loader", "lib/libMoltenVK.dylib": b"bundled MoltenVK",
+                     "vulkan/icd.d/MoltenVK_icd.json": self.gate._PACKAGE.canonical_json({"ICD": {"library_path": "../../lib/libMoltenVK.dylib"}})}
+            for relative, data in files.items():
+                target = package / relative
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(data)
+                target.chmod(0o755)
+            manifest = {"schema": 1, "platform": "macos", "runtime": {"launcher": "MinecraftClone.command",
+                        "vulkan_loader": "lib/libvulkan.1.dylib", "moltenvk": "lib/libMoltenVK.dylib", "icd": "vulkan/icd.d/MoltenVK_icd.json"},
+                        "files": [{"path": relative, "bytes": len(data), "sha256": self.gate.hashlib.sha256(data).hexdigest()}
+                                  for relative, data in files.items()]}
+            (package / "manifest.json").write_bytes(self.gate._PACKAGE.canonical_json(manifest))
+        return package, package / "manifest.json"
+
+
+    def record_macos(self, root, receipt, executable):
+        package, manifest = self.macos_package(root, executable)
+        return self.gate.record(root, receipt, "macos", executable, 180, macos_package=package, macos_manifest=manifest)
+
+
+    def macos_runtime(self, package, manifest):
+        identity = self.gate.macos_package_identity(package, manifest)
+        return {"kind": "normal-macos-package-v1", "capture_package": str(package),
+                "original_before": identity, "original_after": identity,
+                "retained_before": identity, "retained_after": identity,
+                "manifest": self.gate.file_identity(manifest),
+                "vulkan_loader": self.gate.file_identity(package / "lib/libvulkan.1.dylib"),
+                "moltenvk": self.gate.file_identity(package / "lib/libMoltenVK.dylib"),
+                "loaded_libraries": "not-observed; closure and normal launcher verified, PID mappings unavailable"}
+
+
+    def record_desktop(self, capture, task_id=DESKTOP_TASK_ID):
+        self.gate.record(capture["root"], capture["receipt"], "windows", capture["executable"], 180,
+                         desktop_package=capture["package"], desktop_manifest=capture["manifest"], desktop_task_id=task_id)
+
+
+    @contextlib.contextmanager
+    def desktop_capture(self, **options):
+        with tempfile.TemporaryDirectory() as directory, contextlib.ExitStack() as patches:
+            root = Path(directory).resolve()
+            aggregate = self.aggregate(root)
+            original = Path(aggregate["rows"][1]["executable"]["path"])
+            package, helper = root / "package", root / "helper"
+            package.mkdir()
+            (helper / "jobs").mkdir(parents=True)
+            inputs = {"mc_main.exe": original, "fmt.dll": original.parent / "fmt.dll",
+                      "shaders/stone.vert.spv": original.parent / "shaders/stone.vert.spv",
+                      "assets/textures/stone/default_stone.png": root / "assets/textures/stone/default_stone.png"}
+            inventory = []
+            for relative, origin in inputs.items():
+                if not origin.exists():
+                    origin.parent.mkdir(parents=True, exist_ok=True)
+                    origin.write_bytes(relative.encode("ascii"))
+                target = package / relative
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(origin, target)
+                identity = self.gate.file_identity(origin)
+                inventory.append({"relative": relative.replace("/", "\\"), "size": identity["size"], "sha256": identity["sha256"]})
+            manifest, receipt = root / "package.json", root / "capture.json"
+            manifest.write_text(json.dumps(inventory), encoding="utf-8-sig")
+            build = copy.deepcopy(aggregate["rows"][1]["build"])
+            build["source_input_sha256"] = self.gate.source_digest(root)
+            native_report = self.report("windows")
+            native_report["game_benchmark"]["diagnostic_overrides_present"] = False
+            state = {"calls": [], "state": "succeeded", "exit_code": 0, "report": native_report,
+                     "request_mutation": {}, "status_mutation": {}, "cancelled": False, **options}
+
+            def client(operation, **parameters):
+                state["calls"].append((operation, parameters))
+                job, app = helper / "jobs" / DESKTOP_JOB_ID, helper / "jobs" / DESKTOP_JOB_ID / "app"
+                now = lambda: datetime.datetime.now(datetime.timezone.utc).isoformat()
+                if operation == "Submit":
+                    state["task_id"] = parameters["task_id"]
+                    shutil.copytree(package, app)
+                    submitted = now()
+                    request = {"schema": 1, "job_id": DESKTOP_JOB_ID, "task_id": state["task_id"], "executable": "mc_main.exe",
+                               "executable_sha256": build["executable_sha256"], "arguments": parameters["arguments"], "timeout_seconds": 450}
+                    request.update(state["request_mutation"])
+                    (job / "request.json").write_text(json.dumps(request), encoding="utf-8")
+                    scheduler = {"schema": 1, "job_id": DESKTOP_JOB_ID, "task_id": state["task_id"], "state": "submitted",
+                                 "instance_guid": "87654321-4321-4321-4321-abcdef123456", "submitted_utc": submitted, "error": None}
+                    (job / "scheduler.json").write_text(json.dumps(scheduler), encoding="utf-8")
+                    native = {"schema": 1, "job_id": DESKTOP_JOB_ID, "task_id": state["task_id"], "state": state["state"],
+                              "started_at_utc": now(), "pid": 4242, "session_id": 1, "executable": "mc_main.exe",
+                              "executable_sha256": build["executable_sha256"], "timeout_seconds": 450,
+                              "exit_code": state["exit_code"] if state["state"] != "running" else None, "error": None}
+                    if state["report"] is not None and state["state"] != "running":
+                        (app / parameters["arguments"][-1]).write_text(json.dumps(state["report"]), encoding="utf-8")
+                    if state["state"] != "running":
+                        native["finished_at_utc"] = now()
+                    state["native"] = native
+                    (job / "status.json").write_text(json.dumps(native), encoding="utf-8")
+                    for name in ("stdout.log", "stderr.log"):
+                        (job / name).write_text("", encoding="utf-8")
+                    (job / "broker.log").write_text(
+                        f"{submitted} validated job={DESKTOP_JOB_ID} task={state['task_id']} sha256={build['executable_sha256']}\n"
+                        f"{native['started_at_utc']} started job={DESKTOP_JOB_ID} pid=4242 session_id=1\n"
+                        f"{now()} finished job={DESKTOP_JOB_ID} state={state['state']} pid=4242 session_id=1 exit_code={state['exit_code']} error=\n",
+                        encoding="utf-8")
+                    if state.get("after_submit"):
+                        state["after_submit"](state, root, package, app)
+                    if state.get("submit_error"):
+                        raise state["submit_error"]
+                    return state.get("submission", {"schema": 1, "job_id": DESKTOP_JOB_ID, "task_id": state["task_id"], "state": "submitted"})
+                self.assertEqual(parameters["job_id"], DESKTOP_JOB_ID)
+                if operation == "Cancel":
+                    if state.get("cancel_error"):
+                        raise state["cancel_error"]
+                    state["cancelled"] = True
+                    response = "already-terminal"
+                    if state["native"]["state"] == "running":
+                        state["native"].update(state="cancelled", exit_code=-9, finished_at_utc=now())
+                        (job / "status.json").write_text(json.dumps(state["native"]), encoding="utf-8")
+                        response = "cancel-requested"
+                    return {"schema": 1, "job_id": DESKTOP_JOB_ID, "state": response}
+                if state.get("poll_error") and not state["cancelled"]:
+                    raise state["poll_error"]
+                if state.get("after_status") and not state["cancelled"]:
+                    state["after_status"](state, root, package, app)
+                    state["after_status"] = None
+                status = copy.deepcopy(state["native"])
+                if not state["cancelled"]:
+                    status.update(state["status_mutation"])
+                return status
+
+            helpers = {name: {"path": str(helper / "bin" / name), "size": 1, "sha256": digest}
+                       for name, digest in self.gate.DESKTOP_HELPERS.items()}
+            patches.enter_context(mock.patch.object(self.gate, "DESKTOP_ROOT", helper))
+            patches.enter_context(mock.patch.object(self.gate, "desktop_helper_identity", return_value=helpers))
+            patches.enter_context(mock.patch.object(self.gate, "build_identity", return_value=build))
+            patches.enter_context(mock.patch.object(self.gate._MATRIX, "candidate_identity", return_value=CANDIDATE))
+            patches.enter_context(mock.patch.object(self.gate.sys, "platform", "win32"))
+            patches.enter_context(mock.patch.object(self.gate.os, "environ", {}))
+            patches.enter_context(mock.patch.object(self.gate, "desktop_client", side_effect=client))
+            patches.enter_context(mock.patch.object(self.gate.subprocess, "Popen", side_effect=AssertionError("direct native launch forbidden")))
+            patches.enter_context(contextlib.redirect_stdout(io.StringIO()))
+            yield {"root": root, "aggregate": aggregate, "executable": original, "receipt": receipt, "package": package,
+                   "manifest": manifest, "build": build, "helper": helper, "state": state, "inputs": inputs}
+
 
     def report(self, platform="macos", interval_ns=None, movement_interval_ns=None):
         interval = interval_ns or (8000000 if platform == "macos" else 2000000)
@@ -116,6 +270,10 @@ class VerifyGameplayGateTests(unittest.TestCase):
                          "executable": executable_identity, "report": self.gate.file_identity(report), "warmup_seconds": 180,
                          "command": [str(executable), *self.gate.benchmark_arguments(platform, 180, str(report))],
                          "exit_code": 0, "timed_out": False, "environment": {}})
+            if platform == "macos":
+                package, manifest = self.macos_package(root, executable)
+                rows[-1].update(macos_runtime=self.macos_runtime(package, manifest), native_report_path=str(report),
+                                actual_command=[str(package / "MinecraftClone.command"), *rows[-1]["command"][1:]])
         return {"schema_version": self.gate.SCHEMA, "rows": rows}
 
     def reconcile_raw_totals(self, report):
@@ -574,11 +732,18 @@ class VerifyGameplayGateTests(unittest.TestCase):
                     mock.patch.object(self.gate, "build_identity", return_value=row["build"]) as identity, \
                     mock.patch.object(self.gate._MATRIX, "candidate_identity", return_value=CANDIDATE), \
                     mock.patch.object(self.gate.subprocess, "Popen", side_effect=launch), contextlib.redirect_stdout(io.StringIO()):
-                self.gate.record(root, receipt, "macos", Path(row["executable"]["path"]), 180)
+                self.record_macos(root, receipt, Path(row["executable"]["path"]))
             captured = json.loads(receipt.read_text(encoding="utf-8"))["rows"][0]
             self.assertEqual(identity.call_count, 2)
             self.assertEqual(captured["build"], row["build"])
             self.assertEqual(captured["report"], self.gate.file_identity(receipt.with_suffix(".raw.json")))
+            self.assertNotIn("transport", captured)
+            self.assertEqual(captured["command"], [row["executable"]["path"],
+                                                   *self.gate.benchmark_arguments("macos", 180, str(receipt.with_suffix(".raw.json")))])
+            self.assertEqual(captured["actual_command"], [str(receipt.with_suffix(".macos").resolve() / "MinecraftClone.command"),
+                                                       *captured["command"][1:-1], captured["native_report_path"]])
+            self.assertNotEqual(captured["native_report_path"], captured["command"][-1])
+            self.assertFalse(Path(captured["native_report_path"]).parent.exists())
 
     def test_capture_merge_and_verify_apply_the_same_invocation_policy(self):
         for policy in self.gate.CADENCE_POLICIES:
@@ -596,6 +761,7 @@ class VerifyGameplayGateTests(unittest.TestCase):
                     return process
 
                 expected = 0 if policy == "snapshot" else 1
+                package, manifest = self.macos_package(root, Path(mac_row["executable"]["path"]))
                 common = ["--root", str(root), "--cadence-policy", policy]
                 with mock.patch.object(self.gate.sys, "platform", "darwin"), mock.patch.object(self.gate.os, "environ", {}), \
                         mock.patch.object(self.gate, "build_identity", return_value=mac_row["build"]), \
@@ -603,6 +769,7 @@ class VerifyGameplayGateTests(unittest.TestCase):
                         mock.patch.object(self.gate.subprocess, "Popen", side_effect=launch), \
                         contextlib.redirect_stdout(io.StringIO()) as capture_output, contextlib.redirect_stderr(io.StringIO()):
                     self.assertEqual(self.gate.main([*common, "--record", "macos", "--receipt", str(mac_receipt),
+                                                     "--macos-package", str(package), "--macos-package-manifest", str(manifest),
                                                      "--executable", mac_row["executable"]["path"]]), expected)
                 if policy == "snapshot":
                     self.assertEqual(json.loads(capture_output.getvalue().splitlines()[-1])["request_cadence_status"], "failed")
@@ -637,7 +804,7 @@ class VerifyGameplayGateTests(unittest.TestCase):
                     mock.patch.object(self.gate, "build_identity", side_effect=[row["build"], changed]), \
                     mock.patch.object(self.gate.subprocess, "Popen", side_effect=launch), contextlib.redirect_stdout(io.StringIO()):
                 with self.assertRaisesRegex(self.gate.GameplayError, "changed during capture"):
-                    self.gate.record(root, receipt, "macos", Path(row["executable"]["path"]), 180)
+                    self.record_macos(root, receipt, Path(row["executable"]["path"]))
             self.assertTrue(receipt.with_suffix(".raw.json").is_file())
             self.assertFalse(receipt.exists())
 
@@ -656,7 +823,11 @@ class VerifyGameplayGateTests(unittest.TestCase):
                 "Z_VCPKG_ROOT_DIR:INTERNAL=/dependencies/vcpkg\nVCPKG_INSTALLED_DIR:PATH=/dependencies/installed\n"
                 "CMAKE_PREFIX_PATH:STRING=/dependencies/private\n", encoding="utf-8")
             with mock.patch.object(self.gate.subprocess, "run", return_value=mock.Mock(returncode=0, stdout="ninja: no work to do.\n")) as run, \
-                    mock.patch.object(self.gate._MATRIX, "_external_dependency_identity", return_value={"consumed_files_sha256": "e" * 64}) as dependencies:
+                    mock.patch.object(self.gate._MATRIX, "_external_dependency_identity", return_value={
+                        "VCPKG_ROOT": {"revision": "vcpkg"},
+                        "VCPKG_INSTALLED_DIR": {"digest": "installed"},
+                        "MC_PRIVATE_DEPENDENCIES_PREFIX": {"path": "/dependencies/private", "digest": "e" * 64},
+                    }) as dependencies:
                 identity = self.gate.build_identity(root, build_root, executable)
                 run.assert_called_once_with(["/tools/ninja", "-n", "-v", "mc_main"], cwd=build_root, capture_output=True, text=True, timeout=60)
                 self.assertEqual(identity["executable_sha256"], row["executable"]["sha256"])
@@ -687,7 +858,7 @@ class VerifyGameplayGateTests(unittest.TestCase):
                     mock.patch.object(self.gate._MATRIX, "candidate_identity", return_value=CANDIDATE), \
                     mock.patch.object(self.gate.subprocess, "Popen", side_effect=launch), contextlib.redirect_stdout(io.StringIO()):
                 with self.assertRaisesRegex(self.gate.GameplayError, "retained failure receipt"):
-                    self.gate.record(root, receipt, "macos", Path(row["executable"]["path"]), 180)
+                    self.record_macos(root, receipt, Path(row["executable"]["path"]))
             captured = json.loads(receipt.read_text(encoding="utf-8"))["rows"][0]
             self.assertEqual(captured["exit_code"], 1)
             self.assertEqual(json.loads(receipt.with_suffix(".raw.json").read_text(encoding="utf-8"))["failure"], "terrain warmup timeout")
@@ -705,12 +876,13 @@ class VerifyGameplayGateTests(unittest.TestCase):
                         mock.patch.object(self.gate._MATRIX, "candidate_identity", return_value=CANDIDATE), \
                         mock.patch.object(self.gate.subprocess, "Popen", return_value=process), contextlib.redirect_stdout(io.StringIO()):
                     with self.assertRaisesRegex(self.gate.GameplayError, "retained failure receipt.*report is absent"):
-                        self.gate.record(root, receipt, "macos", Path(row["executable"]["path"]), 180)
+                        self.record_macos(root, receipt, Path(row["executable"]["path"]))
                 captured = json.loads(receipt.read_text(encoding="utf-8"))["rows"][0]
                 self.assertEqual(captured["exit_code"], exit_code)
                 self.assertFalse(captured["timed_out"])
                 self.assertIsNone(captured["report"])
                 self.assertEqual(captured["capture_error"], "native report is absent")
+                self.assertFalse(Path(captured["native_report_path"]).parent.exists())
                 self.assertEqual(captured["build"], row["build"])
                 self.assertEqual(captured["command"][-1], str(receipt.with_suffix(".raw.json")))
 
@@ -728,7 +900,7 @@ class VerifyGameplayGateTests(unittest.TestCase):
                     mock.patch.object(self.gate.subprocess, "Popen", return_value=process), \
                     mock.patch.object(self.gate.time, "monotonic", side_effect=[0, 451, 451]), contextlib.redirect_stdout(io.StringIO()):
                 with self.assertRaisesRegex(self.gate.GameplayError, "retained failure receipt.*report is absent"):
-                    self.gate.record(root, receipt, "macos", Path(row["executable"]["path"]), 180)
+                    self.record_macos(root, receipt, Path(row["executable"]["path"]))
             captured = json.loads(receipt.read_text(encoding="utf-8"))["rows"][0]
             self.assertTrue(captured["timed_out"])
             self.assertEqual(captured["exit_code"], -9)
@@ -742,10 +914,10 @@ class VerifyGameplayGateTests(unittest.TestCase):
             aggregate = self.aggregate(root)
             inputs = []
             for row in aggregate["rows"]:
+                partial = Path(row["report"]["path"]).parent / "capture.json"
                 if row["platform"] == "windows":
                     row["executable"]["path"] = r"C:\capture\mc_main.exe"
                     row["report"]["path"] = r"C:\capture\report.json"
-                partial = root / row["platform"] / "capture.json"
                 partial.write_text(json.dumps({"schema_version": self.gate.SCHEMA, "rows": [row]}), encoding="utf-8")
                 inputs.append(partial)
             output = root / "aggregate.json"
@@ -888,6 +1060,712 @@ class VerifyGameplayGateTests(unittest.TestCase):
         bands[4]["resident"] = 4
         with self.assertRaisesRegex(self.gate.GameplayError, "do not reconcile"):
             self.gate.verify_terrain_radial_scan(bands, 2_345_000)
+
+    def test_direct_capture_does_not_follow_raw_link_inserted_during_build_identity(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            row = self.aggregate(root)["rows"][0]
+            receipt, target = root / "captured.json", root / "unapproved.json"
+            launched_report = []
+            processes = []
+            def identity(*arguments):
+                report = receipt.with_suffix(".raw.json")
+                if not report.is_symlink():
+                    report.symlink_to(target)
+                return row["build"]
+            def launch(command, cwd):
+                native_report = Path(command[-1])
+                self.assertNotEqual(native_report, receipt.with_suffix(".raw.json"))
+                launched_report.append(native_report)
+                native_report.write_text(json.dumps(self.report()), encoding="utf-8")
+                process = mock.Mock(returncode=0)
+                process.poll.return_value = 0
+                processes.append(process)
+                return process
+            with mock.patch.object(self.gate.sys, "platform", "darwin"), mock.patch.object(self.gate.os, "environ", {}), \
+                    mock.patch.object(self.gate, "build_identity", side_effect=identity), \
+                    mock.patch.object(self.gate._MATRIX, "candidate_identity", return_value=CANDIDATE), \
+                    mock.patch.object(self.gate.subprocess, "Popen", side_effect=launch), contextlib.redirect_stdout(io.StringIO()):
+                with self.assertRaisesRegex(self.gate.GameplayError, "retained failure receipt.*transport artifact already exists"):
+                    self.record_macos(root, receipt, Path(row["executable"]["path"]))
+            self.assertFalse(target.exists())
+            self.assertTrue(receipt.with_suffix(".raw.json").is_symlink())
+            failure = self.gate.read_json(receipt)["rows"][0]
+            self.assertIsNone(failure["report"])
+            self.assertIn("transport artifact already exists", failure["capture_error"])
+            self.assertEqual(len(launched_report), 1)
+            self.assertTrue(launched_report[0].is_file())
+            self.assertEqual(launched_report[0].read_bytes(), json.dumps(self.report()).encode("utf-8"))
+            self.assertEqual(failure["failed_report"], self.gate.file_identity(launched_report[0]))
+            self.assertEqual(launched_report[0].parent.parent, receipt.parent)
+            self.assertEqual(processes[0].poll(), 0)
+
+
+    def test_verify_rejects_actual_command_changes_beyond_report_relocation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            aggregate = self.aggregate(root)
+            row = aggregate["rows"][0]
+            row["native_report_path"] = str(root / "private/native.raw.json")
+            row["actual_command"] = [row["actual_command"][0], *row["command"][1:-1], row["native_report_path"]]
+            receipt = root / "receipt.json"
+            for mutation in ("arguments", "missing path", "missing command"):
+                changed = copy.deepcopy(aggregate)
+                current = changed["rows"][0]
+                if mutation == "arguments":
+                    current["actual_command"][1] = "--unapproved"
+                elif mutation == "missing path":
+                    del current["native_report_path"]
+                else:
+                    del current["actual_command"]
+                receipt.write_text(json.dumps(changed), encoding="utf-8")
+                with self.subTest(mutation=mutation), self.assertRaisesRegex(self.gate.GameplayError, "actual capture command"):
+                    self.gate.verify_receipt(root, receipt)
+
+
+    def test_verify_accepts_transported_windows_actual_report_path(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            aggregate = self.aggregate(root)
+            row = aggregate["rows"][1]
+            row["native_report_path"] = r"C:\Users\capture\Temp\mc-gameplay-capture-owned\native.raw.json"
+            row["actual_command"] = [*row["command"][:-1], row["native_report_path"]]
+            receipt = root / "receipt.json"
+            receipt.write_text(json.dumps(aggregate), encoding="utf-8")
+            self.assertEqual(set(self.gate.verify_receipt(root, receipt)), {"macos", "windows"})
+
+
+    def test_direct_capture_interruption_stops_owned_child_before_retaining_raw(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            row = self.aggregate(root)["rows"][0]
+            receipt = root / "interrupted.json"
+            process = mock.Mock(returncode=-9)
+            process.poll.return_value = None
+            process.wait.side_effect = [KeyboardInterrupt(), None]
+            def launch(command, cwd):
+                Path(command[-1]).write_bytes(b"partial native evidence")
+                return process
+            with mock.patch.object(self.gate.sys, "platform", "darwin"), mock.patch.object(self.gate.os, "environ", {}), \
+                    mock.patch.object(self.gate, "build_identity", return_value=row["build"]), \
+                    mock.patch.object(self.gate.subprocess, "Popen", side_effect=launch), contextlib.redirect_stdout(io.StringIO()):
+                with self.assertRaises(KeyboardInterrupt):
+                    self.record_macos(root, receipt, Path(row["executable"]["path"]))
+            process.kill.assert_called_once_with()
+            self.assertEqual(process.wait.call_count, 2)
+            retained = list(root.glob("mc-gameplay-capture-*/native.raw.json"))
+            self.assertEqual(len(retained), 1)
+            self.assertEqual(retained[0].read_bytes(), b"partial native evidence")
+
+
+    def test_build_capture_fingerprints_each_cmake_prefix_in_order(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            row = self.aggregate(root)["rows"][0]
+            executable = Path(row["executable"]["path"])
+            build_root = executable.parent
+            (build_root / "CMakeFiles").mkdir()
+            for name in ("build.ninja", "CMakeFiles/rules.ninja", "compile_commands.json"):
+                (build_root / name).write_text("fixture", encoding="utf-8")
+            prefixes = ["/dependencies/corecpp", "/dependencies/coreproject", "/dependencies/vcpkg"]
+            (build_root / "CMakeCache.txt").write_text(
+                f"CMAKE_GENERATOR:INTERNAL=Ninja\nCMAKE_BUILD_TYPE:STRING=Release\nCMAKE_HOME_DIRECTORY:INTERNAL={root}\n"
+                "MC_ENABLE_SANITIZERS:BOOL=OFF\nMC_ALLOW_INEXACT_CORECPP:BOOL=OFF\nCMAKE_MAKE_PROGRAM:FILEPATH=/tools/ninja\n"
+                "Z_VCPKG_ROOT_DIR:INTERNAL=/dependencies/vcpkg-root\nVCPKG_INSTALLED_DIR:PATH=/dependencies/installed\n"
+                f"CMAKE_PREFIX_PATH:STRING={';'.join(prefixes)}\n", encoding="utf-8")
+
+            def dependency_identity(_root, _row, environment):
+                prefix = environment["MC_PRIVATE_DEPENDENCIES_PREFIX"]
+                return {
+                    "VCPKG_ROOT": {"revision": "vcpkg"},
+                    "VCPKG_INSTALLED_DIR": {"digest": "installed"},
+                    "MC_PRIVATE_DEPENDENCIES_PREFIX": {"path": prefix, "digest": str(len(prefix))},
+                }
+
+            with mock.patch.object(self.gate.subprocess, "run", return_value=mock.Mock(returncode=0, stdout="ninja: no work to do.\n")), \
+                    mock.patch.object(self.gate._MATRIX, "_external_dependency_identity", side_effect=dependency_identity) as dependencies:
+                identity = self.gate.build_identity(root, build_root, executable)
+
+            self.assertEqual(
+                [call.args[2]["MC_PRIVATE_DEPENDENCIES_PREFIX"] for call in dependencies.call_args_list], prefixes
+            )
+            expected_dependencies = {
+                "VCPKG_ROOT": {"revision": "vcpkg"},
+                "VCPKG_INSTALLED_DIR": {"digest": "installed"},
+                "CMAKE_PREFIX_PATH": [
+                    {"path": prefix, "digest": str(len(prefix))} for prefix in prefixes
+                ],
+            }
+            expected_digest = self.gate.hashlib.sha256(
+                self.gate._MATRIX._canonical_json(expected_dependencies)
+            ).hexdigest()
+            self.assertEqual(identity["dependency_sha256"], expected_digest)
+
+
+    def test_desktop_capture_binds_native_session_and_every_original_runtime_input(self):
+        with self.desktop_capture() as capture:
+            self.record_desktop(capture)
+            row = json.loads(capture["receipt"].read_text(encoding="utf-8"))["rows"][0]
+            transport = row["transport"]
+            self.assertEqual(transport["original_executable"], self.gate.file_identity(capture["executable"]))
+            self.assertNotEqual(row["command"][0], transport["original_executable"]["path"])
+            self.assertEqual(row["command"][-1], "capture.raw.json")
+            self.assertEqual(transport["terminal_status"]["pid"], 4242)
+            self.assertEqual(transport["terminal_status"]["session_id"], 1)
+            self.assertEqual(transport["build_after"], row["build"])
+            self.assertEqual(transport["package_before"], transport["package_after"])
+            self.assertEqual(len(transport["copied_inputs"]), 4)
+            self.gate.verify_desktop_transport(row, capture["root"])
+            self.assertEqual([operation for operation, _ in capture["state"]["calls"]], ["Submit", "Status"])
+
+
+    def test_desktop_transport_merge_preserves_native_job_and_copied_closure_paths(self):
+        with self.desktop_capture() as capture:
+            self.record_desktop(capture)
+            original = json.loads(capture["receipt"].read_text(encoding="utf-8"))["rows"][0]
+            moved = capture["root"] / "transported"
+            moved.mkdir()
+            shutil.copyfile(capture["receipt"], moved / "capture.json")
+            shutil.copyfile(capture["receipt"].with_suffix(".raw.json"), moved / "capture.raw.json")
+            shutil.copytree(capture["receipt"].with_suffix(".desktop"), moved / "capture.desktop")
+            mac = capture["aggregate"]["rows"][0]
+            mac["source_input_sha256"] = capture["build"]["source_input_sha256"]
+            mac["build"]["source_input_sha256"] = capture["build"]["source_input_sha256"]
+            mac_receipt = moved / "mac.json"
+            mac_receipt.write_text(json.dumps({"schema_version": self.gate.SCHEMA, "rows": [mac]}), encoding="utf-8")
+            merged = moved / "aggregate.json"
+            inputs = [mac_receipt, moved / "capture.json"]
+            for index, row in enumerate(capture["aggregate"]["rows"][2:]):
+                row["source_input_sha256"] = capture["build"]["source_input_sha256"]
+                row["build"]["source_input_sha256"] = capture["build"]["source_input_sha256"]
+                row["build"] = copy.deepcopy(mac["build"] if row["platform"] == "macos" else original["build"])
+                partial = moved / f"coverage-{index}.json"
+                partial.write_text(json.dumps({"schema_version": self.gate.SCHEMA, "rows": [row]}), encoding="utf-8")
+                inputs.append(partial)
+            self.gate.merge_receipts(capture["root"], inputs, merged)
+            row = json.loads(merged.read_text(encoding="utf-8"))["rows"][1]
+            self.assertEqual(row["command"], original["command"])
+            self.assertEqual(row["transport"]["job_id"], DESKTOP_JOB_ID)
+            self.assertEqual(Path(row["executable"]["path"]), moved / "capture.desktop/app/mc_main.exe")
+
+
+    def test_desktop_manifest_rejects_drive_absolute_traversal_and_duplicate_inputs(self):
+        for relative in ("../mc_main.exe", "..\\mc_main.exe", "/mc_main.exe", r"C:\private\mc_main.exe", "mc_main.exe:stream"):
+            with self.subTest(relative=relative), self.desktop_capture() as capture:
+                entries = self.gate.read_json(capture["manifest"])
+                entries[0]["relative"] = relative
+                capture["manifest"].write_text(json.dumps(entries), encoding="utf-8")
+                with self.assertRaises(self.gate.GameplayError):
+                    self.record_desktop(capture)
+                self.assertEqual(capture["state"]["calls"], [])
+        with self.desktop_capture() as capture:
+            entries = self.gate.read_json(capture["manifest"])
+            entries.append({**entries[0], "relative": "MC_MAIN.EXE"})
+            capture["manifest"].write_text(json.dumps(entries), encoding="utf-8")
+            with self.assertRaisesRegex(self.gate.GameplayError, "duplicate"):
+                self.record_desktop(capture)
+
+
+    def test_desktop_manifest_rejects_malformed_field_types_and_unknown_schema(self):
+        for mutation in ({"size": True}, {"size": 1.0}, {"sha256": "A" * 64}, {"sha256": None}, {"unknown": 1}):
+            with self.subTest(mutation=mutation), self.desktop_capture() as capture:
+                entries = self.gate.read_json(capture["manifest"])
+                entries[0].update(mutation)
+                capture["manifest"].write_text(json.dumps(entries), encoding="utf-8")
+                with self.assertRaises(self.gate.GameplayError):
+                    self.record_desktop(capture)
+                self.assertEqual(capture["state"]["calls"], [])
+
+
+    def test_desktop_package_rejects_unlisted_private_file_and_directory(self):
+        for name, directory in (("private-source.cpp", False), (".git", True)):
+            with self.subTest(name=name), self.desktop_capture() as capture:
+                target = capture["package"] / name
+                if directory:
+                    target.mkdir()
+                else:
+                    target.write_bytes(b"private")
+                with self.assertRaisesRegex(self.gate.GameplayError, "inventory|non-runtime directory"):
+                    self.record_desktop(capture)
+                self.assertEqual(capture["state"]["calls"], [])
+
+
+    def test_desktop_package_rejects_original_and_package_links(self):
+        for role in ("original", "package"):
+            with self.subTest(role=role), self.desktop_capture() as capture:
+                target = capture["inputs"]["fmt.dll"] if role == "original" else capture["package"] / "fmt.dll"
+                backing = target.with_suffix(".saved")
+                target.rename(backing)
+                target.symlink_to(backing)
+                with self.assertRaisesRegex(self.gate.GameplayError, "reparse"):
+                    self.record_desktop(capture)
+                self.assertEqual(capture["state"]["calls"], [])
+
+
+    def test_desktop_package_requires_exact_original_executable_dll_shader_and_asset(self):
+        for relative in ("mc_main.exe", "fmt.dll", "shaders/stone.vert.spv", "assets/textures/stone/default_stone.png"):
+            with self.subTest(relative=relative), self.desktop_capture() as capture:
+                capture["inputs"][relative].write_bytes(b"altered original")
+                with self.assertRaisesRegex(self.gate.GameplayError, "disagrees with original"):
+                    self.record_desktop(capture)
+                self.assertEqual(capture["state"]["calls"], [])
+
+
+    def test_desktop_capture_keeps_failure_receipt_on_source_build_dependency_drift(self):
+        for field in ("source_input_sha256", "executable_sha256", "configuration_sha256", "dependency_sha256"):
+            with self.subTest(field=field), self.desktop_capture() as capture:
+                changed = {**capture["build"], field: "f" * 64}
+                with mock.patch.object(self.gate, "build_identity", side_effect=[capture["build"], changed]):
+                    with self.assertRaisesRegex(self.gate.GameplayError, "retained failure receipt.*changed during capture"):
+                        self.record_desktop(capture)
+                row = self.gate.read_json(capture["receipt"])["rows"][0]
+                self.assertEqual(row["transport"]["build_after"], changed)
+                self.assertTrue(capture["receipt"].with_suffix(".raw.json").is_file())
+
+
+    def test_desktop_capture_rejects_dangling_output_links_before_submission(self):
+        for output in ("raw report", "retained directory"):
+            with self.subTest(output=output), self.desktop_capture() as capture:
+                target = capture["root"] / "unapproved-target"
+                destination = capture["receipt"].with_suffix(".raw.json" if output == "raw report" else ".desktop")
+                destination.symlink_to(target, target_is_directory=output == "retained directory")
+                with self.assertRaisesRegex(self.gate.GameplayError, "raw capture path already exists|desktop transport output already exists"):
+                    self.record_desktop(capture)
+                self.assertFalse(target.exists())
+                self.assertEqual(capture["state"]["calls"], [])
+
+
+    def test_transport_copy_rejects_dangling_destination_link_without_following_it(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            source, target = root / "source.log", root / "retained.log"
+            unapproved = root / "unapproved.log"
+            source.write_bytes(b"retained")
+            target.symlink_to(unapproved)
+            with self.assertRaisesRegex(self.gate.GameplayError, "transport artifact already exists"):
+                self.gate.copy_transport_file(source, target, root)
+            self.assertFalse(unapproved.exists())
+
+
+    def test_record_cli_rejects_dangling_receipt_link_before_submission(self):
+        with self.desktop_capture() as capture:
+            target = capture["root"] / "unapproved.json"
+            capture["receipt"].symlink_to(target)
+            with contextlib.redirect_stderr(io.StringIO()) as errors:
+                result = self.gate.main(["--root", str(capture["root"]), "--receipt", str(capture["receipt"]),
+                                         "--record", "windows", "--executable", str(capture["executable"]),
+                                         "--desktop-package", str(capture["package"]),
+                                         "--desktop-package-manifest", str(capture["manifest"]),
+                                         "--desktop-task-id", DESKTOP_TASK_ID])
+            self.assertEqual(result, 1)
+            self.assertIn("output receipt already exists", errors.getvalue())
+            self.assertTrue(capture["receipt"].is_symlink())
+            for receipt in (target, capture["receipt"]):
+                self.assertFalse(receipt.exists())
+                self.assertFalse(receipt.with_suffix(".raw.json").exists())
+                self.assertFalse(receipt.with_suffix(".desktop").exists())
+            self.assertEqual(capture["state"]["calls"], [])
+
+
+    def test_merge_cli_rejects_dangling_receipt_link_without_writing_target(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            aggregate = self.aggregate(root)
+            inputs = [root / f"{row['platform']}.json" for row in aggregate["rows"]]
+            for receipt, row in zip(inputs, aggregate["rows"]):
+                receipt.write_text(json.dumps({"schema_version": self.gate.SCHEMA, "rows": [row]}), encoding="utf-8")
+            output, target = root / "merged.json", root / "unapproved.json"
+            output.symlink_to(target)
+            with contextlib.redirect_stderr(io.StringIO()) as errors:
+                result = self.gate.main(["--root", str(root), "--receipt", str(output), "--merge", *map(str, inputs)])
+            self.assertEqual(result, 1)
+            self.assertIn("output receipt already exists", errors.getvalue())
+            self.assertTrue(output.is_symlink())
+            self.assertFalse(target.exists())
+            self.assertFalse(target.with_suffix(".raw.json").exists())
+            self.assertFalse(target.with_suffix(".desktop").exists())
+            with self.assertRaisesRegex(self.gate.GameplayError, "aggregate receipt already exists"):
+                self.gate.merge_receipts(root, inputs, output)
+            self.assertFalse(target.exists())
+
+
+    def test_record_cli_rejects_receipt_link_inserted_after_cli_precheck(self):
+        with self.desktop_capture() as capture:
+            target = capture["root"] / "unapproved.json"
+            exists = self.gate.path_entry_exists
+            def insert_after_check(destination):
+                present = exists(destination)
+                if destination == capture["receipt"] and not present:
+                    destination.symlink_to(target)
+                return present
+            with mock.patch.object(self.gate, "path_entry_exists", side_effect=insert_after_check), \
+                    contextlib.redirect_stderr(io.StringIO()):
+                result = self.gate.main(["--root", str(capture["root"]), "--receipt", str(capture["receipt"]),
+                                         "--record", "windows", "--executable", str(capture["executable"])])
+            self.assertEqual(result, 1)
+            self.assertFalse(target.exists())
+            self.assertFalse(target.with_suffix(".raw.json").exists())
+            self.assertEqual(capture["state"]["calls"], [])
+
+
+    def test_desktop_capture_exclusive_receipt_write_rejects_late_link(self):
+        def insert_after_submission(state, root, package, app):
+            (root / "capture.json").symlink_to(root / "unapproved.json")
+        with self.desktop_capture(after_submit=insert_after_submission) as capture:
+            with self.assertRaises(FileExistsError):
+                self.record_desktop(capture)
+            self.assertFalse((capture["root"] / "unapproved.json").exists())
+            self.assertTrue(capture["receipt"].is_symlink())
+
+
+    def test_merge_rejects_receipt_link_inserted_after_precheck(self):
+        for invocation in ("cli", "direct"):
+            with self.subTest(invocation=invocation), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory).resolve()
+                aggregate = self.aggregate(root)
+                inputs = [root / f"{row['platform']}.json" for row in aggregate["rows"]]
+                for receipt, row in zip(inputs, aggregate["rows"]):
+                    receipt.write_text(json.dumps({"schema_version": self.gate.SCHEMA, "rows": [row]}), encoding="utf-8")
+                output, target = root / "merged.json", root / "unapproved.json"
+                exists = self.gate.path_entry_exists
+                def insert_after_check(destination):
+                    present = exists(destination)
+                    if destination == output and not present:
+                        destination.symlink_to(target)
+                    return present
+                with mock.patch.object(self.gate, "path_entry_exists", side_effect=insert_after_check), \
+                        contextlib.redirect_stderr(io.StringIO()):
+                    if invocation == "cli":
+                        self.assertEqual(self.gate.main(["--root", str(root), "--receipt", str(output),
+                                                         "--merge", *map(str, inputs)]), 1)
+                    else:
+                        with self.assertRaises(FileExistsError):
+                            self.gate.merge_receipts(root, inputs, output)
+                self.assertTrue(output.is_symlink())
+                self.assertFalse(target.exists())
+                self.assertFalse(target.with_suffix(".raw.json").exists())
+                self.assertFalse(target.with_suffix(".desktop").exists())
+
+
+    def test_desktop_capture_keeps_native_report_on_original_package_and_copy_drift(self):
+        for role in ("original", "package", "copy"):
+            def mutate(state, root, package, app):
+                target = root / "windows/fmt.dll" if role == "original" else (package if role == "package" else app) / "fmt.dll"
+                target.write_bytes(b"altered runtime")
+            with self.subTest(role=role), self.desktop_capture(after_submit=mutate) as capture:
+                with self.assertRaisesRegex(self.gate.GameplayError, "retained failure receipt.*runtime|retained failure receipt.*original"):
+                    self.record_desktop(capture)
+                row = self.gate.read_json(capture["receipt"])["rows"][0]
+                self.assertEqual(row["exit_code"], 0)
+                self.assertIsNotNone(row["report"])
+                self.assertTrue(row["capture_error"])
+
+
+    def test_desktop_capture_checks_copied_runtime_closure_before_and_after_native_run(self):
+        def mutate(state, root, package, app):
+            (app / "shaders/stone.vert.spv").write_bytes(b"changed during native run")
+        with self.desktop_capture(after_status=mutate) as capture:
+            with self.assertRaisesRegex(self.gate.GameplayError, "retained failure receipt.*runtime closure changed"):
+                self.record_desktop(capture)
+            row = self.gate.read_json(capture["receipt"])["rows"][0]
+            self.assertIsNotNone(row["report"])
+            self.assertNotEqual(row["transport"]["copied_before"], row["transport"]["copied_after"])
+
+
+    def test_desktop_capture_rejects_manifest_bytes_and_installed_helper_drift(self):
+        def mutate(state, root, package, app):
+            manifest = root / "package.json"
+            manifest.write_bytes(manifest.read_bytes() + b"\n")
+        with self.desktop_capture(after_status=mutate) as capture:
+            with self.assertRaisesRegex(self.gate.GameplayError, "retained failure receipt.*manifest changed"):
+                self.record_desktop(capture)
+        with self.desktop_capture() as capture:
+            helpers = self.gate.desktop_helper_identity()
+            changed = copy.deepcopy(helpers)
+            changed["windows-interactive-client.ps1"]["sha256"] = "f" * 64
+            with mock.patch.object(self.gate, "desktop_helper_identity", side_effect=[helpers, changed]):
+                with self.assertRaisesRegex(self.gate.GameplayError, "retained failure receipt.*helper identity drift"):
+                    self.record_desktop(capture)
+
+
+    def test_desktop_capture_rejects_stale_malformed_status_and_cancels_only_owned_job(self):
+        mutations = ({"schema": True}, {"schema": 2}, {"job_id": "bad"}, {"job_id": "87654321-4321-4321-4321-abcdef123456"},
+                     {"task_id": "old-task"}, {"executable": "recorder.exe"}, {"executable_sha256": "f" * 64},
+                     {"timeout_seconds": True}, {"session_id": 0}, {"pid": 0}, {"exit_code": True}, {"state": "unknown"})
+        for mutation in mutations:
+            with self.subTest(mutation=mutation), self.desktop_capture(status_mutation=mutation) as capture:
+                with self.assertRaisesRegex(self.gate.GameplayError, "retained failure receipt"):
+                    self.record_desktop(capture)
+                calls = capture["state"]["calls"]
+                self.assertEqual(sum(operation == "Submit" for operation, _ in calls), 1)
+                self.assertEqual([parameters["job_id"] for operation, parameters in calls if operation == "Cancel"], [DESKTOP_JOB_ID])
+                row = self.gate.read_json(capture["receipt"])["rows"][0]
+                self.assertTrue(row["transport"]["cleanup"]["terminal_observed"])
+
+
+    def test_desktop_capture_rejects_altered_native_arguments(self):
+        with self.desktop_capture(request_mutation={"arguments": ["--diagnostic"]}) as capture:
+            with self.assertRaisesRegex(self.gate.GameplayError, "retained failure receipt.*native gameplay command"):
+                self.record_desktop(capture)
+            row = self.gate.read_json(capture["receipt"])["rows"][0]
+            self.assertIsNotNone(row["report"])
+            self.assertTrue(row["transport"]["cleanup"]["terminal_observed"])
+
+
+    def test_desktop_capture_retains_missing_report_failure_with_native_exit_zero(self):
+        with self.desktop_capture(report=None) as capture:
+            with self.assertRaisesRegex(self.gate.GameplayError, "retained failure receipt.*native report is absent"):
+                self.record_desktop(capture)
+            row = self.gate.read_json(capture["receipt"])["rows"][0]
+            self.assertEqual(row["exit_code"], 0)
+            self.assertIsNone(row["report"])
+            self.assertFalse(row["timed_out"])
+
+
+    def test_desktop_capture_requires_actual_native_diagnostic_environment_false(self):
+        for present in ("missing", True, None, 0):
+            raw = self.report("windows")
+            if present == "missing":
+                del raw["game_benchmark"]["diagnostic_overrides_present"]
+            else:
+                raw["game_benchmark"]["diagnostic_overrides_present"] = present
+            with self.subTest(present=present), self.desktop_capture(report=raw) as capture:
+                with self.assertRaisesRegex(self.gate.GameplayError, "retained failure receipt.*diagnostic environment proof"):
+                    self.record_desktop(capture)
+                row = self.gate.read_json(capture["receipt"])["rows"][0]
+                self.assertEqual(row["exit_code"], 0)
+                self.assertIsNotNone(row["report"])
+                with self.assertRaisesRegex(self.gate.GameplayError, "diagnostic environment proof"):
+                    self.gate.verify_desktop_transport(row, capture["root"])
+
+
+    def test_desktop_capture_retains_nonzero_native_exit_and_failed_raw_report(self):
+        raw = self.report("windows")
+        raw.update(passed=False, failure="terrain warmup timeout")
+        with self.desktop_capture(state="failed", exit_code=1, report=raw) as capture:
+            with self.assertRaisesRegex(self.gate.GameplayError, "retained failure receipt"):
+                self.record_desktop(capture)
+            row = self.gate.read_json(capture["receipt"])["rows"][0]
+            self.assertEqual(row["exit_code"], 1)
+            self.assertEqual(self.gate.read_json(capture["receipt"].with_suffix(".raw.json"))["failure"], "terrain warmup timeout")
+
+
+    def test_desktop_capture_timeout_cancels_and_waits_exact_owned_native_job(self):
+        with self.desktop_capture(state="running", report=None) as capture:
+            clock = itertools.chain([0, 0, 0, 0, 0, 0], itertools.repeat(511))
+            with mock.patch.object(self.gate.time, "monotonic", side_effect=lambda: next(clock)), \
+                    mock.patch.object(self.gate.time, "sleep"):
+                with self.assertRaisesRegex(self.gate.GameplayError, "retained failure receipt.*deadline exceeded"):
+                    self.record_desktop(capture)
+            row = self.gate.read_json(capture["receipt"])["rows"][0]
+            self.assertTrue(row["timed_out"])
+            self.assertEqual(row["exit_code"], -9)
+            self.assertTrue(row["transport"]["cleanup"]["terminal_observed"])
+            self.assertEqual(row["transport"]["cleanup"]["terminal_status"]["state"], "cancelled")
+            self.assertEqual(sum(operation == "Submit" for operation, _ in capture["state"]["calls"]), 1)
+
+
+    def test_desktop_poll_uncertainty_does_not_resubmit_and_preserves_raw_report(self):
+        with self.desktop_capture(poll_error=self.gate.subprocess.TimeoutExpired("helper-status", 30)) as capture:
+            with self.assertRaisesRegex(self.gate.GameplayError, "retained failure receipt"):
+                self.record_desktop(capture)
+            row = self.gate.read_json(capture["receipt"])["rows"][0]
+            self.assertIsNotNone(row["report"])
+            self.assertTrue(row["transport"]["cleanup"]["terminal_observed"])
+            self.assertEqual([operation for operation, _ in capture["state"]["calls"]], ["Submit", "Status", "Cancel", "Status"])
+
+
+    def test_desktop_lost_submission_response_recovers_only_exact_new_request_for_cancellation(self):
+        with self.desktop_capture(submit_error=self.gate.subprocess.TimeoutExpired("helper-submit", 30)) as capture:
+            with self.assertRaisesRegex(self.gate.GameplayError, "retained failure receipt"):
+                self.record_desktop(capture)
+            row = self.gate.read_json(capture["receipt"])["rows"][0]
+            self.assertEqual(row["transport"]["job_id"], DESKTOP_JOB_ID)
+            self.assertTrue(row["transport"]["cleanup"]["terminal_observed"])
+            self.assertEqual([operation for operation, _ in capture["state"]["calls"]], ["Submit", "Cancel", "Status"])
+
+
+    def test_desktop_lost_response_does_not_claim_concurrent_same_caller_job(self):
+        foreign_job = "87654321-4321-4321-4321-abcdef123456"
+
+        def concurrent_request(state, root, package, app):
+            request = self.gate.read_json(app.parent / "request.json")
+            request.update(job_id=foreign_job, task_id=DESKTOP_TASK_ID)
+            directory = app.parent.parent / foreign_job
+            directory.mkdir()
+            (directory / "request.json").write_text(json.dumps(request), encoding="utf-8")
+
+        with self.desktop_capture(submit_error=self.gate.subprocess.TimeoutExpired("helper-submit", 30),
+                                  after_submit=concurrent_request) as capture:
+            with self.assertRaisesRegex(self.gate.GameplayError, "retained failure receipt"):
+                self.record_desktop(capture)
+            row = self.gate.read_json(capture["receipt"])["rows"][0]
+            self.assertEqual(row["transport"].get("job_id"), DESKTOP_JOB_ID)
+            self.assertEqual([parameters["job_id"] for operation, parameters in capture["state"]["calls"]
+                              if operation == "Cancel"], [DESKTOP_JOB_ID])
+            self.assertTrue(row["transport"]["cleanup"]["terminal_observed"])
+
+    def test_desktop_submissions_use_unique_bounded_task_correlations(self):
+        task_ids = []
+        with mock.patch.object(self.gate.uuid, "uuid4", side_effect=[mock.Mock(hex="1" * 32), mock.Mock(hex="2" * 32)]):
+            for _ in range(2):
+                with self.desktop_capture() as capture:
+                    self.record_desktop(capture, "a" * 64)
+                    task_ids.append(capture["state"]["task_id"])
+        self.assertEqual(task_ids, ["a" * 31 + "-" + "1" * 32, "a" * 31 + "-" + "2" * 32])
+
+    def test_desktop_lost_response_rejects_partial_or_invalid_task_correlation(self):
+        for suffix in ("f" * 31, "g" * 32):
+            with self.subTest(suffix=suffix):
+                def malformed_request(state, root, package, app):
+                    target = app.parent / "request.json"
+                    request = self.gate.read_json(target)
+                    request["task_id"] = state["task_id"].rsplit("-", 1)[0] + "-" + suffix
+                    target.write_text(json.dumps(request), encoding="utf-8")
+
+                with self.desktop_capture(submit_error=self.gate.subprocess.TimeoutExpired("helper-submit", 30),
+                                          after_submit=malformed_request) as capture:
+                    with self.assertRaisesRegex(self.gate.GameplayError, "retained failure receipt"):
+                        self.record_desktop(capture)
+                    row = self.gate.read_json(capture["receipt"])["rows"][0]
+                    self.assertNotIn("job_id", row["transport"])
+                    self.assertEqual([operation for operation, _ in capture["state"]["calls"]], ["Submit"])
+
+    def test_desktop_cancellation_failure_is_retained_without_claiming_cleanup(self):
+        with self.desktop_capture(poll_error=OSError("poll unavailable"), cancel_error=OSError("cancel unavailable")) as capture:
+            with self.assertRaisesRegex(self.gate.GameplayError, "retained failure receipt.*cancel unavailable"):
+                self.record_desktop(capture)
+            row = self.gate.read_json(capture["receipt"])["rows"][0]
+            self.assertFalse(row["transport"]["cleanup"]["terminal_observed"])
+            self.assertIn("cancel unavailable", row["transport"]["cleanup"]["error"])
+
+
+    def test_desktop_cleanup_interruption_is_retained_as_incomplete(self):
+        with self.desktop_capture(state="running", report=None, poll_error=OSError("poll unavailable"),
+                                  cancel_error=KeyboardInterrupt()) as capture:
+            with self.assertRaisesRegex(self.gate.GameplayError, "retained failure receipt"):
+                self.record_desktop(capture)
+            row = self.gate.read_json(capture["receipt"])["rows"][0]
+            cleanup = row["transport"]["cleanup"]
+            self.assertFalse(cleanup["terminal_observed"])
+            self.assertEqual(cleanup["error"], "KeyboardInterrupt")
+            self.assertEqual([operation for operation, _ in capture["state"]["calls"]], ["Submit", "Status", "Cancel"])
+
+
+    def test_desktop_cleanup_rejects_skeletal_terminal_status(self):
+        responses = [{"schema": 1, "job_id": DESKTOP_JOB_ID, "state": "cancel-requested"},
+                     {"schema": 1, "job_id": DESKTOP_JOB_ID, "task_id": DESKTOP_TASK_ID, "state": "succeeded"}]
+        with mock.patch.object(self.gate, "desktop_client", side_effect=responses):
+            cleanup = self.gate.cancel_desktop_job(DESKTOP_JOB_ID, DESKTOP_TASK_ID, "d" * 64, 450, True)
+        self.assertFalse(cleanup["terminal_observed"])
+        self.assertNotIn("terminal_status", cleanup)
+        self.assertIn("malformed native desktop status", cleanup["error"])
+
+
+    def test_desktop_cleanup_accepts_documented_no_process_startup_failure(self):
+        status = {"schema": 1, "job_id": DESKTOP_JOB_ID, "task_id": DESKTOP_TASK_ID, "state": "failed",
+                  "submitted_utc": "2026-10-13T08:00:00+00:00", "finished_utc": "2026-10-13T08:00:01+00:00",
+                  "pid": None, "session_id": None, "exit_code": None, "error": "Scheduler launch failed."}
+        responses = [{"schema": 1, "job_id": DESKTOP_JOB_ID, "state": "already-terminal"}, status]
+        with mock.patch.object(self.gate, "desktop_client", side_effect=responses):
+            cleanup = self.gate.cancel_desktop_job(DESKTOP_JOB_ID, DESKTOP_TASK_ID, "d" * 64, 450, True)
+        self.assertTrue(cleanup["terminal_observed"])
+        self.assertEqual(cleanup["terminal_status"], status)
+
+
+    def test_desktop_cleanup_does_not_prove_startup_failure_without_verified_request(self):
+        status = {"schema": 1, "job_id": DESKTOP_JOB_ID, "task_id": DESKTOP_TASK_ID, "state": "failed",
+                  "submitted_utc": "2026-10-13T08:00:00+00:00", "finished_utc": "2026-10-13T08:00:01+00:00",
+                  "pid": None, "session_id": None, "exit_code": None, "error": "Scheduler launch failed."}
+        responses = [{"schema": 1, "job_id": DESKTOP_JOB_ID, "state": "already-terminal"}, status]
+        with mock.patch.object(self.gate, "desktop_client", side_effect=responses):
+            cleanup = self.gate.cancel_desktop_job(DESKTOP_JOB_ID, DESKTOP_TASK_ID, "d" * 64, 450, False)
+        self.assertFalse(cleanup["terminal_observed"])
+        self.assertIn("without a verified request", cleanup["error"])
+
+
+    def test_desktop_cancel_wait_is_bounded_when_helper_never_reaches_terminal(self):
+        replies = [{"schema": 1, "job_id": DESKTOP_JOB_ID, "state": "cancel-requested"},
+                   {"schema": 1, "job_id": DESKTOP_JOB_ID, "task_id": DESKTOP_TASK_ID, "state": "running",
+                    "started_at_utc": "2026-10-13T08:00:00+00:00", "pid": 4242, "session_id": 1,
+                    "executable": "mc_main.exe", "executable_sha256": "d" * 64, "timeout_seconds": 450,
+                    "exit_code": None, "error": None}]
+        with mock.patch.object(self.gate, "desktop_client", side_effect=replies) as client, \
+                mock.patch.object(self.gate.time, "monotonic", side_effect=[0, 0, 0, 31, 31]), \
+                mock.patch.object(self.gate.time, "sleep"):
+            cleanup = self.gate.cancel_desktop_job(DESKTOP_JOB_ID, DESKTOP_TASK_ID, "d" * 64, 450, True)
+        self.assertFalse(cleanup["terminal_observed"])
+        self.assertIn("within 30 seconds", cleanup["error"])
+        self.assertEqual([call.kwargs["job_id"] for call in client.call_args_list], [DESKTOP_JOB_ID, DESKTOP_JOB_ID])
+
+
+    def test_desktop_report_from_before_fresh_submission_is_rejected(self):
+        def stale_report(state, root, package, app):
+            self.gate.os.utime(app / "capture.raw.json", (1, 1))
+        with self.desktop_capture(after_submit=stale_report) as capture:
+            with self.assertRaisesRegex(self.gate.GameplayError, "retained failure receipt.*predates"):
+                self.record_desktop(capture)
+            self.assertIsNone(self.gate.read_json(capture["receipt"])["rows"][0]["report"])
+
+
+    def test_desktop_transport_rejects_broker_scheduler_and_runtime_identity_tampering(self):
+        for change in ("broker", "scheduler", "native-status", "build", "package", "path", "extra-copy"):
+            with self.subTest(change=change), self.desktop_capture() as capture:
+                self.record_desktop(capture)
+                row = self.gate.read_json(capture["receipt"])["rows"][0]
+                transport = row["transport"]
+                if change in ("broker", "scheduler", "native-status"):
+                    name = {"broker": "broker.log", "scheduler": "scheduler.json", "native-status": "status.json"}[change]
+                    target = capture["root"] / transport["artifacts"][name]["path"]
+                    if change == "broker":
+                        target.write_text(target.read_text(encoding="utf-8").replace("pid=4242", "pid=9999"), encoding="utf-8")
+                    else:
+                        artifact = self.gate.read_json(target)
+                        artifact.update(instance_guid="not-a-guid" if change == "scheduler" else artifact.get("instance_guid"))
+                        if change == "native-status":
+                            artifact.pop("instance_guid")
+                            artifact["session_id"] = 2
+                        target.write_text(json.dumps(artifact), encoding="utf-8")
+                    transport["artifacts"][name] = self.gate.transport_file(target, capture["root"])
+                elif change == "build":
+                    transport["build_after"]["dependency_sha256"] = "f" * 64
+                elif change == "package":
+                    transport["package_after"][0]["original"]["sha256"] = "f" * 64
+                elif change == "path":
+                    transport["package_before"][0]["original"]["path"] = str(capture["root"] / "wrong-asset.png")
+                    transport["package_after"] = copy.deepcopy(transport["package_before"])
+                else:
+                    (capture["receipt"].with_suffix(".desktop") / "app/foreign.dll").write_bytes(b"unlisted")
+                with self.assertRaises(self.gate.GameplayError):
+                    self.gate.verify_desktop_transport(row, capture["root"])
+
+
+    def test_desktop_client_encodes_argument_array_without_powershell_interpolation(self):
+        parameters = {"package": "C:\\approved package\\'runtime", "arguments": ["--evidence", "Пример '$(`evil`)\"\n.json"],
+                      "timeout_seconds": 450, "task_id": DESKTOP_TASK_ID}
+        response = {"schema": 1, "job_id": DESKTOP_JOB_ID, "task_id": DESKTOP_TASK_ID, "state": "submitted"}
+        with mock.patch.object(self.gate.subprocess, "run", return_value=mock.Mock(returncode=0, stdout=json.dumps(response), stderr="")) as run:
+            self.assertEqual(self.gate.desktop_client("Submit", **parameters), response)
+        command = run.call_args.args[0]
+        self.assertEqual(command[1:-1], ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-EncodedCommand"])
+        script = base64.b64decode(command[-1]).decode("utf-16-le")
+        encoded_parameters = script.split("FromBase64String('", 1)[1].split("')", 1)[0]
+        self.assertEqual(json.loads(base64.b64decode(encoded_parameters).decode("utf-8")), parameters)
+        self.assertIn("-Arguments ([string[]]@($p.arguments))", script)
+        self.assertNotIn("evil", script)
+        self.assertEqual(run.call_args.kwargs["timeout"], 30)
+
+
+    def test_desktop_options_are_windows_record_only_and_require_complete_input_set(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for arguments in (["--record", "macos", "--desktop-package", str(root), "--desktop-package-manifest", str(root),
+                               "--desktop-task-id", DESKTOP_TASK_ID], ["--record", "windows", "--desktop-package", str(root)],
+                              ["--desktop-task-id", DESKTOP_TASK_ID]):
+                with self.subTest(arguments=arguments), contextlib.redirect_stderr(io.StringIO()), \
+                        mock.patch.object(self.gate, "record", side_effect=AssertionError("native capture forbidden")):
+                    self.assertEqual(self.gate.main(["--root", str(root), "--receipt", str(root / "receipt.json"), *arguments]), 1)
+
 
 if __name__ == "__main__":
     unittest.main()
