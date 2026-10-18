@@ -146,6 +146,7 @@ def snapshot_source_for_check(
     *,
     candidate: bool,
     strict: bool,
+    snapshot_task_id: str | None = None,
 ) -> str | None:
     if explicit_source is not None:
         source = require_snapshot_source_commit(root, explicit_source)
@@ -156,8 +157,26 @@ def snapshot_source_for_check(
             supported_source_branch = branch == "ai-dev" or (
                 branch.startswith("codex/ai-") and len(branch) > len("codex/ai-")
             )
-            if supported_source_branch and pending_source is None and head == source:
-                return source
+            if supported_source_branch and pending_source is None:
+                if head == source:
+                    return source
+                if branch == "ai-dev" and snapshot_task_id:
+                    resolver = root / "script" / "ai_publish.py"
+                    completed = subprocess.run(
+                        [
+                            sys.executable, str(resolver), "--root", str(root),
+                            "resolve-tagged-source", "--expected-head", head,
+                            "--task-id", snapshot_task_id,
+                        ],
+                        cwd=root, text=True, capture_output=True, check=False,
+                    )
+                    if completed.returncode:
+                        raise ValueError(
+                            completed.stderr.strip()
+                            or "cannot validate the tagged snapshot source"
+                        )
+                    if completed.stdout.strip() == source:
+                        return source
             if branch == "ai-main" and pending_source == source:
                 return source
             raise ValueError(
@@ -1057,6 +1076,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--level", choices=("basic", "snapshot", "minor", "major"), default="basic")
     parser.add_argument("--require-index-match", action="store_true", help="reject partially staged governed files")
     parser.add_argument("--snapshot-source-commit", help="bind the snapshot date to an immutable AI source commit")
+    parser.add_argument("--snapshot-task-id", help=argparse.SUPPRESS)
     parser.add_argument("--root", type=Path, help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
     if args.fast and (args.candidate or args.strict or args.level != "basic"):
@@ -1074,6 +1094,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             args.snapshot_source_commit,
             candidate=args.candidate,
             strict=args.strict,
+            snapshot_task_id=args.snapshot_task_id,
         )
     except (OSError, RuntimeError, ValueError) as error:
         print(f"AI check date binding: {error}", file=sys.stderr)

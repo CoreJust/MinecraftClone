@@ -12,10 +12,13 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 from unittest import mock
 
+REPOSITORY = Path(__file__).resolve().parents[2]
+
 from script import ai_check
 
+sys.path.insert(0, str(REPOSITORY / "script"))
+import ai_history
 
-REPOSITORY = Path(__file__).resolve().parents[2]
 SCRIPT_NAMES = ("ai_publish.py", "ai_commit.py", "ai_history.py", "ai_tasks.py")
 
 
@@ -295,6 +298,119 @@ class AiPublishTests(unittest.TestCase):
         self.assertEqual(resolved.stdout.strip(), self.source)
         self.assertEqual(checkout_resolved.stdout.strip(), self.source)
         self.assertEqual(strict_source, self.source)
+
+    def test_tagged_source_date_survives_a_workflow_only_commit(self) -> None:
+        records = json.loads((self.root / "docs" / "ai" / "backlog.json").read_text())
+        records.append(task("MC-AI-0003", "basic", status="done", finalized=True))
+        (self.root / "docs" / "ai" / "backlog.json").write_text(
+            json.dumps(records, indent=2) + "\n", encoding="utf-8"
+        )
+        prerelease_script = self.root / "script" / "ai_prerelease_fix.py"
+        prerelease_script.write_text("# workflow-only change before publication\n", encoding="utf-8")
+        self.git("add", "docs/ai/backlog.json", "script/ai_prerelease_fix.py")
+        self.git("commit", "--no-gpg-sign", "-q", "-m", "prepublication workflow fix\n\nTask-ID: MC-AI-0003")
+        self.git("commit", "--allow-empty", "--no-gpg-sign", "-q", "-m", "snapshot source\n\nTask-ID: MC-AI-0032")
+        self.source = self.git_output("rev-parse", "HEAD")
+        self.assertEqual(
+            ai_history.collect_snapshot(self.root, records, "MC-AI-0032", "HEAD"),
+            ["MC-AI-0001", "MC-AI-0003"],
+        )
+        self.prepare()
+        self.finish(env={
+            "GIT_AUTHOR_DATE": "2026-10-18T12:00:00+00:00",
+            "GIT_COMMITTER_DATE": "2026-10-18T12:00:00+00:00",
+        })
+        promoted = self.git_output("rev-parse", "HEAD")
+        tagged = self.run_publish("tag", "MC-AI-0032")
+        self.assertEqual(tagged.returncode, 0, tagged.stderr)
+        self.assertTrue(tagged.stdout.strip().endswith("_26.10.18"))
+        self.git("checkout", "-q", "ai-dev")
+        repair_file = self.root / "script" / "ai_workflow_fix.py"
+        repair_file.write_text("# workflow-only repair\n", encoding="utf-8")
+        backlog_path = self.root / "docs" / "ai" / "backlog.json"
+        records = json.loads(backlog_path.read_text(encoding="utf-8"))
+        records.append(task(
+            "MC-AI-0002", "basic", status="done", finalized=True,
+        ))
+        backlog_path.write_text(json.dumps(records, indent=2) + "\n", encoding="utf-8")
+        self.git("add", "script/ai_workflow_fix.py", "docs/ai/backlog.json")
+        self.git(
+            "commit", "--no-gpg-sign", "-q", "-m",
+            "workflow-only repair\n\nTask-ID: MC-AI-0002",
+        )
+        repair = self.git_output("rev-parse", "HEAD")
+
+        resolved = self.run_publish(
+            "resolve-tagged-source", "--expected-head", repair,
+            "--task-id", "MC-AI-0032",
+        )
+        self.assertEqual(
+            resolved.returncode, 0,
+            resolved.stderr,
+        )
+        self.assertEqual(resolved.stdout.strip(), self.source)
+
+        gameplay = self.root / "src" / "gameplay.cpp"
+        gameplay.write_text("unpublished gameplay\n", encoding="utf-8")
+        self.git("add", "src/gameplay.cpp")
+        self.git("commit", "--no-gpg-sign", "-q", "-m", "unpublished gameplay\n\nTask-ID: MC-AI-0002")
+        rejected = self.run_publish(
+            "resolve-tagged-source", "--expected-head", self.git_output("rev-parse", "HEAD"),
+            "--task-id", "MC-AI-0032",
+        )
+        self.assertNotEqual(rejected.returncode, 0)
+        self.assertIn("no valid annotated promotion tag", rejected.stderr)
+        self.git("checkout", "-q", "--detach", repair)
+        self.git("branch", "-f", "ai-dev", repair)
+        self.git("checkout", "-q", "ai-dev")
+
+        current_tasks = json.loads((self.root / "docs" / "ai" / "backlog.json").read_text())
+        self.assertEqual(
+            ai_history.collect_snapshot(self.root, current_tasks, "MC-AI-0032", "HEAD"),
+            ["MC-AI-0001", "MC-AI-0003"],
+        )
+
+        ledger = next(item for item in current_tasks if item["id"] == "MC-AI-0032")
+        ledger.update({
+            "status": "done", "owner": "", "resolved_at": "2026-10-19",
+            "evidence": "Published snapshot artifacts verified.",
+            "resolution_changes": "Recorded the published snapshot.",
+        })
+        (self.root / "docs" / "ai" / "backlog.json").write_text(
+            json.dumps(current_tasks, indent=2) + "\n", encoding="utf-8"
+        )
+        self.git("add", "docs/ai/backlog.json")
+        self.record_pending_review()
+        precommit = subprocess.run(
+            [sys.executable, self.root / "script" / "ai_commit.py", "precommit"],
+            cwd=self.root,
+            env=os.environ | {"AI_TASK": "MC-AI-0032", "MC_TEST_AI_CHECK_ARGS_LOG": str(self.ai_check_args_log)},
+            text=True,
+            capture_output=True,
+        )
+        self.assertEqual(precommit.returncode, 0, precommit.stderr)
+        check_args = self.ai_check_args_log.read_text(encoding="utf-8")
+        self.assertIn(f"--snapshot-source-commit\n{self.source}\n", check_args)
+        self.assertIn("--snapshot-task-id\nMC-AI-0032\n", check_args)
+        self.assertEqual(
+            ai_check.snapshot_source_for_check(
+                self.root, self.source, candidate=True, strict=False,
+                snapshot_task_id="MC-AI-0032",
+            ),
+            self.source,
+        )
+
+        tag_name = tagged.stdout.strip()
+        self.git("tag", "-d", tag_name)
+        missing_tag = self.run_publish(
+            "resolve-tagged-source", "--expected-head", repair, "--task-id", "MC-AI-0032",
+        )
+        self.assertNotEqual(missing_tag.returncode, 0)
+        self.git("tag", "-a", tag_name, promoted, "-m", "AI snapshot MC-AI-0004")
+        wrong_task_tag = self.run_publish(
+            "resolve-tagged-source", "--expected-head", repair, "--task-id", "MC-AI-0032",
+        )
+        self.assertNotEqual(wrong_task_tag.returncode, 0)
 
     def test_release_checkout_resolves_a_clean_finalized_aggregate_source(self) -> None:
         resolved = self.run_publish(

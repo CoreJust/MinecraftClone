@@ -259,6 +259,81 @@ def checkout_source_for_date_check(root: Path, expected_head: str) -> str:
     return head
 
 
+def tagged_source_for_candidate(
+    root: Path, expected_head: str, task_id: str
+) -> str | None:
+    require_exact_commit(expected_head)
+    head = revision(root, "HEAD")
+    if head != expected_head:
+        raise PublishError("candidate HEAD does not match the requested immutable commit")
+    require_branch(root, AI_DEV)
+
+    matching_tags = []
+    tag_refs = git(root, "for-each-ref", "--format=%(refname)", "refs/tags/ai/").splitlines()
+    for tag_ref in tag_refs:
+        if git(root, "cat-file", "-t", tag_ref).strip() != "tag":
+            continue
+        promoted = revision(root, tag_ref)
+        if ai_history.commit_task_id(root, promoted) == task_id:
+            matching_tags.append((tag_ref, promoted))
+    if not matching_tags:
+        try:
+            staged = json.loads(
+                git(root, "show", ":docs/ai/backlog.json"),
+                object_pairs_hook=ai_history._unique_json_object,
+            )
+            ai_tasks.validate_backlog(staged)
+            current = next(
+                task for task in staged
+                if task["id"] == task_id
+            )
+        except (PublishError, ai_tasks.BacklogError, ValueError, StopIteration) as error:
+            raise PublishError(f"cannot resolve snapshot task {task_id} without a valid tag") from error
+        if current.get("status") == "active":
+            return None
+        raise PublishError(f"{task_id} has no valid annotated promotion tag for its ledger transition")
+
+    for tag_ref, promoted in matching_tags:
+        parents = git(root, "show", "-s", "--format=%P", promoted).split()
+        if len(parents) != 2:
+            continue
+        tagged_source = parents[1]
+        if ai_history.commit_task_id(root, tagged_source) != task_id:
+            continue
+        tag_object = git(root, "cat-file", "-p", tag_ref)
+        if tag_object.partition("\n\n")[2].strip() != f"AI snapshot {task_id}":
+            continue
+        canonical = expected_tag(root, promoted)
+        prefix, separator, date = canonical.rpartition("_")
+        tag_name = tag_ref.removeprefix("refs/tags/")
+        if not separator or not re.fullmatch(
+            rf"{re.escape(prefix)}(?:-r[1-9][0-9]*)?_{re.escape(date)}", tag_name
+        ):
+            continue
+        try:
+            source_backlog = json.loads(
+                git(root, "show", f"{tagged_source}:docs/ai/backlog.json"),
+                object_pairs_hook=ai_history._unique_json_object,
+            )
+            ai_tasks.validate_backlog(source_backlog)
+        except (PublishError, ai_tasks.BacklogError, ValueError):
+            continue
+        task = next((item for item in source_backlog if item["id"] == task_id), None)
+        if task is None or task.get("level") != "snapshot":
+            continue
+        try:
+            baseline = revision(root, str(task["baseline_commit"]))
+        except (PublishError, ValueError):
+            continue
+        if ai_history.has_tagged_promotion(
+            root, baseline, head, task_id, expected_source=tagged_source
+        ):
+            return tagged_source
+    raise PublishError(
+        f"{task_id} has no valid annotated promotion tag for the checked-out workflow-only history"
+    )
+
+
 def verify_promotion_bootstrap(root: Path, promoted_text: str, remote_base_text: str) -> None:
     require_exact_commit(promoted_text)
     require_exact_commit(remote_base_text)
@@ -449,6 +524,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     bootstrap_command.add_argument("remote_base")
     resolve_date_source = commands.add_parser("resolve-date-source")
     resolve_date_source.add_argument("--expected-head")
+    resolve_tagged_source = commands.add_parser("resolve-tagged-source")
+    resolve_tagged_source.add_argument("--expected-head", required=True)
+    resolve_tagged_source.add_argument("--task-id", required=True)
     tag_command = commands.add_parser("tag")
     tag_command.add_argument("task_id")
     tag_command.add_argument("--revision", type=int, choices=range(1, 1000))
@@ -467,6 +545,10 @@ def main(argv: Sequence[str] | None = None) -> int:
                 if args.expected_head is not None
                 else promotion_source_for_date_check(root)
             )
+            if source is not None:
+                print(source)
+        elif args.command == "resolve-tagged-source":
+            source = tagged_source_for_candidate(root, args.expected_head, args.task_id)
             if source is not None:
                 print(source)
         else:
