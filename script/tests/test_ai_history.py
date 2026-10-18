@@ -264,7 +264,7 @@ class AiHistoryTest(unittest.TestCase):
         previous.update({
             "status": "done",
             "owner": "",
-            "blocker": "",
+            "blocker": "User-authorized runtime acceptance remains pending.",
             "context": "Condensed published context.",
             "plan": ["Condensed published plan."],
             "product_changes": ["Condensed product result."],
@@ -296,10 +296,18 @@ class AiHistoryTest(unittest.TestCase):
             {ledger: {"context", "plan", "product_changes", "code_changes"}},
             clear=True,
         ):
-            self.assertEqual(
-                ai_history.collect_snapshot(self.repo, tasks, "MC-AI-0102", "HEAD"),
-                ["MC-AI-0003"],
-            )
+            with self.assertRaisesRegex(ai_history.HistoryError, "changes immutable"):
+                ai_history.collect_snapshot(self.repo, tasks, "MC-AI-0102", "HEAD")
+        with mock.patch.dict(
+            ai_history.LEGACY_PUBLICATION_LEDGER_FIELD_EXCEPTIONS,
+            {ledger: {"blocker", "context", "plan", "product_changes", "code_changes"}},
+            clear=True,
+        ):
+            try:
+                collected = ai_history.collect_snapshot(self.repo, tasks, "MC-AI-0102", "HEAD")
+            except ai_history.HistoryError as error:
+                self.fail(f"exact legacy blocker exception was rejected: {error}")
+            self.assertEqual(collected, ["MC-AI-0003"])
 
     def test_collect_next_snapshot_excludes_post_publication_aggregate_ledger(self) -> None:
         tasks = self.hierarchy()

@@ -532,6 +532,7 @@ def require_valid_prior_snapshot_ledgers(
             allowed_fields = allowed_fields | {"blocker"}
         if not changed_fields <= allowed_fields or (
             "blocker" in changed_fields
+            and "blocker" not in LEGACY_PUBLICATION_LEDGER_FIELD_EXCEPTIONS.get(sha, set())
             and not (previous.get("blocker") and not published.get("blocker"))
         ):
             raise HistoryError(f"publication ledger {sha} changes immutable {task_id} fields")

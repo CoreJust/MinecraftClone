@@ -16852,5 +16852,41 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0475",
+    "title": "Preserve exact historical ledger blocker exceptions",
+    "kind": "bug",
+    "status": "done",
+    "priority": "P1",
+    "route": "luna",
+    "milestone": "AI-WORKFLOW",
+    "depends_on": [],
+    "acceptance": "Retain the exact previously authorized legacy S6 blocker mutation while keeping ordinary published ledger blocker rewrites rejected; regress both cases and validate the actual S7 metadata candidate. No published artifact or tag changes.",
+    "evidence": "RED exact legacy blocker rewrite rejected; GREEN 29 history tests passed in 6.288s; actual ai_history collect MC-AI-0038 passes with the frozen 226-child set. One-line production predicate correction preserves exact existing legacy exception.",
+    "blocker": "",
+    "owner": "",
+    "level": "basic",
+    "parent": "",
+    "motivation": "The new clear-only blocker guard incorrectly overrode an existing exact-commit legacy exception during actual S7 ledger validation.",
+    "context": "Post-release workflow-only follow-up to 0474; ledger safely stashed; no game, platform or snapshot scope change.",
+    "complexity": "low",
+    "created_at": "2026-10-19",
+    "resolved_at": "2026-10-19",
+    "resolution_changes": "Preserve existing exact-commit legacy blocker exception while retaining ordinary rewrite rejection; no published game change.",
+    "plan": [],
+    "product_changes": [
+      "No published game or platform change; actual S7 history collection succeeds."
+    ],
+    "code_changes": [
+      "One additional legacy-exception predicate and positive/negative blocker rewrite regression in existing history fixture."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]
