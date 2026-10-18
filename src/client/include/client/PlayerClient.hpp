@@ -12,6 +12,7 @@
 
 #include <shared/ProjectInfo.hpp>
 #include <shared/net/Message.hpp>
+#include <shared/world/HeightTileInterest.hpp>
 #include <shared/world/HeightTileSurfaceMesher.hpp>
 #include <shared/world/World.hpp>
 #include <shared/world/WorldGeneration.hpp>
@@ -60,9 +61,9 @@ struct PlayerClientCapturePlan final {
 [[nodiscard]] std::array<PlayerClientCapturePreset, 4> playerClientCapturePresets() noexcept;
 [[nodiscard]] uint16_t playerClientCaptureSpeedup(int64_t distance_subcells) noexcept;
 [[nodiscard]] std::chrono::milliseconds playerClientRendererFrameBudget(bool capture_enabled) noexcept;
-[[nodiscard]] std::chrono::steady_clock::time_point playerClientPreviewMeshAdmissionDeadline(
+[[nodiscard]] std::chrono::steady_clock::time_point playerClientPreviewMeshWorkDeadline(
     std::chrono::steady_clock::time_point renderer_deadline,
-    std::chrono::steady_clock::time_point near_admission_started_at) noexcept;
+    std::chrono::steady_clock::time_point mesh_work_started_at) noexcept;
 [[nodiscard]] uint32_t playerClientHeightTileChangeBudget(bool capture_enabled) noexcept;
 [[nodiscard]] uint32_t playerClientPreviewMeshJobBudget(bool capture_enabled) noexcept;
 [[nodiscard]] uint32_t playerClientPreviewMeshBacklogCapacity(bool capture_enabled) noexcept;
@@ -90,14 +91,45 @@ struct PlayerClientBenchmarkOptions final {
     bool require_immediate_present_mode = false;
     bool freeze_camera = false;
     bool show_debug_hud = false;
+    bool enable_mesh_stage_diagnostics = false;
+};
+
+struct PlayerClientMeshResultDrainDiagnostics final {
+    uint32_t drained_result_count = 0U;
+    uint32_t stale_epoch_discard_count = 0U;
+    uint32_t no_longer_interested_or_resident_discard_count = 0U;
+    uint32_t source_mismatch_requeue_count = 0U;
+    uint32_t target_detail_mismatch_requeue_count = 0U;
+    uint32_t cannot_publish_requeue_count = 0U;
+    uint32_t publish_attempt_count = 0U;
+    uint32_t publish_success_count = 0U;
+    uint32_t publish_failure_count = 0U;
+    std::chrono::nanoseconds seam_planning_duration{ 0 };
+    std::chrono::nanoseconds renderer_batch_upsert_duration{ 0 };
+    client::RendererHeightTileUpsertDiagnostics renderer_upsert_stages;
 };
 
 struct PlayerClientRenderDiagnostics final {
+    std::chrono::nanoseconds window_input_duration{ 0 };
     std::chrono::nanoseconds height_tile_interest_duration{ 0 };
     std::chrono::nanoseconds preview_lod_refresh_duration{ 0 };
     uint32_t preview_lod_classified_bucket_count = 0U;
     uint32_t preview_lod_evaluated_tile_count = 0U;
     uint32_t preview_lod_changed_tile_count = 0U;
+    std::chrono::nanoseconds preview_mesh_pump_before_changes_duration{ 0 };
+    std::chrono::nanoseconds height_tile_change_and_removal_duration{ 0 };
+    std::chrono::nanoseconds height_tile_change_queue_duration{ 0 };
+    std::chrono::nanoseconds preview_mesh_remove_duration{ 0 };
+    std::chrono::nanoseconds preview_mesh_remove_renderer_duration{ 0 };
+    std::chrono::nanoseconds preview_mesh_remove_neighbor_enqueue_duration{ 0 };
+    uint32_t preview_mesh_remove_count = 0U;
+    std::chrono::nanoseconds preview_mesh_pump_after_changes_duration{ 0 };
+    std::chrono::nanoseconds camera_resolution_duration{ 0 };
+    std::chrono::nanoseconds before_resize_duration{ 0 };
+    std::chrono::nanoseconds resize_duration{ 0 };
+    std::chrono::nanoseconds after_resize_duration{ 0 };
+    std::chrono::nanoseconds renderer_call_duration{ 0 };
+    std::chrono::nanoseconds after_renderer_duration{ 0 };
 };
 
 inline constexpr int32_t PLAYER_CLIENT_BENCHMARK_TERRAIN_NEAR_RADIUS = 7;
@@ -297,8 +329,20 @@ private:
 
 class PlayerPreviewMeshQueue final {
 public:
+    struct StorageStats final {
+        uint64_t retained_bytes = 0U;
+        uint64_t buffer_reuses = 0U;
+        uint64_t ticket_reuses = 0U;
+    };
+    PlayerPreviewMeshQueue();
+    ~PlayerPreviewMeshQueue();
+    PlayerPreviewMeshQueue(PlayerPreviewMeshQueue const&) = delete;
+    PlayerPreviewMeshQueue& operator=(PlayerPreviewMeshQueue const&) = delete;
     void clear() noexcept;
+    void reserveStorage(uint32_t maximum_pending);
+    [[nodiscard]] StorageStats storageStats() const noexcept;
     [[nodiscard]] bool push(shared::HeightTileKey key);
+    void pushBatch(std::span<shared::HeightTileKey const> keys);
     void resetPriority(
         shared::HeightTileKey center,
         int8_t heading_x,
@@ -306,6 +350,7 @@ public:
         std::unordered_set<shared::HeightTileKey, PlayerHeightTileKeyHash> const& interest
     );
     void beginPriorityRefresh(shared::HeightTileKey center, int8_t heading_x, int8_t heading_y);
+    // Counts inspected unranked entries and ready heads, including stale removal.
     [[nodiscard]]
     uint32_t refreshPriority(
         uint32_t maximum_entries,
@@ -318,6 +363,7 @@ public:
     ) const noexcept;
     [[nodiscard]] bool empty() const noexcept;
     [[nodiscard]] bool hasReady() const noexcept;
+    // Consumes only the caller's remaining stale-head budget; unranked work stays deferred.
     [[nodiscard]] bool prepareReady(uint32_t& maintenance_budget) noexcept;
     [[nodiscard]] size_t size() const noexcept;
     [[nodiscard]] shared::HeightTileKey top() const noexcept;
@@ -326,6 +372,7 @@ public:
     void pop();
 
 private:
+    class RetirementState;
     struct Entry final {
         double priority;
         shared::HeightTileKey key;
@@ -335,10 +382,12 @@ private:
     [[nodiscard]] bool isCurrent(Entry const& entry) const noexcept;
     [[nodiscard]] uint32_t pruneReadyHeap(uint32_t maximum_entries) noexcept;
     [[nodiscard]] static bool lowerPriority(Entry const& first, Entry const& second) noexcept;
+    void ensureHeapCapacity(uint64_t required_entries);
 
     std::vector<Entry> m_heap;
     std::deque<std::vector<Entry>> m_unranked;
     std::unordered_map<shared::HeightTileKey, uint64_t, PlayerHeightTileKeyHash> m_tickets;
+    std::unique_ptr<RetirementState> m_retirement;
     uint64_t m_next_ticket = 1U;
     shared::HeightTileKey m_center{};
     int8_t m_heading_x = 0;
@@ -391,6 +440,7 @@ public:
 private:
     friend struct PlayerClientTestAccess;
     class PreviewMeshWorkerPool;
+    class PreviewCacheRetirementReaper;
     struct PreviewTileElevation final {
         HeightTileRevision tile_revision{};
         uint64_t tile_token = 0U;
@@ -440,11 +490,12 @@ private:
         PlayerPresentationPosition const& local_position
     ) const noexcept;
     void queuePreviewMesh(shared::HeightTileKey key);
+    void queuePreviewMeshes(std::span<shared::HeightTileKey const> keys);
     void queuePreviewRemoval(shared::HeightTileKey key);
     void markPreviewMeshVisible(shared::HeightTileKey key);
-    void publishPreviewMesh(
+    [[nodiscard]] bool publishPreviewMesh(
         shared::HeightTileKey key,
-        shared::HeightTileSurfaceMesh mesh,
+        shared::HeightTileSurfaceMesh &mesh,
         HeightTileHandle const& tile,
         std::chrono::steady_clock::time_point deadline
     );
@@ -456,8 +507,13 @@ private:
     );
     void processPendingPreviewMeshes(
         uint32_t maximum_meshes,
-        std::chrono::steady_clock::time_point renderer_deadline,
-        std::chrono::steady_clock::time_point near_admission_deadline);
+        std::chrono::steady_clock::time_point mesh_work_deadline);
+    void submitPreviewCacheRetirements() noexcept;
+    void drainPreviewCacheRetirements() noexcept;
+    [[nodiscard]] uint64_t previewCacheRetirementHighWaterBytes() const noexcept;
+    [[nodiscard]] uint64_t previewCacheRetirementOutstandingBytes() const noexcept;
+    [[nodiscard]] uint64_t previewCacheRetirementFallbackCount() const noexcept;
+    [[nodiscard]] uint64_t previewCacheRetirementSubmissionCount() const noexcept;
     [[nodiscard]] bool hasCurrentPreviewMeshCoverage() const noexcept;
     [[nodiscard]] bool hasExactCurrentPreviewMeshCoverage() const noexcept;
     [[nodiscard]] bool hasExactCurrentRendererMeshCoverage() const;
@@ -498,6 +554,10 @@ private:
     int8_t m_applied_interest_heading_x = 0;
     int8_t m_applied_interest_heading_y = 0;
     std::optional<shared::HeightTileKey> m_height_tile_center;
+    shared::HeightTileInterestDelta m_interest_delta_scratch;
+    std::vector<shared::HeightTileKey> m_remesh_closure_scratch;
+    std::vector<shared::HeightTileKey> m_pending_keys_scratch;
+    uint32_t m_interest_storage_radius = 0U;
     std::optional<shared::HeightTileKey> m_preview_forecast_center;
     std::unordered_set<shared::HeightTileKey, PlayerHeightTileKeyHash> m_height_tile_interest;
     std::deque<shared::HeightTileKey> m_pending_preview_removals;
@@ -505,6 +565,8 @@ private:
     PlayerPreviewMeshQueue m_pending_preview_meshes;
     std::unordered_set<shared::HeightTileKey, PlayerHeightTileKeyHash> m_preview_mesh_jobs;
     std::unordered_set<shared::HeightTileKey, PlayerHeightTileKeyHash> m_preview_mesh_dirty_jobs;
+    std::optional<std::chrono::steady_clock::time_point> m_deferred_preview_mesh_result_deadline;
+    PlayerClientMeshResultDrainDiagnostics m_mesh_result_drain_diagnostics{};
     std::unordered_set<shared::HeightTileKey, PlayerHeightTileKeyHash> m_visible_preview_meshes;
     PlayerPreviewMeshCoverage m_preview_mesh_coverage;
     std::unordered_map<shared::HeightTileKey, HeightTileHandle, PlayerHeightTileKeyHash>
@@ -518,6 +580,7 @@ private:
     > m_visible_preview_mesh_edge_profiles;
     std::unordered_map<shared::HeightTileKey, PreviewMeshSeamBridgeSet, PlayerHeightTileKeyHash>
         m_visible_preview_mesh_seam_bridges;
+    std::unique_ptr<PreviewCacheRetirementReaper> m_preview_cache_retirement_reaper;
     PlayerPreviewLod m_preview_lod;
     std::unordered_map<shared::HeightTileKey, PreviewTileElevation, PlayerHeightTileKeyHash>
         m_preview_tile_elevations;

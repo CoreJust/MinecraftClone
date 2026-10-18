@@ -619,6 +619,12 @@ void reportUncaughtException(char const* category, char const* details = nullptr
 int main(int argc, char** argv) {
     int exit_code = 0;
     try {
+#if defined(__APPLE__)
+        // Keep driver submit/present encoding off the game thread unless explicitly overridden.
+        if (::setenv("MVK_CONFIG_SYNCHRONOUS_QUEUE_SUBMITS", "0", 0) != 0) {
+            throw std::runtime_error("Cannot select the default MoltenVK queue submission mode");
+        }
+#endif
         core::LogSettings log_settings{};
         log_settings.initial_level = spdlog::level::debug;
         core::Log::ensureInit(log_settings);

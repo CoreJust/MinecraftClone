@@ -136,7 +136,7 @@ TEST(PreviewMeshingTest, CapturedGeometryRequiresCurrentReceivedHeightsAndNeighb
     heights.fill(8U);
     ASSERT_EQ(residency.accept(KEY, REVISION, 1U, heights).replacement,
         client::HeightTileReplacement::Published);
-    client::PreviewMeshSource source{ .tile = residency.resident(KEY) };
+    client::PreviewMeshSource source{ .tile = residency.resident(KEY), .neighbors = {} };
     EXPECT_TRUE(source.matchesGeometry(source.tile, source.neighbors, source.neighbor_details));
     auto changed_details = source.neighbor_details;
     changed_details[0U] = shared::HeightTileSurfaceDetail::Coarse2;
@@ -395,6 +395,23 @@ TEST(PreviewMeshingTest, DefersCenterAndNeighborSeamsWhenChangedNeighborBatchUpl
     EXPECT_EQ(visible_west.quads, fixture.installed_west.quads);
     EXPECT_EQ(visible_west_bridges.edges(), fixture.installed_west_bridges.edges());
     EXPECT_EQ(visible_east_bridges.edges(), fixture.installed_east_bridges.edges());
+}
+
+TEST(PreviewMeshingTest, RebuildAfterNeighborRemovalClearsItsStaleSeamBridge)
+{
+    PreviewSeamPublicationFixture fixture;
+    ASSERT_FALSE(fixture.installed_west_bridges.edges()[1U].empty());
+
+    std::array<client::PreviewMeshSeamNeighborSnapshot,
+        client::MAX_PREVIEW_MESH_NEIGHBOR_UPSERTS_PER_RESULT> const no_neighbors{};
+    client::PreviewMeshSeamPublicationPlan const plan = client::planPreviewMeshSeamPublication(
+        fixture.installed_west,
+        fixture.installed_west_bridges,
+        no_neighbors
+    );
+
+    EXPECT_TRUE(plan.center_bridges.edges()[1U].empty());
+    EXPECT_EQ(plan.center_mesh.quads, fixture.installed_west.quads);
 }
 
 TEST(PreviewMeshingTest, RebuildsWrappedSeamFacesFromTheCurrentNeighborRevision)

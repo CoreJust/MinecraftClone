@@ -32,6 +32,27 @@
 
 namespace {
 
+TEST(RendererSmokeTest, DisabledTerrainOcclusionRetainsEveryRange)
+{
+    EXPECT_TRUE(client::detail::diagnosticTerrainRangeVisible(false, true, VK_SUCCESS, 0U, 1U));
+    EXPECT_TRUE(client::detail::diagnosticTerrainRangeVisible(false, false, VK_NOT_READY, 0U, 0U));
+}
+
+TEST(RendererSmokeTest, TerrainOcclusionRetainsEveryNonzeroResult)
+{
+    EXPECT_FALSE(client::detail::diagnosticTerrainRangeVisible(true, true, VK_SUCCESS, 0U, 1U));
+    EXPECT_TRUE(client::detail::diagnosticTerrainRangeVisible(true, true, VK_SUCCESS, 1U, 1U));
+    EXPECT_TRUE(client::detail::diagnosticTerrainRangeVisible(true, true, VK_SUCCESS, UINT64_MAX, 1U));
+}
+
+TEST(RendererSmokeTest, TerrainOcclusionFailsClosedOnStaleUnavailableOrFailedQueries)
+{
+    EXPECT_TRUE(client::detail::diagnosticTerrainRangeVisible(true, false, VK_SUCCESS, 0U, 1U));
+    EXPECT_TRUE(client::detail::diagnosticTerrainRangeVisible(true, true, VK_SUCCESS, 0U, 0U));
+    EXPECT_TRUE(client::detail::diagnosticTerrainRangeVisible(true, true, VK_NOT_READY, 0U, 1U));
+    EXPECT_TRUE(client::detail::diagnosticTerrainRangeVisible(true, true, VK_ERROR_DEVICE_LOST, 0U, 1U));
+}
+
 class InertPresentationBackend final : public core::graphics::vulkan::PresentationBackend {
 public:
     core::graphics::vulkan::FenceWaitResult recreation_wait_result = core::graphics::vulkan::FenceWaitResult::Completed;
@@ -430,6 +451,153 @@ TEST(RendererSmokeTest, GrowsStoneFaceArenaWithoutBreakingPresentation)
     };
     renderVisibleTile(0);
     renderVisibleTile(static_cast<int32_t>(TILE_COUNT - 1U));
+    EXPECT_EQ(renderer.validationErrorCount(), 0U);
+}
+
+TEST(RendererSmokeTest, BatchUpsertCoalescesNewlyRetiredRangesWithReusableRanges)
+{
+    static constexpr uint32_t INITIAL_CAPACITY = 65'536U;
+    static constexpr uint32_t MAXIMUM_TILE_FACE_COUNT = shared::HeightTileSurfaceMesh::MAXIMUM_QUAD_COUNT;
+    static constexpr uint32_t SMALL_TILE_FACE_COUNT = MAXIMUM_TILE_FACE_COUNT / 2U;
+    static constexpr uint32_t FULL_TILE_COUNT =
+        (INITIAL_CAPACITY - 2U * SMALL_TILE_FACE_COUNT) / MAXIMUM_TILE_FACE_COUNT;
+    static constexpr uint32_t FINAL_TILE_FACE_COUNT = INITIAL_CAPACITY - 2U * SMALL_TILE_FACE_COUNT
+        - FULL_TILE_COUNT * MAXIMUM_TILE_FACE_COUNT;
+    static constexpr uint32_t HALF_RETIREMENT_DELAY_FRAMES = 4U;
+    static constexpr auto TIMEOUT = std::chrono::seconds{ 10 };
+
+    core::platform::glfw::GlfwWindow window{
+        { .width = 320U, .height = 240U, .title = "MinecraftClone retired stone-range smoke" },
+    };
+    glfwHideWindow(window.nativeHandle());
+    client::InstalledShaderAssets const shader_assets;
+    client::VulkanRenderer renderer{
+        client::VulkanRenderer::createPresentationContext(window, { .require_validation = true }),
+        shader_assets,
+        { .require_validation = true },
+    };
+    auto const deadline = [] { return std::chrono::steady_clock::now() + TIMEOUT; };
+    auto mesh_with_faces = [](int32_t const tile_x, uint32_t const face_count) {
+        shared::HeightTileSurfaceMesh mesh = denseHeightTileMesh(tile_x);
+        mesh.quads.resize(face_count);
+        return mesh;
+    };
+
+    std::vector<shared::HeightTileSurfaceMesh> resident_meshes;
+    resident_meshes.reserve(FULL_TILE_COUNT + 3U);
+    resident_meshes.push_back(mesh_with_faces(0, SMALL_TILE_FACE_COUNT));
+    resident_meshes.push_back(mesh_with_faces(1, SMALL_TILE_FACE_COUNT));
+    for (uint32_t index = 0U; index < FULL_TILE_COUNT; ++index) {
+        resident_meshes.push_back(mesh_with_faces(static_cast<int32_t>(index + 2U), MAXIMUM_TILE_FACE_COUNT));
+    }
+    resident_meshes.push_back(mesh_with_faces(
+        static_cast<int32_t>(FULL_TILE_COUNT + 2U), FINAL_TILE_FACE_COUNT
+    ));
+    for (shared::HeightTileSurfaceMesh const& mesh : resident_meshes) {
+        ASSERT_TRUE(renderer.upsertHeightTileMesh(mesh, deadline()));
+    }
+    ASSERT_EQ(renderer.runtimeInfo().stone_face_capacity, INITIAL_CAPACITY);
+    ASSERT_EQ(renderer.runtimeInfo().chunk_face_count, INITIAL_CAPACITY);
+
+    EXPECT_TRUE(renderer.removeHeightTileMesh({ .x = 0, .y = 0 }));
+    for (uint32_t frame = 0U; frame < HALF_RETIREMENT_DELAY_FRAMES; ++frame) {
+        ASSERT_TRUE(window.nextFrame());
+        ASSERT_TRUE(renderer.render({}, deadline()));
+    }
+    EXPECT_TRUE(renderer.removeHeightTileMesh({ .x = 1, .y = 0 }));
+    for (uint32_t frame = 0U; frame < HALF_RETIREMENT_DELAY_FRAMES; ++frame) {
+        ASSERT_TRUE(window.nextFrame());
+        ASSERT_TRUE(renderer.render({}, deadline()));
+    }
+    std::array const flush_batch{ resident_meshes[2] };
+    ASSERT_TRUE(renderer.upsertHeightTileMeshes(flush_batch, deadline()));
+
+    for (uint32_t frame = 0U; frame < HALF_RETIREMENT_DELAY_FRAMES; ++frame) {
+        ASSERT_TRUE(window.nextFrame());
+        ASSERT_TRUE(renderer.render({}, deadline()));
+    }
+    std::array const replacement_batch{
+        mesh_with_faces(static_cast<int32_t>(resident_meshes.size()), MAXIMUM_TILE_FACE_COUNT),
+    };
+    ASSERT_TRUE(renderer.upsertHeightTileMeshes(replacement_batch, deadline()));
+
+    EXPECT_EQ(renderer.runtimeInfo().stone_face_capacity, INITIAL_CAPACITY);
+    EXPECT_EQ(renderer.runtimeInfo().chunk_face_count, INITIAL_CAPACITY);
+    EXPECT_EQ(renderer.runtimeInfo().stone_face_growth.growth_attempt_count, 0U);
+    EXPECT_EQ(renderer.validationErrorCount(), 0U);
+}
+
+TEST(RendererSmokeTest, TerrainOcclusionOrdinaryCaptureMatchesBaselineAndInvalidatesOnSceneChange)
+{
+    static constexpr uint32_t MAXIMUM_FRAMES = 24U;
+    static constexpr auto TIMEOUT = std::chrono::seconds{ 10 };
+    char const* const requested = std::getenv("MC_DIAGNOSTIC_TERRAIN_OCCLUSION");
+    if (requested == nullptr || std::string_view{ requested } != "1") {
+        GTEST_SKIP() << "set MC_DIAGNOSTIC_TERRAIN_OCCLUSION=1 to exercise the diagnostic oracle";
+    }
+    core::platform::glfw::GlfwWindow window{
+        { .width = 320U, .height = 240U, .title = "MinecraftClone terrain occlusion diagnostic" },
+    };
+    glfwHideWindow(window.nativeHandle());
+    client::InstalledShaderAssets const shader_assets;
+    client::VulkanRenderer renderer{
+        client::VulkanRenderer::createPresentationContext(
+            window, { .require_validation = true, .enable_frame_capture = true }
+        ),
+        shader_assets,
+        { .require_validation = true, .enable_frame_capture = true },
+    };
+    if (!renderer.runtimeInfo().diagnostic_terrain_occlusion_enabled) {
+        GTEST_SKIP() << "set MC_DIAGNOSTIC_TERRAIN_OCCLUSION=1 to exercise the diagnostic oracle";
+    }
+    renderer.setDebugHudEnabled(false);
+    renderer.setCamera({ .position = { 8.0, -20.0, 25.0 }, .angles = { .pitch_degrees = -30.0 } });
+    auto const deadline = std::chrono::steady_clock::now() + TIMEOUT;
+    shared::HeightTileSurfaceMesh mesh = denseHeightTileMesh(0);
+    ASSERT_TRUE(renderer.upsertHeightTileMesh(mesh, deadline));
+    ASSERT_TRUE(window.nextFrame());
+    renderer.requestFrameCapture();
+    ASSERT_TRUE(renderer.render({}, deadline));
+    ASSERT_FALSE(renderer.runtimeInfo().diagnostic_terrain_occlusion_oracle_frame);
+    ASSERT_FALSE(renderer.runtimeInfo().diagnostic_terrain_occlusion_filtered_frame);
+    auto const baseline = renderer.takeFrameCapture();
+    ASSERT_TRUE(baseline.has_value());
+
+    bool saw_oracle = false;
+    bool saw_filtered = false;
+    renderer.requestFrameCapture();
+    for (uint32_t frame = 0U; frame < MAXIMUM_FRAMES && std::chrono::steady_clock::now() < deadline; ++frame) {
+        ASSERT_TRUE(window.nextFrame());
+        ASSERT_TRUE(renderer.render({}, deadline));
+        auto const info = renderer.runtimeInfo();
+        if (info.diagnostic_terrain_occlusion_oracle_frame) {
+            saw_oracle = true;
+            EXPECT_FALSE(renderer.takeFrameCapture().has_value());
+            EXPECT_FALSE(info.diagnostic_gpu_terrain_duration.has_value());
+        }
+        if (info.diagnostic_terrain_occlusion_filtered_frame) {
+            saw_filtered = true;
+            auto const filtered = renderer.takeFrameCapture();
+            ASSERT_TRUE(filtered.has_value());
+            EXPECT_EQ(filtered->rgba8, baseline->rgba8);
+            EXPECT_EQ(filtered->width, baseline->width);
+            EXPECT_EQ(filtered->height, baseline->height);
+            break;
+        }
+    }
+    ASSERT_TRUE(saw_oracle);
+    ASSERT_TRUE(saw_filtered);
+
+    renderer.setCamera({ .position = { 9.0, -20.0, 25.0 }, .angles = { .pitch_degrees = -30.0 } });
+    ASSERT_TRUE(window.nextFrame());
+    ASSERT_TRUE(renderer.render({}, deadline));
+    EXPECT_FALSE(renderer.runtimeInfo().diagnostic_terrain_occlusion_filtered_frame);
+    EXPECT_EQ(renderer.runtimeInfo().diagnostic_terrain_occlusion_removed_quad_count, 0U);
+    mesh.quads.pop_back();
+    ASSERT_TRUE(renderer.upsertHeightTileMesh(mesh, deadline));
+    ASSERT_TRUE(window.nextFrame());
+    ASSERT_TRUE(renderer.render({}, deadline));
+    EXPECT_FALSE(renderer.runtimeInfo().diagnostic_terrain_occlusion_filtered_frame);
     EXPECT_EQ(renderer.validationErrorCount(), 0U);
 }
 

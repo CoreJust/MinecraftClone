@@ -345,4 +345,77 @@ TEST(HeightTileInterestTest, RemovalSelectionBreaksEqualPriorityTiesDeterministi
     EXPECT_EQ(first.front(), positive);
 }
 
+TEST(HeightTileInterestTest, DeltaOutputReusesStorageAcrossMovementWrapAndNoChange)
+{
+    static constexpr uint32_t TRANSITION_COUNT = 8U;
+    static constexpr uint32_t OUTPUT_CAPACITY = 256U;
+    static constexpr std::array<shared::HeightTileKey, TRANSITION_COUNT + 1U> CENTERS{
+        shared::HeightTileKey{ .x = 100, .y = 200 },
+        shared::HeightTileKey{ .x = 101, .y = 200 },
+        shared::HeightTileKey{ .x = 101, .y = 201 },
+        shared::HeightTileKey{ .x = 102, .y = 201 },
+        shared::HeightTileKey{ .x = 4'095, .y = 300 },
+        shared::HeightTileKey{ .x = 0, .y = 300 },
+        shared::HeightTileKey{ .x = 4'095, .y = 300 },
+        shared::HeightTileKey{ .x = 4'095, .y = 300 },
+        shared::HeightTileKey{ .x = 100, .y = 200 },
+    };
+    static constexpr std::array<uint32_t, TRANSITION_COUNT> RADII{
+        8U, 8U, 8U, 8U, 8U, 8U, 8U, 4U,
+    };
+    auto const keySet = [](std::vector<shared::HeightTileKey> const& keys) {
+        std::set<std::pair<int32_t, int32_t>> result;
+        for (shared::HeightTileKey const key : keys) {
+            result.emplace(key.x, key.y);
+        }
+        return result;
+    };
+    shared::HeightTileInterestDelta reused;
+    reused.additions.reserve(OUTPUT_CAPACITY);
+    reused.removals.reserve(OUTPUT_CAPACITY);
+    shared::HeightTileKey const* const additions_storage = reused.additions.data();
+    shared::HeightTileKey const* const removals_storage = reused.removals.data();
+    uint32_t const additions_capacity = static_cast<uint32_t>(reused.additions.capacity());
+    uint32_t const removals_capacity = static_cast<uint32_t>(reused.removals.capacity());
+
+    for (uint32_t index = 0U; index < TRANSITION_COUNT; ++index) {
+        shared::HeightTileKey const previous_center = CENTERS[index];
+        shared::HeightTileKey const next_center = CENTERS[index + 1U];
+        uint32_t const radius = RADII[index];
+        shared::heightTileInterestDelta(previous_center, next_center, radius, reused);
+        shared::HeightTileInterestDelta const returned = shared::heightTileInterestDelta(
+            previous_center, next_center, radius
+        );
+        EXPECT_EQ(reused.additions, returned.additions);
+        EXPECT_EQ(reused.removals, returned.removals);
+
+        std::vector<shared::HeightTileKey> const previous_keys = shared::makeHeightTileInterest(
+            previous_center, 0, 127, radius
+        ).keys;
+        std::vector<shared::HeightTileKey> const next_keys = shared::makeHeightTileInterest(
+            next_center, 0, 127, radius
+        ).keys;
+        std::set<std::pair<int32_t, int32_t>> const previous_set = keySet(previous_keys);
+        std::set<std::pair<int32_t, int32_t>> const next_set = keySet(next_keys);
+        std::set<std::pair<int32_t, int32_t>> expected_additions;
+        std::set<std::pair<int32_t, int32_t>> expected_removals;
+        for (shared::HeightTileKey const key : next_keys) {
+            if (!previous_set.contains({ key.x, key.y })) {
+                expected_additions.emplace(key.x, key.y);
+            }
+        }
+        for (shared::HeightTileKey const key : previous_keys) {
+            if (!next_set.contains({ key.x, key.y })) {
+                expected_removals.emplace(key.x, key.y);
+            }
+        }
+        EXPECT_EQ(keySet(reused.additions), expected_additions);
+        EXPECT_EQ(keySet(reused.removals), expected_removals);
+        EXPECT_EQ(reused.additions.data(), additions_storage);
+        EXPECT_EQ(reused.removals.data(), removals_storage);
+        EXPECT_EQ(reused.additions.capacity(), additions_capacity);
+        EXPECT_EQ(reused.removals.capacity(), removals_capacity);
+    }
+}
+
 } // namespace

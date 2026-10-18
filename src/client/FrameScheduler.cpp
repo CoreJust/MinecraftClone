@@ -24,9 +24,13 @@ bool FrameScheduler::simulationDue(std::chrono::steady_clock::time_point const n
 }
 
 std::chrono::milliseconds FrameScheduler::idleDelay(
-    std::chrono::steady_clock::time_point const now
+    std::chrono::steady_clock::time_point const now,
+    bool const presentation_succeeded
 ) const noexcept
 {
+    if (presentation_succeeded) {
+        return std::chrono::milliseconds::zero();
+    }
     if (now >= m_next_simulation) {
         return std::chrono::milliseconds{ 1 };
     }

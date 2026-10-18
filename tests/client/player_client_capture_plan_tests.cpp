@@ -201,24 +201,36 @@ TEST(PlayerClientCapturePlanTest, GivesArenaGrowthTimeThroughoutCapturePreload)
 }
 
 TEST(PlayerClientCapturePlanTest,
-     PreservesBoundedNearAdmissionAfterInterestRefreshUsesFrameBudget) {
+     ReservesOnlyOneFreshMillisecondOfMeshWorkAfterInterestRefreshOverruns) {
   static constexpr std::chrono::milliseconds RENDERER_BUDGET{8};
   static constexpr std::chrono::milliseconds OVERRUN{3};
-  static constexpr std::chrono::milliseconds ADMISSION_GRACE{1};
+  static constexpr std::chrono::milliseconds MESH_WORK_RESERVE{1};
   std::chrono::steady_clock::time_point const frame_started_at{};
   std::chrono::steady_clock::time_point const renderer_deadline =
       frame_started_at + RENDERER_BUDGET;
   std::chrono::steady_clock::time_point const refresh_completed_at =
       renderer_deadline + OVERRUN;
+  std::chrono::steady_clock::time_point const mesh_work_deadline =
+      client::playerClientPreviewMeshWorkDeadline(renderer_deadline, refresh_completed_at);
 
-  EXPECT_EQ(client::playerClientPreviewMeshAdmissionDeadline(
+  EXPECT_EQ(mesh_work_deadline, refresh_completed_at + MESH_WORK_RESERVE);
+  EXPECT_EQ(mesh_work_deadline - refresh_completed_at, MESH_WORK_RESERVE);
+  EXPECT_GT(mesh_work_deadline, renderer_deadline);
+}
+
+TEST(PlayerClientCapturePlanTest,
+     KeepsExistingRendererDeadlineWhenInterestRefreshCompletesWithinBudget) {
+  static constexpr std::chrono::milliseconds RENDERER_BUDGET{8};
+  static constexpr std::chrono::milliseconds REFRESH_DURATION{3};
+  std::chrono::steady_clock::time_point const frame_started_at{};
+  std::chrono::steady_clock::time_point const renderer_deadline =
+      frame_started_at + RENDERER_BUDGET;
+  std::chrono::steady_clock::time_point const refresh_completed_at =
+      frame_started_at + REFRESH_DURATION;
+
+  EXPECT_EQ(client::playerClientPreviewMeshWorkDeadline(
                 renderer_deadline, refresh_completed_at),
-            refresh_completed_at + ADMISSION_GRACE);
-  EXPECT_EQ(
-      client::playerClientPreviewMeshAdmissionDeadline(
-          renderer_deadline,
-          frame_started_at),
-      renderer_deadline);
+            renderer_deadline);
 }
 
 TEST(PlayerClientCapturePlanTest, ProbesNearMeshesFromTheCenterOut) {
@@ -479,6 +491,60 @@ TEST(PlayerClientCapturePlanTest,
                };
       });
   for (shared::HeightTileKey const key : keys) {
+    EXPECT_EQ(queue.top(), key);
+    queue.pop();
+  }
+  EXPECT_TRUE(queue.empty());
+}
+
+TEST(PlayerClientCapturePlanTest,
+     BatchAdmissionsDeduplicateAndUseBoundedPriorityRefresh) {
+  static constexpr shared::HeightTileKey CENTER{100, 100};
+  static constexpr shared::HeightTileKey DEPARTED{99, 100};
+  std::array<shared::HeightTileKey, 5U> const keys{{
+      {120, 100},
+      CENTER,
+      {100, 101},
+      DEPARTED,
+      CENTER,
+  }};
+  std::unordered_set<shared::HeightTileKey,
+                     client::PlayerHeightTileKeyHash> const interest{
+      keys[0],
+      keys[1],
+      keys[2],
+  };
+  client::PlayerPreviewMeshQueue queue;
+  queue.resetPriority(CENTER, 127, 0, interest);
+  queue.pushBatch(keys);
+
+  EXPECT_EQ(queue.size(), 4U);
+  EXPECT_FALSE(queue.hasReady());
+  std::array<shared::HeightTileKey, 3U> const nearby_candidates{
+      {keys[0], keys[1], keys[2]}};
+  EXPECT_EQ(queue.nearestPending(nearby_candidates), CENTER);
+  EXPECT_EQ(queue.refreshPriority(2U, interest), 2U);
+  EXPECT_FALSE(queue.hasReady());
+  EXPECT_EQ(queue.refreshPriority(2U, interest), 2U);
+  EXPECT_TRUE(queue.hasReady());
+  EXPECT_EQ(queue.size(), interest.size());
+
+  std::vector<shared::HeightTileKey> expected{interest.begin(), interest.end()};
+  std::ranges::sort(
+      expected,
+      [](shared::HeightTileKey const first,
+         shared::HeightTileKey const second) {
+        return std::tuple{
+                   shared::heightTileInterestPriority(CENTER, 127, 0, first),
+                   first.y,
+                   first.x,
+               } < std::tuple{
+                   shared::heightTileInterestPriority(CENTER, 127, 0, second),
+                   second.y,
+                   second.x,
+               };
+      });
+  for (shared::HeightTileKey const key : expected) {
     EXPECT_EQ(queue.top(), key);
     queue.pop();
   }
@@ -1342,6 +1408,41 @@ TEST(PlayerClientCapturePlanTest, StaleReadyHeapCleanupIsBoundedAndNearCandidate
     EXPECT_EQ(queue.refreshPriority(BUDGET, interest), 0U);
 }
 
+TEST(PlayerClientCapturePlanTest, PriorityRefreshSharesItsBudgetWithStaleReadyHeapPops)
+{
+    static constexpr shared::HeightTileKey CENTER{ 2'048, 2'048 };
+    static constexpr shared::HeightTileKey STALE_KEY{ 2'049, 2'048 };
+    static constexpr shared::HeightTileKey FIRST_FAR{ 2'248, 2'048 };
+    static constexpr shared::HeightTileKey SECOND_FAR{ 2'249, 2'048 };
+    static constexpr uint32_t STALE_ENTRIES = 4U;
+    static constexpr uint32_t BUDGET = 3U;
+    std::unordered_set<shared::HeightTileKey, client::PlayerHeightTileKeyHash> const interest{
+        FIRST_FAR, SECOND_FAR,
+    };
+    client::PlayerPreviewMeshQueue queue;
+    queue.resetPriority(CENTER, 127, 0, interest);
+    ASSERT_TRUE(queue.push(CENTER));
+    for (uint32_t index = 0U; index < STALE_ENTRIES; ++index) {
+        ASSERT_TRUE(queue.push(STALE_KEY));
+        ASSERT_TRUE(queue.erase(STALE_KEY));
+    }
+    ASSERT_TRUE(queue.erase(CENTER));
+    ASSERT_TRUE(queue.push(FIRST_FAR));
+    std::array const arrivals{ SECOND_FAR };
+    queue.pushBatch(arrivals);
+    EXPECT_FALSE(queue.hasReady());
+    EXPECT_EQ(queue.refreshPriority(BUDGET, interest), BUDGET);
+    EXPECT_FALSE(queue.hasReady());
+    EXPECT_EQ(queue.refreshPriority(BUDGET, interest), BUDGET);
+    ASSERT_TRUE(queue.hasReady());
+    EXPECT_EQ(queue.top(), FIRST_FAR);
+    queue.pop();
+    ASSERT_TRUE(queue.hasReady());
+    EXPECT_EQ(queue.top(), SECOND_FAR);
+    queue.pop();
+    EXPECT_TRUE(queue.empty());
+}
+
 TEST(PlayerClientCapturePlanTest, OnePumpBudgetAdmitsNearForecastPrewarmAndManyFarJobs)
 {
     static constexpr uint32_t FAR_COUNT = 32U;
@@ -1551,4 +1652,183 @@ TEST(PlayerClientCapturePlanTest, MaintainedCoverageMatchesVisibleInterestThroug
     coverage.clear();
     EXPECT_EQ(coverage.visibleCount(), 0U);
     EXPECT_FALSE(coverage.complete(0U));
+}
+
+TEST(PlayerClientCapturePlanTest, UnrankedBacklogRefreshUsesExactBudgetAndFinalPriority)
+{
+    static constexpr uint32_t KEY_COUNT = 8192U;
+    static constexpr uint32_t BUDGET = 256U;
+    static constexpr shared::HeightTileKey CENTER{ 2050, 2048 };
+    client::PlayerPreviewMeshQueue queue;
+    std::vector<shared::HeightTileKey> keys;
+    std::unordered_set<shared::HeightTileKey, client::PlayerHeightTileKeyHash> interest;
+    for (uint32_t index = 0U; index < KEY_COUNT; ++index) {
+        shared::HeightTileKey const key{
+            2000 + static_cast<int32_t>(index % 128U),
+            2000 + static_cast<int32_t>(index / 128U),
+        };
+        keys.push_back(key);
+        interest.insert(key);
+    }
+    queue.pushBatch(keys);
+    queue.beginPriorityRefresh(CENTER, 127, 0);
+    for (uint32_t processed = 0U; processed < KEY_COUNT; processed += BUDGET) {
+        EXPECT_FALSE(queue.hasReady());
+        EXPECT_EQ(queue.refreshPriority(BUDGET, interest), BUDGET);
+    }
+    std::sort(keys.begin(), keys.end(), [](auto const first, auto const second) {
+        return std::tuple{ shared::heightTileInterestPriority(CENTER, 127, 0, first), first.y, first.x }
+            < std::tuple{ shared::heightTileInterestPriority(CENTER, 127, 0, second), second.y, second.x };
+    });
+    for (auto const key : keys) {
+        ASSERT_TRUE(queue.hasReady());
+        EXPECT_EQ(queue.top(), key);
+        queue.pop();
+    }
+    EXPECT_TRUE(queue.empty());
+    queue.clear();
+}
+
+TEST(PlayerClientCapturePlanTest, QueueChurnKeepsNearBypassAndFreshTicketsAcrossRetirement)
+{
+    static constexpr uint32_t KEY_COUNT = 2048U;
+    static constexpr uint32_t BUDGET = 256U;
+    static constexpr shared::HeightTileKey CENTER{ 2048, 2048 };
+    client::PlayerPreviewMeshQueue queue;
+    std::unordered_set<shared::HeightTileKey, client::PlayerHeightTileKeyHash> interest;
+    for (uint32_t index = 0U; index < KEY_COUNT; ++index) {
+        shared::HeightTileKey const key{ 1024 + static_cast<int32_t>(index), 2048 };
+        interest.insert(key);
+        ASSERT_TRUE(queue.push(key));
+    }
+    queue.beginPriorityRefresh(CENTER, 127, 0);
+    EXPECT_EQ(queue.refreshPriority(BUDGET, interest), BUDGET);
+    ASSERT_TRUE(queue.erase(CENTER));
+    ASSERT_TRUE(queue.push(CENTER));
+    std::array<shared::HeightTileKey, 1> const near{ CENTER };
+    EXPECT_EQ(queue.nearestPending(near), CENTER);
+    EXPECT_FALSE(queue.hasReady());
+    for (uint32_t step = 0U; step < 8U; ++step) {
+        queue.beginPriorityRefresh({ CENTER.x + static_cast<int32_t>(step), CENTER.y }, 127, 0);
+        EXPECT_LE(queue.refreshPriority(BUDGET, interest), BUDGET);
+        EXPECT_EQ(queue.nearestPending(near), CENTER);
+    }
+    queue.clear();
+    EXPECT_TRUE(queue.empty());
+    EXPECT_FALSE(queue.hasReady());
+    EXPECT_FALSE(queue.nearestPending(near).has_value());
+    EXPECT_TRUE(queue.push(CENTER));
+    EXPECT_TRUE(queue.hasReady());
+    EXPECT_EQ(queue.top(), CENTER);
+    queue.pop();
+    EXPECT_TRUE(queue.empty());
+}
+
+TEST(PlayerClientCapturePlanTest, ReservedQueueStorageReusesNodesAndBuffersAcrossChurn)
+{
+    static constexpr uint32_t KEY_COUNT = 64U;
+    static constexpr uint32_t CYCLES = 32U;
+    static constexpr uint32_t BUDGET = 8U;
+    static constexpr uint64_t MAXIMUM_RETAINED_BYTES =
+        uint64_t{64U} * 1024U * 1024U;
+    static constexpr shared::HeightTileKey CENTER{100, 100};
+    client::PlayerPreviewMeshQueue queue;
+    queue.reserveStorage(KEY_COUNT);
+    for (uint32_t cycle = 0U; cycle < CYCLES; ++cycle) {
+        std::vector<shared::HeightTileKey> keys;
+        keys.reserve(KEY_COUNT);
+        for (uint32_t index = 0U; index < KEY_COUNT; ++index) {
+            keys.push_back({CENTER.x + static_cast<int32_t>(index), CENTER.y + static_cast<int32_t>(cycle)});
+        }
+        std::unordered_set<shared::HeightTileKey, client::PlayerHeightTileKeyHash> const interest{
+            keys.begin(), keys.end()};
+        queue.pushBatch(keys);
+        queue.beginPriorityRefresh(CENTER, 127, 0);
+        for (uint32_t iteration = 0U; !queue.hasReady() && iteration < KEY_COUNT; ++iteration) {
+            EXPECT_LE(queue.refreshPriority(BUDGET, interest), BUDGET);
+        }
+        ASSERT_TRUE(queue.hasReady());
+        EXPECT_EQ(queue.size(), KEY_COUNT);
+        for (uint32_t index = 0U; index < KEY_COUNT; ++index) {
+            ASSERT_TRUE(queue.hasReady());
+            EXPECT_TRUE(interest.contains(queue.top()));
+            queue.pop();
+        }
+        EXPECT_TRUE(queue.empty());
+        EXPECT_LE(queue.storageStats().retained_bytes, MAXIMUM_RETAINED_BYTES);
+    }
+    EXPECT_GE(queue.storageStats().buffer_reuses, CYCLES);
+    EXPECT_GE(queue.storageStats().ticket_reuses, static_cast<uint64_t>(KEY_COUNT) * (CYCLES - 1U));
+    queue.clear();
+    EXPECT_EQ(queue.storageStats().retained_bytes, 0U);
+    queue.reserveStorage(KEY_COUNT);
+    EXPECT_TRUE(queue.push(CENTER));
+    EXPECT_EQ(queue.top(), CENTER);
+}
+
+TEST(PlayerClientCapturePlanTest, RecycledTicketsPreserveNearBypassAndBudgetedStaleCleanup)
+{
+    static constexpr uint32_t KEY_COUNT = 64U;
+    static constexpr uint32_t CYCLES = 16U;
+    static constexpr uint32_t BUDGET = 8U;
+    static constexpr shared::HeightTileKey CENTER{100, 100};
+    client::PlayerPreviewMeshQueue queue;
+    queue.reserveStorage(KEY_COUNT);
+    std::unordered_set<shared::HeightTileKey, client::PlayerHeightTileKeyHash> interest;
+    std::vector<shared::HeightTileKey> previous;
+    for (uint32_t cycle = 0U; cycle < CYCLES; ++cycle) {
+        for (auto const key : previous) {
+            EXPECT_TRUE(queue.erase(key));
+        }
+        previous.clear();
+        interest.clear();
+        for (uint32_t index = 0U; index < KEY_COUNT; ++index) {
+            shared::HeightTileKey const key{CENTER.x + static_cast<int32_t>(index),
+                CENTER.y + static_cast<int32_t>(cycle)};
+            previous.push_back(key);
+            interest.insert(key);
+        }
+        queue.pushBatch(previous);
+        queue.beginPriorityRefresh(CENTER, 127, 0);
+        EXPECT_EQ(queue.size(), KEY_COUNT);
+        EXPECT_EQ(queue.nearestPending(std::span<shared::HeightTileKey const>{previous.data(), 1U}), previous.front());
+        EXPECT_LE(queue.refreshPriority(BUDGET, interest), BUDGET);
+    }
+    for (uint32_t iteration = 0U; !queue.hasReady() && iteration < KEY_COUNT * CYCLES; ++iteration) {
+        EXPECT_LE(queue.refreshPriority(BUDGET, interest), BUDGET);
+    }
+    ASSERT_TRUE(queue.hasReady());
+    EXPECT_EQ(queue.top(), previous.front());
+    EXPECT_GT(queue.storageStats().ticket_reuses, 0U);
+    queue.clear();
+    EXPECT_TRUE(queue.empty());
+    EXPECT_FALSE(queue.hasReady());
+    EXPECT_EQ(queue.storageStats().retained_bytes, 0U);
+}
+
+TEST(PlayerClientCapturePlanTest, DepartedTicketsAreRemovedAndResetDrainsUnrankedBuffers)
+{
+    static constexpr uint32_t KEY_COUNT = 1024U;
+    static constexpr uint32_t BUDGET = 256U;
+    static constexpr shared::HeightTileKey CENTER{ 100, 100 };
+    client::PlayerPreviewMeshQueue queue;
+    std::vector<shared::HeightTileKey> keys;
+    keys.reserve(KEY_COUNT);
+    for (uint32_t index = 0U; index < KEY_COUNT; ++index) {
+        keys.push_back({ static_cast<int32_t>(index), 100 });
+    }
+    queue.pushBatch(keys);
+    std::unordered_set<shared::HeightTileKey, client::PlayerHeightTileKeyHash> const interest{ CENTER };
+    queue.beginPriorityRefresh(CENTER, 0, 127);
+    for (uint32_t processed = 0U; processed < KEY_COUNT; processed += BUDGET) {
+        EXPECT_EQ(queue.refreshPriority(BUDGET, interest), BUDGET);
+    }
+    EXPECT_EQ(queue.size(), 1U);
+    EXPECT_EQ(queue.top(), CENTER);
+    queue.beginPriorityRefresh(CENTER, 127, 0);
+    queue.resetPriority(CENTER, 0, 127, interest);
+    EXPECT_TRUE(queue.hasReady());
+    EXPECT_EQ(queue.top(), CENTER);
+    queue.clear();
+    EXPECT_TRUE(queue.empty());
 }

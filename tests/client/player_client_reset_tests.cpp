@@ -69,7 +69,7 @@ struct PlayerClientTestAccess final {
             .negative_y = surface.heights,
             .positive_y = surface.heights,
         }, detail);
-        client.publishPreviewMesh(tile->key(), std::move(mesh), tile, deadline);
+        static_cast<void>(client.publishPreviewMesh(tile->key(), mesh, tile, deadline));
     }
 
     static shared::HeightTileSurfaceDetail lodDetail(PlayerClient& client, shared::HeightTileKey const key)
@@ -157,23 +157,61 @@ struct PlayerClientTestAccess final {
         }
         client.m_pending_preview_meshes.clear();
         client.m_capture.emplace();
+        bool const track_mesh_stages = client.m_benchmark.has_value()
+            && client.m_benchmark->enable_mesh_stage_diagnostics;
         client.m_benchmark.emplace();
+        client.m_benchmark->enable_mesh_stage_diagnostics = track_mesh_stages;
+        client::PlayerClientBenchmarkFullTerrainInfo const before = client.benchmarkFullTerrainStreamingInfo();
+        std::optional<shared::HeightTileKey> const center = client.m_height_tile_center;
+        HeightTileHandle const tile = client.m_height_tile_residency.resident(key);
+        if (!client.m_preview_mesh_jobs.empty() || before.worker_result_count != 0U
+            || before.worker_outstanding_count != 0U || !center.has_value() || *center != key
+            || !client.m_height_tile_interest.contains(key) || !tile) {
+            ADD_FAILURE() << "Expected an idle, interested target before preparing a single-key mesh job";
+            return false;
+        }
         client.queuePreviewMesh(key);
         auto const deadline = std::chrono::steady_clock::now() + std::chrono::seconds{ 2 };
-        client.processPendingPreviewMeshes(0U, deadline, deadline);
+        std::span<shared::HeightTileKey const> const no_nearby_candidates{};
+        if (!client.enqueuePreviewMeshJob(key, tile, key, no_nearby_candidates, deadline)) {
+            ADD_FAILURE() << "Failed to submit the requested completed mesh job";
+            return false;
+        }
         while (std::chrono::steady_clock::now() < deadline) {
-            if (client.benchmarkFullTerrainStreamingInfo().worker_result_count == 1U) {
+            client::PlayerClientBenchmarkFullTerrainInfo const info = client.benchmarkFullTerrainStreamingInfo();
+            if (info.worker_result_count == 1U && info.worker_outstanding_count == 1U
+                && info.active_mesh_job_count == 1U && info.pending_mesh_count == 0U
+                && client.m_preview_mesh_jobs.contains(key)) {
                 return true;
             }
             std::this_thread::sleep_for(std::chrono::milliseconds{ 1 });
         }
+        client::PlayerClientBenchmarkFullTerrainInfo const info = client.benchmarkFullTerrainStreamingInfo();
+        ADD_FAILURE() << "Timed out preparing the requested completed mesh: results=" << info.worker_result_count
+                      << " outstanding=" << info.worker_outstanding_count
+                      << " pending=" << info.pending_mesh_count
+                      << " active=" << info.active_mesh_job_count
+                      << " target_job_active=" << client.m_preview_mesh_jobs.contains(key);
         return false;
+    }
+
+    static void processOneLodResult(
+        PlayerClient& client,
+        std::chrono::steady_clock::time_point const deadline
+    )
+    {
+        client.processPendingPreviewMeshes(1U, deadline, deadline);
     }
 
     static void processOneLodResult(PlayerClient& client)
     {
-        auto const mesh_pump_deadline = std::chrono::steady_clock::now() + std::chrono::seconds{ 2 };
-        client.processPendingPreviewMeshes(1U, mesh_pump_deadline, mesh_pump_deadline);
+        processOneLodResult(client, std::chrono::steady_clock::now() + std::chrono::seconds{ 2 });
+    }
+
+    static void drainOneLodResultWithoutAdmission(PlayerClient& client)
+    {
+        auto const renderer_deadline = std::chrono::steady_clock::now() + std::chrono::seconds{ 2 };
+        client.processPendingPreviewMeshes(1U, renderer_deadline, std::chrono::steady_clock::now());
     }
 
     static uint64_t meshAdmissionCount(PlayerClient const& client)
@@ -196,6 +234,41 @@ struct PlayerClientTestAccess final {
     static shared::HeightTileSurfaceDetail installedDetail(PlayerClient const& client, shared::HeightTileKey const key)
     {
         return client.m_visible_preview_mesh_bases.at(key).detail;
+    }
+
+    static uint64_t baseStorageBytes(PlayerClient const& client, shared::HeightTileKey const key)
+    {
+        return static_cast<uint64_t>(client.m_visible_preview_mesh_bases.at(key).quads.capacity())
+            * sizeof(shared::HeightTileSurfaceQuad);
+    }
+
+    static uint64_t retiredPreviewCacheHighWaterBytes(PlayerClient const& client)
+    {
+        return client.previewCacheRetirementHighWaterBytes();
+    }
+
+    static uint64_t pendingPreviewCacheRetirementBytes(PlayerClient const& client)
+    {
+        return client.previewCacheRetirementOutstandingBytes();
+    }
+
+    static uint64_t cacheRetirementSubmissionCount(PlayerClient const& client)
+    {
+        return client.previewCacheRetirementSubmissionCount();
+    }
+
+    static uint64_t cacheRetirementFallbackCount(PlayerClient const& client)
+    {
+        return client.previewCacheRetirementFallbackCount();
+    }
+
+    static bool previewCacheContains(PlayerClient const& client, shared::HeightTileKey const key)
+    {
+        return client.m_visible_preview_meshes.contains(key)
+            || client.m_visible_preview_mesh_tiles.contains(key)
+            || client.m_visible_preview_mesh_bases.contains(key)
+            || client.m_visible_preview_mesh_edge_profiles.contains(key)
+            || client.m_visible_preview_mesh_seam_bridges.contains(key);
     }
 
     static std::optional<shared::HeightTileSurfaceDetail> selectedLodDetail(
@@ -228,6 +301,12 @@ struct PlayerClientTestAccess final {
     {
         client.m_height_tile_interest.erase(key);
         client.removePreviewMesh(key, std::chrono::steady_clock::now() + std::chrono::seconds{ 2 });
+        client.submitPreviewCacheRetirements();
+    }
+
+    static bool pendingLodMesh(PlayerClient const& client, shared::HeightTileKey const key)
+    {
+        return client.m_pending_preview_meshes.contains(key);
     }
 
     static shared::HeightTileKey seedPreviewState(
@@ -578,4 +657,74 @@ TEST(PlayerClientResetTest, ChangedInstalledProfileRejectsUnsafeCompletedCoarseG
     ASSERT_TRUE(client::PlayerClientTestAccess::waitForVisibleMesh(player_client, KEY));
     EXPECT_EQ(client::PlayerClientTestAccess::installedDetail(player_client, KEY),
         shared::HeightTileSurfaceDetail::Fine);
+}
+
+
+TEST(PlayerClientResetTest, RemovedPreviewCacheStorageIsRetiredAndConnectionResetDrainsIt)
+{
+    static constexpr shared::HeightTileKey KEY{ 200, 0 };
+    static constexpr client::HeightTileRevision REVISION{ 1U, 1U };
+    client::PlayerClient player_client{ shared::WorldMode::Flight };
+    auto const tile = client::PlayerClientTestAccess::seedLodNeighborhood(player_client, KEY, REVISION, 20U);
+    client::PlayerClientTestAccess::publishLodTile(
+        player_client, tile, std::chrono::steady_clock::now() + std::chrono::seconds{ 2 }
+    );
+    ASSERT_EQ(client::PlayerClientTestAccess::rendererMeshCount(player_client), 1U);
+    uint64_t const storage_bytes = client::PlayerClientTestAccess::baseStorageBytes(player_client, tile->key());
+    uint64_t const submissions_before_remove =
+        client::PlayerClientTestAccess::cacheRetirementSubmissionCount(player_client);
+    ASSERT_GT(storage_bytes, 0U);
+    ASSERT_EQ(client::PlayerClientTestAccess::retiredPreviewCacheHighWaterBytes(player_client), 0U);
+
+    client::PlayerClientTestAccess::removeLodTile(player_client, tile->key());
+
+    EXPECT_FALSE(client::PlayerClientTestAccess::currentMeshVisible(player_client, tile->key()));
+    EXPECT_FALSE(client::PlayerClientTestAccess::previewCacheContains(player_client, tile->key()));
+    EXPECT_EQ(client::PlayerClientTestAccess::rendererMeshCount(player_client), 0U);
+    EXPECT_GE(client::PlayerClientTestAccess::retiredPreviewCacheHighWaterBytes(player_client), storage_bytes);
+    EXPECT_EQ(client::PlayerClientTestAccess::cacheRetirementSubmissionCount(player_client),
+        submissions_before_remove + 1U);
+    EXPECT_EQ(client::PlayerClientTestAccess::cacheRetirementFallbackCount(player_client), 0U);
+    EXPECT_TRUE(client::PlayerClientTestAccess::pendingLodMesh(
+        player_client,
+        shared::normalizeHeightTileKey({ .x = tile->key().x - 1, .y = tile->key().y })
+    ));
+    client::PlayerClientTestAccess::resetConnectionState(player_client);
+    EXPECT_EQ(client::PlayerClientTestAccess::pendingPreviewCacheRetirementBytes(player_client), 0U);
+}
+
+
+TEST(PlayerClientResetTest, CompletedMeshSurvivesAnExpiredPublicationDeadline)
+{
+    static constexpr shared::HeightTileKey KEY{ 200, 0 };
+    client::PlayerClient player_client{ shared::WorldMode::Flight };
+    static_cast<void>(client::PlayerClientTestAccess::seedLodNeighborhood(
+        player_client, KEY, { 1U, 1U }, 1'024U
+    ));
+    ASSERT_TRUE(client::PlayerClientTestAccess::prepareCompletedLodJob(player_client, KEY));
+    ASSERT_EQ(player_client.benchmarkFullTerrainStreamingInfo().worker_result_count, 1U);
+    ASSERT_EQ(player_client.benchmarkFullTerrainStreamingInfo().worker_outstanding_count, 1U);
+    ASSERT_EQ(client::PlayerClientTestAccess::meshAdmissionCount(player_client), 1U);
+
+    auto const expired_deadline = std::chrono::steady_clock::now() - std::chrono::milliseconds{ 1 };
+    client::PlayerClientTestAccess::processOneLodResult(player_client, expired_deadline);
+    auto const deferred = player_client.benchmarkFullTerrainStreamingInfo();
+    EXPECT_EQ(deferred.worker_result_count, 1U);
+    EXPECT_EQ(deferred.worker_outstanding_count, 1U);
+    EXPECT_EQ(deferred.pending_mesh_count, 0U);
+    EXPECT_EQ(deferred.active_mesh_job_count, 1U);
+    EXPECT_EQ(client::PlayerClientTestAccess::meshAdmissionCount(player_client), 1U);
+
+    client::PlayerClientTestAccess::processOneLodResult(player_client, expired_deadline);
+    EXPECT_EQ(player_client.benchmarkFullTerrainStreamingInfo().worker_result_count, 1U);
+    EXPECT_EQ(client::PlayerClientTestAccess::meshAdmissionCount(player_client), 1U);
+
+    client::PlayerClientTestAccess::drainOneLodResultWithoutAdmission(player_client);
+    auto const published = player_client.benchmarkFullTerrainStreamingInfo();
+    EXPECT_EQ(published.worker_result_count, 0U);
+    EXPECT_EQ(published.worker_outstanding_count, 0U);
+    EXPECT_EQ(published.pending_mesh_count, 0U);
+    EXPECT_EQ(published.active_mesh_job_count, 0U);
+    EXPECT_EQ(client::PlayerClientTestAccess::meshAdmissionCount(player_client), 1U);
+    EXPECT_TRUE(client::PlayerClientTestAccess::currentMeshVisible(player_client, KEY));
 }

@@ -31,7 +31,7 @@
         "tests/acceptance/runtime_cli_tests.cmake",
         "tests/acceptance/scenario_runner_tests.cpp"
       ],
-      "sources_sha256": "16969a8cb70b342c48f71272ea03eba51d38bf51d660e827492c9b817e3a369f"
+      "sources_sha256": "2790ed4e1ac206e0f270305fe93fafa9e01a52881c9c4fb571a1fb7ff5d86a7f"
     },
     {
       "guide": "docs/code/ANDROID.md",
@@ -51,7 +51,7 @@
         "tests/android/input_state_tests.cpp",
         "tests/android/input_tests.cpp"
       ],
-      "sources_sha256": "fee6bbcecb94f114745cca4dfaba3e70090b13152dba03f11a514c1ed3457725"
+      "sources_sha256": "6bcf2b70766eccc36facfd23fa70e9584d6ba6533a59db986764d0a533f4a08d"
     },
     {
       "guide": "docs/BUILD.md",
@@ -179,7 +179,7 @@
         "vcpkg-configuration.json",
         "vcpkg.json"
       ],
-      "sources_sha256": "9645fc985462b229ed78700c85c9299369a5c18766dbeed1183e507844ee208c"
+      "sources_sha256": "618264fcb1c38088be710d15ffd5ba973c4ddfab5b41437efa2360ccbdfb18ff"
     },
     {
       "guide": "docs/code/CORE.md",
@@ -305,7 +305,7 @@
         "tests/core/world_generation_scheduler_tests.cpp",
         "tests/core/world_generation_tests.cpp"
       ],
-      "sources_sha256": "e60c5d42251b17cfaefa475a8b59083d4cf79a52e76089d38747e2c9b39657d1"
+      "sources_sha256": "0d55178ffcab08e3aa5db760573e0bd45ab5deeb4bf542976aa50dcfd9efa467"
     },
     {
       "guide": "docs/code/RENDERING.md",
@@ -317,6 +317,7 @@
         "src/client/include/client/render/DepthFormat.hpp",
         "src/client/include/client/render/GuiRenderer.hpp",
         "src/client/include/client/render/HeightTileDrawIndex.hpp",
+        "src/client/include/client/render/HeightTileInstanceReaper.hpp",
         "src/client/include/client/render/InstalledShaderAssets.hpp",
         "src/client/include/client/render/ShaderAssets.hpp",
         "src/client/include/client/render/StoneFaceCapacity.hpp",
@@ -344,6 +345,8 @@
         "src/client/render/shaders/sky.vert",
         "src/client/render/shaders/stone.frag",
         "src/client/render/shaders/stone.vert",
+        "src/client/render/shaders/stone_geometry.glsl",
+        "src/client/render/shaders/stone_indexed_block.vert",
         "src/client/render/shaders/stone_solid.frag",
         "src/client/render/shaders/text.frag",
         "src/client/render/shaders/text.vert",
@@ -365,6 +368,7 @@
         "tests/client/goldens/s4_scene_v1.ppm",
         "tests/client/gui_renderer_tests.cpp",
         "tests/client/height_tile_draw_index_tests.cpp",
+        "tests/client/height_tile_instance_reaper_tests.cpp",
         "tests/client/player_client_capture_plan_tests.cpp",
         "tests/client/player_client_reset_tests.cpp",
         "tests/client/player_presentation_tests.cpp",
@@ -386,7 +390,7 @@
         "tests/testsupport/include/testsupport/AdverseTransport.hpp",
         "tests/testsupport/include/testsupport/ImageComparison.hpp"
       ],
-      "sources_sha256": "bc14a5990a8a4df5617a77be82383b6f595988d2e81713eb4c08e06b4f84213e"
+      "sources_sha256": "008135b45edd1f579b3fa6c02ebe4c5ba80d87982dd93aaef031a49ba20175b7"
     }
   ],
   "version": 1

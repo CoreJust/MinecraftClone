@@ -23,6 +23,7 @@
 #include <optional>
 #include <random>
 #include <ranges>
+#include <span>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -190,7 +191,12 @@ TEST(HeightTileDrawIndexTest, DirectionalSpansIncludeAppendedSeamBridgesAndRetai
     second.heights.fill(3U);
     shared::HeightTileSurfaceMesher const mesher;
     shared::HeightTileSurfaceMesh mesh = mesher.build(
-        first, { .positive_x = first.heights }, shared::HeightTileSurfaceDetail::Coarse
+        first, {
+            .negative_x = std::nullopt,
+            .positive_x = first.heights,
+            .negative_y = std::nullopt,
+            .positive_y = std::nullopt,
+        }, shared::HeightTileSurfaceDetail::Coarse
     );
     shared::HeightTileSurfaceMesh const neighbor = mesher.build(second);
     shared::HeightTileSurfaceSeamBridge const bridge = shared::heightTileSurfaceSeamBridge(
@@ -236,6 +242,77 @@ TEST(HeightTileDrawIndexTest, DirectionSelectionKeepsCoplanarAndMixedPlanesAndMe
     index.remove(entry.coordinate);
     static_cast<void>(index.collect(client::VulkanFrustum{ glm::mat4{ 1.0F } }, {}, ranges));
     EXPECT_TRUE(ranges.empty());
+}
+
+TEST(HeightTileDrawIndexTest, ReusesVisibilityOnlyForAnUnchangedCameraAndFrustum)
+{
+    Index index;
+    index.upsert(insideEntry({ .x = 0, .y = 0 }, { 10U, 3U }));
+    client::VulkanFrustum const frustum{ glm::mat4{ 1.0F } };
+    glm::dvec3 const camera_position{ 0.25, 0.25, 0.5 };
+    std::vector<Range> actual;
+
+    Index::Work const first_work = index.collect(frustum, camera_position, actual);
+    EXPECT_GT(first_work.group_plane_tests, 0U);
+    EXPECT_EQ(pack(actual), (PackedRanges{ { 10U, 3U } }));
+
+    Index::Work const repeated_work = index.collect(frustum, camera_position, actual);
+    EXPECT_EQ(repeated_work.group_plane_tests, 0U);
+    EXPECT_EQ(repeated_work.tile_plane_tests, 0U);
+    EXPECT_EQ(pack(actual), (PackedRanges{ { 10U, 3U } }));
+
+    glm::dvec3 const moved_camera_position{ 0.5, 0.25, 0.5 };
+    Index::Work const moved_camera_work = index.collect(frustum, moved_camera_position, actual);
+    EXPECT_GT(moved_camera_work.group_plane_tests, 0U);
+    EXPECT_EQ(pack(actual), pack(reference(
+        std::vector<Index::Entry>{ insideEntry({ .x = 0, .y = 0 }, { 10U, 3U }) },
+        frustum,
+        moved_camera_position
+    ).ranges));
+
+    client::VulkanFrustum const changed_frustum{
+        glm::scale(glm::mat4{ 1.0F }, { 0.5F, 1.0F, 1.0F })
+    };
+    Index::Work const changed_frustum_work = index.collect(changed_frustum, moved_camera_position, actual);
+    EXPECT_GT(changed_frustum_work.group_plane_tests, 0U);
+    EXPECT_EQ(pack(actual), pack(reference(
+        std::vector<Index::Entry>{ insideEntry({ .x = 0, .y = 0 }, { 10U, 3U }) },
+        changed_frustum,
+        moved_camera_position
+    ).ranges));
+}
+
+TEST(HeightTileDrawIndexTest, SuccessfulMutationsInvalidateVisibilityButRejectedUpdatesDoNot)
+{
+    Index index;
+    Index::Entry entry = insideEntry({ .x = 0, .y = 0 }, { 10U, 3U });
+    index.upsert(entry);
+    client::VulkanFrustum const frustum{ glm::mat4{ 1.0F } };
+    glm::dvec3 const camera_position{};
+    std::vector<Range> actual;
+    static_cast<void>(index.collect(frustum, camera_position, actual));
+
+    Index::Entry invalid = entry;
+    invalid.range.instance_count = 0U;
+    EXPECT_THROW(index.upsert(invalid), std::invalid_argument);
+    Index::Work const after_rejection = index.collect(frustum, camera_position, actual);
+    EXPECT_EQ(after_rejection.group_plane_tests, 0U);
+
+    entry.minimum = { 4.0F, 0.0F, 0.0F };
+    entry.maximum = { 5.0F, 1.0F, 1.0F };
+    index.upsert(entry);
+    Index::Work const after_replacement = index.collect(frustum, camera_position, actual);
+    EXPECT_GT(after_replacement.group_plane_tests, 0U);
+    EXPECT_TRUE(actual.empty());
+
+    index.remove(entry.coordinate);
+    static_cast<void>(index.collect(frustum, camera_position, actual));
+    EXPECT_TRUE(actual.empty());
+    index.clear();
+    Index::Work const after_clear = index.collect(frustum, camera_position, actual);
+    EXPECT_EQ(after_clear.groups, 0U);
+    EXPECT_EQ(after_clear.records, 0U);
+    EXPECT_TRUE(actual.empty());
 }
 
 TEST(HeightTileDrawIndexTest, IncrementalReplacementRemovalResetAndArenaReuseMatchSortedLiveRanges)
@@ -381,6 +458,7 @@ TEST(HeightTileDrawIndexTest, FragmentedSparseAndFullGroupsMatchScalarOracleThro
     static constexpr uint32_t RANGE_STRIDE = 16U;
     static constexpr uint32_t WIDTH = 1'600U;
     static constexpr uint32_t HEIGHT = 900U;
+    static constexpr uint32_t RANDOM_SEED = 4'521U;
     static constexpr int32_t WORLD_TILE_SIDE = 4'096;
     static constexpr std::array<glm::dvec3, 3> POSITIONS{
         glm::dvec3{ 32'768.3125, 32'768.3125, 96.0 },
@@ -420,11 +498,13 @@ TEST(HeightTileDrawIndexTest, FragmentedSparseAndFullGroupsMatchScalarOracleThro
         for (uint32_t ordinal = 0U; ordinal < RECORD_COUNT; ++ordinal) {
             insertion_order.push_back(ordinal);
         }
-        std::minstd_rand random{ 4'521U };
+        std::seed_seq seed{ RANDOM_SEED };
+        std::minstd_rand random{ seed };
         std::shuffle(insertion_order.begin(), insertion_order.end(), random);
         for (uint32_t const ordinal : insertion_order) {
-            slots[ordinal] = make_entry(ordinal, 0U);
-            index.upsert(*slots[ordinal]);
+            Index::Entry const entry = make_entry(ordinal, 0U);
+            slots[ordinal] = entry;
+            index.upsert(entry);
         }
         std::vector<Range> actual;
         auto const verify = [&] {
@@ -452,7 +532,8 @@ TEST(HeightTileDrawIndexTest, FragmentedSparseAndFullGroupsMatchScalarOracleThro
             EXPECT_LE(index.lastUpdateSlotsInspected(), MAXIMUM_UPDATE_SLOTS);
         };
         Index::Work const initial_work = index.collect(client::VulkanFrustum{ glm::mat4{ 1.0F } }, {}, actual);
-        EXPECT_EQ(initial_work.groups, sparse ? RECORD_COUNT : 1U);
+        // The 16x16 dense fixture spans four 8x8 index groups.
+        EXPECT_EQ(initial_work.groups, sparse ? RECORD_COUNT : 4U);
         verify();
         for (uint32_t update = 0U; update < UPDATE_COUNT; ++update) {
             uint32_t const ordinal = random() % RECORD_COUNT;
@@ -461,8 +542,9 @@ TEST(HeightTileDrawIndexTest, FragmentedSparseAndFullGroupsMatchScalarOracleThro
                 index.remove(entry.coordinate);
                 slots[ordinal].reset();
             } else {
-                if (update % 4U == 2U && slots[ordinal].has_value()) {
-                    entry.range = slots[ordinal]->range;
+                auto const& slot = slots[ordinal];
+                if (update % 4U == 2U && slot.has_value()) {
+                    entry.range = slot->range;
                 }
                 if (update % 4U == 3U) {
                     index.remove(entry.coordinate);
@@ -483,8 +565,9 @@ TEST(HeightTileDrawIndexTest, FragmentedSparseAndFullGroupsMatchScalarOracleThro
         verify();
         EXPECT_EQ(index.collect(client::VulkanFrustum{ glm::mat4{ 1.0F } }, {}, actual).groups, 0U);
         for (uint32_t const ordinal : insertion_order) {
-            slots[ordinal] = make_entry(ordinal, 0U);
-            index.upsert(*slots[ordinal]);
+            Index::Entry const entry = make_entry(ordinal, 0U);
+            slots[ordinal] = entry;
+            index.upsert(entry);
         }
         verify();
         index.clear();
@@ -493,6 +576,187 @@ TEST(HeightTileDrawIndexTest, FragmentedSparseAndFullGroupsMatchScalarOracleThro
         }
         verify();
     }
+}
+
+TEST(HeightTileDrawIndexTest, CertifiedGroupFacingMasksMatchScalarOracleAcrossWrapsAndChurn)
+{
+    static constexpr uint32_t RECORDS_PER_GROUP = 32U;
+    static constexpr uint32_t GROUP_COUNT = 3U;
+    static constexpr uint32_t RECORD_COUNT = RECORDS_PER_GROUP * GROUP_COUNT;
+    static constexpr uint32_t UPDATE_COUNT = 192U;
+    static constexpr uint32_t RANDOM_SEED = 4'580U;
+    static constexpr uint32_t CAMERA_SAMPLE_COUNT = 18U;
+    static constexpr std::array<glm::dvec3, 11> EDGE_CAMERAS{
+        glm::dvec3{ 0.0, 0.0, 0.5 },
+        glm::dvec3{ 0.25, 1.25, 0.5 },
+        glm::dvec3{ -2.75, -1.25, 0.5 },
+        glm::dvec3{ 65'536.25, 65'537.25, 0.5 },
+        glm::dvec3{ 32'768.5, 32'768.5, 0.5 },
+        glm::dvec3{ 32'768.0, 32'768.0, 0.0 },
+        glm::dvec3{ 65'536.0, 65'536.0, 0.0 },
+        glm::dvec3{ 65'536.5, 65'536.5, 1.0 },
+        glm::dvec3{ 33'024.999'999, 33'024.000'001, 0.5 },
+        glm::dvec3{ 32'768.000'000'1, 32'768.999'999'9, 0.5 },
+        glm::dvec3{ 33'524.5, 32'768.5, 0.5 },
+    };
+    static constexpr std::array<glm::dvec3, 4> CAMERA_ANCHORS{
+        glm::dvec3{ 0.0, 0.0, 0.5 },
+        glm::dvec3{ 32'768.0, 32'768.0, 0.5 },
+        glm::dvec3{ 65'536.0, 65'536.0, 0.5 },
+        glm::dvec3{ 33'524.0, 32'768.0, 0.5 },
+    };
+    static constexpr double CAMERA_JITTER_SCALE = 0.001;
+    static constexpr float HORIZONTAL_SCALE = 1.0F / 200'000.0F;
+
+    struct EntryFixture final {
+        uint32_t slot;
+        uint32_t revision;
+        bool mismatched_bounds;
+    };
+    auto const make_entry = [](EntryFixture const fixture) {
+        uint32_t const group = fixture.slot / RECORDS_PER_GROUP;
+        uint32_t const ordinal = fixture.slot % RECORDS_PER_GROUP;
+        int32_t const tile_x = group == 0U ? 2'048 + static_cast<int32_t>(ordinal % 16U)
+            : group == 1U ? 2'064 + static_cast<int32_t>(ordinal % 16U)
+            : static_cast<int32_t>(ordinal % 16U);
+        int32_t const tile_y = group == 2U ? static_cast<int32_t>(ordinal / 16U)
+            : 2'048 + static_cast<int32_t>(ordinal / 16U);
+        int32_t const x = tile_x * shared::HeightTile::SIDE_LENGTH;
+        int32_t const y = tile_y * shared::HeightTile::SIDE_LENGTH;
+        Index::Entry entry{
+            .coordinate = { .x = tile_x, .y = tile_y },
+            .range = {},
+            .minimum = { static_cast<float>(x), static_cast<float>(y), 0.0F },
+            .maximum = { static_cast<float>(x + 16), static_cast<float>(y + 16), 1.0F },
+        };
+        uint32_t instance_count = 0U;
+        for (uint32_t direction = 0U; direction < entry.directional_spans.size(); ++direction) {
+            int32_t const axis = static_cast<int32_t>(direction / 2U);
+            int32_t const plane_origin = axis == 0 ? x : axis == 1 ? y : 0;
+            int32_t const extent = axis == 2 ? 1 : 16;
+            int32_t const minimum_offset = static_cast<int32_t>(
+                (ordinal * 3U + fixture.revision + direction) % static_cast<uint32_t>(extent + 1)
+            );
+            int32_t minimum_origin = plane_origin + minimum_offset;
+            int32_t maximum_origin = minimum_origin + static_cast<int32_t>(
+                (ordinal + fixture.revision + direction) % static_cast<uint32_t>(extent - minimum_offset + 1)
+            );
+            if (group == 1U && ordinal == 0U && fixture.mismatched_bounds && direction == 1U) {
+                minimum_origin = x + 1'000;
+                maximum_origin = minimum_origin;
+            }
+            uint32_t const direction_count = 1U + (ordinal + fixture.revision + direction) % 2U;
+            entry.directional_spans[direction] = {
+                .instance_count = direction_count,
+                .minimum_origin = minimum_origin,
+                .maximum_origin = maximum_origin,
+            };
+            instance_count += direction_count;
+        }
+        entry.range = {
+            .first_instance = group * 20'000U + (fixture.revision % 2U) * 1'000U + ordinal * 7U,
+            .instance_count = instance_count,
+        };
+        return entry;
+    };
+
+    Index index;
+    std::vector<std::optional<Index::Entry>> slots(RECORD_COUNT);
+    std::vector<uint32_t> insertion_order;
+    insertion_order.reserve(RECORD_COUNT);
+    for (uint32_t slot = 0U; slot < RECORD_COUNT; ++slot) {
+        insertion_order.push_back(slot);
+    }
+    std::seed_seq update_seed{ RANDOM_SEED };
+    std::minstd_rand update_random{ update_seed };
+    std::shuffle(insertion_order.begin(), insertion_order.end(), update_random);
+    for (uint32_t const slot : insertion_order) {
+        Index::Entry const entry = make_entry({ .slot = slot, .revision = 0U,
+            .mismatched_bounds = slot == RECORDS_PER_GROUP });
+        slots[slot] = entry;
+        index.upsert(entry);
+    }
+
+    client::VulkanFrustum const frustum{
+        glm::translate(glm::mat4{ 1.0F }, { 0.0F, 0.0F, 0.5F })
+            * glm::scale(glm::mat4{ 1.0F }, { HORIZONTAL_SCALE, HORIZONTAL_SCALE, 0.1F })
+    };
+    std::vector<Range> actual;
+    auto const verify = [&] {
+        std::vector<Index::Entry> live_entries;
+        live_entries.reserve(RECORD_COUNT);
+        for (std::optional<Index::Entry> const& slot : slots) {
+            if (slot.has_value()) {
+                live_entries.push_back(*slot);
+            }
+        }
+        std::seed_seq camera_seed{ RANDOM_SEED, static_cast<uint32_t>(live_entries.size()) };
+        std::minstd_rand camera_random{ camera_seed };
+        for (uint32_t sample = 0U; sample < CAMERA_SAMPLE_COUNT; ++sample) {
+            glm::dvec3 position{};
+            if (sample < EDGE_CAMERAS.size()) {
+                position = EDGE_CAMERAS[sample];
+            } else {
+                glm::dvec3 const anchor = CAMERA_ANCHORS[camera_random() % CAMERA_ANCHORS.size()];
+                int32_t const jitter_x = static_cast<int32_t>(camera_random() % 2'001U) - 1'000;
+                int32_t const jitter_y = static_cast<int32_t>(camera_random() % 2'001U) - 1'000;
+                position = { anchor.x + jitter_x * CAMERA_JITTER_SCALE,
+                    anchor.y + jitter_y * CAMERA_JITTER_SCALE, anchor.z };
+            }
+            Index::Work const work = index.collect(frustum, position, actual);
+            EXPECT_EQ(work.records, live_entries.size());
+            EXPECT_EQ(pack(actual), pack(reference(live_entries, frustum, position).ranges))
+                << "camera sample " << sample;
+        }
+    };
+    uint32_t const mismatched_slot = RECORDS_PER_GROUP;
+    auto const verify_mismatched_span_falls_back_to_exact_facing = [&] {
+        ASSERT_TRUE(slots[mismatched_slot].has_value());
+        Index::Entry const& entry = *slots[mismatched_slot];
+        glm::dvec3 const position = EDGE_CAMERAS[10U];
+        static_cast<void>(index.collect(frustum, position, actual));
+        auto const contains_instance = [](std::vector<Range> const& ranges, uint32_t const instance) {
+            return std::ranges::any_of(ranges, [instance](Range const range) {
+                return instance >= range.first_instance && instance - range.first_instance < range.instance_count;
+            });
+        };
+        uint32_t const positive_x_first_instance = entry.range.first_instance
+            + entry.directional_spans[0].instance_count;
+        uint32_t const negative_y_first_instance = positive_x_first_instance
+            + entry.directional_spans[1].instance_count;
+        EXPECT_TRUE(contains_instance(actual, negative_y_first_instance));
+        EXPECT_FALSE(contains_instance(actual, positive_x_first_instance));
+    };
+    verify();
+    verify_mismatched_span_falls_back_to_exact_facing();
+    for (uint32_t const revision : { 2U, 4U }) {
+        bool const mismatched_bounds = revision == 4U;
+        Index::Entry const entry = make_entry({ .slot = mismatched_slot, .revision = revision,
+            .mismatched_bounds = mismatched_bounds });
+        index.upsert(entry);
+        slots[mismatched_slot] = entry;
+        verify();
+        if (mismatched_bounds) {
+            verify_mismatched_span_falls_back_to_exact_facing();
+        }
+    }
+    for (uint32_t update = 0U; update < UPDATE_COUNT; ++update) {
+        uint32_t const slot = update_random() % RECORD_COUNT;
+        if (update % 5U == 0U) {
+            index.remove(make_entry({ .slot = slot, .revision = 0U, .mismatched_bounds = false }).coordinate);
+            slots[slot].reset();
+        } else {
+            bool const mismatched_bounds = slot == mismatched_slot && update % 2U == 0U;
+            Index::Entry const entry = make_entry({ .slot = slot, .revision = update + 1U,
+                .mismatched_bounds = mismatched_bounds });
+            index.upsert(entry);
+            slots[slot] = entry;
+        }
+        if (update % 12U == 0U) {
+            verify();
+        }
+    }
+    verify();
 }
 
 TEST(HeightTileDrawIndexTest, RejectsInvalidRangeBeforeChangingPublishedVisibility)
@@ -607,6 +871,114 @@ TEST(HeightTileDrawIndexTest, ExactOracleCoversMovingRotatingWrappedCamerasAndWi
                 }
             }
         }
+    }
+}
+
+TEST(HeightTileDrawIndexTest, BatchRemovalMatchesRepeatedSingleRemovalAcrossGroups)
+{
+    std::vector<Index::Entry> const entries{
+        insideEntry({ .x = 2, .y = 3 }, { 100U, 2U }),
+        insideEntry({ .x = 3, .y = 3 }, { 10U, 4U }),
+        insideEntry({ .x = 8, .y = 3 }, { 14U, 6U }),
+        insideEntry({ .x = 9, .y = 3 }, { 20U, 2U }),
+        insideEntry({ .x = -1, .y = 3 }, { 30U, 1U }),
+        insideEntry({ .x = 0, .y = -1 }, { 40U, 1U }),
+    };
+    static constexpr std::array<shared::HeightTileCoordinate, 5> REMOVALS{
+        shared::HeightTileCoordinate{ 2, 3 },
+        shared::HeightTileCoordinate{ 8, 3 },
+        shared::HeightTileCoordinate{ 2, 3 },
+        shared::HeightTileCoordinate{ 50, 50 },
+        shared::HeightTileCoordinate{ -1, 3 },
+    };
+    Index batched;
+    Index repeated;
+    for (Index::Entry const& entry : entries) {
+        batched.upsert(entry);
+        repeated.upsert(entry);
+    }
+
+    batched.removeBatch(REMOVALS);
+    for (shared::HeightTileCoordinate const coordinate : REMOVALS) {
+        repeated.remove(coordinate);
+    }
+    EXPECT_TRUE(batched.hasFallbackRecords());
+    EXPECT_TRUE(repeated.hasFallbackRecords());
+
+    client::VulkanFrustum const frustum{ glm::mat4{ 1.0F } };
+    std::vector<Range> batched_ranges;
+    std::vector<Range> repeated_ranges;
+    Index::Work const batched_work = batched.collect(frustum, {}, batched_ranges);
+    Index::Work const repeated_work = repeated.collect(frustum, {}, repeated_ranges);
+    EXPECT_EQ(pack(batched_ranges), pack(repeated_ranges));
+    EXPECT_EQ(batched_work.groups, repeated_work.groups);
+    EXPECT_EQ(batched_work.records, repeated_work.records);
+
+    batched.upsert(entries[0]);
+    repeated.upsert(entries[0]);
+    batched.upsert(entries[2]);
+    repeated.upsert(entries[2]);
+    Index::Work const after_range_reuse = batched.collect(frustum, {}, batched_ranges);
+    Index::Work const repeated_after_range_reuse = repeated.collect(frustum, {}, repeated_ranges);
+    EXPECT_EQ(after_range_reuse.records, repeated_after_range_reuse.records);
+    EXPECT_EQ(pack(batched_ranges), pack(repeated_ranges));
+
+    static constexpr std::array<shared::HeightTileCoordinate, 1> LAST_FALLBACK{
+        shared::HeightTileCoordinate{ 0, -1 },
+    };
+    batched.removeBatch(LAST_FALLBACK);
+    repeated.remove(LAST_FALLBACK.front());
+    EXPECT_FALSE(batched.hasFallbackRecords());
+    EXPECT_FALSE(repeated.hasFallbackRecords());
+}
+
+TEST(HeightTileDrawIndexTest, ReplacementReleasesTheOldRangeStartImmediately)
+{
+    Index index;
+    Index::Entry const original = insideEntry({ .x = 0, .y = 0 }, { 100U, 2U });
+    Index::Entry replacement = original;
+    replacement.range = { 200U, 2U };
+    index.upsert(original);
+    index.upsert(replacement);
+
+    Index::Entry const reused_range = insideEntry({ .x = 8, .y = 0 }, original.range);
+    index.upsert(reused_range);
+
+    client::VulkanFrustum const frustum{ glm::mat4{ 1.0F } };
+    std::vector<Range> actual;
+    Index::Work const work = index.collect(frustum, {}, actual);
+    EXPECT_EQ(work.records, 2U);
+    EXPECT_EQ(pack(actual), pack(reference({ replacement, reused_range }, frustum, {}).ranges));
+}
+
+TEST(HeightTileDrawIndexTest, DestructionDrainsRetiredStorageAfterLogicalRemoval)
+{
+    static constexpr uint32_t ENTRY_COUNT = 64U;
+    static constexpr int32_t GROUP_SIDE = 8;
+    Index::Work work;
+    std::vector<Range> actual;
+    client::VulkanFrustum const frustum{ glm::mat4{ 1.0F } };
+    {
+        Index index;
+        std::vector<Index::Entry> entries;
+        std::vector<shared::HeightTileCoordinate> coordinates;
+        entries.reserve(ENTRY_COUNT);
+        coordinates.reserve(ENTRY_COUNT);
+        for (uint32_t ordinal = 0U; ordinal < ENTRY_COUNT; ++ordinal) {
+            shared::HeightTileCoordinate const coordinate{
+                .x = static_cast<int32_t>(ordinal % static_cast<uint32_t>(GROUP_SIDE)),
+                .y = static_cast<int32_t>(ordinal / static_cast<uint32_t>(GROUP_SIDE)),
+            };
+            entries.push_back(insideEntry(coordinate, { ordinal * 2U, 1U }));
+            coordinates.push_back(coordinate);
+            index.upsert(entries.back());
+        }
+
+        index.removeBatch(coordinates);
+        work = index.collect(frustum, {}, actual);
+        EXPECT_EQ(work.groups, 0U);
+        EXPECT_EQ(work.records, 0U);
+        EXPECT_TRUE(actual.empty());
     }
 }
 

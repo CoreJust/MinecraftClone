@@ -509,3 +509,37 @@ TEST(EvidenceJson, PreservesPlayerRenderStageTimingsPerFrame)
     EXPECT_NE(json.find("\"diagnostic_client_preview_lod_changed_tile_count\": 13"),
               std::string::npos);
 }
+
+
+TEST(EvidenceJson, SerializesPresentationAcquisitionStagesAndResults)
+{
+    acceptance::GameBenchmarkFrameSample sample;
+    sample.diagnostic_presentation_acquire = {
+        .captured = true,
+        .frame_slot = 2U,
+        .stage_count = 2U,
+        .stages = {
+            acceptance::GameBenchmarkPresentationAcquireStageSample{
+                .stage = acceptance::GameBenchmarkPresentationAcquireStage::SubmittedFrameFence,
+                .duration_ns = 7'000'000U,
+                .result = 0,
+            },
+            acceptance::GameBenchmarkPresentationAcquireStageSample{
+                .stage = acceptance::GameBenchmarkPresentationAcquireStage::SwapchainImage,
+                .duration_ns = 100'000U,
+                .result = 0,
+            },
+        },
+        .image_index = 1U,
+    };
+    acceptance::RuntimeEvidence evidence;
+    evidence.game_benchmark.emplace();
+    evidence.game_benchmark->raw_frames.push_back(sample);
+
+    std::string const json = acceptance::evidenceJson(evidence);
+    EXPECT_NE(json.find("\"diagnostic_presentation_acquire\": { \"captured\": true"), std::string::npos);
+    EXPECT_NE(json.find("\"frame_slot\": 2, \"image_index\": 1"), std::string::npos);
+    EXPECT_NE(json.find("\"stage\": \"SubmittedFrameFence\", \"duration_ns\": 7000000"), std::string::npos);
+    EXPECT_NE(json.find("\"vk_result\": 0"), std::string::npos);
+    EXPECT_NE(json.find("\"stage\": \"SwapchainImage\", \"duration_ns\": 100000"), std::string::npos);
+}

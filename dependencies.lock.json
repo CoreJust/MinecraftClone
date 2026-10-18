@@ -3,13 +3,13 @@
   "dependencies": {
     "CoreCpp": {
       "repository": "CoreJust/CoreCpp",
-      "revision": "090b4fe87875f48ca5c9705b2f63036bf34a3135",
-      "fetch_ref": "refs/tags/v0.1.0"
+      "revision": "63004f816348778e95703e2d92061531a4bcb277",
+      "fetch_ref": "refs/tags/v0.1.0-s7-present-fence-poll"
     },
     "CoreProject2026": {
       "repository": "CoreJust/CoreProject2026",
-      "revision": "4272ab11993ac4ff6a9f6e4f9d724db318d5cdc5",
-      "fetch_ref": "refs/heads/ai-dev"
+      "revision": "9840659b27dbd6feaf99fa932dde19107e51d720",
+      "fetch_ref": "refs/tags/v0.1.3.3-s7-display-timing"
     }
   }
 }

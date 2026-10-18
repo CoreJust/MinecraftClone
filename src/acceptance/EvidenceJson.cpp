@@ -357,6 +357,45 @@ std::string fullRadiusTerrainJson(GameBenchmarkFullRadiusEvidence const& evidenc
         + ", \"complete\": " + (evidence.complete ? "true" : "false") + " }";
 }
 
+std::string_view presentationAcquireStageName(GameBenchmarkPresentationAcquireStage const stage)
+{
+    switch (stage) {
+    case GameBenchmarkPresentationAcquireStage::SubmittedFrameFence:
+        return "SubmittedFrameFence";
+    case GameBenchmarkPresentationAcquireStage::AcquireFence:
+        return "AcquireFence";
+    case GameBenchmarkPresentationAcquireStage::PresentFence:
+        return "PresentFence";
+    case GameBenchmarkPresentationAcquireStage::SwapchainImage:
+        return "SwapchainImage";
+    }
+    throw std::logic_error("unknown serialized presentation acquisition stage");
+}
+
+std::string presentationAcquireDiagnosticsJson(GameBenchmarkPresentationAcquireSample const& sample)
+{
+    if (sample.stage_count > sample.stages.size()) {
+        throw std::invalid_argument("presentation acquisition diagnostic exceeds its fixed stage bound");
+    }
+    std::string result = "{ \"captured\": ";
+    result += sample.captured ? "true" : "false";
+    result += ", \"frame_slot\": " + std::to_string(sample.frame_slot);
+    result += ", \"image_index\": ";
+    result += sample.image_index ? std::to_string(*sample.image_index) : "null";
+    result += ", \"stages\": [";
+    for (uint32_t index = 0U; index < sample.stage_count; ++index) {
+        if (index != 0U) {
+            result += ", ";
+        }
+        GameBenchmarkPresentationAcquireStageSample const& stage = sample.stages[index];
+        result += "{ \"stage\": ";
+        result += jsonString(presentationAcquireStageName(stage.stage));
+        result += ", \"duration_ns\": " + std::to_string(stage.duration_ns);
+        result += ", \"vk_result\": " + std::to_string(stage.result) + " }";
+    }
+    return result + "] }";
+}
+
 std::string gameBenchmarkJson(GameBenchmarkEvidence const& benchmark)
 {
     std::string result = "{\n"
@@ -462,6 +501,8 @@ std::string gameBenchmarkJson(GameBenchmarkEvidence const& benchmark)
             + ", \"terrain_near\": "
                 + (sample.terrain_near ? terrainNearSampleJson(*sample.terrain_near) : "null")
             + ", \"diagnostic_render_attempt_id\": " + std::to_string(sample.diagnostic_render_attempt_id)
+            + ", \"diagnostic_presentation_acquire\": "
+                + presentationAcquireDiagnosticsJson(sample.diagnostic_presentation_acquire)
             + ", \"diagnostic_frame_recorded\": " + (sample.diagnostic_frame_recorded ? "true" : "false")
             + ", \"diagnostic_indexed_stone_quads\": " + (sample.diagnostic_indexed_stone_quads ? "true" : "false")
             + ", \"diagnostic_stone_indirect\": " + (sample.diagnostic_stone_indirect ? "true" : "false")

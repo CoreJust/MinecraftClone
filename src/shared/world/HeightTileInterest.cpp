@@ -238,18 +238,31 @@ HeightTileInterestDelta heightTileInterestDelta(
     uint32_t const radius
 )
 {
-    ASSERT(isValidHeightTileInterestRadius(radius), "invalid height-tile interest radius");
     HeightTileInterestDelta result;
+    heightTileInterestDelta(previous_center, next_center, radius, result);
+    return result;
+}
+
+void heightTileInterestDelta(
+    // NOLINTNEXTLINE(bugprone-easily-swappable-parameters) -- ordered previous/next centers
+    HeightTileKey const previous_center,
+    HeightTileKey const next_center,
+    uint32_t const radius,
+    HeightTileInterestDelta& output
+)
+{
+    ASSERT(isValidHeightTileInterestRadius(radius), "invalid height-tile interest radius");
+    output.additions.clear();
+    output.removals.clear();
     HeightTileKey const normalized_previous = normalizeHeightTileKey(previous_center);
     HeightTileKey const normalized_next = normalizeHeightTileKey(next_center);
     int32_t const dx = shortestDisplacement(normalized_previous.x, normalized_next.x);
     int32_t const dy = shortestDisplacement(normalized_previous.y, normalized_next.y);
     if (dx == 0 && dy == 0) {
-        return result;
+        return;
     }
-    appendDifference(result.additions, normalized_next, dx, dy, static_cast<int32_t>(radius));
-    appendDifference(result.removals, normalized_previous, -dx, -dy, static_cast<int32_t>(radius));
-    return result;
+    appendDifference(output.additions, normalized_next, dx, dy, static_cast<int32_t>(radius));
+    appendDifference(output.removals, normalized_previous, -dx, -dy, static_cast<int32_t>(radius));
 }
 
 bool heightTileWithinInterest(

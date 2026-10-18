@@ -6,6 +6,7 @@
 #include <client/PlayerPresentation.hpp>
 #include <client/PreviewMeshing.hpp>
 #include <client/PreviewMeshWorkQueue.hpp>
+#include <client/render/HeightTileInstanceReaper.hpp>
 #include <client/render/TextRenderer.hpp>
 #include <client/render/VulkanRenderer.hpp>
 
@@ -95,12 +96,12 @@ std::chrono::milliseconds playerClientRendererFrameBudget(bool const capture_ena
     return capture_enabled ? std::chrono::seconds{1} : std::chrono::milliseconds{8};
 }
 
-std::chrono::steady_clock::time_point playerClientPreviewMeshAdmissionDeadline(
+std::chrono::steady_clock::time_point playerClientPreviewMeshWorkDeadline(
     std::chrono::steady_clock::time_point const renderer_deadline,
-    std::chrono::steady_clock::time_point const near_admission_started_at) noexcept
+    std::chrono::steady_clock::time_point const mesh_work_started_at) noexcept
 {
-    static constexpr std::chrono::milliseconds NEAR_ADMISSION_GRACE{ 1 };
-    return std::max(renderer_deadline, near_admission_started_at + NEAR_ADMISSION_GRACE);
+    static constexpr std::chrono::milliseconds FRESH_MESH_WORK_RESERVE{ 1 };
+    return std::max(renderer_deadline, mesh_work_started_at + FRESH_MESH_WORK_RESERVE);
 }
 
 uint32_t playerClientHeightTileChangeBudget(bool const) noexcept
@@ -286,8 +287,250 @@ uint16_t playerClientCaptureSpeedup(int64_t const distance_subcells) noexcept
     return CAPTURE_NEAR_SPEEDUP;
 }
 
+class PlayerClient::PreviewCacheRetirementReaper final {
+private:
+    using VisibleMeshSet = std::unordered_set<HeightTileKey, PlayerHeightTileKeyHash>;
+    using VisibleTileMap = std::unordered_map<HeightTileKey, HeightTileHandle, PlayerHeightTileKeyHash>;
+    using BaseMeshMap = std::unordered_map<HeightTileKey, shared::HeightTileSurfaceMesh, PlayerHeightTileKeyHash>;
+    using EdgeProfileMap = std::unordered_map<HeightTileKey, PreviewMeshEdgeProfiles, PlayerHeightTileKeyHash>;
+    using SeamBridgeMap = std::unordered_map<HeightTileKey, PreviewMeshSeamBridgeSet, PlayerHeightTileKeyHash>;
+
+    static constexpr uint32_t BATCH_CAPACITY = 128U;
+    static constexpr uint64_t NODE_OVERHEAD_BYTES = 64U;
+
+    struct Batch final {
+        std::array<VisibleMeshSet::node_type, BATCH_CAPACITY> visible_meshes{};
+        std::array<VisibleTileMap::node_type, BATCH_CAPACITY> visible_tiles{};
+        std::array<BaseMeshMap::node_type, BATCH_CAPACITY> base_meshes{};
+        std::array<EdgeProfileMap::node_type, BATCH_CAPACITY> edge_profiles{};
+        std::array<SeamBridgeMap::node_type, BATCH_CAPACITY> seam_bridges{};
+        uint32_t visible_mesh_count = 0U;
+        uint32_t visible_tile_count = 0U;
+        uint32_t base_mesh_count = 0U;
+        uint32_t edge_profile_count = 0U;
+        uint32_t seam_bridge_count = 0U;
+        uint64_t nested_storage_bytes = 0U;
+
+        Batch() = default;
+        Batch(Batch const&) = delete;
+        Batch& operator=(Batch const&) = delete;
+        Batch(Batch&&) noexcept = default;
+        Batch& operator=(Batch&&) noexcept = default;
+
+        [[nodiscard]] bool empty() const noexcept
+        {
+            return visible_mesh_count == 0U && visible_tile_count == 0U && base_mesh_count == 0U
+                && edge_profile_count == 0U && seam_bridge_count == 0U;
+        }
+    };
+
+public:
+    void extractRemoved(PlayerClient& client, HeightTileKey const key)
+    {
+        extractNode(client.m_visible_preview_meshes, key, m_pending.visible_meshes,
+            m_pending.visible_mesh_count);
+
+        auto const tile = client.m_visible_preview_mesh_tiles.find(key);
+        uint64_t const tile_bytes = tile != client.m_visible_preview_mesh_tiles.end() && tile->second
+            ? static_cast<uint64_t>(sizeof(HeightTile))
+            : 0U;
+        extractNode(client.m_visible_preview_mesh_tiles, key, m_pending.visible_tiles,
+            m_pending.visible_tile_count, tile_bytes);
+
+        extractBaseMesh(client, key);
+        extractEdgeProfiles(client, key);
+        extractSeamBridges(client, key);
+    }
+
+    void extractReplacedBase(PlayerClient& client, HeightTileKey const key)
+    {
+        extractBaseMesh(client, key);
+    }
+
+    void extractReplacedTile(PlayerClient& client, HeightTileKey const key)
+    {
+        auto const tile = client.m_visible_preview_mesh_tiles.find(key);
+        uint64_t const tile_bytes = tile != client.m_visible_preview_mesh_tiles.end() && tile->second
+            ? static_cast<uint64_t>(sizeof(HeightTile))
+            : 0U;
+        extractNode(client.m_visible_preview_mesh_tiles, key, m_pending.visible_tiles,
+            m_pending.visible_tile_count, tile_bytes);
+    }
+
+    void extractReplacedEdgeProfiles(PlayerClient& client, HeightTileKey const key)
+    {
+        extractEdgeProfiles(client, key);
+    }
+
+    void extractReplacedSeamBridges(PlayerClient& client, HeightTileKey const key)
+    {
+        extractSeamBridges(client, key);
+    }
+
+    void extractAll(PlayerClient& client)
+    {
+        while (!client.m_visible_preview_meshes.empty()) {
+            HeightTileKey const key = *client.m_visible_preview_meshes.begin();
+            extractRemoved(client, key);
+        }
+        while (!client.m_visible_preview_mesh_tiles.empty()) {
+            HeightTileKey const key = client.m_visible_preview_mesh_tiles.begin()->first;
+            extractRemoved(client, key);
+        }
+        while (!client.m_visible_preview_mesh_bases.empty()) {
+            HeightTileKey const key = client.m_visible_preview_mesh_bases.begin()->first;
+            extractRemoved(client, key);
+        }
+        while (!client.m_visible_preview_mesh_edge_profiles.empty()) {
+            HeightTileKey const key = client.m_visible_preview_mesh_edge_profiles.begin()->first;
+            extractRemoved(client, key);
+        }
+        while (!client.m_visible_preview_mesh_seam_bridges.empty()) {
+            HeightTileKey const key = client.m_visible_preview_mesh_seam_bridges.begin()->first;
+            extractRemoved(client, key);
+        }
+    }
+
+    void submitPending() noexcept
+    {
+        if (m_pending.empty()) {
+            return;
+        }
+        std::vector<Batch> payload;
+        try {
+            payload.reserve(1U);
+            payload.push_back(std::move(m_pending));
+        } catch (...) {
+            m_reaper.recordSynchronousFallback();
+            m_pending = Batch{};
+            return;
+        }
+        uint64_t const nested_storage_bytes = payload.front().nested_storage_bytes;
+        m_pending = Batch{};
+        if (m_reaper.retire(payload, nested_storage_bytes)) {
+            ++m_submission_count;
+        } else {
+            payload.clear();
+        }
+    }
+
+    void drain() noexcept
+    {
+        submitPending();
+        m_reaper.drain();
+    }
+
+    [[nodiscard]] uint64_t highWaterBytes() const noexcept { return m_reaper.highWaterBytes(); }
+    [[nodiscard]] uint64_t outstandingBytes() const noexcept { return m_reaper.outstandingBytes(); }
+    [[nodiscard]] uint64_t synchronousFallbackCount() const noexcept
+    {
+        return m_reaper.synchronousFallbackCount();
+    }
+    [[nodiscard]] uint64_t submissionCount() const noexcept { return m_submission_count; }
+
+private:
+    template<typename Map, typename NodeArray>
+    void extractNode(
+        Map& map,
+        HeightTileKey const key,
+        NodeArray& nodes,
+        uint32_t& count,
+        uint64_t const nested_storage_bytes = 0U
+    )
+    {
+        if (count == BATCH_CAPACITY) {
+            submitPending();
+        }
+        auto const found = map.find(key);
+        if (found == map.end()) {
+            return;
+        }
+        addStorageBytes(m_pending.nested_storage_bytes,
+            static_cast<uint64_t>(sizeof(typename Map::value_type)) + NODE_OVERHEAD_BYTES);
+        addStorageBytes(m_pending.nested_storage_bytes, nested_storage_bytes);
+        nodes[count] = map.extract(found);
+        ++count;
+    }
+
+    void extractBaseMesh(PlayerClient& client, HeightTileKey const key)
+    {
+        auto const base = client.m_visible_preview_mesh_bases.find(key);
+        uint64_t const nested_storage_bytes = base == client.m_visible_preview_mesh_bases.end()
+            ? 0U
+            : capacityBytes(
+                static_cast<uint64_t>(base->second.quads.capacity()),
+                static_cast<uint64_t>(sizeof(shared::HeightTileSurfaceQuad))
+            );
+        extractNode(client.m_visible_preview_mesh_bases, key, m_pending.base_meshes,
+            m_pending.base_mesh_count, nested_storage_bytes);
+    }
+
+    void extractEdgeProfiles(PlayerClient& client, HeightTileKey const key)
+    {
+        extractNode(client.m_visible_preview_mesh_edge_profiles, key, m_pending.edge_profiles,
+            m_pending.edge_profile_count);
+    }
+
+    void extractSeamBridges(PlayerClient& client, HeightTileKey const key)
+    {
+        uint64_t nested_storage_bytes = 0U;
+        auto const seams = client.m_visible_preview_mesh_seam_bridges.find(key);
+        if (seams != client.m_visible_preview_mesh_seam_bridges.end()) {
+            for (std::vector<shared::HeightTileSurfaceQuad> const& edge : seams->second.edges()) {
+                addStorageBytes(nested_storage_bytes,
+                    capacityBytes(
+                        static_cast<uint64_t>(edge.capacity()),
+                        static_cast<uint64_t>(sizeof(shared::HeightTileSurfaceQuad))
+                    ));
+            }
+        }
+        extractNode(client.m_visible_preview_mesh_seam_bridges, key, m_pending.seam_bridges,
+            m_pending.seam_bridge_count, nested_storage_bytes);
+    }
+
+    static uint64_t capacityBytes(uint64_t const capacity, uint64_t const value_size) noexcept
+    {
+        return value_size != 0U && capacity > std::numeric_limits<uint64_t>::max() / value_size
+            ? std::numeric_limits<uint64_t>::max()
+            : capacity * value_size;
+    }
+
+    static void addStorageBytes(uint64_t& total, uint64_t const bytes) noexcept
+    {
+        if (bytes > std::numeric_limits<uint64_t>::max() - total) {
+            total = std::numeric_limits<uint64_t>::max();
+        } else {
+            total += bytes;
+        }
+    }
+
+    Batch m_pending;
+    HeightTileInstanceReaper<Batch> m_reaper;
+    uint64_t m_submission_count = 0U;
+};
+
 class PlayerClient::PreviewMeshWorkerPool final {
 public:
+    enum class Stage : uint8_t {
+        WorkerQueued,
+        WorkerBuilding,
+        CompletedResultWaiting,
+    };
+
+    struct StageSummary final {
+        uint32_t worker_queued_count = 0U;
+        uint32_t worker_building_count = 0U;
+        uint32_t completed_result_waiting_count = 0U;
+        std::chrono::nanoseconds oldest_worker_queued_age{ 0 };
+        std::chrono::nanoseconds oldest_worker_building_age{ 0 };
+        std::chrono::nanoseconds oldest_completed_result_waiting_age{ 0 };
+    };
+
+    struct StageState final {
+        Stage stage;
+        std::chrono::steady_clock::time_point started_at;
+    };
+
     struct Job final {
         HeightTileKey key;
         PreviewMeshSource source;
@@ -305,9 +548,33 @@ public:
         uint64_t epoch;
     };
 
-    explicit PreviewMeshWorkerPool(uint32_t const maximum_queued_meshes)
-        : m_admission_window(maximum_queued_meshes)
+    static constexpr uint32_t RETIREMENT_BATCH_CAPACITY = 256U;
+
+    struct RetirementBatch final {
+        std::array<Job, RETIREMENT_BATCH_CAPACITY> jobs{};
+        std::array<Result, RETIREMENT_BATCH_CAPACITY> results{};
+        uint32_t job_count = 0U;
+        uint32_t result_count = 0U;
+        uint64_t nested_storage_bytes = 0U;
+
+        RetirementBatch() = default;
+        RetirementBatch(RetirementBatch const&) = delete;
+        RetirementBatch& operator=(RetirementBatch const&) = delete;
+        RetirementBatch(RetirementBatch&&) noexcept = default;
+        RetirementBatch& operator=(RetirementBatch&&) noexcept = default;
+
+        [[nodiscard]] bool empty() const noexcept
+        {
+            return job_count == 0U && result_count == 0U;
+        }
+    };
+
+    explicit PreviewMeshWorkerPool(uint32_t const maximum_queued_meshes, bool const track_stages)
+        : m_admission_window(maximum_queued_meshes), m_track_stages(track_stages)
     {
+        if (m_track_stages) {
+            m_stage_by_key.reserve(maximum_queued_meshes);
+        }
         uint32_t const worker_count = std::clamp(std::thread::hardware_concurrency(), 2U, 8U);
         m_workers.reserve(worker_count);
         for (uint32_t worker = 0U; worker < worker_count; ++worker) {
@@ -325,6 +592,21 @@ public:
         for (std::thread& worker : m_workers) {
             worker.join();
         }
+        submitPendingRetirements();
+        RetirementBatch queued_retirement;
+        {
+            std::lock_guard lock{m_mutex};
+            for (Job& job : m_work) {
+                appendRetiredJob(queued_retirement, std::move(job));
+            }
+            m_work.clear();
+            for (Result& result : m_results) {
+                appendRetiredResult(queued_retirement, std::move(result));
+            }
+            m_results.clear();
+        }
+        submitRetirementBatch(std::move(queued_retirement));
+        m_retirement_reaper.drain();
     }
 
     [[nodiscard]] bool enqueue(Job job)
@@ -332,7 +614,15 @@ public:
         {
             std::lock_guard lock{m_mutex};
             if (m_stopping || !m_admission_window.canAccept()) {
+                appendRetiredJob(m_pending_retirements, std::move(job));
                 return false;
+            }
+            if (m_track_stages) {
+                m_stage_by_key.insert_or_assign(job.key,
+                    StageState{
+                        .stage = Stage::WorkerQueued,
+                        .started_at = std::chrono::steady_clock::now(),
+                    });
             }
             m_work.push_back(std::move(job));
             ASSERT(m_admission_window.tryAdmit(), "Preview mesh admission window changed unexpectedly");
@@ -356,16 +646,43 @@ public:
     )
     {
         std::vector<HeightTileKey> cancelled;
-        std::lock_guard lock{m_mutex};
-        std::erase_if(m_work, [&](Job const& job) {
-            if (interest.contains(job.key)) {
-                return false;
+        RetirementBatch retired;
+        {
+            std::lock_guard lock{m_mutex};
+            cancelled.reserve(m_work.size());
+            for (auto job = m_work.begin(); job != m_work.end();) {
+                if (interest.contains(job->key)) {
+                    ++job;
+                    continue;
+                }
+                cancelled.push_back(job->key);
+                appendRetiredJob(retired, std::move(*job));
+                if (m_track_stages) {
+                    m_stage_by_key.erase(cancelled.back());
+                }
+                ASSERT(m_admission_window.releaseOne(), "Cancelled preview mesh was not outstanding");
+                job = m_work.erase(job);
             }
-            cancelled.push_back(job.key);
-            ASSERT(m_admission_window.releaseOne(), "Cancelled preview mesh was not outstanding");
-            return true;
-        });
+        }
+        submitRetirementBatch(std::move(retired));
         return cancelled;
+    }
+
+    void discardCompletedResults()
+    {
+        RetirementBatch retired;
+        {
+            std::lock_guard lock{m_mutex};
+            for (Result& result : m_results) {
+                if (m_track_stages) {
+                    m_stage_by_key.erase(result.key);
+                }
+                ASSERT(m_admission_window.releaseOne(), "Discarded preview mesh result was not outstanding");
+                appendRetiredResult(retired, std::move(result));
+            }
+            m_results.clear();
+        }
+        submitRetirementBatch(std::move(retired));
     }
 
     [[nodiscard]] bool canAccept() const
@@ -386,6 +703,40 @@ public:
         return m_admission_window.outstandingCount();
     }
 
+    [[nodiscard]] StageSummary currentStages(
+        std::span<HeightTileKey const> keys, std::chrono::steady_clock::time_point const sampled_at) const
+    {
+        StageSummary summary;
+        if (!m_track_stages) {
+            return summary;
+        }
+        std::lock_guard lock{ m_mutex };
+        for (HeightTileKey const key : keys) {
+            auto const stage = m_stage_by_key.find(key);
+            if (stage == m_stage_by_key.end()) {
+                continue;
+            }
+            std::chrono::nanoseconds const age =
+                std::chrono::duration_cast<std::chrono::nanoseconds>(sampled_at - stage->second.started_at);
+            switch (stage->second.stage) {
+            case Stage::WorkerQueued:
+                ++summary.worker_queued_count;
+                summary.oldest_worker_queued_age = std::max(summary.oldest_worker_queued_age, age);
+                break;
+            case Stage::WorkerBuilding:
+                ++summary.worker_building_count;
+                summary.oldest_worker_building_age = std::max(summary.oldest_worker_building_age, age);
+                break;
+            case Stage::CompletedResultWaiting:
+                ++summary.completed_result_waiting_count;
+                summary.oldest_completed_result_waiting_age =
+                    std::max(summary.oldest_completed_result_waiting_age, age);
+                break;
+            }
+        }
+        return summary;
+    }
+
     [[nodiscard]] std::optional<Result> takeResult()
     {
         std::lock_guard lock{m_mutex};
@@ -400,8 +751,40 @@ public:
             m_results.begin() + static_cast<std::deque<Result>::difference_type>(*preferred_index);
         Result result = std::move(*result_iterator);
         m_results.erase(result_iterator);
-        ASSERT(m_admission_window.releaseOne(), "Preview mesh result was not outstanding");
         return result;
+    }
+
+    void requeueResult(Result result)
+    {
+        std::lock_guard lock{ m_mutex };
+        ASSERT(m_admission_window.outstandingCount() > m_results.size(),
+            "Deferred preview mesh result lost its admission");
+        m_results.push_back(std::move(result));
+    }
+
+    void retireTakenResult(Result&& result)
+    {
+        appendRetiredResult(m_pending_retirements, std::move(result));
+    }
+
+    void drainRetired()
+    {
+        submitPendingRetirements();
+        m_retirement_reaper.drain();
+    }
+
+    void submitRetired() noexcept
+    {
+        submitPendingRetirements();
+    }
+
+    void finishResult(HeightTileKey const key)
+    {
+        std::lock_guard lock{ m_mutex };
+        if (m_track_stages) {
+            m_stage_by_key.erase(key);
+        }
+        ASSERT(m_admission_window.releaseOne(), "Preview mesh result was not outstanding");
     }
 
     [[nodiscard]] std::optional<HeightTileKey> deferLowerPriority(uint8_t const admitted_tier)
@@ -416,17 +799,22 @@ public:
             auto result = lowestPriorityAbove(m_results, priority_tier, threshold);
             if (result != m_results.end()) {
                 key = result->key;
+                appendRetiredResult(m_pending_retirements, std::move(*result));
                 m_results.erase(result);
             } else {
                 auto job = lowestPriorityAbove(m_work, priority_tier, threshold);
                 if (job != m_work.end()) {
                     key = job->key;
+                    appendRetiredJob(m_pending_retirements, std::move(*job));
                     m_work.erase(job);
                 }
             }
         }
         if (!key.has_value()) {
             return std::nullopt;
+        }
+        if (m_track_stages) {
+            m_stage_by_key.erase(*key);
         }
         ASSERT(m_admission_window.releaseOne(), "Deferred preview mesh was not outstanding");
         return key;
@@ -450,6 +838,83 @@ private:
             }
         }
         return candidate;
+    }
+
+    static void addStorageBytes(uint64_t& total, uint64_t const bytes) noexcept
+    {
+        if (bytes > std::numeric_limits<uint64_t>::max() - total) {
+            total = std::numeric_limits<uint64_t>::max();
+        } else {
+            total += bytes;
+        }
+    }
+
+    static uint64_t sourceTileBytes(PreviewMeshSource const& source) noexcept
+    {
+        uint64_t bytes = source.tile ? static_cast<uint64_t>(sizeof(HeightTile)) : 0U;
+        for (HeightTileHandle const& neighbor : source.neighbors) {
+            if (neighbor) {
+                addStorageBytes(bytes, static_cast<uint64_t>(sizeof(HeightTile)));
+            }
+        }
+        return bytes;
+    }
+
+    static uint64_t capacityBytes(uint64_t const capacity, uint64_t const element_size) noexcept
+    {
+        return element_size != 0U && capacity > std::numeric_limits<uint64_t>::max() / element_size
+            ? std::numeric_limits<uint64_t>::max()
+            : capacity * element_size;
+    }
+
+    static void appendRetiredJob(RetirementBatch& batch, Job&& job) noexcept
+    {
+        if (batch.job_count >= RETIREMENT_BATCH_CAPACITY) {
+            std::abort();
+        }
+        addStorageBytes(batch.nested_storage_bytes, sourceTileBytes(job.source));
+        batch.jobs[batch.job_count++] = std::move(job);
+    }
+
+    static void appendRetiredResult(RetirementBatch& batch, Result&& result) noexcept
+    {
+        if (batch.result_count >= RETIREMENT_BATCH_CAPACITY) {
+            std::abort();
+        }
+        addStorageBytes(batch.nested_storage_bytes, sourceTileBytes(result.source));
+        addStorageBytes(batch.nested_storage_bytes,
+            capacityBytes(static_cast<uint64_t>(result.mesh.quads.capacity()),
+                static_cast<uint64_t>(sizeof(shared::HeightTileSurfaceQuad))));
+        batch.results[batch.result_count++] = std::move(result);
+    }
+
+    void submitRetirementBatch(RetirementBatch&& batch) noexcept
+    {
+        if (batch.empty()) {
+            return;
+        }
+        std::vector<RetirementBatch> payload;
+        try {
+            payload.reserve(1U);
+            payload.push_back(std::move(batch));
+        } catch (...) {
+            m_retirement_reaper.recordSynchronousFallback();
+            return;
+        }
+        uint64_t const nested_storage_bytes = payload.front().nested_storage_bytes;
+        if (!m_retirement_reaper.retire(payload, nested_storage_bytes)) {
+            payload.clear();
+        }
+    }
+
+    void submitPendingRetirements() noexcept
+    {
+        if (m_pending_retirements.empty()) {
+            return;
+        }
+        RetirementBatch pending = std::move(m_pending_retirements);
+        m_pending_retirements = RetirementBatch{};
+        submitRetirementBatch(std::move(pending));
     }
 
     void workerLoop()
@@ -478,6 +943,13 @@ private:
                 });
                 job = std::move(*next);
                 m_work.erase(next);
+                if (m_track_stages) {
+                    m_stage_by_key.insert_or_assign(job.key,
+                        StageState{
+                            .stage = Stage::WorkerBuilding,
+                            .started_at = std::chrono::steady_clock::now(),
+                        });
+                }
             }
             shared::HeightTileSurfaceMesh mesh = buildPreviewMesh(job.source);
             Result result{
@@ -489,6 +961,13 @@ private:
                 .epoch = job.epoch,
             };
             std::lock_guard lock{m_mutex};
+            if (m_track_stages) {
+                m_stage_by_key.insert_or_assign(job.key,
+                    StageState{
+                        .stage = Stage::CompletedResultWaiting,
+                        .started_at = std::chrono::steady_clock::now(),
+                    });
+            }
             m_results.push_back(std::move(result));
         }
     }
@@ -498,7 +977,11 @@ private:
     std::condition_variable m_work_available;
     std::deque<Job> m_work;
     std::deque<Result> m_results;
+    std::unordered_map<HeightTileKey, StageState, PlayerHeightTileKeyHash> m_stage_by_key;
     std::vector<std::thread> m_workers;
+    bool const m_track_stages;
+    RetirementBatch m_pending_retirements;
+    HeightTileInstanceReaper<RetirementBatch> m_retirement_reaper;
     HeightTileKey m_priority_center{};
     std::optional<HeightTileKey> m_priority_forecast_center;
     int8_t m_priority_heading_x = 0;
@@ -508,6 +991,9 @@ private:
 
 PlayerClient::~PlayerClient()
 {
+    m_preview_cache_retirement_reaper->extractAll(*this);
+    drainPreviewCacheRetirements();
+    m_preview_mesh_workers->drainRetired();
     if (m_window.nativeHandle() != nullptr) {
         glfwSetInputMode(m_window.nativeHandle(), GLFW_CURSOR, GLFW_CURSOR_NORMAL);
     }
@@ -517,28 +1003,34 @@ void PlayerClient::onConnectionStateReset()
 {
     m_jump_queued = false;
     ++m_preview_mesh_epoch;
+    drainPreviewCacheRetirements();
+    m_preview_mesh_workers->drainRetired();
     for (HeightTileKey const key : m_visible_preview_meshes) {
         static_cast<void>(m_renderer.removeHeightTileMesh({ .x = key.x, .y = key.y }));
     }
-    m_visible_preview_meshes.clear();
+    m_preview_cache_retirement_reaper->extractAll(*this);
+    drainPreviewCacheRetirements();
     m_preview_mesh_coverage.clear();
-    m_visible_preview_mesh_tiles.clear();
-    m_visible_preview_mesh_bases.clear();
-    m_visible_preview_mesh_edge_profiles.clear();
     m_preview_edge_profile_token = 0U;
-    m_visible_preview_mesh_seam_bridges.clear();
     m_preview_lod.clear();
     m_preview_tile_elevations.clear();
-    m_height_tile_center.reset();
     m_preview_forecast_center.reset();
+    m_height_tile_center.reset();
     m_height_tile_interest.clear();
+    m_interest_delta_scratch = {};
+    std::vector<HeightTileKey>{}.swap(m_remesh_closure_scratch);
+    std::vector<HeightTileKey>{}.swap(m_pending_keys_scratch);
+    m_interest_storage_radius = 0U;
     m_pending_preview_removals.clear();
     m_pending_preview_removal_set.clear();
     m_pending_preview_meshes.clear();
     m_preview_mesh_dirty_jobs.clear();
+    m_deferred_preview_mesh_result_deadline.reset();
     for (HeightTileKey const key : m_preview_mesh_workers->cancelQueuedOutsideInterest(m_height_tile_interest)) {
         m_preview_mesh_jobs.erase(key);
     }
+    m_preview_mesh_workers->discardCompletedResults();
+    m_preview_mesh_workers->drainRetired();
     m_preview_mesh_jobs.clear();
     m_interest_heading_x = 0;
     m_interest_heading_y = 127;
@@ -559,6 +1051,36 @@ void PlayerClient::onConnectionStateReset()
     m_capture_interest_baseline.clear();
     m_capture_mesh_baseline.clear();
     m_capture_requested = false;
+}
+
+void PlayerClient::submitPreviewCacheRetirements() noexcept
+{
+    m_preview_cache_retirement_reaper->submitPending();
+}
+
+void PlayerClient::drainPreviewCacheRetirements() noexcept
+{
+    m_preview_cache_retirement_reaper->drain();
+}
+
+uint64_t PlayerClient::previewCacheRetirementHighWaterBytes() const noexcept
+{
+    return m_preview_cache_retirement_reaper->highWaterBytes();
+}
+
+uint64_t PlayerClient::previewCacheRetirementOutstandingBytes() const noexcept
+{
+    return m_preview_cache_retirement_reaper->outstandingBytes();
+}
+
+uint64_t PlayerClient::previewCacheRetirementFallbackCount() const noexcept
+{
+    return m_preview_cache_retirement_reaper->synchronousFallbackCount();
+}
+
+uint64_t PlayerClient::previewCacheRetirementSubmissionCount() const noexcept
+{
+    return m_preview_cache_retirement_reaper->submissionCount();
 }
 
 PlayerClient::PlayerClient(
@@ -590,8 +1112,10 @@ PlayerClient::PlayerClient(
                 && m_benchmark->require_immediate_present_mode,
         }
     )
+    , m_preview_cache_retirement_reaper(std::make_unique<PreviewCacheRetirementReaper>())
     , m_preview_mesh_workers(std::make_unique<PreviewMeshWorkerPool>(
-        playerClientPreviewMeshBacklogCapacity(m_capture.has_value())
+        playerClientPreviewMeshBacklogCapacity(m_capture.has_value()),
+        m_benchmark.has_value() && m_benchmark->enable_mesh_stage_diagnostics
     ))
 {
     beginContinuousLook();
@@ -874,11 +1398,250 @@ void PlayerPreviewMeshCoverage::meshPublished(bool const newly_visible, bool con
     }
 }
 
+class PlayerPreviewMeshQueue::RetirementState final {
+    static constexpr uint32_t BUFFER_BATCH_SIZE = 16U;
+    static constexpr uint32_t NODE_BATCH_SIZE = 256U;
+    using Tickets = std::unordered_map<HeightTileKey, uint64_t, PlayerHeightTileKeyHash>;
+    struct Batch final {
+        std::array<std::vector<Entry>, BUFFER_BATCH_SIZE> buffers;
+        std::array<Tickets::node_type, NODE_BATCH_SIZE> nodes;
+        uint32_t buffer_count = 0U;
+        uint32_t node_count = 0U;
+        uint64_t storage_bytes = 0U;
+    };
+
+public:
+    void reserveStorage(uint32_t const maximum_pending)
+    {
+        uint64_t const previous_capacity = m_free_nodes.capacity();
+        m_node_limit = std::max(previous_capacity,
+            std::min(static_cast<uint64_t>(maximum_pending), POOL_BYTES / (2U * NODE_BYTES)));
+        uint64_t const additional_bytes = (m_node_limit - previous_capacity) * sizeof(Tickets::node_type);
+        while (m_free_buffer_count != 0U && additional_bytes > POOL_BYTES - m_pool_bytes) {
+            auto& buffer = m_free_buffers[--m_free_buffer_count];
+            m_pool_bytes -= static_cast<uint64_t>(buffer.capacity()) * sizeof(Entry);
+            destroyBuffer(buffer);
+        }
+        m_free_nodes.reserve(m_node_limit);
+        m_free_nodes.resize(m_node_limit);
+        m_pool_bytes += (static_cast<uint64_t>(m_free_nodes.capacity()) - previous_capacity)
+            * sizeof(Tickets::node_type);
+    }
+
+    [[nodiscard]] StorageStats storageStats() const noexcept
+    {
+        return {.retained_bytes = m_pool_bytes, .buffer_reuses = m_buffer_reuses, .ticket_reuses = m_ticket_reuses};
+    }
+
+    [[nodiscard]] std::vector<Entry> acquireBuffer(uint64_t const required_entries) noexcept
+    {
+        uint32_t selected = m_free_buffer_count;
+        for (uint32_t index = 0U; index < m_free_buffer_count; ++index) {
+            if (m_free_buffers[index].capacity() >= required_entries
+                && (selected == m_free_buffer_count
+                    || m_free_buffers[index].capacity() < m_free_buffers[selected].capacity())) {
+                selected = index;
+            }
+        }
+        if (selected == m_free_buffer_count) {
+            return {};
+        }
+        std::vector<Entry> result = std::move(m_free_buffers[selected]);
+        --m_free_buffer_count;
+        if (selected != m_free_buffer_count) {
+            m_free_buffers[selected] = std::move(m_free_buffers[m_free_buffer_count]);
+        }
+        m_pool_bytes -= static_cast<uint64_t>(result.capacity()) * sizeof(Entry);
+        ++m_buffer_reuses;
+        return result;
+    }
+
+    void insertTicket(Tickets& tickets, HeightTileKey const key, uint64_t const ticket)
+    {
+        if (m_free_node_count == 0U) {
+            tickets.emplace(key, ticket);
+            return;
+        }
+        Tickets::node_type& node = m_free_nodes[m_free_node_count - 1U];
+        node.key() = key;
+        node.mapped() = ticket;
+        auto inserted = tickets.insert(std::move(node));
+        if (!inserted.inserted) {
+            node = std::move(inserted.node);
+            ASSERT(inserted.inserted, "Recycled preview ticket key must be absent");
+            return;
+        }
+        --m_free_node_count;
+        m_pool_bytes -= NODE_BYTES;
+        ++m_ticket_reuses;
+    }
+
+    void retireBuffer(std::vector<Entry>& buffer) noexcept
+    {
+        buffer.clear();
+        uint64_t const bytes = static_cast<uint64_t>(buffer.capacity()) * sizeof(Entry);
+        if (bytes == 0U) {
+            return;
+        }
+        if (m_free_buffer_count < m_free_buffers.size() && bytes <= POOL_BYTES - m_pool_bytes) {
+            m_free_buffers[m_free_buffer_count++].swap(buffer);
+            m_pool_bytes += bytes;
+            return;
+        }
+        destroyBuffer(buffer);
+    }
+
+    void destroyBuffer(std::vector<Entry>& buffer) noexcept
+    {
+        if (buffer.capacity() == 0U) {
+            return;
+        }
+        uint64_t const bytes = static_cast<uint64_t>(buffer.capacity()) * sizeof(Entry);
+        if (bytes > HeightTileInstanceReaper<Batch>::MAXIMUM_BYTES - sizeof(Batch)) {
+            m_reaper.recordSynchronousFallback();
+            std::vector<Entry>{}.swap(buffer);
+            return;
+        }
+        prepare(bytes);
+        if (m_pending.buffer_count == BUFFER_BATCH_SIZE) {
+            submit();
+        }
+        m_pending.buffers[m_pending.buffer_count++].swap(buffer);
+        m_pending.storage_bytes += bytes;
+    }
+
+    bool eraseTicket(Tickets& tickets, HeightTileKey const key) noexcept
+    {
+        auto const found = tickets.find(key);
+        if (found == tickets.end()) {
+            return false;
+        }
+        if (m_free_node_count < m_free_nodes.size() && NODE_BYTES <= POOL_BYTES - m_pool_bytes) {
+            m_free_nodes[m_free_node_count++] = tickets.extract(found);
+            m_pool_bytes += NODE_BYTES;
+            return true;
+        }
+        prepare(NODE_BYTES);
+        if (m_pending.node_count == NODE_BATCH_SIZE) {
+            submit();
+        }
+        m_pending.nodes[m_pending.node_count++] = tickets.extract(found);
+        m_pending.storage_bytes += NODE_BYTES;
+        return true;
+    }
+
+    void submit() noexcept
+    {
+        if (m_pending.buffer_count == 0U && m_pending.node_count == 0U) {
+            return;
+        }
+        std::vector<Batch> payload;
+        try {
+            payload.reserve(1U);
+            payload.push_back(std::move(m_pending));
+        } catch (...) {
+            m_reaper.recordSynchronousFallback();
+            m_pending = Batch{};
+            return;
+        }
+        uint64_t const bytes = payload.front().storage_bytes;
+        m_pending = Batch{};
+        static_cast<void>(m_reaper.retire(payload, bytes));
+    }
+
+    void drain() noexcept
+    {
+        while (m_free_buffer_count != 0U) {
+            destroyBuffer(m_free_buffers[--m_free_buffer_count]);
+        }
+        for (uint64_t index = 0U; index < m_free_node_count; ++index) {
+            prepare(NODE_BYTES);
+            if (m_pending.node_count == NODE_BATCH_SIZE) {
+                submit();
+            }
+            m_pending.nodes[m_pending.node_count++] = std::move(m_free_nodes[index]);
+            m_pending.storage_bytes += NODE_BYTES;
+        }
+        std::vector<Tickets::node_type>{}.swap(m_free_nodes);
+        m_free_node_count = 0U;
+        m_pool_bytes = 0U;
+        m_node_limit = 0U;
+        submit();
+        m_reaper.drain();
+    }
+
+private:
+    static constexpr uint64_t POOL_BYTES = uint64_t{64U} * 1024U * 1024U;
+    static constexpr uint64_t NODE_BYTES = sizeof(Tickets::value_type) + 4U * sizeof(void*);
+    void prepare(uint64_t const bytes) noexcept
+    {
+        static constexpr uint64_t LIMIT = HeightTileInstanceReaper<Batch>::MAXIMUM_BYTES - sizeof(Batch);
+        if (bytes > LIMIT || m_pending.storage_bytes > LIMIT - bytes) {
+            submit();
+        }
+    }
+
+    Batch m_pending;
+    HeightTileInstanceReaper<Batch> m_reaper;
+    std::array<std::vector<Entry>, 32> m_free_buffers;
+    std::vector<Tickets::node_type> m_free_nodes;
+    uint64_t m_free_node_count = 0U;
+    uint32_t m_free_buffer_count = 0U;
+    uint64_t m_node_limit = 0U;
+    uint64_t m_pool_bytes = 0U;
+    uint64_t m_buffer_reuses = 0U;
+    uint64_t m_ticket_reuses = 0U;
+};
+
+PlayerPreviewMeshQueue::PlayerPreviewMeshQueue()
+    : m_retirement(std::make_unique<RetirementState>())
+{}
+
+PlayerPreviewMeshQueue::~PlayerPreviewMeshQueue()
+{
+    clear();
+}
+
+void PlayerPreviewMeshQueue::reserveStorage(uint32_t const maximum_pending)
+{
+    m_retirement->reserveStorage(maximum_pending);
+    m_tickets.reserve(maximum_pending);
+    ensureHeapCapacity(maximum_pending);
+    std::vector<Entry> spare = m_retirement->acquireBuffer(maximum_pending);
+    spare.reserve(maximum_pending);
+    m_retirement->retireBuffer(spare);
+}
+
+PlayerPreviewMeshQueue::StorageStats PlayerPreviewMeshQueue::storageStats() const noexcept
+{
+    return m_retirement->storageStats();
+}
+
+void PlayerPreviewMeshQueue::ensureHeapCapacity(uint64_t const required_entries)
+{
+    if (required_entries <= m_heap.capacity()) {
+        return;
+    }
+    uint64_t const target_capacity = std::max(required_entries, static_cast<uint64_t>(m_heap.capacity()) * 2U);
+    std::vector<Entry> replacement = m_retirement->acquireBuffer(target_capacity);
+    replacement.reserve(target_capacity);
+    replacement.insert(replacement.end(), m_heap.begin(), m_heap.end());
+    m_heap.swap(replacement);
+    m_retirement->retireBuffer(replacement);
+}
+
 void PlayerPreviewMeshQueue::clear() noexcept
 {
-    m_heap.clear();
+    m_retirement->retireBuffer(m_heap);
+    for (auto& buffer : m_unranked) {
+        m_retirement->retireBuffer(buffer);
+    }
     m_unranked.clear();
-    m_tickets.clear();
+    while (!m_tickets.empty()) {
+        static_cast<void>(m_retirement->eraseTicket(m_tickets, m_tickets.begin()->first));
+    }
+    decltype(m_tickets){}.swap(m_tickets);
+    m_retirement->drain();
 }
 
 bool PlayerPreviewMeshQueue::push(HeightTileKey const key)
@@ -886,11 +1649,52 @@ bool PlayerPreviewMeshQueue::push(HeightTileKey const key)
     if (m_tickets.contains(key)) {
         return false;
     }
+    ensureHeapCapacity(static_cast<uint64_t>(m_heap.size()) + 1U);
     uint64_t const ticket = m_next_ticket++;
-    m_tickets.emplace(key, ticket);
+    m_retirement->insertTicket(m_tickets, key, ticket);
     m_heap.push_back(entryFor(key, ticket));
     std::push_heap(m_heap.begin(), m_heap.end(), lowerPriority);
     return true;
+}
+
+void PlayerPreviewMeshQueue::pushBatch(std::span<HeightTileKey const> const keys)
+{
+    if (keys.empty()) {
+        return;
+    }
+    m_unranked.emplace_back();
+    std::vector<Entry>& batch = m_unranked.back();
+    try {
+        batch = m_retirement->acquireBuffer(keys.size());
+        batch.reserve(keys.size());
+    } catch (...) {
+        m_retirement->retireBuffer(batch);
+        m_unranked.pop_back();
+        throw;
+    }
+    try {
+        for (HeightTileKey const key : keys) {
+            if (m_tickets.contains(key)) {
+                continue;
+            }
+            uint64_t const ticket = m_next_ticket++;
+            m_retirement->insertTicket(m_tickets, key, ticket);
+            batch.push_back({ .priority = 0.0, .key = key, .ticket = ticket });
+        }
+    } catch (...) {
+        if (batch.empty()) {
+            m_retirement->retireBuffer(batch);
+            m_unranked.pop_back();
+        }
+        m_retirement->submit();
+        throw;
+    }
+    if (batch.empty()) {
+        m_retirement->retireBuffer(batch);
+        m_unranked.pop_back();
+        m_retirement->submit();
+        return;
+    }
 }
 
 void PlayerPreviewMeshQueue::resetPriority(
@@ -900,8 +1704,14 @@ void PlayerPreviewMeshQueue::resetPriority(
     std::unordered_set<HeightTileKey, PlayerHeightTileKeyHash> const& interest
 )
 {
+    uint64_t required_entries = static_cast<uint64_t>(m_heap.size());
+    for (auto const& heap : m_unranked) {
+        required_entries += static_cast<uint64_t>(heap.size());
+    }
+    ensureHeapCapacity(required_entries);
     for (auto& heap : m_unranked) {
         m_heap.insert(m_heap.end(), heap.begin(), heap.end());
+        m_retirement->retireBuffer(heap);
     }
     m_unranked.clear();
     m_center = center;
@@ -914,7 +1724,7 @@ void PlayerPreviewMeshQueue::resetPriority(
         if (interest.contains(entry.key)) {
             return false;
         }
-        m_tickets.erase(entry.key);
+        static_cast<void>(m_retirement->eraseTicket(m_tickets, entry.key));
         return true;
     });
     for (Entry& entry : m_heap) {
@@ -923,6 +1733,7 @@ void PlayerPreviewMeshQueue::resetPriority(
         );
     }
     std::make_heap(m_heap.begin(), m_heap.end(), lowerPriority);
+    m_retirement->submit();
 }
 
 void PlayerPreviewMeshQueue::beginPriorityRefresh(
@@ -936,7 +1747,7 @@ void PlayerPreviewMeshQueue::beginPriorityRefresh(
     m_heading_y = heading_y;
     if (!m_heap.empty()) {
         m_unranked.push_back(std::move(m_heap));
-        m_heap = {};
+        m_heap = m_retirement->acquireBuffer(0U);
     }
 }
 
@@ -946,7 +1757,14 @@ uint32_t PlayerPreviewMeshQueue::refreshPriority(
 )
 {
     if (maximum_entries == 0U) {
+        m_retirement->submit();
         return 0U;
+    }
+    uint64_t const maximum_additions = std::min(
+        static_cast<uint64_t>(maximum_entries), static_cast<uint64_t>(m_tickets.size())
+    );
+    if (!m_unranked.empty()) {
+        ensureHeapCapacity(static_cast<uint64_t>(m_heap.size()) + maximum_additions);
     }
     uint32_t refreshed = 0U;
     while (refreshed < maximum_entries && !m_unranked.empty()) {
@@ -954,6 +1772,7 @@ uint32_t PlayerPreviewMeshQueue::refreshPriority(
         Entry entry = heap.back();
         heap.pop_back();
         if (heap.empty()) {
+            m_retirement->retireBuffer(heap);
             m_unranked.pop_front();
         }
         ++refreshed;
@@ -961,7 +1780,7 @@ uint32_t PlayerPreviewMeshQueue::refreshPriority(
             continue;
         }
         if (!interest.contains(entry.key)) {
-            m_tickets.erase(entry.key);
+            static_cast<void>(m_retirement->eraseTicket(m_tickets, entry.key));
             continue;
         }
         entry = entryFor(entry.key, entry.ticket);
@@ -969,6 +1788,7 @@ uint32_t PlayerPreviewMeshQueue::refreshPriority(
         std::push_heap(m_heap.begin(), m_heap.end(), lowerPriority);
     }
     refreshed += pruneReadyHeap(maximum_entries - refreshed);
+    m_retirement->submit();
     return refreshed;
 }
 
@@ -1083,7 +1903,7 @@ HeightTileKey PlayerPreviewMeshQueue::top() const noexcept
 
 bool PlayerPreviewMeshQueue::erase(HeightTileKey const key) noexcept
 {
-    return m_tickets.erase(key) != 0U;
+    return m_retirement->eraseTicket(m_tickets, key);
 }
 
 void PlayerPreviewMeshQueue::pop()
@@ -1093,7 +1913,7 @@ void PlayerPreviewMeshQueue::pop()
     std::pop_heap(m_heap.begin(), m_heap.end(), lowerPriority);
     m_heap.pop_back();
     if (isCurrent(entry)) {
-        m_tickets.erase(entry.key);
+        static_cast<void>(m_retirement->eraseTicket(m_tickets, entry.key));
     }
 }
 
@@ -1166,6 +1986,15 @@ void PlayerClient::refreshHeightTileInterest(
     if (!radius) {
         return;
     }
+    if (m_interest_storage_radius != *radius) {
+        uint32_t const required_tiles = shared::heightTileInterestCount(*radius);
+        m_interest_delta_scratch.additions.reserve(required_tiles);
+        m_interest_delta_scratch.removals.reserve(required_tiles);
+        m_remesh_closure_scratch.reserve(static_cast<uint64_t>(required_tiles) * 5U);
+        m_pending_keys_scratch.reserve(required_tiles);
+        m_pending_preview_meshes.reserveStorage(required_tiles);
+        m_interest_storage_radius = *radius;
+    }
     CameraProjection camera_projection = m_camera.projection();
     double const far_plane = static_cast<double>(*radius) * shared::HEIGHT_TILE_SIDE_LENGTH
         + shared::WorldExtent::DEPTH;
@@ -1213,26 +2042,28 @@ void PlayerClient::refreshHeightTileInterest(
         m_pending_preview_meshes.beginPriorityRefresh(center, heading.x, heading.y);
     }
     if (center_changed) {
-        PlayerPreviewInterestDelta delta;
+        shared::HeightTileInterestDelta& delta = m_interest_delta_scratch;
         if (m_height_tile_center) {
-            delta = playerPreviewInterestDelta(*m_height_tile_center, center, *radius);
+            shared::heightTileInterestDelta(*m_height_tile_center, center, *radius, delta);
         } else {
-            delta.additions = shared::makeHeightTileInterest(center, heading.x, heading.y, *radius).keys;
+            auto const initial = shared::makeHeightTileInterest(center, heading.x, heading.y, *radius);
+            delta.additions.assign(initial.keys.begin(), initial.keys.end());
+            delta.removals.clear();
             m_height_tile_interest.reserve(delta.additions.size());
         }
         for (HeightTileKey const key : delta.removals) {
             m_preview_mesh_coverage.interestRemoved(m_visible_preview_meshes.contains(key));
             m_height_tile_interest.erase(key);
-            m_preview_lod.erase(key);
             m_preview_tile_elevations.erase(key);
             queuePreviewRemoval(key);
         }
+        m_preview_lod.eraseBatch(delta.removals);
         for (HeightTileKey const key : delta.additions) {
             if (m_height_tile_interest.insert(key).second) {
                 m_preview_mesh_coverage.interestAdded(m_visible_preview_meshes.contains(key));
-                queuePreviewMesh(key);
             }
         }
+        queuePreviewMeshes(delta.additions);
     }
     m_height_tile_center = center;
     m_applied_interest_heading_x = heading.x;
@@ -1267,17 +2098,8 @@ void PlayerClient::refreshHeightTileInterest(
         m_render_diagnostics.preview_lod_evaluated_tile_count = refresh.evaluated_tiles;
         m_render_diagnostics.preview_lod_changed_tile_count = static_cast<uint32_t>(refresh.changed_keys.size());
     }
-    for (HeightTileKey const key : refresh.changed_keys) {
-        queuePreviewMesh(key);
-        for (HeightTileKey const adjacent : {
-                 offsetHeightTileKey(key, -1, 0),
-                 offsetHeightTileKey(key, 1, 0),
-                 offsetHeightTileKey(key, 0, -1),
-                 offsetHeightTileKey(key, 0, 1),
-             }) {
-            queuePreviewMesh(adjacent);
-        }
-    }
+    playerPreviewLodRemeshClosure(refresh.changed_keys, m_remesh_closure_scratch);
+    queuePreviewMeshes(m_remesh_closure_scratch);
 }
 
 std::array<HeightTileHandle, 4> PlayerClient::previewMeshNeighbors(HeightTileKey const key) const
@@ -1383,7 +2205,9 @@ bool PlayerClient::refreshVisiblePreviewMesh(
     if (m_renderer.upsertHeightTileMesh(mesh, deadline)) {
         markPreviewMeshVisible(key);
         if (candidate_bridges != nullptr) {
+            m_preview_cache_retirement_reaper->extractReplacedSeamBridges(*this, key);
             m_visible_preview_mesh_seam_bridges.insert_or_assign(key, *candidate_bridges);
+            submitPreviewCacheRetirements();
         }
         return true;
     } else {
@@ -1395,13 +2219,16 @@ bool PlayerClient::refreshVisiblePreviewMesh(
     }
 }
 
-void PlayerClient::publishPreviewMesh(
+bool PlayerClient::publishPreviewMesh(
     HeightTileKey const key,
-    shared::HeightTileSurfaceMesh mesh,
+    shared::HeightTileSurfaceMesh &mesh,
     HeightTileHandle const& tile,
     std::chrono::steady_clock::time_point const deadline
 )
 {
+    bool const capture_mesh_diagnostics = m_benchmark.has_value() && m_benchmark->enable_mesh_stage_diagnostics;
+    std::chrono::steady_clock::time_point const seam_planning_started_at =
+        capture_mesh_diagnostics ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
     PreviewMeshSeamBridgeSet center_bridges;
     auto const current_bridges = m_visible_preview_mesh_seam_bridges.find(key);
     if (current_bridges != m_visible_preview_mesh_seam_bridges.end()) {
@@ -1438,16 +2265,42 @@ void PlayerClient::publishPreviewMesh(
             mesh, PreviewMeshSeamBridgeSet::EDGES[edge]
         );
     }
+    if (capture_mesh_diagnostics) {
+        m_mesh_result_drain_diagnostics.seam_planning_duration += std::chrono::duration_cast<std::chrono::nanoseconds>(
+            std::chrono::steady_clock::now() - seam_planning_started_at);
+    }
     bool const published = publishPreviewMeshSeamPlan(
         plan,
         batch,
-        [this, deadline](std::span<shared::HeightTileSurfaceMesh const> candidates) {
-            return m_renderer.upsertHeightTileMeshes(candidates, deadline);
+        [this, deadline, capture_mesh_diagnostics](std::span<shared::HeightTileSurfaceMesh const> candidates) {
+            std::chrono::steady_clock::time_point const upsert_started_at =
+                capture_mesh_diagnostics ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
+            RendererHeightTileUpsertDiagnostics upsert_diagnostics;
+            bool const upserted = m_renderer.upsertHeightTileMeshes(
+                candidates,
+                deadline,
+                capture_mesh_diagnostics ? &upsert_diagnostics : nullptr
+            );
+            if (capture_mesh_diagnostics) {
+                m_mesh_result_drain_diagnostics.renderer_batch_upsert_duration +=
+                    std::chrono::duration_cast<std::chrono::nanoseconds>(
+                        std::chrono::steady_clock::now() - upsert_started_at);
+                m_mesh_result_drain_diagnostics.renderer_upsert_stages.free_range_prepare_duration +=
+                    upsert_diagnostics.free_range_prepare_duration;
+                m_mesh_result_drain_diagnostics.renderer_upsert_stages.mesh_prepare_duration +=
+                    upsert_diagnostics.mesh_prepare_duration;
+                m_mesh_result_drain_diagnostics.renderer_upsert_stages.capacity_prepare_duration +=
+                    upsert_diagnostics.capacity_prepare_duration;
+                m_mesh_result_drain_diagnostics.renderer_upsert_stages.commit_upload_duration +=
+                    upsert_diagnostics.commit_upload_duration;
+            }
+            return upserted;
         },
         [this, key, &mesh, &tile, &adjacent_keys, &edge_profiles](
             PreviewMeshSeamPublicationPlan& accepted_plan
         ) {
             markPreviewMeshVisible(key);
+            m_preview_cache_retirement_reaper->extractReplacedBase(*this, key);
             m_visible_preview_mesh_bases.insert_or_assign(key, std::move(mesh));
             auto const previous = m_visible_preview_mesh_edge_profiles.find(key);
             PreviewMeshEdgeProfiles profiles{ .edges = edge_profiles };
@@ -1457,12 +2310,19 @@ void PlayerClient::publishPreviewMesh(
                     ? previous->second.tokens[edge]
                     : ++m_preview_edge_profile_token;
             }
-            m_visible_preview_mesh_edge_profiles.insert_or_assign(key, std::move(profiles));
+            m_preview_cache_retirement_reaper->extractReplacedEdgeProfiles(*this, key);
+            m_visible_preview_mesh_edge_profiles.insert_or_assign(key, profiles);
+            m_preview_cache_retirement_reaper->extractReplacedSeamBridges(*this, key);
             m_visible_preview_mesh_seam_bridges.insert_or_assign(key, std::move(accepted_plan.center_bridges));
+            m_preview_cache_retirement_reaper->extractReplacedTile(*this, key);
             m_visible_preview_mesh_tiles.insert_or_assign(key, tile);
             for (uint32_t index = 0U; index < accepted_plan.changed_neighbors.size(); ++index) {
                 if (accepted_plan.changed_neighbors[index]) {
                     markPreviewMeshVisible(adjacent_keys[index]);
+                    m_preview_cache_retirement_reaper->extractReplacedSeamBridges(
+                        *this,
+                        adjacent_keys[index]
+                    );
                     m_visible_preview_mesh_seam_bridges.insert_or_assign(
                         adjacent_keys[index],
                         std::move(accepted_plan.neighbor_bridges[index])
@@ -1476,37 +2336,38 @@ void PlayerClient::publishPreviewMesh(
         if (m_capture.has_value()) {
             ++m_capture_mesh_publish_failures;
         }
-        queuePreviewMesh(key);
     }
+    if (capture_mesh_diagnostics) {
+        if (published) {
+            ++m_mesh_result_drain_diagnostics.publish_success_count;
+        } else {
+            ++m_mesh_result_drain_diagnostics.publish_failure_count;
+        }
+    }
+    return published;
 }
 
 void PlayerClient::removePreviewMesh(
     HeightTileKey const key,
-    std::chrono::steady_clock::time_point const deadline
-)
+    std::chrono::steady_clock::time_point const)
 {
+    bool const capture_render_diagnostics = m_benchmark.has_value();
     static_cast<void>(m_renderer.removeHeightTileMesh({ .x = key.x, .y = key.y }));
-    m_visible_preview_meshes.erase(key);
-    m_visible_preview_mesh_tiles.erase(key);
-    m_visible_preview_mesh_bases.erase(key);
-    m_visible_preview_mesh_edge_profiles.erase(key);
-    m_visible_preview_mesh_seam_bridges.erase(key);
-    refreshPreviewMeshNeighborElevations(key);
-    uint32_t edge = 0U;
+    m_preview_cache_retirement_reaper->extractRemoved(*this, key);
+    std::chrono::steady_clock::time_point const neighbor_enqueue_started_at =
+        capture_render_diagnostics ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
     for (HeightTileKey const adjacent : {
              offsetHeightTileKey(key, -1, 0),
              offsetHeightTileKey(key, 1, 0),
              offsetHeightTileKey(key, 0, -1),
              offsetHeightTileKey(key, 0, 1),
          }) {
-        auto const seams = m_visible_preview_mesh_seam_bridges.find(adjacent);
-        if (seams != m_visible_preview_mesh_seam_bridges.end()) {
-            PreviewMeshSeamBridgeSet candidate_bridges = seams->second;
-            if (candidate_bridges.replace(PreviewMeshSeamBridgeSet::OPPOSITE_EDGES[edge], {})) {
-                static_cast<void>(refreshVisiblePreviewMesh(adjacent, deadline, &candidate_bridges));
-            }
-        }
-        ++edge;
+        queuePreviewMesh(adjacent);
+    }
+    if (capture_render_diagnostics) {
+        std::chrono::steady_clock::time_point const remove_completed_at = std::chrono::steady_clock::now();
+        m_render_diagnostics.preview_mesh_remove_neighbor_enqueue_duration +=
+            std::chrono::duration_cast<std::chrono::nanoseconds>(remove_completed_at - neighbor_enqueue_started_at);
     }
 }
 
@@ -1515,7 +2376,7 @@ shared::HeightTileSurfaceDetail PlayerClient::previewMeshDetail(
     HeightTileHandle const& tile
 )
 {
-    if (!tile || !m_height_tile_center.has_value()) {
+    if (!tile || m_height_tile_interest.empty()) {
         return shared::HeightTileSurfaceDetail::Fine;
     }
     std::array<HeightTileHandle, 4> const neighbors = previewMeshNeighbors(key);
@@ -1536,10 +2397,11 @@ shared::HeightTileSurfaceDetail PlayerClient::previewMeshDetail(
         }
         auto const installed = m_visible_preview_mesh_edge_profiles.find(neighbor_keys[index]);
         if (installed != m_visible_preview_mesh_edge_profiles.end()) {
-            installed_neighbor_profiles[index] = installed->second.edges[
+            shared::HeightTileSurfaceEdgeProfile const &installed_profile = installed->second.edges[
                 PreviewMeshSeamBridgeSet::OPPOSITE_EDGES[index]
             ];
-            neighbor_mesh_ranges[index] = installed_neighbor_profiles[index]->elevation;
+            installed_neighbor_profiles[index] = installed_profile;
+            neighbor_mesh_ranges[index] = installed_profile.elevation;
         }
     }
     auto elevation = m_preview_tile_elevations.find(key);
@@ -1623,6 +2485,23 @@ void PlayerClient::queuePreviewMesh(HeightTileKey const key)
     } else {
         static_cast<void>(m_pending_preview_meshes.push(key));
     }
+}
+
+void PlayerClient::queuePreviewMeshes(std::span<HeightTileKey const> const keys)
+{
+    std::vector<HeightTileKey>& pending = m_pending_keys_scratch;
+    pending.clear();
+    for (HeightTileKey const key : keys) {
+        if (!m_height_tile_interest.contains(key) || !heightTileResidency().resident(key)) {
+            continue;
+        }
+        if (m_preview_mesh_jobs.contains(key)) {
+            m_preview_mesh_dirty_jobs.insert(key);
+        } else {
+            pending.push_back(key);
+        }
+    }
+    m_pending_preview_meshes.pushBatch(pending);
 }
 
 void PlayerClient::queuePreviewRemoval(HeightTileKey const key)
@@ -1738,42 +2617,65 @@ bool PlayerClient::enqueuePreviewMeshJob(
 
 void PlayerClient::processPendingPreviewMeshes(
     uint32_t const maximum_meshes,
-    std::chrono::steady_clock::time_point const renderer_deadline,
-    std::chrono::steady_clock::time_point const near_admission_deadline)
+    std::chrono::steady_clock::time_point const mesh_work_deadline)
 {
-    if (!m_height_tile_center.has_value()) {
-        while (m_preview_mesh_workers->takeResult().has_value()) {
+    if (m_deferred_preview_mesh_result_deadline == mesh_work_deadline) {
+        return;
+    }
+    m_deferred_preview_mesh_result_deadline.reset();
+    bool const capture_mesh_diagnostics = m_benchmark.has_value() && m_benchmark->enable_mesh_stage_diagnostics;
+    std::optional<HeightTileKey> const center = m_height_tile_center;
+    if (!center.has_value()) {
+        while (std::optional<PreviewMeshWorkerPool::Result> result = m_preview_mesh_workers->takeResult()) {
+            if (capture_mesh_diagnostics) {
+                ++m_mesh_result_drain_diagnostics.drained_result_count;
+                ++m_mesh_result_drain_diagnostics.no_longer_interested_or_resident_discard_count;
+            }
+            m_preview_mesh_workers->finishResult(result->key);
+            m_preview_mesh_jobs.erase(result->key);
+            m_preview_mesh_workers->retireTakenResult(std::move(*result));
         }
+        m_preview_mesh_workers->submitRetired();
         return;
     }
     static constexpr uint32_t PRIORITY_REFRESH_BUDGET = 256U;
     uint32_t maintenance_budget = PRIORITY_REFRESH_BUDGET;
     maintenance_budget -= m_pending_preview_meshes.refreshPriority(maintenance_budget, m_height_tile_interest);
     auto const upload_started = std::chrono::steady_clock::now();
-    for (uint32_t completed = 0U; completed < maximum_meshes && std::chrono::steady_clock::now() < renderer_deadline; ++completed) {
+    for (uint32_t completed = 0U; completed < maximum_meshes
+         && std::chrono::steady_clock::now() < mesh_work_deadline; ++completed) {
         std::optional<PreviewMeshWorkerPool::Result> result = m_preview_mesh_workers->takeResult();
         if (!result.has_value()) {
             break;
         }
-        if (m_capture.has_value()) {
-            ++m_capture_mesh_results;
+        if (capture_mesh_diagnostics) {
+            ++m_mesh_result_drain_diagnostics.drained_result_count;
         }
         if (result->epoch != m_preview_mesh_epoch) {
+            if (capture_mesh_diagnostics) {
+                ++m_mesh_result_drain_diagnostics.stale_epoch_discard_count;
+            }
+            m_preview_mesh_workers->finishResult(result->key);
+            m_preview_mesh_jobs.erase(result->key);
+            m_preview_mesh_workers->retireTakenResult(std::move(*result));
             continue;
         }
-        m_preview_mesh_jobs.erase(result->key);
         HeightTileHandle const current = heightTileResidency().resident(result->key);
+        std::array<HeightTileHandle, 4> current_neighbors{};
+        bool const currently_interested = m_height_tile_interest.contains(result->key);
         bool source_current = false;
         bool detail_current = false;
-        if (m_height_tile_interest.contains(result->key) && current) {
-            source_current = result->source.matchesGeometry(current, previewMeshNeighbors(result->key),
+        if (currently_interested && current) {
+            current_neighbors = previewMeshNeighbors(result->key);
+            source_current = result->source.matchesGeometry(current, current_neighbors,
                 previewMeshNeighborDetails(result->key));
             shared::HeightTileSurfaceDetail const expected_mesh_detail = result->stage
                     == PreviewMeshStage::Coarse
                 ? previewMeshCoarseDetail(result->target_detail)
                 : result->target_detail;
             // Installed profiles affect certification, not base geometry. Revalidate
-            // their current content before rebuilding seams from the installed meshes.
+            // their current content before rebuilding seams from the installed
+            // meshes.
             detail_current = previewMeshDetail(result->key, current) == result->target_detail
                 && result->mesh.detail == expected_mesh_detail;
         }
@@ -1788,23 +2690,51 @@ void PlayerClient::processPendingPreviewMeshes(
             result->stage,
             current
         );
-        if (source_current && detail_current && can_publish) {
-            publishPreviewMesh(
-                result->key,
-                std::move(result->mesh),
-                result->source.tile,
-                renderer_deadline
-            );
-            if (result->stage == PreviewMeshStage::Coarse
-                && m_visible_preview_mesh_tiles.contains(result->key)) {
-                queuePreviewMesh(result->key);
+        if (capture_mesh_diagnostics) {
+            if (!currently_interested || !current) {
+                ++m_mesh_result_drain_diagnostics.no_longer_interested_or_resident_discard_count;
+            } else if (!source_current) {
+                ++m_mesh_result_drain_diagnostics.source_mismatch_requeue_count;
+            } else if (!detail_current) {
+                ++m_mesh_result_drain_diagnostics.target_detail_mismatch_requeue_count;
+            } else if (!can_publish) {
+                ++m_mesh_result_drain_diagnostics.cannot_publish_requeue_count;
             }
-        } else if (source_current && detail_current && !can_publish
-            && result->stage == PreviewMeshStage::Coarse) {
+        }
+        bool published = false;
+        if (source_current && detail_current && can_publish) {
+            if (capture_mesh_diagnostics) {
+                ++m_mesh_result_drain_diagnostics.publish_attempt_count;
+            }
+            published = publishPreviewMesh(
+                result->key, result->mesh,
+                result->source.tile, mesh_work_deadline);
+            if (!published && !m_preview_mesh_dirty_jobs.contains(result->key)) {
+                m_preview_mesh_workers->requeueResult(std::move(*result));
+                m_deferred_preview_mesh_result_deadline = mesh_work_deadline;
+                break;
+            }
+        }
+
+        bool const retry_coarse =
+            source_current && detail_current && !can_publish && result->stage == PreviewMeshStage::Coarse;
+        bool const retry_dirty =
+            m_preview_mesh_dirty_jobs.erase(result->key) > 0U || !source_current || !detail_current;
+        bool const refine_coarse = published && result->stage == PreviewMeshStage::Coarse
+                && m_visible_preview_mesh_tiles.contains(result->key);
+        m_preview_mesh_workers->finishResult(result->key);
+        m_preview_mesh_jobs.erase(result->key);
+        if (m_capture.has_value()) {
+            ++m_capture_mesh_results;
+        }
+        if (retry_coarse || retry_dirty || refine_coarse) {
             queuePreviewMesh(result->key);
         }
-        if (m_preview_mesh_dirty_jobs.erase(result->key) > 0U || !source_current || !detail_current) {
-            queuePreviewMesh(result->key);
+        if (published && source_current && result->mesh.quads.capacity() == 0U) {
+            // Exact source handles remain owned by current residency and these pinned snapshots.
+            result->source = {};
+        } else {
+            m_preview_mesh_workers->retireTakenResult(std::move(*result));
         }
         if (std::chrono::steady_clock::now() - upload_started >= std::chrono::milliseconds{2}) {
             break;
@@ -1821,11 +2751,11 @@ void PlayerClient::processPendingPreviewMeshes(
     uint32_t nearby_candidate_count = 0U;
     bool nearby_probe_complete = true;
     for (PlayerClientPreviewMeshProbeOffset const offset : PLAYER_CLIENT_PREVIEW_MESH_PROBE_OFFSETS) {
-            if (std::chrono::steady_clock::now() >= near_admission_deadline) {
+            if (std::chrono::steady_clock::now() >= mesh_work_deadline) {
                 nearby_probe_complete = false;
                 break;
             }
-            HeightTileKey const key = offsetHeightTileKey(*m_height_tile_center, offset.x, offset.y);
+            HeightTileKey const key = offsetHeightTileKey(*center, offset.x, offset.y);
             if (!m_height_tile_interest.contains(key) || m_preview_mesh_jobs.contains(key)) {
                 continue;
             }
@@ -1845,15 +2775,15 @@ void PlayerClient::processPendingPreviewMeshes(
     uint32_t forecast_candidate_count = 0U;
     bool forecast_probe_complete = nearby_probe_complete;
     if (forecast_probe_complete && m_preview_forecast_center
-        && *m_preview_forecast_center != *m_height_tile_center) {
+        && *m_preview_forecast_center != *center) {
         for (PlayerClientPreviewMeshProbeOffset const offset : PLAYER_CLIENT_PREVIEW_MESH_PROBE_OFFSETS) {
-            if (std::chrono::steady_clock::now() >= near_admission_deadline) {
+            if (std::chrono::steady_clock::now() >= mesh_work_deadline) {
                 forecast_probe_complete = false;
                 break;
             }
             HeightTileKey const key = offsetHeightTileKey(*m_preview_forecast_center, offset.x, offset.y);
             if (!m_height_tile_interest.contains(key) || m_preview_mesh_jobs.contains(key)
-                || withinCurrentNearProbe({ .center = *m_height_tile_center, .key = key })) {
+                || withinCurrentNearProbe({ .center = *center, .key = key })) {
                 continue;
             }
             HeightTileHandle const tile = heightTileResidency().resident(key);
@@ -1872,11 +2802,11 @@ void PlayerClient::processPendingPreviewMeshes(
     bool prewarm_probe_complete = forecast_probe_complete;
     if (prewarm_probe_complete) {
         for (PlayerClientPreviewMeshProbeOffset const offset : PLAYER_CLIENT_PREVIEW_MESH_PREWARM_OFFSETS) {
-            if (std::chrono::steady_clock::now() >= near_admission_deadline) {
+            if (std::chrono::steady_clock::now() >= mesh_work_deadline) {
                 prewarm_probe_complete = false;
                 break;
             }
-            HeightTileKey const key = offsetHeightTileKey(*m_height_tile_center, offset.x, offset.y);
+            HeightTileKey const key = offsetHeightTileKey(*center, offset.x, offset.y);
             if (m_height_tile_interest.contains(key)) {
                 prewarm_candidates[prewarm_candidate_count++] = key;
             }
@@ -1891,7 +2821,7 @@ void PlayerClient::processPendingPreviewMeshes(
     };
     uint32_t const admission_budget = playerClientPreviewMeshAdmissionBudget(m_capture.has_value());
     for (uint32_t examined = 0U;
-         examined < admission_budget && std::chrono::steady_clock::now() < near_admission_deadline;
+         examined < admission_budget && std::chrono::steady_clock::now() < mesh_work_deadline;
          ++examined) {
         std::optional<PlayerPreviewMeshAdmissionCandidate> const admission_candidate =
             nextPlayerPreviewMeshAdmissionCandidate(m_pending_preview_meshes, maintenance_budget,
@@ -1928,14 +2858,15 @@ void PlayerClient::processPendingPreviewMeshes(
             static_cast<void>(m_pending_preview_meshes.erase(key));
             continue;
         }
-        if (std::chrono::steady_clock::now() >= near_admission_deadline) {
+        if (std::chrono::steady_clock::now() >= mesh_work_deadline) {
             break;
         }
         if (!enqueuePreviewMeshJob(
-                key, tile, *m_height_tile_center, nearby_candidate_span, near_admission_deadline)) {
+                key, tile, *center, nearby_candidate_span, mesh_work_deadline)) {
             break;
         }
     }
+    m_preview_mesh_workers->submitRetired();
 }
 
 void PlayerClient::updateFlightControlToggles()
@@ -2266,13 +3197,13 @@ void PlayerClient::render() {
     }
     m_render_diagnostics.height_tile_interest_duration = std::chrono::duration_cast<std::chrono::nanoseconds>(
         std::chrono::steady_clock::now() - interest_started_at);
-    std::chrono::steady_clock::time_point const near_admission_deadline =
-        playerClientPreviewMeshAdmissionDeadline(renderer_deadline, std::chrono::steady_clock::now());
+    std::chrono::steady_clock::time_point const mesh_work_deadline =
+        playerClientPreviewMeshWorkDeadline(renderer_deadline, std::chrono::steady_clock::now());
     processPendingPreviewMeshes(
         playerClientPreviewMeshJobBudget(m_capture.has_value()),
-        renderer_deadline,
-        near_admission_deadline
+        mesh_work_deadline
     );
+    submitPreviewCacheRetirements();
     for (HeightTileChange const change : heightTileResidency().takeChanges(
              playerClientHeightTileChangeBudget(m_capture.has_value()))) {
         if (m_capture.has_value()) {
@@ -2304,9 +3235,9 @@ void PlayerClient::render() {
     }
     processPendingPreviewMeshes(
         playerClientPreviewMeshJobBudget(m_capture.has_value()),
-        renderer_deadline,
-        near_admission_deadline
+        mesh_work_deadline
     );
+    submitPreviewCacheRetirements();
     std::optional<PlayerPresentationPosition> const local_position = predictedLocalPresentation(now);
     double camera_distance = MAX_LOCAL_PLAYER_CAMERA_DISTANCE;
     if (local_position.has_value()) {

@@ -60,6 +60,27 @@ struct RendererCaptureEvidence final {
     bool content_verified{ false };
 };
 
+enum class GameBenchmarkPresentationAcquireStage : uint8_t {
+    SubmittedFrameFence,
+    AcquireFence,
+    PresentFence,
+    SwapchainImage,
+};
+
+struct GameBenchmarkPresentationAcquireStageSample final {
+    GameBenchmarkPresentationAcquireStage stage = GameBenchmarkPresentationAcquireStage::SubmittedFrameFence;
+    uint64_t duration_ns = 0U;
+    int32_t result = 0;
+};
+
+struct GameBenchmarkPresentationAcquireSample final {
+    bool captured = false;
+    uint32_t frame_slot = 0U;
+    uint32_t stage_count = 0U;
+    std::array<GameBenchmarkPresentationAcquireStageSample, 4U> stages{};
+    std::optional<uint32_t> image_index;
+};
+
 struct GameBenchmarkFrameSample final {
     bool warm = false;
     bool uncapped = false;
@@ -96,6 +117,7 @@ struct GameBenchmarkFrameSample final {
     };
     std::optional<TerrainNearSample> terrain_near;
     uint64_t diagnostic_render_attempt_id = 0U;
+    GameBenchmarkPresentationAcquireSample diagnostic_presentation_acquire = {};
     bool diagnostic_frame_recorded = false;
     bool diagnostic_indexed_stone_quads = false;
     bool diagnostic_stone_indirect = false;

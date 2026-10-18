@@ -220,8 +220,9 @@ TEST_F(StoneRendererAcceptanceTest, DeterministicChunkRendersFromAboveAndBelow)
     EXPECT_EQ(m_renderer->validationErrorCount(), 0U);
 }
 
-TEST_F(StoneRendererAcceptanceTest, IndexedAndSixVertexQuadsHaveByteIdenticalOffscreenOutput)
+TEST_F(StoneRendererAcceptanceTest, AllThreeQuadModesHaveByteIdenticalOffscreenOutput)
 {
+    ScopedStoneSetting const control_shader{ "MC_DIAGNOSTIC_SPECIALIZED_STONE_SHADER", "0" };
     std::array const cameras{
         ABOVE_CAMERA,
         BELOW_CAMERA,
@@ -229,7 +230,17 @@ TEST_F(StoneRendererAcceptanceTest, IndexedAndSixVertexQuadsHaveByteIdenticalOff
         client::CameraPose{ .position = { 28.0, 8.0, 8.0 }, .angles = { .yaw_degrees = -90.0 } },
         client::CameraPose{ .position = { 8.0, 28.0, 8.0 }, .angles = { .yaw_degrees = 180.0 } },
     };
-    shared::ChunkMesh const mesh = deterministicChunk();
+    shared::ChunkMesh mesh = deterministicChunk();
+    std::vector<shared::MeshFace> visible_faces = std::move(mesh.faces);
+    mesh.faces.assign(
+        client::StoneIndirectDraws::QUADS_PER_INDEX_BLOCK,
+        shared::MeshFace{
+            .local_origin = { .x = 240U, .y = 240U, .z = 240U },
+            .direction = shared::FaceDirection::PositiveZ,
+            .material = shared::Block::Stone,
+        }
+    );
+    mesh.faces.insert(mesh.faces.end(), visible_faces.begin(), visible_faces.end());
     auto const capture_mode = [&](char const* const mode) {
         ScopedStoneSetting const selected{ "MC_DIAGNOSTIC_INDEXED_STONE_QUADS", mode };
         client::VulkanOffscreenRenderer renderer{ m_shader_assets, true };
@@ -243,11 +254,33 @@ TEST_F(StoneRendererAcceptanceTest, IndexedAndSixVertexQuadsHaveByteIdenticalOff
         return captures;
     };
     auto const six_vertex = capture_mode("0");
-    auto const indexed = capture_mode("1");
-    ASSERT_EQ(six_vertex.size(), indexed.size());
-    for (size_t view = 0U; view < indexed.size(); ++view) {
-        EXPECT_GT(stonePixelCount(indexed[view]), 0U) << view;
-        EXPECT_EQ(indexed[view].rgba8, six_vertex[view].rgba8) << view;
+    auto const indexed_instanced = capture_mode("1");
+    auto const indexed_block = capture_mode("2");
+    auto const default_mode = capture_mode(nullptr);
+    auto const specialized_block = [&] {
+        ScopedStoneSetting const selected{ "MC_DIAGNOSTIC_SPECIALIZED_STONE_SHADER", "1" };
+        return capture_mode("2");
+    }();
+    ASSERT_EQ(six_vertex.size(), indexed_instanced.size());
+    ASSERT_EQ(six_vertex.size(), indexed_block.size());
+    ASSERT_EQ(six_vertex.size(), default_mode.size());
+    ASSERT_EQ(six_vertex.size(), specialized_block.size());
+    for (uint32_t view = 0U; view < static_cast<uint32_t>(six_vertex.size()); ++view) {
+        EXPECT_GT(stonePixelCount(indexed_instanced[view]), 0U) << view;
+        EXPECT_GT(stonePixelCount(indexed_block[view]), 0U) << view;
+        EXPECT_EQ(indexed_instanced[view].rgba8, six_vertex[view].rgba8) << view;
+        EXPECT_EQ(indexed_block[view].rgba8, six_vertex[view].rgba8) << view;
+        EXPECT_EQ(default_mode[view].rgba8, six_vertex[view].rgba8) << view;
+        EXPECT_EQ(specialized_block[view].rgba8, indexed_block[view].rgba8) << view;
+    }
+}
+
+TEST_F(StoneRendererAcceptanceTest, SpecializedShaderRejectsOtherQuadModes)
+{
+    ScopedStoneSetting const specialized_shader{ "MC_DIAGNOSTIC_SPECIALIZED_STONE_SHADER", "1" };
+    for (char const* const mode : { "0", "1" }) {
+        ScopedStoneSetting const selected{ "MC_DIAGNOSTIC_INDEXED_STONE_QUADS", mode };
+        EXPECT_THROW((client::VulkanOffscreenRenderer{ m_shader_assets, true }), std::invalid_argument);
     }
 }
 
@@ -297,6 +330,7 @@ TEST_F(StoneRendererAcceptanceTest, DirectionSelectionPreservesOffscreenPixelsAn
 
 TEST_F(StoneRendererAcceptanceTest, InstalledSeamBucketsMatchWholeTilePixelsAcrossSubmissionModesAndWrap)
 {
+    static constexpr uint32_t TILE_EDGE = 16U;
     static constexpr std::array<client::CameraPose, 4> CAMERAS{
         client::CameraPose{ .position = { 24.0, -40.0, 25.0 }, .angles = { .pitch_degrees = -25.0 } },
         client::CameraPose{ .position = { -24.0, 8.0, 15.0 },
@@ -309,6 +343,11 @@ TEST_F(StoneRendererAcceptanceTest, InstalledSeamBucketsMatchWholeTilePixelsAcro
     shared::HeightTile second{ .coordinate = { .x = 1, .y = 0 } };
     first.heights.fill(8U);
     second.heights.fill(3U);
+    for (uint32_t y = 4U; y < 8U; ++y) {
+        for (uint32_t x = 4U; x < 8U; ++x) {
+            second.heights[y * TILE_EDGE + x] = 0U;
+        }
+    }
     shared::HeightTileSurfaceMesher const mesher;
     std::array meshes{
         mesher.build(first, { .positive_x = first.heights }, shared::HeightTileSurfaceDetail::Coarse),
@@ -335,7 +374,31 @@ TEST_F(StoneRendererAcceptanceTest, InstalledSeamBucketsMatchWholeTilePixelsAcro
             context, m_shader_assets, { .require_validation = true, .enable_frame_capture = true }
         };
         renderer.setDebugHudEnabled(false);
-        EXPECT_TRUE(renderer.upsertHeightTileMeshes(meshes, std::chrono::steady_clock::now() + RENDER_TIMEOUT));
+        client::RendererHeightTileUpsertDiagnostics upsert_diagnostics;
+        auto const upsert_started_at = std::chrono::steady_clock::now();
+        bool const upserted = renderer.upsertHeightTileMeshes(
+            meshes,
+            upsert_started_at + RENDER_TIMEOUT,
+            &upsert_diagnostics
+        );
+        EXPECT_TRUE(upserted);
+        if (!upserted) {
+            return std::vector<client::RendererFrameCapture>{};
+        }
+        auto const upsert_duration = std::chrono::duration_cast<std::chrono::nanoseconds>(
+            std::chrono::steady_clock::now() - upsert_started_at
+        );
+        EXPECT_GT(upsert_diagnostics.free_range_prepare_duration, std::chrono::nanoseconds::zero());
+        EXPECT_GT(upsert_diagnostics.mesh_prepare_duration, std::chrono::nanoseconds::zero());
+        EXPECT_GT(upsert_diagnostics.capacity_prepare_duration, std::chrono::nanoseconds::zero());
+        EXPECT_GT(upsert_diagnostics.commit_upload_duration, std::chrono::nanoseconds::zero());
+        EXPECT_LE(
+            upsert_diagnostics.free_range_prepare_duration
+                + upsert_diagnostics.mesh_prepare_duration
+                + upsert_diagnostics.capacity_prepare_duration
+                + upsert_diagnostics.commit_upload_duration,
+            upsert_duration
+        );
         std::vector<client::RendererFrameCapture> captures;
         for (client::CameraPose const camera : CAMERAS) {
             renderer.setCamera(camera);
@@ -370,7 +433,7 @@ TEST_F(StoneRendererAcceptanceTest, InstalledSeamBucketsMatchWholeTilePixelsAcro
     };
     auto const baseline = capture_mode("0", "1", "1");
     ASSERT_EQ(baseline.size(), CAMERAS.size());
-    for (char const* const quads : { "0", "1" }) {
+    for (char const* const quads : { "0", "1", "2" }) {
         for (char const* const direct : { "0", "1" }) {
             auto const culled = capture_mode("1", quads, direct);
             ASSERT_EQ(culled.size(), baseline.size());

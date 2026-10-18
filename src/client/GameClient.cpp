@@ -153,6 +153,7 @@ void GameClient::run(
         if (!m_running || !isConnected()) {
             continue;
         }
+        bool const presentation_succeeded = presentationSucceeded();
         if (benchmark_hooks && benchmark_hooks->on_loop) {
             benchmark_hooks->on_loop(GameClientLoopSample{
                 .started_at = loop_started_at,
@@ -170,11 +171,11 @@ void GameClient::run(
                 .client_message_payload_bytes_sent = m_benchmark_bytes_sent,
                 .client_message_payload_bytes_received = m_benchmark_bytes_received,
                 .input_sent = input_sent,
-                .presentation_succeeded = presentationSucceeded(),
+                .presentation_succeeded = presentation_succeeded,
             });
         }
         if (!benchmark_hooks || !benchmark_hooks->is_uncapped_phase || !benchmark_hooks->is_uncapped_phase()) {
-            std::this_thread::sleep_for(scheduler.idleDelay(now));
+            std::this_thread::sleep_for(scheduler.idleDelay(now, presentation_succeeded));
         }
     }
     m_client_audio.stop();

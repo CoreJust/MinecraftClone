@@ -30,7 +30,7 @@ std::string assetPath(std::string_view const name)
 
 } // namespace
 
-AndroidShaderAssets::AndroidShaderAssets(AAssetManager* const asset_manager) noexcept
+AndroidShaderAssets::AndroidShaderAssets(AAssetManager* const asset_manager)
     : m_asset_manager(asset_manager)
 {
     ASSERT(m_asset_manager != nullptr, "Android shader assets require an asset manager");

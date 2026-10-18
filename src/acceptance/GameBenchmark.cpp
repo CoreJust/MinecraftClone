@@ -10,6 +10,7 @@
 #include <shared/policy/Policy.hpp>
 #include <shared/world/World.hpp>
 
+#include <core/graphics/vulkan/Vulkan.hpp>
 #include <core/net/Address.hpp>
 
 #include <acceptance/EvidenceJson.hpp>
@@ -35,6 +36,7 @@
 #include <ratio>
 #include <set>
 #include <span>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <thread>
@@ -90,6 +92,47 @@ GameBenchmarkTerrainObservation gameBenchmarkTerrainObservation(
 }
 
 [[nodiscard]]
+GameBenchmarkPresentationAcquireStage gameBenchmarkPresentationAcquireStage(
+    core::graphics::vulkan::PresentationAcquireStage const stage
+)
+{
+    switch (stage) {
+    case core::graphics::vulkan::PresentationAcquireStage::SubmittedFrameFence:
+        return GameBenchmarkPresentationAcquireStage::SubmittedFrameFence;
+    case core::graphics::vulkan::PresentationAcquireStage::AcquireFence:
+        return GameBenchmarkPresentationAcquireStage::AcquireFence;
+    case core::graphics::vulkan::PresentationAcquireStage::PresentFence:
+        return GameBenchmarkPresentationAcquireStage::PresentFence;
+    case core::graphics::vulkan::PresentationAcquireStage::SwapchainImage:
+        return GameBenchmarkPresentationAcquireStage::SwapchainImage;
+    }
+    throw std::runtime_error("unknown Vulkan presentation acquisition stage");
+}
+
+GameBenchmarkPresentationAcquireSample gameBenchmarkPresentationAcquireSample(
+    core::graphics::vulkan::PresentationAcquireDiagnostics const& diagnostics
+)
+{
+    if (diagnostics.stage_count > diagnostics.stages.size()) {
+        throw std::runtime_error("Vulkan presentation acquisition diagnostics exceed their fixed bound");
+    }
+    GameBenchmarkPresentationAcquireSample sample{
+        .captured = diagnostics.captured,
+        .frame_slot = diagnostics.frame_slot,
+        .stage_count = diagnostics.stage_count,
+        .image_index = diagnostics.image_index,
+    };
+    for (uint32_t index = 0U; index < diagnostics.stage_count; ++index) {
+        core::graphics::vulkan::PresentationAcquireStageTiming const& source = diagnostics.stages[index];
+        sample.stages[index] = {
+            .stage = gameBenchmarkPresentationAcquireStage(source.stage),
+            .duration_ns = positiveNanoseconds(source.duration),
+            .result = static_cast<int32_t>(source.result),
+        };
+    }
+    return sample;
+}
+
 GameBenchmarkFrameSample::TerrainNearSample gameBenchmarkTerrainFrameSample(
     client::PlayerClientBenchmarkTerrainInfo const& info,
     uint64_t const accepted_near_admission_delta,
@@ -1078,6 +1121,9 @@ std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOption
                     ? full_terrain_info.center->y : 0,
                 .terrain_near = terrain_near_sample,
                 .diagnostic_render_attempt_id = runtime.diagnostic_render_attempt_id,
+                .diagnostic_presentation_acquire = gameBenchmarkPresentationAcquireSample(
+                    runtime.diagnostic_presentation_acquire
+                ),
                 .diagnostic_frame_recorded = runtime.diagnostic_frame_recorded,
                 .diagnostic_indexed_stone_quads = runtime.diagnostic_indexed_stone_quads,
                 .diagnostic_stone_indirect = runtime.diagnostic_stone_indirect,

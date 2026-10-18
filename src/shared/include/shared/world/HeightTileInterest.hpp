@@ -83,6 +83,13 @@ HeightTileInterestDelta heightTileInterestDelta(
     uint32_t radius = HEIGHT_TILE_INTEREST_RADIUS
 );
 
+void heightTileInterestDelta(
+    HeightTileKey previous_center,
+    HeightTileKey next_center,
+    uint32_t radius,
+    HeightTileInterestDelta& output
+);
+
 [[nodiscard]]
 bool heightTileWithinInterest(HeightTileKey center, HeightTileKey key, uint32_t radius);
 

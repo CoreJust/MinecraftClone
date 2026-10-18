@@ -14,7 +14,15 @@ namespace client {
 
 class StoneIndirectDraws final {
 public:
+    static constexpr uint32_t QUADS_PER_INDEX_BLOCK = 4096U;
+    static constexpr uint32_t INDEX_COUNT_PER_BLOCK = QUADS_PER_INDEX_BLOCK * 6U;
     static constexpr std::array<uint16_t, 6> QUAD_INDICES{ 0U, 1U, 2U, 0U, 2U, 3U };
+
+    enum class QuadMode : uint8_t {
+        SixVertex = 0U,
+        IndexedInstanced = 1U,
+        IndexedBlock = 2U,
+    };
 
     class Buffer;
     using Factory = std::function<std::unique_ptr<Buffer>(uint32_t)>;
@@ -23,6 +31,12 @@ public:
         uint32_t first_instance = 0U;
         uint32_t instance_count = 0U;
     };
+
+    [[nodiscard]]
+    static std::array<uint16_t, INDEX_COUNT_PER_BLOCK> const& quadIndexBlock() noexcept;
+
+    [[nodiscard]]
+    static VkDrawIndexedIndirectCommand indexedBlockCommand(Range range);
 
     struct MaximumDrawCount final {
         constexpr MaximumDrawCount(uint32_t const value) noexcept
@@ -60,6 +74,7 @@ public:
     struct Prepared final {
         Buffer const* buffer = nullptr;
         uint32_t logical_draw_count = 0U;
+        uint32_t textured_command_count = 0U;
         uint32_t maximum_draw_count = 0U;
         bool indexed = false;
 
@@ -72,7 +87,7 @@ public:
         bool multi_draw_indirect_enabled,
         bool draw_indirect_first_instance_enabled,
         Factory factory,
-        bool indexed = false
+        QuadMode quad_mode = QuadMode::SixVertex
     );
 
     // The caller has acquired this slot after its submission fence completed.
@@ -89,7 +104,7 @@ private:
     uint32_t m_maximum_command_count;
     uint32_t m_maximum_draw_count;
     Factory m_factory;
-    bool m_indexed = false;
+    QuadMode m_quad_mode = QuadMode::SixVertex;
     std::unordered_map<uint32_t, std::unique_ptr<Buffer>> m_buffers;
 };
 

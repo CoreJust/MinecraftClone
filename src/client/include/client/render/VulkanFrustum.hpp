@@ -52,6 +52,9 @@ public:
     [[nodiscard]]
     Classification classify(glm::vec3 minimum, glm::vec3 maximum) const noexcept;
 
+    [[nodiscard]]
+    bool hasSamePlanes(VulkanFrustum const& other) const noexcept;
+
 private:
     struct Plane final {
         glm::dvec4 coefficients{};
