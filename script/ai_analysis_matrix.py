@@ -98,7 +98,7 @@ INPUT_SCOPES = {
         "script/ci/install_msan_libcxx.py",
         "script/ci/vcpkg-overlays/gmp/**",
     ),
-    "clang_static": (),
+    "clang_static": ("script/ci/clang_static_gate.py",),
     "clang_tidy": (),
     "iwyu": ("script/ci/iwyu_gate.py",),
     "cppcheck": ("script/ci/cppcheck_gate.py",),
@@ -117,9 +117,9 @@ ROW_INPUT_SCOPES = {
     "cppcheck": ("common", "cppcheck"),
 }
 REQUIRED_ROW_ENVIRONMENT = {
-    "macos_asan": ("VCPKG_ROOT", "VCPKG_INSTALLED_DIR", "MC_PRIVATE_DEPENDENCIES_PREFIX"),
-    "macos_ubsan": ("VCPKG_ROOT", "VCPKG_INSTALLED_DIR", "MC_PRIVATE_DEPENDENCIES_PREFIX"),
-    "macos_tsan": ("VCPKG_ROOT", "VCPKG_INSTALLED_DIR", "MC_PRIVATE_DEPENDENCIES_PREFIX"),
+    "macos_asan": ("VCPKG_ROOT", "VCPKG_INSTALLED_DIR", "MC_PRIVATE_DEPENDENCIES_PREFIX", "CXXFLAGS"),
+    "macos_ubsan": ("VCPKG_ROOT", "VCPKG_INSTALLED_DIR", "MC_PRIVATE_DEPENDENCIES_PREFIX", "CXXFLAGS"),
+    "macos_tsan": ("VCPKG_ROOT", "VCPKG_INSTALLED_DIR", "MC_PRIVATE_DEPENDENCIES_PREFIX", "CXXFLAGS"),
     "windows_msvc_asan": ("VCPKG_ROOT", "VCPKG_INSTALLED_DIR", "MC_PRIVATE_DEPENDENCIES_PREFIX", "VULKAN_SDK"),
     "windows_msvc_analyze": ("VCPKG_ROOT", "VCPKG_INSTALLED_DIR", "MC_PRIVATE_DEPENDENCIES_PREFIX", "VULKAN_SDK"),
     "linux_lsan": (
@@ -141,10 +141,10 @@ REQUIRED_ROW_ENVIRONMENT = {
         "LD_LIBRARY_PATH",
         "DEBUGINFOD_URLS",
     ),
-    "clang_static_analysis": ("VCPKG_ROOT", "VCPKG_INSTALLED_DIR", "MC_PRIVATE_DEPENDENCIES_PREFIX"),
-    "clang_tidy": ("VCPKG_ROOT", "VCPKG_INSTALLED_DIR", "MC_PRIVATE_DEPENDENCIES_PREFIX"),
-    "iwyu": ("VCPKG_ROOT", "VCPKG_INSTALLED_DIR", "MC_PRIVATE_DEPENDENCIES_PREFIX"),
-    "cppcheck": ("VCPKG_ROOT", "VCPKG_INSTALLED_DIR", "MC_PRIVATE_DEPENDENCIES_PREFIX"),
+    "clang_static_analysis": ("VCPKG_ROOT", "VCPKG_INSTALLED_DIR", "MC_PRIVATE_DEPENDENCIES_PREFIX", "CXXFLAGS"),
+    "clang_tidy": ("VCPKG_ROOT", "VCPKG_INSTALLED_DIR", "MC_PRIVATE_DEPENDENCIES_PREFIX", "CXXFLAGS"),
+    "iwyu": ("VCPKG_ROOT", "VCPKG_INSTALLED_DIR", "MC_PRIVATE_DEPENDENCIES_PREFIX", "CXXFLAGS"),
+    "cppcheck": ("VCPKG_ROOT", "VCPKG_INSTALLED_DIR", "MC_PRIVATE_DEPENDENCIES_PREFIX", "CXXFLAGS"),
 }
 DEPENDENCY_ENVIRONMENT = {
     "macos_asan": ("VCPKG_ROOT", "VCPKG_INSTALLED_DIR", "MC_PRIVATE_DEPENDENCIES_PREFIX"),
@@ -178,6 +178,8 @@ IDENTITY_ENVIRONMENT = (
     "CXX",
     "CFLAGS",
     "CXXFLAGS",
+    "ASAN_OPTIONS",
+    "LSAN_OPTIONS",
     "CPPFLAGS",
     "LDFLAGS",
     "CMAKE_GENERATOR",
@@ -434,6 +436,12 @@ def validate_manifest(manifest: Any) -> dict[str, Any]:
         elif effective_flags is not None or compile_commands is not None:
             raise MatrixError(f"manifest row {row_id} has unexpected effective compiler flag requirements")
         row_environment = _require_environment(row.get("environment"), f"manifest row {row_id}.environment")
+        if row_id == "macos_asan" and (
+            row_environment.get("ASAN_OPTIONS") != "detect_leaks=1"
+            or row_environment.get("LSAN_OPTIONS")
+            != "suppressions={env:MC_ANALYSIS_ROOT}/script/ci/macos_lsan.supp:print_suppressions=1"
+        ):
+            raise MatrixError("manifest row macos_asan must enable its configured integrated LeakSanitizer policy")
         if row_id == "linux_msan" and row_environment.get("DEBUGINFOD_URLS") != "":
             raise MatrixError("manifest row linux_msan must disable remote debuginfod lookup")
         if row_id != "linux_msan" and "DEBUGINFOD_URLS" in row_environment:
@@ -1246,6 +1254,11 @@ def _validate_input_identity(row: Mapping[str, Any], manifest_row: Mapping[str, 
         for name, value in row_environment.items()
     ):
         raise MatrixError(f"receipt row {row_id}.input_identity.row_environment has invalid values")
+    if any(
+        name in environment and environment[name] != value
+        for name, value in row_environment.items()
+    ):
+        raise MatrixError(f"receipt row {row_id}.input_identity.environment does not attest effective row options")
     if row_id == "linux_msan" and row_environment.get("DEBUGINFOD_URLS") != "":
         raise MatrixError("receipt row linux_msan does not disable remote debuginfod lookup")
     if row_id == "linux_msan" and environment.get("DEBUGINFOD_URLS") != "":
@@ -1269,7 +1282,7 @@ def _validate_input_identity(row: Mapping[str, Any], manifest_row: Mapping[str, 
         if tool.get("probe_argv") != expected_probe:
             raise MatrixError(f"{field}.probe_argv does not match the manifest and captured environment")
         executable = _require_string(tool.get("executable"), f"{field}.executable")
-        executable_path = PureWindowsPath(executable) if platform_identity["name"] == "windows" else Path(executable)
+        executable_path = _host_path(executable, platform_identity["name"])
         if not executable_path.is_absolute():
             raise MatrixError(f"{field}.executable is not an absolute host path")
         for key in ("executable_size", "executable_mtime_ns"):
@@ -1409,7 +1422,9 @@ def _validate_input_identity(row: Mapping[str, Any], manifest_row: Mapping[str, 
             for cache_key in ("Vulkan_LIBRARY", "Vulkan_GLSLC_EXECUTABLE", "MC_SPIRV_VAL_EXECUTABLE"):
                 if not _host_path_within(cache_values[cache_key], sdk_root, platform_name):
                     raise MatrixError(f"receipt row {row_id} selected {cache_key} escapes VULKAN_SDK")
-            loader_path = str(_host_path(sdk_root, platform_name) / "Bin" / "vulkan-1.dll")
+            loader_path = cache_values.get("MC_VULKAN_RUNTIME_DLL")
+            if not isinstance(loader_path, str) or not _host_path(loader_path, platform_name).is_absolute():
+                raise MatrixError(f"receipt row {row_id} CMake cache lacks an absolute MC_VULKAN_RUNTIME_DLL")
             _validate_selected_file(
                 runtime_loader,
                 f"receipt row {row_id}.toolchain_resources.vulkan.runtime_loader",
@@ -1482,7 +1497,7 @@ def _validate_input_identity(row: Mapping[str, Any], manifest_row: Mapping[str, 
             raise MatrixError(f"receipt row {row_id} has unexpected compiler runtime evidence")
     else:
         _require_string(resource_directory, f"receipt row {row_id}.input_identity.runtime_resources.resource_directory")
-        if not Path(resource_directory).is_absolute() or not runtime_files:
+        if not _host_path(resource_directory, platform_name).is_absolute() or not runtime_files:
             raise MatrixError(f"receipt row {row_id} is missing its selected sanitizer runtime")
         expected_families = [family[0], "msan_cxx"] if row_id == "linux_msan" else [family[0]]
         observed_families: list[str] = []
@@ -1492,10 +1507,11 @@ def _validate_input_identity(row: Mapping[str, Any], manifest_row: Mapping[str, 
                 raise MatrixError(f"{field} is malformed")
             name = _require_string(runtime.get("name"), f"{field}.name")
             path = _require_string(runtime.get("path"), f"{field}.path")
-            if not Path(path).is_absolute() or Path(path).name != name:
+            runtime_path = _host_path(path, platform_name)
+            if not runtime_path.is_absolute() or runtime_path.name != name:
                 raise MatrixError(f"{field}.path is not an absolute path for its runtime name")
             try:
-                Path(path).relative_to(Path(resource_directory))
+                runtime_path.relative_to(_host_path(resource_directory, platform_name))
             except ValueError as error:
                 raise MatrixError(f"{field}.path escapes its compiler resource directory") from error
             size = runtime.get("size")
@@ -1518,10 +1534,10 @@ def _validate_input_identity(row: Mapping[str, Any], manifest_row: Mapping[str, 
         if ignorelist.get("name") != "msan_ignorelist.txt":
             raise MatrixError(f"receipt row {row_id} has an unexpected MSan ignorelist")
         ignorelist_path = _require_string(ignorelist.get("path"), f"receipt row {row_id}.msan_ignorelist.path")
-        expected_ignorelist = str(Path(str(resource_directory)) / "share" / "msan_ignorelist.txt")
+        expected_ignorelist = str(PurePosixPath(str(resource_directory)) / "share" / "msan_ignorelist.txt")
         if ignorelist_path != expected_ignorelist:
             raise MatrixError(f"receipt row {row_id} MSan ignorelist is not the selected compiler resource")
-        if not Path(ignorelist_path).is_absolute():
+        if not PurePosixPath(ignorelist_path).is_absolute():
             raise MatrixError(f"receipt row {row_id} MSan ignorelist path is not absolute")
         if not isinstance(ignorelist.get("size"), int) or isinstance(ignorelist.get("size"), bool) or ignorelist["size"] < 1:
             raise MatrixError(f"receipt row {row_id} MSan ignorelist size is invalid")
@@ -1541,7 +1557,7 @@ def _validate_input_identity(row: Mapping[str, Any], manifest_row: Mapping[str, 
         if unwinder.get("selected_by") != "ldd" or unwinder.get("name") != "libgcc_s.so.1":
             raise MatrixError(f"receipt row {row_id} did not select the system libgcc_s unwinder")
         unwinder_path = _require_string(unwinder.get("path"), f"receipt row {row_id}.system_unwinder.path")
-        if not Path(unwinder_path).is_absolute() or Path(unwinder_path).name != "libgcc_s.so.1":
+        if not PurePosixPath(unwinder_path).is_absolute() or PurePosixPath(unwinder_path).name != "libgcc_s.so.1":
             raise MatrixError(f"receipt row {row_id} system unwinder path is invalid")
         if not isinstance(unwinder.get("size"), int) or isinstance(unwinder.get("size"), bool) or unwinder["size"] < 1:
             raise MatrixError(f"receipt row {row_id} system unwinder size is invalid")
@@ -1623,6 +1639,11 @@ def _validate_row_receipt(
             raise MatrixError(f"{field}.argv does not invoke the declared executable")
         if argv != input_identity["effective_commands"][index]:
             raise MatrixError(f"{field}.argv does not match the recorded effective command")
+        if declared[:2] == ["cmake", "--build"] and not any(
+            argv[offset : offset + 2] == ["--parallel", "2"]
+            for offset in range(len(argv) - 1)
+        ):
+            raise MatrixError(f"{field}.argv must enforce the matrix two-job build cap")
         if row_id in REQUIRED_ANALYSIS_CONFIGURATION and declared[:2] == ["cmake", "--build"] and "--verbose" not in argv:
             raise MatrixError(f"{field}.argv must enable verbose analyzer command capture")
         if execution.get("return_code") != 0:
@@ -1964,11 +1985,14 @@ def _effective_command_argv(manifest_row: Mapping[str, Any], environment: Mappin
     commands: list[list[str]] = []
     for command in manifest_row["commands"]:
         expanded = _expand_environment(command, environment)
+        if expanded[:2] == ["cmake", "--build"]:
+            expanded.extend(["--parallel", "2"])
         if (
             manifest_row["id"] in REQUIRED_ANALYSIS_CONFIGURATION
             and expanded[:2] == ["cmake", "--build"]
         ):
             expanded.append("--verbose")
+            expanded.extend(["--", "-k", "0"])
         commands.append(expanded)
     return commands
 
@@ -2141,7 +2165,7 @@ def _selected_toolchain_resources(
                 except ValueError as error:
                     raise MatrixError(f"{row_id} selected {key} escapes VULKAN_SDK") from error
             runtime_loader = _selected_file_identity(
-                str(Path(sdk_root) / "Bin" / "vulkan-1.dll"), "Windows Vulkan runtime loader"
+                cache_values.get("MC_VULKAN_RUNTIME_DLL", ""), "Windows Vulkan runtime loader"
             )
         resources["vulkan"] = {
             "sdk_root": sdk_root,
@@ -2497,7 +2521,7 @@ def _external_dependency_identity(
     environment: Mapping[str, str],
 ) -> dict[str, Any]:
     result: dict[str, Any] = {}
-    for name in REQUIRED_ROW_ENVIRONMENT[manifest_row["id"]]:
+    for name in DEPENDENCY_ENVIRONMENT[manifest_row["id"]]:
         if name not in environment or (not environment[name] and name != "DEBUGINFOD_URLS"):
             raise MatrixError(f"analysis row {manifest_row['id']} requires environment variable {name}")
     for name in ("VCPKG_ROOT", "MC_LLVM_PROJECT_ROOT"):
@@ -2578,6 +2602,9 @@ def _row_input_identity(
     *,
     require_toolchain_resources: bool = False,
 ) -> dict[str, Any]:
+    for name in REQUIRED_ROW_ENVIRONMENT[manifest_row["id"]]:
+        if name not in environment or (not environment[name] and name != "DEBUGINFOD_URLS"):
+            raise MatrixError(f"analysis row {manifest_row['id']} requires environment variable {name}")
     effective_environment = {
         name: environment.get(name, "<unset>")
         for name in IDENTITY_ENVIRONMENT
@@ -2705,7 +2732,70 @@ def _terminate_process_tree(process: subprocess.Popen[str]) -> None:
         process.wait(timeout=5)
     except subprocess.TimeoutExpired:
         process.kill()
-        process.wait()
+        process.wait(timeout=5)
+
+
+def _raise_timeout_after_cleanup(
+    process: subprocess.Popen[str],
+    command: Sequence[str],
+    timeout_seconds: float,
+    partial_output: str,
+) -> None:
+    diagnostics = []
+    try:
+        _terminate_process_tree(process)
+    except (OSError, subprocess.TimeoutExpired) as error:
+        diagnostics.append(f"process-tree cleanup failed for PID {process.pid}; containment unconfirmed: {error}")
+    output = partial_output
+    try:
+        collected, _ = process.communicate(timeout=5)
+    except (OSError, subprocess.TimeoutExpired) as error:
+        collected = error.output if isinstance(error, subprocess.TimeoutExpired) else None
+        diagnostics.append(f"output drain failed after command timeout; containment unconfirmed: {error}")
+        # Windows communicate readers can hold the stream lock while waiting
+        # for an inherited pipe. Do not turn a bounded drain into a blocking close.
+        streams = (process.stdout, process.stderr) if os.name != "nt" else ()
+        for stream in streams:
+            if stream is not None:
+                try:
+                    stream.close()
+                except OSError as close_error:
+                    diagnostics.append(f"output pipe close failed: {close_error}")
+    if isinstance(collected, bytes):
+        collected = collected.decode("utf-8", errors="replace")
+    if collected:
+        if collected.startswith(output):
+            output = collected
+        elif not output.startswith(collected):
+            output += collected
+    cleanup_output = "\n" + "\n".join(diagnostics) if diagnostics else ""
+    raise subprocess.TimeoutExpired(command, timeout_seconds, output=output, stderr=cleanup_output)
+
+
+def _process_session_identity(pid: int) -> dict[str, Any] | None:
+    """Read one exact POSIX PID; never discover targets by executable name."""
+    result = subprocess.run(
+        ["/bin/ps", "-p", str(pid), "-o", "pid=,ppid=,pgid=,lstart="],
+        capture_output=True, text=True, timeout=2, check=False,
+    )
+    fields = result.stdout.strip().split(None, 3)
+    if result.returncode or len(fields) != 4:
+        return None
+    return {"pid": int(fields[0]), "ppid": int(fields[1]), "pgid": int(fields[2]), "started": fields[3]}
+
+
+def _register_owned_session(process: subprocess.Popen[str], environment: Mapping[str, str]) -> None:
+    """Emit optional ownership diagnostics for the private outer supervisor."""
+    token = environment.get("MC_ANALYSIS_SESSION_TOKEN")
+    if os.name == "nt" or not token:
+        return
+    record: dict[str, Any] = {"schema": 1, "token": token, "pid": process.pid, "owner_pid": os.getpid()}
+    try:
+        record["identity"] = _process_session_identity(process.pid)
+        record["owner_identity"] = _process_session_identity(os.getpid())
+    except (OSError, ValueError, subprocess.SubprocessError) as error:
+        record["registration_error"] = f"{type(error).__name__}: {error}"
+    print("MC_ANALYSIS_OWNED_SESSION " + json.dumps(record, sort_keys=True), flush=True)
 
 
 def _run_with_liveness(
@@ -2733,12 +2823,12 @@ def _run_with_liveness(
         env=environment,
         start_new_session=os.name != "nt",
     )
+    _register_owned_session(process, environment)
+    partial_output = ""
     while True:
         remaining = timeout_seconds - (time.monotonic() - started)
         if remaining <= 0:
-            _terminate_process_tree(process)
-            output, _ = process.communicate(timeout=5)
-            raise subprocess.TimeoutExpired(command, timeout_seconds, output=output)
+            _raise_timeout_after_cleanup(process, command, timeout_seconds, partial_output)
         try:
             output, _ = process.communicate(timeout=min(30.0, remaining))
             return subprocess.CompletedProcess(list(command), process.returncode, output, "")
@@ -2754,9 +2844,7 @@ def _run_with_liveness(
                 flush=True,
             )
             if time.monotonic() - started >= timeout_seconds:
-                _terminate_process_tree(process)
-                output, _ = process.communicate(timeout=5)
-                raise subprocess.TimeoutExpired(command, timeout_seconds, output=output)
+                _raise_timeout_after_cleanup(process, command, timeout_seconds, partial_output)
 
 
 def _row_receipt(
@@ -2931,7 +3019,7 @@ def run_row(
                             f"$ {' '.join(expanded_command)}\n{error}\n{partial_stdout}{partial_stderr}"
                         )
                         break
-                    except FileNotFoundError as error:
+                    except OSError as error:
                         status = "failed"
                         output_parts.append(f"$ {' '.join(expanded_command)}\n{error}")
                         break

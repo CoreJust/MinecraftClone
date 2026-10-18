@@ -15,6 +15,19 @@ SCRIPT = REPOSITORY / "tests/acceptance/runtime_cli_tests.cmake"
 
 
 class RuntimeCliTests(unittest.TestCase):
+    def test_native_diagnostic_provenance_covers_all_source_overrides(self):
+        pattern = re.compile(r'"(MC_DIAGNOSTIC_[A-Z_]+)"')
+        recognized = set()
+        for source in (REPOSITORY / "src").rglob("*"):
+            if source.suffix in (".cpp", ".hpp"):
+                recognized.update(pattern.findall(source.read_text(encoding="utf-8")))
+        benchmark = (REPOSITORY / "src/acceptance/GameBenchmark.cpp").read_text(encoding="utf-8")
+        helper = benchmark.split("bool gameBenchmarkDiagnosticOverridesPresent(", 1)[1].split("\n}", 1)[0]
+        reported = set(pattern.findall(helper))
+
+        self.assertTrue(recognized)
+        self.assertEqual(reported, recognized)
+
     def test_valid_scenario_failure_reports_exact_child_diagnostics(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

@@ -146,6 +146,9 @@ struct GameBenchmarkOptions final {
 [[nodiscard]] std::chrono::seconds gameBenchmarkDeadline(GameBenchmarkOptions const& options) noexcept;
 
 [[nodiscard]]
+bool gameBenchmarkDiagnosticOverridesPresent(bool explicit_diagnostic_capture = false) noexcept;
+
+[[nodiscard]]
 shared::Direction gameBenchmarkDirection(GameBenchmarkWorkload workload, uint64_t ordinal) noexcept;
 
 [[nodiscard]]

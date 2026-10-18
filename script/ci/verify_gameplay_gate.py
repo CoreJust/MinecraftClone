@@ -160,6 +160,7 @@ def verify_report(report: dict[str, Any], platform: str, cadence_policy: str = "
     timing = report["timing"]
     require(integer(timing["elapsed_ms"], "elapsed_ms", 1) <= integer(timing["deadline_ms"], "deadline_ms", 1), "runtime timeout")
     game = report["game_benchmark"]
+    require(game.get("diagnostic_overrides_present") is False, "diagnostic gameplay report is not qualification proof")
     require(game["workload"] == WORKLOAD and game["build_mode"] == "release", "requires Release full-radius workload")
     require(game["displayed_cadence_hz"] is None, "physical display cadence is unavailable in this contract")
     require(game["present_mode"] == ("immediate" if platform == "windows" else "fifo"), "incorrect negotiated present mode")
@@ -221,13 +222,13 @@ def verify_report(report: dict[str, Any], platform: str, cadence_policy: str = "
         start = integer(frame["started_offset_ns"], "started_offset_ns")
         duration = integer(frame["loop_duration_ns"], "loop_duration_ns", 1)
         require(start >= previous_completion and type(frame["presentation_succeeded"]) is bool, "unordered or malformed raw frames")
-        radial_bands = frame.get("diagnostic_terrain_radial_bands")
+        radial_bands = frame["diagnostic_terrain_radial_bands"]
         if radial_bands is None:
-            require(integer(frame.get("diagnostic_terrain_spatial_scan_duration_ns", 0),
+            require(integer(frame["diagnostic_terrain_spatial_scan_duration_ns"],
                             "terrain spatial scan duration") == 0,
                     "terrain spatial scan duration exists without radial bands")
         else:
-            verify_terrain_radial_scan(radial_bands, frame.get("diagnostic_terrain_spatial_scan_duration_ns", 0))
+            verify_terrain_radial_scan(radial_bands, frame["diagnostic_terrain_spatial_scan_duration_ns"])
             require(all(band["desired"] == count
                         for band, count in zip(radial_bands, radial_band_counts(full["render_distance"]))),
                     "terrain radial desired counts disagree with render radius")

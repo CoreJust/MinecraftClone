@@ -14,13 +14,13 @@
         "ASAN_OPTIONS": "detect_leaks=1",
         "LSAN_OPTIONS": "suppressions={env:MC_ANALYSIS_ROOT}/script/ci/macos_lsan.supp:print_suppressions=1"
       },
-      "tool_probes": [["python", "--version"], ["clang", "--version"], ["clang++", "--version"], ["cmake", "--version"]],
+      "tool_probes": [["python3", "--version"], ["clang", "--version"], ["clang++", "--version"], ["cmake", "--version"]],
       "commands": [
-        ["python", "script/ci/verify_macos_lsan.py", "controls", "--build-dir", "build/analysis-macos-asan/lsan-controls"],
+        ["python3", "script/ci/verify_macos_lsan.py", "controls", "--build-dir", "build/analysis-macos-asan/lsan-controls"],
         ["cmake", "--preset", "analysis-macos-asan"],
         ["cmake", "--build", "--preset", "analysis-macos-asan"],
         ["ctest", "--test-dir", "build/analysis-macos-asan", "--output-on-failure", "--no-tests=error"],
-        ["python", "script/ci/verify_macos_lsan.py", "summarize", "--last-test-log", "build/analysis-macos-asan/Testing/Temporary/LastTest.log"]
+        ["python3", "script/ci/verify_macos_lsan.py", "summarize", "--last-test-log", "build/analysis-macos-asan/Testing/Temporary/LastTest.log"]
       ],
       "timeout_seconds": 600
     },
@@ -46,7 +46,7 @@
       "compile_commands": "build/analysis-macos-tsan/compile_commands.json",
       "required_compile_flags": ["-fsanitize=thread"],
       "tool_probes": [["clang", "--version"], ["cmake", "--version"]],
-      "commands": [["cmake", "--preset", "analysis-macos-tsan"], ["cmake", "--build", "--preset", "analysis-macos-tsan"], ["ctest", "--test-dir", "build/analysis-macos-tsan", "--output-on-failure", "--no-tests=error"]],
+      "commands": [["cmake", "--preset", "analysis-macos-tsan"], ["cmake", "--build", "--preset", "analysis-macos-tsan"], ["ctest", "--test-dir", "build/analysis-macos-tsan", "--output-on-failure", "--no-tests=error", "--parallel", "2"]],
       "timeout_seconds": 600
     },
     {
@@ -58,7 +58,7 @@
       "compile_commands": "build/analysis-windows-asan/compile_commands.json",
       "required_compile_flags": ["/fsanitize=address"],
       "tool_probes": [["cl.exe", "/Bv", "/?"], ["cmake", "--version"]],
-      "commands": [["cmake", "--preset", "analysis-windows-asan"], ["cmake", "--build", "--preset", "analysis-windows-asan"], ["ctest", "--test-dir", "build/analysis-windows-asan", "--output-on-failure", "--no-tests=error"]],
+      "commands": [["cmake", "--preset", "analysis-windows-asan"], ["cmake", "--build", "--preset", "analysis-windows-asan"], ["ctest", "--test-dir", "build/analysis-windows-asan", "--output-on-failure", "--no-tests=error", "--parallel", "4"]],
       "timeout_seconds": 600
     },
     {
@@ -68,7 +68,7 @@
       "capability": "msvc-analyze",
       "flags": ["/analyze", "/W4", "/WX"],
       "tool_probes": [["cl.exe", "/Bv", "/?"], ["cmake", "--version"]],
-      "commands": [["cmake", "--preset", "analysis-windows-analyze"], ["cmake", "--build", "--preset", "analysis-windows-analyze"], ["ctest", "--test-dir", "build/analysis-windows-analyze", "--output-on-failure", "--no-tests=error"]],
+      "commands": [["cmake", "--preset", "analysis-windows-analyze"], ["cmake", "--build", "--preset", "analysis-windows-analyze"], ["ctest", "--test-dir", "build/analysis-windows-analyze", "--output-on-failure", "--no-tests=error", "--parallel", "4"]],
       "timeout_seconds": 600
     },
     {
@@ -114,7 +114,7 @@
       "capability": "clang-analyzer",
       "flags": ["scan-build interposition", "-Xanalyzer", "-analyzer-output=text"],
       "tool_probes": [["clang", "--version"], ["scan-build", "--help"]],
-      "commands": [["cmake", "--preset", "analysis-clang-static"], ["cmake", "--build", "--preset", "analysis-clang-static"]],
+      "commands": [["cmake", "--preset", "analysis-clang-static", "-DCMAKE_CXX_FLAGS={env:CXXFLAGS} -Xanalyzer -analyzer-output=text"], ["cmake", "--build", "--preset", "analysis-clang-static"]],
       "timeout_seconds": 600
     },
     {

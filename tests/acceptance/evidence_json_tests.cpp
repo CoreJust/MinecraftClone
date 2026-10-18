@@ -17,6 +17,17 @@
 
 namespace {
 
+TEST(EvidenceJson, SerializesDiagnosticOverridePresenceAsBooleans)
+{
+    acceptance::RuntimeEvidence evidence{};
+    evidence.game_benchmark = acceptance::GameBenchmarkEvidence{};
+    EXPECT_NE(acceptance::evidenceJson(evidence).find("\"diagnostic_overrides_present\": false"),
+        std::string::npos);
+    evidence.game_benchmark->diagnostic_overrides_present = true;
+    EXPECT_NE(acceptance::evidenceJson(evidence).find("\"diagnostic_overrides_present\": true"),
+        std::string::npos);
+}
+
 TEST(EvidenceJson, IncludesVersionedMetadataTimingAndCounters)
 {
     acceptance::RuntimeEvidence const evidence{

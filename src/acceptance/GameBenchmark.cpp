@@ -20,7 +20,11 @@
 
 #if defined(__APPLE__)
 #include <sys/sysctl.h>
-#elif defined(_WIN32)
+#endif
+
+#include <vulkan/vulkan_core.h>
+
+#if defined(_WIN32)
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #endif
@@ -763,6 +767,19 @@ std::pair<int32_t, int32_t> GameBenchmarkTerrainReadinessTracker::coordinates(
     return { key.x, key.y };
 }
 
+bool gameBenchmarkDiagnosticOverridesPresent(bool const explicit_diagnostic_capture) noexcept
+{
+    return explicit_diagnostic_capture
+        || environmentVariableMatches("MC_DIAGNOSTIC_DIRECTIONAL_STONE_CULLING", std::nullopt)
+        || environmentVariableMatches("MC_DIAGNOSTIC_DIRECT_STONE_DRAWS", std::nullopt)
+        || environmentVariableMatches("MC_DIAGNOSTIC_GPU_TIMESTAMPS", std::nullopt)
+        || environmentVariableMatches("MC_DIAGNOSTIC_INDEXED_STONE_QUADS", std::nullopt)
+        || environmentVariableMatches("MC_DIAGNOSTIC_PRESENTATION_STAGES", std::nullopt)
+        || environmentVariableMatches("MC_DIAGNOSTIC_SPECIALIZED_STONE_SHADER", std::nullopt)
+        || environmentVariableMatches("MC_DIAGNOSTIC_TERRAIN_SPATIAL_SCAN", std::nullopt)
+        || environmentVariableMatches("MC_DIAGNOSTIC_TERRAIN_OCCLUSION", std::nullopt);
+}
+
 shared::Direction gameBenchmarkDirection(
     GameBenchmarkWorkload const workload,
     uint64_t const ordinal
@@ -953,7 +970,7 @@ std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOption
     };
     ServerRunGuard server_run{ server, server_hooks };
     std::cout << "[benchmark-game] loopback server started\n" << std::flush;
-    client::PlayerClient player{
+    auto const player_storage = std::make_unique<client::PlayerClient>(
         shared::WorldMode::Flight,
         std::nullopt,
         client::PlayerClientBenchmarkOptions{
@@ -962,8 +979,9 @@ std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOption
                 || full_radius_workload,
             .show_debug_hud = full_radius_workload,
             .enable_mesh_stage_diagnostics = options.diagnostic_full_radius_capture,
-        },
-    };
+        }
+    );
+    client::PlayerClient& player = *player_storage;
     std::cout << "[benchmark-game] player renderer ready; connecting\n" << std::flush;
 
     GameBenchmarkEvidence benchmark{
@@ -977,6 +995,9 @@ std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOption
 #else
         .build_mode = "debug",
 #endif
+        .diagnostic_overrides_present = gameBenchmarkDiagnosticOverridesPresent(
+            options.diagnostic_full_radius_capture
+        ),
         .cold_duration_ms = static_cast<uint64_t>(
             std::chrono::duration_cast<std::chrono::milliseconds>(options.cold_duration).count()
         ),

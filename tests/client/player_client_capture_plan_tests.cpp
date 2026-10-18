@@ -1,5 +1,4 @@
 #include <client/Camera.hpp>
-#include <client/HeightTileInterestRegion.hpp>
 #include <client/PlayerClient.hpp>
 #include <client/PlayerPresentation.hpp>
 #include <client/PreviewResidency.hpp>
@@ -1849,6 +1848,36 @@ TEST(PlayerClientCapturePlanTest, RecycledTicketsPreserveNearBypassAndBudgetedSt
     EXPECT_TRUE(queue.empty());
     EXPECT_FALSE(queue.hasReady());
     EXPECT_EQ(queue.storageStats().retained_bytes, 0U);
+}
+
+TEST(PlayerClientCapturePlanTest, RepeatedUnrankedBatchDrainsPreserveQueueReuse)
+{
+    static constexpr uint32_t BATCH_COUNT = 129U;
+    static constexpr uint32_t KEYS_PER_BATCH = 8U;
+    static constexpr uint32_t CYCLES = 2U;
+    static constexpr shared::HeightTileKey CENTER{ 100, 100 };
+    client::PlayerPreviewMeshQueue queue;
+    for (uint32_t cycle = 0U; cycle < CYCLES; ++cycle) {
+        for (uint32_t batch = 0U; batch < BATCH_COUNT; ++batch) {
+            std::array<shared::HeightTileKey, KEYS_PER_BATCH> keys;
+            for (uint32_t index = 0U; index < KEYS_PER_BATCH; ++index) {
+                keys[index] = {
+                    CENTER.x + static_cast<int32_t>(batch * KEYS_PER_BATCH + index),
+                    CENTER.y + static_cast<int32_t>(cycle),
+                };
+            }
+            queue.pushBatch(keys);
+        }
+        EXPECT_EQ(queue.size(), BATCH_COUNT * KEYS_PER_BATCH);
+        queue.clear();
+        EXPECT_TRUE(queue.empty());
+        EXPECT_FALSE(queue.hasReady());
+        EXPECT_EQ(queue.storageStats().retained_bytes, 0U);
+        ASSERT_TRUE(queue.push(CENTER));
+        EXPECT_EQ(queue.top(), CENTER);
+        queue.pop();
+        EXPECT_TRUE(queue.empty());
+    }
 }
 
 TEST(PlayerClientCapturePlanTest, DepartedTicketsAreRemovedAndResetDrainsUnrankedBuffers)

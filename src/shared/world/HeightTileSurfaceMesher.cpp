@@ -628,48 +628,53 @@ HeightTileSurfaceFaceAreas heightTileSurfaceFaceAreas(
     for (uint32_t level = 0U; level < areas.maximum.size(); ++level) {
         uint32_t const cell_size = HeightTileSurfaceFaceAreas::CELL_SIZES[level];
         HeightTile const reduced = reduceTile(tile, cell_size);
+        auto const cellMaximumArea = [&](uint32_t const cell_x, uint32_t const cell_y) {
+            uint32_t maximum_area = cell_size * cell_size;
+            uint16_t const height = reduced.heights[index(cell_x, cell_y)];
+            for (uint32_t edge = 0U; edge < EDGES.size(); ++edge) {
+                bool const x_edge = edge < 2U;
+                bool const negative_edge = edge == 0U || edge == 2U;
+                int32_t const perpendicular = static_cast<int32_t>(x_edge ? cell_x : cell_y);
+                int32_t const adjacent = negative_edge ? perpendicular - 1
+                    : perpendicular + static_cast<int32_t>(cell_size);
+                bool const boundary = adjacent < 0 || adjacent >= static_cast<int32_t>(SIDE_LENGTH);
+                uint32_t const along_start = x_edge ? cell_y : cell_x;
+                auto const adjacentHeight = [&](uint32_t const offset) {
+                    return heightAt(
+                        reduced,
+                        compatible_neighbors,
+                        x_edge ? adjacent : static_cast<int32_t>(offset),
+                        x_edge ? static_cast<int32_t>(offset) : adjacent
+                    );
+                };
+                uint32_t along = along_start;
+                while (along < along_start + cell_size) {
+                    uint16_t const adjacent_height = adjacentHeight(along);
+                    uint32_t span = 1U;
+                    while (along + span < along_start + cell_size
+                        && adjacentHeight(along + span) == adjacent_height) {
+                        ++span;
+                    }
+                    if (height > adjacent_height) {
+                        maximum_area = std::max(maximum_area, span * static_cast<uint32_t>(height - adjacent_height));
+                    }
+                    along += span;
+                }
+                if (boundary && installed_neighbor_profiles[edge].has_value()) {
+                    auto const& top = installed_neighbor_profiles[edge].value().top;
+                    for (uint32_t offset = along_start; offset < along_start + cell_size; ++offset) {
+                        uint32_t const gap = height > top[offset] ? height - top[offset] : top[offset] - height;
+                        // Seam gaps are contained between the two installed top profiles.
+                        maximum_area = std::max(maximum_area, cell_size * gap);
+                    }
+                }
+            }
+            return maximum_area;
+        };
         uint32_t maximum_area = cell_size * cell_size;
         for (uint32_t cell_y = 0U; cell_y < SIDE_LENGTH; cell_y += cell_size) {
             for (uint32_t cell_x = 0U; cell_x < SIDE_LENGTH; cell_x += cell_size) {
-                uint16_t const height = reduced.heights[index(cell_x, cell_y)];
-                for (uint32_t edge = 0U; edge < EDGES.size(); ++edge) {
-                    bool const x_edge = edge < 2U;
-                    bool const negative_edge = edge == 0U || edge == 2U;
-                    int32_t const perpendicular = static_cast<int32_t>(x_edge ? cell_x : cell_y);
-                    int32_t const adjacent = negative_edge ? perpendicular - 1
-                        : perpendicular + static_cast<int32_t>(cell_size);
-                    bool const boundary = adjacent < 0 || adjacent >= static_cast<int32_t>(SIDE_LENGTH);
-                    uint32_t const along_start = x_edge ? cell_y : cell_x;
-                    auto const adjacentHeight = [&](uint32_t const offset) {
-                        return heightAt(
-                            reduced,
-                            compatible_neighbors,
-                            x_edge ? adjacent : static_cast<int32_t>(offset),
-                            x_edge ? static_cast<int32_t>(offset) : adjacent
-                        );
-                    };
-                    uint32_t along = along_start;
-                    while (along < along_start + cell_size) {
-                        uint16_t const adjacent_height = adjacentHeight(along);
-                        uint32_t span = 1U;
-                        while (along + span < along_start + cell_size
-                            && adjacentHeight(along + span) == adjacent_height) {
-                            ++span;
-                        }
-                        if (height > adjacent_height) {
-                            maximum_area = std::max(maximum_area, span * static_cast<uint32_t>(height - adjacent_height));
-                        }
-                        along += span;
-                    }
-                    if (boundary && installed_neighbor_profiles[edge].has_value()) {
-                        auto const& top = installed_neighbor_profiles[edge]->top;
-                        for (uint32_t offset = along_start; offset < along_start + cell_size; ++offset) {
-                            uint32_t const gap = height > top[offset] ? height - top[offset] : top[offset] - height;
-                            // Seam gaps are contained between the two installed top profiles.
-                            maximum_area = std::max(maximum_area, cell_size * gap);
-                        }
-                    }
-                }
+                maximum_area = std::max(maximum_area, cellMaximumArea(cell_x, cell_y));
             }
         }
         areas.maximum[level] = maximum_area;

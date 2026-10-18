@@ -193,6 +193,16 @@ constexpr int32_t HEIGHT_TILE_WORLD_EXTENT = static_cast<int32_t>(
     shared::WorldExtent::WIDTH / shared::HEIGHT_TILE_SIDE_LENGTH
 );
 
+[[noreturn]]
+void retirementBatchOverflow(char const* const message) noexcept
+{
+    try {
+        ASSERT(false, "{}", message);
+    } catch (...) {
+        std::abort();
+    }
+}
+
 [[nodiscard]] int64_t shortestFlightDelta(int64_t const current, int64_t const target) noexcept
 {
     int64_t delta = target - current;
@@ -448,6 +458,9 @@ private:
         addStorageBytes(m_pending.nested_storage_bytes,
             static_cast<uint64_t>(sizeof(typename Map::value_type)) + NODE_OVERHEAD_BYTES);
         addStorageBytes(m_pending.nested_storage_bytes, nested_storage_bytes);
+        if (count >= BATCH_CAPACITY) {
+            retirementBatchOverflow("Retired preview cache batch must have an available slot");
+        }
         nodes[count] = map.extract(found);
         ++count;
     }
@@ -593,19 +606,18 @@ public:
             worker.join();
         }
         submitPendingRetirements();
-        RetirementBatch queued_retirement;
         {
             std::lock_guard lock{m_mutex};
             for (Job& job : m_work) {
-                appendRetiredJob(queued_retirement, std::move(job));
+                appendRetiredJob(m_pending_retirements, std::move(job));
             }
             m_work.clear();
             for (Result& result : m_results) {
-                appendRetiredResult(queued_retirement, std::move(result));
+                appendRetiredResult(m_pending_retirements, std::move(result));
             }
             m_results.clear();
         }
-        submitRetirementBatch(std::move(queued_retirement));
+        submitPendingRetirements();
         m_retirement_reaper.drain();
     }
 
@@ -646,7 +658,7 @@ public:
     )
     {
         std::vector<HeightTileKey> cancelled;
-        RetirementBatch retired;
+        submitPendingRetirements();
         {
             std::lock_guard lock{m_mutex};
             cancelled.reserve(m_work.size());
@@ -656,7 +668,7 @@ public:
                     continue;
                 }
                 cancelled.push_back(job->key);
-                appendRetiredJob(retired, std::move(*job));
+                appendRetiredJob(m_pending_retirements, std::move(*job));
                 if (m_track_stages) {
                     m_stage_by_key.erase(cancelled.back());
                 }
@@ -664,13 +676,13 @@ public:
                 job = m_work.erase(job);
             }
         }
-        submitRetirementBatch(std::move(retired));
+        submitPendingRetirements();
         return cancelled;
     }
 
     void discardCompletedResults()
     {
-        RetirementBatch retired;
+        submitPendingRetirements();
         {
             std::lock_guard lock{m_mutex};
             for (Result& result : m_results) {
@@ -678,11 +690,11 @@ public:
                     m_stage_by_key.erase(result.key);
                 }
                 ASSERT(m_admission_window.releaseOne(), "Discarded preview mesh result was not outstanding");
-                appendRetiredResult(retired, std::move(result));
+                appendRetiredResult(m_pending_retirements, std::move(result));
             }
             m_results.clear();
         }
-        submitRetirementBatch(std::move(retired));
+        submitPendingRetirements();
     }
 
     [[nodiscard]] bool canAccept() const
@@ -907,14 +919,26 @@ private:
         }
     }
 
+    static void clearRetirementBatch(RetirementBatch& batch) noexcept
+    {
+        for (uint32_t index = 0U; index < batch.job_count; ++index) {
+            batch.jobs[index] = Job{};
+        }
+        for (uint32_t index = 0U; index < batch.result_count; ++index) {
+            batch.results[index] = Result{};
+        }
+        batch.job_count = 0U;
+        batch.result_count = 0U;
+        batch.nested_storage_bytes = 0U;
+    }
+
     void submitPendingRetirements() noexcept
     {
         if (m_pending_retirements.empty()) {
             return;
         }
-        RetirementBatch pending = std::move(m_pending_retirements);
-        m_pending_retirements = RetirementBatch{};
-        submitRetirementBatch(std::move(pending));
+        submitRetirementBatch(std::move(m_pending_retirements));
+        clearRetirementBatch(m_pending_retirements);
     }
 
     void workerLoop()
@@ -1595,6 +1619,9 @@ public:
         if (m_pending.buffer_count == BUFFER_BATCH_SIZE) {
             submit();
         }
+        if (m_pending.buffer_count >= BUFFER_BATCH_SIZE) {
+            retirementBatchOverflow("Retired buffer batch must have an available slot");
+        }
         m_pending.buffers[m_pending.buffer_count++].swap(buffer);
         m_pending.storage_bytes += bytes;
     }
@@ -1613,6 +1640,9 @@ public:
         prepare(NODE_BYTES);
         if (m_pending.node_count == NODE_BATCH_SIZE) {
             submit();
+        }
+        if (m_pending.node_count >= NODE_BATCH_SIZE) {
+            retirementBatchOverflow("Retired ticket batch must have an available slot");
         }
         m_pending.nodes[m_pending.node_count++] = tickets.extract(found);
         m_pending.storage_bytes += NODE_BYTES;
@@ -1647,6 +1677,9 @@ public:
             prepare(NODE_BYTES);
             if (m_pending.node_count == NODE_BATCH_SIZE) {
                 submit();
+            }
+            if (m_pending.node_count >= NODE_BATCH_SIZE) {
+                retirementBatchOverflow("Retired ticket batch must have an available slot");
             }
             m_pending.nodes[m_pending.node_count++] = std::move(m_free_nodes[index]);
             m_pending.storage_bytes += NODE_BYTES;

@@ -299,6 +299,15 @@ class ClientLaunchTest(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("requires --workload speed-200-full-radius", result.stderr)
 
+        result = subprocess.run(
+            [str(self.binary), "--benchmark-game", "--diagnostic-full-radius-capture",
+             "--workload", "speed-200", "--evidence", "unused-full-radius.json"],
+            capture_output=True, text=True, timeout=5,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("--diagnostic-full-radius-capture requires --workload speed-200-full-radius", result.stderr)
+
+
         with tempfile.TemporaryDirectory() as directory:
             evidence_path = Path(directory) / "full-radius.json"
             result = subprocess.run(
@@ -310,6 +319,69 @@ class ClientLaunchTest(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0)
             self.assertTrue(evidence_path.exists())
             self.assertIn("requires render distance 256", evidence_path.read_text())
+    def test_diagnostic_indexed_stone_quad_mode_is_bounded_and_workload_specific(self):
+        for value in ("0", "1", "2"):
+            with self.subTest(mode=value):
+                result = subprocess.run(
+                    [str(self.binary), "--benchmark-game", "--diagnostic-indexed-stone-quads", value,
+                     "--workload", "invalid", "--evidence", "unused-renderer-mode.json"],
+                    capture_output=True, text=True, timeout=5,
+                )
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("invalid game benchmark workload", result.stderr)
+
+        for value in ("-1", "3", "1x"):
+            with self.subTest(mode=value):
+                result = subprocess.run(
+                    [str(self.binary), "--benchmark-game", "--diagnostic-indexed-stone-quads", value,
+                     "--workload", "speed-200-full-radius", "--evidence", "unused-renderer-mode.json"],
+                    capture_output=True, text=True, timeout=5,
+                )
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("diagnostic indexed stone quad mode must be 0, 1, or 2", result.stderr)
+
+        result = subprocess.run(
+            [str(self.binary), "--benchmark-game",
+             "--diagnostic-indexed-stone-quads", "1",
+             "--workload", "speed-200-full-radius",
+             "--full-radius-warmup-seconds", "180",
+             "--present-immediate",
+             "--diagnostic-full-radius-capture",
+             "--diagnostic-presentation-stages",
+             "--render-distance", "invalid",
+             "--evidence", "unused-renderer-mode.json"],
+            capture_output=True, text=True, timeout=5,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("render distance must be an integer chunk radius from 1 to 256", result.stderr)
+
+        result = subprocess.run(
+            [str(self.binary), "--benchmark-game", "--diagnostic-indexed-stone-quads", "1",
+             "--workload", "speed-200", "--evidence", "unused-renderer-mode.json"],
+            capture_output=True, text=True, timeout=5,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("requires --workload speed-200-full-radius", result.stderr)
+
+
+    def test_diagnostic_presentation_stages_are_full_radius_specific(self):
+        result = subprocess.run(
+            [str(self.binary), "--benchmark-game", "--diagnostic-presentation-stages",
+             "--workload", "invalid", "--evidence", "unused-presentation-stages.json"],
+            capture_output=True, text=True, timeout=5,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("invalid game benchmark workload", result.stderr)
+
+        result = subprocess.run(
+            [str(self.binary), "--benchmark-game", "--diagnostic-presentation-stages",
+             "--workload", "speed-200", "--evidence", "unused-presentation-stages.json"],
+            capture_output=True, text=True, timeout=5,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("--diagnostic-presentation-stages requires --workload speed-200-full-radius",
+            result.stderr)
+
 
     def test_normal_server_accepts_selected_render_distance(self):
         port = free_udp_port()

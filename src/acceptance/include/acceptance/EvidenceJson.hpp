@@ -341,6 +341,7 @@ struct GameBenchmarkEvidence final {
     std::optional<std::string> gpu;
     std::string present_mode;
     std::string build_mode;
+    bool diagnostic_overrides_present = false;
     uint64_t cold_duration_ms = 0U;
     uint64_t warm_duration_ms = 0U;
     uint64_t uncapped_duration_ms = 0U;

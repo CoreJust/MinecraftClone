@@ -31,7 +31,7 @@
         "tests/acceptance/runtime_cli_tests.cmake",
         "tests/acceptance/scenario_runner_tests.cpp"
       ],
-      "sources_sha256": "6945a6bc3e067ce91ea92c8cb8b0e9d84d0911bf206c656f80e9fd764bb597d3"
+      "sources_sha256": "27828db16db286ff6f10ffe4a434d2c66067a352298f821d5e5f6ae4b39159f7"
     },
     {
       "guide": "docs/code/ANDROID.md",
@@ -114,6 +114,7 @@
         "script/ci/android_clang_tidy.py",
         "script/ci/android_hwasan_emulator.py",
         "script/ci/build_snapshot.py",
+        "script/ci/clang_static_gate.py",
         "script/ci/cppcheck_gate.py",
         "script/ci/diagnostics/targeted_tsan_client.py",
         "script/ci/install_msan_libcxx.py",
@@ -149,6 +150,7 @@
         "script/tests/test_build_snapshot.py",
         "script/tests/test_checks_common.py",
         "script/tests/test_ci_acquire.py",
+        "script/tests/test_clang_static_gate.py",
         "script/tests/test_cppcheck_gate.py",
         "script/tests/test_gmp_vcpkg_overlay.py",
         "script/tests/test_install_msan_libcxx.py",
@@ -179,7 +181,7 @@
         "vcpkg-configuration.json",
         "vcpkg.json"
       ],
-      "sources_sha256": "44b4437754aaa0610a7cd79f0773e03ec5e2fbdfc548649d6e63069284bcf08b"
+      "sources_sha256": "72c1be347fc1e8e107358cdccda87f5d56f4fd9e8945693fb614022175825b29"
     },
     {
       "guide": "docs/code/CORE.md",
@@ -307,7 +309,7 @@
         "tests/core/world_generation_scheduler_tests.cpp",
         "tests/core/world_generation_tests.cpp"
       ],
-      "sources_sha256": "fd15c485c3f4731d9c0fea9a924d7ea1baf9c6cad2a34b6368426473298e82fb"
+      "sources_sha256": "95cd1a9767abbcb4af0952e9a10ed4ea7e9c9782da7af9c02e7e92d6f5cc82d6"
     },
     {
       "guide": "docs/code/RENDERING.md",
@@ -393,7 +395,7 @@
         "tests/testsupport/include/testsupport/AdverseTransport.hpp",
         "tests/testsupport/include/testsupport/ImageComparison.hpp"
       ],
-      "sources_sha256": "c56e869f88aeb7d0523de8a111dca2abd5049928b80088bc17080053605fffe4"
+      "sources_sha256": "a24ba67b71c747b9c9026288a75fc44caf2461bccf686951b0e35c8bb0edff48"
     }
   ],
   "version": 1

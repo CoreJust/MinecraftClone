@@ -609,6 +609,29 @@ TEST(PlayerClientResetTest, RemovedPreviewCacheStorageIsRetiredAndConnectionRese
     EXPECT_EQ(client::PlayerClientTestAccess::pendingPreviewCacheRetirementBytes(player_client), 0U);
 }
 
+TEST(PlayerClientResetTest, ConnectionResetDrainsSeveralPreviewCacheBatches)
+{
+    static constexpr uint32_t TILE_COUNT = 257U;
+    static constexpr client::HeightTileRevision REVISION{ 1U, 1U };
+    client::PlayerClient player_client{ shared::WorldMode::Flight };
+    auto const deadline = std::chrono::steady_clock::now() + std::chrono::seconds{ 2 };
+    for (uint32_t index = 0U; index < TILE_COUNT; ++index) {
+        shared::HeightTileKey const key{ 200 + static_cast<int32_t>(index) * 3, 0 };
+        auto const tile = client::PlayerClientTestAccess::seedLodNeighborhood(player_client, key, REVISION, 20U);
+        client::PlayerClientTestAccess::publishLodTile(player_client, tile, deadline);
+        ASSERT_TRUE(client::PlayerClientTestAccess::previewCacheContains(player_client, tile->key()));
+    }
+    ASSERT_EQ(client::PlayerClientTestAccess::rendererMeshCount(player_client), TILE_COUNT);
+
+    client::PlayerClientTestAccess::resetConnectionState(player_client);
+
+    EXPECT_EQ(client::PlayerClientTestAccess::rendererMeshCount(player_client), 0U);
+    EXPECT_GE(client::PlayerClientTestAccess::cacheRetirementSubmissionCount(player_client), 3U);
+    EXPECT_EQ(client::PlayerClientTestAccess::cacheRetirementFallbackCount(player_client), 0U);
+    EXPECT_EQ(client::PlayerClientTestAccess::pendingPreviewCacheRetirementBytes(player_client), 0U);
+    EXPECT_TRUE(client::PlayerClientTestAccess::previewSetsEmpty(player_client));
+}
+
 TEST(PlayerClientResetTest, OlderInstalledNeighborBoundsSurviveRejectedReplacementAndInvalidateOnPublication)
 {
     static constexpr shared::HeightTileKey KEY{ .x = 200, .y = 0 };

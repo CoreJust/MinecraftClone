@@ -479,6 +479,8 @@ std::string gameBenchmarkJson(GameBenchmarkEvidence const& benchmark)
         "    \"gpu\": " + (benchmark.gpu ? jsonString(*benchmark.gpu) : "null") + ",\n"
         "    \"present_mode\": " + jsonString(benchmark.present_mode) + ",\n"
         "    \"build_mode\": " + jsonString(benchmark.build_mode) + ",\n"
+        "    \"diagnostic_overrides_present\": "
+            + (benchmark.diagnostic_overrides_present ? "true" : "false") + ",\n"
         "    \"cold_duration_ms\": " + std::to_string(benchmark.cold_duration_ms) + ",\n"
         "    \"warm_duration_ms\": " + std::to_string(benchmark.warm_duration_ms) + ",\n"
         "    \"uncapped_duration_ms\": " + std::to_string(benchmark.uncapped_duration_ms) + ",\n"

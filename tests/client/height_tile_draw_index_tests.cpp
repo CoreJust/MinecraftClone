@@ -450,6 +450,33 @@ TEST(HeightTileDrawIndexTest, DirectionOrderMatchesOracleAcrossTheEntireArenaAdd
     EXPECT_EQ(actual.back().instance_count, 1U);
 }
 
+TEST(HeightTileDrawIndexTest, RepeatedOrderingResetsScratchAfterShrinkAndClear)
+{
+    static constexpr std::array<uint32_t, 6> STARTS{
+        0U, 2'047U, 2'048U, 4'194'303U, 4'194'304U, std::numeric_limits<uint32_t>::max() - 2U,
+    };
+    static constexpr std::array<uint32_t, 3> ROUND_COUNTS{ 6U, 2U, 5U };
+    Index index;
+    client::VulkanFrustum const frustum{ glm::mat4{ 1.0F } };
+    std::vector<Range> actual;
+    for (uint32_t round = 0U; round < ROUND_COUNTS.size(); ++round) {
+        index.clear();
+        std::vector<Index::Entry> entries;
+        entries.reserve(ROUND_COUNTS[round]);
+        for (uint32_t ordinal = 0U; ordinal < ROUND_COUNTS[round]; ++ordinal) {
+            entries.push_back(insideEntry(
+                { .x = static_cast<int32_t>(ordinal * 16U), .y = 0 },
+                { STARTS[(ordinal + round) % STARTS.size()], 1U }
+            ));
+        }
+        for (Index::Entry const& entry : entries | std::views::reverse) {
+            index.upsert(entry);
+        }
+        static_cast<void>(index.collect(frustum, {}, actual));
+        EXPECT_EQ(pack(actual), pack(reference(entries, frustum, {}).ranges));
+    }
+}
+
 TEST(HeightTileDrawIndexTest, FragmentedSparseAndFullGroupsMatchScalarOracleThroughoutChurn)
 {
     static constexpr uint32_t RECORD_COUNT = 256U;

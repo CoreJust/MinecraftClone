@@ -108,6 +108,38 @@ class CppcheckGateTests(unittest.TestCase):
         self.assertEqual(query[query.index("-D") + 1], "USER=1")
         self.assertEqual(query[query.index("-U") + 1], "OLD")
 
+    def test_cppcheck_omits_only_compiler_selected_libcxx_root(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            project = root / "project"
+            libcxx = root / "libcxx"
+            sdk = root / "sdk"
+            for include_root in (project, libcxx, sdk):
+                include_root.mkdir()
+            (libcxx / "__config").write_text("#define _LIBCPP_VERSION 200100\n")
+            (project / "project.hpp").write_text("// project include\n")
+            (sdk / "TargetConditionals.h").write_text("// SDK include\n")
+            search_paths = (
+                "#include <...> search starts here:\n"
+                f" {project}\n {libcxx}\n {sdk}\n"
+                "End of search list.\n"
+            )
+            compiler = [
+                "clang++", "-I", str(project), "-isystem", str(libcxx), "-isystem", str(sdk),
+                "-stdlib=libc++", "-c", "/repo/src/a.cpp",
+            ]
+            result = subprocess.CompletedProcess([], 0, b"#define __clang__ 1\n", search_paths.encode())
+            with patch.object(gate.subprocess, "run", return_value=result) as runner:
+                args = gate.analyzer_arguments(["cppcheck"], compiler, Path("/repo/src/a.cpp"), Path("/repo"))
+
+            self.assertNotIn("-I" + str(libcxx), args)
+            self.assertIn("-I" + str(project), args)
+            self.assertIn("-I" + str(sdk), args)
+            query = runner.call_args.args[0]
+            for expected in ("-I", str(project), "-isystem", str(libcxx), str(sdk), "-stdlib=libc++"):
+                self.assertIn(expected, query)
+            self.assertFalse(any(argument.startswith("-D__has_include_next") for argument in args))
+
     def test_builtin_features_are_queried_not_assumed(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

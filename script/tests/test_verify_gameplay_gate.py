@@ -88,7 +88,7 @@ class VerifyGameplayGateTests(unittest.TestCase):
                      "current_near_coverage_complete": True}
         return {"schema_version": "mc.runtime-evidence.v1", "mode": "benchmark-game", "passed": True, "failure": "",
                 "timing": {"elapsed_ms": offset // 1000000, "deadline_ms": 450000}, "game_benchmark": {
-                    "workload": self.gate.WORKLOAD, "build_mode": "release", "displayed_cadence_hz": None,
+                    "workload": self.gate.WORKLOAD, "diagnostic_overrides_present": False, "build_mode": "release", "displayed_cadence_hz": None,
                     "present_mode": "immediate" if platform == "windows" else "fifo", "failed_present_requests": 0,
                     "successful_present_requests": len(frames),
                     "server_events_processed": 10, "inputs_sent": 10, "authoritative_player_updates": 10,

@@ -8,8 +8,11 @@
 #include <array>
 #include <chrono>
 #include <cstdint>
+#include <cstdlib>
 #include <expected>
+#include <memory>
 #include <optional>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -17,6 +20,116 @@
 using namespace std::chrono_literals;
 
 namespace {
+
+static constexpr std::array<char const*, 8U> DIAGNOSTIC_VARIABLES{
+    "MC_DIAGNOSTIC_DIRECTIONAL_STONE_CULLING",
+    "MC_DIAGNOSTIC_DIRECT_STONE_DRAWS",
+    "MC_DIAGNOSTIC_GPU_TIMESTAMPS",
+    "MC_DIAGNOSTIC_INDEXED_STONE_QUADS",
+    "MC_DIAGNOSTIC_PRESENTATION_STAGES",
+    "MC_DIAGNOSTIC_SPECIALIZED_STONE_SHADER",
+    "MC_DIAGNOSTIC_TERRAIN_SPATIAL_SCAN",
+    "MC_DIAGNOSTIC_TERRAIN_OCCLUSION",
+};
+
+std::optional<std::string> diagnosticEnvironmentValue(char const* const variable)
+{
+#if defined(_MSC_VER)
+    char* raw_value = nullptr;
+    size_t value_size = 0U;
+    auto const status = ::_dupenv_s(&raw_value, &value_size, variable);
+    std::unique_ptr<char, decltype(&std::free)> const value{ raw_value, &std::free };
+    if (status != 0) {
+        throw std::runtime_error("cannot read benchmark diagnostic environment");
+    }
+    if (value == nullptr) {
+        return std::nullopt;
+    }
+    return std::string{ value.get() };
+#else
+    char const* const value = std::getenv(variable);
+    if (value == nullptr) {
+        return std::nullopt;
+    }
+    return std::string{ value };
+#endif
+}
+
+struct DiagnosticEnvironmentSetting final {
+    char const* variable;
+    char const* value;
+};
+
+class ScopedDiagnosticSetting final {
+public:
+    ScopedDiagnosticSetting(DiagnosticEnvironmentSetting const setting)
+        : m_variable(setting.variable)
+    {
+        if (std::optional<std::string> const previous = diagnosticEnvironmentValue(m_variable)) {
+            m_previous = *previous;
+#if defined(_WIN32)
+            if (m_previous->empty()) {
+                throw std::runtime_error("Windows CRT cannot restore an empty diagnostic variable");
+            }
+#endif
+        }
+        if (assign(setting.value) != 0) {
+            throw std::runtime_error("cannot set benchmark diagnostic environment");
+        }
+    }
+
+    ~ScopedDiagnosticSetting() noexcept
+    {
+        try {
+            EXPECT_EQ(assign(m_previous ? m_previous->c_str() : nullptr), 0);
+        } catch (...) {
+            std::terminate();
+        }
+    }
+    ScopedDiagnosticSetting(ScopedDiagnosticSetting const&) = delete;
+    ScopedDiagnosticSetting& operator=(ScopedDiagnosticSetting const&) = delete;
+
+private:
+    [[nodiscard]]
+    int32_t assign(char const* const value) const
+    {
+#if defined(_WIN32)
+        return _putenv_s(m_variable, value == nullptr ? "" : value);
+#else
+        return value == nullptr ? unsetenv(m_variable) : setenv(m_variable, value, 1);
+#endif
+    }
+
+    char const* const m_variable;
+    std::optional<std::string> m_previous;
+};
+
+struct ScopedCleanDiagnosticEnvironment final {
+    ScopedDiagnosticSetting directional_culling{
+        DiagnosticEnvironmentSetting{ DIAGNOSTIC_VARIABLES[0U], nullptr },
+    };
+    ScopedDiagnosticSetting direct_draws{
+        DiagnosticEnvironmentSetting{ DIAGNOSTIC_VARIABLES[1U], nullptr },
+    };
+    ScopedDiagnosticSetting gpu_timestamps{
+        DiagnosticEnvironmentSetting{ DIAGNOSTIC_VARIABLES[2U], nullptr },
+    };
+    ScopedDiagnosticSetting indexed_quads{
+        DiagnosticEnvironmentSetting{ DIAGNOSTIC_VARIABLES[3U], nullptr },
+    };
+    ScopedDiagnosticSetting presentation_stages{
+        DiagnosticEnvironmentSetting{ DIAGNOSTIC_VARIABLES[4U], nullptr },
+    };
+    ScopedDiagnosticSetting specialized_stone_shader{
+        DiagnosticEnvironmentSetting{ DIAGNOSTIC_VARIABLES[5U], nullptr },
+    };
+    ScopedDiagnosticSetting terrain_spatial_scan{
+        DiagnosticEnvironmentSetting{ DIAGNOSTIC_VARIABLES[6U], nullptr },
+    };
+    ScopedDiagnosticSetting terrain_occlusion{
+        DiagnosticEnvironmentSetting{ DIAGNOSTIC_VARIABLES[7U], nullptr },
+    };
+};
 
 struct OneNearTileFixture final {
     shared::HeightTileKey center{};
@@ -79,6 +192,48 @@ acceptance::GameBenchmarkTerrainObservation fullNearWindow(
 }
 
 } // namespace
+
+TEST(GameBenchmark, ReportsNoDiagnosticOverridesWhenKnownVariablesAreAbsent)
+{
+    ScopedCleanDiagnosticEnvironment const environment;
+    ScopedDiagnosticSetting const unrelated{
+        DiagnosticEnvironmentSetting{ "MC_DIAGNOSTIC_UNIMPLEMENTED_SETTING", "1" },
+    };
+    EXPECT_FALSE(acceptance::gameBenchmarkDiagnosticOverridesPresent());
+    EXPECT_TRUE(acceptance::gameBenchmarkDiagnosticOverridesPresent(true));
+}
+
+TEST(GameBenchmark, ReportsEachKnownDiagnosticOverride)
+{
+    ScopedCleanDiagnosticEnvironment const environment;
+    for (char const* const variable : DIAGNOSTIC_VARIABLES) {
+        {
+            ScopedDiagnosticSetting const setting{ DiagnosticEnvironmentSetting{ variable, "1" } };
+            EXPECT_TRUE(acceptance::gameBenchmarkDiagnosticOverridesPresent()) << variable;
+        }
+        EXPECT_FALSE(acceptance::gameBenchmarkDiagnosticOverridesPresent()) << variable;
+    }
+}
+
+TEST(GameBenchmark, CountsZeroValuesAsDiagnosticOverrides)
+{
+    ScopedCleanDiagnosticEnvironment const environment;
+    for (char const* const variable : DIAGNOSTIC_VARIABLES) {
+        ScopedDiagnosticSetting const setting{ DiagnosticEnvironmentSetting{ variable, "0" } };
+        EXPECT_TRUE(acceptance::gameBenchmarkDiagnosticOverridesPresent()) << variable;
+    }
+}
+
+#if !defined(_WIN32)
+TEST(GameBenchmark, CountsEmptyValuesAsDiagnosticOverrides)
+{
+    ScopedCleanDiagnosticEnvironment const environment;
+    for (char const* const variable : DIAGNOSTIC_VARIABLES) {
+        ScopedDiagnosticSetting const setting{ DiagnosticEnvironmentSetting{ variable, "" } };
+        EXPECT_TRUE(acceptance::gameBenchmarkDiagnosticOverridesPresent()) << variable;
+    }
+}
+#endif
 
 TEST(GameBenchmark, DefaultsTo256AndRejectsUnsupportedRenderDistancesBeforeLaunch)
 {

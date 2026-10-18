@@ -133,6 +133,7 @@ private:
     RangeStarts m_range_starts;
     std::vector<PendingRange> m_pending_ranges;
     std::vector<PendingRange> m_sort_workspace;
+    std::vector<uint64_t> m_sort_offsets;
     std::optional<VulkanFrustum> m_cached_frustum;
     glm::dvec3 m_cached_camera_position{};
     std::vector<StoneIndirectDraws::Range> m_cached_visible_ranges;

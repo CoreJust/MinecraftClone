@@ -552,24 +552,28 @@ void HeightTileDrawIndex::orderPendingRanges()
     if (m_pending_ranges.size() < 2U) {
         return;
     }
-    std::array<std::array<uint64_t, DIGIT_COUNT>, PASS_COUNT> offsets{};
+    m_sort_offsets.resize(static_cast<uint64_t>(PASS_COUNT) * DIGIT_COUNT);
+    std::ranges::fill(m_sort_offsets, 0U);
     for (PendingRange const pending : m_pending_ranges) {
         for (uint32_t pass = 0U; pass < PASS_COUNT; ++pass) {
             uint32_t const digit = (pending.order_key >> (pass * DIGIT_BITS)) & DIGIT_MASK;
-            ++offsets[pass][digit];
+            ++m_sort_offsets[static_cast<uint64_t>(pass) * DIGIT_COUNT + digit];
         }
     }
     m_sort_workspace.resize(m_pending_ranges.size());
     for (uint32_t pass = 0U; pass < PASS_COUNT; ++pass) {
+        std::span<uint64_t> const offsets{
+            m_sort_offsets.data() + static_cast<uint64_t>(pass) * DIGIT_COUNT, DIGIT_COUNT
+        };
         uint64_t first_index = 0U;
-        for (uint64_t& offset : offsets[pass]) {
+        for (uint64_t& offset : offsets) {
             uint64_t const count = offset;
             offset = first_index;
             first_index += count;
         }
         for (PendingRange const pending : m_pending_ranges) {
             uint32_t const digit = (pending.order_key >> (pass * DIGIT_BITS)) & DIGIT_MASK;
-            m_sort_workspace[offsets[pass][digit]++] = pending;
+            m_sort_workspace[offsets[digit]++] = pending;
         }
         m_pending_ranges.swap(m_sort_workspace);
     }

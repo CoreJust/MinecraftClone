@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import copy
-from contextlib import ExitStack
+from contextlib import ExitStack, redirect_stdout
 import hashlib
 import importlib.util
+import io
 import json
 import os
 import shutil
@@ -38,6 +39,38 @@ class AnalysisMatrixTests(unittest.TestCase):
     def setUp(self):
         self.matrix = load_module()
         self.manifest = self.matrix.load_manifest(MANIFEST_PATH)
+
+    @unittest.skipIf(os.name == "nt", "POSIX session registration")
+    def test_owned_session_marker_records_actual_child_start_and_owner(self):
+        environment = {**os.environ, "MC_ANALYSIS_SESSION_TOKEN": "normal-session-control"}
+        output = io.StringIO()
+        with redirect_stdout(output):
+            completed = self.matrix._run_with_liveness(
+                [sys.executable, "-c", "import time; time.sleep(.15); print('normal child')"],
+                cwd=REPOSITORY, environment=environment, timeout_seconds=2, row_id="normal-control",
+            )
+        marker = next(line for line in output.getvalue().splitlines() if line.startswith("MC_ANALYSIS_OWNED_SESSION "))
+        registration = json.loads(marker.split(" ", 1)[1])
+        self.assertEqual(completed.returncode, 0)
+        self.assertIn("normal child", completed.stdout)
+        self.assertEqual(registration["token"], environment["MC_ANALYSIS_SESSION_TOKEN"])
+        self.assertEqual(registration["owner_pid"], os.getpid())
+        self.assertEqual(registration["identity"]["pid"], registration["identity"]["pgid"])
+        self.assertEqual(registration["identity"]["ppid"], os.getpid())
+        self.assertTrue(registration["identity"]["started"])
+
+    @unittest.skipIf(os.name == "nt", "POSIX session registration")
+    def test_owned_session_timeout_preserves_marker_and_primary_failure(self):
+        output = io.StringIO()
+        with redirect_stdout(output), self.assertRaises(subprocess.TimeoutExpired) as raised:
+            self.matrix._run_with_liveness(
+                [sys.executable, "-u", "-c", "import time; print('timeout control'); time.sleep(1)"],
+                cwd=REPOSITORY, environment={**os.environ, "MC_ANALYSIS_SESSION_TOKEN": "timeout-session-control"},
+                timeout_seconds=.15, row_id="timeout-control",
+            )
+        self.assertIn("MC_ANALYSIS_OWNED_SESSION ", output.getvalue())
+        self.assertIn("timeout control", raised.exception.output)
+        self.assertEqual(raised.exception.timeout, .15)
 
     def test_timeout_kills_descendant_holding_pipe_after_command_exits(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -86,6 +119,83 @@ class AnalysisMatrixTests(unittest.TestCase):
             self.assertIn("partial probe", result["diagnostics"])
             self.assertIn("\ufffd", result["diagnostics"])
             self.assertIn("stderr retained", result["diagnostics"])
+
+    @unittest.skipIf(os.name == "nt", "POSIX process-group permission failure")
+    def test_timeout_retains_output_when_group_kill_is_denied_and_pipe_drain_times_out(self):
+        process = mock.Mock(pid=42)
+        process.communicate.side_effect = [
+            subprocess.TimeoutExpired(["ctest"], 1, output=b"646/729 tests\npartial\xff"),
+            subprocess.TimeoutExpired(["ctest"], 5, output=b"646/729 tests\npartial\xff\nlast output"),
+        ]
+        with mock.patch.object(self.matrix.subprocess, "Popen", return_value=process), \
+                mock.patch.object(self.matrix.os, "killpg", side_effect=[None, PermissionError("SIGKILL denied")]) as killpg, \
+                mock.patch.object(self.matrix.time, "monotonic", side_effect=[0, 0, 1, 1]):
+            with self.assertRaises(subprocess.TimeoutExpired) as raised:
+                self.matrix._run_with_liveness(["ctest"], cwd=REPOSITORY, environment={}, timeout_seconds=1, row_id="permission-test")
+        self.assertEqual(raised.exception.cmd, ["ctest"])
+        self.assertEqual(raised.exception.timeout, 1)
+        self.assertIn("646/729 tests\npartial\ufffd\nlast output", raised.exception.output)
+        self.assertIn("process-tree cleanup failed for PID 42", raised.exception.stderr)
+        self.assertIn("SIGKILL denied", raised.exception.stderr)
+        self.assertIn("output drain failed", raised.exception.stderr)
+        self.assertIn("containment unconfirmed", raised.exception.stderr)
+        self.assertEqual(killpg.call_count, 2)
+        process.communicate.assert_called_with(timeout=5)
+        process.stdout.close.assert_called_once_with()
+        self.assertTrue(all(call.kwargs.get("timeout") == 5 for call in process.wait.call_args_list))
+
+    @unittest.skipIf(os.name == "nt", "POSIX process-group permission failure")
+    def test_row_receipt_retains_original_timeout_output_and_cleanup_permission_failure(self):
+        row = self.manifest["rows"][0]
+        real_run = self.matrix._run_with_liveness
+        process = mock.Mock(pid=42)
+        process.communicate.side_effect = [subprocess.TimeoutExpired(["ctest"], 1, output=b"646/729 completed\n"), ("646/729 completed\n", None)]
+
+        def timed_out_command(argv, **kwargs):
+            with mock.patch.object(self.matrix.subprocess, "Popen", return_value=process), \
+                    mock.patch.object(self.matrix.os, "killpg", side_effect=PermissionError("group cleanup denied")), \
+                    mock.patch.object(self.matrix.time, "monotonic", side_effect=[0, 0, 1, 1]):
+                return real_run(argv, cwd=kwargs["cwd"], environment=kwargs["environment"], timeout_seconds=1, row_id=row["id"])
+
+        with tempfile.TemporaryDirectory() as directory, mock.patch.object(self.matrix, "require_clean_checkout"), \
+                self.patch_row_execution(row, timed_out_command):
+            receipt = Path(directory) / "failed-row.json"
+            result = self.matrix.run_row(row["id"], receipt, MANIFEST_PATH, root=REPOSITORY, expected_candidate=CANDIDATE)
+            retained = json.loads(receipt.read_text(encoding="utf-8"))
+        self.assertEqual(result, retained)
+        self.assertEqual(retained["rows"][0]["status"], "failed")
+        self.assertIn("timed out after 1 seconds", retained["rows"][0]["diagnostics"])
+        self.assertIn("646/729 completed", retained["rows"][0]["diagnostics"])
+        self.assertIn("group cleanup denied", retained["rows"][0]["diagnostics"])
+        self.assertIn("containment unconfirmed", retained["rows"][0]["diagnostics"])
+        self.assertEqual(retained["rows"][0]["executed_commands"], [])
+
+    def test_timeout_retains_partial_output_when_final_pipe_read_raises_oserror(self):
+        process = mock.Mock(pid=42)
+        process.communicate.side_effect = OSError("pipe read denied")
+        with mock.patch.object(self.matrix, "_terminate_process_tree"):
+            with self.assertRaises(subprocess.TimeoutExpired) as raised:
+                self.matrix._raise_timeout_after_cleanup(process, ["ctest"], 600, "646/729 completed")
+        self.assertEqual(raised.exception.output, "646/729 completed")
+        self.assertEqual(raised.exception.timeout, 600)
+        self.assertIn("output drain failed", raised.exception.stderr)
+        self.assertIn("pipe read denied", raised.exception.stderr)
+        self.assertIn("containment unconfirmed", raised.exception.stderr)
+        process.communicate.assert_called_once_with(timeout=5)
+
+    @unittest.skipIf(os.name == "nt", "POSIX process-group bounded wait contract")
+    def test_timeout_cleanup_never_reaps_with_an_unbounded_wait(self):
+        process = mock.Mock(pid=42)
+        process.wait.side_effect = subprocess.TimeoutExpired(["ctest"], 5)
+        process.communicate.return_value = ("retained partial output", None)
+        with mock.patch.object(self.matrix.os, "killpg"):
+            with self.assertRaises(subprocess.TimeoutExpired) as raised:
+                self.matrix._raise_timeout_after_cleanup(process, ["ctest"], 600, "retained partial output")
+        self.assertIn("process-tree cleanup failed", raised.exception.stderr)
+        self.assertIn("containment unconfirmed", raised.exception.stderr)
+        self.assertEqual(process.wait.call_count, 3)
+        self.assertTrue(all(call.kwargs == {"timeout": 5} for call in process.wait.call_args_list))
+        process.kill.assert_called_once_with()
 
     def test_missing_probe_remains_unavailable(self):
         with mock.patch.object(self.matrix, "_run_with_liveness", side_effect=FileNotFoundError("missing")):
@@ -166,7 +276,7 @@ class AnalysisMatrixTests(unittest.TestCase):
                 name: declared_environment[name]
                 for name in manifest_row.get("environment", {})
             }
-            probe_environment = {**environment, **row_environment}
+            probe_environment = declared_environment
             effective_commands = self.matrix._effective_command_argv(manifest_row, probe_environment)
             tools = [
                 {
@@ -269,13 +379,14 @@ class AnalysisMatrixTests(unittest.TestCase):
                             "Vulkan_LIBRARY": str(host_path_type(sdk_root) / "Lib" / "vulkan-1.lib"),
                             "Vulkan_GLSLC_EXECUTABLE": str(host_path_type(sdk_root) / "Bin" / "glslc.exe"),
                             "MC_SPIRV_VAL_EXECUTABLE": str(host_path_type(sdk_root) / "Bin" / "spirv-val.exe"),
+                            "MC_VULKAN_RUNTIME_DLL": r"C:\Windows\System32\vulkan-1.dll",
                             "CMAKE_CXX_COMPILER": r"C:\captured\VC\Tools\MSVC\14.44.35207\bin\Hostx64\x64\cl.exe",
                             "CMAKE_LINKER": r"C:\captured\VC\Tools\MSVC\14.44.35207\bin\Hostx64\x64\link.exe",
                         }
                     )
                     if row_id == "windows_msvc_asan":
                         cache_values["MC_SANITIZER"] = "address"
-                    runtime_loader_path = str(host_path_type(sdk_root) / "Bin" / "vulkan-1.dll")
+                    runtime_loader_path = cache_values["MC_VULKAN_RUNTIME_DLL"]
                 else:
                     include_directory = "/captured/vcpkg/arm64-osx/include"
                     cache_values.update(
@@ -352,7 +463,10 @@ class AnalysisMatrixTests(unittest.TestCase):
                     "python": "3.test",
                 },
                 "environment": {
-                    **{name: environment.get(name, "<unset>") for name in self.matrix.IDENTITY_ENVIRONMENT},
+                    **{
+                        name: declared_environment.get(name, "<unset>")
+                        for name in self.matrix.IDENTITY_ENVIRONMENT
+                    },
                     "MC_ANALYSIS_ROOT": environment["MC_ANALYSIS_ROOT"],
                 },
                 "row_environment": row_environment,
@@ -451,7 +565,9 @@ class AnalysisMatrixTests(unittest.TestCase):
 
     def patch_row_execution(self, row, command_side_effect):
         row["platform"] = self.matrix._host_platform()
-        environment = self.matrix.resolve_row_environment(row, REPOSITORY, {})
+        environment = self.matrix.resolve_row_environment(
+            row, REPOSITORY, {"CXXFLAGS": "-nostdinc++ -isystem /captured/sdk/usr/include/c++/v1"}
+        )
         tool_identities = [
             {"probe_argv": self.matrix._expand_environment(probe, environment)}
             for probe in row["tool_probes"]
@@ -912,10 +1028,79 @@ class AnalysisMatrixTests(unittest.TestCase):
         self.assertEqual(
             row["commands"],
             [
-                ["cmake", "--preset", "analysis-clang-static"],
+                [
+                    "cmake",
+                    "--preset",
+                    "analysis-clang-static",
+                    "-DCMAKE_CXX_FLAGS={env:CXXFLAGS} -Xanalyzer -analyzer-output=text",
+                ],
                 ["cmake", "--build", "--preset", "analysis-clang-static"],
             ],
         )
+        self.assertIn("CXXFLAGS", self.matrix.REQUIRED_ROW_ENVIRONMENT["clang_static_analysis"])
+
+        cxxflags = "-nostdinc++ -isystem /captured/sdk/usr/include/c++/v1 -stdlib=libc++"
+        environment = self.matrix.resolve_row_environment(row, REPOSITORY, {"CXXFLAGS": cxxflags})
+        effective_commands = self.matrix._effective_command_argv(row, environment)
+        self.assertEqual(
+            effective_commands[0][-1],
+            f"-DCMAKE_CXX_FLAGS={cxxflags} -Xanalyzer -analyzer-output=text",
+        )
+        self.assertTrue(
+            any(
+                effective_commands[1][index : index + 2] == ["--parallel", "2"]
+                for index in range(len(effective_commands[1]) - 1)
+            )
+        )
+        self.assertIn("--verbose", effective_commands[1])
+
+    def test_every_matrix_build_command_is_capped_at_two_parallel_jobs(self):
+        for row in self.manifest["rows"]:
+            inherited_environment = {
+                name: f"/captured/{name.lower()}"
+                for name in self.matrix.IDENTITY_ENVIRONMENT
+            }
+            inherited_environment["CXXFLAGS"] = "-isystem /captured/sdk/usr/include/c++/v1"
+            environment = self.matrix.resolve_row_environment(
+                row, REPOSITORY, inherited_environment
+            )
+            for command in self.matrix._effective_command_argv(row, environment):
+                if command[:2] == ["cmake", "--build"]:
+                    with self.subTest(row=row["id"]):
+                        self.assertTrue(
+                            any(
+                                command[index : index + 2] == ["--parallel", "2"]
+                                for index in range(len(command) - 1)
+                            )
+                        )
+
+    def test_analyzer_builds_collect_all_findings_without_ignoring_failures(self):
+        for row in self.manifest["rows"]:
+            environment = {
+                name: f"/captured/{name.lower()}"
+                for name in self.matrix.IDENTITY_ENVIRONMENT
+            }
+            environment["CXXFLAGS"] = "-isystem /captured/sdk/usr/include/c++/v1"
+            resolved = self.matrix.resolve_row_environment(row, REPOSITORY, environment)
+            for command in self.matrix._effective_command_argv(row, resolved):
+                if command[:2] != ["cmake", "--build"]:
+                    continue
+                with self.subTest(row=row["id"]):
+                    if row["id"] in self.matrix.REQUIRED_ANALYSIS_CONFIGURATION:
+                        self.assertEqual(command[-3:], ["--", "-k", "0"])
+                        self.assertEqual(command.count("--"), 1)
+                        self.assertLess(command.index("--parallel"), command.index("--"))
+                        self.assertLess(command.index("--verbose"), command.index("--"))
+                    else:
+                        self.assertNotIn("-k", command)
+
+    def test_tsan_runs_the_full_suite_with_bounded_test_parallelism(self):
+        row = next(item for item in self.manifest["rows"] if item["id"] == "macos_tsan")
+        self.assertEqual(row["timeout_seconds"], 600)
+        self.assertEqual(row["commands"][-1], [
+            "ctest", "--test-dir", "build/analysis-macos-tsan",
+            "--output-on-failure", "--no-tests=error", "--parallel", "2",
+        ])
 
     def test_msvc_rows_use_zero_exit_version_probe_and_keep_required_analysis_commands(self):
         rows = {row["id"]: row for row in self.manifest["rows"]}
@@ -931,7 +1116,10 @@ class AnalysisMatrixTests(unittest.TestCase):
                     [
                         ["cmake", "--preset", preset],
                         ["cmake", "--build", "--preset", preset],
-                        ["ctest", "--test-dir", build_directory, "--output-on-failure", "--no-tests=error"],
+                        [
+                            "ctest", "--test-dir", build_directory, "--output-on-failure",
+                            "--no-tests=error", "--parallel", "4",
+                        ],
                     ],
                 )
 
@@ -1089,6 +1277,7 @@ class AnalysisMatrixTests(unittest.TestCase):
                     (
                         r"MC_BUILD_CLIENT:BOOL=ON",
                         r"MC_SPIRV_VAL_EXECUTABLE:FILEPATH=C:/sdk/Bin/spirv-val.exe",
+                        r"MC_VULKAN_RUNTIME_DLL:FILEPATH=C:/Windows/System32/vulkan-1.dll",
                         r"Vulkan_INCLUDE_DIR:PATH=C:/vcpkg/include",
                         r"Vulkan_LIBRARY:FILEPATH=C:/sdk/Lib/vulkan-1.lib",
                         r"Vulkan_GLSLC_EXECUTABLE:FILEPATH=C:/sdk/Bin/glslc.exe",
@@ -1104,6 +1293,7 @@ class AnalysisMatrixTests(unittest.TestCase):
             for name in (
                 "MC_BUILD_CLIENT",
                 "MC_SPIRV_VAL_EXECUTABLE",
+                "MC_VULKAN_RUNTIME_DLL",
                 "Vulkan_INCLUDE_DIR",
                 "Vulkan_LIBRARY",
                 "Vulkan_GLSLC_EXECUTABLE",
@@ -1128,6 +1318,39 @@ class AnalysisMatrixTests(unittest.TestCase):
         self.rehash_input_identity(row)
         with self.assertRaisesRegex(self.matrix.MatrixError, "differs from captured VULKAN_SDK"):
             self.matrix.validate_receipt(receipt, self.manifest, CANDIDATE)
+
+    def test_offline_windows_loader_must_match_explicit_cached_runtime(self):
+        receipt = self.receipt()
+        self.matrix.validate_receipt(receipt, self.manifest, CANDIDATE)
+        row = next(row for row in receipt["rows"] if row["id"] == "windows_msvc_analyze")
+        row["input_identity"]["toolchain_resources"]["vulkan"]["runtime_loader"]["path"] = (
+            r"C:\captured\vulkan-sdk\Bin\vulkan-1.dll"
+        )
+        self.rehash_input_identity(row)
+        with self.assertRaisesRegex(self.matrix.MatrixError, "does not match its selected CMake/environment path"):
+            self.matrix.validate_receipt(receipt, self.manifest, CANDIDATE)
+
+    def test_offline_identity_uses_recorded_platform_not_verifier_path_flavor(self):
+        receipt = self.receipt()
+        with mock.patch.object(self.matrix, "Path", self.matrix.PureWindowsPath):
+            for row in receipt["rows"]:
+                with self.subTest(row=row["id"]):
+                    manifest_row = next(item for item in self.manifest["rows"] if item["id"] == row["id"])
+                    self.matrix._validate_input_identity(row, manifest_row)
+
+    def test_offline_windows_loader_requires_selected_absolute_cache_path(self):
+        for selected in (None, "vulkan-1.dll"):
+            with self.subTest(selected=selected):
+                receipt = self.receipt()
+                row = next(row for row in receipt["rows"] if row["id"] == "windows_msvc_analyze")
+                values = row["input_identity"]["effective_cmake_cache"]["values"]
+                if selected is None:
+                    values.pop("MC_VULKAN_RUNTIME_DLL")
+                else:
+                    values["MC_VULKAN_RUNTIME_DLL"] = selected
+                self.rehash_input_identity(row)
+                with self.assertRaisesRegex(self.matrix.MatrixError, "absolute MC_VULKAN_RUNTIME_DLL"):
+                    self.matrix.validate_receipt(receipt, self.manifest, CANDIDATE)
 
     def test_offline_windows_msvc_asan_runtime_must_match_cached_linker_directory(self):
         receipt = self.receipt()
@@ -1189,6 +1412,68 @@ class AnalysisMatrixTests(unittest.TestCase):
             with mock.patch.object(self.matrix, "_git_dependency_identity", return_value={"path": "x", "revision": "1" * 40}):
                 with self.assertRaisesRegex(self.matrix.MatrixError, "vcpkg installed-file inventory is missing"):
                     self.matrix._external_dependency_identity(root, row, env)
+
+    def test_external_dependency_identity_does_not_require_analysis_flags(self):
+        row = next(row for row in self.manifest["rows"] if row["id"] == "macos_asan")
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            vcpkg_root = root / "vcpkg"
+            installed = root / "installed"
+            private_prefix = root / "private"
+            installed_header = installed / "arm64-osx/include/package.hpp"
+            inventory = installed / "vcpkg/info/package_1.0_arm64-osx.list"
+            private_header = private_prefix / "include/private.hpp"
+            installed_header.parent.mkdir(parents=True)
+            inventory.parent.mkdir(parents=True)
+            private_header.parent.mkdir(parents=True)
+            installed_header.write_text("struct InstalledPackage {};\n", encoding="utf-8")
+            inventory.write_text("arm64-osx/include/package.hpp\n", encoding="utf-8")
+            private_header.write_text("struct PrivateDependency {};\n", encoding="utf-8")
+            environment = {
+                "VCPKG_ROOT": str(vcpkg_root),
+                "VCPKG_INSTALLED_DIR": str(installed),
+                "MC_PRIVATE_DEPENDENCIES_PREFIX": str(private_prefix),
+            }
+
+            with mock.patch.object(
+                self.matrix,
+                "_git_dependency_identity",
+                return_value={"path": str(vcpkg_root), "revision": "1" * 40},
+            ):
+                identity = self.matrix._external_dependency_identity(root, row, environment)
+
+        self.assertEqual(
+            set(identity),
+            {"VCPKG_ROOT", "VCPKG_INSTALLED_DIR", "MC_PRIVATE_DEPENDENCIES_PREFIX"},
+        )
+        self.assertNotIn("CXXFLAGS", identity)
+
+    def test_macos_analysis_identity_and_execution_require_cxxflags(self):
+        row = next(row for row in self.manifest["rows"] if row["id"] == "macos_asan")
+        environment = {
+            "VCPKG_ROOT": "/captured/vcpkg",
+            "VCPKG_INSTALLED_DIR": "/captured/installed",
+            "MC_PRIVATE_DEPENDENCIES_PREFIX": "/captured/private",
+        }
+        with self.assertRaisesRegex(self.matrix.MatrixError, "requires environment variable CXXFLAGS"):
+            self.matrix._row_input_identity(REPOSITORY, row, environment, [])
+
+        with tempfile.TemporaryDirectory() as directory, \
+            mock.patch.object(self.matrix, "require_clean_checkout"), \
+            mock.patch.object(self.matrix, "_row_supported_on_host", return_value=True), \
+            mock.patch.object(self.matrix, "_capture_tool_probes") as capture_probes, \
+            mock.patch.dict(self.matrix.os.environ, environment, clear=True):
+            receipt = self.matrix.run_row(
+                row["id"],
+                Path(directory) / "row.json",
+                MANIFEST_PATH,
+                root=REPOSITORY,
+                expected_candidate=CANDIDATE,
+            )
+
+        self.assertEqual(receipt["rows"][0]["status"], "unavailable")
+        self.assertIn("CXXFLAGS", receipt["rows"][0]["diagnostics"])
+        capture_probes.assert_not_called()
 
     def test_vcpkg_triplet_inventory_hashes_dependency_files_and_skips_directories(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -2096,7 +2381,7 @@ class AnalysisMatrixTests(unittest.TestCase):
             row = next(row for row in self.manifest["rows"] if row["id"] == "linux_lsan")
             environment = {"MC_LSAN_LIBCXX_PREFIX": str(prefix)}
             with mock.patch.dict(
-                self.matrix.REQUIRED_ROW_ENVIRONMENT,
+                self.matrix.DEPENDENCY_ENVIRONMENT,
                 {"linux_lsan": ("MC_LSAN_LIBCXX_PREFIX",)},
             ):
                 first = self.matrix._external_dependency_identity(root, row, environment)
@@ -2158,44 +2443,76 @@ class AnalysisMatrixTests(unittest.TestCase):
         with self.assertRaisesRegex(self.matrix.MatrixError, r"escapes the instrumented libc\+\+ prefix"):
             self.matrix.validate_receipt(receipt, self.manifest, CANDIDATE)
 
-    def test_macos_address_row_uses_integrated_lsan_for_the_full_ctest_run(self):
+    def test_macos_address_row_keeps_integrated_lsan_controls_and_linux_lsan_required(self):
         row = next(row for row in self.manifest["rows"] if row["id"] == "macos_asan")
-        self.assertEqual(row["environment"].get("ASAN_OPTIONS"), "detect_leaks=1")
+        self.assertEqual(row["tool_probes"][0], ["python3", "--version"])
+        self.assertEqual(row["environment"]["ASAN_OPTIONS"], "detect_leaks=1")
         self.assertEqual(
-            row["environment"].get("LSAN_OPTIONS"),
+            row["environment"]["LSAN_OPTIONS"],
             "suppressions={env:MC_ANALYSIS_ROOT}/script/ci/macos_lsan.supp:print_suppressions=1",
         )
-        controls_index = next(
-            index
-            for index, command in enumerate(row["commands"])
-            if command[:3] == ["python", "script/ci/verify_macos_lsan.py", "controls"]
+        self.assertEqual(
+            row["commands"],
+            [
+                ["python3", "script/ci/verify_macos_lsan.py", "controls", "--build-dir", "build/analysis-macos-asan/lsan-controls"],
+                ["cmake", "--preset", "analysis-macos-asan"],
+                ["cmake", "--build", "--preset", "analysis-macos-asan"],
+                ["ctest", "--test-dir", "build/analysis-macos-asan", "--output-on-failure", "--no-tests=error"],
+                ["python3", "script/ci/verify_macos_lsan.py", "summarize", "--last-test-log", "build/analysis-macos-asan/Testing/Temporary/LastTest.log"],
+            ],
         )
+        self.assertEqual(
+            self.matrix.ROW_INPUT_SCOPES["macos_asan"],
+            ("common", "macos_lsan"),
+        )
+        self.assertIn("linux_lsan", self.matrix.REQUIRED_ROW_IDS)
+        linux_lsan = next(row for row in self.manifest["rows"] if row["id"] == "linux_lsan")
+        self.assertEqual(linux_lsan["required_compile_flags"], ["-fsanitize=leak"])
+        self.assertTrue(linux_lsan.get("analysis_only"))
+        self.assertFalse(any(command[0] == "leaks" for command in row["commands"]))
         configure_index = row["commands"].index(["cmake", "--preset", "analysis-macos-asan"])
         build_index = row["commands"].index(["cmake", "--build", "--preset", "analysis-macos-asan"])
-        self.assertEqual(controls_index, 0)
-        self.assertLess(controls_index, configure_index)
-        self.assertLess(controls_index, build_index)
         ctest_index = next(index for index, command in enumerate(row["commands"]) if command[0] == "ctest")
         summary_index = next(
-            index
-            for index, command in enumerate(row["commands"])
-            if command[:3] == ["python", "script/ci/verify_macos_lsan.py", "summarize"]
+            index for index, command in enumerate(row["commands"]) if command[1:3] == ["script/ci/verify_macos_lsan.py", "summarize"]
         )
+        controls_index = next(
+            index for index, command in enumerate(row["commands"]) if command[1:3] == ["script/ci/verify_macos_lsan.py", "controls"]
+        )
+        self.assertLess(controls_index, configure_index)
         self.assertLess(build_index, ctest_index)
         self.assertLess(ctest_index, summary_index)
-        self.assertFalse(any(command[0] == "leaks" for command in row["commands"]))
-        self.assertFalse(any(probe[0] == "leaks" for probe in row["tool_probes"]))
-        self.assertFalse(any("leaks" in flag for flag in row["flags"]))
 
     def test_matrix_row_environment_resolves_checkout_root_placeholders(self):
         row = next(row for row in self.manifest["rows"] if row["id"] == "macos_asan")
-        environment = self.matrix.resolve_row_environment(row, Path("/private/tmp/minecraft"), {})
+        environment = self.matrix.resolve_row_environment(
+            row,
+            Path("/private/tmp/minecraft"),
+            {"ASAN_OPTIONS": "detect_leaks=0", "LSAN_OPTIONS": "exitcode=0"},
+        )
         expected_root = str(Path("/private/tmp/minecraft").resolve())
         self.assertEqual(environment["MC_ANALYSIS_ROOT"], expected_root)
+        self.assertEqual(environment["ASAN_OPTIONS"], "detect_leaks=1")
         self.assertEqual(
             environment["LSAN_OPTIONS"],
             f"suppressions={expected_root}/script/ci/macos_lsan.supp:print_suppressions=1",
         )
+
+    def test_macos_asan_rejects_manifest_that_disables_integrated_leak_detection(self):
+        manifest = copy.deepcopy(self.manifest)
+        row = next(row for row in manifest["rows"] if row["id"] == "macos_asan")
+        row["environment"]["ASAN_OPTIONS"] = "detect_leaks=0"
+        with self.assertRaisesRegex(self.matrix.MatrixError, "integrated LeakSanitizer policy"):
+            self.matrix.validate_manifest(manifest)
+
+    def test_macos_asan_identity_rejects_inherited_leak_disabling_override(self):
+        receipt = self.receipt()
+        row = next(row for row in receipt["rows"] if row["id"] == "macos_asan")
+        self.assertEqual(row["input_identity"]["environment"]["ASAN_OPTIONS"], "detect_leaks=1")
+        row["input_identity"]["environment"]["ASAN_OPTIONS"] = "detect_leaks=0"
+        self.rehash_input_identity(row)
+        with self.assertRaisesRegex(self.matrix.MatrixError, "effective row options"):
+            self.matrix.validate_receipt(receipt, self.manifest, CANDIDATE)
 
     def test_linux_presets_are_tests_only_and_use_distinct_sanitizers(self):
         presets = json.loads((REPOSITORY / "CMakePresets.json").read_text(encoding="utf-8"))
@@ -2299,6 +2616,19 @@ class AnalysisMatrixTests(unittest.TestCase):
             row["environment"].get("UBSAN_OPTIONS"),
             "halt_on_error=1:print_stacktrace=1",
         )
+
+    def test_windows_ctest_rows_run_complete_suites_with_bounded_parallelism(self):
+        for row in self.manifest["rows"]:
+            if row["id"] not in ("windows_msvc_asan", "windows_msvc_analyze"):
+                continue
+            commands = [command for command in row["commands"] if command[0] == "ctest"]
+            self.assertEqual(len(commands), 1, row["id"])
+            with self.subTest(row_id=row["id"]):
+                command = commands[0]
+                self.assertIn("--no-tests=error", command)
+                self.assertIn("--parallel", command)
+                self.assertEqual(command[command.index("--parallel") + 1], "4")
+                self.assertFalse(set(command) & {"-R", "-E", "-I", "--tests-from-file", "--exclude-from-file"})
 
     def test_android_hwasan_release_has_an_isolated_application_id(self):
         build_gradle = (REPOSITORY / "android/app/build.gradle").read_text(encoding="utf-8")

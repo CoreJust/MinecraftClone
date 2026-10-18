@@ -1583,7 +1583,7 @@ class AiCheckTests(unittest.TestCase):
         self.assertNotIn("build", calls)
         self.assertNotIn("ctest", calls)
 
-    def test_unknown_tooling_mixed_with_native_changes_keeps_full_python_scope(self):
+    def test_unknown_tooling_mixed_with_native_changes_keeps_python_and_source_checks(self):
         checker = load_module()
         changed = {"src/fixture.cpp", "publish.py"}
         calls = []
@@ -1596,7 +1596,19 @@ class AiCheckTests(unittest.TestCase):
             self.assertEqual(checker.main(["--root", str(self.root), "--fast"]), 0)
         self.assertIn("full-python", output.getvalue())
         self.assertIn("python-tests", calls)
-        self.assertNotIn("source-checks", calls)
+        self.assertIn("source-checks", calls)
+
+    def test_mixed_native_and_tooling_changes_propagate_source_policy_failure(self):
+        checker = load_module()
+
+        def run_phase(root, log_dir, name, command, timeout, **kwargs):
+            return checker.PhaseResult(name, command, 1 if name == "source-checks" else 0, "source policy failed")
+
+        with mock.patch.object(checker, "changed_scope", return_value=("full-python", ["src/fixture.cpp", "publish.py"])), \
+                mock.patch.object(checker, "run_phase", side_effect=run_phase), \
+                contextlib.redirect_stdout(io.StringIO()) as output:
+            self.assertEqual(checker.main(["--root", str(self.root), "--fast"]), 1)
+        self.assertIn("FAIL source-checks", output.getvalue())
 
     def test_fast_cpp_source_policy_failure_propagates_without_python_suite(self):
         (self.root / "CMakePresets.json").write_text("{}\n", encoding="utf-8")

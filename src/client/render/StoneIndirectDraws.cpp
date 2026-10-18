@@ -106,20 +106,21 @@ StoneIndirectDraws::AllocationError::AllocationError(VkResult const result, char
 
 std::array<uint16_t, StoneIndirectDraws::INDEX_COUNT_PER_BLOCK> const& StoneIndirectDraws::quadIndexBlock() noexcept
 {
-    static std::array<uint16_t, INDEX_COUNT_PER_BLOCK> const indices = [] {
-        std::array<uint16_t, INDEX_COUNT_PER_BLOCK> generated{};
+    static std::array<uint16_t, INDEX_COUNT_PER_BLOCK> indices{};
+    static bool const initialized = []() noexcept {
         for (uint32_t quad_index = 0U; quad_index < QUADS_PER_INDEX_BLOCK; ++quad_index) {
             uint32_t const index_offset = quad_index * STONE_INDEX_COUNT_PER_QUAD;
             uint16_t const vertex_offset = static_cast<uint16_t>(quad_index * STONE_VERTEX_COUNT_PER_QUAD);
-            generated[index_offset] = vertex_offset;
-            generated[index_offset + 1U] = static_cast<uint16_t>(vertex_offset + 1U);
-            generated[index_offset + 2U] = static_cast<uint16_t>(vertex_offset + 2U);
-            generated[index_offset + 3U] = vertex_offset;
-            generated[index_offset + 4U] = static_cast<uint16_t>(vertex_offset + 2U);
-            generated[index_offset + 5U] = static_cast<uint16_t>(vertex_offset + 3U);
+            indices[index_offset] = vertex_offset;
+            indices[index_offset + 1U] = static_cast<uint16_t>(vertex_offset + 1U);
+            indices[index_offset + 2U] = static_cast<uint16_t>(vertex_offset + 2U);
+            indices[index_offset + 3U] = vertex_offset;
+            indices[index_offset + 4U] = static_cast<uint16_t>(vertex_offset + 2U);
+            indices[index_offset + 5U] = static_cast<uint16_t>(vertex_offset + 3U);
         }
-        return generated;
+        return true;
     }();
+    static_cast<void>(initialized);
     return indices;
 }
 

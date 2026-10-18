@@ -1102,7 +1102,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         ("diff-working", ["git", "diff", "--check"], 30, False),
         ("diff-cached", ["git", "diff", "--cached", "--check"], 30, False),
     ]
-    if not args.proof_only and args.fast and scope == "full-cpp":
+    native_changes = scope == "full-cpp" or any(
+        name in NATIVE_BUILD_FILES or name.startswith(NATIVE_BUILD_PREFIXES)
+        for name in changed
+    )
+    if not args.proof_only and args.fast and native_changes:
         try:
             names, version = project_version_arguments(root)
             phase_specs.append(
