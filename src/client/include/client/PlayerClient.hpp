@@ -63,6 +63,8 @@ struct PlayerClientCapturePlan final {
 [[nodiscard]] std::array<PlayerClientCapturePreset, 4> playerClientCapturePresets() noexcept;
 [[nodiscard]] uint16_t playerClientCaptureSpeedup(int64_t distance_subcells) noexcept;
 [[nodiscard]] std::chrono::milliseconds playerClientRendererFrameBudget(bool capture_enabled) noexcept;
+[[nodiscard]] std::chrono::steady_clock::time_point playerClientPresentationDeadline(
+    std::chrono::steady_clock::time_point render_started_at, bool capture_enabled) noexcept;
 [[nodiscard]] std::chrono::steady_clock::time_point playerClientPreviewMeshWorkDeadline(
     std::chrono::steady_clock::time_point renderer_deadline,
     std::chrono::steady_clock::time_point mesh_work_started_at) noexcept;
@@ -258,6 +260,32 @@ struct PlayerClientBenchmarkTerrainInfo final {
     PlayerClientMeshResultDrainDiagnostics mesh_result_drain;
 };
 
+struct PlayerMeshEpisodeSummary final {
+    uint64_t entered_count = 0U;
+    uint64_t completed_count = 0U;
+    uint64_t censored_count = 0U;
+    uint64_t completed_total_ns = 0U;
+    uint64_t completed_max_ns = 0U;
+    uint64_t censored_max_ns = 0U;
+    uint64_t tracked_count = 0U;
+    uint64_t pending_count = 0U;
+    uint64_t oldest_pending_ns = 0U;
+    uint64_t oldest_resident_pending_ns = 0U;
+    // Upper bounds: 100ms, 250ms, 500ms, 1s, 2s, 5s, then unbounded.
+    std::array<uint64_t, 7U> completed_latency_buckets{};
+    std::array<uint64_t, 7U> censored_latency_buckets{};
+    uint64_t never_resident_censored_count = 0U;
+    uint64_t resident_censored_count = 0U;
+    uint64_t resident_censored_max_wait_ns = 0U;
+    std::array<uint64_t, 7U> never_resident_censored_entry_latency_buckets{};
+    std::array<uint64_t, 7U> resident_censored_wait_latency_buckets{};
+    std::array<uint64_t, 7U> resident_at_departure_censored_entry_latency_buckets{};
+    std::array<uint64_t, 7U> nonresident_at_departure_censored_entry_latency_buckets{};
+    uint64_t unknown_departure_residency_censored_count = 0U;
+    std::array<uint64_t, 16U> pending_by_current_band{};
+    std::array<uint64_t, 16U> oldest_pending_ns_by_current_band{};
+};
+
 struct PlayerClientBenchmarkFullTerrainInfo final {
     std::optional<shared::HeightTileKey> center;
     bool scan_performed = false;
@@ -303,10 +331,34 @@ struct PlayerClientBenchmarkFullTerrainInfo final {
         uint32_t stale_or_missing_mesh_count = 0U;
     };
     std::array<RadialBand, PLAYER_CLIENT_BENCHMARK_FULL_TERRAIN_RADIAL_BAND_COUNT> radial_bands{};
+    std::optional<PlayerMeshEpisodeSummary> mesh_episodes;
 };
 
 struct PlayerHeightTileKeyHash final {
     [[nodiscard]] size_t operator()(shared::HeightTileKey key) const noexcept;
+};
+
+// Diagnostic-only first-publication episodes. Completed keys retain membership,
+// not history; departure retires the entry, so re-entry starts a new episode.
+class PlayerMeshEpisodes final {
+public:
+    using Clock = std::chrono::steady_clock;
+    void enter(shared::HeightTileKey key, Clock::time_point now);
+    void resident(shared::HeightTileKey key, Clock::time_point now);
+    void published(shared::HeightTileKey key, Clock::time_point now);
+    void leave(shared::HeightTileKey key, Clock::time_point now,
+        std::optional<bool> resident_at_departure = std::nullopt);
+    void leaveAll(Clock::time_point now);
+    [[nodiscard]] PlayerMeshEpisodeSummary snapshot(shared::HeightTileKey center, Clock::time_point now) const;
+
+private:
+    struct Episode final {
+        Clock::time_point entered_at;
+        std::optional<Clock::time_point> resident_at;
+        bool completed = false;
+    };
+    std::unordered_map<shared::HeightTileKey, Episode, PlayerHeightTileKeyHash> m_current;
+    PlayerMeshEpisodeSummary m_totals;
 };
 
 class PlayerPreviewMeshCoverage final {
@@ -371,8 +423,8 @@ public:
     void clear() noexcept;
     void reserveStorage(uint32_t maximum_pending);
     [[nodiscard]] StorageStats storageStats() const noexcept;
-    [[nodiscard]] bool push(shared::HeightTileKey key);
-    void pushBatch(std::span<shared::HeightTileKey const> keys);
+    [[nodiscard]] bool push(shared::HeightTileKey key, bool missing_current_mesh = false);
+    void pushBatch(std::span<shared::HeightTileKey const> keys, bool missing_current_mesh = false);
     void resetPriority(
         shared::HeightTileKey center,
         int8_t heading_x,
@@ -395,7 +447,7 @@ public:
     ) const noexcept;
     [[nodiscard]] bool empty() const noexcept;
     [[nodiscard]] bool hasReady() const noexcept;
-    // Consumes only the caller's remaining stale-head budget; unranked work stays deferred.
+    // Consumes only the caller's remaining stale-head budget; refreshed entries may progress before the backlog.
     [[nodiscard]] bool prepareReady(uint32_t& maintenance_budget) noexcept;
     [[nodiscard]] size_t size() const noexcept;
     [[nodiscard]] shared::HeightTileKey top() const noexcept;
@@ -405,20 +457,30 @@ public:
 
 private:
     class RetirementState;
+    struct Ticket final {
+        uint64_t id;
+        bool missing_current_mesh;
+    };
     struct Entry final {
         double priority;
         shared::HeightTileKey key;
         uint64_t ticket;
+        bool missing_current_mesh;
     };
-    [[nodiscard]] Entry entryFor(shared::HeightTileKey key, uint64_t ticket) const noexcept;
+    struct Lane final {
+        std::vector<Entry> heap;
+        std::deque<std::vector<Entry>> unranked;
+    };
+    [[nodiscard]] Entry entryFor(shared::HeightTileKey key, Ticket ticket) const noexcept;
     [[nodiscard]] bool isCurrent(Entry const& entry) const noexcept;
-    [[nodiscard]] uint32_t pruneReadyHeap(uint32_t maximum_entries) noexcept;
+    [[nodiscard]] bool laneHasReady(Lane const& lane) const noexcept;
+    [[nodiscard]] uint32_t pruneReadyHeap(Lane& lane, uint32_t maximum_entries) noexcept;
     [[nodiscard]] static bool lowerPriority(Entry const& first, Entry const& second) noexcept;
-    void ensureHeapCapacity(uint64_t required_entries);
+    void ensureHeapCapacity(Lane& lane, uint64_t required_entries);
 
-    std::vector<Entry> m_heap;
-    std::deque<std::vector<Entry>> m_unranked;
-    std::unordered_map<shared::HeightTileKey, uint64_t, PlayerHeightTileKeyHash> m_tickets;
+    // Both lanes share ticket ownership, retirement storage and the caller's maintenance budget.
+    std::array<Lane, 2U> m_lanes;
+    std::unordered_map<shared::HeightTileKey, Ticket, PlayerHeightTileKeyHash> m_tickets;
     std::unique_ptr<RetirementState> m_retirement;
     uint64_t m_next_ticket = 1U;
     shared::HeightTileKey m_center{};
@@ -618,6 +680,7 @@ private:
     mutable std::array<PreviewMeshPendingAge, PLAYER_CLIENT_BENCHMARK_TERRAIN_NEAR_TILE_COUNT>
         m_preview_mesh_pending_ages{};
     PlayerClientMeshResultDrainDiagnostics m_mesh_result_drain_diagnostics{};
+    PlayerMeshEpisodes m_mesh_episodes;
     std::unordered_map<shared::HeightTileKey, shared::HeightTileSurfaceMesh, PlayerHeightTileKeyHash>
         m_visible_preview_mesh_bases;
     std::unordered_map<

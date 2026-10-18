@@ -181,6 +181,144 @@ double projectedPatchArea(
 
 } // namespace
 
+TEST(HeightTileSurfaceMesherTest, EdgeProfilesPreserveClippedSpansOverwriteOrderAndPointWalls)
+{
+    static constexpr std::array EDGES{
+        shared::HeightTileSurfaceDirection::NegativeX,
+        shared::HeightTileSurfaceDirection::PositiveX,
+        shared::HeightTileSurfaceDirection::NegativeY,
+        shared::HeightTileSurfaceDirection::PositiveY,
+    };
+    static constexpr std::array COORDINATES{
+        shared::HeightTileCoordinate{ -1, -1 }, shared::HeightTileCoordinate{ 4095, 4095 },
+    };
+    static constexpr std::array<uint16_t, 16U> EXPECTED_TOP{
+        10U, 10U, 20U, 20U, 20U, 10U, 10U, 10U,
+        10U, 10U, 10U, 10U, 10U, 10U, 10U, 10U,
+    };
+    for (auto const coordinate : COORDINATES) {
+        for (auto const edge : EDGES) {
+            bool const x_edge = edge == EDGES[0U] || edge == EDGES[1U];
+            int32_t const boundary = edge == EDGES[0U] || edge == EDGES[2U] ? 0 : 15;
+            int32_t const origin_x = coordinate.x * 16;
+            int32_t const origin_y = coordinate.y * 16;
+            shared::HeightTileSurfaceMesh mesh{ .coordinate = coordinate };
+            auto const top = [&](
+                int32_t const perpendicular, int32_t const along,
+                uint16_t const perpendicular_span, uint16_t const along_span,
+                int32_t const height) {
+                mesh.quads.push_back({
+                    .x = origin_x + (x_edge ? boundary + perpendicular : along),
+                    .y = origin_y + (x_edge ? along : boundary + perpendicular),
+                    .z = height - 1,
+                    .direction = shared::HeightTileSurfaceDirection::PositiveZ,
+                    .u_extent = x_edge ? perpendicular_span : along_span,
+                    .v_extent = x_edge ? along_span : perpendicular_span,
+                });
+            };
+            auto const wall = [&](
+                int32_t const perpendicular, int32_t const along,
+                int32_t const lower, uint16_t const span, uint16_t const height) {
+                mesh.quads.push_back({
+                    .x = origin_x + (x_edge ? boundary + perpendicular : along),
+                    .y = origin_y + (x_edge ? along : boundary + perpendicular),
+                    .z = lower,
+                    .direction = edge,
+                    .u_extent = span,
+                    .v_extent = height,
+                });
+            };
+            top(-1, -2, 18U, 20U, 10);
+            top(0, 2, 1U, 3U, 20);
+            top(1, 0, 1U, 16U, 99);
+            top(-1, 0, 1U, 16U, 99);
+            top(0, -1, 1U, 1U, 99);
+            top(0, 16, 1U, 1U, 99);
+            top(0, 0, 0U, 16U, 99);
+            top(0, 0, 1U, 0U, 99);
+            wall(0, -2, 4, 5U, 2U);
+            wall(0, 14, 30, 4U, 3U);
+            wall(1, 0, 1, 16U, 100U);
+            wall(-1, 0, 1, 16U, 100U);
+            wall(0, 0, 1, 0U, 100U);
+            wall(0, -1, 1, 1U, 100U);
+            wall(0, 16, 1, 1U, 100U);
+            wall(0, 8, 3, 1U, 0U);
+            auto const profile = shared::heightTileSurfaceEdgeProfile(mesh, edge);
+            EXPECT_EQ(profile.top, EXPECTED_TOP);
+            EXPECT_EQ(profile.elevation.minimum, 3U);
+            EXPECT_EQ(profile.elevation.maximum, 33U);
+            shared::HeightTileSurfaceMesh point_only{ .coordinate = coordinate };
+            point_only.quads.push_back(mesh.quads.back());
+            auto const point_profile = shared::heightTileSurfaceEdgeProfile(point_only, edge);
+            EXPECT_EQ(point_profile.top, (std::array<uint16_t, 16U>{}));
+            EXPECT_EQ(point_profile.elevation.minimum, 0U);
+            EXPECT_EQ(point_profile.elevation.maximum, 3U);
+        }
+    }
+}
+
+TEST(HeightTileSurfaceMesherTest, ClippedWallCoverageLeavesExactGapsWithBothSeamOwners)
+{
+    static constexpr std::array EDGES{
+        shared::HeightTileSurfaceDirection::NegativeX,
+        shared::HeightTileSurfaceDirection::PositiveX,
+        shared::HeightTileSurfaceDirection::NegativeY,
+        shared::HeightTileSurfaceDirection::PositiveY,
+    };
+    static constexpr std::array OPPOSITE{ 1U, 0U, 3U, 2U };
+    for (uint32_t edge_index = 0U; edge_index < EDGES.size(); ++edge_index) {
+        auto const edge = EDGES[edge_index];
+        auto const opposite = EDGES[OPPOSITE[edge_index]];
+        bool const x_edge = edge_index < 2U;
+        bool const negative = edge_index == 0U || edge_index == 2U;
+        shared::HeightTileSurfaceMesh first{ .coordinate = { 4094, 4094 } };
+        shared::HeightTileSurfaceMesh second{ .coordinate = {
+            first.coordinate.x + (x_edge ? (negative ? -1 : 1) : 0),
+            first.coordinate.y + (x_edge ? 0 : (negative ? -1 : 1)),
+        } };
+        first.quads.push_back({ .x = first.coordinate.x * 16, .y = first.coordinate.y * 16,
+            .z = 9, .direction = shared::HeightTileSurfaceDirection::PositiveZ,
+            .u_extent = 16U, .v_extent = 16U });
+        second.quads.push_back({ .x = second.coordinate.x * 16, .y = second.coordinate.y * 16,
+            .z = 5, .direction = shared::HeightTileSurfaceDirection::PositiveZ,
+            .u_extent = 16U, .v_extent = 16U });
+        second.quads.push_back({
+            .x = second.coordinate.x * 16 + (x_edge ? (negative ? 15 : 0) : 4),
+            .y = second.coordinate.y * 16 + (x_edge ? 4 : (negative ? 15 : 0)),
+            .z = 13,
+            .direction = shared::HeightTileSurfaceDirection::PositiveZ,
+            .u_extent = static_cast<uint16_t>(x_edge ? 1U : 4U),
+            .v_extent = static_cast<uint16_t>(x_edge ? 4U : 1U),
+        });
+        auto const wall = [x_edge](
+            shared::HeightTileSurfaceMesh const& owner,
+            shared::HeightTileSurfaceDirection const direction,
+            int32_t const along, int32_t const z, uint16_t const span) {
+            int32_t const boundary = direction == EDGES[0U] || direction == EDGES[2U] ? 0 : 15;
+            return shared::HeightTileSurfaceQuad{
+                .x = owner.coordinate.x * 16 + (x_edge ? boundary : along),
+                .y = owner.coordinate.y * 16 + (x_edge ? along : boundary),
+                .z = z,
+                .direction = direction,
+                .u_extent = span,
+                .v_extent = 2U,
+            };
+        };
+        first.quads.push_back(wall(first, edge, -1, 6, 18U));
+        second.quads.push_back(wall(second, opposite, 4, 12, 4U));
+        auto const bridge = shared::heightTileSurfaceSeamBridge(first, second, edge);
+        std::vector<shared::HeightTileSurfaceQuad> const expected_first{
+            wall(first, edge, 0, 8, 4U), wall(first, edge, 8, 8, 8U),
+        };
+        std::vector<shared::HeightTileSurfaceQuad> const expected_second{
+            wall(second, opposite, 4, 10, 4U),
+        };
+        EXPECT_EQ(bridge.first, expected_first);
+        EXPECT_EQ(bridge.second, expected_second);
+    }
+}
+
 TEST(HeightTileSurfaceMesherTest, ReplacementCellCertificateUsesLocalWallsInsteadOfWholeHeightSpan)
 {
     static constexpr uint32_t SIDE = shared::HeightTile::SIDE_LENGTH;

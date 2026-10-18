@@ -263,7 +263,7 @@ TEST(MessageTest, UsesVersionedLittleEndianFixedWidthPayloads) {
     EXPECT_EQ(
         shared::encodeMessage(shared::JoinRequestMessage{ .ch = '@' }),
         (std::vector<uint8_t>{
-            0x4D, 13, 0, '@', 0,
+            0x4D, 14, 0, '@', 0,
             1, 0, 0, 0,
             42, 0, 0, 0, 0, 0, 0, 0,
             16, 16, 16,
@@ -272,15 +272,15 @@ TEST(MessageTest, UsesVersionedLittleEndianFixedWidthPayloads) {
     );
     EXPECT_EQ(
         shared::encodeMessage(shared::JoinResponseMessage{ .accepted = true }),
-        (std::vector<uint8_t>{ 0x4D, 13, 1, 1 })
+        (std::vector<uint8_t>{ 0x4D, 14, 1, 1 })
     );
     EXPECT_EQ(
         shared::encodeMessage(shared::JoinResponseMessage{ .accepted = false }),
-        (std::vector<uint8_t>{ 0x4D, 13, 1, 0 })
+        (std::vector<uint8_t>{ 0x4D, 14, 1, 0 })
     );
     EXPECT_EQ(
         shared::encodeMessage(shared::ClientInputMessage{ .direction = { 129, 127, 1 }, .sequence = 0x7856'3412U }),
-        (std::vector<uint8_t>{ 0x4D, 13, 2, 129, 127, 1, 0, 5, 0, 0, 0, 127, 18, 52, 86, 120 })
+        (std::vector<uint8_t>{ 0x4D, 14, 2, 129, 127, 1, 0, 5, 0, 0, 0, 127, 18, 52, 86, 120 })
     );
     EXPECT_EQ(
         shared::encodeMessage(shared::ServerPlayerPositionMessage{
@@ -289,7 +289,7 @@ TEST(MessageTest, UsesVersionedLittleEndianFixedWidthPayloads) {
             .acknowledged_input_sequence = 0x7856'3412U, .state_revision = 0x1234'5678U,
         }),
         (std::vector<uint8_t>{
-            0x4D, 13, 4, '#', 7, 0,
+            0x4D, 14, 4, '#', 7, 0,
             30, 0, 0, 0,
             2, 0, 0, 0,
             12, 0, 0, 0,
@@ -300,19 +300,116 @@ TEST(MessageTest, UsesVersionedLittleEndianFixedWidthPayloads) {
     );
     EXPECT_EQ(
         shared::encodeMessage(shared::ServerRemovePlayerMessage{ .ch = '$' }),
-        (std::vector<uint8_t>{ 0x4D, 13, 5, '$' })
+        (std::vector<uint8_t>{ 0x4D, 14, 5, '$' })
     );
     auto const height_tile = shared::encodeMessage(heightTileMessage());
-    EXPECT_EQ(height_tile.size(), 3U + 24U + shared::HEIGHT_TILE_PAYLOAD_BYTES);
+    EXPECT_EQ(height_tile.size(), 3U + 24U + 259U);
     EXPECT_EQ(height_tile[0], shared::PROTOCOL_MAGIC);
     EXPECT_EQ(height_tile[1], shared::PROTOCOL_VERSION);
     EXPECT_EQ(height_tile[2], 8U);
     auto const height_tile_batch = shared::encodeMessage(heightTileBatchMessage());
     EXPECT_EQ(
         height_tile_batch.size(),
-        3U + 10U + 2U * (24U + shared::HEIGHT_TILE_PAYLOAD_BYTES)
+        3U + 10U + 2U * (24U + 259U)
     );
     EXPECT_EQ(height_tile_batch[2], 10U);
+}
+
+TEST(MessageTest, EncodesHeightTilesWithCanonicalLosslessBitPacking)
+{
+    shared::ServerHeightTileMessage constant{
+        .key = { .x = 17, .y = 23 },
+        .revision = 7U,
+        .token = 11U,
+    };
+    constant.heights.fill(1024U);
+    std::vector<uint8_t> const constant_fixture{
+        0x4D, 14, 8,
+        17, 0, 0, 0, 23, 0, 0, 0,
+        7, 0, 0, 0, 0, 0, 0, 0,
+        11, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 4,
+    };
+    EXPECT_EQ(shared::encodeMessage(constant), constant_fixture);
+    EXPECT_EQ(shared::encodeMessage(constant).size(), 30U);
+    EXPECT_EQ(shared::encodedHeightTileSize(constant), 27U);
+    auto const constant_decoded = shared::decodeMessage(constant_fixture);
+    ASSERT_TRUE(constant_decoded.has_value());
+    ASSERT_TRUE(std::holds_alternative<shared::ServerHeightTileMessage>(*constant_decoded));
+    EXPECT_EQ(std::get<shared::ServerHeightTileMessage>(*constant_decoded).heights, constant.heights);
+
+    shared::ServerHeightTileMessage alternating{
+        .key = { .x = 17, .y = 23 },
+        .revision = 7U,
+        .token = 11U,
+    };
+    for (uint32_t index = 0U; index < shared::HEIGHT_TILE_SAMPLE_COUNT; ++index) {
+        alternating.heights[index] = static_cast<uint16_t>(200U + (index & 1U));
+    }
+    std::vector<uint8_t> alternating_fixture{
+        0x4D, 14, 8,
+        17, 0, 0, 0, 23, 0, 0, 0,
+        7, 0, 0, 0, 0, 0, 0, 0,
+        11, 0, 0, 0, 0, 0, 0, 0,
+        1, 200, 0,
+    };
+    alternating_fixture.insert(alternating_fixture.end(), 32U, 0xAAU);
+    EXPECT_EQ(shared::encodeMessage(alternating), alternating_fixture);
+    EXPECT_EQ(shared::encodeMessage(alternating).size(), 62U);
+    EXPECT_EQ(shared::encodedHeightTileSize(alternating), 59U);
+    auto const alternating_decoded = shared::decodeMessage(alternating_fixture);
+    ASSERT_TRUE(alternating_decoded.has_value());
+    ASSERT_TRUE(std::holds_alternative<shared::ServerHeightTileMessage>(*alternating_decoded));
+    EXPECT_EQ(std::get<shared::ServerHeightTileMessage>(*alternating_decoded).heights, alternating.heights);
+
+    shared::ServerHeightTileMessage valid_range{
+        .key = { .x = 17, .y = 23 },
+        .revision = 7U,
+        .token = 11U,
+    };
+    for (uint32_t index = 0U; index < shared::HEIGHT_TILE_SAMPLE_COUNT; ++index) {
+        valid_range.heights[index] = static_cast<uint16_t>(index * 4U);
+    }
+    valid_range.heights.back() = 1024U;
+    auto const valid_range_packet = shared::encodeMessage(valid_range);
+    EXPECT_EQ(valid_range_packet.size(), 382U);
+    EXPECT_EQ(shared::encodedHeightTileSize(valid_range), 379U);
+    auto const valid_range_decoded = shared::decodeMessage(valid_range_packet);
+    ASSERT_TRUE(valid_range_decoded.has_value());
+    ASSERT_TRUE(std::holds_alternative<shared::ServerHeightTileMessage>(*valid_range_decoded));
+    EXPECT_EQ(std::get<shared::ServerHeightTileMessage>(*valid_range_decoded).heights, valid_range.heights);
+
+    expectRoundTrip(heightTileMessage());
+}
+
+TEST(MessageTest, RejectsMalformedHeightTileEncodings)
+{
+    shared::ServerHeightTileMessage alternating{
+        .key = { .x = 17, .y = 23 },
+        .revision = 7U,
+        .token = 11U,
+    };
+    for (uint32_t index = 0U; index < shared::HEIGHT_TILE_SAMPLE_COUNT; ++index) {
+        alternating.heights[index] = static_cast<uint16_t>(200U + (index & 1U));
+    }
+    std::vector<uint8_t> const valid_packet = shared::encodeMessage(alternating);
+
+    auto invalid_width = valid_packet;
+    invalid_width[27] = 17U;
+    EXPECT_FALSE(shared::decodeMessage(invalid_width).has_value());
+
+    auto truncated = valid_packet;
+    truncated.pop_back();
+    EXPECT_FALSE(shared::decodeMessage(truncated).has_value());
+
+    auto overflowing_base = valid_packet;
+    overflowing_base[28] = 0xFFU;
+    overflowing_base[29] = 0xFFU;
+    EXPECT_FALSE(shared::decodeMessage(overflowing_base).has_value());
+
+    auto trailing = valid_packet;
+    trailing.push_back(0U);
+    EXPECT_FALSE(shared::decodeMessage(trailing).has_value());
 }
 
 TEST(MessageTest, RejectsNoncanonicalAcceptanceByte) {
@@ -377,10 +474,9 @@ TEST(MessageTest, RejectsInvalidPayloadValues) {
     auto join = shared::encodeMessage(shared::JoinRequestMessage{ .ch = '\n' });
     EXPECT_FALSE(shared::decodeMessage(join).has_value());
 
-    auto height_tile = shared::encodeMessage(heightTileMessage());
-    height_tile[27] = 1U;
-    height_tile[28] = 4U;
-    EXPECT_FALSE(shared::decodeMessage(height_tile).has_value());
+    auto invalid_tile = heightTileMessage();
+    invalid_tile.heights.fill(1025U);
+    EXPECT_FALSE(shared::decodeMessage(shared::encodeMessage(invalid_tile)).has_value());
 }
 
 TEST(MessageTest, RejectsOldAndMixedProtocolVersions) {
@@ -415,7 +511,10 @@ TEST(MessageTest, MapsExactDiskCardinalitiesToEverySupportedRadius)
         shared::heightTileInterestCount(257U),
     };
 
-    EXPECT_EQ(shared::PROTOCOL_VERSION, 13U);
+    EXPECT_EQ(shared::PROTOCOL_VERSION, 14U);
+    EXPECT_EQ(shared::HEIGHT_TILE_BATCH_CAPACITY, 64U);
+    EXPECT_EQ(shared::HEIGHT_TILE_RESIDENCY_RECEIPT_KEY_CAPACITY, 128U);
+    EXPECT_EQ(shared::encodedHeightTileSize(heightTileMessage()), 283U);
     EXPECT_FALSE(shared::isValidHeightTileInterestRadius(0U));
     EXPECT_FALSE(shared::isValidHeightTileInterestRadius(257U));
     for (uint32_t radius = MINIMUM_RADIUS; radius <= MAXIMUM_RADIUS; ++radius) {

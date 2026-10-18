@@ -60,12 +60,20 @@ discard valid completed geometry. Failed uploads retain installed state; meshes 
 after movement/FOV/profile changes. Seam batches atomically publish the center and
 changed neighbors; failure retains renderer/client state. Cached seam spans handle
 out-of-order uploads. LOD preserves terrain/collision; far plane/fog scale with
-the accepted radius,
-and workers mesh outside presentation.
+the accepted radius.
 
-Uploads/restoration share an 8 ms gameplay budget; overdue tiles defer. Only
-exact recreation/present-fence timeouts before destruction defer growth (5 s);
-other Vulkan errors are fatal. Diagnostics report the latest timeout.
+CoreCpp workers retire caches, queues, renderer slots and draw indexes; logical
+removal and eight-frame GPU quarantine stay synchronous. Reapers cap storage at
+4,096 jobs/64 MiB; rejection retains ownership and records fallback;
+teardown drains. Ticket/empty-buffer recycling shares another 64 MiB; overflow
+retires. Priority refresh inspects 256 entries without barriers. Admission,
+results and deferral rank near, forecast, missing prewarm/far, then replacement
+prewarm/far; distance breaks ties and retries retain captured mesh class.
+
+Terrain uses 8 ms (1 ms shared publication/admission after overruns). Acquisition
+expires at render-entry+ceil(1s/120); recording is not deadline-bound. Capture
+retains 1 s preload. Only exact recreation/present-fence timeouts before destruction
+defer growth (5 s); other Vulkan errors are fatal. Diagnostics report the latest timeout.
 `chunk_draw_face_count` counts quads; `chunk_draw_count` counts ranges.
 [`height_tile_surface_mesher_tests.cpp`](../../tests/core/height_tile_surface_mesher_tests.cpp)
 covers flat tiles, exposed height differences, neighbor seams, and generated
@@ -94,46 +102,42 @@ enable validation when interpreting the count.
 
 ## Capture, input, and validation
 
-Capture enables transfer-source presentation and returns an owned RGBA8 vector
-after submission. Readback allocation occurs only on capture; recreation,
-resize, and Android window replacement retain the capture contract.
+Recreation, resize and Android replacement preserve RGBA8 readback.
 
-Desktop GLFW cursor deltas control yaw/pitch; W/A/S/D lower through
-`CameraController` into unchanged authoritative `Direction` packets. Window input
-retains Escape, shader-reload R, debounced F1 HUD-toggle and debounced F5 camera-cycle.
-Android lowers left-drag movement/right-drag yaw/pitch identically, retaining assets
-and `AndroidInput`; hardware F5 uses the same cycle.
+GLFW controls yaw/pitch; WASD passes authoritative `Direction` through
+`CameraController`. Escape, R reload, F1 HUD and F5 camera remain. Android uses
+left-drag movement/right-drag look via `AndroidInput`, plus hardware F5.
 
-[`renderer_smoke_tests.cpp`](../../tests/client/renderer_smoke_tests.cpp)
-tests desktop GLFW input, presentation/recreation/readback, HUD and resident face counts.
-Android package compilation and emulator presentation remain separate gates.
+[`renderer_smoke_tests.cpp`](../../tests/client/renderer_smoke_tests.cpp) covers
+desktop input, presentation/readback, HUD and resident faces. Android build and
+emulator presentation are separate gates.
 
-`renderer_golden_tests.cpp` captures the fixed 640-by-480 S4 scene without
-GLFW/surface/swapchain; oblique cases cover yaw `37.2`, its opposite and pitch `-35`.
-`VulkanOffscreenTarget` owns linear color, submission/readback; Client owns depth
-and shared presentation recording/pipelines. Strict approval requires validation,
-the active versioned reference and independent depth/scene checks. References
-change only after bounded native-size review. Offscreen GUI/HUD checks top-left pixels.
+`renderer_golden_tests.cpp` captures 640-by-480 S4 offscreen; oblique yaw is
+`37.2`/opposite, pitch `-35`.
+`VulkanOffscreenTarget` owns linear color/submission/readback; Client owns
+depth/recording/pipelines. Approval requires validation, the active versioned
+reference, independent scene/depth checks and native-size review; GUI/HUD checks
+top-left pixels.
 
-S5 offscreen acceptance verifies textured stone, sky, deterministic frames,
-mesh replacement, validation, and remote-player altitude.
+S5 offscreen checks scene/replacement/validation/remote-player altitude.
 
-`--benchmark-render` excludes server/network/gameplay; `--benchmark-game` counts
-completed player-client requests with all three. Neither measures scanout;
-missing immediate mode fails. Evidence includes resolution/GPU/HUD/rate,
-p50/p95/p99/max, CPU phases and submitted work. Full-radius barriers require
-exact meshes/empty queues around x200; retain stationary attempts and phase
-costs. `DiagnosticStationary` freezes movement/look for diagnostics only.
-Opt-in terrain timestamps are not whole-frame; MoltenVK reports unsupported/null
-when render-pass markers defer to encoder end. Release disables validation;
-`--hud` permits paired runs. Legacy S6 uses 90-by-90 capacity/edge streaming;
-its renderer gate requires 120 Hz within 1%, p99 ≤10 ms including waits.
+`--benchmark-render` excludes server/network/gameplay. `--benchmark-game` counts
+completed player-client present requests with all three; neither measures
+scanout, and missing immediate mode fails. Evidence records resolution/GPU/HUD/
+rate, p50/p95/p99/max, CPU phases and submitted work. `DiagnosticStationary`
+freezes movement/look for diagnostic A/B only. Terrain timestamps are opt-in,
+not whole-frame; MoltenVK reports unsupported/null when render-pass markers defer
+to encoder end. Release disables validation; `--hud` supports paired runs.
+`speed-200-full-radius` keeps normal HUD/scheduling and requires 225 current
+radius-7 meshes each iteration; endpoint refill cannot mask gaps
+([`qualification`](../ai/GAMEPLAY_QUALIFICATION.md)). Barriers report faces/
+capacity; samples retain CPU, not GPU or physical-cadence, timing. S6 stress uses
+90-by-90 capacity and bounded edge streaming; its gate is 120 Hz within 1% and
+p99 ≤10 ms including display wait/jitter.
 
-Benchmark and renderer capture preserve requested framebuffer pixels through
-bounded GLFW resizing. Capture checks readback, sky, and stone; benchmark checks
-presentation, a stone draw, and phase timing. Networked S7 capture runs the
-production server/client, waits for the accepted radius's exact resident tiles and uploaded
-meshes, compares keys across 16 headings, and validates terrain, HUD, and label.
-Capture HUD FPS includes full-disk readiness scans and heading-key comparisons,
-so is not normal-game throughput. Radius 1,024 coverage is mathematical;
-runtime capacity/performance is unmeasured.
+GLFW resizing preserves framebuffer pixels. Capture checks readback/sky/stone;
+benchmark checks presentation/stone draws/timing. Networked
+S7 capture waits for exact-radius production meshes, compares keys at 16
+headings and validates terrain/HUD/label. FPS includes full-disk scans, not
+normal throughput. Radius1,024 coverage is mathematical; runtime capacity/performance
+is unmeasured.

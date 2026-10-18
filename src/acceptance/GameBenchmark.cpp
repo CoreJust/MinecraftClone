@@ -1619,6 +1619,7 @@ std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOption
             }
             GameBenchmarkFullRadiusPhase const full_phase = full_radius_sequence.phase();
             std::optional<std::array<GameBenchmarkFrameSample::TerrainRadialBand, 16U>> terrain_radial_bands;
+            std::optional<GameBenchmarkFrameSample::MeshEpisodes> mesh_episodes;
             uint64_t terrain_spatial_scan_duration_ns = 0U;
             std::chrono::nanoseconds const duration = std::chrono::duration_cast<std::chrono::nanoseconds>(
                 sample.completed_at - sample.started_at
@@ -1766,6 +1767,39 @@ std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOption
                     );
                     *candidate_scanned = full_terrain_info.potentially_ready;
                 }
+                if (full_terrain_info.mesh_episodes) {
+                    auto const& source = *full_terrain_info.mesh_episodes;
+                    mesh_episodes = GameBenchmarkFrameSample::MeshEpisodes{
+                        .entered_count = source.entered_count,
+                        .completed_count = source.completed_count,
+                        .censored_count = source.censored_count,
+                        .completed_total_ns = source.completed_total_ns,
+                        .completed_max_ns = source.completed_max_ns,
+                        .censored_max_ns = source.censored_max_ns,
+                        .tracked_count = source.tracked_count,
+                        .pending_count = source.pending_count,
+                        .oldest_pending_ns = source.oldest_pending_ns,
+                        .oldest_resident_pending_ns = source.oldest_resident_pending_ns,
+                        .completed_latency_buckets = source.completed_latency_buckets,
+                        .censored_latency_buckets = source.censored_latency_buckets,
+                        .never_resident_censored_count = source.never_resident_censored_count,
+                        .resident_censored_count = source.resident_censored_count,
+                        .resident_censored_max_wait_ns = source.resident_censored_max_wait_ns,
+                        .never_resident_censored_entry_latency_buckets =
+                            source.never_resident_censored_entry_latency_buckets,
+                        .resident_censored_wait_latency_buckets = source.resident_censored_wait_latency_buckets,
+                        .resident_at_departure_censored_entry_latency_buckets =
+                            source.resident_at_departure_censored_entry_latency_buckets,
+                        .nonresident_at_departure_censored_entry_latency_buckets =
+                            source.nonresident_at_departure_censored_entry_latency_buckets,
+                        .unknown_departure_residency_censored_count = source.unknown_departure_residency_censored_count,
+                        .global_active_mesh_job_count = full_terrain_info.active_mesh_job_count,
+                        .global_worker_result_count = full_terrain_info.worker_result_count,
+                        .global_worker_outstanding_count = full_terrain_info.worker_outstanding_count,
+                        .pending_by_current_band = source.pending_by_current_band,
+                        .oldest_pending_ns_by_current_band = source.oldest_pending_ns_by_current_band,
+                    };
+                }
                 if (full_phase == GameBenchmarkFullRadiusPhase::InitialWarmup) {
                     full_evidence.initial_warmup_elapsed_ms = elapsed_ms;
                 } else if (full_phase == GameBenchmarkFullRadiusPhase::RecoveryWarmup) {
@@ -1907,6 +1941,7 @@ std::expected<RuntimeEvidence, std::string> runGameBenchmark(GameBenchmarkOption
                     ? full_terrain_info.center->y : 0,
                 .terrain_near = terrain_near_sample,
                 .diagnostic_terrain_radial_bands = terrain_radial_bands,
+                .diagnostic_mesh_episodes = mesh_episodes,
                 .diagnostic_terrain_spatial_scan_duration_ns = terrain_spatial_scan_duration_ns,
                 .renderer_stone_face_growth = full_radius_workload && record_raw_frame
                     && (full_phase == GameBenchmarkFullRadiusPhase::InitialWarmup

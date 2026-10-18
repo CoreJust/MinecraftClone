@@ -574,6 +574,7 @@ void GameClient::processPendingHeightTileDeliveries()
             m_running = false;
             return;
         }
+        flush();
     }
 }
 

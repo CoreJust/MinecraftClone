@@ -991,6 +991,60 @@ TEST(EvidenceJson, PreservesTimedTerrainRadialBands)
         "\"current_mesh_visible\": 1, \"stale_or_missing_mesh\": 2"), std::string::npos);
 }
 
+TEST(EvidenceJson, PreservesMeshEpisodeLossAndLatencyInsteadOfOnlyCompletedSamples)
+{
+    acceptance::RuntimeEvidence evidence{};
+    evidence.game_benchmark.emplace();
+    auto& frame = evidence.game_benchmark->raw_frames.emplace_back();
+    frame.diagnostic_mesh_episodes.emplace();
+    auto& episodes = *frame.diagnostic_mesh_episodes;
+    episodes.entered_count = 13U;
+    episodes.completed_count = 7U;
+    episodes.censored_count = 3U;
+    episodes.pending_count = 3U;
+    episodes.tracked_count = 10U;
+    episodes.completed_max_ns = 120'000'000U;
+    episodes.censored_max_ns = 4'000'000'000U;
+    episodes.oldest_pending_ns = 2'000'000'000U;
+    episodes.oldest_resident_pending_ns = 1'000'000'000U;
+    episodes.censored_latency_buckets[5U] = 3U;
+    episodes.never_resident_censored_count = 1U;
+    episodes.resident_censored_count = 2U;
+    episodes.resident_censored_max_wait_ns = 900'000'000U;
+    episodes.never_resident_censored_entry_latency_buckets[5U] = 1U;
+    episodes.resident_censored_wait_latency_buckets[0U] = 2U;
+    episodes.resident_at_departure_censored_entry_latency_buckets[4U] = 1U;
+    episodes.nonresident_at_departure_censored_entry_latency_buckets[5U] = 1U;
+    episodes.unknown_departure_residency_censored_count = 1U;
+    episodes.global_active_mesh_job_count = 87U;
+    episodes.global_worker_result_count = 65U;
+    episodes.global_worker_outstanding_count = 128U;
+    episodes.pending_by_current_band[7U] = 3U;
+    std::string const json = acceptance::evidenceJson(evidence);
+    EXPECT_NE(json.find("\"diagnostic_mesh_episodes\": {"), std::string::npos);
+    EXPECT_NE(json.find("\"censored_count\": 3"), std::string::npos);
+    EXPECT_NE(json.find("\"censored_max_ns\": 4000000000"), std::string::npos);
+    EXPECT_NE(json.find("\"oldest_pending_ns\": 2000000000"), std::string::npos);
+    EXPECT_NE(json.find("\"oldest_resident_pending_ns\": 1000000000"), std::string::npos);
+    EXPECT_NE(json.find("\"censored_latency_buckets\": [0, 0, 0, 0, 0, 3, 0]"), std::string::npos);
+    EXPECT_NE(json.find("\"never_resident_censored_count\": 1"), std::string::npos);
+    EXPECT_NE(json.find("\"resident_censored_count\": 2"), std::string::npos);
+    EXPECT_NE(json.find("\"resident_censored_max_wait_ns\": 900000000"), std::string::npos);
+    EXPECT_NE(json.find("\"never_resident_censored_entry_latency_buckets\": [0, 0, 0, 0, 0, 1, 0]"),
+        std::string::npos);
+    EXPECT_NE(json.find("\"resident_censored_wait_latency_buckets\": [2, 0, 0, 0, 0, 0, 0]"),
+        std::string::npos);
+    EXPECT_NE(json.find("\"resident_at_departure_censored_entry_latency_buckets\": [0, 0, 0, 0, 1, 0, 0]"),
+        std::string::npos);
+    EXPECT_NE(json.find("\"nonresident_at_departure_censored_entry_latency_buckets\": [0, 0, 0, 0, 0, 1, 0]"),
+        std::string::npos);
+    EXPECT_NE(json.find("\"unknown_departure_residency_censored_count\": 1"), std::string::npos);
+    EXPECT_NE(json.find("\"global_active_mesh_job_count\": 87"), std::string::npos);
+    EXPECT_NE(json.find("\"global_worker_result_count\": 65"), std::string::npos);
+    EXPECT_NE(json.find("\"global_worker_outstanding_count\": 128"), std::string::npos);
+    EXPECT_NE(json.find("\"pending_by_current_band\": [0, 0, 0, 0, 0, 0, 0, 3"), std::string::npos);
+}
+
 TEST(EvidenceJson, ConvertsExpectedFailureToSerializableEvidence)
 {
     acceptance::RuntimeEvidence const evidence = acceptance::collectRuntimeEvidence(

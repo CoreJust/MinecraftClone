@@ -36,6 +36,8 @@ public:
 
 class BenchmarkClient final : public client::GameClient {
 public:
+    std::function<void()> on_render;
+
     explicit BenchmarkClient(shared::WorldMode const mode = shared::WorldMode::Flat)
         : GameClient{
             mode,
@@ -44,6 +46,7 @@ public:
             std::make_unique<ImmediateAudioOutput>(),
         }
     { }
+
 private:
     shared::Direction input() override
     {
@@ -51,7 +54,11 @@ private:
     }
 
     void render() override
-    { }
+    {
+        if (on_render) {
+            on_render();
+        }
+    }
 
     [[nodiscard]] bool presentationSucceeded() const override
     {
@@ -129,4 +136,55 @@ TEST(GameClientBenchmarkTest, ConnectedProductionLoopAdoptsTheServerWideRadius)
     EXPECT_EQ(game_client.renderDistance(), RADIUS);
     EXPECT_EQ(game_client.requiredHeightTileCount(), 51'433U);
     EXPECT_GT(game_client.heightTileResidency().stats().resident_tiles, 0U);
+}
+
+TEST(GameClientBenchmarkTest, AppliedTerrainDeliveryReachesServerBeforeRenderingCompletes)
+{
+    static constexpr uint32_t RADIUS = 8U;
+    static constexpr std::chrono::seconds DEADLINE{ 5 };
+    static constexpr std::chrono::milliseconds ACK_DEADLINE{ 500 };
+    static constexpr std::chrono::milliseconds ACK_POLL_INTERVAL{ 1 };
+    server::GameServer server{
+        0U, {}, shared::WorldMode::Flight, shared::World::canonicalConfiguration(), RADIUS,
+    };
+    std::atomic_bool stop_server{ false };
+    std::atomic_uint64_t acknowledged_deliveries{ 0U };
+    server::GameServer::BenchmarkHooks const server_hooks{
+        .on_tick = {},
+        .on_preview_buffered = {},
+        .on_preview_metrics = [&](core::ClientId, server::GameServer::PreviewStreamMetrics const metrics) {
+            acknowledged_deliveries.store(metrics.delivery_credit_samples, std::memory_order_release);
+        },
+        .before_height_tile_completion = {},
+    };
+    std::thread server_thread{ [&] { server.run(stop_server, &server_hooks); } };
+    BenchmarkClient game_client{ shared::WorldMode::Flight };
+    bool blocked_after_delivery = false;
+    bool acknowledged_during_render = false;
+    game_client.on_render = [&] {
+        if (game_client.heightTileResidency().stats().resident_tiles == 0U) {
+            return;
+        }
+        blocked_after_delivery = true;
+        auto const acknowledgement_deadline = std::chrono::steady_clock::now() + ACK_DEADLINE;
+        while (acknowledged_deliveries.load(std::memory_order_acquire) == 0U
+            && std::chrono::steady_clock::now() < acknowledgement_deadline) {
+            std::this_thread::sleep_for(ACK_POLL_INTERVAL);
+        }
+        acknowledged_during_render = acknowledged_deliveries.load(std::memory_order_acquire) > 0U;
+    };
+    client::GameClientBenchmarkHooks const hooks{
+        .deadline = std::chrono::steady_clock::now() + DEADLINE,
+        .should_stop = [&] { return blocked_after_delivery; },
+        .is_uncapped_phase = {},
+        .input_override = {},
+        .on_loop = {},
+        .on_authoritative_player = {},
+    };
+    game_client.run(core::Address::localhost(server.port()), '@', &hooks);
+    stop_server.store(true, std::memory_order_relaxed);
+    server_thread.join();
+
+    EXPECT_TRUE(blocked_after_delivery);
+    EXPECT_TRUE(acknowledged_during_render);
 }

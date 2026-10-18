@@ -344,31 +344,35 @@ EdgeSurfaceProfile edgeSurfaceProfile(
             || edge == shared::HeightTileSurfaceDirection::NegativeY
         ? 0U
         : static_cast<uint32_t>(shared::HeightTile::SIDE_LENGTH - 1U);
+    int64_t const origin_x = static_cast<int64_t>(mesh.coordinate.x) * SIDE_LENGTH;
+    int64_t const origin_y = static_cast<int64_t>(mesh.coordinate.y) * SIDE_LENGTH;
+    int64_t const boundary = (x_edge ? origin_x : origin_y) + edge_offset;
+    int64_t const along_origin = x_edge ? origin_y : origin_x;
     EdgeSurfaceProfile profile;
     for (shared::HeightTileSurfaceQuad const& quad : mesh.quads) {
-        if (quad.direction == shared::HeightTileSurfaceDirection::PositiveZ) {
-            for (uint32_t along = 0U; along < shared::HeightTile::SIDE_LENGTH; ++along) {
-                uint32_t const local_x = x_edge ? edge_offset : along;
-                uint32_t const local_y = x_edge ? along : edge_offset;
-                int32_t const x = worldCoordinate(mesh.coordinate.x, local_x);
-                int32_t const y = worldCoordinate(mesh.coordinate.y, local_y);
-                if (quad.x <= x && x < quad.x + quad.u_extent
-                    && quad.y <= y && y < quad.y + quad.v_extent) {
-                    profile.top[along] = quad.z + 1;
-                }
+        bool const top = quad.direction == shared::HeightTileSurfaceDirection::PositiveZ;
+        if (!top && quad.direction != edge) {
+            continue;
+        }
+        int64_t const perpendicular = x_edge ? quad.x : quad.y;
+        if (top) {
+            int64_t const perpendicular_extent = x_edge ? quad.u_extent : quad.v_extent;
+            if (boundary < perpendicular || boundary >= perpendicular + perpendicular_extent) {
+                continue;
             }
-        } else if (quad.direction == edge) {
-            for (uint32_t along = 0U; along < shared::HeightTile::SIDE_LENGTH; ++along) {
-                uint32_t const local_x = x_edge ? edge_offset : along;
-                uint32_t const local_y = x_edge ? along : edge_offset;
-                int32_t const x = worldCoordinate(mesh.coordinate.x, local_x);
-                int32_t const y = worldCoordinate(mesh.coordinate.y, local_y);
-                bool const covers_sample = x_edge
-                    ? quad.x == x && quad.y <= y && y < quad.y + quad.u_extent
-                    : quad.y == y && quad.x <= x && x < quad.x + quad.u_extent;
-                if (covers_sample) {
-                    profile.walls[along].push_back({ quad.z, quad.z + quad.v_extent });
-                }
+        } else if (perpendicular != boundary) {
+            continue;
+        }
+        int64_t const along_start = static_cast<int64_t>(x_edge ? quad.y : quad.x) - along_origin;
+        int64_t const along_extent = top && x_edge ? quad.v_extent : quad.u_extent;
+        int64_t const clipped_start = std::max<int64_t>(0, along_start);
+        int64_t const clipped_end = std::min<int64_t>(SIDE_LENGTH, along_start + along_extent);
+        for (int64_t along = clipped_start; along < clipped_end; ++along) {
+            uint32_t const sample = static_cast<uint32_t>(along);
+            if (top) {
+                profile.top[sample] = quad.z + 1;
+            } else {
+                profile.walls[sample].push_back({ quad.z, quad.z + quad.v_extent });
             }
         }
     }

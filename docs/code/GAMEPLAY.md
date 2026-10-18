@@ -43,9 +43,9 @@ and a sequence; positions carry authoritative coordinates, subcell remainders,
 palette identity, and acknowledgement. Palette color is a stable hash of
 character identity.
 
-Protocol 13 bounded receipts report absent/evicted tiles after removal-first
-application; servers refill. `max_height_tiles` maps radius 1–256 to disk counts;
-invalid inputs fail before mutation.
+Protocol 14 height tiles losslessly pack minimum-plus-bit-width deltas; bounded
+receipts report absent tiles after removal-first apply. `max_height_tiles` maps
+radii 1–256 to disk counts.
 
 ## Server authority
 
@@ -57,11 +57,10 @@ wait 5 ms. Ticks consume at most one input/player. Invalid joins, duplicate
 characters, and unjoined inputs are rejected; positions carry ACKs/revisions;
 disconnects broadcast removals.
 
-After movement, four 16-operation batches rotate among clients. Four credited
-batches/peer (34,356 bytes) fit ENet's shared 65,536-byte window; negotiation/
-throttling may shrink it. Ready/dispatched tiles cap at 128 (`BenchmarkHooks::on_preview_buffered`).
-ACKs reconcile keys/refill. Obsolete retirement budgets tile operations, not
-packets; a cached priority heap rechecks current interest before removal.
+Round-robin batches cap at 64 operations/8,589 encoded bytes; eight credits
+retain ≤34,356 bytes within ENet's 65,536-byte window (negotiation may shrink it).
+Ready/dispatched tiles cap at 128. Clients flush applied receipts immediately;
+ACKs refill. Retirements budget operations; priority rechecks current interest.
 Center/heading changes restart near-first admission, reclaiming unstarted distant
 jobs only when near coverage is missing. Refills reorder pending queues;
 running/completed jobs remain intact.
@@ -105,8 +104,8 @@ membership. Admission order: current 15×15, next actual-input World-tick foreca
 15×15 within the unchanged desired disk, then bounded prewarm/background;
 background order is wrapped distance; heading breaks ties. Server wraps deltas
 and caps discovery at 64 results/pump; center/heading changes restart scans.
-Refill cursors survive running jobs. Generation targets 8,192 tiles/s
-(128 bursts after 250 ms settled). CoreLang 0.1.2 supplies wave parameters; C++
+Refill cursors survive running jobs. Generation targets 32,768 tiles/s in
+128-tile bursts after 250 ms settled. CoreLang 0.1.2 supplies wave parameters; C++
 builds six 128-block layers. First-wave spawn; HUD speed 2x–500x.
 
 LOD bounds replacement faces to 2 px² using wrapped distance, FOV and framebuffer
@@ -115,11 +114,11 @@ neighbor profiles and raw-height distance; four-by-four buckets select
 nonmonotone areas. Changes recertify neighbors; failed uploads retain inputs;
 jobs recheck revisions/detail/certification before safe profile-only reuse.
 Meshes refine on movement/projection/profile changes. Play/capture share 256
-reranks/16 jobs; a 225-key near probe queues missing residents before distant
-work and discards stale tickets. After interest refresh exhausts the 8 ms
-deadline, near discovery/admission gets ≤1 ms; result publication retains
-deadline. Intake 128 changes/call; obsolete removal stays bounded, without a
-global coverage wait.
+inspections, 128 admissions and 512 residency changes/call. The 225-key near
+probe precedes far work; ranked first publications progress during bounded
+refresh, with stale heads sharing maintenance. Near admission gets ≤1 ms after
+the 8 ms interest deadline; publication remains bounded without global coverage
+waits.
 
 ## S5 chunk data
 

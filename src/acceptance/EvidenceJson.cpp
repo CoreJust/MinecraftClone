@@ -296,6 +296,58 @@ std::string terrainRadialBandsJson(std::array<GameBenchmarkFrameSample::TerrainR
     return result;
 }
 
+std::string meshEpisodesJson(GameBenchmarkFrameSample::MeshEpisodes const& episodes)
+{
+    auto const array_json = [](auto const& values) {
+        std::string result = "[";
+        for (size_t index = 0U; index < values.size(); ++index) {
+            if (index != 0U) {
+                result += ", ";
+            }
+            result += std::to_string(values[index]);
+        }
+        return result + "]";
+    };
+    return "{ \"scope\": \"interest-entry-to-first-current-handle-publication\", "
+        "\"latency_bucket_upper_bounds_ns\": [100000000, 250000000, 500000000, "
+        "1000000000, 2000000000, 5000000000, null], "
+        "\"current_band_width_tiles\": 16, "
+        "\"resident_age_clock\": \"first-resident-enqueue-observation\", "
+        "\"censor_residency_scope\": \"ever-observed-resident-during-interest-episode\", "
+        "\"departure_residency_scope\": \"current-residency-at-interest-departure-or-explicit-unknown\", "
+        "\"entered_count\": " + std::to_string(episodes.entered_count)
+        + ", \"completed_count\": " + std::to_string(episodes.completed_count)
+        + ", \"censored_count\": " + std::to_string(episodes.censored_count)
+        + ", \"completed_total_ns\": " + std::to_string(episodes.completed_total_ns)
+        + ", \"completed_max_ns\": " + std::to_string(episodes.completed_max_ns)
+        + ", \"censored_max_ns\": " + std::to_string(episodes.censored_max_ns)
+        + ", \"tracked_count\": " + std::to_string(episodes.tracked_count)
+        + ", \"pending_count\": " + std::to_string(episodes.pending_count)
+        + ", \"oldest_pending_ns\": " + std::to_string(episodes.oldest_pending_ns)
+        + ", \"oldest_resident_pending_ns\": " + std::to_string(episodes.oldest_resident_pending_ns)
+        + ", \"completed_latency_buckets\": " + array_json(episodes.completed_latency_buckets)
+        + ", \"censored_latency_buckets\": " + array_json(episodes.censored_latency_buckets)
+        + ", \"never_resident_censored_count\": " + std::to_string(episodes.never_resident_censored_count)
+        + ", \"resident_censored_count\": " + std::to_string(episodes.resident_censored_count)
+        + ", \"resident_censored_max_wait_ns\": " + std::to_string(episodes.resident_censored_max_wait_ns)
+        + ", \"never_resident_censored_entry_latency_buckets\": "
+            + array_json(episodes.never_resident_censored_entry_latency_buckets)
+        + ", \"resident_censored_wait_latency_buckets\": "
+            + array_json(episodes.resident_censored_wait_latency_buckets)
+        + ", \"resident_at_departure_censored_entry_latency_buckets\": "
+            + array_json(episodes.resident_at_departure_censored_entry_latency_buckets)
+        + ", \"nonresident_at_departure_censored_entry_latency_buckets\": "
+            + array_json(episodes.nonresident_at_departure_censored_entry_latency_buckets)
+        + ", \"unknown_departure_residency_censored_count\": "
+            + std::to_string(episodes.unknown_departure_residency_censored_count)
+        + ", \"global_active_mesh_job_count\": " + std::to_string(episodes.global_active_mesh_job_count)
+        + ", \"global_worker_result_count\": " + std::to_string(episodes.global_worker_result_count)
+        + ", \"global_worker_outstanding_count\": " + std::to_string(episodes.global_worker_outstanding_count)
+        + ", \"pending_by_current_band\": " + array_json(episodes.pending_by_current_band)
+        + ", \"oldest_pending_ns_by_current_band\": " + array_json(episodes.oldest_pending_ns_by_current_band)
+        + " }";
+}
+
 std::string terrainReadinessJson(GameBenchmarkTerrainReadinessEvidence const& evidence)
 {
     return "{ \"contract\": \"mc.current-near-terrain-readiness.v1\", "
@@ -744,6 +796,8 @@ std::string gameBenchmarkJson(GameBenchmarkEvidence const& benchmark)
             + ", \"diagnostic_terrain_radial_bands\": "
                 + (sample.diagnostic_terrain_radial_bands
                     ? terrainRadialBandsJson(*sample.diagnostic_terrain_radial_bands) : "null")
+            + ", \"diagnostic_mesh_episodes\": "
+                + (sample.diagnostic_mesh_episodes ? meshEpisodesJson(*sample.diagnostic_mesh_episodes) : "null")
             + ", \"diagnostic_terrain_spatial_scan_duration_ns\": "
                 + std::to_string(sample.diagnostic_terrain_spatial_scan_duration_ns)
             + ", \"renderer_stone_face_growth\": "

@@ -1887,9 +1887,13 @@ uint32_t GameServer::admitHeightTileDeliveries(
     uint32_t const maximum_batches
 )
 {
-    // Credits are an upper bound, not a requirement to fill the transport window.
-    // Four maximum-size batches retain 34,356 bytes, leaving gameplay headroom in
-    // the default 65,536-byte ENet reliable window shared by both channels.
+    // Keep the existing terrain byte reserve, not a fixed number of raw packets,
+    // below the shared 65,536-byte reliable window so gameplay retains headroom.
+    uint32_t inflight_bytes = 0U;
+    for (auto const& [token, delivery] : stream.inflight_deliveries) {
+        static_cast<void>(token);
+        inflight_bytes += delivery.encoded_bytes;
+    }
     uint32_t const available_batches = std::min<uint32_t>({
         stream.delivery_credits,
         static_cast<uint32_t>(PreviewStream::MAX_INFLIGHT_DELIVERIES - stream.inflight_deliveries.size()),
@@ -2005,6 +2009,15 @@ uint32_t GameServer::admitHeightTileDeliveries(
         && stream.delivery_credits > 0U
         && stream.inflight_deliveries.size() < PreviewStream::MAX_INFLIGHT_DELIVERIES
         ) {
+        static constexpr uint32_t BATCH_HEADER_BYTES = 13U;
+        static constexpr uint32_t REMOVAL_BYTES = 24U;
+        uint32_t const byte_capacity = std::min(
+            PreviewStream::MAX_DELIVERY_BYTES,
+            PreviewStream::MAX_INFLIGHT_DELIVERY_BYTES - inflight_bytes
+        );
+        if (byte_capacity <= BATCH_HEADER_BYTES) {
+            break;
+        }
         uint64_t projected_resident_count = static_cast<uint64_t>(stream.resident_keys.size())
             + static_cast<uint64_t>(stream.inflight_addition_keys.size());
         uint64_t const inflight_removal_count = static_cast<uint64_t>(stream.inflight_removal_keys.size());
@@ -2033,6 +2046,26 @@ uint32_t GameServer::admitHeightTileDeliveries(
         } else {
             batch_removal_count = std::min(remaining_removal_count, batch_capacity);
         }
+        batch_removal_count = std::min(
+            batch_removal_count,
+            (byte_capacity - BATCH_HEADER_BYTES) / REMOVAL_BYTES
+        );
+        batch_addition_count = std::min(batch_addition_count, free_resident_capacity + batch_removal_count);
+        uint32_t encoded_bytes = BATCH_HEADER_BYTES + batch_removal_count * REMOVAL_BYTES;
+        uint32_t fitting_additions = 0U;
+        auto addition_candidate = ready;
+        while (fitting_additions < batch_addition_count) {
+            auto const tile = stream.ready_tiles.find(*addition_candidate);
+            ASSERT(tile != stream.ready_tiles.end(), "selected height tile is no longer ready");
+            uint32_t const tile_bytes = shared::encodedHeightTileSize(tile->second);
+            if (tile_bytes > byte_capacity - encoded_bytes) {
+                break;
+            }
+            encoded_bytes += tile_bytes;
+            ++fitting_additions;
+            ++addition_candidate;
+        }
+        batch_addition_count = fitting_additions;
         if (batch_addition_count == 0U && batch_removal_count == 0U) {
             break;
         }
@@ -2042,7 +2075,7 @@ uint32_t GameServer::admitHeightTileDeliveries(
             .tiles = {},
             .removals = {},
         };
-        PreviewStream::Delivery delivery;
+        PreviewStream::Delivery delivery{ .additions = {}, .removals = {}, .encoded_bytes = encoded_bytes };
         batch.tiles.reserve(batch_addition_count);
         batch.removals.reserve(batch_removal_count);
         for (uint32_t index = 0U; index < batch_removal_count; ++index) {
@@ -2071,7 +2104,7 @@ uint32_t GameServer::admitHeightTileDeliveries(
             stream.ready_tiles.erase(tile);
         }
         if (delivery.additions.empty() && delivery.removals.empty()) {
-            return admitted_batches;
+            break;
         }
         uint64_t const delivery_token = batch.delivery_token;
         uint32_t const admitted_addition_count = static_cast<uint32_t>(delivery.additions.size());
@@ -2079,10 +2112,21 @@ uint32_t GameServer::admitHeightTileDeliveries(
             delivery.admitted_at = std::chrono::steady_clock::now();
         }
         stream.inflight_deliveries.emplace(delivery_token, std::move(delivery));
+        inflight_bytes += encoded_bytes;
         --stream.delivery_credits;
         sendHeightTileTo(stream.client_id, std::move(batch));
         stream.admitted_additions_since_metrics += admitted_addition_count;
         ++admitted_batches;
+    }
+    for (; removal != removal_keys.end(); ++removal) {
+        shared::HeightTileKey const key = *removal;
+        stream.removal_candidates.push_back({
+            .key = key,
+            .priority = shared::heightTileInterestPriority(
+                stream.center, stream.heading_x, stream.heading_y, key
+            ),
+        });
+        std::ranges::push_heap(stream.removal_candidates, removal_order);
     }
     return admitted_batches;
 }
@@ -2568,7 +2612,7 @@ void GameServer::dispatchWorldMaterialization()
 void GameServer::dispatchHeightTileWork()
 {
     static constexpr uint32_t MAX_DISPATCHED_TILES_PER_PUMP = PreviewStream::MAX_QUEUED_TILES;
-    static constexpr double BACKGROUND_TILES_PER_SECOND = 8'192.0;
+    static constexpr double BACKGROUND_TILES_PER_SECOND = 32'768.0;
     static constexpr double MAXIMUM_BACKGROUND_BURST = 128.0;
     auto const now = std::chrono::steady_clock::now();
     for (PreviewStream& stream : m_preview_streams) {

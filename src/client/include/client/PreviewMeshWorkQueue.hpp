@@ -14,6 +14,31 @@
 
 namespace client {
 
+inline constexpr uint8_t PREVIEW_MESH_WORK_TIER_COUNT = 6U;
+
+[[nodiscard]] inline uint8_t previewMeshWorkTier(uint8_t const geographic_tier, bool const missing_current_mesh)
+{
+    return geographic_tier < 2U ? geographic_tier
+        : static_cast<uint8_t>(geographic_tier + (missing_current_mesh ? 0U : 2U));
+}
+
+template<typename WorkRange, typename PriorityTier>
+[[nodiscard]] auto lowestPriorityPreviewMeshAbove(
+    WorkRange& work, PriorityTier priority_tier, uint8_t const admitted_tier
+)
+{
+    auto candidate = work.end();
+    uint8_t deferred_tier = admitted_tier;
+    for (auto item = work.begin(); item != work.end(); ++item) {
+        uint8_t const tier = previewMeshWorkTier(priority_tier(item->key), item->missing_current_mesh);
+        if (tier > deferred_tier) {
+            candidate = item;
+            deferred_tier = tier;
+        }
+    }
+    return candidate;
+}
+
 template<typename WorkRange, typename PriorityTier>
 [[nodiscard]] std::optional<shared::HeightTileKey> deferLowerPriorityPreviewMesh(
     WorkRange& work,
@@ -44,11 +69,12 @@ template<typename PriorityTier>
     int8_t const heading_x,
     int8_t const heading_y,
     shared::HeightTileKey const key,
-    PriorityTier priority_tier
+    PriorityTier priority_tier,
+    bool const missing_current_mesh = false
 )
 {
     return std::tuple{
-        priority_tier(key),
+        previewMeshWorkTier(priority_tier(key), missing_current_mesh),
         shared::heightTileInterestPriority(center, heading_x, heading_y, key),
         key.y,
         key.x,
@@ -70,7 +96,7 @@ template<typename ResultRange, typename PriorityTier>
     uint32_t index = 0U;
     for (auto const& result : results) {
         auto const priority = previewMeshWorkPriority(
-            center, heading_x, heading_y, result.key, priority_tier
+            center, heading_x, heading_y, result.key, priority_tier, result.missing_current_mesh
         );
         if (!preferred.has_value() || priority < preferred_priority) {
             preferred = index;

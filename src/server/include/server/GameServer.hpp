@@ -240,7 +240,9 @@ private:
 
         static constexpr uint32_t MAX_QUEUED_TILES = 128U;
         static constexpr uint32_t MAX_BUFFERED_TILES = 128U;
-        static constexpr uint32_t MAX_INFLIGHT_DELIVERIES = 4U;
+        static constexpr uint32_t MAX_INFLIGHT_DELIVERIES = shared::HEIGHT_TILE_DELIVERY_WINDOW;
+        static constexpr uint32_t MAX_DELIVERY_BYTES = 8'589U;
+        static constexpr uint32_t MAX_INFLIGHT_DELIVERY_BYTES = 34'356U;
         static constexpr uint32_t MAX_URGENT_CANDIDATES_PER_PUMP = 512U;
         static constexpr uint32_t MAX_PRIORITY_CANDIDATES_PER_PUMP = 256U;
         static constexpr uint32_t MAX_BACKGROUND_CANDIDATES_PER_PUMP = 512U;
@@ -249,6 +251,7 @@ private:
         struct Delivery final {
             std::vector<shared::HeightTileKey> additions;
             std::vector<shared::HeightTileKey> removals;
+            uint32_t encoded_bytes = 0U;
             std::chrono::steady_clock::time_point admitted_at{};
         };
 
