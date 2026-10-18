@@ -106,8 +106,9 @@ void GameClient::run(
         if (!isConnected()) {
             continue;
         }
+        auto const iteration_started_at = std::chrono::steady_clock::now();
         auto const loop_started_at = benchmark_hooks
-            ? std::chrono::steady_clock::now()
+            ? iteration_started_at
             : std::chrono::steady_clock::time_point{};
         auto const network_poll_started_at = loop_started_at;
         uint64_t network_event_count = 0U;
@@ -175,7 +176,12 @@ void GameClient::run(
             });
         }
         if (!benchmark_hooks || !benchmark_hooks->is_uncapped_phase || !benchmark_hooks->is_uncapped_phase()) {
-            std::this_thread::sleep_for(scheduler.idleDelay(now, presentation_succeeded));
+            auto const iteration_completed_at = std::chrono::steady_clock::now();
+            std::this_thread::sleep_for(scheduler.idleDelay(
+                iteration_started_at,
+                iteration_completed_at,
+                presentation_succeeded
+            ));
         }
     }
     m_client_audio.stop();

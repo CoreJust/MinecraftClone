@@ -73,11 +73,12 @@ disabled.
 ## Client roles and lifecycle
 
 [GameClient.hpp](../../src/client/include/client/GameClient.hpp) and
-[GameClient.cpp](../../src/client/GameClient.cpp) connect, join, poll, and render.
-Connect retains one peer for 30 seconds; polling is 25 ms, retrying every 250 ms
-with stop cancellation. `FrameScheduler` sends input every 100 ms with at most
-1 ms sleep. Positions update world; presentation snaps, then interpolates one
-`TICK`, holding across gaps. Disconnect resets and retries.
+[GameClient](../../src/client/GameClient.cpp) connects/joins/polls/renders.
+A retained peer lasts 30 seconds; 25 ms polls retry every 250 ms until cancelled.
+`FrameScheduler` sends input every 100 ms. Successful presentations never idle-sleep; unsuccessful iterations sleep only
+the unspent 1 ms, counting blocked render time. Positions update world;
+presentation snaps/interpolates one `TICK`, holding across gaps. Disconnect
+resets/retries.
 
 Hooks time client loops/input and server ticks. Legacy
 benchmarks skip idle delay; full-radius qualification retains normal scheduling.

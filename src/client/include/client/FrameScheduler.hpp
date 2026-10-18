@@ -14,8 +14,9 @@ public:
     [[nodiscard]]
     bool simulationDue(std::chrono::steady_clock::time_point now) noexcept;
     [[nodiscard]]
-    std::chrono::milliseconds idleDelay(
-        std::chrono::steady_clock::time_point now,
+    std::chrono::steady_clock::duration idleDelay(
+        std::chrono::steady_clock::time_point iteration_started_at,
+        std::chrono::steady_clock::time_point iteration_completed_at,
         bool presentation_succeeded
     ) const noexcept;
 
