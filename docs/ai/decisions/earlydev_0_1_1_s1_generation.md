@@ -1,84 +1,88 @@
-# S1 — Proposed generation and production integration
+# S1 — Selected generation model
 
-Part of the [S1 planning draft](earlydev_0_1_1_s1.md); proposals below are not
-owner-approved implementation choices or runtime evidence.
+The owner requests a complete generation design and temporary experiments now;
+production implementation remains later. Use a bounded, physically motivated
+procedural model: **global simulation → canonical regional elaboration → local
+chunks**. Do not allocate a 65,536² simulation or repeat global preparation for
+chunk requests. Model details, constants, measured results and implementation
+ownership are linked below.
 
-## Proposed terrain design
+## Global dependency graph
 
-Use an explicit world seed and generator revision, with a validated immutable
-configuration. The current native cosine-wave height kernel has no seed input;
-the new contract must propagate seed/configuration consistently to every
-authority and generation consumer. Identical seed, revision, configuration and
-coordinates must regenerate identical results regardless of chunk request
-order, worker count or eviction. The precision/quantization contract must make
-authoritative heights/materials consistent across supported platforms; it is
-an implementation decision to specify and test, not a floating-point assumption.
+```mermaid
+flowchart LR
+    A[Seeded crust and moving plates] --> C0[Coastline elaboration]
+    C0 --> B[Initial connected-ocean drainage]
+    B --> C[Provisional climate: 24 iterations]
+    C --> D[Bounded erosion and glacial shaping]
+    D --> E[Final climate: 80 iterations]
+    E --> F[Final discharge and water bodies]
+    F --> G[Validated immutable atlas]
+    G --> H[First-touch regional hierarchy]
+    H --> I[Canonical surface columns and 16³ chunks]
+```
 
-The owner's later clarification supersedes the earlier noise-led composition:
-tectonic simulation or a credible approximation generates the base heights;
-the seed decides the arrangement and scale of landforms. The following is a
-proposed architecture, with the actual model selected after comparison in
-[the tectonics research/design note](earlydev_0_1_1_s1_tectonics.md).
+1. [Geology](earlydev_0_1_1_s1_geology.md): seed independent plate and crust
+   fields; transport crust through 12 moving-plate epochs. Continuous velocity
+   strain produces collision belts, trenches, ridges/rifts and island arcs.
+   Residual detail follows geology. Plate identity is not continent identity.
+   [Coast/island diversity](earlydev_0_1_1_s1_diversity.md) adds uneven crust
+   provinces, segmented arcs and sparse hotspot histories.
+2. [Terrain and water](earlydev_0_1_1_s1_hydrology.md): choose one sea offset,
+   identify periodic connected seas, derive an acyclic drainage graph and lake
+   spill surfaces, shape rainfall-fed valleys and cold coastal inlets, reroute.
+   Keep beds distinct from water. Diagnose landmasses and sheltered inlets.
+3. [Climate](earlydev_0_1_1_s1_climate.md): synthetic toroidal insolation,
+   elevation cooling, prescribed winds, wind-driven ocean heat transport and
+   moisture/orographic rain. These fields select S1 materials and provide
+   future ecological/seasonal inputs. The provisional pass resolves the
+   climate–erosion dependency with a fixed budget.
 
-1. **Seeded geology:** establish plates, continental/oceanic crust structure
-   and motion. Do not equate one plate with one continent: the result must
-   support varied landmasses and oceanic portions within a plate model.
-2. **Tectonic relief:** model or approximate collision, subduction, spreading
-   and their regional effects. Generate related mountain belts/foothills,
-   deep basins/trenches, ridges and island/coast structures from that geology.
-   Merely naming a random range mask “tectonics” does not satisfy the goal.
-3. **Optional elaboration:** bounded relaxation/erosion or local noise may
-   refine slopes and coastlines where needed. Preserve the base geography;
-   an exponential local-noise term is an available detail technique, not a
-   requirement to recreate the continents or mountain placement independently.
-4. **Height:** map base and elaborated elevation into block heights with the
-   declared quantization rule, preserving bedrock, standing clearance and
-   relative basin/range structure. Avoid broad clamping that erases that relief.
-5. **Sea level:** choose S deterministically per seed/configuration using a
-   bounded world-wide sample, then reuse that one value for all chunks.
-   A proposed initial quantitative interpretation of “roughly half” is
-   45–55% submerged columns, measured on a separately declared validation grid.
-   Keep the result and sample definition; do not normalize each chunk independently.
+The global atlas is the intended future unloaded-world-map detail: continent
+shape, coasts, islands, ranges/trenches, seas/lakes and large rivers. It does
+not represent individual blocks or future decorations. Geographic features
+emerge from the seed/model; do not paste identical landmark counts into each
+world. The test/demo map colours water data despite S1's dry game basins.
 
-Use a bounded coarse world model/atlas plus deterministic local refinement,
-subject to measured cost and feature preservation. Plate preprocessing belongs
-to world creation, not every chunk request or gameplay tick. Bound atlas
-resolution, iterations, memory and initialization time; expose progress and
-cancellation. Cache immutable outputs by seed, configuration and generator
-identity, with query work independent of player travel history.
+## Regional and local generation
 
-Respect the existing 65,536-block X/Y period in plate ownership, motion,
-neighborhoods and height queries. Tile edges/corners and both wrap seams must
-agree; adopting a spherical-paper algorithm does not authorize changing world
-topology. Do not choose a new dependency before checking its build/license
-contract. Plate model, resolution, evolution/detail parameters, seed corpus
-and proposed land-area tolerance need evidence before becoming constants.
+[Regional elaboration](earlydev_0_1_1_s1_refinement.md) uses the existing
+16,384→4,096→1,024→256→64 extents, deterministic lattice values, parent
+constraints and bounded halos. Request order, eviction and worker scheduling
+cannot change the terrain. The prototype evaluates the canonical field
+without a cache; production must actually consume typed parent artifacts.
 
-## Integration with the actual game
+Local sampling applies the shared H/S convention, climate material table,
+exact four-block soil/seabed band and bottom Bedrock. A single sampler feeds
+materialization, authority, surface previews and detailed map export. Preserve
+65,536-block XY wrapping and bounded 1,024-block Z; distinguish geological
+height from compressed block height. Safe spawn follows atlas readiness.
 
-The current code exposes only Air/Stone in `Chunk.hpp`. `TerrainGenerator`
-produces height tiles and materialized chunks; `HeightTileSurfaceMesher` and
-the normal `PlayerClient` render height-derived quads. Existing streamed
-messages carry heights, not the new material layers. A block-enum change alone
-cannot deliver S1.
+## Selection and implementation boundary
 
-The implementation must establish one terrain sample contract for height,
-latitude, sea level and material-at-Z, then make these agree:
+[Choice rationale](earlydev_0_1_1_s1_rationale.md) defends alternatives, stage
+dependencies and parameter defaults, separating measurements from procedural
+calibration and explicit simplifications.
 
-- Generated chunks and authoritative collision, including lazy regeneration.
-- Streamed surface data/configuration and versioned codec validation.
-- Top and side rendering: cliffs expose the correct four ground layers,
-  underlying stone and bottom bedrock where visible; LOD does not paint an
-  entire cliff with its top material or erase biome/material boundaries.
-- Generation refinement: preview and final content agree at published sample
-  points, and stale work cannot install a different seed/configuration/revision.
-- Spawn: choose a bounded deterministic safe land position with standing
-  clearance instead of retaining a fixed Z that may lie inside the new terrain.
+[Experiments and budgets](earlydev_0_1_1_s1_experiments.md) record all six owner
+seeds `[0,1,42,777,2004,8800555]`, source/configuration identities, maps,
+performance, component ablations, rejected morphology and approximation limits.
+Use these results to choose default resolution and bound preparation. Finite
+iterations, progress and cancellation are mandatory. No busy preparation runs
+on the gameplay tick.
 
-Whether to transmit compact material metadata or derive it from an authenticated
-shared configuration is an implementation design choice. Arbitrary client-side
-guesses are not acceptable. Existing generation-stage, CoreLang configuration,
-streaming, cancellation and LOD contracts remain constraints. S1 need not add
-full voxel streaming for unedited heightfield terrain; S2 must explicitly
-design edit representation, replication, meshing and collision updates before
-claiming interactive editing works in the ordinary world.
+[Ownership/scheduling](earlydev_0_1_1_s1_architecture.md) defines immutable
+world identity, typed atlas/regional/surface results, dependency leases,
+near-first priority and independent memory budgets. The
+[implementation sequence](earlydev_0_1_1_s1_implementation.md) names exact
+production files, current bypasses, protocol/renderer changes and native tests.
+The initial [tectonics survey](earlydev_0_1_1_s1_tectonics.md) retains alternatives
+and source-access limits; it is superseded for algorithm selection.
+
+This design removes the model-selection prerequisite for implementation.
+Python measurements establish the measured host/model costs and appearance;
+they do not establish C++/Android costs, gameplay FPS, multiplayer correctness
+or cross-platform bitwise regeneration. Those gates remain explicit native
+implementation work, alongside the inherited defects and ordinary S1 gameplay
+acceptance. No in-game map UI, physical water or later biome content is added
+by this planning/experiment task.

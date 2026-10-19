@@ -8,8 +8,11 @@ This supersedes the earlier continental-noise plus independent range-mask design
 
 ## Model candidates and evidence
 
-This is a bounded primary-source survey, not an implementation selection or
-benchmark. Sources were checked on 19 October 2026. No prototype was run.
+This initial survey preceded the experiments. The subsequent
+[selected model](earlydev_0_1_1_s1_generation.md) and
+[measured experiment](earlydev_0_1_1_s1_experiments.md) now own the algorithm
+and selection evidence. Sources below were checked on 19 October 2026; the
+initial survey itself did not run a prototype or benchmark those libraries.
 
 | Candidate | Evidence and relevant limit | What the project must establish |
 |---|---|---|

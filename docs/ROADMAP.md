@@ -31,17 +31,29 @@ See [S1 design and acceptance](ai/decisions/earlydev_0_1_1_s1.md) and
    simulation or a credible approximation the foundation of the base heights.
    Large, medium and small continents, mountain ranges, ocean trenches,
    islands and peninsulas should emerge naturally, with their distribution
-   decided by the seed. Add local detail only where needed; the earlier
+   decided by the seed. Support smooth, curved irregular and ragged coasts;
+   elongated large islands with satellites, large-island groups, medium/small
+   archipelagos, isolated oceanic islands/groups and subcontinental islands.
+   Geography is anisotropic: land may concentrate in one half-world, and sparse
+   unusual landscapes arise from the processes. Do not distribute one shape
+   uniformly or require every feature in every seed. Add detail only where needed; the earlier
    `exp(local_octave_noise()) + continental_octave_noise()` suggestion no longer
    defines the large-scale foundation. Mountains should mostly form ranges
    with lower mountains, foothills and plains around them, while allowing
    occasional isolated mountains. Choose
    `SEA_LEVEL` so roughly half the terrain is above and half below it.
-   At or above sea level, use one topmost block, four ground blocks, then stone
-   down to bedrock. In each outer north/south 20% band, topmost/ground are
-   snow/ice; the central 60% uses grass/dirt. Below sea level, only terrain in
+   Global preparation builds tectonics, then terrain/water elaboration
+   (erosion, coasts, ranges/trenches, islands/peninsulas, seas/lakes, large
+   rivers and glacial inlets), then climate from winds and ocean currents.
+   Progressive first-touch regional elaboration precedes local chunk generation.
+   Climate-driven materials apply in S1, superseding fixed outer-20% polar
+   bands. At or above sea level, use one topmost block, four ground blocks,
+   then stone down to bedrock. Below sea level, only terrain in
    the four-block band immediately below `SEA_LEVEL` uses ground material;
-   deeper terrain is stone. Water itself arrives in S4.
+   deeper terrain is stone. Add standalone world-map generation for tests and
+   demos with ordered seeds `[0, 1, 42, 777, 2004, 8800555]`; the global atlas
+   also provides the future unloaded-map detail level. No in-game map UI in S1.
+   Physical water itself arrives in S4.
 2. **Placing, breaking and game modes.** Highlight the reachable block under
    the player's gaze. Breaking shows cracks and cubic particles. Normal break
    times are snow 1 s, dirt/grass 1.5 s, ice 2 s and stone 3 s; bedrock is
@@ -84,9 +96,10 @@ See [S1 design and acceptance](ai/decisions/earlydev_0_1_1_s1.md) and
    selection and exact thresholds are decisions for S6 planning.
 
 These are planned outcomes, not implemented or accepted behavior. S1's seeded
-continental shapes and polar materials are the initial terrain foundation;
-the richer height/temperature biome system, sand, trees and polar ice-wall work
-listed for 0.1.3 remain later scope. Menus, inventories and save/open-world UI
+geography and climate-driven materials are the initial terrain foundation.
+The richer biome content, sand, trees and polar ice-wall work listed for 0.1.3
+remain later scope; its older temperature/height wording does not postpone
+S1's explicitly requested climate simulation. Menus, inventories and save/open-world UI
 remain in 0.1.2. Planning does not start implementation or release reporting.
 
 Plans for EarlyDev 0.1.2 - GUI:
