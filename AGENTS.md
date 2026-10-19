@@ -1,6 +1,6 @@
 # AI development
 
-Read [docs/ai/README.md](docs/ai/README.md), then the task's guide and backlog item.
+Read [README](docs/ai/README.md), [next-minor handoff](docs/ai/INITIATION-CLOSURE-2026-10-19.md), and the task's guide/backlog.
 
 ## Scope and branches
 
@@ -27,7 +27,7 @@ Cover public contracts with unit, integration, fixed-seed/replay, offscreen scre
 
 ## Delivery gates
 
-- Every snapshot/version requires [three-hour PDFs, twelve-hour consolidation, fixed features, time diagrams and evidence-checked cleanup](docs/ai/RELEASE_REPORTS.md).
+- Automatically initialize implementation's folder/heartbeat for [three-hour PDFs, twelve-hour consolidation, fixed features, time diagrams and evidence-checked cleanup](docs/ai/RELEASE_REPORTS.md).
 
 - Bound stages below 30 minutes before launch; persist expiry/owned-process identities in receipts for resume. Preflight target, prerequisites and recovery. Print test names; for silence over 30 seconds announce phase/duration/next update, report every 60 seconds, and terminate owned trees at deadline.
 - Split work exceeding a deadline into bounded stages. Retain partial logs and a failure receipt, mark later stages unrun, and resume from the command or checkpoint; partial output never passes. `ai_check.py` caps stages at 10 minutes and invocations at 25.
