@@ -14,40 +14,45 @@ order, worker count or eviction. The precision/quantization contract must make
 authoritative heights/materials consistent across supported platforms; it is
 an implementation decision to specify and test, not a floating-point assumption.
 
-Treat the owner's formula as the shape of the composition, not a mandate to
-exponentiate an unbounded raw value. A proposed construction is:
+The owner's later clarification supersedes the earlier noise-led composition:
+tectonic simulation or a credible approximation generates the base heights;
+the seed decides the arrangement and scale of landforms. The following is a
+proposed architecture, with the actual model selected after comparison in
+[the tectonics research/design note](earlydev_0_1_1_s1_tectonics.md).
 
-1. **Continents:** low-frequency, multi-octave periodic noise supplies broad
-   landmasses, ocean basins and smooth regional elevation.
-2. **Range grouping:** a spatially coherent ridge/range field controls where
-   local relief is strong. Broad transition bands reduce its amplitude through
-   lower mountains and foothills into plains. A smaller isolated-peak component
-   permits exceptions without making the whole landscape a field of spikes.
-3. **Local relief:** normalized multi-octave local noise is exponentially
-   shaped with a finite exponent and amplitude. The range field modulates its
-   strength; fine detail cannot dominate the continental structure.
-4. **Height:** combine continental elevation and local relief, quantize using
-   the declared rule, and bound the result within the vertical world while
-   preserving bedrock and enough ceiling clearance for a standing player.
-   Tune amplitudes before relying on clamping, which can create flat plateaus.
+1. **Seeded geology:** establish plates, continental/oceanic crust structure
+   and motion. Do not equate one plate with one continent: the result must
+   support varied landmasses and oceanic portions within a plate model.
+2. **Tectonic relief:** model or approximate collision, subduction, spreading
+   and their regional effects. Generate related mountain belts/foothills,
+   deep basins/trenches, ridges and island/coast structures from that geology.
+   Merely naming a random range mask “tectonics” does not satisfy the goal.
+3. **Optional elaboration:** bounded relaxation/erosion or local noise may
+   refine slopes and coastlines where needed. Preserve the base geography;
+   an exponential local-noise term is an available detail technique, not a
+   requirement to recreate the continents or mountain placement independently.
+4. **Height:** map base and elaborated elevation into block heights with the
+   declared quantization rule, preserving bedrock, standing clearance and
+   relative basin/range structure. Avoid broad clamping that erases that relief.
 5. **Sea level:** choose S deterministically per seed/configuration using a
    bounded world-wide sample, then reuse that one value for all chunks.
    A proposed initial quantitative interpretation of “roughly half” is
    45–55% submerged columns, measured on a separately declared validation grid.
    Keep the result and sample definition; do not normalize each chunk independently.
 
-Evaluate fields in global wrapped coordinates with an exact 65,536-block
-horizontal period. Tile edges, corners and the world wrap seam must agree in
-height and material; visible noise seams or abrupt terrain steps are failures.
-Do not choose a new dependency without checking the existing build contract.
-Frequency, octave count, amplitudes, range widths, seed corpus and the proposed
-land-area tolerance need a preview/calibration pass before their final values
-become acceptance constants.
+Use a bounded coarse world model/atlas plus deterministic local refinement,
+subject to measured cost and feature preservation. Plate preprocessing belongs
+to world creation, not every chunk request or gameplay tick. Bound atlas
+resolution, iterations, memory and initialization time; expose progress and
+cancellation. Cache immutable outputs by seed, configuration and generator
+identity, with query work independent of player travel history.
 
-This composition is a design proposal, not evidence that realistic geography
-has been achieved. NVIDIA's [procedural-terrain chapter](https://developer.nvidia.com/gpugems/gpugems3/part-i-geometry/chapter-1-generating-complex-procedural-terrains-using-gpu)
-describes combining noise at different scales and spatial distortion; the
-range-control field and acceptance criteria here are our project proposal.
+Respect the existing 65,536-block X/Y period in plate ownership, motion,
+neighborhoods and height queries. Tile edges/corners and both wrap seams must
+agree; adopting a spherical-paper algorithm does not authorize changing world
+topology. Do not choose a new dependency before checking its build/license
+contract. Plate model, resolution, evolution/detail parameters, seed corpus
+and proposed land-area tolerance need evidence before becoming constants.
 
 ## Integration with the actual game
 

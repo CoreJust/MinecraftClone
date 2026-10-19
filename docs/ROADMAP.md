@@ -27,12 +27,15 @@ See [S1 design and acceptance](ai/decisions/earlydev_0_1_1_s1.md) and
 
 1. **Improved world generation and solid blocks.** Add grass, dirt, bedrock,
    snow and ice alongside existing stone. Place a one-block-deep bedrock layer
-   at the bottom. Shape elevation approximately as
-   `exp(local_octave_noise()) + continental_octave_noise()`: slowly varying
-   continental structure supplies recognizable land/ocean shapes and smooth
-   general elevation; local structure supplies plains, hills and mountains.
-   Mountains should mostly form ranges with lower mountains, foothills and
-   plains around them, while allowing occasional isolated mountains. Choose
+   at the bottom. The owner's later clarification makes seeded tectonic
+   simulation or a credible approximation the foundation of the base heights.
+   Large, medium and small continents, mountain ranges, ocean trenches,
+   islands and peninsulas should emerge naturally, with their distribution
+   decided by the seed. Add local detail only where needed; the earlier
+   `exp(local_octave_noise()) + continental_octave_noise()` suggestion no longer
+   defines the large-scale foundation. Mountains should mostly form ranges
+   with lower mountains, foothills and plains around them, while allowing
+   occasional isolated mountains. Choose
    `SEA_LEVEL` so roughly half the terrain is above and half below it.
    At or above sea level, use one topmost block, four ground blocks, then stone
    down to bedrock. In each outer north/south 20% band, topmost/ground are

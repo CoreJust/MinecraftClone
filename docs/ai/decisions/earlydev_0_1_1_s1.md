@@ -8,9 +8,10 @@ The current planning checkout is `s7-delivery-recovered`, `ai-dev`, inspected at
 
 ## Intended result and boundaries
 
-S1 replaces the repeating stone-only wave landscape with recognizable oceans,
-continents, plains, hills and grouped mountain ranges, with grass/dirt and
-snow/ice surface layers over stone and bottom bedrock. Oceans remain dry basins
+S1 replaces repeating stone waves with seed-driven tectonic base heights,
+simulated or credibly approximated. Different-sized continents, ranges, ocean
+trenches, islands and peninsulas emerge; detail is added only where needed.
+Grass/dirt and polar snow/ice cover stone and bottom bedrock. Oceans remain dry basins
 until S4. A normal player must see these materials and the same terrain that
 the server uses for collision; a separate showcase or chunk-only fixture does
 not satisfy the snapshot.
@@ -34,15 +35,16 @@ S2 will need arbitrary voxel edits, including changes a height alone cannot enco
 |---|---|---|
 | S1-01 | Grass, dirt, bedrock, snow and ice join existing stone. | Stable block identities and distinguishable normal-game surface/cliff materials; invalid IDs rejected before mutation. |
 | S1-02 | Exactly one bedrock layer at the world bottom. | Bedrock at Z=0 for every generated column; higher layers follow the rules below. |
-| S1-03 | Slowly varying continental octave noise plus exponentially shaped local octave noise. | Fixed-seed whole-world elevation preview and ordinary travel show land/ocean shapes and local relief. |
-| S1-04 | Mountains predominantly group into ranges, with lower mountains, hills and plains nearby; isolated mountains remain possible. | Several preselected seed previews and traversals show connected ranges and graded foothills rather than independent spikes. |
+| S1-03 | Seed-driven tectonic simulation or approximation produces base heights and varied continents, ocean trenches, islands and peninsulas; detail follows only if needed. | Base-height and final previews across seeds show emergent geography; noise cannot supply all the structure. |
+| S1-04 | Mountains mostly form ranges grading into lower mountains, foothills and plains; isolated peaks remain possible. | Tectonic fields and traversals explain connected ranges and their surroundings. |
 | S1-05 | Roughly half of terrain lies below sea level. | Record land/waterline-area statistics for each acceptance seed and the sampling method. |
 | S1-06 | Land has one topmost block, four ground blocks and stone down to bedrock. | Exact boundary-column tests and visible cutaways/steep cliffs agree. |
 | S1-07 | Each outer 20% north/south band uses snow/ice; the central 60% uses grass/dirt. | Tests at both band boundaries and wrap seam; latitude/material map and normal-game views. |
 | S1-08 | Below sea level, ground occurs only in the four-block band immediately below sea level; lower terrain is stone. | Exact shoreline/deep-basin column cases below. |
 | S1-09 | Fixes accompany the snapshot; they do not replace its product scope. | MC-AI-0477/0478/0479 evidence and representative final-S1 gameplay evidence. |
 
-Requirements S1-01–08 come from the owner's recovered S1 plan in the roadmap;
+Requirements S1-01–08 come from the owner's recovered S1 plan and subsequent
+tectonics clarification in the roadmap;
 S1-09 comes from the explicit correction about fixes and the retained handoff.
 Seed reproducibility, bounded work, common authority/render semantics and seam
 continuity below are derived from the existing generation/world contracts.

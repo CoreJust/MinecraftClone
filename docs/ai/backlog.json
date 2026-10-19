@@ -17032,7 +17032,7 @@
     "depends_on": [
       "MC-AI-0033"
     ],
-    "acceptance": "Deliver the six owner-supplied snapshots recorded in docs/ROADMAP.md and docs/ai/ROADMAP.md: layered continental/local terrain with grass/dirt/stone/bedrock/snow/ice, editing/modes, adaptive HUD/crosshair, water/swimming/flow, animated models/opacity and multiplayer bots. First fix inherited 0477/0478/0479 alongside S1 and retain representative gameplay regressions. Keep automated gates, exact-package owner acceptance/exception and separately authorized publication distinct. Plan only in this chat; reporting starts automatically with later implementation.",
+    "acceptance": "Deliver the six owner-supplied snapshots recorded in docs/ROADMAP.md and docs/ai/ROADMAP.md: layered seed-driven tectonic terrain with naturally varied continents, mountains, trenches, islands and peninsulas with grass/dirt/stone/bedrock/snow/ice, editing/modes, adaptive HUD/crosshair, water/swimming/flow, animated models/opacity and multiplayer bots. First fix inherited 0477/0478/0479 alongside S1 and retain representative gameplay regressions. Keep automated gates, exact-package owner acceptance/exception and separately authorized publication distinct. Plan only in this chat; reporting starts automatically with later implementation.",
     "evidence": "",
     "blocker": "",
     "owner": "",
@@ -17047,6 +17047,7 @@
     "plan": [
       "Deliver planned snapshots in order: MC-AI-0482, MC-AI-0483, MC-AI-0484, MC-AI-0485, MC-AI-0486, MC-AI-0487; product scope is docs/ROADMAP.md.",
       "Use docs/ai/decisions/earlydev_0_1_1_s1.md for the S1 planning draft and resolve its proposed defaults before implementation.",
+      "S1 tectonic simulation or credible approximation creates the base heights; seed determines varied landform scales, with detail/noise added only where needed. See the S1 tectonics note before selecting a model.",
       "Treat inherited defects as engineering work alongside S1; never replace the six product snapshots by fix-only or separate water-subsystem snapshots.",
       "Research/elaborate flowing water at S4 planning; refine model/art and bot rules at their owning snapshots.",
       "At implementation start initialize the version-specific three-hour reporting/heartbeat lifecycle; preserve the Windows-secondary/untouched owner restriction."
@@ -17113,7 +17114,7 @@
     "depends_on": [
       "MC-AI-0038"
     ],
-    "acceptance": "Grass, dirt, bedrock, snow and ice alongside stone; one bottom bedrock layer; continental octave terrain plus exponentially shaped local relief with grouped ranges and foothills; roughly half submerged; exact land/seabed and outer 20-percent latitude layers. Deliver in the ordinary streamed renderer and authoritative world, with 0477/0478/0479 fixes and regressions alongside S1. See docs/ai/decisions/earlydev_0_1_1_s1.md; proposed defaults remain subject to planning.",
+    "acceptance": "Grass, dirt, bedrock, snow and ice alongside stone; one bottom bedrock layer; seed-driven tectonic simulation or credible approximation creates base heights and naturally varied large/mid/small continents, ranges, ocean trenches, islands and peninsulas. Add detail only where needed, not an independently noise-authored geography. Preserve grouped ranges/foothills, roughly half submerged and exact land/seabed/polar layer rules. Deliver in the ordinary streamed renderer and authoritative world, with 0477/0478/0479 fixes and regressions alongside S1. See docs/ai/decisions/earlydev_0_1_1_s1.md; model/default choices require evidence.",
     "evidence": "",
     "blocker": "",
     "owner": "",
@@ -17126,9 +17127,9 @@
     "resolved_at": "",
     "resolution_changes": "",
     "plan": [
-      "Settle S1 design choices and create executable basic work packages from the detailed design.",
+      "Compare tectonic models from base-height previews, seed diversity and bounded preprocessing/query costs, then settle the S1 design and create executable basic work packages.",
       "First reproduce and fix inherited cursor, moving-frame and visible terrain-service defects; preserve raw failures and exact-package acceptance.",
-      "Deliver calibrated seeded terrain, correct solid layers, material-aware production streaming/rendering/collision and safe spawn.",
+      "Deliver calibrated tectonic base heights and optional detail, correct solid layers, material-aware production streaming/rendering/collision and safe spawn.",
       "Qualify representative normal movement and retained performance, visual and applicable platform gates."
     ],
     "product_changes": [],
@@ -17324,6 +17325,47 @@
     "baseline_commit": "",
     "commits": [],
     "finalized": false,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0488",
+    "title": "Ground S1 terrain plan in seed-driven tectonics",
+    "kind": "decision",
+    "status": "done",
+    "priority": "P1",
+    "route": "astra",
+    "milestone": "ED-011-PLAN",
+    "depends_on": [],
+    "acceptance": "Update canonical product/delivery/S1 plans and planned task metadata so tectonics produces base heights and naturally varied continents, mountains, ocean trenches, islands and peninsulas; optional noise is later detail. Record a bounded primary-source comparison of credible model approaches and required morphology/cost evidence without choosing an unmeasured implementation or claiming runtime success.",
+    "evidence": "Canonical product/delivery/S1 plans and minor/S1 task metadata now require seed-driven tectonic base heights and naturally varied landforms. The new S1 tectonics note compares primary-source model approaches, access/transfer limits and morphology/cost checks. ai_tasks.py check, ai_plan.py check, ai_docs.py check and git diff --check passed; 23 local Markdown links resolve and all S1 notes meet the 900-word limit. No model was implemented or benchmarked; no game code, reporting lifecycle, current selection or remote state changed.",
+    "blocker": "",
+    "owner": "codex",
+    "level": "basic",
+    "parent": "",
+    "motivation": "Owner clarified that S1 base heights should emerge from tectonic simulation or a credible approximation, with the seed deciding landform arrangement and scale.",
+    "context": "Planning-only follow-up to MC-AI-0481 on 19 October 2026. Preserve all six product snapshots, material/layer rules, inherited fixes and release restrictions. No implementation, prototype execution, reporting automation or publication.",
+    "complexity": "high",
+    "created_at": "2026-10-19",
+    "resolved_at": "2026-10-19",
+    "resolution_changes": "Replaced the noise-led terrain foundation with the owner-confirmed tectonic simulation/approximation requirement, kept detail conditional, and recorded a bounded primary-source model comparison and acceptance plan.",
+    "plan": [
+      "Revise the terrain foundation and seed-driven morphology throughout owning plans.",
+      "Compare simplified tectonic evolution with procedural tectonic approximation using primary sources and explicit limits.",
+      "Define base-vs-final previews, tectonic/relief consistency and bounded world-preprocessing acceptance.",
+      "Validate and obtain one exact-candidate Luna/high review before the local planning commit."
+    ],
+    "product_changes": [
+      "No runtime product behavior changed; S1 terrain requirements now reflect the owner's tectonic foundation and seed-driven landform variety."
+    ],
+    "code_changes": [
+      "Updated product/delivery roadmaps, S1 requirements/generation/acceptance and generated task metadata; added the tectonic research/design note."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
     "retrospective": "",
     "docs_review": "",
     "environment_review": "",

@@ -32,7 +32,7 @@ S1 is elaborated in [its design](decisions/earlydev_0_1_1_s1.md).
 
 | ID | Depends on | Product outcome | Validation focus |
 |---|---|---|---|
-| ED-011-S1 | ED-010-S7 | Seeded continental/local terrain with grouped ranges, bottom bedrock, grass/dirt and polar snow/ice layers; roughly half the terrain below sea level. | Exact layer/band/seam/determinism checks, global previews and normal streamed-world visuals; inherited 0477–0479 fixes/regressions alongside delivery. |
+| ED-011-S1 | ED-010-S7 | Seed-driven tectonic simulation/approximation produces varied continents, ranges, trenches, islands and peninsulas; optional detail follows. Bottom bedrock, grass/dirt and polar snow/ice layers; roughly half below sea level. | Tectonic base/final previews and measured bounded costs; layer/band/seam/determinism checks and normal streamed-world visuals; inherited 0477–0479 fixes/regressions alongside delivery. |
 | ED-011-S2 | ED-011-S1 | Reachable-block highlight, animated permission-aware placing/breaking, official Spectator/Creative/Survival presets, B block selection and precise mode/permission HUD. | Production edit/replication/collision cases; block times and filters; ordinary multiplayer editing and mode switches. |
 | ED-011-S3 | ED-011-S2 | Central edit crosshair and single-color or per-pixel dark/light scene-adaptive HUD/crosshair styling. | Mixed light/dark backgrounds within one element, scene sampling and normal-view readability. |
 | ED-011-S4 | ED-011-S3 | Sea-level water fill, semitransparency, underwater postprocessing, swimming permissions/slowdown, flowing water and replacement by placed solids. | Fluid research/design before implementation; authority, swim transitions, edit interaction and bounded multiplayer convergence. |
