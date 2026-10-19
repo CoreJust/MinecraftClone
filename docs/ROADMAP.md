@@ -14,11 +14,77 @@ Planned path to it (per snapshot):
 6. World test. The world is full 65'536 x 65'536 x 1'024 blocks. The chunks are still only air and stone with a simple generation pattern.
 7. Entity permissions and physics test. General permissions apply to every entity, with hard restrictions and overridable soft defaults; players are the first user. Permission-gated flight and phasing coexist with gravity, jump and collision. The snapshot adds a deterministic 16-color player parallelepiped with first-person, rear and front-facing third-person views, adverse-network acceptance, full-game performance checks including the x200 speed modifier, and automated fail-closed sanitizer/static-analysis gates.
 
-Plans for EarlyDev 0.1.1 (not split into snapshots) - BasicBlocks:
-1. A basic set of blocks (grass, stone, bedrock, snow, ice, water).
-2. Simple worldgen (probably still not random, but with fixed patterns).
-3. Blocks placing and breaking (and corresponding permissions).
-4. Proper player models, first/second/third person viewes.
+## EarlyDev 0.1.1 — BasicBlocks
+
+Owner-supplied six-snapshot plan, recovered and recorded on 19 October 2026.
+This replaces the earlier fixed-pattern outline and the assistant's proposed
+reliability/water snapshot splits. Fixes accompany the product snapshots;
+they are not separate product features or snapshots. The inherited cursor,
+moving-performance and terrain-loading defects are the first engineering batch
+alongside S1, with their regression checks retained throughout the minor.
+See [S1 design and acceptance](ai/decisions/earlydev_0_1_1_s1.md) and
+[delivery sequencing](ai/ROADMAP.md#basicblocks-snapshots).
+
+1. **Improved world generation and solid blocks.** Add grass, dirt, bedrock,
+   snow and ice alongside existing stone. Place a one-block-deep bedrock layer
+   at the bottom. Shape elevation approximately as
+   `exp(local_octave_noise()) + continental_octave_noise()`: slowly varying
+   continental structure supplies recognizable land/ocean shapes and smooth
+   general elevation; local structure supplies plains, hills and mountains.
+   Mountains should mostly form ranges with lower mountains, foothills and
+   plains around them, while allowing occasional isolated mountains. Choose
+   `SEA_LEVEL` so roughly half the terrain is above and half below it.
+   At or above sea level, use one topmost block, four ground blocks, then stone
+   down to bedrock. In each outer north/south 20% band, topmost/ground are
+   snow/ice; the central 60% uses grass/dirt. Below sea level, only terrain in
+   the four-block band immediately below `SEA_LEVEL` uses ground material;
+   deeper terrain is stone. Water itself arrives in S4.
+2. **Placing, breaking and game modes.** Highlight the reachable block under
+   the player's gaze. Breaking shows cracks and cubic particles. Normal break
+   times are snow 1 s, dirt/grass 1.5 s, ice 2 s and stone 3 s; bedrock is
+   described as unbreakable. Breaking permissions provide a block blacklist or
+   whitelist, including an empty list, and normal or effectively instant speed.
+   Spectator grants flight and block passthrough with an empty breaking
+   whitelist. Creative derives from Spectator, disables block passthrough,
+   uses an empty blacklist and quick destruction. Survival derives from
+   Creative, blacklists bedrock and uses normal destruction speed. The HUD
+   prints the mode and precise permissions in parentheses. B cycles the block
+   selected for placement, initially displayed in the HUD. Creative's bedrock
+   exception and Survival's inherited flight need explicit decisions during
+   S2 planning; do not silently substitute conventional Minecraft defaults.
+3. **Crosshair and adaptive HUD styling.** Add a central crosshair for the
+   edit ray. HUD/crosshair style supports a single color or a dark/light pair.
+   Adaptive color selection depends on the scene behind each individual pixel,
+   so an element remains readable across both snow and dark terrain; do not
+   switch the entire element to one color based on an average background.
+4. **Water.** Fill empty blocks at or below `SEA_LEVEL` with semitransparent
+   water. Include swimming, underwater effects with at least bluish screen
+   postprocessing, and flowing water. Movement slows in water when neither
+   flight nor passthrough is enabled. A swim permission, enabled by default in
+   Creative/Survival, permits swimming upward. Water is not broken; placing a
+   solid block into water replaces it. Research and elaborate fluid behavior
+   when planning S4, including alternatives to Minecraft's water model.
+5. **Player model and animation.** Replace the box body with a conventional
+   player model. First person shows two hands with distinct motions for
+   running, jumping, breaking, placing and swimming. Rear/front external views
+   show the complete animated model. Move the selected-block display from the
+   HUD into the player's hand. Add opacity in the range 0–100%; Spectator uses
+   40% opacity. Exact art and animation direction belongs to S5 planning.
+6. **Multiplayer players and bots.** Every multiplayer player has the model.
+   Bots wander, occasionally place/break nearby blocks and may swim, subject
+   to their capabilities; bots with flight use it, and Spectator bots only fly.
+   Keep bots near a player: proposed thresholds are return movement beyond
+   64 blocks, temporary Spectator flight beyond 128, and acceleration up to
+   500× beyond 160. Restore the original mode inside the usual 64-block range.
+   Recover a valid nonintersecting position when leaving passthrough inside
+   terrain; the same rule applies to human mode switches. Anchor-player
+   selection and exact thresholds are decisions for S6 planning.
+
+These are planned outcomes, not implemented or accepted behavior. S1's seeded
+continental shapes and polar materials are the initial terrain foundation;
+the richer height/temperature biome system, sand, trees and polar ice-wall work
+listed for 0.1.3 remain later scope. Menus, inventories and save/open-world UI
+remain in 0.1.2. Planning does not start implementation or release reporting.
 
 Plans for EarlyDev 0.1.2 - GUI:
 1. Main screen.
