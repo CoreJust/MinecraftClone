@@ -54,8 +54,8 @@ Chunk::Chunk(ChunkCoordinate const coordinate, Blocks const& blocks)
     , m_content_hash(contentHash(m_blocks))
 {
     for (Block const block : m_blocks) {
-        if (!isSupported(block)) {
-            throw std::invalid_argument{ "Chunk blocks must be Air or Stone" };
+        if (!isValidBlock(block)) {
+            throw std::invalid_argument{ "Chunk blocks must use a supported material ID" };
         }
     }
 }
@@ -106,7 +106,7 @@ std::optional<Block> Chunk::blockAt(BlockCoordinate const coordinate) const noex
 
 bool Chunk::setBlock(BlockCoordinate const coordinate, Block const block) noexcept
 {
-    if (!isValid(coordinate) || !isSupported(block)) {
+    if (!isValid(coordinate) || !isValidBlock(block)) {
         return false;
     }
 

@@ -126,7 +126,7 @@ int32_t signedDirectionComponent(uint8_t const component) noexcept
                         .y = static_cast<uint8_t>(wrapped_y % Chunk::SIDE_LENGTH),
                         .z = static_cast<uint8_t>(block_z % Chunk::SIDE_LENGTH),
                     });
-                    if (block == Block::Stone) {
+                    if (block && isSolidBlock(*block)) {
                         surface = std::max(surface, (block_z + 1) * SUBCELLS_PER_CELL);
                         found_column_support = true;
                         break;

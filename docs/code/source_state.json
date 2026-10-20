@@ -189,7 +189,7 @@
         "vcpkg-configuration.json",
         "vcpkg.json"
       ],
-      "sources_sha256": "c3e749f32d8f1002747b7c284eb0a0b03126738052f474bf7e746f62d05423f9"
+      "sources_sha256": "9e1d7efde9acc0857b87dba304111608b97aa062e9c9b84a0fb9ac117d28f544"
     },
     {
       "guide": "docs/code/CORE.md",
@@ -276,6 +276,7 @@
         "src/shared/include/shared/world/HeightTileSurfaceMesher.hpp",
         "src/shared/include/shared/world/ScriptedWorld.hpp",
         "src/shared/include/shared/world/SparseWorld.hpp",
+        "src/shared/include/shared/world/TerrainWorld.hpp",
         "src/shared/include/shared/world/World.hpp",
         "src/shared/include/shared/world/WorldGeneration.hpp",
         "src/shared/include/shared/world/WorldGenerationScheduler.hpp",
@@ -293,6 +294,7 @@
         "src/shared/world/HeightTileSurfaceMesher.cpp",
         "src/shared/world/ScriptedWorld.cpp",
         "src/shared/world/SparseWorld.cpp",
+        "src/shared/world/TerrainWorld.cpp",
         "src/shared/world/World.cpp",
         "src/shared/world/WorldGeneration.cpp",
         "src/shared/world/WorldGenerationScheduler.cpp",
@@ -314,14 +316,16 @@
         "tests/core/shared_message_tests.cpp",
         "tests/core/shared_world_tests.cpp",
         "tests/core/sparse_world_tests.cpp",
+        "tests/core/terrain_world_reference_tests.cpp",
+        "tests/core/terrain_world_tests.cpp",
         "tests/core/world_generation_scheduler_tests.cpp",
         "tests/core/world_generation_tests.cpp"
       ],
-      "sources_sha256": "f2cf771d7f1ca22a7cadaba7042ba3ceb009b62439285852283e5f60928b95de"
+      "sources_sha256": "9753ec57a2bc23ccc4eabe40b40665ee8faadc6eb0d36244b678d3ca522c3b2c"
     },
     {
       "guide": "docs/code/GENERATION.md",
-      "guide_sha256": "ef507d4a1cdcc6fe6c43209e56076ec8d3dbb82220b182528727055bfca373e1",
+      "guide_sha256": "d7a763c0a8416c85817fbb79f4f10fe6b90ab9c247f3d83b2f695096e312dc3f",
       "id": "generation",
       "sources": [
         "src/generation/CMakeLists.txt",

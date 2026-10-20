@@ -168,6 +168,8 @@ add_executable(mc_tests
     core/shared_message_tests.cpp
     core/scenario_parser_tests.cpp
     core/chunk_tests.cpp
+    core/terrain_world_tests.cpp
+    core/terrain_world_reference_tests.cpp
     core/chunk_mesher_tests.cpp
     core/chunk_mesh_lod_tests.cpp
     core/height_tile_surface_mesher_tests.cpp

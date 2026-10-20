@@ -1,6 +1,7 @@
 #pragma once
 
 #include <shared/world/Chunk.hpp>
+#include <shared/world/TerrainWorld.hpp>
 #include <shared/world/World.hpp>
 #include <shared/world/WorldGeneration.hpp>
 #include <shared/world/WorldGenerationScheduler.hpp>
@@ -100,6 +101,7 @@ struct SparseBlockQuery final {
 class SparseWorld final {
 public:
     explicit SparseWorld(SparseWorldOptions options = {});
+    SparseWorld(SparseWorldOptions options, std::shared_ptr<TerrainWorld const> terrain_world);
 
     [[nodiscard]]
     std::optional<Block> blockAt(WorldCoordinate coordinate);
@@ -173,7 +175,8 @@ private:
 
 private:
     SparseWorldOptions m_options;
-    TerrainGenerator m_generator;
+    std::optional<TerrainGenerator> m_generator;
+    std::shared_ptr<TerrainWorld const> m_terrain_world;
     ResidentChunks m_resident;
     PreviewChunks m_previews;
     uint64_t m_access_clock = 0U;

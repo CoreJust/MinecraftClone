@@ -27,9 +27,29 @@ uint64_t SparseWorld::ChunkCoordinateHash::operator()(ChunkCoordinate const coor
 
 SparseWorld::SparseWorld(SparseWorldOptions const options)
     : m_options(options)
+    , m_generator(std::in_place)
 {
     if (m_options.max_resident_chunks == 0U) {
         throw std::invalid_argument{"sparse world requires a positive resident chunk bound"};
+    }
+    m_resident.reserve(static_cast<ResidentChunks::size_type>(m_options.max_resident_chunks));
+    m_previews.reserve(static_cast<PreviewChunks::size_type>(m_options.max_resident_chunks));
+}
+
+SparseWorld::SparseWorld(
+    SparseWorldOptions const options,
+    std::shared_ptr<TerrainWorld const> terrain_world
+)
+    : m_options(options)
+    , m_terrain_world(std::move(terrain_world))
+{
+    if (m_options.max_resident_chunks == 0U) {
+        throw std::invalid_argument{"sparse world requires a positive resident chunk bound"};
+    }
+    if (!m_terrain_world
+        || m_terrain_world->identity().seed != m_options.seed
+        || m_terrain_world->identity().revision != m_options.revision) {
+        throw std::invalid_argument{"sparse world terrain context must match its seed and revision"};
     }
     m_resident.reserve(static_cast<ResidentChunks::size_type>(m_options.max_resident_chunks));
     m_previews.reserve(static_cast<PreviewChunks::size_type>(m_options.max_resident_chunks));
@@ -106,11 +126,29 @@ Chunk* SparseWorld::ensureChunk(ChunkCoordinate const coordinate)
         touch(existing->second);
         return &existing->second.chunk;
     }
+    if (m_terrain_world
+        && (m_terrain_world->identity().seed != m_options.seed
+            || m_terrain_world->identity().revision != m_options.revision)) {
+        return nullptr;
+    }
     m_previews.erase(preview_coordinate);
     evictIfFull();
+    Chunk generated;
+    if (m_terrain_world) {
+        SurfaceTile const surface = m_terrain_world->sampleSurface({
+            .x = coordinate.x,
+            .y = coordinate.y,
+            .z = 0,
+        });
+        generated = m_terrain_world->materializeChunk(surface, coordinate);
+    } else if (m_generator) {
+        generated = m_generator->generateChunk(coordinate);
+    } else {
+        return nullptr;
+    }
     auto [iterator, inserted] = m_resident.emplace(
         coordinate,
-        ResidentChunk{.chunk = m_generator.generateChunk(coordinate)}
+        ResidentChunk{.chunk = std::move(generated)}
     );
     if (!inserted) {
         return nullptr;

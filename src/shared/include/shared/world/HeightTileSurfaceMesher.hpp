@@ -24,6 +24,7 @@ struct HeightTileSurfaceQuad final {
     HeightTileSurfaceDirection direction = HeightTileSurfaceDirection::PositiveZ;
     uint16_t u_extent = 1U;
     uint16_t v_extent = 1U;
+    Block material = Block::Stone;
 
     constexpr bool operator==(HeightTileSurfaceQuad const&) const noexcept = default;
 };
@@ -93,11 +94,18 @@ private:
 };
 
 struct HeightTileSurfaceMesh final {
-    static constexpr uint32_t MAXIMUM_QUAD_COUNT = HeightTile::SAMPLE_COUNT * 4U;
+    // A column can contribute one top and up to four material runs on each side.
+    static constexpr uint32_t MAXIMUM_MATERIAL_RUNS_PER_COLUMN = 4U;
+    static constexpr uint32_t MAXIMUM_BASE_QUAD_COUNT = HeightTile::SAMPLE_COUNT
+        * (1U + 4U * MAXIMUM_MATERIAL_RUNS_PER_COLUMN);
+    static constexpr uint32_t MAXIMUM_SEAM_QUAD_COUNT = 4U * HeightTile::SIDE_LENGTH
+        * (2U * MAXIMUM_MATERIAL_RUNS_PER_COLUMN + 1U);
+    static constexpr uint32_t MAXIMUM_QUAD_COUNT = MAXIMUM_BASE_QUAD_COUNT + MAXIMUM_SEAM_QUAD_COUNT;
 
     HeightTileCoordinate coordinate{};
     std::vector<HeightTileSurfaceQuad> quads;
     HeightTileSurfaceDetail detail = HeightTileSurfaceDetail::Fine;
+    TerrainIdentity identity;
 };
 
 struct HeightTileSurfaceSeamBridge final {
@@ -132,7 +140,9 @@ struct HeightTileSurfaceEdgeProfile final {
 [[nodiscard]] HeightTileSurfaceSeamBridge heightTileSurfaceSeamBridge(
     HeightTileSurfaceMesh const& first,
     HeightTileSurfaceMesh const& second,
-    HeightTileSurfaceDirection first_edge
+    HeightTileSurfaceDirection first_edge,
+    SurfaceTile const* first_surface = nullptr,
+    SurfaceTile const* second_surface = nullptr
 );
 
 struct HeightTileSurfaceNeighbors final {

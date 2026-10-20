@@ -29,3 +29,20 @@ For the independent CPU target, configure `src/generation` with
 CTest cases. Parent-project tests register the same seven native generation
 sources in `mc_tests`. These checks establish numerical component behavior;
 they do not establish full gameplay, renderer, GPU, or release acceptance.
+
+## Regional sampling and materialization
+
+`TerrainWorld` binds every regional artifact and surface tile to the atlas
+configuration identity, terrain revision, and seed. Typed regional samples,
+surface columns, and materialized chunks come from that same atlas. Surface
+columns preserve top and ground material IDs; `Chunk` accepts only the declared
+material range and exposes one shared solid-material predicate. The injected
+`SparseWorld` context uses this sampler to materialize collision chunks rather
+than choosing an independent generator.
+
+The native `TerrainWorld` reference suite compares region, surface, material,
+and chunk results against the frozen revision-3/4/5 fixtures. Chunk, sampler,
+and material-aware mesher tests cover ID validity, deterministic ordering,
+surface intervals, and known-neighbor seams. These component checks and a
+normal-game Ready-sphere observation do not qualify integrated timing, GPU
+performance, all platforms, or the S1 release.

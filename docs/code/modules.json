@@ -54,6 +54,8 @@
         "tests/core/network_event_batch_tests.cpp",
         "tests/core/game_server_lifecycle_tests.cpp",
         "tests/core/chunk_tests.cpp",
+        "tests/core/terrain_world_tests.cpp",
+        "tests/core/terrain_world_reference_tests.cpp",
         "tests/core/chunk_mesher_tests.cpp",
         "tests/core/chunk_mesh_lod_tests.cpp",
         "tests/core/height_tile_surface_mesher_tests.cpp",

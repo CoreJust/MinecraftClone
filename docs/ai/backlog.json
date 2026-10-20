@@ -17555,5 +17555,43 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0495",
+    "title": "Integrate canonical Terrain-v2 regional and material sampling",
+    "kind": "feature",
+    "status": "done",
+    "priority": "P0",
+    "route": "luna",
+    "milestone": "ED-011-S1",
+    "depends_on": [],
+    "acceptance": "Implement exact layers/material identities and typed regional/surface/chunk sampling from the same atlas; server collision/materialization share context; order/seam/reference regressions and Ready spheres.",
+    "evidence": "0495 candidate checks: chunk 9/9, typed TerrainWorld/materialization 16/16, material/seam regression filter 7/7, frozen reference CTest 6/6; logs and source hashes: /Users/core-just/.codex/task-evidence/mc-s1-20261019/commit-preparation/sampling-final/focused-candidate-receipt.json. Actual normal-game run first-ready metric reports a complete 320-block playable sphere at 14.570589500s (raw frame 1388, 37428/37428); build source map is stable across 832 files (/Users/core-just/.codex/task-evidence/mc-s1-20261019/commit-preparation/sampling-final/focused-candidate-receipt.json includes its hash) and binary SHA-256 9d0483fc2ce4eef9bd5d163e6e437d150b1873bd52843551fc1d1356ba0de71e. The actual-game run exits 1 and reports passed=false: game benchmark did not complete the scripted full-game workload. Prepared SparseWorld test source is synthesized and not byte-identical to the runtime SparseWorld; the shared sampling/materialization calls and separate source-bound Ready observation support this task only. No 0505 integrated timing/FPS/platform or S1 qualification is claimed.",
+    "blocker": "",
+    "owner": "codex",
+    "level": "basic",
+    "parent": "MC-AI-0482",
+    "motivation": "S1 requires one authoritative sampler rather than independent default-wave paths.",
+    "context": "Amended parallel three-major S1 plan; implement independent work now with disjoint ownership and integrate real producers before acceptance.",
+    "complexity": "high",
+    "created_at": "2026-10-19",
+    "resolved_at": "2026-10-20",
+    "resolution_changes": "Added canonical atlas-backed typed regional/surface/chunk sampling, shared material identities and collision materialization; retained the Ready-sphere acceptance verbatim and attached a source-bound normal-game Ready observation. The game diagnostic itself did not complete its scripted workload; this task evidence does not claim integrated performance or platform qualification.",
+    "plan": [],
+    "product_changes": [
+      "Provide atlas-backed typed region/surface/chunk sampling with stable material identities for collision and presentation consumers."
+    ],
+    "code_changes": [
+      "Add TerrainWorld regional refinement, surface sampling, and canonical chunk materialization over the frozen atlas.",
+      "Preserve material IDs in chunks and meshing, and inject the same terrain context into SparseWorld collision materialization.",
+      "Register focused material, ordering, seam, and frozen-reference tests in the native project target."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <shared/world/Chunk.hpp>
+#include <shared/world/TerrainWorld.hpp>
 #include <shared/world/WorldGenerationScheduler.hpp>
 
 #include <array>
@@ -27,6 +28,7 @@ struct HeightTile final {
 
     HeightTileCoordinate coordinate{};
     Heights heights{};
+    SurfaceTile surface{};
 
     [[nodiscard]]
     std::optional<uint16_t> heightAt(BlockCoordinate coordinate) const noexcept;

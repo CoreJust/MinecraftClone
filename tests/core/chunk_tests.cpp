@@ -22,6 +22,34 @@ TEST(ChunkTest, StoresDenseCubicBlocksAtEveryBoundary)
     EXPECT_EQ(chunk.blockAt(LAST), shared::Block::Stone);
 }
 
+TEST(ChunkTest, PreservesTerrainMaterialIdsAndStoresEveryMaterial)
+{
+    static constexpr std::array<shared::Block, 7> MATERIALS{
+        shared::Block::Air,
+        shared::Block::Stone,
+        shared::Block::Grass,
+        shared::Block::Dirt,
+        shared::Block::Bedrock,
+        shared::Block::Snow,
+        shared::Block::Ice,
+    };
+
+    for (uint8_t index = 0; index < MATERIALS.size(); ++index) {
+        EXPECT_EQ(static_cast<uint8_t>(MATERIALS[index]), index);
+        EXPECT_TRUE(shared::isValidBlock(MATERIALS[index]));
+        EXPECT_EQ(shared::isSolidBlock(MATERIALS[index]), MATERIALS[index] != shared::Block::Air);
+    }
+    EXPECT_FALSE(shared::isValidBlock(static_cast<shared::Block>(7U)));
+    EXPECT_FALSE(shared::isSolidBlock(static_cast<shared::Block>(7U)));
+
+    shared::Chunk chunk;
+    for (uint8_t index = 1; index < MATERIALS.size(); ++index) {
+        shared::BlockCoordinate const coordinate{ .x = index, .y = 0, .z = 0 };
+        ASSERT_TRUE(chunk.setBlock(coordinate, MATERIALS[index]));
+        EXPECT_EQ(chunk.blockAt(coordinate), MATERIALS[index]);
+    }
+}
+
 TEST(ChunkTest, RejectsOutOfBoundsQueriesAndEditsWithoutChangingIdentity)
 {
     static constexpr shared::BlockCoordinate INVALID_X{ .x = 16, .y = 0, .z = 0 };
@@ -62,7 +90,7 @@ TEST(ChunkTest, RevisionsAndContentHashesChangeOnlyForEffectiveEdits)
 TEST(ChunkTest, RejectsUnsupportedBlockEditsWithoutChangingIdentity)
 {
     static constexpr shared::BlockCoordinate COORDINATE{ .x = 4, .y = 8, .z = 12 };
-    static constexpr shared::Block UNSUPPORTED = static_cast<shared::Block>(255U);
+    static constexpr shared::Block UNSUPPORTED = static_cast<shared::Block>(7U);
 
     shared::Chunk chunk;
     shared::ChunkContentIdentity const original_identity = chunk.contentIdentity();
@@ -97,7 +125,7 @@ TEST(ChunkTest, BulkConstructionRejectsUnsupportedBlocks)
     blocks.fill(shared::Block::Air);
     blocks[static_cast<uint32_t>(BLOCK_COORDINATE.z) * shared::Chunk::FACE_BLOCK_COUNT
         + static_cast<uint32_t>(BLOCK_COORDINATE.y) * shared::Chunk::SIDE_LENGTH
-        + BLOCK_COORDINATE.x] = static_cast<shared::Block>(2U);
+        + BLOCK_COORDINATE.x] = static_cast<shared::Block>(7U);
 
     EXPECT_THROW(
         static_cast<void>(shared::Chunk{ {}, blocks }),

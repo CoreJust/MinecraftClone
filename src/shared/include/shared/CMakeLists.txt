@@ -10,6 +10,7 @@ target_sources(mc
             world/CanonicalWorld.hpp
             world/ScriptedWorld.hpp
             world/Chunk.hpp
+            world/TerrainWorld.hpp
             world/ChunkMesher.hpp
             world/ChunkMeshLod.hpp
             world/HeightTileInterest.hpp
