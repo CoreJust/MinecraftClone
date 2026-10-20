@@ -6,10 +6,12 @@ from __future__ import annotations
 import argparse
 from datetime import datetime, timedelta, timezone
 import hashlib
+from io import BytesIO
 import json
 import math
 import os
 from pathlib import Path
+from pathlib import PurePosixPath
 import re
 import shutil
 import sys
@@ -45,7 +47,10 @@ _DRAFT_KEYS = {
     "next_goals",
     "summary",
 }
+_MAJOR_DRAFT_KEYS = {"product_results", "screenshots", "measurements", "analysis"}
 _TIME_KEYS = {"allocations", "parallel_note"}
+_STATUS_ORDER = {"Done": 0, "In progress": 1, "Planned": 2}
+_STATUS_COLORS = {"Done": "#188038", "In progress": "#1a73e8", "Planned": "#5f6368"}
 
 
 class ReportError(ValueError):
@@ -162,14 +167,28 @@ def _validate_feature_lines(entries: Any, known_ids: set[str]) -> dict[str, list
 
 
 def validate_draft(
-    draft: dict[str, Any], features: list[dict[str, str]], expected_kind: str
+    draft: dict[str, Any],
+    features: list[dict[str, str]],
+    expected_kind: str,
+    *,
+    minor_kind: str | None = None,
+    minors_per_major: int = 3,
 ) -> None:
     """Validate the ten-section report content and period-specific constraints."""
-    if expected_kind not in {"3h", "12h"}:
-        raise ReportError("period kind must be 3h or 12h")
+    if minor_kind is None:
+        minor_kind = "3h" if expected_kind == "3h" else "4h"
+    if minor_kind not in {"3h", "4h"} or expected_kind not in {minor_kind, "12h"}:
+        raise ReportError("period kind must match the 3h legacy or 4h minor report profile")
+    if isinstance(minors_per_major, bool) or not isinstance(minors_per_major, int) or minors_per_major < 1:
+        raise ReportError("a major report must cover at least one minor period")
     if not isinstance(draft, dict):
         raise ReportError("draft must be a JSON object")
     allowed_keys = _DRAFT_KEYS | ({"covered_periods"} if expected_kind == "12h" else set())
+    if expected_kind == "12h" and minor_kind == "4h":
+        missing_major_fields = _MAJOR_DRAFT_KEYS - set(draft)
+        if missing_major_fields:
+            raise ReportError(f"major report fields are missing: {', '.join(sorted(missing_major_fields))}")
+        allowed_keys |= _MAJOR_DRAFT_KEYS
     if set(draft) != allowed_keys:
         raise ReportError("draft fields do not match the required report format")
     manifest = _features_by_id(features)
@@ -181,9 +200,16 @@ def validate_draft(
     start = _parse_datetime(period["start"], "period start")
     end = _parse_datetime(period["end"], "period end")
     hours = (end - start).total_seconds() / 3600
-    expected_hours = 3 if expected_kind == "3h" else 12
-    if not math.isclose(hours, expected_hours, rel_tol=0, abs_tol=1e-9):
-        raise ReportError(f"period must be exactly {expected_hours} hours")
+    if minor_kind == "3h":
+        maximum_hours = 3 if expected_kind == "3h" else 12
+        if not math.isclose(hours, maximum_hours, rel_tol=0, abs_tol=1e-9):
+            raise ReportError(f"period must be exactly {maximum_hours} hours")
+    else:
+        maximum_hours = 4 if expected_kind == "4h" else 12
+        if hours <= 0:
+            raise ReportError("period must have a positive duration")
+        if hours > maximum_hours:
+            raise ReportError(f"period must be at most {maximum_hours} hours")
 
     states = draft["feature_state"]
     if not isinstance(states, list) or len(states) != len(features):
@@ -233,7 +259,7 @@ def validate_draft(
         if not evidence:
             raise ReportError(f"time allocation evidence for {label} must not be empty")
         total_hours += float(amount)
-    if not math.isclose(total_hours, expected_hours, rel_tol=0, abs_tol=1e-6):
+    if not math.isclose(total_hours, hours, rel_tol=0, abs_tol=1e-6):
         raise ReportError("time allocations must sum to the period")
     if "parallel_note" in spent and not _single_line(spent["parallel_note"], "parallel work note"):
         raise ReportError("parallel work note must not be empty")
@@ -246,21 +272,107 @@ def validate_draft(
 
     if expected_kind == "12h":
         covered = draft["covered_periods"]
-        if not isinstance(covered, list) or len(covered) != 4:
-            raise ReportError("12-hour summary must list exactly four covered periods")
+        if not isinstance(covered, list) or len(covered) != minors_per_major:
+            raise ReportError(f"12-hour summary must list exactly {minors_per_major} covered periods")
         parsed: list[tuple[datetime, datetime]] = []
         for item in covered:
             if not isinstance(item, dict) or set(item) != {"start", "end"}:
                 raise ReportError("covered periods must contain start and end")
             item_start = _parse_datetime(item["start"], "covered period start")
             item_end = _parse_datetime(item["end"], "covered period end")
-            if not math.isclose((item_end - item_start).total_seconds(), 10800, rel_tol=0, abs_tol=1e-6):
-                raise ReportError("covered periods must each be exactly three hours")
+            item_hours = (item_end - item_start).total_seconds() / 3600
+            if minor_kind == "3h":
+                if not math.isclose(item_hours, 3, rel_tol=0, abs_tol=1e-6):
+                    raise ReportError("legacy covered periods must each be exactly three hours")
+            elif item_hours <= 0 or item_hours > 4:
+                raise ReportError("covered minor periods must have positive duration and be at most 4 hours")
             parsed.append((item_start, item_end))
-        if any(parsed[index][1] != parsed[index + 1][0] for index in range(3)):
+        if any(parsed[index][1] != parsed[index + 1][0] for index in range(len(parsed) - 1)):
             raise ReportError("covered periods must be contiguous")
         if parsed[0][0] != start or parsed[-1][1] != end:
-            raise ReportError("covered periods do not match the 12-hour summary period")
+            raise ReportError("covered periods do not match the major summary period")
+        if minor_kind == "4h":
+            _validate_major_details(draft)
+
+
+def _validate_major_details(draft: dict[str, Any]) -> None:
+    product_results = _line_list(draft["product_results"], "product results", 30)
+    if not product_results:
+        raise ReportError("major report fields require at least one product result")
+
+    screenshots = draft["screenshots"]
+    if not isinstance(screenshots, list) or len(screenshots) > 8:
+        raise ReportError("major report screenshots must contain at most 8 images")
+    screenshot_paths: set[str] = set()
+    for screenshot in screenshots:
+        if not isinstance(screenshot, dict) or set(screenshot) != {"path", "caption"}:
+            raise ReportError("each major screenshot must contain path and caption")
+        screenshot_path = _single_line(screenshot["path"], "screenshot path")
+        path_parts = PurePosixPath(screenshot_path).parts
+        if (
+            not screenshot_path
+            or "\\" in screenshot_path
+            or PurePosixPath(screenshot_path).is_absolute()
+            or any(part in {"", ".", ".."} for part in path_parts)
+        ):
+            raise ReportError("screenshot paths must be project-relative and must not traverse directories")
+        if screenshot_path in screenshot_paths:
+            raise ReportError("major report screenshot paths must be unique")
+        screenshot_paths.add(screenshot_path)
+        if not _single_line(screenshot["caption"], "screenshot caption"):
+            raise ReportError("screenshot caption must not be empty")
+
+    measurements = draft["measurements"]
+    if not isinstance(measurements, list) or not 1 <= len(measurements) <= 30:
+        raise ReportError("major report must contain 1 to 30 measurement rows")
+    labels: set[str] = set()
+    for measurement in measurements:
+        if not isinstance(measurement, dict) or set(measurement) != {"metric", "value", "workload", "evidence"}:
+            raise ReportError("each measurement must contain metric, value, workload, and evidence")
+        metric = _single_line(measurement["metric"], "measurement metric")
+        if not metric or metric in labels:
+            raise ReportError("measurement metrics must be nonempty and unique")
+        labels.add(metric)
+        for key in ("value", "workload", "evidence"):
+            if not _single_line(measurement[key], f"measurement {key}"):
+                raise ReportError(f"measurement {key} must not be empty")
+
+    analysis = _line_list(draft["analysis"], "major analysis", 30)
+    if not analysis:
+        raise ReportError("major report fields require at least one analysis line")
+
+
+def _read_screenshots(draft: dict[str, Any]) -> tuple[list[bytes], list[str]]:
+    images: list[bytes] = []
+    hashes: list[str] = []
+    root = Path.cwd()
+    for screenshot in draft.get("screenshots", []):
+        source = root
+        for component in PurePosixPath(screenshot["path"]).parts:
+            source = source / component
+            if source.is_symlink():
+                raise ReportError(f"screenshot path contains a symlink: {screenshot['path']}")
+        if not source.is_file():
+            raise ReportError(f"screenshot file does not exist: {screenshot['path']}")
+        image_data = source.read_bytes()
+        try:
+            from PIL import Image
+
+            with Image.open(BytesIO(image_data)) as image:
+                if image.format not in {"PNG", "JPEG"}:
+                    raise ReportError("major report screenshots must be PNG or JPEG images")
+                if image.width * image.height > 50_000_000:
+                    raise ReportError("major report screenshot exceeds 50 megapixels")
+                image.verify()
+        except ImportError as error:
+            raise ReportError("validating screenshots requires Pillow from the bundled Python") from error
+        except ReportError:
+            raise
+        except Exception as error:
+            raise ReportError(f"cannot read screenshot image {screenshot['path']}: {error}") from error
+        images.append(image_data)
+        hashes.append(hashlib.sha256(image_data).hexdigest())
+    return images, hashes
 
 
 def _manifest_revision(state: dict[str, Any], period_index: int) -> dict[str, Any]:
@@ -278,6 +390,26 @@ def _revision_hash(revision: dict[str, Any]) -> str:
     return hashlib.sha256(_canonical_json(revision).encode("utf-8")).hexdigest()
 
 
+def _reporting_profile(state: dict[str, Any]) -> dict[str, Any]:
+    """Resolve the new anchored cadence or the historical unmarked 3h cadence."""
+    reporting = state.get("reporting")
+    if reporting is None:
+        return {"minor_kind": "3h", "minor_hours": 3, "minors_per_major": 4, "anchor": None}
+    if not isinstance(reporting, dict) or set(reporting) != {"anchor", "minor_hours", "minors_per_major"}:
+        raise ReportError("reporting cadence state is malformed")
+    anchor = _parse_datetime(reporting["anchor"], "implementation anchor")
+    if (
+        isinstance(reporting["minor_hours"], bool)
+        or not isinstance(reporting["minor_hours"], int)
+        or reporting["minor_hours"] != 4
+        or isinstance(reporting["minors_per_major"], bool)
+        or not isinstance(reporting["minors_per_major"], int)
+        or reporting["minors_per_major"] != 3
+    ):
+        raise ReportError("unsupported reporting cadence")
+    return {"minor_kind": "4h", "minor_hours": 4, "minors_per_major": 3, "anchor": anchor}
+
+
 def _state_paths(reports_root: str | Path, release_id: str) -> tuple[Path, Path, Path]:
     release_directory = _release_directory(reports_root, release_id)
     owner_path = release_directory / ".report-owner.json"
@@ -290,6 +422,12 @@ def _state_paths(reports_root: str | Path, release_id: str) -> tuple[Path, Path,
         raise ReportError("release owner marker does not match")
     if not isinstance(state, dict) or state.get("release_id") != release_id or state.get("owner_token") != owner.get("token"):
         raise ReportError("release state does not match its owner marker")
+    reporting = state.get("reporting")
+    if owner.get("anchor") is not None:
+        if not isinstance(reporting, dict) or reporting.get("anchor") != owner["anchor"]:
+            raise ReportError("implementation anchor does not match its owner marker")
+    elif reporting is not None:
+        raise ReportError("anchored report state is missing its owner marker")
     return release_directory, owner_path, state_path
 
 
@@ -299,10 +437,15 @@ def start_release(
     prefix: str,
     features: list[dict[str, str]],
     required_gates: list[str],
+    *,
+    anchor: str | None = None,
 ) -> Path:
-    """Create a fresh managed release folder and its initial ordered manifest."""
+    """Create a fresh anchored 4-hour minor and 12-hour major report folder."""
     release_id = _safe_component(release_id, "release ID")
     prefix = _safe_component(prefix, "filename prefix")
+    if anchor is None:
+        raise ReportError("new release report state requires an implementation anchor")
+    anchor_value = _parse_datetime(anchor, "implementation anchor").isoformat()
     normalized_features = [_validate_feature(feature) for feature in features]
     _features_by_id(normalized_features)
     gates = [_safe_component(gate, "gate ID") for gate in required_gates]
@@ -314,7 +457,7 @@ def start_release(
     if release_directory.exists() or release_directory.is_symlink():
         raise ReportError(f"managed release folder already exists: {release_directory}")
     release_directory.mkdir()
-    (release_directory / "3h").mkdir()
+    (release_directory / "4h").mkdir()
     (release_directory / "12h").mkdir()
     token = uuid.uuid4().hex
     revision = {
@@ -330,11 +473,20 @@ def start_release(
         "required_gates": gates,
         "owner_token": token,
         "manifest_revisions": [revision],
+        "reporting": {
+            "anchor": anchor_value,
+            "minor_hours": 4,
+            "minors_per_major": 3,
+        },
         "periods": [],
         "aggregates": [],
     }
     try:
-        _atomic_json(release_directory / ".report-owner.json", {"release_id": release_id, "token": token})
+        _atomic_json(release_directory / ".report-owner.json", {
+            "release_id": release_id,
+            "token": token,
+            "anchor": anchor_value,
+        })
         _atomic_json(release_directory / ".report-state.json", state)
     except Exception:
         shutil.rmtree(release_directory)
@@ -378,8 +530,9 @@ def add_feature(
     return state
 
 
-def _filename(prefix: str, start: datetime) -> str:
-    return f"{prefix}-{start:%Y-%m-%d-%H}-report.pdf"
+def _filename(prefix: str, start: datetime, *, precise: bool = False) -> str:
+    timestamp = start.strftime("%Y-%m-%d-%H%M%S%f%z" if precise else "%Y-%m-%d-%H")
+    return f"{prefix}-{timestamp}-report.pdf"
 
 
 def _payload(
@@ -397,6 +550,10 @@ def _payload(
     }
 
 
+def _pdf_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    return {key: value for key, value in payload.items() if key != "_screenshot_data"}
+
+
 def _atomic_render(payload: dict[str, Any], destination: Path) -> str:
     destination.parent.mkdir(parents=True, exist_ok=True)
     temporary = destination.with_name(f".{destination.name}.{uuid.uuid4().hex}.tmp.pdf")
@@ -411,27 +568,47 @@ def _atomic_render(payload: dict[str, Any], destination: Path) -> str:
 
 
 def _validate_append_inputs(
-    state: dict[str, Any], draft: dict[str, Any], twelve_hour_summary: dict[str, Any] | None
+    state: dict[str, Any],
+    draft: dict[str, Any],
+    twelve_hour_summary: dict[str, Any] | None,
+    *,
+    check_screenshots: bool = True,
 ) -> tuple[dict[str, Any], datetime, datetime, bool]:
     if "pending_pruning" in state:
         raise ReportError("a previous aggregate needs pruning reconciliation before another report")
+    profile = _reporting_profile(state)
     periods = state["periods"]
     period_index = len(periods)
     revision = _manifest_revision(state, period_index)
-    validate_draft(draft, revision["features"], "3h")
+    validate_draft(
+        draft,
+        revision["features"],
+        profile["minor_kind"],
+        minor_kind=profile["minor_kind"],
+        minors_per_major=profile["minors_per_major"],
+    )
     period_start = _parse_datetime(draft["period"]["start"], "period start")
     period_end = _parse_datetime(draft["period"]["end"], "period end")
+    if period_index == 0 and profile["anchor"] is not None and period_start != profile["anchor"]:
+        raise ReportError("first minor report must begin at the implementation anchor")
     if periods and period_start != _parse_datetime(periods[-1]["end"], "previous period end"):
         raise ReportError("report periods must be contiguous")
-    aggregate_required = period_index % 4 == 3
+    aggregate_required = period_index % profile["minors_per_major"] == profile["minors_per_major"] - 1
+    aggregate_ordinal = "third" if profile["minors_per_major"] == 3 else "fourth"
     if aggregate_required and twelve_hour_summary is None:
-        raise ReportError("the fourth contiguous report requires a 12-hour summary")
+        raise ReportError(f"the {aggregate_ordinal} contiguous report requires a 12-hour summary")
     if not aggregate_required and twelve_hour_summary is not None:
-        raise ReportError("12-hour summary is only accepted with every fourth report")
+        raise ReportError(f"12-hour summary is only accepted with every {aggregate_ordinal} report")
     if aggregate_required:
         assert twelve_hour_summary is not None
-        validate_draft(twelve_hour_summary, revision["features"], "12h")
-        first_index = period_index - 3
+        validate_draft(
+            twelve_hour_summary,
+            revision["features"],
+            "12h",
+            minor_kind=profile["minor_kind"],
+            minors_per_major=profile["minors_per_major"],
+        )
+        first_index = period_index - profile["minors_per_major"] + 1
         covered_records = [
             *periods[first_index:period_index],
             {"start": draft["period"]["start"], "end": draft["period"]["end"]},
@@ -445,12 +622,12 @@ def _validate_append_inputs(
             for item in twelve_hour_summary["covered_periods"]
         ]
         if supplied != expected:
-            raise ReportError("12-hour summary covered periods do not match the four reports")
+            raise ReportError(f"12-hour summary covered periods do not match the {profile['minors_per_major']} reports")
         if (
             _parse_datetime(twelve_hour_summary["period"]["start"], "summary start") != expected[0][0]
             or _parse_datetime(twelve_hour_summary["period"]["end"], "summary end") != period_end
         ):
-            raise ReportError("12-hour summary must cover the exact four-report interval")
+            raise ReportError(f"12-hour summary must cover the exact {profile['minors_per_major']}-report interval")
         initial_revision = _manifest_revision(state, first_index)
         initial_ids = {feature["id"] for feature in initial_revision["features"]}
         summary_progress = _validate_feature_lines(
@@ -460,6 +637,8 @@ def _validate_append_inputs(
         for feature in revision["features"]:
             if feature["id"] not in initial_ids and feature["id"] not in summary_progress:
                 raise ReportError(f"12-hour summary must note addition of feature {feature['id']}")
+        if check_screenshots and profile["minor_kind"] == "4h":
+            _read_screenshots(twelve_hour_summary)
     return revision, period_start, period_end, aggregate_required
 
 
@@ -469,7 +648,7 @@ def append_report(
     draft: dict[str, Any],
     twelve_hour_summary: dict[str, Any] | None = None,
 ) -> list[Path]:
-    """Append the next contiguous 3-hour report and consolidate each fourth."""
+    """Append one contiguous minor report and consolidate each complete major."""
     release_directory, _, state_path = _state_paths(reports_root, release_id)
     state = _read_json(state_path)
     if "pending_pruning" in state:
@@ -480,13 +659,15 @@ def append_report(
         state, draft, twelve_hour_summary
     )
     features = current_revision["features"]
+    profile = _reporting_profile(state)
+    precise_names = profile["minor_kind"] == "4h"
 
     standalone_path: Path | None = None
     if not expected_aggregate:
-        standalone_path = release_directory / "3h" / _filename(state["prefix"], period_start)
+        standalone_path = release_directory / profile["minor_kind"] / _filename(state["prefix"], period_start, precise=precise_names)
         if standalone_path.exists():
             raise ReportError("report filename already exists")
-        payload = _payload(state, draft, current_revision, "3h")
+        payload = _payload(state, draft, current_revision, profile["minor_kind"])
         digest = _atomic_render(payload, standalone_path)
         period_record = {
             "start": draft["period"]["start"],
@@ -506,11 +687,11 @@ def append_report(
         return [standalone_path]
 
     assert twelve_hour_summary is not None
-    first_index = period_index - 3
+    first_index = period_index - profile["minors_per_major"] + 1
     covered_records = periods[first_index:period_index]
     summary_start = _parse_datetime(twelve_hour_summary["period"]["start"], "summary start")
 
-    aggregate_path = release_directory / "12h" / _filename(state["prefix"], summary_start)
+    aggregate_path = release_directory / "12h" / _filename(state["prefix"], summary_start, precise=precise_names)
     if aggregate_path.exists():
         raise ReportError("12-hour report filename already exists")
     standalone_paths = [record.get("pdf_path") for record in covered_records]
@@ -521,11 +702,15 @@ def append_report(
     ]
     for record, relative in zip(covered_records, standalone_paths):
         candidate = release_directory / relative if relative else release_directory
-        if candidate.parent != release_directory / "3h" or candidate.is_symlink() or not candidate.is_file():
+        if candidate.parent != release_directory / profile["minor_kind"] or candidate.is_symlink() or not candidate.is_file():
             raise ReportError("a covered standalone report is missing or unsafe")
         if hashlib.sha256(candidate.read_bytes()).hexdigest() != record.get("pdf_sha256"):
             raise ReportError(f"standalone report changed after verification: {relative}")
     payload = _payload(state, twelve_hour_summary, current_revision, "12h")
+    if precise_names:
+        screenshot_data, screenshot_hashes = _read_screenshots(twelve_hour_summary)
+        payload["screenshot_sha256"] = screenshot_hashes
+        payload["_screenshot_data"] = screenshot_data
     digest = _atomic_render(payload, aggregate_path)
     aggregate = {
         "start": twelve_hour_summary["period"]["start"],
@@ -571,10 +756,11 @@ def _feature_status_text(feature_state: dict[str, Any]) -> str:
 
 
 def _feature_status_line(feature_name: str, feature_state: dict[str, Any]) -> str:
-    return f"{feature_name} - {_feature_status_text(feature_state)}"
+    identity = f" [{feature_state['id']}]" if "id" in feature_state else ""
+    return f"{feature_name}{identity} - {_feature_status_text(feature_state)}"
 
 
-def _time_share_labels(allocations: list[dict[str, Any]], period_hours: int) -> list[str]:
+def _time_share_labels(allocations: list[dict[str, Any]], period_hours: float) -> list[str]:
     return [
         f"{allocation['label']} - {allocation['hours']:g} h "
         f"({allocation['hours'] / period_hours * 100:.1f}%, {allocation['basis']})"
@@ -582,15 +768,23 @@ def _time_share_labels(allocations: list[dict[str, Any]], period_hours: int) -> 
     ]
 
 
+def _period_duration_hours(period: dict[str, Any]) -> float:
+    start = _parse_datetime(period["start"], "period start")
+    end = _parse_datetime(period["end"], "period end")
+    return (end - start).total_seconds() / 3600
+
+
 def _report_story(payload: dict[str, Any]):
     from reportlab.lib import colors
     from reportlab.lib.enums import TA_LEFT
+    from reportlab.lib.pagesizes import A4
     from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
     from reportlab.lib.units import mm
-    from reportlab.platypus import Flowable, Paragraph, Spacer, Table, TableStyle
+    from reportlab.platypus import Flowable, Image, Paragraph, Spacer, Table, TableStyle
+    from reportlab.lib.utils import ImageReader
 
     class TimeShareChart(Flowable):
-        def __init__(self, allocations: list[dict[str, Any]], period_hours: int):
+        def __init__(self, allocations: list[dict[str, Any]], period_hours: float):
             super().__init__()
             self.allocations = allocations
             self.period_hours = period_hours
@@ -639,6 +833,17 @@ def _report_story(payload: dict[str, Any]):
         escaped = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
         return Paragraph(escaped, styles["ReportBody"])
 
+    def status_paragraph(feature_name: str, state: dict[str, Any]):
+        identity = f" [{state['id']}]" if "id" in state else ""
+        status = _feature_status_text(state)
+        color = _STATUS_COLORS[state["status"]]
+        escaped_name = feature_name.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        escaped_status = status.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        return Paragraph(
+            f"{escaped_name}{identity} - <font color=\"{color}\"><b>{escaped_status}</b></font>",
+            styles["ReportBody"],
+        )
+
     def add_section(title: str, lines: list[str]):
         story.append(Paragraph(title, styles["ReportSection"]))
         if not lines:
@@ -649,13 +854,19 @@ def _report_story(payload: dict[str, Any]):
     period = report["period"]
     period_lines = [f"{period['kind']}: {period['start']} to {period['end']}"]
     if period["kind"] == "12h":
-        period_lines.extend(f"Covered 3-hour interval: {item['start']} to {item['end']}" for item in report["covered_periods"])
+        minor_label = "4-hour minor interval" if "product_results" in report else "3-hour interval"
+        period_lines.extend(f"Covered {minor_label}: {item['start']} to {item['end']}" for item in report["covered_periods"])
     add_section(SECTION_TITLES[0], period_lines)
-    states = []
-    for state in report["feature_state"]:
-        name = next(feature["name"] for feature in features if feature["id"] == state["id"])
-        states.append(_feature_status_line(name, state))
-    add_section(SECTION_TITLES[1], states)
+    feature_names = {feature["id"]: feature["name"] for feature in features}
+    display_states = sorted(
+        enumerate(report["feature_state"]),
+        key=lambda item: (_STATUS_ORDER[item[1]["status"]], item[0]),
+    )
+    story.append(Paragraph(SECTION_TITLES[1], styles["ReportSection"]))
+    if not display_states:
+        story.append(paragraph_text("None recorded."))
+    for _, state in display_states:
+        story.append(status_paragraph(feature_names[state["id"]], state))
     add_section(SECTION_TITLES[2], report["expected_progress"])
     progress_lines = []
     for item in report["feature_progress"]:
@@ -665,7 +876,7 @@ def _report_story(payload: dict[str, Any]):
     add_section(SECTION_TITLES[4], report["other_progress"])
     story.append(Paragraph(SECTION_TITLES[5], styles["ReportSection"]))
     spent = report["time_spent"]
-    hours = 3 if period["kind"] == "3h" else 12
+    hours = _period_duration_hours(period)
     story.append(Spacer(1, 3))
     allocations = spent["allocations"]
     story.append(paragraph_text("Time-share chart: proportional activity hours; labels show hours, share, and basis."))
@@ -698,7 +909,44 @@ def _report_story(payload: dict[str, Any]):
     add_section(SECTION_TITLES[6], report["issues"])
     add_section(SECTION_TITLES[7], report["conclusions"])
     add_section(SECTION_TITLES[8], report["next_goals"])
-    add_section(SECTION_TITLES[9], report["summary"])
+    story.append(Paragraph(SECTION_TITLES[9], styles["ReportSection"]))
+    if "product_results" in report:
+        story.append(Paragraph("Product-level results", styles["Heading3"]))
+        for line in report["product_results"]:
+            story.append(paragraph_text(line))
+
+        story.append(Paragraph("Screenshots", styles["Heading3"]))
+        screenshot_data = payload.get("_screenshot_data", [])
+        if not report["screenshots"]:
+            story.append(paragraph_text("None available."))
+        for screenshot, image_data in zip(report["screenshots"], screenshot_data):
+            image_width, image_height = ImageReader(BytesIO(image_data)).getSize()
+            scale = min((A4[0] - 36 * mm) / image_width, 120 * mm / image_height, 1)
+            story.append(Image(BytesIO(image_data), width=image_width * scale, height=image_height * scale))
+            story.append(paragraph_text(screenshot["caption"]))
+
+        story.append(Paragraph("Measurements", styles["Heading3"]))
+        measurement_rows = [["Metric", "Value", "Workload", "Evidence"]]
+        measurement_rows.extend([
+            paragraph_text(measurement[key])
+            for key in ("metric", "value", "workload", "evidence")
+        ] for measurement in report["measurements"])
+        measurement_table = Table(measurement_rows, colWidths=[31 * mm, 25 * mm, 48 * mm, None], repeatRows=1)
+        measurement_table.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#e8edf3")),
+            ("GRID", (0, 0), (-1, -1), 0.3, colors.HexColor("#b8c0c9")),
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ("FONTSIZE", (0, 0), (-1, -1), 8),
+        ]))
+        story.append(measurement_table)
+
+        story.append(Paragraph("Analysis of results and problems", styles["Heading3"]))
+        for line in report["analysis"]:
+            story.append(paragraph_text(line))
+    if not report["summary"]:
+        story.append(paragraph_text("None recorded."))
+    for line in report["summary"]:
+        story.append(paragraph_text(line))
 
     return story
 
@@ -739,7 +987,7 @@ def render_pdf(payload: dict[str, Any], output_path: Path) -> None:
         writer.append(reader)
         writer.add_metadata({
             "/Title": f"{payload['prefix']} release report",
-            "/ReleaseReportData": _canonical_json(payload),
+            "/ReleaseReportData": _canonical_json(_pdf_payload(payload)),
         })
         with output_path.open("wb") as stream:
             writer.write(stream)
@@ -758,7 +1006,7 @@ def verify_pdf(path: Path, payload: dict[str, Any]) -> None:
         if not reader.pages:
             raise ReportError("rendered PDF has no pages")
         metadata = reader.metadata
-        if metadata is None or metadata.get("/ReleaseReportData") != _canonical_json(payload):
+        if metadata is None or metadata.get("/ReleaseReportData") != _canonical_json(_pdf_payload(payload)):
             raise ReportError("rendered PDF payload metadata does not match the validated draft")
         text = " ".join(" ".join((page.extract_text() or "").split()) for page in reader.pages)
         missing = [title for title in SECTION_TITLES if title not in text]
@@ -775,13 +1023,56 @@ def verify_pdf(path: Path, payload: dict[str, Any]) -> None:
         for allocation in payload["draft"]["time_spent"]["allocations"]:
             if any(allocation[key] not in text for key in ("label", "basis", "evidence")):
                 raise ReportError("rendered PDF is missing time allocation details")
-        for label in _time_share_labels(payload["draft"]["time_spent"]["allocations"], 3 if period["kind"] == "3h" else 12):
+        for label in _time_share_labels(payload["draft"]["time_spent"]["allocations"], _period_duration_hours(period)):
             if label not in text:
                 raise ReportError("rendered PDF is missing a time-share chart label")
-        for state in payload["draft"]["feature_state"]:
-            feature_name = next(feature["name"] for feature in payload["features"] if feature["id"] == state["id"])
-            if _feature_status_line(feature_name, state) not in text:
+        feature_names = {feature["id"]: feature["name"] for feature in payload["features"]}
+        display_states = sorted(
+            enumerate(payload["draft"]["feature_state"]),
+            key=lambda item: (_STATUS_ORDER[item[1]["status"]], item[0]),
+        )
+        previous_position = -1
+        for _, state in display_states:
+            status_line = _feature_status_line(feature_names[state["id"]], state)
+            position = text.find(status_line)
+            if position < 0:
                 raise ReportError("rendered PDF has an incorrect feature status")
+            if position <= previous_position:
+                raise ReportError("rendered PDF feature statuses are not in stable status order")
+            previous_position = position
+        report = payload["draft"]
+        if "product_results" in report:
+            major_headings = (
+                "Product-level results",
+                "Screenshots",
+                "Measurements",
+                "Analysis of results and problems",
+            )
+            if any(heading not in text for heading in major_headings):
+                raise ReportError("rendered major report is missing a product evidence section")
+            required_text = [
+                *report["product_results"],
+                *[screenshot["caption"] for screenshot in report["screenshots"]],
+                *[item[key] for item in report["measurements"] for key in ("metric", "value", "workload", "evidence")],
+                *report["analysis"],
+            ]
+            # Table cells can wrap inside paths and hashes during text extraction.
+            compact_text = "".join(text.split())
+            if any("".join(line.split()) not in compact_text for line in required_text):
+                raise ReportError("rendered major report is missing product evidence")
+            screenshot_hashes = payload.get("screenshot_sha256", [])
+            screenshot_data = payload.get("_screenshot_data", [])
+            if not isinstance(screenshot_hashes, list) or not isinstance(screenshot_data, list):
+                raise ReportError("rendered major report screenshot evidence is malformed")
+            expected_images = len(screenshot_hashes)
+            actual_images = sum(len(page.images) for page in reader.pages)
+            if expected_images != actual_images or expected_images != len(report["screenshots"]):
+                raise ReportError("rendered major report screenshot images do not match its evidence")
+            if (
+                any(not isinstance(digest, str) or not _SHA256.fullmatch(digest) for digest in screenshot_hashes)
+                or [hashlib.sha256(image).hexdigest() for image in screenshot_data] != screenshot_hashes
+            ):
+                raise ReportError("rendered major report screenshot hash is malformed")
     except OSError as error:
         raise ReportError(f"cannot read rendered PDF: {error}") from error
 
@@ -806,12 +1097,15 @@ def _pending_prune_hashes(state: dict[str, Any]) -> dict[str, str]:
     periods = state.get("periods", [])
     if not aggregates:
         raise ReportError("pending report-pruning record has no aggregate")
+    profile = _reporting_profile(state)
+    group_size = profile["minors_per_major"]
+    precise_names = profile["minor_kind"] == "4h"
     covered = aggregates[-1].get("covered_period_indices")
-    if not isinstance(covered, list) or len(covered) != 4 or covered != list(range(len(periods) - 4, len(periods))):
+    if not isinstance(covered, list) or len(covered) != group_size or covered != list(range(len(periods) - group_size, len(periods))):
         raise ReportError("pending report-pruning record is not for the latest completed aggregate")
     expected_paths = [
-        f"3h/{_filename(state['prefix'], _parse_datetime(periods[index]['start'], 'period start'))}"
-        for index in covered[:3]
+        f"{profile['minor_kind']}/{_filename(state['prefix'], _parse_datetime(periods[index]['start'], 'period start'), precise=precise_names)}"
+        for index in covered[:-1]
     ]
     sources = pending["sources"]
     if len(sources) != len(expected_paths):
@@ -831,14 +1125,16 @@ def _pending_prune_hashes(state: dict[str, Any]) -> dict[str, str]:
 
 
 def _verify_managed_tree(release_directory: Path, state: dict[str, Any]) -> None:
-    expected_root_entries = {".report-owner.json", ".report-state.json", "3h", "12h"}
+    profile = _reporting_profile(state)
+    report_directories = (profile["minor_kind"], "12h")
+    expected_root_entries = {".report-owner.json", ".report-state.json", *report_directories}
     actual_root_entries = {entry.name for entry in release_directory.iterdir()}
     if actual_root_entries != expected_root_entries:
         raise ReportError("managed release folder contains an unrecognized file or directory")
     expected = _expected_report_paths(release_directory, state)
     pending = _pending_prune_hashes(state)
     actual: set[str] = set()
-    for directory_name in ("3h", "12h"):
+    for directory_name in report_directories:
         directory = release_directory / directory_name
         if directory.is_symlink():
             raise ReportError("managed report directories must not be symlinks")
@@ -866,13 +1162,19 @@ def check_release_state(reports_root: str | Path, release_id: str) -> dict[str, 
         "schema_version", "release_id", "prefix", "required_gates", "owner_token",
         "manifest_revisions", "periods", "aggregates",
     }
-    if not isinstance(state, dict) or frozenset(state) not in {
+    allowed_state_keys = {
         frozenset(state_keys),
         frozenset(state_keys | {"pending_pruning"}),
-    }:
+        frozenset(state_keys | {"reporting"}),
+        frozenset(state_keys | {"reporting", "pending_pruning"}),
+    }
+    if not isinstance(state, dict) or frozenset(state) not in allowed_state_keys:
         raise ReportError("unsupported or malformed report state")
     if state.get("schema_version") != SCHEMA_VERSION or not isinstance(state.get("periods"), list):
         raise ReportError("unsupported or malformed report state")
+    profile = _reporting_profile(state)
+    precise_names = profile["minor_kind"] == "4h"
+    group_size = profile["minors_per_major"]
     revisions = state.get("manifest_revisions")
     gates = state.get("required_gates")
     if not isinstance(revisions, list) or not revisions or not isinstance(gates, list) or not gates:
@@ -917,10 +1219,10 @@ def check_release_state(reports_root: str | Path, release_id: str) -> dict[str, 
                 raise ReportError("feature addition provenance is malformed")
         prior_features = features
 
-    completed_period_count = (period_count // 4) * 4
+    completed_period_count = (period_count // group_size) * group_size
     aggregates = state.get("aggregates")
-    if not isinstance(aggregates, list) or len(aggregates) != period_count // 4:
-        raise ReportError("report state does not contain one aggregate for each complete four-period group")
+    if not isinstance(aggregates, list) or len(aggregates) != period_count // group_size:
+        raise ReportError("report state does not contain one aggregate for each complete minor group")
     previous_end: datetime | None = None
     for index, record in enumerate(state["periods"]):
         has_pdf = index >= completed_period_count
@@ -931,6 +1233,8 @@ def check_release_state(reports_root: str | Path, release_id: str) -> dict[str, 
             raise ReportError("3-hour report history does not match the retention schedule")
         start = _parse_datetime(record["start"], "period start")
         end = _parse_datetime(record["end"], "period end")
+        if index == 0 and profile["anchor"] is not None and start != profile["anchor"]:
+            raise ReportError("first minor report does not begin at the implementation anchor")
         if previous_end is not None and start != previous_end:
             raise ReportError("report periods must be contiguous")
         draft_period = record["draft"].get("period") if isinstance(record["draft"], dict) else None
@@ -939,16 +1243,22 @@ def check_release_state(reports_root: str | Path, release_id: str) -> dict[str, 
         revision = _manifest_revision(state, index)
         if record["manifest_revision"] != revision["revision"] or record["manifest_sha256"] != _revision_hash(revision):
             raise ReportError("report history references the wrong feature manifest")
-        validate_draft(record["draft"], revision["features"], "3h")
+        validate_draft(
+            record["draft"],
+            revision["features"],
+            profile["minor_kind"],
+            minor_kind=profile["minor_kind"],
+            minors_per_major=group_size,
+        )
         if has_pdf:
-            expected_relative = f"3h/{_filename(state['prefix'], start)}"
+            expected_relative = f"{profile['minor_kind']}/{_filename(state['prefix'], start, precise=precise_names)}"
             if record["pdf_path"] != expected_relative or not _SHA256.fullmatch(str(record["pdf_sha256"])):
                 raise ReportError("standalone report path or hash is malformed")
         previous_end = end
 
     for group_index, aggregate in enumerate(aggregates):
-        first_index = group_index * 4
-        last_index = first_index + 3
+        first_index = group_index * group_size
+        last_index = first_index + group_size - 1
         expected_indices = list(range(first_index, last_index + 1))
         aggregate_keys = {
             "start", "end", "covered_period_indices", "draft", "manifest_revision",
@@ -962,9 +1272,14 @@ def check_release_state(reports_root: str | Path, release_id: str) -> dict[str, 
             raise ReportError("12-hour aggregate summary is malformed")
         prior_state = {key: value for key, value in state.items() if key != "pending_pruning"}
         prior_state["periods"] = state["periods"][:last_index]
-        revision, _, _, aggregate_required = _validate_append_inputs(prior_state, final_period["draft"], summary)
+        revision, _, _, aggregate_required = _validate_append_inputs(
+            prior_state,
+            final_period["draft"],
+            summary,
+            check_screenshots=False,
+        )
         if not aggregate_required:
-            raise ReportError("12-hour aggregate is not aligned to a four-period boundary")
+            raise ReportError("12-hour aggregate is not aligned to a complete minor group")
         if (
             aggregate.get("start") != summary["period"]["start"]
             or aggregate.get("end") != summary["period"]["end"]
@@ -974,7 +1289,7 @@ def check_release_state(reports_root: str | Path, release_id: str) -> dict[str, 
         ):
             raise ReportError("12-hour aggregate metadata does not match its validated summary")
         summary_start = _parse_datetime(summary["period"]["start"], "summary start")
-        expected_relative = f"12h/{_filename(state['prefix'], summary_start)}"
+        expected_relative = f"12h/{_filename(state['prefix'], summary_start, precise=precise_names)}"
         if aggregate.get("pdf_path") != expected_relative or not _SHA256.fullmatch(str(aggregate.get("pdf_sha256", ""))):
             raise ReportError("12-hour aggregate path or hash is malformed")
 
@@ -1080,6 +1395,7 @@ def main(argv: list[str] | None = None) -> int:
     start.add_argument("prefix")
     start.add_argument("--features", type=Path, required=True)
     start.add_argument("--gate", action="append", dest="gates", required=True)
+    start.add_argument("--anchor", required=True, help="timezone-aware implementation-start datetime")
     add = subparsers.add_parser("add-feature", help="append an explicitly requested feature revision")
     add.add_argument("release_id")
     add.add_argument("--feature", type=Path, required=True)
@@ -1105,7 +1421,14 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.command == "start":
             features = _read_json(args.features)
-            directory = start_release(args.reports_root, args.release_id, args.prefix, features, args.gates)
+            directory = start_release(
+                args.reports_root,
+                args.release_id,
+                args.prefix,
+                features,
+                args.gates,
+                anchor=args.anchor,
+            )
             print(directory)
         elif args.command == "add-feature":
             add_feature(
