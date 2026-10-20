@@ -31,9 +31,12 @@ covered minors.
 
 Every report has these ten sections in order: Period; State of release;
 Expected progress; Feature progress; Other progress; Time spent; Issues;
-Conclusions (investigated causes and corrections); Next goals; Summary. State
-contains exactly one feature line per manifest entry, in manifest order. Lines
-use `<name> [<ID>] - Done`, `<name> [<ID>] - in progress: <detail>`, or
+Conclusions (investigated causes and corrections); Next goals; Summary. A draft
+may include an `overview` list of up to six plain-language lines. The PDF shows
+those lines at the start of State of release, before the feature statuses; when
+the field is absent, the existing report layout is unchanged. State contains
+exactly one feature line per manifest entry, in manifest order. Lines use
+`<name> [<ID>] - Done`, `<name> [<ID>] - in progress: <detail>`, or
 `<name> [<ID>] - planned`. The PDF orders features by Done, In progress, then
 Planned, preserving manifest order within each status and showing each ID and
 name; status words are bold and colored.

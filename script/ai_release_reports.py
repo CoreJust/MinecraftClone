@@ -47,6 +47,7 @@ _DRAFT_KEYS = {
     "next_goals",
     "summary",
 }
+_OPTIONAL_DRAFT_KEYS = {"overview"}
 _MAJOR_DRAFT_KEYS = {"product_results", "screenshots", "measurements", "analysis"}
 _TIME_KEYS = {"allocations", "parallel_note"}
 _STATUS_ORDER = {"Done": 0, "In progress": 1, "Planned": 2}
@@ -183,14 +184,17 @@ def validate_draft(
         raise ReportError("a major report must cover at least one minor period")
     if not isinstance(draft, dict):
         raise ReportError("draft must be a JSON object")
-    allowed_keys = _DRAFT_KEYS | ({"covered_periods"} if expected_kind == "12h" else set())
+    required_keys = _DRAFT_KEYS | ({"covered_periods"} if expected_kind == "12h" else set())
     if expected_kind == "12h" and minor_kind == "4h":
         missing_major_fields = _MAJOR_DRAFT_KEYS - set(draft)
         if missing_major_fields:
             raise ReportError(f"major report fields are missing: {', '.join(sorted(missing_major_fields))}")
-        allowed_keys |= _MAJOR_DRAFT_KEYS
-    if set(draft) != allowed_keys:
+        required_keys |= _MAJOR_DRAFT_KEYS
+    allowed_keys = required_keys | _OPTIONAL_DRAFT_KEYS
+    if not required_keys.issubset(draft) or not set(draft).issubset(allowed_keys):
         raise ReportError("draft fields do not match the required report format")
+    if "overview" in draft:
+        _line_list(draft["overview"], "overview", 6)
     manifest = _features_by_id(features)
     period = draft["period"]
     if not isinstance(period, dict) or set(period) != {"kind", "start", "end"}:
@@ -863,6 +867,8 @@ def _report_story(payload: dict[str, Any]):
         key=lambda item: (_STATUS_ORDER[item[1]["status"]], item[0]),
     )
     story.append(Paragraph(SECTION_TITLES[1], styles["ReportSection"]))
+    for line in report.get("overview", []):
+        story.append(paragraph_text(line))
     if not display_states:
         story.append(paragraph_text("None recorded."))
     for _, state in display_states:
@@ -1041,6 +1047,13 @@ def verify_pdf(path: Path, payload: dict[str, Any]) -> None:
                 raise ReportError("rendered PDF feature statuses are not in stable status order")
             previous_position = position
         report = payload["draft"]
+        overview_positions = [text.find(" ".join(line.split())) for line in report.get("overview", [])]
+        if any(position < 0 for position in overview_positions):
+            raise ReportError("rendered PDF is missing release overview text")
+        if overview_positions and display_states and max(overview_positions) >= text.find(
+            _feature_status_line(feature_names[display_states[0][1]["id"]], display_states[0][1])
+        ):
+            raise ReportError("rendered PDF overview must appear before feature statuses")
         if "product_results" in report:
             major_headings = (
                 "Product-level results",

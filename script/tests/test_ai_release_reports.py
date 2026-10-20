@@ -413,6 +413,69 @@ class AiReleaseReportsTest(unittest.TestCase):
         with self.assertRaisesRegex(ai_release_reports.ReportError, "at most 8"):
             ai_release_reports.validate_draft(too_many_time_categories, FEATURES, "3h")
 
+    def test_optional_overview_accepts_six_lines_and_keeps_legacy_drafts_valid(self) -> None:
+        ai_release_reports.validate_draft(draft_for(0), FEATURES, "3h")
+
+        report = draft_for(0)
+        report["overview"] = [f"Plain-language result {index}." for index in range(6)]
+        ai_release_reports.validate_draft(report, FEATURES, "3h")
+
+    def test_optional_overview_rejects_non_list(self) -> None:
+        report = draft_for(0)
+        report["overview"] = "The world loads."
+        with self.assertRaisesRegex(ai_release_reports.ReportError, "overview.*at most 6 lines"):
+            ai_release_reports.validate_draft(report, FEATURES, "3h")
+
+    def test_optional_overview_rejects_more_than_six_lines(self) -> None:
+        report = draft_for(0)
+        report["overview"] = [f"Result {index}." for index in range(7)]
+        with self.assertRaisesRegex(ai_release_reports.ReportError, "overview.*at most 6 lines"):
+            ai_release_reports.validate_draft(report, FEATURES, "3h")
+
+    def test_optional_overview_rejects_non_string_line(self) -> None:
+        report = draft_for(0)
+        report["overview"] = [None]
+        with self.assertRaisesRegex(ai_release_reports.ReportError, "overview line must be a single line"):
+            ai_release_reports.validate_draft(report, FEATURES, "3h")
+
+    def test_optional_overview_rejects_multiline_entries(self) -> None:
+        report = draft_for(0)
+        report["overview"] = ["The world loads.\nMovement is still under test."]
+        with self.assertRaisesRegex(ai_release_reports.ReportError, "overview line must be a single line"):
+            ai_release_reports.validate_draft(report, FEATURES, "3h")
+
+    @unittest.skipUnless(
+        all(importlib.util.find_spec(name) for name in ("reportlab", "pypdf")),
+        "bundled PDF libraries are required",
+    )
+    def test_overview_is_rendered_before_feature_statuses(self) -> None:
+        from pypdf import PdfReader
+
+        report = draft_for(0)
+        report["overview"] = [
+            "  The normal world  loads and accepts movement. ",
+            "Release-wide delivery gates remain open.  ",
+        ]
+        ai_release_reports.validate_draft(report, FEATURES, "3h")
+        revision = {
+            "revision": 1,
+            "effective_period_index": 0,
+            "features": FEATURES,
+            "addition_authority": None,
+        }
+        state = {"release_id": "S7", "prefix": PREFIX}
+        payload = ai_release_reports._payload(state, report, revision, "3h")
+        output_path = Path(self.temporary_directory.name) / "overview.pdf"
+        ai_release_reports.render_pdf(payload, output_path)
+        ai_release_reports.verify_pdf(output_path, payload)
+
+        reader = PdfReader(str(output_path))
+        text = " ".join(page.extract_text() or "" for page in reader.pages)
+        first_overview = " ".join(report["overview"][0].split())
+        last_overview = " ".join(report["overview"][-1].split())
+        self.assertLess(text.index("2. State of release"), text.index(first_overview))
+        self.assertLess(text.index(last_overview), text.index("Terrain streaming [terrain]"))
+
     def test_rendered_status_and_time_share_labels_match_report_contract(self) -> None:
         self.assertEqual(ai_release_reports._feature_status_line("Terrain streaming", {"status": "Done"}), "Terrain streaming - Done")
         self.assertEqual(

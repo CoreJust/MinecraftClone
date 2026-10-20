@@ -17666,5 +17666,45 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0509",
+    "title": "Make progress reports show product status and iteration outcomes",
+    "kind": "chore",
+    "status": "done",
+    "priority": "P1",
+    "route": "luna",
+    "milestone": "EarlyDev-0.1.1-S1",
+    "depends_on": [],
+    "acceptance": "A concise plain-language overview precedes feature details and explains what works, latest iteration results, current blockers and next goals. Feature completion is separate from release qualification; unchanged legacy drafts remain valid.",
+    "evidence": "19 report tests pass; same-task review renewal approved the exact implementation. Latest aggregate PDF SHA1eed6bae83d4aa3b499e5dfa540dd9a97190a22730d94432d3cd9c5f5b426cc8 has all six pages visually checked; first page states working features, latest changes, blockers and next goals. Current fast development gate passes; S1 release gates remain open.",
+    "blocker": "",
+    "owner": "root",
+    "level": "basic",
+    "parent": "MC-AI-0482",
+    "motivation": "The owner found the report cryptic and misleading because every feature was labeled in progress.",
+    "context": "Direct owner feedback requires a readable status report, evidence-based feature reclassification and concrete next actions.",
+    "complexity": "medium",
+    "created_at": "2026-10-20",
+    "resolved_at": "2026-10-20",
+    "resolution_changes": "Added a plain-language product overview before feature status lists, validated its bounded format and PDF order, and corrected current feature completion independently of release gates.",
+    "plan": [
+      "Add optional six-line overview with validation and PDF ordering/readback checks.",
+      "Audit original feature criteria independently of aggregate release gates.",
+      "Rewrite and visually verify the latest progress PDF."
+    ],
+    "product_changes": [
+      "Progress reports open with what works, latest outcomes, blockers and next goals; completed feature work is distinguished from unfinished release qualification."
+    ],
+    "code_changes": [
+      "Added optional bounded overview validation, rendering and readback checks; retained legacy drafts without overview."
+    ],
+    "baseline_commit": "9e0bbf90d4833d57a82c547a1dd51c7478f23e69",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]
