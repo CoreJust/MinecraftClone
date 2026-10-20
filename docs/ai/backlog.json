@@ -17593,5 +17593,40 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0498",
+    "title": "Export actual Terrain-v2 CPU world maps and raw fields",
+    "kind": "feature",
+    "status": "done",
+    "priority": "P1",
+    "route": "luna",
+    "milestone": "ED-011-S1",
+    "depends_on": [],
+    "acceptance": "mc_world_map links only numerical generation and CPU dependencies; ordered six seeds and single-seed CLI emit real atlas diagnostic PPM/raw layers plus exact configuration/source/timing/memory metadata with bounded validated sizes; regional extent uses canonical sampler. No network, Vulkan or compiler initialization.",
+    "evidence": "Candidate-bound standalone CPU configure/build and CLI CTest: /Users/core-just/.codex/task-evidence/mc-s1-20261019/commit-preparation/world-map-final/focused-receipt.json.",
+    "blocker": "",
+    "owner": "codex",
+    "level": "basic",
+    "parent": "MC-AI-0482",
+    "motivation": "S1-11 requires a standalone producer shared with gameplay and reference tests.",
+    "context": "Use src/generation public API and canonical sampler from task0495; parent owns root CMake registration, reference identities from0497.",
+    "complexity": "medium",
+    "created_at": "2026-10-19",
+    "resolved_at": "2026-10-20",
+    "resolution_changes": "Added a standalone CPU-only mc_world_map CLI over the numerical generation and canonical sampler, exporting validated atlas diagnostics/raw fields and bounded regional material samples with source/configuration/timing/memory metadata; added six-case CLI coverage and module documentation. No gameplay or S1 release qualification is claimed.",
+    "plan": [],
+    "product_changes": [],
+    "code_changes": [
+      "Add the standalone mc_world_map target and register the CLI regression suite in the independent CPU generation subproject.",
+      "Export actual generation atlas layers and optional canonical regional material samples with bounded output and metadata."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]

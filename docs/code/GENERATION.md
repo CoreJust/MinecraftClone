@@ -46,3 +46,12 @@ and material-aware mesher tests cover ID validity, deterministic ordering,
 surface intervals, and known-neighbor seams. These component checks and a
 normal-game Ready-sphere observation do not qualify integrated timing, GPU
 performance, all platforms, or the S1 release.
+
+## Standalone world-map export
+
+`mc_world_map` is built from the CPU generation and canonical sampling targets.
+Its standalone CMake project does not initialize the game, renderer, network, or
+CoreLang runtime. The CLI exports ordered single- or six-seed atlas diagnostics,
+optional canonical regional material samples, raw fields, and per-seed metadata.
+See [the world-map export contract](../ai/WORLD_MAP.md) for options and output
+layout. `TerrainWorldMap.Cli` checks valid exports and bounded/invalid requests.

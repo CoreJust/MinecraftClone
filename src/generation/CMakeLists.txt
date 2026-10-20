@@ -62,6 +62,45 @@ if(TARGET mc)
 endif()
 
 if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
+    add_library(mc_world_sampling STATIC
+        "${CMAKE_CURRENT_SOURCE_DIR}/../shared/world/Chunk.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/../shared/world/TerrainWorld.cpp"
+    )
+    target_link_libraries(mc_world_sampling PUBLIC mc_generation)
+    target_include_directories(mc_world_sampling
+        PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/../shared/include"
+        PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/.."
+    )
+    target_compile_features(mc_world_sampling PUBLIC cxx_std_23)
+    if(MSVC)
+        target_compile_options(mc_world_sampling PRIVATE /fp:strict)
+    else()
+        target_compile_options(mc_world_sampling PRIVATE -ffp-contract=off)
+    endif()
+
+    add_executable(mc_world_map ../tools/world_map.cpp)
+    target_link_libraries(mc_world_map PRIVATE mc_world_sampling)
+    target_compile_features(mc_world_map PRIVATE cxx_std_23)
+    if(WIN32)
+        target_link_libraries(mc_world_map PRIVATE Psapi)
+    endif()
+
+    if(BUILD_TESTING)
+        find_package(Python3 COMPONENTS Interpreter REQUIRED)
+        add_test(
+            NAME TerrainWorldMap.Cli
+            COMMAND ${Python3_EXECUTABLE}
+                "${CMAKE_CURRENT_SOURCE_DIR}/../../script/tests/test_world_map_cli.py"
+                --executable $<TARGET_FILE:mc_world_map>
+        )
+        set_tests_properties(TerrainWorldMap.Cli PROPERTIES
+            TIMEOUT 180
+            LABELS "generation;tools"
+        )
+    endif()
+endif()
+
+if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
     if(MC_GENERATION_BUILD_TESTS)
         find_package(GTest CONFIG REQUIRED)
         set(MC_REPOSITORY_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../..")

@@ -137,7 +137,8 @@
         "tests/generation/**",
         "tests/fixtures/terrain_v2/**",
         "tests/fixtures/terrain_v2_revision_4/**",
-        "tests/fixtures/terrain_v2_revision_5/**"
+        "tests/fixtures/terrain_v2_revision_5/**",
+        "src/tools/world_map.cpp"
       ]
     }
   ]

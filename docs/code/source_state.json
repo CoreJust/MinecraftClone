@@ -177,6 +177,7 @@
         "script/tests/test_verify_release_assets.py",
         "script/tests/test_windows_runtime_staging.py",
         "script/tests/test_workflow_contexts.py",
+        "script/tests/test_world_map_cli.py",
         "src/CMakeLists.txt",
         "tests/CMakeLists.txt",
         "tests/cmake/corecpp_provenance_fixture.cmake.in",
@@ -189,7 +190,7 @@
         "vcpkg-configuration.json",
         "vcpkg.json"
       ],
-      "sources_sha256": "9e1d7efde9acc0857b87dba304111608b97aa062e9c9b84a0fb9ac117d28f544"
+      "sources_sha256": "1c915f2380a5970d013a2d875c6cb09f860b1f8c3200ffd5f47d5f8ec2f92e72"
     },
     {
       "guide": "docs/code/CORE.md",
@@ -325,7 +326,7 @@
     },
     {
       "guide": "docs/code/GENERATION.md",
-      "guide_sha256": "d7a763c0a8416c85817fbb79f4f10fe6b90ab9c247f3d83b2f695096e312dc3f",
+      "guide_sha256": "04f67eb44d394ede3b5545cb55f74bb5e256a6c1b23818b0887f6b5c3edd3b9b",
       "id": "generation",
       "sources": [
         "src/generation/CMakeLists.txt",
@@ -341,6 +342,7 @@
         "src/generation/NumpyRandom.hpp",
         "src/generation/NumpyTanh.cpp",
         "src/generation/include/generation/Generation.hpp",
+        "src/tools/world_map.cpp",
         "tests/fixtures/terrain_v2/manifest.json",
         "tests/fixtures/terrain_v2/rng_oracle_seed42.json",
         "tests/fixtures/terrain_v2/seed-0/atlas__climate_zone.raw",
@@ -871,7 +873,7 @@
         "tests/generation/numpy_random_tests.cpp",
         "tests/generation/reference_tests.cpp"
       ],
-      "sources_sha256": "1f492052c50d6bbeb5c218f310572d07f49feb27e5322fcac3ad39ccb450e9b2"
+      "sources_sha256": "514eefefe41c207eaebf70dfdb1bb8bb9fc1174da32beda7bb1ce96bdc8f9628"
     },
     {
       "guide": "docs/code/RENDERING.md",
