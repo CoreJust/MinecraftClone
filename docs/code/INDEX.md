@@ -273,6 +273,7 @@ Files:
 - [`src/shared/include/shared/world/SparseWorld.hpp`](../../src/shared/include/shared/world/SparseWorld.hpp)
 - [`src/shared/include/shared/world/TerrainWorld.hpp`](../../src/shared/include/shared/world/TerrainWorld.hpp)
 - [`src/shared/include/shared/world/World.hpp`](../../src/shared/include/shared/world/World.hpp)
+- [`src/shared/include/shared/world/WorldCoverage.hpp`](../../src/shared/include/shared/world/WorldCoverage.hpp)
 - [`src/shared/include/shared/world/WorldGeneration.hpp`](../../src/shared/include/shared/world/WorldGeneration.hpp)
 - [`src/shared/include/shared/world/WorldGenerationScheduler.hpp`](../../src/shared/include/shared/world/WorldGenerationScheduler.hpp)
 - [`src/shared/net/Message.cpp`](../../src/shared/net/Message.cpp)
@@ -291,6 +292,7 @@ Files:
 - [`src/shared/world/SparseWorld.cpp`](../../src/shared/world/SparseWorld.cpp)
 - [`src/shared/world/TerrainWorld.cpp`](../../src/shared/world/TerrainWorld.cpp)
 - [`src/shared/world/World.cpp`](../../src/shared/world/World.cpp)
+- [`src/shared/world/WorldCoverage.cpp`](../../src/shared/world/WorldCoverage.cpp)
 - [`src/shared/world/WorldGeneration.cpp`](../../src/shared/world/WorldGeneration.cpp)
 - [`src/shared/world/WorldGenerationScheduler.cpp`](../../src/shared/world/WorldGenerationScheduler.cpp)
 - [`tests/core/chunk_mesh_lod_tests.cpp`](../../tests/core/chunk_mesh_lod_tests.cpp)
@@ -313,6 +315,7 @@ Files:
 - [`tests/core/sparse_world_tests.cpp`](../../tests/core/sparse_world_tests.cpp)
 - [`tests/core/terrain_world_reference_tests.cpp`](../../tests/core/terrain_world_reference_tests.cpp)
 - [`tests/core/terrain_world_tests.cpp`](../../tests/core/terrain_world_tests.cpp)
+- [`tests/core/world_coverage_tests.cpp`](../../tests/core/world_coverage_tests.cpp)
 - [`tests/core/world_generation_scheduler_tests.cpp`](../../tests/core/world_generation_scheduler_tests.cpp)
 - [`tests/core/world_generation_tests.cpp`](../../tests/core/world_generation_tests.cpp)
 

@@ -7,8 +7,12 @@
 #include <shared/world/WorldGenerationScheduler.hpp>
 
 #include <cstdint>
+#include <memory>
 #include <optional>
+#include <set>
+#include <span>
 #include <unordered_map>
+#include <unordered_set>
 
 namespace shared {
 
@@ -93,6 +97,11 @@ struct SparseWorldOptions final {
     uint64_t revision = 1U;
 };
 
+enum class SparseWorldGenerationMode : uint8_t {
+    Local,
+    MaterializedOnly,
+};
+
 struct SparseBlockQuery final {
     GenerationState state = GenerationState::Unknown;
     std::optional<Block> block;
@@ -101,6 +110,7 @@ struct SparseBlockQuery final {
 class SparseWorld final {
 public:
     explicit SparseWorld(SparseWorldOptions options = {});
+    SparseWorld(SparseWorldOptions options, SparseWorldGenerationMode generation_mode);
     SparseWorld(SparseWorldOptions options, std::shared_ptr<TerrainWorld const> terrain_world);
 
     [[nodiscard]]
@@ -117,11 +127,26 @@ public:
         ChunkCoordinate coordinate,
         HeightTile tile,
         uint64_t revision,
-        uint64_t seed
+        uint64_t seed,
+        std::optional<ChunkCoordinate>* evicted_coordinate = nullptr
     );
 
     [[nodiscard]]
-    bool publishMaterializedChunk(Chunk chunk, uint64_t revision, uint64_t seed);
+    bool publishMaterializedChunk(
+        Chunk chunk,
+        uint64_t revision,
+        uint64_t seed,
+        std::optional<ChunkCoordinate>* evicted_coordinate = nullptr
+    );
+
+    [[nodiscard]]
+    bool setProtectedChunks(std::span<ChunkCoordinate const> coordinates);
+
+    [[nodiscard]]
+    bool isChunkProtected(ChunkCoordinate coordinate) const noexcept;
+
+    [[nodiscard]]
+    uint64_t protectedChunkCount() const noexcept;
 
     void setWorldIdentity(uint64_t revision, uint64_t seed) noexcept;
 
@@ -132,7 +157,10 @@ public:
     Chunk const* residentChunk(ChunkCoordinate coordinate) const noexcept;
 
     [[nodiscard]]
-    Chunk* ensureChunk(ChunkCoordinate coordinate);
+    Chunk* ensureChunk(
+        ChunkCoordinate coordinate,
+        std::optional<ChunkCoordinate>* evicted_coordinate = nullptr
+    );
 
     [[nodiscard]]
     bool evict(ChunkCoordinate coordinate) noexcept;
@@ -160,7 +188,25 @@ private:
         uint64_t last_access = 0U;
     };
 
+    struct ResidentEvictionCandidate final {
+        uint64_t last_access;
+        ChunkCoordinate coordinate;
+    };
+
+    struct ResidentEvictionCandidateLess final {
+        [[nodiscard]]
+        bool operator()(
+            ResidentEvictionCandidate const& left,
+            ResidentEvictionCandidate const& right
+        ) const noexcept;
+    };
+
     using ResidentChunks = std::unordered_map<ChunkCoordinate, ResidentChunk, ChunkCoordinateHash>;
+    using ProtectedChunks = std::unordered_set<ChunkCoordinate, ChunkCoordinateHash>;
+    using ResidentEvictionCandidates = std::set<
+        ResidentEvictionCandidate,
+        ResidentEvictionCandidateLess
+    >;
 
     struct Preview final {
         HeightTile tile;
@@ -170,8 +216,11 @@ private:
 
     using PreviewChunks = std::unordered_map<ChunkCoordinate, Preview, ChunkCoordinateHash>;
 
-    void touch(ResidentChunk& resident) noexcept;
-    void evictIfFull() noexcept;
+    void advanceAccessClock() noexcept;
+    void touch(ChunkCoordinate coordinate, ResidentChunk& resident) noexcept;
+    void indexResidentForEviction(ChunkCoordinate coordinate, ResidentChunk const& resident);
+    [[nodiscard]]
+    bool evictIfFull(std::optional<ChunkCoordinate>* evicted_coordinate) noexcept;
 
 private:
     SparseWorldOptions m_options;
@@ -179,6 +228,8 @@ private:
     std::shared_ptr<TerrainWorld const> m_terrain_world;
     ResidentChunks m_resident;
     PreviewChunks m_previews;
+    ProtectedChunks m_protected_chunks;
+    ResidentEvictionCandidates m_evictable_residents;
     uint64_t m_access_clock = 0U;
 };
 

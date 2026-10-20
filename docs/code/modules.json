@@ -65,7 +65,8 @@
         "tests/core/world_generation_scheduler_tests.cpp",
         "tests/core/world_generation_tests.cpp",
         "scenarios/canonical_sample.core",
-        "scenarios/world/canonical_world.core"
+        "scenarios/world/canonical_world.core",
+        "tests/core/world_coverage_tests.cpp"
       ]
     },
     {

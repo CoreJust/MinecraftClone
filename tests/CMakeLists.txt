@@ -176,6 +176,7 @@ add_executable(mc_tests
     core/height_tile_interest_tests.cpp
     core/scripted_world_tests.cpp
     core/world_generation_tests.cpp
+    core/world_coverage_tests.cpp
     core/sparse_world_tests.cpp
     core/world_generation_scheduler_tests.cpp
     core/game_server_preview_tests.cpp

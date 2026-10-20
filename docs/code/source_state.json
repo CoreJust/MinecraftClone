@@ -190,7 +190,7 @@
         "vcpkg-configuration.json",
         "vcpkg.json"
       ],
-      "sources_sha256": "1c915f2380a5970d013a2d875c6cb09f860b1f8c3200ffd5f47d5f8ec2f92e72"
+      "sources_sha256": "a0d0544b2e539c5353f4444904bc9015198460fa75977daeb23f9bf006fb6896"
     },
     {
       "guide": "docs/code/CORE.md",
@@ -227,7 +227,7 @@
     },
     {
       "guide": "docs/code/GAMEPLAY.md",
-      "guide_sha256": "99d5f017d417ee49d2c793f6dfaee19d28eea88d7246cbd32936c76c4b5dbd81",
+      "guide_sha256": "188879118c47148a45dc9610cf6489cfff467c488e70101a7cdafe19177529b6",
       "id": "gameplay",
       "sources": [
         "src/client/BotClient.cpp",
@@ -279,6 +279,7 @@
         "src/shared/include/shared/world/SparseWorld.hpp",
         "src/shared/include/shared/world/TerrainWorld.hpp",
         "src/shared/include/shared/world/World.hpp",
+        "src/shared/include/shared/world/WorldCoverage.hpp",
         "src/shared/include/shared/world/WorldGeneration.hpp",
         "src/shared/include/shared/world/WorldGenerationScheduler.hpp",
         "src/shared/net/Message.cpp",
@@ -297,6 +298,7 @@
         "src/shared/world/SparseWorld.cpp",
         "src/shared/world/TerrainWorld.cpp",
         "src/shared/world/World.cpp",
+        "src/shared/world/WorldCoverage.cpp",
         "src/shared/world/WorldGeneration.cpp",
         "src/shared/world/WorldGenerationScheduler.cpp",
         "tests/core/chunk_mesh_lod_tests.cpp",
@@ -319,10 +321,11 @@
         "tests/core/sparse_world_tests.cpp",
         "tests/core/terrain_world_reference_tests.cpp",
         "tests/core/terrain_world_tests.cpp",
+        "tests/core/world_coverage_tests.cpp",
         "tests/core/world_generation_scheduler_tests.cpp",
         "tests/core/world_generation_tests.cpp"
       ],
-      "sources_sha256": "9753ec57a2bc23ccc4eabe40b40665ee8faadc6eb0d36244b678d3ca522c3b2c"
+      "sources_sha256": "d5844829c8a50d0f1a6aa8d3fe2e6afcc14e133239ed0839548eb85d34922350"
     },
     {
       "guide": "docs/code/GENERATION.md",

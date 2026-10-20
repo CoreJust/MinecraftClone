@@ -17628,5 +17628,43 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0504",
+    "title": "Preserve exact mandatory spheres in bounded authoritative storage",
+    "kind": "feature",
+    "status": "done",
+    "priority": "P0",
+    "route": "luna",
+    "milestone": "ED-011-S1",
+    "depends_on": [],
+    "acceptance": "Shared wrapped closed3D sphere enumeration for48/320 blocks; protected key LRU retains all mandatory chunks and rejects exhausted admission; remote materialized-only worlds cannot generate missing data; late generated publications preserve resident edits.",
+    "evidence": "Private candidate-bound CPU evidence: `/Users/core-just/.codex/task-evidence/mc-s1-20261019/commit-preparation/storage-final/candidate-test-receipt.json`; exact clean CoreCpp 63004f816348778e95703e2d92061531a4bcb277/CoreProject2026 9840659b27dbd6feaf99fa932dde19107e51d720 package pair; focused suites 26/26 (17 SparseWorld, 9 WorldCoverage), including 37,296-key radius-320 sphere protection, publication of every mandatory materialized chunk, and eligible LRU eviction while all mandatory keys remain resident. Existing 48/320 enumeration, materialized-only unknown-query, exhausted-admission, and duplicate-publication edit-preservation cases pass. Independent production caller at `src/server/GameServer.cpp:1224-1229` sets `max_resident_chunks` to `MAX_FOUR_PLAYER_MATERIALIZED_INTEREST_CHUNK_KEYS` (224,072, derived at `src/shared/include/shared/world/WorldCoverage.hpp:26-28`); this current worktree source is outside this candidate. Independent normal-game evidence is `visual-feedback/current-015-moving-v3-near-delivery-02/run.json`: first complete 320-block sphere 37,428/37,428 at 14.570589500s; its whole-game benchmark exits 1 and passed=false, so no integrated S1/platform/performance qualification is claimed.",
+    "blocker": "",
+    "owner": "codex",
+    "level": "basic",
+    "parent": "MC-AI-0482",
+    "motivation": "128-chunk LRU cannot retain the required320-block sphere and remote consumer must never use a default generator.",
+    "context": "MC-AI-0495 canonical TerrainWorld and MC-AI-0496 exactloading sphere selection.",
+    "complexity": "high",
+    "created_at": "2026-10-19",
+    "resolved_at": "2026-10-20",
+    "resolution_changes": "Added shared wrapped closed-sphere key enumeration and bounded protected-key residency with deterministic eligible LRU eviction. Candidate-bound tests demonstrate the full 37,296-key 320-block sphere can be protected and materialized at explicit bounded capacity while outside residents remain evictable; remote materialized-only reads do not generate absent data and late duplicate publication preserves resident edits. Existing production caller capacity and separate normal-game first-Ready observation are linked as independent evidence. Overall S1 performance, platform, and game benchmark qualification remain outside this task.",
+    "plan": [],
+    "product_changes": [
+      "Provide bounded authoritative storage that retains every mandatory sphere chunk and rejects exhausted admission without evicting protected chunks."
+    ],
+    "code_changes": [
+      "Add the shared wrapped 3D closed-sphere chunk selector and key-count bounds.",
+      "Protect mandatory keys in the bounded SparseWorld LRU and preserve materialized-only and late-publication semantics.",
+      "Register sphere-selection and SparseWorld integration coverage, including a maximum-radius mandatory set."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]

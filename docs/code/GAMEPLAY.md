@@ -117,8 +117,9 @@ barriers, not separate intake.
 
 ## S5 chunk data
 
-`Chunk` validates Air/Stone IDs/identity; CoreLang terrain feeds bounded
-`SparseWorld`.
+`WorldCoverage` enumerates wrapped closed spheres. `SparseWorld` protects mandatory
+keys in bounded LRU, rejects exhausted admission, uses materialized-only remote
+reads, and preserves edits against late publications.
 
 ## S7 staged generation
 

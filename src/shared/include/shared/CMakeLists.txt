@@ -18,5 +18,6 @@ target_sources(mc
             world/WorldGeneration.hpp
             world/WorldGenerationScheduler.hpp
             world/SparseWorld.hpp
+            world/WorldCoverage.hpp
             world/World.hpp
 )
