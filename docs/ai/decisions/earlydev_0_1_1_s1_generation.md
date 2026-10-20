@@ -1,11 +1,22 @@
-# S1 — Selected generation model
+# S1 — Terrain-v2 generation design
 
-The owner requests a complete generation design and temporary experiments now;
-production implementation remains later. Use a bounded, physically motivated
+Status: **finalized by the owner on 19 October 2026 as Terrain-v2**, for
+EarlyDev 0.1.1 S1. Terrain-v1 is the currently implemented repeating-wave
+generator. Terrain-v2 is the settled replacement design; production
+implementation and native acceptance remain planned.
+
+Use a bounded, physically motivated
 procedural model: **global simulation → canonical regional elaboration → local
 chunks**. Do not allocate a 65,536² simulation or repeat global preparation for
 chunk requests. Model details, constants, measured results and implementation
 ownership are linked below.
+
+The experiment's v1/v2/v3 labels describe research iterations, not terrain
+versions. Terrain-v2 adopts the selected **prototype v3 at 256²**, with 512²
+as a separate higher-detail world configuration. The retained source identity,
+maps and PDF remain the evidence for that choice. The native port defines its
+own explicit numerical/configuration revision within Terrain-v2; the name
+alone is not a sufficient world or save identity.
 
 ## Global dependency graph
 
@@ -67,7 +78,7 @@ calibration and explicit simplifications.
 [Experiments and budgets](earlydev_0_1_1_s1_experiments.md) record all six owner
 seeds `[0,1,42,777,2004,8800555]`, source/configuration identities, maps,
 performance, component ablations, rejected morphology and approximation limits.
-Use these results to choose default resolution and bound preparation. Finite
+Retain the selected default resolution and bounded preparation budgets. Finite
 iterations, progress and cancellation are mandatory. No busy preparation runs
 on the gameplay tick.
 

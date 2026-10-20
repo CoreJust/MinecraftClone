@@ -28,11 +28,12 @@ This is an implementation queue, not the product specification. [../ROADMAP.md](
 
 The [owner's recovered six-snapshot plan](../ROADMAP.md#earlydev-011--basicblocks)
 is canonical. All rows are planned; fixes accompany these product deliveries.
-S1 is elaborated in [its design](decisions/earlydev_0_1_1_s1.md).
+S1 uses the finalized [Terrain-v2 design](decisions/earlydev_0_1_1_s1_generation.md),
+replacing the current Terrain-v1 waves. Its implementation remains planned.
 
 | ID | Depends on | Product outcome | Validation focus |
 |---|---|---|---|
-| ED-011-S1 | ED-010-S7 | Global tectonics/hydrology/climate → regional detail → chunks; climate-driven solid layers and standalone six-seed maps. See [S1 design](decisions/earlydev_0_1_1_s1.md). | Causal maps, bounded costs, layers/climate/seams/determinism and normal streamed-world visuals; inherited 0477–0479 fixes/regressions alongside delivery. |
+| ED-011-S1 | ED-010-S7 | Terrain-v2, climate-driven layers/maps, CoreLang 0.1.5 JIT/AOT, loading/key gate and shared 2D tests. | [Loading/FPS targets](decisions/earlydev_0_1_1_s1_performance.md), exact pixels, subsystem modes and two-laptop play; inherited 0477–0479 fixes. |
 | ED-011-S2 | ED-011-S1 | Reachable-block highlight, animated permission-aware placing/breaking, official Spectator/Creative/Survival presets, B block selection and precise mode/permission HUD. | Production edit/replication/collision cases; block times and filters; ordinary multiplayer editing and mode switches. |
 | ED-011-S3 | ED-011-S2 | Central edit crosshair and single-color or per-pixel dark/light scene-adaptive HUD/crosshair styling. | Mixed light/dark backgrounds within one element, scene sampling and normal-view readability. |
 | ED-011-S4 | ED-011-S3 | Sea-level water fill, semitransparency, underwater postprocessing, swimming permissions/slowdown, flowing water and replacement by placed solids. | Fluid research/design before implementation; authority, swim transitions, edit interaction and bounded multiplayer convergence. |

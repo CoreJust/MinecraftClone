@@ -1,11 +1,14 @@
 # S1 — Selected prototype and measured budgets
 
-Select **v3, 256²** for the fast-start global atlas; offer 512² as a distinct
+Terrain-v2 adopts **prototype v3, 256²** for the fast-start global atlas;
+512² is a distinct
 higher-detail configuration. Research, actual Python experiments and source-level
 production design are complete; game implementation remains later. All source,
 raw arrays, maps, identities, rejected versions and replay instructions are in
 the retained bundle at
 `/Users/core-just/.codex/reports/minecraft-worldgen-2026-10-19/bundle/README.md`.
+The retained v1/v2/v3 experiment labels and PDF predate the Terrain-v2 name;
+they are research iterations, not the Terrain-v1/Terrain-v2 design versions.
 The explanatory 16-page PDF, actual seed 42 stage captures, six additional
 parameter variants and figure sources are retained separately at
 `/Users/core-just/.codex/reports/minecraft-worldgen-2026-10-19/report/`.

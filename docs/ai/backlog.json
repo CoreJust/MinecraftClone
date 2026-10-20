@@ -17032,7 +17032,7 @@
     "depends_on": [
       "MC-AI-0033"
     ],
-    "acceptance": "Deliver the six owner-supplied snapshots recorded in docs/ROADMAP.md and docs/ai/ROADMAP.md: staged global tectonics, terrain/hydrology and climate with regional/local elaboration, climate-driven solid materials and standalone six-seed world maps, editing/modes, adaptive HUD/crosshair, water/swimming/flow, animated models/opacity and multiplayer bots. First fix inherited 0477/0478/0479 alongside S1 and retain representative gameplay regressions. Keep automated gates, exact-package owner acceptance/exception and separately authorized publication distinct. Plan only in this chat; reporting starts automatically with later implementation. Include distinct smooth/irregular/ragged coasts, multiple island families, uneven half-world land concentration and sparse unusual landforms; demonstrate diversity across seeds rather than repeating uniform templates.",
+    "acceptance": "Deliver the six owner-supplied snapshots recorded in docs/ROADMAP.md and docs/ai/ROADMAP.md: staged global tectonics, terrain/hydrology and climate with regional/local elaboration, climate-driven solid materials and standalone six-seed world maps, editing/modes, adaptive HUD/crosshair, water/swimming/flow, animated models/opacity and multiplayer bots. First fix inherited 0477/0478/0479 alongside S1 and retain representative gameplay regressions. Keep automated gates, exact-package owner acceptance/exception and separately authorized publication distinct. Plan only in this chat; reporting starts automatically with later implementation. Include distinct smooth/irregular/ragged coasts, multiple island families, uneven half-world land concentration and sparse unusual landforms; demonstrate diversity across seeds rather than repeating uniform templates. Additional finalized S1 requirements: CoreLang 0.1.5 JIT/AOT with an exact temporary ai-dev pin/fix updates and release transition; actual loading map and key gate within 4 s including safe refined spawn and Ready 48-block sphere; Ready 320-block sphere by 20 s Mac/15 s Windows from original T0, preserved at x30 with ≥99% moving time at ≥120/≥300 fresh FPS at existing settings; shared normal-game 2D top-block-pixel mode, connected new coverage and order/movement/version-stable Python/native reference comparisons; subsystem/module review and test modes; physical two-laptop playtests with both host roles.",
     "evidence": "",
     "blocker": "",
     "owner": "",
@@ -17046,11 +17046,11 @@
     "resolution_changes": "",
     "plan": [
       "Deliver planned snapshots in order: MC-AI-0482, MC-AI-0483, MC-AI-0484, MC-AI-0485, MC-AI-0486, MC-AI-0487; product scope is docs/ROADMAP.md.",
-      "Use docs/ai/decisions/earlydev_0_1_1_s1.md and its selected model, experiments and source-level implementation slices as the ready S1 design.",
-      "S1 global tectonics, terrain/hydrology and climate feed on-demand regional detail and local chunks. Use climate-driven materials in S1; standalone test/demo maps use ordered seeds0,1,42,777,2004,8800555. MC-AI-0489 owns the temporary qualification.",
+      "Use the owner-finalized Terrain-v2 design in docs/ai/decisions/earlydev_0_1_1_s1_generation.md and its S1 algorithm, architecture, experiment and implementation notes; Terrain-v1 is the current waves.",
+      "Implement Terrain-v2 using the finalized S1 notes: global/regional/local generation, climate materials, ordered six-seed maps and the additional loading, 0.1.5, deterministic test, performance and two-laptop contracts.",
       "Treat inherited defects as engineering work alongside S1; never replace the six product snapshots by fix-only or separate water-subsystem snapshots.",
       "Research/elaborate flowing water at S4 planning; refine model/art and bot rules at their owning snapshots.",
-      "At implementation start initialize the version-specific three-hour reporting/heartbeat lifecycle; preserve the Windows-secondary/untouched owner restriction."
+      "At implementation start adopt the planned project-wide 4h/12h reporting, validation and checked ai-dev checkpoint policy. The added S1 request explicitly includes Mac/Windows performance and two-laptop qualification, superseding the earlier Windows-untouched restriction for those activities."
     ],
     "product_changes": [],
     "code_changes": [],
@@ -17105,7 +17105,7 @@
   },
   {
     "id": "MC-AI-0482",
-    "title": "EarlyDev 0.1.1:1 — Improved world generation and solid blocks",
+    "title": "EarlyDev 0.1.1:1 — Terrain-v2 world generation and solid blocks",
     "kind": "feature",
     "status": "backlog",
     "priority": "P1",
@@ -17114,23 +17114,26 @@
     "depends_on": [
       "MC-AI-0038"
     ],
-    "acceptance": "Global tectonics, terrain/hydrology and climate produce seeded varied geography, followed by progressively smaller first-touch regional detail and local chunks. Add Grass/Dirt/Bedrock/Snow/Ice alongside Stone with climate-driven materials and exact land/seabed layers; roughly half submerged. Standalone headless world maps for ordered seeds0,1,42,777,2004,8800555 share gameplay generation. Deliver normal streamed materials/collision/safe spawn with 0477/0478/0479 fixes/regressions alongside S1. Selected algorithms, architecture, measured prototype and native gates are indexed in docs/ai/decisions/earlydev_0_1_1_s1.md; prototype evidence is not game qualification. Include distinct smooth/irregular/ragged coasts, multiple island families, uneven half-world land concentration and sparse unusual landforms; demonstrate diversity across seeds rather than repeating uniform templates.",
+    "acceptance": "Implement the owner-finalized Terrain-v2 design indexed by docs/ai/decisions/earlydev_0_1_1_s1.md, replacing Terrain-v1 waves. Preserve solid materials/exact layers, varied geography and inherited 0477/0478/0479 fixes. CoreLang 0.1.5 JIT/AOT with an exact temporary ai-dev pin/fix updates and release transition; actual loading map and key gate within 4 s including safe refined spawn and Ready 48-block sphere; Ready 320-block sphere by 20 s Mac/15 s Windows from original T0, preserved at x30 with ≥99% moving time at ≥120/≥300 fresh FPS at existing settings; shared normal-game 2D top-block-pixel mode, connected new coverage and order/movement/version-stable Python/native reference comparisons; subsystem/module review and test modes; physical two-laptop playtests with both host roles. No prototype, headless or 2D result substitutes for native ordinary-gameplay or platform acceptance.",
     "evidence": "",
     "blocker": "",
     "owner": "",
     "level": "snapshot",
     "parent": "MC-AI-0480",
     "motivation": "Record the owner-supplied BasicBlocks product plan and prepare bounded later implementation.",
-    "context": "Game implementation remains later. This chat explicitly authorizes research/docs and temporary model experiments (MC-AI-0489). Preserve INITIATION-CLOSURE-2026-10-19.md and mandatory report lifecycle at later implementation start; no publication or runtime acceptance is established.",
+    "context": "PLANNED IMPLEMENTATION. Owner finalized Terrain-v2 and expanded S1 requirements on 19 October 2026 (MC-AI-0490). Terrain-v1 is the current waves; prototype v3 is research provenance. Additional S1 contracts supersede no-loading-map, old Mac thresholds and Windows-untouched assumptions. Final timing clarification uses original load T0, not key press. This chat only records the plan; implementation, iteration clocks and reporting activation belong to a future implementation chat.",
     "complexity": "high",
     "created_at": "2026-10-19",
     "resolved_at": "",
     "resolution_changes": "",
     "plan": [
-      "Use the qualified model/configuration, retained temporary prototype/maps and ordered production implementation slices; create executable basic work packages without reopening model selection by default.",
-      "First reproduce and fix inherited cursor, moving-frame and visible terrain-service defects; preserve raw failures and exact-package acceptance.",
-      "Port the bounded global atlas and canonical regional/local sampler; integrate full identity, typed dependencies, climate-driven solid layers, material-aware production streaming/rendering/collision, safe spawn and shared headless map export.",
-      "Qualify representative normal movement and retained performance, visual and applicable platform gates."
+      "Use the parallel three-major objective plan in earlydev_0_1_1_s1_iterations.md and the project_iteration_workflow.md policy for both projects. Plan 12h major objectives now; split into 4h minor objectives only when each major starts. Overlap product, defects, dependency and workflow work; Mac and Windows validate each runnable increment concurrently. No implementation starts in this planning chat.",
+      "Use the finalized Terrain-v2 specification and additional loading/performance/CoreLang/testing/module/multiplayer contracts; create bounded executable tasks from earlydev_0_1_1_s1_implementation.md.",
+      "First reproduce/fix inherited cursor, fresh-moving-frame and visible terrain-service defects; retain raw failures and normal-launcher regressions.",
+      "Adopt an owning-chat exact CoreLang 0.1.5 ai-dev pin with JIT/AOT; preserve provenance, report fixes/update pins and switch to release when available without expanding agreed language features.",
+      "Implement reviewed CPU/service/script/presentation boundaries, exact-reference generation and shared authoritative sampling/material streaming/collision; add progressive loading map, key gate and true sphere readiness.",
+      "Implement the normal-game 2D pixel/coverage adapter and reusable correctness/performance replay matrix. Require stable same-version seed/config output across native/Python references, scheduling, movement and backend updates.",
+      "Qualify original-T0 load deadlines, x30 radius/FPS at existing Mac/Windows settings, both physical-laptop host roles, applicable Android checks and exact-package owner playtests."
     ],
     "product_changes": [],
     "code_changes": [],
@@ -17409,5 +17412,44 @@
     "docs_review": "Owning S1 decision notes and both roadmaps updated; generated backlog/task docs rendered. Source mapping corrected default-generator/refinement bypasses and graphics-linked map/PPM assumptions.",
     "environment_review": "Isolated pinned temporary Python runtime only; final source/maps/raw data retained; no global package/config/plugin or game-runtime changes. Scratch runtime/cache removed only after consumers finish.",
     "backlog_review": "0480/0482 remain planned; only0489 closes. Current selection and release state unchanged; no remote mutation."
+  },
+  {
+    "id": "MC-AI-0490",
+    "title": "Finalize Terrain-v2, S1 iteration plan and shared project workflow",
+    "kind": "decision",
+    "status": "done",
+    "priority": "P1",
+    "route": "luna",
+    "milestone": "ED-011-PLAN",
+    "depends_on": [
+      "MC-AI-0489"
+    ],
+    "acceptance": "Finalize Terrain-v2 in S1 plans; identify Terrain-v1 waves and prototype v3 provenance. Record all new owner requirements: CoreLang 0.1.5 JIT/AOT with an exact temporary ai-dev pin/fix updates and release transition; actual loading map and key gate within 4 s including safe refined spawn and Ready 48-block sphere; Ready 320-block sphere by 20 s Mac/15 s Windows from original T0, preserved at x30 with ≥99% moving time at ≥120/≥300 fresh FPS at existing settings; shared normal-game 2D top-block-pixel mode, connected new coverage and order/movement/version-stable Python/native reference comparisons; subsystem/module review and test modes; physical two-laptop playtests with both host roles. Coordinate a candidate dependency handoff with the owning CoreLang chat and record actual readiness honestly. Preserve later implementation/publication boundaries and validate exact planning artifacts. Record the project-wide small/medium/large validation classification, automatic affected-module selection, Mac 3/12/45-minute lane budgets, failure-first reruns, 4h/12h reporting/review and checked remote-major checkpoints; provide the initial S1 iteration split. Planning only: do not implement tooling, activate reporting or start snapshot development.",
+    "evidence": "Finalized S1 design and additional contract notes are indexed by earlydev_0_1_1_s1.md. earlydev_0_1_1_s1_iterations.md records three parallel major objective groups, their dependencies, ownership and machine scheduling; 4h objectives are deferred until each major starts; project_iteration_workflow.md records the requirements for MinecraftClone and CoreProject2026. Source-backed module audits and the authorized CoreLang handoff request are retained; a usable dependency pin remains a future prerequisite. Unrequested workflow implementation was removed, with cleanup recorded in /private/tmp/mc-terrain-v2-finalize-20261019/planning-only-correction.json. Remaining changes are planning documentation only; documentation/backlog/plan and whitespace checks verify this delivery. No commit or publication is claimed.",
+    "blocker": "",
+    "owner": "codex",
+    "level": "basic",
+    "parent": "",
+    "motivation": "Owner approved Terrain-v2 and added concrete dependency, loading, performance, normal-game 2D, multiplayer and subsystem architecture/test requirements for S1.",
+    "context": "Owner corrections: 0.1.5 supersedes 0.1.4; initial radius is a 3D 48-block sphere; use existing laptop graphics settings; the final timing answer supersedes the intermediate key-press answer and starts all loading deadlines at the original request. This chat remains research/planning, with explicit CoreLang-chat coordination authorized. The latest owner correction limits completion to planning and reporting the iteration split. No development chat is created and no reporting clock is started. Latest planning correction: do not pre-plan 4h tasks; minimize elapsed delivery through independent feature/support lanes and concurrent Mac/Windows work. The old serial seven-major allocation is superseded.",
+    "complexity": "high",
+    "created_at": "2026-10-19",
+    "resolved_at": "2026-10-19",
+    "resolution_changes": "Finalize Terrain-v2 naming, source-backed architecture and all additional S1 contracts; record shared project validation/reporting policy and the parallel three-major objective plan without advance 4h scheduling. Preserve game/dependency locks and future implementation boundaries. Remove the mistakenly started workflow tools and temporary clone.",
+    "plan": [
+      "Finalize Terrain-v2 naming and source hierarchy; preserve existing experimental identities.",
+      "Audit current module/streaming/CoreLang seams and coordinate an exact temporary 0.1.5 dependency handoff.",
+      "Record loading/T0/sphere, performance, 2D deterministic pixel/topology, module/subsystem and real two-laptop contracts; reconcile old conflicting plans.",
+      "Record shared validation/reporting requirements and the parallel three-major S1 objectives, dependency joins, disjoint lane ownership and concurrent Mac/Windows validation; validate and report the plan without implementation, scheduling or publication."
+    ],
+    "product_changes": [],
+    "code_changes": [],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "The owner corrected an implementation scope overreach. Workers were stopped and their tooling changes removed; this delivery contains the requested plan only.",
+    "docs_review": "Owning plan and generated references updated together; native acceptance remains planned.",
+    "environment_review": "No game source, dependency lock or automation changes remain. The unrequested temporary CoreProject clone was removed after consumer and commit checks; no remote mutation occurred.",
+    "backlog_review": "New decision MC-AI-0490 closes; minor MC-AI-0480 and snapshot MC-AI-0482 remain backlog/unfinalized."
   }
 ]

@@ -47,7 +47,7 @@ same outlets, lakes and channels instead of inventing incompatible watersheds.
 | One median sea offset | Directly implements roughly half submerged terrain. Holding it through shaping preserves causal coast changes and consistent regional sea level. |
 | World-scaled belts/coasts | Widths stay in world units when atlas sampling changes. Nearshore restriction protects inland relief; cold/activity modulation provides contrasted coasts. Coefficients and event frequencies remain procedural calibration. |
 | Five existing regional extents | Reuse the established hierarchy while replacing ignored tokens with actual typed parent dependencies. Canonical lattice samples give order/eviction independence. |
-| −2 °C / 0.20 material thresholds | Explicit full-block Snow/Ice and Grass/Dirt transition choices within S1's palette. Climate-driven selection is required; these thresholds are proposed gameplay calibration, not scientific biome boundaries. |
+| −2 °C / 0.20 material thresholds | Explicit full-block Snow/Ice and Grass/Dirt transition choices within S1's palette. Climate-driven selection is required; these are Terrain-v2 gameplay thresholds, not scientific biome boundaries. |
 
 Geological elevation, block-height compression, relief caps, coastal displacement
 and hotspot frequencies are documented bounded art-scale controls. They were

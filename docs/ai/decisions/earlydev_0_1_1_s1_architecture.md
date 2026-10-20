@@ -1,6 +1,6 @@
 # S1 — Generation ownership and scheduling
 
-This future production design replaces the fixed-wave generator. The
+Terrain-v2 replaces the current Terrain-v1 fixed-wave generator. The
 [experiment](earlydev_0_1_1_s1_experiments.md) qualifies the model, not native
 runtime behavior. Source ownership was inspected at
 `2e3e4e2adefa51521ab513f5a5bacd87a59be21a`.
@@ -87,3 +87,10 @@ quantization, rather than inheriting `std::hash`, library random distributions
 or unchecked transcendental behavior. Its concrete numerical contract and
 cross-platform gates are in the [implementation sequence](earlydev_0_1_1_s1_implementation.md).
 The Python experiment establishes same-environment repeatability only.
+The [reference-pixel contract](earlydev_0_1_1_s1_testing.md) now requires exact
+Python/native examples and stable version/seed/config output, including across
+backend/pin changes. Follow the [reviewed module boundaries](earlydev_0_1_1_s1_modules.md),
+[CoreLang 0.1.5 adapter](earlydev_0_1_1_s1_corelang.md) and
+[loading/readiness lifecycle](earlydev_0_1_1_s1_loading.md). The generation
+service, normal renderer and 2D renderer share these artifacts; none may
+substitute preview readiness for the required authoritative sphere.

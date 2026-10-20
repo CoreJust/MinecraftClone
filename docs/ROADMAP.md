@@ -25,7 +25,9 @@ alongside S1, with their regression checks retained throughout the minor.
 See [S1 design and acceptance](ai/decisions/earlydev_0_1_1_s1.md) and
 [delivery sequencing](ai/ROADMAP.md#basicblocks-snapshots).
 
-1. **Improved world generation and solid blocks.** Add grass, dirt, bedrock,
+1. **Terrain-v2 world generation and solid blocks.** The owner finalized the
+   [Terrain-v2 design](ai/decisions/earlydev_0_1_1_s1_generation.md) for S1;
+   Terrain-v1 is the current repeating-wave generator. Add grass, dirt, bedrock,
    snow and ice alongside existing stone. Place a one-block-deep bedrock layer
    at the bottom. The owner's later clarification makes seeded tectonic
    simulation or a credible approximation the foundation of the base heights.
@@ -52,8 +54,22 @@ See [S1 design and acceptance](ai/decisions/earlydev_0_1_1_s1.md) and
    the four-block band immediately below `SEA_LEVEL` uses ground material;
    deeper terrain is stone. Add standalone world-map generation for tests and
    demos with ordered seeds `[0, 1, 42, 777, 2004, 8800555]`; the global atlas
-   also provides the future unloaded-map detail level. No in-game map UI in S1.
-   Physical water itself arrives in S4.
+   also provides the future unloaded-map detail level. During initial loading,
+   show the actual generated map, refine safe spawn, generate a 48-block sphere
+   and show **Press any key to start** within 4 s. From the same original load
+   request, fill the playable 20-chunk/320-block sphere within 20 s on Mac or
+   15 s on Windows; key wait does not reset the deadline. At x30 preserve that
+   radius with ≥99% of moving time at ≥120 fresh FPS on Mac or ≥300 on Windows,
+   using existing qualification settings. Use CoreLang 0.1.5 with JIT/AOT,
+   temporarily pinned to an exact owning-chat ai-dev commit, then its release;
+   new language features belong to later versions. Add normal-game 2D tests
+   that replace rendering with in-memory top-block-color pixels while retaining
+   actual generation. Require connected new chunk coverage, deterministic
+   Python/native pixels and order/movement-independent worlds under the same
+   version/seed/configuration. Review module separation and subsystem-specific
+   correctness/performance modes. Qualify two physical laptops with one local
+   and one remote player, hosting on Mac and Windows. Detailed contracts are in
+   the S1 plan. Physical water itself arrives in S4.
 2. **Placing, breaking and game modes.** Highlight the reachable block under
    the player's gaze. Breaking shows cracks and cubic particles. Normal break
    times are snow 1 s, dirt/grass 1.5 s, ice 2 s and stone 3 s; bedrock is

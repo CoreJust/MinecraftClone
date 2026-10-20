@@ -1,24 +1,26 @@
 # EarlyDev 0.1.1:1 — Improved world generation and solid blocks
 
-Status: design for later implementation, 19 October 2026. The
+Status: **Terrain-v2 design finalized by the owner, 19 October 2026**;
+S1 implementation remains planned. Terrain-v1 names the current repeating-wave
+generator. The finalized [Terrain-v2 design](earlydev_0_1_1_s1_generation.md)
+and its linked algorithm, architecture, rationale and acceptance notes are
+the implementation specification. The
 [product roadmap](../../ROADMAP.md#earlydev-011--basicblocks) owns the six
 snapshots; this document elaborates S1. Prototype evidence is separate from
 native game acceptance.
 
 ## Intended result and boundaries
 
-S1 replaces repeating stone waves with seed-driven tectonic base heights,
-simulated or credibly approximated. Different-sized continents, ranges, trenches and peninsulas emerge with
-smooth/irregular/ragged coasts, varied island families and uneven world-scale
-land concentration; detail is added only where needed.
-Climate selects grass/dirt or snow/ice over stone and bottom bedrock. Oceans remain dry basins
-until S4. A normal player must see these materials and the same terrain that
-the server uses for collision; a separate showcase or chunk-only fixture does
-not satisfy the snapshot.
+Terrain-v2 replaces repeating stone waves with seeded tectonics, varied
+geography and progressive detail. Climate selects grass/dirt or snow/ice over
+stone and bottom bedrock. Oceans remain dry until S4. Normal gameplay must
+show these materials and agree with server collision; showcases and chunk-only
+fixtures do not satisfy S1.
 
 Cursor capture, ordinary moving-frame performance and visible terrain service
-are inherited defects, not S1 product features. Fix and regress them as the
-first engineering batch, then recheck affected behavior on the final S1 world.
+are inherited defects, not S1 product features. Fix and regress them in the
+first engineering lanes while independent terrain work proceeds; recheck
+affected behavior on the final S1 world.
 The handoff's historical qualification does not establish a clean baseline.
 
 Keep the existing 65,536 × 65,536 horizontal extent and 1,024-block vertical
@@ -44,57 +46,40 @@ S2 owns arbitrary voxel edits, which a height alone cannot encode.
 | S1-10 | Global tectonics → terrain/water elaboration → climate, then progressive first-touch regional elaboration and local chunks. | Causal diagnostic layers, bounded costs and exact parent/child consistency. |
 | S1-11 | Standalone world-map generation for tests/demos; ordered seeds 0, 1, 42, 777, 2004, 8800555. | Actual maps, timings/memory, identities and retained rejected attempts; future map CLI shares gameplay generation. |
 | S1-12 | Coast/island diversity, anisotropic land concentration and sparse unusual terrain phenomena follow the seed/processes. | Actual coastal/island crops and half-domain land statistics across the corpus; no repeated uniform templates or mandatory landmark catalog in each seed. |
+| S1-13 | Use CoreLang 0.1.5 with JIT/AOT; temporary exact ai-dev pin, then release. | Owning-chat handoff, backend/provenance/parity checks and version-safe upgrades. |
+| S1-14 | Show actual world-map generation, refine safe spawn and generate its 48-block sphere; prompt for any key. | Normal loading state machine and rendered prompt within 4 s from T0. |
+| S1-15 | Ready 320-block sphere within 20 s Mac / 15 s Windows from T0; preserve it at x30 with ≥99% moving time at ≥120 / ≥300 fresh FPS. | Exact coverage and raw timing/frame evidence at existing laptop settings. |
+| S1-16 | Normal-game 2D top-block-color mode shares actual generation. | In-memory pixel and coverage comparisons across movement/order/teleport scenarios. |
+| S1-17 | Two physical laptops, one local and one remote client; host on either OS. | Mac-host/Windows-host playtests, identities, correctness and separate laptop metrics. |
+| S1-18 | Review/separate modules and elaborate subsystem correctness/performance testing. | Source audit, standalone/custom-mode consumers, strict Python/native pixels and same-version seed/config reproduction. |
 
 Requirements S1-01–08 come from the owner's recovered S1 plan and subsequent
 tectonics/climate clarification in the roadmap; S1-10/11 from the owner's
 subsequent staged-generation and map request; S1-12 from the later explicit
 coast/island-family and world-anisotropy clarification;
 S1-09 comes from the explicit correction about fixes and the retained handoff.
-Reproducibility, bounded work, authority/render agreement and seams derive
+S1-13–18 come from the owner's additional S1 requirements and 0.1.5, sphere,
+settings and final T0 clarifications. Reproducibility, bounded work, authority/render agreement and seams derive
 from existing generation/world contracts.
 
-## Exact column rules
+## Solid materials
 
-Proposed indexing convention: `H(x,y)` is the Z coordinate of the highest
-solid block, and `S = SEA_LEVEL` is the highest Z that S4 may fill with water.
-Thus `H >= S` is land, and `H < S` is submerged terrain. This convention must
-be shared by generation, rendering, collision and S4 water placement.
-
-At `z=0`, always generate Bedrock. At `z>H`, generate Air in S1. For the
-remaining solid blocks (`1 <= z <= H`):
-
-| Column | Layer | Block |
-|---|---|---|
-| Land: `H >= S` | `z == H` | TOPMOST_BLOCK |
-| Land | `H-4 <= z < H` | GROUND |
-| Land | `z < H-4` | Stone |
-| Submerged: `H < S` | `S-4 <= z <= H` | GROUND |
-| Submerged | `z < S-4` | Stone |
-
-The bedrock rule takes precedence if a configured shallow column would overlap
-the bottom. TOPMOST_BLOCK/GROUND follow the [climate material table](earlydev_0_1_1_s1_climate.md):
-Snow/Ice when cold; Grass/Dirt when warmer and moist; proposed Dirt/Dirt when
-warmer and dry. Submerged ground can therefore be Ice; no grass/snow cap is
-generated below sea level. Inland lake beds above S retain the land rule.
-
-Boundary examples, assuming enough depth above bedrock:
-
-| Highest solid block | Result immediately below/at sea level |
-|---|---|
-| `H=S` | Topmost at S, four ground blocks at S-1 through S-4. |
-| `H=S-1` | Four ground blocks at S-1 through S-4; Air at S until S4. |
-| `H=S-3` | Two ground blocks at S-3 and S-4. |
-| `H=S-4` | One ground block at S-4. |
-| `H=S-5` | Stone-only column above bedrock. |
-
-The owner's shallow/deep-water rule uses a fixed sea-level band, not four
-ground blocks beneath every seabed.
-
-Climate uses smooth toroidal insolation, elevation, ocean heat transport and
-wind/moisture effects. There is no fixed Y-band material predicate. Snow and
-Ice remain full solid blocks; thin snow, melting and friction are not inferred.
+The [material/column contract](earlydev_0_1_1_s1_materials.md) owns inclusive
+highest-solid H, sea level S, exact four-block ground/seabed bands and bottom
+Bedrock. It preserves the original boundary cases and climate-driven palette.
 
 ## Planning references
 
-- [Selected generation model and experiment index](earlydev_0_1_1_s1_generation.md).
-- [Work packages, acceptance and next decisions](earlydev_0_1_1_s1_acceptance.md).
+- [Finalized Terrain-v2 design and experiment index](earlydev_0_1_1_s1_generation.md).
+- [Work packages and native acceptance](earlydev_0_1_1_s1_acceptance.md).
+
+## Additional finalized contracts
+
+- [Loading map, key gate and sphere readiness](earlydev_0_1_1_s1_loading.md).
+- [Mac/Windows performance predicates](earlydev_0_1_1_s1_performance.md).
+- [CoreLang 0.1.5 pin and backend integration](earlydev_0_1_1_s1_corelang.md).
+- [Shared 2D/headless testing and deterministic pixels](earlydev_0_1_1_s1_testing.md).
+- [Project review and module boundaries](earlydev_0_1_1_s1_modules.md).
+- [Two-laptop multiplayer qualification](earlydev_0_1_1_s1_multiplayer.md).
+- [Parallel three-major iteration plan](earlydev_0_1_1_s1_iterations.md).
+- [Planned 4h/12h workflow for both projects](project_iteration_workflow.md).

@@ -61,7 +61,7 @@ The canonical column sampler bilinearly samples final climate and uses:
 | Warmer, integrated precipitation > 0.20 | Grass / Dirt |
 | Warmer, drier | Dirt / Dirt |
 
-The dry Dirt top is a proposed material interpretation within the existing
+The dry Dirt top is the finalized Terrain-v2 material choice within the existing
 S1 palette. It introduces no sand or new biome content. Cold ground is Ice,
 including the permitted shallow-seabed band. No snow cap is placed on
 submerged columns. All cases keep the [exact soil/bedrock rules](earlydev_0_1_1_s1.md).
