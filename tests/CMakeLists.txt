@@ -137,6 +137,13 @@ if(MC_BUILD_CLIENT AND NOT ANDROID)
 endif()
 
 add_executable(mc_tests
+    generation/climate_tests.cpp
+    generation/coastal_tests.cpp
+    generation/generation_tests.cpp
+    generation/geology_tests.cpp
+    generation/hydrology_tests.cpp
+    generation/numpy_random_tests.cpp
+    generation/reference_tests.cpp
     core/algorithm_tests.cpp
     core/byte_io_tests.cpp
     core/crash_handler_tests.cpp
@@ -420,3 +427,8 @@ if(MC_ENABLE_RENDERER_GOLDEN)
         FAIL_REGULAR_EXPRESSION "Vulkan validation; error at ; critical at "
     )
 endif()
+
+
+target_compile_definitions(mc_tests PRIVATE
+    MC_TERRAIN_REFERENCE_FIXTURE_DIR="${PROJECT_SOURCE_DIR}/tests/fixtures/terrain_v2"
+)

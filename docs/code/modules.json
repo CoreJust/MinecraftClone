@@ -131,6 +131,8 @@
       "id": "generation",
       "guide": "docs/code/GENERATION.md",
       "sources": [
+        "src/generation/**",
+        "tests/generation/**",
         "tests/fixtures/terrain_v2/**",
         "tests/fixtures/terrain_v2_revision_4/**",
         "tests/fixtures/terrain_v2_revision_5/**"

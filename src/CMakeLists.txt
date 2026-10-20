@@ -1,5 +1,7 @@
 add_library(mc STATIC)
 
+add_subdirectory(generation)
+
 target_sources(mc
     PRIVATE
         android/AndroidInputState.cpp

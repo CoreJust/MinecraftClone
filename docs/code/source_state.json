@@ -189,7 +189,7 @@
         "vcpkg-configuration.json",
         "vcpkg.json"
       ],
-      "sources_sha256": "9847d265299241bafcc4c35ca386ad4aecfb1767573a38590cfe69151d0d02c8"
+      "sources_sha256": "c3e749f32d8f1002747b7c284eb0a0b03126738052f474bf7e746f62d05423f9"
     },
     {
       "guide": "docs/code/CORE.md",
@@ -321,9 +321,22 @@
     },
     {
       "guide": "docs/code/GENERATION.md",
-      "guide_sha256": "92634838c5bb6b8aab4ca7829c6bf0635cf04b25e99932f1a7571a14bd49a122",
+      "guide_sha256": "ef507d4a1cdcc6fe6c43209e56076ec8d3dbb82220b182528727055bfca373e1",
       "id": "generation",
       "sources": [
+        "src/generation/CMakeLists.txt",
+        "src/generation/Climate.cpp",
+        "src/generation/Coastal.cpp",
+        "src/generation/Generation.cpp",
+        "src/generation/GenerationStages.hpp",
+        "src/generation/Geology.cpp",
+        "src/generation/Hydrology.cpp",
+        "src/generation/Numerics.cpp",
+        "src/generation/Numerics.hpp",
+        "src/generation/NumpyRandom.cpp",
+        "src/generation/NumpyRandom.hpp",
+        "src/generation/NumpyTanh.cpp",
+        "src/generation/include/generation/Generation.hpp",
         "tests/fixtures/terrain_v2/manifest.json",
         "tests/fixtures/terrain_v2/rng_oracle_seed42.json",
         "tests/fixtures/terrain_v2/seed-0/atlas__climate_zone.raw",
@@ -845,9 +858,16 @@
         "tests/fixtures/terrain_v2_revision_5/seed-8800555/local_detail.raw",
         "tests/fixtures/terrain_v2_revision_5/seed-8800555/point_xy.raw",
         "tests/fixtures/terrain_v2_revision_5/seed-8800555/top_material_v4.raw",
-        "tests/fixtures/terrain_v2_revision_5/seed-8800555/top_material_v5.raw"
+        "tests/fixtures/terrain_v2_revision_5/seed-8800555/top_material_v5.raw",
+        "tests/generation/climate_tests.cpp",
+        "tests/generation/coastal_tests.cpp",
+        "tests/generation/generation_tests.cpp",
+        "tests/generation/geology_tests.cpp",
+        "tests/generation/hydrology_tests.cpp",
+        "tests/generation/numpy_random_tests.cpp",
+        "tests/generation/reference_tests.cpp"
       ],
-      "sources_sha256": "835dba91f662469febcae787cb20ed6464f9af12f49c47c23c26e697afadd950"
+      "sources_sha256": "1f492052c50d6bbeb5c218f310572d07f49feb27e5322fcac3ad39ccb450e9b2"
     },
     {
       "guide": "docs/code/RENDERING.md",

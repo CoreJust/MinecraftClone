@@ -316,6 +316,19 @@ Files:
 Guide: [GENERATION.md](GENERATION.md)
 
 Files:
+- [`src/generation/CMakeLists.txt`](../../src/generation/CMakeLists.txt)
+- [`src/generation/Climate.cpp`](../../src/generation/Climate.cpp)
+- [`src/generation/Coastal.cpp`](../../src/generation/Coastal.cpp)
+- [`src/generation/Generation.cpp`](../../src/generation/Generation.cpp)
+- [`src/generation/GenerationStages.hpp`](../../src/generation/GenerationStages.hpp)
+- [`src/generation/Geology.cpp`](../../src/generation/Geology.cpp)
+- [`src/generation/Hydrology.cpp`](../../src/generation/Hydrology.cpp)
+- [`src/generation/Numerics.cpp`](../../src/generation/Numerics.cpp)
+- [`src/generation/Numerics.hpp`](../../src/generation/Numerics.hpp)
+- [`src/generation/NumpyRandom.cpp`](../../src/generation/NumpyRandom.cpp)
+- [`src/generation/NumpyRandom.hpp`](../../src/generation/NumpyRandom.hpp)
+- [`src/generation/NumpyTanh.cpp`](../../src/generation/NumpyTanh.cpp)
+- [`src/generation/include/generation/Generation.hpp`](../../src/generation/include/generation/Generation.hpp)
 - [`tests/fixtures/terrain_v2/manifest.json`](../../tests/fixtures/terrain_v2/manifest.json)
 - [`tests/fixtures/terrain_v2/rng_oracle_seed42.json`](../../tests/fixtures/terrain_v2/rng_oracle_seed42.json)
 - [`tests/fixtures/terrain_v2/seed-0/atlas__climate_zone.raw`](../../tests/fixtures/terrain_v2/seed-0/atlas__climate_zone.raw)
@@ -838,6 +851,13 @@ Files:
 - [`tests/fixtures/terrain_v2_revision_5/seed-8800555/point_xy.raw`](../../tests/fixtures/terrain_v2_revision_5/seed-8800555/point_xy.raw)
 - [`tests/fixtures/terrain_v2_revision_5/seed-8800555/top_material_v4.raw`](../../tests/fixtures/terrain_v2_revision_5/seed-8800555/top_material_v4.raw)
 - [`tests/fixtures/terrain_v2_revision_5/seed-8800555/top_material_v5.raw`](../../tests/fixtures/terrain_v2_revision_5/seed-8800555/top_material_v5.raw)
+- [`tests/generation/climate_tests.cpp`](../../tests/generation/climate_tests.cpp)
+- [`tests/generation/coastal_tests.cpp`](../../tests/generation/coastal_tests.cpp)
+- [`tests/generation/generation_tests.cpp`](../../tests/generation/generation_tests.cpp)
+- [`tests/generation/geology_tests.cpp`](../../tests/generation/geology_tests.cpp)
+- [`tests/generation/hydrology_tests.cpp`](../../tests/generation/hydrology_tests.cpp)
+- [`tests/generation/numpy_random_tests.cpp`](../../tests/generation/numpy_random_tests.cpp)
+- [`tests/generation/reference_tests.cpp`](../../tests/generation/reference_tests.cpp)
 
 ## `rendering`
 
