@@ -17481,5 +17481,42 @@
     "docs_review": "",
     "environment_review": "",
     "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0497",
+    "title": "Freeze Terrain-v2 raw references and numerical identity checks",
+    "kind": "feature",
+    "status": "done",
+    "priority": "P0",
+    "route": "luna",
+    "milestone": "ED-011-S1",
+    "depends_on": [],
+    "acceptance": "Retain immutable six-seed Python stage/height/material/color references and exact source/config hashes; native comparator reports real byte/pixel mismatches and never regenerates goldens silently.",
+    "evidence": "Focused Python reference/comparator suite: 15/15 passed in 1.120s; source-bound receipt: /Users/core-just/.codex/task-evidence/mc-s1-20261019/commit-preparation/reference-final/focused-receipt.json. Revision-4 approved global base: six seeds, 36/36 raw fields exact on Mac/Windows/Android; manifest SHA-256 9a2644bbe81a88876bac4f84f334f8c0a5d3525295e83122dcce10f92f02d6eb. Separate revision-5 local-detail contract: 8,418 point checks plus 393,216 precipitation bits, zero mismatches on Mac/Windows MSVC/Android arm64; manifest SHA-256 593da126bfebecc56f2412424aba50a160105a3471d2b5c58f2c1146108294f2; portable packet SHA-256 7e58efe26dd0be1ffc9d4b25cbdb64850000eea64aebb270622a3cec444538c4. These component/reference receipts do not claim full GPU gameplay or strict S1 qualification.",
+    "blocker": "",
+    "owner": "codex",
+    "level": "basic",
+    "parent": "MC-AI-0482",
+    "motivation": "Native port must reproduce approved world identity.",
+    "context": "Amended parallel three-major S1 plan; implement independent work now with disjoint ownership and integrate real producers before acceptance.",
+    "complexity": "high",
+    "created_at": "2026-10-19",
+    "resolved_at": "2026-10-20",
+    "resolution_changes": "Added immutable v3/v4/v5 reference fixtures, identity verification and native-candidate comparison; the focused 15-test reference suite and separately scoped v4/v5 portable parity receipts are recorded.",
+    "plan": [],
+    "product_changes": [
+      "Preserve immutable six-seed Terrain-v2 reference identities and native-candidate comparison rules."
+    ],
+    "code_changes": [
+      "Add read-only revision-3, revision-4, and revision-5 Python reference verification/comparison tools and focused mismatch tests.",
+      "Check in versioned source/config-bound fixture manifests and raw reference samples for all six seeds."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
   }
 ]

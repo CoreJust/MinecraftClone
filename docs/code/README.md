@@ -5,6 +5,7 @@ Start with one guide; use [the generated file index](INDEX.md) for exact paths. 
 | Area | Guide | Primary responsibility |
 |---|---|---|
 | Core utilities, I/O, networking | [CORE.md](CORE.md) | Reusable foundations and their contracts |
+| Frozen Terrain reference fixtures | [GENERATION.md](GENERATION.md) | Versioned numerical identities and comparator evidence |
 | Entry point, client, server, shared world/protocol | [GAMEPLAY.md](GAMEPLAY.md) | Authority, state transitions, message flow |
 | Renderer and shaders | [RENDERING.md](RENDERING.md) | Frame lifecycle, GPU data, reload |
 | Android NativeActivity bridge | [ANDROID.md](ANDROID.md) | Activity lifecycle, input, surfaces, packaged assets |
