@@ -3,7 +3,9 @@
 The [four-screen prototype](../prototypes/s2-ui/index.html) is a design artifact,
 not game implementation. Judge it against the owner's four criteria: authentic
 use of current capabilities, visual appeal, useful information and easy operation.
-Prototype animation, field values and ready states are illustrative fixtures.
+Formation and runtime counters are fixtures. The revised prototype uses one
+native atlas export for all map layers and marker climate, with retained source
+identity and units; this is not a live game connection.
 
 ## Available primitives
 
@@ -34,8 +36,8 @@ path; do not conceal that work behind the prototype.
    not only its label. Automatic retries retain `T0`; a new request has a new
    epoch and separately retained attempt evidence.
 
-2. **Generation or synchronization.** Make world formation move: relief and
-   coast evolution, water/drainage appearance, climate/material transitions,
+2. **Generation or synchronization.** Make geographical formation move: a
+   coherent oblique relief rises, masked basins fill and climate zones emerge,
    then a marked safe spawn. Use bounded map-pixel animation and bitmap phase
    labels. The owner allows illustrative intermediate depiction; this is not a
    claim of physical simulation. Prefer actual stage snapshots and show the
@@ -55,14 +57,19 @@ path; do not conceal that work behind the prototype.
    yaw/pitch/roll. Preserve the current coordinate display convention and F1
    visibility. Add dense loaded chunks, process memory and local climate to
    that telemetry group. Keep mode, precise effective edit/movement rights and
-   selected block in compact bottom lines, with a central crosshair. Group and
-   recolor existing information; no field disappears merely to reduce clutter.
+   selected block in compact bottom groups, with a central crosshair. Give
+   primary values a larger integer glyph scale than labels and hints. Use plain
+   actions: “Selected block: Grass”, “B Change block”, effective/selected speed
+   and collision bypass. Reflow crowded groups; do not silently shrink entire
+   rows. No field disappears merely to reduce clutter.
    The local map uses the game's material palette and strong outlined N/E/S/W
    plus heading. The [map note](earlydev_0_1_1_s2_maps.md) owns L1/L2 coverage.
 
 4. **World map.** A dominant image, plain title/detail label, position/heading,
    cardinal glyphs and text hints. Proposed controls: `M`/`Esc` closes, arrows
-   pan, `+/-` zoom, `R` recenters. Exclusive map input cannot move/edit/change
+   pan, `+/-` zoom, `R` recenters; the map note owns separate layer keys and
+   legends. Ignore modified browser shortcuts and repeated toggle presses.
+   Exclusive map input cannot move/edit/change
    mode while multiplayer continues. Android uses map gestures/back navigation;
    entry mapping and ordinary-device proof remain implementation work.
 

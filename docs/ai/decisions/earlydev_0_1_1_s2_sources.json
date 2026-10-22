@@ -635,5 +635,19 @@
     "src/client/PlayerClient.cpp": "72ee8a29c5504a5504afffa85bc71d2a2afb64773d500ab39d1c8ec042d4f452",
     "src/client/ColumnMapClient.cpp": "bfcdd5059df52609832d02967b3e7f8fd04b9bf810f294719aef99fea0890729",
     "src/client/render/shaders/terrain_texture_sampling.glsl": "a484d46c6cfcb67c3581b4affed740d0b25e0234877284c1953a1fb678273e91"
+  },
+  "owner_ui_readability_layers_feedback": {
+    "text": "World generation still terrible. Looks like cheap effects from PPTX made by 2nd-grade schooler...\nIn-game info difficult to read. Fucking blob of same-looking text.\nWhat's Grass [B]?!\nWorld map looks so-so. Probably it needs modes. To see plates, heights, temperature, biomes, wind, currents, etc. Each enabled/disabled with separate toggles (on specific keys).",
+    "sha256": "2ac9b08e24be05f8e6d17c9df5184b7308b2d5ff3b9d5430e0d3683134c3b0a5"
+  },
+  "owner_sol_max_fanout": {
+    "text": "Fan out Sol/Max subagents for each issue and also for other parts in an attempt to improve the visuals and look for UI/UX issues",
+    "sha256": "38a2c2d7c1f3ce76b22216289c52a3efd5524d79a0d5834c70107cd0c21bf061"
+  },
+  "ui_refinement": {
+    "task_id": "MC-AI-0517",
+    "requirements_ledger_sha256": "7531815332a01f42a3c4e2fb0157fd319c73aaf4ce7a484a96cd90f8a512369f",
+    "native_atlas_provenance": "../prototypes/s2-ui/assets/world-data-provenance.json",
+    "note": "One native same-run map fixture; all UI/runtime/vertical-position examples remain explicitly disclosed; no native game implementation or qualification."
   }
 }

@@ -11,6 +11,11 @@ collision, rendering and later visits agree. The crosshair and HUD remain
 readable across bright snow and dark terrain within one element. A minimap
 supports local orientation; an interactive world map shows the wider world.
 
+The refined [prototype](../prototypes/s2-ui/index.html) adds a coherent relief
+formation view, readable HUD hierarchy and independently keyed atlas layers.
+Its native fixture shares one source identity; browser visuals remain design
+evidence, not game implementation or owner acceptance.
+
 S2 also owns the terrain-model replacement deferred from S1. The separate
 world-model study has no accepted production candidate. Its adoption is an
 explicit dependency, not something editing or renderer tests can substitute for.

@@ -17154,7 +17154,7 @@
     "depends_on": [
       "MC-AI-0482"
     ],
-    "acceptance": "Reachable target highlighting; cracks and cubic particles; snow 1 s, dirt/grass 1.5 s, ice 2 s, stone 3 s; Creative can break bedrock and Survival cannot fly; block breaking blacklist/whitelist including empty lists and normal/quick speed; explicit Spectator/Creative/Survival capability presets; B placement-block cycling; HUD mode, precise permissions and selected block. Server-authoritative edits update rendering/collision/replication in the ordinary world. Central edit-ray crosshair; HUD/crosshair single-color and two-color dark/light styles; choose adaptive color independently for each pixel from the scene behind it, retaining readability across mixed snow and dark terrain. Adopt the owner-selected qualified replacement terrain model deferred from S1, preserving final S1 loading, actual-volume, streaming and platform/performance gates. Include a gameplay minimap and interactive world map, as added by the owner on 22 October 2026. Improve the four text/background/map-based UI views (pre-connect, generation, game, world map); HUD includes loaded chunks, measured memory and local climate, with inapplicable fields omitted; minimap shows the local L1/L2 area and N/E/S/W. Preserve the complete existing HUD (FPS, uptime/platform help, active/selected speed, view, movement rights, XYZ, YPR and F1), while grouping it compactly with new telemetry. Generation is dynamically engaging through current map-image primitives; the minimap uses game material colors and conspicuous outlined cardinal labels.",
+    "acceptance": "Reachable target highlighting; cracks and cubic particles; snow 1 s, dirt/grass 1.5 s, ice 2 s, stone 3 s; Creative can break bedrock and Survival cannot fly; block breaking blacklist/whitelist including empty lists and normal/quick speed; explicit Spectator/Creative/Survival capability presets; B placement-block cycling; HUD mode, precise permissions and selected block. Server-authoritative edits update rendering/collision/replication in the ordinary world. Central edit-ray crosshair; HUD/crosshair single-color and two-color dark/light styles; choose adaptive color independently for each pixel from the scene behind it, retaining readability across mixed snow and dark terrain. Adopt the owner-selected qualified replacement terrain model deferred from S1, preserving final S1 loading, actual-volume, streaming and platform/performance gates. Include a gameplay minimap and interactive world map, as added by the owner on 22 October 2026. Improve the four text/background/map-based UI views (pre-connect, generation, game, world map); HUD includes loaded chunks, measured memory and local climate, with inapplicable fields omitted; minimap shows the local L1/L2 area and N/E/S/W. Preserve the complete existing HUD (FPS, uptime/platform help, active/selected speed, view, movement rights, XYZ, YPR and F1), while grouping it compactly with new telemetry. Generation is dynamically engaging through current map-image primitives; the minimap uses game material colors and conspicuous outlined cardinal labels. World-map layers have independent keys and availability/units/legends for plates, heights, temperature, biomes/climate zones, wind, currents, moisture and model precipitation; layer combinations remain legible and map keys remain exclusive.",
     "evidence": "",
     "blocker": "",
     "owner": "",
@@ -17842,7 +17842,7 @@
     "depends_on": [
       "MC-AI-0482"
     ],
-    "acceptance": "Deliver both an in-game minimap and an interactive world map through ordinary desktop/Android play. Use the accepted session terrain identity and canonical surface/edit data, with honest coarse/verified/Unknown coverage, wrapped navigation, player position/heading, pan/zoom/recenter and safe input ownership. Verify accepted top-surface edits, epoch reset, lifecycle, bounded work/storage and inherited S1 performance/platform gates. Controls and visual defaults in the initial design remain proposals; no game implementation is authorized by this planning item.",
+    "acceptance": "Deliver both an in-game minimap and an interactive world map through ordinary desktop/Android play. Use the accepted session terrain identity and canonical surface/edit data, with honest coarse/verified/Unknown coverage, wrapped navigation, player position/heading, pan/zoom/recenter and safe input ownership. Verify accepted top-surface edits, epoch reset, lifecycle, bounded work/storage and inherited S1 performance/platform gates. Controls and visual defaults in the initial design remain proposals; no game implementation is authorized by this planning item. World-map layers have independent keys and availability/units/legends for plates, heights, temperature, biomes/climate zones, wind, currents, moisture and model precipitation; layer combinations remain legible and map keys remain exclusive.",
     "evidence": "",
     "blocker": "",
     "owner": "",
@@ -17857,6 +17857,7 @@
     "plan": [
       "Reconcile the map design with final S1 atlas, canonical surface coverage, renderer and input APIs.",
       "Implement shared bounded map sources and view state; minimap and world-map UI consume matching session/epoch data and authoritative known edits.",
+      "Bind each keyed layer to the same atlas identity and canonical units; implement readable scalar/vector composition, honest availability, repeat-safe toggles and clear legends.",
       "Integrate desktop/Android navigation and edit cancellation/modality, then verify visual, multiplayer, wrap, lifecycle and performance acceptance."
     ],
     "product_changes": [],
@@ -17880,14 +17881,14 @@
     "depends_on": [
       "MC-AI-0482"
     ],
-    "acceptance": "Deliver the four UI views using current bitmap text, background and map primitives; no button/widget system is required. Loading uses a HUD-free pre-rendered game background; generation visually explains land/water/climate/spawn with honest progress and the actual final map/readiness gate. A compact gameplay HUD shows dense loaded chunks, measured client memory and canonical local climate including temperature/humidity; hide inapplicable salinity. Preserve mode/effective-rights/selected-material HUD, local L1/L2 map/cardinals, loading T0/deadlines, input ownership, Android lifecycle and inherited S1 gates. Prototype samples do not constitute production acceptance. Preserve the complete existing HUD (FPS, uptime/platform help, active/selected speed, view, movement rights, XYZ, YPR and F1), while grouping it compactly with new telemetry. Generation is dynamically engaging through current map-image primitives; the minimap uses game material colors and conspicuous outlined cardinal labels.",
+    "acceptance": "Deliver the four UI views using current bitmap text, background and map primitives; no button/widget system is required. Loading uses a HUD-free pre-rendered game background; generation visually explains land/water/climate/spawn with honest progress and the actual final map/readiness gate. A compact gameplay HUD shows dense loaded chunks, measured client memory and canonical local climate including temperature/humidity; hide inapplicable salinity. Preserve mode/effective-rights/selected-material HUD, local L1/L2 map/cardinals, loading T0/deadlines, input ownership, Android lifecycle and inherited S1 gates. Prototype samples do not constitute production acceptance. Preserve the complete existing HUD (FPS, uptime/platform help, active/selected speed, view, movement rights, XYZ, YPR and F1), while grouping it compactly with new telemetry. Generation is dynamically engaging through current map-image primitives; the minimap uses game material colors and conspicuous outlined cardinal labels. Use clear selected-block/key-action copy and a deliberate primary/secondary glyph hierarchy; reflow at actual available landscape height without losing fields or obscuring gameplay.",
     "evidence": "",
     "blocker": "",
     "owner": "",
     "level": "basic",
     "parent": "MC-AI-0483",
     "motivation": "Make S2 easier to read and more enjoyable using the renderer capabilities the owner explicitly retained.",
-    "context": "Owner requests four-screen UI design and telemetry on 22 October 2026, corrects the initial illustrated mockups to existing text/background/map capabilities, and asks for a HUD-free game capture, richer generation visualization, conditional fields and a quieter HUD. Initial design: docs/ai/decisions/earlydev_0_1_1_s2_ui.md; prototype: docs/ai/prototypes/s2-ui/index.html. Humidity producer/units and measured RSS are missing prerequisites, not invented values.",
+    "context": "Owner requests four-screen UI design and telemetry on 22 October 2026, corrects the initial illustrated mockups to existing text/background/map capabilities, and asks for a HUD-free game capture, richer generation visualization, conditional fields and a quieter HUD. Initial design: docs/ai/decisions/earlydev_0_1_1_s2_ui.md; prototype: docs/ai/prototypes/s2-ui/index.html. Humidity producer/units and measured RSS are missing prerequisites, not invented values. Owner rejected the first generation effects, undifferentiated HUD text and Grass[B] shorthand; MC-AI-0517 refines the prototype through disjoint Sol/Max lanes.",
     "complexity": "high",
     "created_at": "2026-10-22",
     "resolved_at": "",
@@ -17902,6 +17903,46 @@
     "baseline_commit": "",
     "commits": [],
     "finalized": false,
+    "retrospective": "",
+    "docs_review": "",
+    "environment_review": "",
+    "backlog_review": ""
+  },
+  {
+    "id": "MC-AI-0517",
+    "title": "Rework S2 prototype visual hierarchy and map layers",
+    "kind": "decision",
+    "status": "done",
+    "priority": "P1",
+    "route": "sol",
+    "milestone": "ED-011-S2-UI",
+    "depends_on": [],
+    "acceptance": "Replace the rejected generation effects with a coherent world-formation treatment, make the complete HUD readable with clear hierarchy and explicit selected-block controls, and add independent keyboard map-layer toggles for plates, heights, temperature, biomes/climate zones, wind and currents with clear legends and source availability. Improve loading/minimap and resolve confirmed UX defects. Stay within current bitmap text/background/map primitives; preserve all current HUD/control/ready semantics; no native feature implementation. Verify desktop and narrow UI, source identity and layer controls, commit through exact-stage review/hooks and retain a local primary-repository ref.",
+    "evidence": "Seven fresh Sol/Max lanes delivered generation, HUD, world map, native data, loading, minimap and holistic UX review. A same-run native seed-42 atlas preserves all 262,144 values across 16 fields. Final desktop and 844x390 landscape visuals were inspected; 27 browser assertions and nine input/lifecycle contract probes pass. JavaScript syntax, document budgets and canonical task checks pass. Exact-stage review/hooks and durable primary local-ref readback are recorded at the commit boundary through Task-ID MC-AI-0517. Native runtime, performance, multiplayer and owner visual acceptance remain future gates.",
+    "blocker": "",
+    "owner": "codex",
+    "level": "basic",
+    "parent": "",
+    "motivation": "Owner rejects the previous prototype visual quality and readability, requests layered world-map modes, and explicitly asks for Sol/Max parallel agents.",
+    "context": "Planning/prototype refinement only. Exact latest owner feedback and Sol/Max fan-out request are preserved at /Users/core-just/.codex/task-evidence/basicblocks-s2-ui-refinement-20261022-01a162a1. Previous design commit 1acd46105f1b7b944a8f116e7adaf8e7a6cc8980 is retained on local primary ref codex/ai-s2-design-0514. Preserve dirty concurrent S1 and current selection.",
+    "complexity": "high",
+    "created_at": "2026-10-22",
+    "resolved_at": "2026-10-22",
+    "resolution_changes": "Replaced rejected generation effects with coherent geographical formation; introduced a readable HUD hierarchy and explicit B Change block; added eight independent, source-grounded map layers and legends. Improved loading/minimap contrast, compass, conditional climate and input/error/ready behavior. Updated S2 design, source provenance and unfinished feature-task acceptance. Replaced two screenshot-derived map assets; their originals remain recoverable in commit 1acd461. S1 and open S2 delivery state are preserved.",
+    "plan": [
+      "Coordinate disjoint Sol/Max prototype modules and native map-data discovery/export.",
+      "Integrate, visually critique, browser-check and revise all four screens and independent map-layer controls.",
+      "Update source-grounded S2 design/unfinished tasks, obtain one exact-stage review, commit and retain a primary local ref."
+    ],
+    "product_changes": [
+      "Revised S2 prototype visual design, explicit HUD controls and independent world-map data layers."
+    ],
+    "code_changes": [
+      "Browser prototype and native-source fixture assets only; no game feature code."
+    ],
+    "baseline_commit": "",
+    "commits": [],
+    "finalized": true,
     "retrospective": "",
     "docs_review": "",
     "environment_review": "",

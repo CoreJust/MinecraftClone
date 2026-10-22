@@ -1,0 +1,384 @@
+{
+  "status": "Prototype fixture from one actual native generation; no gameplay, platform, or model qualification claim.",
+  "generatedAtUtc": "2026-10-22T15:14:27.762733+00:00",
+  "asset": {
+    "path": "docs/ai/prototypes/s2-ui/assets/world-data.js",
+    "bytes": 1095688,
+    "sha256": "a2126eb42a2990ef430aedc396a99fcba5dc6e4dd7157b6c2f1c7d86a172f908"
+  },
+  "nativeIdentity": "terrain-v2;model-revision=6;source-map-sha256=5de753a4068c71d742f5ce7e75e4e8bcabbaad5fddaf6c8404dc41ba00d45704;seed=42;resolution=256;epochs=12;erosion-steps=3;initial-climate-iterations=24;climate-iterations=80;currents=1;wind-sign=1;coastal-elaboration=1;shelf-exp=exp64-to-f32-v1",
+  "configuration": {
+    "seed": 42,
+    "resolution": 256,
+    "epochs": 12,
+    "erosion_steps": 3,
+    "initial_climate_iterations": 24,
+    "climate_iterations": 80,
+    "currents": true,
+    "wind_sign": 1,
+    "coastal_elaboration": true
+  },
+  "source": {
+    "captured_at_utc": "2026-10-22T15:02:21.679163+00:00",
+    "root": "/Users/core-just/.codex/worktrees/s7-delivery-recovered",
+    "origin": "https://github.com/CoreJust/MinecraftClone.git",
+    "branch": "ai-dev",
+    "head": "1acd46105f1b7b944a8f116e7adaf8e7a6cc8980",
+    "sources": {
+      "src/generation/Climate.cpp": "185d3666e0ae21fc10180743daf9cd829bed5ac546c02f988ec309d61c6b2012",
+      "src/generation/Coastal.cpp": "2cc50120cdde56745795ba33a8e241caeaaaaf3230a78f79d26af8ba5b6dfbc5",
+      "src/generation/Generation.cpp": "0d447620253b6d872623fe9a6bd710e9108c324cd4086923f1ec3901e8994d43",
+      "src/generation/Geology.cpp": "9ad6fb925a0444f16fdb78a28edff7b64c1075f521ce008f6fe4c15041258d47",
+      "src/generation/Hydrology.cpp": "1f270e4ae36755296e0236c4d156eb305083437696d41224648d644d9713a7d2",
+      "src/generation/Numerics.cpp": "bdcccabbb6dd5fbb1984c7389288dd50663c28154b19288de362c7c5fb2502ab",
+      "src/generation/NumpyRandom.cpp": "9a25fec508e65ece57d8ca929eb87dd9124595c0fb578072531c6bd42476697d",
+      "src/generation/NumpyTanh.cpp": "d4d8a17b65d3b5327d0202a41897bf44d36f44a2f1a6582499ea87078e99c9a3",
+      "src/generation/GenerationStages.hpp": "a0c7ebad0824cc820ac3c5a09d0a9838043d4e6c2911ef9719be8069659f02b5",
+      "src/generation/Numerics.hpp": "df4422860e79ce216833cb0b439f17a287dbc8ed5e500619bb66ab7228fc7e50",
+      "src/generation/NumpyRandom.hpp": "9e7d8a95e3e642c1473fb063ba9c2f5e8b1becdca9bec36af63908de20e420e2",
+      "src/generation/include/generation/Generation.hpp": "404997f6940708b7f212ffd2e38b81b546a73c35a8d374d084bc3e6801bbfd59"
+    },
+    "supporting_sources": {
+      "src/shared/world/TerrainWorld.cpp": "2ffd0be6ed30e16b6cce7b65a1e6d3e35c8d39deb590bf2c8c02370345353282"
+    }
+  },
+  "sourceHashesUnchangedAfterExport": true,
+  "sampling": {
+    "nativeGrid": [
+      256,
+      256
+    ],
+    "fixtureGrid": [
+      128,
+      128
+    ],
+    "rule": "Exact same-run samples at native [2*y,2*x]; no averaging, interpolation, quantization, generated channels, or merged source runs."
+  },
+  "projection": {
+    "type": "native periodic planar XY grid",
+    "layout": "row-major [y,x]",
+    "origin": [
+      0,
+      0
+    ],
+    "extent": [
+      65536,
+      65536
+    ],
+    "horizontalUnit": "world blocks",
+    "periodic": [
+      true,
+      true
+    ],
+    "nativeResolution": [
+      256,
+      256
+    ],
+    "nativeCellSpacingBlocks": [
+      256,
+      256
+    ],
+    "fixtureCellSpacingBlocks": [
+      512,
+      512
+    ],
+    "sampleOffsetNativeCells": [
+      0,
+      0
+    ],
+    "sampleStrideNativeCells": [
+      2,
+      2
+    ],
+    "coordinateRule": "worldX=(x/width)*65536; worldY=(y/height)*65536",
+    "direction": "+U is increasing column/native X; +V is increasing row/native Y",
+    "cardinals": "The source defines periodic XY axes, not a geographic CRS or north datum."
+  },
+  "fixtureLocation": {
+    "normalized": {
+      "x": 0.578125,
+      "y": 0.4375,
+      "heading": 0
+    },
+    "nativeGrid": {
+      "x": 148,
+      "y": 112
+    },
+    "fixtureGrid": {
+      "x": 74,
+      "y": 56
+    },
+    "worldXYBlocks": {
+      "x": 37888,
+      "y": 28672
+    },
+    "note": "UI fixture marker; not a measured player position or canonical regional surface sample."
+  },
+  "climateZones": {
+    "names": {
+      "0": "Ocean",
+      "1": "Warm dry",
+      "2": "Warm wet",
+      "3": "Temperate",
+      "4": "Cold",
+      "5": "Snow"
+    },
+    "rules": {
+      "0": "Native ocean mask; inland water follows the native land climate classification.",
+      "1": "Land temperature >=18 C and precipitation <0.35 model units.",
+      "2": "Land temperature >=18 C and precipitation >=0.35 model units.",
+      "3": "Land temperature >=2 C and <18 C.",
+      "4": "Land temperature <2 C.",
+      "5": "Snow override: land temperature <-2 C and precipitation >0.025 model units."
+    },
+    "limitation": "Coarse climate zones are a biome proxy; these codes are not game block material IDs."
+  },
+  "fieldSemantics": {
+    "elevation": "Geological kilometres relative to atlas sea level 0. A model scalar, not block Z.",
+    "waterLevel": "Geological kilometres in the same datum. On dry land the source stores terrain elevation; consult water masks before drawing water.",
+    "moisture": "Dimensionless final climate moisture reservoir, not measured relative humidity or a percentage.",
+    "precipitation": "Dimensionless native rainfall accumulated through climate iterations; no physical annual rate is defined.",
+    "plateVectors": "Displacement in native 65536-wide world-coordinate units per tectonic epoch. Not cm/year or atlas-cell velocity.",
+    "windAndCurrentVectors": "Native atlas-cell advection units per climate iteration. Components retain native256-grid scale after sampling; not m/s. Current fields come from the final climate solve, before final drainage masks.",
+    "verticalMapping": "TerrainWorld.cpp mappedHeight uses clamp(floor(blockSeaLevel + verticalScale * (elevation - seaLevel)), 1, maxHeight). This fixture does not sample the canonical regional/local surface; do not infer actual player block Z from atlas elevation."
+  },
+  "fields": {
+    "elevation": {
+      "source": "GlobalAtlas.elevation",
+      "encoding": "f32le",
+      "unit": "km (sea=0)",
+      "count": 16384,
+      "bytes": 65536,
+      "sha256": "294cc98333ad16a2b0f76d27d031875249da018bcad533cf901fd42382fccc38",
+      "minimum": -4.263838768005371,
+      "maximum": 5.195795059204102,
+      "fixtureMarkerValue": 1.7797892093658447
+    },
+    "waterLevel": {
+      "source": "GlobalAtlas.water_level",
+      "encoding": "f32le",
+      "unit": "km (sea=0)",
+      "count": 16384,
+      "bytes": 65536,
+      "sha256": "116690c90d9804e61e19157a3a77a0d5dfb3ffd2d153bf047d32944c21aa31f5",
+      "minimum": 0.0,
+      "maximum": 5.195795059204102,
+      "fixtureMarkerValue": 1.7797892093658447
+    },
+    "temperature": {
+      "source": "GlobalAtlas.temperature",
+      "encoding": "f32le",
+      "unit": "C",
+      "count": 16384,
+      "bytes": 65536,
+      "sha256": "e49d650acb4fad040930a770aaa82a11f6fcfef5b2e1bccc88f869767898b995",
+      "minimum": -39.14143371582031,
+      "maximum": 29.999990463256836,
+      "fixtureMarkerValue": 16.604320526123047
+    },
+    "precipitation": {
+      "source": "GlobalAtlas.precipitation",
+      "encoding": "f32le",
+      "unit": "model accumulated rain",
+      "count": 16384,
+      "bytes": 65536,
+      "sha256": "6b6b3843e9914558e25a26bd9fb0d310554ae31a9d0425828f651b496e3beebb",
+      "minimum": 0.027296649292111397,
+      "maximum": 62.19369888305664,
+      "fixtureMarkerValue": 1.7316807508468628
+    },
+    "moisture": {
+      "source": "GlobalAtlas.moisture",
+      "encoding": "f32le",
+      "unit": "model reservoir",
+      "count": 16384,
+      "bytes": 65536,
+      "sha256": "cd378e83397ece785ade0eb04e8fe9fd57af2adf0e110618811250bf6f7ac0f4",
+      "minimum": 0.0008979556732811034,
+      "maximum": 0.9262490272521973,
+      "fixtureMarkerValue": 0.11127214878797531
+    },
+    "plateId": {
+      "source": "GlobalAtlas.plate_id",
+      "encoding": "i16le",
+      "unit": "plate ID",
+      "count": 16384,
+      "bytes": 32768,
+      "sha256": "7359bdf33f341736cf29915b5808dacd320d9fadea625abac3ae07987b6f3514",
+      "minimum": 0,
+      "maximum": 15,
+      "fixtureMarkerValue": 6,
+      "counts": {
+        "0": 1064,
+        "1": 1359,
+        "2": 880,
+        "3": 541,
+        "4": 1453,
+        "5": 422,
+        "6": 1512,
+        "7": 1042,
+        "8": 818,
+        "9": 1535,
+        "10": 1462,
+        "11": 925,
+        "12": 916,
+        "13": 1149,
+        "14": 1019,
+        "15": 287
+      }
+    },
+    "plateVx": {
+      "source": "GlobalAtlas.plate_vx",
+      "encoding": "f32le",
+      "unit": "world units/epoch",
+      "count": 16384,
+      "bytes": 65536,
+      "sha256": "8f24a89c57c02414820eef3b0b51d4a8f22e237cdbd7b4a0f5f5a6546461d565",
+      "minimum": -640.91015625,
+      "maximum": 319.29913330078125,
+      "fixtureMarkerValue": -361.9462585449219
+    },
+    "plateVy": {
+      "source": "GlobalAtlas.plate_vy",
+      "encoding": "f32le",
+      "unit": "world units/epoch",
+      "count": 16384,
+      "bytes": 65536,
+      "sha256": "02a5977b96bc8a696ad9b04630aa935c0bc496df9cf805a68857c37f74e49f9b",
+      "minimum": -629.1393432617188,
+      "maximum": 687.8731689453125,
+      "fixtureMarkerValue": -580.9860229492188
+    },
+    "windU": {
+      "source": "GlobalAtlas.wind_u",
+      "encoding": "f32le",
+      "unit": "atlas cells/climate iteration",
+      "count": 16384,
+      "bytes": 65536,
+      "sha256": "23a8422adb4b4c08b43ebcaee44c985d64f4a211d0a3ab3f3c86a1531f3eb058",
+      "minimum": 0.43034037947654724,
+      "maximum": 1.736771583557129,
+      "fixtureMarkerValue": 1.4857853651046753
+    },
+    "windV": {
+      "source": "GlobalAtlas.wind_v",
+      "encoding": "f32le",
+      "unit": "atlas cells/climate iteration",
+      "count": 16384,
+      "bytes": 65536,
+      "sha256": "f8a72244f94f3d84a1d766e012e4ade337a2296a9b414d519210134e98a30b4f",
+      "minimum": -0.43811601400375366,
+      "maximum": 0.50837242603302,
+      "fixtureMarkerValue": 0.4241091310977936
+    },
+    "currentU": {
+      "source": "GlobalAtlas.current_u",
+      "encoding": "f32le",
+      "unit": "atlas cells/climate iteration",
+      "count": 16384,
+      "bytes": 65536,
+      "sha256": "8e03a973655ce74b6b07704011967dee08e6fd988fe93fd1da7c47211c912d63",
+      "minimum": -0.38830921053886414,
+      "maximum": 0.2604217827320099,
+      "fixtureMarkerValue": 0.0
+    },
+    "currentV": {
+      "source": "GlobalAtlas.current_v",
+      "encoding": "f32le",
+      "unit": "atlas cells/climate iteration",
+      "count": 16384,
+      "bytes": 65536,
+      "sha256": "496cf45883e98b9fca7882067b1ca32834f7243ea63da09e5203e115722cbb60",
+      "minimum": -0.4527691602706909,
+      "maximum": 0.42566394805908203,
+      "fixtureMarkerValue": 0.0
+    },
+    "climateZone": {
+      "source": "GlobalAtlas.climate_zone",
+      "encoding": "u8",
+      "unit": "coarse climate zone ID",
+      "count": 16384,
+      "bytes": 16384,
+      "sha256": "10b9b62d408489018beac50efb5a30d268838aa0f244e69cee8af1f659be7c0f",
+      "minimum": 0,
+      "maximum": 5,
+      "fixtureMarkerValue": 3,
+      "counts": {
+        "0": 8145,
+        "1": 639,
+        "2": 318,
+        "3": 2481,
+        "4": 464,
+        "5": 4337
+      }
+    },
+    "oceanMask": {
+      "source": "GlobalAtlas.ocean_mask",
+      "encoding": "u8",
+      "unit": "0/1",
+      "count": 16384,
+      "bytes": 16384,
+      "sha256": "e864c89fee87ce8f135363f5f8a70fbbdb5d8ac609167900a6c087f4de78b803",
+      "minimum": 0,
+      "maximum": 1,
+      "fixtureMarkerValue": 0,
+      "counts": {
+        "0": 8239,
+        "1": 8145
+      }
+    },
+    "lakeMask": {
+      "source": "GlobalAtlas.lake_mask",
+      "encoding": "u8",
+      "unit": "0/1",
+      "count": 16384,
+      "bytes": 16384,
+      "sha256": "c553833666ee1a61efdd14ee34ac9d8ac359c5b04c77898e7878fb423a4a94ea",
+      "minimum": 0,
+      "maximum": 1,
+      "fixtureMarkerValue": 0,
+      "counts": {
+        "0": 16242,
+        "1": 142
+      }
+    },
+    "riverMask": {
+      "source": "GlobalAtlas.river_mask",
+      "encoding": "u8",
+      "unit": "0/1",
+      "count": 16384,
+      "bytes": 16384,
+      "sha256": "e68166c81fb1e9f03f6b12946e5a0abe47cd9ed28e1769b3b055b637d11af2c9",
+      "minimum": 0,
+      "maximum": 1,
+      "fixtureMarkerValue": 0,
+      "counts": {
+        "0": 16225,
+        "1": 159
+      }
+    }
+  },
+  "nativeAtlasMetadata": {
+    "identity": "terrain-v2;model-revision=6;source-map-sha256=5de753a4068c71d742f5ce7e75e4e8bcabbaad5fddaf6c8404dc41ba00d45704;seed=42;resolution=256;epochs=12;erosion-steps=3;initial-climate-iterations=24;climate-iterations=80;currents=1;wind-sign=1;coastal-elaboration=1;shelf-exp=exp64-to-f32-v1",
+    "seaLevel": 0,
+    "blockSeaLevel": 384,
+    "maxHeight": 1020,
+    "verticalScale": 89.719,
+    "elapsedSeconds": 1.16516
+  },
+  "nativeAtlasMetadataFloatFormatting": "The temporary exporter uses default ostream precision (six significant digits) for metadata scalars. All field payload floats preserve exact native float32 bits; verticalScale is not used to derive player Z.",
+  "evidenceDirectory": "/Users/core-just/.codex/task-evidence/basicblocks-s2-ui-refinement-20261022-01a162a1/data-lane",
+  "reproduction": {
+    "compilerReceipt": "compile-receipt.json",
+    "exportReceipt": "export-receipt.json",
+    "exporter": "export_atlas.cpp",
+    "packer": "pack_fixture.py",
+    "rawDirectory": "raw/",
+    "immutableSourceSnapshot": "source/"
+  },
+  "limitations": [
+    "128 grid is a stride2 subset of the native256 grid; subcell features can disappear.",
+    "The older map PNG/terrain captures have separate provenance and are not asserted to depict this atlas.",
+    "Source configuration identity retains its native frozen source-map token; current compiled source bytes are independently bound by all source hashes."
+  ]
+}

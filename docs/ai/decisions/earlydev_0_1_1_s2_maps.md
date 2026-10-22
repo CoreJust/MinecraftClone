@@ -12,9 +12,18 @@ The following source locations are sampled S1 worktree observations, recorded wi
 
 ## Proposed behavior and data
 
+Provide independent text-key toggles: `P` plates, `H` heights, `T` temperature,
+`B` biomes, `W` wind, `C` currents, `O` moisture and `Q` precipitation. Show
+ON/OFF or unavailable, units and color/vector legends. Heights add relief;
+temperature colors the base when biomes are off and adds isotherms otherwise.
+Keep all enabled channels visible together. Biomes currently mean coarse
+climate zones; moisture is not relative humidity and model rain is not mm/year.
+Use one matching atlas identity; no screenshot-derived vectors or mixed runs.
+The prototype's native export/provenance demonstrates this data prerequisite.
+
 Place a north-up minimap at top-right, showing the player in the shared selected-model L1/L2 projection around them, with prominent outlined N/E/S/W labels and a heading marker, using the game's material palette rather than the diagnostic atlas colors. It must cover more than resident voxel columns. The S1 scaffold’s L1/L2 spacing is 64/16 blocks at 256 atlas resolution and 32/8 at 512 (`docs/ai/decisions/earlydev_0_1_1_s1_lod_scaffold.md:21`). Shared `TerrainLodArtifact` (`src/shared/include/shared/world/TerrainLod.hpp:41`) records model identity and level; today’s model is an S1 placeholder. Use the eventual accepted terrain identity and shared projection, not that placeholder or duplicate terrain research. Use the accepted immutable session atlas for the wider world map ([atlas contract](../WORLD_MAP.md#L3)).
 
-Propose M to open/close the larger world map, arrows/drag to pan, +/- or pinch/wheel to zoom and R to recenter. Show plain text instructions; the owner's current-renderer constraint excludes buttons and a widget toolkit. M is unbound in the surveyed PlayerClient path; check all input routes before implementation. Android uses exclusive gestures and back navigation, with entry mapping still to define. Map input cannot move, look, edit or change mode; hide the reticle while multiplayer continues. Show the local player only. Map clicks do not edit or teleport; no fog, waypoints or other-player disclosure is required.
+Propose M to open/close the larger world map, arrows/drag to pan, +/- or pinch/wheel to zoom and R to recenter. W toggles wind; do not also bind WASD pan. Suppress toggle repeat and pass modified browser shortcuts through. Show plain text instructions; no button/widget toolkit. M is unbound in the surveyed PlayerClient path; check all input routes before implementation. Android uses exclusive gestures and back navigation, with entry mapping still to define. Map input cannot move, look, edit or change mode; hide the reticle while multiplayer continues. Show the local player only. Map clicks do not edit or teleport; no fog, waypoints or other-player disclosure is required.
 
 Use shared L1/L2 projection as the local base without waiting for L3 voxels. Overlay local edits only at map scales where block-surface detail is meaningful. Gate each affected cell on current model identity, epoch, and edited-column manifest/revisions ([replication](earlydev_0_1_1_s2_replication.md#L15)); show incomplete edited cells as pending/Unknown while unaffected L1/L2 remains visible. Never require the whole map view to be voxel-ready, or trigger whole-world generation/download. At detail scale, define the projection as the highest occupied block per XY column: after an accepted top-block removal, recompute the next solid; show Air only when the column is proven empty. The top view cannot show tunnels or undercuts, and roofs hide lower geometry. Unknown is distinct from Air.
 

@@ -1,17 +1,36 @@
 # S2 UI prototype
 
-Open `index.html` directly in a browser. It uses local files only. The four numbered links sit outside the game frame; inside it, all content is bitmap text, flat color, and the unchanged native terrain or map capture. There are no in-frame buttons or widgets.
+Open `index.html` directly, or serve this directory on localhost. The numbered review links and fixture disclosure sit outside the game frame. Five focused view modules draw exact Tamsyn8x16 bitmap text, native scene capture and bounded map rasters. No in-frame buttons or widget toolkit is required.
 
-`assets/font.js` exposes the exact 96-glyph Tamsyn 8x16 bitmap as `window.S2_FONT_8X16`. Glyph rows and bit order match `src/client/render/shaders/text.frag`. Product copy is ASCII and draws at integer scales. `assets/map-source.js` supplies the same native map PNG bytes as an origin-clean data URI so the prototype can read pixels for the local material preview.
+## Four views
 
-Loading starts before a connection: the fixed native terrain capture sits behind `Preparing to connect`, `Loading client resources`, and `Address: localhost`. `Enter` changes to a static connecting label, then opens the Generation fixture. `Esc` cancels and `Enter` retries. No server connection, client preparation, atlas load, or progress estimate runs here.
+**Loading.** The unchanged HUD-free S1 capture backs Preparing to connect, the server address, Connecting, cancellation and Enter/Esc hints. Enter advances the review fixture, not a real connection. No percentage, ETA or requested-world readiness is invented. The owner permits this backdrop until completed S1 provides a representative capture.
 
-Generation automatically illustrates four map-making phases over about 14 seconds: Land, Water, Climate, and Safe spawn. It transforms the captured map in the canvas raster, then shows `World ready` and the exact prompt `Press any key to start`. Enter can manually advance phases; any fresh key at the ready gate opens Game, while Escape cancels. The animation runs only on this screen, at up to 18 frames per second, pauses while the page is hidden, and becomes a static Enter-advanced sequence when reduced motion is enabled. The animation, timing, and ready state are reviewer fixtures, not generated-world telemetry or a production readiness gate; implementation must bind real pipeline progress and actual ready data.
+**Generation.** A coherent oblique relief rises from the native height field, masked ocean/lake/river basins fill, coarse climate zones emerge, and a start marker appears. The 16-second Relief/Water/Climate/Arrival sequence illustrates geographical formation; it is not the actual generation pipeline or progress measurement. Enter advances a sample phase. Reduced motion shows static phase results; hidden pages stop animation. Missing required atlas data stays an error. The exact `Press any key to start` prompt follows the fixture ready state; a fresh key is consumed. Esc cancels; Enter retries cancelled/error states. Production must retain real S1 progress, final coverage, safe spawn, clocks and readiness predicates without waiting for this animation.
 
-Game starts in Creative. Its compact HUD groups the current renderer fields with sample chunk, RSS, temperature, and humidity values: FPS, uptime, XYZ in native X/Z/Y display order, YPR, view, effective and selected speed, acceleration, flight, and collision bypass. F1 toggles this HUD; F5 or 5 cycles the view; plus/minus selects speed; Control toggles acceleration; G cycles the mode fixtures and F6 or 6 cycles active movement capabilities under the current mode grant without changing mode. B changes the selected material, M opens World Map, and Escape returns to Loading. Values are fixed examples, not live measurements. Humidity is shown as unavailable because the climate producer does not currently supply it. Salinity is not shown for this land sample.
+**Game.** Primary values use larger glyphs than labels and hints; position/climate, movement, session health and editing form separate groups. All existing desktop fields remain: FPS, uptime, X/Z/Y, yaw/pitch/roll, view, active/selected speed, acceleration, flight and collision bypass. Chunks, memory and marker-local climate are added. `Selected block` and `B Change block` replace `Grass [B]`. F1 toggles telemetry; F5/5 changes view; +/- selects speed; Ctrl toggles acceleration; F6/6 cycles granted movement flags; G changes mode fixtures; B selects Grass/Stone; M opens the map. Survival cannot gain flight, Creative may quick-break Bedrock, Spectator cannot edit. These are UI fixtures, not enforced gameplay permissions.
 
-The three mode fixtures keep movement and edit permissions together. Creative has flight on, bypass off, quick break of all blocks including Bedrock, and placement of all blocks. Survival has flight and bypass off, normal breaking with Bedrock denied, and normal placement excluding Bedrock. Spectator has flight and bypass on, with no breaking or placement. The selected material label is illustrative; these permissions are not enforced by the prototype.
+The minimap shows a periodic local crop using native relief and material-family colors. Its climate-derived surface colors are explicitly a proxy, not verified voxel surfaces or production L1/L2 coverage. N/E/S/W and clockwise heading are prominent.
 
-The Game minimap is a 64x64 crop around the fixture marker. It uses a simple pixel classifier to map the capture to the game's Grass, Stone, Dirt, Bedrock, Snow, Ice, and dry-air colors, then adds light relief shading. N/E/S/W and a `^` heading surround the local preview. This crop and palette projection are not production L1/L2 data or the native column-map sampler. World Map uses the actual first 256x256 crop from `maps.png`; arrow keys or WASD pan, plus/minus zoom, R centers, and M or Escape returns to Game. The marker moves with the repeated map image within the preview viewport; that fixture does not define production world wrapping.
+**World map.** Press a layer key to toggle it independently:
 
-Missing terrain or map captures are reported in-frame. Generation cannot show the ready gate without a readable map. The outside-frame note identifies the generation and HUD values as illustrative and states that the prototype has no live world connection.
+| Key | Layer |
+|---|---|
+| P | Plate boundaries and drift |
+| H | Geological heights, relief and contours |
+| T | Temperature |
+| B | Biomes represented by coarse climate zones |
+| W | Wind direction |
+| C | Ocean-current direction |
+| O | Model moisture |
+| Q | Model precipitation |
+
+Heights+biomes start enabled. Temperature provides thermal color with biomes off and isotherms with biomes on; heights retain relief. Individual/composite views have units and legends; all-off retains geography. Arrows pan, Shift pans faster, +/- zooms, R recenters, M/Esc closes. WASD pan is removed because W toggles wind. Held toggles do not flicker, modified browser shortcuts pass through, and map keys cannot change gameplay state.
+
+## Data and limits
+
+`assets/world-data.js` contains 16 aligned fields from one seed42 native revision6 generation: exact stride-2 samples from256x256 to128x128, with unchanged float/integer bits. Its provenance records source snapshots/hashes, configuration, grid, units and decoded field hashes. This samples mutable S1 CPU-generation source; it is not production-model or gameplay qualification. Native captured scene/font provenance and Tamsyn license remain separate.
+
+The marker is normalized148/256,112/256, native world X37888/Y28672. HUD temperature16.6C comes from that marker. Humidity is unavailable: model moisture is not RH; salinity is absent on land. Elevation is geological km relative to sea0, not actual player Z. Runtime counters and Z84.1 remain disclosed examples. Map North is negative raster/nativeY; heading is clockwise, matching native yaw180-heading. The fixed scene is not a camera rendered at that point.
+
+Native/Android/runtime, multiplayer, performance and owner acceptance remain implementation work. Browser screenshots demonstrate the design and controls only.
