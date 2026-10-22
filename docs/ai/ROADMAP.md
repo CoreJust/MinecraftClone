@@ -35,11 +35,12 @@ replacing the current Terrain-v1 waves. Its implementation remains planned.
 | ID | Depends on | Product outcome | Validation focus |
 |---|---|---|---|
 | ED-011-S1 | ED-010-S7 | Terrain-v2, climate-driven layers/maps, CoreLang 0.1.5 JIT/AOT, loading/key gate and shared 2D tests. | [Loading/FPS targets](decisions/earlydev_0_1_1_s1_performance.md), exact pixels, subsystem modes and two-laptop play; inherited 0477–0479 fixes. |
-| ED-011-S2 | ED-011-S1 | Reachable-block highlight, animated permission-aware placing/breaking, official Spectator/Creative/Survival presets, B block selection, precise mode/permission HUD, central edit crosshair and single-color or per-pixel dark/light scene-adaptive styling. | Production edit/replication/collision cases; block times and filters; ordinary multiplayer editing and mode switches; mixed light/dark backgrounds within one element, scene sampling and normal-view readability. |
+| ED-011-S2 | ED-011-S1 | [Editing/modes, adaptive HUD/crosshair and minimap/world map](decisions/earlydev_0_1_1_s2.md), B selection/precise rights, four text/map views and chunk/RAM/climate HUD; qualified replacement terrain model from S1. | Authority/collision/replication, timing/filters/modes, per-pixel styling, map navigation/edit/wrap, UI and model adoption; inherited S1 gates. |
 | ED-011-S3 | ED-011-S2 | Sea-level water fill, semitransparency, underwater postprocessing, swimming permissions/slowdown, flowing water and replacement by placed solids. | Fluid research/design before implementation; authority, swim transitions, edit interaction and bounded multiplayer convergence. |
 | ED-011-S4 | ED-011-S3 | Conventional animated models for all players, two first-person hands, held selected block, external-view animations and 0–100% opacity with Spectator at 40%; capability-aware bots that wander/edit/swim/fly and return toward players; safe recovery from embedded mode switches. | All specified action/view combinations, held-block presentation and opacity in ordinary play; two-player model/action replication, bot-distance/mode restoration and human/bot collision recovery. |
 
-S2 must resolve Creative's bedrock exception and Survival's flight default.
+Creative can break bedrock; Survival cannot fly (owner-confirmed).
+Map UI moves forward from GD-020. Terrain adoption still needs an accepted model.
 S3's fluid model and S4's proposed 64/128/160-block thresholds and anchor-player
 selection remain later design decisions. Do not replace these four product
 snapshots with a fix-only or separate water-subsystem sequence.
@@ -64,7 +65,7 @@ snapshots with a fix-only or separate water-subsystem sequence.
 
 | ID | Depends on | Scope and acceptance | Validation |
 |---|---|---|---|
-| GD-020 Map | ED-019 | Seas, rivers, lakes, ponds, islands, minimap, world map, and gravel if selected. D: decide the original “gravel, ?” scope and water-map representation. | fixed-seed hydrology/topology tests; map navigation smoke. |
+| GD-020 Map | ED-019 | Seas, rivers, lakes, ponds, islands and gravel if selected; integrate geography with S2 maps. D: decide “gravel, ?” and water-map representation. | fixed-seed hydrology/topology and map integration tests. |
 | GD-021 SurfaceBiomes | GD-020 | Deserts with sandstone/cactus; tundra with frozen dirt; taiga, “step” (D: clarify whether this means steppe), savanna, jungle; better terrain. | biome-material and transition tests; seed gallery smoke. |
 | GD-022 Forests | GD-021 | Realistic structures/placement, meadows, young/old/bush/fallen/dead trees, and pine, spruce, oak, birch, weeping willow, palm, acacia, maple, ginkgo, sakura, baobab, giant sequoia, banyan, tree-like cactus, olive, juniper. | species grammar/placement tests; biome traversal smoke. |
 | GD-023 Caves | GD-022 | D: define the tentative layered/rifted cave kinds; surface, dirt+some-stone underground, stone caves, deep caves with compressed-stone decision and occasional lava, and nether with netherstone/lava bodies; layer-specific specialized ores and additional minerals. | layer/ore/lava safety tests; vertical exploration smoke. |

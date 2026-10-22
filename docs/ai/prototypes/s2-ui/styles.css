@@ -1,0 +1,49 @@
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  color: #111;
+  background: #ededed;
+  font: 13px/1.35 sans-serif;
+}
+
+.prototype {
+  display: grid;
+  width: 100%;
+  height: 100dvh;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.outside-frame {
+  padding: 4px 8px 3px;
+}
+
+.outside-frame nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 14px;
+}
+
+.outside-frame p {
+  margin: 2px 0 0;
+  color: #333;
+}
+
+.screen {
+  min-height: 0;
+  overflow: hidden;
+}
+
+canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}

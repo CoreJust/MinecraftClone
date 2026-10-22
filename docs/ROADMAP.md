@@ -71,24 +71,36 @@ See [S1 design and acceptance](ai/decisions/earlydev_0_1_1_s1.md) and
    correctness/performance modes. Qualify two physical laptops with one local
    and one remote player, hosting on Mac and Windows. Detailed contracts are in
    the S1 plan. Physical water itself arrives in S3.
-2. **Placing, breaking, game modes, crosshair and HUD.** Highlight the reachable
+2. **Placing, breaking, game modes, HUD and maps.** Highlight the reachable
    block under the player's gaze. Breaking shows cracks and cubic particles. Normal break
-   times are snow 1 s, dirt/grass 1.5 s, ice 2 s and stone 3 s; bedrock is
-   described as unbreakable. Breaking permissions provide a block blacklist or
+   times are snow 1 s, dirt/grass 1.5 s, ice 2 s and stone 3 s. Bedrock cannot
+   be broken normally; the owner confirms Creative can break it. Breaking permissions provide a block blacklist or
    whitelist, including an empty list, and normal or effectively instant speed.
    Spectator grants flight and block passthrough with an empty breaking
    whitelist. Creative derives from Spectator, disables block passthrough,
    uses an empty blacklist and quick destruction. Survival derives from
-   Creative, blacklists bedrock and uses normal destruction speed. The HUD
+   Creative, disables flight, blacklists bedrock and uses normal destruction speed. The HUD
    prints the mode and precise permissions in parentheses. B cycles the block
-   selected for placement, initially displayed in the HUD. Creative's bedrock
-   exception and Survival's inherited flight need explicit decisions during
-   S2 planning; do not silently substitute conventional Minecraft defaults.
+   selected for placement, initially displayed in the HUD. Creative bedrock
+   breaking and Survival without flight were confirmed on 22 October 2026.
+   The [S2 design](ai/decisions/earlydev_0_1_1_s2.md) defines interaction,
+   world/replication ownership, rendering and future acceptance. S2 also owns
+   the replacement terrain model deferred from S1, subject to the separate
+   research's owner-selected, qualified handoff.
    Add a central crosshair for the edit ray. HUD/crosshair style supports a
    single color or a dark/light pair.
    Adaptive color selection depends on the scene behind each individual pixel,
    so an element remains readable across both snow and dark terrain; do not
    switch the entire element to one color based on an average background.
+   Add a gameplay minimap and interactive world map, brought forward from
+   GeographyDev by the owner on 22 October 2026. Use the shared generated
+   world and canonical edits; detailed map behavior remains in the S2 design.
+   Improve pre-connect loading, generation, game and world-map views with
+   existing text/background/map rendering. Use a HUD-free game capture at
+   loading and richer generation imagery, keeping progress and readiness honest.
+   A quieter HUD shows loaded chunks, memory and local climate (temperature,
+   humidity and salinity only where applicable). Minimap covers a local L1/L2
+   area with N/E/S/W orientation. No button/widget framework is required.
 3. **Water.** Fill empty blocks at or below `SEA_LEVEL` with semitransparent
    water. Include swimming, underwater effects with at least bluish screen
    postprocessing, and flowing water. Movement slows in water when neither
@@ -179,7 +191,9 @@ That makes for EarlyDev complete after some additional tests and probable improv
 Plans for GeographyDev 0.2.0 - Map:
 1. Seas, rivers, lakes, ponds (+ gravel, ?).
 2. Islands.
-3. Minimap and world map.
+
+Minimap and world-map UI move forward to EarlyDev 0.1.1 S2; later geography
+uses their shared world-data path.
 
 Plans for GeographyDev 0.2.1 - SurfaceBiomes:
 1. Deserts (+ sandstone and cactus).
