@@ -16,7 +16,8 @@ Planned path to it (per snapshot):
 
 ## EarlyDev 0.1.1 — BasicBlocks
 
-Owner-supplied six-snapshot plan, recovered and recorded on 19 October 2026.
+Owner-supplied plan, recovered and recorded on 19 October 2026, consolidated
+into four snapshots on 22 October: S3 joins S2, and S5/S6 become the new S4.
 This replaces the earlier fixed-pattern outline and the assistant's proposed
 reliability/water snapshot splits. Fixes accompany the product snapshots;
 they are not separate product features or snapshots. The inherited cursor,
@@ -69,9 +70,9 @@ See [S1 design and acceptance](ai/decisions/earlydev_0_1_1_s1.md) and
    version/seed/configuration. Review module separation and subsystem-specific
    correctness/performance modes. Qualify two physical laptops with one local
    and one remote player, hosting on Mac and Windows. Detailed contracts are in
-   the S1 plan. Physical water itself arrives in S4.
-2. **Placing, breaking and game modes.** Highlight the reachable block under
-   the player's gaze. Breaking shows cracks and cubic particles. Normal break
+   the S1 plan. Physical water itself arrives in S3.
+2. **Placing, breaking, game modes, crosshair and HUD.** Highlight the reachable
+   block under the player's gaze. Breaking shows cracks and cubic particles. Normal break
    times are snow 1 s, dirt/grass 1.5 s, ice 2 s and stone 3 s; bedrock is
    described as unbreakable. Breaking permissions provide a block blacklist or
    whitelist, including an empty list, and normal or effectively instant speed.
@@ -83,25 +84,25 @@ See [S1 design and acceptance](ai/decisions/earlydev_0_1_1_s1.md) and
    selected for placement, initially displayed in the HUD. Creative's bedrock
    exception and Survival's inherited flight need explicit decisions during
    S2 planning; do not silently substitute conventional Minecraft defaults.
-3. **Crosshair and adaptive HUD styling.** Add a central crosshair for the
-   edit ray. HUD/crosshair style supports a single color or a dark/light pair.
+   Add a central crosshair for the edit ray. HUD/crosshair style supports a
+   single color or a dark/light pair.
    Adaptive color selection depends on the scene behind each individual pixel,
    so an element remains readable across both snow and dark terrain; do not
    switch the entire element to one color based on an average background.
-4. **Water.** Fill empty blocks at or below `SEA_LEVEL` with semitransparent
+3. **Water.** Fill empty blocks at or below `SEA_LEVEL` with semitransparent
    water. Include swimming, underwater effects with at least bluish screen
    postprocessing, and flowing water. Movement slows in water when neither
    flight nor passthrough is enabled. A swim permission, enabled by default in
    Creative/Survival, permits swimming upward. Water is not broken; placing a
    solid block into water replaces it. Research and elaborate fluid behavior
-   when planning S4, including alternatives to Minecraft's water model.
-5. **Player model and animation.** Replace the box body with a conventional
-   player model. First person shows two hands with distinct motions for
+   when planning S3, including alternatives to Minecraft's water model.
+4. **Player models, animation, multiplayer and bots.** Replace the box body
+   with a conventional player model. First person shows two hands with distinct motions for
    running, jumping, breaking, placing and swimming. Rear/front external views
    show the complete animated model. Move the selected-block display from the
    HUD into the player's hand. Add opacity in the range 0–100%; Spectator uses
-   40% opacity. Exact art and animation direction belongs to S5 planning.
-6. **Multiplayer players and bots.** Every multiplayer player has the model.
+   40% opacity. Exact art and animation direction belongs to S4 planning.
+   Every multiplayer player has the model.
    Bots wander, occasionally place/break nearby blocks and may swim, subject
    to their capabilities; bots with flight use it, and Spectator bots only fly.
    Keep bots near a player: proposed thresholds are return movement beyond
@@ -109,7 +110,7 @@ See [S1 design and acceptance](ai/decisions/earlydev_0_1_1_s1.md) and
    500× beyond 160. Restore the original mode inside the usual 64-block range.
    Recover a valid nonintersecting position when leaving passthrough inside
    terrain; the same rule applies to human mode switches. Anchor-player
-   selection and exact thresholds are decisions for S6 planning.
+   selection and exact thresholds are decisions for S4 planning.
 
 These are planned outcomes, not implemented or accepted behavior. S1's seeded
 geography and climate-driven materials are the initial terrain foundation.

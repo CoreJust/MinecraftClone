@@ -82,7 +82,7 @@ clamp; retain clamp counts so saturation cannot hide lost mountain relief.
 top and ground material. `materializeChunk` fills one 16³ palette from the
 same 16² columns and [exact layer intervals](earlydev_0_1_1_s1_materials.md). Z never
 wraps. S1 materialization returns Air above H even where the map depicts
-water. Physical water, swimming and flow remain S4.
+water. Physical water, swimming and flow remain S3.
 
 Use identical surface data for server collision, streamed previews, cliff
 layers and headless detailed maps. Preserve global constraints in every

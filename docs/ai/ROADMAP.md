@@ -26,7 +26,8 @@ This is an implementation queue, not the product specification. [../ROADMAP.md](
 
 ## BasicBlocks snapshots
 
-The [owner's recovered six-snapshot plan](../ROADMAP.md#earlydev-011--basicblocks)
+The [owner's four-snapshot plan](../ROADMAP.md#earlydev-011--basicblocks),
+consolidated on 22 October 2026 from the recovered six-snapshot plan,
 is canonical. All rows are planned; fixes accompany these product deliveries.
 S1 uses the finalized [Terrain-v2 design](decisions/earlydev_0_1_1_s1_generation.md),
 replacing the current Terrain-v1 waves. Its implementation remains planned.
@@ -34,22 +35,20 @@ replacing the current Terrain-v1 waves. Its implementation remains planned.
 | ID | Depends on | Product outcome | Validation focus |
 |---|---|---|---|
 | ED-011-S1 | ED-010-S7 | Terrain-v2, climate-driven layers/maps, CoreLang 0.1.5 JIT/AOT, loading/key gate and shared 2D tests. | [Loading/FPS targets](decisions/earlydev_0_1_1_s1_performance.md), exact pixels, subsystem modes and two-laptop play; inherited 0477–0479 fixes. |
-| ED-011-S2 | ED-011-S1 | Reachable-block highlight, animated permission-aware placing/breaking, official Spectator/Creative/Survival presets, B block selection and precise mode/permission HUD. | Production edit/replication/collision cases; block times and filters; ordinary multiplayer editing and mode switches. |
-| ED-011-S3 | ED-011-S2 | Central edit crosshair and single-color or per-pixel dark/light scene-adaptive HUD/crosshair styling. | Mixed light/dark backgrounds within one element, scene sampling and normal-view readability. |
-| ED-011-S4 | ED-011-S3 | Sea-level water fill, semitransparency, underwater postprocessing, swimming permissions/slowdown, flowing water and replacement by placed solids. | Fluid research/design before implementation; authority, swim transitions, edit interaction and bounded multiplayer convergence. |
-| ED-011-S5 | ED-011-S4 | Conventional animated player, two first-person hands, held selected block, external-view animations and 0–100% opacity with Spectator at 40%. | All specified action/view combinations, held-block presentation and opacity in ordinary play. |
-| ED-011-S6 | ED-011-S5 | Models for all multiplayer players; capability-aware bots that wander/edit/swim/fly and return toward players; safe recovery from embedded mode switches. | Two-player model/action replication, bot-distance/mode restoration and human/bot collision recovery. |
+| ED-011-S2 | ED-011-S1 | Reachable-block highlight, animated permission-aware placing/breaking, official Spectator/Creative/Survival presets, B block selection, precise mode/permission HUD, central edit crosshair and single-color or per-pixel dark/light scene-adaptive styling. | Production edit/replication/collision cases; block times and filters; ordinary multiplayer editing and mode switches; mixed light/dark backgrounds within one element, scene sampling and normal-view readability. |
+| ED-011-S3 | ED-011-S2 | Sea-level water fill, semitransparency, underwater postprocessing, swimming permissions/slowdown, flowing water and replacement by placed solids. | Fluid research/design before implementation; authority, swim transitions, edit interaction and bounded multiplayer convergence. |
+| ED-011-S4 | ED-011-S3 | Conventional animated models for all players, two first-person hands, held selected block, external-view animations and 0–100% opacity with Spectator at 40%; capability-aware bots that wander/edit/swim/fly and return toward players; safe recovery from embedded mode switches. | All specified action/view combinations, held-block presentation and opacity in ordinary play; two-player model/action replication, bot-distance/mode restoration and human/bot collision recovery. |
 
 S2 must resolve Creative's bedrock exception and Survival's flight default.
-S4's fluid model and S6's proposed 64/128/160-block thresholds and anchor-player
-selection remain later design decisions. Do not replace these six product
+S3's fluid model and S4's proposed 64/128/160-block thresholds and anchor-player
+selection remain later design decisions. Do not replace these four product
 snapshots with a fix-only or separate water-subsystem sequence.
 
 ## EarlyDev minor releases
 
 | ID | Depends on | Scope and acceptance | Validation |
 |---|---|---|---|
-| ED-011 BasicBlocks | ED-010-S7 | The six snapshots above: solid layered continental terrain including dirt, permission-aware editing/modes, adaptive HUD/crosshair, flowing water/swimming, animated player models/opacity and multiplayer bot behavior. | Snapshot-specific behavior and visual checks; inherited gameplay regressions; integrated multiplayer and platform acceptance. |
+| ED-011 BasicBlocks | ED-010-S7 | The four snapshots above: solid layered continental terrain including dirt, permission-aware editing/modes, adaptive HUD/crosshair, flowing water/swimming, animated player models/opacity and multiplayer bot behavior. | Snapshot-specific behavior and visual checks; inherited gameplay regressions; integrated multiplayer and platform acceptance. |
 | ED-012 GUI | ED-011 | Main screen; create/join-world screen; pause; hotbar and inventories; save/open world; F3 diagnostics. Save/load preserves world and inventory. | UI state/save compatibility tests; create, join, pause, reload smoke. |
 | ED-013 BasicWorldGen | ED-012 | Global height/temperature continents and oceans; local deep-ocean/ocean/beach/plains/hills/mountains biomes; sand; icy poles and extreme north/south ice wall; trees. | fixed-seed map/biome boundary tests; map preview smoke. |
 | ED-014 SkyGraphics | ED-013 | Lighting/effects, day/night, sun/moon/stars/clouds, and latitude-dependent sky position/block tint. D: choose lighting model and performance target. | deterministic time/latitude tests; day-cycle visual smoke. |

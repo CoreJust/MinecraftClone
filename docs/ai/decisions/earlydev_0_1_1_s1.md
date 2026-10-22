@@ -5,7 +5,7 @@ S1 implementation remains planned. Terrain-v1 names the current repeating-wave
 generator. The finalized [Terrain-v2 design](earlydev_0_1_1_s1_generation.md)
 and its linked algorithm, architecture, rationale and acceptance notes are
 the implementation specification. The
-[product roadmap](../../ROADMAP.md#earlydev-011--basicblocks) owns the six
+[product roadmap](../../ROADMAP.md#earlydev-011--basicblocks) owns the four
 snapshots; this document elaborates S1. Prototype evidence is separate from
 native game acceptance.
 
@@ -13,7 +13,7 @@ native game acceptance.
 
 Terrain-v2 replaces repeating stone waves with seeded tectonics, varied
 geography and progressive detail. Climate selects grass/dirt or snow/ice over
-stone and bottom bedrock. Oceans remain dry until S4. Normal gameplay must
+stone and bottom bedrock. Oceans remain dry until S3. Normal gameplay must
 show these materials and agree with server collision; showcases and chunk-only
 fixtures do not satisfy S1.
 
@@ -27,7 +27,7 @@ Keep the existing 65,536 × 65,536 horizontal extent and 1,024-block vertical
 extent, sparse residency, player-position-driven interest and projection-based
 LOD. X and Y wrap; Z is bounded. Do not allocate the whole voxel world or tie
 collision authority to client visual residency. S1 does not add block-edit
-input, official mode presets, the S3 crosshair, water, player animation or bots.
+input, official mode presets, the S2 crosshair, water, player animation or bots.
 S2 owns arbitrary voxel edits, which a height alone cannot encode.
 
 ## Ordered owner requirements

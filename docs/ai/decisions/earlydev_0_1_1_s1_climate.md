@@ -72,7 +72,7 @@ the canonical material table above controls actual voxels.
 Store temperature, precipitation/moisture, winds, currents and zones for
 future decorations, flora/fauna and seasons. S1 adds those fields and their
 material effects, not the future systems themselves. Global maps depict
-water-body data; S1 voxels above the bed remain Air until S4.
+water-body data; S1 voxels above the bed remain Air until S3.
 
 [NOAA](https://www.noaa.gov/education/resource-collections/ocean-coasts/ocean-currents)
 supports wind-driven current/heat transport, and

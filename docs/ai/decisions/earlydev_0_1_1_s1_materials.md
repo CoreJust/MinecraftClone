@@ -1,9 +1,9 @@
 # S1 — Terrain-v2 solid materials and exact columns
 
 Indexing convention: `H(x,y)` is the Z coordinate of the highest
-solid block, and `S = SEA_LEVEL` is the highest Z that S4 may fill with water.
+solid block, and `S = SEA_LEVEL` is the highest Z that S3 may fill with water.
 Thus `H >= S` is land, and `H < S` is submerged terrain. This convention must
-be shared by generation, rendering, collision and S4 water placement.
+be shared by generation, rendering, collision and S3 water placement.
 
 At `z=0`, always generate Bedrock. At `z>H`, generate Air in S1. For the
 remaining solid blocks (`1 <= z <= H`):
@@ -27,7 +27,7 @@ Boundary examples, assuming enough depth above bedrock:
 | Highest solid block | Result immediately below/at sea level |
 |---|---|
 | `H=S` | Topmost at S, four ground blocks at S-1 through S-4. |
-| `H=S-1` | Four ground blocks at S-1 through S-4; Air at S until S4. |
+| `H=S-1` | Four ground blocks at S-1 through S-4; Air at S until S3. |
 | `H=S-3` | Two ground blocks at S-3 and S-4. |
 | `H=S-4` | One ground block at S-4. |
 | `H=S-5` | Stone-only column above bedrock. |

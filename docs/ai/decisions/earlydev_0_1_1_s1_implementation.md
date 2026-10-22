@@ -59,7 +59,7 @@ keep inherited fixes first and ordinary-gameplay evidence throughout.
    draw/instance paths. Quads/merges require matching material; cliffs expose
    correct top, four ground layers and Stone. Preserve seams, shoreline and
    material transitions during LOD. Snow/Ice are solid S1 materials. Water
-   transparency/rendering and physical water remain S4; map colours do not
+   transparency/rendering and physical water remain S3; map colours do not
    implement either. Full voxel edit meshing remains S2.
 8. **Qualify the actual delivery.** Extend the existing generation/scheduler,
    sparse-world, server-preview, message and player-LOD suites. Add fixed-seed
