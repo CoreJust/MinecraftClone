@@ -686,5 +686,48 @@
   "owner_ui_weather_feedback": {
     "text": "Also maybe some animations related to winds/currents/precipitations/etc might improve the visuals",
     "sha256": "c2ebab57fe58319b1cdcc03502e5734b1cd47b772d590a8cb38b0342060ecd30"
+  },
+  "owner_ui_acceptance": {
+    "date": "2026-10-22",
+    "text": "Accepted. Finalize it into S2 description, elaborate technical design and architecture, etc",
+    "sha256": "ec846e9f42e8db0fd5a574c6a38e7342b4329b28c789e44ddaa142db2c45b987",
+    "accepted_prototype_commit": "232eae681ddd9f38e6187a109168d70ce0b64ed5",
+    "scope": "Four-screen visual and interaction baseline; no native implementation, real telemetry, terrain-model choice or snapshot qualification",
+    "task_id": "MC-AI-0520",
+    "requirements_ledger_sha256": "73737951dadc1d27db15c74c2387dc9f1cf8b2b5f80b8eef50bdf3794f134497",
+    "prototype_files_sha256": {
+      "docs/ai/prototypes/s2-ui/app.js": "b356975f3b12198295631a080ae14a80aeca1ed141886e241b424aa4ffd85065",
+      "docs/ai/prototypes/s2-ui/assets/TAMSYN_LICENSE.txt": "a78104a9d1021e24f5766ff9c40ebdfc679c2d9fb1cb524c49330fbc49fd0a26",
+      "docs/ai/prototypes/s2-ui/assets/font.js": "702f06b6498ec7c198ae971d25742a35f0a146a6defdacb15a8dd3c7ab15881d",
+      "docs/ai/prototypes/s2-ui/assets/provenance.json": "4bdcfcdebf2484f7213902a8ff102f46b2cf2e7ad8cda383860e9678229a873b",
+      "docs/ai/prototypes/s2-ui/assets/terrain.png": "d8d97e3480a8b193d953057bf4b1b1bb266c33289327ef5c9d54f465994232fc",
+      "docs/ai/prototypes/s2-ui/assets/world-data-provenance.json": "d4df4cbc43e138a4e57defd55a36c8316018b86c50bb7afd6c482ba50d69086e",
+      "docs/ai/prototypes/s2-ui/assets/world-data.js": "a2126eb42a2990ef430aedc396a99fcba5dc6e4dd7157b6c2f1c7d86a172f908",
+      "docs/ai/prototypes/s2-ui/game-hud.js": "bd95e6ea130e3f05a0f242e98827a203814c9b7dfa3ec21db1ff9bec1f4601c4",
+      "docs/ai/prototypes/s2-ui/generation-view.js": "8be68ff5a86736fabe0e743049429fbc58bfeb8eb98be67a0a3a336481959f85",
+      "docs/ai/prototypes/s2-ui/index.html": "229d3b1c22c4e39dd4a54a20726651628277bcf903542e6e0142914ee5f0b6ff",
+      "docs/ai/prototypes/s2-ui/loading-view.js": "9cc8f9738ee0d765070ff79946f264f0f78fe3ee438c8e4358c1a47385ac5ef3",
+      "docs/ai/prototypes/s2-ui/minimap-view.js": "ca0bb6f115816a27af117eff40442d26760a67d0f5e93925bdd15cf832a72eb6",
+      "docs/ai/prototypes/s2-ui/screens/game.png": "774be7465f9995d8850cdfd38c49f0f53b3d15f7494f829ca46c4d3362c9754e",
+      "docs/ai/prototypes/s2-ui/screens/generation.png": "515607f22e00e5543dec48d6f39715bf63ae14cc8c6e981d427a41977cb83cfb",
+      "docs/ai/prototypes/s2-ui/screens/loading.png": "bda3172a2bf025e61c889f7ead55450efa1f4c00f957ee080f2631d8977424c6",
+      "docs/ai/prototypes/s2-ui/screens/world-map.png": "0fcee10fb92f2d5119226dc6f3419d263939df94f174601f301a022d7e642af5",
+      "docs/ai/prototypes/s2-ui/styles.css": "29d4702f65a4d68f8fc5f6e4a0db323404b9208cffc9fcce105dd81d10e500d4",
+      "docs/ai/prototypes/s2-ui/world-map-view.js": "58154e200fda5ab82dc4dadcb212bd34d272dcaca3e57fcc78e81f9a8befb12f"
+    },
+    "native_source_observations": {
+      "head_at_inspection": "232eae681ddd9f38e6187a109168d70ce0b64ed5",
+      "meaning": "Hashes identify mutable S1 working bytes, not accepted APIs or HEAD contents. Reconcile final S1 before implementation.",
+      "files": {
+        "src/client/include/client/WorldLoading.hpp": "8c229e61bcc6150ece83d34c5eee5aaa1b8f2b784edf2abf46fd9a7571e5b41e",
+        "src/client/WorldLoading.cpp": "4946753a2735e393da66bd4e5a9fb52f685c567cc8fa08d5faf715ab44bc1965",
+        "src/client/include/client/GenerationMapPresentation.hpp": "84ac8cce33e2cdb7ecf1c1c7f9c07595201080ac906ab374cfc158a26656f35c",
+        "src/client/GenerationMapPresentation.cpp": "a0e870de24b37ca50f073d713c11f87d5c70c1507f28c4359e177fdf9524b393",
+        "src/client/GameClient.cpp": "58eb018bc4f72b0b17cd728b99ecd1e4b7413738bfba218a78b368d71a7fd071",
+        "src/client/PlayerClient.cpp": "e8b636ff9f92310174d407d32ffe44efee4fd2051447f26802c788f220176ff2",
+        "src/generation/include/generation/Generation.hpp": "404997f6940708b7f212ffd2e38b81b546a73c35a8d374d084bc3e6801bbfd59",
+        "src/client/include/client/render/VulkanRenderer.hpp": "7186ab0d146dd9642b81a7b0895fd270e8fc861ddb8f0fd09e7d136240b0e5d3"
+      }
+    }
   }
 }

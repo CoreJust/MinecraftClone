@@ -1,7 +1,8 @@
 # S2 — Editing, modes, adaptive HUD and maps
 
-Initial design, 22 October 2026. This records requirements and proposed
-implementation choices; it does not start implementation or qualify S2.
+Design updated 22 October 2026: the owner accepted the four-screen UI at
+`232eae681ddd9f38e6187a109168d70ce0b64ed5`. That presentation is the S2 baseline.
+Native architecture below elaborates it; implementation and S2 qualification remain open.
 
 ## Intended result
 
@@ -11,10 +12,10 @@ collision, rendering and later visits agree. The crosshair and HUD remain
 readable across bright snow and dark terrain within one element. A minimap
 supports local orientation; an interactive world map shows the wider world.
 
-The refined [prototype](../prototypes/s2-ui/index.html) adds a coherent relief
-formation view, readable HUD hierarchy and independently keyed atlas layers.
-Its native fixture shares one source identity; browser visuals remain design
-evidence, not game implementation or owner acceptance.
+The accepted [prototype](../prototypes/s2-ui/index.html) defines pre-connect,
+generation, game and full-viewport map views: coherent tectonic/ice/weather
+formation, uniform colored readouts without View text, and independent climate
+heatmaps. Runtime samples remain fixtures; this acceptance does not qualify native gameplay.
 
 S2 also owns the terrain-model replacement deferred from S1. The separate
 world-model study has no accepted production candidate. Its adoption is an
@@ -41,8 +42,8 @@ model boundary and inherited acceptance requirements.
 | S2-07 | Center crosshair and HUD support fixed color or independent per-pixel dark/light choice from the scene behind them. | Adaptive-HUD task |
 | S2-08 | Integrate an owner-selected, qualified replacement terrain model through the canonical world contract. | S1 scope amendment |
 | S2-09 | Preserve world bounds/wrapping, residency/LOD separation and the final accepted S1 gameplay/platform gates. | Existing world contract + S1 task |
-| S2-10 | Add a minimap and world map in S2, bringing forward the later map UI scope. | Owner addition, 22 October 2026 |
-| S2-11 | Prototype pre-connect loading, world generation, gameplay and world map using current text/background/map primitives; no widget toolkit. | Owner UI request and capability correction |
+| S2-10 | Add minimap/world map with independent P/H/T/B/W/C/O/Q layers, translucent T/O/Q and full-viewport navigation. | Owner addition and accepted UI |
+| S2-11 | Deliver accepted pre-connect, dynamic generation, game and map views using text/background/map primitives; no widget toolkit. Preserve authoritative readiness. | Owner UI acceptance |
 | S2-12 | Preserve FPS/uptime/speed/movement/XYZ/YPR and controls; omit camera-view readout per latest owner feedback. Add chunks, measured memory and local climate. Local L1/L2 map uses game colors and prominent N/E/S/W. Hide inapplicable fields. | Owner UI request and refinement |
 
 ## Architecture
@@ -93,8 +94,10 @@ base preset and actual rights; no preset overrides a hard restriction.
 - [World state](earlydev_0_1_1_s2_world.md): edit storage, collision, meshing and terrain adoption.
 - [Replication](earlydev_0_1_1_s2_replication.md): action ordering, coverage, snapshots and recovery.
 - [Rendering](earlydev_0_1_1_s2_rendering.md): effects, pixel contrast and GPU resource ownership.
-- [Maps](earlydev_0_1_1_s2_maps.md): minimap/world-map behavior, shared terrain data and input ownership.
+- [Maps](earlydev_0_1_1_s2_maps.md) and [map pipeline](earlydev_0_1_1_s2_map_pipeline.md): behavior, source/composition, edit coverage, caching and input.
 - [UI and prototype](earlydev_0_1_1_s2_ui.md): four current-renderer views, telemetry producers and visual/input constraints.
+- [Native presentation](earlydev_0_1_1_s2_presentation.md): typed snapshots, screen/input ownership, telemetry and bounded image uploads.
+- [Generation presentation](earlydev_0_1_1_s2_generation_ui.md): producer checkpoints, six visual stages, persistent ice and authoritative readiness.
 - [Verification and work packages](earlydev_0_1_1_s2_verification.md): implementation boundaries and observable acceptance.
 
 Physical water remains S3; player models/hand animation and bot recovery remain

@@ -1,11 +1,11 @@
 # S2 UI — Authentic, informative and engaging
 
-The [four-screen prototype](../prototypes/s2-ui/index.html) is a design artifact,
-not game implementation. Judge it against the owner's four criteria: authentic
-use of current capabilities, visual appeal, useful information and easy operation.
-Formation and runtime counters are fixtures. The revised prototype uses one
-native atlas export for all map layers and marker climate, with retained source
-identity and units; this is not a live game connection.
+**Accepted visual baseline, 22 October 2026:** the [four-screen prototype](../prototypes/s2-ui/index.html)
+at `232eae681ddd9f38e6187a109168d70ce0b64ed5`. Preserve its authentic primitives,
+visual appeal, useful information and clear operation. Formation/runtime counters
+remain fixtures; one native atlas supplies aligned layers and marker climate.
+The [native architecture](earlydev_0_1_1_s2_presentation.md) defines implementation
+contracts. Prototype acceptance does not establish native gameplay or live telemetry.
 
 ## Available primitives
 
@@ -74,7 +74,7 @@ path; do not conceal that work behind the prototype.
    legends; the map note owns separate layer keys and heatmaps. Ignore modified browser shortcuts and repeated toggle presses.
    Exclusive map input cannot move/edit/change
    mode while multiplayer continues. Android uses map gestures/back navigation;
-   entry mapping and ordinary-device proof remain implementation work.
+   entry and pointer ownership follow the native architecture; device proof remains open.
 
 ## Telemetry and visual ownership
 
@@ -97,7 +97,5 @@ A local material map must resemble the game: derive colors from canonical
 surface materials/shared terrain palette, with bounded relief shading. The
 prototype's projection is illustrative, not production LOD evidence. Wider
 geographic overview may use atlas colors with an explicit detail label.
-Acceptance covers all four flows, dynamic/reduced-motion behavior, every
-preserved/new HUD field, conditional data, bitmap contrast, compass visibility,
-input gates and narrow landscape. Native/runtime and performance gates remain
-future work; a browser screenshot cannot qualify the game.
+The [verification plan](earlydev_0_1_1_s2_verification.md) covers four native flows,
+conditional data, readable landscape, motion, compass/input and inherited gates.

@@ -1,5 +1,7 @@
 # S2 UI prototype
 
+The owner accepted this visual/interaction baseline on 22 October 2026 at commit `232eae681ddd9f38e6187a109168d70ce0b64ed5`; see the [S2 architecture](../../decisions/earlydev_0_1_1_s2_presentation.md). Native delivery remains open.
+
 Open `index.html` directly, or serve this directory on localhost. The numbered review links and fixture disclosure sit outside the game frame. Five focused view modules draw exact Tamsyn8x16 bitmap text, native scene capture and bounded map rasters. No in-frame buttons or widget toolkit is required.
 
 ## Four views
@@ -35,4 +37,4 @@ Shared ice is a visual proxy: 4,303 nonwater Snow-zone cells and 2,834 ocean/lak
 
 The marker is normalized148/256,112/256, native world X37888/Y28672. HUD temperature16.6C comes from that marker. Humidity is unavailable: model moisture is not RH; salinity is absent on land. Elevation is geological km relative to sea0, not actual player Z. Runtime counters and Z84.1 remain disclosed examples. Map North is negative raster/nativeY; heading is clockwise, matching native yaw180-heading. The fixed scene is not a camera rendered at that point.
 
-Native/Android/runtime, multiplayer, performance and owner acceptance remain implementation work. Browser screenshots demonstrate the design and controls only.
+Native/Android/runtime, multiplayer, performance and owner gameplay acceptance remain implementation work. Browser screenshots demonstrate the design and controls only.

@@ -1,10 +1,10 @@
 # S2 — Minimap and world map design
 
-**Status:** Both maps are owner-required. This is a design proposal, not implemented or qualified behavior; layout and controls are defaults.
+**Status:** The owner accepted the prototype at `232eae68`; its layout, layers and keys are the S2 baseline. Native implementation and qualification remain open.
 
 ## Current paths and scope
 
-The [S2 index](earlydev_0_1_1_s2.md) owns the map requirement. The [UI note](earlydev_0_1_1_s2_ui.md) owns the four screens and HUD telemetry; this note covers map behavior and input ownership.
+The [S2 index](earlydev_0_1_1_s2.md) owns scope. This note owns behavior; [map pipeline](earlydev_0_1_1_s2_map_pipeline.md) specifies source/composition/cache contracts, and [UI](earlydev_0_1_1_s2_ui.md) owns screens/telemetry.
 
 The following source locations are sampled S1 worktree observations, recorded with hashes in the [source record](earlydev_0_1_1_s2_sources.json); several files are not committed yet. Reconcile them with final S1 before implementation.
 
@@ -27,7 +27,7 @@ world. Preserve isotropic projection, never stretch geography to fill space.
 
 Place a north-up minimap at top-right, showing the player in the shared selected-model L1/L2 projection around them, with prominent outlined N/E/S/W labels and a heading marker, using the game's material palette rather than the diagnostic atlas colors. It must cover more than resident voxel columns. The S1 scaffold’s L1/L2 spacing is 64/16 blocks at 256 atlas resolution and 32/8 at 512 (`docs/ai/decisions/earlydev_0_1_1_s1_lod_scaffold.md:21`). Shared `TerrainLodArtifact` (`src/shared/include/shared/world/TerrainLod.hpp:41`) records model identity and level; today’s model is an S1 placeholder. Use the eventual accepted terrain identity and shared projection, not that placeholder or duplicate terrain research. Use the accepted immutable session atlas for the wider world map ([atlas contract](../WORLD_MAP.md#L3)).
 
-Propose M to open/close the larger world map, arrows/drag to pan, +/- or pinch/wheel to zoom and R to reset. W toggles wind; do not also bind WASD pan. Suppress toggle repeat and pass modified browser shortcuts through. Show plain text instructions; no button/widget toolkit. M is unbound in the surveyed PlayerClient path; check all input routes before implementation. Android uses exclusive gestures and back navigation, with entry mapping still to define. Map input cannot move, look, edit or change mode; hide the reticle while multiplayer continues. Show the local player only. Map clicks do not edit or teleport; no fog, waypoints or other-player disclosure is required.
+Propose M to open/close the larger world map, arrows/drag to pan, +/- or pinch/wheel to zoom and R to reset. W toggles wind; do not also bind WASD pan. Suppress toggle repeat and pass modified browser shortcuts through. Show plain text instructions; no button/widget toolkit. M is unbound in the surveyed PlayerClient path; check all input routes before implementation. Android map actions and pointer ownership follow the [native architecture](earlydev_0_1_1_s2_presentation.md). Map input cannot move, look, edit or change mode; hide the reticle while multiplayer continues. Show the local player only. Map clicks do not edit or teleport; no fog, waypoints or other-player disclosure is required.
 
 Use shared L1/L2 projection as the local base without waiting for L3 voxels. Overlay local edits only at map scales where block-surface detail is meaningful. Gate each affected cell on current model identity, epoch, and edited-column manifest/revisions ([replication](earlydev_0_1_1_s2_replication.md#L15)); show incomplete edited cells as pending/Unknown while unaffected L1/L2 remains visible. Never require the whole map view to be voxel-ready, or trigger whole-world generation/download. At detail scale, define the projection as the highest occupied block per XY column: after an accepted top-block removal, recompute the next solid; show Air only when the column is proven empty. The top view cannot show tunnels or undercuts, and roofs hide lower geometry. Unknown is distinct from Air.
 

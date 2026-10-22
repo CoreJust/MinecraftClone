@@ -97,10 +97,13 @@ See [S1 design and acceptance](ai/decisions/earlydev_0_1_1_s1.md) and
    world and canonical edits; detailed map behavior remains in the S2 design.
    Improve pre-connect loading, generation, game and world-map views with
    existing text/background/map rendering. Use a HUD-free game capture at
-   loading and richer generation imagery, keeping progress and readiness honest.
+   loading and the accepted tectonic/relief/water/ice/climate/arrival sequence,
+   keeping progress/readiness honest and final ice/geography consistent.
    A quieter HUD shows loaded chunks, memory and local climate (temperature,
    humidity and salinity only where applicable). Minimap covers a local L1/L2
-   area with N/E/S/W orientation. No button/widget framework is required.
+   area with N/E/S/W. The owner accepted the prototype at `232eae68`: uniform
+   colored HUD readouts without View text (F5 retained), full-viewport map and
+   independent translucent climate layers. No widget framework is required.
 3. **Water.** Fill empty blocks at or below `SEA_LEVEL` with semitransparent
    water. Include swimming, underwater effects with at least bluish screen
    postprocessing, and flowing water. Movement slows in water when neither
@@ -124,7 +127,7 @@ See [S1 design and acceptance](ai/decisions/earlydev_0_1_1_s1.md) and
    terrain; the same rule applies to human mode switches. Anchor-player
    selection and exact thresholds are decisions for S4 planning.
 
-These are planned outcomes, not implemented or accepted behavior. S1's seeded
+These are planned production outcomes, not delivered native features. S1's seeded
 geography and climate-driven materials are the initial terrain foundation.
 The richer biome content, sand, trees and polar ice-wall work listed for 0.1.3
 remain later scope; its older temperature/height wording does not postpone
